@@ -49,3 +49,7 @@
 - `[KNOWN GAP]` HTTP/SSE servers: configuration and passing are implemented from the SDK types but not tested against a real remote server.
 - `[KNOWN GAP]` Counts are not persisted across app restarts and do not include history of resumed sessions.
 - `[KNOWN GAP]` Context for models other than `auto` was not observed (this account only offers `auto`).
+
+## Changes
+
+- **2026-10-16, feature 020**: the app-level custom server list and the Import screens (FR-001, FR-003, FR-006) are replaced: `~/.copilot/mcp-config.json` is the primary global list, shown with no setup (FR-007 "ambient" servers); Durbar's own servers are optional **extras per folder/workspace** only. The Tools counts (FR-012/FR-013) gain an "All time" persisted view. See [020](../020-tools-all-time-and-mcp-cli-primary/spec.md). The text above is kept as the record of milestone 8.

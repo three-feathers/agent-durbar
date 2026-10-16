@@ -61,4 +61,10 @@ Spec drafts only (no plan or tasks yet); they must go through `/speckit.clarify`
 | --- | --- | --- |
 | [019](019-mcp-tools-and-context/spec.md) | Global MCP servers, tool usage per agent, models and context window | milestone 8 |
 
+## Feature 020: milestone 10
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [020](020-tools-all-time-and-mcp-cli-primary/spec.md) | Tools "This session / All time", Copilot CLI MCP list first, MCP extras per folder | in progress |
+
 New features take the next number (`/speckit.specify` picks it automatically from this folder).
