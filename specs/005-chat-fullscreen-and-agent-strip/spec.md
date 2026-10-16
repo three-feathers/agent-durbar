@@ -79,7 +79,7 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 - **FR-010** `[IMPLEMENTED]` read: Copy resume command copies `copilot --resume <session id>` and explains to end the session here first (one process should drive a session at a time).
 - **FR-011** `[KNOWN GAP]` Assistant text is shown as **plain text**: no Markdown, code blocks or links are rendered. `read:` (Task T020.)
 - **FR-012** `[KNOWN GAP]` In live mode, nothing prevents sending a second message while a turn runs; how the runtime treats it (queue vs steer) is **not verified**. `read:` (Task T021.)
-- **FR-013** `[KNOWN GAP]` Stop (interrupt) and End/resume were verified on the simulator and by unit tests of the broker only; the README states they were not run on a real session. See feature 013.
+- **FR-013** `[KNOWN GAP]` Stop (interrupt) and End/resume were verified on the simulator and by unit tests of the broker only; the README says milestone 6 was built and tested on simulated agents and fixtures only ("no prompts to real models"), so Stop/End/resume on a real running turn were never exercised. See feature 013.
 - **FR-014** `[KNOWN GAP]` Chat history lives only in renderer memory for the run; reopening the app shows an empty chat for a restored folder (earlier turns are available only through Previous sessions, feature 006). `read:`
 - **FR-015** `[KNOWN GAP]` The chat has no search, copy-message button or export. `read:`
 - **FR-016** `[KNOWN GAP]` The open-chat densities noted in the README (`card` at 1440x900, `mini` at 1280x800 for the office behind it) are not exercised by this feature's checks; only the chat layout was re-measured. See feature 001.
