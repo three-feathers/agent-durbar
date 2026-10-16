@@ -262,7 +262,12 @@ function renderOffice(){
       stage.innerHTML=sizing.map(m=>roomHTML(m,d,aw,c)).join('');
       const h=stage.scrollHeight;
       if(!any||h<any.h-8)any={c,h};
-      if(fits()&&(!best||h<best.h-8))best={c,h};
+      if(fits()){
+        /* among layouts that fit, prefer desks close to a comfortable width (not stretched, not squeezed) */
+        const ds=stage.querySelectorAll('.desk.card'); let tw=0; ds.forEach(e=>{tw+=e.getBoundingClientRect().width;});
+        const miss=Math.abs(tw/Math.max(1,ds.length)-D.cw*1.3);
+        if(!best||miss<best.miss-6)best={c,h,miss};
+      }
     }
     cap=(best||any).c;
     if(best){fit=true;break;}

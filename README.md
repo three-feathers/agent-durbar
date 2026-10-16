@@ -2,10 +2,29 @@
 
 Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.
 
-> Status: **milestone 3 (approvals and attachments verified on real Copilot sessions; Linux only, macOS/Windows untested).** The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. Milestone 2 makes 10-15 agents readable on one 1440x900 / 1280x800 screen. See [Status](#status-milestone-2).
+> Status: **milestone 4 (office floor-plan look for 10-15 agents) on top of milestone 3 (approvals and attachments verified on real Copilot sessions; Linux only, macOS/Windows untested).** The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. Milestone 2 makes 10-15 agents readable on one 1440x900 / 1280x800 screen. See [Status](#status-milestone-2).
 
-![15 simulated agents at 1440x900](docs/screenshots/m2-sim15-1440x900-closed.png)
-![15 simulated agents with the chat panel open at 1280x800](docs/screenshots/m2-sim15-1280x800-panel.png)
+![15 simulated agents at 1440x900](docs/screenshots/m4-sim15-1440x900-closed.png)
+![15 simulated agents with the chat panel open at 1280x800](docs/screenshots/m4-sim15-1280x800-panel.png)
+
+## Status (milestone 4: office floor-plan look for 10-15 agents)
+
+The compact densities (`card` / `mini` / `micro`, used automatically for 10-15 agents) no longer look like a dashboard of cards; the office is a floor plan again. No AI credits were used (`DURBAR_SIM=12` / `15`, plus `?sim=30` for a stress check).
+
+- **Every agent is a tiny desk scene** (the prototype's flat-vector person, desk and monitor, cropped and reused). Status is shown by the scene itself: typing hands and a soft monitor glow while working, a thought bubble with blinking cursor while thinking, a raised waving hand and amber monitor when waiting for you, a red screen with `!` on error, a green check on done, and a dimmed figure with a coffee mug when idle. A coloured status word stays next to the name, so colour is never the only cue.
+- **Rooms are floor-plan zones**: tinted floor with faint tiles, a wall edge with a door gap, a nameplate and a plant. Desks sit on a grid so rows and columns line up. The renderer also tries several desk-column counts per room and keeps the one whose desks are closest to a comfortable width among those that fit.
+- **Helpers are smaller figures at mini-desks** on a strip under their parent, joined by a connector. The strip shows the highest-priority helper (waiting, then error first) plus a `+N more` chip with status dots that expands in place ("Show fewer" collapses it). Sorting (waiting-for-you, then errors first) and the status / folder filters are unchanged.
+- `card` keeps role, a two-line intent, a status pill and usage; `mini` is name, status word and a two-line intent; `micro` is name, status word and a one-line intent. Text never goes below 10.5px.
+- **Calm and light**: flat tints, no emoji, no blur filters in compact scenes. Animations are CSS only, run in coarse steps (a few repaints per second), and all stop under `prefers-reduced-motion`. In headless Chrome with software rendering, 15 animated agents (78 running animations) use about 10% of one core in total and about 0.2% with reduced motion; the sim tick is the only JS and only touches changed agents.
+- The `full` density used for a handful of agents is unchanged (pixel-compared before and after).
+
+Checked at 1440x900 and 1280x800, panel closed and open, with 12 and 15 simulated agents: no overlaps, no clipping, no page scroll, floor does not scroll. 15 agents use `card` everywhere except 1280x800 with the panel open, which uses `mini`.
+
+![Compact floor plan, 15 agents, 1440x900](docs/screenshots/m4-sim15-1440x900-closed.png)
+![Chat panel open at 1280x800 (mini desks)](docs/screenshots/m4-sim15-1280x800-panel.png)
+![Helpers expanded in place](docs/screenshots/m4-sim15-expanded-helpers-1280x800.png)
+
+Remaining: the helper strip shows one helper plus `+N more` (more only after expanding); in `micro` the helper figures are very small (about 34px wide); rooms with many agents and a long folder name truncate the nameplate and hide the path and the idle/done counts when narrow; re-rendering on each simulated tick restarts the desk animations of every agent (the old behaviour, now more visible because the scenes move).
 
 ## Status (milestone 3)
 
@@ -111,6 +130,7 @@ An Electron app that:
 - [ ] Resume sessions; read-only discovery of VS Code / terminal sessions
 - [x] Open in VS Code (`code <folder>`)
 - [x] Office polish for 10-15 agents: auto-fit density, helpers with `+N`, status sorting, chat chips (simulated agents mode)
+- [x] Floor-plan look for the compact densities: desk scenes, room zones, helper mini-desks (milestone 4)
 - [ ] Second adapter (Claude or Codex CLI)
 - [ ] Packaging (macOS, Windows, Linux)
 

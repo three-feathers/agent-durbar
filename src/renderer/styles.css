@@ -309,7 +309,7 @@ body.panel-open #panel{display:flex}
 #stage:not([data-d="full"]) .room-head{container-type:inline-size}
 @container (max-width:330px){.room-path{display:none}}
 @container (max-width:250px){.rd.calm{display:none}}
-#stage:not([data-d="full"]) .room-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#stage:not([data-d="full"]) .room-name{flex:0 .05 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #stage:not([data-d="full"]) .room-path{font-size:11px;flex-shrink:4}
 #stage:not([data-d="full"]) .room-dots{gap:6px;min-width:0}
 #stage:not([data-d="full"]) .room-dots{padding-right:0}
