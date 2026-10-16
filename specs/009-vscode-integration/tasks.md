@@ -1,0 +1,20 @@
+# Tasks: VS Code integration
+
+## Done (as built)
+
+- [x] T001 Pure launch planning for macOS/Windows/Linux, no shell, guarded `cmd.exe` fallback, tests [FR-001, FR-002, SC-001]
+- [x] T002 `openInVSCode` spawn wrapper with clear errors [FR-001]
+- [x] T003 Chat store discovery per OS and `workspace.json` matching [FR-004]
+- [x] T004 Tolerant append-log and flat-JSON parser, transcript builder, size caps, honest notes, tests [FR-005, SC-002]
+- [x] T005 IPC with opaque keys; read-only view with banner [FR-006]
+- [x] T006 Copy resume command and VS Code "External" hint [FR-007]
+- [x] T007 README research notes on VS Code session visibility (documented, not verified) [FR-012]
+
+## Open
+
+- [ ] T020 Reconcile Cursor: add Cursor's user-data dir to `vscodeUserDirs` (with a test) or remove it from the README. [FR-008]
+- [ ] T021 Offer Insiders/VSCodium for "Open in" (clarify which binary to prefer). [FR-009]
+- [ ] T022 Run the real launch on macOS and Windows and record it. [FR-014]
+- [ ] T023 Check the reader against a real VS Code chat store (redacted sample as a new fixture) (feature 013). [FR-011]
+- [ ] T024 Verify that our sessions appear in VS Code's session list with the External filter (feature 013). [FR-012]
+- [ ] T025 Clarify support for portable, Flatpak/Snap and remote workspaces. [FR-010]
