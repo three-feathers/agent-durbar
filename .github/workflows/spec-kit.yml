@@ -1,6 +1,7 @@
 name: Spec Kit
 
-# Fails a pull request that changes src/ without changing specs/ (and without a Spec-Exempt reason or label).
+# Fails a pull request whose branch is not NNN-slug (warning only for non-agent bot branches), or that changes src/ without
+# changing a complete specs/NNN-*/ folder (spec.md, plan.md, tasks.md) -- unless it has a Spec-Exempt reason or label.
 # Logic lives in .github/scripts/spec-gate.sh. Runs on label and description edits too, so adding the
 # `spec-exempt` label or a "Spec-Exempt: <reason>" line re-evaluates the check.
 on:
@@ -22,10 +23,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - name: src/ changes need specs/ changes
+      - name: Gate script self-test (throwaway repos, no network)
+        run: bash .github/scripts/test-spec-gate.sh
+      - name: Branch is NNN-slug; src/ changes need the spec folder
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_LABELS_JSON: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}
+          PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
         run: bash .github/scripts/spec-gate.sh
