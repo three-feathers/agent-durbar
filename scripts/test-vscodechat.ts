@@ -37,7 +37,7 @@ assert.strictEqual(plainLinks('Read [](file:///a/b%20c.ts), lines 1 to 2 and [do
   assert.strictEqual(p.badLines, 2);
 }
 
-// --- fixture on disk
+async function main(): Promise<void> {
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-vsfix-'));
 try {
   const folder = path.join(tmp, 'my project');
@@ -55,7 +55,7 @@ try {
   const wsStores = findChatStores(ud, { folders: [path.join(tmp, 'x')], workspaceFile: wsFile });
   assert.deepStrictEqual(wsStores.map((s) => s.hash), [fx.hashes.workspace], 'a .code-workspace matches its own storage');
 
-  const listing = listChats([ud], { folders: [folder] });
+  const listing = await listChats([ud], { folders: [folder] });
   assert.strictEqual(listing.storesFound, 1);
   const titles = listing.sessions.map((s) => s.summary.title);
   assert.deepStrictEqual(titles, ['Notes app: add and persist notes', 'DURBAR fixture: newer log copy', 'DURBAR fixture: proto', 'DURBAR fixture: older flat-JSON chat']);
@@ -68,7 +68,7 @@ try {
   assert.ok(top.summary.updated! > top.summary.created!);
   assert.strictEqual(top.summary.key, `${fx.hashes.match}/s-log`);
 
-  const r = readChat(top);
+  const r = await readChat(top);
   assert.ok(r.ok);
   if (r.ok) {
     const t = r.transcript;
@@ -89,15 +89,15 @@ try {
     assert.ok(t.notes.some((n) => /futureThing2027/.test(n)), 'unknown part kinds are reported, not silently dropped');
   }
   const flat = listing.sessions.find((s) => s.summary.key.endsWith('/s-flat'))!;
-  const fr = readChat(flat);
+  const fr = await readChat(flat);
   assert.ok(fr.ok && fr.transcript.blocks[1].type === 'assistant' && (fr.transcript.blocks[1] as { text: string }).text.startsWith('Plain string'), 'old flat JSON with string responses');
 
   // a file that disappears or breaks after listing is a clean error
   fs.writeFileSync(top.file, 'garbage');
-  const bad = readChat(top);
+  const bad = await readChat(top);
   assert.ok(!bad.ok && /could not be read/.test(bad.error));
   fs.rmSync(top.file);
-  assert.ok(!readChat(top).ok);
+  assert.ok(!(await readChat(top)).ok);
 
   // unknown format version is flagged
   const v9 = toTranscript({ state: { version: 9, requests: [{ message: { text: 'x' }, response: [] }] }, badLines: 0 });
@@ -115,3 +115,5 @@ try {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 console.log('vscodechat tests passed');
+}
+main().catch((e) => { console.error(e); process.exit(1); });

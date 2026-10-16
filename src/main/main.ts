@@ -1,15 +1,27 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { CopilotAdapter } from '../adapters/copilot';
 import { resolveWorkspaceCwd } from '../adapters/workspace';
 import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, stageAttachment } from '../shared/attachments';
-import type { AddResult, AgentInfo, PermMode, PickedFile } from '../shared/api';
+import type { AddResult, AgentInfo, ModelChoice, PermMode, PickedFile, ResumeResult, SessionOptions, VsChatListResult } from '../shared/api';
 import { openInVSCode } from './vscode';
+import { FolderStore } from './folders';
+import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '../adapters/vscodeChat';
+import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
 
 // Cheapest routing on the logged-in account's only model ("auto"); see docs/milestone-1.md.
+// Dev/test: DURBAR_USER_DATA=/tmp/x keeps the saved folder list (and Electron's other state) out of the real profile.
+if (process.env.DURBAR_USER_DATA) app.setPath('userData', process.env.DURBAR_USER_DATA);
 const DEFAULT_MODEL = 'auto';
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+type Effort = (typeof EFFORTS)[number];
+const asEffort = (v: unknown): Effort | undefined => (EFFORTS as readonly string[]).includes(v as string) ? (v as Effort) : undefined;
+let folderStore: FolderStore | undefined;
+/** The folder (or .code-workspace file) an agent belongs to; the key of the saved folder list. */
+const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
 
 const adapter = new CopilotAdapter();
@@ -42,35 +54,67 @@ if (process.env.DURBAR_LOG) {
   adapter.debug = (m) => write({ t: Date.now(), debug: m });
 }
 
-async function addWorkspace(workspace: string, permMode: PermMode): Promise<AgentInfo> {
+const infoFor = (workspace: string, permMode: PermMode, id: string, model: string, effort: string | undefined, extra: Partial<AgentInfo> = {}): AgentInfo => {
   const ws = resolveWorkspaceCwd(workspace);
-  const id = await adapter.start({
-    workspace,
-    model: DEFAULT_MODEL,
-    autoTier: 'efficiency',
-    allow: permMode === 'allow',
-    ask: permMode === 'ask',
-  });
-  const info: AgentInfo = {
+  return {
     id,
     name: path.basename(ws.workspaceFile ?? ws.cwd).replace(/\.code-workspace$/, ''),
     cwd: ws.cwd,
     workspaceFile: ws.workspaceFile,
     folders: ws.folders,
     permMode,
-    model: DEFAULT_MODEL,
+    model,
+    effort,
+    ...extra,
   };
+};
+
+const startOptionsFor = (a: AgentInfo) => ({
+  workspace: wsKey(a),
+  model: a.model ?? DEFAULT_MODEL,
+  reasoningEffort: asEffort(a.effort),
+  autoTier: (a.model ?? DEFAULT_MODEL) === 'auto' ? ('efficiency' as const) : undefined,
+  allow: a.permMode === 'allow',
+  ask: a.permMode === 'ask',
+});
+
+async function addWorkspace(
+  workspace: string,
+  permMode: PermMode,
+  opts: { resumeSessionId?: string; silent?: boolean; model?: string; effort?: string; persist?: boolean } = {},
+): Promise<AgentInfo> {
+  const model = opts.model || DEFAULT_MODEL;
+  const effort = asEffort(opts.effort);
+  const draft = infoFor(workspace, permMode, '', model, effort);
+  const id = await adapter.start({ ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId });
+  const info: AgentInfo = { ...draft, id, hidden: folderStore?.get(wsKey(draft))?.hidden };
   agents.set(id, info);
-  toRenderer('agent:added', info);
+  if (opts.persist) folderStore?.upsert({ workspace: wsKey(info), permMode, model, effort });
+  if (!opts.silent) toRenderer('agent:added', info);
   return info;
 }
 
-async function addMany(paths: string[], permMode: PermMode): Promise<AddResult> {
+/** Make sure the agent has a live runtime session: resume it by id when it has history, else start one under that id. */
+const starting = new Map<string, Promise<void>>();
+async function ensureLive(a: AgentInfo): Promise<void> {
+  if (adapter.isLive(a.id)) return;
+  let p = starting.get(a.id);
+  if (!p) {
+    p = adapter.start({ ...startOptionsFor(a), sessionId: a.id, quiet: true }).then(() => {
+      a.lazy = false;
+    });
+    starting.set(a.id, p);
+    void p.finally(() => starting.delete(a.id)).catch(() => undefined);
+  }
+  await p;
+}
+
+async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions & { persist?: boolean } = {}): Promise<AddResult> {
   const added: AgentInfo[] = [];
   const errors: string[] = [];
   for (const p of paths) {
     try {
-      added.push(await addWorkspace(p, permMode));
+      added.push(await addWorkspace(p, permMode, { model: opts.model, effort: opts.effort, persist: opts.persist }));
     } catch (err) {
       errors.push(`${path.basename(p)}: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -78,23 +122,106 @@ async function addMany(paths: string[], permMode: PermMode): Promise<AddResult> 
   return { ok: errors.length === 0, agents: added, error: errors.join('; ') || undefined };
 }
 
+/** Folders remembered from earlier runs come back as "not started" agents: nothing runs until the first message. */
+function restoreFolders(): void {
+  if (!folderStore) return;
+  for (const f of folderStore.load()) {
+    try {
+      if (!fs.existsSync(f.workspace)) continue; // e.g. an unplugged drive: stays saved, just not shown
+      const info = infoFor(f.workspace, f.permMode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, hidden: f.hidden });
+      agents.set(info.id, info);
+    } catch {
+      /* folder gone or not a folder any more */
+    }
+  }
+}
+
 const validMode = (m: unknown): PermMode => (m === 'ask' || m === 'allow' ? m : 'read-only');
 
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('agents:list', () => [...agents.values()]);
 
-ipcMain.handle('agents:addFolder', async (_e, mode: unknown) => {
+const sessionOpts = (o: unknown): SessionOptions & { persist: boolean } => {
+  const x = (o && typeof o === 'object' ? o : {}) as Record<string, unknown>;
+  return { model: typeof x.model === 'string' ? x.model.slice(0, 100) : undefined, effort: asEffort(x.effort), persist: true };
+};
+
+ipcMain.handle('agents:addFolder', async (_e, mode: unknown, opts: unknown) => {
   const r = await dialog.showOpenDialog({ title: 'Add folder', properties: ['openDirectory', 'multiSelections'] });
-  return r.canceled ? { ok: true, agents: [] } : addMany(r.filePaths, validMode(mode));
+  return r.canceled ? { ok: true, agents: [] } : addMany(r.filePaths, validMode(mode), sessionOpts(opts));
 });
 
-ipcMain.handle('agents:addWorkspaceFile', async (_e, mode: unknown) => {
+ipcMain.handle('agents:addWorkspaceFile', async (_e, mode: unknown, opts: unknown) => {
   const r = await dialog.showOpenDialog({
     title: 'Add .code-workspace file',
     properties: ['openFile'],
     filters: [{ name: 'VS Code workspace', extensions: ['code-workspace'] }],
   });
-  return r.canceled ? { ok: true, agents: [] } : addMany(r.filePaths, validMode(mode));
+  return r.canceled ? { ok: true, agents: [] } : addMany(r.filePaths, validMode(mode), sessionOpts(opts));
+});
+
+// ---- Previous sessions of a folder (Copilot CLI/SDK store, resumable) and VS Code chat history (read-only) ----
+// The renderer only ever names an agent and an opaque id; folders and file paths are resolved here.
+const vsUserDirs = (): UserDir[] =>
+  process.env.DURBAR_VSCODE_USER_DIR ? [{ product: 'Test', dir: process.env.DURBAR_VSCODE_USER_DIR }] : vscodeUserDirs();
+const vsChatRefs = new Map<string, Map<string, ChatFileRef>>();
+const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+ipcMain.handle('sessions:listPrevious', async (_e, id: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  if (!a) return { ok: false, error: 'unknown agent', sessions: [] };
+  try {
+    return { ok: true, sessions: await adapter.listPreviousSessions(a.cwd, new Set(agents.keys())) };
+  } catch (err) {
+    return { ok: false, error: errText(err), sessions: [] };
+  }
+});
+
+ipcMain.handle('sessions:resume', async (_e, id: unknown, sessionId: unknown, replace: unknown): Promise<ResumeResult> => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  if (!a) return { ok: false, error: 'unknown agent' };
+  if (typeof sessionId !== 'string' || agents.has(sessionId)) return { ok: false, error: 'That session is already open.' };
+  try {
+    // Only sessions that belong to this agent's folder can be resumed (re-checked here, not trusted from the UI).
+    const prev = (await adapter.listPreviousSessions(a.cwd, new Set(agents.keys()))).find((s) => s.id === sessionId);
+    if (!prev) return { ok: false, error: 'That session is no longer available for this folder.' };
+    // Resume first; only then retire the untouched agent, so a failed resume leaves everything as it was.
+    const info = await addWorkspace(a.workspaceFile ?? a.cwd, a.permMode, { resumeSessionId: sessionId, silent: true });
+    let history: ResumeResult['history'];
+    try {
+      history = await adapter.history(info.id);
+    } catch {
+      history = { items: [], total: 0, truncated: false };
+    }
+    let removedId: string | undefined;
+    if (replace === true) {
+      removedId = id as string;
+      await adapter.stop(removedId);
+      agents.delete(removedId);
+    }
+    return { ok: true, agent: info, removedId, title: prev.title, history };
+  } catch (err) {
+    return { ok: false, error: errText(err) };
+  }
+});
+
+ipcMain.handle('vschat:list', async (_e, id: unknown): Promise<VsChatListResult> => {
+  const empty = { sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0, formatNote: VSCODE_CHAT_FORMAT_NOTE };
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  if (!a) return { ok: false, error: 'unknown agent', ...empty };
+  try {
+    const l = await listChats(vsUserDirs(), { folders: a.folders, workspaceFile: a.workspaceFile });
+    vsChatRefs.set(a.id, new Map(l.sessions.map((r) => [r.summary.key, r])));
+    return { ok: true, sessions: l.sessions.map((r) => r.summary), storesFound: l.storesFound, unreadable: l.unreadable, tooLarge: l.tooLarge, formatNote: VSCODE_CHAT_FORMAT_NOTE };
+  } catch (err) {
+    return { ok: false, error: errText(err), ...empty };
+  }
+});
+
+ipcMain.handle('vschat:read', async (_e, id: unknown, key: unknown) => {
+  const ref = typeof id === 'string' && typeof key === 'string' ? vsChatRefs.get(id)?.get(key) : undefined;
+  if (!ref) return { ok: false, error: 'That chat is not in the list any more. Reopen the list and try again.' };
+  return readChat(ref);
 });
 
 ipcMain.handle('agents:pickAttachments', async (): Promise<PickedFile[]> => {
@@ -138,6 +265,7 @@ ipcMain.handle('agents:send', async (_e, id: string, text: string, attachments: 
     if (size > MAX_ATTACH_BYTES) return { ok: false, error: `"${a.name}" is ${fmtSize(size)}, over the ${fmtSize(MAX_ATTACH_BYTES)} per-file limit.` };
   }
   try {
+    await ensureLive(agents.get(id) as AgentInfo); // an ended or not-yet-started agent starts (resumes) its session here
     await adapter.send(id, {
       text: String(text),
       attachments: safe.map((a) => ({ path: a.path, kind: a.kind === 'image' ? 'image' : 'file' })),
@@ -148,8 +276,62 @@ ipcMain.handle('agents:send', async (_e, id: string, text: string, attachments: 
   }
 });
 
+// Stop only interrupts the running turn (the agent returns to Ready); End session frees the runtime session.
 ipcMain.handle('agents:stop', async (_e, id: string) => {
+  if (agents.has(id)) await adapter.interrupt(id);
+});
+
+ipcMain.handle('agents:end', async (_e, id: string) => {
   if (agents.has(id)) await adapter.stop(id);
+});
+
+ipcMain.handle('agents:newSession', async (_e, id: unknown, opts: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  if (!a) return { ok: false, error: 'unknown agent' };
+  const o = (opts && typeof opts === 'object' ? opts : {}) as Record<string, unknown>;
+  try {
+    const mode = o.permMode === undefined ? a.permMode : validMode(o.permMode);
+    const agent = await addWorkspace(wsKey(a), mode, { model: typeof o.model === 'string' ? o.model.slice(0, 100) : a.model, effort: asEffort(o.effort) ?? undefined });
+    return { ok: true, agent };
+  } catch (err) {
+    return { ok: false, error: errText(err) };
+  }
+});
+
+ipcMain.handle('models:list', async (): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }> => {
+  try {
+    const models = (await adapter.listModelOptions()).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
+    return { ok: true, models };
+  } catch (err) {
+    return { ok: false, error: errText(err), models: [] };
+  }
+});
+
+ipcMain.handle('folders:setHidden', (_e, id: unknown, hidden: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  if (!a) return { ok: false };
+  const key = wsKey(a);
+  for (const x of agents.values()) if (wsKey(x) === key) x.hidden = hidden === true;
+  folderStore?.setHidden(key, hidden === true);
+  return { ok: true };
+});
+
+ipcMain.handle('folders:remove', async (_e, id: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  if (!a) return { ok: false, removedIds: [] as string[] };
+  const key = wsKey(a);
+  const removedIds = [...agents.values()].filter((x) => wsKey(x) === key).map((x) => x.id);
+  for (const rid of removedIds) {
+    try {
+      await adapter.stop(rid); // no-op when it is not running; the history stays in ~/.copilot
+    } catch {
+      /* already gone */
+    }
+    agents.delete(rid);
+    vsChatRefs.delete(rid);
+  }
+  folderStore?.remove(key);
+  return { ok: true, removedIds };
 });
 
 ipcMain.handle('agents:resolvePermission', (_e, id: string, requestId: string, approve: boolean, remember?: boolean) => {
@@ -211,6 +393,8 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  folderStore = new FolderStore(path.join(app.getPath('userData'), 'durbar-folders.json'));
+  restoreFolders();
   createWindow();
   // Dev/headless convenience: DURBAR_OPEN="/path/a:/path/b" starts agents (read-only) on launch.
   const open = (process.env.DURBAR_OPEN ?? '').split(path.delimiter).filter((p) => p && fs.existsSync(p));

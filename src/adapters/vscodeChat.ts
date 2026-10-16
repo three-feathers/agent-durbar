@@ -14,6 +14,7 @@
  * Unit-tested in scripts/test-vscodechat.ts with synthetic fixtures.
  */
 import * as fs from 'fs';
+import { promises as fsp } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { normDir } from './history';
@@ -451,14 +452,14 @@ export interface ChatListing {
 const FILE_RE = /^([A-Za-z0-9_-]{1,100})\.(jsonl|json)$/;
 
 /** All chats of the matching stores in the given `User` folders, newest first. Never throws. */
-export function listChats(userDirs: UserDir[], targets: FolderTargets, platform: NodeJS.Platform = process.platform): ChatListing {
+export async function listChats(userDirs: UserDir[], targets: FolderTargets, platform: NodeJS.Platform = process.platform): Promise<ChatListing> {
   const stores = userDirs.flatMap((u) => findChatStores(u, targets, platform));
   const files: { key: string; id: string; file: string; ext: '.json' | '.jsonl'; mtime: number }[] = [];
   let tooLarge = 0;
   for (const s of stores) {
     let names: string[] = [];
     try {
-      names = fs.readdirSync(s.chatDir);
+      names = await fsp.readdir(s.chatDir);
     } catch {
       continue;
     }
@@ -472,7 +473,7 @@ export function listChats(userDirs: UserDir[], targets: FolderTargets, platform:
     for (const [id, { name, ext }] of byId) {
       const file = path.join(s.chatDir, name);
       try {
-        const st = fs.statSync(file);
+        const st = await fsp.stat(file);
         if (!st.isFile() || st.size === 0) continue;
         if (st.size > MAX_FILE_BYTES) {
           tooLarge++;
@@ -489,7 +490,7 @@ export function listChats(userDirs: UserDir[], targets: FolderTargets, platform:
   let unreadable = 0;
   for (const f of files.slice(0, MAX_SESSIONS)) {
     try {
-      const sum = summarize(parseChatText(fs.readFileSync(f.file, 'utf8'), f.ext), f.key, f.ext === '.jsonl' ? 'jsonl' : 'json', f.mtime);
+      const sum = summarize(parseChatText(await fsp.readFile(f.file, 'utf8'), f.ext), f.key, f.ext === '.jsonl' ? 'jsonl' : 'json', f.mtime);
       if (sum) sessions.push({ summary: sum, file: f.file });
     } catch {
       unreadable++;
@@ -500,10 +501,10 @@ export function listChats(userDirs: UserDir[], targets: FolderTargets, platform:
 }
 
 /** Read one listed chat as a transcript. Returns an error string instead of throwing. */
-export function readChat(ref: ChatFileRef): { ok: true; transcript: VsChatTranscript } | { ok: false; error: string } {
+export async function readChat(ref: ChatFileRef): Promise<{ ok: true; transcript: VsChatTranscript } | { ok: false; error: string }> {
   try {
     const ext = ref.file.endsWith('.jsonl') ? '.jsonl' : '.json';
-    return { ok: true, transcript: toTranscript(parseChatText(fs.readFileSync(ref.file, 'utf8'), ext)) };
+    return { ok: true, transcript: toTranscript(parseChatText(await fsp.readFile(ref.file, 'utf8'), ext)) };
   } catch {
     return { ok: false, error: 'This chat file could not be read (missing, corrupt or in a format this version does not know).' };
   }

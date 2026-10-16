@@ -75,6 +75,18 @@ async function main(): Promise<void> {
   const stopped = t.ev.filter((e) => e.type === 'resolved' && e.permission.via === 'stopped');
   assert.strictEqual(stopped.length, 2);
   assert.strictEqual((await t.b.request({ kind: 'write', fileName: '/x/q.ts', toolCallId: 'late' })).kind, 'reject');
+  // Stop (interrupt a turn): pending requests are denied, but the session and its grants live on
+  t = mk({ ask: true });
+  const g = t.b.request({ kind: 'write', fileName: '/x/y.ts', toolCallId: 'i1' });
+  await tick();
+  t.b.resolve('i1', true, true);
+  assert.strictEqual((await g).kind, 'approve-once');
+  const pend = t.b.request({ kind: 'shell', fullCommandText: 'make', toolCallId: 'i2' });
+  await tick();
+  t.b.denyPending();
+  assert.strictEqual((await pend).kind, 'reject');
+  assert.strictEqual(t.b.listGrants().length, 1, 'grants survive an interrupt');
+  assert.strictEqual((await t.b.request({ kind: 'write', fileName: '/x/z.ts', toolCallId: 'i3' })).kind, 'approve-once', 'still usable after the interrupt (auto-approved by the grant)');
   console.log('permissions: all checks passed');
 }
 main().catch((e) => {

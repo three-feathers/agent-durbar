@@ -11,6 +11,8 @@ import type {
 import { PermissionBroker } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
+import { eventsToHistory, previousSessionsFor } from './history';
+import type { HistoryResult, PreviousSession } from './history';
 import { unpackedRuntimePath } from './runtime';
 import * as os from 'os';
 import * as fs from 'fs';
@@ -26,6 +28,17 @@ const IMAGE_MIME: Record<string, string> = {
 };
 
 type EventBody = AgentEvent extends infer E ? (E extends AgentEvent ? Omit<E, 'sessionId' | 'timestamp'> & { agentId?: string } : never) : never;
+
+/** A model the account can use, as shown in the picker. */
+export interface ModelOption {
+  id: string;
+  name: string;
+  /** Billing cost multiplier reported by the API, when there is one. */
+  multiplier?: number;
+  efforts: string[];
+  defaultEffort?: string;
+  disabled: boolean;
+}
 
 interface Live {
   session: CopilotSession;
@@ -48,6 +61,8 @@ export class CopilotAdapter implements AgentAdapter {
   debug?: (message: string) => void;
   /** callId -> tool name, so complete/update events can carry the tool name. */
   private toolNames = new Map<string, string>();
+  /** Reasoning block ids that already streamed as deltas (so the complete block is not shown twice). */
+  private reasoningSeen = new Set<string>();
 
   /** Lazily start the shared runtime. Uses the logged-in Copilot user (e.g. `copilot login`). */
   private async getClient(): Promise<CopilotClient> {
@@ -73,6 +88,22 @@ export class CopilotAdapter implements AgentAdapter {
   }
 
   /** Cheapest model by billing multiplier, falling back to input token price. Undefined if none reports billing. */
+  /** What the logged-in account offers, in the shape the UI needs (no inference, no credits). */
+  async listModelOptions(): Promise<ModelOption[]> {
+    return (await this.listModels()).map((m) => ({
+      id: m.id,
+      name: m.name || m.id,
+      multiplier: m.billing?.multiplier,
+      efforts: m.supportedReasoningEfforts ?? [],
+      defaultEffort: m.defaultReasoningEffort,
+      disabled: m.policy?.state === 'disabled',
+    }));
+  }
+
+  isLive(sessionId: string): boolean {
+    return this.sessions.has(sessionId);
+  }
+
   async cheapestModel(): Promise<ModelInfo | undefined> {
     const models = (await this.listModels()).filter((m) => m.policy?.state !== 'disabled');
     const price = (m: ModelInfo): number =>
@@ -80,10 +111,25 @@ export class CopilotAdapter implements AgentAdapter {
     return [...models].sort((a, b) => price(a) - price(b))[0];
   }
 
+  /**
+   * Earlier Copilot CLI/SDK sessions whose working directory is `cwd`, newest first (no inference, no credits).
+   * Sessions open in this app and empty ones (the runtime does not list sessions without events) are left out.
+   */
+  async listPreviousSessions(cwd: string, excludeIds: ReadonlySet<string> = new Set()): Promise<PreviousSession[]> {
+    const client = await this.getClient();
+    const metas = await client.listSessions();
+    return previousSessionsFor(metas, cwd, new Set([...excludeIds, ...this.sessions.keys()]), process.platform, fs.realpathSync);
+  }
+
+  /** Persisted messages and tool calls of a live (e.g. just resumed) session, capped, for replay in the chat panel. */
+  async history(sessionId: string): Promise<HistoryResult> {
+    return eventsToHistory(await this.mustGet(sessionId).session.getEvents());
+  }
+
   async start(options: StartOptions): Promise<string> {
     const { cwd } = resolveWorkspaceCwd(options.workspace);
     const client = await this.getClient();
-    let sid = options.resumeSessionId ?? '';
+    let sid = options.resumeSessionId ?? options.sessionId ?? '';
     const broker = new PermissionBroker({
       allow: options.allow,
       ask: options.ask,
@@ -114,16 +160,22 @@ export class CopilotAdapter implements AgentAdapter {
       workingDirectory: cwd,
       streaming: true,
       model: options.model,
+      ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}),
       ...(options.autoTier ? { capi: { autoTier: options.autoTier } } : {}),
       onPermissionRequest,
     };
-    const session = options.resumeSessionId
-      ? await client.resumeSession(options.resumeSessionId, config)
-      : await client.createSession(config);
+    let session: CopilotSession;
+    if (options.resumeSessionId) session = await client.resumeSession(options.resumeSessionId, config);
+    else if (options.sessionId) {
+      // An agent that was ended (or restored from the saved folder list) keeps its id: resume it when it has
+      // history on disk, otherwise start a fresh session under that same id.
+      const known = await client.getSessionMetadata(options.sessionId).catch(() => undefined);
+      session = known ? await client.resumeSession(options.sessionId, config) : await client.createSession({ ...config, sessionId: options.sessionId });
+    } else session = await client.createSession(config);
     sid = session.sessionId;
     const unsubscribe = session.on((ev) => this.map(sid, ev));
     this.sessions.set(sid, { session, unsubscribe, cwd, broker });
-    this.emit(sid, { type: 'status', status: 'idle', intent: `Ready in ${cwd}` });
+    if (!options.quiet) this.emit(sid, { type: 'status', status: 'idle', intent: `Ready in ${cwd}` });
     return sid;
   }
 
@@ -148,6 +200,23 @@ export class CopilotAdapter implements AgentAdapter {
     await live.session.send({ prompt: message.text, attachments: attachments.length ? attachments : undefined });
   }
 
+  /**
+   * Stop = interrupt the current turn only. The session stays open and the agent returns to Ready, so the next
+   * message just works. Pending permission requests are denied cleanly; "Approve for this session" grants stay.
+   */
+  async interrupt(sessionId: string): Promise<void> {
+    const live = this.sessions.get(sessionId);
+    if (!live) return;
+    live.broker.denyPending();
+    try {
+      await live.session.abort();
+    } catch {
+      /* nothing running */
+    }
+    this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Aborted' });
+  }
+
+  /** End the session: frees the runtime session. Its history stays on disk and sending again resumes it. */
   async stop(sessionId: string): Promise<void> {
     const live = this.sessions.get(sessionId);
     if (!live) return;
@@ -206,7 +275,13 @@ export class CopilotAdapter implements AgentAdapter {
       case 'assistant.intent':
         return this.emit(sid, { type: 'status', status: 'working', intent: ev.data.intent, agentId });
       case 'assistant.reasoning_delta':
+        this.reasoningSeen.add(ev.data.reasoningId);
         return this.emit(sid, { type: 'thinking', delta: ev.data.deltaContent, agentId });
+      case 'assistant.reasoning':
+        // Complete reasoning block. When no deltas came for it (streaming off or not provided), show it whole.
+        if (this.reasoningSeen.delete(ev.data.reasoningId)) return;
+        if (ev.data.content) this.emit(sid, { type: 'thinking', delta: ev.data.content, agentId });
+        return;
       case 'assistant.message_delta':
         return this.emit(sid, { type: 'output', delta: ev.data.deltaContent, agentId });
       case 'assistant.message':

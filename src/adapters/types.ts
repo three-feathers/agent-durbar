@@ -16,6 +16,10 @@ export interface StartOptions {
   maxAiCredits?: number;
   /** Resume an existing session id (disk-backed). */
   resumeSessionId?: string;
+  /** Use this id: resume it when it exists on disk, otherwise create a new session with exactly this id. */
+  sessionId?: string;
+  /** Reasoning effort for models that support it (see listModels). */
+  reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /**
    * Permission policy. Default (both unset): reads are approved, everything that can
    * change state (write, shell, mcp, url, custom tools, ...) is denied.
@@ -24,6 +28,8 @@ export interface StartOptions {
    */
   allow?: boolean;
   ask?: boolean;
+  /** Do not emit the "Ready" status when the session is up (used when starting it for a message that is about to be sent). */
+  quiet?: boolean;
 }
 
 export interface Attachment {
@@ -164,7 +170,9 @@ export interface AgentAdapter {
   start(options: StartOptions): Promise<string>;
   /** Send a user message (with optional files/images) to a running session. */
   send(sessionId: string, message: AgentMessage): Promise<void>;
-  /** Stop/cancel a session. */
+  /** Interrupt the running turn; the session stays open and accepts new messages. */
+  interrupt?(sessionId: string): Promise<void>;
+  /** End a session and free its resources (it can be resumed later by id). */
   stop(sessionId: string): Promise<void>;
   /** Approve/deny a permission request left pending by `ask: true`; `remember` = approve for the rest of the session. Optional. */
   resolvePermission?(sessionId: string, requestId: string, approve: boolean, remember?: boolean): void;

@@ -160,7 +160,12 @@ export class PermissionBroker {
     return had;
   }
 
-  /** Session stopped: deny everything pending cleanly and forget all grants. */
+  /** Turn interrupted (Stop): deny what is pending so nothing waits forever; the session and its grants stay. */
+  denyPending(): void {
+    for (const p of [...this.pending.values()]) p.resolve({ approve: false, remember: false, via: 'stopped' });
+  }
+
+  /** Session ended: deny everything pending cleanly and forget all grants. */
   stop(): void {
     this.stopped = true;
     for (const p of [...this.pending.values()]) p.resolve({ approve: false, remember: false, via: 'stopped' });
