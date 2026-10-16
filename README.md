@@ -52,6 +52,39 @@ npm run dist              # installers/archives for this OS in release/ (no sign
 
 Each release also lists `SHA256SUMS.txt`. Releases are built by GitHub Actions from `v*` tags into a **draft** release; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Status (milestone 8: global MCP servers, tool usage, context window)
+
+Spec [019](specs/019-mcp-tools-and-context/spec.md) (research in [research.md](specs/019-mcp-tools-and-context/research.md)). Built and tested on the simulator and on sanitised recordings of real events. Research cost: **1 real prompt, 2 model calls, 0.167 AIU**.
+
+**Settings (top bar)** is one global screen, not per agent. It lists MCP servers with add / edit / remove / enable (stdio: command, args, env; http/sse: URL, headers). Values of env variables and headers are secrets: the renderer never receives them (key names and "set" only), they show as `••••••`, and they are stored only encrypted with Electron `safeStorage`. If the OS has no protected store (Linux `basic_text` counts as none) they are kept in memory for the run and the screen says so. They are not logged, exported or committed. **Enabling a server shows its exact command (or URL) and a warning that MCP servers run local commands with your rights**; trust is remembered for that exact definition and asked again if it changes. **Import** reads `~/.copilot/mcp-config.json` or the VS Code user `mcp.json` read-only, shows a preview and imports only what you tick, switched off. Servers apply to **new** sessions as defaults; each agent has an **MCP** button in its header to switch single servers off for itself (live sessions switch right away through the runtime).
+
+**Tools (top bar, and per agent in the chat header)**: tool calls per agent and for all agents, built-in tools and MCP tools grouped by server, a table with small bars, failed calls and "used by". A second tab, **Models & context**, shows per agent the model(s) used, and the context window used / size with a percent bar (amber from 70%, red above 90%); the chat header has the same as a chip. Counts are kept in memory for the run (a resumed session starts at zero).
+
+![Settings, MCP servers](docs/screenshots/m8-settings-mcp-1280x800.png)
+![Trust dialog](docs/screenshots/m8-mcp-trust-1280x800.png)
+![Import preview](docs/screenshots/m8-mcp-import-1280x800.png)
+![Tool usage](docs/screenshots/m8-tools-usage-1440x900.png)
+![Models and context window](docs/screenshots/m8-tools-models-context-1280x800.png)
+![Chat header: context chip, Tools, MCP](docs/screenshots/m8-chat-header-1280x800.png)
+![Per-agent MCP switches](docs/screenshots/m8-agent-mcp-1280x800.png)
+
+**Findings (Copilot SDK 1.0.22, CLI runtime 1.0.98)**
+
+| | Status |
+| --- | --- |
+| `createSession` / `resumeSession` take `mcpServers` (stdio worked end to end; http/sse only in the types) and `disabledMcpServers` | confirmed (stdio, disable by name) |
+| The runtime **also always loads** `~/.copilot/mcp-config.json` and the built-in `github-mcp-server`. So our config is additive; those are listed read-only with an on/off switch for new sessions | confirmed |
+| Running session: `session.rpc.mcp.enable/disable` work live and write nothing to `~/.copilot` | confirmed |
+| `tool.execution_start` carries `mcpServerName` / `mcpToolName` | confirmed |
+| `session.usage_info` gives `tokenLimit` and `currentTokens` before each model call (real: 272000) | confirmed |
+| `listModels` window (`max_context_window_tokens`) | present in the type; **0 (unknown) for `auto`** on this account, so the window comes from usage events after the first turn |
+| A read-only-annotated MCP tool ran **without** a permission prompt (so even in Read-only mode a trusted MCP server can act; Settings says so) | confirmed (one tool); a write-capable MCP tool was not tested |
+| Tool allow/deny lists (`availableTools` / `excludedTools`, `mcp:<server>-<tool>`), OAuth (`needs-auth`), `contextTier` | types only; not used. [KNOWN GAP] servers needing OAuth show "needs auth" and are not handled |
+
+**Limits.** Remote (http/sse) servers are untested against a real server. Before the first model call the window is "unknown". Under `auto` the window is the answering model's. Sub-agent tool calls count for the owning agent. Usage counts are not persisted across app restarts. Imported `${...}` variables are copied as literal text and flagged. Plain-text secrets cannot be avoided in the CLI's own `mcp-config.json`; we never write to it.
+
+Tests: `npm test` adds MCP store/import/validation (fake secret codec, dummy fixtures), tool statistics, MCP/usage mapping on real-event fixtures and the MCP permission key. Screenshots: `scripts/shots-m8.js` (see the header comment). `npm run check:office`: 95/95 still pass.
+
 ## Status (milestone 7: thinking, sub-agents, Markdown, room doors, permission mode)
 
 Specs [015](specs/015-thinking-and-subagent-activity/spec.md) to [018](specs/018-permission-mode-switch/spec.md). Built and tested on the simulator and on sanitised recordings of real events (no further AI credits).

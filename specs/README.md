@@ -55,4 +55,10 @@ Spec drafts only (no plan or tasks yet); they must go through `/speckit.clarify`
 | [017](017-room-doors/spec.md) | Room doors (collapse/expand) | milestone 7 |
 | [018](018-permission-mode-switch/spec.md) | Change permission mode any time | milestone 7 |
 
+## Feature 019: milestone 8
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [019](019-mcp-tools-and-context/spec.md) | Global MCP servers, tool usage per agent, models and context window | milestone 8 |
+
 New features take the next number (`/speckit.specify` picks it automatically from this folder).

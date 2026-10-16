@@ -25,7 +25,7 @@
 - **FR-007** **Applied to sessions**: `StartOptions.mcpServers` (enabled + trusted Durbar servers) and `StartOptions.disabledMcpServers` (global list of ambient servers switched off, plus per-agent overrides). Ambient servers (the runtime also loads `~/.copilot/mcp-config.json` and the built-in `github-mcp-server`, see research) are listed read-only in Settings with a switch that adds them to the disabled list.
 - **FR-008** Changes apply to **new** sessions and to agents that start (or resume) afterwards; Settings says so. Running sessions are only changed by the per-agent switch (FR-009).
 - **FR-009** Per-agent override: tri-state per server (default / off), in memory per agent id; on a live session the adapter calls the runtime enable/disable, otherwise it is part of the next start.
-- **FR-010** Permissions are unchanged: MCP calls go through the permission modes (spec 003). Settings states that one tested read-only MCP tool ran without a permission prompt (research), so only enable servers you trust.
+- **FR-010** Permissions are unchanged: MCP calls go through the permission modes (spec 003). Settings states that one tested read-only MCP tool ran without a permission prompt (research), so only enable servers you trust. One delta: the permission summary and the "approve for this session" key of an MCP call now include the server name, so a grant for one server's tool never covers another server's tool of the same name.
 
 ### Tool usage
 - **FR-011** `ToolCallEvent` gains `mcpServer?` and `mcpTool?` (filled by the mapper from the runtime's MCP fields). A tool is counted on its `start`; `failed` is counted separately.
