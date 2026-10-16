@@ -2,10 +2,31 @@
 
 Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.
 
-> Status: **milestone 2 (works on Linux; macOS/Windows untested).** The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. Milestone 2 makes 10-15 agents readable on one 1440x900 / 1280x800 screen. See [Status](#status-milestone-2).
+> Status: **milestone 3 (approvals and attachments verified on real Copilot sessions; Linux only, macOS/Windows untested).** The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. Milestone 2 makes 10-15 agents readable on one 1440x900 / 1280x800 screen. See [Status](#status-milestone-2).
 
 ![15 simulated agents at 1440x900](docs/screenshots/m2-sim15-1440x900-closed.png)
 ![15 simulated agents with the chat panel open at 1280x800](docs/screenshots/m2-sim15-1280x800-panel.png)
+
+## Status (milestone 3)
+
+Verified end to end on real `auto`/`efficiency` sessions through the Electron app (xvfb, real renderer clicks, real adapter), 4 tiny prompts, **0.416 AIU** in total (as reported by the API):
+
+| Check | Result |
+| --- | --- |
+| Ask mode: write is held, card goes to "Waiting for you", chat shows the permission with Approve/Deny | pass |
+| Deny: `apply_patch` fails with the feedback, `git diff` empty, model reports the edit was denied | pass |
+| Second prompt, Approve: edit applied (`// hello` added at the top of `index.js`, confirmed with `git diff`) | pass |
+| Read-only mode: write denied, note "(denied: read-only mode)", model explains it in chat, file unchanged | pass |
+| Attachments: text file and PNG show as chips in the composer and in the sent message; the SDK received a `file` and a base64 `blob` (`image/png`); the answer described the red circle and summarised the text | pass (images work on `auto` / free plan) |
+
+Fixes in this milestone: the approval note said "denyd" after Deny; Approve/Deny buttons sat on the text line (now their own row); the read-only note says how to allow edits; images are now sent as SDK `blob` attachments (base64 + mime type) instead of a file path, text files as `file` attachments with a display name.
+
+Dev hooks for repeatable tests without a native dialog: `DURBAR_PICK=/a.txt:/b.png` (answers the attach picker), `DURBAR_LOG=/tmp/events.jsonl` (every normalized event and what is handed to the SDK), `DURBAR_DRIVER=scripts/e2e-driver.js` (drives the real window; `PHASES=fake|ask|ro|att`). Example: `PHASES=fake DURBAR_DRIVER=$PWD/scripts/e2e-driver.js xvfb-run -a npx electron . --no-sandbox` (the `fake` phase sends synthetic events, no credits). Fixtures in `scripts/fixtures/`.
+
+![Approval pending](docs/screenshots/m3-approval-pending.png)
+![Attachments](docs/screenshots/m3-attachments.png)
+
+Remaining: stopping a session while a permission is pending leaves the Approve/Deny buttons visible; the permission note sits below the answer rather than inline in the tool timeline; "Approve for this session" is not offered; no attachment size cap; attachment chips only exist for files picked in the native dialog.
 
 ## Status (milestone 2)
 
@@ -22,7 +43,7 @@ Screenshots: [15 agents, 1440x900](docs/screenshots/m2-sim15-1440x900-closed.png
 Known gaps in milestone 2:
 - Past about 15 agents plus many helpers (or 15 single-agent folders with the panel open at 1280x800) the layout falls to `micro`, and beyond that the floor scrolls inside itself (the page never does).
 - Intents truncate to one line in `mini`/`micro` (full text in the tooltip and the panel).
-- Not run with real Copilot sessions in this milestone (that costs credits); the real-adapter path only gained the `intent`-first card text and the unchanged event handling.
+- (Real sessions were exercised in milestone 3, see above.)
 
 ## Status (milestone 1)
 
