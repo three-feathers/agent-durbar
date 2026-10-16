@@ -7,7 +7,7 @@ const qs = new URLSearchParams(location.search);
 const DEMO_LIB = window.DURBAR_DEMO;
 const {L,S} = DEMO_LIB;
 const N_MAIN = Math.max(8, Math.min(15, parseInt(qs.get('n')||'12',10)));
-const FORCE_DENSITY = ['full','card','mini','micro'].includes(qs.get('density')) ? qs.get('density') : null;
+const FORCE_DENSITY = ['full','roomy','card','mini','micro'].includes(qs.get('density')) ? qs.get('density') : null;
 
 /* ---------------- demo data ---------------- */
 let ROOMS = DEMO_LIB.ROOMS;
@@ -54,7 +54,7 @@ function hairFront(style,c){
 }
 function scene(a,mini,c){
   const st=vis(a), k=a.look, shirt=k.shirt, arm=shade(shirt,-.14), skinD=shade(k.skin,-.08);
-  let s=`<svg class="scene${c?' sc-c':''}" viewBox="${c?'16 5 176 116':mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
+  let s=`<svg class="scene${c?' sc-c':''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses?1:0}|${c?'c':mini?'m':'f'}" viewBox="${c?'16 5 176 116':mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
   s+=`<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="#2c3733" opacity=".06"/>`;
   /* compact scenes: flat halo rects + CSS-only animation (no blur filter, no SMIL) so 15 of them stay cheap */
   if(c){const hc={working:'#6f93b5',thinking:'#8a97bd',waiting:'#d9962b',error:'#bf5a50'}[st];
@@ -121,7 +121,7 @@ function renderStats(){
   const list=visibleAgents().filter(a=>!a.parent); const c={working:0,waiting:0,idle:0,error:0,done:0};
   list.forEach(a=>{const s=vis(a); if(s==='working'||s==='thinking')c.working++; else c[s]++;});
   const defs=[['working','Working','working or thinking'],['waiting','Waiting','waiting for you'],['idle','Idle','idle or paused'],['error','Errors','with errors'],['done','Done','done']];
-  $('stats').innerHTML=defs.map(([k,l,t])=>`<button class="stat${(k==='waiting'||k==='error')&&c[k]?' attn':''}" data-k="${k}" aria-pressed="${ui.status===k}" title="Show only agents ${t}" aria-label="${c[k]} ${t}. Toggle filter."><span class="dot ${k}"></span><b>${c[k]}</b><span class="l">${l}</span></button>`).join('');
+  morphHTML($('stats'),defs.map(([k,l,t])=>`<button class="stat${(k==='waiting'||k==='error')&&c[k]?' attn':''}" data-k="${k}" aria-pressed="${ui.status===k}" title="Show only agents ${t}" aria-label="${c[k]} ${t}. Toggle filter."><span class="dot ${k}"></span><b>${c[k]}</b><span class="l">${l}</span></button>`).join(''));
 }
 function renderFilter(){
   const sel=$('wsFilter');
@@ -134,15 +134,21 @@ const matchStatus = a => !ui.status || ((ui.status==='working')?['working','thin
 const DENS={
   full:{cw:164,hw:90,cap:3},
   /* compact densities: uniform desk cells on a grid (cw = min cell width), helpers on a strip of mini desks below */
-  card:{cw:236,cap:1,gap:8,rp:12},
-  mini:{cw:216,cap:1,gap:6,rp:10},
-  micro:{cw:190,cap:1,gap:5,rp:8}
+  roomy:{cw:262,gap:10,rp:14},   /* card with bigger desks, used only when the floor has room to spare */
+  card:{cw:236,gap:8,rp:12},
+  mini:{cw:216,gap:6,rp:10},
+  micro:{cw:190,gap:5,rp:8}
 };
+/* Layout candidates, richest first: [density, helpers shown before "+N more"]. The first one that fits wins. */
+const CANDIDATES=[['full',3],['roomy',3],['card',3],['card',1],['mini',3],['mini',1],['micro',3],['micro',1]];
+let HCAP=1; /* helpers shown on a compact strip before "+N more" (a layout parameter, chosen with the density) */
+let HBOOST=new Set(); /* with HCAP=1, agents that still get 3 because the floor has room left over (see chooseLayout) */
+const helperCap=(d,a)=>d==='full'?DENS.full.cap:(a&&HBOOST.has(a.id)?3:HCAP);
 const SC_CACHE=new Map();
 function sceneC(a){const st=vis(a),k=a.look,key=st+k.shirt+k.skin+k.hair+k.style+(k.glasses?1:0);let v=SC_CACHE.get(key);if(!v){v=scene(a,false,true);SC_CACHE.set(key,v);}return v;}
 function visibleHelpers(a,d){
   const all=helpersOf(a).slice().sort((x,y)=>prio(x)-prio(y));
-  const cap=DENS[d].cap;
+  const cap=helperCap(d,a);
   if(all.length<=cap+1||ui.expanded[a.id])return {shown:all,hidden:[]};
   return {shown:all.slice(0,cap),hidden:all.slice(cap)};
 }
@@ -181,12 +187,12 @@ function unitHTML(a,d){
   const st=vis(a), {shown,hidden}=visibleHelpers(a,d), nSubs=shown.length+hidden.length;
   let helpers='';
   if(nSubs){
-    const fewer=ui.expanded[a.id]&&nSubs>DENS[d].cap+1;
+    const fewer=ui.expanded[a.id]&&nSubs>helperCap(d,a)+1;
     if(d==='full'){
       const rows=shown.map(helperHTML).join('');
-      helpers=`<div class="helpers">${linksSVG(d,shown.length,hidden.length>0||fewer)}${rows}${hidden.length?moreHTML(a,hidden,d):''}${fewer?`<button class="more" data-more="${esc(a.id)}" aria-expanded="true">Show fewer</button>`:''}</div>`;
+      helpers=`<div class="helpers" data-key="strip">${linksSVG(d,shown.length,hidden.length>0||fewer)}${rows}${hidden.length?moreHTML(a,hidden,d):''}${fewer?`<button class="more" data-more="${esc(a.id)}" aria-expanded="true">Show fewer</button>`:''}</div>`;
     } else {
-      helpers=`<div class="helpers strip${fewer?' open':''}">${shown.map(helperTileHTML).join('')}${hidden.length?moreHTML(a,hidden,d):''}${fewer?`<button class="more fewer" data-more="${esc(a.id)}" aria-expanded="true">Show fewer</button>`:''}</div>`;
+      helpers=`<div class="helpers strip${fewer?' open':''}" data-key="strip">${shown.map(helperTileHTML).join('')}${hidden.length?moreHTML(a,hidden,d):''}${fewer?`<button class="more fewer" data-more="${esc(a.id)}" aria-expanded="true">Show fewer</button>`:''}</div>`;
     }
   }
   let desk;
@@ -196,7 +202,7 @@ function unitHTML(a,d){
       <div class="info"><div class="who"><span class="name">${esc(a.name)}</span><span class="role">${esc(a.role)}</span></div>
       <p class="task">${esc(a.task)}</p><span class="pill st-${st}"><i></i>${label(a)}</span></div></button>`;
   } else desk=cardHTML(a,d,nSubs);
-  return `<div class="unit${nSubs?' has-h':''}">${desk}${helpers}</div>`;
+  return `<div class="unit${nSubs?' has-h':''}" data-key="unit:${esc(a.id)}">${desk}${helpers}</div>`;
 }
 const unitWidth=(a,d)=>{const D=DENS[d];return D.cw+(helpersOf(a).length?(d==='full'?D.hw+14+8:D.hw+18):0);};
 function officeModel(ignoreStatus){
@@ -219,17 +225,88 @@ function roomHTML({r,mains,all},d,aw,cap){
     const widths=mains.map(a=>unitWidth(a,d));
     const basis=Math.min(aw,widths.reduce((x,y)=>x+y,0)+gap*(widths.length-1)+2*pad+30);
     const min=Math.max(...widths)+2*pad+30;
-    return `<section class="room" data-tint="${r.tint}" style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Workspace ${esc(r.name)}">${head}
+    return `<section class="room" data-key="room:${esc(r.id)}" data-tint="${r.tint}" style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Workspace ${esc(r.name)}">${head}
       <div class="units">${mains.map(a=>unitHTML(a,d)).join('')}</div></section>`;
   }
   /* compact: the room is a floor-plan zone with `cols` desk columns */
   const D=DENS[d], cols=Math.max(1,Math.min(mains.length,cap)), over=2*D.rp+4;
   const basis=cols*D.cw+(cols-1)*D.gap+over, min=D.cw+over;
-  return `<section class="room" data-tint="${r.tint}" style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Workspace ${esc(r.name)}">${head}
+  return `<section class="room" data-key="room:${esc(r.id)}" data-tint="${r.tint}" style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Workspace ${esc(r.name)}">${head}
     <div class="units" style="--cols:${cols}">${mains.map(a=>unitHTML(a,d)).join('')}</div></section>`;
 }
-/* Pick the richest density that fits the floor at scale 1 (text is never scaled down).
-   Compact densities also try several desk-column counts per room and keep the shortest layout that fits. */
+/* ---- keyed DOM updates: patch only what changed, so desk animations keep running ---- */
+const keyOf=n=>n.nodeType===1?(n.getAttribute('data-key')||(n.dataset.id!=null?'id:'+n.dataset.id:null)||(n.dataset.more!=null?'more:'+n.dataset.more+(n.classList.contains('fewer')||n.getAttribute('aria-expanded')==='true'?':f':''):null)):null;
+function syncAttrs(o,n){
+  for(const at of [...o.attributes])if(!n.hasAttribute(at.name))o.removeAttribute(at.name);
+  for(const at of n.attributes)if(o.getAttribute(at.name)!==at.value)o.setAttribute(at.name,at.value);
+}
+function morphNode(o,n){
+  if(o.nodeType!==1){if(o.nodeValue!==n.nodeValue)o.nodeValue=n.nodeValue;return o;}
+  /* scenes carry a signature of everything they draw: same signature = leave the SVG (and its animations) alone */
+  if(n.dataset&&n.dataset.sig!==undefined){if(o.dataset.sig===n.dataset.sig)return o;o.replaceWith(n);return n;}
+  syncAttrs(o,n); morphChildren(o,n); return o;
+}
+function morphChildren(op,np){
+  const old=[...op.childNodes], byKey=new Map(), plain=[];
+  old.forEach(k=>{const key=keyOf(k);if(key!=null)byKey.set(key,k);else plain.push(k);});
+  let pi=0, ref=op.firstChild; const used=new Set();
+  for(const nk of [...np.childNodes]){
+    const key=keyOf(nk); let m=null;
+    if(key!=null){m=byKey.get(key)||null;if(m&&(used.has(m)||m.nodeName!==nk.nodeName))m=null;}
+    else if(pi<plain.length&&plain[pi].nodeName===nk.nodeName&&!used.has(plain[pi]))m=plain[pi++];
+    if(m){const r=morphNode(m,nk);used.add(r);if(r===m){if(m===ref)ref=m.nextSibling;else op.insertBefore(m,ref);}else if(m===ref)ref=r.nextSibling;}
+    else{op.insertBefore(nk,ref);used.add(nk);}
+  }
+  old.forEach(k=>{if(!used.has(k)&&k.parentNode===op)op.removeChild(k);});
+}
+function morphHTML(el,html){const t=document.createElement('template');t.innerHTML=html;morphChildren(el,t.content);}
+
+/* ---- layout: pick the richest density that fits the floor at scale 1 (text is never scaled down) ----
+   The search renders trial layouts into the hidden #probe, never into the visible stage, and its result is cached
+   until the *shape* of the office changes (agents, helper counts, filters, size). Status changes only patch the DOM. */
+function chooseLayout(sizing,aw,ah){
+  const probe=$('probe'); probe.style.width=aw+'px';
+  const fits=()=>probe.scrollHeight<=ah+1&&probe.scrollWidth<=aw+1;
+  const cands=FORCE_DENSITY?CANDIDATES.filter(c=>c[0]===FORCE_DENSITY):CANDIDATES;
+  let res=null, lastAny=null;
+  for(const [d,hcap] of cands){
+    HCAP=hcap; HBOOST=new Set(); probe.dataset.d=d; probe.style.height='auto';
+    if(d==='full'){
+      probe.innerHTML=sizing.map(m=>roomHTML(m,d,aw)).join('');
+      if(fits()){res={d,hcap,cap:0,fit:true};break;}
+      lastAny={d,hcap,cap:0,fit:false};continue;
+    }
+    const D=DENS[d], over=2*D.rp+4;
+    const maxCap=Math.max(1,Math.min(Math.max(...sizing.map(m=>m.mains.length)),Math.floor((aw-over+D.gap)/(D.cw+D.gap))));
+    let best=null, any=null;
+    for(let c=maxCap;c>=1;c--){
+      probe.innerHTML=sizing.map(m=>roomHTML(m,d,aw,c)).join('');
+      const h=probe.scrollHeight;
+      if(!any||h<any.h-8)any={c,h};
+      if(fits()){
+        /* among layouts that fit, prefer desks close to a comfortable width (not stretched, not squeezed) */
+        let tw=0; const ds=probe.querySelectorAll('.desk.card'); ds.forEach(e=>{tw+=e.getBoundingClientRect().width;});
+        const miss=Math.abs(tw/Math.max(1,ds.length)-D.cw*1.3);
+        if(!best||miss<best.miss-6)best={c,h,miss};
+      }
+    }
+    if(best){res={d,hcap,cap:best.c,fit:true,boost:[]};break;}
+    lastAny={d,hcap,cap:any.c,fit:false,boost:[]};
+  }
+  /* Leftover floor space: with one helper per strip, give 3 to the agents with the most helpers (attention first) while it still fits. */
+  if(res&&res.d!=='full'&&res.hcap===1){
+    const many=sizing.flatMap(m=>m.mains).filter(a=>helpersOf(a).length>2).sort((x,y)=>Math.min(prio(x),...helpersOf(x).map(prio))-Math.min(prio(y),...helpersOf(y).map(prio))||helpersOf(y).length-helpersOf(x).length);
+    HCAP=1; probe.dataset.d=res.d;
+    for(const a of many){
+      HBOOST.add(a.id); probe.style.height='auto';
+      probe.innerHTML=sizing.map(m=>roomHTML(m,res.d,aw,res.cap)).join('');
+      if(fits())res.boost.push(a.id); else HBOOST.delete(a.id);
+    }
+  }
+  probe.innerHTML='';
+  return res||lastAny;
+}
+let layoutKey='', layout=null;
 function renderOffice(){
   if(ui.view!=='office')return;
   const floor=$('floor'), stage=$('stage'), cs=getComputedStyle(floor);
@@ -238,45 +315,21 @@ function renderOffice(){
   if(aw<=0||ah<=0)return;
   const model=officeModel();
   if(!model.length){
-    stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto';
+    stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey='';
     stage.innerHTML='<div class="empty">'+(!agents.length&&!demoOn?'No agents yet. Use "Add folder" or "Add .code-workspace" above.':'No agents match these filters.')+'</div>';
     floor.classList.remove('scrolls'); return;
   }
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
-  const order=FORCE_DENSITY?[FORCE_DENSITY]:['full','card','mini','micro'];
   const sizing=ui.status?officeModel(true):model;
-  const fits=()=>stage.scrollHeight<=ah+1&&stage.scrollWidth<=aw+1;
-  let fit=false, d=order[0], cap=0;
-  stage.style.width=aw+'px';
-  for(d of order){
-    stage.dataset.d=d; stage.style.height='auto';
-    if(d==='full'){
-      stage.innerHTML=sizing.map(m=>roomHTML(m,d,aw)).join('');
-      if(fits()){fit=true;break;}
-      continue;
-    }
-    const D=DENS[d], over=2*D.rp+4;
-    const maxCap=Math.max(1,Math.min(Math.max(...sizing.map(m=>m.mains.length)),Math.floor((aw-over+D.gap)/(D.cw+D.gap))));
-    let best=null, any=null;
-    for(let c=maxCap;c>=1;c--){
-      stage.innerHTML=sizing.map(m=>roomHTML(m,d,aw,c)).join('');
-      const h=stage.scrollHeight;
-      if(!any||h<any.h-8)any={c,h};
-      if(fits()){
-        /* among layouts that fit, prefer desks close to a comfortable width (not stretched, not squeezed) */
-        const ds=stage.querySelectorAll('.desk.card'); let tw=0; ds.forEach(e=>{tw+=e.getBoundingClientRect().width;});
-        const miss=Math.abs(tw/Math.max(1,ds.length)-D.cw*1.3);
-        if(!best||miss<best.miss-6)best={c,h,miss};
-      }
-    }
-    cap=(best||any).c;
-    if(best){fit=true;break;}
-  }
-  if(d==='full')stage.innerHTML=model.map(m=>roomHTML(m,d,aw)).join('');
-  else stage.innerHTML=model.map(m=>roomHTML(m,d,aw,cap)).join('');
-  stage.style.height='auto';
-  stage.dataset.fit=fit?'ok':'scroll';
-  floor.classList.toggle('scrolls',!fit);
+  const key=JSON.stringify([aw,ah,FORCE_DENSITY,sizing.map(m=>[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]])])]);
+  if(key!==layoutKey||!layout){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
+  HCAP=layout.hcap; HBOOST=new Set(layout.boost);
+  const html=model.map(m=>roomHTML(m,layout.d,aw,layout.cap)).join('');
+  const fresh=stage.dataset.d!==layout.d||!!stage.querySelector('.empty');
+  stage.style.width=aw+'px'; stage.style.height='auto'; stage.dataset.d=layout.d;
+  if(fresh)stage.innerHTML=html; else morphHTML(stage,html);
+  stage.dataset.fit=layout.fit?'ok':'scroll'; stage.dataset.h=String(layout.hcap);
+  floor.classList.toggle('scrolls',!layout.fit);
 }
 
 /* ---------------- list view ---------------- */

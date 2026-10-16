@@ -70,7 +70,7 @@ body.has-bridge #liveBar{display:flex}
 .workspace{flex:1;display:flex;min-height:0;min-width:0}
 #floor{flex:1;min-width:0;position:relative;overflow:hidden;padding:12px 16px 12px}
 #floor.scrolls{overflow-y:auto}
-#stage{display:flex;flex-wrap:wrap;gap:12px;align-content:flex-start;align-items:stretch}
+.stage{display:flex;flex-wrap:wrap;gap:12px;align-content:flex-start;align-items:stretch}
 .room{flex:var(--w) 1 calc(var(--w)*1px);min-width:var(--min);display:flex;flex-direction:column;border-radius:20px;border:1.5px solid var(--wall);background:var(--tint);padding:10px 12px 12px;position:relative}
 .room[data-tint="sage"]{--tint:#eaf0e9;--wall:#d3dfd3}
 .room[data-tint="blue"]{--tint:#e9eef3;--wall:#d1dce6}
@@ -83,21 +83,21 @@ body.has-bridge #liveBar{display:flex}
 .rd{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--ink-2)}
 .rd.attn{color:var(--amber-ink);font-weight:650}
 .room-plant{display:none;position:absolute;right:12px;top:6px}
-#stage[data-d="full"] .room-plant{display:block}
-#stage[data-d="full"] .room-dots{padding-right:32px}
+.stage[data-d="full"] .room-plant{display:block}
+.stage[data-d="full"] .room-dots{padding-right:32px}
 .units{flex:1;margin:6px 0 0;display:flex;flex-wrap:wrap;align-content:flex-start;gap:var(--ugap,10px);padding:var(--upad,8px);background:rgba(255,255,255,.4);border-radius:14px}
 .unit{display:flex;align-items:flex-start;position:relative;--hx:0px}
 .unit.has-h{--hx:calc(var(--hw) + 18px)}
 
 /* density: full = illustrated desks; card / mini = compact cards that never scale text down */
-#stage[data-d="full"]{--cw:164px;--hw:90px;--ugap:10px 6px;--upad:14px 6px 12px}
-#stage[data-d="full"] .units{justify-content:space-evenly;align-content:center}
+.stage[data-d="full"]{--cw:164px;--hw:90px;--ugap:10px 6px;--upad:14px 6px 12px}
+.stage[data-d="full"] .units{justify-content:space-evenly;align-content:center}
 
 .desk{position:relative;text-align:left;cursor:pointer;display:block;border:1.5px solid transparent;background:rgba(255,253,249,.72);transition:background .15s,border-color .15s,box-shadow .15s,transform .15s}
 .desk:hover{background:var(--surface);border-color:var(--line-2)}
 .desk[aria-pressed="true"]{background:var(--surface);border-color:#7fa0bd;box-shadow:0 0 0 3px #d9e6f0}
-#stage[data-d="full"] .desk{width:var(--cw);padding:4px 4px 10px;border-radius:var(--radius)}
-#stage[data-d="full"] .desk:hover{transform:translateY(-1px)}
+.stage[data-d="full"] .desk{width:var(--cw);padding:4px 4px 10px;border-radius:var(--radius)}
+.stage[data-d="full"] .desk:hover{transform:translateY(-1px)}
 .scene{display:block;width:100%;height:auto;overflow:visible}
 .helper .scene{overflow:hidden}
 .desk .badge{position:absolute;top:10px;right:10px}
@@ -117,7 +117,7 @@ body.has-bridge #liveBar{display:flex}
 .st-waiting{--pb:#fbefd6;--pc:var(--amber-ink);--pd:var(--c-waiting)} .st-idle{--pb:#ece9e2;--pc:#5c5f59;--pd:var(--c-idle)}
 .st-error{--pb:#f6e2df;--pc:var(--red-ink);--pd:var(--c-error)} .st-done{--pb:#e0eee6;--pc:#2f6a47;--pd:var(--c-done)}
 .st-idle i{background:transparent;border:1.5px solid var(--c-idle)}
-#stage[data-d="full"] .desk.is-idle .scene,#stage[data-d="full"] .desk.is-idle .info{opacity:.7}
+.stage[data-d="full"] .desk.is-idle .scene,.stage[data-d="full"] .desk.is-idle .info{opacity:.7}
 
 /* sub-agents: beside the parent, connected by a line */
 .helpers{position:relative;display:flex;flex-direction:column;gap:var(--hgap,6px);margin-left:14px;padding-left:2px;flex:none}
@@ -125,9 +125,9 @@ body.has-bridge #liveBar{display:flex}
 .helper{display:block;text-align:left;cursor:pointer;position:relative;border:1.5px solid transparent;background:rgba(255,253,249,.72);transition:background .15s,border-color .15s}
 .helper:hover{background:var(--surface);border-color:var(--line-2)}
 .helper[aria-pressed="true"]{background:var(--surface);border-color:#7fa0bd;box-shadow:0 0 0 3px #d9e6f0}
-#stage[data-d="full"] .helpers{width:calc(var(--hw) + 14px);margin-left:-2px;padding-left:14px}
-#stage[data-d="full"] .links{left:-6px;width:24px}
-#stage[data-d="full"] .helper{width:var(--hw);border-radius:12px;padding:3px 2px 6px}
+.stage[data-d="full"] .helpers{width:calc(var(--hw) + 14px);margin-left:-2px;padding-left:14px}
+.stage[data-d="full"] .links{left:-6px;width:24px}
+.stage[data-d="full"] .helper{width:var(--hw);border-radius:12px;padding:3px 2px 6px}
 .helper .badge{position:absolute;top:4px;right:4px;width:12px;height:12px;box-shadow:0 0 0 2px rgba(255,253,249,.9)}
 .helper .badge svg{width:7px;height:7px}
 .hinfo{padding:0 4px}
@@ -302,38 +302,40 @@ body.panel-open #panel{display:flex}
    floor-plan zones with desks in tidy grid rows; helpers sit at mini-desks
    on a strip below, joined by a connector. Text never scales below 10.5px.
    ===================================================================== */
-#stage:not([data-d="full"]){gap:10px;--line:#a9b6ad}
-#stage[data-d="card"]{--ch:82px;--sw:92px;--hh:40px;--hsw:50px;--gap:8px;--rp:12px;--stub:28px;--cmax:340px}
-#stage[data-d="mini"]{--ch:64px;--sw:78px;--hh:38px;--hsw:42px;--gap:6px;--rp:10px;--stub:26px;--cmax:300px}
-#stage[data-d="micro"]{--ch:52px;--sw:60px;--hh:33px;--hsw:34px;--gap:5px;--rp:8px;--stub:20px;--cmax:270px}
+.stage:not([data-d="full"]){gap:10px;--line:#a9b6ad}
+.stage[data-d="roomy"]{--ch:92px;--sw:104px;--hh:44px;--hsw:56px;--gap:10px;--rp:14px;--stub:34px;--cmax:400px}
+.stage[data-d="card"]{--ch:82px;--sw:92px;--hh:40px;--hsw:50px;--gap:8px;--rp:12px;--stub:28px;--cmax:340px}
+.stage[data-d="mini"]{--ch:64px;--sw:78px;--hh:38px;--hsw:42px;--gap:6px;--rp:10px;--stub:26px;--cmax:300px}
+.stage[data-d="micro"]{--ch:52px;--sw:60px;--hh:33px;--hsw:34px;--gap:5px;--rp:8px;--stub:20px;--cmax:270px}
 
 /* room = floor-plan zone: tinted floor with faint tiles, wall edge, door gap, nameplate, plant */
-#stage:not([data-d="full"]) .room{
+.stage:not([data-d="full"]) .room{
   border:2px solid var(--wall);border-radius:10px;padding:calc(var(--rp) - 4px) var(--rp) var(--rp);
   background-color:var(--tint);
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cpath d='M32 0V32M0 32H32' fill='none' stroke='%23000' stroke-opacity='.04'/%3E%3C/svg%3E");
   box-shadow:inset 0 0 0 3px rgba(255,255,255,.28)}
-#stage:not([data-d="full"]) .room[data-tint="sage"]{--wall:#b7cdb9}
-#stage:not([data-d="full"]) .room[data-tint="blue"]{--wall:#b5c8d8}
-#stage:not([data-d="full"]) .room[data-tint="sand"]{--wall:#d2c4a4}
-#stage:not([data-d="full"]) .room[data-tint="clay"]{--wall:#d8c1b3}
-#stage:not([data-d="full"]) .room::after{content:"";position:absolute;left:28px;bottom:-2px;width:30px;height:2px;background:var(--bg)}
-#stage:not([data-d="full"]) .room-head{min-height:calc(var(--rp) + 14px);gap:8px;padding-right:calc(var(--plw) + 4px)}
-#stage:not([data-d="full"]) .room-name{font-size:12.5px;line-height:18px;padding:0 9px;border-radius:6px;background:rgba(255,255,255,.72);border:1px solid var(--wall)}
-#stage:not([data-d="full"]) .room-head{container-type:inline-size}
+.stage:not([data-d="full"]) .room[data-tint="sage"]{--wall:#b7cdb9}
+.stage:not([data-d="full"]) .room[data-tint="blue"]{--wall:#b5c8d8}
+.stage:not([data-d="full"]) .room[data-tint="sand"]{--wall:#d2c4a4}
+.stage:not([data-d="full"]) .room[data-tint="clay"]{--wall:#d8c1b3}
+.stage:not([data-d="full"]) .room::after{content:"";position:absolute;left:28px;bottom:-2px;width:30px;height:2px;background:var(--bg)}
+.stage:not([data-d="full"]) .room-head{min-height:calc(var(--rp) + 14px);gap:8px;padding-right:calc(var(--plw) + 4px)}
+.stage:not([data-d="full"]) .room-name{font-size:12.5px;line-height:18px;padding:0 9px;border-radius:6px;background:rgba(255,255,255,.72);border:1px solid var(--wall)}
+.stage:not([data-d="full"]) .room-head{container-type:inline-size}
 @container (max-width:330px){.room-path{display:none}}
 @container (max-width:250px){.rd.calm{display:none}}
-#stage:not([data-d="full"]) .room-name{flex:0 .05 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#stage:not([data-d="full"]) .room-path{font-size:11px;flex-shrink:4}
-#stage:not([data-d="full"]) .room-dots{gap:6px;min-width:0}
-#stage:not([data-d="full"]) .room-dots{padding-right:0}
-#stage:not([data-d="full"]) .room-plant{display:block;width:var(--plw);height:auto;right:var(--rp);top:calc(var(--rp) - 6px)}
-#stage[data-d="card"]{--plw:22px}
-#stage[data-d="mini"]{--plw:20px}
-#stage[data-d="micro"]{--plw:18px}
-#stage[data-d="micro"] .room-path{display:none}
-#stage:not([data-d="full"]) .units{display:grid;grid-template-columns:repeat(var(--cols,1),minmax(0,1fr));gap:calc(var(--gap) + 2px) var(--gap);align-content:start;align-items:start;max-width:calc(var(--cols,1)*var(--cmax) + (var(--cols,1) - 1)*var(--gap));margin:calc(var(--rp) - 4px) 0 0;padding:0;background:none;border-radius:0}
-#stage:not([data-d="full"]) .unit{display:flex;flex-direction:column;min-width:0}
+.stage:not([data-d="full"]) .room-name{flex:0 .05 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stage:not([data-d="full"]) .room-path{font-size:11px;flex-shrink:4}
+.stage:not([data-d="full"]) .room-dots{gap:6px;min-width:0}
+.stage:not([data-d="full"]) .room-dots{padding-right:0}
+.stage:not([data-d="full"]) .room-plant{display:block;width:var(--plw);height:auto;right:var(--rp);top:calc(var(--rp) - 6px)}
+.stage[data-d="roomy"]{--plw:24px}
+.stage[data-d="card"]{--plw:22px}
+.stage[data-d="mini"]{--plw:20px}
+.stage[data-d="micro"]{--plw:18px}
+.stage[data-d="micro"] .room-path{display:none}
+.stage:not([data-d="full"]) .units{display:grid;grid-template-columns:repeat(var(--cols,1),minmax(0,1fr));gap:calc(var(--gap) + 2px) var(--gap);align-content:start;align-items:start;max-width:calc(var(--cols,1)*var(--cmax) + (var(--cols,1) - 1)*var(--gap));margin:calc(var(--rp) - 4px) 0 0;padding:0;background:none;border-radius:0}
+.stage:not([data-d="full"]) .unit{display:flex;flex-direction:column;min-width:0}
 
 /* the desk: tiny scene + text */
 .desk.card{width:100%;height:var(--ch);padding:5px 10px 5px 5px;border-radius:12px;display:grid;grid-template-columns:var(--sw) minmax(0,1fr);column-gap:8px;align-items:center;
@@ -357,17 +359,17 @@ body.panel-open #panel{display:flex}
 .l3 .pill{height:20px;font-size:11px;padding:0 8px 0 7px;flex:none}
 .l3 .use{margin-left:auto;text-align:right;flex:0 1 auto}
 .use{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;font-variant-numeric:tabular-nums}
-#stage[data-d="mini"] .desk.card{padding:4px 8px 4px 4px;column-gap:7px}
-#stage[data-d="mini"] .l1 .role,#stage[data-d="micro"] .l1 .role{display:none}
-#stage[data-d="mini"] .l1{align-items:center}
-#stage[data-d="mini"] .l1 .name{font-size:13px}
-#stage[data-d="mini"] .l3{display:none}
-#stage[data-d="mini"] .stl,#stage[data-d="micro"] .stl{display:inline;margin-left:auto;flex:none;font-size:10.5px;font-weight:650;color:var(--pc);white-space:nowrap}
-#stage[data-d="micro"] .desk.card{padding:3px 8px 3px 3px;column-gap:6px}
-#stage[data-d="micro"] .l3{display:none}
-#stage[data-d="micro"] .l1{align-items:center}
-#stage[data-d="micro"] .l1 .name{font-size:12.5px;line-height:16px}
-#stage[data-d="micro"] .intent{font-size:11px;line-height:14px;white-space:nowrap;display:block;text-overflow:ellipsis}
+.stage[data-d="mini"] .desk.card{padding:4px 8px 4px 4px;column-gap:7px}
+.stage[data-d="mini"] .l1 .role,.stage[data-d="micro"] .l1 .role{display:none}
+.stage[data-d="mini"] .l1{align-items:center}
+.stage[data-d="mini"] .l1 .name{font-size:13px}
+.stage[data-d="mini"] .l3{display:none}
+.stage[data-d="mini"] .stl,.stage[data-d="micro"] .stl{display:inline;margin-left:auto;flex:none;font-size:10.5px;font-weight:650;color:var(--pc);white-space:nowrap}
+.stage[data-d="micro"] .desk.card{padding:3px 8px 3px 3px;column-gap:6px}
+.stage[data-d="micro"] .l3{display:none}
+.stage[data-d="micro"] .l1{align-items:center}
+.stage[data-d="micro"] .l1 .name{font-size:12.5px;line-height:16px}
+.stage[data-d="micro"] .intent{font-size:11px;line-height:14px;white-space:nowrap;display:block;text-overflow:ellipsis}
 
 /* helpers: mini-desks on a strip under the parent, joined by a connector */
 .helpers.strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--gap);margin:10px 0 0;padding:0;position:relative;width:auto}
@@ -376,7 +378,7 @@ body.panel-open #panel{display:flex}
 .helpers.strip>*{position:relative;min-width:0}
 .helpers.strip>*::before{content:"";position:absolute;left:var(--stub);right:calc(-1*(var(--gap) + var(--stub)));top:-5px;height:5px;border-left:1.5px solid var(--line);border-top:1.5px solid var(--line);pointer-events:none}
 .helpers.strip>*:last-child::before,.helpers.strip>*:nth-child(2)::before{right:auto;width:0}
-.helpers.strip>*:nth-child(n+3)::before{display:none}
+.helpers.strip>*:nth-child(n+3)::before{right:auto;width:0;top:calc(-1*var(--gap));height:var(--gap);border-top:0}
 .helpers.strip>.fewer{grid-column:1/-1;height:22px}
 .helpers.strip>.fewer::before{display:none}
 .helper.hc{width:100%;height:var(--hh);padding:3px 6px 3px 4px;border-radius:10px;display:grid;grid-template-columns:var(--hsw) minmax(0,1fr);column-gap:5px;align-items:center;
@@ -388,10 +390,10 @@ body.panel-open #panel{display:flex}
 .helper.hc .hname{font-size:12px;line-height:15px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .helper.hc .hs{font-size:10.5px;line-height:13px;font-weight:600;color:var(--pc);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .helpers.strip>.more{width:auto;height:var(--hh);font-size:11.5px;border-radius:10px;flex-wrap:wrap;row-gap:0;column-gap:6px;line-height:15px;padding:0 4px}
-#stage[data-d="micro"] .helpers.strip>.more{font-size:10.5px;line-height:13px}
-#stage[data-d="micro"] .helper.hc{padding:3px 4px 3px 3px;column-gap:4px}
-#stage[data-d="micro"] .helper.hc .hname{font-size:11.5px;line-height:14px}
-#stage[data-d="micro"] .helper.hc .hs{font-size:10.5px;line-height:12px}
+.stage[data-d="micro"] .helpers.strip>.more{font-size:10.5px;line-height:13px}
+.stage[data-d="micro"] .helper.hc{padding:3px 4px 3px 3px;column-gap:4px}
+.stage[data-d="micro"] .helper.hc .hname{font-size:11.5px;line-height:14px}
+.stage[data-d="micro"] .helper.hc .hs{font-size:10.5px;line-height:12px}
 
 /* scene animation for compact scenes: CSS only, subtle */
 .sc-c .halo{animation:halo 3.6s ease-in-out infinite alternate}
@@ -401,7 +403,7 @@ body.panel-open #panel{display:flex}
 .sc-c .wave{transform-origin:20% 90%;animation:wave 2.8s ease-in-out infinite}
 @keyframes wave{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(6deg)}}
 .sc-c .cursor{animation:dotp 1.6s ease-in-out infinite}
-#stage:not([data-d="full"]) .sc-c .head{animation:none}
+.stage:not([data-d="full"]) .sc-c .head{animation:none}
 
 /* keep 15+ animated scenes cheap: compact scenes animate in coarse steps (a few repaints per second, not 60) */
 .sc-c .halo{animation-timing-function:steps(6)}
@@ -421,3 +423,18 @@ body.panel-open #panel{display:flex}
 .drop-ov{display:none;position:absolute;inset:6px;z-index:5;border:2px dashed #7fa0bd;border-radius:14px;background:rgba(233,241,248,.93);align-items:center;justify-content:center;text-align:center;font-size:15px;font-weight:650;color:#2a506c;pointer-events:none}
 .drop-ov.on{display:flex}
 .drop-ov small{display:block;margin-top:6px;font-size:12px;font-weight:500;color:var(--ink-2)}
+
+/* roomy: the card density with bigger desks, used when the floor has space to spare (never at the cost of fitting) */
+.stage[data-d="roomy"] .desk.card{padding:6px 12px 6px 6px;column-gap:10px}
+.stage[data-d="roomy"] .l1{gap:8px}
+.stage[data-d="roomy"] .l1 .name{font-size:14.5px;line-height:19px}
+.stage[data-d="roomy"] .l1 .role{font-size:11.5px;line-height:19px}
+.stage[data-d="roomy"] .intent{font-size:12px;line-height:16px}
+.stage[data-d="roomy"] .l3{height:22px}
+.stage[data-d="roomy"] .l3 .pill{height:22px;font-size:11.5px}
+.stage[data-d="roomy"] .use{font-size:11px}
+.stage[data-d="roomy"] .room-name{font-size:13px}
+.stage[data-d="roomy"] .helper.hc{padding:3px 8px 3px 5px;column-gap:7px}
+.stage[data-d="roomy"] .helper.hc .hname{font-size:12.5px;line-height:16px}
+.stage[data-d="roomy"] .helper.hc .hs{font-size:11px;line-height:14px}
+.stage[data-d="roomy"] .helpers.strip>.more{font-size:12px}
