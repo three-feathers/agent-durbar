@@ -37,7 +37,10 @@ export interface DurbarApi {
   pickAttachments(): Promise<PickedFile[]>;
   send(id: string, text: string, attachments: PickedFile[]): Promise<{ ok: boolean; error?: string }>;
   stop(id: string): Promise<void>;
-  resolvePermission(id: string, requestId: string, approve: boolean): Promise<void>;
+  /** `remember` = "Approve for this session" (ignored when denying). */
+  resolvePermission(id: string, requestId: string, approve: boolean, remember?: boolean): Promise<void>;
+  /** Forget one "Approve for this session" grant (key from the `grants` event). */
+  revokeGrant(id: string, key: string): Promise<void>;
   openInVSCode(id: string): Promise<{ ok: boolean; error?: string }>;
   onEvent(cb: (e: AgentEvent) => void): () => void;
   onAgentAdded(cb: (a: AgentInfo) => void): () => void;

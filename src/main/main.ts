@@ -120,8 +120,12 @@ ipcMain.handle('agents:stop', async (_e, id: string) => {
   if (agents.has(id)) await adapter.stop(id);
 });
 
-ipcMain.handle('agents:resolvePermission', (_e, id: string, requestId: string, approve: boolean) => {
-  if (agents.has(id)) adapter.resolvePermission(id, String(requestId), approve === true);
+ipcMain.handle('agents:resolvePermission', (_e, id: string, requestId: string, approve: boolean, remember?: boolean) => {
+  if (agents.has(id)) adapter.resolvePermission(id, String(requestId), approve === true, approve === true && remember === true);
+});
+
+ipcMain.handle('agents:revokeGrant', (_e, id: string, key: string) => {
+  if (agents.has(id)) adapter.revokeGrant(id, String(key));
 });
 
 ipcMain.handle('agents:openInVSCode', (_e, id: string) => {

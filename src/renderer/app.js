@@ -460,6 +460,7 @@ function openPanel(id,focus){
     <button class="close" id="closeBtn" aria-label="Close panel">${ICON.x}</button>
     <div class="ph-meta"><span data-f="status"></span><span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
     <p class="ptask" data-f="task"></p><p class="pusage" data-f="usage"></p>
+    <div class="grants" id="grants" aria-label="Permissions allowed for this session" hidden></div>
     <div class="actions"><button class="btn primary" id="vscodeBtn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
       <button class="btn" id="pauseBtn"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
       <button class="btn danger" id="stopBtn"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>Stop</button></div></div>
@@ -470,7 +471,7 @@ function openPanel(id,focus){
      <button class="ib send" id="sendBtn" type="button" aria-label="Send message" aria-disabled="true"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h11M9.5 4.5L14 9l-4.5 4.5"/></svg></button></div>
     <p class="hint">Enter sends, Shift+Enter adds a line. Sample only.</p></div></div>`;
   const chat=getChat(a); $('chat').appendChild(chat.el);
-  updatePanelHeader();
+  updatePanelHeader(); renderGrants();
   $('chat').scrollTop=1e6;
   $('closeBtn').onclick=closePanel;
   $('vscodeBtn').onclick=()=>a.live?openLive(a):toast('Would run <code>code '+esc(room.path)+'</code>',3800);
@@ -479,6 +480,7 @@ function openPanel(id,focus){
   $('stopBtn').onclick=()=>{if(a.live)return stopLive(a);a.paused=false;a.state='idle';a.label='Stopped';a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
   $('attFile').onclick=()=>{if(a.live)return pickLive();attached.push({name:SAMPLE_FILES[fi++%SAMPLE_FILES.length]});renderAttached();setSend();};
   $('attImg').onclick=()=>{if(a.live)return pickLive();attached.push({name:SAMPLE_IMGS[ii++%SAMPLE_IMGS.length],img:true});renderAttached();setSend();};
+  $('grants').onclick=e=>{const b=e.target.closest('[data-revoke]');if(b){const r=liveRoot(byId(ui.selected));bridge.revokeGrant(r.id,b.dataset.revoke);}};
   $('attached').onclick=e=>{const b=e.target.closest('[data-rm]');if(b){attached.splice(+b.dataset.rm,1);renderAttached();setSend();}};
   const input=$('msgInput');
   input.addEventListener('input',autoGrow);
@@ -554,7 +556,7 @@ function addLiveAgent(info){
   const mode={'read-only':'read-only','allow':'can edit','ask':'asks first'}[info.permMode];
   let name=info.name; const dup=LIVE.agents.filter(x=>!x.parent&&x.room===room.id&&x.baseName===info.name).length; if(dup)name=info.name+' '+(dup+1);
   LIVE.agents.push({id:info.id,name,baseName:info.name,role:info.role||('Copilot ('+mode+')'),room:room.id,state:'idle',label:'Ready',task:'Ready. Send a message to start.',
-    look:lookFor(info.id),files:[],paused:false,live:true,info,usage:{calls:0,inT:0,outT:0,nano:0},usageText:'',turn:null,worked:false});
+    look:lookFor(info.id),files:[],paused:false,live:true,info,usage:{calls:0,inT:0,outT:0,nano:0},usageText:'',turn:null,worked:false,pend:new Map(),settled:new Set(),grants:[]});
   if(!demoOn){if(!ui.expanded)ui.expanded={};renderFilter();scheduleRender();}
   if(pendingOpen===info.id){pendingOpen=null;if(!demoOn)openPanel(info.id,false);}
 }
@@ -584,6 +586,48 @@ function toolLabel(args){
   const v=args.path||args.pattern||args.command||args.url||args.query||args.file_path||Object.values(args).find(x=>typeof x==='string')||'';
   return String(v).replace(/\s+/g,' ').slice(0,400);
 }
+/* ---------- permissions: inline note in the tool timeline, Approve / Approve for this session / Deny, revocable chips ---------- */
+function showPerm(a,p){
+  const t=ensureTurn(a);
+  const n=document.createElement('div');n.className='note perm';n.setAttribute('role','group');n.setAttribute('aria-label','Permission request');
+  n.innerHTML='<b>Permission:</b> <span class="psum"></span><span class="pstate"></span>';
+  n.querySelector('.psum').textContent=p.summary;
+  const st=n.querySelector('.pstate');
+  if(p.state==='denied')st.innerHTML=' <i>(denied: read-only mode; add the folder in Ask mode to allow edits)</i>';
+  else if(p.state==='pending'){
+    const row=document.createElement('div');row.className='note-actions';
+    const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);};
+    const answer=(approve,remember)=>{bridge.resolvePermission(a.id,p.requestId,approve,remember);settlePerm(a,{requestId:p.requestId,state:approve?'approved':'denied',via:'user',remembered:approve&&remember,scopeLabel:p.scopeLabel,summary:p.summary});};
+    mk('Approve','primary','Allow this one request',()=>answer(true,false));
+    if(p.scopeKey)mk('Approve for this session','session','Allow "'+(p.scopeLabel||p.kind)+'" until you stop this session. Shown as a chip you can revoke.',()=>answer(true,true));
+    mk('Deny','danger','Deny this request',()=>answer(false,false));
+    n.appendChild(row);
+    a.pend.set(p.requestId,{n,row,st});
+  }
+  t.chips.appendChild(n);scrollChat(liveChat(a));
+}
+function settlePerm(a,p){
+  let e=a.pend.get(p.requestId);
+  if(!e&&a.settled.has(p.requestId))return; /* already shown (the click settles locally, the adapter event follows) */
+  if(!e){ /* auto-approved by a session grant, or answered elsewhere: show a settled note in timeline order */
+    if(p.state==='pending')return;
+    showPerm(a,Object.assign({},p,{state:'approved'}));
+    const n=ensureTurn(a).chips.lastElementChild;e={n,st:n.querySelector('.pstate')};
+  }
+  a.pend.delete(p.requestId);a.settled.add(p.requestId);
+  if(e.row)e.row.remove();
+  const word=p.state==='approved'?'approved':'denied';
+  const why=p.via==='stopped'?' (session stopped)':p.via==='session'?' (allowed for this session)':p.remembered?' (and remembered for this session)':'';
+  e.st.textContent=' → '+word+why;
+  e.n.classList.add('settled',word);
+  scrollChat(liveChat(a));
+}
+function setGrants(a,list){a.grants=list;if(ui.selected&&liveRoot(byId(ui.selected)||a)===a)renderGrants();}
+function renderGrants(){
+  const box=$('grants'),a0=byId(ui.selected);if(!box||!a0)return;const a=liveRoot(a0);
+  box.innerHTML=(a.grants||[]).map(g=>`<span class="gchip" title="Allowed for this session: ${esc(g.label)}. Revoke to be asked again."><span>Allowed: ${esc(g.label)}</span><button type="button" data-revoke="${esc(g.key)}" aria-label="Revoke permission: ${esc(g.label)}">${ICON.x}</button></span>`).join('');
+  box.hidden=!(a.grants||[]).length;
+}
 function onLiveEvent(e){
   const a=liveById(e.sessionId); if(!a)return;
   const chat=liveChat(a), main=!e.agentId;
@@ -595,18 +639,19 @@ function onLiveEvent(e){
       if(a.state!=='working'&&a.state!=='thinking')setState(a,'working',null,e.intent||a.task); else if(e.intent)setState(a,a.state,undefined,e.intent);}
     else if(e.status==='needs-permission'){
       ensureTurn(a); setState(a,'waiting',null,e.intent||'Waiting for permission');
-      const p=e.permission;
-      if(p){const n=addNote(chat,'<b>Permission:</b> '+esc(p.summary)+(p.state==='denied'?' <i>(denied: read-only mode; add the folder in Ask mode to allow edits)</i>':''));
-        if(p.state==='pending'){const row=document.createElement('div');row.className='note-actions';
-          [['Approve','approved'],['Deny','denied']].forEach(([l,done])=>{const b=document.createElement('button');b.className='btn'+(l==='Deny'?' danger':' primary');b.textContent=l;
-            b.onclick=()=>{bridge.resolvePermission(a.id,p.requestId,l==='Approve');row.remove();n.append(' → '+done);};row.appendChild(b);});
-          n.appendChild(row);}}
+      if(e.permission)showPerm(a,e.permission);
     }
     else if(e.status==='idle'){const was=a.worked;a.worked=false;closeTurn(a);
       if(was)setState(a,'done','Done',a.lastOutput?SHORT(a.lastOutput,140):'Finished.'); else setState(a,'idle','Ready',a.task);}
     else if(e.status==='error'){closeTurn(a);addNote(chat,esc(e.intent||'Error'),true);setState(a,'error',null,SHORT(e.intent||'Error',140));}
-    else if(e.status==='stopped'){closeTurn(a);setState(a,'idle','Stopped','Stopped by you. Session closed.');}
+    else if(e.status==='stopped'){
+      /* a permission still pending when the session stops is denied cleanly: no Approve/Deny left behind, grants gone */
+      [...a.pend.keys()].forEach(id=>settlePerm(a,{requestId:id,state:'denied',via:'stopped'}));
+      setGrants(a,[]);
+      closeTurn(a);setState(a,'idle','Stopped','Stopped by you. Session closed.');}
     return;
+  case 'permission':if(main)settlePerm(a,e.permission);return;
+  case 'grants':setGrants(a,e.grants||[]);return;
   case 'thinking':{if(!main)return;const t=ensureTurn(a);t.body.textContent+=e.delta;scrollChat(chat);setState(a,'thinking',null);return;}
   case 'output':{if(!main)return;const t=ensureTurn(a);
     if(!t.bubble){t.bubble=document.createElement('div');t.bubble.className='bubble caret';t.m.insertBefore(t.bubble,t.typing||null);}
@@ -625,7 +670,7 @@ function onLiveEvent(e){
     a.usageText=usageLong(a);scheduleRender();
     if(ui.selected===a.id||(byId(ui.selected)||{}).parent===a.id)updatePanelHeader();return;}
   case 'subagent':{const sid=a.id+':'+e.subagentId;let s=liveById(sid);
-    if(!s){s={id:sid,parent:a.id,name:e.name||'Sub-agent',role:'Helper',state:'working',label:null,task:e.task||'',look:lookFor(sid),files:[],paused:false,live:true,info:a.info,usage:{calls:0,inT:0,outT:0,nano:0},usageText:''};LIVE.agents.push(s);}
+    if(!s){s={id:sid,parent:a.id,name:e.name||'Sub-agent',role:'Helper',state:'working',label:null,task:e.task||'',look:lookFor(sid),files:[],paused:false,live:true,info:a.info,usage:{calls:0,inT:0,outT:0,nano:0},usageText:'',pend:new Map(),settled:new Set(),grants:[]};LIVE.agents.push(s);}
     if(e.phase==='started')setState(s,'working',null,e.task||'Working');
     else if(e.phase==='completed')setState(s,'done','Done',s.task);
     else setState(s,'error',null,SHORT(e.task||'Failed',100));

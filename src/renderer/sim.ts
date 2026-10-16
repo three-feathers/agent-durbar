@@ -33,6 +33,10 @@ interface SimAgent {
   think: number;
   open?: string;
   files: string[];
+  /** Pending permission request (the agent is waiting for the user). */
+  perm?: { requestId: string; kind: string; summary: string; scopeKey: string; scopeLabel: string; file: string; cont: 'tool' | 'edit' };
+  /** "Approve for this session" grants: key -> chip label. */
+  grants: Map<string, string>;
 }
 
 (function () {
@@ -116,6 +120,7 @@ interface SimAgent {
         attachments: i === 0 ? ['/home/vikram/notes/registry-split-notes.md', '/home/vikram/Pictures/module-graph-2026-10-16-final-v3-annotated.png'] : i === 3 ? ['/home/vikram/docs/tool-table.csv'] : undefined,
         tool: 0,
         think: i,
+        grants: new Map(),
       };
     });
 
@@ -151,6 +156,36 @@ interface SimAgent {
       for (let i = 0; i < sentences; i++) emit({ type: 'thinking', sessionId: sid(s), timestamp: now(), delta: THINK[s.think++ % THINK.length] });
     };
 
+    const dirOf = (f: string): string => (f.includes('/') ? f.slice(0, f.lastIndexOf('/')) : '.');
+    const scopeOf = (f: string): { key: string; label: string } => ({ key: 'write:' + dirOf(f), label: 'write in ' + dirOf(f).split('/').slice(-2).join('/') + '/' });
+    const grantsEvent = (s: SimAgent): void =>
+      emit({ type: 'grants', sessionId: sid(s), timestamp: now(), grants: [...s.grants].map(([key, label]) => ({ key, kind: 'write', label })) });
+    /** Like the real broker: auto-approve under a session grant, otherwise leave the request pending. */
+    function askWrite(s: SimAgent, file: string, summary: string, cont: 'tool' | 'edit', intent: string): boolean {
+      const sc = scopeOf(file);
+      const requestId = 'perm-' + sid(s) + '-' + now();
+      const base = { requestId, kind: 'write', summary, scopeKey: sc.key, scopeLabel: sc.label };
+      if (s.grants.has(sc.key)) {
+        emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { ...base, state: 'approved', via: 'session' } });
+        return true;
+      }
+      s.perm = { ...base, file, cont };
+      s.state = 'waiting';
+      emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'needs-permission', intent, permission: { ...base, state: 'pending' } });
+      return false;
+    }
+    function editTool(s: SimAgent, file: string, ok: boolean): void {
+      const id = sid(s) + '-edit' + s.tool++;
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: 'edit_file', phase: 'start', args: { path: file } });
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: 'edit_file', phase: ok ? 'complete' : 'failed', output: ok ? '+4 -1' : 'Denied by user in Agent Durbar.' });
+    }
+    function finishReply(s: SimAgent, ok: boolean, file: string): void {
+      const out = ok ? 'Simulated reply: edited ' + file + '.' : 'Simulated reply: the edit to ' + file + ' was denied, so I left it unchanged.';
+      emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: out, final: true, text: out });
+      emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'idle' });
+      s.state = 'done';
+    }
+
     function play(s: SimAgent): void {
       emit({ type: 'user', sessionId: sid(s), timestamp: now(), text: s.prompt, attachments: (s.attachments ?? []).map((p) => ({ path: p, kind: /\.(png|jpe?g|gif)$/i.test(p) ? 'image' as const : 'file' as const })) });
       if (s.state === 'idle') return;
@@ -177,10 +212,7 @@ interface SimAgent {
           think(s, 2);
           break;
         case 'waiting':
-          emit({
-            type: 'status', sessionId: sid(s), timestamp: now(), status: 'needs-permission', intent: s.intent,
-            permission: { requestId: 'perm-' + sid(s), kind: 'write', summary: 'Edit ' + s.files[0] + ' (rename find_company to search_companies)', state: 'pending' },
-          });
+          askWrite(s, s.files[0], 'Edit ' + s.files[0] + ' (rename find_company to search_companies)', 'tool', s.intent);
           break;
         case 'error':
           emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: sid(s) + '-fail', tool: 'bash', phase: 'start', args: { command: 'python evals/run.py --prompt v7 --concurrency 8' } });
@@ -217,6 +249,14 @@ interface SimAgent {
       closeOpen(s);
       emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: 'Answering: ' + text.slice(0, 60) });
       think(s, 2);
+      if (/\b(edit|write|change|fix|rename)\b/i.test(text)) {
+        // Edit request: ask for write permission (or use a session grant), then edit inline in the timeline.
+        const file = s.files[0];
+        toolStep(s, false);
+        usage(s);
+        if (askWrite(s, file, 'write ' + file, 'edit', 'Waiting for permission: write ' + file)) { editTool(s, file, true); finishReply(s, true, file); }
+        return;
+      }
       toolStep(s, false);
       usage(s);
       const out = 'Simulated reply. I read ' + s.files[0] + ' and nothing else depends on it, so this is safe to change.';
@@ -255,19 +295,37 @@ interface SimAgent {
       send: async (id, text) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
+        if (s.perm) return { ok: false, error: 'Waiting for your permission decision first.' };
         window.setTimeout(() => reply(s, text), 400);
         return { ok: true };
       },
       stop: async (id) => {
         const s = sims.find((x) => x.info.id === id);
-        if (s) { s.state = 'idle'; closeOpen(s); emit({ type: 'status', sessionId: id, timestamp: now(), status: 'stopped' }); }
-      },
-      resolvePermission: async (id, _req, approve) => {
-        const s = sims.find((x) => x.info.id === id);
         if (!s) return;
+        if (s.perm) {
+          const { cont: _c, file: _f, ...p } = s.perm;
+          emit({ type: 'permission', sessionId: id, timestamp: now(), permission: { ...p, state: 'denied', via: 'stopped' } });
+          s.perm = undefined;
+        }
+        if (s.grants.size) { s.grants.clear(); grantsEvent(s); }
+        s.state = 'idle'; closeOpen(s);
+        emit({ type: 'status', sessionId: id, timestamp: now(), status: 'stopped' });
+      },
+      resolvePermission: async (id, req, approve, remember) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s || !s.perm || s.perm.requestId !== req) return;
+        const { cont, file, ...p } = s.perm;
+        s.perm = undefined;
+        const keep = approve && remember === true;
+        if (keep) { s.grants.set(p.scopeKey, p.scopeLabel); grantsEvent(s); }
+        emit({ type: 'permission', sessionId: id, timestamp: now(), permission: { ...p, state: approve ? 'approved' : 'denied', via: 'user', remembered: keep || undefined } });
         s.state = 'working';
-        emit({ type: 'status', sessionId: id, timestamp: now(), status: 'working', intent: (approve ? 'Approved: ' : 'Denied: ') + s.files[0] });
-        toolStep(s, true);
+        emit({ type: 'status', sessionId: id, timestamp: now(), status: 'working', intent: (approve ? 'Approved: ' : 'Denied: ') + file });
+        if (cont === 'edit') { editTool(s, file, approve); finishReply(s, approve, file); } else toolStep(s, true);
+      },
+      revokeGrant: async (id, key) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (s && s.grants.delete(key)) grantsEvent(s);
       },
       openInVSCode: async () => ({ ok: true }),
       onEvent: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },
