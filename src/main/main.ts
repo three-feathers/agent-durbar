@@ -118,6 +118,7 @@ function createWindow(): void {
   win = new BrowserWindow({
     width: 1440,
     height: 900,
+    useContentSize: true,
     title: 'Agent Durbar',
     backgroundColor: '#f6f1e7',
     webPreferences: {
@@ -127,7 +128,34 @@ function createWindow(): void {
       sandbox: true,
     },
   });
-  void win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  // DURBAR_SIM=N: simulated live agents (fake events, no sessions, no AI credits). See src/renderer/sim.ts.
+  const sim = parseInt(process.env.DURBAR_SIM ?? '', 10);
+  const query: Record<string, string> = {};
+  if (sim > 0) {
+    query.sim = String(sim);
+    if (process.env.DURBAR_SIM_FREEZE === '1') query.simfreeze = '1';
+    if (process.env.DURBAR_SIM_ROOMS) query.simrooms = process.env.DURBAR_SIM_ROOMS;
+  }
+  void win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query });
+  // Dev: DURBAR_SHOT=/tmp/out.png [DURBAR_SHOT_SIZE=1280x800] [DURBAR_SHOT_CLICK=sim-1] saves a screenshot and quits.
+  const shot = process.env.DURBAR_SHOT;
+  if (shot) {
+    const m = /^(\d+)x(\d+)$/.exec(process.env.DURBAR_SHOT_SIZE ?? '');
+    if (m) win.setContentSize(Number(m[1]), Number(m[2]));
+    const w = win;
+    w.webContents.once('did-finish-load', () => {
+      setTimeout(async () => {
+        const click = process.env.DURBAR_SHOT_CLICK;
+        if (click) {
+          await w.webContents.executeJavaScript(`document.querySelector('[data-id=${JSON.stringify(click)}]')?.click()`);
+          await new Promise((r) => setTimeout(r, 600));
+        }
+        const img = await w.webContents.capturePage();
+        fs.writeFileSync(shot, img.toPNG());
+        app.quit();
+      }, 1800);
+    });
+  }
 }
 
 app.whenReady().then(() => {

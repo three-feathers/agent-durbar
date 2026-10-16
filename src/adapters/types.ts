@@ -108,7 +108,18 @@ export interface UsageEvent extends BaseEvent {
   creditsStatus?: 'complete' | 'partial' | 'unavailable';
 }
 
+/**
+ * Echo of a user message. Emitted by the simulator and by adapters that can replay history;
+ * the renderer also adds its own bubble when the user types, so live adapters need not emit it.
+ */
+export interface UserEvent extends BaseEvent {
+  type: 'user';
+  text: string;
+  attachments?: Attachment[];
+}
+
 export type AgentEvent =
+  | UserEvent
   | StatusEvent
   | ThinkingEvent
   | OutputEvent
