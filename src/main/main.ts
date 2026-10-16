@@ -1,8 +1,121 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import * as fs from 'fs';
 import * as path from 'path';
+import { CopilotAdapter } from '../adapters/copilot';
+import { resolveWorkspaceCwd } from '../adapters/workspace';
+import type { AddResult, AgentInfo, PermMode, PickedFile } from '../shared/api';
+import { openInVSCode } from './vscode';
+
+// Cheapest routing on the logged-in account's only model ("auto"); see docs/milestone-1.md.
+const DEFAULT_MODEL = 'auto';
+const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
+
+const adapter = new CopilotAdapter();
+const agents = new Map<string, AgentInfo>();
+/** Files the user picked through the native dialog; only these can be attached. */
+const pickedFiles = new Set<string>();
+let win: BrowserWindow | undefined;
+
+const toRenderer = (channel: string, payload: unknown): void => {
+  if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+};
+
+adapter.onEvent((e) => toRenderer('agent:event', e));
+
+async function addWorkspace(workspace: string, permMode: PermMode): Promise<AgentInfo> {
+  const ws = resolveWorkspaceCwd(workspace);
+  const id = await adapter.start({
+    workspace,
+    model: DEFAULT_MODEL,
+    autoTier: 'efficiency',
+    allow: permMode === 'allow',
+    ask: permMode === 'ask',
+  });
+  const info: AgentInfo = {
+    id,
+    name: path.basename(ws.workspaceFile ?? ws.cwd).replace(/\.code-workspace$/, ''),
+    cwd: ws.cwd,
+    workspaceFile: ws.workspaceFile,
+    folders: ws.folders,
+    permMode,
+    model: DEFAULT_MODEL,
+  };
+  agents.set(id, info);
+  toRenderer('agent:added', info);
+  return info;
+}
+
+async function addMany(paths: string[], permMode: PermMode): Promise<AddResult> {
+  const added: AgentInfo[] = [];
+  const errors: string[] = [];
+  for (const p of paths) {
+    try {
+      added.push(await addWorkspace(p, permMode));
+    } catch (err) {
+      errors.push(`${path.basename(p)}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return { ok: errors.length === 0, agents: added, error: errors.join('; ') || undefined };
+}
+
+const validMode = (m: unknown): PermMode => (m === 'ask' || m === 'allow' ? m : 'read-only');
+
+ipcMain.handle('app:version', () => app.getVersion());
+ipcMain.handle('agents:list', () => [...agents.values()]);
+
+ipcMain.handle('agents:addFolder', async (_e, mode: unknown) => {
+  const r = await dialog.showOpenDialog({ title: 'Add folder', properties: ['openDirectory', 'multiSelections'] });
+  return r.canceled ? { ok: true, agents: [] } : addMany(r.filePaths, validMode(mode));
+});
+
+ipcMain.handle('agents:addWorkspaceFile', async (_e, mode: unknown) => {
+  const r = await dialog.showOpenDialog({
+    title: 'Add .code-workspace file',
+    properties: ['openFile'],
+    filters: [{ name: 'VS Code workspace', extensions: ['code-workspace'] }],
+  });
+  return r.canceled ? { ok: true, agents: [] } : addMany(r.filePaths, validMode(mode));
+});
+
+ipcMain.handle('agents:pickAttachments', async (): Promise<PickedFile[]> => {
+  const r = await dialog.showOpenDialog({ title: 'Attach files or images', properties: ['openFile', 'multiSelections'] });
+  if (r.canceled) return [];
+  return r.filePaths.map((p) => {
+    pickedFiles.add(p);
+    return { path: p, name: path.basename(p), kind: IMAGE_EXT.has(path.extname(p).toLowerCase()) ? 'image' : 'file' };
+  });
+});
+
+ipcMain.handle('agents:send', async (_e, id: string, text: string, attachments: PickedFile[]) => {
+  if (!agents.has(id)) return { ok: false, error: 'unknown agent' };
+  const safe = (Array.isArray(attachments) ? attachments : []).filter((a) => pickedFiles.has(a.path));
+  try {
+    await adapter.send(id, {
+      text: String(text),
+      attachments: safe.map((a) => ({ path: a.path, kind: a.kind === 'image' ? 'image' : 'file' })),
+    });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+});
+
+ipcMain.handle('agents:stop', async (_e, id: string) => {
+  if (agents.has(id)) await adapter.stop(id);
+});
+
+ipcMain.handle('agents:resolvePermission', (_e, id: string, requestId: string, approve: boolean) => {
+  if (agents.has(id)) adapter.resolvePermission(id, String(requestId), approve === true);
+});
+
+ipcMain.handle('agents:openInVSCode', (_e, id: string) => {
+  const a = agents.get(id);
+  // Only paths of agents we started: the workspace file if there is one, else the folder.
+  return a ? openInVSCode(a.workspaceFile ?? a.cwd) : { ok: false, error: 'unknown agent' };
+});
 
 function createWindow(): void {
-  const win = new BrowserWindow({
+  win = new BrowserWindow({
     width: 1440,
     height: 900,
     title: 'Agent Durbar',
@@ -14,19 +127,21 @@ function createWindow(): void {
       sandbox: true,
     },
   });
-  // The office view is currently the static prototype (see prototype/index.html).
   void win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 }
 
-ipcMain.handle('app:version', () => app.getVersion());
-
 app.whenReady().then(() => {
   createWindow();
+  // Dev/headless convenience: DURBAR_OPEN="/path/a:/path/b" starts agents (read-only) on launch.
+  const open = (process.env.DURBAR_OPEN ?? '').split(path.delimiter).filter((p) => p && fs.existsSync(p));
+  if (open.length) void addMany(open, validMode(process.env.DURBAR_PERM));
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  void adapter.dispose().finally(() => {
+    if (process.platform !== 'darwin') app.quit();
+  });
 });
