@@ -12,7 +12,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "npm run build && electron .",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "test:permissions": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-permissions.js"
+    "test:permissions": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-permissions.js",
+    "test:attachments": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-attachments.js",
+    "test": "npm run test:permissions && npm run test:attachments"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

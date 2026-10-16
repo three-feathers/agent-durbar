@@ -19,7 +19,12 @@ export interface PickedFile {
   path: string;
   name: string;
   kind: 'file' | 'image';
+  /** Bytes on disk (used for the per-file cap). */
+  size?: number;
 }
+
+/** Result of staging a pasted or dropped file. */
+export type StageResult = { ok: true; file: PickedFile } | { ok: false; error: string };
 
 export interface AddResult {
   ok: boolean;
@@ -35,6 +40,8 @@ export interface DurbarApi {
   /** Agents already running in main (survives renderer reloads) and startup paths. */
   listAgents(): Promise<AgentInfo[]>;
   pickAttachments(): Promise<PickedFile[]>;
+  /** Pasted / dropped file bytes (renderer has no path): checked (10 MB, real image format), sanitized, written to a private temp folder. */
+  stageAttachment(name: string, mime: string, data: ArrayBuffer): Promise<StageResult>;
   send(id: string, text: string, attachments: PickedFile[]): Promise<{ ok: boolean; error?: string }>;
   stop(id: string): Promise<void>;
   /** `remember` = "Approve for this session" (ignored when denying). */

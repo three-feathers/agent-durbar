@@ -1,8 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { CopilotAdapter } from '../adapters/copilot';
 import { resolveWorkspaceCwd } from '../adapters/workspace';
+import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, stageAttachment } from '../shared/attachments';
 import type { AddResult, AgentInfo, PermMode, PickedFile } from '../shared/api';
 import { openInVSCode } from './vscode';
 
@@ -14,6 +16,16 @@ const adapter = new CopilotAdapter();
 const agents = new Map<string, AgentInfo>();
 /** Files the user picked through the native dialog; only these can be attached. */
 const pickedFiles = new Set<string>();
+/** Private folder for pasted / dropped files (removed on quit). */
+let stageDir: string | undefined;
+const getStageDir = (): string => (stageDir ??= fs.mkdtempSync(path.join(os.tmpdir(), 'agent-durbar-att-')));
+const sizeOf = (p: string): number | undefined => {
+  try {
+    return fs.statSync(p).size;
+  } catch {
+    return undefined;
+  }
+};
 let win: BrowserWindow | undefined;
 
 const toRenderer = (channel: string, payload: unknown): void => {
@@ -91,20 +103,40 @@ ipcMain.handle('agents:pickAttachments', async (): Promise<PickedFile[]> => {
   if (preset.length) {
     return preset.map((p) => {
       pickedFiles.add(p);
-      return { path: p, name: path.basename(p), kind: IMAGE_EXT.has(path.extname(p).toLowerCase()) ? 'image' : 'file' };
+      return { path: p, name: path.basename(p), kind: IMAGE_EXT.has(path.extname(p).toLowerCase()) ? 'image' : 'file', size: sizeOf(p) };
     });
   }
   const r = await dialog.showOpenDialog({ title: 'Attach files or images', properties: ['openFile', 'multiSelections'] });
   if (r.canceled) return [];
   return r.filePaths.map((p) => {
     pickedFiles.add(p);
-    return { path: p, name: path.basename(p), kind: IMAGE_EXT.has(path.extname(p).toLowerCase()) ? 'image' : 'file' };
+    return { path: p, name: path.basename(p), kind: IMAGE_EXT.has(path.extname(p).toLowerCase()) ? 'image' : 'file', size: sizeOf(p) };
   });
+});
+
+ipcMain.handle('agents:stageAttachment', (_e, name: unknown, mime: unknown, data: unknown) => {
+  const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : undefined;
+  if (!bytes) return { ok: false, error: 'No file data.' };
+  try {
+    const r = stageAttachment(getStageDir(), String(name ?? ''), String(mime ?? ''), bytes);
+    if (!r.ok) return r;
+    pickedFiles.add(r.path);
+    return { ok: true, file: { path: r.path, name: r.name, kind: r.kind, size: r.size } };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 });
 
 ipcMain.handle('agents:send', async (_e, id: string, text: string, attachments: PickedFile[]) => {
   if (!agents.has(id)) return { ok: false, error: 'unknown agent' };
   const safe = (Array.isArray(attachments) ? attachments : []).filter((a) => pickedFiles.has(a.path));
+  // Caps are enforced here too, not only in the UI.
+  if (safe.length > MAX_ATTACH_FILES) return { ok: false, error: `Up to ${MAX_ATTACH_FILES} attachments per message (got ${safe.length}).` };
+  for (const a of safe) {
+    const size = sizeOf(a.path);
+    if (size === undefined) return { ok: false, error: `"${a.name}" is no longer available.` };
+    if (size > MAX_ATTACH_BYTES) return { ok: false, error: `"${a.name}" is ${fmtSize(size)}, over the ${fmtSize(MAX_ATTACH_BYTES)} per-file limit.` };
+  }
   try {
     await adapter.send(id, {
       text: String(text),
@@ -211,6 +243,10 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+app.on('will-quit', () => {
+  if (stageDir) fs.rmSync(stageDir, { recursive: true, force: true });
 });
 
 app.on('window-all-closed', () => {

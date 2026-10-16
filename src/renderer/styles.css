@@ -412,3 +412,12 @@ body.panel-open #panel{display:flex}
 .sc-c .td,.sc-c .cursor{animation-timing-function:steps(5)}
 .sc-c .steam{animation-timing-function:steps(6)}
 .sc{contain:paint}
+
+/* attachments: cap message, counter, drop overlay */
+.att-note{margin:0 0 8px;padding:6px 10px;border-radius:9px;background:#f9ece9;border:1px solid #ebc7c2;color:var(--red-ink);font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+.att-note[hidden]{display:none}
+.att-count{align-self:center;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;padding-left:2px}
+.panel-in{position:relative}
+.drop-ov{display:none;position:absolute;inset:6px;z-index:5;border:2px dashed #7fa0bd;border-radius:14px;background:rgba(233,241,248,.93);align-items:center;justify-content:center;text-align:center;font-size:15px;font-weight:650;color:#2a506c;pointer-events:none}
+.drop-ov.on{display:flex}
+.drop-ov small{display:block;margin-top:6px;font-size:12px;font-weight:500;color:var(--ink-2)}

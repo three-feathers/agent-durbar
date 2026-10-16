@@ -435,9 +435,54 @@ async function sendMessage(text,forId){
 let attached=[];
 const SAMPLE_FILES=['notes.md','schema.sql','error-log.txt','spec-draft.pdf'], SAMPLE_IMGS=['screenshot-2026-10-16.png','floor-plan.png','diagram.png'];
 let fi=0,ii=0;
+/* Caps (also enforced in the main process): 10 MB per file, 5 files per message. */
+const MAX_ATT_BYTES=10*1024*1024, MAX_ATT_FILES=5;
+const fmtSize=n=>n>=1048576?(n/1048576).toFixed(1).replace(/\.0$/,'')+' MB':Math.max(1,Math.round(n/1024))+' KB';
+const cleanName=n=>String(n||'').split(/[\\/]/).pop().replace(/[\u0000-\u001f\u007f<>:"|?*]/g,'').trim().replace(/^\.+/,'').slice(0,80);
+let attNoteTimer=0;
+function attNotice(msgs){
+  const n=$('attNote'); if(!n)return; clearTimeout(attNoteTimer);
+  n.textContent=msgs.join(' '); n.hidden=!msgs.length;
+  if(msgs.length)attNoteTimer=setTimeout(()=>{n.hidden=true;},9000);
+}
+/* Add files through one gate so the picker, drop and paste share the same caps and messages. */
+function gate(items){
+  const msgs=[], over=[], skipped=[];
+  const accepted=[];
+  for(const it of items){
+    if(it.size>MAX_ATT_BYTES){msgs.push('"'+it.name+'" is '+fmtSize(it.size)+', over the '+fmtSize(MAX_ATT_BYTES)+' per-file limit. Not attached.');continue;}
+    if(attached.length+accepted.length>=MAX_ATT_FILES){skipped.push(it.name);continue;}
+    accepted.push(it);
+  }
+  if(skipped.length)msgs.push('Up to '+MAX_ATT_FILES+' files per message. Not attached: '+skipped.slice(0,3).map(n=>'"'+n+'"').join(', ')+(skipped.length>3?' and '+(skipped.length-3)+' more':'')+'.');
+  return {accepted,msgs};
+}
+function addPicked(list){
+  const {accepted,msgs}=gate(list.map(f=>({name:f.name,size:f.size||0,img:f.kind==='image',path:f.path,kind:f.kind})));
+  accepted.forEach(x=>attached.push(x));
+  renderAttached();setSend();attNotice(msgs);
+}
+/* Pasted / dropped File objects: the renderer has no path, so bytes go to the main process, which checks the
+   format (real image type, no SVG), sanitizes the name and stages a private temp copy. */
+async function addFiles(files,opts){
+  opts=opts||{}; const a0=byId(ui.selected); if(!a0)return;
+  let list=[...files]; if(opts.imagesOnly)list=list.filter(f=>/^image\//i.test(f.type));
+  if(!list.length)return;
+  const {accepted,msgs}=gate(list.map(f=>({f,name:cleanName(f.name)||'file',size:f.size,img:/^image\//i.test(f.type)})));
+  for(const it of accepted){
+    let name=it.name; if(it.img&&(!name||/^image\.\w+$/i.test(name))){const d=new Date(),p=n=>String(n).padStart(2,'0');name='pasted-image-'+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds())+'.'+((it.f.type.split('/')[1]||'png').replace('jpeg','jpg'));}
+    if(a0.live){
+      const r=await bridge.stageAttachment(name,it.f.type,await it.f.arrayBuffer());
+      if(!r.ok){msgs.push(r.error);continue;}
+      attached.push({name:r.file.name,img:r.file.kind==='image',path:r.file.path,kind:r.file.kind,size:r.file.size});
+    } else attached.push({name,img:it.img,size:it.f.size});
+    renderAttached();setSend();
+  }
+  attNotice(msgs);
+}
 function renderAttached(){
   const box=$('attached'); if(!box)return;
-  box.innerHTML=attached.map((x,i)=>`<span class="att ${x.img?'img':''}" title="${esc(x.path||x.name)}">${x.img?ICON.img:ICON.file}<span>${esc(x.name)}</span><button type="button" data-rm="${i}" aria-label="Remove ${esc(x.name)}">${ICON.x}</button></span>`).join('');
+  box.innerHTML=attached.map((x,i)=>`<span class="att ${x.img?'img':''}" title="${esc(x.path||x.name)}${x.size?' ('+fmtSize(x.size)+')':''}">${x.img?ICON.img:ICON.file}<span>${esc(x.name)}</span><button type="button" data-rm="${i}" aria-label="Remove ${esc(x.name)}">${ICON.x}</button></span>`).join('')+(attached.length?`<span class="att-count" aria-live="polite">${attached.length}/${MAX_ATT_FILES}</span>`:'');
 }
 function autoGrow(){const t=$('msgInput');if(!t)return;t.style.height='auto';t.style.height=Math.min(110,t.scrollHeight)+'px';setSend();}
 function setSend(){const b=$('sendBtn'),t=$('msgInput');if(!b||!t)return;const a=byId(ui.selected);const busy=a&&chats[a.id]&&chats[a.id].busy;b.setAttribute('aria-disabled',String(!!busy||(!t.value.trim()&&!attached.length)));}
@@ -465,11 +510,12 @@ function openPanel(id,focus){
       <button class="btn" id="pauseBtn"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
       <button class="btn danger" id="stopBtn"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>Stop</button></div></div>
    <div id="chat" role="log" aria-live="off" aria-label="Chat with ${esc(a.name)}" tabindex="0"></div>
-   <div class="composer"><div class="attached" id="attached" aria-label="Attachments"></div>
+   <div class="composer"><div class="att-note" id="attNote" role="alert" hidden></div><div class="attached" id="attached" aria-label="Attachments"></div>
     <div class="inbox"><button class="ib" id="attFile" type="button" aria-label="Attach file" title="Attach file">${ICON.file}</button><button class="ib" id="attImg" type="button" aria-label="Attach image" title="Attach image">${ICON.img}</button>
      <textarea id="msgInput" rows="1" placeholder="Message ${esc(a.name)}..." aria-label="Message ${esc(a.name)}"></textarea>
      <button class="ib send" id="sendBtn" type="button" aria-label="Send message" aria-disabled="true"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h11M9.5 4.5L14 9l-4.5 4.5"/></svg></button></div>
-    <p class="hint">Enter sends, Shift+Enter adds a line. Sample only.</p></div></div>`;
+    <p class="hint">Enter sends, Shift+Enter adds a line. Drop or paste images to attach. Sample only.</p></div>
+   <div class="drop-ov" id="dropOv" aria-hidden="true"><div>Drop to attach<small>Up to 5 files, 10 MB each. Images: PNG, JPEG, GIF, WebP, BMP.</small></div></div></div>`;
   const chat=getChat(a); $('chat').appendChild(chat.el);
   updatePanelHeader(); renderGrants();
   $('chat').scrollTop=1e6;
@@ -478,15 +524,26 @@ function openPanel(id,focus){
   if(a.live)$('pauseBtn').hidden=true;
   $('pauseBtn').onclick=()=>{a.paused=!a.paused;toast(esc(a.name)+(a.paused?' paused.':' resumed.'));renderAll();};
   $('stopBtn').onclick=()=>{if(a.live)return stopLive(a);a.paused=false;a.state='idle';a.label='Stopped';a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
-  $('attFile').onclick=()=>{if(a.live)return pickLive();attached.push({name:SAMPLE_FILES[fi++%SAMPLE_FILES.length]});renderAttached();setSend();};
-  $('attImg').onclick=()=>{if(a.live)return pickLive();attached.push({name:SAMPLE_IMGS[ii++%SAMPLE_IMGS.length],img:true});renderAttached();setSend();};
+  $('attFile').onclick=()=>{if(a.live)return pickLive();addPicked([{name:SAMPLE_FILES[fi++%SAMPLE_FILES.length],kind:'file',size:12*1024}]);};
+  $('attImg').onclick=()=>{if(a.live)return pickLive();addPicked([{name:SAMPLE_IMGS[ii++%SAMPLE_IMGS.length],kind:'image',size:240*1024}]);};
+  /* drag and drop anywhere on the panel, paste into the message box */
+  const panel=$('panel'), ov=$('dropOv'); let dragDepth=0;
+  const hasFiles=e=>e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files');
+  panel.ondragenter=e=>{if(!hasFiles(e))return;e.preventDefault();dragDepth++;ov.classList.add('on');};
+  panel.ondragover=e=>{if(!hasFiles(e))return;e.preventDefault();e.dataTransfer.dropEffect='copy';};
+  panel.ondragleave=e=>{if(!hasFiles(e))return;dragDepth=Math.max(0,dragDepth-1);if(!dragDepth)ov.classList.remove('on');};
+  panel.ondrop=e=>{if(!hasFiles(e))return;e.preventDefault();dragDepth=0;ov.classList.remove('on');addFiles(e.dataTransfer.files);};
+  $('msgInput').addEventListener('paste',e=>{
+    const fl=[...(e.clipboardData?e.clipboardData.files:[])].filter(f=>/^image\//i.test(f.type)); if(!fl.length)return;
+    if(!e.clipboardData.getData('text/plain'))e.preventDefault(); /* image only: attach; image + text: attach and let the text paste */
+    addFiles(fl,{imagesOnly:true});});
   $('grants').onclick=e=>{const b=e.target.closest('[data-revoke]');if(b){const r=liveRoot(byId(ui.selected));bridge.revokeGrant(r.id,b.dataset.revoke);}};
   $('attached').onclick=e=>{const b=e.target.closest('[data-rm]');if(b){attached.splice(+b.dataset.rm,1);renderAttached();setSend();}};
   const input=$('msgInput');
   input.addEventListener('input',autoGrow);
   input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(input.value);}});
   $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
-  if(a.live){const h=document.querySelector('#panel .hint');if(h)h.textContent='Enter sends, Shift+Enter adds a line. '+(SIM?'Simulated session (no AI credits)':'Live Copilot session')+' ('+a.info.permMode+').';}
+  if(a.live){const h=document.querySelector('#panel .hint');if(h)h.textContent='Enter sends, Shift+Enter adds a line. Drop or paste images to attach. '+(SIM?'Simulated session (no AI credits)':'Live Copilot session')+' ('+a.info.permMode+').';}
   setSend();
   renderAll();
   if(focus!==false)$('panelTitle').focus({preventScroll:true});
@@ -505,6 +562,8 @@ document.addEventListener('click',e=>{
   const chip=e.target.closest('#chat .chip:not(.att-chip)'); if(chip){const o=chip.classList.toggle('open');chip.setAttribute('aria-expanded',String(o));return;}
   const t=e.target.closest('[data-id]'); if(t&&!t.closest('#panel')){openPanel(t.dataset.id,e.detail===0);}
 });
+/* a file dropped anywhere else must not navigate the window away */
+['dragover','drop'].forEach(t=>window.addEventListener(t,e=>{if(e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files'))e.preventDefault();}));
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&ui.selected){closePanel();return;}
   if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('#chat .chip:not(.att-chip)')){e.preventDefault();e.target.click();}
@@ -688,11 +747,7 @@ async function sendLive(text,forId){
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})));
   if(!r.ok){closeTurn(a);addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);setState(a,'error',null,'Send failed: '+SHORT(r.error,100));}
 }
-async function pickLive(){
-  const files=await bridge.pickAttachments();
-  files.forEach(f=>attached.push({name:f.name,img:f.kind==='image',path:f.path,kind:f.kind}));
-  renderAttached();setSend();
-}
+async function pickLive(){addPicked(await bridge.pickAttachments());}
 async function openLive(a){
   const r=await bridge.openInVSCode(liveRoot(a).id);
   toast(r.ok?'Opening in VS Code…':'Could not open VS Code: '+esc(r.error||'unknown error'),4200);

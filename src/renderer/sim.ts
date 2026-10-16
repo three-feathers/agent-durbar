@@ -292,6 +292,12 @@ interface SimAgent {
         { path: '/home/vikram/notes/api-design-notes.md', name: 'api-design-notes.md', kind: 'file' },
         { path: '/home/vikram/Pictures/screenshot-2026-10-16.png', name: 'screenshot-2026-10-16.png', kind: 'image' },
       ],
+      stageAttachment: async (name, mime, data) => {
+        // The simulator has no disk: pretend to stage, with the same caps as the real main process.
+        if (data.byteLength > 10 * 1024 * 1024) return { ok: false, error: 'over the 10 MB per-file limit' };
+        const clean = String(name).split(/[\\/]/).pop() || 'attachment';
+        return { ok: true, file: { path: '/tmp/agent-durbar-att-sim/' + clean, name: clean, kind: /^image\//.test(mime) ? 'image' : 'file', size: data.byteLength } };
+      },
       send: async (id, text) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };

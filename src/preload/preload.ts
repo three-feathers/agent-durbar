@@ -16,6 +16,7 @@ const api: DurbarApi = {
   addWorkspaceFile: (permMode) => ipcRenderer.invoke('agents:addWorkspaceFile', permMode),
   listAgents: () => ipcRenderer.invoke('agents:list'),
   pickAttachments: () => ipcRenderer.invoke('agents:pickAttachments'),
+  stageAttachment: (name, mime, data) => ipcRenderer.invoke('agents:stageAttachment', name, mime, data),
   send: (id, text, attachments) => ipcRenderer.invoke('agents:send', id, text, attachments),
   stop: (id) => ipcRenderer.invoke('agents:stop', id),
   resolvePermission: (id, requestId, approve, remember) => ipcRenderer.invoke('agents:resolvePermission', id, requestId, approve, remember),

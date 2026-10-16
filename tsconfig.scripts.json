@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "rootDir": ".", "outDir": "dist-scripts", "sourceMap": false },
-  "include": ["src/adapters/**/*.ts", "scripts/**/*.ts"]
+  "include": ["src/adapters/**/*.ts", "src/shared/**/*.ts", "scripts/**/*.ts"]
 }
