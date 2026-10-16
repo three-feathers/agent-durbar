@@ -2,10 +2,42 @@
 
 Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.
 
-> Status: **milestone 4 (office floor-plan look for 10-15 agents) on top of milestone 3 (approvals and attachments verified on real Copilot sessions; Linux only, macOS/Windows untested).** The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. Milestone 2 makes 10-15 agents readable on one 1440x900 / 1280x800 screen. See [Status](#status-milestone-2).
+> Status: **milestone 5 (permission, attachment and office polish) on top of milestone 4 (floor-plan look for 10-15 agents) and milestone 3 (approvals and attachments verified on real Copilot sessions; Linux only, macOS/Windows untested).** The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. See [Status](#status-milestone-5).
 
-![15 simulated agents at 1440x900](docs/screenshots/m4-sim15-1440x900-closed.png)
-![15 simulated agents with the chat panel open at 1280x800](docs/screenshots/m4-sim15-1280x800-panel.png)
+![15 simulated agents at 1440x900 (roomy desks use the spare floor space)](docs/screenshots/m5-sim15-1440x900-closed.png)
+![15 simulated agents with the chat panel open at 1280x800](docs/screenshots/m5-sim15-1280x800-panel.png)
+
+## Status (milestone 5: permissions, attachments, office polish)
+
+All seven remaining issues from milestones 3 and 4 are fixed. Built and tested on simulated agents (`DURBAR_SIM`, no AI credits); the permission path was also verified once on a real session with **one tiny prompt, 0.189 AIU** (3 API calls, as reported by the API).
+
+1. **Approve for this session.** Each pending permission now offers **Approve**, **Approve for this session** and **Deny**. "For this session" remembers a narrow scope until you stop that session: writes in that file's folder, a simple shell command by name (anything with pipes, `&&`, redirects or substitutions is only remembered for that exact command), a URL host, or an MCP/custom tool name. It shows as a small green chip in the panel header (`Allowed: write in src/`) with an **x** to revoke; later matching requests are approved automatically and shown as "approved (allowed for this session)" in the timeline. Deny never remembers, grants vanish on Stop. The logic is a pure class ([`src/adapters/permissions.ts`](src/adapters/permissions.ts), `npm run test:permissions`).
+2. **Stop with a pending permission** denies the request cleanly: the adapter resolves it as denied (`via: stopped`), the note reads "denied (session stopped)", Approve/Deny disappear, the card goes idle and the chips are cleared.
+3. **The permission note is inline** in the tool timeline, between the tool chips in the order things happened, not below the answer. (On a real session the SDK starts the tool call before it asks, so the order is `apply_patch` then its permission note.)
+4. **Attachment caps**: 10 MB per file and 5 files per message, enforced in the renderer (fast, with a message in the composer such as `"big.mov" is 11 MB, over the 10 MB per-file limit. Not attached.` or `Up to 5 files per message. Not attached: "d.png", "e.png".`) and again in the main process on stage and on send. A counter (`3/5`) shows next to the chips. **Drag and drop** files onto the panel (overlay "Drop to attach") and **paste** images into the message box (image only: it attaches; image plus text: it attaches and the text still pastes). The renderer has no file path for these, so the bytes go to the main process, which checks the real format by magic bytes (PNG, JPEG, GIF, WebP, BMP; SVG and renamed non-images are rejected), strips directories and control characters from the name, forces the extension from the real format, and writes a private copy (mode 0600) into a temp folder that is deleted on quit ([`src/shared/attachments.ts`](src/shared/attachments.ts), `npm run test:attachments`). A file dropped anywhere else no longer navigates the window.
+5. **Keyed DOM updates in the office view.** Trial layouts are measured in a hidden probe element, never in the visible floor, and the chosen layout is cached until the office shape changes (agents, helper counts, filters, size, panel). A tick or status change then patches only what changed: rooms, units, desks and helper tiles are matched by id, text and attributes are updated in place, and a desk scene (SVG) is replaced only when its status or look changes. Measured over 24 s of live ticks at SIM=15: no desk node was replaced, only the scenes of agents whose status changed, and no running animation of an unchanged agent restarted. The stat pills use the same patching.
+6. **Helper strip**: up to **3 helpers** show before `+N more` when the floor has room (the strip is a 2-column grid, so 2 rows). The layout search tries 3 first and falls back to 1; when only 1 fits, the leftover space is spent per agent (agents with the most helpers, attention-needing ones first) while everything still fits, e.g. Elif shows `Types`, `Tag`, `Diff` + `+3 more` at 1280x800 with the panel open.
+7. **Spare floor space**: a new `roomy` density (card with bigger desks, 92px rows, 14.5px names, 11-12px text, bigger helper tiles) is tried right after `full`; it wins only when it fits, so the 1280x800 fits are unchanged. At 1440x900 with the panel closed, SIM=12 and SIM=15 now use `roomy`; at 1280x800, SIM=12 closed also fits `roomy`.
+
+Checked at 1440x900 and 1280x800, panel closed and open, SIM=12 and 15, also over 18 s of live ticks each (no overlaps, no clipping, nothing outside the floor, no page or floor scroll, text never below 10.5px, densities stable):
+
+| | 1440x900 closed | 1440x900 panel | 1280x800 closed | 1280x800 panel |
+| --- | --- | --- | --- | --- |
+| SIM=12 | roomy | card | roomy | card |
+| SIM=15 | roomy | card | card | mini |
+
+![Pending permission, inline in the timeline](docs/screenshots/m5-perm-pending-1280x800.png)
+![Auto-approved by a session grant, chip in the header](docs/screenshots/m5-perm-auto-approved-1280x800.png)
+![Real Copilot session: one Approve for this session covered two edits](docs/screenshots/m5-real-session-grant.png)
+![Stopped while pending](docs/screenshots/m5-perm-stopped-1280x800.png)
+![Attachment cap message](docs/screenshots/m5-att-cap-count-1280x800.png)
+![Drop overlay](docs/screenshots/m5-att-drop-overlay-1280x800.png)
+![Helpers: up to 3 before +N more, expanded in place](docs/screenshots/m5-sim15-expanded-helpers-1280x800.png)
+![12 agents, roomy desks](docs/screenshots/m5-sim12-1440x900-closed.png)
+
+Tests: `npm test` (permission broker, attachment rules; no Copilot, no credits). End-to-end driver phases: `PHASES=m5` (real Electron main and adapter session start, no prompt: real staging IPC, drop/paste, permission UI, Stop through the real adapter), `PHASES=real` (the one real prompt: two edits in ask mode, Approve for this session once, the second edit was approved automatically). Both with `DURBAR_DRIVER=$PWD/scripts/e2e-driver.js xvfb-run -a npx electron . --no-sandbox`.
+
+Remaining: a layout re-search (resize, opening the panel, adding agents) takes roughly 150-200 ms at 15 agents in headless software rendering (cached otherwise); the grant scopes are chosen conservatively (folder, command name, host, tool) and not configurable; dropped non-image files are copied to the temp folder like images (not referenced in place); in `micro` the helper figures are still very small and the helper boost only applies when something fits; long folder names truncate the nameplate when narrow; macOS/Windows untested; no AI-credit cap or session resume yet (see Roadmap).
 
 ## Status (milestone 4: office floor-plan look for 10-15 agents)
 
@@ -24,7 +56,7 @@ Checked at 1440x900 and 1280x800, panel closed and open, with 12 and 15 simulate
 ![Chat panel open at 1280x800 (mini desks)](docs/screenshots/m4-sim15-1280x800-panel.png)
 ![Helpers expanded in place](docs/screenshots/m4-sim15-expanded-helpers-1280x800.png)
 
-Remaining: the helper strip shows one helper plus `+N more` (more only after expanding); in `micro` the helper figures are very small (about 34px wide); rooms with many agents and a long folder name truncate the nameplate and hide the path and the idle/done counts when narrow; re-rendering on each simulated tick restarts the desk animations of every agent (the old behaviour, now more visible because the scenes move).
+Remaining (as of milestone 4; the helper strip, the animation restarts and the spare floor space are fixed in milestone 5): the helper strip showed one helper plus `+N more`; in `micro` the helper figures are very small (about 34px wide); rooms with many agents and a long folder name truncate the nameplate and hide the path and the idle/done counts when narrow.
 
 ## Status (milestone 3)
 
@@ -45,7 +77,7 @@ Dev hooks for repeatable tests without a native dialog: `DURBAR_PICK=/a.txt:/b.p
 ![Approval pending](docs/screenshots/m3-approval-pending.png)
 ![Attachments](docs/screenshots/m3-attachments.png)
 
-Remaining: stopping a session while a permission is pending leaves the Approve/Deny buttons visible; the permission note sits below the answer rather than inline in the tool timeline; "Approve for this session" is not offered; no attachment size cap; attachment chips only exist for files picked in the native dialog.
+Remaining (as of milestone 3; all fixed in milestone 5): stopping a session while a permission was pending left the Approve/Deny buttons visible; the permission note sat below the answer; "Approve for this session" was not offered; no attachment size cap; attachment chips only existed for files picked in the native dialog.
 
 ## Status (milestone 2)
 
@@ -131,6 +163,7 @@ An Electron app that:
 - [x] Open in VS Code (`code <folder>`)
 - [x] Office polish for 10-15 agents: auto-fit density, helpers with `+N`, status sorting, chat chips (simulated agents mode)
 - [x] Floor-plan look for the compact densities: desk scenes, room zones, helper mini-desks (milestone 4)
+- [x] Approve for this session (revocable), clean Stop with pending permission, inline permission notes, attachment caps with drag-and-drop/paste, keyed office updates, up to 3 helpers, roomy desks (milestone 5)
 - [ ] Second adapter (Claude or Codex CLI)
 - [ ] Packaging (macOS, Windows, Linux)
 
@@ -141,10 +174,11 @@ npm install
 npm run build   # tsc + copy src/renderer assets into dist/renderer
 npm start       # build and launch Electron (needs `copilot login` once)
 DURBAR_SIM=15 npm start   # 15 simulated agents, no sessions, no AI credits
+npm test        # permission broker + attachment rules, no Copilot, no credits
 npm run smoke   # headless adapter test, sends 2 tiny prompts (uses AI credits)
 ```
 
-Layout: `src/main` (Electron main), `src/preload` (bridge), `src/renderer` (UI: html/css/js, demo data, simulator), `src/adapters` (agent adapters), `prototype/` (static design), `docs/` (research).
+Layout: `src/main` (Electron main), `src/preload` (bridge), `src/renderer` (UI: html/css/js, demo data, simulator), `src/adapters` (agent adapters, permission broker), `src/shared` (IPC types, attachment rules), `prototype/` (static design), `docs/` (research).
 
 ## License
 
