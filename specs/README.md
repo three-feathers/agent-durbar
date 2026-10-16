@@ -46,4 +46,13 @@ Spec drafts only (no plan or tasks yet); they must go through `/speckit.clarify`
 | [013](013-live-verification-stop-resume-thinking/spec.md) | Live verification of Stop, resume and thinking | draft |
 | [014](014-signing-and-notarization/spec.md) | Code signing and notarization | draft, **needs approval (purchase)** |
 
+## Features 015-018: milestone 7 (spec first, then code)
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [015](015-thinking-and-subagent-activity/spec.md) | Thinking that shows up, sub-agent activity | milestone 7 |
+| [016](016-markdown-in-chat/spec.md) | Safe Markdown in the chat | milestone 7 |
+| [017](017-room-doors/spec.md) | Room doors (collapse/expand) | milestone 7 |
+| [018](018-permission-mode-switch/spec.md) | Change permission mode any time | milestone 7 |
+
 New features take the next number (`/speckit.specify` picks it automatically from this folder).
