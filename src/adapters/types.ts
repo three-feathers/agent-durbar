@@ -45,7 +45,10 @@ export interface AgentMessage {
 interface BaseEvent {
   /** Durbar session id (stable per adapter instance). */
   sessionId: string;
-  /** Set for sub-agent events; undefined means the top-level agent. */
+  /**
+   * Set for events of a sub-agent; undefined means the top-level agent. It is the id of the parent's `task` tool call that
+   * spawned the sub-agent (the same id as `SubagentEvent.subagentId`), whichever id the runtime used for the event.
+   */
   agentId?: string;
   timestamp: number;
 }
@@ -98,6 +101,8 @@ export interface ThinkingEvent extends BaseEvent {
   type: 'thinking';
   /** Incremental reasoning text (delta). */
   delta: string;
+  /** Reasoning block this belongs to; a new id starts a new block. A complete block that never streamed arrives as one delta. */
+  reasoningId?: string;
 }
 
 export interface OutputEvent extends BaseEvent {
@@ -124,6 +129,14 @@ export interface SubagentEvent extends BaseEvent {
   name?: string;
   phase: 'started' | 'completed' | 'failed';
   task?: string;
+  /** Internal agent type, e.g. "explore". */
+  agentName?: string;
+  model?: string;
+  /** On failure: the error text. */
+  error?: string;
+  durationMs?: number;
+  totalTokens?: number;
+  totalToolCalls?: number;
 }
 
 /** Per model call usage. Credits are reported by the runtime as nano-AIU when available. */

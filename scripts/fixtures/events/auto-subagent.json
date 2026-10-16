@@ -1,0 +1,938 @@
+[
+ {
+  "type": "user.message",
+  "agentId": null,
+  "data": {
+   "content": "Use a sub-agent to look at both README.md and index.js and summarise in two sentences. Do not edit files."
+  }
+ },
+ {
+  "type": "assistant.turn_start",
+  "agentId": null,
+  "data": {
+   "turnId": "0"
+  }
+ },
+ {
+  "type": "assistant.usage",
+  "agentId": null,
+  "data": {
+   "model": "gpt-6-luna",
+   "inputTokens": 12256,
+   "outputTokens": 71,
+   "cacheReadTokens": 7736,
+   "reasoningTokens": 0,
+   "cost": 1,
+   "aiCreditsStatus": "complete",
+   "copilotUsage": {
+    "totalNanoAiu": 67778500
+   }
+  }
+ },
+ {
+  "type": "assistant.message",
+  "agentId": null,
+  "data": {
+   "messageId": "f5a01566-bad1-4f69-a01e-579c589122ff",
+   "model": "gpt-6-luna",
+   "content": "",
+   "toolRequests": [
+    {
+     "toolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni",
+     "name": "task"
+    }
+   ],
+   "turnId": "0"
+  }
+ },
+ {
+  "type": "tool.execution_start",
+  "agentId": null,
+  "data": {
+   "toolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni",
+   "toolName": "task",
+   "arguments": {
+    "description": "Summarize README and index",
+    "prompt": "Read README.md and index.js in the repository and summarize their contents in exactly two sentences. Do not edit files. Keep the summary concrete and concise.",
+    "agent_type": "explore",
+    "name": "readme-index-summary",
+    "mode": "sync"
+   },
+   "turnId": "0",
+   "model": "gpt-6-luna"
+  }
+ },
+ {
+  "type": "subagent.started",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "toolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni",
+   "agentName": "explore",
+   "agentDisplayName": "readme-index-summary",
+   "agentDescription": "Summarize README and index",
+   "model": "gpt-5.6-luna",
+   "taskModelSource": "unset",
+   "modelSelectionSource": "agent_definition_default",
+   "resumable": false,
+   "agentType": "explore",
+   "executionMode": "sync"
+  }
+ },
+ {
+  "type": "user.message",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "content": "Read README.md and index.js in the repository and summarize their contents in exactly two sentences. Do not edit files. Keep the summary concrete and concise."
+  }
+ },
+ {
+  "type": "assistant.turn_start",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "turnId": "0",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.usage",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "model": "gpt-6-luna",
+   "inputTokens": 3955,
+   "outputTokens": 67,
+   "cacheReadTokens": 3892,
+   "reasoningTokens": 0,
+   "cost": 1,
+   "aiCreditsStatus": "complete",
+   "copilotUsage": {
+    "totalNanoAiu": 8022000
+   }
+  }
+ },
+ {
+  "type": "assistant.message",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "80a031f1-7688-41cb-a77f-37c0c2a7a0dd",
+   "model": "gpt-6-luna",
+   "content": "",
+   "toolRequests": [
+    {
+     "toolCallId": "call_76UNcD01ujWVxE4LqBzZaEbG",
+     "name": "view"
+    },
+    {
+     "toolCallId": "call_QJidSYI3CN8Tgqq0sO4hgDeJ",
+     "name": "view"
+    }
+   ],
+   "turnId": "0"
+  }
+ },
+ {
+  "type": "tool.execution_start",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "toolCallId": "call_76UNcD01ujWVxE4LqBzZaEbG",
+   "toolName": "view",
+   "arguments": {
+    "path": "/home/user/hello-app/README.md"
+   },
+   "turnId": "0",
+   "model": "gpt-6-luna",
+   "toolTitle": "Viewing file",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "tool.execution_start",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "toolCallId": "call_QJidSYI3CN8Tgqq0sO4hgDeJ",
+   "toolName": "view",
+   "arguments": {
+    "path": "/home/user/hello-app/index.js"
+   },
+   "turnId": "0",
+   "model": "gpt-6-luna",
+   "toolTitle": "Viewing file",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "tool.execution_complete",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "toolCallId": "call_76UNcD01ujWVxE4LqBzZaEbG",
+   "model": "gpt-6-luna",
+   "turnId": "0",
+   "success": true,
+   "result": {
+    "content": "# hello-app\n\nTiny dummy app for testing.\n"
+   },
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "tool.execution_complete",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "toolCallId": "call_QJidSYI3CN8Tgqq0sO4hgDeJ",
+   "model": "gpt-6-luna",
+   "turnId": "0",
+   "success": true,
+   "result": {
+    "content": "// TODO: replace this placeholder greeting with something useful\nconsole.log(\"hello\");\n"
+   },
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.turn_end",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "turnId": "0",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.turn_start",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "turnId": "1",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": "README",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": ".md",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " describes",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " `",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": "hello",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": "-app",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": "`",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " as",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " a",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " tiny",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " dummy",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " app",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " for",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " testing",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": ".",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " `",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": "index",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": ".js",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": "`",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " is",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " a",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " placeholder",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " that",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " prints",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " \u201c",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": "hello",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": "\u201d",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " and",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " includes",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " a",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " TODO",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " to",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " replace",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " the",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": " greeting",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "deltaContent": ".",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "assistant.usage",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "model": "gpt-6-luna",
+   "inputTokens": 4066,
+   "outputTokens": 40,
+   "cacheReadTokens": 3952,
+   "reasoningTokens": 0,
+   "cost": 1,
+   "aiCreditsStatus": "complete",
+   "copilotUsage": {
+    "totalNanoAiu": 7369500
+   }
+  }
+ },
+ {
+  "type": "assistant.message",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "messageId": "6c482867-982a-438f-8378-c07f88757bbf",
+   "model": "gpt-6-luna",
+   "content": "README.md describes `hello-app` as a tiny dummy app for testing. `index.js` is a placeholder that prints \u201chello\u201d and includes a TODO to replace the greeting.",
+   "toolRequests": [],
+   "turnId": "1",
+   "phase": "final_answer"
+  }
+ },
+ {
+  "type": "assistant.turn_end",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "turnId": "1",
+   "parentToolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni"
+  }
+ },
+ {
+  "type": "subagent.completed",
+  "agentId": "682bc2b7-43d8-4e64-9237-1c33d421c871",
+  "data": {
+   "toolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni",
+   "agentName": "explore",
+   "agentDisplayName": "readme-index-summary",
+   "model": "gpt-5.6-luna",
+   "firstDispatchedModel": "gpt-6-luna",
+   "modelSelectionSource": "agent_definition_default",
+   "totalToolCalls": 2,
+   "totalTokens": 8128,
+   "durationMs": 6194
+  }
+ },
+ {
+  "type": "tool.execution_complete",
+  "agentId": null,
+  "data": {
+   "toolCallId": "call_M0UqVWsTdGLiLNcHk9FaP8ni",
+   "model": "gpt-6-luna",
+   "turnId": "0",
+   "success": true,
+   "result": {
+    "content": "README.md describes `hello-app` as a tiny dummy app for testing. `index.js` is a placeholder that prints \u201chello\u201d and includes a TODO to replace the greeting."
+   }
+  }
+ },
+ {
+  "type": "assistant.turn_end",
+  "agentId": null,
+  "data": {
+   "turnId": "0"
+  }
+ },
+ {
+  "type": "assistant.turn_start",
+  "agentId": null,
+  "data": {
+   "turnId": "1"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": "README"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": ".md"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " describes"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " `"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": "hello"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": "-app"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": "`"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " as"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " a"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " tiny"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " dummy"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " app"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " for"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " testing"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": "."
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " `"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": "index"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": ".js"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": "`"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " is"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " a"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " placeholder"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " that"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " prints"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " \u201c"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": "hello"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": "\u201d"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " and"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " includes"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " a"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " TODO"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " to"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " replace"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " the"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": " greeting"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "deltaContent": "."
+  }
+ },
+ {
+  "type": "assistant.usage",
+  "agentId": null,
+  "data": {
+   "model": "gpt-6-luna",
+   "inputTokens": 12373,
+   "outputTokens": 40,
+   "cacheReadTokens": 12253,
+   "reasoningTokens": 0,
+   "cost": 1,
+   "aiCreditsStatus": "complete",
+   "copilotUsage": {
+    "totalNanoAiu": 15745500
+   }
+  }
+ },
+ {
+  "type": "assistant.message",
+  "agentId": null,
+  "data": {
+   "messageId": "f8a8f678-2a88-44a3-b693-bd2b4041f76a",
+   "model": "gpt-6-luna",
+   "content": "README.md describes `hello-app` as a tiny dummy app for testing. `index.js` is a placeholder that prints \u201chello\u201d and includes a TODO to replace the greeting.",
+   "toolRequests": [],
+   "turnId": "1",
+   "phase": "final_answer"
+  }
+ },
+ {
+  "type": "assistant.turn_end",
+  "agentId": null,
+  "data": {
+   "turnId": "1"
+  }
+ },
+ {
+  "type": "session.idle",
+  "agentId": null,
+  "data": {
+   "mode": "interactive"
+  }
+ }
+]

@@ -8,6 +8,8 @@ import type {
   StartOptions,
   Unsubscribe,
 } from './types';
+import { EventMapper } from './map';
+import type { EventBody, RawEvent } from './map';
 import { PermissionBroker } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
@@ -26,8 +28,6 @@ const IMAGE_MIME: Record<string, string> = {
   '.webp': 'image/webp',
   '.bmp': 'image/bmp',
 };
-
-type EventBody = AgentEvent extends infer E ? (E extends AgentEvent ? Omit<E, 'sessionId' | 'timestamp'> & { agentId?: string } : never) : never;
 
 /** A model the account can use, as shown in the picker. */
 export interface ModelOption {
@@ -59,10 +59,8 @@ export class CopilotAdapter implements AgentAdapter {
   private sessions = new Map<string, Live>();
   /** Optional debug sink (DURBAR_LOG): what was actually handed to the SDK. */
   debug?: (message: string) => void;
-  /** callId -> tool name, so complete/update events can carry the tool name. */
-  private toolNames = new Map<string, string>();
-  /** Reasoning block ids that already streamed as deltas (so the complete block is not shown twice). */
-  private reasoningSeen = new Set<string>();
+  /** One mapper per session (it remembers tool names, reasoning ids and sub-agent ids of that session). */
+  private mappers = new Map<string, EventMapper>();
 
   /** Lazily start the shared runtime. Uses the logged-in Copilot user (e.g. `copilot login`). */
   private async getClient(): Promise<CopilotClient> {
@@ -229,6 +227,7 @@ export class CopilotAdapter implements AgentAdapter {
     live.unsubscribe();
     await live.session.disconnect();
     this.sessions.delete(sessionId);
+    this.mappers.delete(sessionId);
     this.emit(sessionId, { type: 'status', status: 'stopped' });
   }
 
@@ -264,106 +263,13 @@ export class CopilotAdapter implements AgentAdapter {
     for (const l of this.listeners) l(event);
   }
 
-  /** SDK SessionEvent -> normalized event(s). */
+  /** SDK SessionEvent -> normalized event(s): see map.ts (pure, unit-tested with recorded fixtures). */
   private map(sid: string, ev: SessionEvent): void {
-    // Events from a sub-agent carry its instance id in `agentId`; tool events inside a
-    // sub-agent also reference the spawning tool call via parentToolCallId.
-    const agentId = ev.agentId;
-    switch (ev.type) {
-      case 'assistant.turn_start':
-        return this.emit(sid, { type: 'status', status: 'working', agentId });
-      case 'assistant.intent':
-        return this.emit(sid, { type: 'status', status: 'working', intent: ev.data.intent, agentId });
-      case 'assistant.reasoning_delta':
-        this.reasoningSeen.add(ev.data.reasoningId);
-        return this.emit(sid, { type: 'thinking', delta: ev.data.deltaContent, agentId });
-      case 'assistant.reasoning':
-        // Complete reasoning block. When no deltas came for it (streaming off or not provided), show it whole.
-        if (this.reasoningSeen.delete(ev.data.reasoningId)) return;
-        if (ev.data.content) this.emit(sid, { type: 'thinking', delta: ev.data.content, agentId });
-        return;
-      case 'assistant.message_delta':
-        return this.emit(sid, { type: 'output', delta: ev.data.deltaContent, agentId });
-      case 'assistant.message':
-        if (ev.data.content) this.emit(sid, { type: 'output', delta: '', final: true, text: ev.data.content, agentId });
-        return;
-      case 'assistant.usage': {
-        const d = ev.data;
-        return this.emit(sid, {
-          type: 'usage',
-          agentId,
-          model: d.model,
-          inputTokens: d.inputTokens,
-          outputTokens: d.outputTokens,
-          cacheReadTokens: d.cacheReadTokens,
-          nanoAiu: d.copilotUsage?.totalNanoAiu,
-          costMultiplier: d.cost,
-          creditsStatus: d.aiCreditsStatus,
-        });
-      }
-      case 'tool.execution_start':
-        this.toolNames.set(ev.data.toolCallId, ev.data.toolName);
-        return this.emit(sid, {
-          type: 'toolCall',
-          callId: ev.data.toolCallId,
-          tool: ev.data.toolName,
-          phase: 'start',
-          args: ev.data.arguments,
-          agentId: agentId ?? ev.data.parentToolCallId,
-        });
-      case 'tool.execution_partial_result':
-        return this.emit(sid, {
-          type: 'toolCall',
-          callId: ev.data.toolCallId,
-          tool: this.toolNames.get(ev.data.toolCallId) ?? '',
-          phase: 'update',
-          output: ev.data.partialOutput,
-          agentId,
-        });
-      case 'tool.execution_complete': {
-        const tool = this.toolNames.get(ev.data.toolCallId) ?? '';
-        this.toolNames.delete(ev.data.toolCallId);
-        return this.emit(sid, {
-          type: 'toolCall',
-          callId: ev.data.toolCallId,
-          tool,
-          phase: ev.data.success ? 'complete' : 'failed',
-          output: ev.data.success ? ev.data.result?.content : ev.data.error?.message,
-          agentId: agentId ?? ev.data.parentToolCallId,
-        });
-      }
-      case 'subagent.started':
-        return this.emit(sid, {
-          type: 'subagent',
-          subagentId: ev.data.toolCallId,
-          name: ev.data.agentDisplayName,
-          phase: 'started',
-          task: ev.data.agentDescription,
-          agentId,
-        });
-      case 'subagent.completed':
-        return this.emit(sid, {
-          type: 'subagent',
-          subagentId: ev.data.toolCallId,
-          name: ev.data.agentDisplayName,
-          phase: 'completed',
-          agentId,
-        });
-      case 'subagent.failed':
-        return this.emit(sid, {
-          type: 'subagent',
-          subagentId: ev.data.toolCallId,
-          name: ev.data.agentDisplayName,
-          phase: 'failed',
-          task: ev.data.error,
-          agentId,
-        });
-      case 'session.idle':
-        return this.emit(sid, { type: 'status', status: 'idle', intent: ev.data.aborted ? 'Aborted' : undefined });
-      case 'session.error':
-        return this.emit(sid, { type: 'status', status: 'error', intent: `${ev.data.errorType}: ${ev.data.message}`, agentId });
-      default:
-        return;
+    let m = this.mappers.get(sid);
+    if (!m) {
+      m = new EventMapper((body) => this.emit(sid, body));
+      this.mappers.set(sid, m);
     }
+    m.map(ev as unknown as RawEvent);
   }
 }

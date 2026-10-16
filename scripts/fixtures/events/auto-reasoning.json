@@ -1,0 +1,1074 @@
+[
+ {
+  "type": "user.message",
+  "agentId": null,
+  "data": {
+   "content": "Think carefully step by step: is 391 prime? Answer in one short sentence. No tools."
+  }
+ },
+ {
+  "type": "assistant.turn_start",
+  "agentId": null,
+  "data": {
+   "turnId": "0"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": "**Calculating prime status**\n\nI"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " need"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " to"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " double"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": "-check"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " my"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " calculations"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": "."
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " The"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " square"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " root"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " of"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 391"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " is"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " approximately"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 19"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": "."
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": "77"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": "."
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " Now"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": ","
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " I"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " need"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " to"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " look"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " at"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " the"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " prime"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " divis"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": "ors"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " up"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " to"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 19"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": "."
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " Checking"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " for"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " divis"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": "ibility"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": ","
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 3"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " doesn't"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " work"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": ","
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 5"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " doesn't"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " work"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " either"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": "."
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " With"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 7"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": ","
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " I"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " get"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 7"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " times"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 55"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " equals"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 385"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " with"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " a"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " remainder"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " of"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 6"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": "."
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " For"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 11"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": ","
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " I"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " get"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 11"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " times"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 35"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " equals"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 385"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": ","
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " again"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " a"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " remainder"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " of"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 6"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": "."
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " And"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " for"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 13"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": ","
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " it"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": "\u2019s"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 13"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " times"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 30"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " equ"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": "aling"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 390"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": ","
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " remainder"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 1"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": "."
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " Finally"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": ","
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 17"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " times"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 23"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " gives"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " 391"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": ","
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " so"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " it's"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " not"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": " prime"
+  }
+ },
+ {
+  "type": "assistant.reasoning_delta",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "deltaContent": "!"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "02154149-79e1-4a3a-ba99-0c58bc847668",
+   "deltaContent": "No"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "02154149-79e1-4a3a-ba99-0c58bc847668",
+   "deltaContent": ","
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "02154149-79e1-4a3a-ba99-0c58bc847668",
+   "deltaContent": " "
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "02154149-79e1-4a3a-ba99-0c58bc847668",
+   "deltaContent": "391"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "02154149-79e1-4a3a-ba99-0c58bc847668",
+   "deltaContent": " is"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "02154149-79e1-4a3a-ba99-0c58bc847668",
+   "deltaContent": " not"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "02154149-79e1-4a3a-ba99-0c58bc847668",
+   "deltaContent": " prime"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "02154149-79e1-4a3a-ba99-0c58bc847668",
+   "deltaContent": ";"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "02154149-79e1-4a3a-ba99-0c58bc847668",
+   "deltaContent": " it"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "02154149-79e1-4a3a-ba99-0c58bc847668",
+   "deltaContent": " equals"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "02154149-79e1-4a3a-ba99-0c58bc847668",
+   "deltaContent": " "
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "02154149-79e1-4a3a-ba99-0c58bc847668",
+   "deltaContent": "17"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "02154149-79e1-4a3a-ba99-0c58bc847668",
+   "deltaContent": " \u00d7"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "02154149-79e1-4a3a-ba99-0c58bc847668",
+   "deltaContent": " "
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "02154149-79e1-4a3a-ba99-0c58bc847668",
+   "deltaContent": "23"
+  }
+ },
+ {
+  "type": "assistant.message_delta",
+  "agentId": null,
+  "data": {
+   "messageId": "02154149-79e1-4a3a-ba99-0c58bc847668",
+   "deltaContent": "."
+  }
+ },
+ {
+  "type": "assistant.usage",
+  "agentId": null,
+  "data": {
+   "model": "gpt-6-luna",
+   "inputTokens": 12251,
+   "outputTokens": 106,
+   "cacheReadTokens": 7736,
+   "reasoningTokens": 84,
+   "cost": 1,
+   "aiCreditsStatus": "complete",
+   "copilotUsage": {
+    "totalNanoAiu": 69466000
+   }
+  }
+ },
+ {
+  "type": "assistant.message",
+  "agentId": null,
+  "data": {
+   "messageId": "02154149-79e1-4a3a-ba99-0c58bc847668",
+   "model": "gpt-6-luna",
+   "content": "No, 391 is not prime; it equals 17 \u00d7 23.",
+   "toolRequests": [],
+   "turnId": "0",
+   "phase": "final_answer"
+  }
+ },
+ {
+  "type": "assistant.reasoning",
+  "agentId": null,
+  "data": {
+   "reasoningId": "e2f3985f-7b04-44b4-8d82-c406024486ab",
+   "content": "**Calculating prime status**\n\nI need to double-check my calculations. The square root of 391 is approximately 19.77. Now, I need to look at the prime divisors up to 19. Checking for divisibility, 3 doesn't work, 5 doesn't work either. With 7, I get 7 times 55 equals 385 with a remainder of 6. For 11, I get 11 times 35 equals 385, again a remainder of 6. And for 13, it\u2019s 13 times 30 equaling 390, remainder 1. Finally, 17 times 23 gives 391, so it's not prime!"
+  }
+ },
+ {
+  "type": "assistant.turn_end",
+  "agentId": null,
+  "data": {
+   "turnId": "0"
+  }
+ },
+ {
+  "type": "session.idle",
+  "agentId": null,
+  "data": {
+   "mode": "interactive"
+  }
+ }
+]
