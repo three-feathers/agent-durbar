@@ -1,0 +1,37 @@
+name: Task from a spec
+description: One Spec Kit task (one issue = one task). Use .github/scripts/tasks-to-issues.sh to create these from tasks.md.
+labels: ["task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Claim it before you start: **assign yourself and add the label `status:claimed`**. If someone already is assigned, pick another issue.
+        Also add the labels `spec:NNN` and one `area:*`.
+  - type: input
+    id: spec
+    attributes:
+      label: Spec and task
+      description: Spec folder and task id, e.g. `specs/003-permissions-and-approvals` T025
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What and why
+      description: Copy the task line from tasks.md and add the context needed to do it.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: Acceptance (a test, a screenshot, a recorded check). Say if it needs a real machine or a real agent session.
+    validations:
+      required: true
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: Rules
+      options:
+        - label: Spec, plan and tasks for this exist (or this issue is to create them first, `/speckit-clarify`, `/speckit-plan`, `/speckit-tasks`)
+        - label: No purchase, release or cloud/paid run is needed (otherwise add `needs-owner-approval`)
