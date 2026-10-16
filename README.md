@@ -2,9 +2,27 @@
 
 Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.
 
-> Status: **milestone 1 (works on Linux; macOS/Windows untested).** The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. See [Status](#status-milestone-1).
+> Status: **milestone 2 (works on Linux; macOS/Windows untested).** The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. Milestone 2 makes 10-15 agents readable on one 1440x900 / 1280x800 screen. See [Status](#status-milestone-2).
 
-![Office view prototype](prototype/office_1280.png)
+![15 simulated agents at 1440x900](docs/screenshots/m2-sim15-1440x900-closed.png)
+![15 simulated agents with the chat panel open at 1280x800](docs/screenshots/m2-sim15-1280x800-panel.png)
+
+## Status (milestone 2)
+
+Added in milestone 2 (office polish, no AI credits spent while building it):
+- **Simulated live agents**: `DURBAR_SIM=15 npm start` (or open `dist/renderer/index.html?sim=15` in a browser) feeds fake *normalized* events (`status`, `thinking`, `output`, `toolCall`, `subagent`, `usage`, plus a new `user` echo event) through the same renderer path as the Copilot adapter ([`src/renderer/sim.ts`](src/renderer/sim.ts)). No session is started. Extras: `DURBAR_SIM_FREEZE=1` (no background activity), `DURBAR_SIM_ROOMS=solo` (one folder per agent), `?density=full|card|mini|micro`, `?seed=N`. The **Demo** toggle (sample office) still works next to it.
+- **Auto-fit density**: the office view picks the richest density that fits the floor at 100% scale, so text is never scaled down: `full` (illustrated desks, few agents), `card` (avatar, name, one-line intent, status pill, tiny usage line), `mini` (tighter cards) and `micro` (last resort). The chat panel stays docked, and the density re-evaluates when it opens. Rooms (per folder) flow and wrap; the density is computed from the unfiltered set so cards do not change shape when a status filter is on.
+- **Sub-agents** sit beside the parent with a connecting line; more than the cap show `+N more` (with status dots, click to expand).
+- **Status clarity**: working / thinking / waiting / error / done / idle each have a colour, a badge icon and a label. Waiting-for-you agents (amber card) and errors sort first inside each room; room headers count them. The top-bar pills count top-level agents and still filter.
+- **Chat panel**: tool chips truncate to one line and wrap, click to expand the full command and output, and only the latest six show (`+N earlier`). The Thinking block is collapsible (auto-collapses when the turn ends). Sent attachments show as chips in the message.
+- UI source moved from the prototype into `src/renderer` (`index.html`, `styles.css`, `app.js`, `demo.js`, `sim.ts`); `prototype/` stays as the static design reference. Dev screenshot hook: `DURBAR_SHOT=/tmp/out.png DURBAR_SHOT_SIZE=1280x800 [DURBAR_SHOT_CLICK=sim-1] DURBAR_SIM=15 npm start`.
+
+Screenshots: [15 agents, 1440x900](docs/screenshots/m2-sim15-1440x900-closed.png), [15 agents, 1280x800](docs/screenshots/m2-sim15-1280x800-closed.png), [panel open, 1280x800](docs/screenshots/m2-sim15-1280x800-panel.png).
+
+Known gaps in milestone 2:
+- Past about 15 agents plus many helpers (or 15 single-agent folders with the panel open at 1280x800) the layout falls to `micro`, and beyond that the floor scrolls inside itself (the page never does).
+- Intents truncate to one line in `mini`/`micro` (full text in the tooltip and the panel).
+- Not run with real Copilot sessions in this milestone (that costs credits); the real-adapter path only gained the `intent`-first card text and the unchanged event handling.
 
 ## Status (milestone 1)
 
@@ -71,6 +89,7 @@ An Electron app that:
 - [ ] AI-credit counter and caps
 - [ ] Resume sessions; read-only discovery of VS Code / terminal sessions
 - [x] Open in VS Code (`code <folder>`)
+- [x] Office polish for 10-15 agents: auto-fit density, helpers with `+N`, status sorting, chat chips (simulated agents mode)
 - [ ] Second adapter (Claude or Codex CLI)
 - [ ] Packaging (macOS, Windows, Linux)
 
@@ -78,12 +97,13 @@ An Electron app that:
 
 ```bash
 npm install
-npm run build   # tsc + copy prototype into dist/renderer
+npm run build   # tsc + copy src/renderer assets into dist/renderer
 npm start       # build and launch Electron (needs `copilot login` once)
+DURBAR_SIM=15 npm start   # 15 simulated agents, no sessions, no AI credits
 npm run smoke   # headless adapter test, sends 2 tiny prompts (uses AI credits)
 ```
 
-Layout: `src/main` (Electron main), `src/preload` (bridge), `src/renderer` (UI), `src/adapters` (agent adapters), `prototype/` (static design), `docs/` (research).
+Layout: `src/main` (Electron main), `src/preload` (bridge), `src/renderer` (UI: html/css/js, demo data, simulator), `src/adapters` (agent adapters), `prototype/` (static design), `docs/` (research).
 
 ## License
 
