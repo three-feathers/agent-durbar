@@ -2,7 +2,7 @@
 
 **Feature Branch**: `011-credit-caps-and-usage-display`
 **Created**: 2026-10-16
-**Status**: Draft (backlog). Not clarified, no plan, no tasks yet. Run `/speckit.clarify` first.
+**Status**: Partly specified for implementation 2026-10-16 (per-session cap + global default + usage-vs-cap display + limit-exhausted handling: see Clarifications, `plan.md`, `tasks.md`). Office-wide totals, persistence of usage and the multiplier estimate (User Stories 1 and 3) stay backlog.
 **Input**: README roadmap "AI-credit counter and caps" (unchecked). Today usage is only a read-only line per agent; `maxAiCredits` exists in `StartOptions` but nothing uses it.
 
 ## What exists today (verified 2026-10-16 by reading code and the installed SDK)
@@ -80,3 +80,35 @@ Next to the model picker I see the credit multiplier and an estimate of cost rel
 - [NEEDS CLARIFICATION] Unit shown to users: AIU, "AI credits", or money? How is AIU converted for plans with premium requests?
 - [NEEDS CLARIFICATION] Default cap for new sessions: none (today) or a conservative one?
 - Depends on: 002 (events), 007 (multipliers), 013 (real verification), 012 (capability flag).
+
+
+## Clarifications (2026-10-16, audit gap 1; decided by the maintainer's brief, no open questions left for this slice)
+
+- **Q: Unit shown?** AIU, as the runtime reports it in `assistant.usage` (`totalNanoAiu / 1e9`). The SDK names its cap "AI Credits". The app treats **1 AIU = 1 AI Credit** for the cap, because the SDK documents no other conversion. `[UNVERIFIED]` against a real session until recorded under "Verification" below; the UI tooltip says "as reported by the Copilot runtime".
+- **Q: Default cap?** None (unchanged behavior). A **global default** can be set in Settings; it is applied when a session is created (new folder, new session, restored folder without its own cap). Empty = no cap.
+- **Q: Persisted?** The per-folder cap and the global default are persisted as plain numbers (FR-007). Usage totals are not persisted (stay backlog).
+- **Q: Hard or soft?** Soft until verified: the runtime checks the limit before a model call, so one call may overshoot (FR-006). The UI says "limit reached", never "never exceeds".
+- **Q: Which events?** SDK 1.0.22: `SessionConfig.sessionLimits.maxAiCredits`, event `session_limits_exhausted.requested {requestId, maxAiCredits, usedAiCredits}`, answered with `session.rpc.ui.handlePendingSessionLimitsExhausted({requestId, response:{action: add|set|unset|cancel, additionalAiCredits?, maxAiCredits?}})`, `session.session_limits_changed`, and `session.rpc.options.update({sessionLimits})` to change the cap on a live session. A consumer must `rpc.events.registerInterest({eventType:'session_limits_exhausted.requested'})` or the runtime does not wait for one.
+
+## Changes
+
+### 2026-10-16: implement the credit cap slice (audit gap 1)
+
+New or changed requirements (they extend FR-003, FR-004, FR-006, FR-008 and User Story 2; numbering continues):
+
+- **FR-009** `StartOptions.maxAiCredits` is mapped by the Copilot adapter to `sessionLimits: { maxAiCredits }` on create **and** resume. Values must be finite, > 0 and <= 1,000,000 (validated in main with `parseCap`; the renderer cannot send anything else); otherwise no cap.
+- **FR-010** A normalized event `limit` (`phase: 'exhausted' | 'changed' | 'resolved'`, `requestId?`, `maxAiCredits?: number | null`, `usedAiCredits?`, `action?`) is emitted by the mapper from `session_limits_exhausted.requested`, `session.session_limits_changed`, `session_limits_exhausted.completed`. Sub-agent tagging is ignored: a limit is the session's.
+- **FR-011** The adapter registers interest in `session_limits_exhausted.requested` (best effort; failure is logged to the debug sink only) and exposes `setCap(sessionId, credits | null)` (live session: `options.update`) and `resolveLimit(sessionId, requestId, action)` (`add` N, `set` N, `unset`, `cancel`). Stop (interrupt) and End answer a pending limit request with `cancel` so nothing waits forever.
+- **FR-012** The main process keeps a per-agent cap (`AgentInfo.maxAiCredits`), a global default in `durbar-settings.json` (numbers only, in userData) and the per-folder cap in the saved folder list. IPC: `settings:get`, `settings:setDefaultCap`, `agents:setCap`, `agents:resolveLimit`. All arguments are validated; unknown agents are ignored.
+- **FR-013** UI: agent cards show `used/cap AIU` (for example `0.12/0.50 AIU`) next to the token count; with no cap they show `used AIU` as before. The chat header shows a **cap chip** (`0.12 / 0.50 AIU` or `No cap`, with a bar when capped) that opens a small dialog to set or remove the cap. The new-session dialog has a cap field pre-filled with the global default. Settings has a "Credit cap" section for the global default.
+- **FR-014** When the limit is exhausted the agent card state is **Limit reached** (attention state, listed first like Waiting), the chat shows an inline notice "Credit limit reached: used X of Y AIU. The agent waits for you." with **Add credits** (amount field, default = current cap), **Remove cap** and **Stop here** (cancel). After Add/Remove the agent continues (`working`); after Stop here it is Ready again with a note. Sending a message while a limit request is pending is refused with a clear message.
+- **FR-015** `[UNVERIFIED]` What the real runtime does after `cancel` (assumed: the blocked model request is cancelled and the turn ends) and whether the cap is checked before or after a call. Recorded in feature 013 once checked with one tiny real prompt (see Verification).
+- **FR-016** The simulator supports caps: some agents start with a cap (`DURBAR_SIM=15`: Ada 0.50, Mira 0.25, Omar 0.02 which exhausts during its first turn), enforce it from simulated usage, and emit `limit` events; `setCap`, `resolveLimit` and the settings bridge work in memory. No credits are spent.
+- **FR-017** Tests (no credits): mapper fixtures for the three events (`scripts/test-events.ts`), `parseCap` and the settings parser (`scripts/test-credits.ts`), saved-folder cap round trip (`scripts/test-folders.ts`).
+- **Packaging**: the SDK dependency is pinned **exactly** (`"@github/copilot-sdk": "1.0.22"`, no caret) because `sessionLimits` and the `ui.handlePending*` calls are marked `@experimental`; upgrading is a deliberate step documented in CONTRIBUTING.md ("Upgrading the Copilot SDK").
+
+Still backlog: office-wide total in the header, per-folder totals, persisted usage, multiplier estimate, capability flag for other adapters (spec 012).
+
+### Verification
+
+To be filled in after the one tiny real prompt (or marked "not run" with the reason), see `tasks.md` T020.
