@@ -240,6 +240,10 @@ An Electron app that:
 - [ ] Second adapter (Claude or Codex CLI)
 - [x] Packaging with electron-builder (unsigned dmg/zip, nsis/portable, AppImage) and GitHub Actions CI + draft releases (alpha)
 
+## How we work
+
+Agent Durbar is spec-driven with [GitHub Spec Kit](https://github.com/github/spec-kit): **no code without a spec, a plan and tasks.** Features 001-010 in [`specs/`](specs/README.md) were reverse-engineered from the shipped code (each requirement is marked `[IMPLEMENTED]` or `[KNOWN GAP]`, with how it was checked); 011-014 are backlog drafts. The rules are in the [constitution](.specify/memory/constitution.md). Every change goes `/speckit.specify` → `/speckit.clarify` → `/speckit.plan` → `/speckit.tasks` → `/speckit.analyze` → `/speckit.implement` (a bug fix is a short spec delta in the owning spec), and a CI check fails pull requests that change `src/` without changing `specs/` unless they carry a `Spec-Exempt: <reason>`. Coding agents: see [AGENTS.md](AGENTS.md). Details: [CONTRIBUTING.md](CONTRIBUTING.md#spec-kit-workflow-is-mandatory).
+
 ## Development
 
 ```bash
@@ -251,7 +255,7 @@ npm test        # permission broker + attachment rules, no Copilot, no credits
 npm run smoke   # headless adapter test, sends 2 tiny prompts (uses AI credits)
 ```
 
-Layout: `build/` (app icons), `.github/workflows/` (CI and release), `src/main` (Electron main), `src/preload` (bridge), `src/renderer` (UI: html/css/js, demo data, simulator), `src/adapters` (agent adapters, permission broker), `src/shared` (IPC types, attachment rules), `prototype/` (static design), `docs/` (research).
+Layout: `build/` (app icons), `.github/workflows/` (CI, release, Spec Kit gate), `specs/` (Spec Kit specs), `.specify/` (constitution, templates, scripts), `src/main` (Electron main), `src/preload` (bridge), `src/renderer` (UI: html/css/js, demo data, simulator), `src/adapters` (agent adapters, permission broker), `src/shared` (IPC types, attachment rules), `prototype/` (static design), `docs/` (research).
 
 ## License
 
