@@ -52,11 +52,14 @@ function hairFront(style,c){
   if(style==='curly')return `<circle cx="64" cy="36" r="6.2" fill="${c}"/><circle cx="74" cy="31.5" r="7" fill="${c}"/><circle cx="84" cy="36" r="6.2" fill="${c}"/>`+fr;
   return fr;
 }
-function scene(a,mini){
+function scene(a,mini,c){
   const st=vis(a), k=a.look, shirt=k.shirt, arm=shade(shirt,-.14), skinD=shade(k.skin,-.08);
-  let s=`<svg class="scene" viewBox="${mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
+  let s=`<svg class="scene${c?' sc-c':''}" viewBox="${c?'16 5 176 116':mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
   s+=`<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="#2c3733" opacity=".06"/>`;
-  if(st==='working'||st==='thinking') s+=`<rect class="glow" x="106" y="28" width="76" height="54" rx="14" fill="${st==='working'?'#6f93b5':'#8a97bd'}" filter="url(#soft)" opacity=".24"/>`;
+  /* compact scenes: flat halo rects + CSS-only animation (no blur filter, no SMIL) so 15 of them stay cheap */
+  if(c){const hc={working:'#6f93b5',thinking:'#8a97bd',waiting:'#d9962b',error:'#bf5a50'}[st];
+    if(hc) s+=`<g class="halo halo-${st}"><rect x="101" y="22" width="86" height="66" rx="17" fill="${hc}" opacity=".13"/><rect x="107" y="28" width="74" height="54" rx="13" fill="${hc}" opacity=".16"/></g>`;}
+  else if(st==='working'||st==='thinking') s+=`<rect class="glow" x="106" y="28" width="76" height="54" rx="14" fill="${st==='working'?'#6f93b5':'#8a97bd'}" filter="url(#soft)" opacity=".24"/>`;
   s+=`<rect x="52" y="50" width="44" height="48" rx="13" fill="#cdc6b8"/>`;
   if(k.style==='long') s+=`<path d="M59.5 44a14.5 14.5 0 0 1 29 0v19q0 4-4 4h-21q-4 0-4-4z" fill="${k.hair}"/>`;
   s+=`<path d="M55 99V77q0-14 14-14h10q14 0 14 14v22z" fill="${shirt}"/>`;
@@ -78,7 +81,7 @@ function scene(a,mini){
   const scr={working:'#eaf1f7',thinking:'#eaeef6',waiting:'#f8eed9',idle:'#d4d8d6',error:'#f6e3e0',done:'#e2efe7'}[st];
   s+=`<rect x="112" y="32" width="64" height="45" rx="5" fill="#5f6d77"/><rect x="116" y="36" width="56" height="37" rx="3" fill="${scr}"/>`;
   if(st==='working') s+=`<rect class="bar" x="121" y="41" width="34" height="3.6" rx="1.8" fill="#6f93b5"/><rect class="bar" x="121" y="48.5" width="26" height="3.6" rx="1.8" fill="#8fb09a"/><rect class="bar" x="121" y="56" width="42" height="3.6" rx="1.8" fill="#6f93b5"/><rect class="bar" x="121" y="63.5" width="20" height="3.6" rx="1.8" fill="#a8bfd2"/>`;
-  if(st==='thinking') s+=`<rect x="121" y="41" width="30" height="3.6" rx="1.8" fill="#8a97bd" opacity=".55"/><rect x="121" y="48.5" width="40" height="3.6" rx="1.8" fill="#8a97bd" opacity=".4"/><rect x="121" y="56" width="22" height="3.6" rx="1.8" fill="#8a97bd" opacity=".55"/><rect x="121" y="63.5" width="5" height="3.6" rx="1.8" fill="#8a97bd">${REDUCED?'':'<animate attributeName="opacity" values="1;.15;1" dur="1.6s" repeatCount="indefinite"/>'}</rect>`;
+  if(st==='thinking') s+=`<rect x="121" y="41" width="30" height="3.6" rx="1.8" fill="#8a97bd" opacity=".55"/><rect x="121" y="48.5" width="40" height="3.6" rx="1.8" fill="#8a97bd" opacity=".4"/><rect x="121" y="56" width="22" height="3.6" rx="1.8" fill="#8a97bd" opacity=".55"/><rect x="121" y="63.5" width="5" height="3.6" rx="1.8" fill="#8a97bd"${c?' class="cursor"':''}>${REDUCED||c?'':'<animate attributeName="opacity" values="1;.15;1" dur="1.6s" repeatCount="indefinite"/>'}</rect>`;
   if(st==='waiting') s+=`<rect x="121" y="41" width="30" height="3.6" rx="1.8" fill="#d9962b" opacity=".5"/><rect x="123" y="49" width="42" height="19" rx="5" fill="#fff" stroke="#e5be78" stroke-width="1.2"/><circle cx="131" cy="58.5" r="3" fill="#d9962b"/><rect x="138" y="54" width="20" height="3" rx="1.5" fill="#e5cf9f"/><rect x="138" y="60" width="14" height="3" rx="1.5" fill="#efe0bb"/>`;
   if(st==='idle') s+=`<circle cx="144" cy="54.5" r="7" fill="none" stroke="#b5b9b6" stroke-width="1.6"/><path d="M144 50.5v4l2.6 1.6" fill="none" stroke="#b5b9b6" stroke-width="1.6" stroke-linecap="round"/>`;
   if(st==='error') s+=`<circle cx="144" cy="52" r="9" fill="none" stroke="#bf5a50" stroke-width="2"/><path d="M144 47.5v5.5M144 56.6v.1" stroke="#bf5a50" stroke-width="2.2" stroke-linecap="round"/><rect x="127" y="65" width="34" height="3" rx="1.5" fill="#e3b5af"/>`;
@@ -90,8 +93,8 @@ function scene(a,mini){
   const typing = st==='working';
   s+=`<g class="${typing?'hand-l':''}">${armL(61,71,68,81)}${hand(68.5,81.4)}</g>`;
   if(st==='waiting'){
-    const wave = REDUCED?'':`<animateTransform attributeName="transform" type="rotate" values="-4 87 71;6 87 71;-4 87 71" dur="2.8s" repeatCount="indefinite"/>`;
-    s+=`<g>${wave}${armL(87,71,97,46)}${hand(97.5,42.5)}</g>`;
+    const wave = REDUCED||c?'':`<animateTransform attributeName="transform" type="rotate" values="-4 87 71;6 87 71;-4 87 71" dur="2.8s" repeatCount="indefinite"/>`;
+    s+=`<g${c?' class="wave"':''}>${wave}${armL(87,71,97,46)}${hand(97.5,42.5)}</g>`;
   } else if(st==='idle'){
     s+=`<g>${armL(87,71,96,80)}${hand(97,80.5)}</g>`;
   } else {
@@ -130,10 +133,13 @@ const matchStatus = a => !ui.status || ((ui.status==='working')?['working','thin
 /* ---------------- office view ---------------- */
 const DENS={
   full:{cw:164,hw:90,cap:3},
-  card:{cw:232,hw:136,ch:82,hh:41,hgap:6,mh:26,cap:2},
-  mini:{cw:200,hw:124,ch:62,hh:20,hgap:4,mh:18,cap:2},
-  micro:{cw:176,hw:112,ch:47,hh:18,hgap:3,mh:16,cap:1}
+  /* compact densities: uniform desk cells on a grid (cw = min cell width), helpers on a strip of mini desks below */
+  card:{cw:236,cap:1,gap:8,rp:12},
+  mini:{cw:216,cap:1,gap:6,rp:10},
+  micro:{cw:190,cap:1,gap:5,rp:8}
 };
+const SC_CACHE=new Map();
+function sceneC(a){const st=vis(a),k=a.look,key=st+k.shirt+k.skin+k.hair+k.style+(k.glasses?1:0);let v=SC_CACHE.get(key);if(!v){v=scene(a,false,true);SC_CACHE.set(key,v);}return v;}
 function visibleHelpers(a,d){
   const all=helpersOf(a).slice().sort((x,y)=>prio(x)-prio(y));
   const cap=DENS[d].cap;
@@ -150,18 +156,18 @@ function helperHTML(h){
     ${scene(h,true)}<span class="badge ${st}">${badgeSVG(st)}</span>
     <div class="hinfo"><div class="hname">${esc(h.name)}</div><div class="hrole">${esc(h.role)}</div><div class="hst"><span class="dot ${st}"></span>${label(h)}</div></div></button>`;
 }
-function helperRowHTML(h){
+function helperTileHTML(h){
   const st=vis(h);
-  return `<button class="helper hrow is-${st}" data-id="${esc(h.id)}" aria-pressed="${ui.selected===h.id}" aria-label="${esc(h.name)}, helper of ${esc(byId(h.parent).name)}, ${label(h)}: ${esc(h.task)}" title="${esc(h.name)} · ${label(h)}: ${esc(h.task)}">
-    <span class="h1"><span class="dot ${st}"></span><span class="name">${esc(h.name)}</span><span class="st">${label(h,true)}</span></span><span class="h2">${label(h,true)}${h.task?' · '+esc(h.task):''}</span></button>`;
+  return `<button class="helper hc is-${st}" data-id="${esc(h.id)}" aria-pressed="${ui.selected===h.id}" aria-label="${esc(h.name)}, helper of ${esc(byId(h.parent).name)}, ${label(h)}: ${esc(h.task)}" title="${esc(h.name)} · ${label(h)}: ${esc(h.task)}">
+    <span class="sc">${sceneC(h)}</span><span class="hi"><span class="hname">${esc(h.name)}</span><span class="hs st-${st}">${label(h,true)}</span></span></button>`;
 }
 function cardHTML(a,d,nSubs){
   const st=vis(a), use=usageShort(a);
   return `<button class="desk card is-${st}" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${label(a)}: ${esc(a.task)}${use?' · '+use:''}" aria-label="${esc(a.name)}, ${esc(a.role)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(a.task)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
-    <span class="av ${st}">${avatar(a)}<span class="badge ${st}">${badgeSVG(st)}</span></span>
+    <span class="sc">${sceneC(a)}</span>
     <span class="ci"><span class="l1"><span class="name">${esc(a.name)}</span><span class="role">${esc(a.role)}</span><span class="stl st-${st}">${label(a,true)}</span></span>
     <span class="intent">${esc(a.task)}</span>
-    <span class="l3"><span class="pill st-${st}"><i></i>${label(a,d==='mini')}</span><span class="use">${esc(use)}</span></span></span></button>`;
+    <span class="l3"><span class="pill st-${st}"><i></i>${label(a,true)}</span><span class="use">${esc(use.split(' · ')[0]||'')}<span class="aiu">${use.includes(' · ')?' · '+esc(use.split(' · ')[1]):''}</span></span></span></span></button>`;
 }
 function linksSVG(d,rows,extraMore){
   const D=DENS[d]; const n=rows+(extraMore?1:0);
@@ -175,9 +181,13 @@ function unitHTML(a,d){
   const st=vis(a), {shown,hidden}=visibleHelpers(a,d), nSubs=shown.length+hidden.length;
   let helpers='';
   if(nSubs){
-    const rows=shown.map(d==='full'?helperHTML:helperRowHTML).join('');
     const fewer=ui.expanded[a.id]&&nSubs>DENS[d].cap+1;
-    helpers=`<div class="helpers">${linksSVG(d,shown.length,hidden.length>0||fewer)}${rows}${hidden.length?moreHTML(a,hidden,d):''}${fewer?`<button class="more" data-more="${esc(a.id)}" aria-expanded="true">Show fewer</button>`:''}</div>`;
+    if(d==='full'){
+      const rows=shown.map(helperHTML).join('');
+      helpers=`<div class="helpers">${linksSVG(d,shown.length,hidden.length>0||fewer)}${rows}${hidden.length?moreHTML(a,hidden,d):''}${fewer?`<button class="more" data-more="${esc(a.id)}" aria-expanded="true">Show fewer</button>`:''}</div>`;
+    } else {
+      helpers=`<div class="helpers strip${fewer?' open':''}">${shown.map(helperTileHTML).join('')}${hidden.length?moreHTML(a,hidden,d):''}${fewer?`<button class="more fewer" data-more="${esc(a.id)}" aria-expanded="true">Show fewer</button>`:''}</div>`;
+    }
   }
   let desk;
   if(d==='full'){
@@ -201,17 +211,25 @@ function officeModel(ignoreStatus){
   });
   return rooms;
 }
-function roomHTML({r,mains,all},d,aw){
-  const gap=d==='full'?6:d==='card'?8:d==='mini'?6:5, pad=d==='full'?12:16;
-  const widths=mains.map(a=>unitWidth(a,d));
-  const basis=Math.min(aw,widths.reduce((x,y)=>x+y,0)+gap*(widths.length-1)+2*pad+30);
-  const min=Math.max(...widths)+2*pad+30;
-  const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}</span>`:''}).join('');
-  return `<section class="room" data-tint="${r.tint}" style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Workspace ${esc(r.name)}">
-    <div class="room-head"><span class="room-name">${esc(r.name)}</span><span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span><span class="room-dots" aria-hidden="true">${dots}</span>${PLANT}</div>
-    <div class="units">${mains.map(a=>unitHTML(a,d)).join('')}</div></section>`;
+function roomHTML({r,mains,all},d,aw,cap){
+  const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':(k==='done'||k==='idle')?' calm':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}</span>`:''}).join('');
+  const head=`<div class="room-head"><span class="room-name" title="${esc(r.name)}">${esc(r.name)}</span><span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span><span class="room-dots" aria-hidden="true">${dots}</span>${PLANT}</div>`;
+  if(d==='full'){
+    const gap=6, pad=12;
+    const widths=mains.map(a=>unitWidth(a,d));
+    const basis=Math.min(aw,widths.reduce((x,y)=>x+y,0)+gap*(widths.length-1)+2*pad+30);
+    const min=Math.max(...widths)+2*pad+30;
+    return `<section class="room" data-tint="${r.tint}" style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Workspace ${esc(r.name)}">${head}
+      <div class="units">${mains.map(a=>unitHTML(a,d)).join('')}</div></section>`;
+  }
+  /* compact: the room is a floor-plan zone with `cols` desk columns */
+  const D=DENS[d], cols=Math.max(1,Math.min(mains.length,cap)), over=2*D.rp+4;
+  const basis=cols*D.cw+(cols-1)*D.gap+over, min=D.cw+over;
+  return `<section class="room" data-tint="${r.tint}" style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Workspace ${esc(r.name)}">${head}
+    <div class="units" style="--cols:${cols}">${mains.map(a=>unitHTML(a,d)).join('')}</div></section>`;
 }
-/* Pick the richest density that fits the floor at scale 1 (text is never scaled down). */
+/* Pick the richest density that fits the floor at scale 1 (text is never scaled down).
+   Compact densities also try several desk-column counts per room and keep the shortest layout that fits. */
 function renderOffice(){
   if(ui.view!=='office')return;
   const floor=$('floor'), stage=$('stage'), cs=getComputedStyle(floor);
@@ -227,14 +245,30 @@ function renderOffice(){
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
   const order=FORCE_DENSITY?[FORCE_DENSITY]:['full','card','mini','micro'];
   const sizing=ui.status?officeModel(true):model;
-  let fit=false, d=order[0];
+  const fits=()=>stage.scrollHeight<=ah+1&&stage.scrollWidth<=aw+1;
+  let fit=false, d=order[0], cap=0;
   stage.style.width=aw+'px';
   for(d of order){
     stage.dataset.d=d; stage.style.height='auto';
-    stage.innerHTML=sizing.map(m=>roomHTML(m,d,aw)).join('');
-    if(stage.scrollHeight<=ah+1&&stage.scrollWidth<=aw+1){fit=true;break;}
+    if(d==='full'){
+      stage.innerHTML=sizing.map(m=>roomHTML(m,d,aw)).join('');
+      if(fits()){fit=true;break;}
+      continue;
+    }
+    const D=DENS[d], over=2*D.rp+4;
+    const maxCap=Math.max(1,Math.min(Math.max(...sizing.map(m=>m.mains.length)),Math.floor((aw-over+D.gap)/(D.cw+D.gap))));
+    let best=null, any=null;
+    for(let c=maxCap;c>=1;c--){
+      stage.innerHTML=sizing.map(m=>roomHTML(m,d,aw,c)).join('');
+      const h=stage.scrollHeight;
+      if(!any||h<any.h-8)any={c,h};
+      if(fits()&&(!best||h<best.h-8))best={c,h};
+    }
+    cap=(best||any).c;
+    if(best){fit=true;break;}
   }
-  if(sizing!==model)stage.innerHTML=model.map(m=>roomHTML(m,d,aw)).join('');
+  if(d==='full')stage.innerHTML=model.map(m=>roomHTML(m,d,aw)).join('');
+  else stage.innerHTML=model.map(m=>roomHTML(m,d,aw,cap)).join('');
   stage.style.height='auto';
   stage.dataset.fit=fit?'ok':'scroll';
   floor.classList.toggle('scrolls',!fit);
