@@ -14,7 +14,9 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "test:permissions": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-permissions.js",
     "test:attachments": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-attachments.js",
-    "test": "npm run test:permissions && npm run test:attachments"
+    "test": "npm run test:permissions && npm run test:attachments && npm run test:vscode && npm run test:runtime",
+    "test:vscode": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-vscode.js",
+    "test:runtime": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-runtime.js"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

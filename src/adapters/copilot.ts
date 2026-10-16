@@ -1,4 +1,4 @@
-import { CopilotClient } from '@github/copilot-sdk';
+import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
 import type { CopilotSession, ModelInfo, PermissionRequest, PermissionRequestResult, SessionEvent } from '@github/copilot-sdk';
 import type {
   AgentAdapter,
@@ -11,6 +11,8 @@ import type {
 import { PermissionBroker } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
+import { unpackedRuntimePath } from './runtime';
+import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -51,7 +53,13 @@ export class CopilotAdapter implements AgentAdapter {
   private async getClient(): Promise<CopilotClient> {
     if (this.client) return this.client;
     this.starting ??= (async () => {
-      const c = new CopilotClient();
+      // Packaged app: run the runtime from app.asar.unpacked. Dev: let the SDK locate it.
+      // No token is passed or stored here; the runtime uses the Copilot login on this machine.
+      const runtimePath = unpackedRuntimePath();
+      this.debug?.(`runtime: ${runtimePath ?? 'sdk default'}`);
+      const c = new CopilotClient(
+        runtimePath ? { connection: RuntimeConnection.forStdio({ path: runtimePath }), workingDirectory: os.homedir() } : {},
+      );
       await c.start();
       this.client = c;
       return c;
