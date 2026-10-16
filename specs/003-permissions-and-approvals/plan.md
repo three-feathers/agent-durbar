@@ -77,3 +77,4 @@ specs/003-permissions-and-approvals/
 - `README.md`: "Allow edits" → "Allow all".
 - Checked on the simulator at 1440x900 and 1280x800 (driver kept outside the repo): selector label, chip, menu, hint, confirmation text, no "Allow edits" in the page text, no top-bar overlap; `npm run check:office` 95/95. Not checked: macOS/Windows native select rendering beyond this Mac, a real Copilot session (text only, no behavior change).
 - Screenshots: `docs/screenshots/003-allow-all-topbar-{1440x900,1280x800}.png`, `docs/screenshots/003-allow-all-menu-{1440x900,1280x800}.png`.
+- `/speckit-analyze` (read by hand from `.claude/skills/`, feature dir 003): only terminology drift found (US5 AC1 and code comments/test messages still said "Allow edits"), fixed; CHANGELOG left as released. `/speckit-converge`: converged for FR-028..FR-030, no tasks appended.

@@ -183,7 +183,7 @@ export interface BrokerOptions {
   emit: (e: BrokerEvent) => void;
   /**
    * Folders this session may read freely (cwd + workspace folders). When set, `read` requests for paths outside them are
-   * asked (Ask) or denied (Read-only); Allow edits approves everything. When unset, reads are not path-checked (unit tests, other callers).
+   * asked (Ask) or denied (Read-only); Allow all approves everything. When unset, reads are not path-checked (unit tests, other callers).
    */
   roots?: string[];
   /** Test hooks for the path check. */
@@ -232,7 +232,7 @@ export class PermissionBroker {
     return this.pending.size;
   }
 
-  /** "Approve now" after switching to Allow edits: answer every pending request with approve-once (nothing is remembered). */
+  /** "Approve now" after switching to Allow all: answer every pending request with approve-once (nothing is remembered). */
   approvePending(): number {
     const all = [...this.pending.values()];
     for (const p of all) p.resolve({ approve: true, remember: false, broad: false, via: 'user' });

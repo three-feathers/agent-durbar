@@ -65,7 +65,7 @@ try {
     assert.ok(!st.setClosed(abs('nope'), true));
     const again = new FolderStore(f2).load();
     assert.strictEqual(again[0].closed, true, 'closed door survives a restart');
-    assert.strictEqual(again[0].permMode, 'allow', 'Allow edits is saved as chosen (spec 003 FR-025)');
+    assert.strictEqual(again[0].permMode, 'allow', 'Allow all is saved as chosen (spec 003 FR-025)');
     st.upsert({ workspace: abs('r1'), permMode: 'allow' });
     st.upsert({ workspace: abs('r2'), permMode: 'ask' });
     st.remove(abs('r2'));
@@ -94,8 +94,8 @@ try {
     fs.rmSync(d3, { recursive: true, force: true });
   }
 }
-// spec 003 FR-025/026: the saved mode is restored exactly, Allow edits included, flagged "restored" only for Allow edits
-assert.deepStrictEqual(restoreMode('allow'), { mode: 'allow', restored: true }, 'Allow edits comes back as Allow edits, flagged');
+// spec 003 FR-025/026: the saved mode is restored exactly, Allow all included, flagged "restored" only for Allow all
+assert.deepStrictEqual(restoreMode('allow'), { mode: 'allow', restored: true }, 'Allow all comes back as Allow all, flagged');
 assert.deepStrictEqual(restoreMode('ask'), { mode: 'ask', restored: false });
 assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: false });
 {
@@ -109,7 +109,7 @@ assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: 
     const back = new FolderStore(f4).load();
     assert.deepStrictEqual(back.map((f) => f.permMode), ['allow', 'ask', 'read-only'], 'every mode survives a restart exactly');
     assert.ok(st.setPermMode(abs('m2'), 'allow'));
-    assert.strictEqual(new FolderStore(f4).load()[1].permMode, 'allow', 'a switch to Allow edits is saved as allow');
+    assert.strictEqual(new FolderStore(f4).load()[1].permMode, 'allow', 'a switch to Allow all is saved as allow');
     st.upsert({ workspace: abs('m1'), permMode: 'read-only' });
     assert.strictEqual(new FolderStore(f4).load()[0].permMode, 'read-only', 'a later choice replaces it (per folder)');
     assert.strictEqual(new FolderStore(f4).load()[2].permMode, 'read-only', 'other folders are untouched');

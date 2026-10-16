@@ -62,7 +62,7 @@ For folders I trust I can pick the mode that approves everything without prompts
 
 **Acceptance Scenarios**:
 
-1. **Given** the top-bar mode "Allow edits" (internally `allow`), **When** a folder is added, **Then** every request is approved with no card. *(test:)*
+1. **Given** the top-bar mode "Allow all (no prompts)" (internally `allow`; called "Allow edits" before FR-028), **When** a folder is added, **Then** every request is approved with no card. *(test:)*
 
 ---
 

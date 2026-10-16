@@ -23,8 +23,8 @@ export interface SavedFolder {
 }
 
 /**
- * The saved mode comes back exactly as saved, Allow edits included (spec 003 FR-025, no silent downgrade).
- * `restored` is true for Allow edits so the UI can show a small "restored" note (FR-026). It is never saved.
+ * The saved mode comes back exactly as saved, Allow all included (spec 003 FR-025, no silent downgrade).
+ * `restored` is true for Allow all so the UI can show a small "restored" note (FR-026). It is never saved.
  */
 export function restoreMode(saved: SavedPermMode): { mode: SavedPermMode; restored: boolean } {
   return { mode: saved, restored: saved === 'allow' };
