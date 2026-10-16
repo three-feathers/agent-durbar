@@ -23,6 +23,11 @@
       <button class="btn" id="addWs" type="button" title="Add a .code-workspace file">+ Workspace</button>
       <label class="sr-only" for="permMode">Permissions for new agents</label>
       <select id="permMode" title="Permissions for newly added agents"><option value="read-only">Read-only</option><option value="ask">Ask first</option><option value="allow">Allow edits</option></select>
+      <label class="sr-only" for="modelSel">Model for new sessions</label>
+      <select id="modelSel" title="Model for new sessions (what your Copilot account offers)"><option value="auto">Model: Auto</option></select>
+      <label class="sr-only" for="effortSel">Reasoning effort for new sessions</label>
+      <select id="effortSel" title="Reasoning effort (only for models that support it)" hidden></select>
+      <button class="btn" id="foldersBtn" type="button" aria-haspopup="true" aria-expanded="false" title="Manage folders: new session, hide, remove">Folders</button>
     </div>
     <label class="select-wrap"><span class="sr-only">Filter by folder</span>
       <select id="wsFilter"></select></label>
@@ -40,6 +45,7 @@
   <section id="list" aria-label="Agent list"></section>
   <aside id="panel" aria-label="Agent details"></aside>
 </div>
+<div id="foldersPop" role="dialog" aria-label="Folders" hidden></div>
 <div id="toasts" role="status" aria-live="polite"></div>
 
 <script src="demo.js"></script>

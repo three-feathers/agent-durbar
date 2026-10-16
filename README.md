@@ -2,10 +2,10 @@
 
 Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.
 
-> Status: **milestone 5 (permission, attachment and office polish) on top of milestone 4 (floor-plan look for 10-15 agents) and milestone 3 (approvals and attachments verified on real Copilot sessions; Linux only, macOS/Windows untested).** The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. See [Status](#status-milestone-5).
+> Status: **milestone 6 (full-screen chat, previous sessions, new sessions, folders, models) on top of milestone 5 (permission, attachment and office polish) on top of milestone 4 (floor-plan look for 10-15 agents) and milestone 3 (approvals and attachments verified on real Copilot sessions; Linux only, macOS/Windows untested).** The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. See [Status](#status-milestone-6-full-screen-chat-previous-sessions-folders-models).
 
 ![15 simulated agents at 1440x900 (roomy desks use the spare floor space)](docs/screenshots/m5-sim15-1440x900-closed.png)
-![15 simulated agents with the chat panel open at 1280x800](docs/screenshots/m5-sim15-1280x800-panel.png)
+![Full-screen chat with every other agent in a slim strip, 15 agents at 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
 
 > **Disclaimer.** Agent Durbar is an independent, community project. It is **not affiliated with, endorsed by or sponsored by GitHub or Microsoft**. "GitHub", "GitHub Copilot" and "Visual Studio Code" are trademarks of their respective owners. This app only drives the official `@github/copilot-sdk` and the `code` command on your own machine.
 
@@ -51,6 +51,34 @@ npm run dist              # installers/archives for this OS in release/ (no sign
 ```
 
 Each release also lists `SHA256SUMS.txt`. Releases are built by GitHub Actions from `v*` tags into a **draft** release; see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Status (milestone 6: full-screen chat, previous sessions, new sessions, folders, models)
+
+Built and tested on simulated agents and fixtures (`DURBAR_SIM`, no AI credits, no prompts to real models). 
+
+**Full-screen chat.** Opening an agent replaces the office with the chat; the docked right panel is gone. Every other agent stays visible in a slim 64px strip at the top (avatar, name, status dot and word, a short intent), horizontally scrollable, **waiting and error agents first and highlighted**. Click one to switch chat, **Office** (top left) or **Esc** goes back. Thinking block, tool chips, attachments, approvals, model name, Stop / End session and Open in VS Code are all still there. Checked with SIM=15 at 1440x900 and 1280x800: no page overflow, no horizontal overflow in the chat.
+
+![Full-screen chat, 1440x900](docs/screenshots/m6-fullchat-sim15-1440x900.png)
+
+**Previous sessions per folder.** When you add a folder, or open an agent that has not been used yet, a "Previous sessions" list shows
+- *Copilot CLI/SDK sessions whose working folder matches* (newest first, title, time, branch). **Resume** continues the very same session (`resumeSession`) and replays the earlier messages and tool calls from its `events.jsonl` into the chat (last 300 items, long outputs trimmed).
+- *VS Code Copilot Chat history for that folder*, marked **read-only**: a copy of the transcript, clearly labelled "cannot be continued here". It reads `workspaceStorage/<hash>/chatSessions/*.jsonl|json` (macOS `~/Library/Application Support/Code/User`, Windows `%APPDATA%\Code\User`, Linux `~/.config/Code/User`; also Insiders, VSCodium, Cursor), matching the folder through each store's `workspace.json`. The format is undocumented and changes between VS Code versions: parsing is tolerant (unknown parts become one honest note, corrupt or oversized files are counted and skipped, nothing is uploaded or logged). Empty-window chats are not included.
+
+![Previous sessions](docs/screenshots/m6-previous-sessions.png)
+![VS Code chat history, read-only](docs/screenshots/m6-vscode-readonly.png)
+
+**The six bug reports**
+1. **Stop** now only interrupts the current turn (pending approvals are denied, grants kept, the agent is Ready again). **End session** frees the session. Sending to an ended or not-yet-started agent starts or resumes it automatically (no more "unknown or stopped session").
+2. **New session in an existing folder**: the **+** on each room, **New session** in the chat header, or Folders > New session. Each one is its own agent with its own chat (named `Ada #2`), with permission, model and effort choices.
+3. **Thinking**: sessions are created with `streaming: true`, and `assistant.reasoning_delta` events stream into the Thinking block live. The complete `assistant.reasoning` block is shown only when no deltas came for it (never twice). Whether reasoning arrives at all depends on the model and effort; many models, and Auto, often return none. In that case the block is replaced by "No reasoning summary was provided for this step." and the card keeps showing intent and tool activity. A live elapsed-seconds counter shows it is working. Not verified against a real reasoning model here (no credits spent).
+4. **Remove / Hide**: the **Folders** button lists every folder with New session, **Hide** (agents keep running, the room leaves the office, list and strip) and **Remove** (ends its sessions, asks first if any is working; earlier Copilot sessions stay on disk). The folder list is saved in the app's user-data folder (`durbar-folders.json`: path, permission mode, hidden, model, effort; no tokens) and restored on start. Restored agents are lazy: nothing starts until you send the first message.
+5. **Model picker** (top bar and New session dialog) from the SDK's `listModels()`, default Auto, with the account's credit multiplier (x0.33, x3 ...) when the API reports one and a reasoning-effort picker for models that list supported efforts. The chosen model and effort show as a chip in the chat header.
+6. **VS Code visibility** (research, honest): the VS Code docs ("Manage agent sessions", *View sessions from other applications*) say VS Code discovers local Copilot CLI sessions created outside VS Code, for sessions tied to a repository and updated in the last 7 days, but **hides them by default**: sessions list filter > **External** (or setting `chat.agentSessions.showExternal`) > Last 7 days / All, and you can continue them there ("Resume in Terminal" for CLI sessions). So sessions this app creates in a repo's folder should appear in VS Code's session list once External is enabled. I could not run VS Code with a signed-in Copilot on this box, so this is **documented, not verified end to end**. What the app offers: **Open in VS Code** (opens the folder) and **Copy resume command** (`copilot --resume <id>`, run it in the integrated terminal after ending the session here, because one process should drive a session at a time). It is not possible to push our session into the VS Code *Local* chat view.
+
+Tests: `npm test` (adds history, VS Code chat reader on synthetic fixtures under `scripts/fixtures/`, folder store).
+
+![New session dialog](docs/screenshots/m6-new-session-dialog.png)
+![Folders: new session, hide, remove](docs/screenshots/m6-folders-popover.png)
 
 ## Status (milestone 5: permissions, attachments, office polish)
 
@@ -179,7 +207,7 @@ Prototype: [`prototype/index.html`](prototype/index.html) (open in a browser). S
 
 ## Known limits
 
-- **Sessions started in VS Code are read-only** (no API to control them; only fragile parsing of files on disk). Live control works for sessions Agent Durbar starts itself.
+- **VS Code chat history is read-only.** VS Code's own Copilot Chat sessions (the Chat view's "Local" sessions) live in an undocumented store that neither the SDK nor the CLI can resume. We only parse it to show a copy of the transcript. Copilot **CLI/SDK** sessions are different: they can be listed and resumed, see milestone 6.
 - **ACP drops sub-agent identity**: sub-agent text arrives as plain message chunks, so parallel sub-agents interleave. Hence the SDK rather than raw ACP.
 - **AI credit usage**: since 2026-06-01 Copilot is billed in usage-based AI Credits, and 10-15 agents can burn them fast. Show a **per-agent credit counter** and support a per-session cap.
 - Permission prompts need a real approve/deny UI; allow-all across 15 agents is risky.

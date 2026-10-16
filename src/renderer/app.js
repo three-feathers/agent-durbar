@@ -116,7 +116,7 @@ function toast(html,ms){const t=document.createElement('div');t.className='toast
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 /* ---------------- top bar ---------------- */
-function visibleAgents(){return agents.filter(a=>(ui.ws==='all'||wsOf(a)===ui.ws));}
+function visibleAgents(){return agents.filter(a=>!roomOf(a).hidden&&(ui.ws==='all'||wsOf(a)===ui.ws));}
 function renderStats(){
   const list=visibleAgents().filter(a=>!a.parent); const c={working:0,waiting:0,idle:0,error:0,done:0};
   list.forEach(a=>{const s=vis(a); if(s==='working'||s==='thinking')c.working++; else c[s]++;});
@@ -125,7 +125,7 @@ function renderStats(){
 }
 function renderFilter(){
   const sel=$('wsFilter');
-  sel.innerHTML='<option value="all">All folders</option>'+ROOMS.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
+  sel.innerHTML='<option value="all">All folders</option>'+ROOMS.filter(r=>!r.hidden).map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
   sel.value=ui.ws;
 }
 const matchStatus = a => !ui.status || ((ui.status==='working')?['working','thinking'].includes(vis(a)):vis(a)===ui.status);
@@ -208,7 +208,7 @@ const unitWidth=(a,d)=>{const D=DENS[d];return D.cw+(helpersOf(a).length?(d==='f
 function officeModel(ignoreStatus){
   const rooms=[];
   ROOMS.forEach(r=>{
-    if(ui.ws!=='all'&&ui.ws!==r.id)return;
+    if(r.hidden||(ui.ws!=='all'&&ui.ws!==r.id))return;
     const mains=agents.filter(a=>!a.parent&&a.room===r.id&&(ignoreStatus||matchStatus(a)));
     if(!mains.length)return;
     const key=a=>Math.min(prio(a),...helpersOf(a).map(prio));
@@ -219,7 +219,7 @@ function officeModel(ignoreStatus){
 }
 function roomHTML({r,mains,all},d,aw,cap){
   const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':(k==='done'||k==='idle')?' calm':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}</span>`:''}).join('');
-  const head=`<div class="room-head"><span class="room-name" title="${esc(r.name)}">${esc(r.name)}</span><span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span><span class="room-dots" aria-hidden="true">${dots}</span>${PLANT}</div>`;
+  const head=`<div class="room-head"><span class="room-name" title="${esc(r.name)}">${esc(r.name)}</span><span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span><span class="room-dots" aria-hidden="true">${dots}</span>${bridge&&bridge.newSession&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${PLANT}</div>`;
   if(d==='full'){
     const gap=6, pad=12;
     const widths=mains.map(a=>unitWidth(a,d));
@@ -316,7 +316,7 @@ function renderOffice(){
   const model=officeModel();
   if(!model.length){
     stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey='';
-    stage.innerHTML='<div class="empty">'+(!agents.length&&!demoOn?'No agents yet. Use "Add folder" or "Add .code-workspace" above.':'No agents match these filters.')+'</div>';
+    stage.innerHTML='<div class="empty">'+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" or "+ Workspace" above.':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open "Folders" above to show them again.':'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
   }
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
@@ -335,7 +335,7 @@ function renderOffice(){
 /* ---------------- list view ---------------- */
 function renderList(){
   const rows=[];
-  ROOMS.forEach(r=>{ if(ui.ws!=='all'&&ui.ws!==r.id)return;
+  ROOMS.forEach(r=>{ if(r.hidden||(ui.ws!=='all'&&ui.ws!==r.id))return;
     agents.filter(a=>!a.parent&&a.room===r.id).slice().sort((x,y)=>Math.min(prio(x),...helpersOf(x).map(prio))-Math.min(prio(y),...helpersOf(y).map(prio))).forEach(a=>{
       const subs=helpersOf(a);
       if(matchStatus(a)){rows.push([a,false]);subs.forEach(h=>rows.push([h,true]));}
@@ -351,7 +351,7 @@ function renderAll(){
   renderStats();
   if(ui.view==='office')renderOffice(); else renderList();
   if(id&&!inPanel){const n=document.querySelector(`[${key}="${CSS.escape(id)}"]`); if(n&&ae!==n)n.focus({preventScroll:true});}
-  if(ui.selected)updatePanelHeader();
+  if(ui.selected){updatePanelHeader();renderStrip();}
 }
 
 
@@ -362,6 +362,7 @@ const ICON={
  run:'<svg viewBox="0 0 16 16" fill="none" stroke="#4f7f65" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2"/><path d="M4.8 6.2l2 1.8-2 1.8M8.6 10h2.6"/></svg>',
  search:'<svg viewBox="0 0 16 16" fill="none" stroke="#8a6f4a" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2l3.3 3.3"/></svg>',
  tool:'<svg viewBox="0 0 16 16" fill="none" stroke="#7a7f8c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.8M8 12.4v1.8M1.8 8h1.8M12.4 8h1.8M3.6 3.6l1.3 1.3M11.1 11.1l1.3 1.3M12.4 3.6l-1.3 1.3M4.9 11.1l-1.3 1.3"/></svg>',
+ back:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3L4.5 8l5 5"/><path d="M5 8h8"/></svg>',
  chev:'<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg>',
  file:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4 1.8h5.2L12.5 5v9.2H4z"/><path d="M9 1.8V5.2h3.5"/></svg>',
  img:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2"/><circle cx="5.6" cy="6.4" r="1.3"/><path d="M2.5 12l3.8-3.4 2.6 2.2 2-1.6 3 2.8"/></svg>',
@@ -407,11 +408,15 @@ function refreshChips(box){
 function addChip(box,el){box.appendChild(el);refreshChips(box);}
 function newAgentMsg(chat,a){
   const m=document.createElement('div');m.className='msg agent';
-  m.innerHTML=`<div class="meta">${esc(a.name)}</div><div class="think streaming"><button class="think-toggle" aria-expanded="true">${ICON.chev}<span>Thinking</span><span class="live" aria-hidden="true"><i></i><i></i><i></i></span></button><div class="think-body"></div></div><div class="chips" aria-label="Tool calls"></div>`;
+  m.innerHTML=`<div class="meta">${esc(a.name)}</div><div class="think streaming"><button class="think-toggle" aria-expanded="true">${ICON.chev}<span class="think-l">Thinking</span><span class="live" aria-hidden="true"><i></i><i></i><i></i></span></button><div class="think-body"></div></div><div class="chips" aria-label="Tool calls"></div>`;
   const tb=m.querySelector('.think-toggle'),body=m.querySelector('.think-body');
   tb.addEventListener('click',()=>{const o=tb.getAttribute('aria-expanded')==='true';tb.setAttribute('aria-expanded',String(!o));body.hidden=o;m.querySelector('.think').dataset.touched='1';});
+  m.querySelector('.think').dataset.t0=String(Date.now());
   chat.el.appendChild(m);scrollChat(chat);return m;
 }
+/* "Thinking · 4s" while a turn waits for the model; reasoning summaries only arrive when the model finishes thinking */
+setInterval(()=>{document.querySelectorAll('.think.streaming').forEach(t=>{const l=t.querySelector('.think-l'),b=t.querySelector('.think-body');
+  const sec=Math.max(0,Math.round((Date.now()-Number(t.dataset.t0||Date.now()))/1000));if(l)l.textContent=(b&&b.textContent?'Thinking':'Waiting for the model')+' · '+sec+'s';});},1000);
 function collapseThink(think){
   if(!think||think.dataset.touched)return;
   const tb=think.querySelector('.think-toggle'),body=think.querySelector('.think-body');
@@ -435,9 +440,9 @@ async function playTurn(chat,a,turn,opts){
   }
   scrollChat(chat);
 }
-function addUserMsg(chat,text,atts){
+function addUserMsg(chat,text,atts,ts){
   const m=document.createElement('div');m.className='msg user';
-  const now=new Date();const hh=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+  const now=ts?new Date(ts):new Date();const hh=(ts&&now.toDateString()!==new Date().toDateString()?now.toLocaleDateString([],{month:'short',day:'numeric'})+' ':'')+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
   m.innerHTML='<div class="bubble"></div><div class="chips" aria-label="Attachments"></div><div class="meta">You · '+hh+'</div>';
   m.querySelector('.bubble').textContent=text;
   const box=m.querySelector('.chips');
@@ -553,15 +558,20 @@ function openPanel(id,focus){
   document.body.classList.add('panel-open');
   const room=roomOf(a), parent=a.parent?byId(a.parent):null;
   const p=$('panel');
+  const stripScroll=(p.querySelector('.strip-list')||{}).scrollLeft||0;
+  const mdlName=a.live&&a.info?modelLabel(a.info):'';
   p.innerHTML=`<div class="panel-in">
-   <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div style="min-width:0;padding-right:34px"><h2 id="panelTitle" tabindex="-1">${esc(a.name)}</h2><div class="sub">${esc(a.role)}${parent?' · helper of '+esc(parent.name):''}</div></div></div>
-    <button class="close" id="closeBtn" aria-label="Close panel">${ICON.x}</button>
-    <div class="ph-meta"><span data-f="status"></span><span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
+   <div class="strip" role="navigation" aria-label="Agents"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON.back}<span>Office</span></button><div class="strip-list" id="stripList"></div></div>
+   <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1">${esc(a.name)}</h2><div class="sub">${esc(a.role)}${parent?' · helper of '+esc(parent.name):''}</div></div>
+      <div class="ph-meta"><span data-f="status"></span>${mdlName?`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`:''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
+      <div class="actions">${a.live&&bridge.newSession&&!a.parent?`<button class="btn" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>`:''}<button class="btn primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
+        ${a.live&&!a.parent?`<button class="btn" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)">Copy resume command</button>`:''}
+        <button class="btn" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
+        <button class="btn danger" id="stopBtn" type="button" title="${a.live?'Interrupt the current turn. The agent stays open and ready.':'Stop'}"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>Stop</button>
+        ${a.live&&bridge.end&&!a.parent?`<button class="btn" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it.">End session</button>`:''}</div></div>
     <p class="ptask" data-f="task"></p><p class="pusage" data-f="usage"></p>
-    <div class="grants" id="grants" aria-label="Permissions allowed for this session" hidden></div>
-    <div class="actions"><button class="btn primary" id="vscodeBtn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
-      <button class="btn" id="pauseBtn"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
-      <button class="btn danger" id="stopBtn"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>Stop</button></div></div>
+    <div class="grants" id="grants" aria-label="Permissions allowed for this session" hidden></div></div>
+   <div class="prev" id="prev" hidden></div>
    <div id="chat" role="log" aria-live="off" aria-label="Chat with ${esc(a.name)}" tabindex="0"></div>
    <div class="composer"><div class="att-note" id="attNote" role="alert" hidden></div><div class="attached" id="attached" aria-label="Attachments"></div>
     <div class="inbox"><button class="ib" id="attFile" type="button" aria-label="Attach file" title="Attach file">${ICON.file}</button><button class="ib" id="attImg" type="button" aria-label="Attach image" title="Attach image">${ICON.img}</button>
@@ -569,12 +579,17 @@ function openPanel(id,focus){
      <button class="ib send" id="sendBtn" type="button" aria-label="Send message" aria-disabled="true"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h11M9.5 4.5L14 9l-4.5 4.5"/></svg></button></div>
     <p class="hint">Enter sends, Shift+Enter adds a line. Drop or paste images to attach. Sample only.</p></div>
    <div class="drop-ov" id="dropOv" aria-hidden="true"><div>Drop to attach<small>Up to 5 files, 10 MB each. Images: PNG, JPEG, GIF, WebP, BMP.</small></div></div></div>`;
+  renderStrip(); const sl=$('stripList'); if(sl)sl.scrollLeft=stripScroll;
   const chat=getChat(a); $('chat').appendChild(chat.el);
   updatePanelHeader(); renderGrants();
   $('chat').scrollTop=1e6;
-  $('closeBtn').onclick=closePanel;
+  $('backBtn').onclick=closePanel;
   $('vscodeBtn').onclick=()=>a.live?openLive(a):toast('Would run <code>code '+esc(room.path)+'</code>',3800);
   if(a.live)$('pauseBtn').hidden=true;
+  if($('newSessBtn'))$('newSessBtn').onclick=()=>newSession(a);
+  if($('endBtn'))$('endBtn').onclick=()=>endLive(a);
+  if($('copyResBtn'))$('copyResBtn').onclick=()=>copyResume(a);
+  if(a.live&&!a.parent)initPrev(a); else {const pv=$('prev');if(pv)pv.hidden=true;}
   $('pauseBtn').onclick=()=>{a.paused=!a.paused;toast(esc(a.name)+(a.paused?' paused.':' resumed.'));renderAll();};
   $('stopBtn').onclick=()=>{if(a.live)return stopLive(a);a.paused=false;a.state='idle';a.label='Stopped';a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
   $('attFile').onclick=()=>{if(a.live)return pickLive();addPicked([{name:SAMPLE_FILES[fi++%SAMPLE_FILES.length],kind:'file',size:12*1024}]);};
@@ -598,7 +613,7 @@ function openPanel(id,focus){
   $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
   if(a.live){const h=document.querySelector('#panel .hint');if(h)h.textContent='Enter sends, Shift+Enter adds a line. Drop or paste images to attach. '+(SIM?'Simulated session (no AI credits)':'Live Copilot session')+' ('+a.info.permMode+').';}
   setSend();
-  renderAll();
+  renderAll(); const cur=document.querySelector('#stripList .sitem.sel'); if(cur)cur.scrollIntoView({inline:'nearest',block:'nearest'});
   if(focus!==false)$('panelTitle').focus({preventScroll:true});
 }
 function closePanel(){
@@ -613,12 +628,19 @@ document.addEventListener('click',e=>{
   const mo=e.target.closest('[data-more]'); if(mo){const id=mo.dataset.more;ui.expanded[id]=!ui.expanded[id];renderAll();return;}
   const cm=e.target.closest('.chips-more'); if(cm){const box=cm.parentNode;box.dataset.exp=box.dataset.exp==='1'?'0':'1';refreshChips(box);return;}
   const chip=e.target.closest('#chat .chip:not(.att-chip)'); if(chip){const o=chip.classList.toggle('open');chip.setAttribute('aria-expanded',String(o));return;}
+  const sw=e.target.closest('[data-sw]'); if(sw){openPanel(sw.dataset.sw,e.detail===0);return;}
+  const ns=e.target.closest('[data-newsess]'); if(ns){const r=ROOMS.find(x=>x.id===ns.dataset.newsess),ag=r&&agents.find(x=>!x.parent&&x.room===r.id);if(ag)newSession(ag);return;}
   const t=e.target.closest('[data-id]'); if(t&&!t.closest('#panel')){openPanel(t.dataset.id,e.detail===0);}
 });
 /* a file dropped anywhere else must not navigate the window away */
 ['dragover','drop'].forEach(t=>window.addEventListener(t,e=>{if(e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files'))e.preventDefault();}));
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'&&ui.selected){closePanel();return;}
+  if(e.key==='Escape'){
+    if(document.getElementById('sessDlg')){closeSessDlg();return;}
+    if(!$('foldersPop').hidden){toggleFolders(false);return;}
+    if(vsViewing){leaveVsView();return;}
+    if(ui.selected){closePanel();return;}
+  }
   if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('#chat .chip:not(.att-chip)')){e.preventDefault();e.target.click();}
 });
 $('wsFilter').addEventListener('change',e=>{ui.ws=e.target.value;renderAll();});
@@ -664,10 +686,11 @@ function addNote(chat,html,err){const n=document.createElement('div');n.classNam
 function addLiveAgent(info){
   if(liveById(info.id))return;
   let room=LIVE.rooms.find(r=>r.path===info.cwd);
-  if(!room){room={id:'r'+LIVE.rooms.length+':'+info.cwd,name:(info.roomName||info.name),path:info.cwd,tint:TINTS[LIVE.rooms.length%4]};LIVE.rooms.push(room);}
+  if(!room){room={id:'r'+LIVE.rooms.length+':'+info.cwd,name:(info.roomName||info.name),path:info.cwd,tint:TINTS[LIVE.rooms.length%4],hidden:!!info.hidden};LIVE.rooms.push(room);}
   const mode={'read-only':'read-only','allow':'can edit','ask':'asks first'}[info.permMode];
-  let name=info.name; const dup=LIVE.agents.filter(x=>!x.parent&&x.room===room.id&&x.baseName===info.name).length; if(dup)name=info.name+' '+(dup+1);
-  LIVE.agents.push({id:info.id,name,baseName:info.name,role:info.role||('Copilot ('+mode+')'),room:room.id,state:'idle',label:'Ready',task:'Ready. Send a message to start.',
+  let name=info.name; const dup=LIVE.agents.filter(x=>!x.parent&&x.room===room.id&&x.baseName===info.name).length; if(dup)name=info.name+' #'+(dup+1);
+  const mdl=info.model&&info.model!=='auto'?' · '+info.model:'';
+  LIVE.agents.push({id:info.id,name,baseName:info.name,role:info.role||('Copilot ('+mode+')'+mdl),room:room.id,state:'idle',label:info.lazy?'Not started':'Ready',task:info.lazy?'Saved folder. A session starts with your first message.':'Ready. Send a message to start.',
     look:lookFor(info.id),files:[],paused:false,live:true,info,usage:{calls:0,inT:0,outT:0,nano:0},usageText:'',turn:null,worked:false,pend:new Map(),settled:new Set(),grants:[]});
   if(!demoOn){if(!ui.expanded)ui.expanded={};renderFilter();scheduleRender();}
   if(pendingOpen===info.id){pendingOpen=null;if(!demoOn)openPanel(info.id,false);}
@@ -682,7 +705,8 @@ function ensureTurn(a){
 function closeTurn(a){
   const t=a.turn; if(!t)return;
   t.think.classList.remove('streaming');
-  if(!t.body.textContent.trim())t.think.remove(); else collapseThink(t.think);
+  if(!t.body.textContent.trim()){const n=document.createElement('div');n.className='nothink';n.textContent='No reasoning summary was provided for this step.';t.think.replaceWith(n);}
+  else{const l=t.think.querySelector('.think-l');if(l)l.textContent='Thinking';collapseThink(t.think);}
   if(t.typing)t.typing.remove();
   if(t.bubble)t.bubble.classList.remove('caret');
   a.turn=null;
@@ -753,6 +777,10 @@ function onLiveEvent(e){
       ensureTurn(a); setState(a,'waiting',null,e.intent||'Waiting for permission');
       if(e.permission)showPerm(a,e.permission);
     }
+    else if(e.status==='idle'&&e.intent==='Aborted'){const was=a.worked;a.worked=false;closeTurn(a);
+      [...a.pend.keys()].forEach(id=>settlePerm(a,{requestId:id,state:'denied',via:'stopped'}));
+      if(was)addNote(chat,'Stopped by you. The agent is ready for your next message.');
+      setState(a,'idle','Ready','Stopped. Ready for your next message.');}
     else if(e.status==='idle'){const was=a.worked;a.worked=false;closeTurn(a);
       if(was)setState(a,'done','Done',a.lastOutput?SHORT(a.lastOutput,140):'Finished.'); else setState(a,'idle','Ready',a.task);}
     else if(e.status==='error'){closeTurn(a);addNote(chat,esc(e.intent||'Error'),true);setState(a,'error',null,SHORT(e.intent||'Error',140));}
@@ -760,7 +788,7 @@ function onLiveEvent(e){
       /* a permission still pending when the session stops is denied cleanly: no Approve/Deny left behind, grants gone */
       [...a.pend.keys()].forEach(id=>settlePerm(a,{requestId:id,state:'denied',via:'stopped'}));
       setGrants(a,[]);
-      closeTurn(a);setState(a,'idle','Stopped','Stopped by you. Session closed.');}
+      closeTurn(a);setState(a,'idle','Ended','Session ended. Send a message to resume it.');}
     return;
   case 'permission':if(main)settlePerm(a,e.permission);return;
   case 'grants':setGrants(a,e.grants||[]);return;
@@ -792,6 +820,7 @@ function onLiveEvent(e){
 async function sendLive(text,forId){
   const a0=byId(forId||ui.selected); if(!a0)return; const a=liveRoot(a0);
   text=(text||'').trim(); if(!text&&!attached.length)return;
+  a.sent=true;
   const chat=liveChat(a), atts=attached.slice();
   addUserMsg(chat,text||'(attachment)',atts);
   attached=[];renderAttached();attNotice([]);
@@ -805,11 +834,246 @@ async function openLive(a){
   const r=await bridge.openInVSCode(liveRoot(a).id);
   toast(r.ok?'Opening in VS Code…':'Could not open VS Code: '+esc(r.error||'unknown error'),4200);
 }
-async function stopLive(a){const r=liveRoot(a);await bridge.stop(r.id);toast(esc(r.name)+' stopped.');}
+async function stopLive(a){const r=liveRoot(a);await bridge.stop(r.id);toast(esc(r.name)+': stopped the current turn. It is ready for your next message.');}
+async function endLive(a){const r=liveRoot(a);await (bridge.end||bridge.stop)(r.id);toast(esc(r.name)+': session ended. Sending a message resumes it.',4200);}
+async function copyResume(a){const r=liveRoot(a),cmd='copilot --resume '+r.id;
+  try{await navigator.clipboard.writeText(cmd);toast('Copied <code>'+esc(cmd)+'</code>. End the session here first, then run it in a terminal in '+esc(roomOf(r).path)+'. In VS Code, turn on the sessions list filter External to see sessions started here.',9000);}
+  catch{toast('Run <code>'+esc(cmd)+'</code> in a terminal in '+esc(roomOf(r).path)+' (end the session here first).',8000);}}
+/* ---------------- full-screen chat: the strip of all agents ---------------- */
+function stripAgents(){
+  return agents.filter(x=>!x.parent&&!roomOf(x).hidden).map((x,i)=>[x,i]).sort((p,q)=>prio(p[0])-prio(q[0])||p[1]-q[1]).map(p=>p[0]);
+}
+function renderStrip(){
+  const box=$('stripList'); if(!box)return;
+  const cur=byId(ui.selected), root=cur?(cur.parent||cur.id):null;
+  morphHTML(box,stripAgents().map(x=>{const st=vis(x),attn=st==='waiting'||st==='error';
+    return `<button class="sitem st-${st}${attn?' attn':''}${x.id===root?' sel':''}" type="button" data-sw="${esc(x.id)}" data-key="sw:${esc(x.id)}" aria-current="${x.id===root}" title="${esc(x.name)} · ${esc(label(x,true))}: ${esc(x.task)}" aria-label="${esc(x.name)}, ${esc(label(x,true))}. Open chat."><span class="sav">${avatar(x)}</span><span class="stx"><b>${esc(x.name)}</b><span class="sst"><span class="dot ${st}"></span><span class="sw">${esc(label(x,true))}</span><span class="sin">${esc(SHORT(x.task,48))}</span></span></span></button>`;}).join(''));
+}
+
+/* ---------------- model + effort ---------------- */
+let MODELS=[];
+function modelLabel(info){
+  const m=MODELS.find(x=>x.id===(info.model||'auto')), nm=m?m.name:(info.model||'auto')==='auto'?'Auto':info.model;
+  const eff=info.effort?' · '+info.effort+' effort':'';
+  const mult=m&&m.multiplier!=null?' · ×'+m.multiplier+' credit multiplier':'';
+  return {text:nm+eff,title:'Model: '+nm+eff+mult+(m&&m.multiplier!=null?' (as reported by your Copilot account)':'')};
+}
+function fillModelSelect(sel,cur){
+  sel.innerHTML=(MODELS.length?MODELS:[{id:'auto',name:'Auto'}]).map(m=>`<option value="${esc(m.id)}">${esc(m.name)}${m.multiplier!=null?' ×'+m.multiplier:''}</option>`).join('');
+  sel.value=MODELS.some(m=>m.id===cur)?cur:'auto';
+}
+function fillEffortSelect(sel,modelId,cur){
+  const m=MODELS.find(x=>x.id===modelId), ef=(m&&m.efforts)||[];
+  sel.hidden=!ef.length; sel.innerHTML=ef.length?'<option value="">Effort: default'+(m.defaultEffort?' ('+esc(m.defaultEffort)+')':'')+'</option>'+ef.map(x=>`<option value="${esc(x)}">Effort: ${esc(x)}</option>`).join(''):'';
+  if(ef.includes(cur))sel.value=cur;
+}
+async function loadModels(){
+  if(!bridge.listModels)return;
+  const r=await bridge.listModels().catch(()=>null);
+  if(!r||!r.ok||!r.models.length)return;
+  MODELS=r.models;
+  const ms=$('modelSel');
+  ms.innerHTML=MODELS.map(m=>`<option value="${esc(m.id)}">Model: ${esc(m.name)}${m.multiplier!=null?' ×'+m.multiplier:''}</option>`).join('');
+  ms.value=MODELS.some(m=>m.id==='auto')?'auto':MODELS[0].id;
+  ms.title='Model for new sessions. This is what your Copilot account offers; × is the cost multiplier the API reports.';
+  fillEffortSelect($('effortSel'),ms.value);
+}
+
+/* ---------------- new session (another agent in a folder) ---------------- */
+function closeSessDlg(){const d=document.getElementById('sessDlg');if(d)d.remove();}
+function newSession(a0){
+  const a=liveRoot(a0); if(!bridge.newSession)return;
+  closeSessDlg();
+  const d=document.createElement('div');d.id='sessDlg';d.className='dlg-ov';
+  d.innerHTML=`<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="sdT"><h3 id="sdT">New session in ${esc(roomOf(a).name)}</h3>
+   <p class="dsub">Another agent with its own chat in <code>${esc(roomOf(a).path)}</code>.</p>
+   <label>Permissions<select id="sdPerm"><option value="read-only">Read-only</option><option value="ask">Ask first</option><option value="allow">Allow edits</option></select></label>
+   <label>Model<select id="sdModel"></select></label>
+   <label id="sdEffL">Reasoning effort<select id="sdEff"></select></label>
+   <div class="dbtn"><button class="btn" id="sdCancel" type="button">Cancel</button><button class="btn primary" id="sdGo" type="button">Start session</button></div></div>`;
+  document.body.appendChild(d);
+  $('sdPerm').value=a.info.permMode||'read-only';
+  fillModelSelect($('sdModel'),a.info.model||'auto');
+  const eff=()=>{fillEffortSelect($('sdEff'),$('sdModel').value,a.info.effort);$('sdEffL').hidden=$('sdEff').hidden;};
+  eff(); $('sdModel').onchange=eff;
+  d.addEventListener('click',e=>{if(e.target===d)closeSessDlg();});
+  $('sdCancel').onclick=closeSessDlg;
+  $('sdGo').onclick=async()=>{
+    const opts={permMode:$('sdPerm').value,model:$('sdModel').value,effort:$('sdEff').hidden?undefined:($('sdEff').value||undefined)};
+    $('sdGo').disabled=true;$('sdGo').textContent='Starting…';
+    const r=await bridge.newSession(a.id,opts);
+    closeSessDlg();
+    if(!r.ok){toast('Could not start a session: '+esc(r.error||'unknown error'),6000);return;}
+    addLiveAgent(r.agent); openPanel(r.agent.id,false);
+  };
+  $('sdGo').focus();
+}
+
+/* ---------------- folders: new session, hide / show, remove ---------------- */
+function toggleFolders(on){
+  const pop=$('foldersPop'),btn=$('foldersBtn');
+  const show=on===undefined?pop.hidden:on;
+  pop.hidden=!show; btn.setAttribute('aria-expanded',String(show));
+  if(show)renderFolders();
+}
+function renderFolders(){
+  const pop=$('foldersPop'); if(pop.hidden)return;
+  if(!ROOMS.length){pop.innerHTML='<p class="fp-empty">No folders yet. Use + Folder or + Workspace. Folders you add are remembered next time.</p>';return;}
+  pop.innerHTML='<div class="fp-h">Folders <small>remembered across restarts</small></div>'+ROOMS.map(r=>{
+    const n=agents.filter(x=>!x.parent&&x.room===r.id).length;
+    return `<div class="fp-row${r.hidden?' hid':''}"><div class="fp-t"><b title="${esc(r.name)}">${esc(r.name)}${r.hidden?' <span class="tag">hidden</span>':''}</b><small title="${esc(r.path)}">${esc(r.path)} · ${n} agent${n===1?'':'s'}</small></div>
+     <button class="btn" type="button" data-fp="new" data-room="${esc(r.id)}">New session</button><button class="btn" type="button" data-fp="hide" data-room="${esc(r.id)}">${r.hidden?'Show':'Hide'}</button><button class="btn danger" type="button" data-fp="rm" data-room="${esc(r.id)}">Remove</button></div>`;}).join('');
+}
+async function hideFolder(r,hidden){
+  const ag=agents.find(x=>x.room===r.id); if(!ag)return;
+  if(hidden&&ui.selected&&roomOf(byId(ui.selected)||ag)===r)closePanel();
+  r.hidden=hidden; if(bridge.setFolderHidden)await bridge.setFolderHidden(liveRoot(ag).id,hidden);
+  if(hidden&&ui.ws===r.id)ui.ws='all';
+  renderFilter(); renderFolders(); scheduleRender();
+  toast(esc(r.name)+(hidden?' hidden. Its sessions keep running; show it from Folders.':' is shown again.'),3600);
+}
+async function removeFolder(r){
+  const ags=agents.filter(x=>x.room===r.id), busy=ags.filter(x=>['working','thinking','waiting'].includes(x.state)).length;
+  const msg=busy?`${esc(r.name)} has ${busy} agent${busy===1?'':'s'} still working. Remove the folder and end ${busy===1?'it':'them'}?`:`Remove ${esc(r.name)}? Its sessions end here; your earlier Copilot sessions stay on disk and can be resumed if you add the folder again.`;
+  if(!window.confirm(msg.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"')))return;
+  const root=ags.find(x=>!x.parent); const res=root&&bridge.removeFolder?await bridge.removeFolder(root.id):{ok:true,removedIds:[]};
+  if(!res.ok){toast('Could not remove the folder.',4000);return;}
+  if(ui.selected&&(byId(ui.selected)||{}).room===r.id)closePanel();
+  const gone=new Set(ags.map(x=>x.id));
+  for(let i=agents.length-1;i>=0;i--){if(gone.has(agents[i].id)||gone.has(agents[i].parent)){delete chats[agents[i].id];delete prev[agents[i].id];agents.splice(i,1);}}
+  const ri=ROOMS.indexOf(r); if(ri>=0)ROOMS.splice(ri,1);
+  if(ui.ws===r.id)ui.ws='all';
+  renderFilter(); renderFolders(); scheduleRender(); toast(esc(r.name)+' removed.',3200);
+}
+function removeLiveAgent(id){
+  for(let i=agents.length-1;i>=0;i--)if(agents[i].id===id||agents[i].parent===id){delete chats[agents[i].id];delete prev[agents[i].id];agents.splice(i,1);}
+  if(ui.selected&&!byId(ui.selected))closePanel();
+}
+
+/* ---------------- previous sessions (Copilot, resumable) + VS Code chat history (read-only) ---------------- */
+const prev={}; let vsViewing=false;
+const when=ms=>{if(!ms)return '';const d=new Date(ms),n=new Date(),t=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  return d.toDateString()===n.toDateString()?'Today '+t:d.toLocaleDateString([],{month:'short',day:'numeric',year:d.getFullYear()===n.getFullYear()?undefined:'numeric'})+' '+t;};
+const pristine=a=>!a.sent&&!a.resumed;
+const prevOf=a=>prev[a.id]||(prev[a.id]={open:false,touched:false,cli:null,vs:null});
+async function loadPrev(a){
+  const st=prevOf(a);
+  const safe=(f,empty)=>f?f(a.id).catch(e=>Object.assign({ok:false,error:String(e&&e.message||e)},empty)):null;
+  const [c,v]=await Promise.all([safe(bridge.listPrevious,{sessions:[]}),safe(bridge.listVsChats,{sessions:[],storesFound:0,unreadable:0,tooLarge:0,formatNote:''})]);
+  st.cli=c; st.vs=v;
+  if(!st.touched&&pristine(a)&&((c&&c.sessions.length)||(v&&v.sessions.length)))st.open=true;
+  if(ui.selected===a.id)renderPrev(a);
+  return st;
+}
+function initPrev(a){
+  const box=$('prev'); if(!box)return;
+  if(!bridge.listPrevious&&!bridge.listVsChats){box.hidden=true;return;}
+  vsViewing=false; renderPrev(a); loadPrev(a);
+}
+function renderPrev(a){
+  const box=$('prev'); if(!box||a.parent)return;
+  const st=prevOf(a), c=st.cli, v=st.vs;
+  if(!c&&!v){box.hidden=false;box.innerHTML='<div class="prev-bar"><span class="prev-t">Previous sessions</span><span class="prev-c">Looking…</span></div>';return;}
+  const nc=c&&c.ok?c.sessions.length:0, nv=v&&v.ok?v.sessions.length:0;
+  const keepScroll=(box.querySelector('.prev-body')||{}).scrollTop||0;
+  let h=`<button class="prev-toggle" type="button" aria-expanded="${st.open}" data-pv="toggle">${ICON.chev}<span class="prev-t">Previous sessions</span><span class="prev-c">${nc} Copilot · ${nv} VS Code chat${nv===1?'':'s'}</span></button>`;
+  if(st.open){
+    h+='<div class="prev-body">';
+    h+='<div class="prev-h">Copilot sessions in this folder <small>Resume continues the same session; earlier messages are shown here.</small></div>';
+    if(!c||!c.ok)h+=`<p class="prev-empty">Could not list sessions${c&&c.error?': '+esc(c.error):''}.</p>`;
+    else if(!c.sessions.length)h+='<p class="prev-empty">No earlier Copilot sessions for this folder.</p>';
+    else h+=c.sessions.map(x=>`<div class="prev-row"><div class="prev-tx"><b title="${esc(x.title)}">${esc(x.title)}</b><small>${esc(when(x.modifiedTime))}${x.branch?' · '+esc(x.branch):''}</small></div><button class="btn" type="button" data-pv="resume" data-sid="${esc(x.id)}">Resume</button></div>`).join('');
+    h+='<div class="prev-h">VS Code chat history <span class="tag">read-only</span> <small>A copy of what VS Code saved. It cannot be continued here.</small></div>';
+    if(!v||!v.ok)h+=`<p class="prev-empty">Could not read VS Code chats${v&&v.error?': '+esc(v.error):''}.</p>`;
+    else if(!v.sessions.length)h+='<p class="prev-empty">'+(v.storesFound?'No chats in the VS Code storage for this folder.':'No VS Code chats found for this folder (VS Code never opened it, or it is stored somewhere this app does not read).')+'</p>';
+    else h+=v.sessions.map(x=>`<div class="prev-row"><div class="prev-tx"><b title="${esc(x.title)}">${esc(x.title)}</b><small>${esc(when(x.updated))} · ${x.requests} message${x.requests===1?'':'s'}</small></div><button class="btn" type="button" data-pv="view" data-key="${esc(x.key)}">View</button></div>`).join('');
+    if(v&&(v.unreadable||v.tooLarge))h+=`<p class="prev-fine">${v.unreadable?v.unreadable+' chat file(s) could not be read. ':''}${v.tooLarge?v.tooLarge+' file(s) skipped for size.':''}</p>`;
+    if(v&&v.formatNote)h+=`<p class="prev-fine">${esc(v.formatNote)}</p>`;
+    h+='</div>';
+  }
+  box.hidden=false; box.innerHTML=h;
+  const nb=box.querySelector('.prev-body'); if(nb)nb.scrollTop=keepScroll;
+}
+function replayHistory(a,h,title){
+  const chat=liveChat(a); let m=null;
+  if(h&&h.truncated)addNote(chat,'Showing the last '+h.items.length+' of '+h.total+' items; earlier ones are not shown.');
+  const agentMsg=()=>{if(!m){m=document.createElement('div');m.className='msg agent';m.innerHTML='<div class="meta">'+esc(a.name)+'</div>';chat.el.appendChild(m);}return m;};
+  const chipBox=()=>{const mm=agentMsg();let l=mm.lastElementChild;if(!l||!l.classList.contains('chips')){l=document.createElement('div');l.className='chips';l.setAttribute('aria-label','Tool calls');mm.appendChild(l);}return l;};
+  for(const it of ((h&&h.items)||[])){
+    if(it.type==='user'){m=null;addUserMsg(chat,it.text,(it.attachments||[]).map(x=>({name:x.name,img:x.kind==='image'})),it.ts);}
+    else if(it.type==='output'){const b=document.createElement('div');b.className='bubble';b.textContent=it.text;agentMsg().appendChild(b);}
+    else{const full=it.output||'';addChip(chipBox(),makeChip({tool:it.tool,label:it.label,res:SHORT(full||(it.failed?'failed':'ok'),60),output:full.slice(0,2000),state:it.failed?'failed':'ok'}));}
+  }
+  addNote(chat,'Resumed: '+esc(title||'earlier session')+'. New messages continue this session.');
+}
+async function resumePrev(a,sid,btn){
+  if(btn){btn.disabled=true;btn.textContent='Resuming…';}
+  const r=await bridge.resumeSession(a.id,sid,pristine(a)).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  if(!r.ok){toast('Could not resume: '+esc(r.error||'unknown error'),7000);if(btn){btn.disabled=false;btn.textContent='Resume';}return;}
+  if(r.removedId)removeLiveAgent(r.removedId);
+  if(ui.selected&&!byId(ui.selected))closePanel();
+  addLiveAgent(r.agent);
+  const na=liveById(r.agent.id); if(!na)return;
+  na.resumed=true; na.sent=false; replayHistory(na,r.history,r.title);
+  setState(na,'idle','Ready','Resumed: '+SHORT(r.title||'',90));
+  openPanel(na.id,false);
+}
+function leaveVsView(){
+  if(!vsViewing)return; vsViewing=false;
+  const a=byId(ui.selected),pi=document.querySelector('#panel .panel-in'); if(pi)pi.classList.remove('viewing');
+  if(a){const c=$('chat');c.replaceChildren(liveChat(a).el);c.scrollTop=1e6;}
+}
+async function viewVs(a,key,btn){
+  if(btn){btn.disabled=true;}
+  const r=await bridge.readVsChat(a.id,key).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  if(btn)btn.disabled=false;
+  if(!r.ok){toast(esc(r.error||'Could not read this chat.'),6000);return;}
+  const tr=r.transcript, wrap=document.createElement('div'); wrap.className='vsview';
+  wrap.innerHTML=`<div class="vsbar" role="note"><div><b>VS Code chat history · read-only</b><span>A copy of what VS Code saved. It cannot be continued here.</span></div><button class="btn" id="vsBack" type="button">Back to chat</button></div><h3 class="vst">${esc(tr.title)}</h3><div class="vsmeta">${tr.shownRequests} of ${tr.totalRequests} messages</div><div class="vsbody chat-inner"></div>${tr.notes.length?'<div class="vsnotes">'+tr.notes.map(n=>'<p>'+esc(n)+'</p>').join('')+'</div>':''}`;
+  const body=wrap.querySelector('.vsbody'), fake={el:body};
+  let am=null;
+  for(const b of tr.blocks){
+    if(b.type==='user'){am=null;addUserMsg(fake,b.text||'(attachment)',(b.attachments||[]).map(n=>({name:n,img:false})),b.ts);}
+    else if(b.type==='assistant'){if(!am){am=document.createElement('div');am.className='msg agent';am.innerHTML='<div class="meta">Copilot (VS Code)</div>';body.appendChild(am);}const d=document.createElement('div');d.className='bubble';d.textContent=b.text;am.appendChild(d);}
+    else if(b.type==='tool'){if(!am){am=document.createElement('div');am.className='msg agent';am.innerHTML='<div class="meta">Copilot (VS Code)</div>';body.appendChild(am);}let l=am.lastElementChild;if(!l||!l.classList.contains('chips')){l=document.createElement('div');l.className='chips';am.appendChild(l);}addChip(l,makeChip({tool:'tool',kind:'tool',label:b.label,state:'ok'}));}
+    else if(b.type==='note'){const n=document.createElement('div');n.className='note err';n.textContent=b.text;body.appendChild(n);}
+  }
+  const c=$('chat'); c.replaceChildren(wrap); c.scrollTop=0; vsViewing=true;
+  document.querySelector('#panel .panel-in').classList.add('viewing');
+  $('vsBack').onclick=leaveVsView; $('vsBack').focus({preventScroll:true});
+}
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-pv]'); if(!b||!b.closest('#prev'))return;
+  const a=byId(ui.selected); if(!a)return; const ra=liveRoot(a);
+  if(b.dataset.pv==='toggle'){const st=prevOf(ra);st.open=!st.open;st.touched=true;renderPrev(ra);}
+  else if(b.dataset.pv==='resume')resumePrev(ra,b.dataset.sid,b);
+  else if(b.dataset.pv==='view')viewVs(ra,b.dataset.key,b);
+});
+document.addEventListener('click',e=>{
+  const f=e.target.closest('[data-fp]');
+  if(f){const r=ROOMS.find(x=>x.id===f.dataset.room);if(!r)return;
+    if(f.dataset.fp==='new'){const ag=agents.find(x=>!x.parent&&x.room===r.id);toggleFolders(false);if(ag)newSession(ag);}
+    else if(f.dataset.fp==='hide')hideFolder(r,!r.hidden);
+    else if(f.dataset.fp==='rm')removeFolder(r);
+    return;}
+  const pop=$('foldersPop');
+  if(!pop.hidden&&!e.target.closest('#foldersPop')&&!e.target.closest('#foldersBtn'))toggleFolders(false);
+});
+
+/* After adding a folder: if it already has earlier Copilot sessions or VS Code chats, say so and show them. */
+async function announcePrevious(a){
+  if(!bridge.listPrevious)return;
+  const st=await loadPrev(a); const n=(st.cli&&st.cli.ok?st.cli.sessions.length:0), v=(st.vs&&st.vs.ok?st.vs.sessions.length:0);
+  if(!n&&!v)return;
+  toast('Found '+(n?n+' earlier Copilot session'+(n===1?'':'s'):'')+(n&&v?' and ':'')+(v?v+' VS Code chat'+(v===1?'':'s'):'')+' for <b>'+esc(roomOf(a).name)+'</b>. Opening them.',4200);
+  if(!ui.selected){st.open=true;openPanel(a.id,false);}
+}
 async function addVia(fn){
-  const r=await fn(document.getElementById('permMode').value);
+  const ef=$('effortSel');
+  const r=await fn($('permMode').value,{model:$('modelSel').value,effort:ef.hidden?undefined:(ef.value||undefined)});
   if(r.error)toast('Could not add: '+esc(r.error),6000);
   r.agents.forEach(addLiveAgent);
+  r.agents.forEach(x=>{const ag=liveById(x.id);if(ag)announcePrevious(ag);});
 }
 let pendingOpen=qs.get('open');
 if(bridge){
@@ -817,9 +1081,12 @@ if(bridge){
   $('demoToggle').onchange=e=>{demoOn=e.target.checked;applyMode();};
   $('addFolder').onclick=()=>addVia(bridge.addFolder);
   $('addWs').onclick=()=>addVia(bridge.addWorkspaceFile);
+  $('foldersBtn').onclick=()=>toggleFolders();
+  $('modelSel').onchange=()=>fillEffortSelect($('effortSel'),$('modelSel').value);
   bridge.onEvent(onLiveEvent);
   bridge.onAgentAdded(addLiveAgent);
-  bridge.listAgents().then(l=>l.forEach(addLiveAgent));
+  bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();});
+  loadModels();
   agents=LIVE.agents; ROOMS=LIVE.rooms;
   setBadge();
 }

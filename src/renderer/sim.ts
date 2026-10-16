@@ -306,6 +306,7 @@ interface SimAgent {
         return { ok: true };
       },
       stop: async (id) => {
+        // Stop = interrupt the turn only (like the real adapter): pending approval denied, grants kept, back to Ready.
         const s = sims.find((x) => x.info.id === id);
         if (!s) return;
         if (s.perm) {
@@ -313,6 +314,12 @@ interface SimAgent {
           emit({ type: 'permission', sessionId: id, timestamp: now(), permission: { ...p, state: 'denied', via: 'stopped' } });
           s.perm = undefined;
         }
+        s.state = 'idle'; closeOpen(s);
+        emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Aborted' });
+      },
+      end: async (id) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return;
         if (s.grants.size) { s.grants.clear(); grantsEvent(s); }
         s.state = 'idle'; closeOpen(s);
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'stopped' });
@@ -333,6 +340,65 @@ interface SimAgent {
         const s = sims.find((x) => x.info.id === id);
         if (s && s.grants.delete(key)) grantsEvent(s);
       },
+      // No disk, no account: canned answers so the new folder / session / history UI can be exercised without credits.
+      listModels: async () => ({
+        ok: true,
+        models: [
+          { id: 'auto', name: 'Auto', efforts: [] },
+          { id: 'sim-fast', name: 'Sim Fast', multiplier: 0.33, efforts: [] },
+          { id: 'sim-deep', name: 'Sim Deep', multiplier: 3, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
+        ],
+      }),
+      newSession: async (id, o) => {
+        const src = sims.find((x) => x.info.id === id);
+        if (!src) return { ok: false, error: 'unknown agent' };
+        extra++;
+        const info = { ...src.info, id: 'sim-n' + extra, permMode: o.permMode ?? src.info.permMode, model: o.model ?? 'auto', effort: o.effort } as AgentInfo;
+        sims.push({ info, room: src.room, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: src.files, grants: new Map() });
+        return { ok: true, agent: info };
+      },
+      setFolderHidden: async () => ({ ok: true }),
+      removeFolder: async (id) => {
+        const src = sims.find((x) => x.info.id === id);
+        const gone = src ? sims.filter((x) => x.info.cwd === src.info.cwd).map((x) => x.info.id) : [];
+        for (const g of gone) sims.splice(sims.findIndex((x) => x.info.id === g), 1);
+        return { ok: true, removedIds: gone };
+      },
+      listPrevious: async (id) => {
+        const src = sims.find((x) => x.info.id === id);
+        if (!src || src.info.cwd !== '~/work/mcp-swiss') return { ok: true, sessions: [] };
+        const t = Date.now();
+        return { ok: true, sessions: [
+          { id: 'prev-1', title: 'Rename the filings handler and update its tests', startTime: t - 3 * 3600e3, modifiedTime: t - 2 * 3600e3, branch: 'refactor/filings' },
+          { id: 'prev-2', title: 'Why does the canton lookup return duplicates?', startTime: t - 30 * 3600e3, modifiedTime: t - 29 * 3600e3, branch: 'main' },
+        ] };
+      },
+      resumeSession: async (id, sessionId, replace) => {
+        const src = sims.find((x) => x.info.id === id);
+        if (!src) return { ok: false, error: 'unknown agent' };
+        extra++;
+        const info = { ...src.info, id: 'sim-n' + extra } as AgentInfo;
+        sims.push({ info, room: src.room, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: src.files, grants: new Map() });
+        const t = Date.now() - 2 * 3600e3;
+        return { ok: true, agent: info, title: sessionId === 'prev-1' ? 'Rename the filings handler and update its tests' : 'Why does the canton lookup return duplicates?',
+          history: { total: 4, truncated: false, items: [
+            { type: 'user', text: 'Rename the filings handler to filingsSearch and update its tests.', ts: t },
+            { type: 'tool', callId: 'c1', tool: 'grep', label: 'grep filingsHandler', output: '6 matches in 3 files' },
+            { type: 'output', text: 'Renamed the handler and updated the three tests that import it. The test run passes.' },
+          ] } };
+      },
+      listVsChats: async (id) => {
+        const src = sims.find((x) => x.info.id === id);
+        if (!src || src.info.cwd !== '~/work/mcp-swiss') return { ok: true, sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0, formatNote: '' };
+        return { ok: true, storesFound: 1, unreadable: 0, tooLarge: 0, formatNote: 'VS Code does not document this format; unknown parts are skipped.',
+          sessions: [{ key: 'h1/c1', title: 'Explain the registry design', updated: Date.now() - 5 * 86400e3, requests: 2, format: 'jsonl' }] };
+      },
+      readVsChat: async () => ({ ok: true, transcript: { title: 'Explain the registry design', totalRequests: 2, shownRequests: 2, notes: [],
+        blocks: [
+          { type: 'user', text: 'Explain how the tool registry is organised.' },
+          { type: 'assistant', text: 'Tools are registered in registry.ts and looked up by name. Each domain exports a list that the registry concatenates.' },
+          { type: 'tool', label: 'Read src/tools/registry.ts' },
+        ] } }),
       openInVSCode: async () => ({ ok: true }),
       onEvent: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },
       onAgentAdded: (cb) => { addedListeners.add(cb); return () => addedListeners.delete(cb); },
