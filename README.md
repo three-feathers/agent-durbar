@@ -2,9 +2,25 @@
 
 Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.
 
-> Status: early scaffold. The window shows the static office-view prototype; no agent runtime is wired up yet.
+> Status: **milestone 1 (works on Linux; macOS/Windows untested).** The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. See [Status](#status-milestone-1).
 
 ![Office view prototype](prototype/office_1280.png)
+
+## Status (milestone 1)
+
+Working:
+- **Copilot adapter** ([`src/adapters/copilot.ts`](src/adapters/copilot.ts)) on `@github/copilot-sdk` 1.0.22 (CLI runtime 1.0.98, pinned in `package.json`): streaming sessions per folder, `send` with file/image attachments, `stop`, and normalized events: `status`, `thinking` (reasoning deltas), `output`, `toolCall`, `subagent` (with `agentId`), plus `usage` (tokens and AI credits in nano-AIU as reported by the API).
+- **Permission policy**: reads are approved; writes, shell, MCP, URL and custom tools are denied by default. `allow: true` approves everything; `ask: true` leaves requests pending (card shows "Waiting for you", chat shows Approve/Deny).
+- **Electron IPC**: main owns the adapter; the renderer gets events through a narrow preload bridge (`window.agentDurbar`). Add a folder (picker), add a `.code-workspace` file (first folder becomes the session cwd), send chat messages with attachments, stop, and **Open in VS Code** (`code <absolute path>`, spawned without a shell).
+- **Office view** shows real agents, status, current intent/tool, sub-agent helpers and a per-agent usage line. **Demo data** toggle brings back the sample office.
+- `npm run smoke`: headless check with one tiny read-only prompt on `/workspace/durbar-test/{hello-app,notes-app}`.
+
+Not done yet / known gaps:
+- Only the `auto` model is exposed on the tested (free-plan) account, so there is no model picker; sessions use `auto` with the `efficiency` tier.
+- Credits: the API reports usage in nano-AIU; the conversion to dollars/"AI Credits" is not shown. No per-session cap yet.
+- Sub-agent event mapping is best effort: card identity uses the spawning tool call id, and events from inside a sub-agent are shown in the parent's chat.
+- No session resume UI, no persistence of agent list, no VS Code session discovery. "Open in VS Code" needs `code` on `PATH`.
+- Developer shortcut: `DURBAR_OPEN=/path/a:/path/b npm start` starts agents on launch (`DURBAR_PERM=ask|allow` to change the policy).
 
 ## Vision
 
@@ -48,13 +64,13 @@ An Electron app that:
 ## Roadmap
 
 - [x] Repo, prototype, research, Electron + TypeScript skeleton, `AgentAdapter` interface
-- [ ] Copilot adapter on `@github/copilot-sdk` (start/send/stop, event mapping)
-- [ ] Wire office view to live adapter events
-- [ ] Chat panel with streaming thinking, attachments
-- [ ] Permission approve/deny flow
+- [x] Copilot adapter on `@github/copilot-sdk` (start/send/stop, event mapping)
+- [x] Wire office view to live adapter events
+- [x] Chat panel with streaming thinking, attachments (basic)
+- [x] Permission approve/deny flow (basic; read-only default)
 - [ ] AI-credit counter and caps
 - [ ] Resume sessions; read-only discovery of VS Code / terminal sessions
-- [ ] Open in VS Code (`code <folder>`)
+- [x] Open in VS Code (`code <folder>`)
 - [ ] Second adapter (Claude or Codex CLI)
 - [ ] Packaging (macOS, Windows, Linux)
 
@@ -63,7 +79,8 @@ An Electron app that:
 ```bash
 npm install
 npm run build   # tsc + copy prototype into dist/renderer
-npm start       # build and launch Electron
+npm start       # build and launch Electron (needs `copilot login` once)
+npm run smoke   # headless adapter test, sends 2 tiny prompts (uses AI credits)
 ```
 
 Layout: `src/main` (Electron main), `src/preload` (bridge), `src/renderer` (UI), `src/adapters` (agent adapters), `prototype/` (static design), `docs/` (research).

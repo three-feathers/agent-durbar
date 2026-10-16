@@ -48,12 +48,19 @@ button{font:inherit;color:inherit}
 /* live-mode controls (Electron only) */
 #liveBar{display:none;align-items:center;gap:8px}
 body.has-bridge #liveBar{display:flex}
+body.has-bridge .topbar{height:auto;min-height:64px;flex-wrap:wrap;row-gap:8px;padding:8px 24px}
+body.has-bridge .brand{flex:none}
 #liveBar .tgl{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2);cursor:pointer;white-space:nowrap}
 #liveBar select{height:34px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:0 8px;font:inherit;font-size:13px;color:var(--ink)}
 .note{font-size:12.5px;color:var(--ink-2);background:#fbefd6;border:1px solid #f0d9a6;border-radius:12px;padding:8px 12px;max-width:92%;align-self:flex-start}
 .note.err{background:#f6e2df;border-color:#ebc7c2;color:var(--red-ink)}
 .note .btn{height:28px;margin:6px 6px 0 0;padding:0 10px}
-.chip.live-run .res{color:var(--blue-ink)}
+.btn[hidden]{display:none}
+#chat{overflow-x:hidden}
+.chips{min-width:0;max-width:100%}
+.chip{min-width:0}
+.chip code{min-width:0;max-width:150px}
+.chip .res{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;max-width:170px}
 
 /* ---------- workspace ---------- */
 .workspace{flex:1;display:flex;min-height:0}
@@ -732,7 +739,7 @@ const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
 const TINTS=['sage','blue','sand','clay'];
 const hashN=str=>{let h=0;for(const c of str)h=(h*31+c.charCodeAt(0))>>>0;return h;};
-const lookFor=key=>{const h=hashN(key);return L(S.sk[h%5],S.hr[(h>>3)%6],['bun','short','long','curly'][(h>>6)%4],S.sh[(h>>9)%7],(h>>12)%3===0);};
+const lookFor=key=>{const h=hashN(key);return L(S.sk[h%5],S.hr[(h>>>3)%6],['bun','short','long','curly'][(h>>>6)%4],S.sh[(h>>>9)%7],(h>>>12)%3===0);};
 const liveById=id=>LIVE.agents.find(a=>a.id===id);
 const liveRoot=a=>a.parent?byId(a.parent):a;
 let renderQueued=false;
