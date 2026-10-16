@@ -17,7 +17,7 @@ Command center to see, chat with and coordinate coding agents (Copilot CLI first
 
 ## Install from releases
 
-Download the build for your system from the [Releases page](https://github.com/vikramgorla/agent-durbar/releases) (pre-releases are alpha builds):
+Download the build for your system from the [Releases page](https://github.com/three-feathers/agent-durbar/releases) (pre-releases are alpha builds):
 
 | System | File |
 | --- | --- |

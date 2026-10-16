@@ -56,13 +56,13 @@
     "dompurify": "3.4.17",
     "marked": "18.1.1"
   },
-  "homepage": "https://github.com/vikramgorla/agent-durbar",
+  "homepage": "https://github.com/three-feathers/agent-durbar",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vikramgorla/agent-durbar.git"
+    "url": "git+https://github.com/three-feathers/agent-durbar.git"
   },
   "bugs": {
-    "url": "https://github.com/vikramgorla/agent-durbar/issues"
+    "url": "https://github.com/three-feathers/agent-durbar/issues"
   },
   "keywords": [
     "electron",
