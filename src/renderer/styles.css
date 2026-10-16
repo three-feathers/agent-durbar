@@ -375,15 +375,15 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .stage[data-d="micro"] .intent{font-size:11px;line-height:14px;white-space:nowrap;display:block;text-overflow:ellipsis}
 
 /* helpers: mini-desks on a strip under the parent, joined by a connector */
-.helpers.strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--gap);margin:10px 0 0;padding:0;position:relative;width:auto}
-.helpers.strip::before{content:"";position:absolute;left:var(--stub);top:-10px;height:5px;border-left:1.5px solid var(--line)}
-.helpers.strip::after{content:"";position:absolute;left:calc(var(--stub) - 3px);top:-12px;width:7px;height:7px;border-radius:50%;background:var(--line)}
-.helpers.strip>*{position:relative;min-width:0}
-.helpers.strip>*::before{content:"";position:absolute;left:var(--stub);right:calc(-1*(var(--gap) + var(--stub)));top:-5px;height:5px;border-left:1.5px solid var(--line);border-top:1.5px solid var(--line);pointer-events:none}
-.helpers.strip>*:last-child::before,.helpers.strip>*:nth-child(2)::before{right:auto;width:0}
-.helpers.strip>*:nth-child(n+3)::before{right:auto;width:0;top:calc(-1*var(--gap));height:var(--gap);border-top:0}
-.helpers.strip>.fewer{grid-column:1/-1;height:22px}
-.helpers.strip>.fewer::before{display:none}
+.helpers.hstrip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--gap);margin:10px 0 0;padding:0;position:relative;width:auto}
+.helpers.hstrip::before{content:"";position:absolute;left:var(--stub);top:-10px;height:5px;border-left:1.5px solid var(--line)}
+.helpers.hstrip::after{content:"";position:absolute;left:calc(var(--stub) - 3px);top:-12px;width:7px;height:7px;border-radius:50%;background:var(--line)}
+.helpers.hstrip>*{position:relative;min-width:0}
+.helpers.hstrip>*::before{content:"";position:absolute;left:var(--stub);right:calc(-1*(var(--gap) + var(--stub)));top:-5px;height:5px;border-left:1.5px solid var(--line);border-top:1.5px solid var(--line);pointer-events:none}
+.helpers.hstrip>*:last-child::before,.helpers.hstrip>*:nth-child(2)::before{right:auto;width:0}
+.helpers.hstrip>*:nth-child(n+3)::before{right:auto;width:0;top:calc(-1*var(--gap));height:var(--gap);border-top:0}
+.helpers.hstrip>.fewer{grid-column:1/-1;height:22px}
+.helpers.hstrip>.fewer::before{display:none}
 .helper.hc{width:100%;height:var(--hh);padding:3px 6px 3px 4px;border-radius:10px;display:grid;grid-template-columns:var(--hsw) minmax(0,1fr);column-gap:5px;align-items:center;
   background:rgba(255,253,249,.78);border:1px solid rgba(255,255,255,.85);box-shadow:0 1px 2px rgba(60,50,30,.07)}
 .helper.hc:hover{background:#fff;border-color:var(--line-2)}
@@ -392,8 +392,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .helper.hc .hi{display:flex;flex-direction:column;min-width:0}
 .helper.hc .hname{font-size:12px;line-height:15px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .helper.hc .hs{font-size:10.5px;line-height:13px;font-weight:600;color:var(--pc);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.helpers.strip>.more{width:auto;height:var(--hh);font-size:11.5px;border-radius:10px;flex-wrap:wrap;row-gap:0;column-gap:6px;line-height:15px;padding:0 4px}
-.stage[data-d="micro"] .helpers.strip>.more{font-size:10.5px;line-height:13px}
+.helpers.hstrip>.more{width:auto;height:var(--hh);font-size:11.5px;border-radius:10px;flex-wrap:wrap;row-gap:0;column-gap:6px;line-height:15px;padding:0 4px}
+.stage[data-d="micro"] .helpers.hstrip>.more{font-size:10.5px;line-height:13px}
 .stage[data-d="micro"] .helper.hc{padding:3px 4px 3px 3px;column-gap:4px}
 .stage[data-d="micro"] .helper.hc .hname{font-size:11.5px;line-height:14px}
 .stage[data-d="micro"] .helper.hc .hs{font-size:10.5px;line-height:12px}
@@ -440,7 +440,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .stage[data-d="roomy"] .helper.hc{padding:3px 8px 3px 5px;column-gap:7px}
 .stage[data-d="roomy"] .helper.hc .hname{font-size:12.5px;line-height:16px}
 .stage[data-d="roomy"] .helper.hc .hs{font-size:11px;line-height:14px}
-.stage[data-d="roomy"] .helpers.strip>.more{font-size:12px}
+.stage[data-d="roomy"] .helpers.hstrip>.more{font-size:12px}
 
 /* =====================================================================
    Full-screen chat (replaces the docked panel)
