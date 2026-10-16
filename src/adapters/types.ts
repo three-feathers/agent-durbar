@@ -14,6 +14,14 @@ export interface StartOptions {
   maxAiCredits?: number;
   /** Resume an existing session id (disk-backed). */
   resumeSessionId?: string;
+  /**
+   * Permission policy. Default (both unset): reads are approved, everything that can
+   * change state (write, shell, mcp, url, custom tools, ...) is denied.
+   * `allow: true` approves everything (explicit opt-in). `ask: true` leaves every
+   * non-read request pending (status 'needs-permission') until `resolvePermission` is called.
+   */
+  allow?: boolean;
+  ask?: boolean;
 }
 
 export interface Attachment {
@@ -39,6 +47,17 @@ export interface StatusEvent extends BaseEvent {
   status: AgentStatus;
   /** Short current intent, e.g. "Refactoring auth module". */
   intent?: string;
+  /** Set when status is 'needs-permission'. */
+  permission?: PermissionInfo;
+}
+
+export interface PermissionInfo {
+  requestId: string;
+  /** SDK permission kind: write | shell | read | mcp | url | custom-tool | ... */
+  kind: string;
+  summary: string;
+  /** 'pending' = waiting for resolvePermission; otherwise already decided by policy. */
+  state: 'pending' | 'approved' | 'denied';
 }
 
 export interface ThinkingEvent extends BaseEvent {
@@ -51,7 +70,9 @@ export interface OutputEvent extends BaseEvent {
   type: 'output';
   /** Incremental assistant text (delta). */
   delta: string;
+  /** True on the closing event of one assistant message; `text` then holds the full message. */
   final?: boolean;
+  text?: string;
 }
 
 export interface ToolCallEvent extends BaseEvent {
@@ -71,7 +92,27 @@ export interface SubagentEvent extends BaseEvent {
   task?: string;
 }
 
-export type AgentEvent = StatusEvent | ThinkingEvent | OutputEvent | ToolCallEvent | SubagentEvent;
+/** Per model call usage. Credits are reported by the runtime as nano-AIU when available. */
+export interface UsageEvent extends BaseEvent {
+  type: 'usage';
+  model?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  /** Cost of this call in nano-AI units (1e-9 AIU) as reported by the Copilot API. */
+  nanoAiu?: number;
+  /** Model cost multiplier reported by the runtime (experimental). */
+  costMultiplier?: number;
+  creditsStatus?: 'complete' | 'partial' | 'unavailable';
+}
+
+export type AgentEvent =
+  | StatusEvent
+  | ThinkingEvent
+  | OutputEvent
+  | ToolCallEvent
+  | SubagentEvent
+  | UsageEvent;
 
 export type Unsubscribe = () => void;
 
@@ -84,6 +125,8 @@ export interface AgentAdapter {
   send(sessionId: string, message: AgentMessage): Promise<void>;
   /** Stop/cancel a session. */
   stop(sessionId: string): Promise<void>;
+  /** Approve/deny a permission request left pending by `ask: true`. Optional. */
+  resolvePermission?(sessionId: string, requestId: string, approve: boolean): void;
   /** Subscribe to normalized events from all sessions of this adapter. */
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe;
 }
