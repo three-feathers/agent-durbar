@@ -8,3 +8,13 @@ release/
 .env.*
 *.tsbuildinfo
 dist-scripts/
+npm-debug.log*
+yarn-error.log*
+.copilot/
+*.pem
+*.p12
+*.pfx
+*.key
+.vscode/
+.idea/
+Thumbs.db

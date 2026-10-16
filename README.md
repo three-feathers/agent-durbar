@@ -7,6 +7,51 @@ Command center to see, chat with and coordinate coding agents (Copilot CLI first
 ![15 simulated agents at 1440x900 (roomy desks use the spare floor space)](docs/screenshots/m5-sim15-1440x900-closed.png)
 ![15 simulated agents with the chat panel open at 1280x800](docs/screenshots/m5-sim15-1280x800-panel.png)
 
+> **Disclaimer.** Agent Durbar is an independent, community project. It is **not affiliated with, endorsed by or sponsored by GitHub or Microsoft**. "GitHub", "GitHub Copilot" and "Visual Studio Code" are trademarks of their respective owners. This app only drives the official `@github/copilot-sdk` and the `code` command on your own machine.
+
+## Requirements
+
+- **A GitHub Copilot subscription (a free plan works) and a Copilot login on your machine.** Agent Durbar does not ship or replace Copilot: it uses the Copilot runtime bundled with the official SDK and your existing Copilot sign-in. Sign in once with the GitHub Copilot CLI (`copilot login`; install it from [github/copilot-cli](https://github.com/github/copilot-cli)) before starting a session. Agent Durbar never sees, stores or sends your token: the Copilot runtime reads it from the place the CLI saved it (your OS keychain or the Copilot config folder), and Agent Durbar has no accounts, no servers and no telemetry of its own.
+- Usage bills against **your** Copilot plan (AI credits); several agents in parallel can use credits quickly.
+- Optional: VS Code with the `code` command, for the "Open in VS Code" button.
+
+## Install from releases
+
+Download the build for your system from the [Releases page](https://github.com/vikramgorla/agent-durbar/releases) (pre-releases are alpha builds):
+
+| System | File |
+| --- | --- |
+| macOS, Apple Silicon (M1 and later) | `Agent-Durbar-<version>-arm64.dmg` (or the `-mac.zip`) |
+| macOS, Intel | `Agent-Durbar-<version>-x64.dmg` (or the `-mac.zip`) |
+| Windows 10/11, x64 | `Agent-Durbar-Setup-<version>.exe` (installer) or `Agent-Durbar-<version>-portable.exe` |
+| Linux, x64 | `Agent-Durbar-<version>.AppImage` (`chmod +x` it, then run) |
+
+There is no auto-update: download a newer release to update.
+
+### These builds are not code-signed
+
+Signing certificates cost money, so the builds are **unsigned and not notarized**. Your OS will warn you the first time; that is expected. Only open files you downloaded from this repository's Releases page.
+
+- **macOS (Gatekeeper):** drag the app to Applications. On first launch, **right-click (or Control-click) the app and choose Open**, then Open again in the dialog. On recent macOS you may instead need System Settings > Privacy & Security > "Open Anyway". If macOS says the app is damaged, remove the download quarantine flag: `xattr -dr com.apple.quarantine "/Applications/Agent Durbar.app"`.
+- **Windows (SmartScreen):** when "Windows protected your PC" appears, click **More info**, then **Run anyway**.
+- **Linux:** `chmod +x Agent-Durbar-*.AppImage && ./Agent-Durbar-*.AppImage` (you may need `--no-sandbox` on systems without unprivileged user namespaces).
+
+### Safety model
+
+Agents run **locally, on your machine, as you**, in the folders you add. Nothing is sent anywhere except to GitHub Copilot through its own runtime. You choose a permission mode per agent: **Read-only** (reads only, everything else denied), **Ask** (writes, shell commands, URLs and tools wait for your Approve / Approve for this session / Deny) or **Allow all** (no prompts; use only in folders you trust). The default is read-only. Review what an agent asks to do, especially shell commands.
+
+## Build from source
+
+```bash
+npm ci
+npm run build && npm test
+npm start                 # needs `copilot login` once
+npm run dist:dir          # unpacked app for this OS in release/
+npm run dist              # installers/archives for this OS in release/ (no signing, no publishing)
+```
+
+Releases are built by GitHub Actions from `v*` tags into a **draft** release; see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Status (milestone 5: permissions, attachments, office polish)
 
 All seven remaining issues from milestones 3 and 4 are fixed. Built and tested on simulated agents (`DURBAR_SIM`, no AI credits); the permission path was also verified once on a real session with **one tiny prompt, 0.189 AIU** (3 API calls, as reported by the API).
@@ -165,7 +210,7 @@ An Electron app that:
 - [x] Floor-plan look for the compact densities: desk scenes, room zones, helper mini-desks (milestone 4)
 - [x] Approve for this session (revocable), clean Stop with pending permission, inline permission notes, attachment caps with drag-and-drop/paste, keyed office updates, up to 3 helpers, roomy desks (milestone 5)
 - [ ] Second adapter (Claude or Codex CLI)
-- [ ] Packaging (macOS, Windows, Linux)
+- [x] Packaging with electron-builder (unsigned dmg/zip, nsis/portable, AppImage) and GitHub Actions CI + draft releases (alpha)
 
 ## Development
 
@@ -178,8 +223,8 @@ npm test        # permission broker + attachment rules, no Copilot, no credits
 npm run smoke   # headless adapter test, sends 2 tiny prompts (uses AI credits)
 ```
 
-Layout: `src/main` (Electron main), `src/preload` (bridge), `src/renderer` (UI: html/css/js, demo data, simulator), `src/adapters` (agent adapters, permission broker), `src/shared` (IPC types, attachment rules), `prototype/` (static design), `docs/` (research).
+Layout: `build/` (app icons), `.github/workflows/` (CI and release), `src/main` (Electron main), `src/preload` (bridge), `src/renderer` (UI: html/css/js, demo data, simulator), `src/adapters` (agent adapters, permission broker), `src/shared` (IPC types, attachment rules), `prototype/` (static design), `docs/` (research).
 
 ## License
 
-MIT, Vikram Gorla.
+[MIT](LICENSE), Vikram Gorla. See also [SECURITY.md](SECURITY.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
