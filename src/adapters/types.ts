@@ -4,6 +4,9 @@
  * Every adapter translates its native protocol into the normalized events below.
  */
 
+import type { McpServerSpec } from '../shared/mcp';
+export type { McpServerSpec };
+
 export type AgentStatus = 'idle' | 'working' | 'needs-permission' | 'error' | 'stopped';
 
 export interface StartOptions {
@@ -30,6 +33,10 @@ export interface StartOptions {
   ask?: boolean;
   /** Do not emit the "Ready" status when the session is up (used when starting it for a message that is about to be sent). */
   quiet?: boolean;
+  /** MCP servers (global Settings, spec 019) handed to this session, by name. Never logged: env/headers may hold secrets. */
+  mcpServers?: Record<string, McpServerSpec>;
+  /** Exact MCP server names that must not start in this session (also switches off servers the runtime loads by itself). */
+  disabledMcpServers?: string[];
 }
 
 export interface Attachment {
@@ -121,6 +128,9 @@ export interface ToolCallEvent extends BaseEvent {
   phase: 'start' | 'update' | 'complete' | 'failed';
   args?: unknown;
   output?: string;
+  /** Set when the tool belongs to an MCP server: the server's configured name and the tool's own name there. */
+  mcpServer?: string;
+  mcpTool?: string;
 }
 
 export interface SubagentEvent extends BaseEvent {
@@ -153,6 +163,35 @@ export interface UsageEvent extends BaseEvent {
   creditsStatus?: 'complete' | 'partial' | 'unavailable';
 }
 
+/** Context window of the main agent, from the runtime's usage info (sent before each model call). Tokens, not characters. */
+export interface ContextEvent extends BaseEvent {
+  type: 'context';
+  /** Tokens in the context window now. */
+  tokens: number;
+  /** Size of the window (0 = unknown). */
+  limit: number;
+  system?: number;
+  conversation?: number;
+  toolDefinitions?: number;
+  messages?: number;
+}
+
+export interface McpServerStatus {
+  name: string;
+  /** connected | failed | needs-auth | pending | disabled | stopped | not_configured */
+  status: string;
+  /** Where the runtime got the server from: user | workspace | plugin | builtin | managed | account. */
+  source?: string;
+  transport?: string;
+  error?: string;
+}
+
+/** The MCP servers of a session and their state (full list; a new event replaces the previous one). */
+export interface McpStatusEvent extends BaseEvent {
+  type: 'mcp';
+  servers: McpServerStatus[];
+}
+
 /**
  * Echo of a user message. Emitted by the simulator and by adapters that can replay history;
  * the renderer also adds its own bubble when the user types, so live adapters need not emit it.
@@ -172,7 +211,9 @@ export type AgentEvent =
   | OutputEvent
   | ToolCallEvent
   | SubagentEvent
-  | UsageEvent;
+  | UsageEvent
+  | ContextEvent
+  | McpStatusEvent;
 
 export type Unsubscribe = () => void;
 
@@ -191,6 +232,8 @@ export interface AgentAdapter {
   resolvePermission?(sessionId: string, requestId: string, approve: boolean, remember?: boolean): void;
   /** Forget one "Approve for this session" grant. Optional. */
   revokeGrant?(sessionId: string, key: string): void;
+  /** Switch one MCP server on or off in a running session (spec 019). Optional. */
+  setMcpEnabled?(sessionId: string, name: string, enabled: boolean): Promise<void>;
   /** Subscribe to normalized events from all sessions of this adapter. */
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe;
 }

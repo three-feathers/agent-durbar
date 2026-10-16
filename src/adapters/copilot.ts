@@ -1,5 +1,5 @@
 import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
-import type { CopilotSession, ModelInfo, PermissionRequest, PermissionRequestResult, SessionEvent } from '@github/copilot-sdk';
+import type { CopilotSession, MCPServerConfig, ModelInfo, PermissionRequest, PermissionRequestResult, SessionEvent } from '@github/copilot-sdk';
 import type {
   AgentAdapter,
   AgentEvent,
@@ -38,6 +38,8 @@ export interface ModelOption {
   efforts: string[];
   defaultEffort?: string;
   disabled: boolean;
+  /** Context window in tokens when the runtime says so (it reports 0 for `auto`, which is treated as unknown). */
+  contextWindow?: number;
 }
 
 interface Live {
@@ -95,6 +97,7 @@ export class CopilotAdapter implements AgentAdapter {
       efforts: m.supportedReasoningEfforts ?? [],
       defaultEffort: m.defaultReasoningEffort,
       disabled: m.policy?.state === 'disabled',
+      contextWindow: m.capabilities?.limits?.max_context_window_tokens > 0 ? m.capabilities.limits.max_context_window_tokens : undefined,
     }));
   }
 
@@ -159,8 +162,13 @@ export class CopilotAdapter implements AgentAdapter {
       model: options.model,
       ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}),
       ...(options.autoTier ? { capi: { autoTier: options.autoTier } } : {}),
+      // MCP (spec 019). The runtime also loads ~/.copilot/mcp-config.json and the built-in GitHub server on its own;
+      // `disabledMcpServers` switches those off by name. Values (env, headers) are secrets: never logged, only names.
+      ...(options.mcpServers && Object.keys(options.mcpServers).length ? { mcpServers: options.mcpServers as unknown as Record<string, MCPServerConfig> } : {}),
+      ...(options.disabledMcpServers?.length ? { disabledMcpServers: options.disabledMcpServers } : {}),
       onPermissionRequest,
     };
+    this.debug?.(`mcp: servers=[${Object.keys(options.mcpServers ?? {}).join(',')}] disabled=[${(options.disabledMcpServers ?? []).join(',')}]`);
     let session: CopilotSession;
     if (options.resumeSessionId) session = await client.resumeSession(options.resumeSessionId, config);
     else if (options.sessionId) {
@@ -245,6 +253,13 @@ export class CopilotAdapter implements AgentAdapter {
       else if (mode === 'read-only') pending -= live.broker.denyPendingByUser();
     }
     return { pending };
+  }
+
+  /** Switch one MCP server on or off in a running session (the runtime does not write this to ~/.copilot). */
+  async setMcpEnabled(sessionId: string, name: string, enabled: boolean): Promise<void> {
+    const live = this.mustGet(sessionId);
+    if (enabled) await live.session.rpc.mcp.enable({ serverName: name });
+    else await live.session.rpc.mcp.disable({ serverName: name });
   }
 
   resolvePermission(sessionId: string, requestId: string, approve: boolean, remember = false): void {

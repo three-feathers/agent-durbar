@@ -132,7 +132,7 @@ const matchStatus = a => !ui.status || ((ui.status==='working')?['working','thin
 
 /* ---------------- office view ---------------- */
 const DENS={
-  full:{cw:164,hw:90,cap:3},
+  full:{cw:164,hw:90},
   /* compact densities: uniform desk cells on a grid (cw = min cell width), helpers on a strip of mini desks below */
   roomy:{cw:262,gap:10,rp:14},   /* card with bigger desks, used only when the floor has room to spare */
   card:{cw:236,gap:8,rp:12},
@@ -140,10 +140,10 @@ const DENS={
   micro:{cw:190,gap:5,rp:8}
 };
 /* Layout candidates, richest first: [density, helpers shown before "+N more"]. The first one that fits wins. */
-const CANDIDATES=[['full',3],['roomy',3],['card',3],['card',1],['mini',3],['mini',1],['micro',3],['micro',1]];
+const CANDIDATES=[['full',3],['full',2],['roomy',3],['card',3],['card',1],['mini',3],['mini',1],['micro',3],['micro',1]];
 let HCAP=1; /* helpers shown on a compact strip before "+N more" (a layout parameter, chosen with the density) */
-let HBOOST=new Set(); /* with HCAP=1, agents that still get 3 because the floor has room left over (see chooseLayout) */
-const helperCap=(d,a)=>d==='full'?DENS.full.cap:(a&&HBOOST.has(a.id)?3:HCAP);
+let HBOOST=new Map(); /* agent id -> helpers shown, for agents that get more than HCAP because the floor has room left over (see chooseLayout) */
+const helperCap=(d,a)=>(a&&HBOOST.get(a.id))||HCAP;
 const SC_CACHE=new Map();
 function sceneC(a){const st=vis(a),k=a.look,key=st+k.shirt+k.skin+k.hair+k.style+(k.glasses?1:0);let v=SC_CACHE.get(key);if(!v){v=scene(a,false,true);SC_CACHE.set(key,v);}return v;}
 function visibleHelpers(a,d){
@@ -301,11 +301,11 @@ function chooseLayout(sizing,aw,ah){
   const cands=FORCE_DENSITY?CANDIDATES.filter(c=>c[0]===FORCE_DENSITY):CANDIDATES;
   let res=null, lastAny=null;
   for(const [d,hcap] of cands){
-    HCAP=hcap; HBOOST=new Set(); probe.dataset.d=d; probe.style.height='auto';
+    HCAP=hcap; HBOOST=new Map(); probe.dataset.d=d; probe.style.height='auto';
     if(d==='full'){
       probe.innerHTML=stageHTML(sizing,d,aw);
-      if(fits()){res={d,hcap,cap:0,fit:true};break;}
-      lastAny={d,hcap,cap:0,fit:false};continue;
+      if(fits()){res={d,hcap,cap:0,fit:true,boost:[]};break;}
+      lastAny={d,hcap,cap:0,fit:false,boost:[]};continue;
     }
     const D=DENS[d], over=2*D.rp+4;
     const maxCap=Math.max(1,Math.min(Math.max(...openOnly.map(m=>m.mains.length)),Math.floor((aw-over+D.gap)/(D.cw+D.gap))));
@@ -324,14 +324,16 @@ function chooseLayout(sizing,aw,ah){
     if(best){res={d,hcap,cap:best.c,fit:true,boost:[]};break;}
     lastAny={d,hcap,cap:any.c,fit:false,boost:[]};
   }
-  /* Leftover floor space: with one helper per strip, give 3 to the agents with the most helpers (attention first) while it still fits. */
-  if(res&&res.d!=='full'&&res.hcap===1){
-    const many=openOnly.flatMap(m=>m.mains).filter(a=>helpersOf(a).length>2).sort((x,y)=>Math.min(prio(x),...helpersOf(x).map(prio))-Math.min(prio(y),...helpersOf(y).map(prio))||helpersOf(y).length-helpersOf(x).length);
-    HCAP=1; probe.dataset.d=res.d;
+  /* Leftover floor space (also what closed rooms free up): give the agents with the most helpers more of them, one step up
+     (1 -> 3, 2 -> 3, 3 -> 6 shown before "+N more"), attention first, while the layout still fits. */
+  if(res&&res.fit){
+    const up={1:3,2:3,3:6}[res.hcap]||res.hcap;
+    const many=openOnly.flatMap(m=>m.mains).filter(a=>helpersOf(a).length>res.hcap+1).sort((x,y)=>Math.min(prio(x),...helpersOf(x).map(prio))-Math.min(prio(y),...helpersOf(y).map(prio))||helpersOf(y).length-helpersOf(x).length);
+    HCAP=res.hcap; probe.dataset.d=res.d;
     for(const a of many){
-      HBOOST.add(a.id); probe.style.height='auto';
+      HBOOST.set(a.id,up); probe.style.height='auto';
       probe.innerHTML=stageHTML(sizing,res.d,aw,res.cap);
-      if(fits())res.boost.push(a.id); else HBOOST.delete(a.id);
+      if(fits())res.boost.push([a.id,up]); else HBOOST.delete(a.id);
     }
   }
   probe.innerHTML='';
@@ -354,7 +356,7 @@ function renderOffice(){
   const sizing=ui.status?officeModel(true):model;
   const key=JSON.stringify([aw,ah,FORCE_DENSITY,sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]])])]);
   if(key!==layoutKey||!layout){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
-  HCAP=layout.hcap; HBOOST=new Set(layout.boost);
+  HCAP=layout.hcap; HBOOST=new Map(layout.boost);
   const html=stageHTML(model,layout.d,aw,layout.cap);
   const fresh=stage.dataset.d!==layout.d||!!stage.querySelector('.empty');
   stage.style.width=aw+'px'; stage.style.height='auto'; stage.dataset.d=layout.d;

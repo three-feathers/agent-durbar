@@ -1,6 +1,9 @@
 import type { AgentEvent } from '../adapters/types';
 import type { HistoryItem, PreviousSession } from '../adapters/history';
 import type { VsChatSummary, VsChatTranscript } from '../adapters/vscodeChat';
+import type { McpServerInput, McpServerView, McpTransport, McpTrustInfo } from './mcp';
+
+export type { McpServerInput, McpServerView, McpTransport, McpTrustInfo };
 
 export type { HistoryItem, PreviousSession, VsChatSummary, VsChatTranscript };
 
@@ -38,6 +41,8 @@ export interface ModelChoice {
   id: string;
   name: string;
   multiplier?: number;
+  /** Context window in tokens; absent = unknown (the runtime reports 0 for `auto`). */
+  contextWindow?: number;
   efforts: string[];
   defaultEffort?: string;
 }
@@ -80,6 +85,72 @@ export interface VsChatListResult {
   formatNote: string;
 }
 
+/** A server the runtime loads on its own (the user's ~/.copilot/mcp-config.json, the built-in GitHub server): read-only here, on/off for new sessions. */
+export interface McpAmbientView {
+  name: string;
+  origin: 'copilot-config' | 'builtin';
+  transport?: McpTransport;
+  command?: string;
+  args?: string[];
+  url?: string;
+  /** Not in the disabled list of Settings. */
+  enabled: boolean;
+}
+
+export interface McpState {
+  servers: McpServerView[];
+  ambient: McpAmbientView[];
+  /** Secrets can be saved encrypted (Electron safeStorage). When false they only live in memory for this run. */
+  secretsPersist: boolean;
+  /** Servers that are switched on but are not passed to new sessions, with the reason. */
+  skipped: { name: string; reason: string }[];
+}
+
+export interface McpImportCandidateView {
+  name: string;
+  transport: McpTransport;
+  command?: string;
+  args?: string[];
+  url?: string;
+  /** Names only: values are never sent to the page. */
+  envKeys: string[];
+  headerKeys: string[];
+  notes: string[];
+}
+
+export interface McpImportPreview {
+  ok: boolean;
+  error?: string;
+  /** Opaque id of the parsed file held by the main process; `mcpImportApply` takes it back with the chosen names. */
+  token?: string;
+  source: 'copilot' | 'vscode';
+  /** Files that were read (display only). */
+  files: string[];
+  candidates: McpImportCandidateView[];
+  skipped: number;
+}
+
+export interface McpResult {
+  ok: boolean;
+  error?: string;
+  server?: McpServerView;
+  /** Enabling needs the user's confirmation of this command/URL (call again with `trustAck`). */
+  needsTrust?: McpTrustInfo;
+}
+
+/** One MCP server as one agent sees it. */
+export interface AgentMcpEntry {
+  name: string;
+  origin: 'durbar' | 'ambient';
+  /** Runtime state when the session is running (connected, failed, needs-auth, disabled, ...). */
+  status?: string;
+  error?: string;
+  /** The default from Settings: on for new sessions. */
+  defaultOn: boolean;
+  /** This agent switched it off. */
+  off: boolean;
+}
+
 /** Bridge exposed by the preload script as `window.agentDurbar`. */
 export interface DurbarApi {
   version(): Promise<string>;
@@ -101,6 +172,20 @@ export interface DurbarApi {
   setFolderHidden?(id: string, hidden: boolean): Promise<{ ok: boolean }>;
   /** Remove the folder of agent `id`: ends its sessions and forgets the folder. */
   removeFolder?(id: string): Promise<{ ok: boolean; removedIds: string[] }>;
+
+  /** Global MCP settings (spec 019). */
+  mcpState?(): Promise<McpState>;
+  mcpUpsert?(input: McpServerInput, originalName?: string): Promise<McpResult>;
+  mcpRemove?(name: string): Promise<{ ok: boolean }>;
+  /** `trustAck`: the user confirmed the command/URL shown for this server. */
+  mcpSetEnabled?(name: string, enabled: boolean, trustAck?: boolean): Promise<McpResult>;
+  mcpSetAmbient?(name: string, enabled: boolean): Promise<{ ok: boolean }>;
+  mcpImportPreview?(source: 'copilot' | 'vscode'): Promise<McpImportPreview>;
+  mcpImportApply?(token: string, names: string[]): Promise<{ ok: boolean; error?: string; added: string[] }>;
+  /** The MCP servers agent `id` has (live state when it runs) with its own on/off choices. */
+  agentMcp?(id: string): Promise<{ ok: boolean; servers: AgentMcpEntry[]; live: boolean }>;
+  /** Per-agent override: `enabled=false` turns the server off for this agent (now when the session runs, else at its next start). */
+  setAgentMcp?(id: string, name: string, enabled: boolean): Promise<{ ok: boolean; error?: string }>;
 
   /** Agents already running in main (survives renderer reloads) and startup paths. */
   listAgents(): Promise<AgentInfo[]>;

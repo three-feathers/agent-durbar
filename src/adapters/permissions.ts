@@ -17,6 +17,8 @@ export interface PermissionLike {
   fullCommandText?: string;
   url?: string;
   toolName?: string;
+  /** MCP requests: the server that hosts the tool. */
+  serverName?: string;
   path?: string;
 }
 
@@ -34,6 +36,7 @@ export function summarize(req: PermissionLike): string {
     case 'url':
       return `fetch ${req.url ?? ''}`.trim();
     case 'mcp':
+      return `mcp ${req.serverName ? req.serverName + ' › ' : ''}${req.toolName ?? ''}`.trim();
     case 'custom-tool':
       return `${req.kind} ${req.toolName ?? ''}`.trim();
     default:
@@ -79,7 +82,11 @@ export function grantScope(req: PermissionLike): { key: string; label: string } 
       }
       return { key: `url:${host}`, label: `fetch ${host}` };
     }
-    case 'mcp':
+    case 'mcp': {
+      // Scoped to the server too: the same tool name on two servers is two different things.
+      const tool = req.toolName ?? '';
+      return { key: req.serverName ? `mcp:${req.serverName}/${tool}` : `mcp:${tool}`, label: req.serverName ? `${req.serverName} › ${tool || 'tool'}` : tool || 'mcp' };
+    }
     case 'custom-tool':
       return { key: `${req.kind}:${req.toolName ?? ''}`, label: `${req.toolName || req.kind}` };
     default:

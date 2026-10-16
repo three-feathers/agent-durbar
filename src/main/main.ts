@@ -12,6 +12,8 @@ import { isHttpUrl } from '../shared/url';
 import { FolderStore } from './folders';
 import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '../adapters/vscodeChat';
 import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
+import { McpStore } from './mcpstore';
+import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 
 // Cheapest routing on the logged-in account's only model ("auto"); see docs/milestone-1.md.
 // Dev/test: DURBAR_USER_DATA=/tmp/x keeps the saved folder list (and Electron's other state) out of the real profile.
@@ -21,12 +23,15 @@ const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 type Effort = (typeof EFFORTS)[number];
 const asEffort = (v: unknown): Effort | undefined => (EFFORTS as readonly string[]).includes(v as string) ? (v as Effort) : undefined;
 let folderStore: FolderStore | undefined;
+/** Global MCP servers (spec 019), created when the app is ready (needs userData and safeStorage). */
+let mcpStore: McpStore | undefined;
 /** The folder (or .code-workspace file) an agent belongs to; the key of the saved folder list. */
 const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
 
 const adapter = new CopilotAdapter();
 const agents = new Map<string, AgentInfo>();
+const mcp = registerMcpIpc({ store: () => mcpStore as McpStore, agents, adapter });
 /** Files the user picked through the native dialog; only these can be attached. */
 const pickedFiles = new Set<string>();
 /** Private folder for pasted / dropped files (removed on quit). */
@@ -83,6 +88,7 @@ const startOptionsFor = (a: AgentInfo) => ({
   autoTier: (a.model ?? DEFAULT_MODEL) === 'auto' ? ('efficiency' as const) : undefined,
   allow: a.permMode === 'allow',
   ask: a.permMode === 'ask',
+  ...mcp.optionsFor(a.id),
 });
 
 async function addWorkspace(
@@ -426,6 +432,8 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   folderStore = new FolderStore(path.join(app.getPath('userData'), 'durbar-folders.json'));
+  mcpStore = new McpStore(path.join(app.getPath('userData'), 'durbar-mcp.json'), safeStorageCodec);
+  mcpStore.load();
   restoreFolders();
   createWindow();
   // Dev/headless convenience: DURBAR_OPEN="/path/a:/path/b" starts agents (read-only) on launch.

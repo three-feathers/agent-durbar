@@ -6,7 +6,7 @@
  * instance to the parent's `task` tool call (`data.toolCallId`). Normalized sub-agent events carry that tool call id as
  * `agentId`, which is also the id of the helper card (`SubagentEvent.subagentId`).
  */
-import type { AgentEvent } from './types';
+import type { AgentEvent, McpServerStatus } from './types';
 
 export type EventBody = AgentEvent extends infer E ? (E extends AgentEvent ? Omit<E, 'sessionId' | 'timestamp'> : never) : never;
 
@@ -20,8 +20,10 @@ export interface RawEvent {
 const SUBAGENT_NAME_FALLBACK = 'Sub-agent';
 
 export class EventMapper {
-  /** callId -> tool name, so complete/update events can carry the tool name. */
-  private toolNames = new Map<string, string>();
+  /** callId -> tool name (and MCP origin), so complete/update events can carry them. */
+  private toolNames = new Map<string, { tool: string; mcpServer?: string; mcpTool?: string }>();
+  /** MCP servers of the session by name (the runtime reports a list once and then single changes). */
+  private mcp = new Map<string, McpServerStatus>();
   /** Reasoning block ids that already streamed as deltas (so the complete block is not shown twice). */
   private reasoningSeen = new Set<string>();
   /** SDK sub-agent instance id -> spawning `task` tool call id. */
@@ -31,8 +33,13 @@ export class EventMapper {
 
   reset(): void {
     this.toolNames.clear();
+    this.mcp.clear();
     this.reasoningSeen.clear();
     this.instances.clear();
+  }
+
+  private emitMcp(): void {
+    this.emit({ type: 'mcp', servers: [...this.mcp.values()].map((x) => ({ ...x })) });
   }
 
   /** Id used as `agentId` of a normalized event: undefined for the main agent. */
@@ -80,17 +87,44 @@ export class EventMapper {
           costMultiplier: d.cost,
           creditsStatus: d.aiCreditsStatus,
         });
-      case 'tool.execution_start':
-        this.toolNames.set(d.toolCallId, d.toolName);
-        return this.emit({ type: 'toolCall', callId: d.toolCallId, tool: d.toolName, phase: 'start', args: d.arguments, agentId });
+      case 'tool.execution_start': {
+        // MCP tools: the runtime names the tool `<server>-<tool>` and adds the server and tool name as separate fields.
+        const mcpServer = str(d.mcpConfigServerName) ?? str(d.mcpServerName);
+        const meta = { tool: d.toolName, ...(mcpServer ? { mcpServer, mcpTool: str(d.mcpToolName) ?? d.toolName } : {}) };
+        this.toolNames.set(d.toolCallId, meta);
+        return this.emit({ type: 'toolCall', callId: d.toolCallId, ...meta, phase: 'start', args: d.arguments, agentId });
+      }
       case 'tool.execution_partial_result':
-        return this.emit({ type: 'toolCall', callId: d.toolCallId, tool: this.toolNames.get(d.toolCallId) ?? '', phase: 'update', output: d.partialOutput, agentId });
+        return this.emit({ type: 'toolCall', callId: d.toolCallId, ...(this.toolNames.get(d.toolCallId) ?? { tool: '' }), phase: 'update', output: d.partialOutput, agentId });
       case 'tool.execution_complete': {
-        const tool = this.toolNames.get(d.toolCallId) ?? '';
+        const meta = this.toolNames.get(d.toolCallId) ?? { tool: '' };
         this.toolNames.delete(d.toolCallId);
         const output = d.success ? contentOf(d.result) : d.error?.message;
-        return this.emit({ type: 'toolCall', callId: d.toolCallId, tool, phase: d.success ? 'complete' : 'failed', output, agentId });
+        return this.emit({ type: 'toolCall', callId: d.toolCallId, ...meta, phase: d.success ? 'complete' : 'failed', output, agentId });
       }
+      case 'session.usage_info':
+        // Context window of the main agent (a sub-agent has its own window and is not shown).
+        if (agentId || typeof d.currentTokens !== 'number') return;
+        return this.emit({
+          type: 'context',
+          tokens: d.currentTokens,
+          limit: typeof d.tokenLimit === 'number' && d.tokenLimit > 0 ? d.tokenLimit : 0,
+          system: num(d.systemTokens),
+          conversation: num(d.conversationTokens),
+          toolDefinitions: num(d.toolDefinitionsTokens),
+          messages: num(d.messagesLength),
+        });
+      case 'session.mcp_servers_loaded':
+        this.mcp.clear();
+        for (const s of Array.isArray(d.servers) ? d.servers : []) if (s && typeof s.name === 'string') this.mcp.set(s.name, mcpStatus(s.name, s));
+        return this.emitMcp();
+      case 'session.mcp_server_status_changed':
+        if (typeof d.serverName !== 'string') return;
+        this.mcp.set(d.serverName, mcpStatus(d.serverName, { status: d.status, error: d.error, source: d.configSource ?? this.mcp.get(d.serverName)?.source, transport: this.mcp.get(d.serverName)?.transport }));
+        return this.emitMcp();
+      case 'session.mcp_server_removed':
+        if (typeof d.serverName === 'string' && this.mcp.delete(d.serverName)) this.emitMcp();
+        return;
       case 'subagent.started':
         return this.emit({
           type: 'subagent',
@@ -135,6 +169,13 @@ export class EventMapper {
         return;
     }
   }
+}
+
+const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+const num = (v: unknown): number | undefined => (typeof v === 'number' && v >= 0 ? v : undefined);
+
+function mcpStatus(name: string, s: Record<string, any>): McpServerStatus { // eslint-disable-line @typescript-eslint/no-explicit-any
+  return { name, status: str(s.status) ?? 'pending', source: str(s.source), transport: str(s.transport), error: str(s.error)?.slice(0, 300) };
 }
 
 /** `tool.execution_complete.result` is `{content, detailedContent?}` (an object in the SDK types, a JSON string in some logs). */

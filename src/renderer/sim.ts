@@ -37,6 +37,12 @@ interface SimAgent {
   perm?: { requestId: string; kind: string; summary: string; scopeKey: string; scopeLabel: string; file: string; cont: 'tool' | 'edit' };
   /** "Approve for this session" grants: key -> chip label. */
   grants: Map<string, string>;
+  /** Context window of the fake session (tokens now / size). */
+  ctx?: { tokens: number; limit: number };
+  /** Models the fake runtime "routes" this agent's calls to (auto). */
+  models?: string[];
+  /** Agent ids that switched an MCP server off (spec 019). */
+  mcpOff?: Set<string>;
 }
 
 (function () {
@@ -142,6 +148,10 @@ interface SimAgent {
         tool: 0,
         think: i,
         grants: new Map(),
+        // Context window profiles: most agents are far from full; one is amber, one nearly full (a smaller window).
+        ctx: i === 0 ? { tokens: 188000, limit: 272000 } : i === 4 ? { tokens: 110000, limit: 128000 } : i === 6 ? undefined : { tokens: 14000 + i * 4300, limit: 272000 },
+        models: i === 4 ? ['gpt-5.6-luna'] : i % 4 === 1 ? ['claude-sonnet-4.6', 'gpt-6-luna'] : undefined,
+        mcpOff: new Set<string>(),
       };
     });
 
@@ -149,24 +159,52 @@ interface SimAgent {
     const emit = (e: AgentEvent): void => listeners.forEach((l) => l(e));
     const sid = (s: SimAgent) => s.info.id;
     const pick = <T,>(a: T[]): T => a[Math.floor(rnd() * a.length)];
-    const usage = (s: SimAgent): void =>
-      emit({ type: 'usage', sessionId: sid(s), timestamp: now(), model: 'auto', inputTokens: 1200 + Math.floor(rnd() * 6000), outputTokens: 150 + Math.floor(rnd() * 900), nanoAiu: Math.floor((0.004 + rnd() * 0.012) * 1e9), creditsStatus: 'complete' });
+    const MODELS = ['gpt-6-luna', 'gpt-6-luna', 'gpt-5.6-luna', 'claude-sonnet-4.6'];
+    const usage = (s: SimAgent): void => {
+      const model = (s.models ?? MODELS)[Math.floor(rnd() * (s.models ?? MODELS).length)];
+      emit({ type: 'usage', sessionId: sid(s), timestamp: now(), model, inputTokens: 1200 + Math.floor(rnd() * 6000), outputTokens: 150 + Math.floor(rnd() * 900), nanoAiu: Math.floor((0.004 + rnd() * 0.012) * 1e9), creditsStatus: 'complete' });
+      // Like the real runtime: the context window is reported before each model call (spec 019).
+      const c = s.ctx;
+      if (c && c.limit > 0) {
+        c.tokens = Math.min(Math.floor(c.limit * 0.97), c.tokens + 700 + Math.floor(rnd() * 1800));
+        emit({ type: 'context', sessionId: sid(s), timestamp: now(), tokens: c.tokens, limit: c.limit, system: 5840, conversation: Math.max(0, c.tokens - 13500), toolDefinitions: 7668, messages: 3 + s.tool });
+      }
+    };
+    const MCP_SERVERS: { name: string; transport: string; source: string }[] = [
+      { name: 'github', transport: 'stdio', source: 'user' },
+      { name: 'playwright', transport: 'stdio', source: 'user' },
+      { name: 'docs-search', transport: 'http', source: 'user' },
+      { name: 'github-mcp-server', transport: 'http', source: 'builtin' },
+    ];
+    const mcpStatus = (s: SimAgent, i: number): void => {
+      const off = s.mcpOff ?? new Set<string>();
+      emit({ type: 'mcp', sessionId: sid(s), timestamp: now(), servers: MCP_SERVERS.map((m) => ({
+        ...m,
+        status: off.has(m.name) ? 'disabled' : m.name === 'docs-search' && i % 5 === 4 ? 'needs-auth' : m.name === 'playwright' && i === 5 ? 'failed' : 'connected',
+        error: m.name === 'playwright' && i === 5 && !off.has(m.name) ? 'spawn npx ENOENT' : undefined,
+      })) });
+    };
 
     function toolStep(s: SimAgent, keepOpen: boolean): void {
       const k = s.tool++;
       const file = s.files[k % s.files.length];
       const id = sid(s) + '-t' + k;
-      const kind = k % 4;
-      const defs: { tool: string; args: Record<string, string>; out: string }[] = [
+      const kind = keepOpen ? 2 : k % 7;
+      const defs: { tool: string; args: Record<string, string>; out: string; mcp?: [string, string] }[] = [
         { tool: 'read_file', args: { path: file }, out: String(80 + Math.floor(rnd() * 800)) + ' lines' },
         { tool: 'grep', args: { pattern: 'registerTool\\(|export (async )?function (find|search|lookup)[A-Z][A-Za-z]+' }, out: '14 matches in 6 files' },
         { tool: 'bash', args: { command: LONG_CMD }, out: LONG_OUT },
         { tool: 'edit_file', args: { path: file }, out: '+' + (20 + Math.floor(rnd() * 160)) + ' -' + Math.floor(rnd() * 40) },
+        { tool: 'github-search_issues', args: { query: 'is:open label:bug registry' }, out: '7 issues', mcp: ['github', 'search_issues'] },
+        { tool: 'playwright-browser_snapshot', args: {}, out: 'page snapshot (212 lines)', mcp: ['playwright', 'browser_snapshot'] },
+        { tool: 'docs-search-query_docs', args: { query: 'registerTool options' }, out: '3 results', mcp: ['docs-search', 'query_docs'] },
       ];
       const d = defs[kind];
-      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: d.tool, phase: 'start', args: d.args });
+      const mcpFields = d.mcp ? { mcpServer: d.mcp[0], mcpTool: d.mcp[1] } : {};
+      if (d.mcp && s.mcpOff?.has(d.mcp[0])) return toolStep(s, false);
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: d.tool, phase: 'start', args: d.args, ...mcpFields });
       if (keepOpen) { s.open = id; return; }
-      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: d.tool, phase: 'complete', output: d.out });
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: d.tool, phase: 'complete', output: d.out, ...mcpFields });
     }
     function subRun(s: SimAgent, h: number, name: string, task: string, st: 'working' | 'thinking' | 'done' | 'failed'): void {
       const call = sid(s) + '-task' + h, base = { sessionId: sid(s), timestamp: now() };
@@ -242,6 +280,7 @@ interface SimAgent {
     function play(s: SimAgent): void {
       emit({ type: 'user', sessionId: sid(s), timestamp: now(), text: s.prompt, attachments: (s.attachments ?? []).map((p) => ({ path: p, kind: /\.(png|jpe?g|gif)$/i.test(p) ? 'image' as const : 'file' as const })) });
       if (s.state === 'idle') return;
+      mcpStatus(s, sims.indexOf(s));
       emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: s.intent });
       if (s.state !== 'done') think(s, 4); // done agents show a turn without reasoning (the model sent none)
       const done = sims.indexOf(s) === 0 ? 8 : s.state === 'working' ? 4 : 3;
@@ -331,9 +370,79 @@ interface SimAgent {
       s.state = 'done';
     }
 
+
+    // ---- Fake global MCP settings (spec 019): in memory only, same masking rules as the real store ----
+    interface FakeSrv { name: string; transport: 'stdio' | 'http' | 'sse'; command?: string; args?: string[]; workingDirectory?: string; url?: string; tools?: string[]; enabled: boolean; trusted: boolean; env: { key: string; set: boolean }[]; headers: { key: string; set: boolean }[]; needsSecrets: boolean }
+    const fakeSrvs: FakeSrv[] = [
+      { name: 'github', transport: 'stdio', command: 'npx', args: ['-y', '@example/github-mcp'], enabled: true, trusted: true, env: [{ key: 'GITHUB_TOKEN', set: true }], headers: [], needsSecrets: false },
+      { name: 'playwright', transport: 'stdio', command: 'npx', args: ['@playwright/mcp@latest'], enabled: true, trusted: true, env: [], headers: [], needsSecrets: false },
+      { name: 'docs-search', transport: 'http', url: 'https://docs.example.test/mcp', enabled: false, trusted: false, env: [], headers: [{ key: 'X-Api-Key', set: true }], needsSecrets: false },
+    ];
+    const fakeAmbient = [
+      { name: 'my-notes', origin: 'copilot-config' as const, transport: 'stdio' as const, command: 'node', args: ['/home/vikram/tools/notes-mcp.js'], enabled: true },
+      { name: 'github-mcp-server', origin: 'builtin' as const, enabled: true },
+    ];
+    const fakeView = (v: FakeSrv) => ({ ...v, env: v.env.map((e) => ({ ...e })), headers: v.headers.map((e) => ({ ...e })) });
+    const mcpApi: Partial<DurbarApi> = {
+      mcpState: async () => ({ servers: fakeSrvs.map(fakeView), ambient: fakeAmbient.map((a) => ({ ...a })), secretsPersist: true, skipped: [] }),
+      mcpUpsert: async (input, orig) => {
+        if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,47}$/.test(input.name || '')) return { ok: false, error: 'Name: letters, digits, "_", "." or "-".' };
+        const cur = orig ? fakeSrvs.find((x) => x.name === orig) : undefined;
+        if (fakeSrvs.some((x) => x.name.toLowerCase() === input.name.toLowerCase() && x !== cur)) return { ok: false, error: 'A server named "' + input.name + '" already exists.' };
+        const keys = (inp: { key: string; value?: string }[] | undefined, old: { key: string; set: boolean }[]) => (inp ?? []).map((r) => ({ key: r.key, set: r.value === undefined ? old.some((o) => o.key === r.key && o.set) : r.value !== '' }));
+        const next: FakeSrv = { name: input.name, transport: input.transport, command: input.command, args: input.args, workingDirectory: input.workingDirectory || undefined, url: input.url, tools: input.tools, enabled: cur?.enabled ?? false, trusted: cur?.trusted ?? false,
+          env: keys(input.env, cur?.env ?? []), headers: keys(input.headers, cur?.headers ?? []), needsSecrets: false };
+        if (cur && (cur.command !== next.command || JSON.stringify(cur.args) !== JSON.stringify(next.args) || cur.url !== next.url || cur.transport !== next.transport)) { next.enabled = false; next.trusted = false; }
+        if (cur) fakeSrvs[fakeSrvs.indexOf(cur)] = next; else fakeSrvs.push(next);
+        return { ok: true, server: fakeView(next) };
+      },
+      mcpRemove: async (name) => { const i = fakeSrvs.findIndex((x) => x.name === name); if (i >= 0) fakeSrvs.splice(i, 1); return { ok: i >= 0 }; },
+      mcpSetEnabled: async (name, enabled, trustAck) => {
+        const v = fakeSrvs.find((x) => x.name === name);
+        if (!v) return { ok: false, error: 'Unknown server.' };
+        if (enabled && !v.trusted) {
+          if (!trustAck) return { ok: false, needsTrust: { name: v.name, transport: v.transport, command: v.command, args: v.args, url: v.url } };
+          v.trusted = true;
+        }
+        v.enabled = enabled;
+        return { ok: true, server: fakeView(v) };
+      },
+      mcpSetAmbient: async (name, enabled) => { const a = fakeAmbient.find((x) => x.name === name); if (a) a.enabled = enabled; return { ok: !!a }; },
+      mcpImportPreview: async (source) => ({
+        ok: true, token: 'sim-import', source, files: [source === 'copilot' ? '~/.copilot/mcp-config.json' : '~/Library/Application Support/Code/User/mcp.json'], skipped: 1,
+        candidates: source === 'copilot'
+          ? [{ name: 'context7', transport: 'http', url: 'https://mcp.example.test/mcp', envKeys: [], headerKeys: ['CONTEXT7_API_KEY'], notes: [] }, { name: 'fetch', transport: 'stdio', command: 'uvx', args: ['mcp-server-fetch'], envKeys: [], headerKeys: [], notes: [] }]
+          : [{ name: 'filesystem', transport: 'stdio', command: 'npx', args: ['-y', '@example/server-filesystem', '${workspaceFolder}'], envKeys: [], headerKeys: [], notes: ['Uses ${...} variables (VS Code input/workspace). They are copied as literal text: edit before enabling.'] }],
+      }),
+      mcpImportApply: async (_t, names) => {
+        for (const n of names) if (!fakeSrvs.some((x) => x.name === n)) fakeSrvs.push({ name: n, transport: n === 'context7' ? 'http' : 'stdio', command: n === 'context7' ? undefined : 'npx', args: [], url: n === 'context7' ? 'https://mcp.example.test/mcp' : undefined, enabled: false, trusted: false, env: [], headers: n === 'context7' ? [{ key: 'CONTEXT7_API_KEY', set: true }] : [], needsSecrets: false });
+        return { ok: true, added: names };
+      },
+      agentMcp: async (id) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, servers: [], live: false };
+        const live = s.state !== 'idle' || !!s.ctx;
+        const stat = (n: string) => (s.mcpOff?.has(n) ? 'disabled' : live ? 'connected' : undefined);
+        const servers = [
+          ...fakeSrvs.map((v) => ({ name: v.name, origin: 'durbar' as const, status: stat(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name) })),
+          ...fakeAmbient.map((a) => ({ name: a.name, origin: 'ambient' as const, status: stat(a.name), defaultOn: a.enabled, off: !!s.mcpOff?.has(a.name) })),
+        ];
+        return { ok: true, servers, live };
+      },
+      setAgentMcp: async (id, name, enabled) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'unknown agent' };
+        s.mcpOff ??= new Set();
+        if (enabled) s.mcpOff.delete(name); else s.mcpOff.add(name);
+        if (s.state !== 'idle') mcpStatus(s, sims.indexOf(s));
+        return { ok: true };
+      },
+    };
+
     let started = false;
     let extra = 0;
     const api: DurbarApi = {
+      ...mcpApi,
       version: async () => 'sim',
       addFolder: async () => {
         extra++;
@@ -411,8 +520,8 @@ interface SimAgent {
         ok: true,
         models: [
           { id: 'auto', name: 'Auto', efforts: [] },
-          { id: 'sim-fast', name: 'Sim Fast', multiplier: 0.33, efforts: [] },
-          { id: 'sim-deep', name: 'Sim Deep', multiplier: 3, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
+          { id: 'sim-fast', name: 'Sim Fast', multiplier: 0.33, efforts: [], contextWindow: 128000 },
+          { id: 'sim-deep', name: 'Sim Deep', multiplier: 3, contextWindow: 200000, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
         ],
       }),
       newSession: async (id, o) => {
