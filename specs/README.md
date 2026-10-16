@@ -67,4 +67,10 @@ Spec drafts only (no plan or tasks yet); they must go through `/speckit.clarify`
 | --- | --- | --- |
 | [020](020-tools-all-time-and-mcp-cli-primary/spec.md) | Tools "This session / All time", Copilot CLI MCP list first, MCP extras per folder | milestone 10 (implemented, simulator + unit tests) |
 
+## Feature 021: collaboration harness
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [021](021-collaboration-harness/spec.md) | Collaboration harness: Claude + Copilot Spec Kit, labels/issues/board, CODEOWNERS, stricter spec gate, ruleset | in progress (tooling only) |
+
 New features take the next number (`/speckit.specify` picks it automatically from this folder).

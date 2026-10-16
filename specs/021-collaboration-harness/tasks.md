@@ -1,0 +1,14 @@
+# Tasks: 021
+- [ ] T001 Spec, plan, tasks (this folder) + specs index row
+- [ ] T002 Test `specify integration install claude --force` on a throwaway branch; then install for real; ignore `.claude/settings.local.json` [FR-001]
+- [ ] T003 `AGENTS.md` "Working as a team", `CLAUDE.md`, copilot pointer [FR-002]
+- [ ] T004 Issue forms, labels file + sync script, CODEOWNERS, PR template [FR-003]
+- [ ] T005 `spec-gate.sh` branch + spec-folder checks, workflow env, `test-spec-gate.sh` [FR-004]
+- [ ] T006 `tasks-to-issues.sh`, `backlog-issues.sh` [FR-005]
+- [ ] T007 `docs/collaboration.md`, CONTRIBUTING pointer [FR-008]
+- [ ] T008 Apply labels to the repo; create the backlog issues [FR-003, FR-005]
+- [ ] T009 Create the org Project "Agent Durbar board" with fields and add the issues (needs token scope `project`; maintainer login handoff) [FR-006]
+- [ ] T010 Switch on the Project's built-in workflows (auto-add, Status on close/merge) in the web UI [FR-006]
+- [ ] T011 Open the PR, CI green, merge [SC-003]
+- [ ] T012 After merge and one CI run on `main`: create the `main` ruleset via `gh api` (require PR, 1 approval, `Spec Kit gate` and CI checks, CODEOWNERS review, block force-push/deletion, admin bypass); record the result here [FR-007]
+- [ ] T013 Review the gate strictness after two weeks of use
