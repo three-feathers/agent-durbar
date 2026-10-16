@@ -1,0 +1,31 @@
+name: Spec Kit
+
+# Fails a pull request that changes src/ without changing specs/ (and without a Spec-Exempt reason or label).
+# Logic lives in .github/scripts/spec-gate.sh. Runs on label and description edits too, so adding the
+# `spec-exempt` label or a "Spec-Exempt: <reason>" line re-evaluates the check.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spec-kit-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  spec-gate:
+    name: Spec Kit gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: src/ changes need specs/ changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS_JSON: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: bash .github/scripts/spec-gate.sh
