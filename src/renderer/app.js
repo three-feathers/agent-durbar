@@ -376,7 +376,7 @@ const toolKind=n=>{n=String(n||'').toLowerCase();
 /* ---------------- panel + chat ---------------- */
 const chats={};
 const sleep=ms=>new Promise(r=>setTimeout(r,REDUCED?0:ms));
-function scrollChat(chat){const c=$('chat'); if(c&&chat.el.parentNode===c){c.scrollTop=c.scrollHeight;}}
+function scrollChat(chat){const c=$('chat'); if(c&&chat.el.parentNode===c&&c.dataset.pin!=='0'){c.scrollTop=c.scrollHeight;}}
 async function typeInto(el,text,speed,chat){
   if(REDUCED){el.textContent=text;return;}
   for(let i=0;i<text.length;){i+=2+Math.floor(Math.random()*3);el.textContent=text.slice(0,i);scrollChat(chat);await sleep(speed);}
@@ -415,8 +415,12 @@ function newAgentMsg(chat,a){
   chat.el.appendChild(m);scrollChat(chat);return m;
 }
 /* "Thinking · 4s" while a turn waits for the model; reasoning summaries only arrive when the model finishes thinking */
-setInterval(()=>{document.querySelectorAll('.think.streaming').forEach(t=>{const l=t.querySelector('.think-l'),b=t.querySelector('.think-body');
-  const sec=Math.max(0,Math.round((Date.now()-Number(t.dataset.t0||Date.now()))/1000));if(l)l.textContent=(b&&b.textContent?'Thinking':'Waiting for the model')+' · '+sec+'s';});},1000);
+setInterval(()=>{
+  document.querySelectorAll('.think.streaming').forEach(t=>{const l=t.querySelector('.think-l'),b=t.querySelector('.think-body');
+    const sec=Math.max(0,Math.round((Date.now()-Number(t.dataset.t0||Date.now()))/1000));if(l)l.textContent=(b&&b.textContent?'Thinking':'Waiting for the model')+' · '+sec+'s';});
+  document.querySelectorAll('.typing[data-t0]').forEach(t=>{const l=t.querySelector('.t-l');if(!l)return;
+    const sec=Math.max(0,Math.round((Date.now()-Number(t.dataset.t0))/1000));l.textContent=(t.parentNode&&t.parentNode.children.length>1?'Working':'Waiting for the model')+' · '+sec+'s';});
+},1000);
 function collapseThink(think){
   if(!think||think.dataset.touched)return;
   const tb=think.querySelector('.think-toggle'),body=think.querySelector('.think-body');
@@ -582,7 +586,9 @@ function openPanel(id,focus){
   renderStrip(); const sl=$('stripList'); if(sl)sl.scrollLeft=stripScroll;
   const chat=getChat(a); $('chat').appendChild(chat.el);
   updatePanelHeader(); renderGrants();
-  $('chat').scrollTop=1e6;
+  const chatEl=$('chat'); chatEl.dataset.pin='1'; chatEl.scrollTop=1e6;
+  chatEl.onscroll=()=>{chatEl.dataset.pin=(chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight<80)?'1':'0';};
+  $('panel').querySelector('.panel-in').classList.toggle('ro',!!(a.live&&a.parent));
   $('backBtn').onclick=closePanel;
   $('vscodeBtn').onclick=()=>a.live?openLive(a):toast('Would run <code>code '+esc(room.path)+'</code>',3800);
   if(a.live)$('pauseBtn').hidden=true;
@@ -624,6 +630,20 @@ function closePanel(){
 
 /* ---------------- events ---------------- */
 document.addEventListener('click',e=>{
+  /* markdown links: only http(s) leaves the app, through the system browser (main re-checks the URL) */
+  const lk=e.target.closest('.md a');
+  if(lk){e.preventDefault();const u=lk.getAttribute('href')||'';
+    if(/^https?:\/\//i.test(u)){if(bridge&&bridge.openExternal)bridge.openExternal(u);else toast('Would open <code>'+esc(SHORT(u,80))+'</code> in your browser',3200);}
+    return;}
+  const cp=e.target.closest('.codebox .copy');
+  if(cp){const code=cp.parentNode.querySelector('code');const txt=code?code.textContent:'';
+    const done=()=>{cp.textContent='Copied';setTimeout(()=>{cp.textContent='Copy';},1400);};
+    if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(done,()=>toast('Could not copy.'));else{const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');done();}catch(_){toast('Could not copy.');}ta.remove();}
+    return;}
+  const so=e.target.closest('.sub-open');
+  if(so){const blk=so.closest('.subblk'),id=blk&&blk.dataset.sub,par=ui.selected&&byId(ui.selected),card=par&&liveById(par.id+':'+id);if(card)openPanel(card.id,false);return;}
+  const pc=e.target.closest('[data-parentchat]');
+  if(pc){const cur=byId(ui.selected);if(cur&&cur.parent)openPanel(cur.parent,false);return;}
   const st=e.target.closest('.stat'); if(st){const k=st.dataset.k;ui.status=ui.status===k?null:k;renderAll();const n=document.querySelector(`.stat[data-k="${k}"]`);if(n)n.focus();return;}
   const mo=e.target.closest('[data-more]'); if(mo){const id=mo.dataset.more;ui.expanded[id]=!ui.expanded[id];renderAll();return;}
   const cm=e.target.closest('.chips-more'); if(cm){const box=cm.parentNode;box.dataset.exp=box.dataset.exp==='1'?'0':'1';refreshChips(box);return;}
@@ -680,7 +700,9 @@ function applyMode(){
 function liveChat(a){
   if(chats[a.id])return chats[a.id];
   const el=document.createElement('div');el.className='chat-inner';
-  return chats[a.id]={el,busy:false};
+  const chat=chats[a.id]={el,busy:false};
+  if(a.sub)buildSubTranscript(a,chat);
+  return chat;
 }
 function addNote(chat,html,err){const n=document.createElement('div');n.className='note'+(err?' err':'');n.innerHTML=html;chat.el.appendChild(n);scrollChat(chat);return n;}
 function addLiveAgent(info){
@@ -695,20 +717,256 @@ function addLiveAgent(info){
   if(!demoOn){if(!ui.expanded)ui.expanded={};renderFilter();scheduleRender();}
   if(pendingOpen===info.id){pendingOpen=null;if(!demoOn)openPanel(info.id,false);}
 }
+/* ---------------- chat timeline: thinking, tools, text and sub-agent blocks in arrival order (spec 015) ---------------- */
+/* Markdown (spec 016): renders are batched per animation frame and patched into the existing DOM, so streaming does not flicker. */
+const MDQ=new Set();
+function mdHTML(raw){
+  const md=window.DurbarMD; if(!md)return esc(raw).replace(/\n/g,'<br>');
+  return md.render(raw).replace(/<pre>/g,'<div class="codebox"><button type="button" class="copy" aria-label="Copy code">Copy</button><pre>').replace(/<\/pre>/g,'</pre></div>');
+}
+function mdPaint(el){el._mdq=false;if(el._raw==null)return;const t=document.createElement('template');t.innerHTML=mdHTML(el._raw);morphChildren(el,t.content);}
+function mdFlush(){const l=[...MDQ];MDQ.clear();l.forEach(mdPaint);}
+let mdRaf=0;
+function mdSet(el,raw,now){
+  el._raw=raw;el.classList.add('md');
+  if(now||REDUCED){mdPaint(el);return;}
+  if(el._mdq)return; el._mdq=true; MDQ.add(el);
+  if(!mdRaf)mdRaf=requestAnimationFrame(()=>{mdRaf=0;mdFlush();});
+}
+function stickyScroll(chat){const c=$('chat'); if(c&&chat.el.parentNode===c&&c.dataset.pin!=='0')c.scrollTop=c.scrollHeight;}
+
+function makeT(tl,chat){return {tl,chat,think:null,thinkN:0,bubble:null,chipsEl:null,chipEls:{},intent:'',typing:null};}
+function tScroll(T){if(T.chat)stickyScroll(T.chat);}
+function tChips(T){
+  const last=T.typing&&T.typing.parentNode===T.tl?T.typing.previousElementSibling:T.tl.lastElementChild;
+  if(last&&last===T.chipsEl)return T.chipsEl;
+  const c=document.createElement('div');c.className='chips';c.setAttribute('aria-label','Tool calls');
+  T.tl.insertBefore(c,T.typing&&T.typing.parentNode===T.tl?T.typing:null);T.chipsEl=c;return c;
+}
+function tAppend(T,el){T.tl.insertBefore(el,T.typing&&T.typing.parentNode===T.tl?T.typing:null);}
+function newThink(T,id){
+  const el=document.createElement('div');el.className='think streaming';el.dataset.t0=String(Date.now());
+  el.innerHTML=`<button class="think-toggle" type="button" aria-expanded="true">${ICON.chev}<span class="think-l">Thinking</span><span class="think-prev"></span><span class="live" aria-hidden="true"><i></i><i></i><i></i></span></button><div class="think-body md"></div>`;
+  const tb=el.querySelector('.think-toggle'),body=el.querySelector('.think-body');
+  tb.addEventListener('click',()=>{const o=tb.getAttribute('aria-expanded')==='true';tb.setAttribute('aria-expanded',String(!o));body.hidden=o;el.dataset.touched='1';});
+  tAppend(T,el);
+  return {id,el,body,raw:'',t0:Date.now()};
+}
+function tThink(T,id,delta){
+  id=id||'r';
+  let b=T.think;
+  if(!b||b.id!==id){if(b)tThinkEnd(b);b=T.think=newThink(T,id);T.thinkN++;}
+  b.raw+=delta;mdSet(b.body,b.raw);
+  if(!REDUCED&&b.body.scrollHeight>b.body.clientHeight)b.body.scrollTop=b.body.scrollHeight;
+  tScroll(T);
+}
+function plainFirst(raw){return String(raw).replace(/[*_`#>\[\]]/g,'').replace(/\s+/g,' ').trim().slice(0,90);}
+function tThinkEnd(b){
+  if(!b||!b.el.classList.contains('streaming'))return;
+  mdPaint(b.body);
+  b.el.classList.remove('streaming');
+  const sec=Math.max(1,Math.round((Date.now()-b.t0)/1000));
+  b.el.querySelector('.think-l').textContent='Thought for '+sec+'s';
+  b.el.querySelector('.think-prev').textContent=plainFirst(b.raw);
+  collapseThink(b.el);
+}
+function tText(T,e){
+  if(!T.bubble){T.bubble=document.createElement('div');T.bubble.className='bubble caret md';T.bubble._acc='';tAppend(T,T.bubble);}
+  if(e.final){T.bubble._acc=e.text||T.bubble._acc;mdSet(T.bubble,T.bubble._acc,true);T.bubble.classList.remove('caret');const out=T.bubble._acc;T.bubble=null;tScroll(T);return out;}
+  T.bubble._acc+=e.delta;mdSet(T.bubble,T.bubble._acc);tScroll(T);return null;
+}
+function tIntent(T,txt){
+  txt=SHORT(txt,160);if(!txt||T.intent===txt)return;T.intent=txt;
+  const n=document.createElement('div');n.className='intent-line';n.textContent=txt;tAppend(T,n);tScroll(T);
+}
+function tTool(T,e){
+  const box=tChips(T);
+  if(e.phase==='start'){const label=toolLabel(e.args);const el=makeChip({tool:e.tool,label,res:'running',state:'run'});addChip(box,el);T.chipEls[e.callId]={el,tool:e.tool,label,box};}
+  else{const c=T.chipEls[e.callId];if(c){const full=String(e.output||'');
+    const el=makeChip({tool:c.tool||e.tool,label:c.label,res:SHORT(full||(e.phase==='complete'?'ok':'failed'),60),output:full.slice(0,2000),state:e.phase==='failed'?'failed':'ok'});
+    c.el.replaceWith(el);c.el=el;refreshChips(c.box);}}
+  tScroll(T);
+}
+/* end of a turn / sub-agent run: finish blocks; say honestly when the model sent no reasoning */
+function tEnd(T,opts){
+  mdFlush();
+  if(T.think)tThinkEnd(T.think);
+  if(T.bubble){T.bubble.classList.remove('caret');T.bubble=null;}
+  if(T.typing){T.typing.remove();T.typing=null;}
+  if(!T.thinkN&&opts&&opts.note&&T.tl.children.length&&!T.tl.querySelector('.nothink')){
+    const n=document.createElement('div');n.className='nothink';
+    n.textContent='This model does not send reasoning for this step. The tool timeline shows what it did.';
+    n.title='Some turns (often plain tool use or delegation) come back without any reasoning summary. Nothing is hidden by Agent Durbar.';
+    T.tl.insertBefore(n,T.tl.firstChild);
+  }
+}
+
+/* ---- sub-agents: one record per spawning `task` call; the nested block in the parent chat and the helper's own
+   read-only transcript are two views of the same event log ---- */
+const SUB_LOG_MAX=3000;
+const SUBIC='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.2" cy="5" r="2"/><circle cx="11.2" cy="6" r="1.6"/><path d="M1.8 13c0-2.4 1.5-3.8 3.4-3.8s3.4 1.4 3.4 3.8M9.6 12.6c.2-1.6 1.1-2.6 2.6-2.6 1.4 0 2.2 1 2.2 2.6"/></svg>';
+function subRec(a,id,seed){
+  if(!a.subs)a.subs=new Map();
+  let s=a.subs.get(id);
+  if(!s){
+    s={id,parent:a,name:'Sub-agent',task:'',prompt:'',model:'',agentName:'',status:'running',result:'',error:'',log:[],views:[],card:null,tools:0,tokens:0,durationMs:0,t0:Date.now(),usage:{calls:0,inT:0,outT:0,nano:0}};
+    a.subs.set(id,s);
+    const t=ensureTurn(a); s.block=subBlock(s,t.T);
+    const cid=a.id+':'+id; let card=liveById(cid);
+    if(!card){card={id:cid,parent:a.id,name:'Sub-agent',role:'Helper',state:'working',label:null,task:'',look:lookFor(cid),files:[],paused:false,live:true,info:a.info,usage:{calls:0,inT:0,outT:0,nano:0},usageText:'',pend:new Map(),settled:new Set(),grants:[],sub:s};LIVE.agents.push(card);}
+    card.sub=s; s.card=card;
+  }
+  if(seed)Object.assign(s,seed);
+  return s;
+}
+function subStatusText(s){return s.status==='running'?'Running':s.status==='failed'?'Failed':'Done';}
+function subFoot(s){
+  const p=[];
+  if(s.model)p.push(s.model); if(s.agentName)p.push(s.agentName);
+  const ms=s.durationMs||(s.status==='running'?Date.now()-s.t0:0); if(ms)p.push((ms/1000).toFixed(1)+'s');
+  if(s.tools)p.push(s.tools+' tool call'+(s.tools===1?'':'s')); if(s.tokens)p.push(fmtTok(s.tokens)+' tokens');
+  return p.join(' · ');
+}
+/* the inner part both views share: prompt, timeline, result, footer */
+function subBody(s,host,chat){
+  host.insertAdjacentHTML('beforeend','<div class="sub-prompt"></div><div class="tl"></div><div class="sub-res"></div><div class="sub-err" role="alert" hidden></div><div class="sub-foot"></div>');
+  const v={s,host,chat,prompt:host.querySelector('.sub-prompt'),res:host.querySelector('.sub-res'),err:host.querySelector('.sub-err'),foot:host.querySelector('.sub-foot'),T:null};
+  v.T=makeT(host.querySelector('.tl'),chat);
+  s.views.push(v); subPaintView(v);
+  s.log.forEach(e=>subApply(v,e,true));
+  return v;
+}
+function subPaintView(v){
+  const s=v.s;
+  if(s.prompt){v.prompt.hidden=false;if(v.prompt._raw!==s.prompt)v.prompt.innerHTML='<span class="lbl">Task</span><div class="pt"></div>',mdSet(v.prompt.querySelector('.pt'),s.prompt,true),v.prompt._raw=s.prompt;}
+  else v.prompt.hidden=true;
+  const showRes=s.result&&s.result!==s.lastFinal;
+  v.res.hidden=!showRes;
+  if(showRes&&v.res._raw!==s.result){v.res.innerHTML='<span class="lbl">Result</span><div class="rt"></div>';mdSet(v.res.querySelector('.rt'),s.result,true);v.res._raw=s.result;}
+  v.err.hidden=!s.error; v.err.textContent=s.error?'Failed: '+s.error:'';
+  v.foot.textContent=subFoot(s);
+  if(v.paint)v.paint();
+}
+function subPaint(s){s.views.forEach(subPaintView);}
+function subBlock(s,T){
+  const el=document.createElement('div');el.className='subblk running';el.dataset.sub=s.id;
+  el.innerHTML=`<div class="sub-head"><button class="sub-toggle" type="button" aria-expanded="true">${ICON.chev}<span class="sub-ic">${SUBIC}</span><b class="sub-name"></b><span class="sub-task"></span><span class="sub-st"></span></button><button class="sub-open" type="button" title="Open this sub-agent's full activity (read-only)">Open</button></div><div class="sub-in"></div>`;
+  const tg=el.querySelector('.sub-toggle'),inn=el.querySelector('.sub-in');
+  tg.addEventListener('click',()=>{const o=tg.getAttribute('aria-expanded')==='true';tg.setAttribute('aria-expanded',String(!o));inn.hidden=o;el.dataset.touched='1';});
+  tAppend(T,el);
+  const v=subBody(s,inn,T.chat);
+  v.paint=()=>{
+    el.classList.toggle('running',s.status==='running');el.classList.toggle('failed',s.status==='failed');el.classList.toggle('done',s.status==='done');
+    el.querySelector('.sub-name').textContent=s.name;
+    el.querySelector('.sub-task').textContent=s.status==='running'?SHORT(s.task||s.prompt,90):SHORT(s.result||s.lastFinal||s.error||s.task,110);
+    el.querySelector('.sub-st').textContent=subStatusText(s);
+    el.querySelector('.sub-open').hidden=!s.card;
+  };
+  v.paint();
+  v.el=el;v.toggle=tg;v.inn=inn;
+  return v;
+}
+function subCollapse(s){const v=s.block;if(!v||v.el.dataset.touched)return;v.toggle.setAttribute('aria-expanded','false');v.inn.hidden=true;}
+function subApply(v,e,replay){
+  const s=v.s,T=v.T;
+  switch(e.type){
+  case 'user':if(!s.prompt){s.prompt=e.text;subPaintView(v);}return;
+  case 'thinking':tThink(T,e.reasoningId,e.delta);return;
+  case 'output':{const out=tText(T,e);if(out!=null&&!replay){}return;}
+  case 'status':if(e.intent)tIntent(T,e.intent);return;
+  case 'toolCall':tTool(T,e);return;
+  }
+}
+/* an event with agentId (the spawning task call id) */
+function onSubEvent(a,e){
+  const s=subRec(a,e.agentId), card=s.card;
+  if(e.type==='usage'){
+    const u=s.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;
+    const cu=card.usage;cu.calls=u.calls;cu.inT=u.inT;cu.outT=u.outT;cu.nano=u.nano;card.usageText=usageLong(card);
+    const p=a.usage;p.calls++;p.inT+=e.inputTokens||0;p.outT+=e.outputTokens||0;p.nano+=e.nanoAiu||0;a.usageText=usageLong(a);
+    scheduleRender();if(ui.selected===card.id||ui.selected===a.id)updatePanelHeader();return;
+  }
+  if(s.log.length<SUB_LOG_MAX)s.log.push(e);
+  if(e.type==='toolCall'&&e.phase==='start'){s.tools++;}
+  if(e.type==='status'&&e.status==='error'){s.error=e.intent||'Error';}
+  if(e.type==='user'&&!s.prompt)s.prompt=e.text;
+  if(e.type==='output'&&e.final)s.lastFinal=e.text||'';
+  s.views.forEach(v=>subApply(v,e));
+  subPaint(s);
+  /* helper card: what it is doing right now */
+  if(e.type==='thinking')setState(card,'thinking',null);
+  else if(e.type==='output')setState(card,'working',null,e.final?SHORT(e.text,100):undefined);
+  else if(e.type==='toolCall'&&e.phase==='start'){const l=toolLabel(e.args);setState(card,'working',null,e.tool+(l?' '+SHORT(l,80):''));}
+  else if(e.type==='status'&&e.intent)setState(card,'working',null,SHORT(e.intent,100));
+  if(ui.selected===card.id)updatePanelHeader();
+}
+function onSubagent(a,e){
+  const s=subRec(a,e.subagentId), card=s.card;
+  if(e.name)s.name=e.name; if(e.model)s.model=e.model; if(e.agentName)s.agentName=e.agentName;
+  if(e.task&&e.phase==='started')s.task=e.task;
+  if(e.durationMs)s.durationMs=e.durationMs; if(e.totalTokens)s.tokens=e.totalTokens; if(e.totalToolCalls!=null)s.tools=Math.max(s.tools,e.totalToolCalls);
+  card.name=s.name;card.role=s.agentName?'Helper · '+s.agentName:'Helper';
+  if(e.phase==='started'){s.status='running';setState(card,'working',null,s.task||'Working');}
+  else{
+    s.t1=Date.now();
+    if(e.phase==='failed'){s.status='failed';s.error=e.error||e.task||'Failed';setState(card,'error',null,SHORT(s.error,100));}
+    else{s.status='done';setState(card,'done','Done',SHORT(s.result||s.task,100));}
+    s.views.forEach(v=>{tEnd(v.T,{note:false});});
+    subCollapse(s);
+  }
+  subPaint(s);scheduleRender();
+}
+/* tool call of the parent: `task` becomes the sub-agent block, not a chip */
+const isTaskTool=t=>t==='task'||t==='agent';
+function onTaskTool(a,e){
+  const s=subRec(a,e.callId);
+  if(e.phase==='start'){
+    const g=e.args||{};
+    if(g.prompt&&!s.prompt)s.prompt=String(g.prompt);
+    if(g.description&&!s.task)s.task=String(g.description);
+    if(g.agent_type&&!s.agentName)s.agentName=String(g.agent_type);
+    if(s.name==='Sub-agent'&&s.task)s.name=SHORT(s.task,40);
+  } else {
+    if(e.phase==='complete'&&e.output)s.result=String(e.output);
+    if(e.phase==='failed'){s.status='failed';s.error=String(e.output||'Failed');}
+    else if(s.status==='running'){s.status='done';}
+    s.views.forEach(v=>tEnd(v.T,{note:false}));
+    if(s.card)setState(s.card,s.status==='failed'?'error':'done',s.status==='failed'?null:'Done',SHORT(s.result||s.error||s.task,100));
+    subCollapse(s);
+  }
+  subPaint(s);scheduleRender();
+}
+/* the helper's own full view (opened from a helper card): header + the shared body, read-only */
+function buildSubTranscript(card,chat){
+  const s=card.sub,host=chat.el;
+  host.innerHTML='';
+  const head=document.createElement('div');head.className='sub-ro';
+  head.innerHTML='<div><b>Sub-agent activity</b><span>Read-only. It updates live while the sub-agent works. Messages go to its parent agent.</span></div><button class="btn" type="button" data-parentchat="1">Back to parent chat</button>';
+  host.appendChild(head);
+  const wrap=document.createElement('div');wrap.className='sub-full';
+  wrap.innerHTML='<div class="sub-full-head"><span class="sub-ic"></span><h3></h3><span class="sub-st"></span></div><p class="sub-full-task"></p>';
+  host.appendChild(wrap);
+  const body=document.createElement('div');body.className='sub-full-body';wrap.appendChild(body);
+  const v=subBody(s,body,chat);
+  v.paint=()=>{wrap.querySelector('.sub-ic').innerHTML=SUBIC;wrap.querySelector('h3').textContent=s.name;wrap.querySelector('.sub-st').textContent=subStatusText(s);wrap.querySelector('.sub-st').className='sub-st '+s.status;wrap.querySelector('.sub-full-task').textContent=s.task;};
+  v.paint();
+  if(s.status!=='running')tEnd(v.T,{note:false});
+}
+
 function ensureTurn(a){
   if(a.turn)return a.turn;
-  const chat=liveChat(a), m=newAgentMsg(chat,a);
-  const t=a.turn={m,body:m.querySelector('.think-body'),chips:m.querySelector('.chips'),think:m.querySelector('.think'),chipEls:{},bubble:null};
-  const ty=document.createElement('div');ty.className='typing';ty.innerHTML='<i></i><i></i><i></i>';m.appendChild(ty);t.typing=ty;
-  return t;
+  const chat=liveChat(a), m=document.createElement('div');m.className='msg agent';
+  m.innerHTML=`<div class="meta">${esc(a.name)}</div><div class="tl"></div>`;
+  chat.el.appendChild(m);
+  const T=makeT(m.querySelector('.tl'),chat);
+  const ty=document.createElement('div');ty.className='typing';ty.dataset.t0=String(Date.now());ty.innerHTML='<i></i><i></i><i></i><span class="t-l"></span>';
+  T.tl.appendChild(ty);T.typing=ty;
+  const t=a.turn={m,T};
+  stickyScroll(chat);return t;
 }
 function closeTurn(a){
   const t=a.turn; if(!t)return;
-  t.think.classList.remove('streaming');
-  if(!t.body.textContent.trim()){const n=document.createElement('div');n.className='nothink';n.textContent='No reasoning summary was provided for this step.';t.think.replaceWith(n);}
-  else{const l=t.think.querySelector('.think-l');if(l)l.textContent='Thinking';collapseThink(t.think);}
-  if(t.typing)t.typing.remove();
-  if(t.bubble)t.bubble.classList.remove('caret');
+  tEnd(t.T,{note:true});
   a.turn=null;
 }
 function setState(a,state,label,task){
@@ -740,7 +998,7 @@ function showPerm(a,p){
     n.appendChild(row);
     a.pend.set(p.requestId,{n,row,st});
   }
-  t.chips.appendChild(n);scrollChat(liveChat(a));
+  tChips(t.T).appendChild(n);scrollChat(liveChat(a));
 }
 function settlePerm(a,p){
   let e=a.pend.get(p.requestId);
@@ -748,7 +1006,7 @@ function settlePerm(a,p){
   if(!e){ /* auto-approved by a session grant, or answered elsewhere: show a settled note in timeline order */
     if(p.state==='pending')return;
     showPerm(a,Object.assign({},p,{state:'approved'}));
-    const n=ensureTurn(a).chips.lastElementChild;e={n,st:n.querySelector('.pstate')};
+    const n=tChips(ensureTurn(a).T).lastElementChild;e={n,st:n.querySelector('.pstate')};
   }
   a.pend.delete(p.requestId);a.settled.add(p.requestId);
   if(e.row)e.row.remove();
@@ -766,12 +1024,14 @@ function renderGrants(){
 }
 function onLiveEvent(e){
   const a=liveById(e.sessionId); if(!a)return;
-  const chat=liveChat(a), main=!e.agentId;
+  if(e.type==='subagent')return onSubagent(a,e);
+  if(e.agentId&&e.type!=='permission'&&e.type!=='grants')return onSubEvent(a,e);
+  const chat=liveChat(a), main=true;
   switch(e.type){
   case 'user':{addUserMsg(chat,e.text,(e.attachments||[]).map(x=>({name:String(x.path).split(/[\\/]/).pop(),img:x.kind==='image',path:x.path})));return;}
   case 'status':
     if(!main)return;
-    if(e.status==='working'){a.worked=true; ensureTurn(a); if(e.intent)a.intent=e.intent;
+    if(e.status==='working'){a.worked=true; const tt=ensureTurn(a); if(e.intent){a.intent=e.intent;if(!/^(Thinking|Approved|Allowed|Denied|Waiting for permission)/.test(e.intent))tIntent(tt.T,e.intent);}
       if(a.state!=='working'&&a.state!=='thinking')setState(a,'working',null,e.intent||a.task); else if(e.intent)setState(a,a.state,undefined,e.intent);}
     else if(e.status==='needs-permission'){
       ensureTurn(a); setState(a,'waiting',null,e.intent||'Waiting for permission');
@@ -792,29 +1052,16 @@ function onLiveEvent(e){
     return;
   case 'permission':if(main)settlePerm(a,e.permission);return;
   case 'grants':setGrants(a,e.grants||[]);return;
-  case 'thinking':{if(!main)return;const t=ensureTurn(a);t.body.textContent+=e.delta;scrollChat(chat);setState(a,'thinking',null);return;}
-  case 'output':{if(!main)return;const t=ensureTurn(a);
-    if(!t.bubble){t.bubble=document.createElement('div');t.bubble.className='bubble caret';t.m.insertBefore(t.bubble,t.typing||null);}
-    if(e.final){t.bubble.textContent=e.text||t.bubble.textContent;t.bubble.classList.remove('caret');a.lastOutput=e.text||'';t.bubble=null;}
-    else t.bubble.textContent+=e.delta;
-    scrollChat(chat);setState(a,'working',null);return;}
+  case 'thinking':{const t=ensureTurn(a);tThink(t.T,e.reasoningId,e.delta);setState(a,'thinking',null);return;}
+  case 'output':{const t=ensureTurn(a);const out=tText(t.T,e);if(out!=null)a.lastOutput=out;setState(a,'working',null);return;}
   case 'toolCall':{const t=ensureTurn(a);
-    if(e.phase==='start'){const label=toolLabel(e.args);const el=makeChip({tool:e.tool,label,res:'running',state:'run'});
-      addChip(t.chips,el);t.chipEls[e.callId]={el,tool:e.tool,label};
-      if(main)setState(a,a.state==='thinking'?'working':a.state,null,a.intent||(e.tool+(label?' '+SHORT(label,90):'')));}
-    else{const c=t.chipEls[e.callId]; if(c){const full=String(e.output||'');
-      const el=makeChip({tool:c.tool||e.tool,label:c.label,res:SHORT(full||(e.phase==='complete'?'ok':'failed'),60),output:full.slice(0,2000),state:e.phase==='failed'?'failed':'ok'});
-      c.el.replaceWith(el);c.el=el;refreshChips(t.chips);}}
+    if(isTaskTool(e.tool)||(t.T.chipEls[e.callId]===undefined&&a.subs&&a.subs.has(e.callId)))onTaskTool(a,e);
+    else tTool(t.T,e);
+    if(e.phase==='start'&&!isTaskTool(e.tool)){const label=toolLabel(e.args);setState(a,a.state==='thinking'?'working':a.state,null,a.intent||(e.tool+(label?' '+SHORT(label,90):'')));}
     scrollChat(chat);return;}
   case 'usage':{const u=a.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;
     a.usageText=usageLong(a);scheduleRender();
     if(ui.selected===a.id||(byId(ui.selected)||{}).parent===a.id)updatePanelHeader();return;}
-  case 'subagent':{const sid=a.id+':'+e.subagentId;let s=liveById(sid);
-    if(!s){s={id:sid,parent:a.id,name:e.name||'Sub-agent',role:'Helper',state:'working',label:null,task:e.task||'',look:lookFor(sid),files:[],paused:false,live:true,info:a.info,usage:{calls:0,inT:0,outT:0,nano:0},usageText:'',pend:new Map(),settled:new Set(),grants:[]};LIVE.agents.push(s);}
-    if(e.phase==='started')setState(s,'working',null,e.task||'Working');
-    else if(e.phase==='completed')setState(s,'done','Done',s.task);
-    else setState(s,'error',null,SHORT(e.task||'Failed',100));
-    scheduleRender();return;}
   }
 }
 async function sendLive(text,forId){
@@ -1001,7 +1248,7 @@ function replayHistory(a,h,title){
   const chipBox=()=>{const mm=agentMsg();let l=mm.lastElementChild;if(!l||!l.classList.contains('chips')){l=document.createElement('div');l.className='chips';l.setAttribute('aria-label','Tool calls');mm.appendChild(l);}return l;};
   for(const it of ((h&&h.items)||[])){
     if(it.type==='user'){m=null;addUserMsg(chat,it.text,(it.attachments||[]).map(x=>({name:x.name,img:x.kind==='image'})),it.ts);}
-    else if(it.type==='output'){const b=document.createElement('div');b.className='bubble';b.textContent=it.text;agentMsg().appendChild(b);}
+    else if(it.type==='output'){const b=document.createElement('div');b.className='bubble';agentMsg().appendChild(b);mdSet(b,it.text,true);}
     else{const full=it.output||'';addChip(chipBox(),makeChip({tool:it.tool,label:it.label,res:SHORT(full||(it.failed?'failed':'ok'),60),output:full.slice(0,2000),state:it.failed?'failed':'ok'}));}
   }
   addNote(chat,'Resumed: '+esc(title||'earlier session')+'. New messages continue this session.');
@@ -1034,7 +1281,7 @@ async function viewVs(a,key,btn){
   let am=null;
   for(const b of tr.blocks){
     if(b.type==='user'){am=null;addUserMsg(fake,b.text||'(attachment)',(b.attachments||[]).map(n=>({name:n,img:false})),b.ts);}
-    else if(b.type==='assistant'){if(!am){am=document.createElement('div');am.className='msg agent';am.innerHTML='<div class="meta">Copilot (VS Code)</div>';body.appendChild(am);}const d=document.createElement('div');d.className='bubble';d.textContent=b.text;am.appendChild(d);}
+    else if(b.type==='assistant'){if(!am){am=document.createElement('div');am.className='msg agent';am.innerHTML='<div class="meta">Copilot (VS Code)</div>';body.appendChild(am);}const d=document.createElement('div');d.className='bubble';am.appendChild(d);mdSet(d,b.text,true);}
     else if(b.type==='tool'){if(!am){am=document.createElement('div');am.className='msg agent';am.innerHTML='<div class="meta">Copilot (VS Code)</div>';body.appendChild(am);}let l=am.lastElementChild;if(!l||!l.classList.contains('chips')){l=document.createElement('div');l.className='chips';am.appendChild(l);}addChip(l,makeChip({tool:'tool',kind:'tool',label:b.label,state:'ok'}));}
     else if(b.type==='note'){const n=document.createElement('div');n.className='note err';n.textContent=b.text;body.appendChild(n);}
   }

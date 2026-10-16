@@ -76,13 +76,34 @@ interface SimAgent {
     ['Types', 'Fixing 4 strict-null errors', 'failed'],
     ['Diff', 'Summarising the diff for review', 'working'],
   ];
+  // Reasoning summaries as the real runtime sends them: a bold heading line, then plain sentences (markdown).
   const THINK = [
-    'The request touches a few files, so I will read them before changing anything. ',
+    '**Planning the change**\n\nThe request touches a few files, so I will read them before changing anything. ',
     'Splitting by domain keeps the public API stable and the diff easy to review. ',
-    'I should check callers first, because a rename here is a breaking change for any client that pins tool names. ',
-    'Eleven of the fourteen inputs have a text layer; the rest need OCR, so I will parse the easy ones first. ',
-    'The failure looks like a rate limit rather than a logic error, so a retry with lower concurrency is probably enough. ',
+    '**Checking callers**\n\nI should check callers first, because a rename here is a *breaking change* for any client that pins tool names. ',
+    '**Choosing an order**\n\nEleven of the fourteen inputs have a text layer; the rest need OCR, so I will parse the easy ones first. ',
+    '**Reading the failure**\n\nThe failure looks like a rate limit rather than a logic error, so a retry with lower concurrency is probably enough. ',
   ];
+  const MD_REPLY = [
+    '**Done.** I moved the company handlers first and kept a thin re-export in `registry.ts`, so the public API is unchanged.',
+    '',
+    '## What changed',
+    '',
+    '- `src/tools/companies.ts`: new module with 6 handlers',
+    '- `src/registry.ts`: re-exports only (*no behaviour change*)',
+    '- Tests: **45 passing**, none skipped',
+    '',
+    '| Module | Handlers | Tests |',
+    '| --- | ---: | ---: |',
+    '| companies | 6 | 22 |',
+    '| cantons | 4 | 9 |',
+    '',
+    '```ts',
+    'export { findCompany, searchCompanies } from "./tools/companies";',
+    '```',
+    '',
+    '> Next I will run the filings module, then update the docs. See the [contributing guide](https://example.com/contributing) for the naming rules.',
+  ].join('\n');
   const LONG_CMD = 'npm run test -- --run --reporter=verbose src/tools/registry.test.ts src/tools/companies.test.ts src/tools/cantons.test.ts --coverage --coverage.reporter=text-summary';
   const LONG_OUT = ' ✓ src/tools/registry.test.ts (14 tests) 212ms\n ✓ src/tools/companies.test.ts (22 tests) 340ms\n ✓ src/tools/cantons.test.ts (9 tests) 98ms\n\nTest Files  3 passed (3)\n     Tests  45 passed (45)\n  Duration  2.41s';
 
@@ -147,13 +168,40 @@ interface SimAgent {
       if (keepOpen) { s.open = id; return; }
       emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: d.tool, phase: 'complete', output: d.out });
     }
+    function subRun(s: SimAgent, h: number, name: string, task: string, st: 'working' | 'thinking' | 'done' | 'failed'): void {
+      const call = sid(s) + '-task' + h, base = { sessionId: sid(s), timestamp: now() };
+      const prompt = 'You are a helper for the **' + name + '** step.\n\n' + task + '.\n\nOnly read files; report back in two sentences.';
+      emit({ ...base, type: 'toolCall', callId: call, tool: 'task', phase: 'start', args: { description: task, prompt, agent_type: 'explore' } });
+      emit({ ...base, type: 'subagent', subagentId: call, name, phase: 'started', task, agentName: 'explore', model: 'gpt-5.6-luna' });
+      emit({ ...base, type: 'user', agentId: call, text: prompt });
+      emit({ ...base, type: 'status', status: 'working', agentId: call, intent: task });
+      if (h % 2 === 0) emit({ ...base, type: 'thinking', agentId: call, reasoningId: call + '-r', delta: '**Scoping the check**\n\nOnly the touched files matter, so I will start with ' + s.files[0] + '. ' });
+      const f = s.files[h % s.files.length];
+      emit({ ...base, type: 'toolCall', agentId: call, callId: call + '-v', tool: 'view', phase: 'start', args: { path: f } });
+      emit({ ...base, type: 'toolCall', agentId: call, callId: call + '-v', tool: 'view', phase: 'complete', output: '120 lines' });
+      emit({ ...base, type: 'usage', agentId: call, model: 'auto', inputTokens: 3900, outputTokens: 60, nanoAiu: 8_000_000, creditsStatus: 'complete' });
+      if (st === 'working' || st === 'thinking') {
+        emit({ ...base, type: 'toolCall', agentId: call, callId: call + '-g', tool: 'grep', phase: 'start', args: { pattern: 'registerTool' } });
+        return;
+      }
+      if (st === 'failed') {
+        emit({ ...base, type: 'subagent', subagentId: call, name, phase: 'failed', task: 'Failed: 4 strict-null errors remain', error: 'Failed: 4 strict-null errors remain', agentName: 'explore', model: 'gpt-5.6-luna', durationMs: 7400, totalTokens: 9100, totalToolCalls: 3 });
+        emit({ ...base, type: 'toolCall', callId: call, tool: 'task', phase: 'failed', output: 'Failed: 4 strict-null errors remain' });
+        return;
+      }
+      const res = '**' + name + '**: ' + task.toLowerCase() + ' finished. `' + f + '` is fine; nothing else needs changing.';
+      emit({ ...base, type: 'output', agentId: call, delta: '', final: true, text: res });
+      emit({ ...base, type: 'subagent', subagentId: call, name, phase: 'completed', agentName: 'explore', model: 'gpt-5.6-luna', durationMs: 6200, totalTokens: 8100, totalToolCalls: 2 });
+      emit({ ...base, type: 'toolCall', callId: call, tool: 'task', phase: 'complete', output: res });
+    }
     function closeOpen(s: SimAgent): void {
       if (!s.open) return;
       emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: s.open, tool: 'bash', phase: 'complete', output: 'ok' });
       s.open = undefined;
     }
     const think = (s: SimAgent, sentences: number): void => {
-      for (let i = 0; i < sentences; i++) emit({ type: 'thinking', sessionId: sid(s), timestamp: now(), delta: THINK[s.think++ % THINK.length] });
+      const rid = sid(s) + '-r' + (s.think >> 3);
+      for (let i = 0; i < sentences; i++) emit({ type: 'thinking', sessionId: sid(s), timestamp: now(), reasoningId: rid, delta: THINK[s.think++ % THINK.length] });
     };
 
     const dirOf = (f: string): string => (f.includes('/') ? f.slice(0, f.lastIndexOf('/')) : '.');
@@ -161,8 +209,13 @@ interface SimAgent {
     const grantsEvent = (s: SimAgent): void =>
       emit({ type: 'grants', sessionId: sid(s), timestamp: now(), grants: [...s.grants].map(([key, label]) => ({ key, kind: 'write', label })) });
     /** Like the real broker: auto-approve under a session grant, otherwise leave the request pending. */
-    function askWrite(s: SimAgent, file: string, summary: string, cont: 'tool' | 'edit', intent: string): boolean {
+    function askWrite(s: SimAgent, file: string, summary: string, cont: 'tool' | 'edit', intent: string, force = false): boolean | 'denied' {
       const sc = scopeOf(file);
+      if (!force && s.info.permMode === 'allow') return true; // Allow edits: no question asked
+      if (!force && s.info.permMode === 'read-only') {
+        emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { requestId: 'perm-' + sid(s) + '-' + now(), kind: 'write', summary, state: 'denied' } });
+        return 'denied';
+      }
       const requestId = 'perm-' + sid(s) + '-' + now();
       const base = { requestId, kind: 'write', summary, scopeKey: sc.key, scopeLabel: sc.label };
       if (s.grants.has(sc.key)) {
@@ -190,29 +243,25 @@ interface SimAgent {
       emit({ type: 'user', sessionId: sid(s), timestamp: now(), text: s.prompt, attachments: (s.attachments ?? []).map((p) => ({ path: p, kind: /\.(png|jpe?g|gif)$/i.test(p) ? 'image' as const : 'file' as const })) });
       if (s.state === 'idle') return;
       emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: s.intent });
-      think(s, 4);
+      if (s.state !== 'done') think(s, 4); // done agents show a turn without reasoning (the model sent none)
       const done = sims.indexOf(s) === 0 ? 8 : s.state === 'working' ? 4 : 3;
       for (let i = 0; i < done; i++) { toolStep(s, false); usage(s); }
-      // Sub-agents
+      // Sub-agents: each one is a `task` tool call of the parent; its own events carry agentId = that call id
       for (let h = 0; h < s.helpers; h++) {
         const [hn, task, st] = HELPER_NAMES[(h + sims.indexOf(s)) % HELPER_NAMES.length];
-        const hid = 'h' + h;
-        emit({ type: 'subagent', sessionId: sid(s), timestamp: now(), subagentId: hid, name: hn, phase: 'started', task });
-        if (st === 'done') emit({ type: 'subagent', sessionId: sid(s), timestamp: now(), subagentId: hid, name: hn, phase: 'completed', task });
-        if (st === 'failed') emit({ type: 'subagent', sessionId: sid(s), timestamp: now(), subagentId: hid, name: hn, phase: 'failed', task: 'Failed: 4 strict-null errors remain' });
-        if (st === 'working' || st === 'thinking') emit({ type: 'subagent', sessionId: sid(s), timestamp: now(), subagentId: hid, name: hn, phase: 'started', task });
+        subRun(s, h, hn, task, st as 'working' | 'thinking' | 'done' | 'failed');
       }
       switch (s.state) {
         case 'working':
           emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: s.intent });
           toolStep(s, true);
-          emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: 'Moved the company handlers first and kept a thin re-export in registry.ts so the public API is unchanged. Next I am running the tests for the three new modules.' });
+          emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: 'Moved the company handlers first and kept a thin re-export in `registry.ts` so the public API is unchanged. Next I am running the **tests** for the three new modules.' });
           break;
         case 'thinking':
           think(s, 2);
           break;
         case 'waiting':
-          askWrite(s, s.files[0], 'Edit ' + s.files[0] + ' (rename find_company to search_companies)', 'tool', s.intent);
+          askWrite(s, s.files[0], 'Edit ' + s.files[0] + ' (rename find_company to search_companies)', 'tool', s.intent, true);
           break;
         case 'error':
           emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: sid(s) + '-fail', tool: 'bash', phase: 'start', args: { command: 'python evals/run.py --prompt v7 --concurrency 8' } });
@@ -220,7 +269,7 @@ interface SimAgent {
           emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'error', intent: s.intent });
           break;
         case 'done': {
-          const text = 'Done. ' + s.intent + ' Every link in the docs index resolves and the tests pass.';
+          const text = '**Done.** ' + s.intent + ' Every link in the docs index resolves and the tests pass.';
           emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: text, final: true, text });
           emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'idle' });
           break;
@@ -248,13 +297,29 @@ interface SimAgent {
     function reply(s: SimAgent, text: string): void {
       closeOpen(s);
       emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: 'Answering: ' + text.slice(0, 60) });
-      think(s, 2);
+      if (!/\bquick\b/i.test(text)) think(s, 3); // "quick": a turn where the model sends no reasoning
+      if (/\b(markdown|md|format)\b/i.test(text)) {
+        emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: MD_REPLY, final: true, text: MD_REPLY + '\n\n[unsafe link](javascript:alert(1)) and <script>alert(1)</script> stay inert.' });
+        emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'idle' });
+        s.state = 'done';
+        return;
+      }
+      if (/\bsub-?agents?|helper|delegate\b/i.test(text)) {
+        subRun(s, 90 + s.tool++, 'Docs check', 'Compare README.md and index.js', 'done');
+        const o = 'Both files agree: the README describes a **tiny dummy app** and `index.js` only prints a greeting.';
+        emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: o, final: true, text: o });
+        emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'idle' });
+        s.state = 'done';
+        return;
+      }
       if (/\b(edit|write|change|fix|rename)\b/i.test(text)) {
         // Edit request: ask for write permission (or use a session grant), then edit inline in the timeline.
         const file = s.files[0];
         toolStep(s, false);
         usage(s);
-        if (askWrite(s, file, 'write ' + file, 'edit', 'Waiting for permission: write ' + file)) { editTool(s, file, true); finishReply(s, true, file); }
+        const r = askWrite(s, file, 'write ' + file, 'edit', 'Waiting for permission: write ' + file);
+        if (r === true) { editTool(s, file, true); finishReply(s, true, file); }
+        else if (r === 'denied') { editTool(s, file, false); finishReply(s, false, file); }
         return;
       }
       toolStep(s, false);
@@ -358,6 +423,23 @@ interface SimAgent {
         return { ok: true, agent: info };
       },
       setFolderHidden: async () => ({ ok: true }),
+      openExternal: async (url) => {
+        console.info('[sim] would open in the system browser:', url);
+        return { ok: /^https?:\/\//i.test(url) };
+      },
+      setRoomClosed: async () => ({ ok: true }),
+      setPermMode: async (id, mode, o) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'unknown agent' };
+        s.info.permMode = mode;
+        if (o?.clearGrants && s.grants.size) { s.grants.clear(); grantsEvent(s); }
+        let pending = s.perm ? 1 : 0;
+        if (s.perm && ((mode === 'allow' && o?.approvePending) || mode === 'read-only')) {
+          await api.resolvePermission(id, s.perm.requestId, mode === 'allow', false);
+          pending = 0;
+        }
+        return { ok: true, mode, pending };
+      },
       removeFolder: async (id) => {
         const src = sims.find((x) => x.info.id === id);
         const gone = src ? sims.filter((x) => x.info.cwd === src.info.cwd).map((x) => x.info.id) : [];
