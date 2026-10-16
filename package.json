@@ -18,7 +18,7 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "test:permissions": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-permissions.js",
     "test:attachments": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-attachments.js",
-    "test": "npm run test:permissions && npm run test:attachments && npm run test:vscode && npm run test:runtime && npm run test:history && npm run test:vscodechat && npm run test:folders && npm run test:events && npm run test:markdown && npm run test:rooms && npm run test:url && npm run test:mcp && npm run test:toolstats && npm run test:devhooks && npm run test:credits",
+    "test": "npm run test:permissions && npm run test:attachments && npm run test:vscode && npm run test:runtime && npm run test:history && npm run test:vscodechat && npm run test:folders && npm run test:events && npm run test:markdown && npm run test:rooms && npm run test:url && npm run test:mcp && npm run test:toolstats && npm run test:devhooks && npm run test:credits && npm run test:toolusage && npm run test:usagestore",
     "test:vscode": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-vscode.js",
     "test:history": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-history.js",
     "test:vscodechat": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-vscodechat.js",
@@ -40,7 +40,9 @@
     "test:toolstats": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-toolstats.js",
     "test:credits": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-credits.js",
     "test:devhooks": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-devhooks.js",
-    "check:office": "npm run build && node scripts/check-office-overlap.js"
+    "check:office": "npm run build && node scripts/check-office-overlap.js",
+    "test:usagestore": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-usagestore.js",
+    "test:toolusage": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-toolusage.js"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
