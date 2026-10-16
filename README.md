@@ -21,10 +21,10 @@ Download the build for your system from the [Releases page](https://github.com/v
 
 | System | File |
 | --- | --- |
-| macOS, Apple Silicon (M1 and later) | `Agent-Durbar-<version>-arm64.dmg` (or the `-mac.zip`) |
-| macOS, Intel | `Agent-Durbar-<version>-x64.dmg` (or the `-mac.zip`) |
+| macOS, Apple Silicon (M1 and later) | `Agent-Durbar-<version>-arm64.dmg` (or `...-arm64.zip`) |
+| macOS, Intel | `Agent-Durbar-<version>-x64.dmg` (or `...-x64.zip`) |
 | Windows 10/11, x64 | `Agent-Durbar-Setup-<version>.exe` (installer) or `Agent-Durbar-<version>-portable.exe` |
-| Linux, x64 | `Agent-Durbar-<version>.AppImage` (`chmod +x` it, then run) |
+| Linux, x64 | `Agent-Durbar-<version>-x86_64.AppImage` (`chmod +x` it, then run) |
 
 There is no auto-update: download a newer release to update.
 
@@ -50,7 +50,7 @@ npm run dist:dir          # unpacked app for this OS in release/
 npm run dist              # installers/archives for this OS in release/ (no signing, no publishing)
 ```
 
-Releases are built by GitHub Actions from `v*` tags into a **draft** release; see [CONTRIBUTING.md](CONTRIBUTING.md).
+Each release also lists `SHA256SUMS.txt`. Releases are built by GitHub Actions from `v*` tags into a **draft** release; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Status (milestone 5: permissions, attachments, office polish)
 
