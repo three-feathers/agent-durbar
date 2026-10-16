@@ -10,6 +10,8 @@ export interface StartOptions {
   /** Folder or .code-workspace file; one session per workspace. */
   workspace: string;
   model?: string;
+  /** For model 'auto': routing preference ('efficiency' is the cheapest). */
+  autoTier?: 'efficiency' | 'balance' | 'intelligence';
   /** Soft cap on AI credits for this session, if the runtime supports it. */
   maxAiCredits?: number;
   /** Resume an existing session id (disk-backed). */

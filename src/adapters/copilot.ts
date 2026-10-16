@@ -105,6 +105,7 @@ export class CopilotAdapter implements AgentAdapter {
       workingDirectory: cwd,
       streaming: true,
       model: options.model,
+      ...(options.autoTier ? { capi: { autoTier: options.autoTier } } : {}),
       onPermissionRequest,
     };
     const session = options.resumeSessionId
