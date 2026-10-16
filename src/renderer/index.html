@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<title>Agent Durbar</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs><filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="6"/></filter></defs></svg>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#4f7f65" stroke-width="1.7" stroke-linejoin="round"><rect x="2.5" y="2.5" width="6" height="7" rx="1.5"/><rect x="11.5" y="2.5" width="6" height="4" rx="1.5"/><rect x="11.5" y="9" width="6" height="8.5" rx="1.5"/><rect x="2.5" y="12.5" width="6" height="5" rx="1.5"/></svg></div>
+    <div><h1>Agent Durbar</h1><span class="proto" id="protoBadge">Prototype - sample data</span></div>
+  </div>
+  <div class="stats" id="stats" role="group" aria-label="Agent status counts. Select one to filter."></div>
+  <div class="controls">
+    <div id="liveBar">
+      <label class="tgl"><input type="checkbox" id="demoToggle"> Demo</label>
+      <button class="btn" id="addFolder" type="button" title="Add a folder">+ Folder</button>
+      <button class="btn" id="addWs" type="button" title="Add a .code-workspace file">+ Workspace</button>
+      <label class="sr-only" for="permMode">Permissions for new agents</label>
+      <select id="permMode" title="Permissions for newly added agents"><option value="read-only">Read-only</option><option value="ask">Ask first</option><option value="allow">Allow edits</option></select>
+    </div>
+    <label class="select-wrap"><span class="sr-only">Filter by folder</span>
+      <select id="wsFilter"></select></label>
+    <div class="seg" role="group" aria-label="View">
+      <button id="vOffice" aria-pressed="true">Office</button>
+      <button id="vList" aria-pressed="false">List</button>
+    </div>
+  </div>
+</header>
+
+<div class="workspace">
+  <div id="stage-host">
+    <main id="floor" aria-label="Office floor plan"><div id="stage"></div></main>
+  </div>
+  <section id="list" aria-label="Agent list"></section>
+  <aside id="panel" aria-label="Agent details"></aside>
+</div>
+<div id="toasts" role="status" aria-live="polite"></div>
+
+<script src="demo.js"></script>
+<script src="sim.js"></script>
+<script src="app.js"></script>
+<script src="renderer.js"></script>
+</body>
+</html>

@@ -1,11 +1,12 @@
-// Copies the office-view prototype into dist/renderer and injects the compiled renderer script.
+// Copies the static renderer assets (HTML, CSS, plain-JS app and demo data) into dist/renderer.
+// The TypeScript renderer scripts (renderer.ts, sim.ts) are compiled there by tsc.
 const fs = require('fs');
 const path = require('path');
 const root = path.resolve(__dirname, '..');
+const srcDir = path.join(root, 'src', 'renderer');
 const outDir = path.join(root, 'dist', 'renderer');
 fs.mkdirSync(outDir, { recursive: true });
-let html = fs.readFileSync(path.join(root, 'prototype', 'index.html'), 'utf8');
-const tag = '<script src="renderer.js"></script>';
-html = html.includes('</body>') ? html.replace('</body>', tag + '\n</body>') : html + '\n' + tag;
-fs.writeFileSync(path.join(outDir, 'index.html'), html);
-console.log('copied prototype/index.html -> dist/renderer/index.html');
+for (const f of ['index.html', 'styles.css', 'app.js', 'demo.js']) {
+  fs.copyFileSync(path.join(srcDir, f), path.join(outDir, f));
+}
+console.log('copied renderer assets -> dist/renderer');
