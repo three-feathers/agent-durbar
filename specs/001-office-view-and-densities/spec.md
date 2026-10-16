@@ -132,3 +132,24 @@ Animations are subtle, CSS-only in compact densities and stop under reduced-moti
 
 - Simulated agents (10-15 with 0-6 helpers) are representative of real ones; real helper counts and intents may be longer.
 - Chromium (Electron 44) text metrics are consistent across OSes; this is **not verified** on macOS/Windows.
+
+## Changes
+
+### 2026-10-16: helper strips overlapped desk cards; closed rooms left the floor half empty (bug, m7b)
+
+**What was wrong.** At SIM=15, 1440x900, with three rooms closed (`?closed=mcp-swiss,blog,infra-notes`), the helper strip under Elif (`Types / Tag / Diff / +3 more`) was drawn over Priya's and Tomas's desk cards, and the strip under Kenji (`Tests`) had a stray background box. Cause: a CSS class collision. The compact helper strip used the class `strip` (`.helpers.strip`), and the full-screen chat's agent bar (feature 005) also defines a global `.strip{height:64px;background:var(--surface-2);border-bottom:1px solid var(--line);align-items:center}`. The helper strip therefore got a fixed 64px height, a filled background, a bottom border and vertically centred content. A strip with one row of helpers (44px) fitted by luck; once the layout search chose 3 helpers shown (`roomy`, helper cap 3, i.e. two rows plus `+N more`) the strip kept 64px, overflowed its unit and the next grid row started underneath it. The probe that measures whether a layout fits used the same CSS, so it measured the same wrong height and reported `fit: ok`. m5/m6 screenshots had no two-row strips at that size, so nothing overlapped.
+
+Second problem: with rooms closed (only 2 of 5 rooms open) the best candidate was `roomy`, because `full` missed the floor by a few pixels with 3 helpers per parent and there was no `full` candidate with fewer helpers. The lower half of the 1440x900 floor stayed empty.
+
+**What is now required.**
+
+- **FR-020** Helper strips (class `hstrip`) must not share class names with other components; a strip is as tall as its content (rows of `--hh` plus gaps) and has no background, border or fixed height. The layout probe measures the real height.
+- **FR-021** In the office, no bounding box of a desk card, helper tile, `+N more` / `Show fewer` chip, helper strip or door plate may intersect another one (tolerance 0.5px), none may extend outside its room (or the floor, for plates), and the floor must not scroll or overflow, for SIM=12 and SIM=15 at 1440x900 and 1280x800 with 0, 1, 3 and all rooms closed and with `?closed=` variants. Checked by `npm run check:office` (T025).
+- **FR-022** When rooms are closed the open rooms use the freed space: the layout search is run for the open rooms only (plates take one short row), and the candidates are `full` with 3 helpers, `full` with 2, `roomy` with 3, then the existing smaller ones. `full` shows its parameter number of helpers (3 or 2), then `+N more`.
+
+**Acceptance scenarios that would have caught it.**
+
+1. Given SIM=15 at 1440x900 with `?closed=mcp-swiss,blog,infra-notes`, when the office is laid out, then `npm run check:office` reports 0 overlaps and 0 clipped boxes, and the stage height is greater than the `roomy` layout's (the freed space is used).
+2. Given any combination listed in FR-021, the check reports 0 overlaps, no floor scroll and no helper strip with a computed background or fixed height.
+
+Tasks: T020 (automated office checks) is delivered together with T025; T026 fixes the class collision; T027 adds the `full`/2 candidate. Spec text for FR-002 and FR-009 is amended accordingly in the converge step below.

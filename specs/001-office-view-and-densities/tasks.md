@@ -20,8 +20,11 @@
 
 ## Open
 
-- [ ] T020 Automate the office checks: a `scripts/` check (Electron under xvfb or a DOM harness) asserting, for SIM=12 and 15 at 1440x900 and 1280x800, no page/floor overflow and min font >= 10.5px; run it in CI on Linux. [FR-015, constitution V]
+- [ ] T020 (partly via T025: overlap/clipping, floor overflow; min font still open) Automate the office checks: a `scripts/` check (Electron under xvfb or a DOM harness) asserting, for SIM=12 and 15 at 1440x900 and 1280x800, no page/floor overflow and min font >= 10.5px; run it in CI on Linux. [FR-015, constitution V]
 - [ ] T021 Resolve the README/measurement drift for SIM=15 @1280x800 closed (`card` documented vs `mini` measured): re-check, then fix README or the layout search. [FR-016]
 - [ ] T022 Improve `micro` helper figures and nameplate truncation when narrow. [FR-017]
 - [ ] T023 Keyboard navigation between desks (arrow keys), with a spec delta first. [FR-019]
 - [ ] T024 Hand-check the office on macOS and Windows and record it here. [VI]
+- [ ] T025 `scripts/check-office-overlap.js` + `npm run check:office`: Electron/xvfb driver; bounding-box intersection and clipping check between desk cards, helper tiles, more chips, helper strips and plates for SIM=12/15 x 1440x900/1280x800 x 0/1/3/all rooms closed x `?closed=` variants; optional screenshots (`OFFICE_SHOTS=dir`). [FR-021]
+- [ ] T026 Rename the helper strip class `strip` -> `hstrip` so the chat agent bar's `.strip` no longer applies. [FR-020]
+- [ ] T027 Layout search: candidate `full` with 2 helpers; helper cap per candidate for `full`. [FR-022]
