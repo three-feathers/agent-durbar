@@ -8,6 +8,7 @@ import type { McpServerSpec } from '../shared/mcp';
 import type { CopilotAdapter } from '../adapters/copilot';
 import type { ImportCandidate } from '../shared/mcpimport';
 import { vscodeUserDirs } from '../adapters/vscodeChat';
+import type { DevEnv } from './devhooks';
 import { BUILTIN_SERVERS, ambientServers, copilotDir, readCandidates, vscodeMcpFiles } from './mcpfiles';
 import { McpStore } from './mcpstore';
 import type { SecretCodec } from './mcpstore';
@@ -36,8 +37,8 @@ export const safeStorageCodec: SecretCodec = {
 
 const trunc = (v: unknown, n: number): string => String(v ?? '').slice(0, n);
 
-export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string, AgentInfo>; adapter: CopilotAdapter }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[] } } {
-  const { agents, adapter } = deps;
+export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string, AgentInfo>; adapter: CopilotAdapter; dev: DevEnv }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[] } } {
+  const { agents, adapter, dev } = deps;
   const store = deps.store;
   /** Per agent id, this run only: servers the user switched off for that agent. */
   const off = new Map<string, Set<string>>();
@@ -53,7 +54,7 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
     const s = store();
     return {
       servers: s.list(),
-      ambient: ambientServers(copilotDir(), new Set(s.ambientDisabled())),
+      ambient: ambientServers(copilotDir(dev), new Set(s.ambientDisabled())),
       secretsPersist: s.secretsPersist,
       skipped: s.forSession().skipped,
     };
@@ -78,7 +79,7 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
 
   ipcMain.handle('mcp:importPreview', (_e, source: unknown): McpImportPreview => {
     const kind = source === 'vscode' ? 'vscode' : 'copilot';
-    const files = kind === 'copilot' ? [path.join(copilotDir(), 'mcp-config.json')] : vscodeMcpFiles(process.env.DURBAR_VSCODE_USER_DIR ? [{ dir: process.env.DURBAR_VSCODE_USER_DIR }] : vscodeUserDirs());
+    const files = kind === 'copilot' ? [path.join(copilotDir(dev), 'mcp-config.json')] : vscodeMcpFiles(dev.DURBAR_VSCODE_USER_DIR ? [{ dir: dev.DURBAR_VSCODE_USER_DIR }] : vscodeUserDirs());
     const candidates: ImportCandidate[] = [];
     const shown: string[] = [];
     let skipped = 0;
@@ -129,7 +130,7 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
     };
     for (const v of s.list()) add(v.name, 'durbar', v.enabled && v.trusted && !v.needsSecrets);
     const dis = new Set(s.ambientDisabled());
-    for (const am of ambientServers(copilotDir(), dis)) add(am.name, 'ambient', am.enabled);
+    for (const am of ambientServers(copilotDir(dev), dis)) add(am.name, 'ambient', am.enabled);
     for (const x of live.get(a.id) ?? []) add(x.name, 'ambient', !dis.has(x.name));
     return { ok: true, servers: entries, live: adapter.isLive(a.id) };
   });

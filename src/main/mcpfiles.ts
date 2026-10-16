@@ -15,7 +15,8 @@ export const BUILTIN_SERVERS = ['github-mcp-server'];
 const MAX_BYTES = 1024 * 1024;
 
 /** The Copilot CLI/SDK config folder. `DURBAR_COPILOT_DIR` is for tests and screenshots. */
-export const copilotDir = (env: NodeJS.ProcessEnv = process.env, home: string = os.homedir()): string => env.DURBAR_COPILOT_DIR || path.join(home, '.copilot');
+/** `env` is the guarded hook environment from devhooks.ts (empty in a packaged build); it is never read from process.env here. */
+export const copilotDir = (env: Readonly<Record<string, string | undefined>> = {}, home: string = os.homedir()): string => env.DURBAR_COPILOT_DIR || path.join(home, '.copilot');
 
 export function readSmallFile(file: string): string | undefined {
   try {

@@ -14,10 +14,16 @@ import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '..
 import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
+import { devEnv, devWarning } from './devhooks';
+
+// Developer/test hooks (spec 010): ignored in packaged builds unless DURBAR_DEV=1. Read hooks only from `dev`.
+const dev = devEnv(process.env, app.isPackaged);
+const devNote = devWarning(process.env, app.isPackaged);
+if (devNote) console.error(devNote);
 
 // Cheapest routing on the logged-in account's only model ("auto"); see docs/milestone-1.md.
 // Dev/test: DURBAR_USER_DATA=/tmp/x keeps the saved folder list (and Electron's other state) out of the real profile.
-if (process.env.DURBAR_USER_DATA) app.setPath('userData', process.env.DURBAR_USER_DATA);
+if (dev.DURBAR_USER_DATA) app.setPath('userData', dev.DURBAR_USER_DATA);
 const DEFAULT_MODEL = 'auto';
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 type Effort = (typeof EFFORTS)[number];
@@ -31,7 +37,7 @@ const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
 
 const adapter = new CopilotAdapter();
 const agents = new Map<string, AgentInfo>();
-const mcp = registerMcpIpc({ store: () => mcpStore as McpStore, agents, adapter });
+const mcp = registerMcpIpc({ store: () => mcpStore as McpStore, agents, adapter, dev });
 /** Files the user picked through the native dialog; only these can be attached. */
 const pickedFiles = new Set<string>();
 /** Private folder for pasted / dropped files (removed on quit). */
@@ -53,8 +59,8 @@ const toRenderer = (channel: string, payload: unknown): void => {
 adapter.onEvent((e) => toRenderer('agent:event', e));
 
 // Dev/test: DURBAR_LOG=/path/events.jsonl records every normalized event and what is sent to the SDK.
-if (process.env.DURBAR_LOG) {
-  const logFile = process.env.DURBAR_LOG;
+if (dev.DURBAR_LOG) {
+  const logFile = dev.DURBAR_LOG;
   const write = (o: unknown): void => fs.appendFileSync(logFile, JSON.stringify(o) + '\n');
   adapter.onEvent((e) => write({ t: Date.now(), event: e }));
   adapter.debug = (m) => write({ t: Date.now(), debug: m });
@@ -176,7 +182,7 @@ ipcMain.handle('agents:addWorkspaceFile', async (_e, mode: unknown, opts: unknow
 // ---- Previous sessions of a folder (Copilot CLI/SDK store, resumable) and VS Code chat history (read-only) ----
 // The renderer only ever names an agent and an opaque id; folders and file paths are resolved here.
 const vsUserDirs = (): UserDir[] =>
-  process.env.DURBAR_VSCODE_USER_DIR ? [{ product: 'Test', dir: process.env.DURBAR_VSCODE_USER_DIR }] : vscodeUserDirs();
+  dev.DURBAR_VSCODE_USER_DIR ? [{ product: 'Test', dir: dev.DURBAR_VSCODE_USER_DIR }] : vscodeUserDirs();
 const vsChatRefs = new Map<string, Map<string, ChatFileRef>>();
 const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -239,7 +245,7 @@ ipcMain.handle('vschat:read', async (_e, id: unknown, key: unknown) => {
 
 ipcMain.handle('agents:pickAttachments', async (): Promise<PickedFile[]> => {
   // Dev/test hook: DURBAR_PICK="/a.txt:/b.png" answers the picker without a native dialog.
-  const preset = (process.env.DURBAR_PICK ?? '').split(path.delimiter).filter((p) => p && fs.existsSync(p));
+  const preset = (dev.DURBAR_PICK ?? '').split(path.delimiter).filter((p) => p && fs.existsSync(p));
   if (preset.length) {
     return preset.map((p) => {
       pickedFiles.add(p);
@@ -401,23 +407,23 @@ function createWindow(): void {
     if (!url.startsWith('file://')) e.preventDefault();
   });
   // DURBAR_SIM=N: simulated live agents (fake events, no sessions, no AI credits). See src/renderer/sim.ts.
-  const sim = parseInt(process.env.DURBAR_SIM ?? '', 10);
+  const sim = parseInt(dev.DURBAR_SIM ?? '', 10);
   const query: Record<string, string> = {};
   if (sim > 0) {
     query.sim = String(sim);
-    if (process.env.DURBAR_SIM_FREEZE === '1') query.simfreeze = '1';
-    if (process.env.DURBAR_SIM_ROOMS) query.simrooms = process.env.DURBAR_SIM_ROOMS;
+    if (dev.DURBAR_SIM_FREEZE === '1') query.simfreeze = '1';
+    if (dev.DURBAR_SIM_ROOMS) query.simrooms = dev.DURBAR_SIM_ROOMS;
   }
   void win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query });
   // Dev: DURBAR_SHOT=/tmp/out.png [DURBAR_SHOT_SIZE=1280x800] [DURBAR_SHOT_CLICK=sim-1] saves a screenshot and quits.
-  const shot = process.env.DURBAR_SHOT;
+  const shot = dev.DURBAR_SHOT;
   if (shot) {
-    const m = /^(\d+)x(\d+)$/.exec(process.env.DURBAR_SHOT_SIZE ?? '');
+    const m = /^(\d+)x(\d+)$/.exec(dev.DURBAR_SHOT_SIZE ?? '');
     if (m) win.setContentSize(Number(m[1]), Number(m[2]));
     const w = win;
     w.webContents.once('did-finish-load', () => {
       setTimeout(async () => {
-        const click = process.env.DURBAR_SHOT_CLICK;
+        const click = dev.DURBAR_SHOT_CLICK;
         if (click) {
           await w.webContents.executeJavaScript(`document.querySelector('[data-id=${JSON.stringify(click)}]')?.click()`);
           await new Promise((r) => setTimeout(r, 600));
@@ -437,11 +443,11 @@ app.whenReady().then(() => {
   restoreFolders();
   createWindow();
   // Dev/headless convenience: DURBAR_OPEN="/path/a:/path/b" starts agents (read-only) on launch.
-  const open = (process.env.DURBAR_OPEN ?? '').split(path.delimiter).filter((p) => p && fs.existsSync(p));
-  if (open.length) void addMany(open, validMode(process.env.DURBAR_PERM));
+  const open = (dev.DURBAR_OPEN ?? '').split(path.delimiter).filter((p) => p && fs.existsSync(p));
+  if (open.length) void addMany(open, validMode(dev.DURBAR_PERM));
   // Dev/test: DURBAR_DRIVER=/path/driver.js runs a UI-driving script against the real window + adapter.
   // The module exports async (ctx) => void with ctx = { win, addMany, shot(file), js(code), sleep(ms), waitFor(expr, ms) }.
-  if (process.env.DURBAR_DRIVER) {
+  if (dev.DURBAR_DRIVER) {
     const ctx = {
       get win() {
         return win as BrowserWindow;
@@ -460,7 +466,7 @@ app.whenReady().then(() => {
       },
     };
     win?.webContents.once('did-finish-load', () => {
-      const driver = require(process.env.DURBAR_DRIVER as string) as (c: typeof ctx) => Promise<void>;
+      const driver = require(dev.DURBAR_DRIVER as string) as (c: typeof ctx) => Promise<void>;
       void driver(ctx).catch((err) => console.error('DRIVER FAILED', err)).finally(() => void adapter.dispose().finally(() => app.exit(0)));
     });
   }
