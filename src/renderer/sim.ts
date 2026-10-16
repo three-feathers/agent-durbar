@@ -78,7 +78,7 @@ interface SimAgent {
   ];
   // Reasoning summaries as the real runtime sends them: a bold heading line, then plain sentences (markdown).
   const THINK = [
-    '**Planning the change**\n\nThe request touches a few files, so I will read them before changing anything. ',
+    '\n\n**Planning the change**\n\nThe request touches a few files, so I will read them before changing anything. ',
     'Splitting by domain keeps the public API stable and the diff easy to review. ',
     '\n\n**Checking callers**\n\nI should check callers first, because a rename here is a *breaking change* for any client that pins tool names. ',
     '\n\n**Choosing an order**\n\nEleven of the fourteen inputs have a text layer; the rest need OCR, so I will parse the easy ones first. ',
