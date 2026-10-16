@@ -58,8 +58,34 @@ export interface PermissionInfo {
   /** SDK permission kind: write | shell | read | mcp | url | custom-tool | ... */
   kind: string;
   summary: string;
-  /** 'pending' = waiting for resolvePermission; otherwise already decided by policy. */
+  /** 'pending' = waiting for resolvePermission; otherwise already decided (by policy, the user or a session grant). */
   state: 'pending' | 'approved' | 'denied';
+  /** What "Approve for this session" would remember (ask mode): a stable key and a short chip label. */
+  scopeKey?: string;
+  scopeLabel?: string;
+  /** Who decided: the user, an earlier "Approve for this session" grant, or the session being stopped. */
+  via?: 'user' | 'session' | 'stopped';
+  /** True when the user approved this one *and* remembered the scope for the session. */
+  remembered?: boolean;
+}
+
+/** A remembered "Approve for this session" permission; can be revoked. */
+export interface SessionGrant {
+  key: string;
+  kind: string;
+  label: string;
+}
+
+/** A permission request got its final answer (or was auto-approved by a session grant). No status change. */
+export interface PermissionEvent extends BaseEvent {
+  type: 'permission';
+  permission: PermissionInfo;
+}
+
+/** The set of active session grants changed (full list). */
+export interface GrantsEvent extends BaseEvent {
+  type: 'grants';
+  grants: SessionGrant[];
 }
 
 export interface ThinkingEvent extends BaseEvent {
@@ -121,6 +147,8 @@ export interface UserEvent extends BaseEvent {
 export type AgentEvent =
   | UserEvent
   | StatusEvent
+  | PermissionEvent
+  | GrantsEvent
   | ThinkingEvent
   | OutputEvent
   | ToolCallEvent
@@ -138,8 +166,10 @@ export interface AgentAdapter {
   send(sessionId: string, message: AgentMessage): Promise<void>;
   /** Stop/cancel a session. */
   stop(sessionId: string): Promise<void>;
-  /** Approve/deny a permission request left pending by `ask: true`. Optional. */
-  resolvePermission?(sessionId: string, requestId: string, approve: boolean): void;
+  /** Approve/deny a permission request left pending by `ask: true`; `remember` = approve for the rest of the session. Optional. */
+  resolvePermission?(sessionId: string, requestId: string, approve: boolean, remember?: boolean): void;
+  /** Forget one "Approve for this session" grant. Optional. */
+  revokeGrant?(sessionId: string, key: string): void;
   /** Subscribe to normalized events from all sessions of this adapter. */
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe;
 }

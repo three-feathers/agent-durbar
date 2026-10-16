@@ -8,6 +8,8 @@ import type {
   StartOptions,
   Unsubscribe,
 } from './types';
+import { PermissionBroker } from './permissions';
+import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -27,28 +29,7 @@ interface Live {
   session: CopilotSession;
   unsubscribe: () => void;
   cwd: string;
-  pending: Map<string, (approve: boolean) => void>;
-}
-
-/** Short human summary of a permission request (for the needs-permission card). */
-function summarize(req: PermissionRequest): string {
-  const r = req as unknown as Record<string, unknown>;
-  const pick = (k: string) => (typeof r[k] === 'string' ? (r[k] as string) : undefined);
-  switch (req.kind) {
-    case 'write':
-      return `write ${pick('fileName') ?? ''}`.trim();
-    case 'shell':
-      return `run ${pick('fullCommandText') ?? ''}`.trim();
-    case 'read':
-      return `read ${pick('path') ?? ''}`.trim();
-    case 'url':
-      return `fetch ${pick('url') ?? ''}`.trim();
-    case 'mcp':
-    case 'custom-tool':
-      return `${req.kind} ${pick('toolName') ?? ''}`.trim();
-    default:
-      return String(req.kind);
-  }
+  broker: PermissionBroker;
 }
 
 /**
@@ -94,27 +75,32 @@ export class CopilotAdapter implements AgentAdapter {
   async start(options: StartOptions): Promise<string> {
     const { cwd } = resolveWorkspaceCwd(options.workspace);
     const client = await this.getClient();
-    const pending = new Map<string, (approve: boolean) => void>();
     let sid = options.resumeSessionId ?? '';
-    const emitStatus = (permission: PermissionInfo, intent: string) =>
-      this.emit(sid, { type: 'status', status: 'needs-permission', intent, permission });
+    const broker = new PermissionBroker({
+      allow: options.allow,
+      ask: options.ask,
+      emit: (e: BrokerEvent) => {
+        switch (e.type) {
+          case 'pending':
+            return this.emit(sid, { type: 'status', status: 'needs-permission', intent: `Waiting for permission: ${e.permission.summary}`, permission: e.permission });
+          case 'denied-policy':
+            return this.emit(sid, { type: 'status', status: 'needs-permission', intent: `Denied (read-only mode): ${e.permission.summary}`, permission: e.permission });
+          case 'resolved':
+            this.emit(sid, { type: 'permission', permission: e.permission });
+            // Back to work unless the session is being stopped (then 'stopped' follows).
+            if (e.permission.via !== 'stopped') {
+              const word = e.permission.state === 'approved' ? (e.permission.via === 'session' ? 'Allowed for this session' : 'Approved') : 'Denied';
+              this.emit(sid, { type: 'status', status: 'working', intent: `${word}: ${e.permission.summary}` });
+            }
+            return;
+          case 'grants':
+            return this.emit(sid, { type: 'grants', grants: e.grants });
+        }
+      },
+    });
 
-    const onPermissionRequest = async (req: PermissionRequest): Promise<PermissionRequestResult> => {
-      const kind = String(req.kind);
-      const summary = summarize(req);
-      const requestId = String(req.toolCallId ?? `${kind}-${Date.now()}`);
-      if (kind === 'read') return { kind: 'approve-once' };
-      if (options.allow) return { kind: 'approve-once' };
-      if (options.ask) {
-        emitStatus({ requestId, kind, summary, state: 'pending' }, `Waiting for permission: ${summary}`);
-        const approve = await new Promise<boolean>((resolve) => pending.set(requestId, resolve));
-        pending.delete(requestId);
-        this.emit(sid, { type: 'status', status: 'working', intent: `${approve ? 'Approved' : 'Denied'}: ${summary}` });
-        return approve ? { kind: 'approve-once' } : { kind: 'reject', feedback: 'Denied by user in Agent Durbar.' };
-      }
-      emitStatus({ requestId, kind, summary, state: 'denied' }, `Denied (read-only mode): ${summary}`);
-      return { kind: 'reject', feedback: 'Agent Durbar is in read-only mode: this action was denied. Do not retry it.' };
-    };
+    const onPermissionRequest = async (req: PermissionRequest): Promise<PermissionRequestResult> =>
+      broker.request(req as unknown as PermissionLike);
 
     const config = {
       workingDirectory: cwd,
@@ -128,7 +114,7 @@ export class CopilotAdapter implements AgentAdapter {
       : await client.createSession(config);
     sid = session.sessionId;
     const unsubscribe = session.on((ev) => this.map(sid, ev));
-    this.sessions.set(sid, { session, unsubscribe, cwd, pending });
+    this.sessions.set(sid, { session, unsubscribe, cwd, broker });
     this.emit(sid, { type: 'status', status: 'idle', intent: `Ready in ${cwd}` });
     return sid;
   }
@@ -157,7 +143,7 @@ export class CopilotAdapter implements AgentAdapter {
   async stop(sessionId: string): Promise<void> {
     const live = this.sessions.get(sessionId);
     if (!live) return;
-    for (const resolve of live.pending.values()) resolve(false);
+    live.broker.stop(); // pending permissions are denied cleanly (renderer clears Approve/Deny) and grants are dropped
     try {
       await live.session.abort();
     } catch {
@@ -169,8 +155,12 @@ export class CopilotAdapter implements AgentAdapter {
     this.emit(sessionId, { type: 'status', status: 'stopped' });
   }
 
-  resolvePermission(sessionId: string, requestId: string, approve: boolean): void {
-    this.sessions.get(sessionId)?.pending.get(requestId)?.(approve);
+  resolvePermission(sessionId: string, requestId: string, approve: boolean, remember = false): void {
+    this.sessions.get(sessionId)?.broker.resolve(requestId, approve, remember);
+  }
+
+  revokeGrant(sessionId: string, key: string): void {
+    this.sessions.get(sessionId)?.broker.revoke(key);
   }
 
   /** Stop all sessions and the shared runtime. */
