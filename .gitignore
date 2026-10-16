@@ -18,3 +18,7 @@ yarn-error.log*
 .vscode/
 .idea/
 Thumbs.db
+
+# Claude Code local settings (personal, never commit)
+.claude/settings.local.json
+.claude/worktrees/
