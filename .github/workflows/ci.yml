@@ -44,3 +44,19 @@ jobs:
       - run: npm ci
       # Builds the app with electron-builder and fails if the Copilot runtime is not unpacked (scripts/after-pack.js).
       - run: npm run pack:dir
+
+  office-check:
+    name: Office layout check (xvfb)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Simulator only (no Copilot login, no AI credits). Runs Electron under xvfb: 95 combinations, about 70 s.
+      # The script itself starts xvfb-run when there is no DISPLAY; install it first (not preinstalled on the runner image).
+      - run: sudo apt-get update && sudo apt-get install -y xvfb
+      - run: npm run check:office

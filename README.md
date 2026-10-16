@@ -52,6 +52,20 @@ npm run dist              # installers/archives for this OS in release/ (no sign
 
 Each release also lists `SHA256SUMS.txt`. Releases are built by GitHub Actions from `v*` tags into a **draft** release; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Status (milestone 9: credit caps, safer defaults, dev hooks)
+
+Specs [011](specs/011-credit-caps-and-usage-display/spec.md), [003](specs/003-permissions-and-approvals/spec.md) (FR-021..FR-024) and [010](specs/010-simulator/spec.md) (FR-017..FR-020). Built and tested on the simulator and unit tests. **AI credits spent: 0 AIU.**
+
+- **Credit caps.** Each session can have a cap in AI credits (shown as AIU, the unit the Copilot runtime reports; GitHub says 1 credit = USD 0.01). The runtime's **minimum is 30** (a real `session.create` with less fails: `Minimum session limit is 30 AI credits`), so the app refuses lower values. A cap is set in the new-session dialog (pre-filled with the **global default** from Settings, empty = no cap), or from the **cap chip** in the chat header; it is saved per folder. Agent cards show `used/cap AIU`, the chat header shows a chip with a bar. It is a **soft** cap (GitHub: usage is checked after each model response, so one response can overshoot). When it is reached the card says **Limit reached** (listed first, like Waiting) and the chat shows **Add credits / Remove cap / Stop here**; after adding, the agent continues. `[UNVERIFIED]` on a real account: the exhausted-limit handshake follows the SDK types and GitHub's docs and is covered by mapper fixtures and the simulator, because reaching a 30-credit cap costs real money (about USD 0.30). `npm run verify:cap` checks the part that is free (session with a cap, raise, remove, the minimum) against the real runtime. The SDK is pinned exactly (`1.0.22`); see CONTRIBUTING.md for how to upgrade.
+- **Permissions.** (a) A saved *Allow edits* is **never restored silently**: a restored folder starts in Ask, and Allow needs a fresh confirmation in each run. (b) *Approve for this session* on a shell command covers the **exact command** by default; "any arguments" is a separate, explicit choice, only offered for simple commands (no pipes or redirects, and never for shells, interpreters or `sudo`). (c) **Reads outside the folder and the workspace roots** (and attached files) are not auto-approved: in Ask they ask, in Read-only they are denied, and only Allow edits lets them through. The read path comes from the SDK's `read` permission request; shell commands expose `possiblePaths` too.
+- **Developer hooks.** The `DURBAR_*` variables (`DURBAR_SIM`, `DURBAR_DRIVER`, `DURBAR_PERM`, `DURBAR_SHOT`, ...) are ignored in a packaged build unless `DURBAR_DEV=1` is set; a test scans the sources for direct reads. See CONTRIBUTING.md "Developer hooks".
+- **CI** also runs `npm run check:office` (xvfb on Ubuntu, 95 layout combinations, no AI credits).
+
+![Office with credit caps on the cards](docs/screenshots/m9-office-caps-1440x900.png)
+![Omar reached his cap: Limit reached with Add credits](docs/screenshots/m9-limit-reached-1280x800.png)
+![Cap dialog](docs/screenshots/m9-cap-dialog-1280x800.png)
+![Settings: default credit cap](docs/screenshots/m9-settings-cap-1280x800.png)
+
 ## Status (milestone 8: global MCP servers, tool usage, context window)
 
 Spec [019](specs/019-mcp-tools-and-context/spec.md) (research in [research.md](specs/019-mcp-tools-and-context/research.md)). Built and tested on the simulator and on sanitised recordings of real events. Research cost: **1 real prompt, 2 model calls, 0.167 AIU**.
@@ -111,7 +125,7 @@ Specs [015](specs/015-thinking-and-subagent-activity/spec.md) to [018](specs/018
 
 ![Doors 1280x800](docs/screenshots/m7-doors-1280x800.png)
 
-**Doors fix (m7b).** A class-name collision (`.helpers.strip` vs the chat bar's `.strip`, fixed height 64px and a background) made two-row helper strips overlap the next desk row and gave strips a stray box; it is now `.hstrip`. With rooms closed the layout search also gets `full` with 2 helpers and a per-agent helper boost, so open rooms grow into the freed space (3 rooms closed at 1440x900: `full`, 714 of 810px used instead of `roomy`, 427px). `npm run check:office` (Electron under xvfb, no AI credits) checks bounding-box overlap, clipping, floor/page overflow and the 10.5px floor for SIM=12/15 at 1440x900 and 1280x800 with 0/1/2/3/4/all rooms closed; it is not in CI yet.
+**Doors fix (m7b).** A class-name collision (`.helpers.strip` vs the chat bar's `.strip`, fixed height 64px and a background) made two-row helper strips overlap the next desk row and gave strips a stray box; it is now `.hstrip`. With rooms closed the layout search also gets `full` with 2 helpers and a per-agent helper boost, so open rooms grow into the freed space (3 rooms closed at 1440x900: `full`, 714 of 810px used instead of `roomy`, 427px). `npm run check:office` (Electron under xvfb, no AI credits) checks bounding-box overlap, clipping, floor/page overflow and the 10.5px floor for SIM=12/15 at 1440x900 and 1280x800 with 0/1/2/3/4/all rooms closed; it runs in CI on Ubuntu (job `office-check`, about 70 s).
 
 ![Doors, 3 rooms closed, 1440x900](docs/screenshots/m7b-doors-1440x900.png)
 ![Doors, 3 rooms closed, 1280x800](docs/screenshots/m7b-doors-1280x800.png)
@@ -132,7 +146,7 @@ Built and tested on simulated agents and fixtures (`DURBAR_SIM`, no AI credits, 
 
 **Previous sessions per folder.** When you add a folder, or open an agent that has not been used yet, a "Previous sessions" list shows
 - *Copilot CLI/SDK sessions whose working folder matches* (newest first, title, time, branch). **Resume** continues the very same session (`resumeSession`) and replays the earlier messages and tool calls from its `events.jsonl` into the chat (last 300 items, long outputs trimmed).
-- *VS Code Copilot Chat history for that folder*, marked **read-only**: a copy of the transcript, clearly labelled "cannot be continued here". It reads `workspaceStorage/<hash>/chatSessions/*.jsonl|json` (macOS `~/Library/Application Support/Code/User`, Windows `%APPDATA%\Code\User`, Linux `~/.config/Code/User`; also Insiders, VSCodium, Cursor), matching the folder through each store's `workspace.json`. The format is undocumented and changes between VS Code versions: parsing is tolerant (unknown parts become one honest note, corrupt or oversized files are counted and skipped, nothing is uploaded or logged). Empty-window chats are not included.
+- *VS Code Copilot Chat history for that folder*, marked **read-only**: a copy of the transcript, clearly labelled "cannot be continued here". It reads `workspaceStorage/<hash>/chatSessions/*.jsonl|json` (macOS `~/Library/Application Support/Code/User`, Windows `%APPDATA%\Code\User`, Linux `~/.config/Code/User`; also Insiders and VSCodium; Cursor is not read), matching the folder through each store's `workspace.json`. The format is undocumented and changes between VS Code versions: parsing is tolerant (unknown parts become one honest note, corrupt or oversized files are counted and skipped, nothing is uploaded or logged). Empty-window chats are not included.
 
 ![Previous sessions](docs/screenshots/m6-previous-sessions.png)
 ![VS Code chat history, read-only](docs/screenshots/m6-vscode-readonly.png)
@@ -162,12 +176,14 @@ All seven remaining issues from milestones 3 and 4 are fixed. Built and tested o
 6. **Helper strip**: up to **3 helpers** show before `+N more` when the floor has room (the strip is a 2-column grid, so 2 rows). The layout search tries 3 first and falls back to 1; when only 1 fits, the leftover space is spent per agent (agents with the most helpers, attention-needing ones first) while everything still fits, e.g. Elif shows `Types`, `Tag`, `Diff` + `+3 more` at 1280x800 with the panel open.
 7. **Spare floor space**: a new `roomy` density (card with bigger desks, 92px rows, 14.5px names, 11-12px text, bigger helper tiles) is tried right after `full`; it wins only when it fits, so the 1280x800 fits are unchanged. At 1440x900 with the panel closed, SIM=12 and SIM=15 now use `roomy`; at 1280x800, SIM=12 closed also fits `roomy`.
 
-Checked at 1440x900 and 1280x800, panel closed and open, SIM=12 and 15, also over 18 s of live ticks each (no overlaps, no clipping, nothing outside the floor, no page or floor scroll, text never below 10.5px, densities stable):
+Checked at 1440x900 and 1280x800, panel closed and open, SIM=12 and 15, also over 18 s of live ticks each (no overlaps, no clipping, nothing outside the floor, no page or floor scroll, text never below 10.5px, densities stable). The densities below were what milestone 5 measured; **they have drifted** since the room doors, the full-screen chat (the docked panel columns no longer exist) and later layout work, so they are kept only as history. The current numbers, re-measured on 2026-10-16 with `npm run check:office` (Electron under xvfb on Linux, all rooms open, chat closed):
 
-| | 1440x900 closed | 1440x900 panel | 1280x800 closed | 1280x800 panel |
-| --- | --- | --- | --- | --- |
-| SIM=12 | roomy | card | roomy | card |
-| SIM=15 | roomy | card | card | mini |
+| Densities chosen today (all rooms open) | 1440x900 | 1280x800 |
+| --- | --- | --- |
+| SIM=12 | roomy | roomy |
+| SIM=15 | card | card |
+
+Milestone 5 had written `SIM=15 | roomy | card | card | mini` (1440 closed, 1440 panel, 1280 closed, 1280 panel). At 1280x800 with the chat closed the answer is `card`, as it was then; at 1440x900 it is now `card`, not `roomy` (a door row was added since). The choice of density depends on font metrics, so another OS can pick a different one; the check asserts that whatever is chosen fits (no overlap, clipping, overflow, text under 10.5px), not which density it is.
 
 ![Pending permission, inline in the timeline](docs/screenshots/m5-perm-pending-1280x800.png)
 ![Auto-approved by a session grant, chip in the header](docs/screenshots/m5-perm-auto-approved-1280x800.png)
@@ -193,7 +209,7 @@ The compact densities (`card` / `mini` / `micro`, used automatically for 10-15 a
 - **Calm and light**: flat tints, no emoji, no blur filters in compact scenes. Animations are CSS only, run in coarse steps (a few repaints per second), and all stop under `prefers-reduced-motion`. In headless Chrome with software rendering, 15 animated agents (78 running animations) use about 10% of one core in total and about 0.2% with reduced motion; the sim tick is the only JS and only touches changed agents.
 - The `full` density used for a handful of agents is unchanged (pixel-compared before and after).
 
-Checked at 1440x900 and 1280x800, panel closed and open, with 12 and 15 simulated agents: no overlaps, no clipping, no page scroll, floor does not scroll. 15 agents use `card` everywhere except 1280x800 with the panel open, which uses `mini`.
+Checked at 1440x900 and 1280x800, panel closed and open, with 12 and 15 simulated agents: no overlaps, no clipping, no page scroll, floor does not scroll. 15 agents used `card` everywhere except 1280x800 with the then-docked panel open, which used `mini` (history; see the density table in milestone 5 for today's numbers).
 
 ![Compact floor plan, 15 agents, 1440x900](docs/screenshots/m4-sim15-1440x900-closed.png)
 ![Chat panel open at 1280x800 (mini desks)](docs/screenshots/m4-sim15-1280x800-panel.png)
@@ -301,7 +317,7 @@ An Electron app that:
 - [x] Wire office view to live adapter events
 - [x] Chat panel with streaming thinking, attachments (basic)
 - [x] Permission approve/deny flow (basic; read-only default)
-- [ ] AI-credit counter and caps
+- [x] AI-credit counter and per-session caps with a global default (milestone 9; the limit-reached flow follows GitHub's docs and is not yet verified on a real account)
 - [ ] Resume sessions; read-only discovery of VS Code / terminal sessions
 - [x] Open in VS Code (`code <folder>`)
 - [x] Office polish for 10-15 agents: auto-fit density, helpers with `+N`, status sorting, chat chips (simulated agents mode)
@@ -312,7 +328,7 @@ An Electron app that:
 
 ## How we work
 
-Agent Durbar is spec-driven with [GitHub Spec Kit](https://github.com/github/spec-kit): **no code without a spec, a plan and tasks.** Features 001-010 in [`specs/`](specs/README.md) were reverse-engineered from the shipped code (each requirement is marked `[IMPLEMENTED]` or `[KNOWN GAP]`, with how it was checked); 011-014 are backlog drafts. The rules are in the [constitution](.specify/memory/constitution.md). Every change goes `/speckit.specify` → `/speckit.clarify` → `/speckit.plan` → `/speckit.tasks` → `/speckit.analyze` → `/speckit.implement` (a bug fix is a short spec delta in the owning spec), and a CI check fails pull requests that change `src/` without changing `specs/` unless they carry a `Spec-Exempt: <reason>`. Coding agents: see [AGENTS.md](AGENTS.md). Details: [CONTRIBUTING.md](CONTRIBUTING.md#spec-kit-workflow-is-mandatory).
+Agent Durbar is spec-driven with [GitHub Spec Kit](https://github.com/github/spec-kit): **no code without a spec, a plan and tasks.** Features 001-010 in [`specs/`](specs/README.md) were reverse-engineered from the shipped code (each requirement is marked `[IMPLEMENTED]` or `[KNOWN GAP]`, with how it was checked); 011 (credit caps) is built; 012-014 are backlog drafts. Spec Kit's helper scripts (`.specify/scripts/bash/*.sh`) are shell scripts: on Windows run them in WSL or Git Bash, or re-initialise with PowerShell scripts (`specify init --here --script ps`); writing the spec files by hand works everywhere. The rules are in the [constitution](.specify/memory/constitution.md). Every change goes `/speckit.specify` → `/speckit.clarify` → `/speckit.plan` → `/speckit.tasks` → `/speckit.analyze` → `/speckit.implement` (a bug fix is a short spec delta in the owning spec), and a CI check fails pull requests that change `src/` without changing `specs/` unless they carry a `Spec-Exempt: <reason>`. Coding agents: see [AGENTS.md](AGENTS.md). Details: [CONTRIBUTING.md](CONTRIBUTING.md#spec-kit-workflow-is-mandatory).
 
 ## Development
 

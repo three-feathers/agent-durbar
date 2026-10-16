@@ -21,3 +21,4 @@
 - [ ] T024 Build attestations (`actions/attest-build-provenance`), pinned by SHA. [FR-012]
 - [ ] T025 Pack-smoke on macOS and Windows runners. [FR-015]
 - [ ] T026 Dependabot for npm and Actions (SHA-pinned). [FR-016]
+- [x] T027 CI job `office-check`: `npm run check:office` under xvfb on Ubuntu (timeout 10 min, ~70 s measured). [FR-017]

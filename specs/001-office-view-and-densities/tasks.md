@@ -20,8 +20,8 @@
 
 ## Open
 
-- [ ] T020 (partly via T025: overlap/clipping, floor overflow; min font still open) Automate the office checks: a `scripts/` check (Electron under xvfb or a DOM harness) asserting, for SIM=12 and 15 at 1440x900 and 1280x800, no page/floor overflow and min font >= 10.5px; run it in CI on Linux. [FR-015, constitution V]
-- [ ] T021 Resolve the README/measurement drift for SIM=15 @1280x800 closed (`card` documented vs `mini` measured): re-check, then fix README or the layout search. [FR-016]
+- [x] T020 (overlap/clipping, floor overflow and the 10.5px minimum are checked; runs in CI as `office-check`) Automate the office checks: a `scripts/` check (Electron under xvfb or a DOM harness) asserting, for SIM=12 and 15 at 1440x900 and 1280x800, no page/floor overflow and min font >= 10.5px; run it in CI on Linux. [FR-015, constitution V]
+- [x] T021 Resolve the README/measurement drift for SIM=15 @1280x800 closed (`card` documented vs `mini` measured): re-check, then fix README or the layout search. [FR-016]
 - [ ] T022 Improve `micro` helper figures and nameplate truncation when narrow. [FR-017]
 - [ ] T023 Keyboard navigation between desks (arrow keys), with a spec delta first. [FR-019]
 - [ ] T024 Hand-check the office on macOS and Windows and record it here. [VI]
