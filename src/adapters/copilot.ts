@@ -50,6 +50,8 @@ export class CopilotAdapter implements AgentAdapter {
   private client: CopilotClient | undefined;
   private starting: Promise<CopilotClient> | undefined;
   private sessions = new Map<string, Live>();
+  /** callId -> tool name, so complete/update events can carry the tool name. */
+  private toolNames = new Map<string, string>();
 
   /** Lazily start the shared runtime. Uses the logged-in Copilot user (e.g. `copilot login`). */
   private async getClient(): Promise<CopilotClient> {
@@ -203,6 +205,7 @@ export class CopilotAdapter implements AgentAdapter {
         });
       }
       case 'tool.execution_start':
+        this.toolNames.set(ev.data.toolCallId, ev.data.toolName);
         return this.emit(sid, {
           type: 'toolCall',
           callId: ev.data.toolCallId,
@@ -215,20 +218,23 @@ export class CopilotAdapter implements AgentAdapter {
         return this.emit(sid, {
           type: 'toolCall',
           callId: ev.data.toolCallId,
-          tool: '',
+          tool: this.toolNames.get(ev.data.toolCallId) ?? '',
           phase: 'update',
           output: ev.data.partialOutput,
           agentId,
         });
-      case 'tool.execution_complete':
+      case 'tool.execution_complete': {
+        const tool = this.toolNames.get(ev.data.toolCallId) ?? '';
+        this.toolNames.delete(ev.data.toolCallId);
         return this.emit(sid, {
           type: 'toolCall',
           callId: ev.data.toolCallId,
-          tool: '',
+          tool,
           phase: ev.data.success ? 'complete' : 'failed',
           output: ev.data.success ? ev.data.result?.content : ev.data.error?.message,
           agentId: agentId ?? ev.data.parentToolCallId,
         });
+      }
       case 'subagent.started':
         return this.emit(sid, {
           type: 'subagent',
