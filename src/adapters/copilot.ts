@@ -128,10 +128,11 @@ export class CopilotAdapter implements AgentAdapter {
   }
 
   async start(options: StartOptions): Promise<string> {
-    const { cwd } = resolveWorkspaceCwd(options.workspace);
+    const { cwd, folders } = resolveWorkspaceCwd(options.workspace);
     const client = await this.getClient();
     let sid = options.resumeSessionId ?? options.sessionId ?? '';
     const broker = new PermissionBroker({
+      roots: [cwd, ...folders],
       mode: options.allow ? 'allow' : options.ask ? 'ask' : 'read-only',
       emit: (e: BrokerEvent) => {
         switch (e.type) {
@@ -186,6 +187,8 @@ export class CopilotAdapter implements AgentAdapter {
 
   async send(sessionId: string, message: AgentMessage): Promise<void> {
     const live = this.mustGet(sessionId);
+    // Files the user attached are theirs to share: the runtime may read them even outside the folders (spec 003 FR-023).
+    if (message.attachments?.length) live.broker.allowReadPaths(message.attachments.map((a) => a.path));
     this.emit(sessionId, { type: 'status', status: 'working', intent: 'Thinking' });
     // Text files go as `file` attachments (the runtime reads them from disk). Images go as
     // base64 `blob` attachments with a mime type, the SDK's documented way to send an image.
@@ -262,8 +265,8 @@ export class CopilotAdapter implements AgentAdapter {
     else await live.session.rpc.mcp.disable({ serverName: name });
   }
 
-  resolvePermission(sessionId: string, requestId: string, approve: boolean, remember = false): void {
-    this.sessions.get(sessionId)?.broker.resolve(requestId, approve, remember);
+  resolvePermission(sessionId: string, requestId: string, approve: boolean, remember = false, broad = false): void {
+    this.sessions.get(sessionId)?.broker.resolve(requestId, approve, remember, broad);
   }
 
   revokeGrant(sessionId: string, key: string): void {

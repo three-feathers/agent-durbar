@@ -24,6 +24,8 @@ export interface AgentInfo {
   effort?: string;
   /** Restored from the saved folder list: no runtime session yet, it starts with the first message. */
   lazy?: boolean;
+  /** Restored from a saved Allow edits: it starts in Ask first (spec 003 FR-021). */
+  permDowngraded?: boolean;
   /** The folder is hidden from the office (it keeps its saved sessions). */
   hidden?: boolean;
   /** The room's door is closed (compact door plate in the office). */
@@ -195,8 +197,8 @@ export interface DurbarApi {
   send(id: string, text: string, attachments: PickedFile[]): Promise<{ ok: boolean; error?: string }>;
   /** Interrupt the current turn only; the agent returns to Ready. */
   stop(id: string): Promise<void>;
-  /** `remember` = "Approve for this session" (ignored when denying). */
-  resolvePermission(id: string, requestId: string, approve: boolean, remember?: boolean): Promise<void>;
+  /** `remember` = "Approve for this session" (ignored when denying); `broad` = the wider "any arguments" scope of a shell request (only if offered). */
+  resolvePermission(id: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean): Promise<void>;
   /** Forget one "Approve for this session" grant (key from the `grants` event). */
   revokeGrant(id: string, key: string): Promise<void>;
   openInVSCode(id: string): Promise<{ ok: boolean; error?: string }>;

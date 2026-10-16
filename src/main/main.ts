@@ -9,7 +9,7 @@ import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, stageAttachment } from '..
 import type { AddResult, AgentInfo, ModelChoice, PermMode, PickedFile, ResumeResult, SessionOptions, VsChatListResult } from '../shared/api';
 import { openInVSCode } from './vscode';
 import { isHttpUrl } from '../shared/url';
-import { FolderStore } from './folders';
+import { FolderStore, restoreMode } from './folders';
 import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '../adapters/vscodeChat';
 import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
@@ -147,7 +147,8 @@ function restoreFolders(): void {
   for (const f of folderStore.load()) {
     try {
       if (!fs.existsSync(f.workspace)) continue; // e.g. an unplugged drive: stays saved, just not shown
-      const info = infoFor(f.workspace, f.permMode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, hidden: f.hidden, closed: f.closed });
+      const rm = restoreMode(f.permMode); // Allow edits is not restored silently (spec 003 FR-021)
+      const info = infoFor(f.workspace, rm.mode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, hidden: f.hidden, closed: f.closed, permDowngraded: rm.downgraded || undefined });
       agents.set(info.id, info);
     } catch {
       /* folder gone or not a folder any more */
@@ -373,8 +374,8 @@ ipcMain.handle('folders:remove', async (_e, id: unknown) => {
   return { ok: true, removedIds };
 });
 
-ipcMain.handle('agents:resolvePermission', (_e, id: string, requestId: string, approve: boolean, remember?: boolean) => {
-  if (agents.has(id)) adapter.resolvePermission(id, String(requestId), approve === true, approve === true && remember === true);
+ipcMain.handle('agents:resolvePermission', (_e, id: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean) => {
+  if (agents.has(id)) adapter.resolvePermission(id, String(requestId), approve === true, approve === true && remember === true, approve === true && remember === true && broad === true);
 });
 
 ipcMain.handle('agents:revokeGrant', (_e, id: string, key: string) => {

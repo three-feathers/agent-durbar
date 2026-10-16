@@ -1044,9 +1044,10 @@ function showPerm(a,p){
   else if(p.state==='pending'){
     const row=document.createElement('div');row.className='note-actions';
     const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);};
-    const answer=(approve,remember)=>{bridge.resolvePermission(a.id,p.requestId,approve,remember);settlePerm(a,{requestId:p.requestId,state:approve?'approved':'denied',via:'user',remembered:approve&&remember,scopeLabel:p.scopeLabel,summary:p.summary});};
+    const answer=(approve,remember,broad)=>{bridge.resolvePermission(a.id,p.requestId,approve,remember,!!broad);settlePerm(a,{requestId:p.requestId,state:approve?'approved':'denied',via:'user',remembered:approve&&remember,scopeLabel:broad?p.broadScopeLabel:p.scopeLabel,summary:p.summary});};
     mk('Approve','primary','Allow this one request',()=>answer(true,false));
-    if(p.scopeKey)mk('Approve for this session','session','Allow "'+(p.scopeLabel||p.kind)+'" until you stop this session. Shown as a chip you can revoke.',()=>answer(true,true));
+    if(p.scopeKey)mk('Approve for this session','session','Allow "'+(p.scopeLabel||p.kind)+'" until you stop this session'+(p.kind==='shell'?' (this exact command only)':'')+'. Shown as a chip you can revoke.',()=>answer(true,true));
+    if(p.broadScopeKey)mk('Approve for session: any arguments','session','Allow every simple "'+(p.broadScopeLabel||p.kind)+'" command (no pipes, redirects or substitutions) until you stop this session. Wider than the exact command above; shown as a chip you can revoke.',()=>answer(true,true,true));
     mk('Deny','danger','Deny this request',()=>answer(false,false));
     n.appendChild(row);
     a.pend.set(p.requestId,{n,row,st});
@@ -1292,6 +1293,7 @@ function newSession(a0){
   d.addEventListener('click',e=>{if(e.target===d)closeSessDlg();});
   $('sdCancel').onclick=closeSessDlg;
   $('sdGo').onclick=async()=>{
+    if($('sdPerm').value==='allow'&&!(await confirmAllow(roomOf(a).name)))return;
     const opts={permMode:$('sdPerm').value,model:$('sdModel').value,effort:$('sdEff').hidden?undefined:($('sdEff').value||undefined)};
     $('sdGo').disabled=true;$('sdGo').textContent='Starting…';
     const r=await bridge.newSession(a.id,opts);
@@ -1462,7 +1464,12 @@ async function announcePrevious(a){
   toast('Found '+(n?n+' earlier Copilot session'+(n===1?'':'s'):'')+(n&&v?' and ':'')+(v?v+' VS Code chat'+(v===1?'':'s'):'')+' for <b>'+esc(roomOf(a).name)+'</b>. Opening them.',4200);
   if(!ui.selected){st.open=true;openPanel(a.id,false);}
 }
+async function confirmAllow(what){
+  const r=await askDialog({title:'Allow edits for '+what+'?',body:'Edits, shell commands and other changes will run without asking. Nothing is undone automatically. Allow edits is not remembered: after a restart this folder starts in Ask first.',buttons:[{label:'Cancel',value:null},{label:'Allow edits',value:'ok',cls:'primary warn'}]});
+  return !!r;
+}
 async function addVia(fn){
+  if($('permMode').value==='allow'&&!(await confirmAllow('the folder you add next')))return;
   const ef=$('effortSel');
   const r=await fn($('permMode').value,{model:$('modelSel').value,effort:ef.hidden?undefined:(ef.value||undefined)});
   if(r.error)toast('Could not add: '+esc(r.error),6000);
@@ -1485,7 +1492,7 @@ if(bridge){
   $('modelSel').onchange=()=>fillEffortSelect($('effortSel'),$('modelSel').value);
   bridge.onEvent(onLiveEvent);
   bridge.onAgentAdded(addLiveAgent);
-  bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();});
+  bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();const dg=l.filter(x=>x.permDowngraded).length;if(dg)toast(dg+' saved folder'+(dg>1?'s were':' was')+' set to Allow edits. Allow edits is not restored: '+(dg>1?'they start':'it starts')+' in <b>Ask first</b>. Switch the mode in the chat header to allow edits again.',9000);});
   loadModels();
   agents=LIVE.agents; ROOMS=LIVE.rooms;
   setBadge();

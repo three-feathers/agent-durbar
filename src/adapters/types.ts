@@ -79,6 +79,9 @@ export interface PermissionInfo {
   /** What "Approve for this session" would remember (ask mode): a stable key and a short chip label. */
   scopeKey?: string;
   scopeLabel?: string;
+  /** Shell only: the wider "any arguments of <command>" scope the user may pick instead (never the default). */
+  broadScopeKey?: string;
+  broadScopeLabel?: string;
   /** Who decided: the user, an earlier "Approve for this session" grant, or the session being stopped. */
   via?: 'user' | 'session' | 'stopped';
   /** True when the user approved this one *and* remembered the scope for the session. */
@@ -229,7 +232,7 @@ export interface AgentAdapter {
   /** End a session and free its resources (it can be resumed later by id). */
   stop(sessionId: string): Promise<void>;
   /** Approve/deny a permission request left pending by `ask: true`; `remember` = approve for the rest of the session. Optional. */
-  resolvePermission?(sessionId: string, requestId: string, approve: boolean, remember?: boolean): void;
+  resolvePermission?(sessionId: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean): void;
   /** Forget one "Approve for this session" grant. Optional. */
   revokeGrant?(sessionId: string, key: string): void;
   /** Switch one MCP server on or off in a running session (spec 019). Optional. */

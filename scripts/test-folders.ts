@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { FolderStore, parseSavedFolders } from '../src/main/folders';
+import { FolderStore, parseSavedFolders, restoreMode } from '../src/main/folders';
 
 const abs = (p: string): string => path.resolve('/', p);
 assert.deepStrictEqual(parseSavedFolders('not json'), []);
@@ -65,7 +65,7 @@ try {
     assert.ok(!st.setClosed(abs('nope'), true));
     const again = new FolderStore(f2).load();
     assert.strictEqual(again[0].closed, true, 'closed door survives a restart');
-    assert.strictEqual(again[0].permMode, 'allow', 'mode survives a restart');
+    assert.strictEqual(again[0].permMode, 'ask', 'Allow edits is never written to the list (spec 003 FR-021)');
     st.upsert({ workspace: abs('r1'), permMode: 'allow' });
     st.upsert({ workspace: abs('r2'), permMode: 'ask' });
     st.remove(abs('r2'));
@@ -76,4 +76,7 @@ try {
     fs.rmSync(d2, { recursive: true, force: true });
   }
 }
+assert.deepStrictEqual(restoreMode('allow'), { mode: 'ask', downgraded: true }, 'an old saved Allow edits comes back as Ask first');
+assert.deepStrictEqual(restoreMode('ask'), { mode: 'ask', downgraded: false });
+assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', downgraded: false });
 console.log('folders tests passed');
