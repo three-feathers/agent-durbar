@@ -52,6 +52,38 @@ npm run dist              # installers/archives for this OS in release/ (no sign
 
 Each release also lists `SHA256SUMS.txt`. Releases are built by GitHub Actions from `v*` tags into a **draft** release; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Status (milestone 7: thinking, sub-agents, Markdown, room doors, permission mode)
+
+Specs [015](specs/015-thinking-and-subagent-activity/spec.md) to [018](specs/018-permission-mode-switch/spec.md). Built and tested on the simulator and on sanitised recordings of real events (no further AI credits).
+
+**What the real runtime sends** (captured with `scripts/capture-raw.ts`, Copilot CLI 1.0.98, model `auto` = `gpt-6-luna`, free plan; fixtures in `scripts/fixtures/events/`). Only `auto` is offered and it has no reasoning-effort options, so an explicit reasoning model could not be tested.
+- Prompts that need thought stream `assistant.reasoning_delta` (a markdown summary, about 1 s burst) and a closing `assistant.reasoning` with the same `reasoningId`. Turns that only delegate or read files send **no** reasoning and no `assistant.intent` (`reasoningTokens: 0`). That is why Thinking looked empty.
+- Sub-agents: `subagent.started` (toolCallId, agentName), then events carrying `agentId` (sub-agent `user.message`, `assistant.*`, `tool.*`), then `subagent.completed` with model, duration, tokens and tool-call count.
+- Cost of the capture: about 0.17 AIU for two tiny prompts (plus one interrupted first run).
+
+**Thinking.** The chat is a timeline: intent line, live "Thinking" block (streams, then collapses to "Thought for 3s" with a preview), tool chips and answers. When a step has no reasoning, a small honest note says "This model does not send reasoning for this step. The tool timeline shows what it did."
+
+![Thinking streaming](docs/screenshots/m7-thinking-streaming.png)
+
+**Sub-agents.** Under the parent's task call a nested, collapsible block shows the helper's name, prompt, own thinking/intent, tool chips, result and live state. Its tool calls are no longer mixed into the parent's list. **Open** (or clicking the helper card in the office) shows the same log as a read-only transcript in the full-screen chat.
+
+![Sub-agent nested block](docs/screenshots/m7-subagent-nested.png)
+![Sub-agent transcript](docs/screenshots/m7-subagent-transcript.png)
+
+**Safe Markdown.** Assistant text, thinking and sub-agent results render bold/italic, headings, lists, links (http/https only, opened with `shell.openExternal`), inline code, fenced code with a Copy button, tables and blockquotes. `marked` + DOMPurify are bundled locally (no CDN); raw HTML, scripts, `javascript:` links and remote images are removed; re-rendering on each delta is keyed so it does not flicker or lose scroll. Tests include malicious input.
+
+![Markdown](docs/screenshots/m7-markdown.png)
+
+**Room doors.** Each room has a door: click it (or Enter/Space, `aria-expanded`) to close it into a compact plate with a one-line summary (Busy - N working, Waiting for you - N, Available, Meeting in progress, Needs attention - error, All done). Waiting and error rooms stay amber/red and still count in the top-bar pills. Closed rooms free space so the open ones may use a bigger density. Closed state persists in userData. **Close all / Open all** in the toolbar. Simulator: `?closed=a,b` or the buttons.
+
+![Doors 1280x800](docs/screenshots/m7-doors-1280x800.png)
+
+**Permission mode any time.** The chat header chip and the card context menu (right click) switch Read-only / Ask first / Allow edits for that agent. It applies from the next request without restarting the session (the broker reads the mode dynamically). Switching to Allow edits asks for confirmation and, if a request is pending, offers to approve it; leaving Allow edits asks whether to forget session grants. Cards show a small mode icon; the mode is saved per folder and restored. The top-bar selector is the default for new sessions.
+
+![Mode switch](docs/screenshots/m7-mode-switch.png)
+
+Simulator keywords: `quick` (no reasoning), `markdown`, `sub-agent`/`helper`/`delegate`.
+
 ## Status (milestone 6: full-screen chat, previous sessions, new sessions, folders, models)
 
 Built and tested on simulated agents and fixtures (`DURBAR_SIM`, no AI credits, no prompts to real models). 
@@ -181,7 +213,7 @@ Working:
 Not done yet / known gaps:
 - Only the `auto` model is exposed on the tested (free-plan) account, so there is no model picker; sessions use `auto` with the `efficiency` tier.
 - Credits: the API reports usage in nano-AIU; the conversion to dollars/"AI Credits" is not shown. No per-session cap yet.
-- Sub-agent event mapping is best effort: card identity uses the spawning tool call id, and events from inside a sub-agent are shown in the parent's chat.
+- Sub-agent events are mapped by a pure, unit-tested mapper (`src/adapters/map.ts`); card identity is the spawning task tool-call id and a sub-agent's own events go to its own activity view (milestone 7).
 - No session resume UI, no persistence of agent list, no VS Code session discovery. "Open in VS Code" needs `code` on `PATH`.
 - Developer shortcut: `DURBAR_OPEN=/path/a:/path/b npm start` starts agents on launch (`DURBAR_PERM=ask|allow` to change the policy).
 
