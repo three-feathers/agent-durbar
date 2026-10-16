@@ -7,8 +7,8 @@
 - [x] T006 `tasks-to-issues.sh`, `backlog-issues.sh` [FR-005]
 - [x] T007 `docs/collaboration.md`, CONTRIBUTING pointer [FR-008]
 - [x] T008 Apply labels to the repo; create the backlog issues [FR-003, FR-005]
-- [ ] T009 Create the org Project "Agent Durbar board" with fields and add the issues: run `.github/scripts/create-board.sh` once the gh token has scope `project` (`gh auth refresh -s project`, maintainer login handoff; the script is **untested** because the scope was missing) [FR-006]
-- [ ] T010 Switch on the Project's built-in workflows (auto-add, Status on close/merge) in the web UI [FR-006]
+- [x] T009 (done 2026-10-16: <https://github.com/orgs/three-feathers/projects/1>, public, linked, issues #2-#10 added as Todo; script fixed, see notes.md) Create the org Project "Agent Durbar board" with fields and add the issues: run `.github/scripts/create-board.sh` once the gh token has scope `project` (`gh auth refresh -s project`, maintainer login handoff; the script is **untested** because the scope was missing) [FR-006]
+- [ ] T010 (needs a web-UI click, no API exists; steps in notes.md) Switch on the Project's built-in workflows (auto-add, Status on close/merge) in the web UI [FR-006]
 - [x] T011 Open the PR, CI green, merge [SC-003] (PR #11, all six checks green, merged 2026-10-16)
 - [x] T014 Ruleset body prepared in `.github/ruleset-main.json` (not applied) [FR-007]
 - [x] T012 (done 2026-10-16, ruleset id 25258904 `main protection`; admin bypass in `pull_request` mode, strict up-to-date policy off) After merge and one CI run on `main`: create the `main` ruleset via `gh api` (require PR, 1 approval, `Spec Kit gate` and CI checks, CODEOWNERS review, block force-push/deletion, admin bypass); record the result here [FR-007]

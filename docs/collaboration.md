@@ -26,7 +26,7 @@ For a new contributor and their Claude agent. Plain steps; the full rules are in
 
 ## For each piece of work
 
-1. **Pick an issue** from the [board](https://github.com/orgs/three-feathers/projects) or the [issue list](https://github.com/three-feathers/agent-durbar/issues): no assignee, not `status:blocked`, not `needs-owner-approval`. Ask your human owner if unsure. Good first picks have `area:docs` or `area:platform`.
+1. **Pick an issue** from the [board](https://github.com/orgs/three-feathers/projects/1) or the [issue list](https://github.com/three-feathers/agent-durbar/issues): no assignee, not `status:blocked`, not `needs-owner-approval`. Ask your human owner if unsure. Good first picks have `area:docs` or `area:platform`.
 2. **Claim it**: assign yourself and add `status:claimed`:
    ```bash
    gh issue edit N --add-assignee @me --add-label status:claimed
@@ -59,5 +59,6 @@ The *Spec Kit gate* check explains itself. Common causes: branch is not `NNN-slu
 - Labels: `bash .github/scripts/sync-labels.sh` (creates `spec:NNN` per spec folder, `area:*`, `status:*`).
 - Issues from a spec: `bash .github/scripts/tasks-to-issues.sh specs/NNN-name [--task T020] [--area x] --create` (dry run without `--create`), or `/speckit-taskstoissues` in Claude / `/speckit.taskstoissues` in Copilot (needs the GitHub MCP server). Open backlog: `.github/scripts/backlog-issues.sh`.
 - After adding Spec Kit extensions or presets, run `specify integration use claude` and `specify integration use copilot` once each and commit the result; they only register for the default integration.
-- Board automation (auto-set Status when a PR opens/merges or an issue closes) is switched on in the Project's web settings (Workflows); it cannot be scripted.
+- Board: <https://github.com/orgs/three-feathers/projects/1> (public, linked to the repo; created and refreshed by `bash .github/scripts/create-board.sh`, safe to re-run, needs `gh` scope `project`). Fields: Status (Todo, Claimed, In progress, In review, Done), Spec ID, Owner, Area.
+- Board automation (auto-add new issues, auto-set Status when a PR is linked or merged or an issue closes) is switched on in the Project's web settings (Workflows); GitHub has no API for it. Steps are in `specs/021-collaboration-harness/notes.md`.
 - Ruleset on `main`: see `.github/ruleset-main.json` and spec 021 T012.
