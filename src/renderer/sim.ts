@@ -80,9 +80,9 @@ interface SimAgent {
   const THINK = [
     '**Planning the change**\n\nThe request touches a few files, so I will read them before changing anything. ',
     'Splitting by domain keeps the public API stable and the diff easy to review. ',
-    '**Checking callers**\n\nI should check callers first, because a rename here is a *breaking change* for any client that pins tool names. ',
-    '**Choosing an order**\n\nEleven of the fourteen inputs have a text layer; the rest need OCR, so I will parse the easy ones first. ',
-    '**Reading the failure**\n\nThe failure looks like a rate limit rather than a logic error, so a retry with lower concurrency is probably enough. ',
+    '\n\n**Checking callers**\n\nI should check callers first, because a rename here is a *breaking change* for any client that pins tool names. ',
+    '\n\n**Choosing an order**\n\nEleven of the fourteen inputs have a text layer; the rest need OCR, so I will parse the easy ones first. ',
+    '\n\n**Reading the failure**\n\nThe failure looks like a rate limit rather than a logic error, so a retry with lower concurrency is probably enough. ',
   ];
   const MD_REPLY = [
     '**Done.** I moved the company handlers first and kept a thin re-export in `registry.ts`, so the public API is unchanged.',
@@ -294,10 +294,11 @@ interface SimAgent {
     }
 
     // Replies to chat messages the user types in sim mode.
-    function reply(s: SimAgent, text: string): void {
+    const wait = (ms: number): Promise<void> => new Promise((r) => window.setTimeout(r, ms));
+    async function reply(s: SimAgent, text: string): Promise<void> {
       closeOpen(s);
       emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: 'Answering: ' + text.slice(0, 60) });
-      if (!/\bquick\b/i.test(text)) think(s, 3); // "quick": a turn where the model sends no reasoning
+      if (!/\bquick\b/i.test(text)) for (let i = 0; i < 4; i++) { think(s, 1); await wait(650); } // "quick": a turn where the model sends no reasoning
       if (/\b(markdown|md|format)\b/i.test(text)) {
         emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: MD_REPLY, final: true, text: MD_REPLY + '\n\n[unsafe link](javascript:alert(1)) and <script>alert(1)</script> stay inert.' });
         emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'idle' });
@@ -367,7 +368,7 @@ interface SimAgent {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
         if (s.perm) return { ok: false, error: 'Waiting for your permission decision first.' };
-        window.setTimeout(() => reply(s, text), 400);
+        window.setTimeout(() => void reply(s, text), 400);
         return { ok: true };
       },
       stop: async (id) => {

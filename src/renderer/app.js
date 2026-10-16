@@ -171,7 +171,7 @@ function cardHTML(a,d,nSubs){
   const st=vis(a), use=usageShort(a);
   return `<button class="desk card is-${st}" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${label(a)}: ${esc(a.task)}${use?' · '+use:''}" aria-label="${esc(a.name)}, ${esc(a.role)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(a.task)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${sceneC(a)}</span>
-    <span class="ci"><span class="l1"><span class="name">${esc(a.name)}</span><span class="role">${esc(a.role)}</span><span class="stl st-${st}">${label(a,true)}</span></span>
+    <span class="ci"><span class="l1"><span class="name">${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc(a.role)}</span><span class="stl st-${st}">${label(a,true)}</span></span>
     <span class="intent">${esc(a.task)}</span>
     <span class="l3"><span class="pill st-${st}"><i></i>${label(a,true)}</span><span class="use">${esc(use.split(' · ')[0]||'')}<span class="aiu">${use.includes(' · ')?' · '+esc(use.split(' · ')[1]):''}</span></span></span></span></button>`;
 }
@@ -199,7 +199,7 @@ function unitHTML(a,d){
   if(d==='full'){
     desk=`<button class="desk is-${st}" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(a.task)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
       ${scene(a,false)}<span class="badge ${st}">${badgeSVG(st)}</span>
-      <div class="info"><div class="who"><span class="name">${esc(a.name)}</span><span class="role">${esc(a.role)}</span></div>
+      <div class="info"><div class="who"><span class="name">${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc(a.role)}</span></div>
       <p class="task">${esc(a.task)}</p><span class="pill st-${st}"><i></i>${label(a)}</span></div></button>`;
   } else desk=cardHTML(a,d,nSubs);
   return `<div class="unit${nSubs?' has-h':''}" data-key="unit:${esc(a.id)}">${desk}${helpers}</div>`;
@@ -217,9 +217,38 @@ function officeModel(ignoreStatus){
   });
   return rooms;
 }
+/* ---- room doors (spec 017): a closed room is a compact door plate with a one-line status ---- */
+const DOOR_OPEN='<svg class="door-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="4" y="2.5" width="12" height="15" rx="1.6" fill="#efe8d8" stroke="#b3a07c" stroke-width="1.2"/><path class="leaf" d="M4.4 3.2 9.6 4.6V15.4L4.4 16.8Z" fill="#d8c6a8" stroke="#a89572" stroke-width="1"/><circle cx="8.2" cy="10" r=".8" fill="#8a7650"/></svg>';
+const DOOR_SHUT='<svg class="door-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="4" y="2.5" width="12" height="15" rx="1.6" fill="#d8c6a8" stroke="#a89572" stroke-width="1.2"/><rect x="6.2" y="4.7" width="7.6" height="4.4" rx=".9" fill="#e8dcc6"/><circle cx="13.1" cy="12" r="1" fill="#8a7650"/></svg>';
+function roomSummary(r){
+  const mains=agents.filter(a=>!a.parent&&a.room===r.id);
+  const sum=window.DurbarRoom.summarizeRoom(mains.map(a=>({state:vis(a),helpers:helpersOf(a).map(vis)})));
+  return Object.assign({n:mains.length},sum);
+}
+function plateHTML({r}){
+  const sm=roomSummary(r);
+  return `<button class="plate tone-${sm.tone}" type="button" data-door="${esc(r.id)}" data-key="door:${esc(r.id)}" data-tint="${r.tint}" aria-expanded="false" aria-label="Open room ${esc(r.name)}. ${esc(sm.text)}. ${sm.n} agent${sm.n===1?'':'s'}." title="${esc(r.path)}">${DOOR_SHUT}<span class="plate-tx"><b>${esc(r.name)}</b><span class="plate-sum">${esc(sm.text)}</span></span><span class="plate-n">${sm.n}</span></button>`;
+}
+const doorsHTML=list=>list.length?`<div class="doors" data-key="doors">${list.map(plateHTML).join('')}</div>`:'';
+const stageHTML=(sizing,d,aw,cap)=>sizing.filter(m=>!m.r.closed).map(m=>roomHTML(m,d,aw,cap)).join('')+doorsHTML(sizing.filter(m=>m.r.closed));
+function setRoomClosed(r,closed,quiet){
+  if(!!r.closed===!!closed)return;
+  r.closed=!!closed;
+  const ag=agents.find(x=>!x.parent&&x.room===r.id);
+  if(ag&&ag.live&&bridge&&bridge.setRoomClosed)bridge.setRoomClosed(ag.id,!!closed);
+  if(!quiet){doorAnim=r.id;renderAll();}
+}
+let doorAnim=null;
+function renderDoorBar(){
+  const b=$('doorBar'); if(!b)return;
+  const vis_=ROOMS.filter(r=>!r.hidden&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id));
+  const open=vis_.filter(r=>!r.closed).length, shut=vis_.length-open;
+  b.hidden=vis_.length<2||ui.view!=='office';
+  $('closeAll').disabled=!open; $('openAll').disabled=!shut;
+}
 function roomHTML({r,mains,all},d,aw,cap){
   const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':(k==='done'||k==='idle')?' calm':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}</span>`:''}).join('');
-  const head=`<div class="room-head"><span class="room-name" title="${esc(r.name)}">${esc(r.name)}</span><span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span><span class="room-dots" aria-hidden="true">${dots}</span>${bridge&&bridge.newSession&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${PLANT}</div>`;
+  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="Close room ${esc(r.name)}" title="Close the door: ${esc(r.name)} becomes a compact plate">${DOOR_OPEN}</button><span class="room-name" title="${esc(r.name)}">${esc(r.name)}</span><span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span><span class="room-dots" aria-hidden="true">${dots}</span>${bridge&&bridge.newSession&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${PLANT}</div>`;
   if(d==='full'){
     const gap=6, pad=12;
     const widths=mains.map(a=>unitWidth(a,d));
@@ -266,21 +295,23 @@ function morphHTML(el,html){const t=document.createElement('template');t.innerHT
    until the *shape* of the office changes (agents, helper counts, filters, size). Status changes only patch the DOM. */
 function chooseLayout(sizing,aw,ah){
   const probe=$('probe'); probe.style.width=aw+'px';
+  const openOnly=sizing.filter(m=>!m.r.closed);
+  if(!openOnly.length){probe.innerHTML=doorsHTML(sizing);probe.dataset.d='card';const ok=probe.scrollHeight<=ah+1;probe.innerHTML='';return {d:'card',hcap:1,cap:1,fit:ok,boost:[]};}
   const fits=()=>probe.scrollHeight<=ah+1&&probe.scrollWidth<=aw+1;
   const cands=FORCE_DENSITY?CANDIDATES.filter(c=>c[0]===FORCE_DENSITY):CANDIDATES;
   let res=null, lastAny=null;
   for(const [d,hcap] of cands){
     HCAP=hcap; HBOOST=new Set(); probe.dataset.d=d; probe.style.height='auto';
     if(d==='full'){
-      probe.innerHTML=sizing.map(m=>roomHTML(m,d,aw)).join('');
+      probe.innerHTML=stageHTML(sizing,d,aw);
       if(fits()){res={d,hcap,cap:0,fit:true};break;}
       lastAny={d,hcap,cap:0,fit:false};continue;
     }
     const D=DENS[d], over=2*D.rp+4;
-    const maxCap=Math.max(1,Math.min(Math.max(...sizing.map(m=>m.mains.length)),Math.floor((aw-over+D.gap)/(D.cw+D.gap))));
+    const maxCap=Math.max(1,Math.min(Math.max(...openOnly.map(m=>m.mains.length)),Math.floor((aw-over+D.gap)/(D.cw+D.gap))));
     let best=null, any=null;
     for(let c=maxCap;c>=1;c--){
-      probe.innerHTML=sizing.map(m=>roomHTML(m,d,aw,c)).join('');
+      probe.innerHTML=stageHTML(sizing,d,aw,c);
       const h=probe.scrollHeight;
       if(!any||h<any.h-8)any={c,h};
       if(fits()){
@@ -295,11 +326,11 @@ function chooseLayout(sizing,aw,ah){
   }
   /* Leftover floor space: with one helper per strip, give 3 to the agents with the most helpers (attention first) while it still fits. */
   if(res&&res.d!=='full'&&res.hcap===1){
-    const many=sizing.flatMap(m=>m.mains).filter(a=>helpersOf(a).length>2).sort((x,y)=>Math.min(prio(x),...helpersOf(x).map(prio))-Math.min(prio(y),...helpersOf(y).map(prio))||helpersOf(y).length-helpersOf(x).length);
+    const many=openOnly.flatMap(m=>m.mains).filter(a=>helpersOf(a).length>2).sort((x,y)=>Math.min(prio(x),...helpersOf(x).map(prio))-Math.min(prio(y),...helpersOf(y).map(prio))||helpersOf(y).length-helpersOf(x).length);
     HCAP=1; probe.dataset.d=res.d;
     for(const a of many){
       HBOOST.add(a.id); probe.style.height='auto';
-      probe.innerHTML=sizing.map(m=>roomHTML(m,res.d,aw,res.cap)).join('');
+      probe.innerHTML=stageHTML(sizing,res.d,aw,res.cap);
       if(fits())res.boost.push(a.id); else HBOOST.delete(a.id);
     }
   }
@@ -321,15 +352,16 @@ function renderOffice(){
   }
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
   const sizing=ui.status?officeModel(true):model;
-  const key=JSON.stringify([aw,ah,FORCE_DENSITY,sizing.map(m=>[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]])])]);
+  const key=JSON.stringify([aw,ah,FORCE_DENSITY,sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]])])]);
   if(key!==layoutKey||!layout){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
   HCAP=layout.hcap; HBOOST=new Set(layout.boost);
-  const html=model.map(m=>roomHTML(m,layout.d,aw,layout.cap)).join('');
+  const html=stageHTML(model,layout.d,aw,layout.cap);
   const fresh=stage.dataset.d!==layout.d||!!stage.querySelector('.empty');
   stage.style.width=aw+'px'; stage.style.height='auto'; stage.dataset.d=layout.d;
   if(fresh)stage.innerHTML=html; else morphHTML(stage,html);
   stage.dataset.fit=layout.fit?'ok':'scroll'; stage.dataset.h=String(layout.hcap);
   floor.classList.toggle('scrolls',!layout.fit);
+  if(doorAnim){const el=stage.querySelector(`[data-door="${CSS.escape(doorAnim)}"]`),box=el&&(el.closest('.room')||el);if(box&&!REDUCED){box.classList.add('enter');setTimeout(()=>box.classList.remove('enter'),420);}doorAnim=null;}
 }
 
 /* ---------------- list view ---------------- */
@@ -346,10 +378,11 @@ function renderList(){
 }
 
 function renderAll(){
-  const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more), inPanel=ae&&ae.closest&&ae.closest('#panel');
-  const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':'');
+  const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.door), inPanel=ae&&ae.closest&&ae.closest('#panel');
+  const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':ae.dataset.door?'data-door':'');
   renderStats();
   if(ui.view==='office')renderOffice(); else renderList();
+  renderDoorBar();
   if(id&&!inPanel){const n=document.querySelector(`[${key}="${CSS.escape(id)}"]`); if(n&&ae!==n)n.focus({preventScroll:true});}
   if(ui.selected){updatePanelHeader();renderStrip();}
 }
@@ -567,7 +600,7 @@ function openPanel(id,focus){
   p.innerHTML=`<div class="panel-in">
    <div class="strip" role="navigation" aria-label="Agents"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON.back}<span>Office</span></button><div class="strip-list" id="stripList"></div></div>
    <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1">${esc(a.name)}</h2><div class="sub">${esc(a.role)}${parent?' · helper of '+esc(parent.name):''}</div></div>
-      <div class="ph-meta"><span data-f="status"></span>${mdlName?`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`:''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
+      <div class="ph-meta"><span data-f="status"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`:''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
       <div class="actions">${a.live&&bridge.newSession&&!a.parent?`<button class="btn" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>`:''}<button class="btn primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
         ${a.live&&!a.parent?`<button class="btn" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)">Copy resume command</button>`:''}
         <button class="btn" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
@@ -644,6 +677,10 @@ document.addEventListener('click',e=>{
   if(so){const blk=so.closest('.subblk'),id=blk&&blk.dataset.sub,par=ui.selected&&byId(ui.selected),card=par&&liveById(par.id+':'+id);if(card)openPanel(card.id,false);return;}
   const pc=e.target.closest('[data-parentchat]');
   if(pc){const cur=byId(ui.selected);if(cur&&cur.parent)openPanel(cur.parent,false);return;}
+  const dr=e.target.closest('[data-door]'); if(dr){const r=ROOMS.find(x=>x.id===dr.dataset.door);if(r)setRoomClosed(r,!r.closed);return;}
+  if(e.target.closest('#closeAll,#openAll')){const shut=!!e.target.closest('#closeAll');
+    ROOMS.filter(r=>!r.hidden&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id)).forEach(r=>setRoomClosed(r,shut,true));
+    layoutKey='';renderAll();return;}
   const st=e.target.closest('.stat'); if(st){const k=st.dataset.k;ui.status=ui.status===k?null:k;renderAll();const n=document.querySelector(`.stat[data-k="${k}"]`);if(n)n.focus();return;}
   const mo=e.target.closest('[data-more]'); if(mo){const id=mo.dataset.more;ui.expanded[id]=!ui.expanded[id];renderAll();return;}
   const cm=e.target.closest('.chips-more'); if(cm){const box=cm.parentNode;box.dataset.exp=box.dataset.exp==='1'?'0':'1';refreshChips(box);return;}
@@ -683,6 +720,8 @@ const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
 const TINTS=['sage','blue','sand','clay'];
+const CLOSED_Q=(qs.get('closed')||'').split(',').filter(Boolean); /* dev/screenshots: ?closed=blog,infra-notes */
+ROOMS.forEach(r=>{if(CLOSED_Q.includes(r.name)||CLOSED_Q.includes(r.id))r.closed=true;});
 const hashN=str=>{let h=0;for(const c of str)h=(h*31+c.charCodeAt(0))>>>0;return h;};
 const lookFor=key=>{const h=hashN(key);return L(S.sk[h%5],S.hr[(h>>>3)%6],['bun','short','long','curly'][(h>>>6)%4],S.sh[(h>>>9)%7],(h>>>12)%3===0);};
 const liveById=id=>LIVE.agents.find(a=>a.id===id);
@@ -705,14 +744,21 @@ function liveChat(a){
   return chat;
 }
 function addNote(chat,html,err){const n=document.createElement('div');n.className='note'+(err?' err':'');n.innerHTML=html;chat.el.appendChild(n);scrollChat(chat);return n;}
+const MODE_NAME={'read-only':'Read-only','ask':'Ask first','allow':'Allow edits'};
+const MODE_TEXT={'read-only':'read-only','allow':'can edit','ask':'asks first'};
+const MODE_HELP={'read-only':'Reads only. Edits, commands and other changes are denied.','ask':'Asks before every edit or command. You can approve for the rest of the session.','allow':'Edits, commands and other changes run without asking.'};
+const roleFor=info=>'Copilot ('+MODE_TEXT[info.permMode]+')'+(info.model&&info.model!=='auto'?' · '+info.model:'');
+const MODE_IC={
+ 'read-only':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.2" y="7" width="9.6" height="6.6" rx="1.6"/><path d="M5.4 7V5.4a2.6 2.6 0 0 1 5.2 0V7"/></svg>',
+ 'ask':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.8l5 1.8v3.8c0 3-2.1 5.2-5 6.6-2.9-1.4-5-3.6-5-6.6V3.6z"/><path d="M6.2 7.8l1.4 1.4 2.4-2.6"/></svg>',
+ 'allow':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"><path d="M2.5 13.5l.7-3L11 2.7a1.4 1.4 0 0 1 2 2L5.5 12.8z"/></svg>'};
+const modeIcon=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}: ${esc(MODE_HELP[a.info.permMode])} (right-click for options)" aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`:'';
 function addLiveAgent(info){
   if(liveById(info.id))return;
   let room=LIVE.rooms.find(r=>r.path===info.cwd);
-  if(!room){room={id:'r'+LIVE.rooms.length+':'+info.cwd,name:(info.roomName||info.name),path:info.cwd,tint:TINTS[LIVE.rooms.length%4],hidden:!!info.hidden};LIVE.rooms.push(room);}
-  const mode={'read-only':'read-only','allow':'can edit','ask':'asks first'}[info.permMode];
+  if(!room){room={id:'r'+LIVE.rooms.length+':'+info.cwd,name:(info.roomName||info.name),path:info.cwd,tint:TINTS[LIVE.rooms.length%4],hidden:!!info.hidden,closed:!!info.closed||CLOSED_Q.includes(info.roomName||info.name)};LIVE.rooms.push(room);}
   let name=info.name; const dup=LIVE.agents.filter(x=>!x.parent&&x.room===room.id&&x.baseName===info.name).length; if(dup)name=info.name+' #'+(dup+1);
-  const mdl=info.model&&info.model!=='auto'?' · '+info.model:'';
-  LIVE.agents.push({id:info.id,name,baseName:info.name,role:info.role||('Copilot ('+mode+')'+mdl),room:room.id,state:'idle',label:info.lazy?'Not started':'Ready',task:info.lazy?'Saved folder. A session starts with your first message.':'Ready. Send a message to start.',
+  LIVE.agents.push({id:info.id,name,baseName:info.name,role:info.role||roleFor(info),room:room.id,state:'idle',label:info.lazy?'Not started':'Ready',task:info.lazy?'Saved folder. A session starts with your first message.':'Ready. Send a message to start.',
     look:lookFor(info.id),files:[],paused:false,live:true,info,usage:{calls:0,inT:0,outT:0,nano:0},usageText:'',turn:null,worked:false,pend:new Map(),settled:new Set(),grants:[]});
   if(!demoOn){if(!ui.expanded)ui.expanded={};renderFilter();scheduleRender();}
   if(pendingOpen===info.id){pendingOpen=null;if(!demoOn)openPanel(info.id,false);}
@@ -858,7 +904,7 @@ function subBlock(s,T){
   v.paint=()=>{
     el.classList.toggle('running',s.status==='running');el.classList.toggle('failed',s.status==='failed');el.classList.toggle('done',s.status==='done');
     el.querySelector('.sub-name').textContent=s.name;
-    el.querySelector('.sub-task').textContent=s.status==='running'?SHORT(s.task||s.prompt,90):SHORT(s.result||s.lastFinal||s.error||s.task,110);
+    el.querySelector('.sub-task').textContent=s.status==='running'?SHORT(plainMd(s.task||s.prompt),90):SHORT(plainMd(s.result||s.lastFinal||s.error||s.task),110);
     el.querySelector('.sub-st').textContent=subStatusText(s);
     el.querySelector('.sub-open').hidden=!s.card;
   };
@@ -895,7 +941,7 @@ function onSubEvent(a,e){
   subPaint(s);
   /* helper card: what it is doing right now */
   if(e.type==='thinking')setState(card,'thinking',null);
-  else if(e.type==='output')setState(card,'working',null,e.final?SHORT(e.text,100):undefined);
+  else if(e.type==='output')setState(card,'working',null,e.final?SHORT(plainMd(e.text),100):undefined);
   else if(e.type==='toolCall'&&e.phase==='start'){const l=toolLabel(e.args);setState(card,'working',null,e.tool+(l?' '+SHORT(l,80):''));}
   else if(e.type==='status'&&e.intent)setState(card,'working',null,SHORT(e.intent,100));
   if(ui.selected===card.id)updatePanelHeader();
@@ -910,7 +956,7 @@ function onSubagent(a,e){
   else{
     s.t1=Date.now();
     if(e.phase==='failed'){s.status='failed';s.error=e.error||e.task||'Failed';setState(card,'error',null,SHORT(s.error,100));}
-    else{s.status='done';setState(card,'done','Done',SHORT(s.result||s.task,100));}
+    else{s.status='done';setState(card,'done','Done',SHORT(plainMd(s.result||s.task),100));}
     s.views.forEach(v=>{tEnd(v.T,{note:false});});
     subCollapse(s);
   }
@@ -931,7 +977,7 @@ function onTaskTool(a,e){
     if(e.phase==='failed'){s.status='failed';s.error=String(e.output||'Failed');}
     else if(s.status==='running'){s.status='done';}
     s.views.forEach(v=>tEnd(v.T,{note:false}));
-    if(s.card)setState(s.card,s.status==='failed'?'error':'done',s.status==='failed'?null:'Done',SHORT(s.result||s.error||s.task,100));
+    if(s.card)setState(s.card,s.status==='failed'?'error':'done',s.status==='failed'?null:'Done',SHORT(plainMd(s.result||s.error||s.task),100));
     subCollapse(s);
   }
   subPaint(s);scheduleRender();
@@ -974,6 +1020,7 @@ function setState(a,state,label,task){
   a.state=state; if(label!==undefined)a.label=label; if(task!==undefined)a.task=task;
   if(ch)scheduleRender();
 }
+const plainMd=t=>String(t==null?'':t).replace(/```[\s\S]*?```/g,' code ').replace(/!?\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/^[#>\-*\s]+/gm,'').replace(/[*_`~]/g,'').replace(/\s+/g,' ').trim();
 const SHORT=(v,n)=>{v=String(v==null?'':v).replace(/\s+/g,' ');return v.length>n?v.slice(0,n-1)+'…':v;};
 function toolLabel(args){
   if(!args||typeof args!=='object')return '';
@@ -1042,7 +1089,7 @@ function onLiveEvent(e){
       if(was)addNote(chat,'Stopped by you. The agent is ready for your next message.');
       setState(a,'idle','Ready','Stopped. Ready for your next message.');}
     else if(e.status==='idle'){const was=a.worked;a.worked=false;closeTurn(a);
-      if(was)setState(a,'done','Done',a.lastOutput?SHORT(a.lastOutput,140):'Finished.'); else setState(a,'idle','Ready',a.task);}
+      if(was)setState(a,'done','Done',a.lastOutput?SHORT(plainMd(a.lastOutput),140):'Finished.'); else setState(a,'idle','Ready',a.task);}
     else if(e.status==='error'){closeTurn(a);addNote(chat,esc(e.intent||'Error'),true);setState(a,'error',null,SHORT(e.intent||'Error',140));}
     else if(e.status==='stopped'){
       /* a permission still pending when the session stops is denied cleanly: no Approve/Deny left behind, grants gone */
@@ -1096,6 +1143,77 @@ function renderStrip(){
   morphHTML(box,stripAgents().map(x=>{const st=vis(x),attn=st==='waiting'||st==='error';
     return `<button class="sitem st-${st}${attn?' attn':''}${x.id===root?' sel':''}" type="button" data-sw="${esc(x.id)}" data-key="sw:${esc(x.id)}" aria-current="${x.id===root}" title="${esc(x.name)} · ${esc(label(x,true))}: ${esc(x.task)}" aria-label="${esc(x.name)}, ${esc(label(x,true))}. Open chat."><span class="sav">${avatar(x)}</span><span class="stx"><b>${esc(x.name)}</b><span class="sst"><span class="dot ${st}"></span><span class="sw">${esc(label(x,true))}</span><span class="sin">${esc(SHORT(x.task,48))}</span></span></span></button>`;}).join(''));
 }
+
+
+/* ---------------- permission mode: change it at any time (spec 018) ---------------- */
+function modeChipHTML(a){const m=a.info.permMode;
+  return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}. ${esc(MODE_HELP[m])} Click to change; it applies from the next request."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m])}</span>${ICON.chev}</button>`;}
+function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');}}
+function openModeMenu(a0,x,y,anchor){
+  const a=liveRoot(a0); if(!a||!a.live||!bridge.setPermMode)return;
+  closeModeMenu();
+  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Permission mode for '+a.name);
+  m.innerHTML=['read-only','ask','allow'].map(k=>`<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(MODE_HELP[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`).join('')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`;
+  document.body.appendChild(m);
+  const r=m.getBoundingClientRect(); const px=Math.max(8,Math.min(x,innerWidth-r.width-8)), py=Math.max(8,Math.min(y,innerHeight-r.height-8));
+  m.style.left=px+'px';m.style.top=py+'px';
+  m.addEventListener('click',e=>{const b=e.target.closest('[data-mode]');if(!b)return;closeModeMenu();changeMode(a,b.dataset.mode);if(anchor&&anchor.focus&&document.contains(anchor))anchor.focus();});
+  m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('[data-mode]')],i=it.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'){e.preventDefault();it[(i+1)%it.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();it[(i+it.length-1)%it.length].focus();}
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&anchor.focus&&document.contains(anchor))anchor.focus();}});
+  (m.querySelector('[aria-checked="true"]')||m.querySelector('button')).focus();
+  const c=$('modeChip');if(c&&anchor===c)c.setAttribute('aria-expanded','true');
+}
+/* small modal: returns {value, checked} or null when dismissed */
+function askDialog({title,body,buttons,check}){
+  return new Promise(resolve=>{
+    const old=document.getElementById('modeDlg');if(old)old.remove();
+    const d=document.createElement('div');d.id='modeDlg';d.className='dlg-ov';
+    d.innerHTML=`<div class="dlg" role="alertdialog" aria-modal="true" aria-labelledby="mdT" aria-describedby="mdB"><h3 id="mdT"></h3><p class="dsub" id="mdB"></p>${check?'<label class="chk"><input type="checkbox" id="mdChk"><span></span></label>':''}<div class="dbtn"></div></div>`;
+    d.querySelector('#mdT').textContent=title;d.querySelector('#mdB').textContent=body;
+    if(check){d.querySelector('.chk span').textContent=check.label;d.querySelector('#mdChk').checked=!!check.checked;}
+    const row=d.querySelector('.dbtn');
+    const done=v=>{d.remove();resolve(v);};
+    buttons.forEach(b=>{const el=document.createElement('button');el.type='button';el.className='btn'+(b.cls?' '+b.cls:'');el.textContent=b.label;el.onclick=()=>done(b.value===null?null:{value:b.value,checked:check?d.querySelector('#mdChk').checked:false});row.appendChild(el);});
+    d.addEventListener('click',e=>{if(e.target===d)done(null);});
+    d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();done(null);}});
+    document.body.appendChild(d);
+    (row.querySelector('.primary')||row.lastElementChild).focus();
+  });
+}
+async function changeMode(a,mode){
+  const cur=a.info.permMode; if(mode===cur||!bridge.setPermMode)return;
+  const pend=a.pend?a.pend.size:0, grants=(a.grants||[]).length;
+  const opts={};
+  if(mode==='allow'){
+    const r=await askDialog({title:'Allow edits for '+a.name+'?',body:'Edits, shell commands and other changes will run without asking, in '+roomOf(a).path+'. Nothing is undone automatically; you can switch back at any time.',
+      check:pend?{label:'Also approve the '+pend+' request'+(pend>1?'s':'')+' waiting now',checked:true}:null,
+      buttons:[{label:'Cancel',value:null},{label:'Allow edits',value:'ok',cls:'primary warn'}]});
+    if(!r)return; opts.approvePending=!!r.checked;
+  } else if(grants){
+    const r=await askDialog({title:'Switch '+a.name+' to '+MODE_NAME[mode]+'?',body:'This session has '+grants+' remembered "Approve for this session" permission'+(grants>1?'s':'')+'. Keep them for when you switch back, or clear them now?',
+      buttons:[{label:'Cancel',value:null},{label:'Switch, keep them',value:'keep'},{label:'Switch and clear them',value:'clear',cls:'primary'}]});
+    if(!r)return; opts.clearGrants=r.value==='clear';
+  }
+  const res=await bridge.setPermMode(a.id,mode,opts).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  if(!res||!res.ok){toast('Could not change the mode: '+esc((res&&res.error)||'unknown error'),5000);return;}
+  a.info.permMode=mode; a.role=roleFor(a.info);
+  if(opts.clearGrants)setGrants(a,[]);
+  toast(esc(a.name)+': <b>'+esc(MODE_NAME[mode])+'</b> from the next request.'+(mode==='allow'?' Edits run without asking.':''),4200);
+  if(ui.selected&&liveRoot(byId(ui.selected)||a)===a){const c=$('modeChip');if(c){c.outerHTML=modeChipHTML(a);}const h=document.querySelector('#panel .hint');if(h)h.textContent=h.textContent.replace(/\([a-z\-]+\)\.?$/,'('+a.info.permMode+').');updatePanelHeader();}
+  scheduleRender();
+}
+document.addEventListener('click',e=>{
+  const chip=e.target.closest('#modeChip');
+  if(chip){e.stopPropagation();if(document.getElementById('modeMenu')){closeModeMenu();return;}const r=chip.getBoundingClientRect(),a=byId(ui.selected);if(a)openModeMenu(a,r.left,r.bottom+6,chip);return;}
+  if(!e.target.closest('#modeMenu'))closeModeMenu();
+},true);
+document.addEventListener('contextmenu',e=>{
+  const d=e.target.closest('.desk[data-id], .helper[data-id], .lrow[data-id]');if(!d||d.closest('#panel'))return;
+  const a=byId(d.dataset.id),ra=a&&liveRoot(a);if(!ra||!ra.live||!bridge.setPermMode)return;
+  e.preventDefault();const r=d.getBoundingClientRect();
+  openModeMenu(ra,e.clientX||r.left+16,e.clientY||r.top+16,d);
+});
 
 /* ---------------- model + effort ---------------- */
 let MODELS=[];
