@@ -1,10 +1,13 @@
 {
   "name": "agent-durbar",
-  "version": "0.0.1",
+  "version": "0.1.0-alpha.1",
   "description": "Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.",
   "private": true,
   "license": "MIT",
-  "author": "Vikram Gorla",
+  "author": {
+    "name": "Vikram Gorla",
+    "url": "https://github.com/vikramgorla"
+  },
   "main": "dist/main/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-assets.js",
@@ -16,14 +19,114 @@
     "test:attachments": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-attachments.js",
     "test": "npm run test:permissions && npm run test:attachments && npm run test:vscode && npm run test:runtime",
     "test:vscode": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-vscode.js",
-    "test:runtime": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-runtime.js"
+    "test:runtime": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-runtime.js",
+    "prepare-runtime": "node scripts/prepare-runtime.js",
+    "pack:dir": "npm run build && node scripts/prepare-runtime.js && electron-builder --dir --publish never",
+    "dist:dir": "npm run pack:dir",
+    "dist": "npm run build && node scripts/prepare-runtime.js && electron-builder --publish never",
+    "dist:mac:arm64": "npm run build && node scripts/prepare-runtime.js darwin-arm64 && electron-builder --mac dmg zip --arm64 --publish never",
+    "dist:mac:x64": "npm run build && node scripts/prepare-runtime.js darwin-x64 && electron-builder --mac dmg zip --x64 --publish never",
+    "dist:win": "npm run build && node scripts/prepare-runtime.js win32-x64 && electron-builder --win nsis portable --x64 --publish never",
+    "dist:linux": "npm run build && node scripts/prepare-runtime.js linux-x64 && electron-builder --linux AppImage --x64 --publish never"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
     "electron": "^33.0.0",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.6.0"
   },
   "dependencies": {
     "@github/copilot-sdk": "^1.0.22"
+  },
+  "homepage": "https://github.com/vikramgorla/agent-durbar",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vikramgorla/agent-durbar.git"
+  },
+  "bugs": {
+    "url": "https://github.com/vikramgorla/agent-durbar/issues"
+  },
+  "keywords": [
+    "electron",
+    "copilot",
+    "agents",
+    "command-center"
+  ],
+  "build": {
+    "appId": "io.github.vikramgorla.agentdurbar",
+    "productName": "Agent Durbar",
+    "copyright": "Copyright (c) Vikram Gorla, MIT License",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "!dist/**/*.map",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/@github/copilot-sdk-*/**",
+      "node_modules/koffi/**"
+    ],
+    "npmRebuild": false,
+    "nodeGypRebuild": false,
+    "afterPack": "scripts/after-pack.js",
+    "publish": null,
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.icns",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "artifactName": "Agent-Durbar-${version}-${arch}.${ext}"
+    },
+    "dmg": {
+      "sign": false
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Agent-Durbar-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Agent-Durbar-${version}-portable.${ext}"
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "Development",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Agent-Durbar-${version}-${arch}.${ext}"
+    }
   }
 }
