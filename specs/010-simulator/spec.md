@@ -14,7 +14,7 @@
 **Acceptance Scenarios**:
 
 1. **Given** `DURBAR_SIM=15`, **When** the app starts, **Then** 15 desks show and the badge reads "Simulated agents" with the tooltip "Fake events, no sessions started, no AI credits used". *(re-verified 2026-10-16: 15 desks, Electron under xvfb)*
-2. **Given** `DURBAR_SIM_FREEZE=1`, **When** running, **Then** no background activity ticks (stable screenshots). *(re-verified: results identical between runs)*
+2. **Given** `DURBAR_SIM_FREEZE=1`, **When** running, **Then** no background activity ticks (stable screenshots). *(read:; frozen runs were used for the 2026-10-16 measurements)*
 3. **Given** `?seed=N`, **When** loaded, **Then** the roster activity is reproducible (seeded `mulberry32`, default 7). *(read:)*
 
 ---
