@@ -45,6 +45,16 @@ button{font:inherit;color:inherit}
 .seg button{height:28px;padding:0 12px;border:0;background:transparent;border-radius:7px;font-size:13px;color:var(--ink-2);cursor:pointer;white-space:nowrap}
 .seg button[aria-pressed="true"]{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(60,50,30,.12)}
 
+/* live-mode controls (Electron only) */
+#liveBar{display:none;align-items:center;gap:8px}
+body.has-bridge #liveBar{display:flex}
+#liveBar .tgl{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2);cursor:pointer;white-space:nowrap}
+#liveBar select{height:34px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:0 8px;font:inherit;font-size:13px;color:var(--ink)}
+.note{font-size:12.5px;color:var(--ink-2);background:#fbefd6;border:1px solid #f0d9a6;border-radius:12px;padding:8px 12px;max-width:92%;align-self:flex-start}
+.note.err{background:#f6e2df;border-color:#ebc7c2;color:var(--red-ink)}
+.note .btn{height:28px;margin:6px 6px 0 0;padding:0 10px}
+.chip.live-run .res{color:var(--blue-ink)}
+
 /* ---------- workspace ---------- */
 .workspace{flex:1;display:flex;min-height:0}
 #floor{flex:1;min-width:0;position:relative;overflow:hidden;padding:16px 24px 20px}
@@ -245,10 +255,17 @@ body.panel-open #panel{display:flex}
 <header class="topbar">
   <div class="brand">
     <div class="brand-mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#4f7f65" stroke-width="1.7" stroke-linejoin="round"><rect x="2.5" y="2.5" width="6" height="7" rx="1.5"/><rect x="11.5" y="2.5" width="6" height="4" rx="1.5"/><rect x="11.5" y="9" width="6" height="8.5" rx="1.5"/><rect x="2.5" y="12.5" width="6" height="5" rx="1.5"/></svg></div>
-    <div><h1>Agent Command Center</h1><span class="proto">Prototype - sample data</span></div>
+    <div><h1>Agent Command Center</h1><span class="proto" id="protoBadge">Prototype - sample data</span></div>
   </div>
   <div class="stats" id="stats" role="group" aria-label="Agent status counts. Select one to filter."></div>
   <div class="controls">
+    <div id="liveBar">
+      <label class="tgl"><input type="checkbox" id="demoToggle"> Demo data</label>
+      <button class="btn" id="addFolder" type="button">Add folder</button>
+      <button class="btn" id="addWs" type="button">Add .code-workspace</button>
+      <label class="sr-only" for="permMode">Permissions for new agents</label>
+      <select id="permMode" title="Permissions for newly added agents"><option value="read-only">Read-only</option><option value="ask">Ask before writes</option><option value="allow">Allow edits</option></select>
+    </div>
     <label class="select-wrap"><span class="sr-only">Filter by workspace</span>
       <select id="wsFilter"></select></label>
     <div class="seg" role="group" aria-label="View">
@@ -275,7 +292,7 @@ const qs = new URLSearchParams(location.search);
 const N_MAIN = Math.max(8, Math.min(15, parseInt(qs.get('n')||'12',10)));
 
 /* ---------------- mock data ---------------- */
-const ROOMS = [
+let ROOMS = [
   {id:'mcp-swiss', name:'mcp-swiss', path:'~/work/mcp-swiss', tint:'sage'},
   {id:'swisscontract-ai', name:'swisscontract-ai', path:'~/work/swisscontract-ai', tint:'blue'},
   {id:'command-center', name:'command-center', path:'~/work/command-center', tint:'sand'},
@@ -495,7 +512,7 @@ function renderOffice(){
       <div class="room-head"><span class="room-name">${r.name}</span><span class="room-path">${r.path}</span><span class="room-dots" aria-hidden="true">${dots}</span>${PLANT}</div>
       <div class="units">${mains.map(unitHTML).join('')}</div></section>`;
   });
-  stage.innerHTML=html||'<div class="empty">No agents match these filters.</div>';
+  stage.innerHTML=html||('<div class="empty">'+(!agents.length&&typeof demoOn!=='undefined'&&!demoOn?'No agents yet. Use "Add folder" or "Add .code-workspace" above.':'No agents match these filters.')+'</div>');
   fit();
 }
 function fit(){
@@ -594,6 +611,7 @@ function addUserMsg(chat,text){
   chat.el.appendChild(m);scrollChat(chat);
 }
 function getChat(a){
+  if(a.live)return liveChat(a);
   if(chats[a.id])return chats[a.id];
   const chat=chats[a.id]={el:document.createElement('div'),busy:false};
   chat.el.className='chat-inner';
@@ -612,7 +630,8 @@ const GENERIC_THINK=[
  'This is within the current scope. I will look at the related code first, then make the smallest edit that does what you asked.',
  'Understood. Before changing anything I want to see how this is used elsewhere in the project so I do not break a caller.'];
 async function sendMessage(text,forId){
-  const a=byId(forId||ui.selected); if(!a)return; const chat=getChat(a);
+  const a=byId(forId||ui.selected); if(!a)return;
+  if(a.live)return sendLive(text,forId); const chat=getChat(a);
   text=(text||'').trim(); if(!text&&!attached.length)return;
   if(chat.busy){toast('Hold on, '+esc(a.name)+' is still replying.');return;}
   const files=attached.map(x=>x.name);
@@ -644,7 +663,7 @@ function updatePanelHeader(){
   const a=byId(ui.selected); if(!a)return; const st=vis(a);
   const ph=document.getElementById('panelHead'); if(!ph)return;
   const sp=ph.querySelector('[data-f=status]'); sp.className='pill st-'+st; sp.innerHTML='<i></i>'+label(a);
-  ph.querySelector('[data-f=task]').textContent=a.task;
+  ph.querySelector('[data-f=task]').textContent=a.task+(a.live&&a.usageText?'  ·  '+a.usageText:'');
   document.getElementById('pauseBtn').querySelector('span').textContent=a.paused?'Resume':'Pause';
 }
 function openPanel(id,focus){
@@ -670,16 +689,18 @@ function openPanel(id,focus){
   updatePanelHeader();
   document.getElementById('chat').scrollTop=1e6;
   document.getElementById('closeBtn').onclick=closePanel;
-  document.getElementById('vscodeBtn').onclick=()=>toast('Would run <code>code '+esc(room.path)+'</code>',3800);
+  document.getElementById('vscodeBtn').onclick=()=>a.live?openLive(a):toast('Would run <code>code '+esc(room.path)+'</code>',3800);
+  if(a.live)document.getElementById('pauseBtn').hidden=true;
   document.getElementById('pauseBtn').onclick=()=>{a.paused=!a.paused;toast(esc(a.name)+(a.paused?' paused.':' resumed.'));renderAll();};
-  document.getElementById('stopBtn').onclick=()=>{a.paused=false;a.state='idle';a.label='Stopped';a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
-  document.getElementById('attFile').onclick=()=>{attached.push({name:SAMPLE_FILES[fi++%SAMPLE_FILES.length]});renderAttached();setSend();};
-  document.getElementById('attImg').onclick=()=>{attached.push({name:SAMPLE_IMGS[ii++%SAMPLE_IMGS.length],img:true});renderAttached();setSend();};
+  document.getElementById('stopBtn').onclick=()=>{if(a.live)return stopLive(a);a.paused=false;a.state='idle';a.label='Stopped';a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
+  document.getElementById('attFile').onclick=()=>{if(a.live)return pickLive();attached.push({name:SAMPLE_FILES[fi++%SAMPLE_FILES.length]});renderAttached();setSend();};
+  document.getElementById('attImg').onclick=()=>{if(a.live)return pickLive();attached.push({name:SAMPLE_IMGS[ii++%SAMPLE_IMGS.length],img:true});renderAttached();setSend();};
   document.getElementById('attached').onclick=e=>{const b=e.target.closest('[data-rm]');if(b){attached.splice(+b.dataset.rm,1);renderAttached();setSend();}};
   const input=document.getElementById('msgInput');
   input.addEventListener('input',autoGrow);
   input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(input.value);}});
   document.getElementById('sendBtn').onclick=()=>{if(document.getElementById('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
+  if(a.live){const h=document.querySelector('#panel .hint');if(h)h.textContent='Enter sends, Shift+Enter adds a line. Live Copilot session ('+a.info.permMode+').';}
   setSend();
   renderAll();
   if(focus!==false)document.getElementById('panelTitle').focus({preventScroll:true});
@@ -703,6 +724,153 @@ document.getElementById('vOffice').onclick=()=>setView('office');
 document.getElementById('vList').onclick=()=>setView('list');
 new ResizeObserver(()=>fit()).observe(document.getElementById('floor'));
 window.addEventListener('resize',fit);
+
+
+/* ---------------- LIVE MODE (Electron bridge; absent in a plain browser) ---------------- */
+const bridge=window.agentDurbar;
+const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
+let demoOn=!bridge;
+const TINTS=['sage','blue','sand','clay'];
+const hashN=str=>{let h=0;for(const c of str)h=(h*31+c.charCodeAt(0))>>>0;return h;};
+const lookFor=key=>{const h=hashN(key);return L(S.sk[h%5],S.hr[(h>>3)%6],['bun','short','long','curly'][(h>>6)%4],S.sh[(h>>9)%7],(h>>12)%3===0);};
+const liveById=id=>LIVE.agents.find(a=>a.id===id);
+const liveRoot=a=>a.parent?byId(a.parent):a;
+let renderQueued=false;
+function scheduleRender(){if(renderQueued)return;renderQueued=true;requestAnimationFrame(()=>{renderQueued=false;renderAll();});}
+function applyMode(){
+  agents=demoOn?DEMO.agents:LIVE.agents; ROOMS=demoOn?DEMO.rooms:LIVE.rooms;
+  ui.ws='all'; ui.status=null;
+  if(ui.selected)closePanel();
+  const b=document.getElementById('protoBadge'); if(b)b.textContent=demoOn?'Prototype - sample data':'Live - Copilot';
+  renderFilter(); renderAll();
+}
+function liveChat(a){
+  if(chats[a.id])return chats[a.id];
+  const el=document.createElement('div');el.className='chat-inner';
+  return chats[a.id]={el,busy:false};
+}
+function addNote(chat,html,err){const n=document.createElement('div');n.className='note'+(err?' err':'');n.innerHTML=html;chat.el.appendChild(n);scrollChat(chat);return n;}
+function addLiveAgent(info){
+  if(liveById(info.id))return;
+  let room=LIVE.rooms.find(r=>r.path===info.cwd);
+  if(!room){room={id:'r'+LIVE.rooms.length+':'+info.cwd,name:info.name,path:info.cwd,tint:TINTS[LIVE.rooms.length%4]};LIVE.rooms.push(room);}
+  const mode={'read-only':'read-only','allow':'can edit','ask':'asks first'}[info.permMode];
+  LIVE.agents.push({id:info.id,name:info.name,role:'Copilot ('+mode+')',room:room.id,state:'idle',label:'Ready',task:'Ready. Send a message to start.',
+    look:lookFor(info.id),files:[],paused:false,live:true,info,usage:{calls:0,inT:0,outT:0,nano:0},usageText:'',turn:null,worked:false});
+  if(!demoOn)scheduleRender();
+}
+function ensureTurn(a){
+  if(a.turn)return a.turn;
+  const chat=liveChat(a), m=newAgentMsg(chat,a);
+  const t=a.turn={m,body:m.querySelector('.think-body'),chips:m.querySelector('.chips'),think:m.querySelector('.think'),chipEls:{},bubble:null};
+  const ty=document.createElement('div');ty.className='typing';ty.innerHTML='<i></i><i></i><i></i>';m.appendChild(ty);t.typing=ty;
+  return t;
+}
+function closeTurn(a){
+  const t=a.turn; if(!t)return;
+  t.think.classList.remove('streaming');
+  if(!t.body.textContent.trim())t.think.remove();
+  if(t.typing)t.typing.remove();
+  if(t.bubble)t.bubble.classList.remove('caret');
+  a.turn=null;
+}
+function setState(a,state,label,task){
+  const ch=a.state!==state||(label!==undefined&&a.label!==label)||(task!==undefined&&a.task!==task);
+  a.state=state; if(label!==undefined)a.label=label; if(task!==undefined)a.task=task;
+  if(ch)scheduleRender();
+}
+const SHORT=(v,n)=>{v=String(v==null?'':v).replace(/\s+/g,' ');return v.length>n?v.slice(0,n-1)+'…':v;};
+function toolLabel(args){
+  if(!args||typeof args!=='object')return '';
+  const v=args.path||args.pattern||args.command||args.url||args.query||args.file_path||Object.values(args).find(x=>typeof x==='string')||'';
+  return SHORT(v,80);
+}
+function liveChipHTML(tool,label,res,state){
+  const cls=state==='failed'?'fail':state==='run'?'run':'';
+  return `<span class="chip ${cls}" title="${esc(tool)}: ${esc(label)}"><b>${esc(tool||'tool')}</b><code>${esc(label)}</code>${res?`<span class="res">${state==='failed'?'Failed: ':''}${esc(res)}</span>`:''}</span>`;
+}
+function onLiveEvent(e){
+  const a=liveById(e.sessionId); if(!a)return;
+  const chat=liveChat(a), main=!e.agentId;
+  switch(e.type){
+  case 'status':
+    if(!main)return;
+    if(e.status==='working'){a.worked=true; ensureTurn(a); if(a.state!=='working'&&a.state!=='thinking')setState(a,'working',null,e.intent||a.task); else if(e.intent)setState(a,a.state,undefined,e.intent);}
+    else if(e.status==='needs-permission'){
+      ensureTurn(a); setState(a,'waiting',null,e.intent||'Waiting for permission');
+      const p=e.permission;
+      if(p){const n=addNote(chat,'<b>Permission:</b> '+esc(p.summary)+(p.state==='denied'?' <i>(denied: read-only mode)</i>':''));
+        if(p.state==='pending'){['Approve','Deny'].forEach(l=>{const b=document.createElement('button');b.className='btn'+(l==='Deny'?' danger':' primary');b.textContent=l;
+          b.onclick=()=>{bridge.resolvePermission(a.id,p.requestId,l==='Approve');n.querySelectorAll('button').forEach(x=>x.remove());n.append(' → '+l.toLowerCase()+'d');};n.appendChild(b);});}}
+    }
+    else if(e.status==='idle'){const was=a.worked;a.worked=false;closeTurn(a);
+      if(was)setState(a,'done','Done',a.lastOutput?SHORT(a.lastOutput,140):'Finished.'); else setState(a,'idle','Ready',a.task);}
+    else if(e.status==='error'){closeTurn(a);addNote(chat,esc(e.intent||'Error'),true);setState(a,'error',null,SHORT(e.intent||'Error',140));}
+    else if(e.status==='stopped'){closeTurn(a);setState(a,'idle','Stopped','Stopped by you. Session closed.');}
+    return;
+  case 'thinking':{if(!main)return;const t=ensureTurn(a);t.body.textContent+=e.delta;scrollChat(chat);setState(a,'thinking',null);return;}
+  case 'output':{if(!main)return;const t=ensureTurn(a);
+    if(!t.bubble){t.bubble=document.createElement('div');t.bubble.className='bubble caret';t.m.insertBefore(t.bubble,t.typing||null);}
+    if(e.final){t.bubble.textContent=e.text||t.bubble.textContent;t.bubble.classList.remove('caret');a.lastOutput=e.text||'';t.bubble=null;}
+    else t.bubble.textContent+=e.delta;
+    scrollChat(chat);setState(a,'working',null);return;}
+  case 'toolCall':{const t=ensureTurn(a);
+    if(e.phase==='start'){const label=toolLabel(e.args);const el=document.createElement('span');el.innerHTML=liveChipHTML(e.tool,label,'running','run');
+      t.chips.appendChild(el.firstChild);t.chipEls[e.callId]={el:t.chips.lastChild,tool:e.tool,label};
+      if(main)setState(a,'working',null,e.tool+(label?' '+label:''));}
+    else{const c=t.chipEls[e.callId]; if(c){const tmp=document.createElement('span');
+      tmp.innerHTML=liveChipHTML(c.tool||e.tool,c.label,SHORT(e.output||(e.phase==='complete'?'ok':'failed'),60),e.phase==='failed'?'failed':'ok');
+      c.el.replaceWith(tmp.firstChild);c.el=null;}}
+    scrollChat(chat);return;}
+  case 'usage':{const u=a.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;
+    a.usageText=u.calls+' calls · '+u.inT+' in / '+u.outT+' out tokens · '+(u.nano/1e9).toFixed(3)+' AIU';
+    if(ui.selected===a.id||(byId(ui.selected)||{}).parent===a.id)updatePanelHeader();return;}
+  case 'subagent':{const sid=a.id+':'+e.subagentId;let s=liveById(sid);
+    if(!s){s={id:sid,parent:a.id,name:e.name||'Sub-agent',role:'Sub-agent',state:'working',label:null,task:e.task||'',look:lookFor(sid),files:[],paused:false,live:true,info:a.info,usage:{calls:0,inT:0,outT:0,nano:0},usageText:''};LIVE.agents.push(s);}
+    if(e.phase==='started')setState(s,'working',null,e.task||'Working');
+    else if(e.phase==='completed')setState(s,'done','Done',s.task);
+    else setState(s,'error',null,SHORT(e.task||'Failed',100));
+    scheduleRender();return;}
+  }
+}
+async function sendLive(text,forId){
+  const a0=byId(forId||ui.selected); if(!a0)return; const a=liveRoot(a0);
+  text=(text||'').trim(); if(!text&&!attached.length)return;
+  const chat=liveChat(a), atts=attached.slice();
+  addUserMsg(chat,(text||'(attachment)')+(atts.length?'\n\nAttached: '+atts.map(x=>x.name).join(', '):''));
+  attached=[];renderAttached();
+  const input=document.getElementById('msgInput');if(input){input.value='';autoGrow();}
+  a.worked=true; closeTurn(a); ensureTurn(a); setState(a,'thinking',null,'Thinking');
+  const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})));
+  if(!r.ok){closeTurn(a);addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);setState(a,'error',null,'Send failed: '+SHORT(r.error,100));}
+}
+async function pickLive(){
+  const files=await bridge.pickAttachments();
+  files.forEach(f=>attached.push({name:f.name,img:f.kind==='image',path:f.path,kind:f.kind}));
+  renderAttached();setSend();
+}
+async function openLive(a){
+  const r=await bridge.openInVSCode(liveRoot(a).id);
+  toast(r.ok?'Opening in VS Code…':'Could not open VS Code: '+esc(r.error||'unknown error'),4200);
+}
+async function stopLive(a){const r=liveRoot(a);await bridge.stop(r.id);toast(esc(r.name)+' stopped.');}
+async function addVia(fn){
+  const r=await fn(document.getElementById('permMode').value);
+  if(r.error)toast('Could not add: '+esc(r.error),6000);
+  r.agents.forEach(addLiveAgent);
+}
+if(bridge){
+  document.body.classList.add('has-bridge');
+  document.getElementById('demoToggle').onchange=e=>{demoOn=e.target.checked;applyMode();};
+  document.getElementById('addFolder').onclick=()=>addVia(bridge.addFolder);
+  document.getElementById('addWs').onclick=()=>addVia(bridge.addWorkspaceFile);
+  bridge.onEvent(onLiveEvent);
+  bridge.onAgentAdded(addLiveAgent);
+  bridge.listAgents().then(l=>l.forEach(addLiveAgent));
+  agents=LIVE.agents; ROOMS=LIVE.rooms;
+  const b=document.getElementById('protoBadge'); if(b)b.textContent='Live - Copilot';
+}
+
 
 renderFilter(); renderAll();
 if(qs.get('view')==='list')setView('list');
