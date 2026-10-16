@@ -23,13 +23,12 @@ export interface SavedFolder {
 }
 
 /**
- * Allow edits (approve everything) is never restored silently (spec 003 FR-021): it is not written to the list, and a saved `allow`
- * (older files) comes back as `ask`. `downgraded` tells the UI to say so.
+ * The saved mode comes back exactly as saved, Allow edits included (spec 003 FR-025, no silent downgrade).
+ * `restored` is true for Allow edits so the UI can show a small "restored" note (FR-026). It is never saved.
  */
-export function restoreMode(saved: SavedPermMode): { mode: SavedPermMode; downgraded: boolean } {
-  return saved === 'allow' ? { mode: 'ask', downgraded: true } : { mode: saved, downgraded: false };
+export function restoreMode(saved: SavedPermMode): { mode: SavedPermMode; restored: boolean } {
+  return { mode: saved, restored: saved === 'allow' };
 }
-const persistable = (m: SavedPermMode): SavedPermMode => (m === 'allow' ? 'ask' : m);
 
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const MAX_FOLDERS = 200;
@@ -88,8 +87,8 @@ export class FolderStore {
   /** Adds the folder, or refreshes its mode/model when it is already saved (the hidden flag is kept). */
   upsert(entry: Omit<SavedFolder, 'hidden'> & { hidden?: boolean }): void {
     const cur = this.get(entry.workspace);
-    if (cur) Object.assign(cur, { permMode: persistable(entry.permMode), model: entry.model, effort: entry.effort, maxAiCredits: parseCap(entry.maxAiCredits) });
-    else this.folders.push({ ...entry, permMode: persistable(entry.permMode), hidden: entry.hidden === true });
+    if (cur) Object.assign(cur, { permMode: entry.permMode, model: entry.model, effort: entry.effort, maxAiCredits: parseCap(entry.maxAiCredits) });
+    else this.folders.push({ ...entry, permMode: entry.permMode, hidden: entry.hidden === true });
     this.save();
   }
 
@@ -122,7 +121,7 @@ export class FolderStore {
   setPermMode(workspace: string, permMode: SavedPermMode): boolean {
     const cur = this.get(workspace);
     if (!cur) return false;
-    cur.permMode = persistable(permMode);
+    cur.permMode = permMode;
     this.save();
     return true;
   }

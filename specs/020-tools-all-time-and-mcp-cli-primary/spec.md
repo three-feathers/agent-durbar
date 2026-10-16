@@ -15,7 +15,7 @@
 
 ## Clarifications (2026-10-16)
 
-- **Q: Is the CLI list trust-gated?** No. These servers are in the user's own Copilot CLI config, the runtime starts them in every session anyway, and the Settings screen shows the exact command or URL (never env or header values). A prompt that cannot stop the runtime would be theatre. The trust prompt with exact-definition hashing (spec 019 FR-005) applies to **extras**, which are the only servers Agent Durbar itself passes to a session. `[OPEN]` if Vikram wants a gate for the CLI list too, the only real way is to pass unconfirmed names in `disabledMcpServers`, which would make them not work until confirmed.
+- **Q: Is the CLI list trust-gated?** **Decided (Vikram, 2026-10-16): No. CLI-list servers (`~/.copilot/mcp-config.json` plus the built-in `github-mcp-server`) get no trust prompt, same as Copilot CLI.** They are in the user's own Copilot CLI config, the runtime starts them in every session anyway, and Settings shows the exact command or URL (never env or header values). A prompt that cannot stop the runtime would be theatre, and the only real gate (listing unconfirmed names in `disabledMcpServers`) would make them not work until confirmed, unlike the CLI. The trust prompt with exact-definition hashing (spec 019 FR-005) applies to **folder extras only**, the only servers Agent Durbar itself passes to a session. Tested: CLI-list entries carry no trust state (test-mcp §6).
 - **Q: What does the on/off switch of a CLI-list server do?** What it did for "ambient" servers: it lists the name in `disabledMcpServers` for **new** sessions started by this app. It never edits the CLI file.
 - **Q: Same name in the CLI list and in a folder's extras?** Refused when saving the extra ("already defined in the Copilot CLI list"): a name must mean one server. If the CLI file later gains a clashing name, the extra is skipped for sessions and Settings says so.
 - **Q: What is a folder/workspace key?** The saved-folder key of spec 006: the `.code-workspace` file when the agent was added from one, else the folder path. An agent gets the extras of its own key only.
@@ -52,6 +52,6 @@
 
 ## Out of scope / known gaps
 - `[KNOWN GAP]` Per-folder import from VS Code's `mcp.json`.
-- `[KNOWN GAP]` The CLI list is not trust-gated (see Clarifications); a changed definition in the CLI file is not flagged.
+- `[KNOWN GAP]` By decision the CLI list is not trust-gated (see Clarifications); a changed definition in the CLI file is not flagged (same as Copilot CLI).
 - `[KNOWN GAP]` All-time counts are not split by day; no export.
 - `[KNOWN GAP]` The CLI file is read, never written; to edit it use the Copilot CLI or an editor.

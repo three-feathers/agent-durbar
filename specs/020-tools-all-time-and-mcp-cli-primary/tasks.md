@@ -10,3 +10,4 @@
 - [x] T009 Folder extras dialog from the room header + agent MCP dialog labels [FR-013, FR-017]
 - [x] T010 Simulator: CLI list, per-folder extras, legacy [FR-019]
 - [x] T011 Screenshots m10 (1440x900, 1280x800), `check:office`, README milestone 10, converge specs 019/020 and the index [FR-019]
+- [x] T012 Decision recorded (CLI list: no trust prompt; extras keep it) and tested: CLI-list entries carry no trust state [FR-009, FR-012]

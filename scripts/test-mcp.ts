@@ -181,6 +181,8 @@ const codec = (available = true): SecretCodec => ({
   assert.strictEqual(r.servers[2].name, 'weird name!', 'names are the exact config keys (the runtime matches them)');
   assert.ok(!JSON.stringify(r).includes('dummy-secret-1') && !JSON.stringify(r).includes('dummy-not-a-real-key'), 'no secret values in views');
   assert.strictEqual(fs.readFileSync(path.join(dir, 'mcp-config.json'), 'utf8'), before, 'files are never modified');
+  // decision 2026-10-16: the CLI list is not trust-gated (same as Copilot CLI); only folder extras are
+  assert.ok(r.servers.every((a) => !('trusted' in a) && !('needsTrust' in a) && !('trust' in a)), 'CLI-list servers carry no trust state');
   // edits of the file show up on the next read (the list is read live, not cached)
   fs.writeFileSync(path.join(dir, 'mcp-config.json'), JSON.stringify({ mcpServers: { fresh: { type: 'local', command: 'node', args: ['x.js'] } } }));
   assert.deepStrictEqual(cliServers(dir, new Set()).servers.map((a) => a.name), ['fresh', 'github-mcp-server']);

@@ -174,8 +174,8 @@ function restoreFolders(): void {
   for (const f of folderStore.load()) {
     try {
       if (!fs.existsSync(f.workspace)) continue; // e.g. an unplugged drive: stays saved, just not shown
-      const rm = restoreMode(f.permMode); // Allow edits is not restored silently (spec 003 FR-021)
-      const info = infoFor(f.workspace, rm.mode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, hidden: f.hidden, closed: f.closed, permDowngraded: rm.downgraded || undefined, maxAiCredits: f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits });
+      const rm = restoreMode(f.permMode); // exactly as saved, Allow edits included, flagged so the UI shows "restored" (spec 003 FR-025/026)
+      const info = infoFor(f.workspace, rm.mode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, hidden: f.hidden, closed: f.closed, permRestored: rm.restored || undefined, maxAiCredits: f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits });
       agents.set(info.id, info);
     } catch {
       /* folder gone or not a folder any more */
@@ -423,6 +423,7 @@ ipcMain.handle('agents:setMode', (_e, id: unknown, mode: unknown, opts: unknown)
   const o = (opts && typeof opts === 'object' ? opts : {}) as Record<string, unknown>;
   const m = validMode(mode);
   a.permMode = m;
+  a.permRestored = undefined; // a fresh choice, no longer "restored"
   const r = adapter.setPermMode(a.id, m, { clearGrants: o.clearGrants === true, approvePending: o.approvePending === true });
   folderStore?.setPermMode(wsKey(a), m);
   return { ok: true, mode: m, pending: r.pending };

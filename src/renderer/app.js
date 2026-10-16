@@ -770,7 +770,7 @@ const MODE_IC={
  'read-only':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.2" y="7" width="9.6" height="6.6" rx="1.6"/><path d="M5.4 7V5.4a2.6 2.6 0 0 1 5.2 0V7"/></svg>',
  'ask':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.8l5 1.8v3.8c0 3-2.1 5.2-5 6.6-2.9-1.4-5-3.6-5-6.6V3.6z"/><path d="M6.2 7.8l1.4 1.4 2.4-2.6"/></svg>',
  'allow':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"><path d="M2.5 13.5l.7-3L11 2.7a1.4 1.4 0 0 1 2 2L5.5 12.8z"/></svg>'};
-const modeIcon=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}: ${esc(MODE_HELP[a.info.permMode])} (right-click for options)" aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`:'';
+const modeIcon=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}${a.info.permMode==='allow'&&a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_HELP[a.info.permMode])} (right-click for options)" aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`:'';
 function addLiveAgent(info){
   if(liveById(info.id))return;
   let room=LIVE.rooms.find(r=>r.path===info.cwd);
@@ -1262,8 +1262,8 @@ function renderStrip(){
 
 
 /* ---------------- permission mode: change it at any time (spec 018) ---------------- */
-function modeChipHTML(a){const m=a.info.permMode;
-  return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}. ${esc(MODE_HELP[m])} Click to change; it applies from the next request."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m])}</span>${ICON.chev}</button>`;}
+function modeChipHTML(a){const m=a.info.permMode, rs=m==='allow'&&a.info.permRestored;
+  return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}. ${esc(MODE_HELP[m])}${rs?' Restored from your last run.':''} Click to change; it applies from the next request."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m])}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON.chev}</button>`;}
 function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');}}
 function openModeMenu(a0,x,y,anchor){
   const a=liveRoot(a0); if(!a||!a.live||!bridge.setPermMode)return;
@@ -1313,7 +1313,7 @@ async function changeMode(a,mode){
   }
   const res=await bridge.setPermMode(a.id,mode,opts).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(!res||!res.ok){toast('Could not change the mode: '+esc((res&&res.error)||'unknown error'),5000);return;}
-  a.info.permMode=mode; a.role=roleFor(a.info);
+  a.info.permMode=mode; a.info.permRestored=undefined; a.role=roleFor(a.info);
   if(opts.clearGrants)setGrants(a,[]);
   toast(esc(a.name)+': <b>'+esc(MODE_NAME[mode])+'</b> from the next request.'+(mode==='allow'?' Edits run without asking.':''),4200);
   if(ui.selected&&liveRoot(byId(ui.selected)||a)===a){const c=$('modeChip');if(c){c.outerHTML=modeChipHTML(a);}const h=document.querySelector('#panel .hint');if(h)h.textContent=h.textContent.replace(/\([a-z\-]+\)\.?$/,'('+a.info.permMode+').');updatePanelHeader();}
@@ -1583,7 +1583,7 @@ if(bridge){
   $('modelSel').onchange=()=>fillEffortSelect($('effortSel'),$('modelSel').value);
   bridge.onEvent(onLiveEvent);
   bridge.onAgentAdded(addLiveAgent);
-  bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();const dg=l.filter(x=>x.permDowngraded).length;if(dg)toast(dg+' saved folder'+(dg>1?'s were':' was')+' set to Allow edits. Allow edits is not restored: '+(dg>1?'they start':'it starts')+' in <b>Ask first</b>. Switch the mode in the chat header to allow edits again.',9000);});
+  bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();const rs=l.filter(x=>x.permRestored&&!x.parent).length;if(rs)toast(rs+' saved folder'+(rs>1?'s were':' was')+' restored in <b>Allow edits</b>, as you left '+(rs>1?'them':'it')+'. Edits and commands run without asking there; the mode chip says <i>restored</i>. "Approve for this session" grants start empty.',9000);});
   loadModels();
   if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};}).catch(()=>{});
   agents=LIVE.agents; ROOMS=LIVE.rooms;

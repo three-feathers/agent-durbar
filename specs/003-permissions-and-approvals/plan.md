@@ -62,5 +62,10 @@ specs/003-permissions-and-approvals/
 
 - `permissions.ts`: `BrokerOptions.roots` (+ `allowReadPaths(paths)` for attachments, injectable `realpath` for tests), `isInsideRoots`, read policy per mode, shell scope split into `exact` (default) and `broad` (`anyArgsScope`), `PermissionInfo.broadScopeKey/broadScopeLabel`, `resolve(requestId, approve, remember, broad)`.
 - `copilot.ts`: roots from `resolveWorkspaceCwd().folders`, attachments allowed in `send`; IPC `agents:resolvePermission(id, requestId, approve, remember, broad)`.
-- `folders.ts`: `restoreMode()`; `setPermMode`/`upsert` never persist `allow`. `main.ts`: `restoreFolders` uses it and flags `AgentInfo.permDowngraded`.
-- `app.js`: 4th button "Approve for session: any <name> arguments", confirmation when adding a folder / new session in Allow edits, toast on downgrade.
+- `folders.ts`: `restoreMode()`; ~~`setPermMode`/`upsert` never persist `allow`~~ (superseded below). `main.ts`: `restoreFolders` uses it.
+- `app.js`: 4th button "Approve for session: any <name> arguments", confirmation when adding a folder / new session in Allow edits.
+
+### Second delta 2026-10-16 (FR-025..FR-027)
+- `folders.ts`: `persistable` removed; `upsert`/`setPermMode` persist the mode as chosen; `restoreMode(saved)` returns `{ mode: saved, restored: saved === 'allow' }`.
+- `api.ts`: `permDowngraded` replaced by `permRestored`. `main.ts`: `restoreFolders` sets it for Allow edits; `agents:setMode` clears it.
+- `app.js`/`styles.css`: "restored" note in the header mode chip and card icon tooltip, cleared on a switch; startup toast; `sim.ts`: one simulated folder restored in Allow edits.

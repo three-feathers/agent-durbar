@@ -143,7 +143,7 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       const [name, role, room, state, intent, helpers, files] = r;
       const roomName = opts.solo ? name.toLowerCase() + '-app' : room;
       const cwd = opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
-      const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: 'auto', maxAiCredits: SIM_CAPS[name] } as AgentInfo;
+      const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined } as AgentInfo;
       (info as AgentInfo & { roomName?: string; role?: string }).roomName = roomName;
       (info as AgentInfo & { roomName?: string; role?: string }).role = role;
       return {
@@ -663,6 +663,7 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
         s.info.permMode = mode;
+        s.info.permRestored = undefined;
         if (o?.clearGrants && s.grants.size) { s.grants.clear(); grantsEvent(s); }
         let pending = s.perm ? 1 : 0;
         if (s.perm && ((mode === 'allow' && o?.approvePending) || mode === 'read-only')) {

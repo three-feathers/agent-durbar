@@ -27,8 +27,8 @@ export interface AgentInfo {
   lazy?: boolean;
   /** Credit cap of this session in AIU (spec 011); unset = no cap. */
   maxAiCredits?: number;
-  /** Restored from a saved Allow edits: it starts in Ask first (spec 003 FR-021). */
-  permDowngraded?: boolean;
+  /** Restored from a saved Allow edits after a restart (spec 003 FR-026): shown as a small "restored" note until the mode is switched. */
+  permRestored?: boolean;
   /** The folder is hidden from the office (it keeps its saved sessions). */
   hidden?: boolean;
   /** The room's door is closed (compact door plate in the office). */

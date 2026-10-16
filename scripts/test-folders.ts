@@ -65,7 +65,7 @@ try {
     assert.ok(!st.setClosed(abs('nope'), true));
     const again = new FolderStore(f2).load();
     assert.strictEqual(again[0].closed, true, 'closed door survives a restart');
-    assert.strictEqual(again[0].permMode, 'ask', 'Allow edits is never written to the list (spec 003 FR-021)');
+    assert.strictEqual(again[0].permMode, 'allow', 'Allow edits is saved as chosen (spec 003 FR-025)');
     st.upsert({ workspace: abs('r1'), permMode: 'allow' });
     st.upsert({ workspace: abs('r2'), permMode: 'ask' });
     st.remove(abs('r2'));
@@ -94,7 +94,30 @@ try {
     fs.rmSync(d3, { recursive: true, force: true });
   }
 }
-assert.deepStrictEqual(restoreMode('allow'), { mode: 'ask', downgraded: true }, 'an old saved Allow edits comes back as Ask first');
-assert.deepStrictEqual(restoreMode('ask'), { mode: 'ask', downgraded: false });
-assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', downgraded: false });
+// spec 003 FR-025/026: the saved mode is restored exactly, Allow edits included, flagged "restored" only for Allow edits
+assert.deepStrictEqual(restoreMode('allow'), { mode: 'allow', restored: true }, 'Allow edits comes back as Allow edits, flagged');
+assert.deepStrictEqual(restoreMode('ask'), { mode: 'ask', restored: false });
+assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: false });
+{
+  const d4 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folders-mode-'));
+  try {
+    const f4 = path.join(d4, 'folders.json');
+    const st = new FolderStore(f4);
+    st.upsert({ workspace: abs('m1'), permMode: 'allow' });
+    st.upsert({ workspace: abs('m2'), permMode: 'ask' });
+    st.upsert({ workspace: abs('m3'), permMode: 'read-only' });
+    const back = new FolderStore(f4).load();
+    assert.deepStrictEqual(back.map((f) => f.permMode), ['allow', 'ask', 'read-only'], 'every mode survives a restart exactly');
+    assert.ok(st.setPermMode(abs('m2'), 'allow'));
+    assert.strictEqual(new FolderStore(f4).load()[1].permMode, 'allow', 'a switch to Allow edits is saved as allow');
+    st.upsert({ workspace: abs('m1'), permMode: 'read-only' });
+    assert.strictEqual(new FolderStore(f4).load()[0].permMode, 'read-only', 'a later choice replaces it (per folder)');
+    assert.strictEqual(new FolderStore(f4).load()[2].permMode, 'read-only', 'other folders are untouched');
+    // an older file with allow is restored as allow
+    fs.writeFileSync(f4, JSON.stringify({ folders: [{ workspace: abs('old'), permMode: 'allow', hidden: false }] }));
+    assert.strictEqual(new FolderStore(f4).load()[0].permMode, 'allow');
+  } finally {
+    fs.rmSync(d4, { recursive: true, force: true });
+  }
+}
 console.log('folders tests passed');
