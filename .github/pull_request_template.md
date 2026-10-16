@@ -1,8 +1,18 @@
-<!-- This repo is spec-driven (GitHub Spec Kit). Read CONTRIBUTING.md "Spec Kit workflow is mandatory". -->
+<!-- This repo is spec-driven (GitHub Spec Kit) and shared by several people and agents. Read AGENTS.md ("Working as a team") and CONTRIBUTING.md. Branch name must be NNN-slug. Never push to main. -->
 
 ## What and why
 
-<!-- One or two sentences. Link the issue if there is one. -->
+<!-- One or two sentences. -->
+
+Closes #<!-- issue number: one issue = one Spec Kit task -->
+
+## Spec and agent
+
+- **Spec**: `specs/NNN-name/` (the NNN of your branch name) — link:
+- **Task(s)**: `Tnnn` in that `tasks.md`:
+- **Agent used** (which agent wrote this, and who is its human owner): <!-- e.g. Claude Code (fjcabello), Copilot CLI (vikramgorla), none -->
+- [ ] I claimed the issue (assigned + `status:claimed`) before starting
+- [ ] The human owner of the agent read this diff; a *different* human reviews it (never the agent's own owner)
 
 ## Spec Kit
 

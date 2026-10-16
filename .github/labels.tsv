@@ -1,0 +1,17 @@
+# name<TAB>color<TAB>description. Applied by .github/scripts/sync-labels.sh (creates or updates; never deletes).
+# spec:NNN labels are generated from the folders in specs/ by the same script.
+task	1d76db	One Spec Kit task (a Tnnn line in specs/NNN-*/tasks.md)
+status:claimed	fbca04	Someone has claimed this (assignee set). Pick another issue.
+status:blocked	b60205	Blocked: see the comment for what is needed
+needs-owner-approval	d93f0b	Needs the maintainer's written yes first (purchase, release, account, settings)
+spec-exempt	cfd3d7	PR with no behavior change, exempt from the spec presence check (reviewer must agree)
+area:ui	c5def5	Renderer, office view, chat, screens
+area:adapters	c5def5	Agent adapters and events (Copilot, Claude, Codex)
+area:permissions	c5def5	Permission modes and approvals
+area:mcp	c5def5	MCP servers and tools
+area:usage	c5def5	Usage, credits, totals
+area:packaging	c5def5	Packaging, signing, releases
+area:platform	c5def5	macOS / Windows / Linux checks on real machines
+area:docs	c5def5	README, docs, specs text
+area:ci	c5def5	Workflows, gates, repo settings
+area:harness	c5def5	Collaboration harness (agents, templates, labels, board)

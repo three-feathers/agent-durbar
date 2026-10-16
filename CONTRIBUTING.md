@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for looking. This is an early alpha; small, focused pull requests are easiest to review. For anything bigger than a fix, open an issue first. Every change follows the [Spec Kit workflow](#spec-kit-workflow-is-mandatory).
+Thanks for looking. This is an early alpha; small, focused pull requests are easiest to review. For anything bigger than a fix, open an issue first. Every change follows the [Spec Kit workflow](#spec-kit-workflow-is-mandatory). Working with a team or your own coding agent (claiming issues, branch names, reviews)? Read [docs/collaboration.md](docs/collaboration.md) first.
 
 ## Setup
 
@@ -47,7 +47,7 @@ Agent Durbar is spec-driven with [GitHub Spec Kit](https://github.com/github/spe
 
 ### The CI gate
 
-The **Spec Kit** workflow (`.github/workflows/spec-kit.yml`, job *Spec Kit gate*, logic in `.github/scripts/spec-gate.sh`) fails a pull request that changes anything under `src/` without changing anything under `specs/`.
+The **Spec Kit** workflow (`.github/workflows/spec-kit.yml`, job *Spec Kit gate*, logic in `.github/scripts/spec-gate.sh`, self-test `.github/scripts/test-spec-gate.sh`) fails a pull request whose branch is not `NNN-slug` (warning only for non-agent bot branches such as Dependabot) or that changes anything under `src/` without changing `specs/NNN-*/` (which must contain `spec.md`, `plan.md` and `tasks.md`). Check your local Spec Kit setup with `specify integration status`.
 
 Exemption, only when there is no behavior change, either:
 

@@ -1,0 +1,25 @@
+name: Bug
+description: Something is wrong. A fix is a spec delta first (a dated entry under ## Changes in the owning spec).
+labels: ["bug"]
+body:
+  - type: input
+    id: spec
+    attributes:
+      label: Owning spec
+      description: e.g. `specs/005-chat-fullscreen-and-agent-strip` (best guess is fine)
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Prefer the simulator (`DURBAR_SIM=15 npm start`). Do not paste tokens, `.env` or session data.
+  - type: input
+    id: env
+    attributes:
+      label: OS and version
+      description: macOS / Windows / Linux, Agent Durbar version or commit

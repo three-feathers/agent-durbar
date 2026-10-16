@@ -1,0 +1,7 @@
+# Owners are asked for review automatically. With the ruleset on main, "require review from Code Owners"
+# makes their approval mandatory for these paths. Everything else needs one approval from any other human.
+/.specify/    @vikramgorla
+/.claude/     @vikramgorla
+/.github/     @vikramgorla
+/AGENTS.md    @vikramgorla
+/CLAUDE.md    @vikramgorla
