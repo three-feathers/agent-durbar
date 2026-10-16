@@ -74,3 +74,9 @@ Spec drafts only (no plan or tasks yet); they must go through `/speckit.clarify`
 | [021](021-collaboration-harness/spec.md) | Collaboration harness: Claude + Copilot Spec Kit, labels/issues/board, CODEOWNERS, stricter spec gate, ruleset | in progress (tooling only) |
 
 New features take the next number (`/speckit.specify` picks it automatically from this folder).
+
+## Feature 023: release v0.1.0-alpha.2
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [023](023-release-alpha2/spec.md) | Release v0.1.0-alpha.2 as a draft pre-release (version bump, changelog, download notes) | built; draft only, not published |

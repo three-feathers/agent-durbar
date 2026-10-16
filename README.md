@@ -28,6 +28,18 @@ Download the build for your system from the [Releases page](https://github.com/t
 
 There is no auto-update: download a newer release to update.
 
+### What's new in v0.1.0-alpha.2
+
+Full list in [CHANGELOG.md](CHANGELOG.md). Short version, since alpha.1:
+
+- **MCP:** the Copilot CLI's server list is global and read live; Agent Durbar's own extras are per folder.
+- **Tools:** *This session* and *All time* usage (all-time counts are kept on disk, names and counts only).
+- **Credit caps** per session (soft cap, runtime minimum 30 AI credits).
+- **Permissions:** change an agent's mode any time; the saved mode (Allow edits too) is restored exactly after a restart; reads outside the folder are asked or denied.
+- **About:** Three Feathers as owner, with credits.
+- **New app id `io.github.three-feathers.agentdurbar`.** An earlier test install (`io.github.vikramgorla.agentdurbar`) is a **separate app** and keeps its own settings; installing alpha.2 does not replace or migrate it.
+- **Still unsigned and not notarized** (steps below). **Untested on real macOS and Windows hardware**: CI builds and unit-tests them, only Linux has been run by hand.
+
 ### These builds are not code-signed
 
 Signing certificates cost money, so the builds are **unsigned and not notarized**. Your OS will warn you the first time; that is expected. Only open files you downloaded from this repository's Releases page.
