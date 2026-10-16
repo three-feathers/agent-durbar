@@ -513,7 +513,7 @@ function gate(items){
 function addPicked(list){
   const {accepted,msgs}=gate(list.map(f=>({name:f.name,size:f.size||0,img:f.kind==='image',path:f.path,kind:f.kind})));
   accepted.forEach(x=>attached.push(x));
-  renderAttached();setSend();attNotice(msgs);
+  renderAttached();setSend();if(msgs.length)attNotice(msgs);
 }
 /* Pasted / dropped File objects: the renderer has no path, so bytes go to the main process, which checks the
    format (real image type, no SVG), sanitizes the name and stages a private temp copy. */
@@ -531,7 +531,7 @@ async function addFiles(files,opts){
     } else attached.push({name,img:it.img,size:it.f.size});
     renderAttached();setSend();
   }
-  attNotice(msgs);
+  if(msgs.length)attNotice(msgs);
 }
 function renderAttached(){
   const box=$('attached'); if(!box)return;
@@ -591,7 +591,7 @@ function openPanel(id,focus){
     if(!e.clipboardData.getData('text/plain'))e.preventDefault(); /* image only: attach; image + text: attach and let the text paste */
     addFiles(fl,{imagesOnly:true});});
   $('grants').onclick=e=>{const b=e.target.closest('[data-revoke]');if(b){const r=liveRoot(byId(ui.selected));bridge.revokeGrant(r.id,b.dataset.revoke);}};
-  $('attached').onclick=e=>{const b=e.target.closest('[data-rm]');if(b){attached.splice(+b.dataset.rm,1);renderAttached();setSend();}};
+  $('attached').onclick=e=>{const b=e.target.closest('[data-rm]');if(b){attached.splice(+b.dataset.rm,1);renderAttached();setSend();attNotice([]);}};
   const input=$('msgInput');
   input.addEventListener('input',autoGrow);
   input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(input.value);}});
@@ -794,7 +794,7 @@ async function sendLive(text,forId){
   text=(text||'').trim(); if(!text&&!attached.length)return;
   const chat=liveChat(a), atts=attached.slice();
   addUserMsg(chat,text||'(attachment)',atts);
-  attached=[];renderAttached();
+  attached=[];renderAttached();attNotice([]);
   const input=$('msgInput');if(input){input.value='';autoGrow();}
   a.worked=true; a.intent=''; closeTurn(a); ensureTurn(a); setState(a,'thinking',null,'Thinking');
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})));
