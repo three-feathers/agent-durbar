@@ -77,3 +77,17 @@ Developers capture screenshots at fixed sizes and drive the real window with scr
 ## Assumptions
 
 - Developers have `xvfb-run` on Linux for headless runs; macOS/Windows developers use a visible window.
+
+## Changes
+
+### 2026-10-16: dev/test hooks are ignored in packaged builds (audit gap 2; closes FR-009 and T022)
+
+**What was wrong.** Every `DURBAR_*` environment variable was honored by release builds. `DURBAR_DRIVER` loads an arbitrary module into the main process, `DURBAR_LOG` writes event content to a file, `DURBAR_OPEN`/`DURBAR_PERM` start agents (with a chosen permission mode) on launch, `DURBAR_PICK` answers the attachment picker without a dialog, `DURBAR_USER_DATA` redirects the profile. Anyone who can set the app's environment already runs code as the user, so the risk is low, but a shipped app should not carry a back door (constitution III).
+
+**What is now required.**
+
+- **FR-017** Dev/test hooks are the variables `DURBAR_SIM`, `DURBAR_SIM_FREEZE`, `DURBAR_SIM_ROOMS`, `DURBAR_USER_DATA`, `DURBAR_OPEN`, `DURBAR_PERM`, `DURBAR_PICK`, `DURBAR_LOG`, `DURBAR_DRIVER`, `DURBAR_SHOT`, `DURBAR_SHOT_SIZE`, `DURBAR_SHOT_CLICK`, `DURBAR_VSCODE_USER_DIR`, `DURBAR_COPILOT_DIR` (every `DURBAR_*` name; the list is not an allow-list, so new hooks are covered automatically).
+- **FR-018** When `app.isPackaged` is true, **all** `DURBAR_*` variables are ignored, unless the explicit opt-in `DURBAR_DEV=1` (exactly the string `1`) is set. When the app is not packaged (`npm start`, `electron .`), behavior is unchanged and `DURBAR_DEV` is not needed.
+- **FR-019** One module, `src/main/devhooks.ts` (pure, no Electron import), decides: `devEnv(env, isPackaged)` returns the variables the app may read. Main-process code reads hooks only from that object (never `process.env.DURBAR_*` directly). A packaged app started with `DURBAR_DEV=1` writes one line to stderr saying that developer hooks are active.
+- **FR-020** Test: `npm run test:devhooks` (in `npm test`) checks the matrix (packaged/unpackaged x `DURBAR_DEV` unset/`1`/`true`/`0`) and scans `src/main` and `src/adapters` so that no file except `devhooks.ts` reads `process.env.DURBAR_*`. `[KNOWN GAP]` The simulator in a **plain browser** (`?sim=15` on `dist/renderer/index.html`) is not an Electron hook and stays available; it has no Node or bridge access.
+- **Documented**: README "Developer hooks" and CONTRIBUTING say that packaged builds ignore the hooks, and how to turn them on (`DURBAR_DEV=1`) for debugging a release build. This is a developer switch, not a user feature.
