@@ -1,0 +1,13 @@
+# Tasks: 019
+- [ ] T001 Research the SDK/CLI (this folder: research.md), probe the real runtime (1 prompt)
+- [ ] T002 shared mcp types/validation/trust hash + import parsers + tests
+- [ ] T003 McpStore (secrets via injected codec, masked views, trust, session resolution) + tests
+- [ ] T004 adapter types, mapper (MCP tool fields, usage_info, MCP status) + fixtures + tests
+- [ ] T005 Copilot adapter: mcpServers/disabledMcpServers, setMcpEnabled, model context window
+- [ ] T006 main + preload + api: MCP IPC, safeStorage codec, session options
+- [ ] T007 toolstats module + tests
+- [ ] T008 Settings screen (list, form, trust, import, ambient)
+- [ ] T009 Tools view (tools table, agents/models/context tab), top bar + chat header entries, MCP per-agent switches
+- [ ] T010 Simulator: MCP/built-in tool calls, context events, MCP status, in-memory MCP bridge
+- [ ] T011 Screenshots m8-*.png (1440x900, 1280x800), office overlap check
+- [ ] T012 README milestone 8, specs index, converge (spec/plan/tasks match the code)
