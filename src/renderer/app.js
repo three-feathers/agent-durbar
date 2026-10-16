@@ -557,9 +557,11 @@ function onLiveEvent(e){
     else if(e.status==='needs-permission'){
       ensureTurn(a); setState(a,'waiting',null,e.intent||'Waiting for permission');
       const p=e.permission;
-      if(p){const n=addNote(chat,'<b>Permission:</b> '+esc(p.summary)+(p.state==='denied'?' <i>(denied: read-only mode)</i>':''));
-        if(p.state==='pending'){['Approve','Deny'].forEach(l=>{const b=document.createElement('button');b.className='btn'+(l==='Deny'?' danger':' primary');b.textContent=l;
-          b.onclick=()=>{bridge.resolvePermission(a.id,p.requestId,l==='Approve');n.querySelectorAll('button').forEach(x=>x.remove());n.append(' → '+l.toLowerCase()+'d');};n.appendChild(b);});}}
+      if(p){const n=addNote(chat,'<b>Permission:</b> '+esc(p.summary)+(p.state==='denied'?' <i>(denied: read-only mode; add the folder in Ask mode to allow edits)</i>':''));
+        if(p.state==='pending'){const row=document.createElement('div');row.className='note-actions';
+          [['Approve','approved'],['Deny','denied']].forEach(([l,done])=>{const b=document.createElement('button');b.className='btn'+(l==='Deny'?' danger':' primary');b.textContent=l;
+            b.onclick=()=>{bridge.resolvePermission(a.id,p.requestId,l==='Approve');row.remove();n.append(' → '+done);};row.appendChild(b);});
+          n.appendChild(row);}}
     }
     else if(e.status==='idle'){const was=a.worked;a.worked=false;closeTurn(a);
       if(was)setState(a,'done','Done',a.lastOutput?SHORT(a.lastOutput,140):'Finished.'); else setState(a,'idle','Ready',a.task);}
