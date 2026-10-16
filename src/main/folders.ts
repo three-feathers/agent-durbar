@@ -13,6 +13,8 @@ export interface SavedFolder {
   workspace: string;
   permMode: SavedPermMode;
   hidden: boolean;
+  /** The room's door is closed in the office (spec 017). */
+  closed?: boolean;
   model?: string;
   effort?: string;
 }
@@ -40,6 +42,7 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       workspace: o.workspace,
       permMode: o.permMode === 'ask' || o.permMode === 'allow' ? o.permMode : 'read-only',
       hidden: o.hidden === true,
+      closed: o.closed === true ? true : undefined,
       model: typeof o.model === 'string' && o.model.length <= 100 ? o.model : undefined,
       effort: typeof o.effort === 'string' && EFFORTS.has(o.effort) ? o.effort : undefined,
     });
@@ -81,6 +84,23 @@ export class FolderStore {
     const cur = this.get(workspace);
     if (!cur) return false;
     cur.hidden = hidden;
+    this.save();
+    return true;
+  }
+
+  setClosed(workspace: string, closed: boolean): boolean {
+    const cur = this.get(workspace);
+    if (!cur) return false;
+    cur.closed = closed ? true : undefined;
+    this.save();
+    return true;
+  }
+
+  /** Remember the permission mode chosen for this folder (used when the agent is restored on the next start). */
+  setPermMode(workspace: string, permMode: SavedPermMode): boolean {
+    const cur = this.get(workspace);
+    if (!cur) return false;
+    cur.permMode = permMode;
     this.save();
     return true;
   }

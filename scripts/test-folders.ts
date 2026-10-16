@@ -23,8 +23,8 @@ const parsed = parseSavedFolders(
   }),
 );
 assert.strictEqual(parsed.length, 2);
-assert.deepStrictEqual(parsed[0], { workspace: abs('a'), permMode: 'ask', hidden: true, model: 'auto', effort: 'high' });
-assert.deepStrictEqual(parsed[1], { workspace: abs('b'), permMode: 'read-only', hidden: false, model: undefined, effort: undefined }, 'unknown values fall back to safe defaults');
+assert.deepStrictEqual(parsed[0], { workspace: abs('a'), permMode: 'ask', hidden: true, closed: undefined, model: 'auto', effort: 'high' });
+assert.deepStrictEqual(parsed[1], { workspace: abs('b'), permMode: 'read-only', hidden: false, closed: undefined, model: undefined, effort: undefined }, 'unknown values fall back to safe defaults');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folders-'));
 try {
@@ -53,5 +53,27 @@ try {
   bad.upsert({ workspace: abs('z'), permMode: 'read-only' });
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
+}
+{
+  const d2 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folders2-'));
+  try {
+    const f2 = path.join(d2, 'f.json');
+    const st = new FolderStore(f2);
+    st.upsert({ workspace: abs('r1'), permMode: 'read-only' });
+    assert.ok(st.setClosed(abs('r1'), true));
+    assert.ok(st.setPermMode(abs('r1'), 'allow'));
+    assert.ok(!st.setClosed(abs('nope'), true));
+    const again = new FolderStore(f2).load();
+    assert.strictEqual(again[0].closed, true, 'closed door survives a restart');
+    assert.strictEqual(again[0].permMode, 'allow', 'mode survives a restart');
+    st.upsert({ workspace: abs('r1'), permMode: 'allow' });
+    st.upsert({ workspace: abs('r2'), permMode: 'ask' });
+    st.remove(abs('r2'));
+    assert.strictEqual(new FolderStore(f2).load()[0].closed, true, 'closed survives new/removed folders');
+    st.setClosed(abs('r1'), false);
+    assert.strictEqual(new FolderStore(f2).load()[0].closed, undefined);
+  } finally {
+    fs.rmSync(d2, { recursive: true, force: true });
+  }
 }
 console.log('folders tests passed');

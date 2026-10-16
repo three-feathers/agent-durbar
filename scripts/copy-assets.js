@@ -6,7 +6,12 @@ const root = path.resolve(__dirname, '..');
 const srcDir = path.join(root, 'src', 'renderer');
 const outDir = path.join(root, 'dist', 'renderer');
 fs.mkdirSync(outDir, { recursive: true });
-for (const f of ['index.html', 'styles.css', 'app.js', 'demo.js']) {
+for (const f of ['index.html', 'styles.css', 'app.js', 'demo.js', 'markdown.js', 'roomsummary.js']) {
   fs.copyFileSync(path.join(srcDir, f), path.join(outDir, f));
 }
+// Markdown parser and sanitiser, bundled from node_modules (no CDN); exact versions are pinned in package.json.
+const vendor = path.join(outDir, 'vendor');
+fs.mkdirSync(vendor, { recursive: true });
+fs.copyFileSync(path.join(root, 'node_modules', 'marked', 'lib', 'marked.umd.js'), path.join(vendor, 'marked.js'));
+fs.copyFileSync(path.join(root, 'node_modules', 'dompurify', 'dist', 'purify.min.js'), path.join(vendor, 'purify.min.js'));
 console.log('copied renderer assets -> dist/renderer');

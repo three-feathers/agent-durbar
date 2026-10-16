@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -8,6 +8,7 @@ import { resolveWorkspaceCwd } from '../adapters/workspace';
 import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, stageAttachment } from '../shared/attachments';
 import type { AddResult, AgentInfo, ModelChoice, PermMode, PickedFile, ResumeResult, SessionOptions, VsChatListResult } from '../shared/api';
 import { openInVSCode } from './vscode';
+import { isHttpUrl } from '../shared/url';
 import { FolderStore } from './folders';
 import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '../adapters/vscodeChat';
 import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
@@ -54,6 +55,12 @@ if (process.env.DURBAR_LOG) {
   adapter.debug = (m) => write({ t: Date.now(), debug: m });
 }
 
+ipcMain.handle('app:openExternal', async (_e, url: unknown) => {
+  if (!isHttpUrl(url)) return { ok: false };
+  await shell.openExternal(url);
+  return { ok: true };
+});
+
 const infoFor = (workspace: string, permMode: PermMode, id: string, model: string, effort: string | undefined, extra: Partial<AgentInfo> = {}): AgentInfo => {
   const ws = resolveWorkspaceCwd(workspace);
   return {
@@ -87,7 +94,7 @@ async function addWorkspace(
   const effort = asEffort(opts.effort);
   const draft = infoFor(workspace, permMode, '', model, effort);
   const id = await adapter.start({ ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId });
-  const info: AgentInfo = { ...draft, id, hidden: folderStore?.get(wsKey(draft))?.hidden };
+  const info: AgentInfo = { ...draft, id, hidden: folderStore?.get(wsKey(draft))?.hidden, closed: folderStore?.get(wsKey(draft))?.closed };
   agents.set(id, info);
   if (opts.persist) folderStore?.upsert({ workspace: wsKey(info), permMode, model, effort });
   if (!opts.silent) toRenderer('agent:added', info);
@@ -128,7 +135,7 @@ function restoreFolders(): void {
   for (const f of folderStore.load()) {
     try {
       if (!fs.existsSync(f.workspace)) continue; // e.g. an unplugged drive: stays saved, just not shown
-      const info = infoFor(f.workspace, f.permMode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, hidden: f.hidden });
+      const info = infoFor(f.workspace, f.permMode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, hidden: f.hidden, closed: f.closed });
       agents.set(info.id, info);
     } catch {
       /* folder gone or not a folder any more */
@@ -316,6 +323,26 @@ ipcMain.handle('folders:setHidden', (_e, id: unknown, hidden: unknown) => {
   return { ok: true };
 });
 
+ipcMain.handle('folders:setClosed', (_e, id: unknown, closed: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  if (!a) return { ok: false };
+  const key = wsKey(a);
+  for (const x of agents.values()) if (wsKey(x) === key) x.closed = closed === true;
+  folderStore?.setClosed(key, closed === true);
+  return { ok: true };
+});
+
+ipcMain.handle('agents:setMode', (_e, id: unknown, mode: unknown, opts: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  if (!a) return { ok: false, error: 'unknown agent' };
+  const o = (opts && typeof opts === 'object' ? opts : {}) as Record<string, unknown>;
+  const m = validMode(mode);
+  a.permMode = m;
+  const r = adapter.setPermMode(a.id, m, { clearGrants: o.clearGrants === true, approvePending: o.approvePending === true });
+  folderStore?.setPermMode(wsKey(a), m);
+  return { ok: true, mode: m, pending: r.pending };
+});
+
 ipcMain.handle('folders:remove', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false, removedIds: [] as string[] };
@@ -361,6 +388,11 @@ function createWindow(): void {
       nodeIntegration: false,
       sandbox: true,
     },
+  });
+  // Links never navigate this window or open new windows; chat links go through app:openExternal (http/https only).
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (e, url) => {
+    if (!url.startsWith('file://')) e.preventDefault();
   });
   // DURBAR_SIM=N: simulated live agents (fake events, no sessions, no AI credits). See src/renderer/sim.ts.
   const sim = parseInt(process.env.DURBAR_SIM ?? '', 10);

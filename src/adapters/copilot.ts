@@ -129,8 +129,7 @@ export class CopilotAdapter implements AgentAdapter {
     const client = await this.getClient();
     let sid = options.resumeSessionId ?? options.sessionId ?? '';
     const broker = new PermissionBroker({
-      allow: options.allow,
-      ask: options.ask,
+      mode: options.allow ? 'allow' : options.ask ? 'ask' : 'read-only',
       emit: (e: BrokerEvent) => {
         switch (e.type) {
           case 'pending':
@@ -229,6 +228,23 @@ export class CopilotAdapter implements AgentAdapter {
     this.sessions.delete(sessionId);
     this.mappers.delete(sessionId);
     this.emit(sessionId, { type: 'status', status: 'stopped' });
+  }
+
+  /**
+   * Change the permission mode of a live session without restarting it: the broker reads the mode on every request.
+   * Optionally clears the session grants, approves what is pending now (Allow edits) or denies it (Read-only).
+   */
+  setPermMode(sessionId: string, mode: 'read-only' | 'ask' | 'allow', opts: { clearGrants?: boolean; approvePending?: boolean } = {}): { pending: number } {
+    const live = this.sessions.get(sessionId);
+    if (!live) return { pending: 0 };
+    live.broker.setMode(mode);
+    if (opts.clearGrants) live.broker.clearGrants();
+    let pending = live.broker.pendingCount();
+    if (pending) {
+      if (opts.approvePending && mode !== 'read-only') pending -= live.broker.approvePending();
+      else if (mode === 'read-only') pending -= live.broker.denyPendingByUser();
+    }
+    return { pending };
   }
 
   resolvePermission(sessionId: string, requestId: string, approve: boolean, remember = false): void {

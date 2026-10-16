@@ -87,6 +87,42 @@ async function main(): Promise<void> {
   assert.strictEqual((await pend).kind, 'reject');
   assert.strictEqual(t.b.listGrants().length, 1, 'grants survive an interrupt');
   assert.strictEqual((await t.b.request({ kind: 'write', fileName: '/x/z.ts', toolCallId: 'i3' })).kind, 'approve-once', 'still usable after the interrupt (auto-approved by the grant)');
+
+  // mode can change at any time (spec 018): applies to the next request, no restart
+  t = mk({});
+  assert.strictEqual(t.b.getMode(), 'read-only');
+  assert.strictEqual((await t.b.request({ kind: 'write', fileName: '/m/a.ts', toolCallId: 'm1' })).kind, 'reject');
+  t.b.setMode('allow');
+  assert.strictEqual((await t.b.request({ kind: 'write', fileName: '/m/a.ts', toolCallId: 'm2' })).kind, 'approve-once', 'allow edits applies to the next request');
+  t.b.setMode('ask');
+  const askP = t.b.request({ kind: 'shell', fullCommandText: 'make', toolCallId: 'm3' });
+  await tick();
+  assert.strictEqual(t.b.pendingCount(), 1);
+  t.b.setMode('allow'); // a pending request stays pending until the user chooses to approve it
+  assert.strictEqual(t.b.pendingCount(), 1);
+  assert.strictEqual(t.b.approvePending(), 1);
+  assert.strictEqual((await askP).kind, 'approve-once');
+  assert.strictEqual(t.b.listGrants().length, 0, 'approving pending ones from the switch remembers nothing');
+  // grants: kept on switch unless cleared
+  t.b.setMode('ask');
+  const gp = t.b.request({ kind: 'write', fileName: '/m/g/a.ts', toolCallId: 'm4' });
+  await tick();
+  t.b.resolve('m4', true, true);
+  await gp;
+  assert.strictEqual(t.b.listGrants().length, 1);
+  t.b.setMode('read-only');
+  assert.strictEqual((await t.b.request({ kind: 'write', fileName: '/m/g/b.ts', toolCallId: 'm5' })).kind, 'reject', 'read-only wins over an old grant');
+  t.b.setMode('ask');
+  assert.strictEqual((await t.b.request({ kind: 'write', fileName: '/m/g/c.ts', toolCallId: 'm6' })).kind, 'approve-once', 'grant kept');
+  t.b.clearGrants();
+  assert.strictEqual(t.b.listGrants().length, 0);
+  assert.strictEqual(t.ev.filter((e) => e.type === 'grants').pop()?.type, 'grants');
+  // switching to read-only can deny what is pending
+  const dp = t.b.request({ kind: 'write', fileName: '/m/g/d.ts', toolCallId: 'm7' });
+  await tick();
+  t.b.setMode('read-only');
+  assert.strictEqual(t.b.denyPendingByUser(), 1);
+  assert.strictEqual((await dp).kind, 'reject');
   console.log('permissions: all checks passed');
 }
 main().catch((e) => {

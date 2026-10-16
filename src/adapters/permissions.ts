@@ -96,7 +96,11 @@ export type BrokerEvent =
   | { type: 'resolved'; permission: PermissionInfo }
   | { type: 'grants'; grants: SessionGrant[] };
 
+export type BrokerMode = 'read-only' | 'ask' | 'allow';
+
 export interface BrokerOptions {
+  /** Initial mode (`allow`/`ask` flags are kept for older callers); it can be changed at any time with `setMode`. */
+  mode?: BrokerMode;
   allow?: boolean;
   ask?: boolean;
   emit: (e: BrokerEvent) => void;
@@ -111,7 +115,44 @@ export class PermissionBroker {
   private grants = new Map<string, SessionGrant>();
   private pending = new Map<string, Pending>();
   private stopped = false;
-  constructor(private readonly opts: BrokerOptions) {}
+  private mode: BrokerMode;
+  constructor(private readonly opts: BrokerOptions) {
+    this.mode = opts.mode ?? (opts.allow ? 'allow' : opts.ask ? 'ask' : 'read-only');
+  }
+
+  getMode(): BrokerMode {
+    return this.mode;
+  }
+
+  /** Applies to the next request; requests already pending stay pending (see `approvePending` / `denyPending`). */
+  setMode(mode: BrokerMode): void {
+    this.mode = mode;
+  }
+
+  pendingCount(): number {
+    return this.pending.size;
+  }
+
+  /** "Approve now" after switching to Allow edits: answer every pending request with approve-once (nothing is remembered). */
+  approvePending(): number {
+    const all = [...this.pending.values()];
+    for (const p of all) p.resolve({ approve: true, remember: false, via: 'user' });
+    return all.length;
+  }
+
+  /** Deny every pending request as the user's decision (e.g. after switching to Read-only). */
+  denyPendingByUser(): number {
+    const all = [...this.pending.values()];
+    for (const p of all) p.resolve({ approve: false, remember: false, via: 'user' });
+    return all.length;
+  }
+
+  /** Forget every "Approve for this session" grant. */
+  clearGrants(): void {
+    if (!this.grants.size) return;
+    this.grants.clear();
+    this.opts.emit({ type: 'grants', grants: [] });
+  }
 
   listGrants(): SessionGrant[] {
     return [...this.grants.values()];
@@ -121,11 +162,11 @@ export class PermissionBroker {
     const kind = String(req.kind);
     const summary = summarize(req);
     const requestId = String(req.toolCallId ?? `${kind}-${now()}`);
-    if (kind === 'read' || this.opts.allow) return { kind: 'approve-once' };
+    if (kind === 'read' || this.mode === 'allow') return { kind: 'approve-once' };
     const scope = grantScope(req);
     const base = { requestId, kind, summary, scopeKey: scope.key, scopeLabel: scope.label };
     if (this.stopped) return { kind: 'reject', feedback: 'Session was stopped in Agent Durbar.' };
-    if (!this.opts.ask) {
+    if (this.mode !== 'ask') {
       const permission: PermissionInfo = { ...base, state: 'denied' };
       this.opts.emit({ type: 'denied-policy', permission });
       return { kind: 'reject', feedback: 'Agent Durbar is in read-only mode: this action was denied. Do not retry it.' };

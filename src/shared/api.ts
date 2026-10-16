@@ -23,6 +23,8 @@ export interface AgentInfo {
   lazy?: boolean;
   /** The folder is hidden from the office (it keeps its saved sessions). */
   hidden?: boolean;
+  /** The room's door is closed (compact door plate in the office). */
+  closed?: boolean;
 }
 
 /** Choices for a new session. */
@@ -89,6 +91,12 @@ export interface DurbarApi {
   listModels?(): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }>;
   /** End the session (frees it; sending again resumes it). `stop` only interrupts the current turn. */
   end?(id: string): Promise<void>;
+  /** Open an http(s) link in the system browser (anything else is refused in the main process). */
+  openExternal?(url: string): Promise<{ ok: boolean }>;
+  /** Change the permission mode of agent `id` now (applies to the next request). `clearGrants`: forget "Approve for this session"; `approvePending`: approve what is waiting. */
+  setPermMode?(id: string, mode: PermMode, opts?: { clearGrants?: boolean; approvePending?: boolean }): Promise<{ ok: boolean; error?: string; mode?: PermMode; pending?: number }>;
+  /** Close or open the door of the room (folder) of agent `id`; remembered. */
+  setRoomClosed?(id: string, closed: boolean): Promise<{ ok: boolean }>;
   /** Hide or show the folder of agent `id`; the choice is remembered. */
   setFolderHidden?(id: string, hidden: boolean): Promise<{ ok: boolean }>;
   /** Remove the folder of agent `id`: ends its sessions and forgets the folder. */
