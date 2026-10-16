@@ -365,4 +365,10 @@ Layout: `build/` (app icons), `.github/workflows/` (CI, release, Spec Kit gate),
 
 ## License
 
-[MIT](LICENSE), Vikram Gorla. See also [SECURITY.md](SECURITY.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+[MIT](LICENSE), Copyright (c) 2026 Three Feathers contributors.
+
+**Credits.** Agent Durbar is by **Three Feathers**. Key contributors: [vikramgorla](https://github.com/vikramgorla), [fjcabello](https://github.com/fjcabello) and [rubenlupi](https://github.com/rubenlupi) (GitHub handles are used as the names). The names live in one place, [`src/shared/about.ts`](src/shared/about.ts) (plus `contributors` in `package.json`; `npm run test:about` keeps them in step). They are shown in the OS About panel and in Settings > About; the copyright line is also in `LICENSE` and in the installer metadata.
+
+**App id changed (2026-10-16).** The bundle/app id is now `io.github.three-feathers.agentdurbar` (was `io.github.vikramgorla.agentdurbar`). An install of an earlier test build is therefore a **separate app** to the OS (own Windows uninstall entry and shortcuts, own macOS bundle id); uninstall it by hand. Saved data (`durbar-*.json` in the Electron user-data folder) is named after the app name, not the id, so it is shared and kept.
+
+See also [SECURITY.md](SECURITY.md) and [CONTRIBUTING.md](CONTRIBUTING.md).

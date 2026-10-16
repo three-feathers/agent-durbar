@@ -22,3 +22,7 @@
 - [ ] T025 Pack-smoke on macOS and Windows runners. [FR-015]
 - [ ] T026 Dependabot for npm and Actions (SHA-pinned). [FR-016]
 - [x] T027 CI job `office-check`: `npm run check:office` under xvfb on Ubuntu (timeout 10 min, ~70 s measured). [FR-017]
+- [x] T028 Owner/credits in one place (`src/shared/about.ts`), About panel + Settings > About, package.json author/contributors, copyright, LICENSE, README, `test:about` [FR-018]
+- [x] T029 appId `io.github.three-feathers.agentdurbar` in package.json, spec, test, README note [FR-019]
+- [x] T030 Contributor names are the GitHub handles (decided by Vikram 2026-10-16); change `CONTRIBUTORS` + package.json `contributors` to use real names later. [FR-018]
+- [ ] T031 Look at the About panel and installer metadata on macOS and Windows builds. [FR-018]

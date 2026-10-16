@@ -19,6 +19,7 @@ import { agentLabel } from '../shared/toolusage';
 import { devEnv, devWarning } from './devhooks';
 import { SettingsStore } from './settings';
 import { parseAmount, parseCap } from '../shared/credits';
+import { aboutPanelOptions, aboutView } from '../shared/about';
 
 // Developer/test hooks (spec 010): ignored in packaged builds unless DURBAR_DEV=1. Read hooks only from `dev`.
 const dev = devEnv(process.env, app.isPackaged);
@@ -356,7 +357,7 @@ ipcMain.handle('usage:reset', () => {
   usageStore?.reset();
   return { ok: true, doc: usageStore?.view() };
 });
-ipcMain.handle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits }));
+ipcMain.handle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits, about: aboutView(app.getVersion()) }));
 ipcMain.handle('settings:setDefaultCap', (_e, credits: unknown) => ({ ok: true, defaultMaxAiCredits: settingsStore?.setDefaultMaxAiCredits(credits) }));
 
 ipcMain.handle('agents:setCap', async (_e, id: unknown, credits: unknown) => {
@@ -511,6 +512,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  app.setAboutPanelOptions(aboutPanelOptions(app.getVersion())); // owner and contributors: src/shared/about.ts (spec 008 FR-018)
   folderStore = new FolderStore(path.join(app.getPath('userData'), 'durbar-folders.json'));
   settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'durbar-settings.json'));
   settingsStore.load();
