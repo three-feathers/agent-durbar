@@ -22,6 +22,14 @@ const toRenderer = (channel: string, payload: unknown): void => {
 
 adapter.onEvent((e) => toRenderer('agent:event', e));
 
+// Dev/test: DURBAR_LOG=/path/events.jsonl records every normalized event and what is sent to the SDK.
+if (process.env.DURBAR_LOG) {
+  const logFile = process.env.DURBAR_LOG;
+  const write = (o: unknown): void => fs.appendFileSync(logFile, JSON.stringify(o) + '\n');
+  adapter.onEvent((e) => write({ t: Date.now(), event: e }));
+  adapter.debug = (m) => write({ t: Date.now(), debug: m });
+}
+
 async function addWorkspace(workspace: string, permMode: PermMode): Promise<AgentInfo> {
   const ws = resolveWorkspaceCwd(workspace);
   const id = await adapter.start({
@@ -78,6 +86,14 @@ ipcMain.handle('agents:addWorkspaceFile', async (_e, mode: unknown) => {
 });
 
 ipcMain.handle('agents:pickAttachments', async (): Promise<PickedFile[]> => {
+  // Dev/test hook: DURBAR_PICK="/a.txt:/b.png" answers the picker without a native dialog.
+  const preset = (process.env.DURBAR_PICK ?? '').split(path.delimiter).filter((p) => p && fs.existsSync(p));
+  if (preset.length) {
+    return preset.map((p) => {
+      pickedFiles.add(p);
+      return { path: p, name: path.basename(p), kind: IMAGE_EXT.has(path.extname(p).toLowerCase()) ? 'image' : 'file' };
+    });
+  }
   const r = await dialog.showOpenDialog({ title: 'Attach files or images', properties: ['openFile', 'multiSelections'] });
   if (r.canceled) return [];
   return r.filePaths.map((p) => {
@@ -163,6 +179,31 @@ app.whenReady().then(() => {
   // Dev/headless convenience: DURBAR_OPEN="/path/a:/path/b" starts agents (read-only) on launch.
   const open = (process.env.DURBAR_OPEN ?? '').split(path.delimiter).filter((p) => p && fs.existsSync(p));
   if (open.length) void addMany(open, validMode(process.env.DURBAR_PERM));
+  // Dev/test: DURBAR_DRIVER=/path/driver.js runs a UI-driving script against the real window + adapter.
+  // The module exports async (ctx) => void with ctx = { win, addMany, shot(file), js(code), sleep(ms), waitFor(expr, ms) }.
+  if (process.env.DURBAR_DRIVER) {
+    const ctx = {
+      get win() {
+        return win as BrowserWindow;
+      },
+      addMany,
+      js: <T>(code: string): Promise<T> => (win as BrowserWindow).webContents.executeJavaScript(code, true) as Promise<T>,
+      sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
+      shot: async (file: string) => fs.writeFileSync(file, (await (win as BrowserWindow).webContents.capturePage()).toPNG()),
+      waitFor: async (expr: string, ms = 120000) => {
+        const end = Date.now() + ms;
+        while (Date.now() < end) {
+          if (await (win as BrowserWindow).webContents.executeJavaScript(`!!(${expr})`)) return true;
+          await new Promise((r) => setTimeout(r, 300));
+        }
+        return false;
+      },
+    };
+    win?.webContents.once('did-finish-load', () => {
+      const driver = require(process.env.DURBAR_DRIVER as string) as (c: typeof ctx) => Promise<void>;
+      void driver(ctx).catch((err) => console.error('DRIVER FAILED', err)).finally(() => void adapter.dispose().finally(() => app.exit(0)));
+    });
+  }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
