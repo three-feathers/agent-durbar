@@ -9,6 +9,17 @@ import type {
   Unsubscribe,
 } from './types';
 import { resolveWorkspaceCwd } from './workspace';
+import * as fs from 'fs';
+import * as path from 'path';
+
+const IMAGE_MIME: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.bmp': 'image/bmp',
+};
 
 type EventBody = AgentEvent extends infer E ? (E extends AgentEvent ? Omit<E, 'sessionId' | 'timestamp'> & { agentId?: string } : never) : never;
 
@@ -50,6 +61,8 @@ export class CopilotAdapter implements AgentAdapter {
   private client: CopilotClient | undefined;
   private starting: Promise<CopilotClient> | undefined;
   private sessions = new Map<string, Live>();
+  /** Optional debug sink (DURBAR_LOG): what was actually handed to the SDK. */
+  debug?: (message: string) => void;
   /** callId -> tool name, so complete/update events can carry the tool name. */
   private toolNames = new Map<string, string>();
 
@@ -123,11 +136,22 @@ export class CopilotAdapter implements AgentAdapter {
   async send(sessionId: string, message: AgentMessage): Promise<void> {
     const live = this.mustGet(sessionId);
     this.emit(sessionId, { type: 'status', status: 'working', intent: 'Thinking' });
-    await live.session.send({
-      prompt: message.text,
-      // Images are sent as file attachments too: the runtime reads them from disk.
-      attachments: message.attachments?.map((a) => ({ type: 'file' as const, path: a.path })),
+    // Text files go as `file` attachments (the runtime reads them from disk). Images go as
+    // base64 `blob` attachments with a mime type, the SDK's documented way to send an image.
+    const attachments = (message.attachments ?? []).map((a) => {
+      const name = path.basename(a.path);
+      const mime = IMAGE_MIME[path.extname(a.path).toLowerCase()];
+      if (a.kind === 'image' && mime) {
+        return { type: 'blob' as const, data: fs.readFileSync(a.path).toString('base64'), mimeType: mime, displayName: name };
+      }
+      return { type: 'file' as const, path: a.path, displayName: name };
     });
+    this.debug?.(
+      `send ${sessionId.slice(0, 8)} prompt=${JSON.stringify(message.text)} attachments=${JSON.stringify(
+        attachments.map((a) => (a.type === 'blob' ? { type: a.type, mimeType: a.mimeType, displayName: a.displayName, base64Chars: a.data.length } : a)),
+      )}`,
+    );
+    await live.session.send({ prompt: message.text, attachments: attachments.length ? attachments : undefined });
   }
 
   async stop(sessionId: string): Promise<void> {
