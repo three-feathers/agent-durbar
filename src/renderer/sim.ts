@@ -43,7 +43,13 @@ interface SimAgent {
   models?: string[];
   /** Agent ids that switched an MCP server off (spec 019). */
   mcpOff?: Set<string>;
+  /** Simulated credit use in nano-AIU, and the open "limit reached" question (spec 011). */
+  used?: number;
+  limitReq?: string;
 }
+
+/** Simulated caps (AIU) by agent name: Omar's is tiny, so he reaches it in his first turn (spec 011 FR-016). */
+const SIM_CAPS: Record<string, number> = { Ada: 0.5, Mira: 0.25, Omar: 0.015 };
 
 (function () {
   const ROOM_DEFS: Record<string, string> = {
@@ -136,7 +142,7 @@ interface SimAgent {
       const [name, role, room, state, intent, helpers, files] = r;
       const roomName = opts.solo ? name.toLowerCase() + '-app' : room;
       const cwd = opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
-      const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: 'auto' } as AgentInfo;
+      const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: 'auto', maxAiCredits: SIM_CAPS[name] } as AgentInfo;
       (info as AgentInfo & { roomName?: string; role?: string }).roomName = roomName;
       (info as AgentInfo & { roomName?: string; role?: string }).role = role;
       return {
@@ -162,7 +168,16 @@ interface SimAgent {
     const MODELS = ['gpt-6-luna', 'gpt-6-luna', 'gpt-5.6-luna', 'claude-sonnet-4.6'];
     const usage = (s: SimAgent): void => {
       const model = (s.models ?? MODELS)[Math.floor(rnd() * (s.models ?? MODELS).length)];
-      emit({ type: 'usage', sessionId: sid(s), timestamp: now(), model, inputTokens: 1200 + Math.floor(rnd() * 6000), outputTokens: 150 + Math.floor(rnd() * 900), nanoAiu: Math.floor((0.004 + rnd() * 0.012) * 1e9), creditsStatus: 'complete' });
+      const nano = Math.floor((0.004 + rnd() * 0.012) * 1e9);
+      emit({ type: 'usage', sessionId: sid(s), timestamp: now(), model, inputTokens: 1200 + Math.floor(rnd() * 6000), outputTokens: 150 + Math.floor(rnd() * 900), nanoAiu: nano, creditsStatus: 'complete' });
+      s.used = (s.used ?? 0) + nano;
+      const cap = s.info.maxAiCredits;
+      if (cap && !s.limitReq && s.used / 1e9 >= cap) {
+        // Like the SDK: the runtime asks the user what to do and waits (the blocked model request).
+        s.limitReq = 'lim-' + sid(s) + '-' + Math.floor(s.used / 1e6);
+        s.state = 'waiting';
+        emit({ type: 'limit', sessionId: sid(s), timestamp: now(), phase: 'exhausted', requestId: s.limitReq, maxAiCredits: cap, usedAiCredits: s.used / 1e9 });
+      }
       // Like the real runtime: the context window is reported before each model call (spec 019).
       const c = s.ctx;
       if (c && c.limit > 0) {
@@ -284,7 +299,8 @@ interface SimAgent {
       emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: s.intent });
       if (s.state !== 'done') think(s, 4); // done agents show a turn without reasoning (the model sent none)
       const done = sims.indexOf(s) === 0 ? 8 : s.state === 'working' ? 4 : 3;
-      for (let i = 0; i < done; i++) { toolStep(s, false); usage(s); }
+      for (let i = 0; i < done; i++) { toolStep(s, false); usage(s); if (s.limitReq) break; }
+      if (s.limitReq) return; // blocked at the credit cap: nothing more happens until the user decides
       // Sub-agents: each one is a `task` tool call of the parent; its own events carry agentId = that call id
       for (let h = 0; h < s.helpers; h++) {
         const [hn, task, st] = HELPER_NAMES[(h + sims.indexOf(s)) % HELPER_NAMES.length];
@@ -319,7 +335,7 @@ interface SimAgent {
     // Slow, calm background activity: one agent advances every few seconds.
     let timer: number | undefined;
     function tick(): void {
-      const live = sims.filter((s) => s.state === 'working' || s.state === 'thinking');
+      const live = sims.filter((s) => (s.state === 'working' || s.state === 'thinking') && !s.limitReq);
       if (!live.length) return;
       const s = pick(live);
       if (s.state === 'working') {
@@ -439,10 +455,51 @@ interface SimAgent {
       },
     };
 
+    // ---- Fake credit caps (spec 011): in memory only ----
+    let defaultCap: number | undefined;
+    const capApi: Partial<DurbarApi> = {
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap }),
+      setDefaultCap: async (c) => { defaultCap = c !== null && c > 0 ? Math.round(c * 1000) / 1000 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
+      setCap: async (id, c) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'unknown agent' };
+        if (c !== null && !(c > 0)) return { ok: false, error: 'The cap must be a number above 0 (AIU).' };
+        s.info.maxAiCredits = c ?? undefined;
+        emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'changed', maxAiCredits: c });
+        return { ok: true, maxAiCredits: c ?? undefined };
+      },
+      resolveLimit: async (id, requestId, choice) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s || s.limitReq !== requestId) return { ok: false, error: 'That request is no longer open.' };
+        s.limitReq = undefined;
+        if (choice.kind === 'cancel') {
+          emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'resolved', requestId, action: 'cancel' });
+          s.state = 'idle'; closeOpen(s);
+          emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Aborted' });
+          return { ok: true };
+        }
+        const cap = s.info.maxAiCredits ?? 0;
+        s.info.maxAiCredits = choice.kind === 'add' ? Math.round((cap + choice.credits) * 1000) / 1000 : choice.kind === 'set' ? choice.credits : undefined;
+        emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'changed', maxAiCredits: s.info.maxAiCredits ?? null });
+        emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'resolved', requestId, action: choice.kind });
+        s.state = 'working';
+        emit({ type: 'status', sessionId: id, timestamp: now(), status: 'working', intent: 'Continuing after the credit limit' });
+        window.setTimeout(() => {
+          if (s.limitReq) return;
+          const text = '**Done.** Continued after the credit limit was raised: ' + s.intent;
+          emit({ type: 'output', sessionId: id, timestamp: now(), delta: text, final: true, text });
+          emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle' });
+          s.state = 'done';
+        }, 900);
+        return { ok: true };
+      },
+    };
+
     let started = false;
     let extra = 0;
     const api: DurbarApi = {
       ...mcpApi,
+      ...capApi,
       version: async () => 'sim',
       addFolder: async () => {
         extra++;
@@ -477,6 +534,7 @@ interface SimAgent {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
         if (s.perm) return { ok: false, error: 'Waiting for your permission decision first.' };
+        if (s.limitReq) return { ok: false, error: 'The credit limit was reached. Choose Add credits, Remove cap or Stop here first.' };
         window.setTimeout(() => void reply(s, text), 400);
         return { ok: true };
       },
@@ -484,6 +542,10 @@ interface SimAgent {
         // Stop = interrupt the turn only (like the real adapter): pending approval denied, grants kept, back to Ready.
         const s = sims.find((x) => x.info.id === id);
         if (!s) return;
+        if (s.limitReq) {
+          emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'resolved', requestId: s.limitReq, action: 'cancel' });
+          s.limitReq = undefined;
+        }
         if (s.perm) {
           const { cont: _c, file: _f, ...p } = s.perm;
           emit({ type: 'permission', sessionId: id, timestamp: now(), permission: { ...p, state: 'denied', via: 'stopped' } });
@@ -528,7 +590,7 @@ interface SimAgent {
         const src = sims.find((x) => x.info.id === id);
         if (!src) return { ok: false, error: 'unknown agent' };
         extra++;
-        const info = { ...src.info, id: 'sim-n' + extra, permMode: o.permMode ?? src.info.permMode, model: o.model ?? 'auto', effort: o.effort } as AgentInfo;
+        const info = { ...src.info, id: 'sim-n' + extra, permMode: o.permMode ?? src.info.permMode, model: o.model ?? 'auto', effort: o.effort, maxAiCredits: o.maxAiCredits === null ? undefined : o.maxAiCredits ?? defaultCap } as AgentInfo;
         sims.push({ info, room: src.room, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: src.files, grants: new Map() });
         return { ok: true, agent: info };
       },

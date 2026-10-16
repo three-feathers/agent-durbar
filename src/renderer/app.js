@@ -31,8 +31,12 @@ const ui = {view:'office', ws:'all', status:null, selected:null, expanded:{}};
 const $ = id => document.getElementById(id);
 
 const fmtTok = n => n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e4?Math.round(n/1e3)+'k':n>=1e3?(n/1e3).toFixed(1)+'k':String(n);
-function usageShort(a){const u=a.usage; if(!u||!u.calls)return ''; return fmtTok(u.inT+u.outT)+' tok · '+(u.nano/1e9).toFixed(2)+' AIU';}
-function usageLong(a){const u=a.usage; if(!u||!u.calls)return ''; return u.calls+' calls · '+fmtTok(u.inT)+' in / '+fmtTok(u.outT)+' out tokens · '+(u.nano/1e9).toFixed(3)+' AIU';}
+/* AI-credit cap (spec 011): AIU as reported by the runtime; the cap is the session's, so helper cards show their own usage only. */
+const capOf=a=>{const c=a&&!a.parent&&a.info&&a.info.maxAiCredits;return c>0?c:0;};
+const capDigits=c=>Math.round(c*100)===c*100?2:3;
+const fmtCap=n=>n>=100?String(Math.round(n)):(Math.round(n*100)===n*100?n.toFixed(2):n.toFixed(3));
+function usageShort(a){const u=a.usage; if(!u||!u.calls)return ''; const c=capOf(a); return c?fmtTok(u.inT+u.outT)+' · '+(u.nano/1e9).toFixed(capDigits(c))+'/'+fmtCap(c)+' AIU':fmtTok(u.inT+u.outT)+' tok · '+(u.nano/1e9).toFixed(2)+' AIU';}
+function usageLong(a){const u=a.usage; if(!u||!u.calls)return ''; const c=capOf(a); return u.calls+' calls · '+fmtTok(u.inT)+' in / '+fmtTok(u.outT)+' out tokens · '+(u.nano/1e9).toFixed(3)+' AIU'+(c?' of '+fmtCap(c)+' cap':'');}
 
 /* ---------------- svg helpers ---------------- */
 
@@ -173,7 +177,7 @@ function cardHTML(a,d,nSubs){
     <span class="sc">${sceneC(a)}</span>
     <span class="ci"><span class="l1"><span class="name">${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc(a.role)}</span><span class="stl st-${st}">${label(a,true)}</span></span>
     <span class="intent">${esc(a.task)}</span>
-    <span class="l3"><span class="pill st-${st}"><i></i>${label(a,true)}</span><span class="use">${esc(use.split(' · ')[0]||'')}<span class="aiu">${use.includes(' · ')?' · '+esc(use.split(' · ')[1]):''}</span></span></span></span></button>`;
+    <span class="l3"><span class="pill st-${st}"><i></i>${label(a,true)}</span><span class="use">${capOf(a)&&use.includes(' · ')?`<span class="aiu">${esc(use.split(' · ')[1])}</span>`:`${esc(use.split(' · ')[0]||'')}<span class="aiu">${use.includes(' · ')?' · '+esc(use.split(' · ')[1]):''}</span>`}</span></span></span></button>`;
 }
 function linksSVG(d,rows,extraMore){
   const D=DENS[d]; const n=rows+(extraMore?1:0);
@@ -590,6 +594,7 @@ function updatePanelHeader(){
   const sp=ph.querySelector('[data-f=status]'); sp.className='pill st-'+st; sp.innerHTML='<i></i>'+label(a);
   const t=ph.querySelector('[data-f=task]'); t.textContent=a.task; t.title=a.task;
   ph.querySelector('[data-f=usage]').textContent=usageLong(a);
+  updateCapChip(a);
   $('pauseBtn').querySelector('span').textContent=a.paused?'Resume':'Pause';
 }
 function openPanel(id,focus){
@@ -602,7 +607,7 @@ function openPanel(id,focus){
   p.innerHTML=`<div class="panel-in">
    <div class="strip" role="navigation" aria-label="Agents"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON.back}<span>Office</span></button><div class="strip-list" id="stripList"></div></div>
    <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1">${esc(a.name)}</h2><div class="sub">${esc(a.role)}${parent?' · helper of '+esc(parent.name):''}</div></div>
-      <div class="ph-meta"><span data-f="status"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`:''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
+      <div class="ph-meta"><span data-f="status"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`:''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
       <div class="actions">${a.live&&!a.parent?`<button class="btn" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools</button>`:''}${a.live&&!a.parent&&bridge.agentMcp?`<button class="btn" id="mcpBtn" type="button" title="MCP servers for this agent (set globally in Settings)">MCP</button>`:''}${a.live&&bridge.newSession&&!a.parent?`<button class="btn" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>`:''}<button class="btn primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
         ${a.live&&!a.parent?`<button class="btn" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)">Copy resume command</button>`:''}
         <button class="btn" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
@@ -1033,6 +1038,75 @@ function toolLabel(args){
   const v=args.path||args.pattern||args.command||args.url||args.query||args.file_path||Object.values(args).find(x=>typeof x==='string')||'';
   return String(v).replace(/\s+/g,' ').slice(0,400);
 }
+/* ---------------- AI-credit cap: chip, dialog, limit reached (spec 011) ---------------- */
+let APP_SETTINGS={};
+function capChipHTML(a){
+  const c=capOf(a),used=a.usage?a.usage.nano/1e9:0,pct=c?Math.min(100,Math.round(used/c*100)):0;
+  const cls=!c?'unk':a.limit?'high':pct>=80?'warn':'ok';
+  const text=c?used.toFixed(capDigits(c))+' / '+fmtCap(c)+' AIU':'No cap';
+  const title=c?'Credit cap: '+used.toFixed(3)+' of '+fmtCap(c)+' AIU used by this session ('+pct+'%). AIU as reported by the Copilot runtime; the cap may be overshot by one model call. Click to change or remove it.':'No credit cap for this session. Click to set one (AIU, as reported by the Copilot runtime).';
+  return `<button class="ctxchip capchip ${cls}" id="capChip" type="button" title="${esc(title)}"><span class="bar" aria-hidden="true"><i style="width:${c?pct:0}%"></i></span><span>${esc(text)}</span></button>`;
+}
+function updateCapChip(a){
+  const el=$('capChip');if(!el||!ui.selected)return;const cur=byId(ui.selected);if(!cur||liveRoot(cur)!==a)return;
+  el.outerHTML=capChipHTML(a);
+}
+function closeCapDlg(){const d=document.getElementById('capDlg');if(d)d.remove();}
+function openCapDialog(a){
+  closeCapDlg();
+  const cur=capOf(a);
+  const d=document.createElement('div');d.id='capDlg';d.className='dlg-ov';
+  d.innerHTML=`<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="cdT"><h3 id="cdT">Credit cap for ${esc(a.name)}</h3>
+   <p class="dsub">The most AI credits (AIU, as the Copilot runtime reports them) this session may use. When it is reached the agent stops and asks you. It is <b>soft</b>: one model call can go past it.</p>
+   <label>Cap (AIU)<input id="cdVal" type="number" min="0.001" step="0.01" placeholder="No cap" value="${cur||''}"></label>
+   <p class="derr" id="cdErr" role="alert" hidden></p>
+   <div class="dbtn"><button class="btn" id="cdCancel" type="button">Cancel</button><button class="btn" id="cdNone" type="button">Remove cap</button><button class="btn primary" id="cdSave" type="button">Save</button></div></div>`;
+  document.body.appendChild(d);
+  const apply=async v=>{
+    const r=await bridge.setCap(a.id,v).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+    if(!r||!r.ok){const er=$('cdErr');er.textContent=(r&&r.error)||'Could not change the cap.';er.hidden=false;return;}
+    a.info.maxAiCredits=r.maxAiCredits||undefined;a.usageText=usageLong(a);closeCapDlg();updateCapChip(a);updatePanelHeader();scheduleRender();
+    toast(esc(a.name)+': '+(v===null?'no credit cap.':'credit cap <b>'+fmtCap(v)+' AIU</b>.'),3200);
+  };
+  $('cdCancel').onclick=closeCapDlg;$('cdNone').onclick=()=>apply(null);
+  $('cdSave').onclick=()=>{const v=parseFloat($('cdVal').value);if(!(v>0)||v>1e6){const er=$('cdErr');er.textContent='Enter a number above 0, or use Remove cap.';er.hidden=false;return;}apply(Math.round(v*1000)/1000);};
+  d.addEventListener('click',e=>{if(e.target===d)closeCapDlg();});
+  d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeCapDlg();}if(e.key==='Enter'&&e.target.id==='cdVal')$('cdSave').click();});
+  $('cdVal').focus();
+}
+document.addEventListener('click',e=>{const c=e.target.closest('#capChip');if(!c)return;const a=byId(ui.selected);if(a)openCapDialog(liveRoot(a));});
+/* The runtime reached the cap and waits for the user: inline notice with Add credits / Remove cap / Stop here. */
+function showLimit(a,e){
+  const t=ensureTurn(a);
+  const max=e.maxAiCredits||capOf(a),used=e.usedAiCredits!=null?e.usedAiCredits:(a.usage?a.usage.nano/1e9:0);
+  const n=document.createElement('div');n.className='note perm limit';n.setAttribute('role','group');n.setAttribute('aria-label','Credit limit reached');
+  n.innerHTML='<b>Credit limit reached:</b> <span class="psum"></span><span class="pstate"></span>';
+  n.querySelector('.psum').textContent='used '+fmtCap(Math.round(used*1000)/1000)+' of '+fmtCap(max)+' AIU. The agent waits for you.';
+  const row=document.createElement('div');row.className='note-actions';
+  const amt=document.createElement('input');amt.type='number';amt.min='0.001';amt.step='0.01';amt.value=String(max||0.5);amt.className='limit-amt';amt.setAttribute('aria-label','AIU to add to the cap');
+  const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);return b;};
+  const answer=async choice=>{
+    const r=await bridge.resolveLimit(a.id,e.requestId,choice).catch(err=>({ok:false,error:String(err&&err.message||err)}));
+    if(!r||!r.ok){addNote(liveChat(a),'Could not answer the credit limit: '+esc((r&&r.error)||'unknown error'),true);return;}
+    settleLimit(a,choice.kind);
+  };
+  row.appendChild(amt);
+  mk('Add credits','primary','Raise the cap by this many AIU and let the agent continue',()=>{const v=parseFloat(amt.value);if(!(v>0)){amt.focus();return;}answer({kind:'add',credits:Math.round(v*1000)/1000});});
+  mk('Remove cap','session','Remove the cap and let the agent continue',()=>answer({kind:'unset'}));
+  mk('Stop here','danger','Cancel the blocked request. The agent is ready for your next message (the cap stays).',()=>answer({kind:'cancel'}));
+  n.appendChild(row);
+  a.limit={requestId:e.requestId,n,row,st:n.querySelector('.pstate')};
+  tChips(t.T).appendChild(n);scrollChat(liveChat(a));
+}
+function settleLimit(a,action){
+  const L=a.limit;if(!L)return;a.limit=null;
+  if(L.row)L.row.remove();
+  const word=action==='cancel'?'stopped here':action==='unset'?'cap removed':'credits added';
+  L.st.textContent=' → '+word;L.n.classList.add('settled',action==='cancel'?'denied':'approved');
+  if(action==='cancel'){closeTurn(a);a.worked=false;setState(a,'idle','Ready','Stopped at the credit limit. Ready for your next message.');}
+  else setState(a,'working',null,'Continuing after the credit limit');
+  updateCapChip(a);scrollChat(liveChat(a));
+}
 /* ---------- permissions: inline note in the tool timeline, Approve / Approve for this session / Deny, revocable chips ---------- */
 function showPerm(a,p){
   const t=ensureTurn(a);
@@ -1101,7 +1175,7 @@ function onLiveEvent(e){
   const a=liveById(e.sessionId); if(!a)return;
   feedStats(a,e);
   if(e.type==='subagent')return onSubagent(a,e);
-  if(e.agentId&&e.type!=='permission'&&e.type!=='grants')return onSubEvent(a,e);
+  if(e.agentId&&e.type!=='permission'&&e.type!=='grants'&&e.type!=='limit')return onSubEvent(a,e);
   const chat=liveChat(a), main=true;
   switch(e.type){
   case 'user':{addUserMsg(chat,e.text,(e.attachments||[]).map(x=>({name:String(x.path).split(/[\\/]/).pop(),img:x.kind==='image',path:x.path})));return;}
@@ -1113,7 +1187,7 @@ function onLiveEvent(e){
       ensureTurn(a); setState(a,'waiting',null,e.intent||'Waiting for permission');
       if(e.permission)showPerm(a,e.permission);
     }
-    else if(e.status==='idle'&&e.intent==='Aborted'){const was=a.worked;a.worked=false;closeTurn(a);
+    else if(e.status==='idle'&&e.intent==='Aborted'){if(a.limit)settleLimit(a,'cancel');const was=a.worked;a.worked=false;closeTurn(a);
       [...a.pend.keys()].forEach(id=>settlePerm(a,{requestId:id,state:'denied',via:'stopped'}));
       if(was)addNote(chat,'Stopped by you. The agent is ready for your next message.');
       setState(a,'idle','Ready','Stopped. Ready for your next message.');}
@@ -1121,6 +1195,7 @@ function onLiveEvent(e){
       if(was)setState(a,'done','Done',a.lastOutput?SHORT(plainMd(a.lastOutput),140):'Finished.'); else setState(a,'idle','Ready',a.task);}
     else if(e.status==='error'){closeTurn(a);addNote(chat,esc(e.intent||'Error'),true);setState(a,'error',null,SHORT(e.intent||'Error',140));}
     else if(e.status==='stopped'){
+      if(a.limit)settleLimit(a,'cancel');
       /* a permission still pending when the session stops is denied cleanly: no Approve/Deny left behind, grants gone */
       [...a.pend.keys()].forEach(id=>settlePerm(a,{requestId:id,state:'denied',via:'stopped'}));
       setGrants(a,[]);
@@ -1128,6 +1203,11 @@ function onLiveEvent(e){
     return;
   case 'permission':if(main)settlePerm(a,e.permission);return;
   case 'grants':setGrants(a,e.grants||[]);return;
+  case 'limit':
+    if(e.phase==='changed'){a.info.maxAiCredits=e.maxAiCredits>0?e.maxAiCredits:undefined;a.usageText=usageLong(a);updateCapChip(a);updatePanelHeader();scheduleRender();}
+    else if(e.phase==='exhausted'){if(a.limit&&a.limit.requestId===e.requestId)return;showLimit(a,e);setState(a,'waiting','Limit reached','Credit limit reached: '+fmtCap(e.maxAiCredits||0)+' AIU');updateCapChip(a);}
+    else if(e.phase==='resolved'){if(a.limit&&a.limit.requestId===e.requestId)settleLimit(a,e.action||'add');}
+    return;
   case 'thinking':{const t=ensureTurn(a);tThink(t.T,e.reasoningId,e.delta);setState(a,'thinking',null);return;}
   case 'output':{const t=ensureTurn(a);const out=tText(t.T,e);if(out!=null)a.lastOutput=out;setState(a,'working',null);return;}
   case 'toolCall':{const t=ensureTurn(a);
@@ -1284,9 +1364,11 @@ function newSession(a0){
    <label>Permissions<select id="sdPerm"><option value="read-only">Read-only</option><option value="ask">Ask first</option><option value="allow">Allow edits</option></select></label>
    <label>Model<select id="sdModel"></select></label>
    <label id="sdEffL">Reasoning effort<select id="sdEff"></select></label>
+   ${bridge.setCap?'<label>Credit cap (AIU, empty = no cap)<input id="sdCap" type="number" min="0.001" step="0.01" placeholder="No cap"></label>':''}
    <div class="dbtn"><button class="btn" id="sdCancel" type="button">Cancel</button><button class="btn primary" id="sdGo" type="button">Start session</button></div></div>`;
   document.body.appendChild(d);
   $('sdPerm').value=a.info.permMode||'read-only';
+  if($('sdCap'))$('sdCap').value=APP_SETTINGS.defaultMaxAiCredits||'';
   fillModelSelect($('sdModel'),a.info.model||'auto');
   const eff=()=>{fillEffortSelect($('sdEff'),$('sdModel').value,a.info.effort);$('sdEffL').hidden=$('sdEff').hidden;};
   eff(); $('sdModel').onchange=eff;
@@ -1295,6 +1377,7 @@ function newSession(a0){
   $('sdGo').onclick=async()=>{
     if($('sdPerm').value==='allow'&&!(await confirmAllow(roomOf(a).name)))return;
     const opts={permMode:$('sdPerm').value,model:$('sdModel').value,effort:$('sdEff').hidden?undefined:($('sdEff').value||undefined)};
+    if($('sdCap')){const cv=parseFloat($('sdCap').value);opts.maxAiCredits=cv>0&&cv<=1e6?Math.round(cv*1000)/1000:null;}
     $('sdGo').disabled=true;$('sdGo').textContent='Starting…';
     const r=await bridge.newSession(a.id,opts);
     closeSessDlg();
@@ -1483,7 +1566,7 @@ if(bridge){
   $('addFolder').onclick=()=>addVia(bridge.addFolder);
   $('addWs').onclick=()=>addVia(bridge.addWorkspaceFile);
   $('foldersBtn').onclick=()=>toggleFolders();
-  window.DurbarScreens.init({bridge,stats:STATS,esc,toast,
+  window.DurbarScreens.init({bridge,stats:STATS,esc,toast,onSettings:v=>{APP_SETTINGS=v||{};},
     agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
     staticLimit:a=>{const m=MODELS.find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
     openAgent:id=>openPanel(id,false)});
@@ -1494,6 +1577,7 @@ if(bridge){
   bridge.onAgentAdded(addLiveAgent);
   bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();const dg=l.filter(x=>x.permDowngraded).length;if(dg)toast(dg+' saved folder'+(dg>1?'s were':' was')+' set to Allow edits. Allow edits is not restored: '+(dg>1?'they start':'it starts')+' in <b>Ask first</b>. Switch the mode in the chat header to allow edits again.',9000);});
   loadModels();
+  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};}).catch(()=>{});
   agents=LIVE.agents; ROOMS=LIVE.rooms;
   setBadge();
 }

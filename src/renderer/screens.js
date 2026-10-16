@@ -76,7 +76,12 @@
     const amb=mcp.ambient.map(a=>`<li class="srv amb" data-amb="${esc(a.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(a.name)}</b><span class="mtag">${a.origin==='builtin'?'built-in':'~/.copilot/mcp-config.json'}</span>${a.transport?`<span class="mtag">${esc(a.transport)}</span>`:''}</div>
         ${a.command||a.url?`<code class="srv-cmd">${esc(cap(a.transport==='stdio'||a.command?[a.command].concat(a.args||[]).join(' '):a.url,180))}</code>`:''}</div>
       <div class="srv-act">${sw(a.enabled,(a.enabled?'Switch off ':'Switch on ')+a.name+' for new sessions','data-act="amb"')}</div></li>`).join('');
-    r.innerHTML=head('Settings')+`<div class="scr-body">
+    let app={};
+    if(X.bridge.getSettings){try{app=(await X.bridge.getSettings())||{};}catch(e){app={};}}
+    const capSec=X.bridge.setDefaultCap?`<section class="scr-sec" aria-labelledby="capH"><h3 id="capH">Credit cap</h3>
+        <p class="scr-note">The default cap, in AIU (as the Copilot runtime reports AI credits), given to <b>new</b> sessions. Empty means no cap. Each session can change its own cap from its chat header; a session that reaches its cap stops and asks you. The cap is <b>soft</b>: one model call can go past it, and it is not yet verified against a real account (see spec 011).</p>
+        <div class="scr-tools"><label class="capf">Default cap (AIU)<input id="capDef" type="number" min="0.001" step="0.01" placeholder="No cap" value="${app.defaultMaxAiCredits||''}"></label><button class="btn primary" type="button" id="capSave">Save</button><span class="scr-note small" id="capMsg" role="status"></span></div></section>`:'';
+    r.innerHTML=head('Settings')+`<div class="scr-body">${capSec}
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH">MCP servers</h3>
         <p class="scr-note">MCP servers give agents extra tools. They are set once here and used by <b>every agent</b> that starts afterwards; each agent can switch single servers off from its own header (MCP button).</p>
         <p class="scr-warn" role="note"><b>MCP servers run local commands with your user rights.</b> Only enable servers you trust. You see the exact command before a server is switched on for the first time, and again whenever its command or URL changes. Read-only MCP tools can run without asking even in Read-only mode.</p>
@@ -90,6 +95,13 @@
         <p class="scr-note">The runtime starts these in every session by itself (your <code>~/.copilot/mcp-config.json</code> and the built-in GitHub server). You cannot edit them here. The switch controls whether new sessions from this app start them.</p>
         <ul class="srvs" id="ambList">${amb}</ul></section></div>`;
     wireHead();
+    if($('capSave'))$('capSave').onclick=async()=>{
+      const v=parseFloat($('capDef').value),msg=$('capMsg');
+      if($('capDef').value.trim()!==''&&!(v>0&&v<=1e6)){msg.textContent='Enter a number above 0, or leave it empty for no cap.';return;}
+      const res=await X.bridge.setDefaultCap($('capDef').value.trim()===''?null:Math.round(v*1000)/1000);
+      if(X.onSettings)X.onSettings({defaultMaxAiCredits:res&&res.defaultMaxAiCredits});
+      msg.textContent=res&&res.defaultMaxAiCredits?'Saved: new sessions start with a cap of '+res.defaultMaxAiCredits+' AIU.':'Saved: new sessions start without a cap.';
+    };
     $('mcpAdd').onclick=()=>editServer(null);
     $('mcpImpCopilot').onclick=()=>importFrom('copilot');
     $('mcpImpVs').onclick=()=>importFrom('vscode');

@@ -117,3 +117,11 @@ body.has-bridge #topBtns{display:flex}
 .ttab:not(.agt) thead th:first-child{width:30%}
 .ttab:not(.agt) .barc{width:34%}
 .ttab:not(.agt) td,.ttab:not(.agt) th[scope=row]{overflow:hidden;text-overflow:ellipsis}
+
+/* AI-credit cap (spec 011) */
+.capchip{margin-left:0}
+.note.limit{background:#f6e2df;border-color:#ebc7c2;color:var(--red-ink)}
+.note.limit.settled{background:#f4f0e6;border-color:#e4dcc6;color:var(--ink-2)}
+.note.limit .limit-amt{width:84px;height:28px;border:1px solid var(--line);border-radius:8px;padding:0 8px;font:inherit;font-size:12.5px;background:#fff}
+.capf{display:inline-flex;align-items:center;gap:8px;font-size:12.5px}
+.capf input{width:110px;height:30px;border:1px solid var(--line);border-radius:8px;padding:0 8px;font:inherit;background:#fff}
