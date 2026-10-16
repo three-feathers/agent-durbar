@@ -47,7 +47,11 @@ export interface SessionOptions {
 /** What the user chose for a session that reached its credit cap (spec 011). */
 export type LimitChoice = { kind: 'add'; credits: number } | { kind: 'set'; credits: number } | { kind: 'unset' } | { kind: 'cancel' };
 
+import type { AboutView } from './about';
+
 export interface AppSettingsView {
+  /** Owner, version and contributors for Settings > About (spec 008 FR-018). */
+  about?: AboutView;
   /** Default cap (AIU) applied to new sessions; unset = none. */
   defaultMaxAiCredits?: number;
 }

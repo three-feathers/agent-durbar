@@ -5,9 +5,23 @@
   "private": true,
   "license": "MIT",
   "author": {
-    "name": "Vikram Gorla",
-    "url": "https://github.com/vikramgorla"
+    "name": "Three Feathers",
+    "url": "https://github.com/three-feathers"
   },
+  "contributors": [
+    {
+      "name": "vikramgorla",
+      "url": "https://github.com/vikramgorla"
+    },
+    {
+      "name": "fjcabello",
+      "url": "https://github.com/fjcabello"
+    },
+    {
+      "name": "rubenlupi",
+      "url": "https://github.com/rubenlupi"
+    }
+  ],
   "main": "dist/main/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-assets.js",
@@ -18,7 +32,7 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "test:permissions": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-permissions.js",
     "test:attachments": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-attachments.js",
-    "test": "npm run test:permissions && npm run test:attachments && npm run test:vscode && npm run test:runtime && npm run test:history && npm run test:vscodechat && npm run test:folders && npm run test:events && npm run test:markdown && npm run test:rooms && npm run test:url && npm run test:mcp && npm run test:toolstats && npm run test:devhooks && npm run test:credits && npm run test:toolusage && npm run test:usagestore",
+    "test": "npm run test:permissions && npm run test:attachments && npm run test:vscode && npm run test:runtime && npm run test:history && npm run test:vscodechat && npm run test:folders && npm run test:events && npm run test:markdown && npm run test:rooms && npm run test:url && npm run test:mcp && npm run test:toolstats && npm run test:devhooks && npm run test:credits && npm run test:toolusage && npm run test:usagestore && npm run test:about",
     "test:vscode": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-vscode.js",
     "test:history": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-history.js",
     "test:vscodechat": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-vscodechat.js",
@@ -42,7 +56,8 @@
     "test:devhooks": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-devhooks.js",
     "check:office": "npm run build && node scripts/check-office-overlap.js",
     "test:usagestore": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-usagestore.js",
-    "test:toolusage": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-toolusage.js"
+    "test:toolusage": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-toolusage.js",
+    "test:about": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-about.js"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
@@ -71,9 +86,9 @@
     "command-center"
   ],
   "build": {
-    "appId": "io.github.vikramgorla.agentdurbar",
+    "appId": "io.github.three-feathers.agentdurbar",
     "productName": "Agent Durbar",
-    "copyright": "Copyright (c) Vikram Gorla, MIT License",
+    "copyright": "Copyright (c) 2026 Three Feathers contributors",
     "directories": {
       "output": "release",
       "buildResources": "build"
