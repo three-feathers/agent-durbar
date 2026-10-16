@@ -161,6 +161,17 @@ export class EventMapper {
           totalTokens: d.totalTokens,
           totalToolCalls: d.totalToolCalls,
         });
+      case 'session_limits_exhausted.requested':
+        // The cap belongs to the session, so sub-agent tagging is dropped on purpose.
+        if (typeof d.requestId !== 'string') return;
+        return this.emit({ type: 'limit', phase: 'exhausted', requestId: d.requestId, maxAiCredits: num(d.maxAiCredits), usedAiCredits: num(d.usedAiCredits) });
+      case 'session_limits_exhausted.completed':
+        if (typeof d.requestId !== 'string') return;
+        return this.emit({ type: 'limit', phase: 'resolved', requestId: d.requestId, action: str(d.response?.action) });
+      case 'session.session_limits_changed': {
+        const cap = num(d.sessionLimits?.maxAiCredits);
+        return this.emit({ type: 'limit', phase: 'changed', maxAiCredits: cap && cap > 0 ? cap : null });
+      }
       case 'session.idle':
         return this.emit({ type: 'status', status: 'idle', intent: d.aborted ? 'Aborted' : undefined });
       case 'session.error':

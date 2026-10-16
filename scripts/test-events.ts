@@ -141,4 +141,22 @@ const run = (events: RawEvent[]): EventBody[] => {
   const t2 = out2.find((e) => e.type === 'toolCall') as { mcpServer?: string };
   assert.strictEqual(t2.mcpServer, undefined, 'built-in tools carry no MCP fields');
 }
+// Credit cap events (spec 011). Shapes are taken from the SDK 1.0.22 type definitions (session-events.d.ts), NOT recorded from a real session.
+{
+  const out = run([
+    { type: 'session.session_limits_changed', data: { sessionLimits: { maxAiCredits: 0.5 } } },
+    { type: 'session_limits_exhausted.requested', agentId: 'inst-1', data: { requestId: 'q1', maxAiCredits: 0.5, usedAiCredits: 0.52 } },
+    { type: 'session_limits_exhausted.completed', data: { requestId: 'q1', response: { action: 'add', additionalAiCredits: 1 } } },
+    { type: 'session.session_limits_changed', data: { sessionLimits: null } },
+    { type: 'session_limits_exhausted.requested', data: { maxAiCredits: 1 } }, // no request id: cannot be answered, ignored
+  ]);
+  assert.deepStrictEqual(out, [
+    { type: 'limit', phase: 'changed', maxAiCredits: 0.5 },
+    { type: 'limit', phase: 'exhausted', requestId: 'q1', maxAiCredits: 0.5, usedAiCredits: 0.52 },
+    { type: 'limit', phase: 'resolved', requestId: 'q1', action: 'add' },
+    { type: 'limit', phase: 'changed', maxAiCredits: null },
+  ]);
+  assert.ok(out.every((e) => e.agentId === undefined), 'a limit is the session\'s, never a sub-agent\'s');
+}
+
 console.log('event mapping tests passed');

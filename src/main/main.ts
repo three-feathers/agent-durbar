@@ -15,6 +15,8 @@ import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { devEnv, devWarning } from './devhooks';
+import { SettingsStore } from './settings';
+import { parseCap } from '../shared/credits';
 
 // Developer/test hooks (spec 010): ignored in packaged builds unless DURBAR_DEV=1. Read hooks only from `dev`.
 const dev = devEnv(process.env, app.isPackaged);
@@ -29,6 +31,8 @@ const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 type Effort = (typeof EFFORTS)[number];
 const asEffort = (v: unknown): Effort | undefined => (EFFORTS as readonly string[]).includes(v as string) ? (v as Effort) : undefined;
 let folderStore: FolderStore | undefined;
+/** Global settings (default credit cap, spec 011), created when the app is ready. */
+let settingsStore: SettingsStore | undefined;
 /** Global MCP servers (spec 019), created when the app is ready (needs userData and safeStorage). */
 let mcpStore: McpStore | undefined;
 /** The folder (or .code-workspace file) an agent belongs to; the key of the saved folder list. */
@@ -57,6 +61,14 @@ const toRenderer = (channel: string, payload: unknown): void => {
 };
 
 adapter.onEvent((e) => toRenderer('agent:event', e));
+// The runtime confirms the cap now in force (also after a change made by another client): keep AgentInfo and the folder's saved cap in step.
+adapter.onEvent((e) => {
+  if (e.type !== 'limit' || e.phase !== 'changed') return;
+  const a = agents.get(e.sessionId);
+  if (!a) return;
+  a.maxAiCredits = parseCap(e.maxAiCredits);
+  folderStore?.setMaxAiCredits(wsKey(a), a.maxAiCredits);
+});
 
 // Dev/test: DURBAR_LOG=/path/events.jsonl records every normalized event and what is sent to the SDK.
 if (dev.DURBAR_LOG) {
@@ -94,21 +106,24 @@ const startOptionsFor = (a: AgentInfo) => ({
   autoTier: (a.model ?? DEFAULT_MODEL) === 'auto' ? ('efficiency' as const) : undefined,
   allow: a.permMode === 'allow',
   ask: a.permMode === 'ask',
+  maxAiCredits: a.maxAiCredits,
   ...mcp.optionsFor(a.id),
 });
 
 async function addWorkspace(
   workspace: string,
   permMode: PermMode,
-  opts: { resumeSessionId?: string; silent?: boolean; model?: string; effort?: string; persist?: boolean } = {},
+  opts: { resumeSessionId?: string; silent?: boolean; model?: string; effort?: string; persist?: boolean; maxAiCredits?: number | null } = {},
 ): Promise<AgentInfo> {
   const model = opts.model || DEFAULT_MODEL;
   const effort = asEffort(opts.effort);
   const draft = infoFor(workspace, permMode, '', model, effort);
+  // Cap: explicit choice (null = none) > the folder's saved cap > the global default (spec 011).
+  draft.maxAiCredits = opts.maxAiCredits === null ? undefined : (opts.maxAiCredits ?? folderStore?.get(wsKey(draft))?.maxAiCredits ?? settingsStore?.defaultMaxAiCredits);
   const id = await adapter.start({ ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId });
   const info: AgentInfo = { ...draft, id, hidden: folderStore?.get(wsKey(draft))?.hidden, closed: folderStore?.get(wsKey(draft))?.closed };
   agents.set(id, info);
-  if (opts.persist) folderStore?.upsert({ workspace: wsKey(info), permMode, model, effort });
+  if (opts.persist) folderStore?.upsert({ workspace: wsKey(info), permMode, model, effort, maxAiCredits: info.maxAiCredits });
   if (!opts.silent) toRenderer('agent:added', info);
   return info;
 }
@@ -133,7 +148,7 @@ async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions
   const errors: string[] = [];
   for (const p of paths) {
     try {
-      added.push(await addWorkspace(p, permMode, { model: opts.model, effort: opts.effort, persist: opts.persist }));
+      added.push(await addWorkspace(p, permMode, { model: opts.model, effort: opts.effort, persist: opts.persist, maxAiCredits: opts.maxAiCredits }));
     } catch (err) {
       errors.push(`${path.basename(p)}: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -148,7 +163,7 @@ function restoreFolders(): void {
     try {
       if (!fs.existsSync(f.workspace)) continue; // e.g. an unplugged drive: stays saved, just not shown
       const rm = restoreMode(f.permMode); // Allow edits is not restored silently (spec 003 FR-021)
-      const info = infoFor(f.workspace, rm.mode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, hidden: f.hidden, closed: f.closed, permDowngraded: rm.downgraded || undefined });
+      const info = infoFor(f.workspace, rm.mode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, hidden: f.hidden, closed: f.closed, permDowngraded: rm.downgraded || undefined, maxAiCredits: f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits });
       agents.set(info.id, info);
     } catch {
       /* folder gone or not a folder any more */
@@ -163,7 +178,8 @@ ipcMain.handle('agents:list', () => [...agents.values()]);
 
 const sessionOpts = (o: unknown): SessionOptions & { persist: boolean } => {
   const x = (o && typeof o === 'object' ? o : {}) as Record<string, unknown>;
-  return { model: typeof x.model === 'string' ? x.model.slice(0, 100) : undefined, effort: asEffort(x.effort), persist: true };
+  const cap = x.maxAiCredits === null ? null : parseCap(x.maxAiCredits);
+  return { model: typeof x.model === 'string' ? x.model.slice(0, 100) : undefined, effort: asEffort(x.effort), maxAiCredits: cap, persist: true };
 };
 
 ipcMain.handle('agents:addFolder', async (_e, mode: unknown, opts: unknown) => {
@@ -311,8 +327,42 @@ ipcMain.handle('agents:newSession', async (_e, id: unknown, opts: unknown) => {
   const o = (opts && typeof opts === 'object' ? opts : {}) as Record<string, unknown>;
   try {
     const mode = o.permMode === undefined ? a.permMode : validMode(o.permMode);
-    const agent = await addWorkspace(wsKey(a), mode, { model: typeof o.model === 'string' ? o.model.slice(0, 100) : a.model, effort: asEffort(o.effort) ?? undefined });
+    const agent = await addWorkspace(wsKey(a), mode, { model: typeof o.model === 'string' ? o.model.slice(0, 100) : a.model, effort: asEffort(o.effort) ?? undefined, maxAiCredits: o.maxAiCredits === null ? null : parseCap(o.maxAiCredits) });
     return { ok: true, agent };
+  } catch (err) {
+    return { ok: false, error: errText(err) };
+  }
+});
+
+// ---- AI-credit caps (spec 011): numbers only, validated here ----
+ipcMain.handle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits }));
+ipcMain.handle('settings:setDefaultCap', (_e, credits: unknown) => ({ ok: true, defaultMaxAiCredits: settingsStore?.setDefaultMaxAiCredits(credits) }));
+
+ipcMain.handle('agents:setCap', async (_e, id: unknown, credits: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  if (!a) return { ok: false, error: 'unknown agent' };
+  const cap = credits === null ? undefined : parseCap(credits);
+  if (credits !== null && cap === undefined) return { ok: false, error: 'The cap must be a number above 0 (AIU).' };
+  try {
+    if (adapter.isLive(a.id)) await adapter.setCap(a.id, cap ?? null); // not started yet: applied when the session starts
+    a.maxAiCredits = cap;
+    folderStore?.setMaxAiCredits(wsKey(a), cap);
+    return { ok: true, maxAiCredits: cap };
+  } catch (err) {
+    return { ok: false, error: errText(err) };
+  }
+});
+
+ipcMain.handle('agents:resolveLimit', async (_e, id: unknown, requestId: unknown, choice: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  if (!a || typeof requestId !== 'string' || !adapter.isLive(a.id)) return { ok: false, error: 'unknown agent' };
+  const c = (choice && typeof choice === 'object' ? choice : {}) as Record<string, unknown>;
+  const credits = parseCap(c.credits);
+  const action = c.kind === 'add' && credits ? { kind: 'add' as const, credits } : c.kind === 'set' && credits ? { kind: 'set' as const, credits } : c.kind === 'unset' ? { kind: 'unset' as const } : c.kind === 'cancel' ? { kind: 'cancel' as const } : undefined;
+  if (!action) return { ok: false, error: 'Invalid choice.' };
+  try {
+    await adapter.resolveLimit(a.id, requestId, action);
+    return { ok: true };
   } catch (err) {
     return { ok: false, error: errText(err) };
   }
@@ -439,6 +489,8 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   folderStore = new FolderStore(path.join(app.getPath('userData'), 'durbar-folders.json'));
+  settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'durbar-settings.json'));
+  settingsStore.load();
   mcpStore = new McpStore(path.join(app.getPath('userData'), 'durbar-mcp.json'), safeStorageCodec);
   mcpStore.load();
   restoreFolders();

@@ -2,6 +2,7 @@ import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
 import type { CopilotSession, MCPServerConfig, ModelInfo, PermissionRequest, PermissionRequestResult, SessionEvent } from '@github/copilot-sdk';
 import type {
   AgentAdapter,
+  LimitAction,
   AgentEvent,
   AgentMessage,
   PermissionInfo,
@@ -47,6 +48,8 @@ interface Live {
   unsubscribe: () => void;
   cwd: string;
   broker: PermissionBroker;
+  /** `session_limits_exhausted.requested` waiting for the user (spec 011): answered with `cancel` when the turn is stopped or the session ends. */
+  limitRequestId?: string;
 }
 
 /**
@@ -167,6 +170,8 @@ export class CopilotAdapter implements AgentAdapter {
       // `disabledMcpServers` switches those off by name. Values (env, headers) are secrets: never logged, only names.
       ...(options.mcpServers && Object.keys(options.mcpServers).length ? { mcpServers: options.mcpServers as unknown as Record<string, MCPServerConfig> } : {}),
       ...(options.disabledMcpServers?.length ? { disabledMcpServers: options.disabledMcpServers } : {}),
+      // AI-credit cap (spec 011): the SDK calls it "AI Credits"; the app treats 1 AIU = 1 credit. `sessionLimits` is @experimental in SDK 1.0.22.
+      ...(options.maxAiCredits && options.maxAiCredits > 0 && Number.isFinite(options.maxAiCredits) ? { sessionLimits: { maxAiCredits: options.maxAiCredits } } : {}),
       onPermissionRequest,
     };
     this.debug?.(`mcp: servers=[${Object.keys(options.mcpServers ?? {}).join(',')}] disabled=[${(options.disabledMcpServers ?? []).join(',')}]`);
@@ -179,8 +184,16 @@ export class CopilotAdapter implements AgentAdapter {
       session = known ? await client.resumeSession(options.sessionId, config) : await client.createSession({ ...config, sessionId: options.sessionId });
     } else session = await client.createSession(config);
     sid = session.sessionId;
-    const unsubscribe = session.on((ev) => this.map(sid, ev));
+    const unsubscribe = session.on((ev) => {
+      // Remember an open limit request so Stop / End can answer it (the runtime waits for a consumer once interest is registered).
+      const live = this.sessions.get(sid);
+      if (live && ev.type === 'session_limits_exhausted.requested') live.limitRequestId = ev.data.requestId;
+      else if (live && ev.type === 'session_limits_exhausted.completed' && live.limitRequestId === ev.data.requestId) live.limitRequestId = undefined;
+      this.map(sid, ev);
+    });
     this.sessions.set(sid, { session, unsubscribe, cwd, broker });
+    // Without a registered consumer the runtime does not ask the user when the cap is reached (SDK docs of `registerInterest`).
+    void session.rpc.eventLog.registerInterest({ eventType: 'session_limits_exhausted.requested' }).catch((err: unknown) => this.debug?.(`limit interest not registered: ${err instanceof Error ? err.message : String(err)}`));
     if (!options.quiet) this.emit(sid, { type: 'status', status: 'idle', intent: `Ready in ${cwd}` });
     return sid;
   }
@@ -216,6 +229,7 @@ export class CopilotAdapter implements AgentAdapter {
     const live = this.sessions.get(sessionId);
     if (!live) return;
     live.broker.denyPending();
+    await this.cancelLimit(live);
     try {
       await live.session.abort();
     } catch {
@@ -228,6 +242,7 @@ export class CopilotAdapter implements AgentAdapter {
   async stop(sessionId: string): Promise<void> {
     const live = this.sessions.get(sessionId);
     if (!live) return;
+    await this.cancelLimit(live);
     live.broker.stop(); // pending permissions are denied cleanly (renderer clears Approve/Deny) and grants are dropped
     try {
       await live.session.abort();
@@ -256,6 +271,35 @@ export class CopilotAdapter implements AgentAdapter {
       else if (mode === 'read-only') pending -= live.broker.denyPendingByUser();
     }
     return { pending };
+  }
+
+  /** Change the credit cap of a running session; `null` removes it. The SDK confirms with a `session.session_limits_changed` event. */
+  async setCap(sessionId: string, credits: number | null): Promise<void> {
+    const live = this.mustGet(sessionId);
+    if (credits !== null && !(credits > 0 && Number.isFinite(credits))) throw new Error('Invalid credit cap.');
+    await live.session.rpc.options.update({ sessionLimits: credits === null ? null : { maxAiCredits: credits } });
+  }
+
+  /** Answer the runtime's "limit reached" question (add / set / unset / cancel). */
+  async resolveLimit(sessionId: string, requestId: string, action: LimitAction): Promise<void> {
+    const live = this.mustGet(sessionId);
+    const response =
+      action.kind === 'add' ? { action: 'add' as const, additionalAiCredits: action.credits }
+      : action.kind === 'set' ? { action: 'set' as const, maxAiCredits: action.credits }
+      : { action: action.kind };
+    await live.session.rpc.ui.handlePendingSessionLimitsExhausted({ requestId, response });
+    if (live.limitRequestId === requestId) live.limitRequestId = undefined;
+  }
+
+  private async cancelLimit(live: Live): Promise<void> {
+    const id = live.limitRequestId;
+    if (!id) return;
+    live.limitRequestId = undefined;
+    try {
+      await live.session.rpc.ui.handlePendingSessionLimitsExhausted({ requestId: id, response: { action: 'cancel' } });
+    } catch {
+      /* already answered elsewhere */
+    }
   }
 
   /** Switch one MCP server on or off in a running session (the runtime does not write this to ~/.copilot). */

@@ -24,6 +24,8 @@ export interface AgentInfo {
   effort?: string;
   /** Restored from the saved folder list: no runtime session yet, it starts with the first message. */
   lazy?: boolean;
+  /** Credit cap of this session in AIU (spec 011); unset = no cap. */
+  maxAiCredits?: number;
   /** Restored from a saved Allow edits: it starts in Ask first (spec 003 FR-021). */
   permDowngraded?: boolean;
   /** The folder is hidden from the office (it keeps its saved sessions). */
@@ -34,9 +36,19 @@ export interface AgentInfo {
 
 /** Choices for a new session. */
 export interface SessionOptions {
+  /** AI-credit cap for the session (AIU). `null` = explicitly no cap; unset = the folder's saved cap, else the global default (spec 011). */
+  maxAiCredits?: number | null;
   permMode?: PermMode;
   model?: string;
   effort?: string;
+}
+
+/** What the user chose for a session that reached its credit cap (spec 011). */
+export type LimitChoice = { kind: 'add'; credits: number } | { kind: 'set'; credits: number } | { kind: 'unset' } | { kind: 'cancel' };
+
+export interface AppSettingsView {
+  /** Default cap (AIU) applied to new sessions; unset = none. */
+  defaultMaxAiCredits?: number;
 }
 
 export interface ModelChoice {
@@ -174,6 +186,12 @@ export interface DurbarApi {
   setFolderHidden?(id: string, hidden: boolean): Promise<{ ok: boolean }>;
   /** Remove the folder of agent `id`: ends its sessions and forgets the folder. */
   removeFolder?(id: string): Promise<{ ok: boolean; removedIds: string[] }>;
+
+  /** Credit caps (spec 011). `credits: null` removes the cap. */
+  getSettings?(): Promise<AppSettingsView>;
+  setDefaultCap?(credits: number | null): Promise<{ ok: boolean; defaultMaxAiCredits?: number }>;
+  setCap?(id: string, credits: number | null): Promise<{ ok: boolean; error?: string; maxAiCredits?: number }>;
+  resolveLimit?(id: string, requestId: string, choice: LimitChoice): Promise<{ ok: boolean; error?: string }>;
 
   /** Global MCP settings (spec 019). */
   mcpState?(): Promise<McpState>;

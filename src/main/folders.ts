@@ -5,6 +5,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { parseCap } from '../shared/credits';
 
 export type SavedPermMode = 'read-only' | 'ask' | 'allow';
 
@@ -17,6 +18,8 @@ export interface SavedFolder {
   closed?: boolean;
   model?: string;
   effort?: string;
+  /** Per-session credit cap (AIU) for this folder's sessions (spec 011); a plain number. */
+  maxAiCredits?: number;
 }
 
 /**
@@ -54,6 +57,7 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       closed: o.closed === true ? true : undefined,
       model: typeof o.model === 'string' && o.model.length <= 100 ? o.model : undefined,
       effort: typeof o.effort === 'string' && EFFORTS.has(o.effort) ? o.effort : undefined,
+      maxAiCredits: parseCap(o.maxAiCredits),
     });
     if (out.length >= MAX_FOLDERS) break;
   }
@@ -84,7 +88,7 @@ export class FolderStore {
   /** Adds the folder, or refreshes its mode/model when it is already saved (the hidden flag is kept). */
   upsert(entry: Omit<SavedFolder, 'hidden'> & { hidden?: boolean }): void {
     const cur = this.get(entry.workspace);
-    if (cur) Object.assign(cur, { permMode: persistable(entry.permMode), model: entry.model, effort: entry.effort });
+    if (cur) Object.assign(cur, { permMode: persistable(entry.permMode), model: entry.model, effort: entry.effort, maxAiCredits: parseCap(entry.maxAiCredits) });
     else this.folders.push({ ...entry, permMode: persistable(entry.permMode), hidden: entry.hidden === true });
     this.save();
   }
@@ -93,6 +97,15 @@ export class FolderStore {
     const cur = this.get(workspace);
     if (!cur) return false;
     cur.hidden = hidden;
+    this.save();
+    return true;
+  }
+
+  /** Remember the credit cap for this folder (undefined/invalid = no cap). */
+  setMaxAiCredits(workspace: string, cap: unknown): boolean {
+    const cur = this.get(workspace);
+    if (!cur) return false;
+    cur.maxAiCredits = parseCap(cap);
     this.save();
     return true;
   }

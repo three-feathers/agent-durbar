@@ -15,7 +15,7 @@ export interface StartOptions {
   model?: string;
   /** For model 'auto': routing preference ('efficiency' is the cheapest). */
   autoTier?: 'efficiency' | 'balance' | 'intelligence';
-  /** Soft cap on AI credits for this session, if the runtime supports it. */
+  /** Cap on AI credits for this session (treated as AIU), if the runtime supports it. Soft until verified (spec 011 FR-015). */
   maxAiCredits?: number;
   /** Resume an existing session id (disk-backed). */
   resumeSessionId?: string;
@@ -205,6 +205,23 @@ export interface UserEvent extends BaseEvent {
   attachments?: Attachment[];
 }
 
+/**
+ * AI-credit cap of the session (spec 011). `exhausted`: the runtime reached the cap and waits for the user's decision
+ * (`requestId` answers it); `changed`: the cap now in force (`null` = none); `resolved`: the decision was taken (any client).
+ * Never tied to a sub-agent: the cap belongs to the session.
+ */
+export interface LimitEvent extends BaseEvent {
+  type: 'limit';
+  phase: 'exhausted' | 'changed' | 'resolved';
+  requestId?: string;
+  /** Cap in force (AI credits, treated as AIU), or null when there is none. */
+  maxAiCredits?: number | null;
+  /** Credits used in the current accounting window (exhausted only). */
+  usedAiCredits?: number;
+  /** The chosen action (resolved only): add | set | unset | cancel. */
+  action?: string;
+}
+
 export type AgentEvent =
   | UserEvent
   | StatusEvent
@@ -216,7 +233,10 @@ export type AgentEvent =
   | SubagentEvent
   | UsageEvent
   | ContextEvent
-  | McpStatusEvent;
+  | McpStatusEvent
+  | LimitEvent;
+
+export type LimitAction = { kind: 'add'; credits: number } | { kind: 'set'; credits: number } | { kind: 'unset' } | { kind: 'cancel' };
 
 export type Unsubscribe = () => void;
 
@@ -235,6 +255,10 @@ export interface AgentAdapter {
   resolvePermission?(sessionId: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean): void;
   /** Forget one "Approve for this session" grant. Optional. */
   revokeGrant?(sessionId: string, key: string): void;
+  /** Change (or with `null` remove) the credit cap of a running session. Optional: adapters that cannot enforce a cap omit it (spec 011). */
+  setCap?(sessionId: string, credits: number | null): Promise<void>;
+  /** Answer a "limit reached" request: add credits, set a new cap, remove the cap or cancel the blocked request. Optional. */
+  resolveLimit?(sessionId: string, requestId: string, action: LimitAction): Promise<void>;
   /** Switch one MCP server on or off in a running session (spec 019). Optional. */
   setMcpEnabled?(sessionId: string, name: string, enabled: boolean): Promise<void>;
   /** Subscribe to normalized events from all sessions of this adapter. */
