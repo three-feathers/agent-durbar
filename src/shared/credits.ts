@@ -4,18 +4,33 @@
  * Numbers only: nothing here touches content, tokens or secrets.
  */
 
-/** Upper bound for a cap (AIU). Anything above is refused as a typo. */
+/** Upper bound for a cap (AI credits). Anything above is refused as a typo. */
 export const MAX_CAP = 1_000_000;
 
-/** A usable cap: finite number in (0, MAX_CAP], rounded to 3 decimals (the precision the UI shows). Otherwise undefined = no cap. */
-export function parseCap(v: unknown): number | undefined {
+/** The smallest cap the runtime accepts (GitHub docs and the runtime: "Minimum session limit is 30 AI credits"). 1 credit = USD 0.01. */
+export const MIN_CAP = 30;
+
+const num = (v: unknown): number | undefined => {
   const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v;
-  if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0 || n > MAX_CAP) return undefined;
-  const r = Math.round(n * 1000) / 1000;
+  return typeof n === 'number' && Number.isFinite(n) ? n : undefined;
+};
+
+/** A usable cap: finite number in [MIN_CAP, MAX_CAP], rounded to 2 decimals. Otherwise undefined = no cap. */
+export function parseCap(v: unknown): number | undefined {
+  const n = num(v);
+  if (n === undefined || n < MIN_CAP || n > MAX_CAP) return undefined;
+  return Math.round(n * 100) / 100;
+}
+
+/** An amount of credits to add to a cap: finite number in (0, MAX_CAP], 2 decimals. */
+export function parseAmount(v: unknown): number | undefined {
+  const n = num(v);
+  if (n === undefined || n <= 0 || n > MAX_CAP) return undefined;
+  const r = Math.round(n * 100) / 100;
   return r > 0 ? r : undefined;
 }
 
-/** Settings file content (`durbar-settings.json`): only the global default cap for new sessions. */
+/** Settings file content (`durbar-settings.json`): only the global default cap (AI credits) for new sessions. */
 export interface AppSettings {
   defaultMaxAiCredits?: number;
 }

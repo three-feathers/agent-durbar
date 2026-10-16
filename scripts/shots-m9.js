@@ -5,7 +5,7 @@
  *   M9_OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
  *     DURBAR_DRIVER=$PWD/scripts/shots-m9.js xvfb-run -a npx electron . --no-sandbox
  *
- * Besides the pictures it asserts: Omar (cap 0.02) is "Limit reached" with the inline notice, sending is refused, "Add credits"
+ * Besides the pictures it asserts: Omar (cap 30) is "Limit reached" with the inline notice, sending is refused, "Add credits"
  * lets him continue, the cap chip shows used / cap, and the card shows used/cap AIU. Exits non-zero (driver failure) on a miss.
  */
 const path = require('path');
@@ -21,12 +21,12 @@ module.exports = async (ctx) => {
     ctx.win.setContentSize(w, h);
     await ctx.sleep(2500);
     assert.ok(await ctx.waitFor(`document.querySelector('[data-id="sim-11"].is-waiting, [data-id="sim-11"].card.is-waiting')`, 8000), 'Omar reaches the credit limit');
-    assert.match(await text('[data-id="sim-1"]'), /\/0\.50 AIU/, 'card shows used/cap');
+    assert.match(await text('[data-id="sim-1"]'), /\/50 AIU/, 'card shows used/cap');
     assert.match(await text('[data-id="sim-11"]'), /Limit reached/, 'card state is Limit reached');
     await shot('office-caps', w, h);
     await click('#stage [data-id="sim-11"]'); await ctx.sleep(700);
     assert.ok(await ctx.js(`!!document.querySelector('.note.limit .limit-amt')`), 'inline limit notice');
-    assert.match(await text('#capChip'), /\/ 0\.015 AIU/, 'cap chip shows used / cap');
+    assert.match(await text('#capChip'), /\/ 30 AIU/, 'cap chip shows used / cap');
     await shot('limit-reached', w, h);
     // sending is refused while the question is open
     await ctx.js(`(()=>{const t=document.getElementById('msgInput');t.value='hello';t.dispatchEvent(new Event('input'));document.getElementById('sendBtn').click();})()`);
@@ -35,7 +35,7 @@ module.exports = async (ctx) => {
     // raise the cap and continue
     await click('.note.limit .btn.primary'); await ctx.sleep(1800);
     assert.ok(await ctx.js(`!document.querySelector('.note.limit:not(.settled)')`), 'notice is settled');
-    assert.match(await text('#capChip'), /\/ 0\.03 AIU/, 'cap raised by the amount (default = the cap)');
+    assert.match(await text('#capChip'), /\/ 60 AIU/, 'cap raised by the amount (default = the cap)');
     await shot('limit-continued', w, h);
     // cap dialog from the chip
     await click('#capChip'); await ctx.sleep(300);

@@ -33,8 +33,9 @@ const $ = id => document.getElementById(id);
 const fmtTok = n => n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e4?Math.round(n/1e3)+'k':n>=1e3?(n/1e3).toFixed(1)+'k':String(n);
 /* AI-credit cap (spec 011): AIU as reported by the runtime; the cap is the session's, so helper cards show their own usage only. */
 const capOf=a=>{const c=a&&!a.parent&&a.info&&a.info.maxAiCredits;return c>0?c:0;};
-const capDigits=c=>Math.round(c*100)===c*100?2:3;
-const fmtCap=n=>n>=100?String(Math.round(n)):(Math.round(n*100)===n*100?n.toFixed(2):n.toFixed(3));
+const MIN_CAP=30; /* the runtime's minimum session limit, AI credits (1 credit = USD 0.01; AIU as reported = credits per GitHub docs) */
+const capDigits=()=>2;
+const fmtCap=n=>Number.isInteger(n)?String(n):n.toFixed(2);
 function usageShort(a){const u=a.usage; if(!u||!u.calls)return ''; const c=capOf(a); return c?fmtTok(u.inT+u.outT)+' · '+(u.nano/1e9).toFixed(capDigits(c))+'/'+fmtCap(c)+' AIU':fmtTok(u.inT+u.outT)+' tok · '+(u.nano/1e9).toFixed(2)+' AIU';}
 function usageLong(a){const u=a.usage; if(!u||!u.calls)return ''; const c=capOf(a); return u.calls+' calls · '+fmtTok(u.inT)+' in / '+fmtTok(u.outT)+' out tokens · '+(u.nano/1e9).toFixed(3)+' AIU'+(c?' of '+fmtCap(c)+' cap':'');}
 
@@ -1044,7 +1045,7 @@ function capChipHTML(a){
   const c=capOf(a),used=a.usage?a.usage.nano/1e9:0,pct=c?Math.min(100,Math.round(used/c*100)):0;
   const cls=!c?'unk':a.limit?'high':pct>=80?'warn':'ok';
   const text=c?used.toFixed(capDigits(c))+' / '+fmtCap(c)+' AIU':'No cap';
-  const title=c?'Credit cap: '+used.toFixed(3)+' of '+fmtCap(c)+' AIU used by this session ('+pct+'%). AIU as reported by the Copilot runtime; the cap may be overshot by one model call. Click to change or remove it.':'No credit cap for this session. Click to set one (AIU, as reported by the Copilot runtime).';
+  const title=c?'Credit cap: '+used.toFixed(2)+' of '+fmtCap(c)+' AIU used by this session ('+pct+'%). AIU as reported by the Copilot runtime. Soft cap: checked after each model response, so one response can overshoot it. Click to change or remove it.':'No credit cap for this session. Click to set one (min 30 AIU, as reported by the Copilot runtime).';
   return `<button class="ctxchip capchip ${cls}" id="capChip" type="button" title="${esc(title)}"><span class="bar" aria-hidden="true"><i style="width:${c?pct:0}%"></i></span><span>${esc(text)}</span></button>`;
 }
 function updateCapChip(a){
@@ -1057,8 +1058,8 @@ function openCapDialog(a){
   const cur=capOf(a);
   const d=document.createElement('div');d.id='capDlg';d.className='dlg-ov';
   d.innerHTML=`<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="cdT"><h3 id="cdT">Credit cap for ${esc(a.name)}</h3>
-   <p class="dsub">The most AI credits (AIU, as the Copilot runtime reports them) this session may use. When it is reached the agent stops and asks you. It is <b>soft</b>: one model call can go past it.</p>
-   <label>Cap (AIU)<input id="cdVal" type="number" min="0.001" step="0.01" placeholder="No cap" value="${cur||''}"></label>
+   <p class="dsub">The most AI credits this session may use (1 credit = USD 0.01; shown as AIU, the unit the Copilot runtime reports). When it is reached the agent stops and asks you. It is a <b>soft</b> cap: it is checked after each model response, so one response can go past it. The minimum is ${MIN_CAP}.</p>
+   <label>Cap (AIU)<input id="cdVal" type="number" min="${MIN_CAP}" step="1" placeholder="No cap" value="${cur||''}"></label>
    <p class="derr" id="cdErr" role="alert" hidden></p>
    <div class="dbtn"><button class="btn" id="cdCancel" type="button">Cancel</button><button class="btn" id="cdNone" type="button">Remove cap</button><button class="btn primary" id="cdSave" type="button">Save</button></div></div>`;
   document.body.appendChild(d);
@@ -1069,7 +1070,7 @@ function openCapDialog(a){
     toast(esc(a.name)+': '+(v===null?'no credit cap.':'credit cap <b>'+fmtCap(v)+' AIU</b>.'),3200);
   };
   $('cdCancel').onclick=closeCapDlg;$('cdNone').onclick=()=>apply(null);
-  $('cdSave').onclick=()=>{const v=parseFloat($('cdVal').value);if(!(v>0)||v>1e6){const er=$('cdErr');er.textContent='Enter a number above 0, or use Remove cap.';er.hidden=false;return;}apply(Math.round(v*1000)/1000);};
+  $('cdSave').onclick=()=>{const v=parseFloat($('cdVal').value);if(!(v>=MIN_CAP)||v>1e6){const er=$('cdErr');er.textContent='Enter a number from '+MIN_CAP+' (the runtime minimum), or use Remove cap.';er.hidden=false;return;}apply(Math.round(v*100)/100);};
   d.addEventListener('click',e=>{if(e.target===d)closeCapDlg();});
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeCapDlg();}if(e.key==='Enter'&&e.target.id==='cdVal')$('cdSave').click();});
   $('cdVal').focus();
@@ -1081,9 +1082,9 @@ function showLimit(a,e){
   const max=e.maxAiCredits||capOf(a),used=e.usedAiCredits!=null?e.usedAiCredits:(a.usage?a.usage.nano/1e9:0);
   const n=document.createElement('div');n.className='note perm limit';n.setAttribute('role','group');n.setAttribute('aria-label','Credit limit reached');
   n.innerHTML='<b>Credit limit reached:</b> <span class="psum"></span><span class="pstate"></span>';
-  n.querySelector('.psum').textContent='used '+fmtCap(Math.round(used*1000)/1000)+' of '+fmtCap(max)+' AIU. The agent waits for you.';
+  n.querySelector('.psum').textContent='used '+used.toFixed(2)+' of '+fmtCap(max)+' AIU. The agent waits for you.';
   const row=document.createElement('div');row.className='note-actions';
-  const amt=document.createElement('input');amt.type='number';amt.min='0.001';amt.step='0.01';amt.value=String(max||0.5);amt.className='limit-amt';amt.setAttribute('aria-label','AIU to add to the cap');
+  const amt=document.createElement('input');amt.type='number';amt.min='0.01';amt.step='1';amt.value=String(max||MIN_CAP);amt.className='limit-amt';amt.setAttribute('aria-label','AIU to add to the cap');
   const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);return b;};
   const answer=async choice=>{
     const r=await bridge.resolveLimit(a.id,e.requestId,choice).catch(err=>({ok:false,error:String(err&&err.message||err)}));
@@ -1091,7 +1092,7 @@ function showLimit(a,e){
     settleLimit(a,choice.kind);
   };
   row.appendChild(amt);
-  mk('Add credits','primary','Raise the cap by this many AIU and let the agent continue',()=>{const v=parseFloat(amt.value);if(!(v>0)){amt.focus();return;}answer({kind:'add',credits:Math.round(v*1000)/1000});});
+  mk('Add credits','primary','Raise the cap by this many AIU and let the agent continue',()=>{const v=parseFloat(amt.value);if(!(v>0)){amt.focus();return;}answer({kind:'add',credits:Math.round(v*100)/100});});
   mk('Remove cap','session','Remove the cap and let the agent continue',()=>answer({kind:'unset'}));
   mk('Stop here','danger','Cancel the blocked request. The agent is ready for your next message (the cap stays).',()=>answer({kind:'cancel'}));
   n.appendChild(row);
@@ -1377,7 +1378,7 @@ function newSession(a0){
   $('sdGo').onclick=async()=>{
     if($('sdPerm').value==='allow'&&!(await confirmAllow(roomOf(a).name)))return;
     const opts={permMode:$('sdPerm').value,model:$('sdModel').value,effort:$('sdEff').hidden?undefined:($('sdEff').value||undefined)};
-    if($('sdCap')){const cv=parseFloat($('sdCap').value);opts.maxAiCredits=cv>0&&cv<=1e6?Math.round(cv*1000)/1000:null;}
+    if($('sdCap')){const cv=parseFloat($('sdCap').value);opts.maxAiCredits=cv>=MIN_CAP&&cv<=1e6?Math.round(cv*100)/100:null;}
     $('sdGo').disabled=true;$('sdGo').textContent='Starting…';
     const r=await bridge.newSession(a.id,opts);
     closeSessDlg();

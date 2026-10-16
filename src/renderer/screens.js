@@ -79,8 +79,8 @@
     let app={};
     if(X.bridge.getSettings){try{app=(await X.bridge.getSettings())||{};}catch(e){app={};}}
     const capSec=X.bridge.setDefaultCap?`<section class="scr-sec" aria-labelledby="capH"><h3 id="capH">Credit cap</h3>
-        <p class="scr-note">The default cap, in AIU (as the Copilot runtime reports AI credits), given to <b>new</b> sessions. Empty means no cap. Each session can change its own cap from its chat header; a session that reaches its cap stops and asks you. The cap is <b>soft</b>: one model call can go past it, and it is not yet verified against a real account (see spec 011).</p>
-        <div class="scr-tools"><label class="capf">Default cap (AIU)<input id="capDef" type="number" min="0.001" step="0.01" placeholder="No cap" value="${app.defaultMaxAiCredits||''}"></label><button class="btn primary" type="button" id="capSave">Save</button><span class="scr-note small" id="capMsg" role="status"></span></div></section>`:'';
+        <p class="scr-note">The default cap, in AI credits (shown as AIU, the unit the Copilot runtime reports; 1 credit = USD 0.01), given to <b>new</b> sessions. Minimum 30 (the runtime refuses less); empty means no cap. Each session can change its own cap from its chat header; a session that reaches its cap stops and asks you. The cap is <b>soft</b>: it is checked after each model response, so one response can go past it. The stop-and-ask flow follows GitHub's documentation and is not yet verified on a real account (see spec 011).</p>
+        <div class="scr-tools"><label class="capf">Default cap (AIU)<input id="capDef" type="number" min="30" step="1" placeholder="No cap" value="${app.defaultMaxAiCredits||''}"></label><button class="btn primary" type="button" id="capSave">Save</button><span class="scr-note small" id="capMsg" role="status"></span></div></section>`:'';
     r.innerHTML=head('Settings')+`<div class="scr-body">${capSec}
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH">MCP servers</h3>
         <p class="scr-note">MCP servers give agents extra tools. They are set once here and used by <b>every agent</b> that starts afterwards; each agent can switch single servers off from its own header (MCP button).</p>
@@ -97,8 +97,8 @@
     wireHead();
     if($('capSave'))$('capSave').onclick=async()=>{
       const v=parseFloat($('capDef').value),msg=$('capMsg');
-      if($('capDef').value.trim()!==''&&!(v>0&&v<=1e6)){msg.textContent='Enter a number above 0, or leave it empty for no cap.';return;}
-      const res=await X.bridge.setDefaultCap($('capDef').value.trim()===''?null:Math.round(v*1000)/1000);
+      if($('capDef').value.trim()!==''&&!(v>=30&&v<=1e6)){msg.textContent='Enter a number from 30 (the runtime minimum), or leave it empty for no cap.';return;}
+      const res=await X.bridge.setDefaultCap($('capDef').value.trim()===''?null:Math.round(v*100)/100);
       if(X.onSettings)X.onSettings({defaultMaxAiCredits:res&&res.defaultMaxAiCredits});
       msg.textContent=res&&res.defaultMaxAiCredits?'Saved: new sessions start with a cap of '+res.defaultMaxAiCredits+' AIU.':'Saved: new sessions start without a cap.';
     };

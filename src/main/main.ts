@@ -16,7 +16,7 @@ import { McpStore } from './mcpstore';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { devEnv, devWarning } from './devhooks';
 import { SettingsStore } from './settings';
-import { parseCap } from '../shared/credits';
+import { parseAmount, parseCap } from '../shared/credits';
 
 // Developer/test hooks (spec 010): ignored in packaged builds unless DURBAR_DEV=1. Read hooks only from `dev`.
 const dev = devEnv(process.env, app.isPackaged);
@@ -342,7 +342,7 @@ ipcMain.handle('agents:setCap', async (_e, id: unknown, credits: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false, error: 'unknown agent' };
   const cap = credits === null ? undefined : parseCap(credits);
-  if (credits !== null && cap === undefined) return { ok: false, error: 'The cap must be a number above 0 (AIU).' };
+  if (credits !== null && cap === undefined) return { ok: false, error: 'The cap must be a number of at least 30 AI credits (the runtime minimum).' };
   try {
     if (adapter.isLive(a.id)) await adapter.setCap(a.id, cap ?? null); // not started yet: applied when the session starts
     a.maxAiCredits = cap;
@@ -357,8 +357,9 @@ ipcMain.handle('agents:resolveLimit', async (_e, id: unknown, requestId: unknown
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a || typeof requestId !== 'string' || !adapter.isLive(a.id)) return { ok: false, error: 'unknown agent' };
   const c = (choice && typeof choice === 'object' ? choice : {}) as Record<string, unknown>;
-  const credits = parseCap(c.credits);
-  const action = c.kind === 'add' && credits ? { kind: 'add' as const, credits } : c.kind === 'set' && credits ? { kind: 'set' as const, credits } : c.kind === 'unset' ? { kind: 'unset' as const } : c.kind === 'cancel' ? { kind: 'cancel' as const } : undefined;
+  const add = parseAmount(c.credits);
+  const setTo = parseCap(c.credits);
+  const action = c.kind === 'add' && add ? { kind: 'add' as const, credits: add } : c.kind === 'set' && setTo ? { kind: 'set' as const, credits: setTo } : c.kind === 'unset' ? { kind: 'unset' as const } : c.kind === 'cancel' ? { kind: 'cancel' as const } : undefined;
   if (!action) return { ok: false, error: 'Invalid choice.' };
   try {
     await adapter.resolveLimit(a.id, requestId, action);

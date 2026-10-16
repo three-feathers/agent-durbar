@@ -82,13 +82,13 @@ try {
   try {
     const f3 = path.join(d3, 'f.json');
     const st = new FolderStore(f3);
-    st.upsert({ workspace: abs('c1'), permMode: 'ask', maxAiCredits: 0.5 });
-    assert.strictEqual(new FolderStore(f3).load()[0].maxAiCredits, 0.5, 'cap survives a restart');
-    assert.ok(st.setMaxAiCredits(abs('c1'), '2.25'));
-    assert.strictEqual(new FolderStore(f3).load()[0].maxAiCredits, 2.25);
+    st.upsert({ workspace: abs('c1'), permMode: 'ask', maxAiCredits: 45 });
+    assert.strictEqual(new FolderStore(f3).load()[0].maxAiCredits, 45, 'cap survives a restart');
+    assert.ok(st.setMaxAiCredits(abs('c1'), '60.25'));
+    assert.strictEqual(new FolderStore(f3).load()[0].maxAiCredits, 60.25);
     assert.ok(st.setMaxAiCredits(abs('c1'), -1), 'invalid clears');
     assert.strictEqual(new FolderStore(f3).load()[0].maxAiCredits, undefined);
-    assert.ok(!st.setMaxAiCredits(abs('nope'), 1));
+    assert.ok(!st.setMaxAiCredits(abs('nope'), 50));
     assert.strictEqual(parseSavedFolders(JSON.stringify({ folders: [{ workspace: abs('x'), maxAiCredits: 'lots' }, { workspace: abs('y'), maxAiCredits: 1e9 }] })).map((f) => f.maxAiCredits).join(','), ',');
   } finally {
     fs.rmSync(d3, { recursive: true, force: true });

@@ -34,7 +34,7 @@ I can set a maximum number of credits when I add a folder or new session; when i
 
 **Acceptance Scenarios**:
 
-1. **Given** a session with cap 0.05, **When** usage reaches it, **Then** the agent shows "Credit cap reached", does not continue silently, and offers "Add credits", "Set new cap", "End session". *(needs real verification: feature 013)*
+1. **Given** a session with cap 30, **When** usage reaches it, **Then** the agent shows "Credit cap reached", does not continue silently, and offers "Add credits", "Set new cap", "End session". *(needs real verification: feature 013)*
 2. **Given** a cap and a pending permission request, **When** the cap is reached, **Then** the request is denied and the state is consistent (no stuck "working").
 3. **Given** no cap is set, **When** I start a session, **Then** behavior is unchanged and the UI says "no cap" (constitution III: say what is and is not limited).
 
@@ -84,10 +84,11 @@ Next to the model picker I see the credit multiplier and an estimate of cost rel
 
 ## Clarifications (2026-10-16, audit gap 1; decided by the maintainer's brief, no open questions left for this slice)
 
-- **Q: Unit shown?** AIU, as the runtime reports it in `assistant.usage` (`totalNanoAiu / 1e9`). The SDK names its cap "AI Credits". The app treats **1 AIU = 1 AI Credit** for the cap, because the SDK documents no other conversion. `[UNVERIFIED]` against a real session until recorded under "Verification" below; the UI tooltip says "as reported by the Copilot runtime".
+- **Q: Unit shown?** AIU, as the runtime reports it in `assistant.usage` (`totalNanoAiu / 1e9`). The SDK names its cap "AI Credits". GitHub's docs say 1 AI credit = USD 0.01 and show `totalNanoAiu / 1e9` as the credit count (with the caveat that billing is the source of truth), so the app treats **1 AIU = 1 AI Credit** and says "as reported by the Copilot runtime" in tooltips. `[UNVERIFIED]` against a real bill.
+- **Q: Minimum cap?** **30 AI credits**, enforced by the runtime ("Minimum session limit is 30 AI credits", seen on a real `session.create` and `session.options.update`, and in GitHub's docs). The app enforces the same minimum in `parseCap` (UI inputs, saved caps, default cap) so a cap can never fail session creation; the *Add credits* amount only has to be above 0 (the resulting cap is above 30).
 - **Q: Default cap?** None (unchanged behavior). A **global default** can be set in Settings; it is applied when a session is created (new folder, new session, restored folder without its own cap). Empty = no cap.
 - **Q: Persisted?** The per-folder cap and the global default are persisted as plain numbers (FR-007). Usage totals are not persisted (stay backlog).
-- **Q: Hard or soft?** Soft until verified: the runtime checks the limit before a model call, so one call may overshoot (FR-006). The UI says "limit reached", never "never exceeds".
+- **Q: Hard or soft?** **Soft**, per GitHub's docs: usage is checked after each model response returns, so one response can overshoot, and the runtime blocks the *next* model call (FR-006). The UI says "limit reached", never "never exceeds".
 - **Q: Which events?** SDK 1.0.22: `SessionConfig.sessionLimits.maxAiCredits`, event `session_limits_exhausted.requested {requestId, maxAiCredits, usedAiCredits}`, answered with `session.rpc.ui.handlePendingSessionLimitsExhausted({requestId, response:{action: add|set|unset|cancel, additionalAiCredits?, maxAiCredits?}})`, `session.session_limits_changed`, and `session.rpc.options.update({sessionLimits})` to change the cap on a live session. A consumer must `rpc.events.registerInterest({eventType:'session_limits_exhausted.requested'})` or the runtime does not wait for one.
 
 ## Changes
@@ -100,10 +101,10 @@ New or changed requirements (they extend FR-003, FR-004, FR-006, FR-008 and User
 - **FR-010** A normalized event `limit` (`phase: 'exhausted' | 'changed' | 'resolved'`, `requestId?`, `maxAiCredits?: number | null`, `usedAiCredits?`, `action?`) is emitted by the mapper from `session_limits_exhausted.requested`, `session.session_limits_changed`, `session_limits_exhausted.completed`. Sub-agent tagging is ignored: a limit is the session's.
 - **FR-011** The adapter registers interest in `session_limits_exhausted.requested` (best effort; failure is logged to the debug sink only) and exposes `setCap(sessionId, credits | null)` (live session: `options.update`) and `resolveLimit(sessionId, requestId, action)` (`add` N, `set` N, `unset`, `cancel`). Stop (interrupt) and End answer a pending limit request with `cancel` so nothing waits forever.
 - **FR-012** The main process keeps a per-agent cap (`AgentInfo.maxAiCredits`), a global default in `durbar-settings.json` (numbers only, in userData) and the per-folder cap in the saved folder list. IPC: `settings:get`, `settings:setDefaultCap`, `agents:setCap`, `agents:resolveLimit`. All arguments are validated; unknown agents are ignored.
-- **FR-013** UI: agent cards show `used/cap AIU` (for example `0.12/0.50 AIU`) next to the token count; with no cap they show `used AIU` as before. The chat header shows a **cap chip** (`0.12 / 0.50 AIU` or `No cap`, with a bar when capped) that opens a small dialog to set or remove the cap. The new-session dialog has a cap field pre-filled with the global default. Settings has a "Credit cap" section for the global default.
+- **FR-013** UI: agent cards show `used/cap AIU` (for example `12.40/50 AIU`) next to the token count; with no cap they show `used AIU` as before. The chat header shows a **cap chip** (`12.40 / 50 AIU` or `No cap`, with a bar when capped) that opens a small dialog to set or remove the cap. The new-session dialog has a cap field pre-filled with the global default. Settings has a "Credit cap" section for the global default.
 - **FR-014** When the limit is exhausted the agent card state is **Limit reached** (attention state, listed first like Waiting), the chat shows an inline notice "Credit limit reached: used X of Y AIU. The agent waits for you." with **Add credits** (amount field, default = current cap), **Remove cap** and **Stop here** (cancel). After Add/Remove the agent continues (`working`); after Stop here it is Ready again with a note. Sending a message while a limit request is pending is refused with a clear message.
-- **FR-015** `[UNVERIFIED]` What the real runtime does after `cancel` (assumed: the blocked model request is cancelled and the turn ends) and whether the cap is checked before or after a call. Recorded in feature 013 once checked with one tiny real prompt (see Verification).
-- **FR-016** The simulator supports caps: some agents start with a cap (`DURBAR_SIM=15`: Ada 0.50, Mira 0.25, Omar 0.02 which exhausts during its first turn), enforce it from simulated usage, and emit `limit` events; `setCap`, `resolveLimit` and the settings bridge work in memory. No credits are spent.
+- **FR-015** `[UNVERIFIED]` What the real runtime does after `cancel` (assumed: the blocked model request is cancelled and the turn ends) and the real shape of the exhausted event. Reaching the minimum cap of 30 credits costs about USD 0.30 (~150 tiny prompts), so it was **not** exercised (see Verification).
+- **FR-016** The simulator supports caps: some agents start with a cap (`DURBAR_SIM=15`: Ada 50, Mira 30, Omar 30 with 11 AIU per simulated call, so he exhausts it during his first turn), enforce it from simulated usage, and emit `limit` events; `setCap`, `resolveLimit` and the settings bridge work in memory. No credits are spent.
 - **FR-017** Tests (no credits): mapper fixtures for the three events (`scripts/test-events.ts`), `parseCap` and the settings parser (`scripts/test-credits.ts`), saved-folder cap round trip (`scripts/test-folders.ts`).
 - **Packaging**: the SDK dependency is pinned **exactly** (`"@github/copilot-sdk": "1.0.22"`, no caret) because `sessionLimits` and the `ui.handlePending*` calls are marked `@experimental`; upgrading is a deliberate step documented in CONTRIBUTING.md ("Upgrading the Copilot SDK").
 
@@ -111,4 +112,8 @@ Still backlog: office-wide total in the header, per-folder totals, persisted usa
 
 ### Verification
 
-To be filled in after the one tiny real prompt (or marked "not run" with the reason), see `tasks.md` T020.
+Run 2026-10-16 (Europe/Madrid) with `npm run verify:cap` against the real runtime (SDK 1.0.22, `auto` model, no prompt sent, **0 AIU spent**):
+
+- `session.create` with `maxAiCredits: 0.001` failed: `Minimum session limit is 30 AI credits.` (so the minimum, FR-009/Q above, is a fact, not an assumption).
+- A real session with cap 30 starts; `setCap(60)` and `setCap(null)` each produced one `session.session_limits_changed` event, normalized to `limit {phase:'changed', max:60}` and `max:null`; `setCap(5)` is refused by the runtime with the same minimum message (the app never sends it: `parseCap`).
+- **Not verified, on purpose:** the exhausted flow (`session_limits_exhausted.requested`, the answers add/set/unset/cancel, behaviour after `cancel`). It needs 30 real credits (about USD 0.30, ~150 tiny prompts). The handshake is implemented from the SDK types and GitHub's documentation and covered by mapper fixtures and the simulator only. The single real prompt allowed for this task was therefore **not used**. Re-run once someone is willing to spend that, and record the result here.

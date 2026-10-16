@@ -48,8 +48,9 @@ interface SimAgent {
   limitReq?: string;
 }
 
-/** Simulated caps (AIU) by agent name: Omar's is tiny, so he reaches it in his first turn (spec 011 FR-016). */
-const SIM_CAPS: Record<string, number> = { Ada: 0.5, Mira: 0.25, Omar: 0.015 };
+/** Simulated caps (AI credits, min 30 like the runtime) by agent name; Omar's calls are expensive (11 AIU each), so he reaches 30 in his first turn (spec 011 FR-016). */
+const SIM_CAPS: Record<string, number> = { Ada: 50, Mira: 30, Omar: 30 };
+const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
 
 (function () {
   const ROOM_DEFS: Record<string, string> = {
@@ -168,7 +169,7 @@ const SIM_CAPS: Record<string, number> = { Ada: 0.5, Mira: 0.25, Omar: 0.015 };
     const MODELS = ['gpt-6-luna', 'gpt-6-luna', 'gpt-5.6-luna', 'claude-sonnet-4.6'];
     const usage = (s: SimAgent): void => {
       const model = (s.models ?? MODELS)[Math.floor(rnd() * (s.models ?? MODELS).length)];
-      const nano = Math.floor((0.004 + rnd() * 0.012) * 1e9);
+      const nano = Math.floor((SIM_EXPENSIVE[s.info.name] ?? 0.004 + rnd() * 0.012) * 1e9);
       emit({ type: 'usage', sessionId: sid(s), timestamp: now(), model, inputTokens: 1200 + Math.floor(rnd() * 6000), outputTokens: 150 + Math.floor(rnd() * 900), nanoAiu: nano, creditsStatus: 'complete' });
       s.used = (s.used ?? 0) + nano;
       const cap = s.info.maxAiCredits;
@@ -459,11 +460,11 @@ const SIM_CAPS: Record<string, number> = { Ada: 0.5, Mira: 0.25, Omar: 0.015 };
     let defaultCap: number | undefined;
     const capApi: Partial<DurbarApi> = {
       getSettings: async () => ({ defaultMaxAiCredits: defaultCap }),
-      setDefaultCap: async (c) => { defaultCap = c !== null && c > 0 ? Math.round(c * 1000) / 1000 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
+      setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setCap: async (id, c) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
-        if (c !== null && !(c > 0)) return { ok: false, error: 'The cap must be a number above 0 (AIU).' };
+        if (c !== null && !(c >= 30)) return { ok: false, error: 'The cap must be a number of at least 30 AI credits (the runtime minimum).' };
         s.info.maxAiCredits = c ?? undefined;
         emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'changed', maxAiCredits: c });
         return { ok: true, maxAiCredits: c ?? undefined };
@@ -479,7 +480,7 @@ const SIM_CAPS: Record<string, number> = { Ada: 0.5, Mira: 0.25, Omar: 0.015 };
           return { ok: true };
         }
         const cap = s.info.maxAiCredits ?? 0;
-        s.info.maxAiCredits = choice.kind === 'add' ? Math.round((cap + choice.credits) * 1000) / 1000 : choice.kind === 'set' ? choice.credits : undefined;
+        s.info.maxAiCredits = choice.kind === 'add' ? Math.round((cap + choice.credits) * 100) / 100 : choice.kind === 'set' ? choice.credits : undefined;
         emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'changed', maxAiCredits: s.info.maxAiCredits ?? null });
         emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'resolved', requestId, action: choice.kind });
         s.state = 'working';

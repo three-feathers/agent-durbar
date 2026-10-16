@@ -12,6 +12,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-assets.js",
     "smoke": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/smoke.js",
+    "verify:cap": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/verify-cap.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "npm run build && electron .",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
