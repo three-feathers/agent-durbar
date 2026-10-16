@@ -68,6 +68,7 @@ specs/001-office-view-and-densities/
 | SIM=15 @1440x900 closed: `roomy`, no overflow, min font 11px | xvfb + Electron driver (quickstart.md) | pass, 2026-10-16 |
 | SIM=15 @1280x800 closed: no overflow, min font 10.5px | same | pass, density `mini` (README table says `card`: FR-016) |
 | SIM=12 both sizes: `roomy` | same | pass |
+| No overlap / clipping / floor overflow: SIM=12 and 15 x 1440x900 and 1280x800 x 0,1,2,3,4,all rooms closed, `?closed=` by name, Close all/Open all, expanded `+N more` | `npm run check:office` | pass, 95/95, 2026-10-16 (fails on the pre-fix code) |
 | Chat open at both sizes: no page overflow, no horizontal overflow in `#chat`, strip has all agents | same | pass |
 | Chat open densities (README: `card` at 1440x900, `mini` at 1280x800) | README only | not re-run |
 | Keyed updates keep animations | README measurement | not re-run |

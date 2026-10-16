@@ -21,3 +21,13 @@ DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=/t
 
 Expected on 2026-10-16: `roomy` @1440x900 (min font 11), `mini` @1280x800 (min font 10.5), `fit: ok`, no overflow, 15 desks.
 A screenshot of the same state: `DURBAR_SHOT=/tmp/out.png DURBAR_SHOT_SIZE=1280x800 DURBAR_SIM=15 npm start`.
+
+## Overlap / clipping check (no AI credits)
+
+```bash
+npm run check:office                       # builds, runs Electron (xvfb-run on Linux without DISPLAY), exits 1 on any overlap
+OFFICE_QUICK=1 npm run check:office        # smaller matrix
+OFFICE_SHOTS=/tmp/shots OFFICE_SHOT_PREFIX=m7b npm run check:office   # also saves screenshots per combination
+```
+
+It loads `?sim=12|15&simfreeze=1[&closed=...]` at 1440x900 and 1280x800 and fails on intersecting desk cards / helper tiles / `+N more` chips / helper strips / door plates, boxes outside their room, unit or the floor, a helper strip with a background or a height that is not its content's, floor scroll, page overflow and text under 10.5px.

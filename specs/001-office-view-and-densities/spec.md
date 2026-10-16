@@ -96,20 +96,20 @@ Animations are subtle, CSS-only in compact densities and stop under reduced-moti
 ### Functional Requirements
 
 - **FR-001** `[IMPLEMENTED]` re-verified 2026-10-16: The office renders one **room** per folder/workspace file (nameplate, path, status dots) and one **desk** per top-level agent.
-- **FR-002** `[IMPLEMENTED]` re-verified 2026-10-16: The renderer picks the richest density that fits at scale 1 from `full`, `roomy`, `card`, `mini`, `micro` (candidate list in that order, each with 3 or 1 helpers shown), by rendering trial layouts into a hidden probe.
+- **FR-002** `[IMPLEMENTED]` re-verified 2026-10-16: The renderer picks the richest density that fits at scale 1 from `full`, `roomy`, `card`, `mini`, `micro` (candidate list in that order: `full` with 3 or 2 helpers shown, `roomy`/`card`/`mini`/`micro` with 3 or 1 helpers shown), by rendering trial layouts into a hidden probe.
 - **FR-003** `[IMPLEMENTED]` read: The density is computed from the unfiltered agent set so status filters do not change card shapes.
 - **FR-004** `[IMPLEMENTED]` re-verified 2026-10-16: No declared font size is below 10.5px (`styles.css`: smallest is 10.5px); measured minimum in the rendered office at SIM=15 was 10.5px (1280x800) and 11px (1440x900).
 - **FR-005** `[IMPLEMENTED]` re-verified 2026-10-16: At SIM=12 and SIM=15, at 1440x900 and 1280x800, there is no page overflow and the floor does not scroll.
 - **FR-006** `[IMPLEMENTED]` sim: Status is shown by the desk scene (typing hands, thought bubble, waving hand, `!` screen, check, mug), a coloured status word and a badge icon; never colour alone.
 - **FR-007** `[IMPLEMENTED]` sim: Waiting-for-you agents sort first, then errors, then stable order; the same for helpers inside a strip and for the agent strip in the chat (feature 005).
 - **FR-008** `[IMPLEMENTED]` sim: Top-bar status pills count top-level agents and toggle a status filter; a folder dropdown filters by room.
-- **FR-009** `[IMPLEMENTED]` sim: Helpers: `full` shows up to 3 beside the parent; compact densities show 1 or 3 (3 chosen when the layout fits, otherwise leftover space boosts agents with the most helpers) then a `+N more` chip that expands in place.
+- **FR-009** `[IMPLEMENTED]` sim: Helpers: `full` shows up to 3 beside the parent; `full` shows 3 or 2 when 3 does not fit; compact densities show 1 or 3 (3 chosen when the layout fits); leftover floor space then boosts the agents with the most helpers one step (1 -> 3, 2 -> 3, 3 -> 6 shown); the rest go behind a `+N more` chip that expands in place.
 - **FR-010** `[IMPLEMENTED]` read: List view: table of agents with helpers indented, honoring status and folder filters.
 - **FR-011** `[IMPLEMENTED]` sim: Updates are keyed: rooms, units, desks and helper tiles are matched by id; only changed text/attributes are patched; a desk scene is replaced only when status or look changes.
 - **FR-012** `[IMPLEMENTED]` read: Compact scenes use CSS-only animation (no blur filter, no SMIL); `prefers-reduced-motion` stops animation.
 - **FR-013** `[IMPLEMENTED]` read: A **Demo** toggle shows a static sample office (`demo.js`) next to live/simulated agents.
 - **FR-014** `[IMPLEMENTED]` read: Each room has a **+** to start another session in that folder (feature 006).
-- **FR-015** `[KNOWN GAP]` The 10.5px floor and the "no overflow at 15 agents" guarantees are checked by hand with screenshots/scripts, **not** by an automated test; a regression would not fail `npm test` or CI. (Task T020.)
+- **FR-015** `[IMPLEMENTED]` partly, 2026-10-16: `npm run check:office` (`scripts/check-office-overlap.js`, Electron under xvfb) automates overlap/clipping/floor-overflow/10.5px checks (FR-021) over SIM=12/15 x 1440x900/1280x800 x closed-room variants. It is **not** part of `npm test` and **not** run in CI yet (needs a display; Linux only so far). (Task T020.)
 - **FR-016** `[KNOWN GAP]` README milestone-5 table says SIM=15 at 1280x800 with the chat closed uses `card`; running it on 2026-10-16 (xvfb, frozen and unfrozen) chose `mini`. Both fit; the README table (or the layout search) drifted. Not investigated (font metrics of the headless environment may differ). (Task T021.)
 - **FR-017** `[KNOWN GAP]` In `micro` the helper figures are very small (~34px wide), and long folder names truncate the nameplate when narrow (README "Remaining").
 - **FR-018** `[KNOWN GAP]` No record exists of 15 real live sessions running at once (cost); the layout is verified on simulated agents only.
@@ -152,4 +152,6 @@ Second problem: with rooms closed (only 2 of 5 rooms open) the best candidate wa
 1. Given SIM=15 at 1440x900 with `?closed=mcp-swiss,blog,infra-notes`, when the office is laid out, then `npm run check:office` reports 0 overlaps and 0 clipped boxes, and the stage height is greater than the `roomy` layout's (the freed space is used).
 2. Given any combination listed in FR-021, the check reports 0 overlaps, no floor scroll and no helper strip with a computed background or fixed height.
 
-Tasks: T020 (automated office checks) is delivered together with T025; T026 fixes the class collision; T027 adds the `full`/2 candidate. Spec text for FR-002 and FR-009 is amended accordingly in the converge step below.
+Tasks: T020 (automated office checks) is delivered together with T025; T026 fixes the class collision; T027 adds the `full`/2 candidate. 
+
+**Converged 2026-10-16** (what was built): class `hstrip` replaces `strip` for compact helper strips (`styles.css`, `app.js` unitHTML). `CANDIDATES` is `full/3, full/2, roomy/3, card/3, card/1, mini/3, mini/1, micro/3, micro/1`; the helper cap is per layout (`HCAP`) with a per-agent boost map (`HBOOST`), grown one step at a time while the probe still fits. `npm run check:office` over 4 combinations of sim/size and every 0/1/2/3/4/all-closed room subset sample (95 checks incl. Close all / Open all clicks and an expanded `+N more`) passes; the same check run against the pre-fix `app.js`/`styles.css` fails (overlaps, helpers outside their room/unit). Screenshots: `docs/screenshots/m7b-*.png`. Not verified: macOS/Windows rendering, real (non-simulated) agents, the check in CI.

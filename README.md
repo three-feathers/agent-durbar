@@ -78,6 +78,11 @@ Specs [015](specs/015-thinking-and-subagent-activity/spec.md) to [018](specs/018
 
 ![Doors 1280x800](docs/screenshots/m7-doors-1280x800.png)
 
+**Doors fix (m7b).** A class-name collision (`.helpers.strip` vs the chat bar's `.strip`, fixed height 64px and a background) made two-row helper strips overlap the next desk row and gave strips a stray box; it is now `.hstrip`. With rooms closed the layout search also gets `full` with 2 helpers and a per-agent helper boost, so open rooms grow into the freed space (3 rooms closed at 1440x900: `full`, 714 of 810px used instead of `roomy`, 427px). `npm run check:office` (Electron under xvfb, no AI credits) checks bounding-box overlap, clipping, floor/page overflow and the 10.5px floor for SIM=12/15 at 1440x900 and 1280x800 with 0/1/2/3/4/all rooms closed; it is not in CI yet.
+
+![Doors, 3 rooms closed, 1440x900](docs/screenshots/m7b-doors-1440x900.png)
+![Doors, 3 rooms closed, 1280x800](docs/screenshots/m7b-doors-1280x800.png)
+
 **Permission mode any time.** The chat header chip and the card context menu (right click) switch Read-only / Ask first / Allow edits for that agent. It applies from the next request without restarting the session (the broker reads the mode dynamically). Switching to Allow edits asks for confirmation and, if a request is pending, offers to approve it; leaving Allow edits asks whether to forget session grants. Cards show a small mode icon; the mode is saved per folder and restored. The top-bar selector is the default for new sessions.
 
 ![Mode switch](docs/screenshots/m7-mode-switch.png)
