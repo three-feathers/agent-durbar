@@ -15,9 +15,9 @@
 ## Open
 
 - [ ] T020 Rename the `allow` mode in the UI to say what it does ("Allow all (no prompts)") in top bar, dialog, chat hint; align README. Spec delta first. [FR-010]
-- [ ] T021 Decide and implement path checks for `read` (inside the folder/workspace roots only) or verify and document that the runtime enforces it; add a test. Needs `/speckit.clarify`. [FR-011]
-- [ ] T022 Re-confirm (or do not restore) Allow-all folders after a restart; clarify first. [FR-012]
-- [ ] T023 Option to narrow shell grants (command + first argument) or make the scope visible before approving. [FR-013]
+- [ ] T021 (spec delta 2026-10-16, FR-023; implement + test) Decide and implement path checks for `read` (inside the folder/workspace roots only) or verify and document that the runtime enforces it; add a test. Needs `/speckit.clarify`. [FR-011]
+- [ ] T022 (FR-021) Re-confirm (or do not restore) Allow-all folders after a restart; clarify first. [FR-012]
+- [ ] T023 (FR-022) Option to narrow shell grants (command + first argument) or make the scope visible before approving. [FR-013]
 - [ ] T024 Switch an agent's mode from the chat header (with confirmation when moving to Allow all). [FR-014]
 - [ ] T025 Test `grantScope` with Windows paths via an injectable `path` flavor. [FR-016]
 - [ ] T026 Collision-proof request ids when `toolCallId` is missing. [Edge case]

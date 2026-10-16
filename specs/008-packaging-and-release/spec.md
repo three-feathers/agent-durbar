@@ -92,3 +92,10 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
 
 - GitHub-hosted runners and `npm pack` can fetch `@github/copilot-sdk-<target>` for a non-native architecture.
 - Users accept first-run OS warnings for an unsigned alpha.
+
+## Changes
+
+### 2026-10-16: layout check in CI (closes spec 001 FR-015 / spec 010 FR-007 for the office layout)
+
+- **FR-017** CI job `office-check` (Ubuntu only): `npm ci`, `npm run build`, then `xvfb-run -a npm run check:office` (95 combinations, simulator only, no AI credits). Measured on the maintainer's Linux box 2026-10-16: 65 s including the build, 95/95 passed, repeated runs identical. Not run on macOS/Windows (needs xvfb semantics; font metrics differ and would make the density expectations flaky). The step has `timeout-minutes: 10`.
+- `[KNOWN GAP]` The check measures layout in headless Chromium with the runner's fonts; it asserts no overlap/clipping/overflow and the 10.5px floor, **not** which density is chosen, so font differences between runners do not make it flaky.

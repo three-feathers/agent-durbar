@@ -57,3 +57,10 @@ specs/003-permissions-and-approvals/
 | Inline notes, chips, stop-while-pending UI | screenshots m5-perm-* + e2e driver `PHASES=m5` | `sim:` recorded, not re-run |
 | Allow-all naming, reads ungated, persisted allow | read against code | confirmed as gaps (FR-010..012) |
 | macOS/Windows | none | untested |
+
+## Delta 2026-10-16 (FR-021..FR-024)
+
+- `permissions.ts`: `BrokerOptions.roots` (+ `allowReadPaths(paths)` for attachments, injectable `realpath` for tests), `isInsideRoots`, read policy per mode, shell scope split into `exact` (default) and `broad` (`anyArgsScope`), `PermissionInfo.broadScopeKey/broadScopeLabel`, `resolve(requestId, approve, remember, broad)`.
+- `copilot.ts`: roots from `resolveWorkspaceCwd().folders`, attachments allowed in `send`; IPC `agents:resolvePermission(id, requestId, approve, remember, broad)`.
+- `folders.ts`: `restoreMode()`; `setPermMode`/`upsert` never persist `allow`. `main.ts`: `restoreFolders` uses it and flags `AgentInfo.permDowngraded`.
+- `app.js`: 4th button "Approve for session: any <name> arguments", confirmation when adding a folder / new session in Allow edits, toast on downgrade.

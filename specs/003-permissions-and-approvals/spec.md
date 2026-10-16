@@ -112,3 +112,14 @@ For folders I trust I can pick the mode that approves everything without prompts
 
 - The SDK calls `onPermissionRequest` for every action that needs a decision, and honors `approve-once` / `reject` with feedback.
 - The user reads a command before approving it (the summary shows the full command text).
+
+## Changes
+
+### 2026-10-16: permission gaps from the Spec Kit audit (closes FR-011, FR-012, FR-013; T021, T022, T023)
+
+**Decisions (the maintainer's brief; conservative defaults, documented).**
+
+- **FR-021 (was FR-012) Allow edits is never restored silently.** A folder saved as `allow` (old files) or set to `allow` is restored in **Ask first**; the saved list never stores `allow` again (it stores `ask`). Switching to Allow edits asks for confirmation every time (mode menu: already; top-bar "add folder" and new-session dialog: now too). A one-line toast says when a saved Allow edits was downgraded. `Read-only` and `Ask` restore as saved.
+- **FR-022 (was FR-013) Shell grants are exact by default.** "Approve for this session" on a shell request remembers **that exact command text** (label `run <command>`). When the command is a simple one (no pipes, `;`, `&&`, redirects, substitutions, newlines) and its name is a plain word that is not a shell, interpreter or privilege tool (`sh bash zsh fish dash pwsh powershell cmd node deno bun python python3 ruby perl php sudo su doas env xargs eval exec find`), the card also offers **Approve for session: any arguments of `<name>`**; only that explicit choice creates the broad grant `shell:<name>`. A broad grant never matches a command that contains shell metacharacters. Write grants are unchanged (folder of the file).
+- **FR-023 (was FR-011) Reads outside the session's roots are not free.** The SDK `read` request exposes `path` (verified in `PermissionRequestRead`, SDK 1.0.22). Roots = the session cwd plus every folder of the `.code-workspace`, plus files the user attached in this session. A read is **inside** when its resolved real path is within a root (symlinks resolved, `..` collapsed, case-insensitive on Windows). Policy: **Allow edits**: approve (the user opted into everything); **Ask first**: ask, with a session-grant scope per parent folder; **Read-only**: deny with feedback "this path is outside the session's folders". A `read` request without a path counts as outside. `[UNVERIFIED]` on a real session: whether the runtime already limits reads itself and whether it sends `read` requests for its own files (skills, `~/.copilot`); if it does, those would be asked/denied in the two stricter modes. Feature 013 records the real check.
+- **FR-024** Tests: `scripts/test-permissions.ts` covers all three (exact shell grant, explicit any-arguments grant, no match for pipes, interpreter denylist, inside/outside/symlink/`..`/missing path reads in each mode, attachments), `scripts/test-folders.ts` the restore mapping.

@@ -74,3 +74,9 @@ In **Previous sessions**, "VS Code chat history" lists chats VS Code saved for t
 
 - `code <folder>` is VS Code's documented way to open a folder (docs/research.md).
 - VS Code's chat storage layout is as described in the file header of `vscodeChat.ts` and may change.
+
+## Changes
+
+### 2026-10-16: FR-008 resolved by removing the claim
+
+README no longer says Cursor's chat history is read (the code lists only `Code`, `Code - Insiders`, `VSCodium`; Cursor's store layout was never checked). Adding Cursor honestly would need its real on-disk format; not done. T020 closed by correcting the README.

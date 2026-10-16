@@ -12,7 +12,7 @@
 
 ## Open
 
-- [ ] T020 Reconcile Cursor: add Cursor's user-data dir to `vscodeUserDirs` (with a test) or remove it from the README. [FR-008]
+- [x] T020 Reconcile Cursor: README claim removed 2026-10-16 (code unchanged; adding Cursor needs a verified store layout). [FR-008]
 - [ ] T021 Offer Insiders/VSCodium for "Open in" (clarify which binary to prefer). [FR-009]
 - [ ] T022 Run the real launch on macOS and Windows and record it. [FR-014]
 - [ ] T023 Check the reader against a real VS Code chat store (redacted sample as a new fixture) (feature 013). [FR-011]
