@@ -5,7 +5,7 @@ import * as path from 'path';
 import { COPYRIGHT, CONTRIBUTORS, OWNER, aboutPanelOptions, aboutView } from '../src/shared/about';
 
 const root = path.resolve(__dirname, '..', '..');
-const read = (f: string): string => fs.readFileSync(path.join(root, f), 'utf8');
+const read = (f: string): string => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'); // Windows checkouts may have CRLF
 const HANDLES = ['vikramgorla', 'fjcabello', 'rubenlupi'];
 
 assert.strictEqual(OWNER, 'Three Feathers');
