@@ -110,3 +110,10 @@ body.screen-open .workspace{display:none}
 .topbtns{display:flex;gap:2px}
 .topbtns button{display:inline-flex;align-items:center;gap:5px}
 .topbtns svg{width:14px;height:14px;flex:none}
+#topBtns{display:none}
+body.has-bridge #topBtns{display:flex}
+#topBtns button[aria-pressed="true"]{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(60,50,30,.12)}
+.ttab:not(.agt){table-layout:fixed}
+.ttab:not(.agt) thead th:first-child{width:30%}
+.ttab:not(.agt) .barc{width:34%}
+.ttab:not(.agt) td,.ttab:not(.agt) th[scope=row]{overflow:hidden;text-overflow:ellipsis}

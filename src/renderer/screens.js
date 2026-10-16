@@ -292,7 +292,7 @@
   window.DurbarScreens={
     init(ctx){X=ctx;},
     openSettings:()=>{mcp=null;open('settings');},
-    openTools:scope=>open('tools',{scope:scope||null,tab:'tools'}),
+    openTools:(scope,tab)=>open('tools',{scope:scope||null,tab:tab||'tools'}),
     agentMcp,
     close,isOpen,
     /* live refresh while the Tools view is open (called when events arrive) */
