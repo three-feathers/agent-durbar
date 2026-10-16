@@ -1,0 +1,304 @@
+[
+ {
+  "type": "session.mcp_server_status_changed",
+  "data": {
+   "serverName": "echo",
+   "status": "pending"
+  }
+ },
+ {
+  "type": "session.mcp_server_status_changed",
+  "data": {
+   "serverName": "echo",
+   "status": "connected",
+   "configSource": "user"
+  }
+ },
+ {
+  "type": "session.mcp_server_status_changed",
+  "data": {
+   "serverName": "github-mcp-server",
+   "status": "pending"
+  }
+ },
+ {
+  "type": "session.mcp_server_status_changed",
+  "data": {
+   "serverName": "github-mcp-server",
+   "status": "connected",
+   "configSource": "builtin"
+  }
+ },
+ {
+  "type": "session.mcp_servers_loaded",
+  "data": {
+   "servers": [
+    {
+     "name": "echo",
+     "status": "connected"
+    },
+    {
+     "name": "github-mcp-server",
+     "status": "connected",
+     "source": "builtin",
+     "displayName": "GitHub MCP Server"
+    }
+   ]
+  }
+ },
+ {
+  "type": "assistant.turn_start",
+  "data": {
+   "turnId": "0",
+   "interactionId": "d235b142-885f-4898-b93c-7cc7b50e9606"
+  }
+ },
+ {
+  "type": "session.usage_info",
+  "data": {
+   "tokenLimit": 272000,
+   "currentTokens": 13557,
+   "messagesLength": 3,
+   "systemTokens": 5840,
+   "conversationTokens": 49,
+   "toolDefinitionsTokens": 7668,
+   "isInitial": true
+  }
+ },
+ {
+  "type": "assistant.usage",
+  "data": {
+   "model": "gpt-6-luna",
+   "provider": {
+    "id": "copilot",
+    "kind": "copilot",
+    "label": "GitHub Copilot"
+   },
+   "modelDisplayName": "GPT-6 Luna",
+   "inputTokens": 12262,
+   "outputTokens": 19,
+   "cacheReadTokens": 0,
+   "cacheWriteTokens": 12259,
+   "reasoningTokens": 0,
+   "cost": 1,
+   "duration": 1378,
+   "initiator": "user",
+   "interactionType": "conversation-agent",
+   "isByok": false,
+   "isAuto": true,
+   "maxPromptTokens": 272000,
+   "providerCallId": "00000-1bb74f88-6d58-4c5f-9a6c-afc65847b9b9",
+   "serviceRequestId": "e968eda8-07bd-4476-8d24-5a983626466f",
+   "rte": true,
+   "apiEndpoint": "ws:/responses",
+   "quotaSnapshots": {
+    "chat": {
+     "isUnlimitedEntitlement": false,
+     "entitlementRequests": 200,
+     "usedRequests": 1,
+     "usageAllowedWithExhaustedQuota": false,
+     "overage": 0,
+     "overageAllowedWithExhaustedQuota": false,
+     "remainingPercentage": 99.3,
+     "resetDate": "2026-11-01T00:00:00Z"
+    },
+    "completions": {
+     "isUnlimitedEntitlement": false,
+     "entitlementRequests": 2000,
+     "usedRequests": 0,
+     "usageAllowedWithExhaustedQuota": false,
+     "overage": 0,
+     "overageAllowedWithExhaustedQuota": false,
+     "remainingPercentage": 100,
+     "resetDate": "2026-11-01T00:00:00Z"
+    },
+    "premium_interactions": {
+     "isUnlimitedEntitlement": false,
+     "entitlementRequests": 0,
+     "usedRequests": 0,
+     "usageAllowedWithExhaustedQuota": false,
+     "overage": 0,
+     "overageAllowedWithExhaustedQuota": false,
+     "remainingPercentage": 0,
+     "resetDate": "2026-11-01T00:00:00Z"
+    }
+   },
+   "copilotUsage": {
+    "totalNanoAiu": 154217500
+   },
+   "aiCreditsStatus": "complete",
+   "reasoningEffort": "medium",
+   "reasoningSummary": "detailed",
+   "availableToolCount": 24,
+   "toolTokenCount": 7668,
+   "frontierSource": "reported_writes",
+   "cacheTtlSeconds": 1800,
+   "cacheDetailsReported": true,
+   "numToolCalls": 1,
+   "toolCounts": {
+    "echo-echo": 1
+   },
+   "finishReason": "tool_calls",
+   "contentFilterTriggered": false,
+   "accounting": {
+    "sourceSessionId": "e46dd2ce-6eaa-46a6-a964-56e6f8eb0083",
+    "sequence": 1,
+    "usageId": "Ux7zqvTslCYclWkRu40k9BW1IxvI5GHNVCIJ9hbhQW9ncGt73N41wCLbk9/SJvZQ2lLY38l9vueCqIRYTd4WlqzBKvmy8bPvYfKNiw6FKOr0zBV8jnxAaVpUTbnUUSc6hMMkVryNIjyoWCYzSeesklkBUf/P68S2gToP16h5lMivS0bSydjwNREWTNfEp5w2XzitZB7mD1gZSIQ9tWEJfFKRCkVYoyFfSvPU0pL8MptEo9YNaSuhUINUfiV6w5lRM/oBNX5WIvWF35VaM99qDvWYFXXcsPyB5jBspkAOI+x6m8hL+O03qgUDsBLi85oR1JB9Z/BVVCNzPDcZrXhBPOvCHxCu/XJB4b0UbrYYFRcTE/jWuB7cMteIidfZ3K5+eqZXrw6bFOMqT3fLPidOFchoU9DACMMT7SX6EM+vetrb+ySdfFh224s7kFvwaHsdnih0h9XUCGl7OvMjYTQ9uxYhQqYQFEMlzq7gg7oPAZFX3Q=="
+   }
+  }
+ },
+ {
+  "type": "assistant.message",
+  "data": {
+   "content": "",
+   "toolRequests": [
+    {
+     "name": "echo-echo",
+     "toolCallId": "call_UcTZCJrWwqOGL78X0udZutyr",
+     "mcpServerName": "echo",
+     "mcpToolName": "echo"
+    }
+   ]
+  }
+ },
+ {
+  "type": "tool.execution_start",
+  "data": {
+   "toolCallId": "call_UcTZCJrWwqOGL78X0udZutyr",
+   "toolName": "echo-echo",
+   "arguments": {
+    "text": "hi"
+   },
+   "turnId": "0",
+   "model": "gpt-6-luna",
+   "toolTitle": "echo",
+   "mcpServerName": "echo",
+   "mcpConfigServerName": "echo",
+   "mcpTransport": "stdio",
+   "mcpConfigSource": "user",
+   "mcpToolName": "echo"
+  }
+ },
+ {
+  "type": "tool.execution_complete",
+  "data": {
+   "toolCallId": "call_UcTZCJrWwqOGL78X0udZutyr",
+   "success": true,
+   "result": {
+    "content": "echo: hi"
+   }
+  }
+ },
+ {
+  "type": "assistant.turn_start",
+  "data": {
+   "turnId": "1",
+   "interactionId": "d235b142-885f-4898-b93c-7cc7b50e9606"
+  }
+ },
+ {
+  "type": "session.usage_info",
+  "data": {
+   "tokenLimit": 272000,
+   "currentTokens": 13602,
+   "messagesLength": 5,
+   "systemTokens": 5840,
+   "conversationTokens": 94,
+   "toolDefinitionsTokens": 7668,
+   "isInitial": false
+  }
+ },
+ {
+  "type": "assistant.usage",
+  "data": {
+   "model": "gpt-6-luna",
+   "provider": {
+    "id": "copilot",
+    "kind": "copilot",
+    "label": "GitHub Copilot"
+   },
+   "modelDisplayName": "GPT-6 Luna",
+   "inputTokens": 12296,
+   "outputTokens": 5,
+   "cacheReadTokens": 12259,
+   "cacheWriteTokens": 34,
+   "reasoningTokens": 0,
+   "cost": 1,
+   "duration": 1126,
+   "initiator": "agent",
+   "interactionType": "conversation-agent",
+   "isByok": false,
+   "isAuto": true,
+   "maxPromptTokens": 272000,
+   "providerCallId": "00000-1bb74f88-6d58-4c5f-9a6c-afc65847b9b9",
+   "serviceRequestId": "c6d97334-c1b5-46d2-a7d8-b9d9642b67c6",
+   "rte": true,
+   "apiEndpoint": "ws:/responses",
+   "quotaSnapshots": {
+    "chat": {
+     "isUnlimitedEntitlement": false,
+     "entitlementRequests": 200,
+     "usedRequests": 1,
+     "usageAllowedWithExhaustedQuota": false,
+     "overage": 0,
+     "overageAllowedWithExhaustedQuota": false,
+     "remainingPercentage": 99.3,
+     "resetDate": "2026-11-01T00:00:00Z"
+    },
+    "completions": {
+     "isUnlimitedEntitlement": false,
+     "entitlementRequests": 2000,
+     "usedRequests": 0,
+     "usageAllowedWithExhaustedQuota": false,
+     "overage": 0,
+     "overageAllowedWithExhaustedQuota": false,
+     "remainingPercentage": 100,
+     "resetDate": "2026-11-01T00:00:00Z"
+    },
+    "premium_interactions": {
+     "isUnlimitedEntitlement": false,
+     "entitlementRequests": 0,
+     "usedRequests": 0,
+     "usageAllowedWithExhaustedQuota": false,
+     "overage": 0,
+     "overageAllowedWithExhaustedQuota": false,
+     "remainingPercentage": 0,
+     "resetDate": "2026-11-01T00:00:00Z"
+    }
+   },
+   "copilotUsage": {
+    "totalNanoAiu": 12964000
+   },
+   "aiCreditsStatus": "complete",
+   "reasoningEffort": "medium",
+   "reasoningSummary": "detailed",
+   "availableToolCount": 24,
+   "toolTokenCount": 7668,
+   "frontierSource": "reported_writes",
+   "cacheTtlSeconds": 1800,
+   "cacheDetailsReported": true,
+   "numToolCalls": 0,
+   "toolCounts": {},
+   "finishReason": "stop",
+   "contentFilterTriggered": false,
+   "accounting": {
+    "sourceSessionId": "e46dd2ce-6eaa-46a6-a964-56e6f8eb0083",
+    "sequence": 2,
+    "usageId": "Raa2wdy3O1p720p8Avo4gwtIsq6lOF6Es8ntPOhLRpjmwLdTTs5k67uFEBknScBepTmcSCA/50mtPukKB9w8on8SL85DfhxiBfNLmXPjMhDPPQaKIssbCSYiyC+H1XMaPNTUqHdRrBauJCtPUM3y5pfsQDx3P0CmU8l9D5ng1vm44wIsmHEAiqLbZxxSPtdlOsN58GZ+aAsn9uhNOu9iH5bn4rvt70Gn63mnXgw0YlTLkRfW47SA7U9SY8TerpTuPdqm04hlTrTIJs+Pp6uVoqrGDBkojSfHUBi8pI9N5qiRC+Lr4wIhehNh+ZtBateR6ozanYaKFAuw6NCRNzVXoYzqcKl6ZageiKoa4g21JEl52aZYrbVGA6Qy5K+J5Sv6nBPvXHBZq50zmBQZWATbhAfB1XUVy2sIeIRaFVRKd4YdvV/QT5+3L/Scnx9BW+UKnC0WUV88+z0CQP/uA5AcSNzw8ICwOMt6as0fyPaCXdOSOQ=="
+   }
+  }
+ },
+ {
+  "type": "assistant.message",
+  "data": {
+   "content": "done",
+   "toolRequests": []
+  }
+ },
+ {
+  "type": "session.idle",
+  "data": {
+   "mode": "interactive"
+  }
+ }
+]

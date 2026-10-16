@@ -11,6 +11,8 @@ async function main(): Promise<void> {
   assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'cat a | sh' }).key.startsWith('shell-exact:'), true);
   assert.strictEqual(grantScope({ kind: 'url', url: 'https://example.com/x?y=1' }).key, 'url:example.com');
   assert.strictEqual(grantScope({ kind: 'mcp', toolName: 'search' }).key, 'mcp:search');
+  assert.strictEqual(grantScope({ kind: 'mcp', serverName: 'github', toolName: 'search' }).key, 'mcp:github/search', 'MCP grants are scoped to the server');
+  assert.notStrictEqual(grantScope({ kind: 'mcp', serverName: 'a', toolName: 'search' }).key, grantScope({ kind: 'mcp', serverName: 'b', toolName: 'search' }).key);
 
   const mk = (opts: { ask?: boolean; allow?: boolean }) => {
     const ev: BrokerEvent[] = [];

@@ -1,0 +1,8 @@
+{
+  "inputs": [{ "type": "promptString", "id": "api-key", "description": "API key", "password": true }],
+  "servers": {
+    "github": { "type": "http", "url": "https://api.example.test/mcp/", "headers": { "Authorization": "Bearer ${input:api-key}" } },
+    "fs": { "type": "stdio", "command": "npx", "args": ["-y", "@example/server-filesystem", "${workspaceFolder}"], "envFile": ".env" },
+    "playwright": { "command": "npx", "args": ["@playwright/mcp@latest"], "env": { "DEBUG": "dummy-value" } }
+  }
+}

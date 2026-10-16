@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "playwright": { "type": "local", "command": "npx", "args": ["@playwright/mcp@latest"], "env": {}, "tools": ["*"] },
+    "context7": { "type": "http", "url": "https://mcp.example.test/mcp", "headers": { "EXAMPLE_API_KEY": "dummy-not-a-real-key" }, "tools": ["*"] },
+    "weird name!": { "command": "node", "args": ["server.js"], "env": { "TOKEN": "dummy-secret-1" } },
+    "legacy-sse": { "type": "sse", "url": "https://sse.example.test/events" },
+    "broken": { "type": "local" },
+    "not-an-object": 5
+  }
+}

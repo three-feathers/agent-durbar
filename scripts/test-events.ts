@@ -100,4 +100,45 @@ const run = (events: RawEvent[]): EventBody[] => {
   assert.strictEqual(out.length, 2);
   assert.deepStrictEqual({ t: (out[1] as { tool: string }).tool, o: (out[1] as { output?: string }).output, p: (out[1] as { phase: string }).phase }, { t: 'bash', o: 'nope', p: 'failed' });
 }
+// 6. MCP (spec 019, recorded from the real runtime): MCP tool attribution, context window, MCP server status.
+{
+  const raw = fx('mcp-tool-usage.json');
+  const out = run(raw);
+  const calls = out.filter((e) => e.type === 'toolCall') as { phase: string; tool: string; mcpServer?: string; mcpTool?: string; output?: string }[];
+  assert.deepStrictEqual(calls.map((c) => [c.phase, c.tool, c.mcpServer, c.mcpTool]), [['start', 'echo-echo', 'echo', 'echo'], ['complete', 'echo-echo', 'echo', 'echo']]);
+  assert.strictEqual(calls[1].output, 'echo: hi');
+  const ctx = out.filter((e) => e.type === 'context') as { tokens: number; limit: number; system?: number; toolDefinitions?: number; messages?: number }[];
+  assert.deepStrictEqual(ctx.map((c) => [c.tokens, c.limit]), [[13557, 272000], [13602, 272000]]);
+  assert.strictEqual(ctx[0].system, 5840);
+  assert.strictEqual(ctx[0].toolDefinitions, 7668);
+  assert.strictEqual(ctx[0].messages, 3);
+  const mcp = out.filter((e) => e.type === 'mcp') as { servers: { name: string; status: string; source?: string }[] }[];
+  assert.ok(mcp.length >= 5, 'every status change emits the full list');
+  const last = mcp[mcp.length - 1].servers;
+  assert.deepStrictEqual(last.map((s) => [s.name, s.status]).sort(), [['echo', 'connected'], ['github-mcp-server', 'connected']]);
+  assert.strictEqual(last.find((s) => s.name === 'github-mcp-server')?.source, 'builtin');
+  assert.strictEqual(mcp[0].servers.length, 1, 'first change lists only that server');
+  const u = out.filter((e) => e.type === 'usage') as { model?: string; nanoAiu?: number }[];
+  assert.strictEqual(u.length, 2);
+  assert.strictEqual(u[0].model, 'gpt-6-luna');
+  assert.ok((u[0].nanoAiu ?? 0) > 0);
+  // Sub-agent context events are not shown; a failed server keeps its error and loses it when it connects; removal drops it.
+  const out2 = run([
+    { type: 'session.usage_info', agentId: 'inst-9', data: { currentTokens: 5, tokenLimit: 100, messagesLength: 1 } },
+    { type: 'session.usage_info', data: { currentTokens: 5, tokenLimit: 0, messagesLength: 1 } },
+    { type: 'session.mcp_server_status_changed', data: { serverName: 's', status: 'failed', error: 'spawn ENOENT', configSource: 'user' } },
+    { type: 'session.mcp_server_status_changed', data: { serverName: 's', status: 'connected' } },
+    { type: 'session.mcp_server_removed', data: { serverName: 's' } },
+    { type: 'tool.execution_start', data: { toolCallId: 'x', toolName: 'view', arguments: {} } },
+  ]);
+  const c2 = out2.filter((e) => e.type === 'context') as { tokens: number; limit: number }[];
+  assert.deepStrictEqual(c2.map((c) => [c.tokens, c.limit]), [[5, 0]], 'sub-agent skipped; unknown limit is 0');
+  const m2 = out2.filter((e) => e.type === 'mcp') as { servers: { name: string; status: string; error?: string; source?: string }[] }[];
+  assert.deepStrictEqual(m2[0].servers, [{ name: 's', status: 'failed', source: 'user', transport: undefined, error: 'spawn ENOENT' }]);
+  assert.strictEqual(m2[1].servers[0].error, undefined);
+  assert.strictEqual(m2[1].servers[0].source, 'user');
+  assert.deepStrictEqual(m2[2].servers, []);
+  const t2 = out2.find((e) => e.type === 'toolCall') as { mcpServer?: string };
+  assert.strictEqual(t2.mcpServer, undefined, 'built-in tools carry no MCP fields');
+}
 console.log('event mapping tests passed');
