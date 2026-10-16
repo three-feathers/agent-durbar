@@ -1,5 +1,6 @@
 /**
- * Agent Durbar's global MCP server list (spec 019): one small JSON file in userData. No Electron import: the secret codec is injected
+ * Agent Durbar's own optional MCP servers ("extras"), kept **per folder/workspace** (spec 020; spec 019 had one global list): one
+ * small JSON file in userData. The only global list is the user's `~/.copilot/mcp-config.json`, which this store never touches. No Electron import: the secret codec is injected
  * (Electron `safeStorage` in main.ts, a fake in tests).
  *
  * Secrets (env values, header values) are encrypted with the codec before they are written. Without a codec they are NOT written
@@ -9,7 +10,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { MAX_SERVERS, trustHash, validateInput } from '../shared/mcp';
 import type { McpSecretKey, McpServerInput, McpServerSpec, McpServerView, McpTransport, McpTrustInfo } from '../shared/mcp';
-import type { ImportCandidate } from '../shared/mcpimport';
 
 export interface SecretCodec {
   available(): boolean;
@@ -53,9 +53,15 @@ export interface SessionMcp {
 }
 
 const MAX_FILE = 2 * 1024 * 1024;
+const MAX_FOLDERS = 200;
+const MAX_KEY = 4096;
+const lc = (s: string): string => String(s).toLowerCase();
 
 export class McpStore {
-  private recs: Rec[] = [];
+  /** Extras by folder/workspace key (the saved-folder key: .code-workspace file or folder path). */
+  private folders = new Map<string, Rec[]>();
+  /** Servers of the old app-level list (milestone 8): kept, never passed to a session, movable into a folder. */
+  private legacyRecs: Rec[] = [];
   private disabledAmbient = new Set<string>();
 
   constructor(
@@ -68,8 +74,56 @@ export class McpStore {
     return !!this.codec && this.codec.available();
   }
 
+  /** One stored server -> record (undefined when it does not validate). Secrets are decrypted when an OS store is available. */
+  private parseRec(e: unknown): Rec | undefined {
+    const r = e && typeof e === 'object' ? (e as Record<string, unknown>) : {};
+    const v = validateInput({ ...r, env: [], headers: [] });
+    if (!v.ok) return undefined;
+    const secrets = (list: unknown): SecretEntry[] =>
+      Array.isArray(list)
+        ? list
+            .filter((s): s is { key: string; enc?: string } => !!s && typeof (s as { key?: unknown }).key === 'string')
+            .map((s) => {
+              let value: string | undefined;
+              if (typeof s.enc === 'string' && this.secretsPersist) {
+                try {
+                  value = (this.codec as SecretCodec).decrypt(s.enc);
+                } catch {
+                  value = undefined;
+                }
+              }
+              return { key: s.key, value };
+            })
+        : [];
+    const x = v.value;
+    return {
+      name: x.name,
+      transport: x.transport,
+      enabled: r.enabled === true,
+      command: x.command,
+      args: x.args,
+      workingDirectory: x.workingDirectory,
+      url: x.url,
+      tools: x.tools,
+      trust: typeof r.trust === 'string' ? r.trust : undefined,
+      env: secrets(r.env),
+      headers: secrets(r.headers),
+    };
+  }
+
+  private parseList(list: unknown): Rec[] {
+    if (!Array.isArray(list)) return [];
+    const out: Rec[] = [];
+    for (const e of list.slice(0, MAX_SERVERS)) {
+      const r = this.parseRec(e);
+      if (r && !out.some((o) => lc(o.name) === lc(r.name))) out.push(r);
+    }
+    return out;
+  }
+
   load(): void {
-    this.recs = [];
+    this.folders = new Map();
+    this.legacyRecs = [];
     this.disabledAmbient = new Set();
     let doc: unknown;
     try {
@@ -80,41 +134,13 @@ export class McpStore {
     }
     const o = (doc && typeof doc === 'object' ? doc : {}) as Record<string, unknown>;
     if (Array.isArray(o.disabledAmbient)) for (const n of o.disabledAmbient) if (typeof n === 'string' && n.length <= 64) this.disabledAmbient.add(n);
-    if (!Array.isArray(o.servers)) return;
-    for (const e of o.servers.slice(0, MAX_SERVERS)) {
-      const r = e && typeof e === 'object' ? (e as Record<string, unknown>) : {};
-      const v = validateInput({ ...r, env: [], headers: [] });
-      if (!v.ok) continue;
-      const secrets = (list: unknown): SecretEntry[] =>
-        Array.isArray(list)
-          ? list
-              .filter((s): s is { key: string; enc?: string } => !!s && typeof (s as { key?: unknown }).key === 'string')
-              .map((s) => {
-                let value: string | undefined;
-                if (typeof s.enc === 'string' && this.secretsPersist) {
-                  try {
-                    value = (this.codec as SecretCodec).decrypt(s.enc);
-                  } catch {
-                    value = undefined;
-                  }
-                }
-                return { key: s.key, value };
-              })
-          : [];
-      const x = v.value;
-      this.recs.push({
-        name: x.name,
-        transport: x.transport,
-        enabled: r.enabled === true,
-        command: x.command,
-        args: x.args,
-        workingDirectory: x.workingDirectory,
-        url: x.url,
-        tools: x.tools,
-        trust: typeof r.trust === 'string' ? r.trust : undefined,
-        env: secrets(r.env),
-        headers: secrets(r.headers),
-      });
+    // Version 1 (milestone 8) had one global `servers` list: it becomes `legacy`. Version 2 has `legacy` too.
+    this.legacyRecs = this.parseList([...(Array.isArray(o.servers) ? o.servers : []), ...(Array.isArray(o.legacy) ? o.legacy : [])]);
+    const f = o.folders && typeof o.folders === 'object' && !Array.isArray(o.folders) ? (o.folders as Record<string, unknown>) : {};
+    for (const key of Object.keys(f).slice(0, MAX_FOLDERS)) {
+      if (!key || key.length > MAX_KEY) continue;
+      const list = this.parseList(f[key]);
+      if (list.length) this.folders.set(key, list);
     }
   }
 
@@ -123,23 +149,22 @@ export class McpStore {
       if (this.secretsPersist && s.value !== undefined && s.value !== '') return { key: s.key, enc: (this.codec as SecretCodec).encrypt(s.value) };
       return { key: s.key };
     };
-    const doc = {
-      version: 1,
-      servers: this.recs.map((r) => ({
-        name: r.name,
-        transport: r.transport,
-        enabled: r.enabled,
-        command: r.command,
-        args: r.args,
-        workingDirectory: r.workingDirectory,
-        url: r.url,
-        tools: r.tools,
-        trust: r.trust,
-        env: r.env.map(enc),
-        headers: r.headers.map(enc),
-      })),
-      disabledAmbient: [...this.disabledAmbient],
-    };
+    const ser = (r: Rec) => ({
+      name: r.name,
+      transport: r.transport,
+      enabled: r.enabled,
+      command: r.command,
+      args: r.args,
+      workingDirectory: r.workingDirectory,
+      url: r.url,
+      tools: r.tools,
+      trust: r.trust,
+      env: r.env.map(enc),
+      headers: r.headers.map(enc),
+    });
+    const folders: Record<string, unknown[]> = {};
+    for (const [k, list] of this.folders) if (list.length) folders[k] = list.map(ser);
+    const doc = { version: 2, folders, legacy: this.legacyRecs.map(ser), disabledAmbient: [...this.disabledAmbient] };
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const tmp = `${this.file}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(doc, null, 1), { mode: 0o600 });
@@ -168,31 +193,52 @@ export class McpStore {
     };
   }
 
-  list(): McpServerView[] {
-    return this.recs.map((r) => this.view(r));
+  private validKey(key: unknown): key is string {
+    return typeof key === 'string' && key.length > 0 && key.length <= MAX_KEY;
   }
 
-  private find(name: string): Rec | undefined {
-    return this.recs.find((r) => r.name.toLowerCase() === String(name).toLowerCase());
+  private recsOf(key: string): Rec[] {
+    return this.folders.get(key) ?? [];
   }
 
-  trustInfo(name: string): McpTrustInfo | undefined {
-    const r = this.find(name);
+  private find(key: string, name: string): Rec | undefined {
+    return this.recsOf(key).find((r) => lc(r.name) === lc(name));
+  }
+
+  /** The extras of one folder/workspace (secrets masked). */
+  list(key: string): McpServerView[] {
+    return this.validKey(key) ? this.recsOf(key).map((r) => this.view(r)) : [];
+  }
+
+  /** Servers of the old app-level list: shown (off, not applied) so the user can move or remove them. */
+  legacyList(): McpServerView[] {
+    return this.legacyRecs.map((r) => ({ ...this.view(r), enabled: false }));
+  }
+
+  trustInfo(key: string, name: string): McpTrustInfo | undefined {
+    const r = this.validKey(key) ? this.find(key, name) : undefined;
     return r && { name: r.name, transport: r.transport, command: r.command, args: r.args, workingDirectory: r.workingDirectory, url: r.url };
   }
 
-  /** Add (`originalName` undefined) or edit. A change of command/args/URL/type switches the server off and drops its trust. */
-  upsert(input: unknown, originalName?: string): StoreResult {
+  /**
+   * Add (`originalName` undefined) or edit an extra of this folder. A change of command/args/URL/type switches the server off and drops
+   * its trust. `reserved` = names that already mean something else (the Copilot CLI list, the built-in server): refused.
+   */
+  upsert(key: string, input: unknown, originalName?: string, reserved: Iterable<string> = []): StoreResult {
+    if (!this.validKey(key)) return { ok: false, error: 'Unknown folder.' };
     const v = validateInput(input);
     if (!v.ok) return { ok: false, error: v.error };
     const x = v.value;
-    const cur = originalName ? this.find(originalName) : undefined;
+    if ([...reserved].some((n) => lc(n) === lc(x.name))) return { ok: false, error: `"${x.name}" is already a server of the Copilot CLI list. Pick another name.` };
+    const cur = originalName ? this.find(key, originalName) : undefined;
     if (originalName && !cur) return { ok: false, error: 'That server no longer exists.' };
-    const clash = this.find(x.name);
-    if (clash && clash !== cur) return { ok: false, error: `A server named "${x.name}" already exists.` };
-    if (!cur && this.recs.length >= MAX_SERVERS) return { ok: false, error: `At most ${MAX_SERVERS} servers.` };
+    const clash = this.find(key, x.name);
+    if (clash && clash !== cur) return { ok: false, error: `A server named "${x.name}" already exists in this folder.` };
+    const list = this.recsOf(key);
+    if (!cur && list.length >= MAX_SERVERS) return { ok: false, error: `At most ${MAX_SERVERS} servers per folder.` };
+    if (!cur && !this.folders.has(key) && this.folders.size >= MAX_FOLDERS) return { ok: false, error: `Extras are kept for at most ${MAX_FOLDERS} folders.` };
     const merge = (incoming: { key: string; value?: string }[], old: SecretEntry[]): SecretEntry[] =>
-      incoming.map((s) => ({ key: s.key, value: s.value !== undefined ? s.value : old.find((o) => o.key.toLowerCase() === s.key.toLowerCase())?.value }));
+      incoming.map((s) => ({ key: s.key, value: s.value !== undefined ? s.value : old.find((o) => lc(o.key) === lc(s.key))?.value }));
     const next: Rec = {
       name: x.name,
       transport: x.transport,
@@ -210,26 +256,30 @@ export class McpStore {
       next.trust = undefined;
       next.enabled = false;
     }
-    if (cur) this.recs[this.recs.indexOf(cur)] = next;
-    else this.recs.push(next);
+    const out = list.slice();
+    if (cur) out[out.indexOf(cur)] = next;
+    else out.push(next);
+    this.folders.set(key, out);
     this.save();
     return { ok: true, view: this.view(next) };
   }
 
-  remove(name: string): boolean {
-    const r = this.find(name);
+  remove(key: string, name: string): boolean {
+    const r = this.validKey(key) ? this.find(key, name) : undefined;
     if (!r) return false;
-    this.recs.splice(this.recs.indexOf(r), 1);
+    const out = this.recsOf(key).filter((x) => x !== r);
+    if (out.length) this.folders.set(key, out);
+    else this.folders.delete(key);
     this.save();
     return true;
   }
 
   /** Enabling an untrusted server returns `needsTrust` until called again with `trustAck` (the user confirmed the shown command). */
-  setEnabled(name: string, enabled: boolean, trustAck = false): StoreResult {
-    const r = this.find(name);
+  setEnabled(key: string, name: string, enabled: boolean, trustAck = false): StoreResult {
+    const r = this.validKey(key) ? this.find(key, name) : undefined;
     if (!r) return { ok: false, error: 'Unknown server.' };
     if (enabled && !this.isTrusted(r)) {
-      if (!trustAck) return { ok: false, needsTrust: this.trustInfo(r.name) };
+      if (!trustAck) return { ok: false, needsTrust: this.trustInfo(key, r.name) };
       r.trust = trustHash(r);
     }
     r.enabled = enabled;
@@ -237,29 +287,28 @@ export class McpStore {
     return { ok: true, view: this.view(r) };
   }
 
-  /** Imported servers arrive off and untrusted. Returns the names added (clashes get a numeric suffix). */
-  addImported(cands: ImportCandidate[]): string[] {
-    const added: string[] = [];
-    for (const c of cands) {
-      if (this.recs.length >= MAX_SERVERS) break;
-      let name = c.name;
-      for (let i = 2; this.find(name); i++) name = `${c.name.slice(0, 44)}-${i}`;
-      const v = validateInput({
-        name,
-        transport: c.transport,
-        command: c.command,
-        args: c.args,
-        workingDirectory: c.workingDirectory,
-        url: c.url,
-        tools: c.tools,
-        env: Object.entries(c.env).map(([key, value]) => ({ key, value })),
-        headers: Object.entries(c.headers).map(([key, value]) => ({ key, value })),
-      });
-      if (!v.ok) continue;
-      const r = this.upsert(v.value);
-      if (r.ok) added.push(name);
-    }
-    return added;
+  /** Move an old app-level server into a folder: it arrives off and untrusted (the user reviews and trusts it there). */
+  moveLegacy(name: string, key: string, reserved: Iterable<string> = []): StoreResult {
+    if (!this.validKey(key)) return { ok: false, error: 'Unknown folder.' };
+    const r = this.legacyRecs.find((x) => lc(x.name) === lc(name));
+    if (!r) return { ok: false, error: 'That old server no longer exists.' };
+    if ([...reserved].some((n) => lc(n) === lc(r.name))) return { ok: false, error: `"${r.name}" is already a server of the Copilot CLI list.` };
+    if (this.find(key, r.name)) return { ok: false, error: `A server named "${r.name}" already exists in this folder.` };
+    if (this.recsOf(key).length >= MAX_SERVERS) return { ok: false, error: `At most ${MAX_SERVERS} servers per folder.` };
+    if (!this.folders.has(key) && this.folders.size >= MAX_FOLDERS) return { ok: false, error: `Extras are kept for at most ${MAX_FOLDERS} folders.` };
+    const moved: Rec = { ...r, enabled: false, trust: undefined };
+    this.legacyRecs = this.legacyRecs.filter((x) => x !== r);
+    this.folders.set(key, [...this.recsOf(key), moved]);
+    this.save();
+    return { ok: true, view: this.view(moved) };
+  }
+
+  removeLegacy(name: string): boolean {
+    const r = this.legacyRecs.find((x) => lc(x.name) === lc(name));
+    if (!r) return false;
+    this.legacyRecs = this.legacyRecs.filter((x) => x !== r);
+    this.save();
+    return true;
   }
 
   ambientDisabled(): string[] {
@@ -274,21 +323,27 @@ export class McpStore {
   }
 
   /**
-   * What a new session gets: enabled + trusted Durbar servers as `mcpServers`, and the names to switch off
-   * (ambient servers turned off globally, plus the names this agent turned off).
+   * What a new session of an agent in folder `key` gets: that folder's enabled + trusted extras as `mcpServers` (never another
+   * folder's), and the names to switch off (CLI-list servers turned off globally, plus the names this agent turned off).
+   * `reserved` = CLI-list/built-in names: an extra with such a name is skipped (a name must mean one server).
    */
-  forSession(agentDisabled: Iterable<string> = []): SessionMcp {
+  forSession(key: string, agentDisabled: Iterable<string> = [], reserved: Iterable<string> = []): SessionMcp {
     const off = new Set<string>(agentDisabled);
+    const taken = new Set<string>([...reserved].map(lc));
     const mcpServers: Record<string, McpServerSpec> = {};
     const skipped: { name: string; reason: string }[] = [];
-    for (const r of this.recs) {
+    for (const r of this.validKey(key) ? this.recsOf(key) : []) {
       if (!r.enabled || off.has(r.name)) continue;
+      if (taken.has(lc(r.name))) {
+        skipped.push({ name: r.name, reason: 'same name as a Copilot CLI server: rename it' });
+        continue;
+      }
       if (!this.isTrusted(r)) {
-        skipped.push({ name: r.name, reason: 'not trusted: review and confirm it in Settings' });
+        skipped.push({ name: r.name, reason: 'not trusted: review and confirm it in this folder\'s MCP extras' });
         continue;
       }
       if ([...r.env, ...r.headers].some((s) => s.value === undefined)) {
-        skipped.push({ name: r.name, reason: 'secret values are not available: enter them again in Settings' });
+        skipped.push({ name: r.name, reason: 'secret values are not available: enter them again in this folder\'s MCP extras' });
         continue;
       }
       const kv = (l: SecretEntry[]): Record<string, string> => Object.fromEntries(l.map((s) => [s.key, s.value as string]));

@@ -1,15 +1,12 @@
-/** IPC for the global MCP settings and the per-agent MCP switches (spec 019). The renderer never receives a secret value or a file path. */
+/** IPC for the Copilot CLI MCP list (global, read live), the per-folder MCP extras and the per-agent MCP switches (specs 019, 020). The renderer never receives a secret value or a file path. */
 import { ipcMain, safeStorage } from 'electron';
-import { randomUUID } from 'crypto';
 import * as path from 'path';
-import type { AgentInfo, AgentMcpEntry, McpImportPreview, McpState } from '../shared/api';
+import type { AgentInfo, AgentMcpEntry, McpFolderState, McpState } from '../shared/api';
 import type { McpServerStatus } from '../adapters/types';
 import type { McpServerSpec } from '../shared/mcp';
 import type { CopilotAdapter } from '../adapters/copilot';
-import type { ImportCandidate } from '../shared/mcpimport';
-import { vscodeUserDirs } from '../adapters/vscodeChat';
 import type { DevEnv } from './devhooks';
-import { BUILTIN_SERVERS, ambientServers, copilotDir, readCandidates, vscodeMcpFiles } from './mcpfiles';
+import { BUILTIN_SERVERS, cliServers, copilotDir } from './mcpfiles';
 import { McpStore } from './mcpstore';
 import type { SecretCodec } from './mcpstore';
 
@@ -36,6 +33,9 @@ export const safeStorageCodec: SecretCodec = {
 };
 
 const trunc = (v: unknown, n: number): string => String(v ?? '').slice(0, n);
+/** The folder/workspace an agent belongs to: the key of the saved folder list and of the MCP extras. */
+const keyOf = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
+const nameOfKey = (key: string): string => path.basename(key).replace(/\.code-workspace$/i, '') || key;
 
 export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string, AgentInfo>; adapter: CopilotAdapter; dev: DevEnv }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[] } } {
   const { agents, adapter, dev } = deps;
@@ -48,71 +48,53 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
     if (e.type === 'mcp') live.set(e.sessionId, e.servers);
     else if (e.type === 'status' && e.status === 'stopped') live.delete(e.sessionId);
   });
-  const imports = new Map<string, ImportCandidate[]>();
+
+  /** The Copilot CLI list is read again on every call, so edits of the file show up the next time a screen opens. */
+  const cli = () => cliServers(copilotDir(dev), new Set(store().ambientDisabled()));
+  const cliNames = (): string[] => cli().servers.map((x) => x.name);
+  /** A folder key is only accepted when an agent of that folder exists (the renderer cannot invent keys). */
+  const knownKey = (key: unknown): key is string => typeof key === 'string' && !!key && [...agents.values()].some((a) => keyOf(a) === key);
 
   const state = (): McpState => {
+    const r = cli();
+    return { cli: r.servers, file: r.file, secretsPersist: store().secretsPersist };
+  };
+  const folderState = (key: string): McpFolderState => {
     const s = store();
+    const names = cliNames();
     return {
-      servers: s.list(),
-      ambient: ambientServers(copilotDir(dev), new Set(s.ambientDisabled())),
+      ok: true,
+      key,
+      name: nameOfKey(key),
+      servers: s.list(key),
+      legacy: s.legacyList(),
       secretsPersist: s.secretsPersist,
-      skipped: s.forSession().skipped,
+      skipped: s.forSession(key, [], names).skipped,
+      cliNames: names,
     };
   };
+  const bad = { ok: false, error: 'Unknown folder.' } as const;
 
   ipcMain.handle('mcp:state', () => state());
-  ipcMain.handle('mcp:upsert', (_e, input: unknown, originalName: unknown) => {
+  ipcMain.handle('mcp:setCli', (_e, name: unknown, enabled: unknown) => {
+    if (typeof name !== 'string' || !name || name.length > 64) return { ok: false };
+    store().setAmbientDisabled(name, enabled !== true);
+    return { ok: true };
+  });
+  ipcMain.handle('mcp:folderState', (_e, key: unknown): McpFolderState | { ok: false; error: string } => (knownKey(key) ? folderState(key) : bad));
+  ipcMain.handle('mcp:upsert', (_e, key: unknown, input: unknown, originalName: unknown) => {
+    if (!knownKey(key)) return bad;
     try {
-      return store().upsert(input, typeof originalName === 'string' ? originalName : undefined);
+      return store().upsert(key, input, typeof originalName === 'string' ? originalName : undefined, cliNames());
     } catch {
       return { ok: false, error: 'Could not save the server list.' };
     }
   });
-  ipcMain.handle('mcp:remove', (_e, name: unknown) => ({ ok: typeof name === 'string' && store().remove(name) }));
-  ipcMain.handle('mcp:setEnabled', (_e, name: unknown, enabled: unknown, trustAck: unknown) =>
-    typeof name === 'string' ? store().setEnabled(name, enabled === true, trustAck === true) : { ok: false, error: 'Unknown server.' });
-  ipcMain.handle('mcp:setAmbient', (_e, name: unknown, enabled: unknown) => {
-    if (typeof name !== 'string') return { ok: false };
-    store().setAmbientDisabled(name, enabled !== true);
-    return { ok: true };
-  });
-
-  ipcMain.handle('mcp:importPreview', (_e, source: unknown): McpImportPreview => {
-    const kind = source === 'vscode' ? 'vscode' : 'copilot';
-    const files = kind === 'copilot' ? [path.join(copilotDir(dev), 'mcp-config.json')] : vscodeMcpFiles(dev.DURBAR_VSCODE_USER_DIR ? [{ dir: dev.DURBAR_VSCODE_USER_DIR }] : vscodeUserDirs());
-    const candidates: ImportCandidate[] = [];
-    const shown: string[] = [];
-    let skipped = 0;
-    let error: string | undefined;
-    for (const f of files) {
-      const r = readCandidates(f, kind);
-      if (!r) continue;
-      shown.push(f);
-      skipped += r.skipped;
-      error = error ?? r.error;
-      for (const c of r.candidates) candidates.push({ ...c, name: candidates.some((x) => x.name.toLowerCase() === c.name.toLowerCase()) ? `${c.name.slice(0, 44)}-${candidates.length + 1}` : c.name });
-    }
-    if (!shown.length) return { ok: false, error: kind === 'copilot' ? 'No ~/.copilot/mcp-config.json found.' : 'No VS Code user mcp.json found.', source: kind, files: [], candidates: [], skipped: 0 };
-    if (error && !candidates.length) return { ok: false, error, source: kind, files: shown, candidates: [], skipped };
-    const token = randomUUID();
-    imports.set(token, candidates);
-    for (const k of [...imports.keys()].slice(0, Math.max(0, imports.size - 4))) imports.delete(k);
-    return {
-      ok: true,
-      token,
-      source: kind,
-      files: shown,
-      skipped,
-      candidates: candidates.map((c) => ({ name: c.name, transport: c.transport, command: c.command, args: c.args, url: c.url, envKeys: Object.keys(c.env), headerKeys: Object.keys(c.headers), notes: c.notes })),
-    };
-  });
-  ipcMain.handle('mcp:importApply', (_e, token: unknown, names: unknown) => {
-    const cands = typeof token === 'string' ? imports.get(token) : undefined;
-    if (!cands) return { ok: false, error: 'The import expired. Open it again.', added: [] as string[] };
-    imports.delete(token as string);
-    const want = new Set(Array.isArray(names) ? names.filter((n): n is string => typeof n === 'string') : []);
-    return { ok: true, added: store().addImported(cands.filter((c) => want.has(c.name))) };
-  });
+  ipcMain.handle('mcp:remove', (_e, key: unknown, name: unknown) => ({ ok: knownKey(key) && typeof name === 'string' && store().remove(key, name) }));
+  ipcMain.handle('mcp:setEnabled', (_e, key: unknown, name: unknown, enabled: unknown, trustAck: unknown) =>
+    knownKey(key) && typeof name === 'string' ? store().setEnabled(key, name, enabled === true, trustAck === true) : { ok: false, error: 'Unknown server.' });
+  ipcMain.handle('mcp:moveLegacy', (_e, name: unknown, key: unknown) => (knownKey(key) && typeof name === 'string' ? store().moveLegacy(name, key, cliNames()) : bad));
+  ipcMain.handle('mcp:removeLegacy', (_e, name: unknown) => ({ ok: typeof name === 'string' && store().removeLegacy(name) }));
 
   ipcMain.handle('agents:mcp', (_e, id: unknown): { ok: boolean; servers: AgentMcpEntry[]; live: boolean } => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;
@@ -128,10 +110,12 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
       const st = status.get(name);
       entries.push({ name, origin, status: st?.status, error: st?.error, defaultOn, off: mine.has(name) });
     };
-    for (const v of s.list()) add(v.name, 'durbar', v.enabled && v.trusted && !v.needsSecrets);
     const dis = new Set(s.ambientDisabled());
-    for (const am of ambientServers(copilotDir(dev), dis)) add(am.name, 'ambient', am.enabled);
-    for (const x of live.get(a.id) ?? []) add(x.name, 'ambient', !dis.has(x.name));
+    const c = cli().servers;
+    for (const am of c) add(am.name, 'cli', am.enabled);
+    const names = new Set(c.map((x) => x.name.toLowerCase()));
+    for (const v of s.list(keyOf(a))) if (!names.has(v.name.toLowerCase())) add(v.name, 'folder', v.enabled && v.trusted && !v.needsSecrets);
+    for (const x of live.get(a.id) ?? []) add(x.name, 'runtime', !dis.has(x.name));
     return { ok: true, servers: entries, live: adapter.isLive(a.id) };
   });
   ipcMain.handle('agents:setMcp', async (_e, id: unknown, name: unknown, enabled: unknown) => {
@@ -153,7 +137,10 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
 
   return {
     optionsFor(agentId: string) {
-      const r = store().forSession(off.get(agentId) ?? []);
+      const a = agents.get(agentId);
+      if (!a) return { mcpServers: {}, disabledMcpServers: [...(off.get(agentId) ?? [])] };
+      // Only this agent's own folder's extras are passed (spec 020 FR-012).
+      const r = store().forSession(keyOf(a), off.get(agentId) ?? [], cliNames());
       return { mcpServers: r.mcpServers, disabledMcpServers: r.disabledMcpServers };
     },
   };

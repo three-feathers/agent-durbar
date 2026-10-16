@@ -14,6 +14,8 @@ import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '..
 import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
+import { UsageStore } from './usagestore';
+import { agentLabel } from '../shared/toolusage';
 import { devEnv, devWarning } from './devhooks';
 import { SettingsStore } from './settings';
 import { parseAmount, parseCap } from '../shared/credits';
@@ -35,6 +37,8 @@ let folderStore: FolderStore | undefined;
 let settingsStore: SettingsStore | undefined;
 /** Global MCP servers (spec 019), created when the app is ready (needs userData and safeStorage). */
 let mcpStore: McpStore | undefined;
+/** All-time tool usage (spec 020), created when the app is ready. */
+let usageStore: UsageStore | undefined;
 /** The folder (or .code-workspace file) an agent belongs to; the key of the saved folder list. */
 const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
@@ -61,6 +65,14 @@ const toRenderer = (channel: string, payload: unknown): void => {
 };
 
 adapter.onEvent((e) => toRenderer('agent:event', e));
+/** Key an agent's all-time counts are kept under: "<agent name> · <folder name>" (base name only, spec 020). */
+const usageLabel = (a: AgentInfo): string => agentLabel(a.name, a.workspaceFile ? path.basename(a.workspaceFile).replace(/\.code-workspace$/i, '') : a.cwd);
+// All-time tool usage is counted here, not in the window, so it also counts while the Tools view is closed (spec 020 FR-006).
+adapter.onEvent((e) => {
+  if (e.type !== 'toolCall') return;
+  const a = agents.get(e.sessionId);
+  if (a) usageStore?.record(usageLabel(a), e);
+});
 // The runtime confirms the cap now in force (also after a change made by another client): keep AgentInfo and the folder's saved cap in step.
 adapter.onEvent((e) => {
   if (e.type !== 'limit' || e.phase !== 'changed') return;
@@ -335,6 +347,15 @@ ipcMain.handle('agents:newSession', async (_e, id: unknown, opts: unknown) => {
 });
 
 // ---- AI-credit caps (spec 011): numbers only, validated here ----
+ipcMain.handle('usage:allTime', () => ({
+  doc: usageStore?.view(),
+  labels: Object.fromEntries([...agents.values()].map((a) => [a.id, usageLabel(a)])),
+  error: usageStore?.lastError,
+}));
+ipcMain.handle('usage:reset', () => {
+  usageStore?.reset();
+  return { ok: true, doc: usageStore?.view() };
+});
 ipcMain.handle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits }));
 ipcMain.handle('settings:setDefaultCap', (_e, credits: unknown) => ({ ok: true, defaultMaxAiCredits: settingsStore?.setDefaultMaxAiCredits(credits) }));
 
@@ -494,6 +515,8 @@ app.whenReady().then(() => {
   settingsStore.load();
   mcpStore = new McpStore(path.join(app.getPath('userData'), 'durbar-mcp.json'), safeStorageCodec);
   mcpStore.load();
+  usageStore = new UsageStore(path.join(app.getPath('userData'), 'durbar-tool-usage.json'));
+  usageStore.load();
   restoreFolders();
   createWindow();
   // Dev/headless convenience: DURBAR_OPEN="/path/a:/path/b" starts agents (read-only) on launch.
@@ -530,6 +553,7 @@ app.whenReady().then(() => {
 });
 
 app.on('will-quit', () => {
+  usageStore?.flush();
   if (stageDir) fs.rmSync(stageDir, { recursive: true, force: true });
 });
 

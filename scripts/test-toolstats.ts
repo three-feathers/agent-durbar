@@ -7,6 +7,7 @@ const S = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'toolstats
   toolKey: (e: unknown) => { key: string; source: string; server: string; name: string };
   ctxLevel: (u?: number, l?: number) => { pct: number | null; level: string };
   fmtTokens: (n?: number) => string;
+  docView: (doc: unknown, scope: string | null) => { rows: any[]; groups: any[]; totals: { total: number; failed: number; mcp: number; agents: number } }; // eslint-disable-line @typescript-eslint/no-explicit-any
 };
 
 const start = (tool: string, extra: Record<string, unknown> = {}) => ({ type: 'toolCall', phase: 'start', tool, callId: 'c', ...extra });
@@ -82,3 +83,26 @@ assert.strictEqual(S.fmtTokens(1_000_000), '1M');
 assert.strictEqual(S.fmtTokens(undefined), '?');
 
 console.log('toolstats tests passed');
+
+// All-time document view (spec 020): same shape as the per-run rows
+{
+  const doc = {
+    version: 1, since: '2026-10-01T00:00:00.000Z',
+    tools: { 'builtin:bash': { source: 'builtin', server: '', name: 'bash', calls: 7, failed: 1 }, 'mcp:github/search': { source: 'mcp', server: 'github', name: 'search', calls: 3, failed: 0 }, 'builtin:view': { source: 'builtin', server: '', name: 'view', calls: 0, failed: 0 } },
+    servers: { github: { calls: 3, failed: 0 } },
+    agents: {
+      'Ada · app': { calls: 6, failed: 1, tools: { 'builtin:bash': { calls: 5, failed: 1 }, 'mcp:github/search': { calls: 1, failed: 0 } } },
+      'Mira · app': { calls: 4, failed: 0, tools: { 'builtin:bash': { calls: 2, failed: 0 }, 'mcp:github/search': { calls: 2, failed: 0 } } },
+      'Idle · app': { calls: 0, failed: 0, tools: {} },
+    },
+  };
+  const all = S.docView(doc, null);
+  assert.deepStrictEqual(all.rows.map((r: { name: string }) => r.name), ['bash', 'search'], 'zero rows are dropped, sorted by calls');
+  assert.deepStrictEqual(all.totals, { total: 10, failed: 1, mcp: 3, agents: 2 });
+  assert.deepStrictEqual(all.rows[0].agents, [{ label: 'Ada · app', count: 5 }, { label: 'Mira · app', count: 2 }]);
+  assert.deepStrictEqual(all.groups.map((g: { title: string }) => g.title), ['Built-in', 'MCP: github']);
+  const ada = S.docView(doc, 'Ada · app');
+  assert.deepStrictEqual(ada.totals, { total: 6, failed: 1, mcp: 1, agents: 1 });
+  assert.strictEqual(S.docView(doc, 'Nobody').rows.length, 0);
+  assert.strictEqual(S.docView(null, null).rows.length, 0);
+}

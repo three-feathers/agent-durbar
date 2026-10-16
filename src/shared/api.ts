@@ -1,6 +1,7 @@
 import type { AgentEvent } from '../adapters/types';
 import type { HistoryItem, PreviousSession } from '../adapters/history';
 import type { VsChatSummary, VsChatTranscript } from '../adapters/vscodeChat';
+import type { UsageDoc } from './toolusage';
 import type { McpServerInput, McpServerView, McpTransport, McpTrustInfo } from './mcp';
 
 export type { McpServerInput, McpServerView, McpTransport, McpTrustInfo };
@@ -99,7 +100,7 @@ export interface VsChatListResult {
   formatNote: string;
 }
 
-/** A server the runtime loads on its own (the user's ~/.copilot/mcp-config.json, the built-in GitHub server): read-only here, on/off for new sessions. */
+/** A server of the Copilot CLI list (`~/.copilot/mcp-config.json`) or the built-in GitHub server: loaded by the runtime itself, read-only here, on/off for new sessions started by this app. */
 export interface McpAmbientView {
   name: string;
   origin: 'copilot-config' | 'builtin';
@@ -111,37 +112,38 @@ export interface McpAmbientView {
   enabled: boolean;
 }
 
+/** What was found when reading the Copilot CLI file (a display label, never the real path). */
+export interface McpCliFile {
+  label: string;
+  found: boolean;
+  error?: string;
+  /** Entries that could not be used. */
+  skipped: number;
+}
+
+/** The global MCP list: the Copilot CLI list, read live. There is no app-level list of extras (spec 020). */
 export interface McpState {
-  servers: McpServerView[];
-  ambient: McpAmbientView[];
+  cli: McpAmbientView[];
+  file: McpCliFile;
   /** Secrets can be saved encrypted (Electron safeStorage). When false they only live in memory for this run. */
   secretsPersist: boolean;
-  /** Servers that are switched on but are not passed to new sessions, with the reason. */
-  skipped: { name: string; reason: string }[];
 }
 
-export interface McpImportCandidateView {
-  name: string;
-  transport: McpTransport;
-  command?: string;
-  args?: string[];
-  url?: string;
-  /** Names only: values are never sent to the page. */
-  envKeys: string[];
-  headerKeys: string[];
-  notes: string[];
-}
-
-export interface McpImportPreview {
+/** The optional extras of ONE folder/workspace (spec 020). */
+export interface McpFolderState {
   ok: boolean;
   error?: string;
-  /** Opaque id of the parsed file held by the main process; `mcpImportApply` takes it back with the chosen names. */
-  token?: string;
-  source: 'copilot' | 'vscode';
-  /** Files that were read (display only). */
-  files: string[];
-  candidates: McpImportCandidateView[];
-  skipped: number;
+  key: string;
+  /** Display name of the folder. */
+  name: string;
+  servers: McpServerView[];
+  /** Old app-level servers that are not applied; they can be moved into this folder or removed. */
+  legacy: McpServerView[];
+  secretsPersist: boolean;
+  /** Extras that are on but are not passed to new sessions, with the reason. */
+  skipped: { name: string; reason: string }[];
+  /** Names of the Copilot CLI list (an extra may not reuse them). */
+  cliNames: string[];
 }
 
 export interface McpResult {
@@ -152,10 +154,19 @@ export interface McpResult {
   needsTrust?: McpTrustInfo;
 }
 
+/** All-time tool usage as the Tools view gets it (spec 020): the stored document plus the label each live agent is counted under. */
+export interface UsageView {
+  doc?: UsageDoc;
+  labels: Record<string, string>;
+  /** The last write to disk failed (counting continues in memory). */
+  error?: string;
+}
+
 /** One MCP server as one agent sees it. */
 export interface AgentMcpEntry {
   name: string;
-  origin: 'durbar' | 'ambient';
+  /** `cli` = Copilot CLI list or built-in, `folder` = an extra of this agent's folder, `runtime` = only reported by the runtime. */
+  origin: 'cli' | 'folder' | 'runtime';
   /** Runtime state when the session is running (connected, failed, needs-auth, disabled, ...). */
   status?: string;
   error?: string;
@@ -193,16 +204,18 @@ export interface DurbarApi {
   setCap?(id: string, credits: number | null): Promise<{ ok: boolean; error?: string; maxAiCredits?: number }>;
   resolveLimit?(id: string, requestId: string, choice: LimitChoice): Promise<{ ok: boolean; error?: string }>;
 
-  /** Global MCP settings (spec 019). */
+  /** Tool usage over all runs (spec 020). */
+  usageAllTime?(): Promise<UsageView>;
+  usageReset?(): Promise<{ ok: boolean; doc?: UsageDoc }>;
+  /** MCP (specs 019, 020): the Copilot CLI list is global and read live; extras are per folder/workspace key (`workspaceFile ?? cwd`). */
   mcpState?(): Promise<McpState>;
-  mcpUpsert?(input: McpServerInput, originalName?: string): Promise<McpResult>;
-  mcpRemove?(name: string): Promise<{ ok: boolean }>;
-  /** `trustAck`: the user confirmed the command/URL shown for this server. */
-  mcpSetEnabled?(name: string, enabled: boolean, trustAck?: boolean): Promise<McpResult>;
-  mcpSetAmbient?(name: string, enabled: boolean): Promise<{ ok: boolean }>;
-  mcpImportPreview?(source: 'copilot' | 'vscode'): Promise<McpImportPreview>;
-  mcpImportApply?(token: string, names: string[]): Promise<{ ok: boolean; error?: string; added: string[] }>;
-  /** The MCP servers agent `id` has (live state when it runs) with its own on/off choices. */
+  mcpSetCli?(name: string, enabled: boolean): Promise<{ ok: boolean }>;
+  mcpFolderState?(key: string): Promise<McpFolderState>;
+  mcpUpsert?(key: string, input: McpServerInput, originalName?: string): Promise<McpResult>;
+  mcpRemove?(key: string, name: string): Promise<{ ok: boolean }>;
+  mcpSetEnabled?(key: string, name: string, enabled: boolean, trustAck?: boolean): Promise<McpResult>;
+  mcpMoveLegacy?(name: string, key: string): Promise<McpResult>;
+  mcpRemoveLegacy?(name: string): Promise<{ ok: boolean }>;
   agentMcp?(id: string): Promise<{ ok: boolean; servers: AgentMcpEntry[]; live: boolean }>;
   /** Per-agent override: `enabled=false` turns the server off for this agent (now when the session runs, else at its next start). */
   setAgentMcp?(id: string, name: string, enabled: boolean): Promise<{ ok: boolean; error?: string }>;

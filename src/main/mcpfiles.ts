@@ -1,14 +1,14 @@
 /**
- * Read-only access to MCP configuration files of other tools (spec 019): ~/.copilot/mcp-config.json (also loaded by the runtime
- * itself, so these servers are "ambient") and VS Code's user `mcp.json`. Nothing here ever writes, and no secret value is returned
- * by `ambientServers`.
+ * Read-only access to the Copilot CLI's MCP list, `~/.copilot/mcp-config.json` (spec 019, 020). The runtime loads it itself in every
+ * session; this module only reads it again whenever a screen opens, so the list is always the current one. Nothing here ever writes,
+ * and no secret value is returned by `cliServers`.
  */
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { parseMcpConfig } from '../shared/mcpimport';
 import type { ImportCandidate } from '../shared/mcpimport';
-import type { McpAmbientView } from '../shared/api';
+import type { McpAmbientView, McpCliFile } from '../shared/api';
 
 /** Servers the runtime starts by itself in every session. */
 export const BUILTIN_SERVERS = ['github-mcp-server'];
@@ -35,24 +35,20 @@ export function readCandidates(file: string, kind: 'copilot' | 'vscode'): { cand
   return { candidates: r.candidates, skipped: r.skipped, error: r.ok ? undefined : r.error };
 }
 
-/** Servers of ~/.copilot/mcp-config.json plus the built-in ones, without any env/header value. `disabled` = names switched off in Settings. */
-export function ambientServers(dir: string, disabled: ReadonlySet<string>): McpAmbientView[] {
+/** Label shown instead of the real path. */
+export const CLI_FILE_LABEL = '~/.copilot/mcp-config.json';
+
+/**
+ * Servers of ~/.copilot/mcp-config.json plus the built-in ones, without any env/header value, and what happened when reading the file.
+ * `disabled` = names switched off in Settings (for new sessions started here).
+ */
+export function cliServers(dir: string, disabled: ReadonlySet<string>): { servers: McpAmbientView[]; file: McpCliFile } {
   const out: McpAmbientView[] = [];
   const r = readCandidates(path.join(dir, 'mcp-config.json'), 'copilot');
   for (const c of r?.candidates ?? []) {
+    if (out.some((o) => o.name === c.originalName)) continue;
     out.push({ name: c.originalName, origin: 'copilot-config', transport: c.transport, command: c.command, args: c.args, url: c.url, enabled: !disabled.has(c.originalName) });
   }
   for (const b of BUILTIN_SERVERS) if (!out.some((o) => o.name === b)) out.push({ name: b, origin: 'builtin', enabled: !disabled.has(b) });
-  return out;
-}
-
-/** VS Code user-level mcp.json files that exist (Code, Insiders, VSCodium). */
-export function vscodeMcpFiles(userDirs: { dir: string }[]): string[] {
-  return userDirs.map((u) => path.join(u.dir, 'mcp.json')).filter((f) => {
-    try {
-      return fs.statSync(f).isFile();
-    } catch {
-      return false;
-    }
-  });
+  return { servers: out, file: { label: CLI_FILE_LABEL, found: r !== undefined, error: r?.error, skipped: r?.skipped ?? 0 } };
 }

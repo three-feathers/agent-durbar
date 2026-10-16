@@ -27,6 +27,45 @@
     return String(Math.round(n));
   }
 
+  /* Built-in first, then MCP servers (by total calls); each with its rows and total. Works on rows of this run and of the all-time document. */
+  function groupRows(rows){
+    const g=new Map();
+    for(const r of rows){
+      const key=r.source==='mcp'?'mcp:'+r.server:'builtin';
+      let x=g.get(key);
+      if(!x){x={key,title:r.source==='mcp'?'MCP: '+r.server:'Built-in',source:r.source,server:r.server,rows:[],total:0};g.set(key,x);}
+      x.rows.push(r);x.total+=r.count;
+    }
+    return [...g.values()].sort((x,y)=>(x.source===y.source?y.total-x.total:x.source==='builtin'?-1:1));
+  }
+
+  /* All-time document (spec 020, src/shared/toolusage.ts) -> rows/groups/totals in the same shape as the per-run ones.
+     scope: an agent label, or null for all agents. Rows' `agents` hold {label,count}. */
+  function docView(doc,scope){
+    const empty={rows:[],groups:[],totals:{total:0,failed:0,mcp:0,agents:0}};
+    if(!doc||!doc.tools)return empty;
+    const rows=[];
+    const agents=doc.agents||{};
+    const row=(k,t,count,failed)=>({key:k,source:t.source,server:t.server||'',name:t.name,count,failed,agents:[]});
+    if(scope){
+      const a=agents[scope];if(!a)return empty;
+      for(const k of Object.keys(a.tools)){const t=doc.tools[k],c=a.tools[k];if(t&&(c.calls||c.failed))rows.push(row(k,t,c.calls,c.failed));}
+    }else{
+      for(const k of Object.keys(doc.tools)){
+        const t=doc.tools[k];if(!(t.calls||t.failed))continue;
+        const r=row(k,t,t.calls,t.failed);
+        for(const lab of Object.keys(agents)){const c=agents[lab].tools[k];if(c&&c.calls)r.agents.push({label:lab,count:c.calls});}
+        r.agents.sort((x,y)=>y.count-x.count);
+        rows.push(r);
+      }
+    }
+    rows.sort((x,y)=>y.count-x.count||x.name.localeCompare(y.name));
+    let total=0,failed=0,mcp=0;
+    for(const r of rows){total+=r.count;failed+=r.failed;if(r.source==='mcp')mcp+=r.count;}
+    const n=scope?(agents[scope]?1:0):Object.keys(agents).filter(l=>agents[l].calls||agents[l].failed).length;
+    return {rows,groups:groupRows(rows),totals:{total,failed,mcp,agents:n}};
+  }
+
   function createStats(){
     const agents=new Map(); /* id -> {total,failed,tools:Map,models:Map,ctx} */
     const get=id=>{let a=agents.get(id);if(!a){a={total:0,failed:0,tools:new Map(),models:new Map(),ctx:null};agents.set(id,a);}return a;};
@@ -75,17 +114,7 @@
         return rows.sort((x,y)=>y.count-x.count||x.name.localeCompare(y.name));
       },
       /* Built-in first, then MCP servers (by total calls); each with its rows and total. */
-      groups(scope){
-        const rows=this.rows(scope);
-        const g=new Map();
-        for(const r of rows){
-          const key=r.source==='mcp'?'mcp:'+r.server:'builtin';
-          let x=g.get(key);
-          if(!x){x={key,title:r.source==='mcp'?'MCP: '+r.server:'Built-in',source:r.source,server:r.server,rows:[],total:0};g.set(key,x);}
-          x.rows.push(r);x.total+=r.count;
-        }
-        return [...g.values()].sort((x,y)=>(x.source===y.source?y.total-x.total:x.source==='builtin'?-1:1));
-      },
+      groups(scope){return groupRows(this.rows(scope));},
       totals(scope){
         let total=0,failed=0,mcp=0;
         for(const [id,a] of agents){
@@ -97,5 +126,5 @@
       },
     };
   }
-  return {createStats,toolKey,ctxLevel,fmtTokens};
+  return {createStats,toolKey,ctxLevel,fmtTokens,groupRows,docView};
 })());
