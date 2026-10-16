@@ -1,12 +1,12 @@
 # Tasks: 020
-- [ ] T001 Spec, plan, tasks (this folder) + spec 019 `## Changes` pointer
-- [ ] T002 `shared/toolusage.ts` + `scripts/test-toolusage.ts` [FR-004, FR-005, FR-006]
-- [ ] T003 `main/usagestore.ts` + test (persistence, debounce, reset, corrupt) [FR-004, FR-007]
-- [ ] T004 Wire the store into main (events -> record, quit flush, IPC), preload, api, simulator all-time bridge [FR-006]
-- [ ] T005 Tools view: period switch, all-time rendering, reset, empty states [FR-001, FR-003, FR-007, FR-008]
-- [ ] T006 `McpStore` per folder + legacy migration + tests [FR-012, FR-014, FR-015]
-- [ ] T007 `mcpfiles` CLI list (found/error/skipped), `mcpipc` folder-keyed IPC, per-agent options by key, remove import IPC [FR-009, FR-012, FR-016]
-- [ ] T008 Settings: CLI list first, remove add/import; Tools: configured servers section [FR-009, FR-010, FR-011]
-- [ ] T009 Folder extras dialog from the room header + agent MCP dialog labels [FR-013, FR-017]
-- [ ] T010 Simulator: CLI list, per-folder extras, legacy [FR-019]
-- [ ] T011 Screenshots m10 (1440x900, 1280x800), `check:office`, README milestone 10, converge specs 019/020 and the index [FR-019]
+- [x] T001 Spec, plan, tasks (this folder) + spec 019 `## Changes` pointer
+- [x] T002 `shared/toolusage.ts` + `scripts/test-toolusage.ts` [FR-004, FR-005, FR-006]
+- [x] T003 `main/usagestore.ts` + test (persistence, debounce, reset, corrupt) [FR-004, FR-007]
+- [x] T004 Wire the store into main (events -> record, quit flush, IPC), preload, api, simulator all-time bridge [FR-006]
+- [x] T005 Tools view: period switch, all-time rendering, reset, empty states [FR-001, FR-003, FR-007, FR-008]
+- [x] T006 `McpStore` per folder + legacy migration + tests [FR-012, FR-014, FR-015]
+- [x] T007 `mcpfiles` CLI list (found/error/skipped), `mcpipc` folder-keyed IPC, per-agent options by key, remove import IPC [FR-009, FR-012, FR-016]
+- [x] T008 Settings: CLI list first, remove add/import; Tools: configured servers section [FR-009, FR-010, FR-011]
+- [x] T009 Folder extras dialog from the room header + agent MCP dialog labels [FR-013, FR-017]
+- [x] T010 Simulator: CLI list, per-folder extras, legacy [FR-019]
+- [x] T011 Screenshots m10 (1440x900, 1280x800), `check:office`, README milestone 10, converge specs 019/020 and the index [FR-019]

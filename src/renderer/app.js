@@ -251,9 +251,14 @@ function renderDoorBar(){
   b.hidden=vis_.length<2||ui.view!=='office';
   $('closeAll').disabled=!open; $('openAll').disabled=!shut;
 }
+/* The folder/workspace of a room: the key its MCP extras are stored under (same key as the saved folder list). */
+function folderOfRoom(roomId){
+  const r=ROOMS.find(x=>x.id===roomId),ag=agents.find(x=>!x.parent&&x.room===roomId&&x.info);
+  return r&&ag?{key:ag.info.workspaceFile||ag.info.cwd,name:r.name}:null;
+}
 function roomHTML({r,mains,all},d,aw,cap){
   const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':(k==='done'||k==='idle')?' calm':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}</span>`:''}).join('');
-  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="Close room ${esc(r.name)}" title="Close the door: ${esc(r.name)} becomes a compact plate">${DOOR_OPEN}</button><span class="room-name" title="${esc(r.name)}">${esc(r.name)}</span><span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span><span class="room-dots" aria-hidden="true">${dots}</span>${bridge&&bridge.newSession&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${PLANT}</div>`;
+  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="Close room ${esc(r.name)}" title="Close the door: ${esc(r.name)} becomes a compact plate">${DOOR_OPEN}</button><span class="room-name" title="${esc(r.name)}">${esc(r.name)}</span><span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span><span class="room-dots" aria-hidden="true">${dots}</span>${bridge&&bridge.newSession&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.mcpFolderState&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT}</div>`;
   if(d==='full'){
     const gap=6, pad=12;
     const widths=mains.map(a=>unitWidth(a,d));
@@ -697,6 +702,7 @@ document.addEventListener('click',e=>{
   const cm=e.target.closest('.chips-more'); if(cm){const box=cm.parentNode;box.dataset.exp=box.dataset.exp==='1'?'0':'1';refreshChips(box);return;}
   const chip=e.target.closest('#chat .chip:not(.att-chip)'); if(chip){const o=chip.classList.toggle('open');chip.setAttribute('aria-expanded',String(o));return;}
   const sw=e.target.closest('[data-sw]'); if(sw){openPanel(sw.dataset.sw,e.detail===0);return;}
+  const mr=e.target.closest('[data-mcproom]'); if(mr){const f=folderOfRoom(mr.dataset.mcproom);if(f)window.DurbarScreens.folderMcp(f.key,f.name);return;}
   const ns=e.target.closest('[data-newsess]'); if(ns){const r=ROOMS.find(x=>x.id===ns.dataset.newsess),ag=r&&agents.find(x=>!x.parent&&x.room===r.id);if(ag)newSession(ag);return;}
   const t=e.target.closest('[data-id]'); if(t&&!t.closest('#panel')){openPanel(t.dataset.id,e.detail===0);}
 });
@@ -1570,6 +1576,7 @@ if(bridge){
   window.DurbarScreens.init({bridge,stats:STATS,esc,toast,onSettings:v=>{APP_SETTINGS=v||{};},
     agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
     staticLimit:a=>{const m=MODELS.find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
+    folderOf:x=>{const ag=LIVE.agents.find(y=>y.id===(x&&x.id||x));return ag?folderOfRoom(ag.room):null;},
     openAgent:id=>openPanel(id,false)});
   $('toolsBtn').onclick=()=>window.DurbarScreens.isOpen()?window.DurbarScreens.close():window.DurbarScreens.openTools(null);
   $('settingsBtn').onclick=()=>window.DurbarScreens.openSettings();

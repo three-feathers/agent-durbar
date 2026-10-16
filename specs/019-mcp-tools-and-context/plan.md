@@ -19,3 +19,6 @@
 `scripts/test-mcp.ts` (store, import, validate), `scripts/test-toolstats.ts`, extra cases in `test-events.ts` with fixtures `scripts/fixtures/events/mcp-tool-usage.json` (sanitised real events from the research probe), `scripts/fixtures/mcp/*.json`.
 ## Docs
 README milestone 8, specs index. Screenshots: `scripts/shots-m8.js` (simulator, xvfb).
+
+## Superseded in part by 020
+`mcpstore.ts` is now per folder, `mcpfiles.ts` reads the CLI list live (`cliServers`), the import IPC and screens are removed, and `shots-m8.js` became `shots-m10.js`; see [020 plan](../020-tools-all-time-and-mcp-cli-primary/plan.md).

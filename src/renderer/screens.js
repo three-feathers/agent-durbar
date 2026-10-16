@@ -1,10 +1,12 @@
-/* Full-page screens opened from the top bar: Settings (global MCP servers) and Tools (tool usage, models, context window). Spec 019.
+/* Full-page screens: Settings (credit cap, the Copilot CLI MCP list), Tools (tool usage this session / all time, models, context window), and a folder's MCP extras. Specs 019, 020.
    Plain script; app.js calls DurbarScreens.init(ctx) once. No secret value ever reaches this file: the bridge sends key names and "set" flags. */
 (function(){
   'use strict';
   const S=window.DurbarStats;
   let X=null; /* ctx from app.js: {bridge, stats, esc, toast, agents(), staticLimit(a), openAgent(id), sim} */
-  let cur=null; /* {kind:'settings'|'tools', ...} */
+  let cur=null; /* {kind:'settings'|'tools'|'folder', ...} */
+  let period='session'; /* Tools view: 'session' | 'all' (remembered for the run) */
+  let usage=null; /* last all-time view {doc,labels,error} from main */
   const $=id=>document.getElementById(id);
   const esc=s=>X.esc(s);
   const root=()=>$('screen');
@@ -28,7 +30,7 @@
   const isOpen=()=>!!cur;
   function paint(focus){
     if(!cur)return;
-    if(cur.kind==='tools')paintTools(focus);else paintSettings(focus);
+    if(cur.kind==='tools')paintTools(focus);else if(cur.kind==='folder')paintFolder(focus);else paintSettings(focus);
   }
   /* modal: body is an element or html; buttons [{label,value,cls}]; resolves value (or null when dismissed). `validate(root)` may return an error text (keeps it open). */
   function dialog({title,html,buttons,wide,validate,onOpen}){
@@ -65,35 +67,28 @@
     if(!cur||cur.kind!=='settings')return;
     const r=root();
     if(!mcp){r.innerHTML=head('Settings')+'<div class="scr-body"><p class="scr-note">MCP settings are not available in this build.</p></div>';wireHead();return;}
-    const cmd=v=>v.transport==='stdio'?[v.command].concat(v.args||[]).join(' '):v.url;
-    const srv=mcp.servers.map(v=>`<li class="srv" data-name="${esc(v.name)}">
-      <div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(v.name)}</b><span class="mtag">${esc(v.transport)}</span>
-        ${v.enabled&&!v.trusted?'<span class="mtag warn">needs trust</span>':''}${v.needsSecrets?'<span class="mtag warn" title="Secret values are not available. Edit the server and enter them again.">needs secrets</span>':''}${v.workingDirectory?`<span class="mtag" title="${esc(v.workingDirectory)}">cwd</span>`:''}</div>
-        <code class="srv-cmd" title="${esc(cmd(v))}">${esc(cap(cmd(v),180))}</code>
-        ${v.env.concat(v.headers).length?`<div class="srv-secrets" aria-label="Secret values (masked)">${v.env.map(s=>secretChip('env',s)).join('')}${v.headers.map(s=>secretChip('header',s)).join('')}</div>`:''}
-      </div>
-      <div class="srv-act">${sw(v.enabled&&v.trusted,(v.enabled?'Disable ':'Enable ')+v.name,'data-act="toggle"')}<button class="btn sm" type="button" data-act="edit">Edit</button><button class="btn sm danger" type="button" data-act="remove">Remove</button></div></li>`).join('');
-    const amb=mcp.ambient.map(a=>`<li class="srv amb" data-amb="${esc(a.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(a.name)}</b><span class="mtag">${a.origin==='builtin'?'built-in':'~/.copilot/mcp-config.json'}</span>${a.transport?`<span class="mtag">${esc(a.transport)}</span>`:''}</div>
-        ${a.command||a.url?`<code class="srv-cmd">${esc(cap(a.transport==='stdio'||a.command?[a.command].concat(a.args||[]).join(' '):a.url,180))}</code>`:''}</div>
-      <div class="srv-act">${sw(a.enabled,(a.enabled?'Switch off ':'Switch on ')+a.name+' for new sessions','data-act="amb"')}</div></li>`).join('');
+    const amb=mcp.cli.map(cliRow).join('');
     let app={};
     if(X.bridge.getSettings){try{app=(await X.bridge.getSettings())||{};}catch(e){app={};}}
     const capSec=X.bridge.setDefaultCap?`<section class="scr-sec" aria-labelledby="capH"><h3 id="capH">Credit cap</h3>
         <p class="scr-note">The default cap, in AI credits (shown as AIU, the unit the Copilot runtime reports; 1 credit = USD 0.01), given to <b>new</b> sessions. Minimum 30 (the runtime refuses less); empty means no cap. Each session can change its own cap from its chat header; a session that reaches its cap stops and asks you. The cap is <b>soft</b>: it is checked after each model response, so one response can go past it. The stop-and-ask flow follows GitHub's documentation and is not yet verified on a real account (see spec 011).</p>
         <div class="scr-tools"><label class="capf">Default cap (AIU)<input id="capDef" type="number" min="30" step="1" placeholder="No cap" value="${app.defaultMaxAiCredits||''}"></label><button class="btn primary" type="button" id="capSave">Save</button><span class="scr-note small" id="capMsg" role="status"></span></div></section>`:'';
+    const f=mcp.file;
+    const fileNote=!f.found?`<p class="scr-note" role="status">No <code>${esc(f.label)}</code> yet. Servers you add with the Copilot CLI (<code>/mcp add</code>) or by editing that file appear here by themselves. The built-in GitHub server is always listed.</p>`
+      :f.error?`<p class="scr-note warn" role="status"><code>${esc(f.label)}</code> could not be read (${esc(f.error)}). Fix the file; this list updates the next time you open this screen.</p>`
+      :`<p class="scr-note ok" role="status">Read from <code>${esc(f.label)}</code>${f.skipped?` · ${f.skipped} entr${f.skipped>1?'ies were':'y was'} skipped (not usable)`:''}. The list is read again every time this screen opens.</p>`;
     r.innerHTML=head('Settings')+`<div class="scr-body">${capSec}
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH">MCP servers</h3>
-        <p class="scr-note">MCP servers give agents extra tools. They are set once here and used by <b>every agent</b> that starts afterwards; each agent can switch single servers off from its own header (MCP button).</p>
-        <p class="scr-warn" role="note"><b>MCP servers run local commands with your user rights.</b> Only enable servers you trust. You see the exact command before a server is switched on for the first time, and again whenever its command or URL changes. Read-only MCP tools can run without asking even in Read-only mode.</p>
-        <p class="scr-note ${mcp.secretsPersist?'ok':'warn'}" role="status">${mcp.secretsPersist?'Secret values (environment variables, headers) are stored encrypted by your operating system and are never shown again, logged or exported.':'<b>No OS-protected secret store is available here.</b> Secret values are kept in memory for this run only and are not saved: you will need to enter them again after a restart. Never put secrets in arguments or URLs.'}</p>
-        <div class="scr-tools"><button class="btn primary" type="button" id="mcpAdd">+ Add server</button><button class="btn" type="button" id="mcpImpCopilot" title="Read ~/.copilot/mcp-config.json (read-only)">Import from Copilot CLI</button><button class="btn" type="button" id="mcpImpVs" title="Read the VS Code user mcp.json (read-only)">Import from VS Code</button></div>
-        ${mcp.skipped.length?`<p class="scr-note warn" role="status">Not passed to new sessions: ${mcp.skipped.map(s=>'<b>'+esc(s.name)+'</b> ('+esc(s.reason)+')').join('; ')}.</p>`:''}
-        ${srv?`<ul class="srvs" id="srvList">${srv}</ul>`:'<p class="scr-empty">No servers yet. Add one, or import what you already use.</p>'}
-        <p class="scr-note small">Changes apply to <b>new</b> sessions and to agents that start or resume afterwards. A running session keeps its servers until it ends, or until you switch one in that agent's MCP menu.</p>
+        <p class="scr-note">MCP servers give agents extra tools. Your <b>Copilot CLI list</b> is the one global list: every agent gets those servers, with nothing to configure or import here. Each agent can switch single servers off from its own header (MCP button).</p>
+        <p class="scr-warn" role="note"><b>MCP servers run local commands with your user rights.</b> The Copilot runtime starts the servers of your CLI list in every session, exactly as the CLI does. Read-only MCP tools can run without asking even in Read-only mode.</p>
+        ${fileNote}
+        <h4 class="scr-sub">From the Copilot CLI list <small>all agents</small></h4>
+        <ul class="srvs" id="ambList">${amb}</ul>
+        <p class="scr-note small">You cannot edit these here: change <code>${esc(f.label)}</code> with the Copilot CLI or an editor. The switch only controls whether <b>new</b> sessions started by this app start a server; a running session keeps its servers until it ends, or until you switch one in that agent's MCP menu.</p>
       </section>
-      <section class="scr-sec" aria-labelledby="ambH"><h3 id="ambH">Also loaded by the Copilot runtime</h3>
-        <p class="scr-note">The runtime starts these in every session by itself (your <code>~/.copilot/mcp-config.json</code> and the built-in GitHub server). You cannot edit them here. The switch controls whether new sessions from this app start them.</p>
-        <ul class="srvs" id="ambList">${amb}</ul></section></div>`;
+      <section class="scr-sec" aria-labelledby="extH"><h3 id="extH">Extras for one folder <small>optional</small></h3>
+        <p class="scr-note">Agent Durbar can add its own servers, but <b>only per folder or workspace</b>: open the <b>MCP</b> button in a room's header (or <b>Folder extras…</b> in an agent's MCP menu). Extras apply only to agents in that folder and are never shared with other folders. Switching one on shows its exact command first, and asks again if the command changes.</p>
+      </section></div>`;
     wireHead();
     if($('capSave'))$('capSave').onclick=async()=>{
       const v=parseFloat($('capDef').value),msg=$('capMsg');
@@ -102,11 +97,15 @@
       if(X.onSettings)X.onSettings({defaultMaxAiCredits:res&&res.defaultMaxAiCredits});
       msg.textContent=res&&res.defaultMaxAiCredits?'Saved: new sessions start with a cap of '+res.defaultMaxAiCredits+' AIU.':'Saved: new sessions start without a cap.';
     };
-    $('mcpAdd').onclick=()=>editServer(null);
-    $('mcpImpCopilot').onclick=()=>importFrom('copilot');
-    $('mcpImpVs').onclick=()=>importFrom('vscode');
     r.onclick=onSettingsClick;
     if(focus){const h=r.querySelector('h2');if(h){h.tabIndex=-1;h.focus({preventScroll:true});}}
+  }
+  /* one server of the Copilot CLI list (or the built-in one): read-only, with its exact command/URL and a switch for new sessions */
+  function cliRow(a){
+    const run=a.command||a.url?(a.transport==='stdio'||a.command?[a.command].concat(a.args||[]).join(' '):a.url):'';
+    return `<li class="srv amb" data-amb="${esc(a.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(a.name)}</b><span class="mtag src">${a.origin==='builtin'?'built-in':'Copilot CLI list'}</span>${a.transport?`<span class="mtag">${esc(a.transport)}</span>`:''}</div>
+      ${run?`<code class="srv-cmd" title="${esc(run)}">${esc(cap(run,180))}</code>`:''}</div>
+      <div class="srv-act">${sw(a.enabled,(a.enabled?'Switch off ':'Switch on ')+a.name+' for new sessions','data-act="amb"')}</div></li>`;
   }
   const secretChip=(kind,s)=>`<span class="sec" title="${kind==='env'?'Environment variable':'Header'}: ${s.set?'value stored, hidden':'no value'}">${esc(s.key)}<i>${s.set?'••••••':'not set'}</i></span>`;
   function head(title){
@@ -116,35 +115,91 @@
   function wireHead(){const c=$('scrClose');if(c)c.onclick=close;}
 
   async function onSettingsClick(e){
+    const li=e.target.closest('li.srv');if(!li||!li.dataset.amb)return;
+    const act=(e.target.closest('[data-act]')||{}).dataset;
+    if(act&&act.act==='amb'){const sw0=e.target.closest('[data-act]');const on=sw0.getAttribute('aria-checked')!=='true';await X.bridge.mcpSetCli(li.dataset.amb,on);X.toast(esc(li.dataset.amb)+(on?' will start in new sessions.':' will not start in new sessions.'),3200);paintSettings();}
+  }
+
+  /* ---------------- a folder's MCP extras (spec 020) ---------------- */
+  const FOLDER_NOTE='Extra, this folder only';
+  async function openFolder(key,name){
+    if(!X.bridge.mcpFolderState)return;
+    open('folder',{key,name:name||key});
+  }
+  async function paintFolder(focus){
+    const k=cur.key;
+    const first=!cur.st;
+    if(first)root().innerHTML=head('MCP extras')+'<div class="scr-body"><p class="scr-note">Loading…</p></div>';
+    const st=await X.bridge.mcpFolderState(k);
+    if(!cur||cur.kind!=='folder'||cur.key!==k)return;
+    cur.st=st;
+    const r=root();
+    if(!st||!st.ok){r.innerHTML=head('MCP extras')+'<div class="scr-body"><p class="scr-note">This folder is not in the office any more.</p></div>';wireHead();return;}
+    const cmd=v=>v.transport==='stdio'?[v.command].concat(v.args||[]).join(' '):v.url;
+    const srv=st.servers.map(v=>`<li class="srv" data-name="${esc(v.name)}">
+      <div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(v.name)}</b><span class="mtag extra" title="Only agents in ${esc(st.name)} get this server">${FOLDER_NOTE}</span><span class="mtag">${esc(v.transport)}</span>
+        ${v.enabled&&!v.trusted?'<span class="mtag warn">needs trust</span>':''}${v.needsSecrets?'<span class="mtag warn" title="Secret values are not available. Edit the server and enter them again.">needs secrets</span>':''}${v.workingDirectory?`<span class="mtag" title="${esc(v.workingDirectory)}">cwd</span>`:''}</div>
+        <code class="srv-cmd" title="${esc(cmd(v))}">${esc(cap(cmd(v),180))}</code>
+        ${v.env.concat(v.headers).length?`<div class="srv-secrets" aria-label="Secret values (masked)">${v.env.map(x=>secretChip('env',x)).join('')}${v.headers.map(x=>secretChip('header',x)).join('')}</div>`:''}
+      </div>
+      <div class="srv-act">${sw(v.enabled&&v.trusted,(v.enabled?'Disable ':'Enable ')+v.name,'data-act="toggle"')}<button class="btn sm" type="button" data-act="edit">Edit</button><button class="btn sm danger" type="button" data-act="remove">Remove</button></div></li>`).join('');
+    const leg=st.legacy.map(v=>`<li class="srv legacy" data-legacy="${esc(v.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(v.name)}</b><span class="mtag warn">old app-level server, not applied</span><span class="mtag">${esc(v.transport)}</span></div>
+        <code class="srv-cmd" title="${esc(cmd(v))}">${esc(cap(cmd(v),180))}</code></div>
+      <div class="srv-act"><button class="btn sm" type="button" data-act="move">Move here</button><button class="btn sm danger" type="button" data-act="rmlegacy">Remove</button></div></li>`).join('');
+    r.innerHTML=head('MCP extras · '+st.name)+`<div class="scr-body">
+      <section class="scr-sec" aria-labelledby="fxH"><h3 id="fxH">Extra servers for <code>${esc(st.name)}</code> <small>${FOLDER_NOTE.toLowerCase()}</small></h3>
+        <p class="scr-note">These servers are optional and belong to <b>this folder or workspace only</b>: agents in other folders do not get them. Servers from your Copilot CLI list are available to every agent and are not edited here.</p>
+        <p class="scr-warn" role="note"><b>MCP servers run local commands with your user rights.</b> You see the exact command before a server is switched on for the first time, and again whenever its command or URL changes. Removing the folder from the office keeps these extras; they come back if you add the folder again.</p>
+        <p class="scr-note ${st.secretsPersist?'ok':'warn'}" role="status">${st.secretsPersist?'Secret values (environment variables, headers) are stored encrypted by your operating system and are never shown again, logged or exported.':'<b>No OS-protected secret store is available here.</b> Secret values are kept in memory for this run only and are not saved: you will need to enter them again after a restart.'}</p>
+        <div class="scr-tools"><button class="btn primary" type="button" id="mcpAdd">+ Add extra server</button><button class="btn" type="button" id="fxSettings">Copilot CLI list…</button></div>
+        ${st.skipped.length?`<p class="scr-note warn" role="status">Not passed to new sessions: ${st.skipped.map(x=>'<b>'+esc(x.name)+'</b> ('+esc(x.reason)+')').join('; ')}.</p>`:''}
+        ${srv?`<ul class="srvs" id="srvList">${srv}</ul>`:'<p class="scr-empty">No extras for this folder. Your Copilot CLI servers are already available to its agents.</p>'}
+        <p class="scr-note small">Changes apply to <b>new</b> sessions in this folder and to agents that start or resume afterwards. A running session keeps its servers until it ends, or until you switch one in that agent's MCP menu.</p>
+      </section>
+      ${leg?`<section class="scr-sec" aria-labelledby="lgH"><h3 id="lgH">Old app-level servers <small>not applied</small></h3>
+        <p class="scr-note">Earlier versions kept one global list of servers. Those are no longer used anywhere. <b>Move here</b> puts one into this folder (switched off; you review and trust it again), or remove it.</p><ul class="srvs" id="legList">${leg}</ul></section>`:''}</div>`;
+    wireHead();
+    $('mcpAdd').onclick=()=>editServer(null,st);
+    $('fxSettings').onclick=()=>open('settings');
+    r.onclick=onFolderClick;
+    if(focus){const h=r.querySelector('h2');if(h){h.tabIndex=-1;h.focus({preventScroll:true});}}
+  }
+  async function onFolderClick(e){
+    const st=cur&&cur.st;if(!st)return;
     const li=e.target.closest('li.srv');if(!li)return;
     const act=(e.target.closest('[data-act]')||{}).dataset;if(!act)return;
-    if(li.dataset.amb){
-      if(act.act==='amb'){const sw0=e.target.closest('[data-act]');const on=sw0.getAttribute('aria-checked')!=='true';await X.bridge.mcpSetAmbient(li.dataset.amb,on);X.toast(esc(li.dataset.amb)+(on?' will start in new sessions.':' will not start in new sessions.'),3200);paintSettings();}
+    if(li.dataset.legacy){
+      const n=li.dataset.legacy;
+      if(act.act==='move'){const res=await X.bridge.mcpMoveLegacy(n,st.key);X.toast(res&&res.ok?esc(n)+' moved here (off). Review it and switch it on.':'Could not move: '+esc((res&&res.error)||'unknown error'),4200);paintFolder();}
+      else if(act.act==='rmlegacy'){
+        const r=await dialog({title:'Remove old server "'+n+'"?',html:'<p class="dsub">It is deleted from Agent Durbar with its stored secret values. It was not being used.</p>',buttons:[{label:'Cancel',value:null},{label:'Remove',value:'ok',cls:'primary warn'}]});
+        if(r){await X.bridge.mcpRemoveLegacy(n);paintFolder();}
+      }
       return;
     }
-    const name=li.dataset.name,v=mcp.servers.find(x=>x.name===name);if(!v)return;
-    if(act.act==='toggle'){const turnOn=!(v.enabled&&v.trusted);await toggleServer(v,turnOn);}
-    else if(act.act==='edit')editServer(v);
+    const name=li.dataset.name,v=st.servers.find(x=>x.name===name);if(!v)return;
+    if(act.act==='toggle'){const turnOn=!(v.enabled&&v.trusted);await toggleServer(v,turnOn,st);}
+    else if(act.act==='edit')editServer(v,st);
     else if(act.act==='remove'){
-      const r=await dialog({title:'Remove "'+name+'"?',html:'<p class="dsub">The server and its stored secret values are deleted from Agent Durbar. Running sessions keep it until they end.</p>',buttons:[{label:'Cancel',value:null},{label:'Remove',value:'ok',cls:'primary warn'}]});
-      if(r){await X.bridge.mcpRemove(name);X.toast('Removed '+esc(name)+'.',2600);paintSettings();}
+      const r=await dialog({title:'Remove "'+name+'"?',html:'<p class="dsub">The server and its stored secret values are deleted from this folder in Agent Durbar. Running sessions keep it until they end.</p>',buttons:[{label:'Cancel',value:null},{label:'Remove',value:'ok',cls:'primary warn'}]});
+      if(r){await X.bridge.mcpRemove(st.key,name);X.toast('Removed '+esc(name)+'.',2600);paintFolder();}
     }
   }
-  async function toggleServer(v,turnOn){
-    let r=await X.bridge.mcpSetEnabled(v.name,turnOn,false);
+  async function toggleServer(v,turnOn,st){
+    let r=await X.bridge.mcpSetEnabled(st.key,v.name,turnOn,false);
     if(r&&r.needsTrust){
       const t=r.needsTrust;
       const run=t.transport==='stdio'?[t.command].concat(t.args||[]).join(' '):t.url;
-      const ok=await dialog({title:'Trust "'+t.name+'"?',wide:true,html:`<p class="dsub"><b>This will run a program on your computer</b> every time a session starts, with your user rights, and give it access to what you pass in its environment. Agents will be able to call its tools${t.transport==='stdio'?'':' (a remote server: requests and your header values go to that URL)'}.</p>
+      const ok=await dialog({title:'Trust "'+t.name+'" in '+st.name+'?',wide:true,html:`<p class="dsub"><b>This will run a program on your computer</b> every time a session starts in <b>${esc(st.name)}</b>, with your user rights, and give it access to what you pass in its environment. Agents there will be able to call its tools${t.transport==='stdio'?'':' (a remote server: requests and your header values go to that URL)'}.</p>
         <p class="dsub">${t.transport==='stdio'?'Command':'URL'}:</p><pre class="trustcmd" tabindex="0">${esc(run)}</pre>${t.workingDirectory?`<p class="dsub">Working directory: <code>${esc(t.workingDirectory)}</code></p>`:''}
         <p class="dsub">Only continue if you know where this comes from. You will be asked again if the command or URL changes.</p>`,
         buttons:[{label:'Cancel',value:null},{label:'Trust and enable',value:'ok',cls:'primary warn'}]});
-      if(!ok){paintSettings();return;}
-      r=await X.bridge.mcpSetEnabled(v.name,true,true);
+      if(!ok){paintFolder();return;}
+      r=await X.bridge.mcpSetEnabled(st.key,v.name,true,true);
     }
     if(!r||!r.ok)X.toast('Could not change the server: '+esc((r&&r.error)||'unknown error'),5000);
-    else X.toast(esc(v.name)+(turnOn?' is on for new sessions.':' is off.'),2800);
-    paintSettings();
+    else X.toast(esc(v.name)+(turnOn?' is on for new sessions in '+esc(st.name)+'.':' is off.'),2800);
+    paintFolder();
   }
 
   /* add / edit form */
@@ -153,7 +208,7 @@
       <input class="v" type="password" spellcheck="false" autocomplete="new-password" aria-label="${kind==='env'?'Variable value (secret)':'Header value (secret)'}" placeholder="${existing&&set?'•••••• stored. Leave empty to keep':'value (secret)'}">
       <button class="btn sm" type="button" data-rm aria-label="Remove this row">×</button></div>`;
   }
-  async function editServer(v){
+  async function editServer(v,st){
     const isNew=!v;
     const t=v?v.transport:'stdio';
     const html=`<form class="mform" id="mForm" autocomplete="off" onsubmit="return false">
@@ -179,7 +234,7 @@
       return o;
     };
     let saved=null;
-    const r=await dialog({title:isNew?'Add MCP server':'Edit "'+v.name+'"',wide:true,html,buttons:[{label:'Cancel',value:null},{label:isNew?'Add server':'Save',value:'ok',cls:'primary'}],
+    const r=await dialog({title:isNew?'Add extra server to '+st.name:'Edit "'+v.name+'"',wide:true,html,buttons:[{label:'Cancel',value:null},{label:isNew?'Add server':'Save',value:'ok',cls:'primary'}],
       onOpen:d=>{sync(d);d.querySelector('#mType').onchange=()=>sync(d);
         d.addEventListener('click',e=>{const add=e.target.closest('[data-add]');if(add){const box=d.querySelector(add.dataset.add==='env'?'#envRows':'#hdrRows');box.insertAdjacentHTML('beforeend',rowHTML(add.dataset.add,'',false,false));box.lastElementChild.querySelector('.k').focus();}
           const rm=e.target.closest('[data-rm]');if(rm)rm.closest('.krow').remove();});},
@@ -191,33 +246,13 @@
         return '';}});
     if(!r)return;
     const input=collect(r.root);
-    const res=await X.bridge.mcpUpsert(input,v?v.name:undefined);
-    if(!res||!res.ok){X.toast('Not saved: '+esc((res&&res.error)||'unknown error'),5600);return editServer2(input,v);}
-    X.toast(esc(input.name)+(isNew?' added (off). Switch it on to use it.':' saved.'),3600);
-    paintSettings();
+    const res=await X.bridge.mcpUpsert(st.key,input,v?v.name:undefined);
+    if(!res||!res.ok){X.toast('Not saved: '+esc((res&&res.error)||'unknown error'),5600);return editServer2(input,v,st);}
+    X.toast(esc(input.name)+(isNew?' added to '+esc(st.name)+' (off). Switch it on to use it.':' saved.'),3600);
+    paintFolder();
   }
   /* reopen after a server-side validation error without losing what was typed (secret values are not kept) */
-  function editServer2(input,v){const view=Object.assign({},v||{},{name:input.name,transport:input.transport,command:input.command,args:input.args,workingDirectory:input.workingDirectory,url:input.url,tools:input.tools,env:(v&&v.env)||[],headers:(v&&v.headers)||[]});return editServer(v?view:Object.assign(view,{name:input.name}));}
-
-  async function importFrom(src){
-    if(!X.bridge.mcpImportPreview)return;
-    const p=await X.bridge.mcpImportPreview(src);
-    const label=src==='copilot'?'Copilot CLI':'VS Code';
-    if(!p.ok){X.toast(esc(p.error||'Nothing to import.'),4800);return;}
-    if(!p.candidates.length){X.toast('Found no MCP servers in the '+esc(label)+' file.',4200);return;}
-    const items=p.candidates.map((c,i)=>`<li class="imp"><label class="chk"><input type="checkbox" data-i="${i}" checked><span><b>${esc(c.name)}</b> <span class="mtag">${esc(c.transport)}</span>
-      <code class="srv-cmd">${esc(cap(c.transport==='stdio'?[c.command].concat(c.args||[]).join(' '):c.url,160))}</code>
-      ${c.envKeys.length||c.headerKeys.length?`<span class="srv-secrets">${c.envKeys.map(k=>`<span class="sec">${esc(k)}<i>••••••</i></span>`).join('')}${c.headerKeys.map(k=>`<span class="sec">${esc(k)}<i>••••••</i></span>`).join('')}</span>`:''}
-      ${c.notes.map(n=>`<span class="imp-note">${esc(n)}</span>`).join('')}</span></label></li>`).join('');
-    const r=await dialog({title:'Import from '+label,wide:true,html:`<p class="dsub">Read-only: the file is not changed. Imported servers are added <b>switched off</b> and must be trusted before use. Values of environment variables and headers are copied into the secret store and are not shown. ${p.skipped?p.skipped+' entr'+(p.skipped>1?'ies were':'y was')+' skipped (not usable).':''}</p><ul class="imps">${items}</ul>`,
-      buttons:[{label:'Cancel',value:null},{label:'Import selected',value:'ok',cls:'primary'}]});
-    if(!r)return;
-    const names=[...r.root.querySelectorAll('input[data-i]:checked')].map(i=>p.candidates[+i.dataset.i].name);
-    if(!names.length)return;
-    const res=await X.bridge.mcpImportApply(p.token,names);
-    X.toast(res.ok?('Imported '+res.added.length+' server'+(res.added.length===1?'':'s')+' (off). Review and switch them on.'):esc(res.error||'Import failed.'),4600);
-    paintSettings();
-  }
+  function editServer2(input,v,st){const view=Object.assign({},v||{},{name:input.name,transport:input.transport,command:input.command,args:input.args,workingDirectory:input.workingDirectory,url:input.url,tools:input.tools,env:(v&&v.env)||[],headers:(v&&v.headers)||[]});return editServer(v?view:Object.assign(view,{name:input.name}),st);}
 
   /* ---------------- per-agent MCP menu ---------------- */
   async function agentMcp(a){
@@ -228,46 +263,108 @@
       const rows=s.servers.map(x=>{
         const eff=x.defaultOn&&!x.off;
         const stat=x.status?`<span class="mst ${esc(x.status)}"><i></i>${esc(x.status)}</span>`:'<span class="mst none">not started</span>';
-        return `<li class="srv sm" data-n="${esc(x.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(x.name)}</b><span class="mtag">${x.origin==='durbar'?'Settings':'runtime'}</span>${stat}${!x.defaultOn?'<span class="mtag">off in Settings</span>':''}</div>${x.error?`<span class="imp-note">${esc(cap(x.error,160))}</span>`:''}</div>
+        return `<li class="srv sm" data-n="${esc(x.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(x.name)}</b><span class="mtag${x.origin==='folder'?' extra':' src'}">${x.origin==='cli'?'Copilot CLI list':x.origin==='folder'?'this folder only':'runtime'}</span>${stat}${!x.defaultOn?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${x.error?`<span class="imp-note">${esc(cap(x.error,160))}</span>`:''}</div>
           <div class="srv-act">${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name,'data-n="'+esc(x.name)+'"'+(!x.defaultOn?' disabled':''))}</div></li>`;}).join('');
-      return `<p class="dsub">${s.live?'This agent is running: a switch applies right away.':'This agent has no running session: your choices apply when it starts.'} Servers are set globally in <b>Settings</b>; here you can only switch one off for <b>${esc(a.name)}</b>.</p><ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul><p class="dsub small">Applies to this agent until the app is closed.</p>`;
+      return `<p class="dsub">${s.live?'This agent is running: a switch applies right away.':'This agent has no running session: your choices apply when it starts.'} Your Copilot CLI servers are global (see <b>Settings</b>); extras belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p><ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul><p class="dsub small">Applies to this agent until the app is closed.</p>`;
     };
-    const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings…',value:'settings'},{label:'Done',value:'ok',cls:'primary'}],
+    const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings…',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
       onOpen:d=>{d.addEventListener('click',async e=>{const b=e.target.closest('button.swt');if(!b||b.disabled)return;const on=b.getAttribute('aria-checked')!=='true';
         const r=await X.bridge.setAgentMcp(a.id,b.dataset.n,on);
         if(r&&r.error)X.toast(esc(r.error),5200);
         st=await load();d.querySelector('.dbody').innerHTML=body(st);});}});
     const r=await d0;
     if(r&&r.value==='settings')open('settings');
+    else if(r&&r.value==='folder'&&X.folderOf){const f=X.folderOf(a);if(f)openFolder(f.key,f.name);}
   }
 
   /* ---------------- Tools view ---------------- */
   function nameOf(id){const a=X.agents().find(x=>x.id===id);return a?a.name:id.slice(0,8);}
-  function paintTools(focus){
+  /* all-time document from main (spec 020); refreshed on every paint request of the all-time period */
+  async function loadUsage(){
+    if(!X.bridge.usageAllTime){usage=null;return;}
+    try{usage=await X.bridge.usageAllTime();}catch(e){usage=null;}
+  }
+  /* the agent label (all-time key) of a live agent id */
+  const labelOfId=id=>usage&&usage.labels&&usage.labels[id]||null;
+  async function paintTools(focus){
+    if(period==='all'&&cur&&cur.kind==='tools'){const k=++toolsSeq;await loadUsage();if(k!==toolsSeq||!cur||cur.kind!=='tools')return;}
+    paintToolsNow(focus);
+  }
+  let toolsSeq=0;
+  async function paintToolsNow(focus){
     const r=root();
-    const scope=cur.scope||null;
+    const all=period==='all';
     const agents=X.agents();
-    const tab=cur.tab||'tools';
-    const tot=X.stats.totals(scope);
-    const scopeSel=`<label class="select-wrap"><span class="sr-only">Show</span><select id="toolScope"><option value="">All agents</option>${agents.map(a=>`<option value="${esc(a.id)}"${a.id===scope?' selected':''}>${esc(a.name)}</option>`).join('')}</select></label>`;
-    r.innerHTML=`<div class="scr-head"><h2>Tools</h2>${scopeSel}<div class="seg" role="tablist" aria-label="Tools view"><button role="tab" id="tabTools" aria-selected="${tab==='tools'}" type="button">Tool usage</button><button role="tab" id="tabAgents" aria-selected="${tab==='agents'}" type="button">Models &amp; context</button></div><span class="grow"></span><button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>
-      <div class="scr-body">${tab==='tools'?toolsTab(scope,tot):agentsTab(scope,agents)}</div>`;
+    const tab=all?'tools':(cur.tab||'tools');
+    let scope=cur.scope||null; /* session: an agent id; all time: an agent label */
+    let tot,groups,scopeSel;
+    if(all){
+      if(scope&&usage&&usage.labels&&usage.labels[scope])scope=usage.labels[scope]; /* an agent id from the chat header */
+      cur.scope=scope;
+      const doc=usage&&usage.doc;
+      const labels=doc?Object.keys(doc.agents).filter(l=>doc.agents[l].calls||doc.agents[l].failed).sort((x,y)=>doc.agents[y].calls-doc.agents[x].calls||x.localeCompare(y)):[];
+      if(scope&&!labels.includes(scope))labels.unshift(scope);
+      const v=S.docView(doc,scope);
+      tot=v.totals;groups=v.groups;
+      scopeSel=`<label class="select-wrap"><span class="sr-only">Show</span><select id="toolScope"><option value="">All agents</option>${labels.map(l=>`<option value="${esc(l)}"${l===scope?' selected':''}>${esc(l)}</option>`).join('')}</select></label>`;
+    }else{
+      if(scope&&!agents.some(a=>a.id===scope)){const id=Object.keys((usage&&usage.labels)||{}).find(k=>usage.labels[k]===scope);scope=id||null;cur.scope=scope;}
+      tot=X.stats.totals(scope);groups=X.stats.groups(scope);
+      scopeSel=`<label class="select-wrap"><span class="sr-only">Show</span><select id="toolScope"><option value="">All agents</option>${agents.map(a=>`<option value="${esc(a.id)}"${a.id===scope?' selected':''}>${esc(a.name)}</option>`).join('')}</select></label>`;
+    }
+    const per=`<div class="seg" role="tablist" aria-label="Period"><button role="tab" id="perSession" aria-selected="${!all}" type="button">This session</button><button role="tab" id="perAll" aria-selected="${all}" type="button">All time</button></div>`;
+    const tabs=all?'':`<div class="seg" role="tablist" aria-label="Tools view"><button role="tab" id="tabTools" aria-selected="${tab==='tools'}" type="button">Tool usage</button><button role="tab" id="tabAgents" aria-selected="${tab==='agents'}" type="button">Models &amp; context</button></div>`;
+    const body=tab==='tools'?await toolsTab(scope,tot,groups,all):agentsTab(scope,agents);
+    if(!cur||cur.kind!=='tools')return;
+    r.innerHTML=`<div class="scr-head"><h2>Tools</h2>${per}${scopeSel}${tabs}<span class="grow"></span><button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>
+      <div class="scr-body">${body}</div>`;
     wireHead();
     $('toolScope').onchange=e=>{cur.scope=e.target.value||null;paintTools();};
-    $('tabTools').onclick=()=>{cur.tab='tools';paintTools();};
-    $('tabAgents').onclick=()=>{cur.tab='agents';paintTools();};
-    r.onclick=e=>{const l=e.target.closest('[data-open]');if(l){close();X.openAgent(l.dataset.open);}};
+    $('perSession').onclick=()=>{if(period==='session')return;period='session';cur.scope=null;paintTools();};
+    $('perAll').onclick=()=>{if(period==='all')return;period='all';paintTools();};
+    if($('tabTools'))$('tabTools').onclick=()=>{cur.tab='tools';paintTools();};
+    if($('tabAgents'))$('tabAgents').onclick=()=>{cur.tab='agents';paintTools();};
+    r.onclick=async e=>{
+      const l=e.target.closest('[data-open]');if(l){close();X.openAgent(l.dataset.open);return;}
+      if(e.target.closest('#cfgSettings')){open('settings');return;}
+      if(e.target.closest('#usageReset')){
+        const ok=await dialog({title:'Reset all-time counts?',html:'<p class="dsub">This clears the counts kept across restarts and starts again from today. It does not touch your agents or their history.</p>',buttons:[{label:'Cancel',value:null},{label:'Reset',value:'ok',cls:'primary warn'}]});
+        if(ok&&X.bridge.usageReset){await X.bridge.usageReset();X.toast('All-time counts were reset.',2600);cur.scope=null;paintTools();}
+      }
+    };
     if(focus){const h=r.querySelector('h2');if(h){h.tabIndex=-1;h.focus({preventScroll:true});}}
   }
-  function toolsTab(scope,tot){
-    const groups=X.stats.groups(scope);
-    if(!groups.length)return `<p class="scr-empty">No tool calls yet${scope?' for '+esc(nameOf(scope)):''}.<br><small>Counts start when an agent uses a tool in this run (built-in tools and MCP tools of every server). History of resumed sessions is not counted.</small></p>`;
+  const fmtDate=iso=>{const d=new Date(iso);return isNaN(d)?'':d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});};
+  async function toolsTab(scope,tot,groups,all){
+    const name1=all?scope:(scope?nameOf(scope):'');
+    const cfg=await configuredServers(scope,all,groups);
+    if(!groups.length){
+      const empty=all?`<p class="scr-empty">Nothing counted yet${scope?' for '+esc(scope):''}.<br><small>Counting starts with the first tool call and is kept across restarts. Only tool names, MCP server names, agent names and counts are stored; never arguments or output.</small></p>`
+        :`<p class="scr-empty">No tool calls yet${scope?' for '+esc(name1):''} in this session.<br><small>This view counts tool calls since the app started (built-in tools and MCP tools of every server). History of resumed sessions is not counted. <b>All time</b> keeps counts across restarts.</small></p>`;
+      return empty+cfg;
+    }
     const max=Math.max(1,...groups.flatMap(g=>g.rows.map(r=>r.count)));
-    const sum=`<p class="scr-sum"><b>${tot.total}</b> tool call${tot.total===1?'':'s'}${scope?' by '+esc(nameOf(scope)):' by all agents'} · <b>${tot.mcp}</b> through MCP${tot.failed?` · <b>${tot.failed}</b> failed`:''}</p>`;
+    const since=all&&usage&&usage.doc?fmtDate(usage.doc.since):'';
+    const sum=`<p class="scr-sum"><b>${tot.total}</b> tool call${tot.total===1?'':'s'}${scope?' by '+esc(name1):all?` by ${tot.agents} agent${tot.agents===1?'':'s'}`:' by all agents'}${all&&since?` since ${esc(since)}`:''} · <b>${tot.mcp}</b> through MCP${tot.failed?` · <b>${tot.failed}</b> failed`:''}</p>`
+      +(all?`<p class="scr-note small">Kept on this computer across restarts: tool names, MCP server names, agent names and counts only (never arguments, output or paths). ${usage&&usage.error?'<b class="warnc">Could not save the last update: '+esc(usage.error)+'.</b> ':''}<button class="btn sm danger" type="button" id="usageReset">Reset all-time counts</button></p>`:'');
     return sum+groups.map(g=>`<section class="tgrp ${g.source}"><h3>${esc(g.title)} <small>${g.total} call${g.total===1?'':'s'}</small></h3>
       <table class="ttab"><thead><tr><th scope="col">Tool</th><th scope="col" class="num">Calls</th><th scope="col" class="barc"><span class="sr-only">Share</span></th>${scope?'':'<th scope="col">Used by</th>'}</tr></thead><tbody>${g.rows.map(r=>`<tr><th scope="row"><code>${esc(r.name)}</code>${r.failed?` <span class="mtag warn" title="${r.failed} failed call${r.failed>1?'s':''}">${r.failed} failed</span>`:''}</th><td class="num">${r.count}</td>
         <td class="barc"><span class="bar ${g.source}" role="img" aria-label="${r.count} of ${max}"><i style="width:${Math.max(3,Math.round(r.count/max*100))}%"></i></span></td>
-        ${scope?'':`<td class="by">${r.agents.slice(0,4).map(x=>`<button class="by-chip" type="button" data-open="${esc(x.id)}" title="Open ${esc(nameOf(x.id))}">${esc(nameOf(x.id))} <b>${x.count}</b></button>`).join('')}${r.agents.length>4?`<span class="by-more">+${r.agents.length-4}</span>`:''}</td>`}</tr>`).join('')}</tbody></table></section>`).join('');
+        ${scope?'':`<td class="by">${r.agents.slice(0,4).map(x=>x.id?`<button class="by-chip" type="button" data-open="${esc(x.id)}" title="Open ${esc(nameOf(x.id))}">${esc(nameOf(x.id))} <b>${x.count}</b></button>`:`<span class="by-chip static" title="${esc(x.label)}">${esc(x.label)} <b>${x.count}</b></span>`).join('')}${r.agents.length>4?`<span class="by-more">+${r.agents.length-4}</span>`:''}</td>`}</tr>`).join('')}</tbody></table></section>`).join('')+cfg;
+  }
+  /* "Configured MCP servers": the Copilot CLI list (and, for one session agent, its folder extras) with the calls of this period, 0 included */
+  async function configuredServers(scope,all,groups){
+    if(!X.bridge.mcpState)return '';
+    let st=null;try{st=await X.bridge.mcpState();}catch(e){return '';}
+    if(!st)return '';
+    const calls=new Map(groups.filter(g=>g.source==='mcp').map(g=>[g.server,g.total]));
+    const items=st.cli.map(a=>({name:a.name,tag:a.origin==='builtin'?'built-in':'Copilot CLI list',on:a.enabled}));
+    if(!all&&scope&&X.bridge.agentMcp){
+      try{const r=await X.bridge.agentMcp(scope);if(r&&r.ok)for(const x of r.servers)if(x.origin==='folder')items.push({name:x.name,tag:'this folder only',extra:true,on:x.defaultOn&&!x.off});}catch(e){/* optional */}
+    }
+    const rows=items.map(i=>`<li class="cfg"><b>${esc(i.name)}</b><span class="mtag${i.extra?' extra':' src'}">${esc(i.tag)}</span>${i.on?'':'<span class="mtag">off for new sessions</span>'}<span class="cfg-n">${calls.get(i.name)||0} call${(calls.get(i.name)||0)===1?'':'s'}</span></li>`).join('');
+    return `<section class="tgrp cfgsec" aria-labelledby="cfgH"><h3 id="cfgH">Configured MCP servers <small>${all?'all time':'this session'}</small></h3><ul class="cfgs">${rows}</ul>
+      <p class="scr-note small">${esc(st.file.label)}${st.file.found?'':' (not found)'}${st.file.error?' (unreadable)':''} is read live. Open <button class="linkbtn" type="button" id="cfgSettings">Settings</button> for the details.</p></section>`;
   }
   function ctxCell(c,limit){
     const tokens=c?c.tokens:undefined;
@@ -303,12 +400,14 @@
 
   window.DurbarScreens={
     init(ctx){X=ctx;},
+    folderMcp:openFolder,
     openSettings:()=>{mcp=null;open('settings');},
-    openTools:(scope,tab)=>open('tools',{scope:scope||null,tab:tab||'tools'}),
+    openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},
     agentMcp,
     close,isOpen,
     /* live refresh while the Tools view is open (called when events arrive) */
     refresh:()=>{if(cur&&cur.kind==='tools'&&!document.getElementById('scrDlg'))paintTools();},
+    period:()=>period,
     ctxChip,
   };
 })();

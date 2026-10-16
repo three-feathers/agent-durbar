@@ -52,6 +52,25 @@ npm run dist              # installers/archives for this OS in release/ (no sign
 
 Each release also lists `SHA256SUMS.txt`. Releases are built by GitHub Actions from `v*` tags into a **draft** release; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Status (milestone 10: Tools "All time", the Copilot CLI MCP list first, MCP extras per folder)
+
+Spec [020](specs/020-tools-all-time-and-mcp-cli-primary/spec.md) (changes spec 019). Built and tested on the simulator and unit tests. **AI credits spent: 0 AIU.**
+
+- **Tools: This session / All time.** A switch at the top of the Tools view. *This session* is as before (counts since the app started, per agent, plus Models & context). *All time* is cumulative and **kept on disk** in the app's userData folder (`durbar-tool-usage.json`), so it survives restarts: per tool, per MCP server and per agent (`<agent name> · <folder name>`). Only tool names, server names, agent labels and counts are stored; never arguments, output, prompts, paths or secrets (a test checks this). Counting happens in the main process, so it works with the Tools view closed. **Reset all-time counts** clears it. Writes are debounced (2 s) and flushed on quit.
+- **MCP: the Copilot CLI list is the primary source.** `~/.copilot/mcp-config.json` (plus the built-in GitHub server) is read live and listed first in Settings and in the Tools view ("Configured MCP servers", with call counts, 0 included), with the exact command or URL and no env/header values. Nothing to configure or import: the Import buttons and the app-level server list are gone. The per-server switch (for new sessions) and each agent's MCP toggles stay.
+- **Extras only per folder or workspace.** Agent Durbar's own optional servers are stored **per folder/workspace** and applied only to agents in that folder (a room-header **MCP** button, or *Folder extras...* in an agent's MCP menu), labelled "Extra, this folder only". There is **no** app-level list of extras. Trust prompts with the exact command stay for extras (and again when the command or URL changes); secrets stay encrypted with the OS store. A name already used by the CLI list is refused. Servers from the old milestone-8 global list are kept but **not applied**; a folder's extras screen offers **Move here** or **Remove**.
+- **Decision to confirm:** CLI-list servers are not behind a trust prompt (the runtime starts them in every session anyway, as the CLI does); the prompt applies to extras, the only servers this app itself passes to a session. Per-folder import from VS Code's `mcp.json` is not built (known gap).
+
+![Room headers with the MCP extras button](docs/screenshots/m10-office-mcp-buttons-1440x900.png)
+![Tools, This session](docs/screenshots/m10-tools-this-session-1440x900.png)
+![Tools, All time](docs/screenshots/m10-tools-all-time-1440x900.png)
+![Settings: the Copilot CLI list first](docs/screenshots/m10-settings-cli-list-1440x900.png)
+![MCP extras of one folder](docs/screenshots/m10-folder-extras-1440x900.png)
+![Trust dialog for an extra](docs/screenshots/m10-folder-trust-1280x800.png)
+![An agent's MCP menu: CLI list + this folder's extras](docs/screenshots/m10-agent-mcp-1280x800.png)
+
+Tests: `npm test` adds `test:toolusage`, `test:usagestore`, the per-folder MCP store (scoping, legacy migration, name clash), the CLI list reader, and the all-time rows. Screenshots: `scripts/shots-m10.js` (1440x900 and 1280x800, with assertions).
+
 ## Status (milestone 9: credit caps, safer defaults, dev hooks)
 
 Specs [011](specs/011-credit-caps-and-usage-display/spec.md), [003](specs/003-permissions-and-approvals/spec.md) (FR-021..FR-024) and [010](specs/010-simulator/spec.md) (FR-017..FR-020). Built and tested on the simulator and unit tests. **AI credits spent: 0 AIU.**
@@ -70,7 +89,7 @@ Specs [011](specs/011-credit-caps-and-usage-display/spec.md), [003](specs/003-pe
 
 Spec [019](specs/019-mcp-tools-and-context/spec.md) (research in [research.md](specs/019-mcp-tools-and-context/research.md)). Built and tested on the simulator and on sanitised recordings of real events. Research cost: **1 real prompt, 2 model calls, 0.167 AIU**.
 
-**Settings (top bar)** is one global screen, not per agent. It lists MCP servers with add / edit / remove / enable (stdio: command, args, env; http/sse: URL, headers). Values of env variables and headers are secrets: the renderer never receives them (key names and "set" only), they show as `••••••`, and they are stored only encrypted with Electron `safeStorage`. If the OS has no protected store (Linux `basic_text` counts as none) they are kept in memory for the run and the screen says so. They are not logged, exported or committed. **Enabling a server shows its exact command (or URL) and a warning that MCP servers run local commands with your rights**; trust is remembered for that exact definition and asked again if it changes. **Import** reads `~/.copilot/mcp-config.json` or the VS Code user `mcp.json` read-only, shows a preview and imports only what you tick, switched off. Servers apply to **new** sessions as defaults; each agent has an **MCP** button in its header to switch single servers off for itself (live sessions switch right away through the runtime).
+*(Superseded by milestone 10: the app-level server list, its Import buttons and the global trust flow below were replaced by the Copilot CLI list and per-folder extras.)* **Settings (top bar)** is one global screen, not per agent. It lists MCP servers with add / edit / remove / enable (stdio: command, args, env; http/sse: URL, headers). Values of env variables and headers are secrets: the renderer never receives them (key names and "set" only), they show as `••••••`, and they are stored only encrypted with Electron `safeStorage`. If the OS has no protected store (Linux `basic_text` counts as none) they are kept in memory for the run and the screen says so. They are not logged, exported or committed. **Enabling a server shows its exact command (or URL) and a warning that MCP servers run local commands with your rights**; trust is remembered for that exact definition and asked again if it changes. **Import** reads `~/.copilot/mcp-config.json` or the VS Code user `mcp.json` read-only, shows a preview and imports only what you tick, switched off. Servers apply to **new** sessions as defaults; each agent has an **MCP** button in its header to switch single servers off for itself (live sessions switch right away through the runtime).
 
 **Tools (top bar, and per agent in the chat header)**: tool calls per agent and for all agents, built-in tools and MCP tools grouped by server, a table with small bars, failed calls and "used by". A second tab, **Models & context**, shows per agent the model(s) used, and the context window used / size with a percent bar (amber from 70%, red above 90%); the chat header has the same as a chip. Counts are kept in memory for the run (a resumed session starts at zero).
 
@@ -97,7 +116,7 @@ Spec [019](specs/019-mcp-tools-and-context/spec.md) (research in [research.md](s
 
 **Limits.** Remote (http/sse) servers are untested against a real server. Before the first model call the window is "unknown". Under `auto` the window is the answering model's. Sub-agent tool calls count for the owning agent. Usage counts are not persisted across app restarts. Imported `${...}` variables are copied as literal text and flagged. Plain-text secrets cannot be avoided in the CLI's own `mcp-config.json`; we never write to it.
 
-Tests: `npm test` adds MCP store/import/validation (fake secret codec, dummy fixtures), tool statistics, MCP/usage mapping on real-event fixtures and the MCP permission key. Screenshots: `scripts/shots-m8.js` (see the header comment). `npm run check:office`: 95/95 still pass.
+Tests: `npm test` adds MCP store/import/validation (fake secret codec, dummy fixtures), tool statistics, MCP/usage mapping on real-event fixtures and the MCP permission key. Screenshots: `scripts/shots-m8.js` (replaced by `scripts/shots-m10.js` in milestone 10; the milestone-8 pictures are kept in `docs/screenshots/`). `npm run check:office`: 95/95 still pass.
 
 ## Status (milestone 7: thinking, sub-agents, Markdown, room doors, permission mode)
 
@@ -318,6 +337,7 @@ An Electron app that:
 - [x] Chat panel with streaming thinking, attachments (basic)
 - [x] Permission approve/deny flow (basic; read-only default)
 - [x] AI-credit counter and per-session caps with a global default (milestone 9; the limit-reached flow follows GitHub's docs and is not yet verified on a real account)
+- [x] Tools "All time" view, Copilot CLI MCP list first, MCP extras per folder (milestone 10)
 - [ ] Resume sessions; read-only discovery of VS Code / terminal sessions
 - [x] Open in VS Code (`code <folder>`)
 - [x] Office polish for 10-15 agents: auto-fit density, helpers with `+N`, status sorting, chat chips (simulated agents mode)

@@ -125,3 +125,16 @@ body.has-bridge #topBtns{display:flex}
 .note.limit .limit-amt{width:84px;height:28px;border:1px solid var(--line);border-radius:8px;padding:0 8px;font:inherit;font-size:12.5px;background:#fff}
 .capf{display:inline-flex;align-items:center;gap:8px;font-size:12.5px}
 .capf input{width:110px;height:30px;border:1px solid var(--line);border-radius:8px;padding:0 8px;font:inherit;background:#fff}
+
+/* spec 020: source labels, per-folder extras, all-time view */
+.mtag.extra{background:#e4f1e8;border-color:#b9d9c3;color:#245b3a}
+.mtag.src{background:#e8eef9;border-color:#c5d3ee;color:#2c4a7c}
+.scr-sub{margin:14px 0 6px;font-size:13px;font-weight:650;color:var(--ink)}
+.scr-sub small{font-weight:500;color:var(--muted);margin-left:6px}
+.srv.legacy{opacity:.92;border-style:dashed}
+.cfgs{list-style:none;margin:6px 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.cfg{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px}
+.cfg .cfg-n{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
+.by-chip.static{cursor:default}
+.linkbtn{background:none;border:0;padding:0;color:#2c4a7c;text-decoration:underline;cursor:pointer;font:inherit}
+.warnc{color:var(--amber-ink)}
