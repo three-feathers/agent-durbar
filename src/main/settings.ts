@@ -37,6 +37,22 @@ export class SettingsStore {
     return cap;
   }
 
+  /** Serious mode (spec 034): off by default. */
+  get seriousMode(): boolean {
+    return this.s.seriousMode === true;
+  }
+
+  /** Only a real boolean changes it; anything else keeps the current value. Returns the value now in force. */
+  setSeriousMode(v: unknown): boolean {
+    if (typeof v !== 'boolean') return this.seriousMode;
+    const next: AppSettings = { ...this.s };
+    if (v) next.seriousMode = true;
+    else delete next.seriousMode;
+    this.s = next;
+    this.save();
+    return v;
+  }
+
   /** Place mapping (spec 024): MCP server name -> place id or `desk`. A copy, never the stored object. */
   get placeMap(): PlaceMap {
     return { ...(this.s.placeMap ?? {}) };

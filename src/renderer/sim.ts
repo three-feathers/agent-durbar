@@ -4,7 +4,7 @@
  * starting any session or spending AI credits.
  *
  * Enable with `DURBAR_SIM=15 npm start` (Electron main passes ?sim=15) or open
- * dist/renderer/index.html?sim=15 in a browser. Extra query params: simtotals=1 (totals saved by a previous run), simunreported=<room>
+ * dist/renderer/index.html?sim=15 in a browser. Extra query params: simwaitold=1 (waiting requests look 2 minutes old), simtotals=1 (totals saved by a previous run), simunreported=<room>
  * (that room reports usage without credits), simfreeze=1 (no ticking),
  * simrooms=solo (one folder per agent), seed=N, density=full|card|mini, open=<agent id>.
  *
@@ -28,6 +28,8 @@ interface SimOptions {
   unreported?: string;
   /** Start with totals saved by a previous run for two folders (spec 011 FR-029), as after a restart. */
   seedTotals?: boolean;
+  /** Pending permission requests carry a time 2 minutes in the past, so "impatient" (spec 034) can be seen at once. */
+  waitOld?: boolean;
 }
 
 interface SimAgent {
@@ -375,7 +377,7 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       }
       s.perm = { ...base, file, cont };
       s.state = 'waiting';
-      emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'needs-permission', intent, permission: { ...base, state: 'pending' } });
+      emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending' } });
       return false;
     }
     function editTool(s: SimAgent, file: string, ok: boolean): void {
@@ -400,6 +402,12 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       if (s.state !== 'done') think(s, 4); // done agents show a turn without reasoning (the model sent none)
       const done = sims.indexOf(s) === 0 ? 8 : s.state === 'working' ? 4 : 3;
       for (let i = 0; i < done; i++) { toolStep(s, false); usage(s); if (s.limitReq) break; }
+      /* spec 034: one agent (Sven) has just had three failed tool calls in a row, so "dizzy" can be seen */
+      if (s.info.name === 'Sven') for (let n = 0; n < 3; n++) {
+        const id = sid(s) + '-dz' + n;
+        emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: 'bash', phase: 'start', args: { command: 'npm run build' } });
+        emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: 'bash', phase: 'failed', output: 'error TS2339: Property \'status\' does not exist on type \'Store\'' });
+      }
       if (s.limitReq) return; // blocked at the credit cap: nothing more happens until the user decides
       // Sub-agents: each one is a `task` tool call of the parent; its own events carry agentId = that call id
       for (let h = 0; h < s.helpers; h++) {
@@ -608,6 +616,7 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
     let defaultCap: number | undefined;
     /* spec 024: place mapping kept in memory (plain script: no imports, so the ids are listed here) */
     const placeMap: Record<string, string> = {};
+    let seriousMode = false; /* spec 034 */
     const PLACE_CHOICES = ['library', 'software', 'terminal', 'web', 'other', 'desk'];
     /* spec 011 FR-029: saved totals, in memory. Default: nothing saved. With simtotals=1: a previous run left totals for two folders
        and one folder that is not in the list any more, so the header shows more than this run's own spend. */
@@ -624,8 +633,9 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, about: { name: 'Agent Durbar', version: '0.1.0-alpha.4 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, seriousMode, about: { name: 'Agent Durbar', version: '0.1.0-alpha.4 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
+      setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setPlace: async (server, place) => {
         const name = typeof server === 'string' ? server.trim() : '';
         if (!name || name.length > 200 || name === '__proto__') return { ok: false, placeMap: { ...placeMap } };

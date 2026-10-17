@@ -2,7 +2,7 @@
 
 **Feature Branch**: `034-agent-health` (amends 001 office view; reads 011 caps, 019 context, 003 permissions)
 **Created**: 2026-10-17
-**Status**: Specified (clarified with Ruben 2026-10-17), not implemented. Issue #20.
+**Status**: Specified (clarified with Ruben 2026-10-17); implemented 2026-10-17 in phase 2 (T002-T007: unit tests, simulator, `check:office` 105/105); the checks driver, screenshots, docs and the review are phase 3 (T008). Issue #20.
 **Input**: Ruben (issue #20, from the ideas discussion): the agent figure gets bigger as its context window fills and turns into a grumpy monster near the limit (a "start a fresh session" signal); trouble gets its own visual: an ambulance when a session errors or dies, the agent faints at its credit cap, looks dizzy after several failed tool calls, taps the desk when it has waited too long for approval. Guardrails from the issue: the figure never grows past its desk or card, at most one ambulance at a time, text and percentage stay, a "serious mode" switch turns it all off, no effect on the density fit.
 
 ## Clarifications (Ruben, 2026-10-17)

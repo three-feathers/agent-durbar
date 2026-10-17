@@ -23,3 +23,12 @@
 - Art quality ("no AI-slop art"): reuse the existing shapes and palette of `scene()`, small additions only, review the screenshots closely.
 - Scene cache growth: key adds two small enums, bounded.
 - Merge with spec 033 (floors) in `app.js`: keep changes local to `scene()`, card text and event hooks.
+
+## Implementation notes (phase 2, 2026-10-17)
+- Built as planned: `mood.js` (rules and tracker, `test:mood`), `seriousMode` in the settings file (parse keeps only `true`, store, IPC, preload, api, simulator bridge; tests in `test:credits`), the drawings in `scene()` (heavy body, monster, ambulance, faint, dizzy, impatient), accessible words on the card, Settings switch, simulator support.
+- Found while building: a **pending permission request arrives inside a `status` event** (`needs-permission` with a `permission`), in the real Copilot adapter too, and only its answer comes as a `permission` event. The first version of the hook listened only to `permission` events, so "impatient" could never have started; `onLiveEvent` now feeds the tracker from both.
+- The monster is drawn by overriding the figure's skin colour and adding horns, hair tufts, angry brows and a frown to the same head; heavy and monster widen the torso (x 52..96, still inside the chair); the ambulance sits at x 18..54 of the scene (the compact viewBox starts at x 16), in front of the desk's left end.
+- The helper constant is `MOODS` (spec 030's model code already uses `DM` in `app.js`).
+- Simulator already had a monster (Noor 91%), a heavy agent (Elif 86%), an error (Tomas) and a limit (Omar); added: Sven has three failed calls in a row, `simwaitold=1` backdates pending requests by 2 minutes.
+- Checks run: `npm run typecheck && npm run build && npm test` (26 groups), `npm run check:office` 105/105 (no layout change). Seen once on the simulator at 1440x900. The driver, close-up screenshots, Serious mode and the review are phase 3.
+
