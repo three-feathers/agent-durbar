@@ -1,6 +1,6 @@
 {
   "name": "agent-durbar",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.",
   "private": true,
   "license": "MIT",

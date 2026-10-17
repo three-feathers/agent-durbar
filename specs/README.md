@@ -86,3 +86,9 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | # | Feature | Status |
 | --- | --- | --- |
 | [025](025-docs-sync/spec.md) | "Keep docs in sync" rule, PR template Docs box, warning-only Docs check, catch-up of README/CHANGELOG/spec statuses | built; screenshots with old wording still open (T006) |
+
+## Feature 026: release v0.1.0-alpha.3
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [026](026-release-alpha3/spec.md) | Release v0.1.0-alpha.3 as a draft pre-release (version bump, changelog, download notes) | built; draft only, not published |
