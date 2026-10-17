@@ -86,3 +86,13 @@
 - Tests: new `scripts/test-usagedoc.ts` (`test:usagedoc`: recording, validation, hostile files, no path on disk, fake-timer store, baseline vs file, reset) and baseline cases in `test-usagetotals.ts`.
 - Sanity run on the simulator (`simtotals=1`, `simunreported=blog`): chip 75.25 AIU = 41.70 saved + 33.55 this run, rooms add their saved totals, the reset dialog and the zeroed chip work. Formal driver, screenshots, mutation check, README/CHANGELOG are phase 3 (T027).
 
+## Verification (phase 3, 2026-10-17)
+- Merged current `main` (alpha.4 published, AGENTS.md spec list) without conflicts.
+- Review fixes: a disk that refuses the write is now shown in Settings (the store's `lastError` reached nobody); the folder-key rule moved to `src/shared/usagedoc.ts` (`folderKeyOf`/`folderNameOf`) and is tested with a workspace agent, as this plan promised.
+- Mutation check (backup and restore, not git): 10 deliberate breaks (negative credits accepted, any key accepted, no case-folding on Windows, no folder cap, baseline not frozen, reset keeps the baseline, no size cap, room ignores the saved total, unlisted never reported, office without the saved part) each fail a test. The size cap was **not** covered at first (the oversized test file was not valid JSON); the test now writes valid JSON over 2 MB.
+- `scripts/shots-021.js` (simulator with `simtotals=1`, `simunreported=infra-notes`) at 1440x900 and 1280x800: chip = saved + this run with the "saved since" and "this run" tooltip lines, saved folder totals, "credits not reported" in the room header and `n/r` on the closed plate, Settings figure, Cancel changes nothing, Reset zeroes the chip and every folder total.
+- Docs: README status section and roadmap, CHANGELOG *Unreleased*, specs index; Settings pictures regenerated with the existing drivers because the new part shows there (`m9-settings-cap-*`, `about-settings-1280x800`).
+- `/speckit-analyze` and `/speckit-converge` followed by hand: two known gaps written into the spec (the reset race, FR-026 not run end to end), otherwise converged.
+- Real IPC without a session (0 AIU): `usage:totals` read a seeded file from userData (path key dropped), `usage:resetTotals` emptied it on disk.
+- Not verified: recording from real `usage` events (needs a real session).
+

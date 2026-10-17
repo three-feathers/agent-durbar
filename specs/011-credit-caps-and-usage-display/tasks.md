@@ -12,7 +12,7 @@
 - [x] T010 Real-runtime check: session create/update with a cap, no prompt (0 AIU); exhausted flow not run (30-credit minimum), recorded under Verification [FR-015, SC-002]
 - [x] T011 Converge spec/plan/tasks, README roadmap, specs index
 
-Backlog: persisted usage, multiplier estimate, capability flag (spec 012). (Office and per-folder totals: done 2026-10-17, T012-T019 below.)
+Backlog: capability flag (spec 012). (Office and per-folder totals: done 2026-10-17, T012-T019; kept across restarts: done 2026-10-17, T020-T027; multiplier estimate: covered by spec 030.)
 
 ## Office and folder usage totals (2026-10-17, issue #8)
 
@@ -34,4 +34,4 @@ Backlog: persisted usage, multiplier estimate, capability flag (spec 012). (Offi
 - [x] T024 Renderer baseline + run in `usagetotals.js` and `app.js` (folder key match, tooltip "since the app opened"); tests [FR-027]
 - [x] T025 Settings "Usage totals" part with Reset and confirmation [FR-028]
 - [x] T026 Simulator bridge with seeded baseline; `simunreported=<room>` [FR-029]
-- [ ] T027 Screenshots (`scripts/shots-021.js`): chip after a restart, "credits not reported" room, Settings part and confirmation, both sizes; README, CHANGELOG, specs index [FR-030]
+- [x] T027 Screenshots (`scripts/shots-021.js`): chip after a restart, "credits not reported" room, Settings part and confirmation, both sizes; README, CHANGELOG, specs index [FR-030]

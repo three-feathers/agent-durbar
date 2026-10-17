@@ -41,7 +41,7 @@ what exists today, not what was originally intended. Each requirement carries a 
 
 | # | Feature | Status |
 | --- | --- | --- |
-| [011](011-credit-caps-and-usage-display/spec.md) | AI-credit caps and usage display | per-session cap slice and office/folder usage totals built (exhausted flow unverified on a real account); persisted usage and multiplier estimate still backlog |
+| [011](011-credit-caps-and-usage-display/spec.md) | AI-credit caps and usage display | per-session cap slice and office/folder usage totals built, totals kept across restarts with a reset (2026-10-17, issue #21); exhausted flow unverified on a real account; multiplier estimate covered by spec 030 |
 | [012](012-claude-codex-adapters/spec.md) | Claude Code and Codex adapters | planned: clarified, [research](012-claude-codex-adapters/research.md), [plan](012-claude-codex-adapters/plan.md), [tasks](012-claude-codex-adapters/tasks.md); **no code, nothing verified on a real account**; real-account tasks need owner approval; umbrella issue #2 |
 | [013](013-live-verification-stop-resume-thinking/spec.md) | Live verification of Stop, resume and thinking | draft |
 | [014](014-signing-and-notarization/spec.md) | Code signing and notarization | draft, **needs approval (purchase)** |
