@@ -2,7 +2,7 @@
 
 Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.
 
-> Status: **alpha, `v0.1.0-alpha.3` ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.3), unsigned, not notarized).** `main` has unreleased changes after it, among them the per-folder MCP import from VS Code and places in the office (see [CHANGELOG.md](CHANGELOG.md), "Unreleased"). The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. Latest work: [places in the office](#status-places-in-the-office-a-shared-lobby-agents-walk-to-the-tool-they-use), [milestone 10 and usage totals](#status-milestone-10-tools-all-time-the-copilot-cli-mcp-list-first-mcp-extras-per-folder). Only Linux has been run by hand; macOS and Windows are built and unit-tested in CI but untested on real hardware. Built by [Three Feathers](https://github.com/three-feathers); the work is tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
+> Status: **alpha, `v0.1.0-alpha.4` ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4), unsigned, not notarized).** It adds places in the office, the per-folder MCP import from VS Code and switching model and context inside a session (simulator and fake sessions; real switching between models is unverified), see [CHANGELOG.md](CHANGELOG.md). `v0.1.0-alpha.3` stays available. The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. Latest work: [places in the office](#status-places-in-the-office-a-shared-lobby-agents-walk-to-the-tool-they-use), [milestone 10 and usage totals](#status-milestone-10-tools-all-time-the-copilot-cli-mcp-list-first-mcp-extras-per-folder). Only Linux has been run by hand; macOS and Windows are built and unit-tested in CI but untested on real hardware. Built by [Three Feathers](https://github.com/three-feathers); the work is tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
 
 ![15 simulated agents at 1440x900 (roomy desks use the spare floor space)](docs/screenshots/m5-sim15-1440x900-closed.png)
 ![Full-screen chat with every other agent in a slim strip, 15 agents at 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
@@ -17,7 +17,7 @@ Command center to see, chat with and coordinate coding agents (Copilot CLI first
 
 ## Install from releases
 
-Download the build for your system from the [Releases page](https://github.com/three-feathers/agent-durbar/releases) (pre-releases are alpha builds). **Release status:** [`v0.1.0-alpha.3`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.3) is **published as a pre-release** (2026-10-17) and is the only public download. It is **unsigned and not notarized**, and it has **not been tested on real Mac or Windows hardware** (only Linux was run by hand). Upgrading in place from alpha.2 was not checked. `v0.1.0-alpha.1` is an unpublished draft. `v0.1.0-alpha.2` was never published: its draft was removed in favour of alpha.3 (the git tag `v0.1.0-alpha.2` remains). You can also build from source (below).
+Download the build for your system from the [Releases page](https://github.com/three-feathers/agent-durbar/releases) (pre-releases are alpha builds). **Release status:** [`v0.1.0-alpha.4`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4) is the newest **pre-release** (2026-10-17); [`v0.1.0-alpha.3`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.3) is the previous one. Both are **unsigned and not notarized**, and neither has been **tested on real Mac or Windows hardware** (only Linux was run by hand). Upgrading in place from alpha.3 was not checked. `v0.1.0-alpha.1` is an unpublished draft. `v0.1.0-alpha.2` was never published (the git tag remains). You can also build from source (below).
 
 | System | File |
 | --- | --- |
@@ -28,7 +28,18 @@ Download the build for your system from the [Releases page](https://github.com/t
 
 There is no auto-update: download a newer release to update.
 
-### What's new in v0.1.0-alpha.3
+### What's new in v0.1.0-alpha.4
+
+Full list in [CHANGELOG.md](CHANGELOG.md). Short version, since alpha.3:
+
+- **Places in the office:** a shared lobby with Library, Software library, Terminal, Web and Other tools; an agent walks there while one of its tools runs, and Settings sets the place of each MCP server (spec 024).
+- **Import MCP servers from VS Code**, per folder, from that folder's `.vscode/mcp.json` (spec 020).
+- **Allow all confirmation:** keyboard focus stays in the dialog, Escape cancels (spec 003).
+- **Switch model, effort and context tier in a session, and compact** (spec 030). Built and tested on the simulator and fake sessions; **switching between two real models was never seen on a real account** (a free plan lists only `auto`).
+- Compaction cost is counted in the usage totals; refreshed pictures.
+- **Still unsigned and not notarized** (steps below). **Untested on real macOS and Windows hardware.** An in-place upgrade from alpha.3 was not checked.
+
+### What was new in v0.1.0-alpha.3
 
 Full list in [CHANGELOG.md](CHANGELOG.md). Short version, since alpha.2:
 
@@ -81,7 +92,7 @@ Each release also lists `SHA256SUMS.txt`. Releases are built by GitHub Actions f
 
 ## Status (places in the office: a shared lobby, agents walk to the tool they use)
 
-Spec [024](specs/024-office-places/spec.md) (issue #18; amends 001 and 017). Built and tested on the simulator and unit tests, plus a short check on a real Copilot session. **AI credits spent: 0.84 AIU** (3 prompts on the real session). Not in a release yet.
+Spec [024](specs/024-office-places/spec.md) (issue #18; amends 001 and 017). Built and tested on the simulator and unit tests, plus a short check on a real Copilot session. **AI credits spent: 0.84 AIU** (3 prompts on the real session). Released in v0.1.0-alpha.4.
 
 - **Lobby.** A one-row band in the middle of the office (between the first and second half of the open rooms) with five places: **Library** (docs: Confluence, Notion, wikis, notes), **Software library** (GitHub, GitLab), **Terminal** (shell commands), **Web** (web fetches, browsers) and **Other tools** (any other MCP server).
 - **Agents walk there.** While a tool runs for more than 0.6 s, the agent's figure leaves its desk (an empty chair stays), walks in about a second to the matching place, stays at least 2 s and walks back when the call ends. File tools (read, edit, search) never move an agent; only main agents walk, helpers stay on their mini-desks. The card says where it is (`At Terminal: bash · ...`); a place's tooltip and accessible label name who is there. At most three figures animate at once; with *reduce motion* they appear without walking. Waiting for an approval keeps the agent at the place; stop, error or the end of the turn sends it back at once.

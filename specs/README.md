@@ -99,6 +99,12 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | --- | --- | --- |
 | [026](026-release-alpha3/spec.md) | Release v0.1.0-alpha.3 (version bump, changelog, download notes) | built; **published as a pre-release** by the maintainer (2026-10-17); alpha.2 draft removed |
 
+## Feature 031: release v0.1.0-alpha.4
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [031](031-release-alpha4/spec.md) | Release v0.1.0-alpha.4 as a pre-release (version bump, changelog, download notes) | release PR 2026-10-17; tag, draft and publishing as a pre-release follow |
+
 ## Feature 030: change model and context window inside a session
 
 | # | Feature | Status |
