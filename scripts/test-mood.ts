@@ -16,6 +16,7 @@ const M = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'mood.js')
   bodyOf: (pct: unknown) => string;
   troubleOf: (o?: unknown) => string | null;
   pickAmbulance: (a: unknown) => string | null;
+  roomAlertOf: (m: unknown) => { tone: string; siren: boolean };
   createMoodTracker: (o?: { now?: () => number }) => Tracker;
   phrases: (o?: unknown) => string[];
 };
@@ -126,5 +127,19 @@ assert.deepStrictEqual(M.phrases({ trouble: 'impatient', waitingMs: 60_000 }), [
 assert.deepStrictEqual(M.phrases({ trouble: 'dizzy', failStreak: 4 }), ['dizzy: 4 failed tool calls in a row']);
 assert.deepStrictEqual(M.phrases({ trouble: 'dizzy' }), ['dizzy: 3 failed tool calls in a row']);
 assert.deepStrictEqual(M.phrases(), []); assert.deepStrictEqual(M.phrases({ trouble: 'unknown' }), []);
+
+// a room takes the tone of its worst agent (spec 034 delta, issue #135)
+const N = { state: 'working', body: 'normal', trouble: null };
+const R = (...m: unknown[]) => M.roomAlertOf(m);
+assert.deepStrictEqual(R(N, N), { tone: 'calm', siren: false }, 'all fine: as today');
+assert.deepStrictEqual(R(N, { ...N, body: 'heavy' }), { tone: 'uneasy', siren: false }, 'a heavy agent: uneasy');
+assert.deepStrictEqual(R({ ...N, body: 'monster' }), { tone: 'alarm', siren: false }, 'a monster: alarm, no siren');
+assert.deepStrictEqual(R({ ...N, state: 'error' }), { tone: 'alarm', siren: false }, 'an agent in Error without the ambulance: alarm, no siren');
+for (const t of ['impatient', 'dizzy']) assert.deepStrictEqual(R({ ...N, trouble: t }), { tone: 'alarm', siren: false }, t + ': alarm, no siren');
+for (const t of ['ambulance', 'faint']) assert.deepStrictEqual(R({ ...N, trouble: t }), { tone: 'alarm', siren: true }, t + ': alarm with the siren');
+assert.deepStrictEqual(R({ ...N, body: 'heavy' }, { ...N, trouble: 'dizzy' }, { ...N, body: 'heavy' }), { tone: 'alarm', siren: false }, 'the worst agent wins whatever the order');
+assert.deepStrictEqual(R({ ...N, trouble: 'faint' }, { ...N, body: 'heavy' }), { tone: 'alarm', siren: true }, 'a lesser agent after the siren does not lower it');
+assert.deepStrictEqual(R({ ...N, body: 'heavy' }, N), { tone: 'uneasy', siren: false });
+for (const bad of [undefined, null, [], 5, 'x', {}, [null, 3, 'y', {}]]) assert.deepStrictEqual(M.roomAlertOf(bad), { tone: 'calm', siren: false }, 'garbage is calm: ' + JSON.stringify(bad));
 
 console.log('mood tests passed');

@@ -68,6 +68,14 @@ function moodFor(a){
 }
 const moodWords=a=>{const w=moodFor(a).words;return w?' — '+esc(w):'';};
 const pickAmbulanceId=()=>MOODS.pickAmbulance(agents.filter(x=>x.live&&!x.parent&&roomShown(roomOf(x))).map(x=>({id:x.id,state:vis(x),errorAt:MOOD.errorAt(x.id)})));
+/* a room takes the tone of its worst main agent; the siren is on while it has the ambulance or a fainted agent (spec 034 delta, issue #135) */
+const NO_ALERT={tone:'calm',siren:false};
+function roomAlert(r){
+  if(SERIOUS||!r)return NO_ALERT;
+  return MOODS.roomAlertOf(agents.filter(a=>!a.parent&&a.live&&a.room===r.id).map(a=>{const m=moodFor(a);return {state:vis(a),body:m.body,trouble:m.trouble};}));
+}
+const ALERT_WORDS='Alert: an agent needs help';
+const SIREN='<span class="siren" aria-hidden="true"><svg viewBox="0 0 14 14" focusable="false"><rect class="siren-light" x="3" y="2" width="8" height="6.5" rx="3.2"/><rect x="1.5" y="8.5" width="11" height="3" rx="1" fill="#6b6f76"/></svg></span>';
 /* "impatient" starts after 60 s without any event, so look every few seconds and redraw only when somebody's mood changed */
 let moodSig='';
 setInterval(()=>{if(SERIOUS||demoOn)return;const sig=agents.map(x=>x.live&&!x.parent?moodFor(x).trouble+'/'+moodFor(x).body:'').join('|');if(sig!==moodSig){moodSig=sig;scheduleRender();}},5000);
@@ -378,8 +386,8 @@ function roomSummary(r){
   return Object.assign({n:mains.length},sum);
 }
 function plateHTML({r}){
-  const sm=roomSummary(r), u=roomAiu(r);
-  return `<button class="plate tone-${sm.tone}" type="button" data-door="${esc(r.id)}" data-key="door:${esc(r.id)}" data-tint="${r.tint}" aria-expanded="false" aria-label="Open room ${esc(r.name)}. ${esc(sm.text)}. ${sm.n} agent${sm.n===1?'':'s'}.${u?' Usage: '+esc(u.long)+'.':''}" title="${esc(r.path)}">${DOOR_SHUT}<span class="plate-tx"><b>${esc(r.name)}</b>${floorTag(r)}<span class="plate-sum">${esc(sm.text)}</span></span>${u?`<span class="plate-aiu" title="${esc(u.tip)}">${esc(u.short)}</span>`:''}<span class="plate-n">${sm.n}</span></button>`;
+  const sm=roomSummary(r), u=roomAiu(r), al=roomAlert(r);
+  return `<button class="plate tone-${sm.tone}" type="button" data-door="${esc(r.id)}" data-key="door:${esc(r.id)}" data-tint="${r.tint}" aria-expanded="false" aria-label="Open room ${esc(r.name)}. ${esc(sm.text)}. ${sm.n} agent${sm.n===1?'':'s'}.${u?' Usage: '+esc(u.long)+'.':''}${al.siren?' '+ALERT_WORDS+'.':''}" title="${esc(r.path)}">${DOOR_SHUT}<span class="plate-tx"><b>${esc(r.name)}</b>${al.siren?SIREN:''}${floorTag(r)}<span class="plate-sum">${esc(sm.text)}</span></span>${u?`<span class="plate-aiu" title="${esc(u.tip)}">${esc(u.short)}</span>`:''}<span class="plate-n">${sm.n}</span></button>`;
 }
 const doorsHTML=list=>list.length?`<div class="doors" data-key="doors">${list.map(plateHTML).join('')}</div>`:'';
 function stageHTML(sizing,d,aw,cap){
@@ -409,20 +417,21 @@ function folderOfRoom(roomId){
   return r&&ag?{key:ag.info.workspaceFile||ag.info.cwd,name:r.name}:null;
 }
 function roomHTML({r,mains,all},d,aw,cap){
+  const al=roomAlert(r), alAttr=(al.tone==='calm'?'':` data-alert="${al.tone}"`)+(al.siren?' data-siren="1"':''), alLabel=al.siren?'. '+ALERT_WORDS:'';
   const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':(k==='done'||k==='idle')?' calm':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}</span>`:''}).join('');
-  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="Close room ${esc(r.name)}" title="Close the door: ${esc(r.name)} becomes a compact plate">${DOOR_OPEN}</button><span class="room-name" title="${esc(r.name)}">${esc(r.name)}</span>${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span>${(()=>{const u=roomAiu(r);return u?`<span class="room-aiu" title="${esc(u.tip)}">${esc(u.long)}</span>`:'';})()}<span class="room-dots" aria-hidden="true">${dots}</span>${bridge&&bridge.newSession&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.mcpFolderState&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT}</div>`;
+  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="Close room ${esc(r.name)}" title="Close the door: ${esc(r.name)} becomes a compact plate">${DOOR_OPEN}</button><span class="room-name" title="${esc(r.name)}">${esc(r.name)}</span>${al.siren?SIREN:''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span>${(()=>{const u=roomAiu(r);return u?`<span class="room-aiu" title="${esc(u.tip)}">${esc(u.long)}</span>`:'';})()}<span class="room-dots" aria-hidden="true">${dots}</span>${bridge&&bridge.newSession&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.mcpFolderState&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT}</div>`;
   if(d==='full'){
     const gap=6, pad=12;
     const widths=mains.map(a=>unitWidth(a,d));
     const basis=Math.min(aw,widths.reduce((x,y)=>x+y,0)+gap*(widths.length-1)+2*pad+30);
     const min=Math.max(...widths)+2*pad+30;
-    return `<section class="room" data-key="room:${esc(r.id)}" data-tint="${r.tint}" style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Workspace ${esc(r.name)}">${head}
+    return `<section class="room" data-key="room:${esc(r.id)}" data-tint="${r.tint}"${alAttr} style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Workspace ${esc(r.name)}${alLabel}">${head}
       <div class="units">${mains.map(a=>unitHTML(a,d)).join('')}</div></section>`;
   }
   /* compact: the room is a floor-plan zone with `cols` desk columns */
   const D=DENS[d], cols=Math.max(1,Math.min(mains.length,cap)), over=2*D.rp+4;
   const basis=cols*D.cw+(cols-1)*D.gap+over, min=D.cw+over;
-  return `<section class="room" data-key="room:${esc(r.id)}" data-tint="${r.tint}" style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Workspace ${esc(r.name)}">${head}
+  return `<section class="room" data-key="room:${esc(r.id)}" data-tint="${r.tint}"${alAttr} style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Workspace ${esc(r.name)}${alLabel}">${head}
     <div class="units" style="--cols:${cols}">${mains.map(a=>unitHTML(a,d)).join('')}</div></section>`;
 }
 /* ---- keyed DOM updates: patch only what changed, so desk animations keep running ---- */
