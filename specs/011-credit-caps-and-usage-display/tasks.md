@@ -28,10 +28,10 @@ Backlog: persisted usage, multiplier estimate, capability flag (spec 012). (Offi
 ## Usage totals kept across restarts (2026-10-17, issue #21)
 
 - [x] T020 Spec delta (second 2026-10-17 delta) + clarifications + plan before code; User Story 3 marked covered by spec 030 [FR-024..FR-030]
-- [ ] T021 `src/shared/usagedoc.ts` + `scripts/test-usagedoc.ts` (in `npm test`) [FR-024, FR-030]
-- [ ] T022 `src/main/usagetotalsstore.ts` (debounce, atomic write, flush, reset, hash key) + tests [FR-025, FR-030]
-- [ ] T023 Main recording from `usage` events, IPC `usage:totals` / `usage:resetTotals`, preload, `api.ts`, flush on quit [FR-026]
-- [ ] T024 Renderer baseline + run in `usagetotals.js` and `app.js` (folder key match, tooltip "since the app opened"); tests [FR-027]
-- [ ] T025 Settings "Usage totals" part with Reset and confirmation [FR-028]
-- [ ] T026 Simulator bridge with seeded baseline; `simunreported=<room>` [FR-029]
+- [x] T021 `src/shared/usagedoc.ts` + `scripts/test-usagedoc.ts` (in `npm test`) [FR-024, FR-030]
+- [x] T022 `src/main/usagetotalsstore.ts` (debounce, atomic write, flush, reset, hash key) + tests [FR-025, FR-030]
+- [x] T023 Main recording from `usage` events, IPC `usage:totals` / `usage:resetTotals`, preload, `api.ts`, flush on quit [FR-026]
+- [x] T024 Renderer baseline + run in `usagetotals.js` and `app.js` (folder key match, tooltip "since the app opened"); tests [FR-027]
+- [x] T025 Settings "Usage totals" part with Reset and confirmation [FR-028]
+- [x] T026 Simulator bridge with seeded baseline; `simunreported=<room>` [FR-029]
 - [ ] T027 Screenshots (`scripts/shots-021.js`): chip after a restart, "credits not reported" room, Settings part and confirmation, both sizes; README, CHANGELOG, specs index [FR-030]

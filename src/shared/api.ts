@@ -2,6 +2,7 @@ import type { AgentEvent } from '../adapters/types';
 import type { HistoryItem, PreviousSession } from '../adapters/history';
 import type { VsChatSummary, VsChatTranscript } from '../adapters/vscodeChat';
 import type { UsageDoc } from './toolusage';
+import type { UsageNumbers } from './usagedoc';
 import type { McpServerInput, McpServerView, McpTransport, McpTrustInfo } from './mcp';
 
 export type { McpServerInput, McpServerView, McpTransport, McpTrustInfo };
@@ -53,6 +54,17 @@ export type LimitChoice = { kind: 'add'; credits: number } | { kind: 'set'; cred
 
 import type { AboutView } from './about';
 import type { CompactResult, ContextTier, ModelControl, ModelPricing, ModelSwitchRequest, ModelSwitchResult, PriceClass } from './modelswitch';
+
+/** Saved credit totals as the window receives them (spec 011 FR-026). Numbers, a display name and the folder's own path (already known to the window); the file holds a hash, never the path. */
+export interface UsageTotalsView {
+  ok: boolean;
+  /** ISO time the saved totals started counting (first run or the last reset). */
+  since?: string;
+  office?: UsageNumbers;
+  folders?: ({ path: string; name: string } & UsageNumbers)[];
+  /** Set when the last write to disk failed. */
+  error?: string;
+}
 
 export interface AppSettingsView {
   /** Owner, version and contributors for Settings > About (spec 008 FR-018). */
@@ -293,6 +305,10 @@ export interface DurbarApi {
   /** Tool usage over all runs (spec 020). */
   usageAllTime?(): Promise<UsageView>;
   usageReset?(): Promise<{ ok: boolean; doc?: UsageDoc }>;
+  /** Credit totals saved before this run (spec 011 FR-026, issue #21): the window adds this run's own figures on top. `folders` are the current agents' folders (key = `workspaceFile ?? cwd`). */
+  usageTotals?(): Promise<UsageTotalsView>;
+  /** Set the saved credit totals to zero (Settings > Usage totals). Returns the now empty view. */
+  usageResetTotals?(): Promise<UsageTotalsView>;
   /** MCP (specs 019, 020): the Copilot CLI list is global and read live; extras are per folder/workspace key (`workspaceFile ?? cwd`). */
   mcpState?(): Promise<McpState>;
   mcpSetCli?(name: string, enabled: boolean): Promise<{ ok: boolean }>;

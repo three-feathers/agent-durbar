@@ -78,3 +78,11 @@
 - Double counting if both the renderer and main persisted: only main writes; the renderer only adds this run on top of a baseline taken at start.
 - A reset while agents are working: the renderer zeroes its run ledger at the same moment it reloads the (empty) baseline.
 - Workspace vs folder keys must match between main (`workspaceFile ?? cwd`) and the renderer (`folderOfRoom`); a test fixture covers a workspace agent.
+
+## Implementation notes (phase 2, 2026-10-17)
+- Built as planned. Design detail that the plan left open: main keeps two views. `doc` (on disk, grows with every event) and a frozen `baseline` copy taken at load and emptied by a reset. IPC `usage:totals` returns the **baseline** (with the folders of the current agents), the window adds this run's own ledger on top, so an event is never counted twice however late the window asks. The window asks again whenever an agent is added (its folder may have a saved total); a reset replaces the baseline and clears the run.
+- The office tooltip says whether the saved total holds folders that are not listed now (`hasUnlisted`: saved office calls above the calls of the listed folders), instead of only looking at this run's folders.
+- Settings reuses the local `dialog()` helper of `screens.js` for the confirmation (same one the Tools reset uses).
+- Tests: new `scripts/test-usagedoc.ts` (`test:usagedoc`: recording, validation, hostile files, no path on disk, fake-timer store, baseline vs file, reset) and baseline cases in `test-usagetotals.ts`.
+- Sanity run on the simulator (`simtotals=1`, `simunreported=blog`): chip 75.25 AIU = 41.70 saved + 33.55 this run, rooms add their saved totals, the reset dialog and the zeroed chip work. Formal driver, screenshots, mutation check, README/CHANGELOG are phase 3 (T027).
+

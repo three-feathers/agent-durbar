@@ -16,6 +16,7 @@ import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { UsageStore } from './usagestore';
+import { UsageTotalsStore } from './usagetotalsstore';
 import { agentLabel } from '../shared/toolusage';
 import { devEnv, devWarning } from './devhooks';
 import { SettingsStore } from './settings';
@@ -43,6 +44,8 @@ let settingsStore: SettingsStore | undefined;
 let mcpStore: McpStore | undefined;
 /** All-time tool usage (spec 020), created when the app is ready. */
 let usageStore: UsageStore | undefined;
+/** Credit totals per folder kept across restarts (spec 011 FR-025, issue #21). */
+let usageTotalsStore: UsageTotalsStore | undefined;
 /** The folder (or .code-workspace file) an agent belongs to; the key of the saved folder list. */
 const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
@@ -79,6 +82,31 @@ adapter.onEvent((e) => {
   const a = agents.get(e.sessionId);
   if (a) usageStore?.record(usageLabel(a), e);
 });
+// Credit totals per folder are kept here too (spec 011 FR-026): one record per `usage` event of a known agent (helpers report through
+// their agent), so they also count while no window is open. Only numbers, the folder's display name and a hash of its path are saved.
+const folderKeyOf = (a: AgentInfo): string => a.workspaceFile || a.cwd;
+const folderNameOf = (a: AgentInfo): string => (a.workspaceFile ? path.basename(a.workspaceFile).replace(/\.code-workspace$/i, '') : path.basename(a.cwd)) || a.cwd;
+adapter.onEvent((e) => {
+  if (e.type !== 'usage') return;
+  const a = agents.get(e.sessionId);
+  if (a) usageTotalsStore?.record(folderKeyOf(a), folderNameOf(a), e);
+});
+/** What the window needs to show the totals: the saved figures from before this run (it adds this run's own on top). */
+const usageTotalsView = (): unknown => {
+  const st = usageTotalsStore;
+  if (!st) return { ok: false };
+  const b = st.baselineView();
+  const folders: unknown[] = [];
+  const seen = new Set<string>();
+  for (const a of agents.values()) {
+    const k = folderKeyOf(a);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const f = b.folderOf(k);
+    if (f) folders.push({ path: k, ...f });
+  }
+  return { ok: true, since: b.since, office: b.office, folders, error: st.lastError };
+};
 // The runtime confirms the cap now in force (also after a change made by another client): keep AgentInfo and the folder's saved cap in step.
 adapter.onEvent((e) => {
   if (e.type !== 'limit' || e.phase !== 'changed') return;
@@ -375,6 +403,11 @@ ipcMain.handle('usage:allTime', () => ({
   labels: Object.fromEntries([...agents.values()].map((a) => [a.id, usageLabel(a)])),
   error: usageStore?.lastError,
 }));
+ipcMain.handle('usage:totals', () => usageTotalsView());
+ipcMain.handle('usage:resetTotals', () => {
+  usageTotalsStore?.reset();
+  return usageTotalsView();
+});
 ipcMain.handle('usage:reset', () => {
   usageStore?.reset();
   return { ok: true, doc: usageStore?.view() };
@@ -600,6 +633,8 @@ app.whenReady().then(() => {
   mcpStore.load();
   usageStore = new UsageStore(path.join(app.getPath('userData'), 'durbar-tool-usage.json'));
   usageStore.load();
+  usageTotalsStore = new UsageTotalsStore(path.join(app.getPath('userData'), 'durbar-usage-totals.json'));
+  usageTotalsStore.load();
   restoreFolders();
   createWindow();
   // Dev/headless convenience: DURBAR_OPEN="/path/a:/path/b" starts agents (read-only) on launch.
@@ -637,6 +672,7 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   usageStore?.flush();
+  usageTotalsStore?.flush();
   if (stageDir) fs.rmSync(stageDir, { recursive: true, force: true });
 });
 
