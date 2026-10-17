@@ -115,4 +115,4 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 
 | # | Feature | Status |
 | --- | --- | --- |
-| [033](033-floors/spec.md) | Floors: group rooms (folders) and switch a whole floor off so it leaves the office, the lobby and the status counts | draft, clarified 2026-10-17; no plan, tasks or code |
+| [033](033-floors/spec.md) | Floors: group rooms (folders) and switch a whole floor off so it leaves the office, the lobby and the status counts | clarified and planned 2026-10-17 ([plan](033-floors/plan.md), [research](033-floors/research.md)); no tasks or code yet |
