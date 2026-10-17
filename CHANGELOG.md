@@ -8,6 +8,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 - **Usage totals (spec 011 FR-018..FR-023, PR #17).** An office total (header chip) and a per-folder total (room header and closed door plate) in AIU, summed from the runtime's usage events since the app opened. Not saved across restarts; ended sessions stay counted; shows "credits not reported" instead of 0 when the runtime sends no figure. `npm run test:usagetotals`.
 - **Windows paths in session-grant scopes** are unit-tested (spec 003 FR-031/FR-032, PR #16). Known gap: Windows grant keys are not yet compared case-insensitively (task T028).
 - **Docs and process:** README, CHANGELOG and spec statuses brought in line with `main`; AGENTS.md has a "Keep docs in sync" rule; the PR template has a "Docs updated" box; a non-blocking check warns when `src/` changes without a docs change (spec 025).
+- **Screenshots of the mode menu, confirmation and right-click menu** (`docs/screenshots/m7-mode-switch.png`, `m7-mode-confirm.png`, `m7-mode-context.png`) were regenerated on the simulator and now say *Allow all*; the driver is `scripts/shots-mode.js` (spec 025 FR-005, T006).
 
 ## v0.1.0-alpha.2 (draft pre-release, 2026-10-16)
 
