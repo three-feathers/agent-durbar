@@ -6,6 +6,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseCap } from '../shared/credits';
+import { parseTier } from '../shared/modelswitch';
+import type { ContextTier } from '../shared/modelswitch';
 
 export type SavedPermMode = 'read-only' | 'ask' | 'allow';
 
@@ -18,6 +20,8 @@ export interface SavedFolder {
   closed?: boolean;
   model?: string;
   effort?: string;
+  /** Context tier chosen for this folder's sessions (spec 030); absent = the model's default. Only ever our own choice, never Copilot's settings. */
+  contextTier?: ContextTier;
   /** Per-session credit cap (AIU) for this folder's sessions (spec 011); a plain number. */
   maxAiCredits?: number;
 }
@@ -56,6 +60,7 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       closed: o.closed === true ? true : undefined,
       model: typeof o.model === 'string' && o.model.length <= 100 ? o.model : undefined,
       effort: typeof o.effort === 'string' && EFFORTS.has(o.effort) ? o.effort : undefined,
+      contextTier: parseTier(o.contextTier),
       maxAiCredits: parseCap(o.maxAiCredits),
     });
     if (out.length >= MAX_FOLDERS) break;
@@ -87,7 +92,7 @@ export class FolderStore {
   /** Adds the folder, or refreshes its mode/model when it is already saved (the hidden flag is kept). */
   upsert(entry: Omit<SavedFolder, 'hidden'> & { hidden?: boolean }): void {
     const cur = this.get(entry.workspace);
-    if (cur) Object.assign(cur, { permMode: entry.permMode, model: entry.model, effort: entry.effort, maxAiCredits: parseCap(entry.maxAiCredits) });
+    if (cur) Object.assign(cur, { permMode: entry.permMode, model: entry.model, effort: entry.effort, contextTier: parseTier(entry.contextTier), maxAiCredits: parseCap(entry.maxAiCredits) });
     else this.folders.push({ ...entry, permMode: entry.permMode, hidden: entry.hidden === true });
     this.save();
   }
@@ -105,6 +110,19 @@ export class FolderStore {
     const cur = this.get(workspace);
     if (!cur) return false;
     cur.maxAiCredits = parseCap(cap);
+    this.save();
+    return true;
+  }
+
+  /** Remember the model choice of an applied switch (spec 030): the model, the effort (`null` clears it, `undefined` keeps it) and the tier (`undefined` = default). Saved in this app's own file only. */
+  setModelChoice(workspace: string, choice: { model: string; effort?: string | null; contextTier?: ContextTier }): boolean {
+    const cur = this.get(workspace);
+    if (!cur || !choice.model || choice.model.length > 100) return false;
+    cur.model = choice.model;
+    if (choice.effort === null) cur.effort = undefined;
+    else if (choice.effort !== undefined) cur.effort = EFFORTS.has(choice.effort) ? choice.effort : cur.effort;
+    const t = parseTier(choice.contextTier);
+    cur.contextTier = t === 'long' ? 'long' : undefined;
     this.save();
     return true;
   }

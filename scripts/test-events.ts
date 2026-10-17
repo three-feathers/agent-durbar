@@ -159,4 +159,51 @@ const run = (events: RawEvent[]): EventBody[] => {
   assert.ok(out.every((e) => e.agentId === undefined), 'a limit is the session\'s, never a sub-agent\'s');
 }
 
+// Model and compaction events (spec 030). SYNTHETIC: shapes follow the SDK 1.0.22 type definitions (session-events.d.ts), NOT recorded from a real session (provenance: synthetic).
+{
+  const out: EventBody[] = [];
+  const m = new EventMapper((b) => out.push(b));
+  m.map({ type: 'session.usage_info', data: { currentTokens: 100, tokenLimit: 1000 } }); // before any model event: no model/tier on the context event
+  m.expectUserModel('sim-deep');
+  m.map({ type: 'session.model_change', data: { newModel: 'sim-deep', previousModel: 'auto', reasoningEffort: 'high', previousReasoningEffort: 'medium', contextTier: 'long_context' } });
+  m.map({ type: 'session.model_change', data: { newModel: 'sim-fast', previousModel: 'sim-deep', cause: 'rate_limit_auto_switch', contextTier: 'default' } });
+  m.map({ type: 'session.model_change', data: { newModel: 'sim-mid', previousModel: 'sim-fast', cause: 'refusal_fallback' } });
+  m.map({ type: 'session.model_change', data: { newModel: 'gpt-x', previousModel: 'sim-mid' } }); // nobody asked: the runtime did it
+  m.map({ type: 'session.model_change', agentId: 'inst-1', data: { newModel: 'helper-model' } }); // a sub-agent's model is not the session's
+  m.map({ type: 'session.model_change', data: { previousModel: 'x' } }); // no new model: ignored
+  m.map({ type: 'session.usage_info', data: { currentTokens: 200, tokenLimit: 2000 } });
+  assert.deepStrictEqual(out[0], { type: 'context', tokens: 100, limit: 1000, system: undefined, conversation: undefined, toolDefinitions: undefined, messages: undefined });
+  assert.deepStrictEqual(out[1], { type: 'model', model: 'sim-deep', previousModel: 'auto', effort: 'high', previousEffort: 'medium', tier: 'long', cause: 'user' });
+  assert.strictEqual((out[2] as { cause: string }).cause, 'rate-limit');
+  assert.strictEqual((out[2] as { tier?: string }).tier, 'default');
+  assert.strictEqual((out[3] as { cause: string }).cause, 'fallback');
+  assert.strictEqual((out[4] as { cause: string }).cause, 'runtime');
+  assert.strictEqual(out.filter((e) => e.type === 'model').length, 4, 'sub-agent and incomplete changes are skipped');
+  const ctx = out[5] as { model?: string; tier?: string };
+  assert.strictEqual(ctx.model, 'gpt-x', 'context events carry the model last reported');
+  assert.strictEqual(ctx.tier, undefined);
+}
+{
+  const out = run([
+    { type: 'session.compaction_start', data: { trigger: 'threshold', currentTokens: 900, tokenLimit: 1000 } },
+    { type: 'session.compaction_complete', data: { success: true, preCompactionTokens: 900, postCompactionTokens: 250, tokenLimit: 1000, summaryContent: 'SECRET SUMMARY', customInstructions: 'focus text' } },
+    { type: 'session.compaction_start', data: { trigger: 'manual', currentTokens: 500 } },
+    { type: 'session.compaction_complete', data: { success: false, error: 'model refused' } },
+    { type: 'session.compaction_start', agentId: 'inst-1', data: { trigger: 'threshold' } }, // sub-agent: skipped
+    { type: 'session.compaction_start', data: { trigger: 'model_switch' } },
+    { type: 'session.compaction_complete', data: { success: true, preCompactionTokens: 10, postCompactionTokens: 20 } },
+    { type: 'session.compaction_start', data: { trigger: 'context_limit_retry' } },
+  ]);
+  assert.deepStrictEqual(out, [
+    { type: 'compaction', phase: 'start', trigger: 'auto', tokensBefore: 900, limit: 1000 },
+    { type: 'compaction', phase: 'complete', trigger: 'auto', tokensBefore: 900, tokensAfter: 250, tokensRemoved: 650, limit: 1000 },
+    { type: 'compaction', phase: 'start', trigger: 'manual', tokensBefore: 500, limit: undefined },
+    { type: 'compaction', phase: 'failed', trigger: 'manual', tokensBefore: undefined, limit: undefined, error: 'model refused' },
+    { type: 'compaction', phase: 'start', trigger: 'model-switch', tokensBefore: undefined, limit: undefined },
+    { type: 'compaction', phase: 'complete', trigger: 'model-switch', tokensBefore: 10, tokensAfter: 20, tokensRemoved: 0, limit: undefined },
+    { type: 'compaction', phase: 'start', trigger: 'overflow', tokensBefore: undefined, limit: undefined },
+  ]);
+  assert.ok(!JSON.stringify(out).includes('SECRET'), 'the summary and the focus text never leave the mapper');
+}
+
 console.log('event mapping tests passed');

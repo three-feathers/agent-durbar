@@ -23,8 +23,8 @@ const parsed = parseSavedFolders(
   }),
 );
 assert.strictEqual(parsed.length, 2);
-assert.deepStrictEqual(parsed[0], { workspace: abs('a'), permMode: 'ask', hidden: true, closed: undefined, model: 'auto', effort: 'high', maxAiCredits: undefined });
-assert.deepStrictEqual(parsed[1], { workspace: abs('b'), permMode: 'read-only', hidden: false, closed: undefined, model: undefined, effort: undefined, maxAiCredits: undefined }, 'unknown values fall back to safe defaults');
+assert.deepStrictEqual(parsed[0], { workspace: abs('a'), permMode: 'ask', hidden: true, closed: undefined, model: 'auto', effort: 'high', contextTier: undefined, maxAiCredits: undefined });
+assert.deepStrictEqual(parsed[1], { workspace: abs('b'), permMode: 'read-only', hidden: false, closed: undefined, model: undefined, effort: undefined, contextTier: undefined, maxAiCredits: undefined }, 'unknown values fall back to safe defaults');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folders-'));
 try {
@@ -118,6 +118,40 @@ assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: 
     assert.strictEqual(new FolderStore(f4).load()[0].permMode, 'allow');
   } finally {
     fs.rmSync(d4, { recursive: true, force: true });
+  }
+}
+{
+  // model choice and context tier (spec 030): saved in our own file only, unknown values dropped
+  const d5 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folders-model-'));
+  try {
+    const f5 = path.join(d5, 'f.json');
+    const st = new FolderStore(f5);
+    st.upsert({ workspace: abs('p1'), permMode: 'ask', model: 'auto', effort: 'low', maxAiCredits: 40 });
+    assert.ok(st.setModelChoice(abs('p1'), { model: 'sim-deep', effort: 'high', contextTier: 'long' }));
+    let back = new FolderStore(f5).load()[0];
+    assert.deepStrictEqual([back.model, back.effort, back.contextTier, back.maxAiCredits, back.permMode], ['sim-deep', 'high', 'long', 40, 'ask'], 'only the model choice changes; the cap and mode stay');
+    assert.ok(st.setModelChoice(abs('p1'), { model: 'sim-fast' }));
+    back = new FolderStore(f5).load()[0];
+    assert.deepStrictEqual([back.model, back.effort, back.contextTier], ['sim-fast', 'high', undefined], 'effort kept when not given, tier back to the default');
+    assert.ok(st.setModelChoice(abs('p1'), { model: 'sim-deep', effort: null }));
+    assert.strictEqual(new FolderStore(f5).load()[0].effort, undefined, 'null clears the effort');
+    assert.ok(st.setModelChoice(abs('p1'), { model: 'sim-deep', effort: 'turbo' }));
+    assert.strictEqual(new FolderStore(f5).load()[0].effort, undefined, 'an unknown effort is not saved');
+    assert.ok(!st.setModelChoice(abs('nope'), { model: 'x' }));
+    assert.ok(!st.setModelChoice(abs('p1'), { model: '' }));
+    assert.ok(!st.setModelChoice(abs('p1'), { model: 'x'.repeat(101) }));
+    // a file with junk or with a tier we do not know
+    fs.writeFileSync(f5, JSON.stringify({ folders: [{ workspace: abs('a'), contextTier: 'long' }, { workspace: abs('b'), contextTier: 'huge' }, { workspace: abs('c'), contextTier: 5 }] }));
+    assert.deepStrictEqual(new FolderStore(f5).load().map((f) => f.contextTier), ['long', undefined, undefined]);
+    // a new session started with the saved folder refreshes the choice (tier included)
+    const s2 = new FolderStore(f5);
+    s2.load();
+    s2.upsert({ workspace: abs('a'), permMode: 'ask', model: 'auto' });
+    assert.strictEqual(new FolderStore(f5).load()[0].contextTier, undefined, 'a plain upsert (new session choice) resets the tier');
+    // Copilot's own settings are never part of the file
+    assert.ok(!fs.readFileSync(f5, 'utf8').match(/repoScope|modelChangeScope|pickerPersistence/));
+  } finally {
+    fs.rmSync(d5, { recursive: true, force: true });
   }
 }
 console.log('folders tests passed');

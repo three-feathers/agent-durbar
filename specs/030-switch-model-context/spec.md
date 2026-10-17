@@ -206,4 +206,9 @@ No answers from the owner were available while this was written, so these are **
 
 ## Changes
 
-*(none yet; real-session results and implementation deltas are recorded here)*
+- **Phase 1, logic, types, mapper, folder store, main IPC, simulator (sim only, no real session):**
+  - `src/shared/modelswitch.ts` holds the adapter-neutral types and the IPC validation. The UI logic is `src/renderer/modelswitch.js` (a plain script, because the renderer cannot import modules). Deviation from plan.md, which named only `src/shared/modelswitch.ts`.
+  - The model change reaches the renderer as the normalized `model` event; there is no separate `agent:model` channel. Main keeps `AgentInfo.model/effort/tier` in step and saves a choice to the folder entry only when the cause is `user`; a rate-limit or refusal fallback is shown but never saved as the folder's choice.
+  - The real Copilot adapter is unchanged: no `setModel`, `cancelQueuedModel` or `compact`, so `AgentInfo.modelControl.switch` is `none` and the handlers answer "start a new session". Phase 2 (T030..T035) adds them.
+  - Simulator: five models (Auto, Sim Fast, Sim Mid, Sim Deep with a long-context tier, Sim Preview with no price), made-up prices in credits per million tokens. `sim:` a switch asked for during a turn is queued and applies when the turn ends or is stopped; the runtime's real behaviour on interrupt is unverified (T044, T046). A chat message containing "fallback" makes the simulated runtime switch models by itself.
+  - Tests: `test:modelswitch`, `test:simmodel`, plus additions to `test:events` and `test:folders`.
