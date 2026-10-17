@@ -4,11 +4,11 @@ import * as path from 'path';
 type Total = { calls: number; inTokens: number; outTokens: number; nano: number; unreported: number };
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const U = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'usagetotals.js')) as {
-  createLedger: () => { record: (room: string, e: unknown) => void; room: (id: string) => Total; roomIds: () => string[]; office: () => Total };
+  createLedger: () => { record: (room: string, e: unknown) => void; room: (id: string, key?: string) => Total; roomRun: (id: string) => Total; roomIds: () => string[]; office: () => Total; officeRun: () => Total; setBaseline: (v: unknown) => void; clearRun: () => void; since: () => string; hasUnlisted: () => boolean };
   validNano: (x: unknown) => boolean;
   fmtTotal: (t: Total, digits?: number) => string;
   fmtShort: (t: Total) => string;
-  tooltip: (t: Total, o?: { scope?: string; removed?: boolean }) => string;
+  tooltip: (t: Total, o?: { scope?: string; removed?: boolean; since?: string; run?: Total }) => string;
 };
 
 const ev = (inputTokens: number, outputTokens: number, nanoAiu?: unknown) => ({ type: 'usage', inputTokens, outputTokens, nanoAiu });
@@ -81,5 +81,47 @@ const tip = U.tooltip(l.office(), { scope: 'office', removed: true });
 assert.ok(/^Office total: 2\.000 AIU/.test(tip) && /Includes folders no longer shown/.test(tip) && /ended sessions are included/.test(tip) && /1 AIU = 1 AI credit, not verified against billing/.test(tip));
 assert.ok(/^Folder total: /.test(U.tooltip(l.room('a'), { scope: 'folder' })));
 assert.ok(!/no longer shown/.test(U.tooltip(l.office(), { scope: 'office' })));
+
+// spec 011 FR-027 (issue #21): totals saved before this run (the baseline) plus what this run records
+const nums = (calls: number, aiu: number, unreported = 0): Total => ({ calls, inTokens: calls * 100, outTokens: calls * 10, nano: aiu * AIU, unreported });
+const bl = U.createLedger();
+assert.strictEqual(bl.since(), '', 'no baseline yet'); assert.strictEqual(bl.hasUnlisted(), false);
+bl.setBaseline({ since: '2026-10-01T09:00:00.000Z', office: nums(120, 41.7), folders: [{ path: '/work/app', name: 'app', ...nums(50, 12.4) }, { path: '/work/blog', name: 'blog', ...nums(30, 8.1) }] });
+assert.strictEqual(bl.since(), '2026-10-01T09:00:00.000Z');
+assert.strictEqual(bl.office().calls, 120, 'before anything happens this run the office shows what was saved');
+assert.strictEqual(bl.office().nano, 41.7 * AIU);
+assert.strictEqual(bl.hasUnlisted(), true, '120 saved calls but only 80 in the listed folders: some folder is not listed any more');
+assert.strictEqual(bl.room('r0', '/work/app').calls, 50, 'a folder shows its saved total before it has any usage this run');
+assert.strictEqual(bl.room('r0').calls, 0, 'without a key only this run counts');
+assert.strictEqual(bl.room('r0', '/never/seen').calls, 0);
+bl.record('r0', ev(1000, 100, 0.5 * AIU)); bl.record('r0', ev(1, 1, undefined));
+assert.strictEqual(bl.office().calls, 122); assert.strictEqual(bl.office().nano, 42.2 * AIU); assert.strictEqual(bl.office().unreported, 1);
+assert.strictEqual(bl.officeRun().calls, 2); assert.strictEqual(bl.officeRun().nano, 0.5 * AIU, 'the run part alone, for the tooltip');
+assert.strictEqual(bl.room('r0', '/work/app').calls, 52); assert.strictEqual(bl.room('r0', '/work/app').nano, 12.9 * AIU);
+assert.strictEqual(bl.roomRun('r0').calls, 2);
+const after = bl.office().calls;
+bl.setBaseline({ since: '2026-10-01T09:00:00.000Z', office: nums(120, 41.7), folders: [{ path: '/work/app', ...nums(50, 12.4) }, { path: '/work/blog', ...nums(30, 8.1) }, { path: '/old', ...nums(40, 1) }] });
+assert.strictEqual(bl.office().calls, after, 'asking for the baseline again (an agent was added) never changes the office total');
+assert.strictEqual(bl.hasUnlisted(), false, 'every saved call now belongs to a listed folder');
+assert.strictEqual(bl.room('r9', '/old').calls, 40, 'a folder added later gets its saved total');
+// a reset: this run's figures and the baseline both go
+bl.clearRun(); bl.setBaseline({ ok: true, since: '2026-10-19T09:00:00.000Z', office: nums(0, 0), folders: [] });
+assert.strictEqual(bl.office().calls, 0); assert.strictEqual(bl.since(), '2026-10-19T09:00:00.000Z'); assert.strictEqual(bl.room('r0', '/work/app').calls, 0);
+// hostile baselines count as zero and never throw
+for (const v of [undefined, null, 5, 'x', [], {}, { office: 'x', folders: 'y' }, { office: { calls: -5, nano: NaN }, folders: [null, 3, { path: 7 }, { path: '/p', calls: 'x' }] }]) {
+  const h = U.createLedger(); h.setBaseline(v);
+  assert.strictEqual(h.office().calls, 0, String(JSON.stringify(v))); assert.strictEqual(h.hasUnlisted(), false);
+  assert.ok(Number.isFinite(h.office().nano));
+}
+const half = U.createLedger(); half.setBaseline({ since: 5, office: nums(2, 1), folders: [] }); assert.strictEqual(half.since(), '', 'a since that is not text is ignored');
+// the tooltip: saved since, and this run alone
+const t2 = U.tooltip(nums(122, 42.2), { scope: 'office', since: '2026-10-01T09:00:00.000Z', run: nums(2, 0.5), removed: true });
+assert.ok(/Saved since 2026-10-01 \(reset in Settings\); ended sessions are included\./.test(t2), t2);
+assert.ok(/Since the app opened \(or the last reset\): 0\.500 AIU in 2 calls\./.test(t2), t2);
+assert.ok(/Includes folders no longer shown\./.test(t2));
+assert.ok(!/Since the app opened/.test(U.tooltip(nums(122, 42.2), { scope: 'office', since: '2026-10-01', run: nums(0, 0) })), 'no run line before this run recorded anything');
+assert.ok(/Since Agent Durbar opened; ended sessions are included\./.test(U.tooltip(nums(3, 1), { scope: 'office' })), 'without a saved baseline the old text stays');
+assert.ok(!/Saved since/.test(U.tooltip(nums(3, 1), { scope: 'office', since: 'garbage' })), 'a since that is not a date is not shown');
+assert.ok(/credits not reported in 4 calls|credits not reported/.test(U.tooltip(nums(4, 0, 4), { scope: 'folder', since: '2026-10-01', run: nums(4, 0, 4) })));
 
 console.log('usagetotals tests passed');

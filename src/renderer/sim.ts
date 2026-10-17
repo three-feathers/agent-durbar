@@ -4,7 +4,8 @@
  * starting any session or spending AI credits.
  *
  * Enable with `DURBAR_SIM=15 npm start` (Electron main passes ?sim=15) or open
- * dist/renderer/index.html?sim=15 in a browser. Extra query params: simfreeze=1 (no ticking),
+ * dist/renderer/index.html?sim=15 in a browser. Extra query params: simtotals=1 (totals saved by a previous run), simunreported=<room>
+ * (that room reports usage without credits), simfreeze=1 (no ticking),
  * simrooms=solo (one folder per agent), seed=N, density=full|card|mini, open=<agent id>.
  *
  * Plain script (no imports/exports) so it runs unchanged in the sandboxed renderer.
@@ -23,6 +24,10 @@ interface SimOptions {
   freeze?: boolean;
   solo?: boolean;
   seed?: number;
+  /** Room name whose agents report usage without a credit figure (spec 011 FR-029): shows "credits not reported". */
+  unreported?: string;
+  /** Start with totals saved by a previous run for two folders (spec 011 FR-029), as after a restart. */
+  seedTotals?: boolean;
 }
 
 interface SimAgent {
@@ -241,10 +246,13 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
     const sid = (s: SimAgent) => s.info.id;
     const pick = <T,>(a: T[]): T => a[Math.floor(rnd() * a.length)];
     const MODELS = ['gpt-6-luna', 'gpt-6-luna', 'gpt-5.6-luna', 'claude-sonnet-4.6'];
+    /* spec 011 FR-029: a room can be made to report usage without credits, like a runtime that does not send them (helpers included) */
+    const unreported = (s: SimAgent): boolean => !!opts.unreported && (s.room === opts.unreported || (s.info as AgentInfo & { roomName?: string }).roomName === opts.unreported);
     const usage = (s: SimAgent): void => {
       const model = (s.models ?? MODELS)[Math.floor(rnd() * (s.models ?? MODELS).length)];
       const nano = Math.floor((SIM_EXPENSIVE[s.info.name] ?? 0.004 + rnd() * 0.012) * 1e9);
-      emit({ type: 'usage', sessionId: sid(s), timestamp: now(), model, inputTokens: 1200 + Math.floor(rnd() * 6000), outputTokens: 150 + Math.floor(rnd() * 900), nanoAiu: nano, creditsStatus: 'complete' });
+      const unrep = unreported(s);
+      emit({ type: 'usage', sessionId: sid(s), timestamp: now(), model, inputTokens: 1200 + Math.floor(rnd() * 6000), outputTokens: 150 + Math.floor(rnd() * 900), ...(unrep ? { creditsStatus: 'unavailable' as const } : { nanoAiu: nano, creditsStatus: 'complete' as const }) });
       s.used = (s.used ?? 0) + nano;
       const cap = s.info.maxAiCredits;
       if (cap && !s.limitReq && s.used / 1e9 >= cap) {
@@ -322,7 +330,7 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       const f = s.files[h % s.files.length];
       emit({ ...base, type: 'toolCall', agentId: call, callId: call + '-v', tool: 'view', phase: 'start', args: { path: f } });
       emit({ ...base, type: 'toolCall', agentId: call, callId: call + '-v', tool: 'view', phase: 'complete', output: '120 lines' });
-      emit({ ...base, type: 'usage', agentId: call, model: 'auto', inputTokens: 3900, outputTokens: 60, nanoAiu: 8_000_000, creditsStatus: 'complete' });
+      emit({ ...base, type: 'usage', agentId: call, model: 'auto', inputTokens: 3900, outputTokens: 60, ...(unreported(s) ? { creditsStatus: 'unavailable' as const } : { nanoAiu: 8_000_000, creditsStatus: 'complete' as const }) });
       if (st === 'working' || st === 'thinking') {
         emit({ ...base, type: 'toolCall', agentId: call, callId: call + '-g', tool: 'grep', phase: 'start', args: { pattern: 'registerTool' } });
         return;
@@ -601,7 +609,21 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
     /* spec 024: place mapping kept in memory (plain script: no imports, so the ids are listed here) */
     const placeMap: Record<string, string> = {};
     const PLACE_CHOICES = ['library', 'software', 'terminal', 'web', 'other', 'desk'];
+    /* spec 011 FR-029: saved totals, in memory. Default: nothing saved. With simtotals=1: a previous run left totals for two folders
+       and one folder that is not in the list any more, so the header shows more than this run's own spend. */
+    const zero = { calls: 0, inTokens: 0, outTokens: 0, nano: 0, unreported: 0 };
+    let savedSince = '2026-10-01T09:00:00.000Z';
+    let saved = opts.seedTotals
+      ? { office: { calls: 120, inTokens: 540_000, outTokens: 60_000, nano: 41.7e9, unreported: 0 },
+          folders: [
+            { path: ROOM_DEFS['mcp-swiss'], name: 'mcp-swiss', calls: 50, inTokens: 230_000, outTokens: 25_000, nano: 12.4e9, unreported: 0 },
+            { path: ROOM_DEFS.blog, name: 'blog', calls: 30, inTokens: 120_000, outTokens: 14_000, nano: 8.1e9, unreported: 0 },
+          ] }
+      : { office: zero, folders: [] as { path: string; name: string; calls: number; inTokens: number; outTokens: number; nano: number; unreported: number }[] };
+    if (!opts.seedTotals) savedSince = new Date().toISOString();
     const capApi: Partial<DurbarApi> = {
+      usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
+      usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
       getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, about: { name: 'Agent Durbar', version: '0.1.0-alpha.4 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setPlace: async (server, place) => {
