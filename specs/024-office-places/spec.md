@@ -91,3 +91,12 @@ In Settings I see the MCP servers I use (the Copilot CLI list, my per-folder ext
 - "Walking" is a direct glide with a walking animation, not pathfinding (Ruben's choice).
 - The lobby takes height. Measured on the simulator with 15 agents (2026-10-17): without it `card` density at both sizes (82px desks, helper rows 3 / 1); with it `card` at 1440x900 (helper rows 3 → 1) and `mini` at 1280x800 (desks 82px → 64px). SC-002 holds. Accepted as the price of the lobby.
 - Out of scope: custom places with own name/icon, per-folder mapping, sounds, helpers walking, real-session verification.
+
+## Verification on a real session (2026-10-17)
+
+Asked for by Ruben. Real Copilot runtime (Copilot CLI 1.0.95, SDK 1.0.22, model `auto`), the app in *Ask first* on an empty test folder, **2 prompts, 0.4364 AIU** (3 usage events). Recorded with `DURBAR_LOG`; the log stays local (it lists the user's own MCP servers).
+
+- `real:` A shell request arrives as `toolCall` `tool: 'bash'` with no MCP server, so FR-002 sends it to **Terminal**.
+- `real:` The runtime sends the tool **start before the permission request** (start at 37.88 s, `needs-permission` at 37.93 s). So an agent waiting for approval is at its place: this is why FR-003 keeps the visit on `needs-permission` (without that review fix it would have gone back at once).
+- `real:` A denied request ends as `toolCall` `failed` (0.9 s after the start, so past the 600 ms debounce): the agent stays its 2 s at the Terminal and walks back; the card says `At Terminal: bash · Denied: run ls`. Accepted as honest ("it went and was refused"). (The checking driver denied `ls` by mistake: its text match failed, so nothing ran.)
+- `[KNOWN GAP]` Not exercised for real: a walk to an **MCP** place. The second prompt asked for GitHub issues, but the session's GitHub server offered only code and user search and the agent called no tool. The real server name was `github`, which the default rules send to Software library.
