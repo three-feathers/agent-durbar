@@ -2,14 +2,14 @@
 
 **Feature Branch**: `011-credit-caps-and-usage-display`
 **Created**: 2026-10-16
-**Status**: Partly specified for implementation 2026-10-16 (per-session cap + global default + usage-vs-cap display + limit-exhausted handling: see Clarifications, `plan.md`, `tasks.md`). Office-wide totals, persistence of usage and the multiplier estimate (User Stories 1 and 3) stay backlog.
+**Status**: Partly specified for implementation 2026-10-16 (per-session cap + global default + usage-vs-cap display + limit-exhausted handling: see Clarifications, `plan.md`, `tasks.md`). Office-wide and per-folder totals built 2026-10-17 (FR-018..FR-023). Persistence of usage and the multiplier estimate (User Stories 1 and 3) stay backlog.
 **Input**: README roadmap "AI-credit counter and caps" (unchecked). Today usage is only a read-only line per agent; `maxAiCredits` exists in `StartOptions` but nothing uses it.
 
 ## What exists today (verified 2026-10-16 by reading code and the installed SDK)
 
 - `[IMPLEMENTED]` `usage` events carry `inputTokens`, `outputTokens`, `model`, `nanoAiu` (from `assistant.usage` → `copilotUsage.totalNanoAiu`, feature 002); the renderer sums them per agent and shows "N calls · X in / Y out tokens · Z AIU" (`usageLong` in `app.js`). *(sim:; the real field was seen on the free plan only)*
 - `[KNOWN GAP]` `StartOptions.maxAiCredits` (`src/adapters/types.ts`) is accepted and ignored (feature 002 FR-017).
-- `[KNOWN GAP]` No total across agents, no per-folder total, no history across restarts, no warning, no cap.
+- `[KNOWN GAP]` ~~No total across agents, no per-folder total~~ (built 2026-10-17, FR-018..FR-023), no history across restarts, no warning, ~~no cap~~ (cap slice 2026-10-16).
 - Installed `@github/copilot-sdk` 1.0.22 offers (read in its `.d.ts`, **never called by this app**): `SessionConfig.sessionLimits?: { maxAiCredits?: number }` ("maximum AI Credits allowed across the session's current accounting window"), an event `session_limits_exhausted.requested` answered with `session.ui.handlePendingSessionLimitsExhausted()` (actions such as add credits / set a new maximum), `session.quota` / `quota_observation` events and `errorType: "quota"` errors. `[UNVERIFIED]` what they do on a real session, whether the cap is hard or soft ("post-paid ceiling is soft" is documented for workflow limits), and whether `AIU` equals "AI credits" shown on GitHub billing pages.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -54,7 +54,7 @@ Next to the model picker I see the credit multiplier and an estimate of cost rel
 
 ### Functional Requirements
 
-- **FR-001** The office header shows the total AIU of all agents since launch, with tooltip explaining AIU and that figures are as reported by the Copilot runtime.
+- **FR-001** (implemented 2026-10-17, FR-018..FR-023) The office header shows the total AIU of all agents since launch, with tooltip explaining AIU and that figures are as reported by the Copilot runtime.
 - **FR-002** Per agent: calls, tokens and AIU as today, plus "credits not reported" when the runtime gives none.
 - **FR-003** A per-session cap can be set when adding a folder or session (default: none); it is passed to the adapter through `StartOptions.maxAiCredits` and mapped by the Copilot adapter to the SDK's `sessionLimits` (after verification, feature 013).
 - **FR-004** Reaching a cap emits a normalized event (name to be decided in `/speckit.plan`, for example `limit`) that the UI renders as an attention state with the choices in User Story 2; the adapter implements the SDK's exhausted-request handshake.
@@ -117,3 +117,25 @@ Run 2026-10-16 (Europe/Madrid) with `npm run verify:cap` against the real runtim
 - `session.create` with `maxAiCredits: 0.001` failed: `Minimum session limit is 30 AI credits.` (so the minimum, FR-009/Q above, is a fact, not an assumption).
 - A real session with cap 30 starts; `setCap(60)` and `setCap(null)` each produced one `session.session_limits_changed` event, normalized to `limit {phase:'changed', max:60}` and `max:null`; `setCap(5)` is refused by the runtime with the same minimum message (the app never sends it: `parseCap`).
 - **Not verified, on purpose:** the exhausted flow (`session_limits_exhausted.requested`, the answers add/set/unset/cancel, behaviour after `cancel`). It needs 30 real credits (about USD 0.30, ~150 tiny prompts). The handshake is implemented from the SDK types and GitHub's documentation and covered by mapper fixtures and the simulator only. The single real prompt allowed for this task was therefore **not used**. Re-run once someone is willing to spend that, and record the result here.
+
+### 2026-10-17: office-wide and per-folder usage totals (User Story 1 FR-001; issue #8)
+
+**Clarifications (Ruben, 2026-10-17).**
+
+- **Q: Scope?** Totals only: an office total in the header and a total per folder, **in memory since the app opened**. Persisting usage across restarts (User Story 1 scenario 3) and the multiplier estimate (User Story 3) stay backlog, as separate issues.
+- **Q: Where is the office total?** A chip after the status counters in the header (`1.23 AIU`), with a tooltip for the breakdown.
+- **Q: Where is the folder total?** In the open room header next to the status dots, and on the closed door plate.
+- **Q: What counts?** Everything since the app opened, **including ended sessions and removed agents** (that spend has happened). Helpers (sub-agents) count **once**: their usage is already part of their parent agent and is not added again.
+- Decided by default (recorded here, no open questions): the header chip counts the **whole office**, ignoring the folder/status filters (spend is not filtered away). Two decimals on the chip and plate, three in tooltips (same as cards and the chat header). A folder that is removed takes its folder total with it, but its spend stays in the office total; the tooltip then says "includes folders no longer shown".
+
+**Requirements (numbering continues).**
+
+- **FR-018** `[IMPLEMENTED]` (test: usagetotals; sim:) A pure usage ledger (`src/renderer/usagetotals.js`, UMD like `roomsummary.js`, tested in Node) records each `usage` event once, keyed by folder (room id): `calls`, `inTokens`, `outTokens`, `nano` (sum of valid `nanoAiu`), `unreported` (calls whose `nanoAiu` is missing, non-numeric, negative or above 1e15). It is never decreased when an agent or session goes away. Events from helpers are recorded once, for the parent's folder.
+- **FR-019** `[IMPLEMENTED]` (sim:) **Header chip** after the status counters: `N.NN AIU` for the office total. Tooltip: total AIU with three decimals, calls, input/output tokens, "since Agent Durbar opened; ended sessions included", "as reported by the Copilot runtime (1 AIU = 1 AI credit, unverified against billing)", and, when relevant, "N calls did not report credits" and "includes folders no longer shown". The chip is not a filter button and is hidden while no `usage` event has arrived (fresh start, demo/sample data).
+- **FR-020** `[IMPLEMENTED]` (sim:) **Folder total** in the open room header next to the status dots (`0.42 AIU`, tooltip with the same breakdown for that folder) and on the closed door plate (appended to the plate's aria-label and shown as short text). Hidden for folders with no usage yet.
+- **FR-021** `[IMPLEMENTED]` (test: usagetotals; **not seen on screen**: the simulator always reports credits, so the not-reported chip/plate text is unit-tested only) **Not reported, never zero:** when every recorded call of the scope lacks credits, the chip/folder total shows `credits not reported` (short form on the plate: `n/r`), not `0.00 AIU`. When only some lack them, the value is shown and the tooltip says how many calls did not report.
+- **FR-022** `[IMPLEMENTED]` (sim:; check:office 95/95) Calm UI (constitution V): text at least 10.5px, the header and room headers still fit at 1440x900 and 1280x800 with 15 simulated agents (`npm run check:office` stays green); the chip uses the existing neutral pill style, no new colors for spend.
+- **FR-023** `[IMPLEMENTED]` (test: usagetotals; sim: screenshots) Tests (no credits): `scripts/test-usagetotals.ts` (sums per folder and office, helpers once, removal does not decrease, invalid `nanoAiu` counted as unreported, formatting incl. not-reported) wired into `npm test`; simulator screenshots at both sizes.
+- SC-001 applies: on the simulator the header total equals the sum of the folder totals (when no folder was removed) to the displayed precision.
+
+Still backlog after this delta: persisted usage across restarts, multiplier estimate (User Story 3), capability flag for other adapters (spec 012).

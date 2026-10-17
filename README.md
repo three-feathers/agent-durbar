@@ -350,6 +350,7 @@ An Electron app that:
 - [x] Permission approve/deny flow (basic; read-only default)
 - [x] AI-credit counter and per-session caps with a global default (milestone 9; the limit-reached flow follows GitHub's docs and is not yet verified on a real account)
 - [x] Tools "All time" view, Copilot CLI MCP list first, MCP extras per folder (milestone 10)
+- [x] Usage totals: office total in the header and per-folder totals in room headers and door plates, in memory since the app opened (spec 011, 2026-10-17; persisted usage is still open)
 - [ ] Resume sessions; read-only discovery of VS Code / terminal sessions
 - [x] Open in VS Code (`code <folder>`)
 - [x] Office polish for 10-15 agents: auto-fit density, helpers with `+N`, status sorting, chat chips (simulated agents mode)

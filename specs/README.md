@@ -41,7 +41,7 @@ Spec drafts only (no plan or tasks yet); they must go through `/speckit.clarify`
 
 | # | Feature | Status |
 | --- | --- | --- |
-| [011](011-credit-caps-and-usage-display/spec.md) | AI-credit caps and usage display | per-session cap slice built (exhausted flow unverified on a real account); office totals and persisted usage still backlog |
+| [011](011-credit-caps-and-usage-display/spec.md) | AI-credit caps and usage display | per-session cap slice and office/folder usage totals built (exhausted flow unverified on a real account); persisted usage and multiplier estimate still backlog |
 | [012](012-claude-codex-adapters/spec.md) | Claude Code and Codex adapters | draft |
 | [013](013-live-verification-stop-resume-thinking/spec.md) | Live verification of Stop, resume and thinking | draft |
 | [014](014-signing-and-notarization/spec.md) | Code signing and notarization | draft, **needs approval (purchase)** |
