@@ -2,7 +2,38 @@
 
 Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on Linux (see "Honest limits"). Each entry names the spec that describes the behavior and how it was checked.
 
-## Unreleased (on `main`, after the alpha.3 tag)
+## Unreleased (on `main`, after the alpha.4 tag)
+
+Nothing yet.
+
+## v0.1.0-alpha.4 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4), 2026-10-17)
+
+A **pre-release** on top of v0.1.0-alpha.3: places in the office, the VS Code MCP import, the dialog focus fix and the first steps of switching model and context window inside a session. Spec: [031](specs/031-release-alpha4/spec.md). Built and tested on the simulator, on fake sessions and with unit tests; **no AI credits were spent for the release itself** (the earlier real-account checks are listed below with their cost).
+
+### Read this first
+
+- **Still unsigned and not notarized.** macOS: right-click (Control-click) the app, choose **Open**, or `xattr -dr com.apple.quarantine "/Applications/Agent Durbar.app"`. Windows: SmartScreen "More info", then "Run anyway". Linux: `chmod +x` the AppImage.
+- **Untested on real hardware.** Only Linux has been run by hand. The macOS and Windows packages are built and unit-tested by CI, but nobody has launched them on a real Mac or Windows PC.
+- Same app id as alpha.3 (`io.github.three-feathers.agentdurbar`), so it should replace alpha.3, but an in-place upgrade from alpha.3 was not checked. No auto-update. Download newer releases by hand.
+- **Switching model and context window is not verified on a real account.** It works on the simulator and on fake sessions. On a real free plan only `auto` exists, so switching between two real models, the long-context tier and the confirmation path were never seen.
+
+### What's new
+
+- **Places in the office (spec 024, issue #18, PR #109).** A shared lobby in the middle of the office with Library, Software library, Terminal, Web and Other tools. An agent whose tool runs longer than 0.6 s walks there and back; file tools never move it. At most three figures move at once, none with *reduce motion*; the card text and the place labels say where each agent is. Settings > *Places in the office* sets the place of each MCP server (global; names and places only). With 15 agents the office keeps `card` desks at 1440x900 and uses `mini` desks at 1280x800. Custom places are not built yet (issue #115).
+- **Import MCP servers from VS Code, per folder (spec 020, issue #7, PR #29).** Reads that folder's `.vscode/mcp.json`, shows a preview with nothing ticked, and adds the ticked servers as extras of that folder only, switched off and untrusted. VS Code `inputs` are never asked for, stored or resolved.
+- **Keyboard focus in the Allow all confirmation (spec 003, issue #25, PR #27).** Focus stays in the dialog, Tab is trapped and Escape cancels.
+- **Switch model, effort and context tier inside a session, and compact (spec 030, PRs #110 to #113).** Chat-header model menu with confirmations and Undo, a context chip with a Compact action, a start-fresh hint near the limit, and the same on real Copilot agents through the adapter (marked "Not verified on a real account yet"). Verified on the simulator and a fake session; real checks on a free plan (`auto` only, 0.56 AIU) found and fixed three things: Stop drops a queued switch, a compaction's cost is now counted in the usage totals, and runtime error text is cleaner.
+- **Docs:** README pictures regenerated on the simulator, specs 012 (Claude Code and Codex adapters) and 030 researched and planned.
+
+### Honest limits
+
+- **Unsigned, not notarized** (signing is spec 014, a draft that needs the maintainer's approval to buy certificates).
+- **Untested on real Macs and Windows PCs.** CI builds the macOS and Windows packages and runs unit tests on all three OSes, but no one has launched them on real hardware. The Windows layout of the lobby was not looked at.
+- Real-account checks of spec 030 covered `auto` only; windows, prices, effort and the long tier of real models are unverified.
+- Needs a GitHub Copilot login (`copilot login`); usage bills against your own plan. Independent project, not affiliated with GitHub or Microsoft.
+- Known gaps are listed per spec (`[KNOWN GAP]`) and under "Known limits" in the README.
+
+### Full entries (as logged while building, newest first)
 
 - **Places in the office (spec 024, issue #18).** A shared lobby in the middle of the office with Library, Software library, Terminal, Web and Other tools. While a tool runs longer than 0.6 s the agent walks there (about 1 s, an empty chair stays at its desk) and walks back after the call; at most three figures move at once, none with *reduce motion*. Settings > *Places in the office* sets the place of each MCP server (global, saved; names and places only). Checked on the simulator and with unit tests (`test:places`, `check:office`, `scripts/shots-024.js`); CI runs the unit tests on Linux, macOS and Windows and the office layout check (with the lobby) on Linux; a short real-session check (3 prompts, 0.84 AIU) confirmed the walks to Terminal and Software library; the Windows layout was not looked at.
 - **Real-account checks of model switching and compaction (spec 030 T041..T046, free plan, `auto` only, 8 one-line prompts + 1 compaction, 0.56 AI credits; ceiling 20, owner's limit 100).** New dev tools `scripts/phase3-real.ts` and `scripts/phase3b-real.ts` and real fixtures. Findings and fixes: **Stop drops a switch that was queued during a reply** (the simulator now does too; the UI says "dropped when you stopped" and no longer leaves "Next: ..." standing, which also clears itself two seconds after a reply ends if no model event came); **a compaction's cost is now counted** in the usage totals (it was one invisible model call, 0.19 AIU); a model the plan cannot use is refused with "not available on this Copilot account or plan"; runtime error text no longer shows the "Request ... failed with message" wrapper; a compaction that grows a tiny conversation says "too short to shrink". History survives switch calls, compaction and resume. Still unverified: switching between two real models, `confirmation_required`, the long tier's window and price (a free plan lists only `auto`). The earlier T040 entry below is part of this.
