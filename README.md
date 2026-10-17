@@ -98,7 +98,7 @@ Spec [034](specs/034-agent-health/spec.md) (issue #20; amends 001). Built and te
 - **Trouble.** An **ambulance** parks by the desk of the agent with the latest error (one ambulance at a time; other agents in Error keep the plain error look). An agent at its credit limit **faints**. One whose permission request has waited 60 s or more **taps the desk**. Three failed tool calls in a row make it **dizzy** (a successful call clears it).
 - **The text never changes.** The card's tooltip and accessible label add the state ("context nearly full (93%)", "needs help: error", "fainted: credit limit reached", "impatient: waiting 2 min for you", "dizzy: 3 failed tool calls in a row").
 - **Serious mode.** Settings > *Agent mood* > **Serious mode** turns every drawing and these words off (saved). With reduced motion the drawings stay but nothing blinks or moves.
-- **Rooms.** A room takes the tone of its worst agent: its own colour, a little darker with a heavy agent and clearly darker with a monster, an agent in Error or any trouble. A small red/blue **siren** blinks next to the room name (and on the door plate of a closed room) while the room has the ambulance or a fainted agent; the room's label then says "Alert: an agent needs help". Header text gets darker with the floor so it stays readable.
+- **Rooms.** A room takes the tone of its worst agent: its own colour, a little darker with a heavy agent and clearly darker with a monster, an agent in Error or any trouble. A small red/blue **siren** blinks next to the room name (and on the door plate of a closed room) while the room has the ambulance or a fainted agent; the room's label then says "Alert: an agent needs help". Header text stays readable (4.5:1 or more): it gets darker with the floor, and the folder path is a little darker in every room.
 - Simulator: `simwaitold=1` makes waiting requests 2 minutes old, so "impatient" shows at once.
 
 ![Office: a monster, the ambulance, fainted and impatient agents; rooms darkened by their worst agent, sirens in two rooms, 1440x900](docs/screenshots/034-office-1440x900.png)
@@ -106,7 +106,7 @@ Spec [034](specs/034-agent-health/spec.md) (issue #20; amends 001). Built and te
 ![Serious mode on, 1280x800](docs/screenshots/034-serious-1280x800.png)
 ![Closed rooms: the siren on the door plate of the room with the ambulance, 1280x800](docs/screenshots/034-plates-1280x800.png)
 
-**Limits.** Not checked on a real Copilot session. In calm rooms the folder path stays at today's contrast (about 4.2:1, below 4.5:1). An agent away at a place in the lobby shows an empty chair, so its drawing is hidden (the words stay); the walking figure and the List view do not show the mood yet.
+**Limits.** Not checked on a real Copilot session. An agent away at a place in the lobby shows an empty chair, so its drawing is hidden (the words stay); the walking figure and the List view do not show the mood yet.
 
 Tests: `npm test` adds `test:mood` and `seriousMode` cases in `test:credits`. Checks and screenshots: `scripts/shots-034.js`.
 ## Status (floors: group rooms and switch a floor off)

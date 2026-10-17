@@ -20,7 +20,7 @@
  *   - Edge  an agent on a floor that is off (spec 033) never takes the ambulance.
  * Rooms (spec 034 delta, issue #135): each room's data-alert follows its worst agent (calm, uneasy, alarm); the siren is on only where
  * the ambulance or a faint is, moves with the ambulance, sits on the closed door plate without changing its size and is named in the
- * label; the header text (path, usage) keeps 4.5:1 contrast on the real pixels in darkened rooms (calm rooms stay as today, about 4.2:1, known gap); Serious mode and a floor that is off
+ * label; the header text (path, usage) keeps 4.5:1 contrast on the real pixels at every tone, calm rooms included; Serious mode and a floor that is off
  * show neither; reduced motion stops the siren; full-density rooms get no inner ring.
  * Crops of single desks (device pixels) go to 034-crop-<state>.png for a close look at the drawings.
  */
@@ -125,9 +125,8 @@ module.exports = async (ctx) => {
       const c = await contrast(k, sel);
       if (c !== null) { low.push([k, rm[k].tone, sel, c]); if (w === 1440) console.log('[034] contrast', k, rm[k].tone, sel, c.toFixed(2)); }
     }
-    /* [KNOWN GAP] calm rooms keep today's colours: the path is about 4.2:1 on main already (T015); only darkened rooms are held to 4.5 */
-    assert.deepStrictEqual(low.filter((x) => x[1] !== 'calm' && x[3] < 4.5).map((x) => `${x[0]} ${x[2]} ${x[3].toFixed(2)} (${x[1]})`), [], 'header text keeps 4.5:1 in darkened rooms');
-    assert.ok(low.filter((x) => x[1] === 'calm').every((x) => x[3] >= 4), 'calm rooms stay as today (about 4.2:1 for the path)');
+    assert.deepStrictEqual(low.filter((x) => x[3] < 4.5).map((x) => `${x[0]} ${x[2]} ${x[3].toFixed(2)} (${x[1]})`), [], 'header text keeps 4.5:1 at every tone, calm rooms included (T015)');
+    assert.ok(low.some((x) => x[1] === 'calm'), 'a calm room was measured too');
     await shot('office', w, h);
 
     if (w === 1440) {

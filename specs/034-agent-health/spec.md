@@ -120,14 +120,14 @@
 
 - The worst agent gets better (new turn, compaction, limit raised): the room's tone follows at once (the same 5 s mood timer as the figures).
 - An agent away at a place in the lobby still counts for its room (its mood is known even though its chair is empty).
-- Text in the room header (path, usage total) keeps a contrast of at least 4.5:1 in a darkened room (its colour turns darker with the floor); the cards keep their own background. A calm room looks as today.
+- Text in the room header (path, usage total) keeps a contrast of at least 4.5:1 at every tone. It turns darker with the floor in a darkened room, and in calm rooms the path is a little darker than before (T015). The cards keep their own background.
 
 #### Requirements
 
 - **FR-008** `[IMPLEMENTED]` Pure `roomAlertOf(moods)` in `src/renderer/mood.js`: list of `{state, body, trouble}` of a room's main agents → `{tone: 'calm'|'uneasy'|'alarm', siren: boolean}` with the rules above; unknown or empty input → calm, no siren.
 - **FR-009** `[IMPLEMENTED]` Open rooms (every density): `data-alert="uneasy|alarm"` on the room section and darker `--tint`/`--wall` per room colour in `styles.css`; the siren (small inline SVG, red/blue) in the room header next to the name; door plates get the siren only. No change to sizes: `check:office` stays green at 1440x900 and 1280x800.
 - **FR-010** `[IMPLEMENTED]` Words: the room section's and door plate's `aria-label` add "Alert: an agent needs help" while the siren is on.
-- **FR-011** `[IMPLEMENTED]` Calm: Serious mode removes tones and sirens; reduced motion stops the blink; header text contrast at least 4.5:1 in darkened rooms, measured on the real pixels in the driver (calm rooms are unchanged).
+- **FR-011** `[IMPLEMENTED]` Calm: Serious mode removes tones and sirens; reduced motion stops the blink; header text contrast at least 4.5:1 at every tone, measured on the real pixels in the driver.
 - **FR-012** `[IMPLEMENTED]` Simulator: one room whose worst agent is heavy only, so all three tones can be seen at once.
 - **FR-013** `[IMPLEMENTED]` Tests, no credits: `roomAlertOf` cases in `scripts/test-mood.ts` (each tone, priority, siren for ambulance and faint only, garbage input); driver `scripts/shots-034.js` extended (tones, siren moves with the ambulance, closed plate, Serious mode, reduced motion, contrast, floor off); screenshots at both sizes.
 
@@ -148,11 +148,11 @@
   - reduced motion: the siren does not blink;
   - a floor that is off;
   - full density without the inner ring.
-  - Header contrast measured on screen pixels: darkened rooms 5.9-6.7:1. `check:office` passes with no layout change: 141/141 on macOS, 142/142 on CI (Linux). The count depends on the machine: with 15 agents at 1440x900 and three rooms closed, Linux fonts let the office pick the full density instead of roomy, and full runs one more check (found in review).
+  - Header contrast measured on screen pixels: darkened rooms 5.9-6.7:1, calm rooms 5.17:1 (path) and 5.35:1 (usage). `check:office` passes with no layout change: 141/141 on macOS, 142/142 on CI (Linux). The count depends on the machine: with 15 agents at 1440x900 and three rooms closed, Linux fonts let the office pick the full density instead of roomy, and full runs one more check (found in review).
 - Fixed in review:
   - On door plates the siren first took its own row and made plates 18 px taller (`check:office` on macOS went from 141 to 140 checks); it now sits on the corner of the door icon.
   - The tone rule gave full-density rooms the compact rooms' inner white ring.
   - In darkened rooms the path fell to 3.5:1, so the header text now gets darker with the floor.
-- `[KNOWN GAP]` Calm rooms keep today's colours, and the folder path there is about 4.2:1 (below 4.5:1) on `main` already. The driver checks that it does not get worse. Follow-up T015.
+- T015, done in this PR after Vikram's review (Ruben chose to do it now): the folder path in every room's header was about 4.2:1 on `main` (`--muted` on the room floor). It is now `#5c635e`, measured at 5.17:1 in a calm room. The driver holds every tone to 4.5:1, so the old colour fails it.
 - `[KNOWN GAP]` Not run on a real Copilot session (it only reads the moods of spec 034).
 

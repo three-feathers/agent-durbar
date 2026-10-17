@@ -82,7 +82,7 @@ body.has-bridge #liveBar{display:flex}
 .room[data-tint="clay"]{--tint:#f3eae4;--wall:#e4d3c9}
 .room-head{display:flex;align-items:center;gap:8px;min-height:24px;min-width:0}
 .room-name{font-size:13.5px;font-weight:650;letter-spacing:-.005em;white-space:nowrap}
-.room-path{font-size:11.5px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto}
+.room-path{font-size:11.5px;color:#5c635e;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto}
 .room-dots{margin-left:auto;display:flex;gap:8px;align-items:center;flex:none}
 /* folder usage total (spec 011 FR-020): sits next to the status dots and never shrinks; the path gives way first */
 .room-aiu{margin-left:auto;flex:none;white-space:nowrap;font-size:11.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
