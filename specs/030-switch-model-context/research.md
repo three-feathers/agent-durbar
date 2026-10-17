@@ -100,12 +100,12 @@ So the neutral contract is: a switch may be `immediate`, `next-message` or unava
 
 | Unverified | Task (all `needs-owner-approval`) |
 | --- | --- |
-| ~~Which pricing fields a real account returns~~ **checked on this login: none (only `auto`, no billing, no window)**; the unit scale of `tokenPrices` is still unverified because no model reported any | T040 done (0 credits); a login that lists priced models is needed |
-| `model_change` and `usage_info.tokenLimit` after a switch; what the next call costs | T041 |
-| Behaviour of a switch requested during a running turn (queue, cancel, `interrupt`) | T042 |
-| Cost and events of a manual compact; allowed `compactionDecision` values | T043, T045 |
-| Long-context tier: window and price step | T044 |
-| Model after resume when `model` is omitted vs passed | T046 |
+| ~~Which pricing fields a real account returns~~ **checked: none on a free plan** (only `auto`); `tokenPrices` unit still unverified, the usage unit is verified | T040 done; a paid plan is needed |
+| `model_change` and `usage_info.tokenLimit` after a switch; what the next call costs | T041: **partly** (auto to auto, unlisted model refused); a switch between two real models needs an account that lists two |
+| Behaviour of a switch requested during a running turn (queue, cancel, `interrupt`) | T042 **done on `auto`**: deferred with `queueId`, `removeAt` works, Stop drops it |
+| Cost and events of a manual compact; allowed `compactionDecision` values | T043 **done** (0.19 AIU, events recorded); T045 open (needs a smaller-window model) |
+| Long-context tier: window and price step | T044 open: accepted on `auto`, window and price not measurable on a free plan |
+| Model after resume when `model` is omitted vs passed | T046 **done on `auto`**: both keep `auto`; history kept |
 
 ## Real results (T040, 2026-10-17, `real:` read-only, 0 credits, no session, no prompt)
 
@@ -117,19 +117,22 @@ Recorded by `scripts/capture-models.ts` into `scripts/fixtures/models/real-list-
 - Consequence for the app: with this login the picker shows Auto only ("price not reported", window unknown). Nothing else can be switched to. Whether other models are hidden by the plan, by an organisation policy or by the way `models.list` is called is unknown (`[KNOWN GAP]`).
 - Consequence for Phase 3: T041, T042, T044 and T045 need **two or more listed models**, T044 also one that advertises a long tier. They cannot run on this login as it is.
 
-## Phase 3 plan, for the owner's explicit OK (nothing below has been run)
+## Real results (T041..T046, 2026-10-17, `real:`, owner-approved, free plan, model `auto` only)
 
-Blocker first: the login lists only `auto`. Options for Vikram: (1) check which models his plan or organisation policy enables (github.com/settings/copilot) and say whether this login is the account he means; (2) allow one free probe, a session create (no prompt) with a catalog id such as `gpt-5-mini` or `gpt-4.1`, to see if an unlisted model is accepted; (3) run Phase 3 with `auto` only, which covers T043 (compaction) and T046 (resume) but not model switching.
+Run with the real `CopilotAdapter` against the logged-in account by `scripts/phase3-real.ts` and `scripts/phase3b-real.ts` (dev tools, never in `npm test`): **8 one-line prompts and 1 manual compaction, 0.56 AI credits** summed from the runtime's own usage events (5 prompts 0.284, compaction 0.191, 3 prompts 0.088; ceiling was 20, the owner's 100; every session had a 30-credit cap). `account.getQuota` lags (it still said 2 of 200 minutes later; the quota snapshot inside each usage event moved 99.2% to 99.0%), so credits are counted from `assistant.usage` / `compactionTokensUsed`, not from the account call. Fixtures: `scripts/fixtures/events/real-030-auto-switch-compact.json`, `real-030-switch-results.json`.
 
-If two cheap models are available (proposal: `gpt-5-mini` and `gpt-4.1`, or the two lowest-priced ones the list reports; premium models are not used), about 9 tiny prompts and 1 compaction, each prompt "Reply with the single word ok." in an empty folder, read-only permissions:
+**The account:** `planTier: free`, 200 AI credits (`unit: ai_credits`), `premium_interactions` entitlement 0, only `auto` listed. `auto` resolved to `gpt-6-luna` ("GPT-6 Luna") with a 272,000-token window; a fresh session already holds about 13.5k tokens (system 5.8k + tool definitions 7.6k).
 
-| Task | Prompts | What is recorded |
-| --- | --- | --- |
-| T041 switch A to B | 2 | `model_change`, `usage_info.tokenLimit` after, cost of the first call after the switch |
-| T042 switch during a turn | 1 (a slightly slower tiny prompt) | `deferred` / `queueId`, `queue.removeAt`, what `interrupt()` does to a queued switch |
-| T043 manual compaction | 3 + 1 compaction | events, `tokensRemoved`, credits of the compaction, behaviour mid-turn |
-| T044 long-context tier | 1, only if a listed model advertises it | `contextTier` accepted, window, price step |
-| T045 `confirmation_required` and `compactionDecision` values | 0 (skipped unless a cheap way is found; it needs a filled context) | none |
-| T046 resume after a switch | 2 | the switched model survives, what `model` omitted does |
+**Verified (`real:`)**
+- `model.switchTo` to a model the account may not use answers `status: "cancelled"`, keeps `modelId: "auto"`, changes nothing. A switch to `auto` answers `status: "applied"`; the runtime emits `session.model_change` (`source: "sdk"`, `contextTier`, `reasoningEffort: null`) even when nothing really changed (auto to auto).
+- History survives the switch calls, a compaction and a resume: the code word told in prompt 1 was answered correctly after each.
+- `contextTier: "long_context"` is accepted on `auto` (`getCurrent` shows it); the window under it was not measured. `auto` advertises no long tier, so the app does not offer it.
+- A switch requested **during a turn** answers `deferred: true` with a `queueId` (also for a no-op switch); the queue lists it as a `command` item `/model auto`. `queue.removeAt` with that id removes it (`removed`), with an unknown id it errors; after a cancel no `model_change` follows.
+- **Stop (`abort`) drops a queued switch:** the queue is empty at once, no `model_change` ever follows, the model stays as it was (event `abort` reason `user_initiated`). The app now says so and clears the "Next: ..." note.
+- `history.compact` is **allowed while a turn runs** (it ran, and the queued switches were applied during it); on an idle session right after a compaction it fails with "Nothing to compact." (events `compaction_start` then `compaction_complete {success:false, error}`). The adapter still refuses to compact mid-turn (safe side).
+- Compaction events: `compaction_start {trigger:"manual", currentTokens, tokenLimit}`, `compaction_complete {success, preCompactionTokens, postCompactionTokens, tokensRemoved, compactionTokensUsed{..., copilotUsage.totalNanoAiu}}`. **A compaction costs one model call** (0.19 AIU here, all input written to the cache); a 296-token conversation grew to 398 tokens (`tokensRemoved: -102`). The app now counts that cost in the usage totals.
+- Resume: passing `model: auto` and omitting `model` both leave `auto` with the `efficiency` routing (`getCurrent`).
+- `assistant.usage` carries `model`, `modelDisplayName`, `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `reasoningTokens`, `cost` (a multiplier, 1 here), `isAuto`, `maxPromptTokens` (the window), `reasoningEffort`, `quotaSnapshots`, and `copilotUsage {tokenDetails[{tokenType, tokenCount, costPerBatch (nano-AIU per batch), batchSize}], totalNanoAiu}`. **Real unit of price:** `costPerBatch` / 1e9 = AI credits per `batchSize` tokens. For `gpt-6-luna`: input 10, cache read 1, cache write 12.5, output 50 credits per million tokens.
+- The session-level `model.list` also returns `modelPriceCategories` (id to low / medium / high; `gpt-5-mini` and `gpt-6-luna` are `low`, `gpt-4o-2024-11-20` is `medium`) even though only `auto` is listed.
 
-Estimate: earlier real runs on `auto` cost 0.104 to 0.189 AIU per tiny prompt (4 prompts = 0.416 AIU, 1 prompt = 0.189 AIU); a compaction of a 3-prompt conversation is one more small call. **Expected 1 to 3 AIU in total; proposed hard ceiling 5 AIU** (the driver stops after each prompt if the reported total passes the ceiling, and each session is created with `maxAiCredits: 5`, which is soft until verified). Prices of non-`auto` models are not reported, so the estimate for them is a guess: if the first prompt on a model reports more than 0.5 AIU the run stops.
+**Still unverified (needs an account with more than `auto`):** a switch between two real models (does the history survive, what the first call after it costs, the new `tokenLimit`); `confirmation_required` and the `compactionDecision` values (T045); the long tier's window and price step; `billing.tokenPrices` and its unit (the usage unit above is real, the model-list field was never returned); whether a queued switch to a real model is also dropped by Stop (verified only for the `auto` routing tier).

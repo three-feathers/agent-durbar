@@ -144,7 +144,7 @@ export interface RawSwitchResult {
 /**
  * SDK result -> normalized result. Order matters and every branch that depends on a guessed value says so:
  * a confirmation request, a deferred (queued) switch, a model id equal to the one asked for (applied), else `rejected` with the runtime's message.
- * The `status` strings other than `confirmation_required` are unknown (T041/T045), so they are never trusted on their own.
+ * Seen on a real runtime (T041): `applied`, `cancelled` (model not usable), and `deferred: true` + `queueId` for a switch queued during a turn; `confirmation_required` is still unseen (T045), so no other status is trusted on its own.
  */
 export function switchResultFrom(r: RawSwitchResult | undefined | null, requested: string): ModelSwitchResult {
   if (!r || typeof r !== 'object') return { status: 'rejected', message: 'The runtime gave no answer to the switch; the model was not changed.' };
@@ -154,9 +154,18 @@ export function switchResultFrom(r: RawSwitchResult | undefined | null, requeste
     const c = r.confirmation ?? {};
     return { status: 'needs-confirmation', model: requested, warning, confirmation: { targetName: c.targetModelDisplayName || requested, currentTokens: Number(c.currentTokens) || 0, targetLimit: Number(c.targetLimit) || 0 } };
   }
+  // real: (T041) a model this account may not use answers `status: 'cancelled'` and keeps the old `modelId` (free plan: only `auto` is usable).
+  if (r.status === 'cancelled') return { status: 'rejected', model: requested, message: message ?? 'That model is not available on this Copilot account or plan, so the model was not changed.', warning };
   if (r.deferred === true) return { status: 'queued', model: requested, queueId: typeof r.queueId === 'string' ? r.queueId : undefined, warning, message };
   if (r.modelId === requested) return { status: 'applied', model: requested, warning, message };
   return { status: 'rejected', model: requested, message: message ?? 'The runtime did not confirm the switch; the model was not changed.', warning };
+}
+
+/** The runtime wraps its errors as "Request <method> failed with message: <text>"; the user needs the text only. */
+export function runtimeMessage(err: unknown, fallback: string): string {
+  const raw = err instanceof Error ? err.message : '';
+  const text = raw.replace(/^Request \S+ failed with message:\s*/i, '').trim();
+  return (text || fallback).slice(0, 300);
 }
 
 /** SDK compaction result -> normalized. `contextWindow.currentTokens` is the size after. */
