@@ -2,7 +2,7 @@
 
 **Feature Branch**: `024-office-places` (amends 001 office view, 017 room doors; uses 019/020 MCP data)
 **Created**: 2026-10-17
-**Status**: Built 2026-10-17 (issue #18): clarified with Ruben, implemented and verified on the simulator and with unit tests (`test:places`, `test:credits`, `check:office` 105/105, `scripts/shots-024.js`). Not checked on a real Copilot session, Windows or Linux.
+**Status**: Built 2026-10-17 (issue #18): clarified with Ruben, implemented and verified on the simulator and with unit tests (`test:places`, `test:credits`, `check:office` 105/105, `scripts/shots-024.js`). CI (PR #109): unit tests pass on Linux, macOS and Windows, `check:office` with the lobby checks passes on Linux (xvfb). Not checked on a real Copilot session; the Windows layout was not looked at.
 **Input**: Ruben (issue #18): named places for the systems agents use (a library for docs/Confluence, a software library for GitHub, a terminal, the web); an agent visibly walks to the place it is using right now; users can map MCP servers to places.
 
 ## Clarifications (Ruben, 2026-10-17)

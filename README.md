@@ -91,7 +91,7 @@ Spec [024](specs/024-office-places/spec.md) (issue #18; amends 001 and 017). Bui
 ![An agent walking to the Software library, 1280x800](docs/screenshots/024-walking-1280x800.png)
 ![Settings: Places in the office](docs/screenshots/024-settings-places-1280x800.png)
 
-**Limits.** The lobby takes height: with 15 agents the office keeps *card* desks at 1440x900 (fewer helper rows) but uses the smaller *mini* desks at 1280x800. Names are not printed in the lobby tiles (tooltip and screen readers only). Walking is a straight glide above the rooms, not a path around desks. Not checked on a real Copilot session, on Windows or on Linux.
+**Limits.** The lobby takes height: with 15 agents the office keeps *card* desks at 1440x900 (fewer helper rows) but uses the smaller *mini* desks at 1280x800. Names are not printed in the lobby tiles (tooltip and screen readers only). Walking is a straight glide above the rooms, not a path around desks. CI runs the unit tests on Linux, macOS and Windows and the office layout check on Linux; not checked on a real Copilot session, and the Windows layout was not looked at.
 
 Tests: `npm test` adds `test:places` (classification, visits, `+N` slots, mapping validation) and settings tests in `test:credits`; `npm run check:office` also checks the lobby (inside the floor, no overlaps, figures on their slots). Checks and screenshots: `scripts/shots-024.js`.
 

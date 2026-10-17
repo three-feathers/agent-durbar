@@ -47,4 +47,5 @@
 - Mutation check: 8 deliberate breaks (shell tools at the desk, no debounce, no dwell, needs-permission leaves, user map ignored, an older call ends the newer visit, `+N` off by one, `__proto__` accepted) each make `test:places` fail.
 - Docs (spec 025 rule): README status section, status line, roadmap; CHANGELOG *Unreleased*; specs index; the README office pictures regenerated with the existing drivers because they now show the lobby (`m5-sim15-1440x900-closed`, `m9-office-caps-*`, `m10-office-mcp-buttons-*`, `011-usage-totals-*`; the drivers `shots-hero.js`, `shots-m9.js`, `shots-m10.js` still pass).
 - `/speckit-analyze` and `/speckit-converge` followed by hand: one new known gap (T011, per-folder extras in the Places list), otherwise converged.
-- Not verified: a real Copilot session (which tool names and server names really arrive; 0 AIU spent), Windows and Linux rendering, the walk with real timing of real tools.
+- CI on PR #109: `npm test` passes on ubuntu, macOS and Windows runners; the office layout check (xvfb, with the lobby checks) passes on Linux; package smoke passes.
+- Not verified: a real Copilot session (which tool names and server names really arrive; 0 AIU spent), the Windows layout (unit tests only there), the walk with real timing of real tools.
