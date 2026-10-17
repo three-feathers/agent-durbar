@@ -465,9 +465,12 @@
   /* small chip for the chat header: "Context 5%" + bar. Returns {html,title}. */
   function ctxChip(a){
     const st=X.stats.agent(a.id),lim=X.staticLimit(a),lv=S.ctxLevel(st.ctx&&st.ctx.tokens,st.ctx&&st.ctx.limit>0?st.ctx.limit:lim);
+    const long=a.info&&a.info.tier==='long'?' · long context':'';
+    /* spec 030: right after a model switch the old figure belongs to the old window; the runtime reports the new one with the next message */
+    if(a.ctxWaiting)return {cls:'unk',text:'Window: waiting for next message',title:'The model changed. The new context window is reported with your next message; the earlier figure belonged to the old window.'+long,pct:0};
     if(lv.level==='unknown')return {cls:'unk',text:'Context: unknown',title:'Context window usage appears after the first message.',pct:0};
     const l=st.ctx&&st.ctx.limit>0?st.ctx.limit:lim;
-    return {cls:lv.level,text:'Context '+lv.pct+'%',title:fmt(st.ctx.tokens)+' of '+fmt(l)+' tokens used ('+lv.pct+'%)'+(st.ctx.system!==undefined?'. System '+fmt(st.ctx.system)+', conversation '+fmt(st.ctx.conversation||0)+', tool definitions '+fmt(st.ctx.toolDefinitions||0)+'.':''),pct:lv.pct};
+    return {cls:lv.level,text:'Context '+lv.pct+'%'+(long?' · long':''),title:fmt(st.ctx.tokens)+' of '+fmt(l)+' tokens used ('+lv.pct+'%)'+long+(st.ctx.system!==undefined?'. System '+fmt(st.ctx.system)+', conversation '+fmt(st.ctx.conversation||0)+', tool definitions '+fmt(st.ctx.toolDefinitions||0)+'.':''),pct:lv.pct};
   }
 
   window.DurbarScreens={

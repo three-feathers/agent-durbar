@@ -93,8 +93,10 @@ adapter.onEvent((e) => {
   if (e.type !== 'model' || e.agentId) return;
   const a = agents.get(e.sessionId);
   if (!a) return;
+  // Under Auto the runtime routes each request itself; the agent stays on "auto" unless the user chose a model.
+  if (a.model === 'auto' && e.cause !== 'user') return;
   a.model = e.model;
-  if (e.effort !== undefined) a.effort = e.effort;
+  if (e.cause === 'user' || e.effort !== undefined) a.effort = e.effort;
   a.tier = e.tier === 'long' ? 'long' : undefined;
   if (e.cause === 'user') folderStore?.setModelChoice(wsKey(a), { model: e.model, effort: e.effort, contextTier: a.tier });
 });

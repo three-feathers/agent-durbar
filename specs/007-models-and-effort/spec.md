@@ -57,7 +57,7 @@ A chip in the chat header shows the model, the effort and, in the tooltip, the c
 - **FR-004** `[IMPLEMENTED]` sim: The top-bar model and effort apply to folders added next; the new-session dialog sets them per session; both are stored with the saved folder (feature 006).
 - **FR-005** `[IMPLEMENTED]` sim: The chat header chip shows model, effort and multiplier tooltip; the desk role line includes `· <model>` for non-auto models.
 - **FR-006** `[KNOWN GAP]` Only the `auto` model was available on the account used for development (free plan, README m1); a **multi-model list, multipliers and effort were never exercised on a real account**. The simulator uses canned data. (Feature 013.)
-- **FR-007** `[KNOWN GAP]` The model or effort of a running session cannot be changed; the user must start a new session. `read:` (Planned in [030](../030-switch-model-context/spec.md): spec, research, plan and tasks exist, no code yet.)
+- **FR-007** `[KNOWN GAP]` The model or effort of a running session cannot be changed; the user must start a new session. `read:` (Closed **on the simulator only** by [030](../030-switch-model-context/spec.md) Phase 1: chat-header menu, confirm/Undo, queued switch; the real Copilot adapter still cannot switch in place and shows a disabled menu with New session. Phase 2 is planned.)
 - **FR-008** `[KNOWN GAP]` The effort list is hard-coded in `main.ts` and `folders.ts`; an effort value the SDK adds later is silently dropped. `read:` (Task T021.)
 - **FR-009** `[KNOWN GAP]` The `auto` routing tier (`efficiency|balance|intelligence`) is supported by the adapter but not selectable in the UI. `read:`
 - **FR-010** `[KNOWN GAP]` The multiplier is shown as returned (`x3`) without explaining units or relating it to the user's remaining credits (feature 011). `read:`
@@ -76,3 +76,7 @@ A chip in the chat header shows the model, the effort and, in the tooltip, the c
 ## Assumptions
 
 - `ModelInfo.billing.multiplier`, `supportedReasoningEfforts`, `defaultReasoningEffort` and `policy.state` are present as in SDK 1.0.22 typings (the adapter compiles against them).
+
+## Changes
+
+- **2026-10-17, feature 030 Phase 1 (simulator only):** FR-007 is closed on the simulator: the model, effort and context tier of a running simulated session can be changed from the chat header or the office card menu, with a confirmation for pricier, unpriced, long-tier or over-headroom switches and an Undo for the rest. The real Copilot adapter is unchanged (no `setModel`), so real agents show the model chip as a menu that explains why it cannot switch and offers New session. `ModelChoice` gained optional `pricing`, `priceClass`, `contextTiers` and `longWindow` (the sim fills them; the real list does not yet). The saved folder entry gained `contextTier`. See [030](../030-switch-model-context/spec.md) `## Changes`.

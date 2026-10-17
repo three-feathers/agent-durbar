@@ -21,11 +21,15 @@ sim.onEvent((e) => events.push(e));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const of = (id: string, type: string) => events.filter((e) => e.sessionId === id && e.type === type) as unknown as Record<string, unknown>[];
 
+const info7 = (l: AgentInfo[]): AgentInfo => l.find((i) => i.id === 'sim-7') as AgentInfo;
+
 async function main(): Promise<void> {
   const infos: AgentInfo[] = await sim.listAgents();
   await sleep(50); // the agents' scripts play
   const info = (id: string) => infos.find((i) => i.id === id) as AgentInfo;
-  assert.ok(infos.every((i) => i.modelControl?.switch === 'next-message' && i.modelControl.compact));
+  assert.ok(infos.filter((i) => i.id !== 'sim-7').every((i) => i.modelControl?.switch === 'next-message' && i.modelControl.compact));
+  // Priya (sim-7) behaves like today's real adapter: no in-place switch, no compact, and the calls say so
+  assert.deepStrictEqual(info7(infos).modelControl, { switch: 'none', effort: false, contextTier: false, compact: false, windowKnown: true });
 
   // priced models, a long tier, one model with no price on purpose
   const models = (await (sim.listModels as NonNullable<DurbarApi['listModels']>)()).models as ModelChoice[];
@@ -44,6 +48,10 @@ async function main(): Promise<void> {
   assert.strictEqual((await setModel('sim-4', { model: 'x' })).ok, false);
   assert.strictEqual((await setModel('sim-4', { model: 'sim-fast', effort: 'high' })).ok, false, 'Sim Fast has no efforts');
   assert.strictEqual((await setModel('sim-4', { model: 'sim-mid', contextTier: 'long' })).ok, false, 'Sim Mid has no long tier');
+
+  assert.strictEqual((await setModel('sim-7', { model: 'sim-fast' })).ok, false);
+  assert.match(((await setModel('sim-7', { model: 'sim-fast' })).error) ?? '', /cannot change its model in place/);
+  assert.strictEqual((await (sim.compact as NonNullable<DurbarApi['compact']>)('sim-7')).ok, false);
 
   // idle agent (Noor, sim-4): applied at once, the new window is reported with the next call
   assert.strictEqual(info('sim-4').model, 'sim-fast');
@@ -142,12 +150,16 @@ async function main(): Promise<void> {
   live.onEvent((e) => liveEvents.push(e));
   await live.listAgents();
   const t0 = Date.now();
-  while (!liveEvents.some((e) => e.type === 'compaction' && e.phase === 'complete') && Date.now() - t0 < 20000) await sleep(20);
-  const auto = liveEvents.filter((e) => e.type === 'compaction') as unknown as Record<string, unknown>[];
-  assert.ok(auto.length >= 2, 'an automatic compaction ran');
-  assert.deepStrictEqual(auto.slice(0, 2).map((e) => [e.phase, e.trigger]), [['start', 'auto'], ['complete', 'auto']]);
-  assert.ok((auto[0].tokensBefore as number) / (auto[0].limit as number) >= 0.8, 'started at 80% or more');
-  assert.ok(!liveEvents.some((e) => (e.sessionId === 'sim-4' || e.sessionId === 'sim-5') && e.type === 'compaction'), 'the two agents kept near the limit never compact on their own');
+  const started = () => liveEvents.find((e) => e.type === 'compaction' && e.phase === 'start' && e.trigger === 'auto');
+  while ((!started() || !liveEvents.some((e) => e.type === 'compaction' && e.phase === 'complete' && e.sessionId === started()?.sessionId && e.timestamp >= (started()?.timestamp ?? 0) && e !== liveEvents.find((x) => x.type === 'compaction' && x.sessionId === e.sessionId))) && Date.now() - t0 < 25000) await sleep(20);
+  const st = started() as unknown as Record<string, unknown> | undefined;
+  assert.ok(st, 'an automatic compaction started');
+  const mine = liveEvents.filter((e) => e.type === 'compaction' && e.sessionId === st.sessionId) as unknown as Record<string, unknown>[];
+  const i0 = mine.findIndex((e) => e.phase === 'start');
+  assert.deepStrictEqual(mine.slice(i0, i0 + 2).map((e) => [e.phase, e.trigger]), [['start', 'auto'], ['complete', 'auto']]);
+  assert.ok((mine[i0].tokensBefore as number) / (mine[i0].limit as number) >= 0.8, 'started at 80% or more');
+  assert.ok(!liveEvents.some((e) => (e.sessionId === 'sim-4' || e.sessionId === 'sim-5') && e.type === 'compaction' && e.phase === 'start'), 'the two agents kept near the limit never compact on their own');
+  assert.ok(liveEvents.some((e) => e.sessionId === 'sim-4' && e.type === 'compaction' && e.phase === 'complete'), 'Noor starts with the line of an earlier compaction');
 
   console.log('simulator model tests passed');
 }
