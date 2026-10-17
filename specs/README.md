@@ -81,6 +81,12 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | --- | --- | --- |
 | [023](023-release-alpha2/spec.md) | Release v0.1.0-alpha.2 as a draft pre-release (version bump, changelog, download notes) | built; draft was removed, never published (superseded by 026) |
 
+## Feature 024: places in the office
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [024](024-office-places/spec.md) | Places in a shared lobby (Library, Software library, Terminal, Web, Other tools); main agents walk to the place of the tool they use; place per MCP server in Settings | built 2026-10-17 (issue #18); simulator and unit tests only |
+
 ## Feature 025: docs in sync
 
 | # | Feature | Status |
@@ -93,8 +99,14 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | --- | --- | --- |
 | [026](026-release-alpha3/spec.md) | Release v0.1.0-alpha.3 (version bump, changelog, download notes) | built; **published as a pre-release** by the maintainer (2026-10-17); alpha.2 draft removed |
 
+## Feature 031: release v0.1.0-alpha.4
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [031](031-release-alpha4/spec.md) | Release v0.1.0-alpha.4 as a pre-release (version bump, changelog, download notes) | release PR 2026-10-17; tag, draft and publishing as a pre-release follow |
+
 ## Feature 030: change model and context window inside a session
 
 | # | Feature | Status |
 | --- | --- | --- |
-| [030](030-switch-model-context/spec.md) | Switch model, effort and context tier of a live session (chat header and office card menu), see window and % full, compact, start-fresh hint, per-folder default; simulator first, adapter-neutral | **Phases 1 and 2 built** (T010..T035). Phase 1 on the simulator (logic, types, mapper, folder store, main IPC, header menu, confirm/Undo, Compact, start-fresh note, card menu). Phase 2: the Copilot adapter's `setModel`, `cancelQueuedModel`, `compact`, resume with the saved model/effort/tier, price fields, tested on a **fake session** only; real controls are flagged "not verified on a real account yet", an adapter without them stays disabled with New session. Spec, [research](030-switch-model-context/research.md), [plan](030-switch-model-context/plan.md), [tasks](030-switch-model-context/tasks.md). Phase 3: T040 done (read-only real model list: the login lists only `auto`, nothing priced); T041..T048 spend credits and wait for the owner's approval (plan in the research file); SDK facts read from types and docs only, **nothing run on a real account**; open questions Q1-Q8 for Vikram |
+| [030](030-switch-model-context/spec.md) | Switch model, effort and context tier of a live session (chat header and office card menu), see window and % full, compact, start-fresh hint, per-folder default; simulator first, adapter-neutral | **Phases 1 and 2 built** (T010..T035). Phase 1 on the simulator (logic, types, mapper, folder store, main IPC, header menu, confirm/Undo, Compact, start-fresh note, card menu). Phase 2: the Copilot adapter's `setModel`, `cancelQueuedModel`, `compact`, resume with the saved model/effort/tier, price fields, tested on a **fake session** only; real controls are flagged "not verified on a real account yet", an adapter without them stays disabled with New session. Spec, [research](030-switch-model-context/research.md), [plan](030-switch-model-context/plan.md), [tasks](030-switch-model-context/tasks.md). Phase 3 run on a free plan (`auto` only): T040, T042, T043, T046 done, T041 partly, T044/T045 open (need a plan that lists more models), T047/T048 wait for the owner; 0.56 AIU spent, results in the research file; SDK facts read from types and docs only, **nothing run on a real account**; open questions Q1-Q8 for Vikram |

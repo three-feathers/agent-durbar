@@ -14,7 +14,7 @@ import type {
 } from './types';
 import { EventMapper } from './map';
 import type { EventBody, RawEvent } from './map';
-import { compactResultFrom, modelConfig, modelOptionFrom, sdkTier, switchResultFrom } from './copilotmodel';
+import { compactResultFrom, modelConfig, modelOptionFrom, runtimeMessage, sdkTier, switchResultFrom } from './copilotmodel';
 import type { ModelOption, RawModelInfo, RawSwitchResult } from './copilotmodel';
 import { PermissionBroker } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
@@ -306,7 +306,7 @@ export class CopilotAdapter implements AgentAdapter {
       return out;
     } catch (err) {
       mapper.expectUserModel(undefined);
-      return { status: 'rejected', model, message: err instanceof Error ? err.message.slice(0, 300) : 'The runtime refused the switch.' };
+      return { status: 'rejected', model, message: runtimeMessage(err, 'The runtime refused the switch.') };
     }
   }
 
@@ -325,7 +325,7 @@ export class CopilotAdapter implements AgentAdapter {
       if (await this.processing(live)) return { success: false, message: 'The agent is working. Compact when it is idle.' };
       return compactResultFrom(await live.session.rpc.history.compact({ trigger: 'manual', ...(focus ? { customInstructions: focus } : {}) }));
     } catch (err) {
-      return { success: false, message: err instanceof Error ? err.message.slice(0, 300) : 'The runtime refused to compact.' };
+      return { success: false, message: runtimeMessage(err, 'The runtime refused to compact.') };
     }
   }
 

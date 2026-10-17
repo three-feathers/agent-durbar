@@ -28,6 +28,88 @@ function aiuChip(){
   const inner=t.unreported>=t.calls?'<span class="l">credits not reported</span>':`<b>${esc((t.nano/1e9).toFixed(2))}</b><span class="l">AIU</span>`;
   return `<span class="stat stat-aiu" role="note" title="${esc(tip)}" aria-label="${esc(tip.replace(/\n/g,' '))}">${inner}</span>`;
 }
+/* ---- places in the office (spec 024): a shared lobby; main agents walk to the place of the tool they are using ---- */
+const VISITS=window.DurbarPlaces.createVisits();
+const SEEN_SERVERS=new Set(); /* MCP server names seen in tool events this run (per-folder extras included): the Places settings list them */
+let PLACE_MAP={}; /* MCP server name -> place id | 'desk' (global setting); unmapped servers use the built-in rules */
+const RETURNING=new Set(); /* agents whose figure is still walking back to the desk: the desk keeps its empty chair until it arrives */
+const PLACE_ICON={
+  library:'<svg class="pic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 16.5V4h3.5v12.5zM6.5 16.5V6h3.5v10.5zM10.5 16.5l3-11.5 3.4.9-3 11.4zM2 16.5h16"/></svg>',
+  software:'<svg class="pic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3.5" width="14" height="5" rx="1.5"/><rect x="3" y="11.5" width="14" height="5" rx="1.5"/><path d="M6 6h.01M6 14h.01M10 6h4M10 14h4"/></svg>',
+  terminal:'<svg class="pic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2"/><path d="M6 8l3 2.5L6 13M11 13h3.5"/></svg>',
+  web:'<svg class="pic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M3 10h14M10 3c2.5 2.2 2.5 11.8 0 14M10 3c-2.5 2.2-2.5 11.8 0 14"/></svg>',
+  other:'<svg class="pic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.5v2.4M10 15.1v2.4M2.5 10h2.4M15.1 10h2.4M4.7 4.7l1.7 1.7M13.6 13.6l1.7 1.7M15.3 4.7l-1.7 1.7M6.4 13.6l-1.7 1.7"/></svg>',
+};
+const lobbyOn=()=>!demoOn&&agents.some(a=>a.live&&!a.parent);
+const lobbyCap=aw=>Math.max(1,Math.min(8,Math.floor(((aw||800)/5-150)/25))); /* slots that fit in a one-row tile next to the icon and the name */
+/* who is at a place and visible under the current filters (a hidden room or a filtered-out agent has no figure) */
+const placeVisitors=pid=>VISITS.occupants(pid).filter(id=>{const a=byId(id),r=a&&!a.parent&&roomOf(a);return r&&!r.hidden&&(ui.ws==='all'||wsOf(a)===ui.ws)&&matchStatus(a);});
+const isAway=a=>!a.parent&&(!!VISITS.at(a.id)||RETURNING.has(a.id));
+const taskOf=a=>{const v=a.parent?null:VISITS.at(a.id);return v?'At '+window.DurbarPlaces.placeName(v.place)+': '+v.label+' · '+a.task:a.task;};
+function lobbyHTML(aw){
+  if(!lobbyOn())return '';
+  const cap=lobbyCap(aw);
+  return `<section class="lobby" data-key="lobby" aria-label="Lobby: the places where agents work">${window.DurbarPlaces.PLACES.map(p=>{
+    const ids=placeVisitors(p.id), sp=window.DurbarPlaces.layoutSpots(ids.length,cap), names=ids.map(id=>byId(id).name);
+    const slots=Array.from({length:cap},(_,i)=>i<sp.shown?`<span class="slot on" data-slot="${i}"></span>`:(sp.more&&i===cap-1?`<span class="slot more" data-slot="${i}">+${sp.more}</span>`:`<span class="slot" data-slot="${i}"></span>`)).join('');
+    return `<div class="place${ids.length?' busy':''}" data-key="place:${p.id}" data-place="${p.id}" role="group" title="${esc(p.name)}: ${names.length?esc(names.join(', ')):'nobody'}" aria-label="${esc(p.name)}: ${names.length?esc(names.join(', ')):'nobody'}">${PLACE_ICON[p.id]}<span class="pn">${esc(p.name)}</span><span class="prow" aria-hidden="true"><span class="pslots">${slots}</span></span></div>`;
+  }).join('')}</section>`;
+}
+const WALK_MS=1000, MAX_WALKS=3; /* about 1 s per walk; beyond 3 at once the others simply appear */
+const walkers=new Map(); /* agent id -> {el, back, walking, shown, timer, to} */
+const walkCount=()=>{let n=0;walkers.forEach(w=>{if(w.walking)n++;});return n;};
+function dropWalker(id){const w=walkers.get(id);if(!w)return;clearTimeout(w.timer);w.el.remove();walkers.delete(id);RETURNING.delete(id);}
+/* Before the desks are drawn: an agent whose visit just ended keeps its empty chair until its figure is back. */
+function prepareWalkers(){
+  if(ui.view!=='office'||!lobbyOn())return;
+  walkers.forEach((w,id)=>{if(!w.back&&!VISITS.at(id))RETURNING.add(id);});
+}
+/* After the office is drawn: put every figure where it belongs (positions are recomputed on every render, so resizes, filters and
+   opened/closed rooms never leave one in the wrong place) and start the walks. */
+function syncWalkers(){
+  const layer=$('walkers'), floor=$('floor'); if(!layer||!floor)return;
+  if(ui.view!=='office'||!lobbyOn()){[...walkers.keys()].forEach(dropWalker);return;}
+  const fr=floor.getBoundingClientRect();
+  if(!fr.width||!fr.height)return; /* office hidden (full-screen chat open): leave the figures as they are until it is shown again */
+  const center=el=>{const r=el.getBoundingClientRect();return {x:Math.round(r.left-fr.left+floor.scrollLeft+r.width/2),y:Math.round(r.top-fr.top+floor.scrollTop+r.height/2)};};
+  const want=new Map(); /* agent id -> slot centre of the place it is visiting (only those that fit; the rest are the "+N") */
+  window.DurbarPlaces.PLACES.forEach(p=>{
+    const tile=document.querySelector(`#stage .place[data-place="${p.id}"]`); if(!tile)return;
+    const ids=placeVisitors(p.id), sp=window.DurbarPlaces.layoutSpots(ids.length,tile.querySelectorAll('.slot').length);
+    ids.slice(0,sp.shown).forEach((id,i)=>{const sl=tile.querySelector(`.slot[data-slot="${i}"]`);if(sl)want.set(id,center(sl));});
+  });
+  const deskPos=id=>{const d=document.querySelector(`#stage [data-id="${CSS.escape(id)}"]`);const sc=d&&(d.querySelector('.scene')||d);return sc?center(sc):null;};
+  const move=(w,pos,after,instant)=>{ /* instant: a layout change moved the slot under a resting figure: put it back, no walk */
+    clearTimeout(w.timer);
+    const walk=!instant&&!REDUCED&&w.shown&&(w.walking||walkCount()<MAX_WALKS);
+    w.el.style.transition=walk?`transform ${WALK_MS}ms linear`:'none';
+    w.el.style.transform=`translate(${pos.x}px,${pos.y}px)`;
+    w.el.classList.toggle('walking',walk); w.walking=walk; w.to=pos.x+','+pos.y;
+    if(walk)w.timer=setTimeout(()=>{w.walking=false;w.el.classList.remove('walking');if(after)after();},WALK_MS+40);
+    else if(after)after();
+  };
+  want.forEach((pos,id)=>{
+    let w=walkers.get(id);
+    if(!w){
+      const a=byId(id); if(!a)return;
+      const el=document.createElement('span'); el.className='walker'; el.setAttribute('aria-hidden','true'); el.innerHTML='<span class="wk">'+avatar(a)+'</span>'; layer.appendChild(el);
+      w={el,back:false,walking:false,shown:false,timer:0,to:''}; walkers.set(id,w);
+      const from=deskPos(id)||pos; el.style.transition='none'; el.style.transform=`translate(${from.x}px,${from.y}px)`; void el.offsetWidth; w.shown=true;
+      move(w,pos); return;
+    }
+    if(w.back){w.back=false;RETURNING.delete(id);move(w,pos);return;}
+    if(w.walking){if(w.to!==pos.x+','+pos.y)move(w,pos);return;}
+    if(w.to!==pos.x+','+pos.y)move(w,pos,null,true);
+  });
+  [...walkers.keys()].forEach(id=>{
+    if(want.has(id))return;
+    const w=walkers.get(id), dp=deskPos(id);
+    if(!dp||REDUCED){dropWalker(id);return;} /* no desk on screen (room closed, filtered out) or no animation wanted: just disappear */
+    if(w.back)return;
+    w.back=true; RETURNING.add(id);
+    move(w,dp,()=>{dropWalker(id);scheduleRender();});
+  });
+}
 function roomAiu(r){const t=LEDGER.room(r.id);return t.calls&&!demoOn?{long:window.DurbarUsage.fmtTotal(t),short:window.DurbarUsage.fmtShort(t),tip:window.DurbarUsage.tooltip(t,{scope:'folder'})}:null;}
 
 const LABELS={working:'Working',thinking:'Thinking',waiting:'Waiting for you',idle:'Idle',error:'Error',done:'Done'};
@@ -77,6 +159,7 @@ function scene(a,mini,c){
     if(hc) s+=`<g class="halo halo-${st}"><rect x="101" y="22" width="86" height="66" rx="17" fill="${hc}" opacity=".13"/><rect x="107" y="28" width="74" height="54" rx="13" fill="${hc}" opacity=".16"/></g>`;}
   else if(st==='working'||st==='thinking') s+=`<rect class="glow" x="106" y="28" width="76" height="54" rx="14" fill="${st==='working'?'#6f93b5':'#8a97bd'}" filter="url(#soft)" opacity=".24"/>`;
   s+=`<rect x="52" y="50" width="44" height="48" rx="13" fill="#cdc6b8"/>`;
+  s+='<g class="pp">'; /* the person (hidden by CSS while the agent is away at a place: an empty chair stays) */
   if(k.style==='long') s+=`<path d="M59.5 44a14.5 14.5 0 0 1 29 0v19q0 4-4 4h-21q-4 0-4-4z" fill="${k.hair}"/>`;
   s+=`<path d="M55 99V77q0-14 14-14h10q14 0 14 14v22z" fill="${shirt}"/>`;
   s+=`<path d="M69.5 63.5q4.5 5 9 0" fill="none" stroke="${shade(shirt,.35)}" stroke-width="2" stroke-linecap="round"/>`;
@@ -90,6 +173,7 @@ function scene(a,mini,c){
   if(k.glasses) s+=`<g fill="none" stroke="#3b3330" stroke-width="1.1"><circle cx="${70.3+ex}" cy="45.4" r="4"/><circle cx="${78.3+ex}" cy="45.4" r="4"/></g>`;
   const mouth = st==='error'?'M71 53.2q3-2 6 0': (st==='done'||st==='idle')?'M70.5 51q3.5 3 7 0':'M71 51.6q3 2 6 0';
   s+=`<path d="${mouth}" fill="none" stroke="#7a4b3a" stroke-width="1.3" stroke-linecap="round"/></g></g>`;
+  s+='</g>';
   // desk
   s+=`<rect x="10" y="86" width="180" height="7" rx="3.5" fill="#d8c6a8"/><rect x="15" y="93" width="170" height="21" rx="4" fill="#e8dcc6"/><rect x="22" y="98" width="46" height="11" rx="3" fill="#dccdb1"/><rect x="142" y="98" width="36" height="11" rx="3" fill="#dccdb1"/>`;
   // monitor
@@ -107,6 +191,7 @@ function scene(a,mini,c){
   const hand=(x,y)=>`<circle cx="${x}" cy="${y}" r="3.6" fill="${k.skin}"/>`;
   const armL=(x1,y1,x2,y2)=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${arm}" stroke-width="8" stroke-linecap="round"/>`;
   const typing = st==='working';
+  s+='<g class="pp">';
   s+=`<g class="${typing?'hand-l':''}">${armL(61,71,68,81)}${hand(68.5,81.4)}</g>`;
   if(st==='waiting'){
     const wave = REDUCED||c?'':`<animateTransform attributeName="transform" type="rotate" values="-4 87 71;6 87 71;-4 87 71" dur="2.8s" repeatCount="indefinite"/>`;
@@ -116,6 +201,7 @@ function scene(a,mini,c){
   } else {
     s+=`<g class="${typing?'hand-r':''}">${armL(87,71,81,81)}${hand(80.5,81.4)}</g>`;
   }
+  s+='</g>';
   if(st==='thinking') s+=`<g class="bubble-g"><circle cx="58.5" cy="31" r="2" fill="#fff" stroke="#c9d0e0" stroke-width="1"/><circle cx="52" cy="25" r="3" fill="#fff" stroke="#c9d0e0" stroke-width="1"/><rect x="18" y="4" width="42" height="19" rx="9.5" fill="#fff" stroke="#c9d0e0" stroke-width="1.2"/><g fill="#8a97bd"><circle class="td" cx="30" cy="13.5" r="2.2"/><circle class="td" cx="39" cy="13.5" r="2.2"/><circle class="td" cx="48" cy="13.5" r="2.2"/></g></g>`;
   s+='</svg>';
   return s;
@@ -185,10 +271,10 @@ function helperTileHTML(h){
 }
 function cardHTML(a,d,nSubs){
   const st=vis(a), use=usageShort(a);
-  return `<button class="desk card is-${st}" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${label(a)}: ${esc(a.task)}${use?' · '+use:''}" aria-label="${esc(a.name)}, ${esc(a.role)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(a.task)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
+  return `<button class="desk card is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${label(a)}: ${esc(taskOf(a))}${use?' · '+use:''}" aria-label="${esc(a.name)}, ${esc(a.role)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${sceneC(a)}</span>
     <span class="ci"><span class="l1"><span class="name">${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc(a.role)}</span><span class="stl st-${st}">${label(a,true)}</span></span>
-    <span class="intent">${esc(a.task)}</span>
+    <span class="intent">${esc(taskOf(a))}</span>
     <span class="l3"><span class="pill st-${st}"><i></i>${label(a,true)}</span><span class="use">${capOf(a)&&use.includes(' · ')?`<span class="aiu">${esc(use.split(' · ')[1])}</span>`:`${esc(use.split(' · ')[0]||'')}<span class="aiu">${use.includes(' · ')?' · '+esc(use.split(' · ')[1]):''}</span>`}</span></span></span></button>`;
 }
 function linksSVG(d,rows,extraMore){
@@ -213,10 +299,10 @@ function unitHTML(a,d){
   }
   let desk;
   if(d==='full'){
-    desk=`<button class="desk is-${st}" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(a.task)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
+    desk=`<button class="desk is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
       ${scene(a,false)}<span class="badge ${st}">${badgeSVG(st)}</span>
       <div class="info"><div class="who"><span class="name">${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc(a.role)}</span></div>
-      <p class="task">${esc(a.task)}</p><span class="pill st-${st}"><i></i>${label(a)}</span></div></button>`;
+      <p class="task">${esc(taskOf(a))}</p><span class="pill st-${st}"><i></i>${label(a)}</span></div></button>`;
   } else desk=cardHTML(a,d,nSubs);
   return `<div class="unit${nSubs?' has-h':''}" data-key="unit:${esc(a.id)}">${desk}${helpers}</div>`;
 }
@@ -246,7 +332,12 @@ function plateHTML({r}){
   return `<button class="plate tone-${sm.tone}" type="button" data-door="${esc(r.id)}" data-key="door:${esc(r.id)}" data-tint="${r.tint}" aria-expanded="false" aria-label="Open room ${esc(r.name)}. ${esc(sm.text)}. ${sm.n} agent${sm.n===1?'':'s'}.${u?' Usage: '+esc(u.long)+'.':''}" title="${esc(r.path)}">${DOOR_SHUT}<span class="plate-tx"><b>${esc(r.name)}</b><span class="plate-sum">${esc(sm.text)}</span></span>${u?`<span class="plate-aiu" title="${esc(u.tip)}">${esc(u.short)}</span>`:''}<span class="plate-n">${sm.n}</span></button>`;
 }
 const doorsHTML=list=>list.length?`<div class="doors" data-key="doors">${list.map(plateHTML).join('')}</div>`:'';
-const stageHTML=(sizing,d,aw,cap)=>sizing.filter(m=>!m.r.closed).map(m=>roomHTML(m,d,aw,cap)).join('')+doorsHTML(sizing.filter(m=>m.r.closed));
+function stageHTML(sizing,d,aw,cap){
+  const open=sizing.filter(m=>!m.r.closed).map(m=>roomHTML(m,d,aw,cap)), doors=doorsHTML(sizing.filter(m=>m.r.closed)), lob=lobbyHTML(aw);
+  if(!lob)return open.join('')+doors;
+  const mid=open.length<2?open.length:Math.ceil(open.length/2); /* one room: below it; none: above the door plates */
+  return open.slice(0,mid).join('')+lob+open.slice(mid).join('')+doors;
+}
 function setRoomClosed(r,closed,quiet){
   if(!!r.closed===!!closed)return;
   r.closed=!!closed;
@@ -317,7 +408,7 @@ function morphHTML(el,html){const t=document.createElement('template');t.innerHT
 function chooseLayout(sizing,aw,ah){
   const probe=$('probe'); probe.style.width=aw+'px';
   const openOnly=sizing.filter(m=>!m.r.closed);
-  if(!openOnly.length){probe.innerHTML=doorsHTML(sizing);probe.dataset.d='card';const ok=probe.scrollHeight<=ah+1;probe.innerHTML='';return {d:'card',hcap:1,cap:1,fit:ok,boost:[]};}
+  if(!openOnly.length){probe.innerHTML=stageHTML(sizing,'card',aw,1);probe.dataset.d='card';const ok=probe.scrollHeight<=ah+1;probe.innerHTML='';return {d:'card',hcap:1,cap:1,fit:ok,boost:[]};}
   const fits=()=>probe.scrollHeight<=ah+1&&probe.scrollWidth<=aw+1;
   const cands=FORCE_DENSITY?CANDIDATES.filter(c=>c[0]===FORCE_DENSITY):CANDIDATES;
   let res=null, lastAny=null;
@@ -375,7 +466,7 @@ function renderOffice(){
   }
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
   const sizing=ui.status?officeModel(true):model;
-  const key=JSON.stringify([aw,ah,FORCE_DENSITY,sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]])])]);
+  const key=JSON.stringify([aw,ah,FORCE_DENSITY,lobbyOn(),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]])])]);
   if(key!==layoutKey||!layout){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
   HCAP=layout.hcap; HBOOST=new Map(layout.boost);
   const html=stageHTML(model,layout.d,aw,layout.cap);
@@ -401,11 +492,13 @@ function renderList(){
 }
 
 function renderAll(){
+  prepareWalkers();
   const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.door), inPanel=ae&&ae.closest&&ae.closest('#panel');
   const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':ae.dataset.door?'data-door':'');
   renderStats();
   if(ui.view==='office')renderOffice(); else renderList();
   renderDoorBar();
+  syncWalkers();
   if(id&&!inPanel){const n=document.querySelector(`[${key}="${CSS.escape(id)}"]`); if(n&&ae!==n)n.focus({preventScroll:true});}
   if(ui.selected){updatePanelHeader();renderStrip();}
 }
@@ -734,7 +827,7 @@ function setView(v){ui.view=v;document.body.classList.toggle('list-mode',v==='li
 $('vOffice').onclick=()=>setView('office');
 $('vList').onclick=()=>setView('list');
 let resizeQueued=false;
-const relayout=()=>{if(resizeQueued)return;resizeQueued=true;requestAnimationFrame(()=>{resizeQueued=false;if(ui.view==='office')renderOffice();});};
+const relayout=()=>{if(resizeQueued)return;resizeQueued=true;requestAnimationFrame(()=>{resizeQueued=false;if(ui.view==='office'){renderOffice();syncWalkers();}});}; /* spec 024: figures follow a resize */
 new ResizeObserver(relayout).observe($('floor'));
 window.addEventListener('resize',relayout);
 
@@ -1196,6 +1289,11 @@ function updateCtxChip(a){
 function onLiveEvent(e){
   const a=liveById(e.sessionId); if(!a)return;
   feedStats(a,e);
+  if(e.type==='toolCall'&&e.mcpServer&&SEEN_SERVERS.size<500)SEEN_SERVERS.add(String(e.mcpServer).trim().slice(0,200));
+  if(!e.agentId){ /* spec 024: only main-agent events move anyone (helper events carry an agentId) */
+    if(e.type==='toolCall'){if(VISITS.onTool(a.id,e,PLACE_MAP))scheduleRender();}
+    else if(e.type==='status'){if(VISITS.onStatus(a.id,e.status))scheduleRender();}
+  }
   if(e.type==='subagent')return onSubagent(a,e);
   if(e.agentId&&e.type!=='permission'&&e.type!=='grants'&&e.type!=='limit')return onSubEvent(a,e);
   const chat=liveChat(a), main=true;
@@ -1212,10 +1310,14 @@ function onLiveEvent(e){
     else if(e.status==='idle'&&e.intent==='Aborted'){if(a.limit)settleLimit(a,'cancel');const was=a.worked;a.worked=false;closeTurn(a);
       [...a.pend.keys()].forEach(id=>settlePerm(a,{requestId:id,state:'denied',via:'stopped'}));
       if(was)addNote(chat,'Stopped by you. The agent is ready for your next message.');
+      /* real:(spec 030 T042) the runtime drops a switch that was still queued when the turn is stopped: say so, never leave "Next: ..." behind */
+      if(a.pendingModel){const nm=a.pendingModel.name;a.pendingModel=undefined;updateModelChip(a);addNote(chat,'The queued switch to '+esc(nm)+' was dropped when you stopped the reply. Choose it again if you still want it.');}
       setState(a,'idle','Ready','Stopped. Ready for your next message.');}
     else if(e.status==='idle'){const was=a.worked;a.worked=false;closeTurn(a);
       if(was)setState(a,'done','Done',a.lastOutput?SHORT(plainMd(a.lastOutput),140):'Finished.'); else setState(a,'idle','Ready',a.task);
-      updateCtxChip(a);maybeSuggestFresh(a);}
+      updateCtxChip(a);maybeSuggestFresh(a);
+      /* a queued switch applies when the turn ends (its model event follows at once); if none came, do not leave "Next: ..." standing */
+      if(a.pendingModel){const p=a.pendingModel;setTimeout(()=>{if(a.pendingModel===p){a.pendingModel=undefined;updateModelChip(a);}},2000);}}
     else if(e.status==='error'){closeTurn(a);addNote(chat,esc(e.intent||'Error'),true);setState(a,'error',null,SHORT(e.intent||'Error',140));}
     else if(e.status==='stopped'){
       if(a.limit)settleLimit(a,'cancel');
@@ -1657,6 +1759,7 @@ async function removeFolder(r){
 }
 function removeLiveAgent(id){
   STATS.forget(id);
+  VISITS.leave(id); dropWalker(id);
   for(let i=agents.length-1;i>=0;i--)if(agents[i].id===id||agents[i].parent===id){delete chats[agents[i].id];delete prev[agents[i].id];agents.splice(i,1);}
   if(ui.selected&&!byId(ui.selected))closePanel();
 }
@@ -1799,6 +1902,7 @@ if(bridge){
   $('addWs').onclick=()=>addVia(bridge.addWorkspaceFile);
   $('foldersBtn').onclick=()=>toggleFolders();
   window.DurbarScreens.init({bridge,stats:STATS,esc,toast,onSettings:v=>{APP_SETTINGS=v||{};},
+    places:window.DurbarPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
     staticLimit:a=>{const m=MODELS.find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
     folderOf:x=>{const ag=LIVE.agents.find(y=>y.id===(x&&x.id||x));return ag?folderOfRoom(ag.room):null;},
@@ -1810,7 +1914,8 @@ if(bridge){
   bridge.onAgentAdded(addLiveAgent);
   bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();const rs=l.filter(x=>x.permRestored&&!x.parent).length;if(rs)toast(rs+' saved folder'+(rs>1?'s were':' was')+' restored in <b>Allow all</b>, as you left '+(rs>1?'them':'it')+'. Everything runs without asking there; the mode chip says <i>restored</i>. "Approve for this session" grants start empty.',9000);});
   loadModels();
-  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};}).catch(()=>{});
+  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};}).catch(()=>{});
+  setInterval(()=>{if(VISITS.tick())scheduleRender();},250);
   agents=LIVE.agents; ROOMS=LIVE.rooms;
   setBadge();
 }

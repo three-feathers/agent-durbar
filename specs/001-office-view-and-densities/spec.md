@@ -155,3 +155,7 @@ Second problem: with rooms closed (only 2 of 5 rooms open) the best candidate wa
 Tasks: T020 (automated office checks) is delivered together with T025; T026 fixes the class collision; T027 adds the `full`/2 candidate. 
 
 **Converged 2026-10-16** (what was built): class `hstrip` replaces `strip` for compact helper strips (`styles.css`, `app.js` unitHTML). `CANDIDATES` is `full/3, full/2, roomy/3, card/3, card/1, mini/3, mini/1, micro/3, micro/1`; the helper cap is per layout (`HCAP`) with a per-agent boost map (`HBOOST`), grown one step at a time while the probe still fits. `npm run check:office` over 4 combinations of sim/size and every 0/1/2/3/4/all-closed room subset sample (95 checks incl. Close all / Open all clicks and an expanded `+N more`) passes; the same check run against the pre-fix `app.js`/`styles.css` fails (overlaps, helpers outside their room/unit). Screenshots: `docs/screenshots/m7b-*.png`. Not verified: macOS/Windows rendering, real (non-simulated) agents, the check in CI.
+
+### 2026-10-17: lobby from spec 024 (cross-reference, no change to this spec's requirements)
+
+Spec [024](../024-office-places/spec.md) adds a one-row **lobby** band between the first and second half of the open rooms. It is part of the HTML that the density search probes, so the fit counts it; `npm run check:office` also checks it. With 15 simulated agents this moves 1280x800 from `card` to `mini` desks (1440x900 stays `card`, fewer helper rows). Desks of agents at a place show an empty chair and `At <Place>: <tool>`.

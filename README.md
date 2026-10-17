@@ -2,7 +2,7 @@
 
 Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.
 
-> Status: **alpha, `v0.1.0-alpha.3` ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.3), unsigned, not notarized).** `main` has unreleased changes after it, among them the per-folder MCP import from VS Code (see [CHANGELOG.md](CHANGELOG.md), "Unreleased"). The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. Latest work: [milestone 10 and usage totals](#status-milestone-10-tools-all-time-the-copilot-cli-mcp-list-first-mcp-extras-per-folder). Only Linux has been run by hand; macOS and Windows are built and unit-tested in CI but untested on real hardware. Built by [Three Feathers](https://github.com/three-feathers); the work is tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
+> Status: **alpha, `v0.1.0-alpha.4` ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4), unsigned, not notarized).** It adds places in the office, the per-folder MCP import from VS Code and switching model and context inside a session (simulator and fake sessions; real switching between models is unverified), see [CHANGELOG.md](CHANGELOG.md). `v0.1.0-alpha.3` stays available. The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. Latest work: [places in the office](#status-places-in-the-office-a-shared-lobby-agents-walk-to-the-tool-they-use), [milestone 10 and usage totals](#status-milestone-10-tools-all-time-the-copilot-cli-mcp-list-first-mcp-extras-per-folder). Only Linux has been run by hand; macOS and Windows are built and unit-tested in CI but untested on real hardware. Built by [Three Feathers](https://github.com/three-feathers); the work is tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
 
 ![15 simulated agents at 1440x900 (roomy desks use the spare floor space)](docs/screenshots/m5-sim15-1440x900-closed.png)
 ![Full-screen chat with every other agent in a slim strip, 15 agents at 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
@@ -17,7 +17,7 @@ Command center to see, chat with and coordinate coding agents (Copilot CLI first
 
 ## Install from releases
 
-Download the build for your system from the [Releases page](https://github.com/three-feathers/agent-durbar/releases) (pre-releases are alpha builds). **Release status:** [`v0.1.0-alpha.3`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.3) is **published as a pre-release** (2026-10-17) and is the only public download. It is **unsigned and not notarized**, and it has **not been tested on real Mac or Windows hardware** (only Linux was run by hand). Upgrading in place from alpha.2 was not checked. `v0.1.0-alpha.1` is an unpublished draft. `v0.1.0-alpha.2` was never published: its draft was removed in favour of alpha.3 (the git tag `v0.1.0-alpha.2` remains). You can also build from source (below).
+Download the build for your system from the [Releases page](https://github.com/three-feathers/agent-durbar/releases) (pre-releases are alpha builds). **Release status:** [`v0.1.0-alpha.4`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4) is the newest **pre-release** (2026-10-17); [`v0.1.0-alpha.3`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.3) is the previous one. Both are **unsigned and not notarized**, and neither has been **tested on real Mac or Windows hardware** (only Linux was run by hand). Upgrading in place from alpha.3 was not checked. `v0.1.0-alpha.1` is an unpublished draft. `v0.1.0-alpha.2` was never published (the git tag remains). You can also build from source (below).
 
 | System | File |
 | --- | --- |
@@ -28,7 +28,18 @@ Download the build for your system from the [Releases page](https://github.com/t
 
 There is no auto-update: download a newer release to update.
 
-### What's new in v0.1.0-alpha.3
+### What's new in v0.1.0-alpha.4
+
+Full list in [CHANGELOG.md](CHANGELOG.md). Short version, since alpha.3:
+
+- **Places in the office:** a shared lobby with Library, Software library, Terminal, Web and Other tools; an agent walks there while one of its tools runs, and Settings sets the place of each MCP server (spec 024).
+- **Import MCP servers from VS Code**, per folder, from that folder's `.vscode/mcp.json` (spec 020).
+- **Allow all confirmation:** keyboard focus stays in the dialog, Escape cancels (spec 003).
+- **Switch model, effort and context tier in a session, and compact** (spec 030). Built and tested on the simulator and fake sessions; **switching between two real models was never seen on a real account** (a free plan lists only `auto`).
+- Compaction cost is counted in the usage totals; refreshed pictures.
+- **Still unsigned and not notarized** (steps below). **Untested on real macOS and Windows hardware.** An in-place upgrade from alpha.3 was not checked.
+
+### What was new in v0.1.0-alpha.3
 
 Full list in [CHANGELOG.md](CHANGELOG.md). Short version, since alpha.2:
 
@@ -79,6 +90,22 @@ npm run dist              # installers/archives for this OS in release/ (no sign
 
 Each release also lists `SHA256SUMS.txt`. Releases are built by GitHub Actions from `v*` tags into a **draft** release that the maintainer publishes by hand; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Status (places in the office: a shared lobby, agents walk to the tool they use)
+
+Spec [024](specs/024-office-places/spec.md) (issue #18; amends 001 and 017). Built and tested on the simulator and unit tests, plus a short check on a real Copilot session. **AI credits spent: 0.84 AIU** (3 prompts on the real session). Released in v0.1.0-alpha.4.
+
+- **Lobby.** A one-row band in the middle of the office (between the first and second half of the open rooms) with five places: **Library** (docs: Confluence, Notion, wikis, notes), **Software library** (GitHub, GitLab), **Terminal** (shell commands), **Web** (web fetches, browsers) and **Other tools** (any other MCP server).
+- **Agents walk there.** While a tool runs for more than 0.6 s, the agent's figure leaves its desk (an empty chair stays), walks in about a second to the matching place, stays at least 2 s and walks back when the call ends. File tools (read, edit, search) never move an agent; only main agents walk, helpers stay on their mini-desks. The card says where it is (`At Terminal: bash · ...`); a place's tooltip and accessible label name who is there. At most three figures animate at once; with *reduce motion* they appear without walking. Waiting for an approval keeps the agent at the place; stop, error or the end of the turn sends it back at once.
+- **Settings > Places in the office.** Choose the place (or *Stay at desk*) for each MCP server; it is global, kept between runs, and only server names and places are saved. Unmapped servers use the built-in name rules. The list shows your Copilot CLI servers and any server seen in this run (per-folder extras appear once an agent has used them).
+
+![Office with the lobby, 1440x900](docs/screenshots/024-lobby-1440x900.png)
+![An agent walking to the Software library, 1280x800](docs/screenshots/024-walking-1280x800.png)
+![Settings: Places in the office](docs/screenshots/024-settings-places-1280x800.png)
+
+**Limits.** The lobby takes height: with 15 agents the office keeps *card* desks at 1440x900 (fewer helper rows) but uses the smaller *mini* desks at 1280x800. Names are not printed in the lobby tiles (tooltip and screen readers only). Walking is a straight glide above the rooms, not a path around desks. CI runs the unit tests on Linux, macOS and Windows and the office layout check on Linux. On a real session a shell call walked to the Terminal and a GitHub code search to the Software library; the Windows layout was not looked at. The built-in GitHub server is `github` in the server list but `github-mcp-server` in its tool events, so a Settings choice on the `github` row does not apply to its calls yet (spec 024 T012).
+
+Tests: `npm test` adds `test:places` (classification, visits, `+N` slots, mapping validation) and settings tests in `test:credits`; `npm run check:office` also checks the lobby (inside the floor, no overlaps, figures on their slots). Checks and screenshots: `scripts/shots-024.js`.
+
 ## Status (milestone 11: switch model and context inside a session, simulator only)
 
 Spec [030](specs/030-switch-model-context/spec.md) (extends [007](specs/007-models-and-effort/spec.md) and [019](specs/019-mcp-tools-and-context/spec.md)), Phases 1 and 2: tasks T010..T035. Phase 1 was built and tested **on the simulator only**; Phase 2 wires the real Copilot adapter and tests it **against a fake session**. **AI credits spent: 0 AIU; no real Copilot session was started.** Phase 2: the Copilot adapter now has `setModel`, `cancelQueuedModel` and `compact` (built from the SDK 1.0.22 types and docs), so real agents get the same menu, confirmations and Compact action as the simulator, **flagged "Not verified on a real account yet"** in the menu and dialogs; an adapter without those members still shows a disabled menu with a reason and **New session**. The saved model, effort and context tier are now passed when a session is created **and when it is resumed**, so a switched model survives an ended session or a restart (the `auto` routing preference is only sent for a new `auto` session). The model list carries price fields when the runtime reports them (missing ones stay absent, shown as "price not reported"); the **unit of those prices is unverified**, so the UI shows them as "(unit not verified)", compares models only by ratio and does not check the credit cap with them.
@@ -90,7 +117,7 @@ Spec [030](specs/030-switch-model-context/spec.md) (extends [007](specs/007-mode
 - **The runtime's own changes are shown.** A rate-limit or refusal fallback to another model is a note and a toast, never silent, and is never saved as the folder's choice. The agent stays on "Auto" when you chose Auto.
 - **Saved per folder** in the app's own folder file (`model`, `effort`, `contextTier`), never in Copilot's settings.
 
-Honest limits (`[KNOWN GAP]`): the simulator's prices, windows, queue-on-busy rule and compaction sizes are **made up**; what a real account reports (price fields and their unit, the long-tier window, what Stop does to a queued switch, the compaction decision values) is unverified until the owner-approved real checks (spec 030 T040..T046). **Checked on a real login (read-only, 0 credits, spec 030 T040):** the Copilot login on the box lists only `auto`, with no window, price, effort or tier fields, so the price unit and the long tier could not be checked and the picker there shows Auto only. Also unverified on a real account: that `model.switchTo` keeps the history and applies at the next message, the status strings it answers with (anything unknown is shown as "not changed"), whether `history.compact` leaves compaction events (the UI adds the result line itself if none arrive), and which model a resumed session starts on. The SDK has no free window size and cannot clear a session. See the spec's research file.
+Honest limits (`[KNOWN GAP]`): the simulator's prices, windows, queue-on-busy rule and compaction sizes are **made up**; what a real account reports (price fields and their unit, the long-tier window, what Stop does to a queued switch, the compaction decision values) is unverified until the owner-approved real checks (spec 030 T040..T046). **Checked on a real login (spec 030 T040..T046, free plan, `auto` only, 8 one-line prompts and 1 compaction, 0.56 AIU in total):** the login lists only `auto` (resolved to `gpt-6-luna`, 272k window), with no price, effort or tier fields. Verified there: a model the plan cannot use is refused (`cancelled`), a switch during a reply is queued and can be cancelled, **Stop drops a queued switch** (the app says so), history survives switch calls, compaction and resume, a compaction is one model call (0.19 AIU, now counted in the totals) and a tiny conversation grows when summarised. Switching between two real models, the long tier's window and price, and `confirmation_required` could not be tried on a free plan. Still unverified on a real account: that a switch between two different models keeps the history and applies at the next message, `confirmation_required` and the compaction decision values, and the price and window of the long tier. The SDK has no free window size and cannot clear a session. See the spec's research file.
 
 ![Model menu in the chat header](docs/screenshots/030-menu-1440x900.png)
 ![A pricier switch asks first](docs/screenshots/030-confirm-1440x900.png)
@@ -391,6 +418,7 @@ An Electron app that:
 - [x] AI-credit counter and per-session caps with a global default (milestone 9; the limit-reached flow follows GitHub's docs and is not yet verified on a real account)
 - [x] Tools "All time" view, Copilot CLI MCP list first, MCP extras per folder (milestone 10), per-folder import from VS Code's `.vscode/mcp.json`
 - [x] Usage totals: office total in the header and per-folder totals in room headers and door plates, in memory since the app opened (spec 011, 2026-10-17; persisted usage is still open)
+- [x] Places in the office: a shared lobby, main agents walk to the place of the tool they use, place per MCP server in Settings (spec 024, simulator only)
 - [x] Resume Copilot CLI/SDK sessions per folder and show VS Code chat history read-only (milestone 6); not done: continuing VS Code's own chats, discovery of sessions from other folders
 - [x] Open in VS Code (`code <folder>`)
 - [x] Office polish for 10-15 agents: auto-fit density, helpers with `+N`, status sorting, chat chips (simulated agents mode)

@@ -37,6 +37,37 @@ try {
   fs.writeFileSync(file, '{{{');
   assert.deepStrictEqual(new SettingsStore(file).load(), {}, 'corrupt file');
   new SettingsStore(path.join(file, 'x', 'y.json')).setDefaultMaxAiCredits(50); // unwritable: no throw
+
+  // spec 024 FR-007: the place mapping lives in the same file and survives cap changes (and the other way round)
+  const f2 = path.join(dir, 'places', 'durbar-settings.json');
+  const ps = new SettingsStore(f2);
+  assert.deepStrictEqual({ ...ps.placeMap }, {}, 'no mapping yet');
+  assert.deepStrictEqual(ps.setPlace('acme-tools', 'library'), { ok: true, placeMap: { 'acme-tools': 'library' } });
+  assert.strictEqual(ps.setDefaultMaxAiCredits(90), 90);
+  assert.deepStrictEqual({ ...ps.placeMap }, { 'acme-tools': 'library' }, 'changing the cap keeps the mapping');
+  assert.strictEqual(ps.setDefaultMaxAiCredits(''), undefined);
+  assert.deepStrictEqual({ ...ps.placeMap }, { 'acme-tools': 'library' }, 'clearing the cap keeps the mapping');
+  assert.ok(ps.setPlace('github', 'desk').ok);
+  assert.strictEqual(ps.setDefaultMaxAiCredits(40), 40);
+  const back = new SettingsStore(f2); back.load();
+  assert.deepStrictEqual({ ...back.placeMap }, { 'acme-tools': 'library', github: 'desk' }, 'the mapping survives a restart');
+  assert.strictEqual(back.defaultMaxAiCredits, 40, 'and the cap too');
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(f2, 'utf8')), { version: 1, defaultMaxAiCredits: 40, placeMap: { 'acme-tools': 'library', github: 'desk' } }, 'server names and place ids only on disk');
+  assert.deepStrictEqual(back.setPlace('github', 'moon'), { ok: false, placeMap: { 'acme-tools': 'library', github: 'desk' } }, 'unknown place: refused, unchanged');
+  assert.strictEqual(back.setPlace('', 'web').ok, false);
+  assert.strictEqual(back.setPlace('__proto__', 'web').ok, false);
+  assert.strictEqual(back.setPlace('x'.repeat(201), 'web').ok, false);
+  assert.deepStrictEqual(back.setPlace('github', null), { ok: true, placeMap: { 'acme-tools': 'library' } }, 'null clears one entry');
+  assert.deepStrictEqual(back.setPlace('acme-tools', null).placeMap, {}, 'last entry cleared');
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(f2, 'utf8')), { version: 1, defaultMaxAiCredits: 40 }, 'an empty mapping is not written');
+  const copy = back.placeMap; (copy as Record<string, string>).sneaky = 'web';
+  assert.deepStrictEqual({ ...back.placeMap }, {}, 'the getter returns a copy');
+  fs.writeFileSync(f2, JSON.stringify({ version: 1, placeMap: { ok: 'web', bad: 'moon', n: 5 }, defaultMaxAiCredits: 'x' }));
+  const odd = new SettingsStore(f2); odd.load();
+  assert.deepStrictEqual({ ...odd.placeMap }, { ok: 'web' }, 'a hand-edited file keeps only valid entries');
+  assert.deepStrictEqual({ ...parseSettings('{"placeMap":{"a":"web"}}').placeMap }, { a: 'web' });
+  assert.deepStrictEqual(parseSettings('{"placeMap":"x"}'), {}, 'a mapping that is not an object is ignored');
+  assert.deepStrictEqual(parseSettings('{"defaultMaxAiCredits":75,"placeMap":{}}'), { defaultMaxAiCredits: 75 }, 'an empty mapping is omitted');
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
 }

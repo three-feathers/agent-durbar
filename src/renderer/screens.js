@@ -3,7 +3,7 @@
 (function(){
   'use strict';
   const S=window.DurbarStats;
-  let X=null; /* ctx from app.js: {bridge, stats, esc, toast, agents(), staticLimit(a), openAgent(id), sim} */
+  let X=null; /* ctx from app.js: {bridge, stats, esc, toast, agents(), staticLimit(a), openAgent(id), sim, places, placeServers(), setPlaceMap(m)} */
   let cur=null; /* {kind:'settings'|'tools'|'folder', ...} */
   let period='session'; /* Tools view: 'session' | 'all' (remembered for the run) */
   let usage=null; /* last all-time view {doc,labels,error} from main */
@@ -77,12 +77,24 @@
     const fileNote=!f.found?`<p class="scr-note" role="status">No <code>${esc(f.label)}</code> yet. Servers you add with the Copilot CLI (<code>/mcp add</code>) or by editing that file appear here by themselves. The built-in GitHub server is always listed.</p>`
       :f.error?`<p class="scr-note warn" role="status"><code>${esc(f.label)}</code> could not be read (${esc(f.error)}). Fix the file; this list updates the next time you open this screen.</p>`
       :`<p class="scr-note ok" role="status">Read from <code>${esc(f.label)}</code>${f.skipped?` · ${f.skipped} entr${f.skipped>1?'ies were':'y was'} skipped (not usable)`:''}. The list is read again every time this screen opens.</p>`;
+    /* Places (spec 024 FR-008): which place the tool calls of each MCP server walk to. Servers: the Copilot CLI list, every server seen in
+       tool events this run (folder extras show up once an agent uses them) and any already mapped. */
+    let placesSec='';
+    if(X.bridge.setPlace&&X.places){
+      const P=X.places, map=app.placeMap||{};
+      const names=[...new Set([...mcp.cli.map(c=>c.name),...X.placeServers(),...Object.keys(map)])].sort((a,b)=>a.localeCompare(b));
+      const rows=names.map(n=>{const v=Object.prototype.hasOwnProperty.call(map,n)?map[n]:'';
+        return `<li class="plrow" data-srv="${esc(n)}"><span class="plname" title="${esc(n)}">${esc(n)}</span><select data-place-sel aria-label="Place for the tools of ${esc(n)}"><option value=""${v?'':' selected'}>Default (${esc(P.placeName(P.defaultServerPlace(n)))})</option>${P.PLACES.map(p=>`<option value="${p.id}"${v===p.id?' selected':''}>${esc(p.name)}</option>`).join('')}<option value="desk"${v==='desk'?' selected':''}>Stay at desk</option></select></li>`;}).join('');
+      placesSec=`<section class="scr-sec" aria-labelledby="plH"><h3 id="plH">Places in the office</h3>
+        <p class="scr-note">In the lobby, an agent walks to a place while one of its tools runs: <b>Terminal</b> for shell commands, <b>Web</b> for web fetches, and the place you choose here for the tools of each MCP server. File tools (read, edit, search) never move an agent. The choice applies to the next tool call, for all folders, and is kept between runs. Only server names and places are saved.</p>
+        ${names.length?`<ul class="plrows" id="plList">${rows}</ul>`:'<p class="scr-note small">No MCP servers yet. They appear here when your Copilot CLI list has some, or after an agent uses one in this run.</p>'}</section>`;
+    }
     const ab=app.about;
     const aboutSec=ab?`<section class="scr-sec" aria-labelledby="aboutH"><h3 id="aboutH">About</h3>
         <p class="scr-note"><b>${esc(ab.name)}</b> ${esc(ab.version)} · by <b>${esc(ab.owner)}</b></p>
         <p class="scr-note small" id="aboutCredits">Contributors: ${ab.contributors.map(c=>esc(c.label)).join(', ')}</p>
         <p class="scr-note small">${esc(ab.copyright)} · MIT License</p></section>`:'';
-    r.innerHTML=head('Settings')+`<div class="scr-body">${capSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${capSec}${placesSec}
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH">MCP servers</h3>
         <p class="scr-note">MCP servers give agents extra tools. Your <b>Copilot CLI list</b> is the one global list: every agent gets those servers, with nothing to configure or import here. Each agent can switch single servers off from its own header (MCP button).</p>
         <p class="scr-warn" role="note"><b>MCP servers run local commands with your user rights.</b> The Copilot runtime starts the servers of your CLI list in every session, exactly as the CLI does. Read-only MCP tools can run without asking even in Read-only mode.</p>
@@ -103,6 +115,7 @@
       msg.textContent=res&&res.defaultMaxAiCredits?'Saved: new sessions start with a cap of '+res.defaultMaxAiCredits+' AIU.':'Saved: new sessions start without a cap.';
     };
     r.onclick=onSettingsClick;
+    r.onchange=onPlaceChange;
     if(focus){const h=r.querySelector('h2');if(h){h.tabIndex=-1;h.focus({preventScroll:true});}}
   }
   /* one server of the Copilot CLI list (or the built-in one): read-only, with its exact command/URL and a switch for new sessions */
@@ -119,6 +132,13 @@
   }
   function wireHead(){const c=$('scrClose');if(c)c.onclick=close;}
 
+  async function onPlaceChange(e){
+    const sel=e.target.closest('select[data-place-sel]'); if(!sel||!X.bridge.setPlace)return;
+    const li=sel.closest('li.plrow'), name=li&&li.dataset.srv; if(!name)return;
+    let res=null; try{res=await X.bridge.setPlace(name,sel.value===''?null:sel.value);}catch(err){res=null;}
+    if(res&&res.ok){X.setPlaceMap(res.placeMap||{});X.toast(esc(name)+': '+(sel.value===''?'back to the default place.':sel.value==='desk'?'agents stay at their desk.':'agents go to '+esc(X.places.placeName(sel.value))+'.'),3200);}
+    else X.toast('Could not save the place for '+esc(name)+'.',4200);
+  }
   async function onSettingsClick(e){
     const li=e.target.closest('li.srv');if(!li||!li.dataset.amb)return;
     const act=(e.target.closest('[data-act]')||{}).dataset;

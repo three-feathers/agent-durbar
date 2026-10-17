@@ -1,0 +1,210 @@
+[
+ {
+  "type": "session.usage_info",
+  "agentId": null,
+  "data": {
+   "tokenLimit": 272000,
+   "currentTokens": 13511,
+   "messagesLength": 3,
+   "systemTokens": 5847,
+   "conversationTokens": 44,
+   "toolDefinitionsTokens": 7620,
+   "isInitial": true
+  }
+ },
+ {
+  "type": "assistant.usage",
+  "agentId": null,
+  "data": {
+   "model": "gpt-6-luna",
+   "provider": {
+    "id": "copilot",
+    "kind": "copilot",
+    "label": "GitHub Copilot"
+   },
+   "modelDisplayName": "GPT-6 Luna",
+   "inputTokens": 12290,
+   "outputTokens": 27,
+   "cacheReadTokens": 0,
+   "cacheWriteTokens": 12287,
+   "reasoningTokens": 20,
+   "cost": 1,
+   "duration": 1815,
+   "timeToFirstTokenMs": 1673.747921,
+   "outputTtftMs": 1673.7481220000002,
+   "initiator": "user",
+   "interactionType": "conversation-agent",
+   "isByok": false,
+   "isAuto": true,
+   "maxPromptTokens": 272000,
+   "transport": "websocket",
+   "requestBodyBytes": 63868,
+   "requestBodyWireBytes": 63868,
+   "requestBodyEncoding": "identity",
+   "rte": true,
+   "copilotUsage": {
+    "tokenDetails": [
+     {
+      "batchSize": 1000000,
+      "costPerBatch": 10000000000,
+      "tokenCount": 3,
+      "tokenType": "input",
+      "model": "gpt-6-luna"
+     },
+     {
+      "batchSize": 1000000,
+      "costPerBatch": 1000000000,
+      "tokenCount": 0,
+      "tokenType": "cache_read",
+      "model": "gpt-6-luna"
+     },
+     {
+      "batchSize": 1000000,
+      "costPerBatch": 12500000000,
+      "tokenCount": 12287,
+      "tokenType": "cache_write",
+      "model": "gpt-6-luna"
+     },
+     {
+      "batchSize": 1000000,
+      "costPerBatch": 50000000000,
+      "tokenCount": 27,
+      "tokenType": "output",
+      "model": "gpt-6-luna"
+     }
+    ],
+    "totalNanoAiu": 154967500
+   },
+   "aiCreditsStatus": "complete",
+   "reasoningEffort": "medium",
+   "reasoningSummary": "detailed",
+   "availableToolCount": 23,
+   "toolTokenCount": 7620,
+   "frontierSource": "reported_writes",
+   "cacheTtlSeconds": 1800,
+   "cacheDetailsReported": true,
+   "numToolCalls": 0,
+   "toolCounts": {},
+   "finishReason": "stop",
+   "contentFilterTriggered": false
+  }
+ },
+ {
+  "type": "session.model_change",
+  "agentId": null,
+  "data": {
+   "source": "sdk",
+   "contextTier": "long_context",
+   "newModel": "auto",
+   "previousModel": "auto",
+   "reasoningEffort": null
+  }
+ },
+ {
+  "type": "session.model_change",
+  "agentId": null,
+  "data": {
+   "source": "sdk",
+   "contextTier": "default",
+   "newModel": "auto",
+   "previousModel": "auto",
+   "reasoningEffort": null
+  }
+ },
+ {
+  "type": "session.compaction_start",
+  "agentId": null,
+  "data": {
+   "systemTokens": 5843,
+   "conversationTokens": 293,
+   "toolDefinitionsTokens": 6732,
+   "currentTokens": 12871,
+   "tokenLimit": 272000,
+   "trigger": "manual"
+  }
+ },
+ {
+  "type": "session.compaction_complete",
+  "agentId": null,
+  "data": {
+   "success": true,
+   "preCompactionTokens": 296,
+   "postCompactionTokens": 398,
+   "preCompactionMessagesLength": 7,
+   "messagesRemoved": 6,
+   "tokensRemoved": -102,
+   "summaryContent": "<overview>\nThe conversation contained two brief memory/formatting requests, followed by a request to summarize the conversation for continuity. No coding task o\u2026",
+   "behaviorModelId": "gpt-6-luna",
+   "compactionTokensUsed": {
+    "requestCount": 1,
+    "provider": {
+     "id": "copilot",
+     "kind": "copilot",
+     "label": "GitHub Copilot"
+    },
+    "modelDisplayName": "GPT-6 Luna",
+    "inputTokens": 13538,
+    "outputTokens": 435,
+    "cacheReadTokens": 0,
+    "cacheWriteTokens": 13463,
+    "copilotUsage": {
+     "tokenDetails": [
+      {
+       "batchSize": 1000000,
+       "costPerBatch": 10000000000,
+       "model": "gpt-6-luna",
+       "tokenCount": 75,
+       "tokenType": "input"
+      },
+      {
+       "batchSize": 1000000,
+       "costPerBatch": 1000000000,
+       "model": "gpt-6-luna",
+       "tokenCount": 0,
+       "tokenType": "cache_read"
+      },
+      {
+       "batchSize": 1000000,
+       "costPerBatch": 12500000000,
+       "model": "gpt-6-luna",
+       "tokenCount": 13463,
+       "tokenType": "cache_write"
+      },
+      {
+       "batchSize": 1000000,
+       "costPerBatch": 50000000000,
+       "model": "gpt-6-luna",
+       "tokenCount": 435,
+       "tokenType": "output"
+      }
+     ],
+     "totalNanoAiu": 190787500
+    },
+    "aiCreditsStatus": "complete",
+    "duration": 6443,
+    "model": "gpt-6-luna"
+   },
+   "systemTokens": 5843,
+   "conversationTokens": 395,
+   "toolDefinitionsTokens": 6732,
+   "tokenLimit": 272000,
+   "trigger": "manual",
+   "checkpointNumber": 1,
+   "responsesReasoning": {
+    "model": "gpt-6-luna",
+    "initialEffort": "medium",
+    "effort": "medium"
+   }
+  }
+ },
+ {
+  "type": "session.compaction_complete",
+  "agentId": null,
+  "data": {
+   "success": false,
+   "error": "Nothing to compact.",
+   "customInstructions": "keep the code word",
+   "trigger": "manual"
+  }
+ }
+]
