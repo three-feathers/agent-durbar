@@ -149,6 +149,8 @@ module.exports = async (ctx) => {
   await click('#modeMenu [data-act="model"]'); await ctx.sleep(350);
   assert.ok(await exists('#modelMenu'), 'the card menu opens the model menu');
   assert.match(await text('#modelMenu'), /Sim Deep/);
+  assert.match(await text('#modelMenu'), /Not verified on a real account yet/, 'a not-yet-verified adapter says so in the menu');
+  await shot('unverified-note', false);
   await key('Escape'); await ctx.sleep(200);
 
   // ---- 10) an agent that behaves like today's real adapter: disabled with a reason, New session offered ----

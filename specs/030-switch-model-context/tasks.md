@@ -37,12 +37,12 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 
 ## Phase 2: Copilot adapter on a fake session (no account, no credits)
 
-- [ ] T030 (sim) `CopilotAdapter.setModel` and `cancelQueuedModel` on `rpc.model.switchTo` / `rpc.queue.removeAt` with the safe option set (never the persistence fields), result mapping (`deferred`, `confirmation_required`, `warning`), tests on a fake session object that records the request [FR-002, FR-003, FR-025]
-- [ ] T031 (sim) `CopilotAdapter.compact` on `rpc.history.compact`, refused while working, result mapping, tests on the fake session [FR-015, FR-025]
-- [ ] T032 (sim) Resume safety: `start()` builds create and resume config from the saved model, effort and tier, `capi.autoTier` only for a new `auto` session; test asserts a switched model survives a resume config [FR-013, SC-004]
-- [ ] T033 (fixtures) `listModelOptions` fills `pricing`, `priceClass`, `contextTiers` from `billing.tokenPrices` and the price category; missing fields stay absent; tests with synthetic `ModelInfo` objects (unit scale flagged unverified) [FR-011]
-- [ ] T034 (sim) Capability contract: an adapter without `setModel`/`compact` (fake) shows disabled controls with the reason and **New session**; with them, the controls work; test on the fake adapter, no Copilot specifics in the renderer (constitution II) [FR-007, FR-017]
-- [ ] T035 (sim) Docs for Phase 2: spec 002 `## Changes` entry for the interface deltas, README adapter limits line, converge [FR-017]
+- [x] T030 (sim) `CopilotAdapter.setModel` and `cancelQueuedModel` on `rpc.model.switchTo` / `rpc.queue.removeAt` with the safe option set (never the persistence fields), result mapping (`deferred`, `confirmation_required`, `warning`), tests on a fake session object that records the request [FR-002, FR-003, FR-025] Done on a fake session; the real runtime's behaviour is unverified (T041, T044, T046).
+- [x] T031 (sim) `CopilotAdapter.compact` on `rpc.history.compact`, refused while working, result mapping, tests on the fake session [FR-015, FR-025] Done on a fake session. "Compact and switch" compacts first (trigger `model_switch`) and never sends a guessed `compactionDecision`; real events unverified (T045).
+- [x] T032 (sim) Resume safety: `start()` builds create and resume config from the saved model, effort and tier, `capi.autoTier` only for a new `auto` session; test asserts a switched model survives a resume config [FR-013, SC-004] Done: create and resume carry the saved model, effort and tier. Which model a resumed session starts on is still unverified (T043).
+- [x] T033 (fixtures) `listModelOptions` fills `pricing`, `priceClass`, `contextTiers` from `billing.tokenPrices` and the price category; missing fields stay absent; tests with synthetic `ModelInfo` objects (unit scale flagged unverified) [FR-011] Done; `pricing.unverified` is always true, so the UI says so and never checks the cap with the numbers.
+- [x] T034 (sim) Capability contract: an adapter without `setModel`/`compact` (fake) shows disabled controls with the reason and **New session**; with them, the controls work; test on the fake adapter, no Copilot specifics in the renderer (constitution II) [FR-007, FR-017] Done; real controls are flagged "Not verified on a real account yet" (`ModelControl.unverified`).
+- [x] T035 (sim) Docs for Phase 2: spec 002 `## Changes` entry for the interface deltas, README adapter limits line, converge [FR-017] Done.
 
 ## Phase 3: real checks (the owner's Copilot login; each one blocked until approved)
 

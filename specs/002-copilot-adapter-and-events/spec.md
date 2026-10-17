@@ -90,3 +90,7 @@ A developer adds another agent runtime by implementing `AgentAdapter` and emitti
 
 - The `@github/copilot-sdk` 1.0.x API and event names stay as documented at <https://github.com/github/copilot-sdk>; protocols are evolving.
 - The user has a Copilot subscription (free works) and has run `copilot login`.
+
+## Changes
+
+- **2026-10-17, feature 030 Phase 2 (fake session only, no credits):** `AgentAdapter` gained three optional members: `setModel(sessionId, request)`, `cancelQueuedModel(sessionId, queueId)` and `compact(sessionId, focus?)`, and the normalized events `model` and `compaction` (types in `src/shared/modelswitch.ts`). `CopilotAdapter` implements them on `rpc.model.switchTo`, `rpc.queue.removeAt` and `rpc.history.compact` (experimental SDK calls, read from the SDK 1.0.22 types and docs). Main derives the UI's `modelControl` from which members exist, so an adapter without them (a future one, or the simulator's "none" agent) shows a disabled menu with a reason and New session. `StartOptions` gained `contextTier`; `start()` passes the saved model, effort and tier on create and on resume and the `auto` routing preference only for a new session. The pure helpers are in `src/adapters/copilotmodel.ts`. `listModelOptions` returns the extra price fields. `test:copilotmodel` runs the real adapter against a fake client and session. `[KNOWN GAP]` What the real runtime does with these calls is unverified (030 T040..T046). See [030](../030-switch-model-context/spec.md).
