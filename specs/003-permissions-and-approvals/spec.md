@@ -142,6 +142,7 @@ For folders I trust I can pick the mode that approves everything without prompts
 - The top-bar permission selector is allowed up to 180px wide (`#liveBar #permMode` in `styles.css`) so the longer label is not cut off.
 - Unchanged: the internal value stays `allow` (saved folder files, IPC, `DURBAR_PERM=allow`, the broker). No behavior change beyond text. README aligned to "Allow all".
 - Acceptance: on the simulator (`DURBAR_SIM=15`), no visible "Allow edits" remains in the top bar, new-session dialog, mode chip/menu, confirmation, toasts or chat hint; the top bar still fits at 1280x800 and 1440x900.
+
 ### 2026-10-17: Windows paths in "Approve for this session" scopes (closes FR-016; T025, issue #6)
 
 **What was wrong.** `grantScope` took the folder of a write/read path with the host's `path.dirname` and was only unit-tested with POSIX paths, so its Windows behavior (drive letters, backslashes, UNC shares) was unverified. `isInsideRoots` already had an injectable path flavor; `grantScope` did not.

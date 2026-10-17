@@ -204,7 +204,6 @@ async function main(): Promise<void> {
   assert.strictEqual((await r.b.request({ kind: 'read', path: path.join(root, 'ok.ts'), toolCallId: 'r7' })).kind, 'approve-once', 'inside reads never ask');
   r = mkRoots('allow');
   assert.strictEqual((await r.b.request({ kind: 'read', path: '/etc/passwd', toolCallId: 'r8' })).kind, 'approve-once', 'Allow all approves everything');
-  assert.strictEqual((await r.b.request({ kind: 'read', path: '/etc/passwd', toolCallId: 'r8' })).kind, 'approve-once', 'Allow edits approves everything');
   // spec 003 FR-031/FR-032: grant scopes with Windows paths (injectable flavor), on any host
   const w = path.win32;
   assert.deepStrictEqual(grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\x.ts' }, w), { key: 'write:C:\\repo\\src', label: 'write in repo/src/' });
