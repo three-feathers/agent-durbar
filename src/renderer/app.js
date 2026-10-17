@@ -22,6 +22,18 @@ const helpersOf = a => agents.filter(x=>x.parent===a.id);
 const LEDGER=window.DurbarUsage.createLedger();
 const ledgerRemoved=()=>LEDGER.roomIds().some(id=>{const r=ROOMS.find(x=>x.id===id);return !r||r.hidden;});
 const recordUsage=(a,e)=>{const r=roomOf(a);if(r)LEDGER.record(r.id,e);};
+/* ---- floors (spec 033): ordered groups of rooms; a floor that is off is hidden exactly like a hidden folder ---- */
+let FLOORS=null; /* {floors:[{id,name,on,ground}],lastFloor,byAgent} from the bridge; null = no floors (demo mode, older bridge) */
+const floorsLive=()=>!!FLOORS&&!demoOn;
+const floorById=id=>floorsLive()?(FLOORS.floors.find(f=>f.id===id)||FLOORS.floors.find(f=>f.ground)||null):null;
+const floorOn=id=>{const f=floorById(id);return !f||f.on;};
+const roomShown=r=>!!r&&!r.hidden&&floorOn(r.floor);
+const floorsOnList=()=>floorsLive()?FLOORS.floors.filter(f=>f.on):[];
+const floorTagsOn=()=>floorsOnList().length>1;
+const floorRank=r=>{const f=floorById(r.floor);return f?FLOORS.floors.indexOf(f):0;};
+/* rooms in floor order; inside a floor, the order they were added (stable) */
+const roomsInOrder=()=>ROOMS.map((r,i)=>[r,i]).sort((x,y)=>floorRank(x[0])-floorRank(y[0])||x[1]-y[1]).map(p=>p[0]);
+const floorTag=r=>{if(!floorTagsOn())return '';const f=floorById(r.floor);return f?`<span class="floor-tag" title="Floor: ${esc(f.name)}">${esc(f.name)}</span>`:'';};
 function aiuChip(){
   const t=LEDGER.office(); if(!t.calls||demoOn)return '';
   const tip=window.DurbarUsage.tooltip(t,{scope:'office',removed:ledgerRemoved()});
@@ -43,7 +55,7 @@ const PLACE_ICON={
 const lobbyOn=()=>!demoOn&&agents.some(a=>a.live&&!a.parent);
 const lobbyCap=aw=>Math.max(1,Math.min(8,Math.floor(((aw||800)/5-150)/25))); /* slots that fit in a one-row tile next to the icon and the name */
 /* who is at a place and visible under the current filters (a hidden room or a filtered-out agent has no figure) */
-const placeVisitors=pid=>VISITS.occupants(pid).filter(id=>{const a=byId(id),r=a&&!a.parent&&roomOf(a);return r&&!r.hidden&&(ui.ws==='all'||wsOf(a)===ui.ws)&&matchStatus(a);});
+const placeVisitors=pid=>VISITS.occupants(pid).filter(id=>{const a=byId(id),r=a&&!a.parent&&roomOf(a);return roomShown(r)&&(ui.ws==='all'||wsOf(a)===ui.ws)&&matchStatus(a);});
 const isAway=a=>!a.parent&&(!!VISITS.at(a.id)||RETURNING.has(a.id));
 const taskOf=a=>{const v=a.parent?null:VISITS.at(a.id);return v?'At '+window.DurbarPlaces.placeName(v.place)+': '+v.label+' · '+a.task:a.task;};
 function lobbyHTML(aw){
@@ -218,7 +230,7 @@ function toast(html,ms){const t=document.createElement('div');t.className='toast
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 /* ---------------- top bar ---------------- */
-function visibleAgents(){return agents.filter(a=>!roomOf(a).hidden&&(ui.ws==='all'||wsOf(a)===ui.ws));}
+function visibleAgents(){return agents.filter(a=>roomShown(roomOf(a))&&(ui.ws==='all'||wsOf(a)===ui.ws));}
 function renderStats(){
   const list=visibleAgents().filter(a=>!a.parent); const c={working:0,waiting:0,idle:0,error:0,done:0};
   list.forEach(a=>{const s=vis(a); if(s==='working'||s==='thinking')c.working++; else c[s]++;});
@@ -227,7 +239,8 @@ function renderStats(){
 }
 function renderFilter(){
   const sel=$('wsFilter');
-  sel.innerHTML='<option value="all">All folders</option>'+ROOMS.filter(r=>!r.hidden).map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
+  if(ui.ws!=='all'&&!roomShown(ROOMS.find(r=>r.id===ui.ws)))ui.ws='all'; /* its floor went off or it was hidden */
+  sel.innerHTML='<option value="all">All folders</option>'+roomsInOrder().filter(roomShown).map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
   sel.value=ui.ws;
 }
 const matchStatus = a => !ui.status || ((ui.status==='working')?['working','thinking'].includes(vis(a)):vis(a)===ui.status);
@@ -309,8 +322,8 @@ function unitHTML(a,d){
 const unitWidth=(a,d)=>{const D=DENS[d];return D.cw+(helpersOf(a).length?(d==='full'?D.hw+14+8:D.hw+18):0);};
 function officeModel(ignoreStatus){
   const rooms=[];
-  ROOMS.forEach(r=>{
-    if(r.hidden||(ui.ws!=='all'&&ui.ws!==r.id))return;
+  roomsInOrder().forEach(r=>{
+    if(!roomShown(r)||(ui.ws!=='all'&&ui.ws!==r.id))return;
     const mains=agents.filter(a=>!a.parent&&a.room===r.id&&(ignoreStatus||matchStatus(a)));
     if(!mains.length)return;
     const key=a=>Math.min(prio(a),...helpersOf(a).map(prio));
@@ -329,7 +342,7 @@ function roomSummary(r){
 }
 function plateHTML({r}){
   const sm=roomSummary(r), u=roomAiu(r);
-  return `<button class="plate tone-${sm.tone}" type="button" data-door="${esc(r.id)}" data-key="door:${esc(r.id)}" data-tint="${r.tint}" aria-expanded="false" aria-label="Open room ${esc(r.name)}. ${esc(sm.text)}. ${sm.n} agent${sm.n===1?'':'s'}.${u?' Usage: '+esc(u.long)+'.':''}" title="${esc(r.path)}">${DOOR_SHUT}<span class="plate-tx"><b>${esc(r.name)}</b><span class="plate-sum">${esc(sm.text)}</span></span>${u?`<span class="plate-aiu" title="${esc(u.tip)}">${esc(u.short)}</span>`:''}<span class="plate-n">${sm.n}</span></button>`;
+  return `<button class="plate tone-${sm.tone}" type="button" data-door="${esc(r.id)}" data-key="door:${esc(r.id)}" data-tint="${r.tint}" aria-expanded="false" aria-label="Open room ${esc(r.name)}. ${esc(sm.text)}. ${sm.n} agent${sm.n===1?'':'s'}.${u?' Usage: '+esc(u.long)+'.':''}" title="${esc(r.path)}">${DOOR_SHUT}<span class="plate-tx"><b>${esc(r.name)}</b>${floorTag(r)}<span class="plate-sum">${esc(sm.text)}</span></span>${u?`<span class="plate-aiu" title="${esc(u.tip)}">${esc(u.short)}</span>`:''}<span class="plate-n">${sm.n}</span></button>`;
 }
 const doorsHTML=list=>list.length?`<div class="doors" data-key="doors">${list.map(plateHTML).join('')}</div>`:'';
 function stageHTML(sizing,d,aw,cap){
@@ -348,7 +361,7 @@ function setRoomClosed(r,closed,quiet){
 let doorAnim=null;
 function renderDoorBar(){
   const b=$('doorBar'); if(!b)return;
-  const vis_=ROOMS.filter(r=>!r.hidden&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id));
+  const vis_=ROOMS.filter(r=>roomShown(r)&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id));
   const open=vis_.filter(r=>!r.closed).length, shut=vis_.length-open;
   b.hidden=vis_.length<2||ui.view!=='office';
   $('closeAll').disabled=!open; $('openAll').disabled=!shut;
@@ -360,7 +373,7 @@ function folderOfRoom(roomId){
 }
 function roomHTML({r,mains,all},d,aw,cap){
   const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':(k==='done'||k==='idle')?' calm':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}</span>`:''}).join('');
-  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="Close room ${esc(r.name)}" title="Close the door: ${esc(r.name)} becomes a compact plate">${DOOR_OPEN}</button><span class="room-name" title="${esc(r.name)}">${esc(r.name)}</span><span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span>${(()=>{const u=roomAiu(r);return u?`<span class="room-aiu" title="${esc(u.tip)}">${esc(u.long)}</span>`:'';})()}<span class="room-dots" aria-hidden="true">${dots}</span>${bridge&&bridge.newSession&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.mcpFolderState&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT}</div>`;
+  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="Close room ${esc(r.name)}" title="Close the door: ${esc(r.name)} becomes a compact plate">${DOOR_OPEN}</button><span class="room-name" title="${esc(r.name)}">${esc(r.name)}</span>${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span>${(()=>{const u=roomAiu(r);return u?`<span class="room-aiu" title="${esc(u.tip)}">${esc(u.long)}</span>`:'';})()}<span class="room-dots" aria-hidden="true">${dots}</span>${bridge&&bridge.newSession&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.mcpFolderState&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT}</div>`;
   if(d==='full'){
     const gap=6, pad=12;
     const widths=mains.map(a=>unitWidth(a,d));
@@ -461,12 +474,12 @@ function renderOffice(){
   const model=officeModel();
   if(!model.length){
     stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey='';
-    stage.innerHTML='<div class="empty">'+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" or "+ Workspace" above.':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open "Folders" above to show them again.':'No agents match these filters.'))+'</div>';
+    stage.innerHTML='<div class="empty">'+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" or "+ Workspace" above.':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open "Folders" above to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?'All floors are off. Open "Floors" above to switch one on.':agents.length&&ROOMS.every(r=>!roomShown(r))?'Nothing to show: every folder is hidden or on a floor that is off. Open "Floors" or "Folders" above.':'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
   }
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
   const sizing=ui.status?officeModel(true):model;
-  const key=JSON.stringify([aw,ah,FORCE_DENSITY,lobbyOn(),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]])])]);
+  const key=JSON.stringify([aw,ah,FORCE_DENSITY,lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]])])]);
   if(key!==layoutKey||!layout){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
   HCAP=layout.hcap; HBOOST=new Map(layout.boost);
   const html=stageHTML(model,layout.d,aw,layout.cap);
@@ -481,7 +494,7 @@ function renderOffice(){
 /* ---------------- list view ---------------- */
 function renderList(){
   const rows=[];
-  ROOMS.forEach(r=>{ if(r.hidden||(ui.ws!=='all'&&ui.ws!==r.id))return;
+  roomsInOrder().forEach(r=>{ if(!roomShown(r)||(ui.ws!=='all'&&ui.ws!==r.id))return;
     agents.filter(a=>!a.parent&&a.room===r.id).slice().sort((x,y)=>Math.min(prio(x),...helpersOf(x).map(prio))-Math.min(prio(y),...helpersOf(y).map(prio))).forEach(a=>{
       const subs=helpersOf(a);
       if(matchStatus(a)){rows.push([a,false]);subs.forEach(h=>rows.push([h,true]));}
@@ -798,7 +811,7 @@ document.addEventListener('click',e=>{
   if(pc){const cur=byId(ui.selected);if(cur&&cur.parent)openPanel(cur.parent,false);return;}
   const dr=e.target.closest('[data-door]'); if(dr){const r=ROOMS.find(x=>x.id===dr.dataset.door);if(r)setRoomClosed(r,!r.closed);return;}
   if(e.target.closest('#closeAll,#openAll')){const shut=!!e.target.closest('#closeAll');
-    ROOMS.filter(r=>!r.hidden&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id)).forEach(r=>setRoomClosed(r,shut,true));
+    ROOMS.filter(r=>roomShown(r)&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id)).forEach(r=>setRoomClosed(r,shut,true));
     layoutKey='';renderAll();return;}
   const st=e.target.closest('.stat[data-k]'); if(st){const k=st.dataset.k;ui.status=ui.status===k?null:k;renderAll();const n=document.querySelector(`.stat[data-k="${k}"]`);if(n)n.focus();return;}
   const mo=e.target.closest('[data-more]'); if(mo){const id=mo.dataset.more;ui.expanded[id]=!ui.expanded[id];renderAll();return;}
@@ -836,7 +849,7 @@ window.addEventListener('resize',relayout);
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', solo:qs.get('simrooms')==='solo', seed:parseInt(qs.get('seed')||'7',10)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', solo:qs.get('simrooms')==='solo', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
@@ -874,10 +887,21 @@ const MODE_IC={
  'ask':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.8l5 1.8v3.8c0 3-2.1 5.2-5 6.6-2.9-1.4-5-3.6-5-6.6V3.6z"/><path d="M6.2 7.8l1.4 1.4 2.4-2.6"/></svg>',
  'allow':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"><path d="M2.5 13.5l.7-3L11 2.7a1.4 1.4 0 0 1 2 2L5.5 12.8z"/></svg>'};
 const modeIcon=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}${a.info.permMode==='allow'&&a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_HELP[a.info.permMode])} (right-click for options)" aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`:'';
+/* Floors state from the bridge (spec 033): rooms take their floor from it, then everything that depends on visibility re-renders. */
+function applyFloors(state){
+  if(!state||!Array.isArray(state.floors)||!state.floors.length)return;
+  FLOORS=state;
+  LIVE.rooms.forEach(r=>{const ag=LIVE.agents.find(a=>!a.parent&&a.room===r.id&&state.byAgent&&state.byAgent[a.id]);if(ag)r.floor=state.byAgent[ag.id];});
+  afterFloorsChange();
+}
+function afterFloorsChange(){
+  if(demoOn)return;
+  renderFilter(); scheduleRender();
+}
 function addLiveAgent(info){
   if(liveById(info.id))return;
   let room=LIVE.rooms.find(r=>r.path===info.cwd);
-  if(!room){room={id:'r'+LIVE.rooms.length+':'+info.cwd,name:(info.roomName||info.name),path:info.cwd,tint:TINTS[LIVE.rooms.length%4],hidden:!!info.hidden,closed:!!info.closed||CLOSED_Q.includes(info.roomName||info.name)};LIVE.rooms.push(room);}
+  if(!room){room={id:'r'+LIVE.rooms.length+':'+info.cwd,name:(info.roomName||info.name),path:info.cwd,tint:TINTS[LIVE.rooms.length%4],floor:info.floor||'ground',hidden:!!info.hidden,closed:!!info.closed||CLOSED_Q.includes(info.roomName||info.name)};LIVE.rooms.push(room);}
   let name=info.name; const dup=LIVE.agents.filter(x=>!x.parent&&x.room===room.id&&x.baseName===info.name).length; if(dup)name=info.name+' #'+(dup+1);
   LIVE.agents.push({id:info.id,name,baseName:info.name,role:info.role||roleFor(info),room:room.id,state:'idle',label:info.lazy?'Not started':'Ready',task:info.lazy?'Saved folder. A session starts with your first message.':'Ready. Send a message to start.',
     look:lookFor(info.id),files:[],paused:false,live:true,info,usage:{calls:0,inT:0,outT:0,nano:0},usageText:'',turn:null,worked:false,pend:new Map(),settled:new Set(),grants:[]});
@@ -1371,7 +1395,7 @@ async function copyResume(a){const r=liveRoot(a),cmd='copilot --resume '+r.id;
   catch{toast('Run <code>'+esc(cmd)+'</code> in a terminal in '+esc(roomOf(r).path)+' (end the session here first).',8000);}}
 /* ---------------- full-screen chat: the strip of all agents ---------------- */
 function stripAgents(){
-  return agents.filter(x=>!x.parent&&!roomOf(x).hidden).map((x,i)=>[x,i]).sort((p,q)=>prio(p[0])-prio(q[0])||p[1]-q[1]).map(p=>p[0]);
+  return agents.filter(x=>!x.parent&&roomShown(roomOf(x))).map((x,i)=>[x,i]).sort((p,q)=>prio(p[0])-prio(q[0])||p[1]-q[1]).map(p=>p[0]);
 }
 function renderStrip(){
   const box=$('stripList'); if(!box)return;
@@ -1912,7 +1936,7 @@ if(bridge){
   $('modelSel').onchange=()=>fillEffortSelect($('effortSel'),$('modelSel').value);
   bridge.onEvent(onLiveEvent);
   bridge.onAgentAdded(addLiveAgent);
-  bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();const rs=l.filter(x=>x.permRestored&&!x.parent).length;if(rs)toast(rs+' saved folder'+(rs>1?'s were':' was')+' restored in <b>Allow all</b>, as you left '+(rs>1?'them':'it')+'. Everything runs without asking there; the mode chip says <i>restored</i>. "Approve for this session" grants start empty.',9000);});
+  bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});const rs=l.filter(x=>x.permRestored&&!x.parent).length;if(rs)toast(rs+' saved folder'+(rs>1?'s were':' was')+' restored in <b>Allow all</b>, as you left '+(rs>1?'them':'it')+'. Everything runs without asking there; the mode chip says <i>restored</i>. "Approve for this session" grants start empty.',9000);});
   loadModels();
   if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};}).catch(()=>{});
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);

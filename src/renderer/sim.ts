@@ -14,6 +14,8 @@ type AgentInfo = import('../shared/api').AgentInfo;
 type DurbarApi = import('../shared/api').DurbarApi;
 type PickedFile = import('../shared/api').PickedFile;
 type ModelChoice = import('../shared/api').ModelChoice;
+type FloorsState = import('../shared/api').FloorsState;
+type FloorsResult = import('../shared/api').FloorsResult;
 type ModelSwitchRequest = import('../shared/modelswitch').ModelSwitchRequest;
 type ModelSwitchResult = import('../shared/modelswitch').ModelSwitchResult;
 type ContextTier = import('../shared/modelswitch').ContextTier;
@@ -23,6 +25,10 @@ interface SimOptions {
   freeze?: boolean;
   solo?: boolean;
   seed?: number;
+  /** Spec 033: three floors (Ground floor, Client A, Personal) with the rooms spread over them. */
+  floors?: boolean;
+  /** Spec 033: names of floors that start switched off. */
+  floorsOff?: string[];
 }
 
 interface SimAgent {
@@ -749,17 +755,99 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       },
     };
 
+    // ---- Floors (spec 033): in memory, same rules as src/shared/floors.ts (this plain script cannot import it) ----
+    const floorsList: { id: string; name: string; on: boolean }[] = [{ id: 'ground', name: 'Ground floor', on: true }];
+    let lastFloor = 'ground';
+    const folderFloor = new Map<string, string>(); // folder (cwd) -> floor id
+    if (opts.floors) {
+      floorsList.push({ id: 'f-clienta0', name: 'Client A', on: true }, { id: 'f-personal', name: 'Personal', on: true });
+      [...new Set(sims.map((x) => x.info.cwd))].forEach((c, i) => folderFloor.set(c, floorsList[i % floorsList.length].id));
+    }
+    for (const f of floorsList) if (opts.floorsOff?.some((n) => n.toLowerCase() === f.name.toLowerCase())) f.on = false;
+    const floorOfCwd = (cwd: string): string => (floorsList.some((f) => f.id === folderFloor.get(cwd)) ? (folderFloor.get(cwd) as string) : 'ground');
+    sims.forEach((x) => (x.info.floor = floorOfCwd(x.info.cwd)));
+    const floorState = (): FloorsState => ({
+      floors: floorsList.map((f) => ({ ...f, ground: f.id === 'ground' })),
+      lastFloor,
+      byAgent: Object.fromEntries(sims.map((x) => [x.info.id, floorOfCwd(x.info.cwd)])),
+    });
+    const fres = (error?: string): FloorsResult => (error ? { ok: false, error, state: floorState() } : { ok: true, state: floorState() });
+    const floorNameError = (name: unknown, except?: string): string => {
+      if (typeof name !== 'string' || !name.trim()) return 'Name is empty.';
+      const nm = name.trim();
+      // eslint-disable-next-line no-control-regex
+      if (nm.length > 40 || /[\u0000-\u001f\u007f]/.test(nm)) return 'Use 1 to 40 characters, without control characters.';
+      return floorsList.some((f) => f.id !== except && f.name.toLowerCase() === nm.toLowerCase()) ? 'A floor with that name exists.' : '';
+    };
+    let floorSeq = 0;
+    const floorApi: Partial<DurbarApi> = {
+      floorsState: async () => floorState(),
+      createFloor: async (name) => {
+        if (floorsList.length >= 40) return fres('At most 40 floors.');
+        const e = floorNameError(name);
+        if (e) return fres(e);
+        floorSeq++;
+        floorsList.push({ id: 'f-sim' + String(floorSeq).padStart(5, '0'), name: name.trim(), on: true });
+        return fres();
+      },
+      renameFloor: async (id, name) => {
+        const f = floorsList.find((x) => x.id === id);
+        if (!f) return fres('Unknown floor.');
+        const e = floorNameError(name, id);
+        if (e) return fres(e);
+        f.name = name.trim();
+        return fres();
+      },
+      reorderFloors: async (ids) => {
+        if (!Array.isArray(ids) || ids.length !== floorsList.length || new Set(ids).size !== ids.length || !ids.every((id) => floorsList.some((f) => f.id === id))) return fres('The new order must list every floor once.');
+        const next = ids.map((id) => floorsList.find((f) => f.id === id) as { id: string; name: string; on: boolean });
+        floorsList.splice(0, floorsList.length, ...next);
+        return fres();
+      },
+      deleteFloor: async (id) => {
+        if (id === 'ground') return fres('The ground floor cannot be deleted.');
+        const i = floorsList.findIndex((f) => f.id === id);
+        if (i < 0) return fres('Unknown floor.');
+        floorsList.splice(i, 1);
+        for (const [c, f] of [...folderFloor]) if (f === id) folderFloor.delete(c);
+        if (lastFloor === id) lastFloor = 'ground';
+        return fres();
+      },
+      setFloorOn: async (id, on) => {
+        const f = floorsList.find((x) => x.id === id);
+        if (!f) return fres('Unknown floor.');
+        f.on = on === true;
+        return fres();
+      },
+      onlyFloor: async (id) => {
+        if (!floorsList.some((f) => f.id === id)) return fres('Unknown floor.');
+        for (const f of floorsList) f.on = f.id === id;
+        return fres();
+      },
+      moveFolderToFloor: async (agentId, floorId) => {
+        const x = sims.find((y) => y.info.id === agentId);
+        if (!x || !floorsList.some((f) => f.id === floorId)) return fres('Unknown folder or floor.');
+        folderFloor.set(x.info.cwd, floorId);
+        return fres();
+      },
+    };
+
     let started = false;
     let extra = 0;
     const api: DurbarApi = {
+      ...floorApi,
       ...mcpApi,
       ...capApi,
       ...modelApi,
       version: async () => 'sim',
-      addFolder: async () => {
+      addFolder: async (_mode, o) => {
         extra++;
         const cwd = '~/work/new-folder-' + extra;
-        const info = { id: 'sim-x' + extra, name: 'new-folder-' + extra, cwd, folders: [cwd], permMode: 'read-only' } as AgentInfo;
+        const floor = o && typeof o.floor === 'string' && floorsList.some((f) => f.id === o.floor) ? o.floor : 'ground';
+        if (o && o.floor !== undefined) lastFloor = floor;
+        folderFloor.set(cwd, floor);
+        const info = { id: 'sim-x' + extra, name: 'new-folder-' + extra, cwd, folders: [cwd], permMode: 'read-only', floor } as AgentInfo;
+        sims.push({ info, room: info.name, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: [], grants: new Map() });
         addedListeners.forEach((l) => l(info));
         return { ok: true, agents: [] };
       },

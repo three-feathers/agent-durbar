@@ -37,6 +37,8 @@ export interface AgentInfo {
   hidden?: boolean;
   /** The room's door is closed (compact door plate in the office). */
   closed?: boolean;
+  /** Floor of the folder (spec 033); absent = the ground floor. */
+  floor?: string;
 }
 
 /** Choices for a new session. */
@@ -46,7 +48,26 @@ export interface SessionOptions {
   permMode?: PermMode;
   model?: string;
   effort?: string;
+  /** Floor for a folder added now (spec 033 FR-006); unknown = the ground floor. */
+  floor?: string;
 }
+
+/** A floor as the renderer sees it (spec 033). */
+export interface FloorView {
+  id: string;
+  name: string;
+  on: boolean;
+  ground: boolean;
+}
+
+/** Floors in order, the default floor for the next added folder, and each agent's floor. */
+export interface FloorsState {
+  floors: FloorView[];
+  lastFloor: string;
+  byAgent: Record<string, string>;
+}
+
+export type FloorsResult = { ok: true; state: FloorsState } | { ok: false; error: string; state: FloorsState };
 
 /** What the user chose for a session that reached its credit cap (spec 011). */
 export type LimitChoice = { kind: 'add'; credits: number } | { kind: 'set'; credits: number } | { kind: 'unset' } | { kind: 'cancel' };
@@ -281,6 +302,17 @@ export interface DurbarApi {
   setFolderHidden?(id: string, hidden: boolean): Promise<{ ok: boolean }>;
   /** Remove the folder of agent `id`: ends its sessions and forgets the folder. */
   removeFolder?(id: string): Promise<{ ok: boolean; removedIds: string[] }>;
+
+  /** Floors (spec 033). Validated in main; never touch a session. Every change returns the full new state. */
+  floorsState?(): Promise<FloorsState>;
+  createFloor?(name: string): Promise<FloorsResult>;
+  renameFloor?(id: string, name: string): Promise<FloorsResult>;
+  reorderFloors?(ids: string[]): Promise<FloorsResult>;
+  deleteFloor?(id: string): Promise<FloorsResult>;
+  setFloorOn?(id: string, on: boolean): Promise<FloorsResult>;
+  onlyFloor?(id: string): Promise<FloorsResult>;
+  /** Move the folder of agent `agentId` (all its agents) to a floor. */
+  moveFolderToFloor?(agentId: string, floorId: string): Promise<FloorsResult>;
 
   /** Credit caps (spec 011). `credits: null` removes the cap. */
   getSettings?(): Promise<AppSettingsView>;

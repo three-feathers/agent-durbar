@@ -8,6 +8,8 @@ import * as path from 'path';
 import { parseCap } from '../shared/credits';
 import { parseTier } from '../shared/modelswitch';
 import type { ContextTier } from '../shared/modelswitch';
+import * as floorOps from '../shared/floors';
+import type { FloorOp, FloorsDoc } from '../shared/floors';
 
 export type SavedPermMode = 'read-only' | 'ask' | 'allow';
 
@@ -24,6 +26,8 @@ export interface SavedFolder {
   contextTier?: ContextTier;
   /** Per-session credit cap (AIU) for this folder's sessions (spec 011); a plain number. */
   maxAiCredits?: number;
+  /** Floor id (spec 033). Absent = the ground floor; never written for it. */
+  floor?: string;
 }
 
 /**
@@ -62,23 +66,94 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       effort: typeof o.effort === 'string' && EFFORTS.has(o.effort) ? o.effort : undefined,
       contextTier: parseTier(o.contextTier),
       maxAiCredits: parseCap(o.maxAiCredits),
+      floor: typeof o.floor === 'string' && o.floor !== floorOps.GROUND && o.floor.length <= 20 ? o.floor : undefined,
     });
     if (out.length >= MAX_FOLDERS) break;
   }
   return out;
 }
 
+/** The floors part of the file (spec 033): a file without it means one ground floor, on, holding every folder. */
+export function parseSavedFloors(text: string): FloorsDoc {
+  try {
+    const doc = JSON.parse(text) as { floors?: unknown; lastFloor?: unknown } | null;
+    return doc && typeof doc === 'object' ? floorOps.parseFloors(doc.floors, doc.lastFloor) : floorOps.defaultFloors();
+  } catch {
+    return floorOps.defaultFloors();
+  }
+}
+
 export class FolderStore {
   private folders: SavedFolder[] = [];
+  private floorsDoc: FloorsDoc = floorOps.defaultFloors();
   constructor(private readonly file: string) {}
 
   load(): SavedFolder[] {
     try {
-      this.folders = parseSavedFolders(fs.readFileSync(this.file, 'utf8'));
+      const text = fs.readFileSync(this.file, 'utf8');
+      this.folders = parseSavedFolders(text);
+      this.floorsDoc = parseSavedFloors(text);
     } catch {
       this.folders = [];
+      this.floorsDoc = floorOps.defaultFloors();
     }
+    // A folder pointing at a floor that is gone is on the ground floor (FR-014).
+    for (const f of this.folders) if (f.floor && floorOps.floorOf(f.floor, this.floorsDoc) === floorOps.GROUND) f.floor = undefined;
     return this.list();
+  }
+
+  /** A copy of the floors and the default floor for the next added folder. */
+  floors(): FloorsDoc {
+    return { floors: this.floorsDoc.floors.map((f) => ({ ...f })), lastFloor: this.floorsDoc.lastFloor };
+  }
+
+  /** The floor a saved folder is on (ground for unknown folders). */
+  floorOfFolder(workspace: string): string {
+    return floorOps.floorOf(this.get(workspace)?.floor, this.floorsDoc);
+  }
+
+  createFloor(name: unknown): FloorOp {
+    return this.applyFloors(floorOps.createFloor(this.floorsDoc, name));
+  }
+
+  renameFloor(id: unknown, name: unknown): FloorOp {
+    return this.applyFloors(floorOps.renameFloor(this.floorsDoc, id, name));
+  }
+
+  reorderFloors(ids: unknown): FloorOp {
+    return this.applyFloors(floorOps.reorderFloors(this.floorsDoc, ids));
+  }
+
+  /** Deletes the floor and, in the same write, moves its folders back to the ground floor. */
+  deleteFloor(id: unknown): FloorOp {
+    const r = floorOps.deleteFloor(this.floorsDoc, id);
+    if (r.ok) for (const f of this.folders) if (f.floor === id) f.floor = undefined;
+    return this.applyFloors(r);
+  }
+
+  setFloorOn(id: unknown, on: unknown): FloorOp {
+    return this.applyFloors(floorOps.setFloorOn(this.floorsDoc, id, on));
+  }
+
+  onlyFloor(id: unknown): FloorOp {
+    return this.applyFloors(floorOps.onlyFloor(this.floorsDoc, id));
+  }
+
+  /** Moves a saved folder to a floor. Nothing else about the folder changes (FR-005). */
+  moveFolder(workspace: string, floorId: unknown): boolean {
+    const cur = this.get(workspace);
+    if (!cur || typeof floorId !== 'string' || floorOps.floorOf(floorId, this.floorsDoc) !== floorId) return false;
+    cur.floor = floorId === floorOps.GROUND ? undefined : floorId;
+    this.save();
+    return true;
+  }
+
+  private applyFloors(r: FloorOp): FloorOp {
+    if (r.ok) {
+      this.floorsDoc = r.doc;
+      this.save();
+    }
+    return { ...r, doc: this.floors() } as FloorOp;
   }
 
   list(): SavedFolder[] {
@@ -93,7 +168,12 @@ export class FolderStore {
   upsert(entry: Omit<SavedFolder, 'hidden'> & { hidden?: boolean }): void {
     const cur = this.get(entry.workspace);
     if (cur) Object.assign(cur, { permMode: entry.permMode, model: entry.model, effort: entry.effort, contextTier: parseTier(entry.contextTier), maxAiCredits: parseCap(entry.maxAiCredits) });
-    else this.folders.push({ ...entry, permMode: entry.permMode, hidden: entry.hidden === true });
+    else {
+      // A new folder goes to the requested floor (unknown -> ground), which becomes the default for the next one (FR-006).
+      const floor = floorOps.floorOf(entry.floor, this.floorsDoc);
+      this.folders.push({ ...entry, permMode: entry.permMode, hidden: entry.hidden === true, floor: floor === floorOps.GROUND ? undefined : floor });
+      if (entry.floor !== undefined) this.floorsDoc = { ...this.floorsDoc, lastFloor: floor };
+    }
     this.save();
   }
 
@@ -157,7 +237,7 @@ export class FolderStore {
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
       const tmp = `${this.file}.${process.pid}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify({ version: 1, folders: this.folders }, null, 2), { mode: 0o600 });
+      fs.writeFileSync(tmp, JSON.stringify({ version: 1, floors: this.floorsDoc.floors, lastFloor: this.floorsDoc.lastFloor, folders: this.folders }, null, 2), { mode: 0o600 });
       fs.renameSync(tmp, this.file);
     } catch {
       /* read-only profile, disk full, ...: keep working without persistence */
