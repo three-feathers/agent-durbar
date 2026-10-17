@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as path from 'path';
 import { modelControlFor, parseFocus, parseSwitchRequest, parseTier, MAX_FOCUS, NO_MODEL_CONTROL } from '../src/shared/modelswitch';
 
-type M = { id: string; name?: string; multiplier?: number; contextWindow?: number; longWindow?: number; contextTiers?: string[]; priceClass?: string; efforts?: string[]; pricing?: { inputPerMTok?: number; outputPerMTok?: number; cachedPerMTok?: number; long?: { inputPerMTok?: number; outputPerMTok?: number } } };
+type M = { id: string; name?: string; multiplier?: number; contextWindow?: number; longWindow?: number; contextTiers?: string[]; priceClass?: string; efforts?: string[]; pricing?: { inputPerMTok?: number; outputPerMTok?: number; cachedPerMTok?: number; unverified?: boolean; long?: { inputPerMTok?: number; outputPerMTok?: number } } };
 type Conf = { needed: boolean; direction: string; reasons: { code: string; text: string }[]; estimate?: number; headroom?: number; compaction: boolean; overCap: boolean };
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const D = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'modelswitch.js')) as {
@@ -161,5 +161,21 @@ assert.deepStrictEqual(modelControlFor({}), NO_MODEL_CONTROL);
 assert.deepStrictEqual(modelControlFor({ setModel() {}, compact() {} }), { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true });
 assert.deepStrictEqual(modelControlFor({ setModel() {} }, { switch: 'live', contextTier: false }), { switch: 'live', effort: true, contextTier: false, compact: false, windowKnown: true });
 assert.strictEqual(modelControlFor({ compact() {} }).switch, 'none');
+
+// prices whose unit was never checked (the real adapter, until spec 030 Phase 3): shown as such, never compared with the cap, ratios still work
+{
+  const u = (x: M): M => ({ ...x, pricing: { ...x.pricing, unverified: true } });
+  const uf = u(fast), um = u(mid);
+  assert.match(D.priceLine(uf), /credits per M tokens \(unit not verified\)/);
+  assert.doesNotMatch(D.priceLine(fast), /not verified/);
+  assert.strictEqual(D.estimateInputCredits(100000, uf), undefined, 'no credit figure from unverified prices');
+  assert.strictEqual(D.relativePrice(uf, um).direction, 'pricier', 'a ratio is valid in any common unit');
+  const capped = D.confirmFor(um, uf, { tokens: 100000, cap: 50, used: 10 });
+  assert.strictEqual(capped.needed, false, 'cheaper with an unverified price needs no confirmation');
+  const dearer = D.confirmFor(uf, um, { tokens: 100000, cap: 50, used: 10 });
+  assert.ok(dearer.reasons.some((r) => r.code === 'cap-unverified'), 'a costlier switch under a cap says the cap cannot be checked');
+  assert.ok(!dearer.reasons.some((r) => r.code === 'over-headroom'));
+  assert.ok(!D.confirmFor(uf, um, { tokens: 100000 }).reasons.some((r) => r.code === 'cap-unverified'), 'no cap, nothing to check');
+}
 
 console.log('modelswitch tests passed');

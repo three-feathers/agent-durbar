@@ -100,9 +100,36 @@ So the neutral contract is: a switch may be `immediate`, `next-message` or unava
 
 | Unverified | Task (all `needs-owner-approval`) |
 | --- | --- |
-| Which pricing fields a real account returns; the unit scale of `tokenPrices` | T040 (0 credits: `listModels` only) |
+| ~~Which pricing fields a real account returns~~ **checked on this login: none (only `auto`, no billing, no window)**; the unit scale of `tokenPrices` is still unverified because no model reported any | T040 done (0 credits); a login that lists priced models is needed |
 | `model_change` and `usage_info.tokenLimit` after a switch; what the next call costs | T041 |
 | Behaviour of a switch requested during a running turn (queue, cancel, `interrupt`) | T042 |
 | Cost and events of a manual compact; allowed `compactionDecision` values | T043, T045 |
 | Long-context tier: window and price step | T044 |
 | Model after resume when `model` is omitted vs passed | T046 |
+
+## Real results (T040, 2026-10-17, `real:` read-only, 0 credits, no session, no prompt)
+
+Recorded by `scripts/capture-models.ts` into `scripts/fixtures/models/real-list-models-2026-10-17.json` (provenance `real`; no token, login name or host kept). Runtime 1.0.98, SDK 1.0.22, login type `user` (the Copilot login on the box, authenticated).
+
+- `client.listModels()` returned **one model: `auto`**. Its fields: `id`, `name: "Auto"`, `capabilities: {supports: {}, limits: {max_context_window_tokens: 0}}`. The runtime's raw answer is the same (`capabilities` is even empty before the SDK fills in the defaults).
+- **Missing on this login:** `billing` (so no `multiplier`, no `tokenPrices`, no `longContext`), `supportedReasoningEfforts`, `defaultReasoningEffort`, `policy`, `modelPickerPriceCategory`, `supportedContextTiers`, any context window (0 = unknown). So the **unit scale of `tokenPrices` is still unverified** (no model reported any), and so is the long-context tier.
+- `rpc.models.getBuiltInCatalog()` (static, no network) lists 61 well-known model ids (for example `gpt-5-mini`, `gpt-4.1`, `claude-haiku-4.5`, `grok-code-fast-1`, `claude-sonnet-4.6`) with **ids only**: no windows, prices or efforts. It says what the runtime knows by name, not what this account may use.
+- Consequence for the app: with this login the picker shows Auto only ("price not reported", window unknown). Nothing else can be switched to. Whether other models are hidden by the plan, by an organisation policy or by the way `models.list` is called is unknown (`[KNOWN GAP]`).
+- Consequence for Phase 3: T041, T042, T044 and T045 need **two or more listed models**, T044 also one that advertises a long tier. They cannot run on this login as it is.
+
+## Phase 3 plan, for the owner's explicit OK (nothing below has been run)
+
+Blocker first: the login lists only `auto`. Options for Vikram: (1) check which models his plan or organisation policy enables (github.com/settings/copilot) and say whether this login is the account he means; (2) allow one free probe, a session create (no prompt) with a catalog id such as `gpt-5-mini` or `gpt-4.1`, to see if an unlisted model is accepted; (3) run Phase 3 with `auto` only, which covers T043 (compaction) and T046 (resume) but not model switching.
+
+If two cheap models are available (proposal: `gpt-5-mini` and `gpt-4.1`, or the two lowest-priced ones the list reports; premium models are not used), about 9 tiny prompts and 1 compaction, each prompt "Reply with the single word ok." in an empty folder, read-only permissions:
+
+| Task | Prompts | What is recorded |
+| --- | --- | --- |
+| T041 switch A to B | 2 | `model_change`, `usage_info.tokenLimit` after, cost of the first call after the switch |
+| T042 switch during a turn | 1 (a slightly slower tiny prompt) | `deferred` / `queueId`, `queue.removeAt`, what `interrupt()` does to a queued switch |
+| T043 manual compaction | 3 + 1 compaction | events, `tokensRemoved`, credits of the compaction, behaviour mid-turn |
+| T044 long-context tier | 1, only if a listed model advertises it | `contextTier` accepted, window, price step |
+| T045 `confirmation_required` and `compactionDecision` values | 0 (skipped unless a cheap way is found; it needs a filled context) | none |
+| T046 resume after a switch | 2 | the switched model survives, what `model` omitted does |
+
+Estimate: earlier real runs on `auto` cost 0.104 to 0.189 AIU per tiny prompt (4 prompts = 0.416 AIU, 1 prompt = 0.189 AIU); a compaction of a 3-prompt conversation is one more small call. **Expected 1 to 3 AIU in total; proposed hard ceiling 5 AIU** (the driver stops after each prompt if the reported total passes the ceiling, and each session is created with `maxAiCredits: 5`, which is soft until verified). Prices of non-`auto` models are not reported, so the estimate for them is a guess: if the first prompt on a model reports more than 0.5 AIU the run stops.
