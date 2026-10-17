@@ -89,10 +89,11 @@
         }
         return false;
       },
-      /* agent status changed (idle, error, stopped, ...): go back to the desk now */
+      /* the turn ended (idle), failed (error) or was stopped: go back to the desk now. Anything else (working, needs-permission, ...)
+         keeps the visit: an agent waiting for approval of its shell command stays at the Terminal. */
       onStatus(agentId,status){
         if(!v.has(agentId))return false;
-        if(status==='working'||status==='thinking'||status==='waiting')return false;
+        if(status!=='idle'&&status!=='error'&&status!=='stopped')return false;
         const r=v.get(agentId); v.delete(agentId); return r.atSince!==null;
       },
       leave(agentId){const r=v.get(agentId); v.delete(agentId); return !!r&&r.atSince!==null;},

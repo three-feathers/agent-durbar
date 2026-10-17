@@ -133,6 +133,8 @@ v = mk();
 v.onTool('a', start('c1', 'bash')); t += 700; v.tick();
 assert.strictEqual(v.onStatus('a', 'working'), false); assert.ok(v.at('a'));
 assert.strictEqual(v.onStatus('a', 'thinking'), false); assert.ok(v.at('a'));
+assert.strictEqual(v.onStatus('a', 'needs-permission'), false); assert.ok(v.at('a'), 'waiting for approval keeps the agent at its place');
+assert.strictEqual(v.onStatus('a', 'something-new'), false); assert.ok(v.at('a'), 'an unknown status does not end the visit');
 assert.strictEqual(v.onStatus('a', 'idle'), true); assert.strictEqual(v.at('a'), null);
 for (const s of ['error', 'stopped']) {
   v.onTool('a', start('c9', 'bash')); t += 700; v.tick(); assert.ok(v.at('a'));
