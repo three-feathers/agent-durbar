@@ -1465,6 +1465,7 @@ async function chooseModelInner(a,req,anchor){
   if(cf.needed){
     const lines=cf.reasons.map(r=>r.text);
     lines.push('Price now: '+DM.priceLine(cur,tierFrom)+'. New: '+DM.priceLine(tgt,tierTo)+'.');
+    if(cf.estimate!==undefined&&!cf.overCap)lines.push('Reading this conversation once would cost about '+DM.fmtCredits(cf.estimate)+' AI credits with '+tgt.name+' (an estimate, if nothing is cached).');
     if(cap>0)lines.push('Your credit cap of '+fmtCap(cap)+' AI credits is not changed.');
     if(busyNow(a))lines.push('A reply is running: the switch applies when it ends.');
     const r=await askDialog({title:'Switch '+a.name+' to '+tgt.name+(tierTo==='long'?' (long context)':'')+'?',body:'The conversation is kept. From the next message this agent uses the new model.',lines,returnFocus:anchor,

@@ -79,6 +79,26 @@ npm run dist              # installers/archives for this OS in release/ (no sign
 
 Each release also lists `SHA256SUMS.txt`. Releases are built by GitHub Actions from `v*` tags into a **draft** release that the maintainer publishes by hand; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Status (milestone 11: switch model and context inside a session, simulator only)
+
+Spec [030](specs/030-switch-model-context/spec.md) (extends [007](specs/007-models-and-effort/spec.md) and [019](specs/019-mcp-tools-and-context/spec.md)), Phase 1: tasks T010..T024. Built and tested **on the simulator only**. **AI credits spent: 0 AIU; no real Copilot session was started.** The real Copilot adapter is unchanged: its agents show the model chip with a "cannot change in place" reason and offer **New session** (spec 030 Phase 2 adds the real calls).
+
+- **Model menu in the chat header.** The model chip is a menu: models with their credit price per million tokens (or "price not reported"), window size, a reasoning-effort row, a **Long context** toggle only when the model has that tier, and a pending row with **Cancel** when a switch is queued behind a running reply. From the office, right-click a card (or Shift+F10) and choose **Model and context...**.
+- **Confirm or Undo.** A switch to a **pricier** model, to a model whose **price is not reported**, to the **long-context tier**, or that would not fit the **credit cap headroom** asks first (with the price comparison and an estimate, never a promise). A cheaper switch applies directly with an **Undo** toast. The credit cap is never changed.
+- **Context chip.** Shows the tier, says "Window: waiting for next message" right after a switch (the old figure belonged to the old window), and has a **Compact** action (idle agents only; asks first, optional focus text, one model call). Compaction (manual, automatic, before a switch to a smaller window, failed) leaves one quiet line in the chat.
+- **Start fresh.** Near the limit (90% or more, after a compaction already ran or failed, or at once for an agent that cannot compact) a dismissible note offers **New session** in the same folder. It never says "clear": a host app cannot clear a conversation.
+- **The runtime's own changes are shown.** A rate-limit or refusal fallback to another model is a note and a toast, never silent, and is never saved as the folder's choice. The agent stays on "Auto" when you chose Auto.
+- **Saved per folder** in the app's own folder file (`model`, `effort`, `contextTier`), never in Copilot's settings.
+
+Honest limits (`[KNOWN GAP]`): the simulator's prices, windows, queue-on-busy rule and compaction sizes are **made up**; what a real account reports (price fields and their unit, the long-tier window, what Stop does to a queued switch, the compaction decision values) is unverified until the owner-approved real checks (spec 030 T040..T046). The SDK has no free window size and cannot clear a session. See the spec's research file.
+
+![Model menu in the chat header](docs/screenshots/030-menu-1440x900.png)
+![A pricier switch asks first](docs/screenshots/030-confirm-1440x900.png)
+![Undo toast and the context chip waiting for the next message](docs/screenshots/030-undo-waiting-1280x800.png)
+![Start-fresh note near the limit](docs/screenshots/030-start-fresh-1280x800.png)
+
+Tests: `npm test` adds `test:modelswitch` (price comparison, confirmation rules, estimates, start-fresh hint, IPC validation), `test:simmodel` (queued, cancelled, applied, needs-confirmation, fallback, manual and automatic compaction), and additions to `test:events`, `test:folders` and `test:dialog`. `npm run check:model` drives the whole UI in the simulator with real key events (menu, dialogs, Undo, queue, compaction, disabled state, text size) and writes the `030-*` screenshots at 1440x900 and 1280x800 (`scripts/shots-model.js`); `npm run check:office` stays green.
+
 ## Status (milestone 10: Tools "All time", the Copilot CLI MCP list first, MCP extras per folder)
 
 Spec [020](specs/020-tools-all-time-and-mcp-cli-primary/spec.md) (changes spec 019). Built and tested on the simulator and unit tests. **AI credits spent: 0 AIU.**
@@ -376,7 +396,7 @@ An Electron app that:
 - [x] Floor-plan look for the compact densities: desk scenes, room zones, helper mini-desks (milestone 4)
 - [x] Approve for this session (revocable), clean Stop with pending permission, inline permission notes, attachment caps with drag-and-drop/paste, keyed office updates, up to 3 helpers, roomy desks (milestone 5)
 - [ ] Second adapter (Claude Code and Codex): planned, not built. Spec, research, plan and tasks are in [spec 012](specs/012-claude-codex-adapters/spec.md); nothing has been tried on a real account, and subscription-login use needs the owner's decision first
-- [ ] Change the model, effort and context tier of a running session, compact the context, start-fresh hint: planned, not built. Spec, research, plan and tasks are in [spec 030](specs/030-switch-model-context/spec.md). The Copilot SDK 1.0.22 declares a live model switch and a manual compaction, but it has **no free choice of window size** and **cannot clear a conversation from a host app**; all of it was read from types and docs only, nothing was run on a real account. Today a session's model is fixed (start a new session to change it)
+- [ ] Change the model, effort and context tier of a running session, compact the context, start-fresh hint: **Phase 1 is built on the simulator only** (milestone 11 above); the real Copilot adapter does not do it yet (Phase 2, then owner-approved real checks). Spec, research, plan and tasks are in [spec 030](specs/030-switch-model-context/spec.md). The Copilot SDK 1.0.22 declares a live model switch and a manual compaction, but it has **no free choice of window size** and **cannot clear a conversation from a host app**; all of it was read from types and docs only, nothing was run on a real account. Today a session's model is fixed (start a new session to change it)
 - [x] Collaboration harness: team rules in [AGENTS.md](AGENTS.md), issues and a [project board](https://github.com/orgs/three-feathers/projects/1), Spec Kit gate, PR template (spec 021)
 - [ ] Code signing and notarization (spec 014, needs a purchase approved by the maintainer)
 - [x] Packaging with electron-builder (unsigned dmg/zip, nsis/portable, AppImage) and GitHub Actions CI + releases built as drafts, published by hand (alpha.3 is the first published pre-release)
