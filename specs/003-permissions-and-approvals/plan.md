@@ -78,3 +78,8 @@ specs/003-permissions-and-approvals/
 - Checked on the simulator at 1440x900 and 1280x800 (driver kept outside the repo): selector label, chip, menu, hint, confirmation text, no "Allow edits" in the page text, no top-bar overlap; `npm run check:office` 95/95. Not checked: macOS/Windows native select rendering beyond this Mac, a real Copilot session (text only, no behavior change).
 - Screenshots: `docs/screenshots/003-allow-all-topbar-{1440x900,1280x800}.png`, `docs/screenshots/003-allow-all-menu-{1440x900,1280x800}.png`.
 - `/speckit-analyze` (read by hand from `.claude/skills/`, feature dir 003): only terminology drift found (US5 AC1 and code comments/test messages still said "Allow edits"), fixed; CHANGELOG left as released. `/speckit-converge`: converged for FR-028..FR-030, no tasks appended.
+## Delta 2026-10-17: Windows paths in grant scopes (FR-031/FR-032, T025)
+
+- `src/adapters/permissions.ts`: `grantScope(req, flavor = path)` uses `flavor.dirname` for write/read; `PermissionBroker.request` passes `this.opts.pathCheck?.flavor`. No other caller changes (default keeps host behavior).
+- `scripts/test-permissions.ts`: `grantScope` with `path.win32` (drive folder, drive root, UNC, same folder shares a key, subfolder does not) and an explicit `path.posix` check; a broker built with `pathCheck.flavor = path.win32` remembers a Windows folder grant and reuses it for a second file there.
+- Grant keys stay exact strings (case-sensitive), documented as a conservative limit in the spec.
