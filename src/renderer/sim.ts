@@ -241,11 +241,15 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       })) });
     };
 
+    let openSeq = 0;
     function toolStep(s: SimAgent, keepOpen: boolean): void {
       const k = s.tool++;
       const file = s.files[k % s.files.length];
       const id = sid(s) + '-t' + k;
-      const kind = keepOpen ? 2 : k % 7;
+      /* spec 024: the calls agents leave open take turns (bash, github, playwright, my-notes) so the lobby shows several places;
+         the first agent to leave one open keeps the long bash command the chat layout checks rely on */
+      const OPEN_KINDS = [2, 4, 5, 6, 2, 4, 6, 5];
+      const kind = keepOpen ? OPEN_KINDS[openSeq++ % OPEN_KINDS.length] : k % 7;
       const defs: { tool: string; args: Record<string, string>; out: string; mcp?: [string, string] }[] = [
         { tool: 'read_file', args: { path: file }, out: String(80 + Math.floor(rnd() * 800)) + ' lines' },
         { tool: 'grep', args: { pattern: 'registerTool\\(|export (async )?function (find|search|lookup)[A-Z][A-Za-z]+' }, out: '14 matches in 6 files' },
@@ -257,10 +261,14 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       ];
       const d = defs[kind];
       const mcpFields = d.mcp ? { mcpServer: d.mcp[0], mcpTool: d.mcp[1] } : {};
-      if (d.mcp && (s.mcpOff?.has(d.mcp[0]) || (d.mcp[0] === 'playwright' && !serversOf(s).some((m) => m.name === 'playwright')))) return toolStep(s, false);
+      if (d.mcp && (s.mcpOff?.has(d.mcp[0]) || (d.mcp[0] === 'playwright' && !serversOf(s).some((m) => m.name === 'playwright')))) return toolStep(s, keepOpen);
       emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: d.tool, phase: 'start', args: d.args, ...mcpFields });
       if (keepOpen) { s.open = id; return; }
-      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: d.tool, phase: 'complete', output: d.out, ...mcpFields });
+      const complete = (): void => emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: d.tool, phase: 'complete', output: d.out, ...mcpFields });
+      /* spec 024 T010: calls that go to a place (bash, github, playwright, my-notes) take 1.5-4 s (seeded) unless the simulator is frozen,
+         so agents walk there and back; frozen runs keep every call instant except the one each working agent leaves open */
+      if (!opts.freeze && [2, 4, 5, 6].includes(kind)) window.setTimeout(complete, 1500 + Math.floor(rnd() * 2500));
+      else complete();
     }
     function subRun(s: SimAgent, h: number, name: string, task: string, st: 'working' | 'thinking' | 'done' | 'failed'): void {
       const call = sid(s) + '-task' + h, base = { sessionId: sid(s), timestamp: now() };

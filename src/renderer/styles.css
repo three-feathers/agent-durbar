@@ -617,6 +617,24 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .door-svg{width:20px;height:20px;display:block;overflow:visible}
 .door-svg .leaf{transform-origin:4.4px 10px;transition:transform .25s ease}
 .door:hover .door-svg .leaf{transform:scaleX(.82)}
+/* ---- lobby and walking figures (spec 024): one shared band with the places agents go to ---- */
+.lobby{flex:0 0 100%;display:flex;gap:8px;align-items:stretch;min-width:0}
+.place{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:7px;height:36px;box-sizing:border-box;padding:0 10px;border-radius:12px;border:1.5px solid var(--wall);background:rgba(255,255,255,.55);color:var(--ink-2);transition:background .2s,border-color .2s}
+.place.busy{background:#fff;border-color:#b5c8d8}
+.place .pic{flex:none;width:18px;height:18px}
+.place .pn{flex:0 1 auto;min-width:0;font-size:12.5px;font-weight:650;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.place .prow{flex:1 1 auto;display:flex;align-items:center;gap:6px;min-width:0;justify-content:flex-end}
+.place .pslots{display:flex;gap:3px;flex:none}
+.slot{width:22px;height:22px;box-sizing:border-box;border-radius:50%;border:1.5px dashed var(--line-2);display:inline-flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:650;color:var(--muted)}
+.slot.on{border-color:transparent}
+.slot.more{border-style:solid;border-color:var(--line-2);background:rgba(255,255,255,.8);color:var(--ink-2)}
+#walkers{position:absolute;left:0;top:0;width:0;height:0;overflow:visible;pointer-events:none;z-index:6}
+.walker{position:absolute;left:0;top:0;width:22px;height:22px;margin:-11px 0 0 -11px;will-change:transform}
+.walker .wk{display:block;width:100%;height:100%;box-sizing:border-box;border-radius:50%;background:#fffdf8;border:1.5px solid var(--line-2);overflow:hidden;box-shadow:0 1px 3px rgba(40,50,45,.22)}
+.walker.walking .wk{animation:wkbob .3s ease-in-out infinite}
+@keyframes wkbob{0%,100%{transform:translateY(0) rotate(-5deg)}50%{transform:translateY(-3px) rotate(5deg)}}
+.desk.is-away .pp{display:none} /* an agent at a place leaves an empty chair at its desk */
+@media (prefers-reduced-motion:reduce){.walker.walking .wk{animation:none}.walker,.place{transition:none!important}}
 .doors{flex:0 0 100%;display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
 .plate{--tone:#c9c2b2;--tonebg:#f6f2e9;display:flex;align-items:center;gap:9px;min-width:210px;max-width:320px;flex:0 1 auto;min-height:44px;padding:5px 12px 5px 8px;border-radius:14px;border:1.5px solid var(--tone);background:var(--tonebg);cursor:pointer;text-align:left;transition:background .15s,border-color .15s,transform .15s}
 .plate:hover{background:#fff;transform:translateY(-1px)}

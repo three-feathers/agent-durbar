@@ -138,3 +138,8 @@ body.has-bridge #topBtns{display:flex}
 .by-chip.static{cursor:default}
 .linkbtn{background:none;border:0;padding:0;color:#2c4a7c;text-decoration:underline;cursor:pointer;font:inherit}
 .warnc{color:var(--amber-ink)}
+/* Settings > Places in the office (spec 024) */
+.plrows{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.plrow{display:flex;align-items:center;gap:12px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2)}
+.plrow .plname{flex:1 1 auto;min-width:0;font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plrow select{flex:none;height:32px;border:1px solid var(--line);background:#fff;border-radius:10px;padding:0 8px;font:inherit;font-size:12.5px;color:var(--ink);max-width:220px}
