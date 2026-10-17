@@ -1285,42 +1285,38 @@ function openModeMenu(a0,x,y,anchor){
   document.body.appendChild(m);
   const r=m.getBoundingClientRect(); const px=Math.max(8,Math.min(x,innerWidth-r.width-8)), py=Math.max(8,Math.min(y,innerHeight-r.height-8));
   m.style.left=px+'px';m.style.top=py+'px';
-  m.addEventListener('click',e=>{const b=e.target.closest('[data-mode]');if(!b)return;closeModeMenu();changeMode(a,b.dataset.mode);if(anchor&&anchor.focus&&document.contains(anchor))anchor.focus();});
+  m.addEventListener('click',e=>{const b=e.target.closest('[data-mode]');if(!b)return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
   m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('[data-mode]')],i=it.indexOf(document.activeElement);
     if(e.key==='ArrowDown'){e.preventDefault();it[(i+1)%it.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();it[(i+it.length-1)%it.length].focus();}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&anchor.focus&&document.contains(anchor))anchor.focus();}});
   (m.querySelector('[aria-checked="true"]')||m.querySelector('button')).focus();
   const c=$('modeChip');if(c&&anchor===c)c.setAttribute('aria-expanded','true');
 }
-/* small modal: returns {value, checked} or null when dismissed */
-function askDialog({title,body,buttons,check}){
-  return new Promise(resolve=>{
-    const old=document.getElementById('modeDlg');if(old)old.remove();
-    const d=document.createElement('div');d.id='modeDlg';d.className='dlg-ov';
-    d.innerHTML=`<div class="dlg" role="alertdialog" aria-modal="true" aria-labelledby="mdT" aria-describedby="mdB"><h3 id="mdT"></h3><p class="dsub" id="mdB"></p>${check?'<label class="chk"><input type="checkbox" id="mdChk"><span></span></label>':''}<div class="dbtn"></div></div>`;
-    d.querySelector('#mdT').textContent=title;d.querySelector('#mdB').textContent=body;
-    if(check){d.querySelector('.chk span').textContent=check.label;d.querySelector('#mdChk').checked=!!check.checked;}
-    const row=d.querySelector('.dbtn');
-    const done=v=>{d.remove();resolve(v);};
-    buttons.forEach(b=>{const el=document.createElement('button');el.type='button';el.className='btn'+(b.cls?' '+b.cls:'');el.textContent=b.label;el.onclick=()=>done(b.value===null?null:{value:b.value,checked:check?d.querySelector('#mdChk').checked:false});row.appendChild(el);});
-    d.addEventListener('click',e=>{if(e.target===d)done(null);});
-    d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();done(null);}});
-    document.body.appendChild(d);
-    (row.querySelector('.primary')||row.lastElementChild).focus();
-  });
+/* small modal: returns {value, checked} or null when dismissed. Focus trap, Escape and focus return live in dialog.js (spec 003 FR-033). */
+const askDialog=DurbarDialog(document);
+/* after a mode change the chip is re-rendered; put focus back on it (or the card it was opened from) unless the user moved it on */
+function refocusAnchor(anchor){
+  const ae=document.activeElement;if(ae&&ae!==document.body&&document.contains(ae))return;
+  let t=anchor&&document.contains(anchor)?anchor:null;
+  if(!t&&anchor&&anchor.id==='modeChip')t=$('modeChip');
+  if(!t&&anchor&&anchor.dataset&&anchor.dataset.id)t=document.querySelector('#stage [data-id="'+anchor.dataset.id+'"]');
+  if(t&&t.focus)t.focus();
 }
-async function changeMode(a,mode){
+async function changeMode(a,mode,anchor){
+  try{await changeModeInner(a,mode,anchor);}finally{refocusAnchor(anchor);}
+}
+async function changeModeInner(a,mode,anchor){
   const cur=a.info.permMode; if(mode===cur||!bridge.setPermMode)return;
   const pend=a.pend?a.pend.size:0, grants=(a.grants||[]).length;
   const opts={};
   if(mode==='allow'){
     const r=await askDialog({title:'Allow all for '+a.name+'?',body:'Edits, shell commands, web requests and tools will run without asking, in '+roomOf(a).path+'. Nothing is undone automatically; you can switch back at any time.',
-      check:pend?{label:'Also approve the '+pend+' request'+(pend>1?'s':'')+' waiting now',checked:true}:null,
+      check:pend?{label:'Also approve the '+pend+' request'+(pend>1?'s':'')+' waiting now',checked:true}:null,returnFocus:anchor,
       buttons:[{label:'Cancel',value:null},{label:'Allow all',value:'ok',cls:'primary warn'}]});
     if(!r)return; opts.approvePending=!!r.checked;
   } else if(grants){
     const r=await askDialog({title:'Switch '+a.name+' to '+MODE_NAME[mode]+'?',body:'This session has '+grants+' remembered "Approve for this session" permission'+(grants>1?'s':'')+'. Keep them for when you switch back, or clear them now?',
-      buttons:[{label:'Cancel',value:null},{label:'Switch, keep them',value:'keep'},{label:'Switch and clear them',value:'clear',cls:'primary'}]});
+      returnFocus:anchor,buttons:[{label:'Cancel',value:null},{label:'Switch, keep them',value:'keep'},{label:'Switch and clear them',value:'clear',cls:'primary'}]});
     if(!r)return; opts.clearGrants=r.value==='clear';
   }
   const res=await bridge.setPermMode(a.id,mode,opts).catch(e=>({ok:false,error:String(e&&e.message||e)}));

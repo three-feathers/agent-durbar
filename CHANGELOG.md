@@ -4,7 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.3 tag)
 
-Nothing yet.
+- **Keyboard focus in the Allow all confirmation (spec 003 FR-033, issue #25).** Focus used to jump back to the mode chip behind the dialog, so Escape did nothing and Tab left the dialog. Now focus stays inside it, Tab is trapped, Escape cancels (mode unchanged) and focus returns to the chip. *Allow all* still needs an explicit confirm. Tests: `npm run test:dialog` (in `npm test`) and `npm run check:dialog-focus` (simulator, real key events).
 
 ## v0.1.0-alpha.3 (draft pre-release, 2026-10-17)
 
