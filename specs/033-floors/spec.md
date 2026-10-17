@@ -145,6 +145,7 @@ When more than one floor is on, I can tell at a glance which floor each room bel
 - **FR-020**: With the shared lobby of spec 024, there MUST be one lobby for all floors that are on, and agents of a floor that is off MUST NOT appear in it (no figure, no walk, no name in a place's label).
 - **FR-021**: The per-folder Hide of spec 006 MUST keep working unchanged. In the Floors panel, each folder that is hidden MUST be marked as hidden (with a word, not colour only), so a user can tell a hidden folder from a floor that is off.
 - **FR-022**: Each floor in the Floors panel MUST have an **Only** action that, in one step, switches that floor on and every other floor off. It follows the same rules as switching floors off one by one (FR-008 to FR-010: nothing is paused or ended).
+- **FR-023**: The Settings screen MUST have a **Floors** section with the same controls and rules as the Floors panel (On/Off, Only, Rename, Up/Down, Delete, Move to, *hidden* tag, New floor, New folders go to). A change made in one place MUST show in the other at once. The top-bar Floors button and panel stay.
 
 ### Key Entities
 
@@ -175,6 +176,10 @@ When more than one floor is on, I can tell at a glance which floor each room bel
 - The Tools view, the Settings screen and MCP settings are not filtered by floor in this feature.
 - Floors apply to every adapter the same way (they belong to the office, not to Copilot), so a future Claude Code or Codex adapter (spec 012) needs nothing extra.
 - Verification is on the simulator and with unit tests only; no real Copilot session is needed or planned for this feature.
+
+## Changes
+
+- **2026-10-17, owner request (fjcabello): floors in Settings too.** Trying the built feature, the owner asked to switch floors on and off from **Settings** as well. Decision (option A of two): **add** a *Floors* section to Settings with the same controls as the Floors panel; the top-bar button stays for quick access (option B, moving everything to Settings, was rejected: switching is frequent). New requirement **FR-023**. No other requirement changes.
 
 ## Verification (2026-10-17, simulator and unit tests; no real Copilot session)
 

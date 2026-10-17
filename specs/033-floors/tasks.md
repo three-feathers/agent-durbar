@@ -90,3 +90,9 @@
 - [x] T027 Record in research.md R9/R10 that the simulator keeps its own copy of the floor rules (a plain renderer script cannot import `src/shared/floors.ts`) instead of importing the shared module per plan: R9/R10 simulator decision (partial)
 - [x] T028 Add a spec 010 cross-reference: the simulator's `+ Folder` now registers the new folder as a simulated agent (needed for its floor, Move and the floors state) per FR-017 (unrequested)
 - [x] T029 Cover the new `askDialog` input options (`value` prefilled, `focus` starts in the field) in `scripts/test-dialog.ts` per Constitution VII.3 (unrequested)
+
+## Phase 9: Change 2026-10-17 (floors in Settings, FR-023)
+
+- [ ] T030 Settings section *Floors* in `src/renderer/screens.js` rendered by `src/renderer/app.js` from the same markup and handlers as the Floors panel (scoped per container, no duplicate ids); a change in either place re-renders both [FR-023]
+- [ ] T031 Check in `scripts/shots-033.js`: switching a floor in Settings updates the office, the pills and the top-bar button, and the panel shows the same state; screenshot `033-settings-floors` at both sizes; README status line [FR-023]
+
