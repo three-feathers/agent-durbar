@@ -305,7 +305,7 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
     /** Like the real broker: auto-approve under a session grant, otherwise leave the request pending. */
     function askWrite(s: SimAgent, file: string, summary: string, cont: 'tool' | 'edit', intent: string, force = false): boolean | 'denied' {
       const sc = scopeOf(file);
-      if (!force && s.info.permMode === 'allow') return true; // Allow edits: no question asked
+      if (!force && s.info.permMode === 'allow') return true; // Allow all: no question asked
       if (!force && s.info.permMode === 'read-only') {
         emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { requestId: 'perm-' + sid(s) + '-' + now(), kind: 'write', summary, state: 'denied' } });
         return 'denied';

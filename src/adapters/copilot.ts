@@ -258,7 +258,7 @@ export class CopilotAdapter implements AgentAdapter {
 
   /**
    * Change the permission mode of a live session without restarting it: the broker reads the mode on every request.
-   * Optionally clears the session grants, approves what is pending now (Allow edits) or denies it (Read-only).
+   * Optionally clears the session grants, approves what is pending now (Allow all) or denies it (Read-only).
    */
   setPermMode(sessionId: string, mode: 'read-only' | 'ask' | 'allow', opts: { clearGrants?: boolean; approvePending?: boolean } = {}): { pending: number } {
     const live = this.sessions.get(sessionId);

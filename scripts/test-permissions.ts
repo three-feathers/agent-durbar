@@ -203,7 +203,7 @@ async function main(): Promise<void> {
   assert.strictEqual((await r.b.request({ kind: 'read', path: '/etc/os-release', toolCallId: 'r6' })).kind, 'approve-once', 'folder grant covers siblings');
   assert.strictEqual((await r.b.request({ kind: 'read', path: path.join(root, 'ok.ts'), toolCallId: 'r7' })).kind, 'approve-once', 'inside reads never ask');
   r = mkRoots('allow');
-  assert.strictEqual((await r.b.request({ kind: 'read', path: '/etc/passwd', toolCallId: 'r8' })).kind, 'approve-once', 'Allow edits approves everything');
+  assert.strictEqual((await r.b.request({ kind: 'read', path: '/etc/passwd', toolCallId: 'r8' })).kind, 'approve-once', 'Allow all approves everything');
   console.log('permissions: all checks passed');
 }
 main().catch((e) => {
