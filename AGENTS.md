@@ -20,7 +20,7 @@ CI (`.github/workflows/spec-kit.yml`) fails a pull request that changes `src/` w
 ## Where things are
 
 - `.specify/memory/constitution.md`: the rules (I-VIII). Read it first. Principles I and III are non-negotiable.
-- `specs/README.md`: index; `specs/001..010` describe what is built, `011` is partly built (caps and usage totals), `012..014` are backlog drafts, `015..021` and `023` are built. Check the index for the next free number. Evidence tags: `[IMPLEMENTED]`, `[KNOWN GAP]`, `test:`, `sim:`, `real:`, `read:`.
+- `specs/README.md`: index; `specs/001..010` describe what is built, `011` is partly built (caps and usage totals), `012..014` are backlog drafts, `015..021`, `023` and `026` are built. Check the index for the next free number. Evidence tags: `[IMPLEMENTED]`, `[KNOWN GAP]`, `test:`, `sim:`, `real:`, `read:`.
 - `src/main`, `src/preload`, `src/renderer` (plain HTML/CSS/JS), `src/adapters`, `src/shared`; tests in `scripts/test-*.ts`.
 
 ## Non-negotiables (details in the constitution)

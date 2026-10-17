@@ -2,7 +2,7 @@
 
 Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.
 
-> Status: **alpha, `v0.1.0-alpha.2` (draft pre-release, unsigned, not notarized); `main` is a little ahead of it (see [CHANGELOG.md](CHANGELOG.md), "Unreleased").** The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. Latest work: [milestone 10 and usage totals](#status-milestone-10-tools-all-time-the-copilot-cli-mcp-list-first-mcp-extras-per-folder). Only Linux has been run by hand; macOS and Windows are built and unit-tested in CI but untested on real hardware. Built by [Three Feathers](https://github.com/three-feathers); the work is tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
+> Status: **alpha, `v0.1.0-alpha.3` (draft pre-release, unsigned, not notarized).** `main` has nothing newer yet (see [CHANGELOG.md](CHANGELOG.md), "Unreleased"). The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. Latest work: [milestone 10 and usage totals](#status-milestone-10-tools-all-time-the-copilot-cli-mcp-list-first-mcp-extras-per-folder). Only Linux has been run by hand; macOS and Windows are built and unit-tested in CI but untested on real hardware. Built by [Three Feathers](https://github.com/three-feathers); the work is tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
 
 ![15 simulated agents at 1440x900 (roomy desks use the spare floor space)](docs/screenshots/m5-sim15-1440x900-closed.png)
 ![Full-screen chat with every other agent in a slim strip, 15 agents at 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
@@ -17,7 +17,7 @@ Command center to see, chat with and coordinate coding agents (Copilot CLI first
 
 ## Install from releases
 
-Download the build for your system from the [Releases page](https://github.com/three-feathers/agent-durbar/releases) (pre-releases are alpha builds). **Release status:** `v0.1.0-alpha.2` is a **draft pre-release** and is not published yet; the maintainer publishes by hand, so until then the page may show no public download and you can build from source (below). It is **unsigned**. `v0.1.0-alpha.1` was never published.
+Download the build for your system from the [Releases page](https://github.com/three-feathers/agent-durbar/releases) (pre-releases are alpha builds). **Release status:** `v0.1.0-alpha.3` is a **draft pre-release** and is not published yet; the maintainer publishes by hand, so until then the page may show no public download and you can build from source (below). It is **unsigned**. `v0.1.0-alpha.1` was never published, and `v0.1.0-alpha.2` is a draft that alpha.3 supersedes.
 
 | System | File |
 | --- | --- |
@@ -28,26 +28,29 @@ Download the build for your system from the [Releases page](https://github.com/t
 
 There is no auto-update: download a newer release to update.
 
-### What's new in v0.1.0-alpha.2
+### What's new in v0.1.0-alpha.3
 
-Full list in [CHANGELOG.md](CHANGELOG.md). Short version, since alpha.1:
-
-- **MCP:** the Copilot CLI's server list is global and read live; Agent Durbar's own extras are per folder.
-- **Tools:** *This session* and *All time* usage (all-time counts are kept on disk, names and counts only).
-- **Credit caps** per session (soft cap, runtime minimum 30 AI credits).
-- **Permissions:** change an agent's mode any time; the saved mode (Allow all too) is restored exactly after a restart; reads outside the folder are asked or denied.
-- **About:** Three Feathers as owner, with credits.
-- **New app id `io.github.three-feathers.agentdurbar`.** An earlier test install (`io.github.vikramgorla.agentdurbar`) is a **separate app** and keeps its own settings; installing alpha.2 does not replace or migrate it.
-- **Still unsigned and not notarized** (steps below). **Untested on real macOS and Windows hardware**: CI builds and unit-tests them, only Linux has been run by hand.
-
-### On `main`, not in alpha.2 yet
+Full list in [CHANGELOG.md](CHANGELOG.md). Short version, since alpha.2:
 
 - **The permission mode is called *Allow all*** (was *Allow edits*; it always approved everything). Names are **Read-only / Ask first / Allow all** (spec 003, PR #15). Builds of alpha.2 still say *Allow edits*.
 - **Usage totals:** the office header shows the total AI credits (AIU) of all agents since the app opened, and each room header and closed door plate shows that folder's total. In memory only, not saved across restarts; "credits not reported" is shown when the runtime sends no figure (spec 011, PR #17).
 - Windows paths in "Approve for this session" scopes are unit-tested (spec 003, PR #16); a known gap remains for case and `/` vs `\` in grant keys.
+- Docs catch-up and a "Keep docs in sync" rule (spec 025).
+- **Still unsigned and not notarized** (steps below). **Untested on real macOS and Windows hardware**: CI builds and unit-tests them, only Linux has been run by hand.
 
 ![Permission modes: Read-only / Ask first / Allow all](docs/screenshots/003-allow-all-menu-1280x800.png)
 ![Office total and per-folder AIU totals](docs/screenshots/011-usage-totals-1280x800.png)
+
+### What was new in v0.1.0-alpha.2
+
+Since alpha.1:
+
+- **MCP:** the Copilot CLI's server list is global and read live; Agent Durbar's own extras are per folder.
+- **Tools:** *This session* and *All time* usage (all-time counts are kept on disk, names and counts only).
+- **Credit caps** per session (soft cap, runtime minimum 30 AI credits).
+- **Permissions:** change an agent's mode any time; the saved mode is restored exactly after a restart; reads outside the folder are asked or denied.
+- **About:** Three Feathers as owner, with credits.
+- **New app id `io.github.three-feathers.agentdurbar`.** An earlier test install (`io.github.vikramgorla.agentdurbar`) is a **separate app** and keeps its own settings; installing alpha.2 or alpha.3 does not replace or migrate it.
 
 ### These builds are not code-signed
 
