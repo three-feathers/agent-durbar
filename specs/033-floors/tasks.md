@@ -29,7 +29,7 @@
 **Goal**: create floors, put folders in them, choose the floor when adding, survive restart.
 **Independent test**: simulator with `DURBAR_SIM_FLOORS=1`: create a floor, move folders, see them under it; restart persistence via T005.
 
-- [ ] T011 [US1] Top-bar **Floors n/m** button and `#floorsPop` panel in `src/renderer/index.html` and `src/renderer/app.js`, same popover behaviour as `#foldersPop` (focus in, Esc closes, click outside closes): one row per floor in order with its folders listed below; "New floor" input + Create showing the error text from the bridge [FR-003, FR-007, FR-018]
+- [ ] T011 [US1] Top-bar **Floors n/m** button and `#floorsPop` panel in `src/renderer/index.html` and `src/renderer/app.js`, same popover behaviour as `#foldersPop` (focus in, Esc closes, click outside closes): one row per floor in order with its folders listed below; "New floor" input + Create showing the error text from the bridge; floor and folder names escaped, long names shortened with an ellipsis and the full name in `title` [FR-003, FR-007, FR-018]
 - [ ] T012 [US1] Move folder: per-folder "Move to" select in the panel calling `moveFolderToFloor(agentId, floorId)`; state replaced by the returned `FloorsState`; office re-renders with the room under its new floor and nothing else about its agents changing [FR-005]
 - [ ] T013 [US1] Add into a floor: "into: <floor>" select next to `+ Folder`/`+ Workspace`, shown only when more than one floor exists, default `lastFloor`; value sent as `opts.floor` in `addVia` [FR-006]
 - [ ] T014 [P] [US1] Styles in `src/renderer/styles.css`: panel rows, folder rows, Move select, error line; text ≥10.5px [FR-018]
@@ -65,7 +65,7 @@
 - [ ] T023 `scripts/check-office-overlap.js`: cases with `simfloors=1` (3 floors on, 2 on, 1 off) at 1440x900 and 1280x800, incl. doors closed; top bar has no overlap with the Floors button and the "into" select at 1280x800 [SC-005, FR-007]
 - [ ] T024 `scripts/shots-033.js` simulator driver: SC-002 (pills equal visible agents after each switch), no lobby figure of an off floor, Only, chat closes, all-off message, SC-003 timing (< 0.5 s per switch with 15 agents), screenshots `docs/screenshots/033-floors-*` at 1440x900 and 1280x800 (two floors on with labels; one floor off; the Floors panel) [SC-002, SC-003, FR-020]
 - [ ] T025 Docs (spec 025 rule): README feature list and status, known limits (agents on off floors keep running and spending, no alerts, the credit total is the only sign; downgrade drops floors; Tools view not filtered); CHANGELOG *Unreleased* line; `specs/README.md` row; spec 033 status and `[IMPLEMENTED]`/`[KNOWN GAP]` tags; cross-reference notes in specs 006 (Hide stays), 017 (plates show the floor tag), 024 (lobby ignores off floors), 011 (office total tooltip) [VIII]
-- [ ] T026 `npm run typecheck && npm run build && npm test` and `npm run check:office` pass; `/speckit-analyze` and `/speckit-converge`; PR from the template with what was not verified (no real session; Windows/macOS layout only via CI unit tests)
+- [ ] T026 `npm run typecheck && npm run build && npm test` and `npm run check:office` pass; CI runs `npm test` on Windows, macOS and Linux [FR-019]; `/speckit-analyze` and `/speckit-converge`; PR from the template with what was not verified (no real session; Windows/macOS layout only via CI unit tests)
 
 ## Dependencies
 
