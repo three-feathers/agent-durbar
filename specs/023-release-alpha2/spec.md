@@ -3,6 +3,7 @@
 **Feature Branch**: `023-release-alpha2`
 **Created**: 2026-10-16
 **Status**: Built in this feature. Release engineering only: a version bump, a changelog and README download notes. No behavior change (the only `src/` edit is the simulator's displayed version string).
+**Update 2026-10-17**: alpha.2 was never published. Its draft release was deleted in favour of `v0.1.0-alpha.3` ([spec 026](../026-release-alpha3/spec.md)); the git tag remains.
 **Input**: Vikram approved cutting `v0.1.0-alpha.2` as a **draft pre-release** (2026-10-16). It is **not published**: publishing needs his explicit yes (AGENTS.md "Needs approval", spec 008 FR-008).
 
 ## Requirements
