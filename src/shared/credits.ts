@@ -3,6 +3,8 @@
  * carries a tiny copy of `fmtAiu`; main re-validates every number it receives with `parseCap`.
  * Numbers only: nothing here touches content, tokens or secrets.
  */
+import { parsePlaceMap } from './places';
+import type { PlaceMap } from './places';
 
 /** Upper bound for a cap (AI credits). Anything above is refused as a typo. */
 export const MAX_CAP = 1_000_000;
@@ -30,17 +32,21 @@ export function parseAmount(v: unknown): number | undefined {
   return r > 0 ? r : undefined;
 }
 
-/** Settings file content (`durbar-settings.json`): only the global default cap (AI credits) for new sessions. */
+/** Settings file content (`durbar-settings.json`): the global default cap (AI credits) for new sessions and the place mapping (spec 024). */
 export interface AppSettings {
   defaultMaxAiCredits?: number;
+  /** MCP server name -> place (spec 024 FR-007). Omitted when empty. */
+  placeMap?: PlaceMap;
 }
 
 /** Tolerant parse: a missing, corrupt or odd file means no settings. */
 export function parseSettings(text: string): AppSettings {
   try {
-    const doc = JSON.parse(text) as { defaultMaxAiCredits?: unknown } | null;
-    const cap = parseCap(doc && typeof doc === 'object' ? doc.defaultMaxAiCredits : undefined);
-    return cap === undefined ? {} : { defaultMaxAiCredits: cap };
+    const doc = JSON.parse(text) as { defaultMaxAiCredits?: unknown; placeMap?: unknown } | null;
+    const obj = doc && typeof doc === 'object' && !Array.isArray(doc) ? doc : {};
+    const cap = parseCap((obj as { defaultMaxAiCredits?: unknown }).defaultMaxAiCredits);
+    const places = parsePlaceMap((obj as { placeMap?: unknown }).placeMap);
+    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}) };
   } catch {
     return {};
   }

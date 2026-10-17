@@ -17,3 +17,9 @@
 - **FR-001** Pure `roomSummary(agents)` in `src/renderer/roomsummary.js` (UMD) with unit tests (`scripts/test-rooms.ts`).
 - **FR-002** `closed` is stored per folder key in `durbar-folders.json` (tolerant parse); API `setRoomClosed(id, closed)`.
 - **LIMIT** Filtering by status pill hides door plates of rooms without matches like open rooms; the list view ignores doors.
+
+## Changes
+
+### 2026-10-17: lobby from spec 024 (cross-reference)
+
+A closed room keeps its agents in the lobby of spec [024](../024-office-places/spec.md) until their call ends; they then disappear into the door plate (no walk to a plate). With every room closed the lobby sits above the door plates.

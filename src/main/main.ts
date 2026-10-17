@@ -379,7 +379,8 @@ ipcMain.handle('usage:reset', () => {
   usageStore?.reset();
   return { ok: true, doc: usageStore?.view() };
 });
-ipcMain.handle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits, about: aboutView(app.getVersion()) }));
+ipcMain.handle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits, placeMap: settingsStore?.placeMap ?? {}, about: aboutView(app.getVersion()) }));
+ipcMain.handle('settings:setPlace', (_e, server: unknown, place: unknown) => settingsStore?.setPlace(server, place) ?? { ok: false });
 ipcMain.handle('settings:setDefaultCap', (_e, credits: unknown) => ({ ok: true, defaultMaxAiCredits: settingsStore?.setDefaultMaxAiCredits(credits) }));
 
 ipcMain.handle('agents:setCap', async (_e, id: unknown, credits: unknown) => {

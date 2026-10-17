@@ -6,6 +6,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { parseCap, parseSettings } from '../shared/credits';
 import type { AppSettings } from '../shared/credits';
+import { setPlaceEntry } from '../shared/places';
+import type { PlaceMap } from '../shared/places';
 
 export class SettingsStore {
   private s: AppSettings = {};
@@ -27,9 +29,30 @@ export class SettingsStore {
   /** `undefined`/invalid clears the default. Returns the stored value. */
   setDefaultMaxAiCredits(v: unknown): number | undefined {
     const cap = parseCap(v);
-    this.s = cap === undefined ? {} : { defaultMaxAiCredits: cap };
+    const next: AppSettings = { ...this.s };
+    if (cap === undefined) delete next.defaultMaxAiCredits;
+    else next.defaultMaxAiCredits = cap;
+    this.s = next;
     this.save();
     return cap;
+  }
+
+  /** Place mapping (spec 024): MCP server name -> place id or `desk`. A copy, never the stored object. */
+  get placeMap(): PlaceMap {
+    return { ...(this.s.placeMap ?? {}) };
+  }
+
+  /** Set one entry, or clear it with `null`. Invalid input changes nothing. Returns `ok` and the resulting map. */
+  setPlace(server: unknown, choice: unknown): { ok: boolean; placeMap: PlaceMap } {
+    const r = setPlaceEntry(this.s.placeMap ?? {}, server, choice);
+    if (r.ok) {
+      const next: AppSettings = { ...this.s };
+      if (Object.keys(r.map).length) next.placeMap = r.map;
+      else delete next.placeMap;
+      this.s = next;
+      this.save();
+    }
+    return { ok: r.ok, placeMap: { ...(this.s.placeMap ?? {}) } };
   }
 
   private save(): void {

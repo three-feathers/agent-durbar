@@ -12,7 +12,9 @@
  *   - a box sticking out of its room / door row / floor (clipped by the floor's overflow:hidden),
  *   - a unit that does not contain its own desk and helpers,
  *   - a helper strip with a background, border or a height that is not its content's (the 2026-10-16 `.strip` collision),
- *   - the floor scrolling or the page overflowing (stage data-fit must be ok), text below 10.5px.
+ *   - the floor scrolling or the page overflowing (stage data-fit must be ok), text below 10.5px,
+ *   - the lobby (spec 024): missing, sticking out of the floor, overlapping a room or the door plates, not holding its 5 places, a place or slot
+ *     sticking out of its tile, a walking figure that is not standing on a slot once the walks have settled, or more figures than empty chairs.
  * An expanded `+N more` is allowed to scroll the floor (the spec says it expands in place) but must still not overlap.
  */
 'use strict';
@@ -37,7 +39,7 @@ function pageCheck(expanded) {
     return (e.className && typeof e.className === 'string' ? e.className.split(' ').slice(0, 2).join('.') : e.tagName) + (id ? '[' + id + ']' : pid ? '{' + pid + '}' : '');
   };
   const problems = [];
-  const items = [...stage.querySelectorAll('.desk, .helper, .more, .helpers, .plate')].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
+  const items = [...stage.querySelectorAll('.desk, .helper, .more, .helpers, .plate, .place')].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
   for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
     const a = items[i], b = items[j];
     if (a.contains(b) || b.contains(a)) continue; /* a strip contains its tiles */
@@ -60,6 +62,29 @@ function pageCheck(expanded) {
   });
   stage.querySelectorAll('.doors').forEach((d) => { inside(d, { x: fx0, y: -1e9, r: fx1, b: expanded ? 1e9 : fy1 }, 'the floor'); d.querySelectorAll('.plate').forEach((e) => inside(e, R(d), 'the door row')); });
   stage.querySelectorAll('.unit').forEach((u) => u.querySelectorAll('.desk, .helper, .more, .helpers').forEach((e) => inside(e, R(u), 'its unit ' + u.dataset.key)));
+  /* lobby (spec 024 FR-004, FR-009) */
+  const lobby = stage.querySelector('.lobby');
+  if (!lobby) problems.push('no lobby in the office');
+  else {
+    const L = R(lobby);
+    inside(lobby, { x: fx0, y: -1e9, r: fx1, b: expanded ? 1e9 : fy1 }, 'the floor');
+    stage.querySelectorAll('.room, .doors').forEach((e) => {
+      const p = R(e), ox = Math.min(p.r, L.r) - Math.max(p.x, L.x), oy = Math.min(p.b, L.b) - Math.max(p.y, L.y);
+      if (ox > T && oy > T) problems.push(`lobby overlaps ${name(e)} by ${ox.toFixed(1)}x${oy.toFixed(1)}px`);
+    });
+    const places = [...lobby.querySelectorAll('.place')];
+    if (places.length !== 5) problems.push(`lobby has ${places.length} places, not 5`);
+    places.forEach((pl) => { inside(pl, L, 'the lobby'); pl.querySelectorAll('.pic, .pn, .prow, .slot').forEach((e) => inside(e, R(pl), 'its place ' + pl.dataset.place)); });
+    const slots = [...lobby.querySelectorAll('.slot.on')].map(R);
+    const walkers = [...document.querySelectorAll('#walkers .walker')];
+    walkers.forEach((w) => {
+      const b = R(w), cx = (b.x + b.r) / 2, cy = (b.y + b.b) / 2;
+      if (!slots.some((q) => Math.abs((q.x + q.r) / 2 - cx) < 4 && Math.abs((q.y + q.b) / 2 - cy) < 4)) problems.push(`a walking figure is not on a slot (${cx.toFixed(0)},${cy.toFixed(0)})`);
+    });
+    /* an empty chair means its agent is at a place (a visitor listed in a tile); a closed room keeps its visitors in the lobby on purpose */
+    const who = places.map((pl) => pl.getAttribute('aria-label')).join(', ');
+    document.querySelectorAll('#stage .desk.is-away').forEach((d) => { const n = d.querySelector('.name'); if (n && !who.includes(n.textContent.trim())) problems.push(`empty chair of ${n.textContent.trim()} but nobody of that name is at a place`); });
+  }
   stage.querySelectorAll('.helpers').forEach((s) => {
     if (!s.classList.contains('hstrip')) return;
     const st = getComputedStyle(s), sr = R(s);
@@ -104,6 +129,8 @@ async function driver(ctx) {
     await ctx.win.loadFile(INDEX, { query: Object.fromEntries(new URLSearchParams(query)) });
     await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
     await sleep(500);
+    /* spec 024: agents go to the lobby after 600 ms and the walk takes about 1 s: wait until somebody is there and nobody is walking */
+    try { await ctx.waitFor(`!!document.querySelector('.place.busy')`, 4000); await ctx.waitFor(`!document.querySelector('.walker.walking')`, 4000); await sleep(150); } catch (e) { /* nobody visits in this layout: the checks below still run */ }
   };
   const run = async (label, query, w, h, shot) => {
     await load(query, w, h);

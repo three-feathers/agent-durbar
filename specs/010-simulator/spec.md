@@ -91,3 +91,7 @@ Developers capture screenshots at fixed sizes and drive the real window with scr
 - **FR-019** One module, `src/main/devhooks.ts` (pure, no Electron import), decides: `devEnv(env, isPackaged)` returns the variables the app may read. Main-process code reads hooks only from that object (never `process.env.DURBAR_*` directly). A packaged app started with `DURBAR_DEV=1` writes one line to stderr saying that developer hooks are active.
 - **FR-020** Test: `npm run test:devhooks` (in `npm test`) checks the matrix (packaged/unpackaged x `DURBAR_DEV` unset/`1`/`true`/`0`) and scans `src/main` and `src/adapters` so that no file except `devhooks.ts` reads `process.env.DURBAR_*`. `[KNOWN GAP]` The simulator in a **plain browser** (`?sim=15` on `dist/renderer/index.html`) is not an Electron hook and stays available; it has no Node or bridge access.
 - **Documented**: README "Developer hooks" and CONTRIBUTING say that packaged builds ignore the hooks, and how to turn them on (`DURBAR_DEV=1`) for debugging a release build. This is a developer switch, not a user feature.
+
+### 2026-10-17: spec 024 simulator changes (cross-reference)
+
+For spec [024](../024-office-places/spec.md): `bash`, `github`, `playwright` and `my-notes` calls take 1.5-4 s (seeded) unless the simulator is frozen, and the calls agents leave open take turns between those four. A simulator-only test hook `window.__durbarSimEmit(event)` lets a driver send one normalized event (used by `scripts/shots-024.js`); it exists only in simulator mode, which packaged builds do not start without `DURBAR_DEV=1`.
