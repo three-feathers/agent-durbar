@@ -74,8 +74,8 @@ export interface McpTrustInfo {
 }
 
 export const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,47}$/;
-const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
-const HEADER_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+export const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+export const HEADER_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 export const MAX_SERVERS = 100;
 const MAX_ARGS = 64;
 const MAX_SECRETS = 64;

@@ -488,6 +488,36 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
         return { ok: true, server: fakeView(v) };
       },
       mcpRemoveLegacy: async (name) => { const i = fakeLegacy.findIndex((x) => x.name === name); if (i >= 0) fakeLegacy.splice(i, 1); return { ok: i >= 0 }; },
+      // Per-folder import from .vscode/mcp.json (spec 020 FR-020): a fixed, realistic fake file for mcp-swiss only; values are never part of the preview
+      mcpImportPreview: async (key) => {
+        const label = '.vscode/mcp.json';
+        if (!knownFolder(key)) return { ok: false, error: 'Unknown folder.', label, files: [], items: [], digest: '', skipped: 0 };
+        if (!key.endsWith('mcp-swiss')) return { ok: false, error: 'No .vscode/mcp.json in this folder.', label, files: [{ from: folderName(key), state: 'missing' as const, skipped: 0, inputs: [] }], items: [], digest: '', skipped: 0 };
+        const have = new Set(extrasOf(key).map((x) => x.name));
+        const mk = (id: string, name: string, o: Partial<import('../shared/api').McpImportItem>): import('../shared/api').McpImportItem =>
+          ({ id, name, originalName: id, transport: 'stdio', env: [], headers: [], notes: [], alreadyAdded: have.has(name) ? true : undefined, ...o });
+        const items = [
+          mk('playwright', 'playwright', { command: 'npx', args: ['@playwright/mcp@latest'] }),
+          mk('postgres', 'postgres', { command: 'npx', args: ['-y', '@modelcontextprotocol/server-postgres', '/home/vikram/work/mcp-swiss'], env: [{ key: 'DATABASE_URL', hasValue: true }], notes: ['Ignored fields: envFile.', '"envFile" is not read: add its variables by hand if the server needs them.'] }),
+          mk('sentry', 'sentry', { transport: 'http', url: 'https://mcp.sentry.example.test/mcp', headers: [{ key: 'Authorization', hasValue: false }], notes: ['Authorization: contains a ${...} reference. The value is not copied or resolved; enter it after importing.'] }),
+          mk('github', 'github-vscode', { command: 'npx', args: ['-y', '@example/github-mcp'], env: [{ key: 'GITHUB_TOKEN', hasValue: false }], notes: ['The name "github" is already taken here (Copilot CLI list or another extra); it will be imported as "github-vscode".', 'GITHUB_TOKEN: contains a ${...} reference. The value is not copied or resolved; enter it after importing.'] }),
+          mk('notion', 'notion', { command: 'node', args: ['notion-mcp.js', '--workspace', '${input:notion-workspace}'], blocked: 'Needs a value that VS Code asks you for (${input:notion-workspace}). Agent Durbar never asks for or guesses it: add this server by hand.' }),
+          mk('fetch', 'fetch', { command: 'uvx', args: ['mcp-server-fetch'], notes: ['Ignored fields: sandbox.'] }),
+        ];
+        return { ok: true, label, files: [{ from: folderName(key), state: 'ok' as const, skipped: 1, inputs: ['api-key', 'notion-workspace'] }], items, digest: 'sim', skipped: 1 };
+      },
+      mcpImportApply: async (key, ids, digest) => {
+        if (!knownFolder(key) || digest !== 'sim') return { ok: false, error: 'The file changed since the preview. Open the import again.', imported: [], failed: [] };
+        const pv = await mcpApi.mcpImportPreview!(key);
+        const imported: string[] = [];
+        for (const it of pv.items) {
+          if (!ids.includes(it.id) || it.blocked || it.alreadyAdded) continue;
+          extrasOf(key).push({ name: it.name, transport: it.transport, command: it.command, args: it.args, url: it.url, enabled: false, trusted: false,
+            env: it.env.map((r) => ({ key: r.key, set: r.hasValue })), headers: it.headers.map((r) => ({ key: r.key, set: r.hasValue })), needsSecrets: [...it.env, ...it.headers].some((r) => !r.hasValue) });
+          imported.push(it.name);
+        }
+        return { ok: true, imported, failed: [] };
+      },
       usageAllTime: async () => ({ doc: JSON.parse(JSON.stringify(simDoc)) as UsageDoc, labels: Object.fromEntries(sims.map((x) => [x.info.id, x.info.name + ' · ' + folderName(x.info.cwd)])) }),
       usageReset: async () => {
         simDoc.tools = {}; simDoc.servers = {}; simDoc.agents = {}; simDoc.since = new Date().toISOString();
