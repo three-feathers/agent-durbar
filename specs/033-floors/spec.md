@@ -46,7 +46,7 @@ As someone who runs agents for several projects or clients, I create floors (for
 1. **Given** no floors have been created yet, **When** the app starts, **Then** every folder is in one built-in floor (working name "Ground floor") and the office looks exactly as it does today.
 2. **Given** the floor manager, **When** I create a floor named "Client A", **Then** it appears in the list of floors, empty and active.
 3. **Given** a folder in "Ground floor", **When** I move it to "Client A", **Then** its room (with its agents, door state, mode, model, cap and MCP extras) is now shown under "Client A", and nothing about its agents changes.
-4. **Given** I add a folder or workspace file with **+ Folder** or **+ Workspace**, **When** the picker opens, **Then** I can choose which floor it goes into; by default, the floor I added a folder to last time (or "Ground floor").
+4. **Given** more than one floor exists, **When** I am about to add a folder or workspace file, **Then** an "into: <floor>" choice next to **+ Folder** / **+ Workspace** in the top bar lets me pick the target floor before the system picker opens; by default it is the floor I added a folder to last time (or "Ground floor"). With only one floor, the choice is not shown and new folders go to it.
 5. **Given** floors and folder assignments, **When** I restart the app, **Then** floors, their names, order, active state and each folder's floor are restored.
 
 ---
@@ -128,7 +128,7 @@ When more than one floor is active, I can tell at a glance which floor each room
 - **FR-003**: Users MUST be able to create a floor with a name that is not empty and not already used (compared ignoring case and surrounding spaces); maximum length 40 characters.
 - **FR-004**: Users MUST be able to rename, reorder and delete floors. Deleting a floor MUST ask for confirmation, MUST move its folders to "Ground floor", and MUST NOT remove any folder or end any session.
 - **FR-005**: Users MUST be able to move a folder from one floor to another; moving MUST NOT change the folder's agents, sessions, permission mode, model, effort, credit cap, door state, hidden flag or MCP extras.
-- **FR-006**: When adding a folder or a workspace file, users MUST be able to choose its floor; the default is the floor used for the last addition, or "Ground floor".
+- **FR-006**: When more than one floor exists, users MUST be able to choose the floor for a new folder or workspace file before the system picker opens (an "into: <floor>" choice next to **+ Folder** / **+ Workspace**); the default is the floor used for the last addition, or "Ground floor". With one floor, no choice is shown.
 - **FR-007**: The top bar MUST have a **Floors** button that shows how many floors are on out of the total (for example "Floors 2/3"). It MUST open a panel with one on/off switch per floor (one action per floor) and the management actions of FR-003 to FR-005 (create, rename, reorder, delete, move folders). The button MUST fit the top bar at 1280x800 without overlapping other controls.
 - **FR-008**: Agents in a floor that is off MUST NOT appear in the office, the list view, the folder filter or the full-screen chat strip, and MUST NOT be counted in the top-bar status pills (Working, Waiting, Idle, Errors, Done) or in the "needs attention" ordering.
 - **FR-009**: Switching a floor off MUST NOT pause, interrupt, stop or end any of its agents' sessions; they keep running exactly like the agents of a hidden folder (spec 006). Messages already sent keep being answered and can spend AI credits.
