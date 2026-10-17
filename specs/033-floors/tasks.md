@@ -84,3 +84,9 @@
 1. MVP = Phase 2 + US1 + US2: group folders and switch floors off, with the counts and the lobby right. Ship-ready on its own (one PR if it stays small).
 2. Then US3 (management) and US4 (labels and order), then Polish (layout checks, driver, screenshots, docs).
 3. If the PR grows too big, split after the MVP checkpoint into a second PR under this spec, as spec 024 suggested.
+
+## Phase 8: Convergence
+
+- [x] T027 Record in research.md R9/R10 that the simulator keeps its own copy of the floor rules (a plain renderer script cannot import `src/shared/floors.ts`) instead of importing the shared module per plan: R9/R10 simulator decision (partial)
+- [x] T028 Add a spec 010 cross-reference: the simulator's `+ Folder` now registers the new folder as a simulated agent (needed for its floor, Move and the floors state) per FR-017 (unrequested)
+- [x] T029 Cover the new `askDialog` input options (`value` prefilled, `focus` starts in the field) in `scripts/test-dialog.ts` per Constitution VII.3 (unrequested)

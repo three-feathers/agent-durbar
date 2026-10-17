@@ -80,6 +80,8 @@ Developers capture screenshots at fixed sizes and drive the real window with scr
 
 ## Changes
 
+- **2026-10-17, spec 033 (floors), cross-reference.** `DURBAR_SIM_FLOORS=1` (`?simfloors=1`) seeds three floors and spreads the rooms over them; `DURBAR_SIM_FLOORS_OFF=<names>` (`?floorsoff=`) starts them off. The simulator's `+ Folder` now registers the new folder as a simulated (idle) agent so it has a floor and can be moved; it still sends no events until you write to it.
+
 ### 2026-10-16: dev/test hooks are ignored in packaged builds (audit gap 2; closes FR-009 and T022)
 
 **What was wrong.** Every `DURBAR_*` environment variable was honored by release builds. `DURBAR_DRIVER` loads an arbitrary module into the main process, `DURBAR_LOG` writes event content to a file, `DURBAR_OPEN`/`DURBAR_PERM` start agents (with a chosen permission mode) on launch, `DURBAR_PICK` answers the attachment picker without a dialog, `DURBAR_USER_DATA` redirects the profile. Anyone who can set the app's environment already runs code as the user, so the risk is low, but a shipped app should not carry a back door (constitution III).

@@ -49,7 +49,7 @@ No open technical unknowns; every decision below was read in the code on `main` 
 
 ## R9. Simulator (FR-017)
 
-- **Decision**: default simulator unchanged (one floor, so existing drivers and screenshots stay valid). `DURBAR_SIM_FLOORS=1` (passed by main as `?simfloors=1`, like `DURBAR_SIM_ROOMS`) seeds three floors (`Ground floor`, `Client A`, `Personal`) and spreads the simulated rooms over them; `DURBAR_SIM_FLOORS_OFF=Personal` (→ `?floorsoff=Personal`) starts with that floor off. The simulator bridge keeps floors in memory with the same validation (it imports the pure module through the renderer build, like other sim helpers).
+- **Decision**: default simulator unchanged (one floor, so existing drivers and screenshots stay valid). `DURBAR_SIM_FLOORS=1` (passed by main as `?simfloors=1`, like `DURBAR_SIM_ROOMS`) seeds three floors (`Ground floor`, `Client A`, `Personal`) and spreads the simulated rooms over them; `DURBAR_SIM_FLOORS_OFF=Personal` (→ `?floorsoff=Personal`) starts with that floor off. The simulator bridge keeps floors in memory with the same rules. **As built:** `sim.ts` is a plain renderer script (no imports), so it keeps its own short copy of the rules (names, 40-floor cap, ground floor cannot be deleted, Only) instead of importing `src/shared/floors.ts`; the shared module stays the one main uses and the one the unit tests cover (T027).
 
 ## R10. Pure logic placement (constitution II)
 
