@@ -51,3 +51,48 @@
 - `/speckit-analyze` and `/speckit-converge` followed by hand (feature dir 011): converged for FR-018..FR-023, no tasks appended.
 - Not verified: a real Copilot session (0 AIU spent), Windows and Linux rendering, the "credits not reported" chip on screen (covered by unit tests only; the simulator always reports credits).
 - Self-review against the maintainer's review checklist: stale "office totals are backlog" text fixed in the spec status, the "What exists today" gap line and the tasks backlog line (older delta history left as is); FR-021 no longer claims `sim:` (the simulator always reports credits). Mutation check: five deliberate breaks of `usagetotals.js` (accept any nano, never count unreported, double-count the office, show 0.00 for not reported, sum raw token fields) each make `test:usagetotals` fail. The `app.js` wiring (record calls, chip click) is checked on the simulator only, not by `npm test`. Demo mode hides the chip and folder totals and they come back when it is turned off.
+
+# Plan: 011 usage totals kept across restarts (2026-10-17, issue #21)
+
+## Constitution check
+- I: spec delta, plan and tasks before code. II: main records the normalized `usage` event only; the renderer stays agent-neutral. III/VII: numbers, display names and path hashes only on disk; IPC validated; no paths read back from disk. IV: unit tests, simulator, 0 AIU. V: no new UI in the office (chip and room totals unchanged in shape); Settings part follows the Credit cap section. VI: hash input normalised per platform (case-folded on Windows). VIII: tooltip says "as reported", the reset and its scope are stated in Settings.
+
+## Main process
+- `src/shared/usagedoc.ts` (pure, no Node): types, `emptyUsageDoc(now)`, `recordUsage`, `sanitizeUsageDoc`, `officeTotals`, `normaliseFolderKey(p, platform)` (string work only; hashing is in main).
+- `src/main/usagetotalsstore.ts`: like `src/main/usagestore.ts` (injectable timers and clock, 2 s debounce, atomic tmp+rename, 2 MB cap, `lastError`); `keyFor(folderKey)` = SHA-256 hex prefix of the normalised key.
+- `src/main/main.ts`: `adapter.onEvent` for `usage` -> `usageTotalsStore.record(keyFor(a.workspaceFile ?? a.cwd), displayName(a), e)`; IPC `usage:totals` (folders of current agents with their path, office sum) and `usage:resetTotals`; flush on `will-quit` next to the tool-usage flush.
+- `src/preload/preload.ts`, `src/shared/api.ts`: `usageTotals()`, `usageResetTotals()`, `UsageTotalsView`.
+
+## Renderer
+- `src/renderer/usagetotals.js`: `createLedger({baseline})` or `ledger.setBaseline({office, folders:Map(key->totals)})`; `room()`/`office()` return baseline + run; a `run()` view for the tooltip; existing formatting kept. Tests extended.
+- `app.js`: load the baseline after `listAgents` (and after a reset), map folders by key (`workspaceFile ?? cwd`) to rooms; the tooltip line "since the app opened" uses the run part.
+- `screens.js`: Settings "Usage totals" part with the reset and a confirmation through `window.DurbarDialog(document)` (`dialog.js`, focus-trapped); `X.onUsageReset()` hook so app.js reloads the baseline.
+- `sim.ts`: in-memory bridge with a seeded baseline; `simunreported=<room>` query (read with the other sim query params in `app.js`).
+
+## Tests and checks
+- `scripts/test-usagedoc.ts` (new, in `npm test`): validation, recording, reset/since, caps, sanitize of hostile input, office sum with folders no longer listed, no path in the serialised document; store debounce/flush/reset with a temp dir and fake timers.
+- `scripts/test-usagetotals.ts`: baseline + run sums, run-only tooltip line.
+- `npm run check:office` unchanged layout; screenshots with a simulator driver `scripts/shots-021.js` (seeded baseline, `simunreported=blog`, Settings part and confirm).
+
+## Risks
+- Double counting if both the renderer and main persisted: only main writes; the renderer only adds this run on top of a baseline taken at start.
+- A reset while agents are working: the renderer zeroes its run ledger at the same moment it reloads the (empty) baseline.
+- Workspace vs folder keys must match between main (`workspaceFile ?? cwd`) and the renderer (`folderOfRoom`); a test fixture covers a workspace agent.
+
+## Implementation notes (phase 2, 2026-10-17)
+- Built as planned. Design detail that the plan left open: main keeps two views. `doc` (on disk, grows with every event) and a frozen `baseline` copy taken at load and emptied by a reset. IPC `usage:totals` returns the **baseline** (with the folders of the current agents), the window adds this run's own ledger on top, so an event is never counted twice however late the window asks. The window asks again whenever an agent is added (its folder may have a saved total); a reset replaces the baseline and clears the run.
+- The office tooltip says whether the saved total holds folders that are not listed now (`hasUnlisted`: saved office calls above the calls of the listed folders), instead of only looking at this run's folders.
+- Settings reuses the local `dialog()` helper of `screens.js` for the confirmation (same one the Tools reset uses).
+- Tests: new `scripts/test-usagedoc.ts` (`test:usagedoc`: recording, validation, hostile files, no path on disk, fake-timer store, baseline vs file, reset) and baseline cases in `test-usagetotals.ts`.
+- Sanity run on the simulator (`simtotals=1`, `simunreported=blog`): chip 75.25 AIU = 41.70 saved + 33.55 this run, rooms add their saved totals, the reset dialog and the zeroed chip work. Formal driver, screenshots, mutation check, README/CHANGELOG are phase 3 (T027).
+
+## Verification (phase 3, 2026-10-17)
+- Merged current `main` (alpha.4 published, AGENTS.md spec list) without conflicts.
+- Review fixes: a disk that refuses the write is now shown in Settings (the store's `lastError` reached nobody); the folder-key rule moved to `src/shared/usagedoc.ts` (`folderKeyOf`/`folderNameOf`) and is tested with a workspace agent, as this plan promised.
+- Mutation check (backup and restore, not git): 10 deliberate breaks (negative credits accepted, any key accepted, no case-folding on Windows, no folder cap, baseline not frozen, reset keeps the baseline, no size cap, room ignores the saved total, unlisted never reported, office without the saved part) each fail a test. The size cap was **not** covered at first (the oversized test file was not valid JSON); the test now writes valid JSON over 2 MB.
+- `scripts/shots-021.js` (simulator with `simtotals=1`, `simunreported=infra-notes`) at 1440x900 and 1280x800: chip = saved + this run with the "saved since" and "this run" tooltip lines, saved folder totals, "credits not reported" in the room header and `n/r` on the closed plate, Settings figure, Cancel changes nothing, Reset zeroes the chip and every folder total.
+- Docs: README status section and roadmap, CHANGELOG *Unreleased*, specs index; Settings pictures regenerated with the existing drivers because the new part shows there (`m9-settings-cap-*`, `about-settings-1280x800`).
+- `/speckit-analyze` and `/speckit-converge` followed by hand: two known gaps written into the spec (the reset race, FR-026 not run end to end), otherwise converged.
+- Real IPC without a session (0 AIU): `usage:totals` read a seeded file from userData (path key dropped), `usage:resetTotals` emptied it on disk.
+- Not verified: recording from real `usage` events (needs a real session).
+

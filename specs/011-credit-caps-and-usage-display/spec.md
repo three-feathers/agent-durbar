@@ -2,7 +2,7 @@
 
 **Feature Branch**: `011-credit-caps-and-usage-display`
 **Created**: 2026-10-16
-**Status**: Partly specified for implementation 2026-10-16 (per-session cap + global default + usage-vs-cap display + limit-exhausted handling: see Clarifications, `plan.md`, `tasks.md`). Office-wide and per-folder totals built 2026-10-17 (FR-018..FR-023). Persistence of usage and the multiplier estimate (User Stories 1 and 3) stay backlog.
+**Status**: Partly specified for implementation 2026-10-16 (per-session cap + global default + usage-vs-cap display + limit-exhausted handling: see Clarifications, `plan.md`, `tasks.md`). Office-wide and per-folder totals built 2026-10-17 (FR-018..FR-023). Persistence of usage and the multiplier estimate (User Stories 1 and 3) stay backlog. Totals kept across restarts with a reset: built 2026-10-17 (second delta, issue #21), simulator and unit tests; User Story 3 (multiplier) is covered by spec 030.
 **Input**: README roadmap "AI-credit counter and caps" (unchecked). Today usage is only a read-only line per agent; `maxAiCredits` exists in `StartOptions` but nothing uses it.
 
 ## What exists today (verified 2026-10-16 by reading code and the installed SDK)
@@ -38,7 +38,7 @@ I can set a maximum number of credits when I add a folder or new session; when i
 2. **Given** a cap and a pending permission request, **When** the cap is reached, **Then** the request is denied and the state is consistent (no stuck "working").
 3. **Given** no cap is set, **When** I start a session, **Then** behavior is unchanged and the UI says "no cap" (constitution III: say what is and is not limited).
 
-### User Story 3 - Understand the multiplier (Priority: P3)
+### User Story 3 - Understand the multiplier (Priority: P3) — covered by spec 030 (2026-10-17 second delta)
 
 Next to the model picker I see the credit multiplier and an estimate of cost relative to `auto` (feature 007 task T024).
 
@@ -139,3 +139,30 @@ Run 2026-10-16 (Europe/Madrid) with `npm run verify:cap` against the real runtim
 - SC-001 applies: on the simulator the header total equals the sum of the folder totals (when no folder was removed) to the displayed precision.
 
 Still backlog after this delta: persisted usage across restarts, multiplier estimate (User Story 3), capability flag for other adapters (spec 012).
+
+### 2026-10-17 (second delta): usage totals kept across restarts, a reset, the multiplier left to spec 030 (issue #21)
+
+**Clarifications (Ruben, 2026-10-17).**
+
+- **Q: The multiplier estimate (User Story 3)?** **Left to spec 030** (switch model and context window), which shows the price per million tokens per model in its model menu and says the legacy multiplier only exists on annual plans. User Story 3 of this spec is therefore covered by spec 030, not built here.
+- **Q: What does the header chip show after a restart?** The **total since the last reset**, saved on disk; the tooltip also gives the amount spent since the app opened (or since the reset, if that was later). The same for each folder (room header and door plate).
+- **Q: How is it reset?** A **"Reset usage totals"** button in Settings, with a confirmation. It is separate from the tool-count reset of Tools > All time (spec 020).
+- **Q: How is a folder identified on disk without storing paths?** By a **hash of its path** (the folder or `.code-workspace` key the folder list uses), plus its display name. Two folders with the same name stay separate; the file never holds a path.
+- Decided by default (recorded here): the main process records the totals from the adapter's `usage` events (like the all-time tool counts, spec 020 FR-006), so nothing depends on a window being open; one record per event, helpers included in their agent's folder; the file is `durbar-usage-totals.json` in userData, written atomically, debounced and flushed on quit, tolerant on read (missing, corrupt or oversized = empty); folders that are no longer in the list keep their saved total in the office figure (the tooltip already says "includes folders no longer shown").
+
+**Requirements (numbering continues).**
+
+- **FR-024** `[IMPLEMENTED]` (test: usagedoc) Pure `src/shared/usagedoc.ts`: document `{ version: 1, since, folders: { [key]: { name, calls, inTokens, outTokens, nano, unreported } } }`; `recordUsage(doc, key, name, event)` with the same validation as FR-018 (`nanoAiu` missing, non-numeric, negative or above 1e15 counts as unreported; bad token fields count as 0); `sanitizeUsageDoc(raw)` (drops anything else, caps 2000 folders and name length 200, numbers finite and >= 0); `officeTotals(doc)`; `normaliseFolderKey(path, platform)` input normalisation (separators unified, trailing separators removed, case-folded on Windows; the hash itself is computed in main).
+- **FR-025** `[IMPLEMENTED]` (test: usagedoc) `src/main/usagetotalsstore.ts` (`UsageTotalsStore`, same shape as `UsageStore`): load, record, debounced atomic save, flush on quit, `reset()` (empty document, `since` = now), `lastError` when the disk refuses. The key is the first 32 hex characters of SHA-256 of the normalised folder key, computed in main (Node `crypto`).
+- **FR-026** `[IMPLEMENTED]` (real IPC without a session, see below; sim: shots-021.js) Main: every `usage` event of a known agent is recorded under its folder key and display name. IPC `usage:totals` returns `{ since, office, folders: [{ path, name, ...totals }] }` where `folders` lists only the folders of the current agents (the path is resolved in memory from the agents, never read from disk) and `office` sums every saved folder; `usage:resetTotals` resets and returns the same view. Preload and `api.ts` get `usageTotals()` and `usageResetTotals()`.
+- **FR-027** `[IMPLEMENTED]` (test: usagetotals; sim: shots-021.js) Renderer: at start (and after a reset) it asks `usageTotals()` once and keeps it as the **baseline**; the chip and the folder totals show baseline + what this run recorded (the existing ledger, FR-018). The tooltip adds "since the app opened: N.NNN AIU" (or "since the reset"), keeps "as reported by the Copilot runtime" and "ended sessions included". Folders are matched by their folder key (`workspaceFile ?? cwd`), never by room id (room ids change between runs).
+- **FR-028** `[IMPLEMENTED]` (sim: shots-021.js) Settings: a "Usage totals" part in the Credit cap section: the office total and since when it counts, and **Reset usage totals** with a confirmation dialog ("This sets the saved office and folder totals to zero. Tool counts in Tools > All time are not changed."). After the reset the chip and folder totals start from zero.
+- **FR-029** `[IMPLEMENTED]` (sim: shots-021.js) Simulator: an in-memory `usageTotals`/`usageResetTotals` bridge (empty by default; **`simtotals=1`** seeds a previous run with totals for two folders plus one folder that is no longer listed, so the header shows more than this run's spend and existing simulator pictures stay as they are); a query parameter `simunreported=<room name>` makes that room's agents and their helpers report usage without `nanoAiu`, so the "credits not reported" text can be seen and photographed (issue #21).
+- **FR-030** `[IMPLEMENTED]` (test: usagedoc, usagetotals; sim: screenshots) Tests, no credits: document validation, recording, reset, `since`, caps, corrupt and oversized files, hash key (no path in the written file), office sum including folders no longer listed; the store's debounce and flush; screenshots at 1440x900 and 1280x800: the chip after a "restart" (seeded baseline), the "credits not reported" room, the Settings part and its confirmation.
+- Privacy (FR-007 still holds): the file holds numbers, folder display names and path hashes only; nothing is sent anywhere.
+- Platforms: CI already runs `npm test` on Linux, macOS and Windows and the office layout check on Linux (issue #21 asked about the chip's rendering there); the Windows layout stays unchecked.
+
+Backlog after this delta: capability flag for other adapters (spec 012). User Story 3 (multiplier) is covered by spec 030.
+- `[KNOWN GAP]` (accepted, documented in the README) A reset while a usage event is in flight can leave this run's figure one call apart from the file until the next restart (main empties the file, the window clears its run when the reply arrives).
+- FR-026 partly run for real (2026-10-17, no session, 0 AIU): the packaged-style app without the simulator read a seeded `durbar-usage-totals.json` from userData through `usage:totals` (a path key in the file was dropped), and `usage:resetTotals` emptied the file on disk.
+- `[KNOWN GAP]` Not run end to end: recording from real `usage` events in `main.ts` (needs a real session that spends credits); covered by the store's unit tests and the simulator.
