@@ -214,6 +214,9 @@ async function main(): Promise<void> {
   assert.strictEqual(grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\a.ts' }, w).key, grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\b.ts' }, w).key, 'same folder, same key');
   assert.notStrictEqual(grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\sub\\a.ts' }, w).key, grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\b.ts' }, w).key, 'a subfolder is a different scope');
   assert.strictEqual(grantScope({ kind: 'write', fileName: '/a/b/src/x.ts' }, path.posix).key, 'write:/a/b/src');
+  // documented limit (FR-032, T028): keys are exact, so case or separator differences make a different key; the broker asks again
+  assert.notStrictEqual(grantScope({ kind: 'write', fileName: 'C:\\Repo\\src\\a.ts' }, w).key, grantScope({ kind: 'write', fileName: 'c:\\repo\\src\\a.ts' }, w).key, 'case differs: different key (known gap)');
+  assert.notStrictEqual(grantScope({ kind: 'write', fileName: 'C:/repo/src/a.ts' }, w).key, grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\a.ts' }, w).key, 'separator differs: different key (known gap)');
   {
     const ev: BrokerEvent[] = [];
     const b = new PermissionBroker({ ask: true, pathCheck: { flavor: w, caseInsensitive: true, realpath: (x) => x }, emit: (e) => ev.push(e) });
@@ -228,6 +231,11 @@ async function main(): Promise<void> {
     assert.strictEqual(b.pendingCount(), 1, 'another Windows folder still asks');
     b.resolve('win3', false);
     await other;
+    const cased = b.request({ kind: 'write', fileName: 'c:\\REPO\\SRC\\d.ts', toolCallId: 'win4' });
+    await tick();
+    assert.strictEqual(b.pendingCount(), 1, 'same folder spelled in another case asks again, never approves extra (known gap T028)');
+    b.resolve('win4', false);
+    await cased;
   }
 
   console.log('permissions: all checks passed');

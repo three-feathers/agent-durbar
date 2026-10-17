@@ -22,3 +22,4 @@
 - [x] T025 (2026-10-17 delta, FR-031/FR-032) Test `grantScope` with Windows paths via an injectable `path` flavor. [FR-016]
 - [ ] T026 Collision-proof request ids when `toolCallId` is missing. [Edge case]
 - [x] T027 (second delta, FR-025..FR-027) Restore the saved mode exactly incl. Allow edits, with a visible "restored" note; grants stay session-only; tests + README. Reverses T022's downgrade.
+- [ ] T028 Windows grant keys: compare case-insensitively and treat `/` and `\` alike (constitution VI), e.g. normalize the folder in `grantScope` for the win32 flavor; update the known-gap test (spec delta 2026-10-17). [FR-032 known gap]
