@@ -8,6 +8,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 - **Docs only, no behaviour change:** spec 012 (Claude Code and Codex adapters) is clarified, researched, planned and split into tasks ([specs/012-claude-codex-adapters](specs/012-claude-codex-adapters/spec.md)). There is no Claude or Codex adapter yet and nothing was tried on a real account.
 
 - **Keyboard focus in the Allow all confirmation (spec 003 FR-033, issue #25).** Focus used to jump back to the mode chip behind the dialog, so Escape did nothing and Tab left the dialog. Now focus stays inside it, Tab is trapped, Escape cancels (mode unchanged) and focus returns to the chip. *Allow all* still needs an explicit confirm. Tests: `npm run test:dialog` (in `npm test`) and `npm run check:dialog-focus` (simulator, real key events).
+- **Docs only, no behaviour change:** the two README hero pictures (15-agent office, full-screen chat) and the Settings/About, credit-cap and MCP pictures (`m9-office-caps`, `m9-settings-cap`, `m10-*`, `about-settings`) were regenerated on the simulator, so they show the office total, per-folder totals, the Tools/Settings buttons, *Import from VS Code...* and the alpha.3 version. New drivers `scripts/shots-hero.js` and `scripts/shots-about.js`; `shots-m9.js` and `shots-m10.js` now hide the startup toast. `AGENTS.md` no longer lists spec 012 as a backlog draft (spec 025 FR-006).
 
 ## v0.1.0-alpha.3 ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.3), 2026-10-17)
 

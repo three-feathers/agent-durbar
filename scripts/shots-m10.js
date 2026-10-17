@@ -17,7 +17,8 @@ module.exports = async (ctx) => {
   const click = (sel) => ctx.js(`(()=>{const e=document.querySelector(${JSON.stringify(sel)});if(!e)return false;e.click();return true})()`);
   const text = (sel) => ctx.js(`(document.querySelector(${JSON.stringify(sel)})||{}).textContent||''`);
   const count = (sel) => ctx.js(`document.querySelectorAll(${JSON.stringify(sel)}).length`);
-  const shot = async (name, w, h) => { await ctx.sleep(450); await ctx.shot(path.join(OUT, `m10-${name}-${w}x${h}.png`)); console.log('[m10] saved', name, w, h); };
+  const calm = () => ctx.js(`(()=>{if(!document.getElementById('shotCalm')){const s=document.createElement('style');s.id='shotCalm';s.textContent='#toasts{display:none!important}';document.head.appendChild(s);}})()`); // the startup toast would sit over the pictures
+  const shot = async (name, w, h) => { await ctx.sleep(450); await calm(); await ctx.sleep(150); await ctx.shot(path.join(OUT, `m10-${name}-${w}x${h}.png`)); console.log('[m10] saved', name, w, h); };
   const closeScreen = () => click('#scrClose');
   const closeDlg = () => ctx.js(`(()=>{const d=document.getElementById('scrDlg');if(d&&d._close)d._close();})()`);
   const roomBtn = (name) => `[data-mcproom][aria-label="MCP extras for ${name}"]`;
