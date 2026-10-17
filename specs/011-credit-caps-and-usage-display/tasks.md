@@ -17,10 +17,10 @@ Backlog (unchanged): office total, per-folder totals, persisted usage, multiplie
 ## Office and folder usage totals (2026-10-17, issue #8)
 
 - [x] T012 Spec delta + clarifications + plan before code [FR-018..FR-023]
-- [ ] T013 `src/renderer/usagetotals.js` (pure ledger, validNano, formatters, tooltip) + `scripts/test-usagetotals.ts` + `test:usagetotals` in `npm test` [FR-018, FR-021, FR-023]
-- [ ] T014 Ship and load it: `scripts/copy-assets.js`, `index.html` [FR-018]
-- [ ] T015 `app.js`: record every `usage` event once (main and helper paths) in one run-long ledger [FR-018]
-- [ ] T016 Header chip after the status counters, tooltip, hidden with no usage [FR-019, FR-021]
-- [ ] T017 Folder total in the room header and on the closed door plate (text + aria-label) [FR-020, FR-021]
-- [ ] T018 Styles `.stat-aiu`, `.room-aiu`; `npm run check:office` green at 1440x900 and 1280x800 [FR-022]
+- [x] T013 `src/renderer/usagetotals.js` (pure ledger, validNano, formatters, tooltip) + `scripts/test-usagetotals.ts` + `test:usagetotals` in `npm test` [FR-018, FR-021, FR-023]
+- [x] T014 Ship and load it: `scripts/copy-assets.js`, `index.html` [FR-018]
+- [x] T015 `app.js`: record every `usage` event once (main and helper paths) in one run-long ledger [FR-018]
+- [x] T016 Header chip after the status counters, tooltip, hidden with no usage [FR-019, FR-021]
+- [x] T017 Folder total in the room header and on the closed door plate (text + aria-label) [FR-020, FR-021]
+- [x] T018 Styles `.stat-aiu`, `.room-aiu`; `npm run check:office` green at 1440x900 and 1280x800 [FR-022]
 - [ ] T019 Screenshots (simulator, both sizes, one closed door), README status line, specs index [FR-023, SC-001]
