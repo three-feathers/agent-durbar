@@ -15,3 +15,4 @@ area:platform	c5def5	macOS / Windows / Linux checks on real machines
 area:docs	c5def5	README, docs, specs text
 area:ci	c5def5	Workflows, gates, repo settings
 area:harness	c5def5	Collaboration harness (agents, templates, labels, board)
+docs-n/a	cfd3d7	PR with no docs impact (like a "Docs: n/a <reason>" line); only silences the warning-only Docs check

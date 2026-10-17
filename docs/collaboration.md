@@ -42,6 +42,7 @@ For a new contributor and their Claude agent. Plain steps; the full rules are in
 4. **Spec first**: in the spec folder `specs/NNN-*/` make sure `spec.md`, `plan.md` and `tasks.md` exist. Missing: `/speckit-specify`, `/speckit-clarify`, `/speckit-plan`, `/speckit-tasks`, `/speckit-analyze`. Fix to something built: a dated spec delta under `## Changes`. Commit these first.
 5. **Implement** the one task (`/speckit-implement`), small commits, tick the task in `tasks.md`. Test on the simulator (`DURBAR_SIM=15 npm start`) and `npm test`. **Do not run real agent sessions, `npm run smoke` or `scripts/capture-raw.ts`**: they spend AI credits. Never paste tokens or `.env` into a chat or a commit.
 6. **Before the PR**: `npm run typecheck && npm run build && npm test`; screenshots for UI changes (see AGENTS.md); `/speckit-converge`.
+   **Docs too**: update README, CHANGELOG, `docs/`, the spec's `tasks.md` and screenshots in the same PR (the list is in AGENTS.md, "Keep docs in sync"). Cannot do one of them? Open an issue with label `area:docs` and assign it; say so in the PR.
 7. **Open the PR** (`git push -u origin <branch>`, then `gh pr create`). Fill the template: `Closes #N`, spec link, *Agent used*, what you did not verify. Move the issue on the board to *In review*.
 8. **Review**: you read your own agent's diff before asking anyone. A *different* human approves. Files under `.specify/`, `.claude/`, `.github/`, `AGENTS.md`, `CLAUDE.md` also need the maintainer. You review your own agent's PRs only, plus the approval you give for someone else's.
 9. **Merge** when CI is green and approvals are in; delete the branch; the issue closes itself.
@@ -53,6 +54,10 @@ Add the label `status:blocked` and comment what you need. Something costs money,
 ## When the gate fails
 
 The *Spec Kit gate* check explains itself. Common causes: branch is not `NNN-slug`; `src/` changed but the PR does not touch `specs/NNN-*/`; the folder lacks `spec.md`, `plan.md` or `tasks.md`. A change with **no behavior change** (typo, comment, formatting, dependency bump, CI-only) may add a line `Spec-Exempt: <reason>` to the PR description; the reviewer must agree. "It is small" is not a reason.
+
+## When the Docs check warns
+
+*Docs check (warning only)* shows a yellow warning when `src/` changed but `README.md`, `CHANGELOG.md` and `docs/` did not, or when `package.json` scripts changed but `README.md` did not. It never fails the PR and is not a required check. Fix it by updating the docs, or write `Docs: n/a <reason>` in the PR description (or ask a maintainer for the `docs-n/a` label) when there is truly no docs impact. Script: `.github/scripts/docs-check.sh`, tested by `.github/scripts/test-docs-check.sh`.
 
 ## For the maintainer
 
