@@ -916,13 +916,18 @@ function afterFloorsChange(){
   renderFilter(); renderFloorsPanel(); renderFloorsSettings(); scheduleRender();
 }
 /* ---------------- floors: top-bar button, "into" select, panel (spec 033) ---------------- */
+/* FR-007 (PR #124 review): only with two or more floors, and compact (icon + "2/3"), so the top bar fits at 1280x800 with
+   wide fonts too. With the Ground floor alone the top bar looks as before; the first extra floor is made in Settings > Floors. */
+const FLOORS_IC='<svg class="fl-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 1.8l6.2 3.1L8 8 1.8 4.9z"/><path d="M1.8 8.1L8 11.2l6.2-3.1"/><path d="M1.8 11.1L8 14.2l6.2-3.1"/></svg>';
 function renderFloorsBtn(){
   const b=$('floorsBtn'); if(!b)return;
-  b.hidden=!floorsLive();
-  if(!floorsLive())return;
-  const on=floorsOnList().length,n=FLOORS.floors.length;
-  b.textContent='Floors '+on+'/'+n;
-  b.setAttribute('aria-label','Floors: '+on+' of '+n+' on. Open the floors panel.');
+  const show=floorsLive()&&FLOORS.floors.length>1;
+  b.hidden=!show;
+  if(!show){const pop=$('floorsPop');if(pop&&!pop.hidden)toggleFloors(false);return;}
+  const on=floorsOnList().length,n=FLOORS.floors.length,tip='Floors: '+on+' of '+n+' on';
+  b.innerHTML=FLOORS_IC+'<span class="fl-cnt">'+on+'/'+n+'</span>';
+  b.title=tip+'. Switch floors on and off, manage them.';
+  b.setAttribute('aria-label',tip+'. Open the floors panel.');
 }
 /* Floor for the next added folder (FR-006): chosen in the Floors panel before the picker opens; default = the last one used.
    The top bar has no room for one more select at 1280x800, so + Folder / + Workspace only name it in their tooltip. */

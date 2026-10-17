@@ -105,8 +105,8 @@
 
 ## Phase 11: Change 2026-10-17 (PR #124 review: top bar at 1280x800 on CI fonts)
 
-- [ ] T036 Floors button only when two or more floors exist; compact form (inline SVG icon + "2/3", accessible name and tooltip "Floors: 2 of 3 on"); Settings > Floors stays the entry point with one floor (`src/renderer/app.js`, `index.html`, `styles.css`) [FR-007]
-- [ ] T037 `scripts/check-office-overlap.js`: optional `OFFICE_FONT_FILE` (a local DejaVu Sans file) forces that font in every page so a Mac measures like CI; header note with Vikram's fontconfig recipe for Linux; floors cases assert no button with one floor [FR-007]
-- [ ] T038 Run `check:office` with the DejaVu font (all cases, both sizes) and with the default fonts; screenshots refreshed where the top bar changed [FR-007, SC-005]
-- [ ] T039 Docs and PR: README and spec wording for the button, the PR body (task range, a literal `Docs:` line, the font caveat), reply to the review [VIII]
+- [x] T036 Floors button only when two or more floors exist; compact form (inline SVG icon + "2/3", accessible name and tooltip "Floors: 2 of 3 on"); Settings > Floors stays the entry point with one floor (`src/renderer/app.js`, `index.html`, `styles.css`) [FR-007]
+- [x] T037 `scripts/check-office-overlap.js`: optional `OFFICE_FONT_FILE` (a local DejaVu Sans file) forces that font in every page so a Mac measures like CI; header note with Vikram's fontconfig recipe for Linux; floors cases assert no button with one floor [FR-007]
+- [x] T038 Run `check:office` with the DejaVu font (all cases, both sizes) and with the default fonts; screenshots refreshed where the top bar changed [FR-007, SC-005]
+- [x] T039 Docs and PR: README and spec wording for the button, the PR body (task range, a literal `Docs:` line, the font caveat), reply to the review [VIII]
 

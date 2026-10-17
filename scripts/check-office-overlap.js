@@ -19,6 +19,15 @@
  *     any floor tag; the top bar controls overlapping each other or sticking out of the window (the Floors button must fit at 1280x800);
  *     a 40-character floor name (renamed through the panel) breaking a room header, a plate or the top bar; a floor that is off with agents
  *     waiting for you that does not say so on its row in the Floors panel, or that shows it anywhere else (pills, button) (FR-010, issue #122).
+ *
+ * Fonts: CI runs on Ubuntu, where `system-ui` is DejaVu Sans, which is wider than the macOS fonts (PR #124: the top bar fitted on a
+ * Mac and overflowed in CI). To measure like CI on any machine, point OFFICE_FONT_FILE at DejaVuSans.ttf (and optionally
+ * OFFICE_FONT_BOLD at DejaVuSans-Bold.ttf, OFFICE_FONT_MONO at DejaVuSansMono.ttf); every page then uses only those fonts:
+ *   OFFICE_FONT_FILE=/path/DejaVuSans.ttf OFFICE_FONT_BOLD=/path/DejaVuSans-Bold.ttf OFFICE_FONT_MONO=/path/DejaVuSansMono.ttf npm run check:office
+ * On Linux the same effect comes from a fontconfig with only DejaVu and Liberation (Vikram's recipe in PR #124):
+ *   printf '<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig><dir>/usr/share/fonts/truetype/dejavu</dir><dir>/usr/share/fonts/truetype/liberation</dir><cachedir>/tmp/fc-cache</cachedir><include ignore_missing="yes">/etc/fonts/conf.d</include></fontconfig>' > /tmp/fonts.conf
+ *   FONTCONFIG_FILE=/tmp/fonts.conf npm run check:office
+ * The font files are handed to the page as data (FontFace), so the app's CSP is not touched.
  * An expanded `+N more` is allowed to scroll the floor (the spec says it expands in place) but must still not overlap.
  */
 'use strict';
@@ -153,8 +162,8 @@ function offAttentionCheck() {
   const text = att && !att.hidden ? att.textContent : '';
   if (!/^Off, .*\d+ (waiting|errors?|at credit limit)/.test(text)) problems.push(`no attention text on the off floor's row (got "${text}")`);
   if (document.querySelector('#floorsPop [data-att="ground"]:not([hidden])')) problems.push('attention text on a floor that is on');
-  const btn = document.getElementById('floorsBtn').textContent;
-  if (btn !== 'Floors 2/3') problems.push(`button changed: ${btn}`);
+  const btn = document.getElementById('floorsBtn').textContent.trim();
+  if (btn !== '2/3') problems.push(`button changed: ${btn}`);
   if (/waiting|error/i.test(btn)) problems.push('attention shown on the button');
   document.getElementById('floorsBtn').click();
   return problems;
@@ -175,10 +184,26 @@ async function driver(ctx) {
   const sleep = ctx.sleep;
   let total = 0, failed = 0;
   const rows = [];
+  /* optional CI-like fonts (see the header): read once, handed to every page as data */
+  const fontB64 = (k) => (process.env[k] ? fs.readFileSync(process.env[k]).toString('base64') : '');
+  const FONTS = { regular: fontB64('OFFICE_FONT_FILE'), bold: fontB64('OFFICE_FONT_BOLD'), mono: fontB64('OFFICE_FONT_MONO') };
+  if (FONTS.regular) console.log('check:office: forcing the fonts from OFFICE_FONT_FILE' + (FONTS.bold ? ' (+bold)' : '') + (FONTS.mono ? ' (+mono)' : ''));
+  const forceFonts = async (w, h) => {
+    if (!FONTS.regular) return;
+    await ctx.js(`(async()=>{const buf=b=>{const s=atob(b),a=new Uint8Array(s.length);for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i);return a.buffer;};
+      const add=async(b,fam,o)=>{if(!b)return;const f=new FontFace(fam,buf(b),o);await f.load();document.fonts.add(f);};
+      await add(${JSON.stringify(FONTS.regular)},'CheckSans',{weight:'100 599'});
+      await add(${JSON.stringify(FONTS.bold || FONTS.regular)},'CheckSans',{weight:'600 900'});
+      await add(${JSON.stringify(FONTS.mono || FONTS.regular)},'CheckMono',{});
+      const st=document.createElement('style');st.textContent='*{font-family:CheckSans!important}.room-path,.mono,.lcell.mono,.folder,code,pre,kbd{font-family:CheckMono!important}';document.head.appendChild(st);})()`);
+    /* the layout is cached by size: nudge the window so the office is laid out again with the new font */
+    ctx.win.setContentSize(w - 1, h); await sleep(150); ctx.win.setContentSize(w, h); await sleep(300);
+  };
   const load = async (query, w, h) => {
     ctx.win.setContentSize(w, h);
     await ctx.win.loadFile(INDEX, { query: Object.fromEntries(new URLSearchParams(query)) });
     await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
+    await forceFonts(w, h);
     await sleep(500);
     /* spec 024: agents go to the lobby after 600 ms and the walk takes about 1 s: wait until somebody is there and nobody is walking */
     try { await ctx.waitFor(`!!document.querySelector('.place.busy')`, 4000); await ctx.waitFor(`!document.querySelector('.walker.walking')`, 4000); await sleep(150); } catch (e) { /* nobody visits in this layout: the checks below still run */ }
@@ -204,6 +229,9 @@ async function driver(ctx) {
     for (const [w, h] of SIZES) {
       const base = `sim=${sim}&simfreeze=1`;
       await load(base, w, h);
+      /* spec 033 FR-007: with only the Ground floor the top bar is as before (no Floors button) */
+      total++;
+      if (!(await ctx.js(`document.getElementById('floorsBtn').hidden`))) { failed++; console.log(`FAIL sim${sim}-${w}x${h}: Floors button shown with one floor`); }
       const names = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].map(e=>e.textContent.trim())`);
       const tag = `sim${sim}-${w}x${h}`;
       const combos = [{ n: 0, closed: [] }];

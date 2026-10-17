@@ -35,7 +35,7 @@ module.exports = async (ctx) => {
     const rooms=[...document.querySelectorAll('#stage .room')].map(r=>({name:r.querySelector('.room-name').textContent,floor:(r.querySelector('.floor-tag')||{}).textContent||null,agents:[...r.querySelectorAll('.desk[data-id] .name')].map(n=>n.textContent.trim())}));
     const lobby=[...document.querySelectorAll('.place')].map(p=>p.getAttribute('aria-label')||'').join(' | ');
     const aiu=document.querySelector('.stat-aiu');
-    return {btn:document.getElementById('floorsBtn').textContent,pills,visible:c,rooms,lobby,walkers:document.querySelectorAll('#walkers .walker').length,away:document.querySelectorAll('#stage .desk.is-away').length,
+    return {btn:document.getElementById('floorsBtn').textContent.trim(),pills,visible:c,rooms,lobby,walkers:document.querySelectorAll('#walkers .walker').length,away:document.querySelectorAll('#stage .desk.is-away').length,
       aiu:aiu&&aiu.textContent.trim(),aiuTip:aiu&&aiu.title,tags:document.querySelectorAll('#stage .floor-tag').length,panelOpen:document.body.classList.contains('panel-open'),
       empty:(document.querySelector('#stage .empty')||{}).textContent||''};})()`);
 
@@ -56,8 +56,8 @@ module.exports = async (ctx) => {
     await ctx.waitFor(`!!document.querySelector('#floorsSet .fl-sw')`, 5000);
     await js(`document.querySelector('#floorsSet [data-fl="on"][data-floor="f-personal"]').click()`);
     await ctx.sleep(300);
-    let st = await js(`({btn:document.getElementById('floorsBtn').textContent,set:document.querySelector('#floorsSet [data-fl="on"][data-floor="f-personal"]').getAttribute('aria-pressed')})`);
-    assert.strictEqual(st.btn, 'Floors 2/3', 'FR-023: a switch in Settings updates the top-bar button');
+    let st = await js(`({btn:document.getElementById('floorsBtn').textContent.trim(),set:document.querySelector('#floorsSet [data-fl="on"][data-floor="f-personal"]').getAttribute('aria-pressed')})`);
+    assert.strictEqual(st.btn, '2/3', 'FR-023: a switch in Settings updates the top-bar button');
     assert.strictEqual(st.set, 'false');
     await panel(true);
     assert.strictEqual(await js(`document.querySelector('#floorsPop [data-fl="on"][data-floor="f-personal"]').getAttribute('aria-pressed')`), 'false', 'FR-023: the panel shows the same state');
@@ -68,12 +68,12 @@ module.exports = async (ctx) => {
     await ctx.sleep(200);
     await js(`window.DurbarScreens.close()`);
     await ctx.sleep(400);
-    assert.strictEqual(await js(`document.getElementById('floorsBtn').textContent`), 'Floors 3/3');
+    assert.strictEqual(await js(`document.getElementById('floorsBtn').textContent.trim()`), '3/3');
 
     // FR-012: tags and order
     let s = await state();
     console.log('[033]', w, 'rooms', JSON.stringify(s.rooms.map((r) => `${r.name}@${r.floor}`)));
-    assert.strictEqual(s.btn, 'Floors 3/3');
+    assert.strictEqual(s.btn, '3/3');
     assert.ok(s.rooms.every((r) => r.floor), 'every room carries its floor tag');
     const order = ['Ground floor', 'Client A', 'Personal'];
     const seen = s.rooms.map((r) => order.indexOf(r.floor));
@@ -88,7 +88,7 @@ module.exports = async (ctx) => {
 
     // SC-003 + SC-002 + FR-020 + FR-016: switch Personal off
     const ms = await js(`new Promise(res=>{const t0=performance.now();document.querySelector('[data-fl="on"][data-floor="f-personal"]').click();
-      const chk=()=>{const b=document.getElementById('floorsBtn').textContent==='Floors 2/3';const gone=![...document.querySelectorAll('#stage .floor-tag')].some(t=>t.textContent==='Personal');
+      const chk=()=>{const b=document.getElementById('floorsBtn').textContent.trim()==='2/3';const gone=![...document.querySelectorAll('#stage .floor-tag')].some(t=>t.textContent==='Personal');
         if(b&&gone)res(performance.now()-t0);else requestAnimationFrame(chk);};chk();})`);
     console.log('[033]', w, 'switch off took', Math.round(ms), 'ms');
     assert.ok(ms < 500, `SC-003: updated in ${Math.round(ms)} ms`);
@@ -107,7 +107,7 @@ module.exports = async (ctx) => {
     const att = await js(`(()=>{const e=document.querySelector('#floorsPop [data-att="f-personal"]');return e&&!e.hidden?e.textContent:''})()`);
     console.log('[033]', w, 'off-floor row:', att);
     assert.ok(/^Off, /.test(att) && /waiting|at credit limit/.test(att), 'FR-010: the off floor says what waits there');
-    assert.strictEqual(await js(`document.getElementById('floorsBtn').textContent`), 'Floors 2/3', 'FR-010: the button is unchanged');
+    assert.strictEqual(await js(`document.getElementById('floorsBtn').textContent.trim()`), '2/3', 'FR-010: the button is unchanged');
     assert.deepStrictEqual((await state()).pills, s.pills, 'FR-010: the pills are unchanged');
     await shot('floor-off-panel', w, h);
     await panel(false);
@@ -117,7 +117,7 @@ module.exports = async (ctx) => {
     await panel(false);
     await ctx.sleep(300);
     s = await state();
-    assert.strictEqual(s.btn, 'Floors 1/3');
+    assert.strictEqual(s.btn, '1/3');
     assert.strictEqual(s.tags, 0, 'one floor on: no floor tags');
     assert.ok(s.rooms.length && s.rooms.every((r) => r.floor === null));
     assert.deepStrictEqual(s.pills, s.visible, 'SC-002 after Only');
