@@ -94,7 +94,7 @@ For folders I trust I can pick the mode that approves everything without prompts
 - **FR-013** `[KNOWN GAP]` "Approve for this session" for a simple shell command approves **any arguments** of that command name (e.g. `git` covers `git push`); for writes it covers every file in that folder. This is documented as conservative but not configurable (README m5 "Remaining"). (Task T023.)
 - **FR-014** `[IMPLEMENTED]` (spec 018, T024) ~~A folder's mode cannot be changed after it is added (a new session in the same folder may pick another mode; that choice is not saved, only adding the folder again updates the saved mode). There is no per-agent mode switch in the chat. `read:` (Task T024.)
 - **FR-015** `[KNOWN GAP]` The broker runs against the SDK's permission *callback* only; behavior for permission kinds added by newer SDKs falls to the default branch (kind used as scope; denied in read-only, asked in ask). Not tested with real new kinds. `read:`
-- **FR-016** `[KNOWN GAP]` Windows path scope: `grantScope` uses the host platform's `path.dirname`; only POSIX paths are unit-tested. `read:` (Task T025.)
+- **FR-016** `[IMPLEMENTED]` (2026-10-17 delta, FR-031/FR-032; test: permissions) ~~Windows path scope: `grantScope` uses the host platform's `path.dirname`; only POSIX paths are unit-tested.~~ Now takes an injectable path flavor; Windows paths are unit-tested. (Task T025.)
 
 ### Key Entities
 
@@ -142,3 +142,12 @@ For folders I trust I can pick the mode that approves everything without prompts
 - The top-bar permission selector is allowed up to 180px wide (`#liveBar #permMode` in `styles.css`) so the longer label is not cut off.
 - Unchanged: the internal value stays `allow` (saved folder files, IPC, `DURBAR_PERM=allow`, the broker). No behavior change beyond text. README aligned to "Allow all".
 - Acceptance: on the simulator (`DURBAR_SIM=15`), no visible "Allow edits" remains in the top bar, new-session dialog, mode chip/menu, confirmation, toasts or chat hint; the top bar still fits at 1280x800 and 1440x900.
+
+### 2026-10-17: Windows paths in "Approve for this session" scopes (closes FR-016; T025, issue #6)
+
+**What was wrong.** `grantScope` took the folder of a write/read path with the host's `path.dirname` and was only unit-tested with POSIX paths, so its Windows behavior (drive letters, backslashes, UNC shares) was unverified. `isInsideRoots` already had an injectable path flavor; `grantScope` did not.
+
+- **FR-031** `[IMPLEMENTED]` (test: permissions) **`grantScope` takes an optional path flavor** (`Pick<typeof path, 'dirname'>`, default the host `path`). The broker passes the flavor of its path check (`BrokerOptions.pathCheck.flavor`) so scopes and read checks use the same rules. Behavior on the host platform is unchanged.
+- **FR-032** `[IMPLEMENTED]` (test: permissions) **Windows paths give the folder, with the platform's separators**: `C:\repo\src\x.ts` → key `write:C:\repo\src`, label `write in repo/src/`; a read of `D:\data\in.csv` → `read:D:\data`; a file at a drive root `C:\x.ts` → `write:C:\`; a UNC path `\\server\share\dir\f.txt` → `write:\\server\share\dir`. Two writes in the same Windows folder share one key; a write in a subfolder does not match the parent's grant.
+- `[KNOWN GAP]` (task T028; test: permissions shows it) Known limit, unchanged: grant keys are compared exactly, so on Windows `C:\Repo` and `c:\repo` are different keys. The effect is conservative (the user is asked again, nothing extra is approved). Case-folding grant keys is not part of this change.
+- Not verified: a real Copilot session on Windows (what path spelling the runtime sends). CI runs `npm test` on Windows, so the host default is exercised there.
