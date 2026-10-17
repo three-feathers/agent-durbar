@@ -902,7 +902,7 @@ function afterFloorsChange(){
   if(demoOn)return;
   /* the open agent is now on a floor that is off: back to the office (its pending requests stay pending, FR-010) */
   if(ui.selected){const a=byId(ui.selected);if(a&&!roomShown(roomOf(a)))closePanel();}
-  renderFilter(); renderFloorsPanel(); scheduleRender();
+  renderFilter(); renderFloorsPanel(); renderFloorsSettings(); scheduleRender();
 }
 /* ---------------- floors: top-bar button, "into" select, panel (spec 033) ---------------- */
 function renderFloorsBtn(){
@@ -931,14 +931,12 @@ function toggleFloors(on){
   else if(document.activeElement&&pop.contains(document.activeElement))btn.focus();
 }
 const roomsOnFloor=id=>roomsInOrder().filter(r=>(floorById(r.floor)||{}).id===id);
-function renderFloorsPanel(){
-  const pop=$('floorsPop'); if(!pop||pop.hidden||!floorsLive())return;
-  const ae=document.activeElement,fk=ae&&pop.contains(ae)?[ae.dataset.fl,ae.dataset.floor||ae.dataset.room||'',ae.id].join('|'):null;
+/* The floors controls (FR-007, FR-023): one markup for the top-bar panel and the Settings section. `px` keeps ids unique per place. */
+function floorsBodyHTML(px){
   const last=FLOORS.floors.length-1;
   const opts=sel=>FLOORS.floors.map(f=>`<option value="${esc(f.id)}"${f.id===sel?' selected':''}>${esc(f.name)}</option>`).join('');
   const into=intoFloor();
-  pop.innerHTML='<div class="fp-h">Floors <small>A floor that is off is hidden and not counted. Its agents keep running and can spend credits.</small></div>'+
-    (into?`<div class="fl-into"><label for="intoFloor">New folders go to</label><select id="intoFloor" title="Floor for the folders you add with + Folder or + Workspace">${opts(into)}</select></div>`:'')+
+  return (into?`<div class="fl-into"><label for="${px}Into">New folders go to</label><select id="${px}Into" class="fl-into-sel" title="Floor for the folders you add with + Folder or + Workspace">${opts(into)}</select></div>`:'')+
     FLOORS.floors.map((f,i)=>{
       const rooms=roomsOnFloor(f.id);
       return `<div class="fl-floor${f.on?'':' off'}"><div class="fl-row">
@@ -949,16 +947,32 @@ function renderFloorsPanel(){
         <button class="btn" type="button" data-fl="up" data-floor="${esc(f.id)}" aria-label="Move ${esc(f.name)} up"${i===0?' disabled':''}>Up</button>
         <button class="btn" type="button" data-fl="down" data-floor="${esc(f.id)}" aria-label="Move ${esc(f.name)} down"${i===last?' disabled':''}>Down</button>
         ${f.ground?'':`<button class="btn danger" type="button" data-fl="del" data-floor="${esc(f.id)}" aria-label="Delete ${esc(f.name)}">Delete</button>`}</div>
-        ${rooms.map(r=>`<div class="fl-folder"><span class="fl-fn" title="${esc(r.path)}">${esc(r.name)}</span>${r.hidden?'<span class="tag">hidden</span>':''}<label class="sr-only" for="flm-${esc(r.id)}">Floor of ${esc(r.name)}</label><select id="flm-${esc(r.id)}" data-fl="move" data-room="${esc(r.id)}" title="Move ${esc(r.name)} to another floor">${opts(f.id)}</select></div>`).join('')}</div>`;}).join('')+
-    `<div class="fl-new"><label class="sr-only" for="flNew">New floor name</label><input id="flNew" type="text" maxlength="40" placeholder="New floor name" autocomplete="off" spellcheck="false"><button class="btn" type="button" data-fl="create">Create</button></div>`+
-    `<p class="fl-err" id="flErr" role="alert"${floorsErr?'':' hidden'}>${esc(floorsErr)}</p>`;
-  if(fk){const [fl,key,id]=fk.split('|');const el=id?pop.querySelector('#'+CSS.escape(id)):pop.querySelector(`[data-fl="${CSS.escape(fl||'')}"][data-floor="${CSS.escape(key)}"],[data-fl="${CSS.escape(fl||'')}"][data-room="${CSS.escape(key)}"]`);if(el&&!el.disabled)el.focus();else pop.focus();}
+        ${rooms.map(r=>`<div class="fl-folder"><span class="fl-fn" title="${esc(r.path)}">${esc(r.name)}</span>${r.hidden?'<span class="tag">hidden</span>':''}<label class="sr-only" for="${px}m-${esc(r.id)}">Floor of ${esc(r.name)}</label><select id="${px}m-${esc(r.id)}" data-fl="move" data-room="${esc(r.id)}" title="Move ${esc(r.name)} to another floor">${opts(f.id)}</select></div>`).join('')}</div>`;}).join('')+
+    `<div class="fl-new"><label class="sr-only" for="${px}New">New floor name</label><input id="${px}New" type="text" maxlength="40" placeholder="New floor name" autocomplete="off" spellcheck="false"><button class="btn" type="button" data-fl="create">Create</button></div>`+
+    `<p class="fl-err" role="alert"${floorsErr?'':' hidden'}>${esc(floorsErr)}</p>`;
+}
+/* re-render one floors container, keeping keyboard focus on the same control */
+function paintFloors(box,html){
+  const ae=document.activeElement,fk=ae&&box.contains(ae)?{fl:ae.dataset.fl||'',key:ae.dataset.floor||ae.dataset.room||'',id:ae.id}:null;
+  box.innerHTML=html;
+  if(!fk)return;
+  const el=fk.id?box.querySelector('#'+CSS.escape(fk.id)):box.querySelector(`[data-fl="${CSS.escape(fk.fl)}"][data-floor="${CSS.escape(fk.key)}"],[data-fl="${CSS.escape(fk.fl)}"][data-room="${CSS.escape(fk.key)}"]`);
+  if(el&&!el.disabled)el.focus();else box.focus();
+}
+function renderFloorsPanel(){
+  const pop=$('floorsPop'); if(!pop||pop.hidden||!floorsLive())return;
+  paintFloors(pop,'<div class="fp-h">Floors <small>A floor that is off is hidden and not counted. Its agents keep running and can spend credits.</small></div>'+floorsBodyHTML('fp'));
+}
+/* Settings > Floors (FR-023): same controls; painted when the Settings screen is open */
+function renderFloorsSettings(){
+  const box=$('floorsSet'); if(!box||!floorsLive())return;
+  paintFloors(box,floorsBodyHTML('fs'));
 }
 /* every floors call returns the full new state; an error is shown in the panel */
 async function floorCall(p){
   let r=null; try{r=await p;}catch{r=null;}
   floorsErr=r&&!r.ok?(r.error||'That did not work.'):(r?'':'Floors are not available.');
-  if(r&&r.state)applyFloors(r.state); else renderFloorsPanel();
+  if(r&&r.state)applyFloors(r.state); else {renderFloorsPanel();renderFloorsSettings();}
   return r;
 }
 async function floorAction(el){
@@ -978,15 +992,15 @@ async function floorAction(el){
   }
   if(fl==='del'&&f){
     const n=roomsOnFloor(id).length;
-    const r=await askDialog({title:'Delete floor '+f.name+'?',body:(n?(n===1?'Its folder moves':'Its '+n+' folders move')+' to '+((FLOORS.floors.find(x=>x.ground)||{}).name||'the ground floor')+'. ':'')+'No folder is removed and no session is ended.',returnFocus:()=>$('floorsBtn'),
+    const r=await askDialog({title:'Delete floor '+f.name+'?',body:(n?(n===1?'Its folder moves':'Its '+n+' folders move')+' to '+((FLOORS.floors.find(x=>x.ground)||{}).name||'the ground floor')+'. ':'')+'No folder is removed and no session is ended.',returnFocus:()=>{const b=el.closest('.floors-ui');return (b&&b.querySelector('.fl-sw'))||$('floorsBtn');},
       buttons:[{label:'Cancel',value:null},{label:'Delete floor',value:'ok',cls:'primary warn'}]});
     if(r)return floorCall(bridge.deleteFloor(id));
     return;
   }
   if(fl==='create'){
-    const inp=$('flNew'),name=inp?inp.value:'';
+    const box=el.closest('.floors-ui'),inp=box&&box.querySelector('.fl-new input'),name=inp?inp.value:'',iid=inp&&inp.id;
     const r=await floorCall(bridge.createFloor(name));
-    if(r&&r.ok){const i2=$('flNew');if(i2){i2.value='';i2.focus();}}
+    if(r&&r.ok){const i2=iid&&document.getElementById(iid);if(i2){i2.value='';i2.focus();}}
     return;
   }
 }
@@ -1985,7 +1999,7 @@ document.addEventListener('click',e=>{
   else if(b.dataset.pv==='view')viewVs(ra,b.dataset.key,b);
 });
 document.addEventListener('click',e=>{
-  const fb=e.target.closest('#floorsPop [data-fl]');
+  const fb=e.target.closest('.floors-ui [data-fl]');
   if(fb&&fb.tagName==='BUTTON'){floorAction(fb);return;}
   const fpop=$('floorsPop');
   if(fpop&&!fpop.hidden&&!e.target.closest('#floorsPop')&&!e.target.closest('#floorsBtn')&&!e.target.closest('#modeDlg'))toggleFloors(false);
@@ -2029,10 +2043,10 @@ if(bridge){
   $('foldersBtn').onclick=()=>toggleFolders();
   $('floorsBtn').onclick=()=>toggleFloors();
   document.addEventListener('change',e=>{
-    const s=e.target.closest&&e.target.closest('#floorsPop select[data-fl="move"]');if(s)moveRoomToFloor(s.dataset.room,s.value);
-    if(e.target&&e.target.id==='intoFloor'){INTO=e.target.value;renderIntoFloor();}});
-  document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target&&e.target.id==='flNew'){e.preventDefault();floorAction({dataset:{fl:'create'}});}});
-  window.DurbarScreens.init({bridge,stats:STATS,esc,toast,onSettings:v=>{APP_SETTINGS=v||{};},
+    const s=e.target.closest&&e.target.closest('.floors-ui select[data-fl="move"]');if(s)moveRoomToFloor(s.dataset.room,s.value);
+    if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
+  document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
+  window.DurbarScreens.init({bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},onSettings:v=>{APP_SETTINGS=v||{};},
     places:window.DurbarPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
     staticLimit:a=>{const m=MODELS.find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},

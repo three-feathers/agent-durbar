@@ -13,7 +13,8 @@
  *   FR-016  the office credit total is unchanged and its tooltip names the part from floors that are off.
  *   FR-022  Only: one floor on, no floor tags.
  *   US2 #7  the full-screen chat of an agent closes when its floor is switched off; FR-013 the all-off message.
- * Screenshots: 033-floors-on, 033-floors-panel, 033-floor-off at both sizes.
+ *   FR-023  Settings > Floors: a switch there updates the office, the pills, the top-bar button and the panel.
+ * Screenshots: 033-floors-on, 033-floors-panel, 033-floor-off, 033-settings-floors at both sizes.
  */
 const path = require('path');
 const assert = require('assert');
@@ -48,6 +49,25 @@ module.exports = async (ctx) => {
     }
     await panel(false);
     await ctx.sleep(600);
+
+    // FR-023: Settings > Floors, same controls, same state as the panel
+    await js(`document.getElementById('settingsBtn').click()`);
+    await ctx.waitFor(`!!document.querySelector('#floorsSet .fl-sw')`, 5000);
+    await js(`document.querySelector('#floorsSet [data-fl="on"][data-floor="f-personal"]').click()`);
+    await ctx.sleep(300);
+    let st = await js(`({btn:document.getElementById('floorsBtn').textContent,set:document.querySelector('#floorsSet [data-fl="on"][data-floor="f-personal"]').getAttribute('aria-pressed')})`);
+    assert.strictEqual(st.btn, 'Floors 2/3', 'FR-023: a switch in Settings updates the top-bar button');
+    assert.strictEqual(st.set, 'false');
+    await panel(true);
+    assert.strictEqual(await js(`document.querySelector('#floorsPop [data-fl="on"][data-floor="f-personal"]').getAttribute('aria-pressed')`), 'false', 'FR-023: the panel shows the same state');
+    await panel(false);
+    await js(`document.getElementById('floorsSet').closest('section').scrollIntoView({block:'start'})`);
+    await shot('settings-floors', w, h);
+    await js(`document.querySelector('#floorsSet [data-fl="on"][data-floor="f-personal"]').click()`);
+    await ctx.sleep(200);
+    await js(`window.DurbarScreens.close()`);
+    await ctx.sleep(400);
+    assert.strictEqual(await js(`document.getElementById('floorsBtn').textContent`), 'Floors 3/3');
 
     // FR-012: tags and order
     let s = await state();

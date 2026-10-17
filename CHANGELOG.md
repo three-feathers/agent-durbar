@@ -4,7 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.4 tag)
 
-- **Floors (spec 033, branch `033-floors`).** Group rooms into floors and switch a floor off: it leaves the office, the list, the filter, the strip and the lobby and is not counted in the status pills; its agents keep running (no alerts) and the office credit total still counts them. Top-bar *Floors n/m* panel with On/Off, Only, rename, reorder, delete, move folder and the floor for new folders. Simulator and unit tests only, 0 AI credits.
+- **Floors (spec 033, branch `033-floors`).** Group rooms into floors and switch a floor off: it leaves the office, the list, the filter, the strip and the lobby and is not counted in the status pills; its agents keep running (no alerts) and the office credit total still counts them. Top-bar *Floors n/m* panel and a *Floors* section in Settings with On/Off, Only, rename, reorder, delete, move folder and the floor for new folders. Simulator and unit tests only, 0 AI credits.
 
 ## v0.1.0-alpha.4 ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4), 2026-10-17)
 

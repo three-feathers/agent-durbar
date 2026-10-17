@@ -93,6 +93,6 @@
 
 ## Phase 9: Change 2026-10-17 (floors in Settings, FR-023)
 
-- [ ] T030 Settings section *Floors* in `src/renderer/screens.js` rendered by `src/renderer/app.js` from the same markup and handlers as the Floors panel (scoped per container, no duplicate ids); a change in either place re-renders both [FR-023]
-- [ ] T031 Check in `scripts/shots-033.js`: switching a floor in Settings updates the office, the pills and the top-bar button, and the panel shows the same state; screenshot `033-settings-floors` at both sizes; README status line [FR-023]
+- [x] T030 Settings section *Floors* in `src/renderer/screens.js` rendered by `src/renderer/app.js` from the same markup and handlers as the Floors panel (scoped per container, no duplicate ids); a change in either place re-renders both [FR-023]
+- [x] T031 Check in `scripts/shots-033.js`: switching a floor in Settings updates the office, the pills and the top-bar button, and the panel shows the same state; screenshot `033-settings-floors` at both sizes; README status line [FR-023]
 

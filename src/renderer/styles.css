@@ -533,6 +533,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 #floorsPop{position:fixed;top:58px;right:14px;z-index:40;width:min(600px,calc(100vw - 28px));max-height:min(72vh,560px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(40,35,25,.2);padding:8px 14px 12px}
 #floorsPop[hidden]{display:none}
 #floorsPop:focus{outline:none}
+.floors-set{max-width:640px}
+.floors-set:focus{outline:none}
 .fl-floor{border-top:1px solid #efe9dd;padding:6px 0}
 .fl-row{display:flex;align-items:center;gap:6px}
 .fl-row .btn{height:28px;padding:0 9px;font-size:12px}

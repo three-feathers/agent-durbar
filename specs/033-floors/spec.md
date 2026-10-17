@@ -187,6 +187,7 @@ When more than one floor is on, I can tell at a glance which floor each room bel
 - `[IMPLEMENTED]` test: FR-016 (office total and tooltip): `test:usagetotals`.
 - `[IMPLEMENTED]` sim: FR-006..FR-013, FR-018, FR-020, FR-021, FR-022, SC-002, SC-003 (switch off in 55-84 ms with 15 agents): `scripts/shots-033.js` at 1440x900 and 1280x800, plus a manual browser pass on the simulator.
 - `[IMPLEMENTED]` sim: FR-011, FR-012, SC-005: `npm run check:office` floors cases (3, 2, 1 floors on, with closed doors; top bar at 1280x800).
+- `[IMPLEMENTED]` sim: FR-023 (Settings > Floors; a switch there updates the office, the pills, the button and the panel): `scripts/shots-033.js`, screenshot `033-settings-floors`.
 - `[IMPLEMENTED]` read: FR-009, FR-010 (no handler touches a session; pending approvals are not resolved by a floor change).
 - FR-019: CI runs `npm test` on Windows, macOS and Linux; the layout was looked at on macOS only.
 - Deviation from the first design: the floor for new folders is chosen in the Floors panel, not in the top bar (no room at 1280x800; research R7, FR-006 updated).

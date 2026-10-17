@@ -3,7 +3,7 @@
 (function(){
   'use strict';
   const S=window.DurbarStats;
-  let X=null; /* ctx from app.js: {bridge, stats, esc, toast, agents(), staticLimit(a), openAgent(id), sim, places, placeServers(), setPlaceMap(m)} */
+  let X=null; /* ctx from app.js: {bridge, stats, esc, toast, floors:{on(),render()}, agents(), staticLimit(a), openAgent(id), sim, places, placeServers(), setPlaceMap(m)} */
   let cur=null; /* {kind:'settings'|'tools'|'folder', ...} */
   let period='session'; /* Tools view: 'session' | 'all' (remembered for the run) */
   let usage=null; /* last all-time view {doc,labels,error} from main */
@@ -89,12 +89,16 @@
         <p class="scr-note">In the lobby, an agent walks to a place while one of its tools runs: <b>Terminal</b> for shell commands, <b>Web</b> for web fetches, and the place you choose here for the tools of each MCP server. File tools (read, edit, search) never move an agent. The choice applies to the next tool call, for all folders, and is kept between runs. Only server names and places are saved.</p>
         ${names.length?`<ul class="plrows" id="plList">${rows}</ul>`:'<p class="scr-note small">No MCP servers yet. They appear here when your Copilot CLI list has some, or after an agent uses one in this run.</p>'}</section>`;
     }
+    /* Floors (spec 033 FR-023): the same controls as the top-bar Floors panel, painted by app.js into #floorsSet */
+    const floorsSec=X.floors&&X.floors.on()?`<section class="scr-sec" aria-labelledby="flH"><h3 id="flH">Floors</h3>
+        <p class="scr-note">Groups of folders. A floor that is <b>off</b> is hidden from the office and not counted in Working, Waiting, Idle, Errors and Done. <b>Its agents keep running</b> and can spend credits; the office credit total still counts them. The same controls are in the <b>Floors</b> button of the top bar.</p>
+        <div class="floors-ui floors-set" id="floorsSet" tabindex="-1"></div></section>`:'';
     const ab=app.about;
     const aboutSec=ab?`<section class="scr-sec" aria-labelledby="aboutH"><h3 id="aboutH">About</h3>
         <p class="scr-note"><b>${esc(ab.name)}</b> ${esc(ab.version)} · by <b>${esc(ab.owner)}</b></p>
         <p class="scr-note small" id="aboutCredits">Contributors: ${ab.contributors.map(c=>esc(c.label)).join(', ')}</p>
         <p class="scr-note small">${esc(ab.copyright)} · MIT License</p></section>`:'';
-    r.innerHTML=head('Settings')+`<div class="scr-body">${capSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${capSec}${floorsSec}${placesSec}
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH">MCP servers</h3>
         <p class="scr-note">MCP servers give agents extra tools. Your <b>Copilot CLI list</b> is the one global list: every agent gets those servers, with nothing to configure or import here. Each agent can switch single servers off from its own header (MCP button).</p>
         <p class="scr-warn" role="note"><b>MCP servers run local commands with your user rights.</b> The Copilot runtime starts the servers of your CLI list in every session, exactly as the CLI does. Read-only MCP tools can run without asking even in Read-only mode.</p>
@@ -107,6 +111,7 @@
         <p class="scr-note">Agent Durbar can add its own servers, but <b>only per folder or workspace</b>: open the <b>MCP</b> button in a room's header (or <b>Folder extras…</b> in an agent's MCP menu). Extras apply only to agents in that folder and are never shared with other folders. Switching one on shows its exact command first, and asks again if the command changes.</p>
       </section>${aboutSec}</div>`;
     wireHead();
+    if(X.floors&&$('floorsSet'))X.floors.render();
     if($('capSave'))$('capSave').onclick=async()=>{
       const v=parseFloat($('capDef').value),msg=$('capMsg');
       if($('capDef').value.trim()!==''&&!(v>=30&&v<=1e6)){msg.textContent='Enter a number from 30 (the runtime minimum), or leave it empty for no cap.';return;}
