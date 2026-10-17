@@ -43,3 +43,10 @@
 ## Risks
 - Double counting helpers (parent and sub both see usage): one `record` per event, covered by a test that replays a helper event.
 - Header width at 1280x800 with the extra chip: checked by `check:office` and screenshots; fall back to dropping the word "AIU" into the tooltip if it does not fit.
+
+## Verification (2026-10-17)
+- `npm run typecheck && npm run build && npm test` (incl. `test:usagetotals`), `npm run check:office` 95/95, on macOS, after merging main (#15, #16).
+- Simulator (`DURBAR_SIM=15`, 1440x900 and 1280x800): header chip `33.56 AIU` equals the sum of the folder totals (SC-001); closed `blog` plate shows `0.06 AIU` and its aria-label says it; smallest new text 11px; no horizontal overflow. Screenshots: `docs/screenshots/011-usage-totals-1440x900.png`, `docs/screenshots/011-usage-totals-1280x800.png`.
+- Fixed during review: (1) the status-counter click handler matched any `.stat`, so clicking the chip cleared the active filter; it now matches `.stat[data-k]` only (FR-019 "not a filter"). (2) The folder total shrank to "0.16 A..." and pushed `swisscontract-ai` into an ellipsis; the total no longer shrinks and, when a room shows a total, the path gives way before the name (selector made specific enough to beat the compact-density rules).
+- `/speckit-analyze` and `/speckit-converge` followed by hand (feature dir 011): converged for FR-018..FR-023, no tasks appended.
+- Not verified: a real Copilot session (0 AIU spent), Windows and Linux rendering, the "credits not reported" chip on screen (covered by unit tests only; the simulator always reports credits).

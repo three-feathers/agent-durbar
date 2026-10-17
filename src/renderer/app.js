@@ -708,7 +708,7 @@ document.addEventListener('click',e=>{
   if(e.target.closest('#closeAll,#openAll')){const shut=!!e.target.closest('#closeAll');
     ROOMS.filter(r=>!r.hidden&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id)).forEach(r=>setRoomClosed(r,shut,true));
     layoutKey='';renderAll();return;}
-  const st=e.target.closest('.stat'); if(st){const k=st.dataset.k;ui.status=ui.status===k?null:k;renderAll();const n=document.querySelector(`.stat[data-k="${k}"]`);if(n)n.focus();return;}
+  const st=e.target.closest('.stat[data-k]'); if(st){const k=st.dataset.k;ui.status=ui.status===k?null:k;renderAll();const n=document.querySelector(`.stat[data-k="${k}"]`);if(n)n.focus();return;}
   const mo=e.target.closest('[data-more]'); if(mo){const id=mo.dataset.more;ui.expanded[id]=!ui.expanded[id];renderAll();return;}
   const cm=e.target.closest('.chips-more'); if(cm){const box=cm.parentNode;box.dataset.exp=box.dataset.exp==='1'?'0':'1';refreshChips(box);return;}
   const chip=e.target.closest('#chat .chip:not(.att-chip)'); if(chip){const o=chip.classList.toggle('open');chip.setAttribute('aria-expanded',String(o));return;}

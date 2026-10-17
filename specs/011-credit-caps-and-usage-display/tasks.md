@@ -23,4 +23,4 @@ Backlog (unchanged): office total, per-folder totals, persisted usage, multiplie
 - [x] T016 Header chip after the status counters, tooltip, hidden with no usage [FR-019, FR-021]
 - [x] T017 Folder total in the room header and on the closed door plate (text + aria-label) [FR-020, FR-021]
 - [x] T018 Styles `.stat-aiu`, `.room-aiu`; `npm run check:office` green at 1440x900 and 1280x800 [FR-022]
-- [ ] T019 Screenshots (simulator, both sizes, one closed door), README status line, specs index [FR-023, SC-001]
+- [x] T019 Screenshots (simulator, both sizes, one closed door), README status line, specs index [FR-023, SC-001]

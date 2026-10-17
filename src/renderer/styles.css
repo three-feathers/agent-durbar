@@ -29,7 +29,6 @@ button{font:inherit;color:inherit}
 /* usage total chip (spec 011 FR-019): same pill as the counters, but a note, not a filter */
 .stat-aiu{cursor:default}
 .stat-aiu:hover{border-color:var(--line);background:var(--surface-2)}
-.stat-aiu .l{color:var(--ink-2)}
 .stat span.l{font-size:12px;color:var(--ink-2)}
 .stat.attn{background:#fdf3df;border-color:#e5be78}
 .stat.attn span.l{color:var(--amber-ink);font-weight:600}
@@ -85,9 +84,11 @@ body.has-bridge #liveBar{display:flex}
 .room-name{font-size:13.5px;font-weight:650;letter-spacing:-.005em;white-space:nowrap}
 .room-path{font-size:11.5px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto}
 .room-dots{margin-left:auto;display:flex;gap:8px;align-items:center;flex:none}
-/* folder usage total (spec 011 FR-020): sits next to the status dots, shrinks before the path does */
-.room-aiu{margin-left:auto;flex:0 1 auto;min-width:0;max-width:11em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+/* folder usage total (spec 011 FR-020): sits next to the status dots and never shrinks; the path gives way first */
+.room-aiu{margin-left:auto;flex:none;white-space:nowrap;font-size:11.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
 .room-aiu+.room-dots{margin-left:0}
+.stage .room-head:has(.room-aiu) .room-path{flex-shrink:1000} /* the path, not the room name, gives way to the total */
+.stage .room-head:has(.room-aiu) .room-name{flex-shrink:0}
 .rd{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--ink-2)}
 .rd.attn{color:var(--amber-ink);font-weight:650}
 .room-plant{display:none;position:absolute;right:12px;top:6px}

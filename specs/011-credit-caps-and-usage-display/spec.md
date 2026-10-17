@@ -54,7 +54,7 @@ Next to the model picker I see the credit multiplier and an estimate of cost rel
 
 ### Functional Requirements
 
-- **FR-001** (specified 2026-10-17 as FR-018..FR-023) The office header shows the total AIU of all agents since launch, with tooltip explaining AIU and that figures are as reported by the Copilot runtime.
+- **FR-001** (implemented 2026-10-17, FR-018..FR-023) The office header shows the total AIU of all agents since launch, with tooltip explaining AIU and that figures are as reported by the Copilot runtime.
 - **FR-002** Per agent: calls, tokens and AIU as today, plus "credits not reported" when the runtime gives none.
 - **FR-003** A per-session cap can be set when adding a folder or session (default: none); it is passed to the adapter through `StartOptions.maxAiCredits` and mapped by the Copilot adapter to the SDK's `sessionLimits` (after verification, feature 013).
 - **FR-004** Reaching a cap emits a normalized event (name to be decided in `/speckit.plan`, for example `limit`) that the UI renders as an attention state with the choices in User Story 2; the adapter implements the SDK's exhausted-request handshake.
@@ -134,8 +134,8 @@ Run 2026-10-16 (Europe/Madrid) with `npm run verify:cap` against the real runtim
 - **FR-019** `[IMPLEMENTED]` (sim:) **Header chip** after the status counters: `N.NN AIU` for the office total. Tooltip: total AIU with three decimals, calls, input/output tokens, "since Agent Durbar opened; ended sessions included", "as reported by the Copilot runtime (1 AIU = 1 AI credit, unverified against billing)", and, when relevant, "N calls did not report credits" and "includes folders no longer shown". The chip is not a filter button and is hidden while no `usage` event has arrived (fresh start, demo/sample data).
 - **FR-020** `[IMPLEMENTED]` (sim:) **Folder total** in the open room header next to the status dots (`0.42 AIU`, tooltip with the same breakdown for that folder) and on the closed door plate (appended to the plate's aria-label and shown as short text). Hidden for folders with no usage yet.
 - **FR-021** `[IMPLEMENTED]` (test: usagetotals; sim:) **Not reported, never zero:** when every recorded call of the scope lacks credits, the chip/folder total shows `credits not reported` (short form on the plate: `n/r`), not `0.00 AIU`. When only some lack them, the value is shown and the tooltip says how many calls did not report.
-- **FR-022** `[KNOWN GAP]` (planned: T018) Calm UI (constitution V): text at least 10.5px, the header and room headers still fit at 1440x900 and 1280x800 with 15 simulated agents (`npm run check:office` stays green); the chip uses the existing neutral pill style, no new colors for spend.
-- **FR-023** `[KNOWN GAP]` (planned: T013, T019) Tests (no credits): `scripts/test-usagetotals.ts` (sums per folder and office, helpers once, removal does not decrease, invalid `nanoAiu` counted as unreported, formatting incl. not-reported) wired into `npm test`; simulator screenshots at both sizes.
+- **FR-022** `[IMPLEMENTED]` (sim:; check:office 95/95) Calm UI (constitution V): text at least 10.5px, the header and room headers still fit at 1440x900 and 1280x800 with 15 simulated agents (`npm run check:office` stays green); the chip uses the existing neutral pill style, no new colors for spend.
+- **FR-023** `[IMPLEMENTED]` (test: usagetotals; sim: screenshots) Tests (no credits): `scripts/test-usagetotals.ts` (sums per folder and office, helpers once, removal does not decrease, invalid `nanoAiu` counted as unreported, formatting incl. not-reported) wired into `npm test`; simulator screenshots at both sizes.
 - SC-001 applies: on the simulator the header total equals the sum of the folder totals (when no folder was removed) to the displayed precision.
 
 Still backlog after this delta: persisted usage across restarts, multiplier estimate (User Story 3), capability flag for other adapters (spec 012).
