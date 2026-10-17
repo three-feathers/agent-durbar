@@ -197,8 +197,8 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
         tool: 0,
         think: i,
         grants: new Map(),
-        // Context window profiles: most agents are far from full; one is amber, one nearly full (a smaller window).
-        ctx: i === 0 ? { tokens: 188000, limit: 272000 } : i === 3 ? { tokens: 117000, limit: 128000 } : i === 4 ? { tokens: 110000, limit: 128000 } : i === 5 ? { tokens: 35500, limit: 200000 } : i === 6 ? undefined : { tokens: 14000 + i * 4300, limit: 272000 },
+        // Context window profiles: most agents are far from full; one is amber, one nearly full (a smaller window). Maya (i = 14, a done agent: idle ones report no context) is amber alone in her room, below the auto-compact line, so a room that is only "uneasy" (spec 034 delta) can be seen.
+        ctx: i === 0 ? { tokens: 188000, limit: 272000 } : i === 3 ? { tokens: 117000, limit: 128000 } : i === 4 ? { tokens: 110000, limit: 128000 } : i === 5 ? { tokens: 35500, limit: 200000 } : i === 6 ? undefined : i === 14 ? { tokens: 94000, limit: 128000 } : { tokens: 14000 + i * 4300, limit: 272000 },
         // Two agents sit near their window so the Compact action and the start-fresh note can be shown; one already compacted once.
         compactions: i === 3 ? 1 : 0,
         noAuto: i === 3 || i === 4 ? true : undefined,

@@ -745,3 +745,16 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .tap{animation:tapdesk .5s ease-in-out infinite}
 @keyframes tapdesk{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
 @media (prefers-reduced-motion:reduce){.amb-light,.dizzy,.tap{animation:none}}
+
+/* ---- room alert (spec 034 delta, issue #135): the room keeps its own colour, darker with its worst agent; a siren while it has the ambulance or a faint.
+   An inset shadow darkens the floor under the cards and the text, so nothing else changes size or colour. ---- */
+.stage .room[data-alert="uneasy"]{border-color:color-mix(in srgb,var(--wall) 88%,#2a1c10);box-shadow:inset 0 0 0 3px rgba(255,255,255,.28),inset 0 0 0 999px rgba(40,26,14,.045)}
+.stage .room[data-alert="alarm"]{border-color:color-mix(in srgb,var(--wall) 72%,#2a1c10);box-shadow:inset 0 0 0 3px rgba(255,255,255,.28),inset 0 0 0 999px rgba(40,26,14,.1)}
+.siren{display:inline-flex;flex:none;width:18px;height:18px;align-self:center}
+.siren svg{width:100%;height:100%;display:block}
+.siren-light{fill:#d9534f;animation:sirenblink 1s steps(1,end) infinite}
+@keyframes sirenblink{0%{fill:#d9534f}50%{fill:#5b8fd1}}
+@media (prefers-reduced-motion:reduce){.siren-light{animation:none}}
+/* on a door plate the siren sits on the corner of the door icon, so the plate keeps its size */
+.plate{position:relative}
+.plate .siren{position:absolute;left:25px;top:4px;width:15px;height:15px}

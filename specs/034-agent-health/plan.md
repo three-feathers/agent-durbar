@@ -45,3 +45,10 @@
 - Driver: extend `scripts/shots-034.js` (tones per room from `data-alert`, the siren moving with the ambulance, closed plate, Serious mode, reduced motion, contrast computed from computed styles, floor off with `simfloors=1`).
 - Risks: darker rooms vs. calm UI (keep the steps small, review screenshots); the siren takes ~14 px of the room header, so long room names may cut earlier (check at both sizes); overlap with spec 033 floor tags in the header.
 
+### Implementation notes for the delta (phase 2, 2026-10-17)
+- Built as planned: `roomAlertOf` in `mood.js` (unit-tested in `test:mood`), `roomAlert(r)` in `app.js` (calm at once in Serious mode; counts only live main agents, like `moodFor`), `data-alert="uneasy|alarm"` and `data-siren` on the open room, the siren (`.siren`, 18 px beacon, red/blue blink) after the room name and on door plates, `Alert: an agent needs help` appended to the room's and the plate's `aria-label`. The existing attribute sync in the morph code adds and removes `data-alert` without a redraw of the cards.
+- Darkening is an inset box-shadow over the floor (`rgba(40,26,14)` at .045 for uneasy, .10 for alarm) plus a darker wall colour (`color-mix` with the room's own `--wall`), so cards, text and sizes do not change and each room keeps its colour. Rules sit at the end of `styles.css` with `.stage .room[...]` so they beat both density rules.
+- Simulator: Maya (a done agent: idle agents report no context) starts at 73% of a 128k window, below the auto-compact line, so `infra-notes` is uneasy while `blog` stays calm; the other rooms are alarm (monster, error, faint).
+- Found: the first try used Hugo, but an idle agent never reports its context (usage runs only when an agent works), so his room stayed calm.
+- Checks run: `npm run typecheck`, `test:mood`; seen on the simulator at 1440x900. The driver extension (tones, siren moving with the ambulance, plate, Serious mode, reduced motion, contrast, floor off), screenshots, README, CHANGELOG and the review are phase 3.
+
