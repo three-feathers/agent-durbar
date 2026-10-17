@@ -1485,6 +1485,7 @@ const modelOf=id=>MODELS.find(m=>m.id===(id||'auto'))||{id:id||'auto',name:(id||
 const ctrlOf=a=>(a.info&&a.info.modelControl)||{switch:'none',compact:false};
 const tierOf=a=>a.info&&a.info.tier==='long'?'long':'default';
 const busyNow=a=>a.state==='working'||a.state==='thinking'||a.state==='waiting'||!!a.worked||!!a.compacting;
+const UNVERIFIED_WHY='Not verified on a real account yet: if a switch does nothing or fails, start a new session.';
 const NO_SWITCH_WHY='This agent cannot change its model in place yet. Start a new session with the model you want; this one keeps its model until it ends.';
 /* a toast with one action button (Undo); the container is a polite live region, the button is a normal tab stop */
 function toastAction(html,label,onClick,ms){
@@ -1526,7 +1527,7 @@ function openModelMenu(a0,x,y,anchor){
   if((cur.efforts||[]).length)h+='<p class="mm-h">Reasoning effort</p><div class="mm-seg" role="group" aria-label="Reasoning effort">'+['',...cur.efforts].map(x=>{const on2=(a.info.effort||'')===x;return `<button type="button" data-effort="${esc(x)}" aria-pressed="${on2}"${dis}>${x?esc(x):'Default'}</button>`;}).join('')+'</div>';
   if(DM.hasLong(cur))h+=`<button type="button" role="menuitemcheckbox" aria-checked="${tier==='long'}" data-tier="1"${dis} class="mm-tier"><span class="mt"><b>Long context</b><small>${esc(DM.fmtTokens(DM.windowOf(cur,'long')))} window · ${esc(DM.priceLine(cur,'long'))}</small></span><span class="ck">${tier==='long'?'✓':''}</span></button>`;
   if(pend)h+=`<div class="mm-pend" role="status"><span>Next: <b>${esc(pend.name)}</b>${pend.tier==='long'?' (long context)':''}, when this reply ends.</span><button type="button" data-cancelq="1">Cancel</button></div>`;
-  h+=on?'<p class="mm-note">Applies from the next message; the conversation is kept. Costlier switches ask first, and your credit cap never changes.</p>':'<div class="mm-foot"><button type="button" class="btn" data-newsess="1">New session…</button></div>';
+  h+=on?'<p class="mm-note">Applies from the next message; the conversation is kept. Costlier switches ask first, and your credit cap never changes.'+(ctrlOf(a).unverified?' '+esc(UNVERIFIED_WHY):'')+'</p>':'<div class="mm-foot"><button type="button" class="btn" data-newsess="1">New session…</button></div>';
   const m=document.createElement('div');m.id='modelMenu';m.className='mode-menu model-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Model and context for '+a.name);
   m.innerHTML=h;document.body.appendChild(m);
   const r=m.getBoundingClientRect();const px=Math.max(8,Math.min(x,innerWidth-r.width-8)),py=Math.max(8,Math.min(y,innerHeight-r.height-8));
@@ -1565,13 +1566,16 @@ async function chooseModelInner(a,req,anchor){
     lines.push('Price now: '+DM.priceLine(cur,tierFrom)+'. New: '+DM.priceLine(tgt,tierTo)+'.');
     if(cf.estimate!==undefined&&!cf.overCap)lines.push('Reading this conversation once would cost about '+DM.fmtCredits(cf.estimate)+' AI credits with '+tgt.name+' (an estimate, if nothing is cached).');
     if(cap>0)lines.push('Your credit cap of '+fmtCap(cap)+' AI credits is not changed.');
-    if(busyNow(a))lines.push('A reply is running: the switch applies when it ends.');
+    if(busyNow(a))lines.push('A reply is running: the switch applies when it ends.'+(ctrlOf(a).unverified?' If you stop the reply, whether the switch still applies is not verified.':''));
+    if(ctrlOf(a).unverified)lines.push(UNVERIFIED_WHY);
     const r=await askDialog({title:'Switch '+a.name+' to '+tgt.name+(tierTo==='long'?' (long context)':'')+'?',body:'The conversation is kept. From the next message this agent uses the new model.',lines,returnFocus:anchor,
       buttons:[{label:'Cancel',value:null},{label:cf.compaction?'Compact and switch':cf.overCap?'Switch anyway':'Switch',value:'ok',cls:'primary'+(cf.overCap?' warn':'')}]});
     if(!r)return;
     if(cf.compaction)confirm.compaction='accept';
   }
-  await sendModelChange(a,Object.assign({model:tgt.id,contextTier:tierTo},req.effort!==undefined?{effort:req.effort}:{},confirm.compaction?{confirm}:{}),{prev:{model:cur.id,effort:a.info.effort,tier:tierFrom},tgt,anchor});
+  /* an effort the new model does not support is cleared (its default), never sent: the runtime would refuse the switch */
+  const effort=req.effort!==undefined?req.effort:(a.info.effort&&tgt.id!==cur.id&&!(tgt.efforts||[]).includes(a.info.effort)?null:undefined);
+  await sendModelChange(a,Object.assign({model:tgt.id,contextTier:tierTo},effort!==undefined?{effort}:{},confirm.compaction?{confirm}:{}),{prev:{model:cur.id,effort:a.info.effort,tier:tierFrom},tgt,anchor});
 }
 async function sendModelChange(a,req,ctx){
   const res=await bridge.setModel(a.id,req).catch(e=>({ok:false,error:String(e&&e.message||e)}));
@@ -1649,12 +1653,18 @@ async function compactDialog(a,anchor){
   const cur=modelOf(a.info.model),c=STATS.agent(a.id).ctx,est=DM.estimateInputCredits(c&&c.tokens,cur,tierOf(a));
   const lines=['Summarises the conversation so it takes less room. It costs one model call'+(est!==undefined?' (about '+DM.fmtCredits(est)+' AI credits to read the conversation, an estimate if nothing is cached)':' (the price of '+cur.name+' is not reported)')+' and cannot be undone.'];
   if(c&&c.limit>0)lines.push('Now: '+DM.fmtTokens(c.tokens)+' of '+DM.fmtTokens(c.limit)+' tokens.');
+  if(ctrlOf(a).unverified)lines.push('Not verified on a real account yet; if it fails, the conversation stays as it is.');
   const r=await askDialog({title:'Compact the context of '+a.name+'?',body:'Older messages are replaced by a summary; the agent keeps working in the same session.',lines,input:{label:'Focus (optional): what the summary should keep',placeholder:'e.g. the API decisions',max:200},returnFocus:anchor,
     buttons:[{label:'Cancel',value:null},{label:'Compact',value:'ok',cls:'primary'}]});
   if(!r)return;
   const res=await bridge.compact(a.id,(r.text||'').trim()||undefined).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(!res||!res.ok)toast('Could not compact: '+esc((res&&res.error)||'unknown error'),6000);
   else if(res.result&&res.result.success===false)toast('Not compacted: '+esc(res.result.message||'the runtime declined.'),6000);
+  else if(res.result&&res.result.success===true){
+    /* the line normally comes from the compaction events; if the runtime sent none for a manual compaction, say it from the result */
+    const before=a.compactions||0,rr=res.result;
+    setTimeout(()=>{if((a.compactions||0)===before&&!a.compacting)onCompaction(a,{phase:'complete',trigger:'manual',tokensRemoved:rr.tokensRemoved,tokensAfter:rr.tokensAfter});},1500);
+  }
   refocusAnchor(anchor);
 }
 

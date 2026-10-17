@@ -58,7 +58,9 @@
   }
 
   /* Rough cost in credits of the model reading `tokens` of input once, with nothing cached (an estimate, not a bill). */
+  const unverifiedPrice=m=>!!(m&&m.pricing&&m.pricing.unverified);
   function estimateInputCredits(tokens,model,tier){
+    if(unverifiedPrice(model))return undefined; /* the unit of the runtime's prices was never checked: no credit figure is shown or compared with the cap */
     const p=priceOf(model,tier);
     if(!p||p.input===undefined||!nn(tokens))return undefined;
     return tokens/1e6*p.input;
@@ -86,7 +88,7 @@
   /* One short line for a menu row: price per million tokens (or its class), or an honest "not reported". */
   function priceLine(m,tier){
     const p=priceOf(m,tier||'default');
-    if(p)return (p.input!==undefined?'in '+fmtCredits(p.input):'')+(p.input!==undefined&&p.output!==undefined?' · ':'')+(p.output!==undefined?'out '+fmtCredits(p.output):'')+' credits per M tokens';
+    if(p)return (p.input!==undefined?'in '+fmtCredits(p.input):'')+(p.input!==undefined&&p.output!==undefined?' · ':'')+(p.output!==undefined?'out '+fmtCredits(p.output):'')+' credits per M tokens'+(unverifiedPrice(m)?' (unit not verified)':'');
     if(m&&CLASS_RANK[m.priceClass])return m.priceClass.replace('-',' ')+' price class';
     if(m&&nn(m.multiplier))return '×'+m.multiplier+' cost multiplier';
     return 'price not reported';
@@ -118,12 +120,13 @@
     let headroom;
     if(pos(ctx.cap)){
       headroom=Math.max(0,ctx.cap-(nn(ctx.used)?ctx.used:0));
-      if(estimate!==undefined&&estimate>headroom)reasons.push({code:'over-headroom',text:'Reading this conversation once could use about '+fmtCredits(estimate)+' credits (estimate); '+fmtCredits(headroom)+' are left under the cap.'});
+      if(estimate===undefined&&unverifiedPrice(tgt)&&rel.direction!=='cheaper'&&rel.direction!=='equal')reasons.push({code:'cap-unverified',text:'The prices reported for '+name+' are not verified yet, so the cost cannot be checked against your cap ('+fmtCredits(headroom)+' credits left).'});
+      else if(estimate!==undefined&&estimate>headroom)reasons.push({code:'over-headroom',text:'Reading this conversation once could use about '+fmtCredits(estimate)+' credits (estimate); '+fmtCredits(headroom)+' are left under the cap.'});
     }
     const win=windowOf(tgt,tierTo);
     const compaction=win>0&&nn(ctx.tokens)&&ctx.tokens>win;
     if(compaction)reasons.push({code:'smaller-window',text:'The context in use ('+fmtTokens(ctx.tokens)+' tokens) is larger than the window of '+name+' ('+fmtTokens(win)+'). It is compacted first, which costs one model call.'});
-    return {needed:reasons.length>0,direction:rel.direction,reasons,estimate,headroom,relative:rel,compaction,overCap:reasons.some(r=>r.code==='over-headroom')};
+    return {needed:reasons.length>0,direction:rel.direction,reasons,estimate,headroom,relative:rel,compaction,overCap:reasons.some(r=>r.code==='over-headroom'),unverifiedPrice:unverifiedPrice(tgt)};
   }
 
   /* Suggest a fresh session near the limit (spec 030 FR-013): at 90% or more, after a compaction already ran (or failed), or at once when the

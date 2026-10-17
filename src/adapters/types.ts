@@ -24,6 +24,8 @@ export interface StartOptions {
   sessionId?: string;
   /** Reasoning effort for models that support it (see listModels). */
   reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  /** Context-window tier of the saved choice (spec 030); omitted = the model's default tier. Passed on create and on resume. */
+  contextTier?: ContextTier;
   /**
    * Permission policy. Default (both unset): reads are approved, everything that can
    * change state (write, shell, mcp, url, custom tools, ...) is denied.

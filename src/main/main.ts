@@ -22,7 +22,7 @@ import { SettingsStore } from './settings';
 import { parseAmount, parseCap } from '../shared/credits';
 import { aboutPanelOptions, aboutView } from '../shared/about';
 import { modelControlFor, parseFocus, parseSwitchRequest } from '../shared/modelswitch';
-import type { ModelSwitchRequest } from '../shared/modelswitch';
+import type { ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 
 // Developer/test hooks (spec 010): ignored in packaged builds unless DURBAR_DEV=1. Read hooks only from `dev`.
 const dev = devEnv(process.env, app.isPackaged);
@@ -126,7 +126,8 @@ const infoFor = (workspace: string, permMode: PermMode, id: string, model: strin
     permMode,
     model,
     effort,
-    modelControl: modelControlFor(generic),
+    // `unverified`: the real adapter's switch/compact calls come from the SDK docs and were never run on an account (spec 030 Phase 3).
+    modelControl: modelControlFor(generic, { unverified: true }),
     ...extra,
   };
 };
@@ -135,6 +136,8 @@ const startOptionsFor = (a: AgentInfo) => ({
   workspace: wsKey(a),
   model: a.model ?? DEFAULT_MODEL,
   reasoningEffort: asEffort(a.effort),
+  // The saved choice goes on create AND resume (spec 030 FR-013); the adapter only uses `autoTier` for a NEW `auto` session.
+  contextTier: a.tier,
   autoTier: (a.model ?? DEFAULT_MODEL) === 'auto' ? ('efficiency' as const) : undefined,
   allow: a.permMode === 'allow',
   ask: a.permMode === 'ask',
@@ -427,7 +430,8 @@ ipcMain.handle('agents:setModel', async (_e, id: unknown, raw: unknown) => {
     const parsed = parseSwitchRequest(raw, await modelsForValidation());
     if (!parsed.ok) return { ok: false, error: parsed.error };
     const req: ModelSwitchRequest = parsed.request;
-    const result = await generic.setModel(a.id, req);
+    // Not started (or ended) yet: nothing is running to switch. The choice is saved and the first start (create or resume) uses it (FR-013).
+    const result: ModelSwitchResult = adapter.isLive(a.id) ? await generic.setModel(a.id, req) : { status: 'applied', model: req.model, message: 'Used from the first message: this agent has not started yet.' };
     if (result.status === 'applied') {
       // Saved only in this app's own folder file; never in Copilot's settings (no repoScope / modelChangeScope / pickerPersistence is ever sent).
       a.model = req.model;
@@ -459,6 +463,7 @@ ipcMain.handle('agents:compact', async (_e, id: unknown, focus: unknown) => {
   if (!a) return { ok: false, error: 'unknown agent' };
   if (typeof generic.compact !== 'function') return { ok: false, error: 'This agent cannot compact its context in place. Start a new session instead.' };
   try {
+    if (!adapter.isLive(a.id)) return { ok: true, result: { success: false, message: 'This agent has not started yet, so there is nothing to compact.' } };
     return { ok: true, result: await generic.compact(a.id, parseFocus(focus)) };
   } catch (err) {
     return { ok: false, error: errText(err) }; // the focus text is never logged or echoed

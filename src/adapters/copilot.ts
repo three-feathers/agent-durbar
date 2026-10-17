@@ -1,16 +1,21 @@
 import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
-import type { CopilotSession, MCPServerConfig, ModelInfo, PermissionRequest, PermissionRequestResult, SessionEvent } from '@github/copilot-sdk';
+import type { CopilotSession, MCPServerConfig, ModelInfo, PermissionRequest, PermissionRequestResult, ResumeSessionConfig, SessionConfig, SessionEvent } from '@github/copilot-sdk';
 import type {
   AgentAdapter,
   LimitAction,
   AgentEvent,
   AgentMessage,
+  CompactResult,
+  ModelSwitchRequest,
+  ModelSwitchResult,
   PermissionInfo,
   StartOptions,
   Unsubscribe,
 } from './types';
 import { EventMapper } from './map';
 import type { EventBody, RawEvent } from './map';
+import { compactResultFrom, modelConfig, modelOptionFrom, sdkTier, switchResultFrom } from './copilotmodel';
+import type { ModelOption, RawModelInfo, RawSwitchResult } from './copilotmodel';
 import { PermissionBroker } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
@@ -30,18 +35,7 @@ const IMAGE_MIME: Record<string, string> = {
   '.bmp': 'image/bmp',
 };
 
-/** A model the account can use, as shown in the picker. */
-export interface ModelOption {
-  id: string;
-  name: string;
-  /** Billing cost multiplier reported by the API, when there is one. */
-  multiplier?: number;
-  efforts: string[];
-  defaultEffort?: string;
-  disabled: boolean;
-  /** Context window in tokens when the runtime says so (it reports 0 for `auto`, which is treated as unknown). */
-  contextWindow?: number;
-}
+export type { ModelOption };
 
 interface Live {
   session: CopilotSession;
@@ -67,8 +61,8 @@ export class CopilotAdapter implements AgentAdapter {
   /** One mapper per session (it remembers tool names, reasoning ids and sub-agent ids of that session). */
   private mappers = new Map<string, EventMapper>();
 
-  /** Lazily start the shared runtime. Uses the logged-in Copilot user (e.g. `copilot login`). */
-  private async getClient(): Promise<CopilotClient> {
+  /** Lazily start the shared runtime. Uses the logged-in Copilot user (e.g. `copilot login`). Protected so a test can hand in a fake client (no runtime process, no credits). */
+  protected async getClient(): Promise<CopilotClient> {
     if (this.client) return this.client;
     this.starting ??= (async () => {
       // Packaged app: run the runtime from app.asar.unpacked. Dev: let the SDK locate it.
@@ -93,15 +87,7 @@ export class CopilotAdapter implements AgentAdapter {
   /** Cheapest model by billing multiplier, falling back to input token price. Undefined if none reports billing. */
   /** What the logged-in account offers, in the shape the UI needs (no inference, no credits). */
   async listModelOptions(): Promise<ModelOption[]> {
-    return (await this.listModels()).map((m) => ({
-      id: m.id,
-      name: m.name || m.id,
-      multiplier: m.billing?.multiplier,
-      efforts: m.supportedReasoningEfforts ?? [],
-      defaultEffort: m.defaultReasoningEffort,
-      disabled: m.policy?.state === 'disabled',
-      contextWindow: m.capabilities?.limits?.max_context_window_tokens > 0 ? m.capabilities.limits.max_context_window_tokens : undefined,
-    }));
+    return (await this.listModels()).map((m) => modelOptionFrom(m as unknown as RawModelInfo));
   }
 
   isLive(sessionId: string): boolean {
@@ -163,9 +149,7 @@ export class CopilotAdapter implements AgentAdapter {
     const config = {
       workingDirectory: cwd,
       streaming: true,
-      model: options.model,
-      ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}),
-      ...(options.autoTier ? { capi: { autoTier: options.autoTier } } : {}),
+      // Model, effort, tier and the `auto` routing (spec 030 FR-013): filled in below once it is known whether this is a create or a resume.
       // MCP (spec 019). The runtime also loads ~/.copilot/mcp-config.json and the built-in GitHub server on its own;
       // `disabledMcpServers` switches those off by name. Values (env, headers) are secrets: never logged, only names.
       ...(options.mcpServers && Object.keys(options.mcpServers).length ? { mcpServers: options.mcpServers as unknown as Record<string, MCPServerConfig> } : {}),
@@ -176,13 +160,19 @@ export class CopilotAdapter implements AgentAdapter {
     };
     this.debug?.(`mcp: servers=[${Object.keys(options.mcpServers ?? {}).join(',')}] disabled=[${(options.disabledMcpServers ?? []).join(',')}]`);
     let session: CopilotSession;
-    if (options.resumeSessionId) session = await client.resumeSession(options.resumeSessionId, config);
+    // The saved model, effort and tier go on create AND resume, so a model the user switched to survives an ended session or a restart.
+    // `modelConfig` adds the `auto` routing preference only to a NEW session (on resume it would override the session's own).
+    const resumed = (): Record<string, unknown> => ({ ...config, ...modelConfig(options, true) });
+    const created = (): Record<string, unknown> => ({ ...config, ...modelConfig(options, false) });
+    if (options.resumeSessionId) session = await client.resumeSession(options.resumeSessionId, resumed() as unknown as ResumeSessionConfig);
     else if (options.sessionId) {
       // An agent that was ended (or restored from the saved folder list) keeps its id: resume it when it has
       // history on disk, otherwise start a fresh session under that same id.
       const known = await client.getSessionMetadata(options.sessionId).catch(() => undefined);
-      session = known ? await client.resumeSession(options.sessionId, config) : await client.createSession({ ...config, sessionId: options.sessionId });
-    } else session = await client.createSession(config);
+      session = known
+        ? await client.resumeSession(options.sessionId, resumed() as unknown as ResumeSessionConfig)
+        : await client.createSession({ ...created(), sessionId: options.sessionId } as unknown as SessionConfig);
+    } else session = await client.createSession(created() as unknown as SessionConfig);
     sid = session.sessionId;
     const unsubscribe = session.on((ev) => {
       // Remember an open limit request so Stop / End can answer it (the runtime waits for a consumer once interest is registered).
@@ -274,6 +264,80 @@ export class CopilotAdapter implements AgentAdapter {
   }
 
   /** Change the credit cap of a running session; `null` removes it. The SDK confirms with a `session.session_limits_changed` event. */
+  /**
+   * Switch the model of a live session (spec 030 FR-003..FR-009, SDK `rpc.model.switchTo`, @experimental).
+   * Built from the SDK 1.0.22 types and docs only, never run on a real account (T041..T046 are Phase 3, they cost credits).
+   * Sent: model, effort, tier, `requireAvailable`, `deferIfModelChangeQueued`, `source: 'model_picker'`, `runCompactionPreflight`.
+   * NEVER sent: `repoScope`, `modelChangeScope`, `pickerPersistence` (they write Copilot's own settings) and `compactionDecision`
+   * (its values are unknown). To "compact and switch" the context is compacted first with `history.compact` (trigger `model_switch`),
+   * then the switch is asked again; if it still needs confirmation it is `rejected`, never looped.
+   */
+  async setModel(sessionId: string, request: ModelSwitchRequest): Promise<ModelSwitchResult> {
+    const live = this.mustGet(sessionId);
+    const model = request.model;
+    if (request.confirm?.compaction === 'decline') return { status: 'rejected', model, message: 'The model was not changed.' };
+    const mapper = this.mapperFor(sessionId);
+    const tier = sdkTier(request.contextTier);
+    const params = {
+      modelId: model,
+      ...(request.effort !== undefined ? { reasoningEffort: request.effort } : {}),
+      ...(tier ? { contextTier: tier } : {}),
+      // `auto` keeps the app's cheapest routing (same as a new `auto` session); the runtime rejects an autoTier for any other model.
+      ...(model === 'auto' ? { autoTier: 'efficiency' as const } : {}),
+      requireAvailable: true,
+      deferIfModelChangeQueued: true,
+      runCompactionPreflight: true,
+      source: 'model_picker' as const,
+    };
+    try {
+      if (request.confirm?.compaction === 'accept') {
+        // Compacting needs an idle session: never while a turn runs (the runtime would queue or reject it, behaviour unverified).
+        if (await this.processing(live)) return { status: 'rejected', model, message: 'Compaction needs the agent to be idle. Stop the turn or wait, then switch again.' };
+        const done = compactResultFrom(await live.session.rpc.history.compact({ trigger: 'model_switch' }));
+        if (!done.success) return { status: 'rejected', model, message: done.message ?? 'The conversation could not be compacted, so the model was not changed.' };
+      }
+      mapper.expectUserModel(model);
+      const out = switchResultFrom((await live.session.rpc.model.switchTo(params)) as RawSwitchResult, model);
+      if (out.status === 'needs-confirmation' && request.confirm?.compaction === 'accept') {
+        mapper.expectUserModel(undefined);
+        return { status: 'rejected', model, message: 'The conversation is still larger than the new model\'s window after compacting. Pick a model with a larger window or start a new session.' };
+      }
+      if (out.status === 'needs-confirmation' || out.status === 'rejected') mapper.expectUserModel(undefined);
+      return out;
+    } catch (err) {
+      mapper.expectUserModel(undefined);
+      return { status: 'rejected', model, message: err instanceof Error ? err.message.slice(0, 300) : 'The runtime refused the switch.' };
+    }
+  }
+
+  /** Remove a switch the runtime queued during a turn (`rpc.queue.removeAt`). What Stop does to a queued switch is unverified (T042). */
+  async cancelQueuedModel(sessionId: string, queueId: string): Promise<void> {
+    const live = this.mustGet(sessionId);
+    const r = await live.session.rpc.queue.removeAt({ id: queueId });
+    this.mapperFor(sessionId).expectUserModel(undefined);
+    if (!r?.removed) throw new Error('Nothing was queued any more: the switch has already been applied or was cancelled.');
+  }
+
+  /** Manual compaction (`rpc.history.compact`, one model call = credits). Refused while the session works. `focus` is never logged. */
+  async compact(sessionId: string, focus?: string): Promise<CompactResult> {
+    const live = this.mustGet(sessionId);
+    try {
+      if (await this.processing(live)) return { success: false, message: 'The agent is working. Compact when it is idle.' };
+      return compactResultFrom(await live.session.rpc.history.compact({ trigger: 'manual', ...(focus ? { customInstructions: focus } : {}) }));
+    } catch (err) {
+      return { success: false, message: err instanceof Error ? err.message.slice(0, 300) : 'The runtime refused to compact.' };
+    }
+  }
+
+  /** True while a turn or a background continuation runs. When the runtime cannot say, assume it does (the safe side: nothing is compacted mid-turn). */
+  private async processing(live: Live): Promise<boolean> {
+    try {
+      return (await live.session.rpc.metadata.isProcessing()).processing !== false;
+    } catch {
+      return true;
+    }
+  }
+
   async setCap(sessionId: string, credits: number | null): Promise<void> {
     const live = this.mustGet(sessionId);
     if (credits !== null && !(credits > 0 && Number.isFinite(credits))) throw new Error('Invalid credit cap.');
@@ -342,12 +406,16 @@ export class CopilotAdapter implements AgentAdapter {
   }
 
   /** SDK SessionEvent -> normalized event(s): see map.ts (pure, unit-tested with recorded fixtures). */
-  private map(sid: string, ev: SessionEvent): void {
+  private mapperFor(sid: string): EventMapper {
     let m = this.mappers.get(sid);
     if (!m) {
       m = new EventMapper((body) => this.emit(sid, body));
       this.mappers.set(sid, m);
     }
-    m.map(ev as unknown as RawEvent);
+    return m;
+  }
+
+  private map(sid: string, ev: SessionEvent): void {
+    this.mapperFor(sid).map(ev as unknown as RawEvent);
   }
 }

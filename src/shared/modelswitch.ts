@@ -19,6 +19,8 @@ export interface TierPricing {
 export interface ModelPricing extends TierPricing {
   /** Prices above the default tier's prompt budget, for models that offer a long-context tier. */
   long?: TierPricing;
+  /** The runtime's numbers were never checked against a real account (the unit scale may be off): the UI says so and does not check the credit cap with them. */
+  unverified?: boolean;
 }
 
 export interface ModelSwitchRequest {
@@ -57,18 +59,22 @@ export interface ModelControl {
   compact: boolean;
   /** The window size is reported by the runtime (a window of 0 or an absent one is "unknown"). */
   windowKnown: boolean;
+  /** The adapter's calls are built from the SDK's documented API but were never run against a real account (spec 030 Phase 3): the UI says so. */
+  unverified?: boolean;
 }
 
 export const NO_MODEL_CONTROL: ModelControl = { switch: 'none', effort: false, contextTier: false, compact: false, windowKnown: true };
 
 /** Control data from the adapter's optional members (a stand-in until spec 012's capabilities exist). */
-export function modelControlFor(adapter: { setModel?: unknown; compact?: unknown }, opts: { switch?: ModelControl['switch']; contextTier?: boolean } = {}): ModelControl {
+export function modelControlFor(adapter: { setModel?: unknown; compact?: unknown }, opts: { switch?: ModelControl['switch']; contextTier?: boolean; unverified?: boolean } = {}): ModelControl {
   const canSwitch = typeof adapter.setModel === 'function';
+  const canCompact = typeof adapter.compact === 'function';
   return {
+    ...(opts.unverified && (canSwitch || canCompact) ? { unverified: true } : {}),
     switch: canSwitch ? opts.switch ?? 'next-message' : 'none',
     effort: canSwitch,
     contextTier: canSwitch && opts.contextTier !== false,
-    compact: typeof adapter.compact === 'function',
+    compact: canCompact,
     windowKnown: true,
   };
 }
