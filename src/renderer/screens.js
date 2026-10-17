@@ -70,9 +70,18 @@
     const amb=mcp.cli.map(cliRow).join('');
     let app={};
     if(X.bridge.getSettings){try{app=(await X.bridge.getSettings())||{};}catch(e){app={};}}
+    /* Usage totals (spec 011 FR-028, issue #21): what the header shows, kept across restarts, and the reset */
+    let usageSec='';
+    if(X.bridge.usageResetTotals&&X.usageOffice&&window.DurbarUsage){
+      const o=X.usageOffice(), since=(X.usageSince&&X.usageSince())||'', now=window.DurbarUsage.fmtTotal(o,2);
+      usageSec=`<h4 class="scr-sub">Usage totals</h4>
+        <p class="scr-note">The office header and each room show the credits spent, kept on this computer across restarts: only numbers, folder names and a fingerprint of each folder's path (never prompts or paths). <b id="usageNow">${now?esc(now+' in '+o.calls+(o.calls===1?' call':' calls')):'Nothing recorded yet'}${/^\d{4}-\d{2}-\d{2}/.test(since)?esc(', counting since '+since.slice(0,10)):''}.</b></p>
+        ${X.usageError&&X.usageError()?`<p class="scr-note warn" role="status">The totals could not be saved to disk (${esc(X.usageError())}); counting continues for this run.</p>`:''}
+        <div class="scr-tools"><button class="btn" type="button" id="usageTotalsReset">Reset usage totals</button><span class="scr-note small" id="usageTotalsMsg" role="status"></span></div>`;
+    }
     const capSec=X.bridge.setDefaultCap?`<section class="scr-sec" aria-labelledby="capH"><h3 id="capH">Credit cap</h3>
         <p class="scr-note">The default cap, in AI credits (shown as AIU, the unit the Copilot runtime reports; 1 credit = USD 0.01), given to <b>new</b> sessions. Minimum 30 (the runtime refuses less); empty means no cap. Each session can change its own cap from its chat header; a session that reaches its cap stops and asks you. The cap is <b>soft</b>: it is checked after each model response, so one response can go past it. The stop-and-ask flow follows GitHub's documentation and is not yet verified on a real account (see spec 011).</p>
-        <div class="scr-tools"><label class="capf">Default cap (AIU)<input id="capDef" type="number" min="30" step="1" placeholder="No cap" value="${app.defaultMaxAiCredits||''}"></label><button class="btn primary" type="button" id="capSave">Save</button><span class="scr-note small" id="capMsg" role="status"></span></div></section>`:'';
+        <div class="scr-tools"><label class="capf">Default cap (AIU)<input id="capDef" type="number" min="30" step="1" placeholder="No cap" value="${app.defaultMaxAiCredits||''}"></label><button class="btn primary" type="button" id="capSave">Save</button><span class="scr-note small" id="capMsg" role="status"></span></div>${usageSec}</section>`:'';
     const f=mcp.file;
     const fileNote=!f.found?`<p class="scr-note" role="status">No <code>${esc(f.label)}</code> yet. Servers you add with the Copilot CLI (<code>/mcp add</code>) or by editing that file appear here by themselves. The built-in GitHub server is always listed.</p>`
       :f.error?`<p class="scr-note warn" role="status"><code>${esc(f.label)}</code> could not be read (${esc(f.error)}). Fix the file; this list updates the next time you open this screen.</p>`
@@ -118,6 +127,13 @@
       const res=await X.bridge.setDefaultCap($('capDef').value.trim()===''?null:Math.round(v*100)/100);
       if(X.onSettings)X.onSettings({defaultMaxAiCredits:res&&res.defaultMaxAiCredits});
       msg.textContent=res&&res.defaultMaxAiCredits?'Saved: new sessions start with a cap of '+res.defaultMaxAiCredits+' AIU.':'Saved: new sessions start without a cap.';
+    };
+    if($('usageTotalsReset'))$('usageTotalsReset').onclick=async()=>{
+      const ok=await dialog({title:'Reset usage totals?',html:'<p class="dsub">This sets the saved office and folder totals to zero and starts counting from now. Tool counts in Tools &gt; All time are not changed, and neither are your agents or their history.</p>',buttons:[{label:'Cancel',value:null},{label:'Reset',value:'ok',cls:'primary warn'}]});
+      if(!ok)return;
+      let v=null; try{v=await X.bridge.usageResetTotals();}catch(e){v=null;}
+      if(v&&v.ok){X.onUsageReset(v);X.toast('Usage totals were reset.',2600);paintSettings();}
+      else{const m=$('usageTotalsMsg');if(m)m.textContent='Could not reset the totals.';}
     };
     r.onclick=onSettingsClick;
     r.onchange=onPlaceChange;

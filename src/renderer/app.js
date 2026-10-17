@@ -20,11 +20,21 @@ const wsOf = a => roomOf(a).id;
 const helpersOf = a => agents.filter(x=>x.parent===a.id);
 /* usage totals (spec 011 FR-018..FR-021): one run-long ledger, one record per `usage` event, never decreased */
 const LEDGER=window.DurbarUsage.createLedger();
-const ledgerRemoved=()=>LEDGER.roomIds().some(id=>{const r=ROOMS.find(x=>x.id===id);return !r||r.hidden;});
+const ledgerRemoved=()=>LEDGER.hasUnlisted()||LEDGER.roomIds().some(id=>{const r=ROOMS.find(x=>x.id===id);return !r||r.hidden;});
+/* Totals saved before this run (spec 011 FR-027, issue #21): asked from the main process once agents exist, and again when one is added
+   (its folder may have a saved total). The baseline is frozen in main, so asking again never double counts what this run recorded. */
+let baselineQueued=false, usageSaveError='';
+function loadUsageBaseline(){
+  if(baselineQueued||!bridge||!bridge.usageTotals)return; baselineQueued=true;
+  setTimeout(()=>{baselineQueued=false;bridge.usageTotals().then(v=>{if(v&&v.ok){LEDGER.setBaseline(v);usageSaveError=typeof v.error==='string'?v.error:'';scheduleRender();}}).catch(()=>{});},50);
+}
+/* After "Reset usage totals" in Settings: this run's figures and the baseline both start from zero. */
+function onUsageReset(view){LEDGER.clearRun();LEDGER.setBaseline(view&&view.ok?view:{});usageSaveError=view&&typeof view.error==='string'?view.error:'';scheduleRender();}
 const recordUsage=(a,e)=>{const r=roomOf(a);if(r)LEDGER.record(r.id,e);};
 /* ---- floors (spec 033): ordered groups of rooms; a floor that is off is hidden exactly like a hidden folder ---- */
 /* spend of the rooms on floors that are off: still in the office total, named in its tooltip (FR-016) */
-const offFloorSpend=()=>window.DurbarUsage.sum(ROOMS.filter(r=>!floorOn(r.floor)).map(r=>LEDGER.room(r.id)));
+/* same since-reset totals as the room headers (spec 011 FR-027: the folder key adds the saved baseline) */
+const offFloorSpend=()=>window.DurbarUsage.sum(ROOMS.filter(r=>!floorOn(r.floor)).map(r=>{const f=folderOfRoom(r.id);return LEDGER.room(r.id,f&&f.key);}));
 let FLOORS=null; /* {floors:[{id,name,on,ground}],lastFloor,byAgent} from the bridge; null = no floors (demo mode, older bridge) */
 const floorsLive=()=>!!FLOORS&&!demoOn;
 const floorById=id=>floorsLive()?(FLOORS.floors.find(f=>f.id===id)||FLOORS.floors.find(f=>f.ground)||null):null;
@@ -38,7 +48,7 @@ const roomsInOrder=()=>ROOMS.map((r,i)=>[r,i]).sort((x,y)=>floorRank(x[0])-floor
 const floorTag=r=>{if(!floorTagsOn())return '';const f=floorById(r.floor);return f?`<span class="floor-tag" title="Floor: ${esc(f.name)}">${esc(f.name)}</span>`:'';};
 function aiuChip(){
   const t=LEDGER.office(); if(!t.calls||demoOn)return '';
-  const tip=window.DurbarUsage.tooltip(t,{scope:'office',removed:ledgerRemoved(),offFloors:offFloorSpend()});
+  const tip=window.DurbarUsage.tooltip(t,{scope:'office',removed:ledgerRemoved(),since:LEDGER.since(),run:LEDGER.officeRun(),offFloors:offFloorSpend()});
   const inner=t.unreported>=t.calls?'<span class="l">credits not reported</span>':`<b>${esc((t.nano/1e9).toFixed(2))}</b><span class="l">AIU</span>`;
   return `<span class="stat stat-aiu" role="note" title="${esc(tip)}" aria-label="${esc(tip.replace(/\n/g,' '))}">${inner}</span>`;
 }
@@ -124,7 +134,7 @@ function syncWalkers(){
     move(w,dp,()=>{dropWalker(id);scheduleRender();});
   });
 }
-function roomAiu(r){const t=LEDGER.room(r.id);return t.calls&&!demoOn?{long:window.DurbarUsage.fmtTotal(t),short:window.DurbarUsage.fmtShort(t),tip:window.DurbarUsage.tooltip(t,{scope:'folder'})}:null;}
+function roomAiu(r){const f=folderOfRoom(r.id),t=LEDGER.room(r.id,f&&f.key);return t.calls&&!demoOn?{long:window.DurbarUsage.fmtTotal(t),short:window.DurbarUsage.fmtShort(t),tip:window.DurbarUsage.tooltip(t,{scope:'folder',since:LEDGER.since(),run:LEDGER.roomRun(r.id)})}:null;}
 
 const LABELS={working:'Working',thinking:'Thinking',waiting:'Waiting for you',idle:'Idle',error:'Error',done:'Done'};
 const LABELS_SHORT={waiting:'Waiting'};
@@ -852,7 +862,7 @@ window.addEventListener('resize',relayout);
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', solo:qs.get('simrooms')==='solo', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
@@ -1016,7 +1026,7 @@ function addLiveAgent(info){
   let name=info.name; const dup=LIVE.agents.filter(x=>!x.parent&&x.room===room.id&&x.baseName===info.name).length; if(dup)name=info.name+' #'+(dup+1);
   LIVE.agents.push({id:info.id,name,baseName:info.name,role:info.role||roleFor(info),room:room.id,state:'idle',label:info.lazy?'Not started':'Ready',task:info.lazy?'Saved folder. A session starts with your first message.':'Ready. Send a message to start.',
     look:lookFor(info.id),files:[],paused:false,live:true,info,usage:{calls:0,inT:0,outT:0,nano:0},usageText:'',turn:null,worked:false,pend:new Map(),settled:new Set(),grants:[]});
-  if(!demoOn){if(!ui.expanded)ui.expanded={};renderFilter();scheduleRender();}
+  if(!demoOn){if(!ui.expanded)ui.expanded={};renderFilter();scheduleRender();loadUsageBaseline();}
   if(pendingOpen===info.id){pendingOpen=null;if(!demoOn)openPanel(info.id,false);}
 }
 /* ---------------- chat timeline: thinking, tools, text and sub-agent blocks in arrival order (spec 015) ---------------- */
@@ -2046,7 +2056,7 @@ if(bridge){
     const s=e.target.closest&&e.target.closest('.floors-ui select[data-fl="move"]');if(s)moveRoomToFloor(s.dataset.room,s.value);
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
-  window.DurbarScreens.init({bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},onSettings:v=>{APP_SETTINGS=v||{};},
+  window.DurbarScreens.init({bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),usageError:()=>usageSaveError,
     places:window.DurbarPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
     staticLimit:a=>{const m=MODELS.find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},

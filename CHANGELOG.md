@@ -5,6 +5,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 ## Unreleased (on `main`, after the alpha.4 tag)
 
 - **Floors (spec 033, branch `033-floors`).** Group rooms into floors and switch a floor off: it leaves the office, the list, the filter, the strip and the lobby and is not counted in the status pills; its agents keep running (no alerts) and the office credit total still counts them. Top-bar *Floors n/m* panel and a *Floors* section in Settings with On/Off, Only, rename, reorder, delete, move folder and the floor for new folders. Simulator and unit tests only, 0 AI credits.
+- **Usage totals kept across restarts (spec 011 FR-024..FR-030, issue #21).** The office chip and the folder totals now show the credits spent **since the last reset**, saved on this computer (`durbar-usage-totals.json`: numbers, folder names and a fingerprint of each folder's path, never prompts or paths); the tooltip also gives this run alone. Settings > Credit cap > *Usage totals* shows the figure and has **Reset usage totals** (with a confirmation; Tools > All time is not touched). "credits not reported" can now be seen in the simulator (`simunreported=<room>`). The multiplier estimate is left to spec 030. Simulator and unit tests (`test:usagedoc`, `scripts/shots-021.js`), 0 AIU; not checked on a real session.
 
 ## v0.1.0-alpha.4 ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4), 2026-10-17)
 

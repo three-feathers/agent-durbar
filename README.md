@@ -110,6 +110,23 @@ Spec [033](specs/033-floors/spec.md) (amends 001, 006, 017; uses 011 and 024). B
 
 Tests: `npm test` adds `test:floors` and floor cases in `test:folders` and `test:usagetotals`; `npm run check:office` adds floors cases (3, 2 and 1 floors on, with closed doors, and the top bar at 1280x800); `scripts/shots-033.js` drives the simulator (`DURBAR_SIM_FLOORS=1`, `DURBAR_SIM_FLOORS_OFF=<name>`) and saves the pictures above.
 
+## Status (usage totals kept across restarts)
+
+Spec [011](specs/011-credit-caps-and-usage-display/spec.md), second delta of 2026-10-17 (issue #21). Built and tested on the simulator and unit tests. **AI credits spent: 0 AIU.** Not in a release yet.
+
+- **Saved totals.** The office chip in the header and each folder's total (room header, closed door plate) count **since the last reset** and survive restarts. The main process records every usage event per folder, so it also counts while no window is open. The tooltip says since when, and how much was spent since the app opened.
+- **Only numbers on disk.** `durbar-usage-totals.json` in the app's userData folder holds numbers, folder display names and a fingerprint (hash) of each folder's path; never prompts, output or paths. Folders that are no longer listed keep counting in the office total ("includes folders no longer shown").
+- **Reset.** Settings > Credit cap > *Usage totals* shows the current figure and *Reset usage totals* (with a confirmation). Tool counts in Tools > *All time* are not changed.
+- **"credits not reported"** is shown instead of 0 when a folder's calls carry no credits; in the simulator, `simunreported=<room>` shows it (and `simtotals=1` starts from totals of a previous run).
+- The model multiplier estimate the issue also asked for is left to spec 030 (its model menu shows the price per model).
+
+![Office with saved totals and a folder whose calls report no credits, 1280x800](docs/screenshots/021-office-1280x800.png)
+![Settings: Usage totals and the reset](docs/screenshots/021-settings-1280x800.png)
+
+**Limits.** Not checked on a real Copilot session (the saved file, its reading and the reset were run in the real app without a session). A reset that happens while a usage event is in flight can leave this run's figure one call apart from the file until the next restart.
+
+Tests: `npm test` adds `test:usagedoc` (recording, validation, hostile and oversized files, no path on disk, the store's debounce and reset) and baseline cases in `test:usagetotals`. Checks and screenshots: `scripts/shots-021.js`.
+
 ## Status (places in the office: a shared lobby, agents walk to the tool they use)
 
 Spec [024](specs/024-office-places/spec.md) (issue #18; amends 001 and 017). Built and tested on the simulator and unit tests, plus a short check on a real Copilot session. **AI credits spent: 0.84 AIU** (3 prompts on the real session). Released in v0.1.0-alpha.4.
@@ -438,7 +455,7 @@ An Electron app that:
 - [x] Permission approve/deny flow (basic; read-only default)
 - [x] AI-credit counter and per-session caps with a global default (milestone 9; the limit-reached flow follows GitHub's docs and is not yet verified on a real account)
 - [x] Tools "All time" view, Copilot CLI MCP list first, MCP extras per folder (milestone 10), per-folder import from VS Code's `.vscode/mcp.json`
-- [x] Usage totals: office total in the header and per-folder totals in room headers and door plates, in memory since the app opened (spec 011, 2026-10-17; persisted usage is still open)
+- [x] Usage totals: office total in the header and per-folder totals in room headers and door plates, kept across restarts with a reset in Settings (spec 011, 2026-10-17)
 - [x] Places in the office: a shared lobby, main agents walk to the place of the tool they use, place per MCP server in Settings (spec 024, simulator only)
 - [x] Resume Copilot CLI/SDK sessions per folder and show VS Code chat history read-only (milestone 6); not done: continuing VS Code's own chats, discovery of sessions from other folders
 - [x] Open in VS Code (`code <folder>`)
