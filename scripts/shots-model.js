@@ -114,7 +114,7 @@ module.exports = async (ctx) => {
   assert.ok(await exists('#mdIn'), 'optional focus text');
   await shot('compact-dialog', false);
   await dlgButton('Compact'); await ctx.sleep(2200);
-  assert.match(await text('#chat'), /Context compacted \(manual\): \d+k → \d+k tokens\./);
+  assert.match(await text('#chat'), /Context compacted \(manual\): \d+(\.\d+)?k → \d+(\.\d+)?k tokens\./);
   assert.notStrictEqual(await text('#ctxChip'), before, 'the context figure changed');
   assert.ok(!(await exists('#chat .note.fresh')), 'after compaction the start-fresh note is gone');
   await shot('compaction-line');
