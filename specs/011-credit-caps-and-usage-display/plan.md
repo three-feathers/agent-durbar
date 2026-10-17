@@ -51,3 +51,30 @@
 - `/speckit-analyze` and `/speckit-converge` followed by hand (feature dir 011): converged for FR-018..FR-023, no tasks appended.
 - Not verified: a real Copilot session (0 AIU spent), Windows and Linux rendering, the "credits not reported" chip on screen (covered by unit tests only; the simulator always reports credits).
 - Self-review against the maintainer's review checklist: stale "office totals are backlog" text fixed in the spec status, the "What exists today" gap line and the tasks backlog line (older delta history left as is); FR-021 no longer claims `sim:` (the simulator always reports credits). Mutation check: five deliberate breaks of `usagetotals.js` (accept any nano, never count unreported, double-count the office, show 0.00 for not reported, sum raw token fields) each make `test:usagetotals` fail. The `app.js` wiring (record calls, chip click) is checked on the simulator only, not by `npm test`. Demo mode hides the chip and folder totals and they come back when it is turned off.
+
+# Plan: 011 usage totals kept across restarts (2026-10-17, issue #21)
+
+## Constitution check
+- I: spec delta, plan and tasks before code. II: main records the normalized `usage` event only; the renderer stays agent-neutral. III/VII: numbers, display names and path hashes only on disk; IPC validated; no paths read back from disk. IV: unit tests, simulator, 0 AIU. V: no new UI in the office (chip and room totals unchanged in shape); Settings part follows the Credit cap section. VI: hash input normalised per platform (case-folded on Windows). VIII: tooltip says "as reported", the reset and its scope are stated in Settings.
+
+## Main process
+- `src/shared/usagedoc.ts` (pure, no Node): types, `emptyUsageDoc(now)`, `recordUsage`, `sanitizeUsageDoc`, `officeTotals`, `normaliseFolderKey(p, platform)` (string work only; hashing is in main).
+- `src/main/usagetotalsstore.ts`: like `src/main/usagestore.ts` (injectable timers and clock, 2 s debounce, atomic tmp+rename, 2 MB cap, `lastError`); `keyFor(folderKey)` = SHA-256 hex prefix of the normalised key.
+- `src/main/main.ts`: `adapter.onEvent` for `usage` -> `usageTotalsStore.record(keyFor(a.workspaceFile ?? a.cwd), displayName(a), e)`; IPC `usage:totals` (folders of current agents with their path, office sum) and `usage:resetTotals`; flush on `will-quit` next to the tool-usage flush.
+- `src/preload/preload.ts`, `src/shared/api.ts`: `usageTotals()`, `usageResetTotals()`, `UsageTotalsView`.
+
+## Renderer
+- `src/renderer/usagetotals.js`: `createLedger({baseline})` or `ledger.setBaseline({office, folders:Map(key->totals)})`; `room()`/`office()` return baseline + run; a `run()` view for the tooltip; existing formatting kept. Tests extended.
+- `app.js`: load the baseline after `listAgents` (and after a reset), map folders by key (`workspaceFile ?? cwd`) to rooms; the tooltip line "since the app opened" uses the run part.
+- `screens.js`: Settings "Usage totals" part with the reset and a confirmation through `window.DurbarDialog(document)` (`dialog.js`, focus-trapped); `X.onUsageReset()` hook so app.js reloads the baseline.
+- `sim.ts`: in-memory bridge with a seeded baseline; `simunreported=<room>` query (read with the other sim query params in `app.js`).
+
+## Tests and checks
+- `scripts/test-usagedoc.ts` (new, in `npm test`): validation, recording, reset/since, caps, sanitize of hostile input, office sum with folders no longer listed, no path in the serialised document; store debounce/flush/reset with a temp dir and fake timers.
+- `scripts/test-usagetotals.ts`: baseline + run sums, run-only tooltip line.
+- `npm run check:office` unchanged layout; screenshots with a simulator driver `scripts/shots-021.js` (seeded baseline, `simunreported=blog`, Settings part and confirm).
+
+## Risks
+- Double counting if both the renderer and main persisted: only main writes; the renderer only adds this run on top of a baseline taken at start.
+- A reset while agents are working: the renderer zeroes its run ledger at the same moment it reloads the (empty) baseline.
+- Workspace vs folder keys must match between main (`workspaceFile ?? cwd`) and the renderer (`folderOfRoom`); a test fixture covers a workspace agent.
