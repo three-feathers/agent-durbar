@@ -624,7 +624,7 @@ function openPanel(id,focus){
   p.innerHTML=`<div class="panel-in">
    <div class="strip" role="navigation" aria-label="Agents"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON.back}<span>Office</span></button><div class="strip-list" id="stripList"></div></div>
    <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1">${esc(a.name)}</h2><div class="sub">${esc(a.role)}${parent?' · helper of '+esc(parent.name):''}</div></div>
-      <div class="ph-meta"><span data-f="status"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`:''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
+      <div class="ph-meta"><span data-f="status"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?(a.live&&a.info&&!a.parent&&bridge.setModel?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`):''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
       <div class="actions">${a.live&&!a.parent?`<button class="btn" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools</button>`:''}${a.live&&!a.parent&&bridge.agentMcp?`<button class="btn" id="mcpBtn" type="button" title="MCP servers for this agent (set globally in Settings)">MCP</button>`:''}${a.live&&bridge.newSession&&!a.parent?`<button class="btn" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>`:''}<button class="btn primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
         ${a.live&&!a.parent?`<button class="btn" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)">Copy resume command</button>`:''}
         <button class="btn" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
@@ -652,7 +652,6 @@ function openPanel(id,focus){
   if($('newSessBtn'))$('newSessBtn').onclick=()=>newSession(a);
   if($('toolsHdrBtn'))$('toolsHdrBtn').onclick=()=>window.DurbarScreens.openTools(liveRoot(a).id);
   if($('mcpBtn'))$('mcpBtn').onclick=()=>window.DurbarScreens.agentMcp(liveRoot(a));
-  if($('ctxChip'))$('ctxChip').onclick=()=>window.DurbarScreens.openTools(null,'agents');
   if($('endBtn'))$('endBtn').onclick=()=>endLive(a);
   if($('copyResBtn'))$('copyResBtn').onclick=()=>copyResume(a);
   if(a.live&&!a.parent)initPrev(a); else {const pv=$('prev');if(pv)pv.hidden=true;}
@@ -1048,6 +1047,7 @@ function closeTurn(a){
 function setState(a,state,label,task){
   const ch=a.state!==state||(label!==undefined&&a.label!==label)||(task!==undefined&&a.task!==task);
   a.state=state; if(label!==undefined)a.label=label; if(task!==undefined)a.task=task;
+  if(ch&&a.live&&a.info&&a.info.modelControl&&a.info.modelControl.compact&&!a.parent)updateCtxChip(a); /* the Compact button is greyed while the agent works */
   if(ch)scheduleRender();
 }
 const plainMd=t=>String(t==null?'':t).replace(/```[\s\S]*?```/g,' code ').replace(/!?\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/^[#>\-*\s]+/gm,'').replace(/[*_`~]/g,'').replace(/\s+/g,' ').trim();
@@ -1176,19 +1176,22 @@ function feedStats(a,e){
   /* sub-agent events are counted for the agent that owns them (a.id is the session) */
   if(e.type==='toolCall')STATS.recordTool(a.id,e);
   else if(e.type==='usage')STATS.recordModel(a.id,e.model);
-  else if(e.type==='context'&&!e.agentId)STATS.setContext(a.id,e);
+  else if(e.type==='context'&&!e.agentId){STATS.setContext(a.id,e);if(a.ctxWaiting){a.ctxWaiting=false;}}
   else if(e.type==='mcp')a.mcp=e.servers;
   else return;
   if(e.type==='usage'||e.type==='context'||(e.type==='toolCall'&&e.phase==='start')){
     updateCtxChip(a);
+    if(e.type==='context')maybeSuggestFresh(a);
     if(window.DurbarScreens.isOpen()&&!statsRefresh)statsRefresh=setTimeout(()=>{statsRefresh=0;window.DurbarScreens.refresh();},700);
   }
 }
 function ctxChipHTML(a){const c=window.DurbarScreens.ctxChip(a);
+  return `<span class="ctxgrp" id="ctxGrp">${ctxChipBtn(a,c)}${compactBtnHTML(a)}</span>`;}
+function ctxChipBtn(a,c){
   return `<button class="ctxchip ${c.cls}" id="ctxChip" type="button" title="${esc(c.title)} Click for models and context of all agents."><span class="bar" aria-hidden="true"><i style="width:${c.pct}%"></i></span><span>${esc(c.text)}</span></button>`;}
 function updateCtxChip(a){
-  const el=$('ctxChip');if(!el||!ui.selected)return;const cur=byId(ui.selected);if(!cur||liveRoot(cur)!==a)return;
-  el.outerHTML=ctxChipHTML(a);
+  const el=$('ctxGrp');if(!el||!ui.selected)return;const cur=byId(ui.selected);if(!cur||liveRoot(cur)!==a)return;
+  const g=$('ctxGrp');if(g)g.outerHTML=ctxChipHTML(a);
 }
 function onLiveEvent(e){
   const a=liveById(e.sessionId); if(!a)return;
@@ -1211,7 +1214,8 @@ function onLiveEvent(e){
       if(was)addNote(chat,'Stopped by you. The agent is ready for your next message.');
       setState(a,'idle','Ready','Stopped. Ready for your next message.');}
     else if(e.status==='idle'){const was=a.worked;a.worked=false;closeTurn(a);
-      if(was)setState(a,'done','Done',a.lastOutput?SHORT(plainMd(a.lastOutput),140):'Finished.'); else setState(a,'idle','Ready',a.task);}
+      if(was)setState(a,'done','Done',a.lastOutput?SHORT(plainMd(a.lastOutput),140):'Finished.'); else setState(a,'idle','Ready',a.task);
+      updateCtxChip(a);maybeSuggestFresh(a);}
     else if(e.status==='error'){closeTurn(a);addNote(chat,esc(e.intent||'Error'),true);setState(a,'error',null,SHORT(e.intent||'Error',140));}
     else if(e.status==='stopped'){
       if(a.limit)settleLimit(a,'cancel');
@@ -1227,6 +1231,8 @@ function onLiveEvent(e){
     else if(e.phase==='exhausted'){if(a.limit&&a.limit.requestId===e.requestId)return;showLimit(a,e);setState(a,'waiting','Limit reached','Credit limit reached: '+fmtCap(e.maxAiCredits||0)+' AIU');updateCapChip(a);}
     else if(e.phase==='resolved'){if(a.limit&&a.limit.requestId===e.requestId)settleLimit(a,e.action||'add');}
     return;
+  case 'model':onModelEvent(a,e);return;
+  case 'compaction':onCompaction(a,e);return;
   case 'thinking':{const t=ensureTurn(a);tThink(t.T,e.reasoningId,e.delta);setState(a,'thinking',null);return;}
   case 'output':{const t=ensureTurn(a);const out=tText(t.T,e);if(out!=null)a.lastOutput=out;setState(a,'working',null);return;}
   case 'toolCall':{const t=ensureTurn(a);
@@ -1281,12 +1287,12 @@ function openModeMenu(a0,x,y,anchor){
   const a=liveRoot(a0); if(!a||!a.live||!bridge.setPermMode)return;
   closeModeMenu();
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Permission mode for '+a.name);
-  m.innerHTML=['read-only','ask','allow'].map(k=>`<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(MODE_HELP[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`).join('')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`;
+  m.innerHTML=['read-only','ask','allow'].map(k=>`<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(MODE_HELP[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`).join('')+(bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`;
   document.body.appendChild(m);
   const r=m.getBoundingClientRect(); const px=Math.max(8,Math.min(x,innerWidth-r.width-8)), py=Math.max(8,Math.min(y,innerHeight-r.height-8));
   m.style.left=px+'px';m.style.top=py+'px';
-  m.addEventListener('click',e=>{const b=e.target.closest('[data-mode]');if(!b)return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
-  m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('[data-mode]')],i=it.indexOf(document.activeElement);
+  m.addEventListener('click',e=>{const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}const b=e.target.closest('[data-mode]');if(!b)return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
+  m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('[data-mode],[data-act]')],i=it.indexOf(document.activeElement);
     if(e.key==='ArrowDown'){e.preventDefault();it[(i+1)%it.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();it[(i+it.length-1)%it.length].focus();}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&anchor.focus&&document.contains(anchor))anchor.focus();}});
   (m.querySelector('[aria-checked="true"]')||m.querySelector('button')).focus();
@@ -1298,7 +1304,7 @@ const askDialog=DurbarDialog(document);
 function refocusAnchor(anchor){
   const ae=document.activeElement;if(ae&&ae!==document.body&&document.contains(ae))return;
   let t=anchor&&document.contains(anchor)?anchor:null;
-  if(!t&&anchor&&anchor.id==='modeChip')t=$('modeChip');
+  if(!t&&anchor&&(anchor.id==='modeChip'||anchor.id==='modelChip'||anchor.id==='compactBtn'))t=$(anchor.id);
   if(!t&&anchor&&anchor.dataset&&anchor.dataset.id)t=document.querySelector('#stage [data-id="'+anchor.dataset.id+'"]');
   if(t&&t.focus)t.focus();
 }
@@ -1328,6 +1334,13 @@ async function changeModeInner(a,mode,anchor){
   scheduleRender();
 }
 document.addEventListener('click',e=>{
+  const cc=e.target.closest('#ctxChip');
+  if(cc){window.DurbarScreens.openTools(null,'agents');return;}
+  const mc=e.target.closest('#modelChip');
+  if(mc){e.stopPropagation();if(document.getElementById('modelMenu')){closeModelMenu();return;}const r=mc.getBoundingClientRect(),a=byId(ui.selected);if(a)openModelMenu(a,r.left,r.bottom+6,mc);return;}
+  if(!e.target.closest('#modelMenu'))closeModelMenu();
+  const cb=e.target.closest('#compactBtn');
+  if(cb){e.stopPropagation();const a=byId(ui.selected);if(a)compactDialog(liveRoot(a),cb);return;}
   const chip=e.target.closest('#modeChip');
   if(chip){e.stopPropagation();if(document.getElementById('modeMenu')){closeModeMenu();return;}const r=chip.getBoundingClientRect(),a=byId(ui.selected);if(a)openModeMenu(a,r.left,r.bottom+6,chip);return;}
   if(!e.target.closest('#modeMenu'))closeModeMenu();
@@ -1343,7 +1356,7 @@ document.addEventListener('contextmenu',e=>{
 let MODELS=[];
 function modelLabel(info){
   const m=MODELS.find(x=>x.id===(info.model||'auto')), nm=m?m.name:(info.model||'auto')==='auto'?'Auto':info.model;
-  const eff=info.effort?' · '+info.effort+' effort':'';
+  const eff=(info.effort?' · '+info.effort+' effort':'')+(info.tier==='long'?' · long context':'');
   const mult=m&&m.multiplier!=null?' · ×'+m.multiplier+' credit multiplier':'';
   return {text:nm+eff,title:'Model: '+nm+eff+mult+(m&&m.multiplier!=null?' (as reported by your Copilot account)':'')};
 }
@@ -1366,6 +1379,199 @@ async function loadModels(){
   ms.value=MODELS.some(m=>m.id==='auto')?'auto':MODELS[0].id;
   ms.title='Model for new sessions. This is what your Copilot account offers; × is the cost multiplier the API reports.';
   fillEffortSelect($('effortSel'),ms.value);
+}
+
+/* ---------------- switch model and context, compact (spec 030) ---------------- */
+const DM=window.DurbarModels;
+const modelOf=id=>MODELS.find(m=>m.id===(id||'auto'))||{id:id||'auto',name:(id||'auto')==='auto'?'Auto':String(id),efforts:[]};
+const ctrlOf=a=>(a.info&&a.info.modelControl)||{switch:'none',compact:false};
+const tierOf=a=>a.info&&a.info.tier==='long'?'long':'default';
+const busyNow=a=>a.state==='working'||a.state==='thinking'||a.state==='waiting'||!!a.worked||!!a.compacting;
+const NO_SWITCH_WHY='This agent cannot change its model in place yet. Start a new session with the model you want; this one keeps its model until it ends.';
+/* a toast with one action button (Undo); the container is a polite live region, the button is a normal tab stop */
+function toastAction(html,label,onClick,ms){
+  const t=document.createElement('div');t.className='toast with-act';
+  const s=document.createElement('span');s.innerHTML=html;t.appendChild(s);
+  const b=document.createElement('button');b.type='button';b.className='toast-act';b.textContent=label;
+  let gone=false;const kill=()=>{if(gone)return;gone=true;t.style.transition='opacity .3s';t.style.opacity='0';setTimeout(()=>t.remove(),320);};
+  b.onclick=()=>{kill();onClick();};t.appendChild(b);$('toasts').appendChild(t);setTimeout(kill,ms||8000);
+  return t;
+}
+function addInfoNote(chat,text,cls){const n=document.createElement('div');n.className='note info'+(cls?' '+cls:'');n.textContent=text;chat.el.appendChild(n);scrollChat(chat);return n;}
+
+function modelChipHTML(a){
+  const m=modelLabel(a.info),pend=a.pendingModel;
+  const txt=m.text+(pend?' → '+pend.name:'');
+  const title=m.title+(pend?'. Next: '+pend.name+(pend.tier==='long'?' (long context)':'')+', when the current reply ends.':'')+(ctrlOf(a).switch==='none'?' This agent cannot switch in place; click for why.':' Click to change the model or the context.');
+  return `<button class="mchip mchip-btn" id="modelChip" type="button" aria-haspopup="menu" aria-expanded="false" title="${esc(title)}"><span>${esc(txt)}</span><svg class="chev" viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg></button>`;
+}
+function updateModelChip(a){
+  const el=$('modelChip');if(!el||!ui.selected)return;const cur=byId(ui.selected);if(!cur||liveRoot(cur)!==a)return;
+  el.outerHTML=modelChipHTML(a);
+}
+function compactBtnHTML(a){
+  const c=ctrlOf(a);if(!c.compact||!bridge.compact)return '';
+  const busy=busyNow(a);
+  return `<button class="mchip mchip-btn" id="compactBtn" type="button"${busy?' aria-disabled="true"':''} title="${busy?'The agent is busy. Compact when it is idle.':'Summarise the conversation to free space in the context window. Costs one model call.'}">Compact</button>`;
+}
+
+function closeModelMenu(){const m=document.getElementById('modelMenu');if(m){m.remove();const c=$('modelChip');if(c)c.setAttribute('aria-expanded','false');}}
+function openModelMenu(a0,x,y,anchor){
+  const a=liveRoot(a0); if(!a||!a.live||!a.info||!bridge.setModel)return;
+  closeModelMenu();closeModeMenu();
+  const on=ctrlOf(a).switch!=='none'&&!!bridge.setModel, curId=a.info.model||'auto', cur=modelOf(curId), tier=tierOf(a), pend=a.pendingModel;
+  const dis=on?'':' aria-disabled="true"';
+  const list=MODELS.length?MODELS:[cur];
+  let h=on?'':`<p class="mm-why" role="note">${esc(NO_SWITCH_WHY)}</p>`;
+  h+='<p class="mm-h">Model</p>'+list.map(m=>{const chk=m.id===curId,w=DM.windowOf(m);
+    return `<button type="button" role="menuitemradio" aria-checked="${chk}" data-pick="${esc(m.id)}"${dis}><span class="mt"><b>${esc(m.name)}${m.multiplier!=null?' ×'+esc(m.multiplier):''}</b><small>${esc(DM.priceLine(m))}${w?' · '+esc(DM.fmtTokens(w))+' window':''}</small></span><span class="ck">${chk?'✓':''}</span></button>`;}).join('');
+  if((cur.efforts||[]).length)h+='<p class="mm-h">Reasoning effort</p><div class="mm-seg" role="group" aria-label="Reasoning effort">'+['',...cur.efforts].map(x=>{const on2=(a.info.effort||'')===x;return `<button type="button" data-effort="${esc(x)}" aria-pressed="${on2}"${dis}>${x?esc(x):'Default'}</button>`;}).join('')+'</div>';
+  if(DM.hasLong(cur))h+=`<button type="button" role="menuitemcheckbox" aria-checked="${tier==='long'}" data-tier="1"${dis} class="mm-tier"><span class="mt"><b>Long context</b><small>${esc(DM.fmtTokens(DM.windowOf(cur,'long')))} window · ${esc(DM.priceLine(cur,'long'))}</small></span><span class="ck">${tier==='long'?'✓':''}</span></button>`;
+  if(pend)h+=`<div class="mm-pend" role="status"><span>Next: <b>${esc(pend.name)}</b>${pend.tier==='long'?' (long context)':''}, when this reply ends.</span><button type="button" data-cancelq="1">Cancel</button></div>`;
+  h+=on?'<p class="mm-note">Applies from the next message; the conversation is kept. Costlier switches ask first, and your credit cap never changes.</p>':'<div class="mm-foot"><button type="button" class="btn" data-newsess="1">New session…</button></div>';
+  const m=document.createElement('div');m.id='modelMenu';m.className='mode-menu model-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Model and context for '+a.name);
+  m.innerHTML=h;document.body.appendChild(m);
+  const r=m.getBoundingClientRect();const px=Math.max(8,Math.min(x,innerWidth-r.width-8)),py=Math.max(8,Math.min(y,innerHeight-r.height-8));
+  m.style.left=px+'px';m.style.top=py+'px';
+  m.addEventListener('click',e=>{
+    const b=e.target.closest('button');if(!b)return;
+    if(b.dataset.newsess){closeModelMenu();newSession(a);return;}
+    if(b.dataset.cancelq){closeModelMenu();cancelPendingModel(a,anchor);return;}
+    if(b.getAttribute('aria-disabled')==='true')return;
+    closeModelMenu();
+    if(b.dataset.pick!==undefined){const t=modelOf(b.dataset.pick);chooseModel(a,{model:t.id,contextTier:t.id===cur.id?tier:'default'},anchor);}
+    else if(b.dataset.effort!==undefined)chooseModel(a,{model:cur.id,effort:b.dataset.effort||null,contextTier:tier},anchor);
+    else if(b.dataset.tier)chooseModel(a,{model:cur.id,contextTier:tier==='long'?'default':'long'},anchor);
+  });
+  m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('button')],i=it.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'||e.key==='ArrowRight'){e.preventDefault();it[(i+1)%it.length].focus();}else if(e.key==='ArrowUp'||e.key==='ArrowLeft'){e.preventDefault();it[(i+it.length-1)%it.length].focus();}
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModelMenu();if(anchor&&anchor.focus&&document.contains(anchor))anchor.focus();}});
+  (m.querySelector('[aria-checked="true"]')||m.querySelector('button')).focus();
+  const c=$('modelChip');if(c&&anchor===c)c.setAttribute('aria-expanded','true');
+}
+
+async function chooseModel(a,req,anchor){
+  try{await chooseModelInner(a,req,anchor);}finally{refocusAnchor(anchor);}
+}
+async function chooseModelInner(a,req,anchor){
+  const cur=modelOf(a.info.model),tgt=modelOf(req.model),tierFrom=tierOf(a),tierTo=req.contextTier==='long'?'long':'default';
+  const sameEffort=req.effort===undefined||(req.effort||'')===(a.info.effort||'');
+  const pend=a.pendingModel;
+  if(!pend&&tgt.id===cur.id&&tierTo===tierFrom&&sameEffort)return;
+  const c=STATS.agent(a.id).ctx,tokens=c?c.tokens:undefined;
+  const cap=a.info.maxAiCredits,used=a.usage?a.usage.nano/1e9:0;
+  const cf=DM.confirmFor(cur,tgt,{tokens,cap,used,tierFrom,tierTo});
+  const confirm={};
+  if(cf.needed){
+    const lines=cf.reasons.map(r=>r.text);
+    lines.push('Price now: '+DM.priceLine(cur,tierFrom)+'. New: '+DM.priceLine(tgt,tierTo)+'.');
+    if(cap>0)lines.push('Your credit cap of '+fmtCap(cap)+' AI credits is not changed.');
+    if(busyNow(a))lines.push('A reply is running: the switch applies when it ends.');
+    const r=await askDialog({title:'Switch '+a.name+' to '+tgt.name+(tierTo==='long'?' (long context)':'')+'?',body:'The conversation is kept. From the next message this agent uses the new model.',lines,returnFocus:anchor,
+      buttons:[{label:'Cancel',value:null},{label:cf.compaction?'Compact and switch':cf.overCap?'Switch anyway':'Switch',value:'ok',cls:'primary'+(cf.overCap?' warn':'')}]});
+    if(!r)return;
+    if(cf.compaction)confirm.compaction='accept';
+  }
+  await sendModelChange(a,Object.assign({model:tgt.id,contextTier:tierTo},req.effort!==undefined?{effort:req.effort}:{},confirm.compaction?{confirm}:{}),{prev:{model:cur.id,effort:a.info.effort,tier:tierFrom},tgt,anchor});
+}
+async function sendModelChange(a,req,ctx){
+  const res=await bridge.setModel(a.id,req).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  if(!res||!res.ok){toast('Could not change the model: '+esc((res&&res.error)||'unknown error'),6000);return;}
+  const r=res.result||{},nm=ctx.tgt.name+(req.contextTier==='long'?' (long context)':'');
+  if(r.status==='applied'){
+    if(!ctx.undo)toastAction(esc(a.name)+': <b>'+esc(nm)+'</b> from the next message.','Undo',()=>undoModel(a,ctx.prev,ctx.anchor),8000);
+    else toast(esc(a.name)+': back to <b>'+esc(nm)+'</b>.',3800);
+  }else if(r.status==='queued'){
+    a.pendingModel={queueId:r.queueId,name:ctx.tgt.name,tier:req.contextTier,prev:ctx.prev};updateModelChip(a);
+    toast(esc(a.name)+' is replying: <b>'+esc(nm)+'</b> applies when the reply ends.',5000);
+  }else if(r.status==='needs-confirmation'){
+    const cf=r.confirmation||{};
+    const d=await askDialog({title:'Compact the context first?',body:(cf.targetName||ctx.tgt.name)+' has a window of '+DM.fmtTokens(cf.targetLimit)+' tokens, and this conversation uses '+DM.fmtTokens(cf.currentTokens)+'. It must be compacted before the switch, which costs one model call.',returnFocus:ctx.anchor,
+      buttons:[{label:'Cancel',value:null},{label:'Compact and switch',value:'ok',cls:'primary'}]});
+    if(d)await sendModelChange(a,Object.assign({},req,{confirm:{compaction:'accept'}}),ctx);
+  }else toast(esc(r.message||'The model was not changed.'),5000);
+}
+async function undoModel(a,prev,anchor){
+  if(!bridge.setModel)return;
+  const req={model:prev.model,contextTier:prev.tier,effort:prev.effort||null};
+  await sendModelChange(a,req,{prev,tgt:modelOf(prev.model),anchor,undo:true});
+  refocusAnchor(anchor);
+}
+async function cancelPendingModel(a,anchor){
+  const p=a.pendingModel;if(!p||!bridge.cancelQueuedModel)return;
+  const r=await bridge.cancelQueuedModel(a.id,p.queueId).catch(()=>({ok:false}));
+  if(r&&r.ok){a.pendingModel=undefined;updateModelChip(a);toast(esc(a.name)+': the queued switch to <b>'+esc(p.name)+'</b> was cancelled.',3800);}
+  else toast('Nothing to cancel: the switch already applied or was dropped.',4200);
+  refocusAnchor(anchor);
+}
+
+/* events: the model changed (ours or the runtime's) and compaction lines */
+function onModelEvent(a,e){
+  const chat=liveChat(a),keepAuto=(a.info.model||'auto')==='auto'&&e.cause!=='user';
+  if(!keepAuto){
+    a.info.model=e.model;
+    if(e.cause==='user'||e.effort!==undefined)a.info.effort=e.effort;
+    a.info.tier=e.tier==='long'?'long':undefined;
+    a.role=roleFor(a.info);
+  }
+  a.ctxWaiting=true; /* the runtime reports the new window with the next message */
+  if(e.cause==='user'&&a.pendingModel)a.pendingModel=undefined;
+  /* the start-up report and Auto's own routing are not a change the user needs to hear about */
+  const quiet=e.cause==='runtime'&&(!e.previousModel||keepAuto);
+  if(!quiet){
+    const nm=x=>modelOf(x).name;
+    const n=addInfoNote(chat,DM.modelChangeText(e,nm),e.cause==='user'?'':'rt');
+    if(e.cause!=='user'){n.classList.remove('info');toast(esc(a.name)+': the runtime switched to <b>'+esc(nm(e.model))+'</b> ('+(e.cause==='rate-limit'?'rate limit':e.cause==='fallback'?'request refused':'its own choice')+').',5200);}
+  }
+  updateModelChip(a);updateCtxChip(a);scheduleRender();
+}
+function onCompaction(a,e){
+  const chat=liveChat(a),t=DM.compactionText(e);
+  if(e.phase==='start'){
+    if(a.compNote&&a.compNote.isConnected)a.compNote.remove();
+    a.compNote=addInfoNote(chat,t,'cline');a.compNote.setAttribute('role','status');a.compacting=true;
+  }else{
+    if(a.compNote&&a.compNote.isConnected){a.compNote.textContent=t;scrollChat(chat);}else addInfoNote(chat,t,'cline');
+    if(e.phase==='failed'&&a.compNote)a.compNote.classList.add('failed');
+    a.compNote=null;a.compacting=false;
+    if(e.phase==='complete'){
+      a.compactions=(a.compactions||0)+1;a.compactFailed=false;
+      const old=STATS.agent(a.id).ctx;
+      if(e.tokensAfter>=0)STATS.setContext(a.id,{tokens:e.tokensAfter,limit:e.limit>0?e.limit:(old&&old.limit)||0});
+    }else a.compactFailed=true;
+  }
+  updateCtxChip(a);if(e.phase!=='start')maybeSuggestFresh(a);
+}
+
+/* manual compaction: confirm what it costs, optional focus, then the result line comes from the compaction events */
+async function compactDialog(a,anchor){
+  if(!bridge.compact||ctrlOf(a).compact!==true)return;
+  if(busyNow(a)){toast('The agent is busy. Compact when it is idle.',3800);return;}
+  const cur=modelOf(a.info.model),c=STATS.agent(a.id).ctx,est=DM.estimateInputCredits(c&&c.tokens,cur,tierOf(a));
+  const lines=['Summarises the conversation so it takes less room. It costs one model call'+(est!==undefined?' (about '+DM.fmtCredits(est)+' AI credits to read the conversation, an estimate if nothing is cached)':' (the price of '+cur.name+' is not reported)')+' and cannot be undone.'];
+  if(c&&c.limit>0)lines.push('Now: '+DM.fmtTokens(c.tokens)+' of '+DM.fmtTokens(c.limit)+' tokens.');
+  const r=await askDialog({title:'Compact the context of '+a.name+'?',body:'Older messages are replaced by a summary; the agent keeps working in the same session.',lines,input:{label:'Focus (optional): what the summary should keep',placeholder:'e.g. the API decisions',max:200},returnFocus:anchor,
+    buttons:[{label:'Cancel',value:null},{label:'Compact',value:'ok',cls:'primary'}]});
+  if(!r)return;
+  const res=await bridge.compact(a.id,(r.text||'').trim()||undefined).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  if(!res||!res.ok)toast('Could not compact: '+esc((res&&res.error)||'unknown error'),6000);
+  else if(res.result&&res.result.success===false)toast('Not compacted: '+esc(res.result.message||'the runtime declined.'),6000);
+  refocusAnchor(anchor);
+}
+
+/* near the limit: suggest a fresh session once, dismissible for good (spec 030 FR-013) */
+function maybeSuggestFresh(a){
+  const c=STATS.agent(a.id).ctx;if(!c||!(c.limit>0))return;
+  const pct=Math.round(c.tokens/c.limit*100);
+  if(a.freshNote&&a.freshNote.isConnected){if(pct<80){a.freshNote.remove();a.freshNote=null;}return;}
+  const idle=!busyNow(a);
+  if(!DM.suggestFresh({percent:pct,compactions:a.compactions||0,lastCompactionFailed:!!a.compactFailed,idle,dismissed:a.freshDismissed,canCompact:ctrlOf(a).compact===true}))return;
+  const chat=liveChat(a),n=document.createElement('div');n.className='note fresh';n.setAttribute('role','note');
+  const why=a.compactFailed&&!a.compactions?'The last compaction did not work.':a.compactions?'It was already compacted '+(a.compactions>1?a.compactions+' times':'once')+'.':'This agent cannot compact in place.';
+  n.innerHTML='<b>This conversation is '+pct+'% full.</b> '+esc(why)+' A new session starts clean in the same folder; this one keeps its history.<div class="note-actions"><button class="btn" type="button" data-fresh="new">New session…</button><button class="btn" type="button" data-fresh="x">Dismiss</button></div>';
+  n.querySelector('[data-fresh="new"]').onclick=()=>newSession(a);
+  n.querySelector('[data-fresh="x"]').onclick=()=>{a.freshDismissed=true;n.remove();a.freshNote=null;const i=$('msgInput');if(i)i.focus();};
+  chat.el.appendChild(n);a.freshNote=n;scrollChat(chat);
 }
 
 /* ---------------- new session (another agent in a folder) ---------------- */

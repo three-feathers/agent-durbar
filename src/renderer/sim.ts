@@ -372,6 +372,8 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       emit({ type: 'user', sessionId: sid(s), timestamp: now(), text: s.prompt, attachments: (s.attachments ?? []).map((p) => ({ path: p, kind: /\.(png|jpe?g|gif)$/i.test(p) ? 'image' as const : 'file' as const })) });
       if (s.state === 'idle') return;
       mcpStatus(s, sims.indexOf(s));
+      // An agent that already compacted once earlier in its session (spec 030): the chat shows that line.
+      if (s.compactions && s.ctx) emit({ type: 'compaction', sessionId: sid(s), timestamp: now(), phase: 'complete', trigger: 'auto', tokensBefore: Math.round(s.ctx.limit * 0.95), tokensAfter: Math.round(s.ctx.limit * 0.24), tokensRemoved: Math.round(s.ctx.limit * 0.71), limit: s.ctx.limit });
       emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: s.intent });
       if (s.state !== 'done') think(s, 4); // done agents show a turn without reasoning (the model sent none)
       const done = sims.indexOf(s) === 0 ? 8 : s.state === 'working' ? 4 : 3;
