@@ -31,7 +31,7 @@
   - Room header (`room-head`): `<span class="room-aiu" title="…">0.42 AIU</span>` after `room-dots` when the room has calls. Door plate (`plateHTML`): short total in the plate text and aria-label.
   - Demo/sample mode is not fed by events, so nothing shows there.
 - `styles.css`: `.stat-aiu` (same pill as `.stat`, no dot, not clickable), `.room-aiu` (muted, `font-size` >= 10.5px, `white-space:nowrap`, shrinks before the path).
-- `sim.ts`: unchanged (already emits `usage` with `nanoAiu`); add one simulated helper usage without `nanoAiu`? No: keep the simulator as is; unreported is covered by unit tests.
+- `sim.ts`: unchanged (it already emits `usage` with `nanoAiu`, also for helpers). The not-reported case is covered by unit tests, not the simulator.
 
 ## Tests and checks
 - `scripts/test-usagetotals.ts` + `package.json` `test:usagetotals` in the `test` chain.
