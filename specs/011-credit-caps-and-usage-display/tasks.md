@@ -12,7 +12,7 @@
 - [x] T010 Real-runtime check: session create/update with a cap, no prompt (0 AIU); exhausted flow not run (30-credit minimum), recorded under Verification [FR-015, SC-002]
 - [x] T011 Converge spec/plan/tasks, README roadmap, specs index
 
-Backlog (unchanged): office total, per-folder totals, persisted usage, multiplier estimate, capability flag (spec 012).
+Backlog: persisted usage, multiplier estimate, capability flag (spec 012). (Office and per-folder totals: done 2026-10-17, T012-T019 below.)
 
 ## Office and folder usage totals (2026-10-17, issue #8)
 
