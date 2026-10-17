@@ -57,7 +57,7 @@ A chip in the chat header shows the model, the effort and, in the tooltip, the c
 - **FR-004** `[IMPLEMENTED]` sim: The top-bar model and effort apply to folders added next; the new-session dialog sets them per session; both are stored with the saved folder (feature 006).
 - **FR-005** `[IMPLEMENTED]` sim: The chat header chip shows model, effort and multiplier tooltip; the desk role line includes `· <model>` for non-auto models.
 - **FR-006** `[KNOWN GAP]` Only the `auto` model was available on the account used for development (free plan, README m1); a **multi-model list, multipliers and effort were never exercised on a real account**. The simulator uses canned data. (Feature 013.)
-- **FR-007** `[KNOWN GAP]` The model or effort of a running session cannot be changed; the user must start a new session. `read:`
+- **FR-007** `[KNOWN GAP]` The model or effort of a running session cannot be changed; the user must start a new session. `read:` (Planned in [030](../030-switch-model-context/spec.md): spec, research, plan and tasks exist, no code yet.)
 - **FR-008** `[KNOWN GAP]` The effort list is hard-coded in `main.ts` and `folders.ts`; an effort value the SDK adds later is silently dropped. `read:` (Task T021.)
 - **FR-009** `[KNOWN GAP]` The `auto` routing tier (`efficiency|balance|intelligence`) is supported by the adapter but not selectable in the UI. `read:`
 - **FR-010** `[KNOWN GAP]` The multiplier is shown as returned (`x3`) without explaining units or relating it to the user's remaining credits (feature 011). `read:`

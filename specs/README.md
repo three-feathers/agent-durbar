@@ -98,3 +98,9 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | # | Feature | Status |
 | --- | --- | --- |
 | [026](026-release-alpha3/spec.md) | Release v0.1.0-alpha.3 (version bump, changelog, download notes) | built; **published as a pre-release** by the maintainer (2026-10-17); alpha.2 draft removed |
+
+## Feature 030: change model and context window inside a session
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [030](030-switch-model-context/spec.md) | Switch model, effort and context tier of a live session (chat header and office card menu), see window and % full, compact, start-fresh hint, per-folder default; simulator first, adapter-neutral | planned: spec, [research](030-switch-model-context/research.md), [plan](030-switch-model-context/plan.md) and [tasks](030-switch-model-context/tasks.md) merged, **no code**; SDK facts read from types and docs only, **nothing run on a real account**; real-account tasks need owner approval; open questions Q1-Q8 for Vikram |
