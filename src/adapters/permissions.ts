@@ -74,17 +74,18 @@ const shortCmd = (cmd: string, n = 28): string => (cmd.length > n ? cmd.slice(0,
  *    redirects, substitutions, newlines) of programs that are not shells, interpreters or privilege tools.
  *  - read (outside the roots): the folder of the path
  *  - url: the host; mcp / custom tools: the tool name; anything else: the kind.
+ * `flavor` is injectable so tests can use Windows paths on any host (spec 003 FR-031).
  */
-export function grantScope(req: PermissionLike): GrantScope {
+export function grantScope(req: PermissionLike, flavor: Pick<typeof path, 'dirname'> = path): GrantScope {
   switch (req.kind) {
     case 'write': {
       const f = req.fileName ?? '';
-      const dir = f ? path.dirname(f) : '';
+      const dir = f ? flavor.dirname(f) : '';
       return { key: `write:${dir}`, label: dir ? `write in ${baseName(dir)}/` : 'write' };
     }
     case 'read': {
       const f = req.path ?? '';
-      const dir = f ? path.dirname(f) : '';
+      const dir = f ? flavor.dirname(f) : '';
       return { key: `read:${dir}`, label: dir ? `read in ${baseName(dir)}/` : 'read' };
     }
     case 'shell': {
@@ -263,7 +264,7 @@ export class PermissionBroker {
     const requestId = String(req.toolCallId ?? `${kind}-${now()}`);
     const outsideRead = kind === 'read' && this.mode !== 'allow' && this.readIsOutside(req);
     if ((kind === 'read' && !outsideRead) || this.mode === 'allow') return { kind: 'approve-once' };
-    const scope = grantScope(req);
+    const scope = grantScope(req, this.opts.pathCheck?.flavor);
     const base = {
       requestId,
       kind,

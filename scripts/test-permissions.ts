@@ -204,6 +204,32 @@ async function main(): Promise<void> {
   assert.strictEqual((await r.b.request({ kind: 'read', path: path.join(root, 'ok.ts'), toolCallId: 'r7' })).kind, 'approve-once', 'inside reads never ask');
   r = mkRoots('allow');
   assert.strictEqual((await r.b.request({ kind: 'read', path: '/etc/passwd', toolCallId: 'r8' })).kind, 'approve-once', 'Allow all approves everything');
+  assert.strictEqual((await r.b.request({ kind: 'read', path: '/etc/passwd', toolCallId: 'r8' })).kind, 'approve-once', 'Allow edits approves everything');
+  // spec 003 FR-031/FR-032: grant scopes with Windows paths (injectable flavor), on any host
+  const w = path.win32;
+  assert.deepStrictEqual(grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\x.ts' }, w), { key: 'write:C:\\repo\\src', label: 'write in repo/src/' });
+  assert.strictEqual(grantScope({ kind: 'read', path: 'D:\\data\\in.csv' }, w).key, 'read:D:\\data');
+  assert.strictEqual(grantScope({ kind: 'write', fileName: 'C:\\x.ts' }, w).key, 'write:C:\\', 'a file at the drive root');
+  assert.strictEqual(grantScope({ kind: 'write', fileName: '\\\\server\\share\\dir\\f.txt' }, w).key, 'write:\\\\server\\share\\dir', 'UNC path');
+  assert.strictEqual(grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\a.ts' }, w).key, grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\b.ts' }, w).key, 'same folder, same key');
+  assert.notStrictEqual(grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\sub\\a.ts' }, w).key, grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\b.ts' }, w).key, 'a subfolder is a different scope');
+  assert.strictEqual(grantScope({ kind: 'write', fileName: '/a/b/src/x.ts' }, path.posix).key, 'write:/a/b/src');
+  {
+    const ev: BrokerEvent[] = [];
+    const b = new PermissionBroker({ ask: true, pathCheck: { flavor: w, caseInsensitive: true, realpath: (x) => x }, emit: (e) => ev.push(e) });
+    const first = b.request({ kind: 'write', fileName: 'C:\\repo\\src\\a.ts', toolCallId: 'win1' });
+    await tick();
+    b.resolve('win1', true, true);
+    await first;
+    assert.deepStrictEqual(b.listGrants().map((g) => g.key), ['write:C:\\repo\\src'], 'the broker uses its path-check flavor for scopes');
+    assert.strictEqual((await b.request({ kind: 'write', fileName: 'C:\\repo\\src\\b.ts', toolCallId: 'win2' })).kind, 'approve-once', 'second file in the granted Windows folder');
+    const other = b.request({ kind: 'write', fileName: 'C:\\repo\\docs\\c.md', toolCallId: 'win3' });
+    await tick();
+    assert.strictEqual(b.pendingCount(), 1, 'another Windows folder still asks');
+    b.resolve('win3', false);
+    await other;
+  }
+
   console.log('permissions: all checks passed');
 }
 main().catch((e) => {

@@ -83,3 +83,4 @@ specs/003-permissions-and-approvals/
 - `src/adapters/permissions.ts`: `grantScope(req, flavor = path)` uses `flavor.dirname` for write/read; `PermissionBroker.request` passes `this.opts.pathCheck?.flavor`. No other caller changes (default keeps host behavior).
 - `scripts/test-permissions.ts`: `grantScope` with `path.win32` (drive folder, drive root, UNC, same folder shares a key, subfolder does not) and an explicit `path.posix` check; a broker built with `pathCheck.flavor = path.win32` remembers a Windows folder grant and reuses it for a second file there.
 - Grant keys stay exact strings (case-sensitive), documented as a conservative limit in the spec.
+- Checked: `npm run typecheck && npm run build && npm test` on macOS. `/speckit-analyze` and `/speckit-converge` followed by hand from `.claude/skills/` (feature dir 003): no drift, converged for FR-031/FR-032, no tasks appended.
