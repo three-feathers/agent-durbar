@@ -13,7 +13,7 @@
 - **Q: How much can be customized?** **Fixed places + mapping**: built-in places, and in Settings the user chooses which MCP server goes to which place. Creating new places (own name/icon) is a separate, later issue.
 - **Q: Where is the mapping stored?** **Globally, per user** (app settings), like the Copilot CLI MCP list. Not per folder.
 - Decided by default and recorded here (open to change in review):
-  - **Lobby shape:** a full-width band inserted **between the first half and the second half of the open rooms** (so it is in the middle at every density and window size; with one open room it sits below it). Closed rooms (door plates, spec 017) stay where they are.
+  - **Lobby shape (confirmed by Ruben 2026-10-17):** a full-width band inserted **between the first half and the second half of the open rooms** (so it is in the middle at every density and window size; with one open room it sits below it). Closed rooms (door plates, spec 017) stay where they are.
   - **Only main agents walk.** Helpers (sub-agents) stay on their mini-desks; their tool calls do not move the parent.
   - **Local file tools stay at the desk** (read, edit, search, list in the folder): no walk.
   - **Calm rules:** a walk starts only if the tool is still running after **600 ms**; once at a place the agent stays at least **2 s**; at most **3 walk animations at the same time** (more agents appear at the place without the animation); `prefers-reduced-motion` shows the agent at the place without any animation.
