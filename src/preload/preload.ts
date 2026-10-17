@@ -36,6 +36,7 @@ const api: DurbarApi = {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setDefaultCap: (credits) => ipcRenderer.invoke('settings:setDefaultCap', credits),
   setPlace: (server, place) => ipcRenderer.invoke('settings:setPlace', server, place),
+  setSeriousMode: (on) => ipcRenderer.invoke('settings:setSeriousMode', on),
   setCap: (id, credits) => ipcRenderer.invoke('agents:setCap', id, credits),
   resolveLimit: (id, requestId, choice) => ipcRenderer.invoke('agents:resolveLimit', id, requestId, choice),
   usageAllTime: () => ipcRenderer.invoke('usage:allTime'),

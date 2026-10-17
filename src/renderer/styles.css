@@ -736,3 +736,12 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .toast-act:hover{background:rgba(255,255,255,.14)}
 .dlg .dlist{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--ink-2)}
 .dlg .dinput input{height:34px;border:1px solid var(--line-2);border-radius:10px;background:#fff;padding:0 10px;font:inherit;font-size:13px;color:var(--ink);font-weight:400}
+
+/* ---- agent mood (spec 034, issue #20): small, flat, inside the scene box; nothing moves under reduced motion ---- */
+.amb-light{animation:ambblink 1.1s steps(1,end) infinite}
+@keyframes ambblink{0%{fill:#d9534f}50%{fill:#5b8fd1}}
+.dizzy{transform-box:fill-box;transform-origin:center;animation:dizzyspin 2.4s linear infinite}
+@keyframes dizzyspin{to{transform:rotate(360deg)}}
+.tap{animation:tapdesk .5s ease-in-out infinite}
+@keyframes tapdesk{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@media (prefers-reduced-motion:reduce){.amb-light,.dizzy,.tap{animation:none}}

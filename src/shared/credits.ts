@@ -37,16 +37,18 @@ export interface AppSettings {
   defaultMaxAiCredits?: number;
   /** MCP server name -> place (spec 024 FR-007). Omitted when empty. */
   placeMap?: PlaceMap;
+  /** Serious mode (spec 034 FR-004): no heavy or monster bodies and no trouble drawings on the agent figures. Only `true` is kept. */
+  seriousMode?: boolean;
 }
 
 /** Tolerant parse: a missing, corrupt or odd file means no settings. */
 export function parseSettings(text: string): AppSettings {
   try {
-    const doc = JSON.parse(text) as { defaultMaxAiCredits?: unknown; placeMap?: unknown } | null;
+    const doc = JSON.parse(text) as { defaultMaxAiCredits?: unknown; placeMap?: unknown; seriousMode?: unknown } | null;
     const obj = doc && typeof doc === 'object' && !Array.isArray(doc) ? doc : {};
     const cap = parseCap((obj as { defaultMaxAiCredits?: unknown }).defaultMaxAiCredits);
     const places = parsePlaceMap((obj as { placeMap?: unknown }).placeMap);
-    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}) };
+    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}) };
   } catch {
     return {};
   }

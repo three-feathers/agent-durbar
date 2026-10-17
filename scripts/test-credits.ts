@@ -68,6 +68,25 @@ try {
   assert.deepStrictEqual({ ...parseSettings('{"placeMap":{"a":"web"}}').placeMap }, { a: 'web' });
   assert.deepStrictEqual(parseSettings('{"placeMap":"x"}'), {}, 'a mapping that is not an object is ignored');
   assert.deepStrictEqual(parseSettings('{"defaultMaxAiCredits":75,"placeMap":{}}'), { defaultMaxAiCredits: 75 }, 'an empty mapping is omitted');
+
+  // spec 034 FR-004: Serious mode lives in the same file, off by default, and survives cap and mapping changes
+  const f3 = path.join(dir, 'serious', 'durbar-settings.json');
+  const ss = new SettingsStore(f3); ss.load();
+  assert.strictEqual(ss.seriousMode, false, 'off by default (the fun is on)');
+  assert.strictEqual(ss.setSeriousMode(true), true); assert.strictEqual(ss.seriousMode, true);
+  assert.ok(ss.setPlace('acme-tools', 'library').ok); assert.strictEqual(ss.setDefaultMaxAiCredits(60), 60);
+  const sb = new SettingsStore(f3); sb.load();
+  assert.strictEqual(sb.seriousMode, true, 'kept after a restart, a cap change and a mapping change');
+  assert.deepStrictEqual({ ...sb.placeMap }, { 'acme-tools': 'library' }); assert.strictEqual(sb.defaultMaxAiCredits, 60);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(f3, 'utf8')), { version: 1, defaultMaxAiCredits: 60, placeMap: { 'acme-tools': 'library' }, seriousMode: true });
+  for (const junk of ['yes', 1, 0, null, undefined, {}, []]) assert.strictEqual(sb.setSeriousMode(junk), true, 'only a boolean changes it: ' + String(junk));
+  assert.strictEqual(sb.setSeriousMode(false), false); assert.strictEqual(sb.seriousMode, false);
+  assert.ok(!('seriousMode' in JSON.parse(fs.readFileSync(f3, 'utf8'))), 'off is not written');
+  assert.strictEqual(sb.setDefaultMaxAiCredits(''), undefined); assert.deepStrictEqual({ ...sb.placeMap }, { 'acme-tools': 'library' }, 'clearing the cap keeps the mapping');
+  assert.strictEqual(sb.setSeriousMode(true), true); assert.strictEqual(sb.setDefaultMaxAiCredits(70), 70); assert.strictEqual(sb.seriousMode, true, 'a cap change keeps Serious mode');
+  assert.deepStrictEqual(parseSettings('{"seriousMode":true}'), { seriousMode: true });
+  for (const bad of ['"yes"', '1', '0', 'null', '[]', '{}', '"true"', '{"seriousMode":"true"}', '{"seriousMode":1}', '{"seriousMode":false}']) assert.deepStrictEqual(parseSettings(bad.startsWith('{') ? bad : '{"seriousMode":' + bad + '}'), {}, 'only true is kept: ' + bad);
+
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
 }

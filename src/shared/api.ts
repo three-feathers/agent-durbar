@@ -94,6 +94,8 @@ export interface AppSettingsView {
   defaultMaxAiCredits?: number;
   /** Places in the office (spec 024): MCP server name -> place id or `desk`; unmapped servers use the built-in rules. */
   placeMap?: Record<string, string>;
+  /** Serious mode (spec 034): the agent figures show no monster, ambulance or other mood drawing. */
+  seriousMode?: boolean;
 }
 
 export interface ModelChoice {
@@ -331,6 +333,8 @@ export interface DurbarApi {
   setDefaultCap?(credits: number | null): Promise<{ ok: boolean; defaultMaxAiCredits?: number }>;
   /** Map an MCP server to a place (`library|software|terminal|web|other|desk`), or `null` to use the default (spec 024). */
   setPlace?(server: string, place: string | null): Promise<{ ok: boolean; placeMap?: Record<string, string> }>;
+  /** Turn Serious mode on or off (spec 034). */
+  setSeriousMode?(on: boolean): Promise<{ ok: boolean; seriousMode?: boolean }>;
   setCap?(id: string, credits: number | null): Promise<{ ok: boolean; error?: string; maxAiCredits?: number }>;
   resolveLimit?(id: string, requestId: string, choice: LimitChoice): Promise<{ ok: boolean; error?: string }>;
 

@@ -415,7 +415,8 @@ ipcMain.handle('usage:reset', () => {
   usageStore?.reset();
   return { ok: true, doc: usageStore?.view() };
 });
-ipcMain.handle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits, placeMap: settingsStore?.placeMap ?? {}, about: aboutView(app.getVersion()) }));
+ipcMain.handle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits, placeMap: settingsStore?.placeMap ?? {}, seriousMode: settingsStore?.seriousMode ?? false, about: aboutView(app.getVersion()) }));
+ipcMain.handle('settings:setSeriousMode', (_e, on: unknown) => ({ ok: true, seriousMode: settingsStore?.setSeriousMode(on) ?? false }));
 ipcMain.handle('settings:setPlace', (_e, server: unknown, place: unknown) => settingsStore?.setPlace(server, place) ?? { ok: false });
 ipcMain.handle('settings:setDefaultCap', (_e, credits: unknown) => ({ ok: true, defaultMaxAiCredits: settingsStore?.setDefaultMaxAiCredits(credits) }));
 

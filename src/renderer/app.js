@@ -52,6 +52,25 @@ function aiuChip(){
   const inner=t.unreported>=t.calls?'<span class="l">credits not reported</span>':`<b>${esc((t.nano/1e9).toFixed(2))}</b><span class="l">AIU</span>`;
   return `<span class="stat stat-aiu" role="note" title="${esc(tip)}" aria-label="${esc(tip.replace(/\n/g,' '))}">${inner}</span>`;
 }
+/* ---- how an agent is doing (spec 034, issue #20): the body follows the context window, trouble gets a drawing ---- */
+const MOODS=window.DurbarMood;
+const MOOD=MOODS.createMoodTracker();
+let SERIOUS=false; /* Serious mode (Settings): no mood drawings at all */
+let AMB_ID=null;   /* the one agent that has the ambulance (the most recent error), chosen once per render */
+const NO_MOOD={body:'normal',trouble:null,pct:null,words:''};
+function moodFor(a){
+  if(SERIOUS||!a||a.parent||!a.live)return NO_MOOD;
+  const c=STATS.agent(a.id).ctx, pct=c&&c.limit>0?window.DurbarStats.ctxLevel(c.tokens,c.limit).pct:null;
+  const st=vis(a), body=MOODS.bodyOf(pct), failStreak=MOOD.failStreak(a.id);
+  const waitingMs=st==='waiting'?MOOD.waitingMs(a.id):0; /* only while the figure is waiting: a request answered elsewhere must not leave it tapping */
+  const trouble=MOODS.troubleOf({state:st,ambulance:AMB_ID===a.id,limit:!!a.limit,waitingMs,failStreak});
+  return {body,trouble,pct,words:MOODS.phrases({body,pct,trouble,waitingMs,failStreak}).join(', ')};
+}
+const moodWords=a=>{const w=moodFor(a).words;return w?' — '+esc(w):'';};
+const pickAmbulanceId=()=>MOODS.pickAmbulance(agents.filter(x=>x.live&&!x.parent&&roomShown(roomOf(x))).map(x=>({id:x.id,state:vis(x),errorAt:MOOD.errorAt(x.id)})));
+/* "impatient" starts after 60 s without any event, so look every few seconds and redraw only when somebody's mood changed */
+let moodSig='';
+setInterval(()=>{if(SERIOUS||demoOn)return;const sig=agents.map(x=>x.live&&!x.parent?moodFor(x).trouble+'/'+moodFor(x).body:'').join('|');if(sig!==moodSig){moodSig=sig;scheduleRender();}},5000);
 /* ---- places in the office (spec 024): a shared lobby; main agents walk to the place of the tool they are using ---- */
 const VISITS=window.DurbarPlaces.createVisits();
 const SEEN_SERVERS=new Set(); /* MCP server names seen in tool events this run (per-folder extras included): the Places settings list them */
@@ -175,8 +194,8 @@ function hairFront(style,c){
   return fr;
 }
 function scene(a,mini,c){
-  const st=vis(a), k=a.look, shirt=k.shirt, arm=shade(shirt,-.14), skinD=shade(k.skin,-.08);
-  let s=`<svg class="scene${c?' sc-c':''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses?1:0}|${c?'c':mini?'m':'f'}" viewBox="${c?'16 5 176 116':mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
+  const st=vis(a), mood=moodFor(a), k=mood.body==='monster'?Object.assign({},a.look,{skin:'#8fa98f'}):a.look, shirt=k.shirt, arm=shade(shirt,-.14), skinD=shade(k.skin,-.08);
+  let s=`<svg class="scene${c?' sc-c':''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses?1:0}|${c?'c':mini?'m':'f'}|${mood.body}${mood.trouble||''}" viewBox="${c?'16 5 176 116':mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
   s+=`<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="#2c3733" opacity=".06"/>`;
   /* compact scenes: flat halo rects + CSS-only animation (no blur filter, no SMIL) so 15 of them stay cheap */
   if(c){const hc={working:'#6f93b5',thinking:'#8a97bd',waiting:'#d9962b',error:'#bf5a50'}[st];
@@ -185,18 +204,22 @@ function scene(a,mini,c){
   s+=`<rect x="52" y="50" width="44" height="48" rx="13" fill="#cdc6b8"/>`;
   s+='<g class="pp">'; /* the person (hidden by CSS while the agent is away at a place: an empty chair stays) */
   if(k.style==='long') s+=`<path d="M59.5 44a14.5 14.5 0 0 1 29 0v19q0 4-4 4h-21q-4 0-4-4z" fill="${k.hair}"/>`;
-  s+=`<path d="M55 99V77q0-14 14-14h10q14 0 14 14v22z" fill="${shirt}"/>`;
+  s+=`<path d="${mood.body==='normal'?'M55 99V77q0-14 14-14h10q14 0 14 14v22z':'M52 99V77q0-14 14-14h16q14 0 14 14v22z'}" fill="${shirt}"/>`; /* heavy and monster: a wider body, still inside the chair */
   s+=`<path d="M69.5 63.5q4.5 5 9 0" fill="none" stroke="${shade(shirt,.35)}" stroke-width="2" stroke-linecap="round"/>`;
   s+=`<rect x="70" y="53" width="8" height="10" rx="3" fill="${skinD}"/>`;
-  const tilt = st==='idle'?'rotate(-7 74 56)': st==='error'?'rotate(4 74 56)':'';
-  s+=`<g ${tilt?`transform="${tilt}"`:''}><g class="${st==='working'?'head':''}"><circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>`;
+  const closed = st==='idle'||mood.trouble==='faint';
+  const tilt = mood.trouble==='faint'?'rotate(-24 74 56)': st==='idle'?'rotate(-7 74 56)': st==='error'?'rotate(4 74 56)':'';
+  s+=`<g ${tilt?`transform="${tilt}"`:''}${mood.trouble==='faint'?' style="transform-box:view-box"':''}><g class="${st==='working'?'head':''}"><circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>`;
   s+=hairFront(k.style,k.hair);
-  const ex = st==='idle'?0:1.4;
-  if(st==='idle') s+=`<path d="M67.5 45.6q2 1.7 4 0M76.5 45.6q2 1.7 4 0" fill="none" stroke="#3b3330" stroke-width="1.3" stroke-linecap="round"/>`;
+  if(mood.body==='monster') s+=`<path d="M64.5 35.5l-4.2-9.5 9 5.2zM83.5 35.5l4.2-9.5-9 5.2z" fill="#6e8a70"/><path d="M65 33l2.4-4.6 2.6 3.6 2.8-5 2.8 4.6 2.6-3.6 2.4 4.6" fill="none" stroke="${k.hair}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`;
+  const ex = closed?0:1.4;
+  if(closed) s+=`<path d="M67.5 45.6q2 1.7 4 0M76.5 45.6q2 1.7 4 0" fill="none" stroke="#3b3330" stroke-width="1.3" stroke-linecap="round"/>`;
   else s+=`<circle cx="${70.3+ex}" cy="45.4" r="1.35" fill="#3b3330"/><circle cx="${78.3+ex}" cy="45.4" r="1.35" fill="#3b3330"/>`;
   if(k.glasses) s+=`<g fill="none" stroke="#3b3330" stroke-width="1.1"><circle cx="${70.3+ex}" cy="45.4" r="4"/><circle cx="${78.3+ex}" cy="45.4" r="4"/></g>`;
-  const mouth = st==='error'?'M71 53.2q3-2 6 0': (st==='done'||st==='idle')?'M70.5 51q3.5 3 7 0':'M71 51.6q3 2 6 0';
-  s+=`<path d="${mouth}" fill="none" stroke="#7a4b3a" stroke-width="1.3" stroke-linecap="round"/></g></g>`;
+  const mouth = mood.body==='monster'?'M70.2 53.8q3.8-3.6 7.6 0': st==='error'?'M71 53.2q3-2 6 0': (st==='done'||st==='idle')?'M70.5 51q3.5 3 7 0':'M71 51.6q3 2 6 0';
+  if(mood.body==='monster') s+=`<path d="M65.5 40l7 3.4M82.5 40l-7 3.4" fill="none" stroke="#3b3330" stroke-width="1.8" stroke-linecap="round"/>`;
+  s+=mood.trouble==='faint'?`<ellipse cx="74" cy="52" rx="1.9" ry="2.4" fill="#7a4b3a"/></g></g>`:`<path d="${mouth}" fill="none" stroke="#7a4b3a" stroke-width="1.3" stroke-linecap="round"/></g></g>`;
+  if(mood.body==='heavy') s+=`<path class="sweat" d="M90.5 36.5q3.2 4.6 0 7.4q-3.2-2.8 0-7.4z" fill="#a9c6e3" stroke="#7fa3c9" stroke-width=".6"/>`;
   s+='</g>';
   // desk
   s+=`<rect x="10" y="86" width="180" height="7" rx="3.5" fill="#d8c6a8"/><rect x="15" y="93" width="170" height="21" rx="4" fill="#e8dcc6"/><rect x="22" y="98" width="46" height="11" rx="3" fill="#dccdb1"/><rect x="142" y="98" width="36" height="11" rx="3" fill="#dccdb1"/>`;
@@ -217,15 +240,17 @@ function scene(a,mini,c){
   const typing = st==='working';
   s+='<g class="pp">';
   s+=`<g class="${typing?'hand-l':''}">${armL(61,71,68,81)}${hand(68.5,81.4)}</g>`;
-  if(st==='waiting'){
+  if(st==='waiting'&&mood.trouble!=='impatient'&&mood.trouble!=='faint'){ /* impatient taps the desk, a fainted agent does not wave */
     const wave = REDUCED||c?'':`<animateTransform attributeName="transform" type="rotate" values="-4 87 71;6 87 71;-4 87 71" dur="2.8s" repeatCount="indefinite"/>`;
     s+=`<g${c?' class="wave"':''}>${wave}${armL(87,71,97,46)}${hand(97.5,42.5)}</g>`;
-  } else if(st==='idle'){
+  } else if(st==='idle'||mood.trouble==='faint'){
     s+=`<g>${armL(87,71,96,80)}${hand(97,80.5)}</g>`;
   } else {
-    s+=`<g class="${typing?'hand-r':''}">${armL(87,71,81,81)}${hand(80.5,81.4)}</g>`;
+    s+=`<g class="${typing?'hand-r':mood.trouble==='impatient'?'tap':''}">${armL(87,71,81,81)}${hand(80.5,81.4)}</g>`;
   }
   s+='</g>';
+  if(mood.trouble==='dizzy'){const star=(x,y)=>`<path d="M${x} ${y-3.2}l1 2.2 2.2 1-2.2 1-1 2.2-1-2.2-2.2-1 2.2-1z" fill="#d9a441"/>`;s+=`<g class="pp"><g class="dizzy">${star(58,28)}${star(74,21)}${star(90,28)}</g></g>`;}
+  if(mood.trouble==='ambulance') s+=`<g class="amb"><rect x="18" y="93" width="36" height="17" rx="4" fill="#f7f4ee" stroke="#9aa59f" stroke-width="1"/><rect x="40" y="96" width="11" height="7" rx="1.5" fill="#bcd3e6"/><rect x="18" y="103" width="36" height="3" fill="#bf5a50"/><path d="M28 96.5v5M25.5 99h5" stroke="#bf5a50" stroke-width="2" stroke-linecap="round"/><rect class="amb-light" x="30" y="89.5" width="9" height="4" rx="2" fill="#d9534f"/><circle cx="26" cy="111" r="3.6" fill="#4a5560"/><circle cx="46" cy="111" r="3.6" fill="#4a5560"/></g>`;
   if(st==='thinking') s+=`<g class="bubble-g"><circle cx="58.5" cy="31" r="2" fill="#fff" stroke="#c9d0e0" stroke-width="1"/><circle cx="52" cy="25" r="3" fill="#fff" stroke="#c9d0e0" stroke-width="1"/><rect x="18" y="4" width="42" height="19" rx="9.5" fill="#fff" stroke="#c9d0e0" stroke-width="1.2"/><g fill="#8a97bd"><circle class="td" cx="30" cy="13.5" r="2.2"/><circle class="td" cx="39" cy="13.5" r="2.2"/><circle class="td" cx="48" cy="13.5" r="2.2"/></g></g>`;
   s+='</svg>';
   return s;
@@ -272,7 +297,7 @@ let HCAP=1; /* helpers shown on a compact strip before "+N more" (a layout param
 let HBOOST=new Map(); /* agent id -> helpers shown, for agents that get more than HCAP because the floor has room left over (see chooseLayout) */
 const helperCap=(d,a)=>(a&&HBOOST.get(a.id))||HCAP;
 const SC_CACHE=new Map();
-function sceneC(a){const st=vis(a),k=a.look,key=st+k.shirt+k.skin+k.hair+k.style+(k.glasses?1:0);let v=SC_CACHE.get(key);if(!v){v=scene(a,false,true);SC_CACHE.set(key,v);}return v;}
+function sceneC(a){const st=vis(a),k=a.look,m=moodFor(a),key=st+k.shirt+k.skin+k.hair+k.style+(k.glasses?1:0)+'|'+m.body+(m.trouble||'');let v=SC_CACHE.get(key);if(!v){v=scene(a,false,true);SC_CACHE.set(key,v);}return v;}
 function visibleHelpers(a,d){
   const all=helpersOf(a).slice().sort((x,y)=>prio(x)-prio(y));
   const cap=helperCap(d,a);
@@ -296,7 +321,7 @@ function helperTileHTML(h){
 }
 function cardHTML(a,d,nSubs){
   const st=vis(a), use=usageShort(a);
-  return `<button class="desk card is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${label(a)}: ${esc(taskOf(a))}${use?' · '+use:''}" aria-label="${esc(a.name)}, ${esc(a.role)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
+  return `<button class="desk card is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${use?' · '+use:''}" aria-label="${esc(a.name)}, ${esc(a.role)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${sceneC(a)}</span>
     <span class="ci"><span class="l1"><span class="name">${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc(a.role)}</span><span class="stl st-${st}">${label(a,true)}</span></span>
     <span class="intent">${esc(taskOf(a))}</span>
@@ -324,7 +349,7 @@ function unitHTML(a,d){
   }
   let desk;
   if(d==='full'){
-    desk=`<button class="desk is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
+    desk=`<button class="desk is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
       ${scene(a,false)}<span class="badge ${st}">${badgeSVG(st)}</span>
       <div class="info"><div class="who"><span class="name">${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc(a.role)}</span></div>
       <p class="task">${esc(taskOf(a))}</p><span class="pill st-${st}"><i></i>${label(a)}</span></div></button>`;
@@ -517,6 +542,7 @@ function renderList(){
 }
 
 function renderAll(){
+  AMB_ID=pickAmbulanceId();
   prepareWalkers();
   const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.door), inPanel=ae&&ae.closest&&ae.closest('#panel');
   const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':ae.dataset.door?'data-door':'');
@@ -863,7 +889,7 @@ window.addEventListener('resize',relayout);
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
@@ -1456,6 +1482,11 @@ function updateCtxChip(a){
 function onLiveEvent(e){
   const a=liveById(e.sessionId); if(!a)return;
   feedStats(a,e);
+  if(!e.agentId){ /* spec 034: only main-agent events change the mood */
+    if(e.type==='toolCall')MOOD.onTool(a.id,e);
+    else if(e.type==='status'){MOOD.onStatus(a.id,e.status);if(e.permission)MOOD.onPermission(a.id,e.permission,e.timestamp);} /* a pending request arrives inside a needs-permission status */
+    else if(e.type==='permission')MOOD.onPermission(a.id,e.permission,e.timestamp);   /* its answer arrives as a permission event */
+  }
   if(e.type==='toolCall'&&e.mcpServer&&SEEN_SERVERS.size<500)SEEN_SERVERS.add(String(e.mcpServer).trim().slice(0,200));
   if(!e.agentId){ /* spec 024: only main-agent events move anyone (helper events carry an agentId) */
     if(e.type==='toolCall'){if(VISITS.onTool(a.id,e,PLACE_MAP))scheduleRender();}
@@ -1925,7 +1956,7 @@ async function removeFolder(r){
   renderFilter(); renderFolders(); scheduleRender(); toast(esc(r.name)+' removed.',3200);
 }
 function removeLiveAgent(id){
-  STATS.forget(id);
+  STATS.forget(id); MOOD.forget(id);
   VISITS.leave(id); dropWalker(id);
   for(let i=agents.length-1;i>=0;i--)if(agents[i].id===id||agents[i].parent===id){delete chats[agents[i].id];delete prev[agents[i].id];agents.splice(i,1);}
   if(ui.selected&&!byId(ui.selected))closePanel();
@@ -2078,7 +2109,7 @@ if(bridge){
     const s=e.target.closest&&e.target.closest('.floors-ui select[data-fl="move"]');if(s)moveRoomToFloor(s.dataset.room,s.value);
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
-  window.DurbarScreens.init({bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),usageError:()=>usageSaveError,
+  window.DurbarScreens.init({bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,setSerious:on=>{SERIOUS=!!on;scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),usageError:()=>usageSaveError,
     places:window.DurbarPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
     staticLimit:a=>{const m=MODELS.find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
@@ -2091,7 +2122,7 @@ if(bridge){
   bridge.onAgentAdded(addLiveAgent);
   bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});const rs=l.filter(x=>x.permRestored&&!x.parent).length;if(rs)toast(rs+' saved folder'+(rs>1?'s were':' was')+' restored in <b>Allow all</b>, as you left '+(rs>1?'them':'it')+'. Everything runs without asking there; the mode chip says <i>restored</i>. "Approve for this session" grants start empty.',9000);});
   loadModels();
-  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};}).catch(()=>{});
+  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};SERIOUS=!!(v&&v.seriousMode);scheduleRender();}).catch(()=>{});
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);
   agents=LIVE.agents; ROOMS=LIVE.rooms;
   setBadge();
