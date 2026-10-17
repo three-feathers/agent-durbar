@@ -17,7 +17,7 @@
 
 ## Tests and checks
 - `scripts/test-mood.ts` in `npm test`; `scripts/test-credits.ts` for `seriousMode` (round trip, keeps cap and place map).
-- `npm run check:office` must stay 105/105 (no layout change); driver `scripts/shots-034.js` checks each state and Serious mode at both sizes and takes the screenshots.
+- `npm run check:office` must stay green (105/105 when planned; spec 033 added floors cases later) with no layout change; driver `scripts/shots-034.js` checks each state and Serious mode at both sizes and takes the screenshots.
 
 ## Risks
 - Art quality ("no AI-slop art"): reuse the existing shapes and palette of `scene()`, small additions only, review the screenshots closely.
