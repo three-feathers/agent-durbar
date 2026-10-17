@@ -85,3 +85,10 @@ specs/003-permissions-and-approvals/
 - `scripts/test-permissions.ts`: `grantScope` with `path.win32` (drive folder, drive root, UNC, same folder shares a key, subfolder does not) and an explicit `path.posix` check; a broker built with `pathCheck.flavor = path.win32` remembers a Windows folder grant and reuses it for a second file there.
 - Grant keys stay exact strings (case-sensitive), documented as a conservative limit in the spec.
 - Checked: `npm run typecheck && npm run build && npm test` on macOS. `/speckit-analyze` and `/speckit-converge` followed by hand from `.claude/skills/` (feature dir 003): no drift, converged for FR-031/FR-032, no tasks appended.
+
+## Delta 2026-10-17: keyboard focus in the confirmation (FR-033, T029)
+
+- `src/renderer/dialog.js` (new, plain script like `markdown.js`; `window.DurbarDialog(document)` in the page, `require` in tests): the shared `askDialog` moved out of `app.js`. A capture-phase `keydown` on the document while it is open handles Escape (cancel) and Tab/Shift+Tab (wrap); a `focusin` guard pulls focus back if something outside takes it; on close focus goes to `returnFocus` (element or function) or the element focused when it opened.
+- `app.js`: `changeMode(a, mode, anchor)` passes `anchor` as `returnFocus` and no longer calls `anchor.focus()` itself (that was the bug); `refocusAnchor` re-focuses the chip (or card) after the chip is re-rendered, only when focus was lost. `index.html` loads `dialog.js`; `scripts/copy-assets.js` copies it.
+- Tests: `scripts/test-dialog.ts` (jsdom; in `npm test` as `test:dialog`); `scripts/check-dialog-focus.js` + `npm run check:dialog-focus` (Electron under xvfb, simulator, real key events via `sendInputEvent`; fails on the old code with focus on `modeChip`). The latter needs xvfb, so it is a manual check like `check:office`, not part of `npm test`.
+- Checked: `npm run typecheck`, `npm run build`, `npm test`, `npm run check:office`, `npm run check:dialog-focus` on Linux. `/speckit-analyze` and `/speckit-converge` followed by hand from `.claude/skills/` (feature dir 003): no drift beyond the FR-033 text above.

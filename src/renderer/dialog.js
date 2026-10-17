@@ -1,0 +1,54 @@
+/* Small confirmation dialog (spec 003 FR-033, spec 018). Plain script: in the page it defines window.DurbarDialog;
+   in Node (tests) `require` gives the same factory. DurbarDialog(document) returns askDialog(opts).
+   askDialog({title,body,buttons:[{label,value,cls}],check:{label,checked},returnFocus}) resolves {value,checked} for a
+   button, or null when dismissed (Cancel button with value null, Escape, click on the backdrop).
+   Keyboard contract: focus goes into the dialog when it opens and cannot leave it (Tab and Shift+Tab wrap; anything that
+   steals focus is undone); Escape dismisses it (never confirms); when it closes focus goes back to `returnFocus` (an element
+   or a function returning one), by default the element that had focus when it opened. Confirming is only ever an explicit
+   activation of a button, so a dialog that asks for confirmation (Allow all) is never weakened by the keyboard handling. */
+(function(root,factory){
+  if(typeof module==='object'&&module.exports) module.exports=factory;
+  else root.DurbarDialog=factory;
+})(typeof self!=='undefined'?self:this, function create(doc){
+  'use strict';
+  const FOCUSABLE='button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])';
+  return function askDialog({title,body,buttons,check,returnFocus}){
+    return new Promise(resolve=>{
+      const old=doc.getElementById('modeDlg');if(old)old.remove();
+      const opener=returnFocus||(doc.activeElement&&doc.activeElement!==doc.body?doc.activeElement:null);
+      const d=doc.createElement('div');d.id='modeDlg';d.className='dlg-ov';
+      d.innerHTML=`<div class="dlg" role="alertdialog" aria-modal="true" aria-labelledby="mdT" aria-describedby="mdB"><h3 id="mdT"></h3><p class="dsub" id="mdB"></p>${check?'<label class="chk"><input type="checkbox" id="mdChk"><span></span></label>':''}<div class="dbtn"></div></div>`;
+      d.querySelector('#mdT').textContent=title;d.querySelector('#mdB').textContent=body;
+      if(check){d.querySelector('.chk span').textContent=check.label;d.querySelector('#mdChk').checked=!!check.checked;}
+      const row=d.querySelector('.dbtn');
+      const items=()=>[...d.querySelectorAll(FOCUSABLE)];
+      const first=()=>(row.querySelector('.primary')||row.lastElementChild);
+      let closed=false;
+      const done=v=>{
+        if(closed)return;closed=true;
+        doc.removeEventListener('keydown',onKey,true);doc.removeEventListener('focusin',onFocusIn,true);
+        d.remove();
+        const t=typeof opener==='function'?opener():opener;
+        if(t&&typeof t.focus==='function'&&doc.contains(t))t.focus();
+        resolve(v);
+      };
+      /* while open: Escape cancels, Tab wraps. On the document in the capture phase, so it also works when focus slipped out. */
+      const onKey=e=>{
+        if(e.key==='Escape'){e.preventDefault();e.stopPropagation();done(null);return;}
+        if(e.key!=='Tab')return;
+        const it=items();if(!it.length)return;
+        const i=it.indexOf(doc.activeElement);
+        if(i<0){e.preventDefault();it[e.shiftKey?it.length-1:0].focus();}
+        else if(e.shiftKey&&i===0){e.preventDefault();it[it.length-1].focus();}
+        else if(!e.shiftKey&&i===it.length-1){e.preventDefault();it[0].focus();}
+      };
+      /* focus must not leave the dialog (a stray focus() on the control behind it, a click on the backdrop) */
+      const onFocusIn=e=>{if(!d.contains(e.target)){const f=first();if(f)f.focus();}};
+      buttons.forEach(b=>{const el=doc.createElement('button');el.type='button';el.className='btn'+(b.cls?' '+b.cls:'');el.textContent=b.label;el.onclick=()=>done(b.value===null?null:{value:b.value,checked:check?d.querySelector('#mdChk').checked:false});row.appendChild(el);});
+      d.addEventListener('click',e=>{if(e.target===d)done(null);});
+      doc.addEventListener('keydown',onKey,true);doc.addEventListener('focusin',onFocusIn,true);
+      doc.body.appendChild(d);
+      first().focus();
+    });
+  };
+});

@@ -174,7 +174,7 @@ Specs [015](specs/015-thinking-and-subagent-activity/spec.md) to [018](specs/018
 ![Doors, 3 rooms closed, 1440x900](docs/screenshots/m7b-doors-1440x900.png)
 ![Doors, 3 rooms closed, 1280x800](docs/screenshots/m7b-doors-1280x800.png)
 
-**Permission mode any time.** The chat header chip and the card context menu (right click) switch Read-only / Ask first / Allow all for that agent. It applies from the next request without restarting the session (the broker reads the mode dynamically). Switching to Allow all asks for confirmation and, if a request is pending, offers to approve it; leaving Allow all asks whether to forget session grants. Cards show a small mode icon; the mode is saved per folder and restored. The top-bar selector is the default for new sessions.
+**Permission mode any time.** The chat header chip and the card context menu (right click) switch Read-only / Ask first / Allow all for that agent. It applies from the next request without restarting the session (the broker reads the mode dynamically). Switching to Allow all asks for confirmation and, if a request is pending, offers to approve it; leaving Allow all asks whether to forget session grants. Cards show a small mode icon; the mode is saved per folder and restored. The top-bar selector is the default for new sessions. The confirmation works from the keyboard: focus stays inside it, Tab is trapped, Escape cancels (the mode stays as it was) and focus goes back to the chip; *Allow all* always needs an explicit confirm (spec 003 FR-033).
 
 ![Mode switch (menu with Read-only / Ask first / Allow all)](docs/screenshots/003-allow-all-menu-1280x800.png)
 
@@ -386,6 +386,7 @@ npm run typecheck         # tsc, no emit
 npm run build             # tsc + copy src/renderer assets into dist/renderer
 npm test                  # every unit suite (permissions, attachments, folders, MCP, tool usage, usage totals, about, ...): no Copilot, no credits
 npm run check:office      # layout check of 95 combinations (Electron under xvfb on Linux), simulator only
+npm run check:dialog-focus # keyboard check of the Allow all confirmation (Electron under xvfb on Linux), simulator only
 npm start                 # build and launch Electron (needs `copilot login` once)
 DURBAR_SIM=15 npm start   # 15 simulated agents, no sessions, no AI credits
 npm run pack:dir          # unpacked app in release/ (also: npm run dist, dist:mac:arm64, dist:mac:x64, dist:win, dist:linux; unsigned)
