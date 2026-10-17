@@ -6,9 +6,9 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 Nothing yet.
 
-## v0.1.0-alpha.4 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4), 2026-10-17)
+## v0.1.0-alpha.4 ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4), 2026-10-17)
 
-A **pre-release** on top of v0.1.0-alpha.3: places in the office, the VS Code MCP import, the dialog focus fix and the first steps of switching model and context window inside a session. Spec: [031](specs/031-release-alpha4/spec.md). Built and tested on the simulator, on fake sessions and with unit tests; **no AI credits were spent for the release itself** (the earlier real-account checks are listed below with their cost).
+Published as a **pre-release** (built as a draft by the release workflow, then published after checking its eight files). On top of v0.1.0-alpha.3: places in the office, the VS Code MCP import, the dialog focus fix and the first steps of switching model and context window inside a session. Spec: [031](specs/031-release-alpha4/spec.md). Built and tested on the simulator, on fake sessions and with unit tests; **no AI credits were spent for the release itself** (the earlier real-account checks are listed below with their cost).
 
 ### Read this first
 
