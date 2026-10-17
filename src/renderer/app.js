@@ -31,9 +31,24 @@ function loadUsageBaseline(){
 /* After "Reset usage totals" in Settings: this run's figures and the baseline both start from zero. */
 function onUsageReset(view){LEDGER.clearRun();LEDGER.setBaseline(view&&view.ok?view:{});usageSaveError=view&&typeof view.error==='string'?view.error:'';scheduleRender();}
 const recordUsage=(a,e)=>{const r=roomOf(a);if(r)LEDGER.record(r.id,e);};
+/* ---- floors (spec 033): ordered groups of rooms; a floor that is off is hidden exactly like a hidden folder ---- */
+/* spend of the rooms on floors that are off: still in the office total, named in its tooltip (FR-016) */
+/* same since-reset totals as the room headers (spec 011 FR-027: the folder key adds the saved baseline) */
+const offFloorSpend=()=>window.DurbarUsage.sum(ROOMS.filter(r=>!floorOn(r.floor)).map(r=>{const f=folderOfRoom(r.id);return LEDGER.room(r.id,f&&f.key);}));
+let FLOORS=null; /* {floors:[{id,name,on,ground}],lastFloor,byAgent} from the bridge; null = no floors (demo mode, older bridge) */
+const floorsLive=()=>!!FLOORS&&!demoOn;
+const floorById=id=>floorsLive()?(FLOORS.floors.find(f=>f.id===id)||FLOORS.floors.find(f=>f.ground)||null):null;
+const floorOn=id=>{const f=floorById(id);return !f||f.on;};
+const roomShown=r=>!!r&&!r.hidden&&floorOn(r.floor);
+const floorsOnList=()=>floorsLive()?FLOORS.floors.filter(f=>f.on):[];
+const floorTagsOn=()=>floorsOnList().length>1;
+const floorRank=r=>{const f=floorById(r.floor);return f?FLOORS.floors.indexOf(f):0;};
+/* rooms in floor order; inside a floor, the order they were added (stable) */
+const roomsInOrder=()=>ROOMS.map((r,i)=>[r,i]).sort((x,y)=>floorRank(x[0])-floorRank(y[0])||x[1]-y[1]).map(p=>p[0]);
+const floorTag=r=>{if(!floorTagsOn())return '';const f=floorById(r.floor);return f?`<span class="floor-tag" title="Floor: ${esc(f.name)}">${esc(f.name)}</span>`:'';};
 function aiuChip(){
   const t=LEDGER.office(); if(!t.calls||demoOn)return '';
-  const tip=window.DurbarUsage.tooltip(t,{scope:'office',removed:ledgerRemoved(),since:LEDGER.since(),run:LEDGER.officeRun()});
+  const tip=window.DurbarUsage.tooltip(t,{scope:'office',removed:ledgerRemoved(),since:LEDGER.since(),run:LEDGER.officeRun(),offFloors:offFloorSpend()});
   const inner=t.unreported>=t.calls?'<span class="l">credits not reported</span>':`<b>${esc((t.nano/1e9).toFixed(2))}</b><span class="l">AIU</span>`;
   return `<span class="stat stat-aiu" role="note" title="${esc(tip)}" aria-label="${esc(tip.replace(/\n/g,' '))}">${inner}</span>`;
 }
@@ -52,7 +67,7 @@ const PLACE_ICON={
 const lobbyOn=()=>!demoOn&&agents.some(a=>a.live&&!a.parent);
 const lobbyCap=aw=>Math.max(1,Math.min(8,Math.floor(((aw||800)/5-150)/25))); /* slots that fit in a one-row tile next to the icon and the name */
 /* who is at a place and visible under the current filters (a hidden room or a filtered-out agent has no figure) */
-const placeVisitors=pid=>VISITS.occupants(pid).filter(id=>{const a=byId(id),r=a&&!a.parent&&roomOf(a);return r&&!r.hidden&&(ui.ws==='all'||wsOf(a)===ui.ws)&&matchStatus(a);});
+const placeVisitors=pid=>VISITS.occupants(pid).filter(id=>{const a=byId(id),r=a&&!a.parent&&roomOf(a);return roomShown(r)&&(ui.ws==='all'||wsOf(a)===ui.ws)&&matchStatus(a);});
 const isAway=a=>!a.parent&&(!!VISITS.at(a.id)||RETURNING.has(a.id));
 const taskOf=a=>{const v=a.parent?null:VISITS.at(a.id);return v?'At '+window.DurbarPlaces.placeName(v.place)+': '+v.label+' · '+a.task:a.task;};
 function lobbyHTML(aw){
@@ -227,7 +242,7 @@ function toast(html,ms){const t=document.createElement('div');t.className='toast
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 /* ---------------- top bar ---------------- */
-function visibleAgents(){return agents.filter(a=>!roomOf(a).hidden&&(ui.ws==='all'||wsOf(a)===ui.ws));}
+function visibleAgents(){return agents.filter(a=>roomShown(roomOf(a))&&(ui.ws==='all'||wsOf(a)===ui.ws));}
 function renderStats(){
   const list=visibleAgents().filter(a=>!a.parent); const c={working:0,waiting:0,idle:0,error:0,done:0};
   list.forEach(a=>{const s=vis(a); if(s==='working'||s==='thinking')c.working++; else c[s]++;});
@@ -236,7 +251,8 @@ function renderStats(){
 }
 function renderFilter(){
   const sel=$('wsFilter');
-  sel.innerHTML='<option value="all">All folders</option>'+ROOMS.filter(r=>!r.hidden).map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
+  if(ui.ws!=='all'&&!roomShown(ROOMS.find(r=>r.id===ui.ws)))ui.ws='all'; /* its floor went off or it was hidden */
+  sel.innerHTML='<option value="all">All folders</option>'+roomsInOrder().filter(roomShown).map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
   sel.value=ui.ws;
 }
 const matchStatus = a => !ui.status || ((ui.status==='working')?['working','thinking'].includes(vis(a)):vis(a)===ui.status);
@@ -318,8 +334,8 @@ function unitHTML(a,d){
 const unitWidth=(a,d)=>{const D=DENS[d];return D.cw+(helpersOf(a).length?(d==='full'?D.hw+14+8:D.hw+18):0);};
 function officeModel(ignoreStatus){
   const rooms=[];
-  ROOMS.forEach(r=>{
-    if(r.hidden||(ui.ws!=='all'&&ui.ws!==r.id))return;
+  roomsInOrder().forEach(r=>{
+    if(!roomShown(r)||(ui.ws!=='all'&&ui.ws!==r.id))return;
     const mains=agents.filter(a=>!a.parent&&a.room===r.id&&(ignoreStatus||matchStatus(a)));
     if(!mains.length)return;
     const key=a=>Math.min(prio(a),...helpersOf(a).map(prio));
@@ -338,7 +354,7 @@ function roomSummary(r){
 }
 function plateHTML({r}){
   const sm=roomSummary(r), u=roomAiu(r);
-  return `<button class="plate tone-${sm.tone}" type="button" data-door="${esc(r.id)}" data-key="door:${esc(r.id)}" data-tint="${r.tint}" aria-expanded="false" aria-label="Open room ${esc(r.name)}. ${esc(sm.text)}. ${sm.n} agent${sm.n===1?'':'s'}.${u?' Usage: '+esc(u.long)+'.':''}" title="${esc(r.path)}">${DOOR_SHUT}<span class="plate-tx"><b>${esc(r.name)}</b><span class="plate-sum">${esc(sm.text)}</span></span>${u?`<span class="plate-aiu" title="${esc(u.tip)}">${esc(u.short)}</span>`:''}<span class="plate-n">${sm.n}</span></button>`;
+  return `<button class="plate tone-${sm.tone}" type="button" data-door="${esc(r.id)}" data-key="door:${esc(r.id)}" data-tint="${r.tint}" aria-expanded="false" aria-label="Open room ${esc(r.name)}. ${esc(sm.text)}. ${sm.n} agent${sm.n===1?'':'s'}.${u?' Usage: '+esc(u.long)+'.':''}" title="${esc(r.path)}">${DOOR_SHUT}<span class="plate-tx"><b>${esc(r.name)}</b>${floorTag(r)}<span class="plate-sum">${esc(sm.text)}</span></span>${u?`<span class="plate-aiu" title="${esc(u.tip)}">${esc(u.short)}</span>`:''}<span class="plate-n">${sm.n}</span></button>`;
 }
 const doorsHTML=list=>list.length?`<div class="doors" data-key="doors">${list.map(plateHTML).join('')}</div>`:'';
 function stageHTML(sizing,d,aw,cap){
@@ -357,7 +373,7 @@ function setRoomClosed(r,closed,quiet){
 let doorAnim=null;
 function renderDoorBar(){
   const b=$('doorBar'); if(!b)return;
-  const vis_=ROOMS.filter(r=>!r.hidden&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id));
+  const vis_=ROOMS.filter(r=>roomShown(r)&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id));
   const open=vis_.filter(r=>!r.closed).length, shut=vis_.length-open;
   b.hidden=vis_.length<2||ui.view!=='office';
   $('closeAll').disabled=!open; $('openAll').disabled=!shut;
@@ -369,7 +385,7 @@ function folderOfRoom(roomId){
 }
 function roomHTML({r,mains,all},d,aw,cap){
   const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':(k==='done'||k==='idle')?' calm':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}</span>`:''}).join('');
-  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="Close room ${esc(r.name)}" title="Close the door: ${esc(r.name)} becomes a compact plate">${DOOR_OPEN}</button><span class="room-name" title="${esc(r.name)}">${esc(r.name)}</span><span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span>${(()=>{const u=roomAiu(r);return u?`<span class="room-aiu" title="${esc(u.tip)}">${esc(u.long)}</span>`:'';})()}<span class="room-dots" aria-hidden="true">${dots}</span>${bridge&&bridge.newSession&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.mcpFolderState&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT}</div>`;
+  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="Close room ${esc(r.name)}" title="Close the door: ${esc(r.name)} becomes a compact plate">${DOOR_OPEN}</button><span class="room-name" title="${esc(r.name)}">${esc(r.name)}</span>${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span>${(()=>{const u=roomAiu(r);return u?`<span class="room-aiu" title="${esc(u.tip)}">${esc(u.long)}</span>`:'';})()}<span class="room-dots" aria-hidden="true">${dots}</span>${bridge&&bridge.newSession&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.mcpFolderState&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT}</div>`;
   if(d==='full'){
     const gap=6, pad=12;
     const widths=mains.map(a=>unitWidth(a,d));
@@ -470,12 +486,12 @@ function renderOffice(){
   const model=officeModel();
   if(!model.length){
     stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey='';
-    stage.innerHTML='<div class="empty">'+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" or "+ Workspace" above.':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open "Folders" above to show them again.':'No agents match these filters.'))+'</div>';
+    stage.innerHTML='<div class="empty">'+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" or "+ Workspace" above.':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open "Folders" above to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?'All floors are off. Open "Floors" above to switch one on.':agents.length&&ROOMS.every(r=>!roomShown(r))?'Nothing to show: every folder is hidden or on a floor that is off. Open "Floors" or "Folders" above.':'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
   }
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
   const sizing=ui.status?officeModel(true):model;
-  const key=JSON.stringify([aw,ah,FORCE_DENSITY,lobbyOn(),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]])])]);
+  const key=JSON.stringify([aw,ah,FORCE_DENSITY,lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]])])]);
   if(key!==layoutKey||!layout){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
   HCAP=layout.hcap; HBOOST=new Map(layout.boost);
   const html=stageHTML(model,layout.d,aw,layout.cap);
@@ -490,7 +506,7 @@ function renderOffice(){
 /* ---------------- list view ---------------- */
 function renderList(){
   const rows=[];
-  ROOMS.forEach(r=>{ if(r.hidden||(ui.ws!=='all'&&ui.ws!==r.id))return;
+  roomsInOrder().forEach(r=>{ if(!roomShown(r)||(ui.ws!=='all'&&ui.ws!==r.id))return;
     agents.filter(a=>!a.parent&&a.room===r.id).slice().sort((x,y)=>Math.min(prio(x),...helpersOf(x).map(prio))-Math.min(prio(y),...helpersOf(y).map(prio))).forEach(a=>{
       const subs=helpersOf(a);
       if(matchStatus(a)){rows.push([a,false]);subs.forEach(h=>rows.push([h,true]));}
@@ -505,6 +521,7 @@ function renderAll(){
   const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.door), inPanel=ae&&ae.closest&&ae.closest('#panel');
   const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':ae.dataset.door?'data-door':'');
   renderStats();
+  updateFloorAttention();
   if(ui.view==='office')renderOffice(); else renderList();
   renderDoorBar();
   syncWalkers();
@@ -807,7 +824,7 @@ document.addEventListener('click',e=>{
   if(pc){const cur=byId(ui.selected);if(cur&&cur.parent)openPanel(cur.parent,false);return;}
   const dr=e.target.closest('[data-door]'); if(dr){const r=ROOMS.find(x=>x.id===dr.dataset.door);if(r)setRoomClosed(r,!r.closed);return;}
   if(e.target.closest('#closeAll,#openAll')){const shut=!!e.target.closest('#closeAll');
-    ROOMS.filter(r=>!r.hidden&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id)).forEach(r=>setRoomClosed(r,shut,true));
+    ROOMS.filter(r=>roomShown(r)&&(ui.ws==='all'||ui.ws===r.id)&&agents.some(a=>!a.parent&&a.room===r.id)).forEach(r=>setRoomClosed(r,shut,true));
     layoutKey='';renderAll();return;}
   const st=e.target.closest('.stat[data-k]'); if(st){const k=st.dataset.k;ui.status=ui.status===k?null:k;renderAll();const n=document.querySelector(`.stat[data-k="${k}"]`);if(n)n.focus();return;}
   const mo=e.target.closest('[data-more]'); if(mo){const id=mo.dataset.more;ui.expanded[id]=!ui.expanded[id];renderAll();return;}
@@ -825,6 +842,7 @@ document.addEventListener('keydown',e=>{
     if(window.DurbarScreens&&window.DurbarScreens.isOpen()&&!document.getElementById('scrDlg')&&!document.getElementById('modeDlg')){window.DurbarScreens.close();return;}
     if(document.getElementById('sessDlg')){closeSessDlg();return;}
     if(!$('foldersPop').hidden){toggleFolders(false);return;}
+    if(!$('floorsPop').hidden){toggleFloors(false);return;}
     if(vsViewing){leaveVsView();return;}
     if(ui.selected){closePanel();return;}
   }
@@ -845,7 +863,7 @@ window.addEventListener('resize',relayout);
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
@@ -864,7 +882,7 @@ function applyMode(){
   agents=demoOn?DEMO.agents:LIVE.agents; ROOMS=demoOn?DEMO.rooms:LIVE.rooms;
   ui.ws='all'; ui.status=null;
   if(ui.selected)closePanel();
-  setBadge(); renderFilter(); renderAll();
+  setBadge(); renderFloorsBtn(); renderIntoFloor(); renderFilter(); renderAll();
 }
 function liveChat(a){
   if(chats[a.id])return chats[a.id];
@@ -883,10 +901,150 @@ const MODE_IC={
  'ask':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.8l5 1.8v3.8c0 3-2.1 5.2-5 6.6-2.9-1.4-5-3.6-5-6.6V3.6z"/><path d="M6.2 7.8l1.4 1.4 2.4-2.6"/></svg>',
  'allow':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"><path d="M2.5 13.5l.7-3L11 2.7a1.4 1.4 0 0 1 2 2L5.5 12.8z"/></svg>'};
 const modeIcon=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}${a.info.permMode==='allow'&&a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_HELP[a.info.permMode])} (right-click for options)" aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`:'';
+/* Floors state from the bridge (spec 033): rooms take their floor from it, then everything that depends on visibility re-renders. */
+function applyFloors(state){
+  if(!state||!Array.isArray(state.floors)||!state.floors.length)return;
+  FLOORS=state;
+  LIVE.rooms.forEach(r=>{const ag=LIVE.agents.find(a=>!a.parent&&a.room===r.id&&state.byAgent&&state.byAgent[a.id]);if(ag)r.floor=state.byAgent[ag.id];});
+  afterFloorsChange();
+}
+function afterFloorsChange(){
+  renderFloorsBtn(); renderIntoFloor();
+  if(demoOn)return;
+  /* the open agent is now on a floor that is off: back to the office (its pending requests stay pending, FR-010) */
+  if(ui.selected){const a=byId(ui.selected);if(a&&!roomShown(roomOf(a)))closePanel();}
+  renderFilter(); renderFloorsPanel(); renderFloorsSettings(); scheduleRender();
+}
+/* ---------------- floors: top-bar button, "into" select, panel (spec 033) ---------------- */
+/* FR-007 (PR #124 review): only with two or more floors, and compact (icon + "2/3"), so the top bar fits at 1280x800 with
+   wide fonts too. With the Ground floor alone the top bar looks as before; the first extra floor is made in Settings > Floors. */
+const FLOORS_IC='<svg class="fl-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 1.8l6.2 3.1L8 8 1.8 4.9z"/><path d="M1.8 8.1L8 11.2l6.2-3.1"/><path d="M1.8 11.1L8 14.2l6.2-3.1"/></svg>';
+function renderFloorsBtn(){
+  const b=$('floorsBtn'); if(!b)return;
+  const show=floorsLive()&&FLOORS.floors.length>1;
+  b.hidden=!show;
+  if(!show){const pop=$('floorsPop');if(pop&&!pop.hidden)toggleFloors(false);return;}
+  const on=floorsOnList().length,n=FLOORS.floors.length,tip='Floors: '+on+' of '+n+' on';
+  b.innerHTML=FLOORS_IC+'<span class="fl-cnt">'+on+'/'+n+'</span>';
+  b.title=tip+'. Switch floors on and off, manage them.';
+  b.setAttribute('aria-label',tip+'. Open the floors panel.');
+}
+/* Floor for the next added folder (FR-006): chosen in the Floors panel before the picker opens; default = the last one used.
+   The top bar has no room for one more select at 1280x800, so + Folder / + Workspace only name it in their tooltip. */
+let INTO=null;
+const intoFloor=()=>{if(!floorsLive()||FLOORS.floors.length<2)return undefined;const f=(INTO&&FLOORS.floors.find(x=>x.id===INTO))||FLOORS.floors.find(x=>x.id===FLOORS.lastFloor)||FLOORS.floors[0];return f.id;};
+function renderIntoFloor(){
+  const n=intoFloor()&&floorById(intoFloor()).name;
+  $('addFolder').title=n?'Add a folder to the floor "'+n+'" (change it in Floors)':'Add a folder';
+  $('addWs').title=n?'Add a .code-workspace file to the floor "'+n+'" (change it in Floors)':'Add a .code-workspace file';
+}
+let floorsErr='';
+function toggleFloors(on){
+  const pop=$('floorsPop'),btn=$('floorsBtn');
+  const show=on===undefined?pop.hidden:on;
+  pop.hidden=!show; btn.setAttribute('aria-expanded',String(show));
+  if(show){floorsErr='';renderFloorsPanel();const f=pop.querySelector('button,input,select');if(f)f.focus();}
+  else if(document.activeElement&&pop.contains(document.activeElement))btn.focus();
+}
+const roomsOnFloor=id=>roomsInOrder().filter(r=>(floorById(r.floor)||{}).id===id);
+/* Attention on a floor that is off (FR-010, maintainer decision in issue #122): plain text in the Floors controls only,
+   e.g. "Off, 1 waiting, 1 error". Main agents and helpers of every room on that floor, hidden rooms included. Never a pill,
+   toast, sound, sort order or change to "Floors n/m". */
+function offFloorAttention(fid){
+  const f=floorById(fid); if(!f||f.on)return '';
+  const ids=new Set(roomsOnFloor(fid).map(r=>r.id));
+  let w=0,e=0,l=0;
+  agents.forEach(a=>{const r=roomOf(a);if(!r||!ids.has(r.id))return;const st=vis(a);if(st==='waiting'){if(a.limit)l++;else w++;}else if(st==='error')e++;});
+  const parts=[];
+  if(w)parts.push(w+' waiting'); if(e)parts.push(e+' error'+(e===1?'':'s')); if(l)parts.push(l+' at credit limit');
+  return parts.length?'Off, '+parts.join(', '):'';
+}
+/* refresh only those texts on every render, so an open select or the focus in the panel is never disturbed */
+function updateFloorAttention(){
+  document.querySelectorAll('.floors-ui [data-att]').forEach(el=>{const t=offFloorAttention(el.dataset.att);if(el.textContent!==t)el.textContent=t;el.hidden=!t;});
+}
+/* The floors controls (FR-007, FR-023): one markup for the top-bar panel and the Settings section. `px` keeps ids unique per place. */
+function floorsBodyHTML(px){
+  const last=FLOORS.floors.length-1;
+  const opts=sel=>FLOORS.floors.map(f=>`<option value="${esc(f.id)}"${f.id===sel?' selected':''}>${esc(f.name)}</option>`).join('');
+  const into=intoFloor();
+  return (into?`<div class="fl-into"><label for="${px}Into">New folders go to</label><select id="${px}Into" class="fl-into-sel" title="Floor for the folders you add with + Folder or + Workspace">${opts(into)}</select></div>`:'')+
+    FLOORS.floors.map((f,i)=>{
+      const rooms=roomsOnFloor(f.id);
+      return `<div class="fl-floor${f.on?'':' off'}"><div class="fl-row">
+        <button class="fl-sw" type="button" data-fl="on" data-floor="${esc(f.id)}" aria-pressed="${f.on}" aria-label="${esc(f.name)}: ${f.on?'on':'off'}. Switch ${f.on?'off':'on'}.">${f.on?'On':'Off'}</button>
+        <div class="fl-t"><b title="${esc(f.name)}">${esc(f.name)}</b><small>${rooms.length} folder${rooms.length===1?'':'s'}</small><small class="fl-att" data-att="${esc(f.id)}"${offFloorAttention(f.id)?'':' hidden'}>${esc(offFloorAttention(f.id))}</small></div>
+        <button class="btn" type="button" data-fl="only" data-floor="${esc(f.id)}" title="Switch ${esc(f.name)} on and every other floor off" aria-label="Only ${esc(f.name)}">Only</button>
+        <button class="btn" type="button" data-fl="rename" data-floor="${esc(f.id)}" aria-label="Rename ${esc(f.name)}">Rename</button>
+        <button class="btn" type="button" data-fl="up" data-floor="${esc(f.id)}" aria-label="Move ${esc(f.name)} up"${i===0?' disabled':''}>Up</button>
+        <button class="btn" type="button" data-fl="down" data-floor="${esc(f.id)}" aria-label="Move ${esc(f.name)} down"${i===last?' disabled':''}>Down</button>
+        ${f.ground?'':`<button class="btn danger" type="button" data-fl="del" data-floor="${esc(f.id)}" aria-label="Delete ${esc(f.name)}">Delete</button>`}</div>
+        ${rooms.map(r=>`<div class="fl-folder"><span class="fl-fn" title="${esc(r.path)}">${esc(r.name)}</span>${r.hidden?'<span class="tag">hidden</span>':''}<label class="sr-only" for="${px}m-${esc(r.id)}">Floor of ${esc(r.name)}</label><select id="${px}m-${esc(r.id)}" data-fl="move" data-room="${esc(r.id)}" title="Move ${esc(r.name)} to another floor">${opts(f.id)}</select></div>`).join('')}</div>`;}).join('')+
+    `<div class="fl-new"><label class="sr-only" for="${px}New">New floor name</label><input id="${px}New" type="text" maxlength="40" placeholder="New floor name" autocomplete="off" spellcheck="false"><button class="btn" type="button" data-fl="create">Create</button></div>`+
+    `<p class="fl-err" role="alert"${floorsErr?'':' hidden'}>${esc(floorsErr)}</p>`;
+}
+/* re-render one floors container, keeping keyboard focus on the same control */
+function paintFloors(box,html){
+  const ae=document.activeElement,fk=ae&&box.contains(ae)?{fl:ae.dataset.fl||'',key:ae.dataset.floor||ae.dataset.room||'',id:ae.id}:null;
+  box.innerHTML=html;
+  if(!fk)return;
+  const el=fk.id?box.querySelector('#'+CSS.escape(fk.id)):box.querySelector(`[data-fl="${CSS.escape(fk.fl)}"][data-floor="${CSS.escape(fk.key)}"],[data-fl="${CSS.escape(fk.fl)}"][data-room="${CSS.escape(fk.key)}"]`);
+  if(el&&!el.disabled)el.focus();else box.focus();
+}
+function renderFloorsPanel(){
+  const pop=$('floorsPop'); if(!pop||pop.hidden||!floorsLive())return;
+  paintFloors(pop,'<div class="fp-h">Floors <small>A floor that is off is hidden and not counted. Its agents keep running and can spend credits; what waits for you there is shown only here.</small></div>'+floorsBodyHTML('fp'));
+}
+/* Settings > Floors (FR-023): same controls; painted when the Settings screen is open */
+function renderFloorsSettings(){
+  const box=$('floorsSet'); if(!box||!floorsLive())return;
+  paintFloors(box,floorsBodyHTML('fs'));
+}
+/* every floors call returns the full new state; an error is shown in the panel */
+async function floorCall(p){
+  let r=null; try{r=await p;}catch{r=null;}
+  floorsErr=r&&!r.ok?(r.error||'That did not work.'):(r?'':'Floors are not available.');
+  if(r&&r.state)applyFloors(r.state); else {renderFloorsPanel();renderFloorsSettings();}
+  return r;
+}
+async function floorAction(el){
+  const fl=el.dataset.fl,id=el.dataset.floor,f=floorById(id);
+  if(fl==='on'&&f)return floorCall(bridge.setFloorOn(id,!f.on));
+  if(fl==='only'&&f)return floorCall(bridge.onlyFloor(id));
+  if((fl==='up'||fl==='down')&&f){
+    const ids=FLOORS.floors.map(x=>x.id),i=ids.indexOf(id),j=fl==='up'?i-1:i+1;
+    if(j<0||j>=ids.length)return; [ids[i],ids[j]]=[ids[j],ids[i]];
+    return floorCall(bridge.reorderFloors(ids));
+  }
+  if(fl==='rename'&&f){
+    const r=await askDialog({title:'Rename floor',body:'1 to 40 characters. Names must be different from the other floors.',input:{label:'Name',value:f.name,max:40,focus:true},returnFocus:el,
+      buttons:[{label:'Cancel',value:null},{label:'Rename',value:'ok',cls:'primary'}]});
+    if(r&&typeof r.text==='string'&&r.text.trim()!==f.name)return floorCall(bridge.renameFloor(id,r.text));
+    return;
+  }
+  if(fl==='del'&&f){
+    const n=roomsOnFloor(id).length;
+    const r=await askDialog({title:'Delete floor '+f.name+'?',body:(n?(n===1?'Its folder moves':'Its '+n+' folders move')+' to '+((FLOORS.floors.find(x=>x.ground)||{}).name||'the ground floor')+'. ':'')+'No folder is removed and no session is ended.',returnFocus:()=>{const b=el.closest('.floors-ui');return (b&&b.querySelector('.fl-sw'))||$('floorsBtn');},
+      buttons:[{label:'Cancel',value:null},{label:'Delete floor',value:'ok',cls:'primary warn'}]});
+    if(r)return floorCall(bridge.deleteFloor(id));
+    return;
+  }
+  if(fl==='create'){
+    const box=el.closest('.floors-ui'),inp=box&&box.querySelector('.fl-new input'),name=inp?inp.value:'',iid=inp&&inp.id;
+    const r=await floorCall(bridge.createFloor(name));
+    if(r&&r.ok){const i2=iid&&document.getElementById(iid);if(i2){i2.value='';i2.focus();}}
+    return;
+  }
+}
+function moveRoomToFloor(roomId,floorId){
+  const ag=agents.find(x=>!x.parent&&x.room===roomId&&x.live);
+  if(!ag||!bridge.moveFolderToFloor)return;
+  return floorCall(bridge.moveFolderToFloor(ag.id,floorId));
+}
 function addLiveAgent(info){
   if(liveById(info.id))return;
   let room=LIVE.rooms.find(r=>r.path===info.cwd);
-  if(!room){room={id:'r'+LIVE.rooms.length+':'+info.cwd,name:(info.roomName||info.name),path:info.cwd,tint:TINTS[LIVE.rooms.length%4],hidden:!!info.hidden,closed:!!info.closed||CLOSED_Q.includes(info.roomName||info.name)};LIVE.rooms.push(room);}
+  if(!room){room={id:'r'+LIVE.rooms.length+':'+info.cwd,name:(info.roomName||info.name),path:info.cwd,tint:TINTS[LIVE.rooms.length%4],floor:info.floor||'ground',hidden:!!info.hidden,closed:!!info.closed||CLOSED_Q.includes(info.roomName||info.name)};LIVE.rooms.push(room);}
   let name=info.name; const dup=LIVE.agents.filter(x=>!x.parent&&x.room===room.id&&x.baseName===info.name).length; if(dup)name=info.name+' #'+(dup+1);
   LIVE.agents.push({id:info.id,name,baseName:info.name,role:info.role||roleFor(info),room:room.id,state:'idle',label:info.lazy?'Not started':'Ready',task:info.lazy?'Saved folder. A session starts with your first message.':'Ready. Send a message to start.',
     look:lookFor(info.id),files:[],paused:false,live:true,info,usage:{calls:0,inT:0,outT:0,nano:0},usageText:'',turn:null,worked:false,pend:new Map(),settled:new Set(),grants:[]});
@@ -1380,7 +1538,7 @@ async function copyResume(a){const r=liveRoot(a),cmd='copilot --resume '+r.id;
   catch{toast('Run <code>'+esc(cmd)+'</code> in a terminal in '+esc(roomOf(r).path)+' (end the session here first).',8000);}}
 /* ---------------- full-screen chat: the strip of all agents ---------------- */
 function stripAgents(){
-  return agents.filter(x=>!x.parent&&!roomOf(x).hidden).map((x,i)=>[x,i]).sort((p,q)=>prio(p[0])-prio(q[0])||p[1]-q[1]).map(p=>p[0]);
+  return agents.filter(x=>!x.parent&&roomShown(roomOf(x))).map((x,i)=>[x,i]).sort((p,q)=>prio(p[0])-prio(q[0])||p[1]-q[1]).map(p=>p[0]);
 }
 function renderStrip(){
   const box=$('stripList'); if(!box)return;
@@ -1873,6 +2031,10 @@ document.addEventListener('click',e=>{
   else if(b.dataset.pv==='view')viewVs(ra,b.dataset.key,b);
 });
 document.addEventListener('click',e=>{
+  const fb=e.target.closest('.floors-ui [data-fl]');
+  if(fb&&fb.tagName==='BUTTON'){floorAction(fb);return;}
+  const fpop=$('floorsPop');
+  if(fpop&&!fpop.hidden&&!e.target.closest('#floorsPop')&&!e.target.closest('#floorsBtn')&&!e.target.closest('#modeDlg'))toggleFloors(false);
   const f=e.target.closest('[data-fp]');
   if(f){const r=ROOMS.find(x=>x.id===f.dataset.room);if(!r)return;
     if(f.dataset.fp==='new'){const ag=agents.find(x=>!x.parent&&x.room===r.id);toggleFolders(false);if(ag)newSession(ag);}
@@ -1898,10 +2060,11 @@ async function confirmAllow(what){
 async function addVia(fn){
   if($('permMode').value==='allow'&&!(await confirmAllow('the folder you add next')))return;
   const ef=$('effortSel');
-  const r=await fn($('permMode').value,{model:$('modelSel').value,effort:ef.hidden?undefined:(ef.value||undefined)});
+  const r=await fn($('permMode').value,{model:$('modelSel').value,effort:ef.hidden?undefined:(ef.value||undefined),floor:intoFloor()});
   if(r.error)toast('Could not add: '+esc(r.error),6000);
   r.agents.forEach(addLiveAgent);
   r.agents.forEach(x=>{const ag=liveById(x.id);if(ag)announcePrevious(ag);});
+  INTO=null; if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});
 }
 let pendingOpen=qs.get('open');
 if(bridge){
@@ -1910,7 +2073,12 @@ if(bridge){
   $('addFolder').onclick=()=>addVia(bridge.addFolder);
   $('addWs').onclick=()=>addVia(bridge.addWorkspaceFile);
   $('foldersBtn').onclick=()=>toggleFolders();
-  window.DurbarScreens.init({bridge,stats:STATS,esc,toast,onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),usageError:()=>usageSaveError,
+  $('floorsBtn').onclick=()=>toggleFloors();
+  document.addEventListener('change',e=>{
+    const s=e.target.closest&&e.target.closest('.floors-ui select[data-fl="move"]');if(s)moveRoomToFloor(s.dataset.room,s.value);
+    if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
+  document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
+  window.DurbarScreens.init({bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),usageError:()=>usageSaveError,
     places:window.DurbarPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
     staticLimit:a=>{const m=MODELS.find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
@@ -1921,7 +2089,7 @@ if(bridge){
   $('modelSel').onchange=()=>fillEffortSelect($('effortSel'),$('modelSel').value);
   bridge.onEvent(onLiveEvent);
   bridge.onAgentAdded(addLiveAgent);
-  bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();const rs=l.filter(x=>x.permRestored&&!x.parent).length;if(rs)toast(rs+' saved folder'+(rs>1?'s were':' was')+' restored in <b>Allow all</b>, as you left '+(rs>1?'them':'it')+'. Everything runs without asking there; the mode chip says <i>restored</i>. "Approve for this session" grants start empty.',9000);});
+  bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});const rs=l.filter(x=>x.permRestored&&!x.parent).length;if(rs)toast(rs+' saved folder'+(rs>1?'s were':' was')+' restored in <b>Allow all</b>, as you left '+(rs>1?'them':'it')+'. Everything runs without asking there; the mode chip says <i>restored</i>. "Approve for this session" grants start empty.',9000);});
   loadModels();
   if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};}).catch(()=>{});
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);

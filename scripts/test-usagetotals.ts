@@ -8,7 +8,8 @@ const U = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'usagetota
   validNano: (x: unknown) => boolean;
   fmtTotal: (t: Total, digits?: number) => string;
   fmtShort: (t: Total) => string;
-  tooltip: (t: Total, o?: { scope?: string; removed?: boolean; since?: string; run?: Total }) => string;
+  tooltip: (t: Total, o?: { scope?: string; removed?: boolean; since?: string; run?: Total; offFloors?: Total }) => string;
+  sum: (list: Total[]) => Total;
 };
 
 const ev = (inputTokens: number, outputTokens: number, nanoAiu?: unknown) => ({ type: 'usage', inputTokens, outputTokens, nanoAiu });
@@ -123,5 +124,22 @@ assert.ok(!/Since the app opened/.test(U.tooltip(nums(122, 42.2), { scope: 'offi
 assert.ok(/Since Agent Durbar opened; ended sessions are included\./.test(U.tooltip(nums(3, 1), { scope: 'office' })), 'without a saved baseline the old text stays');
 assert.ok(!/Saved since/.test(U.tooltip(nums(3, 1), { scope: 'office', since: 'garbage' })), 'a since that is not a date is not shown');
 assert.ok(/credits not reported in 4 calls|credits not reported/.test(U.tooltip(nums(4, 0, 4), { scope: 'folder', since: '2026-10-01', run: nums(4, 0, 4) })));
+// spec 033 FR-016: the office total keeps counting floors that are off; the tooltip says how much of it is from them
+{
+  const f = U.createLedger();
+  f.record('on', ev(100, 10, 1 * AIU));
+  f.record('off1', ev(100, 10, 0.5 * AIU));
+  f.record('off2', ev(100, 10, 0.25 * AIU));
+  const off = U.sum([f.room('off1'), f.room('off2'), f.room('missing')]);
+  assert.deepStrictEqual(off, { calls: 2, inTokens: 200, outTokens: 20, nano: 0.75 * AIU, unreported: 0 });
+  assert.strictEqual(U.fmtTotal(f.office()), '1.75 AIU', 'the total value is unchanged');
+  const t = U.tooltip(f.office(), { scope: 'office', offFloors: off });
+  assert.ok(/Includes 0\.750 AIU from floors that are off/.test(t), t);
+  assert.ok(!/floors that are off/.test(U.tooltip(f.office(), { scope: 'office', offFloors: U.sum([]) })), 'no line when nothing comes from off floors');
+  assert.ok(!/floors that are off/.test(U.tooltip(f.room('off1'), { scope: 'folder', offFloors: off })), 'office tooltip only');
+  const g = U.createLedger();
+  g.record('x', ev(1, 1, 'bad'));
+  assert.ok(/1 call with credits not reported from floors that are off/.test(U.tooltip(g.office(), { scope: 'office', offFloors: g.room('x') })));
+}
 
 console.log('usagetotals tests passed');

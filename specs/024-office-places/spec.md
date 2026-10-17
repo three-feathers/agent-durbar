@@ -102,3 +102,7 @@ Asked for by Ruben. Real Copilot runtime (Copilot CLI 1.0.95, SDK 1.0.22, model 
 - First run, second prompt: asked for GitHub issues, but the session's GitHub server offered only code and user search, and the agent called no tool.
 - `real:` A walk to an **MCP** place (second run, Ruben's go-ahead for one more prompt): a GitHub code search arrived as `toolCall` `tool: 'github-mcp-server-search_code'`, `mcpServer: 'github-mcp-server'`, `mcpTool: 'search_code'` (not `github`, the name in the server list). The default rules sent it to **Software library**; the card said `At Software library: github-mcp-server search_code`; the read-only tool ran without a permission request; the call lasted 1.25 s, so the agent walked there, stayed its 2 s and walked back.
 - `[KNOWN GAP]` (task T012) The server list names the built-in GitHub server `github`, but its tool events carry `mcpServer: 'github-mcp-server'`. The default rules send both to Software library, but a mapping set in Settings on the `github` row does **not** apply to those calls (the map is keyed by the event's server name). Fix idea: treat the two names as one server in Settings, or list the event name.
+
+## Changes
+
+- **2026-10-17, spec 033 (floors), cross-reference.** One lobby for all floors that are on; agents of a floor that is off are not listed at a place and have no figure (the same filter as a hidden room in `placeVisitors`). Switching a floor off while one of its agents is at a place removes the figure at once, without a walk back (`check:office` floors cases, `scripts/shots-033.js`).

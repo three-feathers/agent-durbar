@@ -3,7 +3,8 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { FolderStore, parseSavedFolders, restoreMode } from '../src/main/folders';
+import { FolderStore, parseSavedFloors, parseSavedFolders, restoreMode } from '../src/main/folders';
+import { GROUND, GROUND_NAME } from '../src/shared/floors';
 
 const abs = (p: string): string => path.resolve('/', p);
 assert.deepStrictEqual(parseSavedFolders('not json'), []);
@@ -23,8 +24,8 @@ const parsed = parseSavedFolders(
   }),
 );
 assert.strictEqual(parsed.length, 2);
-assert.deepStrictEqual(parsed[0], { workspace: abs('a'), permMode: 'ask', hidden: true, closed: undefined, model: 'auto', effort: 'high', contextTier: undefined, maxAiCredits: undefined });
-assert.deepStrictEqual(parsed[1], { workspace: abs('b'), permMode: 'read-only', hidden: false, closed: undefined, model: undefined, effort: undefined, contextTier: undefined, maxAiCredits: undefined }, 'unknown values fall back to safe defaults');
+assert.deepStrictEqual(parsed[0], { workspace: abs('a'), permMode: 'ask', hidden: true, closed: undefined, model: 'auto', effort: 'high', contextTier: undefined, maxAiCredits: undefined, floor: undefined });
+assert.deepStrictEqual(parsed[1], { workspace: abs('b'), permMode: 'read-only', hidden: false, closed: undefined, model: undefined, effort: undefined, contextTier: undefined, maxAiCredits: undefined, floor: undefined }, 'unknown values fall back to safe defaults');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folders-'));
 try {
@@ -152,6 +153,81 @@ assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: 
     assert.ok(!fs.readFileSync(f5, 'utf8').match(/repoScope|modelChangeScope|pickerPersistence/));
   } finally {
     fs.rmSync(d5, { recursive: true, force: true });
+  }
+}
+{
+  // floors (spec 033): saved in the same file, folders keep everything else, a file from before floors still loads
+  const d6 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folders-floors-'));
+  try {
+    const f6 = path.join(d6, 'f.json');
+    // a file written before this feature: one ground floor, on, every folder on it
+    fs.writeFileSync(f6, JSON.stringify({ version: 1, folders: [{ workspace: abs('old1'), permMode: 'ask', hidden: true, closed: true, model: 'auto', effort: 'high', maxAiCredits: 50 }, { workspace: abs('old2') }] }));
+    const st = new FolderStore(f6);
+    st.load();
+    assert.deepStrictEqual(st.floors(), { floors: [{ id: GROUND, name: GROUND_NAME, on: true }], lastFloor: GROUND });
+    assert.strictEqual(st.floorOfFolder(abs('old1')), GROUND);
+    assert.strictEqual(st.floorOfFolder(abs('unknown')), GROUND);
+    const snapshot = (w: string): unknown => {
+      const f = new FolderStore(f6).load().find((x) => x.workspace === w);
+      return f && [f.permMode, f.hidden, f.closed, f.model, f.effort, f.contextTier, f.maxAiCredits];
+    };
+    const before = snapshot(abs('old1'));
+    // create + move + restart
+    const c = st.createFloor('Client A');
+    assert.ok(c.ok);
+    const ca = c.doc.floors[1].id;
+    assert.ok(st.moveFolder(abs('old1'), ca));
+    assert.ok(!st.moveFolder(abs('old1'), 'f-zzzzzzzz'), 'unknown floor refused');
+    assert.ok(!st.moveFolder(abs('nope'), ca), 'unknown folder refused');
+    let again = new FolderStore(f6);
+    again.load();
+    assert.strictEqual(again.floorOfFolder(abs('old1')), ca, 'folder floor survives a restart');
+    assert.deepStrictEqual(again.floors().floors.map((f) => f.name), [GROUND_NAME, 'Client A']);
+    assert.deepStrictEqual(snapshot(abs('old1')), before, 'moving changes nothing else about the folder (FR-005)');
+    // on/off, Only and order survive a restart
+    assert.ok(st.createFloor('Personal').ok);
+    assert.ok(st.setFloorOn(ca, false).ok);
+    const ids = st.floors().floors.map((f) => f.id);
+    assert.ok(st.reorderFloors([ids[2], ids[0], ids[1]]).ok);
+    again = new FolderStore(f6);
+    again.load();
+    assert.deepStrictEqual(again.floors().floors.map((f) => [f.name, f.on]), [['Personal', true], [GROUND_NAME, true], ['Client A', false]]);
+    assert.ok(st.onlyFloor(ca).ok);
+    again = new FolderStore(f6);
+    again.load();
+    assert.deepStrictEqual(again.floors().floors.map((f) => f.on), [false, false, true], 'Only survives a restart');
+    // a new folder goes to the chosen floor, which becomes the default; unknown -> ground
+    st.upsert({ workspace: abs('new1'), permMode: 'read-only', floor: ca });
+    assert.strictEqual(st.floorOfFolder(abs('new1')), ca);
+    assert.strictEqual(st.floors().lastFloor, ca);
+    st.upsert({ workspace: abs('new2'), permMode: 'read-only', floor: 'f-zzzzzzzz' });
+    assert.strictEqual(st.floorOfFolder(abs('new2')), GROUND);
+    st.upsert({ workspace: abs('new1'), permMode: 'ask' }); // refresh keeps the floor
+    assert.strictEqual(st.floorOfFolder(abs('new1')), ca);
+    // delete: folders back on the ground floor in the same write, no folder lost, lastFloor reset
+    assert.ok(!st.deleteFloor(GROUND).ok);
+    assert.ok(st.deleteFloor(ca).ok);
+    again = new FolderStore(f6);
+    const folders = again.load();
+    assert.deepStrictEqual(folders.map((f) => f.workspace), [abs('old1'), abs('old2'), abs('new1'), abs('new2')], 'no folder lost (SC-006)');
+    assert.ok(folders.every((f) => f.floor === undefined), 'every folder back on the ground floor');
+    assert.strictEqual(again.floors().lastFloor, GROUND);
+    assert.deepStrictEqual(snapshot(abs('old1')), before);
+    // a folder pointing at a floor that is not in the file is on the ground floor
+    fs.writeFileSync(f6, JSON.stringify({ version: 1, floors: [{ id: GROUND, name: 'G', on: false }], folders: [{ workspace: abs('x'), floor: 'f-gonegone' }] }));
+    const s3 = new FolderStore(f6);
+    s3.load();
+    assert.strictEqual(s3.floorOfFolder(abs('x')), GROUND);
+    assert.strictEqual(s3.floors().floors[0].on, false, 'a ground floor that is off stays off');
+    // damaged floors part: folders still load, floors fall back to the default
+    assert.deepStrictEqual(parseSavedFloors('{{{'), { floors: [{ id: GROUND, name: GROUND_NAME, on: true }], lastFloor: GROUND });
+    assert.deepStrictEqual(parseSavedFloors(JSON.stringify({ floors: 'x', folders: [] })).floors.length, 1);
+    // the file holds only floor ids, names and on/off next to the folder data (FR-015)
+    const text = fs.readFileSync(f6, 'utf8');
+    assert.ok(!/token|secret|prompt/i.test(text));
+    if (process.platform !== 'win32') assert.strictEqual(fs.statSync(f6).mode & 0o077, 0, 'file is private');
+  } finally {
+    fs.rmSync(d6, { recursive: true, force: true });
   }
 }
 console.log('folders tests passed');

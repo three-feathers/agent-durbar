@@ -2,7 +2,7 @@
 
 Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.
 
-> Status: **alpha, `v0.1.0-alpha.4` ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4), unsigned, not notarized).** It adds places in the office, the per-folder MCP import from VS Code and switching model and context inside a session (simulator and fake sessions; real switching between models is unverified), see [CHANGELOG.md](CHANGELOG.md). `v0.1.0-alpha.3` stays available. The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. Latest work: [places in the office](#status-places-in-the-office-a-shared-lobby-agents-walk-to-the-tool-they-use), [milestone 10 and usage totals](#status-milestone-10-tools-all-time-the-copilot-cli-mcp-list-first-mcp-extras-per-folder). Only Linux has been run by hand; macOS and Windows are built and unit-tested in CI but untested on real hardware. Built by [Three Feathers](https://github.com/three-feathers); the work is tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
+> Status: **alpha, `v0.1.0-alpha.4` ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4), unsigned, not notarized).** It adds places in the office, the per-folder MCP import from VS Code and switching model and context inside a session (simulator and fake sessions; real switching between models is unverified), see [CHANGELOG.md](CHANGELOG.md). `v0.1.0-alpha.3` stays available. The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. Latest work: [floors](#status-floors-group-rooms-and-switch-a-floor-off) (on branch `033-floors`, not released), [places in the office](#status-places-in-the-office-a-shared-lobby-agents-walk-to-the-tool-they-use), [milestone 10 and usage totals](#status-milestone-10-tools-all-time-the-copilot-cli-mcp-list-first-mcp-extras-per-folder). Only Linux has been run by hand; macOS and Windows are built and unit-tested in CI but untested on real hardware. Built by [Three Feathers](https://github.com/three-feathers); the work is tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
 
 ![15 simulated agents at 1440x900 (roomy desks use the spare floor space)](docs/screenshots/m5-sim15-1440x900-closed.png)
 ![Full-screen chat with every other agent in a slim strip, 15 agents at 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
@@ -89,6 +89,27 @@ npm run dist              # installers/archives for this OS in release/ (no sign
 ```
 
 Each release also lists `SHA256SUMS.txt`. Releases are built by GitHub Actions from `v*` tags into a **draft** release that the maintainer publishes by hand; see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Status (floors: group rooms and switch a floor off)
+
+Spec [033](specs/033-floors/spec.md) (amends 001, 006, 017; uses 011 and 024). Built and tested on the simulator and with unit tests; **no AI credits spent**, no real Copilot session needed or used. Not released yet.
+
+- **Floors.** A floor is a named group of rooms (folders or `.code-workspace` files). Every folder is on one floor; the built-in **Ground floor** holds every folder you have not moved. A file from before this feature opens with everything on Ground floor.
+- **Floors button** in the top bar, shown **once you have two or more floors** (a small icon and `2/3` = two of three floors on; with only the Ground floor the top bar is as before and you create the first floor in **Settings > Floors**). Its panel has an **On/Off** switch per floor, **Only** (that floor on, every other floor off), **Rename**, **Up/Down**, **Delete** (asks first; its folders go back to Ground floor; no folder is removed and no session ended), a **Move to** choice per folder, a *hidden* tag for folders hidden with Folders > Hide, **New floor**, and **New folders go to** (the floor `+ Folder` / `+ Workspace` add to; their tooltips name it). **Settings > Floors** has the same controls; a change in one place shows in the other at once.
+- **A floor that is off** leaves the office, the list, the folder filter, the full-screen chat strip and the lobby, and is **not counted** in Working / Waiting / Idle / Errors / Done. The office uses the freed space (a roomier density). An open chat of an agent on that floor closes.
+- **Its agents keep running.** Switching a floor off pauses, stops or ends nothing. A request waiting there stays pending until you act on it. There are **no alerts** from a floor that is off (no pill, toast, sound or change to the button); what waits for you there is shown **only as text on that floor's row** in the Floors panel and Settings, for example *Off, 1 waiting, 1 at credit limit* (maintainer decision, issue #122). The **office credit total still counts every floor** (since the last reset, spec 011), and its tooltip says how much came from floors that are off.
+- **Room labels.** With two or more floors on, rooms are grouped in floor order and each room header and door plate shows its floor; with one floor on nothing extra is shown.
+- **Saved** in the app's own folder file (`durbar-folders.json`: floor ids, names, order, on/off and each folder's floor). Floors are local to this computer.
+
+![Three floors on, rooms labelled, 1440x900](docs/screenshots/033-floors-on-1440x900.png)
+![The Floors panel, 1280x800](docs/screenshots/033-floors-panel-1280x800.png)
+![Personal switched off: its rooms and agents are gone from the office and the counts, 1280x800](docs/screenshots/033-floor-off-1280x800.png)
+![The off floor's row says what waits there, 1280x800](docs/screenshots/033-floor-off-panel-1280x800.png)
+![Settings > Floors, 1280x800](docs/screenshots/033-settings-floors-1280x800.png)
+
+**Limits.** Agents on a floor that is off keep running and can spend credits and wait for approvals; you see it only in the office credit total and on the floor's row in the Floors panel or Settings (no alert, by design). Closing and reopening the app behaves as before for them. The Tools view is not filtered by floor. An older build that saves the folder file drops the floors (folders are kept, all on one floor). Up to 40 floors. Checked on the simulator at 1440x900 and 1280x800 (macOS); Windows and Linux only through CI unit tests.
+
+Tests: `npm test` adds `test:floors` and floor cases in `test:folders` and `test:usagetotals`; `npm run check:office` adds floors cases (3, 2 and 1 floors on, with closed doors, a 40-character floor name, the off-floor text, no Floors button with one floor, and the top bar at 1280x800); set `OFFICE_FONT_FILE` (and `OFFICE_FONT_BOLD`, `OFFICE_FONT_MONO`) to DejaVu Sans files to measure with the wider fonts CI uses on Linux (see the script's header); `scripts/shots-033.js` drives the simulator (`DURBAR_SIM_FLOORS=1`, `DURBAR_SIM_FLOORS_OFF=<name>`) and saves the pictures above.
 
 ## Status (usage totals kept across restarts)
 
@@ -411,6 +432,7 @@ Prototype: [`prototype/index.html`](prototype/index.html) (open in a browser). S
 - **ACP drops sub-agent identity**: sub-agent text arrives as plain message chunks, so parallel sub-agents interleave. Hence the SDK rather than raw ACP.
 - **AI credit usage**: since 2026-06-01 Copilot is billed in usage-based AI Credits, and 10-15 agents can burn them fast. The app shows a per-agent counter, office and per-folder totals (since launch, not saved) and supports a soft per-session cap (milestone 9, spec 011); a spend history across restarts is not built.
 - **MCP import from VS Code is a one-time copy per folder:** later edits of `.vscode/mcp.json` are not tracked, only the folder's own file is read (not VS Code's user-level `mcp.json`), and entries that need VS Code `inputs` or unresolved variables must be added by hand.
+- **Floors that are off are quiet:** their agents keep running and can spend credits or wait for an approval; the only signs are the office credit total and a line of text on the floor's row in the Floors panel and Settings (spec 033).
 - Permission prompts need a real approve/deny UI; allow-all across 15 agents is risky.
 - SDK/ACP/AHP protocols are evolving; pin CLI and SDK versions.
 - Overlap with the GitHub Copilot app and the VS Code Agents window; the office view is the differentiator.

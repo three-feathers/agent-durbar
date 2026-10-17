@@ -15,6 +15,19 @@
  *   - the floor scrolling or the page overflowing (stage data-fit must be ok), text below 10.5px,
  *   - the lobby (spec 024): missing, sticking out of the floor, overlapping a room or the door plates, not holding its 5 places, a place or slot
  *     sticking out of its tile, a walking figure that is not standing on a slot once the walks have settled, or more figures than empty chairs.
+ *   - floors (spec 033, `simfloors=1`): with two or more floors on, a room header or door plate without its floor tag; with one floor on,
+ *     any floor tag; the top bar controls overlapping each other or sticking out of the window (the Floors button must fit at 1280x800);
+ *     a 40-character floor name (renamed through the panel) breaking a room header, a plate or the top bar; a floor that is off with agents
+ *     waiting for you that does not say so on its row in the Floors panel, or that shows it anywhere else (pills, button) (FR-010, issue #122).
+ *
+ * Fonts: CI runs on Ubuntu, where `system-ui` is DejaVu Sans, which is wider than the macOS fonts (PR #124: the top bar fitted on a
+ * Mac and overflowed in CI). To measure like CI on any machine, point OFFICE_FONT_FILE at DejaVuSans.ttf (and optionally
+ * OFFICE_FONT_BOLD at DejaVuSans-Bold.ttf, OFFICE_FONT_MONO at DejaVuSansMono.ttf); every page then uses only those fonts:
+ *   OFFICE_FONT_FILE=/path/DejaVuSans.ttf OFFICE_FONT_BOLD=/path/DejaVuSans-Bold.ttf OFFICE_FONT_MONO=/path/DejaVuSansMono.ttf npm run check:office
+ * On Linux the same effect comes from a fontconfig with only DejaVu and Liberation (Vikram's recipe in PR #124):
+ *   printf '<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig><dir>/usr/share/fonts/truetype/dejavu</dir><dir>/usr/share/fonts/truetype/liberation</dir><cachedir>/tmp/fc-cache</cachedir><include ignore_missing="yes">/etc/fonts/conf.d</include></fontconfig>' > /tmp/fonts.conf
+ *   FONTCONFIG_FILE=/tmp/fonts.conf npm run check:office
+ * The font files are handed to the page as data (FontFace), so the app's CSP is not touched.
  * An expanded `+N more` is allowed to scroll the floor (the spec says it expands in place) but must still not overlap.
  */
 'use strict';
@@ -109,6 +122,53 @@ function pageCheck(expanded) {
   };
 }
 
+/* spec 033: floor tags and the top bar; runs inside the page after pageCheck */
+function floorsCheck(expectTags) {
+  const problems = [];
+  const stage = document.getElementById('stage');
+  const boxes = [...stage.querySelectorAll('.room-head, .plate')];
+  boxes.forEach((b) => {
+    const t = b.querySelector('.floor-tag');
+    if (expectTags && !t) problems.push('no floor tag in ' + (b.querySelector('.room-name, b') || b).textContent.trim());
+    if (!expectTags && t) problems.push('floor tag shown with one floor on');
+    if (t && t.getClientRects().length && parseFloat(getComputedStyle(t).fontSize) < 10.5) problems.push('floor tag below 10.5px');
+  });
+  const ctl = [...document.querySelectorAll('.topbar button, .topbar select, .topbar .tgl')].filter((e) => e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden');
+  const R = (e) => e.getBoundingClientRect();
+  ctl.forEach((e) => { const b = R(e); if (b.right > innerWidth + 0.5 || b.left < -0.5) problems.push(`top bar control sticks out: ${(e.id || e.textContent).trim().slice(0, 20)}`); });
+  for (let i = 0; i < ctl.length; i++) for (let j = i + 1; j < ctl.length; j++) {
+    if (ctl[i].contains(ctl[j]) || ctl[j].contains(ctl[i])) continue;
+    const p = R(ctl[i]), q = R(ctl[j]);
+    const ox = Math.min(p.right, q.right) - Math.max(p.left, q.left), oy = Math.min(p.bottom, q.bottom) - Math.max(p.top, q.top);
+    if (ox > 0.5 && oy > 0.5) problems.push(`top bar overlap ${(ctl[i].id || ctl[i].textContent).trim().slice(0, 16)} x ${(ctl[j].id || ctl[j].textContent).trim().slice(0, 16)}`);
+  }
+  const btn = document.getElementById('floorsBtn');
+  if (!btn || btn.hidden) problems.push('Floors button missing');
+  /* every room header keeps the floor tag and the + / MCP buttons inside it (a long tag shrinks, it never pushes them out;
+     the door button sits on the room's edge on purpose and is not checked) */
+  stage.querySelectorAll('.room-head').forEach((h) => {
+    const hb = R(h);
+    [...h.querySelectorAll('.floor-tag, .room-new, .room-mcp, .room-dots, .room-aiu')].forEach((c) => { const b = R(c); if (b.width && (b.right > hb.right + 0.5 || b.left < hb.left - 0.5)) problems.push(`room header part sticks out: ${(c.className || c.tagName).toString().slice(0, 20)}`); });
+  });
+  return problems;
+}
+
+/* spec 033 FR-010 (issue #122): the off floor's row says what waits there; nothing else changes */
+function offAttentionCheck() {
+  const problems = [];
+  const pop = document.getElementById('floorsPop');
+  if (pop.hidden) document.getElementById('floorsBtn').click();
+  const att = document.querySelector('#floorsPop [data-att="f-personal"]');
+  const text = att && !att.hidden ? att.textContent : '';
+  if (!/^Off, .*\d+ (waiting|errors?|at credit limit)/.test(text)) problems.push(`no attention text on the off floor's row (got "${text}")`);
+  if (document.querySelector('#floorsPop [data-att="ground"]:not([hidden])')) problems.push('attention text on a floor that is on');
+  const btn = document.getElementById('floorsBtn').textContent.trim();
+  if (btn !== '2/3') problems.push(`button changed: ${btn}`);
+  if (/waiting|error/i.test(btn)) problems.push('attention shown on the button');
+  document.getElementById('floorsBtn').click();
+  return problems;
+}
+
 function subsets(list, k) {
   const out = [];
   const rec = (start, cur) => { if (cur.length === k) { out.push(cur.slice()); return; } for (let i = start; i < list.length; i++) { cur.push(list[i]); rec(i + 1, cur); cur.pop(); } };
@@ -124,10 +184,26 @@ async function driver(ctx) {
   const sleep = ctx.sleep;
   let total = 0, failed = 0;
   const rows = [];
+  /* optional CI-like fonts (see the header): read once, handed to every page as data */
+  const fontB64 = (k) => (process.env[k] ? fs.readFileSync(process.env[k]).toString('base64') : '');
+  const FONTS = { regular: fontB64('OFFICE_FONT_FILE'), bold: fontB64('OFFICE_FONT_BOLD'), mono: fontB64('OFFICE_FONT_MONO') };
+  if (FONTS.regular) console.log('check:office: forcing the fonts from OFFICE_FONT_FILE' + (FONTS.bold ? ' (+bold)' : '') + (FONTS.mono ? ' (+mono)' : ''));
+  const forceFonts = async (w, h) => {
+    if (!FONTS.regular) return;
+    await ctx.js(`(async()=>{const buf=b=>{const s=atob(b),a=new Uint8Array(s.length);for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i);return a.buffer;};
+      const add=async(b,fam,o)=>{if(!b)return;const f=new FontFace(fam,buf(b),o);await f.load();document.fonts.add(f);};
+      await add(${JSON.stringify(FONTS.regular)},'CheckSans',{weight:'100 599'});
+      await add(${JSON.stringify(FONTS.bold || FONTS.regular)},'CheckSans',{weight:'600 900'});
+      await add(${JSON.stringify(FONTS.mono || FONTS.regular)},'CheckMono',{});
+      const st=document.createElement('style');st.textContent='*{font-family:CheckSans!important}.room-path,.mono,.lcell.mono,.folder,code,pre,kbd{font-family:CheckMono!important}';document.head.appendChild(st);})()`);
+    /* the layout is cached by size: nudge the window so the office is laid out again with the new font */
+    ctx.win.setContentSize(w - 1, h); await sleep(150); ctx.win.setContentSize(w, h); await sleep(300);
+  };
   const load = async (query, w, h) => {
     ctx.win.setContentSize(w, h);
     await ctx.win.loadFile(INDEX, { query: Object.fromEntries(new URLSearchParams(query)) });
     await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
+    await forceFonts(w, h);
     await sleep(500);
     /* spec 024: agents go to the lobby after 600 ms and the walk takes about 1 s: wait until somebody is there and nobody is walking */
     try { await ctx.waitFor(`!!document.querySelector('.place.busy')`, 4000); await ctx.waitFor(`!document.querySelector('.walker.walking')`, 4000); await sleep(150); } catch (e) { /* nobody visits in this layout: the checks below still run */ }
@@ -153,6 +229,9 @@ async function driver(ctx) {
     for (const [w, h] of SIZES) {
       const base = `sim=${sim}&simfreeze=1`;
       await load(base, w, h);
+      /* spec 033 FR-007: with only the Ground floor the top bar is as before (no Floors button) */
+      total++;
+      if (!(await ctx.js(`document.getElementById('floorsBtn').hidden`))) { failed++; console.log(`FAIL sim${sim}-${w}x${h}: Floors button shown with one floor`); }
       const names = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].map(e=>e.textContent.trim())`);
       const tag = `sim${sim}-${w}x${h}`;
       const combos = [{ n: 0, closed: [] }];
@@ -179,6 +258,44 @@ async function driver(ctx) {
       await ctx.js(`document.getElementById('openAll').click()`); await sleep(500);
       r = await ctx.js(`(${pageCheck.toString()})(false)`); total++;
       if (r.problems.length) { failed++; console.log(`FAIL ${tag} Open all click: ${r.problems.join('; ')}`); }
+    }
+  }
+  /* spec 033: floors on/off (3, 2 and 1 floors on), with and without closed doors, both sizes */
+  for (const [w, h] of SIZES) {
+    const cases = [
+      ['3 floors on', 'sim=15&simfreeze=1&simfloors=1', true],
+      ['2 floors on', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Personal', true],
+      ['1 floor on', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Personal,Client%20A', false],
+      ['3 floors on, 2 doors closed', 'sim=15&simfreeze=1&simfloors=1&closed=blog,infra-notes', true],
+      ['2 floors on, 1 door closed', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Client%20A&closed=mcp-swiss', true],
+      ['40-char floor name', 'sim=15&simfreeze=1&simfloors=1&closed=infra-notes', true, 'long'],
+    ];
+    for (const [label, q, tags, extra] of cases) {
+      const tag = `floors ${w}x${h} ${label}`;
+      if (extra === 'long') {
+        /* rename Client A to the longest allowed name through the panel and its dialog, then check the office again */
+        await load(q, w, h);
+        await ctx.js(`(async()=>{const w=ms=>new Promise(r=>setTimeout(r,ms));document.getElementById('floorsBtn').click();await w(100);
+          document.querySelector('#floorsPop [data-fl="rename"][data-floor="f-clienta0"]').click();await w(100);
+          document.getElementById('mdIn').value='Client A with a very long floor name 40!';
+          [...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent==='Rename').click();await w(200);
+          document.getElementById('floorsBtn').click();await w(300);})()`);
+        await sleep(400);
+        const r1 = await ctx.js(`(${pageCheck.toString()})(false)`); total++;
+        if (r1.problems.length) { failed++; console.log(`FAIL ${tag}: ${r1.problems.slice(0, 6).join('; ')}`); }
+        const named = await ctx.js(`[...document.querySelectorAll('#stage .floor-tag')].some(t=>t.textContent.length===40)`);
+        if (!named) { failed++; console.log(`FAIL ${tag}: the 40-character name is not on a tag`); }
+        rows.push({ label: tag, ...r1.info, problems: r1.problems.length });
+        if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-floors-${w}x${h}-long-name.png`));
+      } else await run(tag, q, w, h, shotsDir ? `floors-${w}x${h}-${label.replace(/[^a-z0-9]+/gi, '-')}` : '');
+      const fp = await ctx.js(`(${floorsCheck.toString()})(${tags})`);
+      total++;
+      if (fp.length) { failed++; console.log(`FAIL ${tag}: ${fp.slice(0, 6).join('; ')}`); }
+      if (/floorsoff=Personal(&|$)/.test(q)) {
+        const ap = await ctx.js(`(${offAttentionCheck.toString()})()`);
+        total++;
+        if (ap.length) { failed++; console.log(`FAIL ${tag} off-floor attention: ${ap.join('; ')}`); }
+      }
     }
   }
   console.log('\nlayout summary (density/helpers shown, stage height vs floor):');

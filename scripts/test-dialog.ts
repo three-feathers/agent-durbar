@@ -46,6 +46,26 @@ const setup = () => {
     assert.strictEqual(t.dlg(), null, 'dialog removed');
     assert.strictEqual(t.doc.activeElement, t.chip, 'focus returns to the chip');
   }
+  // spec 033 (Rename floor): an input can start filled in and focused; the result carries its text
+  {
+    const t = setup(); t.chip.focus();
+    const p = t.ask(t.opts({ input: { label: 'Name', value: 'Client A', max: 40, focus: true } }));
+    const inp = t.doc.getElementById('mdIn') as HTMLInputElement;
+    assert.strictEqual(inp.value, 'Client A', 'prefilled');
+    assert.strictEqual(inp.maxLength, 40);
+    assert.strictEqual(t.doc.activeElement, inp, 'focus starts in the field');
+    inp.value = 'Client B';
+    t.btn('Allow all').click();
+    const r = (await p) as unknown as { value: string; text: string };
+    assert.strictEqual(r.text, 'Client B');
+    // without focus: true the primary button keeps the focus (the Compact dialog)
+    const t2 = setup(); t2.chip.focus();
+    const p2 = t2.ask(t2.opts({ input: { label: 'Focus' } }));
+    assert.strictEqual(t2.doc.activeElement, t2.btn('Allow all'));
+    assert.strictEqual((t2.doc.getElementById('mdIn') as HTMLInputElement).value, '', 'no value: empty');
+    t2.key('Escape');
+    assert.strictEqual(await p2, null);
+  }
   // Escape also works when focus slipped to <body> (click on the backdrop's blank area), and when the chip was the opener by default
   {
     const t = setup(); t.chip.focus();

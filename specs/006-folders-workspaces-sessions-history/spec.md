@@ -109,3 +109,7 @@ For a folder that has not been used yet in this run, a "Previous sessions" panel
 
 - The SDK's `listSessions()` returns metadata with `context.workingDirectory`, `modifiedTime`, `summary`, `isRemote`.
 - `getSessionMetadata(id)` rejects or returns nothing for an id with no history.
+
+## Changes
+
+- **2026-10-17, spec 033 (floors), cross-reference.** Folders now belong to a floor (`floor` in `durbar-folders.json`, absent = Ground floor). **Hide (US4, FR-005) is unchanged** and combines with floors: a room shows only when it is not hidden and its floor is on; the Floors panel marks hidden folders. `+ Folder` / `+ Workspace` add to the floor chosen in the Floors panel. No requirement of this spec changes.
