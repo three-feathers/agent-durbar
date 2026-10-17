@@ -4,7 +4,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { trustHash, validateInput } from '../src/shared/mcp';
-import { parseMcpConfig } from '../src/shared/mcpimport';
+import { candidateInput, parseMcpConfig, parseVSCodeMcp, stripJsonc } from '../src/shared/mcpimport';
+import { applyFolderImport, previewFolderImport, readVSCodeFile } from '../src/main/mcpimport';
 import { McpStore } from '../src/main/mcpstore';
 import { CLI_FILE_LABEL, cliServers, copilotDir, readCandidates } from '../src/main/mcpfiles';
 import type { SecretCodec } from '../src/main/mcpstore';
@@ -141,9 +142,9 @@ const codec = (available = true): SecretCodec => ({
   assert.deepStrictEqual(bad.list(K1), []);
 }
 
-// 5. Import parsers (read-only: they only get text; kept for the CLI list and a later per-folder VS Code import)
+// 5. Parser of the Copilot CLI file (read-only: it only gets text). The VS Code parser is section 9.
 {
-  const c = parseMcpConfig(fx('copilot-mcp-config.json'), 'copilot');
+  const c = parseMcpConfig(fx('copilot-mcp-config.json'));
   assert.ok(c.ok);
   assert.strictEqual(c.candidates.length, 4);
   assert.strictEqual(c.skipped, 2, 'the entry without command/url and the non-object are skipped');
@@ -155,14 +156,9 @@ const codec = (available = true): SecretCodec => ({
   assert.ok(by['weird-name'].notes.some((n) => /Renamed/.test(n)));
   assert.strictEqual(by['weird-name'].transport, 'stdio', 'no type + command means stdio');
   assert.strictEqual(by['legacy-sse'].transport, 'sse');
-  const v = parseMcpConfig(fx('vscode-mcp.json'), 'vscode');
-  assert.ok(v.ok && v.candidates.length === 3);
-  const gh = v.candidates.find((x) => x.name === 'github');
-  assert.ok(gh?.notes.some((n) => /variables/.test(n)), 'input variables are flagged');
-  assert.ok(v.candidates.find((x) => x.name === 'fs')?.notes.some((n) => /envFile/.test(n)));
-  assert.strictEqual(parseMcpConfig(fx('vscode-mcp.json'), 'copilot').candidates.length, 0);
-  assert.strictEqual(parseMcpConfig('{oops', 'vscode').ok, false);
-  assert.strictEqual(parseMcpConfig('{"a":{"command":"node"}}', 'copilot').candidates.length, 1, 'bare top-level format');
+  assert.strictEqual(parseMcpConfig(fx('vscode-mcp.json')).candidates.length, 0, 'a VS Code file is not a CLI file');
+  assert.strictEqual(parseMcpConfig('{oops').ok, false);
+  assert.strictEqual(parseMcpConfig('{"a":{"command":"node"}}').candidates.length, 1, 'bare top-level format');
 }
 
 // 6. The Copilot CLI list: read live from ~/.copilot/mcp-config.json, no setup, read-only (spec 020 FR-009)
@@ -192,7 +188,7 @@ const codec = (available = true): SecretCodec => ({
   assert.strictEqual(r.file.found, true);
   assert.ok(r.file.error, 'a parse error is reported');
   assert.deepStrictEqual(r.servers.map((a) => a.name), ['github-mcp-server']);
-  assert.strictEqual(readCandidates(path.join(dir, 'nope.json'), 'copilot'), undefined);
+  assert.strictEqual(readCandidates(path.join(dir, 'nope.json')), undefined);
   assert.strictEqual(copilotDir({ DURBAR_COPILOT_DIR: '/x' } as NodeJS.ProcessEnv, '/home/u'), '/x');
   assert.strictEqual(copilotDir({} as NodeJS.ProcessEnv, '/home/u'), path.join('/home/u', '.copilot'));
 }
@@ -283,4 +279,174 @@ const codec = (available = true): SecretCodec => ({
   assert.deepStrictEqual(s2.list(K1).map((x) => x.name), ['old-one']);
 }
 
+
+// 9. Per-folder import from VS Code's .vscode/mcp.json (spec 020 FR-020..FR-031, issue #7)
+{
+  // 9a. JSONC tolerance
+  const j = stripJsonc('\ufeff// c\n{"a": "http://x//y", /* b */ "l": [1, 2,], "o": {"k": 1,},\n}');
+  assert.ok(j.ok);
+  assert.deepStrictEqual(JSON.parse((j as { text: string }).text), { a: 'http://x//y', l: [1, 2], o: { k: 1 } }, 'comments, BOM, trailing commas; // inside a string stays');
+  assert.deepStrictEqual(JSON.parse((stripJsonc('{"s": "a\\"//b", "t": "/* not a comment */"}') as { text: string }).text), { s: 'a"//b', t: '/* not a comment */' });
+  assert.strictEqual(stripJsonc('{ /* open').ok, false, 'an unclosed block comment is an error');
+
+  const WS = path.join(os.tmpdir(), 'ws-root');
+  const p = parseVSCodeMcp(fx('vscode-mcp.jsonc'), { workspaceFolder: WS });
+  assert.ok(p.ok, p.error);
+  assert.deepStrictEqual(p.inputs, ['api-key', 'region'], 'input ids are only named');
+  assert.strictEqual(p.skipped, 3, 'unknown type, no command/url, not an object');
+  assert.ok(p.candidates.some((c) => c.originalName === 'ws://odd name' && c.name === 'ws-odd-name'));
+  const by = Object.fromEntries(p.candidates.map((c) => [c.originalName, c]));
+  // types
+  assert.strictEqual(by.playwright.transport, 'stdio', 'no type + command = stdio');
+  assert.deepStrictEqual(by.playwright.args, ['@playwright/mcp@latest']);
+  assert.strictEqual(by.docs.transport, 'http');
+  assert.strictEqual(by['old-sse'].transport, 'sse');
+  assert.strictEqual(by['unknown-type'], undefined, 'unknown type is skipped');
+  assert.strictEqual(by['no-target'], undefined);
+  assert.strictEqual(by['not-an-object'], undefined);
+  // ${workspaceFolder} is resolved, nothing else
+  assert.deepStrictEqual(by.fs.args, ['-y', '@example/server-filesystem', WS]);
+  assert.strictEqual(by['abs-cwd'].workingDirectory, WS + '/sub');
+  // env: literal copied; ${input}/${env} references and empty values carry no value; invalid keys ignored with a note; numbers as text
+  assert.deepStrictEqual(by.fs.env, [{ key: 'DEBUG', value: 'dummy-literal-value' }, { key: 'TOKEN' }, { key: 'FROM_ENV' }, { key: 'PORT', value: '3000' }, { key: 'EMPTY' }]);
+  assert.ok(by.fs.notes.some((n) => /Ignored variable "bad-key"/.test(n)));
+  assert.ok(by.fs.notes.some((n) => /TOKEN: contains a \$\{\.\.\.\} reference/.test(n)));
+  assert.ok(by.fs.notes.some((n) => /Ignored fields: envFile, sandbox/.test(n)) && by.fs.notes.some((n) => /envFile" is not read/.test(n)), 'ignored fields are listed');
+  assert.strictEqual(by.fs.blocked, undefined, 'a server with dropped secret references is still importable (key kept, no value)');
+  assert.deepStrictEqual(by.docs.headers, [{ key: 'X-Api-Key', value: 'dummy-header-secret' }, { key: 'Authorization' }]);
+  // inputs / unresolved variables in command, args, url, cwd block the entry (arguments are shown and stored in clear)
+  assert.match(by['needs-input'].blocked ?? '', /VS Code asks you for \(\$\{input:region\}\)/);
+  assert.match(by['needs-env'].blocked ?? '', /not resolved here/);
+  assert.match(by['creds-in-url'].blocked ?? '', /credentials/i, 'the app\'s own validation blocks the rest');
+  assert.match(by['rel-cwd'].blocked ?? '', /absolute/i);
+  assert.strictEqual(by['abs-cwd'].blocked, undefined);
+  // remote entry: command/env are ignored with a note
+  assert.ok(by['remote-with-command'].notes.some((n) => /Ignored fields: command, env/.test(n)));
+  assert.deepStrictEqual(by['remote-with-command'].env, [], 'env of a remote server is not imported');
+  // names
+  assert.ok(by['weird/name'].name === 'weird-name' && by['weird/name'].notes.some((n) => /Renamed/.test(n)));
+  // secret values never appear in notes or blocked text
+  assert.ok(!JSON.stringify(p.candidates.map((c) => [c.notes, c.blocked])).match(/dummy-(literal-value|header-secret)/));
+  // the form input a candidate makes passes the app's validation (so the store accepts it)
+  assert.ok(['playwright', 'fs', 'docs', 'old-sse', 'abs-cwd', 'weird/name'].every((n) => by[n].blocked === undefined));
+  // bad files
+  assert.strictEqual(parseVSCodeMcp('{oops', { workspaceFolder: WS }).ok, false);
+  assert.ok(!/oops/.test(parseVSCodeMcp('{oops', { workspaceFolder: WS }).error ?? ''), 'the parse error does not echo file content');
+  assert.strictEqual(parseVSCodeMcp('[1]', { workspaceFolder: WS }).ok, false);
+  assert.strictEqual(parseVSCodeMcp('{"servers": []}', { workspaceFolder: WS }).ok, false);
+  assert.deepStrictEqual(parseVSCodeMcp('{"inputs": []}', { workspaceFolder: WS }).candidates, [], 'no servers map is not an error');
+  assert.deepStrictEqual(parseVSCodeMcp('{"servers": {"a": {"command": "node"}, "A": {"command": "deno"}}}', { workspaceFolder: WS }).candidates.map((c) => c.name), ['a', 'A-2'], 'names that differ only by case stay unique');
+  assert.strictEqual(candidateInput(by.docs).env?.length, 0);
+
+  // 9b. Preview (main): masked, no values, digest; files on disk; read-only
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-vsimp-'));
+  const projA = path.join(root, 'proj-a');
+  fs.mkdirSync(path.join(projA, '.vscode'), { recursive: true });
+  const fileA = path.join(projA, '.vscode', 'mcp.json');
+  fs.writeFileSync(fileA, fx('vscode-mcp.jsonc'));
+  const beforeA = fs.readFileSync(fileA, 'utf8');
+  const cliDir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-copilot-'));
+  fs.writeFileSync(path.join(cliDir, 'mcp-config.json'), fx('copilot-mcp-config.json'));
+  const cliBefore = fs.readFileSync(path.join(cliDir, 'mcp-config.json'), 'utf8');
+  const cliNamesNow = cliServers(cliDir, new Set()).servers.map((x) => x.name);
+  const pv = previewFolderImport([projA], [], ['github-mcp-server', 'playwright-cli']);
+  assert.ok(pv.ok && pv.label === '.vscode/mcp.json');
+  assert.ok(!JSON.stringify(pv).includes('dummy-literal-value') && !JSON.stringify(pv).includes('dummy-header-secret'), 'previews never carry a secret value');
+  assert.ok(!JSON.stringify(pv).includes(fileA.replace(/\\/g, '\\\\')) , 'the path of the file is not part of the preview (only a label); a resolved ${workspaceFolder} in a command is shown because the trust dialog shows it too');
+  const it = Object.fromEntries(pv.items.map((x) => [x.originalName, x]));
+  assert.deepStrictEqual(it.fs.env.map((r) => [r.key, r.hasValue]), [['DEBUG', true], ['TOKEN', false], ['FROM_ENV', false], ['PORT', true], ['EMPTY', false]]);
+  assert.strictEqual(it['needs-input'].blocked !== undefined, true);
+  assert.strictEqual(pv.files[0].state, 'ok');
+  assert.deepStrictEqual(pv.files[0].inputs, ['api-key', 'region']);
+  assert.strictEqual(fs.readFileSync(fileA, 'utf8'), beforeA, 'the VS Code file is never modified');
+
+  // missing / bad / huge files
+  const empty = path.join(root, 'empty');
+  fs.mkdirSync(empty);
+  let bad = previewFolderImport([empty], [], []);
+  assert.ok(!bad.ok && /No \.vscode\/mcp\.json/.test(bad.error ?? ''));
+  fs.mkdirSync(path.join(empty, '.vscode'));
+  fs.writeFileSync(path.join(empty, '.vscode', 'mcp.json'), '{ "servers": { oops } }');
+  bad = previewFolderImport([empty], [], []);
+  assert.ok(!bad.ok && /Not valid JSON/.test(bad.error ?? '') && bad.items.length === 0);
+  fs.writeFileSync(path.join(empty, '.vscode', 'mcp.json'), 'x'.repeat(1024 * 1024 + 1));
+  bad = previewFolderImport([empty], [], []);
+  assert.ok(!bad.ok && /larger than 1 MiB/.test(bad.error ?? ''));
+  assert.strictEqual(readVSCodeFile(path.join(empty, 'nope')).state, 'missing');
+  fs.writeFileSync(path.join(empty, '.vscode', 'mcp.json'), '{"servers":{}}');
+  const none = previewFolderImport([empty], [], []);
+  assert.ok(none.ok && none.items.length === 0, 'a file without servers is an empty preview');
+
+  // 9c. Apply through the store: this folder only, off, untrusted, trust prompt on first enable
+  const f = tmp();
+  const st = new McpStore(f, codec());
+  st.load();
+  const KA = projA; // the folder key
+  const KB = path.join(root, 'proj-b');
+  const reserved = ['github-mcp-server', 'playwright-cli'];
+  const ids = ['playwright', 'fs', 'docs', 'weird/name'].map((n) => pv.items.find((x) => x.originalName === n)?.id as string);
+  const noDigest = applyFolderImport(st, KA, [projA], ids, 'stale', reserved);
+  assert.ok(!noDigest.ok && /changed since the preview/.test(noDigest.error ?? ''), 'a changed file is refused');
+  assert.deepStrictEqual(st.list(KA), []);
+  const r = applyFolderImport(st, KA, [projA], ids, pv.digest, reserved);
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.deepStrictEqual(r.imported.sort(), ['docs', 'fs', 'playwright', 'weird-name']);
+  assert.deepStrictEqual(r.failed, []);
+  assert.strictEqual(st.list(KB).length, 0, 'other folders get nothing');
+  assert.deepStrictEqual(st.forSession(KA).mcpServers, {}, 'imported servers are not passed to sessions (off)');
+  const views = st.list(KA);
+  assert.ok(views.every((v) => !v.enabled && !v.trusted), 'off and untrusted');
+  const fsv = views.find((v) => v.name === 'fs');
+  assert.deepStrictEqual(fsv?.env, [{ key: 'DEBUG', set: true }, { key: 'TOKEN', set: false }, { key: 'FROM_ENV', set: false }, { key: 'PORT', set: true }, { key: 'EMPTY', set: false }]);
+  assert.ok(fsv?.needsSecrets, 'dropped references leave a key with no value: the server cannot start until it is entered');
+  assert.ok(!JSON.stringify(views).includes('dummy-literal-value') && !JSON.stringify(views).includes('dummy-header-secret'), 'views are masked');
+  const disk = fs.readFileSync(f, 'utf8');
+  assert.ok(!disk.includes('dummy-literal-value') && !disk.includes('dummy-header-secret'), 'secret values are encrypted on disk');
+  assert.ok(disk.includes('ENC1:'));
+  // trust prompt on first start: enabling returns needsTrust with the exact command (workspace folder resolved)
+  const need = st.setEnabled(KA, 'fs', true);
+  assert.ok(!need.ok && need.needsTrust?.command === 'npx' && need.needsTrust.args?.[2] === projA);
+  // fs still needs secrets: even trusted it is not passed until they are entered
+  assert.ok(st.setEnabled(KA, 'fs', true, true).ok);
+  assert.ok(st.forSession(KA).skipped.some((x) => x.name === 'fs' && /secret/.test(x.reason)));
+  assert.ok(st.setEnabled(KA, 'playwright', true, true).ok);
+  assert.deepStrictEqual(Object.keys(st.forSession(KA).mcpServers), ['playwright']);
+  // blocked / unknown ids fail without creating anything
+  const again = previewFolderImport([projA], st.list(KA), reserved);
+  const blockedId = again.items.find((x) => x.originalName === 'needs-input')?.id as string;
+  const rb = applyFolderImport(st, KA, [projA], [blockedId, '0:nope'], again.digest, reserved);
+  assert.ok(!rb.ok && rb.imported.length === 0 && rb.failed.length === 2);
+  // importing again: the same definitions are "already added" and cannot be imported twice
+  const done = Object.fromEntries(again.items.map((x) => [x.originalName, x]));
+  assert.ok(done.playwright.alreadyAdded && done.fs.alreadyAdded && done.docs.alreadyAdded && done['weird/name'].alreadyAdded);
+  assert.ok(!done['old-sse'].alreadyAdded);
+  const dup = applyFolderImport(st, KA, [projA], [done.playwright.id], again.digest, reserved);
+  assert.ok(!dup.ok && dup.failed[0].error === 'Already added.' && st.list(KA).filter((v) => v.name === 'playwright').length === 1);
+  // a name clash with the CLI list or with a different extra gets -vscode
+  const f2 = tmp();
+  const st2 = new McpStore(f2, codec());
+  st2.load();
+  assert.ok(st2.upsert(KA, { name: 'docs', transport: 'http', url: 'https://other.example.test/mcp' }).ok);
+  const pv2 = previewFolderImport([projA], st2.list(KA), ['playwright']);
+  const m = Object.fromEntries(pv2.items.map((x) => [x.originalName, x]));
+  assert.strictEqual(m.docs.name, 'docs-vscode');
+  assert.strictEqual(m.playwright.name, 'playwright-vscode');
+  assert.ok(m.docs.notes.some((n) => /already taken/.test(n)));
+  const r2 = applyFolderImport(st2, KA, [projA], [m.docs.id, m.playwright.id], pv2.digest, ['playwright']);
+  assert.deepStrictEqual(r2.imported.sort(), ['docs-vscode', 'playwright-vscode']);
+  assert.ok(st2.list(KA).every((v) => !v.enabled), 'nothing is switched on by importing');
+  // a workspace: the files of several folders, each entry says where it comes from, ids are per folder
+  const projB = path.join(root, 'proj-c');
+  fs.mkdirSync(path.join(projB, '.vscode'), { recursive: true });
+  fs.writeFileSync(path.join(projB, '.vscode', 'mcp.json'), '{ "servers": { "playwright": { "command": "npx", "args": ["@playwright/mcp@latest", "--b"] } } }');
+  const ws = previewFolderImport([projA, projB, path.join(root, 'none')], [], []);
+  assert.deepStrictEqual(ws.files.map((x) => x.state), ['ok', 'ok', 'missing']);
+  const pw = ws.items.filter((x) => x.originalName === 'playwright');
+  assert.deepStrictEqual(pw.map((x) => [x.from, x.name]), [['proj-a', 'playwright'], ['proj-c', 'playwright-vscode']]);
+  assert.notStrictEqual(pw[0].id, pw[1].id);
+  // nothing outside the folder store changed: the CLI file (if the machine has one) was not touched
+  assert.strictEqual(fs.readFileSync(path.join(cliDir, 'mcp-config.json'), 'utf8'), cliBefore, 'the Copilot CLI file is not touched');
+  assert.deepStrictEqual(cliServers(cliDir, new Set()).servers.map((x) => x.name), cliNamesNow, 'the global list is unchanged by a per-folder import');
+  assert.strictEqual(fs.readFileSync(fileA, 'utf8'), beforeA);
+}
 console.log('mcp tests passed');

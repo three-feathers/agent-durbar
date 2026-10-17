@@ -7,6 +7,7 @@ import type { McpServerSpec } from '../shared/mcp';
 import type { CopilotAdapter } from '../adapters/copilot';
 import type { DevEnv } from './devhooks';
 import { BUILTIN_SERVERS, cliServers, copilotDir } from './mcpfiles';
+import { applyFolderImport, MAX_IMPORT_FOLDERS, previewFolderImport } from './mcpimport';
 import { McpStore } from './mcpstore';
 import type { SecretCodec } from './mcpstore';
 
@@ -74,6 +75,12 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
     };
   };
   const bad = { ok: false, error: 'Unknown folder.' } as const;
+  /** The folders behind a key (a workspace has several), taken from the agents in the office, never from the renderer. */
+  const dirsOf = (key: string): string[] => {
+    const out: string[] = [];
+    for (const a of agents.values()) if (keyOf(a) === key) for (const d of a.folders?.length ? a.folders : [a.cwd]) if (d && !out.includes(d)) out.push(d);
+    return out.slice(0, MAX_IMPORT_FOLDERS);
+  };
 
   ipcMain.handle('mcp:state', () => state());
   ipcMain.handle('mcp:setCli', (_e, name: unknown, enabled: unknown) => {
@@ -94,6 +101,20 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
   ipcMain.handle('mcp:setEnabled', (_e, key: unknown, name: unknown, enabled: unknown, trustAck: unknown) =>
     knownKey(key) && typeof name === 'string' ? store().setEnabled(key, name, enabled === true, trustAck === true) : { ok: false, error: 'Unknown server.' });
   ipcMain.handle('mcp:moveLegacy', (_e, name: unknown, key: unknown) => (knownKey(key) && typeof name === 'string' ? store().moveLegacy(name, key, cliNames()) : bad));
+  /** Per-folder import from `.vscode/mcp.json` (spec 020 FR-020): preview, then apply the ticked ids. Read-only for the file; imported servers arrive off and untrusted. */
+  ipcMain.handle('mcp:importPreview', (_e, key: unknown) => {
+    if (!knownKey(key)) return { ...bad, label: '.vscode/mcp.json', files: [], items: [], digest: '', skipped: 0 };
+    return previewFolderImport(dirsOf(key), store().list(key), cliNames());
+  });
+  ipcMain.handle('mcp:importApply', (_e, key: unknown, ids: unknown, digest: unknown) => {
+    if (!knownKey(key)) return { ...bad, imported: [], failed: [] };
+    if (!Array.isArray(ids) || typeof digest !== 'string') return { ok: false, error: 'Nothing selected.', imported: [], failed: [] };
+    try {
+      return applyFolderImport(store(), key, dirsOf(key), ids as string[], digest, cliNames());
+    } catch {
+      return { ok: false, error: 'Could not save the server list.', imported: [], failed: [] };
+    }
+  });
   ipcMain.handle('mcp:removeLegacy', (_e, name: unknown) => ({ ok: typeof name === 'string' && store().removeLegacy(name) }));
 
   ipcMain.handle('agents:mcp', (_e, id: unknown): { ok: boolean; servers: AgentMcpEntry[]; live: boolean } => {

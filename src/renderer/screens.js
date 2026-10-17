@@ -33,11 +33,11 @@
     if(cur.kind==='tools')paintTools(focus);else if(cur.kind==='folder')paintFolder(focus);else paintSettings(focus);
   }
   /* modal: body is an element or html; buttons [{label,value,cls}]; resolves value (or null when dismissed). `validate(root)` may return an error text (keeps it open). */
-  function dialog({title,html,buttons,wide,validate,onOpen}){
+  function dialog({title,html,buttons,wide,cls,validate,onOpen}){
     return new Promise(resolve=>{
       const old=document.getElementById('scrDlg');if(old)old.remove();
       const d=document.createElement('div');d.id='scrDlg';d.className='dlg-ov';
-      d.innerHTML=`<div class="dlg${wide?' wide':''}" role="dialog" aria-modal="true" aria-labelledby="scrDlgT"><h3 id="scrDlgT"></h3><div class="dbody">${html||''}</div><p class="derr" id="scrDlgErr" role="alert" hidden></p><div class="dbtn"></div></div>`;
+      d.innerHTML=`<div class="dlg${wide?' wide':''}${cls?' '+cls:''}" role="dialog" aria-modal="true" aria-labelledby="scrDlgT"><h3 id="scrDlgT"></h3><div class="dbody">${html||''}</div><p class="derr" id="scrDlgErr" role="alert" hidden></p><div class="dbtn"></div></div>`;
       d.querySelector('#scrDlgT').textContent=title;
       const row=d.querySelector('.dbtn');
       const done=v=>{d.remove();resolve(v);};
@@ -156,7 +156,7 @@
         <p class="scr-note">These servers are optional and belong to <b>this folder or workspace only</b>: agents in other folders do not get them. Servers from your Copilot CLI list are available to every agent and are not edited here.</p>
         <p class="scr-warn" role="note"><b>MCP servers run local commands with your user rights.</b> You see the exact command before a server is switched on for the first time, and again whenever its command or URL changes. Removing the folder from the office keeps these extras; they come back if you add the folder again.</p>
         <p class="scr-note ${st.secretsPersist?'ok':'warn'}" role="status">${st.secretsPersist?'Secret values (environment variables, headers) are stored encrypted by your operating system and are never shown again, logged or exported.':'<b>No OS-protected secret store is available here.</b> Secret values are kept in memory for this run only and are not saved: you will need to enter them again after a restart.'}</p>
-        <div class="scr-tools"><button class="btn primary" type="button" id="mcpAdd">+ Add extra server</button><button class="btn" type="button" id="fxSettings">Copilot CLI list…</button></div>
+        <div class="scr-tools"><button class="btn primary" type="button" id="mcpAdd">+ Add extra server</button><button class="btn" type="button" id="mcpImportVs" title="Read this folder's .vscode/mcp.json and pick servers to add (nothing is switched on)">Import from VS Code…</button><button class="btn" type="button" id="fxSettings">Copilot CLI list…</button></div>
         ${st.skipped.length?`<p class="scr-note warn" role="status">Not passed to new sessions: ${st.skipped.map(x=>'<b>'+esc(x.name)+'</b> ('+esc(x.reason)+')').join('; ')}.</p>`:''}
         ${srv?`<ul class="srvs" id="srvList">${srv}</ul>`:'<p class="scr-empty">No extras for this folder. Your Copilot CLI servers are already available to its agents.</p>'}
         <p class="scr-note small">Changes apply to <b>new</b> sessions in this folder and to agents that start or resume afterwards. A running session keeps its servers until it ends, or until you switch one in that agent's MCP menu.</p>
@@ -165,6 +165,7 @@
         <p class="scr-note">Earlier versions kept one global list of servers. Those are no longer used anywhere. <b>Move here</b> puts one into this folder (switched off; you review and trust it again), or remove it.</p><ul class="srvs" id="legList">${leg}</ul></section>`:''}</div>`;
     wireHead();
     $('mcpAdd').onclick=()=>editServer(null,st);
+    $('mcpImportVs').onclick=()=>importVSCode(st);
     $('fxSettings').onclick=()=>open('settings');
     r.onclick=onFolderClick;
     if(focus){const h=r.querySelector('h2');if(h){h.tabIndex=-1;h.focus({preventScroll:true});}}
@@ -204,6 +205,52 @@
     }
     if(!r||!r.ok)X.toast('Could not change the server: '+esc((r&&r.error)||'unknown error'),5000);
     else X.toast(esc(v.name)+(turnOn?' is on for new sessions in '+esc(st.name)+'.':' is off.'),2800);
+    paintFolder();
+  }
+
+  /* ---------------- import from VS Code's .vscode/mcp.json, per folder (spec 020 FR-020..FR-031) ---------------- */
+  /* The main process reads the file; this only gets keys, flags and notes (never a secret value). Nothing is ticked, imports arrive off + untrusted. */
+  const impChip=(kind,x)=>`<span class="sec" title="${kind==='env'?'Environment variable':'Header'}: ${x.hasValue?'the value is copied into the secret store (hidden)':'no value is copied: enter it after importing'}">${esc(x.key)}<i>${x.hasValue?'••••••':'no value'}</i></span>`;
+  async function importVSCode(st){
+    if(!X.bridge.mcpImportPreview)return;
+    const pv=await X.bridge.mcpImportPreview(st.key);
+    if(!cur||cur.kind!=='folder'||cur.key!==st.key)return;
+    const intro=`<p class="dsub">Servers found in <code>${esc(pv.label||'.vscode/mcp.json')}</code> of <b>${esc(st.name)}</b>. The file is only read, never changed, and your Copilot CLI list is not touched.</p>`;
+    if(!pv.ok||!pv.items.length){
+      const msg=!pv.ok?esc(pv.error||'The file could not be read.'):'No servers in this file.'+(pv.skipped?` ${pv.skipped} entr${pv.skipped===1?'y was':'ies were'} skipped (not a server definition).`:'');
+      await dialog({title:'Import from VS Code',html:intro+`<p class="scr-note ${pv.ok?'':'warn'}" role="status">${msg}</p>`,buttons:[{label:'Close',value:'ok',cls:'primary'}]});
+      return;
+    }
+    const cmd=v=>v.transport==='stdio'?[v.command].concat(v.args||[]).join(' '):v.url;
+    const usable=pv.items.filter(v=>!v.blocked&&!v.alreadyAdded);
+    const rows=pv.items.map(v=>{
+      const dis=!!(v.blocked||v.alreadyAdded);
+      const secrets=v.env.concat(v.headers).length?`<div class="srv-secrets" aria-label="Secret values (masked)">${v.env.map(x=>impChip('env',x)).join('')}${v.headers.map(x=>impChip('header',x)).join('')}</div>`:'';
+      const notes=v.notes.length?`<ul class="imp-notes">${v.notes.map(n=>'<li>'+esc(n)+'</li>').join('')}</ul>`:'';
+      return `<li class="imp-row${dis?' dis':''}"><label><input type="checkbox" data-imp="${esc(v.id)}" aria-label="Import ${esc(v.name)}"${dis?' disabled':''}>
+        <span class="imp-main"><span class="srv-top"><b class="srv-name">${esc(v.name)}</b><span class="mtag">${esc(v.transport)}</span>${v.from?`<span class="mtag src" title="Folder of this workspace">${esc(v.from)}</span>`:''}${v.alreadyAdded?'<span class="mtag">already added</span>':''}${v.blocked?'<span class="mtag warn">cannot import</span>':''}</span>
+        <code class="srv-cmd" title="${esc(cmd(v))}">${esc(cap(cmd(v),180))}</code>${v.workingDirectory?`<span class="imp-cwd">Working directory: <code>${esc(cap(v.workingDirectory,120))}</code></span>`:''}${secrets}
+        ${v.blocked?`<span class="imp-block">${esc(v.blocked)}</span>`:''}${notes}</span></label></li>`;
+    }).join('');
+    const inputs=[].concat(...pv.files.map(f=>f.inputs||[]));
+    const issues=pv.files.filter(f=>f.state==='error').map(f=>(pv.files.length>1?f.from+': ':'')+f.message);
+    const foot=[pv.skipped?`${pv.skipped} entr${pv.skipped===1?'y':'ies'} skipped (not a usable server definition).`:'',inputs.length?`The file declares inputs (${inputs.slice(0,6).map(esc).join(', ')}). Agent Durbar never asks for them, stores them or fills them in.`:'',issues.length?esc(issues.join(' ')):''].filter(Boolean).join(' ');
+    const body=intro+`<p class="scr-note small">Tick what to add. Imported servers belong to <b>this folder only</b> and arrive <b>switched off</b>: the first time you switch one on you see its exact command and confirm that you trust it. Values of variables and headers stay hidden.</p>
+      <div class="imp-tools"><button class="btn sm" type="button" data-all="1">Select all importable (${usable.length})</button><button class="btn sm" type="button" data-all="0">Clear</button><span class="imp-count" id="impCount" role="status" aria-live="polite">0 selected</span></div>
+      <ul class="imp-list" id="impList">${rows}</ul>${foot?`<p class="scr-note small">${foot}</p>`:''}`;
+    const r=await dialog({title:'Import from VS Code · '+st.name,wide:true,cls:'imp',html:body,buttons:[{label:'Cancel',value:null},{label:'Import selected',value:'ok',cls:'primary'}],
+      onOpen:d=>{const upd=()=>{const n=d.querySelectorAll('[data-imp]:checked').length;d.querySelector('#impCount').textContent=n+' selected';};
+        d.addEventListener('change',e=>{if(e.target.matches('[data-imp]'))upd();});
+        d.addEventListener('click',e=>{const a=e.target.closest('[data-all]');if(a){d.querySelectorAll('[data-imp]:not(:disabled)').forEach(c=>{c.checked=a.dataset.all==='1';});upd();}});},
+      validate:d=>d.querySelector('[data-imp]:checked')?'':'Tick at least one server to import.'});
+    if(!r)return;
+    const ids=[...r.root.querySelectorAll('[data-imp]:checked')].map(c=>c.dataset.imp);
+    const res=await X.bridge.mcpImportApply(st.key,ids,pv.digest);
+    const n=(res&&res.imported||[]).length,bad=(res&&res.failed)||[];
+    if(n)X.toast(`Imported ${n} server${n===1?'':'s'} into ${esc(st.name)} (off). Switch one on to review and trust it.`,4600);
+    if(bad.length||!res||!res.ok){
+      await dialog({title:n?'Some servers were not imported':'Nothing was imported',html:`<p class="dsub">${res&&res.error?esc(res.error):'These entries could not be imported:'}</p>${bad.length?`<ul class="imp-notes">${bad.map(b=>'<li><b>'+esc(b.name)+'</b>: '+esc(b.error)+'</li>').join('')}</ul>`:''}`,buttons:[{label:'Close',value:'ok',cls:'primary'}]});
+    }
     paintFolder();
   }
 

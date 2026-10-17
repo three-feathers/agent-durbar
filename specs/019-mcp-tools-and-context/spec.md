@@ -53,3 +53,4 @@
 ## Changes
 
 - **2026-10-16, feature 020**: the app-level custom server list and the Import screens (FR-001, FR-003, FR-006) are replaced: `~/.copilot/mcp-config.json` is the primary global list, shown with no setup (FR-007 "ambient" servers); Durbar's own servers are optional **extras per folder/workspace** only. The Tools counts (FR-012/FR-013) gain an "All time" persisted view. See [020](../020-tools-all-time-and-mcp-cli-primary/spec.md). The text above is kept as the record of milestone 8.
+- **2026-10-17, feature 020 delta (issue #7)**: FR-006's import returns **per folder only**, as an *Import from VS Code...* action of a folder's extras screen reading `.vscode/mcp.json` (tolerant JSONC, preview, nothing ticked, imported servers off and untrusted, `inputs` never prompted or stored). The Copilot CLI import and any global import stay removed. See [020](../020-tools-all-time-and-mcp-cli-primary/spec.md) FR-020..FR-031.
