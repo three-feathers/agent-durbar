@@ -52,6 +52,8 @@ Since alpha.1:
 - **About:** Three Feathers as owner, with credits.
 - **New app id `io.github.three-feathers.agentdurbar`.** An earlier test install (`io.github.vikramgorla.agentdurbar`) is a **separate app** and keeps its own settings; installing alpha.3 does not replace or migrate it.
 
+![Settings, About: Three Feathers as owner, version and contributors](docs/screenshots/about-settings-1280x800.png)
+
 ### These builds are not code-signed
 
 Signing certificates cost money, so the builds are **unsigned and not notarized**. Your OS will warn you the first time; that is expected. Only open files you downloaded from this repository's Releases page.
