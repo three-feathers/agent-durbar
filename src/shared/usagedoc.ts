@@ -116,6 +116,20 @@ export function officeTotals(doc: UsageTotalsDoc): UsageNumbers {
 }
 
 /**
+ * The folder an agent's usage belongs to: its `.code-workspace` file when it has one, else its folder. The same rule as the folder
+ * list (`workspaceFile ?? cwd`) and the window's room lookup (`folderOfRoom` in app.js), so the saved total lands on the right room.
+ */
+export function folderKeyOf(a: { workspaceFile?: string; cwd: string }): string {
+  return a.workspaceFile || a.cwd;
+}
+
+/** A short display name: the workspace file's base name without `.code-workspace`, else the folder's base name. */
+export function folderNameOf(a: { workspaceFile?: string; cwd: string }): string {
+  const base = (p: string): string => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p;
+  return cleanName(a.workspaceFile ? base(a.workspaceFile).replace(/\.code-workspace$/i, '') : base(a.cwd));
+}
+
+/**
  * The text a folder is fingerprinted from: separators unified, trailing separators removed, case-folded on Windows (paths there
  * are case-insensitive, so `C:\\Work\\App` and `c:/work/app/` are one folder). Pure string work; the hash is computed in main.
  */

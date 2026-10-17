@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { MAX_FOLDERS, MAX_NAME, cleanName, emptyUsageDoc, normaliseFolderKey, officeTotals, recordUsage, sanitizeUsageDoc, validNano } from '../src/shared/usagedoc';
+import { MAX_FOLDERS, MAX_NAME, cleanName, emptyUsageDoc, folderKeyOf, folderNameOf, normaliseFolderKey, officeTotals, recordUsage, sanitizeUsageDoc, validNano } from '../src/shared/usagedoc';
 import { UsageTotalsStore, folderFingerprint } from '../src/main/usagetotalsstore';
 
 const AIU = 1e9;
@@ -83,6 +83,15 @@ assert.strictEqual(folderFingerprint('C:\\Work\\App', 'win32'), folderFingerprin
 assert.notStrictEqual(folderFingerprint('/a/app', 'linux'), folderFingerprint('/b/app', 'linux'), 'same name, different folder: different fingerprint');
 assert.ok(/^[0-9a-f]{32}$/.test(folderFingerprint('/any/path', 'linux')));
 
+// which folder an agent's usage belongs to: the workspace file when there is one (same rule as the folder list and the window)
+assert.strictEqual(folderKeyOf({ cwd: '/work/app' }), '/work/app');
+assert.strictEqual(folderKeyOf({ cwd: '/work/app', workspaceFile: '/work/all.code-workspace' }), '/work/all.code-workspace');
+assert.strictEqual(folderKeyOf({ cwd: '/work/app', workspaceFile: '' }), '/work/app', 'an empty workspace file means none');
+assert.strictEqual(folderNameOf({ cwd: '/work/app/' }), 'app');
+assert.strictEqual(folderNameOf({ cwd: 'C:\\Work\\App' }), 'App');
+assert.strictEqual(folderNameOf({ cwd: '/work/app', workspaceFile: '/work/All Repos.code-workspace' }), 'All Repos');
+assert.strictEqual(folderNameOf({ cwd: '/' }), '/');
+
 // the store: debounce, flush, no path on disk, restart, baseline vs run, reset, hostile files
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-totals-'));
 try {
@@ -146,7 +155,7 @@ try {
   // hostile and broken files: empty document, no throw
   fs.writeFileSync(file, '{{{'); const c1 = mk(); c1.load(); assert.strictEqual(c1.baselineView().office.calls, 0);
   fs.writeFileSync(file, JSON.stringify({ folders: { '/etc/passwd': { calls: 5 } } })); const c2 = mk(); c2.load(); assert.deepStrictEqual({ ...c2.view().folders }, {});
-  fs.writeFileSync(file, 'x'.repeat(3 * 1024 * 1024)); const c3 = mk(); c3.load(); assert.strictEqual(c3.baselineView().office.calls, 0, 'an oversized file is ignored');
+  fs.writeFileSync(file, JSON.stringify({ since: '2026-01-01T00:00:00Z', folders: { [K1]: { name: 'x'.repeat(3 * 1024 * 1024), calls: 5, nano: AIU } } })); const c3 = mk(); c3.load(); assert.strictEqual(c3.baselineView().office.calls, 0, 'a valid but oversized file (over 2 MB) is ignored');
   fs.rmSync(file); fs.mkdirSync(file); const c4 = mk(); c4.load(); assert.strictEqual(c4.baselineView().office.calls, 0, 'a directory where the file should be');
   fs.rmSync(file, { recursive: true });
 

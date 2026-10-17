@@ -76,6 +76,7 @@
       const o=X.usageOffice(), since=(X.usageSince&&X.usageSince())||'', now=window.DurbarUsage.fmtTotal(o,2);
       usageSec=`<h4 class="scr-sub">Usage totals</h4>
         <p class="scr-note">The office header and each room show the credits spent, kept on this computer across restarts: only numbers, folder names and a fingerprint of each folder's path (never prompts or paths). <b id="usageNow">${now?esc(now+' in '+o.calls+(o.calls===1?' call':' calls')):'Nothing recorded yet'}${/^\d{4}-\d{2}-\d{2}/.test(since)?esc(', counting since '+since.slice(0,10)):''}.</b></p>
+        ${X.usageError&&X.usageError()?`<p class="scr-note warn" role="status">The totals could not be saved to disk (${esc(X.usageError())}); counting continues for this run.</p>`:''}
         <div class="scr-tools"><button class="btn" type="button" id="usageTotalsReset">Reset usage totals</button><span class="scr-note small" id="usageTotalsMsg" role="status"></span></div>`;
     }
     const capSec=X.bridge.setDefaultCap?`<section class="scr-sec" aria-labelledby="capH"><h3 id="capH">Credit cap</h3>

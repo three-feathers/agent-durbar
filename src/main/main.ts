@@ -17,6 +17,7 @@ import { McpStore } from './mcpstore';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { UsageStore } from './usagestore';
 import { UsageTotalsStore } from './usagetotalsstore';
+import { folderKeyOf, folderNameOf } from '../shared/usagedoc';
 import { agentLabel } from '../shared/toolusage';
 import { devEnv, devWarning } from './devhooks';
 import { SettingsStore } from './settings';
@@ -84,8 +85,6 @@ adapter.onEvent((e) => {
 });
 // Credit totals per folder are kept here too (spec 011 FR-026): one record per `usage` event of a known agent (helpers report through
 // their agent), so they also count while no window is open. Only numbers, the folder's display name and a hash of its path are saved.
-const folderKeyOf = (a: AgentInfo): string => a.workspaceFile || a.cwd;
-const folderNameOf = (a: AgentInfo): string => (a.workspaceFile ? path.basename(a.workspaceFile).replace(/\.code-workspace$/i, '') : path.basename(a.cwd)) || a.cwd;
 adapter.onEvent((e) => {
   if (e.type !== 'usage') return;
   const a = agents.get(e.sessionId);
