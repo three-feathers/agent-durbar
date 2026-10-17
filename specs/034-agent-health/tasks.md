@@ -17,5 +17,5 @@
 - [x] T011 Room tones (`data-alert`, darker `--tint`/`--wall` per colour, every density) and the siren in the room header and on door plates; Serious mode; reduced motion [FR-009, FR-011]
 - [x] T012 Accessible words on the room section and door plate [FR-010]
 - [x] T013 Simulator: a room whose worst agent is heavy only [FR-012]
-- [ ] T014 Driver `scripts/shots-034.js` extended, contrast check, screenshots at both sizes, `check:office`, README, CHANGELOG, specs index [FR-011, FR-013, SC-003, SC-004]
-
+- [x] T014 Driver `scripts/shots-034.js` extended, contrast check, screenshots at both sizes, `check:office`, README, CHANGELOG, specs index [FR-011, FR-013, SC-003, SC-004]
+- [ ] T015 (follow-up, not in this PR) Room header path text in calm rooms: about 4.2:1 contrast on `main`, raise it to 4.5:1 for every room (changes every room's look slightly, so its own change and screenshots)

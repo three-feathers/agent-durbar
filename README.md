@@ -2,7 +2,7 @@
 
 Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.
 
-> Status: **alpha, `v0.1.0-alpha.4` ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4), unsigned, not notarized).** It adds places in the office, the per-folder MCP import from VS Code and switching model and context inside a session (simulator and fake sessions; real switching between models is unverified), see [CHANGELOG.md](CHANGELOG.md). `v0.1.0-alpha.3` stays available. The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. Latest work: [agents show how they are doing](#status-agents-show-how-they-are-doing-heavy-monster-ambulance), [floors](#status-floors-group-rooms-and-switch-a-floor-off) (on branch `033-floors`, not released), [places in the office](#status-places-in-the-office-a-shared-lobby-agents-walk-to-the-tool-they-use), [milestone 10 and usage totals](#status-milestone-10-tools-all-time-the-copilot-cli-mcp-list-first-mcp-extras-per-folder). Only Linux has been run by hand; macOS and Windows are built and unit-tested in CI but untested on real hardware. Built by [Three Feathers](https://github.com/three-feathers); the work is tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
+> Status: **alpha, `v0.1.0-alpha.4` ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4), unsigned, not notarized).** It adds places in the office, the per-folder MCP import from VS Code and switching model and context inside a session (simulator and fake sessions; real switching between models is unverified), see [CHANGELOG.md](CHANGELOG.md). `v0.1.0-alpha.3` stays available. The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. Latest work: [agents show how they are doing](#status-agents-show-how-they-are-doing-heavy-monster-ambulance-room-sirens), [floors](#status-floors-group-rooms-and-switch-a-floor-off) (on branch `033-floors`, not released), [places in the office](#status-places-in-the-office-a-shared-lobby-agents-walk-to-the-tool-they-use), [milestone 10 and usage totals](#status-milestone-10-tools-all-time-the-copilot-cli-mcp-list-first-mcp-extras-per-folder). Only Linux has been run by hand; macOS and Windows are built and unit-tested in CI but untested on real hardware. Built by [Three Feathers](https://github.com/three-feathers); the work is tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
 
 ![15 simulated agents at 1440x900 (roomy desks use the spare floor space)](docs/screenshots/m5-sim15-1440x900-closed.png)
 ![Full-screen chat with every other agent in a slim strip, 15 agents at 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
@@ -90,7 +90,7 @@ npm run dist              # installers/archives for this OS in release/ (no sign
 
 Each release also lists `SHA256SUMS.txt`. Releases are built by GitHub Actions from `v*` tags into a **draft** release that the maintainer publishes by hand; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Status (agents show how they are doing: heavy, monster, ambulance)
+## Status (agents show how they are doing: heavy, monster, ambulance, room sirens)
 
 Spec [034](specs/034-agent-health/spec.md) (issue #20; amends 001). Built and tested on the simulator and unit tests. **AI credits spent: 0 AIU.** Not in a release yet.
 
@@ -98,13 +98,15 @@ Spec [034](specs/034-agent-health/spec.md) (issue #20; amends 001). Built and te
 - **Trouble.** An **ambulance** parks by the desk of the agent with the latest error (one ambulance at a time; other agents in Error keep the plain error look). An agent at its credit limit **faints**. One whose permission request has waited 60 s or more **taps the desk**. Three failed tool calls in a row make it **dizzy** (a successful call clears it).
 - **The text never changes.** The card's tooltip and accessible label add the state ("context nearly full (93%)", "needs help: error", "fainted: credit limit reached", "impatient: waiting 2 min for you", "dizzy: 3 failed tool calls in a row").
 - **Serious mode.** Settings > *Agent mood* > **Serious mode** turns every drawing and these words off (saved). With reduced motion the drawings stay but nothing blinks or moves.
+- **Rooms.** A room takes the tone of its worst agent: its own colour, a little darker with a heavy agent and clearly darker with a monster, an agent in Error or any trouble. A small red/blue **siren** blinks next to the room name (and on the door plate of a closed room) while the room has the ambulance or a fainted agent; the room's label then says "Alert: an agent needs help". Header text gets darker with the floor so it stays readable.
 - Simulator: `simwaitold=1` makes waiting requests 2 minutes old, so "impatient" shows at once.
 
-![Office with a monster, the ambulance, a fainted and impatient agents, 1440x900](docs/screenshots/034-office-1440x900.png)
+![Office: a monster, the ambulance, fainted and impatient agents; rooms darkened by their worst agent, sirens in two rooms, 1440x900](docs/screenshots/034-office-1440x900.png)
 ![Close-ups: ambulance, faint, impatient, monster, dizzy](docs/screenshots/034-closeups.png)
 ![Serious mode on, 1280x800](docs/screenshots/034-serious-1280x800.png)
+![Closed rooms: the siren on the door plate of the room with the ambulance, 1280x800](docs/screenshots/034-plates-1280x800.png)
 
-**Limits.** Not checked on a real Copilot session. An agent away at a place in the lobby shows an empty chair, so its drawing is hidden (the words stay); the walking figure and the List view do not show the mood yet.
+**Limits.** Not checked on a real Copilot session. In calm rooms the folder path stays at today's contrast (about 4.2:1, below 4.5:1). An agent away at a place in the lobby shows an empty chair, so its drawing is hidden (the words stay); the walking figure and the List view do not show the mood yet.
 
 Tests: `npm test` adds `test:mood` and `seriousMode` cases in `test:credits`. Checks and screenshots: `scripts/shots-034.js`.
 ## Status (floors: group rooms and switch a floor off)

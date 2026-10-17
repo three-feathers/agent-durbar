@@ -52,3 +52,6 @@
 - Found: the first try used Hugo, but an idle agent never reports its context (usage runs only when an agent works), so his room stayed calm.
 - Checks run: `npm run typecheck`, `test:mood`; seen on the simulator at 1440x900. The driver extension (tones, siren moving with the ambulance, plate, Serious mode, reduced motion, contrast, floor off), screenshots, README, CHANGELOG and the review are phase 3.
 
+### Verification for the delta (phase 3, 2026-10-17)
+- See the delta's *Verification* in the spec: driver checks, measured contrast, review fixes (plate size, full-density ring, header text colour) and the calm-room contrast gap (T015).
+

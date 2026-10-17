@@ -45,7 +45,7 @@
   function roomAlertOf(moods){
     let tone='calm', siren=false;
     (Array.isArray(moods)?moods:[]).forEach(m=>{
-      if(!m||typeof m!=='object')return;
+      if(!m)return; /* numbers or text have no fields: they count as calm */
       if(m.trouble==='ambulance'||m.trouble==='faint')siren=true;
       if(m.trouble==='ambulance'||m.trouble==='faint'||m.trouble==='impatient'||m.trouble==='dizzy'||m.body==='monster'||m.state==='error')tone='alarm';
       else if(m.body==='heavy'&&tone==='calm')tone='uneasy';

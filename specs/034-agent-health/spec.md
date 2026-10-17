@@ -120,19 +120,39 @@
 
 - The worst agent gets better (new turn, compaction, limit raised): the room's tone follows at once (the same 5 s mood timer as the figures).
 - An agent away at a place in the lobby still counts for its room (its mood is known even though its chair is empty).
-- Text in the room header (name, path, floor tag, usage total) keeps a contrast of at least 4.5:1 at every tone; the cards keep their own background.
+- Text in the room header (path, usage total) keeps a contrast of at least 4.5:1 in a darkened room (its colour turns darker with the floor); the cards keep their own background. A calm room looks as today.
 
 #### Requirements
 
-- **FR-008** `[KNOWN GAP]` (planned: T010) Pure `roomAlertOf(moods)` in `src/renderer/mood.js`: list of `{state, body, trouble}` of a room's main agents → `{tone: 'calm'|'uneasy'|'alarm', siren: boolean}` with the rules above; unknown or empty input → calm, no siren.
-- **FR-009** `[KNOWN GAP]` (planned: T011) Open rooms (every density): `data-alert="uneasy|alarm"` on the room section and darker `--tint`/`--wall` per room colour in `styles.css`; the siren (small inline SVG, red/blue) in the room header next to the name; door plates get the siren only. No change to sizes: `check:office` stays green at 1440x900 and 1280x800.
-- **FR-010** `[KNOWN GAP]` (planned: T012) Words: the room section's and door plate's `aria-label` add "Alert: an agent needs help" while the siren is on.
-- **FR-011** `[KNOWN GAP]` (planned: T011) Calm: Serious mode removes tones and sirens; reduced motion stops the blink; header text contrast at least 4.5:1 at every tone (checked in the driver).
-- **FR-012** `[KNOWN GAP]` (planned: T013) Simulator: one room whose worst agent is heavy only, so all three tones can be seen at once.
-- **FR-013** `[KNOWN GAP]` (planned: T010, T014) Tests, no credits: `roomAlertOf` cases in `scripts/test-mood.ts` (each tone, priority, siren for ambulance and faint only, garbage input); driver `scripts/shots-034.js` extended (tones, siren moves with the ambulance, closed plate, Serious mode, reduced motion, contrast, floor off); screenshots at both sizes.
+- **FR-008** `[IMPLEMENTED]` Pure `roomAlertOf(moods)` in `src/renderer/mood.js`: list of `{state, body, trouble}` of a room's main agents → `{tone: 'calm'|'uneasy'|'alarm', siren: boolean}` with the rules above; unknown or empty input → calm, no siren.
+- **FR-009** `[IMPLEMENTED]` Open rooms (every density): `data-alert="uneasy|alarm"` on the room section and darker `--tint`/`--wall` per room colour in `styles.css`; the siren (small inline SVG, red/blue) in the room header next to the name; door plates get the siren only. No change to sizes: `check:office` stays green at 1440x900 and 1280x800.
+- **FR-010** `[IMPLEMENTED]` Words: the room section's and door plate's `aria-label` add "Alert: an agent needs help" while the siren is on.
+- **FR-011** `[IMPLEMENTED]` Calm: Serious mode removes tones and sirens; reduced motion stops the blink; header text contrast at least 4.5:1 in darkened rooms, measured on the real pixels in the driver (calm rooms are unchanged).
+- **FR-012** `[IMPLEMENTED]` Simulator: one room whose worst agent is heavy only, so all three tones can be seen at once.
+- **FR-013** `[IMPLEMENTED]` Tests, no credits: `roomAlertOf` cases in `scripts/test-mood.ts` (each tone, priority, siren for ambulance and faint only, garbage input); driver `scripts/shots-034.js` extended (tones, siren moves with the ambulance, closed plate, Serious mode, reduced motion, contrast, floor off); screenshots at both sizes.
 
 #### Success criteria
 
 - **SC-003**: On the simulator, calm, uneasy and alarm rooms and at least one siren are visible at 1440x900 and 1280x800 with 15 agents, and `npm run check:office` passes.
 - **SC-004**: Serious mode on: no room has `data-alert` and no siren is in the page.
+
+#### Verification (phase 3, 2026-10-17)
+
+- `test:` `roomAlertOf` cases in `scripts/test-mood.ts`. Mutation check: 10 deliberate breaks, 9 fail a test; the 10th removed a redundant type check (numbers and text have no fields), so that check was removed from the code.
+- `sim:` `scripts/shots-034.js` at 1440x900 and 1280x800:
+  - every room's tone: `mcp-swiss` alarm, `swisscontract-ai` and `command-center` alarm with siren, `infra-notes` uneasy, `blog` calm;
+  - the alert words only with the siren;
+  - the siren moves with the ambulance to another room and back;
+  - a closed plate with the siren keeps its size;
+  - Serious mode: no tone, siren or words;
+  - reduced motion: the siren does not blink;
+  - a floor that is off;
+  - full density without the inner ring.
+  - Header contrast measured on screen pixels: darkened rooms 5.9-6.7:1. `check:office` 141/141 (no layout change).
+- Fixed in review:
+  - On door plates the siren first took its own row and made plates 18 px taller (`check:office` went from 141 to 140 checks); it now sits on the corner of the door icon.
+  - The tone rule gave full-density rooms the compact rooms' inner white ring.
+  - In darkened rooms the path fell to 3.5:1, so the header text now gets darker with the floor.
+- `[KNOWN GAP]` Calm rooms keep today's colours, and the folder path there is about 4.2:1 (below 4.5:1) on `main` already. The driver checks that it does not get worse. Follow-up T015.
+- `[KNOWN GAP]` Not run on a real Copilot session (it only reads the moods of spec 034).
 

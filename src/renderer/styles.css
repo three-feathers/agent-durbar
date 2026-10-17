@@ -750,6 +750,9 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
    An inset shadow darkens the floor under the cards and the text, so nothing else changes size or colour. ---- */
 .stage .room[data-alert="uneasy"]{border-color:color-mix(in srgb,var(--wall) 88%,#2a1c10);box-shadow:inset 0 0 0 3px rgba(255,255,255,.28),inset 0 0 0 999px rgba(40,26,14,.045)}
 .stage .room[data-alert="alarm"]{border-color:color-mix(in srgb,var(--wall) 72%,#2a1c10);box-shadow:inset 0 0 0 3px rgba(255,255,255,.28),inset 0 0 0 999px rgba(40,26,14,.1)}
+.stage[data-d="full"] .room[data-alert="uneasy"]{box-shadow:inset 0 0 0 999px rgba(40,26,14,.045)} /* full rooms have no inner white ring */
+.stage[data-d="full"] .room[data-alert="alarm"]{box-shadow:inset 0 0 0 999px rgba(40,26,14,.1)}
+.stage .room[data-alert] .room-path,.stage .room[data-alert] .room-aiu{color:#465049} /* darker floor, darker header text: 4.5:1 or more on the real pixels (checked by shots-034.js) */
 .siren{display:inline-flex;flex:none;width:18px;height:18px;align-self:center}
 .siren svg{width:100%;height:100%;display:block}
 .siren-light{fill:#d9534f;animation:sirenblink 1s steps(1,end) infinite}

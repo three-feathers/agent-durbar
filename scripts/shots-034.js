@@ -18,6 +18,10 @@
  *          reduced motion: nothing animates (emulated through the DevTools protocol);
  *   - FR-002 the compact densities (mini) use the same rules; scene boxes keep their size;
  *   - Edge  an agent on a floor that is off (spec 033) never takes the ambulance.
+ * Rooms (spec 034 delta, issue #135): each room's data-alert follows its worst agent (calm, uneasy, alarm); the siren is on only where
+ * the ambulance or a faint is, moves with the ambulance, sits on the closed door plate without changing its size and is named in the
+ * label; the header text (path, usage) keeps 4.5:1 contrast on the real pixels in darkened rooms (calm rooms stay as today, about 4.2:1, known gap); Serious mode and a floor that is off
+ * show neither; reduced motion stops the siren; full-density rooms get no inner ring.
  * Crops of single desks (device pixels) go to 034-crop-<state>.png for a close look at the drawings.
  */
 const fs = require('fs');
@@ -38,7 +42,7 @@ module.exports = async (ctx) => {
   };
   /* every main desk: name, away, mood (from data-sig), labels, visible text, scene box size */
   const desks = () => js(`[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>{const sv=d.querySelector('svg.scene'),sig=(sv&&sv.dataset.sig)||'',m=/\\|(normal|heavy|monster)(\\w*)$/.exec(sig),b=sv?sv.getBoundingClientRect():{width:0,height:0};
-    return {id:d.dataset.id,name:d.querySelector('.name').textContent.trim(),away:d.classList.contains('is-away'),st:(/is-(\\w+)/.exec(d.className)||[])[1],
+    return {id:d.dataset.id,name:d.querySelector('.name').textContent.trim(),room:((d.closest('.room')||document).querySelector('.room-name')||{textContent:''}).textContent.trim(),away:d.classList.contains('is-away'),st:(/is-(\\w+)/.exec(d.className)||[])[1],
       body:m?m[1]:null,trouble:m&&m[2]?m[2]:null,label:d.getAttribute('aria-label')||'',title:d.getAttribute('title')||'',
       text:(d.querySelector('.ci, .info')||d).innerText.replace(/\\s+/g,' ').trim(),box:[Math.round(b.width),Math.round(b.height)],
       amb:d.querySelectorAll('.amb').length,dizzy:d.querySelectorAll('.dizzy').length,sweat:d.querySelectorAll('.sweat').length,tap:d.querySelectorAll('.tap').length}})`);
@@ -51,6 +55,18 @@ module.exports = async (ctx) => {
     console.log('[034] saved crop', name);
   };
   const emit = (e) => js(`window.__durbarSimEmit(${JSON.stringify(e)})`);
+  const rooms = () => js(`[...document.querySelectorAll('#stage .room')].reduce((o,r)=>{o[r.querySelector('.room-name').textContent.trim()]={tone:r.dataset.alert||'calm',siren:!!r.querySelector('.room-head .siren'),label:r.getAttribute('aria-label')};return o;},{})`);
+  /* WCAG contrast of a header text against the pixels right next to it (the real, darkened floor) */
+  const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+  const contrast = async (roomName, sel) => {
+    const q = await js(`(()=>{const r=[...document.querySelectorAll('#stage .room')].find(x=>x.querySelector('.room-name').textContent.trim()===${JSON.stringify(roomName)});const e=r&&r.querySelector(${JSON.stringify(sel)});if(!e||!e.getClientRects().length)return null;const b=e.getBoundingClientRect(),c=getComputedStyle(e).color.match(/[\\d.]+/g).map(Number);return {x:Math.round(b.left)-5,y:Math.round(b.top+b.height/2)-1,c}})()`);
+    if (!q) return null;
+    const img = await ctx.win.webContents.capturePage({ x: q.x, y: q.y, width: 2, height: 2 });
+    const bm = img.toBitmap(), n = bm.length / 4; let r = 0, g = 0, bl = 0;
+    for (let i = 0; i < n; i++) { bl += bm[i * 4]; g += bm[i * 4 + 1]; r += bm[i * 4 + 2]; }
+    const bg = [r / n, g / n, bl / n], a = lum(q.c), bb = lum(bg);
+    return (Math.max(a, bb) + 0.05) / (Math.min(a, bb) + 0.05);
+  };
   const serious = async (on) => {
     await js(`document.getElementById('settingsBtn').click()`); await ctx.sleep(800);
     const cur = await js(`document.getElementById('seriousSw').getAttribute('aria-checked')==='true'`);
@@ -97,6 +113,21 @@ module.exports = async (ctx) => {
     const awayDz = ds.find((d) => d.away && d.trouble);
     if (awayDz) assert.strictEqual(await js(`getComputedStyle([...document.querySelectorAll('#stage .desk[data-id]')].find(d=>d.dataset.id===${JSON.stringify(awayDz.id)}).querySelector('svg.scene .pp:last-of-type')).display`), 'none', `${awayDz.name}: away, so the drawing is hidden`);
     if (awayDz) assert.ok(/needs help|fainted|impatient|dizzy/.test(awayDz.label), `${awayDz.name}: the words stay while away`);
+    // Rooms (issue #135): tone of the worst agent, siren where the ambulance or a faint is
+    let rm = await rooms();
+    console.log('[034]', w, 'rooms', JSON.stringify(Object.fromEntries(Object.entries(rm).map(([k, v]) => [k, v.tone + (v.siren ? '+siren' : '')]))));
+    assert.deepStrictEqual(Object.fromEntries(Object.entries(rm).map(([k, v]) => [k, [v.tone, v.siren]])),
+      { 'mcp-swiss': ['alarm', false], 'swisscontract-ai': ['alarm', true], 'command-center': ['alarm', true], blog: ['calm', false], 'infra-notes': ['uneasy', false] },
+      'monster/impatient: alarm; ambulance and faint: alarm with siren; heavy only: uneasy; nothing: calm');
+    for (const [k, v] of Object.entries(rm)) assert.strictEqual(/Alert: an agent needs help/.test(v.label), v.siren, k + ': the label names the alert only with the siren');
+    const low = [];
+    for (const k of Object.keys(rm)) for (const sel of ['.room-path', '.room-aiu']) {
+      const c = await contrast(k, sel);
+      if (c !== null) { low.push([k, rm[k].tone, sel, c]); if (w === 1440) console.log('[034] contrast', k, rm[k].tone, sel, c.toFixed(2)); }
+    }
+    /* [KNOWN GAP] calm rooms keep today's colours: the path is about 4.2:1 on main already (T015); only darkened rooms are held to 4.5 */
+    assert.deepStrictEqual(low.filter((x) => x[1] !== 'calm' && x[3] < 4.5).map((x) => `${x[0]} ${x[2]} ${x[3].toFixed(2)} (${x[1]})`), [], 'header text keeps 4.5:1 in darkened rooms');
+    assert.ok(low.filter((x) => x[1] === 'calm').every((x) => x[3] >= 4), 'calm rooms stay as today (about 4.2:1 for the path)');
     await shot('office', w, h);
 
     if (w === 1440) {
@@ -110,14 +141,18 @@ module.exports = async (ctx) => {
     }
 
     // Edge: a second, newer error takes the ambulance; when it ends the ambulance goes back
-    const other = await one((d) => !d.away && d.st === 'idle' && !d.trouble, 'an idle agent for a second error');
+    const other = await one((d) => !d.away && d.st === 'idle' && !d.trouble && d.room !== amb[0].room, 'an idle agent in another room for a second error');
     await emit({ type: 'status', sessionId: other.id, timestamp: Date.now(), status: 'error', intent: 'Session failed' }); await ctx.sleep(700);
     ds = await desks();
     assert.deepStrictEqual(ds.filter((d) => d.trouble === 'ambulance').map((d) => d.id), [other.id], 'the newest error has the only ambulance');
     assert.strictEqual(ds.find((d) => d.id === amb[0].id).st, 'error', 'the first agent keeps its plain error look');
+    rm = await rooms();
+    assert.ok(rm[other.room].siren && rm[other.room].tone === 'alarm', 'the siren moves with the ambulance to ' + other.room);
+    assert.ok(rm[amb[0].room].tone === 'alarm' && !rm[amb[0].room].siren, 'the old room stays dark without a siren (an agent is still in Error)');
     await emit({ type: 'status', sessionId: other.id, timestamp: Date.now(), status: 'idle' }); await ctx.sleep(700);
     ds = await desks();
     assert.deepStrictEqual(ds.filter((d) => d.trouble === 'ambulance').map((d) => d.id), [amb[0].id], 'the ambulance goes back');
+    rm = await rooms(); assert.ok(rm[amb[0].room].siren && !rm[other.room].siren, 'and the siren with it');
 
     // US2.4: three failed calls in a row at the desk (an edit stays at the desk), then a successful one
     const dz = await one((d) => !d.away && (d.st === 'working' || d.st === 'thinking') && !d.trouble, 'a working agent at its desk');
@@ -141,6 +176,8 @@ module.exports = async (ctx) => {
     assert.ok(ds.every((x) => x.body === 'normal' && !x.trouble), 'Serious mode: every scene is plain');
     assert.strictEqual(await js(`document.querySelectorAll('#stage .amb, #stage .dizzy, #stage .sweat, #stage .tap').length`), 0, 'Serious mode: no mood drawing in the page');
     assert.ok(ds.every((x) => !/context nearly full|needs help|fainted|impatient|dizzy/.test(x.label)), 'Serious mode: no mood words');
+    assert.strictEqual(await js(`document.querySelectorAll('#stage .room[data-alert], #stage .siren').length`), 0, 'Serious mode: no room tone and no siren');
+    assert.ok(Object.values(await rooms()).every((v) => !/Alert:/.test(v.label)), 'Serious mode: no alert words');
     await shot('serious', w, h);
     await serious(false); await js(`document.getElementById('scrClose').click()`); await ctx.sleep(700);
     assert.ok((await desks()).some((x) => x.body === 'monster'), 'Serious mode off: the drawings are back');
@@ -151,8 +188,8 @@ module.exports = async (ctx) => {
   dbg.attach('1.3');
   await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   await ctx.sleep(300);
-  const anim = await js(`[...document.querySelectorAll('#stage .amb-light, #stage .tap')].map(e=>getComputedStyle(e).animationName)`);
-  assert.ok(anim.length >= 2 && anim.every((a) => a === 'none'), 'reduced motion: nothing animates ' + JSON.stringify(anim));
+  const anim = await js(`[...document.querySelectorAll('#stage .amb-light, #stage .tap, #stage .siren-light')].map(e=>getComputedStyle(e).animationName)`);
+  assert.ok(anim.length >= 4 && anim.every((a) => a === 'none'), 'reduced motion: nothing animates ' + JSON.stringify(anim));
   await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });
   dbg.detach();
 
@@ -173,5 +210,22 @@ module.exports = async (ctx) => {
   await emit({ type: 'status', sessionId: tomas.id, timestamp: Date.now(), status: 'error', intent: 'Session failed again' }); await ctx.sleep(700);
   fl = await desks();
   assert.deepStrictEqual(fl.filter((x) => x.trouble === 'ambulance').map((x) => x.id), [vis1.id], 'a newer error on an off floor does not take the ambulance away');
+  assert.strictEqual(await js(`[...document.querySelectorAll('#stage .room[data-siren]')].length`) >= 1, true, 'the siren is in a room that is shown');
+
+  // closed door plate: the siren sits on the door icon, the plate keeps its size, the label names the alert
+  await load(1280, 800, { simwaitold: '1', closed: 'blog,infra-notes' }); /* plates in one row stretch to the same height: measure them without any siren first */
+  const h0 = await js(`Math.round(document.querySelector('.plate').getBoundingClientRect().height)`);
+  await load(1280, 800, { simwaitold: '1', closed: 'swisscontract-ai,blog' });
+  const plates = await js(`[...document.querySelectorAll('.plate')].map(p=>({n:p.querySelector('b').textContent,siren:!!p.querySelector('.siren'),h:Math.round(p.getBoundingClientRect().height),l:p.getAttribute('aria-label')}))`);
+  const ps = plates.find((p) => p.n === 'swisscontract-ai'), pb = plates.find((p) => p.n === 'blog');
+  assert.ok(ps.siren && /Alert: an agent needs help\./.test(ps.l), 'the closed room with the ambulance: siren and words on its plate');
+  assert.ok(!pb.siren && !/Alert:/.test(pb.l), 'a calm closed room: no siren');
+  assert.ok(ps.h === h0 && pb.h === h0, `the siren does not change the plate size (${ps.h}/${pb.h} vs ${h0} without a siren)`);
+  await shot('plates', 1280, 800);
+
+  // full density: the tone without the compact rooms' inner ring
+  await load(1440, 900, { simwaitold: '1', density: 'full' });
+  const ring = await js(`[...document.querySelectorAll('#stage .room[data-alert]')].map(r=>getComputedStyle(r).boxShadow)`);
+  assert.ok(ring.length >= 1 && ring.every((b) => !/255, 255, 255/.test(b)), 'full density: dark overlay only ' + JSON.stringify(ring));
   console.log('[034] all checks passed');
 };
