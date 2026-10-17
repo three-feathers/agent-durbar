@@ -16,7 +16,9 @@
  *   - the lobby (spec 024): missing, sticking out of the floor, overlapping a room or the door plates, not holding its 5 places, a place or slot
  *     sticking out of its tile, a walking figure that is not standing on a slot once the walks have settled, or more figures than empty chairs.
  *   - floors (spec 033, `simfloors=1`): with two or more floors on, a room header or door plate without its floor tag; with one floor on,
- *     any floor tag; the top bar controls overlapping each other or sticking out of the window (the Floors button must fit at 1280x800).
+ *     any floor tag; the top bar controls overlapping each other or sticking out of the window (the Floors button must fit at 1280x800);
+ *     a 40-character floor name (renamed through the panel) breaking a room header, a plate or the top bar; a floor that is off with agents
+ *     waiting for you that does not say so on its row in the Floors panel, or that shows it anywhere else (pills, button) (FR-010, issue #122).
  * An expanded `+N more` is allowed to scroll the floor (the spec says it expands in place) but must still not overlap.
  */
 'use strict';
@@ -133,6 +135,28 @@ function floorsCheck(expectTags) {
   }
   const btn = document.getElementById('floorsBtn');
   if (!btn || btn.hidden) problems.push('Floors button missing');
+  /* every room header keeps the floor tag and the + / MCP buttons inside it (a long tag shrinks, it never pushes them out;
+     the door button sits on the room's edge on purpose and is not checked) */
+  stage.querySelectorAll('.room-head').forEach((h) => {
+    const hb = R(h);
+    [...h.querySelectorAll('.floor-tag, .room-new, .room-mcp, .room-dots, .room-aiu')].forEach((c) => { const b = R(c); if (b.width && (b.right > hb.right + 0.5 || b.left < hb.left - 0.5)) problems.push(`room header part sticks out: ${(c.className || c.tagName).toString().slice(0, 20)}`); });
+  });
+  return problems;
+}
+
+/* spec 033 FR-010 (issue #122): the off floor's row says what waits there; nothing else changes */
+function offAttentionCheck() {
+  const problems = [];
+  const pop = document.getElementById('floorsPop');
+  if (pop.hidden) document.getElementById('floorsBtn').click();
+  const att = document.querySelector('#floorsPop [data-att="f-personal"]');
+  const text = att && !att.hidden ? att.textContent : '';
+  if (!/^Off, .*\d+ (waiting|errors?|at credit limit)/.test(text)) problems.push(`no attention text on the off floor's row (got "${text}")`);
+  if (document.querySelector('#floorsPop [data-att="ground"]:not([hidden])')) problems.push('attention text on a floor that is on');
+  const btn = document.getElementById('floorsBtn').textContent;
+  if (btn !== 'Floors 2/3') problems.push(`button changed: ${btn}`);
+  if (/waiting|error/i.test(btn)) problems.push('attention shown on the button');
+  document.getElementById('floorsBtn').click();
   return problems;
 }
 
@@ -216,13 +240,34 @@ async function driver(ctx) {
       ['1 floor on', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Personal,Client%20A', false],
       ['3 floors on, 2 doors closed', 'sim=15&simfreeze=1&simfloors=1&closed=blog,infra-notes', true],
       ['2 floors on, 1 door closed', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Client%20A&closed=mcp-swiss', true],
+      ['40-char floor name', 'sim=15&simfreeze=1&simfloors=1&closed=infra-notes', true, 'long'],
     ];
-    for (const [label, q, tags] of cases) {
+    for (const [label, q, tags, extra] of cases) {
       const tag = `floors ${w}x${h} ${label}`;
-      await run(tag, q, w, h, shotsDir ? `floors-${w}x${h}-${label.replace(/[^a-z0-9]+/gi, '-')}` : '');
+      if (extra === 'long') {
+        /* rename Client A to the longest allowed name through the panel and its dialog, then check the office again */
+        await load(q, w, h);
+        await ctx.js(`(async()=>{const w=ms=>new Promise(r=>setTimeout(r,ms));document.getElementById('floorsBtn').click();await w(100);
+          document.querySelector('#floorsPop [data-fl="rename"][data-floor="f-clienta0"]').click();await w(100);
+          document.getElementById('mdIn').value='Client A with a very long floor name 40!';
+          [...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent==='Rename').click();await w(200);
+          document.getElementById('floorsBtn').click();await w(300);})()`);
+        await sleep(400);
+        const r1 = await ctx.js(`(${pageCheck.toString()})(false)`); total++;
+        if (r1.problems.length) { failed++; console.log(`FAIL ${tag}: ${r1.problems.slice(0, 6).join('; ')}`); }
+        const named = await ctx.js(`[...document.querySelectorAll('#stage .floor-tag')].some(t=>t.textContent.length===40)`);
+        if (!named) { failed++; console.log(`FAIL ${tag}: the 40-character name is not on a tag`); }
+        rows.push({ label: tag, ...r1.info, problems: r1.problems.length });
+        if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-floors-${w}x${h}-long-name.png`));
+      } else await run(tag, q, w, h, shotsDir ? `floors-${w}x${h}-${label.replace(/[^a-z0-9]+/gi, '-')}` : '');
       const fp = await ctx.js(`(${floorsCheck.toString()})(${tags})`);
       total++;
       if (fp.length) { failed++; console.log(`FAIL ${tag}: ${fp.slice(0, 6).join('; ')}`); }
+      if (/floorsoff=Personal(&|$)/.test(q)) {
+        const ap = await ctx.js(`(${offAttentionCheck.toString()})()`);
+        total++;
+        if (ap.length) { failed++; console.log(`FAIL ${tag} off-floor attention: ${ap.join('; ')}`); }
+      }
     }
   }
   console.log('\nlayout summary (density/helpers shown, stage height vs floor):');

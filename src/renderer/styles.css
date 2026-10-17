@@ -543,7 +543,9 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .fl-t{flex:1;min-width:0;display:flex;flex-direction:column}
 .fl-t b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fl-t small{font-size:11.5px;color:var(--muted)}
-.fl-floor.off .fl-t,.fl-floor.off .fl-folder .fl-fn{opacity:.65}
+.fl-floor.off .fl-t b,.fl-floor.off .fl-t small:not(.fl-att),.fl-floor.off .fl-folder .fl-fn{opacity:.65}
+.fl-t .fl-att{font-size:11.5px;font-weight:650;color:var(--amber-ink)}
+.fl-t .fl-att[hidden]{display:none}
 .fl-folder{display:flex;align-items:center;gap:6px;padding:4px 0 0 52px;font-size:12.5px}
 .fl-fn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fl-folder select{height:26px;max-width:170px;border:1px solid var(--line);background:var(--surface-2);border-radius:8px;font:inherit;font-size:12px;color:var(--ink)}

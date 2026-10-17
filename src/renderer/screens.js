@@ -100,7 +100,7 @@
     }
     /* Floors (spec 033 FR-023): the same controls as the top-bar Floors panel, painted by app.js into #floorsSet */
     const floorsSec=X.floors&&X.floors.on()?`<section class="scr-sec" aria-labelledby="flH"><h3 id="flH">Floors</h3>
-        <p class="scr-note">Groups of folders. A floor that is <b>off</b> is hidden from the office and not counted in Working, Waiting, Idle, Errors and Done. <b>Its agents keep running</b> and can spend credits; the office credit total still counts them. The same controls are in the <b>Floors</b> button of the top bar.</p>
+        <p class="scr-note">Groups of folders. A floor that is <b>off</b> is hidden from the office and not counted in Working, Waiting, Idle, Errors and Done. <b>Its agents keep running</b> and can spend credits; the office credit total still counts them, and an agent there that waits for you or has an error is shown <b>only here</b>, on its floor's row (for example "Off, 1 waiting"). The same controls are in the <b>Floors</b> button of the top bar.</p>
         <div class="floors-ui floors-set" id="floorsSet" tabindex="-1"></div></section>`:'';
     const ab=app.about;
     const aboutSec=ab?`<section class="scr-sec" aria-labelledby="aboutH"><h3 id="aboutH">About</h3>

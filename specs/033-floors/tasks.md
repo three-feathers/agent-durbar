@@ -99,7 +99,7 @@
 ## Phase 10: Change 2026-10-17 (maintainer review, issue #122)
 
 - [x] T032 Merge `main` into `033-floors` (PR #121: usage totals kept across restarts) and resolve `src/renderer/usagetotals.js` / `app.js`; check that the office tooltip's "from floors that are off" amount uses the same since-reset totals [FR-016]
-- [ ] T033 Off-floor attention text on the floor's row in `floorsBodyHTML` (`src/renderer/app.js`): "Off, N waiting, N error(s), N at limit" from main agents and helpers of that floor's shown-or-hidden rooms; plain text, no colour-only cue; nothing else changes [FR-010]
-- [ ] T034 `scripts/check-office-overlap.js` and `scripts/shots-033.js`: a floor that is off with waiting/error agents shows the text in the panel and nowhere else (pills, button unchanged); a 40-character floor name at 1280x800 and 1440x900 (tags, plates, panel, top bar) [FR-010, edge case]
-- [ ] T035 Docs: README status and known limits (the off-floor text in the panel), CHANGELOG line, spec verification; reply in issue #122 point by point [VIII]
+- [x] T033 Off-floor attention text on the floor's row in `floorsBodyHTML` (`src/renderer/app.js`): "Off, N waiting, N error(s), N at limit" from main agents and helpers of that floor's shown-or-hidden rooms; plain text, no colour-only cue; nothing else changes [FR-010]
+- [x] T034 `scripts/check-office-overlap.js` and `scripts/shots-033.js`: a floor that is off with waiting/error agents shows the text in the panel and nowhere else (pills, button unchanged); a 40-character floor name at 1280x800 and 1440x900 (tags, plates, panel, top bar) [FR-010, edge case]
+- [x] T035 Docs: README status and known limits (the off-floor text in the panel), CHANGELOG line, spec verification; reply in issue #122 point by point [VIII]
 

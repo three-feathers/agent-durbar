@@ -13,8 +13,9 @@
  *   FR-016  the office credit total is unchanged and its tooltip names the part from floors that are off.
  *   FR-022  Only: one floor on, no floor tags.
  *   US2 #7  the full-screen chat of an agent closes when its floor is switched off; FR-013 the all-off message.
+ *   FR-010  (issue #122) the off floor's row in the panel says what waits there ("Off, 1 waiting, ..."); the pills and the button do not.
  *   FR-023  Settings > Floors: a switch there updates the office, the pills, the top-bar button and the panel.
- * Screenshots: 033-floors-on, 033-floors-panel, 033-floor-off, 033-settings-floors at both sizes.
+ * Screenshots: 033-floors-on, 033-floors-panel, 033-floor-off, 033-floor-off-panel, 033-settings-floors at both sizes.
  */
 const path = require('path');
 const assert = require('assert');
@@ -101,6 +102,15 @@ module.exports = async (ctx) => {
     assert.strictEqual(s.aiu, totalBefore, 'FR-016: the office total is unchanged');
     assert.ok(/from floors that are off/.test(s.aiuTip || ''), 'FR-016: the tooltip names the off-floor spend');
     await shot('floor-off', w, h);
+    // FR-010 (maintainer decision, issue #122): attention from the off floor, only as text on its row
+    await panel(true);
+    const att = await js(`(()=>{const e=document.querySelector('#floorsPop [data-att="f-personal"]');return e&&!e.hidden?e.textContent:''})()`);
+    console.log('[033]', w, 'off-floor row:', att);
+    assert.ok(/^Off, /.test(att) && /waiting|at credit limit/.test(att), 'FR-010: the off floor says what waits there');
+    assert.strictEqual(await js(`document.getElementById('floorsBtn').textContent`), 'Floors 2/3', 'FR-010: the button is unchanged');
+    assert.deepStrictEqual((await state()).pills, s.pills, 'FR-010: the pills are unchanged');
+    await shot('floor-off-panel', w, h);
+    await panel(false);
 
     // FR-022 Only
     await click('[data-fl="only"][data-floor="f-clienta0"]');

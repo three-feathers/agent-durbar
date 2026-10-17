@@ -521,6 +521,7 @@ function renderAll(){
   const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.door), inPanel=ae&&ae.closest&&ae.closest('#panel');
   const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':ae.dataset.door?'data-door':'');
   renderStats();
+  updateFloorAttention();
   if(ui.view==='office')renderOffice(); else renderList();
   renderDoorBar();
   syncWalkers();
@@ -941,6 +942,22 @@ function toggleFloors(on){
   else if(document.activeElement&&pop.contains(document.activeElement))btn.focus();
 }
 const roomsOnFloor=id=>roomsInOrder().filter(r=>(floorById(r.floor)||{}).id===id);
+/* Attention on a floor that is off (FR-010, maintainer decision in issue #122): plain text in the Floors controls only,
+   e.g. "Off, 1 waiting, 1 error". Main agents and helpers of every room on that floor, hidden rooms included. Never a pill,
+   toast, sound, sort order or change to "Floors n/m". */
+function offFloorAttention(fid){
+  const f=floorById(fid); if(!f||f.on)return '';
+  const ids=new Set(roomsOnFloor(fid).map(r=>r.id));
+  let w=0,e=0,l=0;
+  agents.forEach(a=>{const r=roomOf(a);if(!r||!ids.has(r.id))return;const st=vis(a);if(st==='waiting'){if(a.limit)l++;else w++;}else if(st==='error')e++;});
+  const parts=[];
+  if(w)parts.push(w+' waiting'); if(e)parts.push(e+' error'+(e===1?'':'s')); if(l)parts.push(l+' at credit limit');
+  return parts.length?'Off, '+parts.join(', '):'';
+}
+/* refresh only those texts on every render, so an open select or the focus in the panel is never disturbed */
+function updateFloorAttention(){
+  document.querySelectorAll('.floors-ui [data-att]').forEach(el=>{const t=offFloorAttention(el.dataset.att);if(el.textContent!==t)el.textContent=t;el.hidden=!t;});
+}
 /* The floors controls (FR-007, FR-023): one markup for the top-bar panel and the Settings section. `px` keeps ids unique per place. */
 function floorsBodyHTML(px){
   const last=FLOORS.floors.length-1;
@@ -951,7 +968,7 @@ function floorsBodyHTML(px){
       const rooms=roomsOnFloor(f.id);
       return `<div class="fl-floor${f.on?'':' off'}"><div class="fl-row">
         <button class="fl-sw" type="button" data-fl="on" data-floor="${esc(f.id)}" aria-pressed="${f.on}" aria-label="${esc(f.name)}: ${f.on?'on':'off'}. Switch ${f.on?'off':'on'}.">${f.on?'On':'Off'}</button>
-        <div class="fl-t"><b title="${esc(f.name)}">${esc(f.name)}</b><small>${rooms.length} folder${rooms.length===1?'':'s'}</small></div>
+        <div class="fl-t"><b title="${esc(f.name)}">${esc(f.name)}</b><small>${rooms.length} folder${rooms.length===1?'':'s'}</small><small class="fl-att" data-att="${esc(f.id)}"${offFloorAttention(f.id)?'':' hidden'}>${esc(offFloorAttention(f.id))}</small></div>
         <button class="btn" type="button" data-fl="only" data-floor="${esc(f.id)}" title="Switch ${esc(f.name)} on and every other floor off" aria-label="Only ${esc(f.name)}">Only</button>
         <button class="btn" type="button" data-fl="rename" data-floor="${esc(f.id)}" aria-label="Rename ${esc(f.name)}">Rename</button>
         <button class="btn" type="button" data-fl="up" data-floor="${esc(f.id)}" aria-label="Move ${esc(f.name)} up"${i===0?' disabled':''}>Up</button>
@@ -971,7 +988,7 @@ function paintFloors(box,html){
 }
 function renderFloorsPanel(){
   const pop=$('floorsPop'); if(!pop||pop.hidden||!floorsLive())return;
-  paintFloors(pop,'<div class="fp-h">Floors <small>A floor that is off is hidden and not counted. Its agents keep running and can spend credits.</small></div>'+floorsBodyHTML('fp'));
+  paintFloors(pop,'<div class="fp-h">Floors <small>A floor that is off is hidden and not counted. Its agents keep running and can spend credits; what waits for you there is shown only here.</small></div>'+floorsBodyHTML('fp'));
 }
 /* Settings > Floors (FR-023): same controls; painted when the Settings screen is open */
 function renderFloorsSettings(){
