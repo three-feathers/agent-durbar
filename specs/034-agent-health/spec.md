@@ -49,6 +49,7 @@
 - An agent leaves Error (new turn): the ambulance goes; if another agent is still in Error, the ambulance moves to the most recent of them.
 - The context window shrinks (compaction, a new model with a larger window, spec 030): the body follows the new percentage at once.
 - An agent at a place in the lobby (spec 024): its desk shows the empty chair as today; the walking figure is not changed by this feature.
+- An agent in a hidden folder or on a floor that is off (spec 033): it never takes the ambulance, so the one ambulance is always on screen (added 2026-10-17 when merging spec 033).
 - Demo mode (sample data): the rules apply only to what the sample data says (no context events: normal bodies).
 
 ## Requirements *(mandatory)*
@@ -84,6 +85,7 @@
 - `test:` `scripts/test-mood.ts` (bands, priority, one ambulance and its hand-over, streak, waiting time from timestamps), `scripts/test-credits.ts` (`seriousMode`). Mutation check: 19 deliberate breaks of `mood.js` and 4 of the settings code, each fails a test.
 - `sim:` `scripts/shots-034.js` at 1440x900 and 1280x800: heavy and monster with their words, exactly one ambulance and its hand-over to a newer error and back, faint at the limit (no waving), impatient only with `simwaitold=1`, dizzy after 3 failed calls and cleared by a successful one, Serious mode on (no drawing, no words) and off, reduced motion (nothing animates), the `mini` density, every scene box the same size. `check:office` 105/105.
 - Fixed in review: "impatient" now counts only while the figure is in Waiting (a request answered elsewhere without a `permission` event must not leave it tapping); a fainted agent no longer waves; the faint tilt turns around the neck (`.scene *{transform-box:fill-box}` moved the head down to the chest).
+- Merged with spec 033 (floors): the ambulance is chosen among agents whose room is shown (not hidden, floor on); checked in the driver with `simfloors=1&floorsoff=Client A`.
 - `[KNOWN GAP]` An agent away at a place (spec 024) shows an empty chair, so its mood drawing is hidden (the walking figure is not changed, as specified); the card words stay. In the simulator Sven is dizzy but away, so the driver makes another agent dizzy with `window.__durbarSimEmit`. Tested in the driver; follow-up T009.
 - `[KNOWN GAP]` The List view has no mood words (the spec covers the office cards). Follow-up T009.
 - `[KNOWN GAP]` Not run on a real Copilot session: the events it reads (`status`, `toolCall`, `permission`, context, limit) are the ones the adapter already sends (specs 003, 011, 019).

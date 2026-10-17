@@ -7,7 +7,9 @@ import { CopilotAdapter } from '../adapters/copilot';
 import type { AgentAdapter } from '../adapters/types';
 import { resolveWorkspaceCwd } from '../adapters/workspace';
 import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, stageAttachment } from '../shared/attachments';
-import type { AddResult, AgentInfo, ModelChoice, PermMode, PickedFile, ResumeResult, SessionOptions, VsChatListResult } from '../shared/api';
+import type { AddResult, AgentInfo, FloorsResult, FloorsState, ModelChoice, PermMode, PickedFile, ResumeResult, SessionOptions, VsChatListResult } from '../shared/api';
+import { GROUND } from '../shared/floors';
+import type { FloorOp } from '../shared/floors';
 import { openInVSCode } from './vscode';
 import { isHttpUrl } from '../shared/url';
 import { FolderStore, restoreMode } from './folders';
@@ -175,7 +177,7 @@ const startOptionsFor = (a: AgentInfo) => ({
 async function addWorkspace(
   workspace: string,
   permMode: PermMode,
-  opts: { resumeSessionId?: string; silent?: boolean; model?: string; effort?: string; persist?: boolean; maxAiCredits?: number | null } = {},
+  opts: { resumeSessionId?: string; silent?: boolean; model?: string; effort?: string; persist?: boolean; maxAiCredits?: number | null; floor?: string } = {},
 ): Promise<AgentInfo> {
   const model = opts.model || DEFAULT_MODEL;
   const effort = asEffort(opts.effort);
@@ -185,7 +187,9 @@ async function addWorkspace(
   const id = await adapter.start({ ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId });
   const info: AgentInfo = { ...draft, id, hidden: folderStore?.get(wsKey(draft))?.hidden, closed: folderStore?.get(wsKey(draft))?.closed };
   agents.set(id, info);
-  if (opts.persist) folderStore?.upsert({ workspace: wsKey(info), permMode, model, effort, maxAiCredits: info.maxAiCredits });
+  if (opts.persist) folderStore?.upsert({ workspace: wsKey(info), permMode, model, effort, maxAiCredits: info.maxAiCredits, floor: opts.floor });
+  // An existing folder keeps its floor; a new one gets the chosen floor (spec 033 FR-006).
+  info.floor = folderStore?.floorOfFolder(wsKey(info)) ?? GROUND;
   if (!opts.silent) toRenderer('agent:added', info);
   return info;
 }
@@ -210,7 +214,7 @@ async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions
   const errors: string[] = [];
   for (const p of paths) {
     try {
-      added.push(await addWorkspace(p, permMode, { model: opts.model, effort: opts.effort, persist: opts.persist, maxAiCredits: opts.maxAiCredits }));
+      added.push(await addWorkspace(p, permMode, { model: opts.model, effort: opts.effort, persist: opts.persist, maxAiCredits: opts.maxAiCredits, floor: opts.floor }));
     } catch (err) {
       errors.push(`${path.basename(p)}: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -225,7 +229,7 @@ function restoreFolders(): void {
     try {
       if (!fs.existsSync(f.workspace)) continue; // e.g. an unplugged drive: stays saved, just not shown
       const rm = restoreMode(f.permMode); // exactly as saved, Allow all included, flagged so the UI shows "restored" (spec 003 FR-025/026)
-      const info = infoFor(f.workspace, rm.mode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, permRestored: rm.restored || undefined, maxAiCredits: f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits });
+      const info = infoFor(f.workspace, rm.mode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, maxAiCredits: f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits });
       agents.set(info.id, info);
     } catch {
       /* folder gone or not a folder any more */
@@ -241,7 +245,7 @@ ipcMain.handle('agents:list', () => [...agents.values()]);
 const sessionOpts = (o: unknown): SessionOptions & { persist: boolean } => {
   const x = (o && typeof o === 'object' ? o : {}) as Record<string, unknown>;
   const cap = x.maxAiCredits === null ? null : parseCap(x.maxAiCredits);
-  return { model: typeof x.model === 'string' ? x.model.slice(0, 100) : undefined, effort: asEffort(x.effort), maxAiCredits: cap, persist: true };
+  return { model: typeof x.model === 'string' ? x.model.slice(0, 100) : undefined, effort: asEffort(x.effort), maxAiCredits: cap, floor: typeof x.floor === 'string' ? x.floor.slice(0, 20) : undefined, persist: true };
 };
 
 ipcMain.handle('agents:addFolder', async (_e, mode: unknown, opts: unknown) => {
@@ -522,6 +526,31 @@ ipcMain.handle('folders:setHidden', (_e, id: unknown, hidden: unknown) => {
   return { ok: true };
 });
 
+// ---- Floors (spec 033): office data only; no handler pauses, stops or ends a session (FR-009, FR-010) ----
+const floorsState = (): FloorsState => {
+  const doc = folderStore?.floors() ?? { floors: [{ id: GROUND, name: 'Ground floor', on: true }], lastFloor: GROUND };
+  const byAgent: Record<string, string> = {};
+  for (const a of agents.values()) byAgent[a.id] = a.floor ?? GROUND;
+  return { floors: doc.floors.map((f) => ({ ...f, ground: f.id === GROUND })), lastFloor: doc.lastFloor, byAgent };
+};
+/** After a floor change, every agent takes its folder's floor from the store again (a deleted floor sends them to the ground floor). */
+const floorsResult = (r: FloorOp | undefined): FloorsResult => {
+  if (folderStore) for (const a of agents.values()) a.floor = folderStore.floorOfFolder(wsKey(a));
+  return r && r.ok ? { ok: true, state: floorsState() } : { ok: false, error: r && !r.ok ? r.error : 'Floors are not available.', state: floorsState() };
+};
+ipcMain.handle('floors:state', () => floorsState());
+ipcMain.handle('floors:create', (_e, name: unknown) => floorsResult(folderStore?.createFloor(name)));
+ipcMain.handle('floors:rename', (_e, id: unknown, name: unknown) => floorsResult(folderStore?.renameFloor(id, name)));
+ipcMain.handle('floors:reorder', (_e, ids: unknown) => floorsResult(folderStore?.reorderFloors(ids)));
+ipcMain.handle('floors:delete', (_e, id: unknown) => floorsResult(folderStore?.deleteFloor(id)));
+ipcMain.handle('floors:setOn', (_e, id: unknown, on: unknown) => floorsResult(folderStore?.setFloorOn(id, on === true)));
+ipcMain.handle('floors:only', (_e, id: unknown) => floorsResult(folderStore?.onlyFloor(id)));
+ipcMain.handle('floors:moveFolder', (_e, agentId: unknown, floorId: unknown): FloorsResult => {
+  const a = typeof agentId === 'string' ? agents.get(agentId) : undefined;
+  if (!a || !folderStore || !folderStore.moveFolder(wsKey(a), floorId)) return { ok: false, error: 'Unknown folder or floor.', state: floorsState() };
+  return floorsResult({ ok: true, doc: folderStore.floors() });
+});
+
 ipcMain.handle('folders:setClosed', (_e, id: unknown, closed: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false };
@@ -601,6 +630,8 @@ function createWindow(): void {
     query.sim = String(sim);
     if (dev.DURBAR_SIM_FREEZE === '1') query.simfreeze = '1';
     if (dev.DURBAR_SIM_ROOMS) query.simrooms = dev.DURBAR_SIM_ROOMS;
+    if (dev.DURBAR_SIM_FLOORS === '1') query.simfloors = '1';
+    if (dev.DURBAR_SIM_FLOORS_OFF) query.floorsoff = dev.DURBAR_SIM_FLOORS_OFF.slice(0, 200);
   }
   void win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query });
   // Dev: DURBAR_SHOT=/tmp/out.png [DURBAR_SHOT_SIZE=1280x800] [DURBAR_SHOT_CLICK=sim-1] saves a screenshot and quits.

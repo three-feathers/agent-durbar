@@ -16,7 +16,8 @@
  *          every trouble is named in the card's accessible label, the visible card text does not change;
  *   - US3  Serious mode on: no mood in any scene and no mood drawing in the page; off again: the drawings come back;
  *          reduced motion: nothing animates (emulated through the DevTools protocol);
- *   - FR-002 the compact densities (mini) use the same rules; scene boxes keep their size.
+ *   - FR-002 the compact densities (mini) use the same rules; scene boxes keep their size;
+ *   - Edge  an agent on a floor that is off (spec 033) never takes the ambulance.
  * Crops of single desks (device pixels) go to 034-crop-<state>.png for a close look at the drawings.
  */
 const fs = require('fs');
@@ -160,5 +161,17 @@ module.exports = async (ctx) => {
   const mini = await desks();
   assert.ok(mini.some((x) => x.body === 'monster') && mini.filter((x) => x.trouble === 'ambulance').length === 1 && mini.some((x) => x.trouble === 'faint'), 'mini density: same moods');
   await shot('mini', 1280, 800);
+  // Edge (spec 033): an agent on a floor that is off never takes the ambulance (no alerts from an off floor)
+  await load(1280, 800, { simwaitold: '1' });
+  const tomas = (await desks()).find((x) => x.trouble === 'ambulance');
+  await load(1280, 800, { simwaitold: '1', simfloors: '1', floorsoff: 'Client A' });
+  let fl = await desks();
+  assert.ok(!fl.some((x) => x.id === tomas.id), 'the agent with the ambulance is on the floor that is off');
+  const vis1 = fl.find((x) => !x.away && x.st === 'idle' && !x.trouble);
+  assert.ok(vis1, 'an idle agent on a floor that is on');
+  await emit({ type: 'status', sessionId: vis1.id, timestamp: Date.now(), status: 'error', intent: 'Session failed' }); await ctx.sleep(400);
+  await emit({ type: 'status', sessionId: tomas.id, timestamp: Date.now(), status: 'error', intent: 'Session failed again' }); await ctx.sleep(700);
+  fl = await desks();
+  assert.deepStrictEqual(fl.filter((x) => x.trouble === 'ambulance').map((x) => x.id), [vis1.id], 'a newer error on an off floor does not take the ambulance away');
   console.log('[034] all checks passed');
 };

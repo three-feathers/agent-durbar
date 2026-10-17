@@ -117,3 +117,8 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | --- | --- | --- |
 | [034](034-agent-health/spec.md) | The figure follows the context window (heavy 70-90%, grumpy monster above 90%), trouble signals (ambulance, faint, dizzy, impatient), Serious mode | **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/shots-034.js`; not checked on a real session; follow-up T009 (walking figure, List view) |
 
+## Feature 033: floors
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [033](033-floors/spec.md) | Floors: group rooms (folders) and switch a whole floor off so it leaves the office, the lobby and the status counts | built 2026-10-17 on branch `033-floors` ([plan](033-floors/plan.md), [research](033-floors/research.md), [tasks](033-floors/tasks.md)); simulator and unit tests, 0 AI credits |
