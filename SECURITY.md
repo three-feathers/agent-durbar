@@ -2,7 +2,7 @@
 
 Agent Durbar is alpha software that starts coding agents on your machine. Please report security problems **privately** through GitHub: open the repository's **Security** tab and choose **Report a vulnerability** (private vulnerability reporting). Please do not open a public issue for a vulnerability.
 
-Include what you found, how to reproduce it, and the version and OS. This is a hobby project run by one person: expect an acknowledgement within about a week, not an SLA.
+Include what you found, how to reproduce it, and the version and OS. This is a small volunteer project run by the Three Feathers team: expect an acknowledgement within about a week, not an SLA.
 
 Things that are in scope: the permission broker (an agent doing something that was denied or not asked), the IPC bridge between the renderer and main process, attachment handling, and how the app launches `code` and the Copilot runtime.
 

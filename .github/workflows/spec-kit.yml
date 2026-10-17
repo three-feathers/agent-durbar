@@ -4,6 +4,7 @@ name: Spec Kit
 # changing a complete specs/NNN-*/ folder (spec.md, plan.md, tasks.md) -- unless it has a Spec-Exempt reason or label.
 # Logic lives in .github/scripts/spec-gate.sh. Runs on label and description edits too, so adding the
 # `spec-exempt` label or a "Spec-Exempt: <reason>" line re-evaluates the check.
+# The second job (Docs check, warning only) lives in the same file; see .github/scripts/docs-check.sh. It never fails and is not a required check.
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited, labeled, unlabeled]
@@ -35,3 +36,24 @@ jobs:
           PR_AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}
           PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
         run: bash .github/scripts/spec-gate.sh
+
+  # Reminder only: warns (annotation + summary) when src/ changes without README/docs/CHANGELOG, or npm scripts change without
+  # README, unless the PR says "Docs: n/a <reason>". It cannot block: continue-on-error, the script always exits 0, and this job
+  # is deliberately NOT in the required checks of the main ruleset (.github/ruleset-main.json).
+  docs-check:
+    name: Docs check (warning only)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Docs check self-test (throwaway repos, no network)
+        run: bash .github/scripts/test-docs-check.sh
+      - name: Warn when docs may be missing
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS_JSON: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: bash .github/scripts/docs-check.sh
