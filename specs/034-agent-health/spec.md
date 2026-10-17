@@ -89,3 +89,50 @@
 - `[KNOWN GAP]` An agent away at a place (spec 024) shows an empty chair, so its mood drawing is hidden (the walking figure is not changed, as specified); the card words stay. In the simulator Sven is dizzy but away, so the driver makes another agent dizzy with `window.__durbarSimEmit`. Tested in the driver; follow-up T009.
 - `[KNOWN GAP]` The List view has no mood words (the spec covers the office cards). Follow-up T009.
 - `[KNOWN GAP]` Not run on a real Copilot session: the events it reads (`status`, `toolCall`, `permission`, context, limit) are the ones the adapter already sends (specs 003, 011, 019).
+
+## Changes
+
+### 2026-10-17: rooms darken with their worst agent, sirens (issue #135)
+
+**Input**: Ruben, after PR #134: "la habitación también vaya cambiando de color a más oscuro para que sea más evidente, y con sirenas cuando ya sea súper evidente". Trouble should be visible from across the office, not only at the desk.
+
+#### Clarifications (Ruben, 2026-10-17)
+
+- **Q: What makes a room darker?** **Its worst agent.** One room, one tone, taken from the main agent that is doing worst (helpers are not counted, as in the rest of this spec).
+- **Q: How does it darken?** **The room's own colour, darker** (sage, blue, sand, clay stay recognisable): a little darker when the worst agent is heavy, clearly darker when it is a monster or in trouble.
+- **Q: The sirens?** **A small light next to the room name** that blinks red/blue, and the same light on the door plate when the room is closed.
+- **Q: When do the sirens come on?** **While the room has the ambulance or a fainted agent** (the two strongest signals of this spec).
+- Decided by default and recorded here (open to change in review):
+  - **Tone steps**: `calm` (every agent normal and without trouble: the room looks as today), `uneasy` (worst agent heavy), `alarm` (a monster, an agent in Error, or any trouble: ambulance, faint, impatient, dizzy). An agent in Error without the ambulance counts as `alarm` too.
+  - **Closed rooms**: the door plate keeps its own status colours (spec 017); only the siren is added.
+  - **Words**: the room's accessible label (open room section and door plate) adds "Alert: an agent needs help" while the siren is on; the tone itself is not spoken (each card already names its agent's state).
+  - Serious mode turns tones and sirens off; reduced motion: the siren is shown but does not blink; a floor that is off (spec 033) or a hidden folder shows nothing, as before.
+
+#### User scenarios
+
+1. **Given** a room whose agents are all normal and without trouble, **Then** it looks as today.
+2. **Given** a room whose worst agent is heavy (70-90%), **Then** its floor colour is a little darker, still its own colour.
+3. **Given** a room with a monster, an agent in Error, or an agent fainted, impatient or dizzy, **Then** its floor colour is clearly darker.
+4. **Given** the room has the ambulance, or a fainted agent, **Then** a small siren blinks next to its name (and on its door plate when closed); the room's label says "Alert: an agent needs help". When the ambulance moves to another room, the siren moves with it.
+5. **Given** Serious mode, **Then** every room and plate looks as today. **Given** reduced motion, **Then** the siren does not blink.
+
+#### Edge cases
+
+- The worst agent gets better (new turn, compaction, limit raised): the room's tone follows at once (the same 5 s mood timer as the figures).
+- An agent away at a place in the lobby still counts for its room (its mood is known even though its chair is empty).
+- Text in the room header (name, path, floor tag, usage total) keeps a contrast of at least 4.5:1 at every tone; the cards keep their own background.
+
+#### Requirements
+
+- **FR-008** `[KNOWN GAP]` (planned: T010) Pure `roomAlertOf(moods)` in `src/renderer/mood.js`: list of `{state, body, trouble}` of a room's main agents → `{tone: 'calm'|'uneasy'|'alarm', siren: boolean}` with the rules above; unknown or empty input → calm, no siren.
+- **FR-009** `[KNOWN GAP]` (planned: T011) Open rooms (every density): `data-alert="uneasy|alarm"` on the room section and darker `--tint`/`--wall` per room colour in `styles.css`; the siren (small inline SVG, red/blue) in the room header next to the name; door plates get the siren only. No change to sizes: `check:office` stays green at 1440x900 and 1280x800.
+- **FR-010** `[KNOWN GAP]` (planned: T012) Words: the room section's and door plate's `aria-label` add "Alert: an agent needs help" while the siren is on.
+- **FR-011** `[KNOWN GAP]` (planned: T011) Calm: Serious mode removes tones and sirens; reduced motion stops the blink; header text contrast at least 4.5:1 at every tone (checked in the driver).
+- **FR-012** `[KNOWN GAP]` (planned: T013) Simulator: one room whose worst agent is heavy only, so all three tones can be seen at once.
+- **FR-013** `[KNOWN GAP]` (planned: T010, T014) Tests, no credits: `roomAlertOf` cases in `scripts/test-mood.ts` (each tone, priority, siren for ambulance and faint only, garbage input); driver `scripts/shots-034.js` extended (tones, siren moves with the ambulance, closed plate, Serious mode, reduced motion, contrast, floor off); screenshots at both sizes.
+
+#### Success criteria
+
+- **SC-003**: On the simulator, calm, uneasy and alarm rooms and at least one siren are visible at 1440x900 and 1280x800 with 15 agents, and `npm run check:office` passes.
+- **SC-004**: Serious mode on: no room has `data-alert` and no siren is in the page.
+

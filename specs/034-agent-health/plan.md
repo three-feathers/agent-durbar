@@ -34,3 +34,14 @@
 
 ## Verification (phase 3, 2026-10-17)
 - Driver `scripts/shots-034.js` (both sizes, Serious mode, reduced motion, `mini`), screenshots `docs/screenshots/034-*`, mutation check, review fixes and known gaps: see the spec's *Verification* section.
+
+## Plan for the 2026-10-17 delta: rooms darken, sirens (issue #135)
+
+- Constitution: I spec delta, plan and tasks before code; II renderer only, reads the moods already computed; III nothing new on disk (Serious mode is the existing switch); IV simulator and unit tests, 0 AIU; V calm: tones stay light, contrast checked, one small siren, reduced motion, Serious mode, no layout change; VI no platform code; VIII limits in the spec.
+- `mood.js`: `roomAlertOf(moods)` next to `troubleOf`, pure, unit-tested.
+- `app.js`: `roomAlert(r)` = `roomAlertOf` over `moodFor(a)` of the room's live main agents (and returns calm at once in Serious mode: the Error state counts for `alarm` and is not cleared by `moodFor`, found in analyze); `roomHTML` adds `data-alert` and the siren to the header; `plateHTML` adds the siren; both `aria-label`s add the words. The 5 s mood timer's signature already changes when a mood changes, so tones follow without a new timer.
+- `styles.css`: per room colour two darker steps for `--tint` and `--wall` (compact and full densities), `.siren` with a red/blue blink, off under reduced motion; colours picked so the header's grey path text keeps 4.5:1.
+- `sim.ts`: one room (likely `infra-notes`) gets an agent at about 78% context, so a room is `uneasy` only.
+- Driver: extend `scripts/shots-034.js` (tones per room from `data-alert`, the siren moving with the ambulance, closed plate, Serious mode, reduced motion, contrast computed from computed styles, floor off with `simfloors=1`).
+- Risks: darker rooms vs. calm UI (keep the steps small, review screenshots); the siren takes ~14 px of the room header, so long room names may cut earlier (check at both sizes); overlap with spec 033 floor tags in the header.
+
