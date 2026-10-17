@@ -63,6 +63,7 @@ For folders I trust I can pick the mode that approves everything without prompts
 **Acceptance Scenarios**:
 
 1. **Given** the top-bar mode "Allow all (no prompts)" (internally `allow`; called "Allow edits" before FR-028), **When** a folder is added, **Then** every request is approved with no card. *(test:)*
+2. **Given** the Allow all confirmation is open (chat-header mode menu, add folder or new session), **When** I use only the keyboard, **Then** focus is inside the dialog, Tab stays inside it, Escape cancels (mode unchanged) and focus returns to the control I came from. Only an explicit activation of *Allow all* confirms. *(test: dialog; sim: check:dialog-focus; FR-033)*
 
 ---
 
@@ -151,3 +152,11 @@ For folders I trust I can pick the mode that approves everything without prompts
 - **FR-032** `[IMPLEMENTED]` (test: permissions) **Windows paths give the folder, with the platform's separators**: `C:\repo\src\x.ts` → key `write:C:\repo\src`, label `write in repo/src/`; a read of `D:\data\in.csv` → `read:D:\data`; a file at a drive root `C:\x.ts` → `write:C:\`; a UNC path `\\server\share\dir\f.txt` → `write:\\server\share\dir`. Two writes in the same Windows folder share one key; a write in a subfolder does not match the parent's grant.
 - `[KNOWN GAP]` (task T028; test: permissions shows it) Known limit, unchanged: grant keys are compared exactly, so on Windows `C:\Repo` and `c:\repo` are different keys. The effect is conservative (the user is asked again, nothing extra is approved). Case-folding grant keys is not part of this change.
 - Not verified: a real Copilot session on Windows (what path spelling the runtime sends). CI runs `npm test` on Windows, so the host default is exercised there.
+
+### 2026-10-17 (fifth delta): keyboard focus in the Allow all confirmation (T029, issue #25)
+
+**What was wrong.** In `changeMode` (via the mode menu's click handler) the code called `anchor.focus()` right after the confirmation dialog opened, so keyboard focus went back to the mode chip *behind* the dialog. Escape was only handled on the dialog element, so it did nothing from there; Tab walked out into the page behind the modal. Reproduced on the simulator with real key events before the fix (focus after opening was `modeChip`, not the dialog).
+
+- **FR-033** `[IMPLEMENTED]` (test: dialog; sim: `npm run check:dialog-focus`) **The confirmation dialog is keyboard-correct.** While it is open, focus is inside it and cannot leave it (Tab and Shift+Tab wrap between its controls; a stray `focus()` on a control behind it is pulled back). **Escape closes it as a cancel**: no mode change, nothing confirmed. When it closes (Cancel, Escape, backdrop click or confirm) focus returns to the control that opened it (the mode chip, or the card for the right-click menu); after a confirmed change the chip is re-rendered and focus goes to the new chip. It applies to every use of the shared dialog (mode switch, "keep or clear grants", add folder in Allow all).
+- **Not weakened:** *Allow all* still needs an explicit activation of its button. Escape, Cancel, a backdrop click and the focus handling never confirm; opening the dialog does not change the mode. The primary (focused) button is still *Allow all*, as before (unchanged; see Not verified).
+- Not verified: a real screen reader (the dialog keeps `role="alertdialog"`, `aria-modal`, label and description); macOS and Windows keyboards (checked on Linux/Electron under xvfb with real key events, and in jsdom).

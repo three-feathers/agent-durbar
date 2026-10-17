@@ -6,15 +6,17 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **Docs only, no behaviour change:** spec 012 (Claude Code and Codex adapters) is clarified, researched, planned and split into tasks ([specs/012-claude-codex-adapters](specs/012-claude-codex-adapters/spec.md)). There is no Claude or Codex adapter yet and nothing was tried on a real account.
 
-## v0.1.0-alpha.3 (draft pre-release, 2026-10-17)
+- **Keyboard focus in the Allow all confirmation (spec 003 FR-033, issue #25).** Focus used to jump back to the mode chip behind the dialog, so Escape did nothing and Tab left the dialog. Now focus stays inside it, Tab is trapped, Escape cancels (mode unchanged) and focus returns to the chip. *Allow all* still needs an explicit confirm. Tests: `npm run test:dialog` (in `npm test`) and `npm run check:dialog-focus` (simulator, real key events).
 
-Small update on top of [v0.1.0-alpha.2](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.2): the permission mode rename, usage totals, Windows grant-scope tests and a docs catch-up. Spec: [026](specs/026-release-alpha3/spec.md). Built and tested on the simulator and unit tests; **no AI credits were spent for the release itself.**
+## v0.1.0-alpha.3 ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.3), 2026-10-17)
+
+Published by the maintainer as a **pre-release** (it was built as a draft first). It is the first published release. Small update on top of v0.1.0-alpha.2 (never published; its draft was removed in favour of this one, the [git tag](https://github.com/three-feathers/agent-durbar/tree/v0.1.0-alpha.2) remains): the permission mode rename, usage totals, Windows grant-scope tests and a docs catch-up. Spec: [026](specs/026-release-alpha3/spec.md). Built and tested on the simulator and unit tests; **no AI credits were spent for the release itself.**
 
 ### Read this first
 
 - **Still unsigned and not notarized.** macOS: right-click (Control-click) the app, choose **Open**, or `xattr -dr com.apple.quarantine "/Applications/Agent Durbar.app"`. Windows: SmartScreen "More info", then "Run anyway". Linux: `chmod +x` the AppImage.
 - **Untested on real hardware.** Only Linux has been run by hand. The macOS and Windows packages are built and unit-tested by CI, but nobody has launched them on a real Mac or Windows PC.
-- Same app id as alpha.2 (`io.github.three-feathers.agentdurbar`), so it is the same app as alpha.2 (not checked as an in-place upgrade on real hardware). No auto-update. Download newer releases by hand.
+- Same app id as alpha.2 (`io.github.three-feathers.agentdurbar`), so it should be the same app as alpha.2, but an in-place upgrade from alpha.2 was not checked. No auto-update. Download newer releases by hand.
 
 ### What's new
 
@@ -24,7 +26,9 @@ Small update on top of [v0.1.0-alpha.2](https://github.com/three-feathers/agent-
 - **Docs and process:** README, CHANGELOG and spec statuses brought in line with `main`; AGENTS.md has a "Keep docs in sync" rule; the PR template has a "Docs updated" box; a non-blocking check warns when `src/` changes without a docs change (spec 025).
 - **Screenshots of the mode menu, confirmation and right-click menu** (`docs/screenshots/m7-mode-switch.png`, `m7-mode-confirm.png`, `m7-mode-context.png`) were regenerated on the simulator and now say *Allow all*; the driver is `scripts/shots-mode.js` (spec 025 FR-005, T006).
 
-## v0.1.0-alpha.2 (draft pre-release, 2026-10-16)
+## v0.1.0-alpha.2 (never published, 2026-10-16)
+
+> The alpha.2 draft was deleted and replaced by alpha.3, which includes everything below. The git tag `v0.1.0-alpha.2` remains.
 
 Everything since [v0.1.0-alpha.1](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.1) (milestones 6 to 10 plus ownership). Spec: [023](specs/023-release-alpha2/spec.md). Built and tested on the simulator and unit tests; the real Copilot runtime was used only for small research captures (about 0.17 AIU) and free checks. **No AI credits were spent for the release itself.**
 
@@ -53,4 +57,4 @@ Everything since [v0.1.0-alpha.1](https://github.com/three-feathers/agent-durbar
 
 ## v0.1.0-alpha.1 (draft, never published)
 
-First packaged build (milestone 5): office view, Copilot adapter, permission modes, attachments, unsigned dmg/zip, nsis/portable and AppImage through a draft pre-release. The draft stays in the repository's Releases list for the maintainer; it is not published.
+First packaged build (milestone 5): office view, Copilot adapter, permission modes, attachments, unsigned dmg/zip, nsis/portable and AppImage through a draft pre-release. The draft stays in the repository's Releases list; it is not published.

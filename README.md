@@ -2,7 +2,7 @@
 
 Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.
 
-> Status: **alpha, `v0.1.0-alpha.3` (draft pre-release, unsigned, not notarized).** `main` has nothing newer yet (see [CHANGELOG.md](CHANGELOG.md), "Unreleased"). The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. Latest work: [milestone 10 and usage totals](#status-milestone-10-tools-all-time-the-copilot-cli-mcp-list-first-mcp-extras-per-folder). Only Linux has been run by hand; macOS and Windows are built and unit-tested in CI but untested on real hardware. Built by [Three Feathers](https://github.com/three-feathers); the work is tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
+> Status: **alpha, `v0.1.0-alpha.3` ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.3), unsigned, not notarized).** `main` has nothing newer yet (see [CHANGELOG.md](CHANGELOG.md), "Unreleased"). The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. Latest work: [milestone 10 and usage totals](#status-milestone-10-tools-all-time-the-copilot-cli-mcp-list-first-mcp-extras-per-folder). Only Linux has been run by hand; macOS and Windows are built and unit-tested in CI but untested on real hardware. Built by [Three Feathers](https://github.com/three-feathers); the work is tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
 
 ![15 simulated agents at 1440x900 (roomy desks use the spare floor space)](docs/screenshots/m5-sim15-1440x900-closed.png)
 ![Full-screen chat with every other agent in a slim strip, 15 agents at 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
@@ -17,7 +17,7 @@ Command center to see, chat with and coordinate coding agents (Copilot CLI first
 
 ## Install from releases
 
-Download the build for your system from the [Releases page](https://github.com/three-feathers/agent-durbar/releases) (pre-releases are alpha builds). **Release status:** `v0.1.0-alpha.3` is a **draft pre-release** and is not published yet; the maintainer publishes by hand, so until then the page may show no public download and you can build from source (below). It is **unsigned**. `v0.1.0-alpha.1` was never published, and `v0.1.0-alpha.2` is a draft that alpha.3 supersedes.
+Download the build for your system from the [Releases page](https://github.com/three-feathers/agent-durbar/releases) (pre-releases are alpha builds). **Release status:** [`v0.1.0-alpha.3`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.3) is **published as a pre-release** (2026-10-17) and is the only public download. It is **unsigned and not notarized**, and it has **not been tested on real Mac or Windows hardware** (only Linux was run by hand). Upgrading in place from alpha.2 was not checked. `v0.1.0-alpha.1` is an unpublished draft. `v0.1.0-alpha.2` was never published: its draft was removed in favour of alpha.3 (the git tag `v0.1.0-alpha.2` remains). You can also build from source (below).
 
 | System | File |
 | --- | --- |
@@ -41,7 +41,7 @@ Full list in [CHANGELOG.md](CHANGELOG.md). Short version, since alpha.2:
 ![Permission modes: Read-only / Ask first / Allow all](docs/screenshots/003-allow-all-menu-1280x800.png)
 ![Office total and per-folder AIU totals](docs/screenshots/011-usage-totals-1280x800.png)
 
-### What was new in v0.1.0-alpha.2
+### What was new in v0.1.0-alpha.2 (never published; included in alpha.3)
 
 Since alpha.1:
 
@@ -50,7 +50,7 @@ Since alpha.1:
 - **Credit caps** per session (soft cap, runtime minimum 30 AI credits).
 - **Permissions:** change an agent's mode any time; the saved mode is restored exactly after a restart; reads outside the folder are asked or denied.
 - **About:** Three Feathers as owner, with credits.
-- **New app id `io.github.three-feathers.agentdurbar`.** An earlier test install (`io.github.vikramgorla.agentdurbar`) is a **separate app** and keeps its own settings; installing alpha.2 or alpha.3 does not replace or migrate it.
+- **New app id `io.github.three-feathers.agentdurbar`.** An earlier test install (`io.github.vikramgorla.agentdurbar`) is a **separate app** and keeps its own settings; installing alpha.3 does not replace or migrate it.
 
 ### These builds are not code-signed
 
@@ -75,7 +75,7 @@ npm run dist:dir          # unpacked app for this OS in release/
 npm run dist              # installers/archives for this OS in release/ (no signing, no publishing)
 ```
 
-Each release also lists `SHA256SUMS.txt`. Releases are built by GitHub Actions from `v*` tags into a **draft** release; see [CONTRIBUTING.md](CONTRIBUTING.md).
+Each release also lists `SHA256SUMS.txt`. Releases are built by GitHub Actions from `v*` tags into a **draft** release that the maintainer publishes by hand; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Status (milestone 10: Tools "All time", the Copilot CLI MCP list first, MCP extras per folder)
 
@@ -174,7 +174,7 @@ Specs [015](specs/015-thinking-and-subagent-activity/spec.md) to [018](specs/018
 ![Doors, 3 rooms closed, 1440x900](docs/screenshots/m7b-doors-1440x900.png)
 ![Doors, 3 rooms closed, 1280x800](docs/screenshots/m7b-doors-1280x800.png)
 
-**Permission mode any time.** The chat header chip and the card context menu (right click) switch Read-only / Ask first / Allow all for that agent. It applies from the next request without restarting the session (the broker reads the mode dynamically). Switching to Allow all asks for confirmation and, if a request is pending, offers to approve it; leaving Allow all asks whether to forget session grants. Cards show a small mode icon; the mode is saved per folder and restored. The top-bar selector is the default for new sessions.
+**Permission mode any time.** The chat header chip and the card context menu (right click) switch Read-only / Ask first / Allow all for that agent. It applies from the next request without restarting the session (the broker reads the mode dynamically). Switching to Allow all asks for confirmation and, if a request is pending, offers to approve it; leaving Allow all asks whether to forget session grants. Cards show a small mode icon; the mode is saved per folder and restored. The top-bar selector is the default for new sessions. The confirmation works from the keyboard: focus stays inside it, Tab is trapped, Escape cancels (the mode stays as it was) and focus goes back to the chip; *Allow all* always needs an explicit confirm (spec 003 FR-033).
 
 ![Mode switch (menu with Read-only / Ask first / Allow all)](docs/screenshots/003-allow-all-menu-1280x800.png)
 
@@ -372,7 +372,7 @@ An Electron app that:
 - [ ] Second adapter (Claude Code and Codex): planned, not built. Spec, research, plan and tasks are in [spec 012](specs/012-claude-codex-adapters/spec.md); nothing has been tried on a real account, and subscription-login use needs the owner's decision first
 - [x] Collaboration harness: team rules in [AGENTS.md](AGENTS.md), issues and a [project board](https://github.com/orgs/three-feathers/projects/1), Spec Kit gate, PR template (spec 021)
 - [ ] Code signing and notarization (spec 014, needs a purchase approved by the maintainer)
-- [x] Packaging with electron-builder (unsigned dmg/zip, nsis/portable, AppImage) and GitHub Actions CI + draft releases (alpha)
+- [x] Packaging with electron-builder (unsigned dmg/zip, nsis/portable, AppImage) and GitHub Actions CI + releases built as drafts, published by hand (alpha.3 is the first published pre-release)
 
 ## How we work
 
@@ -386,6 +386,7 @@ npm run typecheck         # tsc, no emit
 npm run build             # tsc + copy src/renderer assets into dist/renderer
 npm test                  # every unit suite (permissions, attachments, folders, MCP, tool usage, usage totals, about, ...): no Copilot, no credits
 npm run check:office      # layout check of 95 combinations (Electron under xvfb on Linux), simulator only
+npm run check:dialog-focus # keyboard check of the Allow all confirmation (Electron under xvfb on Linux), simulator only
 npm start                 # build and launch Electron (needs `copilot login` once)
 DURBAR_SIM=15 npm start   # 15 simulated agents, no sessions, no AI credits
 npm run pack:dir          # unpacked app in release/ (also: npm run dist, dist:mac:arm64, dist:mac:x64, dist:win, dist:linux; unsigned)
