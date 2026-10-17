@@ -80,3 +80,9 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | # | Feature | Status |
 | --- | --- | --- |
 | [023](023-release-alpha2/spec.md) | Release v0.1.0-alpha.2 as a draft pre-release (version bump, changelog, download notes) | built; draft only, not published |
+
+## Feature 024: places in the office
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [024](024-office-places/spec.md) | Places in a shared lobby (Library, Software library, Terminal, Web, Other); main agents walk to the place of the tool they use; MCP server mapping in Settings | specified 2026-10-17 (issue #18), not implemented |
