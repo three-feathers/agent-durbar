@@ -94,9 +94,10 @@ In Settings I see the MCP servers I use (the Copilot CLI list, my per-folder ext
 
 ## Verification on a real session (2026-10-17)
 
-Asked for by Ruben. Real Copilot runtime (Copilot CLI 1.0.95, SDK 1.0.22, model `auto`), the app in *Ask first* on an empty test folder, **2 prompts, 0.4364 AIU** (3 usage events). Recorded with `DURBAR_LOG`; the log stays local (it lists the user's own MCP servers).
+Asked for by Ruben. Real Copilot runtime (Copilot CLI 1.0.95, SDK 1.0.22, model `auto`), the app in *Ask first* on an empty test folder, **3 prompts, 0.8385 AIU in total** (first run: 2 prompts, 0.4364 AIU; second run: 1 prompt, 0.4021 AIU). Recorded with `DURBAR_LOG`; the log stays local (it lists the user's own MCP servers).
 
 - `real:` A shell request arrives as `toolCall` `tool: 'bash'` with no MCP server, so FR-002 sends it to **Terminal**.
 - `real:` The runtime sends the tool **start before the permission request** (start at 37.88 s, `needs-permission` at 37.93 s). So an agent waiting for approval is at its place: this is why FR-003 keeps the visit on `needs-permission` (without that review fix it would have gone back at once).
 - `real:` A denied request ends as `toolCall` `failed` (0.9 s after the start, so past the 600 ms debounce): the agent stays its 2 s at the Terminal and walks back; the card says `At Terminal: bash · Denied: run ls`. Accepted as honest ("it went and was refused"). (The checking driver denied `ls` by mistake: its text match failed, so nothing ran.)
-- `[KNOWN GAP]` Not exercised for real: a walk to an **MCP** place. The second prompt asked for GitHub issues, but the session's GitHub server offered only code and user search and the agent called no tool. The real server name was `github`, which the default rules send to Software library.
+- First run, second prompt: asked for GitHub issues, but the session's GitHub server offered only code and user search, and the agent called no tool.
+- `real:` A walk to an **MCP** place (second run, Ruben's go-ahead for one more prompt): a GitHub code search arrived as `toolCall` `tool: 'github-mcp-server-search_code'`, `mcpServer: 'github-mcp-server'`, `mcpTool: 'search_code'` (not `github`, the name in the server list). The default rules sent it to **Software library**; the card said `At Software library: github-mcp-server search_code`; the read-only tool ran without a permission request; the call lasted 1.25 s, so the agent walked there, stayed its 2 s and walked back.

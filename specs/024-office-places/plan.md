@@ -48,5 +48,5 @@
 - Docs (spec 025 rule): README status section, status line, roadmap; CHANGELOG *Unreleased*; specs index; the README office pictures regenerated with the existing drivers because they now show the lobby (`m5-sim15-1440x900-closed`, `m9-office-caps-*`, `m10-office-mcp-buttons-*`, `011-usage-totals-*`; the drivers `shots-hero.js`, `shots-m9.js`, `shots-m10.js` still pass).
 - `/speckit-analyze` and `/speckit-converge` followed by hand: one new known gap (T011, per-folder extras in the Places list), otherwise converged.
 - CI on PR #109: `npm test` passes on ubuntu, macOS and Windows runners; the office layout check (xvfb, with the lobby checks) passes on Linux; package smoke passes.
-- Real session (2 prompts, 0.4364 AIU, see the spec): shell calls arrive as `bash`, the start comes before the permission request, a denied call ends as `failed`; an MCP walk was not exercised.
-- Not verified: an MCP tool call on a real session, the Windows layout (unit tests only there), the walk with real timing of real tools.
+- Real session (3 prompts, 0.8385 AIU, see the spec): shell calls arrive as `bash`, the start comes before the permission request, a denied call ends as `failed`; a GitHub code search arrives with `mcpServer: 'github-mcp-server'` and walked to Software library.
+- Not verified: the Windows layout (unit tests only there), the walk with real timing of real tools.
