@@ -35,14 +35,14 @@ what exists today, not what was originally intended. Each requirement carries a 
 | [009](009-vscode-integration/spec.md) | Open in VS Code, VS Code chat history (read-only) | implemented |
 | [010](010-simulator/spec.md) | Simulator and dev/test hooks | implemented |
 
-## Features 011-014: 011 built, 012-014 backlog drafts
+## Features 011-014: 011 built, 012 planned, 013-014 backlog drafts
 
-Spec drafts only (no plan or tasks yet); they must go through `/speckit.clarify`, `/speckit.plan`, `/speckit.tasks` before any code.
+013 and 014 are spec drafts only (no plan or tasks yet); they must go through `/speckit.clarify`, `/speckit.plan`, `/speckit.tasks` before any code. 012 has been through them (2026-10-17) but nothing is built.
 
 | # | Feature | Status |
 | --- | --- | --- |
 | [011](011-credit-caps-and-usage-display/spec.md) | AI-credit caps and usage display | per-session cap slice and office/folder usage totals built (exhausted flow unverified on a real account); persisted usage and multiplier estimate still backlog |
-| [012](012-claude-codex-adapters/spec.md) | Claude Code and Codex adapters | draft |
+| [012](012-claude-codex-adapters/spec.md) | Claude Code and Codex adapters | planned: clarified, [research](012-claude-codex-adapters/research.md), [plan](012-claude-codex-adapters/plan.md), [tasks](012-claude-codex-adapters/tasks.md); **no code, nothing verified on a real account**; real-account tasks need owner approval; umbrella issue #2 |
 | [013](013-live-verification-stop-resume-thinking/spec.md) | Live verification of Stop, resume and thinking | draft |
 | [014](014-signing-and-notarization/spec.md) | Code signing and notarization | draft, **needs approval (purchase)** |
 
