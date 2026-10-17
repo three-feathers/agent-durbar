@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { CopilotAdapter } from '../adapters/copilot';
+import type { AgentAdapter } from '../adapters/types';
 import { resolveWorkspaceCwd } from '../adapters/workspace';
 import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, stageAttachment } from '../shared/attachments';
 import type { AddResult, AgentInfo, ModelChoice, PermMode, PickedFile, ResumeResult, SessionOptions, VsChatListResult } from '../shared/api';
@@ -20,6 +21,8 @@ import { devEnv, devWarning } from './devhooks';
 import { SettingsStore } from './settings';
 import { parseAmount, parseCap } from '../shared/credits';
 import { aboutPanelOptions, aboutView } from '../shared/about';
+import { modelControlFor, parseFocus, parseSwitchRequest } from '../shared/modelswitch';
+import type { ModelSwitchRequest } from '../shared/modelswitch';
 
 // Developer/test hooks (spec 010): ignored in packaged builds unless DURBAR_DEV=1. Read hooks only from `dev`.
 const dev = devEnv(process.env, app.isPackaged);
@@ -45,6 +48,8 @@ const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
 
 const adapter = new CopilotAdapter();
+/** The same adapter through the adapter-neutral interface: its optional members (`setModel`, `compact`, ...) say what it can do (spec 030 FR-017). */
+const generic: AgentAdapter = adapter;
 const agents = new Map<string, AgentInfo>();
 const mcp = registerMcpIpc({ store: () => mcpStore as McpStore, agents, adapter, dev });
 /** Files the user picked through the native dialog; only these can be attached. */
@@ -83,6 +88,17 @@ adapter.onEvent((e) => {
   folderStore?.setMaxAiCredits(wsKey(a), a.maxAiCredits);
 });
 
+/** Keep AgentInfo in step with the model the runtime reports. Only a switch the user asked for is saved with the folder; a runtime fallback (rate limit, refusal) is shown but never becomes the folder's choice (spec 030 FR-015). */
+adapter.onEvent((e) => {
+  if (e.type !== 'model' || e.agentId) return;
+  const a = agents.get(e.sessionId);
+  if (!a) return;
+  a.model = e.model;
+  if (e.effort !== undefined) a.effort = e.effort;
+  a.tier = e.tier === 'long' ? 'long' : undefined;
+  if (e.cause === 'user') folderStore?.setModelChoice(wsKey(a), { model: e.model, effort: e.effort, contextTier: a.tier });
+});
+
 // Dev/test: DURBAR_LOG=/path/events.jsonl records every normalized event and what is sent to the SDK.
 if (dev.DURBAR_LOG) {
   const logFile = dev.DURBAR_LOG;
@@ -108,6 +124,7 @@ const infoFor = (workspace: string, permMode: PermMode, id: string, model: strin
     permMode,
     model,
     effort,
+    modelControl: modelControlFor(generic),
     ...extra,
   };
 };
@@ -176,7 +193,7 @@ function restoreFolders(): void {
     try {
       if (!fs.existsSync(f.workspace)) continue; // e.g. an unplugged drive: stays saved, just not shown
       const rm = restoreMode(f.permMode); // exactly as saved, Allow all included, flagged so the UI shows "restored" (spec 003 FR-025/026)
-      const info = infoFor(f.workspace, rm.mode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, hidden: f.hidden, closed: f.closed, permRestored: rm.restored || undefined, maxAiCredits: f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits });
+      const info = infoFor(f.workspace, rm.mode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, permRestored: rm.restored || undefined, maxAiCredits: f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits });
       agents.set(info.id, info);
     } catch {
       /* folder gone or not a folder any more */
@@ -392,9 +409,64 @@ ipcMain.handle('agents:resolveLimit', async (_e, id: unknown, requestId: unknown
   }
 });
 
+/** The last list of models the account offers; a switch request is checked against it (spec 030 FR-018). */
+let lastModels: ModelChoice[] = [];
+const modelsForValidation = async (): Promise<ModelChoice[]> => {
+  if (!lastModels.length) lastModels = (await adapter.listModelOptions()).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
+  return lastModels;
+};
+const NO_SWITCH = 'This agent cannot change its model in place. Start a new session with the model you want.';
+
+ipcMain.handle('agents:setModel', async (_e, id: unknown, raw: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  if (!a) return { ok: false, error: 'unknown agent' };
+  if (typeof generic.setModel !== 'function') return { ok: false, error: NO_SWITCH };
+  try {
+    const parsed = parseSwitchRequest(raw, await modelsForValidation());
+    if (!parsed.ok) return { ok: false, error: parsed.error };
+    const req: ModelSwitchRequest = parsed.request;
+    const result = await generic.setModel(a.id, req);
+    if (result.status === 'applied') {
+      // Saved only in this app's own folder file; never in Copilot's settings (no repoScope / modelChangeScope / pickerPersistence is ever sent).
+      a.model = req.model;
+      if (req.effort === null) a.effort = undefined;
+      else if (req.effort !== undefined) a.effort = req.effort;
+      a.tier = req.contextTier === 'long' ? 'long' : undefined;
+      folderStore?.setModelChoice(wsKey(a), { model: req.model, effort: req.effort, contextTier: a.tier });
+    }
+    return { ok: true, result };
+  } catch (err) {
+    return { ok: false, error: errText(err) };
+  }
+});
+
+ipcMain.handle('agents:cancelQueuedModel', async (_e, id: unknown, queueId: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  if (!a || typeof queueId !== 'string' || !queueId || queueId.length > 200) return { ok: false, error: 'unknown agent' };
+  if (typeof generic.cancelQueuedModel !== 'function') return { ok: false, error: NO_SWITCH };
+  try {
+    await generic.cancelQueuedModel(a.id, queueId);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: errText(err) };
+  }
+});
+
+ipcMain.handle('agents:compact', async (_e, id: unknown, focus: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  if (!a) return { ok: false, error: 'unknown agent' };
+  if (typeof generic.compact !== 'function') return { ok: false, error: 'This agent cannot compact its context in place. Start a new session instead.' };
+  try {
+    return { ok: true, result: await generic.compact(a.id, parseFocus(focus)) };
+  } catch (err) {
+    return { ok: false, error: errText(err) }; // the focus text is never logged or echoed
+  }
+});
+
 ipcMain.handle('models:list', async (): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }> => {
   try {
     const models = (await adapter.listModelOptions()).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
+    lastModels = models;
     return { ok: true, models };
   } catch (err) {
     return { ok: false, error: errText(err), models: [] };

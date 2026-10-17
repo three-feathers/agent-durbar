@@ -5,7 +5,8 @@
  */
 
 import type { McpServerSpec } from '../shared/mcp';
-export type { McpServerSpec };
+import type { CompactResult, ContextTier, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
+export type { McpServerSpec, CompactResult, ContextTier, ModelSwitchRequest, ModelSwitchResult };
 
 export type AgentStatus = 'idle' | 'working' | 'needs-permission' | 'error' | 'stopped';
 
@@ -177,6 +178,37 @@ export interface ContextEvent extends BaseEvent {
   conversation?: number;
   toolDefinitions?: number;
   messages?: number;
+  /** Model and tier the window belongs to, when the adapter knows them (spec 030). */
+  model?: string;
+  tier?: ContextTier;
+}
+
+/**
+ * The model, effort or context tier of the session changed (spec 030). `cause`: `user` = Agent Durbar asked for it,
+ * `runtime` = the runtime changed it on its own, `rate-limit` / `fallback` = the runtime switched because of a rate limit or a
+ * refused request, `resume` = restored when a session was resumed. A change the runtime makes is shown, never hidden.
+ */
+export interface ModelEvent extends BaseEvent {
+  type: 'model';
+  model: string;
+  previousModel?: string;
+  effort?: string;
+  previousEffort?: string;
+  tier?: ContextTier;
+  cause: 'user' | 'runtime' | 'rate-limit' | 'fallback' | 'resume';
+}
+
+/** Compaction of the context (spec 030): `auto` = the runtime did it at its threshold, `manual` = the user asked, `model-switch` = before a switch to a smaller window, `overflow` = after the window was exceeded. */
+export interface CompactionEvent extends BaseEvent {
+  type: 'compaction';
+  phase: 'start' | 'complete' | 'failed';
+  trigger: 'auto' | 'manual' | 'model-switch' | 'overflow';
+  tokensBefore?: number;
+  tokensAfter?: number;
+  tokensRemoved?: number;
+  /** Window the compaction targeted, when known. */
+  limit?: number;
+  error?: string;
 }
 
 export interface McpServerStatus {
@@ -233,6 +265,8 @@ export type AgentEvent =
   | SubagentEvent
   | UsageEvent
   | ContextEvent
+  | ModelEvent
+  | CompactionEvent
   | McpStatusEvent
   | LimitEvent;
 
@@ -261,6 +295,12 @@ export interface AgentAdapter {
   resolveLimit?(sessionId: string, requestId: string, action: LimitAction): Promise<void>;
   /** Switch one MCP server on or off in a running session (spec 019). Optional. */
   setMcpEnabled?(sessionId: string, name: string, enabled: boolean): Promise<void>;
+  /** Change the model, effort or context tier of a live session; applies from the next message (spec 030). Optional: adapters that cannot omit it and the UI offers a new session instead. */
+  setModel?(sessionId: string, request: ModelSwitchRequest): Promise<ModelSwitchResult>;
+  /** Remove a switch the runtime queued while a turn was running (`queueId` from a `queued` result). Optional. */
+  cancelQueuedModel?(sessionId: string, queueId: string): Promise<void>;
+  /** Compact the context now (spends a model call); `focus` steers the summary. Optional. */
+  compact?(sessionId: string, focus?: string): Promise<CompactResult>;
   /** Subscribe to normalized events from all sessions of this adapter. */
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe;
 }

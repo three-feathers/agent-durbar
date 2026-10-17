@@ -32,7 +32,7 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "test:permissions": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-permissions.js",
     "test:attachments": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-attachments.js",
-    "test": "npm run test:permissions && npm run test:attachments && npm run test:vscode && npm run test:runtime && npm run test:history && npm run test:vscodechat && npm run test:folders && npm run test:events && npm run test:markdown && npm run test:rooms && npm run test:url && npm run test:mcp && npm run test:toolstats && npm run test:devhooks && npm run test:credits && npm run test:toolusage && npm run test:usagestore && npm run test:about && npm run test:usagetotals && npm run test:dialog && npm run test:places",
+    "test": "npm run test:permissions && npm run test:attachments && npm run test:vscode && npm run test:runtime && npm run test:history && npm run test:vscodechat && npm run test:folders && npm run test:events && npm run test:markdown && npm run test:rooms && npm run test:url && npm run test:mcp && npm run test:toolstats && npm run test:devhooks && npm run test:credits && npm run test:toolusage && npm run test:usagestore && npm run test:about && npm run test:usagetotals && npm run test:dialog && npm run test:modelswitch && npm run test:simmodel && npm run test:places",
     "test:vscode": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-vscode.js",
     "test:history": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-history.js",
     "test:vscodechat": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-vscodechat.js",
@@ -60,6 +60,8 @@
     "test:places": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-places.js",
     "test:toolusage": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-toolusage.js",
     "test:about": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-about.js",
+    "test:modelswitch": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-modelswitch.js",
+    "test:simmodel": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-sim-model.js",
     "test:dialog": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-dialog.js",
     "check:dialog-focus": "npm run build && xvfb-run -a sh -c \"L=\\$(mktemp); DURBAR_USER_DATA=\\$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=\\$PWD/scripts/check-dialog-focus.js electron . --no-sandbox 2>&1 | tee \\$L; grep -q 'dialog-focus] all checks passed' \\$L\""
   },
