@@ -25,7 +25,7 @@ Node 20.19+ or 22.12+ is required. `npm start` with real sessions needs a GitHub
 
 ## Spec Kit workflow is mandatory
 
-Agent Durbar is spec-driven with [GitHub Spec Kit](https://github.com/github/spec-kit). **No code without a spec, a plan and tasks.** This applies to everyone, including coding agents and the maintainer. The rules live in [`.specify/memory/constitution.md`](.specify/memory/constitution.md) (principle I); the specs live in [`specs/`](specs/README.md) (001-010 describe what is already built, 011 is partly built, 012-014 are backlog drafts, 015-021 and 023 are built).
+Agent Durbar is spec-driven with [GitHub Spec Kit](https://github.com/github/spec-kit). **No code without a spec, a plan and tasks.** This applies to everyone, including coding agents and the maintainer. The rules live in [`.specify/memory/constitution.md`](.specify/memory/constitution.md) (principle I); the specs live in [`specs/`](specs/README.md) (001-010 describe what is already built, 011 is partly built, 012 is planned (spec, research, plan and tasks, no code), 013-014 are backlog drafts, 015-021 and 023 are built).
 
 | Step | Command (Copilot Chat in VS Code) | Produces |
 | --- | --- | --- |

@@ -4,7 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.3 tag)
 
-Nothing yet.
+- **Docs only, no behaviour change:** spec 012 (Claude Code and Codex adapters) is clarified, researched, planned and split into tasks ([specs/012-claude-codex-adapters](specs/012-claude-codex-adapters/spec.md)). There is no Claude or Codex adapter yet and nothing was tried on a real account.
 
 ## v0.1.0-alpha.3 (draft pre-release, 2026-10-17)
 
