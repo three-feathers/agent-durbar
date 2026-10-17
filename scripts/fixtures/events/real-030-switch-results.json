@@ -1,0 +1,66 @@
+{
+ "provenance": "real",
+ "capturedAt": "2026-10-17",
+ "plan": "free (planTier free, only `auto` listed)",
+ "switchTo": [
+  {
+   "request": "modelId gpt-5-mini (not listed)",
+   "result": {
+    "status": "cancelled",
+    "deferred": false,
+    "modelId": "auto"
+   }
+  },
+  {
+   "request": "modelId auto, autoTier efficiency",
+   "result": {
+    "status": "applied",
+    "deferred": false,
+    "modelId": "auto"
+   }
+  },
+  {
+   "request": "modelId auto, contextTier long_context",
+   "result": {
+    "status": "applied",
+    "modelId": "auto",
+    "message": "Model changed from Auto (Efficiency) to Auto (Efficiency)"
+   },
+   "current": {
+    "modelId": "auto",
+    "contextTier": "long_context",
+    "autoTier": "efficiency"
+   }
+  },
+  {
+   "request": "modelId auto during a turn, deferIfModelChangeQueued",
+   "result": {
+    "status": "applied",
+    "deferred": true,
+    "queueId": "4",
+    "modelId": "auto"
+   },
+   "pendingItems": [
+    {
+     "id": "3",
+     "kind": "command",
+     "displayText": "/model auto"
+    }
+   ]
+  }
+ ],
+ "queueRemoveAt": {
+  "known id": {
+   "removed": true
+  },
+  "unknown id": {
+   "error": "unknown queue item id 'nope'"
+  }
+ },
+ "historyCompact": {
+  "idleNothingToCompact": {
+   "error": "Nothing to compact."
+  },
+  "duringTurn": "succeeded (compaction ran while a turn was running and drained the queued switches)"
+ }
+}

@@ -162,6 +162,11 @@ export class EventMapper {
         this.compaction = undefined;
         const before = num(d.preCompactionTokens);
         const after = num(d.postCompactionTokens);
+        // real: (T043) the compaction is one model call with its own cost (`compactionTokensUsed`); count it like any other usage so totals and caps are honest.
+        const cu = d.compactionTokensUsed;
+        if (d.success === true && cu && typeof cu === 'object' && Number(cu.copilotUsage?.totalNanoAiu) > 0) {
+          this.emit({ type: 'usage', model: str(cu.model) ?? str(d.behaviorModelId), inputTokens: num(cu.inputTokens), outputTokens: num(cu.outputTokens), cacheReadTokens: num(cu.cacheReadTokens), nanoAiu: Number(cu.copilotUsage.totalNanoAiu), creditsStatus: cu.copilotUsage.aiCreditsStatus ?? cu.aiCreditsStatus });
+        }
         if (d.success !== true) return this.emit({ type: 'compaction', phase: 'failed', trigger: c.trigger, tokensBefore: before, limit: c.limit, error: str(d.error) });
         return this.emit({
           type: 'compaction',

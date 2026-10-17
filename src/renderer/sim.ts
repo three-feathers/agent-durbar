@@ -52,7 +52,7 @@ interface SimAgent {
   limitReq?: string;
   /** Model and context handling (spec 030). */
   tier?: ContextTier;
-  /** A switch asked for during a turn: applies when the turn ends (like the runtime's queue). */
+  /** A switch asked for during a turn: applies when the turn ends and is dropped by Stop (both seen on a real runtime, spec 030 T042). */
   pendingModel?: { req: ModelSwitchRequest; queueId: string };
   /** Window the next context report will carry (the runtime tells it with the next message, not at once). */
   pendingLimit?: number;
@@ -785,6 +785,7 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
           emit({ type: 'permission', sessionId: id, timestamp: now(), permission: { ...p, state: 'denied', via: 'stopped' } });
           s.perm = undefined;
         }
+        s.pendingModel = undefined; // real: (spec 030 T042) the runtime drops a switch that was still queued when the turn is stopped
         s.state = 'idle'; closeOpen(s);
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Aborted' });
       },

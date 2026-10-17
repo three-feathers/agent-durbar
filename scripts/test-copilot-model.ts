@@ -8,7 +8,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { CopilotAdapter } from '../src/adapters/copilot';
-import { compactResultFrom, modelConfig, modelOptionFrom, priceClassOf, pricingFromTokenPrices, switchResultFrom } from '../src/adapters/copilotmodel';
+import { EventMapper } from '../src/adapters/map';
+import type { RawEvent } from '../src/adapters/map';
+import { compactResultFrom, modelConfig, runtimeMessage, modelOptionFrom, priceClassOf, pricingFromTokenPrices, switchResultFrom } from '../src/adapters/copilotmodel';
 import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
 import { modelControlFor, NO_MODEL_CONTROL } from '../src/shared/modelswitch';
 
@@ -124,6 +126,37 @@ async function main(): Promise<void> {
     const D = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'modelswitch.js')) as { priceLine: (m: unknown) => string; windowOf: (m: unknown) => number };
     assert.strictEqual(D.priceLine(opt), 'price not reported');
     assert.strictEqual(D.windowOf(opt), 0, 'the window of auto is unknown, the chip says so');
+  }
+
+  // ---- real events (provenance real: free plan, model auto, 2026-10-17, see spec 030 research.md): what the mapper makes of them
+  {
+    const fxDir = path.join(__dirname, '..', '..', 'scripts', 'fixtures', 'events');
+    const raw = JSON.parse(fs.readFileSync(path.join(fxDir, 'real-030-auto-switch-compact.json'), 'utf8')) as RawEvent[];
+    const out: Array<Record<string, unknown>> = [];
+    const m = new EventMapper((b) => out.push(b as unknown as Record<string, unknown>));
+    m.expectUserModel('auto');
+    for (const e of raw) m.map(e);
+    const ctx = out.find((e) => e.type === 'context') as { tokens: number; limit: number };
+    assert.deepStrictEqual([ctx.tokens, ctx.limit], [13511, 272000], 'the real window of auto (its resolved model) arrives with the first usage info');
+    const us = out.filter((e) => e.type === 'usage') as Array<{ model: string; nanoAiu: number }>;
+    assert.strictEqual(us[0].model, 'gpt-6-luna', 'a usage event names the model auto resolved to');
+    assert.strictEqual(us[0].nanoAiu, 154967500);
+    assert.strictEqual(us.length, 2, 'the compaction call is counted as usage too');
+    assert.strictEqual(us[1].nanoAiu, 190787500, 'real: a compaction costs one model call (0.19 AIU here)');
+    const ch = out.filter((e) => e.type === 'model') as Array<{ cause: string; tier?: string }>;
+    assert.deepStrictEqual([ch[0].cause, ch[0].tier], ['user', 'long'], 'a requested tier change arrives as a model event with the tier');
+    const comp = out.filter((e) => e.type === 'compaction') as Array<{ phase: string; trigger: string; tokensBefore?: number; tokensAfter?: number; tokensRemoved?: number; error?: string }>;
+    assert.deepStrictEqual(comp.map((c) => c.phase), ['start', 'complete', 'failed']);
+    assert.deepStrictEqual([comp[1].tokensBefore, comp[1].tokensAfter, comp[1].tokensRemoved], [296, 398, 0], 'real: a tiny conversation grows when summarised; tokensRemoved is never negative');
+    const sw = JSON.parse(fs.readFileSync(path.join(fxDir, 'real-030-switch-results.json'), 'utf8')) as { provenance: string; switchTo: Array<{ result: Record<string, unknown> }> };
+    assert.strictEqual(sw.provenance, 'real');
+    const [cancelled, applied, , deferred] = sw.switchTo.map((x) => x.result);
+    assert.strictEqual(switchResultFrom(cancelled, 'gpt-5-mini').status, 'rejected');
+    assert.match(switchResultFrom(cancelled, 'gpt-5-mini').message ?? '', /not available on this Copilot account/);
+    assert.strictEqual(switchResultFrom(applied, 'auto').status, 'applied');
+    assert.deepStrictEqual([switchResultFrom(deferred, 'auto').status, switchResultFrom(deferred, 'auto').queueId], ['queued', '4']);
+    assert.strictEqual(runtimeMessage(new Error('Request session.history.compact failed with message: Nothing to compact.'), 'x'), 'Nothing to compact.');
+    assert.strictEqual(runtimeMessage('weird', 'fallback'), 'fallback');
   }
 
   // ---- T032: the pure config keeps the saved choice on create and resume; autoTier only for a NEW auto session

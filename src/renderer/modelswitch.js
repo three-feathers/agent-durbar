@@ -145,7 +145,8 @@
     const how=TRIGGER[e.trigger]||'automatic';
     if(e.phase==='start')return 'Compacting the context ('+how+')…';
     if(e.phase==='failed')return 'Compaction failed'+(e.error?': '+String(e.error).slice(0,200):'')+'. The conversation is unchanged.';
-    const span=nn(e.tokensBefore)&&nn(e.tokensAfter)?': '+fmtTokens(e.tokensBefore)+' → '+fmtTokens(e.tokensAfter)+' tokens':nn(e.tokensRemoved)?': '+fmtTokens(e.tokensRemoved)+' tokens removed':'';
+    const grew=nn(e.tokensBefore)&&nn(e.tokensAfter)&&e.tokensAfter>e.tokensBefore;
+    const span=nn(e.tokensBefore)&&nn(e.tokensAfter)?': '+fmtTokens(e.tokensBefore)+' → '+fmtTokens(e.tokensAfter)+' tokens'+(grew?' (too short to shrink)':''):nn(e.tokensRemoved)?': '+fmtTokens(e.tokensRemoved)+' tokens removed':'';
     return 'Context compacted ('+how+')'+span+'.';
   }
   const CAUSE={'rate-limit':'because of a rate limit','fallback':'because the request was refused','runtime':'by the runtime','resume':'when the session resumed'};

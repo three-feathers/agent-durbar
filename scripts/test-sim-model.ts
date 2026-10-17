@@ -102,9 +102,8 @@ async function main(): Promise<void> {
   assert.strictEqual(r.result?.status, 'queued');
   await sim.stop('sim-5');
   await sleep(30);
-  m = of('sim-5', 'model').pop() as Record<string, unknown>;
-  assert.deepStrictEqual([m.model, m.cause], ['sim-preview', 'user'], 'a queued switch applies when the turn ends or is stopped (sim: the real behaviour on Stop is unverified)');
-  assert.strictEqual(info('sim-5').model, 'sim-preview');
+  assert.notStrictEqual(info('sim-5').model, 'sim-preview', 'real: (T042) Stop drops a queued switch: the model is unchanged');
+  assert.ok(!of('sim-5', 'model').some((e) => (e as { model?: string }).model === 'sim-preview'), 'and no model event follows');
 
   // accepted compaction before a smaller window (Ada is idle now, about 200k tokens, on Sim Mid): compaction first, then the switch
   const nComp = of('sim-1', 'compaction').length;
