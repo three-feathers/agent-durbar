@@ -23,13 +23,14 @@ This feature adds a level above rooms. It is called a **floor** (the user's word
 
 - Q: What is the new grouping called in the app? → A: **Floor**. "Room" keeps meaning one folder or workspace file; a floor holds rooms. The built-in floor is called "Ground floor".
 - Q: What happens to the agents of a floor that is switched off? → A: **They keep running**, exactly like a hidden folder today (spec 006). Switching a floor off does not pause, stop or end anything, so those agents can still spend AI credits.
-- Q: Is attention from a floor that is off signalled? → A: **No, nothing at all.** An agent of a floor that is off that waits for an approval or hits an error is not shown or counted anywhere until its floor is on again. Its request stays pending.
+- Q: Is attention from a floor that is off signalled? → A: **No, nothing at all.** An agent of a floor that is off that waits for an approval or hits an error is not shown or counted anywhere until its floor is on again. Its request stays pending. *(Superseded on 2026-10-17 by the maintainer's decision below, issue #122.)*
 - Q: How do floors combine with the shared lobby of spec 024 (PR #109, places in the office)? → A: There is **one lobby for all floors that are on**; agents of a floor that is off never appear in the lobby (they are treated like agents hidden by a filter in spec 024).
 - Q: Where are floors switched on and off? → A: A **Floors** button in the top bar showing how many are on (for example "Floors 2/3"); it opens a panel with an on/off switch per floor and the management actions (create, rename, reorder, delete, move folders).
 - Q: With more than one floor on, how does the office show which floor a room belongs to? → A: No extra band: rooms are ordered by floor (floor order, then the usual room order) and each room header shows a small label with its floor's name.
 - Q: Do we keep hiding a single folder (Folders → Hide) now that floors exist? → A: Yes, keep both. Hide still works per folder, and the Floors panel marks hidden folders so it is clear why a room is not shown.
 - Q: Is there a one-click "only this floor" shortcut? → A: Yes: each floor in the Floors panel has an **Only** action that switches that floor on and every other floor off. No "All on" action.
 - Q: Does the office AI-credit total count spend by agents on floors that are off? → A: Yes, it counts everything spent on every floor; its tooltip says how much of it comes from floors that are off. (Status counts stay compartmentalized; money spent is always visible.)
+- Q: (Vikram, maintainer, issue #122, 2026-10-17) Should attention from a floor that is off be shown somewhere? → A: **Yes, only inside the Floors controls**: plain text on that floor's row, for example "Off, 1 waiting, 1 error". Nothing else: no pill, no toast, no sound, no sorting, no change to the top-bar counts or to "Floors n/m".
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -118,6 +119,9 @@ When more than one floor is on, I can tell at a glance which floor each room bel
 - A floor is switched off while one of its agents is in the lobby (spec 024): the figure disappears at once, without walking back.
 - The Tools view (spec 019/020) is not filtered by floor in this feature (stated as a limit).
 - Demo mode (sample data) has no floors: everything behaves as one "Ground floor" that is on.
+- Closing and reopening the app behaves exactly as today for agents on floors that are off: nothing new is paused, resumed, ended or hidden differently; saved folders come back as "not started" agents on their floor, and the floor keeps its on/off state.
+- A model switch (spec 030) queued on an agent whose floor is off just waits, as today; switching floors never changes, applies or cancels it.
+- The longest allowed floor name (40 characters) fits: it is shortened with an ellipsis (full name in the tooltip) in room tags, door plates, the Floors panel and Settings, and never pushes top-bar controls out at 1280x800.
 
 ## Requirements *(mandatory)*
 
@@ -132,7 +136,7 @@ When more than one floor is on, I can tell at a glance which floor each room bel
 - **FR-007**: The top bar MUST have a **Floors** button that shows how many floors are on out of the total (for example "Floors 2/3"). It MUST open a panel with one on/off switch per floor (one action per floor) and the management actions of FR-003 to FR-005 (create, rename, reorder, delete, move folders). The button MUST fit the top bar at 1280x800 without overlapping other controls.
 - **FR-008**: Agents in a floor that is off MUST NOT appear in the office, the list view, the folder filter or the full-screen chat strip, and MUST NOT be counted in the top-bar status pills (Working, Waiting, Idle, Errors, Done) or in the "needs attention" ordering.
 - **FR-009**: Switching a floor off MUST NOT pause, interrupt, stop or end any of its agents' sessions; they keep running exactly like the agents of a hidden folder (spec 006). Messages already sent keep being answered and can spend AI credits.
-- **FR-010**: Attention from a floor that is off (waiting for approval, error, limit reached) MUST NOT be shown or counted anywhere in the app (no pill, no mark, no toast, no sort order). A pending approval MUST stay pending: switching a floor off or on never approves or denies anything. When the floor is switched on again, its waiting and error agents show and sort first as usual.
+- **FR-010**: Attention from a floor that is off (waiting for approval, error, limit reached) MUST be shown **only** as plain text on that floor's row in the Floors panel and in Settings > Floors, for example "Off, 1 waiting, 1 error" (counts of main agents and helpers in those states; none = no text). It MUST NOT be shown or counted anywhere else: no pill, no mark on the top-bar button, no change to "Floors n/m", no toast, no sound, no sort order. A pending approval MUST stay pending: switching a floor off or on never approves or denies anything. When the floor is switched on again, its waiting and error agents show and sort first as usual.
 - **FR-011**: The office density (spec 001) MUST be chosen from the agents of floors that are on only; the 15-agent legibility rule at 1440x900 and 1280x800 MUST hold with one or several floors on.
 - **FR-012**: When more than one floor is on, the office MUST order rooms by floor (floor order first, then the existing room order) and MUST show a small floor-name label in each room header and closed door plate, using no extra vertical space (no band or heading per floor). The label MUST be text (not colour only) and at least 10.5px. With one floor on, no label is shown.
 - **FR-013**: When every floor is off, the office MUST show an empty-state message that says so and how to switch a floor on.
@@ -167,7 +171,7 @@ When more than one floor is on, I can tell at a glance which floor each room bel
 ## Assumptions
 
 - "Room" keeps its current meaning (one folder or workspace file); a floor groups rooms.
-- Accepted trade-off (user's choice, see Clarifications): an agent in a floor that is off can keep spending AI credits and can sit waiting for an approval; the only sign in the app is its spend in the office credit total (FR-016). The docs and the Floors panel's help text say so plainly.
+- Accepted trade-off (see Clarifications): an agent in a floor that is off can keep spending AI credits and can sit waiting for an approval; the signs are its spend in the office credit total (FR-016) and the plain-text count on its floor's row in the Floors panel and Settings (FR-010). The docs and the Floors panel's help text say so plainly.
 - Spec 024 (lobby, PR #109) is merged on `main` (2026-10-17); this feature builds on it.
 - Several floors can be on at the same time; switching one on does not switch others off. The **Only** action (FR-022) is the one shortcut; there is no "All on".
 - The existing per-folder Hide (spec 006) and room doors (spec 017) stay as they are and combine with floors as described in Edge Cases.
@@ -179,6 +183,7 @@ When more than one floor is on, I can tell at a glance which floor each room bel
 
 ## Changes
 
+- **2026-10-17, maintainer review (Vikram, issue #122).** FR-010 changed: attention from a floor that is off is shown as plain text **only** on that floor's row in the Floors panel and Settings ("Off, 1 waiting, 1 error"); nothing else changes (no pill, toast, sound, sorting, top-bar change). This replaces the owner's earlier "nothing at all" (Q3). Also added: app quit behaves as today, a queued model switch on an off floor just waits (spec 030), the 40-character floor name is checked at 1280x800, and the office total's off-floor amount uses the since-reset totals of spec 011 (PR #121).
 - **2026-10-17, owner request (fjcabello): floors in Settings too.** Trying the built feature, the owner asked to switch floors on and off from **Settings** as well. Decision (option A of two): **add** a *Floors* section to Settings with the same controls as the Floors panel; the top-bar button stays for quick access (option B, moving everything to Settings, was rejected: switching is frequent). New requirement **FR-023**. No other requirement changes.
 
 ## Verification (2026-10-17, simulator and unit tests; no real Copilot session)
