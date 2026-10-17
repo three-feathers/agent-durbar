@@ -677,7 +677,7 @@ function openPanel(id,focus){
   input.addEventListener('input',autoGrow);
   input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(input.value);}});
   $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
-  if(a.live){const h=document.querySelector('#panel .hint');if(h)h.textContent='Enter sends, Shift+Enter adds a line. Drop or paste images to attach. '+(SIM?'Simulated session (no AI credits)':'Live Copilot session')+' ('+a.info.permMode+').';}
+  if(a.live){const h=document.querySelector('#panel .hint');if(h)h.textContent='Enter sends, Shift+Enter adds a line. Drop or paste images to attach. '+(SIM?'Simulated session (no AI credits)':'Live Copilot session')+' ('+MODE_NAME[a.info.permMode]+').';}
   setSend();
   renderAll(); const cur=document.querySelector('#stripList .sitem.sel'); if(cur)cur.scrollIntoView({inline:'nearest',block:'nearest'});
   if(focus!==false)$('panelTitle').focus({preventScroll:true});
@@ -773,9 +773,9 @@ function liveChat(a){
   return chat;
 }
 function addNote(chat,html,err){const n=document.createElement('div');n.className='note'+(err?' err':'');n.innerHTML=html;chat.el.appendChild(n);scrollChat(chat);return n;}
-const MODE_NAME={'read-only':'Read-only','ask':'Ask first','allow':'Allow edits'};
-const MODE_TEXT={'read-only':'read-only','allow':'can edit','ask':'asks first'};
-const MODE_HELP={'read-only':'Reads only. Edits, commands and other changes are denied.','ask':'Asks before every edit or command. You can approve for the rest of the session.','allow':'Edits, commands and other changes run without asking.'};
+const MODE_NAME={'read-only':'Read-only','ask':'Ask first','allow':'Allow all'};
+const MODE_TEXT={'read-only':'read-only','allow':'no prompts','ask':'asks first'};
+const MODE_HELP={'read-only':'Reads only. Edits, commands and other changes are denied.','ask':'Asks before every edit or command. You can approve for the rest of the session.','allow':'Everything runs without asking: edits, shell commands, web requests and tools.'};
 const roleFor=info=>'Copilot ('+MODE_TEXT[info.permMode]+')'+(info.model&&info.model!=='auto'?' · '+info.model:'');
 const MODE_IC={
  'read-only':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.2" y="7" width="9.6" height="6.6" rx="1.6"/><path d="M5.4 7V5.4a2.6 2.6 0 0 1 5.2 0V7"/></svg>',
@@ -1314,9 +1314,9 @@ async function changeMode(a,mode){
   const pend=a.pend?a.pend.size:0, grants=(a.grants||[]).length;
   const opts={};
   if(mode==='allow'){
-    const r=await askDialog({title:'Allow edits for '+a.name+'?',body:'Edits, shell commands and other changes will run without asking, in '+roomOf(a).path+'. Nothing is undone automatically; you can switch back at any time.',
+    const r=await askDialog({title:'Allow all for '+a.name+'?',body:'Edits, shell commands, web requests and tools will run without asking, in '+roomOf(a).path+'. Nothing is undone automatically; you can switch back at any time.',
       check:pend?{label:'Also approve the '+pend+' request'+(pend>1?'s':'')+' waiting now',checked:true}:null,
-      buttons:[{label:'Cancel',value:null},{label:'Allow edits',value:'ok',cls:'primary warn'}]});
+      buttons:[{label:'Cancel',value:null},{label:'Allow all',value:'ok',cls:'primary warn'}]});
     if(!r)return; opts.approvePending=!!r.checked;
   } else if(grants){
     const r=await askDialog({title:'Switch '+a.name+' to '+MODE_NAME[mode]+'?',body:'This session has '+grants+' remembered "Approve for this session" permission'+(grants>1?'s':'')+'. Keep them for when you switch back, or clear them now?',
@@ -1327,8 +1327,8 @@ async function changeMode(a,mode){
   if(!res||!res.ok){toast('Could not change the mode: '+esc((res&&res.error)||'unknown error'),5000);return;}
   a.info.permMode=mode; a.info.permRestored=undefined; a.role=roleFor(a.info);
   if(opts.clearGrants)setGrants(a,[]);
-  toast(esc(a.name)+': <b>'+esc(MODE_NAME[mode])+'</b> from the next request.'+(mode==='allow'?' Edits run without asking.':''),4200);
-  if(ui.selected&&liveRoot(byId(ui.selected)||a)===a){const c=$('modeChip');if(c){c.outerHTML=modeChipHTML(a);}const h=document.querySelector('#panel .hint');if(h)h.textContent=h.textContent.replace(/\([a-z\-]+\)\.?$/,'('+a.info.permMode+').');updatePanelHeader();}
+  toast(esc(a.name)+': <b>'+esc(MODE_NAME[mode])+'</b> from the next request.'+(mode==='allow'?' Everything runs without asking.':''),4200);
+  if(ui.selected&&liveRoot(byId(ui.selected)||a)===a){const c=$('modeChip');if(c){c.outerHTML=modeChipHTML(a);}const h=document.querySelector('#panel .hint');if(h)h.textContent=h.textContent.replace(/\([^()]*\)\.?$/,'('+MODE_NAME[a.info.permMode]+').');updatePanelHeader();}
   scheduleRender();
 }
 document.addEventListener('click',e=>{
@@ -1380,7 +1380,7 @@ function newSession(a0){
   const d=document.createElement('div');d.id='sessDlg';d.className='dlg-ov';
   d.innerHTML=`<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="sdT"><h3 id="sdT">New session in ${esc(roomOf(a).name)}</h3>
    <p class="dsub">Another agent with its own chat in <code>${esc(roomOf(a).path)}</code>.</p>
-   <label>Permissions<select id="sdPerm"><option value="read-only">Read-only</option><option value="ask">Ask first</option><option value="allow">Allow edits</option></select></label>
+   <label>Permissions<select id="sdPerm"><option value="read-only">Read-only</option><option value="ask">Ask first</option><option value="allow">Allow all (no prompts)</option></select></label>
    <label>Model<select id="sdModel"></select></label>
    <label id="sdEffL">Reasoning effort<select id="sdEff"></select></label>
    ${bridge.setCap?'<label>Credit cap (AIU, empty = no cap)<input id="sdCap" type="number" min="0.001" step="0.01" placeholder="No cap"></label>':''}
@@ -1567,7 +1567,7 @@ async function announcePrevious(a){
   if(!ui.selected){st.open=true;openPanel(a.id,false);}
 }
 async function confirmAllow(what){
-  const r=await askDialog({title:'Allow edits for '+what+'?',body:'Edits, shell commands and other changes will run without asking. Nothing is undone automatically. Allow edits is not remembered: after a restart this folder starts in Ask first.',buttons:[{label:'Cancel',value:null},{label:'Allow edits',value:'ok',cls:'primary warn'}]});
+  const r=await askDialog({title:'Allow all for '+what+'?',body:'Edits, shell commands, web requests and tools will run without asking. Nothing is undone automatically. The choice is saved for this folder and comes back after a restart, marked restored.',buttons:[{label:'Cancel',value:null},{label:'Allow all',value:'ok',cls:'primary warn'}]});
   return !!r;
 }
 async function addVia(fn){
@@ -1595,7 +1595,7 @@ if(bridge){
   $('modelSel').onchange=()=>fillEffortSelect($('effortSel'),$('modelSel').value);
   bridge.onEvent(onLiveEvent);
   bridge.onAgentAdded(addLiveAgent);
-  bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();const rs=l.filter(x=>x.permRestored&&!x.parent).length;if(rs)toast(rs+' saved folder'+(rs>1?'s were':' was')+' restored in <b>Allow edits</b>, as you left '+(rs>1?'them':'it')+'. Edits and commands run without asking there; the mode chip says <i>restored</i>. "Approve for this session" grants start empty.',9000);});
+  bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();const rs=l.filter(x=>x.permRestored&&!x.parent).length;if(rs)toast(rs+' saved folder'+(rs>1?'s were':' was')+' restored in <b>Allow all</b>, as you left '+(rs>1?'them':'it')+'. Everything runs without asking there; the mode chip says <i>restored</i>. "Approve for this session" grants start empty.',9000);});
   loadModels();
   if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};}).catch(()=>{});
   agents=LIVE.agents; ROOMS=LIVE.rooms;

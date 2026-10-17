@@ -74,17 +74,18 @@ const shortCmd = (cmd: string, n = 28): string => (cmd.length > n ? cmd.slice(0,
  *    redirects, substitutions, newlines) of programs that are not shells, interpreters or privilege tools.
  *  - read (outside the roots): the folder of the path
  *  - url: the host; mcp / custom tools: the tool name; anything else: the kind.
+ * `flavor` is injectable so tests can use Windows paths on any host (spec 003 FR-031).
  */
-export function grantScope(req: PermissionLike): GrantScope {
+export function grantScope(req: PermissionLike, flavor: Pick<typeof path, 'dirname'> = path): GrantScope {
   switch (req.kind) {
     case 'write': {
       const f = req.fileName ?? '';
-      const dir = f ? path.dirname(f) : '';
+      const dir = f ? flavor.dirname(f) : '';
       return { key: `write:${dir}`, label: dir ? `write in ${baseName(dir)}/` : 'write' };
     }
     case 'read': {
       const f = req.path ?? '';
-      const dir = f ? path.dirname(f) : '';
+      const dir = f ? flavor.dirname(f) : '';
       return { key: `read:${dir}`, label: dir ? `read in ${baseName(dir)}/` : 'read' };
     }
     case 'shell': {
@@ -183,7 +184,7 @@ export interface BrokerOptions {
   emit: (e: BrokerEvent) => void;
   /**
    * Folders this session may read freely (cwd + workspace folders). When set, `read` requests for paths outside them are
-   * asked (Ask) or denied (Read-only); Allow edits approves everything. When unset, reads are not path-checked (unit tests, other callers).
+   * asked (Ask) or denied (Read-only); Allow all approves everything. When unset, reads are not path-checked (unit tests, other callers).
    */
   roots?: string[];
   /** Test hooks for the path check. */
@@ -232,7 +233,7 @@ export class PermissionBroker {
     return this.pending.size;
   }
 
-  /** "Approve now" after switching to Allow edits: answer every pending request with approve-once (nothing is remembered). */
+  /** "Approve now" after switching to Allow all: answer every pending request with approve-once (nothing is remembered). */
   approvePending(): number {
     const all = [...this.pending.values()];
     for (const p of all) p.resolve({ approve: true, remember: false, broad: false, via: 'user' });
@@ -263,7 +264,7 @@ export class PermissionBroker {
     const requestId = String(req.toolCallId ?? `${kind}-${now()}`);
     const outsideRead = kind === 'read' && this.mode !== 'allow' && this.readIsOutside(req);
     if ((kind === 'read' && !outsideRead) || this.mode === 'allow') return { kind: 'approve-once' };
-    const scope = grantScope(req);
+    const scope = grantScope(req, this.opts.pathCheck?.flavor);
     const base = {
       requestId,
       kind,

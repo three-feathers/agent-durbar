@@ -62,7 +62,7 @@ For folders I trust I can pick the mode that approves everything without prompts
 
 **Acceptance Scenarios**:
 
-1. **Given** the top-bar mode "Allow edits" (internally `allow`), **When** a folder is added, **Then** every request is approved with no card. *(test:)*
+1. **Given** the top-bar mode "Allow all (no prompts)" (internally `allow`; called "Allow edits" before FR-028), **When** a folder is added, **Then** every request is approved with no card. *(test:)*
 
 ---
 
@@ -88,13 +88,13 @@ For folders I trust I can pick the mode that approves everything without prompts
 - **FR-007** `[IMPLEMENTED]` real: The agent card goes to `waiting` ("Waiting for you") while a request is pending and returns to `working` after the answer.
 - **FR-008** `[IMPLEMENTED]` read: Permission answers cross IPC as `(agentId, requestId, approve, remember)`; the main process ignores unknown agent ids and only honors `remember` when approving.
 - **FR-009** `[IMPLEMENTED]` test: Summaries shown to the user: `write <file>`, `run <command>`, `read <path>`, `fetch <url>`, `mcp|custom-tool <name>`.
-- **FR-010** `[KNOWN GAP]` **Naming**: the top-bar and new-session dialog call the `allow` mode **"Allow edits"** while it approves *everything* (shell, URLs, MCP, custom tools). README calls it "Allow all". Constitution III requires it be named honestly. (Task T020.)
+- **FR-010** `[IMPLEMENTED]` (third delta, FR-028..FR-030) ~~**Naming**: the top-bar and new-session dialog call the `allow` mode **"Allow edits"** while it approves *everything* (shell, URLs, MCP, custom tools). README calls it "Allow all". Constitution III requires it be named honestly.~~ Now "Allow all". (Task T020.)
 - **FR-011** `[KNOWN GAP]` **Reads are never gated**: `read` requests are approved in every mode, for any path (the broker does not check the path is inside the folder). Whether the Copilot runtime itself limits reads to the workspace is **not verified**. (Task T021.)
 - **FR-012** `[KNOWN GAP]` **Persisted Allow-all**: the saved folder list stores `permMode: 'allow'` and restores it on next launch without asking again (`restoreFolders`). The opt-in is not re-confirmed after a restart. (Task T022.)
 - **FR-013** `[KNOWN GAP]` "Approve for this session" for a simple shell command approves **any arguments** of that command name (e.g. `git` covers `git push`); for writes it covers every file in that folder. This is documented as conservative but not configurable (README m5 "Remaining"). (Task T023.)
 - **FR-014** `[IMPLEMENTED]` (spec 018, T024) ~~A folder's mode cannot be changed after it is added (a new session in the same folder may pick another mode; that choice is not saved, only adding the folder again updates the saved mode). There is no per-agent mode switch in the chat. `read:` (Task T024.)
 - **FR-015** `[KNOWN GAP]` The broker runs against the SDK's permission *callback* only; behavior for permission kinds added by newer SDKs falls to the default branch (kind used as scope; denied in read-only, asked in ask). Not tested with real new kinds. `read:`
-- **FR-016** `[KNOWN GAP]` Windows path scope: `grantScope` uses the host platform's `path.dirname`; only POSIX paths are unit-tested. `read:` (Task T025.)
+- **FR-016** `[IMPLEMENTED]` (2026-10-17 delta, FR-031/FR-032; test: permissions) ~~Windows path scope: `grantScope` uses the host platform's `path.dirname`; only POSIX paths are unit-tested.~~ Now takes an injectable path flavor; Windows paths are unit-tested. (Task T025.)
 
 ### Key Entities
 
@@ -131,3 +131,23 @@ For folders I trust I can pick the mode that approves everything without prompts
 - **FR-027** `[IMPLEMENTED]` (test: permissions, unchanged) **"Approve for session" grants stay session-only.** Grants (exact shell, any-arguments, write folder, read folder, URL, MCP) live in the broker's memory for the session and are never written to disk; a restart starts with none, whatever the restored mode.
 - Unchanged: switching *to* Allow edits from the chat header, the top-bar "add folder" or the new-session dialog still asks for confirmation (FR-021's confirmation part stays). Only the restore path no longer asks or downgrades.
 - Tests: `scripts/test-folders.ts` (`restoreMode('allow')` keeps `allow` and flags `restored`; `upsert`/`setPermMode` persist `allow`; round trip through a new `FolderStore`; old file with `allow`).
+
+### 2026-10-16 (third delta): name the `allow` mode honestly (closes FR-010; T020, issue #5)
+
+**What was wrong.** The UI called the `allow` mode **"Allow edits"** while it approves *everything* (writes, shell commands, URLs, MCP and custom tools, reads outside the folder). The README already said "Allow all". Constitution III requires the mode to be named honestly. The add-folder / new-session confirmation also still said "Allow edits is not remembered: after a restart this folder starts in Ask first", which FR-025 made false.
+
+- **FR-028** `[IMPLEMENTED]` (sim) **The `allow` mode is called "Allow all" everywhere in the UI.** The permission selectors (top bar for new agents, new-session dialog) read **"Allow all (no prompts)"**. The chat-header mode chip, its menu, the card mode icon tooltip, confirmation dialogs and their button, toasts and the startup "restored" toast say **"Allow all"**. The agent role text says `no prompts` instead of `can edit`. The help text says that edits, shell commands, web requests and tools all run without asking.
+- **FR-029** `[IMPLEMENTED]` (sim) **The chat hint names the mode** with the same display name (`(Allow all)`, `(Ask first)`, `(Read-only)`) instead of the internal value (`(allow)`), and keeps it in sync after a mode switch.
+- **FR-030** `[IMPLEMENTED]` (sim) **The confirmation is truthful.** Switching to Allow all (add folder, new session, chat header) says the choice is saved for the folder and comes back after a restart, marked *restored* (FR-025/FR-026).
+- The top-bar permission selector is allowed up to 180px wide (`#liveBar #permMode` in `styles.css`) so the longer label is not cut off.
+- Unchanged: the internal value stays `allow` (saved folder files, IPC, `DURBAR_PERM=allow`, the broker). No behavior change beyond text. README aligned to "Allow all".
+- Acceptance: on the simulator (`DURBAR_SIM=15`), no visible "Allow edits" remains in the top bar, new-session dialog, mode chip/menu, confirmation, toasts or chat hint; the top bar still fits at 1280x800 and 1440x900.
+
+### 2026-10-17: Windows paths in "Approve for this session" scopes (closes FR-016; T025, issue #6)
+
+**What was wrong.** `grantScope` took the folder of a write/read path with the host's `path.dirname` and was only unit-tested with POSIX paths, so its Windows behavior (drive letters, backslashes, UNC shares) was unverified. `isInsideRoots` already had an injectable path flavor; `grantScope` did not.
+
+- **FR-031** `[IMPLEMENTED]` (test: permissions) **`grantScope` takes an optional path flavor** (`Pick<typeof path, 'dirname'>`, default the host `path`). The broker passes the flavor of its path check (`BrokerOptions.pathCheck.flavor`) so scopes and read checks use the same rules. Behavior on the host platform is unchanged.
+- **FR-032** `[IMPLEMENTED]` (test: permissions) **Windows paths give the folder, with the platform's separators**: `C:\repo\src\x.ts` → key `write:C:\repo\src`, label `write in repo/src/`; a read of `D:\data\in.csv` → `read:D:\data`; a file at a drive root `C:\x.ts` → `write:C:\`; a UNC path `\\server\share\dir\f.txt` → `write:\\server\share\dir`. Two writes in the same Windows folder share one key; a write in a subfolder does not match the parent's grant.
+- `[KNOWN GAP]` (task T028; test: permissions shows it) Known limit, unchanged: grant keys are compared exactly, so on Windows `C:\Repo` and `c:\repo` are different keys. The effect is conservative (the user is asked again, nothing extra is approved). Case-folding grant keys is not part of this change.
+- Not verified: a real Copilot session on Windows (what path spelling the runtime sends). CI runs `npm test` on Windows, so the host default is exercised there.

@@ -175,7 +175,7 @@ function restoreFolders(): void {
   for (const f of folderStore.load()) {
     try {
       if (!fs.existsSync(f.workspace)) continue; // e.g. an unplugged drive: stays saved, just not shown
-      const rm = restoreMode(f.permMode); // exactly as saved, Allow edits included, flagged so the UI shows "restored" (spec 003 FR-025/026)
+      const rm = restoreMode(f.permMode); // exactly as saved, Allow all included, flagged so the UI shows "restored" (spec 003 FR-025/026)
       const info = infoFor(f.workspace, rm.mode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, hidden: f.hidden, closed: f.closed, permRestored: rm.restored || undefined, maxAiCredits: f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits });
       agents.set(info.id, info);
     } catch {
