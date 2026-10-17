@@ -8,5 +8,6 @@
 - [x] T006 `placeMap` in settings: `src/shared/places.ts` parse/validate (server names and place ids only), `SettingsStore`, IPC `settings:setPlace`, preload/api, simulator bridge; tests [FR-007, FR-010, FR-011]
 - [x] T007 Settings "Places" section in `screens.js` (server list, place picker, default label) [FR-008]
 - [x] T008 `check:office` lobby checks; fit at 1440x900 and 1280x800 with 15 agents [FR-009, SC-002]
-- [ ] T009 Simulator driver for SC-001/SC-003, screenshots (lobby with agents, one mid-walk) at both sizes, README status, specs index [FR-010, SC-001, SC-003]
+- [x] T009 Simulator driver for SC-001/SC-003, screenshots (lobby with agents, one mid-walk) at both sizes, README status, specs index [FR-010, SC-001, SC-003]
 - [x] T010 Simulator: `bash`/`github`/`playwright`/`my-notes` calls last 1.5-4 s (seeded); with `DURBAR_SIM_FREEZE=1` a fixed set of agents stays mid-call so the lobby is occupied in screenshots [SC-001, FR-010]
+- [ ] T011 List per-folder MCP extras in Settings > Places before they are used (needs an app-wide read of every folder's extras; known gap under FR-008)
