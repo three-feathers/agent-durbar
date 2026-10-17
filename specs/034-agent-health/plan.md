@@ -32,3 +32,5 @@
 - Simulator already had a monster (Noor 91%), a heavy agent (Elif 86%), an error (Tomas) and a limit (Omar); added: Sven has three failed calls in a row, `simwaitold=1` backdates pending requests by 2 minutes.
 - Checks run: `npm run typecheck && npm run build && npm test` (26 groups), `npm run check:office` 105/105 (no layout change). Seen once on the simulator at 1440x900. The driver, close-up screenshots, Serious mode and the review are phase 3.
 
+## Verification (phase 3, 2026-10-17)
+- Driver `scripts/shots-034.js` (both sizes, Serious mode, reduced motion, `mini`), screenshots `docs/screenshots/034-*`, mutation check, review fixes and known gaps: see the spec's *Verification* section.

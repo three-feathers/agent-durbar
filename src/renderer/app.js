@@ -46,8 +46,9 @@ const NO_MOOD={body:'normal',trouble:null,pct:null,words:''};
 function moodFor(a){
   if(SERIOUS||!a||a.parent||!a.live)return NO_MOOD;
   const c=STATS.agent(a.id).ctx, pct=c&&c.limit>0?window.DurbarStats.ctxLevel(c.tokens,c.limit).pct:null;
-  const body=MOODS.bodyOf(pct), waitingMs=MOOD.waitingMs(a.id), failStreak=MOOD.failStreak(a.id);
-  const trouble=MOODS.troubleOf({state:a.state,ambulance:AMB_ID===a.id,limit:!!a.limit,waitingMs,failStreak});
+  const st=vis(a), body=MOODS.bodyOf(pct), failStreak=MOOD.failStreak(a.id);
+  const waitingMs=st==='waiting'?MOOD.waitingMs(a.id):0; /* only while the figure is waiting: a request answered elsewhere must not leave it tapping */
+  const trouble=MOODS.troubleOf({state:st,ambulance:AMB_ID===a.id,limit:!!a.limit,waitingMs,failStreak});
   return {body,trouble,pct,words:MOODS.phrases({body,pct,trouble,waitingMs,failStreak}).join(', ')};
 }
 const moodWords=a=>{const w=moodFor(a).words;return w?' — '+esc(w):'';};
@@ -193,7 +194,7 @@ function scene(a,mini,c){
   s+=`<rect x="70" y="53" width="8" height="10" rx="3" fill="${skinD}"/>`;
   const closed = st==='idle'||mood.trouble==='faint';
   const tilt = mood.trouble==='faint'?'rotate(-24 74 56)': st==='idle'?'rotate(-7 74 56)': st==='error'?'rotate(4 74 56)':'';
-  s+=`<g ${tilt?`transform="${tilt}"`:''}><g class="${st==='working'?'head':''}"><circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>`;
+  s+=`<g ${tilt?`transform="${tilt}"`:''}${mood.trouble==='faint'?' style="transform-box:view-box"':''}><g class="${st==='working'?'head':''}"><circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>`;
   s+=hairFront(k.style,k.hair);
   if(mood.body==='monster') s+=`<path d="M64.5 35.5l-4.2-9.5 9 5.2zM83.5 35.5l4.2-9.5-9 5.2z" fill="#6e8a70"/><path d="M65 33l2.4-4.6 2.6 3.6 2.8-5 2.8 4.6 2.6-3.6 2.4 4.6" fill="none" stroke="${k.hair}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`;
   const ex = closed?0:1.4;
@@ -224,10 +225,10 @@ function scene(a,mini,c){
   const typing = st==='working';
   s+='<g class="pp">';
   s+=`<g class="${typing?'hand-l':''}">${armL(61,71,68,81)}${hand(68.5,81.4)}</g>`;
-  if(st==='waiting'&&mood.trouble!=='impatient'){
+  if(st==='waiting'&&mood.trouble!=='impatient'&&mood.trouble!=='faint'){ /* impatient taps the desk, a fainted agent does not wave */
     const wave = REDUCED||c?'':`<animateTransform attributeName="transform" type="rotate" values="-4 87 71;6 87 71;-4 87 71" dur="2.8s" repeatCount="indefinite"/>`;
     s+=`<g${c?' class="wave"':''}>${wave}${armL(87,71,97,46)}${hand(97.5,42.5)}</g>`;
-  } else if(st==='idle'){
+  } else if(st==='idle'||mood.trouble==='faint'){
     s+=`<g>${armL(87,71,96,80)}${hand(97,80.5)}</g>`;
   } else {
     s+=`<g class="${typing?'hand-r':mood.trouble==='impatient'?'tap':''}">${armL(87,71,81,81)}${hand(80.5,81.4)}</g>`;

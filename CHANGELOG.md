@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.4 tag)
 
+- **Agents show how they are doing (spec 034, issue #20).** An agent's figure gets heavier from 70% of its context window and turns into a grumpy green monster above 90% (time for a fresh session). Trouble gets a drawing: an ambulance by the desk when a session errors (one at a time, the latest error), a faint at the credit limit, tapping the desk after waiting 60 s for you, dizzy stars after 3 failed tool calls in a row. Card text is unchanged; the card's tooltip and accessible label name the state. **Settings > Agent mood > Serious mode** turns it all off; with reduced motion nothing moves. Simulator: `simwaitold=1`. Simulator and unit tests (`test:mood`, `scripts/shots-034.js`), 0 AIU; not checked on a real session.
+
 - **Usage totals kept across restarts (spec 011 FR-024..FR-030, issue #21).** The office chip and the folder totals now show the credits spent **since the last reset**, saved on this computer (`durbar-usage-totals.json`: numbers, folder names and a fingerprint of each folder's path, never prompts or paths); the tooltip also gives this run alone. Settings > Credit cap > *Usage totals* shows the figure and has **Reset usage totals** (with a confirmation; Tools > All time is not touched). "credits not reported" can now be seen in the simulator (`simunreported=<room>`). The multiplier estimate is left to spec 030. Simulator and unit tests (`test:usagedoc`, `scripts/shots-021.js`), 0 AIU; not checked on a real session.
 
 ## v0.1.0-alpha.4 ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4), 2026-10-17)
