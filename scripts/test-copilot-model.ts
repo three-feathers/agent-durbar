@@ -111,6 +111,21 @@ async function main(): Promise<void> {
   assert.strictEqual(modelOptionFrom({ id: 'm3', capabilities: { limits: { max_context_window_tokens: 0 } } }).contextWindow, undefined, 'a window of 0 (auto) is unknown');
   assert.deepStrictEqual(modelOptionFrom({ id: 'm4', supportedContextTiers: ['default', 'long_context'] }).contextTiers, ['default', 'long']);
 
+  // ---- T040: the REAL list of the owner's login (provenance real, read-only, no credits): only `auto`, with no window, price, effort or tier fields
+  {
+    const fx = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'fixtures', 'models', 'real-list-models-2026-10-17.json'), 'utf8')) as { provenance: string; models: Array<{ id: string }>; builtInCatalogIds: string[] };
+    assert.strictEqual(fx.provenance, 'real');
+    assert.deepStrictEqual(fx.models.map((m) => m.id), ['auto']);
+    assert.ok(fx.builtInCatalogIds.length > 10 && fx.builtInCatalogIds.every((x) => typeof x === 'string'));
+    assert.ok(!JSON.stringify(fx).match(/ghu_|gho_|ghp_|github_pat_|"login"|"host"|"statusMessage"|bearer/i), 'the fixture keeps no account detail');
+    const opt = modelOptionFrom(fx.models[0] as never);
+    assert.deepStrictEqual(opt, { id: 'auto', name: 'Auto', multiplier: undefined, efforts: [], defaultEffort: undefined, disabled: false, contextWindow: undefined });
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const D = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'modelswitch.js')) as { priceLine: (m: unknown) => string; windowOf: (m: unknown) => number };
+    assert.strictEqual(D.priceLine(opt), 'price not reported');
+    assert.strictEqual(D.windowOf(opt), 0, 'the window of auto is unknown, the chip says so');
+  }
+
   // ---- T032: the pure config keeps the saved choice on create and resume; autoTier only for a NEW auto session
   assert.deepStrictEqual(modelConfig({ model: 'auto', autoTier: 'efficiency' }, false), { model: 'auto', capi: { autoTier: 'efficiency' } });
   assert.deepStrictEqual(modelConfig({ model: 'auto', autoTier: 'efficiency' }, true), { model: 'auto' }, 'no autoTier on resume');

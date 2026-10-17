@@ -266,7 +266,7 @@ export class CopilotAdapter implements AgentAdapter {
   /** Change the credit cap of a running session; `null` removes it. The SDK confirms with a `session.session_limits_changed` event. */
   /**
    * Switch the model of a live session (spec 030 FR-003..FR-009, SDK `rpc.model.switchTo`, @experimental).
-   * Built from the SDK 1.0.22 types and docs only, never run on a real account (T041/T044/T045 are Phase 3, they cost credits).
+   * Built from the SDK 1.0.22 types and docs only, never run on a real account (T041..T046 are Phase 3, they cost credits).
    * Sent: model, effort, tier, `requireAvailable`, `deferIfModelChangeQueued`, `source: 'model_picker'`, `runCompactionPreflight`.
    * NEVER sent: `repoScope`, `modelChangeScope`, `pickerPersistence` (they write Copilot's own settings) and `compactionDecision`
    * (its values are unknown). To "compact and switch" the context is compacted first with `history.compact` (trigger `model_switch`),
@@ -310,7 +310,7 @@ export class CopilotAdapter implements AgentAdapter {
     }
   }
 
-  /** Remove a switch the runtime queued during a turn (`rpc.queue.removeAt`). What Stop does to a queued switch is unverified (T046). */
+  /** Remove a switch the runtime queued during a turn (`rpc.queue.removeAt`). What Stop does to a queued switch is unverified (T042). */
   async cancelQueuedModel(sessionId: string, queueId: string): Promise<void> {
     const live = this.mustGet(sessionId);
     const r = await live.session.rpc.queue.removeAt({ id: queueId });
