@@ -212,3 +212,11 @@ No answers from the owner were available while this was written, so these are **
   - The real Copilot adapter is unchanged: no `setModel`, `cancelQueuedModel` or `compact`, so `AgentInfo.modelControl.switch` is `none` and the handlers answer "start a new session". Phase 2 (T030..T035) adds them.
   - Simulator: five models (Auto, Sim Fast, Sim Mid, Sim Deep with a long-context tier, Sim Preview with no price), made-up prices in credits per million tokens. `sim:` a switch asked for during a turn is queued and applies when the turn ends or is stopped; the runtime's real behaviour on interrupt is unverified (T044, T046). A chat message containing "fallback" makes the simulated runtime switch models by itself.
   - Tests: `test:modelswitch`, `test:simmodel`, plus additions to `test:events` and `test:folders`.
+- **Phase 1, UI (sim only):**
+  - Chat-header model chip is a menu (`role=menu`, arrow keys, Escape and focus return); the mode menu gained a *Model and context...* row, which is also the office card entry (right-click or Shift+F10).
+  - `src/renderer/dialog.js` gained optional `lines` (a short list) and `input` (one text field), both set as text; `test:dialog` covers them.
+  - The context chip is a group: chip plus **Compact** (shown only when `modelControl.compact`). After a model event the chip says "Window: waiting for next message" until the next `context` event. The chip's click handler is now a document-level delegate (it was lost when the chip was re-rendered).
+  - Real Copilot agents: `modelControl.switch = none`, so the menu is disabled with a reason and offers New session. They also get compaction lines and the start-fresh note, because the mapper now emits `compaction` events for real sessions (read-only information, synthetic fixtures only; no real session was run).
+  - Under Auto the agent stays "Auto": a runtime model change is shown in the chat but does not rename the chip (main and renderer). The start-up `model_change` report of a real session is silent.
+  - Known gaps: estimate and prices are the runtime's own numbers or none; the long-tier window semantics, what Stop does to a queued switch, and the real `compactionDecision` values are unverified (T040..T046). No card button was added.
+  - Screenshots: `docs/screenshots/030-*-1440x900.png` and `-1280x800.png` (`npm run check:model`).

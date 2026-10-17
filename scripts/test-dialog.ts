@@ -97,5 +97,21 @@ const setup = () => {
     assert.strictEqual(t.doc.querySelectorAll('#modeDlg').length, 1, 'only one dialog at a time');
     t.key('Escape'); assert.strictEqual(await p2, null); void p1;
   }
+  // spec 030: a short list under the body and an optional text input; everything is text, never HTML
+  {
+    const t = setup(); t.chip.focus();
+    const p = t.ask(t.opts({ lines: ['Deep costs 2× more <b>x</b>', 'Second line'], input: { label: 'Focus (optional)', placeholder: 'e.g. keep the API notes', max: 10 } }));
+    const items = Array.from(t.doc.querySelectorAll('#modeDlg .dlist li'));
+    assert.deepStrictEqual(items.map((li) => li.textContent), ['Deep costs 2× more <b>x</b>', 'Second line']);
+    assert.strictEqual(t.doc.querySelectorAll('#modeDlg .dlist b').length, 0, 'lines are text, not HTML');
+    const inp = t.doc.getElementById('mdIn') as HTMLInputElement;
+    assert.strictEqual(inp.maxLength, 10);
+    inp.value = 'keep notes';
+    const order = Array.from(t.doc.querySelectorAll('#modeDlg input, #modeDlg .btn')) as HTMLElement[]; // input, Cancel, Allow all
+    assert.strictEqual(order.length, 3);
+    order[2].focus(); assert.ok(t.key('Tab'), 'Tab wraps over the input too'); assert.strictEqual(t.doc.activeElement, order[0]);
+    t.btn('Allow all').click();
+    assert.deepStrictEqual(await p, { value: 'ok', checked: false, text: 'keep notes' });
+  }
   console.log('dialog tests passed');
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -169,6 +169,8 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       const roomName = opts.solo ? name.toLowerCase() + '-app' : room;
       const cwd = opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
       const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true } } as AgentInfo;
+      // Priya behaves like a real Copilot agent today (spec 030 Phase 1): no in-place switch or compact, so the UI shows the disabled state and offers a new session.
+      if (i === 6) info.modelControl = { switch: 'none', effort: false, contextTier: false, compact: false, windowKnown: true };
       (info as AgentInfo & { roomName?: string; role?: string }).roomName = roomName;
       (info as AgentInfo & { roomName?: string; role?: string }).role = role;
       return {
@@ -372,6 +374,8 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       emit({ type: 'user', sessionId: sid(s), timestamp: now(), text: s.prompt, attachments: (s.attachments ?? []).map((p) => ({ path: p, kind: /\.(png|jpe?g|gif)$/i.test(p) ? 'image' as const : 'file' as const })) });
       if (s.state === 'idle') return;
       mcpStatus(s, sims.indexOf(s));
+      // An agent that already compacted once earlier in its session (spec 030): the chat shows that line.
+      if (s.compactions && s.ctx) emit({ type: 'compaction', sessionId: sid(s), timestamp: now(), phase: 'complete', trigger: 'auto', tokensBefore: Math.round(s.ctx.limit * 0.95), tokensAfter: Math.round(s.ctx.limit * 0.24), tokensRemoved: Math.round(s.ctx.limit * 0.71), limit: s.ctx.limit });
       emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: s.intent });
       if (s.state !== 'done') think(s, 4); // done agents show a turn without reasoning (the model sent none)
       const done = sims.indexOf(s) === 0 ? 8 : s.state === 'working' ? 4 : 3;
@@ -687,6 +691,7 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       setModel: async (id, req) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
+        if (s.info.modelControl?.switch === 'none') return { ok: false, error: 'This agent cannot change its model in place. Start a new session with the model you want.' };
         const m = simModel(req?.model);
         if (!m) return { ok: false, error: 'That model is not in the list your account offers.' };
         if (req.effort && !m.efforts.includes(req.effort)) return { ok: false, error: 'That model does not offer this reasoning effort.' };
@@ -715,6 +720,7 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       compact: async (id, focus) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
+        if (!s.info.modelControl?.compact) return { ok: false, error: 'This agent cannot compact its context in place. Start a new session instead.' };
         if (isBusy(s)) return { ok: true, result: { success: false, message: 'The agent is working. Compact when it is idle.' } };
         return { ok: true, result: await compactNow(s, 'manual', /\bfail\b/i.test(focus ?? '')) };
       },

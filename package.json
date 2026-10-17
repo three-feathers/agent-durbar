@@ -62,6 +62,7 @@
     "test:modelswitch": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-modelswitch.js",
     "test:simmodel": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-sim-model.js",
     "test:dialog": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-dialog.js",
+    "check:model": "npm run build && xvfb-run -a sh -c \"L=\\$(mktemp); DURBAR_USER_DATA=\\$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=\\$PWD/scripts/shots-model.js electron . --no-sandbox 2>&1 | tee \\$L; grep -q 'model] all checks passed' \\$L\"",
     "check:dialog-focus": "npm run build && xvfb-run -a sh -c \"L=\\$(mktemp); DURBAR_USER_DATA=\\$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=\\$PWD/scripts/check-dialog-focus.js electron . --no-sandbox 2>&1 | tee \\$L; grep -q 'dialog-focus] all checks passed' \\$L\""
   },
   "devDependencies": {
