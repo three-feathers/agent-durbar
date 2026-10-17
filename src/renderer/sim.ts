@@ -516,9 +516,20 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
 
     // ---- Fake credit caps (spec 011): in memory only ----
     let defaultCap: number | undefined;
+    /* spec 024: place mapping kept in memory (plain script: no imports, so the ids are listed here) */
+    const placeMap: Record<string, string> = {};
+    const PLACE_CHOICES = ['library', 'software', 'terminal', 'web', 'other', 'desk'];
     const capApi: Partial<DurbarApi> = {
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, about: { name: 'Agent Durbar', version: '0.1.0-alpha.2 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, about: { name: 'Agent Durbar', version: '0.1.0-alpha.2 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
+      setPlace: async (server, place) => {
+        const name = typeof server === 'string' ? server.trim() : '';
+        if (!name || name.length > 200 || name === '__proto__') return { ok: false, placeMap: { ...placeMap } };
+        if (place === null) delete placeMap[name];
+        else if (PLACE_CHOICES.includes(place)) placeMap[name] = place;
+        else return { ok: false, placeMap: { ...placeMap } };
+        return { ok: true, placeMap: { ...placeMap } };
+      },
       setCap: async (id, c) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };

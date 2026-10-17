@@ -54,6 +54,8 @@ export interface AppSettingsView {
   about?: AboutView;
   /** Default cap (AIU) applied to new sessions; unset = none. */
   defaultMaxAiCredits?: number;
+  /** Places in the office (spec 024): MCP server name -> place id or `desk`; unmapped servers use the built-in rules. */
+  placeMap?: Record<string, string>;
 }
 
 export interface ModelChoice {
@@ -205,6 +207,8 @@ export interface DurbarApi {
   /** Credit caps (spec 011). `credits: null` removes the cap. */
   getSettings?(): Promise<AppSettingsView>;
   setDefaultCap?(credits: number | null): Promise<{ ok: boolean; defaultMaxAiCredits?: number }>;
+  /** Map an MCP server to a place (`library|software|terminal|web|other|desk`), or `null` to use the default (spec 024). */
+  setPlace?(server: string, place: string | null): Promise<{ ok: boolean; placeMap?: Record<string, string> }>;
   setCap?(id: string, credits: number | null): Promise<{ ok: boolean; error?: string; maxAiCredits?: number }>;
   resolveLimit?(id: string, requestId: string, choice: LimitChoice): Promise<{ ok: boolean; error?: string }>;
 

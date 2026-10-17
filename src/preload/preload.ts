@@ -24,6 +24,7 @@ const api: DurbarApi = {
   removeFolder: (id) => ipcRenderer.invoke('folders:remove', id),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setDefaultCap: (credits) => ipcRenderer.invoke('settings:setDefaultCap', credits),
+  setPlace: (server, place) => ipcRenderer.invoke('settings:setPlace', server, place),
   setCap: (id, credits) => ipcRenderer.invoke('agents:setCap', id, credits),
   resolveLimit: (id, requestId, choice) => ipcRenderer.invoke('agents:resolveLimit', id, requestId, choice),
   usageAllTime: () => ipcRenderer.invoke('usage:allTime'),
