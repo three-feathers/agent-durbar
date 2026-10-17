@@ -31,6 +31,18 @@ comment with a line like the next one (or ask a maintainer for the `spec-exempt`
 Spec-Exempt: <reason>
 -->
 
+## Docs
+
+- [ ] **Docs updated** in this PR: whichever of `README.md`, `docs/`, `CHANGELOG.md`, the spec's `tasks.md` and the screenshots it shows are affected (list in [AGENTS.md](../AGENTS.md#keep-docs-in-sync)) — links:
+- [ ] ...or **no docs impact**: I wrote a `Docs: n/a <reason>` line below (only a reminder check reads it; it never blocks)
+
+<!--
+No user-visible change, no script, permission, setting, MCP/tool, release-status or contributor change? Replace this comment
+with a line like the next one. A CI check only warns when src/ changes without a docs change; it does not block.
+
+Docs: n/a <reason>
+-->
+
 ## Verification
 
 - [ ] `npm run typecheck && npm run build && npm test` pass locally (no AI credits spent)
@@ -38,5 +50,6 @@ Spec-Exempt: <reason>
 - [ ] UI change: screenshots at **1440x900** and **1280x800** with 15 simulated agents (`DURBAR_SIM=15`), added under `docs/screenshots/` and linked below
 - [ ] Real-session check, if any (state the prompt count and the AI credits it used) — otherwise "simulator only"
 - [ ] README/docs claims match the code; anything unverified is worded as unverified
+- [ ] Screenshots I changed or that now show old wording (for example a renamed button) are replaced, or listed below as needing a real run
 
 <!-- Screenshots / notes -->

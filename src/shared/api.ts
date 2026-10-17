@@ -152,6 +152,66 @@ export interface McpFolderState {
   cliNames: string[];
 }
 
+/** One env/header row in an import preview: the key and whether a value would be copied. The value itself never leaves the main process. */
+export interface McpImportRow {
+  key: string;
+  /** true = a literal value would be copied into the secret store (shown masked); false = no value (enter it after importing). */
+  hasValue: boolean;
+}
+
+/** One server found in a folder's `.vscode/mcp.json` (spec 020 FR-023). */
+export interface McpImportItem {
+  /** Opaque id for `mcpImportApply` (source folder index + the key in the file). */
+  id: string;
+  name: string;
+  originalName: string;
+  /** Folder name the entry comes from; only set when the key has several folders (a workspace). */
+  from?: string;
+  transport: McpTransport;
+  command?: string;
+  args?: string[];
+  workingDirectory?: string;
+  url?: string;
+  env: McpImportRow[];
+  headers: McpImportRow[];
+  notes: string[];
+  /** Why the box is disabled (not importable). */
+  blocked?: string;
+  /** This exact definition is already an extra of this folder. */
+  alreadyAdded?: boolean;
+}
+
+/** What was found for one folder of the key. */
+export interface McpImportFile {
+  from: string;
+  state: 'ok' | 'missing' | 'error';
+  message?: string;
+  /** Entries that are not usable at all. */
+  skipped: number;
+  /** Ids of the file's `inputs` (names only; they are never asked for or stored). */
+  inputs: string[];
+}
+
+export interface McpImportPreview {
+  ok: boolean;
+  error?: string;
+  /** Display label of the file (never the real path). */
+  label: string;
+  files: McpImportFile[];
+  items: McpImportItem[];
+  /** Digest of the file text(s); `mcpImportApply` refuses when the files changed since. */
+  digest: string;
+  skipped: number;
+}
+
+export interface McpImportResult {
+  ok: boolean;
+  error?: string;
+  /** Names of the extras that were created (off, not trusted). */
+  imported: string[];
+  failed: { name: string; error: string }[];
+}
+
 export interface McpResult {
   ok: boolean;
   error?: string;
@@ -223,6 +283,9 @@ export interface DurbarApi {
   mcpRemove?(key: string, name: string): Promise<{ ok: boolean }>;
   mcpSetEnabled?(key: string, name: string, enabled: boolean, trustAck?: boolean): Promise<McpResult>;
   mcpMoveLegacy?(name: string, key: string): Promise<McpResult>;
+  /** Per-folder import from VS Code's `.vscode/mcp.json` (spec 020 FR-020): a preview, then the ticked ids. Imported servers are off and untrusted. */
+  mcpImportPreview?(key: string): Promise<McpImportPreview>;
+  mcpImportApply?(key: string, ids: string[], digest: string): Promise<McpImportResult>;
   mcpRemoveLegacy?(name: string): Promise<{ ok: boolean }>;
   agentMcp?(id: string): Promise<{ ok: boolean; servers: AgentMcpEntry[]; live: boolean }>;
   /** Per-agent override: `enabled=false` turns the server off for this agent (now when the session runs, else at its next start). */

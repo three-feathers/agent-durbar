@@ -21,10 +21,11 @@ Node 20.19+ or 22.12+ is required. `npm start` with real sessions needs a GitHub
 - Add or update a test in `scripts/` when you change the permission broker, attachments or launcher logic.
 - Run `npm run typecheck && npm run build && npm test` before opening a PR; CI runs the same. For UI changes attach screenshots at 1440x900 and 1280x800 with 15 simulated agents (`DURBAR_SIM=15`).
 - Use the pull request template and tick the checklist honestly; state what you did *not* verify.
+- **Keep the docs in sync, in the same PR.** If you change something a user can see, a script, a permission, a setting, MCP or tool behavior, the release status or the contributors, update `README.md`, the relevant `docs/` page, the spec's `tasks.md`, `CHANGELOG.md` and the screenshots it shows. The exact list is in [AGENTS.md](AGENTS.md#keep-docs-in-sync). No docs impact? Write `Docs: n/a <reason>` in the PR description. A CI check only *warns* about it; it never blocks.
 
 ## Spec Kit workflow is mandatory
 
-Agent Durbar is spec-driven with [GitHub Spec Kit](https://github.com/github/spec-kit). **No code without a spec, a plan and tasks.** This applies to everyone, including coding agents and the maintainer. The rules live in [`.specify/memory/constitution.md`](.specify/memory/constitution.md) (principle I); the specs live in [`specs/`](specs/README.md) (001-010 describe what is already built, 011-014 are backlog drafts).
+Agent Durbar is spec-driven with [GitHub Spec Kit](https://github.com/github/spec-kit). **No code without a spec, a plan and tasks.** This applies to everyone, including coding agents and the maintainer. The rules live in [`.specify/memory/constitution.md`](.specify/memory/constitution.md) (principle I); the specs live in [`specs/`](specs/README.md) (001-010 describe what is already built, 011 is partly built, 012 is planned (spec, research, plan and tasks, no code), 013-014 are backlog drafts, 015-021 and 023 are built).
 
 | Step | Command (Copilot Chat in VS Code) | Produces |
 | --- | --- | --- |
@@ -72,7 +73,7 @@ The gate checks **presence, not quality**: it cannot tell a good spec from a one
 
 ## Releases (maintainer)
 
-Pushing a tag `v*` (for example `v0.1.0-alpha.2`; the tag must match `version` in `package.json`) runs `.github/workflows/release.yml`, which builds unsigned macOS, Windows and Linux packages and attaches them to a **draft** pre-release. Review the draft, then publish it by hand. Builds are not signed or notarized and there is no auto-update.
+Pushing a tag `v*` (for example `v0.1.0-alpha.3`; the tag must match `version` in `package.json`) runs `.github/workflows/release.yml`, which builds unsigned macOS, Windows and Linux packages and attaches them to a **draft** pre-release. Review the draft, then publish it by hand. Builds are not signed or notarized and there is no auto-update.
 
 ## License
 

@@ -2,7 +2,7 @@
 
 Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.
 
-> Status: **milestone 6 (full-screen chat, previous sessions, new sessions, folders, models) on top of milestone 5 (permission, attachment and office polish) on top of milestone 4 (floor-plan look for 10-15 agents) and milestone 3 (approvals and attachments verified on real Copilot sessions; Linux only, macOS/Windows untested).** The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. See [Status](#status-milestone-6-full-screen-chat-previous-sessions-folders-models).
+> Status: **alpha, `v0.1.0-alpha.3` ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.3), unsigned, not notarized).** `main` has unreleased changes after it, among them the per-folder MCP import from VS Code (see [CHANGELOG.md](CHANGELOG.md), "Unreleased"). The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. Latest work: [milestone 10 and usage totals](#status-milestone-10-tools-all-time-the-copilot-cli-mcp-list-first-mcp-extras-per-folder). Only Linux has been run by hand; macOS and Windows are built and unit-tested in CI but untested on real hardware. Built by [Three Feathers](https://github.com/three-feathers); the work is tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
 
 ![15 simulated agents at 1440x900 (roomy desks use the spare floor space)](docs/screenshots/m5-sim15-1440x900-closed.png)
 ![Full-screen chat with every other agent in a slim strip, 15 agents at 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
@@ -17,7 +17,7 @@ Command center to see, chat with and coordinate coding agents (Copilot CLI first
 
 ## Install from releases
 
-Download the build for your system from the [Releases page](https://github.com/three-feathers/agent-durbar/releases) (pre-releases are alpha builds):
+Download the build for your system from the [Releases page](https://github.com/three-feathers/agent-durbar/releases) (pre-releases are alpha builds). **Release status:** [`v0.1.0-alpha.3`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.3) is **published as a pre-release** (2026-10-17) and is the only public download. It is **unsigned and not notarized**, and it has **not been tested on real Mac or Windows hardware** (only Linux was run by hand). Upgrading in place from alpha.2 was not checked. `v0.1.0-alpha.1` is an unpublished draft. `v0.1.0-alpha.2` was never published: its draft was removed in favour of alpha.3 (the git tag `v0.1.0-alpha.2` remains). You can also build from source (below).
 
 | System | File |
 | --- | --- |
@@ -28,17 +28,31 @@ Download the build for your system from the [Releases page](https://github.com/t
 
 There is no auto-update: download a newer release to update.
 
-### What's new in v0.1.0-alpha.2
+### What's new in v0.1.0-alpha.3
 
-Full list in [CHANGELOG.md](CHANGELOG.md). Short version, since alpha.1:
+Full list in [CHANGELOG.md](CHANGELOG.md). Short version, since alpha.2:
+
+- **The permission mode is called *Allow all*** (was *Allow edits*; it always approved everything). Names are **Read-only / Ask first / Allow all** (spec 003, PR #15). Builds of alpha.2 still say *Allow edits*.
+- **Usage totals:** the office header shows the total AI credits (AIU) of all agents since the app opened, and each room header and closed door plate shows that folder's total. In memory only, not saved across restarts; "credits not reported" is shown when the runtime sends no figure (spec 011, PR #17).
+- Windows paths in "Approve for this session" scopes are unit-tested (spec 003, PR #16); a known gap remains for case and `/` vs `\` in grant keys.
+- Docs catch-up and a "Keep docs in sync" rule (spec 025).
+- **Still unsigned and not notarized** (steps below). **Untested on real macOS and Windows hardware**: CI builds and unit-tests them, only Linux has been run by hand.
+
+![Permission modes: Read-only / Ask first / Allow all](docs/screenshots/003-allow-all-menu-1280x800.png)
+![Office total and per-folder AIU totals](docs/screenshots/011-usage-totals-1280x800.png)
+
+### What was new in v0.1.0-alpha.2 (never published; included in alpha.3)
+
+Since alpha.1:
 
 - **MCP:** the Copilot CLI's server list is global and read live; Agent Durbar's own extras are per folder.
 - **Tools:** *This session* and *All time* usage (all-time counts are kept on disk, names and counts only).
 - **Credit caps** per session (soft cap, runtime minimum 30 AI credits).
-- **Permissions:** change an agent's mode any time; the saved mode (Allow all too) is restored exactly after a restart; reads outside the folder are asked or denied.
+- **Permissions:** change an agent's mode any time; the saved mode is restored exactly after a restart; reads outside the folder are asked or denied.
 - **About:** Three Feathers as owner, with credits.
-- **New app id `io.github.three-feathers.agentdurbar`.** An earlier test install (`io.github.vikramgorla.agentdurbar`) is a **separate app** and keeps its own settings; installing alpha.2 does not replace or migrate it.
-- **Still unsigned and not notarized** (steps below). **Untested on real macOS and Windows hardware**: CI builds and unit-tests them, only Linux has been run by hand.
+- **New app id `io.github.three-feathers.agentdurbar`.** An earlier test install (`io.github.vikramgorla.agentdurbar`) is a **separate app** and keeps its own settings; installing alpha.3 does not replace or migrate it.
+
+![Settings, About: Three Feathers as owner, version and contributors](docs/screenshots/about-settings-1280x800.png)
 
 ### These builds are not code-signed
 
@@ -50,7 +64,7 @@ Signing certificates cost money, so the builds are **unsigned and not notarized*
 
 ### Safety model
 
-Agents run **locally, on your machine, as you**, in the folders you add. Nothing is sent anywhere except to GitHub Copilot through its own runtime. You choose a permission mode per agent: **Read-only** (reads only, everything else denied), **Ask** (writes, shell commands, URLs and tools wait for your Approve / Approve for this session / Deny) or **Allow all** (no prompts; use only in folders you trust). The default is read-only. Review what an agent asks to do, especially shell commands.
+Agents run **locally, on your machine, as you**, in the folders you add. Nothing is sent anywhere except to GitHub Copilot through its own runtime. You choose a permission mode per agent: **Read-only** (reads only, everything else denied), **Ask first** (writes, shell commands, URLs and tools wait for your Approve / Approve for this session / Deny) or **Allow all** (no prompts; use only in folders you trust). The default is read-only. You can switch the mode of an agent any time (chat header chip or right-click on its card). Review what an agent asks to do, especially shell commands.
 
 ## Build from source
 
@@ -58,11 +72,12 @@ Agents run **locally, on your machine, as you**, in the folders you add. Nothing
 npm ci
 npm run build && npm test
 npm start                 # needs `copilot login` once
+DURBAR_SIM=15 npm start   # 15 simulated agents, no sessions, no AI credits
 npm run dist:dir          # unpacked app for this OS in release/
 npm run dist              # installers/archives for this OS in release/ (no signing, no publishing)
 ```
 
-Each release also lists `SHA256SUMS.txt`. Releases are built by GitHub Actions from `v*` tags into a **draft** release; see [CONTRIBUTING.md](CONTRIBUTING.md).
+Each release also lists `SHA256SUMS.txt`. Releases are built by GitHub Actions from `v*` tags into a **draft** release that the maintainer publishes by hand; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Status (milestone 10: Tools "All time", the Copilot CLI MCP list first, MCP extras per folder)
 
@@ -71,7 +86,10 @@ Spec [020](specs/020-tools-all-time-and-mcp-cli-primary/spec.md) (changes spec 0
 - **Tools: This session / All time.** A switch at the top of the Tools view. *This session* is as before (counts since the app started, per agent, plus Models & context). *All time* is cumulative and **kept on disk** in the app's userData folder (`durbar-tool-usage.json`), so it survives restarts: per tool, per MCP server and per agent (`<agent name> · <folder name>`). Only tool names, server names, agent labels and counts are stored; never arguments, output, prompts, paths or secrets (a test checks this). Counting happens in the main process, so it works with the Tools view closed. **Reset all-time counts** clears it. Writes are debounced (2 s) and flushed on quit.
 - **MCP: the Copilot CLI list is the primary source.** `~/.copilot/mcp-config.json` (plus the built-in GitHub server) is read live and listed first in Settings and in the Tools view ("Configured MCP servers", with call counts, 0 included), with the exact command or URL and no env/header values. Nothing to configure or import: the Import buttons and the app-level server list are gone. The per-server switch (for new sessions) and each agent's MCP toggles stay.
 - **Extras only per folder or workspace.** Agent Durbar's own optional servers are stored **per folder/workspace** and applied only to agents in that folder (a room-header **MCP** button, or *Folder extras...* in an agent's MCP menu), labelled "Extra, this folder only". There is **no** app-level list of extras. Trust prompts with the exact command stay for extras (and again when the command or URL changes); secrets stay encrypted with the OS store. A name already used by the CLI list is refused. Servers from the old milestone-8 global list are kept but **not applied**; a folder's extras screen offers **Move here** or **Remove**.
-- **Decided (Vikram, 2026-10-16):** CLI-list servers (the Copilot CLI file plus the built-in one) get **no** trust prompt (the runtime starts them in every session anyway, as the CLI does); the prompt applies to extras, the only servers this app itself passes to a session. Per-folder import from VS Code's `mcp.json` is not built (known gap).
+- **Decided (Vikram, 2026-10-16):** CLI-list servers (the Copilot CLI file plus the built-in one) get **no** trust prompt (the runtime starts them in every session anyway, as the CLI does); the prompt applies to extras, the only servers this app itself passes to a session.
+- **Import from VS Code, per folder (spec 020 FR-020..FR-031, issue #7, 2026-10-17).** A folder's extras screen has **Import from VS Code...**. It reads that folder's `.vscode/mcp.json` (for a workspace, the file of each of its folders), tolerating comments and trailing commas, and shows a preview with a checkbox per server: type, exact command and args or URL, and environment/header **keys with masked values**. Nothing is ticked by default. Ticked servers become extras of **this folder only**, **switched off and untrusted**, so the first switch-on shows the usual trust dialog. It never writes the VS Code file, never touches `~/.copilot/mcp-config.json` and never adds anything to the global list. **Safety decisions:** literal env/header values go into the same encrypted secret store as hand-typed ones and are never shown; a value containing a `${...}` reference is not copied or resolved (the key is kept, the server shows *needs secrets* until you enter it); Agent Durbar never prompts for, stores or resolves VS Code `inputs`, and an entry that needs an `${input:...}` (or any other unresolved variable except `${workspaceFolder}`) in its command, arguments, URL or working directory cannot be imported (add it by hand); unsupported fields (`envFile`, `sandbox`, ...) are listed as ignored. Not read: VS Code's user-level `mcp.json`, `settings.json` and `.code-workspace` `mcp` blocks. Simulator and unit tests only; no real VS Code file from a user's machine, macOS or Windows was checked.
+
+![Import from VS Code: preview](docs/screenshots/i7-import-preview-1440x900.png)
 
 ![Room headers with the MCP extras button](docs/screenshots/m10-office-mcp-buttons-1440x900.png)
 ![Tools, This session](docs/screenshots/m10-tools-this-session-1440x900.png)
@@ -81,7 +99,7 @@ Spec [020](specs/020-tools-all-time-and-mcp-cli-primary/spec.md) (changes spec 0
 ![Trust dialog for an extra](docs/screenshots/m10-folder-trust-1280x800.png)
 ![An agent's MCP menu: CLI list + this folder's extras](docs/screenshots/m10-agent-mcp-1280x800.png)
 
-Tests: `npm test` adds `test:toolusage`, `test:usagestore`, the per-folder MCP store (scoping, legacy migration, name clash), the CLI list reader, and the all-time rows. Screenshots: `scripts/shots-m10.js` (1440x900 and 1280x800, with assertions).
+Tests: `npm test` adds `test:toolusage`, `test:usagestore`, the per-folder MCP store (scoping, legacy migration, name clash), the CLI list reader, and the all-time rows. Screenshots: `scripts/shots-m10.js` (1440x900 and 1280x800, with assertions). The VS Code import adds tests to `test:mcp` (JSONC, types, `inputs`, masking, bad files, name clashes, per-folder store) and `scripts/shots-i7.js` (`docs/screenshots/i7-import-preview-*.png`).
 
 ## Status (milestone 9: credit caps, safer defaults, dev hooks)
 
@@ -161,9 +179,9 @@ Specs [015](specs/015-thinking-and-subagent-activity/spec.md) to [018](specs/018
 ![Doors, 3 rooms closed, 1440x900](docs/screenshots/m7b-doors-1440x900.png)
 ![Doors, 3 rooms closed, 1280x800](docs/screenshots/m7b-doors-1280x800.png)
 
-**Permission mode any time.** The chat header chip and the card context menu (right click) switch Read-only / Ask first / Allow all for that agent. It applies from the next request without restarting the session (the broker reads the mode dynamically). Switching to Allow all asks for confirmation and, if a request is pending, offers to approve it; leaving Allow all asks whether to forget session grants. Cards show a small mode icon; the mode is saved per folder and restored. The top-bar selector is the default for new sessions.
+**Permission mode any time.** The chat header chip and the card context menu (right click) switch Read-only / Ask first / Allow all for that agent. It applies from the next request without restarting the session (the broker reads the mode dynamically). Switching to Allow all asks for confirmation and, if a request is pending, offers to approve it; leaving Allow all asks whether to forget session grants. Cards show a small mode icon; the mode is saved per folder and restored. The top-bar selector is the default for new sessions. The confirmation works from the keyboard: focus stays inside it, Tab is trapped, Escape cancels (the mode stays as it was) and focus goes back to the chip; *Allow all* always needs an explicit confirm (spec 003 FR-033).
 
-![Mode switch](docs/screenshots/m7-mode-switch.png)
+![Mode switch (menu with Read-only / Ask first / Allow all)](docs/screenshots/003-allow-all-menu-1280x800.png)
 
 Simulator keywords: `quick` (no reasoning), `markdown`, `sub-agent`/`helper`/`delegate`.
 
@@ -319,14 +337,15 @@ Prototype: [`prototype/index.html`](prototype/index.html) (open in a browser). S
 
 - **Electron + TypeScript**, using the official **`@github/copilot-sdk`** (Node/TS) in the main process. Lowest-risk path to streaming events including sub-agent identity (`agentId`, `subagent.*`).
 - **One session per folder or `.code-workspace` file.**
-- **Adapter interface** ([`src/adapters/types.ts`](src/adapters/types.ts)): `start`, `send`, `stop`, `onEvent` with normalized events (`status`, `thinking`, `output`, `toolCall`, `subagent`). Copilot is first; Claude and Codex CLIs can be added later without touching the UI.
+- **Adapter interface** ([`src/adapters/types.ts`](src/adapters/types.ts)): `start`, `send`, `stop`, `onEvent` with normalized events (`status`, `thinking`, `output`, `toolCall`, `subagent`). Copilot is the only adapter today. Claude Code and Codex are planned ([spec 012](specs/012-claude-codex-adapters/spec.md)); the interface has never been implemented twice, so it is unproven, and adding them needs an adapter registry, a capability list and an agent picker (small UI change).
 - Full background and sources: [`docs/research.md`](docs/research.md).
 
 ## Known limits
 
 - **VS Code chat history is read-only.** VS Code's own Copilot Chat sessions (the Chat view's "Local" sessions) live in an undocumented store that neither the SDK nor the CLI can resume. We only parse it to show a copy of the transcript. Copilot **CLI/SDK** sessions are different: they can be listed and resumed, see milestone 6.
 - **ACP drops sub-agent identity**: sub-agent text arrives as plain message chunks, so parallel sub-agents interleave. Hence the SDK rather than raw ACP.
-- **AI credit usage**: since 2026-06-01 Copilot is billed in usage-based AI Credits, and 10-15 agents can burn them fast. Show a **per-agent credit counter** and support a per-session cap.
+- **AI credit usage**: since 2026-06-01 Copilot is billed in usage-based AI Credits, and 10-15 agents can burn them fast. The app shows a per-agent counter, office and per-folder totals (since launch, not saved) and supports a soft per-session cap (milestone 9, spec 011); a spend history across restarts is not built.
+- **MCP import from VS Code is a one-time copy per folder:** later edits of `.vscode/mcp.json` are not tracked, only the folder's own file is read (not VS Code's user-level `mcp.json`), and entries that need VS Code `inputs` or unresolved variables must be added by hand.
 - Permission prompts need a real approve/deny UI; allow-all across 15 agents is risky.
 - SDK/ACP/AHP protocols are evolving; pin CLI and SDK versions.
 - Overlap with the GitHub Copilot app and the VS Code Agents window; the office view is the differentiator.
@@ -349,32 +368,39 @@ An Electron app that:
 - [x] Chat panel with streaming thinking, attachments (basic)
 - [x] Permission approve/deny flow (basic; read-only default)
 - [x] AI-credit counter and per-session caps with a global default (milestone 9; the limit-reached flow follows GitHub's docs and is not yet verified on a real account)
-- [x] Tools "All time" view, Copilot CLI MCP list first, MCP extras per folder (milestone 10)
+- [x] Tools "All time" view, Copilot CLI MCP list first, MCP extras per folder (milestone 10), per-folder import from VS Code's `.vscode/mcp.json`
 - [x] Usage totals: office total in the header and per-folder totals in room headers and door plates, in memory since the app opened (spec 011, 2026-10-17; persisted usage is still open)
-- [ ] Resume sessions; read-only discovery of VS Code / terminal sessions
+- [x] Resume Copilot CLI/SDK sessions per folder and show VS Code chat history read-only (milestone 6); not done: continuing VS Code's own chats, discovery of sessions from other folders
 - [x] Open in VS Code (`code <folder>`)
 - [x] Office polish for 10-15 agents: auto-fit density, helpers with `+N`, status sorting, chat chips (simulated agents mode)
 - [x] Floor-plan look for the compact densities: desk scenes, room zones, helper mini-desks (milestone 4)
 - [x] Approve for this session (revocable), clean Stop with pending permission, inline permission notes, attachment caps with drag-and-drop/paste, keyed office updates, up to 3 helpers, roomy desks (milestone 5)
-- [ ] Second adapter (Claude or Codex CLI)
-- [x] Packaging with electron-builder (unsigned dmg/zip, nsis/portable, AppImage) and GitHub Actions CI + draft releases (alpha)
+- [ ] Second adapter (Claude Code and Codex): planned, not built. Spec, research, plan and tasks are in [spec 012](specs/012-claude-codex-adapters/spec.md); nothing has been tried on a real account, and subscription-login use needs the owner's decision first
+- [x] Collaboration harness: team rules in [AGENTS.md](AGENTS.md), issues and a [project board](https://github.com/orgs/three-feathers/projects/1), Spec Kit gate, PR template (spec 021)
+- [ ] Code signing and notarization (spec 014, needs a purchase approved by the maintainer)
+- [x] Packaging with electron-builder (unsigned dmg/zip, nsis/portable, AppImage) and GitHub Actions CI + releases built as drafts, published by hand (alpha.3 is the first published pre-release)
 
 ## How we work
 
-Agent Durbar is spec-driven with [GitHub Spec Kit](https://github.com/github/spec-kit): **no code without a spec, a plan and tasks.** Features 001-010 in [`specs/`](specs/README.md) were reverse-engineered from the shipped code (each requirement is marked `[IMPLEMENTED]` or `[KNOWN GAP]`, with how it was checked); 011 (credit caps) is built; 012-014 are backlog drafts. Spec Kit's helper scripts (`.specify/scripts/bash/*.sh`) are shell scripts: on Windows run them in WSL or Git Bash, or re-initialise with PowerShell scripts (`specify init --here --script ps`); writing the spec files by hand works everywhere. The rules are in the [constitution](.specify/memory/constitution.md). Every change goes `/speckit.specify` → `/speckit.clarify` → `/speckit.plan` → `/speckit.tasks` → `/speckit.analyze` → `/speckit.implement` (a bug fix is a short spec delta in the owning spec), and a CI check fails pull requests that change `src/` without changing `specs/` unless they carry a `Spec-Exempt: <reason>`. Coding agents: see [AGENTS.md](AGENTS.md). Details: [CONTRIBUTING.md](CONTRIBUTING.md#spec-kit-workflow-is-mandatory).
+Agent Durbar is spec-driven with [GitHub Spec Kit](https://github.com/github/spec-kit): **no code without a spec, a plan and tasks.** Features 001-010 in [`specs/`](specs/README.md) were reverse-engineered from the shipped code (each requirement is marked `[IMPLEMENTED]` or `[KNOWN GAP]`, with how it was checked); 011 (credit caps and usage totals) and 015-021, 023 are built; 012 (Claude Code and Codex adapters) has a spec, research, plan and tasks but no code; 013-014 are backlog drafts. Spec Kit's helper scripts (`.specify/scripts/bash/*.sh`) are shell scripts: on Windows run them in WSL or Git Bash, or re-initialise with PowerShell scripts (`specify init --here --script ps`); writing the spec files by hand works everywhere. The rules are in the [constitution](.specify/memory/constitution.md). Every change goes `/speckit.specify` → `/speckit.clarify` → `/speckit.plan` → `/speckit.tasks` → `/speckit.analyze` → `/speckit.implement` (a bug fix is a short spec delta in the owning spec), and a CI check fails pull requests that change `src/` without changing `specs/` unless they carry a `Spec-Exempt: <reason>`. Coding agents: see [AGENTS.md](AGENTS.md) (it also says which docs a PR must update: README, docs, specs, screenshots, CHANGELOG). Teams: claim an issue first; start with [docs/collaboration.md](docs/collaboration.md) and the [project board](https://github.com/orgs/three-feathers/projects/1). Releases: [CHANGELOG.md](CHANGELOG.md). Details: [CONTRIBUTING.md](CONTRIBUTING.md#spec-kit-workflow-is-mandatory).
 
 ## Development
 
 ```bash
-npm install
-npm run build   # tsc + copy src/renderer assets into dist/renderer
-npm start       # build and launch Electron (needs `copilot login` once)
+npm ci                    # or npm install
+npm run typecheck         # tsc, no emit
+npm run build             # tsc + copy src/renderer assets into dist/renderer
+npm test                  # every unit suite (permissions, attachments, folders, MCP, tool usage, usage totals, about, ...): no Copilot, no credits
+npm run check:office      # layout check of 95 combinations (Electron under xvfb on Linux), simulator only
+npm run check:dialog-focus # keyboard check of the Allow all confirmation (Electron under xvfb on Linux), simulator only
+npm start                 # build and launch Electron (needs `copilot login` once)
 DURBAR_SIM=15 npm start   # 15 simulated agents, no sessions, no AI credits
-npm test        # permission broker + attachment rules, no Copilot, no credits
-npm run smoke   # headless adapter test, sends 2 tiny prompts (uses AI credits)
+npm run pack:dir          # unpacked app in release/ (also: npm run dist, dist:mac:arm64, dist:mac:x64, dist:win, dist:linux; unsigned)
 ```
 
-Layout: `build/` (app icons), `.github/workflows/` (CI, release, Spec Kit gate), `specs/` (Spec Kit specs), `.specify/` (constitution, templates, scripts), `src/main` (Electron main), `src/preload` (bridge), `src/renderer` (UI: html/css/js, demo data, simulator), `src/adapters` (agent adapters, permission broker), `src/shared` (IPC types, attachment rules), `prototype/` (static design), `docs/` (research).
+These spend AI credits or need a real Copilot login, so run them only on purpose: `npm run smoke` (headless adapter test, sends 2 tiny prompts) and `npm run verify:cap` (checks session caps against the real runtime; no model call). Single suites are `npm run test:<name>` (see `scripts/test-*.ts` and `package.json`).
+
+Layout: `build/` (app icons), `.github/` (workflows: CI, release, Spec Kit gate; PR and issue templates; scripts), `specs/` (Spec Kit specs), `.specify/` (constitution, templates, scripts), `src/main` (Electron main), `src/preload` (bridge), `src/renderer` (UI: html/css/js, demo data, simulator), `src/adapters` (agent adapters, permission broker), `src/shared` (IPC types, attachment rules), `prototype/` (static design), `docs/` (research, [collaboration guide](docs/collaboration.md), screenshots), `scripts/` (tests and screenshot scripts), `CHANGELOG.md`, `AGENTS.md` (rules for agents).
 
 ## License
 
@@ -384,4 +410,4 @@ Layout: `build/` (app icons), `.github/workflows/` (CI, release, Spec Kit gate),
 
 **App id changed (2026-10-16).** The bundle/app id is now `io.github.three-feathers.agentdurbar` (was `io.github.vikramgorla.agentdurbar`). An install of an earlier test build is therefore a **separate app** to the OS (own Windows uninstall entry and shortcuts, own macOS bundle id); uninstall it by hand. Saved data (`durbar-*.json` in the Electron user-data folder) is named after the app name, not the id, so it is shared and kept.
 
-See also [SECURITY.md](SECURITY.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+Repository: <https://github.com/three-feathers/agent-durbar>. Board: <https://github.com/orgs/three-feathers/projects/1>. See also [SECURITY.md](SECURITY.md), [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).

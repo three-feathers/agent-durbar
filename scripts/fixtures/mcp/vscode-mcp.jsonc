@@ -1,0 +1,26 @@
+// VS Code workspace MCP servers (test fixture: every value is a dummy)
+{
+  /* values VS Code asks for on first use */
+  "inputs": [
+    { "type": "promptString", "id": "api-key", "description": "API key", "password": true },
+    { "type": "pickString", "id": "region", "options": ["eu", "us"] },
+  ],
+  "servers": {
+    "playwright": { "command": "npx", "args": ["@playwright/mcp@latest"], }, // trailing commas are fine
+    "fs": { "type": "stdio", "command": "npx", "args": ["-y", "@example/server-filesystem", "${workspaceFolder}"], "envFile": "${workspaceFolder}/.env", "sandbox": { "filesystem": {} },
+      "env": { "DEBUG": "dummy-literal-value", "TOKEN": "${input:api-key}", "FROM_ENV": "${env:HOME}", "PORT": 3000, "bad-key": "x", "EMPTY": "" } },
+    "docs": { "type": "http", "url": "https://docs.example.test/mcp", "headers": { "X-Api-Key": "dummy-header-secret", "Authorization": "Bearer ${input:api-key}" } },
+    "old-sse": { "type": "sse", "url": "https://sse.example.test/events" },
+    "needs-input": { "type": "stdio", "command": "node", "args": ["server.js", "--region", "${input:region}"] },
+    "needs-env": { "command": "${env:MY_TOOL}" },
+    "creds-in-url": { "type": "http", "url": "https://user:pw@example.test/mcp" },
+    "rel-cwd": { "command": "node", "cwd": "./sub" },
+    "abs-cwd": { "command": "node", "cwd": "${workspaceFolder}/sub" },
+    "ws://odd name": { "command": "node" },
+    "weird/name": { "command": "node", "args": ["a"] },
+    "remote-with-command": { "type": "http", "url": "https://r.example.test/mcp", "command": "ignored", "env": { "A": "b" } },
+    "unknown-type": { "type": "websocket", "url": "wss://x.example.test" },
+    "no-target": { "type": "stdio" },
+    "not-an-object": 42
+  }
+}

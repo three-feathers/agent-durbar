@@ -35,14 +35,14 @@ what exists today, not what was originally intended. Each requirement carries a 
 | [009](009-vscode-integration/spec.md) | Open in VS Code, VS Code chat history (read-only) | implemented |
 | [010](010-simulator/spec.md) | Simulator and dev/test hooks | implemented |
 
-## Features 011-014: 011 built, 012-014 backlog drafts
+## Features 011-014: 011 built, 012 planned, 013-014 backlog drafts
 
-Spec drafts only (no plan or tasks yet); they must go through `/speckit.clarify`, `/speckit.plan`, `/speckit.tasks` before any code.
+013 and 014 are spec drafts only (no plan or tasks yet); they must go through `/speckit.clarify`, `/speckit.plan`, `/speckit.tasks` before any code. 012 has been through them (2026-10-17) but nothing is built.
 
 | # | Feature | Status |
 | --- | --- | --- |
 | [011](011-credit-caps-and-usage-display/spec.md) | AI-credit caps and usage display | per-session cap slice and office/folder usage totals built (exhausted flow unverified on a real account); persisted usage and multiplier estimate still backlog |
-| [012](012-claude-codex-adapters/spec.md) | Claude Code and Codex adapters | draft |
+| [012](012-claude-codex-adapters/spec.md) | Claude Code and Codex adapters | planned: clarified, [research](012-claude-codex-adapters/research.md), [plan](012-claude-codex-adapters/plan.md), [tasks](012-claude-codex-adapters/tasks.md); **no code, nothing verified on a real account**; real-account tasks need owner approval; umbrella issue #2 |
 | [013](013-live-verification-stop-resume-thinking/spec.md) | Live verification of Stop, resume and thinking | draft |
 | [014](014-signing-and-notarization/spec.md) | Code signing and notarization | draft, **needs approval (purchase)** |
 
@@ -65,13 +65,13 @@ Spec drafts only (no plan or tasks yet); they must go through `/speckit.clarify`
 
 | # | Feature | Status |
 | --- | --- | --- |
-| [020](020-tools-all-time-and-mcp-cli-primary/spec.md) | Tools "This session / All time", Copilot CLI MCP list first, MCP extras per folder | milestone 10 (implemented, simulator + unit tests) |
+| [020](020-tools-all-time-and-mcp-cli-primary/spec.md) | Tools "This session / All time", Copilot CLI MCP list first, MCP extras per folder, per-folder import from VS Code `mcp.json` (delta 2026-10-17, issue #7) | milestone 10 (implemented, simulator + unit tests); import delta implemented (simulator + unit tests) |
 
 ## Feature 021: collaboration harness
 
 | # | Feature | Status |
 | --- | --- | --- |
-| [021](021-collaboration-harness/spec.md) | Collaboration harness: Claude + Copilot Spec Kit, labels/issues/board, CODEOWNERS, stricter spec gate, ruleset | in progress (tooling only) |
+| [021](021-collaboration-harness/spec.md) | Collaboration harness: Claude + Copilot Spec Kit, labels/issues/board, CODEOWNERS, stricter spec gate, ruleset | built (tooling only): harness, board, ruleset in place; open: T010 (board workflows, web UI) and T013 (gate review) |
 
 New features take the next number (`/speckit.specify` picks it automatically from this folder).
 
@@ -79,10 +79,22 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 
 | # | Feature | Status |
 | --- | --- | --- |
-| [023](023-release-alpha2/spec.md) | Release v0.1.0-alpha.2 as a draft pre-release (version bump, changelog, download notes) | built; draft only, not published |
+| [023](023-release-alpha2/spec.md) | Release v0.1.0-alpha.2 as a draft pre-release (version bump, changelog, download notes) | built; draft was removed, never published (superseded by 026) |
 
 ## Feature 024: places in the office
 
 | # | Feature | Status |
 | --- | --- | --- |
-| [024](024-office-places/spec.md) | Places in a shared lobby (Library, Software library, Terminal, Web, Other); main agents walk to the place of the tool they use; MCP server mapping in Settings | specified 2026-10-17 (issue #18), not implemented |
+| [024](024-office-places/spec.md) | Places in a shared lobby (Library, Software library, Terminal, Web, Other tools); main agents walk to the place of the tool they use; place per MCP server in Settings | built 2026-10-17 (issue #18); simulator and unit tests only |
+
+## Feature 025: docs in sync
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [025](025-docs-sync/spec.md) | "Keep docs in sync" rule, PR template Docs box, warning-only Docs check, catch-up of README/CHANGELOG/spec statuses | built; stale screenshots regenerated (T006, T008) |
+
+## Feature 026: release v0.1.0-alpha.3
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [026](026-release-alpha3/spec.md) | Release v0.1.0-alpha.3 (version bump, changelog, download notes) | built; **published as a pre-release** by the maintainer (2026-10-17); alpha.2 draft removed |

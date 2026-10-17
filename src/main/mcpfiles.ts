@@ -27,11 +27,11 @@ export function readSmallFile(file: string): string | undefined {
   }
 }
 
-/** Candidates of one file, or undefined when the file is missing or too big. */
-export function readCandidates(file: string, kind: 'copilot' | 'vscode'): { candidates: ImportCandidate[]; skipped: number; error?: string } | undefined {
+/** Candidates of the Copilot CLI file, or undefined when the file is missing or too big. */
+export function readCandidates(file: string): { candidates: ImportCandidate[]; skipped: number; error?: string } | undefined {
   const text = readSmallFile(file);
   if (text === undefined) return undefined;
-  const r = parseMcpConfig(text, kind);
+  const r = parseMcpConfig(text);
   return { candidates: r.candidates, skipped: r.skipped, error: r.ok ? undefined : r.error };
 }
 
@@ -44,7 +44,7 @@ export const CLI_FILE_LABEL = '~/.copilot/mcp-config.json';
  */
 export function cliServers(dir: string, disabled: ReadonlySet<string>): { servers: McpAmbientView[]; file: McpCliFile } {
   const out: McpAmbientView[] = [];
-  const r = readCandidates(path.join(dir, 'mcp-config.json'), 'copilot');
+  const r = readCandidates(path.join(dir, 'mcp-config.json'));
   for (const c of r?.candidates ?? []) {
     if (out.some((o) => o.name === c.originalName)) continue;
     out.push({ name: c.originalName, origin: 'copilot-config', transport: c.transport, command: c.command, args: c.args, url: c.url, enabled: !disabled.has(c.originalName) });

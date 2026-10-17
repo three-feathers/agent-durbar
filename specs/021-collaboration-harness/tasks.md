@@ -1,5 +1,5 @@
 # Tasks: 021
-- [ ] T001 Spec, plan, tasks (this folder) + specs index row
+- [x] T001 Spec, plan, tasks (this folder) + specs index row
 - [x] T002 Test `specify integration install claude --force` on a throwaway branch; then install for real; ignore `.claude/settings.local.json` [FR-001]
 - [x] T003 `AGENTS.md` "Working as a team", `CLAUDE.md`, copilot pointer [FR-002]
 - [x] T004 Issue forms, labels file + sync script, CODEOWNERS, PR template [FR-003]
