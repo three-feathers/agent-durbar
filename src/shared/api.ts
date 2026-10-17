@@ -23,6 +23,10 @@ export interface AgentInfo {
   model?: string;
   /** Reasoning effort chosen for this session, when the model supports it. */
   effort?: string;
+  /** Context tier of this session (spec 030); absent = the model's default. */
+  tier?: ContextTier;
+  /** What the agent's adapter can do about model and context (spec 030); absent = nothing (a new session is needed). */
+  modelControl?: ModelControl;
   /** Restored from the saved folder list: no runtime session yet, it starts with the first message. */
   lazy?: boolean;
   /** Credit cap of this session in AIU (spec 011); unset = no cap. */
@@ -48,6 +52,7 @@ export interface SessionOptions {
 export type LimitChoice = { kind: 'add'; credits: number } | { kind: 'set'; credits: number } | { kind: 'unset' } | { kind: 'cancel' };
 
 import type { AboutView } from './about';
+import type { CompactResult, ContextTier, ModelControl, ModelPricing, ModelSwitchRequest, ModelSwitchResult, PriceClass } from './modelswitch';
 
 export interface AppSettingsView {
   /** Owner, version and contributors for Settings > About (spec 008 FR-018). */
@@ -64,6 +69,13 @@ export interface ModelChoice {
   contextWindow?: number;
   efforts: string[];
   defaultEffort?: string;
+  /** Token prices in credits per million tokens, when the runtime reports them (spec 030 FR-011). Absent = "price not reported". */
+  pricing?: ModelPricing;
+  priceClass?: PriceClass;
+  /** Tiers the model offers; `long` only when the runtime advertises a long-context tier. */
+  contextTiers?: ContextTier[];
+  /** Window in tokens of the long-context tier, when reported. */
+  longWindow?: number;
 }
 
 export interface PickedFile {
@@ -255,6 +267,12 @@ export interface DurbarApi {
   openExternal?(url: string): Promise<{ ok: boolean }>;
   /** Change the permission mode of agent `id` now (applies to the next request). `clearGrants`: forget "Approve for this session"; `approvePending`: approve what is waiting. */
   setPermMode?(id: string, mode: PermMode, opts?: { clearGrants?: boolean; approvePending?: boolean }): Promise<{ ok: boolean; error?: string; mode?: PermMode; pending?: number }>;
+  /** Change the model, effort or context tier of agent `id` (spec 030). Validated in main; saved with the folder entry once applied. */
+  setModel?(id: string, request: ModelSwitchRequest): Promise<{ ok: boolean; error?: string; result?: ModelSwitchResult }>;
+  /** Remove a queued model switch (spec 030). */
+  cancelQueuedModel?(id: string, queueId: string): Promise<{ ok: boolean; error?: string }>;
+  /** Compact the context of agent `id` now (spec 030); `focus` is an optional short text. */
+  compact?(id: string, focus?: string): Promise<{ ok: boolean; error?: string; result?: CompactResult }>;
   /** Close or open the door of the room (folder) of agent `id`; remembered. */
   setRoomClosed?(id: string, closed: boolean): Promise<{ ok: boolean }>;
   /** Hide or show the folder of agent `id`; the choice is remembered. */

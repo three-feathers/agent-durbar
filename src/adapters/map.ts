@@ -6,7 +6,7 @@
  * instance to the parent's `task` tool call (`data.toolCallId`). Normalized sub-agent events carry that tool call id as
  * `agentId`, which is also the id of the helper card (`SubagentEvent.subagentId`).
  */
-import type { AgentEvent, McpServerStatus } from './types';
+import type { AgentEvent, CompactionEvent, ContextTier, McpServerStatus } from './types';
 
 export type EventBody = AgentEvent extends infer E ? (E extends AgentEvent ? Omit<E, 'sessionId' | 'timestamp'> : never) : never;
 
@@ -16,6 +16,10 @@ export interface RawEvent {
   agentId?: string;
   data: Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 }
+
+const tierOf = (v: unknown): ContextTier | undefined => (v === 'long_context' ? 'long' : v === 'default' ? 'default' : undefined);
+const positive = (v: unknown): number | undefined => (typeof v === 'number' && v > 0 ? v : undefined);
+const triggerOf = (v: unknown): CompactionEvent['trigger'] => (v === 'manual' ? 'manual' : v === 'model_switch' ? 'model-switch' : v === 'context_limit_retry' ? 'overflow' : 'auto');
 
 const SUBAGENT_NAME_FALLBACK = 'Sub-agent';
 
@@ -28,6 +32,13 @@ export class EventMapper {
   private reasoningSeen = new Set<string>();
   /** SDK sub-agent instance id -> spawning `task` tool call id. */
   private instances = new Map<string, string>();
+  /** Model and tier last reported by the runtime, attached to context events (spec 030). */
+  private model: string | undefined;
+  private tier: ContextTier | undefined;
+  /** Trigger of the compaction in progress (the complete event does not repeat it) and the window it started with. */
+  private compaction: { trigger: CompactionEvent['trigger']; limit?: number } | undefined;
+  /** A model Agent Durbar asked for: the next change to it is the user's own (cause `user`), not the runtime's. */
+  private expected: string | undefined;
 
   constructor(private readonly emit: (body: EventBody) => void) {}
 
@@ -36,6 +47,12 @@ export class EventMapper {
     this.mcp.clear();
     this.reasoningSeen.clear();
     this.instances.clear();
+    this.model = this.tier = this.compaction = this.expected = undefined;
+  }
+
+  /** Tell the mapper the user asked for `model`, so the matching `session.model_change` is reported with cause `user`. */
+  expectUserModel(model: string | undefined): void {
+    this.expected = model;
   }
 
   private emitMcp(): void {
@@ -113,7 +130,49 @@ export class EventMapper {
           conversation: num(d.conversationTokens),
           toolDefinitions: num(d.toolDefinitionsTokens),
           messages: num(d.messagesLength),
+          ...(this.model ? { model: this.model } : {}),
+          ...(this.tier ? { tier: this.tier } : {}),
         });
+      case 'session.model_change': {
+        if (agentId || typeof d.newModel !== 'string' || !d.newModel) return;
+        const tier = tierOf(d.contextTier);
+        const cause = d.cause === 'rate_limit_auto_switch' ? 'rate-limit' : d.cause === 'refusal_fallback' ? 'fallback' : this.expected === d.newModel ? 'user' : 'runtime';
+        if (this.expected === d.newModel) this.expected = undefined;
+        this.model = d.newModel;
+        this.tier = tier;
+        return this.emit({
+          type: 'model',
+          model: d.newModel,
+          previousModel: str(d.previousModel),
+          effort: typeof d.reasoningEffort === 'string' ? d.reasoningEffort : undefined,
+          previousEffort: str(d.previousReasoningEffort),
+          tier,
+          cause,
+        });
+      }
+      case 'session.compaction_start': {
+        if (agentId) return;
+        const trigger = triggerOf(d.trigger);
+        this.compaction = { trigger, limit: positive(d.tokenLimit) };
+        return this.emit({ type: 'compaction', phase: 'start', trigger, tokensBefore: num(d.currentTokens), limit: positive(d.tokenLimit) });
+      }
+      case 'session.compaction_complete': {
+        if (agentId) return;
+        const c = this.compaction ?? { trigger: 'auto' as const };
+        this.compaction = undefined;
+        const before = num(d.preCompactionTokens);
+        const after = num(d.postCompactionTokens);
+        if (d.success !== true) return this.emit({ type: 'compaction', phase: 'failed', trigger: c.trigger, tokensBefore: before, limit: c.limit, error: str(d.error) });
+        return this.emit({
+          type: 'compaction',
+          phase: 'complete',
+          trigger: c.trigger,
+          tokensBefore: before,
+          tokensAfter: after,
+          tokensRemoved: before !== undefined && after !== undefined ? Math.max(0, before - after) : undefined,
+          limit: positive(d.tokenLimit) ?? c.limit,
+        });
+      }
       case 'session.mcp_servers_loaded':
         this.mcp.clear();
         for (const s of Array.isArray(d.servers) ? d.servers : []) if (s && typeof s.name === 'string') this.mcp.set(s.name, mcpStatus(s.name, s));

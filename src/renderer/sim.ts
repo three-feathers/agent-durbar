@@ -13,6 +13,10 @@ type AgentEvent = import('../adapters/types').AgentEvent;
 type AgentInfo = import('../shared/api').AgentInfo;
 type DurbarApi = import('../shared/api').DurbarApi;
 type PickedFile = import('../shared/api').PickedFile;
+type ModelChoice = import('../shared/api').ModelChoice;
+type ModelSwitchRequest = import('../shared/modelswitch').ModelSwitchRequest;
+type ModelSwitchResult = import('../shared/modelswitch').ModelSwitchResult;
+type ContextTier = import('../shared/modelswitch').ContextTier;
 
 interface SimOptions {
   n: number;
@@ -46,7 +50,28 @@ interface SimAgent {
   /** Simulated credit use in nano-AIU, and the open "limit reached" question (spec 011). */
   used?: number;
   limitReq?: string;
+  /** Model and context handling (spec 030). */
+  tier?: ContextTier;
+  /** A switch asked for during a turn: applies when the turn ends (like the runtime's queue). */
+  pendingModel?: { req: ModelSwitchRequest; queueId: string };
+  /** Window the next context report will carry (the runtime tells it with the next message, not at once). */
+  pendingLimit?: number;
+  compactions?: number;
+  compacting?: boolean;
+  /** Stay near the limit (no automatic compaction) so the start-fresh note can be shown. */
+  noAuto?: boolean;
 }
+
+/** Fake models with prices in credits per million tokens (sim: made-up numbers, not Copilot's). Sim Preview reports no price on purpose. */
+const SIM_MODELS: ModelChoice[] = [
+  { id: 'auto', name: 'Auto', efforts: [] },
+  { id: 'sim-fast', name: 'Sim Fast', multiplier: 0.33, efforts: [], contextWindow: 128000, priceClass: 'low', pricing: { inputPerMTok: 20, outputPerMTok: 100, cachedPerMTok: 2 } },
+  { id: 'sim-mid', name: 'Sim Mid', multiplier: 1, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium', contextWindow: 272000, priceClass: 'medium', pricing: { inputPerMTok: 80, outputPerMTok: 400, cachedPerMTok: 8 } },
+  { id: 'sim-deep', name: 'Sim Deep', multiplier: 3, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium', contextWindow: 200000, priceClass: 'high', contextTiers: ['default', 'long'], longWindow: 400000,
+    pricing: { inputPerMTok: 250, outputPerMTok: 1250, cachedPerMTok: 25, long: { inputPerMTok: 500, outputPerMTok: 1875 } } },
+  { id: 'sim-preview', name: 'Sim Preview', efforts: [], contextWindow: 128000 },
+];
+const SIM_MODEL_BY_AGENT: Record<number, string> = { 3: 'sim-fast', 4: 'sim-fast', 5: 'sim-deep' };
 
 /** Simulated caps (AI credits, min 30 like the runtime) by agent name; Omar's calls are expensive (11 AIU each), so he reaches 30 in his first turn (spec 011 FR-016). */
 const SIM_CAPS: Record<string, number> = { Ada: 50, Mira: 30, Omar: 30 };
@@ -143,7 +168,7 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       const [name, role, room, state, intent, helpers, files] = r;
       const roomName = opts.solo ? name.toLowerCase() + '-app' : room;
       const cwd = opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
-      const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined } as AgentInfo;
+      const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true } } as AgentInfo;
       (info as AgentInfo & { roomName?: string; role?: string }).roomName = roomName;
       (info as AgentInfo & { roomName?: string; role?: string }).role = role;
       return {
@@ -156,7 +181,10 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
         think: i,
         grants: new Map(),
         // Context window profiles: most agents are far from full; one is amber, one nearly full (a smaller window).
-        ctx: i === 0 ? { tokens: 188000, limit: 272000 } : i === 4 ? { tokens: 110000, limit: 128000 } : i === 6 ? undefined : { tokens: 14000 + i * 4300, limit: 272000 },
+        ctx: i === 0 ? { tokens: 188000, limit: 272000 } : i === 3 ? { tokens: 117000, limit: 128000 } : i === 4 ? { tokens: 110000, limit: 128000 } : i === 5 ? { tokens: 35500, limit: 200000 } : i === 6 ? undefined : { tokens: 14000 + i * 4300, limit: 272000 },
+        // Two agents sit near their window so the Compact action and the start-fresh note can be shown; one already compacted once.
+        compactions: i === 3 ? 1 : 0,
+        noAuto: i === 3 || i === 4 ? true : undefined,
         models: i === 4 ? ['gpt-5.6-luna'] : i % 4 === 1 ? ['claude-sonnet-4.6', 'gpt-6-luna'] : undefined,
         mcpOff: new Set<string>(),
       };
@@ -197,6 +225,10 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
     };
     const emit = (e: AgentEvent): void => {
       listeners.forEach((l) => l(e));
+      if (e.type === 'status' && e.status === 'idle') {
+        const q = sims.find((x) => x.info.id === e.sessionId);
+        if (q?.pendingModel) window.setTimeout(() => void applyPending(q), 0); // the turn ended: the queued switch applies
+      }
       const src = e.type === 'toolCall' ? sims.find((x) => x.info.id === e.sessionId) : undefined;
       if (src) simCount(e, src.info.name + ' · ' + src.info.cwd.replace(/\/+$/, '').split('/').pop());
     };
@@ -217,9 +249,12 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       }
       // Like the real runtime: the context window is reported before each model call (spec 019).
       const c = s.ctx;
+      if (c && s.pendingLimit) { c.limit = s.pendingLimit; s.pendingLimit = undefined; } // the new window is reported with the first call after a switch
       if (c && c.limit > 0) {
         c.tokens = Math.min(Math.floor(c.limit * 0.97), c.tokens + 700 + Math.floor(rnd() * 1800));
-        emit({ type: 'context', sessionId: sid(s), timestamp: now(), tokens: c.tokens, limit: c.limit, system: 5840, conversation: Math.max(0, c.tokens - 13500), toolDefinitions: 7668, messages: 3 + s.tool });
+        emit({ type: 'context', sessionId: sid(s), timestamp: now(), tokens: c.tokens, limit: c.limit, system: 5840, conversation: Math.max(0, c.tokens - 13500), toolDefinitions: 7668, messages: 3 + s.tool, model: s.info.model, tier: s.tier });
+        // Like the runtime's infinite sessions: compact in the background when the window is about 80% full.
+        if (c.tokens / c.limit >= 0.8 && !s.compacting && !s.noAuto) void compactNow(s, 'auto');
       }
     };
     // The Copilot CLI list (global) + the extras of the agent's own folder (spec 020). Extras live in `fakeExtras`, keyed by folder.
@@ -394,6 +429,7 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
     async function reply(s: SimAgent, text: string): Promise<void> {
       closeOpen(s);
       emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: 'Answering: ' + text.slice(0, 60) });
+      if (/\bfallback\b/i.test(text)) runtimeSwitch(s, 'fallback'); // demo: the runtime switches models by itself (spec 030 FR-015)
       if (!/\bquick\b/i.test(text)) for (let i = 0; i < 4; i++) { think(s, 1); await wait(650); } // "quick": a turn where the model sends no reasoning
       if (/\b(markdown|md|format)\b/i.test(text)) {
         emit({ type: 'output', sessionId: sid(s), timestamp: now(), delta: MD_REPLY, final: true, text: MD_REPLY + '\n\n[unsafe link](javascript:alert(1)) and <script>alert(1)</script> stay inert.' });
@@ -584,11 +620,112 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       },
     };
 
+    // ---- Model, context tier and compaction (spec 030). Fake: no session, no credits. The queue-on-busy rule and the compaction numbers are made up (sim:), the shapes are the normalized ones. ----
+    let queueN = 0;
+    const simModel = (id: string | undefined): ModelChoice | undefined => SIM_MODELS.find((m) => m.id === id);
+    const windowFor = (m: ModelChoice | undefined, tier: ContextTier | undefined): number => (tier === 'long' && m?.longWindow ? m.longWindow : m?.contextWindow ?? 0);
+    const isBusy = (s: SimAgent): boolean => s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.compacting;
+    const needsCompaction = (s: SimAgent, req: ModelSwitchRequest): boolean => {
+      const w = windowFor(simModel(req.model), req.contextTier === 'long' ? 'long' : undefined);
+      return w > 0 && !!s.ctx && s.ctx.tokens > w;
+    };
+
+    function applyModel(s: SimAgent, req: ModelSwitchRequest, cause: 'user' | 'runtime' | 'rate-limit' | 'fallback'): void {
+      const m = simModel(req.model);
+      if (!m) return;
+      const previousModel = s.info.model, previousEffort = s.info.effort;
+      s.info.model = m.id;
+      if (req.effort === null) s.info.effort = undefined;
+      else if (req.effort !== undefined) s.info.effort = req.effort;
+      else if (!m.efforts.includes(s.info.effort ?? '')) s.info.effort = undefined; // kept when the new model offers it
+      s.tier = req.contextTier === 'long' ? 'long' : undefined;
+      s.info.tier = s.tier;
+      s.models = m.id === 'auto' ? undefined : [m.id];
+      const w = windowFor(m, s.tier);
+      if (w > 0 && s.ctx) s.pendingLimit = w; // reported with the next call, not at once
+      emit({ type: 'model', sessionId: sid(s), timestamp: now(), model: m.id, previousModel, effort: s.info.effort, previousEffort, tier: s.tier ?? 'default', cause });
+    }
+
+    async function applyPending(s: SimAgent): Promise<void> {
+      const p = s.pendingModel;
+      if (!p) return;
+      s.pendingModel = undefined;
+      if (p.req.confirm?.compaction === 'accept' && needsCompaction(s, p.req)) await compactNow(s, 'model-switch');
+      applyModel(s, p.req, 'user');
+    }
+
+    /** The runtime moves the agent to another model on its own (rate limit, refused request): shown, never silent (FR-015). */
+    function runtimeSwitch(s: SimAgent, cause: 'rate-limit' | 'fallback'): void {
+      const to = s.info.model === 'sim-fast' ? 'sim-mid' : 'sim-fast';
+      applyModel(s, { model: to }, cause);
+    }
+
+    async function compactNow(s: SimAgent, trigger: 'auto' | 'manual' | 'model-switch', fail = false): Promise<import('../shared/modelswitch').CompactResult> {
+      const c = s.ctx;
+      if (!c || !(c.limit > 0)) return { success: false, message: 'This agent reports no context to compact.' };
+      if (s.compacting) return { success: false, message: 'A compaction is already running.' };
+      s.compacting = true;
+      const before = c.tokens;
+      emit({ type: 'compaction', sessionId: sid(s), timestamp: now(), phase: 'start', trigger, tokensBefore: before, limit: c.limit });
+      await wait(trigger === 'auto' ? 1400 : 900);
+      s.compacting = false;
+      if (fail) {
+        emit({ type: 'compaction', sessionId: sid(s), timestamp: now(), phase: 'failed', trigger, tokensBefore: before, limit: c.limit, error: 'The summary request was refused (simulated).' });
+        return { success: false, message: 'The summary request was refused (simulated).' };
+      }
+      const after = Math.round(c.limit * 0.18 + rnd() * c.limit * 0.04);
+      c.tokens = after;
+      s.compactions = (s.compactions ?? 0) + 1;
+      emit({ type: 'usage', sessionId: sid(s), timestamp: now(), model: s.info.model ?? 'auto', inputTokens: before, outputTokens: 900, nanoAiu: Math.floor(0.02 * 1e9), creditsStatus: 'complete' });
+      s.used = (s.used ?? 0) + Math.floor(0.02 * 1e9);
+      emit({ type: 'compaction', sessionId: sid(s), timestamp: now(), phase: 'complete', trigger, tokensBefore: before, tokensAfter: after, tokensRemoved: before - after, limit: c.limit });
+      emit({ type: 'context', sessionId: sid(s), timestamp: now(), tokens: after, limit: c.limit, system: 5840, conversation: Math.max(0, after - 13500), toolDefinitions: 7668, messages: 3, model: s.info.model, tier: s.tier });
+      return { success: true, tokensAfter: after, tokensRemoved: before - after };
+    }
+
+    const modelApi: Partial<DurbarApi> = {
+      setModel: async (id, req) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'unknown agent' };
+        const m = simModel(req?.model);
+        if (!m) return { ok: false, error: 'That model is not in the list your account offers.' };
+        if (req.effort && !m.efforts.includes(req.effort)) return { ok: false, error: 'That model does not offer this reasoning effort.' };
+        if (req.contextTier === 'long' && !m.contextTiers?.includes('long')) return { ok: false, error: 'That model has no long-context tier.' };
+        const tier: ContextTier | undefined = req.contextTier === 'long' ? 'long' : undefined;
+        if (needsCompaction(s, req)) {
+          // The target window is smaller than the context in use: the runtime asks first (status confirmation_required).
+          if (!req.confirm?.compaction) return { ok: true, result: { status: 'needs-confirmation', model: m.id, confirmation: { targetName: m.name, currentTokens: s.ctx?.tokens ?? 0, targetLimit: windowFor(m, tier) } } };
+          if (req.confirm.compaction === 'decline') return { ok: true, result: { status: 'rejected', message: 'The model was not changed.' } };
+        }
+        if (isBusy(s)) {
+          const queueId = 'q-' + sid(s) + '-' + ++queueN;
+          s.pendingModel = { req, queueId };
+          return { ok: true, result: { status: 'queued', model: m.id, queueId } };
+        }
+        if (req.confirm?.compaction === 'accept' && needsCompaction(s, req)) await compactNow(s, 'model-switch');
+        applyModel(s, req, 'user');
+        return { ok: true, result: { status: 'applied', model: m.id } as ModelSwitchResult };
+      },
+      cancelQueuedModel: async (id, queueId) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s || s.pendingModel?.queueId !== queueId) return { ok: false, error: 'Nothing queued to cancel.' };
+        s.pendingModel = undefined;
+        return { ok: true };
+      },
+      compact: async (id, focus) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'unknown agent' };
+        if (isBusy(s)) return { ok: true, result: { success: false, message: 'The agent is working. Compact when it is idle.' } };
+        return { ok: true, result: await compactNow(s, 'manual', /\bfail\b/i.test(focus ?? '')) };
+      },
+    };
+
     let started = false;
     let extra = 0;
     const api: DurbarApi = {
       ...mcpApi,
       ...capApi,
+      ...modelApi,
       version: async () => 'sim',
       addFolder: async () => {
         extra++;
@@ -667,19 +804,12 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
         if (s && s.grants.delete(key)) grantsEvent(s);
       },
       // No disk, no account: canned answers so the new folder / session / history UI can be exercised without credits.
-      listModels: async () => ({
-        ok: true,
-        models: [
-          { id: 'auto', name: 'Auto', efforts: [] },
-          { id: 'sim-fast', name: 'Sim Fast', multiplier: 0.33, efforts: [], contextWindow: 128000 },
-          { id: 'sim-deep', name: 'Sim Deep', multiplier: 3, contextWindow: 200000, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
-        ],
-      }),
+      listModels: async () => ({ ok: true, models: SIM_MODELS.map((m) => ({ ...m })) }),
       newSession: async (id, o) => {
         const src = sims.find((x) => x.info.id === id);
         if (!src) return { ok: false, error: 'unknown agent' };
         extra++;
-        const info = { ...src.info, id: 'sim-n' + extra, permMode: o.permMode ?? src.info.permMode, model: o.model ?? 'auto', effort: o.effort, maxAiCredits: o.maxAiCredits === null ? undefined : o.maxAiCredits ?? defaultCap } as AgentInfo;
+        const info = { ...src.info, id: 'sim-n' + extra, permMode: o.permMode ?? src.info.permMode, model: o.model ?? 'auto', tier: undefined, effort: o.effort, maxAiCredits: o.maxAiCredits === null ? undefined : o.maxAiCredits ?? defaultCap } as AgentInfo;
         sims.push({ info, room: src.room, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: src.files, grants: new Map() });
         return { ok: true, agent: info };
       },
