@@ -23,6 +23,8 @@ const LEDGER=window.DurbarUsage.createLedger();
 const ledgerRemoved=()=>LEDGER.roomIds().some(id=>{const r=ROOMS.find(x=>x.id===id);return !r||r.hidden;});
 const recordUsage=(a,e)=>{const r=roomOf(a);if(r)LEDGER.record(r.id,e);};
 /* ---- floors (spec 033): ordered groups of rooms; a floor that is off is hidden exactly like a hidden folder ---- */
+/* spend of the rooms on floors that are off: still in the office total, named in its tooltip (FR-016) */
+const offFloorSpend=()=>window.DurbarUsage.sum(ROOMS.filter(r=>!floorOn(r.floor)).map(r=>LEDGER.room(r.id)));
 let FLOORS=null; /* {floors:[{id,name,on,ground}],lastFloor,byAgent} from the bridge; null = no floors (demo mode, older bridge) */
 const floorsLive=()=>!!FLOORS&&!demoOn;
 const floorById=id=>floorsLive()?(FLOORS.floors.find(f=>f.id===id)||FLOORS.floors.find(f=>f.ground)||null):null;
@@ -36,7 +38,7 @@ const roomsInOrder=()=>ROOMS.map((r,i)=>[r,i]).sort((x,y)=>floorRank(x[0])-floor
 const floorTag=r=>{if(!floorTagsOn())return '';const f=floorById(r.floor);return f?`<span class="floor-tag" title="Floor: ${esc(f.name)}">${esc(f.name)}</span>`:'';};
 function aiuChip(){
   const t=LEDGER.office(); if(!t.calls||demoOn)return '';
-  const tip=window.DurbarUsage.tooltip(t,{scope:'office',removed:ledgerRemoved()});
+  const tip=window.DurbarUsage.tooltip(t,{scope:'office',removed:ledgerRemoved(),offFloors:offFloorSpend()});
   const inner=t.unreported>=t.calls?'<span class="l">credits not reported</span>':`<b>${esc((t.nano/1e9).toFixed(2))}</b><span class="l">AIU</span>`;
   return `<span class="stat stat-aiu" role="note" title="${esc(tip)}" aria-label="${esc(tip.replace(/\n/g,' '))}">${inner}</span>`;
 }
@@ -829,6 +831,7 @@ document.addEventListener('keydown',e=>{
     if(window.DurbarScreens&&window.DurbarScreens.isOpen()&&!document.getElementById('scrDlg')&&!document.getElementById('modeDlg')){window.DurbarScreens.close();return;}
     if(document.getElementById('sessDlg')){closeSessDlg();return;}
     if(!$('foldersPop').hidden){toggleFolders(false);return;}
+    if(!$('floorsPop').hidden){toggleFloors(false);return;}
     if(vsViewing){leaveVsView();return;}
     if(ui.selected){closePanel();return;}
   }
@@ -868,7 +871,7 @@ function applyMode(){
   agents=demoOn?DEMO.agents:LIVE.agents; ROOMS=demoOn?DEMO.rooms:LIVE.rooms;
   ui.ws='all'; ui.status=null;
   if(ui.selected)closePanel();
-  setBadge(); renderFilter(); renderAll();
+  setBadge(); renderFloorsBtn(); renderIntoFloor(); renderFilter(); renderAll();
 }
 function liveChat(a){
   if(chats[a.id])return chats[a.id];
@@ -895,8 +898,102 @@ function applyFloors(state){
   afterFloorsChange();
 }
 function afterFloorsChange(){
+  renderFloorsBtn(); renderIntoFloor();
   if(demoOn)return;
-  renderFilter(); scheduleRender();
+  /* the open agent is now on a floor that is off: back to the office (its pending requests stay pending, FR-010) */
+  if(ui.selected){const a=byId(ui.selected);if(a&&!roomShown(roomOf(a)))closePanel();}
+  renderFilter(); renderFloorsPanel(); scheduleRender();
+}
+/* ---------------- floors: top-bar button, "into" select, panel (spec 033) ---------------- */
+function renderFloorsBtn(){
+  const b=$('floorsBtn'); if(!b)return;
+  b.hidden=!floorsLive();
+  if(!floorsLive())return;
+  const on=floorsOnList().length,n=FLOORS.floors.length;
+  b.textContent='Floors '+on+'/'+n;
+  b.setAttribute('aria-label','Floors: '+on+' of '+n+' on. Open the floors panel.');
+}
+/* Floor for the next added folder (FR-006): chosen in the Floors panel before the picker opens; default = the last one used.
+   The top bar has no room for one more select at 1280x800, so + Folder / + Workspace only name it in their tooltip. */
+let INTO=null;
+const intoFloor=()=>{if(!floorsLive()||FLOORS.floors.length<2)return undefined;const f=(INTO&&FLOORS.floors.find(x=>x.id===INTO))||FLOORS.floors.find(x=>x.id===FLOORS.lastFloor)||FLOORS.floors[0];return f.id;};
+function renderIntoFloor(){
+  const n=intoFloor()&&floorById(intoFloor()).name;
+  $('addFolder').title=n?'Add a folder to the floor "'+n+'" (change it in Floors)':'Add a folder';
+  $('addWs').title=n?'Add a .code-workspace file to the floor "'+n+'" (change it in Floors)':'Add a .code-workspace file';
+}
+let floorsErr='';
+function toggleFloors(on){
+  const pop=$('floorsPop'),btn=$('floorsBtn');
+  const show=on===undefined?pop.hidden:on;
+  pop.hidden=!show; btn.setAttribute('aria-expanded',String(show));
+  if(show){floorsErr='';renderFloorsPanel();const f=pop.querySelector('button,input,select');if(f)f.focus();}
+  else if(document.activeElement&&pop.contains(document.activeElement))btn.focus();
+}
+const roomsOnFloor=id=>roomsInOrder().filter(r=>(floorById(r.floor)||{}).id===id);
+function renderFloorsPanel(){
+  const pop=$('floorsPop'); if(!pop||pop.hidden||!floorsLive())return;
+  const ae=document.activeElement,fk=ae&&pop.contains(ae)?[ae.dataset.fl,ae.dataset.floor||ae.dataset.room||'',ae.id].join('|'):null;
+  const last=FLOORS.floors.length-1;
+  const opts=sel=>FLOORS.floors.map(f=>`<option value="${esc(f.id)}"${f.id===sel?' selected':''}>${esc(f.name)}</option>`).join('');
+  const into=intoFloor();
+  pop.innerHTML='<div class="fp-h">Floors <small>A floor that is off is hidden and not counted. Its agents keep running and can spend credits.</small></div>'+
+    (into?`<div class="fl-into"><label for="intoFloor">New folders go to</label><select id="intoFloor" title="Floor for the folders you add with + Folder or + Workspace">${opts(into)}</select></div>`:'')+
+    FLOORS.floors.map((f,i)=>{
+      const rooms=roomsOnFloor(f.id);
+      return `<div class="fl-floor${f.on?'':' off'}"><div class="fl-row">
+        <button class="fl-sw" type="button" data-fl="on" data-floor="${esc(f.id)}" aria-pressed="${f.on}" aria-label="${esc(f.name)}: ${f.on?'on':'off'}. Switch ${f.on?'off':'on'}.">${f.on?'On':'Off'}</button>
+        <div class="fl-t"><b title="${esc(f.name)}">${esc(f.name)}</b><small>${rooms.length} folder${rooms.length===1?'':'s'}</small></div>
+        <button class="btn" type="button" data-fl="only" data-floor="${esc(f.id)}" title="Switch ${esc(f.name)} on and every other floor off" aria-label="Only ${esc(f.name)}">Only</button>
+        <button class="btn" type="button" data-fl="rename" data-floor="${esc(f.id)}" aria-label="Rename ${esc(f.name)}">Rename</button>
+        <button class="btn" type="button" data-fl="up" data-floor="${esc(f.id)}" aria-label="Move ${esc(f.name)} up"${i===0?' disabled':''}>Up</button>
+        <button class="btn" type="button" data-fl="down" data-floor="${esc(f.id)}" aria-label="Move ${esc(f.name)} down"${i===last?' disabled':''}>Down</button>
+        ${f.ground?'':`<button class="btn danger" type="button" data-fl="del" data-floor="${esc(f.id)}" aria-label="Delete ${esc(f.name)}">Delete</button>`}</div>
+        ${rooms.map(r=>`<div class="fl-folder"><span class="fl-fn" title="${esc(r.path)}">${esc(r.name)}</span>${r.hidden?'<span class="tag">hidden</span>':''}<label class="sr-only" for="flm-${esc(r.id)}">Floor of ${esc(r.name)}</label><select id="flm-${esc(r.id)}" data-fl="move" data-room="${esc(r.id)}" title="Move ${esc(r.name)} to another floor">${opts(f.id)}</select></div>`).join('')}</div>`;}).join('')+
+    `<div class="fl-new"><label class="sr-only" for="flNew">New floor name</label><input id="flNew" type="text" maxlength="40" placeholder="New floor name" autocomplete="off" spellcheck="false"><button class="btn" type="button" data-fl="create">Create</button></div>`+
+    `<p class="fl-err" id="flErr" role="alert"${floorsErr?'':' hidden'}>${esc(floorsErr)}</p>`;
+  if(fk){const [fl,key,id]=fk.split('|');const el=id?pop.querySelector('#'+CSS.escape(id)):pop.querySelector(`[data-fl="${CSS.escape(fl||'')}"][data-floor="${CSS.escape(key)}"],[data-fl="${CSS.escape(fl||'')}"][data-room="${CSS.escape(key)}"]`);if(el&&!el.disabled)el.focus();else pop.focus();}
+}
+/* every floors call returns the full new state; an error is shown in the panel */
+async function floorCall(p){
+  let r=null; try{r=await p;}catch{r=null;}
+  floorsErr=r&&!r.ok?(r.error||'That did not work.'):(r?'':'Floors are not available.');
+  if(r&&r.state)applyFloors(r.state); else renderFloorsPanel();
+  return r;
+}
+async function floorAction(el){
+  const fl=el.dataset.fl,id=el.dataset.floor,f=floorById(id);
+  if(fl==='on'&&f)return floorCall(bridge.setFloorOn(id,!f.on));
+  if(fl==='only'&&f)return floorCall(bridge.onlyFloor(id));
+  if((fl==='up'||fl==='down')&&f){
+    const ids=FLOORS.floors.map(x=>x.id),i=ids.indexOf(id),j=fl==='up'?i-1:i+1;
+    if(j<0||j>=ids.length)return; [ids[i],ids[j]]=[ids[j],ids[i]];
+    return floorCall(bridge.reorderFloors(ids));
+  }
+  if(fl==='rename'&&f){
+    const r=await askDialog({title:'Rename floor',body:'1 to 40 characters. Names must be different from the other floors.',input:{label:'Name',value:f.name,max:40,focus:true},returnFocus:el,
+      buttons:[{label:'Cancel',value:null},{label:'Rename',value:'ok',cls:'primary'}]});
+    if(r&&typeof r.text==='string'&&r.text.trim()!==f.name)return floorCall(bridge.renameFloor(id,r.text));
+    return;
+  }
+  if(fl==='del'&&f){
+    const n=roomsOnFloor(id).length;
+    const r=await askDialog({title:'Delete floor '+f.name+'?',body:(n?(n===1?'Its folder moves':'Its '+n+' folders move')+' to '+((FLOORS.floors.find(x=>x.ground)||{}).name||'the ground floor')+'. ':'')+'No folder is removed and no session is ended.',returnFocus:()=>$('floorsBtn'),
+      buttons:[{label:'Cancel',value:null},{label:'Delete floor',value:'ok',cls:'primary warn'}]});
+    if(r)return floorCall(bridge.deleteFloor(id));
+    return;
+  }
+  if(fl==='create'){
+    const inp=$('flNew'),name=inp?inp.value:'';
+    const r=await floorCall(bridge.createFloor(name));
+    if(r&&r.ok){const i2=$('flNew');if(i2){i2.value='';i2.focus();}}
+    return;
+  }
+}
+function moveRoomToFloor(roomId,floorId){
+  const ag=agents.find(x=>!x.parent&&x.room===roomId&&x.live);
+  if(!ag||!bridge.moveFolderToFloor)return;
+  return floorCall(bridge.moveFolderToFloor(ag.id,floorId));
 }
 function addLiveAgent(info){
   if(liveById(info.id))return;
@@ -1888,6 +1985,10 @@ document.addEventListener('click',e=>{
   else if(b.dataset.pv==='view')viewVs(ra,b.dataset.key,b);
 });
 document.addEventListener('click',e=>{
+  const fb=e.target.closest('#floorsPop [data-fl]');
+  if(fb&&fb.tagName==='BUTTON'){floorAction(fb);return;}
+  const fpop=$('floorsPop');
+  if(fpop&&!fpop.hidden&&!e.target.closest('#floorsPop')&&!e.target.closest('#floorsBtn')&&!e.target.closest('#modeDlg'))toggleFloors(false);
   const f=e.target.closest('[data-fp]');
   if(f){const r=ROOMS.find(x=>x.id===f.dataset.room);if(!r)return;
     if(f.dataset.fp==='new'){const ag=agents.find(x=>!x.parent&&x.room===r.id);toggleFolders(false);if(ag)newSession(ag);}
@@ -1913,10 +2014,11 @@ async function confirmAllow(what){
 async function addVia(fn){
   if($('permMode').value==='allow'&&!(await confirmAllow('the folder you add next')))return;
   const ef=$('effortSel');
-  const r=await fn($('permMode').value,{model:$('modelSel').value,effort:ef.hidden?undefined:(ef.value||undefined)});
+  const r=await fn($('permMode').value,{model:$('modelSel').value,effort:ef.hidden?undefined:(ef.value||undefined),floor:intoFloor()});
   if(r.error)toast('Could not add: '+esc(r.error),6000);
   r.agents.forEach(addLiveAgent);
   r.agents.forEach(x=>{const ag=liveById(x.id);if(ag)announcePrevious(ag);});
+  INTO=null; if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});
 }
 let pendingOpen=qs.get('open');
 if(bridge){
@@ -1925,6 +2027,11 @@ if(bridge){
   $('addFolder').onclick=()=>addVia(bridge.addFolder);
   $('addWs').onclick=()=>addVia(bridge.addWorkspaceFile);
   $('foldersBtn').onclick=()=>toggleFolders();
+  $('floorsBtn').onclick=()=>toggleFloors();
+  document.addEventListener('change',e=>{
+    const s=e.target.closest&&e.target.closest('#floorsPop select[data-fl="move"]');if(s)moveRoomToFloor(s.dataset.room,s.value);
+    if(e.target&&e.target.id==='intoFloor'){INTO=e.target.value;renderIntoFloor();}});
+  document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target&&e.target.id==='flNew'){e.preventDefault();floorAction({dataset:{fl:'create'}});}});
   window.DurbarScreens.init({bridge,stats:STATS,esc,toast,onSettings:v=>{APP_SETTINGS=v||{};},
     places:window.DurbarPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),

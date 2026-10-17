@@ -29,6 +29,7 @@
       <label class="sr-only" for="effortSel">Reasoning effort for new sessions</label>
       <select id="effortSel" title="Reasoning effort (only for models that support it)" hidden></select>
       <button class="btn" id="foldersBtn" type="button" aria-haspopup="true" aria-expanded="false" title="Manage folders: new session, hide, remove">Folders</button>
+      <button class="btn" id="floorsBtn" type="button" aria-haspopup="true" aria-expanded="false" title="Floors: groups of folders you can switch off" hidden>Floors</button>
     </div>
     <label class="select-wrap"><span class="sr-only">Filter by folder</span>
       <select id="wsFilter"></select></label>
@@ -56,6 +57,7 @@
 </div>
 <section id="screen" aria-label="Settings and tools" hidden></section>
 <div id="foldersPop" role="dialog" aria-label="Folders" hidden></div>
+<div id="floorsPop" role="dialog" aria-label="Floors" tabindex="-1" hidden></div>
 <div id="toasts" role="status" aria-live="polite"></div>
 
 <script src="vendor/marked.js"></script>

@@ -20,6 +20,8 @@
 
 ## Changes
 
+- **2026-10-17, spec 033 (floors), cross-reference.** With two or more floors on, door plates (and open room headers) show a small floor tag; Close all / Open all act only on rooms that are shown (not hidden, floor on). A room on a floor that is off has no plate. Door state stays per folder.
+
 ### 2026-10-17: lobby from spec 024 (cross-reference)
 
 A closed room keeps its agents in the lobby of spec [024](../024-office-places/spec.md) until their call ends; they then disappear into the door plate (no walk to a plate). With every room closed the lobby sits above the door plates.

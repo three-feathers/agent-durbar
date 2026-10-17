@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-17
 
-**Status**: Draft, clarified 2026-10-17 (spec only; no plan, tasks or code yet)
+**Status**: Built 2026-10-17 on branch `033-floors` (T001-T026): simulator and unit tests only, 0 AI credits. Evidence per requirement: see *Verification* at the end.
 
 **Input**: User description (Francisco Javier Cabello, in Spanish): "Salas (rooms) propias de Agent Durbar: hoy una room = una carpeta o un .code-workspace (concepto de VS Code; con varias carpetas solo se usa la primera como cwd y las demás no se ven). Queremos un concepto propio de 'sala' que agrupe varias carpetas (cada carpeta con sus agentes) para compartimentar espacios de trabajo. El usuario puede crear, renombrar y borrar salas, y mover carpetas entre salas. Cada sala se puede activar o desactivar: una sala desactivada no aparece en la oficina ni cuenta en las estadísticas de la barra superior (Working, Waiting, Idle, Errors, Done), ni en los avisos de atención. Debe persistir entre reinicios. Funciona en el simulador sin créditos."
 
@@ -46,7 +46,7 @@ As someone who runs agents for several projects or clients, I create floors (for
 1. **Given** no floors have been created yet, **When** the app starts, **Then** every folder is in one built-in floor (working name "Ground floor") and the office looks exactly as it does today.
 2. **Given** the Floors panel, **When** I create a floor named "Client A", **Then** it appears in the list of floors, empty and on.
 3. **Given** a folder in "Ground floor", **When** I move it to "Client A", **Then** its room (with its agents, door state, mode, model, cap and MCP extras) is now shown under "Client A", and nothing about its agents changes.
-4. **Given** more than one floor exists, **When** I am about to add a folder or workspace file, **Then** an "into: <floor>" choice next to **+ Folder** / **+ Workspace** in the top bar lets me pick the target floor before the system picker opens; by default it is the floor I added a folder to last time (or "Ground floor"). With only one floor, the choice is not shown and new folders go to it.
+4. **Given** more than one floor exists, **When** I am about to add a folder or workspace file, **Then** I can pick the target floor beforehand in the Floors panel ("New folders go to: <floor>"), and the tooltips of **+ Folder** / **+ Workspace** name it; by default it is the floor I added a folder to last time (or "Ground floor"). With only one floor, the choice is not shown and new folders go to it.
 5. **Given** floors and folder assignments, **When** I restart the app, **Then** floors, their names, order, on/off state and each folder's floor are restored.
 
 ---
@@ -128,7 +128,7 @@ When more than one floor is on, I can tell at a glance which floor each room bel
 - **FR-003**: Users MUST be able to create a floor with a name that is not already used (compared ignoring case and surrounding spaces); 1 to 40 characters after trimming, no control characters. At most 40 floors; creating a 41st is refused with a short message.
 - **FR-004**: Users MUST be able to rename, reorder and delete floors. Deleting a floor MUST ask for confirmation, MUST move its folders to "Ground floor", and MUST NOT remove any folder or end any session.
 - **FR-005**: Users MUST be able to move a folder from one floor to another; moving MUST NOT change the folder's agents, sessions, permission mode, model, effort, credit cap, door state, hidden flag or MCP extras.
-- **FR-006**: When more than one floor exists, users MUST be able to choose the floor for a new folder or workspace file before the system picker opens (an "into: <floor>" choice next to **+ Folder** / **+ Workspace**); the default is the floor used for the last addition, or "Ground floor". With one floor, no choice is shown.
+- **FR-006**: When more than one floor exists, users MUST be able to choose the floor for a new folder or workspace file before the system picker opens: a "New folders go to" choice in the Floors panel, named in the tooltips of **+ Folder** / **+ Workspace**; the default is the floor used for the last addition, or "Ground floor". With one floor, no choice is shown. (The top bar has no room for one more control at 1280x800, see research R7.)
 - **FR-007**: The top bar MUST have a **Floors** button that shows how many floors are on out of the total (for example "Floors 2/3"). It MUST open a panel with one on/off switch per floor (one action per floor) and the management actions of FR-003 to FR-005 (create, rename, reorder, delete, move folders). The button MUST fit the top bar at 1280x800 without overlapping other controls.
 - **FR-008**: Agents in a floor that is off MUST NOT appear in the office, the list view, the folder filter or the full-screen chat strip, and MUST NOT be counted in the top-bar status pills (Working, Waiting, Idle, Errors, Done) or in the "needs attention" ordering.
 - **FR-009**: Switching a floor off MUST NOT pause, interrupt, stop or end any of its agents' sessions; they keep running exactly like the agents of a hidden folder (spec 006). Messages already sent keep being answered and can spend AI credits.
@@ -175,3 +175,14 @@ When more than one floor is on, I can tell at a glance which floor each room bel
 - The Tools view, the Settings screen and MCP settings are not filtered by floor in this feature.
 - Floors apply to every adapter the same way (they belong to the office, not to Copilot), so a future Claude Code or Codex adapter (spec 012) needs nothing extra.
 - Verification is on the simulator and with unit tests only; no real Copilot session is needed or planned for this feature.
+
+## Verification (2026-10-17, simulator and unit tests; no real Copilot session)
+
+- `[IMPLEMENTED]` test: FR-001..FR-005, FR-014, FR-015, FR-022 (operations, refusals, persistence, damaged and pre-floors files): `test:floors`, `test:folders`.
+- `[IMPLEMENTED]` test: FR-016 (office total and tooltip): `test:usagetotals`.
+- `[IMPLEMENTED]` sim: FR-006..FR-013, FR-018, FR-020, FR-021, FR-022, SC-002, SC-003 (switch off in 55-84 ms with 15 agents): `scripts/shots-033.js` at 1440x900 and 1280x800, plus a manual browser pass on the simulator.
+- `[IMPLEMENTED]` sim: FR-011, FR-012, SC-005: `npm run check:office` floors cases (3, 2, 1 floors on, with closed doors; top bar at 1280x800).
+- `[IMPLEMENTED]` read: FR-009, FR-010 (no handler touches a session; pending approvals are not resolved by a floor change).
+- FR-019: CI runs `npm test` on Windows, macOS and Linux; the layout was looked at on macOS only.
+- Deviation from the first design: the floor for new folders is chosen in the Floors panel, not in the top bar (no room at 1280x800; research R7, FR-006 updated).
+- `[KNOWN GAP]` The Tools view is not filtered by floor (out of scope). An older build that saves the folder file drops floors (folders kept).

@@ -1,6 +1,6 @@
 /* Small confirmation dialog (spec 003 FR-033, spec 018). Plain script: in the page it defines window.DurbarDialog;
    in Node (tests) `require` gives the same factory. DurbarDialog(document) returns askDialog(opts).
-   askDialog({title,body,lines:[text],input:{label,placeholder,max},buttons:[{label,value,cls}],check:{label,checked},returnFocus}) resolves {value,checked,text} for a
+   askDialog({title,body,lines:[text],input:{label,placeholder,max,value,focus},buttons:[{label,value,cls}],check:{label,checked},returnFocus}) resolves {value,checked,text} for a
    button (`text` = the optional input's value, `lines` = a short list under the body; all set with textContent, never HTML), or null when dismissed (Cancel button with value null, Escape, click on the backdrop).
    Keyboard contract: focus goes into the dialog when it opens and cannot leave it (Tab and Shift+Tab wrap; anything that
    steals focus is undone); Escape dismisses it (never confirms); when it closes focus goes back to `returnFocus` (an element
@@ -20,7 +20,7 @@
       d.innerHTML=`<div class="dlg" role="alertdialog" aria-modal="true" aria-labelledby="mdT" aria-describedby="mdB mdL"><h3 id="mdT"></h3><p class="dsub" id="mdB"></p>${lines&&lines.length?'<ul class="dlist" id="mdL"></ul>':''}${input?'<label class="dinput"><span></span><input type="text" id="mdIn" autocomplete="off" spellcheck="false"></label>':''}${check?'<label class="chk"><input type="checkbox" id="mdChk"><span></span></label>':''}<div class="dbtn"></div></div>`;
       d.querySelector('#mdT').textContent=title;d.querySelector('#mdB').textContent=body;
       if(lines&&lines.length)lines.forEach(t=>{const li=doc.createElement('li');li.textContent=t;d.querySelector('#mdL').appendChild(li);});
-      if(input){d.querySelector('.dinput span').textContent=input.label||'';const inp=d.querySelector('#mdIn');inp.placeholder=input.placeholder||'';inp.maxLength=input.max||200;}
+      if(input){d.querySelector('.dinput span').textContent=input.label||'';const inp=d.querySelector('#mdIn');inp.placeholder=input.placeholder||'';inp.maxLength=input.max||200;inp.value=input.value||'';}
       if(check){d.querySelector('.chk span').textContent=check.label;d.querySelector('#mdChk').checked=!!check.checked;}
       const row=d.querySelector('.dbtn');
       const items=()=>[...d.querySelectorAll(FOCUSABLE)];
@@ -51,7 +51,7 @@
       d.addEventListener('click',e=>{if(e.target===d)done(null);});
       doc.addEventListener('keydown',onKey,true);doc.addEventListener('focusin',onFocusIn,true);
       doc.body.appendChild(d);
-      first().focus();
+      (input&&input.focus?d.querySelector('#mdIn'):first()).focus(); /* input.focus: start in the text field (rename) */
     });
   };
 });

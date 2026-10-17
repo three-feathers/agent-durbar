@@ -15,6 +15,8 @@
  *   - the floor scrolling or the page overflowing (stage data-fit must be ok), text below 10.5px,
  *   - the lobby (spec 024): missing, sticking out of the floor, overlapping a room or the door plates, not holding its 5 places, a place or slot
  *     sticking out of its tile, a walking figure that is not standing on a slot once the walks have settled, or more figures than empty chairs.
+ *   - floors (spec 033, `simfloors=1`): with two or more floors on, a room header or door plate without its floor tag; with one floor on,
+ *     any floor tag; the top bar controls overlapping each other or sticking out of the window (the Floors button must fit at 1280x800).
  * An expanded `+N more` is allowed to scroll the floor (the spec says it expands in place) but must still not overlap.
  */
 'use strict';
@@ -109,6 +111,31 @@ function pageCheck(expanded) {
   };
 }
 
+/* spec 033: floor tags and the top bar; runs inside the page after pageCheck */
+function floorsCheck(expectTags) {
+  const problems = [];
+  const stage = document.getElementById('stage');
+  const boxes = [...stage.querySelectorAll('.room-head, .plate')];
+  boxes.forEach((b) => {
+    const t = b.querySelector('.floor-tag');
+    if (expectTags && !t) problems.push('no floor tag in ' + (b.querySelector('.room-name, b') || b).textContent.trim());
+    if (!expectTags && t) problems.push('floor tag shown with one floor on');
+    if (t && t.getClientRects().length && parseFloat(getComputedStyle(t).fontSize) < 10.5) problems.push('floor tag below 10.5px');
+  });
+  const ctl = [...document.querySelectorAll('.topbar button, .topbar select, .topbar .tgl')].filter((e) => e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden');
+  const R = (e) => e.getBoundingClientRect();
+  ctl.forEach((e) => { const b = R(e); if (b.right > innerWidth + 0.5 || b.left < -0.5) problems.push(`top bar control sticks out: ${(e.id || e.textContent).trim().slice(0, 20)}`); });
+  for (let i = 0; i < ctl.length; i++) for (let j = i + 1; j < ctl.length; j++) {
+    if (ctl[i].contains(ctl[j]) || ctl[j].contains(ctl[i])) continue;
+    const p = R(ctl[i]), q = R(ctl[j]);
+    const ox = Math.min(p.right, q.right) - Math.max(p.left, q.left), oy = Math.min(p.bottom, q.bottom) - Math.max(p.top, q.top);
+    if (ox > 0.5 && oy > 0.5) problems.push(`top bar overlap ${(ctl[i].id || ctl[i].textContent).trim().slice(0, 16)} x ${(ctl[j].id || ctl[j].textContent).trim().slice(0, 16)}`);
+  }
+  const btn = document.getElementById('floorsBtn');
+  if (!btn || btn.hidden) problems.push('Floors button missing');
+  return problems;
+}
+
 function subsets(list, k) {
   const out = [];
   const rec = (start, cur) => { if (cur.length === k) { out.push(cur.slice()); return; } for (let i = start; i < list.length; i++) { cur.push(list[i]); rec(i + 1, cur); cur.pop(); } };
@@ -179,6 +206,23 @@ async function driver(ctx) {
       await ctx.js(`document.getElementById('openAll').click()`); await sleep(500);
       r = await ctx.js(`(${pageCheck.toString()})(false)`); total++;
       if (r.problems.length) { failed++; console.log(`FAIL ${tag} Open all click: ${r.problems.join('; ')}`); }
+    }
+  }
+  /* spec 033: floors on/off (3, 2 and 1 floors on), with and without closed doors, both sizes */
+  for (const [w, h] of SIZES) {
+    const cases = [
+      ['3 floors on', 'sim=15&simfreeze=1&simfloors=1', true],
+      ['2 floors on', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Personal', true],
+      ['1 floor on', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Personal,Client%20A', false],
+      ['3 floors on, 2 doors closed', 'sim=15&simfreeze=1&simfloors=1&closed=blog,infra-notes', true],
+      ['2 floors on, 1 door closed', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Client%20A&closed=mcp-swiss', true],
+    ];
+    for (const [label, q, tags] of cases) {
+      const tag = `floors ${w}x${h} ${label}`;
+      await run(tag, q, w, h, shotsDir ? `floors-${w}x${h}-${label.replace(/[^a-z0-9]+/gi, '-')}` : '');
+      const fp = await ctx.js(`(${floorsCheck.toString()})(${tags})`);
+      total++;
+      if (fp.length) { failed++; console.log(`FAIL ${tag}: ${fp.slice(0, 6).join('; ')}`); }
     }
   }
   console.log('\nlayout summary (density/helpers shown, stage height vs floor):');

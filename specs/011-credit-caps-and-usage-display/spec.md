@@ -93,6 +93,8 @@ Next to the model picker I see the credit multiplier and an estimate of cost rel
 
 ## Changes
 
+- **2026-10-17, spec 033 (floors), cross-reference.** The office total keeps counting rooms on floors that are off; its tooltip adds "Includes X AIU from floors that are off" (`tooltip(t, {offFloors})`, `sum()` in `usagetotals.js`, `test:usagetotals`). Room totals are unchanged.
+
 ### 2026-10-16: implement the credit cap slice (audit gap 1)
 
 New or changed requirements (they extend FR-003, FR-004, FR-006, FR-008 and User Story 2; numbering continues):

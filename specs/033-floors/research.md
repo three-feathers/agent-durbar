@@ -40,8 +40,8 @@ No open technical unknowns; every decision below was read in the code on `main` 
 
 ## R7. Choosing the floor when adding a folder (FR-006)
 
-- **Decision**: the native picker cannot host a select, so the floor is chosen **before** it: `+ Folder` / `+ Workspace` add an optional `floor` field to the existing add options; the top bar keeps a small "into: <floor>" select only when more than one floor exists (hidden otherwise). Default = `lastFloor` from the store, else `ground`. Main validates the id (unknown → `ground`) and saves `lastFloor`.
-- **Alternatives**: ask after the picker in a dialog (rejected: one more step on every add); always Ground floor then move (rejected: FR-006).
+- **Decision**: the native picker cannot host a select, so the floor is chosen **before** it. First tried as an "into: <floor>" select in the top bar next to `+ Folder` / `+ Workspace`; at 1280x800 with three floors it pushed **Office / List** off the bar (measured in the simulator, 2026-10-17). Moved to the top of the Floors panel ("New folders go to: <floor>"), shown only when more than one floor exists; the tooltips of `+ Folder` / `+ Workspace` name the target floor. Default = `lastFloor` from the store, else `ground`. Main validates the id (unknown → `ground`) and saves `lastFloor`.
+- **Alternatives**: the top-bar select (rejected: no room at 1280x800, constitution V); ask after the picker in a dialog (rejected: one more step on every add); always Ground floor then move (rejected: FR-006).
 
 ## R8. Full-screen chat on an off floor
 

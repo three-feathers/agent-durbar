@@ -29,21 +29,21 @@
 **Goal**: create floors, put folders in them, choose the floor when adding, survive restart.
 **Independent test**: simulator with `DURBAR_SIM_FLOORS=1`: create a floor, move folders, see them under it; restart persistence via T005.
 
-- [ ] T011 [US1] Top-bar **Floors n/m** button and `#floorsPop` panel in `src/renderer/index.html` and `src/renderer/app.js`, same popover behaviour as `#foldersPop` (focus in, Esc closes, click outside closes): one row per floor in order with its folders listed below; "New floor" input + Create showing the error text from the bridge; floor and folder names escaped, long names shortened with an ellipsis and the full name in `title` [FR-003, FR-007, FR-018]
-- [ ] T012 [US1] Move folder: per-folder "Move to" select in the panel calling `moveFolderToFloor(agentId, floorId)`; state replaced by the returned `FloorsState`; office re-renders with the room under its new floor and nothing else about its agents changing [FR-005]
-- [ ] T013 [US1] Add into a floor: "into: <floor>" select next to `+ Folder`/`+ Workspace`, shown only when more than one floor exists, default `lastFloor`; value sent as `opts.floor` in `addVia` [FR-006]
-- [ ] T014 [P] [US1] Styles in `src/renderer/styles.css`: panel rows, folder rows, Move select, error line; text ≥10.5px [FR-018]
+- [x] T011 [US1] Top-bar **Floors n/m** button and `#floorsPop` panel in `src/renderer/index.html` and `src/renderer/app.js`, same popover behaviour as `#foldersPop` (focus in, Esc closes, click outside closes): one row per floor in order with its folders listed below; "New floor" input + Create showing the error text from the bridge; floor and folder names escaped, long names shortened with an ellipsis and the full name in `title` [FR-003, FR-007, FR-018]
+- [x] T012 [US1] Move folder: per-folder "Move to" select in the panel calling `moveFolderToFloor(agentId, floorId)`; state replaced by the returned `FloorsState`; office re-renders with the room under its new floor and nothing else about its agents changing [FR-005]
+- [x] T013 [US1] Add into a floor: "New folders go to: <floor>" select at the top of the Floors panel, shown only when more than one floor exists, default `lastFloor`; `+ Folder` / `+ Workspace` tooltips name the target; value sent as `opts.floor` in `addVia` (moved from the top bar: no room at 1280x800, research R7) [FR-006]
+- [x] T014 [P] [US1] Styles in `src/renderer/styles.css`: panel rows, folder rows, Move select, error line; text ≥10.5px [FR-018]
 
 ## Phase 4: User Story 2 — Switch a floor off (P1) — MVP part 2
 
 **Goal**: off floors leave the office and the counts; Only.
 **Independent test**: quickstart steps 2-6; `scripts/shots-033.js` asserts pills = visible agents.
 
-- [ ] T015 [US2] Per-floor switch in the panel: a `button` with `aria-pressed` and the word On/Off, calling `setFloorOn`; button label updates to "Floors n/m" [FR-007, FR-008, FR-018]
-- [ ] T016 [US2] **Only** action per floor calling `onlyFloor` [FR-022]
-- [ ] T017 [US2] Side effects after any floor change in `src/renderer/app.js`: reset the folder filter to "All folders" if its room is no longer shown; close the full-screen chat if its agent is now on an off floor (pending approvals untouched); empty state "All floors are off. Open Floors above to switch one on." when every floor is off and agents exist [FR-008, FR-010, FR-013, spec US2 #5 #7]
-- [ ] T018 [P] [US2] Office credit total: `tooltip()` in `src/renderer/usagetotals.js` gets `opts.offFloors` (a ledger total) and adds "<x> AIU of it from floors that are off"; `app.js` passes the sum of rooms on off floors; total value unchanged; test in `scripts/test-usagetotals.ts` [FR-016]
-- [ ] T019 [US2] Hidden folders in the panel: a `hidden` tag (word, not colour) on folders hidden with Folders → Hide [FR-021]
+- [x] T015 [US2] Per-floor switch in the panel: a `button` with `aria-pressed` and the word On/Off, calling `setFloorOn`; button label updates to "Floors n/m" [FR-007, FR-008, FR-018]
+- [x] T016 [US2] **Only** action per floor calling `onlyFloor` [FR-022]
+- [x] T017 [US2] Side effects after any floor change in `src/renderer/app.js`: reset the folder filter to "All folders" if its room is no longer shown; close the full-screen chat if its agent is now on an off floor (pending approvals untouched); empty state "All floors are off. Open Floors above to switch one on." when every floor is off and agents exist [FR-008, FR-010, FR-013, spec US2 #5 #7]
+- [x] T018 [P] [US2] Office credit total: `tooltip()` in `src/renderer/usagetotals.js` gets `opts.offFloors` (a ledger total) and adds "<x> AIU of it from floors that are off"; `app.js` passes the sum of rooms on off floors; total value unchanged; test in `scripts/test-usagetotals.ts` [FR-016]
+- [x] T019 [US2] Hidden folders in the panel: a `hidden` tag (word, not colour) on folders hidden with Folders → Hide [FR-021]
 
 **Checkpoint (MVP)**: stories 1 and 2 work on the simulator; quickstart steps 1-6 and 8 pass.
 
@@ -51,21 +51,21 @@
 
 **Independent test**: quickstart step 7.
 
-- [ ] T020 [US3] Rename (inline field, same name rules and messages), Up/Down reorder (calls `reorderFloors` with the full new order), Delete with confirmation via the existing `askDialog` ("Delete floor X? Its N folders move to Ground floor. No session is ended."), Delete not offered for Ground floor, in `src/renderer/app.js` [FR-002, FR-004]
+- [x] T020 [US3] Rename (inline field, same name rules and messages), Up/Down reorder (calls `reorderFloors` with the full new order), Delete with confirmation via the existing `askDialog` ("Delete floor X? Its N folders move to Ground floor. No session is ended."), Delete not offered for Ground floor, in `src/renderer/app.js` [FR-002, FR-004]
 
 ## Phase 6: User Story 4 — See which floor a room belongs to (P3)
 
 **Independent test**: two floors on at 1440x900 and 1280x800 with 15 agents: labels in headers and plates, rooms grouped, no overlap.
 
-- [ ] T021 [US4] Order rooms by floor index (stable, existing order inside a floor) in `officeModel` and the list view; floor-name tag `<span class="floor-tag">` in `roomHTML` header and the door plate only when two or more floors are on; escaped, ellipsis with full name in `title`, ≥10.5px, text not colour [FR-012]
-- [ ] T022 [P] [US4] Floor tag styles in `src/renderer/styles.css` (shrinks first in narrow headers at `mini`/`micro`) [FR-012, SC-005]
+- [x] T021 [US4] Order rooms by floor index (stable, existing order inside a floor) in `officeModel` and the list view; floor-name tag `<span class="floor-tag">` in `roomHTML` header and the door plate only when two or more floors are on; escaped, ellipsis with full name in `title`, ≥10.5px, text not colour [FR-012]
+- [x] T022 [P] [US4] Floor tag styles in `src/renderer/styles.css` (shrinks first in narrow headers at `mini`/`micro`) [FR-012, SC-005]
 
 ## Phase 7: Polish and cross-cutting
 
-- [ ] T023 `scripts/check-office-overlap.js`: cases with `simfloors=1` (3 floors on, 2 on, 1 off) at 1440x900 and 1280x800, incl. doors closed; top bar has no overlap with the Floors button and the "into" select at 1280x800 [SC-005, FR-007]
-- [ ] T024 `scripts/shots-033.js` simulator driver: SC-002 (pills equal visible agents after each switch), no lobby figure of an off floor, Only, chat closes, all-off message, SC-003 timing (< 0.5 s per switch with 15 agents), screenshots `docs/screenshots/033-floors-*` at 1440x900 and 1280x800 (two floors on with labels; one floor off; the Floors panel) [SC-002, SC-003, FR-020]
-- [ ] T025 Docs (spec 025 rule): README feature list and status, known limits (agents on off floors keep running and spending, no alerts, the credit total is the only sign; downgrade drops floors; Tools view not filtered); CHANGELOG *Unreleased* line; `specs/README.md` row; spec 033 status and `[IMPLEMENTED]`/`[KNOWN GAP]` tags; cross-reference notes in specs 006 (Hide stays), 017 (plates show the floor tag), 024 (lobby ignores off floors), 011 (office total tooltip) [VIII]
-- [ ] T026 `npm run typecheck && npm run build && npm test` and `npm run check:office` pass; CI runs `npm test` on Windows, macOS and Linux [FR-019]; `/speckit-analyze` and `/speckit-converge`; PR from the template with what was not verified (no real session; Windows/macOS layout only via CI unit tests)
+- [x] T023 `scripts/check-office-overlap.js`: cases with `simfloors=1` (3 floors on, 2 on, 1 off) at 1440x900 and 1280x800, incl. doors closed; top bar has no overlap with the Floors button and the "into" select at 1280x800 [SC-005, FR-007]
+- [x] T024 `scripts/shots-033.js` simulator driver: SC-002 (pills equal visible agents after each switch), no lobby figure of an off floor, Only, chat closes, all-off message, SC-003 timing (< 0.5 s per switch with 15 agents), screenshots `docs/screenshots/033-floors-*` at 1440x900 and 1280x800 (two floors on with labels; one floor off; the Floors panel) [SC-002, SC-003, FR-020]
+- [x] T025 Docs (spec 025 rule): README feature list and status, known limits (agents on off floors keep running and spending, no alerts, the credit total is the only sign; downgrade drops floors; Tools view not filtered); CHANGELOG *Unreleased* line; `specs/README.md` row; spec 033 status and `[IMPLEMENTED]`/`[KNOWN GAP]` tags; cross-reference notes in specs 006 (Hide stays), 017 (plates show the floor tag), 024 (lobby ignores off floors), 011 (office total tooltip) [VIII]
+- [x] T026 `npm run typecheck && npm run build && npm test` and `npm run check:office` pass; CI runs `npm test` on Windows, macOS and Linux [FR-019]; `/speckit-analyze` and `/speckit-converge`; PR from the template with what was not verified (no real session; Windows/macOS layout only via CI unit tests)
 
 ## Dependencies
 

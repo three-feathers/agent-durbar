@@ -10,6 +10,8 @@
   const tok=x=>typeof x==='number'&&Number.isFinite(x)&&x>0?x:0;
   const blank=()=>({calls:0,inTokens:0,outTokens:0,nano:0,unreported:0});
   const copy=t=>({calls:t.calls,inTokens:t.inTokens,outTokens:t.outTokens,nano:t.nano,unreported:t.unreported});
+  /* Sum of several totals (spec 033: the spend of the rooms on floors that are off). */
+  const sum=list=>{const o=blank();(list||[]).forEach(t=>{if(!t)return;o.calls+=t.calls;o.inTokens+=t.inTokens;o.outTokens+=t.outTokens;o.nano+=t.nano;o.unreported+=t.unreported;});return o;};
 
   /* One ledger per run. record() is called once per `usage` event, for the folder (room id) of the owning agent; helpers are
      recorded through their parent's event, never twice. Nothing is ever subtracted: ended sessions and removed agents still count. */
@@ -38,7 +40,8 @@
   const fmtTokens=n=>n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(n>=1e4?0:1)+'k':String(Math.round(n));
   const plural=(n,w)=>n+' '+w+(n===1?'':'s');
 
-  /* Tooltip text. opts.scope: 'office' | 'folder'; opts.removed: some spend belongs to folders no longer shown. */
+  /* Tooltip text. opts.scope: 'office' | 'folder'; opts.removed: some spend belongs to folders no longer shown;
+     opts.offFloors: the part of the office total spent on floors that are off (spec 033 FR-016; still counted). */
   function tooltip(t,opts){
     if(none(t))return '';
     const o=opts||{}, office=o.scope!=='folder';
@@ -47,9 +50,10 @@
     if(t.unreported&&!allUnreported(t))lines.push(plural(t.unreported,'call')+' did not report credits');
     lines.push('Since Agent Durbar opened; ended sessions are included.');
     if(office&&o.removed)lines.push('Includes folders no longer shown.');
+    if(office&&o.offFloors&&!none(o.offFloors))lines.push('Includes '+(allUnreported(o.offFloors)?plural(o.offFloors.calls,'call')+' with credits not reported':aiu(o.offFloors,3))+' from floors that are off (their agents keep running).');
     lines.push('As reported by the Copilot runtime (1 AIU = 1 AI credit, not verified against billing).');
     return lines.join('\n');
   }
 
-  return {createLedger,validNano,fmtTotal,fmtShort,tooltip,fmtTokens};
+  return {createLedger,validNano,fmtTotal,fmtShort,tooltip,fmtTokens,sum};
 })());
