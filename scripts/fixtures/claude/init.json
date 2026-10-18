@@ -1,0 +1,62 @@
+{
+  "provenance": "synthetic",
+  "description": "system/init: Ready status and the MCP server list; an unrelated system message is ignored.",
+  "messages": [
+    {
+      "type": "system",
+      "subtype": "init",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "cwd": "/work/demo",
+      "model": "claude-synthetic-1",
+      "permissionMode": "default",
+      "tools": [
+        "Read",
+        "Bash",
+        "Agent"
+      ],
+      "mcp_servers": [
+        {
+          "name": "github",
+          "status": "connected",
+          "source": "user"
+        },
+        {
+          "name": "my-server",
+          "status": "failed"
+        }
+      ],
+      "apiKeySource": "none",
+      "claude_code_version": "0.0.0-synthetic"
+    },
+    {
+      "type": "system",
+      "subtype": "api_retry",
+      "attempt": 1
+    },
+    {
+      "type": "some_future_message",
+      "x": 1
+    }
+  ],
+  "expected": [
+    {
+      "type": "status",
+      "status": "idle",
+      "intent": "Ready in /work/demo"
+    },
+    {
+      "type": "mcp",
+      "servers": [
+        {
+          "name": "github",
+          "status": "connected",
+          "source": "user"
+        },
+        {
+          "name": "my-server",
+          "status": "failed"
+        }
+      ]
+    }
+  ]
+}
