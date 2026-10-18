@@ -918,7 +918,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const floorNameError = (name: unknown, except?: string): string => {
       if (typeof name !== 'string' || !name.trim()) return 'Name is empty.';
       const nm = name.trim();
-      // same rule as src/shared/floors.ts (this bundle cannot import it): controls, and hidden direction or zero-width characters
+      // same rule as src/shared/floors.ts (this bundle cannot import it): controls and hidden or layout characters (CONTROL_RE + HIDDEN_RE); test-floors compares both
       // eslint-disable-next-line no-control-regex
       if (nm.length > 40 || /[\u0000-\u001f\u007f-\u009f\u00ad\u034f\u115f\u180e\u200b\u2028\u2029\u202a-\u202e\u2060-\u2064\u2066-\u2069\u3164\ufeff\ufff9-\ufffb]/.test(nm)) return 'Use 1 to 40 characters, without control or hidden characters.';
       return floorsList.some((f) => f.id !== except && f.name.toLowerCase() === nm.toLowerCase()) ? 'A floor with that name exists.' : '';

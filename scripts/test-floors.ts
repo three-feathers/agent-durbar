@@ -159,7 +159,7 @@ async function simChecks(): Promise<void> {
     return (win.__durbarSim as { create(o: Record<string, unknown>): DurbarApi }).create({ n: 1, freeze: true });
   };
   const samples: unknown[] = [
-    ...REFUSED.map((c) => 'We' + c + 'b'), ...ALLOWED, 'x'.repeat(40), 'x'.repeat(41), 'a\u0000b', 'a\nb', 'a\u007fb', 'a\u0085b', '   ', '', 5, null, 'Plain', '  Padded  ', '\u2028x', 'x\u2029',
+    ...REFUSED.map((c) => 'We' + c + 'b'), ...ALLOWED, 'Ground floor', 'GROUND FLOOR', 'ground FLOOR', 'x'.repeat(40), 'x'.repeat(41), 'a\u0000b', 'a\nb', 'a\u007fb', 'a\u0085b', '   ', '', 5, null, 'Plain', '  Padded  ', '\u2028x', 'x\u2029',
   ];
   for (const sample of samples) {
     const shared = nameError(sample, defaultFloors());
