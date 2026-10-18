@@ -14,6 +14,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **Claude Code event mapper (spec 012 T023, issue #42).** A pure mapper from Claude Agent SDK stream messages to Durbar's events (text, thinking, tools, MCP tools parsed against the init server list, sub-agents closed exactly once, token usage, cost estimate as per-result deltas, errors), tested against synthetic fixtures. No SDK dependency, not wired yet, no user-visible change, 0 AIU.
 
+- **Codex JSON-RPC client (spec 012 T042, issue #50).** A line-delimited JSON-RPC client for `codex app-server` over a child process (argv only, no shell): framing, ids, timeouts, server requests, malformed and oversize lines, child exit and a SIGTERM-then-SIGKILL close. Tested on a fake child process; not wired yet, no user-visible change, 0 AIU.
+
 - **Copilot passes the adapter contract (spec 012 T016, issue #36; spec 002 T020).** The contract suite and a replay of the recorded sessions now run on the Copilot adapter through a fake SDK client. Test code only, 0 AIU.
 
 - **Adapter contract suite (spec 012 T015, issue #35).** A fake adapter and a shared contract every adapter must pass (events, permissions, stop, capabilities), plus tests for the main-process rules that refuse settings an adapter cannot apply. No user-visible change. Unit tests, 0 AIU.

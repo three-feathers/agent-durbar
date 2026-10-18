@@ -46,7 +46,7 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 
 - [ ] T040 (needs-owner-approval) Decision Q3 and dependency: add `@anthropic-ai/claude-agent-sdk` pinned to an exact version with a dynamic `import()` wrapper; typecheck and build only, nothing started. Depends on the owner accepting its licence [FR-003, FR-020]
 - [ ] T041 (needs-owner-approval) Decision Q4 and binary source: use the user's installed `claude` via `pathToClaudeCodeExecutable` plus a minimum-version check; a test asserts the vendor binaries are not in `asarUnpack` or the package files [FR-021, FR-010]
-- [ ] T042 (sim) `codexRpc.ts`: line-delimited JSON-RPC client over `child_process.spawn` (argv array, absolute path, no shell); tests on a scripted stdio fake: framing, ids, notifications, server requests, malformed lines, child exit [FR-006, FR-020]
+- [x] T042 (sim) `codexRpc.ts`: line-delimited JSON-RPC client over `child_process.spawn` (argv array, absolute path, no shell); tests on a scripted stdio fake: framing, ids, notifications, server requests, malformed lines, child exit [FR-006, FR-020]
 - [ ] T043 (sim) `CodexAdapter`: initialize, `thread/start` and `thread/resume`, `turn/start`, interrupt, stop, approvals through the broker, crash becomes `error`; contract suite on a scripted app-server fake [FR-003, FR-017, SC-002]
 - [ ] T044 (sim) Packaged-build check without a vendor: the ESM SDK is imported from the CommonJS main process, `asarUnpack` entries are right, run in CI on three OSes; documents the result [FR-021]
 - [ ] T045 (sim) `ClaudeAdapter` on a fake `query()` object seam: input queue, `canUseTool` to broker, hooks, interrupt, close, resume with `sessionId`; contract suite. Depends on T040, T041 [FR-003, FR-017, SC-002]
