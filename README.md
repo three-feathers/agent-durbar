@@ -96,7 +96,7 @@ The three mode names are the same for every agent kind, and Durbar maps them to 
 
 ## Agents and adapters
 
-**GitHub Copilot** is the agent Agent Durbar offers today. **Claude Code** has a working adapter that you can switch on as an experiment (`DURBAR_CLAUDE=1`): it drives your installed `claude` directly, enforces Read-only / Ask first / Allow all through Durbar's own permission broker, and was checked on a real Claude Code 2.1.302 (every mode, interrupt, stop and resume; about $0.015). It is not offered to everyone yet: the full app has not been run end to end with a Claude agent, and Claude's cost is a dollar *estimate* that must stay apart from AIU. Codex is planned ([spec 012](specs/012-claude-codex-adapters/spec.md)) and is "simulator/fixtures only".
+**GitHub Copilot** is the agent Agent Durbar offers today. **Claude Code** has a working adapter that you can switch on as an experiment (`DURBAR_CLAUDE=1`): it drives your installed `claude` directly, enforces Read-only / Ask first / Allow all through Durbar's own permission broker, and was checked on a real Claude Code 2.1.302 (every mode, interrupt, stop and resume; about $0.015). It is not offered to everyone yet: the full app has not been run end to end with a Claude agent, and Claude's cost is a dollar *estimate*: its cards show it as `≈ $… est.`, never as AIU and never added to an AIU total. Codex is planned ([spec 012](specs/012-claude-codex-adapters/spec.md)) and is "simulator/fixtures only".
 
 | Agent | Status | Simulator | Fixtures / fakes | Real account |
 | --- | --- | --- | --- | --- |

@@ -218,8 +218,16 @@ const capOf=a=>{const c=a&&!a.parent&&a.info&&a.info.maxAiCredits;return c>0?c:0
 const MIN_CAP=30; /* the runtime's minimum session limit, AI credits (1 credit = USD 0.01; AIU as reported = credits per GitHub docs) */
 const capDigits=()=>2;
 const fmtCap=n=>Number.isInteger(n)?String(n):n.toFixed(2);
-function usageShort(a){const u=a.usage; if(!u||!u.calls)return ''; const c=capOf(a); return c?fmtTok(u.inT+u.outT)+' · '+(u.nano/1e9).toFixed(capDigits(c))+'/'+fmtCap(c)+' AIU':fmtTok(u.inT+u.outT)+' tok · '+(u.nano/1e9).toFixed(2)+' AIU';}
-function usageLong(a){const u=a.usage; if(!u||!u.calls)return ''; const c=capOf(a); return u.calls+' calls · '+fmtTok(u.inT)+' in / '+fmtTok(u.outT)+' out tokens · '+(u.nano/1e9).toFixed(3)+' AIU'+(c?' of '+fmtCap(c)+' cap':'');}
+/* spec 012 FR-122: what the agent's kind reports decides the money part: AIU, a labelled dollar estimate (never AIU), or nothing */
+const usageCaps=a=>{const r=a&&a.parent?(byId(a.parent)||a):a;const c=typeof capsFor==='function'&&r&&r.info?capsFor(r):null;return (c&&c.usage)||{nanoAiu:true};};
+const fmtUsd=v=>'≈ $'+(v>0&&v<0.01?v.toFixed(4):v.toFixed(2))+' est.';
+const USD_TIP='The agent\'s own estimate of the API price for these tokens, not a bill and not AIU.';
+function usageShort(a){const u=a.usage; if(!u||!u.calls)return ''; const k=usageCaps(a), c=capOf(a);
+  if(!k.nanoAiu)return fmtTok(u.inT+u.outT)+' tok'+(k.costUsd?' · '+fmtUsd(u.usd||0):'');
+  return c?fmtTok(u.inT+u.outT)+' · '+(u.nano/1e9).toFixed(capDigits(c))+'/'+fmtCap(c)+' AIU':fmtTok(u.inT+u.outT)+' tok · '+(u.nano/1e9).toFixed(2)+' AIU';}
+function usageLong(a){const u=a.usage; if(!u||!u.calls)return ''; const k=usageCaps(a), c=capOf(a), base=u.calls+' calls · '+fmtTok(u.inT)+' in / '+fmtTok(u.outT)+' out tokens';
+  if(!k.nanoAiu)return base+(k.costUsd?' · '+fmtUsd(u.usd||0):'');
+  return base+' · '+(u.nano/1e9).toFixed(3)+' AIU'+(c?' of '+fmtCap(c)+' cap':'');}
 
 /* ---------------- svg helpers ---------------- */
 
@@ -389,7 +397,7 @@ function cardHTML(a,d,nSubs){
     <span class="sc">${sceneC(a)}</span>
     <span class="ci"><span class="l1"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc(a.role)}</span><span class="stl st-${st}">${label(a,true)}</span></span>
     <span class="intent">${esc(taskOf(a))}</span>
-    <span class="l3"><span class="pill st-${st}"><i></i>${label(a,true)}</span><span class="use">${capOf(a)&&use.includes(' · ')?`<span class="aiu">${esc(use.split(' · ')[1])}</span>`:`${esc(use.split(' · ')[0]||'')}<span class="aiu">${use.includes(' · ')?' · '+esc(use.split(' · ')[1]):''}</span>`}</span></span></span></button>`;
+    <span class="l3"><span class="pill st-${st}"><i></i>${label(a,true)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${esc(use.split(' · ')[1])}</span>`:`${esc(use.split(' · ')[0]||'')}<span class="aiu">${use.includes(' · ')?' · '+esc(use.split(' · ')[1]):''}</span>`}</span></span></span></button>`;
 }
 function linksSVG(d,rows,extraMore){
   const D=DENS[d]; const n=rows+(extraMore?1:0);
@@ -835,7 +843,7 @@ function updatePanelHeader(){
   const ph=$('panelHead'); if(!ph)return;
   const sp=ph.querySelector('[data-f=status]'); sp.className='pill st-'+st; sp.innerHTML='<i></i>'+label(a);
   const t=ph.querySelector('[data-f=task]'); t.textContent=a.task; t.title=a.task;
-  ph.querySelector('[data-f=usage]').textContent=usageLong(a);
+  const ug=ph.querySelector('[data-f=usage]'); ug.textContent=usageLong(a); ug.title=ug.textContent.endsWith(' est.')?USD_TIP:'';
   updateCapChip(a);
   $('pauseBtn').querySelector('span').textContent=a.paused?'Resume':'Pause';
 }
@@ -1327,9 +1335,9 @@ function subApply(v,e,replay){
 function onSubEvent(a,e){
   const s=subRec(a,e.agentId), card=s.card;
   if(e.type==='usage'){
-    const u=s.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;
-    const cu=card.usage;cu.calls=u.calls;cu.inT=u.inT;cu.outT=u.outT;cu.nano=u.nano;card.usageText=usageLong(card);
-    const p=a.usage;p.calls++;p.inT+=e.inputTokens||0;p.outT+=e.outputTokens||0;p.nano+=e.nanoAiu||0;a.usageText=usageLong(a);
+    const u=s.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;u.usd=(u.usd||0)+(e.costUsd>0?e.costUsd:0);
+    const cu=card.usage;cu.calls=u.calls;cu.inT=u.inT;cu.outT=u.outT;cu.nano=u.nano;cu.usd=u.usd;card.usageText=usageLong(card);
+    const p=a.usage;p.calls++;p.inT+=e.inputTokens||0;p.outT+=e.outputTokens||0;p.nano+=e.nanoAiu||0;p.usd=(p.usd||0)+(e.costUsd>0?e.costUsd:0);a.usageText=usageLong(a);
     recordUsage(a,e);
     scheduleRender();if(ui.selected===card.id||ui.selected===a.id)updatePanelHeader();return;
   }
@@ -1636,7 +1644,7 @@ function onLiveEvent(e){
     else tTool(t.T,e);
     if(e.phase==='start'&&!isTaskTool(e.tool)){const label=toolLabel(e.args);setState(a,a.state==='thinking'?'working':a.state,null,a.intent||(e.tool+(label?' '+SHORT(label,90):'')));}
     scrollChat(chat);return;}
-  case 'usage':{const u=a.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;
+  case 'usage':{const u=a.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;u.usd=(u.usd||0)+(e.costUsd>0?e.costUsd:0);
     a.usageText=usageLong(a);recordUsage(a,e);scheduleRender();
     if(ui.selected===a.id||(byId(ui.selected)||{}).parent===a.id)updatePanelHeader();return;}
   }
