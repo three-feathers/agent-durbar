@@ -181,4 +181,4 @@ Spec 012 adds two agent kinds that do not report AI credits. The units stay sepa
 
 ### 2026-10-18: a very narrow room header shows the folder total in its tooltip (spec 001 FR-023)
 
-- **FR-020** (delta) `[IMPLEMENTED]` In a room header narrower than 260 px (many one-agent folders on one screen) the folder total is not drawn in the header; it is in the room name's tooltip (`blog · 0.06 AIU`) and on the closed door plate as before, and the office header total still counts it. Wider headers are unchanged.
+- **FR-020** (delta) `[IMPLEMENTED]` In a room header narrower than 280 px (many one-agent folders on one screen) the folder total is not drawn in the header; it is in the room name's tooltip (`blog · 0.06 AIU`) and on the closed door plate as before, and the office header total still counts it. Wider headers are unchanged.
