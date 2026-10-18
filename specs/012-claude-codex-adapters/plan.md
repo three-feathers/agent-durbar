@@ -46,7 +46,7 @@ One adapter instance per id (one shared child process where the vendor allows: C
 | --- | --- | --- |
 | `src/adapters/capabilities.ts` | `AdapterCapabilities`, `AdapterDescriptor`, `AdapterState` | yes |
 | `src/adapters/registry.ts` | id → descriptor/factory, `detectAll()` | yes (injected detect function; exec is injected in `detect.ts`) |
-| `src/adapters/detect.ts` | find binary, `--version`, min-version compare, Windows shim rules | yes (injected env/exec) |
+| `src/adapters/detect.ts` | find binary (configured path, PATH, known folders), `--version`, min-version compare, Windows `.exe`/`.cmd` rules, `detectCopilot` (spec `## Changes` 2026-10-18, T012) | yes (injected env/exec; `nodeExec` is the one real wrapper) |
 | `src/adapters/fake.ts` | `FakeAdapter`: plays a script of normalized events, honours the broker, for tests and `DURBAR_SIM_MAIN` | yes |
 | `src/adapters/claudeModes.ts` | mode → SDK options, tool name → permission kind, Read-only hook decision | yes |
 | `src/adapters/claudeMap.ts` | `SDKMessage` → `AgentEvent` (stateful mapper like `EventMapper`) | yes |
