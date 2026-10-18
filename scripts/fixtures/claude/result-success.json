@@ -1,0 +1,29 @@
+{
+  "provenance": "synthetic",
+  "description": "A successful turn result: estimated cost in USD (never nanoAiu), then idle.",
+  "messages": [
+    {
+      "type": "result",
+      "subtype": "success",
+      "is_error": false,
+      "total_cost_usd": 0.0123,
+      "usage": {
+        "input_tokens": 1
+      },
+      "modelUsage": {},
+      "permission_denials": [],
+      "session_id": "00000000-0000-4000-8000-000000000001"
+    }
+  ],
+  "expected": [
+    {
+      "type": "usage",
+      "costUsd": 0.0123,
+      "costBasis": "estimate"
+    },
+    {
+      "type": "status",
+      "status": "idle"
+    }
+  ]
+}

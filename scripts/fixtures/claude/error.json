@@ -1,0 +1,82 @@
+{
+  "provenance": "synthetic",
+  "description": "Error results, an aborted message, a credits_required rate-limit event and a rate-limit event that is ignored.",
+  "messages": [
+    {
+      "type": "result",
+      "subtype": "error_max_turns",
+      "is_error": true,
+      "total_cost_usd": 0,
+      "permission_denials": [
+        {
+          "tool_name": "Bash"
+        }
+      ],
+      "session_id": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "type": "result",
+      "subtype": "error_during_execution",
+      "is_error": true,
+      "session_id": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "type": "assistant",
+      "message": {
+        "id": "msg_8",
+        "model": "claude-synthetic-1",
+        "content": [
+          {
+            "type": "text",
+            "text": "Partial"
+          }
+        ]
+      },
+      "parent_tool_use_id": null,
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "aborted": true
+    },
+    {
+      "type": "rate_limit_event",
+      "rate_limit_info": {
+        "status": "rejected",
+        "errorCode": "credits_required"
+      }
+    },
+    {
+      "type": "rate_limit_event",
+      "rate_limit_info": {
+        "status": "allowed",
+        "utilization": 0.2
+      }
+    }
+  ],
+  "expected": [
+    {
+      "type": "status",
+      "status": "error",
+      "intent": "error_max_turns (1 permission denial)"
+    },
+    {
+      "type": "status",
+      "status": "error",
+      "intent": "error_during_execution"
+    },
+    {
+      "type": "output",
+      "delta": "",
+      "final": true,
+      "text": "Partial"
+    },
+    {
+      "type": "status",
+      "status": "idle",
+      "intent": "Aborted"
+    },
+    {
+      "type": "status",
+      "status": "error",
+      "intent": "Claude usage limit reached"
+    }
+  ]
+}

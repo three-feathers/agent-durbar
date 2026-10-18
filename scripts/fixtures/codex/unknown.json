@@ -1,0 +1,27 @@
+{
+  "provenance": "synthetic",
+  "notifications": [
+    {"method":"warning","params":{"message":"careful"}},
+    {"method":"configWarning","params":{"summary":"x"}},
+    {"method":"model/rerouted","params":{"from":"a","to":"b"}},
+    {"method":"mcpServer/startupStatus/updated","params":{"name":"github","status":"ready"}},
+    {"method":"item/somethingNew/delta","params":{"threadId":"thr_main","itemId":"x","delta":"y"}},
+    {"method":"turn/futureEvent","params":{}},
+    {"method":"item/started","params":{"item":{"id":"z","type":"holographicItem"}}},
+    {"method":"item/started","params":{"item":{"type":"commandExecution"}}},
+    {"method":"item/started","params":{"item":"nope"}},
+    {"method":"item/agentMessage/delta","params":{"itemId":"m","delta":42}},
+    {"method":"item/agentMessage/delta"},
+    {"method":"turn/started","params":"oops"},
+    {"method":"thread/tokenUsage/updated","params":{"tokenUsage":{"last":"x"}}},
+    {"method":"turn/completed","params":{"turn":{"status":"mystery"}}},
+    {"method":7,"params":{}},
+    {"params":{}},
+    {},
+    null,
+    "text",
+    [],
+    42
+  ],
+  "expected": []
+}
