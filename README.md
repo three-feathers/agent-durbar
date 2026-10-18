@@ -159,6 +159,8 @@ Spec [024](specs/024-office-places/spec.md) (issue #18; amends 001 and 017). Bui
 ![An agent walking to the Software library, 1280x800](docs/screenshots/024-walking-1280x800.png)
 ![Settings: Places in the office](docs/screenshots/024-settings-places-1280x800.png)
 
+[Settings > Places at 1440x900](docs/screenshots/024-settings-places-1440x900.png).
+
 ![Lobby with three custom places (simulator, 1440x900)](docs/screenshots/024-custom-lobby-1440x900.png)
 
 ![Settings: Your places (1280x800)](docs/screenshots/024-custom-settings-1280x800.png)
