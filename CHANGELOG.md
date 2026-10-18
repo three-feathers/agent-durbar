@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **MCP server groundwork: key file and handshake (spec 041 T011, issue #180).** A per-install secret kept in a private file, and a mutual HMAC handshake so the bridge and Durbar prove the key to each other without sending it. Not wired yet: nothing listens. No user-visible change, 0 AIU.
+
 - **MCP server groundwork: constants and per-OS paths (spec 041 T010, issue #175).** Where the MCP socket or named pipe and the key file would live on Windows, macOS and Linux, with a safety check for any folder outside the app's data folder. Not wired yet: nothing listens. No user-visible change, 0 AIU.
 
 - **Codex reads limited to the session's folders (spec 012 T084, issue #168).** In Read-only and Ask first, the Codex mode settings now use a Codex permission profile that may read only the session's folders and Codex's minimal system files, instead of the `read-only` sandbox that could read anywhere (`~/.ssh`). Where that cannot be enforced (Codex older than rust-v0.163.0, no experimental API, Windows without the elevated sandbox) Durbar will refuse those two modes for Codex. Pure settings and unit tests only; there is no Codex adapter yet and nothing was run on a real Codex.
