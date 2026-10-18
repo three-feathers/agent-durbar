@@ -26,8 +26,10 @@ export type FloorOp = { ok: true; doc: FloorsDoc } | { ok: false; error: string;
 const ID_RE = /^f-[a-z0-9]{8}$/;
 // eslint-disable-next-line no-control-regex
 const CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
-/** Invisible characters that can make one name look like another (bidi embeddings, overrides, isolates, zero-width space, word joiner, BOM). ZWNJ/ZWJ and LRM/RLM stay allowed: real scripts and emoji need them. */
-const HIDDEN_RE = /[​‪-‮⁠⁦-⁩﻿]/g;
+/** Invisible characters that can make one name look like another or spoof the layout: bidi embeddings, overrides and isolates, zero-width space, word joiner, invisible operators, line and paragraph separators, soft hyphen, combining grapheme joiner, Mongolian vowel separator, Hangul fillers, interlinear annotation marks, BOM. ZWNJ/ZWJ and LRM/RLM stay allowed: real scripts and emoji need them. Escaped on purpose: never write these characters literally in source. */
+const HIDDEN_RE = /[\u00ad\u034f\u115f\u180e\u200b\u2028\u2029\u202a-\u202e\u2060-\u2064\u2066-\u2069\u3164\ufeff\ufff9-\ufffb]/;
+const HIDDEN_ALL_RE = /[\u00ad\u034f\u115f\u180e\u200b\u2028\u2029\u202a-\u202e\u2060-\u2064\u2066-\u2069\u3164\ufeff\ufff9-\ufffb]/g; // for replace only: a global regex keeps lastIndex, never use it with test
+const C1_ALL_RE = /[\u0080-\u009f]/g;
 
 const copy = (d: FloorsDoc): FloorsDoc => ({ floors: d.floors.map((f) => ({ ...f })), lastFloor: d.lastFloor });
 const fail = (doc: FloorsDoc, error: string): FloorOp => ({ ok: false, error, doc: copy(doc) });
@@ -47,7 +49,7 @@ export function parseFloors(floors: unknown, lastFloor?: unknown): FloorsDoc {
     if ((id !== GROUND && !ID_RE.test(id)) || all.some((f) => f.id === id)) continue;
     if (id !== GROUND && others >= MAX_FLOORS - 1) continue;
     // A saved name loses its hidden characters instead of the whole floor (FR-003, 2026-10-18).
-    const name = cleanName(typeof o.name === 'string' ? o.name.replace(HIDDEN_RE, '') : o.name) ?? (id === GROUND ? GROUND_NAME : undefined);
+    const name = cleanName(typeof o.name === 'string' ? o.name.replace(HIDDEN_ALL_RE, '').replace(C1_ALL_RE, '') : o.name) ?? (id === GROUND ? GROUND_NAME : undefined);
     if (!name || names.has(name.toLowerCase())) continue;
     all.push({ id, name, on: o.on !== false });
     names.add(name.toLowerCase());
@@ -67,7 +69,6 @@ export function parseFloors(floors: unknown, lastFloor?: unknown): FloorsDoc {
 export function cleanName(v: unknown): string | undefined {
   if (typeof v !== 'string') return undefined;
   const n = v.trim();
-  HIDDEN_RE.lastIndex = 0;
   if (n.length < 1 || n.length > MAX_FLOOR_NAME || CONTROL_RE.test(n) || HIDDEN_RE.test(n)) return undefined;
   return n;
 }
