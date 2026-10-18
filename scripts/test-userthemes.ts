@@ -20,6 +20,13 @@ assert.strictEqual(checkUserManifest('{"id":"x","tokens":' + JSON.stringify(Obje
 assert.strictEqual(checkUserManifest('{"id":"x","words":' + JSON.stringify(Object.fromEntries(Array.from({ length: 25 }, (_, i) => ['w' + i, 'v']))) + '}').ok, false, 'over 24 words rejected');
 assert.strictEqual(checkUserManifest('{"id":"x","tokens":{"--bg":"#eef"}}').ok, true);
 assert.ok(checkUserManifest('x'.repeat(USER_THEME_LIMITS.manifestBytes + 1)).error!.includes('64 KB'));
+// tokens on import (spec 040 FR-006): refused with the token named
+assert.strictEqual(checkUserManifest('{"id":"x","tokens":{"display":"none"}}').ok, false, 'a key that is not --name is refused');
+assert.ok(checkUserManifest('{"id":"x","tokens":{"--chair":"x\\"/><style>a{}</style>"}}').error!.includes('--chair'), 'a markup value is refused and named');
+assert.strictEqual(checkUserManifest('{"id":"x","tokens":{"--chair":"url(x)"}}').ok, false, 'url() is refused');
+assert.strictEqual(checkUserManifest('{"id":"x","tokens":{"--chair":"rgb(1 2 3 / .5)"}}').ok, true, 'a colour function is fine');
+assert.strictEqual(checkUserManifest('{"id":"x","ui":"court-japanese"}').ok, true, 'a listed UI style is fine');
+assert.ok(checkUserManifest('{"id":"x","ui":"neon"}').error!.includes('ui must be one of'), 'an unknown UI style is refused');
 
 // --- store: list / import / export ---
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-uth-'));
@@ -77,5 +84,17 @@ assert.strictEqual(e.ok, true);
 assert.strictEqual(fs.readFileSync(path.join(String(e.to), 'manifest.json'), 'utf8'), fs.readFileSync(path.join(root, 'themes', 'ocean', 'manifest.json'), 'utf8'));
 assert.strictEqual(store.exportFolder('retro', dest).ok, false, 'no built-in id');
 assert.strictEqual(store.exportFolder('ocean', dest).ok, false, 'existing dest refused');
+
+// a failed copy returns ok:false, throws nothing and leaves no temporary folder (spec 040 FR-008)
+{
+  const fileRoot = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-uth-bad-')), 'themes');
+  fs.writeFileSync(fileRoot, 'a file where the themes folder should be');
+  const r2 = new UserThemeStore(fileRoot).importFolder(path.join(src, 'ocean'), (id) => BUILT.has(id));
+  assert.strictEqual(r2.ok, false, 'copy failure is reported');
+  assert.ok(r2.error && r2.error.includes('could not be copied'));
+}
+// an unfinished import (dot folder) is not listed as a broken theme
+fs.mkdirSync(path.join(root, 'themes', '.ocean.tmp-123'));
+assert.ok(!store.list().some((t) => t.id.startsWith('.')), 'dot folders are skipped');
 
 console.log('user theme tests passed');

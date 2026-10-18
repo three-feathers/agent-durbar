@@ -213,34 +213,58 @@
   const ATTR_BLACKLIST_RE=/^(on[a-z]+|href|xlink:href|style)$/i;
   const SVG_WHITELIST=['xmlns','viewBox','width','height','fill','stroke','stroke-width','stroke-linecap','stroke-linejoin','stroke-dasharray','opacity','rx','ry','cx','cy','r','x','y','x1','y1','x2','y2','points','d','transform','class','aria-hidden','focusable'];
 
+  /* Art slots come from user themes too (spec 040 FR-005), so the fragment is never passed through: it is
+     tokenized, every tag and attribute checked, and the output rebuilt from the parts with values escaped.
+     Only whitespace may sit between tags (kept as is, so canonical built-ins come out byte-identical). */
+  const SLOT_TOKEN_RE=/<(\/?)([A-Za-z][A-Za-z0-9]*)((?:\s+[A-Za-z_:][A-Za-z0-9_.:-]*\s*=\s*(?:"[^"<>`]*"|'[^'<>`]*'))*)\s*(\/?)>/y;
+  const SLOT_ATTR_RE=/\s+([A-Za-z_:][A-Za-z0-9_.:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+  const escAttr=v=>v.replace(/&(?![a-z]+;|#\d+;|#x[0-9a-f]+;)/gi,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   function sanitizeSlot(svg){
     if(typeof svg!=='string' || !svg.trim()) return null;
-    let depth=0, lastIndex=0;
-    const tagRe=/\u003c(\/?)([A-Za-z][A-Za-z0-9]*)((?:\s+[A-Za-z_:][A-Za-z0-9_.:-]*(?:\s*=\s*(?:"[^"]*"|'[^']*'|\S+))?)*)\s*(\/?)\u003e/g;
-    let m;
-    while((m=tagRe.exec(svg))!==null){
-      const outside=svg.slice(lastIndex,m.index);
-      if(outside.trim().length>0) return null;
-      lastIndex=tagRe.lastIndex;
+    const src=svg.trim();
+    const stack=[];
+    let i=0, out='';
+    while(i<src.length){
+      const ws=/^\s*/.exec(src.slice(i))[0];
+      out+=ws; i+=ws.length;
+      if(i>=src.length) break;
+      SLOT_TOKEN_RE.lastIndex=i;
+      const m=SLOT_TOKEN_RE.exec(src);
+      if(!m) return null; /* text, an unquoted value, a comment, CDATA, a stray < or > */
+      i=SLOT_TOKEN_RE.lastIndex;
       const closing=m[1], tag=m[2].toLowerCase(), attrs=m[3], selfClose=m[4];
       if(!SLOT_TAG_RE.test(tag)) return null;
-      const attrRe=/\s+([A-Za-z_:][A-Za-z0-9_.:-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+)))?/g;
+      if(closing){
+        if(attrs.trim()||selfClose||stack.pop()!==tag) return null;
+        out+='</'+m[2]+'>';
+        continue;
+      }
+      let rebuilt='<'+m[2];
+      SLOT_ATTR_RE.lastIndex=0;
       let am;
-      while((am=attrRe.exec(attrs))!==null){
+      while((am=SLOT_ATTR_RE.exec(attrs))!==null){
         const name=am[1].toLowerCase();
-        const value=(am[2]!==undefined?am[2]:am[3]!==undefined?am[3]:am[4])||'';
+        const value=am[2]!==undefined?am[2]:am[3];
         if(ATTR_BLACKLIST_RE.test(name)) return null;
         if(!SVG_WHITELIST.includes(name) && !name.startsWith('data-')) return null;
         if(/javascript:/i.test(value) || /\bon\w+\s*=/i.test(value)) return null;
+        if(/url\s*\(/i.test(value) && !/^\s*url\(#[A-Za-z][\w-]*\)\s*$/.test(value)) return null; /* local paint references only */
+        rebuilt+=' '+am[1]+'="'+escAttr(value)+'"';
       }
-      if(closing){ depth--; if(depth<0) return null; }
-      else if(!selfClose && !VOID_TAG_RE.test(tag)){ depth++; }
+      if(selfClose) out+=rebuilt+'/>';
+      else if(VOID_TAG_RE.test(tag)) return null; /* an unclosed <rect> would swallow what follows in innerHTML */
+      else { stack.push(tag); out+=rebuilt+'>'; }
     }
-    const tail=svg.slice(lastIndex);
-    if(tail.trim().length>0) return null;
-    if(depth!==0) return null;
-    return svg.trim();
+    if(stack.length) return null;
+    return out||null;
   }
+
+  /* A token value (spec 040 FR-006): a colour, a number with an optional unit, or one keyword. No quotes, <, >, ;, braces or url(). */
+  const TOKEN_VALUE_RE=/^(#[0-9a-f]{3,8}|(rgb|rgba|hsl|hsla)\([0-9a-z., %\/+-]*\)|-?[0-9]*\.?[0-9]+(px|em|rem|%|s|ms|deg)?|[a-z][a-z-]*)$/i;
+  const isTokenValue=v=>typeof v==='string' && v.trim().length<=64 && TOKEN_VALUE_RE.test(v.trim());
+
+  /* UI styles (spec 035 FR-009): the app owns their CSS (themes.css); a manifest only names one. */
+  const UI_STYLES=['clean','corporate','retro','court-indian','court-european','court-japanese'];
 
   function validateManifest(m){
     if(!m || typeof m!=='object') return null;
@@ -252,7 +276,12 @@
     out.version=String(m.version||'1.0');
     out.extends=String(m.extends||CLEAN_ID);
     if(!['clean-office'].includes(out.extends)) out.extends=CLEAN_ID;
-    out.tokens=Object.assign({}, m.tokens && typeof m.tokens==='object'?m.tokens:{});
+    out.tokens={}; /* only Clean Office keys, only token-grammar values (spec 040 FR-006): never raw CSS on <html> or in SVG attributes */
+    if(m.tokens && typeof m.tokens==='object'){
+      for(const [k,v] of Object.entries(m.tokens)){
+        if(Object.prototype.hasOwnProperty.call(CLEAN_TOKENS,k) && isTokenValue(v)) out.tokens[k]=v.trim();
+      }
+    }
     out.art={};
     if(m.art && typeof m.art==='object'){
       for(const [k,v] of Object.entries(m.art)){
@@ -261,7 +290,14 @@
       }
     }
     out.motion=Object.assign({}, m.motion && typeof m.motion==='object'?m.motion:{});
-    out.words=Object.assign({}, m.words && typeof m.words==='object'?m.words:{});
+    out.ui=UI_STYLES.includes(m.ui)?m.ui:'clean';
+    out.words={}; /* only scene words, short, no control characters (spec 040 FR-007) */
+    if(m.words && typeof m.words==='object'){
+      for(const [k,v] of Object.entries(m.words)){
+        // eslint-disable-next-line no-control-regex
+        if(Object.prototype.hasOwnProperty.call(CLEAN_WORDS,k) && typeof v==='string' && v.trim() && v.length<=60 && !/[\u0000-\u001f\u007f-\u009f]/.test(v)) out.words[k]=v;
+      }
+    }
     return out;
   }
 
@@ -393,6 +429,7 @@
     currentId=id;
     currentManifest=manifest;
     applyTokens(resolveTokens(manifest));
+    if(typeof document!=='undefined'&&document.documentElement)document.documentElement.dataset.ui=manifest.ui||'clean';
     /* motion presets (036 FR-006): re-applied on every switch, reduced motion wins */
     for(const k of ['bar','glow','halo','wave','cursor']){
       if(typeof document!=='undefined'&&document.documentElement)document.documentElement.style.setProperty('--m-'+k,motion(k));
@@ -446,9 +483,10 @@
   /* ---- 037: Corporate — glass and steel, cool neutrals ---- */
   registerBuiltIn({
     id:'corporate', name:'Corporate', author:'Three Feathers', version:'1.0', extends:'clean-office',
+    ui:'corporate',
     tokens:{
-      '--bg':'#edf1f5','--surface':'#f8fafc','--surface-2':'#eef3f8','--line':'#d5dde5','--line-2':'#c2ccd6',
-      '--ink':'#21303f','--ink-2':'#3d5468','--muted':'#5c6f80','--room-path':'#46586a',
+      '--bg':'#e6eaef','--surface':'#ffffff','--surface-2':'#f3f5f8','--line':'#d2d9e1','--line-2':'#b4bfcc',
+      '--ink':'#142131','--ink-2':'#33455a','--muted':'#55677b','--room-path':'#4b5d71',
       '--sage':'#7fa3b8','--sage-ink':'#2c5468','--blue':'#5b83ad','--blue-ink':'#2a5578',
       '--amber':'#c98f2b','--amber-ink':'#7a5505','--red':'#c05a50','--red-ink':'#8e382f','--green':'#4f8f6a','--gray':'#8f99a3',
       '--c-working':'#5b83ad','--c-thinking':'#7d8fb0','--c-waiting':'#c98f2b','--c-idle':'#97a1ab','--c-error':'#c05a50','--c-done':'#4f8f6a',
@@ -462,12 +500,12 @@
       '--plant-mid':'#93ab9a','--plant-dark':'#7b9883','--plant-light':'#a4b7aa','--pot':'#a8b2ba',
       '--link':'#9aa9b4',
       '--door-bg':'#e9edf1','--door-line':'#a8b4bf','--door-leaf':'#c9d1d9','--door-leaf-line':'#9faab6','--door-knob':'#77828c','--door-panel':'#e1e7ec',
-      '--brand-mark':'#37658a','--brand-bg':'#e0e9f0','--focus':'#3d6fa8',
-      '--sel-border':'#6b93b8','--sel-ring':'#d3e0ec','--sel-ring-2':'#d7e3ee','--stat-sel-border':'#7d9ab5','--stat-sel-ring':'#d7e3ee',
-      '--avatar-bg':'#dfe7ee','--walker-bg':'#fdfdfe','--drop':'#6b93b8','--drop-bg':'rgb(229 238 246 / .93)','--drop-ink':'#23415c',
-      '--badge-idle':'#aab2ba','--place-busy':'#a7bdcd',
-      '--tint-sage':'#e8eef1','--wall-sage':'#cfdbe0','--tint-blue':'#e6edf4','--wall-blue':'#cbd8e4','--tint-sand':'#ebf0f4','--wall-sand':'#d7dfe7','--tint-clay':'#e9edf2','--wall-clay':'#d2dbe3',
-      '--cwall-sage':'#aec3cd','--cwall-blue':'#a9bfce','--cwall-sand':'#bcc9d4','--cwall-clay':'#b4c1cb',
+      '--brand-mark':'#ffffff','--brand-bg':'#1f5fa8','--focus':'#1f6fc5',
+      '--sel-border':'#2f74c0','--sel-ring':'#cfe0f4','--sel-ring-2':'#d6e5f5','--stat-sel-border':'#2f74c0','--stat-sel-ring':'#d6e5f5',
+      '--avatar-bg':'#dfe7ee','--walker-bg':'#ffffff','--drop':'#6b93b8','--drop-bg':'rgb(229 238 246 / .93)','--drop-ink':'#23415c',
+      '--badge-idle':'#aab2ba','--place-busy':'#7fa7d1',
+      '--tint-sage':'#f7faf9','--wall-sage':'#1f8a70','--tint-blue':'#f6f9fc','--wall-blue':'#2f6fb5','--tint-sand':'#fbfaf6','--wall-sand':'#b08427','--tint-clay':'#fcf8f7','--wall-clay':'#b0524a',
+      '--cwall-sage':'#1f8a70','--cwall-blue':'#2f6fb5','--cwall-sand':'#b08427','--cwall-clay':'#b0524a',
       '--pb-working':'#dfe9f2','--pc-working':'#29506f','--pb-thinking':'#e6e9f1','--pc-thinking':'#3d4a72',
       '--pb-waiting':'#f7ecd2','--pc-waiting':'#7a5505','--pb-idle':'#e7eaeb','--pc-idle':'#50575c',
       '--pb-error':'#f6e2de','--pc-error':'#8e382f','--pb-done':'#dfeede','--pc-done':'#2d6142',
@@ -498,9 +536,10 @@
   /* ---- 038: Retro — 8-bit palette, blocky slot art ---- */
   registerBuiltIn({
     id:'retro', name:'Retro Pixel', author:'Three Feathers', version:'1.0', extends:'clean-office',
+    ui:'retro',
     tokens:{
-      '--bg':'#e8e4d8','--surface':'#f8f4e6','--surface-2':'#efe9d9','--line':'#c8c0aa','--line-2':'#b3a98f',
-      '--ink':'#23233a','--ink-2':'#454566','--muted':'#66687f','--room-path':'#4a4c66',
+      '--bg':'#1d2b53','--surface':'#fff1e8','--surface-2':'#f7e2cf','--line':'#111122','--line-2':'#111122',
+      '--ink':'#111122','--ink-2':'#2b2b44','--muted':'#46465f','--room-path':'#36364f',
       '--sage':'#5fae76','--sage-ink':'#2c6b40','--blue':'#5f87c8','--blue-ink':'#2c4f82','--amber':'#e0a92c','--amber-ink':'#7c5a06',
       '--red':'#d8564a','--red-ink':'#8e2f26','--green':'#4fa760','--gray':'#9a987e',
       '--c-working':'#5f87c8','--c-thinking':'#8b8fc9','--c-waiting':'#e0a92c','--c-idle':'#a3a08e','--c-error':'#d8564a','--c-done':'#4fa760',
@@ -514,12 +553,12 @@
       '--cup':'#f2ecd9','--cup-line':'#b3a37c','--steam':'#9d987e',
       '--link':'#989e8a','--star':'#e0a92c',
       '--door-bg':'#e6dfd0','--door-line':'#a3967a','--door-leaf':'#c2b096','--door-leaf-line':'#988a6c','--door-knob':'#6e6248','--door-panel':'#ddd3ba',
-      '--brand-mark':'#3d9b58','--brand-bg':'#dde8d4','--focus':'#3a6fae',
-      '--sel-border':'#6d8cc2','--sel-ring':'#d2def0','--sel-ring-2':'#d8e2f2','--stat-sel-border':'#7f95c2','--stat-sel-ring':'#d8e2f2',
-      '--avatar-bg':'#e0ead2','--walker-bg':'#fbf8ee','--drop':'#6d8cc2','--drop-bg':'rgb(230 236 248 / .93)','--drop-ink':'#26456e',
-      '--badge-idle':'#b8b49c','--place-busy':'#a7b8d6',
-      '--tint-sage':'#e2ead2','--wall-sage':'#c5d2ac','--tint-blue':'#dee6f2','--wall-blue':'#c1cfe6','--tint-sand':'#ece6d0','--wall-sand':'#d8cdaa','--tint-clay':'#efe2d6','--wall-clay':'#dcc8b2',
-      '--cwall-sage':'#acc092','--cwall-blue':'#a7b8d6','--cwall-sand':'#c6b98e','--cwall-clay':'#cfb89e',
+      '--brand-mark':'#111122','--brand-bg':'#ffec27','--focus':'#29adff',
+      '--sel-border':'#ff004d','--sel-ring':'#ffccaa','--sel-ring-2':'#ffccaa','--stat-sel-border':'#ff004d','--stat-sel-ring':'#ffccaa',
+      '--avatar-bg':'#e0ead2','--walker-bg':'#fff1e8','--drop':'#6d8cc2','--drop-bg':'rgb(230 236 248 / .93)','--drop-ink':'#26456e',
+      '--badge-idle':'#b8b49c','--place-busy':'#29adff',
+      '--tint-sage':'#b9f2c6','--wall-sage':'#111122','--tint-blue':'#c2e7ff','--wall-blue':'#111122','--tint-sand':'#ffe9a6','--wall-sand':'#111122','--tint-clay':'#ffcdbd','--wall-clay':'#111122',
+      '--cwall-sage':'#111122','--cwall-blue':'#111122','--cwall-sand':'#111122','--cwall-clay':'#111122',
       '--pb-working':'#dce6f6','--pc-working':'#26456e','--pb-thinking':'#e4e3f6','--pc-thinking':'#3c3f78',
       '--pb-waiting':'#faecd0','--pc-waiting':'#7c5a06','--pb-idle':'#e6e4d6','--pc-idle':'#585647',
       '--pb-error':'#f8e1dc','--pc-error':'#8e2f26','--pb-done':'#daeede','--pc-done':'#2b6338',
@@ -627,9 +666,10 @@
   /* ---- 039a: Durbar — Indian court (maroon, gold, sandalwood) ---- */
   registerBuiltIn({
     id:'durbar-indian', name:'Durbar · Indian Court', author:'Three Feathers', version:'1.0', extends:'clean-office',
+    ui:'court-indian',
     tokens:{
-      '--bg':'#f6f0e6','--surface':'#fdf9f0','--surface-2':'#f8f1e2','--line':'#e3d6bc','--line-2':'#d4c2a2',
-      '--ink':'#3a2e26','--ink-2':'#5d4c3e','--muted':'#756553','--room-path':'#655341',
+      '--bg':'#f3e6cc','--surface':'#fffaf0','--surface-2':'#fbf1dd','--line':'#e2c991','--line-2':'#c9a35a',
+      '--ink':'#3b1d14','--ink-2':'#5e3424','--muted':'#76503e','--room-path':'#6b4130',
       '--sage':'#8aab84','--sage-ink':'#3f6238','--blue':'#7d95b5','--blue-ink':'#3a5a80','--amber':'#d9962b','--amber-ink':'#80530a',
       '--red':'#b85448','--red-ink':'#8e3226','--green':'#5f9a76','--gray':'#a39a87',
       '--c-working':'#7d95b5','--c-thinking':'#9a8fbd','--c-waiting':'#d9962b','--c-idle':'#aca496','--c-error':'#b85448','--c-done':'#5f9a76',
@@ -642,12 +682,12 @@
       '--plant-mid':'#a9bf92','--plant-dark':'#8aa474','--plant-light':'#bccba6','--pot':'#b8626a',
       '--link':'#b3a68c','--star':'#d99a2c',
       '--door-bg':'#f0e4cc','--door-line':'#a98b62','--door-leaf':'#cf9a5e','--door-leaf-line':'#a87b48','--door-knob':'#8a6436','--door-panel':'#e6d4ae',
-      '--brand-mark':'#8c4a3c','--brand-bg':'#efe2c8','--focus':'#7d5aa8',
-      '--sel-border':'#a87b48','--sel-ring':'#e8d6b8','--sel-ring-2':'#e3d2b6','--stat-sel-border':'#a8907a','--stat-sel-ring':'#e3d2b6',
-      '--avatar-bg':'#eee2ca','--walker-bg':'#fdf8ec','--drop':'#a87b48','--drop-bg':'rgb(244 236 220 / .93)','--drop-ink':'#5c3c18',
-      '--badge-idle':'#bfb49e','--place-busy':'#c2a574',
-      '--tint-sage':'#ece8d8','--wall-sage':'#d6cfae','--tint-blue':'#e9edf2','--wall-blue':'#d0d9e5','--tint-sand':'#f2eadb','--wall-sand':'#e2d2b4','--tint-clay':'#f4e4d6','--wall-clay':'#e4c9b2',
-      '--cwall-sage':'#c2b98e','--cwall-blue':'#b4c2d6','--cwall-sand':'#d0bc90','--cwall-clay':'#d6b493',
+      '--brand-mark':'#f2c75c','--brand-bg':'#8a1c2c','--focus':'#0f6e6e',
+      '--sel-border':'#b5302f','--sel-ring':'#f3d9a8','--sel-ring-2':'#f3d9a8','--stat-sel-border':'#b5302f','--stat-sel-ring':'#f3d9a8',
+      '--avatar-bg':'#eee2ca','--walker-bg':'#fffaf0','--drop':'#a87b48','--drop-bg':'rgb(244 236 220 / .93)','--drop-ink':'#5c3c18',
+      '--badge-idle':'#bfb49e','--place-busy':'#d4a240',
+      '--tint-sage':'#eef0d8','--wall-sage':'#8a9a3a','--tint-blue':'#ddeeed','--wall-blue':'#0f6e6e','--tint-sand':'#fbe7c4','--wall-sand':'#d9822b','--tint-clay':'#f8dfdb','--wall-clay':'#a8343f',
+      '--cwall-sage':'#8a9a3a','--cwall-blue':'#0f6e6e','--cwall-sand':'#d9822b','--cwall-clay':'#a8343f',
       '--pb-working':'#e2e9f2','--pc-working':'#315074','--pb-thinking':'#e8e4f2','--pc-thinking':'#4a3f80',
       '--pb-waiting':'#f8ebcf','--pc-waiting':'#80530a','--pb-idle':'#eae4d6','--pc-idle':'#5c544a',
       '--pb-error':'#f6e0dc','--pc-error':'#8e3226','--pb-done':'#ddeede','--pc-done':'#2f6240',
@@ -682,9 +722,10 @@
   /* ---- 039b: Durbar — European court (navy, silver, parchment) ---- */
   registerBuiltIn({
     id:'durbar-european', name:'Durbar · European Court', author:'Three Feathers', version:'1.0', extends:'clean-office',
+    ui:'court-european',
     tokens:{
-      '--bg':'#eef0f4','--surface':'#fafbfd','--surface-2':'#f2f4f8','--line':'#d8dce4','--line-2':'#c6ccd8',
-      '--ink':'#2a2a44','--ink-2':'#4a4a68','--muted':'#66667f','--room-path':'#52526e',
+      '--bg':'#e9e2d1','--surface':'#fffdf7','--surface-2':'#f6f1e4','--line':'#d9cba6','--line-2':'#b8995a',
+      '--ink':'#1b2240','--ink-2':'#3b4266','--muted':'#585d7c','--room-path':'#4c5274',
       '--sage':'#8fa9a0','--sage-ink':'#3f6258','--blue':'#5f7fae','--blue-ink':'#2c4a78','--amber':'#d2a03c','--amber-ink':'#7a5c0e',
       '--red':'#bf5a6a','--red-ink':'#8e3642','--green':'#5f9a76','--gray':'#9a9884',
       '--c-working':'#5f7fae','--c-thinking':'#8a8fbd','--c-waiting':'#d2a03c','--c-idle':'#a6a29a','--c-error':'#bf5a6a','--c-done':'#5f9a76',
@@ -698,12 +739,12 @@
       '--plant-mid':'#92b294','--plant-dark':'#779c7a','--plant-light':'#a6c2a8','--pot':'#8a6f4c',
       '--link':'#9aa4b0','--star':'#d2a03c',
       '--door-bg':'#ece6d8','--door-line':'#a89a78','--door-leaf':'#b8a272','--door-leaf-line':'#96845c','--door-knob':'#6e5c34','--door-panel':'#e2d8bc',
-      '--brand-mark':'#3e4f8e','--brand-bg':'#dde2ee','--focus':'#4a5fa0',
-      '--sel-border':'#7d94c2','--sel-ring':'#d6deee','--sel-ring-2':'#dde4f0','--stat-sel-border':'#8b9cc0','--stat-sel-ring':'#dde4f0',
-      '--avatar-bg':'#e2e4ec','--walker-bg':'#fbfaf6','--drop':'#7d94c2','--drop-bg':'rgb(232 236 246 / .93)','--drop-ink':'#2a3a66',
-      '--badge-idle':'#b6b4a4','--place-busy':'#a8b8d4',
-      '--tint-sage':'#e6ece6','--wall-sage':'#cfd8ce','--tint-blue':'#e6eaf2','--wall-blue':'#ccd5e4','--tint-sand':'#eeeade','--wall-sand':'#ddd6bc','--tint-clay':'#eee6e2','--wall-clay':'#ddd0c8',
-      '--cwall-sage':'#b2c2b4','--cwall-blue':'#aebcce','--cwall-sand':'#c9c29e','--cwall-clay':'#c9bcb0',
+      '--brand-mark':'#e2bf63','--brand-bg':'#1b2a4e','--focus':'#2b4c9a',
+      '--sel-border':'#7a1f35','--sel-ring':'#ead9b0','--sel-ring-2':'#ead9b0','--stat-sel-border':'#7a1f35','--stat-sel-ring':'#ead9b0',
+      '--avatar-bg':'#e2e4ec','--walker-bg':'#fffdf7','--drop':'#7d94c2','--drop-bg':'rgb(232 236 246 / .93)','--drop-ink':'#2a3a66',
+      '--badge-idle':'#b6b4a4','--place-busy':'#b8995a',
+      '--tint-sage':'#e5ece2','--wall-sage':'#3f6b4f','--tint-blue':'#e4e9f4','--wall-blue':'#2b3f7a','--tint-sand':'#f4ebd3','--wall-sand':'#b08a35','--tint-clay':'#f2e2e2','--wall-clay':'#7a1f35',
+      '--cwall-sage':'#3f6b4f','--cwall-blue':'#2b3f7a','--cwall-sand':'#b08a35','--cwall-clay':'#7a1f35',
       '--pb-working':'#dee6f2','--pc-working':'#2a4268','--pb-thinking':'#e6e4f2','--pc-thinking':'#41407a',
       '--pb-waiting':'#f6ecd0','--pc-waiting':'#7a5c0e','--pb-idle':'#e8e6dc','--pc-idle':'#585650',
       '--pb-error':'#f6e2e4','--pc-error':'#8e3642','--pb-done':'#ddeee0','--pc-done':'#2f6240',
@@ -738,9 +779,10 @@
   /* ---- 039c: Durbar — Japanese court (indigo, vermilion, rice paper) ---- */
   registerBuiltIn({
     id:'durbar-japanese', name:'Durbar · Japanese Court', author:'Three Feathers', version:'1.0', extends:'clean-office',
+    ui:'court-japanese',
     tokens:{
-      '--bg':'#f3f1eb','--surface':'#fbfaf5','--surface-2':'#f5f3ec','--line':'#dcd8cc','--line-2':'#c8c3b4',
-      '--ink':'#262a38','--ink-2':'#464c62','--muted':'#646878','--room-path':'#50546a',
+      '--bg':'#ede6d8','--surface':'#fdfbf5','--surface-2':'#f6f1e6','--line':'#d6cdb9','--line-2':'#a99c80',
+      '--ink':'#1c1a17','--ink-2':'#3f3a33','--muted':'#5f584e','--room-path':'#575047',
       '--sage':'#8aa88e','--sage-ink':'#3c6244','--blue':'#5878ac','--blue-ink':'#2c4a78','--amber':'#d29838','--amber-ink':'#7a580e',
       '--red':'#c24a42','--red-ink':'#8c2e26','--green':'#5c9a70','--gray':'#9c9886',
       '--c-working':'#5878ac','--c-thinking':'#8b90bc','--c-waiting':'#d29838','--c-idle':'#a8a496','--c-error':'#c24a42','--c-done':'#5c9a70',
@@ -754,12 +796,12 @@
       '--plant-mid':'#96b296','--plant-dark':'#7a9a7a','--plant-light':'#aabf9f','--pot':'#9a4a44',
       '--link':'#9aa0ac','--star':'#d29838',
       '--door-bg':'#e9e3d3','--door-line':'#a39874','--door-leaf':'#c0ab7c','--door-leaf-line':'#9c8c62','--door-knob':'#6e5c36','--door-panel':'#ddd2b8',
-      '--brand-mark':'#38498c','--brand-bg':'#dee0ec','--focus':'#3a6aa0',
-      '--sel-border':'#7d90bc','--sel-ring':'#d8deea','--sel-ring-2':'#dee3ee','--stat-sel-border':'#8c9abc','--stat-sel-ring':'#dee3ee',
-      '--avatar-bg':'#e2e2da','--walker-bg':'#fbfaf2','--drop':'#7d90bc','--drop-bg':'rgb(233 236 246 / .93)','--drop-ink':'#2a3c64',
-      '--badge-idle':'#b8b4a2','--place-busy':'#aab6ce',
-      '--tint-sage':'#e6ebe2','--wall-sage':'#ced6c4','--tint-blue':'#e6eaf2','--wall-blue':'#ccd4e4','--tint-sand':'#ece8dc','--wall-sand':'#dad4bc','--tint-clay':'#eee6e0','--wall-clay':'#dccec2',
-      '--cwall-sage':'#b2c0a8','--cwall-blue':'#aebad0','--cwall-sand':'#c6bd9a','--cwall-clay':'#c8b8a6',
+      '--brand-mark':'#fdfbf5','--brand-bg':'#c23b22','--focus':'#2c4a7e',
+      '--sel-border':'#c23b22','--sel-ring':'#f0d5cc','--sel-ring-2':'#f0d5cc','--stat-sel-border':'#c23b22','--stat-sel-ring':'#f0d5cc',
+      '--avatar-bg':'#e2e2da','--walker-bg':'#fdfbf5','--drop':'#7d90bc','--drop-bg':'rgb(233 236 246 / .93)','--drop-ink':'#2a3c64',
+      '--badge-idle':'#b8b4a2','--place-busy':'#8c9db8',
+      '--tint-sage':'#e8ecdd','--wall-sage':'#6b7d4a','--tint-blue':'#e3e8f0','--wall-blue':'#2c4a7e','--tint-sand':'#f3ecdb','--wall-sand':'#a88a52','--tint-clay':'#f4e5e1','--wall-clay':'#b5432e',
+      '--cwall-sage':'#6b7d4a','--cwall-blue':'#2c4a7e','--cwall-sand':'#a88a52','--cwall-clay':'#b5432e',
       '--pb-working':'#dfe6f2','--pc-working':'#28466e','--pb-thinking':'#e6e4f2','--pc-thinking':'#41427c',
       '--pb-waiting':'#f7ecd1','--pc-waiting':'#7a580e','--pb-idle':'#e8e5da','--pc-idle':'#565450',
       '--pb-error':'#f6e1dc','--pc-error':'#8c2e26','--pb-done':'#deeddc','--pc-done':'#2e6038',
@@ -788,7 +830,7 @@
       'place-web':'<circle cx="10" cy="10" r="6.2"/><path d="M4 10h12M10 3.8q3.3 3 0 12.4M10 3.8q-3.3 3 0 12.4"/>',
       'place-other':'<path d="M7 16.6V9.8L10 5.4l3 4.4v6.8"/><path d="M7 13h6"/>',
     },
-    words:{'place-library':'The Library','place-software':'The Workshop','place-terminal':'The Machine Room','place-web':'The Radio Room','place-other':'Odd Jobs','lobby-label':'The tea hall: the places where agents work'},
+    words:{'place-library':'The Library','place-software':'The Workshop','place-terminal':'Machine Room','place-web':'The Radio Room','place-other':'Odd Jobs','lobby-label':'The tea hall: the places where agents work'},
     motion:{preset:'court'},
   });
 
@@ -812,6 +854,8 @@
     registerUserThemes,
     MOTION_PRESETS,
     _sanitizeSlot:sanitizeSlot,
+    _isTokenValue:isTokenValue,
+    UI_STYLES:UI_STYLES.slice(),
     _validateManifest:validateManifest,
     _compilePixelMap:compilePixelMap,
     _tokens(){return resolveTokens(currentManifest);},

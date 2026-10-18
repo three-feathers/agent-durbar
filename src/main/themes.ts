@@ -30,7 +30,7 @@ export class UserThemeStore {
     const out: UserThemeEntry[] = [];
     let names: string[] = [];
     try {
-      names = fs.readdirSync(this.root, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+      names = fs.readdirSync(this.root, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name); // dot folders are unfinished imports
     } catch {
       return out;
     }
@@ -87,27 +87,47 @@ export class UserThemeStore {
     const v = checkUserManifest(text);
     if (!v.ok || !v.id) return { ok: false, error: v.error || 'invalid manifest' };
     if (isBuiltIn(v.id)) return { ok: false, error: '"' + v.id + '" is a built-in theme id' };
-    const files = fs.readdirSync(from, { withFileTypes: true });
+    let files: fs.Dirent[];
+    try {
+      files = fs.readdirSync(from, { withFileTypes: true });
+    } catch {
+      return { ok: false, error: 'that folder cannot be read' };
+    }
     if (files.filter((f) => f.isFile()).length > USER_THEME_LIMITS.maxFiles) return { ok: false, error: 'a pack may carry at most ' + USER_THEME_LIMITS.maxFiles + ' files' };
     for (const f of files) {
       if (!f.isFile()) continue;
-      const s = fs.lstatSync(path.join(from, f.name));
+      let s: fs.Stats;
+      try {
+        s = fs.lstatSync(path.join(from, f.name));
+      } catch {
+        return { ok: false, error: f.name + ' cannot be read' };
+      }
       if (s.isSymbolicLink()) return { ok: false, error: 'no links inside a pack, please' };
       if (s.size > USER_THEME_LIMITS.maxFileBytes) return { ok: false, error: f.name + ' is over 64 KB' };
     }
     const dest = this.dir(v.id);
     if (fs.existsSync(dest)) return { ok: false, error: 'a theme with this id is already installed' };
-    fs.mkdirSync(this.root, { recursive: true });
     const tmp = this.dir('.' + v.id + '.tmp-' + process.pid);
-    fs.rmSync(tmp, { recursive: true, force: true });
-    fs.mkdirSync(tmp, { recursive: true });
-    for (const f of files) {
-      if (!f.isFile()) continue;
-      const src = path.join(from, f.name);
-      if (fs.lstatSync(src).isSymbolicLink()) continue;
-      fs.copyFileSync(src, path.join(tmp, f.name));
+    try {
+      fs.mkdirSync(this.root, { recursive: true });
+      fs.rmSync(tmp, { recursive: true, force: true });
+      fs.mkdirSync(tmp, { recursive: true });
+      for (const f of files) {
+        if (!f.isFile()) continue;
+        const src = path.join(from, f.name);
+        if (fs.lstatSync(src).isSymbolicLink()) continue;
+        fs.copyFileSync(src, path.join(tmp, f.name));
+      }
+      fs.renameSync(tmp, dest);
+    } catch {
+      // a failed copy leaves nothing behind (spec 040 FR-008)
+      try {
+        fs.rmSync(tmp, { recursive: true, force: true });
+      } catch {
+        /* nothing more to do */
+      }
+      return { ok: false, error: 'the theme could not be copied in' };
     }
-    fs.renameSync(tmp, dest);
     return { ok: true, id: v.id, name: v.name };
   }
 

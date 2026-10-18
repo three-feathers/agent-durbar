@@ -32,7 +32,7 @@ import { agentLabel } from '../shared/toolusage';
 import { devEnv, devWarning } from './devhooks';
 import { UserThemeStore } from './themes';
 import { SettingsStore } from './settings';
-import { parseAmount, parseCap } from '../shared/credits';
+import { parseAmount, parseCap, parseThemeId } from '../shared/credits';
 import { aboutPanelOptions, aboutView } from '../shared/about';
 import { modelControlFor, parseFocus, parseSwitchRequest } from '../shared/modelswitch';
 import type { ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
@@ -431,18 +431,23 @@ ipcMain.handle('usage:reset', () => {
   usageStore?.reset();
   return { ok: true, doc: usageStore?.view() };
 });
-ipcMain.handle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits, placeMap: settingsStore?.placeMap ?? {}, customPlaces: settingsStore?.customPlaces ?? [], seriousMode: settingsStore?.seriousMode ?? false, theme: settingsStore?.theme ?? 'clean-office', about: aboutView(app.getVersion()) }));
+ipcMain.handle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits, placeMap: settingsStore?.placeMap ?? {}, customPlaces: settingsStore?.customPlaces ?? [], seriousMode: settingsStore?.seriousMode ?? false, theme: runTheme ?? settingsStore?.theme ?? 'clean-office', about: aboutView(app.getVersion()) }));
 ipcMain.handle('settings:setSeriousMode', (_e, on: unknown) => ({ ok: true, seriousMode: settingsStore?.setSeriousMode(on) ?? false }));
-ipcMain.handle('settings:setTheme', (_e, id: unknown) => settingsStore ? settingsStore.setTheme(id) : { ok: false });
+/* DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it and is saved as usual. */
+let runTheme: string | undefined;
+ipcMain.handle('settings:setTheme', (_e, id: unknown) => {
+  runTheme = undefined;
+  return settingsStore ? settingsStore.setTheme(id) : { ok: false };
+});
 /* User themes (spec 040): `userData/themes/<id>/manifest.json`, import/export by folder pick. Dev hook DURBAR_PICK answers the dialog in checks. */
 const userThemes = new UserThemeStore(path.join(app.getPath('userData'), 'themes'));
 const BUILT_IN_THEME_IDS = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese'];
 const pickFolder = async (title: string): Promise<string | null> => {
-  if (dev.DURBAR_PICK) { const first = dev.DURBAR_PICK.split(':')[0]; return first || null; }
+  if (dev.DURBAR_PICK) { const first = dev.DURBAR_PICK.split(path.delimiter)[0]; return first || null; } // path.delimiter keeps C:\ paths whole (spec 040 FR-008)
   const r = await dialog.showOpenDialog({ title, properties: ['openDirectory'] });
   return r.canceled || !r.filePaths.length ? null : r.filePaths[0];
 };
-ipcMain.handle('theme:listUser', () => userThemes.list().map((t) => ({ id: t.id, name: t.name, ok: t.ok, error: t.error, folder: t.folder })));
+ipcMain.handle('theme:listUser', () => userThemes.list().map((t) => ({ id: t.id, name: t.name, ok: t.ok, error: t.error })));
 ipcMain.handle('theme:getUser', (_e, id: unknown) => (typeof id === 'string' ? userThemes.get(id) : null));
 ipcMain.handle('theme:import', async () => {
   const dir = await pickFolder('Import a theme folder (with manifest.json)');
@@ -703,7 +708,7 @@ app.whenReady().then(() => {
   settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'durbar-settings.json'));
   settingsStore.load();
   /* Dev/test theme seed (spec 036 FR-005): DURBAR_THEME=<id> makes the office open on that theme for the per-theme checks; invalid ids fall back in the renderer. */
-  if (dev.DURBAR_THEME) settingsStore.setTheme(dev.DURBAR_THEME);
+  if (dev.DURBAR_THEME) runTheme = parseThemeId(dev.DURBAR_THEME);
   mcpStore = new McpStore(path.join(app.getPath('userData'), 'durbar-mcp.json'), safeStorageCodec);
   mcpStore.load();
   usageStore = new UsageStore(path.join(app.getPath('userData'), 'durbar-tool-usage.json'));

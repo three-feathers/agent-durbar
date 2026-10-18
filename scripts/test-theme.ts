@@ -1,6 +1,7 @@
 /* test-theme.ts — unit tests for src/renderer/theme.js (spec 035) */
 
 import * as assert from 'node:assert';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const T = require(path.resolve(process.cwd(), 'src', 'renderer', 'theme.js'));
@@ -36,13 +37,14 @@ const good = T._validateManifest({
   extends: 'clean-office',
   tokens: { '--bg': '#eef1f4' },
   art: { 'chair-back': '<rect x="0" y="0" width="10" height="10" fill="#333"/>' },
-  words: { room: 'office' },
+  words: { 'place-terminal': 'Server room', room: 'office' },
 });
 assert.strictEqual(good.id, 'corporate');
 assert.strictEqual(good.extends, 'clean-office');
 assert.strictEqual(good.tokens['--bg'], '#eef1f4');
 assert.ok(good.art['chair-back']);
-assert.strictEqual(good.words.room, 'office');
+assert.strictEqual(good.words['place-terminal'], 'Server room');
+assert.strictEqual(good.words.room, undefined, 'a word key that is not a scene word is dropped (spec 040 FR-007)');
 
 // Invalid extends is normalized to clean-office
 assert.strictEqual(T._validateManifest({ extends: 'something-else' }).extends, 'clean-office');
@@ -65,6 +67,57 @@ assert.strictEqual(T._sanitizeSlot('not svg'), null, 'garbage rejected');
 // Only whitelisted tags allowed
 assert.strictEqual(T._sanitizeSlot('<iframe src="x"/>'), null, 'iframe rejected');
 assert.ok(T._sanitizeSlot('<g><path d="M0 0h10" fill="#000"/></g>'), 'g + path allowed');
+
+// The fragment is rebuilt, never passed through (spec 040 FR-005; bypasses from the PR #137 review)
+assert.strictEqual(T._sanitizeSlot('<rect fill=x><style>body{display:none}</style>'), null, 'unquoted value cannot swallow a <style>');
+assert.strictEqual(T._sanitizeSlot('<rect fill=x><iframe/srcdoc=&lt;b&gt;hi&lt;/b&gt;>'), null, 'unquoted value cannot swallow an <iframe>');
+assert.strictEqual(T._sanitizeSlot('<rect fill=x><img/src=y/onerror=alert(1)>'), null, 'unquoted value cannot swallow an <img>');
+assert.strictEqual(T._sanitizeSlot('<rect fill=red/>'), null, 'unquoted values are refused');
+assert.strictEqual(T._sanitizeSlot('<rect fill="a>b"/>'), null, '> inside a value is refused');
+assert.strictEqual(T._sanitizeSlot("<rect fill='x\"/><style>a{}</style>'/>"), null, 'a quote trick cannot open a tag');
+assert.strictEqual(T._sanitizeSlot("<rect fill='a\"b'/>"), '<rect fill="a&quot;b"/>', 'values are re-serialized with " escaped');
+assert.strictEqual(T._sanitizeSlot('<rect width="1"/><!-- x -->'), null, 'comments are refused');
+assert.strictEqual(T._sanitizeSlot('<rect width="1">'), null, 'an unclosed rect is refused');
+assert.strictEqual(T._sanitizeSlot('<g><rect width="1"/></path>'), null, 'mismatched close tag refused');
+assert.strictEqual(T._sanitizeSlot('<rect fill="url(http://x/y)"/>'), null, 'external url() refused');
+assert.strictEqual(T._sanitizeSlot('<rect fill="url(#grad)"/>'), '<rect fill="url(#grad)"/>', 'local url(#id) allowed');
+assert.strictEqual(T._sanitizeSlot('<g>\n  <rect width="1"/>\n</g>'), '<g>\n  <rect width="1"/>\n</g>', 'whitespace between tags is kept');
+
+// Tokens (spec 040 FR-006): only Clean Office keys, only token-grammar values
+for (const v of ['#fff', '#a1b2c3d4', 'rgb(233 241 248 / .93)', 'rgba(0,0,0,.5)', 'hsl(210 40% 50%)', '12px', '.5', '-2', '1.5s', 'transparent', 'currentColor'])
+  assert.ok(T._isTokenValue(v), 'token value allowed: ' + v);
+for (const v of ['red;display:none', 'x"/><style>a{}</style>', 'url(x)', 'var(--x)', 'expression(1)', '{}', 'a b', '#fff' + ' '.repeat(70) + 'x', 12])
+  assert.ok(!T._isTokenValue(v), 'token value refused: ' + String(v));
+const tk = T._validateManifest({ id: 'tk', tokens: { '--surface': '#123456', '--chair': 'x"/><style>*{display:none}</style><rect fill="x', display: 'none', '--not-a-clean-token': '#fff' } });
+assert.deepStrictEqual(tk.tokens, { '--surface': '#123456' }, 'bad values, non-custom-property keys and unknown keys are dropped');
+T.setTheme('clean-office');
+const cleanChair = T.token('--chair');
+T.setTheme(tk);
+assert.strictEqual(T.token('--chair'), cleanChair, 'a dropped token falls back to Clean Office');
+assert.ok(!String(T.token('--chair')).includes('<'), 'no markup reaches a token');
+T.setTheme('clean-office');
+
+// themes.css changes looks, never sizes (spec 035 FR-010): no width/height/padding/margin/gap/font-size/border-width rules
+{
+  const css = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'themes.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/min-width:0\b/g, ''); // min-width:0 only lets display text ellipsize
+  const sized = css.match(/(?:^|[;{])\s*(?:(?:min-|max-)?(?:width|height)|padding(?:-[a-z]+)?|margin(?:-[a-z]+)?|gap|row-gap|column-gap|font-size|line-height|border(?:-(?:top|right|bottom|left))?-width|border(?:-(?:top|right|bottom|left))?\s*:\s*[0-9.]+px)\s*:?/g);
+  assert.strictEqual(sized, null, 'themes.css sets a size: ' + (sized || []).join(' '));
+}
+// UI styles (spec 035 FR-009): a fixed list; anything else is clean
+assert.strictEqual(T._validateManifest({ id: 'u1' }).ui, 'clean', 'no ui = clean');
+assert.strictEqual(T._validateManifest({ id: 'u2', ui: 'retro' }).ui, 'retro');
+assert.strictEqual(T._validateManifest({ id: 'u3', ui: 'x"><style>' }).ui, 'clean', 'unknown ui = clean');
+assert.deepStrictEqual(T.UI_STYLES, ['clean', 'corporate', 'retro', 'court-indian', 'court-european', 'court-japanese']);
+for (const [id, ui] of [['corporate', 'corporate'], ['retro', 'retro'], ['durbar-indian', 'court-indian'], ['durbar-european', 'court-european'], ['durbar-japanese', 'court-japanese'], ['clean-office', 'clean']]) {
+  T.setTheme(id);
+  assert.strictEqual(T.current().manifest.ui, ui, id + ' uses the ' + ui + ' UI style');
+}
+T.setTheme('clean-office');
+
+// Words (spec 040 FR-007): scene keys only, short, no control characters
+const wd = T._validateManifest({ id: 'wd', words: { 'place-web': 'Radio', 'status-working': 'Sleeping', 'place-other': 'x'.repeat(61), 'place-library': 'a\u0007b' } });
+assert.deepStrictEqual(wd.words, { 'place-web': 'Radio' }, 'only short scene words without control characters are kept');
 
 // --- Pixel maps (spec 038) ---
 assert.ok(T._compilePixelMap({cell:2,palette:{a:'#fff'},rows:['a.a','.a.']}),'pixel map compiles');
