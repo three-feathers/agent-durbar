@@ -94,6 +94,83 @@ assert.ok(T._builtins()['durbar-japanese'].art['hair-acc'],'japanese kanzashi sl
 assert.ok(!T._builtins()['retro'].art['hair-acc'],'retro: no accessory');
 assert.ok(!T._builtins()['clean-office'].art||!T._builtins()['clean-office'].art['hair-acc'],'clean: no accessory');
 
+/* --- Art slot expansion (stage D, PR #137): characters + room looks per theme --- */
+const CHAR_SLOTS=['char-body','char-robe','char-headwear','char-collar'];
+const ROOM_SLOTS=['room-back-wall','room-back-window','room-floor'];
+const OBJECT_SLOTS=['desk-back','desk-art','monitor-art','door-art','lobby-art'];
+const ICON_SLOTS=['place-library','place-software','place-terminal','place-web','place-other'];
+const NEW_SLOTS=[...CHAR_SLOTS,...ROOM_SLOTS,...OBJECT_SLOTS,...ICON_SLOTS];
+const THEMED_PACKS=['corporate','retro','durbar-indian','durbar-european','durbar-japanese'];
+
+/* Clean Office omits every expansion slot: THEME.slot() must return null (the renderer draws the default). */
+T.setTheme('clean-office');
+for(const n of NEW_SLOTS)assert.strictEqual(T.slot(n),null,'clean-office omits art slot '+n);
+
+/* Every themed pack ships at least: one character-art slot, all three room slots, desk art, door art and lobby art. */
+for(const id of THEMED_PACKS){
+  const art=T._builtins()[id].art||{};
+  const charNow=[...CHAR_SLOTS,'hair-acc'].some(s=>art[s]!==undefined);
+  assert.ok(charNow,id+': a character body/outfit/headwear slot');
+  for(const s of ROOM_SLOTS.slice(0,1).concat(ROOM_SLOTS[2]))assert.ok(art[s]!==undefined,id+': '+s+' present');
+  for(const s of ['desk-art','door-art','lobby-art'])assert.ok(art[s]!==undefined,id+': '+s+' present');
+  T.setTheme(id);
+  for(const [k,v] of Object.entries(art)){
+    assert.strictEqual(typeof v,'string',id+':'+k+' compiled to a sanitized string at registration');
+    assert.strictEqual(T._sanitizeSlot(v as string),v,id+':'+k+' survives the sanitizer byte-for-byte');
+    assert.ok(!/<script|<foreignObject|on\w+=|javascript:/i.test(v as string),id+':'+k+' has no active content');
+  }
+}
+
+/* slots resolve through THEME.slot() and fall back independently per slot */
+T.setTheme('durbar-indian');
+assert.ok(T.slot('char-robe'),'indian robe');
+assert.ok(T.slot('char-collar'),'indian collar');
+assert.strictEqual(T.slot('char-headwear'),null,'indian omits char-headwear (independent fallback)');
+assert.strictEqual(T.slot('char-body'),null,'indian omits char-body');
+assert.strictEqual(T.slot('room-back-window'),null,'indian omits room-back-window');
+T.setTheme('retro');
+assert.ok(T.slot('char-body'),'retro pixel body');
+assert.ok(T.slot('room-back-wall'),'retro wall pixels');
+assert.ok(T.slot('room-floor'),'retro floor pixels');
+assert.ok(T.slot('door-art'),'retro door pixels');
+assert.ok(T.slot('lobby-art'),'retro lobby pixels');
+assert.ok(T.slot('char-body').includes('<rect'),'pixel-map slot compiles to rects');
+T.setTheme('corporate');
+assert.ok(T.slot('char-body'),'corporate suit-collar overlay');
+assert.ok(T.slot('room-back-wall'),'corporate skyline glass');
+T.setTheme('durbar-european');
+assert.ok(T.slot('char-robe'),'european gown');
+assert.ok(T.slot('char-collar'),'european ermine collar');
+assert.ok(T.slot('room-floor'),'european carpet aisle');
+T.setTheme('durbar-japanese');
+assert.ok(T.slot('char-robe'),'japanese kimono');
+assert.ok(T.slot('room-back-wall'),'japanese shoji wall');
+assert.ok(T.slot('room-floor'),'japanese tatami');
+T.setTheme('clean-office');
+
+/* Pixel-map validation: new limits and malformed maps */
+assert.ok(T._compilePixelMap({cell:2,palette:{a:'#fff'},rows:Array.from({length:24},()=>'a'.repeat(30))}),'24x30 map compiles');
+assert.strictEqual(T._compilePixelMap({cell:2,palette:{a:'#fff'},rows:Array.from({length:25},()=>'a')}),null,'over 24 rows rejected');
+assert.strictEqual(T._compilePixelMap({cell:2,palette:{a:'#fff'},rows:['a'.repeat(31)]}),null,'row over 30 cells rejected');
+assert.ok(T._compilePixelMap({cell:100,palette:{a:'#fff'},rows:['a']}),'cell 100 falls back to the default cell size');
+assert.ok(T._compilePixelMap({cell:0,palette:{a:'#fff'},rows:['a']}),'cell 0 falls back to the default cell size');
+assert.ok(T._compilePixelMap({cell:2,palette:{a:'var(--ink)'},rows:['a']}),'var(--token) palette colour allowed');
+assert.strictEqual(T._compilePixelMap({cell:2,palette:{a:'var(--bad..)'},rows:['a']}),null,'malformed var name rejected');
+assert.strictEqual(T._compilePixelMap({cell:2,palette:{a:'var(--x);color:red'},rows:['a']}),null,'var with payload rejected');
+assert.ok(T._compilePixelMap({cell:2,palette:{a:'#fff'},rows:['a ']}).includes('rect'),'trailing transparent cell ok');
+
+/* a user theme manifest with the new slots validates and sanitizes the same as a built-in */
+const artManifest=T._validateManifest({id:'u-art',art:{
+  'room-wall':'<rect x="0" y="0" width="320" height="40" fill="#456"/>',
+  'room-floor':{cell:2,palette:{c:'#789'},rows:['cc','..']},
+  'desk-art':'<circle onclick="x" cx="5" cy="5" r="5"/>',
+  'char-robe':'<path d="M0 0h10v10z" fill="#123"/>',
+}});
+assert.ok(artManifest.art['room-wall'],'user room-wall accepted');
+assert.ok(artManifest.art['room-floor'].includes('<rect'),'user pixel map compiled');
+assert.strictEqual(artManifest.art['desk-art'],undefined,'user desk-art with onclick dropped');
+assert.ok(artManifest.art['char-robe'],'user char-robe accepted');
+
 /* scene words of each pack differ from Clean Office where they claim to */
 assert.strictEqual(T._builtins()['corporate'].words['place-library'],'Records');
 assert.strictEqual(T._builtins()['retro'].words['place-web'],'Modem');

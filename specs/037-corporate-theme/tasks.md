@@ -4,3 +4,4 @@
 - [ ] T002 Settings Theme section (list + apply live); `settings:setTheme` IPC + store + parse; renderer switch path
 - [ ] T003 Contrast checks per pack in `test:theme`; tune tokens
 - [ ] T004 `check:themes` covers corporate; screenshots optional
+- [ ] T005 Art expansion (stage D, PR #137): suit-collar/tie overlay, glass wall w/ skyline + blinds, sheen floor, steel lobby frame, door vents, briefcase on the desk; five place icons

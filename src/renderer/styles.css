@@ -107,7 +107,7 @@ body.has-bridge #liveBar{display:flex}
 .room-plant{display:none;position:absolute;right:12px;top:6px}
 .stage[data-d="full"] .room-plant{display:block}
 .stage[data-d="full"] .room-dots{padding-right:32px}
-.units{flex:1;margin:6px 0 0;display:flex;flex-wrap:wrap;align-content:flex-start;gap:var(--ugap,10px);padding:var(--upad,8px);background:rgba(255,255,255,.4);border-radius:14px}
+.units{flex:1;margin:6px 0 0;display:flex;flex-wrap:wrap;align-content:flex-start;gap:var(--ugap,10px);padding:var(--upad,8px);background:rgba(255,255,255,.4);border-radius:14px;position:relative}
 .unit{display:flex;align-items:flex-start;position:relative;--hx:0px}
 .unit.has-h{--hx:calc(var(--hw) + 18px)}
 
@@ -774,3 +774,14 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 /* on a door plate the siren sits on the corner of the door icon, so the plate keeps its size */
 .plate{position:relative}
 .plate .siren{position:absolute;left:25px;top:4px;width:15px;height:15px}
+
+/* ---- theme art slots (specs 037-040 stage D): non-layout overlays. A pack that omits a slot renders no element at all,
+   so Clean Office stays byte-identical. Art never has size or position of its own: it is drawn under/behind the real
+   layout pieces and any spec 034 darkening still tints it. ---- */
+.room-art{position:absolute;inset:0;width:100%;height:100%;border-radius:12px;pointer-events:none;z-index:0}
+.room-art[data-slot="room-floor"]{top:auto;height:38%}
+.lobby{position:relative;overflow:hidden}
+.lobby-art{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0}
+.lobby .place{position:relative;z-index:1}
+.place .pic svg{display:block}
+.desk .scene,.helper .scene{z-index:1}

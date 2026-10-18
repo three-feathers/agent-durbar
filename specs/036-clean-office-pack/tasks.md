@@ -7,3 +7,4 @@
 - [ ] T005 `DURBAR_THEME` dev hook seeds the theme; `check:themes` runs the office check per built-in theme
 - [ ] T006 `test:theme` extended (per-pack defaults, fallback, word maps, sanitization regression)
 - [ ] T007 Verify byte-identical Clean Office scenes; run all gates
+- [ ] T008 Stage D verification (PR #137): Clean Office omits every new art slot; renderer strings byte-identical to 486416e (62/62 across demo agents, densities, doors) — scripts/parity not added; verified with a one-off harness
