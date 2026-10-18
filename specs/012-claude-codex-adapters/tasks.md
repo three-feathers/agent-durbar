@@ -103,3 +103,9 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 - [ ] T095 (real-account) Offer Claude Code to every user: run the real app with a Claude agent end to end (add a folder, chat, Ask first approval card, stop, restart and resume), with T085 so Claude's dollar estimate is never added to AIU; then move it to `PRODUCTION_DESCRIPTORS` [FR-114]
 - T040 and T041 are answered by this entry (no SDK in `package.json` until the owner accepts its terms; the user's `claude` is used); T045 is done as T091.
 
+## Changes 2026-10-18 (issue #54, Claude half of T046)
+
+- [ ] T096 (sim) `ClaudeAdapter.setPermMode`: broker mode at once, launched/current hook rule, broker route for launched Allow all in Ask first, relaunch with `--resume` on the next send; `permModeSwitch: 'live'` [FR-115, FR-116]
+- [ ] T097 (sim) Fake-CLI tests for every launched/current pair, the broker route and the relaunch [FR-117]
+- [ ] T098 (real-account, owner allowed) One real check: Allow all switched to Read-only during a slow shell command; the later write must not happen [FR-117]
+
