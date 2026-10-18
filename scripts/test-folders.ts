@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { FolderStore, adapterOf, parseAdapterId, parseSavedFloors, parseSavedFolders, restoreMode } from '../src/main/folders';
+import { FolderStore, adapterOf, parseAdapterId, parseLabel, parseSavedFloors, parseSavedFolders, restoreMode } from '../src/main/folders';
 import { GROUND, GROUND_NAME } from '../src/shared/floors';
 
 const abs = (p: string): string => path.resolve('/', p);
@@ -334,6 +334,34 @@ assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: 
     if (process.platform !== 'win32') assert.strictEqual(fs.statSync(f7).mode & 0o077, 0, 'file stays private');
   } finally {
     fs.rmSync(d7, { recursive: true, force: true });
+  }
+}
+// spec 006 FR-018: the folder display name
+{
+  assert.strictEqual(parseLabel('  Client   site '), 'Client site');
+  assert.strictEqual(parseLabel(''), undefined);
+  assert.strictEqual(parseLabel('   '), undefined);
+  assert.strictEqual(parseLabel('x'.repeat(40)), 'x'.repeat(40));
+  assert.strictEqual(parseLabel('x'.repeat(41)), undefined);
+  assert.strictEqual(parseLabel('é'.repeat(40)), 'é'.repeat(40), 'characters, not UTF-16 units');
+  assert.strictEqual(parseLabel('a\u0007b'), undefined, 'no control characters');
+  assert.strictEqual(parseLabel(42), undefined);
+  const d3 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folders3-'));
+  try {
+    const f3 = path.join(d3, 'f.json');
+    const st = new FolderStore(f3);
+    st.upsert({ workspace: abs('l1'), permMode: 'read-only' });
+    assert.deepStrictEqual(st.setLabel(abs('l1'), ' Website '), { label: 'Website' });
+    assert.strictEqual(st.setLabel(abs('nope'), 'x'), false);
+    assert.strictEqual(new FolderStore(f3).load()[0].label, 'Website', 'the label survives a restart');
+    st.upsert({ workspace: abs('l1'), permMode: 'ask' });
+    assert.strictEqual(new FolderStore(f3).load()[0].label, 'Website', 'a new session in the folder keeps the label');
+    assert.deepStrictEqual(st.setLabel(abs('l1'), ''), { label: undefined });
+    assert.strictEqual(new FolderStore(f3).load()[0].label, undefined, 'empty goes back to the folder name');
+    const bad = parseSavedFolders(JSON.stringify({ folders: [{ workspace: abs('l2'), permMode: 'ask', label: 'y'.repeat(41) }, { workspace: abs('l3'), permMode: 'ask', label: { x: 1 } }] }));
+    assert.deepStrictEqual(bad.map((f) => f.label), [undefined, undefined], 'a bad saved label is ignored, the folder kept');
+  } finally {
+    fs.rmSync(d3, { recursive: true, force: true });
   }
 }
 console.log('folders tests passed');

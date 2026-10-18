@@ -47,6 +47,8 @@ export interface AgentInfo {
   closed?: boolean;
   /** Floor of the folder (spec 033); absent = the ground floor. */
   floor?: string;
+  /** Display name of the folder's room (spec 006 FR-018); absent = the folder's own name. */
+  label?: string;
   /** Which adapter runs this agent (spec 012 FR-058), e.g. `copilot`. */
   adapterId: string;
 }
@@ -353,6 +355,10 @@ export interface DurbarApi {
   setFolderHidden?(id: string, hidden: boolean): Promise<{ ok: boolean }>;
   /** Remove the folder of agent `id`: ends its sessions and forgets the folder. */
   removeFolder?(id: string): Promise<{ ok: boolean; removedIds: string[] }>;
+  /** Ends one main session and takes it out of the office (spec 006 FR-017); refused for the last main session of a folder and for helpers. */
+  removeSession?(id: string): Promise<{ ok: boolean; error?: string }>;
+  /** Sets the folder's display name (spec 006 FR-018); empty = the folder's own name. */
+  renameFolder?(id: string, label: string): Promise<{ ok: boolean; label?: string }>;
 
   /** Floors (spec 033). Validated in main; never touch a session. Every change returns the full new state. */
   floorsState?(): Promise<FloorsState>;

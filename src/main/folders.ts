@@ -30,6 +30,8 @@ export interface SavedFolder {
   floor?: string;
   /** Which agent kind restores this folder (spec 012 FR-042). Absent means `copilot`; it is never written for Copilot. */
   adapterId?: string;
+  /** Display name of the room (spec 006 FR-018); absent = the folder's own name. */
+  label?: string;
 }
 
 export const DEFAULT_ADAPTER = 'copilot';
@@ -53,6 +55,16 @@ export function parseAdapterId(v: unknown): string | undefined {
  */
 export function restoreMode(saved: SavedPermMode): { mode: SavedPermMode; restored: boolean } {
   return { mode: saved, restored: saved === 'allow' };
+}
+
+export const MAX_LABEL = 40;
+
+/** A folder display name (spec 006 FR-018): trimmed, 1 to 40 characters, no control characters; anything else is `undefined` (the folder's own name). */
+export function parseLabel(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined;
+  const t = v.replace(/\s+/g, ' ').trim();
+  // eslint-disable-next-line no-control-regex
+  return t && [...t].length <= MAX_LABEL && !/[\u0000-\u001f\u007f]/.test(t) ? t : undefined;
 }
 
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
@@ -85,6 +97,7 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       maxAiCredits: parseCap(o.maxAiCredits),
       floor: typeof o.floor === 'string' && o.floor !== floorOps.GROUND && o.floor.length <= 20 ? o.floor : undefined,
       adapterId: parseAdapterId(o.adapterId),
+      ...(parseLabel(o.label) ? { label: parseLabel(o.label) } : {}), // only when set, so older files read back unchanged
     });
     if (out.length >= MAX_FOLDERS) break;
   }
@@ -234,6 +247,15 @@ export class FolderStore {
     cur.adapterId = parseAdapterId(id);
     this.save();
     return true;
+  }
+
+  /** Sets the folder's display name (FR-018); an empty or invalid name clears it. Returns the saved label, or false for an unknown folder. */
+  setLabel(workspace: string, label: unknown): { label: string | undefined } | false {
+    const cur = this.get(workspace);
+    if (!cur) return false;
+    cur.label = parseLabel(label);
+    this.save();
+    return { label: cur.label };
   }
 
   setClosed(workspace: string, closed: boolean): boolean {
