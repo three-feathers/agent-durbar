@@ -1,0 +1,496 @@
+/**
+ * `ClaudeAdapter` (spec 012 FR-112, T091): Claude Code behind the `AgentAdapter` interface, over a `ClaudeTransport`
+ * (claudeTransport.ts: the CLI transport by default; claudeSdk.ts when the SDK is available and chosen, FR-113).
+ *
+ * - Messages map through `ClaudeMapper` (claudeMap.ts) to normalized events.
+ * - Permissions: the CLI's `can_use_tool` goes through Durbar's `PermissionBroker` (same modes, roots, grants and pending
+ *   cards as Copilot); the Read-only `PreToolUse` hook answers with `preToolUseDecision`. The CLI's permission
+ *   *suggestions* are never sent back (they would write the user's own settings).
+ * - The CLI starts at the first message (lazy, like a restored Copilot folder). A session id given by the app is resumed
+ *   when Claude has it on disk, otherwise created under that id.
+ * - Settings files are never loaded (`--setting-sources ""`, Q8); the folder's `CLAUDE.md` (with `@` imports inside the
+ *   folder) goes in as an appended system prompt instead (owner decision, review of #160).
+ */
+import { randomUUID } from 'crypto';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { ClaudeMapper } from './claudeMap';
+import type { ClaudeMessage } from './claudeMap';
+import { claudeOptionsFor, parseMcpTool, preToolUseDecision, toolKind } from './claudeModes';
+import { createCliTransport } from './claudeTransport';
+import type { ClaudeTransport, ControlAnswer, IncomingControl, TransportHandlers, UserContent } from './claudeTransport';
+import type { AdapterCapabilities, AdapterDescriptor, PermissionMode } from './capabilities';
+import type { EventBody } from './map';
+import { PermissionBroker, startModeOf } from './permissions';
+import type { BrokerEvent, PermissionLike } from './permissions';
+import type { AgentAdapter, AgentEvent, AgentMessage, McpServerSpec, StartOptions, Unsubscribe } from './types';
+import { resolveWorkspaceCwd } from './workspace';
+
+export const CLAUDE_ID = 'claude';
+export const CLAUDE_NAME = 'Claude Code';
+
+export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
+  interrupt: true,
+  resume: true,
+  images: true,
+  models: false, // T049
+  effort: false,
+  permissionModes: Object.freeze(['read-only', 'ask', 'allow'] as PermissionMode[]),
+  permModeSwitch: 'none', // T046 (set_permission_mode) is not wired yet
+  usage: Object.freeze({ tokens: true, costUsd: true, nanoAiu: false }),
+  context: false,
+  caps: false, // Q7 / T081
+  helpers: true,
+  history: false, // T048
+  mcpStatus: true,
+  mcpToggle: false, // T050
+}) as AdapterCapabilities;
+
+/** The hook callback id Durbar registers for `PreToolUse` (any string the CLI echoes back). */
+export const PRE_TOOL_USE_HOOK = 'durbar_pre_tool_use';
+/** CLAUDE.md budget: total characters of the file and its imports, and import depth. */
+export const CLAUDE_MD_MAX_CHARS = 64 * 1024;
+const CLAUDE_MD_MAX_DEPTH = 4;
+const IMAGE_TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
+const ASK_USER_DENY = 'Agent Durbar cannot show questions to the user yet. Do not ask; decide yourself, or write the question in your reply.';
+
+/* ------------------------------------------------------------------ pure helpers (unit-tested) ------------------------------------------------------------------ */
+
+/** A Claude tool call as the broker's request (kind from `toolKind`; path, command, URL and MCP server pulled from the input). */
+export function permissionLikeOf(toolName: string, input: Record<string, unknown> | undefined, toolUseId?: string): PermissionLike {
+  const kind = toolKind(toolName);
+  const s = (k: string): string | undefined => (input && typeof input[k] === 'string' ? (input[k] as string) : undefined);
+  const like: PermissionLike = { kind, toolName, ...(toolUseId ? { toolCallId: toolUseId } : {}) };
+  if (kind === 'read' || kind === 'write') {
+    const p = s('file_path') ?? s('notebook_path') ?? s('path');
+    if (p) {
+      like.path = p;
+      like.fileName = p;
+    }
+  } else if (kind === 'shell') {
+    const c = s('command');
+    if (c) like.fullCommandText = c;
+  } else if (kind === 'url') {
+    const u = s('url') ?? s('query');
+    if (u) like.url = u;
+  } else if (kind === 'mcp') {
+    const m = parseMcpTool(toolName);
+    if (m) {
+      like.serverName = m.server;
+      like.toolName = m.tool;
+    }
+  }
+  return like;
+}
+
+/** Durbar's MCP servers as the CLI's `--mcp-config` JSON (`disabled` names left out). Never logged: env and headers may hold secrets. */
+export function mcpConfigOf(servers: Record<string, McpServerSpec> | undefined, disabled: readonly string[] = []): string | undefined {
+  if (!servers) return undefined;
+  const out: Record<string, unknown> = {};
+  for (const [name, spec] of Object.entries(servers)) {
+    if (!spec || disabled.includes(name)) continue;
+    if (spec.type === 'stdio' && spec.command) out[name] = { type: 'stdio', command: spec.command, args: spec.args ?? [], ...(spec.env ? { env: spec.env } : {}) };
+    else if ((spec.type === 'http' || spec.type === 'sse') && spec.url) out[name] = { type: spec.type, url: spec.url, ...(spec.headers ? { headers: spec.headers } : {}) };
+  }
+  return Object.keys(out).length ? JSON.stringify({ mcpServers: out }) : undefined;
+}
+
+/** What a transport needs to start a session (FR-111): the CLI turns it into argv, the SDK into `query()` options. */
+export interface ClaudeLaunch {
+  mode: PermissionMode;
+  sessionId: string;
+  resume: boolean;
+  model?: string;
+  /** `--mcp-config` JSON (`{"mcpServers": {...}}`); never logged. */
+  mcpConfig?: string;
+  appendSystemPrompt?: string;
+}
+
+/** The CLI argv (FR-111). Mode flags come from `claudeOptionsFor`, so an unknown mode gets Read-only. */
+export function claudeArgs(i: ClaudeLaunch): string[] {
+  const o = claudeOptionsFor(i.mode);
+  const a = ['-p', '--output-format', 'stream-json', '--verbose', '--input-format', 'stream-json', '--permission-prompt-tool', 'stdio', '--include-partial-messages'];
+  a.push('--permission-mode', o.permissionMode);
+  if (o.allowDangerouslySkipPermissions) a.push('--allow-dangerously-skip-permissions');
+  if (o.allowedTools?.length) a.push('--allowedTools', o.allowedTools.join(','));
+  if (o.disallowedTools?.length) a.push('--disallowedTools', o.disallowedTools.join(','));
+  a.push('--setting-sources', o.settingSources.join(','));
+  if (o.strictMcpConfig) a.push('--strict-mcp-config');
+  if (i.mcpConfig) a.push('--mcp-config', i.mcpConfig);
+  if (i.model && /^(claude-|opus|sonnet|haiku)/i.test(i.model)) a.push('--model', i.model); // Copilot model ids (`auto`, `gpt-…`) are not Claude's
+  if (i.appendSystemPrompt) a.push('--append-system-prompt', i.appendSystemPrompt);
+  a.push(i.resume ? '--resume' : '--session-id', i.sessionId);
+  return a;
+}
+
+export interface ClaudeMdIo {
+  readFile(p: string): string | undefined;
+  realpath(p: string): string;
+}
+
+const nodeIo: ClaudeMdIo = {
+  readFile: (p) => {
+    try {
+      const st = fs.statSync(p);
+      return st.isFile() && st.size <= CLAUDE_MD_MAX_CHARS ? fs.readFileSync(p, 'utf8') : undefined;
+    } catch {
+      return undefined;
+    }
+  },
+  realpath: (p) => {
+    try {
+      return fs.realpathSync(p);
+    } catch {
+      return p;
+    }
+  },
+};
+
+/**
+ * The folder's `CLAUDE.md` with its `@path` imports expanded (an import is a whitespace-separated `@relative/path` token
+ * outside code spans). Only files inside the folder (symlinks resolved) are read; at most `CLAUDE_MD_MAX_CHARS` in total
+ * and `CLAUDE_MD_MAX_DEPTH` levels; each file once. Returns undefined when there is no CLAUDE.md.
+ */
+export function claudeMdPrompt(folder: string, io: ClaudeMdIo = nodeIo, flavor: Pick<typeof path, 'resolve' | 'relative' | 'isAbsolute' | 'dirname' | 'sep'> = path): string | undefined {
+  const root = io.realpath(flavor.resolve(folder));
+  const inside = (p: string): boolean => {
+    const r = flavor.relative(root, p);
+    return r === '' || (!r.startsWith('..') && !flavor.isAbsolute(r));
+  };
+  const seen = new Set<string>();
+  let budget = CLAUDE_MD_MAX_CHARS;
+  const load = (file: string, depth: number): string | undefined => {
+    const real = io.realpath(file);
+    if (!inside(real) || seen.has(real) || budget <= 0) return undefined;
+    seen.add(real);
+    const text = io.readFile(real);
+    if (text === undefined) return undefined;
+    const kept = text.slice(0, budget);
+    budget -= kept.length;
+    if (depth >= CLAUDE_MD_MAX_DEPTH) return kept;
+    let inFence = false;
+    return kept
+      .split('\n')
+      .map((line) => {
+        if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
+        if (inFence) return line;
+        return line.replace(/(^|\s)@([^\s`]+)/g, (whole, pre: string, ref: string) => {
+          if (/^[a-z][a-z0-9+.-]*:/i.test(ref) || ref.startsWith('~')) return whole; // URLs and home paths are not imported
+          const target = flavor.resolve(flavor.dirname(real), ref);
+          const sub = load(target, depth + 1);
+          return sub === undefined ? whole : `${pre}\n<!-- imported from ${ref} -->\n${sub}\n`;
+        });
+      })
+      .join('\n');
+  };
+  const main = load(flavor.resolve(root, 'CLAUDE.md'), 0);
+  return main === undefined || !main.trim() ? undefined : `The folder's CLAUDE.md (project instructions; Agent Durbar passes it because project settings are not loaded):\n\n${main}`;
+}
+
+/** A user message as the CLI's content: text, then images as base64 blocks; attached files are named in the text (Claude reads them with its tools). */
+export function userContentOf(message: AgentMessage, readImage: (p: string) => Buffer | undefined = (p) => {
+  try {
+    return fs.readFileSync(p);
+  } catch {
+    return undefined;
+  }
+}): UserContent {
+  const atts = message.attachments ?? [];
+  const files = atts.filter((a) => a.kind !== 'image');
+  let text = message.text;
+  if (files.length) text += `\n\nAttached files:\n${files.map((f) => `- ${f.path}`).join('\n')}`;
+  const images = atts.filter((a) => a.kind === 'image');
+  if (!images.length) return text;
+  const blocks: Exclude<UserContent, string> = [{ type: 'text', text }];
+  for (const img of images) {
+    const media = IMAGE_TYPES[path.extname(img.path).toLowerCase()];
+    const data = media ? readImage(img.path) : undefined;
+    if (media && data) blocks.push({ type: 'image', source: { type: 'base64', media_type: media, data: data.toString('base64') } });
+  }
+  return blocks;
+}
+
+/** True when Claude has a saved session with this id (`<config>/projects/<folder>/<id>.jsonl`). Bounded scan, never throws. */
+export function claudeSessionExists(id: string, configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')): boolean {
+  if (!/^[A-Za-z0-9-]{8,80}$/.test(id)) return false;
+  try {
+    const projects = path.join(configDir, 'projects');
+    for (const d of fs.readdirSync(projects, { withFileTypes: true }).slice(0, 5000)) {
+      if (d.isDirectory() && fs.existsSync(path.join(projects, d.name, `${id}.jsonl`))) return true;
+    }
+  } catch {
+    /* no Claude data yet */
+  }
+  return false;
+}
+
+/* ------------------------------------------------------------------ the adapter ------------------------------------------------------------------ */
+
+/** Everything a transport factory gets. */
+export interface TransportInput {
+  /** Absolute path of `claude`. */
+  file: string;
+  launch: ClaudeLaunch;
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+  handlers: TransportHandlers;
+}
+/** May be async (the SDK transport loads its package first). */
+export type TransportFactory = (o: TransportInput) => ClaudeTransport | Promise<ClaudeTransport>;
+
+/** The CLI transport (FR-111). */
+export const cliTransportFactory: TransportFactory = (o) => createCliTransport({ file: o.file, args: claudeArgs(o.launch), cwd: o.cwd, env: o.env, handlers: o.handlers });
+
+export interface ClaudeAdapterDeps {
+  /** Absolute path of `claude` (from detect); resolved lazily at the first start of a CLI. */
+  claudePath: () => Promise<string | undefined>;
+  /** Makes a transport (tests inject a fake; default: the CLI transport; the SDK transport when chosen, FR-113). */
+  makeTransport?: TransportFactory;
+  sessionExists?: (id: string) => boolean;
+  claudeMd?: (folder: string) => string | undefined;
+  readImage?: (p: string) => Buffer | undefined;
+  env?: () => NodeJS.ProcessEnv;
+}
+
+interface Session {
+  id: string;
+  cwd: string;
+  roots: string[];
+  options: StartOptions;
+  broker: PermissionBroker;
+  mapper: ClaudeMapper;
+  /** True once Claude has this id on disk (resume on the next CLI start). */
+  resumable: boolean;
+  transport?: ClaudeTransport;
+  starting?: Promise<ClaudeTransport>;
+  stopping?: boolean;
+  /** The CLI was started with --resume and exited before `init`: retry once as a new session under the same id. */
+  resumeTried?: boolean;
+  initSeen?: boolean;
+}
+
+export class ClaudeAdapter implements AgentAdapter {
+  readonly id = CLAUDE_ID;
+  readonly displayName = CLAUDE_NAME;
+  readonly capabilities = CLAUDE_CAPABILITIES;
+  debug?: (message: string) => void;
+  private sessions = new Map<string, Session>();
+  private listeners = new Set<(event: AgentEvent) => void>();
+
+  constructor(private readonly deps: ClaudeAdapterDeps) {}
+
+  onEvent(listener: (event: AgentEvent) => void): Unsubscribe {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  isLive(sessionId: string): boolean {
+    return this.sessions.has(sessionId);
+  }
+
+  async start(options: StartOptions): Promise<string> {
+    const mode = startModeOf(options);
+    const ws = resolveWorkspaceCwd(options.workspace);
+    const given = options.resumeSessionId ?? options.sessionId;
+    const id = given ?? randomUUID();
+    if (this.sessions.has(id)) return id;
+    const exists = this.deps.sessionExists ?? claudeSessionExists;
+    const resumable = options.resumeSessionId !== undefined || (given !== undefined && exists(id));
+    const roots = [...new Set([ws.cwd, ...ws.folders])];
+    const broker = new PermissionBroker({ roots, mode, emit: (e) => this.onBroker(id, e) });
+    const mapper = new ClaudeMapper((b) => this.emit(id, b), { quiet: true, onDropped: (why) => this.debug?.(`claude: dropped ${why}`) });
+    this.sessions.set(id, { id, cwd: ws.cwd, roots, options: { ...options, permissionMode: mode }, broker, mapper, resumable });
+    if (!options.quiet) this.emit(id, { type: 'status', status: 'idle', intent: `Ready in ${ws.cwd}` });
+    return id;
+  }
+
+  async send(sessionId: string, message: AgentMessage): Promise<void> {
+    const s = this.mustGet(sessionId);
+    if (message.attachments?.length) s.broker.allowReadPaths(message.attachments.map((a) => a.path));
+    this.emit(sessionId, { type: 'status', status: 'working', intent: 'Thinking' });
+    let t: ClaudeTransport;
+    try {
+      t = await this.ensureTransport(s);
+    } catch (e) {
+      this.emit(sessionId, { type: 'status', status: 'error', intent: e instanceof Error ? e.message : 'Claude could not start' });
+      return;
+    }
+    t.sendUser(userContentOf(message, this.deps.readImage));
+  }
+
+  async interrupt(sessionId: string): Promise<void> {
+    const s = this.sessions.get(sessionId);
+    if (!s) return;
+    s.broker.denyPending();
+    if (s.transport?.alive) {
+      s.mapper.expectAbort();
+      try {
+        await s.transport.request({ subtype: 'interrupt' }, 5000);
+      } catch {
+        /* no turn running */
+      }
+    }
+    this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Aborted' });
+  }
+
+  async stop(sessionId: string): Promise<void> {
+    const s = this.sessions.get(sessionId);
+    if (!s) return;
+    s.stopping = true;
+    s.broker.stop(); // pending permissions are answered deny; grants are dropped
+    try {
+      await s.transport?.close();
+    } catch {
+      /* already gone */
+    }
+    this.sessions.delete(sessionId);
+    this.emit(sessionId, { type: 'status', status: 'stopped' });
+  }
+
+  resolvePermission(sessionId: string, requestId: string, approve: boolean, remember = false, broad = false): void {
+    this.sessions.get(sessionId)?.broker.resolve(requestId, approve, remember, broad);
+  }
+
+  revokeGrant(sessionId: string, key: string): void {
+    this.sessions.get(sessionId)?.broker.revoke(key);
+  }
+
+  async dispose(): Promise<void> {
+    await Promise.all([...this.sessions.keys()].map((id) => this.stop(id)));
+  }
+
+  /* ---------------- internals ---------------- */
+
+  private mustGet(id: string): Session {
+    const s = this.sessions.get(id);
+    if (!s) throw new Error('Unknown Claude session.');
+    return s;
+  }
+
+  private ensureTransport(s: Session): Promise<ClaudeTransport> {
+    if (s.transport?.alive) return Promise.resolve(s.transport);
+    if (!s.starting) {
+      s.starting = this.launch(s).finally(() => {
+        s.starting = undefined;
+      });
+    }
+    return s.starting;
+  }
+
+  private async launch(s: Session): Promise<ClaudeTransport> {
+    const file = await this.deps.claudePath();
+    if (!file) throw new Error('Claude Code is not installed or could not be found. Install it, sign in with `claude` in a terminal, then restart Durbar.');
+    const o = s.options;
+    const launch: ClaudeLaunch = {
+      mode: s.broker.getMode(),
+      sessionId: s.id,
+      resume: s.resumable,
+      model: o.model,
+      mcpConfig: mcpConfigOf(o.mcpServers, o.disabledMcpServers),
+      appendSystemPrompt: (this.deps.claudeMd ?? claudeMdPrompt)(s.cwd),
+    };
+    const handlers: TransportHandlers = {
+      message: (m) => this.onMessage(s, m),
+      control: (req) => this.onControl(s, req),
+      exit: (info) => this.onExit(s, info),
+    };
+    const make = this.deps.makeTransport ?? cliTransportFactory;
+    s.initSeen = false;
+    s.mapper.reset();
+    const t = await make({ file, launch, cwd: s.cwd, env: (this.deps.env ?? (() => process.env))(), handlers });
+    s.transport = t;
+    // Register the PreToolUse hook (Read-only roots check) before the first prompt.
+    await t.request({ subtype: 'initialize', hooks: { PreToolUse: [{ matcher: '*', hookCallbackIds: [PRE_TOOL_USE_HOOK] }] } });
+    s.resumable = true; // from now on Claude has (or will have) this id on disk
+    return t;
+  }
+
+  private onMessage(s: Session, m: ClaudeMessage): void {
+    if (m.type === 'system' && m.subtype === 'init') s.initSeen = true;
+    s.mapper.map(m);
+  }
+
+  private async onControl(s: Session, req: IncomingControl): Promise<ControlAnswer> {
+    const r = req.request;
+    if (req.subtype === 'can_use_tool') {
+      const tool = typeof r.tool_name === 'string' ? r.tool_name : '';
+      const input = r.input && typeof r.input === 'object' && !Array.isArray(r.input) ? (r.input as Record<string, unknown>) : {};
+      const toolUseID = typeof r.tool_use_id === 'string' ? r.tool_use_id : undefined;
+      if (tool === 'AskUserQuestion') return { response: { behavior: 'deny', message: ASK_USER_DENY, ...(toolUseID ? { toolUseID } : {}) } }; // T052 [KNOWN GAP]: no question UI yet
+      const d = await s.broker.request(permissionLikeOf(tool, input, toolUseID));
+      return d.kind === 'approve-once'
+        ? { response: { behavior: 'allow', updatedInput: input, ...(toolUseID ? { toolUseID } : {}) } }
+        : { response: { behavior: 'deny', message: d.feedback, ...(toolUseID ? { toolUseID } : {}) } };
+    }
+    if (req.subtype === 'hook_callback') {
+      if (r.callback_id !== PRE_TOOL_USE_HOOK) return { response: {} };
+      const input = r.input && typeof r.input === 'object' ? (r.input as Record<string, unknown>) : {};
+      const tool = typeof input.tool_name === 'string' ? input.tool_name : '';
+      const toolInput = input.tool_input && typeof input.tool_input === 'object' ? (input.tool_input as Record<string, unknown>) : undefined;
+      const deny = preToolUseDecision(s.broker.getMode(), tool, toolInput, s.roots);
+      return { response: deny ? { ...deny } : {} };
+    }
+    // elicitation, mcp_message, ... are not supported yet (T052, FR-024): refuse explicitly
+    return { error: `Agent Durbar does not handle ${req.subtype || 'this request'} yet.` };
+  }
+
+  private onExit(s: Session, info: { code: number | null; signal: string | null; stderrTail: string }): void {
+    s.transport = undefined;
+    if (s.stopping || !this.sessions.has(s.id)) return;
+    if (info.stderrTail) this.debug?.(`claude stderr (exit ${String(info.code)}): ${info.stderrTail}`);
+    s.broker.denyPending();
+    this.emit(s.id, { type: 'status', status: 'error', intent: info.code === 0 ? 'Claude ended the session; send a message to continue.' : `Claude stopped unexpectedly (exit ${info.code ?? info.signal ?? '?'}). Send a message to resume.` });
+  }
+
+  private onBroker(sid: string, e: BrokerEvent): void {
+    switch (e.type) {
+      case 'pending':
+        return this.emit(sid, { type: 'status', status: 'needs-permission', intent: `Waiting for permission: ${e.permission.summary}`, permission: e.permission });
+      case 'denied-policy':
+        return this.emit(sid, { type: 'status', status: 'needs-permission', intent: `Denied (read-only mode): ${e.permission.summary}`, permission: e.permission });
+      case 'resolved':
+        this.emit(sid, { type: 'permission', permission: e.permission });
+        if (e.permission.via !== 'stopped') {
+          const word = e.permission.state === 'approved' ? (e.permission.via === 'session' ? 'Allowed for this session' : 'Approved') : 'Denied';
+          this.emit(sid, { type: 'status', status: 'working', intent: `${word}: ${e.permission.summary}` });
+        }
+        return;
+      case 'grants':
+        return this.emit(sid, { type: 'grants', grants: e.grants });
+    }
+  }
+
+  private emit(sessionId: string, body: EventBody): void {
+    const event = { ...body, sessionId, timestamp: Date.now() } as AgentEvent;
+    for (const l of this.listeners) {
+      try {
+        l(event);
+      } catch {
+        /* a listener bug must not break the session */
+      }
+    }
+  }
+}
+
+/** The descriptor; `makeTransport` chooses the transport (main passes the SDK one when it is chosen and available, FR-113/FR-114). */
+export function claudeDescriptor(makeTransport: TransportFactory = cliTransportFactory): AdapterDescriptor {
+  return {
+    id: CLAUDE_ID,
+    displayName: CLAUDE_NAME,
+    installHint: 'Install Claude Code (npm install -g @anthropic-ai/claude-code), sign in with `claude` in a terminal, then restart Durbar.',
+    capabilities: CLAUDE_CAPABILITIES,
+    create: () => new ClaudeAdapter({ claudePath: claudeBinaryPath, makeTransport }),
+  };
+}
+export const CLAUDE_DESCRIPTOR: AdapterDescriptor = claudeDescriptor();
+
+/** The installed `claude` found by `detect()` (cached for the app's life once found). */
+let cachedPath: string | undefined;
+export async function claudeBinaryPath(): Promise<string | undefined> {
+  if (cachedPath) return cachedPath;
+  const { detectBinary, CLAUDE_BINARY, nodeExec, nodeDetectEnv } = await import('./detect');
+  const r = await detectBinary(CLAUDE_BINARY, nodeDetectEnv(), nodeExec);
+  if (r.state === 'ready' && r.path) cachedPath = r.path;
+  return cachedPath;
+}
