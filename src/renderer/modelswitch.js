@@ -178,7 +178,7 @@
       const state=Object.prototype.hasOwnProperty.call(KIND_STATE,a.state)?a.state:'unknown';
       const name=typeof a.displayName==='string'&&a.displayName?a.displayName:a.id;
       const stateText=KIND_STATE[state];
-      return {id:a.id,name,state,stateText,disabled:state!=='ready',label:stateText?name+': '+stateText:name,
+      return {id:a.id,name,shortName:name.replace(/\s*\([^)]*\)\s*$/,'')||name,state,stateText,disabled:state!=='ready',label:stateText?name+': '+stateText:name,
         version:typeof a.version==='string'?a.version.slice(0,HINT_MAX):'',hint:typeof a.hint==='string'?a.hint.slice(0,HINT_MAX):''};
     });
   }
@@ -201,5 +201,18 @@
     }
   }
 
-  return {pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows};
+  /* The modes an adapter can enforce, in the order the UI lists them. Missing or empty means read-only only (safe by default), unlike `shows`, which counts a missing caps object as all on. */
+  const MODE_ORDER=['read-only','ask','allow'];
+  function modesFor(caps){
+    const c=caps||{};
+    const m=Array.isArray(c.permissionModes)?MODE_ORDER.filter(k=>c.permissionModes.includes(k)):[];
+    return m.length?m:['read-only'];
+  }
+  /* The mode to keep when the kind changes: the current one when allowed, else read-only; never a wider mode. */
+  function fallbackMode(caps,cur){
+    const m=modesFor(caps);
+    return m.includes(cur)?cur:'read-only';
+  }
+
+  return {modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows};
 })());

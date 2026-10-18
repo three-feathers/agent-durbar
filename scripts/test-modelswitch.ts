@@ -21,7 +21,9 @@ const D = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'modelswit
   fmtTokens: (n: number) => string;
   priceLine: (m: M, t?: string) => string;
   capsOf: (info: unknown, adapters: unknown) => Record<string, unknown>;
-  kindChoices: (adapters: unknown) => Array<{ id: string; name: string; state: string; stateText: string; disabled: boolean; label: string; version: string; hint: string }>;
+  modesFor: (caps: unknown) => string[];
+  fallbackMode: (caps: unknown, cur: string) => string;
+  kindChoices: (adapters: unknown) => Array<{ id: string; name: string; shortName: string; state: string; stateText: string; disabled: boolean; label: string; version: string; hint: string }>;
   showsKindPicker: (adapters: unknown) => boolean;
   shows: (caps: unknown, feature: string, mode?: string) => boolean;
 };
@@ -243,6 +245,31 @@ assert.strictEqual(modelControlFor({ compact() {} }).switch, 'none');
   assert.strictEqual(D.shows({ ...base, mcpToggle: false }, 'mcpToggle'), false, 'd: toggle needs the flag');
   assert.strictEqual(D.shows({ ...base, mcpStatus: false }, 'mcpToggle'), false, 'd: toggle needs mcpStatus');
   assert.strictEqual(D.shows(undefined, 'cap'), true, 'd: no caps, as today');
+
+  // (e) spec 012 T018: the narrowest kind ("basic") and the mode helpers
+  const basic = { ...none, permissionModes: ['read-only'], permModeSwitch: 'none' };
+  assert.strictEqual(D.shows(basic, 'mcp'), false, 'e: basic has no MCP button');
+  assert.strictEqual(D.shows(basic, 'mcpToggle'), false, 'e: basic has no MCP switches');
+  assert.strictEqual(D.shows(basic, 'modeList', 'read-only'), true, 'e: basic lists Read-only');
+  assert.strictEqual(D.shows(basic, 'modeList', 'ask'), false, 'e: basic does not list Ask first');
+  assert.strictEqual(D.shows(basic, 'modeList', 'allow'), false, 'e: basic does not list Allow all');
+  assert.strictEqual(D.shows({ ...basic, mcpToggle: true }, 'mcpToggle'), false, 'e: a toggle flag without mcpStatus shows nothing');
+  assert.deepStrictEqual(D.modesFor(base), ['read-only', 'ask', 'allow'], 'e: full list, in order');
+  assert.deepStrictEqual(D.modesFor({ ...base, permissionModes: ['allow', 'read-only'] }), ['read-only', 'allow'], 'e: listed in the UI order, not the adapter order');
+  assert.deepStrictEqual(D.modesFor(basic), ['read-only']);
+  assert.deepStrictEqual(D.modesFor({ ...base, permissionModes: [] }), ['read-only'], 'e: empty list means read-only only');
+  assert.deepStrictEqual(D.modesFor({ ...base, permissionModes: undefined }), ['read-only'], 'e: missing list means read-only only');
+  assert.deepStrictEqual(D.modesFor({ ...base, permissionModes: ['bogus'] }), ['read-only'], 'e: unknown modes are ignored');
+  assert.deepStrictEqual(D.modesFor(undefined), ['read-only'], 'e: no caps object means read-only only (safe by default)');
+  assert.strictEqual(D.fallbackMode(base, 'allow'), 'allow', 'e: an allowed mode is kept');
+  assert.strictEqual(D.fallbackMode(basic, 'allow'), 'read-only', 'e: allow falls back to read-only, never stays wide');
+  assert.strictEqual(D.fallbackMode(basic, 'ask'), 'read-only');
+  assert.strictEqual(D.fallbackMode({ ...base, permissionModes: ['read-only', 'ask'] }, 'allow'), 'read-only', 'e: not to the next mode up or down, always read-only');
+  assert.strictEqual(D.fallbackMode(basic, 'nonsense'), 'read-only');
+  assert.strictEqual(D.fallbackMode(basic, undefined as unknown as string), 'read-only');
+  assert.strictEqual(D.kindChoices([mk('ready', { displayName: 'Claude Code (simulated)' })])[0].shortName, 'Claude Code', 'e: the select shows the short name');
+  assert.strictEqual(D.kindChoices([mk('ready', { displayName: 'Claude Code (simulated)' })])[0].name, 'Claude Code (simulated)', 'e: the About dialog keeps (simulated)');
+  assert.strictEqual(D.kindChoices([cop])[0].shortName, 'Copilot');
 }
 
 console.log('modelswitch tests passed');

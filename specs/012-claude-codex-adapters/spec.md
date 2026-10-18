@@ -287,7 +287,7 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 
     Screenshots: `docs/screenshots/012-picker-{1440x900,1280x800}.png` from `scripts/shots-017.js`..
 
-- **2026-10-18, T018 scope: a mixed-kind simulator roster and the gating left over from T017 (issue #38; DRAFT, nothing built yet).** Today the simulator gives every agent `adapterId: 'copilot'` (`src/renderer/sim.ts:185`). `simkinds=1` adds only kinds that are **not ready**, a Claude Code that is not installed and a Codex that is too old (`sim.ts:874-887`), so no agent ever runs with fewer capabilities, and FR-062 is tested only by force-enabling a disabled kind. T017 left five things to this task (`[KNOWN GAP]` (T018), `spec.md` T017 implementation notes):
+- **2026-10-18, T018 scope: a mixed-kind simulator roster and the gating left over from T017 (issue #38; built 2026-10-18: simulator only; the default simulator and `simkinds=1` are byte-identical, checked with a dump harness).** Today the simulator gives every agent `adapterId: 'copilot'` (`src/renderer/sim.ts:185`). `simkinds=1` adds only kinds that are **not ready**, a Claude Code that is not installed and a Codex that is too old (`sim.ts:874-887`), so no agent ever runs with fewer capabilities, and FR-062 is tested only by force-enabling a disabled kind. T017 left five things to this task (`[KNOWN GAP]` (T018), `spec.md` T017 implementation notes):
   - no gating of the room "+" and MCP buttons (`app.js` ~422);
   - no gating of the header mode chip, MCP and new-session buttons (~781);
   - no gating of `modeChipHTML` (~1592);
@@ -296,30 +296,31 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 
   PR #137 (themes) is still open, edits those three `app.js` regions, and is already marked conflicting with `main` (`gh pr view 137`, 2026-10-18: `OPEN`, `CONFLICTING`, head `6020d26`). `read:`
   - **Boundaries.** Renderer and simulator only (`src/renderer/sim.ts`, `app.js`, `modelswitch.js`), plus one scenario in `scripts/check-office-overlap.js` and a new driver. No main-process change, no new adapter, no new CSS. The default simulator (no `simkinds`) and `simkinds=1` stay exactly as they are, so `check:office` and the existing screenshots do not change.
-  - **FR-065** `simkinds=mixed` registers three **ready** simulated kinds. Their names say "(simulated)" in the "About agent kinds" dialog; the select shows the short name. Capabilities:
+  - **FR-065** `[IMPLEMENTED]` (test: `scripts/test-modelswitch.ts`; sim: `scripts/shots-018.js` and the `check:office` mixed scenario at 1440x900 and 1280x800) `simkinds=mixed` registers three **ready** simulated kinds. Their names say "(simulated)" in the "About agent kinds" dialog; the select shows the short name. Capabilities:
     - `copilot`: as today.
     - `claude`, Claude-like: `caps: false`, `usage: { tokens: true, costUsd: true, nanoAiu: false }`, `mcpToggle: false`, `permModeSwitch: 'live'`, `helpers: true`, `history: true`.
     - `codex`, Codex-like: `caps: false`, `usage: { tokens: true, costUsd: false, nanoAiu: false }`, `permModeSwitch: 'next-message'`, `history: false`, `helpers: false`, `mcpToggle: false`.
     - `basic` ("Basic agent (simulated)", not modelled on any vendor): exists only to exercise the narrowest gates. It has `permissionModes: ['read-only']`, `permModeSwitch: 'none'`, `interrupt: false`, `models: false`, `effort: false`, `mcpStatus: false`, and everything else false.
 
-    The values follow the plan's "Capabilities" section. They are a simulation, not a statement about the real CLIs (Phase 4). `[KNOWN GAP]` until T018 is built.
-  - **FR-066** In `simkinds=mixed`, the 15-agent roster gives a fixed set of agents each kind (the same ones on every run): about a third `claude`, a fifth `codex` and one `basic`, spread over rooms so that one room holds two kinds. Their simulated events follow their capabilities:
+    The values follow the plan's "Capabilities" section. They are a simulation, not a statement about the real CLIs (Phase 4)..
+  - **FR-066** `[IMPLEMENTED]` (test: `scripts/test-modelswitch.ts`; sim: `scripts/shots-018.js` and the `check:office` mixed scenario at 1440x900 and 1280x800) In `simkinds=mixed`, the 15-agent roster gives a fixed set of agents each kind (the same ones on every run): about a third `claude`, a fifth `codex` and one `basic`, spread over rooms so that one room holds two kinds. Their simulated events follow their capabilities:
     - **Claude-like:** `usage` with `costUsd` and `costBasis: 'estimate'`, no `nanoAiu`, `creditsStatus: 'unavailable'`; no cap and no `limit` event.
     - **Codex-like:** the same with no `costUsd`, and no `subagent` events (no helper tiles).
 
     Showing `costUsd` is not part of this task: the card shows "credits not reported" as spec 011 does (FR-015). `[KNOWN GAP]` (T028).
-  - **FR-067** The remaining gates use `DurbarModels.shows`:
+  - **FR-067** `[IMPLEMENTED]` (test: `scripts/test-modelswitch.ts`; sim: `scripts/shots-018.js` and the `check:office` mixed scenario at 1440x900 and 1280x800) The remaining gates use `DurbarModels.shows`:
     - The room "+" shows when the bridge has `newSession` and at least one kind is ready.
     - The room MCP and header MCP buttons show only with `mcpStatus`; their switches only with `mcpToggle`.
     - With `permModeSwitch: 'none'` the header mode chip is **plain text** with the title "Set when the session starts" (the mode stays visible, constitution III), not a button.
     - With `'next-message'` the chip works, and its toast adds "Applies from the next message." (the T046 wording).
     - The mode menu and both Permissions selects (toolbar and new-session dialog) list only the chosen kind's `permissionModes`. When the current value is not among them, it falls back to `read-only`, never to a wider mode.
 
-    `[KNOWN GAP]` until T018 is built.
-  - **FR-068** `check:office` gains the scenario `sim=15&simfreeze=1&simkinds=mixed` at 1440x900 and 1280x800: no overlap, no office scroll, and the toolbar on one row. `scripts/shots-018.js` takes `docs/screenshots/012-mixed-{1440x900,1280x800}.png` and checks the following:
+   .
+  - **FR-068** `[IMPLEMENTED]` (test: `scripts/test-modelswitch.ts`; sim: `scripts/shots-018.js` and the `check:office` mixed scenario at 1440x900 and 1280x800) `check:office` gains the scenario `sim=15&simfreeze=1&simkinds=mixed` at 1440x900 and 1280x800: no overlap, no office scroll, and the toolbar on one row. `scripts/shots-018.js` takes `docs/screenshots/012-mixed-{1440x900,1280x800}.png` and checks the following:
+  - **Implementation notes (T018):** the room MCP button shows when any root agent in the room supports MCP (not only the first one); the toast for a next-message kind reads "<b>Ask first</b>. Applies from the next message."; the MCP dialog disables its switches with a visible reason when the kind has no `mcpToggle` (`screens.js`). Condition-only edits inside PR #137's hunks: `app.js` ~422, ~781-782 and `modeChipHTML`. Screenshots: `docs/screenshots/012-mixed-1440x900.png`, `012-mixed-1280x800.png`. `[KNOWN GAP]` (T043/T045, before the first real second adapter ships): `roleFor`, the panel hint and the agent MCP dialog still say "Copilot" for other kinds; agent cards do not show their kind; a basic-like kind still shows a static model text and the Copilot previous-sessions count; folder-extras MCP switches are not gated by `mcpToggle` (they apply at session start). `[KNOWN GAP]`: the driver exits 0 even when it prints DRIVER FAILED (pre-existing in `main.ts`), so look for the pass line.
     - no cap chip on a `claude` or `codex` agent;
     - no helper tiles on `codex` agents;
     - the plain-text mode chip, or the next-message toast;
     - the Permissions select filtered by kind;
     - every font at 10.5px or larger;
-    - every visible button changes something (none is a dead button, SC-003). `[KNOWN GAP]` until T018 is built.
+    - every visible button changes something (none is a dead button, SC-003)..

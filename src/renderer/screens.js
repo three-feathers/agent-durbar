@@ -365,8 +365,9 @@
   function editServer2(input,v,st){const view=Object.assign({},v||{},{name:input.name,transport:input.transport,command:input.command,args:input.args,workingDirectory:input.workingDirectory,url:input.url,tools:input.tools,env:(v&&v.env)||[],headers:(v&&v.headers)||[]});return editServer(v?view:Object.assign(view,{name:input.name}),st);}
 
   /* ---------------- per-agent MCP menu ---------------- */
-  async function agentMcp(a){
+  async function agentMcp(a,o){
     if(!X.bridge.agentMcp)return;
+    const fixed=!!o&&o.toggle===false; /* this agent kind cannot switch servers while it runs (spec 012 FR-067): shown, with the reason */
     const load=async()=>X.bridge.agentMcp(a.id);
     let st=await load();
     const body=s=>{
@@ -374,8 +375,8 @@
         const eff=x.defaultOn&&!x.off;
         const stat=x.status?`<span class="mst ${esc(x.status)}"><i></i>${esc(x.status)}</span>`:'<span class="mst none">not started</span>';
         return `<li class="srv sm" data-n="${esc(x.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(x.name)}</b><span class="mtag${x.origin==='folder'?' extra':' src'}">${x.origin==='cli'?'Copilot CLI list':x.origin==='folder'?'this folder only':'runtime'}</span>${stat}${!x.defaultOn?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${x.error?`<span class="imp-note">${esc(cap(x.error,160))}</span>`:''}</div>
-          <div class="srv-act">${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name,'data-n="'+esc(x.name)+'"'+(!x.defaultOn?' disabled':''))}</div></li>`;}).join('');
-      return `<p class="dsub">${s.live?'This agent is running: a switch applies right away.':'This agent has no running session: your choices apply when it starts.'} Your Copilot CLI servers are global (see <b>Settings</b>); extras belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p><ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul><p class="dsub small">Applies to this agent until the app is closed.</p>`;
+          <div class="srv-act">${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name,'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed?' disabled':''))}</div></li>`;}).join('');
+      return `<p class="dsub">${s.live?(fixed?'This agent is running.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Your Copilot CLI servers are global (see <b>Settings</b>); extras belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent kind:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul><p class="dsub small">Applies to this agent until the app is closed.</p>`;
     };
     const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings…',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
       onOpen:d=>{d.addEventListener('click',async e=>{const b=e.target.closest('button.swt');if(!b||b.disabled)return;const on=b.getAttribute('aria-checked')!=='true';

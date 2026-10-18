@@ -419,7 +419,7 @@ function folderOfRoom(roomId){
 function roomHTML({r,mains,all},d,aw,cap){
   const al=roomAlert(r), alAttr=(al.tone==='calm'?'':` data-alert="${al.tone}"`)+(al.siren?' data-siren="1"':''), alLabel=al.siren?'. '+ALERT_WORDS:'';
   const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':(k==='done'||k==='idle')?' calm':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}</span>`:''}).join('');
-  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="Close room ${esc(r.name)}" title="Close the door: ${esc(r.name)} becomes a compact plate">${DOOR_OPEN}</button><span class="room-name" title="${esc(r.name)}">${esc(r.name)}</span>${al.siren?SIREN:''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span>${(()=>{const u=roomAiu(r);return u?`<span class="room-aiu" title="${esc(u.tip)}">${esc(u.long)}</span>`:'';})()}<span class="room-dots" aria-hidden="true">${dots}</span>${bridge&&bridge.newSession&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.mcpFolderState&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT}</div>`;
+  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="Close room ${esc(r.name)}" title="Close the door: ${esc(r.name)} becomes a compact plate">${DOOR_OPEN}</button><span class="room-name" title="${esc(r.name)}">${esc(r.name)}</span>${al.siren?SIREN:''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span>${(()=>{const u=roomAiu(r);return u?`<span class="room-aiu" title="${esc(u.tip)}">${esc(u.long)}</span>`:'';})()}<span class="room-dots" aria-hidden="true">${dots}</span>${bridge&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT}</div>`;
   if(d==='full'){
     const gap=6, pad=12;
     const widths=mains.map(a=>unitWidth(a,d));
@@ -778,8 +778,8 @@ function openPanel(id,focus){
   p.innerHTML=`<div class="panel-in">
    <div class="strip" role="navigation" aria-label="Agents"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON.back}<span>Office</span></button><div class="strip-list" id="stripList"></div></div>
    <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1">${esc(a.name)}</h2><div class="sub">${esc(a.role)}${parent?' · helper of '+esc(parent.name):''}</div></div>
-      <div class="ph-meta"><span data-f="status"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?(a.live&&a.info&&!a.parent&&bridge.setModel?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`):''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
-      <div class="actions">${a.live&&!a.parent?`<button class="btn" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools</button>`:''}${a.live&&!a.parent&&bridge.agentMcp?`<button class="btn" id="mcpBtn" type="button" title="MCP servers for this agent (set globally in Settings)">MCP</button>`:''}${a.live&&bridge.newSession&&!a.parent?`<button class="btn" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>`:''}<button class="btn primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
+      <div class="ph-meta"><span data-f="status"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?(a.live&&a.info&&!a.parent&&bridge.setModel&&feat(a,'models')?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`):''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
+      <div class="actions">${a.live&&!a.parent?`<button class="btn" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools</button>`:''}${a.live&&!a.parent&&bridge.agentMcp&&feat(liveRoot(a),'mcp')?`<button class="btn" id="mcpBtn" type="button" title="MCP servers for this agent (set globally in Settings)">MCP</button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="btn" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>`:''}<button class="btn primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
         ${a.live&&!a.parent?`<button class="btn" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)">Copy resume command</button>`:''}
         <button class="btn" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
         ${a.live&&!feat(liveRoot(a),'stop')?'':`<button class="btn danger" id="stopBtn" type="button" title="${a.live?'Interrupt the current turn. The agent stays open and ready.':'Stop'}"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>Stop</button>`}
@@ -805,7 +805,7 @@ function openPanel(id,focus){
   if(a.live)$('pauseBtn').hidden=true;
   if($('newSessBtn'))$('newSessBtn').onclick=()=>newSession(a);
   if($('toolsHdrBtn'))$('toolsHdrBtn').onclick=()=>window.DurbarScreens.openTools(liveRoot(a).id);
-  if($('mcpBtn'))$('mcpBtn').onclick=()=>window.DurbarScreens.agentMcp(liveRoot(a));
+  if($('mcpBtn'))$('mcpBtn').onclick=()=>window.DurbarScreens.agentMcp(liveRoot(a),{toggle:feat(liveRoot(a),'mcpToggle')});
   if($('endBtn'))$('endBtn').onclick=()=>endLive(a);
   if($('copyResBtn'))$('copyResBtn').onclick=()=>copyResume(a);
   if(a.live&&!a.parent)initPrev(a); else {const pv=$('prev');if(pv)pv.hidden=true;}
@@ -1591,6 +1591,7 @@ function renderStrip(){
 
 /* ---------------- permission mode: change it at any time (spec 018) ---------------- */
 function modeChipHTML(a){const m=a.info.permMode, rs=m==='allow'&&a.info.permRestored;
+  if(!feat(a,'modes'))return `<span class="modechip" title="Set when the session starts">${esc(MODE_NAME[m])}</span>`;
   return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}. ${esc(MODE_HELP[m])}${rs?' Restored from your last run.':''} Click to change; it applies from the next request."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m])}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON.chev}</button>`;}
 function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');}}
 function openModeMenu(a0,x,y,anchor){
@@ -1639,7 +1640,7 @@ async function changeModeInner(a,mode,anchor){
   if(!res||!res.ok){toast('Could not change the mode: '+esc((res&&res.error)||'unknown error'),5000);return;}
   a.info.permMode=mode; a.info.permRestored=undefined; a.role=roleFor(a.info);
   if(opts.clearGrants)setGrants(a,[]);
-  toast(esc(a.name)+': <b>'+esc(MODE_NAME[mode])+'</b> from the next request.'+(mode==='allow'?' Everything runs without asking.':''),4200);
+  toast(esc(a.name)+': <b>'+esc(MODE_NAME[mode])+(capsFor(a).permModeSwitch==='next-message'?'</b>. Applies from the next message.':'</b> from the next request.')+(mode==='allow'?' Everything runs without asking.':''),4200);
   if(ui.selected&&liveRoot(byId(ui.selected)||a)===a){const c=$('modeChip');if(c){c.outerHTML=modeChipHTML(a);}const h=document.querySelector('#panel .hint');if(h)h.textContent=h.textContent.replace(/\([^()]*\)\.?$/,'('+MODE_NAME[a.info.permMode]+').');updatePanelHeader();}
   scheduleRender();
 }
@@ -1699,9 +1700,17 @@ const capsFor=a=>DMK().capsOf(a&&a.info,KINDS);
 const feat=(a,f,mode)=>DMK().shows(capsFor(a),f,mode);
 const kindCaps=id=>DMK().capsOf({adapterId:id},KINDS);
 const defaultKind=()=>KINDS&&KINDS[0]?KINDS[0].id:'';
+const anyKindReady=()=>!KINDS||DMK().kindChoices(KINDS).some(k=>!k.disabled); /* the room "+" and "+ New session" need a kind that can start */
+const PERM_LABEL={'read-only':'Read-only',ask:'Ask first',allow:'Allow all (no prompts)'};
+/* Permissions select of a kind: only the modes it can enforce; a value it cannot hold falls back to read-only, never to a wider mode (spec 012 FR-067) */
+function fillPermSelect(sel,caps){
+  const modes=DMK().modesFor(caps),cur=sel.value;
+  if([...sel.options].map(o=>o.value).join()!==modes.join())sel.innerHTML=modes.map(k=>`<option value="${k}">${PERM_LABEL[k]}</option>`).join('');
+  sel.value=DMK().fallbackMode(caps,cur);
+}
 /* the first kind that is ready, preferring `want` */
 const pickKind=want=>{const ch=DMK().kindChoices(KINDS);const w=ch.find(k=>k.id===want&&!k.disabled);return w?w.id:(ch.find(k=>!k.disabled)||{id:''}).id;};
-const kindOptions=()=>DMK().kindChoices(KINDS).map(k=>`<option value="${esc(k.id)}"${k.disabled?' disabled':''}>${esc(k.name)}${k.stateText?' ('+esc(k.stateText)+')':''}</option>`).join('');
+const kindOptions=()=>DMK().kindChoices(KINDS).map(k=>`<option value="${esc(k.id)}"${k.disabled?' disabled':''}>${esc(k.shortName||k.name)}${k.stateText?' ('+esc(k.stateText)+')':''}</option>`).join('');
 /* Toolbar: model and effort follow the chosen kind. A kind other than the default has no model list yet (FR-062, T049), so both are hidden and it starts with its own default. */
 function syncKindModel(){
   const ms=$('modelSel'),ef=$('effortSel');
@@ -1709,6 +1718,7 @@ function syncKindModel(){
   const c=KINDS?kindCaps(id):null, ok=!other&&(!c||DMK().shows(c,'models'));
   ms.hidden=!ok;
   fillEffortSelect(ef,ms.value,undefined,!ok||(c&&!DMK().shows(c,'effort')));
+  fillPermSelect($('permMode'),kindCaps(id));
 }
 function applyKinds(){
   const show=DMK().showsKindPicker(KINDS), sel=$('kindSel'), keep=sel.value;
@@ -1963,6 +1973,7 @@ function newSession(a0){
     $('sdModelL').hidden=other()||(c&&!DMK().shows(c,'models'));
     fillEffortSelect($('sdEff'),$('sdModel').value,a.info.effort,off||$('sdModelL').hidden);$('sdEffL').hidden=$('sdEff').hidden;
     if($('sdCapL'))$('sdCapL').hidden=!!c&&!DMK().shows(c,'cap');
+    if(c)fillPermSelect($('sdPerm'),c);
   };
   if($('sdKind'))$('sdKind').value=pickKind(a.info.adapterId||defaultKind());
   eff(); $('sdModel').onchange=eff; if($('sdKind'))$('sdKind').onchange=eff;

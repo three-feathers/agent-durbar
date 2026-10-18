@@ -298,6 +298,14 @@ async function driver(ctx) {
       }
     }
   }
+  /* spec 012 T018 (FR-068): Claude-like, Codex-like and basic agents beside Copilot. No floors here, so no floor-tag checks; the toolbar stays on one row */
+  for (const [w, h] of SIZES) {
+    const tag = `kinds ${w}x${h} mixed kinds`;
+    await run(tag, 'sim=15&simfreeze=1&simkinds=mixed', w, h, shotsDir ? `kinds-${w}x${h}-mixed` : '');
+    const row = await ctx.js(`(()=>{const t=[...document.querySelectorAll('#liveBar > button, #liveBar > select')].filter(e=>e.getClientRects().length).map(e=>Math.round(e.getBoundingClientRect().top));return {min:Math.min(...t),max:Math.max(...t),n:t.length}})()`);
+    total++;
+    if (row.max - row.min > 3) { failed++; console.log(`FAIL ${tag}: the toolbar wraps ${JSON.stringify(row)}`); }
+  }
   console.log('\nlayout summary (density/helpers shown, stage height vs floor):');
   rows.forEach((r) => console.log(`  ${r.problems ? 'FAIL' : 'ok  '} ${r.label.padEnd(60)} ${String(r.d).padEnd(5)} h=${r.h} rooms=${r.rooms} plates=${r.plates} desks=${r.desks} stage ${r.stageH}/${r.floorH}px minFont=${r.minFont}`));
   console.log(`\noffice check: ${total - failed}/${total} checks passed, ${failed} failed`);

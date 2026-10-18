@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.4 tag)
 
+- **Mixed-kind simulator and capability gating (spec 012 T018, issue #38).** `simkinds=mixed` in the simulator shows Claude-like, Codex-like and a minimal kind next to Copilot; room and header buttons, the mode chip, mode lists and the Permissions selects follow each kind's capabilities and never widen. No visible change with Copilot alone. Simulator only, 0 AIU.
+
 - **Agent kind picker (spec 012 T017, issue #37).** With more than one kind of agent, the toolbar and the New session dialog get an agent-kind select before Permissions; kinds that are not installed or too old are disabled and explained in "About agent kinds". Controls an adapter cannot support are hidden. No visible change while only Copilot exists. Simulator and unit tests, 0 AIU.
 
 - **Copilot passes the adapter contract (spec 012 T016, issue #36; spec 002 T020).** The contract suite and a replay of the recorded sessions now run on the Copilot adapter through a fake SDK client. Test code only, 0 AIU.
