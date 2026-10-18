@@ -7,6 +7,7 @@
  * `agentId`, which is also the id of the helper card (`SubagentEvent.subagentId`).
  */
 import type { AgentEvent, CompactionEvent, ContextTier, McpServerStatus } from './types';
+import { cleanSessionTitle } from './history';
 
 export type EventBody = AgentEvent extends infer E ? (E extends AgentEvent ? Omit<E, 'sessionId' | 'timestamp'> : never) : never;
 
@@ -235,6 +236,11 @@ export class EventMapper {
       case 'session.session_limits_changed': {
         const cap = num(d.sessionLimits?.maxAiCredits);
         return this.emit({ type: 'limit', phase: 'changed', maxAiCredits: cap && cap > 0 ? cap : null });
+      }
+      case 'session.title_changed': {
+        // The main agent's display title (issue #126); a sub-agent's title is not shown.
+        const title = agentId ? undefined : cleanSessionTitle(d.title);
+        return title ? this.emit({ type: 'title', title }) : undefined;
       }
       case 'session.idle':
         return this.emit({ type: 'status', status: 'idle', intent: d.aborted ? 'Aborted' : undefined });

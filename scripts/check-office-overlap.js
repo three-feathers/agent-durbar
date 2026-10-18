@@ -286,6 +286,16 @@ async function driver(ctx) {
       }
     }
   }
+  /* spec 001/002 deltas 2026-10-18 (issue #126): main agents with session titles (one long enough to be ellipsized), both sizes;
+     the run fails when no title reached a card, so it cannot pass on a page without titles */
+  for (const [w, h] of SIZES) {
+    for (const sim of [12, 15]) {
+      await run(`titles sim${sim}-${w}x${h}`, `sim=${sim}&simfreeze=1&simtitles=1`, w, h, sim === 15 ? `titles-sim15-${w}x${h}` : '');
+      const shown = await ctx.js(`[...document.querySelectorAll('#stage .desk .name')].some((n)=>n.textContent==='Fix login bug')`);
+      total++;
+      if (!shown) { failed++; console.log(`FAIL titles sim${sim}-${w}x${h}: no session title on any card`); }
+    }
+  }
   /* spec 033: floors on/off (3, 2 and 1 floors on), with and without closed doors, both sizes */
   for (const [w, h] of SIZES) {
     const cases = [

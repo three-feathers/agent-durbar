@@ -1,6 +1,6 @@
 /** Unit tests for previous Copilot sessions per folder and history replay (synthetic events): `npm run test:history`. */
 import * as assert from 'assert';
-import { cleanTitle, eventsToHistory, normDir, previousSessionsFor, sameDir } from '../src/adapters/history';
+import { cleanSessionTitle, cleanTitle, eventsToHistory, normDir, previousSessionsFor, sameDir } from '../src/adapters/history';
 
 // --- folder matching
 assert.strictEqual(normDir('/a/b/', 'linux'), '/a/b');
@@ -91,4 +91,21 @@ assert.ok(capped.items[0].type === 'user' && capped.items[0].text === 'm40', 'th
 const long = eventsToHistory([ev('assistant.message', { content: 'y'.repeat(50_000) })]);
 assert.ok(long.items[0].type === 'output' && long.items[0].text.length === 20_001);
 assert.deepStrictEqual(eventsToHistory([]).items, []);
+
+// Issue #126: session titles (spec 002 delta 2026-10-18)
+assert.strictEqual(cleanSessionTitle(undefined), undefined);
+assert.strictEqual(cleanSessionTitle(' \u200B\u2060 '), undefined, 'nothing left = no title');
+assert.strictEqual(cleanSessionTitle('a\u202Eb\u0007c\u2066d'), 'abcd', 'bidi overrides, isolates and control characters removed');
+assert.strictEqual(cleanSessionTitle('Team 👩\u200D💻'), 'Team 👩\u200D💻', 'ZWJ kept');
+assert.strictEqual(cleanSessionTitle('کار\u200Cها'), 'کار\u200Cها', 'ZWNJ kept');
+assert.strictEqual(cleanTitle('a\u0007b'), 'ab', 'the previous-sessions title is cleaned the same way');
+const named = previousSessionsFor(
+  [
+    { sessionId: 'n1', summary: 'first prompt text', name: 'Release notes', startTime: 1, modifiedTime: 2, context: { workingDirectory: '/p' } },
+    { sessionId: 'n2', summary: 'only a summary', startTime: 1, modifiedTime: 1, context: { workingDirectory: '/p' } },
+    { sessionId: 'n3', summary: 'summary wins', name: '  ', startTime: 1, modifiedTime: 0, context: { workingDirectory: '/p' } },
+  ],
+  '/p', undefined, 'linux',
+);
+assert.deepStrictEqual(named.map((s) => s.title), ['Release notes', 'only a summary', 'summary wins'], 'a saved name wins over the summary; an empty name does not');
 console.log('history tests passed');
