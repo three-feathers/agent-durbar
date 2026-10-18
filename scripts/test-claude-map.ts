@@ -134,7 +134,7 @@ for (const f of files) {
   assert.strictEqual(u.costBasis, 'estimate');
   assert.strictEqual(u.nanoAiu, undefined, 'no nanoAiu from Claude');
   const tokens = run(load('stream-text-thinking.json').messages).find((e) => e.type === 'usage');
-  assert.ok(tokens && tokens.type === 'usage' && tokens.nanoAiu === undefined && tokens.inputTokens === 120 && tokens.cacheReadTokens === 80);
+  assert.ok(tokens && tokens.type === 'usage' && tokens.nanoAiu === undefined && tokens.inputTokens === 200 && tokens.cacheReadTokens === 80);
 }
 
 // 7. Init: quiet start skips the Ready status; the session info is remembered.

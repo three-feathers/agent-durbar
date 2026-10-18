@@ -117,6 +117,6 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 
 ## Changes 2026-10-19 (issue #196, T095 part 1)
 
-- [ ] T102 (sim) Per-kind wording: subtitle, chat footer, Previous sessions header and counts, Copy resume command per kind [FR-123]
-- [ ] T103 (fixtures) Claude `inputTokens` include cache creation and cache reads; test [FR-124]
+- [x] T102 (sim) Per-kind wording: subtitle, chat footer, Previous sessions header and counts, Copy resume command per kind [FR-123]
+- [x] T103 (fixtures) Claude `inputTokens` include cache creation and cache reads; test [FR-124]
 
