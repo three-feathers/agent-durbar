@@ -43,6 +43,8 @@ export interface AgentInfo {
   closed?: boolean;
   /** Floor of the folder (spec 033); absent = the ground floor. */
   floor?: string;
+  /** Which adapter runs this agent (spec 012 FR-058), e.g. `copilot`. */
+  adapterId: string;
 }
 
 /** Choices for a new session. */
@@ -54,6 +56,8 @@ export interface SessionOptions {
   effort?: string;
   /** Floor for a folder added now (spec 033 FR-006); unknown = the ground floor. */
   floor?: string;
+  /** Agent kind (adapter id) for a new folder or session (spec 012 FR-058). Unknown or not ready = refused. Unset = the folder's saved kind, else the default. */
+  adapterId?: string;
 }
 
 /** A floor as the renderer sees it (spec 033). */

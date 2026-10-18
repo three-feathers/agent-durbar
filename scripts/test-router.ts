@@ -217,6 +217,14 @@ async function main(): Promise<void> {
     assert.ok('error' in adapterForAdd(undefined, 'future', has, 'copilot'), 'i: saved unknown is refused');
     assert.deepStrictEqual(adapterForAdd(undefined, undefined, has, 'copilot'), { id: 'copilot' }, 'i: none gives the default');
     assert.ok('error' in adapterForAdd('future', 'copilot', has, 'copilot'), 'i: explicit unknown is refused');
+    // T017 (FR-058): a kind the user picked must be ready; no fallback to another kind
+    const ready = (id: string): boolean => id === 'copilot';
+    assert.deepStrictEqual(adapterForAdd('copilot', undefined, has, 'copilot', ready), { id: 'copilot' }, 'i: explicit ready is used');
+    const notReady = adapterForAdd('other', 'copilot', has, 'copilot', ready);
+    assert.ok('error' in notReady && /not ready/.test(notReady.error), 'i: explicit known but not ready is refused');
+    assert.deepStrictEqual(adapterForAdd('other', undefined, has, 'copilot'), { id: 'other' }, 'i: without a ready check (resume, restore) nothing changes');
+    assert.deepStrictEqual(adapterForAdd(undefined, 'other', has, 'copilot', ready), { id: 'other' }, 'i: a saved kind is not re-checked');
+    assert.ok('error' in adapterForAdd('future', undefined, has, 'copilot', ready), 'i: unknown still refused with a ready check');
   }
   console.log('router tests passed');
 }

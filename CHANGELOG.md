@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.4 tag)
 
+- **Agent kind picker (spec 012 T017, issue #37).** With more than one kind of agent, the toolbar and the New session dialog get an agent-kind select before Permissions; kinds that are not installed or too old are disabled and explained in "About agent kinds". Controls an adapter cannot support are hidden. No visible change while only Copilot exists. Simulator and unit tests, 0 AIU.
+
 - **Copilot passes the adapter contract (spec 012 T016, issue #36; spec 002 T020).** The contract suite and a replay of the recorded sessions now run on the Copilot adapter through a fake SDK client. Test code only, 0 AIU.
 
 - **Adapter contract suite (spec 012 T015, issue #35).** A fake adapter and a shared contract every adapter must pass (events, permissions, stop, capabilities), plus tests for the main-process rules that refuse settings an adapter cannot apply. No user-visible change. Unit tests, 0 AIU.

@@ -18,7 +18,7 @@ function setup() {
   const by = new Map<string, FakeAdapter>();
   const agents = new Map<string, AgentInfo>();
   const mk = (id: string, ad: FakeAdapter): AgentInfo => {
-    const a = { id, name: id, cwd: WS + '-' + id, folders: [], permMode: 'ask' as PermMode } as AgentInfo;
+    const a = { id, name: id, cwd: WS + '-' + id, folders: [], permMode: 'ask' as PermMode, adapterId: 'copilot' } as AgentInfo;
     agents.set(id, a);
     by.set(id, ad);
     return a;

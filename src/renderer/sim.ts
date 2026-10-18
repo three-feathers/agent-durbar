@@ -15,6 +15,7 @@ type AgentInfo = import('../shared/api').AgentInfo;
 type DurbarApi = import('../shared/api').DurbarApi;
 type PickedFile = import('../shared/api').PickedFile;
 type ModelChoice = import('../shared/api').ModelChoice;
+type AdapterInfo = import('../shared/api').AdapterInfo;
 type FloorsState = import('../shared/api').FloorsState;
 type FloorsResult = import('../shared/api').FloorsResult;
 type ModelSwitchRequest = import('../shared/modelswitch').ModelSwitchRequest;
@@ -181,7 +182,7 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       const [name, role, room, state, intent, helpers, files] = r;
       const roomName = opts.solo ? name.toLowerCase() + '-app' : room;
       const cwd = opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
-      const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true } } as AgentInfo;
+      const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], adapterId: 'copilot', permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true } } as AgentInfo;
       // Priya models an adapter that cannot switch or compact in place (spec 030): the UI shows the disabled state and offers a new session.
       // Jonas models the real adapter's state until Phase 3: the controls work but are flagged as not verified on a real account.
       if (name === 'Jonas') info.modelControl = { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true, unverified: true };
@@ -870,6 +871,19 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       },
     };
 
+    const simKinds = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simkinds') === '1';
+    const copilotCaps = { interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true } as AdapterInfo['capabilities'];
+    const simAdapters = (): AdapterInfo[] => [
+      { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps } },
+      ...(simKinds ? [
+        { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false } },
+        { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'] } },
+      ] as AdapterInfo[] : []),
+    ];
+    const notReady = (adapterId: string): string | undefined => {
+      const k = simAdapters().find((x) => x.id === adapterId);
+      return k && k.state === 'ready' ? undefined : 'This agent kind is not ready on this computer. Open "About agent kinds" for what is missing.';
+    };
     let started = false;
     let extra = 0;
     const api: DurbarApi = {
@@ -878,13 +892,17 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       ...capApi,
       ...modelApi,
       version: async () => 'sim',
+      // Spec 012 T017 (FR-063): only Copilot by default; simkinds=1 adds a Claude Code that is not installed and a Codex that is too old.
+      listAdapters: async () => simAdapters(),
       addFolder: async (_mode, o) => {
+        const bad = o && o.adapterId !== undefined ? notReady(o.adapterId) : undefined;
+        if (bad) return { ok: false, agents: [], error: bad }; // like main: nothing starts, nothing is written
         extra++;
         const cwd = '~/work/new-folder-' + extra;
         const floor = o && typeof o.floor === 'string' && floorsList.some((f) => f.id === o.floor) ? o.floor : 'ground';
         if (o && o.floor !== undefined) lastFloor = floor;
         folderFloor.set(cwd, floor);
-        const info = { id: 'sim-x' + extra, name: 'new-folder-' + extra, cwd, folders: [cwd], permMode: 'read-only', floor } as AgentInfo;
+        const info = { id: 'sim-x' + extra, name: 'new-folder-' + extra, cwd, folders: [cwd], permMode: 'read-only', floor, adapterId: 'copilot' } as AgentInfo;
         sims.push({ info, room: info.name, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: [], grants: new Map() });
         addedListeners.forEach((l) => l(info));
         return { ok: true, agents: [] };
@@ -964,8 +982,10 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       newSession: async (id, o) => {
         const src = sims.find((x) => x.info.id === id);
         if (!src) return { ok: false, error: 'unknown agent' };
+        const bad = o.adapterId !== undefined ? notReady(o.adapterId) : undefined;
+        if (bad) return { ok: false, error: bad };
         extra++;
-        const info = { ...src.info, id: 'sim-n' + extra, permMode: o.permMode ?? src.info.permMode, model: o.model ?? 'auto', tier: undefined, effort: o.effort, maxAiCredits: o.maxAiCredits === null ? undefined : o.maxAiCredits ?? defaultCap } as AgentInfo;
+        const info = { ...src.info, adapterId: o.adapterId ?? src.info.adapterId, id: 'sim-n' + extra, permMode: o.permMode ?? src.info.permMode, model: o.model ?? 'auto', tier: undefined, effort: o.effort, maxAiCredits: o.maxAiCredits === null ? undefined : o.maxAiCredits ?? defaultCap } as AgentInfo;
         sims.push({ info, room: src.room, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: src.files, grants: new Map() });
         return { ok: true, agent: info };
       },
