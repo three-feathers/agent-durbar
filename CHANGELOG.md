@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **MCP server groundwork: JSON-RPC framing and protocol (spec 041 T012, issue #176).** Newline framing with a 64 KB cap, the MCP `initialize`/`ping` subset with no new dependency, a fake client and synthetic handshakes for tests. Not wired yet: Durbar does not listen for MCP clients. No user-visible change, 0 AIU.
+
 - **Docs: what the permission modes and usage mean per agent kind (spec 012 T028, issue #47).** Dated `## Changes` entries in specs 003 (Read-only / Ask first / Allow all for Claude and Codex, unknown mode = Read-only, Codex Read-only differs), 011 (AIU for Copilot, a labelled USD estimate for Claude never added to AIU, no money for Codex; caps stay Copilot-only) and 018 (live mode switch per kind), and a README *Safety model* note. Docs only; nothing is wired to a real Claude or Codex yet.
 
 ## v0.1.0-alpha.5 (pre-release, 2026-10-18)
