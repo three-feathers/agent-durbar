@@ -27,7 +27,7 @@
 
 ## Changes 2026-10-18 (remove a session, rename a folder)
 
-- [ ] T028 `agents:remove` in main (refuses the last main session of a folder and helpers), bridge, simulator; **Remove session** in the chat header with a confirm when busy [FR-017]
-- [ ] T029 `label` in `SavedFolder` (parse, save, restore) with `test:folders`; `folders:rename` in main, bridge, simulator; Folders > **Rename** dialog; room name everywhere [FR-018]
-- [ ] T030 Screenshots at 1440x900 and 1280x800, README, CHANGELOG, specs index [FR-017, FR-018]
+- [x] T028 `agents:remove` in main (refuses the last main session of a folder and helpers), bridge, simulator; **Remove session** in the chat header with a confirm when busy [FR-017]
+- [x] T029 `label` in `SavedFolder` (parse, save, restore) with `test:folders`; `folders:rename` in main, bridge, simulator; Folders > **Rename** dialog; room name everywhere [FR-018]
+- [x] T030 Screenshots at 1440x900 and 1280x800, README, CHANGELOG, specs index [FR-017, FR-018]
 

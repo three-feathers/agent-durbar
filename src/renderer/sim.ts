@@ -1144,6 +1144,18 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         for (const g of gone) sims.splice(sims.findIndex((x) => x.info.id === g), 1);
         return { ok: true, removedIds: gone };
       },
+      removeSession: async (id) => { // spec 006 FR-017: same rule as main (never the last session of a folder)
+        const src = sims.find((x) => x.info.id === id);
+        if (!src) return { ok: false, error: 'unknown session' };
+        if (sims.filter((x) => x.info.cwd === src.info.cwd).length < 2) return { ok: false, error: 'This is the only session in the folder. Remove the folder from Folders instead.' };
+        sims.splice(sims.indexOf(src), 1);
+        return { ok: true };
+      },
+      renameFolder: async (id, label) => { // spec 006 FR-018: the same trimming as main's parseLabel, nothing saved
+        if (!sims.some((x) => x.info.id === id)) return { ok: false };
+        const t = String(label ?? '').replace(/\s+/g, ' ').trim();
+        return { ok: true, label: t && [...t].length <= 40 ? t : undefined };
+      },
       listPrevious: async (id) => {
         const src = sims.find((x) => x.info.id === id);
         if (!src || src.info.cwd !== '~/work/mcp-swiss') return { ok: true, sessions: [] };
