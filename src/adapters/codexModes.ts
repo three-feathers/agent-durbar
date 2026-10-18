@@ -72,8 +72,9 @@ export function codexPermission(method: string, params: unknown): CodexPermissio
       const command = str(params, 'command');
       const net = own(params, 'networkApprovalContext');
       const host = str(net, 'host');
-      if (net && typeof net === 'object' && host) return { kind: 'url', url: host, summary: `fetch ${host}` };
-      return { kind: 'shell', fullCommandText: command, summary: `run ${command ?? ''}`.trim() };
+      // Always a shell request: the user must see (and a grant must key on) the command; the host is extra context.
+      const netHost = net && typeof net === 'object' ? host : undefined;
+      return { kind: 'shell', fullCommandText: command, url: netHost, summary: `run ${command ?? ''}${netHost ? ` (network: ${netHost})` : ''}`.trim() };
     }
     case 'item/fileChange/requestApproval': {
       const changes = own(params, 'changes');
@@ -86,6 +87,7 @@ export function codexPermission(method: string, params: unknown): CodexPermissio
       return { kind: 'custom-tool', toolName: 'request_permissions', summary: `request_permissions ${str(params, 'reason') ?? ''}`.trim() };
     case 'mcpServer/elicitation/request':
     case 'tool/requestUserInput': {
+      // Mapped to `mcp` only because it is a non-read kind that asks the user; it is not a claim that an MCP server sent it.
       const serverName = str(params, 'serverName');
       const toolName = str(params, 'toolName');
       return { kind: 'mcp', serverName, toolName, summary: `mcp ${serverName ? serverName + ' › ' : ''}${toolName ?? ''}`.trim() };
