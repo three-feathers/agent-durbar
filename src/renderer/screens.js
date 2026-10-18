@@ -97,7 +97,7 @@
       const P=X.places, map=app.placeMap||{};
       const names=[...new Set([...mcp.cli.map(c=>c.name),...X.placeServers(),...Object.keys(map)])].sort((a,b)=>a.localeCompare(b));
       const rows=names.map(n=>{const v=Object.prototype.hasOwnProperty.call(map,n)?map[n]:'';
-        return `<li class="plrow" data-srv="${esc(n)}"><span class="plname" title="${esc(n)}">${esc(n)}</span><select data-place-sel aria-label="Place for the tools of ${esc(n)}"><option value=""${v?'':' selected'}>Default (${esc(P.placeName(P.defaultServerPlace(n)))})</option>${P.PLACES.map(p=>`<option value="${p.id}"${v===p.id?' selected':''}>${esc(p.name)}</option>`).join('')}<option value="desk"${v==='desk'?' selected':''}>Stay at desk</option></select></li>`;}).join('');
+        return `<li class="plrow" data-srv="${esc(n)}"><span class="plname" title="${esc(n)}">${esc(n)}</span><select data-place-sel aria-label="Place for the tools of ${esc(n)}"><option value=""${v?'':' selected'}>Default (${esc(window.THEME.word('place-'+P.defaultServerPlace(n)))})</option>${P.PLACES.map(p=>`<option value="${p.id}"${v===p.id?' selected':''}>${esc(window.THEME.word('place-'+p.id))}</option>`).join('')}<option value="desk"${v==='desk'?' selected':''}>Stay at desk</option></select></li>`;}).join('');
       placesSec=`<section class="scr-sec" aria-labelledby="plH"><h3 id="plH">Places in the office</h3>
         <p class="scr-note">In the lobby, an agent walks to a place while one of its tools runs: <b>Terminal</b> for shell commands, <b>Web</b> for web fetches, and the place you choose here for the tools of each MCP server. File tools (read, edit, search) never move an agent. The choice applies to the next tool call, for all folders, and is kept between runs. Only server names and places are saved.</p>
         ${names.length?`<ul class="plrows" id="plList">${rows}</ul>`:'<p class="scr-note small">No MCP servers yet. They appear here when your Copilot CLI list has some, or after an agent uses one in this run.</p>'}</section>`;
@@ -161,7 +161,7 @@
     const sel=e.target.closest('select[data-place-sel]'); if(!sel||!X.bridge.setPlace)return;
     const li=sel.closest('li.plrow'), name=li&&li.dataset.srv; if(!name)return;
     let res=null; try{res=await X.bridge.setPlace(name,sel.value===''?null:sel.value);}catch(err){res=null;}
-    if(res&&res.ok){X.setPlaceMap(res.placeMap||{});X.toast(esc(name)+': '+(sel.value===''?'back to the default place.':sel.value==='desk'?'agents stay at their desk.':'agents go to '+esc(X.places.placeName(sel.value))+'.'),3200);}
+    if(res&&res.ok){X.setPlaceMap(res.placeMap||{});X.toast(esc(name)+': '+(sel.value===''?'back to the default place.':sel.value==='desk'?'agents stay at their desk.':'agents go to '+esc(window.THEME.word('place-'+sel.value))+'.'),3200);}
     else X.toast('Could not save the place for '+esc(name)+'.',4200);
   }
   async function onSettingsClick(e){

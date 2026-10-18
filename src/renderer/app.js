@@ -3,6 +3,9 @@
 (function(){
 'use strict';
 const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const THEME=window.THEME; /* theme packs (specs 035-040): tokens, words, motion; every scene colour reads a semantic token */
+const T_=n=>THEME.token(n);
+const wordOf=k=>THEME.word(k);
 const qs = new URLSearchParams(location.search);
 const DEMO_LIB = window.DURBAR_DEMO;
 const {L,S} = DEMO_LIB;
@@ -75,7 +78,7 @@ function roomAlert(r){
   return MOODS.roomAlertOf(agents.filter(a=>!a.parent&&a.live&&a.room===r.id).map(a=>{const m=moodFor(a);return {state:vis(a),body:m.body,trouble:m.trouble};}));
 }
 const ALERT_WORDS='Alert: an agent needs help';
-const SIREN='<span class="siren" aria-hidden="true"><svg viewBox="0 0 14 14" focusable="false"><rect class="siren-light" x="3" y="2" width="8" height="6.5" rx="3.2"/><rect x="1.5" y="8.5" width="11" height="3" rx="1" fill="#6b6f76"/></svg></span>';
+const SIREN=()=>'<span class="siren" aria-hidden="true"><svg viewBox="0 0 14 14" focusable="false"><rect class="siren-light" x="3" y="2" width="8" height="6.5" rx="3.2"/><rect x="1.5" y="8.5" width="11" height="3" rx="1" fill="'+T_('--siren-base')+'"/></svg></span>';
 /* "impatient" starts after 60 s without any event, so look every few seconds and redraw only when somebody's mood changed */
 let moodSig='';
 setInterval(()=>{if(SERIOUS||demoOn)return;const sig=agents.map(x=>x.live&&!x.parent?moodFor(x).trouble+'/'+moodFor(x).body:'').join('|');if(sig!==moodSig){moodSig=sig;scheduleRender();}},5000);
@@ -96,14 +99,14 @@ const lobbyCap=aw=>Math.max(1,Math.min(8,Math.floor(((aw||800)/5-150)/25))); /* 
 /* who is at a place and visible under the current filters (a hidden room or a filtered-out agent has no figure) */
 const placeVisitors=pid=>VISITS.occupants(pid).filter(id=>{const a=byId(id),r=a&&!a.parent&&roomOf(a);return roomShown(r)&&(ui.ws==='all'||wsOf(a)===ui.ws)&&matchStatus(a);});
 const isAway=a=>!a.parent&&(!!VISITS.at(a.id)||RETURNING.has(a.id));
-const taskOf=a=>{const v=a.parent?null:VISITS.at(a.id);return v?'At '+window.DurbarPlaces.placeName(v.place)+': '+v.label+' · '+a.task:a.task;};
+const taskOf=a=>{const v=a.parent?null:VISITS.at(a.id);return v?'At '+wordOf('place-'+v.place)+': '+v.label+' · '+a.task:a.task;};
 function lobbyHTML(aw){
   if(!lobbyOn())return '';
   const cap=lobbyCap(aw);
-  return `<section class="lobby" data-key="lobby" aria-label="Lobby: the places where agents work">${window.DurbarPlaces.PLACES.map(p=>{
-    const ids=placeVisitors(p.id), sp=window.DurbarPlaces.layoutSpots(ids.length,cap), names=ids.map(id=>byId(id).name);
+  return `<section class="lobby" data-key="lobby" aria-label="${esc(wordOf('lobby-label'))}">${window.DurbarPlaces.PLACES.map(p=>{
+    const ids=placeVisitors(p.id), sp=window.DurbarPlaces.layoutSpots(ids.length,cap), names=ids.map(id=>byId(id).name), pname=wordOf('place-'+p.id);
     const slots=Array.from({length:cap},(_,i)=>i<sp.shown?`<span class="slot on" data-slot="${i}"></span>`:(sp.more&&i===cap-1?`<span class="slot more" data-slot="${i}">+${sp.more}</span>`:`<span class="slot" data-slot="${i}"></span>`)).join('');
-    return `<div class="place${ids.length?' busy':''}" data-key="place:${p.id}" data-place="${p.id}" role="group" title="${esc(p.name)}: ${names.length?esc(names.join(', ')):'nobody'}" aria-label="${esc(p.name)}: ${names.length?esc(names.join(', ')):'nobody'}">${PLACE_ICON[p.id]}<span class="pn">${esc(p.name)}</span><span class="prow" aria-hidden="true"><span class="pslots">${slots}</span></span></div>`;
+    return `<div class="place${ids.length?' busy':''}" data-key="place:${p.id}" data-place="${p.id}" role="group" title="${esc(pname)}: ${names.length?esc(names.join(', ')):'nobody'}" aria-label="${esc(pname)}: ${names.length?esc(names.join(', ')):'nobody'}">${PLACE_ICON[p.id]}<span class="pn">${esc(pname)}</span><span class="prow" aria-hidden="true"><span class="pslots">${slots}</span></span></div>`;
   }).join('')}</section>`;
 }
 const WALK_MS=1000, MAX_WALKS=3; /* about 1 s per walk; beyond 3 at once the others simply appear */
@@ -189,60 +192,62 @@ function usageLong(a){const u=a.usage; if(!u||!u.calls)return ''; const c=capOf(
 function shade(hex,p){const n=parseInt(hex.slice(1),16);let r=n>>16,g=(n>>8)&255,b=n&255;const f=p<0?0:255,t=Math.abs(p);
   r=Math.round((f-r)*t+r);g=Math.round((f-g)*t+g);b=Math.round((f-b)*t+b);return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1)}
 function badgeSVG(st){
-  if(st==='done')return '<svg viewBox="0 0 10 10" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.3l2.1 2.1L8 3"/></svg>';
-  if(st==='error')return '<svg viewBox="0 0 10 10" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><path d="M5 2v3.4M5 7.6v.1"/></svg>';
-  if(st==='waiting')return '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="2.2" fill="#fff"/></svg>';
-  if(st==='idle')return '<svg viewBox="0 0 10 10" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 5h5"/></svg>';
-  return '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="2" fill="#fff" opacity=".9"/></svg>';
+  const w=T_('--done-mark'); /* the badge glyph sits on the status dot colour */
+  if(st==='done')return '<svg viewBox="0 0 10 10" fill="none" stroke="'+w+'" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.3l2.1 2.1L8 3"/></svg>';
+  if(st==='error')return '<svg viewBox="0 0 10 10" fill="none" stroke="'+w+'" stroke-width="1.8" stroke-linecap="round"><path d="M5 2v3.4M5 7.6v.1"/></svg>';
+  if(st==='waiting')return '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="2.2" fill="'+w+'"/></svg>';
+  if(st==='idle')return '<svg viewBox="0 0 10 10" fill="none" stroke="'+w+'" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 5h5"/></svg>';
+  return '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="2" fill="'+w+'" opacity=".9"/></svg>';
 }
 function hairFront(style,c){
   const fr=`<path d="M61 43.5C61 33 67 30.5 74 30.5C81 30.5 87 33 87 43.5C84 38.5 80 37 74 37C68 37 64 38.5 61 43.5Z" fill="${c}"/>`;
-  if(style==='bun')return fr+`<circle cx="74" cy="28" r="5.5" fill="${c}"/>`;
-  if(style==='curly')return `<circle cx="64" cy="36" r="6.2" fill="${c}"/><circle cx="74" cy="31.5" r="7" fill="${c}"/><circle cx="84" cy="36" r="6.2" fill="${c}"/>`+fr;
-  return fr;
+  const acc=THEME.slot('hair-acc');
+  if(style==='bun')return fr+`<circle cx="74" cy="28" r="5.5" fill="${c}"/>`+(acc||'');
+  if(style==='curly')return `<circle cx="64" cy="36" r="6.2" fill="${c}"/><circle cx="74" cy="31.5" r="7" fill="${c}"/><circle cx="84" cy="36" r="6.2" fill="${c}"/>`+fr+(acc||'');
+  return fr+(acc||'');
 }
 function scene(a,mini,c){
-  const st=vis(a), mood=moodFor(a), k=mood.body==='monster'?Object.assign({},a.look,{skin:'#8fa98f'}):a.look, shirt=k.shirt, arm=shade(shirt,-.14), skinD=shade(k.skin,-.08);
+  const st=vis(a), mood=moodFor(a), k=mood.body==='monster'?Object.assign({},a.look,{skin:T_('--monster-skin')}):a.look, shirt=k.shirt, arm=shade(shirt,-.14), skinD=shade(k.skin,-.08);
   let s=`<svg class="scene${c?' sc-c':''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses?1:0}|${c?'c':mini?'m':'f'}|${mood.body}${mood.trouble||''}" viewBox="${c?'16 5 176 116':mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
-  s+=`<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="#2c3733" opacity=".06"/>`;
+  s+=`<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="${T_('--scene-shadow')}" opacity=".06"/>`;
   /* compact scenes: flat halo rects + CSS-only animation (no blur filter, no SMIL) so 15 of them stay cheap */
-  if(c){const hc={working:'#6f93b5',thinking:'#8a97bd',waiting:'#d9962b',error:'#bf5a50'}[st];
+  if(c){const hc={working:T_('--halo-working'),thinking:T_('--halo-thinking'),waiting:T_('--halo-waiting'),error:T_('--halo-error')}[st];
     if(hc) s+=`<g class="halo halo-${st}"><rect x="101" y="22" width="86" height="66" rx="17" fill="${hc}" opacity=".13"/><rect x="107" y="28" width="74" height="54" rx="13" fill="${hc}" opacity=".16"/></g>`;}
-  else if(st==='working'||st==='thinking') s+=`<rect class="glow" x="106" y="28" width="76" height="54" rx="14" fill="${st==='working'?'#6f93b5':'#8a97bd'}" filter="url(#soft)" opacity=".24"/>`;
-  s+=`<rect x="52" y="50" width="44" height="48" rx="13" fill="#cdc6b8"/>`;
+  else if(st==='working'||st==='thinking') s+=`<rect class="glow" x="106" y="28" width="76" height="54" rx="14" fill="${st==='working'?T_('--halo-working'):T_('--halo-thinking')}" filter="url(#soft)" opacity=".24"/>`;
+  s+=`<rect x="52" y="50" width="44" height="48" rx="13" fill="${T_('--chair')}"/>`;
   s+='<g class="pp">'; /* the person (hidden by CSS while the agent is away at a place: an empty chair stays) */
   if(k.style==='long') s+=`<path d="M59.5 44a14.5 14.5 0 0 1 29 0v19q0 4-4 4h-21q-4 0-4-4z" fill="${k.hair}"/>`;
   s+=`<path d="${mood.body==='normal'?'M55 99V77q0-14 14-14h10q14 0 14 14v22z':'M52 99V77q0-14 14-14h16q14 0 14 14v22z'}" fill="${shirt}"/>`; /* heavy and monster: a wider body, still inside the chair */
   s+=`<path d="M69.5 63.5q4.5 5 9 0" fill="none" stroke="${shade(shirt,.35)}" stroke-width="2" stroke-linecap="round"/>`;
   s+=`<rect x="70" y="53" width="8" height="10" rx="3" fill="${skinD}"/>`;
-  const closed = st==='idle'||mood.trouble==='faint';
+  const eyesClosed = st==='idle'||mood.trouble==='faint';
   const tilt = mood.trouble==='faint'?'rotate(-24 74 56)': st==='idle'?'rotate(-7 74 56)': st==='error'?'rotate(4 74 56)':'';
   s+=`<g ${tilt?`transform="${tilt}"`:''}${mood.trouble==='faint'?' style="transform-box:view-box"':''}><g class="${st==='working'?'head':''}"><circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>`;
   s+=hairFront(k.style,k.hair);
-  if(mood.body==='monster') s+=`<path d="M64.5 35.5l-4.2-9.5 9 5.2zM83.5 35.5l4.2-9.5-9 5.2z" fill="#6e8a70"/><path d="M65 33l2.4-4.6 2.6 3.6 2.8-5 2.8 4.6 2.6-3.6 2.4 4.6" fill="none" stroke="${k.hair}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`;
-  const ex = closed?0:1.4;
-  if(closed) s+=`<path d="M67.5 45.6q2 1.7 4 0M76.5 45.6q2 1.7 4 0" fill="none" stroke="#3b3330" stroke-width="1.3" stroke-linecap="round"/>`;
-  else s+=`<circle cx="${70.3+ex}" cy="45.4" r="1.35" fill="#3b3330"/><circle cx="${78.3+ex}" cy="45.4" r="1.35" fill="#3b3330"/>`;
-  if(k.glasses) s+=`<g fill="none" stroke="#3b3330" stroke-width="1.1"><circle cx="${70.3+ex}" cy="45.4" r="4"/><circle cx="${78.3+ex}" cy="45.4" r="4"/></g>`;
+  if(mood.body==='monster') s+=`<path d="M64.5 35.5l-4.2-9.5 9 5.2zM83.5 35.5l4.2-9.5-9 5.2z" fill="${T_('--monster-horn')}"/><path d="M65 33l2.4-4.6 2.6 3.6 2.8-5 2.8 4.6 2.6-3.6 2.4 4.6" fill="none" stroke="${k.hair}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`;
+  const ex = eyesClosed?0:1.4;
+  if(eyesClosed) s+=`<path d="M67.5 45.6q2 1.7 4 0M76.5 45.6q2 1.7 4 0" fill="none" stroke="${T_('--face-dark')}" stroke-width="1.3" stroke-linecap="round"/>`;
+  else s+=`<circle cx="${70.3+ex}" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><circle cx="${78.3+ex}" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/>`;
+  if(k.glasses) s+=`<g fill="none" stroke="${T_('--face-dark')}" stroke-width="1.1"><circle cx="${70.3+ex}" cy="45.4" r="4"/><circle cx="${78.3+ex}" cy="45.4" r="4"/></g>`;
   const mouth = mood.body==='monster'?'M70.2 53.8q3.8-3.6 7.6 0': st==='error'?'M71 53.2q3-2 6 0': (st==='done'||st==='idle')?'M70.5 51q3.5 3 7 0':'M71 51.6q3 2 6 0';
-  if(mood.body==='monster') s+=`<path d="M65.5 40l7 3.4M82.5 40l-7 3.4" fill="none" stroke="#3b3330" stroke-width="1.8" stroke-linecap="round"/>`;
-  s+=mood.trouble==='faint'?`<ellipse cx="74" cy="52" rx="1.9" ry="2.4" fill="#7a4b3a"/></g></g>`:`<path d="${mouth}" fill="none" stroke="#7a4b3a" stroke-width="1.3" stroke-linecap="round"/></g></g>`;
-  if(mood.body==='heavy') s+=`<path class="sweat" d="M90.5 36.5q3.2 4.6 0 7.4q-3.2-2.8 0-7.4z" fill="#a9c6e3" stroke="#7fa3c9" stroke-width=".6"/>`;
+  if(mood.body==='monster') s+=`<path d="M65.5 40l7 3.4M82.5 40l-7 3.4" fill="none" stroke="${T_('--face-dark')}" stroke-width="1.8" stroke-linecap="round"/>`;
+  s+=mood.trouble==='faint'?`<ellipse cx="74" cy="52" rx="1.9" ry="2.4" fill="${T_('--faint-mouth')}"/></g></g>`:`<path d="${mouth}" fill="none" stroke="${T_('--mouth')}" stroke-width="1.3" stroke-linecap="round"/></g></g>`;
+  if(mood.body==='heavy') s+=`<path class="sweat" d="M90.5 36.5q3.2 4.6 0 7.4q-3.2-2.8 0-7.4z" fill="${T_('--sweat')}" stroke="${T_('--sweat-line')}" stroke-width=".6"/>`;
   s+='</g>';
   // desk
-  s+=`<rect x="10" y="86" width="180" height="7" rx="3.5" fill="#d8c6a8"/><rect x="15" y="93" width="170" height="21" rx="4" fill="#e8dcc6"/><rect x="22" y="98" width="46" height="11" rx="3" fill="#dccdb1"/><rect x="142" y="98" width="36" height="11" rx="3" fill="#dccdb1"/>`;
+  s+=`<rect x="10" y="86" width="180" height="7" rx="3.5" fill="${T_('--desk')}"/><rect x="15" y="93" width="170" height="21" rx="4" fill="${T_('--desk-front')}"/><rect x="22" y="98" width="46" height="11" rx="3" fill="${T_('--desk-drawer')}"/><rect x="142" y="98" width="36" height="11" rx="3" fill="${T_('--desk-drawer')}"/>`;
   // monitor
-  s+=`<rect x="138.5" y="76" width="11" height="9" fill="#7c8791"/><rect x="130" y="83" width="28" height="3.5" rx="1.75" fill="#7c8791"/>`;
-  const scr={working:'#eaf1f7',thinking:'#eaeef6',waiting:'#f8eed9',idle:'#d4d8d6',error:'#f6e3e0',done:'#e2efe7'}[st];
-  s+=`<rect x="112" y="32" width="64" height="45" rx="5" fill="#5f6d77"/><rect x="116" y="36" width="56" height="37" rx="3" fill="${scr}"/>`;
-  if(st==='working') s+=`<rect class="bar" x="121" y="41" width="34" height="3.6" rx="1.8" fill="#6f93b5"/><rect class="bar" x="121" y="48.5" width="26" height="3.6" rx="1.8" fill="#8fb09a"/><rect class="bar" x="121" y="56" width="42" height="3.6" rx="1.8" fill="#6f93b5"/><rect class="bar" x="121" y="63.5" width="20" height="3.6" rx="1.8" fill="#a8bfd2"/>`;
-  if(st==='thinking') s+=`<rect x="121" y="41" width="30" height="3.6" rx="1.8" fill="#8a97bd" opacity=".55"/><rect x="121" y="48.5" width="40" height="3.6" rx="1.8" fill="#8a97bd" opacity=".4"/><rect x="121" y="56" width="22" height="3.6" rx="1.8" fill="#8a97bd" opacity=".55"/><rect x="121" y="63.5" width="5" height="3.6" rx="1.8" fill="#8a97bd"${c?' class="cursor"':''}>${REDUCED||c?'':'<animate attributeName="opacity" values="1;.15;1" dur="1.6s" repeatCount="indefinite"/>'}</rect>`;
-  if(st==='waiting') s+=`<rect x="121" y="41" width="30" height="3.6" rx="1.8" fill="#d9962b" opacity=".5"/><rect x="123" y="49" width="42" height="19" rx="5" fill="#fff" stroke="#e5be78" stroke-width="1.2"/><circle cx="131" cy="58.5" r="3" fill="#d9962b"/><rect x="138" y="54" width="20" height="3" rx="1.5" fill="#e5cf9f"/><rect x="138" y="60" width="14" height="3" rx="1.5" fill="#efe0bb"/>`;
-  if(st==='idle') s+=`<circle cx="144" cy="54.5" r="7" fill="none" stroke="#b5b9b6" stroke-width="1.6"/><path d="M144 50.5v4l2.6 1.6" fill="none" stroke="#b5b9b6" stroke-width="1.6" stroke-linecap="round"/>`;
-  if(st==='error') s+=`<circle cx="144" cy="52" r="9" fill="none" stroke="#bf5a50" stroke-width="2"/><path d="M144 47.5v5.5M144 56.6v.1" stroke="#bf5a50" stroke-width="2.2" stroke-linecap="round"/><rect x="127" y="65" width="34" height="3" rx="1.5" fill="#e3b5af"/>`;
-  if(st==='done') s+=`<circle cx="144" cy="54.5" r="10" fill="#5f9a76"/><path d="M139 54.5l3.6 3.6 6.6-7" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`;
-  s+=`<rect x="59" y="82.2" width="36" height="3.8" rx="1.9" fill="#8f99a1"/>`;
-  if(st==='idle') s+=`<rect x="98" y="76" width="10" height="10" rx="2.5" fill="#f6f1e7" stroke="#cdbf9f" stroke-width="1"/><path d="M108 78.5q4 0 4 3t-4 3" fill="none" stroke="#cdbf9f" stroke-width="1.4"/><path class="steam" d="M101 73q-2-3 0-5" fill="none" stroke="#b6b2a8" stroke-width="1.2" stroke-linecap="round"/><path class="steam" d="M105 73q-2-3 0-5" fill="none" stroke="#b6b2a8" stroke-width="1.2" stroke-linecap="round"/>`;
+  s+=`<rect x="138.5" y="76" width="11" height="9" fill="${T_('--monitor-stand')}"/><rect x="130" y="83" width="28" height="3.5" rx="1.75" fill="${T_('--monitor-stand')}"/>`;
+  const scr={working:T_('--screen-working'),thinking:T_('--screen-thinking'),waiting:T_('--screen-waiting'),idle:T_('--screen-idle'),error:T_('--screen-error'),done:T_('--screen-done')}[st];
+  s+=`<rect x="112" y="32" width="64" height="45" rx="5" fill="${T_('--monitor-frame')}"/><rect x="116" y="36" width="56" height="37" rx="3" fill="${scr}"/>`;
+  if(st==='working') s+=`<rect class="bar" x="121" y="41" width="34" height="3.6" rx="1.8" fill="${T_('--bar-blue')}"/><rect class="bar" x="121" y="48.5" width="26" height="3.6" rx="1.8" fill="${T_('--bar-sage')}"/><rect class="bar" x="121" y="56" width="42" height="3.6" rx="1.8" fill="${T_('--bar-blue')}"/><rect class="bar" x="121" y="63.5" width="20" height="3.6" rx="1.8" fill="${T_('--bar-blue-2')}"/>`;
+  if(st==='thinking') s+=`<rect x="121" y="41" width="30" height="3.6" rx="1.8" fill="${T_('--halo-thinking')}" opacity=".55"/><rect x="121" y="48.5" width="40" height="3.6" rx="1.8" fill="${T_('--halo-thinking')}" opacity=".4"/><rect x="121" y="56" width="22" height="3.6" rx="1.8" fill="${T_('--halo-thinking')}" opacity=".55"/><rect x="121" y="63.5" width="5" height="3.6" rx="1.8" fill="${T_('--halo-thinking')}"${c?' class="cursor"':''}>${REDUCED||c?'':'<animate attributeName="opacity" values="1;.15;1" dur="1.6s" repeatCount="indefinite"/>'}</rect>`;
+  if(st==='waiting') s+=`<rect x="121" y="41" width="30" height="3.6" rx="1.8" fill="${T_('--wait-dot')}" opacity=".5"/><rect x="123" y="49" width="42" height="19" rx="5" fill="${T_('--wait-card')}" stroke="${T_('--wait-note-stroke')}" stroke-width="1.2"/><circle cx="131" cy="58.5" r="3" fill="${T_('--wait-dot')}"/><rect x="138" y="54" width="20" height="3" rx="1.5" fill="${T_('--wait-note-line')}"/><rect x="138" y="60" width="14" height="3" rx="1.5" fill="${T_('--wait-note-line-2')}"/>`;
+  if(st==='idle') s+=`<circle cx="144" cy="54.5" r="7" fill="none" stroke="${T_('--idle-clock')}" stroke-width="1.6"/><path d="M144 50.5v4l2.6 1.6" fill="none" stroke="${T_('--idle-clock')}" stroke-width="1.6" stroke-linecap="round"/>`;
+  if(st==='error') s+=`<circle cx="144" cy="52" r="9" fill="none" stroke="${T_('--halo-error')}" stroke-width="2"/><path d="M144 47.5v5.5M144 56.6v.1" stroke="${T_('--halo-error')}" stroke-width="2.2" stroke-linecap="round"/><rect x="127" y="65" width="34" height="3" rx="1.5" fill="${T_('--err-mark')}"/>`;
+  if(st==='done') s+=`<circle cx="144" cy="54.5" r="10" fill="${T_('--done-bg')}"/><path d="M139 54.5l3.6 3.6 6.6-7" fill="none" stroke="${T_('--done-mark')}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`;
+  s+=`<rect x="59" y="82.2" width="36" height="3.8" rx="1.9" fill="${T_('--laptop')}"/>`;
+  if(st==='idle') s+=`<rect x="98" y="76" width="10" height="10" rx="2.5" fill="${T_('--cup')}" stroke="${T_('--cup-line')}" stroke-width="1"/><path d="M108 78.5q4 0 4 3t-4 3" fill="none" stroke="${T_('--cup-line')}" stroke-width="1.4"/><path class="steam" d="M101 73q-2-3 0-5" fill="none" stroke="${T_('--steam')}" stroke-width="1.2" stroke-linecap="round"/><path class="steam" d="M105 73q-2-3 0-5" fill="none" stroke="${T_('--steam')}" stroke-width="1.2" stroke-linecap="round"/>`;
   const hand=(x,y)=>`<circle cx="${x}" cy="${y}" r="3.6" fill="${k.skin}"/>`;
   const armL=(x1,y1,x2,y2)=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${arm}" stroke-width="8" stroke-linecap="round"/>`;
   const typing = st==='working';
@@ -257,19 +262,17 @@ function scene(a,mini,c){
     s+=`<g class="${typing?'hand-r':mood.trouble==='impatient'?'tap':''}">${armL(87,71,81,81)}${hand(80.5,81.4)}</g>`;
   }
   s+='</g>';
-  if(mood.trouble==='dizzy'){const star=(x,y)=>`<path d="M${x} ${y-3.2}l1 2.2 2.2 1-2.2 1-1 2.2-1-2.2-2.2-1 2.2-1z" fill="#d9a441"/>`;s+=`<g class="pp"><g class="dizzy">${star(58,28)}${star(74,21)}${star(90,28)}</g></g>`;}
-  if(mood.trouble==='ambulance') s+=`<g class="amb"><rect x="18" y="93" width="36" height="17" rx="4" fill="#f7f4ee" stroke="#9aa59f" stroke-width="1"/><rect x="40" y="96" width="11" height="7" rx="1.5" fill="#bcd3e6"/><rect x="18" y="103" width="36" height="3" fill="#bf5a50"/><path d="M28 96.5v5M25.5 99h5" stroke="#bf5a50" stroke-width="2" stroke-linecap="round"/><rect class="amb-light" x="30" y="89.5" width="9" height="4" rx="2" fill="#d9534f"/><circle cx="26" cy="111" r="3.6" fill="#4a5560"/><circle cx="46" cy="111" r="3.6" fill="#4a5560"/></g>`;
-  if(st==='thinking') s+=`<g class="bubble-g"><circle cx="58.5" cy="31" r="2" fill="#fff" stroke="#c9d0e0" stroke-width="1"/><circle cx="52" cy="25" r="3" fill="#fff" stroke="#c9d0e0" stroke-width="1"/><rect x="18" y="4" width="42" height="19" rx="9.5" fill="#fff" stroke="#c9d0e0" stroke-width="1.2"/><g fill="#8a97bd"><circle class="td" cx="30" cy="13.5" r="2.2"/><circle class="td" cx="39" cy="13.5" r="2.2"/><circle class="td" cx="48" cy="13.5" r="2.2"/></g></g>`;
+  if(mood.trouble==='dizzy'){const star=(x,y)=>`<path d="M${x} ${y-3.2}l1 2.2 2.2 1-2.2 1-1 2.2-1-2.2-2.2-1 2.2-1z" fill="${T_('--star')}"/>`;s+=`<g class="pp"><g class="dizzy">${star(58,28)}${star(74,21)}${star(90,28)}</g></g>`;}
+  if(mood.trouble==='ambulance') s+=`<g class="amb"><rect x="18" y="93" width="36" height="17" rx="4" fill="${T_('--amb-body')}" stroke="${T_('--amb-line')}" stroke-width="1"/><rect x="40" y="96" width="11" height="7" rx="1.5" fill="${T_('--amb-window')}"/><rect x="18" y="103" width="36" height="3" fill="${T_('--amb-stripe')}"/><path d="M28 96.5v5M25.5 99h5" stroke="${T_('--amb-stripe')}" stroke-width="2" stroke-linecap="round"/><rect class="amb-light" x="30" y="89.5" width="9" height="4" rx="2" fill="${T_('--amb-light')}"/><circle cx="26" cy="111" r="3.6" fill="${T_('--amb-wheel')}"/><circle cx="46" cy="111" r="3.6" fill="${T_('--amb-wheel')}"/></g>`;
+  if(st==='thinking') s+=`<g class="bubble-g"><circle cx="58.5" cy="31" r="2" fill="${T_('--bubble')}" stroke="${T_('--bubble-line')}" stroke-width="1"/><circle cx="52" cy="25" r="3" fill="${T_('--bubble')}" stroke="${T_('--bubble-line')}" stroke-width="1"/><rect x="18" y="4" width="42" height="19" rx="9.5" fill="${T_('--bubble')}" stroke="${T_('--bubble-line')}" stroke-width="1.2"/><g fill="${T_('--think-dot')}"><circle class="td" cx="30" cy="13.5" r="2.2"/><circle class="td" cx="39" cy="13.5" r="2.2"/><circle class="td" cx="48" cy="13.5" r="2.2"/></g></g>`;
   s+='</svg>';
   return s;
 }
 function avatar(a){
   const k=a.look;
-  return `<svg viewBox="50 20 48 48" width="100%" height="100%" aria-hidden="true" focusable="false">${k.style==='long'?`<path d="M59.5 44a14.5 14.5 0 0 1 29 0v19q0 4-4 4h-21q-4 0-4-4z" fill="${k.hair}"/>`:''}<path d="M55 99V77q0-14 14-14h10q14 0 14 14v22z" fill="${k.shirt}"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${shade(k.skin,-.08)}"/><circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>${hairFront(k.style,k.hair)}<circle cx="71.7" cy="45.4" r="1.35" fill="#3b3330"/><circle cx="79.7" cy="45.4" r="1.35" fill="#3b3330"/><path d="M71 51.6q3 2 6 0" fill="none" stroke="#7a4b3a" stroke-width="1.3" stroke-linecap="round"/></svg>`;
+  return `<svg viewBox="50 20 48 48" width="100%" height="100%" aria-hidden="true" focusable="false">${k.style==='long'?`<path d="M59.5 44a14.5 14.5 0 0 1 29 0v19q0 4-4 4h-21q-4 0-4-4z" fill="${k.hair}"/>`:''}<path d="M55 99V77q0-14 14-14h10q14 0 14 14v22z" fill="${k.shirt}"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${shade(k.skin,-.08)}"/><circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>${hairFront(k.style,k.hair)}<circle cx="71.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><circle cx="79.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><path d="M71 51.6q3 2 6 0" fill="none" stroke="${T_('--mouth')}" stroke-width="1.3" stroke-linecap="round"/></svg>`;
 }
-const PLANT='<svg class="room-plant" width="26" height="30" viewBox="0 0 26 30" aria-hidden="true" focusable="false"><path d="M13 20C13 12 9 8 4 7c0 6 3 11 9 13z" fill="#9dbca6"/><path d="M13 20c0-9 4-13 9-14 0 7-3 12-9 14z" fill="#86a98f"/><path d="M13 20C12 14 12 9 13 3c2 6 2 11 0 17z" fill="#aac6b2"/><path d="M7 21h12l-1.5 8h-9z" fill="#d4b99a"/></svg>';
-
-
+const PLANT=()=>'<svg class="room-plant" width="26" height="30" viewBox="0 0 26 30" aria-hidden="true" focusable="false">'+THEME.slot('plant')+'</svg>';
 /* ---------------- toast ---------------- */
 function toast(html,ms){const t=document.createElement('div');t.className='toast';t.innerHTML=html;$('toasts').appendChild(t);setTimeout(()=>{t.style.transition='opacity .3s';t.style.opacity='0';setTimeout(()=>t.remove(),320)},ms||3200)}
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -328,9 +331,10 @@ function helperTileHTML(h){
   return `<button class="helper hc is-${st}" data-id="${esc(h.id)}" aria-pressed="${ui.selected===h.id}" aria-label="${esc(h.name)}, helper of ${esc(byId(h.parent).name)}, ${label(h)}: ${esc(h.task)}" title="${esc(h.name)} · ${label(h)}: ${esc(h.task)}">
     <span class="sc">${sceneC(h)}</span><span class="hi"><span class="hname">${esc(h.name)}</span><span class="hs st-${st}">${label(h,true)}</span></span></button>`;
 }
+const visitPlace=a=>{const v=a.parent?null:VISITS.at(a.id);return v?v.place:(RETURNING.has(a.id)?null:null);};
 function cardHTML(a,d,nSubs){
   const st=vis(a), use=usageShort(a);
-  return `<button class="desk card is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${use?' · '+use:''}" aria-label="${esc(a.name)}, ${esc(a.role)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
+  return `<button class="desk card is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${use?' · '+use:''}" aria-label="${esc(a.name)}, ${esc(a.role)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${sceneC(a)}</span>
     <span class="ci"><span class="l1"><span class="name">${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc(a.role)}</span><span class="stl st-${st}">${label(a,true)}</span></span>
     <span class="intent">${esc(taskOf(a))}</span>
@@ -342,7 +346,7 @@ function linksSVG(d,rows,extraMore){
   if(d==='full'){py=78;for(let i=0;i<n;i++)ys.push(34+i*104);}
   else{py=D.ch/2;for(let i=0;i<rows;i++)ys.push(i*(D.hh+D.hgap)+D.hh/2);if(extraMore)ys.push(rows*(D.hh+D.hgap)+D.mh/2);}
   const w=d==='full'?24:16, mid=d==='full'?12:8;
-  return `<svg class="links" aria-hidden="true" focusable="false"><g fill="none" stroke="#a9b6ad" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${ys.map(y=>`<path d="M0 ${py}H${mid}V${y}H${w}"/>`).join('')}</g><circle cx="0" cy="${py}" r="2.6" fill="#a9b6ad"/></svg>`;
+  return `<svg class="links" aria-hidden="true" focusable="false"><g fill="none" stroke="${T_('--link')}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${ys.map(y=>`<path d="M0 ${py}H${mid}V${y}H${w}"/>`).join('')}</g><circle cx="0" cy="${py}" r="2.6" fill="${T_('--link')}"/></svg>`;
 }
 function unitHTML(a,d){
   const st=vis(a), {shown,hidden}=visibleHelpers(a,d), nSubs=shown.length+hidden.length;
@@ -358,7 +362,7 @@ function unitHTML(a,d){
   }
   let desk;
   if(d==='full'){
-    desk=`<button class="desk is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
+    desk=`<button class="desk is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
       ${scene(a,false)}<span class="badge ${st}">${badgeSVG(st)}</span>
       <div class="info"><div class="who"><span class="name">${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc(a.role)}</span></div>
       <p class="task">${esc(taskOf(a))}</p><span class="pill st-${st}"><i></i>${label(a)}</span></div></button>`;
@@ -379,8 +383,13 @@ function officeModel(ignoreStatus){
   return rooms;
 }
 /* ---- room doors (spec 017): a closed room is a compact door plate with a one-line status ---- */
-const DOOR_OPEN='<svg class="door-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="4" y="2.5" width="12" height="15" rx="1.6" fill="#efe8d8" stroke="#b3a07c" stroke-width="1.2"/><path class="leaf" d="M4.4 3.2 9.6 4.6V15.4L4.4 16.8Z" fill="#d8c6a8" stroke="#a89572" stroke-width="1"/><circle cx="8.2" cy="10" r=".8" fill="#8a7650"/></svg>';
-const DOOR_SHUT='<svg class="door-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="4" y="2.5" width="12" height="15" rx="1.6" fill="#d8c6a8" stroke="#a89572" stroke-width="1.2"/><rect x="6.2" y="4.7" width="7.6" height="4.4" rx=".9" fill="#e8dcc6"/><circle cx="13.1" cy="12" r="1" fill="#8a7650"/></svg>';
+/* door colours come from the theme (spec 036) */
+function doorSvg(open){
+  const t=T_;
+  return open
+    ?`<svg class="door-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="4" y="2.5" width="12" height="15" rx="1.6" fill="${t('--door-bg')}" stroke="${t('--door-line')}" stroke-width="1.2"/><path class="leaf" d="M4.4 3.2 9.6 4.6V15.4L4.4 16.8Z" fill="${t('--door-leaf')}" stroke="${t('--door-leaf-line')}" stroke-width="1"/><circle cx="8.2" cy="10" r=".8" fill="${t('--door-knob')}"/></svg>`
+    :`<svg class="door-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="4" y="2.5" width="12" height="15" rx="1.6" fill="${t('--door-leaf')}" stroke="${t('--door-leaf-line')}" stroke-width="1.2"/><rect x="6.2" y="4.7" width="7.6" height="4.4" rx=".9" fill="${t('--door-panel')}"/><circle cx="13.1" cy="12" r="1" fill="${t('--door-knob')}"/></svg>`;
+}
 function roomSummary(r){
   const mains=agents.filter(a=>!a.parent&&a.room===r.id);
   const sum=window.DurbarRoom.summarizeRoom(mains.map(a=>({state:vis(a),helpers:helpersOf(a).map(vis)})));
@@ -388,7 +397,7 @@ function roomSummary(r){
 }
 function plateHTML({r}){
   const sm=roomSummary(r), u=roomAiu(r), al=roomAlert(r);
-  return `<button class="plate tone-${sm.tone}" type="button" data-door="${esc(r.id)}" data-key="door:${esc(r.id)}" data-tint="${r.tint}" aria-expanded="false" aria-label="Open room ${esc(r.name)}. ${esc(sm.text)}. ${sm.n} agent${sm.n===1?'':'s'}.${u?' Usage: '+esc(u.long)+'.':''}${al.siren?' '+ALERT_WORDS+'.':''}" title="${esc(r.path)}">${DOOR_SHUT}<span class="plate-tx"><b>${esc(r.name)}</b>${al.siren?SIREN:''}${floorTag(r)}<span class="plate-sum">${esc(sm.text)}</span></span>${u?`<span class="plate-aiu" title="${esc(u.tip)}">${esc(u.short)}</span>`:''}<span class="plate-n">${sm.n}</span></button>`;
+  return `<button class="plate tone-${sm.tone}" type="button" data-door="${esc(r.id)}" data-key="door:${esc(r.id)}" data-tint="${r.tint}" aria-expanded="false" aria-label="${esc(wordOf('door-open'))} ${esc(r.name)}. ${esc(sm.text)}. ${sm.n} agent${sm.n===1?'':'s'}.${u?' Usage: '+esc(u.long)+'.':''}${al.siren?' '+ALERT_WORDS+'.':''}" title="${esc(r.path)}">${doorSvg(false)}<span class="plate-tx"><b>${esc(r.name)}</b>${al.siren?SIREN():''}${floorTag(r)}<span class="plate-sum">${esc(sm.text)}</span></span>${u?`<span class="plate-aiu" title="${esc(u.tip)}">${esc(u.short)}</span>`:''}<span class="plate-n">${sm.n}</span></button>`;
 }
 const doorsHTML=list=>list.length?`<div class="doors" data-key="doors">${list.map(plateHTML).join('')}</div>`:'';
 function stageHTML(sizing,d,aw,cap){
@@ -420,7 +429,7 @@ function folderOfRoom(roomId){
 function roomHTML({r,mains,all},d,aw,cap){
   const al=roomAlert(r), alAttr=(al.tone==='calm'?'':` data-alert="${al.tone}"`)+(al.siren?' data-siren="1"':''), alLabel=al.siren?'. '+ALERT_WORDS:'';
   const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':(k==='done'||k==='idle')?' calm':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}</span>`:''}).join('');
-  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="Close room ${esc(r.name)}" title="Close the door: ${esc(r.name)} becomes a compact plate">${DOOR_OPEN}</button><span class="room-name" title="${esc(r.name)}">${esc(r.name)}</span>${al.siren?SIREN:''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span>${(()=>{const u=roomAiu(r);return u?`<span class="room-aiu" title="${esc(u.tip)}">${esc(u.long)}</span>`:'';})()}<span class="room-dots" aria-hidden="true">${dots}</span>${bridge&&bridge.newSession&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.mcpFolderState&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT}</div>`;
+  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="${esc(wordOf('door-close'))} ${esc(r.name)}" title="${esc(wordOf('door-title-prefix'))}: ${esc(r.name)} ${esc(wordOf('door-plate-suffix'))}">${doorSvg(true)}</button><span class="room-name" title="${esc(r.name)}">${esc(r.name)}</span>${al.siren?SIREN():''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span>${(()=>{const u=roomAiu(r);return u?`<span class="room-aiu" title="${esc(u.tip)}">${esc(u.long)}</span>`:'';})()}<span class="room-dots" aria-hidden="true">${dots}</span>${bridge&&bridge.newSession&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.mcpFolderState&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT()}</div>`;
   if(d==='full'){
     const gap=6, pad=12;
     const widths=mains.map(a=>unitWidth(a,d));
@@ -567,18 +576,19 @@ function renderAll(){
 
 
 /* ---------------- icons ---------------- */
-const ICON={
- read:'<svg viewBox="0 0 16 16" fill="none" stroke="#5b7f94" stroke-width="1.5" stroke-linejoin="round"><path d="M4 1.8h5.2L12.5 5v9.2H4z"/><path d="M9 1.8V5.2h3.5"/></svg>',
- edit:'<svg viewBox="0 0 16 16" fill="none" stroke="#7f8a5b" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"><path d="M2.5 13.5l.7-3L11 2.7a1.4 1.4 0 0 1 2 2L5.5 12.8z"/></svg>',
- run:'<svg viewBox="0 0 16 16" fill="none" stroke="#4f7f65" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2"/><path d="M4.8 6.2l2 1.8-2 1.8M8.6 10h2.6"/></svg>',
- search:'<svg viewBox="0 0 16 16" fill="none" stroke="#8a6f4a" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2l3.3 3.3"/></svg>',
- tool:'<svg viewBox="0 0 16 16" fill="none" stroke="#7a7f8c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.8M8 12.4v1.8M1.8 8h1.8M12.4 8h1.8M3.6 3.6l1.3 1.3M11.1 11.1l1.3 1.3M12.4 3.6l-1.3 1.3M4.9 11.1l-1.3 1.3"/></svg>',
+function ICON_(){return { /* token colours (spec 036): built on every call, not once */
+ read:'<svg viewBox="0 0 16 16" fill="none" stroke="'+T_('--ic-read')+'" stroke-width="1.5" stroke-linejoin="round"><path d="M4 1.8h5.2L12.5 5v9.2H4z"/><path d="M9 1.8V5.2h3.5"/></svg>',
+ edit:'<svg viewBox="0 0 16 16" fill="none" stroke="'+T_('--ic-edit')+'" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"><path d="M2.5 13.5l.7-3L11 2.7a1.4 1.4 0 0 1 2 2L5.5 12.8z"/></svg>',
+ run:'<svg viewBox="0 0 16 16" fill="none" stroke="'+T_('--ic-run')+'" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2"/><path d="M4.8 6.2l2 1.8-2 1.8M8.6 10h2.6"/></svg>',
+ search:'<svg viewBox="0 0 16 16" fill="none" stroke="'+T_('--ic-search')+'" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2l3.3 3.3"/></svg>',
+ tool:'<svg viewBox="0 0 16 16" fill="none" stroke="'+T_('--ic-tool')+'" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.8M8 12.4v1.8M1.8 8h1.8M12.4 8h1.8M3.6 3.6l1.3 1.3M11.1 11.1l1.3 1.3M12.4 3.6l-1.3 1.3M4.9 11.1l-1.3 1.3"/></svg>',
  back:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3L4.5 8l5 5"/><path d="M5 8h8"/></svg>',
  chev:'<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg>',
  file:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4 1.8h5.2L12.5 5v9.2H4z"/><path d="M9 1.8V5.2h3.5"/></svg>',
  img:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2"/><circle cx="5.6" cy="6.4" r="1.3"/><path d="M2.5 12l3.8-3.4 2.6 2.2 2-1.6 3 2.8"/></svg>',
  x:'<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 3l6 6M9 3l-6 6"/></svg>'
-};
+};}
+function ICON(k){return ICON_()[k];}
 const TOOLNAME={read:'Read file',edit:'Edit file',run:'Run',search:'Search'};
 const toolKind=n=>{n=String(n||'').toLowerCase();
   if(/read|view|cat|open|fetch/.test(n))return 'read'; if(/edit|write|create|patch|replace/.test(n))return 'edit';
@@ -603,7 +613,7 @@ function makeChip({tool,kind,label,res,state,output}){
   el.title=name+': '+label+(res?' ('+res+')':'');
   const detail=output&&output!==res?output:'';
   if(detail)el.classList.add('has-detail');
-  el.innerHTML=`${ICON[k]||ICON.tool}<b>${esc(name)}</b><code>${esc(label)}</code>${res?`<span class="res">${el.className.includes('fail')?'Failed: ':''}${esc(res)}</span>`:''}<span class="detail">${esc(detail)}</span>`;
+  el.innerHTML=`${ICON(k)||ICON('tool')}<b>${esc(name)}</b><code>${esc(label)}</code>${res?`<span class="res">${el.className.includes('fail')?'Failed: ':''}${esc(res)}</span>`:''}<span class="detail">${esc(detail)}</span>`;
   return el;
 }
 function refreshChips(box){
@@ -619,7 +629,7 @@ function refreshChips(box){
 function addChip(box,el){box.appendChild(el);refreshChips(box);}
 function newAgentMsg(chat,a){
   const m=document.createElement('div');m.className='msg agent';
-  m.innerHTML=`<div class="meta">${esc(a.name)}</div><div class="think streaming"><button class="think-toggle" aria-expanded="true">${ICON.chev}<span class="think-l">Thinking</span><span class="live" aria-hidden="true"><i></i><i></i><i></i></span></button><div class="think-body"></div></div><div class="chips" aria-label="Tool calls"></div>`;
+  m.innerHTML=`<div class="meta">${esc(a.name)}</div><div class="think streaming"><button class="think-toggle" aria-expanded="true">${ICON('chev')}<span class="think-l">Thinking</span><span class="live" aria-hidden="true"><i></i><i></i><i></i></span></button><div class="think-body"></div></div><div class="chips" aria-label="Tool calls"></div>`;
   const tb=m.querySelector('.think-toggle'),body=m.querySelector('.think-body');
   tb.addEventListener('click',()=>{const o=tb.getAttribute('aria-expanded')==='true';tb.setAttribute('aria-expanded',String(!o));body.hidden=o;m.querySelector('.think').dataset.touched='1';});
   m.querySelector('.think').dataset.t0=String(Date.now());
@@ -662,7 +672,7 @@ function addUserMsg(chat,text,atts,ts){
   m.querySelector('.bubble').textContent=text;
   const box=m.querySelector('.chips');
   (atts||[]).forEach(x=>{const c=document.createElement('div');c.className='chip att-chip'+(x.img?' img':'');c.title=x.path||x.name;
-    c.innerHTML=(x.img?ICON.img:ICON.file)+'<span>'+esc(x.name)+'</span>';box.appendChild(c);});
+    c.innerHTML=(x.img?ICON('img'):ICON('file'))+'<span>'+esc(x.name)+'</span>';box.appendChild(c);});
   if(!(atts||[]).length)box.remove();
   chat.el.appendChild(m);scrollChat(chat);
 }
@@ -755,7 +765,7 @@ async function addFiles(files,opts){
 }
 function renderAttached(){
   const box=$('attached'); if(!box)return;
-  box.innerHTML=attached.map((x,i)=>`<span class="att ${x.img?'img':''}" title="${esc(x.path||x.name)}${x.size?' ('+fmtSize(x.size)+')':''}">${x.img?ICON.img:ICON.file}<span>${esc(x.name)}</span><button type="button" data-rm="${i}" aria-label="Remove ${esc(x.name)}">${ICON.x}</button></span>`).join('')+(attached.length?`<span class="att-count" aria-live="polite">${attached.length}/${MAX_ATT_FILES}</span>`:'');
+  box.innerHTML=attached.map((x,i)=>`<span class="att ${x.img?'img':''}" title="${esc(x.path||x.name)}${x.size?' ('+fmtSize(x.size)+')':''}">${x.img?ICON('img'):ICON('file')}<span>${esc(x.name)}</span><button type="button" data-rm="${i}" aria-label="Remove ${esc(x.name)}">${ICON('x')}</button></span>`).join('')+(attached.length?`<span class="att-count" aria-live="polite">${attached.length}/${MAX_ATT_FILES}</span>`:'');
 }
 function autoGrow(){const t=$('msgInput');if(!t)return;t.style.height='auto';t.style.height=Math.min(110,t.scrollHeight)+'px';setSend();}
 function setSend(){const b=$('sendBtn'),t=$('msgInput');if(!b||!t)return;const a=byId(ui.selected);const busy=a&&chats[a.id]&&chats[a.id].busy;b.setAttribute('aria-disabled',String(!!busy||(!t.value.trim()&&!attached.length)));}
@@ -777,7 +787,7 @@ function openPanel(id,focus){
   const stripScroll=(p.querySelector('.strip-list')||{}).scrollLeft||0;
   const mdlName=a.live&&a.info?modelLabel(a.info):'';
   p.innerHTML=`<div class="panel-in">
-   <div class="strip" role="navigation" aria-label="Agents"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON.back}<span>Office</span></button><div class="strip-list" id="stripList"></div></div>
+   <div class="strip" role="navigation" aria-label="Agents"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><div class="strip-list" id="stripList"></div></div>
    <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1">${esc(a.name)}</h2><div class="sub">${esc(a.role)}${parent?' · helper of '+esc(parent.name):''}</div></div>
       <div class="ph-meta"><span data-f="status"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?(a.live&&a.info&&!a.parent&&bridge.setModel?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`):''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
       <div class="actions">${a.live&&!a.parent?`<button class="btn" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools</button>`:''}${a.live&&!a.parent&&bridge.agentMcp?`<button class="btn" id="mcpBtn" type="button" title="MCP servers for this agent (set globally in Settings)">MCP</button>`:''}${a.live&&bridge.newSession&&!a.parent?`<button class="btn" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>`:''}<button class="btn primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
@@ -790,7 +800,7 @@ function openPanel(id,focus){
    <div class="prev" id="prev" hidden></div>
    <div id="chat" role="log" aria-live="off" aria-label="Chat with ${esc(a.name)}" tabindex="0"></div>
    <div class="composer"><div class="att-note" id="attNote" role="alert" hidden></div><div class="attached" id="attached" aria-label="Attachments"></div>
-    <div class="inbox"><button class="ib" id="attFile" type="button" aria-label="Attach file" title="Attach file">${ICON.file}</button><button class="ib" id="attImg" type="button" aria-label="Attach image" title="Attach image">${ICON.img}</button>
+    <div class="inbox"><button class="ib" id="attFile" type="button" aria-label="Attach file" title="Attach file">${ICON('file')}</button><button class="ib" id="attImg" type="button" aria-label="Attach image" title="Attach image">${ICON('img')}</button>
      <textarea id="msgInput" rows="1" placeholder="Message ${esc(a.name)}..." aria-label="Message ${esc(a.name)}"></textarea>
      <button class="ib send" id="sendBtn" type="button" aria-label="Send message" aria-disabled="true"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h11M9.5 4.5L14 9l-4.5 4.5"/></svg></button></div>
     <p class="hint">Enter sends, Shift+Enter adds a line. Drop or paste images to attach. Sample only.</p></div>
@@ -1116,7 +1126,7 @@ function tChips(T){
 function tAppend(T,el){T.tl.insertBefore(el,T.typing&&T.typing.parentNode===T.tl?T.typing:null);}
 function newThink(T,id){
   const el=document.createElement('div');el.className='think streaming';el.dataset.t0=String(Date.now());
-  el.innerHTML=`<button class="think-toggle" type="button" aria-expanded="true">${ICON.chev}<span class="think-l">Thinking</span><span class="think-prev"></span><span class="live" aria-hidden="true"><i></i><i></i><i></i></span></button><div class="think-body md"></div>`;
+  el.innerHTML=`<button class="think-toggle" type="button" aria-expanded="true">${ICON('chev')}<span class="think-l">Thinking</span><span class="think-prev"></span><span class="live" aria-hidden="true"><i></i><i></i><i></i></span></button><div class="think-body md"></div>`;
   const tb=el.querySelector('.think-toggle'),body=el.querySelector('.think-body');
   tb.addEventListener('click',()=>{const o=tb.getAttribute('aria-expanded')==='true';tb.setAttribute('aria-expanded',String(!o));body.hidden=o;el.dataset.touched='1';});
   tAppend(T,el);
@@ -1220,7 +1230,7 @@ function subPaintView(v){
 function subPaint(s){s.views.forEach(subPaintView);}
 function subBlock(s,T){
   const el=document.createElement('div');el.className='subblk running';el.dataset.sub=s.id;
-  el.innerHTML=`<div class="sub-head"><button class="sub-toggle" type="button" aria-expanded="true">${ICON.chev}<span class="sub-ic">${SUBIC}</span><b class="sub-name"></b><span class="sub-task"></span><span class="sub-st"></span></button><button class="sub-open" type="button" title="Open this sub-agent's full activity (read-only)">Open</button></div><div class="sub-in"></div>`;
+  el.innerHTML=`<div class="sub-head"><button class="sub-toggle" type="button" aria-expanded="true">${ICON('chev')}<span class="sub-ic">${SUBIC}</span><b class="sub-name"></b><span class="sub-task"></span><span class="sub-st"></span></button><button class="sub-open" type="button" title="Open this sub-agent's full activity (read-only)">Open</button></div><div class="sub-in"></div>`;
   const tg=el.querySelector('.sub-toggle'),inn=el.querySelector('.sub-in');
   tg.addEventListener('click',()=>{const o=tg.getAttribute('aria-expanded')==='true';tg.setAttribute('aria-expanded',String(!o));inn.hidden=o;el.dataset.touched='1';});
   tAppend(T,el);
@@ -1462,7 +1472,7 @@ function settlePerm(a,p){
 function setGrants(a,list){a.grants=list;if(ui.selected&&liveRoot(byId(ui.selected)||a)===a)renderGrants();}
 function renderGrants(){
   const box=$('grants'),a0=byId(ui.selected);if(!box||!a0)return;const a=liveRoot(a0);
-  box.innerHTML=(a.grants||[]).map(g=>`<span class="gchip" title="Allowed for this session: ${esc(g.label)}. Revoke to be asked again."><span>Allowed: ${esc(g.label)}</span><button type="button" data-revoke="${esc(g.key)}" aria-label="Revoke permission: ${esc(g.label)}">${ICON.x}</button></span>`).join('');
+  box.innerHTML=(a.grants||[]).map(g=>`<span class="gchip" title="Allowed for this session: ${esc(g.label)}. Revoke to be asked again."><span>Allowed: ${esc(g.label)}</span><button type="button" data-revoke="${esc(g.key)}" aria-label="Revoke permission: ${esc(g.label)}">${ICON('x')}</button></span>`).join('');
   box.hidden=!(a.grants||[]).length;
 }
 /* ---------------- tool usage, models and context window (spec 019) ---------------- */
@@ -1591,7 +1601,7 @@ function renderStrip(){
 
 /* ---------------- permission mode: change it at any time (spec 018) ---------------- */
 function modeChipHTML(a){const m=a.info.permMode, rs=m==='allow'&&a.info.permRestored;
-  return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}. ${esc(MODE_HELP[m])}${rs?' Restored from your last run.':''} Click to change; it applies from the next request."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m])}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON.chev}</button>`;}
+  return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}. ${esc(MODE_HELP[m])}${rs?' Restored from your last run.':''} Click to change; it applies from the next request."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m])}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>`;}
 function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');}}
 function openModeMenu(a0,x,y,anchor){
   const a=liveRoot(a0); if(!a||!a.live||!bridge.setPermMode)return;
@@ -1998,7 +2008,7 @@ function renderPrev(a){
   if(!c&&!v){box.hidden=false;box.innerHTML='<div class="prev-bar"><span class="prev-t">Previous sessions</span><span class="prev-c">Looking…</span></div>';return;}
   const nc=c&&c.ok?c.sessions.length:0, nv=v&&v.ok?v.sessions.length:0;
   const keepScroll=(box.querySelector('.prev-body')||{}).scrollTop||0;
-  let h=`<button class="prev-toggle" type="button" aria-expanded="${st.open}" data-pv="toggle">${ICON.chev}<span class="prev-t">Previous sessions</span><span class="prev-c">${nc} Copilot · ${nv} VS Code chat${nv===1?'':'s'}</span></button>`;
+  let h=`<button class="prev-toggle" type="button" aria-expanded="${st.open}" data-pv="toggle">${ICON('chev')}<span class="prev-t">Previous sessions</span><span class="prev-c">${nc} Copilot · ${nv} VS Code chat${nv===1?'':'s'}</span></button>`;
   if(st.open){
     h+='<div class="prev-body">';
     h+='<div class="prev-h">Copilot sessions in this folder <small>Resume continues the same session; earlier messages are shown here.</small></div>';
