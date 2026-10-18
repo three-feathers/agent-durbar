@@ -39,6 +39,20 @@
     return best?best.id:null;
   }
 
+  /* A room takes the tone of its worst main agent (spec 034 delta, issue #135). moods: [{state, body, trouble}] of the room's main agents.
+     tone: 'calm' (nothing to see) | 'uneasy' (the worst agent is heavy) | 'alarm' (a monster, an agent in Error, or any trouble);
+     siren: the room has the ambulance or a fainted agent. Unknown or empty input is calm without a siren. */
+  function roomAlertOf(moods){
+    let tone='calm', siren=false;
+    (Array.isArray(moods)?moods:[]).forEach(m=>{
+      if(!m)return; /* numbers or text have no fields: they count as calm */
+      if(m.trouble==='ambulance'||m.trouble==='faint')siren=true;
+      if(m.trouble==='ambulance'||m.trouble==='faint'||m.trouble==='impatient'||m.trouble==='dizzy'||m.body==='monster'||m.state==='error')tone='alarm';
+      else if(m.body==='heavy'&&tone==='calm')tone='uneasy';
+    });
+    return {tone,siren};
+  }
+
   /* Per main agent: failed-call streak, pending permission requests (since when), time of the last error. */
   function createMoodTracker(opts){
     const now=(opts&&opts.now)||Date.now;
@@ -90,5 +104,5 @@
     return out;
   }
 
-  return {HEAVY_PCT,MONSTER_PCT,IMPATIENT_MS,DIZZY_STREAK,bodyOf,troubleOf,pickAmbulance,createMoodTracker,phrases};
+  return {HEAVY_PCT,MONSTER_PCT,IMPATIENT_MS,DIZZY_STREAK,bodyOf,troubleOf,pickAmbulance,roomAlertOf,createMoodTracker,phrases};
 })());

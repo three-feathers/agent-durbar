@@ -82,7 +82,7 @@ body.has-bridge #liveBar{display:flex}
 .room[data-tint="clay"]{--tint:#f3eae4;--wall:#e4d3c9}
 .room-head{display:flex;align-items:center;gap:8px;min-height:24px;min-width:0}
 .room-name{font-size:13.5px;font-weight:650;letter-spacing:-.005em;white-space:nowrap}
-.room-path{font-size:11.5px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto}
+.room-path{font-size:11.5px;color:#5c635e;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto}
 .room-dots{margin-left:auto;display:flex;gap:8px;align-items:center;flex:none}
 /* folder usage total (spec 011 FR-020): sits next to the status dots and never shrinks; the path gives way first */
 .room-aiu{margin-left:auto;flex:none;white-space:nowrap;font-size:11.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
@@ -745,3 +745,19 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .tap{animation:tapdesk .5s ease-in-out infinite}
 @keyframes tapdesk{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
 @media (prefers-reduced-motion:reduce){.amb-light,.dizzy,.tap{animation:none}}
+
+/* ---- room alert (spec 034 delta, issue #135): the room keeps its own colour, darker with its worst agent; a siren while it has the ambulance or a faint.
+   An inset shadow darkens the floor under the cards and the text, so nothing else changes size or colour. ---- */
+.stage .room[data-alert="uneasy"]{border-color:color-mix(in srgb,var(--wall) 88%,#2a1c10);box-shadow:inset 0 0 0 3px rgba(255,255,255,.28),inset 0 0 0 999px rgba(40,26,14,.045)}
+.stage .room[data-alert="alarm"]{border-color:color-mix(in srgb,var(--wall) 72%,#2a1c10);box-shadow:inset 0 0 0 3px rgba(255,255,255,.28),inset 0 0 0 999px rgba(40,26,14,.1)}
+.stage[data-d="full"] .room[data-alert="uneasy"]{box-shadow:inset 0 0 0 999px rgba(40,26,14,.045)} /* full rooms have no inner white ring */
+.stage[data-d="full"] .room[data-alert="alarm"]{box-shadow:inset 0 0 0 999px rgba(40,26,14,.1)}
+.stage .room[data-alert] .room-path,.stage .room[data-alert] .room-aiu{color:#465049} /* darker floor, darker header text: 4.5:1 or more on the real pixels (checked by shots-034.js) */
+.siren{display:inline-flex;flex:none;width:18px;height:18px;align-self:center}
+.siren svg{width:100%;height:100%;display:block}
+.siren-light{fill:#d9534f;animation:sirenblink 1s steps(1,end) infinite}
+@keyframes sirenblink{0%{fill:#d9534f}50%{fill:#5b8fd1}}
+@media (prefers-reduced-motion:reduce){.siren-light{animation:none}}
+/* on a door plate the siren sits on the corner of the door icon, so the plate keeps its size */
+.plate{position:relative}
+.plate .siren{position:absolute;left:25px;top:4px;width:15px;height:15px}
