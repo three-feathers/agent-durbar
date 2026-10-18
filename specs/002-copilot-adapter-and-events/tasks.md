@@ -29,3 +29,9 @@
 - [x] T027 Normalized `title` event in `src/adapters/types.ts`; `session.title_changed` mapped in `src/adapters/map.ts` (top level only); `name.get` fallback after a turn in `src/adapters/copilot.ts`; title cleaning shared with `cleanTitle`; fixtures and tests
 - [x] T028 Previous sessions prefer `name` over `summary` (`previousSessionsFor` in `src/adapters/history.ts`); test
 - [x] T029 Main keeps `AgentInfo.title` from the event (`src/main/main.ts`), sets it on resume from the previous session's title; `usageLabel` unchanged; test that a planted title never reaches a tool-usage label
+
+## Changes 2026-10-19 (questions from Copilot)
+
+- [ ] T031 `onUserInputRequest` in `CopilotAdapter`: `question` event, `answerQuestion`, skip and Stop answers; fake-session test [FR-058]
+- [ ] T032 (real-account, owner allowed) One prompt that must use `ask_user`; answer from the card; record as `real:` [FR-058]
+
