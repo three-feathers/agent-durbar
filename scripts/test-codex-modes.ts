@@ -31,7 +31,12 @@ assert.deepStrictEqual(CODEX_INITIALIZE_CAPABILITIES, { experimentalApi: true },
 
 // runtimeWorkspaceRoots
 assert.deepStrictEqual(codexWorkspaceRoots(['/a/b', '/a/b', '/c d/e=f']), ['/a/b', '/c d/e=f'], 'posix paths, spaces and = kept as is, deduped');
-assert.deepStrictEqual(codexWorkspaceRoots(['C:\\Users\\me\\my proj', 'D:/x', '\\\\srv\\share\\p']), ['C:\\Users\\me\\my proj', 'D:/x', '\\\\srv\\share\\p'], 'windows drive, forward-slash and UNC paths kept');
+assert.deepStrictEqual(codexWorkspaceRoots(['C:\\Users\\me\\my proj', 'D:/x', '\\\\srv\\share\\p']), ['C:\\Users\\me\\my proj', 'D:\\x', '\\\\srv\\share\\p'], 'windows drive, forward-slash (normalised) and UNC paths kept');
+assert.deepStrictEqual(codexWorkspaceRoots(['/a/', '/a']), ['/a'], 'trailing separator removed, deduped');
+assert.deepStrictEqual(codexWorkspaceRoots(['C:\\x', 'c:\\x\\']), ['C:\\x'], 'windows dedupe is case-insensitive and ignores the trailing separator');
+assert.deepStrictEqual(codexWorkspaceRoots(['/A', '/a']), ['/A', '/a'], 'posix is case-sensitive');
+assert.deepStrictEqual(codexWorkspaceRoots(['/a/./b', '/a/b/../c']), ['/a/b', '/a/c'], '. and .. resolved');
+assert.deepStrictEqual(codexWorkspaceRoots(['/a/../..', '/a/..', '/..', '/', '//', 'C:\\', 'C:/', 'C:\\a\\..', 'C:\\..\\..', '\\\\srv\\share', '\\\\srv\\share\\', '\\\\srv\\share\\x\\..\\..']), [], 'filesystem roots, UNC share roots and escapes are dropped');
 assert.deepStrictEqual(codexWorkspaceRoots(['rel/path', '', '.', '../x', 'C:foo', 5 as never, null as never, '/ok\0bad']), [], 'relative, empty, non-string and NUL paths dropped');
 assert.deepStrictEqual(codexWorkspaceRoots(undefined), [], 'undefined roots');
 assert.deepStrictEqual(codexWorkspaceRoots(null), [], 'null roots');

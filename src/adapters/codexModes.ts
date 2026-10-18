@@ -3,6 +3,7 @@
  * The types below mirror the names of the `codex app-server` protocol (research.md, docs-derived, unverified on
  * a real account); they are local on purpose so no vendor type leaks into the renderer or `src/shared`.
  */
+import * as path from 'path';
 import type { PermissionMode } from './capabilities';
 
 /** Protocol `AskForApproval`, the values we use. `untrusted` is retired; `granular` is not offered. */
@@ -15,7 +16,8 @@ export const CODEX_RO_PROFILE = 'durbar_ro';
 
 /**
  * `thread/start` and `turn/start` settings. `permissions` (a profile id) and `sandbox` are mutually exclusive:
- * exactly one of them is present.
+ * exactly one of them is present. On `turn/start` the sandbox field is `sandboxPolicy` (an object), not `sandbox`;
+ * the adapter maps `sandbox` to it there.
  */
 export interface CodexModeSettings {
   approvalPolicy: CodexApprovalPolicy;
@@ -61,25 +63,40 @@ export function codexProfileArgs(): string[] {
 /** `initialize` capabilities: `permissions` and `runtimeWorkspaceRoots` are experimental fields. */
 export const CODEX_INITIALIZE_CAPABILITIES = Object.freeze({ experimentalApi: true });
 
-function isAbsolutePath(p: string): boolean {
-  return p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p) || p.startsWith('\\\\');
+/** Normalised absolute root, or undefined when it must be dropped. Windows-form paths use `path.win32`, others `path.posix`. */
+function normalizeRoot(r: string): { path: string; key: string } | undefined {
+  const win = /^[A-Za-z]:[\\/]/.test(r) || r.startsWith('\\\\');
+  if (!win && !r.startsWith('/')) return undefined;
+  const api = win ? path.win32 : path.posix;
+  let n = api.normalize(r);
+  const root = api.parse(n).root;
+  if (n === root || n === root.replace(/[\\/]+$/, '') || root === '') return undefined; // a filesystem root or a UNC share root
+  n = n.replace(/[\\/]+$/, '');
+  if (n.split(/[\\/]/).includes('..')) return undefined;
+  return { path: n, key: win ? n.toLowerCase() : n };
 }
 
 /**
- * Session folders to `runtimeWorkspaceRoots`: absolute paths only, duplicates removed, order kept. Values are
- * JSON params (never argv or TOML), so spaces, `=` and Windows separators need no escaping. A relative or empty
- * entry is dropped, never resolved: fewer roots means fewer readable files.
+ * Session folders to `runtimeWorkspaceRoots`: absolute paths only, normalised (`.` and `..` resolved, no trailing
+ * separator), duplicates removed (case-insensitively for Windows-form paths), order kept. A root that is a
+ * filesystem root (`/`, `C:\`, `\\server\share`) or still holds `..` is dropped: a session root must never make
+ * everything readable. Values are JSON params (never argv or TOML), so spaces and `=` need no escaping. A relative
+ * or empty entry is dropped, never resolved: fewer roots means fewer readable files.
  */
 export function codexWorkspaceRoots(roots: readonly unknown[] | undefined | null): string[] {
   const out: string[] = [];
+  const seen = new Set<string>();
   for (const r of Array.isArray(roots) ? roots : []) {
-    if (typeof r !== 'string' || !r || r.includes('\0') || !isAbsolutePath(r)) continue;
-    if (!out.includes(r)) out.push(r);
+    if (typeof r !== 'string' || !r || r.includes('\0')) continue;
+    const n = normalizeRoot(r);
+    if (!n || seen.has(n.key)) continue;
+    seen.add(n.key);
+    out.push(n.path);
   }
   return out;
 }
 
-/** First Codex version that has `permissions` (spec 012 FR-087). */
+/** The Codex version researched (2026-10-18); older ones are refused because they are unchecked (spec 012 FR-087). */
 export const CODEX_MIN_PERMISSIONS_VERSION = 'rust-v0.163.0';
 
 /** `rust-v0.163.0`, `v0.163.0` or `0.163.0` (optional `-pre`/`+build`) to numbers; undefined when unparseable. */
