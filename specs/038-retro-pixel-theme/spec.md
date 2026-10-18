@@ -19,3 +19,9 @@
 
 ## Success Criteria
 - Retro scene distinctly 8-bit on both densities; all contrast pairs pass; office check green.
+
+## Changes
+
+### 2026-10-18: a UI style of its own (spec 035 FR-009..FR-012)
+
+- `[IMPLEMENTED]` The pack sets `ui` and stronger core colours: 8-bit arcade: a dark blue page and a black top bar with a yellow monospace title, light rooms in a fixed game palette with thick black outlines and hard offset shadows, square corners everywhere (cards, pills, buttons, tiles), monospace uppercase display text. Sizes are unchanged; `check:themes` covers it. Owner review of the look requested in PR #137.

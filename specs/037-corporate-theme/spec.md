@@ -34,3 +34,9 @@
 
 ## Assumptions / out of scope
 - Settings model gains one string key `theme` only; no per-room theming.
+
+## Changes
+
+### 2026-10-18: a UI style of its own (spec 035 FR-009..FR-012)
+
+- `[IMPLEMENTED]` The pack sets `ui` and stronger core colours: glass-and-steel office: a dark navy top bar, white rooms with a coloured accent bar on the left edge, square-cornered cards with a thin border and a soft shadow, rectangular tag-style pills and buttons, room names as small uppercase labels. Sizes are unchanged; `check:themes` covers it. Owner review of the look requested in PR #137.

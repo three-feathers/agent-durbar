@@ -32,3 +32,9 @@
 
 ## Success Criteria
 - Each court is instantly recognizable by palette and small accessories; no status ambiguity; office check green per pack.
+
+## Changes
+
+### 2026-10-18: a UI style of its own (spec 035 FR-009..FR-012)
+
+- `[IMPLEMENTED]` The pack sets `ui` and stronger core colours: three courts with their own frame: **Indian** a maroon top bar with a gold rule, ivory pages, arched room tops with a double gold frame and serif headings; **European** a royal navy top bar with gilt rules, parchment pages, gilded double frames, small corners and serif small-caps headings; **Japanese** a paper top bar with a vermilion rule and a red seal brand mark, washi pages, thin ink lines, nearly square corners and Mincho-style serif headings. The Japanese terminal place is renamed **Machine Room** so it fits its tile. Sizes are unchanged; `check:themes` covers it. Owner review of the look requested in PR #137.

@@ -82,3 +82,15 @@
 - `SC_CACHE` currently has no theme id; this spec adds `themeId` to the cache key.
 - Reduced motion is read once; themes will use fixed motion presets in later specs.
 - Some Clean Office state colours have low contrast alone; the gate will test colour plus icon/word cue.
+
+## Changes
+
+### 2026-10-18: UI styles, so a theme looks like its name (owner review of PR #137)
+
+**Symptom.** Vikram, looking at screenshots of every pack at 1280x800: the themes "don't vary much". The cause is structural: every token is a **colour**; card and room shape, borders, shadows, the top bar, buttons, pills, lobby tiles and heading fonts are fixed in `styles.css`, and many surfaces are literal (`#fff` buttons, `rgba(255,253,249,.78)` cards), so a pack could only nudge the scene colours and rename places. Also found: the room and lobby art showed through transparent pieces (the `+N more` chip, lobby tiles), making their text hard to read (constitution V).
+
+**Corrected wording.**
+- **FR-009** `[IMPLEMENTED]` A manifest may name a **UI style**, `ui`, from a fixed list owned by the app: `clean`, `corporate`, `retro`, `court-indian`, `court-european`, `court-japanese`. Unknown or missing = `clean`. The style is set as `data-ui` on `<html>`; its CSS lives in the app (`src/renderer/themes.css`), never in the manifest, so this stays data-only (like the motion presets, 036 FR-006). A user theme may pick any listed style and give its own colour tokens; the style reads them through the same `var(--...)` names.
+- **FR-010** `[IMPLEMENTED]` A UI style may change colours, borders, corner radii, shadows, textures (CSS gradients) and the font family of **display text** (brand, room names, place names, door plates, dialog titles). It must not change sizes, padding, gaps or the font size of anything the layout measures, so the 15-agent fit is the same in every style (`check:themes`). Display text that could get wider under another font is ellipsized, never wrapped.
+- **FR-011** `[IMPLEMENTED]` Fonts are generic system stacks (serif, monospace); no font files are shipped. What a user sees depends on the fonts installed on their OS (documented as a limit).
+- **FR-012** `[IMPLEMENTED]` Theme art never covers text: everything with text in a room or the lobby (the `+N more` / `Show fewer` chips, lobby tiles and their slots) has an opaque background and sits above the art layers.
