@@ -39,7 +39,7 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 - [x] T024 (fixtures) `codexMap.ts` plus `scripts/fixtures/codex/` synthetic fixtures (thread, turn, deltas, command, file change, mcpToolCall, sub-agent items, token usage, failure) and `test-codex-map.ts`; unknown notifications ignored [FR-014, FR-018, FR-020]
 - [ ] T025 (fixtures) Usage and context tests: Claude cost delta from running `total_cost_usd`, per `message.id` dedupe, Codex `modelContextWindow` null as unknown, "credits not reported" for Codex [FR-015, FR-016]
 - [ ] T026 (sim) Contract case SC-004 for every adapter on fakes: a write attempt is denied in Read-only, pending in Ask first, approved in Allow all; stop with a pending request denies it [FR-013, FR-017, SC-004]
-- [ ] T027 (sim) Folder trust for project-level vendor settings, as decided in Q8 (2026-10-18): no Claude settings files in any mode (`settingSources: []`), `strictMcpConfig: true` in every mode, tests; no folder-trust dialog [FR-025]
+- [x] T027 (sim) Folder trust for project-level vendor settings, as decided in Q8 (2026-10-18): no Claude settings files in any mode (`settingSources: []`), `strictMcpConfig: true` in every mode, tests; no folder-trust dialog [FR-025]
 - [ ] T028 (sim) Docs for Phase 2: dated `## Changes` entries in specs 003, 011 and 018 (mode wording per agent, usage units, live switch per adapter), README Safety model note, converge [FR-005, FR-008]
 
 ## Phase 3: transports on fake processes (still no account, no credits)
@@ -87,6 +87,6 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 
 - Coverage: FR-001 T011/T014; FR-002 T010/T014; FR-003 T040-T045; FR-004 T021/T022/T052; FR-005 T010/T028; FR-006 T012/T042/T051; FR-007 T015/T016/T023/T024; FR-008 T019/T028/T053/T082; FR-009 T011/T046/T049; FR-010 T012/T047/T061/T066; FR-011 T013; FR-012 T047/T071; FR-013 T021/T022/T026/T064/T068; FR-014 T023/T024/T065/T069; FR-015/FR-016 T025/T062/T067; FR-017 T026/T043/T045/T063; FR-018 T023/T024/T065/T069; FR-019 T048/T080; FR-020 T023/T024/T040/T042; FR-021 T041/T044/T070; FR-022 T060-T070; FR-023 T017; FR-024 T050/T065; FR-025 T027/T083. SC-001 T018; SC-002 T015/T043/T045; SC-003 T017/T018; SC-004 T026; SC-005 T019/T082.
 - Ordering: T010 before T011 to T016; T015 before T026, T043, T045; T021/T022 before T026; T040 and T041 before T045; T048 before T080. T042 to T044 and T047 have no vendor dependency and can run in parallel after Phase 1.
-- Gaps recorded rather than hidden: `[KNOWN GAP]` question UI (T052), Codex per-session MCP (FR-024), Codex helpers (T065), Windows Codex sandbox (T070), dollar cap (T081).
+- Gaps recorded rather than hidden: `[KNOWN GAP]` question UI (T052), Codex per-session MCP (FR-024), Codex helpers (T065), Windows Codex sandbox (T070), dollar cap (T081), repo `.claude` hooks/agents/`.mcp.json` not run (T083).
 - Contradictions found and fixed while writing: the 2026-10-16 spec said the simulator could be wrapped as an adapter (it is renderer-side: `FakeAdapter` is new, T015); it said `AgentAdapter` was Copilot-agnostic apart from a few parts (`main.ts` also calls six non-interface members: T010).
 - No open `[NEEDS CLARIFICATION]` remains in spec.md; the owner questions are Q1 to Q9, each mapped to a blocked task.

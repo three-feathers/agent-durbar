@@ -20,7 +20,7 @@ Add two adapters behind the existing `AgentAdapter` interface: **Claude Code** t
 | --- | --- |
 | I Spec Kit | This plan, tasks and research exist before any `src/` change. OK |
 | II Adapter plug-ins | Vendor names stay in `src/adapters/`. New optional interface members are gated by `capabilities`. The renderer reads capabilities only. **Improves** the current state (Copilot-only members in `main.ts`). |
-| III Safe by default, no secrets | Read-only default; mode set explicitly; layered enforcement; no token, key or `auth.json` read; no in-app login; no key entry. Folder trust before project settings run. OK, with the two policy questions Q1 and Q3 open. |
+| III Safe by default, no secrets | Read-only default; mode set explicitly; layered enforcement; no token, key or `auth.json` read; no in-app login; no key entry. No Claude settings files loaded (Q8, `settingSources: []`, `strictMcpConfig`); Codex project trust. OK, with the two policy questions Q1 and Q3 open. |
 | IV No credits in tests | Phases 1 to 3 need no account. Phase 4 is separate, one tiny prompt per check, `needs-owner-approval`. OK |
 | V Calm UI | Picker and capability gating only; a small agent-kind label on the desk. Needs the usual 1440x900 and 1280x800 screenshots in the UI tasks. |
 | VI Parity | Paths via `path`; `.cmd` shims handled in `detect()`; Codex Windows sandbox is a `[KNOWN GAP]` until checked on Windows. |
@@ -207,7 +207,7 @@ Phases 1 to 3 can be reviewed and merged with no vendor installed. Nothing in Ph
 | ESM-only packages and asar break at runtime | medium | adapter fails in release builds | dynamic import test in a packaged-build check (T044) |
 | Installer size if someone bundles the binaries | low | 700 MB more per platform | C4: not bundled; a test asserts `asarUnpack` does not list them |
 | API keys invisible to a GUI app | high | "not signed in" confusion | detect message and README; no key entry (constitution III) |
-| Hooks/MCP in the user's repo run on open | medium | code execution | folder trust (FR-025) |
+| Hooks/MCP in the user's repo run on open | medium | code execution | `settingSources: []` + `strictMcpConfig` (FR-025) |
 | No real fixtures for months | high | mappers drift from reality | label synthetic, keep them minimal, Phase 4 replaces them |
 | Cost shown as USD is mistaken for a bill | medium | trust | "estimate" label, vendor's own warning quoted, never summed |
 
