@@ -120,3 +120,9 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 - [x] T102 (sim) Per-kind wording: subtitle, chat footer, Previous sessions header and counts, Copy resume command per kind [FR-123]
 - [x] T103 (fixtures) Claude `inputTokens` include cache creation and cache reads; test [FR-124]
 
+## Changes 2026-10-19 (issue #56, Claude half of T048)
+
+- [ ] T104 (fixtures) `src/adapters/claudeHistory.ts`: list and replay from Claude's session files (pure parsers on text, small fs wrapper with caps) [FR-125, FR-126]
+- [ ] T105 (fixtures) `ClaudeAdapter.listPreviousSessions` / `history`, `history: true`; tests on synthetic files [FR-125..FR-127]
+- [ ] T106 (real-account) T095 rerun: restart, Previous sessions, Resume remembers the earlier turn [FR-127]
+
