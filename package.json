@@ -37,7 +37,7 @@
     "test:history": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-history.js",
     "test:vscodechat": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-vscodechat.js",
     "test:folders": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-folders.js",
-    "test:runtime": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-runtime.js && node dist-scripts/scripts/test-claude-map.js",
+    "test:runtime": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-runtime.js && node dist-scripts/scripts/test-detect.js && node dist-scripts/scripts/test-router.js && node dist-scripts/scripts/test-adapter-contract.js && node dist-scripts/scripts/test-agentops.js && node dist-scripts/scripts/test-claude-map.js",
     "prepare-runtime": "node scripts/prepare-runtime.js",
     "pack:dir": "npm run build && node scripts/prepare-runtime.js && electron-builder --dir --publish never",
     "dist:dir": "npm run pack:dir",

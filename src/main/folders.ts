@@ -28,6 +28,23 @@ export interface SavedFolder {
   maxAiCredits?: number;
   /** Floor id (spec 033). Absent = the ground floor; never written for it. */
   floor?: string;
+  /** Which agent kind restores this folder (spec 012 FR-042). Absent means `copilot`; it is never written for Copilot. */
+  adapterId?: string;
+}
+
+export const DEFAULT_ADAPTER = 'copilot';
+
+/** The adapter id of a saved folder; `copilot` when none is saved. */
+export function adapterOf(f: Pick<SavedFolder, 'adapterId'>): string {
+  return f.adapterId ?? DEFAULT_ADAPTER;
+}
+
+// Same shape as the registry's id rule (src/adapters/registry.ts); copied so the store imports no adapter code.
+const ADAPTER_ID = /^[a-z][a-z0-9-]{0,31}$/;
+
+/** A well-formed id other than `copilot` is kept as saved (even one this build does not know); anything else is `undefined` (Copilot). */
+export function parseAdapterId(v: unknown): string | undefined {
+  return typeof v === 'string' && ADAPTER_ID.test(v) && v !== DEFAULT_ADAPTER ? v : undefined;
 }
 
 /**
@@ -67,6 +84,7 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       contextTier: parseTier(o.contextTier),
       maxAiCredits: parseCap(o.maxAiCredits),
       floor: typeof o.floor === 'string' && o.floor !== floorOps.GROUND && o.floor.length <= 20 ? o.floor : undefined,
+      adapterId: parseAdapterId(o.adapterId),
     });
     if (out.length >= MAX_FOLDERS) break;
   }
@@ -164,14 +182,16 @@ export class FolderStore {
     return this.folders.find((f) => f.workspace === workspace);
   }
 
-  /** Adds the folder, or refreshes its mode/model when it is already saved (the hidden flag is kept). */
+  /** Adds the folder, or refreshes its mode/model when it is already saved (the hidden flag is kept), and its adapter when a valid `adapterId` (or `'copilot'`) is given. */
   upsert(entry: Omit<SavedFolder, 'hidden'> & { hidden?: boolean }): void {
     const cur = this.get(entry.workspace);
-    if (cur) Object.assign(cur, { permMode: entry.permMode, model: entry.model, effort: entry.effort, contextTier: parseTier(entry.contextTier), maxAiCredits: parseCap(entry.maxAiCredits) });
-    else {
+    if (cur) {
+      Object.assign(cur, { permMode: entry.permMode, model: entry.model, effort: entry.effort, contextTier: parseTier(entry.contextTier), maxAiCredits: parseCap(entry.maxAiCredits) });
+      if (entry.adapterId === DEFAULT_ADAPTER || parseAdapterId(entry.adapterId) !== undefined) cur.adapterId = parseAdapterId(entry.adapterId);
+    } else {
       // A new folder goes to the requested floor (unknown -> ground), which becomes the default for the next one (FR-006).
       const floor = floorOps.floorOf(entry.floor, this.floorsDoc);
-      this.folders.push({ ...entry, permMode: entry.permMode, hidden: entry.hidden === true, floor: floor === floorOps.GROUND ? undefined : floor });
+      this.folders.push({ ...entry, permMode: entry.permMode, hidden: entry.hidden === true, floor: floor === floorOps.GROUND ? undefined : floor, adapterId: parseAdapterId(entry.adapterId) });
       if (entry.floor !== undefined) this.floorsDoc = { ...this.floorsDoc, lastFloor: floor };
     }
     this.save();
@@ -203,6 +223,15 @@ export class FolderStore {
     else if (choice.effort !== undefined) cur.effort = EFFORTS.has(choice.effort) ? choice.effort : cur.effort;
     const t = parseTier(choice.contextTier);
     cur.contextTier = t === 'long' ? 'long' : undefined;
+    this.save();
+    return true;
+  }
+
+  /** Remember which agent kind this folder uses (spec 012 FR-044). `copilot` clears the field; a malformed id is refused. */
+  setAdapterId(workspace: string, id: unknown): boolean {
+    const cur = this.get(workspace);
+    if (!cur || (id !== DEFAULT_ADAPTER && parseAdapterId(id) === undefined)) return false;
+    cur.adapterId = parseAdapterId(id);
     this.save();
     return true;
   }
