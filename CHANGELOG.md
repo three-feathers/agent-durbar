@@ -8,7 +8,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **Docs: what the permission modes and usage mean per agent kind (spec 012 T028, issue #47).** Dated `## Changes` entries in specs 003 (Read-only / Ask first / Allow all for Claude and Codex, unknown mode = Read-only, Codex Read-only differs), 011 (AIU for Copilot, a labelled USD estimate for Claude never added to AIU, no money for Codex; caps stay Copilot-only) and 018 (live mode switch per kind), and a README *Safety model* note. Docs only; nothing is wired to a real Claude or Codex yet.
 
-## v0.1.0-alpha.5 (pre-release, 2026-10-18)
+## v0.1.0-alpha.5 ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.5), 2026-10-18)
 
 Themes that change the whole office, main agents named by their Copilot session title, floors, agents that show how they are doing, custom places and usage totals kept across restarts, plus groundwork for Claude Code and Codex that is not wired yet (only Copilot works). Checked on the simulator and with unit tests; nothing here was checked on a real Copilot session. **Unsigned and not notarized; untested on real macOS and Windows hardware; an in-place upgrade from alpha.4 was not checked** (spec 042).
 
