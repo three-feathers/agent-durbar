@@ -95,9 +95,9 @@
     let placesSec='';
     if(X.bridge.setPlace&&X.places){
       const P=X.places, map=app.placeMap||{};
-      const names=[...new Set([...mcp.cli.map(c=>c.name),...X.placeServers(),...Object.keys(map)])].sort((a,b)=>a.localeCompare(b));
-      const rows=names.map(n=>{const v=Object.prototype.hasOwnProperty.call(map,n)?map[n]:'';
-        return `<li class="plrow" data-srv="${esc(n)}"><span class="plname" title="${esc(n)}">${esc(n)}</span><select data-place-sel aria-label="Place for the tools of ${esc(n)}"><option value=""${v?'':' selected'}>Default (${esc(P.placeName(P.defaultServerPlace(n)))})</option>${P.PLACES.map(p=>`<option value="${p.id}"${v===p.id?' selected':''}>${esc(p.name)}</option>`).join('')}<option value="desk"${v==='desk'?' selected':''}>Stay at desk</option></select></li>`;}).join('');
+      const names=[...new Set([...mcp.cli.map(c=>c.name),...X.placeServers(),...Object.keys(map)])];
+      const rows=P.placeRows(names,map).map(({name:n,aliases,value:v})=>{const note=aliases.length?' also '+aliases.join(', '):'';
+        return `<li class="plrow" data-srv="${esc(n)}" data-alias="${esc(aliases.join('\n'))}"><span class="plname" title="${esc(n+note)}">${esc(n)}${note?` <small>${esc(note.trim())}</small>`:''}</span><select data-place-sel aria-label="Place for the tools of ${esc(n)}"><option value=""${v?'':' selected'}>Default (${esc(P.placeName(P.defaultServerPlace(n)))})</option>${P.PLACES.map(p=>`<option value="${p.id}"${v===p.id?' selected':''}>${esc(p.name)}</option>`).join('')}<option value="desk"${v==='desk'?' selected':''}>Stay at desk</option></select></li>`;}).join('');
       placesSec=`<section class="scr-sec" aria-labelledby="plH"><h3 id="plH">Places in the office</h3>
         <p class="scr-note">In the lobby, an agent walks to a place while one of its tools runs: <b>Terminal</b> for shell commands, <b>Web</b> for web fetches, and the place you choose here for the tools of each MCP server. File tools (read, edit, search) never move an agent. The choice applies to the next tool call, for all folders, and is kept between runs. Only server names and places are saved.</p>
         ${names.length?`<ul class="plrows" id="plList">${rows}</ul>`:'<p class="scr-note small">No MCP servers yet. They appear here when your Copilot CLI list has some, or after an agent uses one in this run.</p>'}</section>`;
@@ -160,7 +160,10 @@
   async function onPlaceChange(e){
     const sel=e.target.closest('select[data-place-sel]'); if(!sel||!X.bridge.setPlace)return;
     const li=sel.closest('li.plrow'), name=li&&li.dataset.srv; if(!name)return;
-    let res=null; try{res=await X.bridge.setPlace(name,sel.value===''?null:sel.value);}catch(err){res=null;}
+    /* canonical key first, then clear old alias keys (spec 024 FR-013); stop at the first failure */
+    let res=null, last=null; /* last = result of the last save that worked, so a partial failure still refreshes the map */
+    try{for(const [k,v] of X.places.placeSaves(name,sel.value===''?null:sel.value,li.dataset.alias?li.dataset.alias.split('\n'):[])){res=await X.bridge.setPlace(k,v);if(!res||!res.ok)break;last=res;}}catch(err){res=null;}
+    if(last&&!(res&&res.ok))X.setPlaceMap(last.placeMap||{});
     if(res&&res.ok){X.setPlaceMap(res.placeMap||{});X.toast(esc(name)+': '+(sel.value===''?'back to the default place.':sel.value==='desk'?'agents stay at their desk.':'agents go to '+esc(X.places.placeName(sel.value))+'.'),3200);}
     else X.toast('Could not save the place for '+esc(name)+'.',4200);
   }

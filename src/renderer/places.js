@@ -34,6 +34,27 @@
     return has(SERVER_ALIASES,name)?SERVER_ALIASES[name]:name;
   }
 
+  /* Settings > Places rows (spec 024 FR-013): fold raw server names into canonical ones, once each, sorted. `aliases` = alias names
+     seen/listed/saved for that row. `value` = a valid entry under an alias first (classify() lets the call's own name win), else under the canonical name, else ''. */
+  function placeRows(names,placeMap){
+    const rows=new Map();
+    for(const raw of Array.isArray(names)?names:[]){
+      const n=str(raw); if(!n)continue;
+      const c=canonicalServer(n);
+      if(!rows.has(c))rows.set(c,{name:c,aliases:[],value:''});
+      if(c!==n&&!rows.get(c).aliases.includes(n))rows.get(c).aliases.push(n);
+    }
+    const valid=v=>v==='desk'||IDS.includes(v);
+    return [...rows.values()].map(r=>{
+      for(const k of [...r.aliases,r.name]){if(has(placeMap,k)&&valid(placeMap[k])){r.value=placeMap[k];break;}}
+      return r;
+    }).sort((a,b)=>a.name.localeCompare(b.name));
+  }
+  /* Saves for one row: the canonical key gets the choice (null = default), then every alias key is cleared. */
+  function placeSaves(name,place,aliases){
+    return [[name,place],...(aliases||[]).map(a=>[a,null])];
+  }
+
   /* Default place of a server, ignoring the user's map. */
   function defaultServerPlace(server){
     const n=str(server); if(!n)return 'other';
@@ -135,5 +156,5 @@
     return {shown:cap-1,more:count-(cap-1)};
   }
 
-  return {PLACES,IDS,placeName,classify,canonicalServer,defaultServerPlace,toolLabel,createVisits,layoutSpots};
+  return {PLACES,IDS,placeName,classify,canonicalServer,placeRows,placeSaves,defaultServerPlace,toolLabel,createVisits,layoutSpots};
 })());
