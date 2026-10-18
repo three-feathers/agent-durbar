@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "rootDir": ".", "outDir": "dist-scripts", "sourceMap": false },
-  "include": ["src/adapters/**/*.ts", "src/shared/**/*.ts", "src/main/vscode.ts", "src/main/folders.ts", "src/main/settings.ts", "src/main/devhooks.ts", "src/main/usagestore.ts", "src/main/mcpstore.ts", "src/main/mcpfiles.ts", "scripts/**/*.ts"]
+  "include": ["src/adapters/**/*.ts", "src/shared/**/*.ts", "src/main/vscode.ts", "src/main/agentops.ts", "src/main/folders.ts", "src/main/settings.ts", "src/main/devhooks.ts", "src/main/usagestore.ts", "src/main/mcpstore.ts", "src/main/mcpfiles.ts", "scripts/**/*.ts"]
 }
