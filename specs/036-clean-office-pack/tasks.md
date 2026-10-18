@@ -11,4 +11,4 @@
 
 ## Changes 2026-10-18
 
-- [ ] T009 `theme=` in simulator runs (main, simulator bridge), `check-office-overlap.js` passes it and fails on a theme mismatch; re-run `check:themes` for every built-in theme and record the result [FR-005]
+- [x] T009 `theme=` in simulator runs (main, simulator bridge), `check-office-overlap.js` passes it and fails on a theme mismatch; re-run `check:themes` for every built-in theme and record the result [FR-005] (2026-10-18, CI fonts DejaVu/Liberation: clean-office, corporate, retro, durbar-indian, durbar-european, durbar-japanese and the sample user theme each 183/183, theme confirmed on screen in every run)

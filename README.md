@@ -111,7 +111,7 @@ Specs [035](specs/035-theme-foundation/spec.md)-[040](specs/040-user-themes/spec
 - **Corporate**: a navy top bar, white rooms with a coloured accent edge, square corners, tag-style pills, uppercase room labels; places become Records, Repository, Server room, Network, Facilities.
 - **Retro Pixel**: a dark arcade page, a black bar with a yellow monospace title, black-outlined rooms in game colours with hard shadows, square tiles and pixel characters; places become Arcade, Cartridge Bay, Console, Modem, Gadgets.
 - **Durbar · Indian / European / Japanese**: a maroon bar with a gold rule and arched rooms in a double gold frame; a royal navy bar with gilt rules and gilded frames in small caps; a paper bar with a vermilion rule and seal, washi and thin ink lines. Each has its own court place names.
-- **The text that matters never changes**: status, permission and credit wording are the same in every theme, and so is the layout (15 agents at 1440x900 and 1280x800; `npm run check:themes` runs the office check per theme).
+- **The text that matters never changes**: status, permission and credit wording are the same in every theme, and so is the layout (15 agents at 1440x900 and 1280x800; `npm run check:themes` runs the office check per theme and on a sample user theme, and fails if the theme on screen is not the one it asked for).
 - **Your own themes**: a folder with a `manifest.json` (colours, a UI style and a scene kit from the fixed lists, small SVG art, place names), imported and exported in Settings. A theme is data only: no scripts and no CSS; SVG art is rebuilt from allowed shapes, colours must be plain colour values, and a pack that breaks a rule is refused with a message.
 
 ![Corporate, 1440x900](docs/screenshots/035-corporate-1440x900.png)
