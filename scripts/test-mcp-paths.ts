@@ -25,7 +25,7 @@ assert.strictEqual(UNIX_SOCKET_MAX_BYTES, 103);
   assert.strictEqual(r.keyFile, ud + '/mcp/connection.json');
   assert.strictEqual(r.socket, ud + '/mcp/mcp.sock');
   assert.strictEqual(r.kind, 'unix');
-  assert.strictEqual(r.fallbackDir, null);
+  assert.strictEqual(r.checkDir, null);
   assert.strictEqual(r.reason, null);
 }
 
@@ -37,12 +37,12 @@ assert.strictEqual(UNIX_SOCKET_MAX_BYTES, 103);
   assert.strictEqual(bytes(at + tail), 103);
   const r103 = mcpPaths({ ...base, platform: 'darwin', userData: at });
   assert.strictEqual(r103.socket, at + tail);
-  assert.strictEqual(r103.fallbackDir, null);
+  assert.strictEqual(r103.checkDir, null);
   const over = mk(104);
   assert.strictEqual(bytes(over + tail), 104);
   const r104 = mcpPaths({ ...base, platform: 'darwin', userData: over });
   assert.strictEqual(r104.socket, '/var/folders/ab/xyz/T/agent-durbar-501/mcp.sock');
-  assert.strictEqual(r104.fallbackDir, '/var/folders/ab/xyz/T/agent-durbar-501');
+  assert.strictEqual(r104.checkDir, '/var/folders/ab/xyz/T/agent-durbar-501');
   assert.strictEqual(r104.keyFile, over + '/mcp/connection.json', 'the key file stays in userData');
 }
 
@@ -51,7 +51,7 @@ assert.strictEqual(UNIX_SOCKET_MAX_BYTES, 103);
   const ud = '/Users/' + 'ñ'.repeat(45) + '/App'; // ~ 100 chars but > 103 bytes with the tail
   const r = mcpPaths({ ...base, platform: 'darwin', userData: ud });
   assert.ok(bytes(ud + '/mcp/mcp.sock') > 103 && (ud + '/mcp/mcp.sock').length <= 103);
-  assert.ok(r.fallbackDir, 'falls back on byte length');
+  assert.ok(r.checkDir, 'falls back on byte length');
 }
 
 // Fallback itself too long, or no usable uid or tmpdir: no listen, with a reason
@@ -73,7 +73,7 @@ assert.strictEqual(UNIX_SOCKET_MAX_BYTES, 103);
   const r = mcpPaths({ ...base, platform: 'linux', userData: '/home/ana/.config/agent-durbar', env: { XDG_RUNTIME_DIR: '/run/user/1000' }, uid: 1000 });
   assert.strictEqual(r.socket, '/run/user/1000/agent-durbar/mcp.sock');
   assert.strictEqual(r.keyFile, '/home/ana/.config/agent-durbar/mcp/connection.json');
-  assert.strictEqual(r.fallbackDir, null);
+  assert.strictEqual(r.checkDir, '/run/user/1000/agent-durbar');
 }
 
 // Linux without XDG (unset, empty, or not absolute): userData/mcp
@@ -83,11 +83,50 @@ for (const xdg of [undefined, '', 'run/user/1000']) {
   assert.strictEqual(r.socket, ud + '/mcp/mcp.sock', 'xdg=' + String(xdg));
 }
 
-// Linux: long XDG path falls back to tmpdir
+// Linux: long XDG path tries <userData>/mcp first, then tmpdir
 {
-  const r = mcpPaths({ platform: 'linux', userData: '/home/ana/.config/agent-durbar', env: { XDG_RUNTIME_DIR: '/run/user/' + 'x'.repeat(100) }, uid: 1000, tmpdir: '/tmp' });
+  const env = { XDG_RUNTIME_DIR: '/run/user/' + 'x'.repeat(100) };
+  const r = mcpPaths({ platform: 'linux', userData: '/home/ana/.config/agent-durbar', env, uid: 1000, tmpdir: '/tmp' });
+  assert.strictEqual(r.socket, '/home/ana/.config/agent-durbar/mcp/mcp.sock');
+  assert.strictEqual(r.checkDir, null);
+  const r2 = mcpPaths({ platform: 'linux', userData: '/' + 'u'.repeat(110), env, uid: 1000, tmpdir: '/tmp' });
+  assert.strictEqual(r2.socket, '/tmp/agent-durbar-1000/mcp.sock');
+  assert.strictEqual(r2.checkDir, '/tmp/agent-durbar-1000');
+}
+
+// Linux without XDG and userData over 103 bytes: tmp fallback
+{
+  const r = mcpPaths({ platform: 'linux', userData: '/' + 'u'.repeat(110), env: {}, uid: 1000, tmpdir: '/tmp' });
   assert.strictEqual(r.socket, '/tmp/agent-durbar-1000/mcp.sock');
-  assert.strictEqual(r.fallbackDir, '/tmp/agent-durbar-1000');
+  assert.strictEqual(r.checkDir, '/tmp/agent-durbar-1000');
+}
+
+// XDG that is not normalized is refused like unset; an XDG outside userData is always lstat-checked (even a bare /tmp)
+{
+  const ud = '/home/ana/.config/agent-durbar';
+  for (const xdg of ['/run/user/1000/../../../tmp', '/run/user/./1000', '/run//user/1000']) {
+    const r = mcpPaths({ ...base, platform: 'linux', userData: ud, env: { XDG_RUNTIME_DIR: xdg }, uid: 1000 });
+    assert.strictEqual(r.socket, ud + '/mcp/mcp.sock', xdg);
+    assert.strictEqual(r.checkDir, null);
+  }
+  const r = mcpPaths({ ...base, platform: 'linux', userData: ud, env: { XDG_RUNTIME_DIR: '/tmp' }, uid: 1000 });
+  assert.strictEqual(r.socket, '/tmp/agent-durbar/mcp.sock');
+  assert.strictEqual(r.checkDir, '/tmp/agent-durbar');
+  const ok = mcpPaths({ ...base, platform: 'linux', userData: ud, env: { XDG_RUNTIME_DIR: '/run/user/1000' }, uid: 1000 });
+  assert.strictEqual(ok.checkDir, '/run/user/1000/agent-durbar');
+}
+
+// Relative userData or DURBAR_USER_DATA: no socket, no key file, a reason; empty DURBAR_USER_DATA is unset
+for (const [platform, rel, abs] of [['linux', 'rel/ud', '/abs/ud'], ['darwin', 'rel/ud', '/abs/ud'], ['win32', 'rel\\ud', 'C:\\abs\\ud']] as const) {
+  const mk = (userData: string, env: Record<string, string | undefined>) => mcpPaths({ platform, userData, env, uid: 501, tmpdir: '/tmp', pipeId: 'abcdef0123456789' });
+  for (const r of [mk(rel, {}), mk(abs, { DURBAR_USER_DATA: rel })]) {
+    assert.strictEqual(r.socket, null, platform);
+    assert.strictEqual(r.keyFile, null, platform);
+    assert.strictEqual(r.mcpDir, null, platform);
+    assert.ok(r.reason, platform);
+  }
+  const e = mk(abs, { DURBAR_USER_DATA: '' });
+  assert.ok(e.socket && e.keyFile && e.keyFile.startsWith(abs), 'empty DURBAR_USER_DATA is unset ' + platform);
 }
 
 // DURBAR_USER_DATA moves everything and ignores XDG, so tests never touch the real runtime dir
@@ -108,12 +147,14 @@ for (const xdg of [undefined, '', 'run/user/1000']) {
   assert.strictEqual(r.socket, '\\\\.\\pipe\\agent-durbar-mcp-abcdef0123456789');
   assert.strictEqual(r.kind, 'pipe');
   assert.strictEqual(r.keyFile, ud + '\\mcp\\connection.json');
-  assert.strictEqual(r.fallbackDir, null);
+  assert.strictEqual(r.checkDir, null);
   // a very long userData does not matter for a pipe
   const long = mcpPaths({ platform: 'win32', userData: 'C:\\' + 'u'.repeat(200), env: {}, uid: null, tmpdir: 'C:\\Temp', pipeId: 'abcdef0123456789' });
   assert.ok(long.socket);
+  assert.ok(mcpPaths({ platform: 'win32', userData: ud, env: {}, uid: null, tmpdir: 'C:\\Temp', pipeId: 'abcdefgh' }).socket, '8 chars ok');
+  assert.ok(mcpPaths({ platform: 'win32', userData: ud, env: {}, uid: null, tmpdir: 'C:\\Temp', pipeId: 'a'.repeat(128) }).socket, '128 chars ok');
   // missing or hostile pipe id: no pipe
-  for (const bad of [undefined, '', 'short', '..\\evil\\pipe0000', 'abc def0123456789']) {
+  for (const bad of ['a'.repeat(129), undefined, '', 'short', 'abcdefg', '..\\evil\\pipe0000', 'abc def0123456789']) {
     const b = mcpPaths({ platform: 'win32', userData: ud, env: {}, uid: null, tmpdir: 'C:\\Temp', pipeId: bad });
     assert.strictEqual(b.socket, null, String(bad));
     assert.ok(b.reason);
@@ -123,9 +164,9 @@ for (const xdg of [undefined, '', 'run/user/1000']) {
 // Same output on every host: the OS is the input, not process.platform
 {
   const a = mcpPaths({ ...base, platform: 'win32', userData: 'C:\\x', pipeId: 'abcdef0123456789' });
-  assert.ok(a.keyFile.includes('\\') && !a.keyFile.includes('/'));
+  assert.ok(a.keyFile!.includes('\\') && !a.keyFile!.includes('/'));
   const b = mcpPaths({ ...base, platform: 'darwin', userData: '/x' });
-  assert.ok(!b.keyFile.includes('\\'));
+  assert.ok(!b.keyFile!.includes('\\'));
 }
 
 // lstat check (FR-062)

@@ -24,13 +24,14 @@ export interface McpPathsInput {
 export interface McpPaths {
   platform: McpPlatform;
   /** Folder that holds the key file (and the socket, unless it moved). Create it with mode 0700. */
-  mcpDir: string;
-  keyFile: string;
+  mcpDir: string | null;
+  /** `null` when userData is not an absolute path (nothing is written). */
+  keyFile: string | null;
   /** Unix socket path, or `\\.\pipe\...` on Windows. `null` when Durbar must not listen (see `reason`). */
   socket: string | null;
   kind: 'unix' | 'pipe';
-  /** Set when the socket sits in the temporary fallback folder: the caller must `lstat` it before use (FR-062). */
-  fallbackDir: string | null;
+  /** Set whenever the socket folder is outside userData (XDG runtime dir or tmp fallback): the caller creates it with mode 0700 and must `lstat`-check it with `checkFallbackDir` before use (FR-062). */
+  checkDir: string | null;
   /** Why there is no socket (shown in Settings); `null` when `socket` is set. */
   reason: string | null;
 }
@@ -42,46 +43,53 @@ function byteLength(s: string): number {
 }
 
 export function mcpPaths(input: McpPathsInput): McpPaths {
+  // Unknown platform names are treated like Linux (Unix socket, XDG runtime dir).
   const platform: McpPlatform = input.platform === 'win32' ? 'win32' : input.platform === 'darwin' ? 'darwin' : 'linux';
+  const p = platform === 'win32' ? path.win32 : path.posix;
   const devUserData = input.env.DURBAR_USER_DATA;
-  const dev = typeof devUserData === 'string' && devUserData !== '';
+  const dev = typeof devUserData === 'string' && devUserData !== ''; // empty means unset
   const userData = dev ? (devUserData as string) : input.userData;
+  const kind = platform === 'win32' ? 'pipe' : 'unix';
+
+  if (typeof userData !== 'string' || !p.isAbsolute(userData)) {
+    return { platform, mcpDir: null, keyFile: null, kind, socket: null, checkDir: null, reason: 'Durbar\'s data folder is not an absolute path, so the MCP server is not started.' };
+  }
+  const mcpDir = p.join(userData, MCP_DIR_NAME);
+  const keyFile = p.join(mcpDir, MCP_KEY_FILE_NAME);
 
   if (platform === 'win32') {
-    const mcpDir = path.win32.join(userData, MCP_DIR_NAME);
-    const keyFile = path.win32.join(mcpDir, MCP_KEY_FILE_NAME);
     const ok = typeof input.pipeId === 'string' && PIPE_ID_RE.test(input.pipeId);
     return {
-      platform, mcpDir, keyFile, kind: 'pipe', fallbackDir: null,
+      platform, mcpDir, keyFile, kind, checkDir: null,
       socket: ok ? `\\\\.\\pipe\\${MCP_SERVER_NAME}-mcp-${input.pipeId}` : null,
       reason: ok ? null : 'The connection id is missing or invalid, so there is no pipe name.',
     };
   }
 
-  const p = path.posix;
-  const mcpDir = p.join(userData, MCP_DIR_NAME);
-  const keyFile = p.join(mcpDir, MCP_KEY_FILE_NAME);
-
-  // Linux: the XDG runtime dir, unless it is unset or not absolute, or DURBAR_USER_DATA asks to keep everything in one folder.
+  // Linux: the XDG runtime dir, unless it is unset, not absolute, not normalized (a ".." or "." segment, double slash), or DURBAR_USER_DATA keeps everything in one folder.
   const xdg = input.env.XDG_RUNTIME_DIR;
-  const useXdg = platform === 'linux' && !dev && typeof xdg === 'string' && p.isAbsolute(xdg);
-  const primaryDir = useXdg ? p.join(xdg as string, MCP_SERVER_NAME) : mcpDir;
-  const primary = p.join(primaryDir, MCP_SOCKET_FILE_NAME);
-  if (byteLength(primary) <= UNIX_SOCKET_MAX_BYTES) {
-    return { platform, mcpDir, keyFile, kind: 'unix', socket: primary, fallbackDir: null, reason: null };
+  const useXdg = platform === 'linux' && !dev && typeof xdg === 'string' && p.isAbsolute(xdg) && p.normalize(xdg) === xdg;
+  const inUserData = p.join(mcpDir, MCP_SOCKET_FILE_NAME);
+  const fits = (s: string) => byteLength(s) <= UNIX_SOCKET_MAX_BYTES;
+  if (useXdg) {
+    const xdgDir = p.join(xdg as string, MCP_SERVER_NAME);
+    const xdgSock = p.join(xdgDir, MCP_SOCKET_FILE_NAME);
+    if (fits(xdgSock)) return { platform, mcpDir, keyFile, kind, socket: xdgSock, checkDir: xdgDir, reason: null };
   }
+  // Then <userData>/mcp (inside Durbar's own folder, not checked).
+  if (fits(inUserData)) return { platform, mcpDir, keyFile, kind, socket: inUserData, checkDir: null, reason: null };
 
   // Too long for a Unix socket: per-user folder in the temp dir (macOS TMPDIR is already per user; the uid keeps the name unique elsewhere).
   const uidOk = input.uid !== null && Number.isInteger(input.uid) && input.uid >= 0;
-  if (!uidOk || !p.isAbsolute(input.tmpdir)) {
-    return { platform, mcpDir, keyFile, kind: 'unix', socket: null, fallbackDir: null, reason: 'The socket path is too long and there is no safe temporary folder to use instead.' };
+  if (!uidOk || !p.isAbsolute(input.tmpdir) || p.normalize(input.tmpdir) !== input.tmpdir) {
+    return { platform, mcpDir, keyFile, kind, socket: null, checkDir: null, reason: 'The socket path is too long and there is no safe temporary folder to use instead.' };
   }
-  const fallbackDir = p.join(input.tmpdir, `${MCP_SERVER_NAME}-${input.uid}`);
-  const fallback = p.join(fallbackDir, MCP_SOCKET_FILE_NAME);
-  if (byteLength(fallback) > UNIX_SOCKET_MAX_BYTES) {
-    return { platform, mcpDir, keyFile, kind: 'unix', socket: null, fallbackDir: null, reason: 'The socket path is too long, even in the temporary folder.' };
+  const checkDir = p.join(input.tmpdir, `${MCP_SERVER_NAME}-${input.uid}`);
+  const fallback = p.join(checkDir, MCP_SOCKET_FILE_NAME);
+  if (!fits(fallback)) {
+    return { platform, mcpDir, keyFile, kind, socket: null, checkDir: null, reason: 'The socket path is too long, even in the temporary folder.' };
   }
-  return { platform, mcpDir, keyFile, kind: 'unix', socket: fallback, fallbackDir, reason: null };
+  return { platform, mcpDir, keyFile, kind, socket: fallback, checkDir, reason: null };
 }
 
 /** The part of `fs.Stats` (from `lstat`, which does not follow links) that the check needs. */
