@@ -99,7 +99,7 @@ module.exports = async (ctx) => {
   const row = await js(`(()=>{const s=document.querySelector('#plList .plrow[data-srv="github"] select');if(!s)return false;s.value='terminal';s.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
   assert.ok(row, 'Settings lists the github server');
   await ctx.sleep(600);
-  // Settings is long: bring the Places section (heading first) to the top of the scroll area, let the toast go, then check the rows are on screen
+  // Settings is long: bring the Places section (heading first) to the top of the scroll area (the save toast stays and confirms the choice), then check the rows are on screen
   // scroll only the Settings container (.scr-body), never the page, so the top bar and Settings header stay in place
   await js(`(()=>{const c=document.querySelector('#screen .scr-body'),sec=document.querySelector('#plList').closest('.scr-sec');c.scrollTop+=sec.getBoundingClientRect().top-c.getBoundingClientRect().top-16})()`);
   await ctx.sleep(900);
