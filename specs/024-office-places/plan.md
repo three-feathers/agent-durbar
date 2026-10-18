@@ -50,3 +50,12 @@
 - CI on PR #109: `npm test` passes on ubuntu, macOS and Windows runners; the office layout check (xvfb, with the lobby checks) passes on Linux; package smoke passes.
 - Real session (3 prompts, 0.8385 AIU, see the spec): shell calls arrive as `bash`, the start comes before the permission request, a denied call ends as `failed`; a GitHub code search arrives with `mcpServer: 'github-mcp-server'` and walked to Software library.
 - Not verified: the Windows layout (unit tests only there), the walk with real timing of real tools.
+
+## Plan for the 2026-10-18 delta: one GitHub server (issue #117)
+
+- Constitution: I spec delta, plan and tasks first; II renderer only, server names from normalized events; III nothing new on disk (same `placeMap`, keyed by name); IV simulator and unit tests, 0 AIU; V one row fewer in Settings, no office change; VIII the old-key case is documented.
+- `places.js`: `SERVER_ALIASES={'github-mcp-server':'github'}`, `canonicalServer(n)` (own-property lookup, so `__proto__` and friends stay themselves), `classify` lookup order: own name, canonical name, default rules. Export `canonicalServer` for `screens.js`.
+- `screens.js` (Places section): build the row list with `canonicalServer`, dedupe, note on the canonical row when an alias name is among the listed or seen names; on change call `setPlace(canonical, value)` and, if the map still has an alias key, `setPlace(alias, null)`. The row's selected value reads the canonical key, then the alias key.
+- Main and `src/shared/places.ts` stay as they are (they validate names and place ids, nothing GitHub-specific).
+- Tests: `test-places.ts` cases; `shots-024.js` extended. Risks: Vishwakarma's spec 035 (theme foundation) tokenizes places and doors in `app.js`/`styles.css`; this delta touches only `places.js`, `screens.js` and tests, so overlap should be small.
+

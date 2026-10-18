@@ -18,6 +18,9 @@ const P = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'places.js
   IDS: string[];
   placeName: (id: string) => string;
   classify: (e: unknown, map?: unknown) => string;
+  canonicalServer: (s: unknown) => unknown;
+  placeRows: (names: unknown, map?: unknown) => { name: string; aliases: string[]; value: string }[];
+  placeSaves: (name: string, place: string | null, aliases?: string[]) => [string, string | null][];
   defaultServerPlace: (s: unknown) => string;
   toolLabel: (e: unknown) => string;
   createVisits: (o?: { now?: () => number; debounceMs?: number; dwellMs?: number }) => Visits;
@@ -160,6 +163,63 @@ assert.strictEqual(v.at('a')?.place, 'library');
 v = mk();
 assert.strictEqual(v.onTool('a', start('c1', 'x', 'github'), { github: 'desk' }), false, 'mapped to desk: nobody walks');
 assert.strictEqual(v.size(), 0);
+
+// FR-012: github and github-mcp-server are one server for places
+assert.strictEqual(P.canonicalServer('github-mcp-server'), 'github');
+assert.strictEqual(P.canonicalServer('github'), 'github');
+for (const n of ['GitHub-MCP-Server', 'github-mcp-server2', 'my-github-mcp-server', 'github-mcp', 'gitlab', ' github-mcp-server', '__proto__', 'constructor', 'toString', 'hasOwnProperty', 'valueOf']) assert.strictEqual(P.canonicalServer(n), n, `${n} stays itself`);
+assert.strictEqual(P.canonicalServer(''), '');
+assert.strictEqual(P.canonicalServer(undefined), undefined);
+assert.strictEqual(P.canonicalServer(null), null);
+assert.strictEqual(c('search_code', 'github-mcp-server', { github: 'terminal' }), 'terminal', 'entry on github applies to github-mcp-server calls');
+assert.strictEqual(c('search_code', 'github-mcp-server', { 'github-mcp-server': 'web' }), 'web', 'old key on the event name still works');
+assert.strictEqual(c('search_code', 'github-mcp-server', { github: 'desk' }), 'desk', 'desk via the canonical key');
+assert.strictEqual(c('search_code', 'github-mcp-server', { github: 'terminal', 'github-mcp-server': 'web' }), 'web', 'own name wins over canonical (call github-mcp-server)');
+assert.strictEqual(c('search_code', 'github', { github: 'terminal', 'github-mcp-server': 'web' }), 'terminal', 'own name wins (call github)');
+assert.strictEqual(c('search_code', 'github', { 'github-mcp-server': 'web' }), 'software', 'a github call does not read the alias key: default rules');
+assert.strictEqual(c('search_code', 'github-mcp-server', { github: 'moon' }), 'software', 'invalid value under canonical: default rules');
+assert.strictEqual(c('search_code', 'github-mcp-server', { github: 'moon', 'github-mcp-server': 'web' }), 'web');
+assert.strictEqual(c('search_code', 'github-mcp-server', {}), 'software');
+assert.strictEqual(c('x', 'GitHub-MCP-Server', { github: 'terminal' }), 'software', 'look-alike name does not alias');
+assert.strictEqual(c('x', 'my-github-mcp-server', { github: 'terminal' }), 'software');
+for (const n of ['__proto__', 'constructor', 'toString']) {
+  assert.strictEqual(c('x', n, {}), 'other', `${n} with an empty map: default`);
+  assert.strictEqual(c('x', n, { [n]: 'web' }), 'web', `${n} own key (a computed key is an own property)`);
+}
+assert.strictEqual(c('x', 'toString', { github: 'web' }), 'other', 'no prototype leak');
+assert.strictEqual(c('x', 'github-mcp-server', Object.create({ github: 'web' })), 'software', 'inherited key ignored (canonical)');
+assert.strictEqual(c('x', 'github', Object.create({ github: 'web' })), 'software', 'inherited key ignored (own name)');
+
+// FR-013: Settings > Places rows fold alias names into the canonical one; saving writes the canonical key and clears the alias key
+const rows = (names: string[], map: Record<string, string> = {}) => P.placeRows(names, map).map((r) => `${r.name}|${r.aliases.join(',')}|${r.value}`);
+assert.deepStrictEqual(rows(['github', 'github-mcp-server', 'acme']), ['acme||', 'github|github-mcp-server|'], 'both names: one github row with the note');
+assert.deepStrictEqual(rows(['github-mcp-server']), ['github|github-mcp-server|'], 'only the alias seen: one github row, with the note');
+assert.deepStrictEqual(rows(['github']), ['github||'], 'only github: no note');
+assert.deepStrictEqual(rows(['github-mcp-server', 'github-mcp-server', 'github']), ['github|github-mcp-server|'], 'duplicates fold');
+assert.deepStrictEqual(rows(['b', 'a', 'github-mcp-server']), ['a||', 'b||', 'github|github-mcp-server|'], 'sorted by canonical name');
+assert.deepStrictEqual(rows(['GitHub-MCP-Server', 'github-mcp-server2', 'my-github-mcp-server', 'GitHub']), ['GitHub||', 'GitHub-MCP-Server||', 'github-mcp-server2||', 'my-github-mcp-server||'], 'look-alikes are not folded');
+assert.deepStrictEqual(rows(['__proto__', 'constructor', 'toString']), ['__proto__||', 'constructor||', 'toString||'], 'special names stay themselves');
+assert.deepStrictEqual(rows(['github', 'github-mcp-server'], { 'github-mcp-server': 'web' }), ['github|github-mcp-server|web'], 'old map with only the alias key: shown on the github row');
+assert.deepStrictEqual(rows(['github', 'github-mcp-server'], { github: 'library', 'github-mcp-server': 'web' }), ['github|github-mcp-server|web'], 'both keys: the alias value is shown (the call\'s own name wins in classify)');
+assert.deepStrictEqual(rows(['github', 'github-mcp-server'], { github: 'moon', 'github-mcp-server': 'desk' }), ['github|github-mcp-server|desk'], 'invalid canonical value falls to the alias');
+assert.deepStrictEqual(rows(['github', 'github-mcp-server'], { github: 'library', 'github-mcp-server': 'moon' }), ['github|github-mcp-server|library'], 'invalid alias value falls back to the canonical one');
+{
+  const both = { github: 'library', 'github-mcp-server': 'web' };
+  assert.strictEqual(P.placeRows(['github', 'github-mcp-server'], both)[0].value, c('x', 'github-mcp-server', both), 'both keys: the row shows what classify() does for a github-mcp-server call');
+}
+assert.deepStrictEqual(rows(['acme'], { acme: 'terminal' }), ['acme||terminal'], 'other rows unchanged');
+assert.deepStrictEqual(rows(['github'], Object.create({ github: 'web' })), ['github||'], 'inherited keys ignored');
+assert.deepStrictEqual(P.placeRows(null, null), [], 'bad input');
+assert.deepStrictEqual(P.placeSaves('github', 'web', ['github-mcp-server']), [['github', 'web'], ['github-mcp-server', null]], 'canonical key written first, alias cleared');
+assert.deepStrictEqual(P.placeSaves('github', null, ['github-mcp-server']), [['github', null], ['github-mcp-server', null]], 'default clears both');
+assert.deepStrictEqual(P.placeSaves('acme', 'web', []), [['acme', 'web']], 'other rows: one save');
+assert.deepStrictEqual(P.placeSaves('acme', 'web'), [['acme', 'web']]);
+{
+  // the transform applied to a saved map, as main does it with setPlaceEntry
+  let sm = parsePlaceMap({ 'github-mcp-server': 'web', acme: 'library' });
+  for (const [k, v] of P.placeSaves('github', 'terminal', ['github-mcp-server'])) { const x = setPlaceEntry(sm, k, v); assert.ok(x.ok); sm = x.map; }
+  assert.deepStrictEqual({ ...sm }, { github: 'terminal', acme: 'library' }, 'github written, alias key gone, acme untouched');
+}
 
 // FR-007 / FR-011: shared validation of the stored mapping (server names and place ids only)
 assert.strictEqual(cleanServerName('  github  '), 'github');
