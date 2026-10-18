@@ -4,7 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
-Nothing yet.
+- Floor names: every hidden character is now written as an escape in source, more look-alike and layout characters are refused (line and paragraph separators, soft hyphen, invisible operators, fillers, annotation marks), a saved name with a C1 control keeps its floor, and the simulator's rule is tested against the shared one (spec 033 delta, T041, issue #167; 0 AIU, unit tests).
 
 ## v0.1.0-alpha.5 (pre-release, 2026-10-18)
 
