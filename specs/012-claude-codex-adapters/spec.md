@@ -95,7 +95,7 @@ New:
 - **FR-022** Real-account verification (one tiny prompt per check, Read-only unless the check is about writes, usage recorded in the spec) is a separate task set, marked `needs-owner-approval`, never part of CI (constitution IV).
 - **FR-023** Capabilities and the contract suite decide what the UI shows; no adapter-name checks in the renderer.
 - **FR-024** `[KNOWN GAP]` Per-session injection of Durbar's global MCP servers (spec 019/020) into Codex, and per-session switch-off, are unverified; until verified, Codex declares `mcpToggle: false` and shows MCP status read-only.
-- **FR-025** Folder trust: project-level vendor settings (`.claude/settings.json`, `.mcp.json`, `.codex/config.toml`) are not loaded for a folder until the user has trusted that folder in Durbar (reuses the spec 020 trust prompt). Claude: `settingSources` defaults to `['user']`; Codex: its own project trust applies.
+- **FR-025** Folder trust: project-level vendor settings (`.claude/settings.json`, `.mcp.json`, `.codex/config.toml`) are not loaded for a folder until the user has trusted that folder in Durbar Decided 2026-10-18 (Q8, see `## Changes`): Claude loads no settings files at all (`settingSources: []`, `strictMcpConfig: true`), trusted or not; Codex: its own project trust applies.
 
 ### Key Entities
 
@@ -128,7 +128,7 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 - **C9 Credit caps (spec 011).** **Decided:** Claude and Codex declare `caps: false` in v1. The cap is AIU; Claude's `maxBudgetUsd` is a dollar estimate and a different thing. A dollar cap is Q7.
 - **C10 Usage units.** **Decided:** tokens everywhere they exist; optional `costUsd` (estimate, Claude only); no office total mixing units; per-agent card shows tokens and a labelled estimate in the tooltip.
 - **C11 Previous sessions of other tools.** **Proposed:** yes, same folder and same agent type only, read-only, through `listSessions`/`getSessionMessages` (Claude) and `thread/list`/`thread/turns/list` (Codex), after live sessions work.
-- **C12 Folder trust.** **Proposed:** FR-025. Claude `settingSources: ['user']` by default; project settings only after Durbar's trust prompt.
+- **C12 Folder trust.** **Proposed:** FR-025. Decided (Q8): Claude `settingSources: []` and `strictMcpConfig: true` always; no folder trust for settings.
 - **C13 Interface changes.** **Decided:** promote what `main.ts` already uses (`isLive`, `dispose`, `listModelOptions`, `listPreviousSessions`, `history`, `setPermMode`) to optional interface members gated by capabilities, in Phase 1, with Copilot behaviour unchanged (existing tests must stay green).
 
 ### Open questions for the owner
@@ -140,7 +140,7 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 - **Q5 Order.** Confirm or reverse C3.
 - **Q6 Codex Read-only wording.** Accept that Codex's Read-only is an OS sandbox in which shell reads can run, shown as such? The alternative (deny all shell) would make Codex unable to read files.
 - **Q7 Dollar cap for Claude.** Add a `maxBudgetUsd` cap later as a separate setting, or leave caps Copilot-only?
-- **Q8 Trust for project settings.** Confirm FR-025 (project settings only after trust), which costs some convenience (a repo's own `.claude` hooks and agents will not run until trusted).
+- **Q8 Trust for project settings.** Answered 2026-10-18 by the owner: never load any Claude settings files (`settingSources: []`), trusted or not. A repo's own `.claude` hooks, agents and `.mcp.json` do not run in v1 (T083).
 - **Q9 Windows.** Is a Windows check of the Codex sandbox (it may need an elevated setup step) acceptable as a later, owner-run task, with Windows Read-only declared `[KNOWN GAP]` meanwhile?
 
 ## Assumptions and dependencies
@@ -150,6 +150,8 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 - The SDK or CLI of either vendor may change or be withdrawn; pinned versions and a minimum-version check are part of every adapter task.
 
 ## Changes
+
+- **2026-10-18, T027 / FR-025 decided (issue #46; owner answered Q8: "Never load any").** A Claude session in Durbar loads **no** Claude settings files, trusted folder or not: `settingSources: []` in every mode (already so since T021). Reason: any settings source can carry `permissions.allow` rules, and the SDK applies those before `canUseTool`, so they would approve tools behind Ask first. Durbar's own modes (spec 003/018) and its own MCP list (spec 020/024) are the only source of rules and servers. T027 also sets `strictMcpConfig: true` in every mode, so MCP servers come only from Durbar's `mcpServers` option and not from `.mcp.json`, user settings, plugins or claude.ai connectors (`read:` research.md 2.3, MCP row). There is no folder-level trust prompt for Claude settings; spec 020's trust stays per MCP extra. Codex is unchanged: its own project trust applies. `[KNOWN GAP]` (T083): a repo's own `.claude` hooks, agents and `.mcp.json` never run in a Claude session started from Durbar; whether the SDK honours `settingSources: []` and `strictMcpConfig` exactly as documented is checked on a real install in T068.
 
 - **2026-10-18, T010 scope restated against today's code (issue #30; built 2026-10-18 on the simulator and in unit tests, not checked on a real account).** The plan was written on 2026-10-17. Since then spec 030 added optional `setModel`, `cancelQueuedModel` and `compact` to `AgentAdapter`, `ModelEvent`/`CompactionEvent`, a `ModelControl` object in `AgentInfo` derived from member presence (`modelControlFor`), and `main.ts` now holds a second, typed reference `generic: AgentAdapter` for those members. `read:` `src/adapters/types.ts:279-308`, `src/main/main.ts:56-58`, `src/shared/modelswitch.ts:54-80`.
   - **What T010 is now.** A pure interface and plumbing change in `src/adapters/types.ts`, `src/adapters/copilot.ts`, `src/adapters/copilotmodel.ts`, `src/shared/modelswitch.ts`, `src/main/main.ts` and `src/main/mcpipc.ts`. No new adapter, no registry (T011), no `AdapterInfo` or IPC (T011/T014), no change to `src/shared/api.ts`, the preload or the renderer, no new dependency. Copilot behaviour is unchanged and every existing test stays green.
