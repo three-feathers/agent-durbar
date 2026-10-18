@@ -202,7 +202,8 @@ async function addWorkspace(
   draft.maxAiCredits = opts.maxAiCredits === null ? undefined : (opts.maxAiCredits ?? folderStore?.get(wsKey(draft))?.maxAiCredits ?? settingsStore?.defaultMaxAiCredits);
   const id = await ad.start({ ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId });
   router.bind(id, adapterId);
-  const info: AgentInfo = { ...draft, id, hidden: folderStore?.get(wsKey(draft))?.hidden, closed: folderStore?.get(wsKey(draft))?.closed };
+  const saved = folderStore?.get(wsKey(draft));
+  const info: AgentInfo = { ...draft, id, hidden: saved?.hidden, closed: saved?.closed, label: saved?.label };
   agents.set(id, info);
   if (opts.persist) folderStore?.upsert({ workspace: wsKey(info), permMode, model, effort, maxAiCredits: info.maxAiCredits, floor: opts.floor, adapterId });
   // An existing folder keeps its floor; a new one gets the chosen floor (spec 033 FR-006).
@@ -262,6 +263,7 @@ function restoreFolders(): void {
       if (!fs.existsSync(f.workspace)) continue; // e.g. an unplugged drive: stays saved, just not shown
       const rm = restoreMode(f.permMode); // exactly as saved, Allow all included, flagged so the UI shows "restored" (spec 003 FR-025/026)
       const info = infoFor(f.workspace, rm.mode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, maxAiCredits: f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(adapterId));
+      if (f.label) info.label = f.label;
       router.bind(info.id, adapterId);
       agents.set(info.id, info);
     } catch {
@@ -656,6 +658,32 @@ ipcMain.handle('folders:remove', async (_e, id: unknown) => {
   }
   folderStore?.remove(key);
   return { ok: true, removedIds };
+});
+
+// One main session out of the office (spec 006 FR-017). The last main session of a folder stays (Folders > Remove is for that).
+ipcMain.handle('agents:remove', async (_e, id: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  if (!a) return { ok: false, error: 'unknown session' };
+  const key = wsKey(a);
+  if ([...agents.values()].filter((x) => wsKey(x) === key).length < 2) return { ok: false, error: 'This is the only session in the folder. Remove the folder from Folders instead.' };
+  try {
+    await router.forAgent(a.id)?.stop(a.id); // the history stays on disk and is listed under Previous sessions
+  } catch {
+    /* already gone */
+  }
+  router.unbind(a.id);
+  agents.delete(a.id);
+  vsChatRefs.delete(a.id);
+  return { ok: true };
+});
+
+ipcMain.handle('folders:rename', (_e, id: unknown, label: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  if (!a || !folderStore) return { ok: false };
+  const r = folderStore.setLabel(wsKey(a), label);
+  if (!r) return { ok: false };
+  for (const x of agents.values()) if (wsKey(x) === wsKey(a)) x.label = r.label;
+  return { ok: true, label: r.label };
 });
 
 ipcMain.handle('agents:resolvePermission', (_e, id: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean) => {
