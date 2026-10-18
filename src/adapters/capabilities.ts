@@ -9,28 +9,28 @@ export type PermissionMode = 'read-only' | 'ask' | 'allow';
 
 export interface AdapterCapabilities {
   /** `interrupt()` stops the running turn and keeps the session. */
-  interrupt: boolean;
+  readonly interrupt: boolean;
   /** An earlier session can be resumed by the vendor's session id. */
-  resume: boolean;
-  images: boolean;
+  readonly resume: boolean;
+  readonly images: boolean;
   /** `listModelOptions()` exists. */
-  models: boolean;
-  effort: boolean;
+  readonly models: boolean;
+  readonly effort: boolean;
   /** The permission modes the adapter can enforce. */
-  permissionModes: PermissionMode[];
+  readonly permissionModes: readonly PermissionMode[];
   /** How a mode change reaches a running session (`setPermMode()` exists unless `none`). */
-  permModeSwitch: 'live' | 'next-message' | 'none';
+  readonly permModeSwitch: 'live' | 'next-message' | 'none';
   /** Which usage figures the adapter reports. `costUsd` is the vendor's estimate, never a bill. */
-  usage: { tokens: boolean; costUsd: boolean; nanoAiu: boolean };
-  context: boolean;
+  readonly usage: Readonly<{ tokens: boolean; costUsd: boolean; nanoAiu: boolean }>;
+  readonly context: boolean;
   /** `setCap()` and `resolveLimit()` exist. */
-  caps: boolean;
-  helpers: boolean;
+  readonly caps: boolean;
+  readonly helpers: boolean;
   /** `listPreviousSessions()` and `history()` exist. */
-  history: boolean;
-  mcpStatus: boolean;
+  readonly history: boolean;
+  readonly mcpStatus: boolean;
   /** `setMcpEnabled()` exists. */
-  mcpToggle: boolean;
+  readonly mcpToggle: boolean;
 }
 
 /** Where an adapter stands on this machine (spec 012 FR-030). `unknown` also covers a detect that failed. */
