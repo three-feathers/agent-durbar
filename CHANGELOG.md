@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.4 tag)
 
+- **Codex JSON-RPC client (spec 012 T042, issue #50).** A line-delimited JSON-RPC client for `codex app-server` over a child process (argv only, no shell): framing, ids, timeouts, server requests, malformed and oversize lines, child exit and a SIGTERM-then-SIGKILL close. Tested on a fake child process; not wired yet, no user-visible change, 0 AIU.
+
 - **Adapter registry and descriptors (spec 012 T011, issue #31).** A pure list of the agents the app knows (only Copilot today), with what each can do and a way to check if it is installed; not wired into the app yet, so no visible change. Unit tests, 0 AIU.
 
 - **Adapter interface ready for more agents (spec 012 T010, issue #30).** The app now talks to every agent through one interface with declared capabilities; Copilot works exactly as before. Groundwork for Claude Code and Codex; simulator and unit tests, 0 AIU.
