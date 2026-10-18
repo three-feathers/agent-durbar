@@ -658,6 +658,9 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .place .pn{flex:0 1 auto;min-width:0;font-size:12.5px;font-weight:650;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .place .prow{flex:1 1 auto;display:flex;align-items:center;gap:6px;min-width:0;justify-content:flex-end}
 .place .pslots{display:flex;gap:3px;flex:none}
+.place-add{flex:none;align-self:center;width:26px;height:26px;box-sizing:border-box;padding:0;border-radius:50%;border:1.5px dashed var(--line-2);background:rgba(255,255,255,.55);color:var(--ink-2);font:inherit;font-size:16px;line-height:1;cursor:pointer}
+.place-add:hover{background:#fff;border-style:solid}
+.place-add:focus-visible{outline:2px solid var(--focus,#4a7fa8);outline-offset:2px}
 .slot{width:22px;height:22px;box-sizing:border-box;border-radius:50%;border:1.5px dashed var(--line-2);display:inline-flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:650;color:var(--muted)}
 .slot.on{border-color:transparent}
 .slot.more{border-style:solid;border-color:var(--line-2);background:rgba(255,255,255,.8);color:var(--ink-2)}

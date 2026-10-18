@@ -407,9 +407,12 @@ ipcMain.handle('usage:reset', () => {
   usageStore?.reset();
   return { ok: true, doc: usageStore?.view() };
 });
-ipcMain.handle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits, placeMap: settingsStore?.placeMap ?? {}, seriousMode: settingsStore?.seriousMode ?? false, about: aboutView(app.getVersion()) }));
+ipcMain.handle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits, placeMap: settingsStore?.placeMap ?? {}, customPlaces: settingsStore?.customPlaces ?? [], seriousMode: settingsStore?.seriousMode ?? false, about: aboutView(app.getVersion()) }));
 ipcMain.handle('settings:setSeriousMode', (_e, on: unknown) => ({ ok: true, seriousMode: settingsStore?.setSeriousMode(on) ?? false }));
 ipcMain.handle('settings:setPlace', (_e, server: unknown, place: unknown) => settingsStore?.setPlace(server, place) ?? { ok: false });
+ipcMain.handle('settings:addPlace', (_e, name: unknown, icon: unknown) => settingsStore?.addPlace(name, icon) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
+ipcMain.handle('settings:updatePlace', (_e, id: unknown, patch: unknown) => settingsStore?.updatePlace(id, patch) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
+ipcMain.handle('settings:removePlace', (_e, id: unknown) => settingsStore?.removePlace(id) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
 ipcMain.handle('settings:setDefaultCap', (_e, credits: unknown) => ({ ok: true, defaultMaxAiCredits: settingsStore?.setDefaultMaxAiCredits(credits) }));
 
 ipcMain.handle('agents:setCap', async (_e, id: unknown, credits: unknown) => {
@@ -623,6 +626,7 @@ function createWindow(): void {
     if (dev.DURBAR_SIM_FREEZE === '1') query.simfreeze = '1';
     if (dev.DURBAR_SIM_ROOMS) query.simrooms = dev.DURBAR_SIM_ROOMS;
     if (dev.DURBAR_SIM_FLOORS === '1') query.simfloors = '1';
+    if (/^[0-3]$/.test(dev.DURBAR_SIM_PLACES ?? '')) query.simplaces = dev.DURBAR_SIM_PLACES as string; // spec 024 FR-026: custom places seeded in the simulator
     if (dev.DURBAR_SIM_FLOORS_OFF) query.floorsoff = dev.DURBAR_SIM_FLOORS_OFF.slice(0, 200);
   }
   void win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query });
