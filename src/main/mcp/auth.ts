@@ -18,7 +18,8 @@ export const NONCE_BYTES = 32;
 const PIPE_ID_RE = /^[A-Za-z0-9]{8,128}$/;
 const HEX_KEY_RE = /^[0-9a-f]{64}$/;
 const KEY_FILE_VERSION = 1;
-const MAX_KEY_FILE_CHARS = 4096;
+/** Largest key file Durbar will read, in bytes (a real one is about 150). */
+const MAX_KEY_FILE_BYTES = 4096;
 
 /** The part of `fs.Stats` (from `lstat`, which does not follow links) the checks need. */
 export interface AuthStat {
@@ -36,7 +37,13 @@ export interface McpFs {
   /** Exclusive create (flag `wx`) with the given mode. */
   writeNew(file: string, data: string, mode: number): void;
   rename(from: string, to: string): void;
-  read(file: string): string;
+  /** Opens read-only without following a final symlink and without blocking on a FIFO (`O_NOFOLLOW|O_NONBLOCK` where the OS has them). Throws on a link. */
+  open(file: string): number;
+  /** `fstat` of an open descriptor, with the size in bytes. */
+  fstat(fd: number): AuthStat & { size: number };
+  /** Reads at most `max` bytes from the descriptor, as UTF-8 text. */
+  readFd(fd: number, max: number): string;
+  close(fd: number): void;
   lstat(p: string): AuthStat;
   unlink(p: string): void;
 }
@@ -78,15 +85,39 @@ function serialize(m: KeyMaterial): string {
   return JSON.stringify({ version: KEY_FILE_VERSION, key: m.key.toString('hex'), pipeId: m.pipeId }) + '\n';
 }
 
+function owned(d: KeyFileDeps, st: AuthStat): boolean {
+  if (d.platform === 'win32') return true; // no usable owner on Windows
+  return d.uid !== null && st.uid === d.uid; // POSIX: fails closed when the uid is unknown
+}
+
+/** The connection folder must be a real folder (not a link) owned by this user. Returns the refusal text, or null. `strictMode` adds the 0700 check (read); the write path fixes the mode itself. */
+function dirProblem(d: KeyFileDeps, st: AuthStat, strictMode: boolean): string | null {
+  if (st.isSymbolicLink()) return 'The connection folder is a symbolic link, so it is not used.';
+  if (!st.isDirectory()) return 'The connection folder is not a folder, so it is not used.';
+  if (!owned(d, st)) return 'The connection folder belongs to another user, so it is not used.';
+  if (strictMode && d.platform !== 'win32' && (st.mode & 0o077) !== 0) return 'The connection folder is open to other users (it must be mode 0700), so it is not used.';
+  return null;
+}
+
 /** Writes the key file atomically (temp file in the same folder, then rename): a failure leaves the old file, or none, never a partial one. */
 function writeAtomic(d: KeyFileDeps, m: KeyMaterial): void {
   const random = d.random ?? randomBytes;
   const posix = d.platform !== 'win32';
   try {
     d.fs.mkdirp(d.mcpDir, 0o700);
-    if (posix) d.fs.chmod(d.mcpDir, 0o700); // an existing folder (or a restrictive umask) must end up 0700
   } catch (e) {
     throw new Error(`Could not create the connection folder (${errCode(e)}).`);
+  }
+  // Never write through a symlinked or foreign folder (checked before chmod, which would follow a link).
+  let problem: string | null;
+  try { problem = dirProblem(d, d.fs.lstat(d.mcpDir), false); } catch (e) {
+    throw new Error(`Could not check the connection folder (${errCode(e)}).`);
+  }
+  if (problem) throw new Error(problem);
+  try {
+    if (posix) d.fs.chmod(d.mcpDir, 0o700); // an existing folder (or a restrictive umask) must end up 0700
+  } catch (e) {
+    throw new Error(`Could not secure the connection folder (${errCode(e)}).`);
   }
   const tmp = `${d.keyFile}.${random(8).toString('hex')}.tmp`;
   try {
@@ -130,34 +161,46 @@ export function deleteKeyFile(d: KeyFileDeps): void {
 export function readKeyFile(d: KeyFileDeps): KeyReadResult {
   const posix = d.platform !== 'win32';
   const unsafe = (message: string): KeyReadResult => ({ ok: false, reason: 'unsafe', message });
-  const owner = (st: AuthStat) => !posix || d.uid === null || st.uid === d.uid;
+  const missing: KeyReadResult = { ok: false, reason: 'missing', message: 'There is no connection key file.' };
+  const cannot = (what: string, e: unknown): KeyReadResult => ({ ok: false, reason: 'invalid', message: `The ${what} cannot be read (${errCode(e)}).` });
 
   let dirSt: AuthStat;
   try { dirSt = d.fs.lstat(d.mcpDir); } catch (e) {
-    if (errCode(e) === 'ENOENT') return { ok: false, reason: 'missing', message: 'There is no connection key file.' };
-    return { ok: false, reason: 'invalid', message: `The connection folder cannot be read (${errCode(e)}).` };
+    return errCode(e) === 'ENOENT' ? missing : cannot('connection folder', e);
   }
-  if (dirSt.isSymbolicLink()) return unsafe('The connection folder is a symbolic link, so it is not used.');
-  if (!dirSt.isDirectory()) return unsafe('The connection folder is not a folder, so it is not used.');
-  if (!owner(dirSt)) return unsafe('The connection folder belongs to another user, so it is not used.');
-  if (posix && (dirSt.mode & 0o077) !== 0) return unsafe('The connection folder is open to other users (it must be mode 0700), so it is not used.');
+  const dp = dirProblem(d, dirSt, true);
+  if (dp) return unsafe(dp);
 
   let st: AuthStat;
   try { st = d.fs.lstat(d.keyFile); } catch (e) {
-    if (errCode(e) === 'ENOENT') return { ok: false, reason: 'missing', message: 'There is no connection key file.' };
-    return { ok: false, reason: 'invalid', message: `The connection key file cannot be read (${errCode(e)}).` };
+    return errCode(e) === 'ENOENT' ? missing : cannot('connection key file', e);
   }
   if (st.isSymbolicLink()) return unsafe('The connection key file is a symbolic link, so it is not used.');
   if (!st.isFile()) return unsafe('The connection key file is not a regular file, so it is not used.');
-  if (!owner(st)) return unsafe('The connection key file belongs to another user, so it is not used.');
-  if (posix && (st.mode & 0o077) !== 0) return unsafe('The connection key file is open to other users (it must be mode 0600), so it is not used.');
 
+  // The checks above are a fast path. What counts is the descriptor: open without following a link or blocking on a
+  // FIFO, then fstat the descriptor, so a file swapped in after the lstat is refused.
+  let fd: number;
+  try { fd = d.fs.open(d.keyFile); } catch (e) {
+    const c = errCode(e);
+    if (c === 'ENOENT') return missing;
+    if (c === 'ELOOP' || c === 'EMLINK') return unsafe('The connection key file is a symbolic link, so it is not used.');
+    return cannot('connection key file', e);
+  }
   let text: string;
-  try { text = d.fs.read(d.keyFile); } catch (e) {
-    return { ok: false, reason: 'invalid', message: `The connection key file cannot be read (${errCode(e)}).` };
+  try {
+    const fst = d.fs.fstat(fd);
+    if (fst.isSymbolicLink() || !fst.isFile()) return unsafe('The connection key file is not a regular file, so it is not used.');
+    if (!owned(d, fst)) return unsafe('The connection key file belongs to another user, so it is not used.');
+    if (posix && (fst.mode & 0o077) !== 0) return unsafe('The connection key file is open to other users (it must be mode 0600), so it is not used.');
+    if (!(fst.size >= 0) || fst.size > MAX_KEY_FILE_BYTES) return { ok: false, reason: 'invalid', message: 'The connection key file is damaged.' };
+    text = d.fs.readFd(fd, MAX_KEY_FILE_BYTES);
+  } catch (e) {
+    return cannot('connection key file', e);
+  } finally {
+    try { d.fs.close(fd); } catch { /* nothing more to do */ }
   }
   const bad: KeyReadResult = { ok: false, reason: 'invalid', message: 'The connection key file is damaged.' };
-  if (text.length > MAX_KEY_FILE_CHARS) return bad;
   let o: unknown;
   try { o = JSON.parse(text); } catch { return bad; }
   if (typeof o !== 'object' || o === null) return bad;
@@ -176,7 +219,19 @@ export function nodeMcpFs(): McpFs {
     chmod: (p, mode) => fs.chmodSync(p, mode),
     writeNew: (file, data, mode) => fs.writeFileSync(file, data, { flag: 'wx', mode }),
     rename: (a, b) => fs.renameSync(a, b),
-    read: (file) => fs.readFileSync(file, 'utf8'),
+    open: (file) => fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0)),
+    fstat: (fd) => fs.fstatSync(fd),
+    readFd: (fd, max) => {
+      const buf = Buffer.alloc(max);
+      let n = 0;
+      while (n < max) {
+        const got = fs.readSync(fd, buf, n, max - n, null);
+        if (got === 0) break;
+        n += got;
+      }
+      return buf.subarray(0, n).toString('utf8');
+    },
+    close: (fd) => fs.closeSync(fd),
     lstat: (p) => fs.lstatSync(p),
     unlink: (p) => fs.unlinkSync(p),
   };
@@ -186,13 +241,15 @@ export function nodeMcpFs(): McpFs {
 // Handshake (FR-058, FR-061)
 //
 //   server -> bridge  {"hello":"agent-durbar-mcp/1","nonceS":<64 hex>}
-//   bridge -> server  {"nonceB":<64 hex>,"mac":HMAC(key,"b"|nonceS|nonceB),"marker":bool?,"parent":str?}
-//   server -> bridge  {"ok":true,"mac":HMAC(key,"s"|nonceB|nonceS)}      (only after the bridge's MAC checked out)
+//   bridge -> server  {"nonceB":<64 hex>,"mac":HMAC(key,T('b')),"marker":bool?,"parent":str?}
+//   server -> bridge  {"ok":true,"mac":HMAC(key,T('s'))}      (only after the bridge's MAC checked out)
 //
-// Nonces are 32 random bytes (hex on the wire). MACs are HMAC-SHA256 over a one-byte role label and the raw
-// nonces; the labels differ per direction, so a MAC cannot be reflected back at the side that made it or replayed
-// from the other direction. The key never crosses the wire. A failed handshake sends nothing back (the server has
-// sent only its nonce before authenticating).
+// T(role) is an unambiguous transcript: lp(role) lp(version) first-nonce second-nonce marker-byte
+// parent-present-byte lp(parent), where lp(x) is a 2-byte big-endian length then the UTF-8 bytes. The order is
+// (nonceS, nonceB) for role "b" and (nonceB, nonceS) for role "s". So each MAC covers the role, the protocol version,
+// both nonces and the bridge's claimed `marker` and `parent`: a relayed reply with a changed field fails, and a MAC
+// cannot be reflected back at the side that made it or replayed from the other direction. The key never crosses
+// the wire. A failed handshake sends nothing back (the server has sent only its nonce before authenticating).
 // ---------------------------------------------------------------------------------------------
 
 export const HELLO = 'agent-durbar-mcp/1';
@@ -206,7 +263,7 @@ const ERROR_TEXT: Record<HandshakeErrorCode, string> = {
   malformed: 'The handshake message was not valid.',
   'bad-version': 'The peer speaks another handshake version.',
   'bad-mac': 'The handshake proof was wrong.',
-  'bad-state': 'A handshake message arrived at the wrong time.',
+  'bad-state': 'A handshake message arrived at the wrong time, or could not be sent.',
 };
 
 export interface HandshakeError { code: HandshakeErrorCode; message: string }
@@ -222,7 +279,7 @@ export interface Timers {
 export interface HandshakeDeps {
   /** 32-byte key from the key file. */
   key: Buffer;
-  /** Writes one handshake message (a JSON string, no newline; T013 frames it). */
+  /** Writes one handshake message (a JSON string, no newline; T013 frames it). If it throws, the handshake fails as `bad-state`. */
   send(message: string): void;
   onDone(result: HandshakeResult): void;
   timers: Timers;
@@ -232,7 +289,7 @@ export interface HandshakeDeps {
 }
 
 export interface Handshake {
-  /** Server: sends the hello and starts the timer. Bridge: starts the timer and waits for the hello. */
+  /** Server: sends the hello and starts the timer. Bridge: starts the timer and waits for the hello. Idempotent. */
   start(): void;
   /** Feed one received message (as text). Never throws. */
   receive(message: string): void;
@@ -241,8 +298,21 @@ export interface Handshake {
   readonly done: boolean;
 }
 
-function mac(key: Buffer, role: 'b' | 's', first: Buffer, second: Buffer): Buffer {
-  return createHmac('sha256', key).update(role, 'utf8').update(first).update(second).digest();
+function lp(s: string): Buffer {
+  const b = Buffer.from(s, 'utf8');
+  const len = Buffer.alloc(2);
+  len.writeUInt16BE(Math.min(b.length, 0xffff));
+  return Buffer.concat([len, b.subarray(0, 0xffff)]);
+}
+
+/** HMAC-SHA256 over the transcript T(role) described above. */
+function mac(key: Buffer, role: 'b' | 's', first: Buffer, second: Buffer, peer: PeerInfo): Buffer {
+  return createHmac('sha256', key)
+    .update(lp(role)).update(lp(HELLO))
+    .update(first).update(second)
+    .update(Buffer.from([peer.marker ? 1 : 0, peer.parent !== undefined ? 1 : 0]))
+    .update(lp(peer.parent ?? ''))
+    .digest();
 }
 
 /** Constant-time compare; a different length is simply "no" (timingSafeEqual would throw). */
@@ -264,16 +334,22 @@ function base(d: HandshakeDeps) {
   const random = d.random ?? randomBytes;
   let finished = false;
   let timer: unknown = null;
-  const clear = () => { if (timer !== null) { d.timers.clearTimeout(timer); timer = null; } };
+  const clear = () => { if (timer !== null) { try { d.timers.clearTimeout(timer); } catch { /* ignore */ } timer = null; } };
   const finish = (r: HandshakeResult) => {
     if (finished) return;
     finished = true;
     clear();
-    d.onDone(r);
+    try { d.onDone(r); } catch { /* a throwing listener must not break the caller */ }
   };
   const fail = (code: HandshakeErrorCode) => finish({ ok: false, error: { code, message: ERROR_TEXT[code] } });
   const arm = () => { timer = d.timers.setTimeout(() => fail('timeout'), d.timeoutMs ?? MCP_LIMITS.handshakeTimeoutMs); };
-  return { random, fail, finish, arm, abort: () => { finished = true; clear(); }, isDone: () => finished };
+  /** Sends; a throwing `send` fails the handshake as bad-state. Returns whether it was sent. */
+  const send = (m: string): boolean => {
+    try { d.send(m); return true; } catch { fail('bad-state'); return false; }
+  };
+  /** Runs a step so that `receive` and `start` never throw. */
+  const guard = (fn: () => void) => { try { fn(); } catch { fail('bad-state'); } };
+  return { random, fail, finish, arm, send, guard, abort: () => { finished = true; clear(); }, isDone: () => finished };
 }
 
 /** The Durbar (listening) side. */
@@ -284,23 +360,28 @@ export function createServerHandshake(d: HandshakeDeps): Handshake {
   return {
     start() {
       if (state !== 'idle' || b.isDone()) return;
-      nonceS = b.random(NONCE_BYTES);
-      state = 'await-reply';
-      b.arm();
-      d.send(JSON.stringify({ hello: HELLO, nonceS: nonceS.toString('hex') }));
+      b.guard(() => {
+        nonceS = b.random(NONCE_BYTES);
+        state = 'await-reply';
+        b.arm();
+        b.send(JSON.stringify({ hello: HELLO, nonceS: nonceS.toString('hex') }));
+      });
     },
     receive(message) {
       if (b.isDone()) return;
-      if (state !== 'await-reply') return b.fail('bad-state');
-      const o = parse(message);
-      const nonceB = o && hex64(o.nonceB);
-      const got = o && hex64(o.mac);
-      if (!o || !nonceB || !got) return b.fail('malformed');
-      if (o.marker !== undefined && typeof o.marker !== 'boolean') return b.fail('malformed');
-      if (o.parent !== undefined && (typeof o.parent !== 'string' || o.parent.length > MCP_LIMITS.maxNameLength)) return b.fail('malformed');
-      if (nonceB.equals(nonceS) || !macEqual(mac(d.key, 'b', nonceS, nonceB), got)) return b.fail('bad-mac');
-      d.send(JSON.stringify({ ok: true, mac: mac(d.key, 's', nonceB, nonceS).toString('hex') }));
-      b.finish({ ok: true, peer: { marker: o.marker === true, ...(typeof o.parent === 'string' ? { parent: o.parent } : {}) } });
+      b.guard(() => {
+        if (state !== 'await-reply') return b.fail('bad-state');
+        const o = parse(message);
+        const nonceB = o && hex64(o.nonceB);
+        const got = o && hex64(o.mac);
+        if (!o || !nonceB || !got) return b.fail('malformed');
+        if (o.marker !== undefined && typeof o.marker !== 'boolean') return b.fail('malformed');
+        if (o.parent !== undefined && (typeof o.parent !== 'string' || o.parent.length > MCP_LIMITS.maxNameLength)) return b.fail('malformed');
+        const peer: PeerInfo = { marker: o.marker === true, ...(typeof o.parent === 'string' ? { parent: o.parent } : {}) };
+        if (nonceB.equals(nonceS) || !macEqual(mac(d.key, 'b', nonceS, nonceB, peer), got)) return b.fail('bad-mac');
+        if (!b.send(JSON.stringify({ ok: true, mac: mac(d.key, 's', nonceB, nonceS, peer).toString('hex') }))) return;
+        b.finish({ ok: true, peer });
+      });
     },
     abort: b.abort,
     get done() { return b.isDone(); },
@@ -308,38 +389,46 @@ export function createServerHandshake(d: HandshakeDeps): Handshake {
 }
 
 export interface BridgeHandshakeDeps extends HandshakeDeps {
-  /** Sent to the server in the answer (plan: marker, parent name). */
+  /** Sent to the server in the answer and covered by both MACs (plan: marker, parent name). */
   peer?: PeerInfo;
 }
 
 /** The bridge (connecting) side. */
 export function createBridgeHandshake(d: BridgeHandshakeDeps): Handshake {
   const b = base(d);
+  const peer: PeerInfo = { marker: d.peer?.marker === true, ...(d.peer?.parent !== undefined ? { parent: d.peer.parent } : {}) };
+  let started = false;
   let state: 'await-hello' | 'await-final' = 'await-hello';
   let nonceS: Buffer = Buffer.alloc(0);
   let nonceB: Buffer = Buffer.alloc(0);
   return {
-    start() { b.arm(); },
+    start() {
+      if (started || b.isDone()) return;
+      started = true;
+      b.guard(() => b.arm());
+    },
     receive(message) {
       if (b.isDone()) return;
-      const o = parse(message);
-      if (state === 'await-hello') {
-        const ns = o && hex64(o.nonceS);
-        if (!o || !ns) return b.fail('malformed');
-        if (o.hello !== HELLO) return b.fail('bad-version');
-        nonceS = ns;
-        nonceB = b.random(NONCE_BYTES);
-        if (nonceB.equals(nonceS)) return b.fail('bad-mac');
-        state = 'await-final';
-        const reply: Record<string, unknown> = { nonceB: nonceB.toString('hex'), mac: mac(d.key, 'b', nonceS, nonceB).toString('hex') };
-        if (d.peer) { reply.marker = d.peer.marker; if (d.peer.parent !== undefined) reply.parent = d.peer.parent; }
-        d.send(JSON.stringify(reply));
-        return;
-      }
-      const got = o && hex64(o.mac);
-      if (!o || o.ok !== true || !got) return b.fail('malformed');
-      if (!macEqual(mac(d.key, 's', nonceB, nonceS), got)) return b.fail('bad-mac');
-      b.finish({ ok: true, peer: { marker: false } });
+      b.guard(() => {
+        const o = parse(message);
+        if (state === 'await-hello') {
+          const ns = o && hex64(o.nonceS);
+          if (!o || !ns) return b.fail('malformed');
+          if (o.hello !== HELLO) return b.fail('bad-version');
+          nonceS = ns;
+          nonceB = b.random(NONCE_BYTES);
+          if (nonceB.equals(nonceS)) return b.fail('bad-mac');
+          state = 'await-final';
+          const reply: Record<string, unknown> = { nonceB: nonceB.toString('hex'), mac: mac(d.key, 'b', nonceS, nonceB, peer).toString('hex') };
+          if (d.peer) { reply.marker = peer.marker; if (peer.parent !== undefined) reply.parent = peer.parent; }
+          b.send(JSON.stringify(reply));
+          return;
+        }
+        const got = o && hex64(o.mac);
+        if (!o || o.ok !== true || !got) return b.fail('malformed');
+        if (!macEqual(mac(d.key, 's', nonceB, nonceS, peer), got)) return b.fail('bad-mac');
+        b.finish({ ok: true, peer: { marker: false } });
+      });
     },
     abort: b.abort,
     get done() { return b.isDone(); },

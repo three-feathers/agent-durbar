@@ -11,14 +11,18 @@ import {
 import type { AuthStat, HandshakeResult, KeyFileDeps, McpFs } from '../src/main/mcp/auth';
 
 // ---- fake fs --------------------------------------------------------------------------------
-interface Node { kind: 'file' | 'dir' | 'link'; mode: number; uid: number; data: string }
+interface Node { kind: 'file' | 'dir' | 'link' | 'fifo'; mode: number; uid: number; data: string }
 function makeFs(uid = 501) {
   const nodes = new Map<string, Node>();
   const fail: { writeAfter?: number; rename?: boolean } = {};
+  const fds = new Map<number, Node>(); let nextFd = 3;
+  /** Runs right after an lstat of `path` returned (to swap the file in a race). */
+  const hook: { afterLstat?: (p: string) => void } = {};
   const err = (code: string) => Object.assign(new Error(code), { code });
-  const stat = (n: Node): AuthStat => ({
+  const stat = (n: Node): AuthStat & { size: number } => ({
     uid: n.uid, mode: n.mode,
     isSymbolicLink: () => n.kind === 'link', isFile: () => n.kind === 'file', isDirectory: () => n.kind === 'dir',
+    size: n.data.length,
   });
   const fs: McpFs = {
     mkdirp(d, mode) { if (!nodes.has(d)) nodes.set(d, { kind: 'dir', mode, uid, data: '' }); },
@@ -29,11 +33,18 @@ function makeFs(uid = 501) {
       nodes.set(f, { kind: 'file', mode, uid, data });
     },
     rename(a, b) { if (fail.rename) throw err('EXDEV'); const n = nodes.get(a); if (!n) throw err('ENOENT'); nodes.delete(a); nodes.set(b, n); },
-    read(f) { const n = nodes.get(f); if (!n) throw err('ENOENT'); return n.data; },
-    lstat(p) { const n = nodes.get(p); if (!n) throw err('ENOENT'); return stat(n); },
+    open(f) {
+      const n = nodes.get(f); if (!n) throw err('ENOENT');
+      if (n.kind === 'link') throw err('ELOOP'); // O_NOFOLLOW
+      const fd = nextFd++; fds.set(fd, n); return fd; // a FIFO opens without blocking (O_NONBLOCK) and is refused by fstat
+    },
+    fstat(fd) { const n = fds.get(fd); if (!n) throw err('EBADF'); return stat(n); },
+    readFd(fd, max) { const n = fds.get(fd); if (!n) throw err('EBADF'); return n.data.slice(0, max); },
+    close(fd) { fds.delete(fd); },
+    lstat(p) { const n = nodes.get(p); if (!n) throw err('ENOENT'); const st = stat(n); hook.afterLstat?.(p); return st; },
     unlink(p) { if (!nodes.delete(p)) throw err('ENOENT'); },
   };
-  return { fs, nodes, fail };
+  return { fs, nodes, fail, fds, hook };
 }
 const DIR = '/u/agent-durbar/mcp';
 const FILE = DIR + '/connection.json';
@@ -101,6 +112,39 @@ function deps(f: ReturnType<typeof makeFs>, over: Partial<KeyFileDeps> = {}): Ke
     f = mk(); f.nodes.get(FILE)!.data = bad;
     const r = readKeyFile(deps(f)); assert.ok(!r.ok && r.reason === 'invalid', bad.slice(0, 20));
   }
+  // the size cap itself: valid JSON, just padded past the cap, is refused (and the same file unpadded is fine)
+  f = mk(); assert.ok(readKeyFile(deps(f)).ok);
+  f.nodes.get(FILE)!.data = f.nodes.get(FILE)!.data.trimEnd() + ' '.repeat(5000);
+  assert.ok(JSON.parse(f.nodes.get(FILE)!.data).version === 1, 'padded file is still valid JSON');
+  { const r = readKeyFile(deps(f)); assert.ok(!r.ok && r.reason === 'invalid', 'size cap'); assert.strictEqual(f.fds.size, 0); }
+
+  // owner check fails closed when the uid is unknown (POSIX)
+  f = mk(); refused(f, { uid: null });
+
+  // a file swapped in after the lstat is refused by the descriptor checks (symlink, FIFO, loosened mode), nothing blocks, no fd leaks
+  for (const swap of ['link', 'fifo'] as const) {
+    f = mk();
+    f.hook.afterLstat = (p) => { if (p === FILE) { f.hook.afterLstat = undefined; f.nodes.get(FILE)!.kind = swap; } };
+    const r = readKeyFile(deps(f)); assert.ok(!r.ok && r.reason === 'unsafe', 'swap to ' + swap);
+    assert.strictEqual(f.fds.size, 0, 'descriptor closed');
+  }
+  f = mk();
+  f.hook.afterLstat = (p) => { if (p === FILE) { f.hook.afterLstat = undefined; f.nodes.get(FILE)!.mode = 0o666; } };
+  { const r = readKeyFile(deps(f)); assert.ok(!r.ok && r.reason === 'unsafe', 'mode loosened after lstat'); }
+  f = mk();
+  f.hook.afterLstat = (p) => { if (p === FILE) { f.hook.afterLstat = undefined; f.nodes.get(FILE)!.uid = 0; } };
+  { const r = readKeyFile(deps(f)); assert.ok(!r.ok && r.reason === 'unsafe', 'owner changed after lstat'); }
+
+  // the write path refuses a symlinked or foreign folder
+  const w = makeFs(); w.nodes.set(DIR, { kind: 'link', mode: 0o777, uid: 501, data: '' });
+  assert.throws(() => createKeyFile(deps(w)), /symbolic link/);
+  assert.ok(!w.nodes.has(FILE) && [...w.nodes.keys()].every((k) => !k.endsWith('.tmp')), 'nothing written through the link');
+  const w2 = makeFs(); w2.nodes.set(DIR, { kind: 'dir', mode: 0o700, uid: 0, data: '' });
+  assert.throws(() => rotateKeyFile(deps(w2)), /another user/);
+  assert.ok(!w2.nodes.has(FILE));
+  const w3 = makeFs(); w3.nodes.set(DIR, { kind: 'file', mode: 0o700, uid: 501, data: '' });
+  assert.throws(() => createKeyFile(deps(w3)), /not a folder/);
+  const w4 = makeFs(); assert.throws(() => createKeyFile(deps(w4, { uid: null })), /another user/, 'write also fails closed without a uid');
 }
 
 // atomic write: a failed write or rename leaves the previous file intact (or none) and no temp file
@@ -319,20 +363,101 @@ function pair(serverKey: Buffer, bridgeKey: Buffer, opts: { marker?: boolean; pa
   for (const t2 of texts) for (const n of needles) assert.ok(!t2.includes(n), 'key material leaked');
 }
 
-// known-answer: the wire format and the role labels are pinned (a MAC without its label, or with the nonces swapped, is a different value)
+// known-answer: the wire format and the transcript encoding are pinned, with an independent encoder in the test
 {
+  const lp = (x: string) => { const bb = Buffer.from(x, 'utf8'); const l = Buffer.alloc(2); l.writeUInt16BE(bb.length); return Buffer.concat([l, bb]); };
+  const T = (role: string, x: Buffer, y: Buffer, marker: boolean, parent?: string) =>
+    Buffer.concat([lp(role), lp('agent-durbar-mcp/1'), x, y, Buffer.from([marker ? 1 : 0, parent !== undefined ? 1 : 0]), lp(parent ?? '')]);
+  const hm = (t: Buffer) => crypto.createHmac('sha256', KEY).update(t).digest('hex');
   const nS = Buffer.alloc(32, 0x11); const nB = Buffer.alloc(32, 0x22);
-  const hm = (label: string, x: Buffer, y: Buffer) => crypto.createHmac('sha256', KEY).update(label).update(x).update(y).digest('hex');
-  const timers = new FakeTimers(); const out: string[] = [];
-  const srv = createServerHandshake({ key: KEY, timers, send: (m) => out.push(m), onDone: () => {}, random: () => nS });
-  const br = createBridgeHandshake({ key: KEY, timers, send: (m) => out.push(m), onDone: () => {}, random: () => nB });
-  srv.start(); br.start();
-  assert.deepStrictEqual(JSON.parse(out[0]), { hello: 'agent-durbar-mcp/1', nonceS: nS.toString('hex') });
-  br.receive(out[0]);
-  assert.strictEqual(JSON.parse(out[1]).mac, hm('b', nS, nB), "bridge MAC = HMAC(key, 'b' | nonceS | nonceB)");
-  srv.receive(out[1]);
-  assert.strictEqual(JSON.parse(out[2]).mac, hm('s', nB, nS), "server MAC = HMAC(key, 's' | nonceB | nonceS)");
-  assert.notStrictEqual(hm('b', nS, nB), hm('s', nB, nS));
+  for (const peer of [{ marker: false }, { marker: true, parent: 'claude-code' }, { marker: false, parent: '' }] as { marker: boolean; parent?: string }[]) {
+    const timers = new FakeTimers(); const out: string[] = [];
+    const srv = createServerHandshake({ key: KEY, timers, send: (m) => out.push(m), onDone: () => {}, random: () => nS });
+    const br = createBridgeHandshake({ key: KEY, timers, send: (m) => out.push(m), onDone: () => {}, random: () => nB, peer });
+    srv.start(); br.start();
+    assert.deepStrictEqual(JSON.parse(out[0]), { hello: 'agent-durbar-mcp/1', nonceS: nS.toString('hex') });
+    br.receive(out[0]);
+    assert.strictEqual(JSON.parse(out[1]).mac, hm(T('b', nS, nB, peer.marker, peer.parent)), 'bridge MAC over the transcript');
+    srv.receive(out[1]);
+    assert.strictEqual(JSON.parse(out[2]).mac, hm(T('s', nB, nS, peer.marker, peer.parent)), 'server MAC over the transcript');
+    assert.notStrictEqual(hm(T('b', nS, nB, peer.marker, peer.parent)), hm(T('s', nB, nS, peer.marker, peer.parent)));
+  }
+  // absent parent and empty parent are different transcripts
+  assert.notStrictEqual(hm(T('b', nS, nB, false)), hm(T('b', nS, nB, false, '')));
+}
+
+// transcript binding: a relayed reply with a changed marker or parent is refused by the server
+{
+  const nS = Buffer.alloc(32, 0x33); const nB = Buffer.alloc(32, 0x44);
+  const attempt = (edit: (o: Record<string, unknown>) => void) => {
+    const timers = new FakeTimers(); const out: string[] = []; let res: HandshakeResult | undefined;
+    const srv = createServerHandshake({ key: KEY, timers, send: (m) => out.push(m), onDone: (r) => { res = r; }, random: () => nS });
+    const br = createBridgeHandshake({ key: KEY, timers, send: (m) => out.push(m), onDone: () => {}, random: () => nB, peer: { marker: true, parent: 'claude-code' } });
+    srv.start(); br.start(); br.receive(out[0]);
+    const reply = JSON.parse(out[1]); edit(reply);
+    srv.receive(JSON.stringify(reply));
+    return res!;
+  };
+  assert.ok(attempt(() => {}).ok, 'unmodified reply is accepted');
+  for (const [name, edit] of [
+    ['marker true->false', (o: Record<string, unknown>) => { o.marker = false; }],
+    ['marker removed', (o: Record<string, unknown>) => { delete o.marker; }],
+    ['parent changed', (o: Record<string, unknown>) => { o.parent = 'vscode'; }],
+    ['parent removed', (o: Record<string, unknown>) => { delete o.parent; }],
+    ['parent added empty', (o: Record<string, unknown>) => { o.parent = ''; }],
+  ] as [string, (o: Record<string, unknown>) => void][]) {
+    const r = attempt(edit);
+    assert.ok(!r.ok && r.error.code === 'bad-mac', name);
+  }
+}
+
+// send / onDone that throw: receive and start never throw, and a send error fails the handshake as bad-state
+{
+  const t = new FakeTimers(); let res: HandshakeResult | undefined;
+  const s1 = createServerHandshake({ key: KEY, timers: t, send: () => { throw new Error('socket closed'); }, onDone: (r) => { res = r; } });
+  assert.doesNotThrow(() => s1.start());
+  assert.ok(res && !res.ok && res.error.code === 'bad-state'); assert.strictEqual(t.pending, 0);
+
+  // the final send fails: not reported as success
+  const ok = pair(KEY, KEY); ok.bridge.start(); ok.server.start();
+  const t2 = new FakeTimers(); let r2: HandshakeResult | undefined; let n = 0; const sent: string[] = [];
+  const s2 = createServerHandshake({ key: KEY, timers: t2, send: (m) => { sent.push(m); if (++n === 2) throw new Error('boom'); }, onDone: (r) => { r2 = r; } });
+  const b2 = createBridgeHandshake({ key: KEY, timers: t2, send: () => {}, onDone: () => {} });
+  void b2; s2.start();
+  const bridgeSent: string[] = [];
+  const b3 = createBridgeHandshake({ key: KEY, timers: t2, send: (m) => bridgeSent.push(m), onDone: () => {} });
+  b3.start(); b3.receive(sent[0]);
+  assert.doesNotThrow(() => s2.receive(bridgeSent[0]));
+  assert.ok(r2 && !r2.ok && r2.error.code === 'bad-state', 'a failed final send is not a success');
+
+  // bridge answer fails to send
+  const t3 = new FakeTimers(); let r3: HandshakeResult | undefined;
+  const b4 = createBridgeHandshake({ key: KEY, timers: t3, send: () => { throw new Error('x'); }, onDone: (r) => { r3 = r; } });
+  b4.start();
+  assert.doesNotThrow(() => b4.receive(JSON.stringify({ hello: 'agent-durbar-mcp/1', nonceS: 'a'.repeat(64) })));
+  assert.ok(r3 && !r3.ok && r3.error.code === 'bad-state');
+
+  // a throwing onDone and a throwing random do not escape
+  const t4 = new FakeTimers();
+  const s4 = createServerHandshake({ key: KEY, timers: t4, send: () => {}, onDone: () => { throw new Error('listener'); } });
+  s4.start(); assert.doesNotThrow(() => s4.receive('garbage')); assert.doesNotThrow(() => t4.advance(5000));
+  const t5 = new FakeTimers(); let r5: HandshakeResult | undefined;
+  const s5 = createServerHandshake({ key: KEY, timers: t5, send: () => {}, onDone: (r) => { r5 = r; }, random: () => { throw new Error('rng'); } });
+  assert.doesNotThrow(() => s5.start());
+  assert.ok(r5 && !r5.ok && r5.error.code === 'bad-state');
+}
+
+// bridge start() is idempotent: no second timer
+{
+  const t = new FakeTimers(); let res: HandshakeResult | undefined;
+  const b = createBridgeHandshake({ key: KEY, timers: t, send: () => {}, onDone: (r) => { res = r; } });
+  b.start(); b.start(); b.start();
+  assert.strictEqual(t.pending, 1, 'one timer after three starts');
+  t.advance(1500); b.start(); t.advance(500);
+  assert.ok(res && !res.ok && res.error.code === 'timeout', 'the first timer still fires at 2 s; a later start did not extend it');
+  b.start(); assert.strictEqual(t.pending, 0, 'no timer after done');
+  const s = createServerHandshake({ key: KEY, timers: new FakeTimers(), send: () => {}, onDone: () => {} });
+  s.start(); s.start();
 }
 
 // rotation invalidates the old key at the handshake
@@ -391,6 +516,20 @@ function pair(serverKey: Buffer, bridgeKey: Buffer, opts: { marker?: boolean; pa
       fsReal.symlinkSync(target, file);
       const l = readKeyFile(d); assert.ok(!l.ok && l.reason === 'unsafe', 'real symlink refused');
       fsReal.unlinkSync(file); fsReal.renameSync(target, file);
+      // a symlink swapped in after the lstat is refused by O_NOFOLLOW (readFileSync would follow it)
+      const real = nodeMcpFs();
+      const racing: KeyFileDeps = { ...d, fs: { ...real, lstat: (p) => {
+        const st = real.lstat(p);
+        if (p === file) { fsReal.renameSync(file, target); fsReal.symlinkSync(target, file); }
+        return st;
+      } } };
+      const race = readKeyFile(racing); assert.ok(!race.ok && race.reason === 'unsafe', 'real symlink swapped after lstat');
+      fsReal.unlinkSync(file); fsReal.renameSync(target, file);
+      // padded past the cap on the real fs
+      const keep = fsReal.readFileSync(file, 'utf8');
+      fsReal.writeFileSync(file, keep.trimEnd() + ' '.repeat(5000), { mode: 0o600 });
+      const big = readKeyFile(d); assert.ok(!big.ok && big.reason === 'invalid', 'real oversize file refused');
+      fsReal.writeFileSync(file, keep, { mode: 0o600 });
     } else console.log('SKIP chmod and symlink checks on win32');
     deleteKeyFile(d);
     const g = readKeyFile(d); assert.ok(!g.ok && g.reason === 'missing', 'deleted gives missing');
