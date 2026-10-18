@@ -26,6 +26,14 @@
   const SHELL=/(bash|powershell|pwsh|shell|terminal|exec|command)|^(sh|zsh|cmd|run)$/i;
   const WEB=/(web_fetch|web_search|fetch|http|browse|url)/i;
 
+  /* Names that count as one server for places (spec 024 FR-012): Copilot's built-in GitHub server is listed as `github`
+     but its tool events say `github-mcp-server`. Fixed table, exact names (no case folding, no prefix matching). */
+  const SERVER_ALIASES=Object.freeze({'github-mcp-server':'github'});
+  /* Canonical name of a server; any other name is returned unchanged. Own-property lookup: `__proto__` etc. stay themselves. */
+  function canonicalServer(name){
+    return has(SERVER_ALIASES,name)?SERVER_ALIASES[name]:name;
+  }
+
   /* Default place of a server, ignoring the user's map. */
   function defaultServerPlace(server){
     const n=str(server); if(!n)return 'other';
@@ -38,7 +46,10 @@
   function classify(e,placeMap){
     const ev=e||{}, server=str(ev.mcpServer);
     if(server){
-      if(has(placeMap,server)){const v=placeMap[server];if(v==='desk'||IDS.includes(v))return v;}
+      /* the user's entry under the call's own name wins, then under its canonical name (spec 024 FR-012) */
+      for(const k of [server,canonicalServer(server)]){
+        if(has(placeMap,k)){const v=placeMap[k];if(v==='desk'||IDS.includes(v))return v;}
+      }
       return defaultServerPlace(server);
     }
     const t=str(ev.tool);
@@ -124,5 +135,5 @@
     return {shown:cap-1,more:count-(cap-1)};
   }
 
-  return {PLACES,IDS,placeName,classify,defaultServerPlace,toolLabel,createVisits,layoutSpots};
+  return {PLACES,IDS,placeName,classify,canonicalServer,defaultServerPlace,toolLabel,createVisits,layoutSpots};
 })());

@@ -15,7 +15,7 @@
 
 ## 2026-10-18 delta: one GitHub server in Settings > Places (issue #117)
 
-- [ ] T013 `canonicalServer` + alias table in `src/renderer/places.js`; `classify` reads the call's own name, then the canonical one; tests in `scripts/test-places.ts` [FR-012]
+- [x] T013 `canonicalServer` + alias table in `src/renderer/places.js`; `classify` reads the call's own name, then the canonical one; tests in `scripts/test-places.ts` [FR-012]
 - [ ] T014 Settings > Places: one row per canonical name with the "also github-mcp-server" note; save under the canonical key and clear an old alias key [FR-013]
 - [ ] T015 `scripts/shots-024.js` check (a place on `github` applies to a `github-mcp-server` call; one row), `check:office`, README, CHANGELOG, specs index [FR-014]
 
