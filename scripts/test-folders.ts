@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { FolderStore, parseSavedFloors, parseSavedFolders, restoreMode } from '../src/main/folders';
+import { FolderStore, adapterOf, parseAdapterId, parseSavedFloors, parseSavedFolders, restoreMode } from '../src/main/folders';
 import { GROUND, GROUND_NAME } from '../src/shared/floors';
 
 const abs = (p: string): string => path.resolve('/', p);
@@ -24,8 +24,8 @@ const parsed = parseSavedFolders(
   }),
 );
 assert.strictEqual(parsed.length, 2);
-assert.deepStrictEqual(parsed[0], { workspace: abs('a'), permMode: 'ask', hidden: true, closed: undefined, model: 'auto', effort: 'high', contextTier: undefined, maxAiCredits: undefined, floor: undefined });
-assert.deepStrictEqual(parsed[1], { workspace: abs('b'), permMode: 'read-only', hidden: false, closed: undefined, model: undefined, effort: undefined, contextTier: undefined, maxAiCredits: undefined, floor: undefined }, 'unknown values fall back to safe defaults');
+assert.deepStrictEqual(parsed[0], { workspace: abs('a'), permMode: 'ask', hidden: true, closed: undefined, model: 'auto', effort: 'high', contextTier: undefined, maxAiCredits: undefined, floor: undefined, adapterId: undefined });
+assert.deepStrictEqual(parsed[1], { workspace: abs('b'), permMode: 'read-only', hidden: false, closed: undefined, model: undefined, effort: undefined, contextTier: undefined, maxAiCredits: undefined, floor: undefined, adapterId: undefined }, 'unknown values fall back to safe defaults');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folders-'));
 try {
@@ -228,6 +228,112 @@ assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: 
     if (process.platform !== 'win32') assert.strictEqual(fs.statSync(f6).mode & 0o077, 0, 'file is private');
   } finally {
     fs.rmSync(d6, { recursive: true, force: true });
+  }
+}
+{
+  // adapter id per folder (spec 012 T013, FR-042..FR-044)
+  assert.strictEqual(parseAdapterId('codex'), 'codex');
+  assert.strictEqual(parseAdapterId('future-agent'), 'future-agent', 'a well-formed unknown id is kept');
+  const bad: unknown[] = ['copilot', 'Claude', '', '1x', 'a'.repeat(33), 5, null, undefined];
+  for (const v of bad) {
+    assert.strictEqual(parseAdapterId(v), undefined, `parseAdapterId(${JSON.stringify(v)})`);
+    assert.strictEqual(adapterOf({ adapterId: parseAdapterId(v) }), 'copilot', `adapterOf(${JSON.stringify(v)})`);
+  }
+  assert.strictEqual(parseAdapterId('a'.repeat(32)), 'a'.repeat(32), '32 chars is the limit');
+  assert.strictEqual(adapterOf({ adapterId: 'codex' }), 'codex');
+  const parsedA = parseSavedFolders(JSON.stringify({ folders: [{ workspace: abs('a1'), adapterId: 'codex' }, { workspace: abs('a2'), adapterId: 'copilot' }, { workspace: abs('a3'), adapterId: 'Bad' }] }));
+  assert.deepStrictEqual(parsedA.map((f) => f.adapterId), ['codex', undefined, undefined]);
+
+  const d7 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folders-adapter-'));
+  try {
+    const f7 = path.join(d7, 'f.json');
+    const read = (): { folders: Record<string, unknown>[] } => JSON.parse(fs.readFileSync(f7, 'utf8'));
+    // (c) an old Copilot-only file: no adapterId is ever written
+    const old = { version: 1, floors: [{ id: GROUND, name: GROUND_NAME, on: true }], lastFloor: GROUND, folders: [{ workspace: abs('o1'), permMode: 'ask', hidden: false, model: 'auto', maxAiCredits: 45 }, { workspace: abs('o2'), permMode: 'read-only', hidden: false }] };
+    fs.writeFileSync(f7, JSON.stringify(old, null, 2));
+    const before = fs.readFileSync(f7, 'utf8');
+    const st = new FolderStore(f7);
+    st.load();
+    assert.ok(st.setHidden(abs('o1'), true));
+    const afterText = fs.readFileSync(f7, 'utf8');
+    assert.ok(!afterText.includes('adapterId'), 'Copilot-only file never gets adapterId');
+    const expected = JSON.parse(before);
+    expected.folders[0].hidden = true;
+    assert.deepStrictEqual(JSON.parse(afterText), expected, 'only the change made differs');
+    // byte-identical after a plain load and save
+    fs.writeFileSync(f7, JSON.stringify({ version: 1, floors: old.floors, lastFloor: GROUND, folders: old.folders }, null, 2));
+    const b0 = fs.readFileSync(f7, 'utf8');
+    const stB = new FolderStore(f7);
+    stB.load();
+    assert.ok(stB.setHidden(abs('o1'), false)); // no-op value, forces a save
+    assert.strictEqual(fs.readFileSync(f7, 'utf8'), b0, 'load + save of a Copilot-only file is byte-identical');
+
+    // (d) an unknown well-formed id survives a load, another write and a reload
+    fs.writeFileSync(f7, JSON.stringify({ version: 1, folders: [{ workspace: abs('u1'), permMode: 'ask', hidden: false, adapterId: 'future-agent' }] }));
+    const stD = new FolderStore(f7);
+    stD.load();
+    assert.ok(stD.setPermMode(abs('u1'), 'allow'));
+    assert.strictEqual(new FolderStore(f7).load()[0].adapterId, 'future-agent');
+    assert.strictEqual(read().folders[0].adapterId, 'future-agent', 'written back unchanged');
+
+    // (e) upsert
+    fs.rmSync(f7);
+    const stE = new FolderStore(f7);
+    stE.upsert({ workspace: abs('e1'), permMode: 'ask', adapterId: 'codex' });
+    assert.strictEqual(stE.get(abs('e1'))?.adapterId, 'codex', 'a new entry can start with an adapter');
+    stE.upsert({ workspace: abs('e1'), permMode: 'allow' });
+    assert.strictEqual(new FolderStore(f7).load()[0].adapterId, 'codex', 'upsert without adapterId keeps it');
+    stE.upsert({ workspace: abs('e1'), permMode: 'allow', adapterId: 'claude' });
+    assert.strictEqual(new FolderStore(f7).load()[0].adapterId, 'claude', 'upsert with adapterId sets it');
+    stE.upsert({ workspace: abs('e1'), permMode: 'allow', adapterId: 'Bad Id' });
+    assert.strictEqual(new FolderStore(f7).load()[0].adapterId, 'claude', 'a malformed id given to upsert keeps the existing value');
+    stE.upsert({ workspace: abs('e1'), permMode: 'allow', adapterId: undefined });
+    assert.strictEqual(new FolderStore(f7).load()[0].adapterId, 'claude', 'an explicit undefined keeps the existing value');
+    stE.upsert({ workspace: abs('e1'), permMode: 'allow', adapterId: 'copilot' });
+    assert.strictEqual(new FolderStore(f7).load()[0].adapterId, undefined, 'copilot clears the id');
+    stE.upsert({ workspace: abs('e3'), permMode: 'ask', adapterId: 'Bad Id' });
+    assert.strictEqual(stE.get(abs('e3'))?.adapterId, undefined, 'a new entry with a malformed id gets none');
+    stE.upsert({ workspace: abs('e2'), permMode: 'ask' });
+    assert.strictEqual(stE.get(abs('e2'))?.adapterId, undefined, 'a new entry gets none');
+    assert.ok(!('adapterId' in read().folders[1]) || read().folders[1].adapterId === undefined);
+    assert.ok(!fs.readFileSync(f7, 'utf8').includes('"adapterId": "copilot"'));
+
+    // (f) setAdapterId
+    fs.rmSync(f7);
+    const stF = new FolderStore(f7);
+    stF.upsert({ workspace: abs('s1'), permMode: 'ask', model: 'auto', effort: 'high', maxAiCredits: 45 });
+    stF.createFloor('Two');
+    const fl = stF.floors().floors[1].id;
+    assert.ok(stF.moveFolder(abs('s1'), fl));
+    assert.ok(stF.setHidden(abs('s1'), true));
+    assert.ok(stF.setClosed(abs('s1'), true));
+    const others = (): unknown => {
+      const f = new FolderStore(f7).load()[0];
+      return [f.model, f.floor, f.maxAiCredits, f.permMode, f.hidden, f.closed, f.effort, f.workspace];
+    };
+    const snap = others();
+    assert.ok(stF.setAdapterId(abs('s1'), 'codex'));
+    assert.strictEqual(new FolderStore(f7).load()[0].adapterId, 'codex');
+    assert.deepStrictEqual(others(), snap, 'codex: other fields unchanged');
+    assert.ok(stF.setAdapterId(abs('s1'), 'copilot'));
+    assert.strictEqual(new FolderStore(f7).load()[0].adapterId, undefined);
+    assert.ok(!fs.readFileSync(f7, 'utf8').includes('adapterId'), 'copilot removes the field from the file');
+    assert.deepStrictEqual(others(), snap, 'copilot: other fields unchanged');
+    assert.ok(stF.setAdapterId(abs('s1'), 'codex'));
+    const text = fs.readFileSync(f7, 'utf8');
+    assert.ok(!stF.setAdapterId(abs('s1'), 'Bad Id'));
+    assert.ok(!stF.setAdapterId(abs('s1'), 5));
+    assert.ok(!stF.setAdapterId(abs('s1'), undefined));
+    assert.ok(!stF.setAdapterId(abs('s1'), ''));
+    assert.strictEqual(fs.readFileSync(f7, 'utf8'), text, 'a refused id leaves the file unchanged');
+    assert.ok(!stF.setAdapterId(abs('nope'), 'codex'));
+    assert.strictEqual(fs.readFileSync(f7, 'utf8'), text, 'an unknown folder leaves the file unchanged');
+    assert.deepStrictEqual(others(), snap);
+
+    // (g) private file
+    if (process.platform !== 'win32') assert.strictEqual(fs.statSync(f7).mode & 0o077, 0, 'file stays private');
+  } finally {
+    fs.rmSync(d7, { recursive: true, force: true });
   }
 }
 console.log('folders tests passed');

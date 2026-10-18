@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { CopilotAdapter, COPILOT_DESCRIPTOR } from '../src/adapters/copilot';
+import { FakeClient, FakeSession, TestAdapter } from './fakes/copilot-sdk';
 import { createRegistry, detectAll } from '../src/adapters/registry';
 import type { AdapterDescriptor } from '../src/adapters/capabilities';
 import { EventMapper } from '../src/adapters/map';
@@ -16,58 +17,6 @@ import { compactResultFrom, modelConfig, runtimeMessage, modelOptionFrom, priceC
 import type { AdapterCapabilities, AgentAdapter, AgentEvent } from '../src/adapters/types';
 import { modelControlFor, NO_MODEL_CONTROL } from '../src/shared/modelswitch';
 import { startOptionsOf } from '../src/main/startopts';
-
-type Call = { name: string; args: unknown[] };
-
-/** A session that records every call and answers from a script. */
-class FakeSession {
-  calls: Call[] = [];
-  handler: ((ev: unknown) => void) | undefined;
-  processing = false;
-  switchAnswer: unknown = { modelId: 'sim-deep' };
-  compactAnswer: unknown = { success: true, tokensRemoved: 5000, messagesRemoved: 4, contextWindow: { tokenLimit: 100000, currentTokens: 12000, messagesLength: 3 } };
-  removed = true;
-  constructor(public sessionId: string, public config: Record<string, unknown>) {}
-  private rec<T>(name: string, v: T, ...args: unknown[]): T { this.calls.push({ name, args }); return v; }
-  on(h: (ev: unknown) => void): () => void { this.handler = h; return () => { this.handler = undefined; }; }
-  fire(type: string, data: Record<string, unknown>): void { this.handler?.({ type, data }); }
-  abort = async (): Promise<void> => this.rec('abort', undefined);
-  disconnect = async (): Promise<void> => this.rec('disconnect', undefined);
-  rpc = {
-    eventLog: { registerInterest: async (a: unknown) => this.rec('registerInterest', undefined, a) },
-    options: { update: async (a: unknown) => this.rec('options.update', undefined, a) },
-    model: { switchTo: async (a: unknown) => this.rec('switchTo', this.switchAnswer, a) },
-    queue: { removeAt: async (a: unknown) => this.rec('removeAt', { removed: this.removed }, a) },
-    history: { compact: async (a: unknown) => this.rec('compact', this.compactAnswer, a) },
-    metadata: { isProcessing: async () => this.rec('isProcessing', { processing: this.processing }) },
-  };
-}
-
-class FakeClient {
-  created: Array<Record<string, unknown>> = [];
-  resumed: Array<{ id: string; config: Record<string, unknown> }> = [];
-  onDisk = new Set<string>();
-  last!: FakeSession;
-  n = 0;
-  async createSession(config: Record<string, unknown>): Promise<FakeSession> {
-    this.created.push(config);
-    this.last = new FakeSession((config.sessionId as string) ?? 'fake-' + ++this.n, config);
-    this.onDisk.add(this.last.sessionId);
-    return this.last;
-  }
-  async resumeSession(id: string, config: Record<string, unknown>): Promise<FakeSession> {
-    this.resumed.push({ id, config });
-    this.last = new FakeSession(id, config);
-    return this.last;
-  }
-  async getSessionMetadata(id: string): Promise<unknown> { return this.onDisk.has(id) ? { sessionId: id } : undefined; }
-  async listModels(): Promise<unknown[]> { return []; }
-}
-
-class TestAdapter extends CopilotAdapter {
-  constructor(public fake: FakeClient) { super(); }
-  protected async getClient(): Promise<never> { return this.fake as never; }
-}
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cm-'));

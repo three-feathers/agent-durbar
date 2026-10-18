@@ -7,6 +7,9 @@ import type { McpServerInput, McpServerView, McpTransport, McpTrustInfo } from '
 
 export type { McpServerInput, McpServerView, McpTransport, McpTrustInfo };
 
+import type { AdapterInfo } from './adapters';
+export type { AdapterInfo };
+
 export type { HistoryItem, PreviousSession, VsChatSummary, VsChatTranscript };
 
 /** Permission policy chosen when adding a folder. */
@@ -318,6 +321,8 @@ export interface DurbarApi {
   newSession?(id: string, opts: SessionOptions): Promise<{ ok: boolean; error?: string; agent?: AgentInfo }>;
   /** Models the account offers (no credits used). */
   listModels?(): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }>;
+  /** Adapters and whether each can run (spec 012 FR-033). `refresh` probes again instead of using the cached answer. */
+  listAdapters?(refresh?: boolean): Promise<AdapterInfo[]>;
   /** End the session (frees it; sending again resumes it). `stop` only interrupts the current turn. */
   end?(id: string): Promise<void>;
   /** Open an http(s) link in the system browser (anything else is refused in the main process). */
