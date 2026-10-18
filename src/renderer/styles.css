@@ -106,7 +106,7 @@ body.has-bridge #liveBar{display:flex}
 .rd.attn{color:var(--amber-ink);font-weight:650}
 .room-plant{display:none;position:absolute;right:12px;top:6px}
 .stage[data-d="full"] .room-plant{display:block}
-.stage[data-d="full"] .room-dots{padding-right:32px}
+.stage[data-d="full"] .room-head{padding-right:32px} /* room for the plant after the last control (dots, +, MCP), spec 001 FR-023 */
 .units{flex:1;margin:6px 0 0;display:flex;flex-wrap:wrap;align-content:flex-start;gap:var(--ugap,10px);padding:var(--upad,8px);background:rgba(255,255,255,.4);border-radius:14px;position:relative}
 .unit{display:flex;align-items:flex-start;position:relative;--hx:0px}
 .unit.has-h{--hx:calc(var(--hw) + 18px)}
@@ -348,6 +348,21 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .stage:not([data-d="full"]) .room-name{font-size:12.5px;line-height:18px;padding:0 9px;border-radius:6px;background:rgba(255,255,255,.72);border:1px solid var(--wall)}
 .stage:not([data-d="full"]) .room-head{container-type:inline-size}
 @container (max-width:330px){.room-path{display:none}}
+/* spec 001 FR-023: a room header fits its room at every width (many one-agent folders). The room is the size container
+   (the header cannot restyle its own padding from its own query). The name gives way after the path, with an ellipsis;
+   in a narrow room the plant goes and the MCP button is tighter; in a very narrow one the folder total moves to the name's tooltip. */
+.stage .room{container:room / inline-size}
+.stage .room-head .room-name{min-width:0;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
+.stage .room-head:has(.room-aiu) .room-name{flex-shrink:1}
+.stage .room-head .door,.stage .room-head .room-new,.stage .room-head .room-mcp,.stage .room-head .siren,.stage .room-head .floor-tag{flex:none}
+@container room (max-width:340px){
+  .stage .room .room-head .room-plant{display:none}
+  .stage .room .room-head.room-head{padding-right:0}
+  .stage .room-head .room-mcp{padding:0 5px}
+  .stage .room-head .room-dots{gap:5px}
+}
+@container room (max-width:280px){.stage .room-head .room-aiu{display:none}}
+@container room (max-width:460px){.stage .room .room-head .room-path{display:none}} /* the path (also in the name's tooltip) goes before the name is cut */
 @container (max-width:250px){.rd.calm{display:none}}
 .stage:not([data-d="full"]) .room-name{flex:0 .05 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .stage:not([data-d="full"]) .room-path{font-size:11px;flex-shrink:4}
