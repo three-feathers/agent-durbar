@@ -22,6 +22,8 @@ export interface SessionMetaLike {
   startTime?: unknown;
   modifiedTime?: unknown;
   summary?: unknown;
+  /** A name given to the session (for example with /rename); wins over the summary as its title. */
+  name?: unknown;
   isRemote?: unknown;
   context?: { workingDirectory?: unknown; gitRoot?: unknown; branch?: unknown } | null;
 }
@@ -56,11 +58,23 @@ const toMs = (v: unknown): number => {
   return 0;
 };
 
+// eslint-disable-next-line no-control-regex
+const TITLE_DROP_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u200b\u2060\ufeff\u202a-\u202e\u2066-\u2069]/g;
+
+/**
+ * A session title as the app shows it (spec 002 delta 2026-10-18): one line, control and hidden direction or zero-width
+ * characters removed (ZWJ, ZWNJ, LRM, RLM kept), at most `max` characters with an ellipsis; undefined when nothing is left.
+ */
+export function cleanSessionTitle(v: unknown, max = 80): string | undefined {
+  if (typeof v !== 'string') return undefined;
+  const s = v.replace(TITLE_DROP_RE, '').replace(/\s+/g, ' ').trim();
+  if (!s) return undefined;
+  return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s;
+}
+
 /** One-line title from a session summary (the first prompt, or the title the runtime generated). */
 export function cleanTitle(summary: unknown, max = 120): string {
-  const s = typeof summary === 'string' ? summary.replace(/\s+/g, ' ').trim() : '';
-  if (!s) return 'Untitled session';
-  return s.length > max ? s.slice(0, max - 1) + '…' : s;
+  return cleanSessionTitle(summary, max) ?? 'Untitled session';
 }
 
 /**
@@ -82,7 +96,7 @@ export function previousSessionsFor(
     const modifiedTime = toMs(m.modifiedTime) || toMs(m.startTime);
     out.push({
       id: m.sessionId,
-      title: cleanTitle(m.summary),
+      title: cleanSessionTitle(m.name, 120) ?? cleanTitle(m.summary), // a saved name (for example /rename) wins over the summary
       startTime: toMs(m.startTime) || modifiedTime,
       modifiedTime,
       branch: typeof m.context?.branch === 'string' ? m.context.branch : undefined,

@@ -90,6 +90,12 @@ router.onEvent((e) => toRenderer('agent:event', e));
 /** Key an agent's all-time counts are kept under: "<agent name> · <folder name>" (base name only, spec 020). */
 const usageLabel = (a: AgentInfo): string => agentLabel(a.name, a.workspaceFile ? path.basename(a.workspaceFile).replace(/\.code-workspace$/i, '') : a.cwd);
 // All-time tool usage is counted here, not in the window, so it also counts while the Tools view is closed (spec 020 FR-006).
+// A main agent's session title (issue #126): kept on its info so a reloaded window gets it from agents:list. Display only.
+router.onEvent((e) => {
+  if (e.type !== 'title') return;
+  const a = agents.get(e.sessionId);
+  if (a) a.title = e.title;
+});
 router.onEvent((e) => {
   if (e.type !== 'toolCall') return;
   const a = agents.get(e.sessionId);
@@ -314,6 +320,7 @@ ipcMain.handle('sessions:resume', async (_e, id: unknown, sessionId: unknown, re
       router.unbind(removedId);
       agents.delete(removedId);
     }
+    if (prev.title && prev.title !== 'Untitled session') info.title = prev.title; // the list's title (name, else summary) until the runtime sends its own
     return { ok: true, agent: info, removedId, title: prev.title, history };
   } catch (err) {
     return { ok: false, error: errText(err) };
@@ -678,6 +685,7 @@ function createWindow(): void {
     if (dev.DURBAR_SIM_FREEZE === '1') query.simfreeze = '1';
     if (dev.DURBAR_SIM_ROOMS) query.simrooms = dev.DURBAR_SIM_ROOMS;
     if (dev.DURBAR_SIM_FLOORS === '1') query.simfloors = '1';
+    if (dev.DURBAR_SIM_TITLES === '1') query.simtitles = '1'; // spec 001/002 deltas 2026-10-18: main agents with session titles
     if (/^[0-3]$/.test(dev.DURBAR_SIM_PLACES ?? '')) query.simplaces = dev.DURBAR_SIM_PLACES as string; // spec 024 FR-026: custom places seeded in the simulator
     if (dev.DURBAR_SIM_FLOORS_OFF) query.floorsoff = dev.DURBAR_SIM_FLOORS_OFF.slice(0, 200);
   }
