@@ -53,7 +53,7 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 - [ ] T043 (sim; T043a built 2026-10-18, PR #177, approvals, interrupt and the D5 env deny list included; split 2026-10-18 into T043a fake app-server, handshake, start with the FR-087 refusal, send, turn mapping, stop, crash, contract run; T043b resume with the profile re-check (approvals and interrupt moved into T043a); T043c registration behind `DURBAR_CODEX=1`, detector, env deny list, docs) `CodexAdapter`: initialize, `thread/start` and `thread/resume`, `turn/start`, interrupt, stop, approvals through the broker, crash becomes `error`; contract suite on a scripted app-server fake [FR-003, FR-017, SC-002]
 - [ ] T044 (sim) Packaged-build check without a vendor: the ESM SDK is imported from the CommonJS main process, `asarUnpack` entries are right, run in CI on three OSes; documents the result [FR-021]
 - [ ] T045 (sim) `ClaudeAdapter` on a fake `query()` object seam: input queue, `canUseTool` to broker, hooks, interrupt, close, resume with `sessionId`; the folder's `CLAUDE.md` with its `@` imports (for example `AGENTS.md`, inside the folder only, bounded size) as an appended system prompt while `settingSources` stays `[]` (owner, 2026-10-18, review of #160); contract suite. Depends on T040, T041 [FR-003, FR-017, SC-002]
-- [ ] T046 (sim) Live permission mode switch (spec 018): Claude `setPermissionMode` immediately, Codex from the next `turn/start`; tests and the toast wording [FR-009, C8]
+- [x] T046 (sim, Claude half; done as T096-T098, Codex half with #51) Live permission mode switch (spec 018): Claude `setPermissionMode` immediately, Codex from the next `turn/start`; tests and the toast wording [FR-009, C8]
 - [ ] T047 (sim) Availability and sign-in: Codex `account/read` probe, Claude version probe, the "sign in with the CLI in a terminal" message, no prompt ever sent, tests with fakes [FR-010, FR-012]
 - [ ] T048 (fixtures) History readers: Claude `listSessions`/`getSessionMessages` and Codex `thread/list`/`thread/turns/list` converted to previous sessions and chat history, same-folder check, size caps, tests [FR-019]
 - [ ] T049 (fixtures) Model and effort lists: Claude `supportedModels`, Codex `model/list` to the model picker shape; effort values per model; tests [FR-009]
@@ -105,4 +105,10 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 - [x] T094 (real-account, owner allowed) Real CLI checks with the installed `claude` and `haiku`: one Read-only prompt (stream, usage, cost, no write possible), Ask first approve and deny, interrupt, stop and resume in the same folder; record as `real:` with the cost [FR-110..FR-114]
 - [ ] T095 (real-account) Offer Claude Code to every user: run the real app with a Claude agent end to end (add a folder, chat, Ask first approval card, stop, restart and resume), with T085 so Claude's dollar estimate is never added to AIU; then move it to `PRODUCTION_DESCRIPTORS` [FR-114]
 - T040 and T041 are answered by this entry (no SDK in `package.json` until the owner accepts its terms; the user's `claude` is used); T045 is done as T091.
+
+## Changes 2026-10-18 (issue #54, Claude half of T046)
+
+- [x] T096 (sim) `ClaudeAdapter.setPermMode`: broker mode at once, launched/current hook rule, broker route for launched Allow all in Ask first, relaunch with `--resume` on the next send; `permModeSwitch: 'live'` [FR-115, FR-116]
+- [x] T097 (sim) Fake-CLI tests for every launched/current pair, the broker route and the relaunch [FR-117]
+- [x] T098 (real-account, owner allowed) One real check: Allow all switched to Read-only during a slow shell command; the later write must not happen [FR-117]
 
