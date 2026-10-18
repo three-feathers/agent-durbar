@@ -262,6 +262,144 @@ async function main(): Promise<void> {
     await ad.stop(sid);
   }
 
+  // ---- live mode switch (FR-115..FR-117): the hook uses launched + current mode; the next send relaunches with --resume ----
+  {
+    const answers: Record<string, Record<string, unknown>> = {};
+    let cur: FakeClaudeChild | undefined;
+    const { ad, sp, events } = make({
+      turn: (c) => {
+        cur = c;
+        if ((c as unknown as { rec?: boolean }).rec) return;
+        (c as unknown as { rec?: boolean }).rec = true;
+        const prev = c.onWrite;
+        c.onWrite = (o) => {
+          prev?.(o);
+          if (o.type === 'control_response') {
+            const r = o.response as { request_id: string; response: Record<string, unknown> };
+            answers[r.request_id] = r.response;
+          }
+        };
+      },
+    });
+    const hook = (id: string, tool: string, input: Record<string, unknown>, tu?: string): void =>
+      cur!.send({ type: 'control_request', request_id: id, request: { subtype: 'hook_callback', callback_id: PRE_TOOL_USE_HOOK, input: { hook_event_name: 'PreToolUse', tool_name: tool, tool_input: input, tool_use_id: tu } } });
+    const decision = (id: string): string | undefined => (answers[id]?.hookSpecificOutput as { permissionDecision?: string } | undefined)?.permissionDecision;
+    const endTurn = (): void => cur!.send({ type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0 });
+    const write = { file_path: path.join(WS, 'w.txt'), content: 'x' };
+
+    const sid = await ad.start({ workspace: WS, permissionMode: 'allow', quiet: true });
+    assert.strictEqual(ad.capabilities.permModeSwitch, 'live');
+    await ad.send(sid, { text: 'go' });
+    await until('turn', () => cur);
+    assert.ok(sp.calls[0].args.includes('bypassPermissions'), 'launched in Allow all');
+    hook('a1', 'Write', write);
+    await until('a1', () => answers.a1);
+    assert.deepStrictEqual(answers.a1, {}, 'Allow all: no opinion');
+    // Allow all -> Read-only during the turn: the hook denies writes and outside reads at once
+    assert.deepStrictEqual(ad.setPermMode(sid, 'read-only'), { pending: 0 });
+    hook('a2', 'Write', write);
+    hook('a3', 'Read', { file_path: '/etc/passwd' });
+    hook('a4', 'Read', { file_path: path.join(WS, 'README.md') });
+    await until('a2-a4', () => answers.a2 && answers.a3 && answers.a4);
+    assert.strictEqual(decision('a2'), 'deny', 'a write is denied at once after switching to Read-only');
+    assert.strictEqual(decision('a3'), 'deny');
+    assert.deepStrictEqual(answers.a4, {}, 'a read inside is fine');
+    // -> Ask first while launched in Allow all (bypassPermissions never calls can_use_tool): the hook asks through the broker
+    ad.setPermMode(sid, 'ask');
+    hook('a5', 'Write', write, 'tu-a5');
+    const p5 = await until('card a5', () => events.find((e) => e.type === 'status' && (e as { status: string }).status === 'needs-permission' && (e as { permission?: { requestId: string } }).permission?.requestId === 'tu-a5'));
+    assert.ok(p5);
+    assert.strictEqual(answers.a5, undefined, 'the hook waits for the user');
+    ad.resolvePermission(sid, 'tu-a5', true);
+    await until('a5', () => answers.a5);
+    assert.deepStrictEqual(answers.a5, {}, 'approved: the CLI goes on');
+    hook('a6', 'Bash', { command: 'rm -rf x' }, 'tu-a6');
+    await until('card a6', () => events.find((e) => (e as { permission?: { requestId: string; state?: string } }).permission?.requestId === 'tu-a6'));
+    ad.resolvePermission(sid, 'tu-a6', false);
+    await until('a6', () => answers.a6);
+    assert.strictEqual(decision('a6'), 'deny', 'denied by the user: the hook denies');
+    // a message while the turn is open does not relaunch
+    await ad.send(sid, { text: 'more' });
+    assert.strictEqual(sp.calls.length, 1, 'no relaunch in the middle of a turn');
+    endTurn();
+    await tick(10);
+    // the next message relaunches with the Ask first flags and --resume, same id
+    await ad.send(sid, { text: 'next' });
+    await until('relaunch', () => sp.calls.length === 2 ? true : undefined);
+    assert.ok(sp.children[0].ended || sp.children[0].killed.length, 'the old process was closed');
+    const args = sp.calls[1].args;
+    assert.ok(args.includes('--resume') && args.includes(sid), 'resumes the same session');
+    assert.ok(!args.includes('bypassPermissions') && args.includes('default'), 'launched with the Ask first mode');
+    assert.ok(!statuses(events, sid).includes('error'), 'the relaunch is not an error');
+    // now launched = current = ask: the hook has no opinion, can_use_tool asks
+    await until('new child turn', () => (cur === sp.children[1] ? true : undefined));
+    hook('a7', 'Write', write, 'tu-a7');
+    await until('a7', () => answers.a7);
+    assert.deepStrictEqual(answers.a7, {});
+    endTurn();
+    await ad.stop(sid);
+  }
+  {
+    // launched Read-only, switched to Allow all mid-turn: still denied (with a "next message" reason) until the relaunch
+    const answers: Record<string, Record<string, unknown>> = {};
+    let cur: FakeClaudeChild | undefined;
+    const { ad, sp } = make({
+      turn: (c) => {
+        cur = c;
+        if ((c as unknown as { rec?: boolean }).rec) return;
+        (c as unknown as { rec?: boolean }).rec = true;
+        const prev = c.onWrite;
+        c.onWrite = (o) => {
+          prev?.(o);
+          if (o.type === 'control_response') {
+            const r = o.response as { request_id: string; response: Record<string, unknown> };
+            answers[r.request_id] = r.response;
+          }
+        };
+      },
+    });
+    const sid = await ad.start({ workspace: WS, quiet: true });
+    await ad.send(sid, { text: 'go' });
+    await until('turn', () => cur);
+    ad.setPermMode(sid, 'allow');
+    cur!.send({ type: 'control_request', request_id: 'r1', request: { subtype: 'hook_callback', callback_id: PRE_TOOL_USE_HOOK, input: { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: '/etc/passwd' } } } });
+    await until('r1', () => answers.r1);
+    const out = answers.r1.hookSpecificOutput as { permissionDecision: string; permissionDecisionReason: string };
+    assert.strictEqual(out.permissionDecision, 'deny', 'launched Read-only: outside reads stay denied until the relaunch');
+    assert.match(out.permissionDecisionReason, /next message/);
+    cur!.send({ type: 'result', subtype: 'success', is_error: false });
+    await tick(10);
+    await ad.send(sid, { text: 'now' });
+    await until('relaunch', () => sp.calls.length === 2 ? true : undefined);
+    assert.ok(sp.calls[1].args.includes('bypassPermissions'), 'relaunched in Allow all');
+    await ad.stop(sid);
+  }
+  {
+    // switching with pending requests: Allow all approves them (approvePending), Read-only denies them
+    const answers: Record<string, Record<string, unknown>> = {};
+    const { ad } = make({
+      turn: (c) => {
+        const prev = c.onWrite;
+        c.onWrite = (o) => {
+          prev?.(o);
+          if (o.type === 'control_response') {
+            const r = o.response as { request_id: string; response: Record<string, unknown> };
+            answers[r.request_id] = r.response;
+          }
+        };
+        c.send({ type: 'control_request', request_id: 'p1', request: { subtype: 'can_use_tool', tool_name: 'Write', input: { file_path: path.join(WS, 'p.txt') }, tool_use_id: 'tu-p1' } });
+      },
+    });
+    const sid = await ad.start({ workspace: WS, permissionMode: 'ask', quiet: true });
+    await ad.send(sid, { text: 'go' });
+    await tick(20);
+    assert.deepStrictEqual(ad.setPermMode(sid, 'allow', { approvePending: true }), { pending: 0 });
+    await until('p1', () => answers.p1);
+    assert.strictEqual(answers.p1.behavior, 'allow');
+    await ad.stop(sid);
+  }
+  assert.deepStrictEqual(new ClaudeAdapter({ claudePath: async () => undefined }).setPermMode('nope', 'allow'), { pending: 0 });
+
   // ---- interrupt: pending permissions denied, the interrupt request sent, Aborted ----
   {
     const { ad, sp, events } = make({ turn: (c) => c.send({ type: 'control_request', request_id: 'p1', request: { subtype: 'can_use_tool', tool_name: 'Write', input: {}, tool_use_id: 'tu-9' } }) });
