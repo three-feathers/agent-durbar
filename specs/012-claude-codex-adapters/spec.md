@@ -215,3 +215,37 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
   - **FR-050** `[IMPLEMENTED]` (test: `scripts/test-router.ts`) The optional-member fallbacks of T010 move into pure helpers in `router.ts`: `previousSessionsOf`, `historyOf`, `modelOptionsOf`, `setPermModeOf` and `setMcpEnabledOf`. Each returns today's fallback when the member is missing. `main.ts` and `mcpipc.ts` call them, and a unit test drives them with a fake adapter that has no optional members. This closes the T010 `[KNOWN GAP]` on guard fallbacks; the full contract suite stays T015..
   - **Refusal rule (from review of #142, 2026-10-18):** the FR-050 helpers report whether a call was applied (`setPermModeOf` → `{ applied, pending }`; `setCapOf`, `setMcpEnabledOf`, `interruptOf` → boolean). When the adapter lacks the member and the agent's session is live (`refusesLive`), `agents:setMode`, `agents:setCap` and the MCP toggle return `ok: false` with a message and save nothing; `agents:stop` returns `{ ok: false, error }`. When the session is not live the value is saved and applies at the next start through the start options. Copilot has all four members, so its results are unchanged (`test:` router (g), (f2)).
   - **Implementation notes (T014):** `agents:end` keeps the agent's binding (an ended agent restarts on its next message); only removing a folder or replacing an agent on resume unbinds. Re-adding a folder that was skipped for an unknown saved adapter id starts it with the default adapter and saves that choice, replacing the unknown id: an explicit user action, not a silent fallback. `sim:` `check:office` 141/141 on this branch; `read:` the office loads in the simulator and `window.agentDurbar.listAdapters()` returns `copilot` `ready` (implementer's driver run, not repeated by the coordinator). `[KNOWN GAP]` (T015): the handler-level refusals and the unknown-id skip in `restoreFolders` have no unit test, because `main.ts` imports Electron; the T015 contract suite should drive them. `[KNOWN GAP]` (T017): the renderer ignores the result of `agents:stop`, so a refused stop would be silent; it cannot happen with Copilot.
+
+- **2026-10-18, T015 scope: `FakeAdapter`, the adapter contract suite and testable handler bodies (issue #35; DRAFT, nothing built yet).** After T014 the interface, capabilities, router and refusal helpers exist and have unit tests (`scripts/test-router.ts`, `scripts/test-copilot-model.ts:354`). What is still untested: the handler-level refusals in `main.ts` (`agents:setMode`, `agents:setCap`, `agents:stop`) and `mcpipc.ts` (`agents:setMcp`), and the unknown-id skip in `restoreFolders` (`main.ts:229-249`), because those files import Electron. The mode precedence (FR-028) is a private `startMode` in `copilot.ts:44`. `read:`
+  - **Boundaries.** T015 adds `src/adapters/fake.ts` and `src/main/agentops.ts`, moves `startMode`, and turns those five handler bodies into calls into `agentops`. No new IPC, no renderer change, no behaviour change for Copilot, and nothing registers `FakeAdapter` in the app (`DURBAR_SIM_MAIN` is later). The Copilot run of the suite is T016.
+  - **FR-051** `src/adapters/fake.ts`: `FakeAdapter implements AgentAdapter`, configured with `{ id?, capabilities?, omit?: OptionalMember[], script? }`. Its optional members exist exactly as its capabilities say (FR-027).
+    - `start` follows FR-028 and refuses a mode that is not in `capabilities.permissionModes`.
+    - Each session has its own `PermissionBroker` whose roots are the workspace. `send` plays the script as normalized events: `working` → steps → `idle`. A `permission` step goes through the broker and waits for its decision. `stop` calls `broker.stop()` and then emits `stopped`.
+    - No timers longer than the script asks for, and no I/O. `[KNOWN GAP]` until T015 is built.
+  - **FR-052** `startModeOf(options)` moves from `copilot.ts` to `src/adapters/permissions.ts`, unchanged. `CopilotAdapter` and `FakeAdapter` both use it. `[KNOWN GAP]` until T015 is built.
+  - **FR-053** `scripts/test-adapter-contract.ts` exports `runContract(name, make, hooks)`. `make()` returns a fresh adapter and workspace. `hooks.requestPermission(ad, sid, req)` makes the adapter receive one runtime permission request; `hooks.turn(ad, sid)` runs one scripted turn. Both are the seam T016 fills for Copilot. The suite checks, skipping what the capabilities say is absent:
+    - **(C1) Identity:** the id matches the registry rule, `displayName` is set, and `capabilities` is plain JSON.
+    - **(C2)** Each optional member and its capability agree (FR-027).
+    - **(C3) Lifecycle:**
+      - `start` resolves an id and `isLive` is true;
+      - the first event is `status idle` unless `quiet`;
+      - `send` to an unknown or stopped id rejects;
+      - `stop` emits `stopped` last and `isLive` turns false;
+      - a second `stop` does not throw;
+      - `dispose` leaves nothing live.
+    - **(C4) Every event:** a known `sessionId`, a numeric `timestamp`, a known `type`, and it survives a JSON round trip.
+    - **(C5) Turn order:** `working` comes before any output, tool or usage event of the turn, and the turn ends with `idle`. `usage` has no `nanoAiu` unless `usage.nanoAiu`, and no `costUsd` unless `usage.costUsd`; `costUsd` comes with `costBasis: 'estimate'`.
+    - **(C6) Modes (SC-004):**
+      - a write request is denied without a pending state in Read-only;
+      - it is pending (`needs-permission`, `state: 'pending'`) in Ask first, then approved by `resolvePermission`;
+      - it is approved in Allow all;
+      - a read inside the workspace is approved in every mode;
+      - an unknown `permissionMode` behaves as Read-only;
+      - starting in a mode the adapter does not declare is refused.
+    - **(C7)** A pending request at `stop` resolves `denied` with `via: 'stopped'`.
+    - **(C8)** "Approve for this session" emits `grants`, and `revokeGrant` removes the grant.
+    - **(C9)** When `permModeSwitch` is `live`, switching Ask first to Read-only denies what is pending.
+    - **(C10)** When `interrupt` is declared, the session stays live after `interrupt`.
+
+    `npm test` runs it on three `FakeAdapter` setups: all capabilities, no optional members, and Read-only only. `[KNOWN GAP]` until T015 is built; Copilot is T016.
+  - **FR-054** `src/main/agentops.ts` (no Electron import) takes `{ agents, router: Pick<AdapterRouter, 'forAgent'>, store?, wsKey }` and holds the bodies of `agents:setMode`, `agents:setCap`, `agents:stop` and `agents:setMcp` (with the per-agent `off` sets passed in), plus `restorable(folders, has, warn)`. `restorable` returns the folders whose `adapterOf` the registry knows and warns once per unknown id, with no path in the message. `main.ts` and `mcpipc.ts` call them with the same results as today. This closes the T010 and T014 `[KNOWN GAP]`s on handler refusals and the restore skip. Path existence (`fs.existsSync`) stays in `main.ts`. `[KNOWN GAP]` until T015 is built.
