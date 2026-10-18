@@ -128,7 +128,7 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 
 ## Changes 2026-10-19 (issue #60, Claude half of T052)
 
-- [ ] T107 (sim) `question` event and `answerQuestion` (types, main IPC, preload); Claude: the `PreToolUse` hook asks and answers `AskUserQuestion` in every mode [FR-128, FR-129]
-- [ ] T108 (sim) Question card in the chat, waiting status, simulator question [FR-130]
-- [ ] T109 Tests on the fake CLI; real check in the three modes with `haiku` [FR-131]
+- [x] T107 (sim) `question` event and `answerQuestion` (types, main IPC, preload); Claude: the `PreToolUse` hook asks and answers `AskUserQuestion` in every mode [FR-128, FR-129]
+- [x] T108 (sim) Question card in the chat, waiting status, simulator question [FR-130]
+- [x] T109 Tests on the fake CLI; real check in the three modes with `haiku` [FR-131]
 
