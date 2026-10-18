@@ -173,3 +173,11 @@ Spec [024](../024-office-places/spec.md) adds a one-row **lobby** band between t
 *Corrected.*
 - **FR-023** `[IMPLEMENTED]` A room header fits its room at every width: the room name gives way first (ellipsis, full name in its tooltip, after the folder path); in a room narrower than 340 px the plant is hidden and the MCP button is tighter; narrower than 280 px the folder's credit total leaves the header and is shown in the room name's tooltip (spec 011 FR-020 delta). Controls never overlap each other or the plant, and never leave the header; in `full` density the header keeps room for the plant after its last control (before, the plant covered the MCP button). `test:` `npm run check:office` (215 checks, CI fonts), `sim:` `docs/screenshots/001-solo-folders-1440x900.png` and `-1280x800.png`.
 - **FR-024** `[IMPLEMENTED]` `check:office` adds one-agent folders (`simrooms=solo`) for 12 and 15 agents at both sizes, and in every combination fails when two header controls (or a control and the plant) overlap, or a control leaves its header.
+
+### 2026-10-18: a short agent name was cut to one letter next to a long status word (sweep)
+
+*Missing:* in `mini` and `micro` density the status word (`Limit reached`, `Waiting for you`) never shrank, so in a narrow card the agent's name gave way alone and could end as `O…`.
+
+*Corrected:*
+- **FR-025** `[IMPLEMENTED]` In `mini` and `micro` the name and the status word share the line: both may be shortened with an ellipsis, in proportion to their length, so the longer one gives way more; the name keeps at least its first three characters when the card has room for them. The full status is still on the card's tooltip and colour. `check:office` fails when a desk name shows fewer than three characters while it has more (`simrooms=solo`, both sizes).
+
