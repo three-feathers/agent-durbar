@@ -4,7 +4,7 @@
 - [x] T002 `src/main/themes.ts`: list/get/import/export + unit tests (`test:userthemes`)
 - [x] T003 IPC + preload bridge
 - [x] T004 Settings Theme section: list user themes, Import/Export, toasts; startup resolution in app.js
-- [ ] T005 Gates: typecheck/build/test/check:themes incl. a fixture user theme
+- [x] T005 Gates: typecheck/build/test/check:themes incl. a fixture user theme (`scripts/fixtures/themes/check-user.json`, 183/183 on 2026-10-18)
 - [x] T006 Expanded user slots: room-*/char-*/desk-art/door-art/lobby-art/place-* validate and sanitize through the same path as built-ins (covered by test:theme art-expansion cases)
 
 ## Changes 2026-10-18 (review of PR #137)

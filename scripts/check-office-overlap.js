@@ -208,11 +208,22 @@ async function driver(ctx) {
     /* the layout is cached by size: nudge the window so the office is laid out again with the new font */
     ctx.win.setContentSize(w - 1, h); await sleep(150); ctx.win.setContentSize(w, h); await sleep(300);
   };
+  /* spec 036 FR-005: the theme under test travels in the page address (theme=, usertheme=); after every load the theme on
+     screen must be the one asked for, or the run fails (it once measured Clean Office for every theme). */
+  const userTheme = process.env.OFFICE_USER_THEME ? JSON.parse(fs.readFileSync(process.env.OFFICE_USER_THEME, 'utf8')) : null;
+  const wantTheme = userTheme ? userTheme.id : (process.env.OFFICE_THEME || '');
+  const themeQuery = (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '');
+  if (wantTheme) console.log('check:office: theme ' + wantTheme + (userTheme ? ' (user theme from ' + path.basename(process.env.OFFICE_USER_THEME) + ')' : ''));
   const load = async (query, w, h) => {
     expectPlaces = 5 + Number((/(?:^|&)simplaces=([0-3])(?:&|$)/.exec(query) || [])[1] || 0);
     ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: Object.fromEntries(new URLSearchParams(query)) });
+    await ctx.win.loadFile(INDEX, { query: Object.fromEntries(new URLSearchParams(query + themeQuery)) });
     await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
+    if (wantTheme) {
+      try { await ctx.waitFor(`window.THEME&&window.THEME.current().id===${JSON.stringify(wantTheme)}`, 5000); } catch (e) { /* reported below */ }
+      const on = await ctx.js(`({id:window.THEME.current().id,ui:document.documentElement.dataset.ui||'clean',want:(window.THEME.current().manifest||{}).ui||'clean'})`);
+      if (on.id !== wantTheme || on.ui !== on.want) throw new Error(`theme ${wantTheme} was not applied (on screen: ${on.id}, data-ui ${on.ui})`);
+    }
     await forceFonts(w, h);
     await sleep(500);
     /* spec 024: agents go to the lobby after 600 ms and the walk takes about 1 s: wait until somebody is there and nobody is walking */

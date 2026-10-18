@@ -55,3 +55,12 @@
 ## Verification
 
 - `npm run typecheck && npm test` pass; `check:office` passes; `check:themes` (new) passes for Clean Office.
+
+### 2026-10-18: `check:themes` never applied the theme (found while preparing alpha.5)
+
+**Symptom.** In simulator runs (`DURBAR_SIM`) the renderer takes its settings from the simulator bridge, which had no theme, and `check-office-overlap.js` builds its own page addresses without one. So `DURBAR_THEME=<id>` changed nothing: every "per-theme" `check:office` run (`check:themes`, the PR #137 description and review replies) measured **Clean Office** six times. Probe: `DURBAR_THEME=retro DURBAR_SIM=15` opened with `data-ui` unset and `THEME.current().id === 'clean-office'`.
+
+**Violated.** FR-005 ("the office layout check runs per built-in theme") and the #129 decision "`check:office` runs per theme".
+
+**Corrected wording.**
+- **FR-005** `[IMPLEMENTED]` In simulator runs the theme travels as the page address parameter `theme=<id>` (main adds `DURBAR_THEME` to it next to `sim=`); the simulator bridge returns it as the saved theme, so the normal start-up path applies it. `check-office-overlap.js` adds `theme=$OFFICE_THEME` to every combination and **fails** when the theme on screen (`THEME.current().id` and `data-ui`) is not the one asked for, so a check can never again pass on the wrong theme. A user theme for the check travels as `usertheme=<manifest JSON>` (simulator only) and goes through the same validation as an imported pack (spec 040 T005).
