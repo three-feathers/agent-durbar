@@ -155,7 +155,7 @@ Windows: sandbox needs a setup step (`windowsSandbox/setupStart`); until checked
 | `item/reasoning/summaryTextDelta` (`textDelta` if present) | `thinking` delta, `reasoningId` = item id + `summaryIndex` | |
 | `item/started` commandExecution | `toolCall start`, `tool: 'shell'`, `args: {command, cwd}` | |
 | `item/commandExecution/outputDelta` | `toolCall update` | capped |
-| `item/completed` commandExecution | `complete`/`failed` (`exitCode`, `status declined` → failed with "declined") | `output` = `aggregatedOutput`, capped |
+| `item/completed` commandExecution | `complete`, or `failed` when `exitCode` is non-zero or `status` is declined ("declined") | `output` = `aggregatedOutput`, capped |
 | `fileChange` item | `toolCall`, `tool: 'apply_patch'`, `args: {files: [...paths]}`, `output` = diff summary | diffs are not sent whole |
 | `mcpToolCall` item | `toolCall` with **`mcpServer` = `server`, `mcpTool` = `tool`**, `tool` = `<server>.<tool>` | direct, no parsing |
 | `dynamicToolCall`, `webSearch`, `imageView` | `toolCall` with the item type as `tool` | |

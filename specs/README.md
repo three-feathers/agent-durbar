@@ -42,7 +42,7 @@ what exists today, not what was originally intended. Each requirement carries a 
 | # | Feature | Status |
 | --- | --- | --- |
 | [011](011-credit-caps-and-usage-display/spec.md) | AI-credit caps and usage display | per-session cap slice and office/folder usage totals built, totals kept across restarts with a reset (2026-10-17, issue #21); exhausted flow unverified on a real account; multiplier estimate covered by spec 030 |
-| [012](012-claude-codex-adapters/spec.md) | Claude Code and Codex adapters | planned: clarified, [research](012-claude-codex-adapters/research.md), [plan](012-claude-codex-adapters/plan.md), [tasks](012-claude-codex-adapters/tasks.md); **T010 interface deltas (#30) and T011 registry (#31) built 2026-10-18 (sim/unit); no Claude or Codex adapter yet, nothing verified on a real account**; real-account tasks need owner approval; umbrella issue #2 |
+| [012](012-claude-codex-adapters/spec.md) | Claude Code and Codex adapters | planned: clarified, [research](012-claude-codex-adapters/research.md), [plan](012-claude-codex-adapters/plan.md), [tasks](012-claude-codex-adapters/tasks.md); **T010 interface deltas (#30), T011 registry (#31) and T024 Codex event mapper (#43, synthetic fixtures, not wired) built 2026-10-18 (sim/unit); no Claude or Codex adapter yet, nothing verified on a real account**; real-account tasks need owner approval; umbrella issue #2 |
 | [013](013-live-verification-stop-resume-thinking/spec.md) | Live verification of Stop, resume and thinking | draft |
 | [014](014-signing-and-notarization/spec.md) | Code signing and notarization | draft, **needs approval (purchase)** |
 

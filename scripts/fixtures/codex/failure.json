@@ -1,0 +1,21 @@
+{
+  "provenance": "synthetic",
+  "notifications": [
+    {"method":"thread/started","params":{"thread":{"id":"thr_main","cwd":"/work/app"}}},
+    {"method":"turn/started","params":{"threadId":"thr_main","turn":{"id":"t1"}}},
+    {"method":"turn/completed","params":{"threadId":"thr_main","turn":{"id":"t1","status":"failed","error":{"message":"Sandbox denied the write","codexErrorInfo":"SandboxError"}}}},
+    {"method":"turn/completed","params":{"threadId":"thr_main","turn":{"id":"t2","status":"failed","error":{"message":"You hit your limit","codexErrorInfo":"UsageLimitExceeded"}}}},
+    {"method":"turn/completed","params":{"threadId":"thr_main","turn":{"id":"t3","status":"failed","error":{"message":"connection reset","codexErrorInfo":{"HttpConnectionFailed":{"httpStatusCode":null}}}}}},
+    {"method":"turn/completed","params":{"threadId":"thr_main","turn":{"id":"t4","status":"failed"}}},
+    {"method":"turn/completed","params":{"threadId":"thr_main","turn":{"id":"t5","status":"interrupted"}}}
+  ],
+  "expected": [
+    {"type":"status","status":"idle","intent":"Ready in /work/app"},
+    {"type":"status","status":"working","intent":"Thinking"},
+    {"type":"status","status":"error","intent":"SandboxError: Sandbox denied the write"},
+    {"type":"status","status":"error","intent":"Codex usage limit reached"},
+    {"type":"status","status":"error","intent":"HttpConnectionFailed: connection reset"},
+    {"type":"status","status":"error","intent":"Turn failed"},
+    {"type":"status","status":"idle","intent":"Aborted"}
+  ]
+}
