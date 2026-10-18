@@ -42,7 +42,7 @@ const isIcon = (v: unknown): v is CustomIconId => typeof v === 'string' && (CUST
 const fold = (n: string): string => n.toLowerCase();
 
 /**
- * A usable place name: a string, trimmed, 1 to 24 characters counted as code points (an emoji is one), no control characters.
+ * A usable place name: a string, trimmed, 1 to 24 characters counted as code points (an emoji is one), no control, bidi or zero-width characters.
  * Says nothing about duplicates; see `placeNameError`.
  */
 export function cleanPlaceName(v: unknown): { ok: true; name: string } | { ok: false; error: 'name-empty' | 'name-long' | 'name-invalid' } {
@@ -50,7 +50,7 @@ export function cleanPlaceName(v: unknown): { ok: true; name: string } | { ok: f
   const n = v.trim();
   if (n.length < 1) return { ok: false, error: 'name-empty' };
   // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f\u007f-\u009f]/.test(n)) return { ok: false, error: 'name-invalid' };
+  if (/[\u0000-\u001f\u007f-\u009f\u200b-\u200c\u200e-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/.test(n)) return { ok: false, error: 'name-invalid' };
   if ([...n].length > MAX_PLACE_NAME) return { ok: false, error: 'name-long' };
   return { ok: true, name: n };
 }

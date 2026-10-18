@@ -297,6 +297,13 @@ assert.deepStrictEqual(cleanPlaceName('  '), { ok: false, error: 'name-empty' })
 assert.deepStrictEqual(cleanPlaceName(''), { ok: false, error: 'name-empty' });
 assert.deepStrictEqual(cleanPlaceName('\n\t '), { ok: false, error: 'name-empty' }, 'whitespace including newlines is trimmed away');
 for (const bad of ['a\nb', 'a\u0000b', 'a\u001fb', 'a\u007fb', 'a\u0085b']) assert.deepStrictEqual(cleanPlaceName(bad), { ok: false, error: 'name-invalid' }, JSON.stringify(bad));
+// bidi controls and zero-width characters could make a name look like another place (one sample per range, plus the edges)
+for (const [label, ch] of [['U+200B zero-width space', '\u200b'], ['U+200C non-joiner', '\u200c'], ['U+200E left-to-right mark', '\u200e'], ['U+200F right-to-left mark', '\u200f'], ['U+202A embedding', '\u202a'], ['U+202E right-to-left override', '\u202e'], ['U+2060 word joiner', '\u2060'], ['U+2069 isolate end', '\u2069'], ['U+FEFF BOM inside', '\ufeff']]) {
+  // trim() already removes a BOM at either end (it is harmless there), so the end position only applies to the others
+  if (ch !== '\ufeff') assert.deepStrictEqual(cleanPlaceName('Web' + ch), { ok: false, error: 'name-invalid' }, 'rejected at the end: ' + label);
+  assert.deepStrictEqual(cleanPlaceName('We' + ch + 'b'), { ok: false, error: 'name-invalid' }, 'rejected inside: ' + label);
+}
+for (const good of ['Caf\u00e9', 'Na\u00efve', '\u00c4pfel', 'Dev \u{1F468}\u200d\u{1F4BB}', 'Data \u{1F680}', '\u{1F468}\u200d\u{1F4BB}'.slice(0, 2), '\u2010dash', '\u2070x']) assert.strictEqual(cleanPlaceName(good).ok, true, 'accepted: ' + JSON.stringify(good));
 for (const bad of [5, null, undefined, {}, [], true]) assert.deepStrictEqual(cleanPlaceName(bad), { ok: false, error: 'name-invalid' }, 'not a string: ' + String(bad));
 assert.deepStrictEqual(cleanPlaceName('<b>x</b> "q"'), { ok: true, name: '<b>x</b> "q"' }, 'markup and quotes are stored as text (escaping is the drawing code\'s job)');
 assert.deepStrictEqual(cleanPlaceName('שלום'), { ok: true, name: 'שלום' }, 'right-to-left text is allowed');
@@ -549,7 +556,7 @@ async function simChecks(): Promise<void> {
     [['add', 'Database', 'database'], ['add', 'database', 'star'], ['add', 'DATABASE ', 'star'], ['add', 'Terminal', 'star'], ['add', '  ', 'star'], ['add', '', 'star'], ['add', 'x'.repeat(25), 'star'],
       ['add', 'x'.repeat(24), 'star'], ['add', 'Fourth', 'star']],
     [['add', 'web', 'star'], ['add', 'Web', 'star'], ['add', 'Other TOOLS', 'star'], ['add', 'stay at desk', 'star'], ['add', 'DEFAULT', 'star'], ['add', 'Library', 'star'], ['add', 'software LIBRARY', 'star'], ['add', 'Terminals', 'star']],
-    [['add', '\u{1F600}'.repeat(24), 'bolt'], ['add', '\u{1F600}'.repeat(25), 'bolt'], ['add', 'a\nb', 'bolt'], ['add', 'a\u0085b', 'bolt'], ['add', 'a\u007fb', 'bolt'], ['add', 5, 'bolt'], ['add', null, 'bolt'], ['add', '<b>x</b>', 'bolt'], ['add', '__proto__', 'bolt']],
+    [['add', '\u{1F600}'.repeat(24), 'bolt'], ['add', '\u{1F600}'.repeat(25), 'bolt'], ['add', 'a\nb', 'bolt'], ['add', 'a\u0085b', 'bolt'], ['add', 'a\u007fb', 'bolt'], ['add', 'Web\u202e', 'bolt'], ['add', 'a\u200bb', 'bolt'], ['add', 'a\u2060b', 'bolt'], ['add', 'a\ufeffb', 'bolt'], ['add', 'Caf\u00e9', 'bolt'], ['add', 'Dev \u{1F468}\u200d\u{1F4BB}', 'bolt'], ['add', 'a\u200cb', 'bolt'], ['add', 'a\u200eb', 'bolt'], ['add', 5, 'bolt'], ['add', null, 'bolt'], ['add', '<b>x</b>', 'bolt'], ['add', '__proto__', 'bolt']],
     [['add', 'Äpfel', 'star'], ['add', 'äPFEL', 'star'], ['add', 'Ok', 'nope'], ['add', 'Ok', undefined], ['add', 'Ok', null], ['add', 'Ok', 'STAR'], ['add', 'Ok', '__proto__'], ['add', 'Ok', 'constructor'], ['add', 'Ok', 'pin']],
     [['add', 'A', 'star'], ['add', 'B', 'flask'], ['map', 'srv1', 0], ['map', 'srv2', 1], ['map', 'srv3', 0], ['map', 'srv4', 'web'], ['map', 'srv5', 'desk'], ['map', 'srv6', 'ghost'],
       ['update', 0, { name: 'A2' }], ['update', 0, { name: 'b' }], ['update', 0, { name: 'B', icon: 'cloud' }], ['update', 0, { icon: 'nope' }], ['update', 0, { icon: 'cloud' }], ['update', 1, { name: 'B' }],

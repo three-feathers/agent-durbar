@@ -650,7 +650,7 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       const n = v.trim();
       if (n.length < 1) return { error: 'name-empty' };
       // eslint-disable-next-line no-control-regex
-      if (/[\u0000-\u001f\u007f-\u009f]/.test(n)) return { error: 'name-invalid' };
+      if (/[\u0000-\u001f\u007f-\u009f\u200b-\u200c\u200e-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/.test(n)) return { error: 'name-invalid' };
       if ([...n].length > 24) return { error: 'name-long' };
       const f = n.toLowerCase();
       if (RESERVED_NAMES.includes(f) || customPlaces.some((p) => p.id !== exceptId && p.name.toLowerCase() === f)) return { error: 'name-taken' };
