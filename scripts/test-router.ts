@@ -1,6 +1,7 @@
 /** Adapter router (spec 012 T014, FR-046..FR-050): fake adapters only. No session, no process, no credits. */
 import * as assert from 'assert';
 import { CopilotAdapter, COPILOT_DESCRIPTOR } from '../src/adapters/copilot';
+import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
 import { detectorFor } from '../src/adapters/detect';
 import { createRegistry, detectAll } from '../src/adapters/registry';
 import { adapterForAdd, createRouter, historyOf, interruptOf, refusesLive, modelOptionsOf, previousSessionsOf, setCapOf, setMcpEnabledOf, setPermModeOf } from '../src/adapters/router';
@@ -60,6 +61,12 @@ function fakes() {
 const ev = (n: number): AgentEvent => ({ type: 'status', sessionId: 's' + n, status: 'idle' } as unknown as AgentEvent);
 
 async function main(): Promise<void> {
+  // (prod) the production registry lists real adapters only, never a test double
+  {
+    const ids = createRegistry(PRODUCTION_DESCRIPTORS).list().map((d) => d.id);
+    assert.deepStrictEqual(ids, ['copilot'], 'prod: only real adapters are registered (no fake)');
+    assert.ok(!ids.some((id) => /fake/i.test(id)), 'prod: no fake adapter id in the production registry');
+  }
   // (a) lazy, one per id, unknown id throws
   {
     const { made, router } = fakes();

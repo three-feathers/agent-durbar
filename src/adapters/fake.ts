@@ -1,6 +1,8 @@
 /**
  * A scripted adapter for tests (spec 012 FR-051). Pure: no SDK, no file system, no processes, no Electron.
- * Not registered in the app. Its optional members exist exactly when its capabilities say so (FR-027), and it
+ * Test and simulator double only: never register it in the production registry (`main.ts` registers only real
+ * descriptors, see `descriptors.ts`; `test-router.ts` guards it). It lives in `src/` so a future simulator mode
+ * (`DURBAR_SIM_MAIN`, spec 012 plan) can use it. Its optional members exist exactly when its capabilities say so (FR-027), and it
  * follows the same permission rules as the real adapters through `PermissionBroker` and `startModeOf` (FR-028, FR-052).
  */
 import type { AdapterCapabilities } from './capabilities';
