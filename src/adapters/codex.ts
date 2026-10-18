@@ -8,6 +8,7 @@
  */
 import * as fs from 'fs';
 import * as os from 'os';
+import * as path from 'path';
 import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, StartOptions, Unsubscribe } from './types';
 import type { AdapterDescriptor } from './capabilities';
 import type { EventBody } from './map';
@@ -101,6 +102,8 @@ interface Live {
   /** Drops mapper events (while starting with `quiet`, and once the session is stopping or dead). */
   muted: boolean;
   turnId?: string;
+  /** Ids of turns already completed (bounded): a late `turn/start` response must not make one current again. */
+  doneTurns: string[];
   stopping: boolean;
   interrupting: boolean;
   /** The next mapper `Aborted` is the one `interrupt` already reported itself. */
@@ -189,12 +192,21 @@ export class CodexAdapter implements AgentAdapter {
     const { cwd, folders } = resolveWorkspaceCwd(options.workspace);
     const roots = codexWorkspaceRoots([cwd, ...folders], this.realpath);
     const limited = mode !== 'allow';
+    // Read-only and Ask first send the resolved cwd, consistent with the roots; Allow all uses it as given.
+    let realCwd: string | undefined;
+    try {
+      realCwd = this.realpath(cwd);
+    } catch {
+      realCwd = undefined;
+    }
 
     const loc = await this.locate();
     if (!loc?.path) throw new Error('Codex was not found on this computer. Install the Codex CLI, then restart Durbar.');
     // A .cmd/.bat shim cannot carry the profile argument and cannot be spawned without a shell: refused in every mode (D4).
     if (isShim(loc.path)) throw new Error('Codex is launched through a .cmd launcher, which Durbar cannot run safely. Use the native codex.exe instead of the .cmd shim.');
     if (limited && !roots.length) throw new Error(`Durbar has no folder it can limit Codex's reads to. Add the project folder itself, not a drive or filesystem root, or a folder Durbar can resolve.`);
+
+    if (limited && !realCwd) throw new Error(`Durbar cannot resolve the session folder (${path.basename(cwd)}), so it cannot confirm Codex reads only inside it. Check that the folder exists and Durbar can read it.`);
 
     // The ids and flags the handlers need exist before the child can talk.
     const live: Live = {
@@ -209,6 +221,7 @@ export class CodexAdapter implements AgentAdapter {
       exited: undefined as unknown as Promise<void>,
       muted: true, // until the session is up: the start itself reports "Ready" (or nothing, when quiet)
       stopping: false,
+      doneTurns: [],
       interrupting: false,
       expectAborted: false,
       anon: 0,
@@ -261,7 +274,7 @@ export class CodexAdapter implements AgentAdapter {
       const settings = codexModeSettings(mode);
       let started: unknown;
       try {
-        started = await child.rpc.request('thread/start', { cwd, ...settings, ...(limited ? { runtimeWorkspaceRoots: roots } : {}) });
+        started = await child.rpc.request('thread/start', { cwd: limited ? realCwd : cwd, ...settings, ...(limited ? { runtimeWorkspaceRoots: roots } : {}) });
       } catch (e) {
         // Never retried with a weaker setting (FR-087).
         throw new Error(`Codex refused the session settings: ${reasonOf(e)}`);
@@ -313,7 +326,7 @@ export class CodexAdapter implements AgentAdapter {
     try {
       const res = await live.rpc.request('turn/start', params);
       const id = isObj(res) && isObj(res.turn) && typeof res.turn.id === 'string' ? res.turn.id : undefined;
-      if (id && live.turnId === undefined) live.turnId = id;
+      if (id && live.turnId === undefined && !live.doneTurns.includes(id)) live.turnId = id;
     } catch (e) {
       if (isRpcError(e) || (e as { kind?: string }).kind === 'timeout') this.emit(sessionId, { type: 'status', status: 'error', intent: `Codex refused the message: ${reasonOf(e)}`.slice(0, 300) });
       throw e;
@@ -407,8 +420,12 @@ export class CodexAdapter implements AgentAdapter {
     // Keep the running turn's id for interrupt and stop.
     if (isObj(params) && (params.threadId === undefined || params.threadId === live.threadId)) {
       const turn = isObj(params.turn) ? params.turn : undefined;
-      if (method === 'turn/started' && turn && typeof turn.id === 'string') live.turnId = turn.id;
-      else if (method === 'turn/completed') live.turnId = undefined;
+      if (method === 'turn/started' && turn && typeof turn.id === 'string') { if (!live.doneTurns.includes(turn.id)) live.turnId = turn.id; }
+      else if (method === 'turn/completed') {
+        const done = turn && typeof turn.id === 'string' ? turn.id : live.turnId;
+        if (done) live.doneTurns = [...live.doneTurns, done].slice(-32);
+        live.turnId = undefined;
+      }
     }
     live.mapper.map({ method, params });
   }
@@ -468,7 +485,7 @@ export class CodexAdapter implements AgentAdapter {
     if (registered) this.sessions.delete(live.sid);
     live.broker.stop();
     const tail = live.rpc?.stderrTail() ?? [];
-    if (tail.length) this.debug?.(`codex stderr (last lines): ${redact(tail.slice(-5).join(' | '), this.env ?? process.env)}`);
+    if (tail.length) this.debug?.(`codex stderr (last lines): ${redact(tail.slice(-5).join(' | '), { ...process.env, ...this.env })}`);
     if (registered) {
       this.emit(live.sid, { type: 'status', status: 'error', intent: `Codex stopped unexpectedly (exit ${code ?? signal ?? 'unknown'})` });
     }

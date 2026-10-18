@@ -15,7 +15,8 @@ import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
 import type { ScriptEvent } from './fakes/copilot-sdk';
 import type { PermissionLike } from '../src/adapters/permissions';
 import type { AgentAdapter, AgentEvent, PermissionInfo, PermissionMode } from '../src/adapters/types';
-import { PRODUCTION_DESCRIPTORS, EXPERIMENTAL_DESCRIPTORS } from '../src/adapters/descriptors';
+import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
+import { EXPERIMENTAL_DESCRIPTORS } from '../src/adapters/experimental';
 import { CodexAdapter } from '../src/adapters/codex';
 import { FakeCodexServer } from './fakes/codex-app-server';
 

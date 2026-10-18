@@ -11,7 +11,8 @@ import * as path from 'path';
 import { CODEX_CAPABILITIES, CODEX_DESCRIPTOR, CodexAdapter } from '../src/adapters/codex';
 import { CodexMapper } from '../src/adapters/codexMap';
 import { CODEX_INITIALIZE_CAPABILITIES, codexProfileArgs, codexWorkspaceRoots } from '../src/adapters/codexModes';
-import { PRODUCTION_DESCRIPTORS, EXPERIMENTAL_DESCRIPTORS } from '../src/adapters/descriptors';
+import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
+import { EXPERIMENTAL_DESCRIPTORS } from '../src/adapters/experimental';
 import type { AgentEvent, PermissionMode } from '../src/adapters/types';
 import { FakeCodexServer } from './fakes/codex-app-server';
 import type { FakeCodexOptions } from './fakes/codex-app-server';
@@ -65,6 +66,26 @@ async function until<T>(what: string, f: () => T | undefined, ms = 1000): Promis
   }
 }
 const pendingOf = (events: AgentEvent[]) => events.find((e): e is Extract<AgentEvent, { type: 'status' }> => e.type === 'status' && e.status === 'needs-permission' && e.permission?.state === 'pending')?.permission;
+/** A promise that must settle soon: a hang is a named failure, never a silent exit. */
+async function settles<T>(what: string, p: Promise<T>, ms = 1000): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, rej) => {
+    timer = setTimeout(() => rej(new assert.AssertionError({ message: `${what}: still waiting after ${ms}ms` })), ms);
+  });
+  try {
+    return await Promise.race([p, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+const req = (server: FakeCodexServer, method: string, params: unknown, child?: ReturnType<FakeCodexServer['childOfThread']>) => settles(`server request ${method}`, server.serverRequest(method, params, child));
+let finished = false;
+process.on('beforeExit', () => {
+  if (!finished) {
+    console.error('codex adapter: did not finish (a promise never settled)');
+    process.exitCode = 1;
+  }
+});
 const decisions = (server: FakeCodexServer): unknown[] => server.replies.map((r) => (r.result as { decision?: unknown } | undefined)?.decision);
 
 async function main(): Promise<void> {
@@ -130,7 +151,7 @@ async function main(): Promise<void> {
       if (mode === 'allow') {
         assert.deepStrictEqual(ts, { cwd: a, approvalPolicy: 'never', sandbox: 'danger-full-access' });
       } else {
-        assert.deepStrictEqual(ts, { cwd: a, approvalPolicy: mode === 'ask' ? 'on-request' : 'never', permissions: 'durbar_ro', runtimeWorkspaceRoots: roots });
+        assert.deepStrictEqual(ts, { cwd: fs.realpathSync.native(a), approvalPolicy: mode === 'ask' ? 'on-request' : 'never', permissions: 'durbar_ro', runtimeWorkspaceRoots: roots });
         assert.ok(!('sandbox' in ts), `${mode}: no sandbox key on thread/start`);
       }
       await ad.send(sid, { text: 'hello', attachments: [{ path: path.join(a, 'p.png'), kind: 'image' }, { path: path.join(a, 'n.txt'), kind: 'file' }] });
@@ -323,11 +344,11 @@ async function main(): Promise<void> {
     await ad.send(sid, { text: 'go' });
     await server.flush();
     const child = server.childOfThread(sid)!;
-    const rep = server.serverRequest('item/fileChange/requestApproval', { threadId: sid, itemId: 'fc_1', changes: [{ path: path.join(ws, 'a.txt') }] }, child);
+    const rep = req(server, 'item/fileChange/requestApproval', { threadId: sid, itemId: 'fc_1', changes: [{ path: path.join(ws, 'a.txt') }] }, child);
     await until('the pending state', () => pendingOf(events));
     events.length = 0;
     await ad.stop(sid);
-    const r = await rep;
+    const r = await settles('the reply to the request pending at stop', rep);
     assert.strictEqual((r.result as { decision: string }).decision, 'cancel', 'a request pending at stop is answered cancel on the wire');
     const perm = events.find((e) => e.type === 'permission');
     assert.ok(perm && perm.type === 'permission' && perm.permission.state === 'denied' && perm.permission.via === 'stopped', "denied via 'stopped'");
@@ -420,12 +441,12 @@ async function main(): Promise<void> {
     {
       const { server, ad, events } = make();
       const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', quiet: true });
-      const r = await server.serverRequest('item/fileChange/requestApproval', fileReq('f1'), server.childOfThread(sid)!);
+      const r = await req(server, 'item/fileChange/requestApproval', fileReq('f1'), server.childOfThread(sid)!);
       assert.strictEqual((r.result as { decision: string }).decision, 'decline');
       assert.strictEqual(pendingOf(events), undefined);
-      const c = await server.serverRequest('item/commandExecution/requestApproval', { itemId: 'c1', command: 'ls' }, server.childOfThread(sid)!);
+      const c = await req(server, 'item/commandExecution/requestApproval', { itemId: 'c1', command: 'ls' }, server.childOfThread(sid)!);
       assert.strictEqual((c.result as { decision: string }).decision, 'decline');
-      const u = await server.serverRequest('some/unknownRequest', { itemId: 'u1' }, server.childOfThread(sid)!);
+      const u = await req(server, 'some/unknownRequest', { itemId: 'u1' }, server.childOfThread(sid)!);
       assert.strictEqual((u.result as { decision: string }).decision, 'decline', 'an unknown server request is declined, not approved');
       await ad.dispose();
     }
@@ -434,21 +455,21 @@ async function main(): Promise<void> {
       const { server, ad, events } = make();
       const sid = await ad.start({ workspace: ws, permissionMode: 'ask', quiet: true });
       const child = server.childOfThread(sid)!;
-      const p1 = server.serverRequest('item/fileChange/requestApproval', fileReq('f1'), child);
+      const p1 = req(server, 'item/fileChange/requestApproval', fileReq('f1'), child);
       const pend = await until('pending', () => pendingOf(events));
       assert.strictEqual(server.replies.length, 0, 'nothing is answered while it is pending');
       ad.resolvePermission(sid, pend.requestId, true, true);
-      assert.strictEqual(((await p1).result as { decision: string }).decision, 'accept');
+      assert.strictEqual(((await settles('p1', p1)).result as { decision: string }).decision, 'accept');
+      const granted = [...events].reverse().find((e): e is Extract<AgentEvent, { type: 'grants' }> => e.type === 'grants');
+      assert.ok(granted && granted.grants.length === 1, 'remember emits a grants event with one Durbar grant');
       events.length = 0;
-      const p2 = await server.serverRequest('item/fileChange/requestApproval', fileReq('f2'), child);
+      const p2 = await req(server, 'item/fileChange/requestApproval', fileReq('f2'), child);
       assert.strictEqual((p2.result as { decision: string }).decision, 'accept', 'the grant approves the next one');
       assert.strictEqual(pendingOf(events), undefined);
-      const g = [...events].reverse().find((e) => e.type === 'grants');
-      void g;
-      const p3 = server.serverRequest('item/commandExecution/requestApproval', { itemId: 'c9', command: 'rm x' }, child);
+      const p3 = req(server, 'item/commandExecution/requestApproval', { itemId: 'c9', command: 'rm x' }, child);
       const pend3 = await until('pending 3', () => pendingOf(events));
       ad.resolvePermission(sid, pend3.requestId, false);
-      assert.strictEqual(((await p3).result as { decision: string }).decision, 'decline');
+      assert.strictEqual(((await settles('p3', p3)).result as { decision: string }).decision, 'decline');
       assert.ok(!decisions(server).includes('acceptForSession'), 'acceptForSession is never sent');
       await ad.dispose();
     }
@@ -456,7 +477,7 @@ async function main(): Promise<void> {
     {
       const { server, ad } = make();
       const sid = await ad.start({ workspace: ws, permissionMode: 'allow', quiet: true });
-      const r = await server.serverRequest('item/commandExecution/requestApproval', { itemId: 'c1', command: 'ls' }, server.childOfThread(sid)!);
+      const r = await req(server, 'item/commandExecution/requestApproval', { itemId: 'c1', command: 'ls' }, server.childOfThread(sid)!);
       assert.strictEqual((r.result as { decision: string }).decision, 'accept');
       assert.ok(!decisions(server).includes('acceptForSession'));
       await ad.dispose();
@@ -471,12 +492,12 @@ async function main(): Promise<void> {
       await ad.send(sid, { text: 'go' });
       await server.flush();
       const child = server.childOfThread(sid)!;
-      const p = server.serverRequest('item/fileChange/requestApproval', fileReq('f1'), child);
+      const p = req(server, 'item/fileChange/requestApproval', fileReq('f1'), child);
       await until('pending', () => pendingOf(events));
       events.length = 0;
       await ad.interrupt(sid);
       await server.flush();
-      assert.strictEqual(((await p).result as { decision: string }).decision, 'cancel');
+      assert.strictEqual(((await settles('the cancel reply', p)).result as { decision: string }).decision, 'cancel');
       const ti = server.requests('turn/interrupt');
       assert.strictEqual(ti.length, 1, 'one turn/interrupt (the cancel reply does not send a second)');
       assert.deepStrictEqual(ti[0].params, { threadId: sid, turnId: 'turn_1' });
@@ -491,6 +512,75 @@ async function main(): Promise<void> {
       assert.ok(end.type === 'status' && end.status === 'idle', 'a new turn runs after interrupt');
       await ad.dispose();
     }
+  }
+
+  // ---- interrupt with a pending approval and no known turn id: still cancelled, nothing sent to turn/interrupt
+  {
+    const ws = dir();
+    const { server, ad, events } = make();
+    const sid = await ad.start({ workspace: ws, permissionMode: 'ask', quiet: true });
+    const p = req(server, 'item/commandExecution/requestApproval', { itemId: 'c1', command: 'ls' }, server.childOfThread(sid));
+    await until('pending', () => pendingOf(events));
+    await ad.interrupt(sid);
+    assert.strictEqual(((await p).result as { decision: string }).decision, 'cancel', 'a pending approval is cancelled by interrupt');
+    assert.strictEqual(server.requests('turn/interrupt').length, 0, 'no turn, so no turn/interrupt');
+    assert.ok(ad.isLive(sid));
+    assert.ok(events.some((e) => e.type === 'permission' && e.permission.state === 'denied'), 'the permission was resolved as denied');
+    await ad.dispose();
+  }
+
+  // ---- FR-087 follow-ups: the cwd sent in Read-only/Ask first is the resolved one
+  {
+    const a = dir();
+    const b = dir();
+    const wsFile = path.join(dir(), 'y.code-workspace');
+    fs.writeFileSync(wsFile, JSON.stringify({ folders: [{ path: a }, { path: b }] }));
+    const mk = (realpath: (p: string) => string) => {
+      const server = new FakeCodexServer();
+      const ad = new CodexAdapter({ spawn: server.spawn, locate: async () => ({ path: BIN, version: '0.163.0' }), platform: 'linux', env: {}, realpath });
+      return { server, ad };
+    };
+    const resolved = (p: string): string => (p === a ? a + '-real' : p);
+    for (const mode of ['read-only', 'ask'] as PermissionMode[]) {
+      const { server, ad } = mk(resolved);
+      await ad.start({ workspace: wsFile, permissionMode: mode, quiet: true });
+      const ts = server.requests('thread/start')[0].params as { cwd: string; runtimeWorkspaceRoots: string[] };
+      assert.strictEqual(ts.cwd, a + '-real', `${mode}: thread/start gets the resolved cwd`);
+      assert.ok(ts.runtimeWorkspaceRoots.includes(a + '-real'), `${mode}: consistent with the roots`);
+      await ad.dispose();
+    }
+    const { server, ad } = mk(resolved);
+    await ad.start({ workspace: wsFile, permissionMode: 'allow', quiet: true });
+    assert.strictEqual((server.requests('thread/start')[0].params as { cwd: string }).cwd, a, 'Allow all uses the cwd as given');
+    await ad.dispose();
+    // the cwd cannot be resolved while another folder can: Read-only and Ask first are refused (reason plus advice, no fallback), Allow all starts
+    const unresolved = (p: string): string => {
+      if (p === a) throw new Error('ENOENT');
+      return p;
+    };
+    for (const mode of ['read-only', 'ask'] as PermissionMode[]) {
+      const m = mk(unresolved);
+      await assert.rejects(() => m.ad.start({ workspace: wsFile, permissionMode: mode }), (e: Error) => /cannot resolve the session folder/.test(e.message) && /Check that the folder exists/.test(e.message) && noFallback(e), `${mode}: an unresolved cwd is refused`);
+      assert.strictEqual(m.server.spawns.length, 0);
+    }
+    const m = mk(unresolved);
+    await m.ad.start({ workspace: wsFile, permissionMode: 'allow', quiet: true });
+    assert.strictEqual((m.server.requests('thread/start')[0].params as { cwd: string }).cwd, a);
+    await m.ad.dispose();
+  }
+
+  // ---- turn id race: turn/completed before the turn/start response must not make the finished turn current
+  {
+    const ws = dir();
+    const { server, ad } = make({ server: { completeBeforeResponse: true } });
+    const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', quiet: true });
+    await ad.send(sid, { text: 'go' });
+    await server.flush();
+    const before = server.requests('turn/interrupt').length;
+    await ad.interrupt(sid);
+    assert.strictEqual(server.requests('turn/interrupt').length, before, 'a finished turn is never interrupted');
+    await ad.stop(sid);
+    assert.strictEqual(server.requests('turn/interrupt').length, before, 'nor by stop');
   }
 
   // ---- FR-098 / criterion 9: every Codex fixture replayed through the adapter equals its `expected`
@@ -511,7 +601,11 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(got[0], { type: 'status', status: 'working', intent: 'Thinking' }, `${f}: the adapter's own leading working`);
       const want = fx.expected.map((e) => e as Record<string, unknown>);
       // The fixture's own first thread/started ("Ready in /work/app") belongs to thread/start here, and a fixture with no turn/completed gets one from the fake.
-      if (fx.notifications[0]?.method === 'thread/started') want.shift();
+      if (fx.notifications[0]?.method === 'thread/started') {
+        const first = want[0];
+        assert.ok(first && first.type === 'status' && first.status === 'idle' && String(first.intent).startsWith('Ready in'), `${f}: the first expected event is the Ready idle of thread/started`);
+        want.shift();
+      }
       if (!fx.notifications.some((n) => n.method === 'turn/completed')) want.push({ type: 'status', status: 'idle' });
       assert.deepStrictEqual(got.slice(1), want, `${f}: adapter events equal the fixture's expected list`);
       await ad.dispose();
@@ -519,6 +613,7 @@ async function main(): Promise<void> {
   }
 
   for (const d of tmp) fs.rmSync(d, { recursive: true, force: true });
+  finished = true;
   console.log('codex adapter: ok');
 }
 

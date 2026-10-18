@@ -19,6 +19,8 @@ export interface FakeCodexOptions {
   turnScript?: Array<{ method: string; params?: unknown }>;
   /** Leave the turn running after the script: it ends on `turn/interrupt` or `finishTurn()`. */
   holdTurn?: boolean;
+  /** Deliver the whole turn (including `turn/completed`) before the `turn/start` response, to test the ordering race. */
+  completeBeforeResponse?: boolean;
   /** Exit (no answer) when a request with this method arrives. */
   exitOn?: { method: string; code?: number | null; signal?: NodeJS.Signals | null };
 }
@@ -250,8 +252,14 @@ export class FakeCodexServer {
         if (!this.threads.has(tid)) return this.fail(child, id, -32600, 'thread not found');
         const turnId = `turn_${this.nextTurn++}`;
         this.openTurn.set(tid, turnId);
-        this.reply(child, id, { turn: { id: turnId, status: 'inProgress' } });
-        this.replayTurn(child, tid, turnId);
+        if (this.opts.completeBeforeResponse) {
+          this.replayTurn(child, tid, turnId);
+          this.queue.push(() => child.send({ id, result: { turn: { id: turnId, status: 'inProgress' } } }));
+          this.pump();
+        } else {
+          this.reply(child, id, { turn: { id: turnId, status: 'inProgress' } });
+          this.replayTurn(child, tid, turnId);
+        }
         return;
       }
       case 'turn/interrupt': {
