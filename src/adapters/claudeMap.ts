@@ -46,6 +46,8 @@ export interface ClaudeSessionInfo {
 
 /** Cap on tool output text kept in an event (characters). */
 export const TOOL_OUTPUT_CAP = 4000;
+/** How many assistant message ids are remembered for the usage dedupe (FR-082). */
+export const USAGE_IDS_CAP = 512;
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
@@ -94,6 +96,8 @@ export class ClaudeMapper {
   private openSubagents = new Set<string>();
   /** Running `total_cost_usd` already reported (streaming mode: the SDK sends totals, Durbar wants per-call amounts). */
   private lastCostTotal = 0;
+  /** Assistant message ids whose usage was already emitted (the most recent USAGE_IDS_CAP, oldest dropped first; FR-082). */
+  private usageSeen = new Set<string>();
   /** What `system/init` reported (read by the adapter). */
   info: ClaudeSessionInfo = {};
 
@@ -113,6 +117,7 @@ export class ClaudeMapper {
     this.streamMessage.clear();
     this.thinkingStreamed.clear();
     this.lastCostTotal = 0;
+    this.usageSeen.clear();
     this.info = {};
   }
 
@@ -266,11 +271,20 @@ export class ClaudeMapper {
       }
     });
     const u = msg.usage;
-    if (u && typeof u === 'object') {
-      // T025: count once per message.id (several messages share one id).
+    if (u && typeof u === 'object' && this.firstUsageOf(id)) {
+      // Once per message.id (FR-082): several assistant messages share one id.
       this.emit({ type: 'usage', model: str(msg.model), inputTokens: num(u.input_tokens), outputTokens: num(u.output_tokens), cacheReadTokens: num(u.cache_read_input_tokens), agentId });
     }
     if (m.aborted === true) this.emit({ type: 'status', status: 'idle', intent: 'Aborted' });
+  }
+
+  /** True when this message's usage has not been counted yet; a message without an id is always counted. */
+  private firstUsageOf(id: string | undefined): boolean {
+    if (id === undefined) return true;
+    if (this.usageSeen.has(id)) return false;
+    this.usageSeen.add(id);
+    if (this.usageSeen.size > USAGE_IDS_CAP) this.usageSeen.delete(this.usageSeen.values().next().value as string);
+    return true;
   }
 
   private user(m: ClaudeMessage, agentId: string | undefined): void {
