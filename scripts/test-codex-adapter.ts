@@ -8,7 +8,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CODEX_CAPABILITIES, CODEX_DESCRIPTOR, CodexAdapter } from '../src/adapters/codex';
+import { CODEX_CAPABILITIES, CODEX_DESCRIPTOR, CodexAdapter, codexChildEnv } from '../src/adapters/codex';
 import { CodexMapper } from '../src/adapters/codexMap';
 import { CODEX_INITIALIZE_CAPABILITIES, codexProfileArgs, codexWorkspaceRoots } from '../src/adapters/codexModes';
 import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
@@ -92,7 +92,7 @@ async function main(): Promise<void> {
   // ---- FR-089: capabilities and optional members
   {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(CODEX_CAPABILITIES)), {
-      interrupt: true, resume: true, images: true, models: false, effort: false,
+      interrupt: true, resume: false, images: true, models: false, effort: false,
       permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'none',
       usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: false, history: false, mcpStatus: false, mcpToggle: false,
     });
@@ -203,6 +203,7 @@ async function main(): Promise<void> {
         await server.flush();
         await settle();
         assert.strictEqual(server.requests('thread/start').length, 0, `${c.name} / ${mode}: no thread/start was sent`);
+        if (c.name === 'no experimentalApi') assert.strictEqual(server.spawns.length, 1, `${mode}: no second child for a limited mode`);
         assert.deepStrictEqual(server.live, [], `${c.name} / ${mode}: no child is left running`);
         assert.deepStrictEqual(events, [], `${c.name} / ${mode}: a refused start emits no event`);
         assert.strictEqual(ad.isLive('thr_1'), false);
@@ -258,6 +259,7 @@ async function main(): Promise<void> {
       await settle();
       assert.deepStrictEqual(server.live, [], 'no child is left after a failed handshake');
       assert.strictEqual(server.requests('thread/start').length, 0);
+      if (mode !== 'allow') assert.strictEqual(server.spawns.length, 1, `${mode}: a failing initialize is never retried (no Allow all retry)`);
     }
     // thread/start answers with an error on `permissions` (Windows without the elevated sandbox): refuse, never retry weaker
     for (const mode of ['read-only', 'ask'] as PermissionMode[]) {
@@ -602,6 +604,185 @@ async function main(): Promise<void> {
     assert.strictEqual(server.requests('turn/interrupt').length, before, 'a finished turn is never interrupted');
     await ad.stop(sid);
     assert.strictEqual(server.requests('turn/interrupt').length, before, 'nor by stop');
+  }
+
+  // ---- D5: the child's environment (default) is the process environment without other tools' credentials
+  {
+    const env = { PATH: '/bin', HOME: '/h', GH_TOKEN: 'a', GITHUB_TOKEN: 'b', GITHUB_PAT: 'x', COPILOT_GITHUB_TOKEN: 'c', ANTHROPIC_API_KEY: 'd', CLAUDE_CODE_OAUTH_TOKEN: 'e', DURBAR_LOG: 'f', DURBAR_SIM: '15', MY_SERVICE_PASSWORD: 'g', AWS_SECRET_ACCESS_KEY: 'h', OPENAI_API_KEY: 'k', CODEX_HOME: '/c', HTTPS_PROXY: 'http://p', NO_PROXY: 'x', SSL_CERT_FILE: '/ca', NODE_EXTRA_CA_CERTS: '/ca2', USERPROFILE: 'u', APPDATA: 'a', TMPDIR: '/t' };
+    const out = codexChildEnv(env);
+    for (const k of ['GH_TOKEN', 'GITHUB_TOKEN', 'GITHUB_PAT', 'COPILOT_GITHUB_TOKEN', 'ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'DURBAR_LOG', 'DURBAR_SIM', 'MY_SERVICE_PASSWORD', 'AWS_SECRET_ACCESS_KEY']) assert.ok(!(k in out), `${k} is dropped`);
+    for (const k of ['PATH', 'HOME', 'OPENAI_API_KEY', 'CODEX_HOME', 'HTTPS_PROXY', 'NO_PROXY', 'SSL_CERT_FILE', 'NODE_EXTRA_CA_CERTS', 'USERPROFILE', 'APPDATA', 'TMPDIR']) assert.strictEqual(out[k], (env as Record<string, string>)[k], `${k} is kept`);
+    // the default of the adapter: what reaches spawn
+    const names = ['GH_TOKEN', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'HTTPS_PROXY'];
+    const saved = names.map((n) => process.env[n]);
+    process.env.GH_TOKEN = 'planted-gh';
+    process.env.ANTHROPIC_API_KEY = 'planted-anthropic';
+    process.env.OPENAI_API_KEY = 'planted-openai';
+    process.env.HTTPS_PROXY = 'http://proxy.test:3128';
+    try {
+      const server = new FakeCodexServer();
+      const ad = new CodexAdapter({ spawn: server.spawn, locate: async () => ({ path: BIN, version: '0.163.0' }), platform: 'linux' });
+      await ad.start({ workspace: dir(), quiet: true });
+      const e = server.spawns[0].options.env!;
+      assert.ok(!('GH_TOKEN' in e) && !('ANTHROPIC_API_KEY' in e), 'GH_TOKEN and ANTHROPIC_API_KEY are not passed to the child');
+      assert.strictEqual(e.OPENAI_API_KEY, 'planted-openai');
+      assert.strictEqual(e.HTTPS_PROXY, 'http://proxy.test:3128');
+      await ad.dispose();
+    } finally {
+      names.forEach((n, i) => (saved[i] === undefined ? delete process.env[n] : (process.env[n] = saved[i])));
+    }
+  }
+
+  // ---- FR-092 / resume is T043b: a known id that is not live is refused, never silently restarted as a new thread
+  {
+    const ws = dir();
+    const { server, ad } = make();
+    await ad.start({ workspace: ws, sessionId: 'agent-9', quiet: true });
+    await ad.stop('agent-9');
+    const spawned = server.spawns.length;
+    await assert.rejects(() => ad.start({ workspace: ws, sessionId: 'agent-9' }), /not available yet/, 'a stopped named session is not restarted as a new thread');
+    const t = await ad.start({ workspace: ws, quiet: true });
+    await ad.stop(t);
+    await assert.rejects(() => ad.start({ workspace: ws, sessionId: t }), /not available yet/, 'nor a stopped thread id');
+    assert.strictEqual(server.spawns.length, spawned + 1, 'the refusals spawn nothing');
+    await ad.start({ workspace: ws, sessionId: 'never-seen', quiet: true }); // an unknown id (restored lazy agent) starts a new thread
+    await ad.dispose();
+  }
+
+  // ---- start races: a second concurrent start of the same id is refused; stop during start cancels it
+  {
+    const ws = dir();
+    const a = make();
+    const p1 = a.ad.start({ workspace: ws, sessionId: 'X', quiet: true });
+    const p2 = a.ad.start({ workspace: ws, sessionId: 'X', quiet: true });
+    await assert.rejects(() => p2, /already running/, 'a concurrent start of the same id is refused');
+    assert.strictEqual(await settles('the first start', p1), 'X');
+    assert.strictEqual(a.server.spawns.length, 1, 'only one child');
+    await a.ad.dispose();
+
+    const b = make({ server: { holdInitialize: true } });
+    const p = b.ad.start({ workspace: ws, sessionId: 'X', quiet: true });
+    const failed = p.then(() => 'started', (e: Error) => e.message);
+    await until('the child spawned', () => (b.server.spawns.length ? true : undefined));
+    const stopped = b.ad.stop('X');
+    b.server.releaseInitialize();
+    assert.match(await settles('the cancelled start', failed), /stopped while starting/);
+    await settles('stop during start', stopped);
+    await b.server.flush();
+    await settle();
+    assert.strictEqual(b.ad.isLive('X'), false, 'a cancelled start never registers');
+    assert.deepStrictEqual(b.server.live, [], 'its child is closed');
+    assert.strictEqual(b.server.requests('thread/start').length, 0, 'no thread was started');
+    assert.deepStrictEqual(b.events, [], 'no event');
+  }
+
+  // ---- interrupt before the turn id is known: sent as soon as it is, Aborted once
+  {
+    const ws = dir();
+    const { server, ad, events } = make({ server: { holdTurnStart: true, holdTurn: true } });
+    const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', quiet: true });
+    const sent = ad.send(sid, { text: 'go' });
+    await until('turn/start on the wire', () => (server.requests('turn/start').length ? true : undefined));
+    events.length = 0;
+    await settles('interrupt', ad.interrupt(sid));
+    assert.strictEqual(server.requests('turn/interrupt').length, 0, 'the turn id is unknown: nothing sent yet');
+    server.releaseTurnStart();
+    await settles('send', sent);
+    await until('turn/interrupt', () => (server.requests('turn/interrupt').length ? true : undefined));
+    await server.flush();
+    assert.deepStrictEqual(server.requests('turn/interrupt')[0].params, { threadId: sid, turnId: 'turn_1' });
+    assert.strictEqual(server.requests('turn/interrupt').length, 1);
+    await settle();
+    assert.strictEqual(events.filter((e) => e.type === 'status' && e.status === 'idle' && (e as { intent?: string }).intent === 'Aborted').length, 1, 'Aborted once');
+    assert.ok(ad.isLive(sid));
+    await ad.dispose();
+  }
+
+  // ---- cwd versus roots (Read-only and Ask first), and a real symlink
+  {
+    const a = dir();
+    const b = dir();
+    const wsFile = path.join(dir(), 'z.code-workspace');
+    fs.writeFileSync(wsFile, JSON.stringify({ folders: [{ path: a }, { path: b }] }));
+    const root = path.parse(os.tmpdir()).root;
+    const mk = (realpath: (p: string) => string) => {
+      const server = new FakeCodexServer();
+      const ad = new CodexAdapter({ spawn: server.spawn, locate: async () => ({ path: BIN, version: '0.163.0' }), platform: 'linux', env: {}, realpath });
+      return { server, ad };
+    };
+    // the first folder (the cwd) resolves to the filesystem root, the second is fine: the roots are not empty, but the cwd is not among them
+    const toRoot = (p: string): string => (p === a ? root : p);
+    for (const mode of ['read-only', 'ask'] as PermissionMode[]) {
+      const m = mk(toRoot);
+      await assert.rejects(() => m.ad.start({ workspace: wsFile, permissionMode: mode }), (e: Error) => /not among the folders/.test(e.message) && /Add the project folder itself/.test(e.message) && noFallback(e), `${mode}: a cwd outside the roots is refused`);
+      assert.strictEqual(m.server.spawns.length, 0);
+    }
+    const m = mk(toRoot);
+    await m.ad.start({ workspace: wsFile, permissionMode: 'allow', quiet: true });
+    await m.ad.dispose();
+
+    // real symlinks (POSIX; skipped where the OS does not allow creating one)
+    const target = dir();
+    const link = path.join(dir(), 'link');
+    const rootLink = path.join(dir(), 'rootlink');
+    let linked = true;
+    try {
+      fs.symlinkSync(target, link, 'dir');
+      fs.symlinkSync(root, rootLink, 'dir');
+    } catch {
+      linked = false;
+      console.log('codex adapter: symlink cases skipped (cannot create a symlink here)');
+    }
+    if (linked) {
+      const real = fs.realpathSync.native(target);
+      const s1 = make();
+      await s1.ad.start({ workspace: link, permissionMode: 'read-only', quiet: true });
+      const ts = s1.server.requests('thread/start')[0].params as { cwd: string; runtimeWorkspaceRoots: string[] };
+      assert.strictEqual(ts.cwd, real, 'the symlink is resolved in cwd');
+      assert.deepStrictEqual(ts.runtimeWorkspaceRoots, [real], 'and in the roots');
+      await s1.ad.dispose();
+      for (const mode of ['read-only', 'ask'] as PermissionMode[]) {
+        const s2 = make();
+        await assert.rejects(() => s2.ad.start({ workspace: rootLink, permissionMode: mode }), (e: Error) => /no folder/.test(e.message) && noFallback(e), `${mode}: a folder that is a real symlink to the filesystem root is refused`);
+        assert.strictEqual(s2.server.spawns.length, 0);
+      }
+    }
+  }
+
+  // ---- start errors are short and clean; dispose during start leaks no child; the second Read-only lock
+  {
+    const ws = dir();
+    // a huge, control-laden server error
+    const evil = 'bad\u0000\u001b[31m\n' + 'x'.repeat(5000);
+    {
+      const s = make({ server: { refusePermissions: true, threadStartError: evil } });
+      await assert.rejects(() => s.ad.start({ workspace: ws, permissionMode: 'read-only' }), (e: Error) => /refused the session settings/.test(e.message) && e.message.length < 360 && !/[\u0000-\u001f\u007f-\u009f]/.test(e.message), 'a refusal is capped and has no control characters');
+    }
+    const hs = make({ server: { initializeErrorText: evil, initialize: 'error' } });
+    await assert.rejects(() => hs.ad.start({ workspace: ws, permissionMode: 'allow' }), (e: Error) => /could not be started/.test(e.message) && e.message.length < 360 && !/[\u0000-\u001f\u007f-\u009f]/.test(e.message));
+
+    // dispose racing a slow start
+    const d = make({ server: { holdInitialize: true } });
+    const p = d.ad.start({ workspace: ws, permissionMode: 'allow', quiet: true });
+    const outcome = p.then(() => 'started', (e: Error) => e.message);
+    await until('the child spawned', () => (d.server.spawns.length ? true : undefined));
+    const disposed = d.ad.dispose();
+    d.server.releaseInitialize();
+    assert.match(await settles('the start', outcome), /shut down/, 'a start racing dispose is rejected');
+    await settles('dispose', disposed);
+    await d.server.flush();
+    await settle();
+    assert.deepStrictEqual(d.server.live, [], 'no child is leaked');
+    assert.strictEqual(d.server.requests('thread/start').length, 0);
+
+    // Read-only is double-locked: even if the broker approved, codexReply declines
+    const r = make();
+    const sid = await r.ad.start({ workspace: ws, permissionMode: 'read-only', quiet: true });
+    const live = (r.ad as unknown as { sessions: Map<string, { broker: { request: () => Promise<unknown> } }> }).sessions.get(sid)!;
+    live.broker.request = async () => ({ kind: 'approve-once' });
+    const rep = await req(r.server, 'item/fileChange/requestApproval', { itemId: 'f1', changes: [{ path: path.join(ws, 'a.txt') }] }, r.server.childOfThread(sid));
+    assert.strictEqual((rep.result as { decision: string }).decision, 'decline', 'a bypassed broker still gets decline in Read-only');
+    await r.ad.dispose();
   }
 
   // ---- FR-098 / criterion 9: every Codex fixture replayed through the adapter equals its `expected`

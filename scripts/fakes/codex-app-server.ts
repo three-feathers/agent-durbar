@@ -21,6 +21,14 @@ export interface FakeCodexOptions {
   holdTurn?: boolean;
   /** Deliver the whole turn (including `turn/completed`) before the `turn/start` response, to test the ordering race. */
   completeBeforeResponse?: boolean;
+  /** Text of the error `thread/start` answers with when it refuses `permissions` (default a short one). */
+  threadStartError?: string;
+  /** Text of the `initialize` error. */
+  initializeErrorText?: string;
+  /** Withhold the `turn/start` response and the turn's notifications until `releaseTurnStart()` (the id is unknown to the adapter meanwhile). */
+  holdTurnStart?: boolean;
+  /** Withhold the `initialize` answer until `releaseInitialize()`. */
+  holdInitialize?: boolean;
   /** Exit (no answer) when a request with this method arrives. */
   exitOn?: { method: string; code?: number | null; signal?: NodeJS.Signals | null };
 }
@@ -132,6 +140,8 @@ export class FakeCodexServer {
   private serverPending = new Map<string, { childIndex: number; method: string; resolve: (v: ServerReply) => void }>();
   /** The open turn per thread (id), if any. */
   private openTurn = new Map<string, string>();
+  private held: Array<() => void> = [];
+  private heldInit: Array<() => void> = [];
   private threadChild = new Map<string, FakeChild>();
 
   constructor(opts: FakeCodexOptions = {}) {
@@ -225,13 +235,14 @@ export class FakeCodexServer {
       const caps = isObj(params) && isObj(params.capabilities) ? params.capabilities : undefined;
       const init = this.opts.initialize ?? 'ok';
       if (init === 'no-answer') return;
-      if (init === 'error' || (init === 'refuse-experimental' && caps?.experimentalApi === true)) return this.fail(child, id, -32600, 'experimentalApi is not supported');
+      if (init === 'error' || (init === 'refuse-experimental' && caps?.experimentalApi === true)) return this.fail(child, id, -32600, this.opts.initializeErrorText ?? 'experimentalApi is not supported');
+      if (this.opts.holdInitialize) return void this.heldInit.push(() => this.reply(child, id, { userAgent: 'fake-codex/0.0.0' }));
       return this.reply(child, id, { userAgent: 'fake-codex/0.0.0' });
     }
     if (!child.initializeSeen || !child.initializedSeen) return this.fail(child, id, -32002, 'Not initialized');
     switch (method) {
       case 'thread/start': {
-        if (this.opts.refusePermissions && isObj(params) && params.permissions !== undefined) return this.fail(child, id, -32602, 'permissions is not supported here');
+        if (this.opts.refusePermissions && isObj(params) && params.permissions !== undefined) return this.fail(child, id, -32602, this.opts.threadStartError ?? 'permissions is not supported here');
         const tid = `thr_${this.nextThread++}`;
         const cwd = isObj(params) && typeof params.cwd === 'string' ? params.cwd : '';
         this.threads.set(tid, cwd);
@@ -252,6 +263,13 @@ export class FakeCodexServer {
         if (!this.threads.has(tid)) return this.fail(child, id, -32600, 'thread not found');
         const turnId = `turn_${this.nextTurn++}`;
         this.openTurn.set(tid, turnId);
+        if (this.opts.holdTurnStart) {
+          this.held.push(() => {
+            this.reply(child, id, { turn: { id: turnId, status: 'inProgress' } });
+            this.replayTurn(child, tid, turnId);
+          });
+          return;
+        }
         if (this.opts.completeBeforeResponse) {
           this.replayTurn(child, tid, turnId);
           this.queue.push(() => child.send({ id, result: { turn: { id: turnId, status: 'inProgress' } } }));
@@ -295,6 +313,15 @@ export class FakeCodexServer {
   private completeTurn(child: FakeChild, tid: string, turnId: string, status: 'completed' | 'interrupted'): void {
     this.openTurn.delete(tid);
     this.enqueue(child, { method: 'turn/completed', params: { threadId: tid, turn: { id: turnId, status } } });
+  }
+
+  /** Deliver what `holdTurnStart` withheld. */
+  releaseTurnStart(): void {
+    for (const f of this.held.splice(0)) f();
+  }
+  /** Deliver what `holdInitialize` withheld. */
+  releaseInitialize(): void {
+    for (const f of this.heldInit.splice(0)) f();
   }
 
   /** End a held turn normally. */

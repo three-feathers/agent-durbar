@@ -30,7 +30,8 @@ const CODEX_NAME = 'OpenAI Codex';
 /** From the plan and the modules (spec 012 FR-089); none of it verified on a real account. Deeply frozen. */
 export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   interrupt: true,
-  resume: true,
+  // T043b turns this on together with FR-093 resume.
+  resume: false,
   images: true,
   models: false,
   effort: false,
@@ -56,7 +57,7 @@ export interface CodexAdapterOptions {
   spawn?: SpawnFn;
   locate?: () => Promise<CodexLocation | undefined>;
   platform?: string;
-  /** Environment of the child. Default: the process environment (the D5 deny list is T043c). Never logged. */
+  /** Environment of the child. Default: `codexChildEnv(process.env)` (D5). Never logged. */
   env?: NodeJS.ProcessEnv;
   /** Shown to Codex in `clientInfo`. */
   appVersion?: string;
@@ -84,9 +85,37 @@ async function detectLocate(): Promise<CodexLocation | undefined> {
   return r.path ? { path: r.path, version: r.version } : undefined;
 }
 
+/**
+ * The environment a Codex child gets (spec 012 D5): the process environment without other tools' credentials. Dropped: names starting
+ * `GH_`, `GITHUB_`, `COPILOT_`, `ANTHROPIC_`, `CLAUDE_`, `DURBAR_`, and any name that looks like a secret (the pattern `redact()` uses).
+ * Kept on purpose: `OPENAI_API_KEY` and `CODEX_*` (Codex's own sign-in), proxy and CA variables, and everything that does not look like a secret
+ * (`PATH`, `HOME`, `USERPROFILE`, `APPDATA`, `TMP*`). Pure. Values are never logged.
+ */
+const DENIED_PREFIX = /^(GH_|GITHUB_|COPILOT_|ANTHROPIC_|CLAUDE_|DURBAR_)/i;
+const SECRET_LOOKING = /(TOKEN|KEY|SECRET|PASSWORD|PASS|AUTH|CREDENTIAL)/i;
+const KEPT = /^(OPENAI_API_KEY|CODEX_.*|(HTTPS?|ALL|NO|FTP)_PROXY|SSL_CERT_FILE|SSL_CERT_DIR|NODE_EXTRA_CA_CERTS|REQUESTS_CA_BUNDLE|CURL_CA_BUNDLE)$/i;
+export function codexChildEnv(env: Readonly<Record<string, string | undefined>>): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [name, value] of Object.entries(env)) {
+    if (value === undefined) continue;
+    if (!KEPT.test(name) && (DENIED_PREFIX.test(name) || SECRET_LOOKING.test(name))) continue;
+    out[name] = value;
+  }
+  return out;
+}
+
+/** `child` is `parent` or below it (paths already normalised and resolved; Windows-form paths compare case-insensitively). */
+function isInside(parent: string, child: string): boolean {
+  const win = /^[A-Za-z]:[\\/]|^\\\\/.test(parent);
+  const api = win ? path.win32 : path.posix;
+  const rel = api.relative(win ? parent.toLowerCase() : parent, win ? child.toLowerCase() : child);
+  return rel === '' || (rel !== '..' && !rel.startsWith('..' + api.sep) && !api.isAbsolute(rel));
+}
+
 const isShim = (file: string): boolean => /\.(cmd|bat)$/i.test(file);
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-const reasonOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+/** A short, single-line reason: control characters stripped, 300 characters at most (server text is never trusted to be small or clean). */
+const reasonOf = (e: unknown): string => (e instanceof Error ? e.message : String(e)).replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').slice(0, 300);
 
 interface Live {
   sid: string;
@@ -104,6 +133,10 @@ interface Live {
   turnId?: string;
   /** Ids of turns already completed (bounded): a late `turn/start` response must not make one current again. */
   doneTurns: string[];
+  /** A `turn/start` is on its way and its id is not known yet. */
+  turnStarting: boolean;
+  /** `interrupt` was asked before the turn id was known: send it as soon as it is. */
+  pendingInterrupt: boolean;
   stopping: boolean;
   interrupting: boolean;
   /** The next mapper `Aborted` is the one `interrupt` already reported itself. */
@@ -120,10 +153,17 @@ export class CodexAdapter implements AgentAdapter {
   readonly id = CODEX_ID;
   readonly displayName = CODEX_NAME;
   readonly capabilities: AdapterCapabilities = CODEX_CAPABILITIES;
-  /** Optional debug sink (DURBAR_LOG). Receives short redacted lines only: never env values, prompts or stderr text. */
+  /** Optional debug sink (DURBAR_LOG). Receives short lines: rpc diagnostics, and on an unexpected exit the last stderr lines after `redact()` (FR-097). Never env values or prompts. */
   debug?: (message: string) => void;
   private listeners = new Set<(event: AgentEvent) => void>();
   private sessions = new Map<string, Live>();
+  /** Ids this run has used, live or not: a stopped one cannot be silently restarted as a new thread (resume is T043b). */
+  private known = new Set<string>();
+  /** Bumped by `dispose`: a start that began earlier closes its child and rejects. */
+  private generation = 0;
+  private inflight = new Set<Promise<unknown>>();
+  /** Named sessions being started: reserved before the first await, so a second start or a stop sees them. */
+  private starting = new Map<string, { cancelled: boolean; done: Promise<void> }>();
   private readonly spawnFn: SpawnFn;
   private readonly locate: () => Promise<CodexLocation | undefined>;
   private readonly platform: string;
@@ -137,7 +177,7 @@ export class CodexAdapter implements AgentAdapter {
     this.spawnFn = o.spawn ?? realSpawn;
     this.locate = o.locate ?? detectLocate;
     this.platform = o.platform ?? process.platform;
-    this.env = o.env ?? process.env;
+    this.env = o.env ?? codexChildEnv(process.env);
     this.appVersion = o.appVersion ?? 'dev';
     this.realpath = o.realpath ?? fs.realpathSync.native;
     this.closeGraceMs = o.closeGraceMs;
@@ -184,11 +224,41 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   async start(options: StartOptions): Promise<string> {
+    const p = this.startReserved(options);
+    this.inflight.add(p);
+    try {
+      return await p;
+    } finally {
+      this.inflight.delete(p);
+    }
+  }
+
+  private async startReserved(options: StartOptions): Promise<string> {
+    const named = options.sessionId;
+    if (!named) return this.startInner(options, { cancelled: false });
+    if (this.sessions.has(named) || this.starting.has(named)) throw new Error(`Session ${named} is already running.`);
+    if (this.known.has(named)) throw new Error('Resuming a Codex session is not available yet.');
+    let release!: () => void;
+    const token = { cancelled: false, done: new Promise<void>((r) => (release = r)) };
+    this.starting.set(named, token);
+    try {
+      return await this.startInner(options, token);
+    } finally {
+      this.starting.delete(named);
+      release();
+    }
+  }
+
+  private async startInner(options: StartOptions, token: { cancelled: boolean }): Promise<string> {
+    const generation = this.generation;
+    const cancelled = (): void => {
+      if (generation !== this.generation) throw new Error('Codex was shut down while the session was starting.');
+      if (token.cancelled) throw new Error(`Session ${options.sessionId} was stopped while starting.`);
+    };
     const mode = startModeOf(options);
     if (!this.capabilities.permissionModes.includes(mode)) throw new Error(`Codex cannot run in ${mode} mode.`);
     // Resume of a known thread arrives with T043b (FR-093). Refuse rather than silently starting a different thread.
     if (options.resumeSessionId) throw new Error('Resuming a Codex session is not available yet.');
-    if (options.sessionId && this.sessions.has(options.sessionId)) throw new Error(`Session ${options.sessionId} is already running.`);
     const { cwd, folders } = resolveWorkspaceCwd(options.workspace);
     const roots = codexWorkspaceRoots([cwd, ...folders], this.realpath);
     const limited = mode !== 'allow';
@@ -201,12 +271,21 @@ export class CodexAdapter implements AgentAdapter {
     }
 
     const loc = await this.locate();
+    cancelled();
     if (!loc?.path) throw new Error('Codex was not found on this computer. Install the Codex CLI, then restart Durbar.');
     // A .cmd/.bat shim cannot carry the profile argument and cannot be spawned without a shell: refused in every mode (D4).
     if (isShim(loc.path)) throw new Error('Codex is launched through a .cmd launcher, which Durbar cannot run safely. Use the native codex.exe instead of the .cmd shim.');
     if (limited && !roots.length) throw new Error(`Durbar has no folder it can limit Codex's reads to. Add the project folder itself, not a drive or filesystem root, or a folder Durbar can resolve.`);
 
     if (limited && !realCwd) throw new Error(`Durbar cannot resolve the session folder (${path.basename(cwd)}), so it cannot confirm Codex reads only inside it. Check that the folder exists and Durbar can read it.`);
+
+    if (limited) {
+      // The folder Codex works in must be one of the folders it may read (or inside one), after symlinks are resolved.
+      const [cwdRoot] = codexWorkspaceRoots([cwd], this.realpath);
+      if (!cwdRoot || !roots.some((r) => isInside(r, cwdRoot))) {
+        throw new Error(`The session folder (${path.basename(cwd)}) is not among the folders Durbar can limit Codex's reads to. Add the project folder itself, not a drive or filesystem root.`);
+      }
+    }
 
     // The ids and flags the handlers need exist before the child can talk.
     const live: Live = {
@@ -222,6 +301,8 @@ export class CodexAdapter implements AgentAdapter {
       muted: true, // until the session is up: the start itself reports "Ready" (or nothing, when quiet)
       stopping: false,
       doneTurns: [],
+      turnStarting: false,
+      pendingInterrupt: false,
       interrupting: false,
       expectAborted: false,
       anon: 0,
@@ -265,6 +346,7 @@ export class CodexAdapter implements AgentAdapter {
           throw new Error(`Codex could not be started: ${reasonOf(e2)}`);
         }
       }
+      cancelled();
       if (limited) {
         const ok = codexReadEnforceable({ version: loc.version, experimentalApi, platform: this.platform, elevatedSandbox: undefined });
         if (!ok.ok) throw new Error(`${ok.reason} ${ok.advice}`);
@@ -283,6 +365,7 @@ export class CodexAdapter implements AgentAdapter {
       const threadId = thread && typeof thread.id === 'string' && thread.id ? thread.id : undefined;
       if (!threadId) throw new Error('Codex did not return a thread id.');
       live.threadId = threadId;
+      cancelled();
     } catch (e) {
       await this.closeChild(child);
       throw e instanceof Error ? e : new Error(String(e));
@@ -293,6 +376,7 @@ export class CodexAdapter implements AgentAdapter {
     live.mapper.adopt(live.threadId, cwd); // thread/started may or may not have arrived yet
     live.muted = false;
     this.sessions.set(live.sid, live);
+    this.known.add(live.sid);
     if (live.rpc.exited) {
       // The child died between the response and now: report it like any crash.
       this.sessions.delete(live.sid);
@@ -323,11 +407,17 @@ export class CodexAdapter implements AgentAdapter {
       // `sandboxPolicy` is an object on turn/start, not the `sandbox` string of thread/start. [KNOWN GAP] T062: shape unverified.
       ...(sandbox ? { sandboxPolicy: { type: 'dangerFullAccess' } } : { runtimeWorkspaceRoots: live.roots }),
     };
+    live.turnStarting = true;
+    live.pendingInterrupt = false;
     try {
       const res = await live.rpc.request('turn/start', params);
       const id = isObj(res) && isObj(res.turn) && typeof res.turn.id === 'string' ? res.turn.id : undefined;
       if (id && live.turnId === undefined && !live.doneTurns.includes(id)) live.turnId = id;
+      live.turnStarting = false;
+      if (live.pendingInterrupt && live.turnId) await this.fireInterrupt(live, live.turnId);
     } catch (e) {
+      live.turnStarting = false;
+      live.pendingInterrupt = false;
       if (isRpcError(e) || (e as { kind?: string }).kind === 'timeout') this.emit(sessionId, { type: 'status', status: 'error', intent: `Codex refused the message: ${reasonOf(e)}`.slice(0, 300) });
       throw e;
     }
@@ -341,14 +431,12 @@ export class CodexAdapter implements AgentAdapter {
     try {
       live.broker.denyPending();
       const turnId = live.turnId;
-      if (!turnId) return;
-      live.expectAborted = true;
-      try {
-        await live.rpc.request('turn/interrupt', { threadId: live.threadId, turnId });
-      } catch {
-        /* the turn ended on its own, or the child is gone */
+      if (!turnId) {
+        // A turn is starting but its id is not known yet: remember the request and send it the moment the id arrives.
+        if (live.turnStarting) live.pendingInterrupt = true;
+        return;
       }
-      if (this.sessions.get(sessionId) === live) this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Aborted' });
+      await this.fireInterrupt(live, turnId);
     } finally {
       // Let the answers of the denied requests (which read this flag) go out first.
       await new Promise<void>((r) => setImmediate(r));
@@ -356,8 +444,27 @@ export class CodexAdapter implements AgentAdapter {
     }
   }
 
+  /** `turn/interrupt` for a known turn, then "Aborted" once (the mapper's own one for this turn is dropped). */
+  private async fireInterrupt(live: Live, turnId: string): Promise<void> {
+    live.pendingInterrupt = false;
+    live.expectAborted = true;
+    try {
+      await live.rpc.request('turn/interrupt', { threadId: live.threadId, turnId });
+    } catch {
+      /* the turn ended on its own, or the child is gone */
+    }
+    if (this.sessions.get(live.sid) === live) this.emit(live.sid, { type: 'status', status: 'idle', intent: 'Aborted' });
+  }
+
   /** End the session: pending permissions are denied, the turn interrupted, the thread unsubscribed, the child closed. */
   async stop(sessionId: string): Promise<void> {
+    const starting = this.starting.get(sessionId);
+    if (starting) {
+      // Stop during start: the start closes its child and never registers; wait for that.
+      starting.cancelled = true;
+      await starting.done;
+      return;
+    }
     const live = this.sessions.get(sessionId);
     if (!live) return;
     this.sessions.delete(sessionId);
@@ -388,6 +495,8 @@ export class CodexAdapter implements AgentAdapter {
 
   /** Stop every session and wait for every child. [KNOWN GAP] (T042): only the direct child is signalled. */
   async dispose(): Promise<void> {
+    this.generation++; // starts in flight close their child and reject
+    await Promise.allSettled([...this.inflight]);
     for (const id of [...this.sessions.keys()]) await this.stop(id);
   }
 
@@ -420,11 +529,19 @@ export class CodexAdapter implements AgentAdapter {
     // Keep the running turn's id for interrupt and stop.
     if (isObj(params) && (params.threadId === undefined || params.threadId === live.threadId)) {
       const turn = isObj(params.turn) ? params.turn : undefined;
-      if (method === 'turn/started' && turn && typeof turn.id === 'string') { if (!live.doneTurns.includes(turn.id)) live.turnId = turn.id; }
+      if (method === 'turn/started' && turn && typeof turn.id === 'string') {
+        if (!live.doneTurns.includes(turn.id)) {
+          live.turnId = turn.id;
+          live.turnStarting = false;
+          if (live.pendingInterrupt) void this.fireInterrupt(live, turn.id);
+        }
+      }
       else if (method === 'turn/completed') {
         const done = turn && typeof turn.id === 'string' ? turn.id : live.turnId;
         if (done) live.doneTurns = [...live.doneTurns, done].slice(-32);
         live.turnId = undefined;
+        live.turnStarting = false;
+        live.pendingInterrupt = false;
       }
     }
     live.mapper.map({ method, params });
