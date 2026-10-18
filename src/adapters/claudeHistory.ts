@@ -69,7 +69,7 @@ export function parseSessionHead(text: string): ClaudeSessionHead {
     if (o.type !== 'user' || o.isSidechain === true) continue;
     if (h.cwd === undefined && typeof o.cwd === 'string') h.cwd = o.cwd;
     if (h.startTime === undefined) h.startTime = tsOf(o);
-    if (h.branch === undefined && typeof o.gitBranch === 'string' && o.gitBranch) h.branch = o.gitBranch;
+    if (h.branch === undefined && typeof o.gitBranch === 'string' && o.gitBranch && o.gitBranch !== 'HEAD') h.branch = o.gitBranch; // `HEAD`: not a git folder (or detached)
     if (h.title === undefined) h.title = typedPrompt(o);
   }
   const title = cleanSessionTitle(named, 120) ?? cleanSessionTitle(h.title, 120);

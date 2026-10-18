@@ -44,6 +44,7 @@ function main(): void {
   assert.strictEqual(parseSessionHead(user('x'.repeat(500))).title?.length, 120);
   assert.strictEqual(parseSessionHead(user('<system-reminder>hi</system-reminder>')).title, undefined);
   assert.deepStrictEqual(parseSessionHead(''), { title: undefined });
+  assert.strictEqual(parseSessionHead(user('hi', { gitBranch: 'HEAD' })).branch, undefined, 'HEAD is not a branch name');
 
   // history: prompts, assistant text, tool calls with label and result (error flag), side-chain and markers skipped
   const hist = claudeHistoryFromText(session);

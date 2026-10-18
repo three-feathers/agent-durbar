@@ -2229,7 +2229,7 @@ function replayHistory(a,h,title){
     else if(it.type==='output'){const b=document.createElement('div');b.className='bubble';agentMsg().appendChild(b);mdSet(b,it.text,true);}
     else{const full=it.output||'';addChip(chipBox(),makeChip({tool:it.tool,label:it.label,res:SHORT(full||(it.failed?'failed':'ok'),60),output:full.slice(0,2000),state:it.failed?'failed':'ok'}));}
   }
-  addNote(chat,'Resumed: '+esc(title||'earlier session')+'. New messages continue this session.');
+  addNote(chat,'Resumed: '+esc((title||'earlier session').replace(/[.!?…]+$/,''))+'. New messages continue this session.');
 }
 async function resumePrev(a,sid,btn){
   if(btn){btn.disabled=true;btn.textContent='Resuming…';}
