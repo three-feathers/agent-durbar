@@ -92,3 +92,13 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 - Gaps recorded rather than hidden: `[KNOWN GAP]` question UI (T052), Codex per-session MCP (FR-024), Codex helpers (T065), Windows Codex sandbox (T070), dollar cap (T081), repo `.claude` hooks/agents/`.mcp.json` not run (T083), Codex reads outside the session folders (T084).
 - Contradictions found and fixed while writing: the 2026-10-16 spec said the simulator could be wrapped as an adapter (it is renderer-side: `FakeAdapter` is new, T015); it said `AgentAdapter` was Copilot-agnostic apart from a few parts (`main.ts` also calls six non-interface members: T010).
 - No open `[NEEDS CLARIFICATION]` remains in spec.md; the owner questions are Q1 to Q9, each mapped to a blocked task.
+
+## Changes 2026-10-18 (Q3/Q4 decided: CLI and SDK transports; issues #48, #49, #53)
+
+- [ ] T090 (sim) `claudeTransport.ts`: transport seam and CLI transport (argv, no shell, JSON lines, control request ids and timeouts, answer-once incoming requests, deny pending on close, redacted stderr tail); `scripts/test-claude-transport.ts` on a scripted fake child [FR-110, FR-111]
+- [ ] T091 (sim) `claude.ts` `ClaudeAdapter` on the seam (replaces T045's `query()` seam): mapper, broker, PreToolUse hook, interrupt, stop, resume, CLAUDE.md appended prompt; contract suite on a fake transport [FR-112]
+- [ ] T092 (sim) `claudeSdk.ts`: SDK transport by dynamic import, "not available" without the package; test on a fake module [FR-113]
+- [ ] T093 (sim) Register Claude Code in `PRODUCTION_DESCRIPTORS` with honest capabilities; the kind picker shows it when `detect()` finds `claude` [FR-114]
+- [ ] T094 (real-account, owner allowed) Real CLI checks with the installed `claude` and `haiku`: one Read-only prompt (stream, usage, cost, no write possible), Ask first approve and deny, interrupt, stop and resume in the same folder; record as `real:` with the cost [FR-110..FR-114]
+- T040 and T041 are answered by this entry (no SDK in `package.json` until the owner accepts its terms; the user's `claude` is used); T045 is done as T091.
+
