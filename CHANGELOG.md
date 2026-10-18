@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **Short agent names are no longer cut to one letter (spec 001 FR-025).** In the compact card sizes, a long status word ("Limit reached") now gives way before the agent's name, so "Omar" stays "Omar" and does not become "O…". `check:office` now fails if a cut name shows fewer than three characters. Simulator only, 0 AIU.
+
 - **Claude Code: change the permission mode while a session runs (spec 012 FR-115..FR-117, issue #54).** A stricter mode applies at once: Durbar's tool check uses both the mode Claude was started with and your current choice. A looser mode applies from the next message, which resumes the same session with the new settings. Checked on a real Claude Code with `haiku` (about $0.011): switching Allow all to Read-only during a shell command blocked the write that followed. The README no longer says that there is no Claude adapter.
 
 - **Remove one session, rename a folder (spec 006 FR-017/FR-018).** A folder with more than one session has **Remove session** in the chat header (asks first when it is working; its history stays under Previous sessions). Folders > **Rename** gives a room a display name (saved, up to 40 characters, empty = the folder name). Simulator and unit tests, 0 AIU.

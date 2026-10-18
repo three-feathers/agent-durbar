@@ -404,7 +404,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .stage[data-d="mini"] .l1{align-items:center}
 .stage[data-d="mini"] .l1 .name{font-size:13px}
 .stage[data-d="mini"] .l3{display:none}
-.stage[data-d="mini"] .stl,.stage[data-d="micro"] .stl{display:inline;margin-left:auto;flex:none;font-size:10.5px;font-weight:650;color:var(--pc);white-space:nowrap}
+.stage[data-d="mini"] .stl,.stage[data-d="micro"] .stl{display:inline;margin-left:auto;flex:0 1 auto;min-width:1.9em;overflow:hidden;text-overflow:ellipsis;font-size:10.5px;font-weight:650;color:var(--pc);white-space:nowrap} /* the status word gives way before the name (FR-025) */
+.stage[data-d="mini"] .l1 .name,.stage[data-d="micro"] .l1 .name{flex-shrink:0;max-width:calc(100% - 3.7em)} /* whole up to the room left for the mode icon and a short status */
 .stage[data-d="micro"] .desk.card{padding:3px 8px 3px 3px;column-gap:6px}
 .stage[data-d="micro"] .l3{display:none}
 .stage[data-d="micro"] .l1{align-items:center}
