@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ClaudeAdapter, PRE_TOOL_USE_HOOK, claudeArgs, claudeMdPrompt, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
+import { ClaudeAdapter, PRE_TOOL_USE_HOOK, claudeArgs, claudeMdPrompt, claudeModelFlag, claudeModelOptions, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import type { AgentEvent } from '../src/adapters/types';
 import { FakeClaudeChild, fakeSpawn } from './fakes/claude-cli';
@@ -92,6 +92,26 @@ async function main(): Promise<void> {
     assert.ok(all.includes('--allow-dangerously-skip-permissions'));
     assert.ok(!all.includes('--model'), 'a Copilot model id is not passed');
     assert.strictEqual(at(claudeArgs({ mode: 'weird' as never, sessionId: 's', resume: false }), '--permission-mode'), 'dontAsk', 'unknown mode = Read-only');
+    // FR-119: Claude ids, aliases and [1m] suffixes; auto/default = no flag; Copilot ids and odd strings dropped; effort only from the known set
+    for (const m of ['fable', 'opus', 'sonnet[1m]', 'claude-haiku-5-5', 'claude-opus-5-5[1m]']) assert.strictEqual(at(claudeArgs({ mode: 'ask', sessionId: 's', resume: false, model: m }), '--model'), m, m);
+    for (const m of ['auto', 'default', 'gpt-5.1', 'o3', 'gemini-3', 'sim-fast', '-rf', 'a b', 'x;y', 'x'.repeat(81), '']) assert.ok(!claudeModelFlag(m), m);
+    assert.strictEqual(at(claudeArgs({ mode: 'ask', sessionId: 's', resume: false, model: 'opus', effort: 'xhigh' }), '--effort'), 'xhigh');
+    assert.ok(!claudeArgs({ mode: 'ask', sessionId: 's', resume: false, effort: 'extreme' }).includes('--effort'));
+    // FR-118: the initialize reply's models in the picker's shape
+    assert.deepStrictEqual(claudeModelOptions([
+      { value: 'default', displayName: 'Default (recommended)', supportedEffortLevels: ['low', 'high', 'bogus'] },
+      { value: 'haiku', displayName: 'Haiku 5.5' },
+      { value: 'haiku', displayName: 'dup' },
+      { value: 'bad id', displayName: 'x' },
+      { displayName: 'no value' },
+      null,
+      { value: 'fable', displayName: '   ' },
+    ]), [
+      { id: 'default', name: 'Default (recommended)', efforts: ['low', 'high'], disabled: false },
+      { id: 'haiku', name: 'Haiku 5.5', efforts: [], disabled: false },
+      { id: 'fable', name: 'fable', efforts: [], disabled: false },
+    ]);
+    assert.deepStrictEqual(claudeModelOptions(undefined), []);
   }
   {
     assert.deepStrictEqual(permissionLikeOf('Write', { file_path: '/w/a.txt', content: 'x' }, 'tu1'), { kind: 'write', toolName: 'Write', toolCallId: 'tu1', path: '/w/a.txt', fileName: '/w/a.txt' });
@@ -399,6 +419,35 @@ async function main(): Promise<void> {
     await ad.stop(sid);
   }
   assert.deepStrictEqual(new ClaudeAdapter({ claudePath: async () => undefined }).setPermMode('nope', 'allow'), { pending: 0 });
+  // ---- model list (FR-118): an initialize-only probe, no prompt, closed, cached; a failure is an empty list ----
+  {
+    const sp = fakeSpawn();
+    let probes = 0;
+    sp.next = (c) => {
+      probes++;
+      c.onWrite = (o) => {
+        if (o.type === 'control_request' && (o.request as { subtype: string }).subtype === 'initialize')
+          setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response: { models: [{ value: 'sonnet', displayName: 'Sonnet', supportedEffortLevels: ['high'] }], account: { email: 'never@read' } } } }), 0);
+      };
+    };
+    const ad = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), env: () => ({}) });
+    const list = await ad.listModelOptions();
+    assert.deepStrictEqual(list, [{ id: 'sonnet', name: 'Sonnet', efforts: ['high'], disabled: false }]);
+    assert.strictEqual(sp.calls[0].args[sp.calls[0].args.indexOf('--permission-mode') + 1], 'dontAsk', 'the probe runs in Read-only');
+    assert.strictEqual(sp.calls[0].cwd, os.tmpdir(), 'in the temp folder, not a user folder');
+    assert.ok(!sp.children[0].objects().some((o) => o.type === 'user'), 'no prompt is written: no tokens');
+    await until('probe closed', () => (sp.children[0].ended || sp.children[0].killed.length ? true : undefined));
+    await ad.listModelOptions();
+    assert.strictEqual(probes, 1, 'cached');
+    const none = new ClaudeAdapter({ claudePath: async () => undefined });
+    assert.deepStrictEqual(await none.listModelOptions(), [], 'no claude: empty list');
+    const sp2 = fakeSpawn();
+    sp2.next = (c) => { c.onWrite = () => setTimeout(() => c.exit(1, null), 0); };
+    const broken = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp2.spawn, closeGraceMs: 10, killGraceMs: 10 }), env: () => ({}) });
+    assert.deepStrictEqual(await broken.listModelOptions(), [], 'a CLI that exits: empty list, no throw');
+    assert.strictEqual(ad.capabilities.models, true);
+    assert.strictEqual(ad.capabilities.effort, true);
+  }
 
   // ---- interrupt: pending permissions denied, the interrupt request sent, Aborted ----
   {

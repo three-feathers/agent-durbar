@@ -112,3 +112,9 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 - [x] T097 (sim) Fake-CLI tests for every launched/current pair, the broker route and the relaunch [FR-117]
 - [x] T098 (real-account, owner allowed) One real check: Allow all switched to Read-only during a slow shell command; the later write must not happen [FR-117]
 
+## Changes 2026-10-19 (issue #57, Claude half of T049)
+
+- [x] T099 (sim) `ClaudeAdapter.listModelOptions()` from the `initialize` reply (no prompt, cached), `models`/`effort` capabilities, `--model`/`--effort` rules in `claudeArgs` [FR-118, FR-119]
+- [x] T100 (sim) `models:list` per kind (main, preload, simulator), per-kind lists in the toolbar, New session dialog and model chip; FR-062 only for kinds without a list [FR-120]
+- [x] T101 Tests on the fake CLI and the simulator; one real probe (no tokens) and one `haiku` prompt from the picker [FR-121]
+

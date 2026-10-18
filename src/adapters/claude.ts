@@ -25,6 +25,7 @@ import type { EventBody } from './map';
 import { PermissionBroker, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import type { AgentAdapter, AgentEvent, AgentMessage, McpServerSpec, StartOptions, Unsubscribe } from './types';
+import type { ModelOption } from '../shared/modelswitch';
 import { resolveWorkspaceCwd } from './workspace';
 
 export const CLAUDE_ID = 'claude';
@@ -34,8 +35,8 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   interrupt: true,
   resume: true,
   images: true,
-  models: false, // T049
-  effort: false,
+  models: true, // FR-118: from the CLI's initialize reply, no prompt
+  effort: true,
   permissionModes: Object.freeze(['read-only', 'ask', 'allow'] as PermissionMode[]),
   permModeSwitch: 'live', // FR-115/FR-116: the broker and the hook at once, the CLI flags from the next message
   usage: Object.freeze({ tokens: true, costUsd: true, nanoAiu: false }),
@@ -102,9 +103,34 @@ export interface ClaudeLaunch {
   sessionId: string;
   resume: boolean;
   model?: string;
+  effort?: string;
   /** `--mcp-config` JSON (`{"mcpServers": {...}}`); never logged. */
   mcpConfig?: string;
   appendSystemPrompt?: string;
+}
+
+const CLAUDE_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
+/** FR-119: Claude ids, aliases and `[1m]` suffixes get `--model`; `auto` and `default` mean Claude's default (no flag). */
+export function claudeModelFlag(model: string | undefined): boolean {
+  if (!model || model === 'auto' || model === 'default') return false;
+  if (/^(gpt|o\d|gemini|grok|sim-)/i.test(model)) return false; // a Copilot or simulator id saved before the folder was Claude's
+  return /^[A-Za-z0-9][A-Za-z0-9._\-[\]]{0,79}$/.test(model);
+}
+
+/** FR-118: the `models` entries of the CLI's `initialize` reply in the model picker's shape; malformed entries are dropped. */
+export function claudeModelOptions(models: unknown): ModelOption[] {
+  if (!Array.isArray(models)) return [];
+  const out: ModelOption[] = [];
+  for (const m of models.slice(0, 50)) {
+    if (!m || typeof m !== 'object') continue;
+    const o = m as Record<string, unknown>;
+    const id = typeof o.value === 'string' ? o.value : '';
+    if (!/^[A-Za-z0-9][A-Za-z0-9._\-[\]]{0,79}$/.test(id) || out.some((x) => x.id === id)) continue;
+    const name = typeof o.displayName === 'string' && o.displayName.trim() ? o.displayName.trim().slice(0, 60) : id;
+    const efforts = Array.isArray(o.supportedEffortLevels) ? o.supportedEffortLevels.filter((e): e is string => typeof e === 'string' && CLAUDE_EFFORTS.has(e)) : [];
+    out.push({ id, name, efforts, disabled: false });
+  }
+  return out;
 }
 
 /** The CLI argv (FR-111). Mode flags come from `claudeOptionsFor`, so an unknown mode gets Read-only. */
@@ -118,7 +144,8 @@ export function claudeArgs(i: ClaudeLaunch): string[] {
   a.push('--setting-sources', o.settingSources.join(','));
   if (o.strictMcpConfig) a.push('--strict-mcp-config');
   if (i.mcpConfig) a.push('--mcp-config', i.mcpConfig);
-  if (i.model && /^(claude-|opus|sonnet|haiku)/i.test(i.model)) a.push('--model', i.model); // Copilot model ids (`auto`, `gpt-…`) are not Claude's
+  if (claudeModelFlag(i.model)) a.push('--model', i.model as string);
+  if (i.effort && CLAUDE_EFFORTS.has(i.effort)) a.push('--effort', i.effort);
   if (i.appendSystemPrompt) a.push('--append-system-prompt', i.appendSystemPrompt);
   a.push(i.resume ? '--resume' : '--session-id', i.sessionId);
   return a;
@@ -289,6 +316,43 @@ export class ClaudeAdapter implements AgentAdapter {
     return () => this.listeners.delete(listener);
   }
 
+  private modelCache?: { at: number; list: Promise<ModelOption[]> };
+
+  /**
+   * FR-118: the models the user's `claude` offers, from its `initialize` reply. A short-lived CLI in Read-only in the temp
+   * folder; no prompt is written, so no tokens are spent. Cached 10 minutes; any failure is an empty list.
+   */
+  listModelOptions(): Promise<ModelOption[]> {
+    const now = Date.now();
+    if (this.modelCache && now - this.modelCache.at < 10 * 60_000) return this.modelCache.list;
+    const list = this.probeModels().catch((e) => {
+      this.debug?.(`claude: model list failed: ${e instanceof Error ? e.message : String(e)}`);
+      this.modelCache = undefined; // try again next time
+      return [] as ModelOption[];
+    });
+    this.modelCache = { at: now, list };
+    return list;
+  }
+
+  private async probeModels(): Promise<ModelOption[]> {
+    const file = await this.deps.claudePath();
+    if (!file) return [];
+    const make = this.deps.makeTransport ?? cliTransportFactory;
+    const t = await make({
+      file,
+      launch: { mode: 'read-only', sessionId: randomUUID(), resume: false },
+      cwd: os.tmpdir(),
+      env: (this.deps.env ?? (() => process.env))(),
+      handlers: { message: () => undefined, control: async () => ({ error: 'not handled in the model probe' }), exit: () => undefined },
+    });
+    try {
+      const r = await t.request({ subtype: 'initialize' }, 20_000);
+      return claudeModelOptions(r.models);
+    } finally {
+      await t.close().catch(() => undefined);
+    }
+  }
+
   isLive(sessionId: string): boolean {
     return this.sessions.has(sessionId);
   }
@@ -428,6 +492,7 @@ export class ClaudeAdapter implements AgentAdapter {
       sessionId: s.id,
       resume: s.resumable,
       model: o.model,
+      effort: o.reasoningEffort,
       mcpConfig: mcpConfigOf(o.mcpServers, o.disabledMcpServers),
       appendSystemPrompt: (this.deps.claudeMd ?? claudeMdPrompt)(s.cwd),
     };
