@@ -43,8 +43,11 @@ export interface ClientInfo {
   version: string;
 }
 
+/** Self-reported text: no control, format (bidi, zero-width) or lone surrogate characters; 64 code points. */
 function clean(v: unknown): string {
-  return typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').slice(0, 64) : '';
+  if (typeof v !== 'string') return '';
+  const t = v.replace(/[\p{Cc}\p{Cf}\p{Cs}]/gu, '');
+  return Array.from(t).slice(0, 64).join('');
 }
 
 export class McpSession {
@@ -84,7 +87,7 @@ export class McpSession {
       if (method === 'initialize') return this.initialize(id, params);
       const h = this.opts.methods && Object.prototype.hasOwnProperty.call(this.opts.methods, method) ? this.opts.methods[method] : undefined;
       if (!h) return errorResponse(id, ERR_METHOD_NOT_FOUND, `Method not found: ${clean(method)}`);
-      return result(id, h(params, this));
+      return result(id, h(params, this) ?? {});
     } catch (e) {
       if (e instanceof McpError) return errorResponse(id, e.code, e.message);
       return errorResponse(id, ERR_INTERNAL, 'Internal error');
@@ -92,11 +95,11 @@ export class McpSession {
   }
 
   private initialize(id: string | number, params: unknown): JsonRpcResponse {
+    if (this.protocolVersion !== null) return errorResponse(id, ERR_INVALID_REQUEST, 'Already initialized');
     const p = typeof params === 'object' && params !== null ? (params as Record<string, unknown>) : null;
     if (!p || typeof p.protocolVersion !== 'string') {
       return errorResponse(id, ERR_INVALID_PARAMS, 'initialize needs params.protocolVersion');
     }
-    if (this.protocolVersion !== null) return errorResponse(id, ERR_INVALID_REQUEST, 'Already initialized');
     // MCP: answer with the client's version when we support it, else with ours (the client then decides).
     this.protocolVersion = SUPPORTED_PROTOCOL_VERSIONS.includes(p.protocolVersion) ? p.protocolVersion : LATEST_PROTOCOL_VERSION;
     const ci = typeof p.clientInfo === 'object' && p.clientInfo !== null ? (p.clientInfo as Record<string, unknown>) : {};

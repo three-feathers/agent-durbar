@@ -66,6 +66,7 @@ export class LineFramer {
   private pending: Buffer[] = [];
   private pendingBytes = 0;
   private discarding = false;
+  private lastCr = false; // the last byte buffered for this line is a CR (it may sit in an earlier chunk)
 
   constructor(private readonly maxBytes: number = MAX_MESSAGE_BYTES) {}
 
@@ -78,12 +79,16 @@ export class LineFramer {
       const end = nl === -1 ? buf.length : nl;
       if (!this.discarding) {
         // Count the bytes of this piece; a trailing CR may still come, so allow it before judging.
-        this.pending.push(buf.subarray(start, end));
-        this.pendingBytes += end - start;
+        if (end > start) {
+          this.pending.push(buf.subarray(start, end));
+          this.pendingBytes += end - start;
+          this.lastCr = buf[end - 1] === 0x0d;
+        }
         if (this.pendingBytes > this.maxBytes + 1 || (nl !== -1 && this.contentBytes() > this.maxBytes)) {
           out.push({ type: 'oversize' });
           this.pending = [];
           this.pendingBytes = 0;
+          this.lastCr = false;
           this.discarding = nl === -1;
         } else if (nl !== -1) {
           const line = this.take();
@@ -99,15 +104,14 @@ export class LineFramer {
 
   /** Bytes buffered for the current line, not counting a final CR. */
   private contentBytes(): number {
-    const last = this.pending[this.pending.length - 1];
-    const endsCr = last !== undefined && last.length > 0 && last[last.length - 1] === 0x0d;
-    return this.pendingBytes - (endsCr ? 1 : 0);
+    return this.pendingBytes - (this.lastCr ? 1 : 0);
   }
 
   private take(): string {
     let all = Buffer.concat(this.pending);
     this.pending = [];
     this.pendingBytes = 0;
+    this.lastCr = false;
     if (all.length > 0 && all[all.length - 1] === 0x0d) all = all.subarray(0, all.length - 1);
     return all.toString('utf8');
   }

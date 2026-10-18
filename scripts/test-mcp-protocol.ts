@@ -40,6 +40,9 @@ const lines = (f: LineFramer, ...chunks: (string | Buffer)[]): string[] => {
   assert.strictEqual(Buffer.byteLength(edge), MAX_MESSAGE_BYTES);
   assert.deepStrictEqual(lines(new LineFramer(), edge + '\n'), [edge], 'a message of exactly the cap is accepted');
   assert.deepStrictEqual(lines(new LineFramer(), edge + '\r\n'), [edge], 'exactly the cap with CRLF is accepted');
+  assert.deepStrictEqual(lines(new LineFramer(), edge + '\r', '\n'), [edge], 'exactly the cap, CR and LF in different chunks');
+  assert.deepStrictEqual(lines(new LineFramer(), edge + '\r', '', '\n'), [edge], 'same with an empty chunk between');
+  assert.deepStrictEqual(lines(new LineFramer(), edge + 'y\r', '\n{"ok":1}\n'), ['<oversize>', '{"ok":1}'], 'one over with split CRLF: rejected, in sync');
   const over = edge + 'y';
   assert.deepStrictEqual(lines(new LineFramer(), over + '\n{"ok":1}\n'), ['<oversize>', '{"ok":1}'], 'one byte over: rejected, next line fine');
   // oversize arriving in many chunks, then a good line in the same stream
@@ -130,6 +133,23 @@ const lines = (f: LineFramer, ...chunks: (string | Buffer)[]): string[] => {
   assert.strictEqual(c.replies.length, n, 'a notification gets no reply');
   assert.strictEqual(s.initialized, true);
   assert.strictEqual(c.request('initialize', { protocolVersion: LATEST_PROTOCOL_VERSION }).error.code, -32600, 'second initialize refused');
+  assert.strictEqual(c.request('initialize').error.code, -32600, 'second initialize without params: -32600, not -32602');
+}
+
+// 8b. clientInfo: format characters, surrogates, code-point cap
+{
+  const s = mk();
+  const c = loopback(s);
+  c.request('initialize', { protocolVersion: LATEST_PROTOCOL_VERSION, clientInfo: { name: 'a\u202Eb\u200Bc\ud800d', version: '1' } });
+  assert.strictEqual(s.clientInfo!.name, 'abcd', 'U+202E, U+200B and a lone surrogate stripped');
+  const t = mk();
+  const emoji = '\ud83d\ude00';
+  loopback(t).request('initialize', { protocolVersion: LATEST_PROTOCOL_VERSION, clientInfo: { name: 'n'.repeat(63) + emoji + 'tail', version: '1' } });
+  assert.strictEqual(Array.from(t.clientInfo!.name).length, 64, '64 code points');
+  assert.strictEqual(t.clientInfo!.name, 'n'.repeat(63) + emoji, 'the emoji at the boundary is kept whole');
+  const u = mk();
+  loopback(u).request('initialize', { protocolVersion: LATEST_PROTOCOL_VERSION, clientInfo: { name: 'n'.repeat(64) + emoji, version: '1' } });
+  assert.strictEqual(u.clientInfo!.name, 'n'.repeat(64), 'a pair past the cap is dropped, never cut in half');
 }
 
 // 9. ping (before and after), unknown methods, unknown notifications, client replies, ids
@@ -165,6 +185,8 @@ const lines = (f: LineFramer, ...chunks: (string | Buffer)[]): string[] => {
   assert.strictEqual(b.error.code, -32603);
   assert.ok(!JSON.stringify(b).includes('secret'), 'internal errors do not leak the message');
   assert.strictEqual(d.request('bad').error.code, -32602);
+  const w = new McpSession({ serverInfo: { name: 'a', version: '1' }, methods: { nothing: () => undefined } });
+  assert.deepStrictEqual(loopback(w).request('nothing').result, {}, 'a handler returning undefined still gives a valid result');
   assert.strictEqual(d.request('toString').error.code, -32601, 'inherited object keys are not methods');
 }
 
