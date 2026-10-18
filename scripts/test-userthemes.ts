@@ -28,6 +28,8 @@ assert.strictEqual(checkUserManifest('{"id":"x","tokens":{"--chair":"rgb(1 2 3 /
 assert.strictEqual(checkUserManifest('{"id":"x","ui":"court-japanese"}').ok, true, 'a listed UI style is fine');
 assert.ok(checkUserManifest('{"id":"x","ui":"neon"}').error!.includes('ui must be one of'), 'an unknown UI style is refused');
 assert.strictEqual(checkUserManifest('{"id":"x","scene":"pixel"}').ok, true, 'a listed scene kit is fine');
+assert.strictEqual(checkUserManifest('{"id":"x","art":{"room-floor":"<rect/>","char-robe":"<rect/>"}}').ok, true, 'drawn art slots are fine');
+assert.ok(checkUserManifest('{"id":"x","art":{"chair-back":"<rect/>"}}').error!.includes('not one the app draws'), 'an art slot the app never draws is refused');
 assert.ok(checkUserManifest('{"id":"x","scene":"robots"}').error!.includes('scene must be one of'), 'an unknown scene kit is refused');
 
 // --- store: list / import / export ---

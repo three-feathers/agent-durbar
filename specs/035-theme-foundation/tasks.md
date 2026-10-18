@@ -16,5 +16,5 @@
 - [x] T011 `ui` in the manifest (renderer and main validation), `data-ui` on `<html>`, app-owned `themes.css`; a test that `themes.css` sets no size [FR-009, FR-010, FR-011]
 - [x] T012 Opaque `+N more` chip and lobby tiles above the art layers [FR-012]
 - [x] T014 Scene kits: `scene` in the manifest (renderer and main validation), `scenekits.js` with five kits, the office kit unchanged; `test:scenekits` (every kit, status, mood and look is valid SVG and keeps its cues) [FR-013]
-- [ ] T015 Follow-up: the built-in packs still carry stage D overlay slots that their kits do not draw; move the overlay tests in `test:theme` to a fixture pack and drop the dead slots
+- [x] T015 Built-in packs carry no overlay slots their kits do not draw (25 entries removed, plus the never-drawn `chair-back`/`desk`/`monitor` defaults); overlay tests use a fixture user pack on the office kit; art keys limited to the slots the renderer draws (spec 040 FR-010)
 - [ ] T013 Owner review of the five looks (screenshots in PR #137)

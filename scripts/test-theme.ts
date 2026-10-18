@@ -12,8 +12,8 @@ assert.ok(T.token('--bg'), 'Clean Office has --bg token');
 assert.strictEqual(T.token('--bg'), '#f6f3ee');
 assert.strictEqual(T.token('bg'), '#f6f3ee');
 assert.strictEqual(T.token('--made-up'), null);
-assert.ok(T.slot('chair-back'), 'chair-back slot exists');
-assert.ok(T.slot('desk'), 'desk slot exists');
+assert.ok(T.slot('plant'), 'Clean Office draws the room plant from a slot');
+assert.strictEqual(T.slot('chair-back'), null, 'no dead registry defaults (spec 040 FR-010)');
 assert.strictEqual(T.slot('nonexistent'), null);
 assert.strictEqual(T.word('room'), 'room');
 
@@ -36,13 +36,14 @@ const good = T._validateManifest({
   version: '0.1',
   extends: 'clean-office',
   tokens: { '--bg': '#eef1f4' },
-  art: { 'chair-back': '<rect x="0" y="0" width="10" height="10" fill="#333"/>' },
+  art: { 'desk-art': '<rect x="0" y="0" width="10" height="10" fill="#333"/>', 'chair-back': '<rect width="1" height="1"/>' },
   words: { 'place-terminal': 'Server room', room: 'office' },
 });
 assert.strictEqual(good.id, 'corporate');
 assert.strictEqual(good.extends, 'clean-office');
 assert.strictEqual(good.tokens['--bg'], '#eef1f4');
-assert.ok(good.art['chair-back']);
+assert.ok(good.art['desk-art']);
+assert.strictEqual(good.art['chair-back'], undefined, 'an art key the renderer never draws is dropped (spec 040 FR-010)');
 assert.strictEqual(good.words['place-terminal'], 'Server room');
 assert.strictEqual(good.words.room, undefined, 'a word key that is not a scene word is dropped (spec 040 FR-007)');
 
@@ -126,8 +127,8 @@ assert.strictEqual(T._compilePixelMap({palette:{a:'red'},rows:['z']}),null,'unkn
 assert.strictEqual(T._compilePixelMap({palette:{a:'url(x)'},rows:['a']}),null,'non-colour palette value rejected');
 assert.strictEqual(T._compilePixelMap({palette:{},rows:['a']}),null,'empty palette rejected');
 assert.ok(T._sanitizeSlot(T._compilePixelMap({cell:3,palette:{a:'#112'},rows:['..a']}))) ;
-const pixPack=T._validateManifest({id:'px',art:{'hair-front':{cell:4,palette:{a:'#123'},rows:['aa','aa']}}});
-assert.ok(pixPack.art['hair-front']&&pixPack.art['hair-front'].includes('<rect'),'pixel map survives manifest validation as rect grid');
+const pixPack=T._validateManifest({id:'px',art:{'hair-acc':{cell:4,palette:{a:'#123'},rows:['aa','aa']}}});
+assert.ok(pixPack.art['hair-acc']&&pixPack.art['hair-acc'].includes('<rect'),'pixel map survives manifest validation as rect grid');
 
 // --- Every built-in pack (specs 036-039) ---
 const packs=T.list().map((t:any)=>t.id);
@@ -140,32 +141,24 @@ for(const id of packs){
   assert.ok(T.word('place-terminal'),id+': word map');
   assert.ok(T.motion('wave'),id+': motion preset');
 }
-/* durbar packs carry the head accessory; retro carries none */
-assert.ok(T._builtins()['durbar-indian'].art['hair-acc'],'indian turban slot');
-assert.ok(T._builtins()['durbar-european'].art['hair-acc'],'european crown slot');
-assert.ok(T._builtins()['durbar-japanese'].art['hair-acc'],'japanese kanzashi slot');
-assert.ok(!T._builtins()['retro'].art['hair-acc'],'retro: no accessory');
-assert.ok(!T._builtins()['clean-office'].art||!T._builtins()['clean-office'].art['hair-acc'],'clean: no accessory');
-
-/* --- Art slot expansion (stage D, PR #137): characters + room looks per theme --- */
-const CHAR_SLOTS=['char-body','char-robe','char-headwear','char-collar'];
+/* --- Art slots (stage D, spec 035 FR-013): built-in packs draw their people and furniture with a scene kit and carry
+   only room, door, lobby, place and plant art; the overlay slots stay for user themes on the office kit --- */
+const OVERLAY_SLOTS=['char-body','char-robe','char-headwear','char-collar','desk-back','desk-art','monitor-art','hair-acc'];
 const ROOM_SLOTS=['room-back-wall','room-back-window','room-floor'];
-const OBJECT_SLOTS=['desk-back','desk-art','monitor-art','door-art','lobby-art'];
 const ICON_SLOTS=['place-library','place-software','place-terminal','place-web','place-other'];
-const NEW_SLOTS=[...CHAR_SLOTS,...ROOM_SLOTS,...OBJECT_SLOTS,...ICON_SLOTS];
 const THEMED_PACKS=['corporate','retro','durbar-indian','durbar-european','durbar-japanese'];
+assert.deepStrictEqual([...T.ART_SLOTS].sort(),['plant',...ROOM_SLOTS,'lobby-art','door-art',...ICON_SLOTS,...OVERLAY_SLOTS].sort(),'the whitelist is exactly what the renderer draws');
 
-/* Clean Office omits every expansion slot: THEME.slot() must return null (the renderer draws the default). */
+/* Clean Office omits every slot but the plant: THEME.slot() returns null (the renderer draws the default). */
 T.setTheme('clean-office');
-for(const n of NEW_SLOTS)assert.strictEqual(T.slot(n),null,'clean-office omits art slot '+n);
+for(const n of T.ART_SLOTS.filter((x:string)=>x!=='plant'))assert.strictEqual(T.slot(n),null,'clean-office omits art slot '+n);
 
-/* Every themed pack ships at least: one character-art slot, all three room slots, desk art, door art and lobby art. */
+/* Every themed pack: no dead overlay data, its room look (back wall and floor), door and lobby art, all sanitized */
 for(const id of THEMED_PACKS){
   const art=T._builtins()[id].art||{};
-  const charNow=[...CHAR_SLOTS,'hair-acc'].some(s=>art[s]!==undefined);
-  assert.ok(charNow,id+': a character body/outfit/headwear slot');
-  for(const s of ROOM_SLOTS.slice(0,1).concat(ROOM_SLOTS[2]))assert.ok(art[s]!==undefined,id+': '+s+' present');
-  for(const s of ['desk-art','door-art','lobby-art'])assert.ok(art[s]!==undefined,id+': '+s+' present');
+  for(const s of OVERLAY_SLOTS)assert.strictEqual(art[s],undefined,id+': no '+s+' (its scene kit draws the people and furniture)');
+  for(const s of ['room-back-wall','room-floor','door-art','lobby-art'])assert.ok(art[s]!==undefined,id+': '+s+' present');
+  for(const k of Object.keys(art))assert.ok(T.ART_SLOTS.includes(k),id+': '+k+' is a slot the renderer draws');
   T.setTheme(id);
   for(const [k,v] of Object.entries(art)){
     assert.strictEqual(typeof v,'string',id+':'+k+' compiled to a sanitized string at registration');
@@ -173,32 +166,24 @@ for(const id of THEMED_PACKS){
     assert.ok(!/<script|<foreignObject|on\w+=|javascript:/i.test(v as string),id+':'+k+' has no active content');
   }
 }
-
-/* slots resolve through THEME.slot() and fall back independently per slot */
-T.setTheme('durbar-indian');
-assert.ok(T.slot('char-robe'),'indian robe');
-assert.ok(T.slot('char-collar'),'indian collar');
-assert.strictEqual(T.slot('char-headwear'),null,'indian omits char-headwear (independent fallback)');
-assert.strictEqual(T.slot('char-body'),null,'indian omits char-body');
-assert.strictEqual(T.slot('room-back-window'),null,'indian omits room-back-window');
 T.setTheme('retro');
-assert.ok(T.slot('char-body'),'retro pixel body');
-assert.ok(T.slot('room-back-wall'),'retro wall pixels');
-assert.ok(T.slot('room-floor'),'retro floor pixels');
-assert.ok(T.slot('door-art'),'retro door pixels');
-assert.ok(T.slot('lobby-art'),'retro lobby pixels');
-assert.ok(T.slot('char-body').includes('<rect'),'pixel-map slot compiles to rects');
-T.setTheme('corporate');
-assert.ok(T.slot('char-body'),'corporate suit-collar overlay');
-assert.ok(T.slot('room-back-wall'),'corporate skyline glass');
-T.setTheme('durbar-european');
-assert.ok(T.slot('char-robe'),'european gown');
-assert.ok(T.slot('char-collar'),'european ermine collar');
-assert.ok(T.slot('room-floor'),'european carpet aisle');
-T.setTheme('durbar-japanese');
-assert.ok(T.slot('char-robe'),'japanese kimono');
-assert.ok(T.slot('room-back-wall'),'japanese shoji wall');
-assert.ok(T.slot('room-floor'),'japanese tatami');
+assert.ok(T.slot('room-back-wall').includes('<rect'),'retro: pixel-map wall compiles to rects');
+T.setTheme('durbar-indian');
+assert.strictEqual(T.slot('room-back-window'),null,'indian omits room-back-window (independent fallback)');
+
+/* overlays on the office kit: a user pack (fixture) resolves each slot through THEME.slot() and falls back per slot */
+const overlayPack=T._validateManifest({id:'u-overlay',art:{
+  'char-robe':'<path d="M60 99V79q0-9 9-12l5-1.5 5 1.5q9 3 9 12v20z" fill="#8c2f3e"/>',
+  'hair-acc':{cell:2,palette:{a:'#c2a04a'},rows:['aaaa']},
+  'desk-art':'<rect x="112" y="80" width="64" height="6" rx="2" fill="#d9a441"/>',
+}});
+assert.strictEqual(overlayPack.scene,'office','a user pack without scene stays on the office kit, where overlays are drawn');
+T.setTheme(overlayPack);
+assert.ok(T.slot('char-robe'),'overlay: robe');
+assert.ok(T.slot('hair-acc').includes('<rect'),'overlay: pixel-map accessory compiles to rects');
+assert.ok(T.slot('desk-art'),'overlay: desk art');
+assert.strictEqual(T.slot('char-body'),null,'overlay: char-body omitted, falls back on its own');
+assert.strictEqual(T.slot('monitor-art'),null,'overlay: monitor-art omitted, falls back on its own');
 T.setTheme('clean-office');
 
 /* Pixel-map validation: new limits and malformed maps */
@@ -214,12 +199,14 @@ assert.ok(T._compilePixelMap({cell:2,palette:{a:'#fff'},rows:['a ']}).includes('
 
 /* a user theme manifest with the new slots validates and sanitizes the same as a built-in */
 const artManifest=T._validateManifest({id:'u-art',art:{
+  'room-back-wall':'<rect x="0" y="0" width="320" height="40" fill="#456"/>',
   'room-wall':'<rect x="0" y="0" width="320" height="40" fill="#456"/>',
   'room-floor':{cell:2,palette:{c:'#789'},rows:['cc','..']},
   'desk-art':'<circle onclick="x" cx="5" cy="5" r="5"/>',
   'char-robe':'<path d="M0 0h10v10z" fill="#123"/>',
 }});
-assert.ok(artManifest.art['room-wall'],'user room-wall accepted');
+assert.ok(artManifest.art['room-back-wall'],'user room-back-wall accepted');
+assert.strictEqual(artManifest.art['room-wall'],undefined,'a made-up slot name is dropped');
 assert.ok(artManifest.art['room-floor'].includes('<rect'),'user pixel map compiled');
 assert.strictEqual(artManifest.art['desk-art'],undefined,'user desk-art with onclick dropped');
 assert.ok(artManifest.art['char-robe'],'user char-robe accepted');
@@ -258,10 +245,10 @@ T.setTheme('clean-office');
 const partial = T._validateManifest({
   id: 'partial',
   tokens: 'not-an-object',
-  art: { bad: '<script/>', good: '<circle cx="5" cy="5" r="5"/>' },
+  art: { 'door-art': '<script/>', 'lobby-art': '<circle cx="5" cy="5" r="5"/>' },
 });
 assert.deepStrictEqual(partial.tokens, {});
-assert.strictEqual(partial.art.bad, undefined);
-assert.ok(partial.art.good);
+assert.strictEqual(partial.art['door-art'], undefined, 'unsafe art is dropped');
+assert.ok(partial.art['lobby-art'], 'safe art on a real slot is kept');
 
 console.log('theme tests passed');

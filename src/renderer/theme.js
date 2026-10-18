@@ -171,14 +171,10 @@
     '--pc-done':'#2f6a47',
   };
 
-  /* ---------- Art slot registry (foundation) ----------
-     Slots are SVG fragments that the scene builder will assemble. For now
-     the registry defines the contract and a few default shapes; slots are
-     populated fully in spec 036. */
+  /* ---------- Art slots: Clean Office defaults ----------
+     Only the room plant has a default drawing here; every other slot (ART_SLOTS) is empty in Clean Office, so the
+     renderer draws its own default. People and furniture come from scene kits (spec 035 FR-013). */
   const CLEAN_SLOTS={
-    'chair-back':'<rect x="52" y="50" width="44" height="48" rx="13" fill="var(--chair)"/>',
-    'desk':'<rect x="10" y="86" width="180" height="7" rx="3.5" fill="var(--desk)"/><rect x="15" y="93" width="170" height="21" rx="4" fill="var(--desk-front)"/><rect x="22" y="98" width="46" height="11" rx="3" fill="var(--desk-drawer)"/><rect x="142" y="98" width="36" height="11" rx="3" fill="var(--desk-drawer)"/>',
-    'monitor':'<rect x="138.5" y="76" width="11" height="9" fill="var(--monitor-stand)"/><rect x="130" y="83" width="28" height="3.5" rx="1.75" fill="var(--monitor-stand)"/>',
     'plant':'<path d="M13 20C13 12 9 8 4 7c0 6 3 11 9 13z" fill="var(--plant-mid)"/><path d="M13 20c0-9 4-13 9-14 0 7-3 12-9 14z" fill="var(--plant-dark)"/><path d="M13 20C12 14 12 9 13 3c2 6 2 11 0 17z" fill="var(--plant-light)"/><path d="M7 21h12l-1.5 8h-9z" fill="var(--pot)"/>',
   };
 
@@ -264,6 +260,11 @@
   const isTokenValue=v=>typeof v==='string' && v.trim().length<=64 && TOKEN_VALUE_RE.test(v.trim());
 
   /* UI styles (spec 035 FR-009): the app owns their CSS (themes.css); a manifest only names one. */
+  /* Art slots the renderer draws (spec 040 FR-010); any other key is dropped. char-*, desk-*, monitor-art and hair-acc
+     are overlays of the office kit only (spec 035 FR-013). */
+  const ART_SLOTS=['plant','room-back-wall','room-back-window','room-floor','lobby-art','door-art',
+    'place-library','place-software','place-terminal','place-web','place-other',
+    'char-body','char-robe','char-headwear','char-collar','desk-back','desk-art','monitor-art','hair-acc'];
   const UI_STYLES=['clean','corporate','retro','court-indian','court-european','court-japanese'];
   /* Scene kits (spec 035 FR-013): how people and desks are drawn; the drawing code is the app's (scenekits.js). */
   const SCENE_KITS=['office','corporate','pixel','court-indian','court-european','court-japanese'];
@@ -287,6 +288,7 @@
     out.art={};
     if(m.art && typeof m.art==='object'){
       for(const [k,v] of Object.entries(m.art)){
+        if(!ART_SLOTS.includes(k)) continue;
         const clean=sanitizeArtValue(v);
         if(clean!==null) out.art[k]=clean;
       }
@@ -522,9 +524,6 @@
     art:{
       /* suit collar + tie under the neck, briefcase on the desk, glass wall with a skyline, blinds,
          floor sheen lanes, steel frame in the lobby, corporate signage on the place tiles */
-      'char-body':'<path d="M65 99V86l9-13.5 4 2-5.6 10.4V99zM83 99V84.9l-5.6-10.4 4-2 9 13.5V99z" fill="#45566a"/><path d="M72.6 74.4 74 69.5l1.4 4.9-1.4 10.5z" fill="#7a2f3a"/><path d="M72.6 74.4 74 69.5l1.4 4.9" fill="#8e3a32"/>',
-      'desk-art':'<rect x="160" y="70" width="20" height="13.5" rx="2" fill="#4b5563"/><rect x="160" y="70" width="20" height="2.2" fill="#5f6d77"/><rect x="168" y="67.5" width="4" height="2.8" rx="1.4" fill="#4b5563"/><rect x="174.5" y="72" width="3" height="4" rx="1" fill="#2c3733" opacity=".25"/>',
-      'monitor-art':'<rect x="112" y="32" width="64" height="5" rx="2" fill="#3d4751" opacity=".6"/>',
       /* glass wall + skyline silhouette (right side) and blinds hints (left) */
       'room-back-wall':'<rect x="2" y="3" width="128" height="30" rx="2" fill="#cdd8e2" opacity=".55"/><path d="M2 33V20 33ZM8 33V16h6v17ZM17 33V11h5v22ZM25 33V18h7v15ZM35 33V8h5v25ZM43 33V15h6v18ZM52 33V21h5v12ZM60 33V12h4v21ZM67 33V17h6v16ZM76 33V23h4v10ZM83 33V14h5v19ZM91 33V19h6v14ZM100 33V10h4v23ZM107 33V17h6v16ZM116 33V22h5v11ZM124 33V15h6v18Z" fill="#8fa3b4" opacity=".5"/><path d="M0 3h132M0 12h132M0 22h132" stroke="#ffffff" stroke-width=".8" opacity=".5"/><path d="M2 6h38M2 9h38M2 12h38M2 15h38M2 18h38" stroke="#a7b7c4" stroke-width="1" opacity=".6"/>',
       'room-floor':'<path d="M4 112l40 -34h8l-40 34ZM300 112l-40 -34h-8l40 34ZM140 112l20 -34h4l-20 34ZM180 112l-20 -34h-4l20 34" fill="#ffffff" opacity=".35"/>',
@@ -573,44 +572,10 @@
     },
     art:{
       'plant':'<rect x="10" y="6" width="6" height="15" fill="var(--plant-dark)"/><rect x="6" y="10" width="4" height="6" fill="var(--plant-dark)"/><rect x="16" y="9" width="4" height="5" fill="var(--plant-mid)"/><rect x="7" y="21" width="12" height="8" fill="var(--pot)"/><rect x="7" y="21" width="12" height="2" fill="var(--door-knob)"/>',
-      'monitor':'<rect x="134.5" y="72" width="11" height="11" fill="var(--monitor-stand)"/><rect x="124" y="83" width="32" height="4" rx="1.75" fill="var(--monitor-stand)"/>',
       /* chunky CRT stand */
       /* Full PIXEL art (owner review, PR #137): an 8-bit figure over the torso (under the round head,
          so hair/hair-acc still work), a stepped pixel desk rim + floppy disk, a CRT monitor with
          scanlines, a scanline brick wall and an arcade-pattern floor, cabinet trim in the lobby. */
-      'char-body':{cell:2,palette:{j:'#2f3455',b:'#23233a',s:'#f2d3a0',h:'#3a2e26',e:'#23233a'},rows:[
-        '......hhhhh.......',
-        '......hhhhh.......',
-        '......sssss.......',
-        '......sssss.......',
-        '......essse.......',
-        '......sssss.......',
-        '.....jjjjjjj......',
-        '....jbjjjjbj......',
-        '....jjjjjjjj......',
-        '....jsjjjjsj......',
-        '....jjjjjjjj......',
-        '....jjjjjjjj......',
-        '....jjjjjjjj......',
-        '.....jjjjjj.......',
-        '.....jjjjjj.......',
-        '.....bbbbb........',
-        '.....bbbbb........',
-      ]},
-      'desk-back':{cell:2,palette:{d:'#5c4f3a',t:'#e0a92c'},rows:[
-        'd'.repeat(30),
-        'ttt'+'.'.repeat(24)+'ttt',
-        'dddd'+'.'.repeat(26),
-      ]},
-      'desk-art':{cell:2,palette:{f:'#3c4266',l:'#e8e4d8',s:'#d8564a'},rows:[
-        'fffffffff',
-        'ffffffflf',
-        'ffffffflf',
-        'ffffffflf',
-        'ffffffflf',
-        'ffflfffsf',
-      ]},
-      'monitor-art':'<path d="M117 39h54M117 45h54M117 51h54M117 57h54M117 63h54M117 69h54" stroke="#000" stroke-width="1" opacity=".12"/><rect x="112" y="32" width="64" height="4" rx="2" fill="#333652"/><rect x="112" y="73" width="64" height="4" rx="2" fill="#333652"/><path d="M112 40v29M176 40v29" stroke="#23233a" stroke-width="2.4"/>',
       'room-back-wall':{cell:4,palette:{w:'#cfc6a8',k:'#b3a98f'},rows:[
         'w'.repeat(30),
         'wkwkwkwkwkwkwkwkwkwkwkwkwkwkwk',
@@ -703,14 +668,8 @@
     },
     art:{
       /* a turban arc + jewel on the head (abstract, geometric); sits with every hairstyle */
-      'hair-acc':'<path d="M60 36 Q74 24 88 36 L86 32 Q74 21 62 32 Z" fill="#8c2f3e"/><circle cx="74" cy="27" r="1.8" fill="#d9a441"/>',
       'plant':'<circle cx="13" cy="10" r="4.5" fill="var(--plant-mid)"/><circle cx="8" cy="14" r="3" fill="var(--plant-dark)"/><circle cx="18" cy="14" r="3" fill="var(--plant-light)"/><path d="M8 21h10l-1.5 8h-7z" fill="var(--pot)"/>',
       /* court attire: a sherwani/robe silhouette over the torso + sash; drawn before the head so hair/turban stay on top */
-      'char-robe':'<path d="M60 99V79q0-9 9-12l5-1.5 5 1.5q9 3 9 12v20z" fill="#8c2f3e"/><path d="M69 66.5h10l-1 5h-8z" fill="#d9a441"/><path d="M59 97V85m30 12V85" stroke="#d9a441" stroke-width="1.4" opacity=".8"/><path d="M63 81l5 17M85 81l-5 17" stroke="#6e2230" stroke-width="1" opacity=".6"/>',
-      'char-collar':'<path d="M71 66.4 74 70l3-3.6V99h-6V66.4z" fill="#f2e4c8" opacity=".92"/><circle cx="74" cy="70.5" r="1.1" fill="#8c2f3e"/>',
-      'desk-art':'<rect x="112" y="80" width="64" height="6" rx="2" fill="#d9a441" opacity=".85"/><rect x="118" y="81.5" width="52" height="3" rx="1.5" fill="#8c2f3e" opacity=".8"/><path d="M112 86h64" stroke="#6e2230" stroke-width="1"/>',
-      'desk-back':'<circle cx="14" cy="96" r="3.5" fill="#d9a441"/><circle cx="186" cy="96" r="3.5" fill="#d9a441"/><circle cx="14" cy="96" r="1.6" fill="#8c2f3e"/><circle cx="186" cy="96" r="1.6" fill="#8c2f3e"/>',
-      'monitor-art':'<rect x="112" y="32" width="64" height="5" rx="2.5" fill="#6e5a2c" opacity=".5"/><circle cx="118" cy="34.5" r="1.2" fill="#d9a441"/><circle cx="170" cy="34.5" r="1.2" fill="#d9a441"/>',
       /* royal durbar hall: arched colonnade + jharokha panels on the wall, a rich carpet below */
       'room-back-wall':'<g fill="none" stroke="#b98a3c" stroke-width="2.4" opacity=".75"><path d="M8 118V50Q8 22 30 22Q52 22 52 50V118"/><path d="M134 118V50Q134 22 160 22Q186 22 186 50V118"/><path d="M268 118V50Q268 22 290 22Q312 22 312 50V118"/></g><path d="M8 44Q30 36 52 44M134 44Q160 36 186 44M268 44Q290 36 312 44" fill="none" stroke="#8c2f3e" stroke-width="1.6" opacity=".8"/><circle cx="30" cy="28" r="2.6" fill="#d9a441"/><circle cx="160" cy="28" r="2.6" fill="#d9a441"/><circle cx="290" cy="28" r="2.6" fill="#d9a441"/><path d="M60 30h62v16H60zM196 30h62v16h-62z" fill="#efe0c0" stroke="#b98a3c" stroke-width="1.2" opacity=".8"/><path d="M64 34h54M64 38h54M64 42h54M200 34h50M200 38h50M200 42h50" stroke="#c9a85c" stroke-width=".8" opacity=".7"/>',
       'room-floor':'<path d="M40 118L80 52h168l40 66z" fill="#8c2f3e" opacity=".9"/><path d="M50 118L86 58h156l36 60" fill="none" stroke="#d9a441" stroke-width="2.4"/><path d="M58 118L90 64h148l32 54" fill="none" stroke="#e8d0a0" stroke-width="1.2" stroke-dasharray="6 4" opacity=".8"/><path d="M78 94h172" stroke="#d9a441" stroke-width="1.4" opacity=".7"/><path d="M70 106h188" stroke="#d9a441" stroke-width="1.1" opacity=".55"/>',
@@ -761,14 +720,8 @@
     },
     art:{
       /* a crown: three points and a base band */
-      'hair-acc':'<path d="M66 32l2.6-6 3.6 4.4L74 25l1.8 5.4 3.6-4.4 2.6 6z" fill="#d9b23c"/><rect x="65.5" y="32" width="17" height="2.4" rx="1.2" fill="#c49a2e"/>',
       'plant':'<path d="M13 3l7 9h-14z" fill="var(--plant-dark)"/><path d="M13 8l6 8H7z" fill="var(--plant-mid)"/><path d="M8 21h10l-1.5 8h-7z" fill="var(--pot)"/>',
       /* ermine-look collar + a gown skirt over the torso (fur spots are abstract dots, no heraldry) */
-      'char-collar':'<path d="M66 68q4-4.4 8-4.4t8 4.4l-3.5 4.5h-9z" fill="#efe9dc"/><circle cx="68.5" cy="67" r="1" fill="#4a4a68"/><circle cx="74" cy="69" r="1" fill="#4a4a68"/><circle cx="79.5" cy="67" r="1" fill="#4a4a68"/>',
-      'char-robe':'<path d="M61 99V84q0-10 13-11 13 1 13 11v15z" fill="#4a3060" opacity=".9"/><path d="M63 82q11-7 22 0" fill="none" stroke="#d9b23c" stroke-width="1.8"/><path d="M61 96q13-4 26 0" fill="none" stroke="#d9b23c" stroke-width="1.2" opacity=".8"/>',
-      'desk-art':'<rect x="112" y="81" width="64" height="4.6" rx="2" fill="#d9b23c" opacity=".8"/><path d="M120 83.3h13M141 83.3h13M162 83.3h10" stroke="#7d6238" stroke-width="1.4"/>',
-      'desk-back':'<circle cx="14" cy="96" r="3.2" fill="#7d6238"/><circle cx="186" cy="96" r="3.2" fill="#7d6238"/><circle cx="14" cy="96" r="1.4" fill="#d9b23c"/><circle cx="186" cy="96" r="1.4" fill="#d9b23c"/>',
-      'monitor-art':'<rect x="112" y="32" width="64" height="4.4" rx="2" fill="#3e4156" opacity=".7"/><circle cx="118" cy="34.2" r="1.1" fill="#d9b23c"/><circle cx="170" cy="34.2" r="1.1" fill="#d9b23c"/>',
       /* English royal courtroom: panelled walls + portrait frames + chandelier hints, a long carpet aisle */
       'room-back-wall':'<g fill="none" stroke="#9aa4b8" stroke-width="1.4" opacity=".6"><rect x="14" y="16" width="86" height="44" rx="2"/><rect x="118" y="16" width="86" height="44" rx="2"/><rect x="222" y="16" width="86" height="44" rx="2"/></g><g fill="#e4d9c0" stroke="#8a7a52" stroke-width="1.2"><rect x="34" y="24" width="20" height="26" rx="1.5"/><rect x="138" y="24" width="20" height="26" rx="1.5"/><rect x="242" y="24" width="20" height="26" rx="1.5"/><rect x="290" y="24" width="12" height="26" rx="1.5"/></g><circle cx="44" cy="37" r="4" fill="#b9ab8a"/><circle cx="148" cy="37" r="4" fill="#b9ab8a"/><circle cx="252" cy="37" r="4" fill="#b9ab8a"/><path d="M150 6q10 4 20 0M150 6q10 4 20 0" fill="none" stroke="#c9a85c" stroke-width="1.2"/><path d="M160 4v8M156 12l4-4 4 4" fill="none" stroke="#c9a85c" stroke-width="1.2"/><circle cx="156" cy="13" r="1.4" fill="#e8d9a8"/><circle cx="164" cy="13" r="1.4" fill="#e8d9a8"/><circle cx="160" cy="15" r="1.4" fill="#e8d9a8"/>',
       'room-floor':'<path d="M50 118L92 54h144l42 64z" fill="#37527a" opacity=".9"/><path d="M60 118L98 62h132l38 56" fill="none" stroke="#d9b23c" stroke-width="2.6"/><path d="M68 118L102 68h124l34 50" fill="none" stroke="#e8d9a8" stroke-width="1.1" stroke-dasharray="8 5" opacity=".75"/><path d="M84 96h160" stroke="#d9b23c" stroke-width="1.3" opacity=".65"/>',
@@ -819,15 +772,9 @@
     },
     art:{
       /* a kanzashi hair pin: a bar across the bun line with a small blossom dot */
-      'hair-acc':'<rect x="62" y="33" width="24" height="2.2" rx="1.1" fill="#c2a04a"/><circle cx="86.5" cy="30.5" r="2.6" fill="#c24a42"/><circle cx="86.5" cy="30.5" r="1.1" fill="#f2d98c"/>',
       'plant':'<path d="M13 4C10 10 8 14 8 18h10c0-4-2-8-5-14z" fill="var(--plant-dark)"/><circle cx="8" cy="15" r="2.4" fill="var(--plant-mid)"/><circle cx="18" cy="16" r="2.2" fill="var(--plant-light)"/><path d="M8 21h10l-1.5 8h-7z" fill="var(--pot)"/>',
       /* kimono silhouette over the torso: wide sleeves and an obi band */
-      'char-robe':'<path d="M57 84q0-10 17-11 17 1 17 11l3 15H54z" fill="#38498c"/><path d="M54 84.5q9.5-5.6 20-5.6t20 5.6" fill="none" stroke="#c24a42" stroke-width="1.6" opacity=".85"/><rect x="66" y="86" width="16" height="6.6" rx="1" fill="#c2a04a"/><rect x="72.6" y="86" width="2.8" height="6.6" fill="#c24a42" opacity=".85"/>',
-      'char-collar':'<path d="M69.4 66.2 74 70.4l4.6-4.2-1 5.4h-7.2z" fill="#e8e2d2"/>',
       /* low desk: a flat lacquer slab under the drawn desk; no height change */
-      'desk-art':'<rect x="112" y="82.5" width="64" height="10.5" rx="2.4" fill="#2c2a26"/><rect x="114" y="84.5" width="60" height="1.6" rx=".8" fill="#c24a42" opacity=".8"/><rect x="114" y="88" width="60" height="1.2" rx=".6" fill="#c2a04a" opacity=".6"/>',
-      'desk-back':'<circle cx="14" cy="97" r="3" fill="#2c2a26"/><circle cx="186" cy="97" r="3" fill="#2c2a26"/><circle cx="14" cy="97" r="1.3" fill="#c2a04a"/><circle cx="186" cy="97" r="1.3" fill="#c2a04a"/>',
-      'monitor-art':'<rect x="112" y="32" width="64" height="4.2" rx="2" fill="#2c2a26" opacity=".8"/><rect x="118" y="33.4" width="8" height="1.4" rx=".7" fill="#c24a42" opacity=".9"/><rect x="162" y="33.4" width="8" height="1.4" rx=".7" fill="#c2a04a" opacity=".8"/>',
       /* tatami floor (woven mats), shoji screen wall panels, hanging scroll hints */
       'room-back-wall':'<g fill="#f3efe2" stroke="#a89a74" stroke-width="1.6" opacity=".92"><rect x="16" y="14" width="76" height="52" rx="1.5"/><rect x="104" y="14" width="76" height="52" rx="1.5"/><rect x="192" y="14" width="76" height="52" rx="1.5"/><rect x="280" y="14" width="28" height="52" rx="1.5"/></g><g stroke="#c2b48e" stroke-width=".8" opacity=".75"><path d="M35 14v52M54 14v52M73 14v52M123 14v52M142 14v52M161 14v52M211 14v52M230 14v52M249 14v52M290 14v52M299 14v52M16 31h76M16 48h76M104 31h76M104 48h76M192 31h76M192 48h76M280 31h28M280 48h28"/></g><rect x="94" y="8" width="3.4" height="58" fill="#8a7a52" opacity=".6"/><rect x="182" y="8" width="3.4" height="58" fill="#8a7a52" opacity=".6"/><rect x="270" y="8" width="3.4" height="58" fill="#8a7a52" opacity=".6"/>',
       'room-floor':'<g opacity=".9"><rect x="24" y="74" width="120" height="22" rx="2" fill="#d8cfae" stroke="#a89a74" stroke-width="1.4"/><rect x="156" y="74" width="120" height="22" rx="2" fill="#cfc5a0" stroke="#a89a74" stroke-width="1.4"/><rect x="24" y="98" width="120" height="22" rx="2" fill="#cfc5a0" stroke="#a89a74" stroke-width="1.4"/><rect x="156" y="98" width="120" height="22" rx="2" fill="#d8cfae" stroke="#a89a74" stroke-width="1.4"/></g><path d="M84 74v22M84 98v22M216 74v22M216 98v22" stroke="#b3a582" stroke-width=".9" stroke-dasharray="4 4" opacity=".8"/>',
@@ -866,6 +813,7 @@
     _isTokenValue:isTokenValue,
     UI_STYLES:UI_STYLES.slice(),
     SCENE_KITS:SCENE_KITS.slice(),
+    ART_SLOTS:ART_SLOTS.slice(),
     sceneKit,
     _validateManifest:validateManifest,
     _compilePixelMap:compilePixelMap,

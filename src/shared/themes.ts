@@ -38,6 +38,10 @@ export function badToken(tokens: unknown): string | null {
 }
 
 /** UI styles a manifest may name (spec 035 FR-009); the same list as `UI_STYLES` in theme.js. */
+/** Art slots the renderer draws (spec 040 FR-010); the same list as `ART_SLOTS` in theme.js. */
+export const ART_SLOTS = ['plant', 'room-back-wall', 'room-back-window', 'room-floor', 'lobby-art', 'door-art',
+  'place-library', 'place-software', 'place-terminal', 'place-web', 'place-other',
+  'char-body', 'char-robe', 'char-headwear', 'char-collar', 'desk-back', 'desk-art', 'monitor-art', 'hair-acc'];
 /** Scene kits a manifest may name (spec 035 FR-013); the same list as `SCENE_KITS` in theme.js. */
 export const SCENE_KITS = ['office', 'corporate', 'pixel', 'court-indian', 'court-european', 'court-japanese'];
 export const UI_STYLES = ['clean', 'corporate', 'retro', 'court-indian', 'court-european', 'court-japanese'];
@@ -62,6 +66,9 @@ export function checkUserManifest(text: string): UserThemeCheck {
   if (count(m.words) > USER_THEME_LIMITS.maxWords) return { ok: false, error: 'too many words (max 24)' };
   if (m.ui !== undefined && !(typeof m.ui === 'string' && UI_STYLES.includes(m.ui))) return { ok: false, error: 'ui must be one of: ' + UI_STYLES.join(', ') };
   if (m.scene !== undefined && !(typeof m.scene === 'string' && SCENE_KITS.includes(m.scene))) return { ok: false, error: 'scene must be one of: ' + SCENE_KITS.join(', ') };
+  const art = m.art && typeof m.art === 'object' && !Array.isArray(m.art) ? Object.keys(m.art as object) : [];
+  const unknownSlot = art.find((k) => !ART_SLOTS.includes(k));
+  if (unknownSlot !== undefined) return { ok: false, error: 'art slot ' + JSON.stringify(unknownSlot.slice(0, 40)) + ' is not one the app draws' };
   const bad = badToken(m.tokens);
   if (bad) return { ok: false, error: 'token ' + bad + ' is not allowed (keys are --names; values are a colour, a number or one word)' };
   return { ok: true, id, name, manifest: m };
