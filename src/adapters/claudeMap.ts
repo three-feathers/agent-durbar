@@ -96,8 +96,8 @@ export class ClaudeMapper {
   private openSubagents = new Set<string>();
   /** Running `total_cost_usd` already reported (streaming mode: the SDK sends totals, Durbar wants per-call amounts). */
   private lastCostTotal = 0;
-  /** Assistant message ids whose usage was already emitted (the most recent USAGE_IDS_CAP, oldest dropped first; FR-082). */
-  private usageSeen = new Set<string>();
+  /** Per assistant message id, the usage already emitted (the most recent USAGE_IDS_CAP ids, oldest dropped first; FR-082). */
+  private usageCounted = new Map<string, { input: number; output: number; cacheRead: number }>();
   /** What `system/init` reported (read by the adapter). */
   info: ClaudeSessionInfo = {};
 
@@ -117,7 +117,7 @@ export class ClaudeMapper {
     this.streamMessage.clear();
     this.thinkingStreamed.clear();
     this.lastCostTotal = 0;
-    this.usageSeen.clear();
+    this.usageCounted.clear();
     this.info = {};
   }
 
@@ -272,19 +272,30 @@ export class ClaudeMapper {
     });
     const u = msg.usage;
     // Once per message.id (FR-082). A usage object with no numeric token field is not usage: no event, and the id stays unused.
-    if (u && typeof u === 'object' && [u.input_tokens, u.output_tokens, u.cache_read_input_tokens].some((v) => num(v) !== undefined) && this.firstUsageOf(id)) {
-      this.emit({ type: 'usage', model: str(msg.model), inputTokens: num(u.input_tokens), outputTokens: num(u.output_tokens), cacheReadTokens: num(u.cache_read_input_tokens), agentId });
+    if (u && typeof u === 'object' && [u.input_tokens, u.output_tokens, u.cache_read_input_tokens].some((v) => num(v) !== undefined)) {
+      const usage = this.usageToCount(id, num(u.input_tokens), num(u.output_tokens), num(u.cache_read_input_tokens));
+      if (usage) this.emit({ type: 'usage', model: str(msg.model), ...usage, agentId });
     }
     if (m.aborted === true) this.emit({ type: 'status', status: 'idle', intent: 'Aborted' });
   }
 
-  /** True when this message's usage has not been counted yet; a message without an id is always counted. */
-  private firstUsageOf(id: string | undefined): boolean {
-    if (id === undefined) return true;
-    if (this.usageSeen.has(id)) return false;
-    this.usageSeen.add(id);
-    if (this.usageSeen.size > USAGE_IDS_CAP) this.usageSeen.delete(this.usageSeen.values().next().value as string);
-    return true;
+  /**
+   * The usage to emit for a message: all of it the first time its id is seen (and always without an id), later only the growth per
+   * field over what was already counted for that id (never negative), or `undefined` when nothing grew.
+   */
+  private usageToCount(id: string | undefined, input?: number, output?: number, cacheRead?: number): { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number } | undefined {
+    if (id === undefined) return { inputTokens: input, outputTokens: output, cacheReadTokens: cacheRead };
+    const seen = this.usageCounted.get(id);
+    if (!seen) {
+      this.usageCounted.set(id, { input: input ?? 0, output: output ?? 0, cacheRead: cacheRead ?? 0 });
+      if (this.usageCounted.size > USAGE_IDS_CAP) this.usageCounted.delete(this.usageCounted.keys().next().value as string);
+      return { inputTokens: input, outputTokens: output, cacheReadTokens: cacheRead };
+    }
+    const grow = (now: number | undefined, was: number): number => (now !== undefined && now > was ? now - was : 0);
+    const gi = grow(input, seen.input), go = grow(output, seen.output), gc = grow(cacheRead, seen.cacheRead);
+    if (!gi && !go && !gc) return undefined;
+    seen.input += gi; seen.output += go; seen.cacheRead += gc;
+    return { ...(gi ? { inputTokens: gi } : {}), ...(go ? { outputTokens: go } : {}), ...(gc ? { cacheReadTokens: gc } : {}) };
   }
 
   private user(m: ClaudeMessage, agentId: string | undefined): void {

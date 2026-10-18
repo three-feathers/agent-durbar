@@ -100,7 +100,7 @@ for (const e of codexUsage) assert.ok(!('costUsd' in e) && !('costBasis' in e) &
   assert.strictEqual(o.unreported, claudeEv.length + 2);
 }
 
-// 6. Claude usage is counted once per message.id, per mapper (FR-082).
+// 6. Claude usage is counted per message.id, never twice (growth only), per mapper (FR-082).
 {
   const asst = (id: unknown, extra: Record<string, unknown> = {}, block: unknown = { type: 'text', text: 'x' }, usage: unknown = { input_tokens: 100, output_tokens: 10 }): ClaudeMessage =>
     ({ type: 'assistant', ...extra, message: { ...(id === undefined ? {} : { id }), model: 'c', content: [block], usage } });
@@ -110,6 +110,20 @@ for (const e of codexUsage) assert.ok(!('costUsd' in e) && !('costBasis' in e) &
   // sub-agent streams follow the same rule
   const sub = { parent_tool_use_id: 'toolA' };
   assert.strictEqual(n([asst('s1', sub), asst('s1', sub), asst('s2', sub), asst('m1'), asst('m1')]), 3, 'sub-agent messages deduped by id too');
+  // a later message with the same id adds only the growth per field; identical repeats and smaller figures add nothing
+  {
+    const g = (o: number, i = 100, c?: number): ClaudeMessage => asst('g', {}, undefined, { input_tokens: i, output_tokens: o, ...(c === undefined ? {} : { cache_read_input_tokens: c }) });
+    const ev = claude([g(1), g(10)]).filter((e) => e.type === 'usage');
+    assert.strictEqual(ev.length, 2, 'partial figure, then the final one under the same id: two events');
+    assert.ok(ev[1].type === 'usage' && ev[1].outputTokens === 9 && ev[1].inputTokens === undefined, 'second event: output growth only, no input growth');
+    const sum = (k: 'inputTokens' | 'outputTokens'): number => ev.reduce((a, e) => a + (e.type === 'usage' ? e[k] ?? 0 : 0), 0);
+    assert.deepStrictEqual([sum('inputTokens'), sum('outputTokens')], [100, 10], 'the totals over both events equal the final figures');
+    assert.strictEqual(n([g(10), g(10), g(10)]), 1, 'identical repeats count once');
+    assert.strictEqual(n([g(10), g(3)]), 1, 'a smaller later figure: no event');
+    assert.strictEqual(n([g(10), g(3), g(10)]), 1, 'a smaller figure does not lower what was counted');
+    const mixed = claude([g(10, 100, 4), g(10, 150, 4), g(12, 150, 9)]).filter((e) => e.type === 'usage');
+    assert.deepStrictEqual(mixed.map((e) => e.type === 'usage' && [e.inputTokens, e.outputTokens, e.cacheReadTokens]), [[100, 10, 4], [50, undefined, undefined], [undefined, 2, 5]], 'growth per field');
+  }
   // one id is counted once across the main stream and a sub-agent stream
   assert.strictEqual(n([asst('x'), asst('x', sub)]), 1, 'same id in main and sub-agent streams: counted once');
   // reset() forgets the ids (a new session on the same mapper)
@@ -127,8 +141,9 @@ for (const e of codexUsage) assert.ok(!('costUsd' in e) && !('costBasis' in e) &
     assert.strictEqual(u.length, 1, 'empty usage then real usage with the same id: one event');
     assert.ok(u[0].type === 'usage' && u[0].inputTokens === 5 && u[0].outputTokens === 2, 'the event carries the real tokens');
     const z = claude([asst('z', {}, undefined, { input_tokens: 0, output_tokens: 0 }), asst('z', {}, undefined, { input_tokens: 5, output_tokens: 2 })]).filter((e) => e.type === 'usage');
-    assert.strictEqual(z.length, 1, 'all-zero numeric usage counts and uses up the id');
-    assert.ok(z[0].type === 'usage' && z[0].inputTokens === 0, 'the event is the zero one');
+    assert.strictEqual(z.length, 2, 'all-zero numeric usage counts and uses up the id; the real figures follow as growth');
+    assert.ok(z[0].type === 'usage' && z[0].inputTokens === 0 && z[0].outputTokens === 0, 'the first event is the zero one');
+    assert.ok(z[1].type === 'usage' && z[1].inputTokens === 5 && z[1].outputTokens === 2, 'the second event is the growth');
     assert.strictEqual(n([asst('w', {}, undefined, {}), asst('w', {}, undefined, 'x')]), 0, 'no numeric field, or a non-object usage: no event');
   }
   // the bound: 512 ids are remembered; the 513th distinct id pushes the first out, so it counts again (documented gap)
