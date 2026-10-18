@@ -32,7 +32,16 @@ export function parseAmount(v: unknown): number | undefined {
   return r > 0 ? r : undefined;
 }
 
-/** Settings file content (`durbar-settings.json`): the global default cap (AI credits) for new sessions and the place mapping (spec 024). */
+export const THEME_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+
+/** A theme id: lowercase kebab, 1-64 chars. Anything else is dropped (Clean Office applies). */
+export function parseThemeId(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined;
+  const t = v.trim();
+  return THEME_ID_RE.test(t) ? t : undefined;
+}
+
+/** Settings file content (`durbar-settings.json`): the global default cap (AI credits) for new sessions, the place mapping (spec 024) and the theme (spec 037). */
 export interface AppSettings {
   defaultMaxAiCredits?: number;
   /** MCP server name -> place (spec 024 FR-007). Omitted when empty. */
@@ -41,18 +50,21 @@ export interface AppSettings {
   customPlaces?: CustomPlace[];
   /** Serious mode (spec 034 FR-004): no heavy or monster bodies and no trouble drawings on the agent figures. Only `true` is kept. */
   seriousMode?: boolean;
+  /** Active theme id (specs 035-040). Omitted = Clean Office. */
+  theme?: string;
 }
 
 /** Tolerant parse: a missing, corrupt or odd file means no settings. */
 export function parseSettings(text: string): AppSettings {
   try {
-    const doc = JSON.parse(text) as { defaultMaxAiCredits?: unknown; placeMap?: unknown; customPlaces?: unknown; seriousMode?: unknown } | null;
+    const doc = JSON.parse(text) as { defaultMaxAiCredits?: unknown; placeMap?: unknown; customPlaces?: unknown; seriousMode?: unknown; theme?: unknown } | null;
     const obj = doc && typeof doc === 'object' && !Array.isArray(doc) ? doc : {};
     const cap = parseCap((obj as { defaultMaxAiCredits?: unknown }).defaultMaxAiCredits);
     // the custom places first: the mapping may only point to ones that exist (spec 024 FR-019)
     const custom = parseCustomPlaces((obj as { customPlaces?: unknown }).customPlaces);
     const places = parsePlaceMap((obj as { placeMap?: unknown }).placeMap, custom.map((p) => p.id));
-    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...(custom.length ? { customPlaces: custom } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}) };
+    const theme = parseThemeId((obj as { theme?: unknown }).theme);
+    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...(custom.length ? { customPlaces: custom } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}), ...(theme === undefined ? {} : { theme }) };
   } catch {
     return {};
   }
