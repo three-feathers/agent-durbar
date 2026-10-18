@@ -74,6 +74,16 @@ assert.ok(nameError('a\u0000b', base).startsWith('Use 1 to 40'));
 assert.strictEqual(nameError('client A', base), 'A floor with that name exists.');
 assert.strictEqual(nameError('Client A', base, 'f-aaaaaaaa'), '', 'a floor may keep its own name');
 assert.strictEqual(nameError('x'.repeat(40), base), '');
+// FR-003 (2026-10-18): C1 controls and hidden direction / zero-width characters are refused; ZWNJ, ZWJ, LRM and RLM are real text
+for (const c of ['\u0085', '\u009f', '​', '‪', '‮', '⁠', '⁦', '⁩', '﻿'])
+  assert.ok(nameError('We' + c + 'b', base).startsWith('Use 1 to 40'), `refuses U+${c.charCodeAt(0).toString(16)}`); // in the middle: trim() already drops a BOM at the ends
+for (const ok of ['कृ‍ष्ण', 'می‌خواهم', '👩‍💻 Dev', 'abc‎', 'Ünïcødé'])
+  assert.strictEqual(nameError(ok, base), '', `keeps ${JSON.stringify(ok)}`);
+assert.strictEqual(nameError('Web‮', base), nameError('Web‮', base), 'no lastIndex state between calls');
+// a saved name loses its hidden characters; the floor (and so its folders) is kept
+const hid = parseFloors([{ id: GROUND, name: 'Ground floor' }, { id: 'f-hidden01', name: '‮Client​ B' }]);
+assert.deepStrictEqual(hid.floors.map((f) => f.name), ['Ground floor', 'Client B']);
+assert.deepStrictEqual(parseFloors([{ id: GROUND, name: 'Ground floor' }, { id: 'f-hidden02', name: '​⁠' }]).floors.map((f) => f.id), [GROUND], 'nothing left: dropped as before');
 
 // ---- create ----
 const c = createFloor(base, '  Side project ', seq([0.5]));

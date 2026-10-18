@@ -813,8 +813,9 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
     const floorNameError = (name: unknown, except?: string): string => {
       if (typeof name !== 'string' || !name.trim()) return 'Name is empty.';
       const nm = name.trim();
+      // same rule as src/shared/floors.ts (this bundle cannot import it): controls, and hidden direction or zero-width characters
       // eslint-disable-next-line no-control-regex
-      if (nm.length > 40 || /[\u0000-\u001f\u007f]/.test(nm)) return 'Use 1 to 40 characters, without control characters.';
+      if (nm.length > 40 || /[\u0000-\u001f\u007f-\u009f​‪-‮⁠⁦-⁩﻿]/.test(nm)) return 'Use 1 to 40 characters, without control or hidden characters.';
       return floorsList.some((f) => f.id !== except && f.name.toLowerCase() === nm.toLowerCase()) ? 'A floor with that name exists.' : '';
     };
     let floorSeq = 0;
