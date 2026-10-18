@@ -27,6 +27,8 @@ import type { BrokerEvent, PermissionLike } from './permissions';
 import type { AgentAdapter, AgentEvent, AgentMessage, McpServerSpec, StartOptions, Unsubscribe } from './types';
 import type { ModelOption } from '../shared/modelswitch';
 import { resolveWorkspaceCwd } from './workspace';
+import { listClaudeSessions, readClaudeHistory } from './claudeHistory';
+import type { HistoryResult, PreviousSession } from './history';
 
 export const CLAUDE_ID = 'claude';
 export const CLAUDE_NAME = 'Claude Code';
@@ -43,7 +45,7 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   context: false,
   caps: false, // Q7 / T081
   helpers: true,
-  history: false, // T048
+  history: true, // FR-125/FR-126: read-only from Claude's own session files
   mcpStatus: true,
   mcpToggle: false, // T050
 }) as AdapterCapabilities;
@@ -278,6 +280,8 @@ export interface ClaudeAdapterDeps {
   claudeMd?: (folder: string) => string | undefined;
   readImage?: (p: string) => Buffer | undefined;
   env?: () => NodeJS.ProcessEnv;
+  /** Claude's config folder (tests); default `CLAUDE_CONFIG_DIR` or `~/.claude`. */
+  configDir?: string;
 }
 
 interface Session {
@@ -351,6 +355,16 @@ export class ClaudeAdapter implements AgentAdapter {
     } finally {
       await t.close().catch(() => undefined);
     }
+  }
+
+  /** FR-125: this folder's earlier Claude sessions, read-only from Claude's session files. */
+  async listPreviousSessions(cwd: string, excludeIds?: ReadonlySet<string>): Promise<PreviousSession[]> {
+    return listClaudeSessions(cwd, excludeIds, this.deps.configDir);
+  }
+
+  /** FR-126: a session's chat for the replay after a resume. */
+  async history(sessionId: string): Promise<HistoryResult> {
+    return readClaudeHistory(sessionId, this.sessions.get(sessionId)?.cwd, this.deps.configDir);
   }
 
   isLive(sessionId: string): boolean {
