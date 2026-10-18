@@ -112,6 +112,17 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | --- | --- | --- |
 | [030](030-switch-model-context/spec.md) | Switch model, effort and context tier of a live session (chat header and office card menu), see window and % full, compact, start-fresh hint, per-folder default; simulator first, adapter-neutral | **Phases 1 and 2 built** (T010..T035). Phase 1 on the simulator (logic, types, mapper, folder store, main IPC, header menu, confirm/Undo, Compact, start-fresh note, card menu). Phase 2: the Copilot adapter's `setModel`, `cancelQueuedModel`, `compact`, resume with the saved model/effort/tier, price fields, tested on a **fake session** only; real controls are flagged "not verified on a real account yet", an adapter without them stays disabled with New session. Spec, [research](030-switch-model-context/research.md), [plan](030-switch-model-context/plan.md), [tasks](030-switch-model-context/tasks.md). Phase 3 run on a free plan (`auto` only): T040, T042, T043, T046 done, T041 partly, T044/T045 open (need a plan that lists more models), T047/T048 wait for the owner; 0.56 AIU spent, results in the research file; SDK facts read from types and docs only, **nothing run on a real account**; open questions Q1-Q8 for Vikram |
 
+## Feature 035-040: themes (data-only packs)
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [035](035-theme-foundation/spec.md) | Theme foundation: data-only theme packs, manifest, token map, art slot registry, UI styles (2026-10-18), Clean Office fallback | **built** on branch `035-theme-foundation` (PR #137): loader, sanitizer, fallback, `test:theme` |
+| [036](036-clean-office-pack/spec.md) | Clean Office pack: every scene colour a semantic token, scene words, `data-*` ids, per-theme motion presets | **built** (scene output byte-identical to main; `shots-024` reads data ids) |
+| [037](037-corporate-theme/spec.md) | Corporate theme (glass/steel) + Settings theme picker with live switch | **built** |
+| [038](038-retro-pixel-theme/spec.md) | Retro pixel theme: 8-bit palette, palette pixel maps in art slots, arcade motion | **built**; dark arcade page allowed (FR-001 amended 2026-10-18) |
+| [039](039-durbar-theme/spec.md) | Durbar court styles: Indian, European, Japanese (head accessory slots, court words) | **built**; word lists await owner review in PR #137 |
+| [040](040-user-themes/spec.md) | User themes: `userData/themes/<id>/manifest.json`, import/export, validation | **built** (`test:userthemes`) |
+
 ## Feature 034: agents show how they are doing
 
 | # | Feature | Status |
