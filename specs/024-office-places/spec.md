@@ -106,3 +106,16 @@ Asked for by Ruben. Real Copilot runtime (Copilot CLI 1.0.95, SDK 1.0.22, model 
 ## Changes
 
 - **2026-10-17, spec 033 (floors), cross-reference.** One lobby for all floors that are on; agents of a floor that is off are not listed at a place and have no figure (the same filter as a hidden room in `placeVisitors`). Switching a floor off while one of its agents is at a place removes the figure at once, without a walk back (`check:office` floors cases, `scripts/shots-033.js`).
+
+- **2026-10-18, one GitHub server in Settings > Places (task T012, issue #117).**
+  - **Problem** (`real:` in the PR #109 check): Copilot's built-in GitHub server sends its tool events as `mcpServer: 'github-mcp-server'`. Users often also have their own server called `github` in `~/.copilot/mcp-config.json` (Ruben does). Settings showed two rows, and a place chosen on the `github` row did not apply to the calls, because the map is keyed by the event's server name.
+  - **Clarification (Ruben, 2026-10-18): one server.** `github` and `github-mcp-server` count as the same server for places. A place chosen on either name applies to calls from both, and Settings shows one row, `github`, with a note that it also covers `github-mcp-server`. Someone who wants different places for the two cannot have them; both are GitHub, so this is accepted.
+  - Decided by default and recorded here (open to change in review):
+    - The aliases are a small fixed table (`github-mcp-server` → `github`), exact names, in the renderer's `places.js`. No user-defined aliases (that belongs to custom places, #115).
+    - The map is saved under the canonical name (`github`). A place saved earlier under `github-mcp-server` keeps working, and the next change on the row moves it to `github`.
+    - Lookup when a call arrives: an entry under the call's own name wins over one under its canonical name (only possible with an old saved map), then the default rules (unchanged: both go to Software library).
+  - **FR-012** `[KNOWN GAP]` (planned: T013) `canonicalServer(name)` and the alias table in `src/renderer/places.js`; `classify()` reads the user map under the call's own name, then under its canonical name; unit tests in `scripts/test-places.ts` (both names, either key, the old key winning, names that only look alike, `__proto__`).
+  - **FR-013** `[KNOWN GAP]` (planned: T014) Settings > Places lists canonical names once; the `github` row carries the note "also github-mcp-server" when that name is seen or listed. Saving writes the canonical key and clears an old alias key.
+  - **FR-014** `[KNOWN GAP]` (planned: T015) Simulator and checks: the simulator already lists both names; `scripts/shots-024.js` sets a place on the `github` row and checks that a `github-mcp-server` call goes there, and that there is one row. Docs: README places text, CHANGELOG, specs index. No layout change (`check:office` stays green).
+  - Not in scope: other servers whose list name differs from their event name (none known); real-session verification (the event name is already `real:` evidence from PR #109).
+
