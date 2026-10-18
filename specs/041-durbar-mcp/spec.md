@@ -228,6 +228,17 @@ As a user, I can be sure that an agent running inside Durbar cannot use Durbar's
 
 ## Changes
 
+- **2026-10-18, consistency pass after the plan draft (decided by the coordinator under Ruben's delegation).** The plan found places where older text contradicts the review rules (FR-050 to FR-056). The newer rule wins:
+  1. US2-4 and FR-026 (switching to Allow all with a warning), and US3-3 and FR-027 (a "Trust and turn on" tick in the dialog), are superseded by **FR-050**: both are refused over MCP in v1 and done in the window.
+  2. FR-020 and US3-1 (picking a floor when adding a folder) are superseded by **FR-054**: a folder added over MCP lands on the last floor, as in the window.
+  3. FR-041's "full path if detail is on" is superseded by **FR-055**: audit lines never hold the full path.
+  4. US1-1's "off, turn it on" message: when the server is off, Durbar deletes the key file and closes the socket, so the bridge can tell **off** (no key file) from **not running** (a key file but no answer) and say which (SC-005 holds: nothing listens while off).
+  5. Context: main already has the current usage total (`UsageTotalsStore.view()`, `src/main/usagetotalsstore.ts`), and #157 (redaction) and #160 (`strictMcpConfig`) are merged. `main.ts` line numbers cited in *Context* are from the first draft and may have moved; the plan cites current ones.
+  6. FR-004 refers to Q3 (the MCP implementation), not Q2.
+  7. FR-056: the parent process name is **reported by the bridge**, not by the OS, because the bridge reads it and an attacker can control the bridge. The dialog labels it that way.
+  - **FR-057** The agent marker of FR-034 is set **only in each agent runtime's environment** (for Copilot through the SDK client's `env` option), never in Durbar's own process environment, so tools the user opens from Durbar (for example VS Code) do not inherit it and the user's own MCP client there is not refused.
+  - **FR-058** The bridge and the server authenticate each other with the per-install key by an HMAC challenge, so the key itself never crosses the socket or pipe (a squatted Windows pipe learns nothing).
+
 - **2026-10-18, review of #161 by Paco (decided by the coordinator under Ruben's delegation).** The confirmation click is the only real gate: the client name is self-reported, and an agent running as the same user, or the user's own assistant after a prompt injection, can ask for anything. So v1 keeps the two privilege jumps in the window only, and makes the dialog hard to approve by accident.
   - **FR-050** v1 MUST refuse over MCP (status `refused`, reason given): switching a mode **up to Allow all**, and **"Trust and turn on"** for an MCP extra. Lowering a mode (to Ask first or Read-only) and saving an extra off and untrusted stay allowed with the dialog. The user raises a mode or trusts an extra in Durbar's own window. This narrows FR-020, FR-026 and FR-027 accordingly.
   - **FR-051** Dialog fatigue:
