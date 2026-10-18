@@ -4,7 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
-- **Codex adapter groundwork (spec 012 T043a, issue #51).** A `CodexAdapter` that talks to `codex app-server` (one child per session): handshake with the read-limited profile, start with the fail-closed refusals, send, approvals through Durbar's broker, interrupt, stop, crash handling, and the adapter contract suite, all on a scripted in-memory fake. Codex never gets other tools' tokens (`GH_TOKEN`, `COPILOT_*`, `ANTHROPIC_*`) in its environment. It is **not registered in the app** (only behind the dev hook `DURBAR_CODEX=1` from T043c), and nothing was run on a real Codex.
+- **Codex adapter groundwork (spec 012 T043a, issue #51).** A `CodexAdapter` that talks to `codex app-server` (one child per session): handshake with the read-limited profile, start with the fail-closed refusals, send, approvals through Durbar's broker, interrupt, stop, crash handling, and the adapter contract suite, all on a scripted in-memory fake. Codex never gets other tools' tokens (`GH_TOKEN`, `COPILOT_*`, `ANTHROPIC_*`) in its environment. It is **not registered in the app**: a dev hook (`DURBAR_CODEX=1`) is planned for T043c and does not exist yet. Nothing was run on a real Codex.
 
 - **A calm warning when you add your home folder, a parent of it or a drive root (spec 006 FR-016, issue #170).** Adding is still allowed; one line says that agents there can read everything under your home folder (or the whole drive), SSH keys and saved credentials included. Windows drive and network-share roots and macOS's case-insensitive paths are covered by unit tests. Simulator and unit tests, 0 AIU.
 
