@@ -30,14 +30,15 @@ const argText = codexProfileArgs().join(' ');
 assert.ok(!argText.includes(':root') && !argText.includes('"write"') && !argText.includes('"deny"'), 'argv has no :root or write entry');
 assert.deepStrictEqual(CODEX_INITIALIZE_CAPABILITIES, { experimentalApi: true }, 'initialize sends experimentalApi');
 
-// runtimeWorkspaceRoots
-assert.deepStrictEqual(codexWorkspaceRoots(['/a/b', '/a/b', '/c d/e=f']), ['/a/b', '/c d/e=f'], 'posix paths, spaces and = kept as is, deduped');
-assert.deepStrictEqual(codexWorkspaceRoots(['C:\\Users\\me\\my proj', 'D:/x', '\\\\srv\\share\\p']), ['C:\\Users\\me\\my proj', 'D:\\x', '\\\\srv\\share\\p'], 'windows drive, forward-slash (normalised) and UNC paths kept');
-assert.deepStrictEqual(codexWorkspaceRoots(['/a/', '/a']), ['/a'], 'trailing separator removed, deduped');
-assert.deepStrictEqual(codexWorkspaceRoots(['C:\\x', 'c:\\x\\']), ['C:\\x'], 'windows dedupe is case-insensitive and ignores the trailing separator');
-assert.deepStrictEqual(codexWorkspaceRoots(['/A', '/a']), ['/A', '/a'], 'posix is case-sensitive');
-assert.deepStrictEqual(codexWorkspaceRoots(['/a/./b', '/a/b/../c']), ['/a/b', '/a/c'], '. and .. resolved');
-assert.deepStrictEqual(codexWorkspaceRoots(['/a/../..', '/a/..', '/..', '/', '//', 'C:\\', 'C:/', 'C:\\a\\..', 'C:\\..\\..', '\\\\srv\\share', '\\\\srv\\share\\', '\\\\srv\\share\\x\\..\\..']), [], 'filesystem roots, UNC share roots and escapes are dropped');
+// runtimeWorkspaceRoots (path-only cases use an identity resolver)
+const ident = (p: string): string => p;
+assert.deepStrictEqual(codexWorkspaceRoots(['/a/b', '/a/b', '/c d/e=f'], ident), ['/a/b', '/c d/e=f'], 'posix paths, spaces and = kept as is, deduped');
+assert.deepStrictEqual(codexWorkspaceRoots(['C:\\Users\\me\\my proj', 'D:/x', '\\\\srv\\share\\p'], ident), ['C:\\Users\\me\\my proj', 'D:\\x', '\\\\srv\\share\\p'], 'windows drive, forward-slash (normalised) and UNC paths kept');
+assert.deepStrictEqual(codexWorkspaceRoots(['/a/', '/a'], ident), ['/a'], 'trailing separator removed, deduped');
+assert.deepStrictEqual(codexWorkspaceRoots(['C:\\x', 'c:\\x\\'], ident), ['C:\\x'], 'windows dedupe is case-insensitive and ignores the trailing separator');
+assert.deepStrictEqual(codexWorkspaceRoots(['/A', '/a'], ident), ['/A', '/a'], 'posix is case-sensitive');
+assert.deepStrictEqual(codexWorkspaceRoots(['/a/./b', '/a/b/../c'], ident), ['/a/b', '/a/c'], '. and .. resolved');
+assert.deepStrictEqual(codexWorkspaceRoots(['/a/../..', '/a/..', '/..', '/', '//', 'C:\\', 'C:/', 'C:\\a\\..', 'C:\\..\\..', '\\\\srv\\share', '\\\\srv\\share\\', '\\\\srv\\share\\x\\..\\..'], ident), [], 'filesystem roots, UNC share roots and escapes are dropped');
 // symlinks: an injected resolver; checks run on the resolved path
 const links: Record<string, string> = { '/proj/link-to-root': '/', '/proj/link-to-a': '/a', 'C:\\proj\\winroot': 'C:\\', 'C:\\proj\\unc': '\\\\srv\\share\\', '/proj/link-to-dots': '/a/../..', '/proj/rel': 'rel/x' };
 const fakeReal = (p: string): string => {
@@ -52,11 +53,11 @@ assert.deepStrictEqual(codexWorkspaceRoots(['/a', '/proj/link-to-a', '/b'], fake
 assert.deepStrictEqual(codexWorkspaceRoots(['/proj/link-to-a'], fakeReal), ['/a'], 'the resolved path is what is sent');
 assert.deepStrictEqual(codexWorkspaceRoots(['/gone', '/ok'], fakeReal), ['/ok'], 'a resolver that throws drops that root only');
 assert.deepStrictEqual(codexWorkspaceRoots(['/ok'], () => { throw new Error('EACCES'); }), [], 'permission denied drops the root');
-assert.deepStrictEqual(codexWorkspaceRoots(['/proj/link-to-root', '/a'], undefined), ['/proj/link-to-root', '/a'], 'no resolver: unchanged, pure');
+assert.deepStrictEqual(codexWorkspaceRoots(['/proj/link-to-root', '/a'], ident), ['/proj/link-to-root', '/a'], 'identity resolver: the link is taken at face value');
 
-assert.deepStrictEqual(codexWorkspaceRoots(['rel/path', '', '.', '../x', 'C:foo', 5 as never, null as never, '/ok\0bad']), [], 'relative, empty, non-string and NUL paths dropped');
-assert.deepStrictEqual(codexWorkspaceRoots(undefined), [], 'undefined roots');
-assert.deepStrictEqual(codexWorkspaceRoots(null), [], 'null roots');
+assert.deepStrictEqual(codexWorkspaceRoots(['rel/path', '', '.', '../x', 'C:foo', 5 as never, null as never, '/ok\0bad'], ident), [], 'relative, empty, non-string and NUL paths dropped');
+assert.deepStrictEqual(codexWorkspaceRoots(undefined, ident), [], 'undefined roots');
+assert.deepStrictEqual(codexWorkspaceRoots(null, ident), [], 'null roots');
 
 // codexReadEnforceable (FR-087): fail closed
 const good = { version: 'rust-v0.163.0', experimentalApi: true, platform: 'darwin', elevatedSandbox: false };

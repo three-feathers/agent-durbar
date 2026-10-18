@@ -117,7 +117,7 @@ function codex(mode: string, c: CaseName): Outcome {
     assert.deepStrictEqual(Object.keys(CODEX_RO_FILESYSTEM).sort(), [':minimal', ':workspace_roots'], `codex ${mode} ${c}: the profile reads :minimal and the workspace roots only`);
     assert.ok(!(':root' in CODEX_RO_FILESYSTEM), `codex ${mode} ${c}: no :root`);
     assert.ok(Object.values(CODEX_RO_FILESYSTEM).every((v) => v === 'read'), `codex ${mode} ${c}: no write or deny entry`);
-    assert.deepStrictEqual(codexWorkspaceRoots([ws]), [ws], `codex ${mode} ${c}: runtimeWorkspaceRoots equal the session roots`);
+    assert.deepStrictEqual(codexWorkspaceRoots([ws], (x) => x), [ws], `codex ${mode} ${c}: runtimeWorkspaceRoots equal the session roots`);
     assert.strictEqual(path.resolve(ws) === ws && path.relative(ws, c === 'read-inside' ? inFile : outFile).startsWith('..'), c === 'read-outside', `codex ${mode} ${c}: the file is inside or outside the root`);
     return c === 'read-inside' ? 'approve' : 'deny';
   }
