@@ -3,11 +3,11 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { COPILOT_DESCRIPTOR } from '../adapters/copilot';
+import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
 import { createRegistry, detectAll } from '../adapters/registry';
 import { detectorFor } from '../adapters/detect';
 import { adapterForAdd, createRouter, historyOf, modelOptionsOf, previousSessionsOf } from '../adapters/router';
-import { restorable, setCapOp, setModeOp, stopTurnOp } from './agentops';
+import { errText, restorable, setCapOp, setModeOp, stopTurnOp, validMode } from './agentops';
 import type { OpsDeps } from './agentops';
 import { adapterOf } from './folders';
 import type { AgentAdapter } from '../adapters/types';
@@ -62,7 +62,7 @@ const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
 
 /** Only Copilot is registered; every agent is routed to its adapter through the router (spec 012 FR-046..FR-050). Adapters are typed as the neutral interface: optional members say what each can do (spec 030 FR-017, spec 012 FR-027). */
-const registry = createRegistry([COPILOT_DESCRIPTOR]);
+const registry = createRegistry(PRODUCTION_DESCRIPTORS);
 const router = createRouter(registry);
 const agents = new Map<string, AgentInfo>();
 const mcp = registerMcpIpc({ store: () => mcpStore as McpStore, agents, router, dev });
@@ -246,8 +246,6 @@ function restoreFolders(): void {
   }
 }
 
-const validMode = (m: unknown): PermMode => (m === 'ask' || m === 'allow' ? m : 'read-only');
-
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('agents:list', () => [...agents.values()]);
 
@@ -276,7 +274,6 @@ ipcMain.handle('agents:addWorkspaceFile', async (_e, mode: unknown, opts: unknow
 const vsUserDirs = (): UserDir[] =>
   dev.DURBAR_VSCODE_USER_DIR ? [{ product: 'Test', dir: dev.DURBAR_VSCODE_USER_DIR }] : vscodeUserDirs();
 const vsChatRefs = new Map<string, Map<string, ChatFileRef>>();
-const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 ipcMain.handle('sessions:listPrevious', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;

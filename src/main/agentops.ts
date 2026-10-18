@@ -18,8 +18,8 @@ export interface OpsDeps {
 
 const NO_INTERRUPT = 'This agent cannot stop a running turn. End the session instead.';
 const NO_LIVE_SETTING = 'This agent cannot change that setting while its session is running. Start a new session with it.';
-const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
-const validMode = (m: unknown): PermMode => (m === 'ask' || m === 'allow' ? m : 'read-only');
+export const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+export const validMode = (m: unknown): PermMode => (m === 'ask' || m === 'allow' ? m : 'read-only');
 const trunc = (v: unknown, n: number): string => String(v ?? '').slice(0, n);
 
 /** `agents:setMode`. */
