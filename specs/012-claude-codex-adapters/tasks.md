@@ -20,7 +20,7 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 
 ## Phase 1: simulator-only foundation (no vendor, no account, no credits)
 
-- [ ] T010 (sim) Interface deltas: capabilities, descriptor, promote isLive/dispose/listModels/listPreviousSessions/history/setPermMode, StartOptions.permissionMode, UsageEvent costUsd and costBasis; Copilot unchanged and all tests green [FR-002, FR-005]
+- [ ] T010 (sim) Interface deltas (restated 2026-10-18, see `## Changes`): capabilities and displayName (full descriptor in T011), required isLive/dispose, optional listModelOptions/listPreviousSessions/history/setPermMode/debug, StartOptions.permissionMode, UsageEvent costUsd and costBasis; Copilot unchanged and all tests green [FR-002, FR-005]
 - [ ] T011 (sim) `capabilities.ts` and `registry.ts` (pure): descriptor, id to factory, `AdapterInfo` for the renderer, tests [FR-001, FR-009]
 - [ ] T012 (sim) `detect.ts` (pure, injected env and exec): binary search order, `--version` parse, minimum version, Windows shims, state `ready|not-installed|too-old|not-signed-in|unknown`, tests on all three path flavours [FR-010, FR-006]
 - [ ] T013 (sim) Folder store: `adapterId` and `vendorSessionId`, migration of old files, tests in `test-folders.ts` [FR-011]
