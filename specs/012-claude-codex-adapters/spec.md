@@ -523,3 +523,11 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 - **FR-123** `[IMPLEMENTED]` Agent-facing wording names the agent's kind: the subtitle ("Claude Code (asks first) · haiku"), the chat footer ("Live Claude Code session"), and the Previous sessions header and counts ("2 Claude Code", "No earlier Claude Code sessions for this folder"). Copy resume command gives the kind's own command (`claude --resume <id>` for Claude, `copilot --resume <id>` for Copilot), and only for kinds that declare one. Copilot's wording is unchanged.
 - **FR-124** `[IMPLEMENTED]` Claude usage follows the convention the other adapters use: `inputTokens` is all input tokens of the call (`input_tokens` + `cache_creation_input_tokens` + `cache_read_input_tokens`), and `cacheReadTokens` is the cache-read part. The dollar estimate is unchanged (Claude's own `total_cost_usd`). Unit test on fixtures.
 
+### 2026-10-19: Claude's dollar estimate on the cards, apart from AIU (issue #194, T085)
+
+*Missing:* a Claude Code agent reports tokens and a dollar estimate (`costUsd`, `costBasis: 'estimate'`) but no AIU, and its card and chat header said "12k tok · 0.00 AIU", which reads as "free". A kind with neither figure (Codex) showed the same zero.
+
+*Corrected:*
+- **FR-122** `[IMPLEMENTED]` The usage text of a card and of the chat header follows the agent kind's `usage` capability: a kind that reports AIU is unchanged; a kind that reports only a dollar estimate shows it as `≈ $0.012 est.` (four decimals under one cent) with the tooltip "Claude Code's own estimate of the API price for these tokens, not a bill and not AIU"; a kind with neither shows tokens only. Helpers use their main agent's kind. No total adds dollars to AIU (FR-015, FR-029 unchanged): the office and room totals keep counting such calls as "credits not reported".
+- Simulator: the mixed roster's Claude agents show the estimate, Codex agents tokens only. `check:office` keeps passing with `simkinds=mixed`.
+
