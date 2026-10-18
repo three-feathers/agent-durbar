@@ -81,6 +81,12 @@ interface SimAgent {
 }
 
 /** Fake models with prices in credits per million tokens (sim: made-up numbers, not Copilot's). Sim Preview reports no price on purpose. */
+/* spec 012 FR-120: what a Claude kind's list looks like (the shape of `claudeModelOptions`); a simulation, not Claude's real list */
+const SIM_CLAUDE_MODELS: ModelChoice[] = [
+  { id: 'default', name: 'Default (recommended)', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { id: 'sonnet', name: 'Sim Sonnet', efforts: ['low', 'medium', 'high'] },
+  { id: 'haiku', name: 'Sim Haiku', efforts: [] },
+];
 const SIM_MODELS: ModelChoice[] = [
   { id: 'auto', name: 'Auto', efforts: [] },
   { id: 'sim-fast', name: 'Sim Fast', multiplier: 0.33, efforts: [], contextWindow: 128000, priceClass: 'low', pricing: { inputPerMTok: 20, outputPerMTok: 100, cachedPerMTok: 2 } },
@@ -1102,7 +1108,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (s && s.grants.delete(key)) grantsEvent(s);
       },
       // No disk, no account: canned answers so the new folder / session / history UI can be exercised without credits.
-      listModels: async () => ({ ok: true, models: SIM_MODELS.map((m) => ({ ...m })) }),
+      listModels: async (kind) => ({ ok: true, models: (kind === 'claude' ? SIM_CLAUDE_MODELS : !kind || kind === 'copilot' ? SIM_MODELS : []).map((m) => ({ ...m })) }),
       newSession: async (id, o) => {
         const src = sims.find((x) => x.info.id === id);
         if (!src) return { ok: false, error: 'unknown agent' };

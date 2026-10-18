@@ -606,6 +606,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .room-mcp:hover{background:#fff;color:var(--ink)}
 #liveBar .btn{white-space:nowrap}
 #liveBar select[hidden]{display:none}
+/* spec 012 FR-120: with the agent-kind picker on a narrow window the toolbar selects are as wide as their choice, so Office / List usually stays on the row (it wraps as designed otherwise, PR #124) */
+@media (max-width:1399px){#liveBar:has(#kindSel:not([hidden])) select{field-sizing:content;min-width:64px}}
 
 /* ---------- milestone 7: timeline, thinking, sub-agents, markdown ---------- */
 .tl{display:flex;flex-direction:column;gap:7px;min-width:0;max-width:100%}

@@ -1746,18 +1746,30 @@ document.addEventListener('contextmenu',e=>{
 
 /* ---------------- model + effort ---------------- */
 let MODELS=[];
+/* spec 012 FR-120: one model list per agent kind; MODELS is the default kind's. A kind without a list gets [] (selects hidden, FR-062). */
+const MODELS_BY={};
+const isDefaultKind=k=>!k||!KINDS||k===defaultKind();
+const modelsFor=k=>isDefaultKind(k)?MODELS:(MODELS_BY[k]||[]);
+const firstModelId=list=>list.some(m=>m.id==='auto')?'auto':list[0]?list[0].id:'auto';
+async function ensureModels(k){
+  if(isDefaultKind(k)||MODELS_BY[k]||!bridge.listModels)return;
+  MODELS_BY[k]=[];
+  const r=await bridge.listModels(k).catch(()=>null);
+  if(r&&r.ok)MODELS_BY[k]=r.models; else delete MODELS_BY[k]; /* asked again next time */
+}
 function modelLabel(info){
-  const m=MODELS.find(x=>x.id===(info.model||'auto')), nm=m?m.name:(info.model||'auto')==='auto'?'Auto':info.model;
+  const m=modelsFor(info.adapterId).find(x=>x.id===(info.model||'auto')), nm=m?m.name:(info.model||'auto')==='auto'?'Auto':info.model;
   const eff=(info.effort?' · '+info.effort+' effort':'')+(info.tier==='long'?' · long context':'');
   const mult=m&&m.multiplier!=null?' · ×'+m.multiplier+' credit multiplier':'';
   return {text:nm+eff,title:'Model: '+nm+eff+mult+(m&&m.multiplier!=null?' (as reported by your Copilot account)':'')};
 }
-function fillModelSelect(sel,cur){
-  sel.innerHTML=(MODELS.length?MODELS:[{id:'auto',name:'Auto'}]).map(m=>`<option value="${esc(m.id)}">${esc(m.name)}${m.multiplier!=null?' ×'+m.multiplier:''}</option>`).join('');
-  sel.value=MODELS.some(m=>m.id===cur)?cur:'auto';
+function fillModelSelect(sel,cur,kind,prefix){
+  const list=modelsFor(kind);
+  sel.innerHTML=(list.length?list:[{id:'auto',name:'Auto'}]).map(m=>`<option value="${esc(m.id)}">${prefix||''}${esc(m.name)}${m.multiplier!=null?' ×'+m.multiplier:''}</option>`).join('');
+  sel.value=list.some(m=>m.id===cur)?cur:firstModelId(list);
 }
-function fillEffortSelect(sel,modelId,cur,off){
-  const m=MODELS.find(x=>x.id===modelId), ef=off?[]:(m&&m.efforts)||[];
+function fillEffortSelect(sel,modelId,cur,off,kind){
+  const m=modelsFor(kind).find(x=>x.id===modelId), ef=off?[]:(m&&m.efforts)||[];
   sel.hidden=!ef.length; sel.innerHTML=ef.length?'<option value="">Effort: default'+(m.defaultEffort?' ('+esc(m.defaultEffort)+')':'')+'</option>'+ef.map(x=>`<option value="${esc(x)}">Effort: ${esc(x)}</option>`).join(''):'';
   if(ef.includes(cur))sel.value=cur;
 }
@@ -1768,8 +1780,7 @@ async function loadModels(){
   if(!r||!r.ok||!r.models.length)return;
   MODELS=r.models;
   const ms=$('modelSel');
-  ms.innerHTML=MODELS.map(m=>`<option value="${esc(m.id)}">Model: ${esc(m.name)}${m.multiplier!=null?' ×'+m.multiplier:''}</option>`).join('');
-  ms.value=MODELS.some(m=>m.id==='auto')?'auto':MODELS[0].id;
+  fillModelSelect(ms,'auto','','Model: ');ms.dataset.kind='';
   ms.title='Model for new sessions. This is what your Copilot account offers; × is the cost multiplier the API reports.';
   syncKindModel();
 }
@@ -1796,15 +1807,20 @@ const kindOptions=()=>DMK().kindChoices(KINDS).map(k=>`<option value="${esc(k.id
 function syncKindModel(){
   const ms=$('modelSel'),ef=$('effortSel');
   const id=$('kindSel').hidden?defaultKind():$('kindSel').value, other=!!KINDS&&!$('kindSel').hidden&&id!==defaultKind();
-  const c=KINDS?kindCaps(id):null, ok=!other&&(!c||DMK().shows(c,'models'));
+  const c=KINDS?kindCaps(id):null, can=!c||DMK().shows(c,'models');
+  if(other&&can&&!MODELS_BY[id]){ensureModels(id).then(()=>{if(MODELS_BY[id]&&MODELS_BY[id].length)syncKindModel();});}
+  const k=other?id:'', ok=can&&(!other||modelsFor(id).length>0);
+  if(ok&&(ms.dataset.kind||'')!==k){fillModelSelect(ms,undefined,k,'Model: ');ms.dataset.kind=k;ms.title=other?'Model for new sessions of this agent kind, as its CLI lists them.':'Model for new sessions. This is what your Copilot account offers; × is the cost multiplier the API reports.';}
   ms.hidden=!ok;
-  fillEffortSelect(ef,ms.value,undefined,!ok||(c&&!DMK().shows(c,'effort')));
+  fillEffortSelect(ef,ms.value,undefined,!ok||(c&&!DMK().shows(c,'effort')),k);
   fillPermSelect($('permMode'),kindCaps(id));
 }
 function applyKinds(){
   const show=DMK().showsKindPicker(KINDS), sel=$('kindSel'), keep=sel.value;
   $('kindHelp').hidden=!show; sel.hidden=!show;
   if(show){sel.innerHTML=kindOptions();sel.value=pickKind(keep||defaultKind());}
+  /* the other ready kinds' model lists, for their agents' model chips (spec 012 FR-120); a CLI probe, no prompt */
+  (KINDS||[]).forEach(k=>{if(!isDefaultKind(k.id)&&k.state==='ready'&&DMK().shows(kindCaps(k.id),'models'))ensureModels(k.id).then(()=>scheduleRender());});
   syncKindModel();
 }
 async function loadKinds(refresh){
@@ -1826,7 +1842,7 @@ async function aboutKinds(){
 
 /* ---------------- switch model and context, compact (spec 030) ---------------- */
 const DM=window.DurbarModels;
-const modelOf=id=>MODELS.find(m=>m.id===(id||'auto'))||{id:id||'auto',name:(id||'auto')==='auto'?'Auto':String(id),efforts:[]};
+const modelOf=(id,kind)=>modelsFor(kind).find(m=>m.id===(id||'auto'))||{id:id||'auto',name:(id||'auto')==='auto'?'Auto':String(id),efforts:[]};
 const ctrlOf=a=>(a.info&&a.info.modelControl)||{switch:'none',compact:false};
 const tierOf=a=>a.info&&a.info.tier==='long'?'long':'default';
 const busyNow=a=>a.state==='working'||a.state==='thinking'||a.state==='waiting'||!!a.worked||!!a.compacting;
@@ -1863,9 +1879,9 @@ function closeModelMenu(){const m=document.getElementById('modelMenu');if(m){m.r
 function openModelMenu(a0,x,y,anchor){
   const a=liveRoot(a0); if(!a||!a.live||!a.info||!bridge.setModel)return;
   closeModelMenu();closeModeMenu();
-  const on=ctrlOf(a).switch!=='none'&&!!bridge.setModel, curId=a.info.model||'auto', cur=modelOf(curId), tier=tierOf(a), pend=a.pendingModel;
+  const on=ctrlOf(a).switch!=='none'&&!!bridge.setModel, curId=a.info.model||'auto', cur=modelOf(curId,a.info.adapterId), tier=tierOf(a), pend=a.pendingModel;
   const dis=on?'':' aria-disabled="true"';
-  const list=MODELS.length?MODELS:[cur];
+  const kl=modelsFor(a.info.adapterId), list=kl.length?kl:[cur];
   let h=on?'':`<p class="mm-why" role="note">${esc(NO_SWITCH_WHY)}</p>`;
   h+='<p class="mm-h">Model</p>'+list.map(m=>{const chk=m.id===curId,w=DM.windowOf(m);
     return `<button type="button" role="menuitemradio" aria-checked="${chk}" data-pick="${esc(m.id)}"${dis}><span class="mt"><b>${esc(m.name)}${m.multiplier!=null?' ×'+esc(m.multiplier):''}</b><small>${esc(DM.priceLine(m))}${w?' · '+esc(DM.fmtTokens(w))+' window':''}</small></span><span class="ck">${chk?'✓':''}</span></button>`;}).join('');
@@ -1883,7 +1899,7 @@ function openModelMenu(a0,x,y,anchor){
     if(b.dataset.cancelq){closeModelMenu();cancelPendingModel(a,anchor);return;}
     if(b.getAttribute('aria-disabled')==='true')return;
     closeModelMenu();
-    if(b.dataset.pick!==undefined){const t=modelOf(b.dataset.pick);chooseModel(a,{model:t.id,contextTier:t.id===cur.id?tier:'default'},anchor);}
+    if(b.dataset.pick!==undefined){const t=modelOf(b.dataset.pick,a.info.adapterId);chooseModel(a,{model:t.id,contextTier:t.id===cur.id?tier:'default'},anchor);}
     else if(b.dataset.effort!==undefined)chooseModel(a,{model:cur.id,effort:b.dataset.effort||null,contextTier:tier},anchor);
     else if(b.dataset.tier)chooseModel(a,{model:cur.id,contextTier:tier==='long'?'default':'long'},anchor);
   });
@@ -1898,7 +1914,7 @@ async function chooseModel(a,req,anchor){
   try{await chooseModelInner(a,req,anchor);}finally{refocusAnchor(anchor);}
 }
 async function chooseModelInner(a,req,anchor){
-  const cur=modelOf(a.info.model),tgt=modelOf(req.model),tierFrom=tierOf(a),tierTo=req.contextTier==='long'?'long':'default';
+  const cur=modelOf(a.info.model,a.info.adapterId),tgt=modelOf(req.model,a.info.adapterId),tierFrom=tierOf(a),tierTo=req.contextTier==='long'?'long':'default';
   const sameEffort=req.effort===undefined||(req.effort||'')===(a.info.effort||'');
   const pend=a.pendingModel;
   if(!pend&&tgt.id===cur.id&&tierTo===tierFrom&&sameEffort)return;
@@ -1995,7 +2011,7 @@ function onCompaction(a,e){
 async function compactDialog(a,anchor){
   if(!bridge.compact||ctrlOf(a).compact!==true)return;
   if(busyNow(a)){toast('The agent is busy. Compact when it is idle.',3800);return;}
-  const cur=modelOf(a.info.model),c=STATS.agent(a.id).ctx,est=DM.estimateInputCredits(c&&c.tokens,cur,tierOf(a));
+  const cur=modelOf(a.info.model,a.info.adapterId),c=STATS.agent(a.id).ctx,est=DM.estimateInputCredits(c&&c.tokens,cur,tierOf(a));
   const lines=['Summarises the conversation so it takes less room. It costs one model call'+(est!==undefined?' (about '+DM.fmtCredits(est)+' AI credits to read the conversation, an estimate if nothing is cached)':' (the price of '+cur.name+' is not reported)')+' and cannot be undone.'];
   if(c&&c.limit>0)lines.push('Now: '+DM.fmtTokens(c.tokens)+' of '+DM.fmtTokens(c.limit)+' tokens.');
   if(ctrlOf(a).unverified)lines.push('Not verified on a real account yet; if it fails, the conversation stays as it is.');
@@ -2045,14 +2061,17 @@ function newSession(a0){
   document.body.appendChild(d);
   $('sdPerm').value=a.info.permMode||'read-only';
   if($('sdCap'))$('sdCap').value=APP_SETTINGS.defaultMaxAiCredits||'';
-  fillModelSelect($('sdModel'),a.info.model||'auto');
-  /* the chosen kind decides which fields exist: another kind than the default has no model list yet (FR-062); no credit cap field without the capability (FR-061) */
+  /* the chosen kind decides which fields exist: its own model list (spec 012 FR-120; none yet = hidden, FR-062); no credit cap field without the capability (FR-061) */
   const kindNow=()=>$('sdKind')?$('sdKind').value:'';
-  const other=()=>!!$('sdKind')&&kindNow()!==defaultKind();
+  const listKind=()=>{const k=kindNow()||a.info.adapterId||'';return isDefaultKind(k)?'':k;};
+  let filled=null;
   const eff=()=>{
-    const k=kindNow(),c=k?kindCaps(k):null,off=other()||(c&&!DMK().shows(c,'effort'));
-    $('sdModelL').hidden=other()||(c&&!DMK().shows(c,'models'));
-    fillEffortSelect($('sdEff'),$('sdModel').value,a.info.effort,off||$('sdModelL').hidden);$('sdEffL').hidden=$('sdEff').hidden;
+    const k=kindNow(),c=k?kindCaps(k):null,lk=listKind();
+    if(lk&&!MODELS_BY[lk]){ensureModels(lk).then(()=>{if($('sessDlg')&&listKind()===lk)eff();});}
+    if(filled!==lk){fillModelSelect($('sdModel'),(a.info.adapterId||'')===(k||a.info.adapterId||'')?a.info.model:undefined,lk);filled=lk;}
+    $('sdModelL').hidden=(!!lk&&!modelsFor(lk).length)||(c&&!DMK().shows(c,'models'));
+    const off=c&&!DMK().shows(c,'effort');
+    fillEffortSelect($('sdEff'),$('sdModel').value,a.info.effort,off||$('sdModelL').hidden,lk);$('sdEffL').hidden=$('sdEff').hidden;
     if($('sdCapL'))$('sdCapL').hidden=!!c&&!DMK().shows(c,'cap');
     if(c)fillPermSelect($('sdPerm'),c);
   };
@@ -2304,7 +2323,7 @@ if(bridge){
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
-    staticLimit:a=>{const m=MODELS.find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
+    staticLimit:a=>{const m=modelsFor(a.info&&a.info.adapterId).find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
     folderOf:x=>{const ag=LIVE.agents.find(y=>y.id===(x&&x.id||x));return ag?folderOfRoom(ag.room):null;},
     openAgent:id=>openPanel(id,false)});
   document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('.place-add'))window.DurbarScreens.placeDialog(null);});
