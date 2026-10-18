@@ -15,6 +15,7 @@ import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
 import type { ScriptEvent } from './fakes/copilot-sdk';
 import type { PermissionLike } from '../src/adapters/permissions';
 import type { AgentAdapter, AgentEvent, PermissionInfo, PermissionMode } from '../src/adapters/types';
+import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
 
 export type Outcome = 'approved' | 'denied';
 
@@ -332,8 +333,11 @@ async function main(): Promise<void> {
     ['fake-bare', () => new FakeAdapter({ script: SCRIPT, omit: ALL_OPTIONAL })],
     ['fake-readonly', () => new FakeAdapter({ script: SCRIPT, capabilities: { permissionModes: ['read-only'] } })],
   ];
+  // FR-085: every contract run, by adapter name, so the end of main can count C6/C7 per registered adapter
+  const reports = new Map<string, ContractReport>();
   for (const [name, mk] of setups) {
     const r = await runContract(name, () => ({ ad: mk(), workspace: WS }), HOOKS);
+    reports.set(name, r);
     assert.ok(r.usageEvents > 0, `${name}: the scripted turn produced usage events, so C5 checked them`);
     console.log(`${name}: ran ${r.ran.join(' ')}; skipped ${r.skipped.length ? r.skipped.join(', ') : 'none'}`);
     if (name === 'fake-full') assert.strictEqual(r.skipped.length, 0, 'fake-full skips nothing');
@@ -366,6 +370,7 @@ async function main(): Promise<void> {
     };
     try {
       const r = await runContract('copilot', copilotMake, copilotHooks);
+      reports.set('copilot', r);
       console.log(`copilot: ran ${r.ran.join(' ')}; skipped ${r.skipped.length ? r.skipped.join(', ') : 'none'}`);
       assert.deepStrictEqual(r.skipped, [], 'copilot skips nothing');
       assert.strictEqual(r.ran.length, 10, 'copilot runs C1-C10');
@@ -410,6 +415,14 @@ async function main(): Promise<void> {
       // The adapter and the reference both use EventMapper, so also pin one fact about the fixture itself: every reasoning delta reaches the stream as a thinking event.
       assert.strictEqual(actual.filter((e) => (e as { type: string }).type === 'thinking').length, raw.filter((e) => e.type === 'assistant.reasoning_delta').length, `${name}: one thinking event per reasoning delta`);
     }
+  }
+
+  // ---- FR-085 (spec 012 T026): C6 (modes) and C7 (stop denies pending) ran once for the fake and for every registered adapter, so a new adapter cannot skip them.
+  // A registered adapter without a contract run above fails here: add its run (T043 Codex, T045 Claude) when it is registered.
+  for (const id of ['fake-full', ...PRODUCTION_DESCRIPTORS.map((d) => d.id)]) {
+    const r = reports.get(id);
+    assert.ok(r, `FR-085: no contract run for the registered adapter ${id}`);
+    for (const c of ['C6', 'C7']) assert.strictEqual(r.ran.filter((x) => x === c).length, 1, `FR-085: ${c} ran exactly once for ${id}`);
   }
 
   // FakeAdapter specifics the contract does not cover
