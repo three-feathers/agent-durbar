@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.4 tag)
 
+- **Copilot passes the adapter contract (spec 012 T016, issue #36; spec 002 T020).** The contract suite and a replay of the recorded sessions now run on the Copilot adapter through a fake SDK client. Test code only, 0 AIU.
+
 - **Adapter contract suite (spec 012 T015, issue #35).** A fake adapter and a shared contract every adapter must pass (events, permissions, stop, capabilities), plus tests for the main-process rules that refuse settings an adapter cannot apply. No user-visible change. Unit tests, 0 AIU.
 
 - **Agents are routed to their adapter (spec 012 T014, issue #34).** The main process now keeps one adapter per kind (only Copilot today) and routes each agent's calls to it; `listAdapters()` reports each adapter's status. A setting an adapter cannot apply to a live session is refused instead of silently saved. Copilot unchanged. Unit tests and the simulator, 0 AIU.

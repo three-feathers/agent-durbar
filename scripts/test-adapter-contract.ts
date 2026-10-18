@@ -1,13 +1,18 @@
 /**
  * Adapter contract suite (spec 012 FR-053, checks C1-C10). Adapter-agnostic: it only uses `AgentAdapter` and two hooks, and it
  * skips a check when the adapter's capabilities say the feature is absent, never by adapter name. T015 runs it on three
- * `FakeAdapter` setups; T016 will run it on `CopilotAdapter` with a fake client. No session, no process, no credits.
+ * `FakeAdapter` setups; T016 runs it on `CopilotAdapter` with a fake client (scripts/fakes/copilot-sdk.ts). No session, no process, no credits.
  */
 import * as assert from 'assert';
+import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { FakeAdapter } from '../src/adapters/fake';
 import type { OptionalMember } from '../src/adapters/fake';
+import { EventMapper } from '../src/adapters/map';
+import type { RawEvent } from '../src/adapters/map';
+import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
+import type { ScriptEvent } from './fakes/copilot-sdk';
 import type { PermissionLike } from '../src/adapters/permissions';
 import type { AgentAdapter, AgentEvent, PermissionInfo, PermissionMode } from '../src/adapters/types';
 
@@ -125,7 +130,9 @@ export async function runContract(name: string, make: () => ContractTarget, hook
     const q = fresh();
     await q.start('read-only', true);
     assert.strictEqual(q.events.length, 0, M('C3', 'a quiet start emits nothing'));
+    const beforeUnknown = t.events.length;
     await assert.rejects(() => t.ad.send('no-such-session', { text: 'hi' }), M('C3', 'send to an unknown id rejects'));
+    assert.deepStrictEqual(t.events.slice(beforeUnknown), [], M('C3', 'send to an unknown id emits no event'));
     await t.ad.stop(sid);
     const last = t.events[t.events.length - 1];
     assert.ok(last.type === 'status' && last.status === 'stopped', M('C3', 'stop emits stopped last'));
@@ -332,6 +339,77 @@ async function main(): Promise<void> {
     if (name === 'fake-full') assert.strictEqual(r.skipped.length, 0, 'fake-full skips nothing');
     if (name === 'fake-bare') assert.ok(r.skipped.some((s) => s.startsWith('C10')) && r.skipped.some((s) => s.startsWith('C9')) && r.skipped.some((s) => s.startsWith('C8')), 'fake-bare skips C8, C9 and C10 by capability');
     if (name === 'fake-readonly') assert.ok(r.skipped.some((s) => s.startsWith('C7')), 'fake-readonly skips C7');
+  }
+
+  // ---- T016 (FR-056): the same suite on CopilotAdapter through its protected getClient() seam, with a fake client and a recorded turn
+  {
+    const fxDir = path.join(__dirname, '..', '..', 'scripts', 'fixtures', 'events');
+    const reasoning = JSON.parse(fs.readFileSync(path.join(fxDir, 'auto-reasoning.json'), 'utf8')) as ScriptEvent[];
+    const clients = new Map<AgentAdapter, FakeClient>();
+    const dirs: string[] = [];
+    const copilotMake = (): ContractTarget => {
+      const client = new FakeClient();
+      client.turnScript = reasoning;
+      const ad = new FakeCopilot(client);
+      clients.set(ad, client);
+      const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-contract-copilot-'));
+      dirs.push(workspace);
+      return { ad, workspace };
+    };
+    const copilotHooks: ContractHooks = {
+      requestPermission: async (ad, sid, req) => {
+        const session = clients.get(ad)!.sessions.get(sid)!;
+        const result = (await (session.config.onPermissionRequest as (r: unknown) => Promise<{ kind: string }>)(req)) as { kind: string };
+        return result.kind === 'approve-once' ? 'approved' : 'denied';
+      },
+      turn: (ad, sid) => ad.send(sid, { text: 'go' }),
+    };
+    try {
+      const r = await runContract('copilot', copilotMake, copilotHooks);
+      console.log(`copilot: ran ${r.ran.join(' ')}; skipped ${r.skipped.length ? r.skipped.join(', ') : 'none'}`);
+      assert.deepStrictEqual(r.skipped, [], 'copilot skips nothing');
+      assert.strictEqual(r.ran.length, 10, 'copilot runs C1-C10');
+      assert.ok(r.usageEvents > 0, 'copilot: the replayed turn produced usage events, so C5 checked them');
+      assert.ok(clients.size > 0);
+      for (const ad of clients.keys()) assert.strictEqual((ad as unknown as { client?: unknown }).client, undefined, 'copilot: no real CopilotClient was created');
+    } finally {
+      for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
+    }
+
+    // ---- FR-057 (spec 002 T020): the adapter's stream for a replayed fixture equals what EventMapper gives for the same events
+    const strip = (e: unknown): unknown => {
+      const { sessionId: _s, timestamp: _t, ...rest } = e as Record<string, unknown>;
+      return rest;
+    };
+    for (const name of ['auto-reasoning', 'auto-subagent', 'mcp-tool-usage']) {
+      const raw = JSON.parse(fs.readFileSync(path.join(fxDir, `${name}.json`), 'utf8')) as ScriptEvent[];
+      const client = new FakeClient();
+      client.turnScript = raw;
+      const ad = new FakeCopilot(client);
+      const got: AgentEvent[] = [];
+      let stream: AgentEvent[] = [];
+      ad.onEvent((e) => got.push(e));
+      const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-fixture-copilot-'));
+      try {
+        const sid = await ad.start({ workspace: ws, quiet: true });
+        await ad.send(sid, { text: 'go' });
+        stream = [...got];
+        await ad.dispose();
+      } finally {
+        fs.rmSync(ws, { recursive: true, force: true });
+      }
+      assert.ok(stream.length > 1, `${name}: the replay produced events`);
+      const first = stream[0];
+      assert.ok(first.type === 'status' && first.status === 'working', `${name}: the adapter's own leading status working comes first`);
+      const actual = stream.slice(1).map(strip);
+      const want: unknown[] = [];
+      const mapper = new EventMapper((b) => want.push(b));
+      for (const ev of raw) mapper.map(ev as unknown as RawEvent);
+      assert.ok(want.length > 0, `${name}: the mapper produced events`);
+      assert.deepStrictEqual(actual, want.map(strip), `${name}: adapter stream equals EventMapper stream`);
+      // The adapter and the reference both use EventMapper, so also pin one fact about the fixture itself: every reasoning delta reaches the stream as a thinking event.
+      assert.strictEqual(actual.filter((e) => (e as { type: string }).type === 'thinking').length, raw.filter((e) => e.type === 'assistant.reasoning_delta').length, `${name}: one thinking event per reasoning delta`);
+    }
   }
 
   // FakeAdapter specifics the contract does not cover
