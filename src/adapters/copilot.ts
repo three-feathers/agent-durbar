@@ -14,6 +14,7 @@ import type {
   StartOptions,
   Unsubscribe,
 } from './types';
+import type { AdapterDescriptor } from './capabilities';
 import { EventMapper } from './map';
 import type { EventBody, RawEvent } from './map';
 import { compactResultFrom, modelConfig, modelOptionFrom, runtimeMessage, sdkTier, switchResultFrom } from './copilotmodel';
@@ -55,30 +56,35 @@ interface Live {
   limitRequestId?: string;
 }
 
+const COPILOT_ID = 'copilot';
+const COPILOT_NAME = 'GitHub Copilot';
+/** From the code (spec 012 FR-009); not newly verified on a real account. Deeply frozen. */
+export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
+  interrupt: true,
+  resume: true,
+  images: true,
+  models: true,
+  effort: true,
+  permissionModes: Object.freeze(['read-only', 'ask', 'allow'] as PermissionMode[]) as PermissionMode[],
+  permModeSwitch: 'live',
+  usage: Object.freeze({ tokens: true, costUsd: false, nanoAiu: true }),
+  context: true,
+  caps: true,
+  helpers: true,
+  history: true,
+  mcpStatus: true,
+  mcpToggle: true,
+});
+
 /**
  * Copilot adapter on the official `@github/copilot-sdk` (1.0.x, CLI runtime 1.0.98).
  * One CopilotClient (one runtime process) is shared; one SDK session per folder.
  */
 export class CopilotAdapter implements AgentAdapter {
-  readonly id = 'copilot';
-  readonly displayName = 'GitHub Copilot';
-  /** From the code (spec 012 FR-009); not newly verified on a real account. */
-  readonly capabilities: AdapterCapabilities = {
-    interrupt: true,
-    resume: true,
-    images: true,
-    models: true,
-    effort: true,
-    permissionModes: ['read-only', 'ask', 'allow'],
-    permModeSwitch: 'live',
-    usage: { tokens: true, costUsd: false, nanoAiu: true },
-    context: true,
-    caps: true,
-    helpers: true,
-    history: true,
-    mcpStatus: true,
-    mcpToggle: true,
-  };
+  readonly id = COPILOT_ID;
+  readonly displayName = COPILOT_NAME;
+  /** One constant shared with the descriptor (spec 012 FR-034). */
+  readonly capabilities: AdapterCapabilities = COPILOT_CAPABILITIES;
   private listeners = new Set<(event: AgentEvent) => void>();
   private client: CopilotClient | undefined;
   private starting: Promise<CopilotClient> | undefined;
@@ -446,3 +452,10 @@ export class CopilotAdapter implements AgentAdapter {
     this.mapperFor(sid).map(ev as unknown as RawEvent);
   }
 }
+
+export const COPILOT_DESCRIPTOR: AdapterDescriptor = {
+  id: COPILOT_ID,
+  displayName: COPILOT_NAME,
+  capabilities: COPILOT_CAPABILITIES,
+  create: () => new CopilotAdapter(),
+};
