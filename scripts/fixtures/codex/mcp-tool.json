@@ -1,0 +1,21 @@
+{
+  "provenance": "synthetic",
+  "notifications": [
+    {"method":"thread/started","params":{"thread":{"id":"thr_main","cwd":"/work/app"}}},
+    {"method":"item/started","params":{"threadId":"thr_main","item":{"id":"mcp_1","type":"mcpToolCall","server":"github","tool":"get_issue","status":"inProgress","arguments":{"number":7}}}},
+    {"method":"item/completed","params":{"threadId":"thr_main","item":{"id":"mcp_1","type":"mcpToolCall","server":"github","tool":"get_issue","status":"completed","arguments":{"number":7},"result":{"content":[{"type":"text","text":"Issue 7: crash"}]},"durationMs":300}}},
+    {"method":"item/started","params":{"threadId":"thr_main","item":{"id":"mcp_2","type":"mcpToolCall","server":"docs","tool":"search","status":"inProgress","arguments":{"q":"x"}}}},
+    {"method":"item/completed","params":{"threadId":"thr_main","item":{"id":"mcp_2","type":"mcpToolCall","server":"docs","tool":"search","status":"failed","arguments":{"q":"x"},"error":{"message":"server unreachable"}}}},
+    {"method":"item/started","params":{"threadId":"thr_main","item":{"id":"web_1","type":"webSearch","query":"codex app-server"}}},
+    {"method":"item/completed","params":{"threadId":"thr_main","item":{"id":"web_1","type":"webSearch","query":"codex app-server"}}}
+  ],
+  "expected": [
+    {"type":"status","status":"idle","intent":"Ready in /work/app"},
+    {"type":"toolCall","callId":"mcp_1","tool":"github.get_issue","mcpServer":"github","mcpTool":"get_issue","phase":"start","args":{"number":7}},
+    {"type":"toolCall","callId":"mcp_1","tool":"github.get_issue","mcpServer":"github","mcpTool":"get_issue","phase":"complete","output":"Issue 7: crash"},
+    {"type":"toolCall","callId":"mcp_2","tool":"docs.search","mcpServer":"docs","mcpTool":"search","phase":"start","args":{"q":"x"}},
+    {"type":"toolCall","callId":"mcp_2","tool":"docs.search","mcpServer":"docs","mcpTool":"search","phase":"failed","output":"server unreachable"},
+    {"type":"toolCall","callId":"web_1","tool":"webSearch","phase":"start","args":{"query":"codex app-server"}},
+    {"type":"toolCall","callId":"web_1","tool":"webSearch","phase":"complete"}
+  ]
+}

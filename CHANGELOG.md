@@ -10,6 +10,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **Claude Code permission-mode and tool mapping (spec 012 T021, issue #40).** A pure module that turns Read-only / Ask first / Allow all into Claude Agent SDK options and decides which tools each mode allows; Read-only denies every non-read tool (MCP included), and an unknown or missing mode falls back to Read-only. No SDK dependency, not wired yet, no user-visible change. Unit tests, 0 AIU.
 
+- **Codex event mapper (spec 012 T024, issue #43).** A pure mapper from Codex app-server notifications to Durbar's events (messages, thinking, commands, file changes, MCP tools, sub-agents, token usage, failures), tested against synthetic fixtures. Not wired yet, no user-visible change, 0 AIU.
+
 - **Copilot passes the adapter contract (spec 012 T016, issue #36; spec 002 T020).** The contract suite and a replay of the recorded sessions now run on the Copilot adapter through a fake SDK client. Test code only, 0 AIU.
 
 - **Adapter contract suite (spec 012 T015, issue #35).** A fake adapter and a shared contract every adapter must pass (events, permissions, stop, capabilities), plus tests for the main-process rules that refuse settings an adapter cannot apply. No user-visible change. Unit tests, 0 AIU.
