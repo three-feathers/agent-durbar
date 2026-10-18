@@ -6,7 +6,7 @@
  * Enable with `DURBAR_SIM=15 npm start` (Electron main passes ?sim=15) or open
  * dist/renderer/index.html?sim=15 in a browser. Extra query params: simwaitold=1 (waiting requests look 2 minutes old), simtotals=1 (totals saved by a previous run), simunreported=<room>
  * (that room reports usage without credits), simfreeze=1 (no ticking),
- * simrooms=solo (one folder per agent), seed=N, density=full|card|mini, open=<agent id>.
+ * simrooms=solo (one folder per agent), simplaces=1..3 (that many custom places, spec 024), seed=N, density=full|card|mini, open=<agent id>.
  *
  * Plain script (no imports/exports) so it runs unchanged in the sandboxed renderer.
  */
@@ -35,6 +35,8 @@ interface SimOptions {
   unreported?: string;
   /** Start with totals saved by a previous run for two folders (spec 011 FR-029), as after a restart. */
   seedTotals?: boolean;
+  /** Spec 024 FR-026: start with this many custom places (0 to 3) and two fake servers mapped to them. Without it the page address (`simplaces=N`) decides. */
+  places?: number;
   /** Pending permission requests carry a time 2 minutes in the past, so "impatient" (spec 034) can be seen at once. */
   waitOld?: boolean;
 }
@@ -631,6 +633,76 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
     const placeMap: Record<string, string> = {};
     let seriousMode = false; /* spec 034 */
     const PLACE_CHOICES = ['library', 'software', 'terminal', 'web', 'other', 'desk'];
+    /* spec 024 FR-018..FR-020: custom places in memory, with the rules of src/shared/places.ts repeated here (the renderer bundle cannot import
+       it; scripts/test-places.ts runs both on the same cases and compares them). */
+    type SimPlace = { id: string; name: string; icon: string };
+    const MAX_CUSTOM = 3;
+    const CUSTOM_ICONS = ['star', 'flask', 'database', 'cloud', 'chart', 'chat', 'mail', 'calendar', 'shield', 'box', 'bolt', 'pin'];
+    const RESERVED_NAMES = ['library', 'software library', 'terminal', 'web', 'other tools', 'stay at desk', 'default'];
+    const customPlaces: SimPlace[] = [];
+    let placeSeq = 0;
+    const simPlaceResult = (ok: boolean, error?: string, place?: SimPlace) => ({
+      ok, ...(error ? { error } : {}), ...(place ? { place: { ...place } } : {}),
+      customPlaces: customPlaces.map((p) => ({ ...p })), placeMap: { ...placeMap },
+    });
+    /** Trimmed name, or the error code: empty, a control character, more than 24 code points, or already used (ignoring case). */
+    const simPlaceName = (v: unknown, exceptId?: string): { name: string } | { error: string } => {
+      if (typeof v !== 'string') return { error: 'name-invalid' };
+      const n = v.trim();
+      if (n.length < 1) return { error: 'name-empty' };
+      // eslint-disable-next-line no-control-regex
+      if (/[\u0000-\u001f\u007f-\u009f\u200b-\u200c\u200e-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/.test(n)) return { error: 'name-invalid' };
+      if ([...n].length > 24) return { error: 'name-long' };
+      const f = n.toLowerCase();
+      if (RESERVED_NAMES.includes(f) || customPlaces.some((p) => p.id !== exceptId && p.name.toLowerCase() === f)) return { error: 'name-taken' };
+      return { name: n };
+    };
+    const simAddPlace = (name: unknown, icon: unknown) => {
+      if (customPlaces.length >= MAX_CUSTOM) return simPlaceResult(false, 'limit');
+      const nm = simPlaceName(name);
+      if ('error' in nm) return simPlaceResult(false, nm.error);
+      if (typeof icon !== 'string' || !CUSTOM_ICONS.includes(icon)) return simPlaceResult(false, 'icon');
+      let id = '';
+      do { id = 'c-sim' + String(++placeSeq).padStart(3, '0'); } while (customPlaces.some((p) => p.id === id));
+      const place = { id, name: nm.name, icon };
+      customPlaces.push(place);
+      return simPlaceResult(true, undefined, place);
+    };
+    const simUpdatePlace = (id: unknown, patch: unknown) => {
+      const p = customPlaces.find((x) => x.id === id);
+      if (!p || !patch || typeof patch !== 'object' || Array.isArray(patch)) return simPlaceResult(false, 'unknown');
+      const { name, icon } = patch as { name?: unknown; icon?: unknown };
+      let nextName = p.name, nextIcon = p.icon;
+      if (name !== undefined) {
+        const nm = simPlaceName(name, p.id);
+        if ('error' in nm) return simPlaceResult(false, nm.error);
+        nextName = nm.name;
+      }
+      if (icon !== undefined) {
+        if (typeof icon !== 'string' || !CUSTOM_ICONS.includes(icon)) return simPlaceResult(false, 'icon');
+        nextIcon = icon;
+      }
+      p.name = nextName; p.icon = nextIcon;
+      return simPlaceResult(true);
+    };
+    const simRemovePlace = (id: unknown) => {
+      const at = customPlaces.findIndex((x) => x.id === id);
+      if (at < 0) return simPlaceResult(false, 'unknown');
+      customPlaces.splice(at, 1);
+      for (const k of Object.keys(placeMap)) if (placeMap[k] === id) delete placeMap[k];
+      return simPlaceResult(true);
+    };
+    /* simplaces=N (spec 024 FR-026): Database, Ticket desk and a 24-character name; two fake servers mapped to the first two */
+    {
+      const q = typeof window !== 'undefined' && window.location ? /[?&]simplaces=([0-3])(?:&|$)/.exec(window.location.search) : null;
+      const want = Math.max(0, Math.min(MAX_CUSTOM, Math.floor(opts.places ?? (q ? Number(q[1]) : 0)) || 0));
+      const seed: [string, string][] = [['Database', 'database'], ['Ticket desk', 'chat'], ['Data analytics reporting', 'chart']];
+      for (let i = 0; i < want; i++) simAddPlace(seed[i][0], seed[i][1]);
+      if (customPlaces.length) {
+        placeMap['my-notes'] = customPlaces[0].id;
+        placeMap['playwright'] = customPlaces[Math.min(1, customPlaces.length - 1)].id;
+      }
+    }
     /* spec 011 FR-029: saved totals, in memory. Default: nothing saved. With simtotals=1: a previous run left totals for two folders
        and one folder that is not in the list any more, so the header shows more than this run's own spend. */
     const zero = { calls: 0, inTokens: 0, outTokens: 0, nano: 0, unreported: 0 };
@@ -646,17 +718,20 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, seriousMode, about: { name: 'Agent Durbar', version: '0.1.0-alpha.4 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, about: { name: 'Agent Durbar', version: '0.1.0-alpha.4 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setPlace: async (server, place) => {
         const name = typeof server === 'string' ? server.trim() : '';
         if (!name || name.length > 200 || name === '__proto__') return { ok: false, placeMap: { ...placeMap } };
         if (place === null) delete placeMap[name];
-        else if (PLACE_CHOICES.includes(place)) placeMap[name] = place;
+        else if (PLACE_CHOICES.includes(place) || customPlaces.some((p) => p.id === place)) placeMap[name] = place;
         else return { ok: false, placeMap: { ...placeMap } };
         return { ok: true, placeMap: { ...placeMap } };
       },
+      addPlace: async (name, icon) => simAddPlace(name, icon),
+      updatePlace: async (id, patch) => simUpdatePlace(id, patch),
+      removePlace: async (id) => simRemovePlace(id),
       setCap: async (id, c) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
