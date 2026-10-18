@@ -2,8 +2,8 @@
 
 **Feature Branch**: `012-adapters-plan` (planning), later `012-<slug>` per task
 **Created**: 2026-10-16
-**Updated**: 2026-10-17 (clarify, plan, tasks and research done; **no code yet**)
-**Status**: Planned. Spec, [research](research.md), [plan](plan.md) and [tasks](tasks.md) exist. Phase 1 (simulator and fakes only) can start. Anything that needs a real account or spends credits is marked `needs-owner-approval` and is blocked until the owner says yes in writing.
+**Updated**: 2026-10-18 (clarify, plan, tasks and research done; Phase 1 T010-T016 built; **no Claude or Codex adapter yet**)
+**Status**: Planned; Phase 1 partly built. Spec, [research](research.md), [plan](plan.md) and [tasks](tasks.md) exist. Phase 1 tasks T010-T016 are on `main` (simulator, fakes and unit tests only; only Copilot is registered); T017-T018 (picker, simulator roster) and Phase 2 are open or in unmerged pull requests. Anything that needs a real account or spends credits is marked `needs-owner-approval` and is blocked until the owner says yes in writing.
 **Input**: README roadmap "Second adapter (Claude or Codex CLI)" and constitution principle II (adapters are plug-ins). Umbrella issue: [#2](https://github.com/three-feathers/agent-durbar/issues/2).
 
 ## What exists today

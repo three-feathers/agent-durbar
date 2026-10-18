@@ -29,7 +29,7 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 - [x] T016 (sim) Fake SDK client seam for `CopilotAdapter` so the contract suite also runs on Copilot (also closes part of 002 T020/T025) [FR-007]
 - [ ] T017 (sim) Picker UI: choose the agent kind when adding a folder or starting a session, "unavailable" state with install hint, capability gating helpers in the renderer; no dead buttons [FR-023, SC-003]
 - [ ] T018 (sim) Simulator roster with mixed agent kinds and different capabilities (for example no cap chip, no helper tiles); screenshots at 1440x900 and 1280x800; `npm run check:office` green [SC-001, SC-003]
-- [ ] T019 (sim) Docs for Phase 1: README (adapter table, all "simulator/fixtures only"), `specs/README.md`, spec 002 `## Changes` entry, converge spec/plan/tasks [FR-008, SC-005]
+- [x] T019 (sim) Docs for Phase 1: README (adapter table, all "simulator/fixtures only"), `specs/README.md`, spec 002 `## Changes` entry, converge spec/plan/tasks [FR-008, SC-005]
 
 ## Phase 2: pure vendor logic with synthetic fixtures (no vendor, no account, no credits)
 
