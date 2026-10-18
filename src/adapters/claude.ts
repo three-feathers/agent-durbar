@@ -27,13 +27,10 @@ import type { BrokerEvent, PermissionLike } from './permissions';
 import type { AgentAdapter, AgentEvent, AgentMessage, McpServerSpec, StartOptions, Unsubscribe } from './types';
 import type { ModelOption } from '../shared/modelswitch';
 import { resolveWorkspaceCwd } from './workspace';
-<<<<<<< HEAD
 import { listClaudeSessions, readClaudeHistory } from './claudeHistory';
 import type { HistoryResult, PreviousSession } from './history';
-=======
 import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
 import type { AskedQuestion } from './types';
->>>>>>> ea9c4c5 (012 FR-128..FR-131: questions from the agent: question event, card, Claude AskUserQuestion answered from the PreToolUse hook (issue #60))
 
 export const CLAUDE_ID = 'claude';
 export const CLAUDE_NAME = 'Claude Code';
