@@ -1,3 +1,4 @@
+import type { BroadKind } from './broadfolder';
 import type { AgentEvent } from '../adapters/types';
 import type { HistoryItem, PreviousSession } from '../adapters/history';
 import type { VsChatSummary, VsChatTranscript } from '../adapters/vscodeChat';
@@ -162,6 +163,8 @@ export interface AddResult {
   ok: boolean;
   agents: AgentInfo[];
   error?: string;
+  /** Folders broader than a project (spec 006 FR-016): the renderer shows one calm line each. */
+  warnings?: { name: string; kind: BroadKind }[];
 }
 
 export interface ResumeResult {

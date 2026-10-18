@@ -29,7 +29,7 @@ what exists today, not what was originally intended. Each requirement carries a 
 | [003](003-permissions-and-approvals/spec.md) | Permission modes, approvals, session grants | implemented |
 | [004](004-attachments/spec.md) | Attachments (pick, drop, paste) and caps | implemented |
 | [005](005-chat-fullscreen-and-agent-strip/spec.md) | Full-screen chat and agent strip | implemented |
-| [006](006-folders-workspaces-sessions-history/spec.md) | Folders, workspaces, sessions, history | implemented |
+| [006](006-folders-workspaces-sessions-history/spec.md) | Folders, workspaces, sessions, history | implemented; delta 2026-10-18: warning for a home folder or a root (issue #170) |
 | [007](007-models-and-effort/spec.md) | Model and reasoning-effort pickers | implemented |
 | [008](008-packaging-and-release/spec.md) | Packaging, CI, draft releases | implemented (unsigned) |
 | [009](009-vscode-integration/spec.md) | Open in VS Code, VS Code chat history (read-only) | implemented |
