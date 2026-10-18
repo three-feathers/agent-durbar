@@ -80,7 +80,8 @@
     '--ambulance-stroke':'#9aa59f',
     '--bubble-stroke':'#c9d0e0',
     '--bubble-fill':'#fff',
-    '--link':'#a9b6ad',
+    '--bubble-fill':'#fff',
+    '--bubble-text':'#8a97bd',
 
     /* screen content */
     '--scr-working':'#eaf1f7',
@@ -97,10 +98,13 @@
     '--scr-waiting-bar':'#d9962b',
     '--scr-waiting-stroke':'#e5be78',
     '--scr-waiting-fill':'#fff',
+    '--scr-waiting-fill':'#fff',
     '--scr-waiting-text':'#e5cf9f',
     '--scr-waiting-text-2':'#efe0bb',
     '--scr-error-bar':'#e3b5af',
     '--scr-idle-stroke':'#b5b9b6',
+
+    '--monster-skin':'#8fa98f',
 
     /* mood / status halos */
     '--halo-working':'#6f93b5',

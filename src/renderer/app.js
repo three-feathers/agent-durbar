@@ -305,7 +305,8 @@ let HCAP=1; /* helpers shown on a compact strip before "+N more" (a layout param
 let HBOOST=new Map(); /* agent id -> helpers shown, for agents that get more than HCAP because the floor has room left over (see chooseLayout) */
 const helperCap=(d,a)=>(a&&HBOOST.get(a.id))||HCAP;
 const SC_CACHE=new Map();
-function sceneC(a){const st=vis(a),k=a.look,m=moodFor(a),key=st+k.shirt+k.skin+k.hair+k.style+(k.glasses?1:0)+'|'+m.body+(m.trouble||'');let v=SC_CACHE.get(key);if(!v){v=scene(a,false,true);SC_CACHE.set(key,v);}return v;}
+function sceneCacheKey(a){const st=vis(a),k=a.look,m=moodFor(a);return st+k.shirt+k.skin+k.hair+k.style+(k.glasses?1:0)+'|'+m.body+(m.trouble||'')+'|'+THEME.themeIdForCache();}
+function sceneC(a){const key=sceneCacheKey(a);let v=SC_CACHE.get(key);if(!v){v=scene(a,false,true);SC_CACHE.set(key,v);}return v;}
 function visibleHelpers(a,d){
   const all=helpersOf(a).slice().sort((x,y)=>prio(x)-prio(y));
   const cap=helperCap(d,a);
@@ -2131,7 +2132,7 @@ if(bridge){
   bridge.onAgentAdded(addLiveAgent);
   bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});const rs=l.filter(x=>x.permRestored&&!x.parent).length;if(rs)toast(rs+' saved folder'+(rs>1?'s were':' was')+' restored in <b>Allow all</b>, as you left '+(rs>1?'them':'it')+'. Everything runs without asking there; the mode chip says <i>restored</i>. "Approve for this session" grants start empty.',9000);});
   loadModels();
-  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};SERIOUS=!!(v&&v.seriousMode);scheduleRender();}).catch(()=>{});
+  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};SERIOUS=!!(v&&v.seriousMode);const tid=(v&&v.theme)||'clean-office';if(tid!==THEME.current().id){THEME.setTheme(tid);SC_CACHE.clear();}scheduleRender();}).catch(()=>{});
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);
   agents=LIVE.agents; ROOMS=LIVE.rooms;
   setBadge();
