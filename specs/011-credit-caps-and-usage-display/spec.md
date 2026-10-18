@@ -168,3 +168,13 @@ Backlog after this delta: capability flag for other adapters (spec 012). User St
 - `[KNOWN GAP]` (accepted, documented in the README) A reset while a usage event is in flight can leave this run's figure one call apart from the file until the next restart (main empties the file, the window clears its run when the reply arrives).
 - FR-026 partly run for real (2026-10-17, no session, 0 AIU): the packaged-style app without the simulator read a seeded `durbar-usage-totals.json` from userData through `usage:totals` (a path key in the file was dropped), and `usage:resetTotals` emptied the file on disk.
 - `[KNOWN GAP]` Not run end to end: recording from real `usage` events in `main.ts` (needs a real session that spends credits); covered by the store's unit tests and the simulator.
+
+### 2026-10-18: usage units per agent kind (cross-reference to spec 012; T028, issue #47)
+
+Spec 012 adds two agent kinds that do not report AI credits. The units stay separate and are never mixed:
+
+- **Copilot**: AIU (`nanoAiu`), as in this spec. Unchanged.
+- **Claude Code**: a USD amount that is the vendor's own **estimate**, never a bill: `UsageEvent.costUsd` with `costBasis: 'estimate'` (spec 012 FR-029, `read:` `src/adapters/claudeMap.ts` `result` handling; test: `scripts/test-claude-map.ts`). It is **never added to AIU**: `recordUsage` (`src/shared/usagedoc.ts`) and the renderer ledger (`src/renderer/usagetotals.js`) sum `nanoAiu` only, and a call with only `costUsd` counts as "did not report credits" (test: `scripts/test-usagedoc.ts`). `[KNOWN GAP]` (spec 012 T085): no screen shows the dollar estimate yet (`read:` `src/renderer/`, no `costUsd` display).
+- **Codex CLI**: tokens only, no credits and no money (`read:` `src/adapters/codexMap.ts`; test: `scripts/test-codex-map.ts`). Its calls count as "credits not reported" under FR-021; never `0.00 AIU`.
+- **Caps stay Copilot-only.** Claude and Codex are planned with `caps: false` (spec 012 C9), so the cap chip and the cap field are hidden for them (spec 012 FR-061 gating; sim: `scripts/shots-018.js` with `simkinds=mixed`, no cap chip on the claude, codex and basic agents). A separate dollar cap for Claude (`maxBudgetUsd`) is open question Q7, task T081 (needs the owner's approval); if it is accepted it gets its own delta here first.
+- `[KNOWN GAP]` (spec 012 T043, T045, T067): no Claude or Codex adapter exists on `main`; the mappers run on synthetic fixtures only, never on a real account. The tooltips still say "as reported by the Copilot runtime" (`src/renderer/app.js`), which is true while only Copilot runs; per-kind wording is spec 012 T085.
