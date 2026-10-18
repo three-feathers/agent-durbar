@@ -162,7 +162,8 @@ async function main(): Promise<void> {
     assert.ok(r.hint && r.hint.length > 0);
     const det = detectorFor('copilot');
     assert.ok(det, 'j: copilot detector');
-    assert.strictEqual(detectorFor('claude'), undefined);
+    assert.strictEqual(typeof detectorFor('claude'), 'function', 'claude: a --version probe (spec 012 T093)');
+    assert.strictEqual(detectorFor('codex'), undefined);
     const d = { id: 'copilot', displayName: 'Copilot', capabilities: {}, create: () => { throw new Error('no'); } } as unknown as AdapterDescriptor;
     const infos = await detectAll(createRegistry([d]), det!);
     assert.strictEqual(infos[0].state, 'ready');

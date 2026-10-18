@@ -6,6 +6,8 @@
  */
 
 import { execFile } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import type { AdapterDescriptor, DetectResult } from './capabilities';
 
@@ -185,12 +187,29 @@ export async function detectCopilot(): Promise<DetectResult> {
   return { state: 'ready', hint: COPILOT_HINT };
 }
 
+/** The real environment for `detectBinary` (process env, home folder, file check). */
+export function nodeDetectEnv(): DetectEnv {
+  return {
+    platform: process.platform,
+    env: process.env,
+    homedir: os.homedir(),
+    isFile: (p) => {
+      try {
+        return fs.statSync(p).isFile();
+      } catch {
+        return false;
+      }
+    },
+  };
+}
+
 export function detectorFor(id: string): ((d: AdapterDescriptor) => Promise<DetectResult>) | undefined {
   if (id === 'copilot') return () => detectCopilot();
+  if (id === 'claude') return () => detectBinary(CLAUDE_BINARY, nodeDetectEnv(), nodeExec).then(({ path: _p, ...r }) => r); // a `--version` call, never a prompt (FR-010)
   return undefined;
 }
 
-/** The real exec: argv array, no shell, hidden window, 5 s timeout, output capped. Never logs. Nothing calls it yet. */
+/** The real exec: argv array, no shell, hidden window, 5 s timeout, output capped. Never logs. Used by the Claude detector (spec 012 T093). */
 export const nodeExec: Exec = (file, args, opts) =>
   new Promise((resolve) => {
     try {

@@ -109,7 +109,14 @@ export class ClaudeMapper {
     return { tools: this.tools.size, tasks: this.tasks.size, openSubagents: this.openSubagents.size, streamMessage: this.streamMessage.size, thinkingStreamed: this.thinkingStreamed.size };
   }
 
+  /** The adapter asked the CLI to interrupt: the turn's closing `error_during_execution` result is an abort, not an error (seen on a real run, spec 012 T094). */
+  private abortExpected = false;
+  expectAbort(): void {
+    this.abortExpected = true;
+  }
+
   reset(): void {
+    this.abortExpected = false;
     this.servers = [];
     this.tools.clear();
     this.tasks.clear();
@@ -323,7 +330,10 @@ export class ClaudeMapper {
       if (delta > 0) this.emit({ type: 'usage', costUsd: delta, costBasis: 'estimate' });
     }
     const subtype = str(m.subtype) ?? 'success';
+    const aborted = this.abortExpected;
+    this.abortExpected = false;
     if (subtype === 'success' && m.is_error !== true) return this.emit({ type: 'status', status: 'idle' });
+    if (aborted && subtype === 'error_during_execution') return; // the adapter already reported "Aborted"
     const denials = Array.isArray(m.permission_denials) ? m.permission_denials.length : 0;
     const text = subtype === 'success' ? 'error' : subtype;
     this.emit({ type: 'status', status: 'error', intent: denials ? `${text} (${denials} permission denial${denials === 1 ? '' : 's'})` : text });

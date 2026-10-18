@@ -95,10 +95,11 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 
 ## Changes 2026-10-18 (Q3/Q4 decided: CLI and SDK transports; issues #48, #49, #53)
 
-- [ ] T090 (sim) `claudeTransport.ts`: transport seam and CLI transport (argv, no shell, JSON lines, control request ids and timeouts, answer-once incoming requests, deny pending on close, redacted stderr tail); `scripts/test-claude-transport.ts` on a scripted fake child [FR-110, FR-111]
-- [ ] T091 (sim) `claude.ts` `ClaudeAdapter` on the seam (replaces T045's `query()` seam): mapper, broker, PreToolUse hook, interrupt, stop, resume, CLAUDE.md appended prompt; contract suite on a fake transport [FR-112]
-- [ ] T092 (sim) `claudeSdk.ts`: SDK transport by dynamic import, "not available" without the package; test on a fake module [FR-113]
-- [ ] T093 (sim) Register Claude Code in `PRODUCTION_DESCRIPTORS` with honest capabilities; the kind picker shows it when `detect()` finds `claude` [FR-114]
-- [ ] T094 (real-account, owner allowed) Real CLI checks with the installed `claude` and `haiku`: one Read-only prompt (stream, usage, cost, no write possible), Ask first approve and deny, interrupt, stop and resume in the same folder; record as `real:` with the cost [FR-110..FR-114]
+- [x] T090 (sim) `claudeTransport.ts`: transport seam and CLI transport (argv, no shell, JSON lines, control request ids and timeouts, answer-once incoming requests, deny pending on close, redacted stderr tail); `scripts/test-claude-transport.ts` on a scripted fake child [FR-110, FR-111]
+- [x] T091 (sim) `claude.ts` `ClaudeAdapter` on the seam (replaces T045's `query()` seam): mapper, broker, PreToolUse hook, interrupt, stop, resume, CLAUDE.md appended prompt; contract suite on a fake transport [FR-112]
+- [x] T092 (sim) `claudeSdk.ts`: SDK transport by dynamic import, "not available" without the package; test on a fake module [FR-113]
+- [x] T093 (sim) Register Claude Code experimentally (`DURBAR_CLAUDE=1`, `src/adapters/experimental.ts`), `detectorFor('claude')` with a `--version` probe [FR-114]
+- [x] T094 (real-account, owner allowed) Real CLI checks with the installed `claude` and `haiku`: one Read-only prompt (stream, usage, cost, no write possible), Ask first approve and deny, interrupt, stop and resume in the same folder; record as `real:` with the cost [FR-110..FR-114]
+- [ ] T095 (real-account) Offer Claude Code to every user: run the real app with a Claude agent end to end (add a folder, chat, Ask first approval card, stop, restart and resume), with T085 so Claude's dollar estimate is never added to AIU; then move it to `PRODUCTION_DESCRIPTORS` [FR-114]
 - T040 and T041 are answered by this entry (no SDK in `package.json` until the owner accepts its terms; the user's `claude` is used); T045 is done as T091.
 
