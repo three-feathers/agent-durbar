@@ -20,11 +20,11 @@ import type { PermissionMode } from '../src/adapters/capabilities';
 
 type Outcome = 'deny' | 'ask' | 'approve';
 type Kind = 'copilot' | 'claude' | 'codex';
-type CaseName = 'write-inside' | 'write-outside' | 'shell' | 'read-inside';
+type CaseName = 'write-inside' | 'write-outside' | 'shell' | 'read-inside' | 'read-outside';
 
 const KINDS: Kind[] = ['copilot', 'claude', 'codex'];
 const MODES = ['read-only', 'ask', 'allow', 'bogus'];
-const CASES: CaseName[] = ['write-inside', 'write-outside', 'shell', 'read-inside'];
+const CASES: CaseName[] = ['write-inside', 'write-outside', 'shell', 'read-inside', 'read-outside'];
 
 /** FR-084. An unknown mode is Read-only. */
 function expected(mode: string, c: CaseName): Outcome {
@@ -51,6 +51,7 @@ async function copilot(mode: string, c: CaseName): Promise<Outcome> {
     c === 'write-inside' ? { kind: 'write', toolCallId: 'c1', fileName: inFile }
     : c === 'write-outside' ? { kind: 'write', toolCallId: 'c1', fileName: outFile }
     : c === 'shell' ? { kind: 'shell', toolCallId: 'c1', fullCommandText: CMD }
+    : c === 'read-outside' ? { kind: 'read', toolCallId: 'c1', path: outFile }
     : { kind: 'read', toolCallId: 'c1', path: inFile };
   const p = broker.request(req);
   const pending = broker.pendingCount();
@@ -73,8 +74,9 @@ async function copilot(mode: string, c: CaseName): Promise<Outcome> {
 /** Claude: `decideTool` is the decision; the options and the Read-only hook must agree with it. */
 function claude(mode: string, c: CaseName): Outcome {
   const m = mode as PermissionMode;
-  const tool = c === 'shell' ? 'Bash' : c === 'read-inside' ? 'Read' : 'Write';
-  const input = c === 'shell' ? { command: CMD } : { file_path: c === 'write-outside' ? outFile : inFile };
+  const isRead = c === 'read-inside' || c === 'read-outside';
+  const tool = c === 'shell' ? 'Bash' : isRead ? 'Read' : 'Write';
+  const input = c === 'shell' ? { command: CMD } : { file_path: c === 'write-outside' || c === 'read-outside' ? outFile : inFile };
   const d = decideTool(m, tool, input, [ws]);
   const hook = preToolUseDecision(m, tool, input, [ws]);
   const opts = claudeOptionsFor(m);
@@ -83,7 +85,7 @@ function claude(mode: string, c: CaseName): Outcome {
     assert.strictEqual(opts.permissionMode, 'dontAsk', `claude ${mode} ${c}: Read-only options use dontAsk`);
     assert.strictEqual(opts.preToolUseHook, true, `claude ${mode} ${c}: Read-only installs the deny hook`);
     assert.strictEqual(hook !== undefined, d.behavior === 'deny', `claude ${mode} ${c}: the hook denies exactly what decideTool denies`);
-    if (c !== 'read-inside') assert.ok(opts.disallowedTools?.includes(tool), `claude ${mode} ${c}: the Read-only backstop disallows ${tool}`);
+    if (!isRead) assert.ok(opts.disallowedTools?.includes(tool), `claude ${mode} ${c}: the Read-only backstop disallows ${tool}`);
   } else {
     assert.strictEqual(hook, undefined, `claude ${mode} ${c}: no hook decision outside Read-only`);
     assert.strictEqual(opts.preToolUseHook, false, `claude ${mode} ${c}: no deny hook outside Read-only`);
@@ -99,7 +101,7 @@ function claude(mode: string, c: CaseName): Outcome {
  * The write/shell enforcement itself is Codex's sandbox (not run here), so this is the settings' outcome.
  */
 function codex(mode: string, c: CaseName): Outcome | 'skip' {
-  if (c === 'read-inside') return 'skip'; // Codex never asks for a read (CodexPermission.kind is never read); the sandbox allows it
+  if (c === 'read-inside' || c === 'read-outside') return 'skip';
   const s = codexModeSettings(mode);
   const perm =
     c === 'shell' ? codexPermission('item/commandExecution/requestApproval', { command: CMD })
@@ -127,7 +129,10 @@ async function main(): Promise<void> {
       for (const c of CASES) {
         const got = kind === 'copilot' ? await copilot(mode, c) : kind === 'claude' ? claude(mode, c) : codex(mode, c);
         if (got === 'skip') {
-          const line = `SKIP ${kind} ${mode} ${c}: Codex sends no approval request for a read (its kind is never read); the read-only or full-access sandbox decides, and that is not run here`;
+          const line =
+            c === 'read-inside'
+              ? `SKIP ${kind} ${mode} ${c}: Codex sends no approval request for a read (its kind is never read); the read-only or full-access sandbox decides, and that is not run here`
+              : `SKIP ${kind} ${mode} ${c}: the read-only sandbox reads anywhere the OS user can and Codex sends no read approval (KNOWN GAP T084)`;
           skipped.push(line);
           console.log(line);
           table.push(`${kind} ${mode} ${c} = SKIP`);
@@ -141,7 +146,10 @@ async function main(): Promise<void> {
   }
   const total = KINDS.length * MODES.length * CASES.length;
   assert.strictEqual(asserted + skipped.length, total, 'every kind x mode x case is asserted or listed as SKIP');
-  assert.strictEqual(skipped.length, MODES.length, 'only the Codex read-inside case is skipped, once per mode');
+  const wantSkips = MODES.flatMap((m) => (['read-inside', 'read-outside'] as CaseName[]).map((c) => `codex ${m} ${c}`)).sort();
+  assert.deepStrictEqual(skipped.map((l) => l.split(':')[0].replace(/^SKIP /, '')).sort(), wantSkips, 'exactly the Codex read-inside and read-outside cells are skipped, one per mode');
+  assert.strictEqual(skipped.length, 8, 'exactly 8 SKIPs');
+  assert.strictEqual(total, 60, '3 kinds x 4 modes x 5 cases = 60 cells');
   console.log(table.join('\n'));
   console.log(`sc004: ${asserted} asserted, ${skipped.length} skipped (listed above), ${total} cells`);
 }
