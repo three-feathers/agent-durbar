@@ -978,7 +978,7 @@ window.addEventListener('resize',relayout);
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', question:qs.get('simquestion')==='1', solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
@@ -1498,6 +1498,50 @@ function showLimit(a,e){
   a.limit={requestId:e.requestId,n,row,st:n.querySelector('.pstate')};
   tChips(t.T).appendChild(n);scrollChat(liveChat(a));
 }
+/* ---------- questions from the agent (spec 012 FR-130): options as buttons, "Other" text, Answer / Skip; text only, never HTML ---------- */
+function showQuestion(a,e){
+  const t=ensureTurn(a), qs=(e.questions||[]).slice(0,4);
+  const n=document.createElement('div');n.className='note perm question';n.setAttribute('role','group');n.setAttribute('aria-label','Question from the agent');
+  const head=document.createElement('b');head.textContent=qs.length>1?'Questions from the agent':'Question from the agent';n.appendChild(head);
+  const st=document.createElement('span');st.className='pstate';n.appendChild(st);
+  const picks=qs.map(()=>new Set()), others=[];
+  qs.forEach((q,i)=>{
+    const box=document.createElement('div');box.className='q-item';
+    const qt=document.createElement('p');qt.className='q-text';
+    if(q.header){const h=document.createElement('span');h.className='tag';h.textContent=q.header;qt.appendChild(h);qt.appendChild(document.createTextNode(' '));}
+    qt.appendChild(document.createTextNode(q.question));box.appendChild(qt);
+    const opts=document.createElement('div');opts.className='q-opts';opts.setAttribute('role',q.multiSelect?'group':'radiogroup');opts.setAttribute('aria-label',q.question);
+    (q.options||[]).forEach(o=>{const b=document.createElement('button');b.type='button';b.className='btn q-opt';b.setAttribute(q.multiSelect?'aria-pressed':'aria-checked','false');if(!q.multiSelect)b.setAttribute('role','radio');
+      b.textContent=o.label;if(o.description)b.title=o.description;
+      b.onclick=()=>{const s=picks[i];if(q.multiSelect){s.has(o.label)?s.delete(o.label):s.add(o.label);b.setAttribute('aria-pressed',String(s.has(o.label)));b.classList.toggle('primary',s.has(o.label));}
+        else{s.clear();s.add(o.label);opts.querySelectorAll('.q-opt').forEach(x=>{x.setAttribute('aria-checked',String(x===b));x.classList.toggle('primary',x===b);});others[i].value='';}};
+      opts.appendChild(b);});
+    const other=document.createElement('input');other.type='text';other.maxLength=500;other.className='q-other';other.placeholder='Other answer';other.setAttribute('aria-label','Other answer: '+q.question);
+    other.oninput=()=>{if(other.value.trim()&&!q.multiSelect){picks[i].clear();opts.querySelectorAll('.q-opt').forEach(x=>{x.setAttribute('aria-checked','false');x.classList.remove('primary');});}};
+    others.push(other);opts.appendChild(other);box.appendChild(opts);n.appendChild(box);
+  });
+  const row=document.createElement('div');row.className='note-actions';
+  const send=async answers=>{
+    const r=await bridge.answerQuestion(a.id,e.requestId,answers).catch(err=>({ok:false,error:String(err&&err.message||err)}));
+    if(!r||!r.ok){addNote(liveChat(a),'Could not answer: '+esc((r&&r.error)||'unknown error'),true);return;}
+    settleQuestion(a,answers);
+  };
+  const ok=document.createElement('button');ok.type='button';ok.className='btn primary';ok.textContent='Answer';
+  ok.onclick=()=>{const ans={};qs.forEach((q,i)=>{const o=others[i].value.replace(/\s+/g,' ').trim();const v=[...picks[i]].concat(o?[o]:[]).join(', ');if(v)ans[q.question]=v;});
+    if(Object.keys(ans).length<qs.length){const miss=qs.findIndex(q=>!ans[q.question]);(others[miss]||ok).focus();toast('Choose an answer for each question, or Skip.',3500);return;}send(ans);};
+  const skip=document.createElement('button');skip.type='button';skip.className='btn danger';skip.textContent='Skip';skip.title='Do not answer; the agent decides itself';skip.onclick=()=>send(null);
+  row.appendChild(ok);row.appendChild(skip);n.appendChild(row);
+  a.question={requestId:e.requestId,n,row,st};
+  tChips(t.T).appendChild(n);scrollChat(liveChat(a));
+}
+function settleQuestion(a,answers){
+  const Q=a.question;if(!Q)return;a.question=null;
+  if(Q.row)Q.row.remove();Q.n.querySelectorAll('.q-opts').forEach(x=>x.remove());
+  Q.st.textContent=answers?' → answered: '+Object.values(answers).join('; '):' → skipped';
+  Q.n.classList.add('settled',answers?'approved':'denied');
+  if(a.state==='waiting')setState(a,'working',null,answers?'Answered':'Question skipped'); /* a Stop already set it idle */
+  updatePanelHeader();scrollChat(liveChat(a));
+}
 function settleLimit(a,action){
   const L=a.limit;if(!L)return;a.limit=null;
   if(L.row)L.row.remove();
@@ -1609,7 +1653,7 @@ function onLiveEvent(e){
       ensureTurn(a); setState(a,'waiting',null,e.intent||'Waiting for permission');
       if(e.permission)showPerm(a,e.permission);
     }
-    else if(e.status==='idle'&&e.intent==='Aborted'){if(a.limit)settleLimit(a,'cancel');const was=a.worked;a.worked=false;closeTurn(a);
+    else if(e.status==='idle'&&e.intent==='Aborted'){if(a.limit)settleLimit(a,'cancel');if(a.question)settleQuestion(a,null);const was=a.worked;a.worked=false;closeTurn(a);
       [...a.pend.keys()].forEach(id=>settlePerm(a,{requestId:id,state:'denied',via:'stopped'}));
       if(was)addNote(chat,'Stopped by you. The agent is ready for your next message.');
       /* real:(spec 030 T042) the runtime drops a switch that was still queued when the turn is stopped: say so, never leave "Next: ..." behind */
@@ -1634,6 +1678,10 @@ function onLiveEvent(e){
     if(e.phase==='changed'){a.info.maxAiCredits=e.maxAiCredits>0?e.maxAiCredits:undefined;a.usageText=usageLong(a);updateCapChip(a);updatePanelHeader();scheduleRender();}
     else if(e.phase==='exhausted'){if(a.limit&&a.limit.requestId===e.requestId)return;showLimit(a,e);setState(a,'waiting','Limit reached','Credit limit reached: '+fmtCap(e.maxAiCredits||0)+' AIU');updateCapChip(a);}
     else if(e.phase==='resolved'){if(a.limit&&a.limit.requestId===e.requestId)settleLimit(a,e.action||'add');}
+    return;
+  case 'question': /* spec 012 FR-130 */
+    if(e.phase==='asked'){if(a.question&&a.question.requestId===e.requestId)return;showQuestion(a,e);setState(a,'waiting','Waiting for your answer','The agent asks you a question');updatePanelHeader();scheduleRender();}
+    else if(a.question&&a.question.requestId===e.requestId)settleQuestion(a,e.phase==='answered'?e.answers:null);
     return;
   case 'model':onModelEvent(a,e);return;
   case 'compaction':onCompaction(a,e);return;
