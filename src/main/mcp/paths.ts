@@ -31,7 +31,7 @@ export interface McpPaths {
   /** Unix socket path, or `\\.\pipe\...` on Windows. `null` when Durbar must not listen (see `reason`). */
   socket: string | null;
   kind: 'unix' | 'pipe';
-  /** Set for every Unix socket folder (XDG runtime dir, <userData>/mcp, tmp fallback); null on Windows: the caller creates it with mode 0700 and must `lstat`-check it with `checkFallbackDir` before use (FR-062). */
+  /** Set for every Unix socket folder (XDG runtime dir, <userData>/mcp, tmp fallback); null on Windows. The caller creates it with mode 0700 and must `lstat`-check it with `checkFallbackDir` before use (FR-062). */
   checkDir: string | null;
   /** Why there is no socket (shown in Settings); `null` when `socket` is set. */
   reason: string | null;
