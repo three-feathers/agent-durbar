@@ -5,8 +5,10 @@
  */
 
 import type { McpServerSpec } from '../shared/mcp';
-import type { CompactResult, ContextTier, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
-export type { McpServerSpec, CompactResult, ContextTier, ModelSwitchRequest, ModelSwitchResult };
+import type { CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
+import type { AdapterCapabilities, PermissionMode } from './capabilities';
+import type { HistoryResult, PreviousSession } from './history';
+export type { McpServerSpec, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult, AdapterCapabilities, PermissionMode };
 
 export type AgentStatus = 'idle' | 'working' | 'needs-permission' | 'error' | 'stopped';
 
@@ -18,7 +20,7 @@ export interface StartOptions {
   autoTier?: 'efficiency' | 'balance' | 'intelligence';
   /** Cap on AI credits for this session (treated as AIU), if the runtime supports it. Soft until verified (spec 011 FR-015). */
   maxAiCredits?: number;
-  /** Resume an existing session id (disk-backed). */
+  /** Resume an existing session by the vendor's own session id (disk-backed). */
   resumeSessionId?: string;
   /** Use this id: resume it when it exists on disk, otherwise create a new session with exactly this id. */
   sessionId?: string;
@@ -31,7 +33,9 @@ export interface StartOptions {
    * change state (write, shell, mcp, url, custom tools, ...) is denied.
    * `allow: true` approves everything (explicit opt-in). `ask: true` leaves every
    * non-read request pending (status 'needs-permission') until `resolvePermission` is called.
+   * `permissionMode`, when present, wins over both booleans; an unknown value means read-only. The booleans stay for scripts and tests.
    */
+  permissionMode?: PermissionMode;
   allow?: boolean;
   ask?: boolean;
   /** Do not emit the "Ready" status when the session is up (used when starting it for a message that is about to be sent). */
@@ -164,6 +168,9 @@ export interface UsageEvent extends BaseEvent {
   cacheReadTokens?: number;
   /** Cost of this call in nano-AI units (1e-9 AIU) as reported by the Copilot API. */
   nanoAiu?: number;
+  /** The vendor's own estimate of this call's cost in USD. Never a bill, and never added to AIU or to any credit total. */
+  costUsd?: number;
+  costBasis?: 'estimate';
   /** Model cost multiplier reported by the runtime (experimental). */
   costMultiplier?: number;
   creditsStatus?: 'complete' | 'partial' | 'unavailable';
@@ -279,6 +286,12 @@ export type Unsubscribe = () => void;
 export interface AgentAdapter {
   /** Adapter id, e.g. "copilot". */
   readonly id: string;
+  /** Name shown to the user, e.g. "GitHub Copilot". */
+  readonly displayName: string;
+  /** What this adapter can do; each optional member below is present exactly when its flag says so. */
+  readonly capabilities: AdapterCapabilities;
+  /** Optional debug sink (DURBAR_LOG); assigned by the main process. Never receives secrets. */
+  debug?: (message: string) => void;
   /** Start (or resume) a session for a workspace. Resolves with the session id. */
   start(options: StartOptions): Promise<string>;
   /** Send a user message (with optional files/images) to a running session. */
@@ -303,6 +316,18 @@ export interface AgentAdapter {
   cancelQueuedModel?(sessionId: string, queueId: string): Promise<void>;
   /** Compact the context now (spends a model call); `focus` steers the summary. Optional. */
   compact?(sessionId: string, focus?: string): Promise<CompactResult>;
+  /** True while the session is open in this adapter. */
+  isLive(sessionId: string): boolean;
+  /** Stop every session and free the runtime. */
+  dispose(): Promise<void>;
+  /** The models the account offers, in the UI's shape (no inference, no credits). Optional (`capabilities.models`). */
+  listModelOptions?(): Promise<ModelOption[]>;
+  /** Earlier sessions of a folder, newest first; `excludeIds` are left out. Optional (`capabilities.history`). */
+  listPreviousSessions?(cwd: string, excludeIds?: ReadonlySet<string>): Promise<PreviousSession[]>;
+  /** Persisted messages and tool calls of a live session, for replay. Optional (`capabilities.history`). */
+  history?(sessionId: string): Promise<HistoryResult>;
+  /** Change the permission mode of a live session; returns how many requests stay pending. Optional (`capabilities.permModeSwitch` is not `none`). */
+  setPermMode?(sessionId: string, mode: PermissionMode, opts?: { clearGrants?: boolean; approvePending?: boolean }): { pending: number };
   /** Subscribe to normalized events from all sessions of this adapter. */
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe;
 }

@@ -6,7 +6,7 @@
  * Enable with `DURBAR_SIM=15 npm start` (Electron main passes ?sim=15) or open
  * dist/renderer/index.html?sim=15 in a browser. Extra query params: simwaitold=1 (waiting requests look 2 minutes old), simtotals=1 (totals saved by a previous run), simunreported=<room>
  * (that room reports usage without credits), simfreeze=1 (no ticking),
- * simrooms=solo (one folder per agent), seed=N, density=full|card|mini, open=<agent id>.
+ * simrooms=solo (one folder per agent), simplaces=1..3 (that many custom places, spec 024), seed=N, density=full|card|mini, open=<agent id>.
  *
  * Plain script (no imports/exports) so it runs unchanged in the sandboxed renderer.
  */
@@ -15,6 +15,7 @@ type AgentInfo = import('../shared/api').AgentInfo;
 type DurbarApi = import('../shared/api').DurbarApi;
 type PickedFile = import('../shared/api').PickedFile;
 type ModelChoice = import('../shared/api').ModelChoice;
+type AdapterInfo = import('../shared/api').AdapterInfo;
 type FloorsState = import('../shared/api').FloorsState;
 type FloorsResult = import('../shared/api').FloorsResult;
 type ModelSwitchRequest = import('../shared/modelswitch').ModelSwitchRequest;
@@ -34,6 +35,8 @@ interface SimOptions {
   unreported?: string;
   /** Start with totals saved by a previous run for two folders (spec 011 FR-029), as after a restart. */
   seedTotals?: boolean;
+  /** Spec 024 FR-026: start with this many custom places (0 to 3) and two fake servers mapped to them. Without it the page address (`simplaces=N`) decides. */
+  places?: number;
   /** Pending permission requests carry a time 2 minutes in the past, so "impatient" (spec 034) can be seen at once. */
   waitOld?: boolean;
 }
@@ -89,6 +92,15 @@ const SIM_MODEL_BY_AGENT: Record<number, string> = { 3: 'sim-fast', 4: 'sim-fast
 /** Simulated caps (AI credits, min 30 like the runtime) by agent name; Omar's calls are expensive (11 AIU each), so he reaches 30 in his first turn (spec 011 FR-016). */
 const SIM_CAPS: Record<string, number> = { Ada: 50, Mira: 30, Omar: 30 };
 const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
+/* Spec 012 T018 (FR-065, FR-066): the simulated kinds of `simkinds=mixed`. They are a simulation, not a statement about the real CLIs.
+   Index in the 15-agent roster -> kind; every other agent is Copilot. Mcp-swiss holds two kinds (Ada, Mira); the basic agent is Priya (idle, never the first). */
+const SIM_KIND_BY_AGENT: Record<number, string> = { 0: 'claude', 3: 'claude', 4: 'codex', 5: 'claude', 6: 'basic', 7: 'codex', 8: 'claude', 9: 'codex', 11: 'claude' };
+const SIM_COPILOT_CAPS = { interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true } as AdapterInfo['capabilities'];
+const SIM_MIXED_KINDS: AdapterInfo[] = [
+  { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: false, mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true } },
+  { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: false } },
+  { id: 'basic', displayName: 'Basic agent (simulated)', state: 'ready', version: 'sim', capabilities: { interrupt: false, resume: false, images: false, models: false, effort: false, permissionModes: ['read-only'], permModeSwitch: 'none', usage: { tokens: true, costUsd: false, nanoAiu: false }, context: false, caps: false, helpers: false, history: false, mcpStatus: false, mcpToggle: false } as AdapterInfo['capabilities'] },
+];
 
 (function () {
   const ROOM_DEFS: Record<string, string> = {
@@ -168,6 +180,9 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
   }
 
   function create(opts: SimOptions): DurbarApi {
+    const simKindsParam = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simkinds') : null;
+    const mixed = simKindsParam === 'mixed'; // read before any random draw: the default and simkinds=1 rosters are unchanged
+    const caps = (adapterId: string): AdapterInfo['capabilities'] => (SIM_MIXED_KINDS.find((k) => k.id === adapterId)?.capabilities ?? SIM_COPILOT_CAPS);
     const rnd = mulberry32(opts.seed ?? 7);
     const listeners = new Set<(e: AgentEvent) => void>();
     const addedListeners = new Set<(a: AgentInfo) => void>();
@@ -181,7 +196,13 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       const [name, role, room, state, intent, helpers, files] = r;
       const roomName = opts.solo ? name.toLowerCase() + '-app' : room;
       const cwd = opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
-      const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true } } as AgentInfo;
+      const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], adapterId: mixed ? SIM_KIND_BY_AGENT[i] ?? 'copilot' : 'copilot', permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true } } as AgentInfo;
+      if (mixed && info.adapterId !== 'copilot') {
+        const k = caps(info.adapterId ?? 'copilot');
+        if (!k.caps) info.maxAiCredits = undefined; // no credit cap on a kind that has none
+        if (!k.permissionModes.includes(info.permMode)) info.permMode = 'read-only';
+        if (!k.models) info.modelControl = { switch: 'none', effort: false, contextTier: false, compact: false, windowKnown: true };
+      }
       // Priya models an adapter that cannot switch or compact in place (spec 030): the UI shows the disabled state and offers a new session.
       // Jonas models the real adapter's state until Phase 3: the controls work but are flagged as not verified on a real account.
       if (name === 'Jonas') info.modelControl = { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true, unverified: true };
@@ -260,9 +281,11 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       const model = (s.models ?? MODELS)[Math.floor(rnd() * (s.models ?? MODELS).length)];
       const nano = Math.floor((SIM_EXPENSIVE[s.info.name] ?? 0.004 + rnd() * 0.012) * 1e9);
       const unrep = unreported(s);
-      emit({ type: 'usage', sessionId: sid(s), timestamp: now(), model, inputTokens: 1200 + Math.floor(rnd() * 6000), outputTokens: 150 + Math.floor(rnd() * 900), ...(unrep ? { creditsStatus: 'unavailable' as const } : { nanoAiu: nano, creditsStatus: 'complete' as const }) });
+      const kc = caps(s.info.adapterId ?? 'copilot');
+      // FR-066: a kind without AIU reports no nanoAiu (credits unavailable); one with a USD estimate sends it as an estimate, never as credits
+      emit({ type: 'usage', sessionId: sid(s), timestamp: now(), model, inputTokens: 1200 + Math.floor(rnd() * 6000), outputTokens: 150 + Math.floor(rnd() * 900), ...(unrep || !kc.usage.nanoAiu ? { creditsStatus: 'unavailable' as const } : { nanoAiu: nano, creditsStatus: 'complete' as const }), ...(kc.usage.costUsd ? { costUsd: Math.round(nano / 1e6) / 1e4, costBasis: 'estimate' as const } : {}) });
       s.used = (s.used ?? 0) + nano;
-      const cap = s.info.maxAiCredits;
+      const cap = kc.caps ? s.info.maxAiCredits : undefined;
       if (cap && !s.limitReq && s.used / 1e9 >= cap) {
         // Like the SDK: the runtime asks the user what to do and waits (the blocked model request).
         s.limitReq = 'lim-' + sid(s) + '-' + Math.floor(s.used / 1e6);
@@ -338,7 +361,7 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       const f = s.files[h % s.files.length];
       emit({ ...base, type: 'toolCall', agentId: call, callId: call + '-v', tool: 'view', phase: 'start', args: { path: f } });
       emit({ ...base, type: 'toolCall', agentId: call, callId: call + '-v', tool: 'view', phase: 'complete', output: '120 lines' });
-      emit({ ...base, type: 'usage', agentId: call, model: 'auto', inputTokens: 3900, outputTokens: 60, ...(unreported(s) ? { creditsStatus: 'unavailable' as const } : { nanoAiu: 8_000_000, creditsStatus: 'complete' as const }) });
+      emit({ ...base, type: 'usage', agentId: call, model: 'auto', inputTokens: 3900, outputTokens: 60, ...(unreported(s) || !caps(s.info.adapterId ?? 'copilot').usage.nanoAiu ? { creditsStatus: 'unavailable' as const } : { nanoAiu: 8_000_000, creditsStatus: 'complete' as const }), ...(caps(s.info.adapterId ?? 'copilot').usage.costUsd ? { costUsd: 0.0008, costBasis: 'estimate' as const } : {}) });
       if (st === 'working' || st === 'thinking') {
         emit({ ...base, type: 'toolCall', agentId: call, callId: call + '-g', tool: 'grep', phase: 'start', args: { pattern: 'registerTool' } });
         return;
@@ -416,7 +439,7 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       }
       if (s.limitReq) return; // blocked at the credit cap: nothing more happens until the user decides
       // Sub-agents: each one is a `task` tool call of the parent; its own events carry agentId = that call id
-      for (let h = 0; h < s.helpers; h++) {
+      for (let h = 0; h < (caps(s.info.adapterId ?? 'copilot').helpers ? s.helpers : 0); h++) {
         const [hn, task, st] = HELPER_NAMES[(h + sims.indexOf(s)) % HELPER_NAMES.length];
         subRun(s, h, hn, task, st as 'working' | 'thinking' | 'done' | 'failed');
       }
@@ -524,6 +547,12 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
     const folderName = (key: string): string => key.replace(/\/+$/, '').split('/').pop() || key;
     const mcpApi: Partial<DurbarApi> = {
       mcpState: async () => ({ cli: fakeCli.map((a) => ({ ...a })), file: { label: '~/.copilot/mcp-config.json', found: true, skipped: 0 }, secretsPersist: true }),
+      mcpExtraNames: async () => {
+        const taken = new Set(fakeCli.map((a) => a.name.toLowerCase()));
+        const names = new Set<string>();
+        for (const list of Object.values(fakeExtras)) for (const v of list) if (!taken.has(v.name.toLowerCase())) names.add(v.name);
+        return { ok: true, names: [...names].sort().slice(0, 500) };
+      },
       mcpSetCli: async (name, enabled) => { const a = fakeCli.find((x) => x.name === name); if (a) a.enabled = enabled; return { ok: !!a }; },
       mcpFolderState: async (key) => !knownFolder(key)
         ? { ok: false, error: 'Unknown folder.', key, name: '', servers: [], legacy: [], secretsPersist: true, skipped: [], cliNames: [] }
@@ -624,6 +653,76 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
     const placeMap: Record<string, string> = {};
     let seriousMode = false; /* spec 034 */
     const PLACE_CHOICES = ['library', 'software', 'terminal', 'web', 'other', 'desk'];
+    /* spec 024 FR-018..FR-020: custom places in memory, with the rules of src/shared/places.ts repeated here (the renderer bundle cannot import
+       it; scripts/test-places.ts runs both on the same cases and compares them). */
+    type SimPlace = { id: string; name: string; icon: string };
+    const MAX_CUSTOM = 3;
+    const CUSTOM_ICONS = ['star', 'flask', 'database', 'cloud', 'chart', 'chat', 'mail', 'calendar', 'shield', 'box', 'bolt', 'pin'];
+    const RESERVED_NAMES = ['library', 'software library', 'terminal', 'web', 'other tools', 'stay at desk', 'default'];
+    const customPlaces: SimPlace[] = [];
+    let placeSeq = 0;
+    const simPlaceResult = (ok: boolean, error?: string, place?: SimPlace) => ({
+      ok, ...(error ? { error } : {}), ...(place ? { place: { ...place } } : {}),
+      customPlaces: customPlaces.map((p) => ({ ...p })), placeMap: { ...placeMap },
+    });
+    /** Trimmed name, or the error code: empty, a control character, more than 24 code points, or already used (ignoring case). */
+    const simPlaceName = (v: unknown, exceptId?: string): { name: string } | { error: string } => {
+      if (typeof v !== 'string') return { error: 'name-invalid' };
+      const n = v.trim();
+      if (n.length < 1) return { error: 'name-empty' };
+      // eslint-disable-next-line no-control-regex
+      if (/[\u0000-\u001f\u007f-\u009f\u200b-\u200c\u200e-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/.test(n)) return { error: 'name-invalid' };
+      if ([...n].length > 24) return { error: 'name-long' };
+      const f = n.toLowerCase();
+      if (RESERVED_NAMES.includes(f) || customPlaces.some((p) => p.id !== exceptId && p.name.toLowerCase() === f)) return { error: 'name-taken' };
+      return { name: n };
+    };
+    const simAddPlace = (name: unknown, icon: unknown) => {
+      if (customPlaces.length >= MAX_CUSTOM) return simPlaceResult(false, 'limit');
+      const nm = simPlaceName(name);
+      if ('error' in nm) return simPlaceResult(false, nm.error);
+      if (typeof icon !== 'string' || !CUSTOM_ICONS.includes(icon)) return simPlaceResult(false, 'icon');
+      let id = '';
+      do { id = 'c-sim' + String(++placeSeq).padStart(3, '0'); } while (customPlaces.some((p) => p.id === id));
+      const place = { id, name: nm.name, icon };
+      customPlaces.push(place);
+      return simPlaceResult(true, undefined, place);
+    };
+    const simUpdatePlace = (id: unknown, patch: unknown) => {
+      const p = customPlaces.find((x) => x.id === id);
+      if (!p || !patch || typeof patch !== 'object' || Array.isArray(patch)) return simPlaceResult(false, 'unknown');
+      const { name, icon } = patch as { name?: unknown; icon?: unknown };
+      let nextName = p.name, nextIcon = p.icon;
+      if (name !== undefined) {
+        const nm = simPlaceName(name, p.id);
+        if ('error' in nm) return simPlaceResult(false, nm.error);
+        nextName = nm.name;
+      }
+      if (icon !== undefined) {
+        if (typeof icon !== 'string' || !CUSTOM_ICONS.includes(icon)) return simPlaceResult(false, 'icon');
+        nextIcon = icon;
+      }
+      p.name = nextName; p.icon = nextIcon;
+      return simPlaceResult(true);
+    };
+    const simRemovePlace = (id: unknown) => {
+      const at = customPlaces.findIndex((x) => x.id === id);
+      if (at < 0) return simPlaceResult(false, 'unknown');
+      customPlaces.splice(at, 1);
+      for (const k of Object.keys(placeMap)) if (placeMap[k] === id) delete placeMap[k];
+      return simPlaceResult(true);
+    };
+    /* simplaces=N (spec 024 FR-026): Database, Ticket desk and a 24-character name; two fake servers mapped to the first two */
+    {
+      const q = typeof window !== 'undefined' && window.location ? /[?&]simplaces=([0-3])(?:&|$)/.exec(window.location.search) : null;
+      const want = Math.max(0, Math.min(MAX_CUSTOM, Math.floor(opts.places ?? (q ? Number(q[1]) : 0)) || 0));
+      const seed: [string, string][] = [['Database', 'database'], ['Ticket desk', 'chat'], ['Data analytics reporting', 'chart']];
+      for (let i = 0; i < want; i++) simAddPlace(seed[i][0], seed[i][1]);
+      if (customPlaces.length) {
+        placeMap['my-notes'] = customPlaces[0].id;
+        placeMap['playwright'] = customPlaces[Math.min(1, customPlaces.length - 1)].id;
+      }
+    }
     /* spec 011 FR-029: saved totals, in memory. Default: nothing saved. With simtotals=1: a previous run left totals for two folders
        and one folder that is not in the list any more, so the header shows more than this run's own spend. */
     const zero = { calls: 0, inTokens: 0, outTokens: 0, nano: 0, unreported: 0 };
@@ -639,17 +738,20 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, seriousMode, about: { name: 'Agent Durbar', version: '0.1.0-alpha.4 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, about: { name: 'Agent Durbar', version: '0.1.0-alpha.4 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setPlace: async (server, place) => {
         const name = typeof server === 'string' ? server.trim() : '';
         if (!name || name.length > 200 || name === '__proto__') return { ok: false, placeMap: { ...placeMap } };
         if (place === null) delete placeMap[name];
-        else if (PLACE_CHOICES.includes(place)) placeMap[name] = place;
+        else if (PLACE_CHOICES.includes(place) || customPlaces.some((p) => p.id === place)) placeMap[name] = place;
         else return { ok: false, placeMap: { ...placeMap } };
         return { ok: true, placeMap: { ...placeMap } };
       },
+      addPlace: async (name, icon) => simAddPlace(name, icon),
+      updatePlace: async (id, patch) => simUpdatePlace(id, patch),
+      removePlace: async (id) => simRemovePlace(id),
       setCap: async (id, c) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
@@ -741,7 +843,7 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       const after = Math.round(c.limit * 0.18 + rnd() * c.limit * 0.04);
       c.tokens = after;
       s.compactions = (s.compactions ?? 0) + 1;
-      emit({ type: 'usage', sessionId: sid(s), timestamp: now(), model: s.info.model ?? 'auto', inputTokens: before, outputTokens: 900, nanoAiu: Math.floor(0.02 * 1e9), creditsStatus: 'complete' });
+      emit({ type: 'usage', sessionId: sid(s), timestamp: now(), model: s.info.model ?? 'auto', inputTokens: before, outputTokens: 900, ...(caps(s.info.adapterId ?? 'copilot').usage.nanoAiu ? { nanoAiu: Math.floor(0.02 * 1e9), creditsStatus: 'complete' as const } : { creditsStatus: 'unavailable' as const }) });
       s.used = (s.used ?? 0) + Math.floor(0.02 * 1e9);
       emit({ type: 'compaction', sessionId: sid(s), timestamp: now(), phase: 'complete', trigger, tokensBefore: before, tokensAfter: after, tokensRemoved: before - after, limit: c.limit });
       emit({ type: 'context', sessionId: sid(s), timestamp: now(), tokens: after, limit: c.limit, system: 5840, conversation: Math.max(0, after - 13500), toolDefinitions: 7668, messages: 3, model: s.info.model, tier: s.tier });
@@ -864,6 +966,20 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       },
     };
 
+    const simKinds = simKindsParam === '1';
+    const copilotCaps = SIM_COPILOT_CAPS;
+    const simAdapters = (): AdapterInfo[] => [
+      { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps } },
+      ...(simKinds ? [
+        { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false } },
+        { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'] } },
+      ] as AdapterInfo[] : []),
+      ...(mixed ? SIM_MIXED_KINDS : []),
+    ];
+    const notReady = (adapterId: string): string | undefined => {
+      const k = simAdapters().find((x) => x.id === adapterId);
+      return k && k.state === 'ready' ? undefined : 'This agent kind is not ready on this computer. Open "About agent kinds" for what is missing.';
+    };
     let started = false;
     let extra = 0;
     const api: DurbarApi = {
@@ -872,13 +988,17 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       ...capApi,
       ...modelApi,
       version: async () => 'sim',
+      // Spec 012 T017 (FR-063): only Copilot by default; simkinds=1 adds a Claude Code that is not installed and a Codex that is too old.
+      listAdapters: async () => simAdapters(),
       addFolder: async (_mode, o) => {
+        const bad = o && o.adapterId !== undefined ? notReady(o.adapterId) : undefined;
+        if (bad) return { ok: false, agents: [], error: bad }; // like main: nothing starts, nothing is written
         extra++;
         const cwd = '~/work/new-folder-' + extra;
         const floor = o && typeof o.floor === 'string' && floorsList.some((f) => f.id === o.floor) ? o.floor : 'ground';
         if (o && o.floor !== undefined) lastFloor = floor;
         folderFloor.set(cwd, floor);
-        const info = { id: 'sim-x' + extra, name: 'new-folder-' + extra, cwd, folders: [cwd], permMode: 'read-only', floor } as AgentInfo;
+        const info = { id: 'sim-x' + extra, name: 'new-folder-' + extra, cwd, folders: [cwd], permMode: 'read-only', floor, adapterId: mixed && o && o.adapterId ? o.adapterId : 'copilot' } as AgentInfo;
         sims.push({ info, room: info.name, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: [], grants: new Map() });
         addedListeners.forEach((l) => l(info));
         return { ok: true, agents: [] };
@@ -958,8 +1078,16 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
       newSession: async (id, o) => {
         const src = sims.find((x) => x.info.id === id);
         if (!src) return { ok: false, error: 'unknown agent' };
+        const bad = o.adapterId !== undefined ? notReady(o.adapterId) : undefined;
+        if (bad) return { ok: false, error: bad };
         extra++;
-        const info = { ...src.info, id: 'sim-n' + extra, permMode: o.permMode ?? src.info.permMode, model: o.model ?? 'auto', tier: undefined, effort: o.effort, maxAiCredits: o.maxAiCredits === null ? undefined : o.maxAiCredits ?? defaultCap } as AgentInfo;
+        const info = { ...src.info, adapterId: o.adapterId ?? src.info.adapterId, id: 'sim-n' + extra, permMode: o.permMode ?? src.info.permMode, model: o.model ?? 'auto', tier: undefined, effort: o.effort, maxAiCredits: o.maxAiCredits === null ? undefined : o.maxAiCredits ?? defaultCap } as AgentInfo;
+        if (mixed) { // the new session follows its kind's capabilities like the roster does
+          const k = caps(info.adapterId ?? 'copilot');
+          if (!k.caps) info.maxAiCredits = undefined;
+          if (!k.permissionModes.includes(info.permMode)) info.permMode = 'read-only';
+          if (!k.models) info.modelControl = { switch: 'none', effort: false, contextTier: false, compact: false, windowKnown: true };
+        }
         sims.push({ info, room: src.room, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: src.files, grants: new Map() });
         return { ok: true, agent: info };
       },

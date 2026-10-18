@@ -3,8 +3,16 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CopilotAdapter } from '../adapters/copilot';
+import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
+import { createRegistry, detectAll } from '../adapters/registry';
+import { detectorFor } from '../adapters/detect';
+import { adapterForAdd, createRouter, historyOf, modelOptionsOf, previousSessionsOf } from '../adapters/router';
+import { errText, restorable, setCapOp, setModeOp, stopTurnOp, validMode } from './agentops';
+import type { OpsDeps } from './agentops';
+import { adapterOf } from './folders';
 import type { AgentAdapter } from '../adapters/types';
+import type { AdapterInfo } from '../shared/adapters';
+import { startOptionsOf } from './startopts';
 import { resolveWorkspaceCwd } from '../adapters/workspace';
 import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, stageAttachment } from '../shared/attachments';
 import type { AddResult, AgentInfo, FloorsResult, FloorsState, ModelChoice, PermMode, PickedFile, ResumeResult, SessionOptions, VsChatListResult } from '../shared/api';
@@ -54,11 +62,11 @@ let usageTotalsStore: UsageTotalsStore | undefined;
 const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
 
-const adapter = new CopilotAdapter();
-/** The same adapter through the adapter-neutral interface: its optional members (`setModel`, `compact`, ...) say what it can do (spec 030 FR-017). */
-const generic: AgentAdapter = adapter;
+/** Only Copilot is registered; every agent is routed to its adapter through the router (spec 012 FR-046..FR-050). Adapters are typed as the neutral interface: optional members say what each can do (spec 030 FR-017, spec 012 FR-027). */
+const registry = createRegistry(PRODUCTION_DESCRIPTORS);
+const router = createRouter(registry);
 const agents = new Map<string, AgentInfo>();
-const mcp = registerMcpIpc({ store: () => mcpStore as McpStore, agents, adapter, dev });
+const mcp = registerMcpIpc({ store: () => mcpStore as McpStore, agents, router, dev });
 /** Files the user picked through the native dialog; only these can be attached. */
 const pickedFiles = new Set<string>();
 /** Private folder for pasted / dropped files (removed on quit). */
@@ -77,18 +85,18 @@ const toRenderer = (channel: string, payload: unknown): void => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 };
 
-adapter.onEvent((e) => toRenderer('agent:event', e));
+router.onEvent((e) => toRenderer('agent:event', e));
 /** Key an agent's all-time counts are kept under: "<agent name> · <folder name>" (base name only, spec 020). */
 const usageLabel = (a: AgentInfo): string => agentLabel(a.name, a.workspaceFile ? path.basename(a.workspaceFile).replace(/\.code-workspace$/i, '') : a.cwd);
 // All-time tool usage is counted here, not in the window, so it also counts while the Tools view is closed (spec 020 FR-006).
-adapter.onEvent((e) => {
+router.onEvent((e) => {
   if (e.type !== 'toolCall') return;
   const a = agents.get(e.sessionId);
   if (a) usageStore?.record(usageLabel(a), e);
 });
 // Credit totals per folder are kept here too (spec 011 FR-026): one record per `usage` event of a known agent (helpers report through
 // their agent), so they also count while no window is open. Only numbers, the folder's display name and a hash of its path are saved.
-adapter.onEvent((e) => {
+router.onEvent((e) => {
   if (e.type !== 'usage') return;
   const a = agents.get(e.sessionId);
   if (a) usageTotalsStore?.record(folderKeyOf(a), folderNameOf(a), e);
@@ -110,7 +118,7 @@ const usageTotalsView = (): unknown => {
   return { ok: true, since: b.since, office: b.office, folders, error: st.lastError };
 };
 // The runtime confirms the cap now in force (also after a change made by another client): keep AgentInfo and the folder's saved cap in step.
-adapter.onEvent((e) => {
+router.onEvent((e) => {
   if (e.type !== 'limit' || e.phase !== 'changed') return;
   const a = agents.get(e.sessionId);
   if (!a) return;
@@ -119,7 +127,7 @@ adapter.onEvent((e) => {
 });
 
 /** Keep AgentInfo in step with the model the runtime reports. Only a switch the user asked for is saved with the folder; a runtime fallback (rate limit, refusal) is shown but never becomes the folder's choice (spec 030 FR-015). */
-adapter.onEvent((e) => {
+router.onEvent((e) => {
   if (e.type !== 'model' || e.agentId) return;
   const a = agents.get(e.sessionId);
   if (!a) return;
@@ -135,8 +143,8 @@ adapter.onEvent((e) => {
 if (dev.DURBAR_LOG) {
   const logFile = dev.DURBAR_LOG;
   const write = (o: unknown): void => fs.appendFileSync(logFile, JSON.stringify(o) + '\n');
-  adapter.onEvent((e) => write({ t: Date.now(), event: e }));
-  adapter.debug = (m) => write({ t: Date.now(), debug: m });
+  router.onEvent((e) => write({ t: Date.now(), event: e }));
+  router.setDebug((m) => write({ t: Date.now(), debug: m }));
 }
 
 ipcMain.handle('app:openExternal', async (_e, url: unknown) => {
@@ -145,7 +153,7 @@ ipcMain.handle('app:openExternal', async (_e, url: unknown) => {
   return { ok: true };
 });
 
-const infoFor = (workspace: string, permMode: PermMode, id: string, model: string, effort: string | undefined, extra: Partial<AgentInfo> = {}): AgentInfo => {
+const infoFor = (workspace: string, permMode: PermMode, id: string, model: string, effort: string | undefined, extra: Partial<AgentInfo> = {}, ad: AgentAdapter = router.instance(registry.defaultId)): AgentInfo => {
   const ws = resolveWorkspaceCwd(workspace);
   return {
     id,
@@ -157,38 +165,37 @@ const infoFor = (workspace: string, permMode: PermMode, id: string, model: strin
     model,
     effort,
     // `unverified`: the real adapter's switch/compact calls come from the SDK docs and were never run on an account (spec 030 Phase 3).
-    modelControl: modelControlFor(generic, { unverified: true }),
+    modelControl: modelControlFor(ad, { unverified: true }),
+    adapterId: ad.id,
     ...extra,
   };
 };
 
 const startOptionsFor = (a: AgentInfo) => ({
-  workspace: wsKey(a),
-  model: a.model ?? DEFAULT_MODEL,
-  reasoningEffort: asEffort(a.effort),
-  // The saved choice goes on create AND resume (spec 030 FR-013); the adapter only uses `autoTier` for a NEW `auto` session.
-  contextTier: a.tier,
-  autoTier: (a.model ?? DEFAULT_MODEL) === 'auto' ? ('efficiency' as const) : undefined,
-  allow: a.permMode === 'allow',
-  ask: a.permMode === 'ask',
-  maxAiCredits: a.maxAiCredits,
+  ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort)),
   ...mcp.optionsFor(a.id),
 });
 
 async function addWorkspace(
   workspace: string,
   permMode: PermMode,
-  opts: { resumeSessionId?: string; silent?: boolean; model?: string; effort?: string; persist?: boolean; maxAiCredits?: number | null; floor?: string } = {},
+  opts: { resumeSessionId?: string; silent?: boolean; model?: string; effort?: string; persist?: boolean; maxAiCredits?: number | null; floor?: string; adapterId?: string; readyIds?: ReadonlySet<string> } = {},
 ): Promise<AgentInfo> {
   const model = opts.model || DEFAULT_MODEL;
   const effort = asEffort(opts.effort);
-  const draft = infoFor(workspace, permMode, '', model, effort);
+  const wsr = resolveWorkspaceCwd(workspace);
+  const picked = adapterForAdd(opts.adapterId, (() => { const f = folderStore?.get(wsr.workspaceFile ?? wsr.cwd); return f ? adapterOf(f) : undefined; })(), (i) => registry.has(i), registry.defaultId, opts.readyIds && ((i) => opts.readyIds!.has(i)));
+  if ('error' in picked) throw new Error(picked.error); // nothing started, nothing written
+  const adapterId = picked.id;
+  const ad = router.instance(adapterId);
+  const draft = infoFor(workspace, permMode, '', model, effort, {}, ad);
   // Cap: explicit choice (null = none) > the folder's saved cap > the global default (spec 011).
   draft.maxAiCredits = opts.maxAiCredits === null ? undefined : (opts.maxAiCredits ?? folderStore?.get(wsKey(draft))?.maxAiCredits ?? settingsStore?.defaultMaxAiCredits);
-  const id = await adapter.start({ ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId });
+  const id = await ad.start({ ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId });
+  router.bind(id, adapterId);
   const info: AgentInfo = { ...draft, id, hidden: folderStore?.get(wsKey(draft))?.hidden, closed: folderStore?.get(wsKey(draft))?.closed };
   agents.set(id, info);
-  if (opts.persist) folderStore?.upsert({ workspace: wsKey(info), permMode, model, effort, maxAiCredits: info.maxAiCredits, floor: opts.floor });
+  if (opts.persist) folderStore?.upsert({ workspace: wsKey(info), permMode, model, effort, maxAiCredits: info.maxAiCredits, floor: opts.floor, adapterId });
   // An existing folder keeps its floor; a new one gets the chosen floor (spec 033 FR-006).
   info.floor = folderStore?.floorOfFolder(wsKey(info)) ?? GROUND;
   if (!opts.silent) toRenderer('agent:added', info);
@@ -198,10 +205,12 @@ async function addWorkspace(
 /** Make sure the agent has a live runtime session: resume it by id when it has history, else start one under that id. */
 const starting = new Map<string, Promise<void>>();
 async function ensureLive(a: AgentInfo): Promise<void> {
-  if (adapter.isLive(a.id)) return;
+  const ad = router.forAgent(a.id);
+  if (!ad) throw new Error('unknown agent');
+  if (ad.isLive(a.id)) return;
   let p = starting.get(a.id);
   if (!p) {
-    p = adapter.start({ ...startOptionsFor(a), sessionId: a.id, quiet: true }).then(() => {
+    p = ad.start({ ...startOptionsFor(a), sessionId: a.id, quiet: true }).then(() => {
       a.lazy = false;
     });
     starting.set(a.id, p);
@@ -213,9 +222,10 @@ async function ensureLive(a: AgentInfo): Promise<void> {
 async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions & { persist?: boolean } = {}): Promise<AddResult> {
   const added: AgentInfo[] = [];
   const errors: string[] = [];
+  const readyIds = opts.adapterId !== undefined ? await readyAdapterIds() : undefined; // a kind the user picked must be ready (FR-058)
   for (const p of paths) {
     try {
-      added.push(await addWorkspace(p, permMode, { model: opts.model, effort: opts.effort, persist: opts.persist, maxAiCredits: opts.maxAiCredits, floor: opts.floor }));
+      added.push(await addWorkspace(p, permMode, { model: opts.model, effort: opts.effort, persist: opts.persist, maxAiCredits: opts.maxAiCredits, floor: opts.floor, adapterId: opts.adapterId, readyIds }));
     } catch (err) {
       errors.push(`${path.basename(p)}: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -226,11 +236,12 @@ async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions
 /** Folders remembered from earlier runs come back as "not started" agents: nothing runs until the first message. */
 function restoreFolders(): void {
   if (!folderStore) return;
-  for (const f of folderStore.load()) {
+  for (const { folder: f, adapterId } of restorable(folderStore.load(), (i) => registry.has(i), console.warn)) {
     try {
       if (!fs.existsSync(f.workspace)) continue; // e.g. an unplugged drive: stays saved, just not shown
       const rm = restoreMode(f.permMode); // exactly as saved, Allow all included, flagged so the UI shows "restored" (spec 003 FR-025/026)
-      const info = infoFor(f.workspace, rm.mode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, maxAiCredits: f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits });
+      const info = infoFor(f.workspace, rm.mode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, maxAiCredits: f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(adapterId));
+      router.bind(info.id, adapterId);
       agents.set(info.id, info);
     } catch {
       /* folder gone or not a folder any more */
@@ -238,15 +249,13 @@ function restoreFolders(): void {
   }
 }
 
-const validMode = (m: unknown): PermMode => (m === 'ask' || m === 'allow' ? m : 'read-only');
-
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('agents:list', () => [...agents.values()]);
 
 const sessionOpts = (o: unknown): SessionOptions & { persist: boolean } => {
   const x = (o && typeof o === 'object' ? o : {}) as Record<string, unknown>;
   const cap = x.maxAiCredits === null ? null : parseCap(x.maxAiCredits);
-  return { model: typeof x.model === 'string' ? x.model.slice(0, 100) : undefined, effort: asEffort(x.effort), maxAiCredits: cap, floor: typeof x.floor === 'string' ? x.floor.slice(0, 20) : undefined, persist: true };
+  return { model: typeof x.model === 'string' ? x.model.slice(0, 100) : undefined, effort: asEffort(x.effort), maxAiCredits: cap, floor: typeof x.floor === 'string' ? x.floor.slice(0, 20) : undefined, adapterId: typeof x.adapterId === 'string' ? x.adapterId.slice(0, 40) : undefined, persist: true };
 };
 
 ipcMain.handle('agents:addFolder', async (_e, mode: unknown, opts: unknown) => {
@@ -268,13 +277,13 @@ ipcMain.handle('agents:addWorkspaceFile', async (_e, mode: unknown, opts: unknow
 const vsUserDirs = (): UserDir[] =>
   dev.DURBAR_VSCODE_USER_DIR ? [{ product: 'Test', dir: dev.DURBAR_VSCODE_USER_DIR }] : vscodeUserDirs();
 const vsChatRefs = new Map<string, Map<string, ChatFileRef>>();
-const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 ipcMain.handle('sessions:listPrevious', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
-  if (!a) return { ok: false, error: 'unknown agent', sessions: [] };
+  const ad = a ? router.forAgent(a.id) : undefined;
+  if (!a || !ad) return { ok: false, error: 'unknown agent', sessions: [] };
   try {
-    return { ok: true, sessions: await adapter.listPreviousSessions(a.cwd, new Set(agents.keys())) };
+    return { ok: true, sessions: await previousSessionsOf(ad, a.cwd, new Set(agents.keys())) };
   } catch (err) {
     return { ok: false, error: errText(err), sessions: [] };
   }
@@ -282,24 +291,26 @@ ipcMain.handle('sessions:listPrevious', async (_e, id: unknown) => {
 
 ipcMain.handle('sessions:resume', async (_e, id: unknown, sessionId: unknown, replace: unknown): Promise<ResumeResult> => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
-  if (!a) return { ok: false, error: 'unknown agent' };
+  const ad = a ? router.forAgent(a.id) : undefined;
+  if (!a || !ad) return { ok: false, error: 'unknown agent' };
   if (typeof sessionId !== 'string' || agents.has(sessionId)) return { ok: false, error: 'That session is already open.' };
   try {
     // Only sessions that belong to this agent's folder can be resumed (re-checked here, not trusted from the UI).
-    const prev = (await adapter.listPreviousSessions(a.cwd, new Set(agents.keys()))).find((s) => s.id === sessionId);
+    const prev = (await previousSessionsOf(ad, a.cwd, new Set(agents.keys()))).find((s) => s.id === sessionId);
     if (!prev) return { ok: false, error: 'That session is no longer available for this folder.' };
     // Resume first; only then retire the untouched agent, so a failed resume leaves everything as it was.
-    const info = await addWorkspace(a.workspaceFile ?? a.cwd, a.permMode, { resumeSessionId: sessionId, silent: true });
+    const info = await addWorkspace(a.workspaceFile ?? a.cwd, a.permMode, { resumeSessionId: sessionId, silent: true, adapterId: router.adapterIdOf(a.id) });
     let history: ResumeResult['history'];
     try {
-      history = await adapter.history(info.id);
+      history = await historyOf(router.forAgent(info.id) ?? ad, info.id);
     } catch {
       history = { items: [], total: 0, truncated: false };
     }
     let removedId: string | undefined;
     if (replace === true) {
       removedId = id as string;
-      await adapter.stop(removedId);
+      await ad.stop(removedId);
+      router.unbind(removedId);
       agents.delete(removedId);
     }
     return { ok: true, agent: info, removedId, title: prev.title, history };
@@ -358,7 +369,8 @@ ipcMain.handle('agents:stageAttachment', (_e, name: unknown, mime: unknown, data
 });
 
 ipcMain.handle('agents:send', async (_e, id: string, text: string, attachments: PickedFile[]) => {
-  if (!agents.has(id)) return { ok: false, error: 'unknown agent' };
+  const ad = agents.has(id) ? router.forAgent(id) : undefined;
+  if (!ad) return { ok: false, error: 'unknown agent' };
   const safe = (Array.isArray(attachments) ? attachments : []).filter((a) => pickedFiles.has(a.path));
   // Caps are enforced here too, not only in the UI.
   if (safe.length > MAX_ATTACH_FILES) return { ok: false, error: `Up to ${MAX_ATTACH_FILES} attachments per message (got ${safe.length}).` };
@@ -369,7 +381,7 @@ ipcMain.handle('agents:send', async (_e, id: string, text: string, attachments: 
   }
   try {
     await ensureLive(agents.get(id) as AgentInfo); // an ended or not-yet-started agent starts (resumes) its session here
-    await adapter.send(id, {
+    await ad.send(id, {
       text: String(text),
       attachments: safe.map((a) => ({ path: a.path, kind: a.kind === 'image' ? 'image' : 'file' })),
     });
@@ -379,13 +391,13 @@ ipcMain.handle('agents:send', async (_e, id: string, text: string, attachments: 
   }
 });
 
+// The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
+const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey };
 // Stop only interrupts the running turn (the agent returns to Ready); End session frees the runtime session.
-ipcMain.handle('agents:stop', async (_e, id: string) => {
-  if (agents.has(id)) await adapter.interrupt(id);
-});
+ipcMain.handle('agents:stop', (_e, id: string) => stopTurnOp(opsDeps, id));
 
 ipcMain.handle('agents:end', async (_e, id: string) => {
-  if (agents.has(id)) await adapter.stop(id);
+  if (agents.has(id)) await router.forAgent(id)?.stop(id);
 });
 
 ipcMain.handle('agents:newSession', async (_e, id: unknown, opts: unknown) => {
@@ -394,7 +406,10 @@ ipcMain.handle('agents:newSession', async (_e, id: unknown, opts: unknown) => {
   const o = (opts && typeof opts === 'object' ? opts : {}) as Record<string, unknown>;
   try {
     const mode = o.permMode === undefined ? a.permMode : validMode(o.permMode);
-    const agent = await addWorkspace(wsKey(a), mode, { model: typeof o.model === 'string' ? o.model.slice(0, 100) : a.model, effort: asEffort(o.effort) ?? undefined, maxAiCredits: o.maxAiCredits === null ? null : parseCap(o.maxAiCredits) });
+    // The dialog's kind (FR-059); none = the current agent's kind. A kind the user picked must be ready (FR-058).
+    const picked = typeof o.adapterId === 'string' ? o.adapterId.slice(0, 40) : undefined;
+    const readyIds = picked !== undefined ? await readyAdapterIds() : undefined;
+    const agent = await addWorkspace(wsKey(a), mode, { model: typeof o.model === 'string' ? o.model.slice(0, 100) : picked !== undefined && picked !== router.adapterIdOf(a.id) ? undefined : a.model, effort: asEffort(o.effort) ?? undefined, maxAiCredits: o.maxAiCredits === null ? null : parseCap(o.maxAiCredits), adapterId: picked ?? router.adapterIdOf(a.id), readyIds });
     return { ok: true, agent };
   } catch (err) {
     return { ok: false, error: errText(err) };
@@ -416,7 +431,7 @@ ipcMain.handle('usage:reset', () => {
   usageStore?.reset();
   return { ok: true, doc: usageStore?.view() };
 });
-ipcMain.handle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits, placeMap: settingsStore?.placeMap ?? {}, seriousMode: settingsStore?.seriousMode ?? false, theme: settingsStore?.theme ?? 'clean-office', about: aboutView(app.getVersion()) }));
+ipcMain.handle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits, placeMap: settingsStore?.placeMap ?? {}, customPlaces: settingsStore?.customPlaces ?? [], seriousMode: settingsStore?.seriousMode ?? false, theme: settingsStore?.theme ?? 'clean-office', about: aboutView(app.getVersion()) }));
 ipcMain.handle('settings:setSeriousMode', (_e, on: unknown) => ({ ok: true, seriousMode: settingsStore?.setSeriousMode(on) ?? false }));
 ipcMain.handle('settings:setTheme', (_e, id: unknown) => settingsStore ? settingsStore.setTheme(id) : { ok: false });
 /* User themes (spec 040): `userData/themes/<id>/manifest.json`, import/export by folder pick. Dev hook DURBAR_PICK answers the dialog in checks. */
@@ -441,33 +456,26 @@ ipcMain.handle('theme:export', async (_e, id: unknown) => {
   return userThemes.exportFolder(id, dir);
 });
 ipcMain.handle('settings:setPlace', (_e, server: unknown, place: unknown) => settingsStore?.setPlace(server, place) ?? { ok: false });
+ipcMain.handle('settings:addPlace', (_e, name: unknown, icon: unknown) => settingsStore?.addPlace(name, icon) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
+ipcMain.handle('settings:updatePlace', (_e, id: unknown, patch: unknown) => settingsStore?.updatePlace(id, patch) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
+ipcMain.handle('settings:removePlace', (_e, id: unknown) => settingsStore?.removePlace(id) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
 ipcMain.handle('settings:setDefaultCap', (_e, credits: unknown) => ({ ok: true, defaultMaxAiCredits: settingsStore?.setDefaultMaxAiCredits(credits) }));
 
 ipcMain.handle('agents:setCap', async (_e, id: unknown, credits: unknown) => {
-  const a = typeof id === 'string' ? agents.get(id) : undefined;
-  if (!a) return { ok: false, error: 'unknown agent' };
-  const cap = credits === null ? undefined : parseCap(credits);
-  if (credits !== null && cap === undefined) return { ok: false, error: 'The cap must be a number of at least 30 AI credits (the runtime minimum).' };
-  try {
-    if (adapter.isLive(a.id)) await adapter.setCap(a.id, cap ?? null); // not started yet: applied when the session starts
-    a.maxAiCredits = cap;
-    folderStore?.setMaxAiCredits(wsKey(a), cap);
-    return { ok: true, maxAiCredits: cap };
-  } catch (err) {
-    return { ok: false, error: errText(err) };
-  }
+  return setCapOp(opsDeps, id, credits);
 });
 
 ipcMain.handle('agents:resolveLimit', async (_e, id: unknown, requestId: unknown, choice: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
-  if (!a || typeof requestId !== 'string' || !adapter.isLive(a.id)) return { ok: false, error: 'unknown agent' };
+  const ad = a ? router.forAgent(a.id) : undefined;
+  if (!a || !ad || typeof requestId !== 'string' || !ad.isLive(a.id)) return { ok: false, error: 'unknown agent' };
   const c = (choice && typeof choice === 'object' ? choice : {}) as Record<string, unknown>;
   const add = parseAmount(c.credits);
   const setTo = parseCap(c.credits);
   const action = c.kind === 'add' && add ? { kind: 'add' as const, credits: add } : c.kind === 'set' && setTo ? { kind: 'set' as const, credits: setTo } : c.kind === 'unset' ? { kind: 'unset' as const } : c.kind === 'cancel' ? { kind: 'cancel' as const } : undefined;
   if (!action) return { ok: false, error: 'Invalid choice.' };
   try {
-    await adapter.resolveLimit(a.id, requestId, action);
+    await ad.resolveLimit?.(a.id, requestId, action);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: errText(err) };
@@ -477,21 +485,22 @@ ipcMain.handle('agents:resolveLimit', async (_e, id: unknown, requestId: unknown
 /** The last list of models the account offers; a switch request is checked against it (spec 030 FR-018). */
 let lastModels: ModelChoice[] = [];
 const modelsForValidation = async (): Promise<ModelChoice[]> => {
-  if (!lastModels.length) lastModels = (await adapter.listModelOptions()).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
+  if (!lastModels.length) lastModels = (await modelOptionsOf(router.instance(registry.defaultId))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
   return lastModels;
 };
 const NO_SWITCH = 'This agent cannot change its model in place. Start a new session with the model you want.';
 
 ipcMain.handle('agents:setModel', async (_e, id: unknown, raw: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
-  if (!a) return { ok: false, error: 'unknown agent' };
-  if (typeof generic.setModel !== 'function') return { ok: false, error: NO_SWITCH };
+  const ad = a ? router.forAgent(a.id) : undefined;
+  if (!a || !ad) return { ok: false, error: 'unknown agent' };
+  if (typeof ad.setModel !== 'function') return { ok: false, error: NO_SWITCH };
   try {
     const parsed = parseSwitchRequest(raw, await modelsForValidation());
     if (!parsed.ok) return { ok: false, error: parsed.error };
     const req: ModelSwitchRequest = parsed.request;
     // Not started (or ended) yet: nothing is running to switch. The choice is saved and the first start (create or resume) uses it (FR-013).
-    const result: ModelSwitchResult = adapter.isLive(a.id) ? await generic.setModel(a.id, req) : { status: 'applied', model: req.model, message: 'Used from the first message: this agent has not started yet.' };
+    const result: ModelSwitchResult = ad.isLive(a.id) ? await ad.setModel(a.id, req) : { status: 'applied', model: req.model, message: 'Used from the first message: this agent has not started yet.' };
     if (result.status === 'applied') {
       // Saved only in this app's own folder file; never in Copilot's settings (no repoScope / modelChangeScope / pickerPersistence is ever sent).
       a.model = req.model;
@@ -508,10 +517,11 @@ ipcMain.handle('agents:setModel', async (_e, id: unknown, raw: unknown) => {
 
 ipcMain.handle('agents:cancelQueuedModel', async (_e, id: unknown, queueId: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
-  if (!a || typeof queueId !== 'string' || !queueId || queueId.length > 200) return { ok: false, error: 'unknown agent' };
-  if (typeof generic.cancelQueuedModel !== 'function') return { ok: false, error: NO_SWITCH };
+  const ad = a ? router.forAgent(a.id) : undefined;
+  if (!a || !ad || typeof queueId !== 'string' || !queueId || queueId.length > 200) return { ok: false, error: 'unknown agent' };
+  if (typeof ad.cancelQueuedModel !== 'function') return { ok: false, error: NO_SWITCH };
   try {
-    await generic.cancelQueuedModel(a.id, queueId);
+    await ad.cancelQueuedModel(a.id, queueId);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: errText(err) };
@@ -520,11 +530,12 @@ ipcMain.handle('agents:cancelQueuedModel', async (_e, id: unknown, queueId: unkn
 
 ipcMain.handle('agents:compact', async (_e, id: unknown, focus: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
-  if (!a) return { ok: false, error: 'unknown agent' };
-  if (typeof generic.compact !== 'function') return { ok: false, error: 'This agent cannot compact its context in place. Start a new session instead.' };
+  const ad = a ? router.forAgent(a.id) : undefined;
+  if (!a || !ad) return { ok: false, error: 'unknown agent' };
+  if (typeof ad.compact !== 'function') return { ok: false, error: 'This agent cannot compact its context in place. Start a new session instead.' };
   try {
-    if (!adapter.isLive(a.id)) return { ok: true, result: { success: false, message: 'This agent has not started yet, so there is nothing to compact.' } };
-    return { ok: true, result: await generic.compact(a.id, parseFocus(focus)) };
+    if (!ad.isLive(a.id)) return { ok: true, result: { success: false, message: 'This agent has not started yet, so there is nothing to compact.' } };
+    return { ok: true, result: await ad.compact(a.id, parseFocus(focus)) };
   } catch (err) {
     return { ok: false, error: errText(err) }; // the focus text is never logged or echoed
   }
@@ -532,13 +543,29 @@ ipcMain.handle('agents:compact', async (_e, id: unknown, focus: unknown) => {
 
 ipcMain.handle('models:list', async (): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }> => {
   try {
-    const models = (await adapter.listModelOptions()).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
+    const models = (await modelOptionsOf(router.instance(registry.defaultId))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
     lastModels = models;
     return { ok: true, models };
   } catch (err) {
     return { ok: false, error: errText(err), models: [] };
   }
 });
+
+/** Which adapters exist and whether each can run (spec 012 FR-033, FR-034). Cached; `refresh` probes again. Runs no session and spends no credits. */
+let adaptersInfo: Promise<AdapterInfo[]> | undefined;
+const adaptersList = (refresh: boolean): Promise<AdapterInfo[]> => {
+  if (!adaptersInfo || refresh) adaptersInfo = detectAll(registry, (d) => detectorFor(d.id)?.(d) ?? Promise.resolve({ state: 'unknown' as const }));
+  return adaptersInfo;
+};
+ipcMain.handle('adapters:list', (_e, refresh: unknown): Promise<AdapterInfo[]> => adaptersList(refresh === true));
+/** Ids whose cached state is `ready`; a failed probe counts as none (spec 012 FR-058). */
+const readyAdapterIds = async (): Promise<ReadonlySet<string>> => {
+  try {
+    return new Set((await adaptersList(false)).filter((i) => i.state === 'ready').map((i) => i.id));
+  } catch {
+    return new Set();
+  }
+};
 
 ipcMain.handle('folders:setHidden', (_e, id: unknown, hidden: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
@@ -583,17 +610,7 @@ ipcMain.handle('folders:setClosed', (_e, id: unknown, closed: unknown) => {
   return { ok: true };
 });
 
-ipcMain.handle('agents:setMode', (_e, id: unknown, mode: unknown, opts: unknown) => {
-  const a = typeof id === 'string' ? agents.get(id) : undefined;
-  if (!a) return { ok: false, error: 'unknown agent' };
-  const o = (opts && typeof opts === 'object' ? opts : {}) as Record<string, unknown>;
-  const m = validMode(mode);
-  a.permMode = m;
-  a.permRestored = undefined; // a fresh choice, no longer "restored"
-  const r = adapter.setPermMode(a.id, m, { clearGrants: o.clearGrants === true, approvePending: o.approvePending === true });
-  folderStore?.setPermMode(wsKey(a), m);
-  return { ok: true, mode: m, pending: r.pending };
-});
+ipcMain.handle('agents:setMode', (_e, id: unknown, mode: unknown, opts: unknown) => setModeOp(opsDeps, id, mode, opts));
 
 ipcMain.handle('folders:remove', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
@@ -602,10 +619,11 @@ ipcMain.handle('folders:remove', async (_e, id: unknown) => {
   const removedIds = [...agents.values()].filter((x) => wsKey(x) === key).map((x) => x.id);
   for (const rid of removedIds) {
     try {
-      await adapter.stop(rid); // no-op when it is not running; the history stays in ~/.copilot
+      await router.forAgent(rid)?.stop(rid); // no-op when it is not running; the history stays in ~/.copilot
     } catch {
       /* already gone */
     }
+    router.unbind(rid);
     agents.delete(rid);
     vsChatRefs.delete(rid);
   }
@@ -614,11 +632,11 @@ ipcMain.handle('folders:remove', async (_e, id: unknown) => {
 });
 
 ipcMain.handle('agents:resolvePermission', (_e, id: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean) => {
-  if (agents.has(id)) adapter.resolvePermission(id, String(requestId), approve === true, approve === true && remember === true, approve === true && remember === true && broad === true);
+  if (agents.has(id)) router.forAgent(id)?.resolvePermission?.(id, String(requestId), approve === true, approve === true && remember === true, approve === true && remember === true && broad === true);
 });
 
 ipcMain.handle('agents:revokeGrant', (_e, id: string, key: string) => {
-  if (agents.has(id)) adapter.revokeGrant(id, String(key));
+  if (agents.has(id)) router.forAgent(id)?.revokeGrant?.(id, String(key));
 });
 
 ipcMain.handle('agents:openInVSCode', (_e, id: string) => {
@@ -654,6 +672,7 @@ function createWindow(): void {
     if (dev.DURBAR_SIM_FREEZE === '1') query.simfreeze = '1';
     if (dev.DURBAR_SIM_ROOMS) query.simrooms = dev.DURBAR_SIM_ROOMS;
     if (dev.DURBAR_SIM_FLOORS === '1') query.simfloors = '1';
+    if (/^[0-3]$/.test(dev.DURBAR_SIM_PLACES ?? '')) query.simplaces = dev.DURBAR_SIM_PLACES as string; // spec 024 FR-026: custom places seeded in the simulator
     if (dev.DURBAR_SIM_FLOORS_OFF) query.floorsoff = dev.DURBAR_SIM_FLOORS_OFF.slice(0, 200);
   }
   void win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query });
@@ -718,7 +737,7 @@ app.whenReady().then(() => {
     };
     win?.webContents.once('did-finish-load', () => {
       const driver = require(dev.DURBAR_DRIVER as string) as (c: typeof ctx) => Promise<void>;
-      void driver(ctx).catch((err) => console.error('DRIVER FAILED', err)).finally(() => void adapter.dispose().finally(() => app.exit(0)));
+      void driver(ctx).catch((err) => console.error('DRIVER FAILED', err)).finally(() => void router.disposeAll().finally(() => app.exit(0)));
     });
   }
   app.on('activate', () => {
@@ -733,7 +752,7 @@ app.on('will-quit', () => {
 });
 
 app.on('window-all-closed', () => {
-  void adapter.dispose().finally(() => {
+  void router.disposeAll().finally(() => {
     if (process.platform !== 'darwin') app.quit();
   });
 });

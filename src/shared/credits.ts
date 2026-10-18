@@ -3,8 +3,8 @@
  * carries a tiny copy of `fmtAiu`; main re-validates every number it receives with `parseCap`.
  * Numbers only: nothing here touches content, tokens or secrets.
  */
-import { parsePlaceMap } from './places';
-import type { PlaceMap } from './places';
+import { parseCustomPlaces, parsePlaceMap } from './places';
+import type { CustomPlace, PlaceMap } from './places';
 
 /** Upper bound for a cap (AI credits). Anything above is refused as a typo. */
 export const MAX_CAP = 1_000_000;
@@ -46,6 +46,8 @@ export interface AppSettings {
   defaultMaxAiCredits?: number;
   /** MCP server name -> place (spec 024 FR-007). Omitted when empty. */
   placeMap?: PlaceMap;
+  /** The user's own places (spec 024 FR-018): up to 3, names and icon ids. Omitted when empty. */
+  customPlaces?: CustomPlace[];
   /** Serious mode (spec 034 FR-004): no heavy or monster bodies and no trouble drawings on the agent figures. Only `true` is kept. */
   seriousMode?: boolean;
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
@@ -55,12 +57,14 @@ export interface AppSettings {
 /** Tolerant parse: a missing, corrupt or odd file means no settings. */
 export function parseSettings(text: string): AppSettings {
   try {
-    const doc = JSON.parse(text) as { defaultMaxAiCredits?: unknown; placeMap?: unknown; seriousMode?: unknown; theme?: unknown } | null;
+    const doc = JSON.parse(text) as { defaultMaxAiCredits?: unknown; placeMap?: unknown; customPlaces?: unknown; seriousMode?: unknown; theme?: unknown } | null;
     const obj = doc && typeof doc === 'object' && !Array.isArray(doc) ? doc : {};
     const cap = parseCap((obj as { defaultMaxAiCredits?: unknown }).defaultMaxAiCredits);
-    const places = parsePlaceMap((obj as { placeMap?: unknown }).placeMap);
+    // the custom places first: the mapping may only point to ones that exist (spec 024 FR-019)
+    const custom = parseCustomPlaces((obj as { customPlaces?: unknown }).customPlaces);
+    const places = parsePlaceMap((obj as { placeMap?: unknown }).placeMap, custom.map((p) => p.id));
     const theme = parseThemeId((obj as { theme?: unknown }).theme);
-    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}), ...(theme === undefined ? {} : { theme }) };
+    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...(custom.length ? { customPlaces: custom } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}), ...(theme === undefined ? {} : { theme }) };
   } catch {
     return {};
   }

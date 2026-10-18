@@ -7,6 +7,9 @@ import type { McpServerInput, McpServerView, McpTransport, McpTrustInfo } from '
 
 export type { McpServerInput, McpServerView, McpTransport, McpTrustInfo };
 
+import type { AdapterInfo } from './adapters';
+export type { AdapterInfo };
+
 export type { HistoryItem, PreviousSession, VsChatSummary, VsChatTranscript };
 
 /** Permission policy chosen when adding a folder. */
@@ -40,6 +43,8 @@ export interface AgentInfo {
   closed?: boolean;
   /** Floor of the folder (spec 033); absent = the ground floor. */
   floor?: string;
+  /** Which adapter runs this agent (spec 012 FR-058), e.g. `copilot`. */
+  adapterId: string;
 }
 
 /** Choices for a new session. */
@@ -51,6 +56,8 @@ export interface SessionOptions {
   effort?: string;
   /** Floor for a folder added now (spec 033 FR-006); unknown = the ground floor. */
   floor?: string;
+  /** Agent kind (adapter id) for a new folder or session (spec 012 FR-058). Unknown or not ready = refused. Unset = the folder's saved kind, else the default. */
+  adapterId?: string;
 }
 
 /** A floor as the renderer sees it (spec 033). */
@@ -87,6 +94,24 @@ export interface UsageTotalsView {
   error?: string;
 }
 
+/** A place the user made (spec 024 FR-018): a name and an icon id from a fixed set. No paths, no content. */
+export interface CustomPlaceView {
+  id: string;
+  name: string;
+  icon: string;
+}
+
+/** Result of adding, changing or removing a custom place (spec 024 FR-020). The list and the map are what is in force after the call, also when it was refused. */
+export interface CustomPlaceResult {
+  ok: boolean;
+  /** One of `name-empty`, `name-long`, `name-taken`, `name-invalid`, `icon`, `limit`, `unknown`. */
+  error?: string;
+  /** The place that was added. */
+  place?: CustomPlaceView;
+  customPlaces: CustomPlaceView[];
+  placeMap: Record<string, string>;
+}
+
 export interface AppSettingsView {
   /** Owner, version and contributors for Settings > About (spec 008 FR-018). */
   about?: AboutView;
@@ -94,6 +119,8 @@ export interface AppSettingsView {
   defaultMaxAiCredits?: number;
   /** Places in the office (spec 024): MCP server name -> place id or `desk`; unmapped servers use the built-in rules. */
   placeMap?: Record<string, string>;
+  /** The user's own places (spec 024 FR-018), up to 3, in creation order. */
+  customPlaces?: CustomPlaceView[];
   /** Serious mode (spec 034): the agent figures show no monster, ambulance or other mood drawing. */
   seriousMode?: boolean;
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
@@ -300,6 +327,8 @@ export interface DurbarApi {
   newSession?(id: string, opts: SessionOptions): Promise<{ ok: boolean; error?: string; agent?: AgentInfo }>;
   /** Models the account offers (no credits used). */
   listModels?(): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }>;
+  /** Adapters and whether each can run (spec 012 FR-033). `refresh` probes again instead of using the cached answer. */
+  listAdapters?(refresh?: boolean): Promise<AdapterInfo[]>;
   /** End the session (frees it; sending again resumes it). `stop` only interrupts the current turn. */
   end?(id: string): Promise<void>;
   /** Open an http(s) link in the system browser (anything else is refused in the main process). */
@@ -333,8 +362,14 @@ export interface DurbarApi {
   /** Credit caps (spec 011). `credits: null` removes the cap. */
   getSettings?(): Promise<AppSettingsView>;
   setDefaultCap?(credits: number | null): Promise<{ ok: boolean; defaultMaxAiCredits?: number }>;
-  /** Map an MCP server to a place (`library|software|terminal|web|other|desk`), or `null` to use the default (spec 024). */
+  /** Map an MCP server to a place (a built-in place id `library|software|terminal|web|other`, a custom place id `c-xxxxxx`, or `desk`), or `null` to use the default (spec 024). */
   setPlace?(server: string, place: string | null): Promise<{ ok: boolean; placeMap?: Record<string, string> }>;
+  /** Custom places (spec 024 FR-020). `icon` is one of 12 ids (`star`, `flask`, `database`, `cloud`, `chart`, `chat`, `mail`, `calendar`, `shield`, `box`, `bolt`, `pin`). */
+  addPlace?(name: string, icon: string): Promise<CustomPlaceResult>;
+  /** Rename and/or change the icon; the id, and so every mapping, stays. */
+  updatePlace?(id: string, patch: { name?: string; icon?: string }): Promise<CustomPlaceResult>;
+  /** Remove a place; the servers that were mapped to it go back to their default place. */
+  removePlace?(id: string): Promise<CustomPlaceResult>;
   /** Turn Serious mode on or off (spec 034). */
   setSeriousMode?(on: boolean): Promise<{ ok: boolean; seriousMode?: boolean }>;
   /** Set the theme (specs 037-040): a built-in id or an imported user theme id. */
@@ -356,6 +391,8 @@ export interface DurbarApi {
   usageResetTotals?(): Promise<UsageTotalsView>;
   /** MCP (specs 019, 020): the Copilot CLI list is global and read live; extras are per folder/workspace key (`workspaceFile ?? cwd`). */
   mcpState?(): Promise<McpState>;
+  /** Names of the extras of every saved folder (any state), nothing else: for the Places list (spec 024 FR-016). */
+  mcpExtraNames?(): Promise<{ ok: boolean; names: string[] }>;
   mcpSetCli?(name: string, enabled: boolean): Promise<{ ok: boolean }>;
   mcpFolderState?(key: string): Promise<McpFolderState>;
   mcpUpsert?(key: string, input: McpServerInput, originalName?: string): Promise<McpResult>;

@@ -13,7 +13,7 @@
  *   - a unit that does not contain its own desk and helpers,
  *   - a helper strip with a background, border or a height that is not its content's (the 2026-10-16 `.strip` collision),
  *   - the floor scrolling or the page overflowing (stage data-fit must be ok), text below 10.5px,
- *   - the lobby (spec 024): missing, sticking out of the floor, overlapping a room or the door plates, not holding its 5 places, a place or slot
+ *   - the lobby (spec 024): missing, sticking out of the floor, overlapping a room or the door plates, not holding its places (5 plus the custom ones, spec 024 FR-026), more than one row of tiles, a missing Add button below 8 tiles or one at 8, a place or slot
  *     sticking out of its tile, a walking figure that is not standing on a slot once the walks have settled, or more figures than empty chairs.
  *   - floors (spec 033, `simfloors=1`): with two or more floors on, a room header or door plate without its floor tag; with one floor on,
  *     any floor tag; the top bar controls overlapping each other or sticking out of the window (the Floors button must fit at 1280x800);
@@ -42,7 +42,7 @@ const SIMS = [12, 15];
 const TOL = 0.5;
 
 /* runs inside the page; returns {problems:[...], info:{...}} */
-function pageCheck(expanded) {
+function pageCheck(expanded, expectPlaces) {
   const T = 0.5;
   const stage = document.getElementById('stage'), floor = document.getElementById('floor');
   const R = (e) => { const b = e.getBoundingClientRect(); return { x: b.left, y: b.top, r: b.right, b: b.bottom, w: b.width, h: b.height }; };
@@ -52,7 +52,7 @@ function pageCheck(expanded) {
     return (e.className && typeof e.className === 'string' ? e.className.split(' ').slice(0, 2).join('.') : e.tagName) + (id ? '[' + id + ']' : pid ? '{' + pid + '}' : '');
   };
   const problems = [];
-  const items = [...stage.querySelectorAll('.desk, .helper, .more, .helpers, .plate, .place')].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
+  const items = [...stage.querySelectorAll('.desk, .helper, .more, .helpers, .plate, .place, .place-add')].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
   for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
     const a = items[i], b = items[j];
     if (a.contains(b) || b.contains(a)) continue; /* a strip contains its tiles */
@@ -86,7 +86,15 @@ function pageCheck(expanded) {
       if (ox > T && oy > T) problems.push(`lobby overlaps ${name(e)} by ${ox.toFixed(1)}x${oy.toFixed(1)}px`);
     });
     const places = [...lobby.querySelectorAll('.place')];
-    if (places.length !== 5) problems.push(`lobby has ${places.length} places, not 5`);
+    if (places.length !== expectPlaces) problems.push(`lobby has ${places.length} places, not ${expectPlaces}`);
+    /* spec 024 FR-022: custom places make tiles narrower, never a second row; the Add button is there below 8 tiles and gone at 8 */
+    const tops = new Set(places.map((pl) => Math.round(R(pl).y)));
+    if (tops.size > 1) problems.push(`lobby tiles are on ${tops.size} rows, not one`);
+    if (L.h > 38) problems.push(`lobby is ${L.h.toFixed(0)}px tall, not 36`);
+    const addBtns = lobby.querySelectorAll('.place-add');
+    if (addBtns.length !== (places.length < 8 ? 1 : 0)) problems.push(`${addBtns.length} Add buttons with ${places.length} places`);
+    addBtns.forEach((b) => { inside(b, L, 'the lobby'); if (!b.getAttribute('aria-label')) problems.push('the Add button has no accessible name'); });
+    places.forEach((pl) => { const n = pl.querySelector('.pn'); if (!n || !pl.getAttribute('aria-label').startsWith(n.textContent + ':') || !pl.title.startsWith(n.textContent + ':')) problems.push(`place ${pl.dataset.place}: its full name is not in the tooltip and the label`); });
     places.forEach((pl) => { inside(pl, L, 'the lobby'); pl.querySelectorAll('.pic, .pn, .prow, .slot').forEach((e) => inside(e, R(pl), 'its place ' + pl.dataset.place)); });
     const slots = [...lobby.querySelectorAll('.slot.on')].map(R);
     const walkers = [...document.querySelectorAll('#walkers .walker')];
@@ -183,6 +191,7 @@ async function driver(ctx) {
   if (shotsDir) fs.mkdirSync(shotsDir, { recursive: true });
   const sleep = ctx.sleep;
   let total = 0, failed = 0;
+  let expectPlaces = 5; /* spec 024 FR-026: five built-in places plus simplaces=N custom ones, read from the query of the page just loaded */
   const rows = [];
   /* optional CI-like fonts (see the header): read once, handed to every page as data */
   const fontB64 = (k) => (process.env[k] ? fs.readFileSync(process.env[k]).toString('base64') : '');
@@ -200,6 +209,7 @@ async function driver(ctx) {
     ctx.win.setContentSize(w - 1, h); await sleep(150); ctx.win.setContentSize(w, h); await sleep(300);
   };
   const load = async (query, w, h) => {
+    expectPlaces = 5 + Number((/(?:^|&)simplaces=([0-3])(?:&|$)/.exec(query) || [])[1] || 0);
     ctx.win.setContentSize(w, h);
     await ctx.win.loadFile(INDEX, { query: Object.fromEntries(new URLSearchParams(query)) });
     await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
@@ -210,7 +220,7 @@ async function driver(ctx) {
   };
   const run = async (label, query, w, h, shot) => {
     await load(query, w, h);
-    const res = await ctx.js(`(${pageCheck.toString()})(false)`);
+    const res = await ctx.js(`(${pageCheck.toString()})(false, ${expectPlaces})`);
     total++;
     const bad = res.problems.length;
     if (bad) { failed++; console.log(`FAIL ${label}: ${res.problems.slice(0, 6).join('; ')}${bad > 6 ? ` (+${bad - 6} more)` : ''}`); }
@@ -220,7 +230,7 @@ async function driver(ctx) {
     const more = await ctx.js(`(()=>{const m=document.querySelector('#stage .more[aria-expanded="false"]');if(!m)return false;m.click();return true})()`);
     if (more) {
       await sleep(400);
-      const r2 = await ctx.js(`(${pageCheck.toString()})(true)`);
+      const r2 = await ctx.js(`(${pageCheck.toString()})(true, ${expectPlaces})`);
       total++;
       if (r2.problems.length) { failed++; console.log(`FAIL ${label} +expanded: ${r2.problems.slice(0, 6).join('; ')}`); }
     }
@@ -254,11 +264,26 @@ async function driver(ctx) {
       /* interactive: Close all / Open all, and a single door */
       await load(base, w, h);
       await ctx.js(`document.getElementById('closeAll').click()`); await sleep(500);
-      let r = await ctx.js(`(${pageCheck.toString()})(false)`); total++;
+      let r = await ctx.js(`(${pageCheck.toString()})(false, ${expectPlaces})`); total++;
       if (r.problems.length) { failed++; console.log(`FAIL ${tag} Close all click: ${r.problems.join('; ')}`); }
       await ctx.js(`document.getElementById('openAll').click()`); await sleep(500);
-      r = await ctx.js(`(${pageCheck.toString()})(false)`); total++;
+      r = await ctx.js(`(${pageCheck.toString()})(false, ${expectPlaces})`); total++;
       if (r.problems.length) { failed++; console.log(`FAIL ${tag} Open all click: ${r.problems.join('; ')}`); }
+    }
+  }
+  /* spec 024 FR-026: the same base cases with three custom places (24-character names in the real run of shots-024-custom.js; the simulator seeds
+     Database, Ticket desk and a 24-character name) so the lobby has 8 tiles. No extra room-closing combinations: none, the first room, the first three, all. */
+  for (const sim of SIMS) {
+    for (const [w, h] of SIZES) {
+      const base = `sim=${sim}&simfreeze=1&simplaces=3`;
+      await load(base, w, h);
+      const names = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].map(e=>e.textContent.trim())`);
+      const tag = `places3 sim${sim}-${w}x${h}`;
+      const cases = [[], names.slice(0, 1), names.slice(0, 3), names];
+      for (const closed of cases) {
+        const qy = base + (closed.length ? '&closed=' + closed.map(encodeURIComponent).join(',') : '');
+        await run(`${tag} closed=${closed.length}`, qy, w, h, closed.length === 0 ? `${tag}-closed0` : '');
+      }
     }
   }
   /* spec 033: floors on/off (3, 2 and 1 floors on), with and without closed doors, both sizes */
@@ -270,6 +295,10 @@ async function driver(ctx) {
       ['3 floors on, 2 doors closed', 'sim=15&simfreeze=1&simfloors=1&closed=blog,infra-notes', true],
       ['2 floors on, 1 door closed', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Client%20A&closed=mcp-swiss', true],
       ['40-char floor name', 'sim=15&simfreeze=1&simfloors=1&closed=infra-notes', true, 'long'],
+      /* spec 024 FR-026 with spec 033: floors on and three custom places together (8 lobby tiles); same assertions as every other case (pageCheck + floorsCheck) */
+      ['3 floors on, 3 custom places', 'sim=15&simfreeze=1&simfloors=1&simplaces=3', true],
+      ['2 floors on, 3 custom places, 1 door closed', 'sim=15&simfreeze=1&simfloors=1&simplaces=3&floorsoff=Personal&closed=mcp-swiss', true],
+      ['1 floor on, 3 custom places', 'sim=15&simfreeze=1&simfloors=1&simplaces=3&floorsoff=Personal,Client%20A', false],
     ];
     for (const [label, q, tags, extra] of cases) {
       const tag = `floors ${w}x${h} ${label}`;
@@ -282,7 +311,7 @@ async function driver(ctx) {
           [...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent==='Rename').click();await w(200);
           document.getElementById('floorsBtn').click();await w(300);})()`);
         await sleep(400);
-        const r1 = await ctx.js(`(${pageCheck.toString()})(false)`); total++;
+        const r1 = await ctx.js(`(${pageCheck.toString()})(false, ${expectPlaces})`); total++;
         if (r1.problems.length) { failed++; console.log(`FAIL ${tag}: ${r1.problems.slice(0, 6).join('; ')}`); }
         const named = await ctx.js(`[...document.querySelectorAll('#stage .floor-tag')].some(t=>t.textContent.length===40)`);
         if (!named) { failed++; console.log(`FAIL ${tag}: the 40-character name is not on a tag`); }
@@ -298,6 +327,14 @@ async function driver(ctx) {
         if (ap.length) { failed++; console.log(`FAIL ${tag} off-floor attention: ${ap.join('; ')}`); }
       }
     }
+  }
+  /* spec 012 T018 (FR-068): Claude-like, Codex-like and basic agents beside Copilot. No floors here, so no floor-tag checks; the toolbar stays on one row */
+  for (const [w, h] of SIZES) {
+    const tag = `kinds ${w}x${h} mixed kinds`;
+    await run(tag, 'sim=15&simfreeze=1&simkinds=mixed', w, h, shotsDir ? `kinds-${w}x${h}-mixed` : '');
+    const row = await ctx.js(`(()=>{const t=[...document.querySelectorAll('#liveBar > button, #liveBar > select')].filter(e=>e.getClientRects().length).map(e=>Math.round(e.getBoundingClientRect().top));return {min:Math.min(...t),max:Math.max(...t),n:t.length}})()`);
+    total++;
+    if (row.max - row.min > 3) { failed++; console.log(`FAIL ${tag}: the toolbar wraps ${JSON.stringify(row)}`); }
   }
   console.log('\nlayout summary (density/helpers shown, stage height vs floor):');
   rows.forEach((r) => console.log(`  ${r.problems ? 'FAIL' : 'ok  '} ${r.label.padEnd(60)} ${String(r.d).padEnd(5)} h=${r.h} rooms=${r.rooms} plates=${r.plates} desks=${r.desks} stage ${r.stageH}/${r.floorH}px minFont=${r.minFont}`));

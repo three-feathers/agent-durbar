@@ -32,7 +32,7 @@
     if(!cur)return;
     if(cur.kind==='tools')paintTools(focus);else if(cur.kind==='folder')paintFolder(focus);else paintSettings(focus);
   }
-  /* modal: body is an element or html; buttons [{label,value,cls}]; resolves value (or null when dismissed). `validate(root)` may return an error text (keeps it open). */
+  /* modal: body is an element or html; buttons [{label,value,cls}]; resolves value (or null when dismissed). `validate(root)` may return an error text (keeps it open and shows it), `true` (keeps it open; the caller already showed the error) or a promise of either. */
   function dialog({title,html,buttons,wide,cls,validate,onOpen}){
     return new Promise(resolve=>{
       const old=document.getElementById('scrDlg');if(old)old.remove();
@@ -42,7 +42,7 @@
       const row=d.querySelector('.dbtn');
       const done=v=>{d.remove();resolve(v);};
       buttons.forEach(b=>{const el=document.createElement('button');el.type='button';el.className='btn'+(b.cls?' '+b.cls:'');el.textContent=b.label;
-        el.onclick=()=>{if(b.value!==null&&validate){const err=validate(d);if(err){const e=d.querySelector('#scrDlgErr');e.textContent=err;e.hidden=false;return;}}done(b.value===null?null:{value:b.value,root:d});};row.appendChild(el);});
+        el.onclick=async()=>{if(b.value!==null&&validate){el.disabled=true;let err;try{err=await validate(d);}finally{el.disabled=false;}if(err){if(typeof err==='string'){const e=d.querySelector('#scrDlgErr');e.textContent=err;e.hidden=false;}return;}}done(b.value===null?null:{value:b.value,root:d});};row.appendChild(el);});
       d.addEventListener('click',e=>{if(e.target===d)done(null);});
       d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();done(null);}});
       document.body.appendChild(d);
@@ -86,8 +86,8 @@
     const fileNote=!f.found?`<p class="scr-note" role="status">No <code>${esc(f.label)}</code> yet. Servers you add with the Copilot CLI (<code>/mcp add</code>) or by editing that file appear here by themselves. The built-in GitHub server is always listed.</p>`
       :f.error?`<p class="scr-note warn" role="status"><code>${esc(f.label)}</code> could not be read (${esc(f.error)}). Fix the file; this list updates the next time you open this screen.</p>`
       :`<p class="scr-note ok" role="status">Read from <code>${esc(f.label)}</code>${f.skipped?` · ${f.skipped} entr${f.skipped>1?'ies were':'y was'} skipped (not usable)`:''}. The list is read again every time this screen opens.</p>`;
-    /* Places (spec 024 FR-008): which place the tool calls of each MCP server walk to. Servers: the Copilot CLI list, every server seen in
-       tool events this run (folder extras show up once an agent uses them) and any already mapped. */
+    /* Places (spec 024 FR-008): which place the tool calls of each MCP server walk to. Servers: the Copilot CLI list, the names of every saved folder's
+       extras, every server seen in tool events this run and any already mapped. */
     /* Agent mood (spec 034 FR-004): Serious mode turns the monster, ambulance and the other drawings off */
     const moodSec=X.bridge.setSeriousMode&&X.isSerious?`<section class="scr-sec" aria-labelledby="moodH"><h3 id="moodH">Agent mood</h3>
         <p class="scr-note">Agent figures get heavier from 70% of their context window and turn into a grumpy monster above 90% (a hint to start a fresh session). Trouble gets a drawing too: an ambulance when a session errors (one at a time), a faint at the credit limit, an agent tapping the desk after 60 s waiting for you, and dizzy stars after 3 failed tool calls in a row. The text and percentages never change. Serious mode turns every drawing off.</p>
@@ -95,11 +95,19 @@
     let placesSec='';
     if(X.bridge.setPlace&&X.places){
       const P=X.places, map=app.placeMap||{};
-      const names=[...new Set([...mcp.cli.map(c=>c.name),...X.placeServers(),...Object.keys(map)])].sort((a,b)=>a.localeCompare(b));
-      const rows=names.map(n=>{const v=Object.prototype.hasOwnProperty.call(map,n)?map[n]:'';
-        return `<li class="plrow" data-srv="${esc(n)}"><span class="plname" title="${esc(n)}">${esc(n)}</span><select data-place-sel aria-label="Place for the tools of ${esc(n)}"><option value=""${v?'':' selected'}>Default (${esc(window.THEME.word('place-'+P.defaultServerPlace(n)))})</option>${P.PLACES.map(p=>`<option value="${p.id}"${v===p.id?' selected':''}>${esc(window.THEME.word('place-'+p.id))}</option>`).join('')}<option value="desk"${v==='desk'?' selected':''}>Stay at desk</option></select></li>`;}).join('');
-      placesSec=`<section class="scr-sec" aria-labelledby="plH"><h3 id="plH">Places in the office</h3>
+      /* names of every saved folder's extras (spec 024 FR-016); a missing call or bad data keeps today's list */
+      let extra=null;
+      if(X.bridge.mcpExtraNames){try{extra=await X.bridge.mcpExtraNames();}catch(e){extra=null;}}
+      const names=P.mergePlaceNames(mcp.cli.map(c=>c.name),extra,X.placeServers(),Object.keys(map));
+      const mine=X.customPlaces?X.customPlaces():[], mineIds=mine.map(p=>p.id), PI=window.DurbarPlaceIcons;
+      const rows=P.placeRows(names,map,mineIds).map(({name:n,aliases,value:v})=>{const note=aliases.length?' also '+aliases.join(', '):'';
+        return `<li class="plrow" data-srv="${esc(n)}" data-alias="${esc(aliases.join('\n'))}"><span class="plname" title="${esc(n+note)}">${esc(n)}${note?` <small>${esc(note.trim())}</small>`:''}</span><select data-place-sel aria-label="Place for the tools of ${esc(n)}"><option value=""${v?'':' selected'}>Default (${esc(X.placeLabel(P.defaultServerPlace(n)))})</option>${P.allPlaces(mine).map(p=>`<option value="${esc(p.id)}"${v===p.id?' selected':''}>${esc(X.placeLabel(p.id))}</option>`).join('')}<option value="desk"${v==='desk'?' selected':''}>Stay at desk</option></select></li>`;}).join('');
+      placesSec=`<section class="scr-sec" aria-labelledby="plH"><h3 id="plH" tabindex="-1">Places in the office</h3>
         <p class="scr-note">In the lobby, an agent walks to a place while one of its tools runs: <b>Terminal</b> for shell commands, <b>Web</b> for web fetches, and the place you choose here for the tools of each MCP server. File tools (read, edit, search) never move an agent. The choice applies to the next tool call, for all folders, and is kept between runs. Only server names and places are saved.</p>
+        ${X.bridge.addPlace&&PI?`<h4 class="scr-sub">Your places</h4>
+        ${mine.length?`<ul class="plrows" id="myPlaces">${mine.map(p=>`<li class="plrow" data-place="${esc(p.id)}"><span class="plname" title="${esc(X.placeLabel(p.id))}"><span class="plico">${PI.iconSvg(p.icon)}</span>${esc(X.placeLabel(p.id))}</span><button class="btn sm" type="button" data-pl-act="edit" aria-label="Edit ${esc(X.placeLabel(p.id))}">Edit</button><button class="btn sm" type="button" data-pl-act="delete" aria-label="Delete ${esc(X.placeLabel(p.id))}">Delete</button></li>`).join('')}</ul>`:'<p class="scr-note small">You have no places of your own yet. Make one for the servers that fit none of the places above.</p>'}
+        ${mine.length<3?'<div class="scr-tools"><button class="btn" type="button" data-pl-act="add">Add a place</button></div>':'<p class="scr-note small" id="plCapNote">Up to 3 places of your own.</p>'}
+        <h4 class="scr-sub">Where each server goes</h4>`:''}
         ${names.length?`<ul class="plrows" id="plList">${rows}</ul>`:'<p class="scr-note small">No MCP servers yet. They appear here when your Copilot CLI list has some, or after an agent uses one in this run.</p>'}</section>`;
     }
     /* Floors (spec 033 FR-023): the same controls as the top-bar Floors panel, painted by app.js into #floorsSet */
@@ -190,11 +198,69 @@
   async function onPlaceChange(e){
     const sel=e.target.closest('select[data-place-sel]'); if(!sel||!X.bridge.setPlace)return;
     const li=sel.closest('li.plrow'), name=li&&li.dataset.srv; if(!name)return;
-    let res=null; try{res=await X.bridge.setPlace(name,sel.value===''?null:sel.value);}catch(err){res=null;}
-    if(res&&res.ok){X.setPlaceMap(res.placeMap||{});X.toast(esc(name)+': '+(sel.value===''?'back to the default place.':sel.value==='desk'?'agents stay at their desk.':'agents go to '+esc(window.THEME.word('place-'+sel.value))+'.'),3200);}
+    /* canonical key first, then clear old alias keys (spec 024 FR-013); stop at the first failure */
+    let res=null, last=null; /* last = result of the last save that worked, so a partial failure still refreshes the map */
+    try{for(const [k,v] of X.places.placeSaves(name,sel.value===''?null:sel.value,li.dataset.alias?li.dataset.alias.split('\n'):[])){res=await X.bridge.setPlace(k,v);if(!res||!res.ok)break;last=res;}}catch(err){res=null;}
+    if(last&&!(res&&res.ok))X.setPlaceMap(last.placeMap||{});
+    if(res&&res.ok){X.setPlaceMap(res.placeMap||{});X.toast(esc(name)+': '+(sel.value===''?'back to the default place.':sel.value==='desk'?'agents stay at their desk.':'agents go to '+esc(X.placeLabel(sel.value))+'.'),3200);}
     else X.toast('Could not save the place for '+esc(name)+'.',4200);
   }
+  /* ---------------- your own places (spec 024 FR-023, FR-024) ---------------- */
+  const PLACE_ERR={'name-empty':'Type a name for the place.','name-long':'Use 24 characters or fewer.','name-taken':'A place with this name already exists.','name-invalid':'The name cannot have line breaks or other control characters.',icon:'Pick one of the icons.',limit:'Up to 3 places of your own.',unknown:'That place could not be saved. It may have been deleted.'};
+  /* The Add / Edit dialog. `existing` = {id,name,icon} to edit, or null to add. Resolves the saved result, or null. */
+  async function placeDialog(existing){
+    const PI=window.DurbarPlaceIcons;
+    if(!X||!PI||!(existing?X.bridge.updatePlace:X.bridge.addPlace))return null;
+    const opener=document.activeElement, icon0=existing?existing.icon:'star';
+    let saved=null;
+    const radios=PI.LIST.map(i=>`<label class="pico-opt"><input type="radio" name="plIcon" value="${i.id}"${i.id===icon0?' checked':''}><span class="pico" aria-hidden="true">${i.svg}</span><span class="pico-sr">${i.label}</span></label>`).join('');
+    const html=`<label>Name<input id="plName" type="text" autocomplete="off" spellcheck="false" value="${esc(existing?existing.name:'')}" aria-describedby="plNameHelp plNameErr"></label>
+      <p class="dsub small" id="plNameHelp">Up to 24 characters.</p><p class="pl-err" id="plNameErr" role="alert" hidden></p>
+      <div class="pico-grid" role="radiogroup" aria-label="Icon">${radios}</div>`;
+    const r=await dialog({title:existing?'Edit place':'Add a place',html,buttons:[{label:'Cancel',value:null},{label:'Save',value:'ok',cls:'primary'}],
+      onOpen:d=>{const inp=d.querySelector('#plName');inp.addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();d.querySelector('.dbtn .primary').click();}});inp.addEventListener('input',()=>{d.querySelector('#plNameErr').hidden=true;});},
+      validate:async d=>{
+        const name=d.querySelector('#plName').value, ic=(d.querySelector('input[name="plIcon"]:checked')||{}).value;
+        let res=null;
+        try{res=existing?await X.bridge.updatePlace(existing.id,{name,icon:ic}):await X.bridge.addPlace(name,ic);}catch(err){res=null;}
+        if(res&&res.customPlaces){X.setCustomPlaces(res.customPlaces,res.placeMap);if(cur&&cur.kind==='settings')paintSettings();}
+        if(res&&res.ok){saved=res;return '';}
+        const e=d.querySelector('#plNameErr');e.textContent=PLACE_ERR[res&&res.error]||PLACE_ERR.unknown;e.hidden=false;
+        d.querySelector(res&&res.error&&/^name-/.test(res.error)?'#plName':'.dbtn .primary').focus();
+        return true;
+      }});
+    if(!r||!saved){if(opener&&opener.focus&&document.contains(opener))opener.focus();return null;}
+    const id=existing?existing.id:saved.place&&saved.place.id;
+    if(cur&&cur.kind==='settings'){await paintSettings();const b=document.querySelector(`#myPlaces li[data-place="${CSS.escape(id)}"] [data-pl-act="edit"]`);if(b)b.focus();}
+    else{await new Promise(r=>requestAnimationFrame(()=>setTimeout(r,80)));const t=document.querySelector('.place-add')||document.querySelector(`#stage .place[data-place="${CSS.escape(id)}"]`);if(t)t.focus();} /* from the lobby: the Add button, or the new tile once the cap took the button away */
+    X.toast(esc(existing?'Saved '+saved.customPlaces.find(p=>p.id===existing.id).name+'.':'Added '+(saved.place?saved.place.name:'the place')+'. Choose its servers in Settings > Places.'),3200);
+    return saved;
+  }
+  async function deletePlace(id){
+    const opener=document.activeElement;
+    const p=(X.customPlaces?X.customPlaces():[]).find(x=>x.id===id); if(!p||!X.bridge.removePlace)return;
+    const map=X.placeMap?X.placeMap():{}, srv=Object.keys(map).filter(k=>map[k]===id).sort();
+    const b=n=>'<b>'+esc(n)+'</b>', shown=srv.slice(0,4).map(b), more=srv.length-shown.length;
+    const list=more>0?shown.join(', ')+' and '+more+' more':shown.length>1?shown.slice(0,-1).join(', ')+' and '+shown[shown.length-1]:shown[0];
+    const body=srv.length?`${list} ${srv.length>1?'go':'goes'} back to ${srv.length>1?'their':'its'} default place.`:'No server is sent there.';
+    const r=await dialog({title:'Delete "'+X.placeLabel(p.id)+'"?',html:`<p class="dsub">${body} Agents that are there now walk back to their desks.</p>`,buttons:[{label:'Cancel',value:null},{label:'Delete',value:'ok',cls:'primary warn'}]});
+    if(!r){if(opener&&opener.focus&&document.contains(opener))opener.focus();return;}
+    const label=X.placeLabel(p.id); /* before setCustomPlaces: afterwards the place is gone and the label is empty */
+    let res=null; try{res=await X.bridge.removePlace(id);}catch(err){res=null;}
+    if(res&&res.customPlaces)X.setCustomPlaces(res.customPlaces,res.placeMap);
+    if(res&&res.ok)X.toast(esc(label)+' was deleted.',3200); else X.toast('Could not delete '+esc(label)+'.',4200);
+    await paintSettings();
+    const nb=document.querySelector('#myPlaces ~ .scr-tools [data-pl-act="add"], .scr-tools [data-pl-act="add"]')||document.getElementById('plH'); if(nb)nb.focus(); /* the Add button, or the Places heading */
+  }
   async function onSettingsClick(e){
+    const pa=e.target.closest('[data-pl-act]');
+    if(pa){
+      const li=pa.closest('li'), id=li&&li.dataset.place, act=pa.dataset.plAct;
+      if(act==='add')await placeDialog(null);
+      else if(act==='edit'){const p=(X.customPlaces?X.customPlaces():[]).find(x=>x.id===id);if(p)await placeDialog(p);}
+      else if(act==='delete')await deletePlace(id);
+      return;
+    }
     const ss=e.target.closest('#seriousSw');
     if(ss&&X.bridge.setSeriousMode){
       const on=ss.getAttribute('aria-checked')!=='true';
@@ -389,8 +455,9 @@
   function editServer2(input,v,st){const view=Object.assign({},v||{},{name:input.name,transport:input.transport,command:input.command,args:input.args,workingDirectory:input.workingDirectory,url:input.url,tools:input.tools,env:(v&&v.env)||[],headers:(v&&v.headers)||[]});return editServer(v?view:Object.assign(view,{name:input.name}),st);}
 
   /* ---------------- per-agent MCP menu ---------------- */
-  async function agentMcp(a){
+  async function agentMcp(a,o){
     if(!X.bridge.agentMcp)return;
+    const fixed=!!o&&o.toggle===false; /* this agent kind cannot switch servers while it runs (spec 012 FR-067): shown, with the reason */
     const load=async()=>X.bridge.agentMcp(a.id);
     let st=await load();
     const body=s=>{
@@ -398,8 +465,8 @@
         const eff=x.defaultOn&&!x.off;
         const stat=x.status?`<span class="mst ${esc(x.status)}"><i></i>${esc(x.status)}</span>`:'<span class="mst none">not started</span>';
         return `<li class="srv sm" data-n="${esc(x.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(x.name)}</b><span class="mtag${x.origin==='folder'?' extra':' src'}">${x.origin==='cli'?'Copilot CLI list':x.origin==='folder'?'this folder only':'runtime'}</span>${stat}${!x.defaultOn?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${x.error?`<span class="imp-note">${esc(cap(x.error,160))}</span>`:''}</div>
-          <div class="srv-act">${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name,'data-n="'+esc(x.name)+'"'+(!x.defaultOn?' disabled':''))}</div></li>`;}).join('');
-      return `<p class="dsub">${s.live?'This agent is running: a switch applies right away.':'This agent has no running session: your choices apply when it starts.'} Your Copilot CLI servers are global (see <b>Settings</b>); extras belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p><ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul><p class="dsub small">Applies to this agent until the app is closed.</p>`;
+          <div class="srv-act">${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name,'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed?' disabled':''))}</div></li>`;}).join('');
+      return `<p class="dsub">${s.live?(fixed?'This agent is running.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Your Copilot CLI servers are global (see <b>Settings</b>); extras belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent kind:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul><p class="dsub small">Applies to this agent until the app is closed.</p>`;
     };
     const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings…',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
       onOpen:d=>{d.addEventListener('click',async e=>{const b=e.target.closest('button.swt');if(!b||b.disabled)return;const on=b.getAttribute('aria-checked')!=='true';
@@ -541,6 +608,7 @@
     openSettings:()=>{mcp=null;open('settings');},
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},
     agentMcp,
+    placeDialog,
     close,isOpen,
     /* live refresh while the Tools view is open (called when events arrive) */
     refresh:()=>{if(cur&&cur.kind==='tools'&&!document.getElementById('scrDlg'))paintTools();},

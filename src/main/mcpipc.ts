@@ -3,8 +3,9 @@ import { ipcMain, safeStorage } from 'electron';
 import * as path from 'path';
 import type { AgentInfo, AgentMcpEntry, McpFolderState, McpState } from '../shared/api';
 import type { McpServerStatus } from '../adapters/types';
+import { setMcpOp } from './agentops';
+import type { AdapterRouter } from '../adapters/router';
 import type { McpServerSpec } from '../shared/mcp';
-import type { CopilotAdapter } from '../adapters/copilot';
 import type { DevEnv } from './devhooks';
 import { BUILTIN_SERVERS, cliServers, copilotDir } from './mcpfiles';
 import { applyFolderImport, MAX_IMPORT_FOLDERS, previewFolderImport } from './mcpimport';
@@ -33,19 +34,18 @@ export const safeStorageCodec: SecretCodec = {
   decrypt: (blob) => safeStorage.decryptString(Buffer.from(blob, 'base64')),
 };
 
-const trunc = (v: unknown, n: number): string => String(v ?? '').slice(0, n);
 /** The folder/workspace an agent belongs to: the key of the saved folder list and of the MCP extras. */
 const keyOf = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 const nameOfKey = (key: string): string => path.basename(key).replace(/\.code-workspace$/i, '') || key;
 
-export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string, AgentInfo>; adapter: CopilotAdapter; dev: DevEnv }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[] } } {
-  const { agents, adapter, dev } = deps;
+export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string, AgentInfo>; router: Pick<AdapterRouter, 'onEvent' | 'forAgent'>; dev: DevEnv }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[] } } {
+  const { agents, router, dev } = deps;
   const store = deps.store;
   /** Per agent id, this run only: servers the user switched off for that agent. */
   const off = new Map<string, Set<string>>();
   /** Latest MCP state the runtime reported per session. */
   const live = new Map<string, McpServerStatus[]>();
-  adapter.onEvent((e) => {
+  router.onEvent((e) => {
     if (e.type === 'mcp') live.set(e.sessionId, e.servers);
     else if (e.type === 'status' && e.status === 'stopped') live.delete(e.sessionId);
   });
@@ -83,6 +83,8 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
   };
 
   ipcMain.handle('mcp:state', () => state());
+  /** Names of every saved folder's extras, nothing else (spec 024 FR-016). No arguments; names that equal a CLI/built-in server are left out. */
+  ipcMain.handle('mcp:extraNames', () => ({ ok: true, names: store().extraNames(cliNames()) }));
   ipcMain.handle('mcp:setCli', (_e, name: unknown, enabled: unknown) => {
     if (typeof name !== 'string' || !name || name.length > 64) return { ok: false };
     store().setAmbientDisabled(name, enabled !== true);
@@ -137,24 +139,9 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
     const names = new Set(c.map((x) => x.name.toLowerCase()));
     for (const v of s.list(keyOf(a))) if (!names.has(v.name.toLowerCase())) add(v.name, 'folder', v.enabled && v.trusted && !v.needsSecrets);
     for (const x of live.get(a.id) ?? []) add(x.name, 'runtime', !dis.has(x.name));
-    return { ok: true, servers: entries, live: adapter.isLive(a.id) };
+    return { ok: true, servers: entries, live: router.forAgent(a.id)?.isLive(a.id) ?? false };
   });
-  ipcMain.handle('agents:setMcp', async (_e, id: unknown, name: unknown, enabled: unknown) => {
-    const a = typeof id === 'string' ? agents.get(id) : undefined;
-    if (!a || typeof name !== 'string' || !name || name.length > 64) return { ok: false, error: 'unknown agent or server' };
-    const set = off.get(a.id) ?? new Set<string>();
-    if (enabled === true) set.delete(name);
-    else set.add(name);
-    off.set(a.id, set);
-    if (!adapter.isLive(a.id)) return { ok: true };
-    try {
-      await adapter.setMcpEnabled(a.id, name, enabled === true);
-      return { ok: true };
-    } catch (err) {
-      // e.g. a server that was not part of this session at start: it comes in with the next start
-      return { ok: true, error: `Saved for this agent. The running session could not apply it now (${trunc(err instanceof Error ? err.message : err, 120)}); it applies at the next start.` };
-    }
-  });
+  ipcMain.handle('agents:setMcp', (_e, id: unknown, name: unknown, enabled: unknown) => setMcpOp({ agents, router, wsKey: keyOf }, off, id, name, enabled));
 
   return {
     optionsFor(agentId: string) {

@@ -37,12 +37,13 @@ what exists today, not what was originally intended. Each requirement carries a 
 
 ## Features 011-014: 011 built, 012 planned, 013-014 backlog drafts
 
-013 and 014 are spec drafts only (no plan or tasks yet); they must go through `/speckit.clarify`, `/speckit.plan`, `/speckit.tasks` before any code. 012 has been through them (2026-10-17) but nothing is built.
+013 and 014 are spec drafts only (no plan or tasks yet); they must go through `/speckit.clarify`, `/speckit.plan`, `/speckit.tasks` before any code. 012 has been through them (2026-10-17); Phase 1 (T010-T019) is built, plus the pure Phase 2/3 pieces T021-T024 and T042, simulator/fixtures and unit tests only; no Claude or Codex adapter is wired yet and nothing has run on a real account.
 
 | # | Feature | Status |
 | --- | --- | --- |
 | [011](011-credit-caps-and-usage-display/spec.md) | AI-credit caps and usage display | per-session cap slice and office/folder usage totals built, totals kept across restarts with a reset (2026-10-17, issue #21); exhausted flow unverified on a real account; multiplier estimate covered by spec 030 |
-| [012](012-claude-codex-adapters/spec.md) | Claude Code and Codex adapters | planned: clarified, [research](012-claude-codex-adapters/research.md), [plan](012-claude-codex-adapters/plan.md), [tasks](012-claude-codex-adapters/tasks.md); **no code, nothing verified on a real account**; real-account tasks need owner approval; umbrella issue #2 |
+| [012](012-claude-codex-adapters/spec.md) | Claude Code and Codex adapters | planned: clarified, [research](012-claude-codex-adapters/research.md), [plan](012-claude-codex-adapters/plan.md), [tasks](012-claude-codex-adapters/tasks.md); **Phase 1 built 2026-10-18 (T010-T019: interface, registry, CLI detection, saved adapter id, routing, contract suite on a fake and on Copilot, kind picker, mixed simulator roster, docs) and Phase 2/3 groundwork (T021/T022 mode mappings, T023/T024 event mappers with synthetic fixtures, T042 Codex JSON-RPC client), all simulator/fixtures and unit tests, not wired to a real Claude or Codex; only Copilot is registered; nothing verified on a real account**; real-account tasks need owner approval; umbrella issue #2 |
+
 | [013](013-live-verification-stop-resume-thinking/spec.md) | Live verification of Stop, resume and thinking | draft |
 | [014](014-signing-and-notarization/spec.md) | Code signing and notarization | draft, **needs approval (purchase)** |
 
@@ -85,7 +86,7 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 
 | # | Feature | Status |
 | --- | --- | --- |
-| [024](024-office-places/spec.md) | Places in a shared lobby (Library, Software library, Terminal, Web, Other tools); main agents walk to the place of the tool they use; place per MCP server in Settings | built 2026-10-17 (issue #18); simulator and unit tests only |
+| [024](024-office-places/spec.md) | Places in a shared lobby (Library, Software library, Terminal, Web, Other tools); main agents walk to the place of the tool they use; place per MCP server in Settings | built 2026-10-17 (issue #18); simulator and unit tests, plus one short real check (3 prompts, 0.84 AIU: Terminal and Software library walks only); delta 2026-10-18 *one GitHub server in Settings > Places* (issue #117, T012) built (T012-T015); delta 2026-10-18 *per-folder extras listed before use* (issue #116, T011) built (T016-T018); delta 2026-10-18 *custom places* (issue #115) built (T019-T026); both unit tests and simulator, not checked on a real session |
 
 ## Feature 025: docs in sync
 

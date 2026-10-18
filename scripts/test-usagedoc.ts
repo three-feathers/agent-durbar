@@ -29,6 +29,11 @@ const tk = emptyUsageDoc();
 recordUsage(tk, K1, 'x', ev(NaN, -5, AIU)); recordUsage(tk, K1, 'x', ev('7', Infinity, AIU));
 assert.deepStrictEqual({ ...tk.folders[K1] }, { name: 'x', calls: 2, inTokens: 0, outTokens: 0, nano: 2 * AIU, unreported: 0 }, 'bad token fields count as 0');
 
+// FR-029 (spec 012): a vendor cost estimate is never added to AIU; a call with only costUsd counts as unreported
+const usd = emptyUsageDoc();
+assert.ok(recordUsage(usd, K1, 'x', { type: 'usage', inputTokens: 10, outputTokens: 1, costUsd: 1.5, costBasis: 'estimate' }));
+assert.deepStrictEqual({ ...usd.folders[K1] }, { name: 'x', calls: 1, inTokens: 10, outTokens: 1, nano: 0, unreported: 1 });
+
 // only usage events with a fingerprint key change anything
 const noop = emptyUsageDoc();
 for (const e of [undefined, null, 'usage', 5, {}, { type: 'toolCall' }, { type: 'output' }]) assert.strictEqual(recordUsage(noop, K1, 'x', e), false, String(JSON.stringify(e)));

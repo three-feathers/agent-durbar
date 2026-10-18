@@ -11,7 +11,9 @@
  *   SC-001  every agent at a place is at the place its open call belongs to (bash -> Terminal, github -> Software library,
  *           github -> software, playwright -> web, my-notes -> library), its desk shows the empty chair and its card says so; after a call ends the
  *           agent walks back to its desk.
- *   SC-003  a place chosen in Settings decides where the next call of that server goes. (The "survives a restart" part is the
+ *   SC-003  a place chosen in Settings decides where the next call of that server goes. Settings > Places lists ONE github row
+ *           (no github-mcp-server row, a note "also github-mcp-server"), and a place set on it applies to a call that comes in as
+ *           github-mcp-server (spec 024 FR-014; the walk/SC-001 checks use the plain github name, so both names are covered). (The "survives a restart" part is the
  *           SettingsStore unit test in test-credits: the simulator keeps settings in memory.)
  *   Edge    figures stay on their slots after a window resize and after the full-screen chat was opened and closed; a status
  *           filter hides filtered-out agents in the lobby too; at most 3 figures walk at once; Demo mode hides the lobby.
@@ -37,6 +39,16 @@ module.exports = async (ctx) => {
     ctx.win.setContentSize(w, h);
     await ctx.sleep(1500);
     await settle();
+
+    // FR-016/FR-017 (issue #116): Settings lists docs-search (an extra that is off, untrusted and never called) with the default place, and one playwright row
+    await js(`document.getElementById('settingsBtn').click()`); await ctx.sleep(900);
+    const ex = await js(`(()=>{const q=n=>[...document.querySelectorAll('#plList .plrow')].filter(r=>r.dataset.srv===n);const d=q('docs-search')[0];const o=d&&d.querySelector('select option:checked');return {docs:q('docs-search').length,docsDefault:o?o.textContent.trim():'',pw:q('playwright').length}})()`);
+    assert.strictEqual(ex.docs, 1, 'Settings lists docs-search before any call');
+    // the name rules send `docs*` servers to the Library by default (spec 024 #116 scenario 1)
+    assert.strictEqual(ex.docsDefault, 'Default (Library)', 'docs-search shows the default place: ' + ex.docsDefault);
+    assert.strictEqual(ex.pw, 1, 'exactly one playwright row');
+    console.log('[024]', w, 'extras rows', JSON.stringify(ex));
+    await js(`document.getElementById('scrClose').click()`); await ctx.sleep(500);
 
     // SC-001: the right place for each open call, empty chair at the desk, figures on slots
     const vs = await visits();
@@ -87,15 +99,34 @@ module.exports = async (ctx) => {
 
   // SC-003: Settings sends github to Terminal; the next github call of that agent goes there
   await js(`document.getElementById('settingsBtn').click()`); await ctx.sleep(900);
+  const rows = await js(`({github:!!document.querySelector('#plList .plrow[data-srv="github"]'),alias:!!document.querySelector('#plList .plrow[data-srv="github-mcp-server"]'),note:((document.querySelector('#plList .plrow[data-srv="github"] small')||{}).textContent||'').trim()})`);
+  assert.strictEqual(rows.github, true, 'Settings lists one github row');
+  assert.strictEqual(rows.alias, false, 'no separate github-mcp-server row');
+  assert.ok(rows.note.includes('also github-mcp-server'), 'the github row notes the other name: ' + rows.note);
   const row = await js(`(()=>{const s=document.querySelector('#plList .plrow[data-srv="github"] select');if(!s)return false;s.value='terminal';s.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
   assert.ok(row, 'Settings lists the github server');
   await ctx.sleep(600);
+  // Settings is long: bring the Places section (heading first) to the top of the scroll area (the save toast stays and confirms the choice), then check the rows are on screen
+  // scroll only the Settings container (.scr-body), never the page, so the top bar and Settings header stay in place
+  await js(`(()=>{const c=document.querySelector('#screen .scr-body'),sec=document.querySelector('#plList').closest('.scr-sec');c.scrollTop+=sec.getBoundingClientRect().top-c.getBoundingClientRect().top-16})()`);
+  await ctx.sleep(900);
+  const vis = await js(`(()=>{const r=document.querySelector('#plList .plrow[data-srv="github"]').getBoundingClientRect();return r.top>=0&&r.bottom<=window.innerHeight&&r.left>=0&&r.right<=window.innerWidth})()`);
+  const page = await js(`({scroll:document.scrollingElement.scrollTop,top:Math.round(document.querySelector('.topbar').getBoundingClientRect().top)})`);
+  assert.deepStrictEqual(page, { scroll: 0, top: 0 }, 'the page itself did not scroll: the top bar is still at y=0');
+  assert.strictEqual(vis, true, 'the github row is inside the viewport for the screenshot');
   await shot('settings-places', w, h);
   await js(`document.getElementById('scrClose').click()`); await ctx.sleep(400);
   await call(2, 'start');
   await ctx.waitFor(`!!document.querySelector('#stage [data-id=${JSON.stringify(who)}].is-away')`, 3000);
   assert.strictEqual(await placeOf(who), expect.terminal, 'the mapping decides the place of the next call');
   await call(2, 'complete');
+  await ctx.waitFor(`!document.querySelector('#stage [data-id=${JSON.stringify(who)}].is-away')`, 6000);
+
+  // FR-014: the place set on the github row also applies to a call that comes in as github-mcp-server
+  await js(`window.__durbarSimEmit({type:'toolCall',sessionId:${JSON.stringify(who)},timestamp:Date.now(),callId:'shots-024-3',tool:'github-mcp-server-search_issues',phase:'start',mcpServer:'github-mcp-server',mcpTool:'search_issues'})`);
+  await ctx.waitFor(`!!document.querySelector('#stage [data-id=${JSON.stringify(who)}].is-away')`, 3000);
+  assert.strictEqual(await placeOf(who), 'Terminal', 'a place set on the github row applies to a github-mcp-server call');
+  await js(`window.__durbarSimEmit({type:'toolCall',sessionId:${JSON.stringify(who)},timestamp:Date.now(),callId:'shots-024-3',tool:'github-mcp-server-search_issues',phase:'complete',mcpServer:'github-mcp-server',mcpTool:'search_issues'})`);
 
   // Demo mode hides the lobby and every figure
   await js(`document.getElementById('demoToggle').click()`); await ctx.sleep(800);

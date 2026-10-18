@@ -1,0 +1,25 @@
+{
+  "provenance": "synthetic",
+  "notifications": [
+    {"method":"thread/started","params":{"thread":{"id":"thr_main","cwd":"/work/app"}}},
+    {"method":"item/started","params":{"threadId":"thr_main","item":{"id":"cmd_1","type":"commandExecution","command":"npm test","cwd":"/work/app","status":"inProgress","commandActions":[]}}},
+    {"method":"item/commandExecution/outputDelta","params":{"threadId":"thr_main","itemId":"cmd_1","delta":"PASS a\n"}},
+    {"method":"item/commandExecution/outputDelta","params":{"threadId":"thr_main","itemId":"cmd_1","delta":"PASS b\n"}},
+    {"method":"item/completed","params":{"threadId":"thr_main","item":{"id":"cmd_1","type":"commandExecution","command":"npm test","cwd":"/work/app","status":"completed","aggregatedOutput":"PASS a\nPASS b\n","exitCode":0,"durationMs":1200}}},
+    {"method":"item/started","params":{"threadId":"thr_main","item":{"id":"cmd_2","type":"commandExecution","command":"rm -rf build","cwd":"/work/app","status":"inProgress"}}},
+    {"method":"item/completed","params":{"threadId":"thr_main","item":{"id":"cmd_2","type":"commandExecution","command":"rm -rf build","cwd":"/work/app","status":"declined"}}},
+    {"method":"item/started","params":{"threadId":"thr_main","item":{"id":"cmd_3","type":"commandExecution","command":"false","cwd":"/work/app","status":"inProgress"}}},
+    {"method":"item/completed","params":{"threadId":"thr_main","item":{"id":"cmd_3","type":"commandExecution","command":"false","cwd":"/work/app","status":"failed","aggregatedOutput":"boom","exitCode":1}}}
+  ],
+  "expected": [
+    {"type":"status","status":"idle","intent":"Ready in /work/app"},
+    {"type":"toolCall","callId":"cmd_1","tool":"shell","phase":"start","args":{"command":"npm test","cwd":"/work/app"}},
+    {"type":"toolCall","callId":"cmd_1","tool":"shell","phase":"update","output":"PASS a\n"},
+    {"type":"toolCall","callId":"cmd_1","tool":"shell","phase":"update","output":"PASS b\n"},
+    {"type":"toolCall","callId":"cmd_1","tool":"shell","phase":"complete","output":"PASS a\nPASS b\n"},
+    {"type":"toolCall","callId":"cmd_2","tool":"shell","phase":"start","args":{"command":"rm -rf build","cwd":"/work/app"}},
+    {"type":"toolCall","callId":"cmd_2","tool":"shell","phase":"failed","output":"declined"},
+    {"type":"toolCall","callId":"cmd_3","tool":"shell","phase":"start","args":{"command":"false","cwd":"/work/app"}},
+    {"type":"toolCall","callId":"cmd_3","tool":"shell","phase":"failed","output":"boom"}
+  ]
+}

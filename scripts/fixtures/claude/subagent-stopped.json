@@ -1,0 +1,55 @@
+{
+  "provenance": "synthetic",
+  "description": "A stopped sub-agent maps to failed with error 'stopped'; the older tool name Task also starts one.",
+  "messages": [
+    {
+      "type": "assistant",
+      "message": {
+        "id": "msg_7",
+        "model": "claude-synthetic-1",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "toolu_a2",
+            "name": "Task",
+            "input": {
+              "description": "Slow job"
+            }
+          }
+        ]
+      },
+      "parent_tool_use_id": null,
+      "session_id": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "type": "system",
+      "subtype": "task_notification",
+      "task_id": "task_2",
+      "tool_use_id": "toolu_a2",
+      "status": "stopped"
+    }
+  ],
+  "expected": [
+    {
+      "type": "toolCall",
+      "callId": "toolu_a2",
+      "tool": "Task",
+      "phase": "start",
+      "args": {
+        "description": "Slow job"
+      }
+    },
+    {
+      "type": "subagent",
+      "subagentId": "toolu_a2",
+      "phase": "started",
+      "task": "Slow job"
+    },
+    {
+      "type": "subagent",
+      "subagentId": "toolu_a2",
+      "phase": "failed",
+      "error": "stopped"
+    }
+  ]
+}

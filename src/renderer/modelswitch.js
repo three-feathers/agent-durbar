@@ -159,5 +159,60 @@
     return 'The runtime changed the model'+(from?' from '+from:'')+' to '+to+' '+(CAUSE[e.cause]||CAUSE.runtime)+'. The next message uses it.';
   }
 
-  return {pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice};
+  /* ---- Agent kinds and what each can do (spec 012 T017, FR-059..FR-061). Pure. `adapters` is the list from bridge.listAdapters();
+     without a list (a bridge that has none, or the call failed) every capability counts as on, so the UI stays as it was. ---- */
+  const ALL_ON={interrupt:true,resume:true,images:true,models:true,effort:true,permissionModes:['read-only','ask','allow'],permModeSwitch:'live',usage:{tokens:true,costUsd:true,nanoAiu:true},context:true,caps:true,helpers:true,history:true,mcpStatus:true,mcpToggle:true};
+  const haveList=a=>Array.isArray(a)&&a.length>0;
+  /* The capabilities of the adapter that runs `info`; all on when the list is missing or does not know the id. */
+  function capsOf(info,adapters){
+    if(!haveList(adapters)||!info)return ALL_ON;
+    const ad=adapters.find(x=>x&&x.id===info.adapterId);
+    return ad&&ad.capabilities&&typeof ad.capabilities==='object'?ad.capabilities:ALL_ON;
+  }
+  const KIND_STATE={'ready':'','not-installed':'not installed','too-old':'too old','not-signed-in':'not signed in','unknown':'unknown'};
+  const HINT_MAX=200;
+  /* One entry per adapter for the select and the "About agent kinds" dialog. Only a `ready` kind can be chosen; the others are disabled and say why. */
+  function kindChoices(adapters){
+    if(!Array.isArray(adapters))return [];
+    return adapters.filter(a=>a&&typeof a.id==='string').map(a=>{
+      const state=Object.prototype.hasOwnProperty.call(KIND_STATE,a.state)?a.state:'unknown';
+      const name=typeof a.displayName==='string'&&a.displayName?a.displayName:a.id;
+      const stateText=KIND_STATE[state];
+      return {id:a.id,name,shortName:name.replace(/\s*\([^)]*\)\s*$/,'')||name,state,stateText,disabled:state!=='ready',label:stateText?name+': '+stateText:name,
+        version:typeof a.version==='string'?a.version.slice(0,HINT_MAX):'',hint:typeof a.hint==='string'?a.hint.slice(0,HINT_MAX):''};
+    });
+  }
+  /* The kind select appears only when there is a real choice. */
+  const showsKindPicker=adapters=>Array.isArray(adapters)&&adapters.length>=2;
+  /* Is a control shown? A feature the adapter lacks is hidden, never shown disabled (SC-003). `modeList` takes the mode: shows(caps,'modeList','ask'). */
+  function shows(caps,feature,mode){
+    const c=caps||ALL_ON;
+    switch(feature){
+      case 'stop':return !!c.interrupt;
+      case 'modes':return c.permModeSwitch!=='none';
+      case 'modeList':return Array.isArray(c.permissionModes)&&c.permissionModes.includes(mode);
+      case 'cap':return !!c.caps;
+      case 'mcp':return !!c.mcpStatus;
+      case 'mcpToggle':return !!c.mcpStatus&&!!c.mcpToggle;
+      case 'history':return !!c.history;
+      case 'models':return !!c.models;
+      case 'effort':return !!c.effort;
+      default:return true;
+    }
+  }
+
+  /* The modes an adapter can enforce, in the order the UI lists them. Missing or empty means read-only only (safe by default), unlike `shows`, which counts a missing caps object as all on. */
+  const MODE_ORDER=['read-only','ask','allow'];
+  function modesFor(caps){
+    const c=caps||{};
+    const m=Array.isArray(c.permissionModes)?MODE_ORDER.filter(k=>c.permissionModes.includes(k)):[];
+    return m.length?m:['read-only'];
+  }
+  /* The mode to keep when the kind changes: the current one when allowed, else read-only; never a wider mode. */
+  function fallbackMode(caps,cur){
+    const m=modesFor(caps);
+    return m.includes(cur)?cur:'read-only';
+  }
+
+  return {modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows};
 })());

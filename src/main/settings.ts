@@ -4,14 +4,34 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomBytes } from 'crypto';
 import { parseCap, parseSettings, parseThemeId } from '../shared/credits';
 import type { AppSettings } from '../shared/credits';
-import { setPlaceEntry } from '../shared/places';
-import type { PlaceMap } from '../shared/places';
+import { addCustomPlace, removeCustomPlace, setPlaceEntry, updateCustomPlace } from '../shared/places';
+import type { CustomPlace, PlaceError, PlaceMap } from '../shared/places';
+
+/** Result of a custom-place call (spec 024 FR-020): the list and the map as they are now, whether the call worked or not. */
+export interface PlaceCallResult {
+  ok: boolean;
+  error?: PlaceError;
+  /** The place that was added. */
+  place?: CustomPlace;
+  customPlaces: CustomPlace[];
+  placeMap: PlaceMap;
+}
+
+const ID_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
+/** `c-` and six random lowercase letters or digits. */
+export function randomPlaceId(): string {
+  let s = 'c-';
+  for (const b of randomBytes(6)) s += ID_CHARS[b % ID_CHARS.length];
+  return s;
+}
 
 export class SettingsStore {
   private s: AppSettings = {};
-  constructor(private readonly file: string) {}
+  /** `newPlaceId` makes candidate ids for new custom places; tests inject their own. */
+  constructor(private readonly file: string, private readonly newPlaceId: () => string = randomPlaceId) {}
 
   load(): AppSettings {
     try {
@@ -82,9 +102,60 @@ export class SettingsStore {
     return { ...(this.s.placeMap ?? {}) };
   }
 
+  /** The user's own places (spec 024 FR-018), a copy. */
+  get customPlaces(): CustomPlace[] {
+    return (this.s.customPlaces ?? []).map((p) => ({ ...p }));
+  }
+
+  private customIds(): string[] {
+    return (this.s.customPlaces ?? []).map((p) => p.id);
+  }
+
+  private placeResult(r: { ok: boolean; error?: PlaceError; place?: CustomPlace }): PlaceCallResult {
+    return { ok: r.ok, ...(r.error ? { error: r.error } : {}), ...(r.place ? { place: { ...r.place } } : {}), customPlaces: this.customPlaces, placeMap: this.placeMap };
+  }
+
+  /** Store a new list and map in one write. If the write fails, memory goes back to what it was and the call is refused. */
+  private commitPlaces(list: CustomPlace[], map: PlaceMap): boolean {
+    const before = this.s;
+    const next: AppSettings = { ...this.s };
+    if (list.length) next.customPlaces = list;
+    else delete next.customPlaces;
+    if (Object.keys(map).length) next.placeMap = map;
+    else delete next.placeMap;
+    this.s = next;
+    if (this.save()) return true;
+    this.s = before;
+    return false;
+  }
+
+  /** Add a custom place (spec 024 FR-020). The renderer is not trusted: everything is validated by the shared rules. */
+  addPlace(name: unknown, icon: unknown): PlaceCallResult {
+    const r = addCustomPlace(this.s.customPlaces ?? [], name, icon, this.newPlaceId);
+    if (!r.ok) return this.placeResult(r);
+    if (!this.commitPlaces(r.list, this.placeMap)) return this.placeResult({ ok: false, error: 'unknown' });
+    return this.placeResult({ ok: true, place: r.place });
+  }
+
+  /** Rename and/or change the icon of a place; its id and mappings stay. */
+  updatePlace(id: unknown, patch: unknown): PlaceCallResult {
+    const r = updateCustomPlace(this.s.customPlaces ?? [], id, patch);
+    if (!r.ok) return this.placeResult(r);
+    if (!this.commitPlaces(r.list, this.placeMap)) return this.placeResult({ ok: false, error: 'unknown' });
+    return this.placeResult({ ok: true });
+  }
+
+  /** Remove a place and every mapping that pointed to it, in one write. */
+  removePlace(id: unknown): PlaceCallResult {
+    const r = removeCustomPlace(this.s.customPlaces ?? [], this.s.placeMap ?? {}, id);
+    if (!r.ok) return this.placeResult(r);
+    if (!this.commitPlaces(r.list, r.placeMap)) return this.placeResult({ ok: false, error: 'unknown' });
+    return this.placeResult({ ok: true });
+  }
+
   /** Set one entry, or clear it with `null`. Invalid input changes nothing. Returns `ok` and the resulting map. */
   setPlace(server: unknown, choice: unknown): { ok: boolean; placeMap: PlaceMap } {
-    const r = setPlaceEntry(this.s.placeMap ?? {}, server, choice);
+    const r = setPlaceEntry(this.s.placeMap ?? {}, server, choice, this.customIds());
     if (r.ok) {
       const next: AppSettings = { ...this.s };
       if (Object.keys(r.map).length) next.placeMap = r.map;
@@ -95,14 +166,16 @@ export class SettingsStore {
     return { ok: r.ok, placeMap: { ...(this.s.placeMap ?? {}) } };
   }
 
-  private save(): void {
+  private save(): boolean {
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
       const tmp = `${this.file}.${process.pid}.tmp`;
       fs.writeFileSync(tmp, JSON.stringify({ version: 1, ...this.s }, null, 2), { mode: 0o600 });
       fs.renameSync(tmp, this.file);
+      return true;
     } catch {
       /* read-only profile, disk full, ...: keep working without persistence */
+      return false;
     }
   }
 }

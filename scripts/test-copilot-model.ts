@@ -7,64 +7,16 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CopilotAdapter } from '../src/adapters/copilot';
+import { CopilotAdapter, COPILOT_DESCRIPTOR } from '../src/adapters/copilot';
+import { FakeClient, FakeSession, TestAdapter } from './fakes/copilot-sdk';
+import { createRegistry, detectAll } from '../src/adapters/registry';
+import type { AdapterDescriptor } from '../src/adapters/capabilities';
 import { EventMapper } from '../src/adapters/map';
 import type { RawEvent } from '../src/adapters/map';
 import { compactResultFrom, modelConfig, runtimeMessage, modelOptionFrom, priceClassOf, pricingFromTokenPrices, switchResultFrom } from '../src/adapters/copilotmodel';
-import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
+import type { AdapterCapabilities, AgentAdapter, AgentEvent } from '../src/adapters/types';
 import { modelControlFor, NO_MODEL_CONTROL } from '../src/shared/modelswitch';
-
-type Call = { name: string; args: unknown[] };
-
-/** A session that records every call and answers from a script. */
-class FakeSession {
-  calls: Call[] = [];
-  handler: ((ev: unknown) => void) | undefined;
-  processing = false;
-  switchAnswer: unknown = { modelId: 'sim-deep' };
-  compactAnswer: unknown = { success: true, tokensRemoved: 5000, messagesRemoved: 4, contextWindow: { tokenLimit: 100000, currentTokens: 12000, messagesLength: 3 } };
-  removed = true;
-  constructor(public sessionId: string, public config: Record<string, unknown>) {}
-  private rec<T>(name: string, v: T, ...args: unknown[]): T { this.calls.push({ name, args }); return v; }
-  on(h: (ev: unknown) => void): () => void { this.handler = h; return () => { this.handler = undefined; }; }
-  fire(type: string, data: Record<string, unknown>): void { this.handler?.({ type, data }); }
-  abort = async (): Promise<void> => this.rec('abort', undefined);
-  disconnect = async (): Promise<void> => this.rec('disconnect', undefined);
-  rpc = {
-    eventLog: { registerInterest: async (a: unknown) => this.rec('registerInterest', undefined, a) },
-    options: { update: async (a: unknown) => this.rec('options.update', undefined, a) },
-    model: { switchTo: async (a: unknown) => this.rec('switchTo', this.switchAnswer, a) },
-    queue: { removeAt: async (a: unknown) => this.rec('removeAt', { removed: this.removed }, a) },
-    history: { compact: async (a: unknown) => this.rec('compact', this.compactAnswer, a) },
-    metadata: { isProcessing: async () => this.rec('isProcessing', { processing: this.processing }) },
-  };
-}
-
-class FakeClient {
-  created: Array<Record<string, unknown>> = [];
-  resumed: Array<{ id: string; config: Record<string, unknown> }> = [];
-  onDisk = new Set<string>();
-  last!: FakeSession;
-  n = 0;
-  async createSession(config: Record<string, unknown>): Promise<FakeSession> {
-    this.created.push(config);
-    this.last = new FakeSession((config.sessionId as string) ?? 'fake-' + ++this.n, config);
-    this.onDisk.add(this.last.sessionId);
-    return this.last;
-  }
-  async resumeSession(id: string, config: Record<string, unknown>): Promise<FakeSession> {
-    this.resumed.push({ id, config });
-    this.last = new FakeSession(id, config);
-    return this.last;
-  }
-  async getSessionMetadata(id: string): Promise<unknown> { return this.onDisk.has(id) ? { sessionId: id } : undefined; }
-  async listModels(): Promise<unknown[]> { return []; }
-}
-
-class TestAdapter extends CopilotAdapter {
-  constructor(public fake: FakeClient) { super(); }
-  protected async getClient(): Promise<never> { return this.fake as never; }
-}
+import { startOptionsOf } from '../src/main/startopts';
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cm-'));
@@ -338,6 +290,133 @@ async function main(): Promise<void> {
   const root = path.join(__dirname, '..', '..');
   const renderer = ['app.js', 'screens.js', 'modelswitch.js', 'dialog.js', 'sim.ts'].map((f) => fs.readFileSync(path.join(root, 'src', 'renderer', f), 'utf8')).join('\n');
   assert.doesNotMatch(renderer, /switchTo|long_context|session\.rpc|@github\/copilot|modelPickerPriceCategory|tokenPrices|capi\b|\.removeAt\(/, 'constitution II: no runtime specifics in the renderer');
+
+
+  // ---- spec 012 T010: the interface contract (FR-026..FR-028)
+  {
+    const ad = new TestAdapter(new FakeClient());
+    const c: AdapterCapabilities = ad.capabilities;
+    assert.strictEqual(ad.displayName, 'GitHub Copilot');
+    assert.deepStrictEqual(c.permissionModes, ['read-only', 'ask', 'allow']);
+    assert.strictEqual(c.permModeSwitch, 'live');
+    assert.deepStrictEqual(c.usage, { tokens: true, costUsd: false, nanoAiu: true });
+    // FR-027: every optional member is present exactly when its capability says so
+    const has = (k: string): boolean => typeof (ad as unknown as Record<string, unknown>)[k] === 'function';
+    assert.strictEqual(c.interrupt, has('interrupt'));
+    assert.strictEqual(c.models, has('listModelOptions'));
+    assert.strictEqual(c.history, has('listPreviousSessions') && has('history'));
+    assert.strictEqual(c.caps, has('setCap') && has('resolveLimit'));
+    assert.strictEqual(c.mcpToggle, has('setMcpEnabled'));
+    assert.strictEqual(c.permModeSwitch !== ('none' as AdapterCapabilities['permModeSwitch']), has('setPermMode'));
+    assert.ok(has('isLive') && has('dispose'));
+
+    // FR-028: permissionMode is the one source of truth when present; unknown = read-only; absent = the old booleans
+    const ask = async (startOpts: Record<string, unknown>): Promise<{ kind: string; pending: boolean }> => {
+      const t = await setup(startOpts);
+      const decide = (t.s.config.onPermissionRequest as (r: unknown) => Promise<{ kind: string }>)({ kind: 'write', fileName: path.join(dir, 'x.ts'), toolCallId: 'w1' });
+      await sleep(10);
+      const pending = t.events.some((e) => e.type === 'status' && e.status === 'needs-permission' && e.permission?.state === 'pending');
+      if (pending) await t.ad.stop(t.sid); // denies what is pending
+      return { kind: (await decide).kind, pending };
+    };
+    assert.deepStrictEqual(await ask({ permissionMode: 'ask' }), { kind: 'reject', pending: true }, 'ask: left pending (denied only when the session stops)');
+    assert.deepStrictEqual(await ask({ permissionMode: 'read-only', allow: true }), { kind: 'reject', pending: false }, 'permissionMode beats allow');
+    assert.deepStrictEqual(await ask({ permissionMode: 'allow', ask: true }), { kind: 'approve-once', pending: false });
+    assert.deepStrictEqual(await ask({ permissionMode: 'bogus' }), { kind: 'reject', pending: false }, 'unknown value = read-only');
+    assert.deepStrictEqual(await ask({ permissionMode: 'bogus', allow: true }), { kind: 'reject', pending: false }, 'unknown value is still read-only next to allow');
+    assert.deepStrictEqual(await ask({ ask: true }), { kind: 'reject', pending: true }, 'absent + ask: pending');
+    assert.deepStrictEqual(await ask({ allow: true }), { kind: 'approve-once', pending: false });
+    assert.deepStrictEqual(await ask({}), { kind: 'reject', pending: false });
+
+    // isLive follows the session
+    const t = await setup();
+    assert.strictEqual(t.ad.isLive(t.sid), true);
+    await t.ad.stop(t.sid);
+    assert.strictEqual(t.ad.isLive(t.sid), false);
+
+    // main.ts sends permissionMode, not the booleans
+    for (const m of ['read-only', 'ask', 'allow'] as const) {
+      const o = startOptionsOf({ permMode: m, maxAiCredits: 40 }, '/w', 'auto', undefined) as unknown as Record<string, unknown>;
+      assert.strictEqual(o.permissionMode, m);
+      assert.ok(!('allow' in o) && !('ask' in o));
+      assert.strictEqual(o.workspace, '/w');
+      assert.strictEqual(o.model, 'auto');
+      assert.strictEqual(o.autoTier, 'efficiency');
+      assert.strictEqual(o.maxAiCredits, 40);
+    }
+    assert.strictEqual(startOptionsOf({ permMode: 'ask', model: 'm1' }, '/w', 'auto', 'high').autoTier, undefined);
+  }
+
+  // ---- spec 012 T011: registry, detectAll, Copilot descriptor (FR-030..FR-034)
+  {
+    const caps = (): AdapterCapabilities => JSON.parse(JSON.stringify(COPILOT_DESCRIPTOR.capabilities));
+    const calls: string[] = [];
+    const fake = (id: string): AdapterDescriptor => ({ id, displayName: `Fake ${id}`, capabilities: caps(), create: () => { calls.push(id); return {} as AgentAdapter; } });
+    // (a) createRegistry errors
+    assert.throws(() => createRegistry([]), /empty/);
+    assert.throws(() => createRegistry([fake('aa'), fake('aa')]), /duplicate/);
+    for (const bad of ['Copilot', '', 'a b', '1x', 'a'.repeat(33)]) assert.throws(() => createRegistry([fake(bad)]), /bad id/, `bad id ${JSON.stringify(bad)}`);
+    createRegistry([fake('a'.repeat(32)), fake('x-1')]);
+    // (b) list/get/has/default/create
+    const reg = createRegistry([fake('one'), fake('two')]);
+    assert.deepStrictEqual(reg.list().map((d) => d.id), ['one', 'two']);
+    assert.strictEqual(reg.get('nope'), undefined);
+    assert.strictEqual(reg.get('two')?.id, 'two');
+    assert.strictEqual(reg.has('one'), true);
+    assert.strictEqual(reg.has('nope'), false);
+    assert.strictEqual(reg.defaultId, 'one');
+    assert.strictEqual(createRegistry([COPILOT_DESCRIPTOR]).defaultId, 'copilot');
+    assert.throws(() => reg.create('nope'));
+    // (c) lazy creation
+    assert.deepStrictEqual(calls, []);
+    await detectAll(reg, async () => ({ state: 'ready' }));
+    assert.deepStrictEqual(calls, [], 'create is never called by createRegistry, list, get or detectAll');
+    reg.create('two');
+    assert.deepStrictEqual(calls, ['two']);
+    reg.create('two');
+    reg.create('one');
+    assert.deepStrictEqual(calls, ['two', 'two', 'one']);
+    // (d) detectAll
+    const d2 = createRegistry([fake('ok'), fake('boom'), fake('bogus'), fake('long'), fake('ver'), fake('getter')]);
+    let infos: Awaited<ReturnType<typeof detectAll>> = [];
+    await assert.doesNotReject(async () => { infos = await detectAll(d2, async (d) => {
+      if (d.id === 'ok') return { state: 'ready', version: '  1.2.3 ' };
+      if (d.id === 'boom') throw new Error('x');
+      if (d.id === 'bogus') return { state: 'weird' as never, version: '9' };
+      if (d.id === 'long') return { state: 'too-old', hint: 'h'.repeat(500) };
+      if (d.id === 'getter') return { state: 'ready', get version(): string { throw new Error('hostile'); } };
+      return { state: 'ready', version: 5 as never };
+    }); });
+    assert.deepStrictEqual(infos.map((i) => i.id), ['ok', 'boom', 'bogus', 'long', 'ver', 'getter']);
+    assert.deepStrictEqual(infos.map((i) => i.state), ['ready', 'unknown', 'unknown', 'too-old', 'ready', 'unknown']);
+    assert.strictEqual(infos[0].version, '1.2.3');
+    assert.strictEqual(infos[3].hint?.length, 200);
+    assert.ok(!('version' in infos[4]), 'non-string version dropped');
+    assert.ok(!('version' in infos[2]), 'nothing kept from a bogus result');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(infos)), infos);
+    assert.ok(!JSON.stringify(infos, (_k, v) => (typeof v === 'function' ? '__fn' : v)).includes('__fn'));
+    const desc = d2.get('ok')!;
+    const out = infos[0].capabilities as unknown as { permissionModes: string[]; usage: { tokens: boolean } };
+    out.permissionModes.push('allow');
+    out.usage.tokens = !out.usage.tokens;
+    assert.deepStrictEqual(desc.capabilities, caps(), 'mutating the output leaves the descriptor alone');
+    // (e) Copilot descriptor
+    const made = COPILOT_DESCRIPTOR.create();
+    assert.ok(made instanceof CopilotAdapter);
+    assert.strictEqual(made.id, COPILOT_DESCRIPTOR.id);
+    assert.strictEqual(made.displayName, COPILOT_DESCRIPTOR.displayName);
+    assert.strictEqual(made.capabilities, COPILOT_DESCRIPTOR.capabilities);
+    assert.strictEqual((made as unknown as { client?: unknown; starting?: unknown }).client, undefined);
+    assert.strictEqual((made as unknown as { starting?: unknown }).starting, undefined, 'create() does not start the client');
+    assert.ok(Object.isFrozen(COPILOT_DESCRIPTOR.capabilities));
+    // compile-time: capabilities are readonly (a write would fail typecheck)
+    // @ts-expect-error readonly property
+    void (() => { COPILOT_DESCRIPTOR.capabilities.images = false; });
+    // @ts-expect-error readonly array
+    void (() => { COPILOT_DESCRIPTOR.capabilities.permissionModes.push('allow'); });
+    // @ts-expect-error readonly nested object
+    void (() => { COPILOT_DESCRIPTOR.capabilities.usage.tokens = false; });
+  }
 
   await sleep(0);
   fs.rmSync(dir, { recursive: true, force: true });

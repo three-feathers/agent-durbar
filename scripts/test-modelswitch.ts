@@ -20,6 +20,12 @@ const D = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'modelswit
   fmtRatio: (n: number) => string;
   fmtTokens: (n: number) => string;
   priceLine: (m: M, t?: string) => string;
+  capsOf: (info: unknown, adapters: unknown) => Record<string, unknown>;
+  modesFor: (caps: unknown) => string[];
+  fallbackMode: (caps: unknown, cur: string) => string;
+  kindChoices: (adapters: unknown) => Array<{ id: string; name: string; shortName: string; state: string; stateText: string; disabled: boolean; label: string; version: string; hint: string }>;
+  showsKindPicker: (adapters: unknown) => boolean;
+  shows: (caps: unknown, feature: string, mode?: string) => boolean;
 };
 
 const fast: M = { id: 'fast', name: 'Fast', pricing: { inputPerMTok: 20, outputPerMTok: 100 }, contextWindow: 128000 };
@@ -176,6 +182,94 @@ assert.strictEqual(modelControlFor({ compact() {} }).switch, 'none');
   assert.ok(dearer.reasons.some((r) => r.code === 'cap-unverified'), 'a costlier switch under a cap says the cap cannot be checked');
   assert.ok(!dearer.reasons.some((r) => r.code === 'over-headroom'));
   assert.ok(!D.confirmFor(uf, um, { tokens: 100000 }).reasons.some((r) => r.code === 'cap-unverified'), 'no cap, nothing to check');
+}
+
+// agent kinds and capability gating (spec 012 T017, FR-059..FR-061)
+{
+  const ALL = ['stop', 'modes', 'cap', 'mcp', 'mcpToggle', 'history', 'models', 'effort'];
+  const base = { interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: true, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true };
+  const none = { ...base, interrupt: false, models: false, effort: false, permissionModes: [], permModeSwitch: 'none', caps: false, history: false, mcpStatus: false, mcpToggle: false };
+  const cop = { id: 'copilot', displayName: 'Copilot', state: 'ready', capabilities: base };
+  const lim = { id: 'lim', displayName: 'Limited', state: 'ready', capabilities: none };
+
+  // (a) capsOf
+  for (const noList of [undefined, null, [], 'x']) {
+    const c = D.capsOf({ adapterId: 'copilot' }, noList);
+    for (const f of ALL) assert.strictEqual(D.shows(c, f), true, `a: no list, ${f} counts as on`);
+    assert.strictEqual(D.shows(c, 'modeList', 'allow'), true, 'a: no list, every mode is listed');
+  }
+  assert.strictEqual(D.capsOf({ adapterId: 'lim' }, [cop, lim]), none, 'a: a known id gives its capabilities');
+  assert.strictEqual(D.capsOf({ adapterId: 'lim' }, [cop, lim]).interrupt, false);
+  for (const f of ALL) assert.strictEqual(D.shows(D.capsOf({ adapterId: 'ghost' }, [cop, lim]), f), true, `a: an unknown id is all on (${f})`);
+  assert.strictEqual(D.shows(D.capsOf({}, [cop, lim]), 'stop'), true, 'a: an info without an id is all on');
+  assert.strictEqual(D.shows(D.capsOf(undefined, [cop, lim]), 'stop'), true, 'a: no info is all on');
+
+  // (b) kindChoices: each of the five states
+  const mk = (state: string, extra: Record<string, unknown> = {}) => ({ id: 'k-' + state, displayName: 'Kind', state, capabilities: base, ...extra });
+  const want: Record<string, [boolean, string, string]> = { ready: [false, '', 'Kind'], 'not-installed': [true, 'not installed', 'Kind: not installed'], 'too-old': [true, 'too old', 'Kind: too old'], 'not-signed-in': [true, 'not signed in', 'Kind: not signed in'], unknown: [true, 'unknown', 'Kind: unknown'] };
+  for (const st of Object.keys(want)) {
+    const [k] = D.kindChoices([mk(st)]);
+    assert.strictEqual(k.disabled, want[st][0], `b: ${st} disabled`);
+    assert.strictEqual(k.stateText, want[st][1], `b: ${st} state text`);
+    assert.strictEqual(k.label, want[st][2], `b: ${st} label`);
+    assert.strictEqual(k.state, st);
+  }
+  assert.strictEqual(D.kindChoices([mk('bogus')])[0].disabled, true, 'b: an unrecognised state is disabled and reads unknown');
+  assert.strictEqual(D.kindChoices([mk('bogus')])[0].stateText, 'unknown');
+  const withHint = D.kindChoices([mk('not-installed', { hint: 'Install it. ' + 'x'.repeat(500), version: '1.2.3' })])[0];
+  assert.ok(withHint.hint.startsWith('Install it. ') && withHint.hint.length === 200, 'b: the hint is passed through and capped');
+  assert.strictEqual(withHint.version, '1.2.3');
+  assert.deepStrictEqual(D.kindChoices(undefined), [], 'b: no list, no choices');
+  assert.deepStrictEqual(D.kindChoices([null, { state: 'ready' }, cop]).map((k) => k.id), ['copilot'], 'b: entries without an id are skipped');
+
+  // (c) showsKindPicker
+  assert.strictEqual(D.showsKindPicker(undefined), false);
+  assert.strictEqual(D.showsKindPicker([]), false);
+  assert.strictEqual(D.showsKindPicker([cop]), false, 'c: one adapter, no picker');
+  assert.strictEqual(D.showsKindPicker([cop, lim]), true, 'c: two adapters');
+  assert.strictEqual(D.showsKindPicker([cop, mk('not-installed')]), true, 'c: a not-ready kind still counts');
+
+  // (d) shows: each feature on and off
+  const pairs: Array<[string, string]> = [['stop', 'interrupt'], ['modes', 'permModeSwitch'], ['cap', 'caps'], ['mcp', 'mcpStatus'], ['history', 'history'], ['models', 'models'], ['effort', 'effort']];
+  for (const [f, flag] of pairs) {
+    assert.strictEqual(D.shows(base, f), true, `d: ${f} on`);
+    assert.strictEqual(D.shows(none, f), false, `d: ${f} off`);
+    const only = { ...none, [flag]: flag === 'permModeSwitch' ? 'next-message' : true };
+    assert.strictEqual(D.shows(only, f), true, `d: ${f} follows ${flag} alone`);
+  }
+  assert.strictEqual(D.shows({ ...base, permModeSwitch: 'next-message' }, 'modes'), true, 'd: next-message still switches');
+  assert.strictEqual(D.shows({ ...base, permissionModes: ['read-only', 'ask'] }, 'modeList', 'allow'), false, 'd: a mode the adapter cannot enforce is not listed');
+  assert.strictEqual(D.shows({ ...base, permissionModes: ['read-only', 'ask'] }, 'modeList', 'ask'), true);
+  assert.strictEqual(D.shows({ ...base, permissionModes: [] }, 'modeList', 'read-only'), false);
+  assert.strictEqual(D.shows(base, 'mcpToggle'), true);
+  assert.strictEqual(D.shows({ ...base, mcpToggle: false }, 'mcpToggle'), false, 'd: toggle needs the flag');
+  assert.strictEqual(D.shows({ ...base, mcpStatus: false }, 'mcpToggle'), false, 'd: toggle needs mcpStatus');
+  assert.strictEqual(D.shows(undefined, 'cap'), true, 'd: no caps, as today');
+
+  // (e) spec 012 T018: the narrowest kind ("basic") and the mode helpers
+  const basic = { ...none, permissionModes: ['read-only'], permModeSwitch: 'none' };
+  assert.strictEqual(D.shows(basic, 'mcp'), false, 'e: basic has no MCP button');
+  assert.strictEqual(D.shows(basic, 'mcpToggle'), false, 'e: basic has no MCP switches');
+  assert.strictEqual(D.shows(basic, 'modeList', 'read-only'), true, 'e: basic lists Read-only');
+  assert.strictEqual(D.shows(basic, 'modeList', 'ask'), false, 'e: basic does not list Ask first');
+  assert.strictEqual(D.shows(basic, 'modeList', 'allow'), false, 'e: basic does not list Allow all');
+  assert.strictEqual(D.shows({ ...basic, mcpToggle: true }, 'mcpToggle'), false, 'e: a toggle flag without mcpStatus shows nothing');
+  assert.deepStrictEqual(D.modesFor(base), ['read-only', 'ask', 'allow'], 'e: full list, in order');
+  assert.deepStrictEqual(D.modesFor({ ...base, permissionModes: ['allow', 'read-only'] }), ['read-only', 'allow'], 'e: listed in the UI order, not the adapter order');
+  assert.deepStrictEqual(D.modesFor(basic), ['read-only']);
+  assert.deepStrictEqual(D.modesFor({ ...base, permissionModes: [] }), ['read-only'], 'e: empty list means read-only only');
+  assert.deepStrictEqual(D.modesFor({ ...base, permissionModes: undefined }), ['read-only'], 'e: missing list means read-only only');
+  assert.deepStrictEqual(D.modesFor({ ...base, permissionModes: ['bogus'] }), ['read-only'], 'e: unknown modes are ignored');
+  assert.deepStrictEqual(D.modesFor(undefined), ['read-only'], 'e: no caps object means read-only only (safe by default)');
+  assert.strictEqual(D.fallbackMode(base, 'allow'), 'allow', 'e: an allowed mode is kept');
+  assert.strictEqual(D.fallbackMode(basic, 'allow'), 'read-only', 'e: allow falls back to read-only, never stays wide');
+  assert.strictEqual(D.fallbackMode(basic, 'ask'), 'read-only');
+  assert.strictEqual(D.fallbackMode({ ...base, permissionModes: ['read-only', 'ask'] }, 'allow'), 'read-only', 'e: not to the next mode up or down, always read-only');
+  assert.strictEqual(D.fallbackMode(basic, 'nonsense'), 'read-only');
+  assert.strictEqual(D.fallbackMode(basic, undefined as unknown as string), 'read-only');
+  assert.strictEqual(D.kindChoices([mk('ready', { displayName: 'Claude Code (simulated)' })])[0].shortName, 'Claude Code', 'e: the select shows the short name');
+  assert.strictEqual(D.kindChoices([mk('ready', { displayName: 'Claude Code (simulated)' })])[0].name, 'Claude Code (simulated)', 'e: the About dialog keeps (simulated)');
+  assert.strictEqual(D.kindChoices([cop])[0].shortName, 'Copilot');
 }
 
 console.log('modelswitch tests passed');

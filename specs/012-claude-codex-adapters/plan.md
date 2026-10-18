@@ -1,6 +1,6 @@
 # Implementation Plan: Claude Code and Codex adapters
 
-**Spec**: [spec.md](spec.md) | **Research**: [research.md](research.md) | **Tasks**: [tasks.md](tasks.md) | **Date**: 2026-10-17 | **Kind**: forward plan (nothing built)
+**Spec**: [spec.md](spec.md) | **Research**: [research.md](research.md) | **Tasks**: [tasks.md](tasks.md) | **Date**: 2026-10-17 | **Kind**: forward plan (Phase 1 T010-T016 built 2026-10-18; no Claude or Codex adapter yet)
 
 ## Summary
 
@@ -45,8 +45,8 @@ One adapter instance per id (one shared child process where the vendor allows: C
 | New file | What | Pure? |
 | --- | --- | --- |
 | `src/adapters/capabilities.ts` | `AdapterCapabilities`, `AdapterDescriptor`, `AdapterState` | yes |
-| `src/adapters/registry.ts` | id → descriptor/factory, `detectAll()` | yes (injected exec) |
-| `src/adapters/detect.ts` | find binary, `--version`, min-version compare, Windows shim rules | yes (injected env/exec) |
+| `src/adapters/registry.ts` | id → descriptor/factory, `detectAll()` | yes (injected detect function; exec is injected in `detect.ts`) |
+| `src/adapters/detect.ts` | find binary (configured path, PATH, known folders), `--version`, min-version compare, Windows `.exe`/`.cmd` rules, `detectCopilot` (spec `## Changes` 2026-10-18, T012) | yes (injected env/exec; `nodeExec` is the one real wrapper) |
 | `src/adapters/fake.ts` | `FakeAdapter`: plays a script of normalized events, honours the broker, for tests and `DURBAR_SIM_MAIN` | yes |
 | `src/adapters/claudeModes.ts` | mode → SDK options, tool name → permission kind, Read-only hook decision | yes |
 | `src/adapters/claudeMap.ts` | `SDKMessage` → `AgentEvent` (stateful mapper like `EventMapper`) | yes |
@@ -62,12 +62,14 @@ One adapter instance per id (one shared child process where the vendor allows: C
 
 ## Interface changes (spec deltas to 002, made in Phase 1, Copilot behaviour unchanged)
 
+> **Note 2026-10-18 (T010, issue #30):** items 1 and 2 below are restated against today's code in [spec.md `## Changes` 2026-10-18](spec.md#changes) (FR-026 to FR-029): `listModelOptions?()` instead of `listModels?()`, `isLive` and `dispose` required, `displayName` + `capabilities` on the instance (the full descriptor is T011), `ModelOption` in `src/shared/modelswitch.ts`, `debug?` added, and the mode-switch capability named `permModeSwitch: 'live' | 'next-message' | 'none'` to match spec 030's `ModelControl`. Item 4 (persisted `adapterId`) stays T013 and item 6 (`AdapterInfo`) stays T011.
+
 1. `AgentAdapter.descriptor` / `capabilities` (readonly).
 2. Optional members promoted from `CopilotAdapter`: `isLive(id)`, `dispose()`, `listModels?()` (returns the existing `ModelOption` shape, moved to `src/shared`), `listPreviousSessions?()`, `history?()`, `setPermMode?()`. UI uses them only when `capabilities` says so.
 3. `StartOptions`: `resumeSessionId` stays the **vendor** id; add `permissionMode: 'read-only' | 'ask' | 'allow'` as the one source of truth (`allow`/`ask` booleans stay for Copilot until migrated). `maxAiCredits` and `autoTier` are ignored by adapters whose `caps` is false.
-4. Persisted folder entry: `adapterId` (default `copilot`) and `vendorSessionId?`. Migration on read.
+4. Persisted folder entry: `adapterId` (default `copilot`) (never written for Copilot). `vendorSessionId` is deferred (spec `## Changes` 2026-10-18 T013, FR-045): the store saves no session id today, so there is nothing to migrate.
 5. `UsageEvent`: add optional `costUsd?: number` and `costBasis?: 'estimate'`; `creditsStatus: 'unavailable'` where the runtime gives no money. No existing field changes.
-6. `AdapterInfo` (in `src/shared/api.ts`): id, name, state, version, hint, capabilities (plain data, no vendor types).
+6. `AdapterInfo` (in `src/shared/adapters.ts`, re-exported from `src/shared/api.ts` by T014; see spec `## Changes` 2026-10-18, T011): id, displayName, state, version, hint, capabilities (plain data, no vendor types).
 
 ## Capabilities
 
@@ -153,7 +155,7 @@ Windows: sandbox needs a setup step (`windowsSandbox/setupStart`); until checked
 | `item/reasoning/summaryTextDelta` (`textDelta` if present) | `thinking` delta, `reasoningId` = item id + `summaryIndex` | |
 | `item/started` commandExecution | `toolCall start`, `tool: 'shell'`, `args: {command, cwd}` | |
 | `item/commandExecution/outputDelta` | `toolCall update` | capped |
-| `item/completed` commandExecution | `complete`/`failed` (`exitCode`, `status declined` → failed with "declined") | `output` = `aggregatedOutput`, capped |
+| `item/completed` commandExecution | `complete`, or `failed` when `exitCode` is non-zero or `status` is declined ("declined") | `output` = `aggregatedOutput`, capped |
 | `fileChange` item | `toolCall`, `tool: 'apply_patch'`, `args: {files: [...paths]}`, `output` = diff summary | diffs are not sent whole |
 | `mcpToolCall` item | `toolCall` with **`mcpServer` = `server`, `mcpTool` = `tool`**, `tool` = `<server>.<tool>` | direct, no parsing |
 | `dynamicToolCall`, `webSearch`, `imageView` | `toolCall` with the item type as `tool` | |
@@ -185,7 +187,7 @@ Project-level vendor settings can run code (Claude runs project hooks and `.mcp.
 
 | Phase | Needs | Content | Credits / accounts |
 | --- | --- | --- | --- |
-| **1 Simulator-only foundation** | nothing | Interface deltas, registry, capabilities, `detect()` skeleton with injected exec, persisted `adapterId`/`vendorSessionId` migration, `FakeAdapter`, contract suite (run on `FakeAdapter` and the Copilot fake), picker UI with unavailable state, capability gating, README table, screenshots on the simulator | none |
+| **1 Simulator-only foundation** (T010-T016 built 2026-10-18 (simulator and unit tests); T017-T019 open) | nothing | Interface deltas, registry, capabilities, `detect()` skeleton with injected exec, persisted `adapterId`/`vendorSessionId` migration, `FakeAdapter`, contract suite (run on `FakeAdapter` and the Copilot fake), picker UI with unavailable state, capability gating, README table, screenshots on the simulator | none |
 | **2 Pure vendor logic** | Phase 1 | `claudeModes`, `codexModes`, `claudeMap`, `codexMap`, kind mapping, detect parsers, with **synthetic** fixtures from vendor docs/types and tests; SC-004 on fakes | none |
 | **3 Transports on fake processes** | Phase 2, Q3/Q4 for Claude | `codexRpc` against a scripted stdio fake; `CodexAdapter`; `ClaudeAdapter` against a fake `query()` object; history readers on fixtures; packaging notes (asar, ESM import) tested by a build check that does not run a vendor | none (a free `--version` probe on a developer's own machine is allowed; no prompt) |
 | **4 Real-account verification** | owner approval (Q1, Q2) | one tiny Read-only prompt per check per vendor: start, one turn, interrupt, stop, resume, permission denied in Read-only, permission asked in Ask first, MCP tool event, sub-agent event, context and usage numbers, sign-in state calls; record redacted fixtures (`recorded`), update spec evidence tags and the README table | **spends the owner's credits** |
