@@ -19,11 +19,11 @@ function makeFs(uid = 501) {
   /** Runs right after an lstat of `path` returned (to swap the file in a race). */
   const hook: { afterLstat?: (p: string) => void } = {};
   const err = (code: string) => Object.assign(new Error(code), { code });
-  const stat = (n: Node): AuthStat & { size: number } => ({
-    uid: n.uid, mode: n.mode,
-    isSymbolicLink: () => n.kind === 'link', isFile: () => n.kind === 'file', isDirectory: () => n.kind === 'dir',
-    size: n.data.length,
-  });
+  // A snapshot taken at call time: a node swapped afterwards must not change an earlier lstat/fstat result.
+  const stat = (n: Node): AuthStat & { size: number } => {
+    const k = n.kind;
+    return { uid: n.uid, mode: n.mode, isSymbolicLink: () => k === 'link', isFile: () => k === 'file', isDirectory: () => k === 'dir', size: n.data.length };
+  };
   const fs: McpFs = {
     mkdirp(d, mode) { if (!nodes.has(d)) nodes.set(d, { kind: 'dir', mode, uid, data: '' }); },
     chmod(p, mode) { const n = nodes.get(p); if (!n) throw err('ENOENT'); n.mode = mode; },
