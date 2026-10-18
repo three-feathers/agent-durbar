@@ -87,6 +87,24 @@ export interface UsageTotalsView {
   error?: string;
 }
 
+/** A place the user made (spec 024 FR-018): a name and an icon id from a fixed set. No paths, no content. */
+export interface CustomPlaceView {
+  id: string;
+  name: string;
+  icon: string;
+}
+
+/** Result of adding, changing or removing a custom place (spec 024 FR-020). The list and the map are what is in force after the call, also when it was refused. */
+export interface CustomPlaceResult {
+  ok: boolean;
+  /** One of `name-empty`, `name-long`, `name-taken`, `name-invalid`, `icon`, `limit`, `unknown`. */
+  error?: string;
+  /** The place that was added. */
+  place?: CustomPlaceView;
+  customPlaces: CustomPlaceView[];
+  placeMap: Record<string, string>;
+}
+
 export interface AppSettingsView {
   /** Owner, version and contributors for Settings > About (spec 008 FR-018). */
   about?: AboutView;
@@ -94,6 +112,8 @@ export interface AppSettingsView {
   defaultMaxAiCredits?: number;
   /** Places in the office (spec 024): MCP server name -> place id or `desk`; unmapped servers use the built-in rules. */
   placeMap?: Record<string, string>;
+  /** The user's own places (spec 024 FR-018), up to 3, in creation order. */
+  customPlaces?: CustomPlaceView[];
   /** Serious mode (spec 034): the agent figures show no monster, ambulance or other mood drawing. */
   seriousMode?: boolean;
 }
@@ -333,6 +353,12 @@ export interface DurbarApi {
   setDefaultCap?(credits: number | null): Promise<{ ok: boolean; defaultMaxAiCredits?: number }>;
   /** Map an MCP server to a place (`library|software|terminal|web|other|desk`), or `null` to use the default (spec 024). */
   setPlace?(server: string, place: string | null): Promise<{ ok: boolean; placeMap?: Record<string, string> }>;
+  /** Custom places (spec 024 FR-020). `icon` is one of 12 ids (`star`, `flask`, `database`, `cloud`, `chart`, `chat`, `mail`, `calendar`, `shield`, `box`, `bolt`, `pin`). */
+  addPlace?(name: string, icon: string): Promise<CustomPlaceResult>;
+  /** Rename and/or change the icon; the id, and so every mapping, stays. */
+  updatePlace?(id: string, patch: { name?: string; icon?: string }): Promise<CustomPlaceResult>;
+  /** Remove a place; the servers that were mapped to it go back to their default place. */
+  removePlace?(id: string): Promise<CustomPlaceResult>;
   /** Turn Serious mode on or off (spec 034). */
   setSeriousMode?(on: boolean): Promise<{ ok: boolean; seriousMode?: boolean }>;
   setCap?(id: string, credits: number | null): Promise<{ ok: boolean; error?: string; maxAiCredits?: number }>;
