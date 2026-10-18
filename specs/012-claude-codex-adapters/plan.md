@@ -78,14 +78,14 @@ interface AdapterCapabilities {
   interrupt: boolean; resume: boolean; images: boolean;
   models: boolean; effort: boolean;
   permissionModes: Array<'read-only' | 'ask' | 'allow'>;
-  liveModeSwitch: 'immediate' | 'next-message' | 'none';
+  permModeSwitch: 'live' | 'next-message' | 'none';  // renamed to match the code (T028)
   usage: { tokens: boolean; costUsd: boolean; nanoAiu: boolean };
   context: boolean; caps: boolean; helpers: boolean; history: boolean;
   mcpStatus: boolean; mcpToggle: boolean;
 }
 ```
 
-Planned values (all unverified until Phase 4): Claude: everything true except `nanoAiu`, `caps`; `liveModeSwitch: 'immediate'`. Codex: `costUsd: false`, `caps: false`, `helpers: false` until child-thread routing is recorded, `mcpToggle: false` (FR-024), `liveModeSwitch: 'next-message'`, `images: true` (`localImage`), `permissionModes` all three on Linux and macOS, **Windows Read-only/Ask declared as gap until checked**.
+Planned values (all unverified until Phase 4): Claude: everything true except `nanoAiu`, `caps`; `permModeSwitch: 'live'`. Codex: `costUsd: false`, `caps: false`, `helpers: false` until child-thread routing is recorded, `mcpToggle: false` (FR-024), `liveModeSwitch: 'next-message'`, `images: true` (`localImage`), `permissionModes` all three on Linux and macOS, **Windows Read-only/Ask declared as gap until checked**.
 
 ## Permission mode mapping
 
