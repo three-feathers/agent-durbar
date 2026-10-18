@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **Codex reads limited to the session's folders (spec 012 T084, issue #168).** In Read-only and Ask first, the Codex mode settings now use a Codex permission profile that may read only the session's folders and Codex's minimal system files, instead of the `read-only` sandbox that could read anywhere (`~/.ssh`). Where that cannot be enforced (Codex older than rust-v0.163.0, no experimental API, Windows without the elevated sandbox) Durbar will refuse those two modes for Codex. Pure settings and unit tests only; there is no Codex adapter yet and nothing was run on a real Codex.
+
 - **Docs: what the permission modes and usage mean per agent kind (spec 012 T028, issue #47).** Dated `## Changes` entries in specs 003 (Read-only / Ask first / Allow all for Claude and Codex, unknown mode = Read-only, Codex Read-only differs), 011 (AIU for Copilot, a labelled USD estimate for Claude never added to AIU, no money for Codex; caps stay Copilot-only) and 018 (live mode switch per kind), and a README *Safety model* note. Docs only; nothing is wired to a real Claude or Codex yet.
 
 ## v0.1.0-alpha.5 (pre-release, 2026-10-18)
