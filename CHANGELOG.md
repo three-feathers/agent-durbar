@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.4 tag)
 
+- **Settings > Places lists every folder's own MCP servers (spec 024 delta, issue #116).** Per-folder extras now get a row before any agent has used them, read by name only from the saved folders; choosing a place never switches a server on or trusts it.
+
 - **One GitHub server in Settings > Places (spec 024 delta, issue #117).** `github` (your own server in `~/.copilot/mcp-config.json`) and Copilot's built-in `github-mcp-server` (the name its tool events carry) are one row, `github`, with the note "also github-mcp-server"; a place chosen there now applies to calls from both. Saving moves an old `github-mcp-server` entry to `github`. Simulator and unit tests (`test:places`, `scripts/shots-024.js`), 0 AIU; not checked on a real session.
 
 - **Rooms show their worst agent (spec 034 delta, issue #135).** A room keeps its colour but gets a little darker when its worst agent is heavy (70-90% context) and clearly darker with a monster, an agent in Error or any trouble; a small red/blue siren blinks next to the room name (and on the door plate when it is closed) while the room has the ambulance or a fainted agent, and its label says "Alert: an agent needs help". Header text gets darker with the floor, and the folder path in every room header is a little darker (it was about 4.2:1, now 4.5:1 or more). Serious mode turns it off; reduced motion stops the blink. Simulator and unit tests, 0 AIU.

@@ -50,6 +50,15 @@
       return r;
     }).sort((a,b)=>a.name.localeCompare(b.name));
   }
+  /* Names for Settings > Places (spec 024 FR-016): the Copilot CLI servers, the names of every saved folder's extras (`extraResult` is what
+     mcpExtraNames() returned; anything but {names:[...]} adds nothing and non-string or empty entries are skipped), servers seen in tool events
+     this run and the names already mapped. Each exact name once; placeRows then folds aliases and case-sensitive duplicates stay as they are. */
+  function mergePlaceNames(cli,extraResult,seen,mapped){
+    const list=v=>Array.isArray(v)?v:[];
+    const extra=extraResult&&typeof extraResult==='object'&&Array.isArray(extraResult.names)?extraResult.names:[];
+    const all=[...list(cli),...extra,...list(seen),...list(mapped)];
+    return [...new Set(all.filter(n=>typeof n==='string'&&n))];
+  }
   /* Saves for one row: the canonical key gets the choice (null = default), then every alias key is cleared. */
   function placeSaves(name,place,aliases){
     return [[name,place],...(aliases||[]).map(a=>[a,null])];
@@ -156,5 +165,5 @@
     return {shown:cap-1,more:count-(cap-1)};
   }
 
-  return {PLACES,IDS,placeName,classify,canonicalServer,placeRows,placeSaves,defaultServerPlace,toolLabel,createVisits,layoutSpots};
+  return {PLACES,IDS,placeName,classify,canonicalServer,placeRows,mergePlaceNames,placeSaves,defaultServerPlace,toolLabel,createVisits,layoutSpots};
 })());

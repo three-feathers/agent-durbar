@@ -347,6 +347,8 @@ export interface DurbarApi {
   usageResetTotals?(): Promise<UsageTotalsView>;
   /** MCP (specs 019, 020): the Copilot CLI list is global and read live; extras are per folder/workspace key (`workspaceFile ?? cwd`). */
   mcpState?(): Promise<McpState>;
+  /** Names of the extras of every saved folder (any state), nothing else: for the Places list (spec 024 FR-016). */
+  mcpExtraNames?(): Promise<{ ok: boolean; names: string[] }>;
   mcpSetCli?(name: string, enabled: boolean): Promise<{ ok: boolean }>;
   mcpFolderState?(key: string): Promise<McpFolderState>;
   mcpUpsert?(key: string, input: McpServerInput, originalName?: string): Promise<McpResult>;

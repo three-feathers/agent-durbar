@@ -20,6 +20,7 @@ const P = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'places.js
   classify: (e: unknown, map?: unknown) => string;
   canonicalServer: (s: unknown) => unknown;
   placeRows: (names: unknown, map?: unknown) => { name: string; aliases: string[]; value: string }[];
+  mergePlaceNames: (cli: unknown, extra: unknown, seen: unknown, mapped: unknown) => string[];
   placeSaves: (name: string, place: string | null, aliases?: string[]) => [string, string | null][];
   defaultServerPlace: (s: unknown) => string;
   toolLabel: (e: unknown) => string;
@@ -206,6 +207,20 @@ assert.deepStrictEqual(rows(['github', 'github-mcp-server'], { github: 'library'
 {
   const both = { github: 'library', 'github-mcp-server': 'web' };
   assert.strictEqual(P.placeRows(['github', 'github-mcp-server'], both)[0].value, c('x', 'github-mcp-server', both), 'both keys: the row shows what classify() does for a github-mcp-server call');
+}
+// FR-016: extra names from the main process are merged with the CLI list before placeRows: one row per name, aliases folded
+assert.deepStrictEqual(rows(['github', 'my-notes', ...['docs-search', 'github-mcp-server', 'my-notes', 'playwright'], 'playwright']), ['docs-search||', 'github|github-mcp-server|', 'my-notes||', 'playwright||'], 'an extra that is a CLI name or an alias gives one row; an unused extra gets a default row');
+assert.deepStrictEqual(rows([...new Set(['github', 'my-notes', 'github-mcp-server', 'docs-search'])], { 'docs-search': 'web' }), ['docs-search||web', 'github|github-mcp-server|', 'my-notes||'], 'an unused extra can carry a saved place');
+{
+  const m = P.mergePlaceNames;
+  const cli = ['github', 'my-notes', 'github-mcp-server'];
+  assert.deepStrictEqual(m(cli, { ok: true, names: ['docs-search', 'playwright'] }, ['playwright'], []), ['github', 'my-notes', 'github-mcp-server', 'docs-search', 'playwright'], 'extras are added, each name once');
+  for (const bad of [undefined, null, 'x', 5, {}, { ok: true }, { names: 'x' }, { names: null }, { names: { 0: 'a' } }]) assert.deepStrictEqual(m(cli, bad, [], []), cli, 'no usable result adds nothing: ' + JSON.stringify(bad));
+  assert.deepStrictEqual(m([], { names: [1, '', 'a', null, {}, 'a', 'b'] }, [], []), ['a', 'b'], 'only non-empty strings are kept');
+  assert.deepStrictEqual(m(null, { names: ['x'] }, undefined, 'y'), ['x'], 'bad lists are ignored');
+  assert.deepStrictEqual(m([], null, [], ['only-mapped']), ['only-mapped'], 'a name that is only mapped is kept');
+  const merged = m(cli, { names: ['docs-search', 'playwright', 'github-mcp-server', 'acme'] }, ['playwright', 'acme'], ['acme', 'docs-search']);
+  assert.deepStrictEqual(rows(merged, { acme: 'web' }), ['acme||web', 'docs-search||', 'github|github-mcp-server|', 'my-notes||', 'playwright||'], 'an extra that is also seen, mapped, a CLI name or an alias gives one row');
 }
 assert.deepStrictEqual(rows(['acme'], { acme: 'terminal' }), ['acme||terminal'], 'other rows unchanged');
 assert.deepStrictEqual(rows(['github'], Object.create({ github: 'web' })), ['github||'], 'inherited keys ignored');

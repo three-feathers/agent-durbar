@@ -524,6 +524,12 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
     const folderName = (key: string): string => key.replace(/\/+$/, '').split('/').pop() || key;
     const mcpApi: Partial<DurbarApi> = {
       mcpState: async () => ({ cli: fakeCli.map((a) => ({ ...a })), file: { label: '~/.copilot/mcp-config.json', found: true, skipped: 0 }, secretsPersist: true }),
+      mcpExtraNames: async () => {
+        const taken = new Set(fakeCli.map((a) => a.name.toLowerCase()));
+        const names = new Set<string>();
+        for (const list of Object.values(fakeExtras)) for (const v of list) if (!taken.has(v.name.toLowerCase())) names.add(v.name);
+        return { ok: true, names: [...names].sort().slice(0, 500) };
+      },
       mcpSetCli: async (name, enabled) => { const a = fakeCli.find((x) => x.name === name); if (a) a.enabled = enabled; return { ok: !!a }; },
       mcpFolderState: async (key) => !knownFolder(key)
         ? { ok: false, error: 'Unknown folder.', key, name: '', servers: [], legacy: [], secretsPersist: true, skipped: [], cliNames: [] }

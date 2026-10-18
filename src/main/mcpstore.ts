@@ -8,7 +8,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { MAX_SERVERS, trustHash, validateInput } from '../shared/mcp';
+import { MAX_SERVERS, NAME_RE, trustHash, validateInput } from '../shared/mcp';
 import type { McpSecretKey, McpServerInput, McpServerSpec, McpServerView, McpTransport, McpTrustInfo } from '../shared/mcp';
 
 export interface SecretCodec {
@@ -55,6 +55,7 @@ export interface SessionMcp {
 const MAX_FILE = 2 * 1024 * 1024;
 const MAX_FOLDERS = 200;
 const MAX_KEY = 4096;
+const MAX_EXTRA_NAMES = 500;
 const lc = (s: string): string => String(s).toLowerCase();
 
 export class McpStore {
@@ -213,6 +214,22 @@ export class McpStore {
   /** Servers of the old app-level list: shown (off, not applied) so the user can move or remove them. */
   legacyList(): McpServerView[] {
     return this.legacyRecs.map((r) => ({ ...this.view(r), enabled: false }));
+  }
+
+  /**
+   * Names only (spec 024 FR-015): the extras of every saved folder, in any state (on, off, untrusted, secrets missing), each exact name once,
+   * for the Settings > Places list. Memory only; no command, URL, env, folder key or path. Old app-level servers are not included. A name that
+   * matches `reserved` (the Copilot CLI list, built-in servers) ignoring case is left out: its CLI row already covers it.
+   */
+  extraNames(reserved: Iterable<string> = []): string[] {
+    const taken = new Set<string>([...reserved].map(lc));
+    const out = new Set<string>();
+    for (const list of this.folders.values())
+      for (const r of list) {
+        if (typeof r.name !== 'string' || !NAME_RE.test(r.name) || r.name === '__proto__' || taken.has(lc(r.name))) continue;
+        out.add(r.name);
+      }
+    return [...out].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).slice(0, MAX_EXTRA_NAMES);
   }
 
   trustInfo(key: string, name: string): McpTrustInfo | undefined {

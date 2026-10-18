@@ -449,4 +449,82 @@ const codec = (available = true): SecretCodec => ({
   assert.deepStrictEqual(cliServers(cliDir, new Set()).servers.map((x) => x.name), cliNamesNow, 'the global list is unchanged by a per-folder import');
   assert.strictEqual(fs.readFileSync(fileA, 'utf8'), beforeA);
 }
+// 10. Names of every folder's extras for Settings > Places (spec 024 FR-015, issue #116)
+{
+  const f = tmp();
+  const s = new McpStore(f, codec());
+  s.load();
+  assert.deepStrictEqual(s.extraNames(), [], 'empty store');
+  const stdio = (name: string) => ({ name, transport: 'stdio', command: '/secret/bin/tool-cmd', args: ['--token-arg'], workingDirectory: '/secret/cwd' });
+  assert.ok(s.upsert(K1, stdio('docs-search')).ok); // off, untrusted
+  assert.ok(s.upsert(K1, stdio('on-one')).ok && s.setEnabled(K1, 'on-one', true, true).ok); // on + trusted
+  assert.ok(s.upsert(K1, { name: 'with-secret', transport: 'http', url: 'https://example.test/mcp', headers: [{ key: 'X-Api-Key', value: SECRET }] }).ok);
+  assert.ok(s.upsert(K2, stdio('docs-search')).ok, 'same name in another folder');
+  assert.ok(s.upsert(K2, stdio('notes')).ok && s.upsert(K2, stdio('Notes')).ok === false, 'case variants clash inside one folder');
+  assert.ok(s.upsert(K1, stdio('Notes')).ok, 'a case variant in another folder is a different exact name');
+  assert.ok(s.upsert(K2, stdio('constructor')).ok);
+  assert.deepStrictEqual(s.extraNames(), ['Notes', 'constructor', 'docs-search', 'notes', 'on-one', 'with-secret'], 'every state, each exact name once, sorted');
+  const out = JSON.stringify(s.extraNames());
+  for (const leak of ['/secret', 'tool-cmd', '--token-arg', 'example.test', SECRET, K1, K2, 'X-Api-Key']) assert.ok(!out.includes(leak), 'names only: ' + leak);
+  assert.ok(s.extraNames().every((n) => typeof n === 'string'));
+  // secrets missing: a header with no stored value (saved without an OS store) is still listed
+  {
+    const nf = tmp();
+    const ns = new McpStore(nf, codec(true));
+    ns.load();
+    assert.ok(ns.upsert(K1, { name: 'needs-secret', transport: 'http', url: 'https://example.test/mcp', headers: [{ key: 'X-Api-Key', value: SECRET }] }).ok);
+    const ls = new McpStore(nf, codec(false)); // reload where the secret cannot be decrypted
+    ls.load();
+    assert.strictEqual(ls.list(K1)[0].needsSecrets, true, 'the secret is missing');
+    assert.deepStrictEqual(ls.extraNames(), ['needs-secret'], 'listed although its secrets are missing');
+  }
+  // reserved names (CLI list, built-in) are left out ignoring case; the others stay
+  assert.deepStrictEqual(s.extraNames(['NOTES', 'On-One']), ['constructor', 'docs-search', 'with-secret'], 'reserved ignores case and removes every case variant');
+  // does not touch the store
+  assert.strictEqual(s.list(K1).length, 4);
+  // a removed extra disappears, but only when no other folder has it
+  assert.ok(s.remove(K1, 'docs-search'));
+  assert.ok(s.extraNames().includes('docs-search'), 'folder B still has it');
+  assert.ok(s.remove(K2, 'docs-search'));
+  assert.ok(!s.extraNames().includes('docs-search'), 'removed everywhere: gone');
+  // survives a reload of the same file
+  const again = new McpStore(f, codec());
+  again.load();
+  assert.deepStrictEqual(again.extraNames(), s.extraNames(), 'same names after load()');
+  // legacy servers are not listed; a hand-edited prototype key or bad name is dropped
+  const g = tmp();
+  const doc = {
+    version: 2,
+    folders: { [K1]: [
+      { name: 'good', transport: 'stdio', command: 'node' },
+      { name: '__proto__', transport: 'stdio', command: 'node' },
+      { name: 'bad name', transport: 'stdio', command: 'node' },
+      { name: 'x'.repeat(49), transport: 'stdio', command: 'node' },
+    ] },
+    legacy: [{ name: 'old-fetch', transport: 'stdio', command: 'uvx' }],
+  };
+  fs.writeFileSync(g, JSON.stringify(doc));
+  const h = new McpStore(g, codec());
+  h.load();
+  assert.deepStrictEqual(h.extraNames(), ['good'], 'legacy, __proto__, bad and too long names are not listed');
+  assert.strictEqual(({} as Record<string, unknown>).good, undefined, 'no pollution');
+  // a broken file gives an empty list
+  const b = tmp();
+  fs.writeFileSync(b, '{ not json');
+  const bs = new McpStore(b, codec());
+  bs.load();
+  assert.deepStrictEqual(bs.extraNames(['x']), []);
+  // the cap: 600 distinct names over 7 folders -> 500, sorted
+  const cf = tmp();
+  const big: Record<string, unknown[]> = {};
+  for (let i = 0; i < 600; i++) (big['/work/f' + (i % 7)] ??= []).push({ name: 'srv' + String(i).padStart(3, '0'), transport: 'stdio', command: 'node' });
+  fs.writeFileSync(cf, JSON.stringify({ version: 2, folders: big, legacy: [] }));
+  const cs = new McpStore(cf, codec());
+  cs.load();
+  const capped = cs.extraNames();
+  assert.strictEqual(capped.length, 500, 'capped at 500');
+  assert.deepStrictEqual(capped, [...capped].sort(), 'sorted');
+  assert.strictEqual(capped[0], 'srv000');
+  assert.strictEqual(capped[499], 'srv499', 'the first 500 by name');
+}
 console.log('mcp tests passed');
