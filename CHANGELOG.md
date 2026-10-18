@@ -6,9 +6,11 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **MCP server groundwork: JSON-RPC framing and protocol (spec 041 T012, issue #176).** Newline framing with a 64 KB cap, the MCP `initialize`/`ping` subset with no new dependency, a fake client and synthetic handshakes for tests. Not wired yet: Durbar does not listen for MCP clients. No user-visible change, 0 AIU.
 
+- **Codex reads limited to the session's folders (spec 012 T084, issue #168).** In Read-only and Ask first, the Codex mode settings now use a Codex permission profile that may read only the session's folders and Codex's minimal system files, instead of the `read-only` sandbox that could read anywhere (`~/.ssh`). Where that cannot be enforced (Codex older than rust-v0.163.0, no experimental API, Windows without the elevated sandbox) Durbar will refuse those two modes for Codex. Pure settings and unit tests only; there is no Codex adapter yet and nothing was run on a real Codex.
+
 - **Docs: what the permission modes and usage mean per agent kind (spec 012 T028, issue #47).** Dated `## Changes` entries in specs 003 (Read-only / Ask first / Allow all for Claude and Codex, unknown mode = Read-only, Codex Read-only differs), 011 (AIU for Copilot, a labelled USD estimate for Claude never added to AIU, no money for Codex; caps stay Copilot-only) and 018 (live mode switch per kind), and a README *Safety model* note. Docs only; nothing is wired to a real Claude or Codex yet.
 
-## v0.1.0-alpha.5 (pre-release, 2026-10-18)
+## v0.1.0-alpha.5 ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.5), 2026-10-18)
 
 Themes that change the whole office, main agents named by their Copilot session title, floors, agents that show how they are doing, custom places and usage totals kept across restarts, plus groundwork for Claude Code and Codex that is not wired yet (only Copilot works). Checked on the simulator and with unit tests; nothing here was checked on a real Copilot session. **Unsigned and not notarized; untested on real macOS and Windows hardware; an in-place upgrade from alpha.4 was not checked** (spec 042).
 
