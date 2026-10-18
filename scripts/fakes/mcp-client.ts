@@ -4,6 +4,7 @@
  * own `write` and calling `onData`. `chunkSize` splits what is written, to exercise partial reads.
  */
 import { LineFramer } from '../../src/main/mcp/jsonrpc';
+import { McpConnection, ConnectionOptions } from '../../src/main/mcp/connection';
 import { McpSession } from '../../src/main/mcp/protocol';
 
 export class FakeMcpClient {
@@ -39,19 +40,38 @@ export class FakeMcpClient {
     return r;
   }
 
+  /** For async handlers: send a request and wait (a few turns of the event loop) for its reply. */
+  async requestAsync(method: string, params?: unknown): Promise<any> {
+    const id = this.nextId++;
+    this.send({ jsonrpc: '2.0', id, method, ...(params === undefined ? {} : { params }) });
+    for (let i = 0; i < 50; i++) {
+      const r = this.replies.find((x) => x.id === id);
+      if (r) return r;
+      await new Promise((res) => setImmediate(res));
+    }
+    throw new Error(`no reply to ${method}`);
+  }
+
   notify(method: string, params?: unknown): void {
     this.send({ jsonrpc: '2.0', method, ...(params === undefined ? {} : { params }) });
   }
 }
 
-/** A client wired straight to a session: bytes written are framed, handled, and the replies framed back. */
-export function loopback(session: McpSession, chunkSize = 0): FakeMcpClient {
-  const tx = new LineFramer();
-  const client: FakeMcpClient = new FakeMcpClient((chunk) => {
-    for (const ev of tx.push(chunk)) {
-      const reply = session.handleEvent(ev);
-      if (reply) client.onData(Buffer.from(JSON.stringify(reply) + '\n', 'utf8'));
-    }
-  }, chunkSize);
+/**
+ * A client wired straight to a session through `McpConnection` (framing, rate limit, ordered replies).
+ * `conn` is exposed so tests can call `drain()`; `extra` overrides the writer, clock or close hook.
+ */
+export function loopback(session: McpSession, chunkSize = 0, extra: Partial<ConnectionOptions> = {}): FakeMcpClient & { conn: McpConnection } {
+  const client: FakeMcpClient & { conn: McpConnection } = new FakeMcpClient((chunk) => conn.onData(chunk), chunkSize) as FakeMcpClient & { conn: McpConnection };
+  const conn = new McpConnection({
+    session,
+    write: (data) => {
+      client.onData(Buffer.from(data, 'utf8'));
+      return true;
+    },
+    onClose: () => {},
+    ...extra,
+  });
+  client.conn = conn;
   return client;
 }

@@ -29,6 +29,7 @@ export class McpError extends Error {
   }
 }
 
+/** May return a Promise; the session awaits it. */
 export type MethodHandler = (params: unknown, session: McpSession) => unknown;
 
 export interface McpSessionOptions {
@@ -50,6 +51,17 @@ function clean(v: unknown): string {
   return Array.from(t).slice(0, 64).join('');
 }
 
+/** A reply is sync unless a handler was async; `null` means nothing to send. */
+export type Reply = JsonRpcResponse | null | Promise<JsonRpcResponse | null>;
+
+function isThenable(v: unknown): v is PromiseLike<unknown> {
+  return typeof v === 'object' && v !== null && typeof (v as { then?: unknown }).then === 'function';
+}
+function failure(id: string | number, e: unknown): JsonRpcResponse {
+  if (e instanceof McpError) return errorResponse(id, e.code, e.message);
+  return errorResponse(id, ERR_INTERNAL, 'Internal error');
+}
+
 export class McpSession {
   protocolVersion: string | null = null;
   clientInfo: ClientInfo | null = null;
@@ -58,15 +70,15 @@ export class McpSession {
 
   constructor(private readonly opts: McpSessionOptions) {}
 
-  /** One framer event in, zero or one reply out. */
-  handleEvent(ev: FramerEvent): JsonRpcResponse | null {
+  /** One framer event in, zero or one reply out (a Promise when a handler is async). */
+  handleEvent(ev: FramerEvent): Reply {
     if (ev.type === 'oversize') {
       return errorResponse(null, ERR_INVALID_REQUEST, `Message too large (over ${MAX_MESSAGE_BYTES} bytes)`);
     }
     return this.handleLine(ev.line);
   }
 
-  handleLine(line: string): JsonRpcResponse | null {
+  handleLine(line: string): Reply {
     const parsed = parseMessage(line);
     switch (parsed.kind) {
       case 'invalid':
@@ -74,23 +86,28 @@ export class McpSession {
       case 'response':
         return null;
       case 'notification':
-        if (parsed.msg.method === 'notifications/initialized') this.initialized = true;
+        // only a client that completed `initialize` can mark the session ready
+        if (parsed.msg.method === 'notifications/initialized' && this.protocolVersion !== null) this.initialized = true;
         return null; // notifications never get a reply, known or not
       case 'request':
         return this.request(parsed.msg.id, parsed.msg.method, parsed.msg.params);
     }
   }
 
-  private request(id: string | number, method: string, params: unknown): JsonRpcResponse {
+  private request(id: string | number, method: string, params: unknown): Reply {
     try {
       if (method === 'ping') return result(id, {});
       if (method === 'initialize') return this.initialize(id, params);
       const h = this.opts.methods && Object.prototype.hasOwnProperty.call(this.opts.methods, method) ? this.opts.methods[method] : undefined;
       if (!h) return errorResponse(id, ERR_METHOD_NOT_FOUND, `Method not found: ${clean(method)}`);
-      return result(id, h(params, this) ?? {});
+      const v = h(params, this);
+      if (isThenable(v)) {
+        // A rejection is an internal error, never an unhandled rejection and never a leaked message.
+        return Promise.resolve(v).then((x) => result(id, x ?? {}), (e) => failure(id, e));
+      }
+      return result(id, v ?? {});
     } catch (e) {
-      if (e instanceof McpError) return errorResponse(id, e.code, e.message);
-      return errorResponse(id, ERR_INTERNAL, 'Internal error');
+      return failure(id, e);
     }
   }
 

@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { LineFramer, MAX_MESSAGE_BYTES, parseMessage } from '../src/main/mcp/jsonrpc';
 import { LATEST_PROTOCOL_VERSION, McpSession, SUPPORTED_PROTOCOL_VERSIONS, McpError } from '../src/main/mcp/protocol';
+import { CLOSE_AFTER_DROPPED, RATE_PER_SECOND } from '../src/main/mcp/connection';
 import { FakeMcpClient, loopback } from './fakes/mcp-client';
 
 const mk = (): McpSession => new McpSession({ serverInfo: { name: 'agent-durbar', version: '9.9.9' } });
@@ -209,4 +210,123 @@ const lines = (f: LineFramer, ...chunks: (string | Buffer)[]): string[] => {
   }
 }
 
-console.log('mcp protocol: ok');
+
+
+// 12. initialized only counts after a successful initialize
+{
+  const s = mk();
+  const c = loopback(s);
+  c.notify('notifications/initialized');
+  assert.strictEqual(s.initialized, false, 'initialized before initialize is ignored');
+  c.request('initialize', { protocolVersion: LATEST_PROTOCOL_VERSION });
+  c.notify('notifications/initialized');
+  assert.strictEqual(s.initialized, true);
+  const t = mk();
+  const d = loopback(t);
+  d.request('initialize', {}); // fails: -32602
+  d.notify('notifications/initialized');
+  assert.strictEqual(t.initialized, false, 'a failed initialize does not unlock it');
+}
+
+async function main(): Promise<void> {
+  // 13. async handlers: resolve, reject, sync throw; replies in request order
+  const gate: { release?: () => void } = {};
+  const s = new McpSession({
+    serverInfo: { name: 'a', version: '1' },
+    methods: {
+      ok: async () => ({ v: 1 }),
+      slow: () => new Promise((res) => { gate.release = () => res({ slow: true }); }),
+      rej: () => Promise.reject(new Error('secret /home/me/token')),
+      rejTyped: () => Promise.reject(new McpError(-32602, 'bad arg')),
+      thrown: () => { throw new Error('secret sync'); },
+    },
+  });
+  const c = loopback(s);
+  assert.deepStrictEqual((await c.requestAsync('ok')).result, { v: 1 }, 'async resolve');
+  const r = await c.requestAsync('rej');
+  assert.strictEqual(r.error.code, -32603, 'async reject: -32603');
+  assert.strictEqual(r.error.message, 'Internal error');
+  assert.ok(!JSON.stringify(r).includes('secret'), 'async reject does not leak the message');
+  assert.strictEqual((await c.requestAsync('rejTyped')).error.code, -32602, 'McpError from a rejection keeps its code');
+  const th = c.request('thrown');
+  assert.strictEqual(th.error.code, -32603, 'sync throw: -32603');
+  assert.ok(!JSON.stringify(th).includes('secret'));
+  // order: a slow request, then a fast ping; the ping's reply waits
+  const n = c.replies.length;
+  c.send({ jsonrpc: '2.0', id: 'A', method: 'slow' });
+  c.send({ jsonrpc: '2.0', id: 'B', method: 'ping' });
+  assert.strictEqual(c.replies.length, n, 'nothing written while the first request is pending');
+  gate.release!();
+  await new Promise((res) => setImmediate(res));
+  assert.deepStrictEqual(c.replies.slice(n).map((x) => x.id), ['A', 'B'], 'replies leave in request order');
+  // no unhandled rejection anywhere above
+  let unhandled = 0;
+  const h = (): void => { unhandled++; };
+  process.on('unhandledRejection', h);
+  await c.requestAsync('rej');
+  await new Promise((res) => setTimeout(res, 20));
+  process.off('unhandledRejection', h);
+  assert.strictEqual(unhandled, 0, 'no unhandled rejection');
+
+  // 14. rate limit: every line counts (invalid and oversize too), before parsing, no reply when over
+  {
+    let t = 1000;
+    let closed = 0;
+    const s2 = mk();
+    const c2 = loopback(s2, 0, { now: () => t, onClose: () => { closed++; } });
+    for (let i = 0; i < RATE_PER_SECOND + 5; i++) c2.sendRaw('garbage\n');
+    assert.strictEqual(c2.replies.length, RATE_PER_SECOND, 'invalid lines use tokens; over the limit nothing is answered');
+    t += 1000;
+    assert.deepStrictEqual(c2.request('ping').result, {}, 'tokens come back with time');
+    // oversize lines count too
+    const c3 = loopback(mk(), 0, { now: () => t });
+    for (let i = 0; i < RATE_PER_SECOND + 3; i++) c3.sendRaw('y'.repeat(70000) + '\n');
+    assert.strictEqual(c3.replies.length, RATE_PER_SECOND, 'oversize lines use tokens too');
+    assert.strictEqual(closed, 0);
+  }
+
+  // 15. Paco's case: 200,000 tiny lines in one 400 KB chunk
+  {
+    let closed = 0;
+    const c4 = loopback(mk(), 0, { onClose: () => { closed++; } });
+    const flood = Buffer.from('x\n'.repeat(200000));
+    assert.strictEqual(flood.length, 400000);
+    const t0 = Date.now();
+    c4.conn.onData(flood);
+    const ms = Date.now() - t0;
+    assert.ok(ms < 1000, `flood handled quickly (${ms} ms)`);
+    assert.ok(c4.replies.length <= RATE_PER_SECOND, `at most a handful of replies (${c4.replies.length})`);
+    assert.strictEqual(closed, 1, 'close signalled once');
+    assert.ok(c4.conn.closed);
+    c4.conn.onData('{"jsonrpc":"2.0","id":1,"method":"ping"}\n');
+    assert.ok(c4.replies.length <= RATE_PER_SECOND, 'a closed connection answers nothing');
+    // sustained drops over 3 s also close, with fewer than 100 lines
+    let t = 0;
+    let closed2 = 0;
+    const c5 = loopback(mk(), 0, { now: () => t, onClose: () => { closed2++; } });
+    for (let i = 0; i < RATE_PER_SECOND + 1; i++) c5.sendRaw('x\n'); // 10 answered, 1 dropped
+    for (let i = 0; i < 4; i++) { t += 900; c5.sendRaw('x\n'.repeat(RATE_PER_SECOND + 2)); } // keeps overflowing
+    assert.strictEqual(closed2, 1, 'drops continuing for 3 s close the connection');
+    assert.ok(CLOSE_AFTER_DROPPED > 20);
+  }
+
+  // 16. backpressure: a full writer stops replies until drain; lines meanwhile are dropped
+  {
+    const out: string[] = [];
+    let full = true;
+    const s6 = mk();
+    const c6 = loopback(s6, 0, { write: (d) => { out.push(d); return !full; } });
+    c6.send({ jsonrpc: '2.0', id: 1, method: 'ping' });
+    c6.send({ jsonrpc: '2.0', id: 2, method: 'ping' }); // blocked: dropped, not answered
+    assert.strictEqual(out.length, 1, 'one write, then the writer is full and nothing more is written');
+    full = false;
+    c6.conn.drain();
+    assert.strictEqual(out.length, 1, 'the dropped request is gone, nothing else was queued');
+    c6.send({ jsonrpc: '2.0', id: 3, method: 'ping' });
+    assert.strictEqual(out.length, 2, 'after drain replies flow again');
+    assert.strictEqual(JSON.parse(out[1]).id, 3);
+  }
+
+  console.log('mcp protocol: ok');
+}
+main().catch((e) => { console.error(e); process.exit(1); });
