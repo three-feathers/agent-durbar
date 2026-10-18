@@ -406,6 +406,27 @@ async function main(): Promise<void> {
     assert.ok(debug.some((l) => l.startsWith('codex stderr') && l.includes('[redacted')), 'the stderr tail is logged, redacted');
     assert.ok(!JSON.stringify(events).includes('fatal'), 'stderr text is never an event');
     await ad.dispose();
+    // a secret that exists only in process.env (e.g. a deny-listed variable the child never got) is still redacted by value
+    {
+      const NAME = 'DURBAR_TEST_ONLY_PARENT_SECRET';
+      const VALUE = 'parent-only-secret-value-9f8e7d6c5b4a';
+      const saved = process.env[NAME];
+      process.env[NAME] = VALUE;
+      try {
+        const p = make({ env: {} });
+        const pid = await p.ad.start({ workspace: ws, quiet: true });
+        const pc = p.server.childOfThread(pid)!;
+        pc.stderrText(`boom ${VALUE}\n`);
+        pc.exit(1, null);
+        await settle();
+        const dump = p.debug.join('\n') + JSON.stringify(p.events);
+        assert.ok(p.debug.some((l) => l.startsWith('codex stderr')), 'the stderr tail is logged');
+        assert.ok(!dump.includes(VALUE), 'a secret present only in process.env does not reach the debug output');
+      } finally {
+        if (saved === undefined) delete process.env[NAME];
+        else process.env[NAME] = saved;
+      }
+    }
     // signal exit
     const s2 = make();
     const id2 = await s2.ad.start({ workspace: ws, quiet: true });
