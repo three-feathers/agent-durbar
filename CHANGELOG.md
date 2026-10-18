@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.4 tag)
 
+- **Floor names refuse hidden characters (spec 033 delta, T040).** Besides control characters, a floor name now refuses C1 controls and invisible direction or zero-width characters (U+202A–U+202E, U+2066–U+2069, U+200B, U+2060, U+FEFF), which could make one floor look like another. ZWNJ/ZWJ and LRM/RLM stay allowed for Indic and Persian scripts and emoji. A saved name just loses them on load. Unit tests (`test:floors`), simulator rule kept equal, 0 AIU.
+
 - **Claude sessions load no Claude settings files (spec 012 T027, issue #46; owner decision Q8).** Mode options for the future Claude adapter set `settingSources: []` and `strictMcpConfig: true` in every mode, trusted folder or not, so a repo's or user's Claude settings and MCP servers cannot approve tools before Durbar asks. A repo's own `.claude` hooks and agents do not run (known gap, T083); the repo's `CLAUDE.md` will be passed as an appended system prompt by the Claude adapter (T045). Unit tests only; not wired to a real Claude yet.
 
 - **Secrets are redacted from the debug log (spec 012 T051, issue #59).** Every `DURBAR_LOG` line now goes through one sink that hides environment secrets (also JSON- and URL-encoded) and token-like strings (GitHub, OpenAI/Anthropic keys, Bearer, JWT, AWS keys, URL credentials) before it is written. Unit tests with planted secrets, 0 AIU.
