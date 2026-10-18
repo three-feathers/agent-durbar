@@ -9,6 +9,7 @@
  * Ask routes everything that is not a known read tool to a permission request.
  */
 import type { PermissionMode } from './capabilities';
+import { isInsideRoots, type PathCheckOptions } from './permissions';
 
 /** The SDK's own permission modes that Durbar uses. `auto`, `acceptEdits` and `plan` are never offered (plan, mode table). */
 export type ClaudeSdkMode = 'default' | 'dontAsk' | 'bypassPermissions';
@@ -19,7 +20,10 @@ export interface ClaudeModeOptions {
   permissionMode: ClaudeSdkMode;
   /** Only with `bypassPermissions`. */
   allowDangerouslySkipPermissions?: boolean;
+  /** Never lists a read tool in Ask first or Allow all (see `claudeOptionsFor`); Read-only lists the read set because `dontAsk` needs it. */
   allowedTools?: string[];
+  /** Always `[]`: Durbar sessions ignore `~/.claude` and project settings (their allow rules would approve tools before `canUseTool`). */
+  settingSources: string[];
   disallowedTools?: string[];
   /** The adapter must install a `canUseTool` callback (Ask first; harmless in the others). */
   canUseTool: boolean;
@@ -44,27 +48,38 @@ const KIND_BY_TOOL: ReadonlyMap<string, ClaudeToolKind> = new Map<string, Claude
   ...URL_TOOLS.map((n): [string, ClaudeToolKind] => [n, 'url']),
 ]);
 
-/** The allow list of Read-only and Ask first: exactly the tools whose kind is `read`, so the SDK mode and the hook agree. */
-const CORE_READ_TOOLS: string[] = [...READ_TOOLS];
+/**
+ * Read-only's allow list: exactly the tools whose kind is `read`. `dontAsk` denies whatever is not pre-approved and never
+ * calls `canUseTool`, so without this list Read-only could read nothing. The session-roots check for those reads is done
+ * by the `PreToolUse` hook (`preToolUseDecision`), which runs before the permission flow and can deny an outside read.
+ * Ask first and Allow all list NO read tool: every read reaches `canUseTool`, so `decideTool` can check the roots.
+ */
+const READ_ONLY_ALLOWED: string[] = [...READ_TOOLS];
 /** Read-only backstop: shell, write and web tools are denied in every mode of the rule engine. */
 const READ_ONLY_DISALLOWED = [...SHELL_TOOLS, ...WRITE_TOOLS, ...URL_TOOLS];
 
 const MCP_NAME = /^mcp__(.+?)__(.+)$/;
 
-/** Durbar mode -> the SDK options that enforce it. An unknown or missing mode (bad data at runtime) gets the Read-only options, never fewer restrictions. */
+/**
+ * Durbar mode -> the SDK options that enforce it. An unknown or missing mode (bad data at runtime) gets the Read-only
+ * options, never fewer restrictions. `settingSources: []` in every mode: T027 (#46) refines this with folder trust.
+ */
 export function claudeOptionsFor(mode: PermissionMode): ClaudeModeOptions {
   switch (mode) {
     case 'ask':
-      return { permissionMode: 'default', allowedTools: [...CORE_READ_TOOLS], canUseTool: true, preToolUseHook: false };
+      return { permissionMode: 'default', settingSources: [], canUseTool: true, preToolUseHook: false };
     case 'allow':
-      return { permissionMode: 'bypassPermissions', allowDangerouslySkipPermissions: true, canUseTool: true, preToolUseHook: false };
+      return { permissionMode: 'bypassPermissions', allowDangerouslySkipPermissions: true, settingSources: [], canUseTool: true, preToolUseHook: false };
     case 'read-only':
     default:
-      return { permissionMode: 'dontAsk', allowedTools: [...CORE_READ_TOOLS], disallowedTools: [...READ_ONLY_DISALLOWED], canUseTool: true, preToolUseHook: true };
+      return { permissionMode: 'dontAsk', allowedTools: [...READ_ONLY_ALLOWED], disallowedTools: [...READ_ONLY_DISALLOWED], settingSources: [], canUseTool: true, preToolUseHook: true };
   }
 }
 
-/** Claude tool name -> permission kind. Anything not listed is `custom-tool`, which is never a read. */
+/**
+ * Claude tool name -> permission kind. Anything not listed is `custom-tool`, which is never a read: `TodoWrite`, `Task`
+ * and `ExitPlanMode` are custom tools too, so Read-only denies them (intended).
+ */
 export function toolKind(toolName: string): ClaudeToolKind {
   const known = KIND_BY_TOOL.get(toolName);
   if (known) return known;
@@ -84,19 +99,50 @@ export function isReadTool(toolName: string): boolean {
 
 export type ToolDecision = { behavior: 'allow' } | { behavior: 'deny'; reason: string } | { behavior: 'ask'; reason: string };
 
+/** Tool input as the SDK passes it (untrusted shape). */
+export type ToolInput = Record<string, unknown> | undefined;
+
+/**
+ * The paths a read tool will touch, or `'outside'` when they cannot be told (wrong type, empty, a pattern that escapes).
+ * `Read`/`NotebookRead` need a path; `Glob`/`Grep`/`LS` without one work on the session folder (`roots[0]`).
+ */
+function readPaths(toolName: string, input: ToolInput, roots: readonly string[]): string[] | 'outside' {
+  const need = toolName === 'Read' ? 'file_path' : toolName === 'NotebookRead' ? 'notebook_path' : 'path';
+  const raw = input ? input[need] : undefined;
+  // a Glob pattern can name an absolute or `..` path by itself
+  const pat = toolName === 'Glob' && input ? input['pattern'] : undefined;
+  if (pat !== undefined && (typeof pat !== 'string' || /^([\\/]|[A-Za-z]:)/.test(pat) || /(^|[\\/])\.\.([\\/]|$)/.test(pat))) return 'outside';
+  if (raw === undefined && (toolName === 'Glob' || toolName === 'Grep' || toolName === 'LS')) return roots.length ? [roots[0]] : 'outside';
+  if (typeof raw !== 'string' || raw === '') return 'outside';
+  return [raw];
+}
+
+/**
+ * Is a read tool call inside the session's roots? Same rule as the Copilot broker's `readIsOutside`
+ * (`isInsideRoots`: `..` collapsed, symlinks resolved), with one difference: no roots given counts as OUTSIDE here,
+ * because the broker is only built with roots and this module must never widen by omission.
+ */
+export function readIsInsideRoots(toolName: string, input: ToolInput, roots: readonly string[] | undefined, pathCheck?: PathCheckOptions): boolean {
+  if (!roots || !roots.length) return false;
+  const paths = readPaths(toolName, input, roots);
+  if (paths === 'outside') return false;
+  return paths.every((p) => isInsideRoots(p, roots, pathCheck));
+}
+
 /**
  * What to do with a tool call in a mode (used for `canUseTool`, and mirrored by the hook in Read-only).
- *  - read-only: reads allowed, everything else (write, shell, web, MCP, unknown) denied.
- *  - ask: reads allowed, everything else asks the user.
+ *  - read-only: a read inside `roots` is allowed; everything else (outside read, write, shell, web, MCP, unknown) is denied.
+ *  - ask: a read inside `roots` is allowed; an outside read and every other tool ask the user.
  *  - allow: everything allowed, except `AskUserQuestion`, which needs the user (plan, "Needs the user").
- * Whether a read is inside the session's roots is the broker's job (spec 003), not decided here.
+ * An unknown mode behaves as read-only. `roots` empty or missing means every read is outside.
  */
-export function decideTool(mode: PermissionMode, toolName: string): ToolDecision {
+export function decideTool(mode: PermissionMode, toolName: string, input?: ToolInput, roots?: readonly string[], pathCheck?: PathCheckOptions): ToolDecision {
   const kind = toolKind(toolName);
   if (mode === 'allow') return toolName === 'AskUserQuestion' ? { behavior: 'ask', reason: 'needs the user to answer' } : { behavior: 'allow' };
-  if (kind === 'read') return { behavior: 'allow' };
-  if (mode === 'ask') return { behavior: 'ask', reason: `${toolName} (${kind}) needs your approval` };
-  return { behavior: 'deny', reason: `Read-only mode: ${toolName} (${kind}) is not allowed` };
+  if (kind === 'read' && readIsInsideRoots(toolName, input, roots, pathCheck)) return { behavior: 'allow' };
+  const what = kind === 'read' ? `${toolName} outside the session's folders` : `${toolName} (${kind})`;
+  if (mode === 'ask') return { behavior: 'ask', reason: `${what} needs your approval` };
+  return { behavior: 'deny', reason: `Read-only mode: ${what} is not allowed` };
 }
 
 /** The `PreToolUse` hook output (the SDK's `hookSpecificOutput` shape; unverified on a real run). */
@@ -105,12 +151,12 @@ export interface PreToolUseDeny {
 }
 
 /**
- * The Read-only `PreToolUse` decision: a deny for every tool that is not a known read tool, whatever the user's
- * own settings allow; `undefined` (no opinion, let the normal flow run) for reads and for the other modes.
+ * The Read-only `PreToolUse` decision: a deny for every tool that is not a read inside the roots, whatever the user's
+ * own settings allow; `undefined` (no opinion, let the normal flow run) for such reads and for the other modes.
  */
-export function preToolUseDecision(mode: PermissionMode, toolName: string): PreToolUseDeny | undefined {
+export function preToolUseDecision(mode: PermissionMode, toolName: string, input?: ToolInput, roots?: readonly string[], pathCheck?: PathCheckOptions): PreToolUseDeny | undefined {
   if (mode === 'ask' || mode === 'allow') return undefined;
-  const d = decideTool(mode, toolName);
+  const d = decideTool(mode, toolName, input, roots, pathCheck);
   if (d.behavior !== 'deny') return undefined;
   return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: d.reason } };
 }
