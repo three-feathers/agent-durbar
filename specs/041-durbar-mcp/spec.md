@@ -223,9 +223,21 @@ As a user, I can be sure that an agent running inside Durbar cannot use Durbar's
 ## Known limits (honest, to keep in the README when built)
 
 - `[KNOWN GAP]` Same-user isolation: an agent in Allow all (or with an approved shell command) runs as the user and can reach any file or socket the user can; FR-034 is best effort; changes still need a click in Durbar (FR-022).
-- `[KNOWN GAP]` Depends on PR #157 (`redact.ts`) for FR-041, and on PR #160 (`strictMcpConfig`) for the Claude half of FR-031.
+- Depended on PR #157 (`redact.ts`) for FR-041 and FR-053, and on PR #160 (`strictMcpConfig`) for the Claude half of FR-031; both are merged on `main` (2026-10-18).
 - `[KNOWN GAP]` Nothing verified on a real client, on Windows or on macOS; client compatibility claims are `read:` until a recorded check.
 
 ## Changes
 
+- **2026-10-18, review of #161 by Paco (decided by the coordinator under Ruben's delegation).** The confirmation click is the only real gate: the client name is self-reported, and an agent running as the same user, or the user's own assistant after a prompt injection, can ask for anything. So v1 keeps the two privilege jumps in the window only, and makes the dialog hard to approve by accident.
+  - **FR-050** v1 MUST refuse over MCP (status `refused`, reason given): switching a mode **up to Allow all**, and **"Trust and turn on"** for an MCP extra. Lowering a mode (to Ask first or Read-only) and saving an extra off and untrusted stay allowed with the dialog. The user raises a mode or trusts an extra in Durbar's own window. This narrows FR-020, FR-026 and FR-027 accordingly.
+  - **FR-051** Dialog fatigue:
+    - one dialog at a time, showing how many requests are waiting;
+    - a **Deny all from this client** button;
+    - a request that was denied is refused for 60 s when the same connection sends it again (same tool, same target, same arguments).
+  - **FR-052** A stray click or Enter must not approve. **Apply** is inactive for about 1 s after the dialog appears and is never focused by default (Deny is). The dialog never takes focus from a text field the user is typing in without showing it clearly first.
+  - **FR-053** Read tools and the dialog MUST NOT show secrets carried in MCP extra **arguments or URLs**: `command`, `args` and `url` go through `redact()` (spec 012 T051), and the value after a flag whose name looks secret (`--token`, `--key`, `--secret`, `--password`, `--auth`, `--api-key`, also in `--flag=value` form) is masked. Env and header values stay excluded (FR-012).
+  - **FR-054** *List agents* and *list folders* include `floorOn` (spec 033), so a client sees which agents the office hides. A folder added over MCP lands where the window would put it (the last floor), since floors are read-only over MCP in v1 (Q8).
+  - **FR-055** Audit lines (FR-041) name a folder by the folder key hash used by usage totals (spec 011), plus the display name, never the full path.
+  - **FR-056** The dialog shows **how** the request connected: the bridge's parent process name, when the OS gives it cheaply, labelled as reported by the OS. `[KNOWN GAP]` (planned task): refusing a peer whose process is a descendant of one of Durbar's own runtime processes (Linux `SO_PEERCRED`, macOS `LOCAL_PEERPID`, Windows named-pipe client PID). That is stronger than the env marker of FR-034, which an agent can unset. It is left out of v1 and needs its own task.
+  - **Related:** #130 (Global Assistant Chat): Durbar's read tools plus the user's own MCP client already give phase 1 of #130 without a built-in assistant; mobile access stays out (loopback only, FR-002). #131 (profiles): the server, socket and secret would be per profile.
 - **2026-10-18**: first draft (analyst, for the coordinator). Not reviewed by the owner.
