@@ -19,3 +19,9 @@
 - [ ] T023 Capture a real `events.jsonl`/`getEvents()` (redacted) as a fixture and re-run `test:history` on it (needs feature 013). [FR-009]
 - [ ] T024 Real-session check of lazy start and resume (feature 013). [FR-009]
 - [ ] T025 Offer sessions started in subfolders (clarify matching rule). [FR-013]
+
+## Changes 2026-10-18 (issue #170)
+
+- [ ] T026 Pure `broadFolderKind(path, home, flavour)` in `src/shared/broadfolder.ts` (home, parent of home, root, else none; Windows drive and UNC roots; case-insensitive on win32/darwin) with `scripts/test-broadfolder.ts` [FR-016]
+- [ ] T027 Main returns `warnings` with the add result (folders and the folders of a `.code-workspace`); the renderer shows one calm toast; simulator hook; screenshots at 1440x900 and 1280x800; docs [FR-016]
+
