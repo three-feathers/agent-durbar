@@ -388,6 +388,14 @@ async function driver(ctx) {
     const row = await ctx.js(`(()=>{const t=[...document.querySelectorAll('#liveBar > button, #liveBar > select')].filter(e=>e.getClientRects().length).map(e=>Math.round(e.getBoundingClientRect().top));return {min:Math.min(...t),max:Math.max(...t),n:t.length}})()`);
     total++;
     if (row.max - row.min > 3) { failed++; console.log(`FAIL ${tag}: the toolbar wraps ${JSON.stringify(row)}`); }
+    /* spec 012 FR-120: Claude chosen in the toolbar, its first model has efforts; the whole top bar stays inside the window */
+    await ctx.js(`(async()=>{const s=document.getElementById('kindSel');s.value='claude';s.dispatchEvent(new Event('change'));await new Promise(r=>setTimeout(r,400));return true})()`);
+    const fit = await ctx.js(`(()=>{const els=[...document.querySelectorAll('header button, header select, header .tgl, header .seg')].filter(e=>e.getClientRects().length);const r=els.map(e=>e.getBoundingClientRect());return {right:Math.max(...r.map(x=>x.right)),win:innerWidth,models:!document.getElementById('modelSel').hidden}})()`);
+    total++;
+    if (fit.right > fit.win + 0.5 || !fit.models) { failed++; console.log(`FAIL ${tag} claude chosen: top bar leaves the window or has no model list ${JSON.stringify(fit)}`); }
+    const row2 = await ctx.js(`(()=>{const t=[...document.querySelectorAll('#liveBar > button, #liveBar > select')].filter(e=>e.getClientRects().length).map(e=>Math.round(e.getBoundingClientRect().top));return {min:Math.min(...t),max:Math.max(...t)}})()`);
+    total++;
+    if (row2.max - row2.min > 3) { failed++; console.log(`FAIL ${tag} claude chosen: the toolbar wraps ${JSON.stringify(row2)}`); }
   }
   console.log('\nlayout summary (density/helpers shown, stage height vs floor):');
   rows.forEach((r) => console.log(`  ${r.problems ? 'FAIL' : 'ok  '} ${r.label.padEnd(60)} ${String(r.d).padEnd(5)} h=${r.h} rooms=${r.rooms} plates=${r.plates} desks=${r.desks} stage ${r.stageH}/${r.floorH}px minFont=${r.minFont}`));

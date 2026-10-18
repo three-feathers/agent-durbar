@@ -570,9 +570,13 @@ ipcMain.handle('agents:compact', async (_e, id: unknown, focus: unknown) => {
   }
 });
 
-ipcMain.handle('models:list', async (): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }> => {
+ipcMain.handle('models:list', async (_e, kind: unknown): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }> => {
+  // spec 012 FR-120: one list per agent kind; no kind = the default kind (as before); an unknown kind is refused
+  const id = kind === undefined || kind === null || kind === '' ? registry.defaultId : typeof kind === 'string' && registry.has(kind) ? kind : undefined;
+  if (!id) return { ok: false, error: 'unknown agent kind', models: [] };
   try {
-    const models = (await modelOptionsOf(router.instance(registry.defaultId))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
+    const models = (await modelOptionsOf(router.instance(id))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
+    if (id !== registry.defaultId) return { ok: true, models };
     lastModels = models;
     return { ok: true, models };
   } catch (err) {

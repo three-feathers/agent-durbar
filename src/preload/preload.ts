@@ -15,7 +15,7 @@ const api: DurbarApi = {
   addFolder: (permMode, opts) => ipcRenderer.invoke('agents:addFolder', permMode, opts),
   addWorkspaceFile: (permMode, opts) => ipcRenderer.invoke('agents:addWorkspaceFile', permMode, opts),
   newSession: (id, opts) => ipcRenderer.invoke('agents:newSession', id, opts),
-  listModels: () => ipcRenderer.invoke('models:list'),
+  listModels: (kind) => ipcRenderer.invoke('models:list', kind),
   listAdapters: (refresh) => ipcRenderer.invoke('adapters:list', refresh === true),
   end: (id) => ipcRenderer.invoke('agents:end', id),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),

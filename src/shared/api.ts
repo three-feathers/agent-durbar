@@ -334,7 +334,8 @@ export interface DurbarApi {
   /** Another agent (own chat) in the same folder as agent `id`. */
   newSession?(id: string, opts: SessionOptions): Promise<{ ok: boolean; error?: string; agent?: AgentInfo }>;
   /** Models the account offers (no credits used). */
-  listModels?(): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }>;
+  /** Models of an agent kind (spec 012 FR-120); no kind = the default kind. */
+  listModels?(kind?: string): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }>;
   /** Adapters and whether each can run (spec 012 FR-033). `refresh` probes again instead of using the cached answer. */
   listAdapters?(refresh?: boolean): Promise<AdapterInfo[]>;
   /** End the session (frees it; sending again resumes it). `stop` only interrupts the current turn. */
