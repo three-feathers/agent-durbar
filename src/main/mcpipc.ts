@@ -2,9 +2,8 @@
 import { ipcMain, safeStorage } from 'electron';
 import * as path from 'path';
 import type { AgentInfo, AgentMcpEntry, McpFolderState, McpState } from '../shared/api';
-import type { McpServerStatus } from '../adapters/types';
+import type { AgentAdapter, McpServerStatus } from '../adapters/types';
 import type { McpServerSpec } from '../shared/mcp';
-import type { CopilotAdapter } from '../adapters/copilot';
 import type { DevEnv } from './devhooks';
 import { BUILTIN_SERVERS, cliServers, copilotDir } from './mcpfiles';
 import { applyFolderImport, MAX_IMPORT_FOLDERS, previewFolderImport } from './mcpimport';
@@ -38,7 +37,7 @@ const trunc = (v: unknown, n: number): string => String(v ?? '').slice(0, n);
 const keyOf = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 const nameOfKey = (key: string): string => path.basename(key).replace(/\.code-workspace$/i, '') || key;
 
-export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string, AgentInfo>; adapter: CopilotAdapter; dev: DevEnv }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[] } } {
+export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string, AgentInfo>; adapter: AgentAdapter; dev: DevEnv }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[] } } {
   const { agents, adapter, dev } = deps;
   const store = deps.store;
   /** Per agent id, this run only: servers the user switched off for that agent. */
@@ -150,6 +149,7 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
     off.set(a.id, set);
     if (!adapter.isLive(a.id)) return { ok: true };
     try {
+      if (!adapter.setMcpEnabled) return { ok: true };
       await adapter.setMcpEnabled(a.id, name, enabled === true);
       return { ok: true };
     } catch (err) {

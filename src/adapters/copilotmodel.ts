@@ -7,27 +7,8 @@
  * the unit of the token prices, the long-tier window, the `status` strings of a switch and the compaction decision values are unverified,
  * and the code degrades (price absent, `rejected` with the runtime's message) instead of guessing.
  */
-import type { ModelPricing, PriceClass, ContextTier, ModelSwitchResult, CompactResult, TierPricing } from '../shared/modelswitch';
-
-/** A model the account can use, as shown in the picker. */
-export interface ModelOption {
-  id: string;
-  name: string;
-  /** Billing cost multiplier reported by the API, when there is one. */
-  multiplier?: number;
-  efforts: string[];
-  defaultEffort?: string;
-  disabled: boolean;
-  /** Context window in tokens when the runtime says so (it reports 0 for `auto`, which is treated as unknown). */
-  contextWindow?: number;
-  /** Token prices in credits per million tokens (UNVERIFIED unit, see `pricingFromTokenPrices`); absent when the runtime reports none. */
-  pricing?: ModelPricing;
-  priceClass?: PriceClass;
-  /** `['default','long']` only when the runtime advertises a long-context tier. */
-  contextTiers?: ContextTier[];
-  /** Window of the long tier = its prompt budget + the model's max output tokens (UNVERIFIED semantics). */
-  longWindow?: number;
-}
+import type { ModelOption, ModelPricing, PriceClass, ContextTier, ModelSwitchResult, CompactResult, TierPricing } from '../shared/modelswitch';
+export type { ModelOption };
 
 const pos = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x) && x > 0;
 
