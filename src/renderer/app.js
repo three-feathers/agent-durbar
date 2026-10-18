@@ -75,7 +75,7 @@ function roomAlert(r){
   return MOODS.roomAlertOf(agents.filter(a=>!a.parent&&a.live&&a.room===r.id).map(a=>{const m=moodFor(a);return {state:vis(a),body:m.body,trouble:m.trouble};}));
 }
 const ALERT_WORDS='Alert: an agent needs help';
-const SIREN='<span class="siren" aria-hidden="true"><svg viewBox="0 0 14 14" focusable="false"><rect class="siren-light" x="3" y="2" width="8" height="6.5" rx="3.2"/><rect x="1.5" y="8.5" width="11" height="3" rx="1" fill="#6b6f76"/></svg></span>';
+const SIREN='<span class="siren" aria-hidden="true"><svg viewBox="0 0 14 14" focusable="false"><rect class="siren-light" x="3" y="2" width="8" height="6.5" rx="3.2"/><rect x="1.5" y="8.5" width="11" height="3" rx="1" fill="var(--siren-base)"/></svg></span>';
 /* "impatient" starts after 60 s without any event, so look every few seconds and redraw only when somebody's mood changed */
 let moodSig='';
 setInterval(()=>{if(SERIOUS||demoOn)return;const sig=agents.map(x=>x.live&&!x.parent?moodFor(x).trouble+'/'+moodFor(x).body:'').join('|');if(sig!==moodSig){moodSig=sig;scheduleRender();}},5000);
@@ -189,11 +189,11 @@ function usageLong(a){const u=a.usage; if(!u||!u.calls)return ''; const c=capOf(
 function shade(hex,p){const n=parseInt(hex.slice(1),16);let r=n>>16,g=(n>>8)&255,b=n&255;const f=p<0?0:255,t=Math.abs(p);
   r=Math.round((f-r)*t+r);g=Math.round((f-g)*t+g);b=Math.round((f-b)*t+b);return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1)}
 function badgeSVG(st){
-  if(st==='done')return '<svg viewBox="0 0 10 10" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.3l2.1 2.1L8 3"/></svg>';
-  if(st==='error')return '<svg viewBox="0 0 10 10" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><path d="M5 2v3.4M5 7.6v.1"/></svg>';
-  if(st==='waiting')return '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="2.2" fill="#fff"/></svg>';
-  if(st==='idle')return '<svg viewBox="0 0 10 10" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 5h5"/></svg>';
-  return '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="2" fill="#fff" opacity=".9"/></svg>';
+  if(st==='done')return '<svg viewBox="0 0 10 10" fill="none" stroke="var(--badge-icon)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.3l2.1 2.1L8 3"/></svg>';
+  if(st==='error')return '<svg viewBox="0 0 10 10" fill="none" stroke="var(--badge-icon)" stroke-width="1.8" stroke-linecap="round"><path d="M5 2v3.4M5 7.6v.1"/></svg>';
+  if(st==='waiting')return '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="2.2" fill="var(--badge-icon)"/></svg>';
+  if(st==='idle')return '<svg viewBox="0 0 10 10" fill="none" stroke="var(--badge-icon)" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 5h5"/></svg>';
+  return '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="2" fill="var(--badge-icon)" opacity=".9"/></svg>';
 }
 function hairFront(style,c){
   const fr=`<path d="M61 43.5C61 33 67 30.5 74 30.5C81 30.5 87 33 87 43.5C84 38.5 80 37 74 37C68 37 64 38.5 61 43.5Z" fill="${c}"/>`;
@@ -204,12 +204,12 @@ function hairFront(style,c){
 function scene(a,mini,c){
   const st=vis(a), mood=moodFor(a), k=mood.body==='monster'?Object.assign({},a.look,{skin:'#8fa98f'}):a.look, shirt=k.shirt, arm=shade(shirt,-.14), skinD=shade(k.skin,-.08);
   let s=`<svg class="scene${c?' sc-c':''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses?1:0}|${c?'c':mini?'m':'f'}|${mood.body}${mood.trouble||''}" viewBox="${c?'16 5 176 116':mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
-  s+=`<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="#2c3733" opacity=".06"/>`;
+  s+=`<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="var(--scene-shadow)" opacity=".06"/>`;
   /* compact scenes: flat halo rects + CSS-only animation (no blur filter, no SMIL) so 15 of them stay cheap */
   if(c){const hc={working:'#6f93b5',thinking:'#8a97bd',waiting:'#d9962b',error:'#bf5a50'}[st];
     if(hc) s+=`<g class="halo halo-${st}"><rect x="101" y="22" width="86" height="66" rx="17" fill="${hc}" opacity=".13"/><rect x="107" y="28" width="74" height="54" rx="13" fill="${hc}" opacity=".16"/></g>`;}
   else if(st==='working'||st==='thinking') s+=`<rect class="glow" x="106" y="28" width="76" height="54" rx="14" fill="${st==='working'?'#6f93b5':'#8a97bd'}" filter="url(#soft)" opacity=".24"/>`;
-  s+=`<rect x="52" y="50" width="44" height="48" rx="13" fill="#cdc6b8"/>`;
+  s+=`<rect x="52" y="50" width="44" height="48" rx="13" fill="var(--chair)"/>`;
   s+='<g class="pp">'; /* the person (hidden by CSS while the agent is away at a place: an empty chair stays) */
   if(k.style==='long') s+=`<path d="M59.5 44a14.5 14.5 0 0 1 29 0v19q0 4-4 4h-21q-4 0-4-4z" fill="${k.hair}"/>`;
   s+=`<path d="${mood.body==='normal'?'M55 99V77q0-14 14-14h10q14 0 14 14v22z':'M52 99V77q0-14 14-14h16q14 0 14 14v22z'}" fill="${shirt}"/>`; /* heavy and monster: a wider body, still inside the chair */
@@ -219,30 +219,30 @@ function scene(a,mini,c){
   const tilt = mood.trouble==='faint'?'rotate(-24 74 56)': st==='idle'?'rotate(-7 74 56)': st==='error'?'rotate(4 74 56)':'';
   s+=`<g ${tilt?`transform="${tilt}"`:''}${mood.trouble==='faint'?' style="transform-box:view-box"':''}><g class="${st==='working'?'head':''}"><circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>`;
   s+=hairFront(k.style,k.hair);
-  if(mood.body==='monster') s+=`<path d="M64.5 35.5l-4.2-9.5 9 5.2zM83.5 35.5l4.2-9.5-9 5.2z" fill="#6e8a70"/><path d="M65 33l2.4-4.6 2.6 3.6 2.8-5 2.8 4.6 2.6-3.6 2.4 4.6" fill="none" stroke="${k.hair}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`;
+  if(mood.body==='monster') s+=`<path d="M64.5 35.5l-4.2-9.5 9 5.2zM83.5 35.5l4.2-9.5-9 5.2z" fill="var(--horn)"/><path d="M65 33l2.4-4.6 2.6 3.6 2.8-5 2.8 4.6 2.6-3.6 2.4 4.6" fill="none" stroke="${k.hair}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`;
   const ex = closed?0:1.4;
-  if(closed) s+=`<path d="M67.5 45.6q2 1.7 4 0M76.5 45.6q2 1.7 4 0" fill="none" stroke="#3b3330" stroke-width="1.3" stroke-linecap="round"/>`;
-  else s+=`<circle cx="${70.3+ex}" cy="45.4" r="1.35" fill="#3b3330"/><circle cx="${78.3+ex}" cy="45.4" r="1.35" fill="#3b3330"/>`;
-  if(k.glasses) s+=`<g fill="none" stroke="#3b3330" stroke-width="1.1"><circle cx="${70.3+ex}" cy="45.4" r="4"/><circle cx="${78.3+ex}" cy="45.4" r="4"/></g>`;
+  if(closed) s+=`<path d="M67.5 45.6q2 1.7 4 0M76.5 45.6q2 1.7 4 0" fill="none" stroke="var(--glasses)" stroke-width="1.3" stroke-linecap="round"/>`;
+  else s+=`<circle cx="${70.3+ex}" cy="45.4" r="1.35" fill="var(--glasses)"/><circle cx="${78.3+ex}" cy="45.4" r="1.35" fill="var(--glasses)"/>`;
+  if(k.glasses) s+=`<g fill="none" stroke="var(--glasses)" stroke-width="1.1"><circle cx="${70.3+ex}" cy="45.4" r="4"/><circle cx="${78.3+ex}" cy="45.4" r="4"/></g>`;
   const mouth = mood.body==='monster'?'M70.2 53.8q3.8-3.6 7.6 0': st==='error'?'M71 53.2q3-2 6 0': (st==='done'||st==='idle')?'M70.5 51q3.5 3 7 0':'M71 51.6q3 2 6 0';
-  if(mood.body==='monster') s+=`<path d="M65.5 40l7 3.4M82.5 40l-7 3.4" fill="none" stroke="#3b3330" stroke-width="1.8" stroke-linecap="round"/>`;
-  s+=mood.trouble==='faint'?`<ellipse cx="74" cy="52" rx="1.9" ry="2.4" fill="#7a4b3a"/></g></g>`:`<path d="${mouth}" fill="none" stroke="#7a4b3a" stroke-width="1.3" stroke-linecap="round"/></g></g>`;
-  if(mood.body==='heavy') s+=`<path class="sweat" d="M90.5 36.5q3.2 4.6 0 7.4q-3.2-2.8 0-7.4z" fill="#a9c6e3" stroke="#7fa3c9" stroke-width=".6"/>`;
+  if(mood.body==='monster') s+=`<path d="M65.5 40l7 3.4M82.5 40l-7 3.4" fill="none" stroke="var(--glasses)" stroke-width="1.8" stroke-linecap="round"/>`;
+  s+=mood.trouble==='faint'?`<ellipse cx="74" cy="52" rx="1.9" ry="2.4" fill="var(--mouth)"/></g></g>`:`<path d="${mouth}" fill="none" stroke="var(--mouth)" stroke-width="1.3" stroke-linecap="round"/></g></g>`;
+  if(mood.body==='heavy') s+=`<path class="sweat" d="M90.5 36.5q3.2 4.6 0 7.4q-3.2-2.8 0-7.4z" fill="var(--sweat)" stroke="var(--sweat-stroke)" stroke-width=".6"/>`;
   s+='</g>';
   // desk
-  s+=`<rect x="10" y="86" width="180" height="7" rx="3.5" fill="#d8c6a8"/><rect x="15" y="93" width="170" height="21" rx="4" fill="#e8dcc6"/><rect x="22" y="98" width="46" height="11" rx="3" fill="#dccdb1"/><rect x="142" y="98" width="36" height="11" rx="3" fill="#dccdb1"/>`;
+  s+=`<rect x="10" y="86" width="180" height="7" rx="3.5" fill="var(--desk)"/><rect x="15" y="93" width="170" height="21" rx="4" fill="var(--desk-front)"/><rect x="22" y="98" width="46" height="11" rx="3" fill="var(--desk-drawer)"/><rect x="142" y="98" width="36" height="11" rx="3" fill="var(--desk-drawer)"/>`;
   // monitor
-  s+=`<rect x="138.5" y="76" width="11" height="9" fill="#7c8791"/><rect x="130" y="83" width="28" height="3.5" rx="1.75" fill="#7c8791"/>`;
+  s+=`<rect x="138.5" y="76" width="11" height="9" fill="var(--monitor-stand)"/><rect x="130" y="83" width="28" height="3.5" rx="1.75" fill="var(--monitor-stand)"/>`;
   const scr={working:'#eaf1f7',thinking:'#eaeef6',waiting:'#f8eed9',idle:'#d4d8d6',error:'#f6e3e0',done:'#e2efe7'}[st];
-  s+=`<rect x="112" y="32" width="64" height="45" rx="5" fill="#5f6d77"/><rect x="116" y="36" width="56" height="37" rx="3" fill="${scr}"/>`;
-  if(st==='working') s+=`<rect class="bar" x="121" y="41" width="34" height="3.6" rx="1.8" fill="#6f93b5"/><rect class="bar" x="121" y="48.5" width="26" height="3.6" rx="1.8" fill="#8fb09a"/><rect class="bar" x="121" y="56" width="42" height="3.6" rx="1.8" fill="#6f93b5"/><rect class="bar" x="121" y="63.5" width="20" height="3.6" rx="1.8" fill="#a8bfd2"/>`;
-  if(st==='thinking') s+=`<rect x="121" y="41" width="30" height="3.6" rx="1.8" fill="#8a97bd" opacity=".55"/><rect x="121" y="48.5" width="40" height="3.6" rx="1.8" fill="#8a97bd" opacity=".4"/><rect x="121" y="56" width="22" height="3.6" rx="1.8" fill="#8a97bd" opacity=".55"/><rect x="121" y="63.5" width="5" height="3.6" rx="1.8" fill="#8a97bd"${c?' class="cursor"':''}>${REDUCED||c?'':'<animate attributeName="opacity" values="1;.15;1" dur="1.6s" repeatCount="indefinite"/>'}</rect>`;
-  if(st==='waiting') s+=`<rect x="121" y="41" width="30" height="3.6" rx="1.8" fill="#d9962b" opacity=".5"/><rect x="123" y="49" width="42" height="19" rx="5" fill="#fff" stroke="#e5be78" stroke-width="1.2"/><circle cx="131" cy="58.5" r="3" fill="#d9962b"/><rect x="138" y="54" width="20" height="3" rx="1.5" fill="#e5cf9f"/><rect x="138" y="60" width="14" height="3" rx="1.5" fill="#efe0bb"/>`;
-  if(st==='idle') s+=`<circle cx="144" cy="54.5" r="7" fill="none" stroke="#b5b9b6" stroke-width="1.6"/><path d="M144 50.5v4l2.6 1.6" fill="none" stroke="#b5b9b6" stroke-width="1.6" stroke-linecap="round"/>`;
-  if(st==='error') s+=`<circle cx="144" cy="52" r="9" fill="none" stroke="#bf5a50" stroke-width="2"/><path d="M144 47.5v5.5M144 56.6v.1" stroke="#bf5a50" stroke-width="2.2" stroke-linecap="round"/><rect x="127" y="65" width="34" height="3" rx="1.5" fill="#e3b5af"/>`;
-  if(st==='done') s+=`<circle cx="144" cy="54.5" r="10" fill="#5f9a76"/><path d="M139 54.5l3.6 3.6 6.6-7" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`;
-  s+=`<rect x="59" y="82.2" width="36" height="3.8" rx="1.9" fill="#8f99a1"/>`;
-  if(st==='idle') s+=`<rect x="98" y="76" width="10" height="10" rx="2.5" fill="#f6f1e7" stroke="#cdbf9f" stroke-width="1"/><path d="M108 78.5q4 0 4 3t-4 3" fill="none" stroke="#cdbf9f" stroke-width="1.4"/><path class="steam" d="M101 73q-2-3 0-5" fill="none" stroke="#b6b2a8" stroke-width="1.2" stroke-linecap="round"/><path class="steam" d="M105 73q-2-3 0-5" fill="none" stroke="#b6b2a8" stroke-width="1.2" stroke-linecap="round"/>`;
+  s+=`<rect x="112" y="32" width="64" height="45" rx="5" fill="var(--monitor)"/><rect x="116" y="36" width="56" height="37" rx="3" fill="${scr}"/>`;
+  if(st==='working') s+=`<rect class="bar" x="121" y="41" width="34" height="3.6" rx="1.8" fill="var(--scr-bar-1)"/><rect class="bar" x="121" y="48.5" width="26" height="3.6" rx="1.8" fill="var(--scr-bar-2)"/><rect class="bar" x="121" y="56" width="42" height="3.6" rx="1.8" fill="var(--scr-bar-1)"/><rect class="bar" x="121" y="63.5" width="20" height="3.6" rx="1.8" fill="var(--scr-bar-4)"/>`;
+  if(st==='thinking') s+=`<rect x="121" y="41" width="30" height="3.6" rx="1.8" fill="var(--scr-thinking-bar)" opacity=".55"/><rect x="121" y="48.5" width="40" height="3.6" rx="1.8" fill="var(--scr-thinking-bar)" opacity=".4"/><rect x="121" y="56" width="22" height="3.6" rx="1.8" fill="var(--scr-thinking-bar)" opacity=".55"/><rect x="121" y="63.5" width="5" height="3.6" rx="1.8" fill="var(--scr-thinking-bar)"${c?' class="cursor"':''}>${REDUCED||c?'':'<animate attributeName="opacity" values="1;.15;1" dur="1.6s" repeatCount="indefinite"/>'}</rect>`;
+  if(st==='waiting') s+=`<rect x="121" y="41" width="30" height="3.6" rx="1.8" fill="var(--scr-waiting-bar)" opacity=".5"/><rect x="123" y="49" width="42" height="19" rx="5" fill="var(--scr-waiting-fill)" stroke="var(--scr-waiting-stroke)" stroke-width="1.2"/><circle cx="131" cy="58.5" r="3" fill="var(--scr-waiting-bar)"/><rect x="138" y="54" width="20" height="3" rx="1.5" fill="var(--scr-waiting-text)"/><rect x="138" y="60" width="14" height="3" rx="1.5" fill="var(--scr-waiting-text-2)"/>`;
+  if(st==='idle') s+=`<circle cx="144" cy="54.5" r="7" fill="none" stroke="var(--clock-stroke)" stroke-width="1.6"/><path d="M144 50.5v4l2.6 1.6" fill="none" stroke="var(--clock-stroke)" stroke-width="1.6" stroke-linecap="round"/>`;
+  if(st==='error') s+=`<circle cx="144" cy="52" r="9" fill="none" stroke="var(--c-error)" stroke-width="2"/><path d="M144 47.5v5.5M144 56.6v.1" stroke="var(--c-error)" stroke-width="2.2" stroke-linecap="round"/><rect x="127" y="65" width="34" height="3" rx="1.5" fill="var(--scr-error-bar)"/>`;
+  if(st==='done') s+=`<circle cx="144" cy="54.5" r="10" fill="var(--c-done)"/><path d="M139 54.5l3.6 3.6 6.6-7" fill="none" stroke="var(--checkmark)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`;
+  s+=`<rect x="59" y="82.2" width="36" height="3.8" rx="1.9" fill="var(--laptop)"/>`;
+  if(st==='idle') s+=`<rect x="98" y="76" width="10" height="10" rx="2.5" fill="var(--coffee-cup)" stroke="var(--coffee-stroke)" stroke-width="1"/><path d="M108 78.5q4 0 4 3t-4 3" fill="none" stroke="var(--coffee-stroke)" stroke-width="1.4"/><path class="steam" d="M101 73q-2-3 0-5" fill="none" stroke="var(--steam)" stroke-width="1.2" stroke-linecap="round"/><path class="steam" d="M105 73q-2-3 0-5" fill="none" stroke="var(--steam)" stroke-width="1.2" stroke-linecap="round"/>`;
   const hand=(x,y)=>`<circle cx="${x}" cy="${y}" r="3.6" fill="${k.skin}"/>`;
   const armL=(x1,y1,x2,y2)=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${arm}" stroke-width="8" stroke-linecap="round"/>`;
   const typing = st==='working';
@@ -257,17 +257,17 @@ function scene(a,mini,c){
     s+=`<g class="${typing?'hand-r':mood.trouble==='impatient'?'tap':''}">${armL(87,71,81,81)}${hand(80.5,81.4)}</g>`;
   }
   s+='</g>';
-  if(mood.trouble==='dizzy'){const star=(x,y)=>`<path d="M${x} ${y-3.2}l1 2.2 2.2 1-2.2 1-1 2.2-1-2.2-2.2-1 2.2-1z" fill="#d9a441"/>`;s+=`<g class="pp"><g class="dizzy">${star(58,28)}${star(74,21)}${star(90,28)}</g></g>`;}
-  if(mood.trouble==='ambulance') s+=`<g class="amb"><rect x="18" y="93" width="36" height="17" rx="4" fill="#f7f4ee" stroke="#9aa59f" stroke-width="1"/><rect x="40" y="96" width="11" height="7" rx="1.5" fill="#bcd3e6"/><rect x="18" y="103" width="36" height="3" fill="#bf5a50"/><path d="M28 96.5v5M25.5 99h5" stroke="#bf5a50" stroke-width="2" stroke-linecap="round"/><rect class="amb-light" x="30" y="89.5" width="9" height="4" rx="2" fill="#d9534f"/><circle cx="26" cy="111" r="3.6" fill="#4a5560"/><circle cx="46" cy="111" r="3.6" fill="#4a5560"/></g>`;
-  if(st==='thinking') s+=`<g class="bubble-g"><circle cx="58.5" cy="31" r="2" fill="#fff" stroke="#c9d0e0" stroke-width="1"/><circle cx="52" cy="25" r="3" fill="#fff" stroke="#c9d0e0" stroke-width="1"/><rect x="18" y="4" width="42" height="19" rx="9.5" fill="#fff" stroke="#c9d0e0" stroke-width="1.2"/><g fill="#8a97bd"><circle class="td" cx="30" cy="13.5" r="2.2"/><circle class="td" cx="39" cy="13.5" r="2.2"/><circle class="td" cx="48" cy="13.5" r="2.2"/></g></g>`;
+  if(mood.trouble==='dizzy'){const star=(x,y)=>`<path d="M${x} ${y-3.2}l1 2.2 2.2 1-2.2 1-1 2.2-1-2.2-2.2-1 2.2-1z" fill="var(--star)"/>`;s+=`<g class="pp"><g class="dizzy">${star(58,28)}${star(74,21)}${star(90,28)}</g></g>`;}
+  if(mood.trouble==='ambulance') s+=`<g class="amb"><rect x="18" y="93" width="36" height="17" rx="4" fill="var(--ambulance-body)" stroke="var(--ambulance-stroke)" stroke-width="1"/><rect x="40" y="96" width="11" height="7" rx="1.5" fill="var(--ambulance-window)"/><rect x="18" y="103" width="36" height="3" fill="var(--ambulance-stripe)"/><path d="M28 96.5v5M25.5 99h5" stroke="var(--ambulance-stripe)" stroke-width="2" stroke-linecap="round"/><rect class="amb-light" x="30" y="89.5" width="9" height="4" rx="2" fill="var(--ambulance-light)"/><circle cx="26" cy="111" r="3.6" fill="var(--ambulance-wheel)"/><circle cx="46" cy="111" r="3.6" fill="var(--ambulance-wheel)"/></g>`;
+  if(st==='thinking') s+=`<g class="bubble-g"><circle cx="58.5" cy="31" r="2" fill="var(--bubble-fill)" stroke="var(--bubble-stroke)" stroke-width="1"/><circle cx="52" cy="25" r="3" fill="var(--bubble-fill)" stroke="var(--bubble-stroke)" stroke-width="1"/><rect x="18" y="4" width="42" height="19" rx="9.5" fill="var(--bubble-fill)" stroke="var(--bubble-stroke)" stroke-width="1.2"/><g fill="var(--bubble-text)"><circle class="td" cx="30" cy="13.5" r="2.2"/><circle class="td" cx="39" cy="13.5" r="2.2"/><circle class="td" cx="48" cy="13.5" r="2.2"/></g></g>`;
   s+='</svg>';
   return s;
 }
 function avatar(a){
   const k=a.look;
-  return `<svg viewBox="50 20 48 48" width="100%" height="100%" aria-hidden="true" focusable="false">${k.style==='long'?`<path d="M59.5 44a14.5 14.5 0 0 1 29 0v19q0 4-4 4h-21q-4 0-4-4z" fill="${k.hair}"/>`:''}<path d="M55 99V77q0-14 14-14h10q14 0 14 14v22z" fill="${k.shirt}"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${shade(k.skin,-.08)}"/><circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>${hairFront(k.style,k.hair)}<circle cx="71.7" cy="45.4" r="1.35" fill="#3b3330"/><circle cx="79.7" cy="45.4" r="1.35" fill="#3b3330"/><path d="M71 51.6q3 2 6 0" fill="none" stroke="#7a4b3a" stroke-width="1.3" stroke-linecap="round"/></svg>`;
+  return `<svg viewBox="50 20 48 48" width="100%" height="100%" aria-hidden="true" focusable="false">${k.style==='long'?`<path d="M59.5 44a14.5 14.5 0 0 1 29 0v19q0 4-4 4h-21q-4 0-4-4z" fill="${k.hair}"/>`:''}<path d="M55 99V77q0-14 14-14h10q14 0 14 14v22z" fill="${k.shirt}"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${shade(k.skin,-.08)}"/><circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>${hairFront(k.style,k.hair)}<circle cx="71.7" cy="45.4" r="1.35" fill="var(--glasses)"/><circle cx="79.7" cy="45.4" r="1.35" fill="var(--glasses)"/><path d="M71 51.6q3 2 6 0" fill="none" stroke="var(--mouth)" stroke-width="1.3" stroke-linecap="round"/></svg>`;
 }
-const PLANT='<svg class="room-plant" width="26" height="30" viewBox="0 0 26 30" aria-hidden="true" focusable="false"><path d="M13 20C13 12 9 8 4 7c0 6 3 11 9 13z" fill="#9dbca6"/><path d="M13 20c0-9 4-13 9-14 0 7-3 12-9 14z" fill="#86a98f"/><path d="M13 20C12 14 12 9 13 3c2 6 2 11 0 17z" fill="#aac6b2"/><path d="M7 21h12l-1.5 8h-9z" fill="#d4b99a"/></svg>';
+const PLANT='<svg class="room-plant" width="26" height="30" viewBox="0 0 26 30" aria-hidden="true" focusable="false"><path d="M13 20C13 12 9 8 4 7c0 6 3 11 9 13z" fill="var(--plant-mid)"/><path d="M13 20c0-9 4-13 9-14 0 7-3 12-9 14z" fill="var(--plant-dark)"/><path d="M13 20C12 14 12 9 13 3c2 6 2 11 0 17z" fill="var(--plant-light)"/><path d="M7 21h12l-1.5 8h-9z" fill="var(--pot)"/></svg>';
 
 
 /* ---------------- toast ---------------- */
@@ -342,7 +342,7 @@ function linksSVG(d,rows,extraMore){
   if(d==='full'){py=78;for(let i=0;i<n;i++)ys.push(34+i*104);}
   else{py=D.ch/2;for(let i=0;i<rows;i++)ys.push(i*(D.hh+D.hgap)+D.hh/2);if(extraMore)ys.push(rows*(D.hh+D.hgap)+D.mh/2);}
   const w=d==='full'?24:16, mid=d==='full'?12:8;
-  return `<svg class="links" aria-hidden="true" focusable="false"><g fill="none" stroke="#a9b6ad" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${ys.map(y=>`<path d="M0 ${py}H${mid}V${y}H${w}"/>`).join('')}</g><circle cx="0" cy="${py}" r="2.6" fill="#a9b6ad"/></svg>`;
+  return `<svg class="links" aria-hidden="true" focusable="false"><g fill="none" stroke="var(--link)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${ys.map(y=>`<path d="M0 ${py}H${mid}V${y}H${w}"/>`).join('')}</g><circle cx="0" cy="${py}" r="2.6" fill="var(--link)"/></svg>`;
 }
 function unitHTML(a,d){
   const st=vis(a), {shown,hidden}=visibleHelpers(a,d), nSubs=shown.length+hidden.length;
@@ -379,8 +379,8 @@ function officeModel(ignoreStatus){
   return rooms;
 }
 /* ---- room doors (spec 017): a closed room is a compact door plate with a one-line status ---- */
-const DOOR_OPEN='<svg class="door-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="4" y="2.5" width="12" height="15" rx="1.6" fill="#efe8d8" stroke="#b3a07c" stroke-width="1.2"/><path class="leaf" d="M4.4 3.2 9.6 4.6V15.4L4.4 16.8Z" fill="#d8c6a8" stroke="#a89572" stroke-width="1"/><circle cx="8.2" cy="10" r=".8" fill="#8a7650"/></svg>';
-const DOOR_SHUT='<svg class="door-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="4" y="2.5" width="12" height="15" rx="1.6" fill="#d8c6a8" stroke="#a89572" stroke-width="1.2"/><rect x="6.2" y="4.7" width="7.6" height="4.4" rx=".9" fill="#e8dcc6"/><circle cx="13.1" cy="12" r="1" fill="#8a7650"/></svg>';
+const DOOR_OPEN='<svg class="door-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="4" y="2.5" width="12" height="15" rx="1.6" fill="var(--door-frame)" stroke="var(--door-stroke)" stroke-width="1.2"/><path class="leaf" d="M4.4 3.2 9.6 4.6V15.4L4.4 16.8Z" fill="var(--door-leaf)" stroke="var(--door-handle)" stroke-width="1"/><circle cx="8.2" cy="10" r=".8" fill="var(--door-handle)"/></svg>';
+const DOOR_SHUT='<svg class="door-svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="4" y="2.5" width="12" height="15" rx="1.6" fill="var(--door-leaf)" stroke="var(--door-handle)" stroke-width="1.2"/><rect x="6.2" y="4.7" width="7.6" height="4.4" rx=".9" fill="var(--door-window)"/><circle cx="13.1" cy="12" r="1" fill="var(--door-handle)"/></svg>';
 function roomSummary(r){
   const mains=agents.filter(a=>!a.parent&&a.room===r.id);
   const sum=window.DurbarRoom.summarizeRoom(mains.map(a=>({state:vis(a),helpers:helpersOf(a).map(vis)})));
@@ -568,11 +568,11 @@ function renderAll(){
 
 /* ---------------- icons ---------------- */
 const ICON={
- read:'<svg viewBox="0 0 16 16" fill="none" stroke="#5b7f94" stroke-width="1.5" stroke-linejoin="round"><path d="M4 1.8h5.2L12.5 5v9.2H4z"/><path d="M9 1.8V5.2h3.5"/></svg>',
- edit:'<svg viewBox="0 0 16 16" fill="none" stroke="#7f8a5b" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"><path d="M2.5 13.5l.7-3L11 2.7a1.4 1.4 0 0 1 2 2L5.5 12.8z"/></svg>',
- run:'<svg viewBox="0 0 16 16" fill="none" stroke="#4f7f65" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2"/><path d="M4.8 6.2l2 1.8-2 1.8M8.6 10h2.6"/></svg>',
- search:'<svg viewBox="0 0 16 16" fill="none" stroke="#8a6f4a" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2l3.3 3.3"/></svg>',
- tool:'<svg viewBox="0 0 16 16" fill="none" stroke="#7a7f8c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.8M8 12.4v1.8M1.8 8h1.8M12.4 8h1.8M3.6 3.6l1.3 1.3M11.1 11.1l1.3 1.3M12.4 3.6l-1.3 1.3M4.9 11.1l-1.3 1.3"/></svg>',
+ read:'<svg viewBox="0 0 16 16" fill="none" stroke="var(--tool-read)" stroke-width="1.5" stroke-linejoin="round"><path d="M4 1.8h5.2L12.5 5v9.2H4z"/><path d="M9 1.8V5.2h3.5"/></svg>',
+ edit:'<svg viewBox="0 0 16 16" fill="none" stroke="var(--tool-edit)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"><path d="M2.5 13.5l.7-3L11 2.7a1.4 1.4 0 0 1 2 2L5.5 12.8z"/></svg>',
+ run:'<svg viewBox="0 0 16 16" fill="none" stroke="var(--tool-run)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2"/><path d="M4.8 6.2l2 1.8-2 1.8M8.6 10h2.6"/></svg>',
+ search:'<svg viewBox="0 0 16 16" fill="none" stroke="var(--tool-search)" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2l3.3 3.3"/></svg>',
+ tool:'<svg viewBox="0 0 16 16" fill="none" stroke="var(--tool-generic)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.8M8 12.4v1.8M1.8 8h1.8M12.4 8h1.8M3.6 3.6l1.3 1.3M11.1 11.1l1.3 1.3M12.4 3.6l-1.3 1.3M4.9 11.1l-1.3 1.3"/></svg>',
  back:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3L4.5 8l5 5"/><path d="M5 8h8"/></svg>',
  chev:'<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg>',
  file:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4 1.8h5.2L12.5 5v9.2H4z"/><path d="M9 1.8V5.2h3.5"/></svg>',

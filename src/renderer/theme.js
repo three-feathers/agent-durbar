@@ -80,8 +80,11 @@
     '--ambulance-stroke':'#9aa59f',
     '--bubble-stroke':'#c9d0e0',
     '--bubble-fill':'#fff',
-    '--bubble-fill':'#fff',
     '--bubble-text':'#8a97bd',
+    '--clock-stroke':'#b5b9b6',
+    '--siren-red':'#d9534f',
+    '--siren-blue':'#5b8fd1',
+    '--siren-base':'#6b6f76',
 
     /* screen content */
     '--scr-working':'#eaf1f7',
@@ -98,7 +101,6 @@
     '--scr-waiting-bar':'#d9962b',
     '--scr-waiting-stroke':'#e5be78',
     '--scr-waiting-fill':'#fff',
-    '--scr-waiting-fill':'#fff',
     '--scr-waiting-text':'#e5cf9f',
     '--scr-waiting-text-2':'#efe0bb',
     '--scr-error-bar':'#e3b5af',
@@ -111,7 +113,25 @@
     '--halo-thinking':'#8a97bd',
     '--halo-waiting':'#d9962b',
     '--halo-error':'#bf5a50',
+    '--badge-icon':'#fff',
+    '--checkmark':'#fff',
+    '--siren-red':'#d9534f',
+    '--siren-blue':'#5b8fd1',
+    '--siren-base':'#6b6f76',
+    '--link':'#a9b6ad',
+    '--door-frame':'#efe8d8',
+    '--door-leaf':'#d8c6a8',
+    '--door-shut':'#d8c6a8',
+    '--door-window':'#e8dcc6',
+    '--door-stroke':'#b3a07c',
+    '--door-handle':'#a89572',
+    '--tool-read':'#5b7f94',
+    '--tool-edit':'#7f8a5b',
+    '--tool-run':'#4f7f65',
+    '--tool-search':'#8a6f4a',
+    '--tool-generic':'#7a7f8c',
   };
+
 
   /* ---------- Art slot registry ----------
      Slots are SVG fragments. They are assembled by scene() in app.js.
