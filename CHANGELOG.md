@@ -2,7 +2,13 @@
 
 Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on Linux (see "Honest limits"). Each entry names the spec that describes the behavior and how it was checked.
 
-## Unreleased (on `main`, after the alpha.4 tag)
+## Unreleased (on `main`, after the alpha.5 tag)
+
+Nothing yet.
+
+## v0.1.0-alpha.5 (pre-release, 2026-10-18)
+
+Themes that change the whole office, floors, agents that show how they are doing, custom places and usage totals kept across restarts, plus groundwork for Claude Code and Codex that is not wired yet (only Copilot works). Checked on the simulator and with unit tests; nothing here was checked on a real Copilot session. **Unsigned and not notarized; untested on real macOS and Windows hardware; an in-place upgrade from alpha.4 was not checked** (spec 042).
 
 - **Claude usage counted once per message (spec 012 T025, issue #44).** The Claude event mapper counted the usage of every streamed piece of one message (text, tool call), so tokens were counted twice; now repeated figures for one `message.id` count once and only their growth is added (bounded memory, empty usage skipped). New fixture tests pin the cost delta, Codex's unknown context window and "credits not reported", and that dollars never mix into AIU totals. Unit tests only; the Claude adapter is not wired yet.
 

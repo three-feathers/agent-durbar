@@ -73,7 +73,7 @@ The gate checks **presence, not quality**: it cannot tell a good spec from a one
 
 ## Releases (maintainer)
 
-Pushing a tag `v*` (for example `v0.1.0-alpha.4`; the tag must match `version` in `package.json`) runs `.github/workflows/release.yml`, which builds unsigned macOS, Windows and Linux packages and attaches them to a **draft** pre-release. Review the draft, then publish it by hand. Builds are not signed or notarized and there is no auto-update.
+Pushing a tag `v*` (for example `v0.1.0-alpha.5`; the tag must match `version` in `package.json`) runs `.github/workflows/release.yml`, which builds unsigned macOS, Windows and Linux packages and attaches them to a **draft** pre-release. Review the draft, then publish it by hand. Builds are not signed or notarized and there is no auto-update.
 
 ## License
 
