@@ -22,6 +22,6 @@
 
 ## Changes 2026-10-18 (issue #170)
 
-- [ ] T026 Pure `broadFolderKind(path, home, flavour)` in `src/shared/broadfolder.ts` (home, parent of home, root, else none; Windows drive and UNC roots; case-insensitive on win32/darwin) with `scripts/test-broadfolder.ts` [FR-016]
-- [ ] T027 Main returns `warnings` with the add result (folders and the folders of a `.code-workspace`); the renderer shows one calm toast; simulator hook; screenshots at 1440x900 and 1280x800; docs [FR-016]
+- [x] T026 Pure `broadFolderKind(path, home, flavour)` in `src/shared/broadfolder.ts` (home, parent of home, root, else none; Windows drive and UNC roots; case-insensitive on win32/darwin) with `scripts/test-broadfolder.ts` [FR-016]
+- [x] T027 Main returns `warnings` with the add result (folders and the folders of a `.code-workspace`); the renderer shows one calm toast; simulator hook; screenshots at 1440x900 and 1280x800; docs [FR-016]
 
