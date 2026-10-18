@@ -25,6 +25,7 @@
 
 ## Changes 2026-10-18 (issue #126)
 
-- [ ] T027 Normalized `title` event in `src/adapters/types.ts`; `session.title_changed` mapped in `src/adapters/map.ts` (top level only); `name.get` fallback after a turn in `src/adapters/copilot.ts`; title cleaning shared with `cleanTitle`; fixtures and tests
-- [ ] T028 Previous sessions prefer `name` over `summary` (`previousSessionsFor` in `src/adapters/history.ts`); test
-- [ ] T029 Main keeps `AgentInfo.title` from the event (`src/main/main.ts`), sets it on resume from the previous session's title; `usageLabel` unchanged; test that a planted title never reaches a tool-usage label
+- [x] T030 (real-account, owner asked) One Read-only prompt: `session.title_changed` for the main session, `name.get`, resume by id; record as `real:` in spec.md (done 2026-10-18, 0.1533 AIU)
+- [x] T027 Normalized `title` event in `src/adapters/types.ts`; `session.title_changed` mapped in `src/adapters/map.ts` (top level only); `name.get` fallback after a turn in `src/adapters/copilot.ts`; title cleaning shared with `cleanTitle`; fixtures and tests
+- [x] T028 Previous sessions prefer `name` over `summary` (`previousSessionsFor` in `src/adapters/history.ts`); test
+- [x] T029 Main keeps `AgentInfo.title` from the event (`src/main/main.ts`), sets it on resume from the previous session's title; `usageLabel` unchanged; test that a planted title never reaches a tool-usage label

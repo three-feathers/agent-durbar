@@ -123,6 +123,22 @@ Specs [035](specs/035-theme-foundation/spec.md)-[040](specs/040-user-themes/spec
 **Limits.** Display fonts are your system's serif and monospace fonts (no font files are shipped), so the courts and Retro look a little different per OS; only Linux was looked at. Not checked on a real Copilot session. The Durbar word lists and the five looks wait for the owner's review.
 
 Tests: `test:theme` (packs, tokens, words, the sanitizer, UI styles, and a guard that `themes.css` never sets a size), `test:scenekits` (3600 scenes: every kit, status, mood and look) and `test:userthemes`. Screenshots: `scripts/shots-themes.js`.
+## Status (main agents show their session title)
+
+Spec deltas in [002](specs/002-copilot-adapter-and-events/spec.md#changes) and [001](specs/001-office-view-and-densities/spec.md) (issue #126). Built and tested on the simulator, fixtures and unit tests, and **checked once on a real Copilot session** (one Read-only prompt, **0.15 AIU**). Not released yet.
+
+- Copilot names every session: a title made from your first prompt, which may later become a short summary or a name you gave it with `/rename`. A main agent now shows that title on its card, in the chat header, the list, the agent strip and the lobby, instead of the folder name; several sessions in one folder are told apart at a glance. The folder stays in the room header and in the card's tooltip and screen-reader label. Sub-agents keep their own names, as before.
+- A session resumed from **Previous sessions** shows its saved name, else its summary, until Copilot sends its own title.
+- Long titles are shortened with an ellipsis (the full title is in the tooltip); line breaks, control and hidden characters are removed. Titles are display only: tool-usage counts and usage totals keep the folder name.
+- Simulator: `DURBAR_SIM_TITLES=1` (page address `simtitles=1`) gives a few main agents titles, one long.
+
+![Main agents with session titles, 1440x900](docs/screenshots/002-titles-1440x900.png)
+![The chat of a titled session, 1280x800](docs/screenshots/002-titles-chat-1280x800.png)
+
+**Real check (2026-10-18).** Copilot sent the title for the main session as soon as the prompt was sent (before the model answered), and the card took it at once. After the session was ended and resumed, Copilot did not send it again; the app's one-time name request on resume brought it back. **Limits:** a later auto summary replacing the first title was not seen in that short run; only Linux.
+
+Tests: `test:events`, `test:history`, `test:copilotmodel`; `check:office` includes titled agents at both sizes. Screenshots: `scripts/shots-002-titles.js`.
+
 ## Status (agents show how they are doing: heavy, monster, ambulance, room sirens)
 
 Spec [034](specs/034-agent-health/spec.md) (issue #20; amends 001). Built and tested on the simulator and unit tests. **AI credits spent: 0 AIU.** Not in a release yet.
