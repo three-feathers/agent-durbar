@@ -16,7 +16,10 @@
 
   /* ---------- Clean Office token map ----------
      Semantic names grouped by domain. These become CSS custom properties
-     on :root when the theme is active. */
+     on :root when the theme is active. For the foundation spec we expose
+     the core UI, brand, status and mood halos that already drive styles.css.
+     Scene/object tokens and art slots are added when the scene builder is
+     refactored in the next spec. */
   const CLEAN_TOKENS={
     /* core UI */
     '--bg':'#f6f3ee',
@@ -49,95 +52,17 @@
     '--c-error':'#bf5a50',
     '--c-done':'#5f9a76',
 
-    /* scene / office objects */
-    '--scene-shadow':'#2c3733',
-    '--chair':'#cdc6b8',
-    '--desk':'#d8c6a8',
-    '--desk-front':'#e8dcc6',
-    '--desk-drawer':'#dccdb1',
-    '--monitor':'#5f6d77',
-    '--monitor-stand':'#7c8791',
-    '--laptop':'#8f99a1',
-    '--coffee-cup':'#f6f1e7',
-    '--coffee-stroke':'#cdbf9f',
-    '--steam':'#b6b2a8',
-    '--plant-light':'#aac6b2',
-    '--plant-mid':'#9dbca6',
-    '--plant-dark':'#86a98f',
-    '--pot':'#d4b99a',
-    '--skin-shadow':'#7a7f8c',   /* generic shadow tone used in avatar */
-    '--mouth':'#7a4b3a',
-    '--glasses':'#3b3330',
-    '--horn':'#6e8a70',
-    '--sweat':'#a9c6e3',
-    '--sweat-stroke':'#7fa3c9',
-    '--star':'#d9a441',
-    '--ambulance-body':'#f7f4ee',
-    '--ambulance-stripe':'#bf5a50',
-    '--ambulance-window':'#bcd3e6',
-    '--ambulance-light':'#d9534f',
-    '--ambulance-wheel':'#4a5560',
-    '--ambulance-stroke':'#9aa59f',
-    '--bubble-stroke':'#c9d0e0',
-    '--bubble-fill':'#fff',
-    '--bubble-text':'#8a97bd',
-    '--clock-stroke':'#b5b9b6',
-    '--siren-red':'#d9534f',
-    '--siren-blue':'#5b8fd1',
-    '--siren-base':'#6b6f76',
-
-    /* screen content */
-    '--scr-working':'#eaf1f7',
-    '--scr-thinking':'#eaeef6',
-    '--scr-waiting':'#f8eed9',
-    '--scr-idle':'#d4d8d6',
-    '--scr-error':'#f6e3e0',
-    '--scr-done':'#e2efe7',
-    '--scr-bar-1':'#6f93b5',
-    '--scr-bar-2':'#8fb09a',
-    '--scr-bar-3':'#6f93b5',
-    '--scr-bar-4':'#a8bfd2',
-    '--scr-thinking-bar':'#8a97bd',
-    '--scr-waiting-bar':'#d9962b',
-    '--scr-waiting-stroke':'#e5be78',
-    '--scr-waiting-fill':'#fff',
-    '--scr-waiting-text':'#e5cf9f',
-    '--scr-waiting-text-2':'#efe0bb',
-    '--scr-error-bar':'#e3b5af',
-    '--scr-idle-stroke':'#b5b9b6',
-
-    '--monster-skin':'#8fa98f',
-
     /* mood / status halos */
     '--halo-working':'#6f93b5',
     '--halo-thinking':'#8a97bd',
     '--halo-waiting':'#d9962b',
     '--halo-error':'#bf5a50',
-    '--badge-icon':'#fff',
-    '--checkmark':'#fff',
-    '--siren-red':'#d9534f',
-    '--siren-blue':'#5b8fd1',
-    '--siren-base':'#6b6f76',
-    '--link':'#a9b6ad',
-    '--door-frame':'#efe8d8',
-    '--door-leaf':'#d8c6a8',
-    '--door-shut':'#d8c6a8',
-    '--door-window':'#e8dcc6',
-    '--door-stroke':'#b3a07c',
-    '--door-handle':'#a89572',
-    '--tool-read':'#5b7f94',
-    '--tool-edit':'#7f8a5b',
-    '--tool-run':'#4f7f65',
-    '--tool-search':'#8a6f4a',
-    '--tool-generic':'#7a7f8c',
   };
 
-
-  /* ---------- Art slot registry ----------
-     Slots are SVG fragments. They are assembled by scene() in app.js.
-     For now the registry lists the slot ids; the actual Clean Office SVGs
-     remain inline in app.js because scene() is a complex composition.
-     Later specs will override individual slots. */
+  /* ---------- Art slot registry (foundation) ----------
+     Slots are SVG fragments that the scene builder will assemble. For now
+     the registry defines the contract and a few default shapes; slots are
+     populated fully in spec 036. */
   const CLEAN_SLOTS={
     'chair-back':'<rect x="52" y="50" width="44" height="48" rx="13" fill="var(--chair)"/>',
     'desk':'<rect x="10" y="86" width="180" height="7" rx="3.5" fill="var(--desk)"/><rect x="15" y="93" width="170" height="21" rx="4" fill="var(--desk-front)"/><rect x="22" y="98" width="46" height="11" rx="3" fill="var(--desk-drawer)"/><rect x="142" y="98" width="36" height="11" rx="3" fill="var(--desk-drawer)"/>',
@@ -148,11 +73,7 @@
   /* Scene words a theme may rename (no other wording changes). */
   const CLEAN_WORDS={};
 
-  /* ---------- Manifest validation / slot sanitization ----------
-     A theme pack contains SVG fragments. We allow only a small whitelist of
-     tags and attributes; scripts, styles, event handlers, links, and foreign
-     objects are rejected. The cleaner works with strings so it runs in both
-     the browser and Node unit tests (no DOMParser dependency). */
+  /* ---------- Manifest validation ---------- */
   const SLOT_TAG_RE=/^\s*(g|path|rect|circle|ellipse|line|polyline|polygon|text)\s*$/i;
   const VOID_TAG_RE=/^\s*(rect|circle|ellipse|line|polyline|polygon|path)\s*$/i;
   const ATTR_BLACKLIST_RE=/^(on[a-z]+|href|xlink:href|style)$/i;
@@ -164,13 +85,11 @@
     const tagRe=/\u003c(\/?)([A-Za-z][A-Za-z0-9]*)((?:\s+[A-Za-z_:][A-Za-z0-9_.:-]*(?:\s*=\s*(?:"[^"]*"|'[^']*'|\S+))?)*)\s*(\/?)\u003e/g;
     let m;
     while((m=tagRe.exec(svg))!==null){
-      // text outside tags must be whitespace-only
       const outside=svg.slice(lastIndex,m.index);
       if(outside.trim().length>0) return null;
       lastIndex=tagRe.lastIndex;
       const closing=m[1], tag=m[2].toLowerCase(), attrs=m[3], selfClose=m[4];
       if(!SLOT_TAG_RE.test(tag)) return null;
-      // attribute validation
       const attrRe=/\s+([A-Za-z_:][A-Za-z0-9_.:-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+)))?/g;
       let am;
       while((am=attrRe.exec(attrs))!==null){
@@ -178,7 +97,6 @@
         const value=(am[2]!==undefined?am[2]:am[3]!==undefined?am[3]:am[4])||'';
         if(ATTR_BLACKLIST_RE.test(name)) return null;
         if(!SVG_WHITELIST.includes(name) && !name.startsWith('data-')) return null;
-        // reject dangerous values in data-* attributes too
         if(/javascript:/i.test(value) || /\bon\w+\s*=/i.test(value)) return null;
       }
       if(closing){ depth--; if(depth<0) return null; }
@@ -237,9 +155,9 @@
   }
 
   function applyTokens(tokens){
-    if (typeof document === 'undefined' || !document.documentElement) return;
-    const el = document.documentElement;
-    for (const [k, v] of Object.entries(tokens)) { el.style.setProperty(k, v); }
+    if(typeof document==='undefined' || !document.documentElement) return;
+    const el=document.documentElement;
+    for(const [k,v] of Object.entries(tokens)){ el.style.setProperty(k, v); }
   }
 
   const BUILT_IN={};
@@ -264,7 +182,7 @@
   function setTheme(idOrManifest){
     const manifest=loadManifest(idOrManifest);
     const id=manifest?manifest.id:CLEAN_ID;
-    if(id===currentId && currentManifest) return id; /* already active */
+    if(id===currentId && currentManifest) return id;
     currentId=id;
     currentManifest=manifest;
     applyTokens(resolveTokens(manifest));
@@ -300,7 +218,7 @@
     word,
     onChange,
     themeIdForCache,
-    _sanitizeSlot:sanitizeSlot, /* exposed for tests */
+    _sanitizeSlot:sanitizeSlot,
     _validateManifest:validateManifest,
   };
 }));
