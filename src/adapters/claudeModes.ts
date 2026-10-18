@@ -22,8 +22,10 @@ export interface ClaudeModeOptions {
   allowDangerouslySkipPermissions?: boolean;
   /** Never lists a read tool in Ask first or Allow all (see `claudeOptionsFor`); Read-only lists the read set because `dontAsk` needs it. */
   allowedTools?: string[];
-  /** Always `[]`: Durbar sessions ignore `~/.claude` and project settings (their allow rules would approve tools before `canUseTool`). */
+  /** Always `[]`, trusted folder or not: Durbar sessions ignore `~/.claude` and project settings (their allow rules would approve tools before `canUseTool`). */
   settingSources: string[];
+  /** Always `true`: MCP servers come only from Durbar's own `mcpServers` option, never `.mcp.json`, user settings, plugins or claude.ai connectors. */
+  strictMcpConfig: boolean;
   disallowedTools?: string[];
   /** The adapter must install a `canUseTool` callback (Ask first; harmless in the others). */
   canUseTool: boolean;
@@ -62,17 +64,17 @@ const MCP_NAME = /^mcp__(.+?)__(.+)$/;
 
 /**
  * Durbar mode -> the SDK options that enforce it. An unknown or missing mode (bad data at runtime) gets the Read-only
- * options, never fewer restrictions. `settingSources: []` in every mode: T027 (#46) refines this with folder trust.
+ * options, never fewer restrictions. `settingSources: []` and `strictMcpConfig: true` in every mode, trusted folder or not (spec 012 Q8, T027).
  */
 export function claudeOptionsFor(mode: PermissionMode): ClaudeModeOptions {
   switch (mode) {
     case 'ask':
-      return { permissionMode: 'default', settingSources: [], canUseTool: true, preToolUseHook: false };
+      return { permissionMode: 'default', settingSources: [], strictMcpConfig: true, canUseTool: true, preToolUseHook: false };
     case 'allow':
-      return { permissionMode: 'bypassPermissions', allowDangerouslySkipPermissions: true, settingSources: [], canUseTool: true, preToolUseHook: false };
+      return { permissionMode: 'bypassPermissions', allowDangerouslySkipPermissions: true, settingSources: [], strictMcpConfig: true, canUseTool: true, preToolUseHook: false };
     case 'read-only':
     default:
-      return { permissionMode: 'dontAsk', allowedTools: [...READ_ONLY_ALLOWED], disallowedTools: [...READ_ONLY_DISALLOWED], settingSources: [], canUseTool: true, preToolUseHook: true };
+      return { permissionMode: 'dontAsk', allowedTools: [...READ_ONLY_ALLOWED], disallowedTools: [...READ_ONLY_DISALLOWED], settingSources: [], strictMcpConfig: true, canUseTool: true, preToolUseHook: true };
   }
 }
 

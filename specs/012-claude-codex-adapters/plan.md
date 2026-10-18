@@ -20,7 +20,7 @@ Add two adapters behind the existing `AgentAdapter` interface: **Claude Code** t
 | --- | --- |
 | I Spec Kit | This plan, tasks and research exist before any `src/` change. OK |
 | II Adapter plug-ins | Vendor names stay in `src/adapters/`. New optional interface members are gated by `capabilities`. The renderer reads capabilities only. **Improves** the current state (Copilot-only members in `main.ts`). |
-| III Safe by default, no secrets | Read-only default; mode set explicitly; layered enforcement; no token, key or `auth.json` read; no in-app login; no key entry. Folder trust before project settings run. OK, with the two policy questions Q1 and Q3 open. |
+| III Safe by default, no secrets | Read-only default; mode set explicitly; layered enforcement; no token, key or `auth.json` read; no in-app login; no key entry. No Claude settings files loaded (Q8, `settingSources: []`, `strictMcpConfig`); Codex project trust. OK, with the two policy questions Q1 and Q3 open. |
 | IV No credits in tests | Phases 1 to 3 need no account. Phase 4 is separate, one tiny prompt per check, `needs-owner-approval`. OK |
 | V Calm UI | Picker and capability gating only; a small agent-kind label on the desk. Needs the usual 1440x900 and 1280x800 screenshots in the UI tasks. |
 | VI Parity | Paths via `path`; `.cmd` shims handled in `detect()`; Codex Windows sandbox is a `[KNOWN GAP]` until checked on Windows. |
@@ -171,7 +171,7 @@ Windows: sandbox needs a setup step (`windowsSandbox/setupStart`); until checked
 ## Lifecycle
 
 - **detect** (no model call): locate binary → `--version` → compare minimum → Claude: nothing more (sign-in is learned at first start from `accountInfo()`/init, unverified); Codex: spawn `app-server`, `initialize`, `account/read` (needs no model call) → `ready | not-signed-in`. Cached for the app run, re-run on demand.
-- **start**: Claude: build options (`cwd`, explicit mode, `sessionId` = agent id as UUID when creating, or `resume`; `settingSources: ['user']` unless the folder is trusted; `mcpServers` from Durbar's store; `env` = process env, never logged; `includePartialMessages`, `forwardSubagentText`), open the input queue, start `query()`, read until `init`. Codex: ensure the shared app-server is up, `thread/start` or `thread/resume` with mode, `cwd`, model; store the returned thread id as the vendor session id.
+- **start**: Claude: build options (`cwd`, explicit mode, `sessionId` = agent id as UUID when creating, or `resume`; `settingSources: []` and `strictMcpConfig: true` always (Q8, 2026-10-18); `mcpServers` from Durbar's store; `env` = process env, never logged; `includePartialMessages`, `forwardSubagentText`), open the input queue, start `query()`, read until `init`. Codex: ensure the shared app-server is up, `thread/start` or `thread/resume` with mode, `cwd`, model; store the returned thread id as the vendor session id.
 - **send**: Claude: push `SDKUserMessage` (images as content blocks); Codex: `turn/start` with text and `localImage` items and the current mode policy.
 - **interrupt**: Claude `query.interrupt()`; Codex `turn/interrupt`. Pending permissions answered deny/cancel first.
 - **stop**: Claude `query.close()`; Codex `thread/unsubscribe` and, when no thread is left, end the child. Status `stopped`.
@@ -181,7 +181,7 @@ Windows: sandbox needs a setup step (`windowsSandbox/setupStart`); until checked
 
 ## Folder trust
 
-Project-level vendor settings can run code (Claude runs project hooks and `.mcp.json` servers in headless mode with no prompt). Durbar loads `settingSources: ['user']` for Claude until the folder is trusted in Durbar (reusing the spec 020 trust dialog and storage), and relies on Codex's own project trust (it keeps project config off for an untrusted project). Cost: a repo's own agents and hooks do not run before trust. Owner confirms in Q8.
+Project-level vendor settings can run code (Claude runs project hooks and `.mcp.json` servers in headless mode with no prompt). Decided 2026-10-18 (Q8): Durbar loads no Claude settings files at all (`settingSources: []`) and sets `strictMcpConfig: true`, trusted folder or not, because any settings source can carry `permissions.allow` rules that approve tools before Durbar asks. It relies on Codex's own project trust. Cost: a repo's own agents, hooks and `.mcp.json` never run from Durbar (T083).
 
 ## Phased approach
 
@@ -207,7 +207,7 @@ Phases 1 to 3 can be reviewed and merged with no vendor installed. Nothing in Ph
 | ESM-only packages and asar break at runtime | medium | adapter fails in release builds | dynamic import test in a packaged-build check (T044) |
 | Installer size if someone bundles the binaries | low | 700 MB more per platform | C4: not bundled; a test asserts `asarUnpack` does not list them |
 | API keys invisible to a GUI app | high | "not signed in" confusion | detect message and README; no key entry (constitution III) |
-| Hooks/MCP in the user's repo run on open | medium | code execution | folder trust (FR-025) |
+| Hooks/MCP in the user's repo run on open | medium | code execution | `settingSources: []` + `strictMcpConfig` (FR-025) |
 | No real fixtures for months | high | mappers drift from reality | label synthetic, keep them minimal, Phase 4 replaces them |
 | Cost shown as USD is mistaken for a bill | medium | trust | "estimate" label, vendor's own warning quoted, never summed |
 
