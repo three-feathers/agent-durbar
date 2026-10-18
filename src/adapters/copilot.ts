@@ -1,6 +1,7 @@
 import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
 import type { CopilotSession, MCPServerConfig, ModelInfo, PermissionRequest, PermissionRequestResult, ResumeSessionConfig, SessionConfig, SessionEvent } from '@github/copilot-sdk';
 import type {
+  AdapterCapabilities,
   AgentAdapter,
   LimitAction,
   AgentEvent,
@@ -9,6 +10,7 @@ import type {
   ModelSwitchRequest,
   ModelSwitchResult,
   PermissionInfo,
+  PermissionMode,
   StartOptions,
   Unsubscribe,
 } from './types';
@@ -37,6 +39,13 @@ const IMAGE_MIME: Record<string, string> = {
 
 export type { ModelOption };
 
+/** The permission mode to start with: `permissionMode` wins (unknown = read-only, constitution III), else the old booleans. */
+function startMode(o: StartOptions): PermissionMode {
+  const m = o.permissionMode as unknown;
+  if (m !== undefined && m !== null) return m === 'allow' || m === 'ask' || m === 'read-only' ? m : 'read-only';
+  return o.allow ? 'allow' : o.ask ? 'ask' : 'read-only';
+}
+
 interface Live {
   session: CopilotSession;
   unsubscribe: () => void;
@@ -52,6 +61,24 @@ interface Live {
  */
 export class CopilotAdapter implements AgentAdapter {
   readonly id = 'copilot';
+  readonly displayName = 'GitHub Copilot';
+  /** From the code (spec 012 FR-009); not newly verified on a real account. */
+  readonly capabilities: AdapterCapabilities = {
+    interrupt: true,
+    resume: true,
+    images: true,
+    models: true,
+    effort: true,
+    permissionModes: ['read-only', 'ask', 'allow'],
+    permModeSwitch: 'live',
+    usage: { tokens: true, costUsd: false, nanoAiu: true },
+    context: true,
+    caps: true,
+    helpers: true,
+    history: true,
+    mcpStatus: true,
+    mcpToggle: true,
+  };
   private listeners = new Set<(event: AgentEvent) => void>();
   private client: CopilotClient | undefined;
   private starting: Promise<CopilotClient> | undefined;
@@ -122,7 +149,7 @@ export class CopilotAdapter implements AgentAdapter {
     let sid = options.resumeSessionId ?? options.sessionId ?? '';
     const broker = new PermissionBroker({
       roots: [cwd, ...folders],
-      mode: options.allow ? 'allow' : options.ask ? 'ask' : 'read-only',
+      mode: startMode(options),
       emit: (e: BrokerEvent) => {
         switch (e.type) {
           case 'pending':
@@ -250,7 +277,7 @@ export class CopilotAdapter implements AgentAdapter {
    * Change the permission mode of a live session without restarting it: the broker reads the mode on every request.
    * Optionally clears the session grants, approves what is pending now (Allow all) or denies it (Read-only).
    */
-  setPermMode(sessionId: string, mode: 'read-only' | 'ask' | 'allow', opts: { clearGrants?: boolean; approvePending?: boolean } = {}): { pending: number } {
+  setPermMode(sessionId: string, mode: PermissionMode, opts: { clearGrants?: boolean; approvePending?: boolean } = {}): { pending: number } {
     const live = this.sessions.get(sessionId);
     if (!live) return { pending: 0 };
     live.broker.setMode(mode);

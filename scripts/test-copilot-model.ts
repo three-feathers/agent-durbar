@@ -11,8 +11,9 @@ import { CopilotAdapter } from '../src/adapters/copilot';
 import { EventMapper } from '../src/adapters/map';
 import type { RawEvent } from '../src/adapters/map';
 import { compactResultFrom, modelConfig, runtimeMessage, modelOptionFrom, priceClassOf, pricingFromTokenPrices, switchResultFrom } from '../src/adapters/copilotmodel';
-import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
+import type { AdapterCapabilities, AgentAdapter, AgentEvent } from '../src/adapters/types';
 import { modelControlFor, NO_MODEL_CONTROL } from '../src/shared/modelswitch';
+import { startOptionsOf } from '../src/main/startopts';
 
 type Call = { name: string; args: unknown[] };
 
@@ -338,6 +339,62 @@ async function main(): Promise<void> {
   const root = path.join(__dirname, '..', '..');
   const renderer = ['app.js', 'screens.js', 'modelswitch.js', 'dialog.js', 'sim.ts'].map((f) => fs.readFileSync(path.join(root, 'src', 'renderer', f), 'utf8')).join('\n');
   assert.doesNotMatch(renderer, /switchTo|long_context|session\.rpc|@github\/copilot|modelPickerPriceCategory|tokenPrices|capi\b|\.removeAt\(/, 'constitution II: no runtime specifics in the renderer');
+
+
+  // ---- spec 012 T010: the interface contract (FR-026..FR-028)
+  {
+    const ad = new TestAdapter(new FakeClient());
+    const c: AdapterCapabilities = ad.capabilities;
+    assert.strictEqual(ad.displayName, 'GitHub Copilot');
+    assert.deepStrictEqual(c.permissionModes, ['read-only', 'ask', 'allow']);
+    assert.strictEqual(c.permModeSwitch, 'live');
+    assert.deepStrictEqual(c.usage, { tokens: true, costUsd: false, nanoAiu: true });
+    // FR-027: every optional member is present exactly when its capability says so
+    const has = (k: string): boolean => typeof (ad as unknown as Record<string, unknown>)[k] === 'function';
+    assert.strictEqual(c.interrupt, has('interrupt'));
+    assert.strictEqual(c.models, has('listModelOptions'));
+    assert.strictEqual(c.history, has('listPreviousSessions') && has('history'));
+    assert.strictEqual(c.caps, has('setCap') && has('resolveLimit'));
+    assert.strictEqual(c.mcpToggle, has('setMcpEnabled'));
+    assert.strictEqual(c.permModeSwitch !== ('none' as AdapterCapabilities['permModeSwitch']), has('setPermMode'));
+    assert.ok(has('isLive') && has('dispose'));
+
+    // FR-028: permissionMode is the one source of truth when present; unknown = read-only; absent = the old booleans
+    const ask = async (startOpts: Record<string, unknown>): Promise<{ kind: string; pending: boolean }> => {
+      const t = await setup(startOpts);
+      const decide = (t.s.config.onPermissionRequest as (r: unknown) => Promise<{ kind: string }>)({ kind: 'write', fileName: path.join(dir, 'x.ts'), toolCallId: 'w1' });
+      await sleep(10);
+      const pending = t.events.some((e) => e.type === 'status' && e.status === 'needs-permission' && e.permission?.state === 'pending');
+      if (pending) await t.ad.stop(t.sid); // denies what is pending
+      return { kind: (await decide).kind, pending };
+    };
+    assert.deepStrictEqual(await ask({ permissionMode: 'ask' }), { kind: 'reject', pending: true }, 'ask: left pending (denied only when the session stops)');
+    assert.deepStrictEqual(await ask({ permissionMode: 'read-only', allow: true }), { kind: 'reject', pending: false }, 'permissionMode beats allow');
+    assert.deepStrictEqual(await ask({ permissionMode: 'allow', ask: true }), { kind: 'approve-once', pending: false });
+    assert.deepStrictEqual(await ask({ permissionMode: 'bogus' }), { kind: 'reject', pending: false }, 'unknown value = read-only');
+    assert.deepStrictEqual(await ask({ permissionMode: 'bogus', allow: true }), { kind: 'reject', pending: false }, 'unknown value is still read-only next to allow');
+    assert.deepStrictEqual(await ask({ ask: true }), { kind: 'reject', pending: true }, 'absent + ask: pending');
+    assert.deepStrictEqual(await ask({ allow: true }), { kind: 'approve-once', pending: false });
+    assert.deepStrictEqual(await ask({}), { kind: 'reject', pending: false });
+
+    // isLive follows the session
+    const t = await setup();
+    assert.strictEqual(t.ad.isLive(t.sid), true);
+    await t.ad.stop(t.sid);
+    assert.strictEqual(t.ad.isLive(t.sid), false);
+
+    // main.ts sends permissionMode, not the booleans
+    for (const m of ['read-only', 'ask', 'allow'] as const) {
+      const o = startOptionsOf({ permMode: m, maxAiCredits: 40 }, '/w', 'auto', undefined) as unknown as Record<string, unknown>;
+      assert.strictEqual(o.permissionMode, m);
+      assert.ok(!('allow' in o) && !('ask' in o));
+      assert.strictEqual(o.workspace, '/w');
+      assert.strictEqual(o.model, 'auto');
+      assert.strictEqual(o.autoTier, 'efficiency');
+      assert.strictEqual(o.maxAiCredits, 40);
+    }
+    assert.strictEqual(startOptionsOf({ permMode: 'ask', model: 'm1' }, '/w', 'auto', 'high').autoTier, undefined);
+  }
 
   await sleep(0);
   fs.rmSync(dir, { recursive: true, force: true });
