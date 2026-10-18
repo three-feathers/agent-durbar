@@ -851,7 +851,7 @@ function openPanel(id,focus){
    <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</h2><div class="sub">${esc(a.role)}${parent?' · helper of '+esc(parent.name):''}</div></div>
       <div class="ph-meta"><span data-f="status"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?(a.live&&a.info&&!a.parent&&bridge.setModel&&feat(a,'models')?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`):''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
       <div class="actions">${a.live&&!a.parent?`<button class="btn" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools</button>`:''}${a.live&&!a.parent&&bridge.agentMcp&&feat(liveRoot(a),'mcp')?`<button class="btn" id="mcpBtn" type="button" title="MCP servers for this agent (set globally in Settings)">MCP</button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="btn" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>`:''}<button class="btn primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
-        ${a.live&&!a.parent?`<button class="btn" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)">Copy resume command</button>`:''}
+        ${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="btn" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)">Copy resume command</button>`:''}
         <button class="btn" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
         ${a.live&&!feat(liveRoot(a),'stop')?'':`<button class="btn danger" id="stopBtn" type="button" title="${a.live?'Interrupt the current turn. The agent stays open and ready.':'Stop'}"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>Stop</button>`}
         ${a.live&&bridge.end&&!a.parent?`<button class="btn" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it.">End session</button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="btn danger" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The other sessions in ${esc(room.name)} stay.">Remove session</button>`:''}</div></div>
@@ -902,7 +902,7 @@ function openPanel(id,focus){
   input.addEventListener('input',autoGrow);
   input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(input.value);}});
   $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
-  if(a.live){const h=document.querySelector('#panel .hint');if(h)h.textContent='Enter sends, Shift+Enter adds a line. Drop or paste images to attach. '+(SIM?'Simulated session (no AI credits)':'Live Copilot session')+' ('+MODE_NAME[a.info.permMode]+').';}
+  if(a.live){const h=document.querySelector('#panel .hint');if(h)h.textContent='Enter sends, Shift+Enter adds a line. Drop or paste images to attach. '+(SIM?'Simulated session (no AI credits)':'Live '+kindWord(liveRoot(a).info&&liveRoot(a).info.adapterId)+' session')+' ('+MODE_NAME[a.info.permMode]+').';}
   setSend();
   renderAll(); const cur=document.querySelector('#stripList .sitem.sel'); if(cur)cur.scrollIntoView({inline:'nearest',block:'nearest'});
   if(focus!==false)$('panelTitle').focus({preventScroll:true});
@@ -1002,7 +1002,12 @@ function addNote(chat,html,err){const n=document.createElement('div');n.classNam
 const MODE_NAME={'read-only':'Read-only','ask':'Ask first','allow':'Allow all'};
 const MODE_TEXT={'read-only':'read-only','allow':'no prompts','ask':'asks first'};
 const MODE_HELP={'read-only':'Reads only. Edits, commands and other changes are denied.','ask':'Asks before every edit or command. You can approve for the rest of the session.','allow':'Everything runs without asking: edits, shell commands, web requests and tools.'};
-const roleFor=info=>'Copilot ('+MODE_TEXT[info.permMode]+')'+(info.model&&info.model!=='auto'?' · '+info.model:'');
+/* spec 012 FR-123: the agent kind's own name in agent-facing text; Copilot's wording is unchanged */
+const KIND_WORD={copilot:'Copilot',claude:'Claude Code',codex:'Codex'};
+const kindWord=id=>{const k=id||'copilot';if(KIND_WORD[k])return KIND_WORD[k];const d=(KINDS||[]).find(x=>x.id===k);return d&&d.displayName?d.displayName:k;};
+const RESUME_CMD={copilot:id=>'copilot --resume '+id,claude:id=>'claude --resume '+id}; /* kinds with a terminal resume command */
+const resumeCmdOf=a=>{const r=liveRoot(a),f=r&&RESUME_CMD[(r.info&&r.info.adapterId)||'copilot'];return f?f(r.id):'';};
+const roleFor=info=>kindWord(info.adapterId)+' ('+MODE_TEXT[info.permMode]+')'+(info.model&&info.model!=='auto'?' · '+info.model:'');
 const MODE_IC={
  'read-only':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.2" y="7" width="9.6" height="6.6" rx="1.6"/><path d="M5.4 7V5.4a2.6 2.6 0 0 1 5.2 0V7"/></svg>',
  'ask':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.8l5 1.8v3.8c0 3-2.1 5.2-5 6.6-2.9-1.4-5-3.6-5-6.6V3.6z"/><path d="M6.2 7.8l1.4 1.4 2.4-2.6"/></svg>',
@@ -1655,7 +1660,7 @@ async function openLive(a){
 }
 async function stopLive(a){const r=liveRoot(a);await bridge.stop(r.id);toast(esc(r.name)+': stopped the current turn. It is ready for your next message.');}
 async function endLive(a){const r=liveRoot(a);await (bridge.end||bridge.stop)(r.id);toast(esc(r.name)+': session ended. Sending a message resumes it.',4200);}
-async function copyResume(a){const r=liveRoot(a),cmd='copilot --resume '+r.id;
+async function copyResume(a){const r=liveRoot(a),cmd=resumeCmdOf(r); if(!cmd)return;
   try{await navigator.clipboard.writeText(cmd);toast('Copied <code>'+esc(cmd)+'</code>. End the session here first, then run it in a terminal in '+esc(roomOf(r).path)+'. In VS Code, turn on the sessions list filter External to see sessions started here.',9000);}
   catch{toast('Run <code>'+esc(cmd)+'</code> in a terminal in '+esc(roomOf(r).path)+' (end the session here first).',8000);}}
 /* ---------------- full-screen chat: the strip of all agents ---------------- */
@@ -2120,7 +2125,7 @@ async function hideFolder(r,hidden){
 }
 async function removeFolder(r){
   const ags=agents.filter(x=>x.room===r.id), busy=ags.filter(x=>['working','thinking','waiting'].includes(x.state)).length;
-  const msg=busy?`${esc(r.name)} has ${busy} agent${busy===1?'':'s'} still working. Remove the folder and end ${busy===1?'it':'them'}?`:`Remove ${esc(r.name)}? Its sessions end here; your earlier Copilot sessions stay on disk and can be resumed if you add the folder again.`;
+  const msg=busy?`${esc(r.name)} has ${busy} agent${busy===1?'':'s'} still working. Remove the folder and end ${busy===1?'it':'them'}?`:`Remove ${esc(r.name)}? Its sessions end here; your earlier ${esc(kindWord(((ags.find(x=>!x.parent)||{}).info||{}).adapterId))} sessions stay on disk and can be resumed if you add the folder again.`;
   if(!window.confirm(msg.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"')))return;
   const root=ags.find(x=>!x.parent); const res=root&&bridge.removeFolder?await bridge.removeFolder(root.id):{ok:true,removedIds:[]};
   if(!res.ok){toast('Could not remove the folder.',4000);return;}
@@ -2186,15 +2191,15 @@ function renderPrev(a){
   const box=$('prev'); if(!box||a.parent)return;
   const st=prevOf(a), c=st.cli, v=st.vs;
   if(!c&&!v){box.hidden=false;box.innerHTML='<div class="prev-bar"><span class="prev-t">Previous sessions</span><span class="prev-c">Looking…</span></div>';return;}
-  const nc=c&&c.ok?c.sessions.length:0, nv=v&&v.ok?v.sessions.length:0;
+  const nc=c&&c.ok?c.sessions.length:0, nv=v&&v.ok?v.sessions.length:0, kw=kindWord(a.info&&a.info.adapterId), hasHist=!!c; /* c is null for a kind without history (loadPrev) */
   const keepScroll=(box.querySelector('.prev-body')||{}).scrollTop||0;
-  let h=`<button class="prev-toggle" type="button" aria-expanded="${st.open}" data-pv="toggle">${ICON('chev')}<span class="prev-t">Previous sessions</span><span class="prev-c">${nc} Copilot · ${nv} VS Code chat${nv===1?'':'s'}</span></button>`;
+  let h=`<button class="prev-toggle" type="button" aria-expanded="${st.open}" data-pv="toggle">${ICON('chev')}<span class="prev-t">Previous sessions</span><span class="prev-c">${hasHist?nc+' '+esc(kw)+' · ':''}${nv} VS Code chat${nv===1?'':'s'}</span></button>`;
   if(st.open){
     h+='<div class="prev-body">';
-    h+='<div class="prev-h">Copilot sessions in this folder <small>Resume continues the same session; earlier messages are shown here.</small></div>';
-    if(!c||!c.ok)h+=`<p class="prev-empty">Could not list sessions${c&&c.error?': '+esc(c.error):''}.</p>`;
-    else if(!c.sessions.length)h+='<p class="prev-empty">No earlier Copilot sessions for this folder.</p>';
-    else h+=c.sessions.map(x=>`<div class="prev-row"><div class="prev-tx"><b title="${esc(x.title)}">${esc(x.title)}</b><small>${esc(when(x.modifiedTime))}${x.branch?' · '+esc(x.branch):''}</small></div><button class="btn" type="button" data-pv="resume" data-sid="${esc(x.id)}">Resume</button></div>`).join('');
+    if(hasHist){h+='<div class="prev-h">'+esc(kw)+' sessions in this folder <small>Resume continues the same session; earlier messages are shown here.</small></div>';
+    if(!c.ok)h+=`<p class="prev-empty">Could not list sessions${c.error?': '+esc(c.error):''}.</p>`;
+    else if(!c.sessions.length)h+='<p class="prev-empty">No earlier '+esc(kw)+' sessions for this folder.</p>';
+    else h+=c.sessions.map(x=>`<div class="prev-row"><div class="prev-tx"><b title="${esc(x.title)}">${esc(x.title)}</b><small>${esc(when(x.modifiedTime))}${x.branch?' · '+esc(x.branch):''}</small></div><button class="btn" type="button" data-pv="resume" data-sid="${esc(x.id)}">Resume</button></div>`).join('');}
     h+='<div class="prev-h">VS Code chat history <span class="tag">read-only</span> <small>A copy of what VS Code saved. It cannot be continued here.</small></div>';
     if(!v||!v.ok)h+=`<p class="prev-empty">Could not read VS Code chats${v&&v.error?': '+esc(v.error):''}.</p>`;
     else if(!v.sessions.length)h+='<p class="prev-empty">'+(v.storesFound?'No chats in the VS Code storage for this folder.':'No VS Code chats found for this folder (VS Code never opened it, or it is stored somewhere this app does not read).')+'</p>';
@@ -2282,7 +2287,7 @@ async function announcePrevious(a){
   if(!bridge.listPrevious)return;
   const st=await loadPrev(a); const n=(st.cli&&st.cli.ok?st.cli.sessions.length:0), v=(st.vs&&st.vs.ok?st.vs.sessions.length:0);
   if(!n&&!v)return;
-  toast('Found '+(n?n+' earlier Copilot session'+(n===1?'':'s'):'')+(n&&v?' and ':'')+(v?v+' VS Code chat'+(v===1?'':'s'):'')+' for <b>'+esc(roomOf(a).name)+'</b>. Opening them.',4200);
+  toast('Found '+(n?n+' earlier '+esc(kindWord(a.info&&a.info.adapterId))+' session'+(n===1?'':'s'):'')+(n&&v?' and ':'')+(v?v+' VS Code chat'+(v===1?'':'s'):'')+' for <b>'+esc(roomOf(a).name)+'</b>. Opening them.',4200);
   if(!ui.selected){st.open=true;openPanel(a.id,false);}
 }
 async function confirmAllow(what){

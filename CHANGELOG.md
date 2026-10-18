@@ -8,6 +8,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **MCP server groundwork: JSON-RPC framing and protocol (spec 041 T012, issue #176).** Newline framing with a 64 KB cap, the MCP `initialize`/`ping` subset with no new dependency, a fake client and synthetic handshakes for tests. Not wired yet: Durbar does not listen for MCP clients. No user-visible change, 0 AIU.
 
+- **Claude Code agents are no longer called Copilot (spec 012 FR-123/FR-124, issue #196).** The first real-app run with a Claude agent worked end to end: add a folder, chat, the Ask first approval card, Stop. It also showed Copilot wording on Claude agents, now fixed: the agent's subtitle, the chat footer, Previous sessions, and Copy resume command (now `claude --resume <id>`). Claude's input token count now includes cached input, as Copilot's does.
+
 - **Claude Code: choose the model and effort (spec 012 FR-118..FR-121, issue #57).** With the experimental Claude Code agent, the toolbar and the New session dialog list the models your `claude` offers (Opus, Sonnet, Haiku, Fable, ...) with their effort levels. The list is read from the CLI without sending a prompt and leaves no session behind. Checked on a real Claude Code 2.1.302: 13 models, and one `haiku` prompt ($0.0013). Each agent kind now has its own model list in the app.
 
 - **Short agent names are no longer cut to one letter (spec 001 FR-025).** In the compact card sizes, a long status word ("Limit reached") now gives way before the agent's name, so "Omar" stays "Omar" and does not become "O…". `check:office` now fails if a cut name shows fewer than three characters. Simulator only, 0 AIU.

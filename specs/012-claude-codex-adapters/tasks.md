@@ -118,3 +118,8 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 - [x] T100 (sim) `models:list` per kind (main, preload, simulator), per-kind lists in the toolbar, New session dialog and model chip; FR-062 only for kinds without a list [FR-120]
 - [x] T101 Tests on the fake CLI and the simulator; one real probe (no tokens) and one `haiku` prompt from the picker [FR-121]
 
+## Changes 2026-10-19 (issue #196, T095 part 1)
+
+- [x] T102 (sim) Per-kind wording: subtitle, chat footer, Previous sessions header and counts, Copy resume command per kind [FR-123]
+- [x] T103 (fixtures) Claude `inputTokens` include cache creation and cache reads; test [FR-124]
+
