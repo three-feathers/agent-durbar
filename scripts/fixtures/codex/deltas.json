@@ -1,0 +1,25 @@
+{
+  "provenance": "synthetic",
+  "notifications": [
+    {"method":"thread/started","params":{"thread":{"id":"thr_main","cwd":"/work/app"}}},
+    {"method":"item/started","params":{"threadId":"thr_main","item":{"id":"rs_1","type":"reasoning","summary":[],"content":[]}}},
+    {"method":"item/reasoning/summaryTextDelta","params":{"threadId":"thr_main","itemId":"rs_1","summaryIndex":0,"delta":"Checking "}},
+    {"method":"item/reasoning/summaryTextDelta","params":{"threadId":"thr_main","itemId":"rs_1","summaryIndex":0,"delta":"the tests"}},
+    {"method":"item/reasoning/summaryTextDelta","params":{"threadId":"thr_main","itemId":"rs_1","summaryIndex":1,"delta":"Then fixing"}},
+    {"method":"item/completed","params":{"threadId":"thr_main","item":{"id":"rs_1","type":"reasoning","summary":["Checking the tests","Then fixing"],"content":[]}}},
+    {"method":"item/completed","params":{"threadId":"thr_main","item":{"id":"rs_2","type":"reasoning","summary":["Never streamed"],"content":[]}}},
+    {"method":"item/agentMessage/delta","params":{"threadId":"thr_main","itemId":"msg_2","delta":"Done"}},
+    {"method":"item/agentMessage/delta","params":{"threadId":"thr_main","itemId":"msg_2","delta":"."}},
+    {"method":"item/completed","params":{"threadId":"thr_main","item":{"id":"msg_2","type":"agentMessage","phase":"final_answer"}}}
+  ],
+  "expected": [
+    {"type":"status","status":"idle","intent":"Ready in /work/app"},
+    {"type":"thinking","delta":"Checking ","reasoningId":"rs_1:0"},
+    {"type":"thinking","delta":"the tests","reasoningId":"rs_1:0"},
+    {"type":"thinking","delta":"Then fixing","reasoningId":"rs_1:1"},
+    {"type":"thinking","delta":"Never streamed","reasoningId":"rs_2:0"},
+    {"type":"output","delta":"Done"},
+    {"type":"output","delta":"."},
+    {"type":"output","delta":"","final":true,"text":"Done."}
+  ]
+}

@@ -1,0 +1,93 @@
+{
+  "provenance": "synthetic",
+  "description": "A built-in tool call that completes and one that fails; output text is taken from string or text-block content.",
+  "messages": [
+    {
+      "type": "assistant",
+      "message": {
+        "id": "msg_3",
+        "model": "claude-synthetic-1",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "toolu_1",
+            "name": "Read",
+            "input": {
+              "file_path": "/work/demo/a.txt"
+            }
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_2",
+            "name": "Bash",
+            "input": {
+              "command": "false"
+            }
+          }
+        ]
+      },
+      "parent_tool_use_id": null,
+      "session_id": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "type": "user",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_1",
+            "content": "file text"
+          },
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_2",
+            "is_error": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "exit 1"
+              }
+            ]
+          }
+        ]
+      },
+      "parent_tool_use_id": null,
+      "session_id": "00000000-0000-4000-8000-000000000001"
+    }
+  ],
+  "expected": [
+    {
+      "type": "toolCall",
+      "callId": "toolu_1",
+      "tool": "Read",
+      "phase": "start",
+      "args": {
+        "file_path": "/work/demo/a.txt"
+      }
+    },
+    {
+      "type": "toolCall",
+      "callId": "toolu_2",
+      "tool": "Bash",
+      "phase": "start",
+      "args": {
+        "command": "false"
+      }
+    },
+    {
+      "type": "toolCall",
+      "callId": "toolu_1",
+      "tool": "Read",
+      "phase": "complete",
+      "output": "file text"
+    },
+    {
+      "type": "toolCall",
+      "callId": "toolu_2",
+      "tool": "Bash",
+      "phase": "failed",
+      "output": "exit 1"
+    }
+  ]
+}

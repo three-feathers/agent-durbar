@@ -1,0 +1,120 @@
+{
+  "provenance": "synthetic",
+  "description": "No task_notification: the Agent tool_result closes the helper (completed, or failed on is_error).",
+  "messages": [
+    {
+      "type": "assistant",
+      "message": {
+        "id": "msg_9",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "toolu_r1",
+            "name": "Agent",
+            "input": {
+              "prompt": "p1"
+            }
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_r2",
+            "name": "Agent",
+            "input": {
+              "prompt": "p2"
+            }
+          }
+        ]
+      },
+      "parent_tool_use_id": null,
+      "session_id": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "type": "user",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_r1",
+            "content": "out"
+          }
+        ]
+      },
+      "parent_tool_use_id": null,
+      "session_id": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "type": "user",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_r2",
+            "content": "boom",
+            "is_error": true
+          }
+        ]
+      },
+      "parent_tool_use_id": null,
+      "session_id": "00000000-0000-4000-8000-000000000001"
+    }
+  ],
+  "expected": [
+    {
+      "type": "toolCall",
+      "callId": "toolu_r1",
+      "tool": "Agent",
+      "phase": "start",
+      "args": {
+        "prompt": "p1"
+      }
+    },
+    {
+      "type": "subagent",
+      "subagentId": "toolu_r1",
+      "phase": "started",
+      "task": "p1"
+    },
+    {
+      "type": "toolCall",
+      "callId": "toolu_r2",
+      "tool": "Agent",
+      "phase": "start",
+      "args": {
+        "prompt": "p2"
+      }
+    },
+    {
+      "type": "subagent",
+      "subagentId": "toolu_r2",
+      "phase": "started",
+      "task": "p2"
+    },
+    {
+      "type": "toolCall",
+      "callId": "toolu_r1",
+      "tool": "Agent",
+      "phase": "complete",
+      "output": "out"
+    },
+    {
+      "type": "subagent",
+      "subagentId": "toolu_r1",
+      "phase": "completed"
+    },
+    {
+      "type": "toolCall",
+      "callId": "toolu_r2",
+      "tool": "Agent",
+      "phase": "failed",
+      "output": "boom"
+    },
+    {
+      "type": "subagent",
+      "subagentId": "toolu_r2",
+      "phase": "failed",
+      "error": "boom"
+    }
+  ]
+}
