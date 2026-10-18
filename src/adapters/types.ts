@@ -290,7 +290,7 @@ export interface AgentAdapter {
   readonly displayName: string;
   /** What this adapter can do; each optional member below is present exactly when its flag says so. */
   readonly capabilities: AdapterCapabilities;
-  /** Optional debug sink (DURBAR_LOG); assigned by the main process. Never receives secrets. */
+  /** Optional debug sink (DURBAR_LOG); assigned by the main process; the sink redacts env values and key-like strings before writing, but callers should still not pass secrets. */
   debug?: (message: string) => void;
   /** Start (or resume) a session for a workspace. Resolves with the session id. */
   start(options: StartOptions): Promise<string>;

@@ -28,6 +28,7 @@ import { parseAmount, parseCap } from '../shared/credits';
 import { aboutPanelOptions, aboutView } from '../shared/about';
 import { modelControlFor, parseFocus, parseSwitchRequest } from '../shared/modelswitch';
 import type { ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
+import { createDebugSink } from '../shared/redact';
 
 // Developer/test hooks (spec 010): ignored in packaged builds unless DURBAR_DEV=1. Read hooks only from `dev`.
 const dev = devEnv(process.env, app.isPackaged);
@@ -133,7 +134,7 @@ adapter.onEvent((e) => {
 // Dev/test: DURBAR_LOG=/path/events.jsonl records every normalized event and what is sent to the SDK.
 if (dev.DURBAR_LOG) {
   const logFile = dev.DURBAR_LOG;
-  const write = (o: unknown): void => fs.appendFileSync(logFile, JSON.stringify(o) + '\n');
+  const write = createDebugSink(logFile, process.env, fs.appendFileSync); // redacts once, at the sink (spec 012 FR-006)
   adapter.onEvent((e) => write({ t: Date.now(), event: e }));
   adapter.debug = (m) => write({ t: Date.now(), debug: m });
 }

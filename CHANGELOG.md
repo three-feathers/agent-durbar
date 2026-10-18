@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.4 tag)
 
+- **Secrets are redacted from the debug log (spec 012 T051, issue #59).** Every `DURBAR_LOG` line now goes through one sink that hides environment secrets (also JSON- and URL-encoded) and token-like strings (GitHub, OpenAI/Anthropic keys, Bearer, JWT, AWS keys, URL credentials) before it is written. Unit tests with planted secrets, 0 AIU.
+
 - **Adapter registry and descriptors (spec 012 T011, issue #31).** A pure list of the agents the app knows (only Copilot today), with what each can do and a way to check if it is installed; not wired into the app yet, so no visible change. Unit tests, 0 AIU.
 
 - **Adapter interface ready for more agents (spec 012 T010, issue #30).** The app now talks to every agent through one interface with declared capabilities; Copilot works exactly as before. Groundwork for Claude Code and Codex; simulator and unit tests, 0 AIU.
