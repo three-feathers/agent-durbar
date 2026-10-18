@@ -6,6 +6,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **Floor names refuse hidden characters (spec 033 delta, T040).** Besides control characters, a floor name now refuses C1 controls and invisible direction or zero-width characters (U+202A–U+202E, U+2066–U+2069, U+200B, U+2060, U+FEFF), which could make one floor look like another. ZWNJ/ZWJ and LRM/RLM stay allowed for Indic and Persian scripts and emoji. A saved name just loses them on load. Unit tests (`test:floors`), simulator rule kept equal, 0 AIU.
 
+- **Custom places in the lobby (spec 024 delta, issue #115).** Add up to 3 places of your own, with a name and an icon from a fixed set, from the lobby or Settings > Places, and send MCP servers there. Rename keeps the mapping; delete sends the servers back to their default place. The lobby stays one row at 1440x900 and 1280x800. Simulator, unit tests and `scripts/shots-024-custom.js`, 0 AIU; not checked on a real session.
+
 - **Settings > Places lists every folder's own MCP servers (spec 024 delta, issue #116).** Per-folder extras now get a row before any agent has used them, read by name only from the saved folders; choosing a place never switches a server on or trusts it.
 
 - **One GitHub server in Settings > Places (spec 024 delta, issue #117).** `github` (your own server in `~/.copilot/mcp-config.json`) and Copilot's built-in `github-mcp-server` (the name its tool events carry) are one row, `github`, with the note "also github-mcp-server"; a place chosen there now applies to calls from both. Saving moves an old `github-mcp-server` entry to `github`. Simulator and unit tests (`test:places`, `scripts/shots-024.js`), 0 AIU; not checked on a real session.
