@@ -9,12 +9,13 @@ export const REDACT_MAX_CHARS = 1_000_000;
 const SECRET_NAME = /(TOKEN|KEY|SECRET|PASSWORD|PASS|AUTH|CREDENTIAL)/i;
 const SECRET_PREFIX = /^(GH_|GITHUB_|OPENAI_|ANTHROPIC_|COPILOT_)/i;
 /** Long but harmless values: excluded from the "20+ characters" rule only (the name rule still applies). */
-const LONG_OK_NAME = /^(PATH|PATHEXT|PSMODULEPATH|HOME|HOMEPATH|HOMEDRIVE|USERPROFILE|PWD|OLDPWD|SHELL|TMPDIR|TEMP|TMP|APPDATA|LOCALAPPDATA|PROGRAMFILES|PROGRAMFILES\(X86\)|PROGRAMDATA|SYSTEMROOT|WINDIR|COMSPEC|NODE_PATH|MANPATH|INFOPATH|LS_COLORS|LSCOLORS|TERM_PROGRAM_VERSION|DISPLAY|DBUS_SESSION_BUS_ADDRESS|SSH_AUTH_SOCK|INIT_CWD|_|__CF.*|SSL_CERT_FILE|NODE_EXTRA_CA_CERTS|.*_HOME|ONEDRIVE.*|COMMONPROGRAMFILES.*|PROGRAMW6432|ALLUSERSPROFILE|PUBLIC|DURBAR_.*|XDG_.*|LC_.*|npm_.*)$/i;
+const LONG_OK_NAME = /^(PATH|PATHEXT|PSMODULEPATH|HOME|HOMEPATH|HOMEDRIVE|USERPROFILE|PWD|OLDPWD|SHELL|TMPDIR|TEMP|TMP|APPDATA|LOCALAPPDATA|PROGRAMFILES|PROGRAMFILES\(X86\)|PROGRAMDATA|SYSTEMROOT|WINDIR|COMSPEC|NODE_PATH|MANPATH|INFOPATH|LS_COLORS|LSCOLORS|TERM_PROGRAM_VERSION|DISPLAY|DBUS_SESSION_BUS_ADDRESS|SSH_AUTH_SOCK|INIT_CWD|_|__CF.*|SSL_CERT_FILE|NODE_EXTRA_CA_CERTS|.*_HOME|ONEDRIVE.*|COMMONPROGRAMFILES.*|PROGRAMW6432|ALLUSERSPROFILE|PUBLIC|TERM_SESSION_ID|XPC_SERVICE_NAME|VSCODE_.*|TERM_PROGRAM.*|ITERM_.*|COLORTERM|DURBAR_.*|XDG_.*|LC_.*|npm_.*)$/i;
 
 /** Key-like shapes. Each is linear: bounded classes, no nested quantifiers, starts anchored where a token cannot already be running. Order matters: header and URL first. */
 const PATTERNS: Array<[RegExp, string]> = [
   [/\b(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8})?[^\s",;]+/gi, '$1[redacted]'],
   [/\b([a-z][a-z0-9+.-]{1,20}:\/\/)[^\s/:@"]{1,200}:[^\s/@"]{1,200}@/gi, '$1[redacted]@'],
+  [/(?<![A-Za-z0-9_-])tid=[0-9a-f]{8,64};[^\s"]{0,2000}/g, '[redacted]'],
   [/\bgh[pousr]_[A-Za-z0-9]{20,}/g, '[redacted]'],
   [/\bgithub_pat_[A-Za-z0-9_]{20,}/g, '[redacted]'],
   [/\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}/g, '[redacted]'],

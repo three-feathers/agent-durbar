@@ -122,6 +122,8 @@ assert.doesNotThrow(() => redact('x', null as unknown as Record<string, string>)
     bearerSpaces: 'Bearer' + ' '.repeat(MB),
     auth: 'authorization '.repeat(MB / 14),
     authSpaces: 'authorization' + ' '.repeat(MB),
+    tid: 'tid=0123abcd;'.repeat(MB / 12),
+    tidLong: 'tid=0123abcd;' + 'a;'.repeat(MB / 2),
     aws: 'AKIA'.repeat(MB / 4),
     awsLong: 'ASIA' + 'A'.repeat(MB),
   };
@@ -165,6 +167,19 @@ assert.doesNotThrow(() => redact('x', null as unknown as Record<string, string>)
   const parsed = JSON.parse(lines[0]);
   assert.strictEqual(parsed.truncated, true);
   assert.ok(!lines[0].includes(GH), 'oversized record has no token');
+}
+
+// 10b. Copilot API session token, and more length-rule exclusions
+{
+  const tok = 'tid=0a1b2c3d4e5f;exp=1760000000;sku=free_limited;proxy-ep=proxy.individual.example.com;st=dotcom:9f8e7d6c5b4a39281706f5e4d3c2b1a0';
+  assert.strictEqual(redact(tok, {}), '[redacted]', 'copilot token: bare');
+  const msg = redact(`request failed: invalid token ${tok} (status 401)`, {});
+  assert.ok(!msg.includes('9f8e7d6c') && !msg.includes('proxy-ep') && msg.startsWith('request failed: invalid token [redacted]'), 'copilot token: inside an error message');
+  for (const ok of ['tid=abc', 'set tid=abc; then go', 'the tid=12345678 field']) assert.strictEqual(redact(ok, {}), ok, `copilot token near miss kept: ${ok}`);
+  const p = '/Users/somebody/projects/some/long/workspace/path';
+  const e = { VSCODE_CWD: p, TERM_SESSION_ID: 'w0t0p0:0123456789-ABCDEF-0123', XPC_SERVICE_NAME: 'application.com.example.long.name.1', TERM_PROGRAM_VERSION: '1.2.3.4.5.6.7.8.9.10.11.12', ITERM_PROFILE: 'a-long-profile-name-here', COLORTERM: 'truecolor-24bit-very-long' };
+  const text = Object.values(e).join(' | ');
+  assert.strictEqual(redact(text, e), text, 'terminal/editor variables stay readable');
 }
 
 // 11. URL credentials do not run across JSON fields
