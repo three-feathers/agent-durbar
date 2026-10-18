@@ -80,7 +80,7 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 
 - [ ] T080 (sim) Previous sessions list for both agents in the folder room (read-only, same folder and agent type) using T048; screenshots [FR-019, C11]
 - [ ] T081 (needs-owner-approval) Decision Q7: a separate dollar cap for Claude (`maxBudgetUsd`) or caps stay Copilot-only; if yes, specify it as a spec 011 delta first [C9]
-- [ ] T083 (backlog, needs-owner-approval) `[KNOWN GAP]` from Q8: a repo's own `.claude` hooks, agents and `.mcp.json` never run in a Claude session from Durbar. A way to allow them without letting their `permissions.allow` rules bypass Durbar's modes needs its own spec delta and the owner's OK [FR-025]
+- [ ] T083 (backlog, needs-owner-approval) `[KNOWN GAP]` from Q8: a repo's own `.claude` hooks, agents and `.mcp.json` never run in a Claude session from Durbar, and (docs, unverified) neither does the repo's `CLAUDE.md`/`AGENTS.md` memory. Options: state it in README known limits, or pass the repo's `CLAUDE.md` as an appended system prompt without loading any settings. A way to allow them without letting their `permissions.allow` rules bypass Durbar's modes needs its own spec delta and the owner's OK [FR-025]
 - [ ] T082 (sim) Converge: README "verified" table from `simulator/fixtures only` to what Phase 4 proved, CHANGELOG, spec statuses, `specs/README.md`, close umbrella issue #2 [FR-008, SC-005]
 
 ## Analyze notes (2026-10-17, by hand)

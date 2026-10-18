@@ -4,7 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.4 tag)
 
-- **Claude sessions load no Claude settings files (spec 012 T027, issue #46; owner decision Q8).** Mode options for the future Claude adapter set `settingSources: []` and `strictMcpConfig: true` in every mode, trusted folder or not, so a repo's or user's Claude settings and MCP servers cannot approve tools before Durbar asks. A repo's own `.claude` hooks and agents do not run (known gap, T083). Unit tests only; not wired to a real Claude yet.
+- **Claude sessions load no Claude settings files (spec 012 T027, issue #46; owner decision Q8).** Mode options for the future Claude adapter set `settingSources: []` and `strictMcpConfig: true` in every mode, trusted folder or not, so a repo's or user's Claude settings and MCP servers cannot approve tools before Durbar asks. A repo's own `.claude` hooks and agents, and probably its `CLAUDE.md`, do not run or load (known gap, T083). Unit tests only; not wired to a real Claude yet.
 
 - **Mixed-kind simulator and capability gating (spec 012 T018, issue #38).** `simkinds=mixed` in the simulator shows Claude-like, Codex-like and a minimal kind next to Copilot; room and header buttons, the mode chip, mode lists and the Permissions selects follow each kind's capabilities and never widen. No visible change with Copilot alone. Simulator only, 0 AIU.
 
