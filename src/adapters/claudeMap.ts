@@ -271,8 +271,8 @@ export class ClaudeMapper {
       }
     });
     const u = msg.usage;
-    if (u && typeof u === 'object' && this.firstUsageOf(id)) {
-      // Once per message.id (FR-082): several assistant messages share one id.
+    // Once per message.id (FR-082). A usage object with no numeric token field is not usage: no event, and the id stays unused.
+    if (u && typeof u === 'object' && [u.input_tokens, u.output_tokens, u.cache_read_input_tokens].some((v) => num(v) !== undefined) && this.firstUsageOf(id)) {
       this.emit({ type: 'usage', model: str(msg.model), inputTokens: num(u.input_tokens), outputTokens: num(u.output_tokens), cacheReadTokens: num(u.cache_read_input_tokens), agentId });
     }
     if (m.aborted === true) this.emit({ type: 'status', status: 'idle', intent: 'Aborted' });

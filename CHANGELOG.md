@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.4 tag)
 
+- **Claude usage counted once per message (spec 012 T025, issue #44).** The Claude event mapper counted the usage of every streamed piece of one message (text, tool call), so tokens were counted twice; it now counts each `message.id` once (bounded memory, empty usage skipped). New fixture tests pin the cost delta, Codex's unknown context window and "credits not reported", and that dollars never mix into AIU totals. Unit tests only; the Claude adapter is not wired yet.
+
 - **Floor names refuse hidden characters (spec 033 delta, T040).** Besides control characters, a floor name now refuses C1 controls and invisible direction or zero-width characters (U+202A–U+202E, U+2066–U+2069, U+200B, U+2060, U+FEFF), which could make one floor look like another. ZWNJ/ZWJ and LRM/RLM stay allowed for Indic and Persian scripts and emoji. A saved name just loses them on load. Unit tests (`test:floors`), simulator rule kept equal, 0 AIU.
 
 - **Claude sessions load no Claude settings files (spec 012 T027, issue #46; owner decision Q8).** Mode options for the future Claude adapter set `settingSources: []` and `strictMcpConfig: true` in every mode, trusted folder or not, so a repo's or user's Claude settings and MCP servers cannot approve tools before Durbar asks. A repo's own `.claude` hooks and agents do not run (known gap, T083); the repo's `CLAUDE.md` will be passed as an appended system prompt by the Claude adapter (T045). Unit tests only; not wired to a real Claude yet.
