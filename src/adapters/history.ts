@@ -127,10 +127,10 @@ export interface HistoryLimits {
 
 export const DEFAULT_HISTORY_LIMITS: HistoryLimits = { maxItems: 300, maxTextChars: 20_000, maxToolOutputChars: 2_000 };
 
-const cut = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + '…' : s);
+export const cut = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + '…' : s);
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
-function toolLabel(args: unknown): string {
+export function toolLabel(args: unknown): string {
   if (typeof args === 'string') return args.replace(/\s+/g, ' ').trim().slice(0, 300);
   if (!isObj(args)) return '';
   const pick = ['path', 'pattern', 'command', 'url', 'query', 'file_path'].map((k) => args[k]).find((v) => typeof v === 'string');

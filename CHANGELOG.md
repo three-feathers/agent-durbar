@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **Claude Code: previous sessions and resume (spec 012 FR-125..FR-127, issue #56).** A Claude agent's Previous sessions now lists the folder's earlier Claude sessions, read-only from Claude's own session files. Resume continues one and replays its chat. Checked in the real app: after a restart, the resumed Claude agent remembered the file it had created. Also, the resume note no longer doubles a title's final full stop.
+
 - **Claude Code's dollar estimate shown apart from AIU (spec 012 FR-122, issue #194).** A Claude agent's card and chat header now show `≈ $0.012 est.` (Claude's own estimate of the API price, not a bill) instead of "0.00 AIU". Agents whose kind reports neither figure show tokens only. Dollars are never added to an AIU total. Simulator only, 0 AIU.
 
 - **Claude Code agents are no longer called Copilot (spec 012 FR-123/FR-124, issue #196).** The first real-app run with a Claude agent worked end to end: add a folder, chat, the Ask first approval card, Stop. It also showed Copilot wording on Claude agents, now fixed: the agent's subtitle, the chat footer, Previous sessions, and Copy resume command (now `claude --resume <id>`). Claude's input token count now includes cached input, as Copilot's does.
