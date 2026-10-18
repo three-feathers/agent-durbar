@@ -231,6 +231,8 @@ As a user, I can be sure that an agent running inside Durbar cannot use Durbar's
 
 ## Changes
 
+- **2026-10-18, T012 built (issue #176; pure code and unit tests, no socket).** `src/main/mcp/jsonrpc.ts` (byte-based newline framing, 64 KB cap per message with the stream kept in sync, CRLF and split UTF-8, JSON-RPC 2.0 errors) and `src/main/mcp/protocol.ts` (`McpSession`: `initialize`, `notifications/initialized`, `ping`, unknown methods `-32601`, a `methods` hook for T013); test: `scripts/test-mcp-protocol.ts`, with a fake client and four **synthetic** handshake fixtures (real clients stay `read:` until T061). Decided by the coordinator: supported protocol versions `2025-06-18`, `2025-03-26`, `2024-11-05` (newest first; an unsupported request gets the newest); a second `initialize` and JSON batches are refused with `-32600`; an oversize message gets `-32600` with `id: null` and is never echoed; `clientInfo` is kept as self-reported, control characters stripped, capped at 64; `tools/*` before `initialize` will be refused (T013 adds the gate).
+
 - **2026-10-18, analyze fixes (T004; decided by the coordinator under Ruben's delegation).** `/speckit-analyze` on spec, plan and tasks said "fix first". Decisions:
   - **D-a** Keeping the server away from Durbar's agents (US4: FR-030 to FR-035, FR-057; tasks T040 and T041) blocks **any** release of this feature, the read-only Phase 1 included. Merging behind the off-by-default switch is fine; shipping it in a release is not, until those tasks are merged.
   - **D-b** Turning **on** an MCP extra that the user already trusted in the window (its trust hash still matches) is allowed over MCP with the dialog. Trusting a new or changed extra stays window-only (FR-050).

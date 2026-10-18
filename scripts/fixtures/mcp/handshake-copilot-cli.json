@@ -1,0 +1,17 @@
+{
+  "provenance": "synthetic",
+  "note": "Hand-written to the MCP initialize shape, not recorded from a real client. Real handshakes are recorded in T061.",
+  "client": "copilot-cli",
+  "initialize": {
+    "jsonrpc": "2.0",
+    "id": 0,
+    "method": "initialize",
+    "params": {
+      "protocolVersion": "2025-03-26",
+      "capabilities": {},
+      "clientInfo": { "name": "github-copilot-cli", "version": "1.0.0" }
+    }
+  },
+  "initialized": { "jsonrpc": "2.0", "method": "notifications/initialized" },
+  "expectProtocolVersion": "2025-03-26"
+}
