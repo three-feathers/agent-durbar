@@ -39,6 +39,16 @@ module.exports = async (ctx) => {
     await ctx.sleep(1500);
     await settle();
 
+    // FR-016/FR-017 (issue #116): Settings lists docs-search (an extra that is off, untrusted and never called) with the default place, and one playwright row
+    await js(`document.getElementById('settingsBtn').click()`); await ctx.sleep(900);
+    const ex = await js(`(()=>{const q=n=>[...document.querySelectorAll('#plList .plrow')].filter(r=>r.dataset.srv===n);const d=q('docs-search')[0];const o=d&&d.querySelector('select option:checked');return {docs:q('docs-search').length,docsDefault:o?o.textContent.trim():'',pw:q('playwright').length}})()`);
+    assert.strictEqual(ex.docs, 1, 'Settings lists docs-search before any call');
+    // the name rules send `docs*` servers to the Library by default (spec 024 #116 scenario 1)
+    assert.strictEqual(ex.docsDefault, 'Default (Library)', 'docs-search shows the default place: ' + ex.docsDefault);
+    assert.strictEqual(ex.pw, 1, 'exactly one playwright row');
+    console.log('[024]', w, 'extras rows', JSON.stringify(ex));
+    await js(`document.getElementById('scrClose').click()`); await ctx.sleep(500);
+
     // SC-001: the right place for each open call, empty chair at the desk, figures on slots
     const vs = await visits();
     console.log('[024]', w, 'visits', JSON.stringify(vs.map((v) => `${v.name}@${v.place}:${v.label}`)));

@@ -83,6 +83,8 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
   };
 
   ipcMain.handle('mcp:state', () => state());
+  /** Names of every saved folder's extras, nothing else (spec 024 FR-016). No arguments; names that equal a CLI/built-in server are left out. */
+  ipcMain.handle('mcp:extraNames', () => ({ ok: true, names: store().extraNames(cliNames()) }));
   ipcMain.handle('mcp:setCli', (_e, name: unknown, enabled: unknown) => {
     if (typeof name !== 'string' || !name || name.length > 64) return { ok: false };
     store().setAmbientDisabled(name, enabled !== true);

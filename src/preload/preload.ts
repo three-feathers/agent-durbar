@@ -44,6 +44,7 @@ const api: DurbarApi = {
   usageTotals: () => ipcRenderer.invoke('usage:totals'),
   usageResetTotals: () => ipcRenderer.invoke('usage:resetTotals'),
   mcpState: () => ipcRenderer.invoke('mcp:state'),
+  mcpExtraNames: () => ipcRenderer.invoke('mcp:extraNames'),
   mcpSetCli: (name, enabled) => ipcRenderer.invoke('mcp:setCli', name, enabled),
   mcpFolderState: (key) => ipcRenderer.invoke('mcp:folderState', key),
   mcpUpsert: (key, input, originalName) => ipcRenderer.invoke('mcp:upsert', key, input, originalName),
