@@ -2256,6 +2256,8 @@ async function addVia(fn){
   }
   const r=await fn($('permMode').value,o);
   if(r.error)toast('Could not add: '+esc(r.error),6000);
+  /* spec 006 FR-016 (issue #170): adding is allowed, but say once what such a folder exposes */
+  (r.warnings||[]).forEach(w=>toast('<b>'+esc(w.name)+'</b>: agents in this folder can read everything '+(w.kind==='root'?'on this drive':'under your home folder')+', including SSH keys and saved credentials.',9000));
   r.agents.forEach(addLiveAgent);
   r.agents.forEach(x=>{const ag=liveById(x.id);if(ag)announcePrevious(ag);});
   INTO=null; if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});

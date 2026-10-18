@@ -113,3 +113,12 @@ For a folder that has not been used yet in this run, a "Previous sessions" panel
 ## Changes
 
 - **2026-10-17, spec 033 (floors), cross-reference.** Folders now belong to a floor (`floor` in `durbar-folders.json`, absent = Ground floor). **Hide (US4, FR-005) is unchanged** and combines with floors: a room shows only when it is not hidden and its floor is on; the Floors panel marks hidden folders. `+ Folder` / `+ Workspace` add to the floor chosen in the Floors panel. No requirement of this spec changes.
+
+### 2026-10-18: a calm warning when the folder is your home, a parent of it, or a root (issue #170)
+
+*Missing:* adding `~`, a parent of it (`/home`, `C:\Users`) or a filesystem or drive root (`/`, `C:\`) is allowed, and then everything under it, `~/.ssh` and other credentials included, counts as "inside the session's folders" for every adapter (Copilot permission broker, the Claude and Codex read rules). Nothing told the user. Found in Paco's review of #169.
+
+*Corrected:*
+- **FR-016** `[IMPLEMENTED]` When a folder that is the user's home, a parent of it, or a filesystem or drive root is added (directly, or as one of the folders of a `.code-workspace` file), the app shows one calm line after adding it: "*name*: agents in this folder can read everything under your home folder, including SSH keys and saved credentials." (for a root: "…everything on this drive…"). Adding is still allowed; nothing else changes. The check is a pure function with the home folder and the path flavour injected, so Windows paths (`C:\`, `\\server\share\`, `C:\Users`) are unit-tested from any OS; paths are compared case-insensitively on Windows and macOS (constitution VI).
+- The warning is shown once per add, not on every start; restored folders are not re-warned.
+
