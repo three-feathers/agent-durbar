@@ -85,7 +85,7 @@ interface AdapterCapabilities {
 }
 ```
 
-Planned values (all unverified until Phase 4): Claude: everything true except `nanoAiu`, `caps`; `permModeSwitch: 'live'`. Codex: `costUsd: false`, `caps: false`, `helpers: false` until child-thread routing is recorded, `mcpToggle: false` (FR-024), `liveModeSwitch: 'next-message'`, `images: true` (`localImage`), `permissionModes` all three on Linux and macOS, **Windows Read-only/Ask declared as gap until checked**.
+Planned values (all unverified until Phase 4): Claude: everything true except `nanoAiu`, `caps`; `permModeSwitch: 'live'`. Codex: `costUsd: false`, `caps: false`, `helpers: false` until child-thread routing is recorded, `mcpToggle: false` (FR-024), `permModeSwitch: 'next-message'`, `images: true` (`localImage`), `permissionModes` all three on Linux and macOS, **Windows Read-only/Ask declared as gap until checked**.
 
 ## Permission mode mapping
 
