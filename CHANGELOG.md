@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **Claude Code: choose the model and effort (spec 012 FR-118..FR-121, issue #57).** With the experimental Claude Code agent, the toolbar and the New session dialog list the models your `claude` offers (Opus, Sonnet, Haiku, Fable, ...) with their effort levels. The list is read from the CLI without sending a prompt and leaves no session behind. Checked on a real Claude Code 2.1.302: 13 models, and one `haiku` prompt ($0.0013). Each agent kind now has its own model list in the app.
+
 - **Short agent names are no longer cut to one letter (spec 001 FR-025).** In the compact card sizes, a long status word ("Limit reached") now gives way before the agent's name, so "Omar" stays "Omar" and does not become "O…". `check:office` now fails if a cut name shows fewer than three characters. Simulator only, 0 AIU.
 
 - **Claude Code: change the permission mode while a session runs (spec 012 FR-115..FR-117, issue #54).** A stricter mode applies at once: Durbar's tool check uses both the mode Claude was started with and your current choice. A looser mode applies from the next message, which resumes the same session with the new settings. Checked on a real Claude Code with `haiku` (about $0.011): switching Allow all to Read-only during a shell command blocked the write that followed. The README no longer says that there is no Claude adapter.
