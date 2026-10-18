@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.4 tag)
 
+- **Saved folders can record their agent kind (spec 012 T013, issue #33).** A new optional `adapterId` per saved folder, never written for Copilot, so existing files stay byte-identical; not read by the app until T014. Unit tests, 0 AIU.
+
 - **Claude Code and Codex CLI detection (spec 012 T012, issue #32).** Pure code that finds the `claude` and `codex` commands (PATH, known folders, Windows npm shims through a guarded cmd.exe) and reads their version, without a shell; not wired into the app yet. Unit tests, 0 AIU.
 
 - **Adapter registry and descriptors (spec 012 T011, issue #31).** A pure list of the agents the app knows (only Copilot today), with what each can do and a way to check if it is installed; not wired into the app yet, so no visible change. Unit tests, 0 AIU.
