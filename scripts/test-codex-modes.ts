@@ -1,6 +1,7 @@
 /** Codex mode and approval mapping (spec 012 T022, FR-004, FR-013). `npm run test:runtime`. No Codex binary, no credits. */
 import * as assert from 'assert';
 import { grantScope } from '../src/adapters/permissions';
+import { CODEX_BINARY, CODEX_MIN_VERSION, compareVersions, parseVersion } from '../src/adapters/detect';
 import {
   CODEX_APPROVAL_METHODS, CODEX_INITIALIZE_CAPABILITIES, CODEX_MIN_PERMISSIONS_VERSION, CODEX_RO_FILESYSTEM,
   codexModeSettings, codexProfileArgs, codexProfileToml, codexReadEnforceable, codexWorkspaceRoots, codexPermission, codexReply,
@@ -75,6 +76,23 @@ assert.ok(/too old/.test(bad({ version: '0.99.0' })), 'old version, bare');
 bad({ version: 'rust-v0.163.0-alpha.1' }); // pre-release of the minimum
 for (const v of ['', 'banana', 'rust-v', '0.163', 'rust-v0.163.x', '0.163.0.1', undefined, null, 163 as never]) {
   assert.ok(/could not be read/.test(bad({ version: v as never })), `unparseable version ${String(v)}`);
+}
+// one answer per version string: codexReadEnforceable and detect.ts agree
+assert.strictEqual(CODEX_BINARY.minVersion, CODEX_MIN_VERSION, 'detect and codexModes share one minimum');
+assert.strictEqual(CODEX_MIN_PERMISSIONS_VERSION, `rust-v${CODEX_BINARY.minVersion}`, 'same minimum, rust-v form');
+for (const [v, tooOld] of [['0.163.0', false], ['0.163.0+build', false], ['rust-v0.163.0+build.5', false], ['0.163.0-pre', true], ['0.163.0-rc.1', true], ['0.162.9', true], ['0.164.0-pre', false]] as const) {
+  const detected: string = parseVersion(v) as string;
+  const detectOld: boolean = compareVersions(detected, CODEX_MIN_VERSION) < 0;
+  const r: { ok: boolean } = codexReadEnforceable({ ...good, version: v });
+  assert.strictEqual(detectOld, tooOld, `detect: ${v} too old = ${tooOld}`);
+  assert.strictEqual(r.ok, !tooOld, `codexModes: ${v} enforceable = ${!tooOld}`);
+  assert.strictEqual(r.ok, !detectOld, `both paths agree on ${v}`);
+}
+// every refusal carries a reason and advice, and offers no fallback
+for (const c of [{ version: 'x' }, { version: '0.1.0' }, { experimentalApi: false }, { platform: '' }, { platform: 'win32', elevatedSandbox: false }]) {
+  const r = codexReadEnforceable({ ...good, ...c });
+  assert.ok(!r.ok && r.reason.length > 0 && r.advice.length > 0, `reason and advice for ${JSON.stringify(c)}`);
+  assert.ok(!r.ok && !/allow all|read-only sandbox/i.test(r.reason + r.advice), 'no fallback offered');
 }
 assert.ok(/experimental/.test(bad({ experimentalApi: false })), 'no experimentalApi');
 bad({ experimentalApi: undefined });

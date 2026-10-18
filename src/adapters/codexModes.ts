@@ -5,6 +5,7 @@
  */
 import * as path from 'path';
 import type { PermissionMode } from './capabilities';
+import { CODEX_MIN_VERSION, compareVersions } from './detect';
 
 /** Protocol `AskForApproval`, the values we use. `untrusted` is retired; `granular` is not offered. */
 export type CodexApprovalPolicy = 'never' | 'on-request';
@@ -112,14 +113,17 @@ export function codexWorkspaceRoots(roots: readonly unknown[] | undefined | null
   return out;
 }
 
-/** The Codex version researched (2026-10-18); older ones are refused because they are unchecked (spec 012 FR-087). */
-export const CODEX_MIN_PERMISSIONS_VERSION = 'rust-v0.163.0';
+/** The Codex version researched (2026-10-18); older ones are refused because they are unchecked (spec 012 FR-087). Same value as `detect.ts`. */
+export const CODEX_MIN_PERMISSIONS_VERSION = `rust-v${CODEX_MIN_VERSION}`;
 
-/** `rust-v0.163.0`, `v0.163.0` or `0.163.0` (optional `-pre`/`+build`) to numbers; undefined when unparseable. */
-function parseCodexVersion(v: unknown): { n: [number, number, number]; pre: boolean } | undefined {
+/**
+ * `rust-v0.163.0`, `v0.163.0` or `0.163.0` (optional `-pre`, optional `+build`) to the canonical `x.y.z[-pre]` that
+ * `detect.ts` `parseVersion` and `compareVersions` use; undefined when unparseable. The `+build` part is ignored.
+ */
+function canonicalCodexVersion(v: unknown): string | undefined {
   if (typeof v !== 'string') return undefined;
-  const m = /^(?:rust-v|v)?(\d{1,9})\.(\d{1,9})\.(\d{1,9})([-+][0-9A-Za-z.+-]*)?$/.exec(v.trim());
-  return m ? { n: [Number(m[1]), Number(m[2]), Number(m[3])], pre: !!m[4] && m[4][0] === '-' } : undefined;
+  const m = /^(?:rust-v|v)?(\d{1,9}\.\d{1,9}\.\d{1,9})(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.+-]*)?$/.exec(v.trim());
+  return m ? m[1] + (m[2] ?? '') : undefined;
 }
 
 export interface CodexReadCheck {
@@ -131,21 +135,22 @@ export interface CodexReadCheck {
   elevatedSandbox?: boolean;
 }
 
+export type CodexReadResult = { ok: true } | { ok: false; reason: string; advice: string };
+
 /**
  * Can the `durbar_ro` profile be enforced? Anything unknown is not enforceable (fail closed; spec 012 FR-087).
- * The caller refuses to start Read-only or Ask first when `ok` is false and may offer Allow all as the user's choice.
+ * The caller refuses to start Read-only or Ask first when `ok` is false, showing `reason` and `advice` (what to
+ * install or upgrade). It offers no fallback: not Allow all, not the plain `read-only` sandbox. The user can still
+ * pick another mode through the normal mode switch.
  */
-export function codexReadEnforceable(c: CodexReadCheck): { ok: true } | { ok: false; reason: string } {
-  const have = parseCodexVersion(c?.version);
-  const min = parseCodexVersion(CODEX_MIN_PERMISSIONS_VERSION)!;
-  if (!have) return { ok: false, reason: `The Codex version could not be read, so Durbar cannot confirm it can limit reads to the session's folders (needs ${CODEX_MIN_PERMISSIONS_VERSION} or newer).` };
-  let cmp = 0;
-  for (let i = 0; i < 3 && cmp === 0; i++) cmp = have.n[i] - min.n[i];
-  if (cmp === 0 && have.pre) cmp = -1; // a pre-release of the minimum may predate the feature
-  if (cmp < 0) return { ok: false, reason: `This Codex is too old to limit reads to the session's folders (needs ${CODEX_MIN_PERMISSIONS_VERSION} or newer).` };
-  if (c.experimentalApi !== true) return { ok: false, reason: 'This Codex did not accept the experimental API, which Durbar needs to limit reads to the session\'s folders.' };
-  if (typeof c.platform !== 'string' || !c.platform) return { ok: false, reason: 'The platform is unknown, so Durbar cannot confirm Codex can limit reads.' };
-  if (c.platform === 'win32' && c.elevatedSandbox !== true) return { ok: false, reason: 'On Windows, Codex needs its elevated sandbox set up to limit reads to the session\'s folders.' };
+export function codexReadEnforceable(c: CodexReadCheck): CodexReadResult {
+  const have = canonicalCodexVersion(c?.version);
+  if (!have) return { ok: false, reason: `The Codex version could not be read, so Durbar cannot confirm it can limit reads to the session's folders.`, advice: `Install Codex ${CODEX_MIN_PERMISSIONS_VERSION} or later and restart Durbar.` };
+  // One comparison for one version string: the same helper as detect.ts (a pre-release is older than its release).
+  if (compareVersions(have, CODEX_MIN_VERSION) < 0) return { ok: false, reason: `This Codex is too old to limit reads to the session's folders.`, advice: `Upgrade Codex to ${CODEX_MIN_PERMISSIONS_VERSION} or later.` };
+  if (c.experimentalApi !== true) return { ok: false, reason: `This Codex did not accept the experimental API, which Durbar needs to limit reads to the session's folders.`, advice: `Upgrade Codex to ${CODEX_MIN_PERMISSIONS_VERSION} or later and make sure the app-server accepts the experimental API.` };
+  if (typeof c.platform !== 'string' || !c.platform) return { ok: false, reason: 'The platform is unknown, so Durbar cannot confirm Codex can limit reads.', advice: 'Restart Durbar; if it persists, report it.' };
+  if (c.platform === 'win32' && c.elevatedSandbox !== true) return { ok: false, reason: `On Windows, Codex needs its elevated sandbox set up to limit reads to the session's folders.`, advice: 'Set up the Codex elevated sandbox on Windows, and use the native codex.exe instead of a .cmd shim.' };
   return { ok: true };
 }
 
