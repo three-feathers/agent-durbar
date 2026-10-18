@@ -6,7 +6,7 @@ import * as path from 'path';
 import { COPILOT_DESCRIPTOR } from '../adapters/copilot';
 import { createRegistry, detectAll } from '../adapters/registry';
 import { detectorFor } from '../adapters/detect';
-import { createRouter, historyOf, interruptOf, modelOptionsOf, previousSessionsOf, refusesLive, setCapOf, setPermModeOf } from '../adapters/router';
+import { adapterForAdd, createRouter, historyOf, interruptOf, modelOptionsOf, previousSessionsOf, refusesLive, setCapOf, setPermModeOf } from '../adapters/router';
 import type { AgentAdapter } from '../adapters/types';
 import type { AdapterInfo } from '../shared/adapters';
 import { adapterOf } from './folders';
@@ -179,7 +179,10 @@ async function addWorkspace(
 ): Promise<AgentInfo> {
   const model = opts.model || DEFAULT_MODEL;
   const effort = asEffort(opts.effort);
-  const adapterId = opts.adapterId ?? registry.defaultId;
+  const wsr = resolveWorkspaceCwd(workspace);
+  const picked = adapterForAdd(opts.adapterId, (() => { const f = folderStore?.get(wsr.workspaceFile ?? wsr.cwd); return f ? adapterOf(f) : undefined; })(), (i) => registry.has(i), registry.defaultId);
+  if ('error' in picked) throw new Error(picked.error); // nothing started, nothing written
+  const adapterId = picked.id;
   const ad = router.instance(adapterId);
   const draft = infoFor(workspace, permMode, '', model, effort, {}, ad);
   // Cap: explicit choice (null = none) > the folder's saved cap > the global default (spec 011).
@@ -412,7 +415,7 @@ ipcMain.handle('agents:newSession', async (_e, id: unknown, opts: unknown) => {
   const o = (opts && typeof opts === 'object' ? opts : {}) as Record<string, unknown>;
   try {
     const mode = o.permMode === undefined ? a.permMode : validMode(o.permMode);
-    const agent = await addWorkspace(wsKey(a), mode, { model: typeof o.model === 'string' ? o.model.slice(0, 100) : a.model, effort: asEffort(o.effort) ?? undefined, maxAiCredits: o.maxAiCredits === null ? null : parseCap(o.maxAiCredits) });
+    const agent = await addWorkspace(wsKey(a), mode, { model: typeof o.model === 'string' ? o.model.slice(0, 100) : a.model, effort: asEffort(o.effort) ?? undefined, maxAiCredits: o.maxAiCredits === null ? null : parseCap(o.maxAiCredits), adapterId: router.adapterIdOf(a.id) });
     return { ok: true, agent };
   } catch (err) {
     return { ok: false, error: errText(err) };

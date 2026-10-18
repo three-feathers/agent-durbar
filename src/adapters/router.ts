@@ -23,6 +23,16 @@ export interface AdapterRouter {
   disposeAll(): Promise<void>;
 }
 
+/**
+ * Which adapter a new session of a folder uses (spec 012 FR-046..FR-050): an explicit id wins, else the folder's saved id,
+ * else the default. An id this build does not know is refused, so a saved folder is never opened as another adapter.
+ */
+export function adapterForAdd(explicit: string | undefined, saved: string | undefined, has: (id: string) => boolean, def: string): { id: string } | { error: string } {
+  if (explicit !== undefined) return has(explicit) ? { id: explicit } : { error: 'This agent kind is not supported by this version.' };
+  if (saved !== undefined) return has(saved) ? { id: saved } : { error: 'This folder was saved for an agent kind this version does not support.' };
+  return { id: def };
+}
+
 export function createRouter(reg: AdapterRegistry): AdapterRouter {
   const instances = new Map<string, AgentAdapter>();
   const bound = new Map<string, string>();

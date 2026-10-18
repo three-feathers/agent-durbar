@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import { CopilotAdapter, COPILOT_DESCRIPTOR } from '../src/adapters/copilot';
 import { detectorFor } from '../src/adapters/detect';
 import { createRegistry, detectAll } from '../src/adapters/registry';
-import { createRouter, historyOf, interruptOf, refusesLive, modelOptionsOf, previousSessionsOf, setCapOf, setMcpEnabledOf, setPermModeOf } from '../src/adapters/router';
+import { adapterForAdd, createRouter, historyOf, interruptOf, refusesLive, modelOptionsOf, previousSessionsOf, setCapOf, setMcpEnabledOf, setPermModeOf } from '../src/adapters/router';
 import type { AdapterCapabilities, AdapterDescriptor } from '../src/adapters/capabilities';
 import type { AgentAdapter, AgentEvent, ModelOption } from '../src/adapters/types';
 
@@ -201,6 +201,15 @@ async function main(): Promise<void> {
     const { reg: reg2 } = fakes();
     const two = await detectAll(reg2, (d) => detectorFor(d.id)?.(d) ?? Promise.resolve({ state: 'unknown' as const }));
     assert.deepStrictEqual(two.map((i) => i.state), ['unknown', 'unknown'], 'h: no detector gives unknown');
+  }
+  // (i) adapterForAdd
+  {
+    const has = (id: string): boolean => id === 'copilot' || id === 'other';
+    assert.deepStrictEqual(adapterForAdd('other', 'copilot', has, 'copilot'), { id: 'other' }, 'i: explicit wins');
+    assert.deepStrictEqual(adapterForAdd(undefined, 'other', has, 'copilot'), { id: 'other' }, 'i: saved known is used');
+    assert.ok('error' in adapterForAdd(undefined, 'future', has, 'copilot'), 'i: saved unknown is refused');
+    assert.deepStrictEqual(adapterForAdd(undefined, undefined, has, 'copilot'), { id: 'copilot' }, 'i: none gives the default');
+    assert.ok('error' in adapterForAdd('future', 'copilot', has, 'copilot'), 'i: explicit unknown is refused');
   }
   console.log('router tests passed');
 }
