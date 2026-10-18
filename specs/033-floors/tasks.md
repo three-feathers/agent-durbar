@@ -109,4 +109,4 @@
 - [x] T037 `scripts/check-office-overlap.js`: optional `OFFICE_FONT_FILE` (a local DejaVu Sans file) forces that font in every page so a Mac measures like CI; header note with Vikram's fontconfig recipe for Linux; floors cases assert no button with one floor [FR-007]
 - [x] T038 Run `check:office` with the DejaVu font (all cases, both sizes) and with the default fonts; screenshots refreshed where the top bar changed [FR-007, SC-005]
 - [x] T039 Docs and PR: README and spec wording for the button, the PR body (task range, a literal `Docs:` line, the font caveat), reply to the review [VIII]
-
+- [ ] T040 Floor names refuse C1 controls and hidden direction/zero-width characters (U+202A–U+202E, U+2066–U+2069, U+200B, U+2060, U+FEFF); a saved name has them removed on load; the simulator bridge repeats the rule; unit tests (`src/shared/floors.ts`, `src/renderer/sim.ts`, `scripts/test-floors.ts`) [FR-003]
