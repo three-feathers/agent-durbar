@@ -12,7 +12,7 @@ import { CODEX_CAPABILITIES, CODEX_DESCRIPTOR, CodexAdapter, codexChildEnv } fro
 import { CodexMapper } from '../src/adapters/codexMap';
 import { CODEX_INITIALIZE_CAPABILITIES, codexProfileArgs, codexWorkspaceRoots } from '../src/adapters/codexModes';
 import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
-import { EXPERIMENTAL_DESCRIPTORS } from '../src/adapters/experimental';
+import { CODEX_EXPERIMENTAL_DESCRIPTORS } from '../src/adapters/experimentalCodex';
 import type { AgentEvent, PermissionMode } from '../src/adapters/types';
 import { FakeCodexServer } from './fakes/codex-app-server';
 import type { FakeCodexOptions } from './fakes/codex-app-server';
@@ -105,7 +105,7 @@ async function main(): Promise<void> {
     assert.strictEqual(CODEX_DESCRIPTOR.capabilities, CODEX_CAPABILITIES);
     assert.ok(CODEX_DESCRIPTOR.create() instanceof CodexAdapter);
     assert.ok(!PRODUCTION_DESCRIPTORS.some((d) => d.id === 'codex'), 'codex is not a production descriptor');
-    assert.deepStrictEqual(EXPERIMENTAL_DESCRIPTORS.map((d) => d.id), ['codex']);
+    assert.deepStrictEqual(CODEX_EXPERIMENTAL_DESCRIPTORS.map((d) => d.id), ['codex']);
   }
 
   // ---- FR-090 / criterion 2: argv, no shell, handshake order

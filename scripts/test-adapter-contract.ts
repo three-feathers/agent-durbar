@@ -16,9 +16,14 @@ import type { ScriptEvent } from './fakes/copilot-sdk';
 import type { PermissionLike } from '../src/adapters/permissions';
 import type { AgentAdapter, AgentEvent, PermissionInfo, PermissionMode } from '../src/adapters/types';
 import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
-import { EXPERIMENTAL_DESCRIPTORS } from '../src/adapters/experimental';
+import { enabledExperimental } from '../src/adapters/experimental';
+import { CODEX_EXPERIMENTAL_DESCRIPTORS } from '../src/adapters/experimentalCodex';
 import { CodexAdapter } from '../src/adapters/codex';
 import { FakeCodexServer } from './fakes/codex-app-server';
+import { ClaudeAdapter, claudeArgs } from '../src/adapters/claude';
+import { createCliTransport } from '../src/adapters/claudeTransport';
+import { fakeSpawn } from './fakes/claude-cli';
+import type { FakeClaudeChild } from './fakes/claude-cli';
 
 export type Outcome = 'approved' | 'denied';
 
@@ -390,6 +395,88 @@ async function main(): Promise<void> {
       for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
     }
 
+    // ---- spec 012 T091 (FR-112): the same suite on ClaudeAdapter over the real CLI transport and a scripted fake `claude`
+    {
+      const children = new Map<string, FakeClaudeChild>(); // session id -> its fake CLI
+      const claudeDirs: string[] = [];
+      const toolFor = (req: PermissionLike): { name: string; input: Record<string, unknown> } => {
+        switch (req.kind) {
+          case 'read': return { name: 'Read', input: { file_path: req.path ?? req.fileName ?? '' } };
+          case 'write': return { name: 'Write', input: { file_path: req.path ?? req.fileName ?? 'x.txt', content: 'x' } };
+          case 'shell': return { name: 'Bash', input: { command: req.fullCommandText ?? 'ls' } };
+          case 'url': return { name: 'WebFetch', input: { url: req.url ?? 'https://example.com' } };
+          case 'mcp': return { name: `mcp__${req.serverName ?? 'srv'}__${req.toolName ?? 'tool'}`, input: {} };
+          default: return { name: 'TodoWrite', input: {} };
+        }
+      };
+      const claudeMake = (): ContractTarget => {
+        const sp = fakeSpawn();
+        sp.next = (c) => {
+          c.onWrite = (o) => {
+            const req = o.request as { subtype?: string } | undefined;
+            if (o.type === 'control_request' && (req?.subtype === 'initialize' || req?.subtype === 'interrupt')) setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response: {} } }), 0);
+            if (o.type === 'user' && !String(JSON.stringify(o.message)).includes('__warmup__')) {
+              setTimeout(() => {
+                c.send({ type: 'system', subtype: 'init', session_id: 's', cwd: '/', model: 'claude-haiku-5-5', permissionMode: 'default', tools: [], mcp_servers: [] });
+                c.send({ type: 'assistant', message: { id: 'm' + Math.random(), role: 'assistant', content: [{ type: 'text', text: 'done' }], usage: { input_tokens: 5, output_tokens: 1 } } });
+                c.send({ type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.0001, usage: { input_tokens: 5, output_tokens: 1 } });
+              }, 0);
+            }
+          };
+        };
+        const ad = new ClaudeAdapter({
+          claudePath: async () => '/usr/local/bin/claude',
+          makeTransport: (x) => {
+            const t = createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 5, killGraceMs: 5 });
+            const sid = x.launch.sessionId;
+            children.set(sid, sp.children[sp.children.length - 1]);
+            return t;
+          },
+          sessionExists: () => false,
+          claudeMd: () => undefined,
+          env: () => ({}),
+        });
+        const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-contract-claude-'));
+        claudeDirs.push(workspace);
+        return { ad, workspace };
+      };
+      let reqN = 0;
+      const claudeHooks: ContractHooks = {
+        requestPermission: async (ad, sid, req) => {
+          if (!children.has(sid)) {
+            await ad.send(sid, { text: '__warmup__' }); // starts the CLI without a turn
+            await until('claude child', () => children.get(sid));
+          }
+          const c = children.get(sid)!;
+          const id = `contract-${++reqN}`;
+          const t = toolFor(req);
+          c.send({ type: 'control_request', request_id: id, request: { subtype: 'can_use_tool', tool_name: t.name, input: t.input, tool_use_id: req.toolCallId ?? id } });
+          const reply = await until(`answer to ${id}`, () => c.objects().find((o) => o.type === 'control_response' && (o.response as { request_id: string }).request_id === id), 5000);
+          return ((reply.response as { response: { behavior: string } }).response.behavior === 'allow') ? 'approved' : 'denied';
+        },
+        turn: async (ad, sid) => {
+          const done = new Promise<void>((resolve) => {
+            const off = ad.onEvent((e) => {
+              if (e.sessionId === sid && e.type === 'status' && (e.status === 'idle' || e.status === 'error') && e.intent === undefined) {
+                off();
+                resolve();
+              }
+            });
+          });
+          await ad.send(sid, { text: 'go' });
+          await done;
+        },
+      };
+      try {
+        const r = await runContract('claude', claudeMake, claudeHooks);
+        reports.set('claude', r);
+        console.log(`claude: ran ${r.ran.join(' ')}; skipped ${r.skipped.length ? r.skipped.join(', ') : 'none'}`);
+        assert.ok(r.usageEvents > 0, 'claude: the scripted turn produced usage events, so C5 checked them');
+      } finally {
+        for (const d of claudeDirs) fs.rmSync(d, { recursive: true, force: true });
+      }
+    }
+
     // ---- FR-057 (spec 002 T020): the adapter's stream for a replayed fixture equals what EventMapper gives for the same events
     const strip = (e: unknown): unknown => {
       const { sessionId: _s, timestamp: _t, ...rest } = e as Record<string, unknown>;
@@ -474,8 +561,8 @@ async function main(): Promise<void> {
   }
 
   // ---- FR-085 (spec 012 T026): C6 (modes) and C7 (stop denies pending) ran once for the fake and for every registered adapter, so a new adapter cannot skip them.
-  // A registered or experimental adapter without a contract run above fails here: add its run (T045 Claude) when it is added.
-  for (const id of ['fake-full', ...PRODUCTION_DESCRIPTORS.map((d) => d.id), ...EXPERIMENTAL_DESCRIPTORS.map((d) => d.id)]) {
+  // A registered or experimental adapter without a contract run above fails here: add its run when it is added.
+  for (const id of ['fake-full', ...PRODUCTION_DESCRIPTORS.map((d) => d.id), ...enabledExperimental({ DURBAR_CLAUDE: '1' }).map((d) => d.id), ...CODEX_EXPERIMENTAL_DESCRIPTORS.map((d) => d.id)]) {
     const r = reports.get(id);
     assert.ok(r, `FR-085: no contract run for the registered adapter ${id}`);
     for (const c of ['C6', 'C7']) assert.strictEqual(r.ran.filter((x) => x === c).length, 1, `FR-085: ${c} ran exactly once for ${id}`);
