@@ -1,0 +1,14 @@
+{
+  "id": "check-user",
+  "name": "Check User Theme",
+  "author": "Agent Durbar tests",
+  "version": "1.0",
+  "ui": "court-japanese",
+  "scene": "office",
+  "tokens": { "--bg": "#efe9dc", "--surface": "#fffdf7", "--tint-sage": "#e6eedf", "--wall-sage": "#6b7d4a", "--chair": "#83769c" },
+  "words": { "place-terminal": "Terminal room", "lobby-label": "Hall: the places where agents work" },
+  "art": {
+    "room-floor": { "cell": 4, "palette": { "a": "#d9cdb4", "b": "#cdbf9f" }, "rows": ["abab", "baba"] },
+    "char-robe": "<path d=\"M60 99V79q0-9 9-12l5-1.5 5 1.5q9 3 9 12v20z\" fill=\"#8c2f3e\"/>"
+  }
+}

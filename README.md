@@ -33,6 +33,7 @@ There is no auto-update: download a newer release to update.
 Full list in [CHANGELOG.md](CHANGELOG.md). Short version, since alpha.4:
 
 - **Themes** (specs 035-040): Settings > Theme switches the whole office live: **Corporate**, **Retro Pixel** and three **Durbar** courts (Indian, European, Japanese) each change the colours, the top bar, room frames, cards, fonts, place names and **the people and furniture** (suits at glass desks, 8-bit people at a CRT, courtiers in turbans, periwigs or kimono). **Clean Office** is today's look. Status, permission and credit wording and the layout stay the same in every theme. You can import and export your own theme packs (data only: no scripts, no CSS).
+- **Main agents show their session title** (specs 001/002, issue #126): the name Copilot gives the session (from your first prompt) instead of the folder name; checked once on a real session.
 - **Floors** (spec 033): group rooms on floors and switch a floor off; its agents keep running.
 - **Agents show how they are doing** (spec 034): heavier near a full context window, an ambulance for errors, fainting at the credit limit; rooms take the tone of their worst agent. *Serious mode* turns it off.
 - **Custom places** in the lobby, and per-folder MCP servers listed in Settings > Places (spec 024).
@@ -89,6 +90,8 @@ Signing certificates cost money, so the builds are **unsigned and not notarized*
 
 Agents run **locally, on your machine, as you**, in the folders you add. Nothing is sent anywhere except to GitHub Copilot through its own runtime. You choose a permission mode per agent: **Read-only** (reads only, everything else denied), **Ask first** (writes, shell commands, URLs and tools wait for your Approve / Approve for this session / Deny) or **Allow all** (no prompts; use only in folders you trust). The default is read-only. You can switch the mode of an agent any time (chat header chip or right-click on its card). Review what an agent asks to do, especially shell commands.
 
+The three mode names are the same for every agent kind, and Durbar maps them to each tool's own controls (Claude Code: its permission mode, allowed read tools and a check that reads stay inside your folders; Codex CLI: its approval policy and sandbox). An unknown mode is treated as Read-only. **Codex differs:** its Read-only is an OS-enforced read-only sandbox in which shell commands that only read may run, and its reads are not limited to the session folders; whether its Ask first asks before file edits is unverified. **This mapping is not active yet**: only Copilot runs today, and the Claude and Codex parts are unit-tested only, never run on a real account ([spec 012](specs/012-claude-codex-adapters/spec.md), [spec 003](specs/003-permissions-and-approvals/spec.md#changes)).
+
 ## Agents and adapters
 
 Only **GitHub Copilot** runs in Agent Durbar today. Claude Code and Codex CLI are planned ([spec 012](specs/012-claude-codex-adapters/spec.md)); the groundwork for them is built and tested, but **there is no Claude or Codex adapter, and nothing has been run on a real Claude or Codex account.** Everything for them is "simulator/fixtures only".
@@ -96,10 +99,10 @@ Only **GitHub Copilot** runs in Agent Durbar today. Claude Code and Codex CLI ar
 | Agent | Status | Simulator | Fixtures / fakes | Real account |
 | --- | --- | --- | --- | --- |
 | GitHub Copilot | Supported, in use | Yes | Yes: adapter contract suite and recorded event fixtures replayed through a fake SDK client | Yes (milestones 1-11; some parts are flagged unverified, see Known limits) |
-| Claude Code | Planned: interface, registry, detection, contract suite and a fake adapter are ready; no adapter, no picker yet | Not yet (simulator roster and picker are open tasks) | Contract suite on a fake adapter only; no Claude fixtures yet | No: never run |
-| Codex CLI | Planned: same groundwork as Claude Code | Not yet | Contract suite on a fake adapter only; no Codex fixtures yet | No: never run |
+| Claude Code | Planned: interface, registry, detection, contract suite, agent-kind picker, mode mapping, event mapper and no-settings rule are ready; no adapter yet | Yes: mixed-kind roster (`simkinds=mixed`) with capability gating | Contract suite on a fake adapter; mode mapping and event mapper on synthetic fixtures | No: never run |
+| Codex CLI | Planned: same groundwork as Claude Code, plus a JSON-RPC client for `codex app-server`; no adapter yet | Yes: mixed-kind roster (`simkinds=mixed`) | Contract suite on a fake adapter; mode mapping, event mapper and JSON-RPC client on synthetic fixtures | No: never run |
 
-What exists on `main` for the next agents (spec 012 T010-T016, simulator and unit tests, **0 AIU**): one adapter interface with declared capabilities, a registry, `claude`/`codex` command detection (not shown in the app yet), an optional adapter id per saved folder (never written for Copilot), per-agent routing in the main process, and a contract suite that Copilot also passes. The agent picker, the adapters themselves, sign-in checks and Windows/macOS behaviour are **not built or not verified**. Supporting a Claude or Codex subscription login needs the owner's decision first (spec 012, T071). Older app builds ignore a saved adapter id, so going back to an older build would open a non-Copilot folder as Copilot (nothing writes one yet).
+What exists on `main` for the next agents (spec 012 Phase 1 T010-T019 and Phase 2/3 groundwork (T021-T024, T027, T042, T051); simulator and unit tests, **0 AIU**): one adapter interface with declared capabilities, a registry, `claude`/`codex` command detection (not shown in the app yet), an optional adapter id per saved folder (never written for Copilot), per-agent routing in the main process, a contract suite that Copilot also passes, the agent-kind picker with capability gating, pure Claude and Codex mode mappings and event mappers, a Codex JSON-RPC client, and redaction of the debug log. The adapters themselves, sign-in checks and Windows/macOS behaviour are **not built or not verified**. Supporting a Claude or Codex subscription login needs the owner's decision first (spec 012, T071). Older app builds ignore a saved adapter id, so going back to an older build would open a non-Copilot folder as Copilot (nothing writes one yet).
 
 ## Build from source
 
@@ -123,7 +126,7 @@ Specs [035](specs/035-theme-foundation/spec.md)-[040](specs/040-user-themes/spec
 - **Corporate**: a navy top bar, white rooms with a coloured accent edge, square corners, tag-style pills, uppercase room labels; places become Records, Repository, Server room, Network, Facilities.
 - **Retro Pixel**: a dark arcade page, a black bar with a yellow monospace title, black-outlined rooms in game colours with hard shadows, square tiles and pixel characters; places become Arcade, Cartridge Bay, Console, Modem, Gadgets.
 - **Durbar · Indian / European / Japanese**: a maroon bar with a gold rule and arched rooms in a double gold frame; a royal navy bar with gilt rules and gilded frames in small caps; a paper bar with a vermilion rule and seal, washi and thin ink lines. Each has its own court place names.
-- **The text that matters never changes**: status, permission and credit wording are the same in every theme, and so is the layout (15 agents at 1440x900 and 1280x800; `npm run check:themes` runs the office check per theme).
+- **The text that matters never changes**: status, permission and credit wording are the same in every theme, and so is the layout (15 agents at 1440x900 and 1280x800; `npm run check:themes` runs the office check per theme and on a sample user theme, and fails if the theme on screen is not the one it asked for).
 - **Your own themes**: a folder with a `manifest.json` (colours, a UI style and a scene kit from the fixed lists, small SVG art, place names), imported and exported in Settings. A theme is data only: no scripts and no CSS; SVG art is rebuilt from allowed shapes, colours must be plain colour values, and a pack that breaks a rule is refused with a message.
 
 ![Corporate, 1440x900](docs/screenshots/035-corporate-1440x900.png)
@@ -137,7 +140,7 @@ Specs [035](specs/035-theme-foundation/spec.md)-[040](specs/040-user-themes/spec
 Tests: `test:theme` (packs, tokens, words, the sanitizer, UI styles, and a guard that `themes.css` never sets a size), `test:scenekits` (3600 scenes: every kit, status, mood and look) and `test:userthemes`. Screenshots: `scripts/shots-themes.js`.
 ## Status (main agents show their session title)
 
-Spec deltas in [002](specs/002-copilot-adapter-and-events/spec.md#changes) and [001](specs/001-office-view-and-densities/spec.md) (issue #126). Built and tested on the simulator, fixtures and unit tests, and **checked once on a real Copilot session** (one Read-only prompt, **0.15 AIU**). Not released yet.
+Spec deltas in [002](specs/002-copilot-adapter-and-events/spec.md#changes) and [001](specs/001-office-view-and-densities/spec.md) (issue #126). Built and tested on the simulator, fixtures and unit tests, and **checked once on a real Copilot session** (one Read-only prompt, **0.15 AIU**). In `v0.1.0-alpha.5`.
 
 - Copilot names every session: a title made from your first prompt, which may later become a short summary or a name you gave it with `/rename`. A main agent now shows that title on its card, in the chat header, the list, the agent strip and the lobby, instead of the folder name; several sessions in one folder are told apart at a glance. The folder stays in the room header and in the card's tooltip and screen-reader label. Sub-agents keep their own names, as before.
 - A session resumed from **Previous sessions** shows its saved name, else its summary, until Copilot sends its own title.

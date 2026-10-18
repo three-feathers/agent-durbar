@@ -8,3 +8,7 @@
 - [x] T006 `test:theme` extended (per-pack defaults, fallback, word maps, sanitization regression)
 - [x] T007 Verify byte-identical Clean Office scenes; run all gates (2026-10-18: pixel comparison against `main` with animations frozen, 0 px at 1280x800, noise only at 1440x900)
 - [ ] T008 Stage D verification (PR #137): Clean Office omits every new art slot; renderer strings byte-identical to 486416e (62/62 across demo agents, densities, doors) — scripts/parity not added; verified with a one-off harness
+
+## Changes 2026-10-18
+
+- [x] T009 `theme=` in simulator runs (main, simulator bridge), `check-office-overlap.js` passes it and fails on a theme mismatch; re-run `check:themes` for every built-in theme and record the result [FR-005] (2026-10-18, CI fonts DejaVu/Liberation: clean-office, corporate, retro, durbar-indian, durbar-european, durbar-japanese and the sample user theme each 183/183, theme confirmed on screen in every run)
