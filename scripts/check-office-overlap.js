@@ -15,6 +15,7 @@
  *   - the floor scrolling or the page overflowing (stage data-fit must be ok), text below 10.5px,
  *   - the lobby (spec 024): missing, sticking out of the floor, overlapping a room or the door plates, not holding its places (5 plus the custom ones, spec 024 FR-026), more than one row of tiles, a missing Add button below 8 tiles or one at 8, a place or slot
  *     sticking out of its tile, a walking figure that is not standing on a slot once the walks have settled, or more figures than empty chairs.
+ *   - room headers (spec 001 FR-023/FR-024, also `simrooms=solo`: one agent per folder): two header parts overlapping, or one leaving its header;
  *   - floors (spec 033, `simfloors=1`): with two or more floors on, a room header or door plate without its floor tag; with one floor on,
  *     any floor tag; the top bar controls overlapping each other or sticking out of the window (the Floors button must fit at 1280x800);
  *     a 40-character floor name (renamed through the panel) breaking a room header, a plate or the top bar; a floor that is off with agents
@@ -106,6 +107,17 @@ function pageCheck(expanded, expectPlaces) {
     const who = places.map((pl) => pl.getAttribute('aria-label')).join(', ');
     document.querySelectorAll('#stage .desk.is-away').forEach((d) => { const n = d.querySelector('.name'); if (n && !who.includes(n.textContent.trim())) problems.push(`empty chair of ${n.textContent.trim()} but nobody of that name is at a place`); });
   }
+  /* spec 001 FR-023 (T030): a room header's parts (door, name, path, dots, +, MCP, AIU, plant, floor tag) never overlap or leave the header */
+  stage.querySelectorAll('.room-head').forEach((hd) => {
+    const H = R(hd), key = (hd.closest('.room') || {}).dataset?.key || '?';
+    const parts = [...hd.children].filter((e) => e.getClientRects().length && R(e).w > 0 && getComputedStyle(e).visibility !== 'hidden');
+    parts.forEach((e) => { const p = R(e), slack = e.classList.contains('door') ? 5 : 1; /* the door hangs 4px left on purpose */ if (p.x < H.x - slack || p.r > H.r + 1) problems.push(`header part ${name(e)} sticks out of the header of ${key}`); });
+    for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
+      const p = R(parts[i]), q = R(parts[j]);
+      const ox = Math.min(p.r, q.r) - Math.max(p.x, q.x), oy = Math.min(p.b, q.b) - Math.max(p.y, q.y);
+      if (ox > T && oy > T) problems.push(`header of ${key}: ${name(parts[i])} overlaps ${name(parts[j])} by ${ox.toFixed(1)}px`);
+    }
+  });
   stage.querySelectorAll('.helpers').forEach((s) => {
     if (!s.classList.contains('hstrip')) return;
     const st = getComputedStyle(s), sr = R(s);
@@ -347,6 +359,17 @@ async function driver(ctx) {
         total++;
         if (ap.length) { failed++; console.log(`FAIL ${tag} off-floor attention: ${ap.join('; ')}`); }
       }
+    }
+  }
+  /* spec 001 FR-023/FR-024 (T030): many folders with one agent each (simrooms=solo), with and without a closed door, both sizes */
+  for (const [w, h] of SIZES) {
+    for (const sim of SIMS) {
+      await run(`solo sim${sim}-${w}x${h}`, `sim=${sim}&simfreeze=1&simrooms=solo`, w, h, shotsDir ? `solo-sim${sim}-${w}x${h}` : '');
+      const names = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].map(e=>e.textContent.trim())`);
+      await run(`solo sim${sim}-${w}x${h} closed=1`, `sim=${sim}&simfreeze=1&simrooms=solo&closed=${encodeURIComponent(names[0] || '')}`, w, h, '');
+      const tip = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].every((n)=>(n.title||'').startsWith(n.textContent.replace(/…$/,'')))`);
+      total++;
+      if (!tip) { failed++; console.log(`FAIL solo sim${sim}-${w}x${h}: a room name has no full-name tooltip`); }
     }
   }
   /* spec 012 T018 (FR-068): Claude-like, Codex-like and basic agents beside Copilot. No floors here, so no floor-tag checks; the toolbar stays on one row */
