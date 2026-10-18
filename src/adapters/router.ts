@@ -25,10 +25,15 @@ export interface AdapterRouter {
 
 /**
  * Which adapter a new session of a folder uses (spec 012 FR-046..FR-050): an explicit id wins, else the folder's saved id,
- * else the default. An id this build does not know is refused, so a saved folder is never opened as another adapter.
+ * else the default. An id this build does not know (or, when `ready` is given, one that is not ready) is refused, so a saved folder is never opened as another adapter.
  */
-export function adapterForAdd(explicit: string | undefined, saved: string | undefined, has: (id: string) => boolean, def: string): { id: string } | { error: string } {
-  if (explicit !== undefined) return has(explicit) ? { id: explicit } : { error: 'This agent kind is not supported by this version.' };
+export function adapterForAdd(explicit: string | undefined, saved: string | undefined, has: (id: string) => boolean, def: string, ready?: (id: string) => boolean): { id: string } | { error: string } {
+  if (explicit !== undefined) {
+    if (!has(explicit)) return { error: 'This agent kind is not supported by this version.' };
+    // Spec 012 FR-058 (T017): a kind the user picked must be ready; there is no fallback to another kind.
+    if (ready && !ready(explicit)) return { error: 'This agent kind is not ready on this computer. Open "About agent kinds" for what is missing.' };
+    return { id: explicit };
+  }
   if (saved !== undefined) return has(saved) ? { id: saved } : { error: 'This folder was saved for an agent kind this version does not support.' };
   return { id: def };
 }
