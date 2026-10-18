@@ -144,6 +144,8 @@
         if(status!=='idle'&&status!=='error'&&status!=='stopped')return false;
         const r=v.get(agentId); v.delete(agentId); return r.atSince!==null;
       },
+      /* a place was deleted: forget every visit to it, shown or still pending; true if one was on screen */
+      dropPlace(placeId){let changed=false;v.forEach((r,id)=>{if(r.place===placeId){if(r.atSince!==null)changed=true;v.delete(id);}});return changed;},
       leave(agentId){const r=v.get(agentId); v.delete(agentId); return !!r&&r.atSince!==null;},
       tick(){
         let changed=false;

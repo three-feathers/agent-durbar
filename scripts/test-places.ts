@@ -14,6 +14,7 @@ type Visits = {
   onTool: (id: string, e: Ev, map?: Record<string, string>, customIds?: string[]) => boolean;
   onStatus: (id: string, s: string) => boolean;
   leave: (id: string) => boolean;
+  dropPlace: (placeId: string) => boolean;
   tick: () => boolean;
   at: (id: string) => { place: string; label: string; since: number } | null;
   occupants: (p: string) => string[];
@@ -482,6 +483,22 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
   v2.onTool('a1', { phase: 'start', callId: '1', tool: 'x', mcpServer: 'pg-tools', mcpTool: 'q' }, { 'pg-tools': cid(9) }, ids);
   v2.tick();
   assert.strictEqual(v2.at('a1')?.place, 'other', 'after the place was removed its next call goes to the default place');
+}
+
+// dropPlace (FR-025): a deleted place loses its visits, shown or still pending; a late 'complete' changes nothing
+{
+  let now = 0;
+  const v = P.createVisits({ now: () => now, debounceMs: 600, dwellMs: 2000 });
+  const start = (id: string, call: string, server: string) => v.onTool(id, { phase: 'start', callId: call, tool: 'x', mcpServer: server }, { pg: cid(1), qq: cid(1), keep: cid(2) }, [cid(1), cid(2)]);
+  start('shown', '1', 'pg'); start('pending-other', '2', 'keep'); now = 700; v.tick();
+  start('pending', '3', 'qq'); // started just now: still pending
+  assert.deepStrictEqual(v.occupants(cid(1)), ['shown']);
+  assert.strictEqual(v.dropPlace(cid(1)), true, 'true: a visit on screen was dropped');
+  assert.strictEqual(v.at('shown'), null); assert.strictEqual(v.at('pending'), null);
+  now = 2000; v.tick(); assert.strictEqual(v.at('pending'), null, 'a pending visit to the deleted place never shows up');
+  assert.strictEqual(v.at('pending-other')?.place, cid(2), 'visits to other places stay');
+  assert.strictEqual(v.onTool('shown', { phase: 'complete', callId: '1' }), false, 'a call that ends later changes nothing');
+  assert.strictEqual(v.dropPlace(cid(1)), false); assert.strictEqual(v.dropPlace('library'), false);
 }
 
 // tileSlots: slots per lobby tile from the real tile width (8px gaps, 26px + gap for the Add button)

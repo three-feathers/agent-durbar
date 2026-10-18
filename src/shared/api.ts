@@ -351,7 +351,7 @@ export interface DurbarApi {
   /** Credit caps (spec 011). `credits: null` removes the cap. */
   getSettings?(): Promise<AppSettingsView>;
   setDefaultCap?(credits: number | null): Promise<{ ok: boolean; defaultMaxAiCredits?: number }>;
-  /** Map an MCP server to a place (`library|software|terminal|web|other|desk`), or `null` to use the default (spec 024). */
+  /** Map an MCP server to a place (a built-in place id `library|software|terminal|web|other`, a custom place id `c-xxxxxx`, or `desk`), or `null` to use the default (spec 024). */
   setPlace?(server: string, place: string | null): Promise<{ ok: boolean; placeMap?: Record<string, string> }>;
   /** Custom places (spec 024 FR-020). `icon` is one of 12 ids (`star`, `flask`, `database`, `cloud`, `chart`, `chat`, `mail`, `calendar`, `shield`, `box`, `bolt`, `pin`). */
   addPlace?(name: string, icon: string): Promise<CustomPlaceResult>;
