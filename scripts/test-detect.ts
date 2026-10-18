@@ -168,6 +168,33 @@ async function main(): Promise<void> {
     assert.strictEqual(infos[0].state, 'ready');
   }
 
+  // (l) hints never show the full path (user name); Claude "local" installer folder
+  {
+    const bad = ok('hello');
+    const hintOf = async (e: DetectEnv, spec = CLAUDE_BINARY): Promise<string | undefined> => (await detectBinary(spec, e, mkExec(bad).exec)).hint;
+    const posix = await hintOf(mkEnv('linux', { PATH: '/home/alice/.local/bin' }, ['/home/alice/.local/bin/claude'], '/home/alice'));
+    assert.strictEqual(posix, 'Found ~/.local/bin/claude but could not read its version.', 'l: under home on POSIX');
+    const win = await hintOf(mkEnv('win32', { PATH: 'C:\\Users\\alice\\bin' }, ['C:\\Users\\alice\\bin\\claude.exe'], 'C:\\Users\\alice'));
+    assert.strictEqual(win, 'Found ~\\bin\\claude.exe but could not read its version.', 'l: under home on Windows');
+    const out = await hintOf(mkEnv('linux', { PATH: '/opt/x' }, ['/opt/x/claude'], '/home/alice'));
+    assert.strictEqual(out, 'Found claude but could not read its version.', 'l: outside home shows the file name only');
+    const sibling = await hintOf(mkEnv('linux', { PATH: '/home/alice2/bin' }, ['/home/alice2/bin/claude'], '/home/alice'));
+    assert.strictEqual(sibling, 'Found claude but could not read its version.', 'l: a sibling folder of home is outside home');
+    const unc = await hintOf(mkEnv('win32', { PATH: '\\\\srv\\share\\alice' }, ['\\\\srv\\share\\alice\\claude.exe'], 'C:\\Users\\alice'));
+    assert.strictEqual(unc, 'Found claude.exe but could not read its version.', 'l: UNC shows the file name only');
+    const unsafe = await hintOf(mkEnv('win32', { PATH: 'C:\\Users\\alice\\a&b' }, ['C:\\Users\\alice\\a&b\\claude.cmd'], 'C:\\Users\\alice'));
+    assert.strictEqual(unsafe, 'Found ~\\a&b\\claude.cmd but cannot run it safely; install the native binary.', 'l: unsafe hint is shortened too');
+    for (const h of [posix, win, out, unc, unsafe]) assert.ok(h && !h.includes('alice'), 'l: no user name in a hint');
+    // the old Claude "local" installer, after ~/.local/bin, on macOS and Linux
+    for (const [pl, home] of [['darwin', '/Users/u'], ['linux', '/home/u']] as const) {
+      const c = candidates(CLAUDE_BINARY, mkEnv(pl, {}, [], home));
+      const i = c.indexOf(`${home}/.local/bin/claude`);
+      assert.ok(i >= 0 && c[i + 1] === `${home}/.claude/local/claude`, `l: ${pl} ~/.claude/local/claude right after ~/.local/bin`);
+      const r = await detectBinary(CLAUDE_BINARY, mkEnv(pl, {}, [`${home}/.claude/local/claude`], home), mkExec(ok('2.1.3 (Claude Code)')).exec);
+      assert.strictEqual(r.path, `${home}/.claude/local/claude`, `l: ${pl} found`);
+    }
+  }
+
   // (k) exec always gets an args array and 5000 ms
   {
     const e = mkEnv('linux', { PATH: '/b' }, ['/b/codex'], '/h');

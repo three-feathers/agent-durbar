@@ -59,6 +59,17 @@ function pathFor(platform: NodeJS.Platform): path.PlatformPath {
   return platform === 'win32' ? path.win32 : path.posix;
 }
 
+/** A path safe to show: `~/…` (`~\\…` on Windows) when under the home folder, otherwise only the file name. Never the user name. */
+export function displayPath(file: string, env: Pick<DetectEnv, 'platform' | 'homedir'>): string {
+  const p = pathFor(env.platform);
+  const sep = env.platform === 'win32' ? '\\' : '/';
+  if (env.homedir && p.isAbsolute(env.homedir)) {
+    const rel = p.relative(env.homedir, file);
+    if (rel && rel !== '..' && !rel.startsWith(`..${sep}`) && !p.isAbsolute(rel)) return `~${sep}${rel}`;
+  }
+  return p.basename(file);
+}
+
 function stripQuotes(s: string): string {
   const t = s.trim();
   return t.length >= 2 && t.startsWith('"') && t.endsWith('"') ? t.slice(1, -1).trim() : t;
@@ -85,7 +96,7 @@ export function candidates(spec: BinarySpec, env: DetectEnv, configuredPath?: st
 
   const home = env.homedir;
   if (env.platform === 'darwin') {
-    for (const d of ['/opt/homebrew/bin', '/usr/local/bin', p.join(home, '.local/bin'), p.join(home, '.npm-global/bin')]) addDir(d);
+    for (const d of ['/opt/homebrew/bin', '/usr/local/bin', p.join(home, '.local/bin'), p.join(home, '.claude/local'), p.join(home, '.npm-global/bin')]) addDir(d);
   } else if (win) {
     addDir(p.join(home, '.local', 'bin'));
     const appData = env.env.APPDATA;
@@ -93,7 +104,7 @@ export function candidates(spec: BinarySpec, env: DetectEnv, configuredPath?: st
     const local = env.env.LOCALAPPDATA;
     if (local && p.isAbsolute(local)) addDir(p.join(local, 'Programs', spec.name));
   } else {
-    for (const d of [p.join(home, '.local/bin'), '/usr/local/bin', '/usr/bin', p.join(home, '.npm-global/bin')]) addDir(d);
+    for (const d of [p.join(home, '.local/bin'), p.join(home, '.claude/local'), '/usr/local/bin', '/usr/bin', p.join(home, '.npm-global/bin')]) addDir(d);
   }
   return out;
 }
@@ -141,12 +152,13 @@ export function compareVersions(a: string, b: string): number {
 export async function detectBinary(spec: BinarySpec, env: DetectEnv, exec: Exec, configuredPath?: string): Promise<DetectResult & { path?: string }> {
   const found = candidates(spec, env, configuredPath).find((c) => env.isFile(c));
   if (!found) return { state: 'not-installed', hint: spec.installHint };
+  const shown = displayPath(found, env);
 
   let file = found;
   let args: readonly string[] = spec.versionArgs;
   let verbatim = false;
   if (env.platform === 'win32' && found.toLowerCase().endsWith('.cmd')) {
-    if (CMD_UNSAFE.test(found)) return { state: 'unknown', hint: `Found ${found} but cannot run it safely; install the native binary.`, path: found };
+    if (CMD_UNSAFE.test(found)) return { state: 'unknown', hint: `Found ${shown} but cannot run it safely; install the native binary.`, path: found };
     file = env.env.ComSpec || env.env.COMSPEC || 'cmd.exe';
     verbatim = true; // the /c argument carries its own quotes; Node must not re-quote them
     args = ['/d', '/s', '/c', `"${found}" ${spec.versionArgs.join(' ')}`];
@@ -156,10 +168,10 @@ export async function detectBinary(spec: BinarySpec, env: DetectEnv, exec: Exec,
   try {
     res = await exec(file, args, verbatim ? { timeoutMs: TIMEOUT_MS, verbatim: true } : { timeoutMs: TIMEOUT_MS });
   } catch {
-    return { state: 'unknown', hint: `Found ${found} but could not read its version.`, path: found };
+    return { state: 'unknown', hint: `Found ${shown} but could not read its version.`, path: found };
   }
   const version = res && res.code === 0 && !res.timedOut && !res.errorCode ? parseVersion(res.stdout) : undefined;
-  if (!version) return { state: 'unknown', hint: `Found ${found} but could not read its version.`, path: found };
+  if (!version) return { state: 'unknown', hint: `Found ${shown} but could not read its version.`, path: found };
   if (spec.minVersion && compareVersions(version, spec.minVersion) < 0) {
     return { state: 'too-old', version, hint: `Found ${version}, needs ${spec.minVersion} or later`, path: found };
   }
