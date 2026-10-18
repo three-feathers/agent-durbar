@@ -265,6 +265,8 @@
 
   /* UI styles (spec 035 FR-009): the app owns their CSS (themes.css); a manifest only names one. */
   const UI_STYLES=['clean','corporate','retro','court-indian','court-european','court-japanese'];
+  /* Scene kits (spec 035 FR-013): how people and desks are drawn; the drawing code is the app's (scenekits.js). */
+  const SCENE_KITS=['office','corporate','pixel','court-indian','court-european','court-japanese'];
 
   function validateManifest(m){
     if(!m || typeof m!=='object') return null;
@@ -291,6 +293,7 @@
     }
     out.motion=Object.assign({}, m.motion && typeof m.motion==='object'?m.motion:{});
     out.ui=UI_STYLES.includes(m.ui)?m.ui:'clean';
+    out.scene=SCENE_KITS.includes(m.scene)?m.scene:'office';
     out.words={}; /* only scene words, short, no control characters (spec 040 FR-007) */
     if(m.words && typeof m.words==='object'){
       for(const [k,v] of Object.entries(m.words)){
@@ -475,6 +478,7 @@
     }
   }
   function themeIdForCache(){ return currentId; }
+  function sceneKit(){ return (currentManifest&&currentManifest.scene)||'office'; }
 
   /* ================================= built-in packs (specs 037-039) =================================
      Data-only: tokens (only Clean Office keys are meaningful), sanitized art slots, scene words,
@@ -484,6 +488,7 @@
   registerBuiltIn({
     id:'corporate', name:'Corporate', author:'Three Feathers', version:'1.0', extends:'clean-office',
     ui:'corporate',
+    scene:'corporate',
     tokens:{
       '--bg':'#e6eaef','--surface':'#ffffff','--surface-2':'#f3f5f8','--line':'#d2d9e1','--line-2':'#b4bfcc',
       '--ink':'#142131','--ink-2':'#33455a','--muted':'#55677b','--room-path':'#4b5d71',
@@ -491,8 +496,8 @@
       '--amber':'#c98f2b','--amber-ink':'#7a5505','--red':'#c05a50','--red-ink':'#8e382f','--green':'#4f8f6a','--gray':'#8f99a3',
       '--c-working':'#5b83ad','--c-thinking':'#7d8fb0','--c-waiting':'#c98f2b','--c-idle':'#97a1ab','--c-error':'#c05a50','--c-done':'#4f8f6a',
       '--halo-working':'#5b83ad','--halo-thinking':'#7d8fb0','--halo-waiting':'#c98f2b','--halo-error':'#c05a50',
-      '--chair':'#c8d0d8','--desk':'#b9c2cb','--desk-front':'#cfd7de','--desk-drawer':'#c0c9d2',
-      '--monitor-stand':'#66727e','--monitor-frame':'#49555f','--laptop':'#707d88',
+      '--chair':'#2f3946','--desk':'#bcd4e6','--desk-front':'#cfd7de','--desk-drawer':'#c0c9d2',
+      '--monitor-stand':'#8a96a3','--monitor-frame':'#1d232b','--laptop':'#c7cfd8',
       '--screen-working':'#e8f0f7','--screen-thinking':'#e9edf4','--screen-waiting':'#f7eeda','--screen-idle':'#d5dadd','--screen-error':'#f6e3e0','--screen-done':'#e2eee7',
       '--bar-sage':'#7fa3b8','--bar-blue':'#5b83ad','--bar-blue-2':'#9fb6cb',
       '--bubble-line':'#c6d0dd','--think-dot':'#7d8fb0',
@@ -537,6 +542,7 @@
   registerBuiltIn({
     id:'retro', name:'Retro Pixel', author:'Three Feathers', version:'1.0', extends:'clean-office',
     ui:'retro',
+    scene:'pixel',
     tokens:{
       '--bg':'#1d2b53','--surface':'#fff1e8','--surface-2':'#f7e2cf','--line':'#111122','--line-2':'#111122',
       '--ink':'#111122','--ink-2':'#2b2b44','--muted':'#46465f','--room-path':'#36364f',
@@ -544,8 +550,8 @@
       '--red':'#d8564a','--red-ink':'#8e2f26','--green':'#4fa760','--gray':'#9a987e',
       '--c-working':'#5f87c8','--c-thinking':'#8b8fc9','--c-waiting':'#e0a92c','--c-idle':'#a3a08e','--c-error':'#d8564a','--c-done':'#4fa760',
       '--halo-working':'#5f87c8','--halo-thinking':'#8b8fc9','--halo-waiting':'#e0a92c','--halo-error':'#d8564a',
-      '--chair':'#b0a88e','--desk':'#a8937a','--desk-front':'#c2b096','--desk-drawer':'#b09d82',
-      '--monitor-stand':'#565c70','--monitor-frame':'#333652','--laptop':'#6d7390',
+      '--chair':'#83769c','--desk':'#ab5236','--desk-front':'#c97d45','--desk-drawer':'#ffa300',
+      '--monitor-stand':'#5f574f','--monitor-frame':'#c2c3c7','--laptop':'#5f574f',
       '--screen-working':'#dfeaf8','--screen-thinking':'#e4e4f6','--screen-waiting':'#faedd2','--screen-idle':'#d2d2c6','--screen-error':'#f8e0d8','--screen-done':'#dcefdc',
       '--bar-sage':'#5fae76','--bar-blue':'#5f87c8','--bar-blue-2':'#93aede',
       '--face-dark':'#23233a','--mouth':'#8a4638',
@@ -667,6 +673,7 @@
   registerBuiltIn({
     id:'durbar-indian', name:'Durbar · Indian Court', author:'Three Feathers', version:'1.0', extends:'clean-office',
     ui:'court-indian',
+    scene:'court-indian',
     tokens:{
       '--bg':'#f3e6cc','--surface':'#fffaf0','--surface-2':'#fbf1dd','--line':'#e2c991','--line-2':'#c9a35a',
       '--ink':'#3b1d14','--ink-2':'#5e3424','--muted':'#76503e','--room-path':'#6b4130',
@@ -674,8 +681,8 @@
       '--red':'#b85448','--red-ink':'#8e3226','--green':'#5f9a76','--gray':'#a39a87',
       '--c-working':'#7d95b5','--c-thinking':'#9a8fbd','--c-waiting':'#d9962b','--c-idle':'#aca496','--c-error':'#b85448','--c-done':'#5f9a76',
       '--halo-working':'#7d95b5','--halo-thinking':'#9a8fbd','--halo-waiting':'#d9962b','--halo-error':'#b85448',
-      '--chair':'#c4b49a','--desk':'#a8764a','--desk-front':'#c08a5c','--desk-drawer':'#b07c50',
-      '--monitor-stand':'#6e6560','--monitor-frame':'#4a3f38','--laptop':'#7d746a',
+      '--chair':'#8a1c2c','--desk':'#9a6436','--desk-front':'#b07a45','--desk-drawer':'#b07c50',
+      '--monitor-stand':'#6e6560','--monitor-frame':'#5a2a1c','--laptop':'#7d746a',
       '--screen-working':'#f2ecdc','--screen-thinking':'#ece7f0','--screen-waiting':'#f8edd4','--screen-idle':'#d6d2c6','--screen-error':'#f6e0da','--screen-done':'#e2efe6',
       '--bar-sage':'#8aab84','--bar-blue':'#7d95b5','--bar-blue-2':'#b3c2d8',
       '--face-dark':'#3a2c26','--mouth':'#7c4638',
@@ -723,6 +730,7 @@
   registerBuiltIn({
     id:'durbar-european', name:'Durbar · European Court', author:'Three Feathers', version:'1.0', extends:'clean-office',
     ui:'court-european',
+    scene:'court-european',
     tokens:{
       '--bg':'#e9e2d1','--surface':'#fffdf7','--surface-2':'#f6f1e4','--line':'#d9cba6','--line-2':'#b8995a',
       '--ink':'#1b2240','--ink-2':'#3b4266','--muted':'#585d7c','--room-path':'#4c5274',
@@ -730,8 +738,8 @@
       '--red':'#bf5a6a','--red-ink':'#8e3642','--green':'#5f9a76','--gray':'#9a9884',
       '--c-working':'#5f7fae','--c-thinking':'#8a8fbd','--c-waiting':'#d2a03c','--c-idle':'#a6a29a','--c-error':'#bf5a6a','--c-done':'#5f9a76',
       '--halo-working':'#5f7fae','--halo-thinking':'#8a8fbd','--halo-waiting':'#d2a03c','--halo-error':'#bf5a6a',
-      '--chair':'#c8c6b8','--desk':'#7d6238','--desk-front':'#96784c','--desk-drawer':'#866c42',
-      '--monitor-stand':'#62687a','--monitor-frame':'#3e4156','--laptop':'#767b8e',
+      '--chair':'#8e2a3a','--desk':'#6b2f1f','--desk-front':'#7a3a26','--desk-drawer':'#866c42',
+      '--monitor-stand':'#62687a','--monitor-frame':'#2a1f18','--laptop':'#767b8e',
       '--screen-working':'#e6edf6','--screen-thinking':'#eae8f3','--screen-waiting':'#f6eed6','--screen-idle':'#d4d6d2','--screen-error':'#f6e2e2','--screen-done':'#e0eee4',
       '--bar-sage':'#8fa9a0','--bar-blue':'#5f7fae','--bar-blue-2':'#a2b4d0',
       '--bubble-line':'#c2c8e0','--think-dot':'#8a8fbd',
@@ -772,7 +780,7 @@
       'place-web':'<circle cx="10" cy="10" r="6.4"/><path d="M3.6 10h12.8M10 3.6q3.4 3 0 12.8M10 3.6q-3.4 3 0 12.8"/>',
       'place-other':'<path d="M10 4.2l1.8 3.8 4.2.6-3 3 .7 4.2-3.7-2-3.7 2 .7-4.2-3-3 4.2-.6z"/>',
     },
-    words:{'place-library':'The Archive','place-software':'The Atelier','place-terminal':'The Engine Room','place-web':'The Signal Tower','place-other':'The Pantry','lobby-label':'The court: the places where agents work'},
+    words:{'place-library':'The Archive','place-software':'The Atelier','place-terminal':'Engine Room','place-web':'Signal Tower','place-other':'The Pantry','lobby-label':'The court: the places where agents work'},
     motion:{preset:'court'},
   });
 
@@ -780,6 +788,7 @@
   registerBuiltIn({
     id:'durbar-japanese', name:'Durbar · Japanese Court', author:'Three Feathers', version:'1.0', extends:'clean-office',
     ui:'court-japanese',
+    scene:'court-japanese',
     tokens:{
       '--bg':'#ede6d8','--surface':'#fdfbf5','--surface-2':'#f6f1e6','--line':'#d6cdb9','--line-2':'#a99c80',
       '--ink':'#1c1a17','--ink-2':'#3f3a33','--muted':'#5f584e','--room-path':'#575047',
@@ -856,6 +865,8 @@
     _sanitizeSlot:sanitizeSlot,
     _isTokenValue:isTokenValue,
     UI_STYLES:UI_STYLES.slice(),
+    SCENE_KITS:SCENE_KITS.slice(),
+    sceneKit,
     _validateManifest:validateManifest,
     _compilePixelMap:compilePixelMap,
     _tokens(){return resolveTokens(currentManifest);},

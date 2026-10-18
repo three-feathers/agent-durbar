@@ -2,7 +2,7 @@
 
 **Feature Branch**: `035-theme-foundation` (builds on spec 035; one PR for 035-040, issue #129)
 **Created**: 2026-10-18
-**Status**: Spec phase
+**Status**: Implemented on branch `035-theme-foundation` (PR #137): simulator and unit tests, 0 AIU; not released
 **Input**: Vikram (issue #129): Clean Office (today) is the first built-in pack. Everything it draws is exactly what the office draws today.
 
 ## Clarifications (binding, from issue #129)
@@ -28,13 +28,13 @@
 
 ## Requirements
 
-- **FR-001** `[PLANNED]` Extend `CLEAN_TOKENS` in `theme.js` with all scene/office domains: `--scene-*` (shadow, chair, desk, desk-front, desk-drawer, monitor, monitor-stand, laptop, screen frames and per-status screens, cup, steam, bubble, sweat, mouth, monster-horn, stars, ambulance…), `--tint-*`/`--wall-*` room tints (both densities), `--pill-*` pill backgrounds/inks, `--pb-*`/`--pc-*` pairs, word and accessory colours.
-- **FR-002** `[PLANNED]` `scene()`, `avatar()`, `hairFront()`, `badgeSVG`, the plant, the doors and `linksSVG` read all colours from `THEME.token()`; the per-person `skin/hair/shirt` stay look data (token defaults, theme-overridable via art slots).
-- **FR-003** `[PLANNED]` Scene-word keys: `place-library/software/terminal/web/other` (place tiles, settings defaults and "At X:" visit text), `lobby`, `door-close`, `door-open`, `plus-more` chip wording stays English (layout text, not a scene word).
-- **FR-004** `[PLANNED]` `scripts/shots-024.js` stops parsing English place names; it reads `data-place` ids (added to away-desks) instead. No other script reads scene words.
-- **FR-005** `[PLANNED]` Theme override hook in main: `DURBAR_THEME=<id>` dev hook seeds the theme for checks; the office layout check runs per built-in theme (`check:themes`).
-- **FR-006** `[PLANNED]` Per-theme motion presets (`motion` in the manifest) selected at theme time; `prefers-reduced-motion` is honoured on every switch (a `reduced` preset is applied when the media query matches), not only at startup.
-- **FR-007** `[PLANNED]` Calm: with Clean Office active there is no pixel change; `check:office` passes byte-identical scenes; `test:theme` gains per-pack defaults/fallback checks.
+- **FR-001** `[IMPLEMENTED]` Extend `CLEAN_TOKENS` in `theme.js` with all scene/office domains: `--scene-*` (shadow, chair, desk, desk-front, desk-drawer, monitor, monitor-stand, laptop, screen frames and per-status screens, cup, steam, bubble, sweat, mouth, monster-horn, stars, ambulance…), `--tint-*`/`--wall-*` room tints (both densities), `--pill-*` pill backgrounds/inks, `--pb-*`/`--pc-*` pairs, word and accessory colours.
+- **FR-002** `[IMPLEMENTED]` `scene()`, `avatar()`, `hairFront()`, `badgeSVG`, the plant, the doors and `linksSVG` read all colours from `THEME.token()`; the per-person `skin/hair/shirt` stay look data (token defaults, theme-overridable via art slots).
+- **FR-003** `[IMPLEMENTED]` Scene-word keys: `place-library/software/terminal/web/other` (place tiles, settings defaults and "At X:" visit text), `lobby`, `door-close`, `door-open`, `plus-more` chip wording stays English (layout text, not a scene word).
+- **FR-004** `[IMPLEMENTED]` `scripts/shots-024.js` stops parsing English place names; it reads `data-place` ids (added to away-desks) instead. No other script reads scene words.
+- **FR-005** `[IMPLEMENTED]` Theme override hook in main: `DURBAR_THEME=<id>` dev hook seeds the theme for checks; the office layout check runs per built-in theme (`check:themes`).
+- **FR-006** `[IMPLEMENTED]` Per-theme motion presets (`motion` in the manifest) selected at theme time; `prefers-reduced-motion` is honoured on every switch (a `reduced` preset is applied when the media query matches), not only at startup.
+- **FR-007** `[IMPLEMENTED]` Calm: with Clean Office active there is no pixel change; `check:office` passes byte-identical scenes; `test:theme` gains per-pack defaults/fallback checks.
 
 ## Success Criteria
 

@@ -38,6 +38,8 @@ export function badToken(tokens: unknown): string | null {
 }
 
 /** UI styles a manifest may name (spec 035 FR-009); the same list as `UI_STYLES` in theme.js. */
+/** Scene kits a manifest may name (spec 035 FR-013); the same list as `SCENE_KITS` in theme.js. */
+export const SCENE_KITS = ['office', 'corporate', 'pixel', 'court-indian', 'court-european', 'court-japanese'];
 export const UI_STYLES = ['clean', 'corporate', 'retro', 'court-indian', 'court-european', 'court-japanese'];
 
 /** Validate one manifest.json text. Never throws. */
@@ -59,6 +61,7 @@ export function checkUserManifest(text: string): UserThemeCheck {
   if (count(m.art) > USER_THEME_LIMITS.maxArt) return { ok: false, error: 'too many art slots (max 24)' };
   if (count(m.words) > USER_THEME_LIMITS.maxWords) return { ok: false, error: 'too many words (max 24)' };
   if (m.ui !== undefined && !(typeof m.ui === 'string' && UI_STYLES.includes(m.ui))) return { ok: false, error: 'ui must be one of: ' + UI_STYLES.join(', ') };
+  if (m.scene !== undefined && !(typeof m.scene === 'string' && SCENE_KITS.includes(m.scene))) return { ok: false, error: 'scene must be one of: ' + SCENE_KITS.join(', ') };
   const bad = badToken(m.tokens);
   if (bad) return { ok: false, error: 'token ' + bad + ' is not allowed (keys are --names; values are a colour, a number or one word)' };
   return { ok: true, id, name, manifest: m };

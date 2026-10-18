@@ -2,7 +2,7 @@
 
 **Feature Branch**: `035-theme-foundation` (issue #129)
 **Created**: 2026-10-18
-**Status**: Spec phase
+**Status**: Implemented on branch `035-theme-foundation` (PR #137): simulator and unit tests, 0 AIU; not released
 **Input**: Vikram (issue #129): other users must be able to make their own theme.
 
 ## Clarifications (binding)
@@ -24,11 +24,11 @@
 
 ## Requirements
 
-- **FR-001** `[PLANNED]` Main: `theme:listUser` scans `userData/themes/*/manifest.json`, validates (id pattern, size caps: manifest ≤ 64 KB, ≤ 40 tokens, ≤ 24 slots, ≤ 24 words, folder name = id), returns `{id,name}` per valid pack plus `{folder,error}` per invalid one.
-- **FR-002** `[PLANNED]` Main: `theme:getUser(id)` returns the manifest JSON (validated again) for renderer application; unknown/invalid → `null`.
-- **FR-003** `[PLANNED]` Main: `theme:import` (folder picker) validates, refuses built-in ids and path escapes, copies the folder (flat, ≤ 8 files, ≤ 64 KB each) to `userData/themes/<id>/`; `theme:export` copies the active user theme's folder out. Both return `{ok,error?}`.
-- **FR-004** `[PLANNED]` Renderer: Theme section lists built-ins + user themes (tagged "yours"); picking a user theme applies its manifest via `THEME.setTheme(manifest object)` and persists the id; invalid picks toast and stay on the old theme.
-- **FR-005** `[PLANNED]` Sanitizer unchanged (same whitelist); pixel maps allowed as in spec 038.
+- **FR-001** `[IMPLEMENTED]` Main: `theme:listUser` scans `userData/themes/*/manifest.json`, validates (id pattern, size caps: manifest ≤ 64 KB, ≤ 40 tokens, ≤ 24 slots, ≤ 24 words, folder name = id), returns `{id,name}` per valid pack plus `{folder,error}` per invalid one.
+- **FR-002** `[IMPLEMENTED]` Main: `theme:getUser(id)` returns the manifest JSON (validated again) for renderer application; unknown/invalid → `null`.
+- **FR-003** `[IMPLEMENTED]` Main: `theme:import` (folder picker) validates, refuses built-in ids and path escapes, copies the folder (flat, ≤ 8 files, ≤ 64 KB each) to `userData/themes/<id>/`; `theme:export` copies the active user theme's folder out. Both return `{ok,error?}`.
+- **FR-004** `[IMPLEMENTED]` Renderer: Theme section lists built-ins + user themes (tagged "yours"); picking a user theme applies its manifest via `THEME.setTheme(manifest object)` and persists the id; invalid picks toast and stay on the old theme.
+- **FR-005** `[SUPERSEDED 2026-10-18]` ~~Sanitizer unchanged (same whitelist); pixel maps allowed as in spec 038.~~ See `## Changes`: the sanitizer now rebuilds fragments.
 
 ## Success Criteria
 - Import a hand-made pack on disk → appears, applies, survives restart, exports byte-identical; a tampered manifest is refused with a clear toast; `npm test` covers the store/validate paths without Electron.
@@ -45,6 +45,7 @@
 - **FR-005** `[IMPLEMENTED]` The sanitizer **rebuilds** each art fragment from allowed elements and attributes instead of passing the input through: every attribute value must be quoted, may not contain `<`, `>` or a backtick, and is re-serialized with `&`, `<`, `>`, `"` escaped; `url(...)` is allowed only as a local reference `url(#id)`. Anything else rejects the slot (the default drawing is used). Built-in slots are already in this canonical form and come out byte-identical.
 - **FR-006** `[IMPLEMENTED]` Tokens: only the keys of Clean Office (`--name` custom properties) are kept, and each value must be a colour (`#hex`, `rgb()`/`rgba()`/`hsl()`/`hsla()` with numbers only), a number with an optional unit, or a single keyword, at most 64 characters. Other keys and values are dropped (the Clean Office value is used). The main process refuses to import a manifest with a token key that is not `--name` or a value outside this grammar, and says which token.
 - **FR-007** `[IMPLEMENTED]` Words: only the scene-word keys of Clean Office are kept, each a string of at most 60 characters without control characters (the longest built-in, an accessible lobby label, is 42); others are dropped. They stay escaped wherever they are shown.
+- **FR-009** `[IMPLEMENTED]` A user theme may name a `scene` kit from the fixed list (spec 035 FR-013); main refuses an unknown one with a message.
 - **FR-008** `[IMPLEMENTED]` Review follow-ups: `theme:listUser` sends only id, name, ok and error to the renderer (no folder path); a failed import removes its temporary folder and returns `{ok:false}` instead of throwing; the `DURBAR_PICK` dev hook takes the whole value (Windows `C:\…` paths); `DURBAR_THEME` applies a theme for the run without saving it.
 
 **Tests.** `test:theme` adds Paco's bypass strings and the token and word cases; `test:userthemes` adds a refused token and a failed copy that leaves no temporary folder.

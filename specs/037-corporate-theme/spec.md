@@ -2,7 +2,7 @@
 
 **Feature Branch**: `035-theme-foundation` (builds on 035/036, issue #129)
 **Created**: 2026-10-18
-**Status**: Spec phase
+**Status**: Implemented on branch `035-theme-foundation` (PR #137): simulator and unit tests, 0 AIU; not released
 **Input**: Vikram (issue #129): sleek glass-and-steel corporate office in blues and grays, and the user picks a theme in Settings.
 
 ## Clarifications (binding)
@@ -23,10 +23,10 @@
 
 ## Requirements
 
-- **FR-001** `[PLANNED]` `corporate` pack in `theme.js` built-ins: full token map, art slots for plant/doors/monitor bezel, word map, motion preset (`calm`: slower, low-amplitude animations).
-- **FR-002** `[PLANNED]` Settings Theme section in `screens.js`: list from `THEME.list()`, current from settings; a select (or button list) calls `setTheme` through the bridge (new IPC `settings:setTheme`, validated `id` string) and then `THEME.setTheme(id)` + `SC_CACHE.clear()` + `scheduleRender()`.
-- **FR-003** `[PLANNED]` Contrast: every themed pill ink keeps ≥4.5:1 on its pill background (checked in tests per pack).
-- **FR-004** `[PLANNED]` `check:themes` covers `corporate`.
+- **FR-001** `[IMPLEMENTED]` `corporate` pack in `theme.js` built-ins: full token map, art slots for plant/doors/monitor bezel, word map, motion preset (`calm`: slower, low-amplitude animations).
+- **FR-002** `[IMPLEMENTED]` Settings Theme section in `screens.js`: list from `THEME.list()`, current from settings; a select (or button list) calls `setTheme` through the bridge (new IPC `settings:setTheme`, validated `id` string) and then `THEME.setTheme(id)` + `SC_CACHE.clear()` + `scheduleRender()`.
+- **FR-003** `[IMPLEMENTED]` Contrast: every themed pill ink keeps ≥4.5:1 on its pill background (checked in tests per pack).
+- **FR-004** `[IMPLEMENTED]` `check:themes` covers `corporate`.
 
 ## Success Criteria
 - **SC-001**: live switch without restart; setting survives relaunch; fallback works.
@@ -40,3 +40,4 @@
 ### 2026-10-18: a UI style of its own (spec 035 FR-009..FR-012)
 
 - `[IMPLEMENTED]` The pack sets `ui` and stronger core colours: glass-and-steel office: a dark navy top bar, white rooms with a coloured accent bar on the left edge, square-cornered cards with a thin border and a soft shadow, rectangular tag-style pills and buttons, room names as small uppercase labels. Sizes are unchanged; `check:themes` covers it. Owner review of the look requested in PR #137.
+- `[IMPLEMENTED]` (2026-10-18, spec 035 FR-013) Its own people and furniture: people in suits with a white shirt and a tie in their own colour, a tall executive chair, a glass desk on metal legs, a thin widescreen and a desk phone (`corporate` kit).
