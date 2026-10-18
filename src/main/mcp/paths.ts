@@ -10,9 +10,10 @@ export type McpPlatform = 'win32' | 'darwin' | 'linux';
 
 export interface McpPathsInput {
   platform: string;
-  /** Electron `userData` (the caller has already applied `DURBAR_USER_DATA` when it set the path; it is read from `env` here too). */
+  /** Electron `userData`. The caller has already applied the `DURBAR_USER_DATA` dev hook (through `devEnv`, empty in packaged builds); this module never reads it. */
   userData: string;
-  env: Record<string, string | undefined>;
+  /** `process.env.XDG_RUNTIME_DIR`, passed by the caller (pass `undefined` when a dev hook keeps everything in userData). Used on Linux only. */
+  xdgRuntimeDir?: string;
   /** Numeric user id (`process.getuid()`); `null` on Windows. */
   uid: number | null;
   /** `os.tmpdir()`; per-user on macOS. */
@@ -30,7 +31,7 @@ export interface McpPaths {
   /** Unix socket path, or `\\.\pipe\...` on Windows. `null` when Durbar must not listen (see `reason`). */
   socket: string | null;
   kind: 'unix' | 'pipe';
-  /** Set whenever the socket folder is outside userData (XDG runtime dir or tmp fallback): the caller creates it with mode 0700 and must `lstat`-check it with `checkFallbackDir` before use (FR-062). */
+  /** Set for every Unix socket folder (XDG runtime dir, <userData>/mcp, tmp fallback); null on Windows: the caller creates it with mode 0700 and must `lstat`-check it with `checkFallbackDir` before use (FR-062). */
   checkDir: string | null;
   /** Why there is no socket (shown in Settings); `null` when `socket` is set. */
   reason: string | null;
@@ -46,13 +47,11 @@ export function mcpPaths(input: McpPathsInput): McpPaths {
   // Unknown platform names are treated like Linux (Unix socket, XDG runtime dir).
   const platform: McpPlatform = input.platform === 'win32' ? 'win32' : input.platform === 'darwin' ? 'darwin' : 'linux';
   const p = platform === 'win32' ? path.win32 : path.posix;
-  const devUserData = input.env.DURBAR_USER_DATA;
-  const dev = typeof devUserData === 'string' && devUserData !== ''; // empty means unset
-  const userData = dev ? (devUserData as string) : input.userData;
+  const userData = input.userData;
   const kind = platform === 'win32' ? 'pipe' : 'unix';
 
-  if (typeof userData !== 'string' || !p.isAbsolute(userData)) {
-    return { platform, mcpDir: null, keyFile: null, kind, socket: null, checkDir: null, reason: 'Durbar\'s data folder is not an absolute path, so the MCP server is not started.' };
+  if (typeof userData !== 'string' || userData.includes('\0') || !p.isAbsolute(userData) || p.normalize(userData) !== userData) {
+    return { platform, mcpDir: null, keyFile: null, kind, socket: null, checkDir: null, reason: 'Durbar\'s data folder is not a plain absolute path, so the MCP server is not started.' };
   }
   const mcpDir = p.join(userData, MCP_DIR_NAME);
   const keyFile = p.join(mcpDir, MCP_KEY_FILE_NAME);
@@ -66,9 +65,9 @@ export function mcpPaths(input: McpPathsInput): McpPaths {
     };
   }
 
-  // Linux: the XDG runtime dir, unless it is unset, not absolute, not normalized (a ".." or "." segment, double slash), or DURBAR_USER_DATA keeps everything in one folder.
-  const xdg = input.env.XDG_RUNTIME_DIR;
-  const useXdg = platform === 'linux' && !dev && typeof xdg === 'string' && p.isAbsolute(xdg) && p.normalize(xdg) === xdg;
+  // Linux: the XDG runtime dir, unless it is unset, not absolute, not normalized (a ".." or "." segment, double slash) or has a NUL.
+  const xdg = input.xdgRuntimeDir;
+  const useXdg = platform === 'linux' && typeof xdg === 'string' && !xdg.includes('\0') && p.isAbsolute(xdg) && p.normalize(xdg) === xdg;
   const inUserData = p.join(mcpDir, MCP_SOCKET_FILE_NAME);
   const fits = (s: string) => byteLength(s) <= UNIX_SOCKET_MAX_BYTES;
   if (useXdg) {
@@ -76,8 +75,8 @@ export function mcpPaths(input: McpPathsInput): McpPaths {
     const xdgSock = p.join(xdgDir, MCP_SOCKET_FILE_NAME);
     if (fits(xdgSock)) return { platform, mcpDir, keyFile, kind, socket: xdgSock, checkDir: xdgDir, reason: null };
   }
-  // Then <userData>/mcp (inside Durbar's own folder, not checked).
-  if (fits(inUserData)) return { platform, mcpDir, keyFile, kind, socket: inUserData, checkDir: null, reason: null };
+  // Then <userData>/mcp (checked too: one lstat, owned, 0700, not a symlink).
+  if (fits(inUserData)) return { platform, mcpDir, keyFile, kind, socket: inUserData, checkDir: mcpDir, reason: null };
 
   // Too long for a Unix socket: per-user folder in the temp dir (macOS TMPDIR is already per user; the uid keeps the name unique elsewhere).
   const uidOk = input.uid !== null && Number.isInteger(input.uid) && input.uid >= 0;
