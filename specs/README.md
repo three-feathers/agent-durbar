@@ -100,6 +100,12 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | --- | --- | --- |
 | [026](026-release-alpha3/spec.md) | Release v0.1.0-alpha.3 (version bump, changelog, download notes) | built; **published as a pre-release** by the maintainer (2026-10-17); alpha.2 draft removed |
 
+## Feature 042: release v0.1.0-alpha.5
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [042](042-release-alpha5/spec.md) | Release v0.1.0-alpha.5 as a pre-release (version bump, changelog, download notes) | release PR 2026-10-18; tag, draft and publishing as a pre-release follow |
+
 ## Feature 031: release v0.1.0-alpha.4
 
 | # | Feature | Status |
