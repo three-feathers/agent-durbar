@@ -15,6 +15,8 @@ import type { PermissionMode } from '../src/adapters/capabilities';
 for (const m of ['ask', 'allow'] as PermissionMode[]) assert.ok(!(claudeOptionsFor(m).allowedTools ?? []).length, `${m}: no tool pre-approved in allowedTools`);
 // no user/project settings in any mode (their allow rules would approve tools before canUseTool)
 for (const m of ['read-only', 'ask', 'allow', 'bogus'] as PermissionMode[]) assert.deepStrictEqual(claudeOptionsFor(m).settingSources, [], `${String(m)}: settingSources is []`);
+// MCP servers only from Durbar's own mcpServers option, in every mode (spec 012 Q8)
+for (const m of ['read-only', 'ask', 'allow', 'bogus'] as PermissionMode[]) assert.strictEqual(claudeOptionsFor(m).strictMcpConfig, true, `${String(m)}: strictMcpConfig is true`);
 
 const posixPC = { flavor: path.posix, realpath: (p: string) => p, caseInsensitive: false };
 const PC = posixPC;
