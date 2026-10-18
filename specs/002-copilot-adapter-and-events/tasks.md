@@ -32,6 +32,6 @@
 
 ## Changes 2026-10-19 (questions from Copilot)
 
-- [ ] T031 `onUserInputRequest` in `CopilotAdapter`: `question` event, `answerQuestion`, skip and Stop answers; fake-session test [FR-058]
-- [ ] T032 (real-account, owner allowed) One prompt that must use `ask_user`; answer from the card; record as `real:` [FR-058]
+- [x] T031 `onUserInputRequest` in `CopilotAdapter`: `question` event, `answerQuestion`, skip and Stop answers; fake-session test [FR-058]
+- [x] T032 (real-account, owner allowed) One prompt that must use `ask_user`; answer from the card; record as `real:` [FR-058]
 

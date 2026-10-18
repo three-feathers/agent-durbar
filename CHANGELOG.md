@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **Copilot can ask you questions too (spec 002 FR-058).** Copilot sessions now get Copilot's `ask_user` tool. When Copilot asks you to choose, the same question card appears in the chat. Before this, the tool was missing because the app did not answer it. Checked on a real Copilot session (0.18 AIU).
+
 - **Questions from the agent (spec 012 FR-128..FR-131, issue #60).** When the Claude agent asks you to choose (`AskUserQuestion`), the chat shows a card with an option button for each choice (several when allowed), an "Other" field, and Answer and Skip. The agent waits with "Waiting for your answer". Before this, those questions were always refused. Checked on a real Claude Code in all three permission modes ($0.007) and in the real app. The question event is generic, so other agents can use it later.
 
 - **Claude Code: previous sessions and resume (spec 012 FR-125..FR-127, issue #56).** A Claude agent's Previous sessions now lists the folder's earlier Claude sessions, read-only from Claude's own session files. Resume continues one and replays its chat. Checked in the real app: after a restart, the resumed Claude agent remembered the file it had created. Also, the resume note no longer doubles a title's final full stop.
