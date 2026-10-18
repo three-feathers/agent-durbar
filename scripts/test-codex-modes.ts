@@ -1,16 +1,67 @@
 /** Codex mode and approval mapping (spec 012 T022, FR-004, FR-013). `npm run test:runtime`. No Codex binary, no credits. */
 import * as assert from 'assert';
 import { grantScope } from '../src/adapters/permissions';
-import { CODEX_APPROVAL_METHODS, codexModeSettings, codexPermission, codexReply } from '../src/adapters/codexModes';
+import {
+  CODEX_APPROVAL_METHODS, CODEX_INITIALIZE_CAPABILITIES, CODEX_MIN_PERMISSIONS_VERSION, CODEX_RO_FILESYSTEM,
+  codexModeSettings, codexProfileArgs, codexProfileToml, codexReadEnforceable, codexWorkspaceRoots, codexPermission, codexReply,
+} from '../src/adapters/codexModes';
 
-// modes
-assert.deepStrictEqual(codexModeSettings('read-only'), { approvalPolicy: 'never', sandbox: 'read-only' }, 'read-only: read-only sandbox, never');
-assert.deepStrictEqual(codexModeSettings('ask'), { approvalPolicy: 'on-request', sandbox: 'read-only' }, 'ask: read-only sandbox, on-request');
+// modes (FR-086): profile instead of sandbox in Read-only and Ask first
+assert.deepStrictEqual(codexModeSettings('read-only'), { approvalPolicy: 'never', permissions: 'durbar_ro' }, 'read-only: profile, never');
+assert.deepStrictEqual(codexModeSettings('ask'), { approvalPolicy: 'on-request', permissions: 'durbar_ro' }, 'ask: profile, on-request');
 assert.deepStrictEqual(codexModeSettings('allow'), { approvalPolicy: 'never', sandbox: 'danger-full-access' }, 'allow: no sandbox, never');
 for (const bad of ['', 'bogus', '__proto__', 'constructor', undefined as unknown as string]) {
-  assert.deepStrictEqual(codexModeSettings(bad), { approvalPolicy: 'never', sandbox: 'read-only' }, `unknown mode ${String(bad)} is read-only`);
+  assert.deepStrictEqual(codexModeSettings(bad), { approvalPolicy: 'never', permissions: 'durbar_ro' }, `unknown mode ${String(bad)} is read-only`);
 }
-for (const m of ['read-only', 'ask'] as const) assert.strictEqual(codexModeSettings(m).sandbox, 'read-only', `${m} never writable`);
+for (const m of ['read-only', 'ask', 'bogus']) {
+  assert.ok(!('sandbox' in codexModeSettings(m)), `${m}: no sandbox key (it cannot be combined with permissions)`);
+  assert.strictEqual(codexModeSettings(m).permissions, 'durbar_ro', `${m}: durbar_ro`);
+}
+assert.ok(!('permissions' in codexModeSettings('allow')), 'allow: no profile');
+
+// the profile: :minimal and the workspace roots, read only; nothing else
+assert.deepStrictEqual({ ...CODEX_RO_FILESYSTEM }, { ':minimal': 'read', ':workspace_roots': 'read' }, 'profile table');
+assert.ok(!(':root' in CODEX_RO_FILESYSTEM), 'no :root');
+assert.ok(Object.values(CODEX_RO_FILESYSTEM).every((v) => v === 'read'), 'no write or deny entry');
+assert.strictEqual(codexProfileToml(), '{":minimal"="read",":workspace_roots"="read"}', 'inline TOML');
+assert.deepStrictEqual(codexProfileArgs(), ['-c', 'permissions.durbar_ro.filesystem={":minimal"="read",":workspace_roots"="read"}'], 'spawn argv: one -c and one value');
+const argText = codexProfileArgs().join(' ');
+assert.ok(!argText.includes(':root') && !argText.includes('"write"') && !argText.includes('"deny"'), 'argv has no :root or write entry');
+assert.deepStrictEqual(CODEX_INITIALIZE_CAPABILITIES, { experimentalApi: true }, 'initialize sends experimentalApi');
+
+// runtimeWorkspaceRoots
+assert.deepStrictEqual(codexWorkspaceRoots(['/a/b', '/a/b', '/c d/e=f']), ['/a/b', '/c d/e=f'], 'posix paths, spaces and = kept as is, deduped');
+assert.deepStrictEqual(codexWorkspaceRoots(['C:\\Users\\me\\my proj', 'D:/x', '\\\\srv\\share\\p']), ['C:\\Users\\me\\my proj', 'D:/x', '\\\\srv\\share\\p'], 'windows drive, forward-slash and UNC paths kept');
+assert.deepStrictEqual(codexWorkspaceRoots(['rel/path', '', '.', '../x', 'C:foo', 5 as never, null as never, '/ok\0bad']), [], 'relative, empty, non-string and NUL paths dropped');
+assert.deepStrictEqual(codexWorkspaceRoots(undefined), [], 'undefined roots');
+assert.deepStrictEqual(codexWorkspaceRoots(null), [], 'null roots');
+
+// codexReadEnforceable (FR-087): fail closed
+const good = { version: 'rust-v0.163.0', experimentalApi: true, platform: 'darwin', elevatedSandbox: false };
+assert.strictEqual(CODEX_MIN_PERMISSIONS_VERSION, 'rust-v0.163.0', 'minimum version');
+assert.deepStrictEqual(codexReadEnforceable(good), { ok: true }, 'all OK (macOS)');
+assert.deepStrictEqual(codexReadEnforceable({ ...good, version: '0.163.0', platform: 'linux' }), { ok: true }, 'bare version, linux');
+assert.deepStrictEqual(codexReadEnforceable({ ...good, version: 'v0.200.1' }), { ok: true }, 'newer version, v prefix');
+assert.deepStrictEqual(codexReadEnforceable({ ...good, version: '1.0.0' }), { ok: true }, 'major bump');
+assert.deepStrictEqual(codexReadEnforceable({ ...good, platform: 'win32', elevatedSandbox: true }), { ok: true }, 'win32 elevated');
+const bad = (c: object): string => {
+  const r = codexReadEnforceable({ ...good, ...c });
+  assert.strictEqual(r.ok, false, `not enforceable: ${JSON.stringify(c)}`);
+  return r.ok ? '' : r.reason;
+};
+assert.ok(/too old/.test(bad({ version: 'rust-v0.162.9' })), 'old version');
+assert.ok(/too old/.test(bad({ version: '0.99.0' })), 'old version, bare');
+bad({ version: 'rust-v0.163.0-alpha.1' }); // pre-release of the minimum
+for (const v of ['', 'banana', 'rust-v', '0.163', 'rust-v0.163.x', '0.163.0.1', undefined, null, 163 as never]) {
+  assert.ok(/could not be read/.test(bad({ version: v as never })), `unparseable version ${String(v)}`);
+}
+assert.ok(/experimental/.test(bad({ experimentalApi: false })), 'no experimentalApi');
+bad({ experimentalApi: undefined });
+assert.ok(/elevated/.test(bad({ platform: 'win32', elevatedSandbox: false })), 'win32 unelevated');
+bad({ platform: 'win32', elevatedSandbox: undefined });
+bad({ platform: undefined });
+bad({ platform: '' });
+assert.strictEqual(codexReadEnforceable(undefined as never).ok, false, 'no input at all');
 
 // request kinds
 const cmd = codexPermission('item/commandExecution/requestApproval', { command: 'npm test', cwd: '/x' });

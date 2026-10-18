@@ -7,27 +7,113 @@ import type { PermissionMode } from './capabilities';
 
 /** Protocol `AskForApproval`, the values we use. `untrusted` is retired; `granular` is not offered. */
 export type CodexApprovalPolicy = 'never' | 'on-request';
-/** Protocol `SandboxMode`, the values we use. `workspace-write` is deliberately not offered (plan Q6). */
-export type CodexSandbox = 'read-only' | 'danger-full-access';
+/** Protocol `SandboxMode`. Only Allow all sends it; Read-only and Ask first use the `durbar_ro` profile (FR-086). */
+export type CodexSandbox = 'danger-full-access';
 
+/** Name of the read-limited permission profile (spec 012 FR-086). */
+export const CODEX_RO_PROFILE = 'durbar_ro';
+
+/**
+ * `thread/start` and `turn/start` settings. `permissions` (a profile id) and `sandbox` are mutually exclusive:
+ * exactly one of them is present.
+ */
 export interface CodexModeSettings {
   approvalPolicy: CodexApprovalPolicy;
-  sandbox: CodexSandbox;
+  sandbox?: CodexSandbox;
+  permissions?: typeof CODEX_RO_PROFILE;
 }
 
 /**
  * Durbar mode to `thread/start` and `turn/start` settings. An unknown mode (bad data) gets the most restrictive
- * setting: refuse, never weaken.
+ * setting: refuse, never weaken. Read-only and Ask first never send `sandbox` (it would replace the profile with
+ * the unrestricted `read-only` sandbox, which reads anywhere the OS user can).
  */
 export function codexModeSettings(mode: PermissionMode | string): CodexModeSettings {
   switch (mode) {
     case 'allow':
       return { approvalPolicy: 'never', sandbox: 'danger-full-access' };
     case 'ask':
-      return { approvalPolicy: 'on-request', sandbox: 'read-only' };
+      return { approvalPolicy: 'on-request', permissions: CODEX_RO_PROFILE };
     default:
-      return { approvalPolicy: 'never', sandbox: 'read-only' };
+      return { approvalPolicy: 'never', permissions: CODEX_RO_PROFILE };
   }
+}
+
+/**
+ * The `durbar_ro` filesystem table: read `:minimal` and the workspace roots, nothing else. No `:root`, no
+ * `write` or `deny` entry (anything not listed is unreadable). Constant data: no user string goes into it.
+ */
+export const CODEX_RO_FILESYSTEM: Readonly<Record<string, 'read'>> = Object.freeze({ ':minimal': 'read', ':workspace_roots': 'read' });
+
+/** The profile as an inline TOML table, for `-c permissions.durbar_ro.filesystem=<this>`. */
+export function codexProfileToml(): string {
+  return `{${Object.entries(CODEX_RO_FILESYSTEM).map(([k, v]) => `"${k}"="${v}"`).join(',')}}`;
+}
+
+/**
+ * Spawn arguments that define the profile (`codex app-server -c key=value`). An argv array for `spawn` without a
+ * shell: each element is one argument, nothing is quoted for a shell.
+ */
+export function codexProfileArgs(): string[] {
+  return ['-c', `permissions.${CODEX_RO_PROFILE}.filesystem=${codexProfileToml()}`];
+}
+
+/** `initialize` capabilities: `permissions` and `runtimeWorkspaceRoots` are experimental fields. */
+export const CODEX_INITIALIZE_CAPABILITIES = Object.freeze({ experimentalApi: true });
+
+function isAbsolutePath(p: string): boolean {
+  return p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p) || p.startsWith('\\\\');
+}
+
+/**
+ * Session folders to `runtimeWorkspaceRoots`: absolute paths only, duplicates removed, order kept. Values are
+ * JSON params (never argv or TOML), so spaces, `=` and Windows separators need no escaping. A relative or empty
+ * entry is dropped, never resolved: fewer roots means fewer readable files.
+ */
+export function codexWorkspaceRoots(roots: readonly unknown[] | undefined | null): string[] {
+  const out: string[] = [];
+  for (const r of Array.isArray(roots) ? roots : []) {
+    if (typeof r !== 'string' || !r || r.includes('\0') || !isAbsolutePath(r)) continue;
+    if (!out.includes(r)) out.push(r);
+  }
+  return out;
+}
+
+/** First Codex version that has `permissions` (spec 012 FR-087). */
+export const CODEX_MIN_PERMISSIONS_VERSION = 'rust-v0.163.0';
+
+/** `rust-v0.163.0`, `v0.163.0` or `0.163.0` (optional `-pre`/`+build`) to numbers; undefined when unparseable. */
+function parseCodexVersion(v: unknown): { n: [number, number, number]; pre: boolean } | undefined {
+  if (typeof v !== 'string') return undefined;
+  const m = /^(?:rust-v|v)?(\d{1,9})\.(\d{1,9})\.(\d{1,9})([-+][0-9A-Za-z.+-]*)?$/.exec(v.trim());
+  return m ? { n: [Number(m[1]), Number(m[2]), Number(m[3])], pre: !!m[4] && m[4][0] === '-' } : undefined;
+}
+
+export interface CodexReadCheck {
+  version?: string;
+  /** True when `initialize` accepted `capabilities.experimentalApi`. */
+  experimentalApi?: boolean;
+  platform?: string;
+  /** Windows only: the elevated sandbox is set up (Codex refuses split read restrictions without it). */
+  elevatedSandbox?: boolean;
+}
+
+/**
+ * Can the `durbar_ro` profile be enforced? Anything unknown is not enforceable (fail closed; spec 012 FR-087).
+ * The caller refuses to start Read-only or Ask first when `ok` is false and may offer Allow all as the user's choice.
+ */
+export function codexReadEnforceable(c: CodexReadCheck): { ok: true } | { ok: false; reason: string } {
+  const have = parseCodexVersion(c?.version);
+  const min = parseCodexVersion(CODEX_MIN_PERMISSIONS_VERSION)!;
+  if (!have) return { ok: false, reason: `The Codex version could not be read, so Durbar cannot confirm it can limit reads to the session's folders (needs ${CODEX_MIN_PERMISSIONS_VERSION} or newer).` };
+  let cmp = 0;
+  for (let i = 0; i < 3 && cmp === 0; i++) cmp = have.n[i] - min.n[i];
+  if (cmp === 0 && have.pre) cmp = -1; // a pre-release of the minimum may predate the feature
+  if (cmp < 0) return { ok: false, reason: `This Codex is too old to limit reads to the session's folders (needs ${CODEX_MIN_PERMISSIONS_VERSION} or newer).` };
+  if (c.experimentalApi !== true) return { ok: false, reason: 'This Codex did not accept the experimental API, which Durbar needs to limit reads to the session\'s folders.' };
+  if (typeof c.platform !== 'string' || !c.platform) return { ok: false, reason: 'The platform is unknown, so Durbar cannot confirm Codex can limit reads.' };
+  if (c.platform === 'win32' && c.elevatedSandbox !== true) return { ok: false, reason: 'On Windows, Codex needs its elevated sandbox set up to limit reads to the session\'s folders.' };
+  return { ok: true };
 }
 
 /** Server request methods that ask for approval (research.md, "Approvals"). */
