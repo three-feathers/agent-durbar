@@ -418,6 +418,62 @@ async function main(): Promise<void> {
     void (() => { COPILOT_DESCRIPTOR.capabilities.usage.tokens = false; });
   }
 
+  // ---- issue #126: the main agent's session title (spec 002 delta 2026-10-18): event first, name.get once as a fallback
+  {
+    const titles = (ev: AgentEvent[]): string[] => ev.filter((e) => e.type === 'title').map((e) => (e as { title: string }).title);
+    // a title event: shown, and name.get is never asked
+    let t = await setup();
+    t.s.fire('session.title_changed', { title: 'Fix login bug' });
+    t.s.fire('session.idle', {});
+    await sleep(0);
+    assert.deepStrictEqual(titles(t.events), ['Fix login bug']);
+    assert.ok(!names(t.s).includes('name.get'), 'no name.get when the runtime sent the title');
+    // no event: asked once after the first turn, never again
+    t = await setup();
+    t.s.nameAnswer = 'Release notes';
+    t.s.fire('session.idle', {});
+    t.s.fire('session.idle', {});
+    await sleep(0);
+    assert.deepStrictEqual(titles(t.events), ['Release notes']);
+    assert.strictEqual(names(t.s).filter((n) => n === 'name.get').length, 1, 'asked once');
+    // no name yet, or the call fails: nothing shown, nothing thrown, not retried
+    t = await setup();
+    t.s.fire('session.idle', {});
+    await sleep(0);
+    assert.deepStrictEqual(titles(t.events), []);
+    t = await setup();
+    t.s.rpc.name.get = async () => { throw new Error('unsupported'); };
+    t.s.fire('session.idle', {});
+    t.s.fire('session.idle', {});
+    await sleep(0);
+    assert.deepStrictEqual(titles(t.events), [], 'a failing name.get is ignored');
+    // a sub-agent's title is not the session's
+    t = await setup();
+    t.s.handler?.({ type: 'session.title_changed', data: { title: 'helper' }, agentId: 'sub-1' });
+    await sleep(0);
+    assert.deepStrictEqual(titles(t.events), []);
+    // a resumed session asks once right away (its title is not sent again)
+    const fake = new FakeClient();
+    fake.nameAnswer = '  Review PR 121\u200B ';
+    const ad = new TestAdapter(fake);
+    const ev: AgentEvent[] = [];
+    ad.onEvent((e) => ev.push(e));
+    await ad.start({ workspace: dir, model: 'auto', resumeSessionId: 'old-1' });
+    await sleep(0);
+    assert.deepStrictEqual(titles(ev), ['Review PR 121'], 'resumed: the cleaned name');
+    // the lazy restore path (sessionId with history on disk) also asks
+    fake.onDisk.add('old-2');
+    fake.nameAnswer = 'Restored title';
+    await ad.start({ workspace: dir, model: 'auto', sessionId: 'old-2', quiet: true });
+    await sleep(0);
+    assert.ok(titles(ev).includes('Restored title'), 'a known session id resumes and asks');
+    // a brand-new session under a chosen id (nothing on disk) does not ask before its first turn
+    fake.nameAnswer = 'never';
+    await ad.start({ workspace: dir, model: 'auto', sessionId: 'fresh-1', quiet: true });
+    await sleep(0);
+    assert.ok(!titles(ev).includes('never'), 'a new session waits for its first turn');
+  }
+
   await sleep(0);
   fs.rmSync(dir, { recursive: true, force: true });
   console.log('copilot model tests passed');

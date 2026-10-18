@@ -206,4 +206,20 @@ const run = (events: RawEvent[]): EventBody[] => {
   assert.ok(!JSON.stringify(out).includes('SECRET'), 'the summary and the focus text never leave the mapper');
 }
 
+// Issue #126: the main agent's session title (spec 002 delta 2026-10-18)
+{
+  const out = run([
+    { type: 'session.title_changed', data: { title: '  Fix the\nlogin   bug\u200B  ' } },
+    { type: 'session.title_changed', data: { title: 'Helper title' }, agentId: 'sub-1' },
+    { type: 'session.title_changed', data: { title: '   ' } },
+    { type: 'session.title_changed', data: {} },
+    { type: 'session.title_changed', data: { title: 'x'.repeat(200) } },
+  ] as RawEvent[]);
+  const titles = out.filter((e) => e.type === 'title') as Array<{ title: string; agentId?: string }>;
+  assert.strictEqual(titles.length, 2, 'a sub-agent title and empty titles are dropped');
+  assert.strictEqual(titles[0].title, 'Fix the login bug', 'one line, collapsed, hidden characters removed');
+  assert.strictEqual(titles[0].agentId, undefined, 'top level');
+  assert.ok(titles[1].title.length === 80 && titles[1].title.endsWith('…'), 'at most 80 characters with an ellipsis');
+}
+
 console.log('event mapping tests passed');

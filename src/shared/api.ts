@@ -18,7 +18,10 @@ export type PermMode = 'read-only' | 'ask' | 'allow';
 export interface AgentInfo {
   /** Session id. */
   id: string;
+  /** The folder or workspace base name. Rooms, tool-usage labels and usage totals use it; it never holds the session title. */
   name: string;
+  /** The runtime's display title for this session (spec 002/001 deltas 2026-10-18, issue #126); display only. */
+  title?: string;
   cwd: string;
   /** Set when the agent was added from a .code-workspace file. */
   workspaceFile?: string;
