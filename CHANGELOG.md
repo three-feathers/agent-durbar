@@ -4,7 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
-Nothing yet.
+- **Docs: what the permission modes and usage mean per agent kind (spec 012 T028, issue #47).** Dated `## Changes` entries in specs 003 (Read-only / Ask first / Allow all for Claude and Codex, unknown mode = Read-only, Codex Read-only differs), 011 (AIU for Copilot, a labelled USD estimate for Claude never added to AIU, no money for Codex; caps stay Copilot-only) and 018 (live mode switch per kind), and a README *Safety model* note. Docs only; nothing is wired to a real Claude or Codex yet.
 
 ## v0.1.0-alpha.5 (pre-release, 2026-10-18)
 
@@ -18,7 +18,6 @@ Themes that change the whole office, floors, agents that show how they are doing
 - **Floor names refuse hidden characters (spec 033 delta, T040).** Besides control characters, a floor name now refuses C1 controls and invisible direction or zero-width characters (U+202A–U+202E, U+2066–U+2069, U+200B, U+2060, U+FEFF), which could make one floor look like another. ZWNJ/ZWJ and LRM/RLM stay allowed for Indic and Persian scripts and emoji. A saved name just loses them on load. Unit tests (`test:floors`), simulator rule kept equal, 0 AIU.
 
 - **Claude sessions load no Claude settings files (spec 012 T027, issue #46; owner decision Q8).** Mode options for the future Claude adapter set `settingSources: []` and `strictMcpConfig: true` in every mode, trusted folder or not, so a repo's or user's Claude settings and MCP servers cannot approve tools before Durbar asks. A repo's own `.claude` hooks and agents do not run (known gap, T083); the repo's `CLAUDE.md` will be passed as an appended system prompt by the Claude adapter (T045). Unit tests only; not wired to a real Claude yet.
-- **Docs: what the permission modes and usage mean per agent kind (spec 012 T028, issue #47).** Dated `## Changes` entries in specs 003 (Read-only / Ask first / Allow all for Claude and Codex, unknown mode = Read-only, Codex Read-only differs), 011 (AIU for Copilot, a labelled USD estimate for Claude never added to AIU, no money for Codex; caps stay Copilot-only) and 018 (live mode switch per kind), and a README *Safety model* note. Docs only; nothing is wired to a real Claude or Codex yet.
 
 - **Secrets are redacted from the debug log (spec 012 T051, issue #59).** Every `DURBAR_LOG` line now goes through one sink that hides environment secrets (also JSON- and URL-encoded) and token-like strings (GitHub, OpenAI/Anthropic keys, Bearer, JWT, AWS keys, URL credentials) before it is written. Unit tests with planted secrets, 0 AIU.
 
