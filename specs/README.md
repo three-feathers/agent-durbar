@@ -37,12 +37,12 @@ what exists today, not what was originally intended. Each requirement carries a 
 
 ## Features 011-014: 011 built, 012 planned, 013-014 backlog drafts
 
-013 and 014 are spec drafts only (no plan or tasks yet); they must go through `/speckit.clarify`, `/speckit.plan`, `/speckit.tasks` before any code. 012 has been through them (2026-10-17); only T010 (interface deltas) and T011 (descriptors and registry, no runtime wiring until T014) are built, simulator and unit tests only.
+013 and 014 are spec drafts only (no plan or tasks yet); they must go through `/speckit.clarify`, `/speckit.plan`, `/speckit.tasks` before any code. 012 has been through them (2026-10-17); only T010 (interface deltas), T011 (descriptors and registry), T012 (CLI detection), T013 (adapter id per saved folder), T014 (per-agent routing, `adapters:list`), T015 (FakeAdapter and the adapter contract suite) and T016 (the contract also runs on Copilot) are built; only Copilot is registered.
 
 | # | Feature | Status |
 | --- | --- | --- |
 | [011](011-credit-caps-and-usage-display/spec.md) | AI-credit caps and usage display | per-session cap slice and office/folder usage totals built, totals kept across restarts with a reset (2026-10-17, issue #21); exhausted flow unverified on a real account; multiplier estimate covered by spec 030 |
-| [012](012-claude-codex-adapters/spec.md) | Claude Code and Codex adapters | planned: clarified, [research](012-claude-codex-adapters/research.md), [plan](012-claude-codex-adapters/plan.md), [tasks](012-claude-codex-adapters/tasks.md); **T010 interface deltas (#30), T011 registry (#31) and T024 Codex event mapper (#43, synthetic fixtures, not wired) built 2026-10-18 (sim/unit); no Claude or Codex adapter yet, nothing verified on a real account**; real-account tasks need owner approval; umbrella issue #2 |
+| [012](012-claude-codex-adapters/spec.md) | Claude Code and Codex adapters | planned: clarified, [research](012-claude-codex-adapters/research.md), [plan](012-claude-codex-adapters/plan.md), [tasks](012-claude-codex-adapters/tasks.md); **T010 interface deltas (#30), T011 registry (#31), T012 CLI detection (#32), T013 saved adapter id (#33), T014 routing (#34), T015 contract suite (#35), T016 Copilot contract (#36) and T024 Codex event mapper (#43, synthetic fixtures, not wired) built 2026-10-18 (sim/unit; only Copilot registered); no Claude or Codex adapter yet, nothing verified on a real account**; real-account tasks need owner approval; umbrella issue #2 |
 | [013](013-live-verification-stop-resume-thinking/spec.md) | Live verification of Stop, resume and thinking | draft |
 | [014](014-signing-and-notarization/spec.md) | Code signing and notarization | draft, **needs approval (purchase)** |
 
