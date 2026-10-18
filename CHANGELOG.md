@@ -6,6 +6,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **MCP server groundwork: constants and per-OS paths (spec 041 T010, issue #175).** Where the MCP socket or named pipe and the key file would live on Windows, macOS and Linux, with a safety check for any folder outside the app's data folder. Not wired yet: nothing listens. No user-visible change, 0 AIU.
 
+- **Remove one session, rename a folder (spec 006 FR-017/FR-018).** A folder with more than one session has **Remove session** in the chat header (asks first when it is working; its history stays under Previous sessions). Folders > **Rename** gives a room a display name (saved, up to 40 characters, empty = the folder name). Simulator and unit tests, 0 AIU.
+
 - **Room headers fit with many one-agent folders (spec 001 FR-023/FR-024).** With many folders of one agent each, room headers no longer overflow or overlap and the office no longer falls back to scrolling: the folder path goes first, then the room name is cut with its full name (and folder total) in the tooltip, narrow rooms hide the plant, and the narrowest move the folder total to that tooltip. In the roomy layout the plant no longer covers the MCP button. `check:office` now checks every room header. Simulator only, 0 AIU.
 
 - Floor names: every hidden character is now written as an escape in source, more look-alike and layout characters are refused (line and paragraph separators, soft hyphen, invisible operators, fillers, annotation marks), a saved name with a C1 control keeps its floor, and the simulator's rule is tested against the shared one (spec 033 delta, T041, issue #167; 0 AIU, unit tests).
