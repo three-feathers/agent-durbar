@@ -42,7 +42,7 @@ what exists today, not what was originally intended. Each requirement carries a 
 | # | Feature | Status |
 | --- | --- | --- |
 | [011](011-credit-caps-and-usage-display/spec.md) | AI-credit caps and usage display | per-session cap slice and office/folder usage totals built, totals kept across restarts with a reset (2026-10-17, issue #21); exhausted flow unverified on a real account; multiplier estimate covered by spec 030 |
-| [012](012-claude-codex-adapters/spec.md) | Claude Code and Codex adapters | planned: clarified, [research](012-claude-codex-adapters/research.md), [plan](012-claude-codex-adapters/plan.md), [tasks](012-claude-codex-adapters/tasks.md); **Phase 1 built 2026-10-18 (T010-T019: interface, registry, CLI detection, saved adapter id, routing, contract suite on a fake and on Copilot, kind picker, mixed simulator roster, docs) and Phase 2/3 groundwork (T021/T022 mode mappings, T023/T024 event mappers with synthetic fixtures, T042 Codex JSON-RPC client), all simulator/fixtures and unit tests, not wired to a real Claude or Codex; only Copilot is registered; nothing verified on a real account**; real-account tasks need owner approval; umbrella issue #2 |
+| [012](012-claude-codex-adapters/spec.md) | Claude Code and Codex adapters | planned: clarified, [research](012-claude-codex-adapters/research.md), [plan](012-claude-codex-adapters/plan.md), [tasks](012-claude-codex-adapters/tasks.md); **Phase 1 built 2026-10-18 (T010-T019: interface, registry, CLI detection, saved adapter id, routing, contract suite on a fake and on Copilot, kind picker, mixed simulator roster, docs) and Phase 2/3 groundwork (T021/T022 mode mappings, T023/T024 event mappers with synthetic fixtures, T042 Codex JSON-RPC client, T051 debug-log redaction, T027 no Claude settings files (Q8), T026 SC-004 parity across mode mappings, T025 usage/context tests and Claude usage dedupe), all simulator/fixtures and unit tests, not wired to a real Claude or Codex; only Copilot is registered; nothing verified on a real account**; real-account tasks need owner approval; umbrella issue #2 |
 
 | [013](013-live-verification-stop-resume-thinking/spec.md) | Live verification of Stop, resume and thinking | draft |
 | [014](014-signing-and-notarization/spec.md) | Code signing and notarization | draft, **needs approval (purchase)** |
@@ -111,6 +111,17 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | # | Feature | Status |
 | --- | --- | --- |
 | [030](030-switch-model-context/spec.md) | Switch model, effort and context tier of a live session (chat header and office card menu), see window and % full, compact, start-fresh hint, per-folder default; simulator first, adapter-neutral | **Phases 1 and 2 built** (T010..T035). Phase 1 on the simulator (logic, types, mapper, folder store, main IPC, header menu, confirm/Undo, Compact, start-fresh note, card menu). Phase 2: the Copilot adapter's `setModel`, `cancelQueuedModel`, `compact`, resume with the saved model/effort/tier, price fields, tested on a **fake session** only; real controls are flagged "not verified on a real account yet", an adapter without them stays disabled with New session. Spec, [research](030-switch-model-context/research.md), [plan](030-switch-model-context/plan.md), [tasks](030-switch-model-context/tasks.md). Phase 3 run on a free plan (`auto` only): T040, T042, T043, T046 done, T041 partly, T044/T045 open (need a plan that lists more models), T047/T048 wait for the owner; 0.56 AIU spent, results in the research file; SDK facts read from types and docs only, **nothing run on a real account**; open questions Q1-Q8 for Vikram |
+
+## Feature 035-040: themes (data-only packs)
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [035](035-theme-foundation/spec.md) | Theme foundation: data-only theme packs, manifest, token map, art slot registry, UI styles (2026-10-18), Clean Office fallback | **built** on branch `035-theme-foundation` (PR #137): loader, sanitizer, fallback, `test:theme` |
+| [036](036-clean-office-pack/spec.md) | Clean Office pack: every scene colour a semantic token, scene words, `data-*` ids, per-theme motion presets | **built** (scene output byte-identical to main; `shots-024` reads data ids) |
+| [037](037-corporate-theme/spec.md) | Corporate theme (glass/steel) + Settings theme picker with live switch | **built** |
+| [038](038-retro-pixel-theme/spec.md) | Retro pixel theme: 8-bit palette, palette pixel maps in art slots, arcade motion | **built**; dark arcade page allowed (FR-001 amended 2026-10-18) |
+| [039](039-durbar-theme/spec.md) | Durbar court styles: Indian, European, Japanese (head accessory slots, court words) | **built**; word lists await owner review in PR #137 |
+| [040](040-user-themes/spec.md) | User themes: `userData/themes/<id>/manifest.json`, import/export, validation | **built** (`test:userthemes`) |
 
 ## Feature 034: agents show how they are doing
 

@@ -5,7 +5,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomBytes } from 'crypto';
-import { parseCap, parseSettings } from '../shared/credits';
+import { parseCap, parseSettings, parseThemeId } from '../shared/credits';
 import type { AppSettings } from '../shared/credits';
 import { addCustomPlace, removeCustomPlace, setPlaceEntry, updateCustomPlace } from '../shared/places';
 import type { CustomPlace, PlaceError, PlaceMap } from '../shared/places';
@@ -71,6 +71,30 @@ export class SettingsStore {
     this.s = next;
     this.save();
     return v;
+  }
+
+  /** Active theme id (spec 037). Undefined = Clean Office; the renderer resolves unknown ids itself. */
+  get theme(): string | undefined {
+    return this.s.theme;
+  }
+
+  /** Only a valid id string changes it (or clears with null/undefined/'clean-office' handled by the caller). Returns {ok, theme}. */
+  setTheme(v: unknown): { ok: boolean; theme?: string } {
+    const id = parseThemeId(v);
+    if (v === null || v === undefined) {
+      const next: AppSettings = { ...this.s };
+      delete next.theme;
+      this.s = next;
+      this.save();
+      return { ok: true };
+    }
+    if (id === undefined) return { ok: false, theme: this.s.theme };
+    const next: AppSettings = { ...this.s };
+    if (id === 'clean-office') delete next.theme;
+    else next.theme = id;
+    this.s = next;
+    this.save();
+    return { ok: true, theme: this.s.theme ?? 'clean-office' };
   }
 
   /** Place mapping (spec 024): MCP server name -> place id or `desk`. A copy, never the stored object. */

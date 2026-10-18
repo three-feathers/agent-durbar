@@ -25,7 +25,9 @@ export type FloorOp = { ok: true; doc: FloorsDoc } | { ok: false; error: string;
 
 const ID_RE = /^f-[a-z0-9]{8}$/;
 // eslint-disable-next-line no-control-regex
-const CONTROL_RE = /[\u0000-\u001f\u007f]/;
+const CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
+/** Invisible characters that can make one name look like another (bidi embeddings, overrides, isolates, zero-width space, word joiner, BOM). ZWNJ/ZWJ and LRM/RLM stay allowed: real scripts and emoji need them. */
+const HIDDEN_RE = /[​‪-‮⁠⁦-⁩﻿]/g;
 
 const copy = (d: FloorsDoc): FloorsDoc => ({ floors: d.floors.map((f) => ({ ...f })), lastFloor: d.lastFloor });
 const fail = (doc: FloorsDoc, error: string): FloorOp => ({ ok: false, error, doc: copy(doc) });
@@ -44,7 +46,8 @@ export function parseFloors(floors: unknown, lastFloor?: unknown): FloorsDoc {
     const id = typeof o.id === 'string' ? o.id : '';
     if ((id !== GROUND && !ID_RE.test(id)) || all.some((f) => f.id === id)) continue;
     if (id !== GROUND && others >= MAX_FLOORS - 1) continue;
-    const name = cleanName(o.name) ?? (id === GROUND ? GROUND_NAME : undefined);
+    // A saved name loses its hidden characters instead of the whole floor (FR-003, 2026-10-18).
+    const name = cleanName(typeof o.name === 'string' ? o.name.replace(HIDDEN_RE, '') : o.name) ?? (id === GROUND ? GROUND_NAME : undefined);
     if (!name || names.has(name.toLowerCase())) continue;
     all.push({ id, name, on: o.on !== false });
     names.add(name.toLowerCase());
@@ -60,11 +63,12 @@ export function parseFloors(floors: unknown, lastFloor?: unknown): FloorsDoc {
   return { floors: all, lastFloor: last };
 }
 
-/** A usable floor name: 1..40 characters after trimming, no control characters. */
+/** A usable floor name: 1..40 characters after trimming, no control characters and no hidden direction or zero-width characters. */
 export function cleanName(v: unknown): string | undefined {
   if (typeof v !== 'string') return undefined;
   const n = v.trim();
-  if (n.length < 1 || n.length > MAX_FLOOR_NAME || CONTROL_RE.test(n)) return undefined;
+  HIDDEN_RE.lastIndex = 0;
+  if (n.length < 1 || n.length > MAX_FLOOR_NAME || CONTROL_RE.test(n) || HIDDEN_RE.test(n)) return undefined;
   return n;
 }
 
@@ -72,7 +76,7 @@ export function cleanName(v: unknown): string | undefined {
 export function nameError(v: unknown, doc: FloorsDoc, exceptId?: string): string {
   if (typeof v !== 'string' || !v.trim()) return 'Name is empty.';
   const n = cleanName(v);
-  if (!n) return `Use 1 to ${MAX_FLOOR_NAME} characters, without control characters.`;
+  if (!n) return `Use 1 to ${MAX_FLOOR_NAME} characters, without control or hidden characters.`;
   if (doc.floors.some((f) => f.id !== exceptId && f.name.toLowerCase() === n.toLowerCase())) return 'A floor with that name exists.';
   return '';
 }

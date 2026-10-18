@@ -2,7 +2,7 @@
 
 Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.
 
-> Status: **alpha, `v0.1.0-alpha.4` ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4), unsigned, not notarized).** It adds places in the office, the per-folder MCP import from VS Code and switching model and context inside a session (simulator and fake sessions; real switching between models is unverified), see [CHANGELOG.md](CHANGELOG.md). `v0.1.0-alpha.3` stays available. The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. Groundwork for Claude Code and Codex is on `main` (an adapter interface, registry, detection, contract tests; **no Claude or Codex adapter yet, only Copilot works**, see [Agents and adapters](#agents-and-adapters)). Latest work: [agents show how they are doing](#status-agents-show-how-they-are-doing-heavy-monster-ambulance-room-sirens), [floors](#status-floors-group-rooms-and-switch-a-floor-off) (on branch `033-floors`, not released), [places in the office](#status-places-in-the-office-a-shared-lobby-agents-walk-to-the-tool-they-use), [milestone 10 and usage totals](#status-milestone-10-tools-all-time-the-copilot-cli-mcp-list-first-mcp-extras-per-folder). Only Linux has been run by hand; macOS and Windows are built and unit-tested in CI but untested on real hardware. Built by [Three Feathers](https://github.com/three-feathers); the work is tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
+> Status: **alpha, `v0.1.0-alpha.4` ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4), unsigned, not notarized).** It adds places in the office, the per-folder MCP import from VS Code and switching model and context inside a session (simulator and fake sessions; real switching between models is unverified), see [CHANGELOG.md](CHANGELOG.md). `v0.1.0-alpha.3` stays available. The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. Groundwork for Claude Code and Codex is on `main` (an adapter interface, registry, detection, contract tests; **no Claude or Codex adapter yet, only Copilot works**, see [Agents and adapters](#agents-and-adapters)). Latest work: [themes](#status-themes-clean-office-corporate-retro-pixel-three-durbar-courts-your-own-packs) (on branch `035-theme-foundation`, not released), [agents show how they are doing](#status-agents-show-how-they-are-doing-heavy-monster-ambulance-room-sirens), [floors](#status-floors-group-rooms-and-switch-a-floor-off) (on branch `033-floors`, not released), [places in the office](#status-places-in-the-office-a-shared-lobby-agents-walk-to-the-tool-they-use), [milestone 10 and usage totals](#status-milestone-10-tools-all-time-the-copilot-cli-mcp-list-first-mcp-extras-per-folder). Only Linux has been run by hand; macOS and Windows are built and unit-tested in CI but untested on real hardware. Built by [Three Feathers](https://github.com/three-feathers); the work is tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
 
 ![15 simulated agents at 1440x900 (roomy desks use the spare floor space)](docs/screenshots/m5-sim15-1440x900-closed.png)
 ![Full-screen chat with every other agent in a slim strip, 15 agents at 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
@@ -102,6 +102,27 @@ npm run dist              # installers/archives for this OS in release/ (no sign
 
 Each release also lists `SHA256SUMS.txt`. Releases are built by GitHub Actions from `v*` tags into a **draft** release that the maintainer publishes by hand; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Status (themes: Clean Office, Corporate, Retro Pixel, three Durbar courts, your own packs)
+
+Specs [035](specs/035-theme-foundation/spec.md)-[040](specs/040-user-themes/spec.md) (issue #129), on branch `035-theme-foundation` (PR #137). Built and tested on the simulator and unit tests. **AI credits spent: 0 AIU.** Not released.
+
+- **Settings > Theme** switches the look of the whole app live, no restart: colours, the top bar, room frames, cards, buttons, pills, lobby tiles, display fonts, the place names and **the people and furniture**: each theme draws its own characters, chairs, desks and monitors (suits at glass desks, 8-bit people at a CRT, courtiers in turbans, periwigs or kimono at carved, gilded or lacquer desks). Status cues stay in the same place in every theme.
+- **Clean Office** is today's look and the fallback for anything unknown or broken (checked against `main`: the same pixels with animations frozen).
+- **Corporate**: a navy top bar, white rooms with a coloured accent edge, square corners, tag-style pills, uppercase room labels; places become Records, Repository, Server room, Network, Facilities.
+- **Retro Pixel**: a dark arcade page, a black bar with a yellow monospace title, black-outlined rooms in game colours with hard shadows, square tiles and pixel characters; places become Arcade, Cartridge Bay, Console, Modem, Gadgets.
+- **Durbar · Indian / European / Japanese**: a maroon bar with a gold rule and arched rooms in a double gold frame; a royal navy bar with gilt rules and gilded frames in small caps; a paper bar with a vermilion rule and seal, washi and thin ink lines. Each has its own court place names.
+- **The text that matters never changes**: status, permission and credit wording are the same in every theme, and so is the layout (15 agents at 1440x900 and 1280x800; `npm run check:themes` runs the office check per theme).
+- **Your own themes**: a folder with a `manifest.json` (colours, a UI style and a scene kit from the fixed lists, small SVG art, place names), imported and exported in Settings. A theme is data only: no scripts and no CSS; SVG art is rebuilt from allowed shapes, colours must be plain colour values, and a pack that breaks a rule is refused with a message.
+
+![Corporate, 1440x900](docs/screenshots/035-corporate-1440x900.png)
+![Retro Pixel, 1440x900](docs/screenshots/035-retro-1440x900.png)
+![Durbar · Indian, 1440x900](docs/screenshots/035-durbar-indian-1440x900.png)
+![Durbar · European, 1280x800](docs/screenshots/035-durbar-european-1280x800.png)
+![Durbar · Japanese, 1280x800](docs/screenshots/035-durbar-japanese-1280x800.png)
+
+**Limits.** Display fonts are your system's serif and monospace fonts (no font files are shipped), so the courts and Retro look a little different per OS; only Linux was looked at. Not checked on a real Copilot session. The Durbar word lists and the five looks wait for the owner's review.
+
+Tests: `test:theme` (packs, tokens, words, the sanitizer, UI styles, and a guard that `themes.css` never sets a size), `test:scenekits` (3600 scenes: every kit, status, mood and look) and `test:userthemes`. Screenshots: `scripts/shots-themes.js`.
 ## Status (agents show how they are doing: heavy, monster, ambulance, room sirens)
 
 Spec [034](specs/034-agent-health/spec.md) (issue #20; amends 001). Built and tested on the simulator and unit tests. **AI credits spent: 0 AIU.** Not in a release yet.
@@ -405,7 +426,7 @@ Verified end to end on real `auto`/`efficiency` sessions through the Electron ap
 
 Fixes in this milestone: the approval note said "denyd" after Deny; Approve/Deny buttons sat on the text line (now their own row); the read-only note says how to allow edits; images are now sent as SDK `blob` attachments (base64 + mime type) instead of a file path, text files as `file` attachments with a display name.
 
-Dev hooks for repeatable tests without a native dialog: `DURBAR_PICK=/a.txt:/b.png` (answers the attach picker), `DURBAR_LOG=/tmp/events.jsonl` (every normalized event and what is handed to the SDK), `DURBAR_DRIVER=scripts/e2e-driver.js` (drives the real window; `PHASES=fake|ask|ro|att`). Example: `PHASES=fake DURBAR_DRIVER=$PWD/scripts/e2e-driver.js xvfb-run -a npx electron . --no-sandbox` (the `fake` phase sends synthetic events, no credits). Fixtures in `scripts/fixtures/`.
+Dev hooks for repeatable tests without a native dialog: `DURBAR_PICK=/a.txt:/b.png` (answers the attach picker), `DURBAR_LOG=/tmp/events.jsonl` (every normalized event and what is handed to the SDK; environment secrets and token-like strings are redacted before each line is written), `DURBAR_DRIVER=scripts/e2e-driver.js` (drives the real window; `PHASES=fake|ask|ro|att`). Example: `PHASES=fake DURBAR_DRIVER=$PWD/scripts/e2e-driver.js xvfb-run -a npx electron . --no-sandbox` (the `fake` phase sends synthetic events, no credits). Fixtures in `scripts/fixtures/`.
 
 ![Approval pending](docs/screenshots/m3-approval-pending.png)
 ![Attachments](docs/screenshots/m3-attachments.png)
