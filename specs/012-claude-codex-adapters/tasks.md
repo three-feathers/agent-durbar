@@ -27,16 +27,16 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 - [x] T014 (sim) `main.ts`, preload and `api.ts`: route each agent's calls to its adapter, `adapters:list` IPC, only Copilot registered, no renderer change [FR-001, FR-002]
 - [x] T015 (sim) `FakeAdapter` (also: drive the `main.ts`/`mcpipc.ts` presence-guard fallbacks for an adapter without the optional members, the T010 known gap) (scripted events, uses the permission broker) and the adapter contract suite `scripts/test-adapter-contract.ts` in `npm test` [FR-007, SC-002]
 - [x] T016 (sim) Fake SDK client seam for `CopilotAdapter` so the contract suite also runs on Copilot (also closes part of 002 T020/T025) [FR-007]
-- [ ] T017 (sim) Picker UI: choose the agent kind when adding a folder or starting a session, "unavailable" state with install hint, capability gating helpers in the renderer; no dead buttons [FR-023, SC-003]
-- [ ] T018 (sim) Simulator roster with mixed agent kinds and different capabilities (for example no cap chip, no helper tiles); screenshots at 1440x900 and 1280x800; `npm run check:office` green [SC-001, SC-003]
-- [ ] T019 (sim) Docs for Phase 1: README (adapter table, all "simulator/fixtures only"), `specs/README.md`, spec 002 `## Changes` entry, converge spec/plan/tasks [FR-008, SC-005]
+- [x] T017 (sim) Picker UI: choose the agent kind when adding a folder or starting a session, "unavailable" state with install hint, capability gating helpers in the renderer; no dead buttons [FR-023, SC-003]
+- [x] T018 (sim) Simulator roster with mixed agent kinds and different capabilities (for example no cap chip, no helper tiles); screenshots at 1440x900 and 1280x800; `npm run check:office` green [SC-001, SC-003]
+- [x] T019 (sim) Docs for Phase 1: README (adapter table, all "simulator/fixtures only"), `specs/README.md`, spec 002 `## Changes` entry, converge spec/plan/tasks [FR-008, SC-005]
 
 ## Phase 2: pure vendor logic with synthetic fixtures (no vendor, no account, no credits)
 
-- [ ] T021 (sim) `claudeModes.ts`: mode to SDK options, tool name to permission kind, Read-only `PreToolUse` decision; tests, including unknown tool names treated as non-read [FR-013, FR-004]
-- [ ] T022 (sim) `codexModes.ts`: mode to `approvalPolicy` and `sandbox`, approval request to permission kind, answer mapping (approve, remember, deny, stop); tests [FR-013, FR-004]
-- [ ] T023 (fixtures) `claudeMap.ts` plus `scripts/fixtures/claude/` synthetic fixtures (init, streamed text and thinking, tool use and result, MCP tool, sub-agent task, result, error) and `test-claude-map.ts`; MCP name parsed against the init server list [FR-014, FR-018, FR-020]
-- [ ] T024 (fixtures) `codexMap.ts` plus `scripts/fixtures/codex/` synthetic fixtures (thread, turn, deltas, command, file change, mcpToolCall, sub-agent items, token usage, failure) and `test-codex-map.ts`; unknown notifications ignored [FR-014, FR-018, FR-020]
+- [x] T021 (sim) `claudeModes.ts`: mode to SDK options, tool name to permission kind, Read-only `PreToolUse` decision; tests, including unknown tool names treated as non-read [FR-013, FR-004]
+- [x] T022 (sim) `codexModes.ts`: mode to `approvalPolicy` and `sandbox`, approval request to permission kind, answer mapping (approve, remember, deny, stop); tests [FR-013, FR-004]
+- [x] T023 (fixtures) `claudeMap.ts` plus `scripts/fixtures/claude/` synthetic fixtures (init, streamed text and thinking, tool use and result, MCP tool, sub-agent task, result, error) and `test-claude-map.ts`; MCP name parsed against the init server list [FR-014, FR-018, FR-020]
+- [x] T024 (fixtures) `codexMap.ts` plus `scripts/fixtures/codex/` synthetic fixtures (thread, turn, deltas, command, file change, mcpToolCall, sub-agent items, token usage, failure) and `test-codex-map.ts`; unknown notifications ignored [FR-014, FR-018, FR-020]
 - [ ] T025 (fixtures) Usage and context tests: Claude cost delta from running `total_cost_usd`, per `message.id` dedupe, Codex `modelContextWindow` null as unknown, "credits not reported" for Codex [FR-015, FR-016]
 - [ ] T026 (sim) Contract case SC-004 for every adapter on fakes: a write attempt is denied in Read-only, pending in Ask first, approved in Allow all; stop with a pending request denies it [FR-013, FR-017, SC-004]
 - [ ] T027 (sim) Folder trust for project-level vendor settings: pure decision function (`settingSources`), reuse of the spec 020 trust storage and dialog, tests [FR-025]
@@ -46,7 +46,7 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 
 - [ ] T040 (needs-owner-approval) Decision Q3 and dependency: add `@anthropic-ai/claude-agent-sdk` pinned to an exact version with a dynamic `import()` wrapper; typecheck and build only, nothing started. Depends on the owner accepting its licence [FR-003, FR-020]
 - [ ] T041 (needs-owner-approval) Decision Q4 and binary source: use the user's installed `claude` via `pathToClaudeCodeExecutable` plus a minimum-version check; a test asserts the vendor binaries are not in `asarUnpack` or the package files [FR-021, FR-010]
-- [ ] T042 (sim) `codexRpc.ts`: line-delimited JSON-RPC client over `child_process.spawn` (argv array, absolute path, no shell); tests on a scripted stdio fake: framing, ids, notifications, server requests, malformed lines, child exit [FR-006, FR-020]
+- [x] T042 (sim) `codexRpc.ts`: line-delimited JSON-RPC client over `child_process.spawn` (argv array, absolute path, no shell); tests on a scripted stdio fake: framing, ids, notifications, server requests, malformed lines, child exit [FR-006, FR-020]
 - [ ] T043 (sim) `CodexAdapter`: initialize, `thread/start` and `thread/resume`, `turn/start`, interrupt, stop, approvals through the broker, crash becomes `error`; contract suite on a scripted app-server fake [FR-003, FR-017, SC-002]
 - [ ] T044 (sim) Packaged-build check without a vendor: the ESM SDK is imported from the CommonJS main process, `asarUnpack` entries are right, run in CI on three OSes; documents the result [FR-021]
 - [ ] T045 (sim) `ClaudeAdapter` on a fake `query()` object seam: input queue, `canUseTool` to broker, hooks, interrupt, close, resume with `sessionId`; contract suite. Depends on T040, T041 [FR-003, FR-017, SC-002]

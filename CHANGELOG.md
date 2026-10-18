@@ -6,17 +6,33 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **Secrets are redacted from the debug log (spec 012 T051, issue #59).** Every `DURBAR_LOG` line now goes through one sink that hides environment secrets (also JSON- and URL-encoded) and token-like strings (GitHub, OpenAI/Anthropic keys, Bearer, JWT, AWS keys, URL credentials) before it is written. Unit tests with planted secrets, 0 AIU.
 
+- **Mixed-kind simulator and capability gating (spec 012 T018, issue #38).** `simkinds=mixed` in the simulator shows Claude-like, Codex-like and a minimal kind next to Copilot; room and header buttons, the mode chip, mode lists and the Permissions selects follow each kind's capabilities and never widen. No visible change with Copilot alone. Simulator only, 0 AIU.
+
+- **Agent kind picker (spec 012 T017, issue #37).** With more than one kind of agent, the toolbar and the New session dialog get an agent-kind select before Permissions; kinds that are not installed or too old are disabled and explained in "About agent kinds". Controls an adapter cannot support are hidden. No visible change while only Copilot exists. Simulator and unit tests, 0 AIU.
+
+- **Codex permission-mode and approval mapping (spec 012 T022, issue #41).** A pure module that turns Read-only / Ask first / Allow all into Codex sandbox and approval settings and maps its approval requests and answers; a missing or unknown mode always declines. Not wired yet, no user-visible change. Unit tests, 0 AIU.
+
+- **Claude Code permission-mode and tool mapping (spec 012 T021, issue #40).** A pure module that turns Read-only / Ask first / Allow all into Claude Agent SDK options and decides which tools each mode allows; Read-only denies every non-read tool (MCP included), and an unknown or missing mode falls back to Read-only. No SDK dependency, not wired yet, no user-visible change. Unit tests, 0 AIU.
+
+- **Codex event mapper (spec 012 T024, issue #43).** A pure mapper from Codex app-server notifications to Durbar's events (messages, thinking, commands, file changes, MCP tools, sub-agents, token usage, failures), tested against synthetic fixtures. Not wired yet, no user-visible change, 0 AIU.
+
+- **Claude Code event mapper (spec 012 T023, issue #42).** A pure mapper from Claude Agent SDK stream messages to Durbar's events (text, thinking, tools, MCP tools parsed against the init server list, sub-agents closed exactly once, token usage, cost estimate as per-result deltas, errors), tested against synthetic fixtures. No SDK dependency, not wired yet, no user-visible change, 0 AIU.
+
+- **Codex JSON-RPC client (spec 012 T042, issue #50).** A line-delimited JSON-RPC client for `codex app-server` over a child process (argv only, no shell): framing, ids, timeouts, server requests, malformed and oversize lines, child exit and a SIGTERM-then-SIGKILL close. Tested on a fake child process; not wired yet, no user-visible change, 0 AIU.
+
+- **Docs for the Claude Code and Codex groundwork (spec 012 T019).** The README has an *Agents and adapters* table: Copilot is supported; Claude Code and Codex are planned and marked simulator/fixtures only, with no adapter and nothing run on a real account.
+
 - **Copilot passes the adapter contract (spec 012 T016, issue #36; spec 002 T020).** The contract suite and a replay of the recorded sessions now run on the Copilot adapter through a fake SDK client. Test code only, 0 AIU.
 
 - **Adapter contract suite (spec 012 T015, issue #35).** A fake adapter and a shared contract every adapter must pass (events, permissions, stop, capabilities), plus tests for the main-process rules that refuse settings an adapter cannot apply. No user-visible change. Unit tests, 0 AIU.
 
 - **Agents are routed to their adapter (spec 012 T014, issue #34).** The main process now keeps one adapter per kind (only Copilot today) and routes each agent's calls to it; `listAdapters()` reports each adapter's status. A setting an adapter cannot apply to a live session is refused instead of silently saved. Copilot unchanged. Unit tests and the simulator, 0 AIU.
 
-- **Saved folders can record their agent kind (spec 012 T013, issue #33).** A new optional `adapterId` per saved folder, never written for Copilot, so existing files stay byte-identical; not read by the app until T014. Unit tests, 0 AIU.
+- **Saved folders can record their agent kind (spec 012 T013, issue #33).** A new optional `adapterId` per saved folder, never written for Copilot, so existing files stay byte-identical; read by the app since T014 (T013 itself changed only the store). Unit tests, 0 AIU.
 
-- **Claude Code and Codex CLI detection (spec 012 T012, issue #32).** Pure code that finds the `claude` and `codex` commands (PATH, known folders, Windows npm shims through a guarded cmd.exe) and reads their version, without a shell; not wired into the app yet. Unit tests, 0 AIU.
+- **Claude Code and Codex CLI detection (spec 012 T012, issue #32).** Pure code that finds the `claude` and `codex` commands (PATH, known folders, Windows npm shims through a guarded cmd.exe) and reads their version, without a shell; since T014 only the Copilot detector is used by the app (`adapters:list`), the `claude` and `codex` ones are not called yet. Unit tests, 0 AIU.
 
-- **Adapter registry and descriptors (spec 012 T011, issue #31).** A pure list of the agents the app knows (only Copilot today), with what each can do and a way to check if it is installed; not wired into the app yet, so no visible change. Unit tests, 0 AIU.
+- **Adapter registry and descriptors (spec 012 T011, issue #31).** A pure list of the agents the app knows (only Copilot today), with what each can do and a way to check if it is installed; since T014 the app builds its adapter from it; no visible change. Unit tests, 0 AIU.
 
 - **Adapter interface ready for more agents (spec 012 T010, issue #30).** The app now talks to every agent through one interface with declared capabilities; Copilot works exactly as before. Groundwork for Claude Code and Codex; simulator and unit tests, 0 AIU.
 

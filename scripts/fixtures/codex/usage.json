@@ -1,0 +1,16 @@
+{
+  "provenance": "synthetic",
+  "notifications": [
+    {"method":"thread/started","params":{"thread":{"id":"thr_main","cwd":"/work/app"}}},
+    {"method":"thread/tokenUsage/updated","params":{"threadId":"thr_main","turnId":"turn_1","tokenUsage":{"total":{"totalTokens":1500,"inputTokens":1000,"cachedInputTokens":400,"cacheWriteInputTokens":0,"outputTokens":500,"reasoningOutputTokens":100},"last":{"totalTokens":1500,"inputTokens":1000,"cachedInputTokens":400,"cacheWriteInputTokens":0,"outputTokens":500,"reasoningOutputTokens":100},"modelContextWindow":272000}}},
+    {"method":"thread/tokenUsage/updated","params":{"threadId":"thr_main","turnId":"turn_2","tokenUsage":{"total":{"totalTokens":2200},"last":{"totalTokens":700,"inputTokens":600,"cachedInputTokens":0,"outputTokens":100},"modelContextWindow":null}}},
+    {"method":"account/rateLimits/updated","params":{"rateLimits":{"primary":{"usedPercent":12}}}}
+  ],
+  "expected": [
+    {"type":"status","status":"idle","intent":"Ready in /work/app"},
+    {"type":"usage","inputTokens":1000,"outputTokens":500,"cacheReadTokens":400},
+    {"type":"context","tokens":1000,"limit":272000},
+    {"type":"usage","inputTokens":600,"outputTokens":100,"cacheReadTokens":0},
+    {"type":"context","tokens":600,"limit":0}
+  ]
+}
