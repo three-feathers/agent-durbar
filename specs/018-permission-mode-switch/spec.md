@@ -16,3 +16,14 @@
 - **FR-001** `PermissionBroker.setMode(mode)`, `approvePending()`; `CopilotAdapter.setPermMode(sessionId, mode, {clearGrants, approvePending})`.
 - **FR-002** `AgentInfo.permMode` updates are pushed to the renderer (`agent:mode` event); IPC `agents:setMode`.
 - **FR-003** Unit tests in `test-permissions.ts` (dynamic mode, pending + switch, grants).
+
+## Changes
+
+### 2026-10-18: live switch per agent kind (cross-reference to spec 012; T028, issue #47)
+
+Mode names here follow spec 003 FR-028: the `allow` mode is shown as **Allow all** (this spec's acceptance text above still says "Allow edits", its older name).
+
+- Each adapter declares whether its mode can change in a running session: capability `permModeSwitch: 'live' | 'next-message' | 'none'` (`read:` `src/adapters/capabilities.ts:22`; spec 012 FR-009).
+- **Copilot**: `live`, as built here (FR-001 to FR-003; `read:` `src/adapters/copilot.ts:62`). Unchanged.
+- **Claude Code**: planned `live` through the SDK's `setPermissionMode`; **Codex CLI**: planned `next-message`, applied from the next `turn/start`. Both are spec 012 T046, **not built**; there is no Claude or Codex adapter on `main` (`[KNOWN GAP]` T043, T045, T046).
+- `[IMPLEMENTED]` (test: `scripts/test-modelswitch.ts`; sim: `scripts/shots-017.js`, `simkinds=1`, spec 012 T017/T018) When a kind declares `none`, the renderer shows the mode as a plain label (tooltip "Set when the session starts") with no menu, and the switch does nothing (`read:` `src/renderer/app.js:1665-1669`, `src/renderer/modelswitch.js:192`); the menu lists only the kind's `permissionModes`. For `next-message` the toast says "Applies from the next message." instead of "from the next request" (`read:` `src/renderer/app.js:1714`; seen only on the simulator roster).
