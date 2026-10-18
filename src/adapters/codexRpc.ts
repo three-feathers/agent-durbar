@@ -15,6 +15,7 @@ import { StringDecoder } from 'string_decoder';
 export const MAX_LINE_BYTES = 8 * 1024 * 1024;
 export const DEFAULT_TIMEOUT_MS = 30_000;
 export const DEFAULT_CLOSE_GRACE_MS = 2_000;
+export const DEFAULT_MAX_PENDING_SERVER_REQUESTS = 16;
 export const DEFAULT_KILL_GRACE_MS = 1_000;
 const MAX_STDERR_LINES = 50;
 
@@ -71,6 +72,7 @@ export interface CodexRpcOptions {
   file: string;
   args: string[];
   cwd?: string;
+  /** When undefined the child inherits the whole app environment; which variables are passed on purpose is the adapter's call (T043). */
   env?: NodeJS.ProcessEnv;
   windowsVerbatimArguments?: boolean;
   onNotification: (method: string, params: Json) => void;
@@ -79,6 +81,8 @@ export interface CodexRpcOptions {
   /** Diagnostics only. Never receives env values or stderr text. */
   debug?: (msg: string) => void;
   /** Wait after stdin ends before SIGTERM (default 2 s). */
+  /** Server requests allowed in flight in `onRequest` (default 16); extra ones get a -32000 error at once. */
+  maxPendingServerRequests?: number;
   closeGraceMs?: number;
   /** Wait after SIGTERM before SIGKILL (default 1 s). */
   killGraceMs?: number;
@@ -108,6 +112,7 @@ export function createCodexRpc(o: CodexRpcOptions): CodexRpc {
   const debug = o.debug ?? (() => undefined);
   const pending = new Map<number, Pending>();
   let nextId = 1;
+  let inFlight = 0;
   let exited = false;
   let closing = false;
   let killTimer: ReturnType<typeof setTimeout> | undefined;
@@ -159,8 +164,14 @@ export function createCodexRpc(o: CodexRpcOptions): CodexRpc {
     if (method !== undefined) {
       if (hasId) {
         const id = msg.id;
+        if (inFlight >= (o.maxPendingServerRequests ?? DEFAULT_MAX_PENDING_SERVER_REQUESTS)) {
+          respond(id, { error: { code: -32000, message: 'too many pending requests' } });
+          return;
+        }
+        inFlight++;
         Promise.resolve()
           .then(() => o.onRequest(method, msg.params))
+          .finally(() => { inFlight--; })
           .then(
             (out) => respond(id, out && typeof out === 'object' ? out : { error: { code: -32603, message: 'invalid handler result' } }),
             (e: unknown) => respond(id, { error: { code: -32603, message: e instanceof Error ? e.message : 'request handler failed' } }),

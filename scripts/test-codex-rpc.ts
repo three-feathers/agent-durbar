@@ -20,7 +20,7 @@ class FakeChild extends EventEmitter {
   die(code: number | null = 0, sig: NodeJS.Signals | null = null) { this.emit('exit', code, sig); }
 }
 
-function make(over: { onRequest?: (m: string, p: unknown) => Promise<RequestOutcome>; closeGraceMs?: number; killGraceMs?: number; pid?: number | undefined; throwSpawn?: boolean } = {}) {
+function make(over: { onRequest?: (m: string, p: unknown) => Promise<RequestOutcome>; closeGraceMs?: number; killGraceMs?: number; maxPending?: number; pid?: number | undefined; throwSpawn?: boolean } = {}) {
   const fc = new FakeChild();
   if ('pid' in over) fc.pid = over.pid;
   const calls: { file: string; args: string[]; opts: SpawnOptions }[] = [];
@@ -36,6 +36,7 @@ function make(over: { onRequest?: (m: string, p: unknown) => Promise<RequestOutc
     debug: (m) => dbg.push(m),
     closeGraceMs: over.closeGraceMs ?? 20,
     killGraceMs: over.killGraceMs ?? 5000,
+    maxPendingServerRequests: over.maxPending,
   });
   return { fc, rpc, calls, notes, exits, dbg };
 }
@@ -282,6 +283,29 @@ async function main(): Promise<void> {
     b.rpc.close();
     await tick(); await tick();
     assert.deepStrictEqual(b.fc.written, [], 'no write after close');
+  }
+
+  // cap on in-flight server requests: under the cap all handled, over it errors without calling onRequest, capacity frees up
+  {
+    const gates: (() => void)[] = [];
+    let calls = 0;
+    const { fc } = make({ maxPending: 2, onRequest: async () => { calls++; await new Promise<void>((r) => gates.push(r)); return { result: 'ok' }; } });
+    fc.out('{"id":1,"method":"m"}\n{"id":2,"method":"m"}\n');
+    await tick();
+    assert.strictEqual(calls, 2, 'under the cap all requests are handled');
+    fc.out('{"id":3,"method":"m"}\n{"id":4,"method":"m"}\n');
+    await tick(); await tick();
+    assert.strictEqual(calls, 2, 'onRequest must not be called over the cap');
+    assert.deepStrictEqual(fc.sent().map((m) => [m.id, m.error?.code, m.error?.message]), [[3, -32000, 'too many pending requests'], [4, -32000, 'too many pending requests']]);
+    gates[0]();
+    await tick(); await tick();
+    assert.strictEqual(fc.sent().length, 3, 'first request answered');
+    fc.out('{"id":5,"method":"m"}\n');
+    await tick();
+    assert.strictEqual(calls, 3, 'capacity frees up as requests resolve');
+    gates.slice(1).forEach((g) => g());
+    await tick(); await tick();
+    assert.deepStrictEqual(fc.sent().filter((m) => m.result === 'ok').map((m) => m.id).sort(), [1, 2, 5]);
   }
 
   // a duplicated server request id is answered twice (the server's fault; we do not dedupe)
