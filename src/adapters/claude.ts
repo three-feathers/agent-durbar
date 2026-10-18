@@ -37,7 +37,7 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   models: false, // T049
   effort: false,
   permissionModes: Object.freeze(['read-only', 'ask', 'allow'] as PermissionMode[]),
-  permModeSwitch: 'none', // T046 (set_permission_mode) is not wired yet
+  permModeSwitch: 'live', // FR-115/FR-116: the broker and the hook at once, the CLI flags from the next message
   usage: Object.freeze({ tokens: true, costUsd: true, nanoAiu: false }),
   context: false,
   caps: false, // Q7 / T081
@@ -268,6 +268,10 @@ interface Session {
   /** The CLI was started with --resume and exited before `init`: retry once as a new session under the same id. */
   resumeTried?: boolean;
   initSeen?: boolean;
+  /** The mode the running CLI was launched with (its flags); differs from the broker's mode after a live switch until the next send (FR-116). */
+  launchedMode?: PermissionMode;
+  /** A user message was sent and its `result` has not come yet (a relaunch would cut the turn). */
+  turnOpen?: boolean;
 }
 
 export class ClaudeAdapter implements AgentAdapter {
@@ -311,11 +315,14 @@ export class ClaudeAdapter implements AgentAdapter {
     this.emit(sessionId, { type: 'status', status: 'working', intent: 'Thinking' });
     let t: ClaudeTransport;
     try {
+      // FR-116: new flags for a changed mode, but never in the middle of a turn (the hook keeps the current mode until then)
+      if (s.transport?.alive && !s.turnOpen && s.launchedMode !== undefined && s.launchedMode !== s.broker.getMode()) await this.relaunchForMode(s);
       t = await this.ensureTransport(s);
     } catch (e) {
       this.emit(sessionId, { type: 'status', status: 'error', intent: e instanceof Error ? e.message : 'Claude could not start' });
       return;
     }
+    s.turnOpen = true;
     t.sendUser(userContentOf(message, this.deps.readImage));
   }
 
@@ -348,6 +355,24 @@ export class ClaudeAdapter implements AgentAdapter {
     this.emit(sessionId, { type: 'status', status: 'stopped' });
   }
 
+  /**
+   * Live mode switch (spec 012 FR-115): the broker takes the new mode at once (the hook and `canUseTool` read it on every call);
+   * the CLI's own flags follow on the next send (FR-116). Same pending rules as Copilot.
+   */
+  setPermMode(sessionId: string, mode: PermissionMode, opts: { clearGrants?: boolean; approvePending?: boolean } = {}): { pending: number } {
+    const s = this.sessions.get(sessionId);
+    if (!s) return { pending: 0 };
+    s.broker.setMode(mode);
+    s.options = { ...s.options, permissionMode: mode };
+    if (opts.clearGrants) s.broker.clearGrants();
+    let pending = s.broker.pendingCount();
+    if (pending) {
+      if (opts.approvePending && mode !== 'read-only') pending -= s.broker.approvePending();
+      else if (mode === 'read-only') pending -= s.broker.denyPendingByUser();
+    }
+    return { pending };
+  }
+
   resolvePermission(sessionId: string, requestId: string, approve: boolean, remember = false, broad = false): void {
     this.sessions.get(sessionId)?.broker.resolve(requestId, approve, remember, broad);
   }
@@ -366,6 +391,22 @@ export class ClaudeAdapter implements AgentAdapter {
     const s = this.sessions.get(id);
     if (!s) throw new Error('Unknown Claude session.');
     return s;
+  }
+
+  /** Ends the running CLI so the next launch uses the current mode's flags; the session id is resumed (FR-116). */
+  private async relaunchForMode(s: Session): Promise<void> {
+    const t = s.transport;
+    if (!t) return;
+    s.stopping = true; // this exit is ours: no error status
+    try {
+      await t.close();
+    } catch {
+      /* already gone */
+    } finally {
+      s.stopping = false;
+      if (s.transport === t) s.transport = undefined;
+    }
+    this.debug?.(`claude: relaunching ${s.id} for mode ${s.broker.getMode()}`);
   }
 
   private ensureTransport(s: Session): Promise<ClaudeTransport> {
@@ -400,6 +441,7 @@ export class ClaudeAdapter implements AgentAdapter {
     s.mapper.reset();
     const t = await make({ file, launch, cwd: s.cwd, env: (this.deps.env ?? (() => process.env))(), handlers });
     s.transport = t;
+    s.launchedMode = launch.mode;
     // Register the PreToolUse hook (Read-only roots check) before the first prompt.
     await t.request({ subtype: 'initialize', hooks: { PreToolUse: [{ matcher: '*', hookCallbackIds: [PRE_TOOL_USE_HOOK] }] } });
     s.resumable = true; // from now on Claude has (or will have) this id on disk
@@ -408,6 +450,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
   private onMessage(s: Session, m: ClaudeMessage): void {
     if (m.type === 'system' && m.subtype === 'init') s.initSeen = true;
+    if (m.type === 'result') s.turnOpen = false;
     s.mapper.map(m);
   }
 
@@ -428,15 +471,38 @@ export class ClaudeAdapter implements AgentAdapter {
       const input = r.input && typeof r.input === 'object' ? (r.input as Record<string, unknown>) : {};
       const tool = typeof input.tool_name === 'string' ? input.tool_name : '';
       const toolInput = input.tool_input && typeof input.tool_input === 'object' ? (input.tool_input as Record<string, unknown>) : undefined;
-      const deny = preToolUseDecision(s.broker.getMode(), tool, toolInput, s.roots);
-      return { response: deny ? { ...deny } : {} };
+      return { response: await this.hookDecision(s, tool, toolInput, typeof input.tool_use_id === 'string' ? input.tool_use_id : undefined) };
     }
     // elicitation, mcp_message, ... are not supported yet (T052, FR-024): refuse explicitly
     return { error: `Agent Durbar does not handle ${req.subtype || 'this request'} yet.` };
   }
 
+  /**
+   * The `PreToolUse` answer with the launched and the current mode (FR-115). The CLI enforces its launch flags; this hook
+   * makes sure the user's current choice is never looser: Read-only (current or launched) gets the Read-only decision, and a
+   * process launched in Allow all (`bypassPermissions`, which never calls `canUseTool`) asks through the broker in Ask first.
+   */
+  private async hookDecision(s: Session, tool: string, toolInput: Record<string, unknown> | undefined, toolUseID: string | undefined): Promise<Record<string, unknown>> {
+    const current = s.broker.getMode();
+    const launched = s.launchedMode ?? current;
+    if (current === 'read-only' || launched === 'read-only') {
+      const deny = preToolUseDecision('read-only', tool, toolInput, s.roots);
+      if (!deny) return {};
+      if (current !== 'read-only') deny.hookSpecificOutput.permissionDecisionReason += ' The new permission mode applies from your next message.';
+      return { ...deny };
+    }
+    if (launched === 'allow' && current === 'ask') {
+      if (tool === 'AskUserQuestion') return {};
+      const d = await s.broker.request(permissionLikeOf(tool, toolInput ?? {}, toolUseID));
+      if (d.kind === 'approve-once') return {};
+      return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: d.feedback ?? 'Denied by user in Agent Durbar.' } };
+    }
+    return {};
+  }
+
   private onExit(s: Session, info: { code: number | null; signal: string | null; stderrTail: string }): void {
     s.transport = undefined;
+    s.turnOpen = false;
     if (s.stopping || !this.sessions.has(s.id)) return;
     if (info.stderrTail) this.debug?.(`claude stderr (exit ${String(info.code)}): ${info.stderrTail}`);
     s.broker.denyPending();
