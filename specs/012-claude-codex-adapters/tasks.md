@@ -34,7 +34,7 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 ## Phase 2: pure vendor logic with synthetic fixtures (no vendor, no account, no credits)
 
 - [ ] T021 (sim) `claudeModes.ts`: mode to SDK options, tool name to permission kind, Read-only `PreToolUse` decision; tests, including unknown tool names treated as non-read [FR-013, FR-004]
-- [ ] T022 (sim) `codexModes.ts`: mode to `approvalPolicy` and `sandbox`, approval request to permission kind, answer mapping (approve, remember, deny, stop); tests [FR-013, FR-004]
+- [x] T022 (sim) `codexModes.ts`: mode to `approvalPolicy` and `sandbox`, approval request to permission kind, answer mapping (approve, remember, deny, stop); tests [FR-013, FR-004]
 - [ ] T023 (fixtures) `claudeMap.ts` plus `scripts/fixtures/claude/` synthetic fixtures (init, streamed text and thinking, tool use and result, MCP tool, sub-agent task, result, error) and `test-claude-map.ts`; MCP name parsed against the init server list [FR-014, FR-018, FR-020]
 - [ ] T024 (fixtures) `codexMap.ts` plus `scripts/fixtures/codex/` synthetic fixtures (thread, turn, deltas, command, file change, mcpToolCall, sub-agent items, token usage, failure) and `test-codex-map.ts`; unknown notifications ignored [FR-014, FR-018, FR-020]
 - [ ] T025 (fixtures) Usage and context tests: Claude cost delta from running `total_cost_usd`, per `message.id` dedupe, Codex `modelContextWindow` null as unknown, "credits not reported" for Codex [FR-015, FR-016]
