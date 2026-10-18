@@ -33,6 +33,7 @@ There is no auto-update: download a newer release to update.
 Full list in [CHANGELOG.md](CHANGELOG.md). Short version, since alpha.4:
 
 - **Themes** (specs 035-040): Settings > Theme switches the whole office live: **Corporate**, **Retro Pixel** and three **Durbar** courts (Indian, European, Japanese) each change the colours, the top bar, room frames, cards, fonts, place names and **the people and furniture** (suits at glass desks, 8-bit people at a CRT, courtiers in turbans, periwigs or kimono). **Clean Office** is today's look. Status, permission and credit wording and the layout stay the same in every theme. You can import and export your own theme packs (data only: no scripts, no CSS).
+- **Main agents show their session title** (specs 001/002, issue #126): the name Copilot gives the session (from your first prompt) instead of the folder name; checked once on a real session.
 - **Floors** (spec 033): group rooms on floors and switch a floor off; its agents keep running.
 - **Agents show how they are doing** (spec 034): heavier near a full context window, an ambulance for errors, fainting at the credit limit; rooms take the tone of their worst agent. *Serious mode* turns it off.
 - **Custom places** in the lobby, and per-folder MCP servers listed in Settings > Places (spec 024).
@@ -137,7 +138,7 @@ Specs [035](specs/035-theme-foundation/spec.md)-[040](specs/040-user-themes/spec
 Tests: `test:theme` (packs, tokens, words, the sanitizer, UI styles, and a guard that `themes.css` never sets a size), `test:scenekits` (3600 scenes: every kit, status, mood and look) and `test:userthemes`. Screenshots: `scripts/shots-themes.js`.
 ## Status (main agents show their session title)
 
-Spec deltas in [002](specs/002-copilot-adapter-and-events/spec.md#changes) and [001](specs/001-office-view-and-densities/spec.md) (issue #126). Built and tested on the simulator, fixtures and unit tests, and **checked once on a real Copilot session** (one Read-only prompt, **0.15 AIU**). Not released yet.
+Spec deltas in [002](specs/002-copilot-adapter-and-events/spec.md#changes) and [001](specs/001-office-view-and-densities/spec.md) (issue #126). Built and tested on the simulator, fixtures and unit tests, and **checked once on a real Copilot session** (one Read-only prompt, **0.15 AIU**). In `v0.1.0-alpha.5`.
 
 - Copilot names every session: a title made from your first prompt, which may later become a short summary or a name you gave it with `/rename`. A main agent now shows that title on its card, in the chat header, the list, the agent strip and the lobby, instead of the folder name; several sessions in one folder are told apart at a glance. The folder stays in the room header and in the card's tooltip and screen-reader label. Sub-agents keep their own names, as before.
 - A session resumed from **Previous sessions** shows its saved name, else its summary, until Copilot sends its own title.
