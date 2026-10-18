@@ -1020,14 +1020,16 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const bad = o && o.adapterId !== undefined ? notReady(o.adapterId) : undefined;
         if (bad) return { ok: false, agents: [], error: bad }; // like main: nothing starts, nothing is written
         extra++;
-        const cwd = '~/work/new-folder-' + extra;
+        /* simaddhome=1 (spec 006 FR-016): the next added folder is the home folder, so the calm warning can be seen */
+        const home = typeof window !== 'undefined' && /[?&]simaddhome=1(?:&|$)/.test(window.location.search) && extra === 1;
+        const cwd = home ? '~' : '~/work/new-folder-' + extra;
         const floor = o && typeof o.floor === 'string' && floorsList.some((f) => f.id === o.floor) ? o.floor : 'ground';
         if (o && o.floor !== undefined) lastFloor = floor;
         folderFloor.set(cwd, floor);
-        const info = { id: 'sim-x' + extra, name: 'new-folder-' + extra, cwd, folders: [cwd], permMode: 'read-only', floor, adapterId: mixed && o && o.adapterId ? o.adapterId : 'copilot' } as AgentInfo;
+        const info = { id: 'sim-x' + extra, name: home ? 'home' : 'new-folder-' + extra, cwd, folders: [cwd], permMode: 'read-only', floor, adapterId: mixed && o && o.adapterId ? o.adapterId : 'copilot' } as AgentInfo;
         sims.push({ info, room: info.name, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: [], grants: new Map() });
         addedListeners.forEach((l) => l(info));
-        return { ok: true, agents: [] };
+        return { ok: true, agents: [], ...(home ? { warnings: [{ name: 'home', kind: 'home' as const }] } : {}) };
       },
       addWorkspaceFile: async () => ({ ok: true, agents: [] }),
       listAgents: async () => {

@@ -33,6 +33,7 @@ import { devEnv, devWarning } from './devhooks';
 import { UserThemeStore } from './themes';
 import { SettingsStore } from './settings';
 import { parseAmount, parseCap, parseThemeId } from '../shared/credits';
+import { broadFolderKind } from '../shared/broadfolder';
 import { aboutPanelOptions, aboutView } from '../shared/about';
 import { modelControlFor, parseFocus, parseSwitchRequest } from '../shared/modelswitch';
 import type { ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
@@ -237,7 +238,19 @@ async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions
       errors.push(`${path.basename(p)}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  return { ok: errors.length === 0, agents: added, error: errors.join('; ') || undefined };
+  // Spec 006 FR-016 (issue #170): a calm line for a folder that is the home folder, a parent of it, or a root.
+  const warnings: NonNullable<AddResult['warnings']> = [];
+  const home = os.homedir();
+  for (const a of added) {
+    for (const f of a.folders?.length ? a.folders : [a.cwd]) {
+      const kind = broadFolderKind(f, home);
+      if (kind) {
+        warnings.push({ name: path.basename(f) || f, kind });
+        break;
+      }
+    }
+  }
+  return { ok: errors.length === 0, agents: added, error: errors.join('; ') || undefined, ...(warnings.length ? { warnings } : {}) };
 }
 
 /** Folders remembered from earlier runs come back as "not started" agents: nothing runs until the first message. */
