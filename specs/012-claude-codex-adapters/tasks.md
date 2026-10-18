@@ -40,7 +40,7 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 - [x] T025 (fixtures) Usage and context tests: Claude cost delta from running `total_cost_usd`, per `message.id` dedupe, Codex `modelContextWindow` null as unknown, "credits not reported" for Codex [FR-015, FR-016]
 - [x] T026 (sim) Contract case SC-004 for every adapter on fakes: a write attempt is denied in Read-only, pending in Ask first, approved in Allow all; stop with a pending request denies it [FR-013, FR-017, SC-004]
 - [x] T027 (sim) Folder trust for project-level vendor settings, as decided in Q8 (2026-10-18): no Claude settings files in any mode (`settingSources: []`), `strictMcpConfig: true` in every mode, tests; no folder-trust dialog [FR-025]
-- [ ] T028 (sim) Docs for Phase 2: dated `## Changes` entries in specs 003, 011 and 018 (mode wording per agent, usage units, live switch per adapter), README Safety model note, converge [FR-005, FR-008]
+- [x] T028 (sim) Docs for Phase 2: dated `## Changes` entries in specs 003, 011 and 018 (mode wording per agent, usage units, live switch per adapter), README Safety model note, converge [FR-005, FR-008]
 
 ## Phase 3: transports on fake processes (still no account, no credits)
 
@@ -82,12 +82,13 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 - [ ] T081 (needs-owner-approval) Decision Q7: a separate dollar cap for Claude (`maxBudgetUsd`) or caps stay Copilot-only; if yes, specify it as a spec 011 delta first [C9]
 - [ ] T083 (backlog, needs-owner-approval) `[KNOWN GAP]` from Q8: a repo's own `.claude` hooks, agents and `.mcp.json` never run in a Claude session from Durbar (the repo's `CLAUDE.md`/`AGENTS.md` instructions are handled by T045, appended system prompt). A way to allow them without letting their `permissions.allow` rules bypass Durbar's modes needs its own spec delta and the owner's OK [FR-025]
 - [ ] T084 (research, then sim) `[KNOWN GAP]` from review of #165: Codex `read-only` sandbox reads anywhere unasked, breaking spec 003 FR-023 parity. Find whether the app-server protocol can limit readable roots (sandbox policy); if yes, use it in `codexModes` and assert read-outside in `test-sc004`; if no, document it in README known limits before T043 ships the Codex adapter [FR-013, FR-084]
+- [ ] T085 (sim) Show Claude's dollar estimate (`costUsd`, `costBasis: 'estimate'`) as a labelled estimate in the usage views, never mixed into AIU; per-kind wording for tooltips that say "as reported by the Copilot runtime" (from T028) [FR-015, FR-029]
 - [ ] T082 (sim) Converge: README "verified" table from `simulator/fixtures only` to what Phase 4 proved, CHANGELOG, spec statuses, `specs/README.md`, close umbrella issue #2 [FR-008, SC-005]
 
 ## Analyze notes (2026-10-17, by hand)
 
 - Coverage: FR-001 T011/T014; FR-002 T010/T014; FR-003 T040-T045; FR-004 T021/T022/T052; FR-005 T010/T028; FR-006 T012/T042/T051; FR-007 T015/T016/T023/T024; FR-008 T019/T028/T053/T082; FR-009 T011/T046/T049; FR-010 T012/T047/T061/T066; FR-011 T013; FR-012 T047/T071; FR-013 T021/T022/T026/T064/T068; FR-014 T023/T024/T065/T069; FR-015/FR-016 T025/T062/T067; FR-017 T026/T043/T045/T063; FR-018 T023/T024/T065/T069; FR-019 T048/T080; FR-020 T023/T024/T040/T042; FR-021 T041/T044/T070; FR-022 T060-T070; FR-023 T017; FR-024 T050/T065; FR-025 T027/T083. SC-001 T018; SC-002 T015/T043/T045; SC-003 T017/T018; SC-004 T026; SC-005 T019/T082.
 - Ordering: T010 before T011 to T016; T015 before T026, T043, T045; T021/T022 before T026; T040 and T041 before T045; T048 before T080. T042 to T044 and T047 have no vendor dependency and can run in parallel after Phase 1.
-- Gaps recorded rather than hidden: `[KNOWN GAP]` question UI (T052), Codex per-session MCP (FR-024), Codex helpers (T065), Windows Codex sandbox (T070), dollar cap (T081), repo `.claude` hooks/agents/`.mcp.json` not run (T083).
+- Gaps recorded rather than hidden: `[KNOWN GAP]` question UI (T052), Codex per-session MCP (FR-024), Codex helpers (T065), Windows Codex sandbox (T070), dollar cap (T081), repo `.claude` hooks/agents/`.mcp.json` not run (T083), Codex reads outside the session folders (T084).
 - Contradictions found and fixed while writing: the 2026-10-16 spec said the simulator could be wrapped as an adapter (it is renderer-side: `FakeAdapter` is new, T015); it said `AgentAdapter` was Copilot-agnostic apart from a few parts (`main.ts` also calls six non-interface members: T010).
 - No open `[NEEDS CLARIFICATION]` remains in spec.md; the owner questions are Q1 to Q9, each mapped to a blocked task.
