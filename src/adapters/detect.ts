@@ -40,11 +40,13 @@ export const CLAUDE_BINARY: BinarySpec = {
   installHint: 'Install Claude Code (npm install -g @anthropic-ai/claude-code), then restart Durbar.',
 };
 
-/** Minimum 0.163.0 is a placeholder (the version the plan was written against) until T061. */
+/** Minimum Codex version: the one researched for the read-limiting profile (spec 012 FR-087), also the detect minimum. Older versions are refused because they are unchecked; T061 confirms it on a real Codex. */
+export const CODEX_MIN_VERSION = '0.163.0';
+
 export const CODEX_BINARY: BinarySpec = {
   name: 'codex',
   versionArgs: ['--version'],
-  minVersion: '0.163.0',
+  minVersion: CODEX_MIN_VERSION,
   installHint: 'Install the Codex CLI (npm install -g @openai/codex), then restart Durbar.',
 };
 

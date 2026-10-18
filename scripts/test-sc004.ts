@@ -15,7 +15,7 @@ import * as path from 'path';
 import { PermissionBroker, startModeOf } from '../src/adapters/permissions';
 import type { BrokerEvent } from '../src/adapters/permissions';
 import { claudeOptionsFor, decideTool, preToolUseDecision } from '../src/adapters/claudeModes';
-import { codexModeSettings, codexPermission, codexReply } from '../src/adapters/codexModes';
+import { CODEX_RO_FILESYSTEM, codexModeSettings, codexPermission, codexReply, codexWorkspaceRoots } from '../src/adapters/codexModes';
 import type { PermissionMode } from '../src/adapters/capabilities';
 
 type Outcome = 'deny' | 'ask' | 'approve';
@@ -41,6 +41,7 @@ const outFile = path.join(outside, 'b.txt');
 const CMD = 'touch a.txt';
 
 const skipped: string[] = [];
+const stricterCells: string[] = [];
 let asserted = 0;
 
 /** Copilot: one broker per request, in the given mode, with the session's roots. */
@@ -100,15 +101,33 @@ function claude(mode: string, c: CaseName): Outcome {
  * `on-request`: the app-server sends an approval request that Durbar holds (ask); `never` + full access: runs (approve).
  * The write/shell enforcement itself is Codex's sandbox (not run here), so this is the settings' outcome.
  */
-function codex(mode: string, c: CaseName): Outcome | 'skip' {
-  if (c === 'read-inside' || c === 'read-outside') return 'skip';
+function codex(mode: string, c: CaseName): Outcome {
   const s = codexModeSettings(mode);
+  if (c === 'read-inside' || c === 'read-outside') {
+    // Reads (FR-088, settings level, not run): Codex sends no read approval, so the profile decides. In Read-only and
+    // Ask first there is no `sandbox` key (it would replace the profile), the profile has no `:root` and no write
+    // entry, and the readable roots are the session's folders. Inside is readable; outside is unreadable.
+    if (s.permissions === undefined) {
+      assert.strictEqual(s.sandbox, 'danger-full-access', `codex ${mode} ${c}: Allow all reads anywhere`);
+      assert.strictEqual(s.approvalPolicy, 'never', `codex ${mode} ${c}: Allow all never asks`);
+      return 'approve';
+    }
+    assert.ok(!('sandbox' in s), `codex ${mode} ${c}: no sandbox key next to the profile`);
+    assert.strictEqual(s.permissions, 'durbar_ro', `codex ${mode} ${c}: the read-limited profile`);
+    assert.deepStrictEqual(Object.keys(CODEX_RO_FILESYSTEM).sort(), [':minimal', ':workspace_roots'], `codex ${mode} ${c}: the profile reads :minimal and the workspace roots only`);
+    assert.ok(!(':root' in CODEX_RO_FILESYSTEM), `codex ${mode} ${c}: no :root`);
+    assert.ok(Object.values(CODEX_RO_FILESYSTEM).every((v) => v === 'read'), `codex ${mode} ${c}: no write or deny entry`);
+    assert.deepStrictEqual(codexWorkspaceRoots([ws], (x) => x), [ws], `codex ${mode} ${c}: runtimeWorkspaceRoots equal the session roots`);
+    assert.strictEqual(path.resolve(ws) === ws && path.relative(ws, c === 'read-inside' ? inFile : outFile).startsWith('..'), c === 'read-outside', `codex ${mode} ${c}: the file is inside or outside the root`);
+    return c === 'read-inside' ? 'approve' : 'deny';
+  }
   const perm =
     c === 'shell' ? codexPermission('item/commandExecution/requestApproval', { command: CMD })
     : codexPermission('item/fileChange/requestApproval', { changes: [{ path: c === 'write-outside' ? outFile : inFile }] });
   assert.strictEqual(perm.kind, c === 'shell' ? 'shell' : 'write', `codex ${mode} ${c}: the request maps to its kind`);
   if (s.approvalPolicy === 'on-request') {
-    assert.strictEqual(s.sandbox, 'read-only', `codex ${mode} ${c}: Ask first keeps the read-only sandbox`);
+    assert.strictEqual(s.permissions, 'durbar_ro', `codex ${mode} ${c}: Ask first keeps the read-limited profile`);
+    assert.ok(!('sandbox' in s), `codex ${mode} ${c}: Ask first sends no sandbox key`);
     assert.strictEqual(codexReply('approve', mode).decision, 'accept', `codex ${mode} ${c}: approving a held request accepts`);
     assert.strictEqual(codexReply('deny', mode).decision, 'decline', `codex ${mode} ${c}: denying a held request declines`);
     return 'ask';
@@ -117,7 +136,7 @@ function codex(mode: string, c: CaseName): Outcome | 'skip' {
     assert.strictEqual(s.approvalPolicy, 'never', `codex ${mode} ${c}: Allow all never asks`);
     return 'approve';
   }
-  // never + read-only sandbox: a stray request is still declined
+  // never + read-limited profile: a stray request is still declined
   assert.strictEqual(codexReply('approve', mode).decision, 'decline', `codex ${mode} ${c}: a stray request is declined, never accepted`);
   return 'deny';
 }
@@ -128,17 +147,12 @@ async function main(): Promise<void> {
     for (const mode of MODES) {
       for (const c of CASES) {
         const got = kind === 'copilot' ? await copilot(mode, c) : kind === 'claude' ? claude(mode, c) : codex(mode, c);
-        if (got === 'skip') {
-          const line =
-            c === 'read-inside'
-              ? `SKIP ${kind} ${mode} ${c}: Codex sends no approval request for a read (its kind is never read); the read-only or full-access sandbox decides, and that is not run here`
-              : `SKIP ${kind} ${mode} ${c}: the read-only sandbox reads anywhere the OS user can and Codex sends no read approval (KNOWN GAP T084)`;
-          skipped.push(line);
-          console.log(line);
-          table.push(`${kind} ${mode} ${c} = SKIP`);
-          continue;
-        }
-        assert.strictEqual(got, expected(mode, c), `SC-004: ${kind} in ${mode} gave ${got} for ${c}, expected ${expected(mode, c)}`);
+        // Codex Ask first, read outside: the profile makes the file unreadable (deny), it cannot hold a read for the user.
+        // Stricter than the spec's "ask", never weaker; the only such cell, and it is named here and in spec 012 FR-088.
+        const stricter = kind === 'codex' && mode === 'ask' && c === 'read-outside';
+        if (stricter) stricterCells.push(`${kind} ${mode} ${c}`);
+        const want = stricter ? 'deny' : expected(mode, c);
+        assert.strictEqual(got, want, `SC-004: ${kind} in ${mode} gave ${got} for ${c}, expected ${want}`);
         asserted++;
         table.push(`${kind} ${mode} ${c} = ${got}`);
       }
@@ -146,9 +160,9 @@ async function main(): Promise<void> {
   }
   const total = KINDS.length * MODES.length * CASES.length;
   assert.strictEqual(asserted + skipped.length, total, 'every kind x mode x case is asserted or listed as SKIP');
-  const wantSkips = MODES.flatMap((m) => (['read-inside', 'read-outside'] as CaseName[]).map((c) => `codex ${m} ${c}`)).sort();
-  assert.deepStrictEqual(skipped.map((l) => l.split(':')[0].replace(/^SKIP /, '')).sort(), wantSkips, 'exactly the Codex read-inside and read-outside cells are skipped, one per mode');
-  assert.strictEqual(skipped.length, 8, 'exactly 8 SKIPs');
+  assert.strictEqual(skipped.length, 0, 'no SKIPs: the Codex read cells are asserted at the settings level (FR-088)');
+  assert.deepStrictEqual(stricterCells, ['codex ask read-outside'], 'exactly one cell is stricter than the contract, by name');
+  assert.strictEqual(asserted, 60, 'all 60 cells asserted');
   assert.strictEqual(total, 60, '3 kinds x 4 modes x 5 cases = 60 cells');
   console.log(table.join('\n'));
   console.log(`sc004: ${asserted} asserted, ${skipped.length} skipped (listed above), ${total} cells`);
