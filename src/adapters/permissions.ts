@@ -9,7 +9,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import type { PermissionInfo, SessionGrant } from './types';
+import type { PermissionInfo, SessionGrant, StartOptions } from './types';
 
 /** The subset of the SDK's PermissionRequest the broker reads (all optional strings besides kind). */
 export interface PermissionLike {
@@ -175,6 +175,13 @@ export type BrokerEvent =
   | { type: 'grants'; grants: SessionGrant[] };
 
 export type BrokerMode = 'read-only' | 'ask' | 'allow';
+
+/** The permission mode to start with: `permissionMode` wins (unknown = read-only, constitution III), else the old booleans. */
+export function startModeOf(o: Pick<StartOptions, 'permissionMode' | 'allow' | 'ask'>): BrokerMode {
+  const m = o.permissionMode as unknown;
+  if (m !== undefined && m !== null) return m === 'allow' || m === 'ask' || m === 'read-only' ? m : 'read-only';
+  return o.allow ? 'allow' : o.ask ? 'ask' : 'read-only';
+}
 
 export interface BrokerOptions {
   /** Initial mode (`allow`/`ask` flags are kept for older callers); it can be changed at any time with `setMode`. */
