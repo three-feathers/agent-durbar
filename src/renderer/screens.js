@@ -106,12 +106,23 @@
     const floorsSec=X.floors&&X.floors.on()?`<section class="scr-sec" aria-labelledby="flH"><h3 id="flH">Floors</h3>
         <p class="scr-note">Groups of folders. A floor that is <b>off</b> is hidden from the office and not counted in Working, Waiting, Idle, Errors and Done. <b>Its agents keep running</b> and can spend credits; the office credit total still counts them, and an agent there that waits for you or has an error is shown <b>only here</b>, on its floor's row (for example "Off, 1 waiting"). With two or more floors, the same controls are also in the <b>Floors</b> button of the top bar.</p>
         <div class="floors-ui floors-set" id="floorsSet" tabindex="-1"></div></section>`:'';
+    /* Theme (specs 037-040): pick a built-in or imported pack; applies live, no restart. */
+    const curTheme=(app.theme||'clean-office');
+    let userThemes=[];
+    if(X.bridge.listUserThemes){try{userThemes=(await X.bridge.listUserThemes())||[];}catch(e){userThemes=[];}}
+    const themes=(window.THEME?window.THEME.list():[{id:'clean-office',name:'Clean Office'}]).map((t)=>({...t,own:false})).concat(userThemes.filter((u)=>u.ok!==false).map((u)=>({id:u.id,name:u.name||u.id,own:true})));
+    const badThemes=userThemes.filter((u)=>u.ok===false);
+    const themeSec=`<section class="scr-sec" aria-labelledby="themeH"><h3 id="themeH">Theme</h3>
+        <p class="scr-note">The look of the office: colours, small art and scene words (places, lobby, doors). Status, permission and credit wording never change, and the layout always fits 15 agents at 1280×800. The choice applies at once and is kept on this computer.</p>
+        <ul class="thlist" id="thList">${themes.map((t)=>`<li class="throw"><button class="thpick" type="button" data-theme="${esc(t.id)}" aria-pressed="${t.id===curTheme}" aria-label="Theme ${esc(t.name)}"><span class="thsw" data-theme-sw="${esc(t.id)}" aria-hidden="true"></span><span class="thtx"><b>${esc(t.name)}</b>${t.own?'<span class="mtag">yours</span>':''}${t.author?`<small>${esc(t.author)}</small>`:''}</span></button></li>`).join('')}</ul>
+        ${badThemes.length?`<p class="scr-note warn" role="status">${badThemes.length} theme folder${badThemes.length>1?'s were':' was'} ignored: ${esc(badThemes.map((b)=>b.error||b.folder).join('; '))}</p>`:''}
+        <div class="scr-tools"><button class="btn" type="button" id="thImport">Import a theme…</button><button class="btn" type="button" id="thExport"${/^(clean-office|corporate|retro|durbar-)/.test(curTheme)?' disabled title="Built-in themes are in the app; export your own themes."':''}>Export the active theme…</button><span class="scr-note small">A theme is a folder with a data-only manifest.json (no scripts, no CSS). The manifest format is spec 040.</span></div></section>`;
     const ab=app.about;
     const aboutSec=ab?`<section class="scr-sec" aria-labelledby="aboutH"><h3 id="aboutH">About</h3>
         <p class="scr-note"><b>${esc(ab.name)}</b> ${esc(ab.version)} · by <b>${esc(ab.owner)}</b></p>
         <p class="scr-note small" id="aboutCredits">Contributors: ${ab.contributors.map(c=>esc(c.label)).join(', ')}</p>
         <p class="scr-note small">${esc(ab.copyright)} · MIT License</p></section>`:'';
-    r.innerHTML=head('Settings')+`<div class="scr-body">${capSec}${moodSec}${floorsSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${themeSec}${capSec}${moodSec}${floorsSec}${placesSec}
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH">MCP servers</h3>
         <p class="scr-note">MCP servers give agents extra tools. Your <b>Copilot CLI list</b> is the one global list: every agent gets those servers, with nothing to configure or import here. Each agent can switch single servers off from its own header (MCP button).</p>
         <p class="scr-warn" role="note"><b>MCP servers run local commands with your user rights.</b> The Copilot runtime starts the servers of your CLI list in every session, exactly as the CLI does. Read-only MCP tools can run without asking even in Read-only mode.</p>
@@ -141,6 +152,25 @@
     };
     r.onclick=onSettingsClick;
     r.onchange=onPlaceChange;
+    /* theme picker (spec 037): click applies live through app.js's applyTheme; no restart */
+    if($('thList'))$('thList').addEventListener('click',(e)=>{
+      const b=e.target.closest&&e.target.closest('[data-theme]');if(!b||!X.applyTheme)return;
+      X.applyTheme(b.dataset.theme);
+    });
+    if($('thImport'))$('thImport').onclick=async()=>{
+      if(!X.bridge.importTheme)return;
+      const res=await X.bridge.importTheme().catch(()=>null);
+      if(!res||!res.ok){X.toast(esc(res&&res.error||'The theme folder could not be imported (cancelled or not a valid pack).'),4200);return;}
+      X.toast('Theme <b>'+esc(res.name||res.id)+'</b> imported.',3200);
+      if(X.applyTheme)X.applyTheme(res.id);
+      paintSettings();
+    };
+    if($('thExport'))$('thExport').onclick=async()=>{
+      if(!X.bridge.exportTheme)return;
+      const res=await X.bridge.exportTheme(curTheme).catch(()=>null);
+      if(!res||!res.ok){X.toast(esc(res&&res.error||'Export did not work (cancelled, or only your own themes can be exported).'),4200);return;}
+      X.toast('Theme copied to <b>'+esc(res.to)+'</b>.',4200);
+    };
     if(focus){const h=r.querySelector('h2');if(h){h.tabIndex=-1;h.focus({preventScroll:true});}}
   }
   /* one server of the Copilot CLI list (or the built-in one): read-only, with its exact command/URL and a switch for new sessions */

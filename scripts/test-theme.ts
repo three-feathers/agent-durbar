@@ -66,6 +66,64 @@ assert.strictEqual(T._sanitizeSlot('not svg'), null, 'garbage rejected');
 assert.strictEqual(T._sanitizeSlot('<iframe src="x"/>'), null, 'iframe rejected');
 assert.ok(T._sanitizeSlot('<g><path d="M0 0h10" fill="#000"/></g>'), 'g + path allowed');
 
+// --- Pixel maps (spec 038) ---
+assert.ok(T._compilePixelMap({cell:2,palette:{a:'#fff'},rows:['a.a','.a.']}),'pixel map compiles');
+assert.strictEqual(T._compilePixelMap({palette:{a:'#fff'},rows:['a']}),T._compilePixelMap({palette:{a:'#fff'},rows:['a']}),'default cell size');
+assert.strictEqual(T._compilePixelMap({palette:{a:'red'},rows:['z']}),null,'unknown palette key rejected');
+assert.strictEqual(T._compilePixelMap({palette:{a:'url(x)'},rows:['a']}),null,'non-colour palette value rejected');
+assert.strictEqual(T._compilePixelMap({palette:{},rows:['a']}),null,'empty palette rejected');
+assert.ok(T._sanitizeSlot(T._compilePixelMap({cell:3,palette:{a:'#112'},rows:['..a']}))) ;
+const pixPack=T._validateManifest({id:'px',art:{'hair-front':{cell:4,palette:{a:'#123'},rows:['aa','aa']}}});
+assert.ok(pixPack.art['hair-front']&&pixPack.art['hair-front'].includes('<rect'),'pixel map survives manifest validation as rect grid');
+
+// --- Every built-in pack (specs 036-039) ---
+const packs=T.list().map((t:any)=>t.id);
+assert.deepStrictEqual(packs,['clean-office','corporate','retro','durbar-indian','durbar-european','durbar-japanese'],'all six built-in packs registered');
+for(const id of packs){
+  T.setTheme(id);
+  assert.strictEqual(T.current().id,id);
+  assert.ok(T.token('--bg'),id+': --bg');
+  assert.ok(T.token('--pc-error'),id+': pill ink');
+  assert.ok(T.word('place-terminal'),id+': word map');
+  assert.ok(T.motion('wave'),id+': motion preset');
+}
+/* durbar packs carry the head accessory; retro carries none */
+assert.ok(T._builtins()['durbar-indian'].art['hair-acc'],'indian turban slot');
+assert.ok(T._builtins()['durbar-european'].art['hair-acc'],'european crown slot');
+assert.ok(T._builtins()['durbar-japanese'].art['hair-acc'],'japanese kanzashi slot');
+assert.ok(!T._builtins()['retro'].art['hair-acc'],'retro: no accessory');
+assert.ok(!T._builtins()['clean-office'].art||!T._builtins()['clean-office'].art['hair-acc'],'clean: no accessory');
+
+/* scene words of each pack differ from Clean Office where they claim to */
+assert.strictEqual(T._builtins()['corporate'].words['place-library'],'Records');
+assert.strictEqual(T._builtins()['retro'].words['place-web'],'Modem');
+assert.strictEqual(T._builtins()['durbar-indian'].words['door-close'],'Close gate');
+
+/* status/permission/credit wording is never a scene word: no pack may define those keys */
+const FORBIDDEN=['working','thinking','waiting','idle','error','done','read-only','ask','allow','aiu','credits'];
+for(const id of packs){
+  const w=T._builtins()[id].words||{};
+  for(const f of FORBIDDEN)assert.ok(!(f in w),id+' must not rename '+f);
+}
+
+/* --- Contrast: every pill ink meets 4.5:1 on its pill background (spec 037 FR-003) --- */
+function lum(hex:any){const n=parseInt(hex.slice(1),16);const f=(v:any)=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);};return 0.2126*f(n>>16)+0.7152*f((n>>8)&255)+0.0722*f(n&255);}
+function contrast(a:any,b:any){const l1=lum(a),l2=lum(b);return (Math.max(l1,l2)+0.05)/(Math.min(l1,l2)+0.05);}
+for(const id of packs){
+  T.setTheme(id);
+  for(const st of ['working','thinking','waiting','idle','error','done']){
+    const ink=T.token('--pc-'+st), bg=T.token('--pb-'+st);
+    const c=contrast(ink,bg);
+    assert.ok(c>=4.5,`${id}: --pc-${st} on --pb-${st} = ${c.toFixed(2)}:1`);
+  }
+}
+T.setTheme('clean-office');
+
+// --- Reduced motion at switch time (spec 036 FR-006) ---
+T.setTheme('retro');
+assert.ok(/steps/.test(T.motion('bar')),'arcade preset uses steps');
+T.setTheme('clean-office');
+
 // --- Invalid manifest values ignored ---
 const partial = T._validateManifest({
   id: 'partial',

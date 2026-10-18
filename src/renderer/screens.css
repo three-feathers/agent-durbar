@@ -158,3 +158,13 @@ body.has-bridge #topBtns{display:flex}
 .plrow{display:flex;align-items:center;gap:12px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2)}
 .plrow .plname{flex:1 1 auto;min-width:0;font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .plrow select{flex:none;height:32px;border:1px solid var(--line);background:#fff;border-radius:10px;padding:0 8px;font:inherit;font-size:12.5px;color:var(--ink);max-width:220px}
+
+/* ---- theme picker (specs 037-040): built-ins + imported packs, applies live ---- */
+.thlist{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:4px}
+.thpick{display:flex;align-items:center;gap:10px;width:100%;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);cursor:pointer;text-align:left}
+.thpick:hover{border-color:var(--line-2);background:#fff}
+.thpick[aria-pressed=true]{border-color:var(--stat-sel-border);box-shadow:0 0 0 2px var(--stat-sel-ring);background:#fff}
+.thsw{width:26px;height:18px;border-radius:5px;border:1px solid var(--line-2);flex:none;background:linear-gradient(135deg,var(--tint-sage) 50%,var(--tint-blue) 50%)}
+.thtx{display:flex;align-items:baseline;gap:8px;min-width:0}
+.thtx b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.thtx small{font-size:11.5px;color:var(--muted)}

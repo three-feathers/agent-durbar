@@ -96,6 +96,8 @@ export interface AppSettingsView {
   placeMap?: Record<string, string>;
   /** Serious mode (spec 034): the agent figures show no monster, ambulance or other mood drawing. */
   seriousMode?: boolean;
+  /** Active theme id (specs 035-040). Omitted = Clean Office. */
+  theme?: string;
 }
 
 export interface ModelChoice {
@@ -335,6 +337,13 @@ export interface DurbarApi {
   setPlace?(server: string, place: string | null): Promise<{ ok: boolean; placeMap?: Record<string, string> }>;
   /** Turn Serious mode on or off (spec 034). */
   setSeriousMode?(on: boolean): Promise<{ ok: boolean; seriousMode?: boolean }>;
+  /** Set the theme (specs 037-040): a built-in id or an imported user theme id. */
+  setTheme?(id: string): Promise<{ ok: boolean; theme?: string }>;
+  /** User themes (spec 040): scan userData/themes; each valid pack listed, each invalid one given back with a reason. */
+  listUserThemes?(): Promise<Array<{ id: string; name?: string; ok: boolean; error?: string; folder?: string }>>;
+  getUserTheme?(id: string): Promise<Record<string, unknown> | null>;
+  importTheme?(): Promise<{ ok: boolean; id?: string; name?: string; error?: string; cancelled?: boolean }>;
+  exportTheme?(id: string): Promise<{ ok: boolean; to?: string; error?: string; cancelled?: boolean }>;
   setCap?(id: string, credits: number | null): Promise<{ ok: boolean; error?: string; maxAiCredits?: number }>;
   resolveLimit?(id: string, requestId: string, choice: LimitChoice): Promise<{ ok: boolean; error?: string }>;
 

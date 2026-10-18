@@ -233,7 +233,8 @@ async function driver(ctx) {
       total++;
       if (!(await ctx.js(`document.getElementById('floorsBtn').hidden`))) { failed++; console.log(`FAIL sim${sim}-${w}x${h}: Floors button shown with one floor`); }
       const names = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].map(e=>e.textContent.trim())`);
-      const tag = `sim${sim}-${w}x${h}`;
+      const themeTag = process.env.OFFICE_THEME ? process.env.OFFICE_THEME + ' ' : '';
+      const tag = `${themeTag}sim${sim}-${w}x${h}`;
       const combos = [{ n: 0, closed: [] }];
       for (let k = 1; k < names.length; k++) {
         let subs = subsets(names, k);
