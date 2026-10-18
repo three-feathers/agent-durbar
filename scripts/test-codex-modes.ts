@@ -37,6 +37,22 @@ assert.deepStrictEqual(codexWorkspaceRoots(['C:\\x', 'c:\\x\\']), ['C:\\x'], 'wi
 assert.deepStrictEqual(codexWorkspaceRoots(['/A', '/a']), ['/A', '/a'], 'posix is case-sensitive');
 assert.deepStrictEqual(codexWorkspaceRoots(['/a/./b', '/a/b/../c']), ['/a/b', '/a/c'], '. and .. resolved');
 assert.deepStrictEqual(codexWorkspaceRoots(['/a/../..', '/a/..', '/..', '/', '//', 'C:\\', 'C:/', 'C:\\a\\..', 'C:\\..\\..', '\\\\srv\\share', '\\\\srv\\share\\', '\\\\srv\\share\\x\\..\\..']), [], 'filesystem roots, UNC share roots and escapes are dropped');
+// symlinks: an injected resolver; checks run on the resolved path
+const links: Record<string, string> = { '/proj/link-to-root': '/', '/proj/link-to-a': '/a', 'C:\\proj\\winroot': 'C:\\', 'C:\\proj\\unc': '\\\\srv\\share\\', '/proj/link-to-dots': '/a/../..', '/proj/rel': 'rel/x' };
+const fakeReal = (p: string): string => {
+  if (p === '/gone') throw new Error('ENOENT');
+  return links[p] ?? p;
+};
+assert.deepStrictEqual(codexWorkspaceRoots(['/proj/link-to-root'], fakeReal), [], 'a link to / is dropped');
+assert.deepStrictEqual(codexWorkspaceRoots(['C:\\proj\\winroot'], fakeReal), [], 'a link to C:\\ is dropped');
+assert.deepStrictEqual(codexWorkspaceRoots(['C:\\proj\\unc'], fakeReal), [], 'a link to a UNC share root is dropped');
+assert.deepStrictEqual(codexWorkspaceRoots(['/proj/link-to-dots', '/proj/rel'], fakeReal), [], 'a link that resolves to a root or to a relative path is dropped');
+assert.deepStrictEqual(codexWorkspaceRoots(['/a', '/proj/link-to-a', '/b'], fakeReal), ['/a', '/b'], 'a link to another root is a duplicate after resolving');
+assert.deepStrictEqual(codexWorkspaceRoots(['/proj/link-to-a'], fakeReal), ['/a'], 'the resolved path is what is sent');
+assert.deepStrictEqual(codexWorkspaceRoots(['/gone', '/ok'], fakeReal), ['/ok'], 'a resolver that throws drops that root only');
+assert.deepStrictEqual(codexWorkspaceRoots(['/ok'], () => { throw new Error('EACCES'); }), [], 'permission denied drops the root');
+assert.deepStrictEqual(codexWorkspaceRoots(['/proj/link-to-root', '/a'], undefined), ['/proj/link-to-root', '/a'], 'no resolver: unchanged, pure');
+
 assert.deepStrictEqual(codexWorkspaceRoots(['rel/path', '', '.', '../x', 'C:foo', 5 as never, null as never, '/ok\0bad']), [], 'relative, empty, non-string and NUL paths dropped');
 assert.deepStrictEqual(codexWorkspaceRoots(undefined), [], 'undefined roots');
 assert.deepStrictEqual(codexWorkspaceRoots(null), [], 'null roots');
