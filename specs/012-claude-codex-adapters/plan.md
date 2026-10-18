@@ -1,6 +1,6 @@
 # Implementation Plan: Claude Code and Codex adapters
 
-**Spec**: [spec.md](spec.md) | **Research**: [research.md](research.md) | **Tasks**: [tasks.md](tasks.md) | **Date**: 2026-10-17 | **Kind**: forward plan (nothing built)
+**Spec**: [spec.md](spec.md) | **Research**: [research.md](research.md) | **Tasks**: [tasks.md](tasks.md) | **Date**: 2026-10-17 | **Kind**: forward plan (Phase 1 T010-T016 built 2026-10-18; no Claude or Codex adapter yet)
 
 ## Summary
 
@@ -187,7 +187,7 @@ Project-level vendor settings can run code (Claude runs project hooks and `.mcp.
 
 | Phase | Needs | Content | Credits / accounts |
 | --- | --- | --- | --- |
-| **1 Simulator-only foundation** | nothing | Interface deltas, registry, capabilities, `detect()` skeleton with injected exec, persisted `adapterId`/`vendorSessionId` migration, `FakeAdapter`, contract suite (run on `FakeAdapter` and the Copilot fake), picker UI with unavailable state, capability gating, README table, screenshots on the simulator | none |
+| **1 Simulator-only foundation** (T010-T016 built 2026-10-18 (simulator and unit tests); T017-T019 open) | nothing | Interface deltas, registry, capabilities, `detect()` skeleton with injected exec, persisted `adapterId`/`vendorSessionId` migration, `FakeAdapter`, contract suite (run on `FakeAdapter` and the Copilot fake), picker UI with unavailable state, capability gating, README table, screenshots on the simulator | none |
 | **2 Pure vendor logic** | Phase 1 | `claudeModes`, `codexModes`, `claudeMap`, `codexMap`, kind mapping, detect parsers, with **synthetic** fixtures from vendor docs/types and tests; SC-004 on fakes | none |
 | **3 Transports on fake processes** | Phase 2, Q3/Q4 for Claude | `codexRpc` against a scripted stdio fake; `CodexAdapter`; `ClaudeAdapter` against a fake `query()` object; history readers on fixtures; packaging notes (asar, ESM import) tested by a build check that does not run a vendor | none (a free `--version` probe on a developer's own machine is allowed; no prompt) |
 | **4 Real-account verification** | owner approval (Q1, Q2) | one tiny Read-only prompt per check per vendor: start, one turn, interrupt, stop, resume, permission denied in Read-only, permission asked in Ask first, MCP tool event, sub-agent event, context and usage numbers, sign-in state calls; record redacted fixtures (`recorded`), update spec evidence tags and the README table | **spends the owner's credits** |
