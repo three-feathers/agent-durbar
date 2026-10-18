@@ -6,9 +6,10 @@
  * as sanitized SVG fragments. Unknown/missing values fall back to Clean Office.
  */
 (function(root, factory){
-  if(typeof module==='object' && module.exports) module.exports=factory();
-  else if(typeof define==='function' && define.amd) define([], factory);
-  else root.THEME=factory();
+  const exports = factory();
+  if(typeof module==='object' && module.exports) module.exports = exports;
+  if(typeof define==='function' && define.amd) define([], function(){ return exports; });
+  root.THEME = exports;
 }(typeof self!=='undefined'?self:this, function(){
   'use strict';
 
