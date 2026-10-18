@@ -45,7 +45,7 @@ One adapter instance per id (one shared child process where the vendor allows: C
 | New file | What | Pure? |
 | --- | --- | --- |
 | `src/adapters/capabilities.ts` | `AdapterCapabilities`, `AdapterDescriptor`, `AdapterState` | yes |
-| `src/adapters/registry.ts` | id → descriptor/factory, `detectAll()` | yes (injected exec) |
+| `src/adapters/registry.ts` | id → descriptor/factory, `detectAll()` | yes (injected detect function; exec is injected in `detect.ts`) |
 | `src/adapters/detect.ts` | find binary, `--version`, min-version compare, Windows shim rules | yes (injected env/exec) |
 | `src/adapters/fake.ts` | `FakeAdapter`: plays a script of normalized events, honours the broker, for tests and `DURBAR_SIM_MAIN` | yes |
 | `src/adapters/claudeModes.ts` | mode → SDK options, tool name → permission kind, Read-only hook decision | yes |
@@ -69,7 +69,7 @@ One adapter instance per id (one shared child process where the vendor allows: C
 3. `StartOptions`: `resumeSessionId` stays the **vendor** id; add `permissionMode: 'read-only' | 'ask' | 'allow'` as the one source of truth (`allow`/`ask` booleans stay for Copilot until migrated). `maxAiCredits` and `autoTier` are ignored by adapters whose `caps` is false.
 4. Persisted folder entry: `adapterId` (default `copilot`) and `vendorSessionId?`. Migration on read.
 5. `UsageEvent`: add optional `costUsd?: number` and `costBasis?: 'estimate'`; `creditsStatus: 'unavailable'` where the runtime gives no money. No existing field changes.
-6. `AdapterInfo` (in `src/shared/api.ts`): id, name, state, version, hint, capabilities (plain data, no vendor types).
+6. `AdapterInfo` (in `src/shared/adapters.ts`, re-exported from `src/shared/api.ts` by T014; see spec `## Changes` 2026-10-18, T011): id, displayName, state, version, hint, capabilities (plain data, no vendor types).
 
 ## Capabilities
 

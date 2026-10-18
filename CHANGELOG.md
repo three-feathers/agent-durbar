@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.4 tag)
 
+- **Adapter registry and descriptors (spec 012 T011, issue #31).** A pure list of the agents the app knows (only Copilot today), with what each can do and a way to check if it is installed; not wired into the app yet, so no visible change. Unit tests, 0 AIU.
+
 - **Adapter interface ready for more agents (spec 012 T010, issue #30).** The app now talks to every agent through one interface with declared capabilities; Copilot works exactly as before. Groundwork for Claude Code and Codex; simulator and unit tests, 0 AIU.
 
 - **Custom places in the lobby (spec 024 delta, issue #115).** Add up to 3 places of your own, with a name and an icon from a fixed set, from the lobby or Settings > Places, and send MCP servers there. Rename keeps the mapping; delete sends the servers back to their default place. The lobby stays one row at 1440x900 and 1280x800. Simulator, unit tests and `scripts/shots-024-custom.js`, 0 AIU; not checked on a real session.

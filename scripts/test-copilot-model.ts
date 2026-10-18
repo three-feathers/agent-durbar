@@ -7,7 +7,9 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CopilotAdapter } from '../src/adapters/copilot';
+import { CopilotAdapter, COPILOT_DESCRIPTOR } from '../src/adapters/copilot';
+import { createRegistry, detectAll } from '../src/adapters/registry';
+import type { AdapterDescriptor } from '../src/adapters/capabilities';
 import { EventMapper } from '../src/adapters/map';
 import type { RawEvent } from '../src/adapters/map';
 import { compactResultFrom, modelConfig, runtimeMessage, modelOptionFrom, priceClassOf, pricingFromTokenPrices, switchResultFrom } from '../src/adapters/copilotmodel';
@@ -394,6 +396,77 @@ async function main(): Promise<void> {
       assert.strictEqual(o.maxAiCredits, 40);
     }
     assert.strictEqual(startOptionsOf({ permMode: 'ask', model: 'm1' }, '/w', 'auto', 'high').autoTier, undefined);
+  }
+
+  // ---- spec 012 T011: registry, detectAll, Copilot descriptor (FR-030..FR-034)
+  {
+    const caps = (): AdapterCapabilities => JSON.parse(JSON.stringify(COPILOT_DESCRIPTOR.capabilities));
+    const calls: string[] = [];
+    const fake = (id: string): AdapterDescriptor => ({ id, displayName: `Fake ${id}`, capabilities: caps(), create: () => { calls.push(id); return {} as AgentAdapter; } });
+    // (a) createRegistry errors
+    assert.throws(() => createRegistry([]), /empty/);
+    assert.throws(() => createRegistry([fake('aa'), fake('aa')]), /duplicate/);
+    for (const bad of ['Copilot', '', 'a b', '1x', 'a'.repeat(33)]) assert.throws(() => createRegistry([fake(bad)]), /bad id/, `bad id ${JSON.stringify(bad)}`);
+    createRegistry([fake('a'.repeat(32)), fake('x-1')]);
+    // (b) list/get/has/default/create
+    const reg = createRegistry([fake('one'), fake('two')]);
+    assert.deepStrictEqual(reg.list().map((d) => d.id), ['one', 'two']);
+    assert.strictEqual(reg.get('nope'), undefined);
+    assert.strictEqual(reg.get('two')?.id, 'two');
+    assert.strictEqual(reg.has('one'), true);
+    assert.strictEqual(reg.has('nope'), false);
+    assert.strictEqual(reg.defaultId, 'one');
+    assert.strictEqual(createRegistry([COPILOT_DESCRIPTOR]).defaultId, 'copilot');
+    assert.throws(() => reg.create('nope'));
+    // (c) lazy creation
+    assert.deepStrictEqual(calls, []);
+    await detectAll(reg, async () => ({ state: 'ready' }));
+    assert.deepStrictEqual(calls, [], 'create is never called by createRegistry, list, get or detectAll');
+    reg.create('two');
+    assert.deepStrictEqual(calls, ['two']);
+    reg.create('two');
+    reg.create('one');
+    assert.deepStrictEqual(calls, ['two', 'two', 'one']);
+    // (d) detectAll
+    const d2 = createRegistry([fake('ok'), fake('boom'), fake('bogus'), fake('long'), fake('ver'), fake('getter')]);
+    let infos: Awaited<ReturnType<typeof detectAll>> = [];
+    await assert.doesNotReject(async () => { infos = await detectAll(d2, async (d) => {
+      if (d.id === 'ok') return { state: 'ready', version: '  1.2.3 ' };
+      if (d.id === 'boom') throw new Error('x');
+      if (d.id === 'bogus') return { state: 'weird' as never, version: '9' };
+      if (d.id === 'long') return { state: 'too-old', hint: 'h'.repeat(500) };
+      if (d.id === 'getter') return { state: 'ready', get version(): string { throw new Error('hostile'); } };
+      return { state: 'ready', version: 5 as never };
+    }); });
+    assert.deepStrictEqual(infos.map((i) => i.id), ['ok', 'boom', 'bogus', 'long', 'ver', 'getter']);
+    assert.deepStrictEqual(infos.map((i) => i.state), ['ready', 'unknown', 'unknown', 'too-old', 'ready', 'unknown']);
+    assert.strictEqual(infos[0].version, '1.2.3');
+    assert.strictEqual(infos[3].hint?.length, 200);
+    assert.ok(!('version' in infos[4]), 'non-string version dropped');
+    assert.ok(!('version' in infos[2]), 'nothing kept from a bogus result');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(infos)), infos);
+    assert.ok(!JSON.stringify(infos, (_k, v) => (typeof v === 'function' ? '__fn' : v)).includes('__fn'));
+    const desc = d2.get('ok')!;
+    const out = infos[0].capabilities as unknown as { permissionModes: string[]; usage: { tokens: boolean } };
+    out.permissionModes.push('allow');
+    out.usage.tokens = !out.usage.tokens;
+    assert.deepStrictEqual(desc.capabilities, caps(), 'mutating the output leaves the descriptor alone');
+    // (e) Copilot descriptor
+    const made = COPILOT_DESCRIPTOR.create();
+    assert.ok(made instanceof CopilotAdapter);
+    assert.strictEqual(made.id, COPILOT_DESCRIPTOR.id);
+    assert.strictEqual(made.displayName, COPILOT_DESCRIPTOR.displayName);
+    assert.strictEqual(made.capabilities, COPILOT_DESCRIPTOR.capabilities);
+    assert.strictEqual((made as unknown as { client?: unknown; starting?: unknown }).client, undefined);
+    assert.strictEqual((made as unknown as { starting?: unknown }).starting, undefined, 'create() does not start the client');
+    assert.ok(Object.isFrozen(COPILOT_DESCRIPTOR.capabilities));
+    // compile-time: capabilities are readonly (a write would fail typecheck)
+    // @ts-expect-error readonly property
+    void (() => { COPILOT_DESCRIPTOR.capabilities.images = false; });
+    // @ts-expect-error readonly array
+    void (() => { COPILOT_DESCRIPTOR.capabilities.permissionModes.push('allow'); });
+    // @ts-expect-error readonly nested object
+    void (() => { COPILOT_DESCRIPTOR.capabilities.usage.tokens = false; });
   }
 
   await sleep(0);
