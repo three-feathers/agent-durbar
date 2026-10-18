@@ -127,13 +127,26 @@ assert.doesNotThrow(() => redact('x', null as unknown as Record<string, string>)
     aws: 'AKIA'.repeat(MB / 4),
     awsLong: 'ASIA' + 'A'.repeat(MB),
   };
-  // Each case runs in a child process with a hard timeout, so a catastrophic regex fails the test instead of hanging it.
+  // Each case runs in a child process. The child times redact() itself, so a busy runner (slow process start,
+  // slow stdin) cannot fail the test; the 1 s assertion is the real ReDoS check. The 30 s outer timeout is only
+  // a hang guard, and a child killed by it (or by a signal) is retried once.
   const mod = require.resolve('../src/shared/redact');
+  const script = `const {redact}=require(${JSON.stringify(mod)});const s=require('fs').readFileSync(0,'utf8');` +
+    `const t=process.hrtime.bigint();redact(s,{});const t2=process.hrtime.bigint();` +
+    `process.stdout.write(JSON.stringify({ms:Number(t2-t)/1e6}))`;
   for (const [k, v] of Object.entries(adversarial)) {
-    const t = Date.now();
-    const r = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(mod)}).redact(require('fs').readFileSync(0, 'utf8'), {})`], { input: v, timeout: 5000, maxBuffer: 1 << 20 });
-    assert.ok(!r.error && r.status === 0, `adversarial ${k}: did not finish in 5 s (${r.error ? r.error.message : 'status ' + r.status})`);
-    assert.ok(Date.now() - t < 5000, `adversarial ${k}: too slow`);
+    let ms = NaN;
+    let why = '';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = spawnSync(process.execPath, ['-e', script], { input: v, timeout: 30000, maxBuffer: 1 << 20 });
+      const err = r.error as NodeJS.ErrnoException | undefined;
+      if (err?.code === 'ETIMEDOUT' || r.signal) { why = err ? err.message : 'signal ' + r.signal; continue; }
+      assert.ok(!r.error && r.status === 0, `adversarial ${k}: child failed (${r.error ? r.error.message : 'status ' + r.status})`);
+      ms = (JSON.parse(String(r.stdout)) as { ms: number }).ms;
+      break;
+    }
+    assert.ok(!Number.isNaN(ms), `adversarial ${k}: child hung twice (${why})`);
+    assert.ok(ms < 1000, `adversarial ${k}: redact() took ${ms.toFixed(1)} ms, limit 1000 ms`);
   }
 }
 
