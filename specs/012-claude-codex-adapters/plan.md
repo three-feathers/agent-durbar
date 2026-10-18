@@ -62,6 +62,8 @@ One adapter instance per id (one shared child process where the vendor allows: C
 
 ## Interface changes (spec deltas to 002, made in Phase 1, Copilot behaviour unchanged)
 
+> **Note 2026-10-18 (T010, issue #30):** items 1 and 2 below are restated against today's code in [spec.md `## Changes` 2026-10-18](spec.md#changes) (FR-026 to FR-029): `listModelOptions?()` instead of `listModels?()`, `isLive` and `dispose` required, `displayName` + `capabilities` on the instance (the full descriptor is T011), `ModelOption` in `src/shared/modelswitch.ts`, `debug?` added, and the mode-switch capability named `permModeSwitch: 'live' | 'next-message' | 'none'` to match spec 030's `ModelControl`. Item 4 (persisted `adapterId`) stays T013 and item 6 (`AdapterInfo`) stays T011.
+
 1. `AgentAdapter.descriptor` / `capabilities` (readonly).
 2. Optional members promoted from `CopilotAdapter`: `isLive(id)`, `dispose()`, `listModels?()` (returns the existing `ModelOption` shape, moved to `src/shared`), `listPreviousSessions?()`, `history?()`, `setPermMode?()`. UI uses them only when `capabilities` says so.
 3. `StartOptions`: `resumeSessionId` stays the **vendor** id; add `permissionMode: 'read-only' | 'ask' | 'allow'` as the one source of truth (`allow`/`ask` booleans stay for Copilot until migrated). `maxAiCredits` and `autoTier` are ignored by adapters whose `caps` is false.

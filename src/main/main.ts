@@ -5,6 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { CopilotAdapter } from '../adapters/copilot';
 import type { AgentAdapter } from '../adapters/types';
+import { startOptionsOf } from './startopts';
 import { resolveWorkspaceCwd } from '../adapters/workspace';
 import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, stageAttachment } from '../shared/attachments';
 import type { AddResult, AgentInfo, FloorsResult, FloorsState, ModelChoice, PermMode, PickedFile, ResumeResult, SessionOptions, VsChatListResult } from '../shared/api';
@@ -53,9 +54,8 @@ let usageTotalsStore: UsageTotalsStore | undefined;
 const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
 
-const adapter = new CopilotAdapter();
-/** The same adapter through the adapter-neutral interface: its optional members (`setModel`, `compact`, ...) say what it can do (spec 030 FR-017). */
-const generic: AgentAdapter = adapter;
+/** Typed as the adapter-neutral interface: its optional members (`setModel`, `compact`, ...) say what it can do (spec 030 FR-017, spec 012 FR-027). */
+const adapter: AgentAdapter = new CopilotAdapter();
 const agents = new Map<string, AgentInfo>();
 const mcp = registerMcpIpc({ store: () => mcpStore as McpStore, agents, adapter, dev });
 /** Files the user picked through the native dialog; only these can be attached. */
@@ -156,21 +156,13 @@ const infoFor = (workspace: string, permMode: PermMode, id: string, model: strin
     model,
     effort,
     // `unverified`: the real adapter's switch/compact calls come from the SDK docs and were never run on an account (spec 030 Phase 3).
-    modelControl: modelControlFor(generic, { unverified: true }),
+    modelControl: modelControlFor(adapter, { unverified: true }),
     ...extra,
   };
 };
 
 const startOptionsFor = (a: AgentInfo) => ({
-  workspace: wsKey(a),
-  model: a.model ?? DEFAULT_MODEL,
-  reasoningEffort: asEffort(a.effort),
-  // The saved choice goes on create AND resume (spec 030 FR-013); the adapter only uses `autoTier` for a NEW `auto` session.
-  contextTier: a.tier,
-  autoTier: (a.model ?? DEFAULT_MODEL) === 'auto' ? ('efficiency' as const) : undefined,
-  allow: a.permMode === 'allow',
-  ask: a.permMode === 'ask',
-  maxAiCredits: a.maxAiCredits,
+  ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort)),
   ...mcp.optionsFor(a.id),
 });
 
@@ -273,7 +265,7 @@ ipcMain.handle('sessions:listPrevious', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false, error: 'unknown agent', sessions: [] };
   try {
-    return { ok: true, sessions: await adapter.listPreviousSessions(a.cwd, new Set(agents.keys())) };
+    return { ok: true, sessions: (await adapter.listPreviousSessions?.(a.cwd, new Set(agents.keys()))) ?? [] };
   } catch (err) {
     return { ok: false, error: errText(err), sessions: [] };
   }
@@ -285,13 +277,13 @@ ipcMain.handle('sessions:resume', async (_e, id: unknown, sessionId: unknown, re
   if (typeof sessionId !== 'string' || agents.has(sessionId)) return { ok: false, error: 'That session is already open.' };
   try {
     // Only sessions that belong to this agent's folder can be resumed (re-checked here, not trusted from the UI).
-    const prev = (await adapter.listPreviousSessions(a.cwd, new Set(agents.keys()))).find((s) => s.id === sessionId);
+    const prev = ((await adapter.listPreviousSessions?.(a.cwd, new Set(agents.keys()))) ?? []).find((s) => s.id === sessionId);
     if (!prev) return { ok: false, error: 'That session is no longer available for this folder.' };
     // Resume first; only then retire the untouched agent, so a failed resume leaves everything as it was.
     const info = await addWorkspace(a.workspaceFile ?? a.cwd, a.permMode, { resumeSessionId: sessionId, silent: true });
     let history: ResumeResult['history'];
     try {
-      history = await adapter.history(info.id);
+      history = adapter.history ? await adapter.history(info.id) : { items: [], total: 0, truncated: false };
     } catch {
       history = { items: [], total: 0, truncated: false };
     }
@@ -380,7 +372,7 @@ ipcMain.handle('agents:send', async (_e, id: string, text: string, attachments: 
 
 // Stop only interrupts the running turn (the agent returns to Ready); End session frees the runtime session.
 ipcMain.handle('agents:stop', async (_e, id: string) => {
-  if (agents.has(id)) await adapter.interrupt(id);
+  if (agents.has(id)) await adapter.interrupt?.(id);
 });
 
 ipcMain.handle('agents:end', async (_e, id: string) => {
@@ -429,7 +421,7 @@ ipcMain.handle('agents:setCap', async (_e, id: unknown, credits: unknown) => {
   const cap = credits === null ? undefined : parseCap(credits);
   if (credits !== null && cap === undefined) return { ok: false, error: 'The cap must be a number of at least 30 AI credits (the runtime minimum).' };
   try {
-    if (adapter.isLive(a.id)) await adapter.setCap(a.id, cap ?? null); // not started yet: applied when the session starts
+    if (adapter.isLive(a.id)) await adapter.setCap?.(a.id, cap ?? null); // not started yet: applied when the session starts
     a.maxAiCredits = cap;
     folderStore?.setMaxAiCredits(wsKey(a), cap);
     return { ok: true, maxAiCredits: cap };
@@ -447,7 +439,7 @@ ipcMain.handle('agents:resolveLimit', async (_e, id: unknown, requestId: unknown
   const action = c.kind === 'add' && add ? { kind: 'add' as const, credits: add } : c.kind === 'set' && setTo ? { kind: 'set' as const, credits: setTo } : c.kind === 'unset' ? { kind: 'unset' as const } : c.kind === 'cancel' ? { kind: 'cancel' as const } : undefined;
   if (!action) return { ok: false, error: 'Invalid choice.' };
   try {
-    await adapter.resolveLimit(a.id, requestId, action);
+    await adapter.resolveLimit?.(a.id, requestId, action);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: errText(err) };
@@ -457,7 +449,7 @@ ipcMain.handle('agents:resolveLimit', async (_e, id: unknown, requestId: unknown
 /** The last list of models the account offers; a switch request is checked against it (spec 030 FR-018). */
 let lastModels: ModelChoice[] = [];
 const modelsForValidation = async (): Promise<ModelChoice[]> => {
-  if (!lastModels.length) lastModels = (await adapter.listModelOptions()).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
+  if (!lastModels.length) lastModels = ((await adapter.listModelOptions?.()) ?? []).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
   return lastModels;
 };
 const NO_SWITCH = 'This agent cannot change its model in place. Start a new session with the model you want.';
@@ -465,13 +457,13 @@ const NO_SWITCH = 'This agent cannot change its model in place. Start a new sess
 ipcMain.handle('agents:setModel', async (_e, id: unknown, raw: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false, error: 'unknown agent' };
-  if (typeof generic.setModel !== 'function') return { ok: false, error: NO_SWITCH };
+  if (typeof adapter.setModel !== 'function') return { ok: false, error: NO_SWITCH };
   try {
     const parsed = parseSwitchRequest(raw, await modelsForValidation());
     if (!parsed.ok) return { ok: false, error: parsed.error };
     const req: ModelSwitchRequest = parsed.request;
     // Not started (or ended) yet: nothing is running to switch. The choice is saved and the first start (create or resume) uses it (FR-013).
-    const result: ModelSwitchResult = adapter.isLive(a.id) ? await generic.setModel(a.id, req) : { status: 'applied', model: req.model, message: 'Used from the first message: this agent has not started yet.' };
+    const result: ModelSwitchResult = adapter.isLive(a.id) ? await adapter.setModel(a.id, req) : { status: 'applied', model: req.model, message: 'Used from the first message: this agent has not started yet.' };
     if (result.status === 'applied') {
       // Saved only in this app's own folder file; never in Copilot's settings (no repoScope / modelChangeScope / pickerPersistence is ever sent).
       a.model = req.model;
@@ -489,9 +481,9 @@ ipcMain.handle('agents:setModel', async (_e, id: unknown, raw: unknown) => {
 ipcMain.handle('agents:cancelQueuedModel', async (_e, id: unknown, queueId: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a || typeof queueId !== 'string' || !queueId || queueId.length > 200) return { ok: false, error: 'unknown agent' };
-  if (typeof generic.cancelQueuedModel !== 'function') return { ok: false, error: NO_SWITCH };
+  if (typeof adapter.cancelQueuedModel !== 'function') return { ok: false, error: NO_SWITCH };
   try {
-    await generic.cancelQueuedModel(a.id, queueId);
+    await adapter.cancelQueuedModel(a.id, queueId);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: errText(err) };
@@ -501,10 +493,10 @@ ipcMain.handle('agents:cancelQueuedModel', async (_e, id: unknown, queueId: unkn
 ipcMain.handle('agents:compact', async (_e, id: unknown, focus: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false, error: 'unknown agent' };
-  if (typeof generic.compact !== 'function') return { ok: false, error: 'This agent cannot compact its context in place. Start a new session instead.' };
+  if (typeof adapter.compact !== 'function') return { ok: false, error: 'This agent cannot compact its context in place. Start a new session instead.' };
   try {
     if (!adapter.isLive(a.id)) return { ok: true, result: { success: false, message: 'This agent has not started yet, so there is nothing to compact.' } };
-    return { ok: true, result: await generic.compact(a.id, parseFocus(focus)) };
+    return { ok: true, result: await adapter.compact(a.id, parseFocus(focus)) };
   } catch (err) {
     return { ok: false, error: errText(err) }; // the focus text is never logged or echoed
   }
@@ -512,7 +504,7 @@ ipcMain.handle('agents:compact', async (_e, id: unknown, focus: unknown) => {
 
 ipcMain.handle('models:list', async (): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }> => {
   try {
-    const models = (await adapter.listModelOptions()).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
+    const models = ((await adapter.listModelOptions?.()) ?? []).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
     lastModels = models;
     return { ok: true, models };
   } catch (err) {
@@ -570,7 +562,7 @@ ipcMain.handle('agents:setMode', (_e, id: unknown, mode: unknown, opts: unknown)
   const m = validMode(mode);
   a.permMode = m;
   a.permRestored = undefined; // a fresh choice, no longer "restored"
-  const r = adapter.setPermMode(a.id, m, { clearGrants: o.clearGrants === true, approvePending: o.approvePending === true });
+  const r = adapter.setPermMode?.(a.id, m, { clearGrants: o.clearGrants === true, approvePending: o.approvePending === true }) ?? { pending: 0 };
   folderStore?.setPermMode(wsKey(a), m);
   return { ok: true, mode: m, pending: r.pending };
 });
@@ -594,11 +586,11 @@ ipcMain.handle('folders:remove', async (_e, id: unknown) => {
 });
 
 ipcMain.handle('agents:resolvePermission', (_e, id: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean) => {
-  if (agents.has(id)) adapter.resolvePermission(id, String(requestId), approve === true, approve === true && remember === true, approve === true && remember === true && broad === true);
+  if (agents.has(id)) adapter.resolvePermission?.(id, String(requestId), approve === true, approve === true && remember === true, approve === true && remember === true && broad === true);
 });
 
 ipcMain.handle('agents:revokeGrant', (_e, id: string, key: string) => {
-  if (agents.has(id)) adapter.revokeGrant(id, String(key));
+  if (agents.has(id)) adapter.revokeGrant?.(id, String(key));
 });
 
 ipcMain.handle('agents:openInVSCode', (_e, id: string) => {

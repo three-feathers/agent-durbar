@@ -20,12 +20,12 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 
 ## Phase 1: simulator-only foundation (no vendor, no account, no credits)
 
-- [ ] T010 (sim) Interface deltas: capabilities, descriptor, promote isLive/dispose/listModels/listPreviousSessions/history/setPermMode, StartOptions.permissionMode, UsageEvent costUsd and costBasis; Copilot unchanged and all tests green [FR-002, FR-005]
+- [x] T010 (sim) Interface deltas (restated 2026-10-18, see `## Changes`): capabilities and displayName (full descriptor in T011), required isLive/dispose, optional listModelOptions/listPreviousSessions/history/setPermMode/debug, StartOptions.permissionMode, UsageEvent costUsd and costBasis; Copilot unchanged and all tests green [FR-002, FR-005]
 - [ ] T011 (sim) `capabilities.ts` and `registry.ts` (pure): descriptor, id to factory, `AdapterInfo` for the renderer, tests [FR-001, FR-009]
 - [ ] T012 (sim) `detect.ts` (pure, injected env and exec): binary search order, `--version` parse, minimum version, Windows shims, state `ready|not-installed|too-old|not-signed-in|unknown`, tests on all three path flavours [FR-010, FR-006]
 - [ ] T013 (sim) Folder store: `adapterId` and `vendorSessionId`, migration of old files, tests in `test-folders.ts` [FR-011]
 - [ ] T014 (sim) `main.ts`, preload and `api.ts`: route each agent's calls to its adapter, `adapters:list` IPC, only Copilot registered, no renderer change [FR-001, FR-002]
-- [ ] T015 (sim) `FakeAdapter` (scripted events, uses the permission broker) and the adapter contract suite `scripts/test-adapter-contract.ts` in `npm test` [FR-007, SC-002]
+- [ ] T015 (sim) `FakeAdapter` (also: drive the `main.ts`/`mcpipc.ts` presence-guard fallbacks for an adapter without the optional members, the T010 known gap) (scripted events, uses the permission broker) and the adapter contract suite `scripts/test-adapter-contract.ts` in `npm test` [FR-007, SC-002]
 - [ ] T016 (sim) Fake SDK client seam for `CopilotAdapter` so the contract suite also runs on Copilot (also closes part of 002 T020/T025) [FR-007]
 - [ ] T017 (sim) Picker UI: choose the agent kind when adding a folder or starting a session, "unavailable" state with install hint, capability gating helpers in the renderer; no dead buttons [FR-023, SC-003]
 - [ ] T018 (sim) Simulator roster with mixed agent kinds and different capabilities (for example no cap chip, no helper tiles); screenshots at 1440x900 and 1280x800; `npm run check:office` green [SC-001, SC-003]

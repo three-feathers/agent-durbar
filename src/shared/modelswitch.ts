@@ -50,6 +50,26 @@ export interface CompactResult {
   message?: string;
 }
 
+/** A model the account can use, as shown in the picker. */
+export interface ModelOption {
+  id: string;
+  name: string;
+  /** Billing cost multiplier reported by the API, when there is one. */
+  multiplier?: number;
+  efforts: string[];
+  defaultEffort?: string;
+  disabled: boolean;
+  /** Context window in tokens when the runtime says so (it reports 0 for `auto`, which is treated as unknown). */
+  contextWindow?: number;
+  /** Token prices in credits per million tokens (UNVERIFIED unit, see `pricingFromTokenPrices`); absent when the runtime reports none. */
+  pricing?: ModelPricing;
+  priceClass?: PriceClass;
+  /** `['default','long']` only when the runtime advertises a long-context tier. */
+  contextTiers?: ContextTier[];
+  /** Window of the long tier = its prompt budget + the model's max output tokens (UNVERIFIED semantics). */
+  longWindow?: number;
+}
+
 /** What an agent's adapter can do about model and context. Derived from the adapter's optional members (spec 030 FR-017). */
 export interface ModelControl {
   /** `live`: applies at once, `next-message`: from the next message, `none`: only a new session can change it. */
