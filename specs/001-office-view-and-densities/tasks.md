@@ -32,3 +32,8 @@
 ## Changes 2026-10-18 (issue #126)
 
 - [x] T028 Renderer shows a main agent's title in place of the folder name (cards, chat header, list, strip, lobby, toasts), folder in the tooltip and accessible name; simulator titles; `check:office`; screenshots at 1440x900 and 1280x800
+
+## Changes 2026-10-18 (one-agent folders)
+
+- [ ] T029 Room headers adapt to their width (container queries: name ellipsis, plant and MCP button in narrow headers, credit total to the tooltip under 260 px) [FR-023]
+- [ ] T030 `check:office`: `simrooms=solo` combinations and a header overlap check in every combination; screenshots at 1440x900 and 1280x800 [FR-024]
