@@ -1,6 +1,6 @@
 # Implementation Plan: Release v0.1.0-alpha.5
 
-1. Branch `041-release-alpha5` from the latest `origin/main` after PR #137 merged (CI green). Number 041 is the next free one: 035-040 are the theme specs.
+1. Branch `042-release-alpha5` from the latest `origin/main` after PR #137 merged (CI green). Number 042 is the next free one: 035-040 are the theme specs, 041 is the Durbar MCP server draft (PR #161).
 2. `npm version 0.1.0-alpha.5 --no-git-tag-version` (package.json and package-lock.json); update the simulator's displayed version string.
 3. Move the CHANGELOG *Unreleased* items into a `v0.1.0-alpha.5` section; README status line, "Install from releases" and "What's new"; the CONTRIBUTING release example; the specs index (docs-sync rule, AGENTS.md). `AGENTS.md` is a protected path and is not touched here.
 4. Pull request, CI green, merge with `--admin` (approved for this release).

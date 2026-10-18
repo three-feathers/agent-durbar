@@ -1,6 +1,6 @@
 # Feature Specification: Release v0.1.0-alpha.5 (pre-release)
 
-**Feature Branch**: `041-release-alpha5`
+**Feature Branch**: `042-release-alpha5`
 **Created**: 2026-10-18
 **Status**: Release PR; tag, draft and publishing as a pre-release follow (tasks T004-T006).
 **Input**: Vikram asked, after the themes PR (#137) was reviewed and pushed: "push, reply, merge and cut a release ... i mean pre release". AGENTS.md "Needs approval": publishing a release is approved here, in writing, for this release only, as for alpha.4 (spec 031). Release engineering only: a version bump, a changelog section and README download notes. No behavior change (the only `src/` edit is the simulator's displayed version string).
