@@ -447,8 +447,9 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(infos)), infos);
     assert.ok(!JSON.stringify(infos, (_k, v) => (typeof v === 'function' ? '__fn' : v)).includes('__fn'));
     const desc = d2.get('ok')!;
-    infos[0].capabilities.permissionModes.push('allow');
-    infos[0].capabilities.usage.tokens = !infos[0].capabilities.usage.tokens;
+    const out = infos[0].capabilities as unknown as { permissionModes: string[]; usage: { tokens: boolean } };
+    out.permissionModes.push('allow');
+    out.usage.tokens = !out.usage.tokens;
     assert.deepStrictEqual(desc.capabilities, caps(), 'mutating the output leaves the descriptor alone');
     // (e) Copilot descriptor
     const made = COPILOT_DESCRIPTOR.create();
@@ -459,6 +460,13 @@ async function main(): Promise<void> {
     assert.strictEqual((made as unknown as { client?: unknown; starting?: unknown }).client, undefined);
     assert.strictEqual((made as unknown as { starting?: unknown }).starting, undefined, 'create() does not start the client');
     assert.ok(Object.isFrozen(COPILOT_DESCRIPTOR.capabilities));
+    // compile-time: capabilities are readonly (a write would fail typecheck)
+    // @ts-expect-error readonly property
+    void (() => { COPILOT_DESCRIPTOR.capabilities.images = false; });
+    // @ts-expect-error readonly array
+    void (() => { COPILOT_DESCRIPTOR.capabilities.permissionModes.push('allow'); });
+    // @ts-expect-error readonly nested object
+    void (() => { COPILOT_DESCRIPTOR.capabilities.usage.tokens = false; });
   }
 
   await sleep(0);
