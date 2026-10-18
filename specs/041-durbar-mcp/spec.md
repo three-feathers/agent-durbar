@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-18
 
-**Status**: Draft (spec only). No plan, no tasks, no code. Open questions Q1-Q12 below need the owner before `/speckit.plan`. Nothing here is verified: every requirement is a target, not a claim.
+**Status**: Clarified 2026-10-18 (owner accepted all recommended defaults, see *Clarifications*). Spec only so far: no plan, no tasks, no code. Previously: open questions Q1-Q12 needed the owner before `/speckit.plan`. Nothing here is verified: every requirement is a target, not a claim.
 
 **Input**: Owner (Ruben, rubenlupi), 2026-10-18: "That the user can also use an MCP against this application to configure it, etc." Durbar exposes its own MCP server, so the user's own MCP client (Claude Code, Copilot CLI, Claude Desktop, VS Code) can, in plain language, read the office (folders, floors, agents and their state, usage totals and caps) and ask for configuration changes (add or remove a folder, permission mode, per-folder MCP extras, credit caps). Every change is confirmed by the user in Durbar's own window.
 
@@ -26,7 +26,24 @@ All configuration is changed by the renderer through the typed preload bridge (`
 
 ## Clarifications
 
-None yet. Open questions for the owner are listed under *Open questions* at the end; recommended defaults are marked.
+### Session 2026-10-18 (owner)
+
+Ruben (owner) accepted **all twelve recommended defaults** in Q1-Q12 ("All defaults", 2026-10-18). They are decided:
+
+- Q1 Transport: (a) a stdio bridge launched by the client, a per-user socket or named pipe, and a secret file. No network port.
+- Q2 Bridge executable: (a) the Durbar app itself with a flag.
+- Q3 MCP implementation: (b) a dependency-free subset (`initialize`, `tools/list`, `tools/call`, `ping`, stdio framing), with tests against recorded client handshakes. No new dependency.
+- Q4 Starting sessions and sending prompts: out of v1.
+- Q5 Waiting for the user: wait 30 s, then return `pending`; a request expires after 10 min.
+- Q6 Queue: one dialog at a time, at most 5 waiting, extra ones `busy`.
+- Q7 Secret values for MCP extras: (a) refused; key names only, and the user types values in Durbar.
+- Q8 Floors, places, serious mode and the Copilot CLI on/off list: read-only over MCP in v1.
+- Q9 Agent marker (FR-034): best effort, `[KNOWN GAP]` for any adapter that cannot set it; FR-022 (a human click in Durbar) is the real gate.
+- Q10 Simulator: (a) `FakeAdapter` plus a main-process simulator for tests.
+- Q11 Durbar not running: the bridge never starts Durbar.
+- Q12 Audit: an in-memory *Recent MCP activity* list in Settings (last 100, cleared on quit) plus `DURBAR_LOG` when set; no new file on disk.
+
+The open questions below are kept for the record; each now reads as decided above.
 
 ## User Scenarios & Testing *(mandatory)*
 
