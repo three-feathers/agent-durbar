@@ -78,7 +78,7 @@ As a user, I tell my assistant "put the agent-durbar folder in Ask first" or "se
 1. **Given** the server is on, **When** the client asks to set folder X's mode to Ask first, **Then** Durbar's window shows a confirmation dialog naming the client (as it reported itself, marked as such), the folder (full path), the current value and the new value, and the client gets `pending` with a request id.
 2. **Given** that dialog, **When** I click Apply, **Then** the change is made through the same code path as the window, the client (on its next call or while waiting) gets `applied` with the new value, and the office shows the new mode.
 3. **Given** that dialog, **When** I click Deny, press Escape or close the window, **Then** nothing changes and the client gets `denied`.
-4. **Given** a request to switch to **Allow all**, **Then** the dialog uses the same honest warning as the window's own switch (spec 018) and never approves pending requests of that agent (no `approvePending` from the MCP path).
+4. **Given** a request to switch to **Allow all**, **Then** it is `refused` at once with "Allow all can only be turned on in Durbar's own window." and no dialog (FR-050, FR-060); a switch between Read-only and Ask first, either way, gets the dialog (D-d) and never approves pending requests (no `approvePending` from the MCP path).
 5. **Given** I do not answer within the time limit (Q5), **Then** the request expires, nothing changes, and the client gets `expired`.
 6. **Given** a request whose input is invalid (unknown folder, cap below 30, unknown mode), **Then** it is refused at once with the same error text the window gives, and no dialog is shown.
 
@@ -86,7 +86,7 @@ As a user, I tell my assistant "put the agent-durbar folder in Ask first" or "se
 
 ### User Story 3 - Add or remove folders and manage per-folder MCP extras (Priority: P2)
 
-As a user, I ask my assistant "add ~/code/api to Durbar on the Client A floor in Read-only" or "add the GitHub MCP server to that folder", and confirm in Durbar.
+As a user, I ask my assistant "add ~/code/api to Durbar in Read-only" (it lands on the last floor, as in the window, FR-054) or "add the GitHub MCP server to that folder", and confirm in Durbar.
 
 **Why this priority**: Useful, but each of these has more risk (a new folder, a command that will run, secrets) and needs the dialog to show more detail.
 
@@ -94,9 +94,9 @@ As a user, I ask my assistant "add ~/code/api to Durbar on the Client A floor in
 
 **Acceptance Scenarios**:
 
-1. **Given** an absolute path to an existing folder or `.code-workspace` file, **When** the client asks to add it, **Then** after Apply it is saved and shown as a "not started" agent (like a restored folder): no runtime session starts and no AI credits are spent until I send a message in Durbar.
+1. **Given** an absolute path to an existing folder or `.code-workspace` file, **When** the client asks to add it, **Then** after Apply it is saved on the last floor (floors are read-only over MCP, FR-054) and shown as a "not started" agent (like a restored folder): no runtime session starts and no AI credits are spent until I send a message in Durbar.
 2. **Given** a request to remove a folder, **Then** the dialog says how many agents (and how many running sessions) will end, and only Apply removes it.
-3. **Given** a request to add an MCP extra with a command, **Then** the dialog shows the exact command, arguments, URL and the **names** of environment variables and headers; the server is saved off and untrusted unless I also tick "trust and turn on" in the dialog (that tick is the spec 020 trust acknowledgement).
+3. **Given** a request to add an MCP extra with a command, **Then** the dialog shows the exact command, arguments, URL and the **names** of environment variables and headers; the server is saved off and untrusted; trusting it is done only in Durbar's own MCP extras screen (FR-050), and only an extra I already trusted there can be turned on over MCP (D-b).
 4. **Given** a request that carries secret values for an extra, **Then** (default of Q7) the values are refused; the extra is saved with key names only and is marked "needs secrets" so I enter them in Durbar's own MCP extras screen.
 
 ---
@@ -152,14 +152,14 @@ As a user, I can be sure that an agent running inside Durbar cannot use Durbar's
 
 **Change tools (each one confirmed in Durbar's window)**
 
-- **FR-020**: Change tools in v1 MUST be: set an agent's or a folder's **permission mode**; set an agent's **cap** or remove it; set the **default cap**; **add a folder or workspace file** (with optional floor, mode, cap); **remove a folder**; **add, edit, remove, turn on/off** a per-folder **MCP extra**. Floors, places, serious mode and the Copilot CLI on/off list are read-only over MCP in v1 (Q8).
+- **FR-020**: Change tools in v1 MUST be: set an agent's or a folder's **permission mode**; set an agent's **cap** or remove it; set the **default cap**; **add a folder or workspace file** (optional mode Read-only or Ask first, optional cap; it lands on the last floor, FR-054); **remove a folder**; **add, edit, remove, turn off** a per-folder **MCP extra**, and turn on one the user already trusted in the window (D-b); a mode switch only between Read-only and Ask first (FR-050, D-d). Floors, places, serious mode and the Copilot CLI on/off list are read-only over MCP in v1 (Q8).
 - **FR-021**: No change MUST be applied by the MCP path alone. Each change request MUST first be validated with the same functions the window uses (`setModeOp`, `setCapOp`, `parseCap`, `validMode`, `validateInput` and reserved names of `src/shared/mcp.ts`, folder path checks); an invalid request is refused at once with the window's error text and no dialog.
 - **FR-022**: A valid request MUST open a **confirmation dialog in Durbar's main window**, owned by the main process (the renderer cannot answer for a request id it did not receive from main; main checks the answer comes from the app window). The dialog MUST show: that it comes from an MCP client, the client's self-reported name (labelled as self-reported), the action in plain words, the exact target (agent name and folder path), the current value and the new value; for an MCP extra the full command, arguments, URL and key names; for remove, how many agents and running sessions end. Buttons: **Apply** and **Deny** (Deny is the default and Escape); keyboard focus stays in the dialog (spec 003 dialog rules).
 - **FR-023**: On Apply, main MUST re-validate against the current state and then run the **same code path** as the window's own control (the IPC handler bodies, moved into testable functions where they are inline today). The result returned is exactly what that code path returns.
 - **FR-024**: Every change tool MUST answer with a request id and one status: `pending`, `applied` (with the new value), `denied`, `expired`, `stale`, `failed` (with the error text), `busy` or `refused` (invalid input). The tool waits up to a short time for the user (Q5) and then returns `pending`; the *request status* tool returns the final status later. Statuses are kept in memory for 15 minutes.
 - **FR-025**: **Add folder** over MCP MUST add the folder as a "not started" agent (as `restoreFolders` does) and save it; it MUST NOT start a runtime session. The path MUST be absolute, exist, be a directory or a `.code-workspace` file, and be shown in full in the dialog.
-- **FR-026**: **Permission mode** over MCP MUST NOT approve pending requests or keep/forget grants beyond what the window's default does (`approvePending` and `clearGrants` are never set from MCP); a switch to Allow all MUST show the spec 018 warning text in the dialog.
-- **FR-027**: **MCP extras** over MCP: an added or edited extra is saved **off and untrusted** unless the user ticks "Trust and turn on" in the dialog, which is the spec 020 trust acknowledgement for exactly the command shown. Secret values per Q7 (default: refused; key names only, marked needs-secrets). An extra whose command or URL points to Durbar's own bridge, socket or endpoint MUST be refused.
+- **FR-026**: **Permission mode** over MCP MUST NOT approve pending requests or keep/forget grants beyond what the window's default does (`approvePending` and `clearGrants` are never set from MCP); a switch to Allow all is refused over MCP (FR-050, FR-060).
+- **FR-027**: **MCP extras** over MCP: an added or edited extra is saved **off and untrusted**; trust (the spec 020 acknowledgement) is given only in the window (FR-050), and turning on over MCP is allowed only for an extra whose trust still matches (D-b). Secret values per Q7 (default: refused; key names only, marked needs-secrets). An extra whose command or URL points to Durbar's own bridge, socket or endpoint MUST be refused.
 - **FR-028**: Starting a session, sending a prompt, stopping or ending a turn, resolving a permission request, resolving a credit-limit request and resetting usage totals MUST NOT be possible over MCP in v1 (Q4). Tools for them MUST NOT be listed.
 
 **Durbar's own agents never get this server**
@@ -244,7 +244,7 @@ As a user, I can be sure that an agent running inside Durbar cannot use Durbar's
   - **FR-064** Change tools MUST NOT be listed or dispatched in a build that does not have the confirmation dialog (tasks: they are switched on in T038, after the dialog tasks T036 and T037).
   - **Wording**: the rate limit is 10 calls per second **per connection**; the queue holds **at most 5 waiting besides the one on screen** (FR-040, Q6, *Edge Cases* updated in place).
   - **Edge cases also covered by tasks**: demo/sample mode starts no server (T017, T020); the read result says when `DURBAR_SIM` agents are not visible (T016); folder targets are matched per OS as the folder store does (T030).
-  - **Fixed in place** (superseded text): *Status*; *Context* on usage totals (`view()`), #157 and #160; US4's release note (D-a); FR-011 (D-c); FR-040 and FR-041 (no "depends on PR", no "detail" option); FR-050 (D-b, D-d); FR-056 ("reported by the bridge"); Q6 and Q9 (the Copilot SDK `env` replaces the environment, so the adapter passes `{ ...process.env, AGENT_DURBAR_RUNTIME: '1' }`); three gaps added to *Known limits* (T060 peer check, the Claude marker T063, Codex ambient config T062).
+  - **Fixed in place** (superseded text): *Status*; *Context* on usage totals (`view()`), #157 and #160; US4's release note (D-a); FR-011 (D-c); FR-040 and FR-041 (no "depends on PR", no "detail" option); FR-050 (D-b, D-d); US2-4, US3 intro and US3-1, US3-3, FR-020, FR-026 and FR-027 (FR-050, FR-054, D-b, D-d); FR-056 ("reported by the bridge"); Q6 and Q9 (the Copilot SDK `env` replaces the environment, so the adapter passes `{ ...process.env, AGENT_DURBAR_RUNTIME: '1' }`); three gaps added to *Known limits* (T060 peer check, the Claude marker T063, Codex ambient config T062).
 
 - **2026-10-18, consistency pass after the plan draft (decided by the coordinator under Ruben's delegation).** The plan found places where older text contradicts the review rules (FR-050 to FR-056). The newer rule wins:
   1. US2-4 and FR-026 (switching to Allow all with a warning), and US3-3 and FR-027 (a "Trust and turn on" tick in the dialog), are superseded by **FR-050**: both are refused over MCP in v1 and done in the window.
