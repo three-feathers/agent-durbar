@@ -6,6 +6,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **Claude sessions load no Claude settings files (spec 012 T027, issue #46; owner decision Q8).** Mode options for the future Claude adapter set `settingSources: []` and `strictMcpConfig: true` in every mode, trusted folder or not, so a repo's or user's Claude settings and MCP servers cannot approve tools before Durbar asks. A repo's own `.claude` hooks and agents do not run (known gap, T083); the repo's `CLAUDE.md` will be passed as an appended system prompt by the Claude adapter (T045). Unit tests only; not wired to a real Claude yet.
 
+- **Secrets are redacted from the debug log (spec 012 T051, issue #59).** Every `DURBAR_LOG` line now goes through one sink that hides environment secrets (also JSON- and URL-encoded) and token-like strings (GitHub, OpenAI/Anthropic keys, Bearer, JWT, AWS keys, URL credentials) before it is written. Unit tests with planted secrets, 0 AIU.
+
 - **Mixed-kind simulator and capability gating (spec 012 T018, issue #38).** `simkinds=mixed` in the simulator shows Claude-like, Codex-like and a minimal kind next to Copilot; room and header buttons, the mode chip, mode lists and the Permissions selects follow each kind's capabilities and never widen. No visible change with Copilot alone. Simulator only, 0 AIU.
 
 - **Agent kind picker (spec 012 T017, issue #37).** With more than one kind of agent, the toolbar and the New session dialog get an agent-kind select before Permissions; kinds that are not installed or too old are disabled and explained in "About agent kinds". Controls an adapter cannot support are hidden. No visible change while only Copilot exists. Simulator and unit tests, 0 AIU.
