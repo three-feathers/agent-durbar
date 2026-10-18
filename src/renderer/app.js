@@ -82,6 +82,10 @@ setInterval(()=>{if(SERIOUS||demoOn)return;const sig=agents.map(x=>x.live&&!x.pa
 /* ---- places in the office (spec 024): a shared lobby; main agents walk to the place of the tool they are using ---- */
 const VISITS=window.DurbarPlaces.createVisits();
 const SEEN_SERVERS=new Set(); /* MCP server names seen in tool events this run (per-folder extras included): the Places settings list them */
+let CUSTOM=[]; /* the user's own places [{id,name,icon}] (spec 024 FR-018), from the settings; changed only through setCustomPlaces */
+const customIds=()=>CUSTOM.map(p=>p.id);
+/* One name for a place everywhere it is shown (tile, card text, Settings options, toasts). A custom place shows the user's own text; callers escape it. */
+const placeLabel=id=>window.DurbarPlaces.placeName(id,CUSTOM);
 let PLACE_MAP={}; /* MCP server name -> place id | 'desk' (global setting); unmapped servers use the built-in rules */
 const RETURNING=new Set(); /* agents whose figure is still walking back to the desk: the desk keeps its empty chair until it arrives */
 const PLACE_ICON={
@@ -92,19 +96,29 @@ const PLACE_ICON={
   other:'<svg class="pic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.5v2.4M10 15.1v2.4M2.5 10h2.4M15.1 10h2.4M4.7 4.7l1.7 1.7M13.6 13.6l1.7 1.7M15.3 4.7l-1.7 1.7M6.4 13.6l-1.7 1.7"/></svg>',
 };
 const lobbyOn=()=>!demoOn&&agents.some(a=>a.live&&!a.parent);
-const lobbyCap=aw=>Math.max(1,Math.min(8,Math.floor(((aw||800)/5-150)/25))); /* slots that fit in a one-row tile next to the icon and the name */
+const placeIcon=p=>PLACE_ICON[p.id]||window.DurbarPlaceIcons.iconSvg(p.icon);
+const MAX_TILES=8, canAddPlace=()=>!!(bridge&&bridge.addPlace)&&window.DurbarPlaces.allPlaces(CUSTOM).length<MAX_TILES;
 /* who is at a place and visible under the current filters (a hidden room or a filtered-out agent has no figure) */
 const placeVisitors=pid=>VISITS.occupants(pid).filter(id=>{const a=byId(id),r=a&&!a.parent&&roomOf(a);return roomShown(r)&&(ui.ws==='all'||wsOf(a)===ui.ws)&&matchStatus(a);});
 const isAway=a=>!a.parent&&(!!VISITS.at(a.id)||RETURNING.has(a.id));
-const taskOf=a=>{const v=a.parent?null:VISITS.at(a.id);return v?'At '+window.DurbarPlaces.placeName(v.place)+': '+v.label+' · '+a.task:a.task;};
+const taskOf=a=>{const v=a.parent?null:VISITS.at(a.id);return v?'At '+placeLabel(v.place)+': '+v.label+' · '+a.task:a.task;};
+/* A result of addPlace/updatePlace/removePlace (or a settings read): the places and the map as they are now. Agents standing at a place that is gone
+   go back to their desk at once (spec 024 FR-025); a rename or an icon change only redraws. */
+function setCustomPlaces(list,map){
+  const old=CUSTOM; CUSTOM=Array.isArray(list)?list:[];
+  old.filter(p=>!CUSTOM.some(q=>q.id===p.id)).forEach(p=>VISITS.dropPlace(p.id));
+  if(map&&typeof map==='object')PLACE_MAP=map;
+  scheduleRender();
+}
 function lobbyHTML(aw){
   if(!lobbyOn())return '';
-  const cap=lobbyCap(aw);
-  return `<section class="lobby" data-key="lobby" aria-label="Lobby: the places where agents work">${window.DurbarPlaces.PLACES.map(p=>{
+  const all=window.DurbarPlaces.allPlaces(CUSTOM), add=canAddPlace();
+  const cap=window.DurbarPlaces.tileSlots(aw,all.length,add);
+  return `<section class="lobby" data-key="lobby" aria-label="Lobby: the places where agents work">${all.map(p=>{
     const ids=placeVisitors(p.id), sp=window.DurbarPlaces.layoutSpots(ids.length,cap), names=ids.map(id=>byId(id).name);
     const slots=Array.from({length:cap},(_,i)=>i<sp.shown?`<span class="slot on" data-slot="${i}"></span>`:(sp.more&&i===cap-1?`<span class="slot more" data-slot="${i}">+${sp.more}</span>`:`<span class="slot" data-slot="${i}"></span>`)).join('');
-    return `<div class="place${ids.length?' busy':''}" data-key="place:${p.id}" data-place="${p.id}" role="group" title="${esc(p.name)}: ${names.length?esc(names.join(', ')):'nobody'}" aria-label="${esc(p.name)}: ${names.length?esc(names.join(', ')):'nobody'}">${PLACE_ICON[p.id]}<span class="pn">${esc(p.name)}</span><span class="prow" aria-hidden="true"><span class="pslots">${slots}</span></span></div>`;
-  }).join('')}</section>`;
+    return `<div class="place${ids.length?' busy':''}" data-key="place:${p.id}" data-place="${p.id}" tabindex="-1" role="group" title="${esc(placeLabel(p.id))}: ${names.length?esc(names.join(', ')):'nobody'}" aria-label="${esc(placeLabel(p.id))}: ${names.length?esc(names.join(', ')):'nobody'}">${placeIcon(p)}<span class="pn">${esc(placeLabel(p.id))}</span><span class="prow" aria-hidden="true"><span class="pslots">${slots}</span></span></div>`;
+  }).join('')}${add?'<button class="place-add" type="button" data-key="place-add" title="Add a place" aria-label="Add a place">+</button>':''}</section>`;
 }
 const WALK_MS=1000, MAX_WALKS=3; /* about 1 s per walk; beyond 3 at once the others simply appear */
 const walkers=new Map(); /* agent id -> {el, back, walking, shown, timer, to} */
@@ -124,7 +138,7 @@ function syncWalkers(){
   if(!fr.width||!fr.height)return; /* office hidden (full-screen chat open): leave the figures as they are until it is shown again */
   const center=el=>{const r=el.getBoundingClientRect();return {x:Math.round(r.left-fr.left+floor.scrollLeft+r.width/2),y:Math.round(r.top-fr.top+floor.scrollTop+r.height/2)};};
   const want=new Map(); /* agent id -> slot centre of the place it is visiting (only those that fit; the rest are the "+N") */
-  window.DurbarPlaces.PLACES.forEach(p=>{
+  window.DurbarPlaces.allPlaces(CUSTOM).forEach(p=>{
     const tile=document.querySelector(`#stage .place[data-place="${p.id}"]`); if(!tile)return;
     const ids=placeVisitors(p.id), sp=window.DurbarPlaces.layoutSpots(ids.length,tile.querySelectorAll('.slot').length);
     ids.slice(0,sp.shown).forEach((id,i)=>{const sl=tile.querySelector(`.slot[data-slot="${i}"]`);if(sl)want.set(id,center(sl));});
@@ -1498,7 +1512,7 @@ function onLiveEvent(e){
   }
   if(e.type==='toolCall'&&e.mcpServer&&SEEN_SERVERS.size<500)SEEN_SERVERS.add(String(e.mcpServer).trim().slice(0,200));
   if(!e.agentId){ /* spec 024: only main-agent events move anyone (helper events carry an agentId) */
-    if(e.type==='toolCall'){if(VISITS.onTool(a.id,e,PLACE_MAP))scheduleRender();}
+    if(e.type==='toolCall'){if(VISITS.onTool(a.id,e,PLACE_MAP,customIds()))scheduleRender();}
     else if(e.type==='status'){if(VISITS.onStatus(a.id,e.status))scheduleRender();}
   }
   if(e.type==='subagent')return onSubagent(a,e);
@@ -2119,11 +2133,12 @@ if(bridge){
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
   window.DurbarScreens.init({bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,setSerious:on=>{SERIOUS=!!on;scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),usageError:()=>usageSaveError,
-    places:window.DurbarPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
+    places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
     staticLimit:a=>{const m=MODELS.find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
     folderOf:x=>{const ag=LIVE.agents.find(y=>y.id===(x&&x.id||x));return ag?folderOfRoom(ag.room):null;},
     openAgent:id=>openPanel(id,false)});
+  document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('.place-add'))window.DurbarScreens.placeDialog(null);});
   $('toolsBtn').onclick=()=>window.DurbarScreens.isOpen()?window.DurbarScreens.close():window.DurbarScreens.openTools(null);
   $('settingsBtn').onclick=()=>window.DurbarScreens.openSettings();
   $('modelSel').onchange=()=>fillEffortSelect($('effortSel'),$('modelSel').value);
@@ -2131,7 +2146,7 @@ if(bridge){
   bridge.onAgentAdded(addLiveAgent);
   bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});const rs=l.filter(x=>x.permRestored&&!x.parent).length;if(rs)toast(rs+' saved folder'+(rs>1?'s were':' was')+' restored in <b>Allow all</b>, as you left '+(rs>1?'them':'it')+'. Everything runs without asking there; the mode chip says <i>restored</i>. "Approve for this session" grants start empty.',9000);});
   loadModels();
-  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};SERIOUS=!!(v&&v.seriousMode);scheduleRender();}).catch(()=>{});
+  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);scheduleRender();}).catch(()=>{});
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);
   agents=LIVE.agents; ROOMS=LIVE.rooms;
   setBadge();
