@@ -6,6 +6,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **Floor names refuse hidden characters (spec 033 delta, T040).** Besides control characters, a floor name now refuses C1 controls and invisible direction or zero-width characters (U+202A–U+202E, U+2066–U+2069, U+200B, U+2060, U+FEFF), which could make one floor look like another. ZWNJ/ZWJ and LRM/RLM stay allowed for Indic and Persian scripts and emoji. A saved name just loses them on load. Unit tests (`test:floors`), simulator rule kept equal, 0 AIU.
 
+- **Agent kind picker (spec 012 T017, issue #37).** With more than one kind of agent, the toolbar and the New session dialog get an agent-kind select before Permissions; kinds that are not installed or too old are disabled and explained in "About agent kinds". Controls an adapter cannot support are hidden. No visible change while only Copilot exists. Simulator and unit tests, 0 AIU.
+
 - **Copilot passes the adapter contract (spec 012 T016, issue #36; spec 002 T020).** The contract suite and a replay of the recorded sessions now run on the Copilot adapter through a fake SDK client. Test code only, 0 AIU.
 
 - **Adapter contract suite (spec 012 T015, issue #35).** A fake adapter and a shared contract every adapter must pass (events, permissions, stop, capabilities), plus tests for the main-process rules that refuse settings an adapter cannot apply. No user-visible change. Unit tests, 0 AIU.

@@ -165,6 +165,7 @@ const infoFor = (workspace: string, permMode: PermMode, id: string, model: strin
     effort,
     // `unverified`: the real adapter's switch/compact calls come from the SDK docs and were never run on an account (spec 030 Phase 3).
     modelControl: modelControlFor(ad, { unverified: true }),
+    adapterId: ad.id,
     ...extra,
   };
 };
@@ -177,12 +178,12 @@ const startOptionsFor = (a: AgentInfo) => ({
 async function addWorkspace(
   workspace: string,
   permMode: PermMode,
-  opts: { resumeSessionId?: string; silent?: boolean; model?: string; effort?: string; persist?: boolean; maxAiCredits?: number | null; floor?: string; adapterId?: string } = {},
+  opts: { resumeSessionId?: string; silent?: boolean; model?: string; effort?: string; persist?: boolean; maxAiCredits?: number | null; floor?: string; adapterId?: string; readyIds?: ReadonlySet<string> } = {},
 ): Promise<AgentInfo> {
   const model = opts.model || DEFAULT_MODEL;
   const effort = asEffort(opts.effort);
   const wsr = resolveWorkspaceCwd(workspace);
-  const picked = adapterForAdd(opts.adapterId, (() => { const f = folderStore?.get(wsr.workspaceFile ?? wsr.cwd); return f ? adapterOf(f) : undefined; })(), (i) => registry.has(i), registry.defaultId);
+  const picked = adapterForAdd(opts.adapterId, (() => { const f = folderStore?.get(wsr.workspaceFile ?? wsr.cwd); return f ? adapterOf(f) : undefined; })(), (i) => registry.has(i), registry.defaultId, opts.readyIds && ((i) => opts.readyIds!.has(i)));
   if ('error' in picked) throw new Error(picked.error); // nothing started, nothing written
   const adapterId = picked.id;
   const ad = router.instance(adapterId);
@@ -220,9 +221,10 @@ async function ensureLive(a: AgentInfo): Promise<void> {
 async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions & { persist?: boolean } = {}): Promise<AddResult> {
   const added: AgentInfo[] = [];
   const errors: string[] = [];
+  const readyIds = opts.adapterId !== undefined ? await readyAdapterIds() : undefined; // a kind the user picked must be ready (FR-058)
   for (const p of paths) {
     try {
-      added.push(await addWorkspace(p, permMode, { model: opts.model, effort: opts.effort, persist: opts.persist, maxAiCredits: opts.maxAiCredits, floor: opts.floor }));
+      added.push(await addWorkspace(p, permMode, { model: opts.model, effort: opts.effort, persist: opts.persist, maxAiCredits: opts.maxAiCredits, floor: opts.floor, adapterId: opts.adapterId, readyIds }));
     } catch (err) {
       errors.push(`${path.basename(p)}: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -252,7 +254,7 @@ ipcMain.handle('agents:list', () => [...agents.values()]);
 const sessionOpts = (o: unknown): SessionOptions & { persist: boolean } => {
   const x = (o && typeof o === 'object' ? o : {}) as Record<string, unknown>;
   const cap = x.maxAiCredits === null ? null : parseCap(x.maxAiCredits);
-  return { model: typeof x.model === 'string' ? x.model.slice(0, 100) : undefined, effort: asEffort(x.effort), maxAiCredits: cap, floor: typeof x.floor === 'string' ? x.floor.slice(0, 20) : undefined, persist: true };
+  return { model: typeof x.model === 'string' ? x.model.slice(0, 100) : undefined, effort: asEffort(x.effort), maxAiCredits: cap, floor: typeof x.floor === 'string' ? x.floor.slice(0, 20) : undefined, adapterId: typeof x.adapterId === 'string' ? x.adapterId.slice(0, 40) : undefined, persist: true };
 };
 
 ipcMain.handle('agents:addFolder', async (_e, mode: unknown, opts: unknown) => {
@@ -403,7 +405,10 @@ ipcMain.handle('agents:newSession', async (_e, id: unknown, opts: unknown) => {
   const o = (opts && typeof opts === 'object' ? opts : {}) as Record<string, unknown>;
   try {
     const mode = o.permMode === undefined ? a.permMode : validMode(o.permMode);
-    const agent = await addWorkspace(wsKey(a), mode, { model: typeof o.model === 'string' ? o.model.slice(0, 100) : a.model, effort: asEffort(o.effort) ?? undefined, maxAiCredits: o.maxAiCredits === null ? null : parseCap(o.maxAiCredits), adapterId: router.adapterIdOf(a.id) });
+    // The dialog's kind (FR-059); none = the current agent's kind. A kind the user picked must be ready (FR-058).
+    const picked = typeof o.adapterId === 'string' ? o.adapterId.slice(0, 40) : undefined;
+    const readyIds = picked !== undefined ? await readyAdapterIds() : undefined;
+    const agent = await addWorkspace(wsKey(a), mode, { model: typeof o.model === 'string' ? o.model.slice(0, 100) : picked !== undefined && picked !== router.adapterIdOf(a.id) ? undefined : a.model, effort: asEffort(o.effort) ?? undefined, maxAiCredits: o.maxAiCredits === null ? null : parseCap(o.maxAiCredits), adapterId: picked ?? router.adapterIdOf(a.id), readyIds });
     return { ok: true, agent };
   } catch (err) {
     return { ok: false, error: errText(err) };
@@ -525,10 +530,19 @@ ipcMain.handle('models:list', async (): Promise<{ ok: boolean; error?: string; m
 
 /** Which adapters exist and whether each can run (spec 012 FR-033, FR-034). Cached; `refresh` probes again. Runs no session and spends no credits. */
 let adaptersInfo: Promise<AdapterInfo[]> | undefined;
-ipcMain.handle('adapters:list', (_e, refresh: unknown): Promise<AdapterInfo[]> => {
-  if (!adaptersInfo || refresh === true) adaptersInfo = detectAll(registry, (d) => detectorFor(d.id)?.(d) ?? Promise.resolve({ state: 'unknown' as const }));
+const adaptersList = (refresh: boolean): Promise<AdapterInfo[]> => {
+  if (!adaptersInfo || refresh) adaptersInfo = detectAll(registry, (d) => detectorFor(d.id)?.(d) ?? Promise.resolve({ state: 'unknown' as const }));
   return adaptersInfo;
-});
+};
+ipcMain.handle('adapters:list', (_e, refresh: unknown): Promise<AdapterInfo[]> => adaptersList(refresh === true));
+/** Ids whose cached state is `ready`; a failed probe counts as none (spec 012 FR-058). */
+const readyAdapterIds = async (): Promise<ReadonlySet<string>> => {
+  try {
+    return new Set((await adaptersList(false)).filter((i) => i.state === 'ready').map((i) => i.id));
+  } catch {
+    return new Set();
+  }
+};
 
 ipcMain.handle('folders:setHidden', (_e, id: unknown, hidden: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
