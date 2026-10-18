@@ -2,7 +2,13 @@
 
 Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on Linux (see "Honest limits"). Each entry names the spec that describes the behavior and how it was checked.
 
-## Unreleased (on `main`, after the alpha.4 tag)
+## Unreleased (on `main`, after the alpha.5 tag)
+
+Nothing yet.
+
+## v0.1.0-alpha.5 (pre-release, 2026-10-18)
+
+Themes that change the whole office, floors, agents that show how they are doing, custom places and usage totals kept across restarts, plus groundwork for Claude Code and Codex that is not wired yet (only Copilot works). Checked on the simulator and with unit tests; nothing here was checked on a real Copilot session. **Unsigned and not notarized; untested on real macOS and Windows hardware; an in-place upgrade from alpha.4 was not checked** (spec 042).
 
 - **Codex reads limited to the session's folders (spec 012 T084, issue #168).** In Read-only and Ask first, the Codex mode settings now use a Codex permission profile that may read only the session's folders and Codex's minimal system files, instead of the `read-only` sandbox that could read anywhere (`~/.ssh`). Where that cannot be enforced (Codex older than rust-v0.163.0, no experimental API, Windows without the elevated sandbox) Durbar will refuse those two modes for Codex. Pure settings and unit tests only; there is no Codex adapter yet and nothing was run on a real Codex.
 
