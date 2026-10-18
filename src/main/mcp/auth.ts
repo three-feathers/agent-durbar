@@ -45,6 +45,8 @@ export interface McpFs {
   readFd(fd: number, max: number): string;
   close(fd: number): void;
   lstat(p: string): AuthStat;
+  /** File names (not paths) in a folder. */
+  readdir(dir: string): string[];
   unlink(p: string): void;
 }
 
@@ -99,6 +101,23 @@ function dirProblem(d: KeyFileDeps, st: AuthStat, strictMode: boolean): string |
   return null;
 }
 
+const TMP_SUFFIX_RE = /^[0-9a-f]{16}\.tmp$/;
+
+/** Removes leftover `<key file name>.<16 hex>.tmp` files from a crashed write: only that pattern, only in `mcpDir`, only regular files (a link or folder with that name is left alone; nothing is followed). Never throws. */
+function removeStaleTemps(d: KeyFileDeps): void {
+  try {
+    const name = d.keyFile.slice(Math.max(d.keyFile.lastIndexOf('/'), d.keyFile.lastIndexOf('\\')) + 1);
+    for (const f of d.fs.readdir(d.mcpDir)) {
+      if (!f.startsWith(name + '.') || !TMP_SUFFIX_RE.test(f.slice(name.length + 1))) continue;
+      const full = d.keyFile.slice(0, d.keyFile.length - name.length) + f;
+      try {
+        const st = d.fs.lstat(full);
+        if (!st.isSymbolicLink() && st.isFile()) d.fs.unlink(full);
+      } catch { /* gone already */ }
+    }
+  } catch { /* no folder, or unreadable: nothing to clean */ }
+}
+
 /** Writes the key file atomically (temp file in the same folder, then rename): a failure leaves the old file, or none, never a partial one. */
 function writeAtomic(d: KeyFileDeps, m: KeyMaterial): void {
   const random = d.random ?? randomBytes;
@@ -119,6 +138,7 @@ function writeAtomic(d: KeyFileDeps, m: KeyMaterial): void {
   } catch (e) {
     throw new Error(`Could not secure the connection folder (${errCode(e)}).`);
   }
+  removeStaleTemps(d);
   const tmp = `${d.keyFile}.${random(8).toString('hex')}.tmp`;
   try {
     d.fs.writeNew(tmp, serialize(m), 0o600);
@@ -143,6 +163,9 @@ export function rotateKeyFile(d: KeyFileDeps): KeyMaterial {
 
 /** Deletes the key file (server turned off). Missing is fine. */
 export function deleteKeyFile(d: KeyFileDeps): void {
+  let folderOk = false;
+  try { folderOk = dirProblem(d, d.fs.lstat(d.mcpDir), false) === null; } catch { /* no folder */ }
+  if (folderOk) removeStaleTemps(d);
   try {
     d.fs.unlink(d.keyFile);
   } catch (e) {
@@ -233,6 +256,7 @@ export function nodeMcpFs(): McpFs {
     },
     close: (fd) => fs.closeSync(fd),
     lstat: (p) => fs.lstatSync(p),
+    readdir: (dir) => fs.readdirSync(dir),
     unlink: (p) => fs.unlinkSync(p),
   };
 }
@@ -254,9 +278,11 @@ export function nodeMcpFs(): McpFs {
 
 export const HELLO = 'agent-durbar-mcp/1';
 const MAX_HANDSHAKE_MESSAGE_CHARS = 1024;
+/** Longest raw `parent` the server looks at (UTF-16 units); it is sanitized and capped to 64 code points after. */
+const MAX_RAW_PARENT_CHARS = 512;
 const HEX64_RE = /^[0-9a-f]{64}$/;
 
-export type HandshakeErrorCode = 'timeout' | 'malformed' | 'bad-version' | 'bad-mac' | 'bad-state';
+export type HandshakeErrorCode = 'timeout' | 'malformed' | 'bad-version' | 'bad-mac' | 'bad-state' | 'refused-agent';
 
 const ERROR_TEXT: Record<HandshakeErrorCode, string> = {
   timeout: 'The handshake did not finish in time.',
@@ -264,6 +290,7 @@ const ERROR_TEXT: Record<HandshakeErrorCode, string> = {
   'bad-version': 'The peer speaks another handshake version.',
   'bad-mac': 'The handshake proof was wrong.',
   'bad-state': 'A handshake message arrived at the wrong time, or could not be sent.',
+  'refused-agent': 'Durbar does not accept connections from inside an agent.',
 };
 
 export interface HandshakeError { code: HandshakeErrorCode; message: string }
@@ -296,6 +323,14 @@ export interface Handshake {
   /** The connection closed: stops the timer without reporting a result. */
   abort(): void;
   readonly done: boolean;
+}
+
+const PARENT_MAX_CODE_POINTS = 64;
+const LONE_SURROGATE_RE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+/** The name of the client that launched the bridge, made safe to bind and show: control and format characters (\p{Cc}, \p{Cf}, such as U+202E) and lone surrogates are stripped, then at most 64 code points are kept (the same rule as `clientInfo`, T012). */
+export function sanitizeParent(s: string): string {
+  return Array.from(s.replace(LONE_SURROGATE_RE, '').replace(/[\p{Cc}\p{Cf}]/gu, '')).slice(0, PARENT_MAX_CODE_POINTS).join('');
 }
 
 function lp(s: string): Buffer {
@@ -376,9 +411,11 @@ export function createServerHandshake(d: HandshakeDeps): Handshake {
         const got = o && hex64(o.mac);
         if (!o || !nonceB || !got) return b.fail('malformed');
         if (o.marker !== undefined && typeof o.marker !== 'boolean') return b.fail('malformed');
-        if (o.parent !== undefined && (typeof o.parent !== 'string' || o.parent.length > MCP_LIMITS.maxNameLength)) return b.fail('malformed');
-        const peer: PeerInfo = { marker: o.marker === true, ...(typeof o.parent === 'string' ? { parent: o.parent } : {}) };
+        if (o.parent !== undefined && (typeof o.parent !== 'string' || o.parent.length > MAX_RAW_PARENT_CHARS)) return b.fail('malformed');
+        const peer: PeerInfo = { marker: o.marker === true, ...(typeof o.parent === 'string' ? { parent: sanitizeParent(o.parent) } : {}) };
         if (nonceB.equals(nonceS) || !macEqual(mac(d.key, 'b', nonceS, nonceB, peer), got)) return b.fail('bad-mac');
+        // Defence in depth (FR-034): an authenticated bridge that says it runs inside an agent is refused; nothing is sent back.
+        if (peer.marker) return b.fail('refused-agent');
         if (!b.send(JSON.stringify({ ok: true, mac: mac(d.key, 's', nonceB, nonceS, peer).toString('hex') }))) return;
         b.finish({ ok: true, peer });
       });
@@ -396,7 +433,7 @@ export interface BridgeHandshakeDeps extends HandshakeDeps {
 /** The bridge (connecting) side. */
 export function createBridgeHandshake(d: BridgeHandshakeDeps): Handshake {
   const b = base(d);
-  const peer: PeerInfo = { marker: d.peer?.marker === true, ...(d.peer?.parent !== undefined ? { parent: d.peer.parent } : {}) };
+  const peer: PeerInfo = { marker: d.peer?.marker === true, ...(d.peer?.parent !== undefined ? { parent: sanitizeParent(d.peer.parent) } : {}) };
   let started = false;
   let state: 'await-hello' | 'await-final' = 'await-hello';
   let nonceS: Buffer = Buffer.alloc(0);
@@ -427,7 +464,7 @@ export function createBridgeHandshake(d: BridgeHandshakeDeps): Handshake {
         const got = o && hex64(o.mac);
         if (!o || o.ok !== true || !got) return b.fail('malformed');
         if (!macEqual(mac(d.key, 's', nonceB, nonceS, peer), got)) return b.fail('bad-mac');
-        b.finish({ ok: true, peer: { marker: false } });
+        b.finish({ ok: true, peer });
       });
     },
     abort: b.abort,

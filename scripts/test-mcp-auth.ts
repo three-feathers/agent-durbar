@@ -6,7 +6,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { nodeMcpFs } from '../src/main/mcp/auth';
 import {
-  createBridgeHandshake, createKeyFile, createServerHandshake, deleteKeyFile, readKeyFile, rotateKeyFile,
+  createBridgeHandshake, createKeyFile, createServerHandshake, deleteKeyFile, readKeyFile, rotateKeyFile, sanitizeParent,
 } from '../src/main/mcp/auth';
 import type { AuthStat, HandshakeResult, KeyFileDeps, McpFs } from '../src/main/mcp/auth';
 
@@ -42,6 +42,7 @@ function makeFs(uid = 501) {
     readFd(fd, max) { const n = fds.get(fd); if (!n) throw err('EBADF'); return n.data.slice(0, max); },
     close(fd) { fds.delete(fd); },
     lstat(p) { const n = nodes.get(p); if (!n) throw err('ENOENT'); const st = stat(n); hook.afterLstat?.(p); return st; },
+    readdir(dir) { return [...nodes.keys()].filter((k) => k.startsWith(dir + '/')).map((k) => k.slice(dir.length + 1)); },
     unlink(p) { if (!nodes.delete(p)) throw err('ENOENT'); },
   };
   return { fs, nodes, fail, fds, hook };
@@ -89,7 +90,7 @@ function deps(f: ReturnType<typeof makeFs>, over: Partial<KeyFileDeps> = {}): Ke
   const mk = () => { const f = makeFs(); createKeyFile(deps(f)); return f; };
   const refused = (f: ReturnType<typeof makeFs>, over: Partial<KeyFileDeps> = {}) => {
     const r = readKeyFile(deps(f, over));
-    assert.ok(!r.ok && r.reason === 'unsafe', JSON.stringify(r));
+    assert.ok(!r.ok && r.reason === 'unsafe', 'expected unsafe, got ' + (r.ok ? 'ok' : r.reason));
     return r;
   };
   let f = mk(); f.nodes.get(FILE)!.mode = 0o644; refused(f);
@@ -183,6 +184,10 @@ class FakeTimers {
   get pending() { return this.t.size; }
 }
 const KEY = crypto.randomBytes(32);
+// An independent encoder of the transcript (spec: lp(role) lp(version) nonces marker-byte parent-byte lp(parent)).
+const lpT = (x: string) => { const bb = Buffer.from(x, 'utf8'); const l = Buffer.alloc(2); l.writeUInt16BE(bb.length); return Buffer.concat([l, bb]); };
+const T = (role: string, x: Buffer, y: Buffer, marker: boolean, parent?: string) =>
+  Buffer.concat([lpT(role), lpT('agent-durbar-mcp/1'), x, y, Buffer.from([marker ? 1 : 0, parent !== undefined ? 1 : 0]), lpT(parent ?? '')]);
 const OTHER = crypto.randomBytes(32);
 
 function pair(serverKey: Buffer, bridgeKey: Buffer, opts: { marker?: boolean; parent?: string } = {}) {
@@ -203,10 +208,11 @@ function pair(serverKey: Buffer, bridgeKey: Buffer, opts: { marker?: boolean; pa
 
 // happy path
 {
-  const p = pair(KEY, KEY, { marker: true, parent: 'claude-code' });
+  const p = pair(KEY, KEY, { marker: false, parent: 'claude-code' });
   p.bridge.start(); p.server.start(); p.pump();
   assert.ok(p.results.server?.ok && p.results.bridge?.ok);
-  assert.deepStrictEqual(p.results.server!.ok && p.results.server!.peer, { marker: true, parent: 'claude-code' });
+  assert.deepStrictEqual(p.results.server!.ok && p.results.server!.peer, { marker: false, parent: 'claude-code' });
+  assert.deepStrictEqual(p.results.bridge!.ok && p.results.bridge!.peer, { marker: false, parent: 'claude-code' }, 'the bridge reports the peer it sent');
   assert.strictEqual(p.log.length, 3, 'hello, answer, final');
   assert.strictEqual(p.timers.pending, 0, 'timers cleared on success');
   assert.ok(p.server.done && p.bridge.done);
@@ -272,9 +278,11 @@ function pair(serverKey: Buffer, bridgeKey: Buffer, opts: { marker?: boolean; pa
   const t4 = new FakeTimers(); let eres: HandshakeResult | undefined; let ns = '';
   const srv3 = createServerHandshake({ key: KEY, timers: t4, send: (m) => { ns = JSON.parse(m).nonceS; }, onDone: (r) => { eres = r; } });
   srv3.start();
-  const selfMac = crypto.createHmac('sha256', KEY).update('b').update(Buffer.from(ns, 'hex')).update(Buffer.from(ns, 'hex')).digest('hex');
+  const nsB = Buffer.from(ns, 'hex'); // a MAC that is valid in every way except nonceB === nonceS
+  const selfMac = crypto.createHmac('sha256', KEY).update(T('b', nsB, nsB, false)).digest('hex');
   srv3.receive(JSON.stringify({ nonceB: ns, mac: selfMac }));
   assert.ok(eres && !eres.ok && eres.error.code === 'bad-mac', 'equal nonces refused');
+  assert.ok(eres && !eres.ok && eres.error.message.length > 0);
 }
 
 // truncated, garbage and wrong-shape messages: refused, never throw
@@ -365,12 +373,9 @@ function pair(serverKey: Buffer, bridgeKey: Buffer, opts: { marker?: boolean; pa
 
 // known-answer: the wire format and the transcript encoding are pinned, with an independent encoder in the test
 {
-  const lp = (x: string) => { const bb = Buffer.from(x, 'utf8'); const l = Buffer.alloc(2); l.writeUInt16BE(bb.length); return Buffer.concat([l, bb]); };
-  const T = (role: string, x: Buffer, y: Buffer, marker: boolean, parent?: string) =>
-    Buffer.concat([lp(role), lp('agent-durbar-mcp/1'), x, y, Buffer.from([marker ? 1 : 0, parent !== undefined ? 1 : 0]), lp(parent ?? '')]);
   const hm = (t: Buffer) => crypto.createHmac('sha256', KEY).update(t).digest('hex');
   const nS = Buffer.alloc(32, 0x11); const nB = Buffer.alloc(32, 0x22);
-  for (const peer of [{ marker: false }, { marker: true, parent: 'claude-code' }, { marker: false, parent: '' }] as { marker: boolean; parent?: string }[]) {
+  for (const peer of [{ marker: false }, { marker: false, parent: 'claude-code' }, { marker: false, parent: '' }] as { marker: boolean; parent?: string }[]) {
     const timers = new FakeTimers(); const out: string[] = [];
     const srv = createServerHandshake({ key: KEY, timers, send: (m) => out.push(m), onDone: () => {}, random: () => nS });
     const br = createBridgeHandshake({ key: KEY, timers, send: (m) => out.push(m), onDone: () => {}, random: () => nB, peer });
@@ -382,6 +387,13 @@ function pair(serverKey: Buffer, bridgeKey: Buffer, opts: { marker?: boolean; pa
     assert.strictEqual(JSON.parse(out[2]).mac, hm(T('s', nB, nS, peer.marker, peer.parent)), 'server MAC over the transcript');
     assert.notStrictEqual(hm(T('b', nS, nB, peer.marker, peer.parent)), hm(T('s', nB, nS, peer.marker, peer.parent)));
   }
+  {
+    // marker true: the bridge MAC covers it (the server then refuses the agent; see below)
+    const timers = new FakeTimers(); const out: string[] = [];
+    const br = createBridgeHandshake({ key: KEY, timers, send: (m) => out.push(m), onDone: () => {}, random: () => nB, peer: { marker: true, parent: 'x' } });
+    br.start(); br.receive(JSON.stringify({ hello: 'agent-durbar-mcp/1', nonceS: nS.toString('hex') }));
+    assert.strictEqual(JSON.parse(out[0]).mac, hm(T('b', nS, nB, true, 'x')));
+  }
   // absent parent and empty parent are different transcripts
   assert.notStrictEqual(hm(T('b', nS, nB, false)), hm(T('b', nS, nB, false, '')));
 }
@@ -392,7 +404,7 @@ function pair(serverKey: Buffer, bridgeKey: Buffer, opts: { marker?: boolean; pa
   const attempt = (edit: (o: Record<string, unknown>) => void) => {
     const timers = new FakeTimers(); const out: string[] = []; let res: HandshakeResult | undefined;
     const srv = createServerHandshake({ key: KEY, timers, send: (m) => out.push(m), onDone: (r) => { res = r; }, random: () => nS });
-    const br = createBridgeHandshake({ key: KEY, timers, send: (m) => out.push(m), onDone: () => {}, random: () => nB, peer: { marker: true, parent: 'claude-code' } });
+    const br = createBridgeHandshake({ key: KEY, timers, send: (m) => out.push(m), onDone: () => {}, random: () => nB, peer: { marker: false, parent: 'claude-code' } });
     srv.start(); br.start(); br.receive(out[0]);
     const reply = JSON.parse(out[1]); edit(reply);
     srv.receive(JSON.stringify(reply));
@@ -400,8 +412,7 @@ function pair(serverKey: Buffer, bridgeKey: Buffer, opts: { marker?: boolean; pa
   };
   assert.ok(attempt(() => {}).ok, 'unmodified reply is accepted');
   for (const [name, edit] of [
-    ['marker true->false', (o: Record<string, unknown>) => { o.marker = false; }],
-    ['marker removed', (o: Record<string, unknown>) => { delete o.marker; }],
+    ['marker false->true', (o: Record<string, unknown>) => { o.marker = true; }],
     ['parent changed', (o: Record<string, unknown>) => { o.parent = 'vscode'; }],
     ['parent removed', (o: Record<string, unknown>) => { delete o.parent; }],
     ['parent added empty', (o: Record<string, unknown>) => { o.parent = ''; }],
@@ -458,6 +469,77 @@ function pair(serverKey: Buffer, bridgeKey: Buffer, opts: { marker?: boolean; pa
   b.start(); assert.strictEqual(t.pending, 0, 'no timer after done');
   const s = createServerHandshake({ key: KEY, timers: new FakeTimers(), send: () => {}, onDone: () => {} });
   s.start(); s.start();
+}
+
+// 1024-char cap: a valid but padded message is malformed
+{
+  const t = new FakeTimers(); let res: HandshakeResult | undefined;
+  const s = createServerHandshake({ key: KEY, timers: t, send: () => {}, onDone: (r) => { res = r; } });
+  s.start();
+  const padded = JSON.stringify({ nonceB: 'a'.repeat(64), mac: 'a'.repeat(64), pad: 'x'.repeat(2000) });
+  assert.ok(JSON.parse(padded).pad.length === 2000);
+  s.receive(padded);
+  assert.ok(res && !res.ok && res.error.code === 'malformed', 'padded message refused by the size cap, not by the MAC');
+}
+
+// marker === true is refused by the server (authenticated, but it says it runs inside an agent); nothing is sent back
+{
+  const p = pair(KEY, KEY, { marker: true, parent: 'claude-code' }); p.bridge.start(); p.server.start(); p.pump();
+  assert.ok(p.results.server && !p.results.server.ok && p.results.server.error.code === 'refused-agent');
+  assert.strictEqual(p.log.length, 2, 'hello and the bridge answer only');
+  assert.ok(p.results.bridge === undefined, 'the bridge is left to time out');
+  // an unauthenticated marker claim is just bad-mac
+  const q = pair(KEY, OTHER, { marker: true }); q.bridge.start(); q.server.start(); q.pump();
+  assert.ok(q.results.server && !q.results.server.ok && q.results.server.error.code === 'bad-mac');
+}
+
+// parent: control and format characters and lone surrogates are stripped, 64 code points kept
+{
+  assert.strictEqual(sanitizeParent('a\u202Eb\ncd\u0000e\u200Bf'), 'abcdef');
+  assert.strictEqual(sanitizeParent('x\uD800y\uDC00z'), 'xyz', 'lone surrogates');
+  const emoji = '\u{1F600}';
+  assert.strictEqual(Array.from(sanitizeParent('a'.repeat(63) + emoji + 'zzz')).length, 64);
+  assert.strictEqual(sanitizeParent('a'.repeat(63) + emoji + 'zzz'), 'a'.repeat(63) + emoji, 'an emoji at the boundary is kept whole');
+  assert.strictEqual(sanitizeParent('a'.repeat(64) + emoji), 'a'.repeat(64));
+  assert.ok(!/[\uD800-\uDFFF]/.test(sanitizeParent('a'.repeat(63) + emoji + emoji).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '')), 'no half emoji');
+  // end to end: the server returns the sanitized name, and a sanitizing bridge still verifies
+  const p = pair(KEY, KEY, { marker: false, parent: 'good\u202Egone\n' }); p.bridge.start(); p.server.start(); p.pump();
+  assert.ok(p.results.server?.ok && p.results.server.peer.parent === 'goodgone');
+  assert.ok(p.results.bridge?.ok && p.results.bridge.peer.parent === 'goodgone');
+  // a raw (unsanitized) name sent by a client that did not sanitize is not accepted as is: the MAC is over the raw bytes
+  const nS = Buffer.alloc(32, 0x55); const nB = Buffer.alloc(32, 0x66); let res: HandshakeResult | undefined; const out: string[] = [];
+  const srv = createServerHandshake({ key: KEY, timers: new FakeTimers(), send: (m) => out.push(m), onDone: (r) => { res = r; }, random: () => nS });
+  srv.start();
+  srv.receive(JSON.stringify({ nonceB: nB.toString('hex'), mac: crypto.createHmac('sha256', KEY).update(T('b', nS, nB, false, 'a\u202Eb')).digest('hex'), marker: false, parent: 'a\u202Eb' }));
+  assert.ok(res && !res.ok && res.error.code === 'bad-mac');
+  assert.ok(!JSON.stringify(out).includes('202'), 'nothing echoed');
+  // too long a raw name is malformed
+  const s2 = createServerHandshake({ key: KEY, timers: new FakeTimers(), send: () => {}, onDone: (r) => { res = r; } });
+  s2.start(); s2.receive(JSON.stringify({ nonceB: nB.toString('hex'), mac: 'a'.repeat(64), parent: 'p'.repeat(513) }));
+  const r2 = res as HandshakeResult | undefined;
+  assert.ok(r2 && !r2.ok && r2.error.code === 'malformed');
+}
+
+// stale temp files
+{
+  const f = makeFs();
+  createKeyFile(deps(f));
+  const tmpName = (h: string) => `${FILE}.${h}.tmp`;
+  const put = (name: string, kind: 'file' | 'link' | 'dir' = 'file') => f.nodes.set(name, { kind, mode: 0o600, uid: 501, data: 'partial' });
+  put(tmpName('0123456789abcdef')); put(tmpName('fedcba9876543210'));
+  put(tmpName('short')); put(DIR + '/other.json.0123456789abcdef.tmp'); put(tmpName('1111111111111111'), 'link'); put(tmpName('2222222222222222'), 'dir');
+  put('/u/agent-durbar/connection.json.0123456789abcdef.tmp'); // outside mcpDir
+  createKeyFile(deps(f));
+  assert.ok(!f.nodes.has(tmpName('0123456789abcdef')) && !f.nodes.has(tmpName('fedcba9876543210')), 'create removes stale temp files');
+  for (const keep of [tmpName('short'), DIR + '/other.json.0123456789abcdef.tmp', tmpName('1111111111111111'), tmpName('2222222222222222'), '/u/agent-durbar/connection.json.0123456789abcdef.tmp']) assert.ok(f.nodes.has(keep), 'left alone: ' + keep);
+  put(tmpName('0123456789abcdef'));
+  deleteKeyFile(deps(f));
+  assert.ok(!f.nodes.has(FILE) && !f.nodes.has(tmpName('0123456789abcdef')), 'delete removes the key file and stale temp files');
+  assert.ok(f.nodes.has(tmpName('1111111111111111')) && f.nodes.has(tmpName('short')), 'delete leaves non-matching names');
+  // a symlinked folder is not touched by delete
+  const g = makeFs(); g.nodes.set(DIR, { kind: 'link', mode: 0o777, uid: 501, data: '' }); g.nodes.set(tmpName('0123456789abcdef'), { kind: 'file', mode: 0o600, uid: 501, data: '' });
+  deleteKeyFile(deps(g));
+  assert.ok(g.nodes.has(tmpName('0123456789abcdef')), 'no cleanup through a symlinked folder');
 }
 
 // rotation invalidates the old key at the handshake
