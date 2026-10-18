@@ -65,7 +65,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   images: true,
   models: true,
   effort: true,
-  permissionModes: Object.freeze(['read-only', 'ask', 'allow'] as PermissionMode[]) as PermissionMode[],
+  permissionModes: Object.freeze(['read-only', 'ask', 'allow'] as const),
   permModeSwitch: 'live',
   usage: Object.freeze({ tokens: true, costUsd: false, nanoAiu: true }),
   context: true,
