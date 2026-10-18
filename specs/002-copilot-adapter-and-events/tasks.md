@@ -15,7 +15,7 @@
 
 ## Open
 
-- [ ] T020 Add a credit-free test of `map()`: feed recorded/synthetic SDK events (fixtures in `scripts/fixtures/`) into the adapter via a fake session and assert the normalized stream; wire into `npm test`. [FR-011]
+- [x] T020 Add a credit-free test of `map()`: feed recorded/synthetic SDK events (fixtures in `scripts/fixtures/`) into the adapter via a fake session and assert the normalized stream; wire into `npm test`. [FR-011]
 - [ ] T021 Give helpers their own intent/tool/usage when the SDK attributes events to a sub-agent; verify on a real multi-agent run (feature 013). [FR-013]
 - [ ] T022 Pin `@github/copilot-sdk` to an exact version in `package.json` (and fix the README wording). [FR-015]
 - [ ] T023 Decide and implement handling for unmapped events that need the user (user-input, plan-mode, shell output). Needs `/speckit.clarify` first. [FR-014]
