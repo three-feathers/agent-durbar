@@ -40,7 +40,7 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 - [ ] T025 (fixtures) Usage and context tests: Claude cost delta from running `total_cost_usd`, per `message.id` dedupe, Codex `modelContextWindow` null as unknown, "credits not reported" for Codex [FR-015, FR-016]
 - [ ] T026 (sim) Contract case SC-004 for every adapter on fakes: a write attempt is denied in Read-only, pending in Ask first, approved in Allow all; stop with a pending request denies it [FR-013, FR-017, SC-004]
 - [x] T027 (sim) Folder trust for project-level vendor settings, as decided in Q8 (2026-10-18): no Claude settings files in any mode (`settingSources: []`), `strictMcpConfig: true` in every mode, tests; no folder-trust dialog [FR-025]
-- [ ] T028 (sim) Docs for Phase 2: dated `## Changes` entries in specs 003, 011 and 018 (mode wording per agent, usage units, live switch per adapter), README Safety model note, converge [FR-005, FR-008]
+- [x] T028 (sim) Docs for Phase 2: dated `## Changes` entries in specs 003, 011 and 018 (mode wording per agent, usage units, live switch per adapter), README Safety model note, converge [FR-005, FR-008]
 
 ## Phase 3: transports on fake processes (still no account, no credits)
 
