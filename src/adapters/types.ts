@@ -263,6 +263,16 @@ export interface LimitEvent extends BaseEvent {
   action?: string;
 }
 
+/**
+ * The session's display title from the runtime (spec 002 delta 2026-10-18, issue #126): a title made from the first prompt,
+ * an auto summary or a name given elsewhere. Top-level agent only, already cleaned (one line, ≤ 80 characters). User text:
+ * shown, never put in tool-usage labels or usage totals.
+ */
+export interface TitleEvent extends BaseEvent {
+  type: 'title';
+  title: string;
+}
+
 export type AgentEvent =
   | UserEvent
   | StatusEvent
@@ -277,7 +287,8 @@ export type AgentEvent =
   | ModelEvent
   | CompactionEvent
   | McpStatusEvent
-  | LimitEvent;
+  | LimitEvent
+  | TitleEvent;
 
 export type LimitAction = { kind: 'add'; credits: number } | { kind: 'set'; credits: number } | { kind: 'unset' } | { kind: 'cancel' };
 

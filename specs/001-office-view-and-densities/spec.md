@@ -159,3 +159,7 @@ Tasks: T020 (automated office checks) is delivered together with T025; T026 fixe
 ### 2026-10-17: lobby from spec 024 (cross-reference, no change to this spec's requirements)
 
 Spec [024](../024-office-places/spec.md) adds a one-row **lobby** band between the first and second half of the open rooms. It is part of the HTML that the density search probes, so the fit counts it; `npm run check:office` also checks it. With 15 simulated agents this moves 1280x800 from `card` to `mini` desks (1440x900 stays `card`, fewer helper rows). Desks of agents at a place show an empty chair and `At <Place>: <tool>`.
+
+### 2026-10-18: main agents show their session title (issue #126)
+
+*Symptom:* sub-agents show their names, but a main agent's card shows the folder name (with `#2`, `#3` for more sessions in the same folder), so several sessions in one folder look alike. *Corrected:* when a main agent has a session title (spec 002, 2026-10-18), its card at every density, the chat header, the list view, the full-screen strip, the lobby visitor labels and toasts show the title instead of the folder name; the folder stays visible in the room header and in the card's tooltip and accessible name ("title, in folder"). Without a title nothing changes. Titles are escaped and ellipsized, never wrapped; the full title is in the tooltip. The simulator gives some main agents a title (opt-in `simtitles=1`, so default simulator pictures do not change) so the office check and the screenshots cover it.

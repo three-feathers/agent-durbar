@@ -22,7 +22,7 @@ import type { ModelOption, RawModelInfo, RawSwitchResult } from './copilotmodel'
 import { PermissionBroker, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
-import { eventsToHistory, previousSessionsFor } from './history';
+import { cleanSessionTitle, eventsToHistory, previousSessionsFor } from './history';
 import type { HistoryResult, PreviousSession } from './history';
 import { unpackedRuntimePath } from './runtime';
 import * as os from 'os';
@@ -47,6 +47,9 @@ interface Live {
   broker: PermissionBroker;
   /** `session_limits_exhausted.requested` waiting for the user (spec 011): answered with `cancel` when the turn is stopped or the session ends. */
   limitRequestId?: string;
+  /** A title reached the app (event or name.get), or name.get was already asked once (issue #126). */
+  titled?: boolean;
+  askedTitle?: boolean;
 }
 
 const COPILOT_ID = 'copilot';
@@ -190,11 +193,15 @@ export class CopilotAdapter implements AgentAdapter {
     // `modelConfig` adds the `auto` routing preference only to a NEW session (on resume it would override the session's own).
     const resumed = (): Record<string, unknown> => ({ ...config, ...modelConfig(options, true) });
     const created = (): Record<string, unknown> => ({ ...config, ...modelConfig(options, false) });
-    if (options.resumeSessionId) session = await client.resumeSession(options.resumeSessionId, resumed() as unknown as ResumeSessionConfig);
-    else if (options.sessionId) {
+    let resumedExisting = false; // its title is asked once (issue #126): the runtime may not send it again
+    if (options.resumeSessionId) {
+      session = await client.resumeSession(options.resumeSessionId, resumed() as unknown as ResumeSessionConfig);
+      resumedExisting = true;
+    } else if (options.sessionId) {
       // An agent that was ended (or restored from the saved folder list) keeps its id: resume it when it has
       // history on disk, otherwise start a fresh session under that same id.
       const known = await client.getSessionMetadata(options.sessionId).catch(() => undefined);
+      resumedExisting = !!known;
       session = known
         ? await client.resumeSession(options.sessionId, resumed() as unknown as ResumeSessionConfig)
         : await client.createSession({ ...created(), sessionId: options.sessionId } as unknown as SessionConfig);
@@ -205,9 +212,12 @@ export class CopilotAdapter implements AgentAdapter {
       const live = this.sessions.get(sid);
       if (live && ev.type === 'session_limits_exhausted.requested') live.limitRequestId = ev.data.requestId;
       else if (live && ev.type === 'session_limits_exhausted.completed' && live.limitRequestId === ev.data.requestId) live.limitRequestId = undefined;
+      if (live && ev.type === 'session.title_changed' && !ev.agentId) live.titled = true;
       this.map(sid, ev);
+      if (live && ev.type === 'session.idle') this.askTitle(sid);
     });
     this.sessions.set(sid, { session, unsubscribe, cwd, broker });
+    if (resumedExisting) this.askTitle(sid);
     // Without a registered consumer the runtime does not ask the user when the cap is reached (SDK docs of `registerInterest`).
     void session.rpc.eventLog.registerInterest({ eventType: 'session_limits_exhausted.requested' }).catch((err: unknown) => this.debug?.(`limit interest not registered: ${err instanceof Error ? err.message : String(err)}`));
     if (!options.quiet) this.emit(sid, { type: 'status', status: 'idle', intent: `Ready in ${cwd}` });
@@ -290,6 +300,25 @@ export class CopilotAdapter implements AgentAdapter {
   }
 
   /** Change the credit cap of a running session; `null` removes it. The SDK confirms with a `session.session_limits_changed` event. */
+  /**
+   * The session's name from the runtime (`rpc.name.get`, @experimental; no prompt, no credits), asked at most once per session:
+   * after a resume, or when a turn ended without a `session.title_changed`. Failures are ignored and never retried (issue #126).
+   */
+  private askTitle(sid: string): void {
+    const live = this.sessions.get(sid);
+    if (!live || live.titled || live.askedTitle) return;
+    live.askedTitle = true;
+    void live.session.rpc.name
+      .get()
+      .then((r: { name?: string | null } | undefined) => {
+        const title = cleanSessionTitle(r?.name);
+        if (!title || live.titled || this.sessions.get(sid) !== live) return;
+        live.titled = true;
+        this.emit(sid, { type: 'title', title });
+      })
+      .catch(() => undefined);
+  }
+
   /**
    * Switch the model of a live session (spec 030 FR-003..FR-009, SDK `rpc.model.switchTo`, @experimental).
    * Built from the SDK 1.0.22 types and docs only, never run on a real account (T041..T046 are Phase 3, they cost credits).

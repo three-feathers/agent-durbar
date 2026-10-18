@@ -14,6 +14,8 @@ export class FakeSession {
   handler: ((ev: unknown) => void) | undefined;
   processing = false;
   switchAnswer: unknown = { modelId: 'sim-deep' };
+  /** What `rpc.name.get` answers (issue #126); null = no name yet. */
+  nameAnswer: string | null = null;
   compactAnswer: unknown = { success: true, tokensRemoved: 5000, messagesRemoved: 4, contextWindow: { tokenLimit: 100000, currentTokens: 12000, messagesLength: 3 } };
   removed = true;
   /** Events `send` replays through the handler, in order (a recorded fixture). */
@@ -37,6 +39,7 @@ export class FakeSession {
     model: { switchTo: async (a: unknown) => this.rec('switchTo', this.switchAnswer, a) },
     queue: { removeAt: async (a: unknown) => this.rec('removeAt', { removed: this.removed }, a) },
     history: { compact: async (a: unknown) => this.rec('compact', this.compactAnswer, a) },
+    name: { get: async () => this.rec('name.get', { name: this.nameAnswer }) },
     metadata: { isProcessing: async () => this.rec('isProcessing', { processing: this.processing }) },
   };
 }
@@ -47,11 +50,14 @@ export class FakeClient {
   onDisk = new Set<string>();
   /** Handed to every session this client creates or resumes. */
   turnScript: ScriptEvent[] = [];
+  /** `rpc.name.get` answer for every session this client creates or resumes (issue #126). */
+  nameAnswer: string | null = null;
   sessions = new Map<string, FakeSession>();
   last!: FakeSession;
   n = 0;
   private track(s: FakeSession): FakeSession {
     s.turnScript = this.turnScript;
+    s.nameAnswer = this.nameAnswer;
     this.sessions.set(s.sessionId, s);
     return s;
   }
