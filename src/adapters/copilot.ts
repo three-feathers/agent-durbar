@@ -19,7 +19,7 @@ import { EventMapper } from './map';
 import type { EventBody, RawEvent } from './map';
 import { compactResultFrom, modelConfig, modelOptionFrom, runtimeMessage, sdkTier, switchResultFrom } from './copilotmodel';
 import type { ModelOption, RawModelInfo, RawSwitchResult } from './copilotmodel';
-import { PermissionBroker } from './permissions';
+import { PermissionBroker, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
 import { eventsToHistory, previousSessionsFor } from './history';
@@ -39,13 +39,6 @@ const IMAGE_MIME: Record<string, string> = {
 };
 
 export type { ModelOption };
-
-/** The permission mode to start with: `permissionMode` wins (unknown = read-only, constitution III), else the old booleans. */
-function startMode(o: StartOptions): PermissionMode {
-  const m = o.permissionMode as unknown;
-  if (m !== undefined && m !== null) return m === 'allow' || m === 'ask' || m === 'read-only' ? m : 'read-only';
-  return o.allow ? 'allow' : o.ask ? 'ask' : 'read-only';
-}
 
 interface Live {
   session: CopilotSession;
@@ -155,7 +148,7 @@ export class CopilotAdapter implements AgentAdapter {
     let sid = options.resumeSessionId ?? options.sessionId ?? '';
     const broker = new PermissionBroker({
       roots: [cwd, ...folders],
-      mode: startMode(options),
+      mode: startModeOf(options),
       emit: (e: BrokerEvent) => {
         switch (e.type) {
           case 'pending':

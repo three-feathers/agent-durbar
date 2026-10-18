@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.4 tag)
 
+- **Adapter contract suite (spec 012 T015, issue #35).** A fake adapter and a shared contract every adapter must pass (events, permissions, stop, capabilities), plus tests for the main-process rules that refuse settings an adapter cannot apply. No user-visible change. Unit tests, 0 AIU.
+
 - **Agents are routed to their adapter (spec 012 T014, issue #34).** The main process now keeps one adapter per kind (only Copilot today) and routes each agent's calls to it; `listAdapters()` reports each adapter's status. A setting an adapter cannot apply to a live session is refused instead of silently saved. Copilot unchanged. Unit tests and the simulator, 0 AIU.
 
 - **Saved folders can record their agent kind (spec 012 T013, issue #33).** A new optional `adapterId` per saved folder, never written for Copilot, so existing files stay byte-identical; not read by the app until T014. Unit tests, 0 AIU.

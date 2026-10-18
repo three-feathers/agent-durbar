@@ -3,7 +3,7 @@ import { ipcMain, safeStorage } from 'electron';
 import * as path from 'path';
 import type { AgentInfo, AgentMcpEntry, McpFolderState, McpState } from '../shared/api';
 import type { McpServerStatus } from '../adapters/types';
-import { refusesLive, setMcpEnabledOf } from '../adapters/router';
+import { setMcpOp } from './agentops';
 import type { AdapterRouter } from '../adapters/router';
 import type { McpServerSpec } from '../shared/mcp';
 import type { DevEnv } from './devhooks';
@@ -34,7 +34,6 @@ export const safeStorageCodec: SecretCodec = {
   decrypt: (blob) => safeStorage.decryptString(Buffer.from(blob, 'base64')),
 };
 
-const trunc = (v: unknown, n: number): string => String(v ?? '').slice(0, n);
 /** The folder/workspace an agent belongs to: the key of the saved folder list and of the MCP extras. */
 const keyOf = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 const nameOfKey = (key: string): string => path.basename(key).replace(/\.code-workspace$/i, '') || key;
@@ -142,25 +141,7 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
     for (const x of live.get(a.id) ?? []) add(x.name, 'runtime', !dis.has(x.name));
     return { ok: true, servers: entries, live: router.forAgent(a.id)?.isLive(a.id) ?? false };
   });
-  ipcMain.handle('agents:setMcp', async (_e, id: unknown, name: unknown, enabled: unknown) => {
-    const a = typeof id === 'string' ? agents.get(id) : undefined;
-    if (!a || typeof name !== 'string' || !name || name.length > 64) return { ok: false, error: 'unknown agent or server' };
-    const ad = router.forAgent(a.id);
-    // A live session whose adapter cannot switch servers keeps them as they are: refuse and save nothing (spec 012 FR-050).
-    if (ad && refusesLive(ad, a.id, !!ad.setMcpEnabled)) return { ok: false, error: 'This agent cannot switch MCP servers while its session is running.' };
-    const set = off.get(a.id) ?? new Set<string>();
-    if (enabled === true) set.delete(name);
-    else set.add(name);
-    off.set(a.id, set);
-    if (!ad || !ad.isLive(a.id)) return { ok: true };
-    try {
-      await setMcpEnabledOf(ad, a.id, name, enabled === true);
-      return { ok: true };
-    } catch (err) {
-      // e.g. a server that was not part of this session at start: it comes in with the next start
-      return { ok: true, error: `Saved for this agent. The running session could not apply it now (${trunc(err instanceof Error ? err.message : err, 120)}); it applies at the next start.` };
-    }
-  });
+  ipcMain.handle('agents:setMcp', (_e, id: unknown, name: unknown, enabled: unknown) => setMcpOp({ agents, router, wsKey: keyOf }, off, id, name, enabled));
 
   return {
     optionsFor(agentId: string) {

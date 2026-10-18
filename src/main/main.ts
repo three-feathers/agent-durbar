@@ -6,10 +6,12 @@ import * as path from 'path';
 import { COPILOT_DESCRIPTOR } from '../adapters/copilot';
 import { createRegistry, detectAll } from '../adapters/registry';
 import { detectorFor } from '../adapters/detect';
-import { adapterForAdd, createRouter, historyOf, interruptOf, modelOptionsOf, previousSessionsOf, refusesLive, setCapOf, setPermModeOf } from '../adapters/router';
+import { adapterForAdd, createRouter, historyOf, modelOptionsOf, previousSessionsOf } from '../adapters/router';
+import { restorable, setCapOp, setModeOp, stopTurnOp } from './agentops';
+import type { OpsDeps } from './agentops';
+import { adapterOf } from './folders';
 import type { AgentAdapter } from '../adapters/types';
 import type { AdapterInfo } from '../shared/adapters';
-import { adapterOf } from './folders';
 import { startOptionsOf } from './startopts';
 import { resolveWorkspaceCwd } from '../adapters/workspace';
 import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, stageAttachment } from '../shared/attachments';
@@ -231,15 +233,7 @@ async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions
 /** Folders remembered from earlier runs come back as "not started" agents: nothing runs until the first message. */
 function restoreFolders(): void {
   if (!folderStore) return;
-  const warned = new Set<string>();
-  for (const f of folderStore.load()) {
-    const adapterId = adapterOf(f);
-    if (!registry.has(adapterId)) {
-      // Saved by a build that knows more adapters: stays in the file, is not shown, and is never started as another adapter. No path in the log.
-      if (!warned.has(adapterId)) console.warn(`Skipping saved folders of unknown adapter ${JSON.stringify(adapterId.slice(0, 40))}`);
-      warned.add(adapterId);
-      continue;
-    }
+  for (const { folder: f, adapterId } of restorable(folderStore.load(), (i) => registry.has(i), console.warn)) {
     try {
       if (!fs.existsSync(f.workspace)) continue; // e.g. an unplugged drive: stays saved, just not shown
       const rm = restoreMode(f.permMode); // exactly as saved, Allow all included, flagged so the UI shows "restored" (spec 003 FR-025/026)
@@ -397,13 +391,10 @@ ipcMain.handle('agents:send', async (_e, id: string, text: string, attachments: 
   }
 });
 
-const NO_INTERRUPT = 'This agent cannot stop a running turn. End the session instead.';
-const NO_LIVE_SETTING = 'This agent cannot change that setting while its session is running. Start a new session with it.';
+// The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
+const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey };
 // Stop only interrupts the running turn (the agent returns to Ready); End session frees the runtime session.
-ipcMain.handle('agents:stop', async (_e, id: string) => {
-  const ad = agents.has(id) ? router.forAgent(id) : undefined;
-  if (ad && refusesLive(ad, id, await interruptOf(ad, id))) return { ok: false, error: NO_INTERRUPT };
-});
+ipcMain.handle('agents:stop', (_e, id: string) => stopTurnOp(opsDeps, id));
 
 ipcMain.handle('agents:end', async (_e, id: string) => {
   if (agents.has(id)) await router.forAgent(id)?.stop(id);
@@ -443,20 +434,7 @@ ipcMain.handle('settings:setPlace', (_e, server: unknown, place: unknown) => set
 ipcMain.handle('settings:setDefaultCap', (_e, credits: unknown) => ({ ok: true, defaultMaxAiCredits: settingsStore?.setDefaultMaxAiCredits(credits) }));
 
 ipcMain.handle('agents:setCap', async (_e, id: unknown, credits: unknown) => {
-  const a = typeof id === 'string' ? agents.get(id) : undefined;
-  const ad = a ? router.forAgent(a.id) : undefined;
-  if (!a || !ad) return { ok: false, error: 'unknown agent' };
-  const cap = credits === null ? undefined : parseCap(credits);
-  if (credits !== null && cap === undefined) return { ok: false, error: 'The cap must be a number of at least 30 AI credits (the runtime minimum).' };
-  try {
-    // Not started yet: nothing to change now, the cap goes in the start options. A live session whose adapter cannot take it is refused, not saved (spec 012 FR-050).
-    if (ad.isLive(a.id) && refusesLive(ad, a.id, await setCapOf(ad, a.id, cap ?? null))) return { ok: false, error: NO_LIVE_SETTING };
-    a.maxAiCredits = cap;
-    folderStore?.setMaxAiCredits(wsKey(a), cap);
-    return { ok: true, maxAiCredits: cap };
-  } catch (err) {
-    return { ok: false, error: errText(err) };
-  }
+  return setCapOp(opsDeps, id, credits);
 });
 
 ipcMain.handle('agents:resolveLimit', async (_e, id: unknown, requestId: unknown, choice: unknown) => {
@@ -595,20 +573,7 @@ ipcMain.handle('folders:setClosed', (_e, id: unknown, closed: unknown) => {
   return { ok: true };
 });
 
-ipcMain.handle('agents:setMode', (_e, id: unknown, mode: unknown, opts: unknown) => {
-  const a = typeof id === 'string' ? agents.get(id) : undefined;
-  const ad = a ? router.forAgent(a.id) : undefined;
-  if (!a || !ad) return { ok: false, error: 'unknown agent' };
-  const o = (opts && typeof opts === 'object' ? opts : {}) as Record<string, unknown>;
-  const m = validMode(mode);
-  const r = setPermModeOf(ad, a.id, m, { clearGrants: o.clearGrants === true, approvePending: o.approvePending === true });
-  // A live session that cannot switch keeps its old mode: say so and save nothing (constitution III, spec 012 FR-050). Not live: it applies at the next start.
-  if (refusesLive(ad, a.id, r.applied)) return { ok: false, error: NO_LIVE_SETTING };
-  a.permMode = m;
-  a.permRestored = undefined; // a fresh choice, no longer "restored"
-  folderStore?.setPermMode(wsKey(a), m);
-  return { ok: true, mode: m, pending: r.pending };
-});
+ipcMain.handle('agents:setMode', (_e, id: unknown, mode: unknown, opts: unknown) => setModeOp(opsDeps, id, mode, opts));
 
 ipcMain.handle('folders:remove', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
