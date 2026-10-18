@@ -122,7 +122,12 @@ for (const e of codexUsage) assert.ok(!('costUsd' in e) && !('costBasis' in e) &
     assert.strictEqual(n([g(10), g(3)]), 1, 'a smaller later figure: no event');
     assert.strictEqual(n([g(10), g(3), g(10)]), 1, 'a smaller figure does not lower what was counted');
     const mixed = claude([g(10, 100, 4), g(10, 150, 4), g(12, 150, 9)]).filter((e) => e.type === 'usage');
-    assert.deepStrictEqual(mixed.map((e) => e.type === 'usage' && [e.inputTokens, e.outputTokens, e.cacheReadTokens]), [[100, 10, 4], [50, undefined, undefined], [undefined, 2, 5]], 'growth per field');
+    assert.deepStrictEqual(mixed.map((e) => e.type === 'usage' && [e.inputTokens, e.outputTokens, e.cacheReadTokens]), [[104, 10, 4], [50, undefined, undefined], [5, 2, 5]], 'growth per field (input includes the cache reads, FR-124)');
+    // FR-124: input = input_tokens + cache writes + cache reads; cacheReadTokens is the read part
+    const w = claude([asst('w', {}, undefined, { input_tokens: 3, cache_creation_input_tokens: 15000, cache_read_input_tokens: 2000, output_tokens: 20 })]).filter((e) => e.type === 'usage');
+    assert.deepStrictEqual(w.map((e) => e.type === 'usage' && [e.inputTokens, e.outputTokens, e.cacheReadTokens]), [[17003, 20, 2000]]);
+    const only = claude([asst('o', {}, undefined, { cache_creation_input_tokens: 500 })]).filter((e) => e.type === 'usage');
+    assert.ok(only.length === 1 && only[0].type === 'usage' && only[0].inputTokens === 500, 'a cache write alone is usage');
   }
   // one id is counted once across the main stream and a sub-agent stream
   assert.strictEqual(n([asst('x'), asst('x', sub)]), 1, 'same id in main and sub-agent streams: counted once');

@@ -131,7 +131,7 @@
     {
       "type": "usage",
       "model": "claude-synthetic-1",
-      "inputTokens": 120,
+      "inputTokens": 200,
       "outputTokens": 30,
       "cacheReadTokens": 80
     }
