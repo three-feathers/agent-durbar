@@ -38,7 +38,7 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 - [x] T023 (fixtures) `claudeMap.ts` plus `scripts/fixtures/claude/` synthetic fixtures (init, streamed text and thinking, tool use and result, MCP tool, sub-agent task, result, error) and `test-claude-map.ts`; MCP name parsed against the init server list [FR-014, FR-018, FR-020]
 - [x] T024 (fixtures) `codexMap.ts` plus `scripts/fixtures/codex/` synthetic fixtures (thread, turn, deltas, command, file change, mcpToolCall, sub-agent items, token usage, failure) and `test-codex-map.ts`; unknown notifications ignored [FR-014, FR-018, FR-020]
 - [x] T025 (fixtures) Usage and context tests: Claude cost delta from running `total_cost_usd`, per `message.id` dedupe, Codex `modelContextWindow` null as unknown, "credits not reported" for Codex [FR-015, FR-016]
-- [ ] T026 (sim) Contract case SC-004 for every adapter on fakes: a write attempt is denied in Read-only, pending in Ask first, approved in Allow all; stop with a pending request denies it [FR-013, FR-017, SC-004]
+- [x] T026 (sim) Contract case SC-004 for every adapter on fakes: a write attempt is denied in Read-only, pending in Ask first, approved in Allow all; stop with a pending request denies it [FR-013, FR-017, SC-004]
 - [x] T027 (sim) Folder trust for project-level vendor settings, as decided in Q8 (2026-10-18): no Claude settings files in any mode (`settingSources: []`), `strictMcpConfig: true` in every mode, tests; no folder-trust dialog [FR-025]
 - [ ] T028 (sim) Docs for Phase 2: dated `## Changes` entries in specs 003, 011 and 018 (mode wording per agent, usage units, live switch per adapter), README Safety model note, converge [FR-005, FR-008]
 
@@ -81,6 +81,7 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 - [ ] T080 (sim) Previous sessions list for both agents in the folder room (read-only, same folder and agent type) using T048; screenshots [FR-019, C11]
 - [ ] T081 (needs-owner-approval) Decision Q7: a separate dollar cap for Claude (`maxBudgetUsd`) or caps stay Copilot-only; if yes, specify it as a spec 011 delta first [C9]
 - [ ] T083 (backlog, needs-owner-approval) `[KNOWN GAP]` from Q8: a repo's own `.claude` hooks, agents and `.mcp.json` never run in a Claude session from Durbar (the repo's `CLAUDE.md`/`AGENTS.md` instructions are handled by T045, appended system prompt). A way to allow them without letting their `permissions.allow` rules bypass Durbar's modes needs its own spec delta and the owner's OK [FR-025]
+- [ ] T084 (research, then sim) `[KNOWN GAP]` from review of #165: Codex `read-only` sandbox reads anywhere unasked, breaking spec 003 FR-023 parity. Find whether the app-server protocol can limit readable roots (sandbox policy); if yes, use it in `codexModes` and assert read-outside in `test-sc004`; if no, document it in README known limits before T043 ships the Codex adapter [FR-013, FR-084]
 - [ ] T082 (sim) Converge: README "verified" table from `simulator/fixtures only` to what Phase 4 proved, CHANGELOG, spec statuses, `specs/README.md`, close umbrella issue #2 [FR-008, SC-005]
 
 ## Analyze notes (2026-10-17, by hand)
