@@ -24,8 +24,8 @@ what exists today, not what was originally intended. Each requirement carries a 
 
 | # | Feature | Status |
 | --- | --- | --- |
-| [001](001-office-view-and-densities/spec.md) | Office view, densities, list view, filters | implemented |
-| [002](002-copilot-adapter-and-events/spec.md) | Copilot adapter and normalized events | implemented |
+| [001](001-office-view-and-densities/spec.md) | Office view, densities, list view, filters | implemented; delta 2026-10-18: main agents show their session title (issue #126) |
+| [002](002-copilot-adapter-and-events/spec.md) | Copilot adapter and normalized events | implemented; delta 2026-10-18: normalized `title` event from `session.title_changed`, `name.get` fallback (issue #126) |
 | [003](003-permissions-and-approvals/spec.md) | Permission modes, approvals, session grants | implemented |
 | [004](004-attachments/spec.md) | Attachments (pick, drop, paste) and caps | implemented |
 | [005](005-chat-fullscreen-and-agent-strip/spec.md) | Full-screen chat and agent strip | implemented |
@@ -42,7 +42,7 @@ what exists today, not what was originally intended. Each requirement carries a 
 | # | Feature | Status |
 | --- | --- | --- |
 | [011](011-credit-caps-and-usage-display/spec.md) | AI-credit caps and usage display | per-session cap slice and office/folder usage totals built, totals kept across restarts with a reset (2026-10-17, issue #21); exhausted flow unverified on a real account; multiplier estimate covered by spec 030 |
-| [012](012-claude-codex-adapters/spec.md) | Claude Code and Codex adapters | planned: clarified, [research](012-claude-codex-adapters/research.md), [plan](012-claude-codex-adapters/plan.md), [tasks](012-claude-codex-adapters/tasks.md); **Phase 1 built 2026-10-18 (T010-T019: interface, registry, CLI detection, saved adapter id, routing, contract suite on a fake and on Copilot, kind picker, mixed simulator roster, docs) and Phase 2/3 groundwork (T021/T022 mode mappings, T023/T024 event mappers with synthetic fixtures, T042 Codex JSON-RPC client, T051 debug-log redaction, T027 no Claude settings files (Q8)), all simulator/fixtures and unit tests, not wired to a real Claude or Codex; only Copilot is registered; nothing verified on a real account**; real-account tasks need owner approval; umbrella issue #2 |
+| [012](012-claude-codex-adapters/spec.md) | Claude Code and Codex adapters | planned: clarified, [research](012-claude-codex-adapters/research.md), [plan](012-claude-codex-adapters/plan.md), [tasks](012-claude-codex-adapters/tasks.md); **Phase 1 built 2026-10-18 (T010-T019: interface, registry, CLI detection, saved adapter id, routing, contract suite on a fake and on Copilot, kind picker, mixed simulator roster, docs) and Phase 2/3 groundwork (T021/T022 mode mappings, T023/T024 event mappers with synthetic fixtures, T042 Codex JSON-RPC client, T051 debug-log redaction, T027 no Claude settings files (Q8), T026 SC-004 parity across mode mappings, T025 usage/context tests and Claude usage dedupe), all simulator/fixtures and unit tests, not wired to a real Claude or Codex; only Copilot is registered; nothing verified on a real account**; real-account tasks need owner approval; umbrella issue #2 |
 
 | [013](013-live-verification-stop-resume-thinking/spec.md) | Live verification of Stop, resume and thinking | draft |
 | [014](014-signing-and-notarization/spec.md) | Code signing and notarization | draft, **needs approval (purchase)** |
@@ -99,6 +99,12 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | # | Feature | Status |
 | --- | --- | --- |
 | [026](026-release-alpha3/spec.md) | Release v0.1.0-alpha.3 (version bump, changelog, download notes) | built; **published as a pre-release** by the maintainer (2026-10-17); alpha.2 draft removed |
+
+## Feature 042: release v0.1.0-alpha.5
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [042](042-release-alpha5/spec.md) | Release v0.1.0-alpha.5 as a pre-release (version bump, changelog, download notes) | release PR 2026-10-18; tag, draft and publishing as a pre-release follow |
 
 ## Feature 031: release v0.1.0-alpha.4
 

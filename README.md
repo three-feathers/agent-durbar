@@ -2,7 +2,7 @@
 
 Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.
 
-> Status: **alpha, `v0.1.0-alpha.4` ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4), unsigned, not notarized).** It adds places in the office, the per-folder MCP import from VS Code and switching model and context inside a session (simulator and fake sessions; real switching between models is unverified), see [CHANGELOG.md](CHANGELOG.md). `v0.1.0-alpha.3` stays available. The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. Groundwork for Claude Code and Codex is on `main` (an adapter interface, registry, detection, contract tests; **no Claude or Codex adapter yet, only Copilot works**, see [Agents and adapters](#agents-and-adapters)). Latest work: [themes](#status-themes-clean-office-corporate-retro-pixel-three-durbar-courts-your-own-packs) (on branch `035-theme-foundation`, not released), [agents show how they are doing](#status-agents-show-how-they-are-doing-heavy-monster-ambulance-room-sirens), [floors](#status-floors-group-rooms-and-switch-a-floor-off) (on branch `033-floors`, not released), [places in the office](#status-places-in-the-office-a-shared-lobby-agents-walk-to-the-tool-they-use), [milestone 10 and usage totals](#status-milestone-10-tools-all-time-the-copilot-cli-mcp-list-first-mcp-extras-per-folder). Only Linux has been run by hand; macOS and Windows are built and unit-tested in CI but untested on real hardware. Built by [Three Feathers](https://github.com/three-feathers); the work is tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
+> Status: **alpha, `v0.1.0-alpha.5` (pre-release, unsigned, not notarized).** It adds themes that change the whole office (colours, frames, fonts, people and furniture) and your own theme packs, floors, agents that show how they are doing, custom places in the lobby and usage totals kept across restarts (all checked on the simulator and with unit tests), see [CHANGELOG.md](CHANGELOG.md). `v0.1.0-alpha.4` stays available. The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. Groundwork for Claude Code and Codex is on `main` (an adapter interface, registry, detection, contract tests; **no Claude or Codex adapter yet, only Copilot works**, see [Agents and adapters](#agents-and-adapters)). Latest work: [themes](#status-themes-clean-office-corporate-retro-pixel-three-durbar-courts-your-own-packs), [agents show how they are doing](#status-agents-show-how-they-are-doing-heavy-monster-ambulance-room-sirens), [floors](#status-floors-group-rooms-and-switch-a-floor-off), [places in the office](#status-places-in-the-office-a-shared-lobby-agents-walk-to-the-tool-they-use), [milestone 10 and usage totals](#status-milestone-10-tools-all-time-the-copilot-cli-mcp-list-first-mcp-extras-per-folder). Only Linux has been run by hand; macOS and Windows are built and unit-tested in CI but untested on real hardware. Built by [Three Feathers](https://github.com/three-feathers); the work is tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
 
 ![15 simulated agents at 1440x900 (roomy desks use the spare floor space)](docs/screenshots/m5-sim15-1440x900-closed.png)
 ![Full-screen chat with every other agent in a slim strip, 15 agents at 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
@@ -17,7 +17,7 @@ Command center to see, chat with and coordinate coding agents (Copilot CLI first
 
 ## Install from releases
 
-Download the build for your system from the [Releases page](https://github.com/three-feathers/agent-durbar/releases) (pre-releases are alpha builds). **Release status:** [`v0.1.0-alpha.4`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4) is the newest **published pre-release** (2026-10-17, eight files with `SHA256SUMS.txt`); [`v0.1.0-alpha.3`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.3) is the previous one. Both are **unsigned and not notarized**, and neither has been **tested on real Mac or Windows hardware** (only Linux was run by hand). Upgrading in place from alpha.3 was not checked. `v0.1.0-alpha.1` is an unpublished draft. `v0.1.0-alpha.2` was never published (the git tag remains). You can also build from source (below).
+Download the build for your system from the [Releases page](https://github.com/three-feathers/agent-durbar/releases) (pre-releases are alpha builds). **Release status:** [`v0.1.0-alpha.5`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.5) is the newest **pre-release** (2026-10-18, eight files with `SHA256SUMS.txt`); [`v0.1.0-alpha.4`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.4) is the previous one and [`v0.1.0-alpha.3`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.3) stays available. All are **unsigned and not notarized**, and none has been **tested on real Mac or Windows hardware** (only Linux was run by hand). Upgrading in place from alpha.4 was not checked. `v0.1.0-alpha.1` is an unpublished draft. `v0.1.0-alpha.2` was never published (the git tag remains). You can also build from source (below).
 
 | System | File |
 | --- | --- |
@@ -28,7 +28,19 @@ Download the build for your system from the [Releases page](https://github.com/t
 
 There is no auto-update: download a newer release to update.
 
-### What's new in v0.1.0-alpha.4
+### What's new in v0.1.0-alpha.5
+
+Full list in [CHANGELOG.md](CHANGELOG.md). Short version, since alpha.4:
+
+- **Themes** (specs 035-040): Settings > Theme switches the whole office live: **Corporate**, **Retro Pixel** and three **Durbar** courts (Indian, European, Japanese) each change the colours, the top bar, room frames, cards, fonts, place names and **the people and furniture** (suits at glass desks, 8-bit people at a CRT, courtiers in turbans, periwigs or kimono). **Clean Office** is today's look. Status, permission and credit wording and the layout stay the same in every theme. You can import and export your own theme packs (data only: no scripts, no CSS).
+- **Floors** (spec 033): group rooms on floors and switch a floor off; its agents keep running.
+- **Agents show how they are doing** (spec 034): heavier near a full context window, an ambulance for errors, fainting at the credit limit; rooms take the tone of their worst agent. *Serious mode* turns it off.
+- **Custom places** in the lobby, and per-folder MCP servers listed in Settings > Places (spec 024).
+- **Usage totals kept across restarts**, with a reset in Settings (spec 011).
+- Groundwork for Claude Code and Codex (spec 012): **not wired, only Copilot works**.
+- **Still unsigned and not notarized** (steps below). **Untested on real macOS and Windows hardware.** Theme fonts depend on your OS. An in-place upgrade from alpha.4 was not checked.
+
+### What was new in v0.1.0-alpha.4
 
 Full list in [CHANGELOG.md](CHANGELOG.md). Short version, since alpha.3:
 
@@ -104,7 +116,7 @@ Each release also lists `SHA256SUMS.txt`. Releases are built by GitHub Actions f
 
 ## Status (themes: Clean Office, Corporate, Retro Pixel, three Durbar courts, your own packs)
 
-Specs [035](specs/035-theme-foundation/spec.md)-[040](specs/040-user-themes/spec.md) (issue #129), on branch `035-theme-foundation` (PR #137). Built and tested on the simulator and unit tests. **AI credits spent: 0 AIU.** Not released.
+Specs [035](specs/035-theme-foundation/spec.md)-[040](specs/040-user-themes/spec.md) (issue #129), PR #137. Built and tested on the simulator and unit tests. **AI credits spent: 0 AIU.** In `v0.1.0-alpha.5`.
 
 - **Settings > Theme** switches the look of the whole app live, no restart: colours, the top bar, room frames, cards, buttons, pills, lobby tiles, display fonts, the place names and **the people and furniture**: each theme draws its own characters, chairs, desks and monitors (suits at glass desks, 8-bit people at a CRT, courtiers in turbans, periwigs or kimono at carved, gilded or lacquer desks). Status cues stay in the same place in every theme.
 - **Clean Office** is today's look and the fallback for anything unknown or broken (checked against `main`: the same pixels with animations frozen).
@@ -123,9 +135,25 @@ Specs [035](specs/035-theme-foundation/spec.md)-[040](specs/040-user-themes/spec
 **Limits.** Display fonts are your system's serif and monospace fonts (no font files are shipped), so the courts and Retro look a little different per OS; only Linux was looked at. Not checked on a real Copilot session. The Durbar word lists and the five looks wait for the owner's review.
 
 Tests: `test:theme` (packs, tokens, words, the sanitizer, UI styles, and a guard that `themes.css` never sets a size), `test:scenekits` (3600 scenes: every kit, status, mood and look) and `test:userthemes`. Screenshots: `scripts/shots-themes.js`.
+## Status (main agents show their session title)
+
+Spec deltas in [002](specs/002-copilot-adapter-and-events/spec.md#changes) and [001](specs/001-office-view-and-densities/spec.md) (issue #126). Built and tested on the simulator, fixtures and unit tests, and **checked once on a real Copilot session** (one Read-only prompt, **0.15 AIU**). Not released yet.
+
+- Copilot names every session: a title made from your first prompt, which may later become a short summary or a name you gave it with `/rename`. A main agent now shows that title on its card, in the chat header, the list, the agent strip and the lobby, instead of the folder name; several sessions in one folder are told apart at a glance. The folder stays in the room header and in the card's tooltip and screen-reader label. Sub-agents keep their own names, as before.
+- A session resumed from **Previous sessions** shows its saved name, else its summary, until Copilot sends its own title.
+- Long titles are shortened with an ellipsis (the full title is in the tooltip); line breaks, control and hidden characters are removed. Titles are display only: tool-usage counts and usage totals keep the folder name.
+- Simulator: `DURBAR_SIM_TITLES=1` (page address `simtitles=1`) gives a few main agents titles, one long.
+
+![Main agents with session titles, 1440x900](docs/screenshots/002-titles-1440x900.png)
+![The chat of a titled session, 1280x800](docs/screenshots/002-titles-chat-1280x800.png)
+
+**Real check (2026-10-18).** Copilot sent the title for the main session as soon as the prompt was sent (before the model answered), and the card took it at once. After the session was ended and resumed, Copilot did not send it again; the app's one-time name request on resume brought it back. **Limits:** a later auto summary replacing the first title was not seen in that short run; only Linux.
+
+Tests: `test:events`, `test:history`, `test:copilotmodel`; `check:office` includes titled agents at both sizes. Screenshots: `scripts/shots-002-titles.js`.
+
 ## Status (agents show how they are doing: heavy, monster, ambulance, room sirens)
 
-Spec [034](specs/034-agent-health/spec.md) (issue #20; amends 001). Built and tested on the simulator and unit tests. **AI credits spent: 0 AIU.** Not in a release yet.
+Spec [034](specs/034-agent-health/spec.md) (issue #20; amends 001). Built and tested on the simulator and unit tests. **AI credits spent: 0 AIU.** In `v0.1.0-alpha.5`.
 
 - **Context window.** An agent's figure gets **heavier** (wider, sweating) from 70% of its context window and becomes a **grumpy monster** (green-grey, horns, frown) above 90%: a hint to start a fresh session. The steps are the context chip's.
 - **Trouble.** An **ambulance** parks by the desk of the agent with the latest error (one ambulance at a time; other agents in Error keep the plain error look). An agent at its credit limit **faints**. One whose permission request has waited 60 s or more **taps the desk**. Three failed tool calls in a row make it **dizzy** (a successful call clears it).
@@ -144,7 +172,7 @@ Spec [034](specs/034-agent-health/spec.md) (issue #20; amends 001). Built and te
 Tests: `npm test` adds `test:mood` and `seriousMode` cases in `test:credits`. Checks and screenshots: `scripts/shots-034.js`.
 ## Status (floors: group rooms and switch a floor off)
 
-Spec [033](specs/033-floors/spec.md) (amends 001, 006, 017; uses 011 and 024). Built and tested on the simulator and with unit tests; **no AI credits spent**, no real Copilot session needed or used. Not released yet.
+Spec [033](specs/033-floors/spec.md) (amends 001, 006, 017; uses 011 and 024). Built and tested on the simulator and with unit tests; **no AI credits spent**, no real Copilot session needed or used. In `v0.1.0-alpha.5`.
 
 - **Floors.** A floor is a named group of rooms (folders or `.code-workspace` files). Every folder is on one floor; the built-in **Ground floor** holds every folder you have not moved. A file from before this feature opens with everything on Ground floor.
 - **Floors button** in the top bar, shown **once you have two or more floors** (a small icon and `2/3` = two of three floors on; with only the Ground floor the top bar is as before and you create the first floor in **Settings > Floors**). Its panel has an **On/Off** switch per floor, **Only** (that floor on, every other floor off), **Rename**, **Up/Down**, **Delete** (asks first; its folders go back to Ground floor; no folder is removed and no session ended), a **Move to** choice per folder, a *hidden* tag for folders hidden with Folders > Hide, **New floor**, and **New folders go to** (the floor `+ Folder` / `+ Workspace` add to; their tooltips name it). **Settings > Floors** has the same controls; a change in one place shows in the other at once.
@@ -165,7 +193,7 @@ Tests: `npm test` adds `test:floors` and floor cases in `test:folders` and `test
 
 ## Status (usage totals kept across restarts)
 
-Spec [011](specs/011-credit-caps-and-usage-display/spec.md), second delta of 2026-10-17 (issue #21). Built and tested on the simulator and unit tests. **AI credits spent: 0 AIU.** Not in a release yet.
+Spec [011](specs/011-credit-caps-and-usage-display/spec.md), second delta of 2026-10-17 (issue #21). Built and tested on the simulator and unit tests. **AI credits spent: 0 AIU.** In `v0.1.0-alpha.5`.
 
 - **Saved totals.** The office chip in the header and each folder's total (room header, closed door plate) count **since the last reset** and survive restarts. The main process records every usage event per folder, so it also counts while no window is open. The tooltip says since when, and how much was spent since the app opened.
 - **Only numbers on disk.** `durbar-usage-totals.json` in the app's userData folder holds numbers, folder display names and a fingerprint (hash) of each folder's path; never prompts, output or paths. Folders that are no longer listed keep counting in the office total ("includes folders no longer shown").
