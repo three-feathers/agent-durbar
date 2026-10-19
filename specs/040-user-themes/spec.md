@@ -50,3 +50,32 @@
 - **FR-008** `[IMPLEMENTED]` Review follow-ups: `theme:listUser` sends only id, name, ok and error to the renderer (no folder path); a failed import removes its temporary folder and returns `{ok:false}` instead of throwing; the `DURBAR_PICK` dev hook takes the whole value (Windows `C:\…` paths); `DURBAR_THEME` applies a theme for the run without saving it.
 
 **Tests.** `test:theme` adds Paco's bypass strings and the token and word cases; `test:userthemes` adds a refused token and a failed copy that leaves no temporary folder.
+
+### 2026-10-19: AI theme maker (issue #182, split from #129)
+
+*Owner:* "can you work on some other issue in parallel like issue #182". The issue's open questions are settled here; the owner's request also covers the AI credits a generation spends.
+
+- **FR-014** **Make a theme with AI.** Settings > Theme has **Make a theme with AI…**:
+  1. The user describes a look in words ("a night-shift newsroom", "a ship's bridge"), at most 300 characters.
+  2. The user picks a harness that can do it (one marked `oneShot`, see FR-015).
+  3. Durbar asks that harness once and shows the result: name, colour swatches, UI style, scene kit and place names.
+  4. **Try it** applies it live without saving. **Save as my theme** stores it as a user theme (FR-001, same folder and format), and it then appears in the list with "yours". **Discard** goes back to the theme that was active before; that is the undo.
+- **FR-015** **Harness.** The optional adapter capability `oneShot` with `generateText(prompt)` runs one prompt with **no tools, no MCP servers and no session kept**, in an empty temporary folder:
+  - **Claude Code:** `claude -p <prompt> --tools "" --no-session-persistence --strict-mcp-config --setting-sources "" --output-format json --max-budget-usd 0.25`; its dollar estimate is shown with the result.
+  - **Codex:** an ephemeral thread with the read-only sandbox and no approvals.
+  - **Copilot:** not in Phase 1 (`[KNOWN GAP]`; it needs a throw-away SDK session).
+  - **Simulator:** a canned theme.
+- **FR-016** **Only the safe subset.** `src/shared/themegen.ts` writes the prompt, which lists the allowed fields and values and asks for JSON only. It then takes from the reply **only**:
+  - a name of up to 40 characters, which becomes an id `ai-<slug>` that clashes with no built-in or saved theme;
+  - `ui` and `scene` from the fixed lists (FR-007), with anything else falling back to Clean;
+  - colours for **a curated list of tokens**, as `#rrggbb` or `#rgb` only;
+  - place and door words for a fixed list of keys, as plain text of at most 40 characters (`<`, `>`, `{` and `}` dropped).
+  - **No art in Phase 1:** no SVG reaches the pack, so the art sanitiser is not exposed.
+  - Missing tokens fall back to Clean Office (`extends: "clean-office"`). The result then passes the same `checkUserManifest` as an imported pack (FR-005..FR-010) and the renderer's own validator.
+- **FR-017** **Legible or refused.** The text must have enough contrast:
+  - `--ink` on `--bg` and on `--surface` at least 4.5:1, and `--muted` on `--surface` at least 3:1 (WCAG);
+  - status colours (`--c-*`) are never generated, so status stays the same in every theme.
+
+  A failing result is not offered; the user sees why and can **Try again**.
+- **FR-018** **Nothing is kept from the description.** It is sent once to the chosen harness and not stored. A saved theme stores only its manifest, with `author: "AI theme maker"` and the description as `description`, cut to 300 characters, so the user can see later where the theme came from.
+
