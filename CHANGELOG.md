@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **Choose a custom agent per session (spec 043, issue #127).** The chat header has an **Agent** chip. It lists the session's custom agents (`.github/agents/*.agent.md` in the folder and `~/.copilot/agents`) and switches between them or back to the default agent. An agent from the folder's repository asks once before use and shows its tools, model and MCP servers. A switch made while the agent works waits for the reply to end, and Stop drops it. Your permission mode always stays. Checked on a real Copilot session: the selected agent answered in its own style, and Read-only still blocked a write.
+
 - **Claude Code: a signed-out `claude` is shown as not signed in (spec 012 FR-132, issue #55).** The agent-kind check now also runs `claude auth status` (no prompt, nothing billed). If you're not signed in, the kind is marked "not signed in" with how to fix it, instead of failing at your first message. Only the signed-in flag is read, never your email or organisation.
 
 - **Live verification on a real Copilot session (spec 013, issue #3).** Stop, End and resume with context, the lazy start of a restored folder, thinking, a helper agent and usage were checked in the real app (9 prompts, about 0.31 AIU) and now count as verified in specs 005 and 006. A second message sent during a turn is queued by Copilot and answered afterwards. Several models, a real cap, VS Code visibility and macOS/Windows remain open.
