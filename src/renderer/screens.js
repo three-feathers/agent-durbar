@@ -161,6 +161,12 @@
     r.onclick=onSettingsClick;
     r.onchange=onPlaceChange;
     /* theme picker (spec 037): click applies live through app.js's applyTheme; no restart */
+    /* spec 037 FR-014: each swatch shows its own theme's colours (validated colour values set through CSSOM) */
+    if($('thList')&&window.THEME&&window.THEME.preview)$('thList').querySelectorAll('[data-theme-sw]').forEach((sw)=>{
+      const c=window.THEME.preview(sw.dataset.themeSw);
+      if(c.length>=3)sw.style.background=`linear-gradient(135deg,${c[0]} 0 34%,${c[1]} 34% 67%,${c[2]} 67%)`;
+      else if(c.length)sw.style.background=c[0];
+    });
     if($('thList'))$('thList').addEventListener('click',(e)=>{
       const b=e.target.closest&&e.target.closest('[data-theme]');if(!b||!X.applyTheme)return;
       X.applyTheme(b.dataset.theme);
