@@ -120,7 +120,7 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('addFolder').click()`);
     await ctx.sleep(400);
     const t = await js(`[...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' | ')`);
-    assert.match(t, /not ready/, `${w}: starting a not-ready kind is blocked: ${t}`);
+    assert.match(t, /not ready|isn't ready/, `${w}: starting a not-ready kind is blocked: ${t}`);
     assert.doesNotMatch(t, /Could not add/, 'the UI blocked it, the bridge was not asked');
     assert.strictEqual(await js(`document.querySelectorAll('#stage .desk[data-id]').length`), before, 'no folder was added');
     await js(`(()=>{const s=document.getElementById('kindSel');s.value='copilot';s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
@@ -135,7 +135,7 @@ module.exports = async (ctx) => {
     assert.ok(sd, `${w}: the new-session dialog has a kind select`);
     assert.deepStrictEqual(sd.opts.map((o) => [o[0], o[1]]), [['copilot', false], ['claude', false], ['codex', true]]);
     assert.match(sd.opts[2][2], /too old/);
-    assert.strictEqual(await js(`document.getElementById('sdKind').closest('label').firstChild.textContent.trim()`), 'Harness', 'FR-136: the dialog calls it Harness');
+    assert.strictEqual(await js(`document.getElementById('sdKind').closest('label').firstChild.textContent.trim()`), 'Agent app', 'FR-136: the dialog calls it Agent app (spec 052 FR-051)');
     assert.strictEqual(sd.value, 'copilot', 'the dialog defaults to the current agent kind');
     assert.ok(sd.model && sd.cap, 'Copilot: model and cap fields shown');
     const f3 = await minFont('#sessDlg');
@@ -149,7 +149,7 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('sdGo').click()`);
     await ctx.sleep(400);
     assert.ok(await js(`!!document.getElementById('sessDlg')`), 'a not-ready kind keeps the dialog open');
-    assert.match(await js(`[...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' | ')`), /not ready/);
+    assert.match(await js(`[...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' | ')`), /not ready|isn't ready/);
     assert.strictEqual(await js(`document.querySelectorAll('#stage .desk[data-id]').length`), n0, 'no session was started');
     if (w === SIZES[0][0]) await shot('012-session', w, h);
     await js(`(()=>{const s=document.getElementById('sdKind');s.value='copilot';s.dispatchEvent(new Event('change',{bubbles:true}))})()`);

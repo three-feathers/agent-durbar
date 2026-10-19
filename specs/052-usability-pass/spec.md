@@ -411,6 +411,6 @@ A UX writer found several words for the same thing (harness, agent kind; Approve
 
   - The AI theme dialog blurb is two sentences (one request, no tools, nothing kept, small cost on your own plan; safe values and readable text, try before saving).
   - Main-process and adapter messages follow (router, `detect.ts` hints, `main.ts`/`agentops.ts` errors, the "Allowed" status intent).
-  - **Deviation:** the "+ Workspace" button became **"+ VS Code"** (title "Add a VS Code workspace (.code-workspace file)"), not "+ Folder": "+ Folder" is already the button beside it, and two buttons with one name would be ambiguous. Shorter than before, so the top bar geometry is unchanged.
+  - **"+ Workspace" stays** (title "Add a VS Code workspace (.code-workspace file)"): with **folder** used everywhere else, "workspace" now names only the VS Code `.code-workspace` file, which is what this button adds. (A first pass renamed it "+ VS Code"; the product lead kept "+ Workspace" as clearer.)
   - `docs/feature-history.md` keeps the old words: it is a record, unchanged by design. The README keeps "harness" where it explains the concept; its section heading "Harnesses" stays because the website (`scripts/build-site.js`) reads it by name.
   - [KNOWN GAP] No simulator run or screenshots in this change; the screenshots in `docs/screenshots/` still show the old words until the lead retakes them.

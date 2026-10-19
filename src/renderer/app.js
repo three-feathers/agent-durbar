@@ -699,7 +699,7 @@ function renderOffice(){
   if(!model.length){
     stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey='';
     if(!agents.length&&!demoOn){stage.innerHTML=WELCOME_HTML;floor.classList.remove('scrolls');return;} /* spec 001 FR-026: first run */
-    stage.innerHTML='<div class="empty">'+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" above (or "+ VS Code" for a VS Code workspace).':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open "Folders" above to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?'All floors are off. Open "Floors" above to switch one on.':agents.length&&ROOMS.every(r=>!roomShown(r))?'Nothing to show: every folder is hidden or on a floor that is off. Open "Floors" or "Folders" above.':'No agents match these filters.'))+'</div>';
+    stage.innerHTML='<div class="empty">'+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" above (or "+ Workspace" for a VS Code .code-workspace file).':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open "Folders" above to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?'All floors are off. Open "Floors" above to switch one on.':agents.length&&ROOMS.every(r=>!roomShown(r))?'Nothing to show: every folder is hidden or on a floor that is off. Open "Floors" or "Folders" above.':'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
   }
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
@@ -977,7 +977,7 @@ function wireMenu(btnId,menuId){
    of view, a bar above the composer shows it with the same choices; its buttons press the card's own buttons, so there is one code
    path. A question is answered in its card (options and text): the bar takes you there. */
 /* the words of a request card (permission, question, limit), in full: the answer bar and the inbox show exactly this (FR-016, FR-027) */
-function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.pstate').forEach(x=>x.remove());const q=n.querySelector('.q-text');return (q?q.textContent:c.textContent).replace(/\s+/g,' ').trim().replace(/^(Permission|Question from the agent|Questions from the agent):?\s*/,'');}
+function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.pstate').forEach(x=>x.remove());const q=n.querySelector('.q-text');return (q?q.textContent:c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,'');}
 let answerObs=null;
 function wireAnswerBar(a){
   if(answerObs){answerObs.m.disconnect();answerObs.i.disconnect();answerObs=null;}
@@ -1482,7 +1482,7 @@ function renderFloorsBtn(){
   b.setAttribute('aria-label',tip+'. Open the floors panel.');
 }
 /* Floor for the next added folder (FR-006): chosen in the Floors panel before the picker opens; default = the last one used.
-   The top bar has no room for one more select at 1280x800, so + Folder / + VS Code only name it in their tooltip. */
+   The top bar has no room for one more select at 1280x800, so + Folder / + Workspace only name it in their tooltip. */
 let INTO=null;
 const intoFloor=()=>{if(!floorsLive()||FLOORS.floors.length<2)return undefined;const f=(INTO&&FLOORS.floors.find(x=>x.id===INTO))||FLOORS.floors.find(x=>x.id===FLOORS.lastFloor)||FLOORS.floors[0];return f.id;};
 function renderIntoFloor(){
@@ -1520,7 +1520,7 @@ function floorsBodyHTML(px){
   const last=FLOORS.floors.length-1;
   const opts=sel=>FLOORS.floors.map(f=>`<option value="${esc(f.id)}"${f.id===sel?' selected':''}>${esc(f.name)}</option>`).join('');
   const into=intoFloor();
-  return (into?`<div class="fl-into"><label for="${px}Into">New folders go to</label><select id="${px}Into" class="fl-into-sel" title="Floor for the folders you add with + Folder or + VS Code">${opts(into)}</select></div>`:'')+
+  return (into?`<div class="fl-into"><label for="${px}Into">New folders go to</label><select id="${px}Into" class="fl-into-sel" title="Floor for the folders you add with + Folder or + Workspace">${opts(into)}</select></div>`:'')+
     FLOORS.floors.map((f,i)=>{
       const rooms=roomsOnFloor(f.id);
       return `<div class="fl-floor${f.on?'':' off'}"><div class="fl-row">
@@ -2133,7 +2133,7 @@ function onLiveEvent(e){
   case 'grants':setGrants(a,e.grants||[]);return;
   case 'limit':
     if(e.phase==='changed'){a.info.maxAiCredits=e.maxAiCredits>0?e.maxAiCredits:undefined;a.usageText=usageLong(a);updateCapChip(a);updatePanelHeader();scheduleRender();}
-    else if(e.phase==='exhausted'){if(a.limit&&a.limit.requestId===e.requestId)return;showLimit(a,e);setState(a,'waiting','Limit reached','Spending limit reached: '+fmtCapOf(a,e.maxAiCredits||0));updateCapChip(a);}
+    else if(e.phase==='exhausted'){if(a.limit&&a.limit.requestId===e.requestId)return;showLimit(a,e);setState(a,'waiting','Limit reached','Stopped at '+fmtCapOf(a,e.maxAiCredits||0)+'. Raise the limit to go on.');updateCapChip(a);}
     else if(e.phase==='resolved'){if(a.limit&&a.limit.requestId===e.requestId)settleLimit(a,e.action||'add');}
     return;
   case 'question': /* spec 012 FR-130 */
@@ -2899,7 +2899,7 @@ document.addEventListener('change',async e=>{if(e.target&&e.target.id==='schedPa
 if(bridge&&bridge.onScheduleRan){bridge.onScheduleRan(r=>{const a=liveById(r.agentId);if(!a)return;addNote(liveChat(a),'Scheduled prompt ('+esc(r.every!==undefined?whenOf({every:r.every}):'once')+').');});}
 function renderFolders(){
   const pop=$('foldersPop'); if(pop.hidden)return;
-  if(!ROOMS.length){pop.innerHTML='<p class="fp-empty">No folders yet. Use + Folder, or + VS Code for a VS Code workspace. Folders you add are remembered next time.</p>';return;}
+  if(!ROOMS.length){pop.innerHTML='<p class="fp-empty">No folders yet. Use + Folder, or + Workspace for a VS Code .code-workspace file. Folders you add are remembered next time.</p>';return;}
   const sched=bridge.listSchedules?`<label class="fp-pause" title="Nothing scheduled is sent while this is on (kept across restarts)"><input type="checkbox" id="schedPauseAll"${SCHED.pausedAll?' checked':''}> Pause all schedules</label>`:'';
   pop.innerHTML='<div class="fp-h">Folders <small>remembered across restarts</small>'+sched+'</div>'+ROOMS.map(r=>{
     const n=agents.filter(x=>!x.parent&&x.room===r.id).length, ss=schedulesOf(r).filter(s=>!s.done), nx=nextRunOf(ss);

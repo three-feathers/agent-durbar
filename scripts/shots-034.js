@@ -113,7 +113,7 @@ module.exports = async (ctx) => {
     // [KNOWN GAP] an agent away at a place (spec 024) shows an empty chair: its mood drawing is there but hidden, the words stay
     const awayDz = ds.find((d) => d.away && d.trouble);
     if (awayDz) assert.strictEqual(await js(`getComputedStyle([...document.querySelectorAll('#stage .desk[data-id]')].find(d=>d.dataset.id===${jsLiteral(awayDz.id)}).querySelector('svg.scene .pp:last-of-type')).display`), 'none', `${awayDz.name}: away, so the drawing is hidden`);
-    if (awayDz) assert.ok(/needs help|fainted|impatient|dizzy/.test(awayDz.label), `${awayDz.name}: the words stay while away`);
+    if (awayDz) assert.ok(/needs a look|Spending limit reached|Waiting .+ for you|failed in a row/.test(awayDz.label), `${awayDz.name}: the words stay while away`);
     // Rooms (issue #135): tone of the worst agent, siren where the ambulance or a faint is
     let rm = await rooms();
     console.log('[034]', w, 'rooms', JSON.stringify(Object.fromEntries(Object.entries(rm).map(([k, v]) => [k, v.tone + (v.siren ? '+siren' : '')]))));
@@ -175,7 +175,7 @@ module.exports = async (ctx) => {
     ds = await desks();
     assert.ok(ds.every((x) => x.body === 'normal' && !x.trouble), 'Serious mode: every scene is plain');
     assert.strictEqual(await js(`document.querySelectorAll('#stage .amb, #stage .dizzy, #stage .sweat, #stage .tap').length`), 0, 'Serious mode: no mood drawing in the page');
-    assert.ok(ds.every((x) => !/Context almost full|Error: needs a look|Spending limit reached|Waiting \d|tool calls failed/.test(x.label)), 'Serious mode: no mood words');
+    assert.ok(ds.every((x) => !/Context almost full|Error: needs a look|Spending limit reached|Waiting \d|tool calls failed/.test(x.label)), 'Serious mode: no mood words: ' + ds.filter((x) => /Context almost full|Error: needs a look|Spending limit reached|Waiting \d|tool calls failed/.test(x.label)).map((x) => x.label).join(' | '));
     assert.strictEqual(await js(`document.querySelectorAll('#stage .room[data-alert], #stage .siren').length`), 0, 'Serious mode: no room tone and no siren');
     assert.ok(Object.values(await rooms()).every((v) => !/Alert:/.test(v.label)), 'Serious mode: no alert words');
     await shot('serious', w, h);
