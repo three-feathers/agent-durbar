@@ -3,15 +3,15 @@
  * Pure: no sockets, no processes. The caller feeds chunks and writes what comes back.
  */
 
-// TODO(T013): move to src/shared/mcpserver.ts (limits) once T010 has landed it.
-/** One message, in bytes, without its line break (FR-040). */
-export const MAX_MESSAGE_BYTES = 64 * 1024;
+import { MCP_LIMITS } from '../../shared/mcpserver';
 
 export const ERR_PARSE = -32700;
 export const ERR_INVALID_REQUEST = -32600;
 export const ERR_METHOD_NOT_FOUND = -32601;
 export const ERR_INVALID_PARAMS = -32602;
 export const ERR_INTERNAL = -32603;
+/** A request other than `initialize` and `ping` arrived before a successful `initialize` (same code LSP uses). */
+export const ERR_NOT_INITIALIZED = -32002;
 
 export type JsonRpcId = string | number | null;
 
@@ -68,7 +68,7 @@ export class LineFramer {
   private discarding = false;
   private lastCr = false; // the last byte buffered for this line is a CR (it may sit in an earlier chunk)
 
-  constructor(private readonly maxBytes: number = MAX_MESSAGE_BYTES) {}
+  constructor(private readonly maxBytes: number = MCP_LIMITS.maxMessageBytes) {}
 
   push(chunk: Buffer | string): FramerEvent[] {
     const buf = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk;

@@ -15,8 +15,9 @@ import {
   parseMessage,
   result,
   FramerEvent,
-  MAX_MESSAGE_BYTES,
+  ERR_NOT_INITIALIZED,
 } from './jsonrpc';
+import { MCP_LIMITS } from '../../shared/mcpserver';
 
 /** The one list of protocol revisions we accept, newest first. Fixtures are checked against it. */
 export const SUPPORTED_PROTOCOL_VERSIONS: readonly string[] = ['2025-06-18', '2025-03-26', '2024-11-05'];
@@ -73,7 +74,7 @@ export class McpSession {
   /** One framer event in, zero or one reply out (a Promise when a handler is async). */
   handleEvent(ev: FramerEvent): Reply {
     if (ev.type === 'oversize') {
-      return errorResponse(null, ERR_INVALID_REQUEST, `Message too large (over ${MAX_MESSAGE_BYTES} bytes)`);
+      return errorResponse(null, ERR_INVALID_REQUEST, `Message too large (over ${MCP_LIMITS.maxMessageBytes} bytes)`);
     }
     return this.handleLine(ev.line);
   }
@@ -98,6 +99,8 @@ export class McpSession {
     try {
       if (method === 'ping') return result(id, {});
       if (method === 'initialize') return this.initialize(id, params);
+      // Init gate: nothing else is served before a successful `initialize`.
+      if (this.protocolVersion === null) return errorResponse(id, ERR_NOT_INITIALIZED, 'Server not initialized');
       const h = this.opts.methods && Object.prototype.hasOwnProperty.call(this.opts.methods, method) ? this.opts.methods[method] : undefined;
       if (!h) return errorResponse(id, ERR_METHOD_NOT_FOUND, `Method not found: ${clean(method)}`);
       const v = h(params, this);
