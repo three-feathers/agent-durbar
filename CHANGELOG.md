@@ -56,6 +56,7 @@ Unsigned and not notarized; only Linux was run by hand. **OpenAI Codex** is now 
 - **Linux: the running window shows the app icon (spec 008 FR-025/FR-026, issue #247).** The window now has the icon. The AppImage's desktop entry also matches the window (`StartupWMClass=agent-durbar`; alpha.6 had `Agent Durbar`), so docks can link the two.
 
 - **Stop and End session in the card menu (spec 005 FR-017, #251).** Right-click a live main agent: Stop (only while it works or thinks; disabled with the reason when the kind cannot interrupt) and End session (asks first when the agent is busy or waiting), the same calls and toasts as the chat header. Checked in the simulator by `npm run check:office` at 1440x900 and 1280x800; not run against a real session.
+- Previous sessions has a search box (shown with 2 or more entries): it filters Copilot sessions and VS Code chats by title, ignoring case and accents, with "N of M" per group and Escape to clear; titles only, nothing is sent anywhere (spec 006 FR-023, issue #252).
 
 - **Removing a folder is easy to find (spec 006 FR-022).** Each room has a **⋯** button (or right-click its header) with New session, Rename, Hide and **Remove folder**. A folder's only session shows **Remove folder** in its chat header. Before, Remove was only in the Folders panel.
 
