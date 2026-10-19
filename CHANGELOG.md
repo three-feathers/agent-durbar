@@ -6,6 +6,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **MCP server groundwork: main-process simulator (spec 041 T015, issue #215).** A developer hook, `DURBAR_SIM_MAIN=N`, plans N simulated agents in the main process (several floors, one off, with waiting, limit, error and not-started agents) on a fake adapter, so the MCP server can be tested later. Ignored in packaged builds; not wired into the app start yet. No user-visible change, 0 AIU.
 
+- **A welcome for new users (spec 001 FR-026).** With no folder yet, the office shows a short welcome: sign in to Copilot once, add a folder (its agent starts Read-only), send a message. It has buttons to add a folder or look around in the demo.
+
 - **Start a new session with a custom agent (spec 043 FR-007).** The New session dialog has an **Agent** select listing the folder's custom agents. A repository agent still asks once before it is used.
 
 - **Copy buttons in the chat (spec 005 FR-015).** Each agent reply has a **Copy** button that copies the reply as written, and each code block has its own button for the code only. They appear when you point at a reply or move to them with the keyboard.

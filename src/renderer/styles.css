@@ -173,6 +173,13 @@ body.has-bridge #liveBar{display:flex}
 .more:hover{background:rgba(255,255,255,.6)}
 .more .dot{width:7px;height:7px}
 .empty{padding:60px;text-align:center;color:var(--muted);width:100%}
+/* first run (spec 001 FR-026) */
+.welcome{max-width:620px;margin:56px auto 0;padding:26px 30px;background:var(--surface);border:1px solid var(--line);border-radius:18px;color:var(--ink)}
+.welcome h2{margin:0 0 6px;font-size:20px}
+.welcome .wl-sub{margin:0 0 16px;color:var(--ink-2);font-size:13.5px;line-height:1.5}
+.welcome .wl-steps{margin:0 0 18px;padding-left:20px;font-size:13.5px;line-height:1.55;display:grid;gap:8px}
+.welcome .wl-actions{display:flex;gap:10px;flex-wrap:wrap}
+.welcome .wl-note{margin:14px 0 0;font-size:12px;color:var(--muted)}
 
 /* scene animation (subtle) */
 .scene *{transform-box:fill-box}
