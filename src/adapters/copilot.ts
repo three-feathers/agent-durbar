@@ -237,6 +237,8 @@ export class CopilotAdapter implements AgentAdapter {
 
     const config = {
       workingDirectory: cwd,
+      // spec 006 FR-019: a workspace's other folders (the SDK asks for them again on resume, which this config does)
+      ...(folders.some((f) => f !== cwd) ? { additionalDirectories: folders.filter((f) => f !== cwd) } : {}),
       streaming: true,
       // Model, effort, tier and the `auto` routing (spec 030 FR-013): filled in below once it is known whether this is a create or a resume.
       // MCP (spec 019). The runtime also loads ~/.copilot/mcp-config.json and the built-in GitHub server on its own;

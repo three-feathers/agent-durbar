@@ -10,7 +10,7 @@ import { ClaudeAdapter, PRE_TOOL_USE_HOOK, cliTransportFactory } from '../src/ad
 import type { TransportInput } from '../src/adapters/claude';
 import { createSdkTransport, loadSdk, sdkOptionsOf, SDK_PACKAGE } from '../src/adapters/claudeSdk';
 import type { SdkModule, SdkQuery } from '../src/adapters/claudeSdk';
-import { claudeTransportFor, enabledExperimental, EXPERIMENTAL_HOOKS } from '../src/adapters/experimental';
+import { claudeTransportFor, offeredDescriptors } from '../src/adapters/experimental';
 import type { AgentEvent } from '../src/adapters/types';
 
 const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -168,12 +168,10 @@ async function main(): Promise<void> {
     await ad.stop(sid);
   }
 
-  // selection and registration (FR-114)
+  // selection and registration (FR-114, FR-135: always registered, no hook)
   {
-    assert.deepStrictEqual(EXPERIMENTAL_HOOKS, { claude: 'DURBAR_CLAUDE' });
-    assert.deepStrictEqual(enabledExperimental({}), [], 'nothing without the hook');
-    assert.deepStrictEqual(enabledExperimental({ DURBAR_CLAUDE: '0' }), []);
-    const reg = enabledExperimental({ DURBAR_CLAUDE: '1' });
+    assert.deepStrictEqual(offeredDescriptors({ DURBAR_CLAUDE: '0' }).map((d) => d.id), ['claude'], 'the old hook no longer hides it');
+    const reg = offeredDescriptors({});
     assert.deepStrictEqual(reg.map((d) => d.id), ['claude']);
     assert.strictEqual(reg[0].displayName, 'Claude Code');
     assert.strictEqual(claudeTransportFor({}), cliTransportFactory, 'CLI by default');

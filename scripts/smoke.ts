@@ -3,10 +3,12 @@
  * Starts one read-only session per test folder, sends ONE tiny prompt each, prints
  * normalized events and usage. SMOKE_DRY=1 only starts the runtime and lists models (no inference).
  */
+import * as os from 'os';
+import * as path from 'path';
 import { CopilotAdapter } from '../src/adapters/copilot';
 import type { AgentEvent } from '../src/adapters/types';
 
-const FOLDERS = (process.env.SMOKE_FOLDERS ?? '/workspace/durbar-test/hello-app,/workspace/durbar-test/notes-app').split(',');
+const FOLDERS = (process.env.SMOKE_FOLDERS ?? ['hello-app', 'notes-app'].map((n) => path.join(os.tmpdir(), 'durbar-test', n)).join(',')).split(',');
 const PROMPT = 'In one sentence, what does index.js do? Do not edit files.';
 const TIMEOUT_MS = 120_000;
 

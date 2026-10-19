@@ -1091,12 +1091,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
     };
 
-    const simKinds = simKindsParam === '1';
+    const simKinds = simKindsParam === '1' || simKindsParam === 'solo'; // spec 012 FR-136: '1' = two ready harnesses (picker shown), 'solo' = only Copilot ready (picker hidden)
     const copilotCaps = SIM_COPILOT_CAPS;
     const simAdapters = (): AdapterInfo[] => [
       { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps } },
       ...(simKinds ? [
-        { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false } },
+        simKindsParam === 'solo'
+          ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false } }
+          : { id: 'claude', displayName: 'Claude Code', state: 'ready', version: 'sim', capabilities: { ...copilotCaps, caps: false, mcpToggle: false } },
         { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'] } },
       ] as AdapterInfo[] : []),
       ...(mixed ? SIM_MIXED_KINDS : []),
@@ -1254,6 +1256,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!sims.some((x) => x.info.id === id)) return { ok: false };
         const t = String(label ?? '').replace(/\s+/g, ' ').trim();
         return { ok: true, label: t && [...t].length <= 40 ? t : undefined };
+      },
+      setFolderDefaultAgent: async (id, profileId) => { // spec 043 FR-009: kept for this run only, the same id rule as main
+        const src = sims.find((x) => x.info.id === id);
+        if (!src || (profileId !== null && !/^[A-Za-z0-9._:@/-]{1,100}$/.test(String(profileId)))) return { ok: false };
+        for (const x of sims) if (x.info.cwd === src.info.cwd) x.info.defaultAgent = profileId ?? undefined;
+        return { ok: true, defaultAgent: profileId ?? undefined };
       },
       listPrevious: async (id) => {
         const src = sims.find((x) => x.info.id === id);

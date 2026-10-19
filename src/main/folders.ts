@@ -32,6 +32,8 @@ export interface SavedFolder {
   adapterId?: string;
   /** Display name of the room (spec 006 FR-018); absent = the folder's own name. */
   label?: string;
+  /** Custom agent preselected for this folder's new sessions (spec 043 FR-009): only the agent's id. */
+  defaultAgent?: string;
 }
 
 export const DEFAULT_ADAPTER = 'copilot';
@@ -67,6 +69,14 @@ export function parseLabel(v: unknown): string | undefined {
   return t && [...t].length <= MAX_LABEL && !/[\u0000-\u001f\u007f]/.test(t) ? t : undefined;
 }
 
+/** The id rule of `agents:selectProfile` (spec 043 FR-003). */
+export const PROFILE_ID = /^[A-Za-z0-9._:@/-]{1,100}$/;
+
+/** A saved default agent id (spec 043 FR-009); anything else is `undefined` (no default). */
+export function parseDefaultAgent(v: unknown): string | undefined {
+  return typeof v === 'string' && PROFILE_ID.test(v) ? v : undefined;
+}
+
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const MAX_FOLDERS = 200;
 
@@ -98,6 +108,7 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       floor: typeof o.floor === 'string' && o.floor !== floorOps.GROUND && o.floor.length <= 20 ? o.floor : undefined,
       adapterId: parseAdapterId(o.adapterId),
       ...(parseLabel(o.label) ? { label: parseLabel(o.label) } : {}), // only when set, so older files read back unchanged
+      ...(parseDefaultAgent(o.defaultAgent) ? { defaultAgent: parseDefaultAgent(o.defaultAgent) } : {}),
     });
     if (out.length >= MAX_FOLDERS) break;
   }
@@ -256,6 +267,15 @@ export class FolderStore {
     cur.label = parseLabel(label);
     this.save();
     return { label: cur.label };
+  }
+
+  /** Sets (a valid id) or clears (`null`) the folder's default agent (spec 043 FR-009); false for an unknown folder or a bad id. */
+  setDefaultAgent(workspace: string, profileId: unknown): { defaultAgent: string | undefined } | false {
+    const cur = this.get(workspace);
+    if (!cur || (profileId !== null && !parseDefaultAgent(profileId))) return false;
+    cur.defaultAgent = profileId === null ? undefined : parseDefaultAgent(profileId);
+    this.save();
+    return { defaultAgent: cur.defaultAgent };
   }
 
   setClosed(workspace: string, closed: boolean): boolean {

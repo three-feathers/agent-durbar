@@ -13,7 +13,7 @@
 
 ## Open
 
-- [ ] T020 Give workspace sessions access to all roots (SDK `additionalDirectories`-style option, check the SDK first) or document the limit in the README. [FR-010]
+- [x] T020 (2026-10-19) Give workspace sessions access to all roots (SDK `additionalDirectories`-style option, check the SDK first) or document the limit in the README. [FR-010, FR-019: Copilot `additionalDirectories`, Claude `--add-dir`, tests, docs]
 - [ ] T021 Decide whether per-folder session count should persist (clarify). [FR-011]
 - [ ] T022 Extract the main-process add/restore/resume logic into testable modules (inject adapter and store) and add credit-free tests. [FR-015]
 - [ ] T023 Capture a real `events.jsonl`/`getEvents()` (redacted) as a fixture and re-run `test:history` on it (needs feature 013). [FR-009]
