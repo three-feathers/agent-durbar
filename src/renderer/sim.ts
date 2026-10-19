@@ -1091,12 +1091,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
     };
 
-    const simKinds = simKindsParam === '1';
+    const simKinds = simKindsParam === '1' || simKindsParam === 'solo'; // spec 012 FR-136: '1' = two ready harnesses (picker shown), 'solo' = only Copilot ready (picker hidden)
     const copilotCaps = SIM_COPILOT_CAPS;
     const simAdapters = (): AdapterInfo[] => [
       { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps } },
       ...(simKinds ? [
-        { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false } },
+        simKindsParam === 'solo'
+          ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false } }
+          : { id: 'claude', displayName: 'Claude Code', state: 'ready', version: 'sim', capabilities: { ...copilotCaps, caps: false, mcpToggle: false } },
         { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'] } },
       ] as AdapterInfo[] : []),
       ...(mixed ? SIM_MIXED_KINDS : []),

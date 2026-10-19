@@ -1923,7 +1923,7 @@ const kindOptions=()=>DMK().kindChoices(KINDS).map(k=>`<option value="${esc(k.id
 /* Toolbar: model and effort follow the chosen kind. A kind other than the default has no model list yet (FR-062, T049), so both are hidden and it starts with its own default. */
 function syncKindModel(){
   const ms=$('modelSel'),ef=$('effortSel');
-  const id=$('kindSel').hidden?defaultKind():$('kindSel').value, other=!!KINDS&&!$('kindSel').hidden&&id!==defaultKind();
+  const id=KINDS&&$('kindSel').value||defaultKind(), other=!!KINDS&&id!==defaultKind();
   const c=KINDS?kindCaps(id):null, can=!c||DMK().shows(c,'models');
   if(other&&can&&!MODELS_BY[id]){ensureModels(id).then(()=>{if(MODELS_BY[id]&&MODELS_BY[id].length)syncKindModel();});}
   const k=other?id:'', ok=can&&(!other||modelsFor(id).length>0);
@@ -1935,7 +1935,8 @@ function syncKindModel(){
 function applyKinds(){
   const show=DMK().showsKindPicker(KINDS), sel=$('kindSel'), keep=sel.value;
   $('kindHelp').hidden=!show; sel.hidden=!show;
-  if(show){sel.innerHTML=kindOptions();sel.value=pickKind(keep||defaultKind());}
+  /* spec 012 FR-136: hidden with one ready harness, but it still holds that one, so it is what new folders use */
+  if(KINDS){sel.innerHTML=kindOptions();sel.value=pickKind(keep||defaultKind());}
   /* the other ready kinds' model lists, for their agents' model chips (spec 012 FR-120); a CLI probe, no prompt */
   (KINDS||[]).forEach(k=>{if(!isDefaultKind(k.id)&&k.state==='ready'&&DMK().shows(kindCaps(k.id),'models'))ensureModels(k.id).then(()=>scheduleRender());});
   syncKindModel();
@@ -2227,7 +2228,7 @@ function newSession(a0){
   const d=document.createElement('div');d.id='sessDlg';d.className='dlg-ov';
   d.innerHTML=`<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="sdT"><h3 id="sdT">New session in ${esc(roomOf(a).name)}</h3>
    <p class="dsub">Another agent with its own chat in <code>${esc(roomOf(a).path)}</code>.</p>
-   ${DMK().showsKindPicker(KINDS)?`<label>Agent<select id="sdKind">${kindOptions()}</select></label>`:''}
+   ${DMK().showsKindPicker(KINDS)?`<label>Harness<select id="sdKind">${kindOptions()}</select></label>`:''}
    <label>Permissions<select id="sdPerm"><option value="read-only">Read-only</option><option value="ask">Ask first</option><option value="allow">Allow all (no prompts)</option></select></label>
    <label id="sdModelL">Model<select id="sdModel"></select></label>
    <label id="sdEffL">Reasoning effort<select id="sdEff"></select></label>
@@ -2549,7 +2550,7 @@ async function addVia(fn){
     const ch=DMK().kindChoices(KINDS).find(k=>k.id===$('kindSel').value);
     if(!ch||ch.disabled){toast('That agent kind is not ready. Open "About agent kinds" in the toolbar to see why.',6000);return;}
     o.adapterId=ch.id;
-  }
+  }else if(KINDS&&$('kindSel').value&&$('kindSel').value!==defaultKind())o.adapterId=$('kindSel').value; /* FR-136: the only ready harness */
   const r=await fn($('permMode').value,o);
   if(r.error)toast('Could not add: '+esc(r.error),6000);
   /* spec 006 FR-016 (issue #170): adding is allowed, but say once what such a folder exposes */
