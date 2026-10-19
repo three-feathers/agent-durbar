@@ -4,6 +4,40 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.6 tag)
 
+- **A cost cap in dollars for Claude Code (spec 012 FR-150).** Set it in the New session dialog or from the cap chip. When Claude's estimate reaches it, the chat shows *Cost cap reached* with Raise cap / Remove cap / Stop here. It is per session, soft, and enforced with Claude's own `--max-budget-usd`.
+- **Codex with MCP servers and helpers (spec 012 FR-147..FR-149).**
+  - Your MCP servers, with the folder's extras, now reach Codex sessions.
+  - Their state shows in the MCP panel and they can be switched on and off (from the next message).
+  - An MCP tool call asks for approval and runs once approved.
+  - Codex sub-agents show as helpers.
+  
+  Checked on a real Codex.
+
+- **Questions from Codex use the question card (spec 012 FR-146).** When Codex asks you to choose, the same card as for Copilot and Claude shows the options. A secret question is never shown there. Codex offers this tool only with an experimental setting, so it often asks in plain text.
+
+- **OpenAI Codex is offered next to Copilot and Claude Code (spec 012 FR-145).** If `codex` is installed and signed in (`codex login`, for example with ChatGPT), it is a harness you can pick. It supports:
+  - Read-only, Ask first and Allow all, enforced;
+  - a mode switch from the next message, models and efforts;
+  - previous sessions and resume; a folder continues its last thread after a restart.
+  
+  Checked end to end in the real app with ChatGPT Plus. On Ubuntu, Read-only and Ask first need the bubblewrap note in the README.
+
+- **Codex groundwork: mode switch and restarts (spec 012 FR-143/FR-144).** A Codex agent's permission mode can be changed while it runs; it applies from the next message, and a stricter mode stops a running turn. An ended Codex session continues its own thread, also after a restart. Checked on a real Codex.
+
+- **Codex groundwork: resume, previous sessions, history and models (spec 012 FR-093, FR-141, FR-142).** The Codex adapter, not offered yet, can resume a thread of the same folder, list the folder's earlier threads, replay a thread's chat, and offer Codex's models and efforts. All of this was checked on a real Codex.
+
+- **For anyone with agents, across harnesses (spec 001 FR-027).**
+  - The welcome card, the README, the app description and the repository description now say what Durbar is: a calm command center for AI agents on GitHub Copilot, Claude Code and (in progress) Codex, for code, documents, research or notes, not only for developers.
+  - The header badge says **Live**; its tooltip lists the ready harnesses.
+
+- **Codex groundwork, first real run (spec 012 FR-138..FR-140).** The Codex adapter, not offered yet, now starts on Codex 0.163 and enforces Read-only, Ask first and Allow all on a real account. A blocked Linux sandbox gives a plain message, with an Ubuntu note in the README. Stop says when a command that already started may still finish.
+
+- **Codex groundwork: sign-in check (spec 012 FR-137).** Codex detection now runs `codex login status` after the version, so a signed-out Codex will show "not signed in" with how to sign in. It takes effect when the Codex adapter is offered (#51).
+
+- **Open in VS Code Insiders or VSCodium (spec 009 FR-015).** "Open in VS Code" now tries VS Code, then VS Code Insiders, then VSCodium, and says which one it opened.
+
+- **Linux: the running window shows the app icon (spec 008 FR-025/FR-026, issue #247).** The window now has the icon. The AppImage's desktop entry also matches the window (`StartupWMClass=agent-durbar`; alpha.6 had `Agent Durbar`), so docks can link the two.
+
 - **VS Code chat view opens at the latest message, reads two more kinds, and has Continue in VS Code (spec 009 FR-015..FR-017, issue #253).** **View** now scrolls to the end of the chat (the "only the last N" and "not recognised" notes are above it); question prompts (`questionCarousel`) are shown as read-only text and `mcpServersStarting` is no longer reported as unknown; **Continue in VS Code** opens the chat's folder with the same launcher as *Open in VS Code*. Simulator, unit tests on synthetic fixtures and a driver at 1440x900 and 1280x800; no real VS Code launch was run.
 
 - **Removing a folder is easy to find (spec 006 FR-022).** Each room has a **⋯** button (or right-click its header) with New session, Rename, Hide and **Remove folder**. A folder's only session shows **Remove folder** in its chat header. Before, Remove was only in the Folders panel.

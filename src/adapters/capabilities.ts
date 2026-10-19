@@ -25,6 +25,8 @@ export interface AdapterCapabilities {
   readonly context: boolean;
   /** `setCap()` and `resolveLimit()` exist. */
   readonly caps: boolean;
+  /** The unit of the cap and its limit events: AI credits (the default) or the vendor's dollar estimate (spec 012 FR-150). */
+  readonly capUnit?: 'aiu' | 'usd';
   readonly helpers: boolean;
   /** `listPreviousSessions()` and `history()` exist. */
   readonly history: boolean;
