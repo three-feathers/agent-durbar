@@ -18,7 +18,7 @@
     <div><h1>Agent Durbar</h1><span class="proto" id="protoBadge">Prototype - sample data</span></div>
   </div>
   <!-- spec 052 FR-027 (#305): the Needs you inbox -->
-  <button class="btn inbox-btn" id="inboxBtn" type="button" title="Needs you: every request in one queue (I). N opens the next agent." hidden><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M2 9.5l1.6-5.2A1.4 1.4 0 0 1 5 3.3h6a1.4 1.4 0 0 1 1.4 1l1.6 5.2v2.8a1.4 1.4 0 0 1-1.4 1.4H3.4A1.4 1.4 0 0 1 2 12.3z"/><path d="M2 9.5h3.2l.9 1.6h3.8l.9-1.6H14"/></svg>Needs you <b>0</b></button>
+  <button class="btn inbox-btn" id="inboxBtn" type="button" title="Needs you: every request in one queue (I or Ctrl+Shift+A). N or Ctrl+Shift+N opens the next agent." aria-keyshortcuts="Control+Shift+A I" hidden><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M2 9.5l1.6-5.2A1.4 1.4 0 0 1 5 3.3h6a1.4 1.4 0 0 1 1.4 1l1.6 5.2v2.8a1.4 1.4 0 0 1-1.4 1.4H3.4A1.4 1.4 0 0 1 2 12.3z"/><path d="M2 9.5h3.2l.9 1.6h3.8l.9-1.6H14"/></svg>Needs you <b>0</b></button>
   <div class="stats" id="stats" role="group" aria-label="Agent status counts. Select one to filter. Press N for the next agent that needs you." title="Select a count to filter. Press N for the next agent that needs you."></div>
   <div class="controls">
     <div id="liveBar">
@@ -77,6 +77,7 @@
 <div id="foldersPop" role="dialog" aria-label="Folders" hidden></div>
 <div id="floorsPop" class="floors-ui" role="dialog" aria-label="Floors" tabindex="-1" hidden></div>
 <div id="toasts" role="status" aria-live="polite"></div>
+<div id="srAnnounce" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
 <script src="vendor/marked.js"></script>
 <script src="vendor/purify.min.js"></script>

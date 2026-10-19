@@ -263,7 +263,7 @@
     hand: (o, x, y) => `<circle cx="${x}" cy="${y}" r="4.4" fill="#fbf8f1" opacity=".95"/>` + roundHand(o, x, y),
   };
 
-  /* ---------- Durbar · Japanese: a gold folding screen, kimono and obi, topknots and kanzashi, a lacquer table ---------- */
+  /* ---------- Durbar · Japanese: a gold folding screen, kimono and obi, plain short hair or a bun with a kanzashi, a lacquer table ---------- */
   const VERMILION = '#c23b22', LACQUER = '#1c1a17';
   KIT['court-japanese'] = {
     chair: (o) => `<g><rect x="40" y="30" width="22" height="66" fill="#d9b95c"/><rect x="62" y="28" width="24" height="68" fill="#e3c66e"/><rect x="86" y="30" width="22" height="66" fill="#d9b95c"/><g fill="none" stroke="${LACQUER}" stroke-width="1.2"><rect x="40" y="30" width="22" height="66"/><rect x="62" y="28" width="24" height="68"/><rect x="86" y="30" width="22" height="66"/></g><path d="M44 60q8-10 16-4q6-12 18-6q10-8 26 2" fill="none" stroke="#3f5a3a" stroke-width="2.4" opacity=".7"/><circle cx="96" cy="40" r="4" fill="${VERMILION}" opacity=".85"/></g>`,
@@ -279,7 +279,8 @@
       if (st === 'bun') return base + `<path d="M66 31q8-9 16 0q-2 4-8 4q-6 0-8-4z" fill="${c}"/><path d="M80 26l8-6" stroke="${o.shade(c, 0.5)}" stroke-width="1.2"/><circle cx="88.5" cy="19.5" r="2.4" fill="${VERMILION}"/><path d="M87 21.5l-1 4M90 21.5l1 4" stroke="#d9b95c" stroke-width=".8"/>`;
       if (st === 'curly') return `<path d="M61 47C60 33 66 30 74 30C82 30 88 33 87 47L84 47L84 39L64 39L64 47Z" fill="${c}"/>`;
       if (st === 'long') return base + `<path d="M62 40q12-6 24 0" fill="none" stroke="${o.shade(c, 0.25)}" stroke-width="1"/>`;
-      return base + `<rect x="71" y="25" width="6" height="7" rx="2" fill="${c}"/><path d="M72 25.5q6-3 8 1" fill="none" stroke="${c}" stroke-width="3" stroke-linecap="round"/>`;
+      /* plain short hair (no topknot): the cap plus short sides at the temples */
+      return base + `<path d="M61.5 44L62 49.5H63.8V40.5Z M86.5 44L86 49.5H84.2V40.5Z" fill="${c}"/>`;
     },
     /* spec 052 FR-032: the table is warm lacquer from the theme's desk tokens, not near-black ink */
     desk: (o) => { const d = o.T('--desk'), f = o.T('--desk-front'); return `<rect x="10" y="86" width="180" height="6" rx="1" fill="${d}"/><rect x="10" y="86" width="180" height="1.4" fill="${VERMILION}"/><rect x="10" y="92" width="180" height="2" fill="${f}"/><path d="M18 94h8v20h-8zM174 94h8v20h-8z" fill="${o.T('--desk-drawer')}"/><rect x="18" y="110" width="164" height="2" fill="${d}" opacity=".6"/>`; },

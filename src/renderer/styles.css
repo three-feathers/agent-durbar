@@ -972,3 +972,59 @@ body.simple .room-path,body.simple .room-mcp,body.simple #vscodeBtn,body.simple 
 body.simple .pusage,body.simple .defaults-grp #modelSel,body.simple .defaults-grp #effortSel,body.simple .lrow .lcell.mono{display:none!important}
 .wl-simple{display:flex;gap:8px;align-items:flex-start;margin:12px 0 0;font-size:13px;color:var(--ink-2);cursor:pointer}
 .wl-simple input{margin-top:3px}
+
+/* spec 052 FR-033: the inbox heading takes focus (a row, not a button) */
+.inbox-row .ib-h{margin:0;font-size:13.5px;font-weight:400;border-radius:6px}
+.inbox-row .ib-h:focus{outline:2px solid var(--focus);outline-offset:3px}
+.inbox-row:focus-within{border-color:var(--focus)}
+.inbox-keys{margin:8px 0 0;font-size:11.5px;color:var(--muted)}
+
+/* spec 052 FR-037: Simple goes further: tool rows fold into one line, Thinking stays folded, fewer top-bar controls */
+body.simple #chat .chips>.chip,body.simple #chat .chips>.chips-more{display:none}
+body.simple #chat .chips:has(>.chip)::before{content:"Worked with its tools (Expert shows each step)";display:block;font-size:12.5px;color:var(--muted);padding:2px 0}
+body.simple #chat .think .think-body{display:none}
+body.simple #addWs,body.simple #foldersBtn,body.simple #vList{display:none!important}
+/* spec 052 R3 design polish (Clean Office only unless noted; colour, border colour, background, shadow, radius, weight and
+   letter-spacing only, so every size stays and check:geometry holds) */
+/* primary action: solid sage ink (the warn variant and the restore strip keep their own look) */
+html:not([data-ui]) .btn.primary:not(.warn){background:var(--sage-ink);border-color:var(--sage-ink);color:#fff;font-weight:600}
+html:not([data-ui]) .btn.primary:not(.warn):hover{background:#355c48;border-color:#355c48}
+/* top-bar counters as one segmented surface. The ring is an inset shadow and the counters keep their 1px (transparent)
+   border, so the group stays 32px high; the gap stays too (widths unchanged) and reads as nothing on a transparent counter */
+html:not([data-ui]) .stats{background:var(--surface-2);border-radius:10px;box-shadow:inset 0 0 0 1px var(--line)}
+html:not([data-ui]) .stat{border-color:transparent;background:transparent;border-radius:8px;background-clip:padding-box}
+html:not([data-ui]) .stat:hover{border-color:transparent;background-color:color-mix(in srgb,var(--raised) 60%,transparent)}
+html:not([data-ui]) .stat-aiu:hover{background-color:transparent}
+html:not([data-ui]) .stat[aria-pressed="true"]{border-color:transparent;background-color:var(--raised);box-shadow:0 1px 2px rgb(44 55 51/.10)}
+html:not([data-ui]) .stat.attn{background-color:var(--warn-bg);border-color:color-mix(in srgb,#e5be78 70%,transparent)}
+html:not([data-ui]) .stat.attn[aria-pressed="true"]{border-color:#d9a54a}
+/* the Needs you button */
+html:not([data-ui]) .inbox-btn{border-radius:8px}
+html:not([data-ui]) .inbox-btn.attn{background:#fbe7bf;border-color:#d9a54a}
+/* room-header controls: quiet at rest, shown when the room is hovered or holds focus (focus ring unchanged) */
+html:not([data-ui]) .room-new,html:not([data-ui]) .room-more,html:not([data-ui]) .room-mcp,html:not([data-ui]) .room-sched{border-color:transparent;background:transparent}
+html:not([data-ui]) .room:hover :is(.room-new,.room-more,.room-mcp,.room-sched),
+html:not([data-ui]) .room:focus-within :is(.room-new,.room-more,.room-mcp,.room-sched){border-color:var(--line-2);background:color-mix(in srgb,var(--raised) 70%,transparent)}
+html:not([data-ui]) .room :is(.room-new,.room-more,.room-mcp,.room-sched):hover{background:var(--raised)}
+/* denser layouts: the room name without a plate, softer walls, no tile pattern or inner glow */
+html:not([data-ui]) .stage:not([data-d="full"]) .room-name{border-color:transparent;background:transparent;letter-spacing:-.01em}
+html:not([data-ui]) .stage:not([data-d="full"]) .room{border-color:color-mix(in srgb,var(--wall) 45%,transparent);box-shadow:none;background-image:none}
+/* waiting and error cards: a 3px status edge inside the card, on top of the FR-024 card shadow */
+html:not([data-ui]) .stage .desk.card.is-waiting{border-color:color-mix(in srgb,var(--card-waiting-line) 60%,transparent);box-shadow:inset 3px 0 0 var(--c-waiting),0 1px 2px rgb(44 55 51/.05),0 4px 12px -4px rgb(44 55 51/.10)}
+html:not([data-ui]) .stage .desk.card.is-waiting:hover{box-shadow:inset 3px 0 0 var(--c-waiting),0 1px 2px rgb(44 55 51/.06),0 8px 18px -6px rgb(44 55 51/.16)}
+html:not([data-ui]) .stage .desk.card.is-error{border-color:color-mix(in srgb,var(--card-error-line) 60%,transparent);box-shadow:inset 3px 0 0 var(--c-error),0 1px 2px rgb(44 55 51/.05),0 4px 12px -4px rgb(44 55 51/.10)}
+html:not([data-ui]) .stage .desk.card.is-error:hover{box-shadow:inset 3px 0 0 var(--c-error),0 1px 2px rgb(44 55 51/.06),0 8px 18px -6px rgb(44 55 51/.16)}
+/* lobby: empty seats as soft dots, places without an outline unless busy (border widths kept) */
+html:not([data-ui]) .slot:not(.more){border-color:transparent;background:color-mix(in srgb,var(--ink) 6%,transparent)}
+html:not([data-ui]) .place:not(.busy){border-color:transparent}
+/* chat-header chips: neutral unless the context is filling up (warn, high keep their colours; the mode chip is unchanged) */
+html:not([data-ui]) .mchip,html:not([data-ui]) .ctxchip.ok{background:var(--surface-2);border-color:var(--line);color:var(--ink-2)}
+html:not([data-ui]) .mchip-btn:hover{background:var(--raised)}
+/* menus and dialogs: a clear keyboard row, layered popover shadows */
+html:not([data-ui]) .more-it:focus-visible,html:not([data-ui]) .mode-menu button:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;background:var(--pb-working)}
+html:not([data-ui]) .more-menu,html:not([data-ui]) .mode-menu,html:not([data-ui]) #foldersPop{box-shadow:0 0 0 1px rgb(44 55 51/.05),0 2px 6px rgb(44 55 51/.06),0 16px 36px -10px rgb(44 55 51/.22)}
+html:not([data-ui]) .dlg{box-shadow:0 0 0 1px rgb(44 55 51/.05),0 2px 6px rgb(44 55 51/.06),0 16px 36px -10px rgb(44 55 51/.24)}
+/* restore strip: an outlined mark; its primary button in amber ink in every theme */
+html:not([data-ui]) .notice-strip .ns-ic{background:transparent;color:var(--amber-ink);box-shadow:inset 0 0 0 1.5px currentColor;font-weight:700}
+.notice-strip .btn.primary,html:not([data-ui]) .notice-strip .btn.primary:not(.warn){background:var(--amber-ink);border-color:var(--amber-ink);color:#fff}
+.notice-strip .btn.primary:hover,html:not([data-ui]) .notice-strip .btn.primary:not(.warn):hover{background:color-mix(in srgb,var(--amber-ink) 88%,#000);border-color:color-mix(in srgb,var(--amber-ink) 88%,#000)}

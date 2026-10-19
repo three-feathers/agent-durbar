@@ -41,3 +41,15 @@
 - [x] T033 Settings: theme grid, lead sentences, Advanced (#309) [FR-030]
 - [x] T034 Simple and Expert (#306) [FR-031]
 - [x] T035 Theme polish, the rest (#310) [FR-032]
+
+## Round 3 (2026-10-20)
+
+- [x] T036 Inbox focus, descriptions, keys, focus trap [FR-033]
+- [x] T037 Live announcements; focus after the answer bar [FR-034]
+- [x] T038 Ctrl+Shift+I / Ctrl+Shift+N, aria-keyshortcuts [FR-035]
+- [x] T039 Confirmations focus Cancel for destructive choices [FR-036]
+- [x] T040 Simple: tool lines collapsed, plain approval words, plain verbs, fewer top-bar controls [FR-037]
+- [x] T041 Restore strip wording [FR-038]
+- [x] T042 Harness name on cards when several are in use [FR-039]
+- [x] T043 Visual pass (Clean Office) [FR-040]
+- [x] T044 Japanese court corrections [FR-041]
