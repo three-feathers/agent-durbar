@@ -92,7 +92,7 @@ async function main(): Promise<void> {
   // ---- FR-089: capabilities and optional members
   {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(CODEX_CAPABILITIES)), {
-      interrupt: true, resume: false, images: true, models: false, effort: false,
+      interrupt: true, resume: true, images: true, models: false, effort: false,
       permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'none',
       usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: false, history: false, mcpStatus: false, mcpToggle: false,
     });
@@ -278,11 +278,44 @@ async function main(): Promise<void> {
       await assert.rejects(() => ad.start({ workspace: ws, permissionMode: 'allow' }), /not found/);
       assert.strictEqual(server.spawns.length, 0);
     }
-    // resume is T043b: refused loudly, nothing spawned
+    // FR-093 resume (T043b): read the stored thread first (real Codex 0.163 rewrites the folder on resume), then resume on a fresh child
     {
-      const { server, ad } = make();
-      await assert.rejects(() => ad.start({ workspace: ws, resumeSessionId: 'thr_x' }), /not available yet/);
-      assert.strictEqual(server.spawns.length, 0);
+      const { server, ad, events } = make();
+      await assert.rejects(() => ad.start({ workspace: ws, resumeSessionId: 'thr_x' }), /could not be found/, 'an unknown thread is an error, not a new thread');
+      assert.strictEqual(server.requests('thread/start').length, 0, 'never a new thread instead');
+      await assert.rejects(() => ad.start({ workspace: ws, resumeSessionId: '../x' }), /not a Codex session id/);
+      const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', quiet: true });
+      await ad.stop(sid);
+      const spawnsBefore = server.spawns.length;
+      const again = await ad.start({ workspace: ws, permissionMode: 'read-only', resumeSessionId: sid, quiet: true });
+      assert.strictEqual(again, sid, 'the resumed session keeps the thread id');
+      assert.strictEqual(server.spawns.length, spawnsBefore + 1, 'a fresh child');
+      const order = server.wire.filter((w) => w.method === 'thread/read' || w.method === 'thread/resume').map((w) => w.method);
+      assert.deepStrictEqual(order.slice(-2), ['thread/read', 'thread/resume'], 'read, then resume');
+      const rp = server.requests('thread/resume').pop()!.params as Record<string, unknown>;
+      assert.strictEqual(rp.threadId, sid); assert.strictEqual(rp.excludeTurns, true);
+      assert.ok(Array.isArray(rp.runtimeWorkspaceRoots), 'the same limited roots as a new thread');
+      events.length = 0;
+      await ad.send(again, { text: 'hi' });
+      await server.flush();
+      assert.ok(events.some((e) => e.type === 'status' && e.status === 'idle'), 'the resumed thread runs turns');
+      await ad.stop(again);
+      // another folder: refused before resume, and the thread keeps its folder
+      const other = dir();
+      const resumes = server.requests('thread/resume').length;
+      await assert.rejects(() => ad.start({ workspace: other, permissionMode: 'read-only', resumeSessionId: sid, quiet: true }), /another folder/);
+      assert.strictEqual(server.requests('thread/resume').length, resumes, 'no thread/resume was sent');
+      assert.strictEqual(server.threads.get(sid), fs.realpathSync(ws), 'the stored folder is unchanged');
+      await ad.dispose();
+    }
+    // FR-093 profile check: in Read-only a resumed thread that reports a wider sandbox is refused
+    {
+      const { ad } = make({ server: { resumeSandbox: { type: 'dangerFullAccess' } } });
+      const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', quiet: true });
+      await ad.stop(sid);
+      await assert.rejects(() => ad.start({ workspace: ws, permissionMode: 'read-only', resumeSessionId: sid, quiet: true }), /wider sandbox/);
+      assert.strictEqual(await ad.start({ workspace: ws, permissionMode: 'allow', resumeSessionId: sid, quiet: true }), sid, 'Allow all accepts it');
+      await ad.dispose();
     }
   }
 
