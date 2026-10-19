@@ -63,8 +63,10 @@ module.exports = async (ctx) => {
       const target = await js(`(()=>{const rows=[...document.querySelectorAll('#inboxDlg .inbox-row')];const i=rows.findIndex(x=>x.querySelector('.ib-h b').textContent!=='Jonas'&&x.querySelector('[data-k="approve"]'));if(i<0)return null;rows[i].querySelector('.ib-h').focus();return rows[i].querySelector('.ib-h b').textContent;})()`);
       if (target) {
         const n0 = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`);
-        key('A'); await ctx.sleep(700);
-        const n1 = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`);
+        key('A');
+        // the answered row shows its answer (600ms) and folds (200ms) before the list repaints: wait for it, up to 4 s
+        let n1 = n0;
+        for (let t = 0; t < 40 && n1 === n0; t++) { await ctx.sleep(100); n1 = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`); }
         assert.ok(n1 === n0 - 1, `A approves the focused row (${target}: ${n0} -> ${n1})`);
         assert.ok(await js(`document.activeElement&&document.activeElement.classList.contains('ib-h')`), 'after an answer, focus is on the next heading');
         assert.match(await js(`document.getElementById('srAnnounce').textContent`), /Allowed .+\. /, 'the answer is announced');
@@ -72,7 +74,8 @@ module.exports = async (ctx) => {
       // approve the first request that is not Jonas's (the chat checks below use Jonas)
       const before2 = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`);
       const who = await js(`(()=>{const r=[...document.querySelectorAll('#inboxDlg .inbox-row')].find(x=>x.querySelector('.ib-h b').textContent!=='Jonas'&&[...x.querySelectorAll('.ib-act button')].some(b=>b.textContent==='Allow once'));if(!r)return null;[...r.querySelectorAll('.ib-act button')].find(b=>b.textContent==='Allow once').click();return r.querySelector('.ib-h b').textContent;})()`); await ctx.sleep(700);
-      const after = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`); 
+      let after = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`);
+      for (let t = 0; t < 40 && who && after === before2; t++) { await ctx.sleep(100); after = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`); } 
       if (who) assert.ok(after === before2 - 1, `approving ${who} from the inbox removes the row (${before2} -> ${after})`);
       else console.log('[052] note: no second permission request in the simulator; inbox approval checked only by its buttons');
     }
