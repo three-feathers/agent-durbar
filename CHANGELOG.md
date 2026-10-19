@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **Permissions on Windows (spec 003).** "Approve for this session" on a folder now also covers the same folder spelled with other capitals or with `/` instead of `\`. Two permission requests that arrive in the same millisecond without an id no longer overwrite each other.
+
 - **Safer attachments (spec 004).** A picked file counts as an image only if its bytes say so (a renamed `.png` is sent as a file). Empty files are left out, and the image button only offers images. A sent file has to be picked again to be sent again, and temporary attachment folders left by a crash are cleaned up at start.
 
 - **Claude Code: switch its MCP servers on and off while it runs (spec 012 FR-133, issue #58).** The per-agent MCP switches now work for Claude agents too, using Claude's own `mcp_toggle`. A switch is remembered when the session restarts. Checked on a real Claude Code with a small local MCP server, without sending a prompt.

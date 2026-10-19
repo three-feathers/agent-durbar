@@ -76,17 +76,19 @@ const shortCmd = (cmd: string, n = 28): string => (cmd.length > n ? cmd.slice(0,
  *  - url: the host; mcp / custom tools: the tool name; anything else: the kind.
  * `flavor` is injectable so tests can use Windows paths on any host (spec 003 FR-031).
  */
-export function grantScope(req: PermissionLike, flavor: Pick<typeof path, 'dirname'> = path): GrantScope {
+export function grantScope(req: PermissionLike, flavor: Pick<typeof path, 'dirname'> & { sep?: string } = path): GrantScope {
+  // spec 003 T028: on Windows one folder has one key, whatever the case and the separators (`C:/Repo` = `c:\repo`); the label keeps the spelling
+  const keyDir = (dir: string): string => (flavor.sep === '\\' ? dir.replace(/\//g, '\\').toLowerCase() : dir);
   switch (req.kind) {
     case 'write': {
       const f = req.fileName ?? '';
       const dir = f ? flavor.dirname(f) : '';
-      return { key: `write:${dir}`, label: dir ? `write in ${baseName(dir)}/` : 'write' };
+      return { key: `write:${keyDir(dir)}`, label: dir ? `write in ${baseName(dir)}/` : 'write' };
     }
     case 'read': {
       const f = req.path ?? '';
       const dir = f ? flavor.dirname(f) : '';
-      return { key: `read:${dir}`, label: dir ? `read in ${baseName(dir)}/` : 'read' };
+      return { key: `read:${keyDir(dir)}`, label: dir ? `read in ${baseName(dir)}/` : 'read' };
     }
     case 'shell': {
       const cmd = (req.fullCommandText ?? '').trim();
@@ -206,6 +208,7 @@ interface Pending {
 }
 
 export class PermissionBroker {
+  private seq = 0;
   private grants = new Map<string, SessionGrant>();
   private pending = new Map<string, Pending>();
   private stopped = false;
@@ -268,7 +271,7 @@ export class PermissionBroker {
   async request(req: PermissionLike, now: () => number = Date.now): Promise<Decision> {
     const kind = String(req.kind);
     const summary = summarize(req);
-    const requestId = String(req.toolCallId ?? `${kind}-${now()}`);
+    const requestId = String(req.toolCallId ?? `${kind}-${now()}-${++this.seq}`); // T026: two requests in the same millisecond get different ids
     const outsideRead = kind === 'read' && this.mode !== 'allow' && this.readIsOutside(req);
     if ((kind === 'read' && !outsideRead) || this.mode === 'allow') return { kind: 'approve-once' };
     const scope = grantScope(req, this.opts.pathCheck?.flavor);
