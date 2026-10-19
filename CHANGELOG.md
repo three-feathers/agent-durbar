@@ -4,8 +4,10 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.7 tag)
 
+- **Team rule: check the linked issue before merging** (owner, spec 021). An issue closes only when everything in it is done; otherwise what is left is written on it, or in a follow-up issue.
 - **CI on `main` runs every merge to the end** (spec 008). Only pull-request runs are cancelled by a newer push, so a release commit always has a complete CI run.
 - **Team rule: merging a forgotten PR** (owner, spec 021). Any agent may merge another team's PR that is approved, green, clean on security, not WIP, and quiet for 2 hours, with a comment saying why.
+
 ## v0.1.0-alpha.7 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.7), 2026-10-19)
 
 Unsigned and not notarized; only Linux was run by hand. **OpenAI Codex** is now offered next to Copilot and Claude Code when it is installed and signed in. Claude Code sessions can have a **cost cap in dollars**. A new session can start from a **reviewed summary**, and Schedules have a **starter kit** (Start my day, Plan my day) that ends by asking you what to do.

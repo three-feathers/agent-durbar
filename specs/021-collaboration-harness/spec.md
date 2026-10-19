@@ -118,3 +118,12 @@ gh-aw work queue; merge queue (not available for personal-account repos; not eva
 
   Stacked PRs and `needs-owner-approval` are excluded.
 
+### 2026-10-19: check the linked issue before merging (owner)
+
+*Owner:* "when you merge, also look at linked issue for which it was worked upon to see if everything is in the issue is covered and handle issue and pr based on it so tht we dont leave stranded issues or close issues where some work is still pending".
+
+- `AGENTS.md`, `docs/collaboration.md` (step 9) and the PR template now say:
+  - before a merge, check every point of the linked issue against the PR;
+  - `Closes #N` only when all is done;
+  - otherwise use `Refs #N`, write on the issue what is left (or link a follow-up issue), and keep it open.
+
