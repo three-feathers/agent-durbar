@@ -1,0 +1,52 @@
+name: Branch cleanup
+
+# Spec 008 FR-024: deletes branches whose pull request was merged more than a day ago. Only branches of this repository
+# (never a fork's), never main, never a branch an open pull request still uses, and only when the branch still points at
+# the commit the pull request merged (a branch that got new commits after the merge is kept). Daily, or by hand (with a
+# dry run). Deleted branches can be restored from their pull request page.
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: List the branches without deleting them
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: branch-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Delete merged branches older than a day
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete merged branches
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+        run: |
+          set -euo pipefail
+          cutoff=$(date -u -d '1 day ago' +%s)
+          default=$(gh api "repos/$REPO" --jq .default_branch)
+          open=$(gh api --paginate "repos/$REPO/pulls?state=open&per_page=100" --jq '.[].head.ref' | sort -u)
+          # merged pull requests from this repository: branch, the head commit it merged, when it merged
+          gh api --paginate "repos/$REPO/pulls?state=closed&per_page=100" \
+            --jq ".[] | select(.merged_at != null) | select(.head.repo.full_name == \"$REPO\") | [.head.ref, .head.sha, .merged_at, .number] | @tsv" |
+          while IFS=$'\t' read -r ref sha merged num; do
+            [ "$ref" = "$default" ] && continue
+            [ "$(date -u -d "$merged" +%s)" -gt "$cutoff" ] && continue
+            if grep -qxF "$ref" <<< "$open"; then echo "keep $ref (an open pull request uses it)"; continue; fi
+            tip=$(gh api "repos/$REPO/git/ref/heads/$ref" --jq .object.sha 2>/dev/null) || continue # already gone (gh prints the 404 body, so test the exit code)
+            if [ "$tip" != "$sha" ]; then echo "keep $ref (new commits after #$num merged)"; continue; fi
+            if [ "$DRY_RUN" = "true" ]; then echo "would delete $ref (#$num merged $merged)"; continue; fi
+            gh api -X DELETE "repos/$REPO/git/refs/heads/$ref" >/dev/null && echo "deleted $ref (#$num merged $merged)"
+          done
