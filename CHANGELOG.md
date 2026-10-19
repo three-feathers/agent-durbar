@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **Dev scripts run on any machine (spec 010 T021).** `scripts/e2e-driver.js` takes its folders from `E2E_DIR`/`E2E_SHOTS`/`E2E_LOGS`/`E2E_HELLO`/`E2E_NOTES`, and `npm run smoke` defaults to folders under the temp folder, instead of `/workspace/...`.
+
 - **A default agent per folder (spec 043 FR-009).** In the New session dialog, tick **Default for new sessions here** and that custom agent is preselected the next time you start a session in the folder. Untick it to go back to the default agent. Only the agent's name is saved; a repository agent still asks once.
 
 - **Scheduled prompts (spec 044, issue #125).** In **Folders**, each folder has **Schedules**: a prompt sent to the folder's agent once at a time or every N minutes, only while the app is open. A run is skipped when the agent is busy or waiting for you, missed runs are not caught up, and **Pause all schedules** stops everything. The agent's own permission mode and credit cap apply. Checked on a real Copilot session (0.16 AIU).
