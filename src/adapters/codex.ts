@@ -15,6 +15,9 @@ import type { EventBody } from './map';
 import { CodexMapper } from './codexMap';
 import { createCodexRpc, realSpawn } from './codexRpc';
 import type { CodexRpc, RequestOutcome, SpawnFn } from './codexRpc';
+import { codexHistory, codexModelOptions, codexPreviousSessions } from './codexHistory';
+import type { HistoryResult, PreviousSession } from './history';
+import type { ModelOption } from '../shared/modelswitch';
 import { CODEX_INITIALIZE_CAPABILITIES, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexWorkspaceRoots } from './codexModes';
 import type { DurbarAnswer } from './codexModes';
 import { CODEX_BINARY, detectBinary, nodeExec } from './detect';
@@ -32,8 +35,8 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   interrupt: true,
   resume: true, // FR-093 (T043b): thread/read, then thread/resume on a fresh child
   images: true,
-  models: false,
-  effort: false,
+  models: true, // FR-142: model/list, model and effort per turn
+  effort: true,
   permissionModes: Object.freeze(['read-only', 'ask', 'allow'] as const),
   // T046 turns this into 'next-message' and adds setPermMode.
   permModeSwitch: 'none',
@@ -41,7 +44,7 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   context: true,
   caps: false,
   helpers: false,
-  history: false,
+  history: true, // FR-141: thread/list and thread/read
   mcpStatus: false,
   mcpToggle: false,
 });
@@ -149,6 +152,11 @@ export function linuxSandboxHint(reason: string): string {
     : '';
 }
 
+/** FR-142: only a Codex model id is sent; `auto`/`default` and Copilot or Claude ids saved for the folder are left to Codex. */
+export function codexModelFlag(model: string | undefined): boolean {
+  return !!model && /^(gpt|o\d|codex)[A-Za-z0-9._:/-]{0,76}$/i.test(model);
+}
+
 const isShim = (file: string): boolean => /\.(cmd|bat)$/i.test(file);
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 /** A short, single-line reason: control characters stripped, 300 characters at most (server text is never trusted to be small or clean). */
@@ -157,6 +165,9 @@ const reasonOf = (e: unknown): string => (e instanceof Error ? e.message : Strin
 interface Live {
   sid: string;
   threadId: string;
+  /** FR-142: model and reasoning effort sent with each turn (a Codex model id only; others are left to Codex's default). */
+  model?: string;
+  effort?: string;
   cwd: string;
   mode: PermissionMode;
   roots: string[];
@@ -260,6 +271,53 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   /** Close a child and wait for its exit (bounded by the kill grace), so a failed start leaves nothing running. */
+  /**
+   * FR-141/FR-142: a short-lived app-server for reads that need no session (previous sessions, a thread's history, the model
+   * list): no thread, no turn, no prompt. Started in the temp folder with the same environment rules (D5); always closed.
+   */
+  private async probe<T>(fn: (rpc: CodexRpc) => Promise<T>): Promise<T> {
+    const loc = await this.locate();
+    if (!loc?.path || isShim(loc.path)) throw new Error('Codex was not found on this computer.');
+    const child = this.spawnChild(loc.path, os.tmpdir(), { onNotification: () => undefined, onRequest: async () => ({ error: { code: -32601, message: 'not handled in a probe' } }), onExit: () => undefined });
+    try {
+      await child.rpc.request('initialize', { clientInfo: { name: 'agent_durbar', title: 'Agent Durbar', version: this.appVersion }, capabilities: CODEX_INITIALIZE_CAPABILITIES });
+      await child.rpc.notify('initialized');
+      return await fn(child.rpc);
+    } finally {
+      await this.closeChild(child);
+    }
+  }
+
+  /** FR-141: the folder's earlier Codex threads (newest first), without the ones open now. */
+  async listPreviousSessions(cwd: string, excludeIds: ReadonlySet<string> = new Set()): Promise<PreviousSession[]> {
+    const res = await this.probe((rpc) => rpc.request('thread/list', { cwd, limit: 100 }));
+    return codexPreviousSessions(isObj(res) ? res.data : undefined, cwd, new Set([...excludeIds, ...this.sessions.keys()]), process.platform, this.realpath);
+  }
+
+  /** FR-141: a session's prompts, answers, commands and file changes, for the chat replay after a resume. */
+  async history(sessionId: string): Promise<HistoryResult> {
+    const live = this.sessions.get(sessionId);
+    const threadId = live?.threadId ?? sessionId;
+    const read = (rpc: CodexRpc): Promise<unknown> => rpc.request('thread/read', { threadId, includeTurns: true });
+    const res = live ? await read(live.rpc) : await this.probe(read);
+    return codexHistory(isObj(res) ? res.thread : undefined);
+  }
+
+  private modelCache?: { at: number; list: Promise<ModelOption[]> };
+  /** FR-142: the models this Codex account offers (`model/list`, no prompt). Cached 10 minutes; a failure is an empty list. */
+  listModelOptions(): Promise<ModelOption[]> {
+    const now = Date.now();
+    if (this.modelCache && now - this.modelCache.at < 10 * 60_000) return this.modelCache.list;
+    const list = this.probe((rpc) => rpc.request('model/list', {}))
+      .then((res) => codexModelOptions(isObj(res) ? res.data : undefined))
+      .catch(() => {
+        this.modelCache = undefined;
+        return [] as ModelOption[];
+      });
+    this.modelCache = { at: now, list };
+    return list;
+  }
+
   private async closeChild(c: Child): Promise<void> {
     c.rpc.close();
     const wait = (this.closeGraceMs ?? 2000) + (this.killGraceMs ?? 1000) + 500;
@@ -337,6 +395,8 @@ export class CodexAdapter implements AgentAdapter {
     const live: Live = {
       sid: options.sessionId ?? '',
       threadId: '',
+      ...(codexModelFlag(options.model) ? { model: options.model } : {}),
+      ...(options.reasoningEffort && /^[a-z][a-z0-9_-]{0,15}$/.test(options.reasoningEffort) ? { effort: options.reasoningEffort } : {}),
       cwd,
       mode,
       roots,
@@ -469,6 +529,8 @@ export class CodexAdapter implements AgentAdapter {
       ...modeFields,
       // `sandboxPolicy` is an object on turn/start, not the `sandbox` string of thread/start. [KNOWN GAP] T062: shape unverified.
       ...(sandbox ? { sandboxPolicy: { type: 'dangerFullAccess' } } : { runtimeWorkspaceRoots: live.roots }),
+      ...(live.model ? { model: live.model } : {}),
+      ...(live.effort ? { effort: live.effort } : {}),
     };
     live.turnStarting = true;
     live.pendingInterrupt = false;

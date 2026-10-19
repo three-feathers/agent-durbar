@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.6 tag)
 
+- **Codex groundwork: resume, previous sessions, history and models (spec 012 FR-093, FR-141, FR-142).** The Codex adapter, not offered yet, can resume a thread of the same folder, list the folder's earlier threads, replay a thread's chat, and offer Codex's models and efforts. All of this was checked on a real Codex.
+
 - **For anyone with agents, across harnesses (spec 001 FR-027).**
   - The welcome card, the README, the app description and the repository description now say what Durbar is: a calm command center for AI agents on GitHub Copilot, Claude Code and (in progress) Codex, for code, documents, research or notes, not only for developers.
   - The header badge says **Live**; its tooltip lists the ready harnesses.
