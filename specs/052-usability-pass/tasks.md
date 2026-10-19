@@ -96,3 +96,8 @@
 - [x] T056 Solid primary buttons in every theme, ghost Tools and Settings, calmer waiting card, Settings measure and headings, restore strip band, theme picker overline, radius tokens, Clean polish after switching back [FR-053]
 - [x] T057 Period textures on themed rooms, European and Retro room-name accents [FR-054]
 - [x] T058 Settings heading scroll stays inside `.scr-body`; empty sign-in output hidden [FR-055]
+## Round 5: plain words for newcomers (2026-10-20)
+
+- [x] T059 Welcome card "Connect your AI account once", agent app cards name the account, install dialog in plain sentences with the exact command under a disclosure [FR-056]
+- [x] T060 Simple: spending-limit pause and rate-limit errors in plain words, folder grant label, inbox keys line hidden, More menu skips hidden items; restore strip text and buttons for everyone [FR-057]
+- [x] T061 Spending limit dialog: plans have a fixed price, Durbar never charges [FR-058]
