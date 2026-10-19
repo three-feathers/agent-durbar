@@ -214,6 +214,12 @@ async function driver(ctx) {
   if (shotsDir) fs.mkdirSync(shotsDir, { recursive: true });
   const sleep = ctx.sleep;
   let total = 0, failed = 0;
+  /* CI shards (spec 008 delta 2026-10-19): OFFICE_SHARDS=n OFFICE_SHARD=k runs every n-th unit (one window size of one block)
+     starting at k, so n parallel jobs cover the whole check. Unset: everything, as before. */
+  const SHARDS = Math.max(1, Number(process.env.OFFICE_SHARDS) || 1), SHARD = Number(process.env.OFFICE_SHARD) || 0;
+  let unit = 0;
+  const mine = () => unit++ % SHARDS === SHARD;
+  if (SHARDS > 1) console.log(`check:office: shard ${SHARD + 1} of ${SHARDS}`);
   let expectPlaces = 5; /* spec 024 FR-026: five built-in places plus simplaces=N custom ones, read from the query of the page just loaded */
   const rows = [];
   /* optional CI-like fonts (see the header): read once, handed to every page as data */
@@ -271,6 +277,7 @@ async function driver(ctx) {
   };
   for (const sim of SIMS) {
     for (const [w, h] of SIZES) {
+      if (!mine()) continue;
       const base = `sim=${sim}&simfreeze=1`;
       await load(base, w, h);
       /* spec 033 FR-007: with only the Ground floor the top bar is as before (no Floors button) */
@@ -309,6 +316,7 @@ async function driver(ctx) {
      Database, Ticket desk and a 24-character name) so the lobby has 8 tiles. No extra room-closing combinations: none, the first room, the first three, all. */
   for (const sim of SIMS) {
     for (const [w, h] of SIZES) {
+      if (!mine()) continue;
       const base = `sim=${sim}&simfreeze=1&simplaces=3`;
       await load(base, w, h);
       const names = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].map(e=>e.textContent.trim())`);
@@ -324,6 +332,7 @@ async function driver(ctx) {
      the run fails when no title reached a card, so it cannot pass on a page without titles */
   for (const [w, h] of SIZES) {
     for (const sim of [12, 15]) {
+      if (!mine()) continue;
       await run(`titles sim${sim}-${w}x${h}`, `sim=${sim}&simfreeze=1&simtitles=1`, w, h, sim === 15 ? `titles-sim15-${w}x${h}` : '');
       const shown = await ctx.js(`[...document.querySelectorAll('#stage .desk .name')].some((n)=>n.textContent==='Fix login bug')`);
       total++;
@@ -332,6 +341,7 @@ async function driver(ctx) {
   }
   /* spec 033: floors on/off (3, 2 and 1 floors on), with and without closed doors, both sizes */
   for (const [w, h] of SIZES) {
+    if (!mine()) continue;
     const cases = [
       ['3 floors on', 'sim=15&simfreeze=1&simfloors=1', true],
       ['2 floors on', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Personal', true],
@@ -375,6 +385,7 @@ async function driver(ctx) {
   /* spec 001 FR-023/FR-024 (T030): many folders with one agent each (simrooms=solo), with and without a closed door, both sizes */
   for (const [w, h] of SIZES) {
     for (const sim of SIMS) {
+      if (!mine()) continue;
       await run(`solo sim${sim}-${w}x${h}`, `sim=${sim}&simfreeze=1&simrooms=solo`, w, h, shotsDir ? `solo-sim${sim}-${w}x${h}` : '');
       const names = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].map(e=>e.textContent.trim())`);
       await run(`solo sim${sim}-${w}x${h} closed=1`, `sim=${sim}&simfreeze=1&simrooms=solo&closed=${encodeURIComponent(names[0] || '')}`, w, h, '');
@@ -385,6 +396,7 @@ async function driver(ctx) {
   }
   /* spec 012 T018 (FR-068): Claude-like, Codex-like and basic agents beside Copilot. No floors here, so no floor-tag checks; the toolbar stays on one row */
   for (const [w, h] of SIZES) {
+    if (!mine()) continue;
     const tag = `kinds ${w}x${h} mixed kinds`;
     await run(tag, 'sim=15&simfreeze=1&simkinds=mixed', w, h, shotsDir ? `kinds-${w}x${h}-mixed` : '');
     const row = await ctx.js(`(()=>{const t=[...document.querySelectorAll('#liveBar > button, #liveBar > select')].filter(e=>e.getClientRects().length).map(e=>Math.round(e.getBoundingClientRect().top));return {min:Math.min(...t),max:Math.max(...t),n:t.length}})()`);
@@ -420,6 +432,7 @@ async function driver(ctx) {
   };
   for (const [w, h] of SIZES) {
     for (const q of ['sim=15&simfreeze=1', 'sim=15&simfreeze=1&simkinds=mixed', 'sim=12&simfreeze=1&simtitles=1']) {
+      if (!mine()) continue;
       await load(q, w, h);
       const ids = await ctx.js(`[...document.querySelectorAll('#stage .desk')].map((d)=>d.dataset.id)`);
       let bad = 0;

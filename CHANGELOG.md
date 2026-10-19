@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.6 tag)
 
+- **Faster CI and tests (spec 008 FR-020..FR-023).** `npm test` compiles the test scripts once and runs the suites in parallel, about 16 s instead of about 4 minutes. The office check runs in four parallel shards. The package smoke no longer waits for the other jobs. A pull request that changes only docs, specs or Markdown skips the build and test jobs. A daily **Branch cleanup** workflow deletes branches whose pull request merged more than a day ago.
+
 - **New app icon: a lead and a working team.** A lead with one arm raised toward a small status board, above three seated workers at laptops, on a navy rounded square (design F2a). Same file names in `build/` (`icon.svg`, 1024x1024 `icon.png`, `icon.ico` with 16-256 px, `icon.icns`), so the packaging config is unchanged. The 16 px entry of `icon.ico` and `icon.icns` is a hand-tuned pixel version (`build/icon-16.svg`: the lead and the board, no team) so it stays readable in the taskbar and title bar; the README header shows it. Asset-only change, 0 AIU.
 
 ## v0.1.0-alpha.6 ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.6), 2026-10-19)
