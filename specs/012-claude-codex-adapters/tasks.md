@@ -137,5 +137,5 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 
 ## Changes 2026-10-19 (issue #55, Claude half of T047)
 
-- [ ] T110 (sim) Claude sign-in state from `claude auth status --json` after the version probe (only `loggedIn` read); fake-exec tests [FR-132]
+- [x] T110 (sim) Claude sign-in state from `claude auth status --json` after the version probe (only `loggedIn` read); fake-exec tests [FR-132]
 
