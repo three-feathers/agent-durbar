@@ -104,6 +104,7 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | # | Feature | Status |
 | --- | --- | --- |
 | [042](042-release-alpha5/spec.md) | Release v0.1.0-alpha.5 as a pre-release (version bump, changelog, download notes) | built; **published as a pre-release** (2026-10-18) |
+| [043](043-custom-agents/spec.md) | Custom agent per session (issue #127) | Phase 1 in progress: Agent chip and menu, repository-agent confirmation, Copilot `rpc.agent.*` |
 
 ## Feature 031: release v0.1.0-alpha.4
 
