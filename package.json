@@ -3,6 +3,7 @@
   "version": "0.1.0-alpha.6",
   "description": "Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.",
   "private": true,
+  "desktopName": "agent-durbar.desktop",
   "license": "MIT",
   "author": {
     "name": "Three Feathers",
@@ -179,6 +180,7 @@
     },
     "linux": {
       "icon": "build/icon.png",
+      "syncDesktopName": true,
       "category": "Development",
       "target": [
         {
