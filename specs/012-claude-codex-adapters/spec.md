@@ -564,3 +564,10 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 
 *Corrected:* **FR-130** (delta) a chosen option also gets a ring in the text colour and a check mark before its label, in every theme. `sim:` screenshots in Clean Office, Retro and Japanese Court (`docs/screenshots/012-question-chosen-*.png`).
 
+### 2026-10-19: switch an MCP server of a running Claude session (issue #58, T050 Claude half)
+
+*Missing:* `ClaudeAdapter` had `mcpToggle: false`: the per-agent MCP switches (spec 019) were disabled for Claude, so a server could only be dropped by a new session.
+
+*Corrected:*
+- **FR-133** `[IMPLEMENTED]` `ClaudeAdapter.setMcpEnabled(sessionId, name, enabled)` sends the CLI's own control request `mcp_toggle` (`serverName`, `enabled`; read from the CLI 2.1.303 bundle, not documented), then `mcp_status` and emits the normalized `mcp` event from its `mcpServers` list. The choice is also kept in the session's start options (`disabledMcpServers`), so a relaunch (a mode change, a crash, a resume) keeps it. A session that is not running only records it. `mcpToggle: true`. Tests on the fake CLI (toggle off live, a recorded switch in the launch config, a launch-disabled server back on through a relaunch). `real:` 2026-10-19, `claude` 2.1.303 with a tiny stdio MCP server and **no prompt**: `mcp_status` said `connected`, `mcp_toggle` off gave `disabled`, on gave `connected` again.
+
