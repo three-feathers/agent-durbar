@@ -34,6 +34,8 @@ export interface SavedFolder {
   label?: string;
   /** Custom agent preselected for this folder's new sessions (spec 043 FR-009): only the agent's id. */
   defaultAgent?: string;
+  /** The folder's last used session (spec 006 FR-020): continued after a restart. An id and its harness, never content. */
+  lastSession?: { id: string; adapterId?: string };
 }
 
 export const DEFAULT_ADAPTER = 'copilot';
@@ -77,6 +79,17 @@ export function parseDefaultAgent(v: unknown): string | undefined {
   return typeof v === 'string' && PROFILE_ID.test(v) ? v : undefined;
 }
 
+const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
+
+/** A saved last session (spec 006 FR-020); anything malformed is `undefined` (the folder starts fresh, as before). */
+export function parseLastSession(v: unknown): SavedFolder['lastSession'] {
+  if (!v || typeof v !== 'object') return undefined;
+  const o = v as Record<string, unknown>;
+  if (typeof o.id !== 'string' || !SESSION_ID.test(o.id)) return undefined;
+  const adapterId = parseAdapterId(o.adapterId);
+  return adapterId ? { id: o.id, adapterId } : { id: o.id };
+}
+
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const MAX_FOLDERS = 200;
 
@@ -109,6 +122,7 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       adapterId: parseAdapterId(o.adapterId),
       ...(parseLabel(o.label) ? { label: parseLabel(o.label) } : {}), // only when set, so older files read back unchanged
       ...(parseDefaultAgent(o.defaultAgent) ? { defaultAgent: parseDefaultAgent(o.defaultAgent) } : {}),
+      ...(parseLastSession(o.lastSession) ? { lastSession: parseLastSession(o.lastSession) } : {}),
     });
     if (out.length >= MAX_FOLDERS) break;
   }
@@ -276,6 +290,25 @@ export class FolderStore {
     cur.defaultAgent = profileId === null ? undefined : parseDefaultAgent(profileId);
     this.save();
     return { defaultAgent: cur.defaultAgent };
+  }
+
+  /** Records the folder's last used session (FR-020); written only when it changes. `copilot` is not written, as for `adapterId`. */
+  setLastSession(workspace: string, id: string, adapterId: string | undefined): boolean {
+    const cur = this.get(workspace);
+    const next = parseLastSession({ id, adapterId });
+    if (!cur || !next) return false;
+    if (cur.lastSession?.id === next.id && cur.lastSession?.adapterId === next.adapterId) return true;
+    cur.lastSession = next;
+    this.save();
+    return true;
+  }
+
+  /** Forgets the last session when it is that one (FR-020: the session was removed from the folder). */
+  clearLastSession(workspace: string, id: string): void {
+    const cur = this.get(workspace);
+    if (!cur || cur.lastSession?.id !== id) return;
+    cur.lastSession = undefined;
+    this.save();
   }
 
   setClosed(workspace: string, closed: boolean): boolean {
