@@ -24,6 +24,31 @@ export function parseCap(v: unknown): number | undefined {
   return Math.round(n * 100) / 100;
 }
 
+/** A dollar cap (spec 012 FR-150, Claude's estimate): from $0.01 to $10,000, rounded to cents. */
+export const MIN_USD_CAP = 0.01;
+export const MAX_USD_CAP = 10_000;
+export function parseUsdCap(v: unknown): number | undefined {
+  const n = num(v);
+  if (n === undefined || n < MIN_USD_CAP || n > MAX_USD_CAP) return undefined;
+  return Math.round(n * 100) / 100;
+}
+
+/** A cap in the adapter's unit (`capUnit`, AIU when missing). */
+export function parseCapIn(unit: 'aiu' | 'usd' | undefined, v: unknown): number | undefined {
+  return unit === 'usd' ? parseUsdCap(v) : parseCap(v);
+}
+
+/**
+ * The cap a new session starts with (spec 011, spec 012 FR-150): the explicit choice (null = none) > the folder's saved cap > the
+ * settings default. The saved and default caps are AIU, so a dollar-cap adapter only ever gets an explicit cap.
+ */
+export function startCap(unit: 'aiu' | 'usd' | undefined, explicit: number | null | undefined, folderCap?: number, defaultCap?: number): number | undefined {
+  if (explicit === null) return undefined;
+  const c = explicit === undefined ? undefined : parseCapIn(unit, explicit);
+  if (c !== undefined) return c;
+  return unit === 'usd' ? undefined : folderCap ?? defaultCap;
+}
+
 /** An amount of credits to add to a cap: finite number in (0, MAX_CAP], 2 decimals. */
 export function parseAmount(v: unknown): number | undefined {
   const n = num(v);

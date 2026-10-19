@@ -161,7 +161,7 @@
 
   /* ---- Agent kinds and what each can do (spec 012 T017, FR-059..FR-061). Pure. `adapters` is the list from bridge.listAdapters();
      without a list (a bridge that has none, or the call failed) every capability counts as on, so the UI stays as it was. ---- */
-  const ALL_ON={interrupt:true,resume:true,images:true,models:true,effort:true,permissionModes:['read-only','ask','allow'],permModeSwitch:'live',usage:{tokens:true,costUsd:true,nanoAiu:true},context:true,caps:true,helpers:true,history:true,mcpStatus:true,mcpToggle:true};
+  const ALL_ON={interrupt:true,resume:true,images:true,models:true,effort:true,permissionModes:['read-only','ask','allow'],permModeSwitch:'live',usage:{tokens:true,costUsd:true,nanoAiu:true},context:true,caps:true,helpers:true,history:true,mcpStatus:true,mcpToggle:true,handoff:true};
   const haveList=a=>Array.isArray(a)&&a.length>0;
   /* The capabilities of the adapter that runs `info`; all on when the list is missing or does not know the id. */
   function capsOf(info,adapters){
@@ -197,10 +197,23 @@
       case 'history':return !!c.history;
       case 'models':return !!c.models;
       case 'effort':return !!c.effort;
+      case 'handoff':return !!c.handoff; /* spec 030 FR-036 */
       default:return true;
     }
   }
 
+  /* Spec 005 FR-017: what the office card menu adds for a live main agent. Stop only while a turn runs (disabled with the reason when the kind cannot interrupt);
+     End session for a started, not yet ended session, and it asks first while the agent is busy or waiting. `a` is the main agent: {live,parent,state,label,info}. */
+  function cardMenuActions(a,caps){
+    const none={stop:null,end:null};
+    if(!a||!a.live||a.parent)return none;
+    const run=a.state==='working'||a.state==='thinking';
+    const out={stop:null,end:null};
+    if(run)out.stop=shows(caps,'stop')?{disabled:false,reason:''}:{disabled:true,reason:'This agent cannot interrupt a running turn.'};
+    const started=!(a.info&&a.info.lazy)&&a.label!=='Ended'&&a.label!=='Not started';
+    if(started)out.end={confirm:run||a.state==='waiting'};
+    return out;
+  }
   /* The modes an adapter can enforce, in the order the UI lists them. Missing or empty means read-only only (safe by default), unlike `shows`, which counts a missing caps object as all on. */
   const MODE_ORDER=['read-only','ask','allow'];
   function modesFor(caps){
@@ -214,5 +227,5 @@
     return m.includes(cur)?cur:'read-only';
   }
 
-  return {modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows};
+  return {modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows,cardMenuActions};
 })());

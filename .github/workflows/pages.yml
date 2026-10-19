@@ -1,0 +1,75 @@
+name: Project site
+
+# Spec 050: the GitHub Pages site is built from the repository (README sections, the specs index, docs/screenshots,
+# docs/site/gallery.json, CHANGELOG, the latest release) by scripts/build-site.js, and rebuilt daily for new releases. No hand-made copy to keep in sync:
+# a change to those files on main republishes the site. A pull request that touches them only builds and checks it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - 'specs/README.md'
+      - 'docs/screenshots/**'
+      - 'docs/site/**'
+      - 'build/icon.svg'
+      - 'scripts/build-site.js'
+      - 'scripts/test-site.js'
+      - '.github/workflows/pages.yml'
+  pull_request:
+    paths:
+      - 'README.md'
+      - 'specs/README.md'
+      - 'docs/site/**'
+      - 'scripts/build-site.js'
+      - 'scripts/test-site.js'
+      - '.github/workflows/pages.yml'
+  # a new release shows up within a day (the github-pages environment deploys from main only, not from a release tag)
+  schedule:
+    - cron: '37 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      # only `marked` is needed; skip install scripts (no Electron download)
+      - run: npm ci --ignore-scripts
+      - run: node scripts/test-site.js
+      - name: Build
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/build-site.js
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

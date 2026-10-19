@@ -581,7 +581,7 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 ### 2026-10-19: the SDK path in a packaged build (issue #52, T044 part)
 
 - `real:` (local, Linux) `npm run pack:dir`, then the packaged binary `release/linux-unpacked/agent-durbar` with `DURBAR_DEV=1 DURBAR_CLAUDE=1 DURBAR_CLAUDE_TRANSPORT=sdk` and the driver `scripts/pack-esm-check.js` running inside the packaged main process (from `app.asar`): `{"packaged":true,"esmBuiltin":true,"esmFromAsar":true,"loadSdk":"undefined","registered":["claude"],"transport":"cli"}`. So the real ESM `import()` (the `new Function` wrapper in `claudeSdk.ts`) works from the CommonJS main process inside `app.asar`, a missing SDK is reported as "not available" without an error, the experimental registration works in a packaged build with the developer opt-in, and the SDK transport falls back to the CLI. No SDK, no `claude` run, no credits.
-- `[KNOWN GAP]` Not in CI and not on macOS or Windows (T044 stays open: it needs a CI change the owner should agree to). The SDK itself is not a dependency (Q3), so `asarUnpack` has nothing to unpack for it.
+- ~~`[KNOWN GAP]` Not in CI and not on macOS or Windows.~~ Closed 2026-10-19 (T044, issue #52, PR #270), see below. The SDK itself is not a dependency (Q3), so `asarUnpack` has nothing to unpack for it.
 
 ### 2026-10-19: real check, Read-only ignores allow rules in the folder's settings (T068, T067a; issues #70, #69)
 
@@ -635,3 +635,205 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 - **FR-136** `[IMPLEMENTED]` The harness picker (the toolbar select for new folders and the New session dialog) is shown only when **two or more** harnesses are ready. With one ready harness there is nothing to choose: the select stays hidden but holds that harness, so a computer with only Claude Code adds Claude folders. In the New session dialog the select is labelled **Harness**, so it no longer shares the word "Agent" with the custom-agent select (spec 043).
 - Unchanged: no credit cap for Claude (T081 open); its dollar estimate stays apart from AIU (FR-122); Read-only / Ask first / Allow all as mapped (FR-069..FR-071).
 - `test:` `showsKindPicker` counts ready harnesses; the registry has Claude without the hook. `sim:` the mixed roster at both sizes. `real:` already done for the real app (T095 part 1, T106) and the checks T066..T069. `real:` 2026-10-19, the built app with a fresh profile and no `DURBAR_CLAUDE`: `listAdapters` gave `copilot: ready` and `claude: ready`, and the toolbar shows the picker (GitHub Copilot, Claude Code). No prompt was sent.
+
+### 2026-10-19: owner decision record (T060, issue #62)
+
+The owner's answers, quoted from the sessions where they were given. All nine are answered or settled (Q7 and Q9 on 2026-10-19 by the agent under the owner's grant: "you can handle what you can handle", "I trust you take right and safe decisions").
+
+- **Q1 Subscription login. Answered.** 2026-10-19: "for claude, lets support claude same as copilot if it is installed" (FR-135), and for Codex: "you can install codex, i have chatgpt plus subscription". Durbar drives the user's own installed and signed-in CLI (`claude`, `codex`), the same as Copilot's. It handles no credentials and loads no vendor settings files (Q8). The earlier policy check (T071) is closed on this basis.
+- **Q2 Budget for real checks. Answered.** 2026-10-18: "it is ok to spend tokens - no need to wait for me or someone to approve if you have tested things and they are good". The accounts are the owner's: GitHub Copilot (free plan: `auto` only), Claude (claude.ai login), and ChatGPT Plus for Codex. Rule kept: small runs (`haiku` / `auto`, a few prompts each), every one recorded as `real:` with its cost.
+- **Q3 Claude Agent SDK as a dependency. Settled by the build.** It is **not** a dependency. An optional transport loads it by dynamic `import()` only if the user installed it and set `DURBAR_CLAUDE_TRANSPORT=sdk` (FR-113). The default CLI transport needs no SDK, so the non-OSI licence question does not arise for the shipped app.
+- **Q4 SDK binary or the user's CLI. Settled by the build.** The user's installed `claude`, found by detection, with a version probe (FR-036..FR-040). No bundled binary.
+- **Q5 Order (C3). Reversed in practice.** C3 proposed Codex first; Claude Code was built, checked and shipped first (v0.1.0-alpha.6), as the owner asked. Codex follows (#51).
+- **Q6 Codex Read-only wording. Answered by the build (2026-10-19).** Read-only is enforced by a read-limited profile: reads inside the session folders, no writes, nothing outside visible (real check, FR-138 and the research findings). It is shown as plain Read-only.
+- **Q7 Dollar cap for Claude. Decided: yes, a separate dollar cap** (FR-150, T081, issue #75, PR #269). It is per session, on Claude's estimate, and never mixed with AIU.
+- **Q8 Project settings. Answered** 2026-10-18 (recorded above): never load any.
+- **Q9 Windows check of the Codex sandbox. Settled: yes, a later owner-run task** (T070, issue #72), because it needs a Windows machine. Meanwhile Codex Read-only on Windows is `[KNOWN GAP]` (not run there), as the spec already says.
+
+### 2026-10-19: Codex sign-in check, and the first real Codex probe (T047 Codex half, T061; issues #55, #63)
+
+The agent installed `@openai/codex` 0.163.0 at the owner's request ("you can install codex, i have chatgpt plus subscription"), and the owner signed in with `codex login` (ChatGPT).
+
+- `real:` (T061, 2026-10-19, no prompt, no usage):
+  - `codex --version` gives `codex-cli 0.163.0`.
+  - `codex app-server`'s `initialize` answers `{userAgent, codexHome, platformFamily, platformOs}`.
+  - `account/read` answers `{account: {type, email, planType}, requiresOpenaiAuth, workspaceRouting: {...}}`, with `type: chatgpt` and `planType: plus`. The e-mail and ids were not printed or kept.
+  - `codex login status` prints `Logged in using ChatGPT` and exits 0. With an empty `CODEX_HOME` it prints `Not logged in` and exits **1**.
+- **FR-137** `[IMPLEMENTED]` Codex detection (when the adapter is registered, FR-100) runs the version probe, then `codex login status` (argv, no shell, 5 s; no prompt, nothing billed):
+  - `Not logged in` in the output (it exits 1) means **not signed in**; an exit code alone does not, since an older CLI without the command fails too, with the hint "Sign in first: run `codex login` in a terminal, then refresh the agent kinds.";
+  - exit 0 with `Logged in` means **ready**, "Signed in to Codex on this computer.";
+  - anything unclear (an older CLI, a timeout, other text) keeps **ready**, as for Claude (FR-132).
+  
+  Only the exit code and those two phrases are read; nothing of the output is kept. `test:` fake exec cases in `test-detect`. `real:` `detectCodex` on the installed CLI gave `ready` / "Signed in to Codex on this computer.", and with an empty `CODEX_HOME` gave `not-signed-in` with the hint. Codex stays unregistered until #51 lands; `detectorFor('codex')` is wired so it works once it is.
+
+### 2026-10-19: Codex on a real account, first run (T062-T064 part; issues #64-#66)
+
+The owner handed the Codex track to this agent ("ruben does not have chatgpt account, I have - so you can take all the work until completion"). These are the first real runs of `CodexAdapter` (T043a, built on a fake app-server), with Codex 0.163.0 and ChatGPT Plus on Linux (Ubuntu with AppArmor), each in a throwaway folder.
+
+*Found and fixed:*
+- **FR-138** Codex 0.163 refuses to start when the config defines a `[permissions]` profile without `default_permissions` ("config defines `[permissions]` profiles but does not set `default_permissions`"). The spawn arguments now add `-c default_permissions="durbar_ro"`. That is fail-closed: Allow all sends its own `sandbox`, which wins.
+- **FR-138** Inside the read-limited profile, Codex runs its own binary again (`bwrap: execvp …/codex: No such file or directory`). An npm install in the home folder is outside `:minimal`, so every command failed. The profile now also gets **Codex's install folder** as a read root:
+  - which folder: the real path of the located `codex`, then its folder, or the parent of a `bin` folder; for npm that is `…/@openai/codex`;
+  - validation: absolute, normalised, no quotes or control characters, never a disk root; anything else is left out, so the profile only gets narrower;
+  - Windows backslashes are escaped for TOML.
+- **FR-140** On a Linux that blocks unprivileged user namespaces (`kernel.apparmor_restrict_unprivileged_userns=1`, Ubuntu 24.04+), Codex's bubblewrap sandbox cannot start (`bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`). Read-only and Ask first then **fail at start**, which is closed, as they must. The error now ends with a plain hint: allow it for bubblewrap, or use Allow all in a trusted folder. On the test machine, with the owner's choice, an AppArmor profile lets only `/usr/bin/bwrap` and Codex's bundled `bwrap` create user namespaces; the global setting stays on.
+- **FR-139** `turn/interrupt` (Durbar's **Stop**) ends the turn at once, but a shell command that **already started keeps running** to its end. The real check: `sleep 20 && touch late.txt` created `late.txt` after the interrupt. Codex 0.163's `command/exec/terminate` only covers commands the client started itself. **End session** (closing the app-server) does stop it: no `late.txt`, and no process left. So when a command is running at the interrupt, "Aborted" now says "(a command that already started may still finish; End session stops it)". `[KNOWN GAP]` until Codex offers a way to stop a running tool command.
+
+*`real:` results (2026-10-19; ChatGPT Plus, so no dollar cost; about 9 short prompts):*
+- **Allow all:** read `note.txt` with a shell command and answered "pelican". It reported usage per turn (`inputTokens`, `outputTokens`, `cacheReadTokens`) and the context window (`475000`).
+- **Read-only (T064):** reading inside the folder worked ("pelican"). `echo hi > x.txt` failed with a read-only file system. `cat ~/.durbar-canary.txt` (outside the folder) failed: the file is not visible in the sandbox. No `x.txt` was created.
+- **Ask first (T064):** `echo hi > x.txt` raised a permission request through Durbar's broker ("run /bin/bash -lc 'echo hi > x.txt'"). Denied: "declined", no file. Approved: the file was created.
+- **Interrupt and Stop (T063 part):** as in FR-139. Resume (T043b) is not built yet.
+
+### 2026-10-19: Codex resume (T043b, FR-093 built)
+
+- **FR-093** `[IMPLEMENTED]` A Codex session is resumed with `resumeSessionId` (the Codex thread id) on a **fresh** child, never replaced by a new thread:
+  - an id that is not a plain id is refused;
+  - an unknown thread gives an error;
+  - `CODEX_CAPABILITIES.resume` is now `true`.
+  
+  *Found on the real account:* `thread/resume` with a `cwd` **rewrites the thread's stored folder**. A check on the resume response would therefore approve a resume from any folder, and it did, in a first try. So the adapter now **reads the stored thread first** (`thread/read {threadId, includeTurns: false}`) and refuses unless its `cwd` equals the session folder (spec 003: resumed sessions belong to the agent's folder). Nothing is changed before that check. Then it sends `thread/resume {threadId, excludeTurns: true}` with the same mode fields and `runtimeWorkspaceRoots` as a new thread.
+  
+  *Profile check:* in Read-only and Ask first, a response whose `sandbox` reports full access or workspace-write is refused; Codex 0.163 reports `{type: "readOnly", networkAccess: false}` in the read-limited profile.
+- `test:` the scripted fake now answers `thread/read`, and rewrites the folder on resume as the real server does. Cases:
+  - unknown thread and bad id;
+  - resume keeps the id, uses a fresh child, reads first, then resumes with the limited roots, and runs a turn;
+  - another folder is refused with no `thread/resume` sent and the stored folder unchanged;
+  - a wider sandbox is refused in Read-only and accepted in Allow all.
+- `real:` 2026-10-19, Codex 0.163.0 (ChatGPT Plus), Read-only, two adapter instances. Session 1 was asked to remember "marmalade". A fresh adapter resumed the thread under the same id and answered **marmalade**. A resume from another folder was refused, and `thread/read` showed the thread's folder unchanged.
+
+
+### 2026-10-19: Codex previous sessions, history and models (T048, T049 Codex halves)
+
+- **FR-141** `[IMPLEMENTED]` `CodexAdapter.listPreviousSessions(cwd)` lists the folder's earlier Codex threads with `thread/list {cwd, limit: 100}` on a short-lived **probe** child (temp folder, same environment rules, no thread, no prompt, always closed):
+  - same folder only (`sameDir`), newest first;
+  - left out: threads open now, sub-agent threads (`parentThreadId`), ephemeral threads and malformed ids;
+  - title: the thread's `name`, else its `preview` (the first prompt); times are seconds turned into ms; the git branch unless `HEAD`.
+  
+  `history(sid)` maps `thread/read {includeTurns: true}` (the live child, or a probe after the session ended) to the chat replay:
+  - prompts, final answers, commands (with output, failed when failed or declined) and file changes;
+  - other items are skipped; the last 300 items are kept.
+  
+  `history: true`.
+- **FR-142** `[IMPLEMENTED]` `listModelOptions()` maps `model/list` to the model picker: visible models, their `supportedReasoningEfforts` and default effort, and Codex's default model first. It is cached for 10 minutes; a failure gives an empty list. The chosen model and effort go with **each turn** (`turn/start {model, effort}`). Only a Codex model id (`gpt…`, `o…`, `codex…`) is sent; `auto` and a Copilot or Claude id saved for the folder are left to Codex's default. `models: true`, `effort: true`. `[KNOWN GAP]` Codex offers an `ultra` effort on some models; Durbar's effort values stop at `max`, so `ultra` is not offered yet.
+- `test:` `scripts/test-codex-history.ts` (new) covers the three mappers and the model-id rule. `test-codex-adapter` uses the fake app-server's `thread/list` and `model/list` to check the probes, exclusion of open sessions, model and effort on the turn, and a non-Codex id left out.
+- `real:` 2026-10-19, Codex 0.163.0 (ChatGPT Plus):
+  - `listModelOptions` gave 7 models in 0.5 s (`gpt-6.1-sol` first, the default);
+  - a Read-only turn on `gpt-5.6-luna` / `low` answered;
+  - while open the session was not listed; after stop it was listed with its first prompt as title, and not in another folder;
+  - `history` after stop gave prompt, shell command and answer.
+
+### 2026-10-19: Codex sessions restart by resume; live mode switch (T046 Codex half)
+
+- **FR-143** `[IMPLEMENTED]` A Codex session that ran before and is not live now (End session, a crash, a relaunch) **restarts by resuming its own thread** (FR-093), never as a new thread. The adapter keeps Durbar's session id → Codex thread id. Before, `start({sessionId})` of a known id threw "Resuming a Codex session is not available yet", so sending to an ended Codex agent failed. The new optional adapter member `resumeIdOf(sid)` gives the thread id, and main remembers **that** id as the folder's last session (spec 006 FR-020), so a Codex folder also continues its last session after a restart.
+- **FR-144** `[IMPLEMENTED]` `setPermMode` (`permModeSwitch: 'next-message'`):
+  - Durbar's own approvals follow at once (the broker: pending denied for Read-only, approved on request for looser modes).
+  - Codex cannot change the sandbox or approval policy of a loaded thread (`read:` the T084 entry). So the **next message reopens the thread on a fresh child** with the new mode's settings (FR-093 resume). This relaunch is silent: no "stopped".
+  - A **stricter** mode during a running turn **interrupts** that turn, so nothing more runs under the looser mode. A command that already started may still finish (FR-139).
+- `test:` the fake app-server covers:
+  - a named session restarts on the same thread with no new thread, and `resumeIdOf` keeps the thread id after stop;
+  - Read-only → Allow all relaunches on a fresh child, resumes the thread, and sends `dangerFullAccess` on the next turn, silently;
+  - Allow all → Read-only during a turn sends `turn/interrupt`.
+- `real:` 2026-10-19, Codex 0.163 (ChatGPT Plus):
+  - in Read-only `echo one > a.txt` failed (read-only file system, no file);
+  - after `setPermMode('allow')` the next message wrote `a.txt`;
+  - after End session, `start` with the same Durbar id resumed the same thread, which answered "a.txt" when asked what it wrote.
+
+### 2026-10-19: Codex offered like Copilot and Claude Code when installed (T043c, T043; owner)
+
+*Owner, 2026-10-19:* "you can take all the work until completion" (the Codex track), after "support claude same as copilot if it is installed" for Claude (FR-135).
+
+- **FR-145** `[IMPLEMENTED]` OpenAI Codex is registered in every build next to Copilot and Claude Code (`offeredDescriptors`). Whether it can be used is what detection says (FR-137): ready, not installed, not signed in, or too old. With two or more ready, the Harness picker offers it (FR-136). This replaces the `DURBAR_CODEX` hook of FR-100, which was never wired.
+- What a Codex agent has (FR-089..FR-099, FR-093, FR-137..FR-144):
+  - the three modes, enforced (Read-only limits reads to the session folders);
+  - approvals through Durbar's broker;
+  - interrupt, with the FR-139 caveat; End session; resume, also across restarts;
+  - a mode change from the next message;
+  - Codex's models and efforts per turn;
+  - previous sessions and history replay;
+  - usage tokens and the context window.
+  
+  Not yet: a credit cap (Codex reports no cost; ChatGPT plans have their own limits), MCP status and switches, helpers (sub-agents) and the question card (T050, T052, T065).
+- `real:` 2026-10-19, the built app, a fresh profile, Codex 0.163 (ChatGPT Plus), two launches:
+  - `listAdapters` gave `copilot`, `claude` and `codex` ready (Codex: "Signed in to Codex on this computer."), and the Harness picker offers GitHub Copilot, Claude Code and OpenAI Codex;
+  - Codex's 7 models were listed;
+  - first launch: a Read-only Codex folder answered;
+  - second launch: the card said "Your last session here"; opening it replayed the chat with "Continued after restart"; asked for the word, it answered **marmalade**;
+  - the folders file held the Codex thread id with `adapterId: codex`.
+  
+  Screenshot: `docs/screenshots/012-codex-real-continued-1440x900.png`. Not checked: Windows and macOS, and MCP or sub-agents through Codex (T065).
+
+### 2026-10-19: questions from Codex (T052 Codex half)
+
+- **FR-146** `[IMPLEMENTED]` Codex's `item/tool/requestUserInput` (the name Codex 0.163 sends; `codexModes` listed only the older `tool/requestUserInput`, so it fell through to the approval path) goes to the **question card** (FR-128):
+  - the questions, options and header are parsed with the shared helpers, and each question's Codex `id` is remembered;
+  - while waiting, the agent shows "Waiting for your answer";
+  - the answer goes back as `{answers: {<id>: {answers: [...]}}}`; Skip, Stop or End session answer `{answers: {}}` and the card says cancelled.
+  
+  A **secret** question (`isSecret`) is never shown on the card and gets no answer, since what is typed into the card lands in the chat.
+- `[KNOWN GAP]` Codex 0.163 offers the `request_user_input` tool only when its feature `default_mode_request_user_input` is on, and that feature is "under development" and off by default. Durbar does not turn it on, so Codex usually asks in plain text instead.
+- `test:` the fake app-server covers: the answer by id; the secret question not shown; `needs-permission`; Skip; Stop.
+- `real:` 2026-10-19, Codex 0.163 with the feature turned on **for this check only**, Ask first: Codex asked "Which colour do you prefer, Sage or Blue?" with both options; the card's answer "Sage" went back by id; Codex replied "You chose Sage."
+
+### 2026-10-19: Codex with MCP servers and sub-agents (T050, T065 Codex halves)
+
+- **FR-147** `[IMPLEMENTED]` Durbar's MCP servers for a session (the Copilot-CLI list and the folder's extras, specs 019/020) go to Codex as `config.mcp_servers` on `thread/start` and `thread/resume`:
+  - stdio becomes `command`, `args`, `env`, `cwd`; http becomes `url`, `http_headers`; a tool filter becomes `enabled_tools`;
+  - switched-off names get `enabled: false`;
+  - names are checked.
+  
+  Codex's own servers (from its `config.toml`, and the built-in `codex_apps`) still run. State:
+  - `mcpServerStatus/list` runs at a loud start, or with the first message after a quiet start (contract C3: a quiet start emits nothing);
+  - `mcpServer/startupStatus/updated` notifications follow;
+  - both become Durbar's `mcp` event (connected, pending, failed, needs-auth, disabled).
+  
+  `setMcpEnabled` shows the change at once and applies it with the next message, on a fresh child that resumes the thread (as FR-144 does). `mcpStatus: true`, `mcpToggle: true`. Secret values go to Codex only; they are never logged.
+- **FR-148** `[IMPLEMENTED]` *Found on the real account:* Codex asks for an MCP tool call with `mcpServer/elicitation/request`, carrying `_meta.codex_approval_kind: "mcp_tool_call"`, the message `Allow the echo MCP server to run tool "echo"?` and an empty form. The answer must be `{action: accept | decline | cancel, content?}`; the adapter sent `{decision}`, so an approved call never ran.
+  - A plain confirmation (no form fields) now goes through Durbar's approval. The tool name is taken from the message, so the card reads "mcp echo › echo". The reply is `{action: 'accept', content: {}}`, `decline` or `cancel`.
+  - An elicitation with form fields, or a URL flow, is **declined**: Durbar cannot fill forms yet (`[KNOWN GAP]`).
+- **FR-149** `[IMPLEMENTED]` *Found on the real account:* a sub-agent comes as `subAgentActivity` items, **one item per activity** (`kind: started` and `kind: completed`, each with its own id, each opened and closed at once). They are linked by `agentThreadId`. The mapper keyed by item id, so one helper showed up twice. Now:
+  - the helper is the **agent thread**, started and ended once, named by the last part of `agentPath` (`/root/pelican` becomes `pelican`);
+  - `collabAgentToolCall` creates a helper only for a spawn tool; Codex's `wait`, `send_input` and the like coordinate helpers and are not helpers themselves;
+  - `helpers: true`.
+- `test:` `test-codex-adapter`: the config, the list and startup states, and a switch applied with the next message on resume. `test-codex-map`: the real sub-agent shape, `wait` ignored, the helper's output attributed to it.
+- `real:` 2026-10-19, Codex 0.163 (ChatGPT Plus), Ask first, with Durbar's config giving a local stdio echo server:
+  - `echo` was connected (and Codex's `codex_apps`);
+  - the tool call asked for approval as "mcp echo › echo"; approved, it returned "echo: hello durbar";
+  - asked to use a sub-agent, Codex spawned one, shown as the helper "pelican", started and completed once; the answer was "pelican".
+
+### 2026-10-19: a dollar cap for Claude Code (Q7, T081)
+
+*Decision* (made by the agent under the owner's "you can handle what you can handle" and "support claude same as copilot"): Q7 is answered **yes**, as a separate unit. Claude reports a dollar **estimate** (FR-122), never AIU, so its cap is in dollars, kept apart from the AIU caps of Copilot. It is off unless the user sets one, and it never borrows an AIU cap. Claude's own `--max-budget-usd` exists in 2.1.303 (`claude --help`).
+
+- **FR-150** A Claude session can have a **cost cap in dollars** (`capUnit: 'usd'` in the capabilities; `caps: true`):
+  - Set it in the New session dialog ("Cost cap ($, estimate)") or from the cap chip, which shows `$0.03 / $0.50`.
+  - The minimum is $0.01. The folder's saved AIU cap and the settings default (AIU) are **never** applied to Claude, and a Claude cap is not saved per folder (`[KNOWN GAP]`: per session only).
+- **Enforcement**, two locks:
+  - each CLI launch gets `--max-budget-usd <cap minus what the session has spent>`, so Claude itself stops a turn at the limit;
+  - after each result, when the session's estimate reaches the cap, the adapter emits the same `limit exhausted` event as Copilot, and the next message is held until the user adds to the cap, removes it, or stops (`resolveLimit`: `add`, `set`, `unset`, `cancel`).
+- Like Copilot's, it is a soft cap: one turn can go a little past it, and the figure is Claude's estimate, not a bill. With a Claude subscription nothing is billed per token.
+- **Raise cap** (`add`) gives that many more dollars **from the higher of the cap and the spend**, rounded up to the cent: a Claude turn can pass the cap by more than Copilot's (the first turn writes the prompt cache), and adding to the cap alone could leave it below the spend, so the agent would stop again at once (seen in the real check).
+- `[IMPLEMENTED]`:
+  - `capUnit: 'usd'`, `caps: true`; `ClaudeAdapter.setCap` and `resolveLimit`; the spend is the sum of the session's `usage.costUsd`; `--max-budget-usd` (4 decimals, never below $0.0001) on every launch; a changed cap relaunches from the next message (a resume).
+  - Claude's own stop (`result` subtype `error_max_budget_usd`) becomes the limit notice, not an error card.
+  - Main: `startCap` (an explicit cap only for a dollar kind), `parseCapIn`, `setCapOp` and `agents:resolveLimit` take dollars for that kind; a dollar cap is never written to the folder file.
+  - Renderer: the chip (`$0.01 / $0.50`), the cap dialog ("Cost cap", min $0.01), the notice ("Cost cap reached", *Raise cap*), the agent card (`$0.01/$0.50 est.`), the New session field ("Cost cap ($, Claude's estimate)", never pre-filled with the AIU default). A model switch never compares its AIU estimate with a dollar cap.
+- `[KNOWN GAP]`:
+  - the spend counts what the session used **while Durbar ran it**; a session resumed after a restart starts again from $0;
+  - per session only (not saved with the folder);
+  - the simulator keeps showing an agent's tool steps after the limit (as it does for AIU), the real adapter stops.
+- `test:` `test:claudeadapter` (argv and remaining budget, notice once, held message, unknown id ignored, add from the spend, the budget stop is not an error, Stop here, setCap and its minimum, no flag without a cap), `test:credits` (`parseUsdCap`, `parseCapIn`, `startCap`), `test:agentops` (dollar minimum, nothing saved to the folder), `test:runtime` (contract and drift rows).
+- `sim:` `scripts/shots-012-cost-cap.js` (`simkinds=mixed`: Ada is a Claude agent with a $0.01 cap), at 1440x900 and 1280x800: `docs/screenshots/cost-cap-*.png`, `cost-cap-dialog-*.png`.
+- `real:` 2026-10-19, Claude Code 2.1.303, the adapter from `dist/` with a fixed prompt, numbers only logged:
+  - `claude -p --max-budget-usd 0.0001` ends with `result` subtype `error_max_budget_usd` after the turn.
+  - `sonnet`, cap $0.01: the first launch got `--max-budget-usd 0.0100`; the turn cost $0.0157, and the budget stop came out as `limit exhausted` (no error). The next message was held (no output). *Raise cap* by $0.05 gave $0.07, the relaunch got `--max-budget-usd 0.0543`, and the held message was answered.
+  - An earlier run showed the overshoot: a cold cache made the first turn $0.06 on a $0.01 cap, and "add to the cap" stayed below the spend, hence the rule above.
+  - On `haiku`, four short turns cost about $0.004 together, under a $0.01 cap: no notice.
+  - About $0.13 of estimate in all (a Claude subscription: nothing billed per token).
+
+### 2026-10-19: the packaged check in CI on three OSes (T044, issue #52)
+
+- `scripts/pack-esm-ci.js` starts the unpacked app from `release/` with `scripts/pack-esm-check.js` as the driver and checks its result, which the driver writes to `PACK_ESM_OUT`. It starts the app with fixed arguments and no shell, and uses `xvfb-run` on Linux without a display.
+- `.github/workflows/packaged-check.yml` runs it after an unsigned `pack:dir` on `macos-latest`, `windows-latest` and `ubuntu-latest`. Triggers: `main` when adapters, the main process or packaging change; on demand; a PR that changes the check. It is not a required check.
+- `test:` (CI, run 39244094105) the same result on all three OSes: `{"packaged":true,"esmBuiltin":true,"esmFromAsar":true,"loadSdk":"undefined","registered":["claude","codex"],"transport":"cli"}`. On macOS the resources folder is `Resources`.
+- `[KNOWN GAP]` Interactive use of the packaged app on real macOS and Windows machines is not covered (T070, #9, #10).

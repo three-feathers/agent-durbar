@@ -1,6 +1,6 @@
 /** Unit test for how VS Code is located and launched (no Electron, no VS Code needed): `npm run test:vscode`. */
 import * as assert from 'assert';
-import { planVSCodeLaunch } from '../src/main/vscode';
+import { EDITIONS, planVSCodeLaunch } from '../src/main/vscode';
 import type { LaunchEnv } from '../src/main/vscode';
 
 const env = (platform: NodeJS.Platform, files: string[], vars: NodeJS.ProcessEnv, homedir: string): LaunchEnv => ({
@@ -42,4 +42,33 @@ for (const bad of ['C:\\a & calc', 'C:\\a"b', 'C:\\%PATH%', 'C:\\a|b', 'C:\\a^b'
   assert.strictEqual(planVSCodeLaunch(bad, env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a')), undefined, bad);
 }
 assert.strictEqual(planVSCodeLaunch('C:\\p', env('win32', [], { LOCALAPPDATA: local }, 'C:\\Users\\a')), undefined);
+// spec 009 FR-015: VS Code, then Insiders, then VSCodium, each found the same way; the plan names the edition
+assert.deepStrictEqual(EDITIONS.map((e) => e.name), ['VS Code', 'VS Code Insiders', 'VSCodium']);
+p = planVSCodeLaunch('/x', env('linux', ['/usr/bin/code'], { PATH: '/usr/bin' }, '/home/a'));
+assert.strictEqual(p?.edition, 'VS Code', 'stable is named');
+p = planVSCodeLaunch('/x', env('linux', ['/snap/bin/code-insiders'], { PATH: '' }, '/home/a'));
+assert.deepStrictEqual([p?.command, p?.edition], ['/snap/bin/code-insiders', 'VS Code Insiders']);
+p = planVSCodeLaunch('/x', env('linux', ['/opt/vsc/codium'], { PATH: '/opt/vsc' }, '/home/a'));
+assert.deepStrictEqual([p?.command, p?.edition, p?.args], ['/opt/vsc/codium', 'VSCodium', ['/x']]);
+p = planVSCodeLaunch('/x', env('linux', ['/usr/bin/codium', '/usr/bin/code-insiders', '/usr/bin/code'], { PATH: '/usr/bin' }, '/home/a'));
+assert.strictEqual(p?.edition, 'VS Code', 'all three installed: stable first');
+p = planVSCodeLaunch('/x', env('linux', ['/usr/bin/codium', '/usr/bin/code-insiders'], { PATH: '/usr/bin' }, '/home/a'));
+assert.strictEqual(p?.edition, 'VS Code Insiders', 'Insiders before VSCodium');
+p = planVSCodeLaunch('/Users/a/p', env('darwin', ['/Applications/Visual Studio Code - Insiders.app/Contents/Resources/app/bin/code'], { PATH: '/usr/bin' }, '/Users/a'));
+assert.strictEqual(p?.edition, 'VS Code Insiders', 'macOS Insiders app bundle');
+p = planVSCodeLaunch('/Users/a/p', env('darwin', ['/Users/a/Applications/VSCodium.app/Contents/Resources/app/bin/codium'], { PATH: '' }, '/Users/a'));
+assert.deepStrictEqual([p?.edition, p?.command], ['VSCodium', '/Users/a/Applications/VSCodium.app/Contents/Resources/app/bin/codium']);
+{
+  const local = 'C:\\Users\\a\\AppData\\Local';
+  const ins = `${local}\\Programs\\Microsoft VS Code Insiders\\Code - Insiders.exe`;
+  p = planVSCodeLaunch('C:\\proj', env('win32', [ins], { LOCALAPPDATA: local }, 'C:\\Users\\a'));
+  assert.deepStrictEqual([p?.command, p?.args, p?.edition], [ins, ['C:\\proj'], 'VS Code Insiders']);
+  const cod = 'C:\\Program Files\\VSCodium\\VSCodium.exe';
+  p = planVSCodeLaunch('C:\\proj', env('win32', [cod], { ProgramFiles: 'C:\\Program Files' }, 'C:\\Users\\a'));
+  assert.deepStrictEqual([p?.command, p?.edition], [cod, 'VSCodium']);
+  // a codium.cmd on PATH with no VSCodium.exe next to it goes through the guarded cmd.exe path
+  p = planVSCodeLaunch('C:\\proj', env('win32', ['C:\\tools\\bin\\codium.cmd'], { PATH: 'C:\\tools\\bin', SystemRoot: 'C:\\Windows' }, 'C:\\Users\\a'));
+  assert.deepStrictEqual([p?.command, p?.edition], ['C:\\Windows\\System32\\cmd.exe', 'VSCodium']);
+}
+
 console.log('vscode launcher: all checks passed');

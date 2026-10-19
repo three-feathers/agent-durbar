@@ -385,6 +385,8 @@ export interface DurbarApi {
   cancelQueuedModel?(id: string, queueId: string): Promise<{ ok: boolean; error?: string }>;
   /** Compact the context of agent `id` now (spec 030); `focus` is an optional short text. */
   compact?(id: string, focus?: string): Promise<{ ok: boolean; error?: string; result?: CompactResult }>;
+  /** A hand-off summary of the session, for a new session's first message (spec 030 FR-034); never sent by itself. */
+  handoff?(id: string): Promise<{ ok: boolean; error?: string; summary?: string; costUsd?: number }>;
   /** Close or open the door of the room (folder) of agent `id`; remembered. */
   setRoomClosed?(id: string, closed: boolean): Promise<{ ok: boolean }>;
   /** Hide or show the folder of agent `id`; the choice is remembered. */
@@ -486,7 +488,7 @@ export interface DurbarApi {
   resolvePermission(id: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean): Promise<void>;
   /** Forget one "Approve for this session" grant (key from the `grants` event). */
   revokeGrant(id: string, key: string): Promise<void>;
-  openInVSCode(id: string): Promise<{ ok: boolean; error?: string }>;
+  openInVSCode(id: string): Promise<{ ok: boolean; error?: string; edition?: string }>;
   /** Earlier Copilot CLI/SDK sessions in this agent's folder (newest first). Optional: not in the simulator. */
   listPrevious?(id: string): Promise<{ ok: boolean; error?: string; sessions: PreviousSession[] }>;
   /** Resume one of them as a new agent in the same folder; `replace` retires this agent if it was never used. */

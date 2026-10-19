@@ -7,7 +7,8 @@ Thanks for looking. This is an early alpha; small, focused pull requests are eas
 ```bash
 npm ci
 npm run build
-npm test            # permission broker, attachment rules, VS Code launcher; no Copilot, no credits
+npm test            # every unit suite, compiled once and run in parallel (~20 s); no Copilot, no credits
+# merged branches are deleted by the daily Branch cleanup workflow one day after the merge (spec 008 FR-024)
 DURBAR_SIM=15 npm start   # 15 simulated agents, no sessions, no AI credits
 ```
 
@@ -25,7 +26,7 @@ Node 20.19+ or 22.12+ is required. `npm start` with real sessions needs a GitHub
 
 ## Spec Kit workflow is mandatory
 
-Agent Durbar is spec-driven with [GitHub Spec Kit](https://github.com/github/spec-kit). **No code without a spec, a plan and tasks.** This applies to everyone, including coding agents and the maintainer. The rules live in [`.specify/memory/constitution.md`](.specify/memory/constitution.md) (principle I); the specs live in [`specs/`](specs/README.md) (001-010 describe what is already built, 011 is partly built, 012 is planned (spec, research, plan and tasks, no code), 013-014 are backlog drafts, 015-021 and 023 are built).
+Agent Durbar is spec-driven with [GitHub Spec Kit](https://github.com/github/spec-kit). **No code without a spec, a plan and tasks.** This applies to everyone, including coding agents and the maintainer. The rules live in [`.specify/memory/constitution.md`](.specify/memory/constitution.md) (principle I); the specs live in [`specs/`](specs/README.md) (001-010 describe what is already built, 011 and 012 are built, 013 was run on a real session, 014 is a backlog draft, 015-021 and 023 are built; the index lists the rest).
 
 | Step | Command (Copilot Chat in VS Code) | Produces |
 | --- | --- | --- |

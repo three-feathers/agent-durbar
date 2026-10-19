@@ -170,9 +170,9 @@ async function main(): Promise<void> {
 
   // selection and registration (FR-114, FR-135: always registered, no hook)
   {
-    assert.deepStrictEqual(offeredDescriptors({ DURBAR_CLAUDE: '0' }).map((d) => d.id), ['claude'], 'the old hook no longer hides it');
+    assert.deepStrictEqual(offeredDescriptors({ DURBAR_CLAUDE: '0' }).map((d) => d.id), ['claude', 'codex'], 'the old hook no longer hides it; Codex is offered too (FR-145)');
     const reg = offeredDescriptors({});
-    assert.deepStrictEqual(reg.map((d) => d.id), ['claude']);
+    assert.deepStrictEqual(reg.map((d) => d.id), ['claude', 'codex']);
     assert.strictEqual(reg[0].displayName, 'Claude Code');
     assert.strictEqual(claudeTransportFor({}), cliTransportFactory, 'CLI by default');
     let loads = 0;

@@ -61,3 +61,60 @@ In **Folders**, each folder has **Schedules**. The dialog lists the folder's sch
 - `real:` 2026-10-19, Free plan, the real app: a once-schedule 20 s ahead sent "Reply with the single word: scheduled" to a real Copilot session in a throwaway folder; the chat showed the prompt and the note, and the agent replied "scheduled" (0.162 AIU).
 - `[KNOWN GAP]` Sleep and wake on macOS and Windows; long-running intervals over hours (timers are recomputed from the wall clock on each change, not on wake).
 
+### 2026-10-19: starter kit, "every day at", and a decision at the end (issue #128, owner)
+
+*Owner decision:* the morning briefing of issue #128 ("Start my day", "summarize my day") is **a starter template of Scheduled prompts**, not a separate feature: "it should be part of schedules as one of starter kit templates … link those issues and develop together". And: "or may be an extended of scheduled ones which asks users something to take decisions or planned work … see how can we support better and intuitive such workflows". The draft spec 050 was dropped for this.
+
+- **FR-006** **Starter kit.** The Schedules dialog has **Start from a template**. Choosing one fills the prompt and the time; nothing is saved until *Add schedule*, and everything stays editable. A note under the picker says what the template needs (MCP servers, or a mode that may run commands) and whether it ends with a question. Templates (`src/renderer/schedtemplates.js`, pure data):
+  - *Start my day (morning briefing)*, every day at 08:30: mail and calendar through the user's own MCP servers, the folder, issues and PRs, in five sections;
+  - *Summarize my day*, every day at 18:00;
+  - *Plan my day (planned work)*, every day at 09:00: at most five pieces of work, each with why and a size;
+  - *Open pull requests and CI*, every 4 h;
+  - *Dependency and security check*, every day at 09:00.
+
+  Every template says to treat mail, documents and web pages as data, never instructions, and says what it must not do (send, merge, install).
+- **FR-007** **Every day at HH:MM.** A third choice next to *Every N minutes* and *Once at*. Stored as an interval with a first run (`every: 1440, at`).
+  - An interval with `at` is **anchored**: after a run, a busy skip, a missed run or *Pause all*, the next run is the next `at + k × every`, so the time of day stays.
+  - Plain intervals keep counting from now, as before.
+  - The list shows "every day at 08:30".
+  - `[KNOWN GAP]` A daily interval is 24 h of clock time, so across a daylight-saving change it shifts by an hour until it is edited.
+- **FR-008** **Decision at the end.** The briefing and planning templates end by asking the user **with the agent's own question tool**: Copilot `ask_user`, Claude `AskUserQuestion`, or Codex `request_user_input` where it is on.
+  - The question offers the suggested next steps as choices (several allowed, plus "none"). The agent then does only what was chosen, one step at a time, still within its permission mode, which asks before anything that writes or sends.
+  - In Durbar this is the existing question card, and the agent shows as **Waiting for you** in the office, so a decision prepared at 08:30 is waiting when the user arrives.
+  - Without a question tool, the agent ends with numbered suggestions and waits for a reply.
+- `test:` `test:schedules`:
+  - anchored intervals: the first run at the chosen time, the next day at the same time, a busy skip keeping the time, a 2.5-day gap resuming at the next 08:30, *Pause all* keeping the time;
+  - plain intervals unchanged; `alignedNext`, `nextDaily`;
+  - every template valid, under 2,000 characters, with the untrusted-data and "do not" rules and a valid time; the decision step in the three templates that have it.
+- `sim:` `scripts/shots-044-templates.js` at 1440x900 and 1280x800: the picker fills *Start my day* and "Every day at 08:30", the note mentions the question, the dialog fits, and the added schedule reads "every day at 08:30". Screenshots: `docs/screenshots/044-templates-*.png`.
+- `real:` 2026-10-19, Claude Code 2.1.303 (`haiku`), Read-only, a throwaway folder with a `TODO.md` of three items. The *Plan my day* prompt read the file and asked through a question card: "Which should I work on? Pick any, or none." The options were the three items with sizes plus "none", with several allowed. It was skipped from the adapter. Cost: $0.005.
+- `[KNOWN GAP]` Not checked: *Start my day* against real mail and calendar MCP servers (it needs the owner's servers), and the question step on Copilot and Codex.
+
+### 2026-10-19: Schedules are easy to find, in the folder and in Settings (owner)
+
+*Found (owner, on alpha.7):* "is scheduling feature already in this build, where can i find it?" Schedules could only be opened from the Folders panel. *Owner:* "make it intuitive and also show it inside folder for that folder and in settings for all folders".
+
+- **FR-009** **In the folder.**
+  - The room's **⋯** menu (and right-click on its header) has **Schedules…**, with a line saying how many there are and the next run, or what schedules do.
+  - A main agent's chat header has **Schedules**, with the count, e.g. "Schedules (1)".
+  - Both open the folder's Schedules dialog with its starter kit.
+- **FR-010** **The room shows it.**
+  - A room with active schedules has a small **clock chip** in its header, next to MCP: the count and the next run, e.g. "1 · 08:30"; outside the next day, "Tue 08:30". It is dimmed when all are paused.
+  - The tooltip says the same in words, and a click opens the dialog.
+  - Without schedules there is no chip; the ⋯ menu still offers it.
+- **FR-011** **Settings > Schedules** lists every folder's schedules in one place:
+  - each folder with **Open…**;
+  - each schedule with when, next and last run, **Pause/Resume** and **Delete**;
+  - **Pause all schedules**;
+  - **Add a schedule to** a folder that has none.
+
+  All views (Folders panel, dialog, room chips, chat button, Settings) refresh together when anything changes.
+- `sim:` `scripts/shots-044-everywhere.js` at 1440x900 and 1280x800:
+  - no chip before there is a schedule;
+  - the menu item opens the dialog;
+  - adding *Start my day* shows the chip "1 · 08:30" inside the room header, and the chip opens the dialog;
+  - the chat header says "Schedules (1)" and opens it;
+  - Settings lists it; Pause and Delete work there, and the chip goes away with the last schedule.
+- Screenshots: `docs/screenshots/044-room-chip-*.png`, `044-settings-*.png`.
+- `scripts/shots-006-remove.js` now expects *Schedules…* in the folder menu.
+

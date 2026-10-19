@@ -207,6 +207,28 @@ export async function detectClaude(env: DetectEnv, exec: Exec, configuredPath?: 
   return r;
 }
 
+export const CODEX_SIGN_IN_HINT = 'Sign in first: run `codex login` in a terminal, then refresh the agent kinds.';
+
+/**
+ * Codex (spec 012 FR-137): the version probe, then `codex login status` (no prompt, nothing billed). "Not logged in" (it exits 1)
+ * means not signed in (an exit code alone is not enough: an older CLI without the command fails too); exit 0 with "Logged in" means ready. Nothing of the output is kept; anything unclear keeps `ready`.
+ */
+export async function detectCodex(env: DetectEnv, exec: Exec, configuredPath?: string): Promise<DetectResult & { path?: string }> {
+  const r = await detectBinary(CODEX_BINARY, env, exec, configuredPath);
+  if (r.state !== 'ready' || !r.path) return r;
+  try {
+    const a = await execFound(r.path, ['login', 'status'], env, exec);
+    if (a && !a.timedOut && !a.errorCode) {
+      const text = `${a.stdout}\n${a.stderr}`;
+      if (/\bNot logged in\b/i.test(text)) return { ...r, state: 'not-signed-in', hint: CODEX_SIGN_IN_HINT };
+      if (a.code === 0 && /\bLogged in\b/i.test(text)) return { ...r, hint: 'Signed in to Codex on this computer.' };
+    }
+  } catch {
+    /* unclear: ready, as before */
+  }
+  return r;
+}
+
 /** No I/O: the runtime ships with the app and its sign-in is learned at the first start (FR-041). */
 export async function detectCopilot(): Promise<DetectResult> {
   return { state: 'ready', hint: COPILOT_HINT };
@@ -231,6 +253,7 @@ export function nodeDetectEnv(): DetectEnv {
 export function detectorFor(id: string): ((d: AdapterDescriptor) => Promise<DetectResult>) | undefined {
   if (id === 'copilot') return () => detectCopilot();
   if (id === 'claude') return () => detectClaude(nodeDetectEnv(), nodeExec).then(({ path: _p, ...r }) => r); // `--version`, then `auth status` (FR-132); never a prompt (FR-010)
+  if (id === 'codex') return () => detectCodex(nodeDetectEnv(), nodeExec).then(({ path: _p, ...r }) => r); // `--version`, then `login status` (FR-137)
   return undefined;
 }
 

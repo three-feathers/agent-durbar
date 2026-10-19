@@ -105,3 +105,48 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
 - **FR-018** `[IMPLEMENTED]` `test:` The app names **Three Feathers** as author/owner and credits three key contributors: `vikramgorla`, `fjcabello`, `rubenlupi` (GitHub handles are used as the names, decided by Vikram 2026-10-16). They are defined once in `src/shared/about.ts` and used by: `app.setAboutPanelOptions` (applicationName, version, copyright, credits for macOS/Windows, authors for Linux, website); Settings > About (via `settings:get`); `package.json` `author` (Three Feathers) and `contributors`; electron-builder `copyright` (macOS `NSHumanReadableCopyright`, Windows file legal copyright) = `Copyright (c) 2026 Three Feathers contributors`; `LICENSE` (same line, text stays MIT); README credits. `scripts/test-about.ts` asserts the About options contain `Three Feathers` and all three handles, and that package.json, `copyright`, LICENSE and README agree with the constants.
 - **FR-019** `[IMPLEMENTED]` `test:` appId changed to `io.github.three-feathers.agentdurbar` (was `io.github.vikramgorla.agentdurbar`; changes FR-001). Hyphens are valid in macOS bundle ids and Windows AppUserModelIDs. Nothing was released to users, so no migration; an earlier test install is a separate app. Saved data lives in the Electron user-data folder, named after the app name (not the id), so it is unaffected (`read:` and checked by printing `app.getPath('userData')`, see the pull request).
 - To use real names later, change `CONTRIBUTORS` (and `package.json` `contributors`). `[KNOWN GAP]` The macOS/Windows About panel and installer metadata were not looked at on those OSes (`read:`); only Linux was run.
+
+### 2026-10-19: faster CI (owner: "ci is the new bottleneck")
+
+*Measured on `main` before the change:* the slowest job, the office check, took 6.7 min (381 s of it in `check:office`). `npm test` took about 240 s on each of the three OSes, and about 200 s of that was 40 copies of the same `tsc -p tsconfig.scripts.json`: every `test:*` script compiles on its own. The package smoke waited for the build-and-test jobs before starting.
+
+- **FR-020** `npm test` runs `scripts/run-tests.js`. It compiles the test scripts **once**, then runs the suites named in `test:serial` (the old chain, kept as the single list and still runnable) **in parallel**, each suite's steps in order. The worker count is `TEST_JOBS`, by default the number of CPUs up to 8. Each suite's output is printed whole when it ends, with every line of a failing suite. A name filter is allowed: `npm test -- folders`. `test:` on Linux, all 40 suites passed in about 16 s, against about 240 s before, in four runs at 4 and 8 workers; a deliberately broken suite fails the run.
+- **FR-021** `check:office` can be sharded: `OFFICE_SHARDS=n OFFICE_SHARD=k` runs every n-th unit (one window size of one block), starting at k. CI runs **4 shard jobs** in parallel. The required check **Office layout check (xvfb)** keeps its name: it waits for the shards and passes only when all of them passed, so the repository ruleset does not change. `test:` 3 shards locally gave 127 + 92 + 83 = 302 checks, the same total as one full run.
+- **FR-022** The **package smoke** no longer waits for build-and-test. It builds by itself.
+- **FR-023** A pull request that changes only `docs/`, `specs/` or Markdown files skips the build, test, package and office jobs. A small **What changed** job decides; a skipped required job counts as passed, and the office aggregator passes on "skipped". Pushes to `main` always run everything.
+- **FR-024** `.github/workflows/branch-cleanup.yml` deletes branches whose pull request was **merged more than a day ago**. It runs daily (03:17 UTC) or by hand; a hand run defaults to a dry run. It never deletes:
+  - a fork's branch;
+  - the default branch;
+  - a branch an open pull request still uses;
+  - a branch that no longer points at the commit its pull request merged (new work after the merge is kept).
+  
+  It uses the workflow's own token (`contents: write`). A deleted branch can be restored from its pull request page. `test:` the same script dry-run locally against the repository listed 7 branches to delete and skipped the ones already gone. Not yet run as a workflow.
+- **Measured after the change** (PR #250's own run, 2026-10-19):
+  - wall time **2.5 min**, against about 7 min;
+  - build and test: ubuntu 26 s, macOS 36 s, Windows 87 s (each about 270 s before);
+  - office shards 122-129 s each, in parallel; package smoke 25 s;
+  - the What changed job 7 s and the aggregator 2 s.
+- The branch cleanup workflow had not run yet when this was written.
+
+### 2026-10-19: the running window shows the app icon on Linux (issue #247)
+
+*Found* (after the new icon, #246):
+- `BrowserWindow` got no `icon`, so `npm start` on Linux showed Electron's default icon.
+- `package.json` had no `desktopName`, so a desktop could not link the running AppImage window to its `.desktop` entry, and showed a generic icon in the dock.
+- Windows and macOS take the icon from the `.exe` and `.icns`.
+
+- **FR-025** `[IMPLEMENTED]` On Linux the window is created with `icon` set to the app icon (`build/icon.png`, copied to `dist/icon.png` by the build, so the packaged app has it in `app.asar`). Other platforms are unchanged.
+- **FR-026** `[IMPLEMENTED]` `package.json` has `"desktopName": "agent-durbar.desktop"` and `build.linux.syncDesktopName: true`. Electron then uses `agent-durbar` as the window's app_id / WM_CLASS, and the AppImage's desktop entry has the same name and `StartupWMClass`. Without it, electron-builder warned.
+- `test:` (2026-10-19, Linux, xvfb):
+  - the AppImage built from this branch has `agent-durbar.desktop` with `StartupWMClass=agent-durbar`; the published alpha.6 AppImage has `StartupWMClass=Agent Durbar`, which does not match the window, so that was the bug;
+  - the running packaged window has `WM_CLASS` `agent-durbar` and a `_NET_WM_ICON`; on main, `_NET_WM_ICON` was missing;
+  - `dist/icon.png` is in `app.asar`.
+  
+  Not checked by eye on a GNOME or KDE dock.
+
+### 2026-10-19: CI on `main` no longer cancels itself
+
+*Found:* `ci.yml` had `cancel-in-progress: true` for every ref. When two PRs merged a few minutes apart, the release commit of alpha.7 (`d90fcd4`) had its CI cancelled twice, by the next merge and again during a re-run. Nothing proved that commit green, although the packaged check passed on it.
+
+*Corrected:* `cancel-in-progress` is true only for pull requests, where a newer push supersedes the old run. On `main`, every merge commit's run finishes, so a release can be tagged on a commit with a complete CI run. Runs on `main` now overlap a little more; the cost is runner minutes, which are free for this public repository.
+

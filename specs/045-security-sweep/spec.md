@@ -11,7 +11,7 @@
 | --- | --- | --- | --- |
 | CodeQL `js/biased-cryptographic-random` (high) | #32 | `src/main/settings.ts` `randomPlaceId` | **Fix** (FR-001) |
 | CodeQL `js/double-escaping` (high) | #1 | `src/renderer/app.js` remove-folder confirm | **Fix** (FR-002) |
-| CodeQL `js/shell-command-injection-from-environment` (medium) | #31 | `src/main/vscode.ts` (and the same pattern in `src/adapters/detect.ts`) | **Fix** (FR-003) |
+| CodeQL `js/shell-command-injection-from-environment` (medium) | #31 | `src/main/vscode.ts` (and the same pattern in `src/adapters/detect.ts`) | **Fix** (FR-003). The scan still flags that the path to Windows' own `cmd.exe` comes from `SystemRoot`, as Windows itself uses it. Dismissed as "won't fix" with that reason. |
 | CodeQL `js/incomplete-url-substring-sanitization` (high) | #33 | `scripts/test-codex-modes.ts` | False positive: a test assertion that a summary string mentions a host, not a URL check. Dismissed with that reason. |
 | CodeQL `js/bad-code-sanitization` (medium) | #2-#30 | `scripts/e2e-driver.js`, `scripts/shots-*.js` | Dev-only simulator drivers. They build page code from constants with `JSON.stringify` and run it in the local test window; nothing comes from outside. Dismissed as "used in tests". |
 | Own review: Electron window | - | `src/main/main.ts` | `will-navigate` let the window load **any** `file://` page, which would get the preload bridge; Electron **grants** web permissions (camera, microphone, notifications, ...) unless a handler says no. **Fix** (FR-004, FR-005). Already right: `contextIsolation`, `sandbox`, no `nodeIntegration`, new windows denied, a CSP without remote sources, `openExternal` only for http(s). |

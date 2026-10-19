@@ -16,7 +16,7 @@
 - [x] T020 (2026-10-19) Give workspace sessions access to all roots (SDK `additionalDirectories`-style option, check the SDK first) or document the limit in the README. [FR-010, FR-019: Copilot `additionalDirectories`, Claude `--add-dir`, tests, docs]
 - [x] T021 (2026-10-19) Decide whether per-folder session count should persist (clarify). [FR-011] Decided 2026-10-19 by the owner: the last session continues (FR-020, FR-021): store, restore, wake IPC with history replay, simulator, real check on Copilot and Claude, docs
 - [ ] T022 Extract the main-process add/restore/resume logic into testable modules (inject adapter and store) and add credit-free tests. [FR-015]
-- [ ] T023 Capture a real `events.jsonl`/`getEvents()` (redacted) as a fixture and re-run `test:history` on it (needs feature 013). [FR-009]
+- [x] T023 Capture a real `events.jsonl`/`getEvents()` (redacted) as a fixture and re-run `test:history` on it (needs feature 013). [FR-009] (2026-10-19: `scripts/fixtures/events/real-getevents-restart.json`, from the FR-021 real check's own throwaway session, read by resuming it without a prompt; `test:history` replays it to its two turns)
 - [x] T024 Real-session check of lazy start and resume (feature 013). [FR-009]
 - [ ] T025 Offer sessions started in subfolders (clarify matching rule). [FR-013]
 
@@ -30,4 +30,6 @@
 - [x] T028 `agents:remove` in main (refuses the last main session of a folder and helpers), bridge, simulator; **Remove session** in the chat header with a confirm when busy [FR-017]
 - [x] T029 `label` in `SavedFolder` (parse, save, restore) with `test:folders`; `folders:rename` in main, bridge, simulator; Folders > **Rename** dialog; room name everywhere [FR-018]
 - [x] T030 Screenshots at 1440x900 and 1280x800, README, CHANGELOG, specs index [FR-017, FR-018]
+- [x] T031 Search box in Previous sessions: title filter (case- and accent-insensitive) over Copilot sessions and VS Code chats, "N of M", "No sessions match", Escape clears; matcher unit test, simulator, `check:office` at both sizes, docs (issue #252) [FR-023]
 
+- [x] T026 (2026-10-19) Remove folder where the user is: chat header for a single-session folder, right-click folder menu on the room header [FR-022]

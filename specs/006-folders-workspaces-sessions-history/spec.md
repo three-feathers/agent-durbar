@@ -112,6 +112,14 @@ For a folder that has not been used yet in this run, a "Previous sessions" panel
 
 ## Changes
 
+### 2026-10-19: search box in Previous sessions (issue #252, task T031)
+
+*Missing:* a folder's *Previous sessions* panel lists earlier Copilot sessions and VS Code chats newest first, with no way to find one when there are many (for example 2 Copilot sessions and 14 VS Code chats).
+
+*Corrected:*
+- **FR-023** `[IMPLEMENTED]` (`test:` `scripts/test-sessionsearch.ts`; `sim:` `check:office` case at 1440x900 and 1280x800; screenshots `docs/screenshots/006-previous-sessions-search-*.png`) *Previous sessions* has a search box above the lists, shown when there are at least 2 entries in total. Typing filters both groups (Copilot sessions and VS Code chats) by **title**, ignoring case and accents; the newest-first order is kept. Each group header shows "N of M" while a query is active, and a group with no match says "No sessions match". **Escape** clears the box. The query is per panel, not saved, and never sent anywhere. Only titles are searched, not conversation content (that would read more data; out of scope).
+- Simulator and unit tests (the matcher), `check:office` at 1440x900 and 1280x800 with the box shown; no AI credits.
+
 - **2026-10-17, spec 033 (floors), cross-reference.** Folders now belong to a floor (`floor` in `durbar-folders.json`, absent = Ground floor). **Hide (US4, FR-005) is unchanged** and combines with floors: a room shows only when it is not hidden and its floor is on; the Floors panel marks hidden folders. `+ Folder` / `+ Workspace` add to the floor chosen in the Floors panel. No requirement of this spec changes.
 
 ### 2026-10-18: a calm warning when the folder is your home, a parent of it, or a root (issue #170)
@@ -149,3 +157,18 @@ For a folder that has not been used yet in this run, a "Previous sessions" panel
 - **FR-021** `[IMPLEMENTED]` After a restart the folder's agent comes back under that session's id. It is still lazy: nothing runs until it is needed. When its chat is opened, or a message is sent first, Durbar resumes that session; resuming sends no prompt. It resumes only after checking that the session is still among the folder's previous sessions of that harness (constitution: resumed sessions must belong to the agent's folder). The chat then shows the earlier conversation (the same replay as Resume, FR-009) and a note "Continued after restart: <title>." A session that is gone (deleted, or not in this folder) gives a new session under the same id, with the note "The last session is no longer available; this is a new session." A folder without a remembered session behaves as before.
 - Only the last session comes back; a folder's other sessions stay under Previous sessions (FR-011 otherwise unchanged).
 - `test:` the folder store (parse, set, no rewrite when unchanged, clear on remove, bad ids dropped). `sim:` a restored agent that continues its session when opened (`simresume=1`), at both sizes. `sim:` `scripts/shots-006-continue.js`. `real:` 2026-10-19, the built app with a fresh profile and two launches per harness. First launch: a read-only folder was added and asked to remember a code word. Second launch: the card said "Your last session here"; opening it showed the earlier turn and the "Continued after restart" note; asked for the word, the agent answered `marmalade`. The folders file held only `lastSession: {id, adapterId}`. Done for Claude Code 2.1.303 (`haiku`, 2 prompts, about $0.005) and Copilot (`auto`, 2 prompts). The fallback was checked too: with the remembered id changed to one that does not exist, opening the agent said "The last session is no longer available; this is a new session." and it was Ready, with no prompt sent. Not checked: macOS/Windows.
+
+### 2026-10-19: removing a folder is easy to find (owner: "i still dont find a way to remove a folder/workspace from the durbar")
+
+*Found:* Remove existed only in the **Folders** panel (top bar), and nothing in the office or the chat pointed there. A folder with a single session had no remove action in its chat header: Remove session is hidden for the last session (FR-017).
+
+- **FR-022** `[IMPLEMENTED]` Removing a folder (or a `.code-workspace`) is offered where the user already is, through the same `removeFolder` flow as the Folders panel (its confirmation, ending the sessions):
+  - **Chat header:** when the agent is its folder's only session, the slot of Remove session shows **Remove folder** (danger style).
+  - **Office:** right-click on a room's header (or Shift+F10 / the context-menu key while its door has focus) opens a **folder menu**: New session, Rename…, Hide, Remove folder…. It uses the same menu element, keyboard handling (arrows, Escape) and focus return as the mode menu. A **⋯** button next to the room's **+** (title "Folder actions") opens the same menu, so it can be found without knowing about right-click. In a narrow room (340 px or less) the ⋯ button stands in for **+**, since the menu has New session, so the header keeps fitting (spec 001 FR-023).
+  - Nothing changes in the Folders panel.
+- `sim:` `scripts/shots-006-remove.js` at 1440x900 and 1280x800: right-click and the ⋯ button both open the menu with the four actions; Remove folder from the menu and from a single-session chat header both remove the room after confirming; Cancel keeps it. `check:office` 302/302, including one-agent rooms. Screenshots: `docs/screenshots/remove-folder-*.png`.
+
+### 2026-10-19: history replay tested on a real `getEvents()` stream (T023)
+
+- `test:` `scripts/fixtures/events/real-getevents-restart.json` holds the 18 events of the throwaway Copilot session from the FR-021 real check. They were read by resuming that session, without a prompt. Redaction: ids are placeholders, the API call id and `transformedContent` are dropped, the system prompt is omitted, and the folder is `/work/demo`. `test:history` replays it to exactly its two turns (prompt, "OK", prompt, "marmalade"); session events, the system prompt and usage are not shown.
+

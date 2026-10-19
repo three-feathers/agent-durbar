@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ClaudeAdapter, PRE_TOOL_USE_HOOK, claudeArgs, claudeMdPrompt, claudeModelFlag, claudeModelOptions, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
+import { ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, handoffArgs, parseHandoffOutput, claudeMdPrompt, claudeModelFlag, claudeModelOptions, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import type { AgentEvent } from '../src/adapters/types';
 import { FakeClaudeChild, fakeSpawn } from './fakes/claude-cli';
@@ -613,6 +613,121 @@ async function main(): Promise<void> {
     await ad.send(sid, { text: 'again' });
     await until('second spawn', () => sp.calls[1]);
     assert.deepStrictEqual(sp.calls[1].args.slice(-2), ['--resume', sid], 'resumes after a crash');
+    await ad.stop(sid);
+  }
+
+  // ---- FR-150: a dollar cap on Claude's estimate: the CLI budget, the limit notice, the held message ----
+  {
+    assert.strictEqual(budgetText(0.5), '0.5');
+    assert.strictEqual(budgetText(0.123456), '0.1235');
+    assert.strictEqual(budgetText(-1), '0.0001', 'nothing left: Claude stops at once');
+    assert.strictEqual(budgetText(1e-7), '0.0001', 'never an exponent');
+    const at = (a: string[], f: string) => (a.includes(f) ? a[a.indexOf(f) + 1] : undefined);
+    assert.strictEqual(at(claudeArgs({ mode: 'read-only', sessionId: 's', resume: false }), '--max-budget-usd'), undefined, 'no cap, no flag');
+    const capped = claudeArgs({ mode: 'read-only', sessionId: 's', resume: true, maxBudgetUsd: 0.25 });
+    assert.strictEqual(at(capped, '--max-budget-usd'), '0.25');
+    assert.deepStrictEqual(capped.slice(-2), ['--resume', 's'], 'the session flag stays last');
+    assert.strictEqual(new ClaudeAdapter({ claudePath: async () => undefined }).capabilities.capUnit, 'usd');
+
+    const costOf = (c: FakeClaudeChild): number => (c as unknown as { cost?: number }).cost ?? 0;
+    const costTurn = (c: FakeClaudeChild, text: string): void => {
+      const cost = costOf(c) + 0.004; // a running total per CLI process, like streaming mode
+      (c as unknown as { cost?: number }).cost = cost;
+      c.send({ type: 'system', subtype: 'init', session_id: 'x', cwd: WS, model: 'claude-haiku-5-5', permissionMode: 'default', tools: [], mcp_servers: [] });
+      c.send({ type: 'assistant', message: { id: 'm-' + text, role: 'assistant', content: [{ type: 'text', text: 'ok ' + text }], usage: { input_tokens: 10, output_tokens: 2 } } });
+      c.send({ type: 'result', subtype: 'success', is_error: false, total_cost_usd: cost, usage: { input_tokens: 10, output_tokens: 2 } });
+    };
+    const { ad, sp, events } = make({ turn: costTurn });
+    const limits = (sid: string) => events.filter((e) => e.sessionId === sid && e.type === 'limit') as Array<AgentEvent & { phase: string; requestId?: string; maxAiCredits?: number | null; usedAiCredits?: number; action?: string }>;
+    const sid = await ad.start({ workspace: WS, quiet: true, maxAiCredits: 0.01 });
+    await ad.send(sid, { text: 'one' });
+    await until('first result', () => statuses(events, sid).includes('idle'));
+    assert.strictEqual(at(sp.calls[0].args, '--max-budget-usd'), '0.01', 'the whole cap on the first launch');
+    assert.strictEqual(limits(sid).length, 0, '$0.004 of $0.01: no limit yet');
+    await ad.send(sid, { text: 'two' });
+    await until('second result', () => statuses(events, sid).filter((x) => x === 'idle').length >= 2);
+    await ad.send(sid, { text: 'three' });
+    const ex = await until('limit exhausted', () => limits(sid).find((e) => e.phase === 'exhausted'));
+    assert.strictEqual(ex.maxAiCredits, 0.01);
+    assert.ok(Math.abs((ex.usedAiCredits ?? 0) - 0.012) < 1e-9, 'used = the estimate so far');
+    await ad.send(sid, { text: 'four' });
+    await tick(20);
+    assert.strictEqual(limits(sid).filter((e) => e.phase === 'exhausted').length, 1, 'one notice per stop, a further message is held too');
+    const turnsBefore = events.filter((e) => e.sessionId === sid && e.type === 'output').length;
+    await ad.resolveLimit(sid, 'not-the-id', { kind: 'unset' });
+    assert.strictEqual(limits(sid).filter((e) => e.phase === 'resolved').length, 0, 'an unknown request id is ignored');
+    // add $0.01: $0.01 more than the $0.012 used (rounded up to the cent: $0.03), the held message goes out on a relaunch with what is left
+    await ad.resolveLimit(sid, ex.requestId!, { kind: 'add', credits: 0.01 });
+    const ch = limits(sid).filter((e) => e.phase === 'changed').pop()!;
+    assert.strictEqual(ch.maxAiCredits, 0.03, 'add counts from the spend when it passed the cap');
+    assert.strictEqual(limits(sid).find((e) => e.phase === 'resolved')?.action, 'add');
+    await until('relaunch', () => sp.calls[1]);
+    assert.strictEqual(at(sp.calls[1].args, '--max-budget-usd'), '0.018', 'the relaunch gets the rest of the cap');
+    await until('held message answered', () => events.filter((e) => e.sessionId === sid && e.type === 'output').length > turnsBefore);
+    // Claude's own budget stop is the limit notice, not an error
+    sp.children[1].send({ type: 'result', subtype: 'error_max_budget_usd', is_error: true, total_cost_usd: costOf(sp.children[1]) });
+    const ex2 = await until('second notice', () => limits(sid).filter((e) => e.phase === 'exhausted')[1]);
+    assert.ok(!events.some((e) => e.sessionId === sid && e.type === 'status' && (e as { status: string; intent?: string }).status === 'error' && /budget/.test((e as { intent?: string }).intent ?? '')), 'no error card for the budget stop');
+    // Stop here: the message is dropped, the cap stays
+    await ad.resolveLimit(sid, ex2.requestId!, { kind: 'cancel' });
+    assert.strictEqual(limits(sid).filter((e) => e.phase === 'resolved').pop()?.action, 'cancel');
+    // a higher cap from the chip releases nothing (no held message) and the next message goes out
+    await ad.setCap(sid, 1);
+    assert.strictEqual(limits(sid).filter((e) => e.phase === 'changed').pop()?.maxAiCredits, 1);
+    await assert.rejects(ad.setCap(sid, 0.001), /Invalid cost cap/);
+    await ad.setCap(sid, null);
+    assert.strictEqual(limits(sid).filter((e) => e.phase === 'changed').pop()?.maxAiCredits, null);
+    const n = sp.calls.length;
+    await ad.send(sid, { text: 'five' });
+    await until('relaunch without a budget', () => sp.calls[n]);
+    assert.strictEqual(at(sp.calls[n].args, '--max-budget-usd'), undefined, 'no cap: no budget flag');
+    await ad.stop(sid);
+  }
+
+  // ---- spec 030 FR-034: hand-off summary from a forked one-shot (no tools, no MCP, no settings, not saved) ----
+  {
+    const a = handoffArgs({ sessionId: 'sid-1', model: 'haiku' });
+    const at = (f: string) => a[a.indexOf(f) + 1];
+    assert.strictEqual(at('--resume'), 'sid-1');
+    for (const f of ['--fork-session', '--no-session-persistence', '--strict-mcp-config']) assert.ok(a.includes(f), f);
+    assert.strictEqual(at('--tools'), '', 'no tools');
+    assert.strictEqual(at('--setting-sources'), '', 'no settings files');
+    assert.strictEqual(at('--output-format'), 'json');
+    assert.strictEqual(at('--max-budget-usd'), '0.5');
+    assert.strictEqual(at('--model'), 'haiku');
+    assert.ok(!handoffArgs({ sessionId: 's', model: 'auto' }).includes('--model'));
+    assert.match(at('-p'), /hand-off summary/);
+    const ok = parseHandoffOutput('noise\n' + JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: '```markdown\n## Goal\nX\n```', total_cost_usd: 0.0009 }));
+    assert.deepStrictEqual(ok, { summary: '## Goal\nX', costUsd: 0.0009 });
+    assert.deepStrictEqual(parseHandoffOutput(JSON.stringify({ type: 'result', subtype: 'error_max_budget_usd', is_error: true, result: 'partial', total_cost_usd: 0.5 })), { summary: '', costUsd: 0.5 });
+    assert.deepStrictEqual(parseHandoffOutput('not json'), { summary: '' });
+
+    const calls: Array<{ file: string; args: string[]; cwd: string }> = [];
+    let reply = { code: 0 as number | null, stdout: JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: '## Goal\nShip it', total_cost_usd: 0.002 }) };
+    const sp = fakeSpawn();
+    sp.next = scripted(okTurn);
+    const ad = new ClaudeAdapter({
+      claudePath: async () => '/usr/local/bin/claude',
+      makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }),
+      sessionExists: () => false, claudeMd: () => undefined, env: () => ({}),
+      runOnce: async (file, args, o) => (calls.push({ file, args, cwd: o.cwd }), reply),
+    });
+    const events: AgentEvent[] = [];
+    ad.onEvent((e) => events.push(e));
+    assert.strictEqual(ad.capabilities.handoff, true);
+    const sid = await ad.start({ workspace: WS, quiet: true, model: 'haiku', maxAiCredits: 1 });
+    assert.deepStrictEqual(await ad.handoffSummary(sid), { summary: '' }, 'nothing said yet: no run');
+    assert.strictEqual(calls.length, 0);
+    await ad.send(sid, { text: 'hi' });
+    await until('turn', () => statuses(events, sid).includes('idle'));
+    const r = await ad.handoffSummary(sid);
+    assert.deepStrictEqual(r, { summary: '## Goal\nShip it', costUsd: 0.002 });
+    assert.strictEqual(calls[0].cwd, WS, 'runs in the session folder (where Claude keeps the session)');
+    assert.ok(calls[0].args.includes(sid) && calls[0].args.includes('--fork-session'));
+    assert.ok(events.some((e) => e.type === 'usage' && (e as { costUsd?: number }).costUsd === 0.002), 'its cost counts as the session\'s usage');
+    assert.strictEqual(sp.calls.length, 1, 'the live CLI is not restarted');
+    reply = { code: 1, stdout: '' };
+    await assert.rejects(ad.handoffSummary(sid), /could not make a summary \(exit 1\)/);
     await ad.stop(sid);
   }
 

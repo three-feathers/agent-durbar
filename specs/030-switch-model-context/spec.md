@@ -185,7 +185,7 @@ No answers from the owner were available while this was written, so these are **
 - **Q: Adapter shape?** Decision: optional `setModel?` and `compact?`, events `model` and `compaction`, `ModelControl` data now, folded into spec 012's capabilities later. No Copilot type in the renderer or `src/shared`.
 - **Q: Real credits?** Decision: none in phases 1 and 2. Phase 3 tasks are `needs-owner-approval` with prompt counts.
 
-### Open questions for Vikram
+### Open questions for Vikram (answered 2026-10-19, see the decision record under Changes)
 
 1. **Q1 Plan and units.** Are you on usage-based AI credits (monthly plan) or a legacy annual plan with multipliers? The UI prefers token prices; do you want the multiplier shown at all when the account reports one?
 2. **Q2 Confirm threshold.** Confirm on any price increase (proposed), or only above a step you choose (for example 2x)?
@@ -233,3 +233,61 @@ No answers from the owner were available while this was written, so these are **
   - **Verified:** an unusable model answers `status: "cancelled"` (the adapter now says "not available on this Copilot account or plan"); `applied`, and `deferred` + `queueId` for a switch during a turn; `queue.removeAt` cancels it; **Stop drops a queued switch** (queue empty, no `model_change` later); history survives switch calls, compaction and resume; resume with or without `model` keeps `auto`; a manual compaction is one model call (0.19 AIU) and emits `compaction_start`/`compaction_complete` with `compactionTokensUsed`; a tiny conversation grows when summarised; `assistant.usage` fields and the real price unit (`costPerBatch` nano-AIU per batch; `gpt-6-luna`: 10 / 1 / 12.5 / 50 credits per million tokens for input / cache read / cache write / output); `auto` resolves to `gpt-6-luna` with a 272k window.
   - **Surprises, and what changed in the app:** (1) Stop drops a queued switch, where the simulator said it applies: the simulator now drops it and the UI shows "dropped when you stopped" instead of a stale "Next: ...". (2) The compaction's cost was not counted: the mapper now emits it as a `usage` event, so totals and the credit cap see it. (3) `history.compact` is allowed mid-turn and drains the queued switches; the adapter still refuses mid-turn (safe side). (4) A tiny conversation grows after compaction: the line says "too short to shrink"; `tokensRemoved` stays non-negative. (5) `account.getQuota` lags; credits are counted from usage events. (6) A no-op switch (auto to auto) still emits a `model_change`.
   - `[KNOWN GAP]` still unverified: a switch between two real models (history, first-call cost, new window), `confirmation_required` and the `compactionDecision` values (T045), the long tier's window and price, `billing.tokenPrices` and its unit (never returned on this plan), a queued switch to a real model under Stop. The UI keeps the "Not verified on a real account yet" note for that reason.
+
+### 2026-10-19: owner decision record (T047, issue #106)
+
+Vikram answered Q1-Q8 one by one in a Claude Code session on 2026-10-19. The proposed defaults become decisions except Q4 and Q6:
+
+- **Q1 Plan and units.** Design for usage-based **AI credits**: token prices first. A multiplier is shown only as a small extra line when a legacy annual plan reports one. The account is on the free plan today (`auto` only), and a paid Copilot plan is coming "soon".
+- **Q2 Confirm threshold.** Confirm on **any price increase**, an unknown price or the long-context tier. A cheaper switch applies at once with Undo. This is what is built.
+- **Q3 Switch while working.** **Queue** the switch until the reply ends, and let the user cancel it. This is what is built.
+- **Q4 Long-context tier.** The owner's answer: "I will get a paid account soon on copilot, we can check it there - we already have paid accounts on claude and codex, you can already check it there". Decision:
+  - the toggle stays as built, flagged "not verified on a real account";
+  - T044 runs on the paid Copilot plan once it exists;
+  - meanwhile the long-context models of Claude (`[1m]` ids) and Codex may be checked on the owner's paid accounts.
+- **Q5 Auto compaction.** Keep each runtime's **defaults**, with no Settings for the thresholds. T062 is dropped.
+- **Q6 Start fresh with a summary.** **Build it now**: T061 moves from "later" to scheduled. The summary is always shown for editing and only sent on the user's Send (Story 5, scenario 3).
+- **Q7 Folder default.** **The last model chosen in the folder**, with no separate setting. This is what is built.
+- **Q8 Real-account budget.** Run T041, T044 and T045 as soon as the paid Copilot plan exists, on the **two cheapest models** it lists, stopping at about **100 AI credits (USD 1)**. Where they apply, the same checks may run on Claude and Codex. Every run is recorded as `real:` with its cost.
+
+### 2026-10-19: new session with a reviewed summary (Q6, T061)
+
+The owner chose "build it now" (Q6). A new session can start from a **hand-off summary** of the current conversation. The user reviews and edits that summary, and nothing is sent until they press Start.
+
+- **FR-034** The adapter capability `handoff` (optional, false when missing) says that `handoffSummary(sessionId)` exists. It returns markdown text and **never changes the original conversation**:
+  - **Copilot:** `session.rpc.history.summarizeForHandoff()` (`@experimental` in SDK 1.0.22). An empty result counts as "no summary".
+  - **Claude Code:** a one-shot run of the user's `claude` on a **fork** of the session: `-p <fixed prompt> --resume <id> --fork-session --no-session-persistence --tools "" --strict-mcp-config --setting-sources "" --output-format json --max-budget-usd 0.50`. It has no tools, no MCP servers and no settings files, and the fork is not saved, so the original session file is not touched. Arguments go in an array, never through a shell.
+  - **Codex:** `thread/fork {threadId, ephemeral: true}` with the read-only sandbox and no approvals, then one turn with the same fixed prompt. The forked thread's final agent message is the summary. The fork is ephemeral (not saved), and its events are not shown in the chat.
+  - **Simulator:** a canned summary built from the agent's task and files.
+- **FR-035** The fixed prompt asks for a short markdown hand-off: goal, what was done, open items, important files and decisions, and next step. At most about 300 words, no secrets, no tool use. The summary is cut at 8,000 characters.
+- **FR-036** Where it shows:
+  - the start-fresh note gets **New session with a summary…**;
+  - the New session dialog gets a checkbox **Start with a summary of this conversation**, shown when the current agent is live and its kind has `handoff`.
+  - Either way, Durbar asks for the summary ("Preparing a summary…", which can be cancelled), then shows it in an **editable box**: *Cancel* or *Start new session*. On Start, the new session starts with the dialog's options, and the edited text is its **first message**. If the summary fails or comes back empty, Durbar says so and offers a plain new session. The new session can be another harness: the summary is plain text.
+- **FR-037** Cost: making the summary may use the model, so the box says "Making the summary used the model of this session (a small cost)". For Claude, the one-shot is capped at $0.50 and its estimate is added to the old agent's usage. `[UNVERIFIED]` whether Copilot's `summarizeForHandoff` spends credits (research): it is checked when the paid plan exists (Q8).
+- `[IMPLEMENTED]`:
+  - **Code:** `src/adapters/handoff.ts` (`HANDOFF_PROMPT`, `cleanSummary`); `handoffSummary` in `copilot.ts`, `claude.ts` (`handoffArgs`, `parseHandoffOutput`, a `spawn` with stdin closed) and `codex.ts` (fork events collected in `onNotification` and never mapped); the fake adapter and the simulator.
+  - **Wiring:** IPC `agents:handoff`, preload `handoff`; renderer `canHandoff`, `reviewHandoff`, the checkbox `#sdSum`, and the button "New session with a summary…" on the start-fresh note.
+- `test:`
+  - `test:handoff`: the prompt and the cleanup.
+  - `test:claudeadapter`: argv, parsing, no run before anything was said, the cost counted as usage, the live CLI untouched, and the error on exit 1.
+  - `test:runtime`: Codex fork params (`ephemeral`, `never`, `read-only`), the prompt going to the fork, the fork unsubscribed, nothing in the chat; contract C2 `handoffSummary() <=> capabilities.handoff`.
+- `sim:` `scripts/shots-030-handoff.js` at 1440x900 and 1280x800: the checkbox (off by default), the review box, the edited text sent as the new session's first message, Cancel starting nothing, and no checkbox for the basic kind. Screenshots: `docs/screenshots/handoff-dialog-*.png`, `handoff-review-*.png`.
+- `real:` 2026-10-19, on throwaway sessions about a garden plan:
+  - Claude Code 2.1.303 (`haiku`), one-shot with the exact `handoffArgs`: a correct five-part summary for $0.00086. No new file appeared in Claude's project folder, so the fork was not saved. Without closing stdin, the CLI waits 3 s ("no stdin data received"), hence `stdio: ignore`.
+  - Codex 0.163 (ChatGPT Plus), Read-only: a correct summary in 5.4 s, with no chat events from the fork.
+- `[KNOWN GAP]`:
+  - Copilot's `summarizeForHandoff` was not run on a real account; whether it spends credits is unverified (Q8, with the paid plan).
+  - The review box has no focus trap (Escape and the buttons work).
+
+### 2026-10-19: long context on Claude (Q4, checked meanwhile on the owner's paid Claude account)
+
+Q4 said the long-context tier could be checked on Claude while the paid Copilot plan is pending.
+
+- `real:` Claude Code 2.1.303, the adapter from `dist/`, one tiny prompt each, numbers only:
+  - `sonnet[1m]` was accepted and ran as `claude-sonnet-5-5`; the context event reported a window of **1,000,000** tokens; cost $0.062 with a cold cache.
+  - Plain `sonnet` also ran as `claude-sonnet-5-5` with a window of **1,000,000** (Sonnet 5.5 has it natively); cost $0.015.
+  - The account's model list (`listModelOptions`, no prompt) offers no `[1m]` variant.
+- **Result:** on Claude the context chip shows the real window from `modelUsage.contextWindow`, whatever alias was chosen. A separate "long tier" control is not needed for Claude: it would cost more and give nothing for Sonnet 5.5.
+- The Copilot long-context tier (T044, #103) still waits for the paid plan.
+

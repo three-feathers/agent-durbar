@@ -380,7 +380,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .stage .room{container:room / inline-size}
 .stage .room-head .room-name{min-width:0;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
 .stage .room-head:has(.room-aiu) .room-name{flex-shrink:1}
-.stage .room-head .door,.stage .room-head .room-new,.stage .room-head .room-mcp,.stage .room-head .siren,.stage .room-head .floor-tag{flex:none}
+.stage .room-head .door,.stage .room-head .room-new,.stage .room-head .room-more,.stage .room-head .room-mcp,.stage .room-head .siren,.stage .room-head .floor-tag{flex:none}
 @container room (max-width:340px){
   .stage .room .room-head .room-plant{display:none}
   .stage .room .room-head.room-head{padding-right:0}
@@ -388,6 +388,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
   .stage .room-head .room-dots{gap:5px}
 }
 @container room (max-width:280px){.stage .room-head .room-aiu{display:none}}
+/* spec 006 FR-022: in a narrow room the ⋯ folder menu (which has New session) stands in for the + button */
+@container room (max-width:340px){.stage .room-head .room-new:not(.room-more){display:none}}
 @container room (max-width:460px){.stage .room .room-head .room-path{display:none}} /* the path (also in the name's tooltip) goes before the name is cut */
 @container (max-width:250px){.rd.calm{display:none}}
 .stage:not([data-d="full"]) .room-name{flex:0 .05 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -552,6 +554,9 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .prev-toggle[aria-expanded="true"] .chev{transform:rotate(90deg)}
 .prev-c{margin-left:auto;font-weight:500;color:var(--muted);font-size:12px}
 .prev-body{max-height:min(30vh,250px);overflow-y:auto;padding:0 0 10px}
+.prev-q{display:block;box-sizing:border-box;width:100%;height:30px;margin:6px 0 2px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel,#fff);color:var(--ink);font:inherit;font-size:12.5px}
+.prev-q:focus-visible{outline:3px solid var(--focus,#4f7fa8);outline-offset:1px}
+.prev-n{font-weight:500;color:var(--muted);font-size:12px;margin-left:6px}
 .prev-h{font-size:12px;font-weight:650;color:var(--ink);margin:8px 0 4px}
 .prev-h small{font-weight:500;color:var(--muted);margin-left:6px}
 .tag{display:inline-block;font-size:10.5px;font-weight:650;padding:0 7px;border-radius:999px;background:var(--pb-waiting,#fbefd6);border:1px solid #f0d9a6;color:var(--amber-ink);vertical-align:1px}
@@ -583,6 +588,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .dlg .sd-agent[hidden]{display:none}
 .dlg select{height:34px;border:1px solid var(--line-2);border-radius:10px;background:#fff;padding:0 8px;font:inherit;font-size:13px;color:var(--ink)}
 .dlg input[type=number]{height:34px;border:1px solid var(--line-2);border-radius:10px;background:#fff;padding:0 10px;font:inherit;font-size:13px;color:var(--ink)}
+.ho-dlg{width:min(720px,calc(100vw - 32px))}
+.ho-dlg textarea{width:100%;box-sizing:border-box;min-height:260px;max-height:55vh;resize:vertical;border:1px solid var(--line-2);border-radius:10px;background:#fff;padding:10px 12px;font:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;color:var(--ink)}
 .dlg .dbtn{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}
 #foldersPop{position:fixed;top:58px;right:14px;z-index:40;width:min(660px,calc(100vw - 28px));max-height:min(70vh,520px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(40,35,25,.2);padding:8px 14px 12px}
 #foldersPop[hidden]{display:none}
@@ -632,22 +639,34 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .fp-h .fp-pause{float:right;font-size:12px;color:var(--ink-2);display:inline-flex;gap:6px;align-items:center;cursor:pointer}
 .sched-dlg{width:min(620px,calc(100vw - 32px))}
 .sched-dlg .sc-list{display:grid;gap:6px;margin:6px 0 12px;max-height:240px;overflow-y:auto}
-.sched-dlg .sc-row{display:flex;gap:6px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
-.sched-dlg .sc-row.off .sc-t{opacity:.6}
-.sched-dlg .sc-t{flex:1;min-width:0;display:flex;flex-direction:column}
-.sched-dlg .sc-t b{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sched-dlg .sc-t small{font-size:11.5px;color:var(--muted)}
-.sched-dlg .sc-row .btn{height:28px;padding:0 10px;font-size:12px}
+.sched-dlg .sc-row,.sched-set .sc-row{display:flex;gap:6px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+.sched-dlg .sc-row.off .sc-t,.sched-set .sc-row.off .sc-t{opacity:.6}
+.sched-dlg .sc-t,.sched-set .sc-t{flex:1;min-width:0;display:flex;flex-direction:column}
+.sched-dlg .sc-t b,.sched-set .sc-t b{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sched-dlg .sc-t small,.sched-set .sc-t small{font-size:11.5px;color:var(--muted)}
+.sched-dlg .sc-row .btn,.sched-set .sc-row .btn{height:28px;padding:0 10px;font-size:12px}
 .sched-dlg .sc-empty,.sched-dlg .sc-paused{font-size:12.5px;color:var(--muted);margin:6px 0}
 .sched-dlg .sc-paused{color:var(--amber-ink,#8a5a00)}
 .sched-dlg textarea{width:100%;box-sizing:border-box;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--surface);color:var(--ink);resize:vertical}
 .sched-dlg .sc-when{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:8px;font-size:13px}
 .sched-dlg .sc-when input[type=number]{width:70px}
+.sched-dlg .sc-tpl-note{font-size:12px;color:var(--muted);margin:2px 0 6px;line-height:1.4}
 .sched-dlg .sc-when input{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:3px 6px;background:var(--surface);color:var(--ink)}
 .room-new{flex:none;width:22px;height:22px;border-radius:7px;border:1px solid var(--line-2);background:rgba(255,255,255,.7);color:var(--ink-2);font-size:15px;line-height:1;cursor:pointer;padding:0;display:grid;place-items:center}
 .room-new:hover{background:#fff;color:var(--ink)}
 .room-mcp{flex:none;height:22px;border-radius:7px;border:1px solid var(--line-2);background:rgba(255,255,255,.7);color:var(--ink-2);font-size:11px;font-weight:600;letter-spacing:.02em;line-height:1;cursor:pointer;padding:0 7px}
 .room-mcp:hover{background:#fff;color:var(--ink)}
+.room-sched{flex:none;display:inline-flex;align-items:center;gap:4px;height:22px;border-radius:7px;border:1px solid var(--line-2);background:rgba(255,255,255,.7);color:var(--ink-2);font-size:11px;font-weight:600;line-height:1;cursor:pointer;padding:0 7px;white-space:nowrap}
+.room-sched:hover{background:#fff;color:var(--ink)}
+.room-sched.off{opacity:.65}
+.sched-set .fp-pause{display:inline-flex;align-items:center;gap:8px;font-size:13px;margin:4px 0 8px}
+.sched-set .ss-group{margin:8px 0 12px}
+.sched-set .ss-head{display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
+.sched-set .ss-head b{font-size:13px}
+.sched-set .ss-head small{flex:1;min-width:0;font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sched-set .ss-head .btn,.sched-set .scr-tools .btn{height:28px;padding:0 10px;font-size:12px}
+.sched-set .ss-add{display:inline-flex;align-items:center;gap:8px;font-size:13px}
+.sched-set .ss-add select{height:30px;border:1px solid var(--line-2);border-radius:8px;background:#fff;padding:0 8px;font:inherit;font-size:13px;color:var(--ink)}
 #liveBar .btn{white-space:nowrap}
 #liveBar select[hidden]{display:none}
 /* spec 012 FR-120: with the agent-kind picker on a narrow window the toolbar selects are as wide as their choice, so Office / List usually stays on the row (it wraps as designed otherwise, PR #124) */
@@ -786,8 +805,11 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .mode-menu button:hover,.mode-menu button:focus-visible{background:#f3efe6}
 .mode-menu .mi{width:16px;height:16px;margin-top:2px;flex:none;color:var(--muted)}.mode-menu .mi svg{width:16px;height:16px}
 .mode-menu .mm-ask .mi{color:var(--blue-ink)}.mode-menu .mm-allow .mi{color:var(--amber-ink)}
+.mode-menu .mm-danger b{color:var(--red-ink)}
 .mode-menu .mt{display:flex;flex-direction:column;flex:1;min-width:0}.mode-menu b{font-size:13px}.mode-menu small{font-size:11.5px;color:var(--muted);line-height:1.35}
 .mode-menu .ck{color:var(--sage-ink);font-weight:700;width:14px;flex:none}
+.mode-menu .mm-sep{height:1px;margin:4px 6px;background:var(--line)}
+.mode-menu [aria-disabled="true"]{opacity:.6;cursor:not-allowed}
 .mm-note{margin:4px 10px 4px;font-size:11.5px;color:var(--muted)}
 .dlg .chk{flex-direction:row;align-items:center;gap:8px;font-weight:500}
 .btn.primary.warn{background:#fdf3df;border-color:#e5be78;color:var(--amber-ink)}

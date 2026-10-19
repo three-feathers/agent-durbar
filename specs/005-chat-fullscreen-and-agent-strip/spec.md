@@ -100,6 +100,17 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 
 ## Changes
 
+### 2026-10-19: Stop and End session from the office card menu (issue #251, task T026)
+
+*Missing:* Stop and End session were only in the chat header (FR-009), so stopping or ending an agent meant opening its chat first. The office card menu (right-click on a card or a list row, spec 030 FR-022) offered only the permission modes and *Model and context…*.
+
+*Corrected:*
+- **FR-017** `[IMPLEMENTED]` (`test:` `cardMenuActions` in `test:modelswitch`; `sim:` `check:office` card menu case at both sizes) The card menu of a **live main agent** (office card or list row, not a helper, not the chat panel) also offers:
+  - **Stop**: interrupts the running turn and keeps the session, the same `interrupt` as the header (FR-009). Shown only while the agent is working or thinking. When the agent's kind cannot interrupt (spec 012 FR-050), it is shown disabled with the reason.
+  - **End session**: frees the session, the same `end` as the header. When the agent is working, thinking or waiting for you, it asks for confirmation first (the same rule as *Remove session*, spec 006 FR-017). An agent that is not started or already ended does not get it.
+  - The same toasts as the header buttons. The items are separated from the mode items, keep the menu's keyboard focus rules (arrows, Escape, focus returns to the card), and use the 10.5px minimum.
+- Simulator only (`DURBAR_SIM=15`): `check:office` opens the menu at 1440x900 and 1280x800 and checks it fits; no AI credits. `[KNOWN GAP]` not run against a real Copilot session (the calls are the same `interrupt`/`end` as the header).
+
 
 ### 2026-10-19: the chat view is checked automatically (task T025)
 
