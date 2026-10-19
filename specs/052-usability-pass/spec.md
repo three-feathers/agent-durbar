@@ -242,3 +242,61 @@ All four were AI personas with 21 new screenshots and the source.
 - `[KNOWN GAP]`:
   - Simple is a display preference of this window (`localStorage`), not a synced setting;
   - money for Copilot credits uses GitHub's USD 0.01 price per credit, so it is an estimate where a plan includes credits.
+
+### 2026-10-20: round 3, five new personas on the build with the follow-ups
+
+**The panel:**
+- **Elena**, a retired teacher who uses Simple at 125% zoom;
+- **Marco**, a design lead benchmarking against the best desktop tools of 2026;
+- **Hiroshi**, a Tokyo developer and calligraphy teacher, on the Japanese court theme;
+- **Jordan**, a blind developer using NVDA and VoiceOver, keyboard only (a code review of semantics);
+- **Sofia**, a Windows freelancer, keyboard-first and cost-conscious.
+
+All five were AI personas, working from 29 screenshots and the source.
+
+**Most serious finding [Jordan]:** after answering a request in the inbox, focus jumps to the *next* agent's Approve button and its request is not read. Pressing Enter twice approves something unheard. New requests are not announced at all, and NVDA's browse mode swallows the single-letter keys N and I.
+
+**Requirements (round 3):**
+- **FR-033** **Inbox focus and keys.**
+  - The inbox opens on the first request's heading, never on a button.
+  - Every action button is described by its row: the agent's name and the request.
+  - After an answer, focus moves to the next row's heading and a live region says "Approved Jonas. 3 left."
+  - Tab stays inside the inbox.
+  - **Keys inside the inbox:** J/K or ↑/↓ move between rows; A approves; D denies; S approves for the session (scoped); O or Enter on a heading opens the chat. The key hints are shown in a footer line.
+- **FR-034** **Announcements.**
+  - A polite live region announces each new request ("Kenji needs your OK: …") and each answer.
+  - A chat opened on an agent that waits announces its request.
+  - After an answer from the answer bar, focus goes to the message box and the outcome is announced.
+- **FR-035** **Shortcuts with a modifier:** Ctrl+Shift+I opens the inbox and Ctrl+Shift+N opens the next agent; both work everywhere, also in text fields and in NVDA browse mode. `aria-keyshortcuts` is set. The single keys stay as well.
+- **FR-036** **Confirmations focus Cancel** when the confirming button is destructive (`danger` or `warn`).
+- **FR-037** **Simple goes further [Elena]:**
+  - the chat's tool lines collapse into one line ("Worked with 3 tools ▸");
+  - Thinking stays collapsed;
+  - approvals use plain words: "Allow this once", "Allow “…” until you end this session", "Don't allow";
+  - places and verbs say "Searching files" and "Using the computer";
+  - the top bar hides + Workspace, Folders and List.
+- **FR-038** **Restore strip wording [Elena]:**
+  - **Ask me first (safer)** as the main button, and **Keep as it is**;
+  - the text says what the risk is: they can change or delete files in these folders without asking.
+- **FR-039** **Which harness [Hiroshi, Sofia]:** when more than one harness is in use, each card's role line ends with the harness name ("Reviewer · Codex").
+- **FR-040** **Visual pass [Marco]**, colours, borders and shadows only, Clean Office:
+  - a solid primary button;
+  - the status counts as one segmented surface;
+  - room-header controls borderless until the room is hovered or focused;
+  - softer room walls without the tile grid;
+  - waiting and error cards with a 3px left edge in their status colour;
+  - quiet lobby slots, neutral chat-header chips, row-style menu focus, layered popover shadows;
+  - a calmer restore icon;
+  - Settings: the theme grid fits one row, and the chosen theme shows a check badge.
+- **FR-041** **Japanese court [Hiroshi]:**
+  - places Tanmatsu-shitsu (terminal room) and Dōgu-beya (tool room);
+  - lobby "The Ō-hiroma";
+  - fusuma door words;
+  - lacquer monitors and laptop, a persimmon clay tint, a vermilion pot, a bonsai plant;
+  - plain short hair instead of a topknot;
+  - dark heri on the tatami.
+
+**Not now:**
+- a per-folder cost view with periods and CSV export, a per-folder budget, and a Codex price table [Sofia] (#315);
+- a command palette (Ctrl+K) [Sofia] (#316);
+- a bundled variable font [Marco], which needs a licence and size review.
