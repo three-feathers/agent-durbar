@@ -59,10 +59,10 @@ Developers capture screenshots at fixed sizes and drive the real window with scr
 - **FR-005** `[IMPLEMENTED]` test: Synthetic fixtures for history and VS Code chat readers live in `scripts/fixtures/`; none contains real user data.
 - **FR-006** `[IMPLEMENTED]` read: Real-session driver phases (`ask`, `ro`, `att`, `real`) spend credits and are run by hand only; `fake` and `m5` use synthetic events through the real main process and spend none.
 - **FR-007** `[KNOWN GAP]` The simulator and e2e driver are **not run by `npm test` or CI**; UI regressions are caught only by hand. (Same gap as feature 001 FR-015.) (Task T020.)
-- **FR-008** `[KNOWN GAP]` `scripts/e2e-driver.js` hard-codes `/workspace/...` paths (`SHOTS`, `HELLO`, `NOTES`, log file) and is therefore not runnable elsewhere without edits. `read:` (Task T021.)
+- **FR-008** `[IMPLEMENTED]` (2026-10-19, T021) `scripts/e2e-driver.js` takes its paths from `E2E_DIR` (default `<temp>/durbar-e2e`), `E2E_SHOTS`, `E2E_LOGS`, `E2E_HELLO` and `E2E_NOTES`, and creates the shot and log folders. Before, it hard-coded `/workspace/...` paths. `read:`
 - **FR-009** `[KNOWN GAP]` The dev hooks are compiled into **release builds** (they are environment-variable driven, with no `app.isPackaged` guard). `DURBAR_DRIVER` loads an arbitrary module into the main process and `DURBAR_LOG` writes event content to a file; anyone who can set the app's environment can already run code as the user, so the risk is low, but constitution III prefers dev-only hooks. `read:` (Task T022.)
 - **FR-010** `[KNOWN GAP]` The simulator's behavior is hand-written and can drift from what the real adapter emits (for example it never reproduces real timing, SDK errors or sub-agent identity quirks). Real behavior is covered only in feature 013. `read:`
-- **FR-011** `[KNOWN GAP]` `smoke.ts` hard-codes `/workspace/durbar-test/...` default folders (overridable with `SMOKE_FOLDERS`). `read:`
+- **FR-011** `[IMPLEMENTED]` (2026-10-19, T021) `smoke.ts` defaults to `<temp>/durbar-test/{hello-app,notes-app}` (overridable with `SMOKE_FOLDERS`); before, it hard-coded `/workspace/durbar-test/...`. `read:` (not run: the smoke costs a prompt)
 
 ### Key Entities
 

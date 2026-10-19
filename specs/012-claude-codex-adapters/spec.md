@@ -571,3 +571,67 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 *Corrected:*
 - **FR-133** `[IMPLEMENTED]` `ClaudeAdapter.setMcpEnabled(sessionId, name, enabled)` sends the CLI's own control request `mcp_toggle` (`serverName`, `enabled`; read from the CLI 2.1.303 bundle, not documented), then `mcp_status` and emits the normalized `mcp` event from its `mcpServers` list. The choice is also kept in the session's start options (`disabledMcpServers`), so a relaunch (a mode change, a crash, a resume) keeps it. A session that is not running only records it. `mcpToggle: true`. Tests on the fake CLI (toggle off live, a recorded switch in the launch config, a launch-disabled server back on through a relaunch). `real:` 2026-10-19, `claude` 2.1.303 with a tiny stdio MCP server and **no prompt**: `mcp_status` said `connected`, `mcp_toggle` off gave `disabled`, on gave `connected` again.
 
+### 2026-10-19: real check of a Claude MCP tool call and a sub-agent (issue #71, T069)
+
+- `real:` Claude Code 2.1.303 with `haiku`, Ask first, a throwaway folder, a tiny local stdio MCP server `echo` passed through Durbar's `--mcp-config` ($0.0046 for both turns):
+  - **MCP:** the init listed `echo:connected`; Claude called `mcp__echo__echo`, which the mapper split into server `echo` and tool `echo`; Ask first raised an `mcp` card ("mcp echo › echo") through `canUseTool`; after Approve the tool ran and Claude reported "echo: durbar".
+  - **Sub-agent:** asked to use a sub-agent, Claude called its **`Agent`** tool (the current name; `Task` is the older one, both are mapped); a `subagent` started (`general-purpose`), the helper's `Glob` and `Bash` calls were attributed to it, the helper's shell command still went through the Ask first card, and the helper completed; the main agent answered with the right count.
+  - Seen but not asked about: `ToolSearch` (Claude's own tool lookup) ran without a permission request in Ask first; it reads no files. Not changed.
+
+### 2026-10-19: the SDK path in a packaged build (issue #52, T044 part)
+
+- `real:` (local, Linux) `npm run pack:dir`, then the packaged binary `release/linux-unpacked/agent-durbar` with `DURBAR_DEV=1 DURBAR_CLAUDE=1 DURBAR_CLAUDE_TRANSPORT=sdk` and the driver `scripts/pack-esm-check.js` running inside the packaged main process (from `app.asar`): `{"packaged":true,"esmBuiltin":true,"esmFromAsar":true,"loadSdk":"undefined","registered":["claude"],"transport":"cli"}`. So the real ESM `import()` (the `new Function` wrapper in `claudeSdk.ts`) works from the CommonJS main process inside `app.asar`, a missing SDK is reported as "not available" without an error, the experimental registration works in a packaged build with the developer opt-in, and the SDK transport falls back to the CLI. No SDK, no `claude` run, no credits.
+- `[KNOWN GAP]` Not in CI and not on macOS or Windows (T044 stays open: it needs a CI change the owner should agree to). The SDK itself is not a dependency (Q3), so `asarUnpack` has nothing to unpack for it.
+
+### 2026-10-19: real check, Read-only ignores allow rules in the folder's settings (T068, T067a; issues #70, #69)
+
+- `real:` Claude Code 2.1.303 with `haiku`, through `ClaudeAdapter` in **Read-only**. The setup was a throwaway folder whose `.claude/settings.json` allows `Write`, `Edit` and `Bash(*)` with `defaultMode: acceptEdits`, and whose `.claude/settings.local.json` allows `Write` and `Bash(*)`. The agent was asked to create `a.txt` with Write and to run `touch b.txt`. It called both tools, and both were refused. The agent said "the Write tool is disabled for this session … the Bash tool is disabled", and **neither file exists**. Durbar loads no settings files (`--setting-sources ""`, Q8), and Read-only's `--disallowedTools` and hook deny the rest. Cost **$0.0016**.
+- Not done: a rule in the user's own `~/.claude/settings.json`. The owner's settings were not edited for a test. Durbar does not load the user's settings either (same flag), so the same result is expected, but it was not run.
+- T067a, from the same run:
+  - the stream gave `status`, `mcp`, `toolCall` (start and end for both calls), `usage` and streamed `output`;
+  - usage arrives once per assistant message (`inputTokens` with the cache added, FR-124; `outputTokens`; `cacheReadTokens`), plus one `costUsd` estimate at the end (`costBasis: estimate`);
+  - **no `context` event was sent**, so a Claude agent's context chip stays "unknown". Recorded as `[KNOWN GAP]`; the result's per-model usage would be the place to read the window from (not built).
+
+
+### 2026-10-19: Claude's context window (from the T067a finding)
+
+*Found:* a Claude agent's context chip always said "Context: unknown", because the adapter sent no `context` event (`context: false`). A real stream (2.1.303) does carry what is needed:
+- each assistant message's `usage` (`input_tokens` plus `cache_creation_input_tokens` and `cache_read_input_tokens` make the whole prompt);
+- the turn's `result` gives `modelUsage[<model>].contextWindow` (1,000,000 for `haiku` on that account) and `maxOutputTokens`.
+
+- **FR-134** `[IMPLEMENTED]` The Claude mapper reports the main agent's context:
+  - **Tokens in use:** the last main-agent message's whole input (the three input fields) plus its output.
+  - **Window:** `contextWindow` of the message's model from the latest `result`'s `modelUsage`. When that model is absent, it uses the largest window listed. Unknown is 0 until the first result.
+  - **When:** a `context` event `{tokens, limit, model}` goes out at each `result`, and after each main-agent message once the window is known. Helper (sub-agent) messages never count.
+  - `CLAUDE_CAPABILITIES.context` becomes `true`.
+  - `test:` mapper fixtures (first turn without a window, window from `modelUsage`, a sub-agent message ignored, a model missing from `modelUsage`). `real:` 2026-10-19, Claude Code 2.1.303 with `haiku` through the adapter: one prompt that read a file sent `context {tokens: 16242, limit: 1000000, model: claude-haiku-5-5}` after the result ($0.0015). Not checked: a model with a 200k window, or a sub-agent turn on a real account.
+
+### 2026-10-19: a redacted real stream as a mapper fixture (T067)
+
+- `real:` Claude Code 2.1.303 (`haiku`) with Durbar's Read-only argv, minus the stdio permission tool, which a read-only run does not need. One prompt read `note.txt` ($0.0015). The 27 messages became 21 after redaction:
+  - ids and uuids are placeholders, and paths are `/work/demo`;
+  - `init` keeps cwd, session, tools (no `mcp__` names), MCP servers, model, mode and version;
+  - the result keeps its usage, `modelUsage` and cost;
+  - rate-limit details are dropped, and the tool input deltas are merged into one.
+- It is `scripts/fixtures/claude/real-readonly-read.json` (`provenance: real-redacted`). `test-claude-map` maps it to its recorded `expected` list (status, mcp, tool start and complete, three streamed outputs, usage, `context 14767/1000000`, cost, idle) and scans it for real paths, keys and e-mail addresses. `test:`
+- The synthetic fixtures stay. Their shapes matched the real one in every field the mapper reads (nothing dropped).
+
+### 2026-10-19: real check, the no-prompt probes (T066)
+
+- `real:` Claude Code 2.1.303 on Linux, through `dist/`:
+  - `detectClaude` gave `ready 2.1.303` and "Signed in to Claude Code on this computer.";
+  - `ClaudeAdapter.listModelOptions()` gave 13 models from the `initialize` reply in 1.5 s;
+  - neither wrote a prompt.
+- **Nothing was billed:** no conversation took place. Claude's per-folder session store for the probe's working folder (`/tmp`) did not exist before or after the run, while every prompted run leaves a session file there.
+- `claude auth status --json` returns the fields `analyticsDisabled`, `apiProvider`, `authMethod`, `configDirectory`, `email`, `loggedIn`, `orgId`, `orgName`, `projectsDirectory` and `subscriptionType`. Durbar reads **only `loggedIn`** (FR-132); the e-mail, organisation and plan are never kept or logged. The values were not printed for this check.
+- The `init` message's `apiKeySource` was `none` for a claude.ai sign-in (from the T067 capture). `accountInfo()` is an SDK call; the CLI transport has no equivalent and does not need one.
+
+
+### 2026-10-19: Claude Code offered like Copilot when it is installed (T095; owner decision)
+
+*Owner decision (Vikram, 2026-10-19, in the session):* "for claude, lets support claude same as copilot if it is installed - when you create a new session and if we have more than one harness - lets provide user option to select harness." This answers T095 and settles T071 for Durbar's side: Durbar drives the user's own installed and signed-in `claude`, as it drives the user's Copilot CLI.
+
+- **FR-135** `[IMPLEMENTED]` Claude Code is registered in every build, next to Copilot, without `DURBAR_CLAUDE`. That hook is gone; `DURBAR_CLAUDE_TRANSPORT=sdk` stays a developer switch. Whether it can be used is what detection says (FR-036..FR-040, FR-132): ready, not installed, not signed in, or too old. A Claude that is not ready is never chosen.
+- **FR-136** `[IMPLEMENTED]` The harness picker (the toolbar select for new folders and the New session dialog) is shown only when **two or more** harnesses are ready. With one ready harness there is nothing to choose: the select stays hidden but holds that harness, so a computer with only Claude Code adds Claude folders. In the New session dialog the select is labelled **Harness**, so it no longer shares the word "Agent" with the custom-agent select (spec 043).
+- Unchanged: no credit cap for Claude (T081 open); its dollar estimate stays apart from AIU (FR-122); Read-only / Ask first / Allow all as mapped (FR-069..FR-071).
+- `test:` `showsKindPicker` counts ready harnesses; the registry has Claude without the hook. `sim:` the mixed roster at both sizes. `real:` already done for the real app (T095 part 1, T106) and the checks T066..T069. `real:` 2026-10-19, the built app with a fresh profile and no `DURBAR_CLAUDE`: `listAdapters` gave `copilot: ready` and `claude: ready`, and the toolbar shows the picker (GitHub Copilot, Claude Code). No prompt was sent.
