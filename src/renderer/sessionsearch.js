@@ -1,4 +1,4 @@
-/* Title search of Previous sessions (spec 006 FR-022, issue #252). Pure: no DOM, no I/O. In the page: window.DurbarSessionSearch; in Node: module.exports. Only titles are matched. */
+/* Title search of Previous sessions (spec 006 FR-023, issue #252). Pure: no DOM, no I/O. In the page: window.DurbarSessionSearch; in Node: module.exports. Only titles are matched. */
 (function(root, api){
   if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarSessionSearch=api;
 })(typeof self!=='undefined'?self:this, (function(){

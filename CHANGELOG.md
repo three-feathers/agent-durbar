@@ -4,7 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.6 tag)
 
-- Previous sessions has a search box (shown with 2 or more entries): it filters Copilot sessions and VS Code chats by title, ignoring case and accents, with "N of M" per group and Escape to clear; titles only, nothing is sent anywhere (spec 006 FR-022, issue #252).
+- Previous sessions has a search box (shown with 2 or more entries): it filters Copilot sessions and VS Code chats by title, ignoring case and accents, with "N of M" per group and Escape to clear; titles only, nothing is sent anywhere (spec 006 FR-023, issue #252).
 
 - **Faster CI and tests (spec 008 FR-020..FR-023).** `npm test` compiles the test scripts once and runs the suites in parallel, about 16 s instead of about 4 minutes. The office check runs in four parallel shards. The package smoke no longer waits for the other jobs. A pull request that changes only docs, specs or Markdown skips the build and test jobs. A daily **Branch cleanup** workflow deletes branches whose pull request merged more than a day ago.
 

@@ -1,4 +1,4 @@
-/** Title search of Previous sessions (spec 006 FR-022, issue #252): `npm run test:sessionsearch`. Pure matcher, no credits. */
+/** Title search of Previous sessions (spec 006 FR-023, issue #252): `npm run test:sessionsearch`. Pure matcher, no credits. */
 import * as assert from 'assert';
 import * as path from 'path';
 type S = { id: string; title: string };

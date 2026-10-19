@@ -2437,7 +2437,7 @@ function initPrev(a){
   if((!bridge.listPrevious||!feat(a,'history'))&&!bridge.listVsChats){box.hidden=true;return;}
   vsViewing=false; renderPrev(a); loadPrev(a);
 }
-/* the two groups of Previous sessions, filtered by the title query (spec 006 FR-022) */
+/* the two groups of Previous sessions, filtered by the title query (spec 006 FR-023) */
 function prevListsHtml(a){
   const st=prevOf(a), c=st.cli, v=st.vs, kw=kindWord(a.info&&a.info.adapterId), hasHist=!!c, q=(st.q||'').trim();
   const S=window.DurbarSessionSearch, nc=c&&c.ok?c.sessions.length:0, nv=v&&v.ok?v.sessions.length:0;
@@ -2468,7 +2468,7 @@ function renderPrev(a){
   let h=`<button class="prev-toggle" type="button" aria-expanded="${st.open}" data-pv="toggle">${ICON('chev')}<span class="prev-t">Previous sessions</span><span class="prev-c">${hasHist?nc+' '+esc(kw)+' · ':''}${nv} VS Code chat${nv===1?'':'s'}</span></button>`;
   if(st.open){
     h+='<div class="prev-body">';
-    /* spec 006 FR-022: a title search when there are at least 2 entries; the query lives in this panel only and is never sent anywhere */
+    /* spec 006 FR-023: a title search when there are at least 2 entries; the query lives in this panel only and is never sent anywhere */
     if(nc+nv>=2)h+=`<input class="prev-q" id="prevQ" type="search" aria-label="Search sessions" placeholder="Search sessions" autocomplete="off" spellcheck="false" value="${esc(st.q)}">`;
     else st.q='';
     h+='<div class="prev-lists" id="prevLists">'+prevListsHtml(a)+'</div>';

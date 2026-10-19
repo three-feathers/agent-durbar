@@ -447,7 +447,7 @@ async function driver(ctx) {
     }
   }
 
-  /* spec 006 FR-022 (T031): the Previous sessions search box at both sizes: shown with 2+ entries, filters by title ignoring case and accents,
+  /* spec 006 FR-023 (T031): the Previous sessions search box at both sizes: shown with 2+ entries, filters by title ignoring case and accents,
      "N of M" while a query is active, "No sessions match", Escape clears; the panel stays inside the window */
   for (const [w, h] of SIZES) {
     if (!mine()) continue;
