@@ -589,6 +589,19 @@ function chooseLayout(sizing,aw,ah){
   return res||lastAny;
 }
 let layoutKey='', layout=null;
+/* spec 001 FR-026: what a new user needs before the first folder: sign in once, add a folder (Read-only), or look around in the demo */
+const WELCOME_HTML=`<section class="welcome" aria-labelledby="wlT"><h2 id="wlT">Welcome to Agent Durbar</h2>
+  <p class="wl-sub">Your coding agents in one office: see what each one is doing, chat with it, and decide what it may do.</p>
+  <ol class="wl-steps">
+    <li><b>Sign in to GitHub Copilot once</b> on this computer: run <code>copilot login</code> in a terminal (a free plan works).</li>
+    <li><b>Add a project folder</b> with <b>+ Folder</b>. Each folder becomes a room with its own agent. Agents start in <b>Read-only</b>: they can read the folder, nothing else.</li>
+    <li><b>Send a message</b> to start. Switch to <b>Ask first</b> or <b>Allow all</b> only for folders you trust.</li>
+  </ol>
+  <div class="wl-actions"><button class="btn primary" type="button" data-wl="add">+ Add a folder</button><button class="btn" type="button" data-wl="demo">Look around in the demo</button></div>
+  <p class="wl-note">Agents run on your computer, as you, and use your Copilot plan's AI credits.</p></section>`;
+document.addEventListener('click',e=>{const b=e.target.closest('[data-wl]');if(!b)return;
+  if(b.dataset.wl==='add')$('addFolder').click();
+  else{const t=$('demoToggle');t.checked=true;t.dispatchEvent(new Event('change'));}});
 function renderOffice(){
   if(ui.view!=='office')return;
   const floor=$('floor'), stage=$('stage'), cs=getComputedStyle(floor);
@@ -598,6 +611,7 @@ function renderOffice(){
   const model=officeModel();
   if(!model.length){
     stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey='';
+    if(!agents.length&&!demoOn){stage.innerHTML=WELCOME_HTML;floor.classList.remove('scrolls');return;} /* spec 001 FR-026: first run */
     stage.innerHTML='<div class="empty">'+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" or "+ Workspace" above.':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open "Folders" above to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?'All floors are off. Open "Floors" above to switch one on.':agents.length&&ROOMS.every(r=>!roomShown(r))?'Nothing to show: every folder is hidden or on a floor that is off. Open "Floors" or "Folders" above.':'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
   }
