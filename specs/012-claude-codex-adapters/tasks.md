@@ -56,6 +56,7 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 - [x] T045 (sim) `ClaudeAdapter` on a fake `query()` object seam: input queue, `canUseTool` to broker, hooks, interrupt, close, resume with `sessionId`; the folder's `CLAUDE.md` with its `@` imports (for example `AGENTS.md`, inside the folder only, bounded size) as an appended system prompt while `settingSources` stays `[]` (owner, 2026-10-18, review of #160); contract suite. Depends on T040, T041 [FR-003, FR-017, SC-002] (done 2026-10-18 as T090-T094 on the CLI transport and the SDK seam; issue #53 closed)
 - [x] T046 (sim, Claude half; done as T096-T098, Codex half with #51) Live permission mode switch (spec 018): Claude `setPermissionMode` immediately, Codex from the next `turn/start`; tests and the toast wording [FR-009, C8]
 - [ ] T047 (sim; the Claude half done as T110 on 2026-10-19, Codex `account/read` open) Availability and sign-in: Codex `account/read` probe, Claude version probe, the "sign in with the CLI in a terminal" message, no prompt ever sent, tests with fakes [FR-010, FR-012]
+- [ ] T047b (sim) Codex sign-in check: `codex login status` in `detectCodex` [FR-137]
 - [ ] T048 (fixtures) History readers: Claude `listSessions`/`getSessionMessages` and Codex `thread/list`/`thread/turns/list` converted to previous sessions and chat history, same-folder check, size caps, tests [FR-019]
 - [ ] T049 (fixtures) Model and effort lists: Claude `supportedModels`, Codex `model/list` to the model picker shape; effort values per model; tests [FR-009]
 - [ ] T050 (fixtures; the Claude half done as T111 on 2026-10-19, Codex open) MCP status: Claude init `mcp_servers` and `mcpServerStatus`, `toggleMcpServer`; Codex `mcpServerStatus/list` read-only; capability `mcpToggle` per adapter; tests [FR-024]
@@ -70,7 +71,7 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 
 - [ ] T060 (needs-owner-approval) Owner decision record: answers to Q1, Q2, Q5 to Q9 written into spec.md, with the prompt budget and the accounts; nothing else in Phase 4 starts before this [FR-022]
 - [x] T060a (2026-10-19) Decision record written: Q1-Q5 and Q8 answered or settled; Q6, Q7 and Q9 still open
-- [ ] T061 (needs-owner-approval) (real-account) Codex: version probe and sign-in state from `account/read` on a real install, no prompt; confirm it costs nothing [FR-010, FR-022]
+- [x] T061 (needs-owner-approval) (real-account) Codex: version probe and sign-in state from `account/read` on a real install, no prompt; confirm it costs nothing [FR-010, FR-022] (real 2026-10-19: see the spec, version, initialize, account/read and login status, no prompt)
 - [ ] T062 (needs-owner-approval) (real-account) Codex: one Read-only prompt, record the event stream, usage, `modelContextWindow` and what `last.inputTokens` means; replace fixtures [FR-007, FR-015, FR-016, FR-022]
 - [ ] T063 (needs-owner-approval) (real-account) Codex: interrupt, stop and resume in the same folder (at most 2 prompts) [FR-017, FR-022]
 - [ ] T064 (needs-owner-approval) (real-account) Codex: Ask first (does a file edit raise an approval in a read-only sandbox?) and the deny path; decide whether Ask first ships for Codex [FR-013, FR-022]
