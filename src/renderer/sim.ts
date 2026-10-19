@@ -1255,6 +1255,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const t = String(label ?? '').replace(/\s+/g, ' ').trim();
         return { ok: true, label: t && [...t].length <= 40 ? t : undefined };
       },
+      setFolderDefaultAgent: async (id, profileId) => { // spec 043 FR-009: kept for this run only, the same id rule as main
+        const src = sims.find((x) => x.info.id === id);
+        if (!src || (profileId !== null && !/^[A-Za-z0-9._:@/-]{1,100}$/.test(String(profileId)))) return { ok: false };
+        for (const x of sims) if (x.info.cwd === src.info.cwd) x.info.defaultAgent = profileId ?? undefined;
+        return { ok: true, defaultAgent: profileId ?? undefined };
+      },
       listPrevious: async (id) => {
         const src = sims.find((x) => x.info.id === id);
         if (!src || src.info.cwd !== '~/work/mcp-swiss') return { ok: true, sessions: [] };

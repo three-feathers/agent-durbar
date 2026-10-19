@@ -2228,7 +2228,7 @@ function newSession(a0){
    <label>Permissions<select id="sdPerm"><option value="read-only">Read-only</option><option value="ask">Ask first</option><option value="allow">Allow all (no prompts)</option></select></label>
    <label id="sdModelL">Model<select id="sdModel"></select></label>
    <label id="sdEffL">Reasoning effort<select id="sdEff"></select></label>
-   ${bridge.listProfiles&&a.info&&a.info.profiles?'<label id="sdAgentL" hidden>Agent<select id="sdAgent"><option value="">Default agent</option></select></label>':''}
+   ${bridge.listProfiles&&a.info&&a.info.profiles?`<div id="sdAgentL" class="sd-agent" hidden><label>Agent<select id="sdAgent"><option value="">Default agent</option></select></label>${bridge.setFolderDefaultAgent?'<label class="chk"><input type="checkbox" id="sdAgentDef"> Default for new sessions here</label>':''}</div>`:''}
    ${bridge.setCap?'<label id="sdCapL">Credit cap (AIU, empty = no cap)<input id="sdCap" type="number" min="0.001" step="0.01" placeholder="No cap"></label>':''}
    <div class="dbtn"><button class="btn" id="sdCancel" type="button">Cancel</button><button class="btn primary" id="sdGo" type="button">Start session</button></div></div>`;
   document.body.appendChild(d);
@@ -2256,6 +2256,10 @@ function newSession(a0){
     if(!$('sessDlg')||!r||!r.ok||!r.profiles.length)return;
     a.profileList=r.profiles;
     $('sdAgent').insertAdjacentHTML('beforeend',r.profiles.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}${SOURCE_WORD[p.source]?' ('+esc(SOURCE_WORD[p.source])+')':''}</option>`).join(''));
+    /* spec 043 FR-009: the folder's default agent is preselected while it is still in the list */
+    const def=a.info.defaultAgent;
+    if(def&&r.profiles.some(p=>p.id===def)){$('sdAgent').value=def;if($('sdAgentDef'))$('sdAgentDef').checked=true;}
+    if($('sdAgentDef'))$('sdAgent').onchange=()=>{$('sdAgentDef').checked=!!$('sdAgent').value&&$('sdAgent').value===a.info.defaultAgent;};
     $('sdAgentL').dataset.ready='1';agentRow();
   }).catch(()=>undefined);
   d.addEventListener('click',e=>{if(e.target===d)closeSessDlg();});
@@ -2268,6 +2272,10 @@ function newSession(a0){
     if(kind)opts.adapterId=kind;
     if($('sdCap')&&!$('sdCapL').hidden){const cv=parseFloat($('sdCap').value);opts.maxAiCredits=cv>=MIN_CAP&&cv<=1e6?Math.round(cv*100)/100:null;}
     const profId=$('sdAgentL')&&!$('sdAgentL').hidden?$('sdAgent').value:'';
+    if($('sdAgentDef')&&!$('sdAgentL').hidden){
+      const want=$('sdAgentDef').checked&&profId?profId:(profId===a.info.defaultAgent?null:undefined);
+      if(want!==undefined&&want!==(a.info.defaultAgent||null))bridge.setFolderDefaultAgent(a.id,want).then(dr=>{if(dr&&dr.ok)for(const x of agents)if(x.room===a.room&&x.info)x.info.defaultAgent=dr.defaultAgent;}).catch(()=>undefined);
+    }
     $('sdGo').disabled=true;$('sdGo').textContent='Starting…';
     const r=await bridge.newSession(a.id,opts);
     closeSessDlg();

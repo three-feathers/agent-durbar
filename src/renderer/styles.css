@@ -578,6 +578,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .dlg .dsub{margin:0;font-size:12.5px;color:var(--ink-2);overflow-wrap:anywhere}
 .dlg label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--ink-2)}
 .dlg label[hidden]{display:none}
+.dlg .sd-agent{display:flex;flex-direction:column;gap:6px}
+.dlg .sd-agent[hidden]{display:none}
 .dlg select{height:34px;border:1px solid var(--line-2);border-radius:10px;background:#fff;padding:0 8px;font:inherit;font-size:13px;color:var(--ink)}
 .dlg input[type=number]{height:34px;border:1px solid var(--line-2);border-radius:10px;background:#fff;padding:0 10px;font:inherit;font-size:13px;color:var(--ink)}
 .dlg .dbtn{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}

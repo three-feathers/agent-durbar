@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **A default agent per folder (spec 043 FR-009).** In the New session dialog, tick **Default for new sessions here** and that custom agent is preselected the next time you start a session in the folder. Untick it to go back to the default agent. Only the agent's name is saved; a repository agent still asks once.
+
 - **Scheduled prompts (spec 044, issue #125).** In **Folders**, each folder has **Schedules**: a prompt sent to the folder's agent once at a time or every N minutes, only while the app is open. A run is skipped when the agent is busy or waiting for you, missed runs are not caught up, and **Pause all schedules** stops everything. The agent's own permission mode and credit cap apply. Checked on a real Copilot session (0.16 AIU).
 
 - **Custom agents for Claude Code too (spec 043 FR-008).** The experimental Claude agent lists the folder's `.claude/agents` and your own `~/.claude/agents`, with the same one-time confirmation for a repository agent. Claude fixes the agent when a session starts, so it is chosen in the New session dialog or before the first message. Checked on a real Claude Code: a session started with a pirate agent answered "Arr…".
