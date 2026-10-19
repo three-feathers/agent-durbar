@@ -113,7 +113,7 @@ Animations are subtle, CSS-only in compact densities and stop under reduced-moti
 - **FR-016** `[IMPLEMENTED]` (resolved 2026-10-16, Task T021) The README milestone-5 table had drifted. Re-measured with `npm run check:office` (xvfb, all rooms open, chat closed): SIM=12 -> `roomy` at 1440x900 and 1280x800; SIM=15 -> `card` at both (the table's `roomy` at 1440x900 predates the door row; the docked-panel columns predate the full-screen chat). An earlier run that saw `mini` at 1280x800 was not reproduced. Which density is chosen depends on font metrics; the check asserts only that the chosen one fits. The README states the new numbers. test: `scripts/check-office-overlap.js`
 - **FR-017** `[KNOWN GAP]` In `micro` the helper figures are very small (~34px wide), and long folder names truncate the nameplate when narrow (README "Remaining").
 - **FR-018** `[KNOWN GAP]` No record exists of 15 real live sessions running at once (cost); the layout is verified on simulated agents only.
-- **FR-019** `[KNOWN GAP]` Keyboard navigation of the office (arrow keys between desks) is not implemented; desks are focusable buttons only. `read:`
+- **FR-019** `[IMPLEMENTED]` (2026-10-19, T023) In the office, arrow keys move the focus between desks, helper tiles and closed door plates: Left and Right to the nearest one on the same row (at the end of a row, the next or previous one in reading order), Up and Down to the nearest one above or below; Enter opens the focused desk as before. Arrow keys with a modifier, and in text fields, are left alone. `sim:` a driver pressed the keys and checked the focus (1440x900 and 1280x800).
 
 ### Key Entities
 
