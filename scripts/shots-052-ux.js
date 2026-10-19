@@ -147,6 +147,27 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('[data-detail="expert"]').click()`); await ctx.sleep(500);
     await js(`document.getElementById('scrClose')&&document.getElementById('scrClose').click()`); await ctx.sleep(500);
     assert.ok(await js(`!document.body.classList.contains('simple')`), 'back to Expert');
+    // FR-042 (#316): Ctrl+K opens the palette; typing filters it; Enter opens the agent's chat
+    await js(`document.activeElement&&document.activeElement.blur()`);
+    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'K', modifiers: ['control'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'K', modifiers: ['control'] }); await ctx.sleep(500);
+    assert.ok(await js(`!!document.getElementById('palDlg')&&document.activeElement&&document.activeElement.id==='palIn'`), 'Ctrl+K opens the palette with focus in its input');
+    await js(`(()=>{const i=document.getElementById('palIn');i.value=${jsLiteral('lena')};i.dispatchEvent(new Event('input',{bubbles:true}));})()`); await ctx.sleep(400);
+    const pal = await js(`({opts:[...document.querySelectorAll('#palList [role="option"]')].map(o=>o.querySelector('.pal-l').textContent),active:document.getElementById('palIn').getAttribute('aria-activedescendant'),said:document.getElementById('srAnnounce').textContent})`);
+    assert.ok(pal.opts.includes('Lena'), 'the palette lists Lena: ' + JSON.stringify(pal));
+    assert.strictEqual(pal.opts[0], 'Lena', 'prefix matches first: ' + pal.opts.join(' | '));
+    assert.ok(pal.active === 'palO0', 'the first option is active');
+    await shot(`052-palette-${w}x${h}.png`);
+    key('Return'); await ctx.sleep(1200);
+    assert.ok(await js(`!document.getElementById('palDlg')`), 'Enter closes the palette');
+    assert.strictEqual(await js(`(document.getElementById('panelTitle')||{}).textContent||''`), 'Lena', 'Enter opens Lena\'s chat');
+    await js(`document.getElementById('backBtn').click()`); await ctx.sleep(600);
+    // FR-043: ? opens the shortcut sheet; Esc closes it
+    await js(`document.activeElement&&document.activeElement.blur()`);
+    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: '/', modifiers: ['shift'] }); ctx.win.webContents.sendInputEvent({ type: 'char', keyCode: '?', modifiers: ['shift'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: '/', modifiers: ['shift'] }); await ctx.sleep(500);
+    assert.ok(await js(`!!document.getElementById('kbdDlg')&&/Ctrl.*K/.test(document.getElementById('kbdDlg').innerText)`), '? opens the shortcut sheet');
+    await shot(`052-shortcuts-${w}x${h}.png`);
+    key('Escape'); await ctx.sleep(300);
+    assert.ok(await js(`!document.getElementById('kbdDlg')`), 'Esc closes the shortcut sheet');
     // FR-015: the strip's two actions (last, so the chat checks above see the agents as they started)
     await js(`document.getElementById('backBtn')&&document.getElementById('backBtn').click()`); await ctx.sleep(500);
     if (w === 1440) {

@@ -53,3 +53,7 @@
 - [ ] T042 Harness name on cards when several are in use [FR-039]
 - [ ] T043 Visual pass (Clean Office) [FR-040]
 - [ ] T044 Japanese court corrections [FR-041]
+
+## Command palette (2026-10-20)
+
+- [x] T045 Command palette (Ctrl+K) and keyboard shortcut sheet (?), ⋯ menu entry, driver section in `scripts/shots-052-ux.js` (#316) [FR-042, FR-043]

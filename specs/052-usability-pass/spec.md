@@ -298,5 +298,23 @@ All five were AI personas, working from 29 screenshots and the source.
 
 **Not now:**
 - a per-folder cost view with periods and CSV export, a per-folder budget, and a Codex price table [Sofia] (#315);
-- a command palette (Ctrl+K) [Sofia] (#316);
+- ~~a command palette (Ctrl+K) [Sofia] (#316)~~: built 2026-10-20, FR-042;
 - a bundled variable font [Marco], which needs a licence and size review.
+
+### 2026-10-20: command palette and shortcut sheet (#316)
+
+Moves the command palette out of *Not now*. Built and checked with `npm test`; the simulator driver (`scripts/shots-052-ux.js`) has a section for it, to be run by the lead.
+
+- **FR-042** **Command palette (Ctrl+K / Cmd+K) [Sofia]:**
+  - opens from anywhere, also from text fields; a modal (`role="dialog"`, `aria-modal`) near the top of the window, about 560px wide;
+  - one input (`role="combobox"`, `aria-expanded`, `aria-controls`, `aria-activedescendant`) over a `role="listbox"` of options, grouped as Agents, Folders and Actions;
+  - **Agents:** every main agent, with its folder, status and harness as secondary text; Enter opens its chat;
+  - **Folders:** every shown folder (and *All folders* while one is filtered); Enter filters the office to it, the same path as the folder filter;
+  - **Actions:** Needs you, Next agent that needs you, Office view, List view, Tools, Settings, Add folder, Simple view, Expert view, Close all room doors, Open all room doors, Keyboard shortcuts; an action that is unavailable now (a disabled or hidden button) is left out; shortcuts are shown as key caps on the right;
+  - typing filters case-insensitively over the label and keywords; label prefix matches first, then word prefixes, then substrings, then keywords;
+  - ↑/↓ move the active option, Enter runs it, a click runs it too; Esc closes and returns focus to where it was; Tab stays in the input;
+  - the result count is announced politely ("5 results"); every value is escaped.
+- **FR-043** **Keyboard shortcut sheet:**
+  - `?` outside text fields and dialogs opens a small modal; it also opens from the palette and from *Keyboard shortcuts* in the top bar's ⋯ menu (`#kbdHelpBtn`);
+  - it lists Ctrl+K (palette), I or Ctrl+Shift+A (inbox), N or Ctrl+Shift+N (next agent), the arrow keys (move between desks), Esc (back or close), `?`, and inside the inbox J/K, A, D, S and O; a note says Cmd works for Ctrl on a Mac;
+  - Esc or Close shuts it and focus goes back; the harness "?" button (`#kindHelp`) is unchanged.
