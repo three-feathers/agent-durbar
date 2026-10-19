@@ -48,13 +48,6 @@ module.exports = async (ctx) => {
     await shot(`052-topbar-more-${w}x${h}.png`);
     key('Escape'); await ctx.sleep(250);
     assert.ok(await js(`document.getElementById('topMoreMenu').hidden&&document.activeElement.id==='topMoreBtn'`), '⋯ closes on Esc');
-    if (w === 1440) {
-      await js(`document.querySelector('#restoreStrip [data-ns="ask"]').click()`); await ctx.sleep(900);
-      assert.ok(await js(`document.getElementById('restoreStrip').hidden`), 'Switch to Ask first clears it');
-    } else {
-      await js(`document.querySelector('#restoreStrip [data-ns="keep"]').click()`); await ctx.sleep(500);
-      assert.ok(await js(`document.getElementById('restoreStrip').hidden`), 'Keep dismisses it');
-    }
 
     // FR-027 (#305): the inbox lists every agent that needs you; a row's Approve settles that agent's card
     await js(`document.activeElement&&document.activeElement.blur()`);
@@ -66,7 +59,7 @@ module.exports = async (ctx) => {
       const before = ib.rows.length;
       // approve the first request that is not Jonas's (the chat checks below use Jonas)
       const who = await js(`(()=>{const r=[...document.querySelectorAll('#inboxDlg .inbox-row')].find(x=>x.querySelector('.ib-h b').textContent!=='Jonas'&&[...x.querySelectorAll('.ib-act button')].some(b=>b.textContent==='Approve'));if(!r)return null;[...r.querySelectorAll('.ib-act button')].find(b=>b.textContent==='Approve').click();return r.querySelector('.ib-h b').textContent;})()`); await ctx.sleep(700);
-      const after = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`);
+      const after = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`); 
       if (who) assert.ok(after === before - 1, `approving ${who} from the inbox removes the row (${before} -> ${after})`);
       else console.log('[052] note: no second permission request in the simulator; inbox approval checked only by its buttons');
     }
@@ -117,6 +110,15 @@ module.exports = async (ctx) => {
     key('N'); await ctx.sleep(1000);
     const second = await js(`(document.getElementById('panelTitle')||{}).textContent||''`);
     assert.ok(first && second && first !== second, `N moves between agents that need you: ${first} -> ${second}`);
+    // FR-015: the strip's two actions (last, so the chat checks above see the agents as they started)
+    await js(`document.getElementById('backBtn')&&document.getElementById('backBtn').click()`); await ctx.sleep(500);
+    if (w === 1440) {
+      await js(`document.querySelector('#restoreStrip [data-ns="ask"]').click()`); await ctx.sleep(900);
+      assert.ok(await js(`document.getElementById('restoreStrip').hidden`), 'Switch to Ask first clears it');
+    } else {
+      await js(`document.querySelector('#restoreStrip [data-ns="keep"]').click()`); await ctx.sleep(500);
+      assert.ok(await js(`document.getElementById('restoreStrip').hidden`), 'Keep dismisses it');
+    }
     console.log('[052]', w, JSON.stringify({ hdr, more: mm.items.length, first, second }));
   }
   console.log('[052] PASS');

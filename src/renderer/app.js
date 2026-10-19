@@ -950,7 +950,11 @@ function wireAnswerBar(a){
   if(answerObs){answerObs.m.disconnect();answerObs.i.disconnect();answerObs=null;}
   const bar=$('answerBar'), chat=$('chat'); if(!bar||!chat)return;
   let card=null, cardVisible=true;
-  const io=new IntersectionObserver(es=>{for(const x of es)if(x.target===card){cardVisible=x.intersectionRatio>=0.6;paint();}},{root:chat,threshold:[0,0.6,1]});
+  /* in view = at least 60% of the card inside the chat's box; recomputed on scroll and on every change (plain geometry, no observer timing) */
+  const inView=()=>{if(!card||!card.isConnected)return true;const c=chat.getBoundingClientRect(),r=card.getBoundingClientRect();if(!r.height)return true;const vis=Math.min(r.bottom,c.bottom)-Math.max(r.top,c.top);return vis>=0.6*Math.min(r.height,c.height);};
+  let raf=0;const recheck=()=>{if(raf)return;raf=requestAnimationFrame(()=>{raf=0;const v=inView();if(v!==cardVisible){cardVisible=v;paint();}});};
+  chat.addEventListener('scroll',recheck,{passive:true});
+  const io={observe(){},unobserve(){},disconnect(){chat.removeEventListener('scroll',recheck);}};
   /* FR-016: the oldest waiting request first, and how many there are */
   const waiting=()=>[...chat.querySelectorAll('.note.perm:not(.settled)')].filter(n=>n.querySelector(':scope > .note-actions button'));
   const pending=()=>waiting()[0]||null;
@@ -972,7 +976,7 @@ function wireAnswerBar(a){
     add('Show in chat','ghost',show,'Scroll to the request in the chat');
     bar.hidden=false;
   }
-  const check=()=>{const p=pending();if(p===card){paint();return;}if(card)io.unobserve(card);card=p;cardVisible=true;if(card)io.observe(card);paint();};
+  const check=()=>{const p=pending();if(p!==card){card=p;cardVisible=inView();}else cardVisible=inView();paint();};
   const mo=new MutationObserver(()=>check());mo.observe(chat,{childList:true,subtree:true});
   answerObs={m:mo,i:io};check();
 }
