@@ -48,17 +48,50 @@ export function codexModeSettings(mode: PermissionMode | string): CodexModeSetti
  */
 export const CODEX_RO_FILESYSTEM: Readonly<Record<string, 'read'>> = Object.freeze({ ':minimal': 'read', ':workspace_roots': 'read' });
 
-/** The profile as an inline TOML table, for `-c permissions.durbar_ro.filesystem=<this>`. */
-export function codexProfileToml(): string {
-  return `{${Object.entries(CODEX_RO_FILESYSTEM).map(([k, v]) => `"${k}"="${v}"`).join(',')}}`;
+/**
+ * A folder that may go into the profile as an extra read root (FR-138: Codex's own install folder). Absolute, normalised,
+ * and free of anything that could break the inline TOML string or a path: no quotes, backslash escapes are doubled,
+ * no control characters. Anything else is `undefined` (left out: the profile only gets narrower).
+ */
+export function codexReadRoot(p: string | undefined): string | undefined {
+  if (!p || /["\u0000-\u001f\u007f]/.test(p)) return undefined;
+  const win = /^[A-Za-z]:[\\/]/.test(p);
+  const api = win ? path.win32 : path.posix;
+  if (!api.isAbsolute(p)) return undefined;
+  const n = api.normalize(p);
+  return n === api.parse(n).root ? undefined : n; // never a whole drive or /
+}
+
+/** The profile as an inline TOML table, for `-c permissions.durbar_ro.filesystem=<this>`. `extraRead`: FR-138 install roots. */
+export function codexProfileToml(extraRead: readonly string[] = []): string {
+  const extra = extraRead.map(codexReadRoot).filter((r): r is string => !!r).map((r) => [r.replace(/\\/g, '\\\\'), 'read'] as const);
+  return `{${[...Object.entries(CODEX_RO_FILESYSTEM), ...extra].map(([k, v]) => `"${k}"="${v}"`).join(',')}}`;
+}
+
+/**
+ * FR-138: the folder Codex is installed in (it runs its own binary again inside the sandbox, so that folder must be readable).
+ * The real path of the located command; its folder, or the parent of a `bin` folder (npm: `.../@openai/codex/bin/codex.js`).
+ */
+export function codexInstallRoot(located: string, realpath: (p: string) => string): string | undefined {
+  try {
+    const real = realpath(located);
+    const win = /^[A-Za-z]:[\\/]/.test(real);
+    const api = win ? path.win32 : path.posix;
+    const dir = api.dirname(real);
+    return codexReadRoot(api.basename(dir).toLowerCase() === 'bin' ? api.dirname(dir) : dir);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
  * Spawn arguments that define the profile (`codex app-server -c key=value`). An argv array for `spawn` without a
  * shell: each element is one argument, nothing is quoted for a shell.
  */
-export function codexProfileArgs(): string[] {
-  return ['-c', `permissions.${CODEX_RO_PROFILE}.filesystem=${codexProfileToml()}`];
+export function codexProfileArgs(extraRead: readonly string[] = []): string[] {
+  // Codex 0.163 refuses to start when a config defines `[permissions]` profiles but no `default_permissions` (real, 2026-10-19).
+  // The read-limited profile is the default: fail closed; Allow all sends its own `sandbox` (FR-138).
+  return ['-c', `permissions.${CODEX_RO_PROFILE}.filesystem=${codexProfileToml(extraRead)}`, '-c', `default_permissions="${CODEX_RO_PROFILE}"`];
 }
 
 /** `initialize` capabilities: `permissions` and `runtimeWorkspaceRoots` are experimental fields. */
@@ -162,6 +195,7 @@ export const CODEX_APPROVAL_METHODS = [
   'item/permissions/requestApproval',
   'mcpServer/elicitation/request',
   'tool/requestUserInput',
+  'item/tool/requestUserInput', // the name Codex 0.163 really sends (schema, 2026-10-19); questions go to the question card (FR-146)
 ] as const;
 
 /** Broker-compatible permission fields (a subset of `PermissionLike`). `kind` is never `read`. */
@@ -211,11 +245,15 @@ export function codexPermission(method: string, params: unknown): CodexPermissio
     case 'item/permissions/requestApproval':
       return { kind: 'custom-tool', toolName: 'request_permissions', summary: `request_permissions ${str(params, 'reason') ?? ''}`.trim() };
     case 'mcpServer/elicitation/request':
-    case 'tool/requestUserInput': {
+    case 'tool/requestUserInput':
+    case 'item/tool/requestUserInput': {
       // Mapped to `mcp` only because it is a non-read kind that asks the user; it is not a claim that an MCP server sent it.
       const serverName = str(params, 'serverName');
-      const toolName = str(params, 'toolName');
-      return { kind: 'mcp', serverName, toolName, summary: `mcp ${serverName ? serverName + ' › ' : ''}${toolName ?? ''}`.trim() };
+      // FR-148 (real, Codex 0.163): a tool-call elicitation names the tool only in its message ("… to run tool \"echo\"?")
+      const toolName = str(params, 'toolName') ?? str(params, 'message')?.match(/run tool "([^"]{1,80})"/)?.[1];
+      // FR-148: an elicitation's own question (for example "Allow the echo tool to run?"), cut to one short line
+      const message = str(params, 'message')?.replace(/\s+/g, ' ').slice(0, 160);
+      return { kind: 'mcp', serverName, toolName, summary: `mcp ${serverName ? serverName + ' › ' : ''}${toolName ?? message ?? ''}`.trim() };
     }
     default: {
       const name = typeof method === 'string' ? method.slice(0, 100) : 'unknown';

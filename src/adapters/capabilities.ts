@@ -25,12 +25,16 @@ export interface AdapterCapabilities {
   readonly context: boolean;
   /** `setCap()` and `resolveLimit()` exist. */
   readonly caps: boolean;
+  /** The unit of the cap and its limit events: AI credits (the default) or the vendor's dollar estimate (spec 012 FR-150). */
+  readonly capUnit?: 'aiu' | 'usd';
   readonly helpers: boolean;
   /** `listPreviousSessions()` and `history()` exist. */
   readonly history: boolean;
   readonly mcpStatus: boolean;
   /** `setMcpEnabled()` exists. */
   readonly mcpToggle: boolean;
+  /** `handoffSummary()` exists (spec 030 FR-034); missing = false. */
+  readonly handoff?: boolean;
 }
 
 /** Where an adapter stands on this machine (spec 012 FR-030). `unknown` also covers a detect that failed. */

@@ -71,6 +71,8 @@ interface SimAgent {
   mcpOff?: Set<string>;
   /** Simulated credit use in nano-AIU, and the open "limit reached" question (spec 011). */
   used?: number;
+  /** Dollar estimate used (kinds with `capUnit: 'usd'`). */
+  usd?: number;
   limitReq?: string;
   /** Model and context handling (spec 030). */
   tier?: ContextTier;
@@ -109,13 +111,15 @@ const SIM_MODEL_BY_AGENT: Record<number, string> = { 3: 'sim-fast', 4: 'sim-fast
 
 /** Simulated caps (AI credits, min 30 like the runtime) by agent name; Omar's calls are expensive (11 AIU each), so he reaches 30 in his first turn (spec 011 FR-016). */
 const SIM_CAPS: Record<string, number> = { Ada: 50, Mira: 30, Omar: 30 };
+/** spec 012 FR-150: dollar caps for kinds that cap their dollar estimate (simulated Claude Code). */
+const SIM_USD_CAPS: Record<string, number> = { Ada: 0.01 };
 const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
 /* Spec 012 T018 (FR-065, FR-066): the simulated kinds of `simkinds=mixed`. They are a simulation, not a statement about the real CLIs.
    Index in the 15-agent roster -> kind; every other agent is Copilot. Mcp-swiss holds two kinds (Ada, Mira); the basic agent is Priya (idle, never the first). */
 const SIM_KIND_BY_AGENT: Record<number, string> = { 0: 'claude', 3: 'claude', 4: 'codex', 5: 'claude', 6: 'basic', 7: 'codex', 8: 'claude', 9: 'codex', 11: 'claude' };
-const SIM_COPILOT_CAPS = { interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true } as AdapterInfo['capabilities'];
+const SIM_COPILOT_CAPS = { interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true } as AdapterInfo['capabilities'];
 const SIM_MIXED_KINDS: AdapterInfo[] = [
-  { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: false, mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true } },
+  { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true } },
   { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: false } },
   { id: 'basic', displayName: 'Basic agent (simulated)', state: 'ready', version: 'sim', capabilities: { interrupt: false, resume: false, images: false, models: false, effort: false, permissionModes: ['read-only'], permModeSwitch: 'none', usage: { tokens: true, costUsd: false, nanoAiu: false }, context: false, caps: false, helpers: false, history: false, mcpStatus: false, mcpToggle: false } as AdapterInfo['capabilities'] },
 ];
@@ -218,6 +222,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (mixed && info.adapterId !== 'copilot') {
         const k = caps(info.adapterId ?? 'copilot');
         if (!k.caps) info.maxAiCredits = undefined; // no credit cap on a kind that has none
+        else if (k.capUnit === 'usd') info.maxAiCredits = SIM_USD_CAPS[name]; // a dollar cap, never an AIU one (FR-150)
         if (!k.permissionModes.includes(info.permMode)) info.permMode = 'read-only';
         if (!k.models) info.modelControl = { switch: 'none', effort: false, contextTier: false, compact: false, windowKnown: true };
       }
@@ -331,7 +336,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           void api.send(s.info.id, sc.prompt, []);
         }
         sc.last = { at: now, outcome };
-        if (sc.every !== undefined) sc.next = now + sc.every * 60000;
+        if (sc.every !== undefined) sc.next = sc.at !== undefined ? sc.at + (Math.floor((now - sc.at) / (sc.every * 60000)) + 1) * sc.every * 60000 : now + sc.every * 60000; // spec 044 FR-007: anchored runs keep their time of day
         else sc.done = true;
       }
       if (any) simSched.changed();
@@ -349,12 +354,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       // FR-066: a kind without AIU reports no nanoAiu (credits unavailable); one with a USD estimate sends it as an estimate, never as credits
       emit({ type: 'usage', sessionId: sid(s), timestamp: now(), model, inputTokens: 1200 + Math.floor(rnd() * 6000), outputTokens: 150 + Math.floor(rnd() * 900), ...(unrep || !kc.usage.nanoAiu ? { creditsStatus: 'unavailable' as const } : { nanoAiu: nano, creditsStatus: 'complete' as const }), ...(kc.usage.costUsd ? { costUsd: Math.round(nano / 1e6) / 1e4, costBasis: 'estimate' as const } : {}) });
       s.used = (s.used ?? 0) + nano;
+      if (kc.usage.costUsd) s.usd = (s.usd ?? 0) + Math.round(nano / 1e6) / 1e4;
       const cap = kc.caps ? s.info.maxAiCredits : undefined;
-      if (cap && !s.limitReq && s.used / 1e9 >= cap) {
+      const spent = kc.capUnit === 'usd' ? s.usd ?? 0 : s.used / 1e9;
+      if (cap && !s.limitReq && spent >= cap) {
         // Like the SDK: the runtime asks the user what to do and waits (the blocked model request).
         s.limitReq = 'lim-' + sid(s) + '-' + Math.floor(s.used / 1e6);
         s.state = 'waiting';
-        emit({ type: 'limit', sessionId: sid(s), timestamp: now(), phase: 'exhausted', requestId: s.limitReq, maxAiCredits: cap, usedAiCredits: s.used / 1e9 });
+        emit({ type: 'limit', sessionId: sid(s), timestamp: now(), phase: 'exhausted', requestId: s.limitReq, maxAiCredits: cap, usedAiCredits: spent });
       }
       // Like the real runtime: the context window is reported before each model call (spec 019).
       const c = s.ctx;
@@ -836,7 +843,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       setCap: async (id, c) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
-        if (c !== null && !(c >= 30)) return { ok: false, error: 'The cap must be a number of at least 30 AI credits (the runtime minimum).' };
+        const usd = caps(s.info.adapterId ?? 'copilot').capUnit === 'usd';
+        if (c !== null && !(c >= (usd ? 0.01 : 30))) return { ok: false, error: usd ? 'The cost cap must be at least $0.01.' : 'The cap must be a number of at least 30 AI credits (the runtime minimum).' };
         s.info.maxAiCredits = c ?? undefined;
         emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'changed', maxAiCredits: c });
         return { ok: true, maxAiCredits: c ?? undefined };
@@ -876,7 +884,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const every = input.every !== undefined ? Math.round(Number(input.every)) : undefined;
         if (!input.folder || !String(input.prompt ?? '').trim() || (every === undefined && !(Number(input.at) > now)) || (every !== undefined && !(every >= 5 && every <= 1440))) return { ok: false as const, error: 'A schedule needs a prompt and either a future time or 5 to 1440 minutes.' };
         const old = simSched.list.find((x) => x.id === input.id);
-        const sc: ScheduleInfo = { id: old?.id ?? 'sched-' + ++simSched.n, folder: input.folder, prompt: String(input.prompt).trim().slice(0, 2000), ...(every !== undefined ? { every, next: old?.next ?? now + every * 60000 } : { at: Number(input.at) }), ...(input.paused ? { paused: true } : {}), ...(old?.last ? { last: old.last } : {}) };
+        const sc: ScheduleInfo = { id: old?.id ?? 'sched-' + ++simSched.n, folder: input.folder, prompt: String(input.prompt).trim().slice(0, 2000), ...(every !== undefined ? { every, ...(Number(input.at) > 0 ? { at: Number(input.at) } : {}), next: old?.next ?? (Number(input.at) > now ? Number(input.at) : now + every * 60000) } : { at: Number(input.at) }), ...(input.paused ? { paused: true } : {}), ...(old?.last ? { last: old.last } : {}) };
         simSched.list = old ? simSched.list.map((x) => (x.id === sc.id ? sc : x)) : [...simSched.list, sc];
         simSched.changed();
         return { ok: true as const, schedule: sc };
@@ -896,7 +904,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           return { ok: true };
         }
         const cap = s.info.maxAiCredits ?? 0;
-        s.info.maxAiCredits = choice.kind === 'add' ? Math.round((cap + choice.credits) * 100) / 100 : choice.kind === 'set' ? choice.credits : undefined;
+        const base = caps(s.info.adapterId ?? 'copilot').capUnit === 'usd' ? Math.max(cap, s.usd ?? 0) : cap; // a dollar cap adds from the spend when a turn went past it (FR-150)
+        s.info.maxAiCredits = choice.kind === 'add' ? Math.ceil((base + choice.credits) * 100 - 1e-6) / 100 : choice.kind === 'set' ? choice.credits : undefined;
         emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'changed', maxAiCredits: s.info.maxAiCredits ?? null });
         emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'resolved', requestId, action: choice.kind });
         s.state = 'working';
@@ -1004,6 +1013,15 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!s || s.pendingModel?.queueId !== queueId) return { ok: false, error: 'Nothing queued to cancel.' };
         s.pendingModel = undefined;
         return { ok: true };
+      },
+      // spec 030 FR-034: a canned hand-off summary (no runtime): goal, files and next step from the simulated agent
+      handoff: async (id) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'unknown agent' };
+        if (!caps(s.info.adapterId ?? 'copilot').handoff) return { ok: false, error: 'This agent kind cannot make a summary.' };
+        await new Promise((r) => window.setTimeout(r, 900));
+        const files = (s.files ?? []).slice(0, 3).map((f) => '- `' + f + '`').join('\n') || '- none yet';
+        return { ok: true, summary: `## Goal\n${s.intent || 'Continue the current task.'}\n\n## What was done\n- Read the relevant code and ran the tests once (simulated).\n\n## Open items\n- Finish the change and run the tests again.\n\n## Important files and decisions\n${files}\n\n## Next step\nPick up from the open items above.` };
       },
       compact: async (id, focus) => {
         const s = sims.find((x) => x.info.id === id);
@@ -1231,7 +1249,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const info = { ...src.info, adapterId: o.adapterId ?? src.info.adapterId, id: 'sim-n' + extra, permMode: o.permMode ?? src.info.permMode, model: o.model ?? 'auto', tier: undefined, effort: o.effort, maxAiCredits: o.maxAiCredits === null ? undefined : o.maxAiCredits ?? defaultCap } as AgentInfo;
         if (mixed) { // the new session follows its kind's capabilities like the roster does
           const k = caps(info.adapterId ?? 'copilot');
-          if (!k.caps) info.maxAiCredits = undefined;
+          if (!k.caps || (k.capUnit === 'usd' && o.maxAiCredits === undefined)) info.maxAiCredits = undefined; // the AIU default is not a dollar cap
           if (!k.permissionModes.includes(info.permMode)) info.permMode = 'read-only';
           if (!k.models) info.modelControl = { switch: 'none', effort: false, contextTier: false, compact: false, windowKnown: true };
         }

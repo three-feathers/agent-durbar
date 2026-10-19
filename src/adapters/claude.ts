@@ -11,6 +11,7 @@
  * - Settings files are never loaded (`--setting-sources ""`, Q8); the folder's `CLAUDE.md` (with `@` imports inside the
  *   folder) goes in as an appended system prompt instead (owner decision, review of #160).
  */
+import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -24,7 +25,10 @@ import type { AdapterCapabilities, AdapterDescriptor, PermissionMode } from './c
 import type { EventBody } from './map';
 import { PermissionBroker, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
-import type { AgentAdapter, AgentEvent, AgentMessage, McpServerSpec, StartOptions, Unsubscribe } from './types';
+import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec, StartOptions, Unsubscribe } from './types';
+import { parseUsdCap } from '../shared/credits';
+import { HANDOFF_PROMPT, cleanSummary } from './handoff';
+import type { HandoffResult } from './handoff';
 import type { ModelOption } from '../shared/modelswitch';
 import { resolveWorkspaceCwd } from './workspace';
 import { listClaudeSessions, readClaudeHistory } from './claudeHistory';
@@ -47,11 +51,13 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   permModeSwitch: 'live', // FR-115/FR-116: the broker and the hook at once, the CLI flags from the next message
   usage: Object.freeze({ tokens: true, costUsd: true, nanoAiu: false }),
   context: true, // FR-134: `modelUsage.contextWindow` and the main agent's last message
-  caps: false, // Q7 / T081
+  caps: true, // FR-150: a dollar cap on Claude's own estimate
+  capUnit: 'usd',
   helpers: true,
   history: true, // FR-125/FR-126: read-only from Claude's own session files
   mcpStatus: true,
   mcpToggle: true, // FR-133: mcp_toggle + mcp_status
+  handoff: true, // spec 030 FR-034: a forked one-shot, the session is not changed
 }) as AdapterCapabilities;
 
 /** The hook callback id Durbar registers for `PreToolUse` (any string the CLI echoes back). */
@@ -117,6 +123,8 @@ export interface ClaudeLaunch {
   appendSystemPrompt?: string;
   /** spec 006 FR-019: the workspace's other folders (`--add-dir`, once each). */
   addDirs?: string[];
+  /** FR-150: what is left of the session's dollar cap (`--max-budget-usd`). */
+  maxBudgetUsd?: number;
 }
 
 const CLAUDE_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
@@ -143,6 +151,14 @@ export function claudeModelOptions(models: unknown): ModelOption[] {
   return out;
 }
 
+/** A dollar amount for `--max-budget-usd`: at least $0.0001 (Claude stops at once), 4 decimals, no exponent. */
+export function budgetText(usd: number): string {
+  return String(Math.max(0.0001, Math.round(usd * 1e4) / 1e4).toFixed(4)).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+/** FR-150: a usable dollar cap or undefined (no cap). */
+const usdCap = (v: unknown): number | undefined => parseUsdCap(v);
+
 /** The CLI argv (FR-111). Mode flags come from `claudeOptionsFor`, so an unknown mode gets Read-only. */
 export function claudeArgs(i: ClaudeLaunch): string[] {
   const o = claudeOptionsFor(i.mode);
@@ -159,6 +175,7 @@ export function claudeArgs(i: ClaudeLaunch): string[] {
   if (i.appendSystemPrompt) a.push('--append-system-prompt', i.appendSystemPrompt);
   if (i.agent && /^[A-Za-z0-9._-]{1,64}$/.test(i.agent.name)) a.push('--agents', i.agent.json, '--agent', i.agent.name);
   for (const d of i.addDirs ?? []) a.push('--add-dir', d);
+  if (i.maxBudgetUsd !== undefined && Number.isFinite(i.maxBudgetUsd)) a.push('--max-budget-usd', budgetText(i.maxBudgetUsd));
   a.push(i.resume ? '--resume' : '--session-id', i.sessionId);
   return a;
 }
@@ -292,6 +309,53 @@ export interface ClaudeAdapterDeps {
   env?: () => NodeJS.ProcessEnv;
   /** Claude's config folder (tests); default `CLAUDE_CONFIG_DIR` or `~/.claude`. */
   configDir?: string;
+  /** Runs `claude` once with fixed arguments (spec 030 FR-034: the hand-off summary); tests inject a fake. */
+  runOnce?: RunOnce;
+}
+
+export type RunOnce = (file: string, args: string[], o: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number }) => Promise<{ code: number | null; stdout: string }>;
+
+const execRunOnce: RunOnce = (file, args, o) =>
+  new Promise((resolve) => {
+    // stdin closed: with an open pipe `claude -p` waits 3 s for input
+    const child = spawn(file, args, { cwd: o.cwd, env: o.env, windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'ignore'] });
+    let out = '';
+    child.stdout?.on('data', (b: Buffer) => {
+      if (out.length < 4 * 1024 * 1024) out += b.toString('utf8');
+    });
+    const timer = setTimeout(() => child.kill(), o.timeoutMs);
+    child.on('error', () => {
+      clearTimeout(timer);
+      resolve({ code: null, stdout: out });
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code, stdout: out });
+    });
+  });
+
+/** Spec 030 FR-034: the one-shot that summarizes a FORK of the session: no tools, no MCP, no settings, not saved, at most $0.50. */
+export function handoffArgs(i: { sessionId: string; model?: string }): string[] {
+  const a = ['-p', HANDOFF_PROMPT, '--resume', i.sessionId, '--fork-session', '--no-session-persistence', '--tools', '', '--strict-mcp-config', '--setting-sources', '', '--output-format', 'json', '--max-budget-usd', '0.5'];
+  if (claudeModelFlag(i.model)) a.push('--model', i.model as string);
+  return a;
+}
+
+/** The `--output-format json` result of that one-shot: the summary text and Claude's cost estimate. */
+export function parseHandoffOutput(stdout: string): HandoffResult {
+  let o: Record<string, unknown> | undefined;
+  for (const line of stdout.split('\n').reverse()) {
+    const t = line.trim();
+    if (!t.startsWith('{')) continue;
+    try {
+      const v = JSON.parse(t) as unknown;
+      if (v && typeof v === 'object' && (v as { type?: unknown }).type === 'result') { o = v as Record<string, unknown>; break; }
+    } catch { /* not JSON */ }
+  }
+  if (!o) return { summary: '' };
+  const cost = typeof o.total_cost_usd === 'number' && Number.isFinite(o.total_cost_usd) && o.total_cost_usd > 0 ? o.total_cost_usd : undefined;
+  const ok = o.subtype === 'success' && o.is_error !== true;
+  return { summary: ok ? cleanSummary(o.result) : '', ...(cost !== undefined ? { costUsd: cost } : {}) };
 }
 
 interface Session {
@@ -318,6 +382,11 @@ interface Session {
   needsRelaunch?: boolean;
   /** spec 043 FR-008: the selected custom agent (passed on every launch). */
   agent?: ClaudeAgentDef;
+  /** FR-150: the dollar cap (Claude's estimate) and what the session spent while Durbar ran it. */
+  capUsd?: number;
+  spentUsd: number;
+  /** FR-150: the cap was reached; the next message waits here until `resolveLimit` (or a higher cap) lets it go. */
+  limit?: { requestId: string; held?: AgentMessage };
   /** Questions waiting for the user (FR-128): request id -> what was asked, Claude's original texts, and the waiter. */
   questions?: Map<string, { asked: AskedQuestion[]; originals: string[]; resolve: (a: Record<string, string> | null) => void }>;
 }
@@ -420,14 +489,19 @@ export class ClaudeAdapter implements AgentAdapter {
     const resumable = options.resumeSessionId !== undefined || (given !== undefined && exists(id));
     const roots = [...new Set([ws.cwd, ...ws.folders])];
     const broker = new PermissionBroker({ roots, mode, emit: (e) => this.onBroker(id, e) });
-    const mapper = new ClaudeMapper((b) => this.emit(id, b), { quiet: true, onDropped: (why) => this.debug?.(`claude: dropped ${why}`) });
-    this.sessions.set(id, { id, cwd: ws.cwd, roots, options: { ...options, permissionMode: mode }, broker, mapper, resumable });
+    const mapper = new ClaudeMapper((b) => this.onMapped(id, b), { quiet: true, onDropped: (why) => this.debug?.(`claude: dropped ${why}`) });
+    this.sessions.set(id, { id, cwd: ws.cwd, roots, options: { ...options, permissionMode: mode }, broker, mapper, resumable, capUsd: usdCap(options.maxAiCredits), spentUsd: 0 });
     if (!options.quiet) this.emit(id, { type: 'status', status: 'idle', intent: `Ready in ${ws.cwd}` });
     return id;
   }
 
   async send(sessionId: string, message: AgentMessage): Promise<void> {
     const s = this.mustGet(sessionId);
+    // FR-150: at the cap, the message waits for the user's answer to the limit notice (like Copilot's blocked request)
+    if (s.limit || this.capReached(s)) {
+      this.openLimit(s).held = message;
+      return;
+    }
     if (message.attachments?.length) s.broker.allowReadPaths(message.attachments.map((a) => a.path));
     this.emit(sessionId, { type: 'status', status: 'working', intent: 'Thinking' });
     let t: ClaudeTransport;
@@ -583,6 +657,7 @@ export class ClaudeAdapter implements AgentAdapter {
       mcpConfig: mcpConfigOf(o.mcpServers, o.disabledMcpServers),
       appendSystemPrompt: (this.deps.claudeMd ?? claudeMdPrompt)(s.cwd),
       ...(s.roots.length > 1 ? { addDirs: s.roots.filter((r) => r !== s.cwd) } : {}),
+      ...(s.capUsd !== undefined ? { maxBudgetUsd: s.capUsd - s.spentUsd } : {}),
     };
     const handlers: TransportHandlers = {
       message: (m) => this.onMessage(s, m),
@@ -607,6 +682,82 @@ export class ClaudeAdapter implements AgentAdapter {
     if (m.type === 'system' && m.subtype === 'init') s.initSeen = true;
     if (m.type === 'result') s.turnOpen = false;
     s.mapper.map(m);
+    if (m.type === 'result' && this.capReached(s)) this.openLimit(s);
+  }
+
+  /** Mapper events of one session: the cost estimate counts towards the cap; Claude's own budget stop is the limit notice, not an error. */
+  private onMapped(sid: string, b: EventBody): void {
+    const s = this.sessions.get(sid);
+    if (s && b.type === 'usage' && typeof b.costUsd === 'number' && b.costUsd > 0) s.spentUsd += b.costUsd;
+    if (s && b.type === 'status' && b.status === 'error' && s.capUsd !== undefined && /budget/i.test(b.intent ?? '')) {
+      this.openLimit(s);
+      return;
+    }
+    this.emit(sid, b);
+  }
+
+  private capReached(s: Session): boolean {
+    return s.capUsd !== undefined && s.spentUsd >= s.capUsd - 1e-9;
+  }
+
+  /** FR-150: the cap was reached: one `limit exhausted` notice per stop, answered by `resolveLimit`. */
+  private openLimit(s: Session): NonNullable<Session['limit']> {
+    if (s.limit) return s.limit;
+    s.limit = { requestId: randomUUID() };
+    this.emit(s.id, { type: 'limit', phase: 'exhausted', requestId: s.limit.requestId, maxAiCredits: s.capUsd ?? null, usedAiCredits: Math.round(s.spentUsd * 1e4) / 1e4 });
+    return s.limit;
+  }
+
+  /** Spec 030 FR-034: a hand-off summary from a forked one-shot of the user's `claude`; the session itself is not changed. */
+  async handoffSummary(sessionId: string): Promise<HandoffResult> {
+    const s = this.mustGet(sessionId);
+    if (!s.resumable) return { summary: '' }; // nothing said yet: nothing to summarize
+    const file = await this.deps.claudePath();
+    if (!file) throw new Error('Claude Code is not installed or could not be found.');
+    if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(file)) throw new Error('A summary needs the native claude.exe, not a .cmd launcher.');
+    const run = this.deps.runOnce ?? execRunOnce;
+    const r = await run(file, handoffArgs({ sessionId: s.id, model: s.options.model }), { cwd: s.cwd, env: (this.deps.env ?? (() => process.env))(), timeoutMs: 180_000 });
+    const out = parseHandoffOutput(r.stdout);
+    if (out.costUsd) this.onMapped(s.id, { type: 'usage', costUsd: out.costUsd, costBasis: 'estimate' }); // counts towards the session's usage and its cap
+    if (!out.summary && r.code !== 0) throw new Error(`Claude could not make a summary (exit ${r.code ?? 'timeout'}).`);
+    return out;
+  }
+
+  /** FR-150: change (null = remove) the dollar cap; the running CLI gets the new budget with the next message. */
+  async setCap(sessionId: string, usd: number | null): Promise<void> {
+    const s = this.mustGet(sessionId);
+    if (usd !== null && usdCap(usd) === undefined) throw new Error('Invalid cost cap.');
+    s.capUsd = usd === null ? undefined : usdCap(usd);
+    s.needsRelaunch = true;
+    this.emit(sessionId, { type: 'limit', phase: 'changed', maxAiCredits: s.capUsd ?? null });
+    if (s.limit && !this.capReached(s)) this.releaseLimit(s, usd === null ? 'unset' : 'set');
+  }
+
+  /** FR-150: the user's answer to the limit notice: add to the cap, set a new one, remove it, or drop the held message. */
+  async resolveLimit(sessionId: string, requestId: string, action: LimitAction): Promise<void> {
+    const s = this.mustGet(sessionId);
+    if (!s.limit || s.limit.requestId !== requestId) return;
+    if (action.kind !== 'cancel') {
+      // `add` gives that much more from here: a turn can overshoot the cap (a first turn's cache write, real: $0.06 on a $0.01 cap), so it counts from the higher of cap and spend, rounded up to the cent
+      const next = action.kind === 'add' ? usdCap(Math.ceil((Math.max(s.capUsd ?? 0, s.spentUsd) + action.credits) * 100 - 1e-6) / 100) : action.kind === 'set' ? usdCap(action.credits) : undefined;
+      if (action.kind !== 'unset' && next === undefined) throw new Error('Invalid cost cap.');
+      s.capUsd = next;
+      s.needsRelaunch = true;
+      this.emit(sessionId, { type: 'limit', phase: 'changed', maxAiCredits: s.capUsd ?? null });
+    }
+    this.releaseLimit(s, action.kind);
+  }
+
+  private releaseLimit(s: Session, action: LimitAction['kind']): void {
+    const l = s.limit;
+    if (!l) return;
+    s.limit = undefined;
+    this.emit(s.id, { type: 'limit', phase: 'resolved', requestId: l.requestId, action });
+    if (action === 'cancel' || !l.held) {
+      this.emit(s.id, { type: 'status', status: 'idle', intent: action === 'cancel' ? 'Stopped at the cost cap' : 'Ready' });
+      return;
+    }
+    void this.send(s.id, l.held);
   }
 
   private async onControl(s: Session, req: IncomingControl): Promise<ControlAnswer> {

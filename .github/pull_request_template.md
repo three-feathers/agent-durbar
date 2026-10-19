@@ -12,7 +12,7 @@ Closes #<!-- issue number: one issue = one Spec Kit task -->
 - **Task(s)**: `Tnnn` in that `tasks.md`:
 - **Agent used** (which agent wrote this, and who is its human owner): <!-- e.g. Claude Code (fjcabello), Copilot CLI (vikramgorla), none -->
 - [ ] I claimed the issue (assigned + `status:claimed`) before starting
-- [ ] The human owner of the agent read this diff; a *different* human reviews it (never the agent's own owner)
+- [ ] The agent did a final review of the whole diff as a reviewer (not only CI) and says below what it checked; another team's agent or a human may review too
 
 ## Spec Kit
 

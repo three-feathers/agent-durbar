@@ -220,15 +220,21 @@ const capOf=a=>{const c=a&&!a.parent&&a.info&&a.info.maxAiCredits;return c>0?c:0
 const MIN_CAP=30; /* the runtime's minimum session limit, AI credits (1 credit = USD 0.01; AIU as reported = credits per GitHub docs) */
 const capDigits=()=>2;
 const fmtCap=n=>Number.isInteger(n)?String(n):n.toFixed(2);
+/* spec 012 FR-150: a kind can cap its own dollar estimate instead of AI credits (Claude Code); the number and the words follow its unit */
+const capUnitOf=a=>{const r=a&&a.parent?(byId(a.parent)||a):a;const c=typeof capsFor==='function'&&r&&r.info?capsFor(r):null;return c&&c.capUnit==='usd'?'usd':'aiu';};
+const isUsdCap=a=>capUnitOf(a)==='usd';
+const capUsed=a=>isUsdCap(a)?(a.usage&&a.usage.usd||0):(a.usage?a.usage.nano/1e9:0);
+const fmtCapOf=(a,n)=>isUsdCap(a)?'$'+n.toFixed(2):fmtCap(n)+' AIU';
+const MIN_USD_CAP=0.01;
 /* spec 012 FR-122: what the agent's kind reports decides the money part: AIU, a labelled dollar estimate (never AIU), or nothing */
 const usageCaps=a=>{const r=a&&a.parent?(byId(a.parent)||a):a;const c=typeof capsFor==='function'&&r&&r.info?capsFor(r):null;return (c&&c.usage)||{nanoAiu:true};};
 const fmtUsd=v=>'≈ $'+(v>0&&v<0.01?v.toFixed(4):v.toFixed(2))+' est.';
 const USD_TIP='The agent\'s own estimate of the API price for these tokens, not a bill and not AIU.';
 function usageShort(a){const u=a.usage; if(!u||!u.calls)return ''; const k=usageCaps(a), c=capOf(a);
-  if(!k.nanoAiu)return fmtTok(u.inT+u.outT)+' tok'+(k.costUsd?' · '+fmtUsd(u.usd||0):'');
+  if(!k.nanoAiu)return c&&k.costUsd&&isUsdCap(a)?fmtTok(u.inT+u.outT)+' · $'+(u.usd||0).toFixed(2)+'/$'+c.toFixed(2)+' est.':fmtTok(u.inT+u.outT)+' tok'+(k.costUsd?' · '+fmtUsd(u.usd||0):'');
   return c?fmtTok(u.inT+u.outT)+' · '+(u.nano/1e9).toFixed(capDigits(c))+'/'+fmtCap(c)+' AIU':fmtTok(u.inT+u.outT)+' tok · '+(u.nano/1e9).toFixed(2)+' AIU';}
 function usageLong(a){const u=a.usage; if(!u||!u.calls)return ''; const k=usageCaps(a), c=capOf(a), base=u.calls+' calls · '+fmtTok(u.inT)+' in / '+fmtTok(u.outT)+' out tokens';
-  if(!k.nanoAiu)return base+(k.costUsd?' · '+fmtUsd(u.usd||0):'');
+  if(!k.nanoAiu)return base+(k.costUsd?' · '+(c&&isUsdCap(a)?fmtUsd(u.usd||0).replace(/ est\.$/,' of a $'+c.toFixed(2)+' cap est.'):fmtUsd(u.usd||0)):'');
   return base+' · '+(u.nano/1e9).toFixed(3)+' AIU'+(c?' of '+fmtCap(c)+' cap':'');}
 
 /* ---------------- svg helpers ---------------- */
@@ -595,14 +601,14 @@ function chooseLayout(sizing,aw,ah){
 let layoutKey='', layout=null;
 /* spec 001 FR-026: what a new user needs before the first folder: sign in once, add a folder (Read-only), or look around in the demo */
 const WELCOME_HTML=`<section class="welcome" aria-labelledby="wlT"><h2 id="wlT">Welcome to Agent Durbar</h2>
-  <p class="wl-sub">Your coding agents in one office: see what each one is doing, chat with it, and decide what it may do.</p>
+  <p class="wl-sub">Your AI agents in one office: see what each one is doing, chat with it, and decide what it may do. For code, documents, research or notes, with GitHub Copilot, Claude Code or OpenAI Codex side by side.</p>
   <ol class="wl-steps">
-    <li><b>Sign in to GitHub Copilot once</b> on this computer: run <code>copilot login</code> in a terminal (a free plan works).</li>
-    <li><b>Add a project folder</b> with <b>+ Folder</b>. Each folder becomes a room with its own agent. Agents start in <b>Read-only</b>: they can read the folder, nothing else.</li>
+    <li><b>Sign in to an agent harness once</b> on this computer: GitHub Copilot (<code>copilot login</code>, a free plan works), Claude Code (<code>claude auth login</code>) or OpenAI Codex (<code>codex login</code>). Several can be used side by side.</li>
+    <li><b>Add a folder</b> with <b>+ Folder</b>: a project, a set of documents, any folder your agent should work in. Each folder becomes a room with its own agent. Agents start in <b>Read-only</b>: they can read the folder, nothing else.</li>
     <li><b>Send a message</b> to start. Switch to <b>Ask first</b> or <b>Allow all</b> only for folders you trust.</li>
   </ol>
   <div class="wl-actions"><button class="btn primary" type="button" data-wl="add">+ Add a folder</button><button class="btn" type="button" data-wl="demo">Look around in the demo</button></div>
-  <p class="wl-note">Agents run on your computer, as you, and use your Copilot plan's AI credits.</p></section>`;
+  <p class="wl-note">Agents run on your computer, as you, and use your own plan (Copilot AI credits, your Claude or ChatGPT plan).</p></section>`;
 document.addEventListener('click',e=>{const b=e.target.closest('[data-wl]');if(!b)return;
   if(b.dataset.wl==='add')$('addFolder').click();
   else{const t=$('demoToggle');t.checked=true;t.dispatchEvent(new Event('change'));}});
@@ -1033,7 +1039,9 @@ const liveRoot=a=>a.parent?byId(a.parent):a;
 let renderQueued=false;
 function scheduleRender(){if(renderQueued)return;renderQueued=true;requestAnimationFrame(()=>{renderQueued=false;renderAll();});}
 function setBadge(){const b=$('protoBadge'); if(!b)return; b.className='proto'+(SIM&&!demoOn?' sim':'');
-  b.title=SIM&&!demoOn?'Fake events, no sessions started, no AI credits used':'';b.textContent=demoOn?'Prototype - sample data':SIM?'Simulated agents':'Live - Copilot';}
+  /* spec 001 FR-027: not one harness; the tooltip names the ready ones */
+  const ready=DMK().kindChoices(KINDS).filter(k=>!k.disabled).map(k=>k.name);
+  b.title=SIM&&!demoOn?'Fake events, no sessions started, no AI credits used':(!demoOn&&ready.length?'Live: '+ready.join(', '):'');b.textContent=demoOn?'Prototype - sample data':SIM?'Simulated agents':'Live';}
 function applyMode(){
   agents=demoOn?DEMO.agents:LIVE.agents; ROOMS=demoOn?DEMO.rooms:LIVE.rooms;
   ui.ws='all'; ui.status=null;
@@ -1495,8 +1503,13 @@ function toolLabel(args){
 let APP_SETTINGS={};
 function capChipHTML(a){
   if(!feat(a,'cap'))return ''; /* this agent kind has no credit cap: no chip (spec 012 FR-061) */
-  const c=capOf(a),used=a.usage?a.usage.nano/1e9:0,pct=c?Math.min(100,Math.round(used/c*100)):0;
+  const c=capOf(a),used=capUsed(a),pct=c?Math.min(100,Math.round(used/c*100)):0;
   const cls=!c?'unk':a.limit?'high':pct>=80?'warn':'ok';
+  if(isUsdCap(a)){
+    const t2=c?'$'+used.toFixed(2)+' / $'+c.toFixed(2):'No cap';
+    const ti=c?'Cost cap: about $'+used.toFixed(2)+' of $'+c.toFixed(2)+' used by this session while Agent Durbar ran it ('+pct+'%). Claude\'s own estimate of the API price, not a bill; with a Claude subscription nothing is billed per token. Soft cap: one turn can go a little past it. Click to change or remove it.':'No cost cap for this session. Click to set one in dollars (Claude\'s estimate, min $0.01).';
+    return `<button class="ctxchip capchip ${cls}" id="capChip" type="button" title="${esc(ti)}"><span class="bar" aria-hidden="true"><i style="width:${c?pct:0}%"></i></span><span>${esc(t2)}</span></button>`;
+  }
   const text=c?used.toFixed(capDigits(c))+' / '+fmtCap(c)+' AIU':'No cap';
   const title=c?'Credit cap: '+used.toFixed(2)+' of '+fmtCap(c)+' AIU used by this session ('+pct+'%). AIU as reported by the Copilot runtime. Soft cap: checked after each model response, so one response can overshoot it. Click to change or remove it.':'No credit cap for this session. Click to set one (min 30 AIU, as reported by the Copilot runtime).';
   return `<button class="ctxchip capchip ${cls}" id="capChip" type="button" title="${esc(title)}"><span class="bar" aria-hidden="true"><i style="width:${c?pct:0}%"></i></span><span>${esc(text)}</span></button>`;
@@ -1508,11 +1521,12 @@ function updateCapChip(a){
 function closeCapDlg(){const d=document.getElementById('capDlg');if(d)d.remove();}
 function openCapDialog(a){
   closeCapDlg();
-  const cur=capOf(a);
+  const cur=capOf(a),usd=isUsdCap(a),min=usd?MIN_USD_CAP:MIN_CAP;
   const d=document.createElement('div');d.id='capDlg';d.className='dlg-ov';
-  d.innerHTML=`<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="cdT"><h3 id="cdT">Credit cap for ${esc(a.name)}</h3>
-   <p class="dsub">The most AI credits this session may use (1 credit = USD 0.01; shown as AIU, the unit the Copilot runtime reports). When it is reached the agent stops and asks you. It is a <b>soft</b> cap: it is checked after each model response, so one response can go past it. The minimum is ${MIN_CAP}.</p>
-   <label>Cap (AIU)<input id="cdVal" type="number" min="${MIN_CAP}" step="1" placeholder="No cap" value="${cur||''}"></label>
+  d.innerHTML=`<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="cdT"><h3 id="cdT">${usd?'Cost':'Credit'} cap for ${esc(a.name)}</h3>
+   ${usd?`<p class="dsub">The most this session may cost, in dollars of Claude's own estimate (not a bill; with a Claude subscription nothing is billed per token). When it is reached the agent stops and asks you. It is a <b>soft</b> cap: one turn can go a little past it. It counts what the session used while Agent Durbar ran it, and it is not saved with the folder. The minimum is $${MIN_USD_CAP}.</p>`
+   :`<p class="dsub">The most AI credits this session may use (1 credit = USD 0.01; shown as AIU, the unit the Copilot runtime reports). When it is reached the agent stops and asks you. It is a <b>soft</b> cap: it is checked after each model response, so one response can go past it. The minimum is ${MIN_CAP}.</p>`}
+   <label>${usd?'Cap ($, estimate)':'Cap (AIU)'}<input id="cdVal" type="number" min="${min}" step="${usd?'0.01':'1'}" placeholder="No cap" value="${cur||''}"></label>
    <p class="derr" id="cdErr" role="alert" hidden></p>
    <div class="dbtn"><button class="btn" id="cdCancel" type="button">Cancel</button><button class="btn" id="cdNone" type="button">Remove cap</button><button class="btn primary" id="cdSave" type="button">Save</button></div></div>`;
   document.body.appendChild(d);
@@ -1520,10 +1534,10 @@ function openCapDialog(a){
     const r=await bridge.setCap(a.id,v).catch(e=>({ok:false,error:String(e&&e.message||e)}));
     if(!r||!r.ok){const er=$('cdErr');er.textContent=(r&&r.error)||'Could not change the cap.';er.hidden=false;return;}
     a.info.maxAiCredits=r.maxAiCredits||undefined;a.usageText=usageLong(a);closeCapDlg();updateCapChip(a);updatePanelHeader();scheduleRender();
-    toast(esc(a.name)+': '+(v===null?'no credit cap.':'credit cap <b>'+fmtCap(v)+' AIU</b>.'),3200);
+    toast(esc(a.name)+': '+(v===null?(usd?'no cost cap.':'no credit cap.'):(usd?'cost cap':'credit cap')+' <b>'+esc(fmtCapOf(a,v))+'</b>.'),3200);
   };
   $('cdCancel').onclick=closeCapDlg;$('cdNone').onclick=()=>apply(null);
-  $('cdSave').onclick=()=>{const v=parseFloat($('cdVal').value);if(!(v>=MIN_CAP)||v>1e6){const er=$('cdErr');er.textContent='Enter a number from '+MIN_CAP+' (the runtime minimum), or use Remove cap.';er.hidden=false;return;}apply(Math.round(v*100)/100);};
+  $('cdSave').onclick=()=>{const v=parseFloat($('cdVal').value);if(!(v>=min)||v>(usd?1e4:1e6)){const er=$('cdErr');er.textContent=usd?'Enter an amount from $'+MIN_USD_CAP+' to $10,000, or use Remove cap.':'Enter a number from '+MIN_CAP+' (the runtime minimum), or use Remove cap.';er.hidden=false;return;}apply(Math.round(v*100)/100);};
   d.addEventListener('click',e=>{if(e.target===d)closeCapDlg();});
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeCapDlg();}if(e.key==='Enter'&&e.target.id==='cdVal')$('cdSave').click();});
   $('cdVal').focus();
@@ -1532,12 +1546,12 @@ document.addEventListener('click',e=>{const c=e.target.closest('#capChip');if(!c
 /* The runtime reached the cap and waits for the user: inline notice with Add credits / Remove cap / Stop here. */
 function showLimit(a,e){
   const t=ensureTurn(a);
-  const max=e.maxAiCredits||capOf(a),used=e.usedAiCredits!=null?e.usedAiCredits:(a.usage?a.usage.nano/1e9:0);
-  const n=document.createElement('div');n.className='note perm limit';n.setAttribute('role','group');n.setAttribute('aria-label','Credit limit reached');
-  n.innerHTML='<b>Credit limit reached:</b> <span class="psum"></span><span class="pstate"></span>';
-  n.querySelector('.psum').textContent='used '+used.toFixed(2)+' of '+fmtCap(max)+' AIU. The agent waits for you.';
+  const usd=isUsdCap(a),max=e.maxAiCredits||capOf(a),used=e.usedAiCredits!=null?e.usedAiCredits:capUsed(a);
+  const n=document.createElement('div');n.className='note perm limit';n.setAttribute('role','group');n.setAttribute('aria-label',usd?'Cost cap reached':'Credit limit reached');
+  n.innerHTML=usd?'<b>Cost cap reached:</b> <span class="psum"></span><span class="pstate"></span>':'<b>Credit limit reached:</b> <span class="psum"></span><span class="pstate"></span>';
+  n.querySelector('.psum').textContent=usd?'about $'+used.toFixed(2)+' of $'+(max||0).toFixed(2)+' (Claude\'s estimate). The agent waits for you.':'used '+used.toFixed(2)+' of '+fmtCap(max)+' AIU. The agent waits for you.';
   const row=document.createElement('div');row.className='note-actions';
-  const amt=document.createElement('input');amt.type='number';amt.min='0.01';amt.step='1';amt.value=String(max||MIN_CAP);amt.className='limit-amt';amt.setAttribute('aria-label','AIU to add to the cap');
+  const amt=document.createElement('input');amt.type='number';amt.min='0.01';amt.step=usd?'0.01':'1';amt.value=String(max||(usd?MIN_USD_CAP:MIN_CAP));amt.className='limit-amt';amt.setAttribute('aria-label',usd?'Dollars to add to the cap':'AIU to add to the cap');
   const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);return b;};
   const answer=async choice=>{
     const r=await bridge.resolveLimit(a.id,e.requestId,choice).catch(err=>({ok:false,error:String(err&&err.message||err)}));
@@ -1545,7 +1559,7 @@ function showLimit(a,e){
     settleLimit(a,choice.kind);
   };
   row.appendChild(amt);
-  mk('Add credits','primary','Raise the cap by this many AIU and let the agent continue',()=>{const v=parseFloat(amt.value);if(!(v>0)){amt.focus();return;}answer({kind:'add',credits:Math.round(v*100)/100});});
+  mk(usd?'Raise cap':'Add credits','primary',usd?'Let the agent use this many more dollars (counted from what it used or the cap, whichever is higher) and continue':'Raise the cap by this many AIU and let the agent continue',()=>{const v=parseFloat(amt.value);if(!(v>0)){amt.focus();return;}answer({kind:'add',credits:Math.round(v*100)/100});});
   mk('Remove cap','session','Remove the cap and let the agent continue',()=>answer({kind:'unset'}));
   mk('Stop here','danger','Cancel the blocked request. The agent is ready for your next message (the cap stays).',()=>answer({kind:'cancel'}));
   n.appendChild(row);
@@ -1599,10 +1613,11 @@ function settleQuestion(a,answers){
 function settleLimit(a,action){
   const L=a.limit;if(!L)return;a.limit=null;
   if(L.row)L.row.remove();
-  const word=action==='cancel'?'stopped here':action==='unset'?'cap removed':'credits added';
+  const word=action==='cancel'?'stopped here':action==='unset'?'cap removed':isUsdCap(a)?'cap raised':'credits added';
   L.st.textContent=' → '+word;L.n.classList.add('settled',action==='cancel'?'denied':'approved');
-  if(action==='cancel'){closeTurn(a);a.worked=false;setState(a,'idle','Ready','Stopped at the credit limit. Ready for your next message.');}
-  else setState(a,'working',null,'Continuing after the credit limit');
+  const what=isUsdCap(a)?'the cost cap':'the credit limit';
+  if(action==='cancel'){closeTurn(a);a.worked=false;setState(a,'idle','Ready','Stopped at '+what+'. Ready for your next message.');}
+  else setState(a,'working',null,'Continuing after '+what);
   updateCapChip(a);scrollChat(liveChat(a));
 }
 /* ---------- permissions: inline note in the tool timeline, Approve / Approve for this session / Deny, revocable chips ---------- */
@@ -1730,7 +1745,7 @@ function onLiveEvent(e){
   case 'grants':setGrants(a,e.grants||[]);return;
   case 'limit':
     if(e.phase==='changed'){a.info.maxAiCredits=e.maxAiCredits>0?e.maxAiCredits:undefined;a.usageText=usageLong(a);updateCapChip(a);updatePanelHeader();scheduleRender();}
-    else if(e.phase==='exhausted'){if(a.limit&&a.limit.requestId===e.requestId)return;showLimit(a,e);setState(a,'waiting','Limit reached','Credit limit reached: '+fmtCap(e.maxAiCredits||0)+' AIU');updateCapChip(a);}
+    else if(e.phase==='exhausted'){if(a.limit&&a.limit.requestId===e.requestId)return;showLimit(a,e);setState(a,'waiting','Limit reached',(isUsdCap(a)?'Cost cap reached: ':'Credit limit reached: ')+fmtCapOf(a,e.maxAiCredits||0));updateCapChip(a);}
     else if(e.phase==='resolved'){if(a.limit&&a.limit.requestId===e.requestId)settleLimit(a,e.action||'add');}
     return;
   case 'question': /* spec 012 FR-130 */
@@ -1770,7 +1785,7 @@ async function sendLive(text,forId){
 async function pickLive(want){addPicked(await bridge.pickAttachments(want));}
 async function openLive(a){
   const r=await bridge.openInVSCode(liveRoot(a).id);
-  toast(r.ok?'Opening in VS Code…':'Could not open VS Code: '+esc(r.error||'unknown error'),4200);
+  toast(r.ok?'Opening in '+esc(r.edition||'VS Code')+'…':'Could not open VS Code: '+esc(r.error||'unknown error'),4200);
 }
 async function stopLive(a){const r=liveRoot(a);await bridge.stop(r.id);toast(esc(r.name)+': stopped the current turn. It is ready for your next message.');}
 async function endLive(a){const r=liveRoot(a);await (bridge.end||bridge.stop)(r.id);toast(esc(r.name)+': session ended. Sending a message resumes it.',4200);}
@@ -1967,6 +1982,7 @@ function applyKinds(){
   /* the other ready kinds' model lists, for their agents' model chips (spec 012 FR-120); a CLI probe, no prompt */
   (KINDS||[]).forEach(k=>{if(!isDefaultKind(k.id)&&k.state==='ready'&&DMK().shows(kindCaps(k.id),'models'))ensureModels(k.id).then(()=>scheduleRender());});
   syncKindModel();
+  setBadge(); /* FR-027: the badge's tooltip lists the ready harnesses */
 }
 async function loadKinds(refresh){
   if(!bridge||!bridge.listAdapters)return;
@@ -1977,7 +1993,7 @@ async function loadKinds(refresh){
 async function aboutKinds(){
   for(;;){
     const ch=DMK().kindChoices(KINDS);
-    const r=await askDialog({title:'About agent kinds',body:'Each kind is a different coding agent. Only a kind that is ready can be chosen. Nothing is installed or run from here: copy the hint if you need to set one up.',
+    const r=await askDialog({title:'About agent kinds',body:'Each kind is a different agent harness. Only a kind that is ready can be chosen. Nothing is installed or run from here: copy the hint if you need to set one up.',
       lines:ch.map(k=>k.name+': '+(k.state==='ready'?'ready':k.stateText)+(k.version?' · version '+k.version:'')+(k.hint?' · '+k.hint:'')),
       buttons:[{label:'Close',value:null},{label:'Check again',value:'again',cls:'primary'}],returnFocus:()=>$('kindHelp')});
     if(!r||r.value!=='again')return;
@@ -2122,7 +2138,7 @@ async function chooseModelInner(a,req,anchor){
   const pend=a.pendingModel;
   if(!pend&&tgt.id===cur.id&&tierTo===tierFrom&&sameEffort)return;
   const c=STATS.agent(a.id).ctx,tokens=c?c.tokens:undefined;
-  const cap=a.info.maxAiCredits,used=a.usage?a.usage.nano/1e9:0;
+  const cap=isUsdCap(a)?undefined:a.info.maxAiCredits,used=a.usage?a.usage.nano/1e9:0; /* the switch estimate is in AI credits: a dollar cap is not compared */
   const cf=DM.confirmFor(cur,tgt,{tokens,cap,used,tierFrom,tierTo});
   const confirm={};
   if(cf.needed){
@@ -2241,16 +2257,19 @@ function maybeSuggestFresh(a){
   if(!DM.suggestFresh({percent:pct,compactions:a.compactions||0,lastCompactionFailed:!!a.compactFailed,idle,dismissed:a.freshDismissed,canCompact:ctrlOf(a).compact===true}))return;
   const chat=liveChat(a),n=document.createElement('div');n.className='note fresh';n.setAttribute('role','note');
   const why=a.compactFailed&&!a.compactions?'The last compaction did not work.':a.compactions?'It was already compacted '+(a.compactions>1?a.compactions+' times':'once')+'.':'This agent cannot compact in place.';
-  n.innerHTML='<b>This conversation is '+pct+'% full.</b> '+esc(why)+' A new session starts clean in the same folder; this one keeps its history.<div class="note-actions"><button class="btn" type="button" data-fresh="new">New session…</button><button class="btn" type="button" data-fresh="x">Dismiss</button></div>';
+  n.innerHTML='<b>This conversation is '+pct+'% full.</b> '+esc(why)+' A new session starts clean in the same folder; this one keeps its history.<div class="note-actions"><button class="btn" type="button" data-fresh="new">New session…</button>'+(canHandoff(a)?'<button class="btn" type="button" data-fresh="sum">New session with a summary…</button>':'')+'<button class="btn" type="button" data-fresh="x">Dismiss</button></div>';
   n.querySelector('[data-fresh="new"]').onclick=()=>newSession(a);
+  const sb=n.querySelector('[data-fresh="sum"]');if(sb)sb.onclick=()=>newSession(a,{summary:true});
   n.querySelector('[data-fresh="x"]').onclick=()=>{a.freshDismissed=true;n.remove();a.freshNote=null;const i=$('msgInput');if(i)i.focus();};
   chat.el.appendChild(n);a.freshNote=n;scrollChat(chat);
 }
 
 /* ---------------- new session (another agent in a folder) ---------------- */
 function closeSessDlg(){const d=document.getElementById('sessDlg');if(d)d.remove();}
-function newSession(a0){
-  const a=liveRoot(a0); if(!bridge.newSession)return;
+/* spec 030 FR-036: a live agent whose kind can make a hand-off summary */
+const canHandoff=a=>!!(bridge.handoff&&a&&a.live&&!a.parent&&feat(a,'handoff'));
+function newSession(a0,o){
+  const a=liveRoot(a0); if(!bridge.newSession)return; o=o||{};
   closeSessDlg();
   const d=document.createElement('div');d.id='sessDlg';d.className='dlg-ov';
   d.innerHTML=`<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="sdT"><h3 id="sdT">New session in ${esc(roomOf(a).name)}</h3>
@@ -2260,11 +2279,12 @@ function newSession(a0){
    <label id="sdModelL">Model<select id="sdModel"></select></label>
    <label id="sdEffL">Reasoning effort<select id="sdEff"></select></label>
    ${bridge.listProfiles&&a.info&&a.info.profiles?`<div id="sdAgentL" class="sd-agent" hidden><label>Agent<select id="sdAgent"><option value="">Default agent</option></select></label>${bridge.setFolderDefaultAgent?'<label class="chk"><input type="checkbox" id="sdAgentDef"> Default for new sessions here</label>':''}</div>`:''}
-   ${bridge.setCap?'<label id="sdCapL">Credit cap (AIU, empty = no cap)<input id="sdCap" type="number" min="0.001" step="0.01" placeholder="No cap"></label>':''}
+   ${canHandoff(a)?`<label class="chk" id="sdSumL"><input type="checkbox" id="sdSum"${o.summary?' checked':''}> Start with a summary of this conversation (you review it before it is sent)</label>`:''}
+   ${bridge.setCap?'<label id="sdCapL"><span id="sdCapT">Credit cap (AIU, empty = no cap)</span><input id="sdCap" type="number" min="0.001" step="0.01" placeholder="No cap"></label>':''}
    <div class="dbtn"><button class="btn" id="sdCancel" type="button">Cancel</button><button class="btn primary" id="sdGo" type="button">Start session</button></div></div>`;
   document.body.appendChild(d);
   $('sdPerm').value=a.info.permMode||'read-only';
-  if($('sdCap'))$('sdCap').value=APP_SETTINGS.defaultMaxAiCredits||'';
+  let capUsd=null; /* the unit the cap field shows; the AIU default is never put in a dollar field (FR-150) */
   /* the chosen kind decides which fields exist: its own model list (spec 012 FR-120; none yet = hidden, FR-062); no credit cap field without the capability (FR-061) */
   const kindNow=()=>$('sdKind')?$('sdKind').value:'';
   const listKind=()=>{const k=kindNow()||a.info.adapterId||'';return isDefaultKind(k)?'':k;};
@@ -2276,7 +2296,11 @@ function newSession(a0){
     $('sdModelL').hidden=(!!lk&&!modelsFor(lk).length)||(c&&!DMK().shows(c,'models'));
     const off=c&&!DMK().shows(c,'effort');
     fillEffortSelect($('sdEff'),$('sdModel').value,a.info.effort,off||$('sdModelL').hidden,lk);$('sdEffL').hidden=$('sdEff').hidden;
-    if($('sdCapL'))$('sdCapL').hidden=!!c&&!DMK().shows(c,'cap');
+    if($('sdCapL')){
+      $('sdCapL').hidden=!!c&&!DMK().shows(c,'cap');
+      const cc=c||capsFor(a),usd=!!cc&&cc.capUnit==='usd';
+      if(usd!==capUsd){capUsd=usd;$('sdCapT').textContent=usd?'Cost cap ($, Claude\'s estimate, empty = no cap)':'Credit cap (AIU, empty = no cap)';$('sdCap').min=usd?String(MIN_USD_CAP):'0.001';$('sdCap').value=usd?'':(APP_SETTINGS.defaultMaxAiCredits||'');}
+    }
     if(c)fillPermSelect($('sdPerm'),c);
   };
   if($('sdKind'))$('sdKind').value=pickKind(a.info.adapterId||defaultKind());
@@ -2301,20 +2325,57 @@ function newSession(a0){
     if($('sdKind')&&(!kind||(DMK().kindChoices(KINDS).find(k=>k.id===kind)||{disabled:true}).disabled)){toast('That agent kind is not ready. Open "About agent kinds" in the toolbar to see why.',6000);return;}
     const opts={permMode:$('sdPerm').value,model:$('sdModelL').hidden?undefined:$('sdModel').value,effort:$('sdEff').hidden?undefined:($('sdEff').value||undefined)};
     if(kind)opts.adapterId=kind;
-    if($('sdCap')&&!$('sdCapL').hidden){const cv=parseFloat($('sdCap').value);opts.maxAiCredits=cv>=MIN_CAP&&cv<=1e6?Math.round(cv*100)/100:null;}
+    if($('sdCap')&&!$('sdCapL').hidden){const cv=parseFloat($('sdCap').value);opts.maxAiCredits=capUsd?(cv>=MIN_USD_CAP&&cv<=1e4?Math.round(cv*100)/100:null):(cv>=MIN_CAP&&cv<=1e6?Math.round(cv*100)/100:null);}
     const profId=$('sdAgentL')&&!$('sdAgentL').hidden?$('sdAgent').value:'';
     if($('sdAgentDef')&&!$('sdAgentL').hidden){
       const want=$('sdAgentDef').checked&&profId?profId:(profId===a.info.defaultAgent?null:undefined);
       if(want!==undefined&&want!==(a.info.defaultAgent||null))bridge.setFolderDefaultAgent(a.id,want).then(dr=>{if(dr&&dr.ok)for(const x of agents)if(x.room===a.room&&x.info)x.info.defaultAgent=dr.defaultAgent;}).catch(()=>undefined);
     }
-    $('sdGo').disabled=true;$('sdGo').textContent='Starting…';
+    let first='';
+    if($('sdSum')&&$('sdSum').checked){
+      /* spec 030 FR-036: make the summary, let the user edit it; nothing is sent until Start */
+      $('sdGo').disabled=true;$('sdGo').textContent='Preparing a summary…';
+      const h=await bridge.handoff(a.id).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+      if(!$('sessDlg'))return; /* cancelled meanwhile */
+      closeSessDlg();
+      const text=h&&h.ok?String(h.summary||'').trim():'';
+      if(!text){
+        const why=h&&h.ok?'The agent returned an empty summary.':'Could not make a summary: '+((h&&h.error)||'unknown error');
+        const go=await askDialog({title:'No summary',body:why,lines:['You can still start a new session without it.'],buttons:[{label:'Cancel',value:null},{label:'Start without a summary',value:'ok',cls:'primary'}]});
+        if(!go)return;
+      }else{
+        first=await reviewHandoff(a,text,h.costUsd);
+        if(first===null)return;
+      }
+    }
+    if($('sdGo')){$('sdGo').disabled=true;$('sdGo').textContent='Starting…';}
     const r=await bridge.newSession(a.id,opts);
     closeSessDlg();
     if(!r.ok){toast('Could not start a session: '+esc(r.error||'unknown error'),6000);return;}
     addLiveAgent(r.agent); openPanel(r.agent.id,false);
     if(profId){const na=liveById(r.agent.id),p=(a.profileList||[]).find(x=>x.id===profId);if(na&&p){na.profileList=a.profileList;applyProfile(na,p);}}
+    if(first){const keep=attached;attached=[];await sendLive(first,r.agent.id);attached=keep;renderAttached();}
   };
   $('sdGo').focus();
+}
+
+/* spec 030 FR-036: the hand-off summary in an editable box; resolves to the edited text, or null (Cancel). User text: never logged. */
+function reviewHandoff(a,text,costUsd){
+  return new Promise(resolve=>{
+    const d=document.createElement('div');d.id='hoDlg';d.className='dlg-ov';
+    const cost=costUsd>0?' (about $'+(costUsd<0.01?costUsd.toFixed(4):costUsd.toFixed(2))+', Claude\'s estimate)':'';
+    d.innerHTML=`<div class="dlg ho-dlg" role="dialog" aria-modal="true" aria-labelledby="hoT"><h3 id="hoT">Summary for the new session</h3>
+     <p class="dsub">This becomes the first message of the new session in ${esc(roomOf(a).name)}. Edit it as you like; nothing is sent until you press Start. Making it used the model of ${esc(a.name)}${esc(cost)}; this session keeps its history.</p>
+     <textarea id="hoText" rows="14" aria-label="Summary for the new session"></textarea>
+     <div class="dbtn"><button class="btn" id="hoCancel" type="button">Cancel</button><button class="btn primary" id="hoGo" type="button">Start new session</button></div></div>`;
+    document.body.appendChild(d);
+    const ta=$('hoText');ta.value=text;
+    const done=v=>{d.remove();resolve(v);};
+    $('hoCancel').onclick=()=>done(null);
+    $('hoGo').onclick=()=>{const v=ta.value.trim();if(!v){ta.focus();return;}done(v);};
+    d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();done(null);}});
+    ta.focus();ta.setSelectionRange(0,0);ta.scrollTop=0;
+  });
 }
 
 /* ---------------- folders: new session, hide / show, remove ---------------- */
@@ -2331,7 +2392,9 @@ const schedulesOf=r=>SCHED.schedules.filter(s=>s.folder===folderKeyOf(r));
 const clock=ms=>{const d=new Date(ms),n=new Date(),t=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});return d.toDateString()===n.toDateString()?t:d.toLocaleDateString([],{month:'short',day:'numeric'})+' '+t;};
 const nextRunOf=ss=>{const t=ss.filter(s=>!s.paused&&!s.done).map(s=>s.every!==undefined?s.next:s.at).filter(Boolean).sort((a,b)=>a-b)[0];return t&&!SCHED.pausedAll?clock(t):'';};
 const OUTCOME_WORD={sent:'sent','skipped-busy':'skipped: the agent was busy','skipped-paused':'skipped: paused',missed:'missed: the app was closed',failed:'could not send'};
-const whenOf=s=>s.every!==undefined?(s.every%60===0?'every '+(s.every/60)+' h':'every '+s.every+' min'):'once at '+clock(s.at);
+const hm=ms=>{const d=new Date(ms);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
+const whenOf=s=>s.every!==undefined&&s.at!==undefined?(s.every===1440?'every day at '+hm(s.at):'every '+(s.every%60===0?(s.every/60)+' h':s.every+' min')+' from '+hm(s.at)) /* spec 044 FR-007 */
+  :s.every!==undefined?(s.every%60===0?'every '+(s.every/60)+' h':'every '+s.every+' min'):'once at '+clock(s.at);
 function renderSchedDlg(){
   const d=$('schedDlg'); if(!d)return; const r=ROOMS.find(x=>x.id===d.dataset.room); if(!r){closeSchedDlg();return;}
   const ss=schedulesOf(r), list=$('sdList');
@@ -2348,8 +2411,9 @@ function openSchedules(r){
    <p class="dsub">A prompt sent to this folder's agent at a time or an interval, <b>only while Agent Durbar is open</b>. A run is skipped when the agent is busy or waiting for you; missed runs are not caught up. The agent's own permission mode and credit cap apply.</p>
    <p class="sc-paused" id="sdPausedNote" hidden>All schedules are paused (Folders panel).</p>
    <div class="sc-list" id="sdList"></div>
-   <div class="sc-form"><label>Prompt<textarea id="scPrompt" rows="3" maxlength="2000" placeholder="For example: Summarise the open pull requests in three bullet points."></textarea></label>
+   <div class="sc-form">${window.DurbarSchedTemplates?`<label>Start from a template<select id="scTpl"><option value="">Blank prompt</option>${DurbarSchedTemplates.TEMPLATES.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')}</select></label><p class="sc-tpl-note" id="scTplNote" hidden></p>`:''}<label>Prompt<textarea id="scPrompt" rows="3" maxlength="2000" placeholder="For example: Summarise the open pull requests in three bullet points."></textarea></label>
     <div class="sc-when"><label class="chk"><input type="radio" name="scKind" value="every" checked> Every <input type="number" id="scEvery" min="5" max="1440" step="5" value="60" aria-label="Minutes between runs"> minutes</label>
+    <label class="chk"><input type="radio" name="scKind" value="daily"> Every day at <input type="time" id="scDaily" value="08:30" aria-label="Time of day"></label>
     <label class="chk"><input type="radio" name="scKind" value="once"> Once at <input type="datetime-local" id="scAt" value="${local}" aria-label="Date and time"></label></div></div>
    <div class="dbtn"><button class="btn" id="scClose" type="button">Close</button><button class="btn primary" id="scAdd" type="button">Add schedule</button></div></div>`;
   document.body.appendChild(d);
@@ -2360,9 +2424,10 @@ function openSchedules(r){
     if(b.id==='scClose'){closeSchedDlg();return;}
     if(b.id==='scAdd'){
       const prompt=$('scPrompt').value.trim();if(!prompt){$('scPrompt').focus();toast('Write the prompt first.',3000);return;}
-      const once=d.querySelector('input[name="scKind"]:checked').value==='once';
+      const kind=d.querySelector('input[name="scKind"]:checked').value,once=kind==='once';
       const input={folder:folderKeyOf(r),prompt};
-      if(once){const t=new Date($('scAt').value).getTime();if(!(t>Date.now())){toast('Choose a time in the future.',3500);return;}input.at=t;}
+      if(kind==='daily'){const t=DurbarSchedTemplates.nextDaily($('scDaily').value,Date.now());if(!t){toast('Choose a time of day.',3500);return;}input.every=1440;input.at=t;} /* spec 044 FR-007 */
+      else if(once){const t=new Date($('scAt').value).getTime();if(!(t>Date.now())){toast('Choose a time in the future.',3500);return;}input.at=t;}
       else{const m=Math.round(Number($('scEvery').value));if(!(m>=5&&m<=1440)){toast('Choose 5 to 1440 minutes.',3500);return;}input.every=m;}
       const res=await bridge.saveSchedule(input);
       if(!res.ok){toast(esc(res.error||'Could not add the schedule.'),5000);return;}
@@ -2373,7 +2438,16 @@ function openSchedules(r){
     else if(b.dataset.sc==='pause'){await bridge.saveSchedule(Object.assign({},s,{paused:!s.paused}));await refreshSchedules();}
   });
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeSchedDlg();}});
-  $('scPrompt').focus();
+  /* spec 044 FR-006: a template fills the form (prompt and when); nothing is saved until Add schedule */
+  const tpl=$('scTpl');if(tpl)tpl.addEventListener('change',()=>{
+    const t=DurbarSchedTemplates.byId(tpl.value),note=$('scTplNote');
+    if(!t){note.hidden=true;return;}
+    $('scPrompt').value=t.prompt;
+    if(t.daily){d.querySelector('input[name="scKind"][value="daily"]').checked=true;$('scDaily').value=t.daily;}
+    else if(t.every){d.querySelector('input[name="scKind"][value="every"]').checked=true;$('scEvery').value=String(t.every);}
+    note.textContent=t.needs+(t.decides?' At the end it asks you what to do next: the agent shows as Waiting for you, with a question card in its chat.':'')+' You can edit the prompt and the time before adding it.';note.hidden=false;
+  });
+  (tpl||$('scPrompt')).focus();
 }
 async function refreshSchedules(){if(!bridge.listSchedules)return;SCHED=await bridge.listSchedules();renderFolders();renderSchedDlg();}
 document.addEventListener('change',async e=>{if(e.target&&e.target.id==='schedPauseAll'){const r=await bridge.setSchedulesPaused(e.target.checked);SCHED.pausedAll=r.pausedAll;renderFolders();renderSchedDlg();}});
