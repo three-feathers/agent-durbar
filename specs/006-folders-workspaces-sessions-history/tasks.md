@@ -31,3 +31,4 @@
 - [x] T029 `label` in `SavedFolder` (parse, save, restore) with `test:folders`; `folders:rename` in main, bridge, simulator; Folders > **Rename** dialog; room name everywhere [FR-018]
 - [x] T030 Screenshots at 1440x900 and 1280x800, README, CHANGELOG, specs index [FR-017, FR-018]
 
+- [x] T026 (2026-10-19) Remove folder where the user is: chat header for a single-session folder, right-click folder menu on the room header [FR-022]
