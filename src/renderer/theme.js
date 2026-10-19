@@ -24,7 +24,7 @@
   const CLEAN_TOKENS={
     /* core UI */
     '--bg':'#f6f3ee',
-    '--surface':'#fffdf9',
+    '--surface':'#fffdf9','--raised':'#ffffff','--card':'#fffdf9','--card-waiting':'#fef5e0','--card-waiting-line':'#e3bd75','--card-error':'#fcefec','--card-error-line':'#e2b6b0','--soft':'#fbf9f4','--note':'#f4f0e6','--warn-bg':'#fdf3df','--bad-bg':'#f9ece9',
     '--surface-2':'#faf7f1',
     '--line':'#e2dbcf',
     '--line-2':'#d3cabb',

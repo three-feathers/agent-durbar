@@ -15,7 +15,7 @@ import type { HistoryResult, PreviousSession } from './history';
 
 export type OptionalMember =
   | 'interrupt' | 'resolvePermission' | 'revokeGrant' | 'setCap' | 'resolveLimit' | 'setMcpEnabled' | 'setModel'
-  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary';
+  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText';
 
 export type Step =
   | { output: string }
@@ -49,6 +49,7 @@ const DEFAULT_CAPS: AdapterCapabilities = {
   mcpStatus: true,
   mcpToggle: true,
   handoff: true,
+  oneShot: true,
 };
 
 interface FakeSession {
@@ -80,6 +81,7 @@ export class FakeAdapter implements AgentAdapter {
   declare listPreviousSessions?: (cwd: string, excludeIds?: ReadonlySet<string>) => Promise<PreviousSession[]>;
   declare history?: (sessionId: string) => Promise<HistoryResult>;
   declare handoffSummary?: (sessionId: string) => Promise<HandoffResult>;
+  declare generateText?: (prompt: string) => Promise<{ text: string; costUsd?: number }>;
   declare setPermMode?: (sessionId: string, mode: PermissionMode, opts?: { clearGrants?: boolean; approvePending?: boolean }) => { pending: number };
 
   private listeners = new Set<(event: AgentEvent) => void>();
@@ -103,6 +105,7 @@ export class FakeAdapter implements AgentAdapter {
       caps: c.caps && !omit.has('setCap') && !omit.has('resolveLimit'),
       mcpToggle: c.mcpToggle && !omit.has('setMcpEnabled'),
       handoff: !!c.handoff && !omit.has('handoffSummary'),
+      oneShot: !!c.oneShot && !omit.has('generateText'),
       permModeSwitch: omit.has('setPermMode') ? ('none' as const) : c.permModeSwitch,
     };
     this.capabilities = caps;
@@ -122,6 +125,7 @@ export class FakeAdapter implements AgentAdapter {
       };
     }
     if (caps.mcpToggle) this.setMcpEnabled = async (sid) => void this.mustGet(sid);
+    if (caps.oneShot) this.generateText = async () => ({ text: '{"name":"Fake","tokens":{"--bg":"#ffffff","--surface":"#ffffff","--ink":"#111111","--muted":"#555555"}}' });
     if (caps.handoff) this.handoffSummary = async (sid) => (this.mustGet(sid), { summary: '## Goal\nFake hand-off summary.' });
     if (has('setModel')) this.setModel = async (sid, request) => (this.mustGet(sid), { status: 'applied', model: request.model });
     if (has('cancelQueuedModel')) this.cancelQueuedModel = async (sid) => void this.mustGet(sid);

@@ -170,6 +170,7 @@ Codex in Read-only and Ask first gets an OS-enforced permission profile limited 
 - **Corporate:** a navy bar, white rooms with an accent edge, square corners.
 - **Retro Pixel:** a dark arcade page with pixel characters at CRT desks.
 - **Durbar · Indian / European / Japanese:** three royal courts, each with its own frames, colours and court place names.
+- **Make a theme with AI:** describe a look ("a pirate ship at night"), or pick one of the ideas, and Claude Code or Codex designs a light or dark theme: colours, a style, place names and art for the people and furniture. Durbar keeps only safe values, cleans the art like an imported pack, and checks that text stays readable; the AI gets up to 3 passes to fix what fails. Try it on the whole app before you save it. One theme costs about a cent on Claude (haiku).
 - **Your own themes:** a folder with a `manifest.json` (colours, a UI style and a scene kit from fixed lists, small SVG art, place names), imported and exported in Settings. A theme is data only: no scripts and no CSS, SVG art is rebuilt from allowed shapes, and a pack that breaks a rule is refused with a message.
 
 Status, permission and credit wording, and the layout, are the same in every theme. Display fonts are your system's own serif and monospace fonts. Details: specs [035](specs/035-theme-foundation/spec.md)-[040](specs/040-user-themes/spec.md).
@@ -186,6 +187,8 @@ npm run typecheck && npm run build && npm test   # unit suites in parallel (~20 
 npm start                 # the app, with the harnesses you have installed and signed in
 DURBAR_SIM=15 npm start   # 15 simulated agents: no sessions, no AI credits
 npm run check:office      # layout check at 1440x900 and 1280x800 (Electron; xvfb on Linux), simulator only
+npm run check:geometry    # every theme lays out exactly like Clean Office (about a minute)
+npm run check:themes      # on demand: the full layout check in every theme, a few at a time, low priority, memory limits
 npm run pack:dir          # unpacked app for this OS in release/ (also dist, dist:mac:arm64, dist:mac:x64, dist:win, dist:linux; unsigned)
 ```
 

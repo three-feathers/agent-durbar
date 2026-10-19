@@ -24,7 +24,7 @@
 
 ## Requirements
 
-- **FR-001** `[IMPLEMENTED]` Main: `theme:listUser` scans `userData/themes/*/manifest.json`, validates (id pattern, size caps: manifest ≤ 64 KB, ≤ 40 tokens, ≤ 24 slots, ≤ 24 words, folder name = id), returns `{id,name}` per valid pack plus `{folder,error}` per invalid one.
+- **FR-001** `[IMPLEMENTED]` Main: `theme:listUser` scans `userData/themes/*/manifest.json`, validates (id pattern, size caps: manifest ≤ 64 KB, ≤ 160 tokens (40 before 2026-10-19; raised so a generated dark theme can set every colour), ≤ 24 slots, ≤ 24 words, folder name = id), returns `{id,name}` per valid pack plus `{folder,error}` per invalid one.
 - **FR-002** `[IMPLEMENTED]` Main: `theme:getUser(id)` returns the manifest JSON (validated again) for renderer application; unknown/invalid → `null`.
 - **FR-003** `[IMPLEMENTED]` Main: `theme:import` (folder picker) validates, refuses built-in ids and path escapes, copies the folder (flat, ≤ 8 files, ≤ 64 KB each) to `userData/themes/<id>/`; `theme:export` copies the active user theme's folder out. Both return `{ok,error?}`.
 - **FR-004** `[IMPLEMENTED]` Renderer: Theme section lists built-ins + user themes (tagged "yours"); picking a user theme applies its manifest via `THEME.setTheme(manifest object)` and persists the id; invalid picks toast and stay on the old theme.
@@ -50,3 +50,79 @@
 - **FR-008** `[IMPLEMENTED]` Review follow-ups: `theme:listUser` sends only id, name, ok and error to the renderer (no folder path); a failed import removes its temporary folder and returns `{ok:false}` instead of throwing; the `DURBAR_PICK` dev hook takes the whole value (Windows `C:\…` paths); `DURBAR_THEME` applies a theme for the run without saving it.
 
 **Tests.** `test:theme` adds Paco's bypass strings and the token and word cases; `test:userthemes` adds a refused token and a failed copy that leaves no temporary folder.
+
+### 2026-10-19: AI theme maker (issue #182, split from #129)
+
+*Owner:* "can you work on some other issue in parallel like issue #182". The issue's open questions are settled here; the owner's request also covers the AI credits a generation spends.
+
+- **FR-014** **Make a theme with AI.** Settings > Theme has **Make a theme with AI…**:
+  1. The user describes a look in words ("a night-shift newsroom", "a ship's bridge"), at most 300 characters.
+  2. The user picks a harness that can do it (one marked `oneShot`, see FR-015).
+  3. Durbar asks that harness once and shows the result: name, colour swatches, UI style, scene kit and place names.
+  4. **Try it** applies it live without saving. **Save as my theme** stores it as a user theme (FR-001, same folder and format), and it then appears in the list with "yours". **Discard** goes back to the theme that was active before; that is the undo.
+- **FR-015** **Harness.** The optional adapter capability `oneShot` with `generateText(prompt)` runs one prompt with **no tools, no MCP servers and no session kept**, in an empty temporary folder:
+  - **Claude Code:** `claude -p <prompt> --tools "" --no-session-persistence --strict-mcp-config --setting-sources "" --output-format json --max-budget-usd 0.25`; its dollar estimate is shown with the result.
+  - **Codex:** an ephemeral thread with the read-only sandbox and no approvals.
+  - **Copilot:** not in Phase 1 (`[KNOWN GAP]`; it needs a throw-away SDK session).
+  - **Simulator:** a canned theme.
+- **FR-016** **Only the safe subset.** `src/shared/themegen.ts` writes the prompt, which lists the allowed fields and values and asks for JSON only. It then takes from the reply **only**:
+  - a name of up to 40 characters, which becomes an id `ai-<slug>` that clashes with no built-in or saved theme;
+  - `ui` and `scene` from the fixed lists (FR-007), with anything else falling back to Clean;
+  - colours for **any token that Clean Office defines** (about 145), as `#rgb`, `#rrggbb`, `#rrggbbaa`, or `rgb()`/`rgba()`, which are converted to hex; anything else is dropped;
+  - place and door words for a fixed list of keys, as plain text of at most 40 characters (`<`, `>`, `{` and `}` dropped);
+  - **art** for the 15 scene slots (people, desks, monitors, plants and the like), each at most 4000 characters, **only through the art sanitiser** (`_sanitizeSlot`, the same one imported packs use: allowed shapes and attributes only, no scripts, no links, no `url()`, no styles). A slot the sanitiser refuses is left out with a warning. The prompt gives each slot's geometry, so the art lines up with the scene (for example, the monitor's screen stays clear for the agent state).
+  - Missing tokens fall back to Clean Office (`extends: "clean-office"`). The result then passes the same `checkUserManifest` as an imported pack (FR-005..FR-010) and the renderer's own validator.
+- **FR-017** **Legible, light or dark.** *Owner:* "ai can take multiple passes than hand tuning those retro pixel type themes no? rather than adding it as a limitation". An earlier draft allowed light themes only; that limit is gone. The prompt lists every token with its Clean value, so a dark look sets them all. `themeIssues` then checks:
+  - 20 contrast pairs (WCAG): `--ink` on `--bg`, `--surface`, `--raised` and the three card colours, `--ink-2` on `--surface`, `--soft` and `--note` (4.5:1); `--muted` on `--surface` and `--room-path` on `--bg` (3:1); each status pill's text on its background (4.5:1); the drop zone, the brand mark and the idle stub;
+  - **the top bar:** the corporate and retro styles fill it with `--ink`, and the Indian and European courts with `--brand-bg`, under fixed light text, so that colour must be dark enough (4.5:1);
+  - **a dark page sets every light token:** when `--bg` is dark, any token still on a light Clean value is listed.
+
+  The CSS now takes every surface from tokens: 25 hard-coded whites became `--raised`, translucent whites a `color-mix` of `--raised`, and card and note backgrounds got their own tokens (`--card`, `--card-waiting`, `--card-error`, `--soft`, `--note` and others). Each new token has its exact old value, so built-in themes look the same (`check:themes`).
+
+  Status colours keep their meaning: the prompt asks for blue-ish working, amber waiting, red error and so on, and the status words are the same in every theme. The hue itself is not enforced.
+- **FR-018** **Nothing is kept from the description.** It is sent once to the chosen harness and not stored. A saved theme stores only its manifest, with `author: "AI theme maker"` and the description as `description`, cut to 300 characters, so the user can see later where the theme came from.
+- **FR-019** **Export works on the active theme** (the owner, on alpha.7: "export active theme did not work").
+  - **The cause:** Settings painted the Export button and the theme list once, so after picking another theme on the same screen, Export still used the old theme (disabled for a built-in one, or exporting the wrong one), and the list kept the old "pressed" marker.
+  - **The fix:**
+    - Export reads the theme that is active **when clicked**;
+    - on a built-in theme it says why there is nothing to export, instead of being silently disabled;
+    - the list marks the new choice at once;
+    - the export folder picker can create a new folder (macOS shows *New Folder* only with `createDirectory`).
+- **FR-020** **Several passes, not hand tuning.** Generation is a loop in main, at most `MAX_PASSES = 3` calls:
+  1. If a reply has no usable theme (no JSON, too few colours), it is asked again once with the error.
+  2. If the theme has issues (FR-017), the model gets its own JSON back with the list of issues and fixes them (`buildFixPrompt`). The best result so far (fewest issues) is kept. **The art is not sent back:** the checks are about colours, and 15 art slots could make the prompt about 65,000 characters, more than one command line allows on Windows (32,767). The fix pass answers without art, and `keepArt` keeps the earlier pass's already sanitised art, if the theme still passes `checkUserManifest`. A fix prompt stays under 16,000 characters (unit test).
+  3. After the passes, a top-bar issue that is left switches the UI style to `clean`, whose top bar follows `--surface` and `--ink`. Text that is still unreadable (`--ink`, `--ink-2` or `--muted`) refuses the theme; the user sees why and can **Try again**. Other issues left are shown as warnings with the preview.
+
+  The preview says how many passes it took and the total dollar estimate (Claude).
+- **FR-021** **Ideas and a try bar.** *Owner:* "give some ideas (random ones from a list you store) like what you are testing, pirate,.. so that users know how to prompt."
+  - The dialog shows 4 random ideas from a stored list of 24 (`THEME_IDEAS`, for example "a pirate ship at night", "a Kyoto tea house in autumn"). Clicking one fills the description; **More ideas** draws 4 others.
+  - **Try it** closes Settings and shows the theme on the whole app, with a small bar at the bottom: **Save as my theme**, **Details** (the preview again), **Try again** and **Discard**. Nothing is saved until the user says so.
+- `[IMPLEMENTED]`:
+  - `src/shared/themegen.ts` (`buildThemePrompt`, `buildRetryPrompt`, `buildFixPrompt`, `parseGeneratedTheme`, `themeIssues`, `firstJsonObject`, `toHex`, `contrast`, `THEME_IDEAS`, `pickIdeas`);
+  - the pass loop in IPC `theme:generate`, and IPC `theme:ideas`; the token cap at 160; the new surface and card tokens in `theme.js` and `styles.css`;
+  - `generateText` in `claude.ts` (`oneShotArgs`, an empty temp folder, removed after) and `codex.ts` (an ephemeral read-only thread in its own probe child);
+  - the capability `oneShot`; IPC `theme:generate` and `theme:saveGenerated`; `UserThemeStore.saveManifest`;
+  - Settings > Theme > **Make a theme with AI…** (ideas, describe, harness, preview with swatches, place names, passes and cost; Try it with the try bar, Save as my theme, Try again, Discard);
+  - `previewTheme` in `app.js`; the simulator and the fake adapter.
+- `test:`
+  - `test:themegen`: the prompt; JSON extraction; the safe subset against art, CSS, `url()`, scripts, unknown keys, status colours and `<…>` in words; `rgb()` conversion; art through the sanitiser and refused art; the contrast pairs, the top bar per UI style and the dark-page check; the fix prompt; ideas; unique and accent-folded ids.
+  - `test:claudeadapter`: `oneShotArgs`, the temp folder, a failure.
+  - `test:runtime`: Codex `generateText` on the fake app-server, and contract C2 `generateText() <=> oneShot`.
+- `sim:` `scripts/shots-040-aitheme.js` at 1440x900 and 1280x800:
+  - Export on a built-in theme explains itself;
+  - the dialog offers Claude but not Copilot;
+  - the dialog shows idea chips, a click fills the description, and More ideas draws others;
+  - the preview shows swatches and words; Try it closes Settings and shows the try bar; Discard restores; Details and Try again work from the bar;
+  - Save lists the theme as "yours" and makes it active; Export then works; the list marks a new pick at once.
+  - Screenshots: `docs/screenshots/040-aitheme-*.png` and `040-aitheme-preview-*.png`.
+- `real:` 2026-10-19, the description "a ship's bridge at dawn":
+  - **Claude Code 2.1.303 (haiku):** "Bridge at dawn" in 12 s for $0.0019; 37 colours, place names like "Logbook" and "Seal hatch"; passes every check.
+  - **Codex 0.163:** "Dawn on the bridge" in 15 s; light, place names like "Chart Room" and "Observation Deck"; passes. Its first try came out dark with only part of the colours set, which looked broken and led to FR-017 and FR-020.
+- `real:` 2026-10-19, after FR-017 and FR-020, Claude Code (haiku), "a pirate ship at night": pass 1 gave 145 colours and all 15 art slots with 1 contrast issue; pass 2 fixed it. About $0.01 in total. The render (built from the saved manifest in the simulator) shows a consistent dark theme: readable cards, room pills, lobby and top bar, and generated art on the people and desks. Screenshot: `docs/screenshots/040-aitheme-pirate-1440x900.png`.
+- `real:` 2026-10-19, after the art-free fix pass, Claude Code (haiku), "a haunted Victorian library at midnight": pass 1 gave 144 colours and 14 art slots with 1 issue (`--room-path` on `--bg` 2.8:1); the fix prompt was 4,133 characters; pass 2 had no issues, and `keepArt` kept all 14 art slots. 56 s, $0.0091.
+- `[KNOWN GAP]`:
+  - Copilot cannot make a theme yet (a throw-away SDK session is needed);
+  - the status hues are asked for in the prompt, not enforced;
+  - a dark theme from Codex was not tried after FR-020 (Claude was);
+  - the full app with a real harness was not driven through the dialog. The adapters were checked for real, and the dialog in the simulator.
+
