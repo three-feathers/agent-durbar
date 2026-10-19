@@ -397,8 +397,10 @@ async function driver(ctx) {
       await load(q, w, h);
       const o = await ctx.js(`({text:(document.querySelector('#stage .empty')||{}).textContent||'',hidden:document.getElementById('floorsBtn').hidden})`);
       total++;
-      if (!re.test(o.text) || o.hidden === btnShown) { failed++; console.log(`FAIL all-off ${w}x${h} ${label}: text "${o.text}", Floors button ${o.hidden ? 'hidden' : 'visible'}`); }
-      if (!btnShown && /above/.test(o.text)) { failed++; console.log(`FAIL all-off ${w}x${h} ${label}: the message names a button that is not on screen`); }
+      const why = [];
+      if (!re.test(o.text) || o.hidden === btnShown) why.push(`text "${o.text}", Floors button ${o.hidden ? 'hidden' : 'visible'}`);
+      if (!btnShown && /above/.test(o.text)) why.push('the message names a button that is not on screen');
+      if (why.length) { failed++; console.log(`FAIL all-off ${w}x${h} ${label}: ${why.join('; ')}`); }
     }
   }
   /* spec 001 FR-023/FR-024 (T030): many folders with one agent each (simrooms=solo), with and without a closed door, both sizes */

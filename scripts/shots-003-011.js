@@ -12,7 +12,7 @@
  */
 const path = require('path');
 const assert = require('assert');
-const OUT = process.env.SHOTS_OUT || '/tmp';
+const OUT = process.env.SHOTS_OUT || require('os').tmpdir();
 
 module.exports = async (ctx) => {
   const click = (sel) => ctx.js(`(()=>{const e=document.querySelector(${JSON.stringify(sel)});if(!e)return false;e.click();return true})()`);
