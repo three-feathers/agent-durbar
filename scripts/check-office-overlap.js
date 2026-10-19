@@ -246,6 +246,7 @@ async function driver(ctx) {
   const userTheme = process.env.OFFICE_USER_THEME ? JSON.parse(fs.readFileSync(process.env.OFFICE_USER_THEME, 'utf8')) : null;
   const wantTheme = userTheme ? userTheme.id : (process.env.OFFICE_THEME || '');
   const themeQuery = (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '');
+  let motionShown = false;
   if (wantTheme) console.log('check:office: theme ' + wantTheme + (userTheme ? ' (user theme from ' + path.basename(process.env.OFFICE_USER_THEME) + ')' : ''));
   const load = async (query, w, h) => {
     expectPlaces = 5 + Number((/(?:^|&)simplaces=([0-3])(?:&|$)/.exec(query) || [])[1] || 0);
@@ -257,6 +258,7 @@ async function driver(ctx) {
       const on = await ctx.js(`({id:window.THEME.current().id,ui:document.documentElement.dataset.ui||'clean',want:(window.THEME.current().manifest||{}).ui||'clean'})`);
       if (on.id !== wantTheme || on.ui !== on.want) throw new Error(`theme ${wantTheme} was not applied (on screen: ${on.id}, data-ui ${on.ui})`);
     }
+    if (!motionShown) { motionShown = true; console.log('check:office: motion ' + ((await ctx.js(`matchMedia('(prefers-reduced-motion: reduce)').matches`)) ? 'reduced' : 'on')); }
     await forceFonts(w, h);
     await sleep(500);
     /* spec 024: agents go to the lobby after 600 ms and the walk takes about 1 s: wait until somebody is there and nobody is walking */
@@ -535,7 +537,7 @@ async function driver(ctx) {
   rows.forEach((r) => console.log(`  ${r.problems ? 'FAIL' : 'ok  '} ${r.label.padEnd(60)} ${String(r.d).padEnd(5)} h=${r.h} rooms=${r.rooms} plates=${r.plates} desks=${r.desks} stage ${r.stageH}/${r.floorH}px minFont=${r.minFont}`));
   console.log(`\noffice check: ${total - failed}/${total} checks passed, ${failed} failed`);
   if (failed) process.exitCode = 1;
-  if (failed) fs.writeFileSync(path.join(os.tmpdir(), 'durbar-office-check.fail'), String(failed));
+  if (failed) fs.writeFileSync(process.env.OFFICE_FAIL_MARKER || path.join(os.tmpdir(), 'durbar-office-check.fail'), String(failed));
 }
 
 module.exports = driver;
@@ -543,12 +545,15 @@ module.exports = driver;
 if (require.main === module) {
   const { spawnSync } = require('child_process');
   if (!fs.existsSync(INDEX)) { console.error('dist/ missing: run npm run build first'); process.exit(2); }
-  const marker = path.join(os.tmpdir(), 'durbar-office-check.fail');
-  try { fs.rmSync(marker); } catch (_) { /* none */ }
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-check-'));
+  // one marker per run, so parallel runs (scripts/check-parallel.js) never read each other's result
+  const marker = path.join(userData, 'office-check.fail');
   const electron = require('electron'); /* path to the binary */
-  const env = { ...process.env, DURBAR_DRIVER: __filename, DURBAR_USER_DATA: fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-check-')), DURBAR_SIM: '15', DURBAR_SIM_FREEZE: '1' };
+  const env = { ...process.env, DURBAR_DRIVER: __filename, DURBAR_USER_DATA: userData, OFFICE_FAIL_MARKER: marker, DURBAR_SIM: '15', DURBAR_SIM_FREEZE: '1' };
   const useXvfb = process.platform === 'linux' && !process.env.DISPLAY;
-  const args = ['.', '--no-sandbox'];
+  // OFFICE_REDUCED_MOTION=1: Chromium reports prefers-reduced-motion, so walks are instant and nothing animates (spec 008 FR-030).
+  // The plain check keeps motion on, so walking and animated states are still checked there once.
+  const args = ['.', '--no-sandbox', ...(process.env.OFFICE_REDUCED_MOTION === '1' ? ['--force-prefers-reduced-motion'] : [])];
   const r = useXvfb ? spawnSync('xvfb-run', ['-a', electron, ...args], { cwd: ROOT, env, stdio: 'inherit' }) : spawnSync(electron, args, { cwd: ROOT, env, stdio: 'inherit' });
   if (r.error) { console.error(r.error.message); process.exit(2); }
   process.exit(fs.existsSync(marker) ? 1 : r.status === 0 ? 0 : r.status || 1);

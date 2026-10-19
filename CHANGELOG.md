@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.7 tag)
 
+- **Faster checks that keep the computer usable** (spec 008 FR-027..FR-030). CI checks the office layout in every theme, in parallel on its own runners, and a theme that breaks the layout blocks the merge. Locally, `npm run check:themes` builds once and runs a few checks at a time, at low priority, and stops a job when memory runs low. Animation is checked once, in the plain office check; the theme checks run without it, about 30% faster. `npm test` leaves a core free.
 - **A project website** at <https://three-feathers.github.io/agent-durbar/> (spec 050, #293). It is generated from the README, the specs index, screenshots, the CHANGELOG and the latest release, and CI republishes it when those change.
 - **Schedules are easy to find (spec 044 FR-009..FR-011).** *Schedules…* in each room's ⋯ menu, a clock chip in the room header with the next run, a *Schedules* button in the chat, and **Settings > Schedules** for all folders.
 - **Team rule: check the linked issue before merging** (owner, spec 021). An issue closes only when everything in it is done; otherwise what is left is written on it, or in a follow-up issue.

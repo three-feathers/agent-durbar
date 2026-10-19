@@ -98,4 +98,6 @@ No docs impact? Tick the PR template's *no docs impact* box and write `Docs: n/a
 npm run typecheck && npm run build && npm test
 ```
 
+**Fast checks, same quality** (owner, 2026-10-19): make checks faster by building once, running in parallel and checking an animation once rather than in every run, never by dropping checks. Your own computer must stay usable: keep the limits in `scripts/run-tests.js` and `scripts/check-parallel.js` (they leave CPU free, watch memory and run at low priority), run long checks in the background, and leave big matrices (every theme, every OS) to CI's parallel runners. Before you stop a check, find its processes by PID or with a `[c]har` pattern: `pkill -f <pattern>` also matches the shell that runs it.
+
 For UI changes also take screenshots at 1440x900 and 1280x800 with `DURBAR_SIM=15` (see `specs/001-office-view-and-densities/quickstart.md`). Commit small and focused, with the spec, plan, tasks and docs changes in the same pull request. Fill in the pull request template honestly, including what you did not verify.

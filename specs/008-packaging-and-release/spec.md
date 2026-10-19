@@ -150,3 +150,21 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
 
 *Corrected:* `cancel-in-progress` is true only for pull requests, where a newer push supersedes the old run. On `main`, every merge commit's run finishes, so a release can be tagged on a commit with a complete CI run. Runs on `main` now overlap a little more; the cost is runner minutes, which are free for this public repository.
 
+
+### 2026-10-19: checks that keep the machine usable, and the theme matrix in CI
+
+*Owner:* "i dont want tests and ci to slow down our development - have the principle of super optimization and parallelization while not compromising on the quality". Then, after a first parallel version: "tests bombarded system, cpu and memory were at max and everything became unresponsive - I had to do a powercycle".
+
+*Found:*
+- `check:themes` ran `check:office` 7 times in a row (6 built-in themes and a user-theme fixture), and each run rebuilt the app first; locally it took more than 30 minutes. CI never ran it.
+- A first parallel runner started 4 Electrons on a 4-core laptop with about 2 GB of memory available, while a stray earlier check was probably still running. It froze the machine. Measured afterwards: one office-check Electron needs about 0.6 GB and **more than two cores** (it draws the animated office in software under xvfb), so 2 jobs already load 4 cores to about 5.
+- `check-office-overlap.js` wrote its result to one fixed file in the temp folder, so two checks at once could read each other's result.
+
+*Decision:*
+- **FR-027** The full matrix runs on CI runners, not on a laptop. CI gets a **Theme layout** job: the 5 other built-in themes and the user-theme fixture, each split into 2 shards (12 jobs in parallel; Clean Office is already the plain office check). It runs when a pull request changes `src/renderer/`, the office check, the theme fixtures or the workflow, and on every push to `main`. The required **Office layout check (xvfb)** waits for these shards too and passes only when all of them passed (or were skipped), so a theme that breaks the layout blocks the merge. The runners are free for this public repository.
+- **FR-028** `scripts/check-parallel.js` runs the office check locally in parallel, **without taking the machine**: one build; at most half the CPUs at once (at most 4; `CHECK_JOBS`); a new job starts only while 1.5 GB of memory is available; under 600 MB the newest job is stopped (its whole process group) and queued again; everything at nice 10; a job that takes longer than 15 minutes fails (`CHECK_TIMEOUT`); Ctrl-C stops every job. `npm run check:themes` and `npm run check:office:fast` use it. Each office-check run writes its result to its own file (`OFFICE_FAIL_MARKER` in its own user-data folder).
+- **FR-029** `npm test` leaves a core free (workers = CPUs minus one, at most 8) and runs at nice 10.
+- **FR-030** **Animation checked once, the rest without it.** *Owner:* "can we check animation once and have no animation mode to check other functionalities?" `OFFICE_REDUCED_MOTION=1` starts the office check's Electron with `--force-prefers-reduced-motion`, the app's own reduced-motion mode: walks to the lobby are instant and the office does not animate. The plain `npm run check:office` (CI's 4 office shards) keeps motion on, so walking figures and animated states are still checked there. The theme matrix in CI and the local parallel runner use reduced motion (`CHECK_MOTION=1` turns it back on). Each run prints `check:office: motion on|reduced`. `test:` the same quarter of the quick matrix, one job: 79/79 checks in 83 s with motion, 58 s reduced.
+- **Rule** (`AGENTS.md`, *Before you finish*): make checks fast by building once and running in parallel, never by dropping checks. On your own machine keep the default limits; long matrices belong in CI.
+
+*Measured* (Linux, 4 cores, 15 GB): `OFFICE_QUICK=1 node scripts/check-parallel.js` with 2 jobs passed 242 checks in 150 s; available memory never fell below 10 GB; the 1-minute load peaked at 5.4. The CI timings are in the PR.
