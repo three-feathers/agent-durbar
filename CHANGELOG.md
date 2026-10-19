@@ -6,11 +6,41 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **MCP server groundwork: read tools (spec 041 T016).** The seven read tools (folders, agents, floors, usage totals, settings, MCP state, request status) answer from Durbar's own state with secret values masked: env and header key names only, secret flags and URL parts hidden. Not reachable yet (no server runs). No user-visible change, 0 AIU.
 
-- **MCP server groundwork: tool registry (spec 041 T013, issue #203).** The read-only tools an MCP client will see (folders, agents, floors, usage totals, settings, MCP state, request status), with argument checks and a gate before `initialize`. Change tools stay hidden until the confirmation dialog exists. Not wired yet: nothing listens. No user-visible change, 0 AIU.
-
 - **MCP server groundwork: agent state in the main process (spec 041 T014, issue #204).** The main process now keeps each agent's office word and sub-label (Working, Waiting for you, Limit reached…) with the same rules as the window, so the MCP read tools can report them later. Pausing in the window is reported to the main process. No visible change, 0 AIU.
 
+- **MCP server groundwork: tool registry (spec 041 T013, issue #203).** The read-only tools an MCP client will see (folders, agents, floors, usage totals, settings, MCP state, request status), with argument checks and a gate before `initialize`. Change tools stay hidden until the confirmation dialog exists. Not wired yet: nothing listens. No user-visible change, 0 AIU.
+
 - **MCP server groundwork: main-process simulator (spec 041 T015, issue #215).** A developer hook, `DURBAR_SIM_MAIN=N`, plans N simulated agents in the main process (several floors, one off, with waiting, limit, error and not-started agents) on a fake adapter, so the MCP server can be tested later. Ignored in packaged builds; not wired into the app start yet. No user-visible change, 0 AIU.
+
+- **After a restart, each folder continues its last session (spec 006 FR-020/FR-021).** Before, a restored folder started a new session at its first message. Now opening it resumes the session it last used and shows the earlier conversation; resuming sends no prompt. Only the session's id is remembered. Checked on a real Copilot and a real Claude Code.
+
+- **Security sweep (spec 045).** The app window now refuses to load any page but its own and refuses web permissions such as the microphone or notifications; only clipboard writes for the Copy buttons are allowed. On Windows, a `.cmd` shim is run with the system's own `cmd.exe`, not whatever `ComSpec` names. Custom place ids are drawn uniformly. The remove-folder question shows names with `&` correctly. Code-scanning alerts in test-only scripts were reviewed and dismissed with reasons, which are listed in the spec. One build-time dependency (`sprintf-js` under electron-builder) has no fix yet and is not shipped in the app.
+
+- **Claude Code is offered next to Copilot (spec 012 FR-135/FR-136).** If `claude` is installed and signed in on your computer, Durbar offers it without any switch. When two or more harnesses are ready, the toolbar and the New session dialog have a **Harness** select; with only one, nothing extra is shown, and new folders use that one. Claude's cost stays a dollar estimate, apart from AIU, with no credit cap.
+
+- **Claude Code: the context chip shows how full the window is (spec 012 FR-134).** It used to say "Context: unknown" for a Claude agent. The window now comes from Claude's own per-model report at the end of each turn, and the tokens in use from the last message. Checked on a real Claude Code.
+
+- **Moods in the List view and on the walking figure (spec 034 FR-014/FR-015).** The List view has no figures, so an agent whose context is nearly full, that needs help, fainted, waits impatiently or is dizzy now says so in amber at the start of its task, and to screen readers. An agent walking to a place in the lobby keeps its mood too: an amber ring when heavy, horns when nearly full, a small dot when in trouble. Serious mode hides all of it, as on the cards.
+
+- **A workspace's other folders reach the agent (spec 006 FR-019).** A `.code-workspace` session still runs in its first folder. Its other folders are now given to the agent as well: Copilot's `additionalDirectories`, Claude's `--add-dir`. The agent can work in all of them, with the same permission mode in each.
+
+- **Dev scripts run on any machine (spec 010 T021).** `scripts/e2e-driver.js` takes its folders from `E2E_DIR`/`E2E_SHOTS`/`E2E_LOGS`/`E2E_HELLO`/`E2E_NOTES`, and `npm run smoke` defaults to folders under the temp folder, instead of `/workspace/...`.
+
+- **A default agent per folder (spec 043 FR-009).** In the New session dialog, tick **Default for new sessions here** and that custom agent is preselected the next time you start a session in the folder. Untick it to go back to the default agent. Only the agent's name is saved; a repository agent still asks once.
+
+- **Scheduled prompts (spec 044, issue #125).** In **Folders**, each folder has **Schedules**: a prompt sent to the folder's agent once at a time or every N minutes, only while the app is open. A run is skipped when the agent is busy or waiting for you, missed runs are not caught up, and **Pause all schedules** stops everything. The agent's own permission mode and credit cap apply. Checked on a real Copilot session (0.16 AIU).
+
+- **Custom agents for Claude Code too (spec 043 FR-008).** The experimental Claude agent lists the folder's `.claude/agents` and your own `~/.claude/agents`, with the same one-time confirmation for a repository agent. Claude fixes the agent when a session starts, so it is chosen in the New session dialog or before the first message. Checked on a real Claude Code: a session started with a pirate agent answered "Arr…".
+
+- **A welcome for new users (spec 001 FR-026).** With no folder yet, the office shows a short welcome: sign in to Copilot once, add a folder (its agent starts Read-only), send a message. It has buttons to add a folder or look around in the demo.
+
+- **Start a new session with a custom agent (spec 043 FR-007).** The New session dialog has an **Agent** select listing the folder's custom agents. A repository agent still asks once before it is used.
+
+- **Copy buttons in the chat (spec 005 FR-015).** Each agent reply has a **Copy** button that copies the reply as written, and each code block has its own button for the code only. They appear when you point at a reply or move to them with the keyboard.
+
+- **Move between desks with the arrow keys (spec 001 FR-019).** In the office, the arrow keys move the focus between desks, helper tiles and closed doors: left and right along a row, up and down to the nearest one. Enter opens the desk, as before.
+
+- **Permissions on Windows (spec 003).** "Approve for this session" on a folder now also covers the same folder spelled with other capitals or with `/` instead of `\`. Two permission requests that arrive in the same millisecond without an id no longer overwrite each other.
 
 - **Safer attachments (spec 004).** A picked file counts as an image only if its bytes say so (a renamed `.png` is sent as a file). Empty files are left out, and the image button only offers images. A sent file has to be picked again to be sent again, and temporary attachment folders left by a crash are cleaned up at start.
 

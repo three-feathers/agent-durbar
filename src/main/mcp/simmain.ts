@@ -123,7 +123,7 @@ export async function startSimMain(env: DevEnv, onEvent?: (event: AgentEvent) =>
   const emit = (sid: string, body: EventBody): void => (adapter as unknown as { emit(s: string, b: EventBody): void }).emit(sid, body);
   for (const a of plan.agents) {
     if (a.lazy) continue;
-    await adapter.start({ workspace: a.folder, sessionId: a.id, permissionMode: 'ask' });
+    await adapter.start({ workspace: a.folder, sessionId: a.id, permissionMode: 'read-only' });
     for (const body of a.events) emit(a.id, body);
   }
   return { plan, registry, adapter, stop: () => adapter.dispose() };

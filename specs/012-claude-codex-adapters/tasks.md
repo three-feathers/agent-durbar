@@ -44,15 +44,16 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 
 ## Phase 3: transports on fake processes (still no account, no credits)
 
-- [ ] T040 (needs-owner-approval) Decision Q3 and dependency: add `@anthropic-ai/claude-agent-sdk` pinned to an exact version with a dynamic `import()` wrapper; typecheck and build only, nothing started. Depends on the owner accepting its licence [FR-003, FR-020]
-- [ ] T041 (needs-owner-approval) Decision Q4 and binary source: use the user's installed `claude` via `pathToClaudeCodeExecutable` plus a minimum-version check; a test asserts the vendor binaries are not in `asarUnpack` or the package files [FR-021, FR-010]
+- [x] T040 (needs-owner-approval) Decision Q3 and dependency: add `@anthropic-ai/claude-agent-sdk` pinned to an exact version with a dynamic `import()` wrapper; typecheck and build only, nothing started. Depends on the owner accepting its licence [FR-003, FR-020] (done 2026-10-18: owner decided Q3, the SDK stays optional behind a dynamic `import()` (FR-113); issue #48 closed)
+- [x] T041 (needs-owner-approval) Decision Q4 and binary source: use the user's installed `claude` via `pathToClaudeCodeExecutable` plus a minimum-version check; a test asserts the vendor binaries are not in `asarUnpack` or the package files [FR-021, FR-010] (done 2026-10-18: the user's installed `claude` with the version probe (FR-036..FR-040); issue #49 closed)
 - [x] T042 (sim) `codexRpc.ts`: line-delimited JSON-RPC client over `child_process.spawn` (argv array, absolute path, no shell); tests on a scripted stdio fake: framing, ids, notifications, server requests, malformed lines, child exit [FR-006, FR-020]
 - [x] T043a (sim) `CodexAdapter` on a scripted app-server fake, not registered (PR #177) [FR-089..FR-092, FR-094..FR-099]
 - [ ] T043b (sim) resume with the profile re-check [FR-093]
 - [ ] T043c (sim) registration behind `DURBAR_CODEX=1`, detector [FR-100]
 - [ ] T043 (sim; T043a built 2026-10-18, PR #177, approvals, interrupt and the D5 env deny list included; split 2026-10-18 into T043a fake app-server, handshake, start with the FR-087 refusal, send, turn mapping, stop, crash, contract run; T043b resume with the profile re-check (approvals and interrupt moved into T043a); T043c registration behind `DURBAR_CODEX=1`, detector, env deny list, docs) `CodexAdapter`: initialize, `thread/start` and `thread/resume`, `turn/start`, interrupt, stop, approvals through the broker, crash becomes `error`; contract suite on a scripted app-server fake [FR-003, FR-017, SC-002]
 - [ ] T044 (sim) Packaged-build check without a vendor: the ESM SDK is imported from the CommonJS main process, `asarUnpack` entries are right, run in CI on three OSes; documents the result [FR-021]
-- [ ] T045 (sim) `ClaudeAdapter` on a fake `query()` object seam: input queue, `canUseTool` to broker, hooks, interrupt, close, resume with `sessionId`; the folder's `CLAUDE.md` with its `@` imports (for example `AGENTS.md`, inside the folder only, bounded size) as an appended system prompt while `settingSources` stays `[]` (owner, 2026-10-18, review of #160); contract suite. Depends on T040, T041 [FR-003, FR-017, SC-002]
+- [x] T044a (2026-10-19) The packaged-build check on Linux, run locally: `scripts/pack-esm-check.js` in `release/linux-unpacked` (see the spec change of that date); CI on three OSes stays open (T044)
+- [x] T045 (sim) `ClaudeAdapter` on a fake `query()` object seam: input queue, `canUseTool` to broker, hooks, interrupt, close, resume with `sessionId`; the folder's `CLAUDE.md` with its `@` imports (for example `AGENTS.md`, inside the folder only, bounded size) as an appended system prompt while `settingSources` stays `[]` (owner, 2026-10-18, review of #160); contract suite. Depends on T040, T041 [FR-003, FR-017, SC-002] (done 2026-10-18 as T090-T094 on the CLI transport and the SDK seam; issue #53 closed)
 - [x] T046 (sim, Claude half; done as T096-T098, Codex half with #51) Live permission mode switch (spec 018): Claude `setPermissionMode` immediately, Codex from the next `turn/start`; tests and the toast wording [FR-009, C8]
 - [ ] T047 (sim; the Claude half done as T110 on 2026-10-19, Codex `account/read` open) Availability and sign-in: Codex `account/read` probe, Claude version probe, the "sign in with the CLI in a terminal" message, no prompt ever sent, tests with fakes [FR-010, FR-012]
 - [ ] T048 (fixtures) History readers: Claude `listSessions`/`getSessionMessages` and Codex `thread/list`/`thread/turns/list` converted to previous sessions and chat history, same-folder check, size caps, tests [FR-019]
@@ -61,6 +62,7 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 - [x] T051 (sim) Redaction: vendor stderr and `DURBAR_LOG` never contain environment values, tokens or key-like strings; tests with planted secrets [FR-006]
 - [ ] T052 (sim; Claude `AskUserQuestion` done as T107-T109 on 2026-10-19, elicitation and Codex still open) `AskUserQuestion`, MCP elicitation and `request_permissions` in v1: shown as a pending card, answered deny, recorded as `[KNOWN GAP]` (no question UI yet); tests [FR-004]
 - [ ] T053 (sim) Docs for Phase 3: README adapter section, CHANGELOG Unreleased line, converge spec/plan/tasks, update research.md where the build disproved a `docs:` claim [FR-008]
+- [x] T053a (2026-10-19) The Claude half: research.md findings section; README, CHANGELOG and the spec changes were updated in each pull request (#186-#228); the Codex half stays with #51
 
 ## Phase 4: real-account verification (spends the owner's credits or needs real accounts)
 
@@ -73,9 +75,13 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 - [ ] T064 (needs-owner-approval) (real-account) Codex: Ask first (does a file edit raise an approval in a read-only sandbox?) and the deny path; decide whether Ask first ships for Codex [FR-013, FR-022]
 - [ ] T065 (needs-owner-approval) (real-account) Codex: an MCP tool call, a sub-agent run (child-thread routing) and per-session MCP control; set `helpers` and `mcpToggle` honestly [FR-014, FR-018, FR-024, FR-022]
 - [ ] T066 (needs-owner-approval) (real-account) Claude: version probe, `accountInfo()` and init `apiKeySource` on a real install, no prompt; confirm nothing is billed [FR-010, FR-022]
+- [x] T067 (needs-owner-approval) (real-account) Claude: one Read-only prompt, record the stream, usage, cost estimate, `getContextUsage` and `modelUsage`; replace fixtures [FR-007, FR-015, FR-016, FR-022] (2026-10-19: T067a recorded the stream; the redacted real recording `scripts/fixtures/claude/real-readonly-read.json` now runs in `test-claude-map` next to the synthetic ones)
+
+- [x] T066 (needs-owner-approval) (real-account) Claude: version probe, `accountInfo()` and init `apiKeySource` on a real install, no prompt; confirm nothing is billed [FR-010, FR-022] (real 2026-10-19, see the spec: `--version`, `auth status --json` (only `loggedIn` read) and `initialize` for the models; no session created; `accountInfo()` is the SDK's, not used by the CLI transport)
 - [ ] T067 (needs-owner-approval) (real-account) Claude: one Read-only prompt, record the stream, usage, cost estimate, `getContextUsage` and `modelUsage`; replace fixtures [FR-007, FR-015, FR-016, FR-022]
-- [ ] T068 (needs-owner-approval) (real-account) Claude: Read-only really denies writes and shell with a user allow rule present in the user's settings (hook plus `dontAsk`); Ask first and Allow all; interrupt, stop, resume (at most 4 prompts) [FR-013, FR-017, FR-022]
-- [ ] T069 (needs-owner-approval) (real-account) Claude: an MCP tool call (name parsing, `canUseTool.mcpServer`), a sub-agent run with `forwardSubagentText` (ids, text, thinking), tool names missing from the kind table [FR-014, FR-018, FR-022]
+- [x] T067a (real 2026-10-19) One Read-only prompt: the stream kinds, usage per message and the cost estimate recorded in the spec; no context-window figure is sent (open, see the spec)
+- [x] T068 (needs-owner-approval) (real-account) Claude: Read-only really denies writes and shell with a user allow rule present in the user's settings (hook plus `dontAsk`); Ask first and Allow all; interrupt, stop, resume (at most 4 prompts) [FR-013, FR-017, FR-022] (real 2026-10-19, see the spec's Changes: project `.claude/settings.json` and `settings.local.json` allow rules for Write and Bash are ignored, both denied; the user's own `~/.claude` settings were not edited, Durbar does not load them either (`--setting-sources ""`))
+- [x] T069 (needs-owner-approval) (real-account) Claude: an MCP tool call (name parsing, `canUseTool.mcpServer`), a sub-agent run with `forwardSubagentText` (ids, text, thinking), tool names missing from the kind table [FR-014, FR-018, FR-022] (done 2026-10-19 with `haiku`, $0.0046; see the spec change of that date)
 - [ ] T070 (needs-owner-approval) (real-account) Windows and macOS on real machines: `detect()` and shims, spawn, Codex sandbox setup step and Read-only, packaged build with both adapters [FR-010, FR-021, Q9]
 - [ ] T071 (needs-owner-approval) Policy check: ask Anthropic (and read OpenAI's current terms again) before Durbar supports the user's subscription login; record the answer and update README wording (Q1) [FR-012]
 
@@ -103,7 +109,8 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 - [x] T092 (sim) `claudeSdk.ts`: SDK transport by dynamic import, "not available" without the package; test on a fake module [FR-113]
 - [x] T093 (sim) Register Claude Code experimentally (`DURBAR_CLAUDE=1`, `src/adapters/experimental.ts`), `detectorFor('claude')` with a `--version` probe [FR-114]
 - [x] T094 (real-account, owner allowed) Real CLI checks with the installed `claude` and `haiku`: one Read-only prompt (stream, usage, cost, no write possible), Ask first approve and deny, interrupt, stop and resume in the same folder; record as `real:` with the cost [FR-110..FR-114]
-- [ ] T095 (real-account) Offer Claude Code to every user: run the real app with a Claude agent end to end (add a folder, chat, Ask first approval card, stop, restart and resume), with T085 so Claude's dollar estimate is never added to AIU; then move it to `PRODUCTION_DESCRIPTORS` [FR-114]
+- [x] T095 (real-account) Offer Claude Code to every user: run the real app with a Claude agent end to end (add a folder, chat, Ask first approval card, stop, restart and resume), with T085 so Claude's dollar estimate is never added to AIU; then move it to `PRODUCTION_DESCRIPTORS` [FR-114] (2026-10-19: owner decision; FR-135/FR-136)
+- [x] T113 (sim) FR-135/FR-136: Claude registered without the hook; harness picker only with 2+ ready harnesses, holding the sole ready one when hidden; "Harness" label; tests, docs (2026-10-19)
 - T040 and T041 are answered by this entry (no SDK in `package.json` until the owner accepts its terms; the user's `claude` is used); T045 is done as T091.
 
 ## Changes 2026-10-18 (issue #54, Claude half of T046)
@@ -142,4 +149,5 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 ## Changes 2026-10-19 (issue #58, Claude half of T050)
 
 - [x] T111 (sim) `setMcpEnabled` over `mcp_toggle` + `mcp_status`, kept for relaunches; `mcpToggle: true`; fake-CLI tests; real check with a stdio MCP server, no prompt [FR-133]
+- [x] T112 (2026-10-19) (fixtures, real) Claude context window from `modelUsage.contextWindow` and the last main message's usage; capability `context: true` [FR-134]
 

@@ -59,10 +59,10 @@ Developers capture screenshots at fixed sizes and drive the real window with scr
 - **FR-005** `[IMPLEMENTED]` test: Synthetic fixtures for history and VS Code chat readers live in `scripts/fixtures/`; none contains real user data.
 - **FR-006** `[IMPLEMENTED]` read: Real-session driver phases (`ask`, `ro`, `att`, `real`) spend credits and are run by hand only; `fake` and `m5` use synthetic events through the real main process and spend none.
 - **FR-007** `[KNOWN GAP]` The simulator and e2e driver are **not run by `npm test` or CI**; UI regressions are caught only by hand. (Same gap as feature 001 FR-015.) (Task T020.)
-- **FR-008** `[KNOWN GAP]` `scripts/e2e-driver.js` hard-codes `/workspace/...` paths (`SHOTS`, `HELLO`, `NOTES`, log file) and is therefore not runnable elsewhere without edits. `read:` (Task T021.)
+- **FR-008** `[IMPLEMENTED]` (2026-10-19, T021) `scripts/e2e-driver.js` takes its paths from `E2E_DIR` (default `<temp>/durbar-e2e`), `E2E_SHOTS`, `E2E_LOGS`, `E2E_HELLO` and `E2E_NOTES`, and creates the shot and log folders. Before, it hard-coded `/workspace/...` paths. `read:`
 - **FR-009** `[KNOWN GAP]` The dev hooks are compiled into **release builds** (they are environment-variable driven, with no `app.isPackaged` guard). `DURBAR_DRIVER` loads an arbitrary module into the main process and `DURBAR_LOG` writes event content to a file; anyone who can set the app's environment can already run code as the user, so the risk is low, but constitution III prefers dev-only hooks. `read:` (Task T022.)
 - **FR-010** `[KNOWN GAP]` The simulator's behavior is hand-written and can drift from what the real adapter emits (for example it never reproduces real timing, SDK errors or sub-agent identity quirks). Real behavior is covered only in feature 013. `read:`
-- **FR-011** `[KNOWN GAP]` `smoke.ts` hard-codes `/workspace/durbar-test/...` default folders (overridable with `SMOKE_FOLDERS`). `read:`
+- **FR-011** `[IMPLEMENTED]` (2026-10-19, T021) `smoke.ts` defaults to `<temp>/durbar-test/{hello-app,notes-app}` (overridable with `SMOKE_FOLDERS`); before, it hard-coded `/workspace/durbar-test/...`. `read:` (not run: the smoke costs a prompt)
 
 ### Key Entities
 
@@ -97,3 +97,8 @@ Developers capture screenshots at fixed sizes and drive the real window with scr
 ### 2026-10-17: spec 024 simulator changes (cross-reference)
 
 For spec [024](../024-office-places/spec.md): `bash`, `github`, `playwright` and `my-notes` calls take 1.5-4 s (seeded) unless the simulator is frozen, and the calls agents leave open take turns between those four. A simulator-only test hook `window.__durbarSimEmit(event)` lets a driver send one normalized event (used by `scripts/shots-024.js`); it exists only in simulator mode, which packaged builds do not start without `DURBAR_DEV=1`.
+
+### 2026-10-19: one event shape check for the simulator and the adapters (sweep; task T023)
+
+- **FR-021** `[IMPLEMENTED]` `src/adapters/eventguard.ts` (`eventProblems`) checks the normalized events: a known type, `sessionId`, `timestamp`, and the fields the renderer relies on per type (status values, tool call phases, non-negative usage numbers, a dollar figure only as an `estimate`, question and agent-profile shapes, and so on). `test:` `npm run test:simevents` runs the real simulator (three rosters, a question, a title, an unreported folder, one-agent folders) with fast timers, drives sends, mode switches and agent profiles, and requires every event to pass (11,210 events, 14 types, on 2026-10-19); the adapter contract suite applies the same check to every event of every registered adapter (fakes, Copilot, Claude, Codex). This narrows FR-010 (drift between the simulator and real adapters) to timing and behaviour; event shapes can no longer drift silently.
+

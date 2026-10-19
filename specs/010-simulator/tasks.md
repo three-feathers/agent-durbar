@@ -13,6 +13,6 @@
 ## Open
 
 - [x] T020 Run the simulator-based layout/overflow check in CI on Linux (see feature 001 T020). [FR-007]
-- [ ] T021 Parameterize `e2e-driver.js` and `smoke.ts` paths via environment/relative fixtures. [FR-008, FR-011]
+- [x] T021 Parameterize `e2e-driver.js` and `smoke.ts` paths via environment/relative fixtures. [FR-008, FR-011] (2026-10-19: `E2E_DIR`, `E2E_SHOTS`, `E2E_LOGS`, `E2E_HELLO`, `E2E_NOTES`, defaults under the temp folder; `SMOKE_FOLDERS` defaults to `<temp>/durbar-test/{hello-app,notes-app}`)
 - [x] T022 Disable or guard dev hooks when `app.isPackaged` unless `DURBAR_DEV=1`: spec delta written 2026-10-16 (FR-017..FR-020); implement `src/main/devhooks.ts` + `scripts/test-devhooks.ts`. [FR-009]
-- [ ] T023 Contract test: simulator events validate against the `AgentEvent` type guard shared with the adapter test (feature 002 T020). [FR-010]
+- [x] T023 Contract test: simulator events validate against the `AgentEvent` type guard shared with the adapter test (feature 002 T020). [FR-010]

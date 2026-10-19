@@ -198,6 +198,8 @@ function syncWalkers(){
     w.back=true; RETURNING.add(id);
     move(w,dp,()=>{dropWalker(id);scheduleRender();});
   });
+  /* spec 034 FR-015: the figure away at a place keeps its mood (ring, horns, trouble dot); none in Serious mode (moodFor) */
+  walkers.forEach((w,id)=>{const m=moodFor(byId(id));w.el.dataset.body=m.body;w.el.dataset.trouble=m.trouble||'';});
 }
 function roomAiu(r){const f=folderOfRoom(r.id),t=LEDGER.room(r.id,f&&f.key);return t.calls&&!demoOn?{long:window.DurbarUsage.fmtTotal(t),short:window.DurbarUsage.fmtShort(t),tip:window.DurbarUsage.tooltip(t,{scope:'folder',since:LEDGER.since(),run:LEDGER.roomRun(r.id)})}:null;}
 
@@ -335,6 +337,8 @@ const PLANT=()=>'<svg class="room-plant" width="26" height="30" viewBox="0 0 26 
 /* ---------------- toast ---------------- */
 function toast(html,ms){const t=document.createElement('div');t.className='toast';t.innerHTML=html;$('toasts').appendChild(t);setTimeout(()=>{t.style.transition='opacity .3s';t.style.opacity='0';setTimeout(()=>t.remove(),320)},ms||3200)}
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+/* the inverse of esc, in one pass (spec 045 FR-002: chained replacements turned "&amp;lt;" into "<") */
+const unesc=s=>String(s).replace(/&(amp|lt|gt|quot);/g,(m,k)=>({amp:'&',lt:'<',gt:'>',quot:'"'}[k]));
 
 /* ---------------- top bar ---------------- */
 function visibleAgents(){return agents.filter(a=>roomShown(roomOf(a))&&(ui.ws==='all'||wsOf(a)===ui.ws));}
@@ -589,6 +593,19 @@ function chooseLayout(sizing,aw,ah){
   return res||lastAny;
 }
 let layoutKey='', layout=null;
+/* spec 001 FR-026: what a new user needs before the first folder: sign in once, add a folder (Read-only), or look around in the demo */
+const WELCOME_HTML=`<section class="welcome" aria-labelledby="wlT"><h2 id="wlT">Welcome to Agent Durbar</h2>
+  <p class="wl-sub">Your coding agents in one office: see what each one is doing, chat with it, and decide what it may do.</p>
+  <ol class="wl-steps">
+    <li><b>Sign in to GitHub Copilot once</b> on this computer: run <code>copilot login</code> in a terminal (a free plan works).</li>
+    <li><b>Add a project folder</b> with <b>+ Folder</b>. Each folder becomes a room with its own agent. Agents start in <b>Read-only</b>: they can read the folder, nothing else.</li>
+    <li><b>Send a message</b> to start. Switch to <b>Ask first</b> or <b>Allow all</b> only for folders you trust.</li>
+  </ol>
+  <div class="wl-actions"><button class="btn primary" type="button" data-wl="add">+ Add a folder</button><button class="btn" type="button" data-wl="demo">Look around in the demo</button></div>
+  <p class="wl-note">Agents run on your computer, as you, and use your Copilot plan's AI credits.</p></section>`;
+document.addEventListener('click',e=>{const b=e.target.closest('[data-wl]');if(!b)return;
+  if(b.dataset.wl==='add')$('addFolder').click();
+  else{const t=$('demoToggle');t.checked=true;t.dispatchEvent(new Event('change'));}});
 function renderOffice(){
   if(ui.view!=='office')return;
   const floor=$('floor'), stage=$('stage'), cs=getComputedStyle(floor);
@@ -598,6 +615,7 @@ function renderOffice(){
   const model=officeModel();
   if(!model.length){
     stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey='';
+    if(!agents.length&&!demoOn){stage.innerHTML=WELCOME_HTML;floor.classList.remove('scrolls');return;} /* spec 001 FR-026: first run */
     stage.innerHTML='<div class="empty">'+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" or "+ Workspace" above.':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open "Folders" above to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?'All floors are off. Open "Floors" above to switch one on.':agents.length&&ROOMS.every(r=>!roomShown(r))?'Nothing to show: every folder is hidden or on a floor that is off. Open "Floors" or "Folders" above.':'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
   }
@@ -623,8 +641,9 @@ function renderList(){
       const subs=helpersOf(a);
       if(matchStatus(a)){rows.push([a,false]);subs.forEach(h=>rows.push([h,true]));}
     });});
-  const row=([a,sub])=>{const st=vis(a);return `<button class="lrow" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}, ${esc(roomOf(a).name)}, ${label(a)}: ${esc(a.task)}">
-    <span class="lname"><span class="dot ${st}"></span><span class="${sub?'sub':''}">${esc(a.name)}</span></span><span class="lcell">${esc(a.role)}</span><span class="lcell mono">${esc(roomOf(a).name)}</span><span class="lcell">${esc(a.task)}</span><span><span class="pill st-${st}"><i></i>${label(a)}</span></span></button>`};
+  /* spec 034 FR-014: no figures here, so the mood words (cards: drawing + label) are written at the start of the task cell */
+  const row=([a,sub])=>{const st=vis(a),mw=moodFor(a).words;return `<button class="lrow" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}, ${esc(roomOf(a).name)}, ${label(a)}: ${esc(a.task)}${moodWords(a)}">
+    <span class="lname"><span class="dot ${st}"></span><span class="${sub?'sub':''}">${esc(a.name)}</span></span><span class="lcell">${esc(a.role)}</span><span class="lcell mono">${esc(roomOf(a).name)}</span><span class="lcell"${mw?` title="${esc(mw)}"`:''}>${mw?`<span class="lmood">${esc(mw)}</span> · `:''}${esc(a.task)}</span><span><span class="pill st-${st}"><i></i>${label(a)}</span></span></button>`};
   $('list').innerHTML=`<div class="list-wrap" role="group" aria-label="Agents"><div class="lrow head" aria-hidden="true"><span>Agent</span><span>Role</span><span>Workspace</span><span>Current task</span><span>Status</span></div>${rows.map(row).join('')||'<div class="empty">No agents match these filters.</div>'}</div>`;
 }
 
@@ -889,6 +908,7 @@ function openPanel(id,focus){
   if($('rmSessBtn'))$('rmSessBtn').onclick=()=>removeSessionUi(a);
   if($('copyResBtn'))$('copyResBtn').onclick=()=>copyResume(a);
   if(a.live&&!a.parent)initPrev(a); else {const pv=$('prev');if(pv)pv.hidden=true;}
+  if(a.live&&!a.parent&&a.info&&a.info.resumeLast&&bridge.wake)wakeLast(a);
   $('pauseBtn').onclick=()=>{a.paused=!a.paused;if(a.live&&bridge.setPaused)bridge.setPaused(a.id,a.paused);toast(esc(a.name)+(a.paused?' paused.':' resumed.'));renderAll();};
   if($('stopBtn'))$('stopBtn').onclick=()=>{if(a.live)return stopLive(a);a.paused=false;a.state='idle';a.label='Stopped';a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
   $('attFile').onclick=()=>{if(a.live)return pickLive();addPicked([{name:SAMPLE_FILES[fi++%SAMPLE_FILES.length],kind:'file',size:12*1024}]);};
@@ -962,7 +982,26 @@ document.addEventListener('keydown',e=>{
     if(ui.selected){closePanel();return;}
   }
   if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('#chat .chip:not(.att-chip)')){e.preventDefault();e.target.click();}
+  /* spec 001 FR-019: arrow keys move between desks, helpers and door plates; left/right in reading order, up/down to the nearest one in that direction */
+  if(/^Arrow(Left|Right|Up|Down)$/.test(e.key)&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&e.target.matches&&e.target.matches(DESK_NAV)){
+    const all=[...document.querySelectorAll(DESK_NAV)].filter(x=>x.getClientRects().length), i=all.indexOf(e.target);
+    let next=null;
+    if(e.key==='ArrowRight'||e.key==='ArrowLeft'){
+      /* the nearest one on the same row in that direction; at the end of a row, the next or previous one in reading order */
+      const r=e.target.getBoundingClientRect(),cy=(r.top+r.bottom)/2,right=e.key==='ArrowRight';let bd=Infinity;
+      for(const x of all){if(x===e.target)continue;const q=x.getBoundingClientRect();if(cy<q.top||cy>q.bottom)continue;
+        const dx=right?q.left-r.right:r.left-q.right;if(dx<-2)continue;if(dx<bd){bd=dx;next=x;}}
+      if(!next)next=right?all[i+1]||null:(i>0?all[i-1]:null);
+    }
+    else{
+      const r=e.target.getBoundingClientRect(),cx=(r.left+r.right)/2,down=e.key==='ArrowDown';let bd=Infinity;
+      for(const x of all){if(x===e.target)continue;const q=x.getBoundingClientRect(),dy=down?q.top-r.bottom:r.top-q.bottom;if(dy<-2)continue;
+        const d=dy*3+Math.abs((q.left+q.right)/2-cx);if(d<bd){bd=d;next=x;}}
+    }
+    if(next){e.preventDefault();next.focus();next.scrollIntoView({block:'nearest',inline:'nearest'});}
+  }
 });
+const DESK_NAV='#stage .desk, #stage .helper, #stage .plate';
 $('wsFilter').addEventListener('change',e=>{ui.ws=e.target.value;renderAll();});
 function setView(v){ui.view=v;document.body.classList.toggle('list-mode',v==='list');
   $('vOffice').setAttribute('aria-pressed',String(v==='office'));$('vList').setAttribute('aria-pressed',String(v==='list'));renderAll();}
@@ -1166,7 +1205,7 @@ function addLiveAgent(info){
   let room=LIVE.rooms.find(r=>r.path===info.cwd);
   if(!room){room={id:'r'+LIVE.rooms.length+':'+info.cwd,name:(info.label||info.roomName||info.name),folderName:(info.roomName||info.name),path:info.cwd,tint:TINTS[LIVE.rooms.length%4],floor:info.floor||'ground',hidden:!!info.hidden,closed:!!info.closed||CLOSED_Q.includes(info.roomName||info.name)};LIVE.rooms.push(room);}
   let name=info.name; const dup=LIVE.agents.filter(x=>!x.parent&&x.room===room.id&&x.baseName===info.name).length; if(dup)name=info.name+' #'+(dup+1);
-  LIVE.agents.push({id:info.id,name:info.title||name,folderLabel:name,title:info.title,baseName:info.name,role:info.role||roleFor(info),room:room.id,state:'idle',label:info.lazy?'Not started':'Ready',task:info.lazy?'Saved folder. A session starts with your first message.':'Ready. Send a message to start.',
+  LIVE.agents.push({id:info.id,name:info.title||name,folderLabel:name,title:info.title,baseName:info.name,role:info.role||roleFor(info),room:room.id,state:'idle',label:info.lazy?'Not started':'Ready',task:info.lazy?(info.resumeLast?'Your last session here. It continues when you open it.':'Saved folder. A session starts with your first message.'):'Ready. Send a message to start.',
     look:lookFor(info.id),files:[],paused:false,live:true,info,usage:{calls:0,inT:0,outT:0,nano:0},usageText:'',turn:null,worked:false,pend:new Map(),settled:new Set(),grants:[]});
   if(!demoOn){if(!ui.expanded)ui.expanded={};renderFilter();scheduleRender();loadUsageBaseline();}
   if(pendingOpen===info.id){pendingOpen=null;if(!demoOn)openPanel(info.id,false);}
@@ -1178,7 +1217,20 @@ function mdHTML(raw){
   const md=window.DurbarMD; if(!md)return esc(raw).replace(/\n/g,'<br>');
   return md.render(raw).replace(/<pre>/g,'<div class="codebox"><button type="button" class="copy" aria-label="Copy code">Copy</button><pre>').replace(/<\/pre>/g,'</pre></div>');
 }
-function mdPaint(el){el._mdq=false;if(el._raw==null)return;const t=document.createElement('template');t.innerHTML=mdHTML(el._raw);morphChildren(el,t.content);}
+function mdPaint(el){el._mdq=false;if(el._raw==null)return;const t=document.createElement('template');t.innerHTML=mdHTML(el._raw);morphChildren(el,t.content);addCopyButtons(el);}
+/* spec 005 FR-015: copy a reply (its Markdown as written) or one code block; buttons come back after every repaint */
+function addCopyButtons(el){
+  const mk=(cls,label)=>{const b=document.createElement('button');b.type='button';b.className='cp-btn '+cls;b.textContent='Copy';b.setAttribute('aria-label',label);b.title=label;return b;};
+  el.querySelectorAll('pre').forEach(p=>{if(!p.querySelector(':scope > .cp-code'))p.appendChild(mk('cp-code','Copy this code'));});
+  if(el.closest('.msg.agent')&&!el.querySelector(':scope > .cp-msg'))el.appendChild(mk('cp-msg','Copy this reply'));
+}
+document.addEventListener('click',async e=>{
+  const b=e.target.closest('.cp-btn');if(!b)return;
+  e.stopPropagation();
+  const text=b.classList.contains('cp-code')?((b.parentElement.querySelector('code')||b.parentElement).textContent||'').replace(/Copy$/,''):(b.closest('.bubble')||{})._raw||'';
+  try{await navigator.clipboard.writeText(text);b.textContent='Copied';setTimeout(()=>{b.textContent='Copy';},1500);}
+  catch{toast('Could not copy to the clipboard.',3000);}
+});
 function mdFlush(){const l=[...MDQ];MDQ.clear();l.forEach(mdPaint);}
 let mdRaf=0;
 function mdSet(el,raw,now){
@@ -1874,7 +1926,7 @@ const kindOptions=()=>DMK().kindChoices(KINDS).map(k=>`<option value="${esc(k.id
 /* Toolbar: model and effort follow the chosen kind. A kind other than the default has no model list yet (FR-062, T049), so both are hidden and it starts with its own default. */
 function syncKindModel(){
   const ms=$('modelSel'),ef=$('effortSel');
-  const id=$('kindSel').hidden?defaultKind():$('kindSel').value, other=!!KINDS&&!$('kindSel').hidden&&id!==defaultKind();
+  const id=KINDS&&$('kindSel').value||defaultKind(), other=!!KINDS&&id!==defaultKind();
   const c=KINDS?kindCaps(id):null, can=!c||DMK().shows(c,'models');
   if(other&&can&&!MODELS_BY[id]){ensureModels(id).then(()=>{if(MODELS_BY[id]&&MODELS_BY[id].length)syncKindModel();});}
   const k=other?id:'', ok=can&&(!other||modelsFor(id).length>0);
@@ -1886,7 +1938,8 @@ function syncKindModel(){
 function applyKinds(){
   const show=DMK().showsKindPicker(KINDS), sel=$('kindSel'), keep=sel.value;
   $('kindHelp').hidden=!show; sel.hidden=!show;
-  if(show){sel.innerHTML=kindOptions();sel.value=pickKind(keep||defaultKind());}
+  /* spec 012 FR-136: hidden with one ready harness, but it still holds that one, so it is what new folders use */
+  if(KINDS){sel.innerHTML=kindOptions();sel.value=pickKind(keep||defaultKind());}
   /* the other ready kinds' model lists, for their agents' model chips (spec 012 FR-120); a CLI probe, no prompt */
   (KINDS||[]).forEach(k=>{if(!isDefaultKind(k.id)&&k.state==='ready'&&DMK().shows(kindCaps(k.id),'models'))ensureModels(k.id).then(()=>scheduleRender());});
   syncKindModel();
@@ -2178,10 +2231,11 @@ function newSession(a0){
   const d=document.createElement('div');d.id='sessDlg';d.className='dlg-ov';
   d.innerHTML=`<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="sdT"><h3 id="sdT">New session in ${esc(roomOf(a).name)}</h3>
    <p class="dsub">Another agent with its own chat in <code>${esc(roomOf(a).path)}</code>.</p>
-   ${DMK().showsKindPicker(KINDS)?`<label>Agent<select id="sdKind">${kindOptions()}</select></label>`:''}
+   ${DMK().showsKindPicker(KINDS)?`<label>Harness<select id="sdKind">${kindOptions()}</select></label>`:''}
    <label>Permissions<select id="sdPerm"><option value="read-only">Read-only</option><option value="ask">Ask first</option><option value="allow">Allow all (no prompts)</option></select></label>
    <label id="sdModelL">Model<select id="sdModel"></select></label>
    <label id="sdEffL">Reasoning effort<select id="sdEff"></select></label>
+   ${bridge.listProfiles&&a.info&&a.info.profiles?`<div id="sdAgentL" class="sd-agent" hidden><label>Agent<select id="sdAgent"><option value="">Default agent</option></select></label>${bridge.setFolderDefaultAgent?'<label class="chk"><input type="checkbox" id="sdAgentDef"> Default for new sessions here</label>':''}</div>`:''}
    ${bridge.setCap?'<label id="sdCapL">Credit cap (AIU, empty = no cap)<input id="sdCap" type="number" min="0.001" step="0.01" placeholder="No cap"></label>':''}
    <div class="dbtn"><button class="btn" id="sdCancel" type="button">Cancel</button><button class="btn primary" id="sdGo" type="button">Start session</button></div></div>`;
   document.body.appendChild(d);
@@ -2202,7 +2256,19 @@ function newSession(a0){
     if(c)fillPermSelect($('sdPerm'),c);
   };
   if($('sdKind'))$('sdKind').value=pickKind(a.info.adapterId||defaultKind());
-  eff(); $('sdModel').onchange=eff; if($('sdKind'))$('sdKind').onchange=eff;
+  eff(); $('sdModel').onchange=eff; if($('sdKind'))$('sdKind').onchange=()=>{eff();agentRow();};
+  /* spec 043 T010: the new session can start with a custom agent of this folder (the same list as the Agent chip; same kind only) */
+  const agentRow=()=>{const l=$('sdAgentL');if(!l)return;l.hidden=!(l.dataset.ready==='1'&&(kindNow()||a.info.adapterId||'')===(a.info.adapterId||kindNow()||''));};
+  if($('sdAgentL'))bridge.listProfiles(a.id).then(r=>{
+    if(!$('sessDlg')||!r||!r.ok||!r.profiles.length)return;
+    a.profileList=r.profiles;
+    $('sdAgent').insertAdjacentHTML('beforeend',r.profiles.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}${SOURCE_WORD[p.source]?' ('+esc(SOURCE_WORD[p.source])+')':''}</option>`).join(''));
+    /* spec 043 FR-009: the folder's default agent is preselected while it is still in the list */
+    const def=a.info.defaultAgent;
+    if(def&&r.profiles.some(p=>p.id===def)){$('sdAgent').value=def;if($('sdAgentDef'))$('sdAgentDef').checked=true;}
+    if($('sdAgentDef'))$('sdAgent').onchange=()=>{$('sdAgentDef').checked=!!$('sdAgent').value&&$('sdAgent').value===a.info.defaultAgent;};
+    $('sdAgentL').dataset.ready='1';agentRow();
+  }).catch(()=>undefined);
   d.addEventListener('click',e=>{if(e.target===d)closeSessDlg();});
   $('sdCancel').onclick=closeSessDlg;
   $('sdGo').onclick=async()=>{
@@ -2212,11 +2278,17 @@ function newSession(a0){
     const opts={permMode:$('sdPerm').value,model:$('sdModelL').hidden?undefined:$('sdModel').value,effort:$('sdEff').hidden?undefined:($('sdEff').value||undefined)};
     if(kind)opts.adapterId=kind;
     if($('sdCap')&&!$('sdCapL').hidden){const cv=parseFloat($('sdCap').value);opts.maxAiCredits=cv>=MIN_CAP&&cv<=1e6?Math.round(cv*100)/100:null;}
+    const profId=$('sdAgentL')&&!$('sdAgentL').hidden?$('sdAgent').value:'';
+    if($('sdAgentDef')&&!$('sdAgentL').hidden){
+      const want=$('sdAgentDef').checked&&profId?profId:(profId===a.info.defaultAgent?null:undefined);
+      if(want!==undefined&&want!==(a.info.defaultAgent||null))bridge.setFolderDefaultAgent(a.id,want).then(dr=>{if(dr&&dr.ok)for(const x of agents)if(x.room===a.room&&x.info)x.info.defaultAgent=dr.defaultAgent;}).catch(()=>undefined);
+    }
     $('sdGo').disabled=true;$('sdGo').textContent='Starting…';
     const r=await bridge.newSession(a.id,opts);
     closeSessDlg();
     if(!r.ok){toast('Could not start a session: '+esc(r.error||'unknown error'),6000);return;}
     addLiveAgent(r.agent); openPanel(r.agent.id,false);
+    if(profId){const na=liveById(r.agent.id),p=(a.profileList||[]).find(x=>x.id===profId);if(na&&p){na.profileList=a.profileList;applyProfile(na,p);}}
   };
   $('sdGo').focus();
 }
@@ -2228,13 +2300,69 @@ function toggleFolders(on){
   pop.hidden=!show; btn.setAttribute('aria-expanded',String(show));
   if(show)renderFolders();
 }
+/* ---------------- scheduled prompts (spec 044): per folder, while the app is open ---------------- */
+let SCHED={pausedAll:false,schedules:[]};
+const folderKeyOf=r=>{const ag=agents.find(x=>!x.parent&&x.room===r.id);const i=ag&&ag.info;return i?(i.workspaceFile||i.cwd):r.path;};
+const schedulesOf=r=>SCHED.schedules.filter(s=>s.folder===folderKeyOf(r));
+const clock=ms=>{const d=new Date(ms),n=new Date(),t=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});return d.toDateString()===n.toDateString()?t:d.toLocaleDateString([],{month:'short',day:'numeric'})+' '+t;};
+const nextRunOf=ss=>{const t=ss.filter(s=>!s.paused&&!s.done).map(s=>s.every!==undefined?s.next:s.at).filter(Boolean).sort((a,b)=>a-b)[0];return t&&!SCHED.pausedAll?clock(t):'';};
+const OUTCOME_WORD={sent:'sent','skipped-busy':'skipped: the agent was busy','skipped-paused':'skipped: paused',missed:'missed: the app was closed',failed:'could not send'};
+const whenOf=s=>s.every!==undefined?(s.every%60===0?'every '+(s.every/60)+' h':'every '+s.every+' min'):'once at '+clock(s.at);
+function renderSchedDlg(){
+  const d=$('schedDlg'); if(!d)return; const r=ROOMS.find(x=>x.id===d.dataset.room); if(!r){closeSchedDlg();return;}
+  const ss=schedulesOf(r), list=$('sdList');
+  list.innerHTML=ss.length?ss.map(s=>`<div class="sc-row${s.paused||s.done?' off':''}"><div class="sc-t"><b title="${esc(s.prompt)}">${esc(s.prompt.length>90?s.prompt.slice(0,89)+'…':s.prompt)}</b><small>${esc(whenOf(s))}${s.done?' · done':s.paused?' · paused':(s.every!==undefined&&s.next&&!SCHED.pausedAll?' · next '+esc(clock(s.next)):'')}${s.last?' · last '+esc(clock(s.last.at))+': '+esc(OUTCOME_WORD[s.last.outcome]||s.last.outcome):''}</small></div>${s.done?'':`<button class="btn" type="button" data-sc="pause" data-id="${esc(s.id)}">${s.paused?'Resume':'Pause'}</button>`}<button class="btn danger" type="button" data-sc="del" data-id="${esc(s.id)}">Delete</button></div>`).join(''):'<p class="sc-empty">No schedules for this folder yet.</p>';
+  $('sdPausedNote').hidden=!SCHED.pausedAll;
+}
+function closeSchedDlg(){const d=$('schedDlg');if(d)d.remove();}
+function openSchedules(r){
+  closeSchedDlg();toggleFolders(false);
+  const d=document.createElement('div');d.id='schedDlg';d.className='dlg-ov';d.dataset.room=r.id;
+  const soon=new Date(Date.now()+60*60000);soon.setSeconds(0,0);const pad=n=>String(n).padStart(2,'0');
+  const local=`${soon.getFullYear()}-${pad(soon.getMonth()+1)}-${pad(soon.getDate())}T${pad(soon.getHours())}:${pad(soon.getMinutes())}`;
+  d.innerHTML=`<div class="dlg sched-dlg" role="dialog" aria-modal="true" aria-labelledby="sdhT"><h3 id="sdhT">Schedules for ${esc(r.name)}</h3>
+   <p class="dsub">A prompt sent to this folder's agent at a time or an interval, <b>only while Agent Durbar is open</b>. A run is skipped when the agent is busy or waiting for you; missed runs are not caught up. The agent's own permission mode and credit cap apply.</p>
+   <p class="sc-paused" id="sdPausedNote" hidden>All schedules are paused (Folders panel).</p>
+   <div class="sc-list" id="sdList"></div>
+   <div class="sc-form"><label>Prompt<textarea id="scPrompt" rows="3" maxlength="2000" placeholder="For example: Summarise the open pull requests in three bullet points."></textarea></label>
+    <div class="sc-when"><label class="chk"><input type="radio" name="scKind" value="every" checked> Every <input type="number" id="scEvery" min="5" max="1440" step="5" value="60" aria-label="Minutes between runs"> minutes</label>
+    <label class="chk"><input type="radio" name="scKind" value="once"> Once at <input type="datetime-local" id="scAt" value="${local}" aria-label="Date and time"></label></div></div>
+   <div class="dbtn"><button class="btn" id="scClose" type="button">Close</button><button class="btn primary" id="scAdd" type="button">Add schedule</button></div></div>`;
+  document.body.appendChild(d);
+  renderSchedDlg();
+  d.addEventListener('click',async e=>{
+    if(e.target===d){closeSchedDlg();return;}
+    const b=e.target.closest('button');if(!b)return;
+    if(b.id==='scClose'){closeSchedDlg();return;}
+    if(b.id==='scAdd'){
+      const prompt=$('scPrompt').value.trim();if(!prompt){$('scPrompt').focus();toast('Write the prompt first.',3000);return;}
+      const once=d.querySelector('input[name="scKind"]:checked').value==='once';
+      const input={folder:folderKeyOf(r),prompt};
+      if(once){const t=new Date($('scAt').value).getTime();if(!(t>Date.now())){toast('Choose a time in the future.',3500);return;}input.at=t;}
+      else{const m=Math.round(Number($('scEvery').value));if(!(m>=5&&m<=1440)){toast('Choose 5 to 1440 minutes.',3500);return;}input.every=m;}
+      const res=await bridge.saveSchedule(input);
+      if(!res.ok){toast(esc(res.error||'Could not add the schedule.'),5000);return;}
+      $('scPrompt').value='';await refreshSchedules();toast('Schedule added: '+esc(whenOf(res.schedule))+'.',3000);return;
+    }
+    const s=SCHED.schedules.find(x=>x.id===b.dataset.id);if(!s)return;
+    if(b.dataset.sc==='del'){await bridge.removeSchedule(s.id);await refreshSchedules();}
+    else if(b.dataset.sc==='pause'){await bridge.saveSchedule(Object.assign({},s,{paused:!s.paused}));await refreshSchedules();}
+  });
+  d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeSchedDlg();}});
+  $('scPrompt').focus();
+}
+async function refreshSchedules(){if(!bridge.listSchedules)return;SCHED=await bridge.listSchedules();renderFolders();renderSchedDlg();}
+document.addEventListener('change',async e=>{if(e.target&&e.target.id==='schedPauseAll'){const r=await bridge.setSchedulesPaused(e.target.checked);SCHED.pausedAll=r.pausedAll;renderFolders();renderSchedDlg();}});
+if(bridge&&bridge.onSchedules){bridge.onSchedules(doc=>{SCHED=doc;renderFolders();renderSchedDlg();});}
+if(bridge&&bridge.onScheduleRan){bridge.onScheduleRan(r=>{const a=liveById(r.agentId);if(!a)return;addNote(liveChat(a),'Scheduled prompt ('+esc(r.every!==undefined?whenOf({every:r.every}):'once')+').');});}
 function renderFolders(){
   const pop=$('foldersPop'); if(pop.hidden)return;
   if(!ROOMS.length){pop.innerHTML='<p class="fp-empty">No folders yet. Use + Folder or + Workspace. Folders you add are remembered next time.</p>';return;}
-  pop.innerHTML='<div class="fp-h">Folders <small>remembered across restarts</small></div>'+ROOMS.map(r=>{
-    const n=agents.filter(x=>!x.parent&&x.room===r.id).length;
-    return `<div class="fp-row${r.hidden?' hid':''}"><div class="fp-t"><b title="${esc(r.name)}">${esc(r.name)}${r.hidden?' <span class="tag">hidden</span>':''}</b><small title="${esc(r.path)}">${esc(r.path)} · ${n} agent${n===1?'':'s'}</small></div>
-     <button class="btn" type="button" data-fp="new" data-room="${esc(r.id)}">New session</button><button class="btn" type="button" data-fp="rename" data-room="${esc(r.id)}" title="Give ${esc(r.name)} a display name">Rename</button><button class="btn" type="button" data-fp="hide" data-room="${esc(r.id)}">${r.hidden?'Show':'Hide'}</button><button class="btn danger" type="button" data-fp="rm" data-room="${esc(r.id)}">Remove</button></div>`;}).join('');
+  const sched=bridge.listSchedules?`<label class="fp-pause" title="Nothing scheduled is sent while this is on (kept across restarts)"><input type="checkbox" id="schedPauseAll"${SCHED.pausedAll?' checked':''}> Pause all schedules</label>`:'';
+  pop.innerHTML='<div class="fp-h">Folders <small>remembered across restarts</small>'+sched+'</div>'+ROOMS.map(r=>{
+    const n=agents.filter(x=>!x.parent&&x.room===r.id).length, ss=schedulesOf(r).filter(s=>!s.done), nx=nextRunOf(ss);
+    return `<div class="fp-row${r.hidden?' hid':''}"><div class="fp-t"><b title="${esc(r.name)}">${esc(r.name)}${r.hidden?' <span class="tag">hidden</span>':''}</b><small title="${esc(r.path)}">${esc(r.path)} · ${n} agent${n===1?'':'s'}${nx?' · ⏰ next '+esc(nx):''}</small></div>
+     ${bridge.listSchedules?`<button class="btn" type="button" data-fp="sched" data-room="${esc(r.id)}" title="Prompts sent to ${esc(r.name)} at a time or an interval, while the app is open">Schedules${ss.length?' ('+ss.length+')':''}</button>`:''}<button class="btn" type="button" data-fp="new" data-room="${esc(r.id)}">New session</button><button class="btn" type="button" data-fp="rename" data-room="${esc(r.id)}" title="Give ${esc(r.name)} a display name">Rename</button><button class="btn" type="button" data-fp="hide" data-room="${esc(r.id)}">${r.hidden?'Show':'Hide'}</button><button class="btn danger" type="button" data-fp="rm" data-room="${esc(r.id)}">Remove</button></div>`;}).join('');
 }
 async function hideFolder(r,hidden){
   const ag=agents.find(x=>x.room===r.id); if(!ag)return;
@@ -2247,7 +2375,7 @@ async function hideFolder(r,hidden){
 async function removeFolder(r){
   const ags=agents.filter(x=>x.room===r.id), busy=ags.filter(x=>['working','thinking','waiting'].includes(x.state)).length;
   const msg=busy?`${esc(r.name)} has ${busy} agent${busy===1?'':'s'} still working. Remove the folder and end ${busy===1?'it':'them'}?`:`Remove ${esc(r.name)}? Its sessions end here; your earlier ${esc(kindWord(((ags.find(x=>!x.parent)||{}).info||{}).adapterId))} sessions stay on disk and can be resumed if you add the folder again.`;
-  if(!window.confirm(msg.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"')))return;
+  if(!window.confirm(unesc(msg)))return;
   const root=ags.find(x=>!x.parent); const res=root&&bridge.removeFolder?await bridge.removeFolder(root.id):{ok:true,removedIds:[]};
   if(!res.ok){toast('Could not remove the folder.',4000);return;}
   if(ui.selected&&(byId(ui.selected)||{}).room===r.id)closePanel();
@@ -2332,7 +2460,18 @@ function renderPrev(a){
   box.hidden=false; box.innerHTML=h;
   const nb=box.querySelector('.prev-body'); if(nb)nb.scrollTop=keepScroll;
 }
-function replayHistory(a,h,title){
+/* spec 006 FR-021: a folder restored after a restart continues its last session when its chat is first opened (no prompt is sent) */
+async function wakeLast(a){
+  if(a.waking)return; a.waking=true;
+  setState(a,'working','Starting','Continuing your last session…');
+  const r=await bridge.wake(a.id).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  a.waking=false;
+  if(!r||!r.ok){setState(a,'idle','Not started','Your last session here. It continues when you open it.');toast('Could not continue the last session: '+esc((r&&r.error)||'unknown error'),7000);return;}
+  if(a.info){a.info.resumeLast=false;a.info.lazy=false;}
+  if(r.resumed){a.resumed=true;replayHistory(a,r.history,r.title,'Continued after restart');setState(a,'idle','Ready','Continued: '+SHORT(r.title||'last session',90));}
+  else{if(r.resumed===false)addNote(liveChat(a),'The last session is no longer available; this is a new session.');setState(a,'idle','Ready','Ready. Send a message to start.');}
+}
+function replayHistory(a,h,title,lead){
   const chat=liveChat(a); let m=null;
   if(h&&h.truncated)addNote(chat,'Showing the last '+h.items.length+' of '+h.total+' items; earlier ones are not shown.');
   const agentMsg=()=>{if(!m){m=document.createElement('div');m.className='msg agent';m.innerHTML='<div class="meta">'+esc(a.name)+'</div>';chat.el.appendChild(m);}return m;};
@@ -2342,7 +2481,7 @@ function replayHistory(a,h,title){
     else if(it.type==='output'){const b=document.createElement('div');b.className='bubble';agentMsg().appendChild(b);mdSet(b,it.text,true);}
     else{const full=it.output||'';addChip(chipBox(),makeChip({tool:it.tool,label:it.label,res:SHORT(full||(it.failed?'failed':'ok'),60),output:full.slice(0,2000),state:it.failed?'failed':'ok'}));}
   }
-  addNote(chat,'Resumed: '+esc((title||'earlier session').replace(/[.!?…]+$/,''))+'. New messages continue this session.');
+  addNote(chat,(lead||'Resumed')+': '+esc((title||'earlier session').replace(/[.!?…]+$/,''))+'. New messages continue this session.');
 }
 async function resumePrev(a,sid,btn){
   if(btn){btn.disabled=true;btn.textContent='Resuming…';}
@@ -2398,6 +2537,7 @@ document.addEventListener('click',e=>{
     else if(f.dataset.fp==='hide')hideFolder(r,!r.hidden);
     else if(f.dataset.fp==='rm')removeFolder(r);
     else if(f.dataset.fp==='rename')renameFolder(r,f);
+    else if(f.dataset.fp==='sched')openSchedules(r);
     return;}
   const pop=$('foldersPop');
   if(!pop.hidden&&!e.target.closest('#foldersPop')&&!e.target.closest('#foldersBtn'))toggleFolders(false);
@@ -2424,7 +2564,7 @@ async function addVia(fn){
     const ch=DMK().kindChoices(KINDS).find(k=>k.id===$('kindSel').value);
     if(!ch||ch.disabled){toast('That agent kind is not ready. Open "About agent kinds" in the toolbar to see why.',6000);return;}
     o.adapterId=ch.id;
-  }
+  }else if(KINDS&&$('kindSel').value&&$('kindSel').value!==defaultKind())o.adapterId=$('kindSel').value; /* FR-136: the only ready harness */
   const r=await fn($('permMode').value,o);
   if(r.error)toast('Could not add: '+esc(r.error),6000);
   /* spec 006 FR-016 (issue #170): adding is allowed, but say once what such a folder exposes */
@@ -2462,6 +2602,7 @@ if(bridge){
   bridge.onAgentAdded(addLiveAgent);
   bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});const rs=l.filter(x=>x.permRestored&&!x.parent).length;if(rs)toast(rs+' saved folder'+(rs>1?'s were':' was')+' restored in <b>Allow all</b>, as you left '+(rs>1?'them':'it')+'. Everything runs without asking there; the mode chip says <i>restored</i>. "Approve for this session" grants start empty.',9000);});
   loadModels();
+  refreshSchedules();
   /* User themes (spec 040): register imported packs, then apply the saved theme id */
   THEME.setTheme.resolveUser=bridge.getUserTheme?(id)=>bridge.getUserTheme(id):null;
   const themeBoot=(v)=>{

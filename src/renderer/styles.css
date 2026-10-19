@@ -173,6 +173,13 @@ body.has-bridge #liveBar{display:flex}
 .more:hover{background:rgba(255,255,255,.6)}
 .more .dot{width:7px;height:7px}
 .empty{padding:60px;text-align:center;color:var(--muted);width:100%}
+/* first run (spec 001 FR-026) */
+.welcome{max-width:620px;margin:56px auto 0;padding:26px 30px;background:var(--surface);border:1px solid var(--line);border-radius:18px;color:var(--ink)}
+.welcome h2{margin:0 0 6px;font-size:20px}
+.welcome .wl-sub{margin:0 0 16px;color:var(--ink-2);font-size:13.5px;line-height:1.5}
+.welcome .wl-steps{margin:0 0 18px;padding-left:20px;font-size:13.5px;line-height:1.55;display:grid;gap:8px}
+.welcome .wl-actions{display:flex;gap:10px;flex-wrap:wrap}
+.welcome .wl-note{margin:14px 0 0;font-size:12px;color:var(--muted)}
 
 /* scene animation (subtle) */
 .scene *{transform-box:fill-box}
@@ -211,6 +218,7 @@ button.lrow[aria-pressed="true"]{background:#eaf1f7}
 .lname .sub{margin-left:12px;font-weight:550}
 .lname .sub::before{content:"";display:inline-block;width:10px;height:10px;border-left:1.5px solid var(--line-2);border-bottom:1.5px solid var(--line-2);margin-right:6px;transform:translateY(-3px);border-radius:0 0 0 4px}
 .lcell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-2)}
+.lmood{color:var(--amber-ink);font-weight:600;font-size:12px}
 .lcell.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
 #stage-host{display:contents}
 body.list-mode #stage-host{display:none}
@@ -255,6 +263,13 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .bubble{padding:10px 14px;border-radius:16px;font-size:13.5px;line-height:1.5;max-width:92%;white-space:pre-wrap;overflow-wrap:anywhere;min-width:0}
 .msg.user .bubble{background:var(--pb-working,#e3ecf4);color:#1f3b52;border-bottom-right-radius:6px}
 .msg.agent .bubble{background:var(--surface-2);border:1px solid var(--line);border-bottom-left-radius:6px;align-self:flex-start}
+/* copy buttons (spec 005 FR-015): quiet until the reply or block is hovered or the button has keyboard focus */
+.msg.agent .bubble.md{position:relative}
+.md pre{position:relative}
+.cp-btn{position:absolute;top:4px;right:4px;height:22px;padding:0 8px;font:inherit;font-size:11px;font-weight:600;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);cursor:pointer;opacity:0;transition:opacity .12s}
+.cp-msg{top:auto;bottom:-11px;right:10px}
+.msg.agent .bubble:hover>.cp-msg,.md pre:hover>.cp-code,.cp-btn:focus-visible{opacity:1}
+@media (hover:none){.cp-btn{opacity:1}}
 .quick{display:flex;gap:6px;flex-wrap:wrap}
 .quick button{height:30px;padding:0 12px;border-radius:999px;border:1px solid #e3c98f;background:#fdf5e3;color:var(--amber-ink);font-size:12.5px;font-weight:550;cursor:pointer}
 .quick button:hover{background:#faecc9}
@@ -564,10 +579,12 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .dlg .dsub{margin:0;font-size:12.5px;color:var(--ink-2);overflow-wrap:anywhere}
 .dlg label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--ink-2)}
 .dlg label[hidden]{display:none}
+.dlg .sd-agent{display:flex;flex-direction:column;gap:6px}
+.dlg .sd-agent[hidden]{display:none}
 .dlg select{height:34px;border:1px solid var(--line-2);border-radius:10px;background:#fff;padding:0 8px;font:inherit;font-size:13px;color:var(--ink)}
 .dlg input[type=number]{height:34px;border:1px solid var(--line-2);border-radius:10px;background:#fff;padding:0 10px;font:inherit;font-size:13px;color:var(--ink)}
 .dlg .dbtn{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}
-#foldersPop{position:fixed;top:58px;right:14px;z-index:40;width:min(560px,calc(100vw - 28px));max-height:min(70vh,520px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(40,35,25,.2);padding:8px 14px 12px}
+#foldersPop{position:fixed;top:58px;right:14px;z-index:40;width:min(660px,calc(100vw - 28px));max-height:min(70vh,520px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(40,35,25,.2);padding:8px 14px 12px}
 #foldersPop[hidden]{display:none}
 /* floors (spec 033): panel like the folders popover; floor tag in room headers and door plates */
 #floorsPop{position:fixed;top:58px;right:14px;z-index:40;width:min(600px,calc(100vw - 28px));max-height:min(72vh,560px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(40,35,25,.2);padding:8px 14px 12px}
@@ -611,6 +628,22 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .fp-t b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fp-t small{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fp-row .btn{height:28px;padding:0 10px;font-size:12px}
+/* scheduled prompts (spec 044) */
+.fp-h .fp-pause{float:right;font-size:12px;color:var(--ink-2);display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+.sched-dlg{width:min(620px,calc(100vw - 32px))}
+.sched-dlg .sc-list{display:grid;gap:6px;margin:6px 0 12px;max-height:240px;overflow-y:auto}
+.sched-dlg .sc-row{display:flex;gap:6px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+.sched-dlg .sc-row.off .sc-t{opacity:.6}
+.sched-dlg .sc-t{flex:1;min-width:0;display:flex;flex-direction:column}
+.sched-dlg .sc-t b{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sched-dlg .sc-t small{font-size:11.5px;color:var(--muted)}
+.sched-dlg .sc-row .btn{height:28px;padding:0 10px;font-size:12px}
+.sched-dlg .sc-empty,.sched-dlg .sc-paused{font-size:12.5px;color:var(--muted);margin:6px 0}
+.sched-dlg .sc-paused{color:var(--amber-ink,#8a5a00)}
+.sched-dlg textarea{width:100%;box-sizing:border-box;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--surface);color:var(--ink);resize:vertical}
+.sched-dlg .sc-when{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:8px;font-size:13px}
+.sched-dlg .sc-when input[type=number]{width:70px}
+.sched-dlg .sc-when input{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:3px 6px;background:var(--surface);color:var(--ink)}
 .room-new{flex:none;width:22px;height:22px;border-radius:7px;border:1px solid var(--line-2);background:rgba(255,255,255,.7);color:var(--ink-2);font-size:15px;line-height:1;cursor:pointer;padding:0;display:grid;place-items:center}
 .room-new:hover{background:#fff;color:var(--ink)}
 .room-mcp{flex:none;height:22px;border-radius:7px;border:1px solid var(--line-2);background:rgba(255,255,255,.7);color:var(--ink-2);font-size:11px;font-weight:600;letter-spacing:.02em;line-height:1;cursor:pointer;padding:0 7px}
@@ -712,6 +745,12 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .walker.walking .wk{animation:wkbob .3s ease-in-out infinite}
 @keyframes wkbob{0%,100%{transform:translateY(0) rotate(-5deg)}50%{transform:translateY(-3px) rotate(5deg)}}
 .desk.is-away .pp{display:none} /* an agent at a place leaves an empty chair at its desk */
+/* spec 034 FR-015: mood on the walking figure */
+.walker[data-body="heavy"] .wk{border:2px solid var(--amber-ink)}
+.walker[data-body="monster"] .wk{border:2px solid #6f8a6a}
+.walker[data-body="monster"]::before{content:"";position:absolute;left:3px;right:3px;top:-5px;height:7px;background:#6f8a6a;clip-path:polygon(0 100%,14% 0,30% 100%,70% 100%,86% 0,100% 100%)}
+.walker[data-trouble]:not([data-trouble=""])::after{content:"";position:absolute;right:-3px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--amber-ink);border:1.5px solid var(--surface)}
+.walker[data-trouble="ambulance"]::after,.walker[data-trouble="faint"]::after{background:var(--red-ink)}
 @media (prefers-reduced-motion:reduce){.walker.walking .wk{animation:none}.walker,.place{transition:none!important}}
 .doors{flex:0 0 100%;display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
 .plate{--tone:#c9c2b2;--tonebg:#f6f2e9;display:flex;align-items:center;gap:9px;min-width:210px;max-width:320px;flex:0 1 auto;min-height:44px;padding:5px 12px 5px 8px;border-radius:14px;border:1.5px solid var(--tone);background:var(--tonebg);cursor:pointer;text-align:left;transition:background .15s,border-color .15s,transform .15s}

@@ -23,7 +23,7 @@
 - [x] T020 (overlap/clipping, floor overflow and the 10.5px minimum are checked; runs in CI as `office-check`) Automate the office checks: a `scripts/` check (Electron under xvfb or a DOM harness) asserting, for SIM=12 and 15 at 1440x900 and 1280x800, no page/floor overflow and min font >= 10.5px; run it in CI on Linux. [FR-015, constitution V]
 - [x] T021 Resolve the README/measurement drift for SIM=15 @1280x800 closed (`card` documented vs `mini` measured): re-check, then fix README or the layout search. [FR-016]
 - [ ] T022 Improve `micro` helper figures and nameplate truncation when narrow. [FR-017]
-- [ ] T023 Keyboard navigation between desks (arrow keys), with a spec delta first. [FR-019]
+- [x] T023 Keyboard navigation between desks (arrow keys), with a spec delta first. [FR-019]
 - [ ] T024 Hand-check the office on macOS and Windows and record it here. [VI]
 - [x] T025 `scripts/check-office-overlap.js` + `npm run check:office`: Electron/xvfb driver; bounding-box intersection and clipping check between desk cards, helper tiles, more chips, helper strips and plates for SIM=12/15 x 1440x900/1280x800 x 0/1/3/all rooms closed x `?closed=` variants; optional screenshots (`OFFICE_SHOTS=dir`). [FR-021]
 - [x] T026 Rename the helper strip class `strip` -> `hstrip` so the chat agent bar's `.strip` no longer applies. [FR-020]
@@ -38,3 +38,7 @@
 - [x] T029 Room headers adapt to their width (container queries: name ellipsis, plant and MCP button in narrow headers, credit total to the tooltip under 280 px) [FR-023]
 - [x] T030 `check:office`: `simrooms=solo` combinations and a header overlap check in every combination; screenshots at 1440x900 and 1280x800 [FR-024]
 - [x] T031 Name and status word share the line in `mini`/`micro` (the status shrinks first; the name has a max width); `check:office` name check [FR-025]
+
+## Changes 2026-10-19 (first run)
+
+- [x] T032 Welcome card for an empty office; screenshots [FR-026]

@@ -227,7 +227,8 @@ assert.strictEqual(modelControlFor({ compact() {} }).switch, 'none');
   assert.strictEqual(D.showsKindPicker([]), false);
   assert.strictEqual(D.showsKindPicker([cop]), false, 'c: one adapter, no picker');
   assert.strictEqual(D.showsKindPicker([cop, lim]), true, 'c: two adapters');
-  assert.strictEqual(D.showsKindPicker([cop, mk('not-installed')]), true, 'c: a not-ready kind still counts');
+  assert.strictEqual(D.showsKindPicker([cop, mk('not-installed')]), false, 'c: FR-136, a harness that is not ready is no choice');
+  assert.strictEqual(D.showsKindPicker([mk('not-installed'), mk('ready', { id: 'claude' })]), false, 'c: one ready harness, no picker');
 
   // (d) shows: each feature on and off
   const pairs: Array<[string, string]> = [['stop', 'interrupt'], ['modes', 'permModeSwitch'], ['cap', 'caps'], ['mcp', 'mcpStatus'], ['history', 'history'], ['models', 'models'], ['effort', 'effort']];

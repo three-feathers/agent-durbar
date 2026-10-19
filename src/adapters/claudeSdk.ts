@@ -88,6 +88,7 @@ export function sdkOptionsOf(o: TransportInput, canUseTool: unknown, hook: unkno
   if (claudeModelFlag(o.launch.model)) opts.model = o.launch.model;
   if (o.launch.effort && ['low', 'medium', 'high', 'xhigh', 'max'].includes(o.launch.effort)) opts.effort = o.launch.effort;
   if (o.launch.appendSystemPrompt) opts.systemPrompt = { type: 'preset', preset: 'claude_code', append: o.launch.appendSystemPrompt };
+  if (o.launch.addDirs?.length) opts.additionalDirectories = o.launch.addDirs;
   if (o.launch.resume) opts.resume = o.launch.sessionId;
   else opts.sessionId = o.launch.sessionId;
   return opts;

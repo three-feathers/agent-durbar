@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
-import { enabledExperimental } from '../adapters/experimental';
+import { offeredDescriptors } from '../adapters/experimental';
 import { createRegistry, detectAll } from '../adapters/registry';
 import { detectorFor } from '../adapters/detect';
 import { adapterForAdd, createRouter, historyOf, modelOptionsOf, previousSessionsOf } from '../adapters/router';
@@ -21,14 +21,17 @@ import { GROUND } from '../shared/floors';
 import type { FloorOp } from '../shared/floors';
 import { openInVSCode } from './vscode';
 import { isHttpUrl } from '../shared/url';
-import { FolderStore, restoreMode } from './folders';
+import { DEFAULT_ADAPTER, FolderStore, PROFILE_ID, restoreMode } from './folders';
+import { navigationAllowed, permissionAllowed } from './hardening';
 import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '../adapters/vscodeChat';
 import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
-import { AgentStateTracker } from './mcp/agentstate';
+import { AgentStateTracker, applySetPaused } from './mcp/agentstate';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { UsageStore } from './usagestore';
 import { AgentTrustStore, hashAgentFile } from './agenttrust';
+import { Scheduler, loadSchedules, saveSchedules } from './schedules';
+import type { SchedulerDeps } from './schedules';
 import { UsageTotalsStore } from './usagetotalsstore';
 import { folderKeyOf, folderNameOf } from '../shared/usagedoc';
 import { agentLabel } from '../shared/toolusage';
@@ -68,7 +71,7 @@ let agentTrust: AgentTrustStore | undefined;
 const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 
 /** Only Copilot is registered; every agent is routed to its adapter through the router (spec 012 FR-046..FR-050). Adapters are typed as the neutral interface: optional members say what each can do (spec 030 FR-017, spec 012 FR-027). */
-const registry = createRegistry([...PRODUCTION_DESCRIPTORS, ...enabledExperimental(dev)]); // DURBAR_CLAUDE=1 adds Claude Code (spec 012 FR-114)
+const registry = createRegistry([...PRODUCTION_DESCRIPTORS, ...offeredDescriptors(dev)]); // Copilot, then Claude Code (spec 012 FR-135); detection decides what is ready
 const router = createRouter(registry);
 const agents = new Map<string, AgentInfo>();
 const mcp = registerMcpIpc({ store: () => mcpStore as McpStore, agents, router, dev });
@@ -98,6 +101,11 @@ router.onEvent((e) => {
   if (!a) return; // removed or unknown: the tracker drops it too
   agentState.ensure(a.id, a.lazy);
   agentState.onEvent(e);
+});
+/** Each main agent's last status (spec 044: a scheduled run is skipped while the folder's agent is busy). */
+const lastStatus = new Map<string, string>();
+router.onEvent((e) => {
+  if (e.type === 'status' && !e.agentId) lastStatus.set(e.sessionId, e.status);
 });
 /** Key an agent's all-time counts are kept under: "<agent name> · <folder name>" (base name only, spec 020). */
 const usageLabel = (a: AgentInfo): string => agentLabel(a.name, a.workspaceFile ? path.basename(a.workspaceFile).replace(/\.code-workspace$/i, '') : a.cwd);
@@ -214,7 +222,7 @@ async function addWorkspace(
   const id = await ad.start({ ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId });
   router.bind(id, adapterId);
   const saved = folderStore?.get(wsKey(draft));
-  const info: AgentInfo = { ...draft, id, hidden: saved?.hidden, closed: saved?.closed, label: saved?.label };
+  const info: AgentInfo = { ...draft, id, hidden: saved?.hidden, closed: saved?.closed, label: saved?.label, defaultAgent: saved?.defaultAgent };
   agents.set(id, info);
   if (opts.persist) folderStore?.upsert({ workspace: wsKey(info), permMode, model, effort, maxAiCredits: info.maxAiCredits, floor: opts.floor, adapterId });
   // An existing folder keeps its floor; a new one gets the chosen floor (spec 033 FR-006).
@@ -225,15 +233,28 @@ async function addWorkspace(
 
 /** Make sure the agent has a live runtime session: resume it by id when it has history, else start one under that id. */
 const starting = new Map<string, Promise<void>>();
+/** Spec 006 FR-021: agents restored as their folder's last session, how that went, until their chat asks for it (agents:wake). */
+const continued = new Map<string, { resumed: boolean; title?: string }>();
+
 async function ensureLive(a: AgentInfo): Promise<void> {
   const ad = router.forAgent(a.id);
   if (!ad) throw new Error('unknown agent');
   if (ad.isLive(a.id)) return;
   let p = starting.get(a.id);
   if (!p) {
-    p = ad.start({ ...startOptionsFor(a), sessionId: a.id, quiet: true }).then(() => {
+    p = (async () => {
+      let resume = false;
+      if (a.resumeLast) {
+        // only a session that is still one of this folder's previous sessions of this harness is resumed (constitution: resumed sessions belong to the folder)
+        const others = new Set([...agents.keys()].filter((k) => k !== a.id));
+        const prev = (await previousSessionsOf(ad, a.cwd, others).catch(() => [])).find((s) => s.id === a.id);
+        resume = !!prev;
+        continued.set(a.id, { resumed: resume, title: prev?.title });
+      }
+      await ad.start({ ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: true });
       a.lazy = false;
-    });
+      a.resumeLast = undefined;
+    })();
     starting.set(a.id, p);
     void p.finally(() => starting.delete(a.id)).catch(() => undefined);
   }
@@ -273,9 +294,14 @@ function restoreFolders(): void {
     try {
       if (!fs.existsSync(f.workspace)) continue; // e.g. an unplugged drive: stays saved, just not shown
       const rm = restoreMode(f.permMode); // exactly as saved, Allow all included, flagged so the UI shows "restored" (spec 003 FR-025/026)
-      const info = infoFor(f.workspace, rm.mode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, maxAiCredits: f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(adapterId));
+      // FR-021: the folder's last session comes back under its own id (resumed when first needed); a harness this build lacks starts fresh
+      const ls = f.lastSession && registry.has(f.lastSession.adapterId ?? DEFAULT_ADAPTER) && !agents.has(f.lastSession.id) ? f.lastSession : undefined;
+      const kind = ls ? (ls.adapterId ?? DEFAULT_ADAPTER) : adapterId;
+      const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, maxAiCredits: f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
+      if (ls) info.resumeLast = true;
       if (f.label) info.label = f.label;
-      router.bind(info.id, adapterId);
+      if (f.defaultAgent) info.defaultAgent = f.defaultAgent;
+      router.bind(info.id, kind);
       agents.set(info.id, info);
     } catch {
       /* folder gone or not a folder any more */
@@ -436,11 +462,49 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
       attachments: safe.map((a) => ({ path: a.path, kind: kindOfFile(a.path) })), // FR-009: checked again here, the renderer's kind is not trusted
     });
     for (const a of safe) pickedFiles.delete(a.path); // spec 004 FR-015: a sent file must be picked again to be sent again
+    noteLastSession(agents.get(id));
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+// ---- scheduled prompts (spec 044): per folder, while the app runs; the run goes through the user's own send path ----
+let scheduler: Scheduler | undefined;
+const folderAgent = (folder: string): AgentInfo | undefined => [...agents.values()].find((x) => wsKey(x) === folder);
+const scheduleDeps = (file: string): SchedulerDeps => ({
+  now: () => Date.now(),
+  isBusy: (folder) => [...agents.values()].some((x) => wsKey(x) === folder && ['working', 'needs-permission'].includes(lastStatus.get(x.id) ?? '')),
+  send: async (folder, prompt, s) => {
+    const a = folderAgent(folder);
+    const ad = a ? router.forAgent(a.id) : undefined;
+    if (!a || !ad) return false;
+    agentState.ensure(a.id, a.lazy);
+    agentState.noteSend(a.id); // same as the interactive send: the window shows Thinking from the moment a prompt goes out
+    try {
+      await ensureLive(a);
+      toRenderer('agent:event', { type: 'user', sessionId: a.id, timestamp: Date.now(), text: prompt });
+      toRenderer('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at });
+      await ad.send(a.id, { text: prompt });
+      noteLastSession(a);
+    } catch (err) {
+      agentState.noteSendFailed(a.id);
+      throw err;
+    }
+    return true;
+  },
+  setTimer: (ms, fn) => setTimeout(fn, ms),
+  clearTimer: (t) => clearTimeout(t as NodeJS.Timeout),
+  save: (doc) => saveSchedules(file, doc),
+  changed: (doc) => toRenderer('schedules:changed', doc),
+});
+ipcMain.handle('schedules:list', () => scheduler?.doc ?? { pausedAll: false, schedules: [] });
+ipcMain.handle('schedules:save', (_e, input: unknown) => (scheduler ? scheduler.save(input, (f) => !!folderStore?.get(f)) : { ok: false, error: 'Schedules are not available.' }));
+ipcMain.handle('schedules:remove', (_e, id: unknown) => ({ ok: typeof id === 'string' && !!scheduler?.remove(id) }));
+ipcMain.handle('schedules:setPausedAll', (_e, on: unknown) => {
+  scheduler?.setPausedAll(on === true);
+  return { ok: !!scheduler, pausedAll: scheduler?.doc.pausedAll ?? false };
+});
 
 // The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
 const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey };
@@ -536,7 +600,6 @@ ipcMain.handle('agents:answerQuestion', (_e, id: unknown, requestId: unknown, an
 });
 
 // ---- custom agent per session (spec 043 FR-003): list, select; a repository agent needs a confirmation for its exact file ----
-const PROFILE_ID = /^[A-Za-z0-9._:@/-]{1,100}$/;
 ipcMain.handle('agents:listProfiles', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
@@ -730,6 +793,7 @@ ipcMain.handle('folders:remove', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false, removedIds: [] as string[] };
   const key = wsKey(a);
+  scheduler?.removeFolder(key); // spec 044: a removed folder takes its schedules with it
   const removedIds = [...agents.values()].filter((x) => wsKey(x) === key).map((x) => x.id);
   for (const rid of removedIds) {
     try {
@@ -748,10 +812,7 @@ ipcMain.handle('folders:remove', async (_e, id: unknown) => {
 
 // One-way from the window: the pause button (spec 041 T014). Unknown ids and non-boolean values are ignored.
 ipcMain.on('agents:setPaused', (_e, id: unknown, paused: unknown) => {
-  const a = typeof id === 'string' ? agents.get(id) : undefined;
-  if (!a || typeof paused !== 'boolean') return;
-  agentState.ensure(a.id, a.lazy);
-  agentState.setPaused(a.id, paused);
+  applySetPaused(agentState, (k) => agents.get(k), id, paused);
 });
 
 // One main session out of the office (spec 006 FR-017). The last main session of a folder stays (Folders > Remove is for that).
@@ -769,6 +830,7 @@ ipcMain.handle('agents:remove', async (_e, id: unknown) => {
   agents.delete(a.id);
   agentState.remove(a.id);
   vsChatRefs.delete(a.id);
+  folderStore?.clearLastSession(key, a.id); // FR-020: a removed session does not come back after a restart
   return { ok: true };
 });
 
@@ -779,6 +841,43 @@ ipcMain.handle('folders:rename', (_e, id: unknown, label: unknown) => {
   if (!r) return { ok: false };
   for (const x of agents.values()) if (wsKey(x) === wsKey(a)) x.label = r.label;
   return { ok: true, label: r.label };
+});
+
+ipcMain.handle('folders:setDefaultAgent', (_e, id: unknown, profileId: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  if (!a || !folderStore) return { ok: false };
+  const r = folderStore.setDefaultAgent(wsKey(a), profileId);
+  if (!r) return { ok: false };
+  for (const x of agents.values()) if (wsKey(x) === wsKey(a)) x.defaultAgent = r.defaultAgent;
+  return { ok: true, defaultAgent: r.defaultAgent };
+});
+
+/** Spec 006 FR-020: the session a folder continues after a restart is the one that last got a message. */
+function noteLastSession(a: AgentInfo | undefined): void {
+  if (a) folderStore?.setLastSession(wsKey(a), a.id, router.adapterIdOf(a.id));
+}
+
+/** Spec 006 FR-021: the chat of a restored agent was opened; start it now (a resume sends no prompt) and hand back what came back. */
+ipcMain.handle('agents:wake', async (_e, id: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  const ad = a ? router.forAgent(a.id) : undefined;
+  if (!a || !ad) return { ok: false, error: 'unknown agent' };
+  try {
+    await ensureLive(a);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  const c = continued.get(a.id);
+  continued.delete(a.id);
+  if (!c) return { ok: true };
+  if (!c.resumed) return { ok: true, resumed: false };
+  let history: NonNullable<ResumeResult['history']>;
+  try {
+    history = await historyOf(ad, a.id);
+  } catch {
+    history = { items: [], total: 0, truncated: false };
+  }
+  return { ok: true, resumed: true, history, title: c.title };
 });
 
 ipcMain.handle('agents:resolvePermission', (_e, id: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean) => {
@@ -811,9 +910,16 @@ function createWindow(): void {
   });
   // Links never navigate this window or open new windows; chat links go through app:openExternal (http/https only).
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  win.webContents.on('will-navigate', (e, url) => {
-    if (!url.startsWith('file://')) e.preventDefault();
-  });
+  // spec 045 FR-004: only the app's own page, never another local file (it would get the preload bridge) or a web page
+  const INDEX_HTML = path.join(__dirname, '..', 'renderer', 'index.html');
+  const guardNav = (e: { preventDefault(): void }, url: string): void => {
+    if (!navigationAllowed(url, INDEX_HTML)) e.preventDefault();
+  };
+  win.webContents.on('will-navigate', guardNav);
+  win.webContents.on('will-redirect', guardNav);
+  // spec 045 FR-005: Electron grants web permissions by default; this page needs only clipboard writes (Copy buttons)
+  win.webContents.session.setPermissionRequestHandler((_wc, permission, done) => done(permissionAllowed(permission)));
+  win.webContents.session.setPermissionCheckHandler((_wc, permission) => permissionAllowed(permission));
   // DURBAR_SIM=N: simulated live agents (fake events, no sessions, no AI credits). See src/renderer/sim.ts.
   const sim = parseInt(dev.DURBAR_SIM ?? '', 10);
   const query: Record<string, string> = {};
@@ -828,7 +934,7 @@ function createWindow(): void {
     if (dev.DURBAR_SIM_FLOORS_OFF) query.floorsoff = dev.DURBAR_SIM_FLOORS_OFF.slice(0, 200);
   }
   win.webContents.on('did-finish-load', () => agentState.clearPaused()); // a fresh page starts with nobody paused (Paused is window-only, spec 041 T014)
-  void win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query });
+  void win.loadFile(INDEX_HTML, { query });
   // Dev: DURBAR_SHOT=/tmp/out.png [DURBAR_SHOT_SIZE=1280x800] [DURBAR_SHOT_CLICK=sim-1] saves a screenshot and quits.
   const shot = dev.DURBAR_SHOT;
   if (shot) {
@@ -867,6 +973,11 @@ app.whenReady().then(() => {
   agentTrust.load();
   usageTotalsStore.load();
   restoreFolders();
+  {
+    const file = path.join(app.getPath('userData'), 'durbar-schedules.json');
+    scheduler = new Scheduler(loadSchedules(file, Date.now()), scheduleDeps(file));
+    scheduler.start(); // missed once-runs are marked, intervals continue from now (spec 044 FR-002)
+  }
   createWindow();
   // Dev/headless convenience: DURBAR_OPEN="/path/a:/path/b" starts agents (read-only) on launch.
   const open = (dev.DURBAR_OPEN ?? '').split(path.delimiter).filter((p) => p && fs.existsSync(p));

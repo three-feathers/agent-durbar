@@ -13,9 +13,9 @@
 
 ## Open
 
-- [ ] T020 Render assistant Markdown (sanitized, no HTML, links open externally) after a spec delta and clarification on scope. [FR-011]
+- [x] T020 Render assistant Markdown (sanitized, no HTML, links open externally) after a spec delta and clarification on scope. [FR-011]
 - [x] T021 Verify on a real session what a second message during a turn does; then block, queue or label it. [FR-012]
-- [ ] T022 Real verification of Stop/End/resume (feature 013). [FR-013]
+- [x] T022 Real verification of Stop/End/resume (feature 013). [FR-013] (2026-10-19: done in spec 013 on a real Copilot session, issue #3)
 - [ ] T023 Decide whether chat history should persist across restarts (clarify; privacy implications). [FR-014]
-- [ ] T024 Copy message / copy code buttons. [FR-015]
-- [ ] T025 Automated overflow test for the chat view (same harness as feature 001 T020). [SC-001]
+- [x] T024 Copy message / copy code buttons. [FR-015]
+- [x] T025 Automated overflow test for the chat view (same harness as feature 001 T020). [SC-001] (2026-10-19: the chat checks in `check:office`, #221)

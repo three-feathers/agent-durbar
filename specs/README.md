@@ -24,16 +24,16 @@ what exists today, not what was originally intended. Each requirement carries a 
 
 | # | Feature | Status |
 | --- | --- | --- |
-| [001](001-office-view-and-densities/spec.md) | Office view, densities, list view, filters | implemented; delta 2026-10-18: main agents show their session title (issue #126); delta 2026-10-18: room headers fit with many one-agent folders (FR-023/FR-024); short names not cut by a long status (FR-025) |
+| [001](001-office-view-and-densities/spec.md) | Office view, densities, list view, filters | implemented; delta 2026-10-18: main agents show their session title (issue #126); delta 2026-10-18: room headers fit with many one-agent folders (FR-023/FR-024); short names not cut by a long status (FR-025); delta 2026-10-19: arrow keys between desks (FR-019); delta 2026-10-19: first-run welcome (FR-026) |
 | [002](002-copilot-adapter-and-events/spec.md) | Copilot adapter and normalized events | implemented; delta 2026-10-18: normalized `title` event from `session.title_changed`, `name.get` fallback (issue #126); delta 2026-10-19: questions from Copilot (`ask_user`, FR-058) |
-| [003](003-permissions-and-approvals/spec.md) | Permission modes, approvals, session grants | implemented |
+| [003](003-permissions-and-approvals/spec.md) | Permission modes, approvals, session grants | implemented; delta 2026-10-19: Windows grant keys, request ids (FR-088, FR-089) |
 | [004](004-attachments/spec.md) | Attachments (pick, drop, paste) and caps | implemented; delta 2026-10-19: FR-009/010/012/013/015 closed |
-| [005](005-chat-fullscreen-and-agent-strip/spec.md) | Full-screen chat and agent strip | implemented |
-| [006](006-folders-workspaces-sessions-history/spec.md) | Folders, workspaces, sessions, history | implemented; delta 2026-10-18: warning for a home folder or a root (issue #170); delta 2026-10-18: remove one session, rename a folder (FR-017/FR-018) |
+| [005](005-chat-fullscreen-and-agent-strip/spec.md) | Full-screen chat and agent strip | implemented; delta 2026-10-19: copy buttons (FR-015), FR-011 closed by 016 |
+| [006](006-folders-workspaces-sessions-history/spec.md) | Folders, workspaces, sessions, history | implemented; delta 2026-10-18: warning for a home folder or a root (issue #170); delta 2026-10-18: remove one session, rename a folder (FR-017/FR-018); delta 2026-10-19: a workspace's other folders given to the session (FR-019, T020); delta 2026-10-19: a folder continues its last session after a restart (FR-020/FR-021, T021, owner decision) |
 | [007](007-models-and-effort/spec.md) | Model and reasoning-effort pickers | implemented |
 | [008](008-packaging-and-release/spec.md) | Packaging, CI, draft releases | implemented (unsigned) |
 | [009](009-vscode-integration/spec.md) | Open in VS Code, VS Code chat history (read-only) | implemented |
-| [010](010-simulator/spec.md) | Simulator and dev/test hooks | implemented |
+| [010](010-simulator/spec.md) | Simulator and dev/test hooks | implemented; delta 2026-10-19: one event shape check for the simulator and adapters (FR-021) |
 
 ## Features 011-014: 011 built, 012 planned, 013-014 backlog drafts
 
@@ -42,7 +42,7 @@ what exists today, not what was originally intended. Each requirement carries a 
 | # | Feature | Status |
 | --- | --- | --- |
 | [011](011-credit-caps-and-usage-display/spec.md) | AI-credit caps and usage display | per-session cap slice and office/folder usage totals built, totals kept across restarts with a reset (2026-10-17, issue #21); exhausted flow unverified on a real account; multiplier estimate covered by spec 030 |
-| [012](012-claude-codex-adapters/spec.md) | Claude Code and Codex adapters | **Claude Code adapter built, experimental** (`DURBAR_CLAUDE=1`; CLI transport, SDK transport by dynamic import; real check 2026-10-18, T090-T094; live mode switch T096-T098, issue #54; model and effort picker T099-T101, issue #57; sign-in check T110, issue #55; MCP switches T111, issue #58; dollar estimate apart from AIU T085, issue #194; first real-app run T095 part 1, issue #196; previous sessions and resume T104-T106, issue #56; questions from the agent T107-T109, issue #60; offering it to everyone is T095); planned: clarified, [research](012-claude-codex-adapters/research.md), [plan](012-claude-codex-adapters/plan.md), [tasks](012-claude-codex-adapters/tasks.md); **Phase 1 built 2026-10-18 (T010-T019: interface, registry, CLI detection, saved adapter id, routing, contract suite on a fake and on Copilot, kind picker, mixed simulator roster, docs) and Phase 2/3 groundwork (T021/T022 mode mappings, T023/T024 event mappers with synthetic fixtures, T042 Codex JSON-RPC client, T051 debug-log redaction, T027 no Claude settings files (Q8), T026 SC-004 parity across mode mappings, T084 Codex reads limited to the session folders, T043a Codex adapter on a scripted fake (not registered), T028 Phase 2 docs, T025 usage/context tests and Claude usage dedupe), all simulator/fixtures and unit tests, not wired to a real Claude or Codex; only Copilot is registered; nothing verified on a real account**; real-account tasks need owner approval; umbrella issue #2 |
+| [012](012-claude-codex-adapters/spec.md) | Claude Code and Codex adapters | **Claude Code offered when installed** (FR-135/FR-136, owner decision 2026-10-19; was experimental behind `DURBAR_CLAUDE=1`; CLI transport, SDK transport by dynamic import; real check 2026-10-18, T090-T094; live mode switch T096-T098, issue #54; model and effort picker T099-T101, issue #57; sign-in check T110, issue #55; MCP switches T111, issue #58; context window T112; dollar estimate apart from AIU T085, issue #194; first real-app run T095 part 1, issue #196; previous sessions and resume T104-T106, issue #56; questions from the agent T107-T109, issue #60; offering it to everyone is T095); planned: clarified, [research](012-claude-codex-adapters/research.md), [plan](012-claude-codex-adapters/plan.md), [tasks](012-claude-codex-adapters/tasks.md); **Phase 1 built 2026-10-18 (T010-T019: interface, registry, CLI detection, saved adapter id, routing, contract suite on a fake and on Copilot, kind picker, mixed simulator roster, docs) and Phase 2/3 groundwork (T021/T022 mode mappings, T023/T024 event mappers with synthetic fixtures, T042 Codex JSON-RPC client, T051 debug-log redaction, T027 no Claude settings files (Q8), T026 SC-004 parity across mode mappings, T084 Codex reads limited to the session folders, T043a Codex adapter on a scripted fake (not registered), T028 Phase 2 docs, T025 usage/context tests and Claude usage dedupe), all simulator/fixtures and unit tests, not wired to a real Claude or Codex; only Copilot is registered; nothing verified on a real account**; real-account tasks need owner approval; umbrella issue #2 |
 | [013](013-live-verification-stop-resume-thinking/spec.md) | Live verification of Stop, resume and thinking | run 2026-10-19: C1-C7 pass on a real Copilot session (9 prompts, 0.31 AIU); several models, real cap, VS Code and macOS/Windows still open |
 | [014](014-signing-and-notarization/spec.md) | Code signing and notarization | draft, **needs approval (purchase)** |
 
@@ -104,7 +104,8 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | # | Feature | Status |
 | --- | --- | --- |
 | [042](042-release-alpha5/spec.md) | Release v0.1.0-alpha.5 as a pre-release (version bump, changelog, download notes) | built; **published as a pre-release** (2026-10-18) |
-| [043](043-custom-agents/spec.md) | Custom agent per session (issue #127) | Phase 1 built: Agent chip and menu, repository-agent confirmation, Copilot `rpc.agent.*` (simulator, unit tests, real check 2026-10-19); Phase 2 (New session dialog, per-folder default, Claude/Codex) not started |
+| [043](043-custom-agents/spec.md) | Custom agent per session (issue #127) | Phase 1 built: Agent chip and menu, repository-agent confirmation, Copilot `rpc.agent.*` (simulator, unit tests, real check 2026-10-19); Phase 2: the agent in the New session dialog built (FR-007); Claude agents built (FR-008); per-folder default built (FR-009); Codex not started |
+| [044](044-scheduled-prompts/spec.md) | Scheduled prompts while the app is open (issue #125) | Phase 1 built: per-folder schedules, once or every N minutes, busy and missed runs skipped, pause all (unit tests, simulator, real check 2026-10-19) |
 
 ## Feature 031: release v0.1.0-alpha.4
 
@@ -133,11 +134,17 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 
 | # | Feature | Status |
 | --- | --- | --- |
-| [034](034-agent-health/spec.md) | The figure follows the context window (heavy 70-90%, grumpy monster above 90%), trouble signals (ambulance, faint, dizzy, impatient), Serious mode | **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/shots-034.js`; not checked on a real session; follow-up T009 (walking figure, List view); delta 2026-10-17 *rooms darken with their worst agent, sirens* (issue #135) **built** (simulator, `scripts/shots-034.js`; T015 room path contrast done too) |
+| [034](034-agent-health/spec.md) | The figure follows the context window (heavy 70-90%, grumpy monster above 90%), trouble signals (ambulance, faint, dizzy, impatient), Serious mode | **built** 2026-10-17 (issue #20): simulator and unit tests, `scripts/shots-034.js`; not checked on a real session; T009 built 2026-10-19: List view mood words and the walking figure's mood (FR-014/FR-015, `scripts/shots-034-list.js`); delta 2026-10-17 *rooms darken with their worst agent, sirens* (issue #135) **built** (simulator, `scripts/shots-034.js`; T015 room path contrast done too) |
 
 ## Feature 033: floors
 
 | # | Feature | Status |
 | --- | --- | --- |
 | [033](033-floors/spec.md) | Floors: group rooms (folders) and switch a whole floor off so it leaves the office, the lobby and the status counts | built 2026-10-17 on branch `033-floors` ([plan](033-floors/plan.md), [research](033-floors/research.md), [tasks](033-floors/tasks.md)); simulator and unit tests, 0 AI credits |
-| [041](041-durbar-mcp/spec.md) | Durbar MCP server: read the office and change settings (mode, caps, folders, MCP extras) from the user's own MCP client; off by default, local only, every change confirmed in Durbar's window, never exposed to Durbar's own agents | **planned** (2026-10-18): owner accepted the Q1-Q12 defaults; [plan](041-durbar-mcp/plan.md) and [tasks](041-durbar-mcp/tasks.md) drafted, analyze fixes done (FR-057..FR-064); no code yet; nothing verified |
+| [041](041-durbar-mcp/spec.md) | Durbar MCP server: read the office and change settings (mode, caps, folders, MCP extras) from the user's own MCP client; off by default, local only, every change confirmed in Durbar's window, never exposed to Durbar's own agents | **in progress** (2026-10-19): owner accepted the Q1-Q12 defaults; [plan](041-durbar-mcp/plan.md) and [tasks](041-durbar-mcp/tasks.md). T010-T012 built (paths, key file and handshake, JSON-RPC layer; unit tests, nothing listens yet), T013-T015 built (read-only tool registry, agent state in main, main-process simulator; unit tests); read tools, server and bridge (T016-T018) built on stacked branches, PRs next; no server runs in the app yet; nothing verified on Windows or Linux |
+
+## Feature 045: security and quality sweep
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [045](045-security-sweep/spec.md) | Security and quality sweep before alpha.6: uniform place ids, one-pass unescape, Windows `cmd.exe` from SystemRoot, window navigation and web-permission hardening, alert triage | built 2026-10-19 (unit tests, Electron check on the simulator) |

@@ -9,6 +9,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { FakeAdapter } from '../src/adapters/fake';
 import type { OptionalMember } from '../src/adapters/fake';
+import { eventProblems } from '../src/adapters/eventguard';
 import { EventMapper } from '../src/adapters/map';
 import type { RawEvent } from '../src/adapters/map';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
@@ -16,7 +17,7 @@ import type { ScriptEvent } from './fakes/copilot-sdk';
 import type { PermissionLike } from '../src/adapters/permissions';
 import type { AgentAdapter, AgentEvent, PermissionInfo, PermissionMode } from '../src/adapters/types';
 import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
-import { enabledExperimental } from '../src/adapters/experimental';
+import { offeredDescriptors } from '../src/adapters/experimental';
 import { CODEX_EXPERIMENTAL_DESCRIPTORS } from '../src/adapters/experimentalCodex';
 import { CodexAdapter } from '../src/adapters/codex';
 import { FakeCodexServer } from './fakes/codex-app-server';
@@ -85,7 +86,12 @@ export async function runContract(name: string, make: () => ContractTarget, hook
   const fresh = () => {
     const t = make();
     const events: AgentEvent[] = [];
-    t.ad.onEvent((e) => events.push(e));
+    // spec 010 T023: every event of every adapter passes the same shape check as the simulator's
+    t.ad.onEvent((e) => {
+      const p = eventProblems(e);
+      assert.deepStrictEqual(p, [], M('event shape', `${e.type}: ${p.join(', ')}`));
+      events.push(e);
+    });
     let n = 0;
     const cap = t.ad.capabilities;
     return {
@@ -562,7 +568,7 @@ async function main(): Promise<void> {
 
   // ---- FR-085 (spec 012 T026): C6 (modes) and C7 (stop denies pending) ran once for the fake and for every registered adapter, so a new adapter cannot skip them.
   // A registered or experimental adapter without a contract run above fails here: add its run when it is added.
-  for (const id of ['fake-full', ...PRODUCTION_DESCRIPTORS.map((d) => d.id), ...enabledExperimental({ DURBAR_CLAUDE: '1' }).map((d) => d.id), ...CODEX_EXPERIMENTAL_DESCRIPTORS.map((d) => d.id)]) {
+  for (const id of ['fake-full', ...PRODUCTION_DESCRIPTORS.map((d) => d.id), ...offeredDescriptors({}).map((d) => d.id), ...CODEX_EXPERIMENTAL_DESCRIPTORS.map((d) => d.id)]) {
     const r = reports.get(id);
     assert.ok(r, `FR-085: no contract run for the registered adapter ${id}`);
     for (const c of ['C6', 'C7']) assert.strictEqual(r.ran.filter((x) => x === c).length, 1, `FR-085: ${c} ran exactly once for ${id}`);

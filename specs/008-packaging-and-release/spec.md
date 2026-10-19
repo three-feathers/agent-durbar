@@ -74,7 +74,7 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
 - **FR-010** `[KNOWN GAP]` Installed builds were never run on macOS or Windows by a person; CI only proves they build and that unit tests pass there. The Linux packaged app was built here; no recorded launch of the packaged binary talking to Copilot. (Feature 013/014.)
 - **FR-011** `[KNOWN GAP]` Only x64 for Windows and Linux; no arm64 builds, no `.deb`/`.rpm`, no Flatpak/Snap/winget/Homebrew. `read:`
 - **FR-012** `[KNOWN GAP]` No provenance: no build attestation, and checksums are uploaded by the same workflow that builds the files. `read:`
-- **FR-013** `[KNOWN GAP]` The CI Node version is fixed at 22; there is no `engines` field in `package.json` while CONTRIBUTING says Node 20.19+ or 22.12+. `read:` (Task T022.)
+- **FR-013** `[IMPLEMENTED]` (2026-10-19) `package.json` has `engines.node` `^20.19.0 || >=22.12.0`, matching CONTRIBUTING; CI builds with Node 22 (20.19 is not run in CI). Was: no `engines` field. (Task T022.)
 - **FR-014** `[KNOWN GAP]` `.github/workflows/spec-kit.yml` ("Spec Kit gate") fails PRs that change `src/` without `specs/` or a `Spec-Exempt` reason; it checks presence only, not that each spec has plan/tasks, and it is not a required status check unless the maintainer sets it in branch protection.
 - **FR-015** `[KNOWN GAP]` `package-smoke` runs `pack:dir` for Linux only; macOS/Windows packaging is first exercised by the tag workflow. `read:`
 - **FR-016** `[KNOWN GAP]` Dependency updates are manual (no Dependabot). `read:`

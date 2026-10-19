@@ -30,7 +30,9 @@ import { resolveWorkspaceCwd } from './workspace';
 import { listClaudeSessions, readClaudeHistory } from './claudeHistory';
 import type { HistoryResult, PreviousSession } from './history';
 import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
-import type { AskedQuestion } from './types';
+import { agentsArg, listClaudeAgents } from './claudeAgents';
+import type { ClaudeAgentDef } from './claudeAgents';
+import type { AgentProfile, AskedQuestion } from './types';
 
 export const CLAUDE_ID = 'claude';
 export const CLAUDE_NAME = 'Claude Code';
@@ -44,7 +46,7 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   permissionModes: Object.freeze(['read-only', 'ask', 'allow'] as PermissionMode[]),
   permModeSwitch: 'live', // FR-115/FR-116: the broker and the hook at once, the CLI flags from the next message
   usage: Object.freeze({ tokens: true, costUsd: true, nanoAiu: false }),
-  context: false,
+  context: true, // FR-134: `modelUsage.contextWindow` and the main agent's last message
   caps: false, // Q7 / T081
   helpers: true,
   history: true, // FR-125/FR-126: read-only from Claude's own session files
@@ -108,9 +110,13 @@ export interface ClaudeLaunch {
   resume: boolean;
   model?: string;
   effort?: string;
+  /** spec 043 FR-008: the custom agent for this launch (`--agents` JSON and `--agent` name). */
+  agent?: { name: string; json: string };
   /** `--mcp-config` JSON (`{"mcpServers": {...}}`); never logged. */
   mcpConfig?: string;
   appendSystemPrompt?: string;
+  /** spec 006 FR-019: the workspace's other folders (`--add-dir`, once each). */
+  addDirs?: string[];
 }
 
 const CLAUDE_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
@@ -151,6 +157,8 @@ export function claudeArgs(i: ClaudeLaunch): string[] {
   if (claudeModelFlag(i.model)) a.push('--model', i.model as string);
   if (i.effort && CLAUDE_EFFORTS.has(i.effort)) a.push('--effort', i.effort);
   if (i.appendSystemPrompt) a.push('--append-system-prompt', i.appendSystemPrompt);
+  if (i.agent && /^[A-Za-z0-9._-]{1,64}$/.test(i.agent.name)) a.push('--agents', i.agent.json, '--agent', i.agent.name);
+  for (const d of i.addDirs ?? []) a.push('--add-dir', d);
   a.push(i.resume ? '--resume' : '--session-id', i.sessionId);
   return a;
 }
@@ -308,6 +316,8 @@ interface Session {
   /** MCP servers left out of the running CLI's config at launch (FR-133): turning one on needs a relaunch. */
   launchedOff?: Set<string>;
   needsRelaunch?: boolean;
+  /** spec 043 FR-008: the selected custom agent (passed on every launch). */
+  agent?: ClaudeAgentDef;
   /** Questions waiting for the user (FR-128): request id -> what was asked, Claude's original texts, and the waiter. */
   questions?: Map<string, { asked: AskedQuestion[]; originals: string[]; resolve: (a: Record<string, string> | null) => void }>;
 }
@@ -362,6 +372,28 @@ export class ClaudeAdapter implements AgentAdapter {
     } finally {
       await t.close().catch(() => undefined);
     }
+  }
+
+  /** spec 043 FR-008: the custom agents of the session's folders and of the user (read by the adapter; Claude does not load them). */
+  async listAgentProfiles(sessionId: string): Promise<AgentProfile[]> {
+    const s = this.sessions.get(sessionId);
+    if (!s) return [];
+    return listClaudeAgents(s.roots, this.deps.configDir).map((d) => d.profile);
+  }
+
+  /**
+   * spec 043 FR-008: the agent the session starts with (`--agents`/`--agent` on its first launch); null = without. Claude fixes the
+   * agent when a session is created and ignores `--agent` on `--resume` (real, 2026-10-19), so a session that already exists refuses.
+   */
+  async selectAgentProfile(sessionId: string, id: string | null): Promise<AgentProfile | null> {
+    const s = this.sessions.get(sessionId);
+    if (!s) throw new Error('Unknown Claude session.');
+    if (s.resumable) throw new Error('Claude Code sets the agent when a session starts. Start a new session with this agent (+ New session).');
+    const def = id === null ? undefined : listClaudeAgents(s.roots, this.deps.configDir).find((d) => d.profile.id === id);
+    if (id !== null && !def) throw new Error('That agent is not available in this session.');
+    s.agent = def;
+    this.emit(s.id, { type: 'agentProfile', profile: def ? def.profile : null });
+    return def ? def.profile : null;
   }
 
   /** FR-125: this folder's earlier Claude sessions, read-only from Claude's session files. */
@@ -547,8 +579,10 @@ export class ClaudeAdapter implements AgentAdapter {
       resume: s.resumable,
       model: o.model,
       effort: o.reasoningEffort,
+      ...(s.agent ? { agent: { name: s.agent.profile.id, json: agentsArg(s.agent) } } : {}),
       mcpConfig: mcpConfigOf(o.mcpServers, o.disabledMcpServers),
       appendSystemPrompt: (this.deps.claudeMd ?? claudeMdPrompt)(s.cwd),
+      ...(s.roots.length > 1 ? { addDirs: s.roots.filter((r) => r !== s.cwd) } : {}),
     };
     const handlers: TransportHandlers = {
       message: (m) => this.onMessage(s, m),

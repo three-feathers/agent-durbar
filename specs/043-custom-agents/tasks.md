@@ -12,5 +12,7 @@
 
 ## Phase 2 (not started)
 
-- [ ] T010 Agent in the New session dialog; per-folder default
-- [ ] T011 Claude and Codex mapping (spec 012)
+- [x] T010a (2026-10-19) Agent in the New session dialog (same list and confirmation as the chip; applied when the session has started)
+- [x] T010 (2026-10-19) Per-folder default agent [FR-009]: `defaultAgent` in the folder store (parse, set, clear on remove), IPC `folders:setDefaultAgent`, the dialog checkbox and preselect, simulator driver at both sizes, docs
+- [ ] T011 Claude and Codex mapping (spec 012); Claude half: T011a
+- [x] T011a (Claude) agent files listed by the adapter, `--agents`/`--agent` on relaunch [FR-008]

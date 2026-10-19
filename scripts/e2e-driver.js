@@ -1,9 +1,15 @@
 const fs = require('fs');
 const { execSync } = require('child_process');
-const SHOTS = '/workspace/command-center';
-const HELLO = '/workspace/durbar-test/hello-app', NOTES = '/workspace/durbar-test/notes-app';
+const os = require('os');
+const path = require('path');
+// spec 010 T021: every path comes from the environment, with defaults under the temp folder (no machine-specific paths)
+const BASE = process.env.E2E_DIR || path.join(os.tmpdir(), 'durbar-e2e');
+const SHOTS = process.env.E2E_SHOTS || path.join(BASE, 'shots');
+const LOGS = process.env.E2E_LOGS || path.join(BASE, 'logs');
+const HELLO = process.env.E2E_HELLO || path.join(BASE, 'durbar-test', 'hello-app'), NOTES = process.env.E2E_NOTES || path.join(BASE, 'durbar-test', 'notes-app');
+fs.mkdirSync(SHOTS, { recursive: true }); fs.mkdirSync(LOGS, { recursive: true });
 const phases = (process.env.PHASES || 'dry').split(',');
-const out = (...a) => { const l = a.join(' '); console.log('[driver] ' + l); fs.appendFileSync('/workspace/m3/driver.log', l + '\n'); };
+const out = (...a) => { const l = a.join(' '); console.log('[driver] ' + l); fs.appendFileSync(path.join(LOGS, 'driver.log'), l + '\n'); };
 const diff = (d) => execSync('git diff --stat; git diff', { cwd: d }).toString();
 
 async function sendViaUi(ctx, id, text, attach) {
@@ -25,7 +31,7 @@ module.exports = async (ctx) => {
     await ctx.js(`document.getElementById('attFile').click()`); await ctx.sleep(600);
     out('chips', await ctx.js(`document.getElementById('attached').innerText`));
     out('card class', await ctx.js(cardState(id)));
-    await ctx.shot('/workspace/m3/dry.png');
+    await ctx.shot(path.join(SHOTS, 'dry.png'));
     return;
   }
   if (phases.includes('m5')) { // no AI: real main process + real session start (no prompt), synthetic events through the real renderer path
@@ -52,7 +58,7 @@ module.exports = async (ctx) => {
     await ctx.sleep(800);
     out('M5 chips:', JSON.stringify(await ctx.js(`[...document.querySelectorAll('#attached .att')].map(e=>e.innerText.trim()+' '+e.title)`)));
     out('M5 note:', await ctx.js(`document.getElementById('attNote').hidden?'(none)':document.getElementById('attNote').innerText`));
-    await ctx.shot(SHOTS + '/m5-electron-attach-cap.png');
+    await ctx.shot(path.join(SHOTS, 'm5-electron-attach-cap.png'));
     // 3) permission UI: Approve for this session + chip + revoke
     send({ type: 'user', text: 'Edit index.js and README.md' });
     send({ type: 'status', status: 'working', intent: 'Thinking' });
@@ -70,7 +76,7 @@ module.exports = async (ctx) => {
     out('M5 notes:', JSON.stringify(await notes()));
     out('M5 timeline order:', await ctx.js(`[...document.querySelectorAll('#panel .msg.agent .chips > *')].map(c=>c.classList.contains('note')?'NOTE':(c.querySelector('b')||{}).innerText).join(' > ')`));
     out('M5 grant chips:', JSON.stringify(await ctx.js(`[...document.querySelectorAll('#grants .gchip')].map(c=>c.innerText)`)));
-    await ctx.shot(SHOTS + '/m5-electron-session-grant.png');
+    await ctx.shot(path.join(SHOTS, 'm5-electron-session-grant.png'));
     await ctx.js(`document.querySelector('#grants [data-revoke]').click()`); await ctx.sleep(300);
     send({ type: 'grants', grants: [] }); await ctx.sleep(300);
     out('M5 chips after revoke:', await ctx.js(`document.querySelectorAll('#grants .gchip').length`));
@@ -80,7 +86,7 @@ module.exports = async (ctx) => {
     out('M5 before stop buttons:', JSON.stringify(await btns()));
     await ctx.js(`document.getElementById('stopBtn').click()`); await ctx.sleep(1500);
     out('M5 after stop buttons:', JSON.stringify(await btns()), 'last note:', (await notes()).slice(-1)[0], 'card:', await ctx.js(cardState(id)));
-    await ctx.shot(SHOTS + '/m5-electron-stop-pending.png');
+    await ctx.shot(path.join(SHOTS, 'm5-electron-stop-pending.png'));
     return;
   }
   if (phases.includes('real')) { // ONE tiny real prompt: Approve for this session across two edits (uses AI credits, see DURBAR_LOG usage events)
@@ -89,7 +95,7 @@ module.exports = async (ctx) => {
     await sendViaUi(ctx, id, 'Make two separate edit tool calls, one file each: add the one-line comment "// hello" at the top of index.js, then add the line "hello" at the end of README.md. Nothing else, no summary.');
     const appr = `[...document.querySelectorAll('#panel .note-actions button')].some(b=>b.textContent==='Approve for this session')`;
     out('REAL first request pending:', await ctx.waitFor(appr, 90000), 'card:', await ctx.js(cardState(id)));
-    await ctx.shot(SHOTS + '/m5-real-pending.png');
+    await ctx.shot(path.join(SHOTS, 'm5-real-pending.png'));
     await ctx.js(`[...document.querySelectorAll('#panel .note-actions button')].find(b=>b.textContent==='Approve for this session').click()`);
     await ctx.sleep(1500);
     out('REAL chips after approve:', JSON.stringify(await ctx.js(`[...document.querySelectorAll('#grants .gchip')].map(c=>c.innerText)`)));
@@ -98,7 +104,7 @@ module.exports = async (ctx) => {
     out('REAL finished:', done, 'card:', await ctx.js(cardState(id)));
     out('REAL notes:', JSON.stringify(await ctx.js(`[...document.querySelectorAll('#panel .note')].map(n=>n.innerText.replace(/\\n/g,' | '))`)));
     out('REAL git diff:', JSON.stringify(diff(HELLO)));
-    await ctx.shot(SHOTS + '/m5-real-session-grant.png');
+    await ctx.shot(path.join(SHOTS, 'm5-real-session-grant.png'));
     execSync('git checkout -- .', { cwd: HELLO });
     return;
   }
@@ -111,7 +117,7 @@ module.exports = async (ctx) => {
     send({ type: 'toolCall', callId: 'c1', tool: 'apply_patch', phase: 'start', args: { path: HELLO + '/index.js' } });
     send({ type: 'status', status: 'needs-permission', intent: 'Waiting for permission: write ' + HELLO + '/index.js', permission: { requestId: 'c1', kind: 'write', summary: 'write ' + HELLO + '/index.js', state: 'pending' } });
     await ctx.sleep(700);
-    await ctx.shot(SHOTS + '/m3-approval-pending.png');
+    await ctx.shot(path.join(SHOTS, 'm3-approval-pending.png'));
     await ctx.js(`[...document.querySelectorAll('#panel button')].find(b=>b.textContent==='Deny').click()`); await ctx.sleep(400);
     out('FAKE note after deny:', await ctx.js(`[...document.querySelectorAll('#panel .note')].map(n=>n.innerText).join(' | ')`));
     return;
@@ -124,13 +130,13 @@ module.exports = async (ctx) => {
     out('ASK1 approve button appeared:', waited, 'card:', await ctx.js(cardState(id)));
     await ctx.sleep(500);
     out('ASK1 note:', await ctx.js(`[...document.querySelectorAll('#panel .note')].map(n=>n.innerText).join(' | ')`));
-    await ctx.shot(SHOTS + '/m3-approval-pending.png');
+    await ctx.shot(path.join(SHOTS, 'm3-approval-pending.png'));
     await ctx.js(`[...document.querySelectorAll('#panel button')].find(b=>b.textContent==='Deny').click()`);
     const done1 = await ctx.waitFor(`/is-(done|idle|error)/.test(${cardState(id)})`, 90000);
     await ctx.sleep(800);
     out('ASK1 finished:', done1, 'card:', await ctx.js(cardState(id)));
     out('ASK1 file unchanged:', fs.readFileSync(HELLO + '/index.js', 'utf8') === before, 'git diff:', JSON.stringify(diff(HELLO)));
-    await ctx.shot(SHOTS + '/m3-approval-denied.png');
+    await ctx.shot(path.join(SHOTS, 'm3-approval-denied.png'));
     // second prompt: approve
     await sendViaUi(ctx, id, 'Please try again: add that one-line comment at the top of index.js.');
     const w2 = await ctx.waitFor(`[...document.querySelectorAll('#panel button')].some(b=>b.textContent==='Approve')`, 90000);
@@ -140,7 +146,7 @@ module.exports = async (ctx) => {
     await ctx.sleep(800);
     out('ASK2 finished:', done2, 'card:', await ctx.js(cardState(id)));
     out('ASK2 git diff:', JSON.stringify(diff(HELLO)));
-    await ctx.shot(SHOTS + '/m3-approval-approved.png');
+    await ctx.shot(path.join(SHOTS, 'm3-approval-approved.png'));
   }
   if (phases.includes('ro')) {
     execSync('git checkout -- .', { cwd: HELLO });
@@ -152,14 +158,14 @@ module.exports = async (ctx) => {
     out('RO finished:', done, 'card:', await ctx.js(cardState(id)));
     out('RO chat:', await ctx.js(`document.getElementById('panel').innerText.slice(-1500)`));
     out('RO git diff:', JSON.stringify(diff(HELLO)));
-    await ctx.shot(SHOTS + '/m3-readonly-denied.png');
+    await ctx.shot(path.join(SHOTS, 'm3-readonly-denied.png'));
   }
   if (phases.includes('att')) {
     const r = await ctx.addMany([NOTES], 'read-only'); const id = r.agents[0].id; await ctx.sleep(800);
     await ctx.js(`document.querySelector('[data-id=${JSON.stringify(id)}]').click()`); await ctx.sleep(500);
     await ctx.js(`document.getElementById('attFile').click()`); await ctx.sleep(600); // DURBAR_PICK answers with both files
     out('ATT chips before send:', JSON.stringify(await ctx.js(`[...document.querySelectorAll('#attached .att')].map(e=>e.innerText.trim()+(e.classList.contains('img')?' [img]':''))`)));
-    await ctx.shot(SHOTS + '/m3-attachments-composer.png');
+    await ctx.shot(path.join(SHOTS, 'm3-attachments-composer.png'));
     await ctx.js(`(()=>{const t=document.getElementById('msgInput');t.value='Describe the attached image in one sentence and summarise the file in one sentence. Do not edit files.';t.dispatchEvent(new Event('input',{bubbles:true}));})()`);
     await ctx.sleep(200);
     await ctx.js(`document.getElementById('sendBtn').click()`);
@@ -170,6 +176,6 @@ module.exports = async (ctx) => {
     out('ATT finished:', done, 'card:', await ctx.js(cardState(id)));
     out('ATT chat:', await ctx.js(`document.getElementById('panel').innerText.slice(-2500)`));
     out('ATT git status:', JSON.stringify(execSync('git status --short', { cwd: NOTES }).toString()));
-    await ctx.shot(SHOTS + '/m3-attachments.png');
+    await ctx.shot(path.join(SHOTS, 'm3-attachments.png'));
   }
 };

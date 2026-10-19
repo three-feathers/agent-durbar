@@ -113,7 +113,7 @@ Animations are subtle, CSS-only in compact densities and stop under reduced-moti
 - **FR-016** `[IMPLEMENTED]` (resolved 2026-10-16, Task T021) The README milestone-5 table had drifted. Re-measured with `npm run check:office` (xvfb, all rooms open, chat closed): SIM=12 -> `roomy` at 1440x900 and 1280x800; SIM=15 -> `card` at both (the table's `roomy` at 1440x900 predates the door row; the docked-panel columns predate the full-screen chat). An earlier run that saw `mini` at 1280x800 was not reproduced. Which density is chosen depends on font metrics; the check asserts only that the chosen one fits. The README states the new numbers. test: `scripts/check-office-overlap.js`
 - **FR-017** `[KNOWN GAP]` In `micro` the helper figures are very small (~34px wide), and long folder names truncate the nameplate when narrow (README "Remaining").
 - **FR-018** `[KNOWN GAP]` No record exists of 15 real live sessions running at once (cost); the layout is verified on simulated agents only.
-- **FR-019** `[KNOWN GAP]` Keyboard navigation of the office (arrow keys between desks) is not implemented; desks are focusable buttons only. `read:`
+- **FR-019** `[IMPLEMENTED]` (2026-10-19, T023) In the office, arrow keys move the focus between desks, helper tiles and closed door plates: Left and Right to the nearest one on the same row (at the end of a row, the next or previous one in reading order), Up and Down to the nearest one above or below; Enter opens the focused desk as before. Arrow keys with a modifier, and in text fields, are left alone. `sim:` a driver pressed the keys and checked the focus (1440x900 and 1280x800).
 
 ### Key Entities
 
@@ -180,4 +180,11 @@ Spec [024](../024-office-places/spec.md) adds a one-row **lobby** band between t
 
 *Corrected:*
 - **FR-025** `[IMPLEMENTED]` In `mini` and `micro` the name and the status word share the line: the status word gives way first (down to about two characters and an ellipsis); the name is not shrunk by the status and is cut only when it is longer than the line minus the mode icon and that short status. So a short name stays whole (`Omar  Limit r…`, before `O…  Limit reached`) and a long one keeps far more than three characters. The full status is still on the card's tooltip and colour. `check:office` fails, in every combination, when a cut desk name shows fewer than three characters (measured in the page with the same font).
+
+### 2026-10-19: a first-run welcome (sweep)
+
+*Found:* with no folder yet, the office showed one grey line ("No agents yet. Use \"+ Folder\"…"), with nothing about signing in to Copilot, what a folder becomes, or the Read-only default.
+
+*Corrected:*
+- **FR-026** `[IMPLEMENTED]` With no agents (and the demo off), the office shows a welcome card: three steps (sign in to Copilot once with `copilot login`; add a project folder, which becomes a room whose agent starts in Read-only; send a message, and use Ask first or Allow all only for trusted folders), **+ Add a folder** (the toolbar's own action) and **Look around in the demo** (switches the Demo toggle on), and one line that agents run as you and use your plan's AI credits. Other empty states (all folders hidden, all floors off) are unchanged. `sim:` the real app with a fresh user-data folder at 1440x900 and 1280x800.
 

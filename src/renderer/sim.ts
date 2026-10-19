@@ -18,6 +18,8 @@ type ModelChoice = import('../shared/api').ModelChoice;
 type AdapterInfo = import('../shared/api').AdapterInfo;
 type FloorsState = import('../shared/api').FloorsState;
 type FloorsResult = import('../shared/api').FloorsResult;
+type ScheduleInfo = import('../shared/api').ScheduleInfo;
+type SchedulesInfo = import('../shared/api').SchedulesInfo;
 type ModelSwitchRequest = import('../shared/modelswitch').ModelSwitchRequest;
 type ModelSwitchResult = import('../shared/modelswitch').ModelSwitchResult;
 type ContextTier = import('../shared/modelswitch').ContextTier;
@@ -311,6 +313,29 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       }, 300);
     }
     const simTrusted = new Set<string>(); // spec 043: repository agents confirmed in this run
+    const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number }) => void)[],
+      changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); } };
+    window.setInterval(() => {
+      const now = Date.now();
+      let any = false;
+      for (const sc of simSched.list) {
+        const due = sc.done || sc.paused ? undefined : sc.every !== undefined ? sc.next : sc.at;
+        if (due === undefined || due > now) continue;
+        any = true;
+        const s = sims.find((x) => (x.info.workspaceFile ?? x.info.cwd) === sc.folder);
+        const busy = !!s && (s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.perm);
+        const outcome = simSched.pausedAll ? 'skipped-paused' : !s ? 'failed' : busy ? 'skipped-busy' : 'sent';
+        if (outcome === 'sent' && s) {
+          emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: sc.prompt } as AgentEvent);
+          simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at }));
+          void api.send(s.info.id, sc.prompt, []);
+        }
+        sc.last = { at: now, outcome };
+        if (sc.every !== undefined) sc.next = now + sc.every * 60000;
+        else sc.done = true;
+      }
+      if (any) simSched.changed();
+    }, 1000);
     const sid = (s: SimAgent) => s.info.id;
     const pick = <T,>(a: T[]): T => a[Math.floor(rnd() * a.length)];
     const MODELS = ['gpt-6-luna', 'gpt-6-luna', 'gpt-5.6-luna', 'claude-sonnet-4.6'];
@@ -461,6 +486,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     }
 
     function play(s: SimAgent): void {
+      if (s.info.resumeLast) return; // spec 006 FR-021 (simresume=1): restored, nothing runs until its chat is opened
       emit({ type: 'user', sessionId: sid(s), timestamp: now(), text: s.prompt, attachments: (s.attachments ?? []).map((p) => ({ path: p, kind: /\.(png|jpe?g|gif)$/i.test(p) ? 'image' as const : 'file' as const })) });
       if (s.state === 'idle') return;
       mcpStatus(s, sims.indexOf(s));
@@ -843,6 +869,22 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         emit({ type: 'agentProfile', sessionId: id, timestamp: now(), profile: p } as AgentEvent);
         return { ok: true, profile: p };
       },
+      // spec 044: scheduled prompts in memory; a 1 s check sends through the simulated agents (no credits)
+      listSchedules: async () => ({ pausedAll: simSched.pausedAll, schedules: simSched.list.map((x) => ({ ...x })) }),
+      saveSchedule: async (input) => {
+        const now = Date.now();
+        const every = input.every !== undefined ? Math.round(Number(input.every)) : undefined;
+        if (!input.folder || !String(input.prompt ?? '').trim() || (every === undefined && !(Number(input.at) > now)) || (every !== undefined && !(every >= 5 && every <= 1440))) return { ok: false as const, error: 'A schedule needs a prompt and either a future time or 5 to 1440 minutes.' };
+        const old = simSched.list.find((x) => x.id === input.id);
+        const sc: ScheduleInfo = { id: old?.id ?? 'sched-' + ++simSched.n, folder: input.folder, prompt: String(input.prompt).trim().slice(0, 2000), ...(every !== undefined ? { every, next: old?.next ?? now + every * 60000 } : { at: Number(input.at) }), ...(input.paused ? { paused: true } : {}), ...(old?.last ? { last: old.last } : {}) };
+        simSched.list = old ? simSched.list.map((x) => (x.id === sc.id ? sc : x)) : [...simSched.list, sc];
+        simSched.changed();
+        return { ok: true as const, schedule: sc };
+      },
+      removeSchedule: async (id) => { const n = simSched.list.length; simSched.list = simSched.list.filter((x) => x.id !== id); simSched.changed(); return { ok: simSched.list.length !== n }; },
+      setSchedulesPaused: async (on) => { simSched.pausedAll = on === true; simSched.changed(); return { ok: true, pausedAll: simSched.pausedAll }; },
+      onSchedules: (cb) => { simSched.subs.push(cb); return () => undefined; },
+      onScheduleRan: (cb) => { simSched.ran.push(cb); return () => undefined; },
       resolveLimit: async (id, requestId, choice) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || s.limitReq !== requestId) return { ok: false, error: 'That request is no longer open.' };
@@ -1050,12 +1092,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
     };
 
-    const simKinds = simKindsParam === '1';
+    const simKinds = simKindsParam === '1' || simKindsParam === 'solo'; // spec 012 FR-136: '1' = two ready harnesses (picker shown), 'solo' = only Copilot ready (picker hidden)
     const copilotCaps = SIM_COPILOT_CAPS;
     const simAdapters = (): AdapterInfo[] => [
       { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps } },
       ...(simKinds ? [
-        { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false } },
+        simKindsParam === 'solo'
+          ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false } }
+          : { id: 'claude', displayName: 'Claude Code', state: 'ready', version: 'sim', capabilities: { ...copilotCaps, caps: false, mcpToggle: false } },
         { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'] } },
       ] as AdapterInfo[] : []),
       ...(mixed ? SIM_MIXED_KINDS : []),
@@ -1099,7 +1143,24 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
             if (!opts.freeze) timer = window.setInterval(tick, 2600);
           }, 0);
         }
+        /* simresume=1 (spec 006 FR-021): Priya's folder came back after a restart as its last session, not started yet */
+        if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simresume') === '1') {
+          const r = sims.find((x) => x.info.name === 'Priya');
+          if (r && r.info.resumeLast === undefined) { r.info.lazy = true; r.info.resumeLast = true; }
+        }
         return sims.map((s) => s.info);
+      },
+      wake: async (id) => { // FR-021: the canned last session comes back, as the main process resumes it (no prompt)
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'unknown agent' };
+        if (!s.info.resumeLast) return { ok: true };
+        s.info.resumeLast = false;
+        s.info.lazy = false;
+        return { ok: true, resumed: true, title: 'Add the clause-type column migration', history: { total: 3, truncated: false, items: [
+          { type: 'user', text: 'Add a migration for the new clause_type column, nullable for now.' },
+          { type: 'tool', callId: 'r1', tool: 'view', label: 'db/migrations/0006_parties.sql', output: '-- 0006: parties table' },
+          { type: 'output', text: 'Added `db/migrations/0007_clause_type.sql`. It adds `clause_type TEXT NULL`; nothing is backfilled yet.' },
+        ] } };
       },
       pickAttachments: async (): Promise<PickedFile[]> => [
         { path: '/home/vikram/notes/api-design-notes.md', name: 'api-design-notes.md', kind: 'file' },
@@ -1213,6 +1274,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!sims.some((x) => x.info.id === id)) return { ok: false };
         const t = String(label ?? '').replace(/\s+/g, ' ').trim();
         return { ok: true, label: t && [...t].length <= 40 ? t : undefined };
+      },
+      setFolderDefaultAgent: async (id, profileId) => { // spec 043 FR-009: kept for this run only, the same id rule as main
+        const src = sims.find((x) => x.info.id === id);
+        if (!src || (profileId !== null && !/^[A-Za-z0-9._:@/-]{1,100}$/.test(String(profileId)))) return { ok: false };
+        for (const x of sims) if (x.info.cwd === src.info.cwd) x.info.defaultAgent = profileId ?? undefined;
+        return { ok: true, defaultAgent: profileId ?? undefined };
       },
       listPrevious: async (id) => {
         const src = sims.find((x) => x.info.id === id);

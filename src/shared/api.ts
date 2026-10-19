@@ -51,6 +51,10 @@ export interface AgentInfo {
   floor?: string;
   /** Display name of the folder's room (spec 006 FR-018); absent = the folder's own name. */
   label?: string;
+  /** Restored after a restart as the folder's last session (spec 006 FR-021): resumed, not started fresh, when first needed. */
+  resumeLast?: boolean;
+  /** Custom agent preselected for the folder's new sessions (spec 043 FR-009). */
+  defaultAgent?: string;
   /** Which adapter runs this agent (spec 012 FR-058), e.g. `copilot`. */
   adapterId: string;
 }
@@ -145,6 +149,23 @@ export interface ProfileInfo {
   tools?: string[];
   model?: string;
   mcpServers?: string[];
+}
+
+/** A scheduled prompt (spec 044); the same shape as the main process's. */
+export interface ScheduleInfo {
+  id: string;
+  folder: string;
+  prompt: string;
+  every?: number;
+  at?: number;
+  next?: number;
+  paused?: boolean;
+  done?: boolean;
+  last?: { at: number; outcome: 'sent' | 'skipped-busy' | 'skipped-paused' | 'missed' | 'failed' };
+}
+export interface SchedulesInfo {
+  pausedAll: boolean;
+  schedules: ScheduleInfo[];
 }
 
 export interface ModelChoice {
@@ -374,6 +395,9 @@ export interface DurbarApi {
   removeSession?(id: string): Promise<{ ok: boolean; error?: string }>;
   /** Sets the folder's display name (spec 006 FR-018); empty = the folder's own name. */
   renameFolder?(id: string, label: string): Promise<{ ok: boolean; label?: string }>;
+  setFolderDefaultAgent?(id: string, profileId: string | null): Promise<{ ok: boolean; defaultAgent?: string }>;
+  /** Spec 006 FR-021: start a restored agent now (no prompt). `resumed` says whether its last session came back, with its history. */
+  wake?(id: string): Promise<{ ok: boolean; error?: string; resumed?: boolean; history?: { items: HistoryItem[]; total: number; truncated: boolean }; title?: string }>;
 
   /** Floors (spec 033). Validated in main; never touch a session. Every change returns the full new state. */
   floorsState?(): Promise<FloorsState>;
@@ -410,6 +434,13 @@ export interface DurbarApi {
   /** One-way: the window tells main an agent was paused or resumed (spec 041 T014); Paused exists only in the window. */
   setPaused?(id: string, paused: boolean): void;
   resolveLimit?(id: string, requestId: string, choice: LimitChoice): Promise<{ ok: boolean; error?: string }>;
+  /** Scheduled prompts (spec 044). */
+  listSchedules?(): Promise<SchedulesInfo>;
+  saveSchedule?(input: Partial<ScheduleInfo> & { folder: string; prompt: string }): Promise<{ ok: true; schedule: ScheduleInfo } | { ok: false; error: string }>;
+  removeSchedule?(id: string): Promise<{ ok: boolean }>;
+  setSchedulesPaused?(on: boolean): Promise<{ ok: boolean; pausedAll: boolean }>;
+  onSchedules?(cb: (doc: SchedulesInfo) => void): () => void;
+  onScheduleRan?(cb: (r: { agentId: string; scheduleId: string; every?: number; at?: number }) => void): () => void;
   /** Answer the agent's question (spec 012 FR-128): question text -> answer; null = skip. */
   answerQuestion?(id: string, requestId: string, answers: Record<string, string> | null): Promise<{ ok: boolean; error?: string }>;
   /** Custom agents the session can use (spec 043); `trusted` is false for a repository agent not yet confirmed for this folder and file. */
