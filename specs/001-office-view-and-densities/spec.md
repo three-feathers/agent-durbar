@@ -188,3 +188,14 @@ Spec [024](../024-office-places/spec.md) adds a one-row **lobby** band between t
 *Corrected:*
 - **FR-026** `[IMPLEMENTED]` With no agents (and the demo off), the office shows a welcome card: three steps (sign in to Copilot once with `copilot login`; add a project folder, which becomes a room whose agent starts in Read-only; send a message, and use Ask first or Allow all only for trusted folders), **+ Add a folder** (the toolbar's own action) and **Look around in the demo** (switches the Demo toggle on), and one line that agents run as you and use your plan's AI credits. Other empty states (all folders hidden, all floors off) are unchanged. `sim:` the real app with a fresh user-data folder at 1440x900 and 1280x800.
 
+
+### 2026-10-19: positioning, many harnesses and anyone with agents (owner)
+
+*Owner, 2026-10-19:* "our target is muti harness and not only for coders/developers - anybody can use it for their agents".
+
+- **FR-027** Everything that describes the app says the same thing: Agent Durbar is a calm command center for **AI agents**, across **several harnesses** (GitHub Copilot, Claude Code, Codex in progress), for **anyone who works with agents**, not only developers. A room is any folder an agent works in: code, documents, research or notes.
+  - The welcome card (FR-026) names the harnesses: sign in to one of them. It says "folder", not "project folder", and the note speaks of "your own plan", not only Copilot's AI credits.
+  - The "About agent kinds" dialog says "agent harness", not "coding agent".
+  - The README tagline, intro and Vision follow this, as do `package.json` `description` and the GitHub repository description and topics.
+  - Honest limits stay: Codex is not offered yet, and agents still act on files in the folders you add.
+- `sim:` the welcome card at 1440x900 and 1280x800 (the FR-026 driver), and `check:office`.
