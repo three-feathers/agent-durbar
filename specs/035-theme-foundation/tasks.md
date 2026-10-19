@@ -7,9 +7,9 @@
 - [x] T005 Add `theme` to settings store; call `setTheme()` on startup and `settings:changed`
 - [x] T006 Add `themeId` to `SC_CACHE` key
 - [x] T007 Write `scripts/test-theme.ts` covering manifest validation, token fallback, slot sanitization, unknown theme fallback
-- [ ] T008 Run `npm run typecheck`, `npm test`, `npm run check:office` at 1440x900 and 1280x800
+- [x] T008 Run `npm run typecheck`, `npm test`, `npm run check:office` at 1440x900 and 1280x800 (done in PR #137: typecheck, tests and `check:office` at both sizes passed in CI)
 - [x] T009 Update `specs/README.md`, `CHANGELOG.md` Unreleased
-- [ ] T010 Open PR, request review, merge when green
+- [x] T010 Open PR, request review, merge when green (PR #137, merged 2026-10-18)
 
 ## Changes 2026-10-18 (owner review of PR #137)
 
