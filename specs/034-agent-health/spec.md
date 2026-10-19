@@ -156,3 +156,7 @@
 - T015, done in this PR after Vikram's review (Ruben chose to do it now): the folder path in every room's header was about 4.2:1 on `main` (`--muted` on the room floor). It is now `#5c635e`, measured at 5.17:1 in a calm room. The driver holds every tone to 4.5:1, so the old colour fails it.
 - `[KNOWN GAP]` Not run on a real Copilot session (it only reads the moods of spec 034).
 
+
+### 2026-10-19: mood words in the List view (T009, first half)
+
+- **FR-014** The List view has no figures, so each main agent's row shows the mood words of FR-003 (the same `phrases()`: context nearly full, needs help, fainted, impatient, dizzy) at the start of its *Current task* cell, in a small amber text, and adds them to the row's accessible label. They show only when there are words. Serious mode shows none, as on the cards, and helpers show none. The walking figure while an agent is at a place stays as specified (unchanged); that is the other half of T009, not built. `sim:` driver in List view at 1440x900 and 1280x800.

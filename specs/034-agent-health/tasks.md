@@ -8,7 +8,7 @@
 - [x] T006 Settings "Serious mode" switch; serious mode turns the drawings off [FR-004]
 - [x] T007 Simulator: context bands, a failed-call streak, `simwaitold=1` [FR-006]
 - [x] T008 Checks and screenshots (`scripts/shots-034.js`, both sizes, Serious mode), `check:office`, README, CHANGELOG, specs index [FR-005, FR-007, SC-001, SC-002]
-- [ ] T009 (follow-up, not in this PR) Mood on the walking figure while an agent is at a place, and mood words in the List view (known gaps found in phase 3)
+- [ ] T009 (follow-up, not in this PR) Mood on the walking figure while an agent is at a place, and mood words in the List view (known gaps found in phase 3); the List view half is FR-014 (T009a)
 
 ## 2026-10-17 delta: rooms darken, sirens (issue #135)
 
