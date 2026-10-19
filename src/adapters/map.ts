@@ -237,6 +237,13 @@ export class EventMapper {
         const cap = num(d.sessionLimits?.maxAiCredits);
         return this.emit({ type: 'limit', phase: 'changed', maxAiCredits: cap && cap > 0 ? cap : null });
       }
+      case 'subagent.selected': {
+        // spec 043 FR-002: the session's selected custom agent (top level only); source and details come from the adapter's list
+        if (agentId || typeof d.agentName !== 'string' || !d.agentName) return;
+        return this.emit({ type: 'agentProfile', profile: { id: d.agentName, name: cleanSessionTitle(d.agentDisplayName, 60) ?? d.agentName, source: 'other', ...(Array.isArray(d.tools) ? { tools: d.tools.filter((t: unknown): t is string => typeof t === 'string').slice(0, 100) } : {}) } });
+      }
+      case 'subagent.deselected':
+        return agentId ? undefined : this.emit({ type: 'agentProfile', profile: null });
       case 'session.title_changed': {
         // The main agent's display title (issue #126); a sub-agent's title is not shown.
         const title = agentId ? undefined : cleanSessionTitle(d.title);

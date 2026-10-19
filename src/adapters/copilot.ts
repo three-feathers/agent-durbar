@@ -21,9 +21,10 @@ import { EventMapper } from './map';
 import type { EventBody, RawEvent } from './map';
 import { compactResultFrom, modelConfig, modelOptionFrom, runtimeMessage, sdkTier, switchResultFrom } from './copilotmodel';
 import type { ModelOption, RawModelInfo, RawSwitchResult } from './copilotmodel';
-import { PermissionBroker, startModeOf } from './permissions';
+import { PermissionBroker, isInsideRoots, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
+import type { AgentProfile } from './types';
 import { cleanSessionTitle, eventsToHistory, previousSessionsFor } from './history';
 import type { HistoryResult, PreviousSession } from './history';
 import { unpackedRuntimePath } from './runtime';
@@ -54,6 +55,36 @@ interface Live {
   askedTitle?: boolean;
   /** `ask_user` questions waiting for the user (spec 002 FR-058): request id -> waiter. */
   questions?: Map<string, { choices: string[]; resolve: (answer: string | null) => void }>;
+  /** The session's folders (spec 043: a profile file inside one is the repository's). */
+  folders?: string[];
+}
+
+/** spec 043 FR-002: the folders Copilot reads agent files from: each session folder's `.github/agents` and the user's `~/.copilot/agents`. */
+export function agentDirsFor(folders: readonly string[], home = os.homedir()): string[] {
+  return [...new Set(folders)].map((f) => path.join(f, '.github', 'agents')).concat(path.join(home, '.copilot', 'agents'));
+}
+
+/** spec 043 FR-001: an SDK agent as a generic profile; undefined for sub-agent-only agents. */
+export function profileOf(a: { id?: unknown; name?: unknown; displayName?: unknown; description?: unknown; path?: unknown; source?: unknown; userInvocable?: unknown; tools?: unknown; model?: unknown; mcpServers?: unknown }, folders: readonly string[] = []): AgentProfile | undefined {
+  const id = typeof a.id === 'string' && a.id ? a.id : typeof a.name === 'string' ? a.name : '';
+  if (!id || a.userInvocable === false) return undefined;
+  const name = cleanSessionTitle(a.displayName, 60) ?? cleanSessionTitle(a.name, 60) ?? id;
+  const description = cleanSessionTitle(a.description, 200);
+  // real (2026-10-19): agents loaded through `agentDirectories` are all reported as `user`, so a file inside a session folder is the
+  // repository's (it asks once before use, FR-003) whatever the runtime says
+  const inFolder = typeof a.path === 'string' && folders.some((f) => isInsideRoots(a.path as string, [f]));
+  const source: AgentProfile['source'] = inFolder || a.source === 'project' || a.source === 'inherited' ? 'repo' : a.source === 'user' ? 'user' : 'other';
+  return {
+    id: id.slice(0, 100),
+    name,
+    ...(description ? { description } : {}),
+    source,
+    ...(typeof a.path === 'string' ? { path: a.path } : {}),
+    // real (2026-10-19): the runtime reports "all tools" as `['*']`; that is the same as no list
+    ...(Array.isArray(a.tools) && !a.tools.includes('*') ? { tools: a.tools.filter((t): t is string => typeof t === 'string').slice(0, 100) } : {}),
+    ...(typeof a.model === 'string' && a.model ? { model: a.model.slice(0, 100) } : {}),
+    ...(a.mcpServers && typeof a.mcpServers === 'object' ? { mcpServers: Object.keys(a.mcpServers as object).slice(0, 50) } : {}),
+  };
 }
 
 /** What Copilot gets when the user skips an `ask_user` question (spec 002 FR-058). */
@@ -216,6 +247,8 @@ export class CopilotAdapter implements AgentAdapter {
       ...(options.maxAiCredits && options.maxAiCredits > 0 && Number.isFinite(options.maxAiCredits) ? { sessionLimits: { maxAiCredits: options.maxAiCredits } } : {}),
       onPermissionRequest,
       onUserInputRequest,
+      // spec 043 FR-002: custom agents from explicit folders only (no config discovery, so no repository skills)
+      agentDirectories: agentDirsFor([cwd, ...folders]),
     };
     this.debug?.(`mcp: servers=[${Object.keys(options.mcpServers ?? {}).join(',')}] disabled=[${(options.disabledMcpServers ?? []).join(',')}]`);
     let session: CopilotSession;
@@ -246,7 +279,16 @@ export class CopilotAdapter implements AgentAdapter {
       this.map(sid, ev);
       if (live && ev.type === 'session.idle') this.askTitle(sid);
     });
-    this.sessions.set(sid, { session, unsubscribe, cwd, broker });
+    this.sessions.set(sid, { session, unsubscribe, cwd, folders: [cwd, ...folders], broker });
+    // spec 043 FR-002: a resumed session keeps its selected agent (stored by the runtime): show it
+    if (resumedExisting)
+      void Promise.resolve()
+        .then(() => session.rpc.agent.getCurrent())
+        .then((r: { agent?: unknown } | undefined) => {
+          const p = r?.agent ? profileOf(r.agent as Parameters<typeof profileOf>[0], [cwd, ...folders]) : undefined;
+          if (p && this.sessions.has(sid)) this.emit(sid, { type: 'agentProfile', profile: p });
+        })
+        .catch(() => undefined);
     if (resumedExisting) this.askTitle(sid);
     // Without a registered consumer the runtime does not ask the user when the cap is reached (SDK docs of `registerInterest`).
     void session.rpc.eventLog.registerInterest({ eventType: 'session_limits_exhausted.requested' }).catch((err: unknown) => this.debug?.(`limit interest not registered: ${err instanceof Error ? err.message : String(err)}`));
@@ -291,6 +333,30 @@ export class CopilotAdapter implements AgentAdapter {
 
   private cancelQuestions(live: Live): void {
     for (const q of [...(live.questions?.values() ?? [])]) q.resolve(null);
+  }
+
+  /** spec 043 FR-002: the session's selectable custom agents (`rpc.agent.list`, @experimental). */
+  async listAgentProfiles(sessionId: string): Promise<AgentProfile[]> {
+    const live = this.sessions.get(sessionId);
+    if (!live) return [];
+    const r = (await live.session.rpc.agent.list()) as { agents?: unknown[] } | undefined;
+    return (r?.agents ?? []).map((a) => profileOf(a as Parameters<typeof profileOf>[0], live.folders ?? [live.cwd])).filter((p): p is AgentProfile => !!p);
+  }
+
+  /** spec 043 FR-002: select a custom agent for the next turns, or the default agent (null). The runtime confirms with an event. */
+  async selectAgentProfile(sessionId: string, id: string | null): Promise<AgentProfile | null> {
+    const live = this.sessions.get(sessionId);
+    if (!live) throw new Error('The session is not running.');
+    if (id === null) {
+      await live.session.rpc.agent.deselect();
+      this.emit(sessionId, { type: 'agentProfile', profile: null });
+      return null;
+    }
+    const p = (await this.listAgentProfiles(sessionId)).find((x) => x.id === id);
+    if (!p) throw new Error('That agent is not available in this session.');
+    await live.session.rpc.agent.select({ name: id });
+    this.emit(sessionId, { type: 'agentProfile', profile: p });
+    return p;
   }
 
   async interrupt(sessionId: string): Promise<void> {
