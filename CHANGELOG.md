@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **MCP server groundwork: key file and handshake (spec 041 T011, issue #180).** A per-install secret kept in a private file, and a mutual HMAC handshake so the bridge and Durbar prove the key to each other without sending it. Not wired yet: nothing listens. No user-visible change, 0 AIU.
+
 - **MCP server groundwork: constants and per-OS paths (spec 041 T010, issue #175).** Where the MCP socket or named pipe and the key file would live on Windows, macOS and Linux, with a safety check for any folder outside the app's data folder. Not wired yet: nothing listens. No user-visible change, 0 AIU.
 
 - **MCP server groundwork: JSON-RPC framing and protocol (spec 041 T012, issue #176).** Newline framing with a 64 KB cap, the MCP `initialize`/`ping` subset with no new dependency, a fake client and synthetic handshakes for tests. Not wired yet: Durbar does not listen for MCP clients. No user-visible change, 0 AIU.

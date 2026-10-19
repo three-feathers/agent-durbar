@@ -11,7 +11,7 @@ Durbar gets its own MCP server, off by default. The user's MCP client launches *
 ## Technical Context
 
 - **Language**: TypeScript, CommonJS main process, Electron 44 (Node 22). Renderer stays plain HTML/CSS/JS (`src/renderer/`).
-- **Dependencies**: **none new** (Q3). JSON-RPC 2.0 + MCP subset, framing, HMAC challenge-response (`crypto`), socket/pipe (`net`) are all Node built-ins. No `@modelcontextprotocol/sdk`.
+- **Dependencies**: **none new** (Q3). JSON-RPC 2.0 + MCP subset, framing, HMAC challenge-response (`crypto`), socket/pipe (`net`) are all Node built-ins. No `@modelcontextprotocol/sdk`. The handshake authenticates the peers, not each later message (no session key or per-frame MAC in v1; see the T011 entry in spec.md).
 - **Storage**: one new setting `mcpServer: true` in `durbar-settings.json` (`AppSettings`, `src/shared/credits.ts:45-56`, parsed by `parseSettings` line 58); one new user-only **key file** in userData (`mcp/connection.json`, 0600 in a 0700 folder; deleted when the server is off). No audit file on disk (Q12).
 - **Testing**: `npm test` only. Pure modules with injected clock, file system, platform and streams; a fake MCP client over a real socket in a temp folder (named pipe on the Windows CI runner); synthetic handshake fixtures labelled `"provenance": "synthetic"` until a recorded check; the main-process simulator. A `DURBAR_DRIVER` script (`scripts/shots-041.js`) for the dialog and Settings screenshots.
 - **Target platforms**: Windows, macOS, Linux (constitution VI). Path and pipe logic is pure and tested for all three from any OS.
