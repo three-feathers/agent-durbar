@@ -255,7 +255,8 @@ void (async () => {
     t.child().out.emit('data', '1. Open https://auth.openai.com/codex/device\n2. Enter this one-time code\n   AB12-CD34E\n');
     const last = t.prog[t.prog.length - 1];
     assert.strictEqual(last.code, 'AB12-CD34E', 'shown on its own');
-    assert.ok(!last.lines.join('\n').includes('AB12-CD34E') && !last.lines.join('\n').includes('auth.openai.com'), 'not in the lines');
+    assert.ok(!last.lines.join('\n').includes('AB12-CD34E'), 'the code is not in the lines');
+    assert.ok(last.lines.some((l) => l.includes('Open [sign-in link]')) && !last.lines.some((l) => /https:/.test(l)), 'the link is replaced in the lines');
     t.child().emit('close', 0); await tick(); await tick();
     assert.ok(!t.done[0].lines.join('\n').includes('AB12-CD34E'), 'nor in the final lines');
   }
