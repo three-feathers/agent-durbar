@@ -753,19 +753,19 @@
       '--c-working':'#5878ac','--c-thinking':'#8b90bc','--c-waiting':'#d29838','--c-idle':'#a8a496','--c-error':'#c24a42','--c-done':'#5c9a70',
       '--halo-working':'#5878ac','--halo-thinking':'#8b90bc','--halo-waiting':'#d29838','--halo-error':'#c24a42',
       '--chair':'#c3bca8','--desk':'#4a3b2c','--desk-front':'#5c4936','--desk-drawer':'#3f3226', /* spec 052 FR-032: warm lacquer */
-      '--monitor-stand':'#5e626e','--monitor-frame':'#363a46','--laptop':'#6e7380',
+      '--monitor-stand':'#2b2420','--monitor-frame':'#1c1a17','--laptop':'#4a3b2c' /* lacquer, not office grey */,
       '--screen-working':'#e7eef8','--screen-thinking':'#eae9f2','--screen-waiting':'#f7eed4','--screen-idle':'#d5d6ce','--screen-error':'#f6e2dc','--screen-done':'#e1efe2',
       '--bar-sage':'#8aa88e','--bar-blue':'#5878ac','--bar-blue-2':'#9cb2d4',
       '--face-dark':'#262430','--mouth':'#7c443a',
       '--bubble-line':'#c4c8e0','--think-dot':'#8b90bc',
-      '--plant-mid':'#96b296','--plant-dark':'#7a9a7a','--plant-light':'#aabf9f','--pot':'#9a4a44',
+      '--plant-mid':'#96b296','--plant-dark':'#7a9a7a','--plant-light':'#aabf9f','--pot':'#c23b22' /* shu vermilion */,
       '--link':'#9aa0ac','--star':'#d29838',
       '--door-bg':'#e9e3d3','--door-line':'#a39874','--door-leaf':'#c0ab7c','--door-leaf-line':'#9c8c62','--door-knob':'#6e5c36','--door-panel':'#ddd2b8',
       '--brand-mark':'#fdfbf5','--brand-bg':'#c23b22','--focus':'#2c4a7e',
       '--sel-border':'#c23b22','--sel-ring':'#f0d5cc','--sel-ring-2':'#f0d5cc','--stat-sel-border':'#c23b22','--stat-sel-ring':'#f0d5cc',
       '--avatar-bg':'#e2e2da','--walker-bg':'#fdfbf5','--drop':'#7d90bc','--drop-bg':'rgb(233 236 246 / .93)','--drop-ink':'#2a3c64',
       '--badge-idle':'#b8b4a2','--place-busy':'#8c9db8',
-      '--tint-sage':'#e8ecdd','--wall-sage':'#6b7d4a','--tint-blue':'#e3e8f0','--wall-blue':'#2c4a7e','--tint-sand':'#f3ecdb','--wall-sand':'#a88a52','--tint-clay':'#f4e5e1','--wall-clay':'#b5432e',
+      '--tint-sage':'#e8ecdd','--wall-sage':'#6b7d4a','--tint-blue':'#e3e8f0','--wall-blue':'#2c4a7e','--tint-sand':'#f3ecdb','--wall-sand':'#a88a52','--tint-clay':'#efe4dc','--wall-clay':'#b5432e',
       '--cwall-sage':'#6b7d4a','--cwall-blue':'#2c4a7e','--cwall-sand':'#a88a52','--cwall-clay':'#b5432e',
       '--pb-working':'#dfe6f2','--pc-working':'#28466e','--pb-thinking':'#e6e4f2','--pc-thinking':'#41427c',
       '--pb-waiting':'#f7ecd1','--pc-waiting':'#7a580e','--pb-idle':'#e8e5da','--pc-idle':'#565450',
@@ -774,15 +774,13 @@
       '--ic-read':'#4e6c92','--ic-edit':'#7c804e','--ic-run':'#40548e','--ic-search':'#846c3c','--ic-tool':'#6c7080',
     },
     art:{
-      /* a kanzashi hair pin: a bar across the bun line with a small blossom dot */
-      'plant':'<path d="M13 4C10 10 8 14 8 18h10c0-4-2-8-5-14z" fill="var(--plant-dark)"/><circle cx="8" cy="15" r="2.4" fill="var(--plant-mid)"/><circle cx="18" cy="16" r="2.2" fill="var(--plant-light)"/><path d="M8 21h10l-1.5 8h-7z" fill="var(--pot)"/>',
-      /* kimono silhouette over the torso: wide sleeves and an obi band */
-      /* low desk: a flat lacquer slab under the drawn desk; no height change */
+      /* a small bonsai pine: a short twisted trunk, three flat cloud pads, a shallow vermilion pot */
+      'plant':'<path d="M12.4 23.4c-1.8-2.4 1.6-4 .2-6.4c-.9-1.7 1.2-3.2 1.6-6" fill="none" stroke="#4a3424" stroke-width="2.2" stroke-linecap="round"/><path d="M12.4 17.6c-1.8-.7-3.6-.4-5.2.6M13.8 13.4c1.8-.5 3.6-.2 5 .9" fill="none" stroke="#4a3424" stroke-width="1.2" stroke-linecap="round"/><g fill="#2f5233"><ellipse cx="7" cy="17.6" rx="4.6" ry="1.9"/><ellipse cx="19.4" cy="13.8" rx="4.4" ry="1.8"/><ellipse cx="13.6" cy="8.8" rx="5.2" ry="2.2"/></g><g fill="#4a6e44"><ellipse cx="7.4" cy="16.9" rx="3" ry=".9"/><ellipse cx="19.6" cy="13.1" rx="2.8" ry=".8"/><ellipse cx="13.8" cy="8" rx="3.4" ry="1"/></g><rect x="5" y="23" width="16" height="1.6" rx=".4" fill="var(--pot)"/><rect x="6.5" y="24.4" width="13" height="3.6" fill="var(--pot)"/><rect x="7.5" y="28" width="2" height="1" fill="#2b2420"/><rect x="16.5" y="28" width="2" height="1" fill="#2b2420"/>',
       /* tatami floor (woven mats), shoji screen wall panels, hanging scroll hints */
       'room-back-wall':'<g fill="#f3efe2" stroke="#a89a74" stroke-width="1.6" opacity=".92"><rect x="16" y="14" width="76" height="52" rx="1.5"/><rect x="104" y="14" width="76" height="52" rx="1.5"/><rect x="192" y="14" width="76" height="52" rx="1.5"/><rect x="280" y="14" width="28" height="52" rx="1.5"/></g><g stroke="#c2b48e" stroke-width=".8" opacity=".75"><path d="M35 14v52M54 14v52M73 14v52M123 14v52M142 14v52M161 14v52M211 14v52M230 14v52M249 14v52M290 14v52M299 14v52M16 31h76M16 48h76M104 31h76M104 48h76M192 31h76M192 48h76M280 31h28M280 48h28"/></g><rect x="94" y="8" width="3.4" height="58" fill="#8a7a52" opacity=".6"/><rect x="182" y="8" width="3.4" height="58" fill="#8a7a52" opacity=".6"/><rect x="270" y="8" width="3.4" height="58" fill="#8a7a52" opacity=".6"/>',
       /* spec 052 FR-032: tatami, not beige strips: rush-straw mats (#d9cfa8) with a thin darker edge, a dark cloth
-         border (heri) on the long sides and a faint weave */
-      'room-floor':'<g stroke="#8f7f58" stroke-width=".8"><rect x="24" y="74" width="120" height="22" rx="1" fill="#d9cfa8"/><rect x="156" y="74" width="120" height="22" rx="1" fill="#d3c89f"/><rect x="24" y="98" width="120" height="22" rx="1" fill="#d3c89f"/><rect x="156" y="98" width="120" height="22" rx="1" fill="#d9cfa8"/></g><path d="M30 74v22M30 98v22M36 74v22M36 98v22M42 74v22M42 98v22M48 74v22M48 98v22M54 74v22M54 98v22M60 74v22M60 98v22M66 74v22M66 98v22M72 74v22M72 98v22M78 74v22M78 98v22M84 74v22M84 98v22M90 74v22M90 98v22M96 74v22M96 98v22M102 74v22M102 98v22M108 74v22M108 98v22M114 74v22M114 98v22M120 74v22M120 98v22M126 74v22M126 98v22M132 74v22M132 98v22M138 74v22M138 98v22M162 74v22M162 98v22M168 74v22M168 98v22M174 74v22M174 98v22M180 74v22M180 98v22M186 74v22M186 98v22M192 74v22M192 98v22M198 74v22M198 98v22M204 74v22M204 98v22M210 74v22M210 98v22M216 74v22M216 98v22M222 74v22M222 98v22M228 74v22M228 98v22M234 74v22M234 98v22M240 74v22M240 98v22M246 74v22M246 98v22M252 74v22M252 98v22M258 74v22M258 98v22M264 74v22M264 98v22M270 74v22M270 98v22" stroke="#b5a77e" stroke-width=".5" opacity=".6"/><g fill="#4a3b2c" opacity=".7"><rect x="24" y="74" width="120" height="2"/><rect x="24" y="94" width="120" height="2"/><rect x="156" y="74" width="120" height="2"/><rect x="156" y="94" width="120" height="2"/><rect x="24" y="98" width="120" height="2"/><rect x="24" y="118" width="120" height="2"/><rect x="156" y="98" width="120" height="2"/><rect x="156" y="118" width="120" height="2"/></g>',
+         border (heri, #3a2f22, full opacity) on the long sides and a faint weave */
+      'room-floor':'<g stroke="#8f7f58" stroke-width=".8"><rect x="24" y="74" width="120" height="22" rx="1" fill="#d9cfa8"/><rect x="156" y="74" width="120" height="22" rx="1" fill="#d3c89f"/><rect x="24" y="98" width="120" height="22" rx="1" fill="#d3c89f"/><rect x="156" y="98" width="120" height="22" rx="1" fill="#d9cfa8"/></g><path d="M30 74v22M30 98v22M36 74v22M36 98v22M42 74v22M42 98v22M48 74v22M48 98v22M54 74v22M54 98v22M60 74v22M60 98v22M66 74v22M66 98v22M72 74v22M72 98v22M78 74v22M78 98v22M84 74v22M84 98v22M90 74v22M90 98v22M96 74v22M96 98v22M102 74v22M102 98v22M108 74v22M108 98v22M114 74v22M114 98v22M120 74v22M120 98v22M126 74v22M126 98v22M132 74v22M132 98v22M138 74v22M138 98v22M162 74v22M162 98v22M168 74v22M168 98v22M174 74v22M174 98v22M180 74v22M180 98v22M186 74v22M186 98v22M192 74v22M192 98v22M198 74v22M198 98v22M204 74v22M204 98v22M210 74v22M210 98v22M216 74v22M216 98v22M222 74v22M222 98v22M228 74v22M228 98v22M234 74v22M234 98v22M240 74v22M240 98v22M246 74v22M246 98v22M252 74v22M252 98v22M258 74v22M258 98v22M264 74v22M264 98v22M270 74v22M270 98v22" stroke="#b5a77e" stroke-width=".5" opacity=".6"/><g fill="#3a2f22"><rect x="24" y="74" width="120" height="2"/><rect x="24" y="94" width="120" height="2"/><rect x="156" y="74" width="120" height="2"/><rect x="156" y="94" width="120" height="2"/><rect x="24" y="98" width="120" height="2"/><rect x="24" y="118" width="120" height="2"/><rect x="156" y="98" width="120" height="2"/><rect x="156" y="118" width="120" height="2"/></g>',
       'door-art':'<rect x="5.6" y="3.8" width="8.8" height="12.4" rx=".8" fill="none" stroke="#9c8c62" stroke-width=".9"/><path d="M8 3.8v12.4M11.6 3.8v12.4M5.6 8h8.8M5.6 12.2h8.8" stroke="#c2b48e" stroke-width=".6"/>',
       'lobby-art':'<path d="M0 32h320" stroke="#a89a74" stroke-width="1.5" opacity=".7"/><path d="M30 32V12M60 32V12M90 32V12M230 32V12M260 32V12M290 32V12" stroke="#c2b48e" stroke-width=".9" opacity=".55"/><rect x="140" y="6" width="40" height="10" rx="2" fill="none" stroke="#8a7a52" stroke-width="1.1" opacity=".7"/><path d="M144 11h32" stroke="#c24a42" stroke-width="1.3" opacity=".75"/>',
       'place-library':'<path d="M4 17V6h5v11zM9 17V8h5v9z"/><path d="M14 16.6l1.5-9.4 2.8 1-1.6 9.4"/><path d="M3.4 17h13.4"/>',
@@ -791,7 +789,7 @@
       'place-web':'<circle cx="10" cy="10" r="6.2"/><path d="M4 10h12M10 3.8q3.3 3 0 12.4M10 3.8q-3.3 3 0 12.4"/>',
       'place-other':'<path d="M7 16.6V9.8L10 5.4l3 4.4v6.8"/><path d="M7 13h6"/>',
     },
-    words:{'place-library':'Bunko','place-software':'Kōbō','place-terminal':'Kikan-shitsu','place-web':'Tsūshinjo','place-other':'Zatsumu', /* spec 052 FR-023: Japanese words in the Japanese court (the plain names are in the tooltips, FR-013) */'lobby-label':'The tea hall: the places where agents work'},
+    words:{'place-library':'Bunko','place-software':'Kōbō','place-terminal':'Tanmatsu-shitsu','place-web':'Tsūshinjo','place-other':'Dōgu-beya', /* spec 052 FR-023: Japanese words in the Japanese court (the plain names are in the tooltips, FR-013) */'lobby-label':'The Ō-hiroma: the places where agents work','door-close':'Slide shut','door-open':'Slide open','door-title-prefix':'Slide the fusuma shut'},
     motion:{preset:'court'},
   });
 
