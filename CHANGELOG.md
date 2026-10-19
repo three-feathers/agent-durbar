@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.7 tag)
 
+- **CI on `main` runs every merge to the end** (spec 008). Only pull-request runs are cancelled by a newer push, so a release commit always has a complete CI run.
 - **Team rule: merging a forgotten PR** (owner, spec 021). Any agent may merge another team's PR that is approved, green, clean on security, not WIP, and quiet for 2 hours, with a comment saying why.
 ## v0.1.0-alpha.7 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.7), 2026-10-19)
 
