@@ -585,6 +585,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .dlg .sd-agent[hidden]{display:none}
 .dlg select{height:34px;border:1px solid var(--line-2);border-radius:10px;background:#fff;padding:0 8px;font:inherit;font-size:13px;color:var(--ink)}
 .dlg input[type=number]{height:34px;border:1px solid var(--line-2);border-radius:10px;background:#fff;padding:0 10px;font:inherit;font-size:13px;color:var(--ink)}
+.ho-dlg{width:min(720px,calc(100vw - 32px))}
+.ho-dlg textarea{width:100%;box-sizing:border-box;min-height:260px;max-height:55vh;resize:vertical;border:1px solid var(--line-2);border-radius:10px;background:#fff;padding:10px 12px;font:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;color:var(--ink)}
 .dlg .dbtn{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}
 #foldersPop{position:fixed;top:58px;right:14px;z-index:40;width:min(660px,calc(100vw - 28px));max-height:min(70vh,520px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(40,35,25,.2);padding:8px 14px 12px}
 #foldersPop[hidden]{display:none}
@@ -645,6 +647,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .sched-dlg textarea{width:100%;box-sizing:border-box;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--surface);color:var(--ink);resize:vertical}
 .sched-dlg .sc-when{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:8px;font-size:13px}
 .sched-dlg .sc-when input[type=number]{width:70px}
+.sched-dlg .sc-tpl-note{font-size:12px;color:var(--muted);margin:2px 0 6px;line-height:1.4}
 .sched-dlg .sc-when input{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:3px 6px;background:var(--surface);color:var(--ink)}
 .room-new{flex:none;width:22px;height:22px;border-radius:7px;border:1px solid var(--line-2);background:rgba(255,255,255,.7);color:var(--ink-2);font-size:15px;line-height:1;cursor:pointer;padding:0;display:grid;place-items:center}
 .room-new:hover{background:#fff;color:var(--ink)}

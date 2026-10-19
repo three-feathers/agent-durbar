@@ -13,7 +13,7 @@ export interface Schedule {
   prompt: string;
   /** Every N minutes (5..1440), or */
   every?: number;
-  /** once at this time (epoch ms). */
+  /** once at this time (epoch ms). With `every`: the first run, and the runs keep that time of day (spec 044 FR-007, e.g. every day at 08:30). */
   at?: number;
   /** Next run of an interval schedule (epoch ms). */
   next?: number;
@@ -35,6 +35,16 @@ const OUTCOMES: Outcome[] = ['sent', 'skipped-busy', 'skipped-paused', 'missed',
 
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 
+/** FR-007: the next run of an anchored interval after `now`: anchor + k * every, the smallest one that is later than now. */
+export function alignedNext(anchor: number, everyMin: number, now: number): number {
+  const step = everyMin * MIN;
+  if (anchor > now) return anchor;
+  return anchor + (Math.floor((now - anchor) / step) + 1) * step;
+}
+
+/** When an interval runs again after `now`: anchored ones keep their time of day, others count from now. */
+const nextAfter = (s: Schedule, now: number): number => (s.at !== undefined && s.every !== undefined ? alignedNext(s.at, s.every, now) : now + (s.every as number) * MIN);
+
 /** One schedule from untrusted input (the file or the renderer); undefined when it is not valid. */
 export function cleanSchedule(o: unknown, now: number, keepId = true): Schedule | undefined {
   if (!o || typeof o !== 'object') return undefined;
@@ -48,8 +58,9 @@ export function cleanSchedule(o: unknown, now: number, keepId = true): Schedule 
   if (every !== undefined) {
     if (!Number.isInteger(every) || every < MIN_EVERY || every > MAX_EVERY) return undefined;
     s.every = every;
+    if (at !== undefined && at > 0) s.at = at; // anchored (FR-007)
     const next = num(r.next);
-    s.next = next !== undefined && next > 0 ? next : now + every * MIN;
+    s.next = next !== undefined && next > 0 ? next : s.at !== undefined ? alignedNext(s.at, every, now - 1) : now + every * MIN;
   } else if (at !== undefined && at > 0) s.at = at;
   else return undefined;
   if (r.paused === true) s.paused = true;
@@ -101,7 +112,7 @@ export class Scheduler {
   private running = false;
   constructor(public doc: SchedulesDoc, private readonly deps: SchedulerDeps) {}
 
-  /** At start: once-schedules that are past are `missed`; intervals continue from now (missed runs are not caught up). */
+  /** At start: once-schedules that are past are `missed`; intervals continue from now, anchored ones at their next time of day (missed runs are not caught up). */
   start(): void {
     const now = this.deps.now();
     for (const s of this.doc.schedules) {
@@ -110,7 +121,7 @@ export class Scheduler {
         s.done = true;
         s.last = { at: now, outcome: 'missed' };
       } else if (s.every !== undefined && (s.next ?? 0) < now - 30_000) {
-        s.next = now + s.every * MIN;
+        s.next = nextAfter(s, now);
         s.last = { at: now, outcome: 'missed' };
       }
     }
@@ -146,7 +157,7 @@ export class Scheduler {
         else if (this.deps.isBusy(s.folder)) outcome = 'skipped-busy';
         else outcome = (await this.deps.send(s.folder, s.prompt, s).catch(() => false)) ? 'sent' : 'failed';
         s.last = { at: now, outcome };
-        if (s.every !== undefined) s.next = now + s.every * MIN;
+        if (s.every !== undefined) s.next = nextAfter(s, now);
         else s.done = true;
       }
     } finally {
@@ -192,7 +203,7 @@ export class Scheduler {
     if (!on) {
       // resuming: intervals continue from now, so nothing fires in a burst
       const now = this.deps.now();
-      for (const s of this.doc.schedules) if (s.every !== undefined && !s.done && !s.paused && (s.next ?? 0) < now) s.next = now + s.every * MIN;
+      for (const s of this.doc.schedules) if (s.every !== undefined && !s.done && !s.paused && (s.next ?? 0) < now) s.next = nextAfter(s, now);
     }
     this.commit();
   }

@@ -45,7 +45,14 @@ Several people, each with their own agent (Claude Code, Copilot, others), work h
 - **Never push to `main`.** Always a branch and a pull request.
 - **Never print, log or commit secrets** (tokens, `.env`, `~/.copilot`, `~/.claude`, session data). Do not paste command output that may contain them.
 - **No cloud or paid runs without asking your human owner**: no real Copilot/Claude sessions for tests, no cloud agents, no Actions you did not ask for, no purchases (issues labelled `needs-owner-approval` are blocked until the owner says yes in writing).
-- **Reviews:** each human reviews only their own agent's PRs, and one *other* human approves before merge. Owned paths (`.specify/`, `.claude/`, `.github/`, `AGENTS.md`, `CLAUDE.md`) also need the maintainer (CODEOWNERS).
+- **Reviews and merge (owner decision 2026-10-19):** humans set the roadmap and strategy; agents review and merge. An agent may merge its PR **without waiting for a human** when all of these hold:
+  1. CI is green;
+  2. it ran `npm run typecheck && npm run build && npm test` and the checks its change needs (simulator screenshots for UI; real sessions only within its owner's budget);
+  3. the spec, tasks and docs are updated;
+  4. it did a **final review of the whole diff as a reviewer**, not only trusting CI: correctness, security (secrets, shell, paths, permissions), the constitution and honest limits. It writes in the PR what it checked.
+
+  A review by another team's agent is welcome, and its approval (posted through its human's account) counts as the one GitHub asks for. Each agent's own human may still read or revert anything. The "Needs approval" list above still applies.
+- **Before this decision:** each human reviewed only their own agent's PRs, and one *other* human approved before merge. Owned paths (`.specify/`, `.claude/`, `.github/`, `AGENTS.md`, `CLAUDE.md`) also need the maintainer (CODEOWNERS).
 - Stuck or blocked? Add `status:blocked` and a comment saying what you need; do not guess requirements.
 
 ## Keep docs in sync

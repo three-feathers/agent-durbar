@@ -23,6 +23,7 @@ const api: DurbarApi = {
   setModel: (id, request) => ipcRenderer.invoke('agents:setModel', id, request),
   cancelQueuedModel: (id, queueId) => ipcRenderer.invoke('agents:cancelQueuedModel', id, queueId),
   compact: (id, focus) => ipcRenderer.invoke('agents:compact', id, focus),
+  handoff: (id) => ipcRenderer.invoke('agents:handoff', id),
   setRoomClosed: (id, closed) => ipcRenderer.invoke('folders:setClosed', id, closed),
   setFolderHidden: (id, hidden) => ipcRenderer.invoke('folders:setHidden', id, hidden),
   removeFolder: (id) => ipcRenderer.invoke('folders:remove', id),
