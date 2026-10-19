@@ -1,0 +1,601 @@
+{
+ "provenance": "real-redacted",
+ "description": "Recorded 2026-10-19 from Claude Code 2.1.303 (haiku) with Durbar's Read-only flags (--include-partial-messages): one prompt that reads note.txt and answers with its first word. Redacted: ids and uuids replaced by placeholders, paths by /work/demo, init cut to a few fields (no agents, skills, plugins or memory paths), rate-limit details and timing fields dropped, the tool input deltas merged into one.",
+ "messages": [
+  {
+   "type": "system",
+   "subtype": "init",
+   "cwd": "/work/demo",
+   "session_id": "uuid_01",
+   "tools": [
+    "Task",
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "DesignSync",
+    "EnterWorktree",
+    "ExitWorktree",
+    "Glob",
+    "Grep",
+    "ListAgents",
+    "Monitor",
+    "PushNotification",
+    "Read",
+    "RemoteTrigger",
+    "ReportFindings",
+    "ScheduleWakeup",
+    "SendMessage",
+    "Skill",
+    "ToolSearch"
+   ],
+   "mcp_servers": [],
+   "model": "claude-haiku-5-5",
+   "permissionMode": "dontAsk",
+   "claude_code_version": "2.1.303",
+   "uuid": "uuid_02"
+  },
+  {
+   "type": "system",
+   "subtype": "status",
+   "status": "requesting",
+   "session_id": "uuid_01",
+   "uuid": "uuid_03"
+  },
+  {
+   "type": "stream_event",
+   "event": {
+    "type": "message_start",
+    "message": {
+     "model": "claude-haiku-5-5",
+     "id": "msg_01",
+     "type": "message",
+     "role": "assistant",
+     "content": [],
+     "container": null,
+     "stop_reason": null,
+     "stop_sequence": null,
+     "stop_details": null,
+     "usage": {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 6004,
+      "cache_read_input_tokens": 8649,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 6004
+      },
+      "output_tokens": 16,
+      "service_tier": "standard",
+      "inference_geo": "global",
+      "speed": "standard"
+     },
+     "input_transformations": [],
+     "diagnostics": null,
+     "context_management": null
+    }
+   },
+   "session_id": "uuid_01",
+   "parent_tool_use_id": null,
+   "uuid": "uuid_04",
+   "ttft_ms": 1037,
+   "thinking_display": "updates",
+   "api_message_id": "msg_01"
+  },
+  {
+   "type": "stream_event",
+   "event": {
+    "type": "content_block_start",
+    "index": 0,
+    "content_block": {
+     "type": "tool_use",
+     "id": "toolu_01",
+     "name": "Read",
+     "input": {},
+     "caller": {
+      "type": "direct"
+     }
+    }
+   },
+   "session_id": "uuid_01",
+   "parent_tool_use_id": null,
+   "uuid": "uuid_05",
+   "api_message_id": "msg_01"
+  },
+  {
+   "type": "stream_event",
+   "event": {
+    "type": "content_block_delta",
+    "index": 0,
+    "delta": {
+     "type": "input_json_delta",
+     "partial_json": "{\"file_path\": \"/work/demo/note.txt\"}"
+    }
+   },
+   "session_id": "uuid_01",
+   "parent_tool_use_id": null,
+   "uuid": "uuid_06",
+   "api_message_id": "msg_01"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-haiku-5-5",
+    "id": "msg_01",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_01",
+      "name": "Read",
+      "input": {
+       "file_path": "/work/demo/note.txt"
+      },
+      "caller": {
+       "type": "direct"
+      }
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 2,
+     "cache_creation_input_tokens": 6004,
+     "cache_read_input_tokens": 8649,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 6004
+     },
+     "output_tokens": 16,
+     "service_tier": "standard",
+     "inference_geo": "global",
+     "speed": "standard"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "uuid_01",
+   "uuid": "uuid_07",
+   "timestamp": "2026-10-19T04:21:33.331Z",
+   "request_id": "req_01",
+   "wire_tool_inputs": {
+    "toolu_013H99DoB31uEkgkwcFaGGbr": {
+     "file_path": "/work/demo/note.txt"
+    }
+   }
+  },
+  {
+   "type": "stream_event",
+   "event": {
+    "type": "content_block_stop",
+    "index": 0
+   },
+   "session_id": "uuid_01",
+   "parent_tool_use_id": null,
+   "uuid": "uuid_08",
+   "api_message_id": "msg_01"
+  },
+  {
+   "type": "stream_event",
+   "event": {
+    "type": "message_delta",
+    "delta": {
+     "stop_reason": "tool_use",
+     "stop_sequence": null,
+     "stop_details": null,
+     "container": null
+    },
+    "usage": {
+     "input_tokens": 2,
+     "cache_creation_input_tokens": 6004,
+     "cache_read_input_tokens": 8649,
+     "output_tokens": 71,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "iterations": [
+      {
+       "input_tokens": 2,
+       "output_tokens": 71,
+       "cache_read_input_tokens": 8649,
+       "cache_creation_input_tokens": 6004,
+       "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 6004
+       },
+       "type": "message"
+      }
+     ]
+    },
+    "context_management": {
+     "applied_edits": []
+    }
+   },
+   "session_id": "uuid_01",
+   "parent_tool_use_id": null,
+   "uuid": "uuid_09",
+   "api_message_id": "msg_01"
+  },
+  {
+   "type": "stream_event",
+   "event": {
+    "type": "message_stop"
+   },
+   "session_id": "uuid_01",
+   "parent_tool_use_id": null,
+   "uuid": "uuid_10",
+   "api_message_id": "msg_01"
+  },
+  {
+   "type": "rate_limit_event",
+   "rate_limit_info": {
+    "status": "allowed"
+   }
+  },
+  {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "tool_use_id": "toolu_01",
+      "type": "tool_result",
+      "content": "1\tpelican and more words\n2\t"
+     }
+    ]
+   },
+   "parent_tool_use_id": null,
+   "session_id": "uuid_01",
+   "uuid": "uuid_11",
+   "timestamp": "2026-10-19T04:21:33.391Z",
+   "tool_use_result": {
+    "type": "text",
+    "file": {
+     "filePath": "/work/demo/note.txt",
+     "content": "pelican and more words\n",
+     "numLines": 2,
+     "startLine": 1,
+     "totalLines": 2
+    }
+   },
+   "tool_result_meta": [
+    {
+     "id": "toolu_01",
+     "permission_decision": {
+      "decision": "accept",
+      "source": "config",
+      "reason_type": "rule"
+     }
+    }
+   ]
+  },
+  {
+   "type": "system",
+   "subtype": "status",
+   "status": "requesting",
+   "session_id": "uuid_01",
+   "uuid": "uuid_12"
+  },
+  {
+   "type": "stream_event",
+   "event": {
+    "type": "message_start",
+    "message": {
+     "model": "claude-haiku-5-5",
+     "id": "msg_02",
+     "type": "message",
+     "role": "assistant",
+     "content": [],
+     "container": null,
+     "stop_reason": null,
+     "stop_sequence": null,
+     "stop_details": null,
+     "usage": {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 111,
+      "cache_read_input_tokens": 14653,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 111
+      },
+      "output_tokens": 1,
+      "service_tier": "standard",
+      "inference_geo": "global",
+      "speed": "standard"
+     },
+     "input_transformations": [],
+     "diagnostics": null,
+     "context_management": null
+    }
+   },
+   "session_id": "uuid_01",
+   "parent_tool_use_id": null,
+   "uuid": "uuid_13",
+   "ttft_ms": 746,
+   "thinking_display": "updates",
+   "api_message_id": "msg_02"
+  },
+  {
+   "type": "stream_event",
+   "event": {
+    "type": "content_block_start",
+    "index": 0,
+    "content_block": {
+     "type": "text",
+     "text": ""
+    }
+   },
+   "session_id": "uuid_01",
+   "parent_tool_use_id": null,
+   "uuid": "uuid_14",
+   "api_message_id": "msg_02"
+  },
+  {
+   "type": "stream_event",
+   "event": {
+    "type": "content_block_delta",
+    "index": 0,
+    "delta": {
+     "type": "text_delta",
+     "text": "p"
+    }
+   },
+   "session_id": "uuid_01",
+   "parent_tool_use_id": null,
+   "uuid": "uuid_15",
+   "api_message_id": "msg_02"
+  },
+  {
+   "type": "stream_event",
+   "event": {
+    "type": "content_block_delta",
+    "index": 0,
+    "delta": {
+     "type": "text_delta",
+     "text": "elican"
+    }
+   },
+   "session_id": "uuid_01",
+   "parent_tool_use_id": null,
+   "uuid": "uuid_16",
+   "api_message_id": "msg_02"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-haiku-5-5",
+    "id": "msg_02",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "pelican"
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 2,
+     "cache_creation_input_tokens": 111,
+     "cache_read_input_tokens": 14653,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 111
+     },
+     "output_tokens": 1,
+     "service_tier": "standard",
+     "inference_geo": "global",
+     "speed": "standard"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "uuid_01",
+   "uuid": "uuid_17",
+   "timestamp": "2026-10-19T04:21:34.199Z",
+   "request_id": "req_02"
+  },
+  {
+   "type": "stream_event",
+   "event": {
+    "type": "content_block_stop",
+    "index": 0
+   },
+   "session_id": "uuid_01",
+   "parent_tool_use_id": null,
+   "uuid": "uuid_18",
+   "api_message_id": "msg_02"
+  },
+  {
+   "type": "stream_event",
+   "event": {
+    "type": "message_delta",
+    "delta": {
+     "stop_reason": "end_turn",
+     "stop_sequence": null,
+     "stop_details": null,
+     "container": null
+    },
+    "usage": {
+     "input_tokens": 2,
+     "cache_creation_input_tokens": 111,
+     "cache_read_input_tokens": 14653,
+     "output_tokens": 5,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "iterations": [
+      {
+       "input_tokens": 2,
+       "output_tokens": 5,
+       "cache_read_input_tokens": 14653,
+       "cache_creation_input_tokens": 111,
+       "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 111
+       },
+       "type": "message"
+      }
+     ]
+    },
+    "context_management": {
+     "applied_edits": []
+    }
+   },
+   "session_id": "uuid_01",
+   "parent_tool_use_id": null,
+   "uuid": "uuid_19",
+   "api_message_id": "msg_02"
+  },
+  {
+   "type": "stream_event",
+   "event": {
+    "type": "message_stop"
+   },
+   "session_id": "uuid_01",
+   "parent_tool_use_id": null,
+   "uuid": "uuid_20",
+   "api_message_id": "msg_02"
+  },
+  {
+   "type": "result",
+   "subtype": "success",
+   "is_error": false,
+   "num_turns": 2,
+   "result": "pelican",
+   "session_id": "uuid_01",
+   "total_cost_usd": 0.00149442,
+   "usage": {
+    "input_tokens": 4,
+    "cache_creation_input_tokens": 6115,
+    "cache_read_input_tokens": 23302,
+    "output_tokens": 76,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 6115,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 5,
+      "cache_read_input_tokens": 14653,
+      "cache_creation_input_tokens": 111,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 111
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   },
+   "modelUsage": {
+    "claude-haiku-5-5": {
+     "inputTokens": 4,
+     "outputTokens": 76,
+     "cacheReadInputTokens": 23302,
+     "cacheCreationInputTokens": 6115,
+     "webSearchRequests": 0,
+     "costUSD": 0.00149442,
+     "contextWindow": 1000000,
+     "maxOutputTokens": 128000,
+     "thinkingTokens": 0,
+     "canonicalModel": "claude-haiku-5-5",
+     "provider": "firstParty",
+     "costBasis": "list"
+    }
+   },
+   "permission_denials": [],
+   "stop_reason": "end_turn",
+   "uuid": "uuid_21"
+  }
+ ],
+ "expected": [
+  {
+   "type": "status",
+   "status": "idle",
+   "intent": "Ready in /work/demo"
+  },
+  {
+   "type": "mcp",
+   "servers": []
+  },
+  {
+   "type": "toolCall",
+   "callId": "toolu_01",
+   "tool": "Read",
+   "phase": "start",
+   "args": {
+    "file_path": "/work/demo/note.txt"
+   }
+  },
+  {
+   "type": "usage",
+   "model": "claude-haiku-5-5",
+   "inputTokens": 14655,
+   "outputTokens": 16,
+   "cacheReadTokens": 8649
+  },
+  {
+   "type": "toolCall",
+   "callId": "toolu_01",
+   "tool": "Read",
+   "phase": "complete",
+   "output": "1\tpelican and more words\n2\t"
+  },
+  {
+   "type": "output",
+   "delta": "p"
+  },
+  {
+   "type": "output",
+   "delta": "elican"
+  },
+  {
+   "type": "output",
+   "delta": "",
+   "final": true,
+   "text": "pelican"
+  },
+  {
+   "type": "usage",
+   "model": "claude-haiku-5-5",
+   "inputTokens": 14766,
+   "outputTokens": 1,
+   "cacheReadTokens": 14653
+  },
+  {
+   "type": "context",
+   "tokens": 14767,
+   "limit": 1000000,
+   "model": "claude-haiku-5-5"
+  },
+  {
+   "type": "usage",
+   "costUsd": 0.00149442,
+   "costBasis": "estimate"
+  },
+  {
+   "type": "status",
+   "status": "idle"
+  }
+ ]
+}

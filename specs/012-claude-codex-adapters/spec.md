@@ -605,3 +605,14 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
   - **When:** a `context` event `{tokens, limit, model}` goes out at each `result`, and after each main-agent message once the window is known. Helper (sub-agent) messages never count.
   - `CLAUDE_CAPABILITIES.context` becomes `true`.
   - `test:` mapper fixtures (first turn without a window, window from `modelUsage`, a sub-agent message ignored, a model missing from `modelUsage`). `real:` 2026-10-19, Claude Code 2.1.303 with `haiku` through the adapter: one prompt that read a file sent `context {tokens: 16242, limit: 1000000, model: claude-haiku-5-5}` after the result ($0.0015). Not checked: a model with a 200k window, or a sub-agent turn on a real account.
+
+### 2026-10-19: a redacted real stream as a mapper fixture (T067)
+
+- `real:` Claude Code 2.1.303 (`haiku`) with Durbar's Read-only argv, minus the stdio permission tool, which a read-only run does not need. One prompt read `note.txt` ($0.0015). The 27 messages became 21 after redaction:
+  - ids and uuids are placeholders, and paths are `/work/demo`;
+  - `init` keeps cwd, session, tools (no `mcp__` names), MCP servers, model, mode and version;
+  - the result keeps its usage, `modelUsage` and cost;
+  - rate-limit details are dropped, and the tool input deltas are merged into one.
+- It is `scripts/fixtures/claude/real-readonly-read.json` (`provenance: real-redacted`). `test-claude-map` maps it to its recorded `expected` list (status, mcp, tool start and complete, three streamed outputs, usage, `context 14767/1000000`, cost, idle) and scans it for real paths, keys and e-mail addresses. `test:`
+- The synthetic fixtures stay. Their shapes matched the real one in every field the mapper reads (nothing dropped).
+
