@@ -150,3 +150,33 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
 
 *Corrected:* `cancel-in-progress` is true only for pull requests, where a newer push supersedes the old run. On `main`, every merge commit's run finishes, so a release can be tagged on a commit with a complete CI run. Runs on `main` now overlap a little more; the cost is runner minutes, which are free for this public repository.
 
+
+### 2026-10-19: checks that keep the machine usable, and the theme matrix in CI
+
+*Owner:* "i dont want tests and ci to slow down our development - have the principle of super optimization and parallelization while not compromising on the quality". Then, after a first parallel version: "tests bombarded system, cpu and memory were at max and everything became unresponsive - I had to do a powercycle".
+
+*Found:*
+- `check:themes` ran `check:office` 7 times in a row (6 built-in themes and a user-theme fixture), and each run rebuilt the app first; locally it took more than 30 minutes. CI never ran it.
+- A first parallel runner started 4 Electrons on a 4-core laptop with about 2 GB of memory available, while a stray earlier check was probably still running. It froze the machine. Measured afterwards: one office-check Electron needs about 0.6 GB and **more than two cores** (it draws the animated office in software under xvfb), so 2 jobs already load 4 cores to about 5.
+- `check-office-overlap.js` wrote its result to one fixed file in the temp folder, so two checks at once could read each other's result.
+
+*Decision:*
+- **FR-027** ~~A Theme layout job in CI on every PR: the full office check in the 5 other themes and the user fixture, 2 shards each.~~ Built and green (12 jobs of 2.3-3.9 min), then replaced the same day by FR-031: the owner asked "should we really test all themes everytime... test one theme and enforce ui on theme... and we test multiple themes only on demand". The matrix stays, on demand only.
+- **FR-028** `scripts/check-parallel.js` runs the office check locally in parallel, **without taking the machine**: one build; at most half the CPUs at once (at most 4; `CHECK_JOBS`); a new job starts only while 1.5 GB of memory is available; under 600 MB the newest job is stopped (its whole process group) and queued again; everything at nice 10; a job that takes longer than 15 minutes fails (`CHECK_TIMEOUT`); Ctrl-C stops every job. `npm run check:themes` and `npm run check:office:fast` use it. Each office-check run writes its result to its own file (`OFFICE_FAIL_MARKER` in its own user-data folder).
+- **FR-029** `npm test` leaves a core free (workers = CPUs minus one, at most 8) and runs at nice 10.
+- **FR-030** **Animation checked once, the rest without it.** *Owner:* "can we check animation once and have no animation mode to check other functionalities?" `OFFICE_REDUCED_MOTION=1` starts the office check's Electron with `--force-prefers-reduced-motion`, the app's own reduced-motion mode: walks to the lobby are instant and the office does not animate. The plain `npm run check:office` (CI's 4 office shards) keeps motion on, so walking figures and animated states are still checked there. The theme matrix in CI and the local parallel runner use reduced motion (`CHECK_MOTION=1` turns it back on). Each run prints `check:office: motion on|reduced`. `test:` the same quarter of the quick matrix, one job: 79/79 checks in 83 s with motion, 58 s reduced.
+- **FR-031** **One theme in full, the others proven equal.** FR-010 of spec 035 already says a theme may change colours, borders, textures and display fonts, never sizes. So:
+  - the full office layout check runs in **Clean Office** only (CI's 4 office shards, motion on);
+  - `scripts/check-theme-geometry.js` (`npm run check:geometry`, CI job **Theme geometry**, about a minute for all themes) loads every other theme and the user fixture at 1440x900 and 1280x800 with 15 and 12 agents, and again with a `+N more` chip expanded, then checks two things:
+    1. **Geometry:** the display text is neutralised for the measurement (one font family, weight, style, case, letter spacing and font variant). Then the box of **every** element of the office, the lobby and the top bar (SVG art excluded) and the font size of every text element must equal Clean Office's within 0.5px. Place names are the theme's own words, so their width and the seats beside them may differ; their top and height may not.
+    2. **Real fonts:** the office check's own rules (overlap, clipping, room headers, text at least 10.5px) on the same layouts in the theme's own fonts, where a wider display font or a longer place name could push something out.
+  - The pointer is moved off the window before measuring, since Retro nudges a hovered card by 1px.
+  - The required **Office layout check (xvfb)** waits for this job.
+  - **On demand:** the full office check in every theme runs from `gh workflow run ci.yml --ref <branch> -f full_themes=true` (12 parallel jobs, reduced motion), or locally with `npm run check:themes`.
+  - `test:`
+    - all themes pass, 60/60 checks in 66 s locally;
+    - three violations injected into the built CSS are all caught: 2px padding on Retro cards (180 differences), a 14px name in the Indian court (45) and a wider room-header gap in the Japanese court (62);
+    - before display text was neutralised, every theme "failed" on room-name and brand widths, which is how the rule for display fonts was found and written down here.
+- **Rule** (`AGENTS.md`, *Before you finish*): make checks fast by building once and running in parallel, never by dropping checks. On your own machine keep the default limits; long matrices belong in CI.
+
+*Measured* (Linux, 4 cores, 15 GB), for FR-028 and FR-030: `OFFICE_QUICK=1 node scripts/check-parallel.js` with 2 jobs passed 242 checks in 150 s; available memory never fell below 10 GB; the 1-minute load peaked at 5.4. The CI timings are in the PR.
