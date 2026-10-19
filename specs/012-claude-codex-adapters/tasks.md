@@ -69,6 +69,7 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 All of these are blocked until the owner answers Q1 and Q2 in writing (which accounts, which plan, how many prompts, who runs them). Each one records the vendor version, the prompt count and the usage the runtime reported, replaces the matching synthetic fixture with a redacted recorded one (`provenance: recorded`), and moves the matching `[KNOWN GAP]` to `real:` with the date. None runs in CI.
 
 - [ ] T060 (needs-owner-approval) Owner decision record: answers to Q1, Q2, Q5 to Q9 written into spec.md, with the prompt budget and the accounts; nothing else in Phase 4 starts before this [FR-022]
+- [x] T060a (2026-10-19) Decision record written: Q1-Q5 and Q8 answered or settled; Q6, Q7 and Q9 still open
 - [ ] T061 (needs-owner-approval) (real-account) Codex: version probe and sign-in state from `account/read` on a real install, no prompt; confirm it costs nothing [FR-010, FR-022]
 - [ ] T062 (needs-owner-approval) (real-account) Codex: one Read-only prompt, record the event stream, usage, `modelContextWindow` and what `last.inputTokens` means; replace fixtures [FR-007, FR-015, FR-016, FR-022]
 - [ ] T063 (needs-owner-approval) (real-account) Codex: interrupt, stop and resume in the same folder (at most 2 prompts) [FR-017, FR-022]
