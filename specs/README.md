@@ -28,12 +28,12 @@ what exists today, not what was originally intended. Each requirement carries a 
 | [002](002-copilot-adapter-and-events/spec.md) | Copilot adapter and normalized events | implemented; delta 2026-10-18: normalized `title` event from `session.title_changed`, `name.get` fallback (issue #126); delta 2026-10-19: questions from Copilot (`ask_user`, FR-058) |
 | [003](003-permissions-and-approvals/spec.md) | Permission modes, approvals, session grants | implemented; delta 2026-10-19: Windows grant keys, request ids (FR-088, FR-089) |
 | [004](004-attachments/spec.md) | Attachments (pick, drop, paste) and caps | implemented; delta 2026-10-19: FR-009/010/012/013/015 closed |
-| [005](005-chat-fullscreen-and-agent-strip/spec.md) | Full-screen chat and agent strip | implemented |
+| [005](005-chat-fullscreen-and-agent-strip/spec.md) | Full-screen chat and agent strip | implemented; delta 2026-10-19: copy buttons (FR-015), FR-011 closed by 016 |
 | [006](006-folders-workspaces-sessions-history/spec.md) | Folders, workspaces, sessions, history | implemented; delta 2026-10-18: warning for a home folder or a root (issue #170); delta 2026-10-18: remove one session, rename a folder (FR-017/FR-018) |
 | [007](007-models-and-effort/spec.md) | Model and reasoning-effort pickers | implemented |
 | [008](008-packaging-and-release/spec.md) | Packaging, CI, draft releases | implemented (unsigned) |
 | [009](009-vscode-integration/spec.md) | Open in VS Code, VS Code chat history (read-only) | implemented |
-| [010](010-simulator/spec.md) | Simulator and dev/test hooks | implemented |
+| [010](010-simulator/spec.md) | Simulator and dev/test hooks | implemented; delta 2026-10-19: one event shape check for the simulator and adapters (FR-021) |
 
 ## Features 011-014: 011 built, 012 planned, 013-014 backlog drafts
 
