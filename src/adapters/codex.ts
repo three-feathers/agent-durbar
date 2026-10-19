@@ -15,7 +15,13 @@ import type { EventBody } from './map';
 import { CodexMapper } from './codexMap';
 import { createCodexRpc, realSpawn } from './codexRpc';
 import type { CodexRpc, RequestOutcome, SpawnFn } from './codexRpc';
-import { CODEX_INITIALIZE_CAPABILITIES, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexWorkspaceRoots } from './codexModes';
+import { codexHistory, codexModelOptions, codexPreviousSessions } from './codexHistory';
+import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
+import { codexMcpConfig, codexMcpServers, codexMcpState } from './codexMcp';
+import type { McpServerStatus } from './types';
+import type { HistoryResult, PreviousSession } from './history';
+import type { ModelOption } from '../shared/modelswitch';
+import { CODEX_INITIALIZE_CAPABILITIES, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexWorkspaceRoots } from './codexModes';
 import type { DurbarAnswer } from './codexModes';
 import { CODEX_BINARY, detectBinary, nodeExec } from './detect';
 import type { DetectEnv } from './detect';
@@ -30,21 +36,19 @@ const CODEX_NAME = 'OpenAI Codex';
 /** From the plan and the modules (spec 012 FR-089); none of it verified on a real account. Deeply frozen. */
 export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   interrupt: true,
-  // T043b turns this on together with FR-093 resume.
-  resume: false,
+  resume: true, // FR-093 (T043b): thread/read, then thread/resume on a fresh child
   images: true,
-  models: false,
-  effort: false,
+  models: true, // FR-142: model/list, model and effort per turn
+  effort: true,
   permissionModes: Object.freeze(['read-only', 'ask', 'allow'] as const),
-  // T046 turns this into 'next-message' and adds setPermMode.
-  permModeSwitch: 'none',
+  permModeSwitch: 'next-message', // FR-144: Durbar's approvals at once, Codex's sandbox from the next message (fresh child, resume)
   usage: Object.freeze({ tokens: true, costUsd: false, nanoAiu: false }),
   context: true,
   caps: false,
-  helpers: false,
-  history: false,
-  mcpStatus: false,
-  mcpToggle: false,
+  helpers: true, // FR-149: subAgentActivity by agent thread (real, Codex 0.163)
+  history: true, // FR-141: thread/list and thread/read
+  mcpStatus: true, // FR-147: mcpServerStatus/list and startup notifications
+  mcpToggle: true, // FR-147: from the next message (fresh child, same thread)
 });
 
 /** Where the `codex` binary is and which version it reports. */
@@ -112,6 +116,57 @@ function isInside(parent: string, child: string): boolean {
   return rel === '' || (rel !== '..' && !rel.startsWith('..' + api.sep) && !api.isAbsolute(rel));
 }
 
+/**
+ * FR-093: a resumed thread must belong to the session folder (spec 003: resumed sessions belong to the agent's folder), and in
+ * Read-only and Ask first Codex must not report a wider sandbox than the read-limited profile. Throws to refuse; the caller
+ * closes the child. A field Codex does not send is not taken as permission: the fresh child with `default_permissions`
+ * (FR-138) is what holds then.
+ */
+export function codexResumeCheck(res: unknown, o: { cwd: string; limited: boolean; realpath: (p: string) => string; required?: boolean }): void {
+  const r = isObj(res) ? res : {};
+  const norm = (p: string): string => {
+    let x = p;
+    try {
+      x = o.realpath(p);
+    } catch {
+      /* compare as given */
+    }
+    const win = /^[A-Za-z]:[\\/]/.test(x);
+    const n = (win ? path.win32 : path.posix).normalize(x).replace(/[\\/]+$/, '');
+    return win ? n.toLowerCase() : n;
+  };
+  const cwd = typeof r.cwd === 'string' ? r.cwd : isObj(r.thread) && typeof r.thread.cwd === 'string' ? r.thread.cwd : undefined;
+  if (cwd === undefined && o.required) throw new Error('Codex did not say which folder that session belongs to, so it is not resumed.');
+  if (cwd !== undefined && norm(cwd) !== norm(o.cwd)) throw new Error('That Codex session belongs to another folder, so it is not resumed here.');
+  if (!o.limited) return;
+  const sb = r.sandbox;
+  const kind = typeof sb === 'string' ? sb : isObj(sb) && typeof sb.type === 'string' ? sb.type : undefined;
+  if (kind !== undefined && /danger|full|workspace.?write/i.test(kind)) throw new Error(`Codex resumed the session with a wider sandbox (${kind.slice(0, 40)}) than this mode allows, so it is not resumed.`);
+}
+
+/** FR-148: does an MCP elicitation ask for form fields (as opposed to a plain yes/no)? Unknown shapes count as fields (declined). */
+export function codexElicitationHasFields(params: unknown): boolean {
+  const schema = isObj(params) && isObj(params.requestedSchema) ? params.requestedSchema : undefined;
+  if (!schema) return isObj(params) && params.mode === 'url'; // a URL flow cannot be answered here
+  const props = isObj(schema.properties) ? schema.properties : {};
+  return Object.keys(props).length > 0;
+}
+
+/**
+ * FR-140 (real, Ubuntu 24.04+): Codex's Linux sandbox (bubblewrap) cannot start where unprivileged user namespaces are blocked
+ * (`kernel.apparmor_restrict_unprivileged_userns=1`). Read-only and Ask first then fail at start (closed, as they must); say why.
+ */
+export function linuxSandboxHint(reason: string): string {
+  return /bwrap|bubblewrap|user namespace|RTM_NEWADDR/i.test(reason)
+    ? ' Codex could not start its Linux sandbox: this system blocks unprivileged user namespaces (Ubuntu AppArmor). Read-only and Ask first need that sandbox; allow it for bubblewrap (see the README, Codex) or use Allow all in a folder you trust.'
+    : '';
+}
+
+/** FR-142: only a Codex model id is sent; `auto`/`default` and Copilot or Claude ids saved for the folder are left to Codex. */
+export function codexModelFlag(model: string | undefined): boolean {
+  return !!model && /^(gpt|o\d|codex)[A-Za-z0-9._:/-]{0,76}$/i.test(model);
+}
+
 const isShim = (file: string): boolean => /\.(cmd|bat)$/i.test(file);
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 /** A short, single-line reason: control characters stripped, 300 characters at most (server text is never trusted to be small or clean). */
@@ -119,7 +174,14 @@ const reasonOf = (e: unknown): string => (e instanceof Error ? e.message : Strin
 
 interface Live {
   sid: string;
+  /** The start options, for a relaunch with a new mode (FR-144). */
+  options: StartOptions;
+  /** A mode chosen while the session runs; it applies with the next message, on a fresh child (FR-144). */
+  wantMode?: PermissionMode;
   threadId: string;
+  /** FR-142: model and reasoning effort sent with each turn (a Codex model id only; others are left to Codex's default). */
+  model?: string;
+  effort?: string;
   cwd: string;
   mode: PermissionMode;
   roots: string[];
@@ -128,6 +190,15 @@ interface Live {
   broker: PermissionBroker;
   /** Resolves when the child has exited. */
   exited: Promise<void>;
+  /** FR-147: the session's MCP servers and their state, by name; `relaunch` = a server was switched, applied with the next message. */
+  mcp: Map<string, McpServerStatus>;
+  relaunch?: boolean;
+  /** The MCP list was read for this child (FR-147). */
+  mcpRead?: boolean;
+  /** FR-146: questions waiting for the user, by request id. */
+  questions: Map<string, (answers: Record<string, string> | null) => void>;
+  /** Shell tool calls started and not yet ended (FR-139). */
+  runningCommands: Set<string>;
   /** Drops mapper events (while starting with `quiet`, and once the session is stopping or dead). */
   muted: boolean;
   turnId?: string;
@@ -159,6 +230,8 @@ export class CodexAdapter implements AgentAdapter {
   private sessions = new Map<string, Live>();
   /** Ids this run has used, live or not: a stopped one cannot be silently restarted as a new thread (resume is T043b). */
   private known = new Set<string>();
+  /** FR-143: Durbar session id -> Codex thread id, so a known session restarts by resuming its thread. */
+  private threadOf = new Map<string, string>();
   /** Bumped by `dispose`: a start that began earlier closes its child and rejects. */
   private generation = 0;
   private inflight = new Set<Promise<unknown>>();
@@ -189,13 +262,19 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   /** Spawn one `codex app-server` child (argv array, no shell). `onExit` and the handlers are given by the caller. */
+  /** FR-138: Codex's own install folder, readable inside the Read-only profile (it runs its binary again in the sandbox). */
+  private installRoots(file: string): string[] {
+    const r = codexInstallRoot(file, this.realpath);
+    return r ? [r] : [];
+  }
+
   private spawnChild(file: string, cwd: string, handlers: { onNotification: (m: string, p: unknown) => void; onRequest: (m: string, p: unknown) => Promise<RequestOutcome>; onExit: (code: number | null, signal: NodeJS.Signals | null) => void }): Child {
     let done!: () => void;
     const exited = new Promise<void>((r) => (done = r));
     const rpc = createCodexRpc({
       spawn: this.spawnFn,
       file,
-      args: ['app-server', ...codexProfileArgs()],
+      args: ['app-server', ...codexProfileArgs(this.installRoots(file))],
       cwd,
       env: this.env,
       onNotification: handlers.onNotification,
@@ -215,6 +294,53 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   /** Close a child and wait for its exit (bounded by the kill grace), so a failed start leaves nothing running. */
+  /**
+   * FR-141/FR-142: a short-lived app-server for reads that need no session (previous sessions, a thread's history, the model
+   * list): no thread, no turn, no prompt. Started in the temp folder with the same environment rules (D5); always closed.
+   */
+  private async probe<T>(fn: (rpc: CodexRpc) => Promise<T>): Promise<T> {
+    const loc = await this.locate();
+    if (!loc?.path || isShim(loc.path)) throw new Error('Codex was not found on this computer.');
+    const child = this.spawnChild(loc.path, os.tmpdir(), { onNotification: () => undefined, onRequest: async () => ({ error: { code: -32601, message: 'not handled in a probe' } }), onExit: () => undefined });
+    try {
+      await child.rpc.request('initialize', { clientInfo: { name: 'agent_durbar', title: 'Agent Durbar', version: this.appVersion }, capabilities: CODEX_INITIALIZE_CAPABILITIES });
+      await child.rpc.notify('initialized');
+      return await fn(child.rpc);
+    } finally {
+      await this.closeChild(child);
+    }
+  }
+
+  /** FR-141: the folder's earlier Codex threads (newest first), without the ones open now. */
+  async listPreviousSessions(cwd: string, excludeIds: ReadonlySet<string> = new Set()): Promise<PreviousSession[]> {
+    const res = await this.probe((rpc) => rpc.request('thread/list', { cwd, limit: 100 }));
+    return codexPreviousSessions(isObj(res) ? res.data : undefined, cwd, new Set([...excludeIds, ...this.sessions.keys()]), process.platform, this.realpath);
+  }
+
+  /** FR-141: a session's prompts, answers, commands and file changes, for the chat replay after a resume. */
+  async history(sessionId: string): Promise<HistoryResult> {
+    const live = this.sessions.get(sessionId);
+    const threadId = live?.threadId ?? sessionId;
+    const read = (rpc: CodexRpc): Promise<unknown> => rpc.request('thread/read', { threadId, includeTurns: true });
+    const res = live ? await read(live.rpc) : await this.probe(read);
+    return codexHistory(isObj(res) ? res.thread : undefined);
+  }
+
+  private modelCache?: { at: number; list: Promise<ModelOption[]> };
+  /** FR-142: the models this Codex account offers (`model/list`, no prompt). Cached 10 minutes; a failure is an empty list. */
+  listModelOptions(): Promise<ModelOption[]> {
+    const now = Date.now();
+    if (this.modelCache && now - this.modelCache.at < 10 * 60_000) return this.modelCache.list;
+    const list = this.probe((rpc) => rpc.request('model/list', {}))
+      .then((res) => codexModelOptions(isObj(res) ? res.data : undefined))
+      .catch(() => {
+        this.modelCache = undefined;
+        return [] as ModelOption[];
+      });
+    this.modelCache = { at: now, list };
+    return list;
+  }
+
   private async closeChild(c: Child): Promise<void> {
     c.rpc.close();
     const wait = (this.closeGraceMs ?? 2000) + (this.killGraceMs ?? 1000) + 500;
@@ -237,7 +363,10 @@ export class CodexAdapter implements AgentAdapter {
     const named = options.sessionId;
     if (!named) return this.startInner(options, { cancelled: false });
     if (this.sessions.has(named) || this.starting.has(named)) throw new Error(`Session ${named} is already running.`);
-    if (this.known.has(named)) throw new Error('Resuming a Codex session is not available yet.');
+    // FR-143: a session that ran before (End session, a crash, a mode relaunch) comes back by resuming its own thread
+    const prior = this.known.has(named) ? this.threadOf.get(named) : undefined;
+    if (this.known.has(named) && !prior && options.resumeSessionId === undefined) throw new Error(`Session ${named} cannot be restarted.`);
+    if (prior && options.resumeSessionId === undefined) options = { ...options, resumeSessionId: prior };
     let release!: () => void;
     const token = { cancelled: false, done: new Promise<void>((r) => (release = r)) };
     this.starting.set(named, token);
@@ -257,8 +386,9 @@ export class CodexAdapter implements AgentAdapter {
     };
     const mode = startModeOf(options);
     if (!this.capabilities.permissionModes.includes(mode)) throw new Error(`Codex cannot run in ${mode} mode.`);
-    // Resume of a known thread arrives with T043b (FR-093). Refuse rather than silently starting a different thread.
-    if (options.resumeSessionId) throw new Error('Resuming a Codex session is not available yet.');
+    // FR-093: a known thread is resumed on a fresh child (below), never silently replaced by a new one.
+    const resumeId = options.resumeSessionId;
+    if (resumeId !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(resumeId)) throw new Error('That is not a Codex session id.');
     const { cwd, folders } = resolveWorkspaceCwd(options.workspace);
     const roots = codexWorkspaceRoots([cwd, ...folders], this.realpath);
     const limited = mode !== 'allow';
@@ -290,7 +420,10 @@ export class CodexAdapter implements AgentAdapter {
     // The ids and flags the handlers need exist before the child can talk.
     const live: Live = {
       sid: options.sessionId ?? '',
+      options,
       threadId: '',
+      ...(codexModelFlag(options.model) ? { model: options.model } : {}),
+      ...(options.reasoningEffort && /^[a-z][a-z0-9_-]{0,15}$/.test(options.reasoningEffort) ? { effort: options.reasoningEffort } : {}),
       cwd,
       mode,
       roots,
@@ -301,6 +434,9 @@ export class CodexAdapter implements AgentAdapter {
       muted: true, // until the session is up: the start itself reports "Ready" (or nothing, when quiet)
       stopping: false,
       doneTurns: [],
+      runningCommands: new Set<string>(),
+      questions: new Map(),
+      mcp: new Map(),
       turnStarting: false,
       pendingInterrupt: false,
       interrupting: false,
@@ -355,12 +491,29 @@ export class CodexAdapter implements AgentAdapter {
       live.exited = child.exited;
       const settings = codexModeSettings(mode);
       let started: unknown;
+      const mcpConfig = codexMcpConfig(options.mcpServers, options.disabledMcpServers); // FR-147
+      const threadParams = { cwd: limited ? realCwd : cwd, ...settings, ...(limited ? { runtimeWorkspaceRoots: roots } : {}), ...(mcpConfig ? { config: mcpConfig } : {}) };
+      if (resumeId !== undefined) {
+        // FR-093 (real, Codex 0.163): `thread/resume` with a cwd REWRITES the thread's folder, so the folder check reads the
+        // stored thread first and refuses before anything is changed.
+        let stored: unknown;
+        try {
+          stored = await child.rpc.request('thread/read', { threadId: resumeId, includeTurns: false });
+        } catch (e) {
+          throw new Error(`That Codex session could not be found: ${reasonOf(e)}`);
+        }
+        codexResumeCheck(isObj(stored) && isObj(stored.thread) ? { cwd: stored.thread.cwd } : {}, { cwd: (limited ? realCwd : cwd) as string, limited: false, realpath: this.realpath, required: true });
+      }
       try {
-        started = await child.rpc.request('thread/start', { cwd: limited ? realCwd : cwd, ...settings, ...(limited ? { runtimeWorkspaceRoots: roots } : {}) });
+        // FR-093: resume on this fresh child, so the thread is never already loaded with an older profile
+        started = resumeId !== undefined
+          ? await child.rpc.request('thread/resume', { threadId: resumeId, excludeTurns: true, ...threadParams })
+          : await child.rpc.request('thread/start', threadParams);
       } catch (e) {
         // Never retried with a weaker setting (FR-087).
-        throw new Error(`Codex refused the session settings: ${reasonOf(e)}`);
+        throw new Error(`Codex refused the session settings: ${reasonOf(e)}${linuxSandboxHint(reasonOf(e))}`);
       }
+      if (resumeId !== undefined) codexResumeCheck(started, { cwd: (limited ? realCwd : cwd) as string, limited, realpath: this.realpath });
       const thread = isObj(started) && isObj(started.thread) ? started.thread : undefined;
       const threadId = thread && typeof thread.id === 'string' && thread.id ? thread.id : undefined;
       if (!threadId) throw new Error('Codex did not return a thread id.');
@@ -377,18 +530,28 @@ export class CodexAdapter implements AgentAdapter {
     live.muted = false;
     this.sessions.set(live.sid, live);
     this.known.add(live.sid);
+    this.threadOf.set(live.sid, live.threadId);
     if (live.rpc.exited) {
       // The child died between the response and now: report it like any crash.
       this.sessions.delete(live.sid);
       throw new Error('Codex stopped unexpectedly while starting.');
     }
     if (!options.quiet) this.emit(live.sid, { type: 'status', status: 'idle', intent: `Ready in ${cwd}` });
+    if (!options.quiet) void this.refreshMcp(live); // FR-147: the session's MCP servers; a quiet start emits nothing (C3), so its first message reads them
     return live.sid;
   }
 
   async send(sessionId: string, message: AgentMessage): Promise<void> {
-    const live = this.mustGet(sessionId);
+    let live = this.mustGet(sessionId);
+    // FR-144/FR-147: a mode or MCP switch chosen while it ran applies now, on a fresh child that resumes the same thread
+    if (((live.wantMode && live.wantMode !== live.mode) || live.relaunch) && live.turnId === undefined && !live.turnStarting) {
+      const next = { ...live.options, permissionMode: live.wantMode ?? live.mode, sessionId, resumeSessionId: undefined, quiet: true };
+      await this.stop(sessionId, true);
+      await this.start(next);
+      live = this.mustGet(sessionId);
+    }
     live.expectAborted = false;
+    if (!live.mcpRead) void this.refreshMcp(live); // FR-147: after a quiet start, with the first message
     const images = (message.attachments ?? []).filter((a) => a.kind === 'image');
     const files = (message.attachments ?? []).filter((a) => a.kind !== 'image');
     // Files the user attached are theirs to share (spec 003 FR-023).
@@ -406,6 +569,8 @@ export class CodexAdapter implements AgentAdapter {
       ...modeFields,
       // `sandboxPolicy` is an object on turn/start, not the `sandbox` string of thread/start. [KNOWN GAP] T062: shape unverified.
       ...(sandbox ? { sandboxPolicy: { type: 'dangerFullAccess' } } : { runtimeWorkspaceRoots: live.roots }),
+      ...(live.model ? { model: live.model } : {}),
+      ...(live.effort ? { effort: live.effort } : {}),
     };
     live.turnStarting = true;
     live.pendingInterrupt = false;
@@ -430,6 +595,7 @@ export class CodexAdapter implements AgentAdapter {
     live.interrupting = true;
     try {
       live.broker.denyPending();
+      for (const answer of [...live.questions.values()]) answer(null); // FR-146: an open question is skipped
       const turnId = live.turnId;
       if (!turnId) {
         // A turn is starting but its id is not known yet: remember the request and send it the moment the id arrives.
@@ -453,11 +619,39 @@ export class CodexAdapter implements AgentAdapter {
     } catch {
       /* the turn ended on its own, or the child is gone */
     }
-    if (this.sessions.get(live.sid) === live) this.emit(live.sid, { type: 'status', status: 'idle', intent: 'Aborted' });
+    // FR-139 (real, Codex 0.163): a command that already started keeps running after turn/interrupt; End session stops it
+    const intent = live.runningCommands.size ? 'Aborted (a command that already started may still finish; End session stops it)' : 'Aborted';
+    if (this.sessions.get(live.sid) === live) this.emit(live.sid, { type: 'status', status: 'idle', intent });
   }
 
   /** End the session: pending permissions are denied, the turn interrupted, the thread unsubscribed, the child closed. */
-  async stop(sessionId: string): Promise<void> {
+  /** FR-143: the Codex thread behind a Durbar session, the id to remember for a resume after a restart (spec 006 FR-020). */
+  resumeIdOf(sessionId: string): string | undefined {
+    return this.sessions.get(sessionId)?.threadId ?? this.threadOf.get(sessionId);
+  }
+
+  /**
+   * FR-144: change the permission mode of a running session. Durbar's own approvals follow at once; Codex's sandbox and approval
+   * policy cannot change on a loaded thread, so the next message reopens the thread on a fresh child with the new settings.
+   * A stricter mode during a running turn interrupts that turn, so nothing more runs under the looser mode.
+   */
+  setPermMode(sessionId: string, mode: PermissionMode, opts: { clearGrants?: boolean; approvePending?: boolean } = {}): { pending: number } {
+    const live = this.sessions.get(sessionId);
+    if (!live) return { pending: 0 };
+    const rank = (m: PermissionMode): number => ({ 'read-only': 0, ask: 1, allow: 2 })[m] ?? 0;
+    live.broker.setMode(mode);
+    live.wantMode = mode === live.mode ? undefined : mode;
+    if (opts.clearGrants) live.broker.clearGrants();
+    let pending = live.broker.pendingCount();
+    if (pending) {
+      if (opts.approvePending && mode !== 'read-only') pending -= live.broker.approvePending();
+      else if (mode === 'read-only') pending -= live.broker.denyPendingByUser();
+    }
+    if (rank(mode) < rank(live.mode) && (live.turnId !== undefined || live.turnStarting)) void this.interrupt(sessionId);
+    return { pending };
+  }
+
+  async stop(sessionId: string, silent = false): Promise<void> {
     const starting = this.starting.get(sessionId);
     if (starting) {
       // Stop during start: the start closes its child and never registers; wait for that.
@@ -471,6 +665,7 @@ export class CodexAdapter implements AgentAdapter {
     live.stopping = true;
     live.muted = true;
     live.broker.stop();
+    for (const answer of [...live.questions.values()]) answer(null); // FR-146
     // Let the denied requests' answers (wire `cancel`) go out before the interrupt and the close.
     await new Promise<void>((r) => setImmediate(r));
     if (!live.rpc.exited) {
@@ -482,7 +677,7 @@ export class CodexAdapter implements AgentAdapter {
     let timer: NodeJS.Timeout | undefined;
     await Promise.race([live.exited, new Promise<void>((r) => (timer = setTimeout(r, wait)))]);
     if (timer) clearTimeout(timer);
-    this.emit(sessionId, { type: 'status', status: 'stopped' });
+    if (!silent) this.emit(sessionId, { type: 'status', status: 'stopped' });
   }
 
   resolvePermission(sessionId: string, requestId: string, approve: boolean, remember = false, broad = false): void {
@@ -518,6 +713,11 @@ export class CodexAdapter implements AgentAdapter {
 
   private fromMapper(live: Live, body: EventBody): void {
     if (live.muted) return;
+    // FR-139: shell commands that are running now (Codex's turn/interrupt does not end one that already started)
+    if (body.type === 'toolCall' && body.tool === 'shell' && typeof body.callId === 'string') {
+      if (body.phase === 'start') live.runningCommands.add(body.callId);
+      else if (body.phase !== 'update') live.runningCommands.delete(body.callId);
+    }
     if (live.expectAborted && body.type === 'status' && body.status === 'idle' && body.intent === 'Aborted' && (body as { agentId?: string }).agentId === undefined) {
       live.expectAborted = false; // `interrupt` reports it itself, once
       return;
@@ -526,6 +726,15 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   private onNotification(live: Live, method: string, params: unknown): void {
+    // FR-147: a server's startup state, for this thread (or all threads)
+    if (method === 'mcpServer/startupStatus/updated' && isObj(params) && typeof params.name === 'string' && (params.threadId == null || params.threadId === live.threadId)) {
+      const name = params.name.slice(0, 64);
+      const disabled = (live.options.disabledMcpServers ?? []).includes(name);
+      const err = typeof params.error === 'string' && params.error ? { error: params.error.slice(0, 300) } : {};
+      live.mcp.set(name, { ...(live.mcp.get(name) ?? {}), name, status: disabled ? 'disabled' : codexMcpState(params.status), ...err });
+      if (this.sessions.get(live.sid) === live) this.emitMcp(live);
+      return;
+    }
     // Keep the running turn's id for interrupt and stop.
     if (isObj(params) && (params.threadId === undefined || params.threadId === live.threadId)) {
       const turn = isObj(params.turn) ? params.turn : undefined;
@@ -574,6 +783,11 @@ export class CodexAdapter implements AgentAdapter {
 
   /** A server request (approval or question). Read-only is double-locked: the broker denies and `codexReply` declines. Never `acceptForSession`. */
   private async onServerRequest(live: Live, method: string, params: unknown): Promise<RequestOutcome> {
+    if (method === 'item/tool/requestUserInput' || method === 'tool/requestUserInput') return this.askUser(live, params);
+    // FR-148 (real, Codex 0.163): an MCP elicitation answers with {action, content}, not {decision}. One with form fields Durbar
+    // cannot fill is declined; a plain confirmation (no fields, e.g. "allow this tool call?") goes through the approval below.
+    const elicit = method === 'mcpServer/elicitation/request';
+    if (elicit && codexElicitationHasFields(params)) return { result: { action: 'decline' } };
     const perm = codexPermission(method, params);
     const itemId = isObj(params) && typeof params.itemId === 'string' && params.itemId ? params.itemId : undefined;
     const toolCallId = itemId ?? `${method}#${++live.anon}`;
@@ -591,7 +805,78 @@ export class CodexAdapter implements AgentAdapter {
     if (reply.interruptTurn && !live.stopping && !live.interrupting && live.turnId && !live.rpc.exited) {
       void live.rpc.request('turn/interrupt', { threadId: live.threadId, turnId: live.turnId }).catch(() => undefined);
     }
+    if (elicit) return { result: reply.decision === 'accept' ? { action: 'accept', content: {} } : { action: answer === 'stop' ? 'cancel' : 'decline' } };
     return { result: { decision: reply.decision } };
+  }
+
+  /**
+   * FR-146: Codex asks the user (`item/tool/requestUserInput`). The questions go to the question card (spec 012 FR-128); the
+   * answer goes back keyed by Codex's question id. Skip, Stop and End session answer with nothing. A secret question
+   * (`isSecret`) is never shown or answered here: what is typed into the card lands in the chat.
+   */
+  private async askUser(live: Live, params: unknown): Promise<RequestOutcome> {
+    const raw = isObj(params) && Array.isArray(params.questions) ? params.questions.filter((q) => isObj(q) && q.isSecret !== true) : [];
+    const { asked, originals } = parseQuestionsWithOriginals({ questions: raw });
+    const idOf = new Map<string, string>();
+    asked.forEach((q, i) => {
+      const src = raw.find((r) => isObj(r) && String(r.question) === originals[i]) as Record<string, unknown> | undefined;
+      if (src && typeof src.id === 'string') idOf.set(q.question, src.id);
+    });
+    if (!asked.length || live.stopping) return { result: { answers: {} } };
+    const requestId = `codex-q-${++live.anon}`;
+    const answers = await new Promise<Record<string, string> | null>((resolve) => {
+      live.questions.set(requestId, resolve);
+      this.emit(live.sid, { type: 'question', phase: 'asked', requestId, questions: asked });
+      this.emit(live.sid, { type: 'status', status: 'needs-permission', intent: 'Waiting for your answer' });
+    });
+    live.questions.delete(requestId);
+    const clean = answers ? cleanAnswers(asked, answers) : undefined;
+    if (!clean) {
+      this.emit(live.sid, { type: 'question', phase: 'cancelled', requestId });
+      return { result: { answers: {} } };
+    }
+    this.emit(live.sid, { type: 'question', phase: 'answered', requestId, answers: clean });
+    this.emit(live.sid, { type: 'status', status: 'working', intent: 'Answered' });
+    const out: Record<string, { answers: string[] }> = {};
+    for (const [q, a] of Object.entries(clean)) {
+      const id = idOf.get(q);
+      if (id) out[id] = { answers: a.split(/,\s*/).filter(Boolean) };
+    }
+    return { result: { answers: out } };
+  }
+
+  /** FR-147: the session's MCP servers from `mcpServerStatus/list`; a failure leaves the list as it was. */
+  private async refreshMcp(live: Live): Promise<void> {
+    live.mcpRead = true;
+    try {
+      const res = await live.rpc.request('mcpServerStatus/list', { threadId: live.threadId, detail: 'toolsAndAuthOnly', limit: 100 });
+      if (this.sessions.get(live.sid) !== live) return;
+      live.mcp = new Map(codexMcpServers(isObj(res) ? res.data : undefined, live.options.disabledMcpServers ?? []).map((s) => [s.name, s]));
+      this.emitMcp(live);
+    } catch {
+      /* an older Codex without the method: no list */
+    }
+  }
+
+  private emitMcp(live: Live): void {
+    this.emit(live.sid, { type: 'mcp', servers: [...live.mcp.values()].map((s) => ({ ...s })) });
+  }
+
+  /** FR-147: switch one MCP server of the session; it applies with the next message (fresh child, same thread), like a mode. */
+  async setMcpEnabled(sessionId: string, name: string, enabled: boolean): Promise<void> {
+    const live = this.mustGet(sessionId);
+    const off = new Set(live.options.disabledMcpServers ?? []);
+    if (enabled) off.delete(name);
+    else off.add(name);
+    live.options = { ...live.options, disabledMcpServers: [...off] };
+    live.relaunch = true;
+    const cur = live.mcp.get(name) ?? { name, status: 'pending' };
+    live.mcp.set(name, { ...cur, status: enabled ? 'pending' : 'disabled' });
+    this.emitMcp(live);
+  }
+
+  answerQuestion(sessionId: string, requestId: string, answers: Record<string, string> | null): void {
+    this.sessions.get(sessionId)?.questions.get(requestId)?.(answers);
   }
 
   /** The child exited. Not caused by `stop`: the session is over and says so (FR-097). */

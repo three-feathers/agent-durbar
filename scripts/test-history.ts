@@ -1,5 +1,7 @@
 /** Unit tests for previous Copilot sessions per folder and history replay (synthetic events): `npm run test:history`. */
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
 import { cleanSessionTitle, cleanTitle, eventsToHistory, normDir, previousSessionsFor, sameDir } from '../src/adapters/history';
 
 // --- folder matching
@@ -108,4 +110,19 @@ const named = previousSessionsFor(
   '/p', undefined, 'linux',
 );
 assert.deepStrictEqual(named.map((s) => s.title), ['Release notes', 'only a summary', 'summary wins'], 'a saved name wins over the summary; an empty name does not');
+// spec 006 T023 / 013 T005: a REAL getEvents() stream (redacted) of a session continued after a restart replays to exactly its two turns
+{
+  const fx = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'fixtures', 'events', 'real-getevents-restart.json'), 'utf8')) as { provenance: string; events: Parameters<typeof eventsToHistory>[0] };
+  assert.strictEqual(fx.provenance, 'real-redacted');
+  assert.ok(!/\/tmp\/|\/home\/|@[a-z0-9-]+\.[a-z]/i.test(JSON.stringify(fx.events)), 'no real paths or e-mail addresses');
+  const real = eventsToHistory(fx.events);
+  assert.deepStrictEqual(real.items.map((it) => [it.type, it.type === 'tool' ? it.tool : it.text]), [
+    ['user', 'Remember the code word: marmalade. Reply with just OK.'],
+    ['output', 'OK'],
+    ['user', 'What was the code word I asked you to remember? Reply with the word only.'],
+    ['output', 'marmalade'],
+  ], 'session events, the system prompt and usage are not shown; both turns are');
+  assert.strictEqual(real.truncated, false);
+}
+
 console.log('history tests passed');

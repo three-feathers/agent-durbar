@@ -220,3 +220,18 @@ What the Claude adapter's build and its real checks showed against the claims ab
 - **Usage:** `input_tokens` excludes cache writes and reads; Durbar adds them to match the other adapters (FR-124).
 - **MCP:** `mcp_toggle` (`serverName`, `enabled`) and `mcp_status` (`mcpServers`) are control requests of the CLI (read from the 2.1.303 bundle; undocumented); checked with a local stdio server without a prompt (FR-133).
 
+## Findings from the Codex build and real runs (2026-10-19, Codex CLI 0.163.0, ChatGPT Plus, Linux)
+
+What the real `codex app-server` showed against the claims above (the evidence is in [spec.md](spec.md) under *Changes*, FR-137..FR-149):
+
+- **Sign-in:** `codex login status` prints `Logged in using ChatGPT` and exits 0, or prints `Not logged in` and exits 1. `account/read` gives `{account: {type, email, planType}, requiresOpenaiAuth}`. Durbar reads only the phrase and the exit code (FR-137).
+- **Permission profile:** a config that defines `[permissions]` profiles must also set `default_permissions`, or the app-server does not start (FR-138). Inside the profile Codex runs its own binary again, so its install folder must be readable (FR-138).
+- **Linux sandbox:** Read-only and Ask first run commands in bubblewrap. On Ubuntu 24.04+ (`kernel.apparmor_restrict_unprivileged_userns=1`) it fails with `RTM_NEWADDR: Operation not permitted` unless an AppArmor profile allows `/usr/bin/bwrap` and Codex's bundled `bwrap` (FR-140, README).
+- **Read-only (Q6, answered by the build):** reads inside the session folders work; writes fail (read-only file system); a file outside the folders is not visible at all. The mode is shown as plain Read-only.
+- **Interrupt:** `turn/interrupt` ends the turn, but a command that already started runs to its end. `command/exec/terminate` covers only client-started commands; closing the app-server (End session) stops it (FR-139).
+- **Resume:** `thread/resume` with a `cwd` **rewrites the thread's stored folder**, so the folder check must read the thread first (`thread/read`) (FR-093). The response reports `sandbox: {type: "readOnly"}` in the read-limited profile.
+- **Sessions and models:** `thread/list` (filter by `cwd`, timestamps in seconds) and `thread/read {includeTurns}` give previous sessions and replay. `model/list` gives 7 models with `supportedReasoningEfforts` (some include `ultra`) and a default. `turn/start` takes `model` and `effort` per turn (FR-141, FR-142).
+- **Questions:** the server request is `item/tool/requestUserInput` (not `tool/requestUserInput`), answered `{answers: {<id>: {answers: [...]}}}`. Codex offers the tool only with the "under development" feature `default_mode_request_user_input` (FR-146).
+- **MCP:** servers can be given per thread as `config.mcp_servers`. States come from `mcpServerStatus/list` and `mcpServer/startupStatus/updated`. A tool call is approved through `mcpServer/elicitation/request` (`_meta.codex_approval_kind: mcp_tool_call`), answered `{action, content}` (FR-147, FR-148).
+- **Sub-agents:** one `subAgentActivity` item per activity (`kind` started or completed), linked by `agentThreadId`. `collabAgentToolCall` with `wait` and the like is coordination, not a helper (FR-149).
+
