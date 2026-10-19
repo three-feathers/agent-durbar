@@ -516,6 +516,53 @@ async function main(): Promise<void> {
     await ad.stop(sid);
   }
 
+  // ---- MCP toggle (FR-133): mcp_toggle then mcp_status; kept for relaunches; a launch-disabled server comes back with a relaunch ----
+  {
+    const sp = fakeSpawn();
+    const toggles: Record<string, unknown>[] = [];
+    let servers = [{ name: 'notes', status: 'connected' }, { name: 'web', status: 'connected' }];
+    sp.next = (c) => {
+      c.onWrite = (o) => {
+        if (o.type !== 'control_request') {
+          if (o.type === 'user') setTimeout(() => { c.send({ type: 'system', subtype: 'init', session_id: 'x', cwd: WS, tools: [], mcp_servers: servers }); c.send({ type: 'result', subtype: 'success', is_error: false }); }, 0);
+          return;
+        }
+        const r = o.request as { subtype: string; serverName?: string; enabled?: boolean };
+        let response: Record<string, unknown> = {};
+        if (r.subtype === 'mcp_toggle') {
+          toggles.push(r);
+          servers = servers.map((s) => (s.name === r.serverName ? { ...s, status: r.enabled ? 'connected' : 'disabled' } : s));
+        }
+        if (r.subtype === 'mcp_status') response = { mcpServers: servers };
+        setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response } }), 0);
+      };
+    };
+    const ad = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const ev: AgentEvent[] = [];
+    ad.onEvent((e) => ev.push(e));
+    const mcp = { notes: { type: 'stdio', command: 'node', args: ['n.js'] }, web: { type: 'stdio', command: 'node', args: ['w.js'] } } as never;
+    const sid = await ad.start({ workspace: WS, quiet: true, mcpServers: mcp });
+    assert.strictEqual(ad.capabilities.mcpToggle, true);
+    await ad.setMcpEnabled(sid, 'web', false); // not running yet: only recorded
+    assert.strictEqual(sp.calls.length, 0, 'no process for a recorded switch');
+    await ad.send(sid, { text: 'hi' });
+    await until('first launch', () => (sp.calls.length === 1 ? true : undefined));
+    const cfg = (args: string[]): string => args[args.indexOf('--mcp-config') + 1];
+    assert.ok(cfg(sp.calls[0].args).includes('notes') && !cfg(sp.calls[0].args).includes('w.js'), 'a recorded switch is in the launch config');
+    await until('idle', () => ev.some((e) => e.type === 'status' && (e as { status: string }).status === 'idle'));
+    await ad.setMcpEnabled(sid, 'notes', false);
+    assert.deepStrictEqual(toggles, [{ subtype: 'mcp_toggle', serverName: 'notes', enabled: false }]);
+    const last = [...ev].reverse().find((e) => e.type === 'mcp') as { servers: { name: string; status: string }[] };
+    assert.deepStrictEqual(last.servers.find((s) => s.name === 'notes')?.status, 'disabled', 'the new list from mcp_status');
+    // web was left out at launch: switching it on cannot go through mcp_toggle; the next message relaunches with it
+    await ad.setMcpEnabled(sid, 'web', true);
+    assert.strictEqual(toggles.length, 1, 'no mcp_toggle for a server the CLI does not know');
+    await ad.send(sid, { text: 'again' });
+    await until('relaunch', () => (sp.calls.length === 2 ? true : undefined));
+    assert.ok(cfg(sp.calls[1].args).includes('w.js') && !cfg(sp.calls[1].args).includes('n.js'), 'relaunched with web on and notes off');
+    await ad.stop(sid);
+  }
+
   // ---- interrupt: pending permissions denied, the interrupt request sent, Aborted ----
   {
     const { ad, sp, events } = make({ turn: (c) => c.send({ type: 'control_request', request_id: 'p1', request: { subtype: 'can_use_tool', tool_name: 'Write', input: {}, tool_use_id: 'tu-9' } }) });
