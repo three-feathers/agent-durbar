@@ -2214,6 +2214,7 @@ function newSession(a0){
    <label>Permissions<select id="sdPerm"><option value="read-only">Read-only</option><option value="ask">Ask first</option><option value="allow">Allow all (no prompts)</option></select></label>
    <label id="sdModelL">Model<select id="sdModel"></select></label>
    <label id="sdEffL">Reasoning effort<select id="sdEff"></select></label>
+   ${bridge.listProfiles&&a.info&&a.info.profiles?'<label id="sdAgentL" hidden>Agent<select id="sdAgent"><option value="">Default agent</option></select></label>':''}
    ${bridge.setCap?'<label id="sdCapL">Credit cap (AIU, empty = no cap)<input id="sdCap" type="number" min="0.001" step="0.01" placeholder="No cap"></label>':''}
    <div class="dbtn"><button class="btn" id="sdCancel" type="button">Cancel</button><button class="btn primary" id="sdGo" type="button">Start session</button></div></div>`;
   document.body.appendChild(d);
@@ -2234,7 +2235,15 @@ function newSession(a0){
     if(c)fillPermSelect($('sdPerm'),c);
   };
   if($('sdKind'))$('sdKind').value=pickKind(a.info.adapterId||defaultKind());
-  eff(); $('sdModel').onchange=eff; if($('sdKind'))$('sdKind').onchange=eff;
+  eff(); $('sdModel').onchange=eff; if($('sdKind'))$('sdKind').onchange=()=>{eff();agentRow();};
+  /* spec 043 T010: the new session can start with a custom agent of this folder (the same list as the Agent chip; same kind only) */
+  const agentRow=()=>{const l=$('sdAgentL');if(!l)return;l.hidden=!(l.dataset.ready==='1'&&(kindNow()||a.info.adapterId||'')===(a.info.adapterId||kindNow()||''));};
+  if($('sdAgentL'))bridge.listProfiles(a.id).then(r=>{
+    if(!$('sessDlg')||!r||!r.ok||!r.profiles.length)return;
+    a.profileList=r.profiles;
+    $('sdAgent').insertAdjacentHTML('beforeend',r.profiles.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}${SOURCE_WORD[p.source]?' ('+esc(SOURCE_WORD[p.source])+')':''}</option>`).join(''));
+    $('sdAgentL').dataset.ready='1';agentRow();
+  }).catch(()=>undefined);
   d.addEventListener('click',e=>{if(e.target===d)closeSessDlg();});
   $('sdCancel').onclick=closeSessDlg;
   $('sdGo').onclick=async()=>{
@@ -2244,11 +2253,13 @@ function newSession(a0){
     const opts={permMode:$('sdPerm').value,model:$('sdModelL').hidden?undefined:$('sdModel').value,effort:$('sdEff').hidden?undefined:($('sdEff').value||undefined)};
     if(kind)opts.adapterId=kind;
     if($('sdCap')&&!$('sdCapL').hidden){const cv=parseFloat($('sdCap').value);opts.maxAiCredits=cv>=MIN_CAP&&cv<=1e6?Math.round(cv*100)/100:null;}
+    const profId=$('sdAgentL')&&!$('sdAgentL').hidden?$('sdAgent').value:'';
     $('sdGo').disabled=true;$('sdGo').textContent='Starting…';
     const r=await bridge.newSession(a.id,opts);
     closeSessDlg();
     if(!r.ok){toast('Could not start a session: '+esc(r.error||'unknown error'),6000);return;}
     addLiveAgent(r.agent); openPanel(r.agent.id,false);
+    if(profId){const na=liveById(r.agent.id),p=(a.profileList||[]).find(x=>x.id===profId);if(na&&p){na.profileList=a.profileList;applyProfile(na,p);}}
   };
   $('sdGo').focus();
 }
