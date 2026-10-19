@@ -19,3 +19,4 @@
 - [ ] T023 Decide whether chat history should persist across restarts (clarify; privacy implications). [FR-014]
 - [x] T024 Copy message / copy code buttons. [FR-015]
 - [x] T025 Automated overflow test for the chat view (same harness as feature 001 T020). [SC-001] (2026-10-19: the chat checks in `check:office`, #221)
+- [ ] T026 Card menu Stop and End session for live main agents (interrupt / end, confirm End when busy, disabled Stop when the kind cannot interrupt), simulator and `check:office` at both sizes, docs (issue #251) [FR-017]
