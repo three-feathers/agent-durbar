@@ -52,6 +52,7 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpStatus: true, // FR-147: mcpServerStatus/list and startup notifications
   mcpToggle: true, // FR-147: from the next message (fresh child, same thread)
   handoff: true, // spec 030 FR-034: an ephemeral fork, the thread is not changed
+  oneShot: true, // spec 040 FR-015: an ephemeral read-only thread in an empty temp folder
 });
 
 /** Where the `codex` binary is and which version it reports. */
@@ -303,16 +304,44 @@ export class CodexAdapter implements AgentAdapter {
    * FR-141/FR-142: a short-lived app-server for reads that need no session (previous sessions, a thread's history, the model
    * list): no thread, no turn, no prompt. Started in the temp folder with the same environment rules (D5); always closed.
    */
-  private async probe<T>(fn: (rpc: CodexRpc) => Promise<T>): Promise<T> {
+  private async probe<T>(fn: (rpc: CodexRpc) => Promise<T>, onNotification: (method: string, params: unknown) => void = () => undefined): Promise<T> {
     const loc = await this.locate();
     if (!loc?.path || isShim(loc.path)) throw new Error('Codex was not found on this computer.');
-    const child = this.spawnChild(loc.path, os.tmpdir(), { onNotification: () => undefined, onRequest: async () => ({ error: { code: -32601, message: 'not handled in a probe' } }), onExit: () => undefined });
+    const child = this.spawnChild(loc.path, os.tmpdir(), { onNotification, onRequest: async () => ({ error: { code: -32601, message: 'not handled in a probe' } }), onExit: () => undefined });
     try {
       await child.rpc.request('initialize', { clientInfo: { name: 'agent_durbar', title: 'Agent Durbar', version: this.appVersion }, capabilities: CODEX_INITIALIZE_CAPABILITIES });
       await child.rpc.notify('initialized');
       return await fn(child.rpc);
     } finally {
       await this.closeChild(child);
+    }
+  }
+
+  /** Spec 040 FR-015: one prompt on an ephemeral, read-only thread in an empty temp folder, in a child of its own; nothing is kept. */
+  async generateText(prompt: string): Promise<{ text: string }> {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-gen-'));
+    let text = '';
+    let finish: (t: string) => void = () => undefined;
+    const done = new Promise<string>((r) => (finish = r));
+    const onNote = (method: string, params: unknown): void => {
+      const item = isObj(params) && isObj(params.item) ? params.item : undefined;
+      if (method === 'item/completed' && item && item.type === 'agentMessage' && typeof item.text === 'string') text = item.text;
+      else if (method === 'turn/completed') finish(text);
+    };
+    try {
+      return await this.probe(async (rpc) => {
+        const res = await rpc.request('thread/start', { cwd: dir, ephemeral: true, approvalPolicy: 'never', sandbox: 'read-only' });
+        const threadId = isObj(res) && isObj(res.thread) && typeof res.thread.id === 'string' ? res.thread.id : undefined;
+        if (!threadId) throw new Error('Codex did not start a thread.');
+        await rpc.request('turn/start', { threadId, input: [{ type: 'text', text: prompt }], approvalPolicy: 'never' });
+        let timer: NodeJS.Timeout | undefined;
+        const t = await Promise.race([done, new Promise<string>((r) => (timer = setTimeout(() => r(text), 180_000)))]);
+        clearTimeout(timer);
+        if (!t) throw new Error('Codex gave no answer.');
+        return { text: t };
+      }, onNote);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   }
 

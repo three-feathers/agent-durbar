@@ -128,7 +128,7 @@
         <p class="scr-note">The look of the office: colours, small art and scene words (places, lobby, doors). Status, permission and credit wording never change, and the layout always fits 15 agents at 1280×800. The choice applies at once and is kept on this computer.</p>
         <ul class="thlist" id="thList">${themes.map((t)=>`<li class="throw"><button class="thpick" type="button" data-theme="${esc(t.id)}" aria-pressed="${t.id===curTheme}" aria-label="Theme ${esc(t.name)}"><span class="thsw" data-theme-sw="${esc(t.id)}" aria-hidden="true"></span><span class="thtx"><b>${esc(t.name)}</b>${t.own?'<span class="mtag">yours</span>':''}${t.author?`<small>${esc(t.author)}</small>`:''}</span></button></li>`).join('')}</ul>
         ${badThemes.length?`<p class="scr-note warn" role="status">${badThemes.length} theme folder${badThemes.length>1?'s were':' was'} ignored: ${esc(badThemes.map((b)=>b.id+': '+(b.error||'invalid')).join('; '))}</p>`:''}
-        <div class="scr-tools"><button class="btn" type="button" id="thImport">Import a theme…</button><button class="btn" type="button" id="thExport"${/^(clean-office|corporate|retro|durbar-)/.test(curTheme)?' disabled title="Built-in themes are in the app; export your own themes."':''}>Export the active theme…</button><span class="scr-note small">A theme is a folder with a data-only manifest.json (no scripts, no CSS). The manifest format is spec 040.</span></div></section>`;
+        <div class="scr-tools">${X.bridge.generateTheme?'<button class="btn" type="button" id="thAi">Make a theme with AI…</button>':''}<button class="btn" type="button" id="thImport">Import a theme…</button><button class="btn" type="button" id="thExport" title="Copy the active theme's folder (one of your own themes) to a folder you pick">Export the active theme…</button><span class="scr-note small">A theme is a folder with a data-only manifest.json (no scripts, no CSS). The manifest format is spec 040.</span></div></section>`;
     const ab=app.about;
     const aboutSec=ab?`<section class="scr-sec" aria-labelledby="aboutH"><h3 id="aboutH">About</h3>
         <p class="scr-note"><b>${esc(ab.name)}</b> ${esc(ab.version)} · by <b>${esc(ab.owner)}</b></p>
@@ -175,6 +175,8 @@
     if($('thList'))$('thList').addEventListener('click',(e)=>{
       const b=e.target.closest&&e.target.closest('[data-theme]');if(!b||!X.applyTheme)return;
       X.applyTheme(b.dataset.theme);
+      /* spec 040 FR-019: the list shows the new choice at once (it was only repainted when Settings reopened) */
+      $('thList').querySelectorAll('[data-theme]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
     });
     if($('thImport'))$('thImport').onclick=async()=>{
       if(!X.bridge.importTheme)return;
@@ -184,13 +186,110 @@
       if(X.applyTheme)X.applyTheme(res.id);
       paintSettings();
     };
+    if($('thAi'))$('thAi').onclick=()=>aiTheme(curTheme);
     if($('thExport'))$('thExport').onclick=async()=>{
       if(!X.bridge.exportTheme)return;
-      const res=await X.bridge.exportTheme(curTheme).catch(()=>null);
+      /* spec 040 FR-019: the theme active NOW, not the one when Settings was painted; a built-in one says why it cannot be exported */
+      const active=(window.THEME&&window.THEME.current&&window.THEME.current().id)||curTheme;
+      if(window.THEME&&window.THEME.list().some((t)=>t.id===active&&!userThemes.some((u)=>u.id===active))){
+        X.toast(esc((window.THEME.list().find((t)=>t.id===active)||{name:active}).name)+' is built into the app, so there is nothing to export. Pick one of your own themes (marked "yours") first, or make one with AI.',6000);return;
+      }
+      const res=await X.bridge.exportTheme(active).catch(()=>null);
       if(!res||!res.ok){X.toast(esc(res&&res.error||'Export did not work (cancelled, or only your own themes can be exported).'),4200);return;}
       X.toast('Theme copied to <b>'+esc(res.to)+'</b>.',4200);
     };
     if(focus){const h=r.querySelector('h2');if(h){h.tabIndex=-1;h.focus({preventScroll:true});}}
+  }
+  /* spec 040 FR-014..FR-018: AI theme maker. Describe -> one prompt to a harness with `oneShot` -> a checked manifest ->
+     preview (Try it, live, not saved) -> Save as my theme, Try again or Discard (back to the theme that was active). User text is never logged. */
+  async function aiTheme(){
+    const before=(window.THEME&&window.THEME.current&&window.THEME.current().id)||'clean-office';
+    let kinds=[];
+    if(X.bridge.listAdapters){try{kinds=((await X.bridge.listAdapters())||[]).filter((k)=>k&&k.state==='ready'&&k.capabilities&&k.capabilities.oneShot);}catch(e){kinds=[];}}
+    if(!kinds.length){await dialog({title:'Make a theme with AI',html:'<p class="dsub">This needs Claude Code or OpenAI Codex, installed and signed in on this computer. Copilot cannot do it yet.</p>',buttons:[{label:'Close',value:'ok',cls:'primary'}]});return;}
+    let desc='',kind=kinds[0].id;
+    /* spec 040 FR-021: a few example looks at random, so people see how to describe one */
+    let ideas=[];
+    if(X.bridge.themeIdeas){try{ideas=(await X.bridge.themeIdeas())||[];}catch(e){ideas=[];}}
+    const pick=()=>{const p=ideas.slice(),o=[];while(o.length<4&&p.length)o.push(p.splice(Math.floor(Math.random()*p.length),1)[0]);return o;};
+    const ideaHtml=()=>ideas.length?`<div class="ai-ideas" id="aiIdeas"><span class="scr-note small">Ideas:</span>${pick().map((i)=>`<button class="btn ai-idea" type="button" data-idea="${esc(i)}">${esc(i)}</button>`).join('')}<button class="btn ai-more" type="button" id="aiMore" title="Show other ideas">More ideas</button></div>`:'';
+    for(;;){
+      const r=await dialog({title:'Make a theme with AI',html:`<p class="dsub">Describe a look in a few words, for example <i>a night-shift newsroom</i> or <i>a ship's bridge at dawn</i>. The harness you pick (no tools, nothing kept) designs a light or dark theme: colours, a style, place names and art for the people and furniture. Durbar keeps only safe values and checks that text stays readable; the AI gets up to 3 passes to fix what fails. You can try it before you save it.</p>
+        <label>Look<textarea id="aiDesc" rows="3" maxlength="300" placeholder="A calm library at night">${esc(desc)}</textarea></label>
+        ${ideaHtml()}
+        <label>Made by<select id="aiKind">${kinds.map((k)=>`<option value="${esc(k.id)}"${k.id===kind?' selected':''}>${esc(k.displayName||k.id)}</option>`).join('')}</select></label>
+        <p class="scr-note small">Uses your own ${esc(kinds.map((k)=>k.displayName||k.id).join(' or '))} account: a small cost (Claude: at most $0.25, usually about a cent).</p>`,
+        buttons:[{label:'Cancel',value:null},{label:'Make the theme',value:'go',cls:'primary'}],
+        validate:(d)=>{const v=d.querySelector('#aiDesc').value.trim();return v.length<3?'Describe the look in a few words.':false;},
+        onOpen:(d)=>{const t=d.querySelector('#aiDesc');t.addEventListener('input',()=>{desc=t.value;});
+          d.addEventListener('click',(e)=>{const b=e.target.closest&&e.target.closest('.ai-idea');if(b){t.value=b.dataset.idea;desc=t.value;t.focus();return;}
+            if(e.target.closest&&e.target.closest('#aiMore')){const box=d.querySelector('#aiIdeas');if(box)box.outerHTML=ideaHtml();}});d.querySelector('#aiKind').addEventListener('change',(e)=>{kind=e.target.value;});}});
+      if(!r||r.value!=='go')return;
+      const busy=X.toast?X.toast('Making the theme… this can take up to a minute.',60000):null;
+      let g=null;
+      try{g=await X.bridge.generateTheme(desc.trim(),kind);}catch(e){g={ok:false,error:String(e&&e.message||e)};}
+      if(busy&&busy.remove)busy.remove();
+      if(!g||!g.ok){
+        const again=await dialog({title:'No theme this time',html:`<p class="dsub">${esc((g&&g.error)||'Unknown error.')}</p>${g&&g.costUsd?`<p class="scr-note small">Cost: about $${esc(g.costUsd.toFixed(4))} (estimate).</p>`:''}`,buttons:[{label:'Close',value:null},{label:'Try again',value:'again',cls:'primary'}]});
+        if(again&&again.value==='again')continue;return;
+      }
+      const m=g.manifest, toks=m.tokens||{}, hex=/^#[0-9a-f]{3,6}$/i;
+      const swatches=['--bg','--surface','--ink','--sage','--blue','--amber','--brand-bg','--desk'].filter((k)=>hex.test(toks[k]||'')).map((k)=>`<span class="ai-sw" title="${esc(k)}" data-col="${esc(toks[k])}"></span>`).join('');
+      const words=Object.entries(m.words||{}).map(([k,v])=>`<li><small>${esc(k)}</small> ${esc(v)}</li>`).join('');
+      for(;;){
+        const pick=await dialog({title:'Theme: '+m.name,wide:true,html:`<div class="ai-sws" aria-hidden="true">${swatches}</div>
+          <p class="dsub">Style <b>${esc(m.ui)}</b>, people and furniture <b>${esc(m.scene)}</b>, ${Object.keys(toks).length} colours.${g.costUsd?` Made for about $${esc(g.costUsd.toFixed(4))} (estimate).`:''}</p>
+          ${words?`<ul class="ai-words">${words}</ul>`:''}
+          ${g.warnings&&g.warnings.length?`<p class="scr-note small">${esc(g.warnings.join('; '))}.</p>`:''}
+          <p class="scr-note small">Try it shows it now without saving. Discard goes back to the theme you had.</p>`,
+          buttons:[{label:'Discard',value:null},{label:'Try again',value:'again'},{label:'Try it',value:'try'},{label:'Save as my theme',value:'save',cls:'primary'}],
+          onOpen:(d)=>d.querySelectorAll('[data-col]').forEach((el)=>{if(hex.test(el.dataset.col))el.style.background=el.dataset.col;})}); /* CSSOM, validated hex only */
+        const choice=pick&&pick.value;
+        if(choice==='try'){
+          /* spec 040 FR-021: look at it in the real office: Settings closes, a small bar offers Save / Details / Try again / Discard */
+          if(X.previewTheme)X.previewTheme(m);
+          close();
+          const next=await tryBar(m.name);
+          if(next==='save'||next==='details'){open('settings');await new Promise((r)=>setTimeout(r,60));}
+          if(next==='details')continue;
+          if(next==='save'){
+            const res=await X.bridge.saveGeneratedTheme(m).catch(()=>null);
+            if(!res||!res.ok){X.toast(esc((res&&res.error)||'The theme could not be saved.'),5000);if(X.previewTheme)X.previewTheme(before);return;}
+            if(X.applyTheme)X.applyTheme(res.id);
+            X.toast('Theme <b>'+esc(res.name||res.id)+'</b> saved. It is in the list as one of yours.',3600);
+            paintSettings();return;
+          }
+          if(X.previewTheme)X.previewTheme(before);
+          if(next==='again'){open('settings');await new Promise((r)=>setTimeout(r,60));break;}
+          return;
+        }
+        if(choice==='save'){
+          const res=await X.bridge.saveGeneratedTheme(m).catch(()=>null);
+          if(!res||!res.ok){X.toast(esc((res&&res.error)||'The theme could not be saved.'),5000);continue;}
+          if(X.applyTheme)X.applyTheme(res.id);
+          X.toast('Theme <b>'+esc(res.name||res.id)+'</b> saved. It is in the list as one of yours.',3600);
+          paintSettings();return;
+        }
+        if(X.previewTheme)X.previewTheme(before); /* Discard or Try again: back to the theme that was active */
+        if(choice==='again')break;
+        return;
+      }
+    }
+  }
+  /* the "trying a theme" bar over the live office; resolves 'save' | 'details' | 'again' | 'discard' (Escape) */
+  function tryBar(name){
+    return new Promise((resolve)=>{
+      const old=document.getElementById('aiTryBar');if(old)old.remove();
+      const b=document.createElement('div');b.id='aiTryBar';b.className='ai-trybar';b.setAttribute('role','dialog');b.setAttribute('aria-label','Trying a theme');
+      b.innerHTML=`<span>Trying <b></b>. Nothing is saved yet.</span><button class="btn" type="button" data-t="discard">Discard</button><button class="btn" type="button" data-t="again">Try again</button><button class="btn" type="button" data-t="details">Details</button><button class="btn primary" type="button" data-t="save">Save as my theme</button>`;
+      b.querySelector('b').textContent=name;
+      const done=(v)=>{b.remove();document.removeEventListener('keydown',onKey,true);resolve(v);};
+      const onKey=(e)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();done('discard');}};
+      b.addEventListener('click',(e)=>{const t=e.target.closest&&e.target.closest('[data-t]');if(t)done(t.dataset.t);});
+      document.addEventListener('keydown',onKey,true);
+      document.body.appendChild(b);
+      b.querySelector('[data-t="save"]').focus();
+    });
   }
   /* one server of the Copilot CLI list (or the built-in one): read-only, with its exact command/URL and a switch for new sessions */
   function cliRow(a){

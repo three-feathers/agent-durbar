@@ -379,6 +379,8 @@ export interface AgentAdapter {
   compact?(sessionId: string, focus?: string): Promise<CompactResult>;
   /** A markdown hand-off summary of the conversation, made without changing it (spec 030 FR-034). Optional (`capabilities.handoff`). */
   handoffSummary?(sessionId: string): Promise<HandoffResult>;
+  /** One prompt answered with no tools, no MCP and no session kept, in an empty temp folder (spec 040 FR-015). Optional (`capabilities.oneShot`). */
+  generateText?(prompt: string): Promise<{ text: string; costUsd?: number }>;
   /** True while the session is open in this adapter. */
   isLive(sessionId: string): boolean;
   /** Stop every session and free the runtime. */

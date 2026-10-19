@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, handoffArgs, parseHandoffOutput, claudeMdPrompt, claudeModelFlag, claudeModelOptions, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
+import { ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, handoffArgs, oneShotArgs, parseHandoffOutput, claudeMdPrompt, claudeModelFlag, claudeModelOptions, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import type { AgentEvent } from '../src/adapters/types';
 import { FakeClaudeChild, fakeSpawn } from './fakes/claude-cli';
@@ -729,6 +729,26 @@ async function main(): Promise<void> {
     reply = { code: 1, stdout: '' };
     await assert.rejects(ad.handoffSummary(sid), /could not make a summary \(exit 1\)/);
     await ad.stop(sid);
+  }
+
+  // ---- spec 040 FR-015: a stand-alone one-shot (AI theme maker): no session, no tools, an empty temp folder removed after ----
+  {
+    const a = oneShotArgs('make a theme');
+    const at = (f: string) => a[a.indexOf(f) + 1];
+    assert.strictEqual(at('-p'), 'make a theme');
+    for (const f of ['--no-session-persistence', '--strict-mcp-config']) assert.ok(a.includes(f), f);
+    assert.ok(!a.includes('--resume') && !a.includes('--session-id'), 'no session at all');
+    assert.strictEqual(at('--tools'), '');
+    assert.strictEqual(at('--setting-sources'), '');
+    assert.strictEqual(at('--max-budget-usd'), '0.25');
+    let seenCwd = '';
+    const ad = new ClaudeAdapter({ claudePath: async () => '/usr/local/bin/claude', env: () => ({}),
+      runOnce: async (_f, _args, o) => { seenCwd = o.cwd; assert.deepStrictEqual(fs.readdirSync(o.cwd), [], 'an empty folder'); return { code: 0, stdout: JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: '{"name":"x"}', total_cost_usd: 0.003 }) }; } });
+    assert.strictEqual(ad.capabilities.oneShot, true);
+    assert.deepStrictEqual(await ad.generateText('p'), { text: '{"name":"x"}', costUsd: 0.003 });
+    assert.ok(seenCwd && !fs.existsSync(seenCwd), 'the temp folder is removed');
+    const bad = new ClaudeAdapter({ claudePath: async () => '/usr/local/bin/claude', env: () => ({}), runOnce: async () => ({ code: 1, stdout: '' }) });
+    await assert.rejects(bad.generateText('p'), /no answer \(exit 1\)/);
   }
 
   // ---- no claude installed: a clear error, no spawn ----
