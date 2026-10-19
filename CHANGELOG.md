@@ -4,6 +4,16 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.7 tag)
 
+- **Round 3 of the usability pass (spec 052, five new personas).**
+  - **Inbox:** it opens on a request, never on a button, and every button is described by its request. After an answer, focus moves to the next request and the outcome is announced. Keys: J/K, A, D, S, O.
+  - **Announcements:** new requests are announced to screen readers.
+  - **Shortcuts:** Ctrl+Shift+A (inbox) and Ctrl+Shift+N (next agent) work everywhere.
+  - **Confirmations:** destructive ones start on Cancel.
+  - **Simple:** tool steps fold, approvals say "Allow this once" / "Don't allow", and the top bar is lighter.
+  - **The restore strip** says what the risk is, and offers "Ask me first (safer)".
+  - **Cards** name their harness when several are in use.
+  - **Visual pass:** a solid primary button, one segmented status bar, quieter room controls and lobby, status edges on waiting and error cards.
+  - **Japanese court:** Tanmatsu-shitsu, Dōgu-beya, the Ō-hiroma, fusuma doors, a bonsai, and plain short hair.
 - **The usability follow-ups, built (spec 052, #305-#311).**
   - **Needs you inbox:** every request in one queue, answered with each request's own choices; press **I**.
   - **Cost in money:** "≈ $0.36" in the header, rooms and cards, with AIU and Claude estimates in the tooltip.

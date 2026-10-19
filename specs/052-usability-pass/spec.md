@@ -296,6 +296,18 @@ All five were AI personas, working from 29 screenshots and the source.
   - plain short hair instead of a topknot;
   - dark heri on the tatami.
 
+**Evidence (round 3):**
+- **Built:** FR-033..FR-039 by the lead; FR-040 (visual pass) and FR-041 (Japanese court) by two implementation sub-agents in their own worktrees, merged and checked by the lead.
+- **Shortcut decision:** **Ctrl+Shift+A**, not Ctrl+Shift+I, because Electron's default menu opens DevTools on Ctrl+Shift+I.
+- `sim:` `scripts/shots-052-ux.js` passes at both sizes:
+  - the inbox opens on a heading; **A** approves the focused row, focus moves to the next heading, and "Approved … N left." is announced;
+  - Ctrl+Shift+A opens the inbox from a text field;
+  - the strip's new wording and buttons;
+  - every earlier check.
+- `test:` `test:dialog` covers FR-036: a destructive confirmation starts on Cancel, and a plain primary keeps the focus.
+- `check:office` (2 shards) and `check:geometry` (60/60) pass.
+- `[KNOWN GAP]`: nothing was tried with NVDA or VoiceOver; the announcements and focus order are checked in the DOM only.
+
 **Not now:**
 - a per-folder cost view with periods and CSV export, a per-folder budget, and a Codex price table [Sofia] (#315);
 - a command palette (Ctrl+K) [Sofia] (#316);
