@@ -1,0 +1,17 @@
+{
+  "provenance": "synthetic",
+  "note": "Hand-written to the MCP initialize shape, not recorded from a real client. Real handshakes are recorded in T061.",
+  "client": "vscode",
+  "initialize": {
+    "jsonrpc": "2.0",
+    "id": 0,
+    "method": "initialize",
+    "params": {
+      "protocolVersion": "2025-06-18",
+      "capabilities": {},
+      "clientInfo": { "name": "Visual Studio Code", "version": "1.105.0" }
+    }
+  },
+  "initialized": { "jsonrpc": "2.0", "method": "notifications/initialized" },
+  "expectProtocolVersion": "2025-06-18"
+}

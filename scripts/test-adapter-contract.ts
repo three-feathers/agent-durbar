@@ -16,6 +16,10 @@ import type { ScriptEvent } from './fakes/copilot-sdk';
 import type { PermissionLike } from '../src/adapters/permissions';
 import type { AgentAdapter, AgentEvent, PermissionInfo, PermissionMode } from '../src/adapters/types';
 import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
+import { enabledExperimental } from '../src/adapters/experimental';
+import { CODEX_EXPERIMENTAL_DESCRIPTORS } from '../src/adapters/experimentalCodex';
+import { CodexAdapter } from '../src/adapters/codex';
+import { FakeCodexServer } from './fakes/codex-app-server';
 import { ClaudeAdapter, claudeArgs } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import { fakeSpawn } from './fakes/claude-cli';
@@ -28,6 +32,11 @@ export interface ContractHooks {
   requestPermission(ad: AgentAdapter, sid: string, req: PermissionLike): Promise<Outcome>;
   /** Runs one scripted turn to its end (`working` ... `idle`). */
   turn(ad: AgentAdapter, sid: string): Promise<void>;
+  /**
+   * Set when the vendor decides reads itself and never asks the adapter (Codex: its sandbox profile, spec 012 D6). C6's "a read
+   * inside the workspace is approved" cannot reach the adapter then; the check is reported as a named skip with this reason, never passed silently.
+   */
+  readsDecidedByVendor?: string;
 }
 
 export interface ContractTarget {
@@ -212,7 +221,7 @@ export async function runContract(name: string, make: () => ContractTarget, hook
       }
       const t = fresh();
       const sid = await t.start(mode);
-      assert.strictEqual(await settles(M('C6', `${mode}: read inside the workspace`), hooks.requestPermission(t.ad, sid, t.read())), 'approved', M('C6', `${mode}: a read inside the workspace is approved`));
+      if (!hooks.readsDecidedByVendor) assert.strictEqual(await settles(M('C6', `${mode}: read inside the workspace`), hooks.requestPermission(t.ad, sid, t.read())), 'approved', M('C6', `${mode}: a read inside the workspace is approved`));
       if (mode === 'read-only') {
         assert.strictEqual(await settles(M('C6', 'read-only: write'), hooks.requestPermission(t.ad, sid, t.write())), 'denied', M('C6', 'read-only: a write is denied'));
         assert.strictEqual(t.pending(), undefined, M('C6', 'read-only: a denied write leaves no pending state'));
@@ -235,6 +244,7 @@ export async function runContract(name: string, make: () => ContractTarget, hook
       }
       await t.ad.stop(sid);
     }
+    if (hooks.readsDecidedByVendor) skip('C6 workspace read', hooks.readsDecidedByVendor);
     // an unknown mode behaves as Read-only
     const u = fresh();
     const sid = await u.ad.start({ workspace: u.ws, permissionMode: 'bogus' as unknown as PermissionMode, quiet: true });
@@ -503,9 +513,56 @@ async function main(): Promise<void> {
     }
   }
 
+  // ---- T043a (FR-099): the same suite on CodexAdapter, with a scripted in-memory app-server (scripts/fakes/codex-app-server.ts).
+  // platform and version are injected so C3 and C6 do not depend on the runner's OS or on a Codex install.
+  {
+    const fxDir = path.join(__dirname, '..', '..', 'scripts', 'fixtures', 'codex');
+    const turn = JSON.parse(fs.readFileSync(path.join(fxDir, 'thread-turn.json'), 'utf8')) as { notifications: Array<{ method: string; params?: unknown }> };
+    const servers = new Map<AgentAdapter, FakeCodexServer>();
+    const dirs: string[] = [];
+    const codexMake = (): ContractTarget => {
+      const server = new FakeCodexServer({ turnScript: turn.notifications });
+      const ad = new CodexAdapter({ spawn: server.spawn, locate: async () => ({ path: path.join(os.tmpdir(), 'fake-codex'), version: '0.163.0' }), platform: 'linux', env: {} });
+      servers.set(ad, server);
+      const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-contract-codex-'));
+      dirs.push(workspace);
+      return { ad, workspace };
+    };
+    const codexHooks: ContractHooks = {
+      requestPermission: async (ad, sid, req) => {
+        const server = servers.get(ad)!;
+        const child = server.childOfThread(sid)!;
+        if (req.kind !== 'write') throw new Error(`the Codex contract hook only sends writes, not ${req.kind}`);
+        const rep = await server.serverRequest('item/fileChange/requestApproval', { threadId: sid, itemId: req.toolCallId, changes: [{ path: req.fileName }] }, child);
+        return (rep.result as { decision?: string } | undefined)?.decision === 'accept' ? 'approved' : 'denied';
+      },
+      turn: async (ad, sid) => {
+        await ad.send(sid, { text: 'go' });
+        await servers.get(ad)!.flush();
+      },
+      readsDecidedByVendor: 'read decided by the Codex profile; settings asserted by test-sc004 FR-088',
+    };
+    try {
+      const r = await runContract('codex', codexMake, codexHooks);
+      reports.set('codex', r);
+      console.log(`codex: ran ${r.ran.join(' ')}; skipped ${r.skipped.length ? r.skipped.join(', ') : 'none'}`);
+      assert.strictEqual(r.ran.length, 9, 'codex runs C1-C8 and C10 (nine checks)');
+      assert.ok(!r.ran.includes('C9'), 'codex does not run C9');
+      assert.deepStrictEqual(
+        r.skipped,
+        ["C6 workspace read (read decided by the Codex profile; settings asserted by test-sc004 FR-088)", "C9 (permModeSwitch is not 'live')"],
+        'codex skips exactly the named C6 workspace read (D6) and C9',
+      );
+      for (const ad of servers.keys()) await ad.dispose();
+      for (const s of servers.values()) assert.deepStrictEqual(s.live, [], 'codex: no fake child is left running');
+    } finally {
+      for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
+    }
+  }
+
   // ---- FR-085 (spec 012 T026): C6 (modes) and C7 (stop denies pending) ran once for the fake and for every registered adapter, so a new adapter cannot skip them.
-  // A registered adapter without a contract run above fails here: add its run (T043 Codex, T045 Claude) when it is registered.
-  for (const id of ['fake-full', ...PRODUCTION_DESCRIPTORS.map((d) => d.id)]) {
+  // A registered or experimental adapter without a contract run above fails here: add its run when it is added.
+  for (const id of ['fake-full', ...PRODUCTION_DESCRIPTORS.map((d) => d.id), ...enabledExperimental({ DURBAR_CLAUDE: '1' }).map((d) => d.id), ...CODEX_EXPERIMENTAL_DESCRIPTORS.map((d) => d.id)]) {
     const r = reports.get(id);
     assert.ok(r, `FR-085: no contract run for the registered adapter ${id}`);
     for (const c of ['C6', 'C7']) assert.strictEqual(r.ran.filter((x) => x === c).length, 1, `FR-085: ${c} ran exactly once for ${id}`);

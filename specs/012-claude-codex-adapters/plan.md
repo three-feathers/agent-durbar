@@ -38,7 +38,7 @@ Renderer (capabilities only) <-- IPC 'agent:event' -- main.ts -- AdapterRegistry
                                                                                 '-- FakeAdapter     -- scripted events (tests, simulator-in-main)
 ```
 
-One adapter instance per id (one shared child process where the vendor allows: Codex one app-server for all threads; Claude one `query()` per session). `main.ts` routes an agent's calls to the adapter named in its folder entry.
+One adapter instance per id (Codex: one app-server child per session, decided 2026-10-18 for T043 D2 because `CodexMapper` routes notifications with no `threadId` to the main thread and a fresh child closes the T084 resume gap; Claude: one `query()` per session). `main.ts` routes an agent's calls to the adapter named in its folder entry.
 
 ### Files (flat, like `copilot.ts` and `map.ts` today)
 

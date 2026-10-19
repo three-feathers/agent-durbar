@@ -4,6 +4,10 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **MCP server groundwork: constants and per-OS paths (spec 041 T010, issue #175).** Where the MCP socket or named pipe and the key file would live on Windows, macOS and Linux, with a safety check for any folder outside the app's data folder. Not wired yet: nothing listens. No user-visible change, 0 AIU.
+
+- **MCP server groundwork: JSON-RPC framing and protocol (spec 041 T012, issue #176).** Newline framing with a 64 KB cap, the MCP `initialize`/`ping` subset with no new dependency, a fake client and synthetic handshakes for tests. Not wired yet: Durbar does not listen for MCP clients. No user-visible change, 0 AIU.
+
 - **Copilot can ask you questions too (spec 002 FR-058).** Copilot sessions now get Copilot's `ask_user` tool. When Copilot asks you to choose, the same question card appears in the chat. Before this, the tool was missing because the app did not answer it. Checked on a real Copilot session (0.18 AIU).
 
 - **Questions from the agent (spec 012 FR-128..FR-131, issue #60).** When the Claude agent asks you to choose (`AskUserQuestion`), the chat shows a card with an option button for each choice (several when allowed), an "Other" field, and Answer and Skip. The agent waits with "Waiting for your answer". Before this, those questions were always refused. Checked on a real Claude Code in all three permission modes ($0.007) and in the real app. The question event is generic, so other agents can use it later.
@@ -27,6 +31,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 - Floor names: every hidden character is now written as an escape in source, more look-alike and layout characters are refused (line and paragraph separators, soft hyphen, invisible operators, fillers, annotation marks), a saved name with a C1 control keeps its floor, and the simulator's rule is tested against the shared one (spec 033 delta, T041, issue #167; 0 AIU, unit tests).
 
 - **Claude Code adapter, experimental (spec 012 T090-T094, issues #48, #49, #53).** With `DURBAR_CLAUDE=1` the agent-kind picker offers Claude Code. It drives your installed `claude` directly over its own stream protocol (no new dependency); the Claude Agent SDK can be used instead when it is installed and `DURBAR_CLAUDE_TRANSPORT=sdk` is set (not bundled: its licence is Anthropic's Commercial Terms). Read-only, Ask first and Allow all are enforced through Durbar's own permission broker, a read outside the session's folders is denied by a hook, the folder's `CLAUDE.md` is passed as instructions while Claude's own settings files are not loaded. Checked on a real Claude Code 2.1.302 with `haiku` (about $0.015): every mode, interrupt, stop and resume. Not offered to everyone yet (T095).
+
+- **Codex adapter groundwork (spec 012 T043a, issue #51).** A `CodexAdapter` that talks to `codex app-server` (one child per session): handshake with the read-limited profile, start with the fail-closed refusals, send, approvals through Durbar's broker, interrupt, stop, crash handling, and the adapter contract suite, all on a scripted in-memory fake. Codex never gets other tools' tokens (`GH_TOKEN`, `COPILOT_*`, `ANTHROPIC_*`) in its environment. It is **not registered in the app**: a dev hook (`DURBAR_CODEX=1`) is planned for T043c and does not exist yet. Nothing was run on a real Codex.
 
 - **A calm warning when you add your home folder, a parent of it or a drive root (spec 006 FR-016, issue #170).** Adding is still allowed; one line says that agents there can read everything under your home folder (or the whole drive), SSH keys and saved credentials included. Windows drive and network-share roots and macOS's case-insensitive paths are covered by unit tests. Simulator and unit tests, 0 AIU.
 

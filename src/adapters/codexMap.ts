@@ -70,6 +70,17 @@ export class CodexMapper {
     return this.main;
   }
 
+  /**
+   * Make `threadId` the main thread without a `thread/started` (a thread resumed on a fresh child may never announce itself;
+   * without this every notification that names the thread is dropped by `route`). Emits nothing. Only when no main thread
+   * is known yet: a mapper that already follows a thread is never re-pointed.
+   */
+  adopt(threadId: string, cwd?: string): void {
+    if (this.main !== undefined || !threadId || typeof threadId !== 'string') return;
+    this.main = threadId;
+    this.cwd = cwd;
+  }
+
   reset(): void {
     this.main = this.cwd = undefined;
     this.children.clear();
