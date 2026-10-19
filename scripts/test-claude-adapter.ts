@@ -563,6 +563,29 @@ async function main(): Promise<void> {
     await ad.stop(sid);
   }
 
+  // ---- custom agents (spec 043 FR-008): chosen before the first message, passed on the first launch; a started session refuses ----
+  {
+    const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cagent-cfg-'));
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cagent-ws-'));
+    fs.mkdirSync(path.join(ws, '.claude', 'agents'), { recursive: true });
+    fs.writeFileSync(path.join(ws, '.claude', 'agents', 'pirate.md'), '---\nname: pirate\ndescription: Arr\n---\nYou are a pirate.');
+    const sp = fakeSpawn();
+    sp.next = scripted(okTurn);
+    const ad = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', configDir: cfg, makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const sid = await ad.start({ workspace: ws, quiet: true });
+    assert.deepStrictEqual((await ad.listAgentProfiles(sid)).map((p) => [p.id, p.source]), [['pirate', 'repo']]);
+    assert.strictEqual((await ad.selectAgentProfile(sid, 'pirate'))?.id, 'pirate');
+    await ad.send(sid, { text: 'hi' });
+    await until('launch', () => (sp.calls.length === 1 ? true : undefined));
+    const args = sp.calls[0].args;
+    assert.strictEqual(args[args.indexOf('--agent') + 1], 'pirate', 'the first launch starts with the agent');
+    assert.strictEqual(JSON.parse(args[args.indexOf('--agents') + 1]).pirate.prompt, 'You are a pirate.');
+    await assert.rejects(ad.selectAgentProfile(sid, null), /sets the agent when a session starts/, 'a started session refuses (Claude ignores --agent on --resume)');
+    await ad.stop(sid);
+    fs.rmSync(cfg, { recursive: true, force: true });
+    fs.rmSync(ws, { recursive: true, force: true });
+  }
+
   // ---- interrupt: pending permissions denied, the interrupt request sent, Aborted ----
   {
     const { ad, sp, events } = make({ turn: (c) => c.send({ type: 'control_request', request_id: 'p1', request: { subtype: 'can_use_tool', tool_name: 'Write', input: {}, tool_use_id: 'tu-9' } }) });

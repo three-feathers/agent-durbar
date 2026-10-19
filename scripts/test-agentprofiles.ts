@@ -9,6 +9,8 @@ import * as path from 'path';
 import { AgentTrustStore, hashAgentFile, parseAgentTrust } from '../src/main/agenttrust';
 import { agentDirsFor, profileOf } from '../src/adapters/copilot';
 import { EventMapper } from '../src/adapters/map';
+import { agentsArg, listClaudeAgents, parseClaudeAgent } from '../src/adapters/claudeAgents';
+import { claudeArgs } from '../src/adapters/claude';
 import type { EventBody } from '../src/adapters/map';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-agents-test-'));
@@ -66,6 +68,33 @@ assert.strictEqual(profileOf({ id: 'x', name: 'x‮ evil', displayName: undefine
   assert.ok(!fs.readFileSync(file, 'utf8').includes('Arr'), 'no file content saved');
   assert.deepStrictEqual(parseAgentTrust('{"trusted":[{"folder":"/a","agentId":"x","sha256":"zz"},{"folder":"/a","agentId":"x","sha256":"' + 'a'.repeat(64) + '"},7]}'), [{ folder: '/a', agentId: 'x', sha256: 'a'.repeat(64) }]);
   assert.deepStrictEqual(parseAgentTrust('nope'), []);
+}
+
+// spec 043 FR-008: Claude agent files
+{
+  const a = parseClaudeAgent('---\nname: reviewer\ndescription: Reviews changes\ntools: Read, Grep\nmodel: haiku\n---\nYou review code.\n', 'reviewer.md', 'repo', '/w/.claude/agents/reviewer.md');
+  assert.deepStrictEqual(a, { profile: { id: 'reviewer', name: 'reviewer', description: 'Reviews changes', source: 'repo', path: '/w/.claude/agents/reviewer.md', tools: ['Read', 'Grep'], model: 'haiku' }, prompt: 'You review code.' });
+  const b = parseClaudeAgent('---\ndescription: x\ntools:\n  - Read\n  - "Bash"\nmodel: inherit\n---\nPrompt', 'from-file.md', 'user');
+  assert.deepStrictEqual([b?.profile.id, b?.profile.tools, b?.profile.model], ['from-file', ['Read', 'Bash'], undefined], 'name from the file, YAML list, inherit = none');
+  assert.strictEqual(parseClaudeAgent('---\nname: bad name!\n---\nx', 'x.md', 'user'), undefined, 'bad names are skipped');
+  assert.strictEqual(parseClaudeAgent('---\nname: empty\n---\n', 'e.md', 'user'), undefined, 'an agent needs a prompt');
+  assert.strictEqual(parseClaudeAgent('Just a prompt', 'plain.md', 'user')?.profile.id, 'plain', 'no front matter: the file name');
+  assert.deepStrictEqual(JSON.parse(agentsArg(a!)), { reviewer: { description: 'Reviews changes', prompt: 'You review code.', tools: ['Read', 'Grep'], model: 'haiku' } });
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cagents-cfg-'));
+  fs.mkdirSync(path.join(WS, '.claude', 'agents'), { recursive: true });
+  fs.mkdirSync(path.join(cfg, 'agents'), { recursive: true });
+  fs.writeFileSync(path.join(WS, '.claude', 'agents', 'pirate.md'), '---\nname: pirate\ndescription: Arr\n---\nYou are a pirate.');
+  fs.writeFileSync(path.join(cfg, 'agents', 'pirate.md'), '---\nname: pirate\n---\nA user pirate.');
+  fs.writeFileSync(path.join(cfg, 'agents', 'mine.md'), '---\nname: mine\n---\nMy own agent.');
+  fs.writeFileSync(path.join(cfg, 'agents', 'huge.md'), '---\nname: huge\n---\n' + 'x'.repeat(70 * 1024));
+  const list = listClaudeAgents([WS, WS], cfg);
+  assert.deepStrictEqual(list.map((d) => [d.profile.id, d.profile.source]), [['pirate', 'repo'], ['mine', 'user']], 'the folder wins a name clash; files over 64 KB are skipped');
+  assert.deepStrictEqual(listClaudeAgents(['/nope'], path.join(cfg, 'missing')), []);
+  const args = claudeArgs({ mode: 'read-only', sessionId: 's', resume: true, agent: { name: 'pirate', json: agentsArg(list[0]) } });
+  const i = args.indexOf('--agents');
+  assert.ok(i >= 0 && JSON.parse(args[i + 1]).pirate.prompt === 'You are a pirate.' && args[args.indexOf('--agent') + 1] === 'pirate');
+  assert.ok(!claudeArgs({ mode: 'read-only', sessionId: 's', resume: true, agent: { name: 'bad name', json: '{}' } }).includes('--agent'), 'a bad name is not passed');
+  fs.rmSync(cfg, { recursive: true, force: true });
 }
 
 fs.rmSync(dir, { recursive: true, force: true });
