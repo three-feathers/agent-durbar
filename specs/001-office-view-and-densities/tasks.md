@@ -42,4 +42,4 @@
 ## Changes 2026-10-19 (first run)
 
 - [x] T032 Welcome card for an empty office; screenshots [FR-026]
-- [ ] T033 (2026-10-19) Positioning: many harnesses, anyone with agents (welcome card, About agent kinds, README, package.json, repo description) [FR-027]
+- [x] T033 (2026-10-19) Positioning: many harnesses, anyone with agents (welcome card, About agent kinds, README, package.json, repo description) [FR-027]

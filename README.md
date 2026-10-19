@@ -4,9 +4,9 @@
 
 <h1 align="center">Agent Durbar</h1>
 
-<p align="center"><em>A calm command center for your coding agents</em></p>
+<p align="center"><em>A calm command center for your AI agents</em></p>
 
-Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.
+An office-style command center to see, chat with and coordinate **AI agents across several harnesses**: GitHub Copilot and Claude Code today, Codex in progress. It is for **anyone who works with agents**, not only developers. A room is any folder an agent works in: code, documents, research or notes.
 
 > Status: **alpha, `v0.1.0-alpha.6` ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.6), unsigned, not notarized).** It offers **Claude Code next to Copilot** when it is installed, and continues each folder's **last session after a restart**. It also adds questions from agents, custom agents per session, scheduled prompts and copy buttons, plus a security sweep; see [CHANGELOG.md](CHANGELOG.md). `v0.1.0-alpha.5` stays available. The Electron app starts real GitHub Copilot sessions through `@github/copilot-sdk`, one per folder or `.code-workspace` file, and feeds the office view from live events. 10-15 agents stay readable on one 1440x900 / 1280x800 screen. **Claude Code is offered next to Copilot when it is installed and signed in** (no switch needed); Codex is groundwork only (see [Agents and adapters](#agents-and-adapters)). Latest work: [themes](#status-themes-clean-office-corporate-retro-pixel-three-durbar-courts-your-own-packs), [agents show how they are doing](#status-agents-show-how-they-are-doing-heavy-monster-ambulance-room-sirens), [floors](#status-floors-group-rooms-and-switch-a-floor-off), [places in the office](#status-places-in-the-office-a-shared-lobby-agents-walk-to-the-tool-they-use), [milestone 10 and usage totals](#status-milestone-10-tools-all-time-the-copilot-cli-mcp-list-first-mcp-extras-per-folder). Only Linux has been run by hand; macOS and Windows are built and unit-tested in CI but untested on real hardware. Built by [Three Feathers](https://github.com/three-feathers); the work is tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
 
@@ -543,7 +543,9 @@ Not done yet / known gaps:
 
 ## Vision
 
-- **See**: every running coding agent at a glance, what it is doing now, and its state (idle / working / needs permission / error).
+- **Any harness, side by side**: GitHub Copilot, Claude Code and (in progress) Codex agents in one office, each with its own permission mode, model and usage.
+- **For anyone with agents**: writing, research, operations or code. Durbar shows what agents do in plain words and keeps you in control of what they may do.
+- **See**: every running agent at a glance, what it is doing now, and its state (idle / working / needs permission / error).
 - **Control**: start, stop and message agents; approve or deny permission prompts.
 - **Coordinate**: group agents by project/folder and watch them work in parallel.
 - **Office view**: each agent is a person in a room; sub-agents appear next to the agent that spawned them.
