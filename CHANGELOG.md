@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.6 tag)
 
+- **Codex groundwork: sign-in check (spec 012 FR-137).** Codex detection now runs `codex login status` after the version, so a signed-out Codex will show "not signed in" with how to sign in. It takes effect when the Codex adapter is offered (#51).
+
 - **Open in VS Code Insiders or VSCodium (spec 009 FR-015).** "Open in VS Code" now tries VS Code, then VS Code Insiders, then VSCodium, and says which one it opened.
 
 - **Linux: the running window shows the app icon (spec 008 FR-025/FR-026, issue #247).** The window now has the icon. The AppImage's desktop entry also matches the window (`StartupWMClass=agent-durbar`; alpha.6 had `Agent Durbar`), so docks can link the two.

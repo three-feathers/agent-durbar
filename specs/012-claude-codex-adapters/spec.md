@@ -649,3 +649,19 @@ The owner's answers so far, quoted from the sessions where they were given. Q6, 
 - **Q7 Dollar cap for Claude. Open** (T081, issue #75). Today Claude shows a dollar estimate apart from AIU and has no cap.
 - **Q8 Project settings. Answered** 2026-10-18 (recorded above): never load any.
 - **Q9 Windows check of the Codex sandbox. Open** (T070, issue #72): it needs a Windows machine.
+
+### 2026-10-19: Codex sign-in check, and the first real Codex probe (T047 Codex half, T061; issues #55, #63)
+
+The agent installed `@openai/codex` 0.163.0 at the owner's request ("you can install codex, i have chatgpt plus subscription"), and the owner signed in with `codex login` (ChatGPT).
+
+- `real:` (T061, 2026-10-19, no prompt, no usage):
+  - `codex --version` gives `codex-cli 0.163.0`.
+  - `codex app-server`'s `initialize` answers `{userAgent, codexHome, platformFamily, platformOs}`.
+  - `account/read` answers `{account: {type, email, planType}, requiresOpenaiAuth, workspaceRouting: {...}}`, with `type: chatgpt` and `planType: plus`. The e-mail and ids were not printed or kept.
+  - `codex login status` prints `Logged in using ChatGPT` and exits 0. With an empty `CODEX_HOME` it prints `Not logged in` and exits **1**.
+- **FR-137** `[IMPLEMENTED]` Codex detection (when the adapter is registered, FR-100) runs the version probe, then `codex login status` (argv, no shell, 5 s; no prompt, nothing billed):
+  - `Not logged in` in the output (it exits 1) means **not signed in**; an exit code alone does not, since an older CLI without the command fails too, with the hint "Sign in first: run `codex login` in a terminal, then refresh the agent kinds.";
+  - exit 0 with `Logged in` means **ready**, "Signed in to Codex on this computer.";
+  - anything unclear (an older CLI, a timeout, other text) keeps **ready**, as for Claude (FR-132).
+  
+  Only the exit code and those two phrases are read; nothing of the output is kept. `test:` fake exec cases in `test-detect`. `real:` `detectCodex` on the installed CLI gave `ready` / "Signed in to Codex on this computer.", and with an empty `CODEX_HOME` gave `not-signed-in` with the hint. Codex stays unregistered until #51 lands; `detectorFor('codex')` is wired so it works once it is.
