@@ -18,6 +18,8 @@ type ModelChoice = import('../shared/api').ModelChoice;
 type AdapterInfo = import('../shared/api').AdapterInfo;
 type FloorsState = import('../shared/api').FloorsState;
 type FloorsResult = import('../shared/api').FloorsResult;
+type ScheduleInfo = import('../shared/api').ScheduleInfo;
+type SchedulesInfo = import('../shared/api').SchedulesInfo;
 type ModelSwitchRequest = import('../shared/modelswitch').ModelSwitchRequest;
 type ModelSwitchResult = import('../shared/modelswitch').ModelSwitchResult;
 type ContextTier = import('../shared/modelswitch').ContextTier;
@@ -311,6 +313,29 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       }, 300);
     }
     const simTrusted = new Set<string>(); // spec 043: repository agents confirmed in this run
+    const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number }) => void)[],
+      changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); } };
+    window.setInterval(() => {
+      const now = Date.now();
+      let any = false;
+      for (const sc of simSched.list) {
+        const due = sc.done || sc.paused ? undefined : sc.every !== undefined ? sc.next : sc.at;
+        if (due === undefined || due > now) continue;
+        any = true;
+        const s = sims.find((x) => (x.info.workspaceFile ?? x.info.cwd) === sc.folder);
+        const busy = !!s && (s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.perm);
+        const outcome = simSched.pausedAll ? 'skipped-paused' : !s ? 'failed' : busy ? 'skipped-busy' : 'sent';
+        if (outcome === 'sent' && s) {
+          emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: sc.prompt } as AgentEvent);
+          simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at }));
+          void api.send(s.info.id, sc.prompt, []);
+        }
+        sc.last = { at: now, outcome };
+        if (sc.every !== undefined) sc.next = now + sc.every * 60000;
+        else sc.done = true;
+      }
+      if (any) simSched.changed();
+    }, 1000);
     const sid = (s: SimAgent) => s.info.id;
     const pick = <T,>(a: T[]): T => a[Math.floor(rnd() * a.length)];
     const MODELS = ['gpt-6-luna', 'gpt-6-luna', 'gpt-5.6-luna', 'claude-sonnet-4.6'];
@@ -843,6 +868,22 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         emit({ type: 'agentProfile', sessionId: id, timestamp: now(), profile: p } as AgentEvent);
         return { ok: true, profile: p };
       },
+      // spec 044: scheduled prompts in memory; a 1 s check sends through the simulated agents (no credits)
+      listSchedules: async () => ({ pausedAll: simSched.pausedAll, schedules: simSched.list.map((x) => ({ ...x })) }),
+      saveSchedule: async (input) => {
+        const now = Date.now();
+        const every = input.every !== undefined ? Math.round(Number(input.every)) : undefined;
+        if (!input.folder || !String(input.prompt ?? '').trim() || (every === undefined && !(Number(input.at) > now)) || (every !== undefined && !(every >= 5 && every <= 1440))) return { ok: false as const, error: 'A schedule needs a prompt and either a future time or 5 to 1440 minutes.' };
+        const old = simSched.list.find((x) => x.id === input.id);
+        const sc: ScheduleInfo = { id: old?.id ?? 'sched-' + ++simSched.n, folder: input.folder, prompt: String(input.prompt).trim().slice(0, 2000), ...(every !== undefined ? { every, next: old?.next ?? now + every * 60000 } : { at: Number(input.at) }), ...(input.paused ? { paused: true } : {}), ...(old?.last ? { last: old.last } : {}) };
+        simSched.list = old ? simSched.list.map((x) => (x.id === sc.id ? sc : x)) : [...simSched.list, sc];
+        simSched.changed();
+        return { ok: true as const, schedule: sc };
+      },
+      removeSchedule: async (id) => { const n = simSched.list.length; simSched.list = simSched.list.filter((x) => x.id !== id); simSched.changed(); return { ok: simSched.list.length !== n }; },
+      setSchedulesPaused: async (on) => { simSched.pausedAll = on === true; simSched.changed(); return { ok: true, pausedAll: simSched.pausedAll }; },
+      onSchedules: (cb) => { simSched.subs.push(cb); return () => undefined; },
+      onScheduleRan: (cb) => { simSched.ran.push(cb); return () => undefined; },
       resolveLimit: async (id, requestId, choice) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || s.limitReq !== requestId) return { ok: false, error: 'That request is no longer open.' };

@@ -147,6 +147,23 @@ export interface ProfileInfo {
   mcpServers?: string[];
 }
 
+/** A scheduled prompt (spec 044); the same shape as the main process's. */
+export interface ScheduleInfo {
+  id: string;
+  folder: string;
+  prompt: string;
+  every?: number;
+  at?: number;
+  next?: number;
+  paused?: boolean;
+  done?: boolean;
+  last?: { at: number; outcome: 'sent' | 'skipped-busy' | 'skipped-paused' | 'missed' | 'failed' };
+}
+export interface SchedulesInfo {
+  pausedAll: boolean;
+  schedules: ScheduleInfo[];
+}
+
 export interface ModelChoice {
   id: string;
   name: string;
@@ -410,6 +427,13 @@ export interface DurbarApi {
   /** One-way: the window tells main an agent was paused or resumed (spec 041 T014); Paused exists only in the window. */
   setPaused?(id: string, paused: boolean): void;
   resolveLimit?(id: string, requestId: string, choice: LimitChoice): Promise<{ ok: boolean; error?: string }>;
+  /** Scheduled prompts (spec 044). */
+  listSchedules?(): Promise<SchedulesInfo>;
+  saveSchedule?(input: Partial<ScheduleInfo> & { folder: string; prompt: string }): Promise<{ ok: true; schedule: ScheduleInfo } | { ok: false; error: string }>;
+  removeSchedule?(id: string): Promise<{ ok: boolean }>;
+  setSchedulesPaused?(on: boolean): Promise<{ ok: boolean; pausedAll: boolean }>;
+  onSchedules?(cb: (doc: SchedulesInfo) => void): () => void;
+  onScheduleRan?(cb: (r: { agentId: string; scheduleId: string; every?: number; at?: number }) => void): () => void;
   /** Answer the agent's question (spec 012 FR-128): question text -> answer; null = skip. */
   answerQuestion?(id: string, requestId: string, answers: Record<string, string> | null): Promise<{ ok: boolean; error?: string }>;
   /** Custom agents the session can use (spec 043); `trusted` is false for a repository agent not yet confirmed for this folder and file. */

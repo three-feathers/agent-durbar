@@ -29,6 +29,8 @@ import { AgentStateTracker } from './mcp/agentstate';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { UsageStore } from './usagestore';
 import { AgentTrustStore, hashAgentFile } from './agenttrust';
+import { Scheduler, loadSchedules, saveSchedules } from './schedules';
+import type { SchedulerDeps } from './schedules';
 import { UsageTotalsStore } from './usagetotalsstore';
 import { folderKeyOf, folderNameOf } from '../shared/usagedoc';
 import { agentLabel } from '../shared/toolusage';
@@ -98,6 +100,11 @@ router.onEvent((e) => {
   if (!a) return; // removed or unknown: the tracker drops it too
   agentState.ensure(a.id, a.lazy);
   agentState.onEvent(e);
+});
+/** Each main agent's last status (spec 044: a scheduled run is skipped while the folder's agent is busy). */
+const lastStatus = new Map<string, string>();
+router.onEvent((e) => {
+  if (e.type === 'status' && !e.agentId) lastStatus.set(e.sessionId, e.status);
 });
 /** Key an agent's all-time counts are kept under: "<agent name> · <folder name>" (base name only, spec 020). */
 const usageLabel = (a: AgentInfo): string => agentLabel(a.name, a.workspaceFile ? path.basename(a.workspaceFile).replace(/\.code-workspace$/i, '') : a.cwd);
@@ -442,6 +449,35 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
   }
 }
 
+// ---- scheduled prompts (spec 044): per folder, while the app runs; the run goes through the user's own send path ----
+let scheduler: Scheduler | undefined;
+const folderAgent = (folder: string): AgentInfo | undefined => [...agents.values()].find((x) => wsKey(x) === folder);
+const scheduleDeps = (file: string): SchedulerDeps => ({
+  now: () => Date.now(),
+  isBusy: (folder) => [...agents.values()].some((x) => wsKey(x) === folder && ['working', 'needs-permission'].includes(lastStatus.get(x.id) ?? '')),
+  send: async (folder, prompt, s) => {
+    const a = folderAgent(folder);
+    const ad = a ? router.forAgent(a.id) : undefined;
+    if (!a || !ad) return false;
+    await ensureLive(a);
+    toRenderer('agent:event', { type: 'user', sessionId: a.id, timestamp: Date.now(), text: prompt });
+    toRenderer('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at });
+    await ad.send(a.id, { text: prompt });
+    return true;
+  },
+  setTimer: (ms, fn) => setTimeout(fn, ms),
+  clearTimer: (t) => clearTimeout(t as NodeJS.Timeout),
+  save: (doc) => saveSchedules(file, doc),
+  changed: (doc) => toRenderer('schedules:changed', doc),
+});
+ipcMain.handle('schedules:list', () => scheduler?.doc ?? { pausedAll: false, schedules: [] });
+ipcMain.handle('schedules:save', (_e, input: unknown) => (scheduler ? scheduler.save(input, (f) => !!folderStore?.get(f)) : { ok: false, error: 'Schedules are not available.' }));
+ipcMain.handle('schedules:remove', (_e, id: unknown) => ({ ok: typeof id === 'string' && !!scheduler?.remove(id) }));
+ipcMain.handle('schedules:setPausedAll', (_e, on: unknown) => {
+  scheduler?.setPausedAll(on === true);
+  return { ok: !!scheduler, pausedAll: scheduler?.doc.pausedAll ?? false };
+});
+
 // The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
 const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey };
 // Stop only interrupts the running turn (the agent returns to Ready); End session frees the runtime session.
@@ -730,6 +766,7 @@ ipcMain.handle('folders:remove', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false, removedIds: [] as string[] };
   const key = wsKey(a);
+  scheduler?.removeFolder(key); // spec 044: a removed folder takes its schedules with it
   const removedIds = [...agents.values()].filter((x) => wsKey(x) === key).map((x) => x.id);
   for (const rid of removedIds) {
     try {
@@ -867,6 +904,11 @@ app.whenReady().then(() => {
   agentTrust.load();
   usageTotalsStore.load();
   restoreFolders();
+  {
+    const file = path.join(app.getPath('userData'), 'durbar-schedules.json');
+    scheduler = new Scheduler(loadSchedules(file, Date.now()), scheduleDeps(file));
+    scheduler.start(); // missed once-runs are marked, intervals continue from now (spec 044 FR-002)
+  }
   createWindow();
   // Dev/headless convenience: DURBAR_OPEN="/path/a:/path/b" starts agents (read-only) on launch.
   const open = (dev.DURBAR_OPEN ?? '').split(path.delimiter).filter((p) => p && fs.existsSync(p));

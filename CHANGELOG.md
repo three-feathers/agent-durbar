@@ -6,6 +6,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **MCP server groundwork: agent state in the main process (spec 041 T014, issue #204).** The main process now keeps each agent's office word and sub-label (Working, Waiting for you, Limit reached…) with the same rules as the window, so the MCP read tools can report them later. Pausing in the window is reported to the main process. No visible change, 0 AIU.
 
+- **Scheduled prompts (spec 044, issue #125).** In **Folders**, each folder has **Schedules**: a prompt sent to the folder's agent once at a time or every N minutes, only while the app is open. A run is skipped when the agent is busy or waiting for you, missed runs are not caught up, and **Pause all schedules** stops everything. The agent's own permission mode and credit cap apply. Checked on a real Copilot session (0.16 AIU).
+
 - **Custom agents for Claude Code too (spec 043 FR-008).** The experimental Claude agent lists the folder's `.claude/agents` and your own `~/.claude/agents`, with the same one-time confirmation for a repository agent. Claude fixes the agent when a session starts, so it is chosen in the New session dialog or before the first message. Checked on a real Claude Code: a session started with a pirate agent answered "Arr…".
 
 - **A welcome for new users (spec 001 FR-026).** With no folder yet, the office shows a short welcome: sign in to Copilot once, add a folder (its agent starts Read-only), send a message. It has buttons to add a folder or look around in the demo.
