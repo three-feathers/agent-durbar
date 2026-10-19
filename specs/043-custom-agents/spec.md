@@ -82,3 +82,8 @@ The runtime has no queue for an agent switch. A choice made while the agent work
   - Findings fixed: agents loaded through `agentDirectories` are all reported as `source: user`, so the source is decided by the file's path (inside a session folder = repository); "all tools" is reported as `["*"]` and is shown as all tools.
 - `[KNOWN GAP]` Not run: an agent with its own MCP servers or tools list on a real session, switching during a running turn on a real session (simulator only), company-level agents, macOS and Windows.
 
+### 2026-10-19: the agent in the New session dialog (Phase 2, T010a)
+
+- **FR-007** `[IMPLEMENTED]` The New session dialog has an **Agent** select (Default agent and this folder's custom agents, the same list as the chip) when the kind can use custom agents and the chosen kind is the folder agent's own. The chosen agent is selected right after the new session starts, through the same path as the chip, so a repository agent still asks once. `sim:` driver at both sizes.
+- Research for the Claude half (T011, not built): with Durbar's flags (`--setting-sources ""`) Claude does not load the folder's `.claude/agents`, which is the safe default. A Claude version would pass explicit `--agents` JSON from the files (after the same confirmation) and `--agent <name>` at launch (a relaunch with `--resume`, like a mode change).
+

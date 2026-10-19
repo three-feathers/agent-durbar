@@ -19,3 +19,6 @@
 - [ ] T023 Decide whether chat history should persist across restarts (clarify; privacy implications). [FR-014]
 - [x] T024 Copy message / copy code buttons. [FR-015]
 - [ ] T025 Automated overflow test for the chat view (same harness as feature 001 T020). [SC-001]
+
+- [ ] T024 Copy message / copy code buttons. [FR-015]
+- [x] T025 Automated overflow test for the chat view (same harness as feature 001 T020). [SC-001]
