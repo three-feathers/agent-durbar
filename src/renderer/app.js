@@ -654,17 +654,18 @@ let layoutKey='', layout=null;
 const WELCOME_HTML=`<section class="welcome" aria-labelledby="wlT"><h2 id="wlT">Welcome to Agent Durbar</h2>
   <p class="wl-sub">Your AI agents in one office: see what each one is doing, chat with it, and decide what it may do. For code, documents, research or notes, with GitHub Copilot, Claude Code or OpenAI Codex side by side.</p>
   <ol class="wl-steps">
-    <li><b>Sign in to an agent harness once</b> on this computer: GitHub Copilot (<code>copilot login</code>, a free plan works), Claude Code (<code>claude auth login</code>) or OpenAI Codex (<code>codex login</code>). Several can be used side by side.</li>
+    <li><b>Set up an agent harness once</b>: GitHub Copilot (a free plan works), Claude Code or OpenAI Codex. <b>Set up harnesses…</b> installs and signs in for you, showing every step; nothing is typed in a terminal.</li>
     <li><b>Add a folder</b> with <b>+ Folder</b>: a project, a set of documents, any folder your agent should work in. Each folder becomes a room with its own agent. Agents start in <b>Read-only</b>: they can read the folder, nothing else.</li>
     <li><b>Send a message</b> to start. Switch to <b>Ask first</b> or <b>Allow all</b> only for folders you trust.</li>
   </ol>
-  <div class="wl-actions"><button class="btn primary" type="button" data-wl="add">+ Add a folder</button><button class="btn" type="button" data-wl="demo">Look around in the demo</button></div>
+  <div class="wl-actions"><button class="btn" type="button" data-wl="setup">Set up harnesses…</button><button class="btn primary" type="button" data-wl="add">+ Add a folder</button><button class="btn" type="button" data-wl="demo">Look around in the demo</button></div>
   <label class="wl-simple"><input type="checkbox" data-wl-simple> <span><b>Simple view</b>: plain words and cost in money, without developer details. You can change it any time in Settings.</span></label>
   <p class="wl-note">Agents run on your computer, as you, and use your own plan (Copilot AI credits, your Claude or ChatGPT plan).</p></section>`;
 /* spec 052 FR-031: the welcome card offers Simple */
 document.addEventListener('change',e=>{if(e.target&&e.target.matches&&e.target.matches('[data-wl-simple]'))setDetail(e.target.checked?'simple':'expert');});
 document.addEventListener('click',e=>{const b=e.target.closest('[data-wl]');if(!b)return;
   if(b.dataset.wl==='add')$('addFolder').click();
+  else if(b.dataset.wl==='setup')window.DurbarScreens.openSettings('harnesses'); /* spec 051 FR-008 */
   else{const t=$('demoToggle');t.checked=true;t.dispatchEvent(new Event('change'));}});
 function renderOffice(){
   if(ui.view!=='office')return;
@@ -2247,9 +2248,10 @@ async function loadKinds(refresh){
 async function aboutKinds(){
   for(;;){
     const ch=DMK().kindChoices(KINDS);
-    const r=await askDialog({title:'About agent kinds',body:'Each kind is a different agent harness. Only a kind that is ready can be chosen. Nothing is installed or run from here: copy the hint if you need to set one up.',
+    const r=await askDialog({title:'About agent kinds',body:'Each kind is a different agent harness. Only a kind that is ready can be chosen. Settings > Harnesses can install, update or sign in to one for you.',
       lines:ch.map(k=>k.name+': '+(k.state==='ready'?'ready':k.stateText)+(k.version?' · version '+k.version:'')+(k.hint?' · '+k.hint:'')),
-      buttons:[{label:'Close',value:null},{label:'Check again',value:'again',cls:'primary'}],returnFocus:()=>$('kindHelp')});
+      buttons:[{label:'Close',value:null},{label:'Check again',value:'again'},{label:'Set up harnesses…',value:'setup',cls:'primary'}],returnFocus:()=>$('kindHelp')});
+    if(r&&r.value==='setup'){window.DurbarScreens.openSettings('harnesses');return;} /* spec 051 FR-008 */
     if(!r||r.value!=='again')return;
     await loadKinds(true);
   }

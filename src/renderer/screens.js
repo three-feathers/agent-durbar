@@ -170,6 +170,8 @@
         <details class="scr-more"><summary>More</summary><p class="scr-note small"><b>Folder extras…</b> in an agent's MCP menu opens the same list. Extras apply only to agents in that folder and are never shared with other folders. Switching one on shows its exact command first, and asks again if the command changes.</p></details>
       </section></details>${aboutSec}</div>`;
     wireHead();
+    /* spec 051 FR-008: entry points open Settings at Harnesses */
+    if(cur.section==='harnesses'){cur.section=null;const h=$('hsH');if(h){h.scrollIntoView({block:'start'});h.focus({preventScroll:true});}}
     if($('advMcp')){$('advMcp').ontoggle=()=>{advOpen=$('advMcp').open;};if(cur.section==='mcp'){cur.section=null;const h=$('mcpH');if(h){h.scrollIntoView({block:'start'});h.focus({preventScroll:true});}}}
     if(X.floors&&$('floorsSet'))X.floors.render();
     if(X.sched&&$('schedSet'))X.sched.render();
@@ -742,7 +744,7 @@
   window.DurbarScreens={
     init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,toast:(t)=>ctx.toast(ctx.esc(t),3600),onChange:(again)=>{X._hsRefresh=true;if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
-    openSettings:(section)=>{mcp=null;open('settings',section==='mcp'?{section:'mcp'}:null);},
+    openSettings:(section)=>{mcp=null;open('settings',section==='mcp'||section==='harnesses'?{section}:null);},
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},
     agentMcp,
     placeDialog,

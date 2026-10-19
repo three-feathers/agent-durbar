@@ -2,7 +2,7 @@
 
 **Feature Branch**: `051-harness-setup`
 **Created**: 2026-10-19
-**Status**: In progress (Phase 1: Settings > Harnesses with install, update and sign-in for Claude Code, Codex and the Copilot sign-in)
+**Status**: Built (Phase 1): Settings > Harnesses with install, update and sign-in for Copilot, Claude Code and Codex; simulator and unit tests, plus real sign-in flows started and cancelled on this machine
 **Input**: Issue #299. Owner (Telegram, 2026-10-19): "for harness setup itself - today we only say that in text, it is better to have wizards inside app to setup harnesses to make life of users easier as this app will also be used by non technical users". The open questions on #299 were decided by Vikram's agent under the owner's delegation the same day ("take decisions on issues which can be taken and you have all means to research and verify"); the decisions are in the issue comment and below.
 
 ## Summary
@@ -71,9 +71,9 @@ Each sign-in was started **without a terminal** (stdin closed, output to a file)
 - **FR-006** **Copilot needs the Copilot CLI only to sign in.** When Copilot is not signed in and the `copilot` CLI is not found, *Sign in…* first offers to install the Copilot CLI (FR-002), then continues with the sign-in.
 - **FR-007** **Copilot sign-in status.** The Copilot adapter gets an optional `authStatus()` that calls `getAuthStatus()` on its shared runtime client: `{ signedIn: boolean }` only (the login name, host and message are dropped). Settings > Harnesses shows Copilot as *Not signed in* when it is false. Detection itself stays free of I/O (`detectCopilot`), so the app's start does not change.
 - **FR-008** **Entry points:**
-  - the welcome screen's sign-in step gets a *Set up harnesses…* link;
-  - in the New session dialog, an unready harness's hint ends with *Set up…*, which opens Settings > Harnesses;
-  - both scroll to the Harnesses section.
+  - the welcome card leads with **Set up harnesses…**;
+  - "About agent kinds" (the "?" next to the harness picker) has **Set up harnesses…**;
+  - both open Settings at the Harnesses section.
 - **FR-009** **Simulator:** with `DURBAR_SIM`, Settings > Harnesses shows Copilot *Ready*, Claude Code *Not signed in* and Codex *Not installed* (with `DURBAR_SIM_KINDS=mixed`). The install and sign-in dialogs play canned output (a fake link and code); nothing runs.
 - **FR-010** **Safety summary** (constitution III):
   - no shell, fixed argv;
@@ -87,6 +87,37 @@ Each sign-in was started **without a terminal** (stdin closed, output to a file)
 - **SC-001** Someone with no terminal knowledge can go from *Not signed in* to *Ready* for Codex or Copilot by clicking *Sign in…*, opening the link and typing the code shown, without leaving Durbar except for the browser.
 - **SC-002** Every command Durbar runs is shown to the user before it runs, and is one of the fixed plans in FR-002 or FR-005.
 - **SC-003** `npm test` covers the plans per OS, the output parsing on the captured outputs, the link allowlist, the paste rules and the runner (fake processes).
+
+## Evidence (2026-10-20)
+
+- `[IMPLEMENTED]`:
+  - `src/shared/harnesssetup.ts` (plans, sign-in parsing, link allowlist, paste rules);
+  - `src/main/harnesssetup.ts` (`HarnessSetup` runner);
+  - IPC `harness:*` and Copilot `authStatus()`;
+  - `src/renderer/harnesses.js` (Settings > Harnesses cards and dialogs);
+  - entry points: the welcome card's **Set up harnesses…**, and the same button in "About agent kinds";
+  - simulator canned flows (`simkinds=solo`).
+- `test:` `test:harnesssetup`:
+  - plans per OS and copies, every argument a plain word;
+  - sign-in parsing on the captured outputs, the link allowlist (suffix, prefix, user info, port and host per harness), the paste rules, ANSI handling and the last lines;
+  - the runner with a fake process: argv, no stdin for device flows, one operation at a time, paste only to Claude, Copilot CLI missing, cancel, timeout, Linuxbrew found, Windows `.cmd` through `cmd /d /s /c` with an unsafe path refused, and output redacted.
+- `sim:` `scripts/shots-051-setup.js` passes at 1440x900 and 1280x800:
+  - three cards (Ready / Not installed / Update needed);
+  - Install shows the exact commands, then runs and closes;
+  - the sign-in shows the link button and the code.
+
+  Screenshots: `docs/screenshots/051-*.png`. The welcome driver passes with the new step 1.
+- `real:` 2026-10-20, this machine (Linux), through `HarnessSetup` with real processes. Each ran with an isolated, empty config folder (`CODEX_HOME`, `COPILOT_HOME`, `CLAUDE_CONFIG_DIR`) and was **cancelled before finishing**, so no real login was changed:
+  - Codex: `auth.openai.com/codex/device` and a code;
+  - Copilot CLI: `github.com` and a code;
+  - Claude Code: a `claude.com` link and the paste prompt.
+
+  All three ended "cancelled".
+- `[KNOWN GAP]`:
+  - no sign-in was completed through the app (that would replace the real logins on this machine);
+  - no install ran for real: winget and Homebrew are not here, and npm `-g` was not run;
+  - Copilot's signed-out state was not observed for real, because the runtime finds the GitHub CLI login in the keychain;
+  - macOS and Windows are untested.
 
 ## Changes
 
