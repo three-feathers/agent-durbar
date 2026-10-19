@@ -4,6 +4,12 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.7 tag)
 
+- **Calmer and clearer, from four persona reviews (spec 052).**
+  - **Answering:** a waiting agent's request is pinned above the message box when its card scrolls away, with the same Approve / Deny buttons. *Previous sessions* no longer opens over a conversation. **N** jumps to the next agent that needs you.
+  - **Chat header:** Open in VS Code, Stop and a **More** menu, with End and Remove last.
+  - **Permissions:** the "restored in Allow all" notice stays until you close it, in plain words. The top bar's mode says **New: Read-only**, because it is the default for new sessions.
+  - **Status and wording:** status counts have shapes (◆ waiting, ▲ error) and spoken labels. Muted text and the focus ring meet contrast. Plain words replace "fainted", "dizzy" and "credits not reported", and themed places keep their plain names in tooltips.
+  - **Fixed:** the List view's header row nodded along with the cartoon heads.
 - **Make a theme with AI (spec 040 FR-014..FR-021, #182).** Describe a look, or pick one of the ideas, and Claude Code or Codex designs a light or dark theme: every colour, a style, place names and art for the people and furniture. Only safe values are kept, art goes through the same sanitiser as imported packs, and readable text is checked; up to 3 passes fix what fails. Try it on the whole app before you save it.
 - **Fixed: Export the active theme** (spec 040 FR-019). It exports the theme that is active now. On a built-in theme it explains why there is nothing to export, and the export picker can create a new folder.
 - **Faster checks that keep the computer usable** (spec 008 FR-028..FR-031). The full office layout check runs in Clean Office, and a one-minute **theme geometry** check proves every other theme lays out identically (every box and font size) and passes the layout rules in its own fonts. The full check in every theme runs on demand. Locally, `npm run check:themes` runs a few checks at a time, at low priority, and stops a job when memory runs low. Animation is checked once, in the plain office check. `npm test` leaves a core free.

@@ -101,7 +101,9 @@ function pageCheck(expanded, expectPlaces) {
     const addBtns = lobby.querySelectorAll('.place-add');
     if (addBtns.length !== (places.length < 8 ? 1 : 0)) problems.push(`${addBtns.length} Add buttons with ${places.length} places`);
     addBtns.forEach((b) => { inside(b, L, 'the lobby'); if (!b.getAttribute('aria-label')) problems.push('the Add button has no accessible name'); });
-    places.forEach((pl) => { const n = pl.querySelector('.pn'); if (!n || !pl.getAttribute('aria-label').startsWith(n.textContent + ':') || !pl.title.startsWith(n.textContent + ':')) problems.push(`place ${pl.dataset.place}: its full name is not in the tooltip and the label`); });
+    /* spec 052 FR-013: a themed place may add its plain name, "Cartridge Bay (Software library): …" */
+    const fullName = (t, n) => t.startsWith(n + ':') || t.startsWith(n + ' (');
+    places.forEach((pl) => { const n = pl.querySelector('.pn'); if (!n || !fullName(pl.getAttribute('aria-label'), n.textContent) || !fullName(pl.title, n.textContent)) problems.push(`place ${pl.dataset.place}: its full name is not in the tooltip and the label`); });
     places.forEach((pl) => { inside(pl, L, 'the lobby'); pl.querySelectorAll('.pic, .pn, .prow, .slot').forEach((e) => inside(e, R(pl), 'its place ' + pl.dataset.place)); });
     const slots = [...lobby.querySelectorAll('.slot.on')].map(R);
     const walkers = [...document.querySelectorAll('#walkers .walker')];
@@ -502,6 +504,8 @@ async function driver(ctx) {
     let found = false;
     for (const id of ids) {
       await ctx.js(`(async()=>{const d=document.querySelector('#stage .desk[data-id="${id}"]');if(d)d.click();await new Promise(r=>setTimeout(r,350));return true})()`);
+      // spec 052 FR-002: the list stays closed over a conversation; open it like a user would
+      await ctx.js(`(async()=>{const t=document.querySelector('.prev-toggle[aria-expanded="false"]');if(t){t.click();await new Promise(r=>setTimeout(r,250));}return true})()`);
       found = await ctx.js(`!!document.getElementById('prevQ')&&!document.getElementById('prevQ').closest('[hidden]')`);
       if (found) break;
       await ctx.js(`(async()=>{const b=document.getElementById('backBtn');if(b)b.click();await new Promise(r=>setTimeout(r,120));return true})()`);
