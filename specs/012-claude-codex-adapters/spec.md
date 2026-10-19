@@ -581,7 +581,7 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 ### 2026-10-19: the SDK path in a packaged build (issue #52, T044 part)
 
 - `real:` (local, Linux) `npm run pack:dir`, then the packaged binary `release/linux-unpacked/agent-durbar` with `DURBAR_DEV=1 DURBAR_CLAUDE=1 DURBAR_CLAUDE_TRANSPORT=sdk` and the driver `scripts/pack-esm-check.js` running inside the packaged main process (from `app.asar`): `{"packaged":true,"esmBuiltin":true,"esmFromAsar":true,"loadSdk":"undefined","registered":["claude"],"transport":"cli"}`. So the real ESM `import()` (the `new Function` wrapper in `claudeSdk.ts`) works from the CommonJS main process inside `app.asar`, a missing SDK is reported as "not available" without an error, the experimental registration works in a packaged build with the developer opt-in, and the SDK transport falls back to the CLI. No SDK, no `claude` run, no credits.
-- `[KNOWN GAP]` Not in CI and not on macOS or Windows (T044 stays open: it needs a CI change the owner should agree to). The SDK itself is not a dependency (Q3), so `asarUnpack` has nothing to unpack for it.
+- ~~`[KNOWN GAP]` Not in CI and not on macOS or Windows.~~ Closed 2026-10-19 (T044, issue #52, PR #270), see below. The SDK itself is not a dependency (Q3), so `asarUnpack` has nothing to unpack for it.
 
 ### 2026-10-19: real check, Read-only ignores allow rules in the folder's settings (T068, T067a; issues #70, #69)
 
@@ -638,7 +638,7 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 
 ### 2026-10-19: owner decision record (T060, issue #62)
 
-The owner's answers so far, quoted from the sessions where they were given. Q6, Q7 and Q9 have no answer yet.
+The owner's answers, quoted from the sessions where they were given. All nine are answered or settled (Q7 and Q9 on 2026-10-19 by the agent under the owner's grant: "you can handle what you can handle", "I trust you take right and safe decisions").
 
 - **Q1 Subscription login. Answered.** 2026-10-19: "for claude, lets support claude same as copilot if it is installed" (FR-135), and for Codex: "you can install codex, i have chatgpt plus subscription". Durbar drives the user's own installed and signed-in CLI (`claude`, `codex`), the same as Copilot's. It handles no credentials and loads no vendor settings files (Q8). The earlier policy check (T071) is closed on this basis.
 - **Q2 Budget for real checks. Answered.** 2026-10-18: "it is ok to spend tokens - no need to wait for me or someone to approve if you have tested things and they are good". The accounts are the owner's: GitHub Copilot (free plan: `auto` only), Claude (claude.ai login), and ChatGPT Plus for Codex. Rule kept: small runs (`haiku` / `auto`, a few prompts each), every one recorded as `real:` with its cost.
@@ -646,9 +646,9 @@ The owner's answers so far, quoted from the sessions where they were given. Q6, 
 - **Q4 SDK binary or the user's CLI. Settled by the build.** The user's installed `claude`, found by detection, with a version probe (FR-036..FR-040). No bundled binary.
 - **Q5 Order (C3). Reversed in practice.** C3 proposed Codex first; Claude Code was built, checked and shipped first (v0.1.0-alpha.6), as the owner asked. Codex follows (#51).
 - **Q6 Codex Read-only wording. Answered by the build (2026-10-19).** Read-only is enforced by a read-limited profile: reads inside the session folders, no writes, nothing outside visible (real check, FR-138 and the research findings). It is shown as plain Read-only.
-- **Q7 Dollar cap for Claude. Open** (T081, issue #75). Today Claude shows a dollar estimate apart from AIU and has no cap.
+- **Q7 Dollar cap for Claude. Decided: yes, a separate dollar cap** (FR-150, T081, issue #75, PR #269). It is per session, on Claude's estimate, and never mixed with AIU.
 - **Q8 Project settings. Answered** 2026-10-18 (recorded above): never load any.
-- **Q9 Windows check of the Codex sandbox. Open** (T070, issue #72): it needs a Windows machine.
+- **Q9 Windows check of the Codex sandbox. Settled: yes, a later owner-run task** (T070, issue #72), because it needs a Windows machine. Meanwhile Codex Read-only on Windows is `[KNOWN GAP]` (not run there), as the spec already says.
 
 ### 2026-10-19: Codex sign-in check, and the first real Codex probe (T047 Codex half, T061; issues #55, #63)
 
@@ -830,3 +830,10 @@ The owner handed the Codex track to this agent ("ruben does not have chatgpt acc
   - An earlier run showed the overshoot: a cold cache made the first turn $0.06 on a $0.01 cap, and "add to the cap" stayed below the spend, hence the rule above.
   - On `haiku`, four short turns cost about $0.004 together, under a $0.01 cap: no notice.
   - About $0.13 of estimate in all (a Claude subscription: nothing billed per token).
+
+### 2026-10-19: the packaged check in CI on three OSes (T044, issue #52)
+
+- `scripts/pack-esm-ci.js` starts the unpacked app from `release/` with `scripts/pack-esm-check.js` as the driver and checks its result, which the driver writes to `PACK_ESM_OUT`. It starts the app with fixed arguments and no shell, and uses `xvfb-run` on Linux without a display.
+- `.github/workflows/packaged-check.yml` runs it after an unsigned `pack:dir` on `macos-latest`, `windows-latest` and `ubuntu-latest`. Triggers: `main` when adapters, the main process or packaging change; on demand; a PR that changes the check. It is not a required check.
+- `test:` (CI, run 39244094105) the same result on all three OSes: `{"packaged":true,"esmBuiltin":true,"esmFromAsar":true,"loadSdk":"undefined","registered":["claude","codex"],"transport":"cli"}`. On macOS the resources folder is `Resources`.
+- `[KNOWN GAP]` Interactive use of the packaged app on real macOS and Windows machines is not covered (T070, #9, #10).
