@@ -23,3 +23,11 @@ export const ALLOWED_PERMISSIONS: ReadonlySet<string> = new Set(['clipboard-sani
 export function permissionAllowed(permission: string): boolean {
   return ALLOWED_PERMISSIONS.has(permission);
 }
+
+/**
+ * Spec 051 FR-004b: a privileged IPC call (installs, sign-in) is answered only for the app's own page in the window's main frame,
+ * never for another frame or a page the window was somehow moved to.
+ */
+export function senderAllowed(frame: { url: string; isMain: boolean } | null | undefined, indexFile: string, platform: NodeJS.Platform = process.platform): boolean {
+  return !!frame && frame.isMain && navigationAllowed(frame.url, indexFile, platform);
+}

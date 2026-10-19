@@ -3,7 +3,8 @@ import * as assert from 'assert';
 import { OFFICIAL_PAGES, SIGN_IN, allowedSignInUrl, installPlans, lastLines, managersFor, parseSignIn, stripAnsi, updatePlans, validPaste } from '../src/shared/harnesssetup';
 import type { PackageManager } from '../src/shared/harnesssetup';
 import { EventEmitter } from 'events';
-import { HarnessSetup } from '../src/main/harnesssetup';
+import { HarnessSetup, confirmText, maskOAuth, posixTrusted } from '../src/main/harnesssetup';
+import { senderAllowed } from '../src/main/hardening';
 import type { ChildLike, SetupDone, SetupProgress } from '../src/main/harnesssetup';
 
 const all = new Set<PackageManager>(['winget', 'brew', 'npm']);
@@ -12,13 +13,13 @@ const only = (...m: PackageManager[]) => new Set<PackageManager>(m);
 // FR-002: routes per OS, in order, only the managers found
 {
   assert.deepStrictEqual(installPlans('claude', 'win32', all).map((p) => p.display), [
-    'winget install --id Anthropic.ClaudeCode -e --accept-source-agreements --accept-package-agreements',
+    'winget install --id Anthropic.ClaudeCode -e --source winget --accept-source-agreements --accept-package-agreements',
     'npm install -g @anthropic-ai/claude-code',
   ]);
   assert.deepStrictEqual(installPlans('claude', 'darwin', all).map((p) => p.display), ['brew install --cask claude-code', 'npm install -g @anthropic-ai/claude-code']);
   assert.match(installPlans('claude', 'darwin', all)[1].note ?? '', /Deprecated/);
   assert.deepStrictEqual(installPlans('copilot', 'darwin', all).map((p) => p.display), ['brew install --cask copilot-cli', 'npm install -g @github/copilot']);
-  assert.deepStrictEqual(installPlans('copilot', 'win32', all)[0].args, ['install', '--id', 'GitHub.Copilot', '-e', '--accept-source-agreements', '--accept-package-agreements']);
+  assert.deepStrictEqual(installPlans('copilot', 'win32', all)[0].args, ['install', '--id', 'GitHub.Copilot', '-e', '--source', 'winget', '--accept-source-agreements', '--accept-package-agreements']);
   assert.deepStrictEqual(installPlans('codex', 'linux', all).map((p) => p.display), ['npm install -g @openai/codex']);
   assert.deepStrictEqual(installPlans('codex', 'darwin', all).map((p) => p.display), ['brew install --cask codex', 'npm install -g @openai/codex']);
   assert.match(installPlans('codex', 'win32', all)[0].note ?? '', /experimental/);
@@ -99,7 +100,7 @@ const only = (...m: PackageManager[]) => new Set<PackageManager>(m);
 // FR-004/FR-005: the runner, with a fake process (nothing runs)
 void (async () => {
   type Call = { file: string; args: readonly string[]; opts: { stdio: unknown[]; windowsVerbatimArguments?: boolean; detached?: boolean } };
-  const mk = (platform: NodeJS.Platform, files: string[], extra: Partial<{ limits: { install: number; signin: number } }> = {}) => {
+  const mk = (platform: NodeJS.Platform, files: string[], extra: Partial<{ limits: { install: number; signin: number }; progressMs: number; now: () => number; realpath: (p: string) => string; trustedPath: (p: string) => boolean }> = {}) => {
     const calls: Call[] = [], prog: SetupProgress[] = [], done: SetupDone[] = [], killed: ChildLike[] = [], written: string[] = [];
     let redetects = 0, child!: ChildLike & EventEmitter & { out: EventEmitter; err: EventEmitter };
     const setup = new HarnessSetup({
@@ -113,6 +114,7 @@ void (async () => {
       killTree: (c) => { killed.push(c); setImmediate(() => (c as unknown as EventEmitter).emit('close', null)); },
       send: ((ch: string, p: SetupProgress | SetupDone) => (ch === 'harness:done' ? done.push(p as SetupDone) : prog.push(p as SetupProgress))) as never,
       redetect: async () => { redetects++; },
+      progressMs: 0,
       ...extra,
     });
     return { setup, calls, prog, done, killed, written, child: () => child, redetects: () => redetects };
@@ -204,6 +206,88 @@ void (async () => {
     assert.ok(!t.prog[t.prog.length - 1].lines.join(' ').includes('ghp_0123456789'), 'redacted');
     t.child().emit('close', 1); await tick(); await tick();
     assert.deepStrictEqual([t.done[0].ok, t.done[0].exitCode], [false, 1]);
+  }
+  // FR-004b: prepare resolves without running; the real path is what is confirmed and spawned; untrusted folders are refused
+  {
+    const t = mk('linux', ['/usr/bin/npm'], { realpath: (p) => (p === '/usr/bin/npm' ? '/usr/lib/node_modules/npm/bin/npm-cli.js' : p) });
+    const p = t.setup.prepare('codex', 'install');
+    assert.ok(p.ok);
+    assert.strictEqual(t.calls.length, 0, 'prepare runs nothing');
+    const job = (p as { job: Parameters<typeof confirmText>[0] }).job;
+    assert.strictEqual(job.file, '/usr/lib/node_modules/npm/bin/npm-cli.js');
+    const c = confirmText(job);
+    assert.strictEqual(c.message, 'Install the Codex CLI?');
+    assert.ok(c.detail.includes('/usr/lib/node_modules/npm/bin/npm-cli.js install -g @openai/codex'), 'the exact program and arguments');
+    assert.ok(t.setup.start(job).ok);
+    assert.strictEqual(t.calls[0].file, '/usr/lib/node_modules/npm/bin/npm-cli.js');
+    const u = mk('linux', ['/tmp/x/npm'], { trustedPath: (f) => !f.startsWith('/tmp/') });
+    (u.setup['deps'].detectEnv.env as Record<string, string>).PATH = '/tmp/x';
+    const r = u.setup.run('codex', 'install');
+    assert.ok(!r.ok && /anyone on this computer can change/.test((r as { error: string }).error));
+    assert.strictEqual(u.calls.length, 0);
+    const gone = mk('linux', ['/usr/bin/npm'], { realpath: () => { throw new Error('ENOENT'); } });
+    assert.ok(!gone.setup.run('codex', 'install').ok, 'a vanished binary is not run');
+    const modes: Record<string, number> = { '/usr/bin/npm': 0o100755, '/usr/bin': 0o40755, '/tmp/npm': 0o100755, '/tmp': 0o41777, '/opt/w/npm': 0o100777, '/opt/w': 0o40755 };
+    const modeOf = (q: string) => { if (!(q in modes)) throw new Error('ENOENT'); return modes[q]; };
+    assert.strictEqual(posixTrusted('/usr/bin/npm', modeOf), true);
+    assert.strictEqual(posixTrusted('/tmp/npm', modeOf), false, 'world-writable folder (even sticky)');
+    assert.strictEqual(posixTrusted('/opt/w/npm', modeOf), false, 'world-writable file');
+    assert.strictEqual(posixTrusted('/nope/npm', modeOf), false, 'unreadable: not trusted');
+  }
+  // FR-004b: only the app's own page in the main frame may call harness setup
+  {
+    const idx = '/app/renderer/index.html';
+    assert.strictEqual(senderAllowed({ url: 'file:///app/renderer/index.html?sim=1', isMain: true }, idx, 'linux'), true);
+    assert.strictEqual(senderAllowed({ url: 'file:///app/renderer/index.html', isMain: false }, idx, 'linux'), false, 'a sub-frame');
+    assert.strictEqual(senderAllowed({ url: 'https://example.com/', isMain: true }, idx, 'linux'), false, 'another page');
+    assert.strictEqual(senderAllowed(null, idx, 'linux'), false, 'no frame');
+  }
+  // winget installs and upgrades name their source
+  {
+    for (const k of ['claude', 'copilot'] as const) for (const f of [installPlans, updatePlans]) assert.ok(f(k, 'win32', only('winget'))[0].display.includes('--source winget'), `${k} names the winget source`);
+  }
+  // FR-005: the sign-in link, the code and OAuth values never sit in the plain lines
+  {
+    assert.strictEqual(maskOAuth('go to https://x.test/cb?code=abc123&state=s3cr3t#access_token=t0k'), 'go to https://x.test/cb?code=[hidden]&state=[hidden]#access_token=[hidden]');
+    assert.strictEqual(maskOAuth('no query here, code=keep'), 'no query here, code=keep', 'only URL parameters');
+    const t = mk('linux', ['/usr/bin/codex']);
+    t.setup.run('codex', 'signin');
+    t.child().out.emit('data', '1. Open https://auth.openai.com/codex/device\n2. Enter this one-time code\n   AB12-CD34E\n');
+    const last = t.prog[t.prog.length - 1];
+    assert.strictEqual(last.code, 'AB12-CD34E', 'shown on its own');
+    assert.ok(!last.lines.join('\n').includes('AB12-CD34E') && !last.lines.join('\n').includes('auth.openai.com'), 'not in the lines');
+    t.child().emit('close', 0); await tick(); await tick();
+    assert.ok(!t.done[0].lines.join('\n').includes('AB12-CD34E'), 'nor in the final lines');
+  }
+  // FR-004c: progress at most once per interval (the last state still arrives); a split UTF-8 character is kept whole
+  {
+    let clock = 1000;
+    const t = mk('linux', ['/usr/bin/npm'], { progressMs: 250, now: () => clock });
+    t.setup.run('codex', 'install');
+    const n0 = t.prog.length;
+    for (let i = 0; i < 20; i++) t.child().out.emit('data', Buffer.from(`line ${i}\n`));
+    assert.strictEqual(t.prog.length, n0, 'nothing more inside the interval');
+    clock += 300;
+    await new Promise((r) => setTimeout(r, 300));
+    assert.strictEqual(t.prog.length, n0 + 1, 'one trailing event');
+    assert.strictEqual(t.prog[t.prog.length - 1].lines.at(-1), 'line 19');
+    const euro = Buffer.from('€ done\n');
+    clock += 300;
+    t.child().out.emit('data', euro.subarray(0, 1)); clock += 300; t.child().out.emit('data', euro.subarray(1));
+    await new Promise((r) => setTimeout(r, 300));
+    assert.strictEqual(t.prog[t.prog.length - 1].lines.at(-1), '€ done');
+    t.child().emit('close', 0); await tick(); await tick();
+  }
+  // a child that fails to start ('error' without 'close') still ends, once, and frees the runner
+  {
+    const t = mk('linux', ['/usr/bin/npm']);
+    t.setup.run('codex', 'install');
+    t.child().emit('error', new Error('EACCES'));
+    await tick(); await tick();
+    assert.deepStrictEqual([t.done.length, t.done[0].ok, t.done[0].reason], [1, false, 'error']);
+    assert.ok(!t.setup.busy);
+    t.child().emit('close', 1); await tick(); await tick();
+    assert.strictEqual(t.done.length, 1, 'ends once');
   }
   console.log('harnesssetup: all checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });

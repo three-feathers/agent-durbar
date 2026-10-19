@@ -28,7 +28,8 @@ interface Route {
   note?: string;
 }
 
-const WINGET_AGREE = ['--accept-source-agreements', '--accept-package-agreements'];
+// spec 051 FR-004b: from the winget community source only, never another configured source that might carry the same id
+const WINGET_AGREE = ['--source', 'winget', '--accept-source-agreements', '--accept-package-agreements'];
 const npm = (pkg: string): Pick<Route, 'manager' | 'install' | 'update'> => ({ manager: 'npm', install: ['install', '-g', pkg], update: ['install', '-g', `${pkg}@latest`] });
 
 /** FR-002: routes per harness and OS, in the order they are offered. */

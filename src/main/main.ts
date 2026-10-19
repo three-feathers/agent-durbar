@@ -23,7 +23,7 @@ import type { FloorOp } from '../shared/floors';
 import { openInVSCode } from './vscode';
 import { isHttpUrl } from '../shared/url';
 import { DEFAULT_ADAPTER, FolderStore, PROFILE_ID, restoreMode } from './folders';
-import { navigationAllowed, permissionAllowed } from './hardening';
+import { navigationAllowed, permissionAllowed, senderAllowed } from './hardening';
 import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '../adapters/vscodeChat';
 import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
@@ -38,7 +38,7 @@ import { folderKeyOf, folderNameOf } from '../shared/usagedoc';
 import { agentLabel } from '../shared/toolusage';
 import { devEnv, devWarning } from './devhooks';
 import { UserThemeStore } from './themes';
-import { HarnessSetup } from './harnesssetup';
+import { HarnessSetup, confirmText, posixTrusted } from './harnesssetup';
 import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind } from '../shared/harnesssetup';
 import { MAX_DESCRIPTION, MAX_PASSES, THEME_IDEAS, TOP_BAR_ISSUE, buildFixPrompt, buildRetryPrompt, buildThemePrompt, isBlocking, keepArt, parseGeneratedTheme } from '../shared/themegen';
 import { SettingsStore } from './settings';
@@ -617,37 +617,58 @@ ipcMain.handle('theme:generate', async (_e, description: unknown, adapterId: unk
 ipcMain.handle('theme:ideas', () => THEME_IDEAS.slice());
 /* Spec 051: harness setup inside the app. One fixed install, update or sign-in at a time (argv, no shell); progress and the end go to
    the window; detection runs again when it ends. Nothing of the output is logged. */
+const sysExe = (name: string): string => path.win32.join(process.env.SystemRoot && path.win32.isAbsolute(process.env.SystemRoot) ? process.env.SystemRoot : 'C:\\Windows', 'System32', name);
 const harnessSetup = new HarnessSetup({
   detectEnv: nodeDetectEnv(),
   spawn: (file, args, opts) => spawn(file, args as string[], opts),
   killTree: (c) => {
     const pid = c.pid;
     if (!pid) return;
-    if (process.platform === 'win32') execFile('taskkill', ['/pid', String(pid), '/t', '/f'], () => undefined);
-    else { try { process.kill(-pid, 'SIGTERM'); } catch { /* gone */ } setTimeout(() => { try { process.kill(-pid, 'SIGKILL'); } catch { /* gone */ } }, 3000).unref(); }
+    if (process.platform === 'win32') execFile(sysExe('taskkill.exe'), ['/pid', String(pid), '/t', '/f'], () => undefined);
+    else {
+      try { process.kill(-pid, 'SIGTERM'); } catch { /* gone */ }
+      // no SIGKILL once it has exited: its group id could already belong to something else
+      const cp = c as unknown as { exitCode: number | null; signalCode: string | null };
+      setTimeout(() => { if (cp.exitCode !== null || cp.signalCode !== null) return; try { process.kill(-pid, 'SIGKILL'); } catch { /* gone */ } }, 3000).unref();
+    }
   },
   send: (channel: string, p: unknown) => toRenderer(channel, p),
   redetect: async () => { await adaptersList(true); },
+  realpath: (p: string) => fs.realpathSync(p),
+  trustedPath: (p: string) => process.platform === 'win32' || posixTrusted(p, (q) => fs.statSync(q).mode),
 } as ConstructorParameters<typeof HarnessSetup>[0]);
-ipcMain.handle('harness:plans', (_e, kind: unknown, op: unknown) => (isSetupKind(kind) && (op === 'install' || op === 'update') ? harnessSetup.plans(kind, op) : { plans: [], page: '', name: '' }));
-ipcMain.handle('harness:run', (_e, kind: unknown, op: unknown, planIndex: unknown) => {
-  if (!isSetupKind(kind) || (op !== 'install' && op !== 'update' && op !== 'signin')) return { ok: false, error: 'invalid request' };
-  return harnessSetup.run(kind, op, typeof planIndex === 'number' && Number.isInteger(planIndex) && planIndex >= 0 && planIndex < 8 ? planIndex : 0);
+/** FR-004b: harness setup answers only the app's own page in the main frame. */
+const fromApp = (e: Electron.IpcMainInvokeEvent): boolean => senderAllowed(e.senderFrame ? { url: e.senderFrame.url, isMain: e.senderFrame === e.sender.mainFrame } : null, path.join(__dirname, '..', 'renderer', 'index.html'));
+ipcMain.handle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? harnessSetup.plans(kind, op) : { plans: [], page: '', name: '' }));
+ipcMain.handle('harness:run', async (e, kind: unknown, op: unknown, planIndex: unknown) => {
+  if (!fromApp(e) || !isSetupKind(kind) || (op !== 'install' && op !== 'update' && op !== 'signin')) return { ok: false, error: 'invalid request' };
+  const p = harnessSetup.prepare(kind, op, typeof planIndex === 'number' && Number.isInteger(planIndex) && planIndex >= 0 && planIndex < 8 ? planIndex : 0);
+  if (!p.ok) return p;
+  // FR-004b: an install or update changes the computer, so the main process asks itself, in a native dialog the page cannot
+  // answer, showing the real path and arguments. Sign-in runs the harness's own fixed login and changes nothing else.
+  if (op !== 'signin') {
+    const t = confirmText(p.job);
+    const opts = { type: 'question' as const, buttons: ['Cancel', t.button], defaultId: 0, cancelId: 0, noLink: true, title: 'Agent Durbar', message: t.message, detail: t.detail };
+    const r = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
+    if (r.response !== 1) return { ok: false, cancelled: true, error: 'Cancelled.' };
+  }
+  return harnessSetup.start(p.job);
 });
-ipcMain.handle('harness:paste', (_e, text: unknown) => harnessSetup.paste(text));
-ipcMain.handle('harness:cancel', () => harnessSetup.cancel());
-ipcMain.handle('harness:openPage', async (_e, kind: unknown) => {
-  if (!isSetupKind(kind)) return { ok: false };
+ipcMain.handle('harness:paste', (e, text: unknown) => (fromApp(e) ? harnessSetup.paste(text) : { ok: false, error: 'invalid request' }));
+ipcMain.handle('harness:cancel', (e) => fromApp(e) && harnessSetup.cancel());
+ipcMain.handle('harness:openPage', async (e, kind: unknown) => {
+  if (!fromApp(e) || !isSetupKind(kind)) return { ok: false };
   await shell.openExternal(OFFICIAL_PAGES[kind]);
   return { ok: true };
 });
-ipcMain.handle('harness:openSignIn', async (_e, kind: unknown, url: unknown) => {
-  // FR-005: only a link on that harness's own sign-in hosts is ever opened
-  if (!isSetupKind(kind) || typeof url !== 'string' || !allowedSignInUrl(kind, url)) return { ok: false };
-  await shell.openExternal(url);
+ipcMain.handle('harness:openSignIn', async (e, kind: unknown, url: unknown) => {
+  // FR-005: only a link on that harness's own sign-in hosts is ever opened, and the parsed, normalised form of it
+  if (!fromApp(e) || !isSetupKind(kind) || typeof url !== 'string' || !allowedSignInUrl(kind, url)) return { ok: false };
+  await shell.openExternal(new URL(url).href);
   return { ok: true };
 });
-ipcMain.handle('harness:copilotAuth', async () => {
+ipcMain.handle('harness:copilotAuth', async (e) => {
+  if (!fromApp(e)) return { known: false };
   try {
     const ad = registry.has('copilot') ? router.instance('copilot') : undefined;
     if (!ad || typeof ad.authStatus !== 'function') return { known: false };
