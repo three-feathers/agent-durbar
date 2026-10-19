@@ -2,12 +2,20 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { LineFramer, MAX_MESSAGE_BYTES, parseMessage } from '../src/main/mcp/jsonrpc';
+import { LineFramer, parseMessage } from '../src/main/mcp/jsonrpc';
+import { MCP_LIMITS } from '../src/shared/mcpserver';
 import { LATEST_PROTOCOL_VERSION, McpSession, SUPPORTED_PROTOCOL_VERSIONS, McpError } from '../src/main/mcp/protocol';
 import { CLOSE_AFTER_DROPPED, RATE_PER_SECOND } from '../src/main/mcp/connection';
 import { FakeMcpClient, loopback } from './fakes/mcp-client';
 
+const MAX_MESSAGE_BYTES = MCP_LIMITS.maxMessageBytes;
+
 const mk = (): McpSession => new McpSession({ serverInfo: { name: 'agent-durbar', version: '9.9.9' } });
+const INIT = { protocolVersion: SUPPORTED_PROTOCOL_VERSIONS[0], clientInfo: { name: 'c', version: '1' } };
+const ready = (c: FakeMcpClient): FakeMcpClient => {
+  c.request('initialize', INIT);
+  return c;
+};
 const lines = (f: LineFramer, ...chunks: (string | Buffer)[]): string[] => {
   const out: string[] = [];
   for (const c of chunks) for (const ev of f.push(c)) out.push(ev.type === 'line' ? ev.line : '<oversize>');
@@ -157,6 +165,8 @@ const lines = (f: LineFramer, ...chunks: (string | Buffer)[]): string[] => {
 {
   const c = loopback(mk());
   assert.deepStrictEqual(c.request('ping'), { jsonrpc: '2.0', id: 1, result: {} }, 'ping before initialize');
+  assert.strictEqual(c.request('no/such').error.code, -32002, 'unknown method before initialize: the init gate answers first');
+  ready(c);
   const r = c.request('no/such');
   assert.strictEqual(r.error.code, -32601, 'unknown method: -32601');
   c.send({ jsonrpc: '2.0', id: 'abc', method: 'ping' });
@@ -169,7 +179,7 @@ const lines = (f: LineFramer, ...chunks: (string | Buffer)[]): string[] => {
 
 // 10. the T013 hook: tools/* are -32601 until registered; a registered handler works; errors map
 {
-  const c = loopback(mk());
+  const c = ready(loopback(mk()));
   assert.strictEqual(c.request('tools/list').error.code, -32601, 'tools/list is -32601 for now');
   assert.strictEqual(c.request('tools/call', { name: 'x' }).error.code, -32601, 'tools/call is -32601 for now');
   const s = new McpSession({
@@ -180,14 +190,14 @@ const lines = (f: LineFramer, ...chunks: (string | Buffer)[]): string[] => {
       bad: () => { throw new McpError(-32602, 'nope'); },
     },
   });
-  const d = loopback(s);
+  const d = ready(loopback(s));
   assert.deepStrictEqual(d.request('tools/list').result, { tools: [] });
   const b = d.request('boom');
   assert.strictEqual(b.error.code, -32603);
   assert.ok(!JSON.stringify(b).includes('secret'), 'internal errors do not leak the message');
   assert.strictEqual(d.request('bad').error.code, -32602);
   const w = new McpSession({ serverInfo: { name: 'a', version: '1' }, methods: { nothing: () => undefined } });
-  assert.deepStrictEqual(loopback(w).request('nothing').result, {}, 'a handler returning undefined still gives a valid result');
+  assert.deepStrictEqual(ready(loopback(w)).request('nothing').result, {}, 'a handler returning undefined still gives a valid result');
   assert.strictEqual(d.request('toString').error.code, -32601, 'inherited object keys are not methods');
 }
 
@@ -241,7 +251,7 @@ async function main(): Promise<void> {
       thrown: () => { throw new Error('secret sync'); },
     },
   });
-  const c = loopback(s);
+  const c = ready(loopback(s));
   assert.deepStrictEqual((await c.requestAsync('ok')).result, { v: 1 }, 'async resolve');
   const r = await c.requestAsync('rej');
   assert.strictEqual(r.error.code, -32603, 'async reject: -32603');

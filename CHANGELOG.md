@@ -6,6 +6,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **MCP server groundwork: agent state in the main process (spec 041 T014, issue #204).** The main process now keeps each agent's office word and sub-label (Working, Waiting for you, Limit reached…) with the same rules as the window, so the MCP read tools can report them later. Pausing in the window is reported to the main process. No visible change, 0 AIU.
 
+- **MCP server groundwork: tool registry (spec 041 T013, issue #203).** The read-only tools an MCP client will see (folders, agents, floors, usage totals, settings, MCP state, request status), with argument checks and a gate before `initialize`. Change tools stay hidden until the confirmation dialog exists. Not wired yet: nothing listens. No user-visible change, 0 AIU.
+
 - **After a restart, each folder continues its last session (spec 006 FR-020/FR-021).** Before, a restored folder started a new session at its first message. Now opening it resumes the session it last used and shows the earlier conversation; resuming sends no prompt. Only the session's id is remembered. Checked on a real Copilot and a real Claude Code.
 
 - **Claude Code is offered next to Copilot (spec 012 FR-135/FR-136).** If `claude` is installed and signed in on your computer, Durbar offers it without any switch. When two or more harnesses are ready, the toolbar and the New session dialog have a **Harness** select; with only one, nothing extra is shown, and new folders use that one. Claude's cost stays a dollar estimate, apart from AIU, with no credit cap.
