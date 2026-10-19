@@ -250,6 +250,9 @@ export class EventMapper {
         return title ? this.emit({ type: 'title', title }) : undefined;
       }
       case 'session.idle':
+        // spec 002 FR-016 (T024): what a turn left behind (a tool that never completed, reasoning never closed, e.g. after Stop) is dropped
+        this.toolNames.clear();
+        this.reasoningSeen.clear();
         return this.emit({ type: 'status', status: 'idle', intent: d.aborted ? 'Aborted' : undefined });
       case 'session.error':
         return this.emit({ type: 'status', status: 'error', intent: `${d.errorType}: ${d.message}`, agentId });

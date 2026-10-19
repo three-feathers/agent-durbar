@@ -71,8 +71,8 @@ A developer adds another agent runtime by implementing `AgentAdapter` and emitti
 - **FR-012** `[KNOWN GAP]` Only one adapter exists; the interface has never been implemented twice, so its fitness for Claude/Codex is unproven (feature 012).
 - **FR-013** `[IMPLEMENTED]` Closed by 015: a helper's prompt, thinking/intent, tool calls, result and stats are attributed to it (fixtures in `scripts/fixtures/events/`, `npm run test:events`).
 - **FR-014** `[KNOWN GAP]` SDK events not mapped: `tool.shell_output`, user-input requests, plan-mode requests, `assistant.usage_checkpoint`/limits, session-created/updated lifecycle events. Agents that block on those would look idle/working without a prompt for the user. `read:`
-- **FR-015** `[KNOWN GAP]` The SDK dependency is declared as `^1.0.22` in `package.json`; only `package-lock.json` pins 1.0.22 (README says "pinned in package.json"; constitution II asks for pinned SDK/runtime). (Task T022.)
-- **FR-016** `[KNOWN GAP]` `reasoningSeen` and `toolNames` are not cleared when a session stops mid-turn (tiny leak per aborted turn). `read:`
+- **FR-015** `[IMPLEMENTED]` (checked 2026-10-19) `package.json` declares `@github/copilot-sdk` as exactly `1.0.22` (no range), as constitution II asks. Was a known gap when it said `^1.0.22`. (Task T022.)
+- **FR-016** `[IMPLEMENTED]` (2026-10-19, T024) `reasoningSeen` and `toolNames` are cleared when the session goes idle, so a stopped turn leaves nothing behind. `test:` `test:events`.
 - **FR-017** `[KNOWN GAP]` Credits (`maxAiCredits` in `StartOptions`) exists in the interface but is not wired to anything (feature 011).
 
 ### Key Entities
