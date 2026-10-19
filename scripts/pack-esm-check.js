@@ -2,7 +2,8 @@
  * spec 012 T044: run inside the PACKAGED main process (no SDK, no claude, no credits):
  *   npm run pack:dir && DURBAR_DEV=1 DURBAR_CLAUDE=1 DURBAR_CLAUDE_TRANSPORT=sdk DURBAR_DRIVER=$PWD/scripts/pack-esm-check.js \
  *     release/linux-unpacked/agent-durbar --no-sandbox   (xvfb-run -a on a Linux box without a display)
- * Prints one line; every field must be true / 'undefined' / ['claude'] / 'cli'.
+ * Prints one line; every field must be true / 'undefined' / 'cli', and `registered` lists 'claude' and 'codex'.
+ * With PACK_ESM_OUT=<file> it also writes the result there as JSON (CI: `scripts/pack-esm-ci.js` reads it on every OS).
  */
 // (from app.asar): the ESM import path, the SDK fallback, the experimental registration.
 const path = require('path');
@@ -21,4 +22,5 @@ module.exports = async (ctx) => {
   out.transport = t.kind;
   await t.close();
   console.log('[pack-esm]', JSON.stringify(out));
+  if (process.env.PACK_ESM_OUT) require('fs').writeFileSync(process.env.PACK_ESM_OUT, JSON.stringify(out));
 };

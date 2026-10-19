@@ -8,7 +8,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CODEX_CAPABILITIES, CODEX_DESCRIPTOR, CodexAdapter, codexChildEnv } from '../src/adapters/codex';
+import { CODEX_CAPABILITIES, CODEX_DESCRIPTOR, CodexAdapter, codexChildEnv, linuxSandboxHint } from '../src/adapters/codex';
 import { CodexMapper } from '../src/adapters/codexMap';
 import { CODEX_INITIALIZE_CAPABILITIES, codexProfileArgs, codexWorkspaceRoots } from '../src/adapters/codexModes';
 import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
@@ -92,14 +92,15 @@ async function main(): Promise<void> {
   // ---- FR-089: capabilities and optional members
   {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(CODEX_CAPABILITIES)), {
-      interrupt: true, resume: false, images: true, models: false, effort: false,
-      permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'none',
-      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: false, history: false, mcpStatus: false, mcpToggle: false,
+      interrupt: true, resume: true, images: true, models: true, effort: true,
+      permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'next-message',
+      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true,
     });
     assert.ok(Object.isFrozen(CODEX_CAPABILITIES) && Object.isFrozen(CODEX_CAPABILITIES.permissionModes) && Object.isFrozen(CODEX_CAPABILITIES.usage), 'capabilities are deeply frozen');
     const { ad } = make();
     for (const m of ['interrupt', 'resolvePermission', 'revokeGrant']) assert.strictEqual(typeof (ad as unknown as Record<string, unknown>)[m], 'function', `${m} is present`);
-    for (const m of ['setCap', 'resolveLimit', 'setMcpEnabled', 'setModel', 'cancelQueuedModel', 'compact', 'listModelOptions', 'setPermMode', 'listPreviousSessions', 'history']) assert.strictEqual((ad as unknown as Record<string, unknown>)[m], undefined, `${m} is absent`);
+    for (const m of ['setCap', 'resolveLimit', 'setModel', 'cancelQueuedModel', 'compact']) assert.strictEqual((ad as unknown as Record<string, unknown>)[m], undefined, `${m} is absent`);
+    for (const m of ['listModelOptions', 'listPreviousSessions', 'history', 'setPermMode', 'resumeIdOf']) assert.strictEqual(typeof (ad as unknown as Record<string, unknown>)[m], 'function', `${m} is there (FR-141..FR-144)`);
     assert.strictEqual(ad.capabilities, CODEX_CAPABILITIES);
     // D1 option B: described, but not in the production list.
     assert.strictEqual(CODEX_DESCRIPTOR.capabilities, CODEX_CAPABILITIES);
@@ -122,7 +123,7 @@ async function main(): Promise<void> {
     assert.strictEqual(sp.options.cwd, ws);
     assert.deepStrictEqual(sp.options.env, env, 'the child gets the injected environment');
     const methods = server.wire.map((w) => w.method);
-    assert.deepStrictEqual(methods, ['initialize', 'initialized', 'thread/start'], 'initialize, initialized, then thread/start');
+    assert.deepStrictEqual(methods, ['initialize', 'initialized', 'thread/start'], 'initialize, initialized, then thread/start (a quiet start reads the MCP list with its first message, FR-147)');
     const init = server.requests('initialize')[0].params as Record<string, unknown>;
     assert.deepStrictEqual(init.capabilities, CODEX_INITIALIZE_CAPABILITIES);
     assert.deepStrictEqual(init.clientInfo, { name: 'agent_durbar', title: 'Agent Durbar', version: '9.9.9' });
@@ -278,11 +279,67 @@ async function main(): Promise<void> {
       await assert.rejects(() => ad.start({ workspace: ws, permissionMode: 'allow' }), /not found/);
       assert.strictEqual(server.spawns.length, 0);
     }
-    // resume is T043b: refused loudly, nothing spawned
+    // FR-093 resume (T043b): read the stored thread first (real Codex 0.163 rewrites the folder on resume), then resume on a fresh child
+    {
+      const { server, ad, events } = make();
+      await assert.rejects(() => ad.start({ workspace: ws, resumeSessionId: 'thr_x' }), /could not be found/, 'an unknown thread is an error, not a new thread');
+      assert.strictEqual(server.requests('thread/start').length, 0, 'never a new thread instead');
+      await assert.rejects(() => ad.start({ workspace: ws, resumeSessionId: '../x' }), /not a Codex session id/);
+      const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', quiet: true });
+      await ad.stop(sid);
+      const spawnsBefore = server.spawns.length;
+      const again = await ad.start({ workspace: ws, permissionMode: 'read-only', resumeSessionId: sid, quiet: true });
+      assert.strictEqual(again, sid, 'the resumed session keeps the thread id');
+      assert.strictEqual(server.spawns.length, spawnsBefore + 1, 'a fresh child');
+      const order = server.wire.filter((w) => w.method === 'thread/read' || w.method === 'thread/resume').map((w) => w.method);
+      assert.deepStrictEqual(order.slice(-2), ['thread/read', 'thread/resume'], 'read, then resume');
+      const rp = server.requests('thread/resume').pop()!.params as Record<string, unknown>;
+      assert.strictEqual(rp.threadId, sid); assert.strictEqual(rp.excludeTurns, true);
+      assert.ok(Array.isArray(rp.runtimeWorkspaceRoots), 'the same limited roots as a new thread');
+      events.length = 0;
+      await ad.send(again, { text: 'hi' });
+      await server.flush();
+      assert.ok(events.some((e) => e.type === 'status' && e.status === 'idle'), 'the resumed thread runs turns');
+      await ad.stop(again);
+      // another folder: refused before resume, and the thread keeps its folder
+      const other = dir();
+      const resumes = server.requests('thread/resume').length;
+      await assert.rejects(() => ad.start({ workspace: other, permissionMode: 'read-only', resumeSessionId: sid, quiet: true }), /another folder/);
+      assert.strictEqual(server.requests('thread/resume').length, resumes, 'no thread/resume was sent');
+      assert.strictEqual(server.threads.get(sid), fs.realpathSync.native(ws), 'the stored folder is unchanged (native realpath, as the adapter uses: long names on Windows)');
+      await ad.dispose();
+    }
+    // FR-141 / FR-142: previous sessions, history and models through a short-lived probe child; model and effort on each turn
     {
       const { server, ad } = make();
-      await assert.rejects(() => ad.start({ workspace: ws, resumeSessionId: 'thr_x' }), /not available yet/);
-      assert.strictEqual(server.spawns.length, 0);
+      const models = await ad.listModelOptions!();
+      assert.deepStrictEqual(models.map((m) => m.id), ['gpt-6.1-sol', 'gpt-6-luna'], "Codex's default first");
+      const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', model: 'gpt-6-luna', reasoningEffort: 'low', quiet: true });
+      assert.deepStrictEqual((await ad.listPreviousSessions!(ws)).map((p) => p.id).includes(sid), false, 'an open session is not a previous one');
+      await ad.send(sid, { text: 'hi' });
+      await server.flush();
+      const tp = server.requests('turn/start').pop()!.params as Record<string, unknown>;
+      assert.deepStrictEqual([tp.model, tp.effort], ['gpt-6-luna', 'low'], 'model and effort go with the turn');
+      await ad.stop(sid);
+      const prev = await ad.listPreviousSessions!(ws);
+      assert.ok(prev.some((p) => p.id === sid), 'listed after stop');
+      assert.ok(!(await ad.listPreviousSessions!(dir())).some((p) => p.id === sid), 'not in another folder');
+      assert.deepStrictEqual((await ad.history!(sid)).items, [], 'history of a thread with no turns');
+      const live = server.spawns.filter((s) => (s.args as string[]).includes('app-server')).length;
+      assert.ok(live >= 4, 'probes are their own children');
+      const s2 = await ad.start({ workspace: ws, permissionMode: 'read-only', model: 'haiku', quiet: true });
+      await ad.send(s2, { text: 'x' }); await server.flush();
+      assert.strictEqual((server.requests('turn/start').pop()!.params as Record<string, unknown>).model, undefined, 'a non-Codex model id is not sent');
+      await ad.dispose();
+    }
+    // FR-093 profile check: in Read-only a resumed thread that reports a wider sandbox is refused
+    {
+      const { ad } = make({ server: { resumeSandbox: { type: 'dangerFullAccess' } } });
+      const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', quiet: true });
+      await ad.stop(sid);
+      await assert.rejects(() => ad.start({ workspace: ws, permissionMode: 'read-only', resumeSessionId: sid, quiet: true }), /wider sandbox/);
+      assert.strictEqual(await ad.start({ workspace: ws, permissionMode: 'allow', resumeSessionId: sid, quiet: true }), sid, 'Allow all accepts it');
+      await ad.dispose();
     }
   }
 
@@ -292,9 +349,9 @@ async function main(): Promise<void> {
     const { server, ad, events } = make();
     const sid = await ad.start({ workspace: ws, permissionMode: 'read-only' });
     assert.strictEqual(sid, 'thr_1', 'the Durbar session id is the thread id');
-    assert.deepStrictEqual(events.map((e) => [e.type, (e as { intent?: string }).intent]), [['status', `Ready in ${ws}`]], 'a loud start says Ready once (the thread/started idle is not doubled)');
+    assert.deepStrictEqual(events.filter((e) => e.type !== 'mcp').map((e) => [e.type, (e as { intent?: string }).intent]), [['status', `Ready in ${ws}`]], 'a loud start says Ready once (the thread/started idle is not doubled)');
     await server.flush();
-    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events.filter((e) => e.type !== 'mcp').length, 1);
     const named = await ad.start({ workspace: ws, sessionId: 'agent-7', permissionMode: 'read-only', quiet: true });
     assert.strictEqual(named, 'agent-7', 'a caller-named id is kept');
     await ad.send(named, { text: 'x' });
@@ -505,6 +562,82 @@ async function main(): Promise<void> {
       assert.ok(!decisions(server).includes('acceptForSession'));
       await ad.dispose();
     }
+    // FR-140: the Linux sandbox error (real text, Ubuntu with unprivileged user namespaces blocked) gets a plain hint; other errors none
+    assert.ok(linuxSandboxHint('error creating thread: failed to load AGENTS.md instructions for environment `local`: fs sandbox helper failed with status exit status: 1: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted').includes('blocks unprivileged user namespaces'));
+    assert.strictEqual(linuxSandboxHint('permissions profile not supported'), '');
+    // FR-147: Durbar's MCP servers go to Codex as config.mcp_servers; the list and startup states become `mcp` events; a switch applies next message
+    {
+      const { server, ad, events } = make();
+      const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', mcpServers: { echo: { type: 'stdio', command: 'node', args: ['s.js'], env: { TOKEN: 'x' } }, web: { type: 'http', url: 'https://example.com/mcp', headers: { Authorization: 'Bearer y' }, tools: ['search'] } }, disabledMcpServers: ['github'] });
+      const cfg = (server.requests('thread/start').pop()!.params as { config?: { mcp_servers?: Record<string, Record<string, unknown>> } }).config;
+      assert.deepStrictEqual(cfg?.mcp_servers, {
+        echo: { command: 'node', args: ['s.js'], env: { TOKEN: 'x' } },
+        web: { url: 'https://example.com/mcp', http_headers: { Authorization: 'Bearer y' }, enabled_tools: ['search'] },
+        github: { enabled: false },
+      });
+      await until('mcp list', () => events.some((e) => e.type === 'mcp'));
+      assert.deepStrictEqual((events.filter((e) => e.type === 'mcp').pop() as { servers: unknown[] }).servers, [{ name: 'echo', status: 'connected' }]);
+      server.notifyAll('mcpServer/startupStatus/updated', { name: 'web', status: 'failed', error: 'refused', threadId: sid });
+      await until('web failed', () => events.some((e) => e.type === 'mcp' && (e as { servers: Array<{ name: string; status: string }> }).servers.some((s) => s.name === 'web' && s.status === 'failed')));
+      await ad.setMcpEnabled!(sid, 'echo', false);
+      const last = events.filter((e) => e.type === 'mcp').pop() as { servers: Array<{ name: string; status: string }> };
+      assert.strictEqual(last.servers.find((s) => s.name === 'echo')?.status, 'disabled', 'shown as off at once');
+      const starts = server.spawns.length;
+      await ad.send(sid, { text: 'next' });
+      await server.flush();
+      assert.strictEqual(server.spawns.length, starts + 1, 'applies with the next message on a fresh child');
+      const rc = (server.requests('thread/resume').pop()!.params as { config?: { mcp_servers?: Record<string, Record<string, unknown>> } }).config;
+      assert.strictEqual(rc?.mcp_servers?.echo?.enabled, false, 'the resumed thread gets the server switched off');
+      await ad.dispose();
+    }
+    // FR-146: Codex's request_user_input goes to the question card; the answer goes back by question id; secret questions never shown
+    {
+      const { server, ad, events } = make({ server: { holdTurn: true } });
+      const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', quiet: true });
+      await ad.send(sid, { text: 'go' });
+      await server.flush();
+      const child = server.childOfThread(sid)!;
+      const qs = { threadId: sid, turnId: 'turn_1', itemId: 'ui1', isBlocking: true, questions: [
+        { id: 'colour', header: 'Colour', question: 'Which colour?', options: [{ label: 'Sage', description: 'calm green' }, { label: 'Blue', description: '' }] },
+        { id: 'pw', header: 'Token', question: 'Paste your token', isSecret: true, options: null },
+      ] };
+      const p = req(server, 'item/tool/requestUserInput', qs, child);
+      await until('asked', () => events.some((e) => e.type === 'question' && e.phase === 'asked'));
+      const asked = events.find((e) => e.type === 'question' && e.phase === 'asked') as { requestId: string; questions: Array<{ question: string; options: unknown[] }> };
+      assert.deepStrictEqual(asked.questions.map((q) => q.question), ['Which colour?'], 'the secret question is not shown');
+      assert.ok(events.some((e) => e.type === 'status' && e.status === 'needs-permission'), 'the agent waits for the user');
+      ad.answerQuestion!(sid, asked.requestId, { 'Which colour?': 'Sage' });
+      const r = await settles('the answer', p);
+      assert.deepStrictEqual(r.result, { answers: { colour: { answers: ['Sage'] } } });
+      assert.ok(events.some((e) => e.type === 'question' && e.phase === 'answered'));
+      // Skip answers nothing; Stop answers an open question with nothing too
+      const p2 = req(server, 'item/tool/requestUserInput', { ...qs, itemId: 'ui2' }, child);
+      await until('asked again', () => events.filter((e) => e.type === 'question' && e.phase === 'asked').length === 2);
+      const asked2 = events.filter((e) => e.type === 'question' && e.phase === 'asked')[1] as { requestId: string };
+      ad.answerQuestion!(sid, asked2.requestId, null);
+      assert.deepStrictEqual((await settles('skip', p2)).result, { answers: {} });
+      assert.ok(events.some((e) => e.type === 'question' && e.phase === 'cancelled'));
+      const p3 = req(server, 'item/tool/requestUserInput', { ...qs, itemId: 'ui3' }, child);
+      await until('asked a third time', () => events.filter((e) => e.type === 'question' && e.phase === 'asked').length === 3);
+      await ad.stop(sid);
+      assert.deepStrictEqual((await settles('stop', p3)).result, { answers: {} });
+      await ad.dispose();
+    }
+    // FR-139: a shell command that already started keeps running after turn/interrupt (real, Codex 0.163); Aborted says so
+    {
+      const started = { method: 'item/started', params: { threadId: 'thr_main', item: { id: 'cmd_9', type: 'commandExecution', command: 'sleep 20', cwd: ws, status: 'inProgress' } } };
+      const { server, ad, events } = make({ server: { turnScript: [started], holdTurn: true } });
+      const sid = await ad.start({ workspace: ws, permissionMode: 'allow', quiet: true });
+      await ad.send(sid, { text: 'go' });
+      await server.flush();
+      assert.ok(events.some((e) => e.type === 'toolCall' && e.phase === 'start'), 'the command started');
+      await ad.interrupt(sid);
+      await server.flush();
+      const ab = events.filter((e) => e.type === 'status' && e.status === 'idle' && String((e as { intent?: string }).intent).startsWith('Aborted'));
+      assert.strictEqual(ab.length, 1);
+      assert.strictEqual((ab[0] as { intent?: string }).intent, 'Aborted (a command that already started may still finish; End session stops it)');
+      await ad.dispose();
+    }
     // Interrupt: pending cancelled, turn/interrupt with the turn id, one Aborted, session stays live, next turn runs
     {
       const { server, ad, events } = make({ server: { holdTurn: true } });
@@ -633,19 +766,54 @@ async function main(): Promise<void> {
     }
   }
 
-  // ---- FR-092 / resume is T043b: a known id that is not live is refused, never silently restarted as a new thread
+  // ---- FR-143: a known session that is not live restarts by resuming its own thread (End session, a crash), never a new thread
   {
     const ws = dir();
-    const { server, ad } = make();
+    const { server, ad, events } = make();
+    const tid = await ad.start({ workspace: ws, quiet: true });
+    await ad.stop(tid);
     await ad.start({ workspace: ws, sessionId: 'agent-9', quiet: true });
+    const thread9 = ad.resumeIdOf!('agent-9');
+    assert.ok(thread9 && thread9 !== 'agent-9', 'a named session runs on its own Codex thread');
     await ad.stop('agent-9');
-    const spawned = server.spawns.length;
-    await assert.rejects(() => ad.start({ workspace: ws, sessionId: 'agent-9' }), /not available yet/, 'a stopped named session is not restarted as a new thread');
-    const t = await ad.start({ workspace: ws, quiet: true });
-    await ad.stop(t);
-    await assert.rejects(() => ad.start({ workspace: ws, sessionId: t }), /not available yet/, 'nor a stopped thread id');
-    assert.strictEqual(server.spawns.length, spawned + 1, 'the refusals spawn nothing');
-    await ad.start({ workspace: ws, sessionId: 'never-seen', quiet: true }); // an unknown id (restored lazy agent) starts a new thread
+    assert.strictEqual(ad.resumeIdOf!('agent-9'), thread9, 'the thread id is kept after stop (what main remembers for a restart)');
+    const starts = server.requests('thread/start').length;
+    assert.strictEqual(await ad.start({ workspace: ws, sessionId: 'agent-9', quiet: true }), 'agent-9');
+    assert.strictEqual(server.requests('thread/start').length, starts, 'no new thread');
+    assert.strictEqual((server.requests('thread/resume').pop()!.params as { threadId: string }).threadId, thread9, 'the same thread is resumed');
+    events.length = 0;
+    await ad.send('agent-9', { text: 'again' });
+    await server.flush();
+    assert.ok(events.some((e) => e.type === 'status' && e.status === 'idle'), 'it runs turns');
+    await ad.dispose();
+  }
+
+  // ---- FR-144: mode switch. Durbar's approvals at once; Codex from the next message, on a fresh child resuming the thread
+  {
+    const ws = dir();
+    const { server, ad, events } = make();
+    const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', quiet: true });
+    assert.deepStrictEqual(ad.setPermMode!(sid, 'allow'), { pending: 0 });
+    const spawns = server.spawns.length;
+    await ad.send(sid, { text: 'write it' });
+    await server.flush();
+    assert.strictEqual(server.spawns.length, spawns + 1, 'a fresh child');
+    assert.strictEqual((server.requests('thread/resume').pop()!.params as { threadId: string }).threadId, sid, 'the same thread');
+    const tp = server.requests('turn/start').pop()!.params as Record<string, unknown>;
+    assert.deepStrictEqual(tp.sandboxPolicy, { type: 'dangerFullAccess' }, 'the next turn runs in the new mode');
+    assert.ok(!events.some((e) => e.type === 'status' && e.status === 'stopped'), 'the relaunch is silent');
+    await ad.dispose();
+  }
+  {
+    // a stricter mode during a running turn interrupts it
+    const ws = dir();
+    const { server, ad } = make({ server: { holdTurn: true } });
+    const sid = await ad.start({ workspace: ws, permissionMode: 'allow', quiet: true });
+    await ad.send(sid, { text: 'go' });
+    await server.flush();
+    ad.setPermMode!(sid, 'read-only');
+    await server.flush();
+    assert.strictEqual(server.requests('turn/interrupt').length, 1, 'the running Allow all turn is interrupted');
     await ad.dispose();
   }
 
@@ -809,7 +977,8 @@ async function main(): Promise<void> {
         want.shift();
       }
       if (!fx.notifications.some((n) => n.method === 'turn/completed')) want.push({ type: 'status', status: 'idle' });
-      assert.deepStrictEqual(got.slice(1), want, `${f}: adapter events equal the fixture's expected list`);
+      // FR-147: the adapter itself turns mcpServer/startupStatus/updated into `mcp` events; the mapper fixtures do not cover them
+      assert.deepStrictEqual(got.slice(1).filter((e) => (e as { type: string }).type !== 'mcp'), want, `${f}: adapter events equal the fixture's expected list`);
       await ad.dispose();
     }
   }

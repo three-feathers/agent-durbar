@@ -167,3 +167,8 @@ For a folder that has not been used yet in this run, a "Previous sessions" panel
   - **Office:** right-click on a room's header (or Shift+F10 / the context-menu key while its door has focus) opens a **folder menu**: New session, Rename…, Hide, Remove folder…. It uses the same menu element, keyboard handling (arrows, Escape) and focus return as the mode menu. A **⋯** button next to the room's **+** (title "Folder actions") opens the same menu, so it can be found without knowing about right-click. In a narrow room (340 px or less) the ⋯ button stands in for **+**, since the menu has New session, so the header keeps fitting (spec 001 FR-023).
   - Nothing changes in the Folders panel.
 - `sim:` `scripts/shots-006-remove.js` at 1440x900 and 1280x800: right-click and the ⋯ button both open the menu with the four actions; Remove folder from the menu and from a single-session chat header both remove the room after confirming; Cancel keeps it. `check:office` 302/302, including one-agent rooms. Screenshots: `docs/screenshots/remove-folder-*.png`.
+
+### 2026-10-19: history replay tested on a real `getEvents()` stream (T023)
+
+- `test:` `scripts/fixtures/events/real-getevents-restart.json` holds the 18 events of the throwaway Copilot session from the FR-021 real check. They were read by resuming that session, without a prompt. Redaction: ids are placeholders, the API call id and `transformedContent` are dropped, the system prompt is omitted, and the folder is `/work/demo`. `test:history` replays it to exactly its two turns (prompt, "OK", prompt, "marmalade"); session events, the system prompt and usage are not shown.
+
