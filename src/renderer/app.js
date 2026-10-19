@@ -2506,7 +2506,7 @@ async function viewVs(a,key,btn){
   if(btn)btn.disabled=false;
   if(!r.ok){toast(esc(r.error||'Could not read this chat.'),6000);return;}
   const tr=r.transcript, wrap=document.createElement('div'); wrap.className='vsview';
-  wrap.innerHTML=`<div class="vsbar" role="note"><div><b>VS Code chat history · read-only</b><span>A copy of what VS Code saved. It cannot be continued here.</span></div><button class="btn" id="vsBack" type="button">Back to chat</button></div><h3 class="vst">${esc(tr.title)}</h3><div class="vsmeta">${tr.shownRequests} of ${tr.totalRequests} messages</div><div class="vsbody chat-inner"></div>${tr.notes.length?'<div class="vsnotes">'+tr.notes.map(n=>'<p>'+esc(n)+'</p>').join('')+'</div>':''}`;
+  wrap.innerHTML=`<div class="vsbar" role="note"><div><b>VS Code chat history · read-only</b><span>A copy of what VS Code saved. It cannot be continued here.</span></div><button class="btn" id="vsCont" type="button" title="Open this chat's folder in VS Code and continue there">Continue in VS Code</button><button class="btn" id="vsBack" type="button">Back to chat</button></div><h3 class="vst">${esc(tr.title)}</h3><div class="vsmeta">${tr.shownRequests} of ${tr.totalRequests} messages</div>${tr.notes.length?'<div class="vsnotes">'+tr.notes.map(n=>'<p>'+esc(n)+'</p>').join('')+'</div>':''}<div class="vsbody chat-inner"></div>`;
   const body=wrap.querySelector('.vsbody'), fake={el:body};
   let am=null;
   for(const b of tr.blocks){
@@ -2515,9 +2515,14 @@ async function viewVs(a,key,btn){
     else if(b.type==='tool'){if(!am){am=document.createElement('div');am.className='msg agent';am.innerHTML='<div class="meta">Copilot (VS Code)</div>';body.appendChild(am);}let l=am.lastElementChild;if(!l||!l.classList.contains('chips')){l=document.createElement('div');l.className='chips';am.appendChild(l);}addChip(l,makeChip({tool:'tool',kind:'tool',label:b.label,state:'ok'}));}
     else if(b.type==='note'){const n=document.createElement('div');n.className='note err';n.textContent=b.text;body.appendChild(n);}
   }
-  const c=$('chat'); c.replaceChildren(wrap); c.scrollTop=0; vsViewing=true;
+  const c=$('chat'); c.replaceChildren(wrap); vsViewing=true;
   document.querySelector('#panel .panel-in').classList.add('viewing');
   $('vsBack').onclick=leaveVsView; $('vsBack').focus({preventScroll:true});
+  $('vsCont').onclick=()=>openLive(a);
+  /* FR-015: open at the latest message; again once layout (images, fonts) settles, unless the reader already scrolled up */
+  const toEnd=()=>{if(vsViewing&&c.contains(wrap))c.scrollTop=c.scrollHeight;};
+  toEnd(); requestAnimationFrame(()=>{toEnd();setTimeout(toEnd,250);});
+  wrap.addEventListener('load',toEnd,true);
 }
 document.addEventListener('click',e=>{
   const b=e.target.closest('[data-pv]'); if(!b||!b.closest('#prev'))return;
