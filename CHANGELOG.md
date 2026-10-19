@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **A workspace's other folders reach the agent (spec 006 FR-019).** A `.code-workspace` session still runs in its first folder. Its other folders are now given to the agent as well: Copilot's `additionalDirectories`, Claude's `--add-dir`. The agent can work in all of them, with the same permission mode in each.
+
 - **Dev scripts run on any machine (spec 010 T021).** `scripts/e2e-driver.js` takes its folders from `E2E_DIR`/`E2E_SHOTS`/`E2E_LOGS`/`E2E_HELLO`/`E2E_NOTES`, and `npm run smoke` defaults to folders under the temp folder, instead of `/workspace/...`.
 
 - **A default agent per folder (spec 043 FR-009).** In the New session dialog, tick **Default for new sessions here** and that custom agent is preselected the next time you start a session in the folder. Untick it to go back to the default agent. Only the agent's name is saved; a repository agent still asks once.
