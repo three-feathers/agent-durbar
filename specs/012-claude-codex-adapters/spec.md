@@ -599,9 +599,9 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 - each assistant message's `usage` (`input_tokens` plus `cache_creation_input_tokens` and `cache_read_input_tokens` make the whole prompt);
 - the turn's `result` gives `modelUsage[<model>].contextWindow` (1,000,000 for `haiku` on that account) and `maxOutputTokens`.
 
-- **FR-134** The Claude mapper reports the main agent's context:
+- **FR-134** `[IMPLEMENTED]` The Claude mapper reports the main agent's context:
   - **Tokens in use:** the last main-agent message's whole input (the three input fields) plus its output.
   - **Window:** `contextWindow` of the message's model from the latest `result`'s `modelUsage`. When that model is absent, it uses the largest window listed. Unknown is 0 until the first result.
   - **When:** a `context` event `{tokens, limit, model}` goes out at each `result`, and after each main-agent message once the window is known. Helper (sub-agent) messages never count.
   - `CLAUDE_CAPABILITIES.context` becomes `true`.
-  - `test:` mapper fixtures (first turn without a window, window from `modelUsage`, a sub-agent message ignored, a model missing from `modelUsage`). `real:` one prompt through the adapter shows a `context` event.
+  - `test:` mapper fixtures (first turn without a window, window from `modelUsage`, a sub-agent message ignored, a model missing from `modelUsage`). `real:` 2026-10-19, Claude Code 2.1.303 with `haiku` through the adapter: one prompt that read a file sent `context {tokens: 16242, limit: 1000000, model: claude-haiku-5-5}` after the result ($0.0015). Not checked: a model with a 200k window, or a sub-agent turn on a real account.

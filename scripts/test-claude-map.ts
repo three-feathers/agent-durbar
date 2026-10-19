@@ -180,4 +180,22 @@ for (const f of files) {
   assert.deepStrictEqual(dropped, [], 'unknown types are ignored without being counted as dropped');
 }
 
+// 4e. FR-134: context = the main agent's last whole input plus output; the window from the result's modelUsage; helpers never count.
+{
+  const asst = (id: string, model: string, u: Record<string, number>, parent?: string): ClaudeMessage => ({ type: 'assistant', ...(parent ? { parent_tool_use_id: parent } : {}), message: { id, model, content: [{ type: 'text', text: 'x' }], usage: u } } as ClaudeMessage);
+  const ctx = (ms: ClaudeMessage[]) => run(ms).filter((e) => e.type === 'context');
+  const first = asst('m1', 'claude-haiku-5-5', { input_tokens: 2, cache_creation_input_tokens: 8302, cache_read_input_tokens: 8858, output_tokens: 7 });
+  const res: ClaudeMessage = { type: 'result', subtype: 'success', modelUsage: { 'claude-haiku-5-5': { contextWindow: 1000000, maxOutputTokens: 128000 } } } as ClaudeMessage;
+  assert.deepStrictEqual(ctx([first]), [], 'no window known yet: no event');
+  assert.deepStrictEqual(strip(ctx([first, res])), [{ type: 'context', tokens: 17169, limit: 1000000, model: 'claude-haiku-5-5' }], 'the window arrives with the result');
+  const second = asst('m2', 'claude-haiku-5-5', { input_tokens: 5, cache_read_input_tokens: 17169, output_tokens: 40 });
+  assert.deepStrictEqual(ctx([first, res, second]).map((e) => (e as { tokens: number }).tokens), [17169, 17214], 'the next message updates it at once');
+  assert.deepStrictEqual(ctx([first, res, second, res]).length, 2, 'an unchanged figure is not sent again');
+  const helper = asst('h1', 'claude-haiku-5-5', { input_tokens: 900000, output_tokens: 1 }, 'toolu_1');
+  assert.deepStrictEqual(ctx([first, res, helper]).length, 1, 'a helper message does not count');
+  const other: ClaudeMessage = { type: 'result', subtype: 'success', modelUsage: { 'claude-x': { contextWindow: 200000 }, 'claude-y': { contextWindow: 'big' } } } as ClaudeMessage;
+  assert.strictEqual((ctx([first, other])[0] as { limit: number }).limit, 200000, 'a model missing from modelUsage takes the largest window listed');
+  assert.deepStrictEqual(ctx([first, { type: 'result', subtype: 'success', modelUsage: { a: { contextWindow: -1 } } } as ClaudeMessage]), [], 'a bad window is ignored');
+}
+
 console.log('claude map tests passed');

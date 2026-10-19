@@ -46,7 +46,7 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   permissionModes: Object.freeze(['read-only', 'ask', 'allow'] as PermissionMode[]),
   permModeSwitch: 'live', // FR-115/FR-116: the broker and the hook at once, the CLI flags from the next message
   usage: Object.freeze({ tokens: true, costUsd: true, nanoAiu: false }),
-  context: false,
+  context: true, // FR-134: `modelUsage.contextWindow` and the main agent's last message
   caps: false, // Q7 / T081
   helpers: true,
   history: true, // FR-125/FR-126: read-only from Claude's own session files
