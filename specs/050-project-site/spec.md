@@ -2,7 +2,7 @@
 
 **Feature Branch**: `050-project-site`
 **Created**: 2026-10-19
-**Status**: Built (first deploy on merge)
+**Status**: Built and **live** at <https://three-feathers.github.io/agent-durbar/> (first deploy 2026-10-19, run 39300604574)
 **Input**: Issue #293 (idea from Ruben, 2026-10-19). Owner approved it in the team chat: "publish it as GitHub pages now and have a custom domain later … part of ci … update the site every time something is worth". He confirmed in his Claude Code session: "Yes, enable it" (Pages with GitHub Actions as the source). Ruben's agent handed the issue over. The approach is from the comment on #293.
 
 ## Summary
@@ -51,4 +51,5 @@ A friendly front door at <https://three-feathers.github.io/agent-durbar/>: what 
 - `test:` `npm run test:site` (in `npm test`).
 - `sim:` the page rendered in Electron at 1280 px and 390 px: no horizontal scroll (scroll width 1264/1279 and 375/390), smallest text 12.5px.
 - `read:` GitHub Pages enabled via the API with `build_type: workflow` (the owner's approval, recorded on #293).
-- `[KNOWN GAP]` The first deploy happens on this PR's merge and was not seen before it. The custom domain is not set up.
+- `real:` the first deploy on the merge of #295 (`pages.yml` run 39300604574): *Build site* and *Deploy to GitHub Pages* succeeded, and the page answers HTTP 200 (41 KB of HTML).
+- `[KNOWN GAP]` The custom domain is not set up (an owner decision).
