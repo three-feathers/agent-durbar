@@ -273,8 +273,27 @@ export interface TitleEvent extends BaseEvent {
   title: string;
 }
 
+/** One question the agent asks the user (spec 012 FR-128); text already cleaned and capped. */
+export interface AskedQuestion {
+  question: string;
+  header?: string;
+  multiSelect: boolean;
+  options: { label: string; description?: string }[];
+}
+
+/** The agent asks the user to choose (spec 012 FR-128): `asked` with the questions, then `answered` or `cancelled`. */
+export interface QuestionEvent extends BaseEvent {
+  type: 'question';
+  phase: 'asked' | 'answered' | 'cancelled';
+  requestId: string;
+  questions?: AskedQuestion[];
+  /** `answered` only: question text -> chosen label(s), comma-separated. */
+  answers?: Record<string, string>;
+}
+
 export type AgentEvent =
   | UserEvent
+  | QuestionEvent
   | StatusEvent
   | PermissionEvent
   | GrantsEvent
@@ -319,6 +338,8 @@ export interface AgentAdapter {
   setCap?(sessionId: string, credits: number | null): Promise<void>;
   /** Answer a "limit reached" request: add credits, set a new cap, remove the cap or cancel the blocked request. Optional. */
   resolveLimit?(sessionId: string, requestId: string, action: LimitAction): Promise<void>;
+  /** Answer a `question` event (spec 012 FR-128); `null` = the user skipped it. Unknown ids are ignored. */
+  answerQuestion?(sessionId: string, requestId: string, answers: Record<string, string> | null): void;
   /** Switch one MCP server on or off in a running session (spec 019). Optional. */
   setMcpEnabled?(sessionId: string, name: string, enabled: boolean): Promise<void>;
   /** Change the model, effort or context tier of a live session; applies from the next message (spec 030). Optional: adapters that cannot omit it and the UI offers a new session instead. */

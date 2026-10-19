@@ -29,6 +29,8 @@ import type { ModelOption } from '../shared/modelswitch';
 import { resolveWorkspaceCwd } from './workspace';
 import { listClaudeSessions, readClaudeHistory } from './claudeHistory';
 import type { HistoryResult, PreviousSession } from './history';
+import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
+import type { AskedQuestion } from './types';
 
 export const CLAUDE_ID = 'claude';
 export const CLAUDE_NAME = 'Claude Code';
@@ -303,6 +305,8 @@ interface Session {
   launchedMode?: PermissionMode;
   /** A user message was sent and its `result` has not come yet (a relaunch would cut the turn). */
   turnOpen?: boolean;
+  /** Questions waiting for the user (FR-128): request id -> what was asked, Claude's original texts, and the waiter. */
+  questions?: Map<string, { asked: AskedQuestion[]; originals: string[]; resolve: (a: Record<string, string> | null) => void }>;
 }
 
 export class ClaudeAdapter implements AgentAdapter {
@@ -408,6 +412,7 @@ export class ClaudeAdapter implements AgentAdapter {
     const s = this.sessions.get(sessionId);
     if (!s) return;
     s.broker.denyPending();
+    this.cancelQuestions(s);
     if (s.transport?.alive) {
       s.mapper.expectAbort();
       try {
@@ -424,6 +429,7 @@ export class ClaudeAdapter implements AgentAdapter {
     if (!s) return;
     s.stopping = true;
     s.broker.stop(); // pending permissions are answered deny; grants are dropped
+    this.cancelQuestions(s);
     try {
       await s.transport?.close();
     } catch {
@@ -449,6 +455,12 @@ export class ClaudeAdapter implements AgentAdapter {
       else if (mode === 'read-only') pending -= s.broker.denyPendingByUser();
     }
     return { pending };
+  }
+
+  /** FR-128: the user's answers (question text -> label(s)), or null when they skipped. */
+  answerQuestion(sessionId: string, requestId: string, answers: Record<string, string> | null): void {
+    const q = this.sessions.get(sessionId)?.questions?.get(requestId);
+    q?.resolve(answers);
   }
 
   resolvePermission(sessionId: string, requestId: string, approve: boolean, remember = false, broad = false): void {
@@ -539,7 +551,14 @@ export class ClaudeAdapter implements AgentAdapter {
       const tool = typeof r.tool_name === 'string' ? r.tool_name : '';
       const input = r.input && typeof r.input === 'object' && !Array.isArray(r.input) ? (r.input as Record<string, unknown>) : {};
       const toolUseID = typeof r.tool_use_id === 'string' ? r.tool_use_id : undefined;
-      if (tool === 'AskUserQuestion') return { response: { behavior: 'deny', message: ASK_USER_DENY, ...(toolUseID ? { toolUseID } : {}) } }; // T052 [KNOWN GAP]: no question UI yet
+      if (tool === 'AskUserQuestion') {
+        // FR-129 fallback: the hook normally answers first; if Claude still asks for permission, ask the user here
+        if (input.answers && typeof input.answers === 'object') return { response: { behavior: 'allow', updatedInput: input, ...(toolUseID ? { toolUseID } : {}) } };
+        const h = (await this.askUser(s, input, toolUseID)) as { hookSpecificOutput?: { permissionDecision?: string; updatedInput?: Record<string, unknown> } };
+        const out = h.hookSpecificOutput;
+        if (out?.permissionDecision === 'allow') return { response: { behavior: 'allow', updatedInput: out.updatedInput ?? input, ...(toolUseID ? { toolUseID } : {}) } };
+        return { response: { behavior: 'deny', message: out ? 'The user skipped the question.' : ASK_USER_DENY, ...(toolUseID ? { toolUseID } : {}) } };
+      }
       const d = await s.broker.request(permissionLikeOf(tool, input, toolUseID));
       return d.kind === 'approve-once'
         ? { response: { behavior: 'allow', updatedInput: input, ...(toolUseID ? { toolUseID } : {}) } }
@@ -562,6 +581,7 @@ export class ClaudeAdapter implements AgentAdapter {
    * process launched in Allow all (`bypassPermissions`, which never calls `canUseTool`) asks through the broker in Ask first.
    */
   private async hookDecision(s: Session, tool: string, toolInput: Record<string, unknown> | undefined, toolUseID: string | undefined): Promise<Record<string, unknown>> {
+    if (tool === 'AskUserQuestion') return this.askUser(s, toolInput ?? {}, toolUseID); // FR-129: a question, not an action: every mode
     const current = s.broker.getMode();
     const launched = s.launchedMode ?? current;
     if (current === 'read-only' || launched === 'read-only') {
@@ -579,12 +599,48 @@ export class ClaudeAdapter implements AgentAdapter {
     return {};
   }
 
+  /**
+   * FR-129: show the agent's questions and wait for the user. The answer goes back as `updatedInput.answers`, keyed by Claude's
+   * own question texts; a skip is a deny. Input without a usable question gets no opinion (Claude's own handling).
+   */
+  private async askUser(s: Session, input: Record<string, unknown>, toolUseID: string | undefined): Promise<Record<string, unknown>> {
+    if (input.answers && typeof input.answers === 'object') return {}; // already answered (a second check of the same call)
+    const { asked, originals } = parseQuestionsWithOriginals(input);
+    if (!asked.length) return {};
+    const requestId = toolUseID ?? randomUUID();
+    s.questions ??= new Map();
+    const answer = await new Promise<Record<string, string> | null>((resolve) => {
+      s.questions!.set(requestId, { asked, originals, resolve });
+      this.emit(s.id, { type: 'question', phase: 'asked', requestId, questions: asked });
+      this.emit(s.id, { type: 'status', status: 'needs-permission', intent: 'Waiting for your answer' });
+    });
+    s.questions.delete(requestId);
+    const clean = answer ? cleanAnswers(asked, answer) : undefined;
+    if (!clean) {
+      this.emit(s.id, { type: 'question', phase: 'cancelled', requestId });
+      return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'The user skipped the question. Decide yourself, or ask in your reply.' } };
+    }
+    const byOriginal: Record<string, string> = {};
+    asked.forEach((q, i) => {
+      if (clean[q.question] !== undefined) byOriginal[originals[i] ?? q.question] = clean[q.question];
+    });
+    this.emit(s.id, { type: 'question', phase: 'answered', requestId, answers: clean });
+    this.emit(s.id, { type: 'status', status: 'working', intent: 'Answered' });
+    return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Answered by the user in Agent Durbar.', updatedInput: { ...input, answers: byOriginal } } };
+  }
+
+  /** Stop, interrupt or a crash: unanswered questions are skipped (the hook answers deny). */
+  private cancelQuestions(s: Session): void {
+    for (const q of [...(s.questions?.values() ?? [])]) q.resolve(null);
+  }
+
   private onExit(s: Session, info: { code: number | null; signal: string | null; stderrTail: string }): void {
     s.transport = undefined;
     s.turnOpen = false;
     if (s.stopping || !this.sessions.has(s.id)) return;
     if (info.stderrTail) this.debug?.(`claude stderr (exit ${String(info.code)}): ${info.stderrTail}`);
     s.broker.denyPending();
+    this.cancelQuestions(s);
     this.emit(s.id, { type: 'status', status: 'error', intent: info.code === 0 ? 'Claude ended the session; send a message to continue.' : `Claude stopped unexpectedly (exit ${info.code ?? info.signal ?? '?'}). Send a message to resume.` });
   }
 

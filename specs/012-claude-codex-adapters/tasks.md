@@ -56,7 +56,7 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 - [ ] T049 (fixtures) Model and effort lists: Claude `supportedModels`, Codex `model/list` to the model picker shape; effort values per model; tests [FR-009]
 - [ ] T050 (fixtures) MCP status: Claude init `mcp_servers` and `mcpServerStatus`, `toggleMcpServer`; Codex `mcpServerStatus/list` read-only; capability `mcpToggle` per adapter; tests [FR-024]
 - [x] T051 (sim) Redaction: vendor stderr and `DURBAR_LOG` never contain environment values, tokens or key-like strings; tests with planted secrets [FR-006]
-- [ ] T052 (sim) `AskUserQuestion`, MCP elicitation and `request_permissions` in v1: shown as a pending card, answered deny, recorded as `[KNOWN GAP]` (no question UI yet); tests [FR-004]
+- [ ] T052 (sim; Claude `AskUserQuestion` done as T107-T109 on 2026-10-19, elicitation and Codex still open) `AskUserQuestion`, MCP elicitation and `request_permissions` in v1: shown as a pending card, answered deny, recorded as `[KNOWN GAP]` (no question UI yet); tests [FR-004]
 - [ ] T053 (sim) Docs for Phase 3: README adapter section, CHANGELOG Unreleased line, converge spec/plan/tasks, update research.md where the build disproved a `docs:` claim [FR-008]
 
 ## Phase 4: real-account verification (spends the owner's credits or needs real accounts)
@@ -125,4 +125,10 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 - [x] T104 (fixtures) `src/adapters/claudeHistory.ts`: list and replay from Claude's session files (pure parsers on text, small fs wrapper with caps) [FR-125, FR-126]
 - [x] T105 (fixtures) `ClaudeAdapter.listPreviousSessions` / `history`, `history: true`; tests on synthetic files [FR-125..FR-127]
 - [x] T106 (real-account) T095 rerun: restart, Previous sessions, Resume remembers the earlier turn [FR-127]
+
+## Changes 2026-10-19 (issue #60, Claude half of T052)
+
+- [x] T107 (sim) `question` event and `answerQuestion` (types, main IPC, preload); Claude: the `PreToolUse` hook asks and answers `AskUserQuestion` in every mode [FR-128, FR-129]
+- [x] T108 (sim) Question card in the chat, waiting status, simulator question [FR-130]
+- [x] T109 Tests on the fake CLI; real check in the three modes with `haiku` [FR-131]
 
