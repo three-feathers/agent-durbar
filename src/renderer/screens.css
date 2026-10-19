@@ -236,3 +236,6 @@ body.has-bridge #topBtns{display:flex}
 .ttab.cost .unk{color:var(--muted)}
 .ttab.cost .cnote{font-size:11.5px;color:var(--ink-2)}
 .ttab.cost tfoot th,.ttab.cost tfoot td{font-weight:650;border-top:2px solid var(--line-2,var(--line))}
+/* spec 052 FR-049: install plan cards: radio beside its command (".dlg label" stacks them), the chosen card is outlined */
+.dlg .hs-plan{flex-direction:row;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer}
+.dlg .hs-plan:has(:checked){border-color:var(--focus);background:var(--pb-working)}

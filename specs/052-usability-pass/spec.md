@@ -350,3 +350,25 @@ Moves the command palette out of *Not now*. Built and checked with `npm test`; t
 - [KNOWN GAP] **A budget per folder** is not built: it needs a stored setting (per folder, kept across restarts) and a decision on what happens when it is reached.
 - [KNOWN GAP] **A Codex price table** is not built: Codex reports tokens but no cost, and turning tokens into dollars needs a decision about which prices to use and how to keep them current.
 - [KNOWN GAP] Not checked in the simulator or with screenshots in this change (no Electron run); the lead takes the screenshots.
+
+### 2026-10-20: round 4, interaction polish
+
+An interaction-design review asked for clearer feedback when something is pressed, busy, done or failed. Renderer only (`app.js`, `screens.js`, `styles.css`, `screens.css`); no main-process or stored-data change. [IMPLEMENTED] `npm test` passes; not yet run in the simulator or with screenshots (the lead runs them).
+
+- **FR-047** **Pressed, disabled and busy states:**
+  - `.btn`, `.stat`, `.chip` and `.more-it` move down 1px with a small inset shadow while pressed (`transform` .06s; background and border .12s). Theme rules in `themes.css` that already style `:active` (Corporate, Retro) are more specific and keep their look.
+  - A disabled button (`:disabled` or `aria-disabled="true"`) is at half opacity with a *not-allowed* cursor.
+  - `busy(btn,label)` in `app.js`: sets `disabled` and `aria-busy="true"`, keeps the button's width (`min-width` = its width), swaps the label for the given text and, after 150ms, a 12px CSS spinner (no spinner under reduced motion; the label alone). It returns `done()`, which restores the button. Used by **Stop** ("Stopping…"), **End session** ("Ending…") and **Open in VS Code** ("Opening…") in the chat header, *Continue in VS Code*, the inbox row buttons ("Sending…") and **Resume** in Previous sessions (which had its own hand-made version). A failed Stop or End now shows a toast instead of failing silently.
+- **FR-048** **Visible answers in the inbox, and focus return:**
+  - after Approve, Deny or Allow for the session, the row's other buttons are disabled; then, in place of its buttons, the row shows **"✓ Approved"** (green ink) or **"Denied"** (red ink) for 600ms, folds away (opacity and height to 0 over 200ms; no fold under reduced motion), and the list repaints as before. Focus stays on the row's heading while it settles. The screen-reader announcement is unchanged.
+  - the empty inbox reads **"All clear. Nobody needs you right now."** with a small CSS-drawn check badge, and the line about what appears there below it.
+  - closing the inbox gives focus back to the element that had it when the inbox opened, if it is still in the page and shown; otherwise to the inbox button.
+- **FR-049** **Dialogs, install plans and copy buttons:**
+  - every `.dlg` eases in (opacity, 6px rise and a slight scale over 160ms, `cubic-bezier(.2,.8,.2,1)`); the overlay fades in over 120ms. The global reduced-motion rule turns both off.
+  - in the install dialog, each plan is a card with its radio beside the command (`.dlg label` stacked them); the chosen card has the focus colour as its border and a light blue fill.
+  - copy buttons (`.cp-btn`, `.md .copy`) rest at 70% opacity (was 55%) and say **"Copied ✓"** for 1200ms after a copy.
+  - the Thinking box (`.think-body.md`) has 26px at the bottom and its copy button sits inside it, so the button is no longer cut off.
+- **FR-050** **Typed toasts and an empty Cost view:**
+  - `.toast.ok` (green left edge) for success and `.toast.err` (red left edge) for failure, used for: stopped, session ended, opening VS Code (or not), folder or session removed (or not), switched to Ask first (or not), copied (resume command, CSV) and copy failures, could not resume, could not stop or end.
+  - **Tools > Cost** with no usage at all says "No costs yet. Numbers appear after an agent's first reply." instead of a table of dashes, and *Copy as CSV* is disabled.
+- [KNOWN GAP] Not checked in the simulator or on screenshots in this change; the lead runs them. The fold of an inbox row is checked only by reading the code.
