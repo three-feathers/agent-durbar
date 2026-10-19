@@ -394,6 +394,8 @@ export interface DurbarApi {
   exportTheme?(id: string): Promise<{ ok: boolean; to?: string; error?: string; cancelled?: boolean }>;
   setCap?(id: string, credits: number | null): Promise<{ ok: boolean; error?: string; maxAiCredits?: number }>;
   resolveLimit?(id: string, requestId: string, choice: LimitChoice): Promise<{ ok: boolean; error?: string }>;
+  /** Answer the agent's question (spec 012 FR-128): question text -> answer; null = skip. */
+  answerQuestion?(id: string, requestId: string, answers: Record<string, string> | null): Promise<{ ok: boolean; error?: string }>;
 
   /** Tool usage over all runs (spec 020). */
   usageAllTime?(): Promise<UsageView>;

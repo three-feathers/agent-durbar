@@ -449,6 +449,73 @@ async function main(): Promise<void> {
     assert.strictEqual(ad.capabilities.effort, true);
   }
 
+  // ---- questions (FR-128, FR-129): the hook asks the user and answers with updatedInput.answers; skip = deny; Stop cancels ----
+  {
+    const { parseQuestions, cleanAnswers } = await import('../src/adapters/questions');
+    const qs = parseQuestions({ questions: [{ question: '  Which   colour? ', header: 'Colour', multiSelect: false, options: [{ label: 'Red', description: 'warm' }, { label: '' }, 'x', { label: 'Blue' }] }, { question: '' }, { question: 'Q2', options: new Array(9).fill({ label: 'o' }), multiSelect: true }, { question: 'Q3' }, { question: 'Q4' }, { question: 'Q5' }] });
+    assert.strictEqual(qs.length, 4, 'at most 4 questions, empty ones dropped');
+    assert.deepStrictEqual(qs[0], { question: 'Which colour?', header: 'Colour', multiSelect: false, options: [{ label: 'Red', description: 'warm' }, { label: 'Blue' }] });
+    assert.strictEqual(qs[1].options.length, 6, 'at most 6 options');
+    assert.deepStrictEqual(cleanAnswers(qs, { 'Which colour?': '  Blue ', unknown: 'x', Q2: 5 }), { 'Which colour?': 'Blue' });
+    assert.strictEqual(cleanAnswers(qs, { 'Which colour?': '   ' }), undefined);
+    assert.deepStrictEqual(parseQuestions(null), []);
+
+    const answers: Record<string, Record<string, unknown>> = {};
+    let cur: FakeClaudeChild | undefined;
+    const { ad, events } = make({
+      turn: (c) => {
+        cur = c;
+        if ((c as unknown as { rec?: boolean }).rec) return;
+        (c as unknown as { rec?: boolean }).rec = true;
+        const prev = c.onWrite;
+        c.onWrite = (o) => {
+          prev?.(o);
+          if (o.type === 'control_response') {
+            const r = o.response as { request_id: string; response: Record<string, unknown> };
+            answers[r.request_id] = r.response;
+          }
+        };
+      },
+    });
+    const ask = (rid: string, tu: string): void =>
+      cur!.send({ type: 'control_request', request_id: rid, request: { subtype: 'hook_callback', callback_id: PRE_TOOL_USE_HOOK, input: { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_use_id: tu, tool_input: { questions: [{ question: 'Which  colour?', header: 'C', multiSelect: false, options: [{ label: 'Red' }, { label: 'Blue' }] }] } } } });
+    const sid = await ad.start({ workspace: WS, quiet: true }); // Read-only: a question is still allowed
+    await ad.send(sid, { text: 'go' });
+    await until('turn', () => cur);
+    ask('q1', 'tu-q1');
+    const asked = await until('asked', () => events.find((e) => e.type === 'question' && (e as { phase: string }).phase === 'asked') as { requestId: string; questions: { question: string }[] } | undefined);
+    assert.strictEqual(asked.requestId, 'tu-q1');
+    assert.strictEqual(asked.questions[0].question, 'Which colour?', 'cleaned for the UI');
+    assert.ok(events.some((e) => e.type === 'status' && (e as { intent?: string }).intent === 'Waiting for your answer'));
+    assert.strictEqual(answers.q1, undefined, 'the hook waits for the user');
+    ad.answerQuestion(sid, 'tu-q1', { 'Which colour?': 'Blue' });
+    await until('q1 answer', () => answers.q1);
+    const out = (answers.q1 as Record<string, unknown>).hookSpecificOutput as { permissionDecision: string; updatedInput: { answers: Record<string, string>; questions: unknown[] } };
+    assert.strictEqual(out.permissionDecision, 'allow');
+    assert.deepStrictEqual(out.updatedInput.answers, { 'Which  colour?': 'Blue' }, "keyed by Claude's own question text");
+    assert.ok(Array.isArray(out.updatedInput.questions), 'the rest of the input is kept');
+    assert.ok(events.some((e) => e.type === 'question' && (e as { phase: string }).phase === 'answered'));
+    // skip
+    ask('q2', 'tu-q2');
+    await until('asked 2', () => events.find((e) => e.type === 'question' && (e as { requestId?: string }).requestId === 'tu-q2'));
+    ad.answerQuestion(sid, 'tu-q2', null);
+    await until('q2 answer', () => answers.q2);
+    assert.strictEqual((answers.q2.hookSpecificOutput as { permissionDecision: string }).permissionDecision, 'deny');
+    // Stop while a question is open: answered deny, cancelled event
+    ask('q3', 'tu-q3');
+    await until('asked 3', () => events.find((e) => e.type === 'question' && (e as { requestId?: string }).requestId === 'tu-q3'));
+    await ad.interrupt(sid);
+    await until('q3 answer', () => answers.q3);
+    assert.strictEqual((answers.q3.hookSpecificOutput as { permissionDecision: string }).permissionDecision, 'deny');
+    assert.ok(events.some((e) => e.type === 'question' && (e as { requestId?: string; phase: string }).requestId === 'tu-q3' && (e as { phase: string }).phase === 'cancelled'));
+    // can_use_tool fallback asks too; an input that already has answers is allowed as it is
+    cur!.send({ type: 'control_request', request_id: 'c1', request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', input: { questions: [{ question: 'Q?', options: [{ label: 'A' }] }], answers: { 'Q?': 'A' } }, tool_use_id: 'tu-c1' } });
+    await until('c1', () => answers.c1);
+    assert.strictEqual(answers.c1.behavior, 'allow');
+    ad.answerQuestion(sid, 'nope', { x: 'y' }); // unknown ids are ignored
+    await ad.stop(sid);
+  }
+
   // ---- interrupt: pending permissions denied, the interrupt request sent, Aborted ----
   {
     const { ad, sp, events } = make({ turn: (c) => c.send({ type: 'control_request', request_id: 'p1', request: { subtype: 'can_use_tool', tool_name: 'Write', input: {}, tool_use_id: 'tu-9' } }) });

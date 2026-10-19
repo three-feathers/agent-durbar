@@ -31,6 +31,8 @@ interface SimOptions {
   floors?: boolean;
   /** Issue #126: some main agents receive a session title, as the runtime sends after the first prompt (page address `simtitles=1`). */
   titles?: boolean;
+  /** Spec 012 FR-130: the first Claude agent (or the first agent) asks a question (page address `simquestion=1`). */
+  question?: boolean;
   /** Spec 033: names of floors that start switched off. */
   floorsOff?: string[];
   /** Room name whose agents report usage without a credit figure (spec 011 FR-029): shows "credits not reported". */
@@ -286,6 +288,21 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       window.setTimeout(() => {
         sims.filter((s, i) => i % 3 === 0).slice(0, SIM_TITLES.length).forEach((s, i) => emit({ type: 'title', sessionId: sid(s), timestamp: now(), title: SIM_TITLES[i] }));
       }, 200);
+    }
+    /* simquestion=1 (spec 012 FR-130): one agent asks a question, as Claude's AskUserQuestion does */
+    let simQ: { s: SimAgent; requestId: string } | undefined;
+    if (opts.question) {
+      window.setTimeout(() => {
+        const s = sims.find((x) => x.info.adapterId === 'claude') ?? sims[0];
+        if (!s) return;
+        simQ = { s, requestId: 'q-' + s.info.id };
+        s.state = 'waiting';
+        emit({ type: 'question', sessionId: s.info.id, timestamp: now(), phase: 'asked', requestId: simQ.requestId, questions: [
+          { question: 'Which colour should the focus ring use?', header: 'Focus ring', multiSelect: false, options: [{ label: 'Sage', description: 'The calm green of the office walls' }, { label: 'Blue', description: 'Matches the links' }] },
+          { question: 'Which screens should get it first?', header: 'Screens', multiSelect: true, options: [{ label: 'Office' }, { label: 'Chat' }, { label: 'Settings' }] },
+        ] });
+        emit({ type: 'status', sessionId: s.info.id, timestamp: now(), status: 'needs-permission', intent: 'Waiting for your answer' });
+      }, 300);
     }
     const sid = (s: SimAgent) => s.info.id;
     const pick = <T,>(a: T[]): T => a[Math.floor(rnd() * a.length)];
@@ -790,6 +807,13 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         s.info.maxAiCredits = c ?? undefined;
         emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'changed', maxAiCredits: c });
         return { ok: true, maxAiCredits: c ?? undefined };
+      },
+      answerQuestion: async (id, requestId, answers) => {
+        if (!simQ || simQ.s.info.id !== id || simQ.requestId !== requestId) return { ok: false, error: 'That question is no longer open.' };
+        simQ = undefined;
+        emit({ type: 'question', sessionId: id, timestamp: now(), phase: answers ? 'answered' : 'cancelled', requestId, ...(answers ? { answers } : {}) });
+        emit({ type: 'output', sessionId: id, timestamp: now(), text: answers ? 'Thanks: ' + Object.values(answers).join('; ') + '.' : 'No answer; I will pick Sage for now.', final: true } as AgentEvent);
+        return { ok: true };
       },
       resolveLimit: async (id, requestId, choice) => {
         const s = sims.find((x) => x.info.id === id);

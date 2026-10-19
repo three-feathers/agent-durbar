@@ -50,6 +50,7 @@ const api: DurbarApi = {
   exportTheme: (id) => ipcRenderer.invoke('theme:export', id),
   setCap: (id, credits) => ipcRenderer.invoke('agents:setCap', id, credits),
   resolveLimit: (id, requestId, choice) => ipcRenderer.invoke('agents:resolveLimit', id, requestId, choice),
+  answerQuestion: (id, requestId, answers) => ipcRenderer.invoke('agents:answerQuestion', id, requestId, answers),
   usageAllTime: () => ipcRenderer.invoke('usage:allTime'),
   usageReset: () => ipcRenderer.invoke('usage:reset'),
   usageTotals: () => ipcRenderer.invoke('usage:totals'),
