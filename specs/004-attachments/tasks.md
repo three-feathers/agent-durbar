@@ -11,9 +11,9 @@
 
 ## Open
 
-- [ ] T020 Magic-byte check for dialog-picked images (reuse `sniffImage` in `agents:pickAttachments`). [FR-009]
-- [ ] T021 Sweep stale `agent-durbar-att-*` folders at startup. [FR-010]
-- [ ] T022 Reject empty dialog-picked files; image filter on the image button. [FR-012, FR-013]
+- [x] T020 Magic-byte check for dialog-picked images (reuse `sniffImage` in `agents:pickAttachments`). [FR-009]
+- [x] T021 Sweep stale `agent-durbar-att-*` folders at startup. [FR-010]
+- [x] T022 Reject empty dialog-picked files; image filter on the image button. [FR-012, FR-013]
 - [ ] T023 Cap total bytes per message (clarify the number first). [FR-014]
-- [ ] T024 Remove sent paths from `pickedFiles`. [FR-015]
+- [x] T024 Remove sent paths from `pickedFiles`. [FR-015]
 - [ ] T025 Hand-check drag/drop/paste on macOS and Windows. [FR-016]

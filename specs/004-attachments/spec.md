@@ -66,13 +66,13 @@ At most 5 files per message and 10 MB per file; I get a plain message saying wha
 - **FR-006** `[IMPLEMENTED]` read: The renderer never sees a file system path for dropped/pasted files; it hands bytes to the main process (`stageAttachment`) and gets back a staged path to show.
 - **FR-007** `[IMPLEMENTED]` sim: Chips show name, kind icon, size tooltip and a `n/5` counter; messages keep the chips after sending (also in replayed history, feature 006).
 - **FR-008** `[IMPLEMENTED]` read: Dropped non-image files are copied to the staging folder like images (not referenced in place).
-- **FR-009** `[KNOWN GAP]` Files picked through the native dialog are **not** magic-byte checked; an `image` chip is decided by file extension, and the bytes are base64'd as-is up to 10 MB. Low risk (the user chose the file) but inconsistent with FR-002. `read:` (Task T020.)
-- **FR-010** `[KNOWN GAP]` The staging folder is removed only on a clean quit; a crash leaves 0600 files in the OS temp folder. `read:` (Task T021.)
+- **FR-009** `[IMPLEMENTED]` (Closed 2026-10-19: a picked file is an image only when its first bytes say so (`kindOfFile`, the same `sniffImage` as pasted files); main checks it again when sending and does not trust the kind the renderer sends.) Was: Files picked through the native dialog are **not** magic-byte checked; an `image` chip is decided by file extension, and the bytes are base64'd as-is up to 10 MB. Low risk (the user chose the file) but inconsistent with FR-002. `read:` (Task T020.)
+- **FR-010** `[IMPLEMENTED]` (Closed 2026-10-19: at start, `agent-durbar-att-*` folders in the temp folder that are older than a day are removed (folders only, never a link).) Was: The staging folder is removed only on a clean quit; a crash leaves 0600 files in the OS temp folder. `read:` (Task T021.)
 - **FR-011** `[KNOWN GAP]` Picked files are read **in place** when sent (text files are handed to the runtime by path); a file that changes between pick and send is sent as it is then. `read:`
-- **FR-012** `[KNOWN GAP]` A zero-byte file chosen in the native dialog is accepted (only pasted/dropped empty files are rejected). `read:`
-- **FR-013** `[KNOWN GAP]` The file and image buttons open the same dialog (no image filter or type hint). `read:`
+- **FR-012** `[IMPLEMENTED]` (Closed 2026-10-19: empty (or unreadable) picked files are left out.) Was: A zero-byte file chosen in the native dialog is accepted (only pasted/dropped empty files are rejected). `read:`
+- **FR-013** `[IMPLEMENTED]` (Closed 2026-10-19: the image button opens the picker with an image filter (PNG, JPEG, GIF, WebP, BMP).) Was: The file and image buttons open the same dialog (no image filter or type hint). `read:`
 - **FR-014** `[KNOWN GAP]` Total attachment size per message is not capped (5 x 10 MB). `read:`
-- **FR-015** `[KNOWN GAP]` The `pickedFiles` allow-list in the main process grows for the whole run (no removal after send). `read:`
+- **FR-015** `[IMPLEMENTED]` (Closed 2026-10-19: files are removed from the allow-list after a successful send (pick again to send again).) Was: The `pickedFiles` allow-list in the main process grows for the whole run (no removal after send). `read:`
 - **FR-016** `[KNOWN GAP]` Drag-and-drop and paste were exercised through the real Electron main process by the e2e driver on Linux (xvfb); macOS/Windows clipboard and drag behavior are untested. `sim:`
 
 ### Key Entities
@@ -88,3 +88,11 @@ At most 5 files per message and 10 MB per file; I get a plain message saying wha
 ## Assumptions
 
 - The runtime accepts `file` and base64 `blob` attachments and the model on the account supports images (it did on the free-plan `auto` model in m3).
+
+## Changes
+
+
+### 2026-10-19: attachment gaps closed (sweep)
+
+FR-009, FR-010, FR-012, FR-013 and FR-015 are closed (texts above; tasks T020, T021, T022, T024). `test:` `test:attachments` (kind from bytes, the sweep of stale folders). The size cap per message (FR-014, T023) still needs a number from the owner.
+

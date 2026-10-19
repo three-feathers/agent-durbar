@@ -442,7 +442,8 @@ export interface DurbarApi {
 
   /** Agents already running in main (survives renderer reloads) and startup paths. */
   listAgents(): Promise<AgentInfo[]>;
-  pickAttachments(): Promise<PickedFile[]>;
+  /** `image` opens the picker with an image filter (spec 004 FR-013). */
+  pickAttachments(want?: 'image' | 'file'): Promise<PickedFile[]>;
   /** Pasted / dropped file bytes (renderer has no path): checked (10 MB, real image format), sanitized, written to a private temp folder. */
   stageAttachment(name: string, mime: string, data: ArrayBuffer): Promise<StageResult>;
   send(id: string, text: string, attachments: PickedFile[]): Promise<{ ok: boolean; error?: string }>;
