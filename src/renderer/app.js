@@ -49,11 +49,16 @@ const floorRank=r=>{const f=floorById(r.floor);return f?FLOORS.floors.indexOf(f)
 /* rooms in floor order; inside a floor, the order they were added (stable) */
 const roomsInOrder=()=>ROOMS.map((r,i)=>[r,i]).sort((x,y)=>floorRank(x[0])-floorRank(y[0])||x[1]-y[1]).map(p=>p[0]);
 const floorTag=r=>{if(!floorTagsOn())return '';const f=floorById(r.floor);return f?`<span class="floor-tag" title="Floor: ${esc(f.name)}">${esc(f.name)}</span>`:'';};
+/* the dollar estimates of the agents whose kind reports them (Claude Code), in a room or the whole office */
+function usdEstimates(roomId){return agents.filter(a=>!a.parent&&a.usage&&(!roomId||a.room===roomId)&&usageCaps(a).costUsd&&!usageCaps(a).nanoAiu).reduce((n,a)=>n+(a.usage.usd||0),0);}
 function aiuChip(){
   const t=LEDGER.office(); if(!t.calls||demoOn)return '';
   const tip=window.DurbarUsage.tooltip(t,{scope:'office',removed:ledgerRemoved(),since:LEDGER.since(),run:LEDGER.officeRun(),offFloors:offFloorSpend()});
-  const inner=t.unreported>=t.calls?'<span class="l">cost not reported</span>':`<b>${esc((t.nano/1e9).toFixed(2))}</b><span class="l">AIU</span>`;
-  return `<span class="stat stat-aiu" role="note" title="${esc(tip)}" aria-label="${esc(tip.replace(/\n/g,' '))}">${inner}</span>`;
+  /* spec 052 FR-028 (#307): one unit, money: Copilot credits at USD 0.01 plus Claude's own estimates; the split is in the tooltip */
+  const usd=usdEstimates(), aiu=t.nano/1e9, none=t.unreported>=t.calls&&!usd;
+  const tip2=tip+'\nIn money: ≈ '+fmtMoney(aiu*AIU_USD+usd)+' = '+aiu.toFixed(2)+' AIU (Copilot credits, USD 0.01 each)'+(usd?' + '+fmtMoney(usd)+' Claude estimate (not a bill)':'')+'. Codex does not report cost.';
+  const inner=none?'<span class="l">cost not reported</span>':`<span class="l">≈</span><b>${esc(fmtMoney(aiu*AIU_USD+usd))}</b>`;
+  return `<span class="stat stat-aiu" role="note" title="${esc(tip2)}" aria-label="${esc(tip2.replace(/\n/g,' '))}">${inner}</span>`;
 }
 /* ---- how an agent is doing (spec 034, issue #20): the body follows the context window, trouble gets a drawing ---- */
 const MOODS=window.DurbarMood;
@@ -214,7 +219,7 @@ function syncWalkers(){
   /* spec 034 FR-015: the figure away at a place keeps its mood (ring, horns, trouble dot); none in Serious mode (moodFor) */
   walkers.forEach((w,id)=>{const m=moodFor(byId(id));w.el.dataset.body=m.body;w.el.dataset.trouble=m.trouble||'';});
 }
-function roomAiu(r){const f=folderOfRoom(r.id),t=LEDGER.room(r.id,f&&f.key);return t.calls&&!demoOn?{long:window.DurbarUsage.fmtTotal(t),short:window.DurbarUsage.fmtShort(t),tip:window.DurbarUsage.tooltip(t,{scope:'folder',since:LEDGER.since(),run:LEDGER.roomRun(r.id)})}:null;}
+function roomAiu(r){const f=folderOfRoom(r.id),t=LEDGER.room(r.id,f&&f.key),usd=usdEstimates(r.id),m=t.calls&&!(t.unreported>=t.calls&&!usd)?'≈ '+fmtMoney(t.nano/1e9*AIU_USD+usd):'';return t.calls&&!demoOn?{long:m||window.DurbarUsage.fmtTotal(t),short:m||window.DurbarUsage.fmtShort(t),tip:window.DurbarUsage.tooltip(t,{scope:'folder',since:LEDGER.since(),run:LEDGER.roomRun(r.id)})}:null;}
 
 const LABELS={working:'Working',thinking:'Thinking',waiting:'Waiting for you',idle:'Idle',error:'Error',done:'Done'};
 const LABELS_SHORT={waiting:'Waiting'};
@@ -241,11 +246,14 @@ const fmtCapOf=(a,n)=>isUsdCap(a)?'$'+n.toFixed(2):fmtCap(n)+' AIU';
 const MIN_USD_CAP=0.01;
 /* spec 012 FR-122: what the agent's kind reports decides the money part: AIU, a labelled dollar estimate (never AIU), or nothing */
 const usageCaps=a=>{const r=a&&a.parent?(byId(a.parent)||a):a;const c=typeof capsFor==='function'&&r&&r.info?capsFor(r):null;return (c&&c.usage)||{nanoAiu:true};};
-const fmtUsd=v=>'≈ $'+(v>0&&v<0.01?v.toFixed(4):v.toFixed(2))+' est.';
+/* spec 052 FR-028 (#307): money as people read it; small amounts are "<$0.01", not four decimals */
+const fmtMoney=v=>v>0&&v<0.005?'<$0.01':'$'+v.toFixed(2);
+const AIU_USD=0.01; /* 1 Copilot AI credit = USD 0.01 (GitHub's price; Settings says the same) */
+const fmtUsd=v=>'≈ '+fmtMoney(v)+' est.';
 const USD_TIP='The agent\'s own estimate of the API price for these tokens, not a bill and not AIU.';
 function usageShort(a){const u=a.usage; if(!u||!u.calls)return ''; const k=usageCaps(a), c=capOf(a);
   if(!k.nanoAiu)return c&&k.costUsd&&isUsdCap(a)?fmtTok(u.inT+u.outT)+' · $'+(u.usd||0).toFixed(2)+'/$'+c.toFixed(2)+' est.':fmtTok(u.inT+u.outT)+' tok'+(k.costUsd?' · '+fmtUsd(u.usd||0):'');
-  return c?fmtTok(u.inT+u.outT)+' · '+(u.nano/1e9).toFixed(capDigits(c))+'/'+fmtCap(c)+' AIU':fmtTok(u.inT+u.outT)+' tok · '+(u.nano/1e9).toFixed(2)+' AIU';}
+  return c?fmtTok(u.inT+u.outT)+' · '+(u.nano/1e9).toFixed(capDigits(c))+'/'+fmtCap(c)+' AIU':fmtTok(u.inT+u.outT)+' tok · ≈ '+fmtMoney(u.nano/1e9*AIU_USD);}
 function usageLong(a){const u=a.usage; if(!u||!u.calls)return ''; const k=usageCaps(a), c=capOf(a), base=u.calls+' calls · '+fmtTok(u.inT)+' in / '+fmtTok(u.outT)+' out tokens';
   if(!k.nanoAiu)return base+(k.costUsd?' · '+(c&&isUsdCap(a)?fmtUsd(u.usd||0).replace(/ est\.$/,' of a $'+c.toFixed(2)+' cap est.'):fmtUsd(u.usd||0)):'');
   return base+' · '+(u.nano/1e9).toFixed(3)+' AIU'+(c?' of '+fmtCap(c)+' cap':'');}
