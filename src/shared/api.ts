@@ -35,6 +35,8 @@ export interface AgentInfo {
   tier?: ContextTier;
   /** What the agent's adapter can do about model and context (spec 030); absent = nothing (a new session is needed). */
   modelControl?: ModelControl;
+  /** The agent's kind can select custom agents (spec 043). */
+  profiles?: boolean;
   /** Restored from the saved folder list: no runtime session yet, it starts with the first message. */
   lazy?: boolean;
   /** Credit cap of this session in AIU (spec 011); unset = no cap. */
@@ -131,6 +133,18 @@ export interface AppSettingsView {
   seriousMode?: boolean;
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
   theme?: string;
+}
+
+/** A custom agent profile as the renderer sees it (spec 043; same shape as the adapter's `AgentProfile`). */
+export interface ProfileInfo {
+  id: string;
+  name: string;
+  description?: string;
+  source: 'repo' | 'user' | 'other';
+  path?: string;
+  tools?: string[];
+  model?: string;
+  mcpServers?: string[];
 }
 
 export interface ModelChoice {
@@ -398,6 +412,10 @@ export interface DurbarApi {
   resolveLimit?(id: string, requestId: string, choice: LimitChoice): Promise<{ ok: boolean; error?: string }>;
   /** Answer the agent's question (spec 012 FR-128): question text -> answer; null = skip. */
   answerQuestion?(id: string, requestId: string, answers: Record<string, string> | null): Promise<{ ok: boolean; error?: string }>;
+  /** Custom agents the session can use (spec 043); `trusted` is false for a repository agent not yet confirmed for this folder and file. */
+  listProfiles?(id: string): Promise<{ ok: boolean; error?: string; profiles: (ProfileInfo & { trusted: boolean })[] }>;
+  /** Select a custom agent (null = default). A repository agent not yet confirmed answers `needsConfirm`; call again with `confirm` after the user agreed. */
+  selectProfile?(id: string, profileId: string | null, confirm?: boolean): Promise<{ ok: boolean; error?: string; needsConfirm?: boolean; profile?: ProfileInfo | null }>;
 
   /** Tool usage over all runs (spec 020). */
   usageAllTime?(): Promise<UsageView>;

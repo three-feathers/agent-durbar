@@ -28,6 +28,7 @@ import { McpStore } from './mcpstore';
 import { AgentStateTracker } from './mcp/agentstate';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { UsageStore } from './usagestore';
+import { AgentTrustStore, hashAgentFile } from './agenttrust';
 import { UsageTotalsStore } from './usagetotalsstore';
 import { folderKeyOf, folderNameOf } from '../shared/usagedoc';
 import { agentLabel } from '../shared/toolusage';
@@ -62,6 +63,7 @@ let mcpStore: McpStore | undefined;
 let usageStore: UsageStore | undefined;
 /** Credit totals per folder kept across restarts (spec 011 FR-025, issue #21). */
 let usageTotalsStore: UsageTotalsStore | undefined;
+let agentTrust: AgentTrustStore | undefined;
 /** The folder (or .code-workspace file) an agent belongs to; the key of the saved folder list. */
 const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
@@ -184,6 +186,7 @@ const infoFor = (workspace: string, permMode: PermMode, id: string, model: strin
     effort,
     // `unverified`: the real adapter's switch/compact calls come from the SDK docs and were never run on an account (spec 030 Phase 3).
     modelControl: modelControlFor(ad, { unverified: true }),
+    profiles: typeof ad.listAgentProfiles === 'function' && typeof ad.selectAgentProfile === 'function' ? true : undefined, // spec 043
     adapterId: ad.id,
     ...extra,
   };
@@ -525,6 +528,46 @@ ipcMain.handle('agents:answerQuestion', (_e, id: unknown, requestId: unknown, an
   return { ok: true };
 });
 
+// ---- custom agent per session (spec 043 FR-003): list, select; a repository agent needs a confirmation for its exact file ----
+const PROFILE_ID = /^[A-Za-z0-9._:@/-]{1,100}$/;
+ipcMain.handle('agents:listProfiles', async (_e, id: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  const ad = a ? router.forAgent(a.id) : undefined;
+  if (!a || !ad?.listAgentProfiles) return { ok: false, error: 'This agent cannot use custom agents.', profiles: [] };
+  try {
+    await ensureLive(a); // a restored or ended agent starts its session (no prompt, no credits)
+    const profiles = (await ad.listAgentProfiles(a.id)).map((p) => ({ ...p, trusted: p.source !== 'repo' || (!!p.path && agentTrust?.isTrusted(wsKey(a), p.id, hashAgentFile(p.path))) }));
+    return { ok: true, profiles };
+  } catch (err) {
+    return { ok: false, error: errText(err), profiles: [] };
+  }
+});
+ipcMain.handle('agents:selectProfile', async (_e, id: unknown, profileId: unknown, confirm: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  const ad = a ? router.forAgent(a.id) : undefined;
+  if (!a || !ad?.selectAgentProfile) return { ok: false, error: 'This agent cannot use custom agents.' };
+  if (profileId !== null && (typeof profileId !== 'string' || !PROFILE_ID.test(profileId))) return { ok: false, error: 'Unknown agent.' };
+  try {
+    await ensureLive(a);
+    if (profileId !== null) {
+      const p = (await ad.listAgentProfiles?.(a.id))?.find((x) => x.id === profileId);
+      if (!p) return { ok: false, error: 'That agent is not available in this session.' };
+      if (p.source === 'repo') {
+        const sha = p.path ? hashAgentFile(p.path) : undefined;
+        if (!sha) return { ok: false, error: 'The agent file could not be read.' };
+        if (!agentTrust?.isTrusted(wsKey(a), p.id, sha)) {
+          if (confirm !== true) return { ok: false, needsConfirm: true, profile: p };
+          agentTrust?.trust(wsKey(a), p.id, sha);
+        }
+      }
+    }
+    const profile = await ad.selectAgentProfile(a.id, profileId as string | null);
+    return { ok: true, profile };
+  } catch (err) {
+    return { ok: false, error: errText(err) };
+  }
+});
+
 ipcMain.handle('agents:resolveLimit', async (_e, id: unknown, requestId: unknown, choice: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
@@ -696,7 +739,6 @@ ipcMain.handle('folders:remove', async (_e, id: unknown) => {
   return { ok: true, removedIds };
 });
 
-// One main session out of the office (spec 006 FR-017). The last main session of a folder stays (Folders > Remove is for that).
 // One-way from the window: the pause button (spec 041 T014). Unknown ids and non-boolean values are ignored.
 ipcMain.on('agents:setPaused', (_e, id: unknown, paused: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
@@ -705,6 +747,7 @@ ipcMain.on('agents:setPaused', (_e, id: unknown, paused: unknown) => {
   agentState.setPaused(a.id, paused);
 });
 
+// One main session out of the office (spec 006 FR-017). The last main session of a folder stays (Folders > Remove is for that).
 ipcMain.handle('agents:remove', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false, error: 'unknown session' };
@@ -812,6 +855,8 @@ app.whenReady().then(() => {
   usageStore = new UsageStore(path.join(app.getPath('userData'), 'durbar-tool-usage.json'));
   usageStore.load();
   usageTotalsStore = new UsageTotalsStore(path.join(app.getPath('userData'), 'durbar-usage-totals.json'));
+  agentTrust = new AgentTrustStore(path.join(app.getPath('userData'), 'durbar-agent-trust.json'));
+  agentTrust.load();
   usageTotalsStore.load();
   restoreFolders();
   createWindow();

@@ -70,6 +70,10 @@ const ROWS: Row[] = [
   { rule: 'user send while at the limit: Thinking, sub-label cleared', events: [limitHit, send], word: 'Thinking', sub: null, renderer: [] },
   { rule: 'user send then idle: Done (the send counts as work)', events: [send, status('idle')], word: 'Done', sub: 'Done', renderer: [] },
   { rule: 'send failed: Error', events: [send, sendFailed], word: 'Error', sub: null, renderer: ["setState(a,'error',null,'Send failed: '+SHORT(r.error,100))"] },
+  { rule: 'stopped during a pending limit clears the work flag: a later idle is Idle, Ready, not Done', events: [working, limitHit, status('stopped'), status('idle')], word: 'Idle', sub: 'Ready', renderer: ["if(a.limit)settleLimit(a,'cancel');"] },
+  { rule: 'stopped with no limit pending keeps the work flag: a later idle is Done', events: [working, status('stopped'), status('idle')], word: 'Done', sub: 'Done', renderer: [] },
+  { rule: 'limit exhausted without a request id, resolved without one: settles to Working', events: [ev({ type: 'limit', phase: 'exhausted' }), ev({ type: 'limit', phase: 'resolved', action: 'add' })], word: 'Working', sub: null, renderer: [] },
+  { rule: 'limit exhausted twice without a request id: de-duplicated (second one does not reset the sub-label)', events: [ev({ type: 'limit', phase: 'exhausted' }), toolStart(), ev({ type: 'limit', phase: 'exhausted' })], word: 'Waiting for you', sub: null, renderer: [] },
   { rule: 'words', events: [], word: 'Idle', sub: 'Ready', renderer: ["const LABELS={working:'Working',thinking:'Thinking',waiting:'Waiting for you',idle:'Idle',error:'Error',done:'Done'};"] },
 ];
 
@@ -139,7 +143,9 @@ for (const r of ROWS) {
 // Wiring guard: main.ts must feed the tracker (a pure unit cannot see these calls).
 {
   const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
-  for (const f of ['agentState.noteSend(id)', 'agentState.noteSendFailed(id)', "'did-finish-load', () => agentState.clearPaused()", "ipcMain.on('agents:setPaused'", 'agentState.onEvent(e)', 'agentState.remove(']) assert.ok(main.includes(f), `main.ts no longer has: ${f}`);
+  for (const f of ['agentState.noteSend(id)', 'agentState.noteSendFailed(id)', "'did-finish-load', () => agentState.clearPaused()", "ipcMain.on('agents:setPaused'", 'agentState.onEvent(e)']) assert.ok(main.includes(f), `main.ts no longer has: ${f}`);
+  const count = (s: string, f: string): number => s.split(f).length - 1;
+  assert.ok(count(main, 'agentState.remove(') >= count(main, 'agents.delete('), 'every agents.delete( in main.ts has an agentState.remove( next to it');
 }
 
 console.log(`mcp agentstate: ${ROWS.length} rule rows + pause, removal and drift guard OK`);

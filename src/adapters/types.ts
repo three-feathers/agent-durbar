@@ -291,9 +291,33 @@ export interface QuestionEvent extends BaseEvent {
   answers?: Record<string, string>;
 }
 
+/** A custom agent the user can select for a session (spec 043 FR-001); generic across adapters. */
+export interface AgentProfile {
+  id: string;
+  name: string;
+  description?: string;
+  /** `repo`: from the session folder's repository (asks once before use); `user`: the user's own folder. */
+  source: 'repo' | 'user' | 'other';
+  /** Definition file, when the profile comes from a file. */
+  path?: string;
+  /** Allowed tools; undefined = all the session's tools. */
+  tools?: string[];
+  /** The model the profile asks for (the runtime may use another). */
+  model?: string;
+  /** Names of the MCP servers the profile brings. */
+  mcpServers?: string[];
+}
+
+/** The selected agent profile of the session changed (spec 043 FR-001); null = the default agent. */
+export interface AgentProfileEvent extends BaseEvent {
+  type: 'agentProfile';
+  profile: AgentProfile | null;
+}
+
 export type AgentEvent =
   | UserEvent
   | QuestionEvent
+  | AgentProfileEvent
   | StatusEvent
   | PermissionEvent
   | GrantsEvent
@@ -340,6 +364,10 @@ export interface AgentAdapter {
   resolveLimit?(sessionId: string, requestId: string, action: LimitAction): Promise<void>;
   /** Answer a `question` event (spec 012 FR-128); `null` = the user skipped it. Unknown ids are ignored. */
   answerQuestion?(sessionId: string, requestId: string, answers: Record<string, string> | null): void;
+  /** Agent profiles the session can use (spec 043 FR-001). */
+  listAgentProfiles?(sessionId: string): Promise<AgentProfile[]>;
+  /** Select a profile for the next turns, or null for the default agent (spec 043 FR-001). Emits `agentProfile`. */
+  selectAgentProfile?(sessionId: string, id: string | null): Promise<AgentProfile | null>;
   /** Switch one MCP server on or off in a running session (spec 019). Optional. */
   setMcpEnabled?(sessionId: string, name: string, enabled: boolean): Promise<void>;
   /** Change the model, effort or context tier of a live session; applies from the next message (spec 030). Optional: adapters that cannot omit it and the UI offers a new session instead. */

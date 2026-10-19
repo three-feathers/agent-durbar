@@ -39,14 +39,14 @@ export interface AgentStateView {
   paused: boolean;
 }
 
-interface Entry { state: OfficeState; label: string | null; paused: boolean; worked: boolean; limitId?: string; questionId?: string }
+interface Entry { state: OfficeState; label: string | null; paused: boolean; worked: boolean; limit: boolean; limitId?: string; question: boolean; questionId?: string }
 
 export class AgentStateTracker {
   private readonly agents = new Map<string, Entry>();
 
   /** Start tracking an agent (a new or restored one: Idle; Not started when it is a saved folder with no session yet). Keeps an existing entry. */
   ensure(id: string, lazy = false): void {
-    if (!this.agents.has(id)) this.agents.set(id, { state: 'idle', label: lazy ? 'Not started' : 'Ready', paused: false, worked: false });
+    if (!this.agents.has(id)) this.agents.set(id, { state: 'idle', label: lazy ? 'Not started' : 'Ready', paused: false, worked: false, limit: false, question: false });
   }
 
   remove(id: string): void {
@@ -109,7 +109,9 @@ export class AgentStateTracker {
         } else if (e.status === 'needs-permission') {
           set('waiting', null);
         } else if (e.status === 'idle' && e.intent === 'Aborted') {
-          a.limitId = undefined; // settleLimit('cancel'), then the Aborted state itself
+          a.limit = false; // settleLimit('cancel'), then the Aborted state itself
+          a.limitId = undefined;
+          a.question = false;
           a.questionId = undefined;
           a.worked = false;
           set('idle', 'Ready');
@@ -120,26 +122,32 @@ export class AgentStateTracker {
         } else if (e.status === 'error') {
           set('error', null);
         } else if (e.status === 'stopped') {
+          if (a.limit) a.worked = false; // settleLimit('cancel') clears the work flag (app.js:1550)
+          a.limit = false;
           a.limitId = undefined;
           set('idle', 'Ended');
         }
         return;
       case 'limit':
         if (e.phase === 'exhausted') {
-          if (a.limitId !== undefined && a.limitId === e.requestId) return;
-          a.limitId = e.requestId ?? '';
+          if (a.limit && a.limitId === e.requestId) return; // ids compared as the renderer does: undefined equals undefined
+          a.limit = true;
+          a.limitId = e.requestId;
           set('waiting', 'Limit reached');
-        } else if (e.phase === 'resolved' && a.limitId !== undefined && a.limitId === e.requestId) {
+        } else if (e.phase === 'resolved' && a.limit && a.limitId === e.requestId) {
+          a.limit = false;
           a.limitId = undefined;
           if ((e.action || 'add') === 'cancel') { a.worked = false; set('idle', 'Ready'); } else set('working', null);
         }
         return;
       case 'question':
         if (e.phase === 'asked') {
-          if (a.questionId !== undefined && a.questionId === e.requestId) return;
+          if (a.question && a.questionId === e.requestId) return;
+          a.question = true;
           a.questionId = e.requestId;
           set('waiting', 'Waiting for your answer');
-        } else if (a.questionId !== undefined && a.questionId === e.requestId) {
+        } else if (a.question && a.questionId === e.requestId) {
+          a.question = false;
           a.questionId = undefined;
           if (a.state === 'waiting') set('working', null);
         }
