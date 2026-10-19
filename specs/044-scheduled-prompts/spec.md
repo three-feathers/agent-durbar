@@ -90,3 +90,31 @@ In **Folders**, each folder has **Schedules**. The dialog lists the folder's sch
 - `real:` 2026-10-19, Claude Code 2.1.303 (`haiku`), Read-only, a throwaway folder with a `TODO.md` of three items. The *Plan my day* prompt read the file and asked through a question card: "Which should I work on? Pick any, or none." The options were the three items with sizes plus "none", with several allowed. It was skipped from the adapter. Cost: $0.005.
 - `[KNOWN GAP]` Not checked: *Start my day* against real mail and calendar MCP servers (it needs the owner's servers), and the question step on Copilot and Codex.
 
+### 2026-10-19: Schedules are easy to find, in the folder and in Settings (owner)
+
+*Found (owner, on alpha.7):* "is scheduling feature already in this build, where can i find it?" Schedules could only be opened from the Folders panel. *Owner:* "make it intuitive and also show it inside folder for that folder and in settings for all folders".
+
+- **FR-009** **In the folder.**
+  - The room's **⋯** menu (and right-click on its header) has **Schedules…**, with a line saying how many there are and the next run, or what schedules do.
+  - A main agent's chat header has **Schedules**, with the count, e.g. "Schedules (1)".
+  - Both open the folder's Schedules dialog with its starter kit.
+- **FR-010** **The room shows it.**
+  - A room with active schedules has a small **clock chip** in its header, next to MCP: the count and the next run, e.g. "1 · 08:30"; outside the next day, "Tue 08:30". It is dimmed when all are paused.
+  - The tooltip says the same in words, and a click opens the dialog.
+  - Without schedules there is no chip; the ⋯ menu still offers it.
+- **FR-011** **Settings > Schedules** lists every folder's schedules in one place:
+  - each folder with **Open…**;
+  - each schedule with when, next and last run, **Pause/Resume** and **Delete**;
+  - **Pause all schedules**;
+  - **Add a schedule to** a folder that has none.
+
+  All views (Folders panel, dialog, room chips, chat button, Settings) refresh together when anything changes.
+- `sim:` `scripts/shots-044-everywhere.js` at 1440x900 and 1280x800:
+  - no chip before there is a schedule;
+  - the menu item opens the dialog;
+  - adding *Start my day* shows the chip "1 · 08:30" inside the room header, and the chip opens the dialog;
+  - the chat header says "Schedules (1)" and opens it;
+  - Settings lists it; Pause and Delete work there, and the chip goes away with the last schedule.
+- Screenshots: `docs/screenshots/044-room-chip-*.png`, `044-settings-*.png`.
+- `scripts/shots-006-remove.js` now expects *Schedules…* in the folder menu.
+
