@@ -24,12 +24,13 @@ const run = (messages: ClaudeMessage[], quiet = false): EventBody[] => {
   return out;
 };
 
-// 1. Every fixture is synthetic and maps to exactly its expected event list.
+// 1. Every fixture is synthetic or a redacted real recording (spec 012 T067) and maps to exactly its expected event list.
 const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
 assert.ok(files.length >= 9, 'fixtures present');
 for (const f of files) {
   const fx = load(f);
-  assert.strictEqual(fx.provenance, 'synthetic', `${f} is marked synthetic`);
+  assert.ok(fx.provenance === 'synthetic' || fx.provenance === 'real-redacted', `${f} is marked synthetic or real-redacted`);
+  if (fx.provenance === 'real-redacted') assert.ok(!/\/tmp\/|\/home\/(?!user\b)|\/Users\/|[A-Za-z]:\\\\|sk-ant|@[a-z0-9-]+\.[a-z]/i.test(JSON.stringify(fx.messages)), `${f}: no real paths, keys or e-mail addresses`);
   assert.deepStrictEqual(strip(run(fx.messages)), fx.expected, `fixture ${f} maps to the expected events`);
   assert.deepStrictEqual(dropped, [], `fixture ${f}: nothing dropped silently`);
 }
