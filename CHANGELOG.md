@@ -4,6 +4,13 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.6 tag)
 
+- **OpenAI Codex is offered next to Copilot and Claude Code (spec 012 FR-145).** If `codex` is installed and signed in (`codex login`, for example with ChatGPT), it is a harness you can pick. It supports:
+  - Read-only, Ask first and Allow all, enforced;
+  - a mode switch from the next message, models and efforts;
+  - previous sessions and resume; a folder continues its last thread after a restart.
+  
+  Checked end to end in the real app with ChatGPT Plus. On Ubuntu, Read-only and Ask first need the bubblewrap note in the README.
+
 - **Codex groundwork: mode switch and restarts (spec 012 FR-143/FR-144).** A Codex agent's permission mode can be changed while it runs; it applies from the next message, and a stricter mode stops a running turn. An ended Codex session continues its own thread, also after a restart. Checked on a real Codex.
 
 - **Codex groundwork: resume, previous sessions, history and models (spec 012 FR-093, FR-141, FR-142).** The Codex adapter, not offered yet, can resume a thread of the same folder, list the folder's earlier threads, replay a thread's chat, and offer Codex's models and efforts. All of this was checked on a real Codex.
