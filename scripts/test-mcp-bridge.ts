@@ -499,7 +499,7 @@ const echoer = (extra?: (m: any, line: string, write: (s: string) => void, sock:
     const calls: string[] = [];
     let current = realUd;
     const app: BridgeApp = {
-      isPackaged: false,
+      isPackaged: false, once: () => undefined,
       getPath: (n) => { calls.push('getPath:' + n); return current; },
       setPath: (n, v) => { calls.push('setPath:' + n); current = v; },
       getVersion: () => '1',
@@ -592,7 +592,9 @@ const echoer = (extra?: (m: any, line: string, write: (s: string) => void, sock:
 
   // 16. Signals end the bridge like stdin end does (folder removed, then app.exit); an unexpected error exits 1 with a fixed line.
   {
+    const quitCbs: Array<() => void> = [];
     const mkApp = (exits: number[]): BridgeApp => ({
+      once: (_e, cb) => { quitCbs.push(cb); },
       isPackaged: false, getPath: () => mkRoot(), setPath: () => undefined, getVersion: () => '1', disableHardwareAcceleration: () => undefined,
       whenReady: () => new Promise<void>(() => undefined), exit: (c) => { exits.push(c ?? 0); },
     });
@@ -611,6 +613,20 @@ const echoer = (extra?: (m: any, line: string, write: (s: string) => void, sock:
       assert.ok(!fs.existsSync(dir), sig + ' removes the bridge folder');
       proc.emit(sig);
       assert.strictEqual(exits.length, 1, 'once');
+    }
+    {
+      // Electron quits on SIGTERM by itself: will-quit and process exit also remove the folder (and do not exit twice)
+      for (const via of ['will-quit', 'exit']) {
+        const exits: number[] = [];
+        const proc = mkProc();
+        const dir = mkRoot();
+        fs.writeFileSync(path.join(dir, 'Local State'), 'x');
+        quitCbs.length = 0;
+        runMcpBridge(mkApp(exits), {}, proc, mkIo(), () => dir);
+        if (via === 'will-quit') quitCbs.forEach((f) => f()); else proc.emit('exit');
+        assert.ok(!fs.existsSync(dir), via + ' removes the bridge folder');
+        assert.deepStrictEqual(exits, [], 'cleanup does not call exit');
+      }
     }
     {
       const exits: number[] = [];

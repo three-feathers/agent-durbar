@@ -31,6 +31,7 @@ export interface BridgeApp {
   disableHardwareAcceleration(): void;
   whenReady(): Promise<unknown>;
   exit(code?: number): void;
+  once(event: 'will-quit', cb: () => void): unknown;
   dock?: { hide(): void };
 }
 
@@ -162,13 +163,18 @@ export function runMcpBridge(
 ): void {
   let bridgeDir: string | null = null;
   let closing = false;
+  // Idempotent: may run from shutdown, from Electron's quit path and from process exit.
+  const cleanup = () => { if (bridgeDir) { try { fs.rmSync(bridgeDir, { recursive: true, force: true }); } catch { /* best effort */ } } };
   const shutdown = (code: number) => {
     if (closing) return;
     closing = true;
-    if (bridgeDir) { try { fs.rmSync(bridgeDir, { recursive: true, force: true }); } catch { /* best effort */ } }
+    cleanup();
     app.exit(code);
   };
   installProcessGuards(proc, shutdown); // first, so even a failure below ends the process
+  // Electron handles SIGTERM/SIGINT itself and quits, so the listeners above may never fire: clean up on its quit path too.
+  app.once('will-quit', cleanup);
+  proc.on('exit', cleanup);
   if (proc === process) {
     // stdout is the protocol: nothing else may be written there, not even by a stray console.log
     console.log = (...a: unknown[]) => console.error(...a);
