@@ -342,6 +342,96 @@ async function connects(sock: string): Promise<boolean> {
     assert.ok(st.reason && !/[0-9a-f]{64}/.test(st.reason));
   }
 
+  // 12. stop() while start() is in flight: nothing is left behind and start does not report listening.
+  {
+    const ud = mkRoot();
+    const h = mkHost(ud);
+    const sp = h.start();
+    const tp = h.stop();
+    const [st] = await Promise.all([sp, tp]);
+    assert.notStrictEqual(st.status, 'listening', 'start did not report listening');
+    assert.strictEqual(h.state().status, 'off');
+    assert.ok(!fs.existsSync(keyFileOf(ud)), 'no key file');
+    if (!win) assert.ok(!fs.existsSync(pathsOf(ud).socket as string), 'no socket');
+    assert.strictEqual(h.socket, null);
+    // the same, when stop() comes after the key file was written but before listen resolved
+    const h2 = mkHost(ud);
+    const sp2 = h2.start();
+    await sleep(0);
+    const tp2 = h2.stop();
+    await Promise.all([sp2, tp2]);
+    assert.ok(!fs.existsSync(keyFileOf(ud)) && (win || !fs.existsSync(pathsOf(ud).socket as string)));
+    assert.strictEqual(h2.state().status, 'off');
+  }
+
+  // 12b. stop() lands after the probe, while the key file is being made: the start undoes itself once listen resolves.
+  {
+    const ud = mkRoot();
+    let once = true;
+    let h3!: McpServerHost;
+    h3 = mkHost(ud, { random: (n) => { if (once) { once = false; void h3.stop(); } return require('crypto').randomBytes(n); } });
+    const st = await h3.start();
+    await h3.stop();
+    assert.notStrictEqual(st.status, 'listening');
+    assert.strictEqual(h3.state().status, 'off');
+    assert.ok(!fs.existsSync(keyFileOf(ud)), 'no key file left');
+    if (!win) assert.ok(!fs.existsSync(pathsOf(ud).socket as string), 'no socket left');
+  }
+
+  // 13. A request line split across the handshake boundary is kept: proof + 20 bytes of initialize, the rest 300 ms later.
+  {
+    const ud = mkRoot();
+    const h = mkHost(ud);
+    await h.start();
+    const s = await dialRaw(h.socket as string);
+    const key = keyOf(ud);
+    const rx = new LineFramer();
+    const replies: any[] = [];
+    let proof = '';
+    let sent = false;
+    const hs = createBridgeHandshake({
+      key,
+      send: (m) => { proof = m + '\n'; },
+      timers: { setTimeout: (f, ms) => setTimeout(f, ms), clearTimeout: (x) => clearTimeout(x as NodeJS.Timeout) },
+      onDone: () => undefined,
+    });
+    hs.start();
+    s.on('data', (chunk: Buffer) => {
+      for (const ev of rx.push(chunk)) {
+        if (ev.type !== 'line') continue;
+        if (!hs.done) {
+          hs.receive(ev.line);
+          if (proof && !sent) {
+            sent = true;
+            const req = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: LATEST_PROTOCOL_VERSION } }) + '\n';
+            s.write(Buffer.concat([Buffer.from(proof), Buffer.from(req).subarray(0, 20)])); // one write: proof + a partial request
+            setTimeout(() => s.write(Buffer.from(req).subarray(20)), 300);
+          }
+        } else replies.push(JSON.parse(ev.line));
+      }
+    });
+    assert.ok(await until(() => replies.length > 0, 3000), 'the split request was answered');
+    assert.strictEqual(replies[0].id, 1);
+    assert.ok(replies[0].result && replies[0].result.serverInfo.name === 'agent-durbar', 'a valid initialize result');
+    await h.stop();
+  }
+
+  // 14. Requests before the handshake get no answer with data and the socket is closed.
+  {
+    const ud = mkRoot();
+    const h = mkHost(ud);
+    await h.start();
+    const s = await dialRaw(h.socket as string);
+    let got = '';
+    s.on('data', (d: Buffer) => { got += d.toString('utf8'); });
+    s.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: LATEST_PROTOCOL_VERSION } }) + '\n');
+    s.write(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'durbar_list_floors', arguments: {} } }) + '\n');
+    assert.ok(await until(() => s.gone), 'closed');
+    assert.ok(!/"result"|"error"|Attic|floors/.test(got.replace(/"hello":"[^"]*"/, '')), 'only the server hello was sent: ' + got.slice(0, 120));
+    assert.strictEqual(h.state().connections, 0);
+    await h.stop();
+  }
+
   console.log('mcp server ok');
 })().then(
   () => cleanup(0),

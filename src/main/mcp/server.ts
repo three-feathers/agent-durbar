@@ -19,7 +19,6 @@ import { MCP_LIMITS, MCP_SERVER_NAME } from '../../shared/mcpserver';
 import { McpFs, createKeyFile, createServerHandshake, deleteKeyFile, nodeMcpFs, readKeyFile } from './auth';
 import type { Handshake, KeyMaterial, Timers } from './auth';
 import { McpConnection } from './connection';
-import { LineFramer } from './jsonrpc';
 import { McpPaths, checkFallbackDir, mcpPaths } from './paths';
 import { McpSession } from './protocol';
 import type { MethodHandler } from './protocol';
@@ -108,6 +107,8 @@ export class McpServerHost {
   private readonly authed = new Set<net.Socket>();
   private readonly pending = new Set<net.Socket>();
   private chain: Promise<unknown> = Promise.resolve();
+  /** Bumped by every stop(): a start that began earlier sees the change and undoes itself. */
+  private gen = 0;
   private readonly o: McpHostOptions;
   private readonly fsx: McpFs;
   private readonly platform: string;
@@ -135,11 +136,13 @@ export class McpServerHost {
   }
 
   start(): Promise<McpHostState> {
-    return this.enqueue(() => this.doStart());
+    const gen = this.gen; // a stop() called after this point cancels this start, even before it runs
+    return this.enqueue(() => this.doStart(gen));
   }
 
   /** Closes everything and removes the socket and the key file now (synchronously); the promise settles when the listener is closed. */
   stop(): Promise<McpHostState> {
+    this.gen++;
     this.teardownSync();
     return this.enqueue(() => this.doStop());
   }
@@ -171,7 +174,8 @@ export class McpServerHost {
     return { fs: this.fsx, mcpDir: p.mcpDir as string, keyFile: p.keyFile as string, uid: this.uid, platform: this.platform, ...(this.o.random ? { random: this.o.random } : {}) };
   }
 
-  private async doStart(): Promise<McpHostState> {
+  private async doStart(gen: number): Promise<McpHostState> {
+    if (gen !== this.gen) return this.set('off', null);
     if (this.server) return this.state(); // already listening
     if (this.o.demo?.()) return this.set('demo', R.demo);
 
@@ -182,6 +186,7 @@ export class McpServerHost {
     const probePaths = this.platform === 'win32' ? (existing.ok ? this.pathsFor(existing.material.pipeId) : null) : first;
     if (probePaths?.socket && (await probe(probePaths.socket, this.o.probeTimeoutMs ?? 500)) === 'live') return this.set('other-instance', R.other);
     // a stop() or another start() may have run while we waited
+    if (gen !== this.gen) return this.set('off', null);
     if (this.server) return this.state();
 
     // 2. A fresh key (a leftover file is from a crash: no live owner holds it).
@@ -218,6 +223,12 @@ export class McpServerHost {
       try { server.close(); } catch { /* not listening */ }
       this.removeKeyFile();
       return (e as NodeJS.ErrnoException).code === 'EADDRINUSE' ? this.set('other-instance', R.other) : this.set('unavailable', R.listen);
+    }
+    if (gen !== this.gen) { // stop() came while we were starting: undo it all now
+      try { server.close(); } catch { /* closing */ }
+      if (paths.kind === 'unix') { try { fs.unlinkSync(paths.socket); } catch { /* gone */ } }
+      this.removeKeyFile();
+      return this.set('off', null);
     }
     server.on('error', () => { /* a late listener error must not crash main */ });
     if (paths.kind === 'unix') { try { fs.chmodSync(paths.socket, 0o600); } catch { /* best effort: the folder is 0700 already */ } }
@@ -279,7 +290,6 @@ export class McpServerHost {
   private onSocket(sock: net.Socket, material: KeyMaterial, methods: Record<string, MethodHandler>): void {
     this.pending.add(sock);
     sock.on('error', () => { /* closed by the peer: 'close' follows */ });
-    const framer = new LineFramer();
     const c: { conn: McpConnection | null } = { conn: null };
     let hs: Handshake | null = null;
     const closeAll = () => { hs?.abort(); this.pending.delete(sock); if (this.authed.delete(sock)) this.set(this.st.status, this.st.reason); };
@@ -310,22 +320,23 @@ export class McpServerHost {
     });
     hs.start();
 
+    // Handshake phase: bytes up to the first newline are the handshake message; everything after it
+    // (whole lines and a partial line) goes to the connection, so nothing is lost at the boundary.
+    let hsBuf: Buffer = Buffer.alloc(0);
     sock.on('data', (chunk: Buffer) => {
       if (c.conn) { c.conn.onData(chunk); return; }
       if (!hs || hs.done) return;
-      // Handshake phase: whole lines go to the handshake; whatever follows the last handshake line goes to the connection.
-      const events = framer.push(chunk);
-      for (let i = 0; i < events.length; i++) {
-        const ev = events[i];
-        const live = c.conn as McpConnection | null; // set by the handshake callback while this loop runs
-        if (!live) {
-          if (ev.type === 'oversize') { sock.destroy(); return; }
-          hs.receive(ev.line);
-          if (sock.destroyed) return;
-        } else if (ev.type === 'line') {
-          live.onData(ev.line + '\n');
-        }
-      }
+      hsBuf = Buffer.concat([hsBuf, chunk]);
+      const nl = hsBuf.indexOf(0x0a);
+      if (nl === -1) { if (hsBuf.length > 2048) sock.destroy(); return; }
+      let end = nl;
+      if (end > 0 && hsBuf[end - 1] === 0x0d) end--;
+      const line = hsBuf.subarray(0, end).toString('utf8');
+      const rest = hsBuf.subarray(nl + 1);
+      hsBuf = Buffer.alloc(0);
+      hs.receive(line);
+      const live = c.conn as McpConnection | null; // set by the handshake callback just now
+      if (live && !sock.destroyed && rest.length > 0) live.onData(rest);
     });
   }
 }
