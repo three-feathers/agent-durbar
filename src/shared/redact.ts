@@ -70,6 +70,61 @@ export function redact(text: unknown, env?: Env): string {
   }
 }
 
+const MASK = '[redacted]';
+/** A flag name that looks secret: contains token/secret/password/apikey/credential, or has a `key`, `pass` or `auth` word (`--api-key`, `--access_token`, `--auth`). */
+function secretFlag(flag: string): boolean {
+  const n = flag.replace(/^-+/, '').toLowerCase();
+  if (!n) return false;
+  return /token|secret|passw|apikey|credential/.test(n) || n.split(/[-_.]/).some((w) => w === 'key' || w === 'pass' || w === 'pwd' || w === 'pat' || w === 'bearer' || w === 'auth' || w === 'authorization');
+}
+
+/**
+ * Command-line arguments for display (spec 041 FR-053): the value after a secret-looking flag (`--token abc`, `--api-key=abc`) is
+ * masked, then every argument goes through `redact()`. Never throws; returns a new array of the same length.
+ */
+export function maskSecretArgs(args: readonly string[], env?: Env): string[] {
+  const out: string[] = [];
+  let maskNext = false;
+  for (const raw of Array.isArray(args) ? args : []) {
+    const a = typeof raw === 'string' ? raw : String(raw ?? '');
+    if (maskNext) {
+      maskNext = false;
+      if (!a.startsWith('-')) { out.push(MASK); continue; }
+    }
+    if (a.startsWith('-')) {
+      const eq = a.indexOf('=');
+      if (eq > 0) {
+        const flag = a.slice(0, eq);
+        // `--token=abc`; else the value may itself be `NAME=value` or `Header: value` (`--header=X-Api-Key: abc`)
+        out.push(secretFlag(flag) ? `${flag}=${MASK}` : `${flag}=${maskPair(a.slice(eq + 1)) ?? redact(a.slice(eq + 1), env)}`);
+        continue;
+      }
+      // Deliberate fail-safe: any flag with a secret word masks the next value, so `--no-auth value` hides `value` too.
+      maskNext = secretFlag(a);
+      out.push(redact(a, env));
+      continue;
+    }
+    out.push(maskPair(a) ?? redact(a, env));
+  }
+  return out;
+}
+
+/** `NAME=value` (`GITHUB_TOKEN=abc`) or `Name: value` (`X-Api-Key: abc`) with a secret-looking name: the whole text with the value masked. Otherwise undefined. */
+function maskPair(a: string): string | undefined {
+  const kv = /^([A-Za-z_][A-Za-z0-9_.-]{0,127})=/.exec(a);
+  if (kv && secretFlag(kv[1])) return `${kv[1]}=${MASK}`;
+  const h = /^([A-Za-z0-9][A-Za-z0-9_-]{0,127}):\s*/.exec(a);
+  if (h && secretFlag(h[1])) return `${h[1]}: ${MASK}`;
+  return undefined;
+}
+
+/** A URL for display: `redact()` (user:password@ and key-like shapes) plus the value of any query parameter whose name looks secret. */
+export function maskSecretUrl(url: unknown, env?: Env): string {
+  const s = typeof url === 'string' ? url : '';
+  const masked = s.replace(/([?&;#])([^=&;#?\s]{1,100})=([^&;#\s]*)/g, (m, sep: string, name: string) => (secretFlag(name) ? `${sep}${name}=${MASK}` : m));
+  return redact(masked.replace(/(:\/\/):[^\s/@]{1,200}@/g, '$1[redacted]@'), env); // `scheme://:secret@host`: redact() wants a user name
+}
+
 /**
  * The one debug-log sink (`DURBAR_LOG`): every record is JSON-encoded, redacted once, then appended as one line.
  * A record over the cap is written as `{"truncated":true,"head":"..."}`, so the file stays valid JSONL.
