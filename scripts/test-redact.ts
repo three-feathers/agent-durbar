@@ -1,7 +1,7 @@
 /** Unit test for secret redaction and the debug sink (spec 012 T051): `npm run test:runtime`. */
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
-import { REDACT_MAX_CHARS, createDebugSink, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, splitCommand } from '../src/shared/redact';
+import { REDACT_MAX_CHARS, createDebugSink, cut, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, splitCommand } from '../src/shared/redact';
 
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const env = {
@@ -357,6 +357,20 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   const ms = Date.now() - t0;
   console.log(`redact: masking 200k-char adversarial inputs in ${ms} ms`);
   assert.ok(ms < 20000, `masking 200k-char adversarial inputs took ${ms} ms`);
+}
+
+// 15. T054: `cut` stops at a token boundary and never leaves half a surrogate pair
+{
+  const words = Array.from({ length: 900 }, () => 'abcdef').join(' '); // 6-letter words, period 7: 4096 % 7 != 0, so a character cut lands mid-word
+  const c = cut(words, 4096);
+  assert.ok(c.endsWith(' [truncated]'), 'marker');
+  const body = c.slice(0, -' [truncated]'.length);
+  assert.ok(body.length <= 4096 && /abcdef$/.test(body) && body.split(' ').every((w) => w === 'abcdef'), 'ends on a whole word');
+  assert.strictEqual(cut('abc', 4096), 'abc');
+  const emoji = cut('a '.repeat(2047) + 'a' + '\u{1F600}', 4096);
+  assert.ok(!/[\ud800-\udbff] \[truncated\]$/.test(emoji) && !/[\ud800-\udbff]$/.test(emoji.slice(0, -12)), 'no lone surrogate');
+  const emoji2 = cut('a'.repeat(4095) + '\u{1F600}', 4096);
+  assert.ok(!/[\ud800-\udbff]/.test(emoji2), 'no lone surrogate (4095 a + emoji)');
 }
 
 console.log('redact: all checks passed');

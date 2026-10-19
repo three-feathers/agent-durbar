@@ -501,6 +501,44 @@ async function main(): Promise<void> {
       console.log(`mcp read tools: 15 agents + 40 folders, all seven tools in ${ms.toFixed(1)} ms`);
     }
 
+    // 12k. T054: the per-string cap (4096 chars, token boundary, ` [truncated]`), applied after the masking
+    {
+      const sec = 'SEC' + 'CAP-' + 'k7m2q9x4w8z1v6b3';
+      const exact = '/' + 'a'.repeat(4095);
+      const longName = 'S'.repeat(5000);
+      const longCmd = 'node ' + 'x '.repeat(5000);
+      // the secret starts well before the cut and straddles it
+      const straddle = 'node ' + 'y '.repeat(2040) + `--token ${sec} ` + 'z '.repeat(3000);
+      const ex = (name: string, over: Partial<McpServerView>): McpServerView => ({ name, transport: 'stdio', enabled: true, trusted: true, needsSecrets: false, command: 'npx', ...over } as any);
+      const f0 = exact; // the saved folder path itself is 4096 characters
+      const { call } = mk(2, 2, {
+        mcpExtras: (k) => (k === f0 ? [ex('longcmd', { command: longCmd }), ex(longName, {}), ex('straddle', { command: straddle }), ex('edge', { command: 'a'.repeat(4096) })] : []),
+        folders: () => [{ workspace: exact, permMode: 'read-only', hidden: false } as SavedFolder],
+      });
+      const { data } = await call('durbar_mcp_state');
+      const servers = data.extras[0].servers as Array<{ name: string; command: string }>;
+      const byName = (n: string) => servers.find((s) => s.name === n || s.name.startsWith(n))!;
+      const lc = byName('longcmd').command;
+      assert.ok(lc.length <= 4096 + 12 && lc.endsWith(' [truncated]'), `long command cut (${lc.length})`);
+      assert.strictEqual(byName('edge').command.length, 4096, 'a string of exactly 4096 comes back whole');
+      const sn = servers.find((s) => !['longcmd', 'straddle', 'edge'].includes(s.name))!.name; // one 5000-char token: nothing before the cut is a token boundary
+      assert.ok(sn.length <= 4096 + 12 && sn.endsWith(' [truncated]'), 'a 5000-character server name is cut');
+      const st = byName('straddle').command;
+      assert.ok(st.length <= 4096 + 12, 'straddling command is capped');
+      for (let i = 0; i + 8 <= sec.length; i++) assert.ok(!st.includes(sec.slice(i, i + 8)), 'no 8-character piece of the straddling secret');
+      const fl = (await call('durbar_list_folders')).data.folders[0].key as string;
+      assert.strictEqual(fl, exact, 'a 4096-character folder path comes back whole');
+      // token boundary: 6-letter words, 6000+ chars, ends on a whole word
+      const words = Array.from({ length: 960 }, () => 'abcdef').join(' ');
+      const w = (await mk(1, 1, { mcpExtras: () => [ex('w', { command: words })] , folders: () => [{ workspace: f0, permMode: 'read-only', hidden: false } as SavedFolder] }).call('durbar_mcp_state')).data.extras[0].servers[0].command as string;
+      assert.ok(/abcdef \[truncated\]$/.test(w) && w.slice(0, -12).split(' ').every((x) => x === 'abcdef') && w.length <= 4096 + 12, 'cut at a word boundary');
+      // masking comes before the cut: a stored value with non-token characters straddling the cut is gone whole
+      const stored = 'Qz8#' + 'Lm4!' + 'Rt7$Wx9';
+      const sc = 'node ' + 'y '.repeat(2040) + ' opt=' + stored + ' end';
+      const m = (await mk(1, 1, { mcpExtras: () => [ex('s', { command: sc })], extraSecretValues: () => [stored], folders: () => [{ workspace: f0, permMode: 'read-only', hidden: false } as SavedFolder] }).call('durbar_mcp_state')).data.extras[0].servers[0].command as string;
+      for (const piece of ['Qz8#', 'Lm4!', 'Rt7$', 'Wx9']) assert.ok(!m.includes(piece), `stored value piece ${piece} is gone`);
+    }
+
     // 12j. a handler is wired for every read tool (a missing one fails at build time, not at the first call)
     {
       const h = createReadToolHandlers(mk(1, 1).deps);
