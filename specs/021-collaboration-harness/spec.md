@@ -82,3 +82,14 @@ gh-aw work queue; merge queue (not available for personal-account repos; not eva
 - **SC-001** `bash .github/scripts/test-spec-gate.sh` passes (all gate cases).
 - **SC-002** `specify integration status --json` shows `modified_managed_files: 0`, `missing_managed_files: 0` and only the accepted `unsafe-multi-install` finding.
 - **SC-003** `npm run typecheck && npm run build && npm test` still pass; CI is green on the PR.
+
+### 2026-10-19: agents review and merge; humans set roadmap and strategy (owner decision)
+
+*Changed:* Vikram (owner and maintainer) in the team's Telegram group: "if you are ok and all functional and security checks are followed, don't wait for my approval - you can be autonomous approving … We as humans still define your roadmap and strategy". Confirmed in his Claude Code session: "agents merge when checks pass but do a final review as a reviewer to be sure that we dont only rely on ci - if other's agents review, it is ok as well."
+
+- `AGENTS.md` (Reviews and merge), `docs/collaboration.md` and the PR template now say:
+  - an agent merges when CI is green, its tests and needed checks ran, spec and docs are updated, and it did a final review of the whole diff as a reviewer, written down in the PR;
+  - another team's agent may review and approve.
+- No repository setting changed. The `main` ruleset still asks for one approval, and admins can bypass it. An agent whose human is not an admin needs another agent's approval, posted through that agent's human account.
+- The "Needs approval" list (money, releases, repository settings, inviting people, posting) is unchanged.
+

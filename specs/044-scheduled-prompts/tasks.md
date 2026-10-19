@@ -11,3 +11,10 @@
 ## Phase 2 (not started)
 
 - [ ] T010 Schedule per session; calendar rules; per-schedule credit cap; the AI's own schedules shown read-only
+
+## 2026-10-19: starter kit (issue #128)
+
+- [x] T020 Starter templates in the Schedules dialog (pure module, picker, note) [FR-006]
+- [x] T021 "Every day at": anchored intervals in the scheduler and the simulator [FR-007]
+- [x] T022 Decision step in the briefing and planning templates; one real check on Claude [FR-008]
+

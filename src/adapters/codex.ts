@@ -29,6 +29,8 @@ import { PermissionBroker, startModeOf } from './permissions';
 import type { BrokerEvent } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
 import { redact } from '../shared/redact';
+import { HANDOFF_PROMPT, cleanSummary } from './handoff';
+import type { HandoffResult } from './handoff';
 
 const CODEX_ID = 'codex';
 const CODEX_NAME = 'OpenAI Codex';
@@ -49,6 +51,7 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   history: true, // FR-141: thread/list and thread/read
   mcpStatus: true, // FR-147: mcpServerStatus/list and startup notifications
   mcpToggle: true, // FR-147: from the next message (fresh child, same thread)
+  handoff: true, // spec 030 FR-034: an ephemeral fork, the thread is not changed
 });
 
 /** Where the `codex` binary is and which version it reports. */
@@ -174,6 +177,8 @@ const reasonOf = (e: unknown): string => (e instanceof Error ? e.message : Strin
 
 interface Live {
   sid: string;
+  /** Spec 030 FR-034: forked threads making a hand-off summary; their events never reach the chat. */
+  forks?: Map<string, { text: string; done: (text: string) => void }>;
   /** The start options, for a relaunch with a new mode (FR-144). */
   options: StartOptions;
   /** A mode chosen while the session runs; it applies with the next message, on a fresh child (FR-144). */
@@ -589,6 +594,29 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   /** Interrupt the running turn; the session stays live and grants stay (C10). With no turn running nothing is sent. */
+  /** Spec 030 FR-034: a hand-off summary from an ephemeral fork (read-only, no approvals); the session's thread is not changed. */
+  async handoffSummary(sessionId: string): Promise<HandoffResult> {
+    const live = this.sessions.get(sessionId);
+    if (!live?.rpc || !live.threadId) throw new Error('Open the session first (send a message), then ask for a summary.');
+    const res = await live.rpc.request('thread/fork', { threadId: live.threadId, ephemeral: true, excludeTurns: true, approvalPolicy: 'never', sandbox: 'read-only', ...(live.model ? { model: live.model } : {}) });
+    const forkId = isObj(res) && isObj(res.thread) && typeof res.thread.id === 'string' ? res.thread.id : undefined;
+    if (!forkId) throw new Error('Codex did not fork the conversation.');
+    const forks = (live.forks ??= new Map());
+    let timer: NodeJS.Timeout | undefined;
+    const text = new Promise<string>((resolve) => {
+      forks.set(forkId, { text: '', done: resolve });
+      timer = setTimeout(() => resolve(forks.get(forkId)?.text ?? ''), 180_000);
+    });
+    try {
+      await live.rpc.request('turn/start', { threadId: forkId, input: [{ type: 'text', text: HANDOFF_PROMPT }], approvalPolicy: 'never' });
+      return { summary: cleanSummary(await text) };
+    } finally {
+      clearTimeout(timer);
+      forks.delete(forkId);
+      void live.rpc.request('thread/unsubscribe', { threadId: forkId }).catch(() => undefined);
+    }
+  }
+
   async interrupt(sessionId: string): Promise<void> {
     const live = this.sessions.get(sessionId);
     if (!live) return;
@@ -726,6 +754,14 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   private onNotification(live: Live, method: string, params: unknown): void {
+    // Spec 030 FR-034: a hand-off fork's events are collected here and never mapped to the chat
+    const fork = isObj(params) && typeof params.threadId === 'string' ? live.forks?.get(params.threadId) : undefined;
+    if (fork) {
+      const item = isObj(params) && isObj(params.item) ? params.item : undefined;
+      if (method === 'item/completed' && item && item.type === 'agentMessage' && typeof item.text === 'string') fork.text = item.text;
+      else if (method === 'turn/completed') fork.done(fork.text);
+      return;
+    }
     // FR-147: a server's startup state, for this thread (or all threads)
     if (method === 'mcpServer/startupStatus/updated' && isObj(params) && typeof params.name === 'string' && (params.threadId == null || params.threadId === live.threadId)) {
       const name = params.name.slice(0, 64);

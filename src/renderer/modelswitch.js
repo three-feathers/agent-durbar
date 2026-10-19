@@ -161,7 +161,7 @@
 
   /* ---- Agent kinds and what each can do (spec 012 T017, FR-059..FR-061). Pure. `adapters` is the list from bridge.listAdapters();
      without a list (a bridge that has none, or the call failed) every capability counts as on, so the UI stays as it was. ---- */
-  const ALL_ON={interrupt:true,resume:true,images:true,models:true,effort:true,permissionModes:['read-only','ask','allow'],permModeSwitch:'live',usage:{tokens:true,costUsd:true,nanoAiu:true},context:true,caps:true,helpers:true,history:true,mcpStatus:true,mcpToggle:true};
+  const ALL_ON={interrupt:true,resume:true,images:true,models:true,effort:true,permissionModes:['read-only','ask','allow'],permModeSwitch:'live',usage:{tokens:true,costUsd:true,nanoAiu:true},context:true,caps:true,helpers:true,history:true,mcpStatus:true,mcpToggle:true,handoff:true};
   const haveList=a=>Array.isArray(a)&&a.length>0;
   /* The capabilities of the adapter that runs `info`; all on when the list is missing or does not know the id. */
   function capsOf(info,adapters){
@@ -197,6 +197,7 @@
       case 'history':return !!c.history;
       case 'models':return !!c.models;
       case 'effort':return !!c.effort;
+      case 'handoff':return !!c.handoff; /* spec 030 FR-036 */
       default:return true;
     }
   }

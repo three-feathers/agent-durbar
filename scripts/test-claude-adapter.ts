@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, claudeMdPrompt, claudeModelFlag, claudeModelOptions, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
+import { ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, handoffArgs, parseHandoffOutput, claudeMdPrompt, claudeModelFlag, claudeModelOptions, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import type { AgentEvent } from '../src/adapters/types';
 import { FakeClaudeChild, fakeSpawn } from './fakes/claude-cli';
@@ -681,6 +681,53 @@ async function main(): Promise<void> {
     await ad.send(sid, { text: 'five' });
     await until('relaunch without a budget', () => sp.calls[n]);
     assert.strictEqual(at(sp.calls[n].args, '--max-budget-usd'), undefined, 'no cap: no budget flag');
+    await ad.stop(sid);
+  }
+
+  // ---- spec 030 FR-034: hand-off summary from a forked one-shot (no tools, no MCP, no settings, not saved) ----
+  {
+    const a = handoffArgs({ sessionId: 'sid-1', model: 'haiku' });
+    const at = (f: string) => a[a.indexOf(f) + 1];
+    assert.strictEqual(at('--resume'), 'sid-1');
+    for (const f of ['--fork-session', '--no-session-persistence', '--strict-mcp-config']) assert.ok(a.includes(f), f);
+    assert.strictEqual(at('--tools'), '', 'no tools');
+    assert.strictEqual(at('--setting-sources'), '', 'no settings files');
+    assert.strictEqual(at('--output-format'), 'json');
+    assert.strictEqual(at('--max-budget-usd'), '0.5');
+    assert.strictEqual(at('--model'), 'haiku');
+    assert.ok(!handoffArgs({ sessionId: 's', model: 'auto' }).includes('--model'));
+    assert.match(at('-p'), /hand-off summary/);
+    const ok = parseHandoffOutput('noise\n' + JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: '```markdown\n## Goal\nX\n```', total_cost_usd: 0.0009 }));
+    assert.deepStrictEqual(ok, { summary: '## Goal\nX', costUsd: 0.0009 });
+    assert.deepStrictEqual(parseHandoffOutput(JSON.stringify({ type: 'result', subtype: 'error_max_budget_usd', is_error: true, result: 'partial', total_cost_usd: 0.5 })), { summary: '', costUsd: 0.5 });
+    assert.deepStrictEqual(parseHandoffOutput('not json'), { summary: '' });
+
+    const calls: Array<{ file: string; args: string[]; cwd: string }> = [];
+    let reply = { code: 0 as number | null, stdout: JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: '## Goal\nShip it', total_cost_usd: 0.002 }) };
+    const sp = fakeSpawn();
+    sp.next = scripted(okTurn);
+    const ad = new ClaudeAdapter({
+      claudePath: async () => '/usr/local/bin/claude',
+      makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }),
+      sessionExists: () => false, claudeMd: () => undefined, env: () => ({}),
+      runOnce: async (file, args, o) => (calls.push({ file, args, cwd: o.cwd }), reply),
+    });
+    const events: AgentEvent[] = [];
+    ad.onEvent((e) => events.push(e));
+    assert.strictEqual(ad.capabilities.handoff, true);
+    const sid = await ad.start({ workspace: WS, quiet: true, model: 'haiku', maxAiCredits: 1 });
+    assert.deepStrictEqual(await ad.handoffSummary(sid), { summary: '' }, 'nothing said yet: no run');
+    assert.strictEqual(calls.length, 0);
+    await ad.send(sid, { text: 'hi' });
+    await until('turn', () => statuses(events, sid).includes('idle'));
+    const r = await ad.handoffSummary(sid);
+    assert.deepStrictEqual(r, { summary: '## Goal\nShip it', costUsd: 0.002 });
+    assert.strictEqual(calls[0].cwd, WS, 'runs in the session folder (where Claude keeps the session)');
+    assert.ok(calls[0].args.includes(sid) && calls[0].args.includes('--fork-session'));
+    assert.ok(events.some((e) => e.type === 'usage' && (e as { costUsd?: number }).costUsd === 0.002), 'its cost counts as the session\'s usage');
+    assert.strictEqual(sp.calls.length, 1, 'the live CLI is not restarted');
+    reply = { code: 1, stdout: '' };
+    await assert.rejects(ad.handoffSummary(sid), /could not make a summary \(exit 1\)/);
     await ad.stop(sid);
   }
 
