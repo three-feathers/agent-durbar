@@ -81,7 +81,7 @@ The bridge is a thin forwarder plus an offline responder. Parsing, limits, tool 
 | `src/main/mcpops.ts` | bodies of `mcp:upsert`, `mcp:remove`, `mcp:setEnabled` moved out of `registerMcpIpc` (`src/main/mcpipc.ts:94-104`) | yes |
 | `src/main/folderops.ts` | bodies of `folders:remove` (`main.ts:621-638`) and the default-cap set (`main.ts:468`); new `addLazyFolderOp` (same shape as `restoreFolders`, `main.ts:238-251`, plus path checks) | yes (deps injected) |
 | `src/renderer/mcpconfirm.js` | the confirmation dialog view (uses `dialog.js` focus rules) | renderer |
-| `scripts/test-mcp-paths.ts`, `test-mcp-protocol.ts`, `test-mcp-server.ts`, `test-mcp-bridge.ts`, `test-mcp-tools.ts`, `test-mcp-requests.ts`, `test-mcp-identity.ts`, `test-mcp-audit.ts`, `test-agentstate.ts` | tests, joined into `npm test` (a new `test:mcpserver` group) | |
+| `scripts/test-mcp-paths.ts`, `test-mcp-protocol.ts`, `test-mcp-server.ts`, `test-mcp-bridge.ts`, `test-mcp-tools.ts`, `test-mcp-requests.ts`, `test-mcp-identity.ts`, `test-mcp-audit.ts`, `test-mcp-agentstate.ts` | tests, joined into `npm test` (a new `test:mcpserver` group) | |
 | `scripts/fakes/mcp-client.ts` | fake MCP client: scripted handshake + calls over the bridge core or a socket | |
 | `scripts/fixtures/mcp/*.json` | handshakes per client, `"provenance": "synthetic"` from the MCP spec and client docs until T061 | |
 | `scripts/test-mcp-bridge-electron.ts` | spawns the built Electron binary with the bridge flag and runs `initialize` over stdio (CI, three OSes, T019) | |
