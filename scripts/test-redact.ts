@@ -248,6 +248,15 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.strictEqual(maskSecretUrl('https://h.test/a?token=' + SEC), 'https://h.test/a?token=[redacted]');
   assert.strictEqual(maskSecretUrl('https://h.test/a?page=2'), 'https://h.test/a?page=2');
   assert.strictEqual(maskSecretUrl(undefined), '');
+
+  // review fixes: NAME=value, Name: value, more words, empty URL user, deliberate over-masking
+  assert.deepStrictEqual(maskSecretArgs(['-e', 'GITHUB_TOKEN=abcdefSECRET1234', 'PORT=8080']), ['-e', 'GITHUB_TOKEN=[redacted]', 'PORT=8080'], 'NAME=value without a dash');
+  assert.deepStrictEqual(maskSecretArgs(['env', 'API_KEY=x']), ['env', 'API_KEY=[redacted]']);
+  assert.deepStrictEqual(maskSecretArgs(['--header', 'X-Api-Key: abc', '--header', 'Content-Type: json']), ['--header', 'X-Api-Key: [redacted]', '--header', 'Content-Type: json'], 'Name: value');
+  assert.deepStrictEqual(maskSecretArgs(['--header=X-Api-Key: abc', '--header=Content-Type: json', '--env=GH_TOKEN=abc']), ['--header=X-Api-Key: [redacted]', '--header=Content-Type: json', '--env=GH_TOKEN=[redacted]'], '--flag=Name: value');
+  assert.deepStrictEqual(maskSecretArgs(['--pat', 'a', '--bearer', 'b', '--pwd', 'c', '--path', 'd']), ['--pat', '[redacted]', '--bearer', '[redacted]', '--pwd', '[redacted]', '--path', 'd'], 'pat, bearer, pwd are whole words');
+  assert.strictEqual(maskSecretUrl('https://:' + SEC + '@h.test/p'), 'https://[redacted]@h.test/p', 'empty user');
+  assert.deepStrictEqual(maskSecretArgs(['--no-auth', 'value']), ['--no-auth', '[redacted]'], 'deliberate fail-safe: over-masking beats leaking');
 }
 
 console.log('redact: all checks passed');

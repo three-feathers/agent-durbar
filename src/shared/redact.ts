@@ -75,7 +75,7 @@ const MASK = '[redacted]';
 function secretFlag(flag: string): boolean {
   const n = flag.replace(/^-+/, '').toLowerCase();
   if (!n) return false;
-  return /token|secret|passw|apikey|credential/.test(n) || n.split(/[-_.]/).some((w) => w === 'key' || w === 'pass' || w === 'auth' || w === 'authorization');
+  return /token|secret|passw|apikey|credential/.test(n) || n.split(/[-_.]/).some((w) => w === 'key' || w === 'pass' || w === 'pwd' || w === 'pat' || w === 'bearer' || w === 'auth' || w === 'authorization');
 }
 
 /**
@@ -94,21 +94,35 @@ export function maskSecretArgs(args: readonly string[], env?: Env): string[] {
     if (a.startsWith('-')) {
       const eq = a.indexOf('=');
       if (eq > 0) {
-        out.push(secretFlag(a.slice(0, eq)) ? `${a.slice(0, eq)}=${MASK}` : redact(a, env));
+        const flag = a.slice(0, eq);
+        // `--token=abc`; else the value may itself be `NAME=value` or `Header: value` (`--header=X-Api-Key: abc`)
+        out.push(secretFlag(flag) ? `${flag}=${MASK}` : `${flag}=${maskPair(a.slice(eq + 1)) ?? redact(a.slice(eq + 1), env)}`);
         continue;
       }
+      // Deliberate fail-safe: any flag with a secret word masks the next value, so `--no-auth value` hides `value` too.
       maskNext = secretFlag(a);
+      out.push(redact(a, env));
+      continue;
     }
-    out.push(redact(a, env));
+    out.push(maskPair(a) ?? redact(a, env));
   }
   return out;
+}
+
+/** `NAME=value` (`GITHUB_TOKEN=abc`) or `Name: value` (`X-Api-Key: abc`) with a secret-looking name: the whole text with the value masked. Otherwise undefined. */
+function maskPair(a: string): string | undefined {
+  const kv = /^([A-Za-z_][A-Za-z0-9_.-]{0,127})=/.exec(a);
+  if (kv && secretFlag(kv[1])) return `${kv[1]}=${MASK}`;
+  const h = /^([A-Za-z0-9][A-Za-z0-9_-]{0,127}):\s*/.exec(a);
+  if (h && secretFlag(h[1])) return `${h[1]}: ${MASK}`;
+  return undefined;
 }
 
 /** A URL for display: `redact()` (user:password@ and key-like shapes) plus the value of any query parameter whose name looks secret. */
 export function maskSecretUrl(url: unknown, env?: Env): string {
   const s = typeof url === 'string' ? url : '';
   const masked = s.replace(/([?&;#])([^=&;#?\s]{1,100})=([^&;#\s]*)/g, (m, sep: string, name: string) => (secretFlag(name) ? `${sep}${name}=${MASK}` : m));
-  return redact(masked, env);
+  return redact(masked.replace(/(:\/\/):[^\s/@]{1,200}@/g, '$1[redacted]@'), env); // `scheme://:secret@host`: redact() wants a user name
 }
 
 /**

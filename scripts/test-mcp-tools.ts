@@ -215,6 +215,8 @@ async function main(): Promise<void> {
       extraValue: 'EXTRAVALUE-0p9o8i7u6y5t4r3e',
       argToken: 'ARGTOKEN-q1w2e3r4t5y6u7i8',
       argEq: 'ARGEQ-z9x8c7v6b5n4m3l2',
+      argEq2: 'ARGEQTWO-a1s2d3f4g5h6j7k8',
+      argHdr: 'ARGHDR-p0o9i8u7y6t5r4e3',
       urlPass: 'URLPASS-m4n5b6v7c8x9z0l1',
       urlQuery: 'URLQUERY-k3j4h5g6f7d8s9a0',
       prompt: 'PROMPT-TEXT-SHOULD-NEVER-APPEAR',
@@ -226,7 +228,7 @@ async function main(): Promise<void> {
     });
     const extra: McpServerView = {
       name: 'gh', transport: 'stdio', enabled: true, trusted: true, needsSecrets: false,
-      command: 'npx', args: ['-y', 'srv', '--token', SECRETS.argToken, `--api-key=${SECRETS.argEq}`, '--verbose'],
+      command: 'npx', args: ['-y', 'srv', '--token', SECRETS.argToken, `--api-key=${SECRETS.argEq}`, '--verbose', 'X_TOKEN=' + SECRETS.argEq2, 'X-Api-Key: ' + SECRETS.argHdr],
       url: `https://u:${SECRETS.urlPass}@example.test/mcp?api_key=${SECRETS.urlQuery}&x=1`,
       workingDirectory: SECRETS.outside,
       // a real McpServerView carries no values; a buggy store that did must still not leak (the planted `value` fields)
@@ -354,7 +356,7 @@ async function main(): Promise<void> {
       const e = m.extras[0].servers[0];
       assert.deepStrictEqual(e.envKeys, [{ key: 'GH_TOKEN', set: true }]);
       assert.deepStrictEqual(e.headerKeys, [{ key: 'Authorization', set: true }]);
-      assert.deepStrictEqual(e.args, ['-y', 'srv', '--token', '[redacted]', '--api-key=[redacted]', '--verbose']);
+      assert.deepStrictEqual(e.args, ['-y', 'srv', '--token', '[redacted]', '--api-key=[redacted]', '--verbose', 'X_TOKEN=[redacted]', 'X-Api-Key: [redacted]']);
       assert.ok(e.url.includes('x=1') && e.url.includes('api_key=[redacted]') && !e.url.includes('u:'), e.url);
       assert.ok(!('workingDirectory' in e));
     }
