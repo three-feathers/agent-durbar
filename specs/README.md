@@ -148,3 +148,9 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | # | Feature | Status |
 | --- | --- | --- |
 | [045](045-security-sweep/spec.md) | Security and quality sweep before alpha.6: uniform place ids, one-pass unescape, Windows `cmd.exe` from SystemRoot, window navigation and web-permission hardening, alert triage | built 2026-10-19 (unit tests, Electron check on the simulator) |
+
+## Feature 046: release v0.1.0-alpha.6
+
+| # | Feature | Status |
+| --- | --- | --- |
+| [046](046-release-alpha6/spec.md) | Release v0.1.0-alpha.6 as a pre-release (version bump, changelog, download notes) | built; tag and publication in progress (2026-10-19) |
