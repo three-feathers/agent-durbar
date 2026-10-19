@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **Claude Code: switch its MCP servers on and off while it runs (spec 012 FR-133, issue #58).** The per-agent MCP switches now work for Claude agents too, using Claude's own `mcp_toggle`. A switch is remembered when the session restarts. Checked on a real Claude Code with a small local MCP server, without sending a prompt.
+
 - **A chosen answer on a question card is visible in every theme (spec 012 FR-130).** It gets a ring and a check mark. In Retro and Japanese Court it used to look like the other options.
 
 - **Theme swatches show their own theme (spec 037 FR-014).** In Settings, each theme's little swatch now shows that theme's colours. Before, all six were painted with the active theme's colours and looked the same.

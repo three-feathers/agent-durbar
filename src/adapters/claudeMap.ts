@@ -82,6 +82,19 @@ function textOf(content: unknown): string | undefined {
 }
 const cap = (s: string | undefined): string | undefined => (s !== undefined && s.length > TOOL_OUTPUT_CAP ? s.slice(0, TOOL_OUTPUT_CAP) : s);
 
+/** Claude's MCP server list (`init.mcp_servers`, or the `mcp_status` reply's `mcpServers`) in the normalized shape. */
+export function claudeMcpServers(list: unknown): McpServerStatus[] {
+  const servers: McpServerStatus[] = [];
+  for (const s of Array.isArray(list) ? list.slice(0, 100) : []) {
+    const name = str((s as { name?: unknown })?.name);
+    if (!name) continue;
+    const source = str((s as { source?: unknown }).source);
+    const error = str((s as { error?: unknown }).error);
+    servers.push({ name, status: str((s as { status?: unknown }).status) ?? 'pending', ...(source ? { source } : {}), ...(error ? { error: error.slice(0, 300) } : {}) });
+  }
+  return servers;
+}
+
 export class ClaudeMapper {
   /** Configured MCP server names from `system/init`. */
   private servers: string[] = [];
@@ -174,14 +187,7 @@ export class ClaudeMapper {
   private system(m: ClaudeMessage): void {
     switch (m.subtype) {
       case 'init': {
-        const list: unknown[] = Array.isArray(m.mcp_servers) ? m.mcp_servers : [];
-        const servers: McpServerStatus[] = [];
-        for (const s of list) {
-          const name = str((s as { name?: unknown })?.name);
-          if (!name) continue;
-          const source = str((s as { source?: unknown }).source);
-          servers.push({ name, status: str((s as { status?: unknown }).status) ?? 'pending', ...(source ? { source } : {}) });
-        }
+        const servers = claudeMcpServers(m.mcp_servers);
         this.servers = servers.map((s) => s.name);
         this.info = { sessionId: str(m.session_id), cwd: str(m.cwd), model: str(m.model), cliVersion: str(m.claude_code_version), apiKeySource: str(m.apiKeySource) };
         if (!this.opts.quiet) this.emit({ type: 'status', status: 'idle', intent: `Ready in ${this.info.cwd ?? 'the folder'}` });

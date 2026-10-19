@@ -15,7 +15,7 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ClaudeMapper } from './claudeMap';
+import { ClaudeMapper, claudeMcpServers } from './claudeMap';
 import type { ClaudeMessage } from './claudeMap';
 import { claudeOptionsFor, parseMcpTool, preToolUseDecision, toolKind } from './claudeModes';
 import { createCliTransport } from './claudeTransport';
@@ -49,7 +49,7 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   helpers: true,
   history: true, // FR-125/FR-126: read-only from Claude's own session files
   mcpStatus: true,
-  mcpToggle: false, // T050
+  mcpToggle: true, // FR-133: mcp_toggle + mcp_status
 }) as AdapterCapabilities;
 
 /** The hook callback id Durbar registers for `PreToolUse` (any string the CLI echoes back). */
@@ -305,6 +305,9 @@ interface Session {
   launchedMode?: PermissionMode;
   /** A user message was sent and its `result` has not come yet (a relaunch would cut the turn). */
   turnOpen?: boolean;
+  /** MCP servers left out of the running CLI's config at launch (FR-133): turning one on needs a relaunch. */
+  launchedOff?: Set<string>;
+  needsRelaunch?: boolean;
   /** Questions waiting for the user (FR-128): request id -> what was asked, Claude's original texts, and the waiter. */
   questions?: Map<string, { asked: AskedQuestion[]; originals: string[]; resolve: (a: Record<string, string> | null) => void }>;
 }
@@ -398,7 +401,7 @@ export class ClaudeAdapter implements AgentAdapter {
     let t: ClaudeTransport;
     try {
       // FR-116: new flags for a changed mode, but never in the middle of a turn (the hook keeps the current mode until then)
-      if (s.transport?.alive && !s.turnOpen && s.launchedMode !== undefined && s.launchedMode !== s.broker.getMode()) await this.relaunchForMode(s);
+      if (s.transport?.alive && !s.turnOpen && ((s.launchedMode !== undefined && s.launchedMode !== s.broker.getMode()) || s.needsRelaunch)) await this.relaunchForMode(s);
       t = await this.ensureTransport(s);
     } catch (e) {
       this.emit(sessionId, { type: 'status', status: 'error', intent: e instanceof Error ? e.message : 'Claude could not start' });
@@ -455,6 +458,31 @@ export class ClaudeAdapter implements AgentAdapter {
       else if (mode === 'read-only') pending -= s.broker.denyPendingByUser();
     }
     return { pending };
+  }
+
+  /**
+   * FR-133: switch one MCP server of the session. Live: the CLI's `mcp_toggle`, then `mcp_status` for the new list. Always kept in
+   * the start options so a relaunch keeps it; a session that is not running only records it.
+   */
+  async setMcpEnabled(sessionId: string, name: string, enabled: boolean): Promise<void> {
+    const s = this.sessions.get(sessionId);
+    if (!s) throw new Error('Unknown Claude session.');
+    const off = new Set(s.options.disabledMcpServers ?? []);
+    if (enabled) off.delete(name);
+    else off.add(name);
+    s.options = { ...s.options, disabledMcpServers: [...off] };
+    if (!s.transport?.alive) return;
+    if (enabled && s.launchedOff?.has(name)) {
+      s.needsRelaunch = true; // not in the running CLI's config: it comes back with the next message (a resume, no extra prompt)
+      return;
+    }
+    await s.transport.request({ subtype: 'mcp_toggle', serverName: name, enabled }, 15_000);
+    try {
+      const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
+      this.emit(s.id, { type: 'mcp', servers: claudeMcpServers(r.mcpServers) });
+    } catch {
+      /* the toggle worked; the list comes with the next init */
+    }
   }
 
   /** FR-128: the user's answers (question text -> label(s)), or null when they skipped. */
@@ -533,6 +561,8 @@ export class ClaudeAdapter implements AgentAdapter {
     const t = await make({ file, launch, cwd: s.cwd, env: (this.deps.env ?? (() => process.env))(), handlers });
     s.transport = t;
     s.launchedMode = launch.mode;
+    s.launchedOff = new Set(o.disabledMcpServers ?? []);
+    s.needsRelaunch = false;
     // Register the PreToolUse hook (Read-only roots check) before the first prompt.
     await t.request({ subtype: 'initialize', hooks: { PreToolUse: [{ matcher: '*', hookCallbackIds: [PRE_TOOL_USE_HOOK] }] } });
     s.resumable = true; // from now on Claude has (or will have) this id on disk

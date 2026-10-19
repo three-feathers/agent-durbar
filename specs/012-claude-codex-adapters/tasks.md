@@ -141,5 +141,5 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 
 ## Changes 2026-10-19 (issue #58, Claude half of T050)
 
-- [ ] T111 (sim) `setMcpEnabled` over `mcp_toggle` + `mcp_status`, kept for relaunches; `mcpToggle: true`; fake-CLI tests; real check with a stdio MCP server, no prompt [FR-133]
+- [x] T111 (sim) `setMcpEnabled` over `mcp_toggle` + `mcp_status`, kept for relaunches; `mcpToggle: true`; fake-CLI tests; real check with a stdio MCP server, no prompt [FR-133]
 
