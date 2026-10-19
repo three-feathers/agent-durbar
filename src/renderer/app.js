@@ -198,6 +198,8 @@ function syncWalkers(){
     w.back=true; RETURNING.add(id);
     move(w,dp,()=>{dropWalker(id);scheduleRender();});
   });
+  /* spec 034 FR-015: the figure away at a place keeps its mood (ring, horns, trouble dot); none in Serious mode (moodFor) */
+  walkers.forEach((w,id)=>{const m=moodFor(byId(id));w.el.dataset.body=m.body;w.el.dataset.trouble=m.trouble||'';});
 }
 function roomAiu(r){const f=folderOfRoom(r.id),t=LEDGER.room(r.id,f&&f.key);return t.calls&&!demoOn?{long:window.DurbarUsage.fmtTotal(t),short:window.DurbarUsage.fmtShort(t),tip:window.DurbarUsage.tooltip(t,{scope:'folder',since:LEDGER.since(),run:LEDGER.roomRun(r.id)})}:null;}
 
@@ -637,8 +639,9 @@ function renderList(){
       const subs=helpersOf(a);
       if(matchStatus(a)){rows.push([a,false]);subs.forEach(h=>rows.push([h,true]));}
     });});
-  const row=([a,sub])=>{const st=vis(a);return `<button class="lrow" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}, ${esc(roomOf(a).name)}, ${label(a)}: ${esc(a.task)}">
-    <span class="lname"><span class="dot ${st}"></span><span class="${sub?'sub':''}">${esc(a.name)}</span></span><span class="lcell">${esc(a.role)}</span><span class="lcell mono">${esc(roomOf(a).name)}</span><span class="lcell">${esc(a.task)}</span><span><span class="pill st-${st}"><i></i>${label(a)}</span></span></button>`};
+  /* spec 034 FR-014: no figures here, so the mood words (cards: drawing + label) are written at the start of the task cell */
+  const row=([a,sub])=>{const st=vis(a),mw=moodFor(a).words;return `<button class="lrow" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}, ${esc(roomOf(a).name)}, ${label(a)}: ${esc(a.task)}${moodWords(a)}">
+    <span class="lname"><span class="dot ${st}"></span><span class="${sub?'sub':''}">${esc(a.name)}</span></span><span class="lcell">${esc(a.role)}</span><span class="lcell mono">${esc(roomOf(a).name)}</span><span class="lcell"${mw?` title="${esc(mw)}"`:''}>${mw?`<span class="lmood">${esc(mw)}</span> · `:''}${esc(a.task)}</span><span><span class="pill st-${st}"><i></i>${label(a)}</span></span></button>`};
   $('list').innerHTML=`<div class="list-wrap" role="group" aria-label="Agents"><div class="lrow head" aria-hidden="true"><span>Agent</span><span>Role</span><span>Workspace</span><span>Current task</span><span>Status</span></div>${rows.map(row).join('')||'<div class="empty">No agents match these filters.</div>'}</div>`;
 }
 
