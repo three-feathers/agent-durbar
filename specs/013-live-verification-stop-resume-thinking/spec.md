@@ -2,7 +2,7 @@
 
 **Feature Branch**: `013-live-verification-stop-resume-thinking`
 **Created**: 2026-10-16
-**Status**: Draft (backlog). A verification plan, not a feature: its output is evidence (recordings, fixtures, spec updates), plus bug-fix spec deltas where reality differs.
+**Status**: Run 2026-10-19 (Linux, free plan, `auto` only): C1-C7 of [checklist.md](checklist.md) passed; C8-C10 recorded as not possible on this account and box. A verification plan, not a feature: its output is evidence (recordings, fixtures, spec updates), plus bug-fix spec deltas where reality differs.
 **Input**: Features 002, 005, 006, 007, 009 each list behavior that was built on the simulator, fixtures and unit tests but **never run on a real Copilot session**. This feature closes those gaps once, deliberately, with a capped budget.
 
 ## Why this exists
@@ -72,3 +72,18 @@ The constitution (IV and VIII) forbids spending AI credits in `npm test` and for
 - [NEEDS CLARIFICATION] Which account and how many credits may be used; is a paid plan available for the multi-model checks?
 - [NEEDS CLARIFICATION] Is a macOS/Windows machine available for the packaged-app check?
 - Depends on: none for the checks; 011 and 012 consume the findings.
+
+### 2026-10-19: results of the run (issue #3)
+
+Real app driven by script (`DURBAR_DRIVER`), one real Copilot session in a throwaway folder (two small files), Read-only, model `auto`, Linux, Agent Durbar `main` at 0.1.0-alpha.5+. Approval: the owner's standing instruction quoted in [checklist.md](checklist.md). **Spent: 8 prompts, 0.309 AIU** in run A, plus 1 prompt in run B (well under the 12-prompt / 3 AIU budget).
+
+- **C1 Stop (US1.1): pass.** Five seconds into "count from 1 to 300", Stop set the agent to Ready **0.3 s** after the click, with the note "Stopped by you. The agent is ready for your next message."; the next message ("Reply with the single word: ready") was answered in the same session.
+- **C2 second message during a turn (US1.4): recorded.** While the agent was thinking about a 250-word story, a second message ("what is 2 plus 2?") was sent: it appeared in the chat at once, the runtime **queued** it, finished the story and then answered "4" (not steered, no error). The send button shows disabled while busy but the message still went out. Product decision recorded in 005 FR-012.
+- **C3 End, then resume (US1.2): pass.** After "Remember the word pineapple", End set the agent to Ended; the next message resumed the same session and the answer was "pineapple".
+- **C4 lazy restore (US1.3): pass.** After a restart with the same user data the folder's card said "Not started"; the first message started the session and the answer was "started".
+- **C5 thinking (US2.1): pass.** A "Thought for 7s" block streamed and collapsed on one turn; on turns without reasoning the note "This model does not send reasoning for this step" was shown.
+- **C6 sub-agent (US2.2): pass.** Asked to use its task tool, Copilot started a helper ("folder-file-count", listing README.md and notes.txt, Done, with Open), and the main agent answered "There are 2 files in the current folder."
+- **C7 usage (US2.3): pass.** Usage reached the header as "10 calls · 112k in / 2.6k out tokens · 0.309 AIU" (AIU from `nanoAiu`).
+- **C8-C10: not run** (only `auto` on this account; the minimum cap is 30 AIU; no VS Code and no macOS/Windows on this box). They stay open in 007, 011, 009 and 008.
+- Also seen: the session title Copilot set from the first prompt ("Count from 1 to 300, one number per line, nothing else.") replaced the folder name on the card, as spec 002's title delta says.
+

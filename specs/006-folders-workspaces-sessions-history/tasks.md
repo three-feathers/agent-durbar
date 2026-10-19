@@ -17,7 +17,7 @@
 - [ ] T021 Decide whether per-folder session count should persist (clarify). [FR-011]
 - [ ] T022 Extract the main-process add/restore/resume logic into testable modules (inject adapter and store) and add credit-free tests. [FR-015]
 - [ ] T023 Capture a real `events.jsonl`/`getEvents()` (redacted) as a fixture and re-run `test:history` on it (needs feature 013). [FR-009]
-- [ ] T024 Real-session check of lazy start and resume (feature 013). [FR-009]
+- [x] T024 Real-session check of lazy start and resume (feature 013). [FR-009]
 - [ ] T025 Offer sessions started in subfolders (clarify matching rule). [FR-013]
 
 ## Changes 2026-10-18 (issue #170)
