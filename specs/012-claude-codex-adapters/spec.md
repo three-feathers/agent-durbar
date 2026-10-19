@@ -812,4 +812,21 @@ The owner handed the Codex track to this agent ("ruben does not have chatgpt acc
   - each CLI launch gets `--max-budget-usd <cap minus what the session has spent>`, so Claude itself stops a turn at the limit;
   - after each result, when the session's estimate reaches the cap, the adapter emits the same `limit exhausted` event as Copilot, and the next message is held until the user adds to the cap, removes it, or stops (`resolveLimit`: `add`, `set`, `unset`, `cancel`).
 - Like Copilot's, it is a soft cap: one turn can go a little past it, and the figure is Claude's estimate, not a bill. With a Claude subscription nothing is billed per token.
-- `test:` the argv and the remaining budget, the limit event and its resolution, and the main-side rule that an AIU default is not used. `real:` a tiny cap reached on `haiku`.
+- **Raise cap** (`add`) gives that many more dollars **from the higher of the cap and the spend**, rounded up to the cent: a Claude turn can pass the cap by more than Copilot's (the first turn writes the prompt cache), and adding to the cap alone could leave it below the spend, so the agent would stop again at once (seen in the real check).
+- `[IMPLEMENTED]`:
+  - `capUnit: 'usd'`, `caps: true`; `ClaudeAdapter.setCap` and `resolveLimit`; the spend is the sum of the session's `usage.costUsd`; `--max-budget-usd` (4 decimals, never below $0.0001) on every launch; a changed cap relaunches from the next message (a resume).
+  - Claude's own stop (`result` subtype `error_max_budget_usd`) becomes the limit notice, not an error card.
+  - Main: `startCap` (an explicit cap only for a dollar kind), `parseCapIn`, `setCapOp` and `agents:resolveLimit` take dollars for that kind; a dollar cap is never written to the folder file.
+  - Renderer: the chip (`$0.01 / $0.50`), the cap dialog ("Cost cap", min $0.01), the notice ("Cost cap reached", *Raise cap*), the agent card (`$0.01/$0.50 est.`), the New session field ("Cost cap ($, Claude's estimate)", never pre-filled with the AIU default). A model switch never compares its AIU estimate with a dollar cap.
+- `[KNOWN GAP]`:
+  - the spend counts what the session used **while Durbar ran it**; a session resumed after a restart starts again from $0;
+  - per session only (not saved with the folder);
+  - the simulator keeps showing an agent's tool steps after the limit (as it does for AIU), the real adapter stops.
+- `test:` `test:claudeadapter` (argv and remaining budget, notice once, held message, unknown id ignored, add from the spend, the budget stop is not an error, Stop here, setCap and its minimum, no flag without a cap), `test:credits` (`parseUsdCap`, `parseCapIn`, `startCap`), `test:agentops` (dollar minimum, nothing saved to the folder), `test:runtime` (contract and drift rows).
+- `sim:` `scripts/shots-012-cost-cap.js` (`simkinds=mixed`: Ada is a Claude agent with a $0.01 cap), at 1440x900 and 1280x800: `docs/screenshots/cost-cap-*.png`, `cost-cap-dialog-*.png`.
+- `real:` 2026-10-19, Claude Code 2.1.303, the adapter from `dist/` with a fixed prompt, numbers only logged:
+  - `claude -p --max-budget-usd 0.0001` ends with `result` subtype `error_max_budget_usd` after the turn.
+  - `sonnet`, cap $0.01: the first launch got `--max-budget-usd 0.0100`; the turn cost $0.0157, and the budget stop came out as `limit exhausted` (no error). The next message was held (no output). *Raise cap* by $0.05 gave $0.07, the relaunch got `--max-budget-usd 0.0543`, and the held message was answered.
+  - An earlier run showed the overshoot: a cold cache made the first turn $0.06 on a $0.01 cap, and "add to the cap" stayed below the spend, hence the rule above.
+  - On `haiku`, four short turns cost about $0.004 together, under a $0.01 cap: no notice.
+  - About $0.13 of estimate in all (a Claude subscription: nothing billed per token).
