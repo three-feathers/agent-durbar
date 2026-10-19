@@ -1197,7 +1197,20 @@ function mdHTML(raw){
   const md=window.DurbarMD; if(!md)return esc(raw).replace(/\n/g,'<br>');
   return md.render(raw).replace(/<pre>/g,'<div class="codebox"><button type="button" class="copy" aria-label="Copy code">Copy</button><pre>').replace(/<\/pre>/g,'</pre></div>');
 }
-function mdPaint(el){el._mdq=false;if(el._raw==null)return;const t=document.createElement('template');t.innerHTML=mdHTML(el._raw);morphChildren(el,t.content);}
+function mdPaint(el){el._mdq=false;if(el._raw==null)return;const t=document.createElement('template');t.innerHTML=mdHTML(el._raw);morphChildren(el,t.content);addCopyButtons(el);}
+/* spec 005 FR-015: copy a reply (its Markdown as written) or one code block; buttons come back after every repaint */
+function addCopyButtons(el){
+  const mk=(cls,label)=>{const b=document.createElement('button');b.type='button';b.className='cp-btn '+cls;b.textContent='Copy';b.setAttribute('aria-label',label);b.title=label;return b;};
+  el.querySelectorAll('pre').forEach(p=>{if(!p.querySelector(':scope > .cp-code'))p.appendChild(mk('cp-code','Copy this code'));});
+  if(el.closest('.msg.agent')&&!el.querySelector(':scope > .cp-msg'))el.appendChild(mk('cp-msg','Copy this reply'));
+}
+document.addEventListener('click',async e=>{
+  const b=e.target.closest('.cp-btn');if(!b)return;
+  e.stopPropagation();
+  const text=b.classList.contains('cp-code')?((b.parentElement.querySelector('code')||b.parentElement).textContent||'').replace(/Copy$/,''):(b.closest('.bubble')||{})._raw||'';
+  try{await navigator.clipboard.writeText(text);b.textContent='Copied';setTimeout(()=>{b.textContent='Copy';},1500);}
+  catch{toast('Could not copy to the clipboard.',3000);}
+});
 function mdFlush(){const l=[...MDQ];MDQ.clear();l.forEach(mdPaint);}
 let mdRaf=0;
 function mdSet(el,raw,now){
