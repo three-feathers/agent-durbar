@@ -257,6 +257,8 @@ export class FakeCodexServer {
         const data = [...this.threads.entries()].map(([tid, cwd], i) => ({ id: tid, cwd, preview: `Prompt ${i + 1}`, createdAt: 1792403000 + i, updatedAt: 1792403100 + i, ephemeral: false, parentThreadId: null, gitInfo: null }));
         return this.reply(child, id, { data, nextCursor: null });
       }
+      case 'mcpServerStatus/list':
+        return this.reply(child, id, { data: [{ name: 'echo', authStatus: 'unsupported', runtimeStatus: 'connected', tools: {}, resources: [], resourceTemplates: [] }], nextCursor: null });
       case 'model/list':
         return this.reply(child, id, { data: [
           { id: 'gpt-6-luna', model: 'gpt-6-luna', displayName: 'GPT-6-Luna', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }], defaultReasoningEffort: 'medium', isDefault: false, hidden: false },
@@ -357,6 +359,11 @@ export class FakeCodexServer {
       this.serverPending.set(`${child.index}:${id}`, { childIndex: child.index, method, resolve });
       child.send({ id, method, params });
     });
+  }
+
+  /** A notification to every live child (tests: MCP startup states, spec 012 FR-147). */
+  notifyAll(method: string, params: unknown): void {
+    for (const c of this.children.filter((x) => !x.exited)) this.enqueue(c, { jsonrpc: '2.0', method, params });
   }
 
   /** The child that serves a thread (the one that answered its `thread/start` or `thread/resume`). */

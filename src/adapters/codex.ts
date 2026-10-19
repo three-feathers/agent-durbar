@@ -17,6 +17,8 @@ import { createCodexRpc, realSpawn } from './codexRpc';
 import type { CodexRpc, RequestOutcome, SpawnFn } from './codexRpc';
 import { codexHistory, codexModelOptions, codexPreviousSessions } from './codexHistory';
 import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
+import { codexMcpConfig, codexMcpServers, codexMcpState } from './codexMcp';
+import type { McpServerStatus } from './types';
 import type { HistoryResult, PreviousSession } from './history';
 import type { ModelOption } from '../shared/modelswitch';
 import { CODEX_INITIALIZE_CAPABILITIES, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexWorkspaceRoots } from './codexModes';
@@ -43,10 +45,10 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   usage: Object.freeze({ tokens: true, costUsd: false, nanoAiu: false }),
   context: true,
   caps: false,
-  helpers: false,
+  helpers: true, // FR-149: subAgentActivity by agent thread (real, Codex 0.163)
   history: true, // FR-141: thread/list and thread/read
-  mcpStatus: false,
-  mcpToggle: false,
+  mcpStatus: true, // FR-147: mcpServerStatus/list and startup notifications
+  mcpToggle: true, // FR-147: from the next message (fresh child, same thread)
 });
 
 /** Where the `codex` binary is and which version it reports. */
@@ -142,6 +144,14 @@ export function codexResumeCheck(res: unknown, o: { cwd: string; limited: boolea
   if (kind !== undefined && /danger|full|workspace.?write/i.test(kind)) throw new Error(`Codex resumed the session with a wider sandbox (${kind.slice(0, 40)}) than this mode allows, so it is not resumed.`);
 }
 
+/** FR-148: does an MCP elicitation ask for form fields (as opposed to a plain yes/no)? Unknown shapes count as fields (declined). */
+export function codexElicitationHasFields(params: unknown): boolean {
+  const schema = isObj(params) && isObj(params.requestedSchema) ? params.requestedSchema : undefined;
+  if (!schema) return isObj(params) && params.mode === 'url'; // a URL flow cannot be answered here
+  const props = isObj(schema.properties) ? schema.properties : {};
+  return Object.keys(props).length > 0;
+}
+
 /**
  * FR-140 (real, Ubuntu 24.04+): Codex's Linux sandbox (bubblewrap) cannot start where unprivileged user namespaces are blocked
  * (`kernel.apparmor_restrict_unprivileged_userns=1`). Read-only and Ask first then fail at start (closed, as they must); say why.
@@ -180,6 +190,11 @@ interface Live {
   broker: PermissionBroker;
   /** Resolves when the child has exited. */
   exited: Promise<void>;
+  /** FR-147: the session's MCP servers and their state, by name; `relaunch` = a server was switched, applied with the next message. */
+  mcp: Map<string, McpServerStatus>;
+  relaunch?: boolean;
+  /** The MCP list was read for this child (FR-147). */
+  mcpRead?: boolean;
   /** FR-146: questions waiting for the user, by request id. */
   questions: Map<string, (answers: Record<string, string> | null) => void>;
   /** Shell tool calls started and not yet ended (FR-139). */
@@ -421,6 +436,7 @@ export class CodexAdapter implements AgentAdapter {
       doneTurns: [],
       runningCommands: new Set<string>(),
       questions: new Map(),
+      mcp: new Map(),
       turnStarting: false,
       pendingInterrupt: false,
       interrupting: false,
@@ -475,7 +491,8 @@ export class CodexAdapter implements AgentAdapter {
       live.exited = child.exited;
       const settings = codexModeSettings(mode);
       let started: unknown;
-      const threadParams = { cwd: limited ? realCwd : cwd, ...settings, ...(limited ? { runtimeWorkspaceRoots: roots } : {}) };
+      const mcpConfig = codexMcpConfig(options.mcpServers, options.disabledMcpServers); // FR-147
+      const threadParams = { cwd: limited ? realCwd : cwd, ...settings, ...(limited ? { runtimeWorkspaceRoots: roots } : {}), ...(mcpConfig ? { config: mcpConfig } : {}) };
       if (resumeId !== undefined) {
         // FR-093 (real, Codex 0.163): `thread/resume` with a cwd REWRITES the thread's folder, so the folder check reads the
         // stored thread first and refuses before anything is changed.
@@ -520,19 +537,21 @@ export class CodexAdapter implements AgentAdapter {
       throw new Error('Codex stopped unexpectedly while starting.');
     }
     if (!options.quiet) this.emit(live.sid, { type: 'status', status: 'idle', intent: `Ready in ${cwd}` });
+    if (!options.quiet) void this.refreshMcp(live); // FR-147: the session's MCP servers; a quiet start emits nothing (C3), so its first message reads them
     return live.sid;
   }
 
   async send(sessionId: string, message: AgentMessage): Promise<void> {
     let live = this.mustGet(sessionId);
-    // FR-144: a mode chosen while it ran applies now, on a fresh child that resumes the same thread
-    if (live.wantMode && live.wantMode !== live.mode && live.turnId === undefined && !live.turnStarting) {
-      const next = { ...live.options, permissionMode: live.wantMode, sessionId, resumeSessionId: undefined, quiet: true };
+    // FR-144/FR-147: a mode or MCP switch chosen while it ran applies now, on a fresh child that resumes the same thread
+    if (((live.wantMode && live.wantMode !== live.mode) || live.relaunch) && live.turnId === undefined && !live.turnStarting) {
+      const next = { ...live.options, permissionMode: live.wantMode ?? live.mode, sessionId, resumeSessionId: undefined, quiet: true };
       await this.stop(sessionId, true);
       await this.start(next);
       live = this.mustGet(sessionId);
     }
     live.expectAborted = false;
+    if (!live.mcpRead) void this.refreshMcp(live); // FR-147: after a quiet start, with the first message
     const images = (message.attachments ?? []).filter((a) => a.kind === 'image');
     const files = (message.attachments ?? []).filter((a) => a.kind !== 'image');
     // Files the user attached are theirs to share (spec 003 FR-023).
@@ -707,6 +726,15 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   private onNotification(live: Live, method: string, params: unknown): void {
+    // FR-147: a server's startup state, for this thread (or all threads)
+    if (method === 'mcpServer/startupStatus/updated' && isObj(params) && typeof params.name === 'string' && (params.threadId == null || params.threadId === live.threadId)) {
+      const name = params.name.slice(0, 64);
+      const disabled = (live.options.disabledMcpServers ?? []).includes(name);
+      const err = typeof params.error === 'string' && params.error ? { error: params.error.slice(0, 300) } : {};
+      live.mcp.set(name, { ...(live.mcp.get(name) ?? {}), name, status: disabled ? 'disabled' : codexMcpState(params.status), ...err });
+      if (this.sessions.get(live.sid) === live) this.emitMcp(live);
+      return;
+    }
     // Keep the running turn's id for interrupt and stop.
     if (isObj(params) && (params.threadId === undefined || params.threadId === live.threadId)) {
       const turn = isObj(params.turn) ? params.turn : undefined;
@@ -756,6 +784,10 @@ export class CodexAdapter implements AgentAdapter {
   /** A server request (approval or question). Read-only is double-locked: the broker denies and `codexReply` declines. Never `acceptForSession`. */
   private async onServerRequest(live: Live, method: string, params: unknown): Promise<RequestOutcome> {
     if (method === 'item/tool/requestUserInput' || method === 'tool/requestUserInput') return this.askUser(live, params);
+    // FR-148 (real, Codex 0.163): an MCP elicitation answers with {action, content}, not {decision}. One with form fields Durbar
+    // cannot fill is declined; a plain confirmation (no fields, e.g. "allow this tool call?") goes through the approval below.
+    const elicit = method === 'mcpServer/elicitation/request';
+    if (elicit && codexElicitationHasFields(params)) return { result: { action: 'decline' } };
     const perm = codexPermission(method, params);
     const itemId = isObj(params) && typeof params.itemId === 'string' && params.itemId ? params.itemId : undefined;
     const toolCallId = itemId ?? `${method}#${++live.anon}`;
@@ -773,6 +805,7 @@ export class CodexAdapter implements AgentAdapter {
     if (reply.interruptTurn && !live.stopping && !live.interrupting && live.turnId && !live.rpc.exited) {
       void live.rpc.request('turn/interrupt', { threadId: live.threadId, turnId: live.turnId }).catch(() => undefined);
     }
+    if (elicit) return { result: reply.decision === 'accept' ? { action: 'accept', content: {} } : { action: answer === 'stop' ? 'cancel' : 'decline' } };
     return { result: { decision: reply.decision } };
   }
 
@@ -810,6 +843,36 @@ export class CodexAdapter implements AgentAdapter {
       if (id) out[id] = { answers: a.split(/,\s*/).filter(Boolean) };
     }
     return { result: { answers: out } };
+  }
+
+  /** FR-147: the session's MCP servers from `mcpServerStatus/list`; a failure leaves the list as it was. */
+  private async refreshMcp(live: Live): Promise<void> {
+    live.mcpRead = true;
+    try {
+      const res = await live.rpc.request('mcpServerStatus/list', { threadId: live.threadId, detail: 'toolsAndAuthOnly', limit: 100 });
+      if (this.sessions.get(live.sid) !== live) return;
+      live.mcp = new Map(codexMcpServers(isObj(res) ? res.data : undefined, live.options.disabledMcpServers ?? []).map((s) => [s.name, s]));
+      this.emitMcp(live);
+    } catch {
+      /* an older Codex without the method: no list */
+    }
+  }
+
+  private emitMcp(live: Live): void {
+    this.emit(live.sid, { type: 'mcp', servers: [...live.mcp.values()].map((s) => ({ ...s })) });
+  }
+
+  /** FR-147: switch one MCP server of the session; it applies with the next message (fresh child, same thread), like a mode. */
+  async setMcpEnabled(sessionId: string, name: string, enabled: boolean): Promise<void> {
+    const live = this.mustGet(sessionId);
+    const off = new Set(live.options.disabledMcpServers ?? []);
+    if (enabled) off.delete(name);
+    else off.add(name);
+    live.options = { ...live.options, disabledMcpServers: [...off] };
+    live.relaunch = true;
+    const cur = live.mcp.get(name) ?? { name, status: 'pending' };
+    live.mcp.set(name, { ...cur, status: enabled ? 'pending' : 'disabled' });
+    this.emitMcp(live);
   }
 
   answerQuestion(sessionId: string, requestId: string, answers: Record<string, string> | null): void {
