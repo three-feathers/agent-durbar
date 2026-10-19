@@ -1,6 +1,6 @@
 /** Unit test for secret redaction and the debug sink (spec 012 T051): `npm run test:runtime`. */
 import * as assert from 'assert';
-import { spawnSync } from 'child_process';
+import { Worker } from 'worker_threads';
 import { REDACT_MAX_CHARS, createDebugSink, maskSecretArgs, maskSecretUrl, redact } from '../src/shared/redact';
 
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
@@ -127,25 +127,29 @@ assert.doesNotThrow(() => redact('x', null as unknown as Record<string, string>)
     aws: 'AKIA'.repeat(MB / 4),
     awsLong: 'ASIA' + 'A'.repeat(MB),
   };
-  // Each case runs in a child process. The child times redact() itself, so a busy runner (slow process start,
-  // slow stdin) cannot fail the test; the 1 s assertion is the real ReDoS check. The 30 s outer timeout is only
-  // a hang guard, and a child killed by it (or by a signal) is retried once.
+  // Each case runs in a worker thread that times redact() itself, so a busy runner cannot fail the test; the 1 s assertion is the
+  // real ReDoS check. Workers, not child processes: a child fed 1 MB on stdin hung for 30 s twice on a busy macOS runner (#303).
+  // The test stays synchronous: the worker writes the time into shared memory and wakes this thread (Atomics), with a 30 s hang
+  // guard; a worker that does not answer in time is stopped and the case retried once.
   const mod = require.resolve('../src/shared/redact');
-  const script = `const {redact}=require(${JSON.stringify(mod)});const s=require('fs').readFileSync(0,'utf8');` +
-    `const t=process.hrtime.bigint();redact(s,{});const t2=process.hrtime.bigint();` +
-    `process.stdout.write(JSON.stringify({ms:Number(t2-t)/1e6}))`;
+  const code = `const {workerData:w}=require('worker_threads');const flag=new Int32Array(w.sab,0,1),out=new Float64Array(w.sab,8,1);` +
+    `try{const {redact}=require(w.mod);const t=process.hrtime.bigint();redact(w.input,{});out[0]=Number(process.hrtime.bigint()-t)/1e6;Atomics.store(flag,0,1)}` +
+    `catch(e){Atomics.store(flag,0,2)}Atomics.notify(flag,0)`;
   for (const [k, v] of Object.entries(adversarial)) {
     let ms = NaN;
     let why = '';
     for (let attempt = 0; attempt < 2; attempt++) {
-      const r = spawnSync(process.execPath, ['-e', script], { input: v, timeout: 30000, maxBuffer: 1 << 20 });
-      const err = r.error as NodeJS.ErrnoException | undefined;
-      if (err?.code === 'ETIMEDOUT' || r.signal) { why = err ? err.message : 'signal ' + r.signal; continue; }
-      assert.ok(!r.error && r.status === 0, `adversarial ${k}: child failed (${r.error ? r.error.message : 'status ' + r.status})`);
-      ms = (JSON.parse(String(r.stdout)) as { ms: number }).ms;
+      const sab = new SharedArrayBuffer(16);
+      const flag = new Int32Array(sab, 0, 1);
+      const worker = new Worker(code, { eval: true, workerData: { mod, input: v, sab } });
+      const waited = Atomics.wait(flag, 0, 0, 30000);
+      void worker.terminate();
+      if (waited === 'timed-out') { why = 'no answer in 30 s'; continue; }
+      assert.strictEqual(Atomics.load(flag, 0), 1, `adversarial ${k}: redact() threw in the worker`);
+      ms = new Float64Array(sab, 8, 1)[0];
       break;
     }
-    assert.ok(!Number.isNaN(ms), `adversarial ${k}: child hung twice (${why})`);
+    assert.ok(!Number.isNaN(ms), `adversarial ${k}: worker hung twice (${why})`);
     assert.ok(ms < 1000, `adversarial ${k}: redact() took ${ms.toFixed(1)} ms, limit 1000 ms`);
   }
 }
