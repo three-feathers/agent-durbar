@@ -20,8 +20,8 @@
 - [x] T022 Pin `@github/copilot-sdk` to an exact version in `package.json` (and fix the README wording). [FR-015]
 - [ ] T023 Decide and implement handling for unmapped events that need the user (user-input, plan-mode, shell output). Needs `/speckit.clarify` first. [FR-014]
 - [x] T024 Clear `reasoningSeen`/`toolNames` on stop/idle. [FR-016]
-- [ ] T025 Second adapter to prove the interface (feature 012). [FR-012]
-- [ ] T026 Wire `maxAiCredits` (feature 011). [FR-017]
+- [x] T025 Second adapter to prove the interface (feature 012). [FR-012] (2026-10-19: the experimental Claude Code adapter, spec 012, runs the same contract suite)
+- [x] T026 Wire `maxAiCredits` (feature 011). [FR-017] (done in spec 011: `sessionLimits.maxAiCredits` at start and `options.update` live)
 
 ## Changes 2026-10-18 (issue #126)
 

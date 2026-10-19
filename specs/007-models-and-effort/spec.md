@@ -61,7 +61,7 @@ A chip in the chat header shows the model, the effort and, in the tooltip, the c
 - **FR-008** `[KNOWN GAP]` The effort list is hard-coded in `main.ts` and `folders.ts`; an effort value the SDK adds later is silently dropped. `read:` (Task T021.)
 - **FR-009** `[KNOWN GAP]` The `auto` routing tier (`efficiency|balance|intelligence`) is supported by the adapter but not selectable in the UI. `read:`
 - **FR-010** `[KNOWN GAP]` The multiplier is shown as returned (`x3`) without explaining units or relating it to the user's remaining credits (feature 011). `read:`
-- **FR-011** `[KNOWN GAP]` No automated test covers model listing or option mapping (it needs the SDK); `cheapestModel()` is used only by the smoke script. `read:`
+- **FR-011** `[IMPLEMENTED]` (2026-10-19, see Changes; was a known gap) No automated test covers model listing or option mapping (it needs the SDK); `cheapestModel()` is used only by the smoke script. `read:`
 
 ### Key Entities
 
@@ -83,3 +83,4 @@ A chip in the chat header shows the model, the effort and, in the tooltip, the c
 - **2026-10-17, feature 030 Phase 2 (fake session only):** the Copilot adapter now fills `ModelChoice.pricing`, `priceClass`, `contextTiers` and `longWindow` from the runtime's billing data when it reports them (absent otherwise; `pricing.unverified` is always true because the unit of the token prices was never checked on a real account). Resume and create pass the saved model, effort and tier. Real agents can switch in place, flagged "not verified on a real account yet". See [030](../030-switch-model-context/spec.md) `## Changes`.
 - **2026-10-17, feature 030 T040 (`real:`, read-only, 0 credits):** the real model list of the Copilot login on the box is only `auto`, with an empty window (0), no billing and no efforts. So today the picker offers Auto only on that login, and the price fields of `ModelChoice` have not been seen filled on a real account. [030](../030-switch-model-context/spec.md) research.md.
 - **2026-10-17, feature 030 T041..T046 (`real:`, free plan, `auto` only):** a model the plan cannot use is refused (`cancelled`); `auto` resolved to `gpt-6-luna` with a 272k window (the context chip shows it after the first message); the real price unit is in each usage event (`costPerBatch` nano-AIU per batch), the model list's own price fields were never returned on this plan. [030](../030-switch-model-context/spec.md) research.md.
+- **2026-10-19, tasks converge:** FR-011 is closed by spec 030: `scripts/test-copilot-model.ts` (in `npm test`) maps fake raw model infos (`modelOptionFrom`: name, multiplier, efforts, default effort, disabled, context window) without the SDK or credits. `test:`
