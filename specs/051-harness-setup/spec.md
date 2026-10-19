@@ -121,4 +121,4 @@ Each sign-in was started **without a terminal** (stdin closed, output to a file)
 
 ## Changes
 
-*(none yet)*
+- **2026-10-20 (spec 052 FR-045):** the cards say which plan each harness uses; the Claude and Codex sign-in and install hints point to Settings > Harnesses (the command stays in brackets); an install that worked goes straight to the sign-in when the harness needs one; the sign-in dialog names the account, adds a step 3 and no longer shows seconds; install choices lead with "Using Homebrew (recommended)" / "Using npm" above the command.

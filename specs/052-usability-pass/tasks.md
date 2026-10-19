@@ -69,3 +69,8 @@
 ## Cost per folder (2026-10-20)
 
 - [x] T046 Tools > Cost: one row per folder, This run / Since <date>, Copy as CSV, room cost opens it (#315) [FR-044]
+
+## Round 4: first run and demo (2026-10-20)
+
+- [x] T050 Harness cards name their plan, welcome "Which one?" line, hints point to Settings > Harnesses, sign-in after install, plainer sign-in and install dialogs [FR-045]
+- [x] T051 Restore strip button readable in every theme; one request per waiting agent; no pending card in Allow all in the simulator [FR-046]

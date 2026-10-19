@@ -651,7 +651,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
   private async launch(s: Session): Promise<ClaudeTransport> {
     const file = await this.deps.claudePath();
-    if (!file) throw new Error('Claude Code is not installed or could not be found. Install it, sign in with `claude` in a terminal, then restart Durbar.');
+    if (!file) throw new Error('Claude Code is not installed or could not be found. Open Settings > Harnesses and choose Install…, then Sign in… there.');
     const o = s.options;
     const launch: ClaudeLaunch = {
       mode: s.broker.getMode(),
@@ -916,7 +916,7 @@ export function claudeDescriptor(makeTransport: TransportFactory = cliTransportF
   return {
     id: CLAUDE_ID,
     displayName: CLAUDE_NAME,
-    installHint: 'Install Claude Code (npm install -g @anthropic-ai/claude-code), sign in with `claude` in a terminal, then restart Durbar.',
+    installHint: 'Open Settings > Harnesses and choose Install…, then Sign in… (or run `npm install -g @anthropic-ai/claude-code`, then `claude auth login`).',
     capabilities: CLAUDE_CAPABILITIES,
     create: () => new ClaudeAdapter({ claudePath: claudeBinaryPath, makeTransport }),
   };

@@ -350,3 +350,21 @@ Moves the command palette out of *Not now*. Built and checked with `npm test`; t
 - [KNOWN GAP] **A budget per folder** is not built: it needs a stored setting (per folder, kept across restarts) and a decision on what happens when it is reached.
 - [KNOWN GAP] **A Codex price table** is not built: Codex reports tokens but no cost, and turning tokens into dollars needs a decision about which prices to use and how to keep them current.
 - [KNOWN GAP] Not checked in the simulator or with screenshots in this change (no Electron run); the lead takes the screenshots.
+
+### 2026-10-20: round 4, first run and demo
+
+Reviewers found the first run still assumed a developer (hints that say "run … in a terminal", no word on which plan each harness needs) and that the demo showed things a safety-minded viewer would not trust. Built and checked with `npm test`; not run in Electron or the simulator in this change (the lead takes the screenshots).
+
+- **FR-045** **First run in plain words** [IMPLEMENTED] `test: test-detect` (hint constants), not yet run in the simulator.
+  - **Settings > Harnesses:** each card has a line under its title saying which subscription it uses: Codex "Uses your ChatGPT plan (Plus, Pro or Team)", Claude Code "Uses your Claude plan (Pro or Max) or an Anthropic API key", Copilot "Uses your GitHub account; a free plan works".
+  - **Welcome card:** one line, "Which one? Have ChatGPT: Codex. Have Claude: Claude Code. Neither: GitHub Copilot (free)."
+  - **Hints point to the app, not a terminal:** the Claude and Codex sign-in hints and the install hints (`src/adapters/detect.ts`, `claude.ts`; Codex reuses the detect hint) say "Open Settings > Harnesses and choose Sign in…" (or "Install…"), with the command in brackets for developers, e.g. "(or run `codex login`)".
+  - **Install, then sign in:** after an install or update that worked, the app checks that harness again (`listAdapters(true)`, and for Copilot its sign-in state) and opens the sign-in dialog straight away when it is not signed in. The toast after an install says "… is installed." (no longer "is ready").
+  - **Sign-in dialog:** names the account (Codex "your ChatGPT account", Claude "your Claude account", Copilot "your GitHub account"), adds step 3 "Come back here. This window closes by itself when you are signed in.", and drops the elapsed seconds (installs keep them).
+  - **Install dialog:** each choice leads with a label from its package manager, "Using Homebrew (recommended)" for the first of several, "Using npm", "Using winget (Windows Package Manager)", with the exact command still shown below it.
+  - Codex sign-in state: `detectCodex` already returns `not-signed-in` when `codex login status` says "Not logged in" (spec 012 FR-137, `test-detect`); no change.
+- **FR-046** **Demo and correctness** [IMPLEMENTED] `test: npm test` (typecheck of the simulator), not yet run in the simulator.
+  - **Restore strip in every theme:** the strip's main button (*Ask me first (safer)*) keeps its amber background and white text in every theme. Before, the themes' rule giving every `.btn` a surface background (`themes.css`) outranked the strip's rule and left white text on a light button (seen in Japanese court).
+  - **Each waiting agent asks for its own thing:** Jonas (reviewer) "Edit src/tools/companies.ts (rename find_company to search_companies)", Kenji (evaluator) "Run python evals/baseline.py --compare" (a shell request), Lena (accessibility) "Edit src/styles/focus.css (focus ring colour)". Before, every waiting agent showed the rename.
+  - **No permission card in Allow all:** a simulated agent that waits for a permission starts in **Ask first**, the only mode where a card appears. Jonas changes from Allow all (restored) to Ask first, Lena from Read-only to Ask first. The restore strip still names a restored Allow-all folder: Tomas's (swisscontract-ai). The driver `scripts/shots-018.js` now opens Maya (Copilot, Allow all) for its new-session check instead of Jonas.
+  - The simulator stays deterministic (no new random draws).

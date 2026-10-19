@@ -12,6 +12,15 @@
     unknown: ['off', 'Unknown'],
   };
   const SETUP_KINDS = ['copilot', 'claude', 'codex'];
+  /* spec 052 FR-045: which subscription each harness uses, and the account its sign-in asks for */
+  const PLAN = {
+    codex: 'Uses your ChatGPT plan (Plus, Pro or Team)',
+    claude: 'Uses your Claude plan (Pro or Max) or an Anthropic API key',
+    copilot: 'Uses your GitHub account; a free plan works',
+  };
+  const ACCOUNT = { codex: 'your ChatGPT account', claude: 'your Claude account', copilot: 'your GitHub account' };
+  /* FR-045: a plain label for each package manager in the install dialog; the command stays visible below it */
+  const MANAGER = { brew: 'Homebrew', npm: 'npm', winget: 'winget (Windows Package Manager)' };
   let B = null; /* the bridge */
   let onChange = () => {};
 
@@ -27,7 +36,7 @@
       const label = { install: 'Install…', update: 'Update…', signin: 'Sign in…' }[act];
       const hint = st === 'ready' ? (k.version ? 'Version ' + k.version + '.' : 'Ready to use.') : st === 'not-signed-in' ? 'Installed; sign in once to use it.' : st === 'too-old' ? (k.hint || 'This version is too old for Durbar.') : st === 'not-installed' ? 'Not on this computer yet.' : 'Durbar could not tell; try Check again.';
       return `<li class="hs-card" data-kind="${esc(k.id)}"><div class="hs-top"><b>${esc(k.displayName || k.id)}</b><span class="hs-st hs-${cls}">${esc(word)}</span></div>
-        <p class="scr-note small">${esc(hint)}</p>
+        ${PLAN[k.id] ? `<p class="scr-note small hs-plan-uses">${esc(PLAN[k.id])}</p>` : ''}<p class="scr-note small">${esc(hint)}</p>
         <div class="hs-act">${act ? `<button class="btn primary" type="button" data-hs="${act}" data-kind="${esc(k.id)}">${esc(label)}</button>` : ''}<button class="btn" type="button" data-hs="check" data-kind="${esc(k.id)}">Check again</button></div></li>`;
     }).join('');
     return `<section class="scr-sec" aria-labelledby="hsH"><h3 id="hsH" tabindex="-1">Harnesses</h3>
@@ -55,8 +64,8 @@
   function runDialog(kind, op, name, planIndex) {
     return new Promise((resolve) => {
       const isSign = op === 'signin';
-      const html = `${isSign ? '<p class="scr-note" id="hsLead">Starting the sign-in…</p><div class="hs-sign" id="hsSign" hidden><p class="scr-note">1. Open the sign-in page and sign in with your account.</p><div class="hs-row"><button class="btn primary" type="button" id="hsOpen">Open the sign-in page</button></div><div id="hsCodeBox" hidden><p class="scr-note">2. Enter this code on that page:</p><div class="hs-row"><code class="hs-code" id="hsCode"></code><button class="btn" type="button" id="hsCopy">Copy</button></div></div><div id="hsPasteBox" hidden><p class="scr-note">2. After signing in, the page shows a code. Paste it here:</p><div class="hs-row"><input id="hsPaste" type="text" maxlength="512" autocomplete="off" spellcheck="false" aria-label="Code from the sign-in page"><button class="btn primary" type="button" id="hsPasteGo">Continue</button></div></div></div>' : '<p class="scr-note" id="hsLead">Installing… this can take a few minutes. A system prompt may ask for permission.</p>'}
-        <pre class="hs-log" id="hsLog" aria-live="polite"></pre><p class="scr-note small" id="hsTime"></p>`;
+      const html = `${isSign ? `<p class="scr-note" id="hsLead">Starting the sign-in…</p><div class="hs-sign" id="hsSign" hidden><p class="scr-note">1. Open the sign-in page and sign in with ${esc(ACCOUNT[kind] || 'your account')}.</p><div class="hs-row"><button class="btn primary" type="button" id="hsOpen">Open the sign-in page</button></div><div id="hsCodeBox" hidden><p class="scr-note">2. Enter this code on that page:</p><div class="hs-row"><code class="hs-code" id="hsCode"></code><button class="btn" type="button" id="hsCopy">Copy</button></div></div><div id="hsPasteBox" hidden><p class="scr-note">2. After signing in, the page shows a code. Paste it here:</p><div class="hs-row"><input id="hsPaste" type="text" maxlength="512" autocomplete="off" spellcheck="false" aria-label="Code from the sign-in page"><button class="btn primary" type="button" id="hsPasteGo">Continue</button></div></div><p class="scr-note">3. Come back here. This window closes by itself when you are signed in.</p></div>` : '<p class="scr-note" id="hsLead">Installing… this can take a few minutes. A system prompt may ask for permission.</p>'}
+        <pre class="hs-log" id="hsLog" aria-live="polite"></pre>${isSign ? '' : '<p class="scr-note small" id="hsTime"></p>'}`;
       const m = modal(isSign ? 'Sign in to ' + name : (op === 'update' ? 'Updating ' : 'Installing ') + name, html, [{ label: 'Cancel', cancel: true, onClick: (close) => { B.harnessCancel(); close(); } }]);
       let url = '';
       const offP = B.onHarnessProgress((p) => {
@@ -95,15 +104,28 @@
         [{ label: 'Close', cancel: true, onClick: (c) => c() }, { label: 'Open the official page', cls: 'primary', onClick: (c) => { B.harnessOpenPage(kind); c(); } }]);
       return;
     }
-    const opts = p.plans.map((pl, i) => `<label class="hs-plan"><input type="radio" name="hsPlan" value="${i}"${i === 0 ? ' checked' : ''}> <span><code>${esc(pl.display)}</code>${pl.note ? `<small>${esc(pl.note)}</small>` : ''}</span></label>`).join('');
+    const opts = p.plans.map((pl, i) => `<label class="hs-plan"><input type="radio" name="hsPlan" value="${i}"${i === 0 ? ' checked' : ''}> <span><b>Using ${esc(MANAGER[pl.manager] || pl.manager)}${i === 0 && p.plans.length > 1 ? ' (recommended)' : ''}</b><code>${esc(pl.display)}</code>${pl.note ? `<small>${esc(pl.note)}</small>` : ''}</span></label>`).join('');
     const choice = await new Promise((res) => {
-      modal((op === 'update' ? 'Update ' : 'Install ') + p.name, `<p class="scr-note">Durbar will run this command on your computer, as you:</p>${opts}<p class="scr-note small">Prefer to do it yourself? <a href="#" id="hsPage">Open the official page</a>.</p>`,
+      modal((op === 'update' ? 'Update ' : 'Install ') + p.name, `<p class="scr-note">Choose how to install. Durbar runs the command shown, on your computer, as you:</p>${opts}<p class="scr-note small">Prefer to do it yourself? <a href="#" id="hsPage">Open the official page</a>.</p>`,
         [{ label: 'Cancel', cancel: true, onClick: (c) => { c(); res(null); } }, { label: op === 'update' ? 'Update' : 'Install', cls: 'primary', onClick: (c) => { const v = document.querySelector('#hsDlg input[name="hsPlan"]:checked'); const i = v ? Number(v.value) : 0; c(); res(i); } }]);
       const a = document.getElementById('hsPage'); if (a) a.onclick = (e) => { e.preventDefault(); B.harnessOpenPage(kind); };
     });
     if (choice === null) return;
     const done = await runDialog(kind, op, p.name, choice);
     result(done, p.name, kind);
+    if (done.ok) await signInNext(kind);
+  }
+
+  /* FR-045: after an install or update that worked, go straight to the sign-in when the harness still needs one */
+  async function signInNext(kind) {
+    let k = null;
+    try { const list = await B.listAdapters(true); k = (list || []).find((x) => x.id === kind) || null; } catch (e) { k = null; }
+    if (!k) return;
+    let need = k.state === 'not-signed-in';
+    if (!need && kind === 'copilot' && k.state === 'ready' && B.copilotAuth) {
+      try { const a = await B.copilotAuth(); need = !!(a && a.known && a.signedIn === false); } catch (e) { need = false; }
+    }
+    if (need) await signin(kind, k.displayName || kind);
   }
 
   async function signin(kind, name) {
@@ -119,7 +141,7 @@
 
   function result(p, name, kind) {
     onChange();
-    if (p.ok) { toastLike((name || kind) + ' is ready.'); return; }
+    if (p.ok) { toastLike((name || kind) + (p.op === 'install' ? ' is installed.' : p.op === 'update' ? ' is updated.' : ' is ready.')); return; }
     if (p.reason === 'cancelled') return;
     modal('That did not finish', `<p class="scr-note">${esc(p.error || (p.reason === 'timeout' ? 'It took too long and was stopped.' : 'It ended with an error' + (p.exitCode != null ? ' (code ' + p.exitCode + ')' : '') + '.'))}</p>${p.lines && p.lines.length ? `<pre class="hs-log">${esc(p.lines.join('\n'))}</pre>` : ''}<p class="scr-note small">You can also follow the official instructions.</p>`,
       [{ label: 'Close', cancel: true, onClick: (c) => c() }, { label: 'Open the official page', onClick: (c) => { B.harnessOpenPage(kind); c(); } }]);
