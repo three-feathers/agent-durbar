@@ -2,7 +2,7 @@
 
 **Feature Branch**: `046-release-alpha6`
 **Created**: 2026-10-19
-**Status**: Built; tag and publication pending (see the release record).
+**Status**: Built and **published as a pre-release on 2026-10-19** (<https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.6>; release PR #244; the new app icon from #246 included; tag on `b0e0565`, CI green on that commit).
 **Input**: Vikram, 2026-10-19, in the session: "cut a pre release" and "go ahead and cut the pre-release", after "look at all security and quality issues and add it to pre release". AGENTS.md "Needs approval": publishing a release is approved here, in writing, for this release only, as for alpha.4 and alpha.5 (specs 031, 042). Release engineering only: a version bump, the changelog and download notes.
 
 ## Requirements
@@ -28,4 +28,12 @@
 
 ## Release record
 
-(filled in when the tag is pushed and the draft is published)
+- Tag `v0.1.0-alpha.6` on `b0e0565` (the merge of #246, the new app icon; after #244). CI on that commit was green.
+- `release.yml` run 39221422754: the Windows, macOS, Linux and draft jobs succeeded.
+- **Draft checked:**
+  - draft and pre-release flags;
+  - eight files: arm64 and x64 dmg and zip, the Windows installer and portable exe, the Linux AppImage, `SHA256SUMS.txt`;
+  - the portable exe and the AppImage were downloaded and match `SHA256SUMS.txt`;
+  - the AppImage extracts, has `app.asar`, and its icon is the new F2a design (1024 px).
+- Notes set with the honest limits above, and **published as a pre-release on 2026-10-19 at 08:24 UTC** on the owner's instruction ("go ahead and cut the pre-release"). The link was posted in the team's Telegram group.
+- `[KNOWN GAP]` The packaged app turns its developer hooks off, so the shipped files were not driven by a test. CI's unpacked-app smoke check passed on the tagged commit. Nobody has run the published files on macOS or Windows.
