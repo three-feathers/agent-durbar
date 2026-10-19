@@ -2,7 +2,13 @@
 
 Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on Linux (see "Honest limits"). Each entry names the spec that describes the behavior and how it was checked.
 
-## Unreleased (on `main`, after the alpha.5 tag)
+## Unreleased (on `main`, after the alpha.6 tag)
+
+Nothing yet.
+
+## v0.1.0-alpha.6 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.6), 2026-10-19)
+
+Unsigned and not notarized; only Linux was run by hand. Claude Code is offered when it is installed and signed in; its cost is a dollar estimate, never AIU, and it has no credit cap. An in-place upgrade from alpha.5 was not checked.
 
 - **MCP server groundwork: agent state in the main process (spec 041 T014, issue #204).** The main process now keeps each agent's office word and sub-label (Working, Waiting for you, Limit reached…) with the same rules as the window, so the MCP read tools can report them later. Pausing in the window is reported to the main process. No visible change, 0 AIU.
 
