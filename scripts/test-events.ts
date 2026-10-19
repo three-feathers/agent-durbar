@@ -222,4 +222,17 @@ const run = (events: RawEvent[]): EventBody[] => {
   assert.ok(titles[1].title.length === 80 && titles[1].title.endsWith('…'), 'at most 80 characters with an ellipsis');
 }
 
+// spec 002 FR-016 (T024): an idle (here after Stop) drops the turn's tool names and reasoning ids
+{
+  const out: EventBody[] = [];
+  const m = new EventMapper((b) => out.push(b));
+  const ev = (type: string, data: Record<string, unknown>): void => m.map({ type, data } as unknown as RawEvent);
+  ev('tool.execution_start', { toolCallId: 't1', toolName: 'bash', arguments: { command: 'sleep 9' } });
+  ev('assistant.reasoning_delta', { reasoningId: 'r1', deltaContent: 'thinking…' });
+  ev('session.idle', { aborted: true });
+  const internals = m as unknown as { toolNames: Map<string, unknown>; reasoningSeen: Set<string> };
+  assert.strictEqual(internals.toolNames.size, 0, 'tool names of the stopped turn are gone');
+  assert.strictEqual(internals.reasoningSeen.size, 0, 'reasoning ids of the stopped turn are gone');
+  assert.ok(out.some((e) => e.type === 'status' && e.status === 'idle' && e.intent === 'Aborted'));
+}
 console.log('event mapping tests passed');

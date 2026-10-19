@@ -54,3 +54,48 @@ export function stageAttachment(dir: string, nameIn: string, mimeIn: string, dat
   fs.writeFileSync(file, data, { mode: 0o600 });
   return { ok: true, path: file, name, kind: img ? 'image' : 'file', size };
 }
+
+/** spec 004 FR-009: the kind of a file on disk by its first bytes (an extension alone never makes an image). Unreadable = file. */
+export function kindOfFile(file: string): 'image' | 'file' {
+  try {
+    const fd = fs.openSync(file, 'r');
+    try {
+      const head = Buffer.alloc(32);
+      const n = fs.readSync(fd, head, 0, 32, 0);
+      return sniffImage(head.subarray(0, n)) ? 'image' : 'file';
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return 'file';
+  }
+}
+
+export const STAGE_PREFIX = 'agent-durbar-att-';
+
+/**
+ * spec 004 FR-010: staging folders left by a crash (`agent-durbar-att-*` in the temp folder, older than `maxAgeMs`) are removed
+ * at start. Only folders with that prefix, directly in `tmp`, and never a symbolic link. Returns how many were removed.
+ */
+export function sweepStaleStageDirs(tmp: string, now = Date.now(), maxAgeMs = 24 * 3600_000): number {
+  let removed = 0;
+  let names: string[];
+  try {
+    names = fs.readdirSync(tmp).filter((n) => n.startsWith(STAGE_PREFIX));
+  } catch {
+    return 0;
+  }
+  for (const n of names.slice(0, 500)) {
+    const p = path.join(tmp, n);
+    try {
+      const st = fs.lstatSync(p);
+      if (!st.isDirectory() || st.isSymbolicLink() || now - st.mtimeMs < maxAgeMs) continue;
+      fs.rmSync(p, { recursive: true, force: true });
+      removed++;
+    } catch {
+      /* not ours to remove, or gone */
+    }
+  }
+  return removed;
+}
+
