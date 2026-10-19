@@ -260,4 +260,14 @@ assert.ok(partial.art['lobby-art'], 'safe art on a real slot is kept');
   assert.deepStrictEqual(T.preview('no-such-theme'), T.preview(T.CLEAN_ID));
   assert.deepStrictEqual(T.preview(42 as any), T.preview(T.CLEAN_ID));
 }
+
+// spec 052 FR-030: each Settings card draws a mini room from validated colours only; unknown ids fall back to Clean Office
+{
+  const ids = T.list().map((x: any) => x.id);
+  const rooms = ids.map((id: string) => JSON.stringify(T.previewRoom(id)));
+  assert.strictEqual(new Set(rooms).size, ids.length, 'every built-in theme has its own mini room');
+  for (const id of ids) { const r = T.previewRoom(id); assert.deepStrictEqual(Object.keys(r).sort(), ['agent', 'bg', 'chair', 'desk', 'ink', 'tint', 'wall'], id + ': all parts'); for (const v of Object.values(r) as string[]) assert.ok(/^(#|rgb|hsl)/.test(v) && !/[;:{}]|url/i.test(v), id + ': ' + v); }
+  assert.deepStrictEqual(T.previewRoom('no-such-theme'), T.previewRoom(T.CLEAN_ID));
+  assert.deepStrictEqual(T.previewRoom(42 as any), T.previewRoom(T.CLEAN_ID));
+}
 console.log('theme tests passed');
