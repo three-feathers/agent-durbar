@@ -306,6 +306,30 @@ const uriName = (u: unknown): string => {
   return '';
 };
 
+const QUESTIONS_SHOWN = 20;
+const OPTIONS_SHOWN = 30;
+const strOf = (v: unknown, max: number): string => (typeof v === 'string' ? oneLine(plainLinks(v), max) : '');
+
+/** `questionCarousel` part -> a plain read-only text (the questions VS Code asked; no answer is shown). */
+function questionText(part: Record<string, unknown>): string {
+  const qs = Array.isArray(part.questions) ? part.questions.filter(isObj).slice(0, QUESTIONS_SHOWN) : [];
+  if (!qs.length) return '';
+  const lines: string[] = ['Copilot asked (read-only copy, not answerable here):'];
+  for (const q of qs) {
+    const title = strOf(q.title, 300);
+    const msg = isObj(q.message) ? strOf(q.message.value, 1000) : strOf(q.message, 1000);
+    lines.push('', `**${title || 'Question'}**` + (msg && msg !== title ? `: ${msg}` : ''));
+    const opts = Array.isArray(q.options) ? q.options.filter(isObj).slice(0, OPTIONS_SHOWN) : [];
+    for (const o of opts) {
+      const l = strOf(o.label, 200) || strOf(o.value, 200);
+      if (l) lines.push(`- ${l}`);
+    }
+    if (q.allowFreeformInput === true) lines.push('(free text allowed)');
+  }
+  if (part.allowSkip === true) lines.push('', '(can be skipped)');
+  return lines.join('\n');
+}
+
 /** Response parts -> blocks (assistant text, tool lines). Markdown stays as text; nothing is rendered as HTML. */
 function responseBlocks(parts: unknown[], unknownKinds: Set<string>): VsChatBlock[] {
   const blocks: VsChatBlock[] = [];
@@ -374,7 +398,17 @@ function responseBlocks(parts: unknown[], unknownKinds: Set<string>): VsChatBloc
       case 'treeData':
       case 'extensions':
       case 'autoModeResolution':
+      case 'mcpServersStarting': // only lists the ids of MCP servers that were starting
         break;
+      case 'questionCarousel': {
+        // Read-only: titles, messages and option labels as plain text (never a control). Shape known from VS Code 1.109+; every string is untrusted.
+        const text = questionText(part);
+        if (text) {
+          flush();
+          blocks.push({ type: 'assistant', text });
+        }
+        break;
+      }
       default:
         if (kind) unknownKinds.add(kind);
     }

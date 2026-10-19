@@ -92,6 +92,35 @@ try {
   const fr = await readChat(flat);
   assert.ok(fr.ok && fr.transcript.blocks[1].type === 'assistant' && (fr.transcript.blocks[1] as { text: string }).text.startsWith('Plain string'), 'old flat JSON with string responses');
 
+  // FR-016: questionCarousel (read-only text) and mcpServersStarting (known, hidden); synthetic shapes only
+  const carousel = {
+    kind: 'questionCarousel',
+    questions: [
+      { id: 'q1', type: 'singleSelect', title: 'DURBAR fixture: which colour?', message: { value: 'Pick <b>one</b> colour for the sample.', uris: {} }, options: [{ id: 'o1', label: 'Teal', value: 'teal' }, { id: 'o2', label: 'Amber', value: 'amber' }], defaultValue: 'o1', allowFreeformInput: true },
+    ],
+    allowSkip: true,
+    resolveId: 'r1',
+  };
+  const mcp = { kind: 'mcpServersStarting', didStartServerIds: [] };
+  const chatsDir = path.join(tmp, 'User', 'workspaceStorage', fx.hashes.match, 'chatSessions');
+  const req = (resp: unknown[]) => ({ timestamp: 1, message: { text: 'DURBAR fixture: question' }, response: resp });
+  fs.writeFileSync(path.join(chatsDir, 's-q-log.jsonl'), JSON.stringify({ kind: 0, v: { version: 3, requests: [req(['Before. ', mcp])] } }) + '\n' + JSON.stringify({ kind: 2, k: ['requests'], v: [req([carousel, mcp])] }) + '\n');
+  fs.writeFileSync(path.join(chatsDir, 's-q-flat.json'), JSON.stringify({ version: 3, requests: [req([mcp, carousel, { kind: 'futureThing2027' }])] }));
+  const l2 = await listChats([ud], { folders: [folder] });
+  for (const id of ['s-q-log', 's-q-flat']) {
+    const qr = await readChat(l2.sessions.find((x) => x.summary.key.endsWith('/' + id))!);
+    assert.ok(qr.ok, id);
+    if (!qr.ok) continue;
+    const q = qr.transcript.blocks.find((b) => b.type === 'assistant' && b.text.includes('which colour'));
+    assert.ok(q && q.type === 'assistant', id + ': the question is shown');
+    for (const part of ['which colour?', 'Pick <b>one</b> colour', '- Teal', '- Amber', '(free text allowed)', '(can be skipped)']) assert.ok(q.text.includes(part), id + ': ' + part);
+    assert.ok(!qr.transcript.blocks.some((b) => b.type !== 'user' && JSON.stringify(b).includes('didStartServerIds')), 'mcpServersStarting is not shown');
+    assert.ok(!qr.transcript.notes.some((n) => /questionCarousel|mcpServersStarting/.test(n)), id + ': neither is "not recognised"');
+    if (id === 's-q-flat') assert.ok(qr.transcript.notes.some((n) => /futureThing2027/.test(n) && !/questionCarousel|mcpServersStarting/.test(n)), 'an unknown kind still gets the note');
+  }
+  const big = toTranscript({ state: { version: 3, requests: [req([{ kind: 'questionCarousel', questions: Array.from({ length: 200 }, (_, i) => ({ title: 'T' + i + 'x'.repeat(500), message: 'm'.repeat(50_000), options: Array.from({ length: 100 }, () => ({ label: 'l'.repeat(900) })) })) }, { kind: 'questionCarousel', questions: 'x' }, { kind: 'questionCarousel' }])] }, badLines: 0 });
+  assert.ok(big.blocks.every((b) => b.type === 'user' || (b.type === 'assistant' && b.text.length <= 20_001)), 'carousel text is capped');
+
   // a file that disappears or breaks after listing is a clean error
   fs.writeFileSync(top.file, 'garbage');
   const bad = await readChat(top);
