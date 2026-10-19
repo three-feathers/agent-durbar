@@ -1,6 +1,7 @@
 /** Spec 041 T015: main-process simulator planner and gate (FR-045, SC-001). No Electron, no real agents. */
 import * as assert from 'assert';
 import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
+import { FakeAdapter } from '../src/adapters/fake';
 import type { AgentEvent } from '../src/adapters/types';
 import { devEnv } from '../src/main/devhooks';
 import { parseSimMainCount, planSimMain, simMainPlanFor, startSimMain } from '../src/main/mcp/simmain';
@@ -52,7 +53,15 @@ import { parseFloors } from '../src/shared/floors';
 
   // starter: the events go through the adapter's normal stream; the registry is separate from production
   const seen: AgentEvent[] = [];
+  const startModes: unknown[] = [];
+  const realStart = FakeAdapter.prototype.start;
+  FakeAdapter.prototype.start = function (this: FakeAdapter, options) {
+    startModes.push(options.permissionMode);
+    return realStart.call(this, options);
+  };
   const h = (await startSimMain(devEnv(hook, false), (e) => seen.push(e)))!;
+  FakeAdapter.prototype.start = realStart;
+  assert.ok(startModes.length > 0 && startModes.every((m) => m === 'read-only'), 'every simulated session starts read-only');
   assert.ok(h);
   assert.strictEqual(h.registry.list().length, 1);
   assert.ok(!prodIds.includes(h.registry.list()[0].id), 'dev registry id is not a production id');
