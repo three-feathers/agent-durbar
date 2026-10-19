@@ -41,3 +41,11 @@
 
 - `[IMPLEMENTED]` The pack sets `ui` and stronger core colours: glass-and-steel office: a dark navy top bar, white rooms with a coloured accent bar on the left edge, square-cornered cards with a thin border and a soft shadow, rectangular tag-style pills and buttons, room names as small uppercase labels. Sizes are unchanged; `check:themes` covers it. Owner review of the look requested in PR #137.
 - `[IMPLEMENTED]` (2026-10-18, spec 035 FR-013) Its own people and furniture: people in suits with a white shirt and a tie in their own colour, a tall executive chair, a glass desk on metal legs, a thin widescreen and a desk phone (`corporate` kit).
+
+### 2026-10-19: every theme's swatch looked the same (sweep)
+
+*Found:* in Settings, each theme row has a small swatch, but it was painted with the **active** theme's colours (`--tint-sage` / `--tint-blue`), so all six rows showed the same grey-green square and the swatch told nothing about the theme.
+
+*Corrected:*
+- **FR-014** `[IMPLEMENTED]` `THEME.preview(id)` returns up to three colours of that theme (its `--bg`, `--tint-sage` and `--wall-blue` tokens after validation, falling back to Clean Office's), and the picker paints each swatch with its own theme's colours (CSSOM, no inline CSS text; only validated colour values). User themes get theirs the same way. `test:` `test:theme`; `sim:` screenshots at 1440x900 and 1280x800.
+
