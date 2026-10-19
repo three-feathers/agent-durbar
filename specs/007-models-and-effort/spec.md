@@ -61,7 +61,7 @@ A chip in the chat header shows the model, the effort and, in the tooltip, the c
 - **FR-008** `[KNOWN GAP]` The effort list is hard-coded in `main.ts` and `folders.ts`; an effort value the SDK adds later is silently dropped. `read:` (Task T021.)
 - **FR-009** `[KNOWN GAP]` The `auto` routing tier (`efficiency|balance|intelligence`) is supported by the adapter but not selectable in the UI. `read:`
 - **FR-010** `[KNOWN GAP]` The multiplier is shown as returned (`x3`) without explaining units or relating it to the user's remaining credits (feature 011). `read:`
-- **FR-011** `[IMPLEMENTED]` (2026-10-19, see Changes; was a known gap) No automated test covers model listing or option mapping (it needs the SDK); `cheapestModel()` is used only by the smoke script. `read:`
+- **FR-011** `[IMPLEMENTED]` (2026-10-19, see Changes) Model listing and option mapping are covered by a credit-free test with fake model infos (`scripts/test-copilot-model.ts`). Before spec 030 this was a known gap: No automated test covers model listing or option mapping (it needs the SDK); `cheapestModel()` is used only by the smoke script. `read:`
 
 ### Key Entities
 
