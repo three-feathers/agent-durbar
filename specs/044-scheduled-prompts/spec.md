@@ -2,7 +2,7 @@
 
 **Feature Branch**: `044-scheduled-prompts`
 **Created**: 2026-10-19
-**Status**: Phase 1 in progress
+**Status**: Phase 1 built (unit tests with a fake clock, simulator, one real check 2026-10-19)
 **Input**: Issue #125 (owner's idea, 2026-10-17, with research notes on SDK 1.0.22 / runtime 1.0.98): schedule a prompt on a session, once or at an interval, only while the app is open; no OS scheduler, nothing changed on the user's system.
 
 ## Decisions taken from the issue (Phase 1)
@@ -51,3 +51,13 @@ In **Folders**, each folder has **Schedules**. The dialog lists the folder's sch
 ## Assumptions and dependencies
 
 - Phase 2 (not here): a schedule per session, calendar rules, a per-schedule credit cap, the AI's own schedules (shown read-only).
+
+## Changes
+
+### 2026-10-19: Phase 1 built
+
+- `test:` `npm run test:schedules` (fake clock and sender): due times, interval runs, a busy agent skips (never queued or caught up), pause all and resume without a burst, once-schedules run once, a past time is refused, missed runs at start, removal, the limit of 50.
+- `sim:` the Folders panel (Schedules per folder, Pause all schedules), the dialog (list, add every N minutes or once at a time, pause, delete), a once-run sent to an idle agent with the chat note "Scheduled prompt (once).", a run skipped while the folder's agent was busy; 1440x900 and 1280x800 (`docs/screenshots/044-*.png`). The Folders panel is 660 px wide now (was 560) so a row keeps its path and next run beside the five buttons.
+- `real:` 2026-10-19, Free plan, the real app: a once-schedule 20 s ahead sent "Reply with the single word: scheduled" to a real Copilot session in a throwaway folder; the chat showed the prompt and the note, and the agent replied "scheduled" (0.162 AIU).
+- `[KNOWN GAP]` Sleep and wake on macOS and Windows; long-running intervals over hours (timers are recomputed from the wall clock on each change, not on wake).
+
