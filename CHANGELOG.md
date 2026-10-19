@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **Custom agents for Claude Code too (spec 043 FR-008).** The experimental Claude agent lists the folder's `.claude/agents` and your own `~/.claude/agents`, with the same one-time confirmation for a repository agent. Claude fixes the agent when a session starts, so it is chosen in the New session dialog or before the first message. Checked on a real Claude Code: a session started with a pirate agent answered "Arr…".
+
 - **A welcome for new users (spec 001 FR-026).** With no folder yet, the office shows a short welcome: sign in to Copilot once, add a folder (its agent starts Read-only), send a message. It has buttons to add a folder or look around in the demo.
 
 - **Start a new session with a custom agent (spec 043 FR-007).** The New session dialog has an **Agent** select listing the folder's custom agents. A repository agent still asks once before it is used.
