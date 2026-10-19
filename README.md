@@ -19,7 +19,7 @@ Command center to see, chat with and coordinate coding agents (Copilot CLI first
 
 - **A GitHub Copilot subscription (a free plan works) and a Copilot login on your machine.** Agent Durbar does not ship or replace Copilot: it uses the Copilot runtime bundled with the official SDK and your existing Copilot sign-in. Sign in once with the GitHub Copilot CLI (`copilot login`; install it from [github/copilot-cli](https://github.com/github/copilot-cli)) before starting a session. Agent Durbar never sees, stores or sends your token: the Copilot runtime reads it from the place the CLI saved it (your OS keychain or the Copilot config folder), and Agent Durbar has no accounts, no servers and no telemetry of its own.
 - Usage bills against **your** Copilot plan (AI credits); several agents in parallel can use credits quickly.
-- Optional: VS Code with the `code` command, for the "Open in VS Code" button.
+- Optional: VS Code (or VS Code Insiders, or VSCodium; tried in that order), for the "Open in VS Code" button.
 
 ## Install from releases
 
