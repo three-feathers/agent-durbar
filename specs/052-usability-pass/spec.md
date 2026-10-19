@@ -226,3 +226,19 @@ All four were AI personas with 21 new screenshots and the source.
   - the Indian court's pillars sit behind the cards in a lighter gold;
   - the Japanese court's furniture is warm lacquer (`--desk` #4a3b2c);
   - Retro's floor art is drawn opaque in two colours instead of smeared.
+
+**Evidence (follow-ups):**
+- **Built:** #305, #307 and #306 by the lead. #309, #310 and #311 by three implementation sub-agents in their own worktrees (typecheck and unit tests only), merged and checked by the lead.
+- `sim:` `scripts/shots-052-ux.js` passes at both sizes:
+  - **I** opens the inbox, which lists every agent that needs you; approving from a row removes it; Esc closes the inbox;
+  - Simple hides paths, chips and VS Code, keeps the mode and the answers, and shows plain verbs and money; switching back to Expert works;
+  - the top-bar group and ⋯.
+- **Layout:** `check:office` (2 shards) and `check:geometry` (60/60) pass.
+  - The 24px room-header targets (#311) pushed MCP into the plant at 1280. Decision: the plant is drawn only in the full layout, and denser rooms give its space to the controls (the designer's round-1 advice).
+- **Bugs found while building:**
+  - the answer bar now decides "in view" by geometry, on scroll and on changes;
+  - a redraw of the inbox keeps focus inside it, so Esc still closes it.
+- **Money wording:** "≈ $0.33"; small amounts read "<$0.01" without "≈".
+- `[KNOWN GAP]`:
+  - Simple is a display preference of this window (`localStorage`), not a synced setting;
+  - money for Copilot credits uses GitHub's USD 0.01 price per credit, so it is an estimate where a plan includes credits.

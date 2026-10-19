@@ -110,6 +110,25 @@ module.exports = async (ctx) => {
     key('N'); await ctx.sleep(1000);
     const second = await js(`(document.getElementById('panelTitle')||{}).textContent||''`);
     assert.ok(first && second && first !== second, `N moves between agents that need you: ${first} -> ${second}`);
+    // FR-031 (#306): Simple hides the developer details, keeps answering; plain verbs on cards
+    await js(`document.getElementById('backBtn')&&document.getElementById('backBtn').click()`); await ctx.sleep(600);
+    await js(`document.getElementById('settingsBtn').click()`); await ctx.sleep(900);
+    await js(`document.querySelector('[data-detail="simple"]').click()`); await ctx.sleep(600);
+    assert.ok(await js(`document.body.classList.contains('simple')`), 'Simple is on');
+    await js(`document.getElementById('scrClose')&&document.getElementById('scrClose').click()`); await ctx.sleep(600);
+    const simpleOffice = await js(`({paths:[...document.querySelectorAll('#stage .room-path')].filter(e=>e.getClientRects().length).length,at:[...document.querySelectorAll('#stage .desk')].some(t=>/\bAt [^:]{1,40}: /.test(t.innerText)),verb:[...document.querySelectorAll('#stage .desk')].some(t=>/(Running a command|Searching (code|the web)|Reading notes|Using a tool) · /.test(t.innerText))})`);
+    assert.ok(simpleOffice.paths === 0 && !simpleOffice.at, 'Simple office: no paths, no "At <place>: <tool>": ' + JSON.stringify(simpleOffice));
+    console.log('[052] simple verbs on cards now:', simpleOffice.verb);
+    await shot(`052-simple-office-${w}x${h}.png`);
+    const jonasS = await deskId('Jonas'); await js(`document.querySelector('#stage [data-id="${jonasS}"]').click()`); await ctx.sleep(1200);
+    const simpleChat = await js(`({hidden:['modelChip','ctxChip','vscodeBtn'].every(i=>{const e=document.getElementById(i);return !e||!e.getClientRects().length}),answer:!!document.querySelector('#chat .note.perm .note-actions button, #chat .note.perm.settled'),mode:!!document.getElementById('modeChip')&&document.getElementById('modeChip').getClientRects().length>0})`);
+    assert.ok(simpleChat.hidden && simpleChat.answer && simpleChat.mode, 'Simple chat: developer chips gone, mode and answering kept: ' + JSON.stringify(simpleChat));
+    await shot(`052-simple-chat-${w}x${h}.png`);
+    await js(`document.getElementById('backBtn').click()`); await ctx.sleep(500);
+    await js(`document.getElementById('settingsBtn').click()`); await ctx.sleep(900);
+    await js(`document.querySelector('[data-detail="expert"]').click()`); await ctx.sleep(500);
+    await js(`document.getElementById('scrClose')&&document.getElementById('scrClose').click()`); await ctx.sleep(500);
+    assert.ok(await js(`!document.body.classList.contains('simple')`), 'back to Expert');
     // FR-015: the strip's two actions (last, so the chat checks above see the agents as they started)
     await js(`document.getElementById('backBtn')&&document.getElementById('backBtn').click()`); await ctx.sleep(500);
     if (w === 1440) {

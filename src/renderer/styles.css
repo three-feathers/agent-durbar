@@ -380,7 +380,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .stage:not([data-d="full"]) .room[data-tint="sand"]{--wall:var(--cwall-sand,#d2c4a4)}
 .stage:not([data-d="full"]) .room[data-tint="clay"]{--wall:var(--cwall-clay,#d8c1b3)}
 .stage:not([data-d="full"]) .room::after{content:"";position:absolute;left:28px;bottom:-2px;width:30px;height:2px;background:var(--bg)}
-.stage:not([data-d="full"]) .room-head{min-height:calc(var(--rp) + 14px);gap:8px;padding-right:calc(var(--plw) + 4px)}
+.stage:not([data-d="full"]) .room-head{min-height:calc(var(--rp) + 14px);gap:8px;padding-right:4px} /* spec 052 (#311): the plant is decoration for the full layout only; denser rooms give its room to the 24px controls */
 .stage:not([data-d="full"]) .room-name{font-size:12.5px;line-height:18px;padding:0 9px;border-radius:6px;background:color-mix(in srgb,var(--raised) 72%,transparent);border:1px solid var(--wall)}
 .stage:not([data-d="full"]) .room-head{container-type:inline-size}
 @container (max-width:330px){.room-path{display:none}}
@@ -408,7 +408,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .stage:not([data-d="full"]) .room-path{font-size:11px;flex-shrink:4}
 .stage:not([data-d="full"]) .room-dots{gap:6px;min-width:0}
 .stage:not([data-d="full"]) .room-dots{padding-right:0}
-.stage:not([data-d="full"]) .room-plant{display:block;width:var(--plw);height:auto;right:var(--rp);top:calc(var(--rp) - 6px)}
+.stage:not([data-d="full"]) .room-plant{display:none}
 .stage[data-d="roomy"]{--plw:24px}
 .stage[data-d="card"]{--plw:22px}
 .stage[data-d="mini"]{--plw:20px}
@@ -965,3 +965,10 @@ html:not([data-ui]) .seg button{border-radius:6px}
 .inbox-row .ib-t{margin:4px 0 8px;font-size:13px;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
 .inbox-row .ib-act{display:flex;flex-wrap:wrap;gap:6px}
 .inbox-empty{color:var(--muted);font-size:13px;max-width:60ch}
+
+/* spec 052 FR-031 (#306): Simple hides the developer details; status, permissions and answering are the same */
+body.simple #modelChip,body.simple .mchip,body.simple #agentChip,body.simple #ctxChip,body.simple #compactBtn,body.simple .ph .folder,
+body.simple .room-path,body.simple .room-mcp,body.simple #vscodeBtn,body.simple #copyResBtn,body.simple #mcpBtn,body.simple #toolsHdrBtn,
+body.simple .pusage,body.simple .defaults-grp #modelSel,body.simple .defaults-grp #effortSel,body.simple .lrow .lcell.mono{display:none!important}
+.wl-simple{display:flex;gap:8px;align-items:flex-start;margin:12px 0 0;font-size:13px;color:var(--ink-2);cursor:pointer}
+.wl-simple input{margin-top:3px}

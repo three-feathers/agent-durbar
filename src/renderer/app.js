@@ -64,6 +64,11 @@ function aiuChip(){
 const MOODS=window.DurbarMood;
 const MOOD=MOODS.createMoodTracker();
 let SERIOUS=false; /* Serious mode (Settings): no mood drawings at all */
+/* spec 052 FR-031 (#306): detail level. Simple hides the developer details (tokens, model and context chips, paths, MCP, VS Code, resume
+   command) and says what agents do in plain verbs; Expert is everything. A display preference of this window (localStorage). */
+let SIMPLE=(()=>{try{return localStorage.getItem('durbar.detail')==='simple';}catch(e){return false;}})();
+function setDetail(level){SIMPLE=level==='simple';try{localStorage.setItem('durbar.detail',SIMPLE?'simple':'expert');}catch(e){}document.body.classList.toggle('simple',SIMPLE);renderAll();if(ui.selected)updatePanelHeader();}
+const PLACE_VERB={library:'Reading notes',software:'Searching code',terminal:'Running a command',web:'Searching the web',other:'Using a tool'};
 let AMB_ID=null;   /* the one agent that has the ambulance (the most recent error), chosen once per render */
 const NO_MOOD={body:'normal',trouble:null,pct:null,words:''};
 function moodFor(a){
@@ -143,7 +148,7 @@ const MAX_TILES=8, canAddPlace=()=>!!(bridge&&bridge.addPlace)&&window.DurbarPla
 /* who is at a place and visible under the current filters (a hidden room or a filtered-out agent has no figure) */
 const placeVisitors=pid=>VISITS.occupants(pid).filter(id=>{const a=byId(id),r=a&&!a.parent&&roomOf(a);return roomShown(r)&&(ui.ws==='all'||wsOf(a)===ui.ws)&&matchStatus(a);});
 const isAway=a=>!a.parent&&(!!VISITS.at(a.id)||RETURNING.has(a.id));
-const taskOf=a=>{const v=a.parent?null:VISITS.at(a.id);return v?'At '+placeLabel(v.place)+': '+v.label+' · '+a.task:a.task;};
+const taskOf=a=>{const v=a.parent?null:VISITS.at(a.id);return v?(SIMPLE?(PLACE_VERB[v.place]||'Using a tool')+' · '+a.task:'At '+placeLabel(v.place)+': '+v.label+' · '+a.task):a.task;};
 /* A result of addPlace/updatePlace/removePlace (or a settings read): the places and the map as they are now. Agents standing at a place that is gone
    go back to their desk at once (spec 024 FR-025); a rename or an icon change only redraws. */
 function setCustomPlaces(list,map){
@@ -219,7 +224,7 @@ function syncWalkers(){
   /* spec 034 FR-015: the figure away at a place keeps its mood (ring, horns, trouble dot); none in Serious mode (moodFor) */
   walkers.forEach((w,id)=>{const m=moodFor(byId(id));w.el.dataset.body=m.body;w.el.dataset.trouble=m.trouble||'';});
 }
-function roomAiu(r){const f=folderOfRoom(r.id),t=LEDGER.room(r.id,f&&f.key),usd=usdEstimates(r.id),m=t.calls&&!(t.unreported>=t.calls&&!usd)?'≈ '+fmtMoney(t.nano/1e9*AIU_USD+usd):'';return t.calls&&!demoOn?{long:m||window.DurbarUsage.fmtTotal(t),short:m||window.DurbarUsage.fmtShort(t),tip:window.DurbarUsage.tooltip(t,{scope:'folder',since:LEDGER.since(),run:LEDGER.roomRun(r.id)})}:null;}
+function roomAiu(r){const f=folderOfRoom(r.id),t=LEDGER.room(r.id,f&&f.key),usd=usdEstimates(r.id),m=t.calls&&!(t.unreported>=t.calls&&!usd)?approx(t.nano/1e9*AIU_USD+usd):'';return t.calls&&!demoOn?{long:m||window.DurbarUsage.fmtTotal(t),short:m||window.DurbarUsage.fmtShort(t),tip:window.DurbarUsage.tooltip(t,{scope:'folder',since:LEDGER.since(),run:LEDGER.roomRun(r.id)})}:null;}
 
 const LABELS={working:'Working',thinking:'Thinking',waiting:'Waiting for you',idle:'Idle',error:'Error',done:'Done'};
 const LABELS_SHORT={waiting:'Waiting'};
@@ -248,12 +253,14 @@ const MIN_USD_CAP=0.01;
 const usageCaps=a=>{const r=a&&a.parent?(byId(a.parent)||a):a;const c=typeof capsFor==='function'&&r&&r.info?capsFor(r):null;return (c&&c.usage)||{nanoAiu:true};};
 /* spec 052 FR-028 (#307): money as people read it; small amounts are "<$0.01", not four decimals */
 const fmtMoney=v=>v>0&&v<0.005?'<$0.01':'$'+v.toFixed(2);
+const approx=v=>(v>0&&v<0.005?'':'≈ ')+fmtMoney(v); /* "<$0.01" needs no "≈" */
 const AIU_USD=0.01; /* 1 Copilot AI credit = USD 0.01 (GitHub's price; Settings says the same) */
-const fmtUsd=v=>'≈ '+fmtMoney(v)+' est.';
+const fmtUsd=v=>approx(v)+' est.';
 const USD_TIP='The agent\'s own estimate of the API price for these tokens, not a bill and not AIU.';
 function usageShort(a){const u=a.usage; if(!u||!u.calls)return ''; const k=usageCaps(a), c=capOf(a);
+  if(SIMPLE){const m=k.nanoAiu?u.nano/1e9*AIU_USD:(k.costUsd?(u.usd||0):null);return m==null?'':approx(m);}
   if(!k.nanoAiu)return c&&k.costUsd&&isUsdCap(a)?fmtTok(u.inT+u.outT)+' · $'+(u.usd||0).toFixed(2)+'/$'+c.toFixed(2)+' est.':fmtTok(u.inT+u.outT)+' tok'+(k.costUsd?' · '+fmtUsd(u.usd||0):'');
-  return c?fmtTok(u.inT+u.outT)+' · '+(u.nano/1e9).toFixed(capDigits(c))+'/'+fmtCap(c)+' AIU':fmtTok(u.inT+u.outT)+' tok · ≈ '+fmtMoney(u.nano/1e9*AIU_USD);}
+  return c?fmtTok(u.inT+u.outT)+' · '+(u.nano/1e9).toFixed(capDigits(c))+'/'+fmtCap(c)+' AIU':fmtTok(u.inT+u.outT)+' tok · '+approx(u.nano/1e9*AIU_USD);}
 function usageLong(a){const u=a.usage; if(!u||!u.calls)return ''; const k=usageCaps(a), c=capOf(a), base=u.calls+' calls · '+fmtTok(u.inT)+' in / '+fmtTok(u.outT)+' out tokens';
   if(!k.nanoAiu)return base+(k.costUsd?' · '+(c&&isUsdCap(a)?fmtUsd(u.usd||0).replace(/ est\.$/,' of a $'+c.toFixed(2)+' cap est.'):fmtUsd(u.usd||0)):'');
   return base+' · '+(u.nano/1e9).toFixed(3)+' AIU'+(c?' of '+fmtCap(c)+' cap':'');}
@@ -652,7 +659,10 @@ const WELCOME_HTML=`<section class="welcome" aria-labelledby="wlT"><h2 id="wlT">
     <li><b>Send a message</b> to start. Switch to <b>Ask first</b> or <b>Allow all</b> only for folders you trust.</li>
   </ol>
   <div class="wl-actions"><button class="btn primary" type="button" data-wl="add">+ Add a folder</button><button class="btn" type="button" data-wl="demo">Look around in the demo</button></div>
+  <label class="wl-simple"><input type="checkbox" data-wl-simple> <span><b>Simple view</b>: plain words and cost in money, without developer details. You can change it any time in Settings.</span></label>
   <p class="wl-note">Agents run on your computer, as you, and use your own plan (Copilot AI credits, your Claude or ChatGPT plan).</p></section>`;
+/* spec 052 FR-031: the welcome card offers Simple */
+document.addEventListener('change',e=>{if(e.target&&e.target.matches&&e.target.matches('[data-wl-simple]'))setDetail(e.target.checked?'simple':'expert');});
 document.addEventListener('click',e=>{const b=e.target.closest('[data-wl]');if(!b)return;
   if(b.dataset.wl==='add')$('addFolder').click();
   else{const t=$('demoToggle');t.checked=true;t.dispatchEvent(new Event('change'));}});
@@ -2945,7 +2955,8 @@ if(bridge){
     const s=e.target.closest&&e.target.closest('.floors-ui select[data-fl="move"]');if(s)moveRoomToFloor(s.dataset.room,s.value);
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
-  window.DurbarScreens.init({bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,setSerious:on=>{SERIOUS=!!on;scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),usageError:()=>usageSaveError,
+  document.body.classList.toggle('simple',SIMPLE);
+  window.DurbarScreens.init({detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,setSerious:on=>{SERIOUS=!!on;scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     previewTheme:(m)=>{THEME.setTheme(m);SC_CACHE.clear();renderAll();}, /* spec 040 FR-014: Try it / Discard, nothing saved */

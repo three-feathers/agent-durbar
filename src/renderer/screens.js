@@ -142,7 +142,12 @@
         <p class="scr-note"><b>${esc(ab.name)}</b> ${esc(ab.version)} · by <b>${esc(ab.owner)}</b></p>
         <p class="scr-note small" id="aboutCredits">Contributors: ${ab.contributors.map(c=>esc(c.label)).join(', ')}</p>
         <p class="scr-note small">${esc(ab.copyright)} · MIT License</p></section>`:'';
-    r.innerHTML=head('Settings')+`<div class="scr-body">${themeSec}${capSec}${moodSec}${schedSec}${floorsSec}${placesSec}
+    /* spec 052 FR-031 (#306): Simple or Expert */
+    const dl=X.detail?X.detail.get():'expert';
+    const detailSec=X.detail?`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Detail level</h3>
+        <p class="scr-note"><b>Simple</b> shows what agents do in plain words and what they cost; <b>Expert</b> adds tokens, models, context, paths and developer tools. Permissions and answering are the same in both.</p>
+        <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div></section>`:'';
+    r.innerHTML=head('Settings')+`<div class="scr-body">${detailSec}${themeSec}${capSec}${moodSec}${schedSec}${floorsSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         <p class="scr-note">Every agent gets the servers of your <b>Copilot CLI list</b>, the one global list.</p>
@@ -383,6 +388,8 @@
       else if(act==='delete')await deletePlace(id);
       return;
     }
+    const dlb=e.target.closest('[data-detail]');
+    if(dlb&&X.detail){X.detail.set(dlb.dataset.detail);paint();return;}
     const ss=e.target.closest('#seriousSw');
     if(ss&&X.bridge.setSeriousMode){
       const on=ss.getAttribute('aria-checked')!=='true';

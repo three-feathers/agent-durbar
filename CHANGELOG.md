@@ -4,6 +4,13 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.7 tag)
 
+- **The usability follow-ups, built (spec 052, #305-#311).**
+  - **Needs you inbox:** every request in one queue, answered with each request's own choices; press **I**.
+  - **Cost in money:** "≈ $0.36" in the header, rooms and cards, with AIU and Claude estimates in the tooltip.
+  - **Simple / Expert:** a detail level in Settings and on the welcome card. Simple uses plain verbs ("Running a command") and hides developer details.
+  - **Settings:** themes as a preview grid, one lead sentence per section, MCP under *Advanced*.
+  - **Controls:** one size scale, and 24px room-header targets.
+  - **Themes:** Corporate bevels, quieter Indian pillars, a lacquer Japanese desk with tatami, and a crisp Retro floor.
 - **Round 2 of the usability pass (spec 052, four new personas).**
   - **Restored Allow all:** a strip under the top bar names the folders, with **Switch to Ask first** and **Keep**.
   - **Answer bar:** it never cuts a request next to Approve, and shows "1 of N", oldest first.
