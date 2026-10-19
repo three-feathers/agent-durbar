@@ -446,6 +446,22 @@ async function driver(ctx) {
       rows.push({ label: `chat ${w}x${h} ${q}`, d: 'chat', h: '-', rooms: '-', plates: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: bad });
     }
   }
+  /* spec 009 FR-015 / T026: the VS Code chat view opens scrolled to the latest message (and has Continue in VS Code) */
+  for (const [w, h] of SIZES) {
+    if (!mine()) continue;
+    await load('sim=15&simfreeze=1', w, h);
+    await ctx.js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith('Ada'));if(d)d.click();return true})()`);
+    await ctx.sleep(900);
+    await ctx.js(`(()=>{if(!document.querySelector('#prev [data-pv="view"]')){const t=document.querySelector('#prev [data-pv="toggle"]');if(t)t.click();}return true})()`);
+    await ctx.sleep(500);
+    await ctx.js(`(()=>{const v=document.querySelector('#prev [data-pv="view"]');if(v)v.click();return true})()`);
+    await ctx.sleep(1000);
+    const vs = await ctx.js(`(()=>{const c=document.getElementById('chat'),b=c&&c.querySelector('.vsbody');if(!b||!b.lastElementChild)return null;const l=b.lastElementChild.getBoundingClientRect(),cr=c.getBoundingClientRect();return {st:c.scrollTop,ch:c.clientHeight,sh:c.scrollHeight,lastIn:l.bottom<=cr.bottom+1&&l.top>=cr.top,cont:!!document.getElementById('vsCont')}})()`);
+    total++;
+    if (!vs) { failed++; console.log(`FAIL vschat ${w}x${h}: the VS Code chat view did not open`); }
+    else if (vs.sh <= vs.ch * 2 || Math.abs(vs.st + vs.ch - vs.sh) > 2 || !vs.lastIn || !vs.cont) { failed++; console.log(`FAIL vschat ${w}x${h}: not opened at the latest message or no Continue button ${JSON.stringify(vs)}`); }
+    rows.push({ label: `vschat ${w}x${h}`, d: 'vschat', h: '-', rooms: '-', plates: '-', desks: '-', stageH: 0, floorH: 0, minFont: '-', problems: !vs || vs.sh <= vs.ch * 2 || Math.abs(vs.st + vs.ch - vs.sh) > 2 || !vs.lastIn || !vs.cont ? 1 : 0 });
+  }
 
   console.log('\nlayout summary (density/helpers shown, stage height vs floor):');
   rows.forEach((r) => console.log(`  ${r.problems ? 'FAIL' : 'ok  '} ${r.label.padEnd(60)} ${String(r.d).padEnd(5)} h=${r.h} rooms=${r.rooms} plates=${r.plates} desks=${r.desks} stage ${r.stageH}/${r.floorH}px minFont=${r.minFont}`));

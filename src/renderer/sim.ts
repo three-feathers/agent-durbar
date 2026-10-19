@@ -1310,7 +1310,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { ok: true, storesFound: 1, unreadable: 0, tooLarge: 0, formatNote: 'VS Code does not document this format; unknown parts are skipped.',
           sessions: [{ key: 'h1/c1', title: 'Explain the registry design', updated: Date.now() - 5 * 86400e3, requests: 2, format: 'jsonl' }] };
       },
-      readVsChat: async () => ({ ok: true, transcript: { title: 'Explain the registry design', totalRequests: 26, shownRequests: 26,
+      readVsChat: async () => ({ ok: true, transcript: { title: 'Explain the registry design', totalRequests: 346, shownRequests: 26,
         notes: ['Only the last 26 of 346 messages are shown.', '1 kind(s) of content were not recognised and skipped (futureThing2027). VS Code\'s format may have changed.'],
         blocks: [
           { type: 'user' as const, text: 'Explain how the tool registry is organised.' },

@@ -4,7 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.6 tag)
 
-- **VS Code chat view opens at the latest message, reads two more kinds, and has Continue in VS Code (spec 009 FR-015..FR-017, issue #253).** **View** now scrolls to the end of the chat (the "only the last N" and "not recognised" notes are above it); question prompts (`questionCarousel`) are shown as read-only text and `mcpServersStarting` is no longer reported as unknown; **Continue in VS Code** opens the chat's folder with the same launcher as *Open in VS Code*. Simulator, unit tests on synthetic fixtures and a driver at 1440x900 and 1280x800; no real VS Code launch was run.
+- **VS Code chat view opens at the latest message, reads two more kinds, and has Continue in VS Code (spec 009 FR-015..FR-017, issue #253).** **View** now scrolls to the end of the chat (the "only the last N" and "not recognised" notes are above it); question prompts (`questionCarousel`) are shown as read-only, sanitised Markdown (no buttons or other controls) and `mcpServersStarting` is no longer reported as unknown; **Continue in VS Code** opens the chat's folder with the same launcher as *Open in VS Code*. Simulator, unit tests on synthetic fixtures and a driver at 1440x900 and 1280x800; no real VS Code launch was run.
 
 - **Removing a folder is easy to find (spec 006 FR-022).** Each room has a **⋯** button (or right-click its header) with New session, Rename, Hide and **Remove folder**. A folder's only session shows **Remove folder** in its chat header. Before, Remove was only in the Folders panel.
 

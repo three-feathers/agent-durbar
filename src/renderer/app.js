@@ -2543,10 +2543,9 @@ async function viewVs(a,key,btn){
   document.querySelector('#panel .panel-in').classList.add('viewing');
   $('vsBack').onclick=leaveVsView; $('vsBack').focus({preventScroll:true});
   $('vsCont').onclick=()=>openLive(a);
-  /* FR-015: open at the latest message; again once layout (images, fonts) settles, unless the reader already scrolled up */
-  const toEnd=()=>{if(vsViewing&&c.contains(wrap))c.scrollTop=c.scrollHeight;};
-  toEnd(); requestAnimationFrame(()=>{toEnd();setTimeout(toEnd,250);});
-  wrap.addEventListener('load',toEnd,true);
+  /* FR-015: open at the latest message; again once layout (fonts) settles, unless the reader already scrolled up */
+  const toEnd=(again)=>{if(vsViewing&&c.contains(wrap)&&!(again&&c.scrollTop+c.clientHeight<c.scrollHeight-40))c.scrollTop=c.scrollHeight;};
+  toEnd(false); requestAnimationFrame(()=>{toEnd(true);setTimeout(()=>toEnd(true),250);});
 }
 document.addEventListener('click',e=>{
   const b=e.target.closest('[data-pv]'); if(!b||!b.closest('#prev'))return;
