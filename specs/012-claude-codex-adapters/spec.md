@@ -571,3 +571,10 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 *Corrected:*
 - **FR-133** `[IMPLEMENTED]` `ClaudeAdapter.setMcpEnabled(sessionId, name, enabled)` sends the CLI's own control request `mcp_toggle` (`serverName`, `enabled`; read from the CLI 2.1.303 bundle, not documented), then `mcp_status` and emits the normalized `mcp` event from its `mcpServers` list. The choice is also kept in the session's start options (`disabledMcpServers`), so a relaunch (a mode change, a crash, a resume) keeps it. A session that is not running only records it. `mcpToggle: true`. Tests on the fake CLI (toggle off live, a recorded switch in the launch config, a launch-disabled server back on through a relaunch). `real:` 2026-10-19, `claude` 2.1.303 with a tiny stdio MCP server and **no prompt**: `mcp_status` said `connected`, `mcp_toggle` off gave `disabled`, on gave `connected` again.
 
+### 2026-10-19: real check of a Claude MCP tool call and a sub-agent (issue #71, T069)
+
+- `real:` Claude Code 2.1.303 with `haiku`, Ask first, a throwaway folder, a tiny local stdio MCP server `echo` passed through Durbar's `--mcp-config` ($0.0046 for both turns):
+  - **MCP:** the init listed `echo:connected`; Claude called `mcp__echo__echo`, which the mapper split into server `echo` and tool `echo`; Ask first raised an `mcp` card ("mcp echo › echo") through `canUseTool`; after Approve the tool ran and Claude reported "echo: durbar".
+  - **Sub-agent:** asked to use a sub-agent, Claude called its **`Agent`** tool (the current name; `Task` is the older one, both are mapped); a `subagent` started (`general-purpose`), the helper's `Glob` and `Bash` calls were attributed to it, the helper's shell command still went through the Ask first card, and the helper completed; the main agent answered with the right count.
+  - Seen but not asked about: `ToolSearch` (Claude's own tool lookup) ran without a permission request in Ask first; it reads no files. Not changed.
+

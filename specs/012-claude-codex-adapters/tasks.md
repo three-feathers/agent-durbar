@@ -75,7 +75,7 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 - [ ] T066 (needs-owner-approval) (real-account) Claude: version probe, `accountInfo()` and init `apiKeySource` on a real install, no prompt; confirm nothing is billed [FR-010, FR-022]
 - [ ] T067 (needs-owner-approval) (real-account) Claude: one Read-only prompt, record the stream, usage, cost estimate, `getContextUsage` and `modelUsage`; replace fixtures [FR-007, FR-015, FR-016, FR-022]
 - [ ] T068 (needs-owner-approval) (real-account) Claude: Read-only really denies writes and shell with a user allow rule present in the user's settings (hook plus `dontAsk`); Ask first and Allow all; interrupt, stop, resume (at most 4 prompts) [FR-013, FR-017, FR-022]
-- [ ] T069 (needs-owner-approval) (real-account) Claude: an MCP tool call (name parsing, `canUseTool.mcpServer`), a sub-agent run with `forwardSubagentText` (ids, text, thinking), tool names missing from the kind table [FR-014, FR-018, FR-022]
+- [x] T069 (needs-owner-approval) (real-account) Claude: an MCP tool call (name parsing, `canUseTool.mcpServer`), a sub-agent run with `forwardSubagentText` (ids, text, thinking), tool names missing from the kind table [FR-014, FR-018, FR-022] (done 2026-10-19 with `haiku`, $0.0046; see the spec change of that date)
 - [ ] T070 (needs-owner-approval) (real-account) Windows and macOS on real machines: `detect()` and shims, spawn, Codex sandbox setup step and Read-only, packaged build with both adapters [FR-010, FR-021, Q9]
 - [ ] T071 (needs-owner-approval) Policy check: ask Anthropic (and read OpenAI's current terms again) before Durbar supports the user's subscription login; record the answer and update README wording (Q1) [FR-012]
 
