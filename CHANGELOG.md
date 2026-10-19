@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.6 tag)
 
+- **Team rule: agents review and merge** (owner decision, spec 021). An agent merges when CI is green and it did a final review of the whole diff as a reviewer; another team's agent may review too. Humans set the roadmap and strategy.
+
 - **A shorter, current README.** It is organised by what you need: what you can do, harnesses, install, safety, costs, themes (new), build, limits and roadmap. The milestone and release sections moved, unchanged, to [docs/feature-history.md](docs/feature-history.md).
 
 - **New session with a summary (spec 030 FR-034..FR-037).** Start a new session from a hand-off summary of the current conversation, made by Copilot, Claude Code or Codex without changing that conversation. You edit the summary before it is sent as the first message.
