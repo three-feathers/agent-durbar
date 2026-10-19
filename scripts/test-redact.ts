@@ -1,7 +1,7 @@
 /** Unit test for secret redaction and the debug sink (spec 012 T051): `npm run test:runtime`. */
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
-import { REDACT_MAX_CHARS, createDebugSink, maskSecretArgs, maskSecretUrl, redact } from '../src/shared/redact';
+import { REDACT_MAX_CHARS, createDebugSink, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, splitCommand } from '../src/shared/redact';
 
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const env = {
@@ -252,11 +252,111 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // review fixes: NAME=value, Name: value, more words, empty URL user, deliberate over-masking
   assert.deepStrictEqual(maskSecretArgs(['-e', 'GITHUB_TOKEN=abcdefSECRET1234', 'PORT=8080']), ['-e', 'GITHUB_TOKEN=[redacted]', 'PORT=8080'], 'NAME=value without a dash');
   assert.deepStrictEqual(maskSecretArgs(['env', 'API_KEY=x']), ['env', 'API_KEY=[redacted]']);
-  assert.deepStrictEqual(maskSecretArgs(['--header', 'X-Api-Key: abc', '--header', 'Content-Type: json']), ['--header', 'X-Api-Key: [redacted]', '--header', 'Content-Type: json'], 'Name: value');
-  assert.deepStrictEqual(maskSecretArgs(['--header=X-Api-Key: abc', '--header=Content-Type: json', '--env=GH_TOKEN=abc']), ['--header=X-Api-Key: [redacted]', '--header=Content-Type: json', '--env=GH_TOKEN=[redacted]'], '--flag=Name: value');
+  assert.deepStrictEqual(maskSecretArgs(['--header', 'X-Api-Key: abc', '--header', 'Content-Type: json']), ['--header', 'X-Api-Key: [redacted]', '--header', 'Content-Type: [redacted]'], 'Name: value; header values are never shown (T053)');
+  assert.deepStrictEqual(maskSecretArgs(['--header=X-Api-Key: abc', '--header=Content-Type: json', '--env=GH_TOKEN=abc']), ['--header=X-Api-Key: [redacted]', '--header=Content-Type: [redacted]', '--env=GH_TOKEN=[redacted]'], '--flag=Name: value');
   assert.deepStrictEqual(maskSecretArgs(['--pat', 'a', '--bearer', 'b', '--pwd', 'c', '--path', 'd']), ['--pat', '[redacted]', '--bearer', '[redacted]', '--pwd', '[redacted]', '--path', 'd'], 'pat, bearer, pwd are whole words');
   assert.strictEqual(maskSecretUrl('https://:' + SEC + '@h.test/p'), 'https://[redacted]@h.test/p', 'empty user');
   assert.deepStrictEqual(maskSecretArgs(['--no-auth', 'value']), ['--no-auth', '[redacted]'], 'deliberate fail-safe: over-masking beats leaking');
+}
+
+// 14b. T053 masking leaks (spec 041 `## Changes` 2026-10-19). SEC is built at run time; every output must not contain it.
+{
+  const SEC = 'sEc' + 'ReT-' + 'q7w8e9r0t1y2u3i4';
+  const R = '[redacted]';
+  const noSec = (x: unknown, what: string): void => assert.ok(!JSON.stringify(x).includes(SEC), `${what}: no secret in ${JSON.stringify(x)}`);
+  const masked = (args: string[], want: string[], what: string): void => { const got = maskSecretArgs(args); assert.deepStrictEqual(got, want, what); noSec(got, what); };
+  // (a) names
+  for (const f of ['--privateKey', '--passphrase', '--pw', '--cookie', '--session', '--jwt', '--signature', '--sig']) masked([f, SEC], [f, R], `name ${f}`);
+  assert.deepStrictEqual(maskSecretArgs(['--keyboard', 'x', '--monkey', 'y']), ['--keyboard', 'x', '--monkey', 'y']);
+  assert.deepStrictEqual(maskSecretArgs(['-p', '8080']), ['-p', '8080']);
+  // (b) one-arg and separator forms
+  masked(['--token ' + SEC], ['--token ' + R], 'one arg');
+  masked(['--token ' + SEC, 'next'], ['--token ' + R, 'next'], 'the next arg is not masked');
+  masked(['--api-key ' + SEC], ['--api-key ' + R], 'api-key one arg');
+  masked(['--password:' + SEC], ['--password:' + R], 'colon');
+  masked(['/token', SEC], ['/token', R], 'slash flag');
+  masked(['/password:' + SEC], ['/password:' + R], 'slash colon');
+  assert.deepStrictEqual(maskSecretArgs(['--url=https://h.test/a?x=1']), ['--url=https://h.test/a?x=1']);
+  assert.deepStrictEqual(maskSecretArgs(['--port:8080']), ['--port:8080']);
+  // (c) headers
+  masked(['--header=Cookie: sid=' + SEC], ['--header=Cookie: ' + R], 'header=');
+  masked(['-H', 'X-Custom: ' + SEC], ['-H', 'X-Custom: ' + R], '-H');
+  assert.deepStrictEqual(maskSecretArgs(['--header', 'Content-Type: json']), ['--header', 'Content-Type: ' + R]);
+  masked(['Cookie: ' + SEC], ['Cookie: ' + R], 'cookie without a flag');
+  assert.deepStrictEqual(maskSecretArgs(['Accept: json']), ['Accept: json']);
+  // (d) structured
+  masked(['{"apiKey":"' + SEC + '","port":1}'], ['{"apiKey":"' + R + '","port":1}'], 'json');
+  const nested = maskSecretArgs(['--config', '{"auth":{"token":"' + SEC + '"}}']);
+  noSec(nested, 'nested json');
+  assert.ok(nested[1].includes(R));
+  const bad = maskSecretArgs(['--config={"token":"' + SEC + '"']);
+  noSec(bad, 'bad json');
+  assert.ok(bad[0].includes(R));
+  masked(['CONN=Server=x;Password=' + SEC + ';Database=d'], ['CONN=Server=x;Password=' + R + ';Database=d'], 'connection string');
+  masked(['--conn', 'Server=x;AccountKey=' + SEC], ['--conn', 'Server=x;AccountKey=' + R], 'AccountKey');
+  // (e) URL-shaped args
+  noSec(maskSecretArgs(['--url', 'https://' + SEC + '@h.test/']), 'url arg');
+  assert.deepStrictEqual(maskSecretArgs(['--url', 'https://' + SEC + '@h.test/']), ['--url', 'https://' + R + '@h.test/']);
+  noSec(maskSecretArgs(['--endpoint=https://h.test/?sig=' + SEC]), 'endpoint');
+  assert.deepStrictEqual(maskSecretArgs(['--endpoint=https://h.test/?sig=' + SEC]), ['--endpoint=https://h.test/?sig=' + R]);
+  // (f) command
+  assert.strictEqual(maskSecretCommand('npx srv --token ' + SEC), 'npx srv --token ' + R);
+  assert.strictEqual(maskSecretCommand('node s.js --api-key=' + SEC), 'node s.js --api-key=' + R);
+  assert.strictEqual(maskSecretCommand('C:\\Program Files\\nodejs\\node.exe'), 'C:\\Program Files\\nodejs\\node.exe');
+  assert.strictEqual(maskSecretCommand('C:\\Program Files\\nodejs\\node.exe --token ' + SEC + ' /x'), 'C:\\Program Files\\nodejs\\node.exe --token ' + R + ' /x');
+  assert.strictEqual(maskSecretCommand('npx  -y   srv'), 'npx -y srv');
+  assert.strictEqual(maskSecretCommand(undefined), '');
+  // (g) URLs
+  assert.strictEqual(maskSecretUrl('https://rawtok123@host.test/'), 'https://' + R + '@host.test/');
+  assert.strictEqual(maskSecretUrl('https://u:p@h.test/'), 'https://' + R + '@h.test/');
+  assert.strictEqual(maskSecretUrl('https://registry.npmjs.org/@scope/pkg'), 'https://registry.npmjs.org/@scope/pkg');
+  assert.strictEqual(maskSecretUrl('https://api.telegram.org/bot123456:' + SEC + '/sendMessage'), 'https://api.telegram.org/bot123456:' + R + '/sendMessage');
+  assert.strictEqual(maskSecretUrl('https://hooks.slack.com/services/T0/B0/' + SEC), 'https://hooks.slack.com/services/T0/B0/' + R);
+  assert.strictEqual(maskSecretUrl('https://discord.com/api/webhooks/42/' + SEC), 'https://discord.com/api/webhooks/42/' + R);
+  for (const q of ['X-Amz-Signature', 'X-Amz-Security-Token', 'X-Goog-Signature', 'sig', '%74oken']) {
+    const u = maskSecretUrl('https://h.test/p?' + q + '=' + SEC + '&page=2');
+    assert.strictEqual(u, 'https://h.test/p?' + q + '=' + R + '&page=2', q);
+  }
+  assert.strictEqual(maskSecretUrl('https://h.test/?code=abc&page=2'), 'https://h.test/?code=abc&page=2');
+  // review round 2: spaces in connection strings, JSON headers, command split, dash values, minor shapes
+  masked(['--conn', 'Server=x; Password=' + SEC], ['--conn', 'Server=x; Password=' + R], 'conn with a space after ;');
+  masked(['--conn', 'Server=x; Password = ' + SEC + ' ;Database=d'], ['--conn', 'Server=x; Password=' + R + ';Database=d'], 'conn with spaces around =');
+  masked(['--headers', '{"X-Custom":"' + SEC + '"}'], ['--headers', '{"X-Custom":"' + R + '"}'], '--headers json');
+  masked(['--header={"X-Custom":"' + SEC + '","n":5}'], ['--header={"X-Custom":"' + R + '","n":"' + R + '"}'], '--header= json');
+  masked(['-H', '{"X":"' + SEC + '"'], ['-H', '{"X":"' + R + '"'], 'bad json after a header flag');
+  const cmd = (c: string): string => maskSecretCommand(c);
+  assert.deepStrictEqual(splitCommand('C:\\srv\\srv.exe serve token=' + SEC), ['C:\\srv\\srv.exe', 'serve', 'token=' + SEC]);
+  assert.ok(!cmd('C:\\srv\\srv.exe serve token=' + SEC).includes(SEC), 'token=SEC after a drive path');
+  assert.strictEqual(cmd('C:\\Program Files\\nodejs\\node.exe'), 'C:\\Program Files\\nodejs\\node.exe');
+  assert.strictEqual(cmd('C:\\Program Files\\nodejs\\node.exe s.js --token ' + SEC), 'C:\\Program Files\\nodejs\\node.exe s.js --token ' + R);
+  assert.deepStrictEqual(splitCommand('\\\\srv\\share\\my tools\\a.exe -v'), ['\\\\srv\\share\\my tools\\a.exe', '-v']);
+  assert.deepStrictEqual(splitCommand('C:\\a\\b.exe C:\\data\\f.txt'), ['C:\\a\\b.exe', 'C:\\data\\f.txt']);
+  masked(['--token', '-' + SEC], ['--token', R], 'dash value');
+  assert.deepStrictEqual(maskSecretArgs(['--api-key', '-' + SEC, 'next']), ['--api-key', R, 'next']);
+  assert.deepStrictEqual(maskSecretArgs(['--token', '--verbose']), ['--token', '--verbose']);
+  assert.deepStrictEqual(maskSecretArgs(['--private-key', SEC]), ['--private-key', R]);
+  masked(['--token=', SEC], ['--token=' + R, R], 'empty --token= then the value');
+  noSec(maskSecretArgs(['--repos=a,https://' + SEC + '@h.test/x']), 'url inside an arg');
+  assert.strictEqual(maskSecretArgs(['--repos=a,https://' + SEC + '@h.test/x'])[0], '--repos=a,https://' + R + '@h.test/x');
+  masked(['["--token","' + SEC + '"]'], ['["--token","' + R + '"]'], 'json array of args');
+  masked(['bearer ' + SEC], ['bearer ' + R], 'bearer');
+  masked(['Bearer ' + SEC], ['Bearer ' + R], 'Bearer');
+  masked(['--auth', 'Bearer ' + SEC], ['--auth', R], 'Bearer after --auth');
+  assert.deepStrictEqual(maskSecretArgs(['--desc', 'Basic setup of the server']), ['--desc', 'Basic setup of the server'], 'prose starting with Basic stays');
+  // `bearer of news` has several tokens after the word, so it is NOT masked (rule: the word plus exactly one token)
+  assert.deepStrictEqual(maskSecretArgs(['--msg', 'bearer of news']), ['--msg', 'bearer of news']);
+  masked(['--header', 'X-Custom=' + SEC], ['--header', 'X-Custom=' + R], 'Name=value after a header flag');
+  assert.strictEqual(maskSecretUrl('https://api.telegram.org/BOT123:' + SEC + '/x'), 'https://api.telegram.org/BOT123:' + R + '/x');
+  assert.strictEqual(maskSecretUrl('https://u:p@ss@h.test/'), 'https://' + R + '@h.test/', 'user info runs to the last @ of the authority');
+  // never throws, and linear on large adversarial input (limit far above the real cost)
+  assert.doesNotThrow(() => { maskSecretArgs([null as any, undefined as any, 5 as any]); maskSecretCommand(null); maskSecretUrl(null); });
+  const big = 200_000;
+  const shapes = ['--token ' + 'a '.repeat(big / 2), '{"a":"'.repeat(big / 6), 'a=b;'.repeat(big / 4), 'x://' + '@'.repeat(big), 'http://' + 'a:'.repeat(big / 2), '/bot1:'.repeat(big / 6), ';token='.repeat(big / 7), '"k": "'.repeat(big / 6), '['.repeat(big)];
+  const t0 = Date.now();
+  for (const x of shapes) { maskSecretArgs([x]); maskSecretUrl(x); maskSecretCommand(x); }
+  const ms = Date.now() - t0;
+  console.log(`redact: masking 200k-char adversarial inputs in ${ms} ms`);
+  assert.ok(ms < 20000, `masking 200k-char adversarial inputs took ${ms} ms`);
 }
 
 console.log('redact: all checks passed');

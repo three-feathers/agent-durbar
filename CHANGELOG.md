@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **MCP read tools: more secret shapes masked, outside paths hidden (spec 041 T053, issue #275).** Secrets in an MCP server's `command`, `args` and `url` are now masked in one-arg flags (`--token abc`), `:` and `/` forms, cookie and other header values, JSON, connection strings, user info without a colon, Telegram, Slack and Discord URLs and signed query parameters; the folder's stored secret values are replaced too. An absolute path outside the saved folders comes back as `…/name`. Not reachable yet (no server runs). 0 AIU.
+
 - **MCP server groundwork: read tools (spec 041 T016).** The seven read tools (folders, agents, floors, usage totals, settings, MCP state, request status) answer from Durbar's own state with secret values masked: env and header key names only, secret flags and URL parts hidden. Not reachable yet (no server runs). No user-visible change, 0 AIU.
 
 - **MCP server groundwork: agent state in the main process (spec 041 T014, issue #204).** The main process now keeps each agent's office word and sub-label (Working, Waiting for you, Limit reached…) with the same rules as the window, so the MCP read tools can report them later. Pausing in the window is reported to the main process. No visible change, 0 AIU.
