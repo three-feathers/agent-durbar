@@ -405,7 +405,10 @@ Built and tested on simulated agents and fixtures (`DURBAR_SIM`, no AI credits).
 - *Claude Code sessions of that folder* (experimental Claude agent): read-only from Claude's own session files (`~/.claude/projects/<folder>/<id>.jsonl`, or `CLAUDE_CONFIG_DIR`), only the first 256 KB of each for the list, files over 50 MB skipped; **Resume** continues it with `claude --resume` and replays the chat the same way. Claude's file format is internal and undocumented (observed on 2.1.302); unknown lines are skipped. Nothing is copied, uploaded or logged.
 - *VS Code Copilot Chat history for that folder*, marked **read-only**: a copy of the transcript, clearly labelled "cannot be continued here". It reads `workspaceStorage/<hash>/chatSessions/*.jsonl|json` (macOS `~/Library/Application Support/Code/User`, Windows `%APPDATA%\Code\User`, Linux `~/.config/Code/User`; also Insiders and VSCodium; Cursor is not read), matching the folder through each store's `workspace.json`. The format is undocumented and changes between VS Code versions: parsing is tolerant (unknown parts become one honest note, corrupt or oversized files are counted and skipped, nothing is uploaded or logged). Empty-window chats are not included.
 
+With 2 or more entries a **Search sessions** box appears above the lists: it filters Copilot sessions and VS Code chats by title (case and accents ignored), shows "N of M" per group, and **Escape** clears it. Only titles are searched; the query stays in the panel and is not saved or sent anywhere.
+
 ![Previous sessions](docs/screenshots/m6-previous-sessions.png)
+![Search in Previous sessions](docs/screenshots/006-previous-sessions-search-1440x900.png)
 ![VS Code chat history, read-only](docs/screenshots/m6-vscode-readonly.png)
 
 **The six bug reports**

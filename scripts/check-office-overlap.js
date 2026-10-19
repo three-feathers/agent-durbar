@@ -447,6 +447,46 @@ async function driver(ctx) {
     }
   }
 
+  /* spec 006 FR-022 (T031): the Previous sessions search box at both sizes: shown with 2+ entries, filters by title ignoring case and accents,
+     "N of M" while a query is active, "No sessions match", Escape clears; the panel stays inside the window */
+  for (const [w, h] of SIZES) {
+    if (!mine()) continue;
+    const tag = `previous-sessions search ${w}x${h}`;
+    await load('sim=15&simfreeze=1', w, h);
+    const ids = await ctx.js(`[...document.querySelectorAll('#stage .desk')].map((d)=>d.dataset.id)`);
+    let found = false;
+    for (const id of ids) {
+      await ctx.js(`(async()=>{const d=document.querySelector('#stage .desk[data-id="${id}"]');if(d)d.click();await new Promise(r=>setTimeout(r,350));return true})()`);
+      found = await ctx.js(`!!document.getElementById('prevQ')&&!document.getElementById('prevQ').closest('[hidden]')`);
+      if (found) break;
+      await ctx.js(`(async()=>{const b=document.getElementById('backBtn');if(b)b.click();await new Promise(r=>setTimeout(r,120));return true})()`);
+    }
+    const P = [];
+    if (!found) P.push('no agent shows the search box (the simulator folder has Copilot sessions and VS Code chats)');
+    else {
+      const type = (q) => ctx.js(`(async()=>{const i=document.getElementById('prevQ');i.focus();i.value=${JSON.stringify(q)};i.dispatchEvent(new Event('input',{bubbles:true}));await new Promise(r=>setTimeout(r,80));
+        return {rows:[...document.querySelectorAll('#prevLists .prev-row b')].map(b=>b.textContent),heads:[...document.querySelectorAll('#prevLists .prev-h')].map(x=>x.textContent.replace(/\\s+/g,' ')),empty:[...document.querySelectorAll('#prevLists .prev-nomatch')].length}})()`);
+      const all = await type('');
+      if (all.rows.length < 3 || /\d of \d/.test(all.heads.join(' '))) P.push(`empty query: ${JSON.stringify(all)}`);
+      const a1 = await type('EXPLICACION');
+      if (a1.rows.length !== 1 || !/Explicaci/.test(a1.rows[0]) || !/0 of 2/.test(a1.heads[0]) || !/1 of 2/.test(a1.heads[1]) || a1.empty !== 1) P.push(`accent/case query: ${JSON.stringify(a1)}`);
+      const none = await type('zzzz');
+      if (none.rows.length || none.empty !== 2 || !/0 of 2/.test(none.heads[0]) || !/0 of 2/.test(none.heads[1])) P.push(`no-match query: ${JSON.stringify(none)}`);
+      await type('explicacion');
+      if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-prevsearch-${w}x${h}.png`));
+      await ctx.js(`document.getElementById('prevQ').focus()`);
+      ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+      await sleep(250);
+      const cleared = await ctx.js(`({v:document.getElementById('prevQ')&&document.getElementById('prevQ').value,rows:document.querySelectorAll('#prevLists .prev-row').length})`);
+      if (cleared.v !== '' || cleared.rows < 3) P.push(`Escape did not clear the query: ${JSON.stringify(cleared)}`);
+      const box = await ctx.js(`(()=>{const r=document.getElementById('prev').getBoundingClientRect(),q=document.getElementById('prevQ').getBoundingClientRect(),de=document.documentElement;return {right:r.right,qr:q.right,ql:q.left,qh:q.height,w:innerWidth,sw:de.scrollWidth,fs:parseFloat(getComputedStyle(document.getElementById('prevQ')).fontSize)}})()`);
+      if (box.right > box.w + 1 || box.qr > box.w + 1 || box.ql < -1 || box.sw > box.w + 1 || box.fs < 10.5) P.push(`layout: ${JSON.stringify(box)}`);
+    }
+    total++;
+    if (P.length) { failed++; console.log(`FAIL ${tag}: ${P.join('; ')}`); }
+    rows.push({ label: tag, d: 'prev', h: '-', rooms: '-', plates: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: P.length });
+  }
+
   console.log('\nlayout summary (density/helpers shown, stage height vs floor):');
   rows.forEach((r) => console.log(`  ${r.problems ? 'FAIL' : 'ok  '} ${r.label.padEnd(60)} ${String(r.d).padEnd(5)} h=${r.h} rooms=${r.rooms} plates=${r.plates} desks=${r.desks} stage ${r.stageH}/${r.floorH}px minFont=${r.minFont}`));
   console.log(`\noffice check: ${total - failed}/${total} checks passed, ${failed} failed`);

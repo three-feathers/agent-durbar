@@ -1308,7 +1308,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const src = sims.find((x) => x.info.id === id);
         if (!src || src.info.cwd !== '~/work/mcp-swiss') return { ok: true, sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0, formatNote: '' };
         return { ok: true, storesFound: 1, unreadable: 0, tooLarge: 0, formatNote: 'VS Code does not document this format; unknown parts are skipped.',
-          sessions: [{ key: 'h1/c1', title: 'Explain the registry design', updated: Date.now() - 5 * 86400e3, requests: 2, format: 'jsonl' }] };
+          sessions: [
+            { key: 'h1/c1', title: 'Explain the registry design', updated: Date.now() - 5 * 86400e3, requests: 2, format: 'jsonl' },
+            { key: 'h1/c2', title: 'Explicación del diseño de la caché', updated: Date.now() - 9 * 86400e3, requests: 3, format: 'jsonl' },
+          ] };
       },
       readVsChat: async () => ({ ok: true, transcript: { title: 'Explain the registry design', totalRequests: 2, shownRequests: 2, notes: [],
         blocks: [
