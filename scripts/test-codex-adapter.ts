@@ -93,14 +93,14 @@ async function main(): Promise<void> {
   {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(CODEX_CAPABILITIES)), {
       interrupt: true, resume: true, images: true, models: true, effort: true,
-      permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'none',
+      permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'next-message',
       usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: false, history: true, mcpStatus: false, mcpToggle: false,
     });
     assert.ok(Object.isFrozen(CODEX_CAPABILITIES) && Object.isFrozen(CODEX_CAPABILITIES.permissionModes) && Object.isFrozen(CODEX_CAPABILITIES.usage), 'capabilities are deeply frozen');
     const { ad } = make();
     for (const m of ['interrupt', 'resolvePermission', 'revokeGrant']) assert.strictEqual(typeof (ad as unknown as Record<string, unknown>)[m], 'function', `${m} is present`);
-    for (const m of ['setCap', 'resolveLimit', 'setMcpEnabled', 'setModel', 'cancelQueuedModel', 'compact', 'setPermMode']) assert.strictEqual((ad as unknown as Record<string, unknown>)[m], undefined, `${m} is absent`);
-    for (const m of ['listModelOptions', 'listPreviousSessions', 'history']) assert.strictEqual(typeof (ad as unknown as Record<string, unknown>)[m], 'function', `${m} is there (FR-141, FR-142)`);
+    for (const m of ['setCap', 'resolveLimit', 'setMcpEnabled', 'setModel', 'cancelQueuedModel', 'compact']) assert.strictEqual((ad as unknown as Record<string, unknown>)[m], undefined, `${m} is absent`);
+    for (const m of ['listModelOptions', 'listPreviousSessions', 'history', 'setPermMode', 'resumeIdOf']) assert.strictEqual(typeof (ad as unknown as Record<string, unknown>)[m], 'function', `${m} is there (FR-141..FR-144)`);
     assert.strictEqual(ad.capabilities, CODEX_CAPABILITIES);
     // D1 option B: described, but not in the production list.
     assert.strictEqual(CODEX_DESCRIPTOR.capabilities, CODEX_CAPABILITIES);
@@ -708,19 +708,54 @@ async function main(): Promise<void> {
     }
   }
 
-  // ---- FR-092 / resume is T043b: a known id that is not live is refused, never silently restarted as a new thread
+  // ---- FR-143: a known session that is not live restarts by resuming its own thread (End session, a crash), never a new thread
   {
     const ws = dir();
-    const { server, ad } = make();
+    const { server, ad, events } = make();
+    const tid = await ad.start({ workspace: ws, quiet: true });
+    await ad.stop(tid);
     await ad.start({ workspace: ws, sessionId: 'agent-9', quiet: true });
+    const thread9 = ad.resumeIdOf!('agent-9');
+    assert.ok(thread9 && thread9 !== 'agent-9', 'a named session runs on its own Codex thread');
     await ad.stop('agent-9');
-    const spawned = server.spawns.length;
-    await assert.rejects(() => ad.start({ workspace: ws, sessionId: 'agent-9' }), /not available yet/, 'a stopped named session is not restarted as a new thread');
-    const t = await ad.start({ workspace: ws, quiet: true });
-    await ad.stop(t);
-    await assert.rejects(() => ad.start({ workspace: ws, sessionId: t }), /not available yet/, 'nor a stopped thread id');
-    assert.strictEqual(server.spawns.length, spawned + 1, 'the refusals spawn nothing');
-    await ad.start({ workspace: ws, sessionId: 'never-seen', quiet: true }); // an unknown id (restored lazy agent) starts a new thread
+    assert.strictEqual(ad.resumeIdOf!('agent-9'), thread9, 'the thread id is kept after stop (what main remembers for a restart)');
+    const starts = server.requests('thread/start').length;
+    assert.strictEqual(await ad.start({ workspace: ws, sessionId: 'agent-9', quiet: true }), 'agent-9');
+    assert.strictEqual(server.requests('thread/start').length, starts, 'no new thread');
+    assert.strictEqual((server.requests('thread/resume').pop()!.params as { threadId: string }).threadId, thread9, 'the same thread is resumed');
+    events.length = 0;
+    await ad.send('agent-9', { text: 'again' });
+    await server.flush();
+    assert.ok(events.some((e) => e.type === 'status' && e.status === 'idle'), 'it runs turns');
+    await ad.dispose();
+  }
+
+  // ---- FR-144: mode switch. Durbar's approvals at once; Codex from the next message, on a fresh child resuming the thread
+  {
+    const ws = dir();
+    const { server, ad, events } = make();
+    const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', quiet: true });
+    assert.deepStrictEqual(ad.setPermMode!(sid, 'allow'), { pending: 0 });
+    const spawns = server.spawns.length;
+    await ad.send(sid, { text: 'write it' });
+    await server.flush();
+    assert.strictEqual(server.spawns.length, spawns + 1, 'a fresh child');
+    assert.strictEqual((server.requests('thread/resume').pop()!.params as { threadId: string }).threadId, sid, 'the same thread');
+    const tp = server.requests('turn/start').pop()!.params as Record<string, unknown>;
+    assert.deepStrictEqual(tp.sandboxPolicy, { type: 'dangerFullAccess' }, 'the next turn runs in the new mode');
+    assert.ok(!events.some((e) => e.type === 'status' && e.status === 'stopped'), 'the relaunch is silent');
+    await ad.dispose();
+  }
+  {
+    // a stricter mode during a running turn interrupts it
+    const ws = dir();
+    const { server, ad } = make({ server: { holdTurn: true } });
+    const sid = await ad.start({ workspace: ws, permissionMode: 'allow', quiet: true });
+    await ad.send(sid, { text: 'go' });
+    await server.flush();
+    ad.setPermMode!(sid, 'read-only');
+    await server.flush();
+    assert.strictEqual(server.requests('turn/interrupt').length, 1, 'the running Allow all turn is interrupted');
     await ad.dispose();
   }
 

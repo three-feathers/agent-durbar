@@ -388,6 +388,8 @@ export interface AgentAdapter {
   history?(sessionId: string): Promise<HistoryResult>;
   /** Change the permission mode of a live session; returns how many requests stay pending. Optional (`capabilities.permModeSwitch` is not `none`). */
   setPermMode?(sessionId: string, mode: PermissionMode, opts?: { clearGrants?: boolean; approvePending?: boolean }): { pending: number };
+  /** The vendor's own id to resume this session later, when it differs from Durbar's session id (spec 006 FR-020; Codex's thread id). */
+  resumeIdOf?(sessionId: string): string | undefined;
   /** Subscribe to normalized events from all sessions of this adapter. */
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe;
 }

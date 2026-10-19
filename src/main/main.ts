@@ -854,7 +854,7 @@ ipcMain.handle('folders:setDefaultAgent', (_e, id: unknown, profileId: unknown) 
 
 /** Spec 006 FR-020: the session a folder continues after a restart is the one that last got a message. */
 function noteLastSession(a: AgentInfo | undefined): void {
-  if (a) folderStore?.setLastSession(wsKey(a), a.id, router.adapterIdOf(a.id));
+  if (a) folderStore?.setLastSession(wsKey(a), router.forAgent(a.id)?.resumeIdOf?.(a.id) ?? a.id, router.adapterIdOf(a.id)); // Codex: its thread id
 }
 
 /** Spec 006 FR-021: the chat of a restored agent was opened; start it now (a resume sends no prompt) and hand back what came back. */
