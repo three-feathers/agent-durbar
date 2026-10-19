@@ -265,5 +265,18 @@ The owner chose "build it now" (Q6). A new session can start from a **hand-off s
   - the New session dialog gets a checkbox **Start with a summary of this conversation**, shown when the current agent is live and its kind has `handoff`.
   - Either way, Durbar asks for the summary ("Preparing a summary…", which can be cancelled), then shows it in an **editable box**: *Cancel* or *Start new session*. On Start, the new session starts with the dialog's options, and the edited text is its **first message**. If the summary fails or comes back empty, Durbar says so and offers a plain new session. The new session can be another harness: the summary is plain text.
 - **FR-037** Cost: making the summary may use the model, so the box says "Making the summary used the model of this session (a small cost)". For Claude, the one-shot is capped at $0.50 and its estimate is added to the old agent's usage. `[UNVERIFIED]` whether Copilot's `summarizeForHandoff` spends credits (research): it is checked when the paid plan exists (Q8).
-- `test:` adapter units (Claude argv and parsing, Codex fork request and collection, Copilot call and empty result), the main IPC, and `test:runtime` contract. `sim:` the dialog, the edit and the first message at 1440x900 and 1280x800. `real:` a summary from a real Claude session and a real Codex thread.
+- `[IMPLEMENTED]`:
+  - **Code:** `src/adapters/handoff.ts` (`HANDOFF_PROMPT`, `cleanSummary`); `handoffSummary` in `copilot.ts`, `claude.ts` (`handoffArgs`, `parseHandoffOutput`, a `spawn` with stdin closed) and `codex.ts` (fork events collected in `onNotification` and never mapped); the fake adapter and the simulator.
+  - **Wiring:** IPC `agents:handoff`, preload `handoff`; renderer `canHandoff`, `reviewHandoff`, the checkbox `#sdSum`, and the button "New session with a summary…" on the start-fresh note.
+- `test:`
+  - `test:handoff`: the prompt and the cleanup.
+  - `test:claudeadapter`: argv, parsing, no run before anything was said, the cost counted as usage, the live CLI untouched, and the error on exit 1.
+  - `test:runtime`: Codex fork params (`ephemeral`, `never`, `read-only`), the prompt going to the fork, the fork unsubscribed, nothing in the chat; contract C2 `handoffSummary() <=> capabilities.handoff`.
+- `sim:` `scripts/shots-030-handoff.js` at 1440x900 and 1280x800: the checkbox (off by default), the review box, the edited text sent as the new session's first message, Cancel starting nothing, and no checkbox for the basic kind. Screenshots: `docs/screenshots/handoff-dialog-*.png`, `handoff-review-*.png`.
+- `real:` 2026-10-19, on throwaway sessions about a garden plan:
+  - Claude Code 2.1.303 (`haiku`), one-shot with the exact `handoffArgs`: a correct five-part summary for $0.00086. No new file appeared in Claude's project folder, so the fork was not saved. Without closing stdin, the CLI waits 3 s ("no stdin data received"), hence `stdio: ignore`.
+  - Codex 0.163 (ChatGPT Plus), Read-only: a correct summary in 5.4 s, with no chat events from the fork.
+- `[KNOWN GAP]`:
+  - Copilot's `summarizeForHandoff` was not run on a real account; whether it spends credits is unverified (Q8, with the paid plan).
+  - The review box has no focus trap (Escape and the buttons work).
 

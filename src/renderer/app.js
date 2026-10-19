@@ -2257,16 +2257,19 @@ function maybeSuggestFresh(a){
   if(!DM.suggestFresh({percent:pct,compactions:a.compactions||0,lastCompactionFailed:!!a.compactFailed,idle,dismissed:a.freshDismissed,canCompact:ctrlOf(a).compact===true}))return;
   const chat=liveChat(a),n=document.createElement('div');n.className='note fresh';n.setAttribute('role','note');
   const why=a.compactFailed&&!a.compactions?'The last compaction did not work.':a.compactions?'It was already compacted '+(a.compactions>1?a.compactions+' times':'once')+'.':'This agent cannot compact in place.';
-  n.innerHTML='<b>This conversation is '+pct+'% full.</b> '+esc(why)+' A new session starts clean in the same folder; this one keeps its history.<div class="note-actions"><button class="btn" type="button" data-fresh="new">New session…</button><button class="btn" type="button" data-fresh="x">Dismiss</button></div>';
+  n.innerHTML='<b>This conversation is '+pct+'% full.</b> '+esc(why)+' A new session starts clean in the same folder; this one keeps its history.<div class="note-actions"><button class="btn" type="button" data-fresh="new">New session…</button>'+(canHandoff(a)?'<button class="btn" type="button" data-fresh="sum">New session with a summary…</button>':'')+'<button class="btn" type="button" data-fresh="x">Dismiss</button></div>';
   n.querySelector('[data-fresh="new"]').onclick=()=>newSession(a);
+  const sb=n.querySelector('[data-fresh="sum"]');if(sb)sb.onclick=()=>newSession(a,{summary:true});
   n.querySelector('[data-fresh="x"]').onclick=()=>{a.freshDismissed=true;n.remove();a.freshNote=null;const i=$('msgInput');if(i)i.focus();};
   chat.el.appendChild(n);a.freshNote=n;scrollChat(chat);
 }
 
 /* ---------------- new session (another agent in a folder) ---------------- */
 function closeSessDlg(){const d=document.getElementById('sessDlg');if(d)d.remove();}
-function newSession(a0){
-  const a=liveRoot(a0); if(!bridge.newSession)return;
+/* spec 030 FR-036: a live agent whose kind can make a hand-off summary */
+const canHandoff=a=>!!(bridge.handoff&&a&&a.live&&!a.parent&&feat(a,'handoff'));
+function newSession(a0,o){
+  const a=liveRoot(a0); if(!bridge.newSession)return; o=o||{};
   closeSessDlg();
   const d=document.createElement('div');d.id='sessDlg';d.className='dlg-ov';
   d.innerHTML=`<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="sdT"><h3 id="sdT">New session in ${esc(roomOf(a).name)}</h3>
@@ -2276,6 +2279,7 @@ function newSession(a0){
    <label id="sdModelL">Model<select id="sdModel"></select></label>
    <label id="sdEffL">Reasoning effort<select id="sdEff"></select></label>
    ${bridge.listProfiles&&a.info&&a.info.profiles?`<div id="sdAgentL" class="sd-agent" hidden><label>Agent<select id="sdAgent"><option value="">Default agent</option></select></label>${bridge.setFolderDefaultAgent?'<label class="chk"><input type="checkbox" id="sdAgentDef"> Default for new sessions here</label>':''}</div>`:''}
+   ${canHandoff(a)?`<label class="chk" id="sdSumL"><input type="checkbox" id="sdSum"${o.summary?' checked':''}> Start with a summary of this conversation (you review it before it is sent)</label>`:''}
    ${bridge.setCap?'<label id="sdCapL"><span id="sdCapT">Credit cap (AIU, empty = no cap)</span><input id="sdCap" type="number" min="0.001" step="0.01" placeholder="No cap"></label>':''}
    <div class="dbtn"><button class="btn" id="sdCancel" type="button">Cancel</button><button class="btn primary" id="sdGo" type="button">Start session</button></div></div>`;
   document.body.appendChild(d);
@@ -2327,14 +2331,51 @@ function newSession(a0){
       const want=$('sdAgentDef').checked&&profId?profId:(profId===a.info.defaultAgent?null:undefined);
       if(want!==undefined&&want!==(a.info.defaultAgent||null))bridge.setFolderDefaultAgent(a.id,want).then(dr=>{if(dr&&dr.ok)for(const x of agents)if(x.room===a.room&&x.info)x.info.defaultAgent=dr.defaultAgent;}).catch(()=>undefined);
     }
-    $('sdGo').disabled=true;$('sdGo').textContent='Starting…';
+    let first='';
+    if($('sdSum')&&$('sdSum').checked){
+      /* spec 030 FR-036: make the summary, let the user edit it; nothing is sent until Start */
+      $('sdGo').disabled=true;$('sdGo').textContent='Preparing a summary…';
+      const h=await bridge.handoff(a.id).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+      if(!$('sessDlg'))return; /* cancelled meanwhile */
+      closeSessDlg();
+      const text=h&&h.ok?String(h.summary||'').trim():'';
+      if(!text){
+        const why=h&&h.ok?'The agent returned an empty summary.':'Could not make a summary: '+((h&&h.error)||'unknown error');
+        const go=await askDialog({title:'No summary',body:why,lines:['You can still start a new session without it.'],buttons:[{label:'Cancel',value:null},{label:'Start without a summary',value:'ok',cls:'primary'}]});
+        if(!go)return;
+      }else{
+        first=await reviewHandoff(a,text,h.costUsd);
+        if(first===null)return;
+      }
+    }
+    if($('sdGo')){$('sdGo').disabled=true;$('sdGo').textContent='Starting…';}
     const r=await bridge.newSession(a.id,opts);
     closeSessDlg();
     if(!r.ok){toast('Could not start a session: '+esc(r.error||'unknown error'),6000);return;}
     addLiveAgent(r.agent); openPanel(r.agent.id,false);
     if(profId){const na=liveById(r.agent.id),p=(a.profileList||[]).find(x=>x.id===profId);if(na&&p){na.profileList=a.profileList;applyProfile(na,p);}}
+    if(first){const keep=attached;attached=[];await sendLive(first,r.agent.id);attached=keep;renderAttached();}
   };
   $('sdGo').focus();
+}
+
+/* spec 030 FR-036: the hand-off summary in an editable box; resolves to the edited text, or null (Cancel). User text: never logged. */
+function reviewHandoff(a,text,costUsd){
+  return new Promise(resolve=>{
+    const d=document.createElement('div');d.id='hoDlg';d.className='dlg-ov';
+    const cost=costUsd>0?' (about $'+(costUsd<0.01?costUsd.toFixed(4):costUsd.toFixed(2))+', Claude\'s estimate)':'';
+    d.innerHTML=`<div class="dlg ho-dlg" role="dialog" aria-modal="true" aria-labelledby="hoT"><h3 id="hoT">Summary for the new session</h3>
+     <p class="dsub">This becomes the first message of the new session in ${esc(roomOf(a).name)}. Edit it as you like; nothing is sent until you press Start. Making it used the model of ${esc(a.name)}${esc(cost)}; this session keeps its history.</p>
+     <textarea id="hoText" rows="14" aria-label="Summary for the new session"></textarea>
+     <div class="dbtn"><button class="btn" id="hoCancel" type="button">Cancel</button><button class="btn primary" id="hoGo" type="button">Start new session</button></div></div>`;
+    document.body.appendChild(d);
+    const ta=$('hoText');ta.value=text;
+    const done=v=>{d.remove();resolve(v);};
+    $('hoCancel').onclick=()=>done(null);
+    $('hoGo').onclick=()=>{const v=ta.value.trim();if(!v){ta.focus();return;}done(v);};
+    d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();done(null);}});
+    ta.focus();ta.setSelectionRange(0,0);ta.scrollTop=0;
+  });
 }
 
 /* ---------------- folders: new session, hide / show, remove ---------------- */

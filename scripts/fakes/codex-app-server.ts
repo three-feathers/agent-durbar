@@ -134,6 +134,8 @@ export class FakeCodexServer {
   /** Threads this server knows: id to cwd. Shared by all children, like Codex's own thread store. */
   threads = new Map<string, string>();
   private nextThread = 1;
+  /** Spec 030 FR-034: forked threads; a turn on one answers with one agent message (the hand-off summary). */
+  private forks = new Set<string>();
   private nextTurn = 1;
   private nextServerId = 1000;
   private queue: Array<() => void> = [];
@@ -253,6 +255,15 @@ export class FakeCodexServer {
         this.enqueue(child, { method: 'thread/started', params: { thread: { id: tid, cwd } } });
         return;
       }
+      case 'thread/fork': {
+        const src = isObj(params) && typeof params.threadId === 'string' ? params.threadId : '';
+        if (!this.threads.has(src)) return this.fail(child, id, -32600, 'no rollout found for thread');
+        const tid = `thr_${this.nextThread++}`;
+        this.threads.set(tid, this.threads.get(src) as string);
+        this.threadChild.set(tid, child);
+        this.forks.add(tid);
+        return this.reply(child, id, { thread: { id: tid, cwd: this.threads.get(tid) } });
+      }
       case 'thread/list': {
         const data = [...this.threads.entries()].map(([tid, cwd], i) => ({ id: tid, cwd, preview: `Prompt ${i + 1}`, createdAt: 1792403000 + i, updatedAt: 1792403100 + i, ephemeral: false, parentThreadId: null, gitInfo: null }));
         return this.reply(child, id, { data, nextCursor: null });
@@ -283,6 +294,13 @@ export class FakeCodexServer {
         const tid = isObj(params) && typeof params.threadId === 'string' ? params.threadId : '';
         if (!this.threads.has(tid)) return this.fail(child, id, -32600, 'thread not found');
         const turnId = `turn_${this.nextTurn++}`;
+        if (this.forks.has(tid)) {
+          this.reply(child, id, { turn: { id: turnId, status: 'inProgress' } });
+          this.enqueue(child, { method: 'turn/started', params: { threadId: tid, turn: { id: turnId, status: 'inProgress' } } });
+          this.enqueue(child, { method: 'item/completed', params: { threadId: tid, turnId, item: { type: 'agentMessage', id: 'msg_fork', text: '## Goal\nFake fork summary.' } } });
+          this.enqueue(child, { method: 'turn/completed', params: { threadId: tid, turn: { id: turnId, status: 'completed' } } });
+          return;
+        }
         this.openTurn.set(tid, turnId);
         if (this.opts.holdTurnStart) {
           this.held.push(() => {

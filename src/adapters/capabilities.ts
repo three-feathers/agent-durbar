@@ -33,6 +33,8 @@ export interface AdapterCapabilities {
   readonly mcpStatus: boolean;
   /** `setMcpEnabled()` exists. */
   readonly mcpToggle: boolean;
+  /** `handoffSummary()` exists (spec 030 FR-034); missing = false. */
+  readonly handoff?: boolean;
 }
 
 /** Where an adapter stands on this machine (spec 012 FR-030). `unknown` also covers a detect that failed. */
