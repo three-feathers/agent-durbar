@@ -2,7 +2,7 @@
 
 **Feature Branch**: `047-release-alpha7`
 **Created**: 2026-10-19
-**Status**: In progress (release PR, then tag, then publish)
+**Status**: Built and **published as a pre-release on 2026-10-19** (<https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.7>; release PR #283; tag on `05b2783`, CI fully green on that commit).
 **Input**: Vikram, 2026-10-19, in his session, asked "Cut the next pre-release (v0.1.0-alpha.7) with Codex as a harness, the Claude cost cap and 'new session with a summary'?" and answered "yes and also review overall readme…". AGENTS.md "Needs approval": publishing this release is approved in writing, for this release only. This is release engineering only: a version bump, the changelog and the download notes.
 
 ## Requirements
@@ -31,4 +31,15 @@
 
 ## Release record
 
-(Filled in after publishing.)
+- **Where the tag went:** the release PR merged as `d90fcd4`. Its CI was cancelled three times by later merges to `main` (#284, #285, #245), because `ci.yml` cancelled in-progress runs on every ref. That is fixed by #286 (spec 008). The packaged check passed on `d90fcd4`.
+  - The tag `v0.1.0-alpha.7` is on `05b2783`, the merge of #245, whose CI was **fully green**: build and test on all three OSes, the package smoke check and the office layout check.
+  - Besides the release, `05b2783` adds only #245 (Durbar MCP read tools, not wired to any server; spec 041 T016) and the process docs of #284 and #285.
+  - Open code-scanning and Dependabot alerts at tagging: 0.
+- `release.yml` run 39293705471: the Windows, macOS, Linux and draft jobs succeeded.
+- **Draft checked:**
+  - draft and pre-release flags;
+  - eight files: arm64 and x64 dmg and zip, the Windows installer and portable exe, the Linux AppImage, and `SHA256SUMS.txt`;
+  - the portable exe and the AppImage were downloaded and match `SHA256SUMS.txt`;
+  - the AppImage extracts, has `app.asar`, and its `package.json` says `0.1.0-alpha.7`.
+- Notes set with the honest limits above, and **published as a pre-release on 2026-10-19 at 17:31 UTC**. The link was posted in the team's Telegram group.
+- `[KNOWN GAP]` Nobody has run the published files on macOS or Windows.
