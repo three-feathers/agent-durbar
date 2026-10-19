@@ -626,3 +626,12 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 - `claude auth status --json` returns the fields `analyticsDisabled`, `apiProvider`, `authMethod`, `configDirectory`, `email`, `loggedIn`, `orgId`, `orgName`, `projectsDirectory` and `subscriptionType`. Durbar reads **only `loggedIn`** (FR-132); the e-mail, organisation and plan are never kept or logged. The values were not printed for this check.
 - The `init` message's `apiKeySource` was `none` for a claude.ai sign-in (from the T067 capture). `accountInfo()` is an SDK call; the CLI transport has no equivalent and does not need one.
 
+
+### 2026-10-19: Claude Code offered like Copilot when it is installed (T095; owner decision)
+
+*Owner decision (Vikram, 2026-10-19, in the session):* "for claude, lets support claude same as copilot if it is installed - when you create a new session and if we have more than one harness - lets provide user option to select harness." This answers T095 and settles T071 for Durbar's side: Durbar drives the user's own installed and signed-in `claude`, as it drives the user's Copilot CLI.
+
+- **FR-135** Claude Code is registered in every build, next to Copilot, without `DURBAR_CLAUDE`. That hook is gone; `DURBAR_CLAUDE_TRANSPORT=sdk` stays a developer switch. Whether it can be used is what detection says (FR-036..FR-040, FR-132): ready, not installed, not signed in, or too old. A Claude that is not ready is never chosen.
+- **FR-136** The harness picker (the toolbar select for new folders and the New session dialog) is shown only when **two or more** harnesses are ready. With one ready harness there is nothing to choose: the select stays hidden but holds that harness, so a computer with only Claude Code adds Claude folders. In the New session dialog the select is labelled **Harness**, so it no longer shares the word "Agent" with the custom-agent select (spec 043).
+- Unchanged: no credit cap for Claude (T081 open); its dollar estimate stays apart from AIU (FR-122); Read-only / Ask first / Allow all as mapped (FR-069..FR-071).
+- `test:` `showsKindPicker` counts ready harnesses; the registry has Claude without the hook. `sim:` the mixed roster at both sizes. `real:` already done for the real app (T095 part 1, T106) and the checks T066..T069.

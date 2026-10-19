@@ -110,6 +110,7 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 - [x] T093 (sim) Register Claude Code experimentally (`DURBAR_CLAUDE=1`, `src/adapters/experimental.ts`), `detectorFor('claude')` with a `--version` probe [FR-114]
 - [x] T094 (real-account, owner allowed) Real CLI checks with the installed `claude` and `haiku`: one Read-only prompt (stream, usage, cost, no write possible), Ask first approve and deny, interrupt, stop and resume in the same folder; record as `real:` with the cost [FR-110..FR-114]
 - [ ] T095 (real-account) Offer Claude Code to every user: run the real app with a Claude agent end to end (add a folder, chat, Ask first approval card, stop, restart and resume), with T085 so Claude's dollar estimate is never added to AIU; then move it to `PRODUCTION_DESCRIPTORS` [FR-114]
+- [ ] T113 (sim) FR-135/FR-136: Claude registered without the hook; harness picker only with 2+ ready harnesses, holding the sole ready one when hidden; "Harness" label; tests, docs
 - T040 and T041 are answered by this entry (no SDK in `package.json` until the owner accepts its terms; the user's `claude` is used); T045 is done as T091.
 
 ## Changes 2026-10-18 (issue #54, Claude half of T046)
