@@ -187,7 +187,7 @@ Spec [034](specs/034-agent-health/spec.md) (issue #20; amends 001). Built and te
 ![Serious mode on, 1280x800](docs/screenshots/034-serious-1280x800.png)
 ![Closed rooms: the siren on the door plate of the room with the ambulance, 1280x800](docs/screenshots/034-plates-1280x800.png)
 
-**Limits.** Not checked on a real Copilot session. An agent away at a place in the lobby shows an empty chair, so its drawing is hidden (the words stay); the walking figure and the List view do not show the mood yet.
+**Limits.** Not checked on a real Copilot session. An agent away at a place in the lobby shows an empty chair, so its drawing is hidden (the words stay); the walking figure shows it with a ring, horns or a small dot (spec 034 FR-015), and the List view writes the mood words in amber at the start of the agent's task (FR-014).
 
 Tests: `npm test` adds `test:mood` and `seriousMode` cases in `test:credits`. Checks and screenshots: `scripts/shots-034.js`.
 ## Status (floors: group rooms and switch a floor off)
