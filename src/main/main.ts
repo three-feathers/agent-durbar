@@ -21,7 +21,7 @@ import { GROUND } from '../shared/floors';
 import type { FloorOp } from '../shared/floors';
 import { openInVSCode } from './vscode';
 import { isHttpUrl } from '../shared/url';
-import { FolderStore, PROFILE_ID, restoreMode } from './folders';
+import { DEFAULT_ADAPTER, FolderStore, PROFILE_ID, restoreMode } from './folders';
 import { navigationAllowed, permissionAllowed } from './hardening';
 import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '../adapters/vscodeChat';
 import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
@@ -224,15 +224,28 @@ async function addWorkspace(
 
 /** Make sure the agent has a live runtime session: resume it by id when it has history, else start one under that id. */
 const starting = new Map<string, Promise<void>>();
+/** Spec 006 FR-021: agents restored as their folder's last session, how that went, until their chat asks for it (agents:wake). */
+const continued = new Map<string, { resumed: boolean; title?: string }>();
+
 async function ensureLive(a: AgentInfo): Promise<void> {
   const ad = router.forAgent(a.id);
   if (!ad) throw new Error('unknown agent');
   if (ad.isLive(a.id)) return;
   let p = starting.get(a.id);
   if (!p) {
-    p = ad.start({ ...startOptionsFor(a), sessionId: a.id, quiet: true }).then(() => {
+    p = (async () => {
+      let resume = false;
+      if (a.resumeLast) {
+        // only a session that is still one of this folder's previous sessions of this harness is resumed (constitution: resumed sessions belong to the folder)
+        const others = new Set([...agents.keys()].filter((k) => k !== a.id));
+        const prev = (await previousSessionsOf(ad, a.cwd, others).catch(() => [])).find((s) => s.id === a.id);
+        resume = !!prev;
+        continued.set(a.id, { resumed: resume, title: prev?.title });
+      }
+      await ad.start({ ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: true });
       a.lazy = false;
-    });
+      a.resumeLast = undefined;
+    })();
     starting.set(a.id, p);
     void p.finally(() => starting.delete(a.id)).catch(() => undefined);
   }
@@ -272,10 +285,14 @@ function restoreFolders(): void {
     try {
       if (!fs.existsSync(f.workspace)) continue; // e.g. an unplugged drive: stays saved, just not shown
       const rm = restoreMode(f.permMode); // exactly as saved, Allow all included, flagged so the UI shows "restored" (spec 003 FR-025/026)
-      const info = infoFor(f.workspace, rm.mode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, maxAiCredits: f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(adapterId));
+      // FR-021: the folder's last session comes back under its own id (resumed when first needed); a harness this build lacks starts fresh
+      const ls = f.lastSession && registry.has(f.lastSession.adapterId ?? DEFAULT_ADAPTER) && !agents.has(f.lastSession.id) ? f.lastSession : undefined;
+      const kind = ls ? (ls.adapterId ?? DEFAULT_ADAPTER) : adapterId;
+      const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, maxAiCredits: f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
+      if (ls) info.resumeLast = true;
       if (f.label) info.label = f.label;
       if (f.defaultAgent) info.defaultAgent = f.defaultAgent;
-      router.bind(info.id, adapterId);
+      router.bind(info.id, kind);
       agents.set(info.id, info);
     } catch {
       /* folder gone or not a folder any more */
@@ -428,6 +445,7 @@ ipcMain.handle('agents:send', async (_e, id: string, text: string, attachments: 
       attachments: safe.map((a) => ({ path: a.path, kind: kindOfFile(a.path) })), // FR-009: checked again here, the renderer's kind is not trusted
     });
     for (const a of safe) pickedFiles.delete(a.path); // spec 004 FR-015: a sent file must be picked again to be sent again
+    noteLastSession(agents.get(id));
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -448,6 +466,7 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
     toRenderer('agent:event', { type: 'user', sessionId: a.id, timestamp: Date.now(), text: prompt });
     toRenderer('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at });
     await ad.send(a.id, { text: prompt });
+    noteLastSession(a);
     return true;
   },
   setTimer: (ms, fn) => setTimeout(fn, ms),
@@ -780,6 +799,7 @@ ipcMain.handle('agents:remove', async (_e, id: unknown) => {
   router.unbind(a.id);
   agents.delete(a.id);
   vsChatRefs.delete(a.id);
+  folderStore?.clearLastSession(key, a.id); // FR-020: a removed session does not come back after a restart
   return { ok: true };
 });
 
@@ -799,6 +819,34 @@ ipcMain.handle('folders:setDefaultAgent', (_e, id: unknown, profileId: unknown) 
   if (!r) return { ok: false };
   for (const x of agents.values()) if (wsKey(x) === wsKey(a)) x.defaultAgent = r.defaultAgent;
   return { ok: true, defaultAgent: r.defaultAgent };
+});
+
+/** Spec 006 FR-020: the session a folder continues after a restart is the one that last got a message. */
+function noteLastSession(a: AgentInfo | undefined): void {
+  if (a) folderStore?.setLastSession(wsKey(a), a.id, router.adapterIdOf(a.id));
+}
+
+/** Spec 006 FR-021: the chat of a restored agent was opened; start it now (a resume sends no prompt) and hand back what came back. */
+ipcMain.handle('agents:wake', async (_e, id: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  const ad = a ? router.forAgent(a.id) : undefined;
+  if (!a || !ad) return { ok: false, error: 'unknown agent' };
+  try {
+    await ensureLive(a);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  const c = continued.get(a.id);
+  continued.delete(a.id);
+  if (!c) return { ok: true };
+  if (!c.resumed) return { ok: true, resumed: false };
+  let history: NonNullable<ResumeResult['history']>;
+  try {
+    history = await historyOf(ad, a.id);
+  } catch {
+    history = { items: [], total: 0, truncated: false };
+  }
+  return { ok: true, resumed: true, history, title: c.title };
 });
 
 ipcMain.handle('agents:resolvePermission', (_e, id: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean) => {

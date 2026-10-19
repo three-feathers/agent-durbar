@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **After a restart, each folder continues its last session (spec 006 FR-020/FR-021).** Before, a restored folder started a new session at its first message. Now opening it resumes the session it last used and shows the earlier conversation; resuming sends no prompt. Only the session's id is remembered. Checked on a real Copilot and a real Claude Code.
+
 - **Security sweep (spec 045).** The app window now refuses to load any page but its own and refuses web permissions such as the microphone or notifications; only clipboard writes for the Copy buttons are allowed. On Windows, a `.cmd` shim is run with the system's own `cmd.exe`, not whatever `ComSpec` names. Custom place ids are drawn uniformly. The remove-folder question shows names with `&` correctly. Code-scanning alerts in test-only scripts were reviewed and dismissed with reasons, which are listed in the spec. One build-time dependency (`sprintf-js` under electron-builder) has no fix yet and is not shipped in the app.
 
 - **Claude Code is offered next to Copilot (spec 012 FR-135/FR-136).** If `claude` is installed and signed in on your computer, Durbar offers it without any switch. When two or more harnesses are ready, the toolbar and the New session dialog have a **Harness** select; with only one, nothing extra is shown, and new folders use that one. Claude's cost stays a dollar estimate, apart from AIU, with no credit cap.
