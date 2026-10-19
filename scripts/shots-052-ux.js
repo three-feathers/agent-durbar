@@ -54,17 +54,35 @@ module.exports = async (ctx) => {
     key('I'); await ctx.sleep(900);
     const ib = await js(`(()=>{const d=document.getElementById('inboxDlg');if(!d)return null;return {rows:[...d.querySelectorAll('.inbox-row')].map(r=>r.querySelector('.ib-h b').textContent),btn:document.getElementById('inboxBtn').innerText}})()`);
     assert.ok(ib && ib.rows.length >= 3, 'the inbox lists the agents that need you: ' + JSON.stringify(ib));
+    // FR-033: it opens on the first request's heading, never on a button
+    assert.ok(await js(`document.activeElement&&document.activeElement.classList.contains('ib-h')`), 'the inbox opens on a heading, not a button');
     await shot(`052-inbox-${w}x${h}.png`);
     if (w === 1440) {
       const before = ib.rows.length;
+      // FR-033: J moves to a row, A approves it (keys act on the focused row)
+      const target = await js(`(()=>{const rows=[...document.querySelectorAll('#inboxDlg .inbox-row')];const i=rows.findIndex(x=>x.querySelector('.ib-h b').textContent!=='Jonas'&&x.querySelector('[data-k="approve"]'));if(i<0)return null;rows[i].querySelector('.ib-h').focus();return rows[i].querySelector('.ib-h b').textContent;})()`);
+      if (target) {
+        const n0 = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`);
+        key('A'); await ctx.sleep(700);
+        const n1 = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`);
+        assert.ok(n1 === n0 - 1, `A approves the focused row (${target}: ${n0} -> ${n1})`);
+        assert.ok(await js(`document.activeElement&&document.activeElement.classList.contains('ib-h')`), 'after an answer, focus is on the next heading');
+        assert.match(await js(`document.getElementById('srAnnounce').textContent`), /Approved .+\. /, 'the answer is announced');
+      }
       // approve the first request that is not Jonas's (the chat checks below use Jonas)
+      const before2 = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`);
       const who = await js(`(()=>{const r=[...document.querySelectorAll('#inboxDlg .inbox-row')].find(x=>x.querySelector('.ib-h b').textContent!=='Jonas'&&[...x.querySelectorAll('.ib-act button')].some(b=>b.textContent==='Approve'));if(!r)return null;[...r.querySelectorAll('.ib-act button')].find(b=>b.textContent==='Approve').click();return r.querySelector('.ib-h b').textContent;})()`); await ctx.sleep(700);
       const after = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`); 
-      if (who) assert.ok(after === before - 1, `approving ${who} from the inbox removes the row (${before} -> ${after})`);
+      if (who) assert.ok(after === before2 - 1, `approving ${who} from the inbox removes the row (${before2} -> ${after})`);
       else console.log('[052] note: no second permission request in the simulator; inbox approval checked only by its buttons');
     }
     key('Escape'); await ctx.sleep(300);
     assert.ok(await js(`!document.getElementById('inboxDlg')`), 'Esc closes the inbox');
+    // FR-035: Ctrl+Shift+A opens the inbox even from a text field
+    await js(`(()=>{const i=document.createElement('input');i.id='tmpIn';document.body.appendChild(i);i.focus();})()`);
+    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'A', modifiers: ['control', 'shift'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'A', modifiers: ['control', 'shift'] }); await ctx.sleep(700);
+    assert.ok(await js(`!!document.getElementById('inboxDlg')`), 'Ctrl+Shift+A opens the inbox from a text field');
+    key('Escape'); await ctx.sleep(300); await js(`document.getElementById('tmpIn').remove()`);
 
     // waiting agent's chat
     const jonas = await deskId('Jonas');
