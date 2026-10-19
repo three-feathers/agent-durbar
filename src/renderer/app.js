@@ -906,6 +906,7 @@ function openPanel(id,focus){
   if($('rmSessBtn'))$('rmSessBtn').onclick=()=>removeSessionUi(a);
   if($('copyResBtn'))$('copyResBtn').onclick=()=>copyResume(a);
   if(a.live&&!a.parent)initPrev(a); else {const pv=$('prev');if(pv)pv.hidden=true;}
+  if(a.live&&!a.parent&&a.info&&a.info.resumeLast&&bridge.wake)wakeLast(a);
   $('pauseBtn').onclick=()=>{a.paused=!a.paused;toast(esc(a.name)+(a.paused?' paused.':' resumed.'));renderAll();};
   if($('stopBtn'))$('stopBtn').onclick=()=>{if(a.live)return stopLive(a);a.paused=false;a.state='idle';a.label='Stopped';a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
   $('attFile').onclick=()=>{if(a.live)return pickLive();addPicked([{name:SAMPLE_FILES[fi++%SAMPLE_FILES.length],kind:'file',size:12*1024}]);};
@@ -1202,7 +1203,7 @@ function addLiveAgent(info){
   let room=LIVE.rooms.find(r=>r.path===info.cwd);
   if(!room){room={id:'r'+LIVE.rooms.length+':'+info.cwd,name:(info.label||info.roomName||info.name),folderName:(info.roomName||info.name),path:info.cwd,tint:TINTS[LIVE.rooms.length%4],floor:info.floor||'ground',hidden:!!info.hidden,closed:!!info.closed||CLOSED_Q.includes(info.roomName||info.name)};LIVE.rooms.push(room);}
   let name=info.name; const dup=LIVE.agents.filter(x=>!x.parent&&x.room===room.id&&x.baseName===info.name).length; if(dup)name=info.name+' #'+(dup+1);
-  LIVE.agents.push({id:info.id,name:info.title||name,folderLabel:name,title:info.title,baseName:info.name,role:info.role||roleFor(info),room:room.id,state:'idle',label:info.lazy?'Not started':'Ready',task:info.lazy?'Saved folder. A session starts with your first message.':'Ready. Send a message to start.',
+  LIVE.agents.push({id:info.id,name:info.title||name,folderLabel:name,title:info.title,baseName:info.name,role:info.role||roleFor(info),room:room.id,state:'idle',label:info.lazy?'Not started':'Ready',task:info.lazy?(info.resumeLast?'Your last session here. It continues when you open it.':'Saved folder. A session starts with your first message.'):'Ready. Send a message to start.',
     look:lookFor(info.id),files:[],paused:false,live:true,info,usage:{calls:0,inT:0,outT:0,nano:0},usageText:'',turn:null,worked:false,pend:new Map(),settled:new Set(),grants:[]});
   if(!demoOn){if(!ui.expanded)ui.expanded={};renderFilter();scheduleRender();loadUsageBaseline();}
   if(pendingOpen===info.id){pendingOpen=null;if(!demoOn)openPanel(info.id,false);}
@@ -2457,7 +2458,18 @@ function renderPrev(a){
   box.hidden=false; box.innerHTML=h;
   const nb=box.querySelector('.prev-body'); if(nb)nb.scrollTop=keepScroll;
 }
-function replayHistory(a,h,title){
+/* spec 006 FR-021: a folder restored after a restart continues its last session when its chat is first opened (no prompt is sent) */
+async function wakeLast(a){
+  if(a.waking)return; a.waking=true;
+  setState(a,'working','Starting','Continuing your last session…');
+  const r=await bridge.wake(a.id).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  a.waking=false;
+  if(!r||!r.ok){setState(a,'idle','Not started','Your last session here. It continues when you open it.');toast('Could not continue the last session: '+esc((r&&r.error)||'unknown error'),7000);return;}
+  if(a.info){a.info.resumeLast=false;a.info.lazy=false;}
+  if(r.resumed){a.resumed=true;replayHistory(a,r.history,r.title,'Continued after restart');setState(a,'idle','Ready','Continued: '+SHORT(r.title||'last session',90));}
+  else{if(r.resumed===false)addNote(liveChat(a),'The last session is no longer available; this is a new session.');setState(a,'idle','Ready','Ready. Send a message to start.');}
+}
+function replayHistory(a,h,title,lead){
   const chat=liveChat(a); let m=null;
   if(h&&h.truncated)addNote(chat,'Showing the last '+h.items.length+' of '+h.total+' items; earlier ones are not shown.');
   const agentMsg=()=>{if(!m){m=document.createElement('div');m.className='msg agent';m.innerHTML='<div class="meta">'+esc(a.name)+'</div>';chat.el.appendChild(m);}return m;};
@@ -2467,7 +2479,7 @@ function replayHistory(a,h,title){
     else if(it.type==='output'){const b=document.createElement('div');b.className='bubble';agentMsg().appendChild(b);mdSet(b,it.text,true);}
     else{const full=it.output||'';addChip(chipBox(),makeChip({tool:it.tool,label:it.label,res:SHORT(full||(it.failed?'failed':'ok'),60),output:full.slice(0,2000),state:it.failed?'failed':'ok'}));}
   }
-  addNote(chat,'Resumed: '+esc((title||'earlier session').replace(/[.!?…]+$/,''))+'. New messages continue this session.');
+  addNote(chat,(lead||'Resumed')+': '+esc((title||'earlier session').replace(/[.!?…]+$/,''))+'. New messages continue this session.');
 }
 async function resumePrev(a,sid,btn){
   if(btn){btn.disabled=true;btn.textContent='Resuming…';}

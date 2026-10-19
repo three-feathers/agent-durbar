@@ -387,6 +387,10 @@ Built and tested on simulated agents and fixtures (`DURBAR_SIM`, no AI credits).
 
 ![Full-screen chat, 1440x900](docs/screenshots/m6-fullchat-sim15-1440x900.png)
 
+**After a restart, each folder continues its last session** (spec 006 FR-020/FR-021). Durbar remembers which session of a folder last got a message (its id only, in the folders file). After a restart that agent's card says *Your last session here*. Opening its chat resumes that very session, which sends no prompt, and shows the earlier messages with the note *Continued after restart*. A session that is gone starts fresh, and says so. The folder's other sessions stay under Previous sessions. This was checked on a real Copilot and a real Claude Code: the agent remembered a word from before the restart.
+
+![A folder continues its last session after a restart](docs/screenshots/continue-last-1440x900.png)
+
 **Previous sessions per folder.** When you add a folder, or open an agent that has not been used yet, a "Previous sessions" list shows
 - *Copilot CLI/SDK sessions whose working folder matches* (newest first, title, time, branch). **Resume** continues the very same session (`resumeSession`) and replays the earlier messages and tool calls from its `events.jsonl` into the chat (last 300 items, long outputs trimmed).
 - *Claude Code sessions of that folder* (experimental Claude agent): read-only from Claude's own session files (`~/.claude/projects/<folder>/<id>.jsonl`, or `CLAUDE_CONFIG_DIR`), only the first 256 KB of each for the list, files over 50 MB skipped; **Resume** continues it with `claude --resume` and replays the chat the same way. Claude's file format is internal and undocumented (observed on 2.1.302); unknown lines are skipped. Nothing is copied, uploaded or logged.
