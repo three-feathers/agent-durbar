@@ -592,3 +592,16 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
   - usage arrives once per assistant message (`inputTokens` with the cache added, FR-124; `outputTokens`; `cacheReadTokens`), plus one `costUsd` estimate at the end (`costBasis: estimate`);
   - **no `context` event was sent**, so a Claude agent's context chip stays "unknown". Recorded as `[KNOWN GAP]`; the result's per-model usage would be the place to read the window from (not built).
 
+
+### 2026-10-19: Claude's context window (from the T067a finding)
+
+*Found:* a Claude agent's context chip always said "Context: unknown", because the adapter sent no `context` event (`context: false`). A real stream (2.1.303) does carry what is needed:
+- each assistant message's `usage` (`input_tokens` plus `cache_creation_input_tokens` and `cache_read_input_tokens` make the whole prompt);
+- the turn's `result` gives `modelUsage[<model>].contextWindow` (1,000,000 for `haiku` on that account) and `maxOutputTokens`.
+
+- **FR-134** The Claude mapper reports the main agent's context:
+  - **Tokens in use:** the last main-agent message's whole input (the three input fields) plus its output.
+  - **Window:** `contextWindow` of the message's model from the latest `result`'s `modelUsage`. When that model is absent, it uses the largest window listed. Unknown is 0 until the first result.
+  - **When:** a `context` event `{tokens, limit, model}` goes out at each `result`, and after each main-agent message once the window is known. Helper (sub-agent) messages never count.
+  - `CLAUDE_CAPABILITIES.context` becomes `true`.
+  - `test:` mapper fixtures (first turn without a window, window from `modelUsage`, a sub-agent message ignored, a model missing from `modelUsage`). `real:` one prompt through the adapter shows a `context` event.
