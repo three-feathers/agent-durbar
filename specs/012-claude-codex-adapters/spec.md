@@ -722,3 +722,19 @@ The owner handed the Codex track to this agent ("ruben does not have chatgpt acc
   - a Read-only turn on `gpt-5.6-luna` / `low` answered;
   - while open the session was not listed; after stop it was listed with its first prompt as title, and not in another folder;
   - `history` after stop gave prompt, shell command and answer.
+
+### 2026-10-19: Codex sessions restart by resume; live mode switch (T046 Codex half)
+
+- **FR-143** `[IMPLEMENTED]` A Codex session that ran before and is not live now (End session, a crash, a relaunch) **restarts by resuming its own thread** (FR-093), never as a new thread. The adapter keeps Durbar's session id → Codex thread id. Before, `start({sessionId})` of a known id threw "Resuming a Codex session is not available yet", so sending to an ended Codex agent failed. The new optional adapter member `resumeIdOf(sid)` gives the thread id, and main remembers **that** id as the folder's last session (spec 006 FR-020), so a Codex folder also continues its last session after a restart.
+- **FR-144** `[IMPLEMENTED]` `setPermMode` (`permModeSwitch: 'next-message'`):
+  - Durbar's own approvals follow at once (the broker: pending denied for Read-only, approved on request for looser modes).
+  - Codex cannot change the sandbox or approval policy of a loaded thread (`read:` the T084 entry). So the **next message reopens the thread on a fresh child** with the new mode's settings (FR-093 resume). This relaunch is silent: no "stopped".
+  - A **stricter** mode during a running turn **interrupts** that turn, so nothing more runs under the looser mode. A command that already started may still finish (FR-139).
+- `test:` the fake app-server covers:
+  - a named session restarts on the same thread with no new thread, and `resumeIdOf` keeps the thread id after stop;
+  - Read-only → Allow all relaunches on a fresh child, resumes the thread, and sends `dangerFullAccess` on the next turn, silently;
+  - Allow all → Read-only during a turn sends `turn/interrupt`.
+- `real:` 2026-10-19, Codex 0.163 (ChatGPT Plus):
+  - in Read-only `echo one > a.txt` failed (read-only file system, no file);
+  - after `setPermMode('allow')` the next message wrote `a.txt`;
+  - after End session, `start` with the same Durbar id resumed the same thread, which answered "a.txt" when asked what it wrote.

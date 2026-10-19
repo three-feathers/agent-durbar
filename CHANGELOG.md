@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.6 tag)
 
+- **Codex groundwork: mode switch and restarts (spec 012 FR-143/FR-144).** A Codex agent's permission mode can be changed while it runs; it applies from the next message, and a stricter mode stops a running turn. An ended Codex session continues its own thread, also after a restart. Checked on a real Codex.
+
 - **Codex groundwork: resume, previous sessions, history and models (spec 012 FR-093, FR-141, FR-142).** The Codex adapter, not offered yet, can resume a thread of the same folder, list the folder's earlier threads, replay a thread's chat, and offer Codex's models and efforts. All of this was checked on a real Codex.
 
 - **For anyone with agents, across harnesses (spec 001 FR-027).**

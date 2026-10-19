@@ -38,8 +38,7 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   models: true, // FR-142: model/list, model and effort per turn
   effort: true,
   permissionModes: Object.freeze(['read-only', 'ask', 'allow'] as const),
-  // T046 turns this into 'next-message' and adds setPermMode.
-  permModeSwitch: 'none',
+  permModeSwitch: 'next-message', // FR-144: Durbar's approvals at once, Codex's sandbox from the next message (fresh child, resume)
   usage: Object.freeze({ tokens: true, costUsd: false, nanoAiu: false }),
   context: true,
   caps: false,
@@ -164,6 +163,10 @@ const reasonOf = (e: unknown): string => (e instanceof Error ? e.message : Strin
 
 interface Live {
   sid: string;
+  /** The start options, for a relaunch with a new mode (FR-144). */
+  options: StartOptions;
+  /** A mode chosen while the session runs; it applies with the next message, on a fresh child (FR-144). */
+  wantMode?: PermissionMode;
   threadId: string;
   /** FR-142: model and reasoning effort sent with each turn (a Codex model id only; others are left to Codex's default). */
   model?: string;
@@ -209,6 +212,8 @@ export class CodexAdapter implements AgentAdapter {
   private sessions = new Map<string, Live>();
   /** Ids this run has used, live or not: a stopped one cannot be silently restarted as a new thread (resume is T043b). */
   private known = new Set<string>();
+  /** FR-143: Durbar session id -> Codex thread id, so a known session restarts by resuming its thread. */
+  private threadOf = new Map<string, string>();
   /** Bumped by `dispose`: a start that began earlier closes its child and rejects. */
   private generation = 0;
   private inflight = new Set<Promise<unknown>>();
@@ -340,7 +345,10 @@ export class CodexAdapter implements AgentAdapter {
     const named = options.sessionId;
     if (!named) return this.startInner(options, { cancelled: false });
     if (this.sessions.has(named) || this.starting.has(named)) throw new Error(`Session ${named} is already running.`);
-    if (this.known.has(named)) throw new Error('Resuming a Codex session is not available yet.');
+    // FR-143: a session that ran before (End session, a crash, a mode relaunch) comes back by resuming its own thread
+    const prior = this.known.has(named) ? this.threadOf.get(named) : undefined;
+    if (this.known.has(named) && !prior && options.resumeSessionId === undefined) throw new Error(`Session ${named} cannot be restarted.`);
+    if (prior && options.resumeSessionId === undefined) options = { ...options, resumeSessionId: prior };
     let release!: () => void;
     const token = { cancelled: false, done: new Promise<void>((r) => (release = r)) };
     this.starting.set(named, token);
@@ -394,6 +402,7 @@ export class CodexAdapter implements AgentAdapter {
     // The ids and flags the handlers need exist before the child can talk.
     const live: Live = {
       sid: options.sessionId ?? '',
+      options,
       threadId: '',
       ...(codexModelFlag(options.model) ? { model: options.model } : {}),
       ...(options.reasoningEffort && /^[a-z][a-z0-9_-]{0,15}$/.test(options.reasoningEffort) ? { effort: options.reasoningEffort } : {}),
@@ -500,6 +509,7 @@ export class CodexAdapter implements AgentAdapter {
     live.muted = false;
     this.sessions.set(live.sid, live);
     this.known.add(live.sid);
+    this.threadOf.set(live.sid, live.threadId);
     if (live.rpc.exited) {
       // The child died between the response and now: report it like any crash.
       this.sessions.delete(live.sid);
@@ -510,7 +520,14 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   async send(sessionId: string, message: AgentMessage): Promise<void> {
-    const live = this.mustGet(sessionId);
+    let live = this.mustGet(sessionId);
+    // FR-144: a mode chosen while it ran applies now, on a fresh child that resumes the same thread
+    if (live.wantMode && live.wantMode !== live.mode && live.turnId === undefined && !live.turnStarting) {
+      const next = { ...live.options, permissionMode: live.wantMode, sessionId, resumeSessionId: undefined, quiet: true };
+      await this.stop(sessionId, true);
+      await this.start(next);
+      live = this.mustGet(sessionId);
+    }
     live.expectAborted = false;
     const images = (message.attachments ?? []).filter((a) => a.kind === 'image');
     const files = (message.attachments ?? []).filter((a) => a.kind !== 'image');
@@ -584,7 +601,33 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   /** End the session: pending permissions are denied, the turn interrupted, the thread unsubscribed, the child closed. */
-  async stop(sessionId: string): Promise<void> {
+  /** FR-143: the Codex thread behind a Durbar session, the id to remember for a resume after a restart (spec 006 FR-020). */
+  resumeIdOf(sessionId: string): string | undefined {
+    return this.sessions.get(sessionId)?.threadId ?? this.threadOf.get(sessionId);
+  }
+
+  /**
+   * FR-144: change the permission mode of a running session. Durbar's own approvals follow at once; Codex's sandbox and approval
+   * policy cannot change on a loaded thread, so the next message reopens the thread on a fresh child with the new settings.
+   * A stricter mode during a running turn interrupts that turn, so nothing more runs under the looser mode.
+   */
+  setPermMode(sessionId: string, mode: PermissionMode, opts: { clearGrants?: boolean; approvePending?: boolean } = {}): { pending: number } {
+    const live = this.sessions.get(sessionId);
+    if (!live) return { pending: 0 };
+    const rank = (m: PermissionMode): number => ({ 'read-only': 0, ask: 1, allow: 2 })[m] ?? 0;
+    live.broker.setMode(mode);
+    live.wantMode = mode === live.mode ? undefined : mode;
+    if (opts.clearGrants) live.broker.clearGrants();
+    let pending = live.broker.pendingCount();
+    if (pending) {
+      if (opts.approvePending && mode !== 'read-only') pending -= live.broker.approvePending();
+      else if (mode === 'read-only') pending -= live.broker.denyPendingByUser();
+    }
+    if (rank(mode) < rank(live.mode) && (live.turnId !== undefined || live.turnStarting)) void this.interrupt(sessionId);
+    return { pending };
+  }
+
+  async stop(sessionId: string, silent = false): Promise<void> {
     const starting = this.starting.get(sessionId);
     if (starting) {
       // Stop during start: the start closes its child and never registers; wait for that.
@@ -609,7 +652,7 @@ export class CodexAdapter implements AgentAdapter {
     let timer: NodeJS.Timeout | undefined;
     await Promise.race([live.exited, new Promise<void>((r) => (timer = setTimeout(r, wait)))]);
     if (timer) clearTimeout(timer);
-    this.emit(sessionId, { type: 'status', status: 'stopped' });
+    if (!silent) this.emit(sessionId, { type: 'status', status: 'stopped' });
   }
 
   resolvePermission(sessionId: string, requestId: string, approve: boolean, remember = false, broad = false): void {
