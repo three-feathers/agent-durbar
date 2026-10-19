@@ -20,7 +20,7 @@
 - [x] T023 (FR-022) Option to narrow shell grants (command + first argument) or make the scope visible before approving. [FR-013]
 - [x] T024 Switch an agent's mode from the chat header (with confirmation when moving to Allow all). [FR-014] (done in spec 018: header chip + card menu + confirm, tests in permissions)
 - [x] T025 (2026-10-17 delta, FR-031/FR-032) Test `grantScope` with Windows paths via an injectable `path` flavor. [FR-016]
-- [ ] T026 Collision-proof request ids when `toolCallId` is missing. [Edge case]
+- [x] T026 Collision-proof request ids when `toolCallId` is missing. [Edge case]
 - [x] T027 (second delta, FR-025..FR-027) Restore the saved mode exactly incl. Allow edits, with a visible "restored" note; grants stay session-only; tests + README. Reverses T022's downgrade.
-- [ ] T028 Windows grant keys: compare case-insensitively and treat `/` and `\` alike (constitution VI), e.g. normalize the folder in `grantScope` for the win32 flavor; update the known-gap test (spec delta 2026-10-17). [FR-032 known gap]
+- [x] T028 Windows grant keys: compare case-insensitively and treat `/` and `\` alike (constitution VI), e.g. normalize the folder in `grantScope` for the win32 flavor; update the known-gap test (spec delta 2026-10-17). [FR-032 known gap]
 - [x] T029 (2026-10-17 delta, FR-033, issue #25) Keyboard focus in the Allow all confirmation: focus stays inside the dialog, Tab is trapped, Escape cancels, focus returns to the chip. Shared `dialog.js`; tests `scripts/test-dialog.ts` (in `npm test`) and `npm run check:dialog-focus` (simulator, real key events). [FR-014, FR-033]
