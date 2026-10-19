@@ -192,3 +192,37 @@ All four were AI personas with 21 new screenshots and the source.
   - the bar's session approval reads "Approve “…” for this session".
 - **A bug caught by that check:** a marker line placed after an `if(…)` without braces flagged the session button as the wide grant, so the bar dropped it. The marker now sits inside the `if` block.
 - `test:` `test:theme` follows the new `--bg`; `npm test` passes.
+
+### 2026-10-19: the follow-ups, built for alpha.8
+
+*Owner:* "implement things which you created as issues from usability feedback for tomorrow's pre-release and not just park them there", and "this a brand new app only seen by 3 people - dont worry too much about compatibility - if you find good feedback from personas go ahead and do changes even if they are drastic".
+
+- **FR-027** **Needs you inbox (#305).**
+  - A **Needs you** button next to the status counts shows how many agents need you. Agents count when they are waiting on a permission or a question, are at their limit, or are in error.
+  - It opens one queue, oldest first. Each row shows:
+    - the agent and its folder;
+    - the request in full;
+    - the same choices as its card in the chat (the wide grant stays in the chat);
+    - *Open chat*.
+  - Answering a row settles the agent's card, as the answer bar does.
+  - **I** opens the inbox; Esc closes it; when nobody needs you it says so.
+- **FR-028** **Cost in one unit (#307).**
+  - The header and room totals show money, "≈ $0.35": Copilot credits at USD 0.01 each, plus Claude's dollar estimates.
+  - The tooltip splits it out ("33.16 AIU (Copilot credits, USD 0.01 each) + $0.02 Claude estimate"), says it is an estimate and when counting began, and says which harnesses report no cost.
+  - Cards show "≈ $" with "<$0.01" for small amounts, and AIU in the tooltip. Codex stays "cost not reported".
+- **FR-029** **One control-size scale (#311):** `--h-ctl` 32px for buttons and selects, `--h-chip` 26px for chips, `--h-pill` 22px for status pills; the room header's +, ⋯ and MCP buttons at 24px (WCAG 2.5.8). `check:office` must pass at 1280x800.
+- **FR-030** **Settings that read easily (#309):**
+  - themes as a grid of preview cards, each with a mini room in its own colours and its name, plus "yours" for your own themes;
+  - every section leads with one sentence, details behind *More*;
+  - MCP sits under an **Advanced** heading;
+  - paragraphs at most 72ch wide.
+- **FR-031** **Simple and Expert (#306).** Settings > *Detail level*: **Expert** (today's app, the default) or **Simple**.
+  - Simple hides token counts, the model, agent, context and Compact chips, the room paths, MCP buttons, Open in VS Code and Copy resume command, and shows cost in money only.
+  - Card activity reads in plain verbs, "Running a command" or "Searching the web", not "At Terminal: bash".
+  - The welcome card offers Simple, and the choice is kept.
+  - Permissions, status and answering are identical in both.
+- **FR-032** **Theme polish, the rest of #310:**
+  - Corporate buttons get a 1997-style bevel;
+  - the Indian court's pillars sit behind the cards in a lighter gold;
+  - the Japanese court's furniture is warm lacquer (`--desk` #4a3b2c);
+  - Retro's floor art is drawn opaque in two colours instead of smeared.

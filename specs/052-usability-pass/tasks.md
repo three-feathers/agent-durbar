@@ -32,3 +32,12 @@
 - [x] T027 Top bar clusters and ⋯ (#308) [FR-025]
 - [x] T028 jsLiteral in every driver; merge script blocks on bot comments [FR-026]
 - [ ] T029 Round 3 with new personas on the build with the follow-ups (#305, #306, #307, #309, #310, #311)
+
+## Follow-ups for alpha.8
+
+- [ ] T030 Needs you inbox and the I key (#305) [FR-027]
+- [ ] T031 Cost in one unit (#307) [FR-028]
+- [ ] T032 Control-size scale and 24px targets (#311) [FR-029]
+- [ ] T033 Settings: theme grid, lead sentences, Advanced (#309) [FR-030]
+- [ ] T034 Simple and Expert (#306) [FR-031]
+- [ ] T035 Theme polish, the rest (#310) [FR-032]
