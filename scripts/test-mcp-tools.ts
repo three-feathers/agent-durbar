@@ -3,6 +3,17 @@ import * as assert from 'assert';
 import { JsonSchema, CHANGE_TOOLS, CHANGE_TOOLS_ENABLED, READ_TOOLS, ToolDef, ToolHandlers, matches, createToolRegistry } from '../src/main/mcp/tools';
 import { LATEST_PROTOCOL_VERSION, McpSession } from '../src/main/mcp/protocol';
 import { FakeMcpClient, loopback } from './fakes/mcp-client';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { SIM_NOTE, createReadToolHandlers } from '../src/main/mcp/readtools';
+import type { ReadToolsDeps } from '../src/main/mcp/readtools';
+import { AgentStateTracker } from '../src/main/mcp/agentstate';
+import { UsageTotalsStore } from '../src/main/usagetotalsstore';
+import type { AgentInfo } from '../src/shared/api';
+import type { McpServerView } from '../src/shared/mcp';
+import type { SavedFolder } from '../src/main/folders';
+import { officeTotals } from '../src/shared/usagedoc';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const stubs = (): ToolHandlers => {
@@ -195,6 +206,239 @@ async function main(): Promise<void> {
     assert.strictEqual(ran, 0, 'a tools/call notification runs no handler');
     assert.strictEqual(n.replies.length, before, 'and gets no reply');
   }
+
+  // 12. T016: the read tools over injected getters, through the registry
+  {
+    const SECRETS = {
+      envValue: 'ENVVALUE-9f8e7d6c5b4a3921',
+      headerValue: 'HDRVALUE-1a2b3c4d5e6f7a8b',
+      extraValue: 'EXTRAVALUE-0p9o8i7u6y5t4r3e',
+      argToken: 'ARGTOKEN-q1w2e3r4t5y6u7i8',
+      argEq: 'ARGEQ-z9x8c7v6b5n4m3l2',
+      argEq2: 'ARGEQTWO-a1s2d3f4g5h6j7k8',
+      argHdr: 'ARGHDR-p0o9i8u7y6t5r4e3',
+      urlPass: 'URLPASS-m4n5b6v7c8x9z0l1',
+      urlQuery: 'URLQUERY-k3j4h5g6f7d8s9a0',
+      prompt: 'PROMPT-TEXT-SHOULD-NEVER-APPEAR',
+      outside: '/outside/saved/folders/secret-dir',
+    };
+    const folder = (i: number, over: Partial<SavedFolder> = {}): SavedFolder => ({ workspace: path.join(os.tmpdir(), `durbar-t016-f${i}`), permMode: i % 3 === 0 ? 'ask' : 'read-only', hidden: false, ...over });
+    const agentOf = (f: SavedFolder, i: number, over: Partial<AgentInfo> = {}): AgentInfo => ({
+      id: `ag-${i}`, name: path.basename(f.workspace), title: SECRETS.prompt, cwd: f.workspace, folders: [f.workspace], permMode: f.permMode, model: 'm-1', adapterId: 'copilot', ...over,
+    });
+    const extra: McpServerView = {
+      name: 'gh', transport: 'stdio', enabled: true, trusted: true, needsSecrets: false,
+      command: 'npx', args: ['-y', 'srv', '--token', SECRETS.argToken, `--api-key=${SECRETS.argEq}`, '--verbose', 'X_TOKEN=' + SECRETS.argEq2, 'X-Api-Key: ' + SECRETS.argHdr],
+      url: `https://u:${SECRETS.urlPass}@example.test/mcp?api_key=${SECRETS.urlQuery}&x=1`,
+      workingDirectory: SECRETS.outside,
+      // a real McpServerView carries no values; a buggy store that did must still not leak (the planted `value` fields)
+      env: [{ key: 'GH_TOKEN', set: true, value: SECRETS.envValue } as any],
+      headers: [{ key: 'Authorization', set: true, value: SECRETS.headerValue } as any],
+      secretValue: SECRETS.extraValue,
+    } as any;
+    const mk = (n: number, nf: number, over: Partial<ReadToolsDeps> = {}) => {
+      const folders = Array.from({ length: nf }, (_, i) => folder(i, i === 1 ? { hidden: true, closed: true, label: 'Nice room', floor: 'f-aaaaaaaa', maxAiCredits: 120 } : {}));
+      const agents = Array.from({ length: n }, (_, i) => agentOf(folders[i % nf], i, i === 0 ? { lazy: true } : i === 1 ? { floor: 'f-aaaaaaaa', maxAiCredits: 120, permMode: 'allow' } : {}));
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-t016-'));
+      const usage = new UsageTotalsStore(path.join(dir, 'u.json'), { delayMs: 1e9, setTimer: () => 0, clearTimer: () => undefined });
+      const tracker = new AgentStateTracker();
+      const deps: ReadToolsDeps = {
+        folders: () => folders,
+        agents: () => agents,
+        tracker,
+        floors: () => ({ floors: [{ id: 'ground', name: 'Ground floor', on: true }, { id: 'f-aaaaaaaa', name: 'Attic', on: false }], lastFloor: 'f-aaaaaaaa' }),
+        usage,
+        settings: () => ({ defaultMaxAiCredits: 300, seriousMode: true, placeMap: { gh: 'web' }, customPlaces: [{ id: 'c-abc123', name: 'Lab', icon: 'flask' }], theme: 'secret-theme' }),
+        mcpCli: () => ({ cli: [{ name: 'cli1', origin: 'copilot-config', transport: 'stdio', command: 'node', args: ['s.js', '--password', SECRETS.argToken], enabled: false }, { name: 'github-mcp-server', origin: 'builtin', enabled: true }], file: { label: '~/.copilot/mcp-config.json', found: true, skipped: 1, error: SECRETS.outside }, secretsPersist: false }),
+        mcpExtras: (k) => (k === folders[0].workspace ? [extra] : []),
+        windowSim: () => false,
+        ...over,
+      };
+      const reg = createToolRegistry({ handlers: createReadToolHandlers(deps) });
+      let t = 0;
+      const c = loopback(new McpSession({ serverInfo: { name: 'agent-durbar', version: '1' }, methods: reg.methods() }), 0, { now: () => (t += 1000) });
+      c.request('initialize', { protocolVersion: LATEST_PROTOCOL_VERSION, clientInfo: { name: 'c', version: '1' } });
+      c.notify('notifications/initialized');
+      const call = async (name: string, args: object = {}): Promise<any> => {
+        const r = await c.requestAsync('tools/call', { name, arguments: args });
+        assert.ok(!r.error && !r.result.isError, `${name} answered: ${JSON.stringify(r).slice(0, 200)}`);
+        assert.strictEqual(r.result.content[0].type, 'text');
+        return { raw: r.result.content[0].text as string, data: JSON.parse(r.result.content[0].text) };
+      };
+      return { call, c, usage, tracker, folders, agents, deps };
+    };
+
+    // 12a. all seven tools answer valid JSON through the registry, and invalid arguments get the registry's error
+    {
+      const { call, c } = mk(15, 40);
+      const all: string[] = [];
+      for (const t of READ_TOOLS) {
+        const args = t.name === 'durbar_request_status' ? { requestId: 'r-1' } : {};
+        const r = await call(t.name, args);
+        assert.ok(typeof r.data === 'object' && r.data !== null, `${t.name} returns a JSON object`);
+        all.push(r.raw);
+        const bad = await c.requestAsync('tools/call', { name: t.name, arguments: { surprise: 1 } });
+        assert.strictEqual(bad.error.code, -32602, `${t.name} refuses unknown arguments`);
+      }
+      const noId = await c.requestAsync('tools/call', { name: 'durbar_request_status', arguments: {} });
+      assert.strictEqual(noId.error.code, -32602, 'request_status needs requestId');
+      const stub = await call('durbar_request_status', { requestId: 'r-1' });
+      assert.strictEqual(stub.data.available, false, 'request status is a stub until T031');
+      assert.ok(!stub.raw.includes('r-1'), 'the stub does not echo the id');
+    }
+
+    // 12b. folders, agents, floors, settings
+    {
+      const { call, folders } = mk(15, 40);
+      const f = (await call('durbar_list_folders')).data.folders;
+      assert.strictEqual(f.length, 40);
+      assert.deepStrictEqual(Object.keys(f[1]).sort(), ['adapter', 'agents', 'cap', 'door', 'floor', 'floorOn', 'hidden', 'key', 'mode', 'name']);
+      assert.strictEqual(f[1].name, 'Nice room');
+      assert.strictEqual(f[1].door, 'closed');
+      assert.strictEqual(f[1].hidden, true);
+      assert.strictEqual(f[1].cap, 120);
+      assert.strictEqual(f[1].floorOn, false, 'the attic is off');
+      assert.strictEqual(f[0].mode, 'Ask first');
+      assert.strictEqual(f[2].mode, 'Read-only');
+      assert.strictEqual(f[0].key, folders[0].workspace);
+      assert.strictEqual(f[0].agents, 1);
+      assert.strictEqual(f[20].agents, 0);
+
+      const a = (await call('durbar_list_agents')).data.agents;
+      assert.strictEqual(a.length, 15);
+      assert.deepStrictEqual(Object.keys(a[0]).sort(), ['adapter', 'cap', 'floor', 'floorOn', 'folder', 'hidden', 'id', 'lazy', 'mode', 'model', 'name', 'state', 'subLabel']);
+      assert.strictEqual(a[0].state, 'Idle');
+      assert.strictEqual(a[0].subLabel, 'Not started', 'a lazy agent is Not started');
+      assert.strictEqual(a[0].lazy, true);
+      assert.strictEqual(a[2].subLabel, 'Ready');
+      assert.strictEqual(a[2].lazy, false);
+      assert.strictEqual(a[1].mode, 'Allow all');
+      assert.strictEqual(a[1].cap, 120);
+      assert.strictEqual(a[1].floorOn, false);
+      assert.strictEqual(a[2].floorOn, true);
+      assert.strictEqual(a[2].cap, null);
+    }
+
+    // 12c. the state word and sub-label follow the tracker
+    {
+      const { call, tracker } = mk(3, 3);
+      await call('durbar_list_agents'); // ensure() registers the agents
+      tracker.onEvent({ type: 'limit', sessionId: 'ag-2', phase: 'exhausted', requestId: 'q' } as any);
+      tracker.noteSend('ag-1');
+      tracker.setPaused('ag-0', true);
+      const a = (await call('durbar_list_agents')).data.agents;
+      assert.deepStrictEqual([a[2].state, a[2].subLabel], ['Waiting for you', 'Limit reached']);
+      assert.deepStrictEqual([a[1].state, a[1].subLabel], ['Thinking', null]);
+      assert.deepStrictEqual([a[0].state, a[0].subLabel], ['Paused', null]);
+    }
+
+    // 12d. floors and settings
+    {
+      const { call } = mk(2, 2);
+      const fl = (await call('durbar_list_floors')).data;
+      assert.deepStrictEqual(fl.floors.map((x: any) => [x.id, x.on, x.ground]), [['ground', true, true], ['f-aaaaaaaa', false, false]]);
+      assert.strictEqual(fl.lastFloor, 'f-aaaaaaaa');
+      const st = (await call('durbar_settings')).data;
+      assert.deepStrictEqual(st, { defaultCap: 300, seriousMode: true, placeMap: { gh: 'web' }, customPlaces: [{ id: 'c-abc123', name: 'Lab', icon: 'flask' }] });
+      const none = (await call('durbar_settings')).data;
+      assert.ok(!('theme' in none));
+    }
+
+    // 12e. MCP state: key names only, args and urls masked
+    {
+      const { call } = mk(2, 2);
+      const m = (await call('durbar_mcp_state')).data;
+      assert.deepStrictEqual(m.copilotCli.servers.map((s: any) => [s.name, s.enabled]), [['cli1', false], ['github-mcp-server', true]]);
+      assert.deepStrictEqual(m.copilotCli.servers[0].args, ['s.js', '--password', '[redacted]']);
+      assert.strictEqual(m.copilotCli.file.found, true);
+      assert.strictEqual(m.copilotCli.secretsPersist, false);
+      assert.strictEqual(m.extras.length, 1);
+      const e = m.extras[0].servers[0];
+      assert.deepStrictEqual(e.envKeys, [{ key: 'GH_TOKEN', set: true }]);
+      assert.deepStrictEqual(e.headerKeys, [{ key: 'Authorization', set: true }]);
+      assert.deepStrictEqual(e.args, ['-y', 'srv', '--token', '[redacted]', '--api-key=[redacted]', '--verbose', 'X_TOKEN=[redacted]', 'X-Api-Key: [redacted]']);
+      assert.ok(e.url.includes('x=1') && e.url.includes('api_key=[redacted]') && !e.url.includes('u:'), e.url);
+      assert.ok(!('workingDirectory' in e));
+    }
+
+    // 12f. SC-004: no planted secret anywhere in any result
+    {
+      const { call } = mk(15, 40);
+      const dump: string[] = [];
+      for (const t of READ_TOOLS) dump.push((await call(t.name, t.name === 'durbar_request_status' ? { requestId: 'x' } : {})).raw);
+      const all = dump.join('\n');
+      for (const [k, v] of Object.entries(SECRETS)) assert.ok(!all.includes(v), `planted ${k} never appears in any result`);
+      assert.ok(!all.includes('secret-theme'), 'theme is not part of the settings answer');
+      assert.ok(all.includes('GH_TOKEN'), 'the key name itself is shown');
+    }
+
+    // 12g. usage: baseline plus this run for the same events
+    {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-t016u-'));
+      const file = path.join(dir, 'u.json');
+      const f0 = folder(0), f1 = folder(1);
+      const seed = new UsageTotalsStore(file, { delayMs: 1e9, setTimer: () => 0, clearTimer: () => undefined });
+      seed.record(f0.workspace, 'f0', { type: 'usage', inputTokens: 100, outputTokens: 50, nanoAiu: 2e9 });
+      seed.record('/not/saved/anymore', 'gone', { type: 'usage', inputTokens: 7, outputTokens: 3, nanoAiu: 1e9 });
+      seed.flush();
+      const usage = new UsageTotalsStore(file, { delayMs: 1e9, setTimer: () => 0, clearTimer: () => undefined });
+      usage.load();
+      const base = usage.baselineView();
+      const events = [
+        [f0.workspace, 'f0', { type: 'usage', inputTokens: 10, outputTokens: 5, nanoAiu: 5e8 }],
+        [f0.workspace, 'f0', { type: 'usage', inputTokens: 1, outputTokens: 1 }], // no credit figure
+        [f1.workspace, 'f1', { type: 'usage', inputTokens: 20, outputTokens: 2, nanoAiu: 3e9 }],
+        [f1.workspace, 'f1', { type: 'output', text: SECRETS.prompt }], // not a usage event: ignored
+      ] as const;
+      for (const [k, n, e] of events) usage.record(k, n, e);
+      const { call } = mk(2, 2, { usage, folders: () => [f0, f1], agents: () => [] });
+      const u = (await call('durbar_usage_totals')).data;
+      assert.strictEqual(u.since, base.since);
+      assert.strictEqual(u.office.calls, base.office.calls + 3, 'office: baseline calls + this run');
+      assert.strictEqual(u.office.inTokens, base.office.inTokens + 31);
+      assert.strictEqual(u.office.outTokens, base.office.outTokens + 8);
+      assert.strictEqual(u.office.nano, base.office.nano + 3.5e9, 'office: baseline nano + this run');
+      assert.strictEqual(u.office.unreportedCalls, base.office.unreported + 1);
+      assert.strictEqual(u.office.aiu, (base.office.nano + 3.5e9) / 1e9);
+      assert.strictEqual(u.office.nano, officeTotals(usage.view()).nano, 'equals the store view');
+      const byName = (n: string): any => u.folders.find((x: any) => x.name === n);
+      assert.strictEqual(byName('f0').calls, base.folderOf(f0.workspace)!.calls + 2);
+      assert.strictEqual(byName('f0').path, f0.workspace, 'a saved folder keeps its path');
+      assert.strictEqual(byName('f1').calls, 1);
+      assert.strictEqual(byName('f1').nano, 3e9);
+      assert.strictEqual(byName('gone').path, undefined, 'a folder that is no longer saved shows no path');
+      assert.ok(!JSON.stringify(u).includes('/not/saved'));
+    }
+
+    // 12h. DURBAR_SIM note
+    {
+      const on = mk(2, 2, { windowSim: () => true });
+      for (const n of ['durbar_list_agents', 'durbar_list_folders']) assert.strictEqual((await on.call(n)).data.note, SIM_NOTE, `${n} carries the sim note`);
+      assert.ok(/DURBAR_SIM/.test(SIM_NOTE) && /not visible/.test(SIM_NOTE));
+      const off = mk(2, 2);
+      for (const n of ['durbar_list_agents', 'durbar_list_folders']) {
+        const r = await off.call(n);
+        assert.ok(!('note' in r.data) && !r.raw.includes('DURBAR_SIM'), `${n} has no note without the flag`);
+      }
+    }
+
+    // 12i. FR-013: 15 agents and 40 folders, every tool, under 200 ms
+    {
+      const { call } = mk(15, 40, {});
+      const t0 = process.hrtime.bigint();
+      for (const t of READ_TOOLS) await call(t.name, t.name === 'durbar_request_status' ? { requestId: 'x' } : {});
+      const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+      assert.ok(ms < 200, `all seven read tools took ${ms.toFixed(1)} ms`);
+      console.log(`mcp read tools: 15 agents + 40 folders, all seven tools in ${ms.toFixed(1)} ms`);
+    }
+
+    // 12j. a handler is wired for every read tool (a missing one fails at build time, not at the first call)
+    {
+      const h = createReadToolHandlers(mk(1, 1).deps);
+      assert.deepStrictEqual(Object.keys(h).sort(), READ_TOOLS.map((t) => t.name).sort());
+    }
+  }
+
 
   console.log('mcp tools: ok');
 }

@@ -17,4 +17,4 @@
 - [x] T020 Starter templates in the Schedules dialog (pure module, picker, note) [FR-006]
 - [x] T021 "Every day at": anchored intervals in the scheduler and the simulator [FR-007]
 - [x] T022 Decision step in the briefing and planning templates; one real check on Claude [FR-008]
-
+- [x] T023 Schedules from the room's ⋯ menu, a room clock chip, the chat header, and Settings > Schedules for all folders [FR-009, FR-010, FR-011]

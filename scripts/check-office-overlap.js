@@ -43,6 +43,10 @@ const INDEX = path.join(ROOT, 'dist', 'renderer', 'index.html');
 const SIZES = [[1440, 900], [1280, 800]];
 const SIMS = [12, 15];
 const TOL = 0.5;
+/* A value as a JavaScript literal that is safe to splice into code run in the page: JSON, with the characters that could end a
+   script or a string in some contexts escaped (CodeQL js/bad-code-sanitization; the recommended escaping). */
+const UNSAFE = { '<': '\\u003C', '>': '\\u003E', '/': '\\u002F', '\u2028': '\\u2028', '\u2029': '\\u2029' };
+const jsLiteral = (v) => JSON.stringify(v).replace(/[<>/\u2028\u2029]/g, (c) => UNSAFE[c]);
 
 /* runs inside the page; returns {problems:[...], info:{...}} */
 function pageCheck(expanded, expectPlaces) {
@@ -461,6 +465,70 @@ async function driver(ctx) {
     if (!vs) { failed++; console.log(`FAIL vschat ${w}x${h}: the VS Code chat view did not open`); }
     else if (vs.sh <= vs.ch * 2 || Math.abs(vs.st + vs.ch - vs.sh) > 2 || !vs.lastIn || !vs.cont) { failed++; console.log(`FAIL vschat ${w}x${h}: not opened at the latest message or no Continue button ${JSON.stringify(vs)}`); }
     rows.push({ label: `vschat ${w}x${h}`, d: 'vschat', h: '-', rooms: '-', plates: '-', desks: '-', stageH: 0, floorH: 0, minFont: '-', problems: !vs || vs.sh <= vs.ch * 2 || Math.abs(vs.st + vs.ch - vs.sh) > 2 || !vs.lastIn || !vs.cont ? 1 : 0 });
+  }
+
+  /* spec 005 FR-017 / T026: the card menu of a working main agent offers Stop and End session, a helper does not, and the menu fits the window */
+  const openCardMenu = (id) => ctx.js(`(async()=>{const m=document.getElementById('modeMenu');if(m)m.remove();const d=document.querySelector('#stage [data-id="${id}"]');if(!d)return null;const r=d.getBoundingClientRect();d.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.right-4,clientY:r.bottom-4}));await new Promise(r=>setTimeout(r,200));const mm=document.getElementById('modeMenu');if(!mm)return {open:false};const b=mm.getBoundingClientRect();return {open:true,stop:!!mm.querySelector('[data-op="stop"]'),end:!!mm.querySelector('[data-op="end"]'),fits:b.left>=0&&b.top>=0&&b.right<=innerWidth&&b.bottom<=innerHeight,minFont:Math.min(...[...mm.querySelectorAll('b,small,p')].map(e=>parseFloat(getComputedStyle(e).fontSize)))}})()`);
+  for (const [w, h] of SIZES) {
+    if (!mine()) continue;
+    await load('sim=15&simfreeze=1', w, h);
+    const ids = await ctx.js(`(()=>({w:[...document.querySelectorAll('#stage .desk.is-working:not(.is-away), #stage .desk.is-thinking:not(.is-away)')].map(d=>d.dataset.id),hp:[...document.querySelectorAll('#stage .helper')].map(d=>d.dataset.id)}))()`);
+    let bad = 0; const say = (m) => { bad++; failed++; console.log(`FAIL card menu ${w}x${h}: ${m}`); };
+    total++; if (!ids.w.length) say('no working main agent to open the menu on');
+    for (const id of ids.w.slice(0, 3)) {
+      const r = await openCardMenu(id); total++;
+      if (!r || !r.open) say(`menu did not open on ${id}`);
+      else if (!r.stop || !r.end) say(`missing Stop/End on working agent ${id} ${JSON.stringify(r)}`);
+      else if (!r.fits) say(`menu leaves the window on ${id}`);
+      else if (r.minFont < 10.5) say(`menu text below 10.5px on ${id}`);
+    }
+    for (const id of ids.hp.slice(0, 2)) {
+      const r = await openCardMenu(id); total++;
+      if (r && r.open && (r.stop || r.end)) say(`helper ${id} has Stop/End`);
+    }
+    await ctx.js(`(()=>{const m=document.getElementById('modeMenu');if(m)m.remove();return true})()`);
+    rows.push({ label: `card menu ${w}x${h}`, d: 'menu', h: '-', rooms: '-', plates: '-', desks: ids.w.length, stageH: 0, floorH: 0, minFont: '-', problems: bad });
+  }
+
+  /* spec 006 FR-023 (T031): the Previous sessions search box at both sizes: shown with 2+ entries, filters by title ignoring case and accents,
+     "N of M" while a query is active, "No sessions match", Escape clears; the panel stays inside the window */
+  for (const [w, h] of SIZES) {
+    if (!mine()) continue;
+    const tag = `previous-sessions search ${w}x${h}`;
+    await load('sim=15&simfreeze=1', w, h);
+    const ids = await ctx.js(`[...document.querySelectorAll('#stage .desk')].map((d)=>d.dataset.id)`);
+    let found = false;
+    for (const id of ids) {
+      await ctx.js(`(async()=>{const d=document.querySelector('#stage .desk[data-id="${id}"]');if(d)d.click();await new Promise(r=>setTimeout(r,350));return true})()`);
+      found = await ctx.js(`!!document.getElementById('prevQ')&&!document.getElementById('prevQ').closest('[hidden]')`);
+      if (found) break;
+      await ctx.js(`(async()=>{const b=document.getElementById('backBtn');if(b)b.click();await new Promise(r=>setTimeout(r,120));return true})()`);
+    }
+    const P = [];
+    if (!found) P.push('no agent shows the search box (the simulator folder has Copilot sessions and VS Code chats)');
+    else {
+      const type = (q) => ctx.js(`(async()=>{const i=document.getElementById('prevQ');i.focus();i.value=${jsLiteral(q)};i.dispatchEvent(new Event('input',{bubbles:true}));await new Promise(r=>setTimeout(r,80));
+        return {rows:[...document.querySelectorAll('#prevLists .prev-row b')].map(b=>b.textContent),heads:[...document.querySelectorAll('#prevLists .prev-h')].map(x=>x.textContent.replace(/\\s+/g,' ')),empty:[...document.querySelectorAll('#prevLists .prev-nomatch')].length}})()`);
+      const all = await type('');
+      if (all.rows.length < 3 || /\d of \d/.test(all.heads.join(' '))) P.push(`empty query: ${JSON.stringify(all)}`);
+      const a1 = await type('EXPLICACION');
+      if (a1.rows.length !== 1 || !/Explicaci/.test(a1.rows[0]) || !/0 of 2/.test(a1.heads[0]) || !/1 of 2/.test(a1.heads[1]) || a1.empty !== 1) P.push(`accent/case query: ${JSON.stringify(a1)}`);
+      const none = await type('zzzz');
+      if (none.rows.length || none.empty !== 2 || !/0 of 2/.test(none.heads[0]) || !/0 of 2/.test(none.heads[1])) P.push(`no-match query: ${JSON.stringify(none)}`);
+      await type('explicacion');
+      if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-prevsearch-${w}x${h}.png`));
+      await ctx.js(`document.getElementById('prevQ').focus()`);
+      ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+      await sleep(250);
+      const cleared = await ctx.js(`({v:document.getElementById('prevQ')&&document.getElementById('prevQ').value,rows:document.querySelectorAll('#prevLists .prev-row').length})`);
+      if (cleared.v !== '' || cleared.rows < 3) P.push(`Escape did not clear the query: ${JSON.stringify(cleared)}`);
+      const box = !(await ctx.js(`!!document.getElementById('prev')&&!!document.getElementById('prevQ')`)) ? null : await ctx.js(`(()=>{const r=document.getElementById('prev').getBoundingClientRect(),q=document.getElementById('prevQ').getBoundingClientRect(),de=document.documentElement;return {right:r.right,qr:q.right,ql:q.left,qh:q.height,w:innerWidth,sw:de.scrollWidth,fs:parseFloat(getComputedStyle(document.getElementById('prevQ')).fontSize)}})()`);
+      if (!box) P.push('the search box is gone after Escape (the panel closed)');
+      else if (box.right > box.w + 1 || box.qr > box.w + 1 || box.ql < -1 || box.sw > box.w + 1 || box.fs < 10.5) P.push(`layout: ${JSON.stringify(box)}`);
+    }
+    total++;
+    if (P.length) { failed++; console.log(`FAIL ${tag}: ${P.join('; ')}`); }
+    rows.push({ label: tag, d: 'prev', h: '-', rooms: '-', plates: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: P.length });
   }
 
   console.log('\nlayout summary (density/helpers shown, stage height vs floor):');

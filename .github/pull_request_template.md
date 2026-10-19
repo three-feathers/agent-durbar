@@ -12,7 +12,9 @@ Closes #<!-- issue number: one issue = one Spec Kit task -->
 - **Task(s)**: `Tnnn` in that `tasks.md`:
 - **Agent used** (which agent wrote this, and who is its human owner): <!-- e.g. Claude Code (fjcabello), Copilot CLI (vikramgorla), none -->
 - [ ] I claimed the issue (assigned + `status:claimed`) before starting
+- [ ] Every point of the linked issue is done (`Closes #N`), or what is left is written on the issue and it stays open (`Refs #N`)
 - [ ] The agent did a final review of the whole diff as a reviewer (not only CI) and says below what it checked; another team's agent or a human may review too
+- [ ] CodeQL / code scanning (this PR's checks and the bot's line comments), Dependabot and secret scanning have no new finding on this PR, or each one is fixed at the cause, or dismissed as a false positive with the reason written down
 
 ## Spec Kit
 

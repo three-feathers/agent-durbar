@@ -93,3 +93,37 @@ gh-aw work queue; merge queue (not available for personal-account repos; not eva
 - No repository setting changed. The `main` ruleset still asks for one approval, and admins can bypass it. An agent whose human is not an admin needs another agent's approval, posted through that agent's human account.
 - The "Needs approval" list (money, releases, repository settings, inviting people, posting) is unchanged.
 
+### 2026-10-19: reviews include GitHub's security results (owner)
+
+*Owner:* "when you review pr's also look at codeql / github advanced security reviews,.. and review and fix it like a expert code quality and security expert, remember this in agents.md".
+
+- `AGENTS.md` (Reviews and merge, point 5), `docs/collaboration.md` (step 8) and the PR template now require reading the PR's CodeQL / code-scanning, Dependabot and secret-scanning results before merging.
+  - Every new finding is fixed at its cause.
+  - An alert is dismissed only as a real false positive, or as test-only code, with the reason written down.
+  - Open alerts on `main` that a change touches are fixed in the same PR, or tracked in an issue.
+- State on 2026-10-19: no open code-scanning, Dependabot or secret-scanning alerts on `main`. The earlier ones were fixed or dismissed with reasons in spec 045. CodeQL passed on the open PRs #245 and #272-#274.
+- The owner added: "not just on repo, also on pr's as we have some checks happening on pr's". AGENTS.md now names the PR-level places to look: `gh pr checks`, the bot's line comments, and the alerts on `refs/pull/<N>/merge`. A finding on a PR is not in `main`'s alert list until it merges.
+  - Example the same day: #273 had a `js/bad-code-sanitization` finding from `github-advanced-security[bot]` on `scripts/check-office-overlap.js` while `main` had 0 alerts.
+  - It was fixed at the cause with a `jsLiteral()` helper that also escapes `< > / U+2028 U+2029`.
+
+### 2026-10-19: an agent may merge another team's ready, quiet PR (owner)
+
+*Owner:* "you can also merge other's pr's as well if they are all ok and not work in progress or open questions and staying for quiet sometime (if their agent forgot merging it)".
+
+- `AGENTS.md` now says when any agent may merge another team's PR, and that it leaves a comment saying why. The conditions:
+  - not a draft or WIP, with no open question or requested change;
+  - CI green and the PR's own security results clean;
+  - approved;
+  - quiet for at least 2 hours (the owner said "sometime"; 2 hours is the agent's reading).
+
+  Stacked PRs and `needs-owner-approval` are excluded.
+
+### 2026-10-19: check the linked issue before merging (owner)
+
+*Owner:* "when you merge, also look at linked issue for which it was worked upon to see if everything is in the issue is covered and handle issue and pr based on it so tht we dont leave stranded issues or close issues where some work is still pending".
+
+- `AGENTS.md`, `docs/collaboration.md` (step 9) and the PR template now say:
+  - before a merge, check every point of the linked issue against the PR;
+  - `Closes #N` only when all is done;
+  - otherwise use `Refs #N`, write on the issue what is left (or link a follow-up issue), and keep it open.
+
