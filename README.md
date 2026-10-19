@@ -1,4 +1,10 @@
-# Agent Durbar
+<p align="center">
+  <img src="build/icon.svg" alt="Agent Durbar icon: a lead and a working team" width="96" height="96">
+</p>
+
+<h1 align="center">Agent Durbar</h1>
+
+<p align="center"><em>A calm command center for your coding agents</em></p>
 
 Command center to see, chat with and coordinate coding agents (Copilot CLI first) in an office-style view.
 
