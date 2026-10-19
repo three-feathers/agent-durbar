@@ -293,6 +293,9 @@ assert.strictEqual(modelControlFor({ compact() {} }).switch, 'none');
   assert.deepStrictEqual(ca(ag({ parent: 'x' }), can), { stop: null, end: null }, 'f: a helper gets nothing');
   assert.deepStrictEqual(ca(ag({ live: false }), can), { stop: null, end: null }, 'f: a non-live agent gets nothing');
   assert.deepStrictEqual(ca(null, can), { stop: null, end: null }, 'f: no agent');
+  const calm = ag({ state: 'idle', label: 'Ready' });
+  assert.deepStrictEqual(ca(calm, can).end, { confirm: false }, 'f: idle when the menu opened');
+  assert.deepStrictEqual(ca({ ...calm, state: 'working' }, can).end, { confirm: true }, 'f: recomputed at click time, it became busy so End asks');
 }
 
 console.log('modelswitch tests passed');
