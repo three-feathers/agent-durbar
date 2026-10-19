@@ -77,6 +77,16 @@ In **Previous sessions**, "VS Code chat history" lists chats VS Code saved for t
 
 ## Changes
 
+### 2026-10-19: VS Code chat view opens at the latest message; two new kinds; Continue in VS Code (issue #253, task T026)
+
+*Found (owner, on alpha.6):* (1) **View** on a long VS Code chat (346 messages, "Only the last 300 … are shown") opened away from the end, so the latest messages needed a manual scroll. (2) Two response kinds were skipped with the "not recognised" note: `mcpServersStarting` and `questionCarousel` (VS Code 1.109+). (3) A VS Code chat cannot be continued here (US2, by design), and there was no short way to go and continue it in VS Code.
+
+*Corrected:*
+- **FR-016** `[IMPLEMENTED]` (sim: `scripts/shots-009-vschat.js` asserts scrolled to the bottom at 1440x900 and 1280x800; the notes now sit above the transcript) **View** opens scrolled to the **latest** message (the end of the transcript), like a chat. The "only the last N" and "not recognised" notes stay reachable at the top.
+- **FR-017** `[IMPLEMENTED]` (test: `scripts/test-vscodechat.ts`, synthetic `.jsonl` and `.json`; the saved user answer is not shown, its shape was never observed: `[KNOWN GAP]`) The reader knows two more kinds: `questionCarousel` is shown as a read-only question block (sanitised Markdown, no controls; each question's title, its message text and its option labels, plus "free text allowed" / "can be skipped" when set; the user's answer is shown only if the saved data carries it; no option is presented as clickable), and `mcpServersStarting` is a known status kind that is not shown (it only lists starting MCP server ids). Neither is counted as "not recognised" any more. Unknown kinds keep the existing note.
+- **FR-018** `[IMPLEMENTED]` (sim: toast, same IPC as Open in VS Code; a real VS Code launch is not re-run, see FR-014) A VS Code chat view has **Continue in VS Code**, which opens the chat's folder (or workspace file) in VS Code with the same launcher as *Open in VS Code* (FR-001); the banner keeps saying the chat cannot be continued here. Opening that exact chat in VS Code is not offered (no supported link). Resuming it in Durbar with a summary would read the chat and spend credits: not done, needs the owner.
+- Fixtures are synthetic, following only the shape of the two kinds (no private content). Simulator and unit tests; the scroll is checked by a driver at 1440x900 and 1280x800; no AI credits.
+
 ### 2026-10-16: FR-008 resolved by removing the claim
 
 README no longer says Cursor's chat history is read (the code lists only `Code`, `Code - Insiders`, `VSCodium`; Cursor's store layout was never checked). Adding Cursor honestly would need its real on-disk format; not done. T020 closed by correcting the README.

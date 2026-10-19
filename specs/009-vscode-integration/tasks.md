@@ -18,3 +18,4 @@
 - [ ] T023 Check the reader against a real VS Code chat store (redacted sample as a new fixture) (feature 013). [FR-011]
 - [ ] T024 Verify that our sessions appear in VS Code's session list with the External filter (feature 013). [FR-012]
 - [ ] T025 Clarify support for portable, Flatpak/Snap and remote workspaces. [FR-010]
+- [x] T026 VS Code chat view: open at the latest message; `questionCarousel` read-only block and `mcpServersStarting` as a known hidden kind (synthetic fixtures); Continue in VS Code button; unit tests, simulator, scroll check at both sizes, docs (issue #253) [FR-016, FR-017, FR-018]

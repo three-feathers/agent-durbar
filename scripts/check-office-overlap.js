@@ -450,6 +450,22 @@ async function driver(ctx) {
       rows.push({ label: `chat ${w}x${h} ${q}`, d: 'chat', h: '-', rooms: '-', plates: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: bad });
     }
   }
+  /* spec 009 FR-016 / T026: the VS Code chat view opens scrolled to the latest message (and has Continue in VS Code) */
+  for (const [w, h] of SIZES) {
+    if (!mine()) continue;
+    await load('sim=15&simfreeze=1', w, h);
+    await ctx.js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith('Ada'));if(d)d.click();return true})()`);
+    await ctx.sleep(900);
+    await ctx.js(`(()=>{if(!document.querySelector('#prev [data-pv="view"]')){const t=document.querySelector('#prev [data-pv="toggle"]');if(t)t.click();}return true})()`);
+    await ctx.sleep(500);
+    await ctx.js(`(()=>{const v=document.querySelector('#prev [data-pv="view"]');if(v)v.click();return true})()`);
+    await ctx.sleep(1000);
+    const vs = await ctx.js(`(()=>{const c=document.getElementById('chat'),b=c&&c.querySelector('.vsbody');if(!b||!b.lastElementChild)return null;const l=b.lastElementChild.getBoundingClientRect(),cr=c.getBoundingClientRect();return {st:c.scrollTop,ch:c.clientHeight,sh:c.scrollHeight,lastIn:l.bottom<=cr.bottom+1&&l.top>=cr.top,cont:!!document.getElementById('vsCont')}})()`);
+    total++;
+    if (!vs) { failed++; console.log(`FAIL vschat ${w}x${h}: the VS Code chat view did not open`); }
+    else if (vs.sh <= vs.ch * 2 || Math.abs(vs.st + vs.ch - vs.sh) > 2 || !vs.lastIn || !vs.cont) { failed++; console.log(`FAIL vschat ${w}x${h}: not opened at the latest message or no Continue button ${JSON.stringify(vs)}`); }
+    rows.push({ label: `vschat ${w}x${h}`, d: 'vschat', h: '-', rooms: '-', plates: '-', desks: '-', stageH: 0, floorH: 0, minFont: '-', problems: !vs || vs.sh <= vs.ch * 2 || Math.abs(vs.st + vs.ch - vs.sh) > 2 || !vs.lastIn || !vs.cont ? 1 : 0 });
+  }
 
   /* spec 005 FR-017 / T026: the card menu of a working main agent offers Stop and End session, a helper does not, and the menu fits the window */
   const openCardMenu = (id) => ctx.js(`(async()=>{const m=document.getElementById('modeMenu');if(m)m.remove();const d=document.querySelector('#stage [data-id="${id}"]');if(!d)return null;const r=d.getBoundingClientRect();d.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.right-4,clientY:r.bottom-4}));await new Promise(r=>setTimeout(r,200));const mm=document.getElementById('modeMenu');if(!mm)return {open:false};const b=mm.getBoundingClientRect();return {open:true,stop:!!mm.querySelector('[data-op="stop"]'),end:!!mm.querySelector('[data-op="end"]'),fits:b.left>=0&&b.top>=0&&b.right<=innerWidth&&b.bottom<=innerHeight,minFont:Math.min(...[...mm.querySelectorAll('b,small,p')].map(e=>parseFloat(getComputedStyle(e).fontSize)))}})()`);

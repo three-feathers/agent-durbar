@@ -280,3 +280,14 @@ The owner chose "build it now" (Q6). A new session can start from a **hand-off s
   - Copilot's `summarizeForHandoff` was not run on a real account; whether it spends credits is unverified (Q8, with the paid plan).
   - The review box has no focus trap (Escape and the buttons work).
 
+### 2026-10-19: long context on Claude (Q4, checked meanwhile on the owner's paid Claude account)
+
+Q4 said the long-context tier could be checked on Claude while the paid Copilot plan is pending.
+
+- `real:` Claude Code 2.1.303, the adapter from `dist/`, one tiny prompt each, numbers only:
+  - `sonnet[1m]` was accepted and ran as `claude-sonnet-5-5`; the context event reported a window of **1,000,000** tokens; cost $0.062 with a cold cache.
+  - Plain `sonnet` also ran as `claude-sonnet-5-5` with a window of **1,000,000** (Sonnet 5.5 has it natively); cost $0.015.
+  - The account's model list (`listModelOptions`, no prompt) offers no `[1m]` variant.
+- **Result:** on Claude the context chip shows the real window from `modelUsage.contextWindow`, whatever alias was chosen. A separate "long tier" control is not needed for Claude: it would cost more and give nothing for Sonnet 5.5.
+- The Copilot long-context tier (T044, #103) still waits for the paid plan.
+
