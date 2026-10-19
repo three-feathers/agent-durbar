@@ -15,7 +15,7 @@ module.exports = async (ctx) => {
   const sdk = require(path.join(base, 'claudeSdk.js'));
   out.loadSdk = String(await sdk.loadSdk());
   const exp = require(path.join(base, 'experimental.js'));
-  out.registered = exp.enabledExperimental(process.env).map((d) => d.id);
+  out.registered = exp.offeredDescriptors(process.env).map((d) => d.id);
   const f = exp.claudeTransportFor(process.env);
   const t = await f({ file: '/nonexistent/claude', cwd: process.cwd(), env: {}, launch: { mode: 'read-only', sessionId: 's', resume: false }, handlers: { message() {}, control: async () => ({ response: {} }), exit() {} } });
   out.transport = t.kind;

@@ -183,7 +183,7 @@
     });
   }
   /* The kind select appears only when there is a real choice. */
-  const showsKindPicker=adapters=>Array.isArray(adapters)&&adapters.length>=2;
+  const showsKindPicker=adapters=>Array.isArray(adapters)&&adapters.filter(a=>a&&a.state==='ready').length>=2; /* spec 012 FR-136: only a real choice between ready harnesses */
   /* Is a control shown? A feature the adapter lacks is hidden, never shown disabled (SC-003). `modeList` takes the mode: shows(caps,'modeList','ask'). */
   function shows(caps,feature,mode){
     const c=caps||ALL_ON;

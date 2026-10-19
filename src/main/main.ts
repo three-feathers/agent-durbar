@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
-import { enabledExperimental } from '../adapters/experimental';
+import { offeredDescriptors } from '../adapters/experimental';
 import { createRegistry, detectAll } from '../adapters/registry';
 import { detectorFor } from '../adapters/detect';
 import { adapterForAdd, createRouter, historyOf, modelOptionsOf, previousSessionsOf } from '../adapters/router';
@@ -69,7 +69,7 @@ let agentTrust: AgentTrustStore | undefined;
 const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 
 /** Only Copilot is registered; every agent is routed to its adapter through the router (spec 012 FR-046..FR-050). Adapters are typed as the neutral interface: optional members say what each can do (spec 030 FR-017, spec 012 FR-027). */
-const registry = createRegistry([...PRODUCTION_DESCRIPTORS, ...enabledExperimental(dev)]); // DURBAR_CLAUDE=1 adds Claude Code (spec 012 FR-114)
+const registry = createRegistry([...PRODUCTION_DESCRIPTORS, ...offeredDescriptors(dev)]); // Copilot, then Claude Code (spec 012 FR-135); detection decides what is ready
 const router = createRouter(registry);
 const agents = new Map<string, AgentInfo>();
 const mcp = registerMcpIpc({ store: () => mcpStore as McpStore, agents, router, dev });
