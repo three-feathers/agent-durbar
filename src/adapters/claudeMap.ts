@@ -112,6 +112,9 @@ export class ClaudeMapper {
   private lastCostTotal = 0;
   /** Per assistant message id, the usage already emitted (the most recent USAGE_IDS_CAP ids, oldest dropped first; FR-082). */
   private usageCounted = new Map<string, { input: number; output: number; cacheRead: number }>();
+  /** FR-134: context windows per model from the latest `result`'s `modelUsage`, and the main agent's last message size. */
+  private windows = new Map<string, number>();
+  private lastCtx: { tokens: number; model?: string; sent?: string } | undefined;
   /** What `system/init` reported (read by the adapter). */
   info: ClaudeSessionInfo = {};
 
@@ -292,6 +295,11 @@ export class ClaudeMapper {
       const input = parts.some((v) => v !== undefined) ? parts.reduce<number>((s, v) => s + (v ?? 0), 0) : undefined;
       const usage = this.usageToCount(id, input, num(u.output_tokens), num(u.cache_read_input_tokens));
       if (usage) this.emit({ type: 'usage', model: str(msg.model), ...usage, agentId });
+      // FR-134: the main agent's whole prompt plus its reply is what the context holds now (helpers have their own)
+      if (agentId === undefined && input !== undefined) {
+        this.lastCtx = { tokens: input + (num(u.output_tokens) ?? 0), model: str(msg.model), sent: this.lastCtx?.sent };
+        this.emitContext();
+      }
     }
     if (m.aborted === true) this.emit({ type: 'status', status: 'idle', intent: 'Aborted' });
   }
@@ -328,10 +336,30 @@ export class ClaudeMapper {
     }
   }
 
+  /** FR-134: one `context` event per change, once the window of the model is known (from a `result`). */
+  private emitContext(): void {
+    const c = this.lastCtx;
+    if (!c) return;
+    const limit = (c.model !== undefined ? this.windows.get(c.model) : undefined) ?? Math.max(0, ...this.windows.values());
+    if (!limit) return;
+    const key = `${c.tokens}/${limit}`;
+    if (c.sent === key) return;
+    c.sent = key;
+    this.emit({ type: 'context', tokens: c.tokens, limit, ...(c.model ? { model: c.model } : {}) });
+  }
+
   private result(m: ClaudeMessage): void {
     // End of turn: forget per-turn stream state so the tables stay bounded.
     this.thinkingStreamed.clear();
     this.streamMessage.clear();
+    const mu = m.modelUsage;
+    if (mu && typeof mu === 'object') {
+      for (const [model, v] of Object.entries(mu as Record<string, unknown>).slice(0, 20)) {
+        const w = v && typeof v === 'object' ? num((v as Record<string, unknown>).contextWindow) : undefined;
+        if (w !== undefined && w > 0 && w < 1e9) this.windows.set(model, Math.round(w));
+      }
+      this.emitContext();
+    }
     // `total_cost_usd` is a running total in streaming mode: report only what is new since the last result.
     const total = num(m.total_cost_usd);
     if (total !== undefined) {

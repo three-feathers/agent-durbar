@@ -51,6 +51,8 @@ export interface AgentInfo {
   floor?: string;
   /** Display name of the folder's room (spec 006 FR-018); absent = the folder's own name. */
   label?: string;
+  /** Custom agent preselected for the folder's new sessions (spec 043 FR-009). */
+  defaultAgent?: string;
   /** Which adapter runs this agent (spec 012 FR-058), e.g. `copilot`. */
   adapterId: string;
 }
@@ -391,6 +393,7 @@ export interface DurbarApi {
   removeSession?(id: string): Promise<{ ok: boolean; error?: string }>;
   /** Sets the folder's display name (spec 006 FR-018); empty = the folder's own name. */
   renameFolder?(id: string, label: string): Promise<{ ok: boolean; label?: string }>;
+  setFolderDefaultAgent?(id: string, profileId: string | null): Promise<{ ok: boolean; defaultAgent?: string }>;
 
   /** Floors (spec 033). Validated in main; never touch a session. Every change returns the full new state. */
   floorsState?(): Promise<FloorsState>;

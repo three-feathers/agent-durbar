@@ -183,7 +183,7 @@ Sub-agents: `thread/list` has a `subAgent*` source kinds and experimental `paren
 | Context window | `getContextUsage`, `modelUsage.contextWindow` | `modelContextWindow` (nullable) | `ContextEvent` fits both. |
 | Resume | `resume: id`, id can be chosen (`sessionId`) | `thread/resume`, id assigned by Codex | Persist a vendor session id. |
 | Interrupt | `interrupt()` (streaming mode) | `turn/interrupt` | Both fit `interrupt?`. |
-| Live mode switch (spec 018) | `setPermissionMode()` | next `turn/start` overrides, applies from the next turn | Claude immediate; Codex from the next turn (declare it). |
+| Live mode switch (spec 018) | `setPermissionMode()` *(not enough alone: see the findings below; built as FR-115/FR-116)* | next `turn/start` overrides, applies from the next turn | Claude: the broker and the `PreToolUse` hook at once, the CLI flags from the next message; Codex from the next turn (declare it). |
 | Auth risk | **Policy restricts third-party use of subscription login** | App-server auth not for commercial/hosted; local use matches the VS Code extension | Q1. |
 
 ## 5. What cannot be known without real accounts
@@ -204,3 +204,19 @@ Everything here needs a real, signed-in session and therefore the owner's approv
 - Both runtimes change weekly. Pin the SDK, record the CLI version in the session, set a minimum version, ignore what you do not know.
 - Neither vendor's transcript format is a contract; use their list/read APIs.
 - Project folders can carry their own hooks and MCP servers (`.claude/settings.json`, `.mcp.json`, `.codex/config.toml`). Claude runs them in headless mode without a trust prompt. Durbar must decide what to load (plan, section "Folder trust").
+
+## Findings from the build and real runs (2026-10-18 and 2026-10-19, Claude Code 2.1.302-2.1.303)
+
+What the Claude adapter's build and its real checks showed against the claims above (each is recorded with its evidence in [spec.md](spec.md) under *Changes*):
+
+- **The SDK is not needed** for what Durbar does: the CLI's stream-json control protocol covers it (`initialize`, `can_use_tool`, `hook_callback`, `interrupt`, `set_permission_mode`, `mcp_status`, `mcp_toggle`). The SDK stays an optional transport (FR-113), not a dependency (Q3); its ESM `import()` from the CommonJS main process works in a packaged build (T044 part).
+- **Live mode switch:** `setPermissionMode()` alone is not safe, because Read-only's pre-approved read tools and Allow all's `bypassPermissions` are launch flags. Built instead: the broker and the `PreToolUse` hook (which **does run under `bypassPermissions`**, real) take the new mode at once; the CLI is relaunched with the new flags and `--resume` on the next message (FR-115, FR-116).
+- **Models:** the `initialize` reply already lists the models with their effort levels (`models[].value`, `displayName`, `supportedEffortLevels`); no prompt and no `supportedModels()` call are needed (FR-118).
+- **Sessions on disk:** without the SDK's `listSessions`/`getSessionMessages`, Durbar reads Claude's own `projects/<folder slug>/<id>.jsonl` read-only (FR-125, FR-126); the format is internal and undocumented.
+- **`AskUserQuestion`:** answered from the `PreToolUse` hook with `updatedInput.answers` keyed by the question text; accepted in every mode, `dontAsk` and `bypassPermissions` included (FR-129, real).
+- **Sub-agents:** Claude's sub-agent tool is now called **`Agent`** (`Task` is the older name); both are mapped (T069, real).
+- **Custom agents:** with `--setting-sources ""` Claude does not load the folder's `.claude/agents`; `--agents <json>` with `--agent <name>` works, but **`--agent` is ignored with `--resume`**: the agent is fixed when a session is created (FR-008 of spec 043, real).
+- **Sign-in:** `claude auth status --json` gives `loggedIn` without a prompt (FR-132).
+- **Usage:** `input_tokens` excludes cache writes and reads; Durbar adds them to match the other adapters (FR-124).
+- **MCP:** `mcp_toggle` (`serverName`, `enabled`) and `mcp_status` (`mcpServers`) are control requests of the CLI (read from the 2.1.303 bundle; undocumented); checked with a local stdio server without a prompt (FR-133).
+

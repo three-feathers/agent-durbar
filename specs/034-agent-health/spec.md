@@ -87,7 +87,7 @@
 - Fixed in review: "impatient" now counts only while the figure is in Waiting (a request answered elsewhere without a `permission` event must not leave it tapping); a fainted agent no longer waves; the faint tilt turns around the neck (`.scene *{transform-box:fill-box}` moved the head down to the chest).
 - Merged with spec 033 (floors): the ambulance is chosen among agents whose room is shown (not hidden, floor on); checked in the driver with `simfloors=1&floorsoff=Client A`.
 - `[KNOWN GAP]` An agent away at a place (spec 024) shows an empty chair, so its mood drawing is hidden (the walking figure is not changed, as specified); the card words stay. In the simulator Sven is dizzy but away, so the driver makes another agent dizzy with `window.__durbarSimEmit`. Tested in the driver; follow-up T009.
-- `[KNOWN GAP]` The List view has no mood words (the spec covers the office cards). Follow-up T009.
+- `[KNOWN GAP]` ~~The List view has no mood words~~ Closed 2026-10-19 by FR-014. The walking figure shows its mood too since FR-015 (2026-10-19).
 - `[KNOWN GAP]` Not run on a real Copilot session: the events it reads (`status`, `toolCall`, `permission`, context, limit) are the ones the adapter already sends (specs 003, 011, 019).
 
 ## Changes
@@ -156,3 +156,13 @@
 - T015, done in this PR after Vikram's review (Ruben chose to do it now): the folder path in every room's header was about 4.2:1 on `main` (`--muted` on the room floor). It is now `#5c635e`, measured at 5.17:1 in a calm room. The driver holds every tone to 4.5:1, so the old colour fails it.
 - `[KNOWN GAP]` Not run on a real Copilot session (it only reads the moods of spec 034).
 
+
+### 2026-10-19: mood words in the List view (T009, first half)
+
+- **FR-014** `[IMPLEMENTED]` The List view has no figures, so each main agent's row shows the mood words of FR-003 (the same `phrases()`: context nearly full, needs help, fainted, impatient, dizzy) at the start of its *Current task* cell, in a small amber text, and adds them to the row's accessible label. They show only when there are words. Serious mode shows none, as on the cards, and helpers show none. The walking figure while an agent is at a place stays as specified (unchanged); that is the other half of T009, not built. `sim:` `scripts/shots-034-list.js` in List view at 1440x900 and 1280x800 (five rows with words: two nearly full, needs help, fainted, dizzy; no helper rows; the words are in the label; row height kept); screenshots `docs/screenshots/mood-list-*.png`.
+- **FR-015** `[IMPLEMENTED]` The walking figure (spec 024, a 22 px head while an agent visits a place) shows its mood in a small form:
+  - heavy: an amber ring;
+  - monster: a grey-green ring and two small horns;
+  - a trouble: a dot at its top right, red for needs help or fainted, amber for impatient or dizzy.
+  
+  It follows the agent's mood on every render while the figure is away. The figure stays `aria-hidden`; the words are on the card and in the List view. Serious mode shows none of it. This closes the other half of T009. `sim:` `scripts/shots-034-list.js` in the office view at both sizes: in the simulator's lobby a dizzy walker shows its dot, a monster and a heavy one show their rings, and no figure without a trouble has a dot. Screenshots `docs/screenshots/mood-walker-*.png`.

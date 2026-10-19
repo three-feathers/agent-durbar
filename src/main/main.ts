@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
-import { enabledExperimental } from '../adapters/experimental';
+import { offeredDescriptors } from '../adapters/experimental';
 import { createRegistry, detectAll } from '../adapters/registry';
 import { detectorFor } from '../adapters/detect';
 import { adapterForAdd, createRouter, historyOf, modelOptionsOf, previousSessionsOf } from '../adapters/router';
@@ -21,7 +21,7 @@ import { GROUND } from '../shared/floors';
 import type { FloorOp } from '../shared/floors';
 import { openInVSCode } from './vscode';
 import { isHttpUrl } from '../shared/url';
-import { FolderStore, restoreMode } from './folders';
+import { FolderStore, PROFILE_ID, restoreMode } from './folders';
 import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '../adapters/vscodeChat';
 import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
@@ -70,7 +70,7 @@ let agentTrust: AgentTrustStore | undefined;
 const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 
 /** Only Copilot is registered; every agent is routed to its adapter through the router (spec 012 FR-046..FR-050). Adapters are typed as the neutral interface: optional members say what each can do (spec 030 FR-017, spec 012 FR-027). */
-const registry = createRegistry([...PRODUCTION_DESCRIPTORS, ...enabledExperimental(dev)]); // DURBAR_CLAUDE=1 adds Claude Code (spec 012 FR-114)
+const registry = createRegistry([...PRODUCTION_DESCRIPTORS, ...offeredDescriptors(dev)]); // Copilot, then Claude Code (spec 012 FR-135); detection decides what is ready
 const router = createRouter(registry);
 const agents = new Map<string, AgentInfo>();
 const mcp = registerMcpIpc({ store: () => mcpStore as McpStore, agents, router, dev });
@@ -221,7 +221,7 @@ async function addWorkspace(
   const id = await ad.start({ ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId });
   router.bind(id, adapterId);
   const saved = folderStore?.get(wsKey(draft));
-  const info: AgentInfo = { ...draft, id, hidden: saved?.hidden, closed: saved?.closed, label: saved?.label };
+  const info: AgentInfo = { ...draft, id, hidden: saved?.hidden, closed: saved?.closed, label: saved?.label, defaultAgent: saved?.defaultAgent };
   agents.set(id, info);
   if (opts.persist) folderStore?.upsert({ workspace: wsKey(info), permMode, model, effort, maxAiCredits: info.maxAiCredits, floor: opts.floor, adapterId });
   // An existing folder keeps its floor; a new one gets the chosen floor (spec 033 FR-006).
@@ -282,6 +282,7 @@ function restoreFolders(): void {
       const rm = restoreMode(f.permMode); // exactly as saved, Allow all included, flagged so the UI shows "restored" (spec 003 FR-025/026)
       const info = infoFor(f.workspace, rm.mode, randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, maxAiCredits: f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(adapterId));
       if (f.label) info.label = f.label;
+      if (f.defaultAgent) info.defaultAgent = f.defaultAgent;
       router.bind(info.id, adapterId);
       agents.set(info.id, info);
     } catch {
@@ -572,7 +573,6 @@ ipcMain.handle('agents:answerQuestion', (_e, id: unknown, requestId: unknown, an
 });
 
 // ---- custom agent per session (spec 043 FR-003): list, select; a repository agent needs a confirmation for its exact file ----
-const PROFILE_ID = /^[A-Za-z0-9._:@/-]{1,100}$/;
 ipcMain.handle('agents:listProfiles', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
@@ -816,6 +816,15 @@ ipcMain.handle('folders:rename', (_e, id: unknown, label: unknown) => {
   if (!r) return { ok: false };
   for (const x of agents.values()) if (wsKey(x) === wsKey(a)) x.label = r.label;
   return { ok: true, label: r.label };
+});
+
+ipcMain.handle('folders:setDefaultAgent', (_e, id: unknown, profileId: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  if (!a || !folderStore) return { ok: false };
+  const r = folderStore.setDefaultAgent(wsKey(a), profileId);
+  if (!r) return { ok: false };
+  for (const x of agents.values()) if (wsKey(x) === wsKey(a)) x.defaultAgent = r.defaultAgent;
+  return { ok: true, defaultAgent: r.defaultAgent };
 });
 
 ipcMain.handle('agents:resolvePermission', (_e, id: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean) => {

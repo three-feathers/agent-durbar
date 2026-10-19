@@ -9,7 +9,8 @@
  * SHOTS_012 defaults to a temp directory, never to docs/screenshots. Exits non-zero ("DRIVER FAILED") on a miss. What it checks:
  *   - One adapter (default): #kindSel and the "?" button are hidden, the new-session dialog has no kind select, and the toolbar
  *     has the same height as with the picker (FR-059). Shots: 012-single-<w>x<h>.png.
- *   - simkinds=1 (Copilot ready, Claude Code not installed, Codex too old):
+ *   - simkinds=solo (Copilot ready, Claude Code not installed, Codex too old): one ready harness, so no picker (FR-136).
+ *   - simkinds=1 (Copilot and Claude Code ready, Codex too old):
  *     the select is visible, has a label, sits before Permissions; Copilot is enabled, the others are disabled and name their
  *     state; a not-ready kind is blocked by the UI (toolbar and new-session dialog) and by the simulator; the About dialog opens
  *     with the keyboard, lists every kind with its state and hint, keeps focus inside, "Check again" works and Esc returns focus;
@@ -58,7 +59,13 @@ module.exports = async (ctx) => {
     await shot('012-single', w, h);
     console.log('[017]', w, 'one adapter: picker hidden, header height', heights[w]);
 
-    // ---- three kinds ----
+    // ---- FR-136: three kinds but only Copilot ready: no picker, no "?" ----
+    await load(w, h, { simkinds: 'solo' });
+    assert.strictEqual(await js(vis('kindSel')), false, `${w}: one ready harness, #kindSel hidden`);
+    assert.strictEqual(await js(vis('kindHelp')), false, `${w}: one ready harness, "?" hidden`);
+    assert.strictEqual(await js(`document.getElementById('kindSel').value`), 'copilot', 'the hidden select holds the ready harness');
+
+    // ---- three kinds, two ready ----
     await load(w, h, { simkinds: '1' });
     assert.strictEqual(await js(vis('kindSel')), true, `${w}: #kindSel visible`);
     assert.strictEqual(await js(vis('kindHelp')), true, `${w}: "?" visible`);
@@ -66,8 +73,8 @@ module.exports = async (ctx) => {
       return {opts:[...s.options].map(o=>({v:o.value,t:o.textContent.trim(),d:o.disabled})),value:s.value,label:l?l.textContent.trim():null,
         before:!!(s.compareDocumentPosition(p)&Node.DOCUMENT_POSITION_FOLLOWING),helpBefore:!!(b.compareDocumentPosition(p)&Node.DOCUMENT_POSITION_FOLLOWING),helpLabel:b.getAttribute('aria-label')}})()`);
     console.log('[017]', w, 'kinds', JSON.stringify(k.opts.map((o) => `${o.v}${o.d ? ' (disabled)' : ''}: ${o.t}`)));
-    assert.deepStrictEqual(k.opts.map((o) => [o.v, o.d]), [['copilot', false], ['claude', true], ['codex', true]], `${w}: only Copilot can be chosen`);
-    assert.match(k.opts[1].t, /Claude Code.*not installed/, 'Claude Code says not installed');
+    assert.deepStrictEqual(k.opts.map((o) => [o.v, o.d]), [['copilot', false], ['claude', false], ['codex', true]], `${w}: Copilot and Claude Code can be chosen`);
+    assert.match(k.opts[1].t, /^Claude Code$/, 'a ready harness has no state words');
     assert.match(k.opts[2].t, /Codex.*too old/, 'Codex says too old');
     assert.strictEqual(k.value, 'copilot', 'the default is the registry default');
     assert.ok(k.label && /agent kind/i.test(k.label), `${w}: the select has a label (${k.label})`);
@@ -90,7 +97,7 @@ module.exports = async (ctx) => {
     assert.ok(await ctx.waitFor(`document.getElementById('modeDlg')`, 3000), 'the dialog opens with Enter');
     assert.ok(await inDialog(), 'focus moved into the dialog');
     const txt = await js(`document.getElementById('modeDlg').innerText.replace(/\\s+/g,' ')`);
-    for (const need of ['About agent kinds', 'Copilot: ready', 'Claude Code: not installed', 'Install Claude Code', 'Codex: too old', 'version 0.9.0', 'Update Codex', 'Check again']) assert.ok(txt.includes(need), `dialog text has "${need}": ${txt}`);
+    for (const need of ['About agent kinds', 'Copilot: ready', 'Claude Code: ready', 'Codex: too old', 'version 0.9.0', 'Update Codex', 'Check again']) assert.ok(txt.includes(need), `dialog text has "${need}": ${txt}`);
     for (let i = 0; i < 6; i++) { await key('Tab'); assert.ok(await inDialog(), `focus stays inside after Tab ${i + 1}`); }
     await key('Tab', ['shift']); assert.ok(await inDialog(), 'focus stays inside after Shift+Tab');
     const f2 = await minFont('#modeDlg');
@@ -107,7 +114,7 @@ module.exports = async (ctx) => {
 
     // a not-ready kind cannot be started from the toolbar (the UI blocks it before the bridge is called)
     const before = await js(`document.querySelectorAll('#stage .desk[data-id]').length`);
-    await js(`(()=>{const s=document.getElementById('kindSel');s.options[1].disabled=false;s.value='claude';s.options[1].disabled=true;s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+    await js(`(()=>{const s=document.getElementById('kindSel');s.options[2].disabled=false;s.value='codex';s.options[2].disabled=true;s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
     assert.strictEqual(await js(vis('modelSel')), false, 'a kind other than the default hides the model select');
     assert.strictEqual(await js(vis('effortSel')), false, 'and the effort select');
     await js(`document.getElementById('addFolder').click()`);
@@ -126,16 +133,18 @@ module.exports = async (ctx) => {
     await ctx.sleep(300);
     const sd = await js(`(()=>{const s=document.getElementById('sdKind');return s?{opts:[...s.options].map(o=>[o.value,o.disabled,o.textContent.trim()]),value:s.value,model:!document.getElementById('sdModelL').hidden,cap:!document.getElementById('sdCapL').hidden}:null})()`);
     assert.ok(sd, `${w}: the new-session dialog has a kind select`);
-    assert.deepStrictEqual(sd.opts.map((o) => [o[0], o[1]]), [['copilot', false], ['claude', true], ['codex', true]]);
-    assert.match(sd.opts[1][2], /not installed/); assert.match(sd.opts[2][2], /too old/);
+    assert.deepStrictEqual(sd.opts.map((o) => [o[0], o[1]]), [['copilot', false], ['claude', false], ['codex', true]]);
+    assert.match(sd.opts[2][2], /too old/);
+    assert.strictEqual(await js(`document.getElementById('sdKind').closest('label').firstChild.textContent.trim()`), 'Harness', 'FR-136: the dialog calls it Harness');
     assert.strictEqual(sd.value, 'copilot', 'the dialog defaults to the current agent kind');
     assert.ok(sd.model && sd.cap, 'Copilot: model and cap fields shown');
     const f3 = await minFont('#sessDlg');
     assert.ok(f3.min >= 10.5, `${w}: new-session dialog text >= 10.5px (${JSON.stringify(f3)})`);
     // force a disabled kind: model and cap follow the kind's capabilities; the start is blocked
-    await js(`(()=>{const s=document.getElementById('sdKind');s.options[1].disabled=false;s.value='claude';s.options[1].disabled=true;s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
-    const sd2 = await js(`({model:!document.getElementById('sdModelL').hidden,eff:!document.getElementById('sdEffL').hidden,cap:!document.getElementById('sdCapL').hidden})`);
-    assert.deepStrictEqual(sd2, { model: false, eff: false, cap: false }, `${w}: another kind hides model, effort and (Claude has no cap) the cap field`);
+    await js(`(()=>{const s=document.getElementById('sdKind');s.value='claude';s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+    const sd2 = await js(`({cap:!document.getElementById('sdCapL').hidden})`);
+    assert.deepStrictEqual(sd2, { cap: false }, `${w}: Claude Code has no credit cap, so the cap field is hidden`);
+    await js(`(()=>{const s=document.getElementById('sdKind');s.options[2].disabled=false;s.value='codex';s.options[2].disabled=true;s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
     const n0 = await js(`document.querySelectorAll('#stage .desk[data-id]').length`);
     await js(`document.getElementById('sdGo').click()`);
     await ctx.sleep(400);

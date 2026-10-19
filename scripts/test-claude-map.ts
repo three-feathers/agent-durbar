@@ -24,12 +24,13 @@ const run = (messages: ClaudeMessage[], quiet = false): EventBody[] => {
   return out;
 };
 
-// 1. Every fixture is synthetic and maps to exactly its expected event list.
+// 1. Every fixture is synthetic or a redacted real recording (spec 012 T067) and maps to exactly its expected event list.
 const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
 assert.ok(files.length >= 9, 'fixtures present');
 for (const f of files) {
   const fx = load(f);
-  assert.strictEqual(fx.provenance, 'synthetic', `${f} is marked synthetic`);
+  assert.ok(fx.provenance === 'synthetic' || fx.provenance === 'real-redacted', `${f} is marked synthetic or real-redacted`);
+  if (fx.provenance === 'real-redacted') assert.ok(!/\/tmp\/|\/home\/(?!user\b)|\/Users\/|[A-Za-z]:\\\\|sk-ant|@[a-z0-9-]+\.[a-z]/i.test(JSON.stringify(fx.messages)), `${f}: no real paths, keys or e-mail addresses`);
   assert.deepStrictEqual(strip(run(fx.messages)), fx.expected, `fixture ${f} maps to the expected events`);
   assert.deepStrictEqual(dropped, [], `fixture ${f}: nothing dropped silently`);
 }
@@ -178,6 +179,24 @@ for (const f of files) {
   assert.strictEqual(dropped.length, 2, 'null block and tool_use without string id are reported');
   assert.deepStrictEqual(run([{ type: 'brand_new' }, { type: 'system', subtype: 'future' }, { type: 'rate_limit_event', rate_limit_info: { status: 'allowed' } }]), []);
   assert.deepStrictEqual(dropped, [], 'unknown types are ignored without being counted as dropped');
+}
+
+// 4e. FR-134: context = the main agent's last whole input plus output; the window from the result's modelUsage; helpers never count.
+{
+  const asst = (id: string, model: string, u: Record<string, number>, parent?: string): ClaudeMessage => ({ type: 'assistant', ...(parent ? { parent_tool_use_id: parent } : {}), message: { id, model, content: [{ type: 'text', text: 'x' }], usage: u } } as ClaudeMessage);
+  const ctx = (ms: ClaudeMessage[]) => run(ms).filter((e) => e.type === 'context');
+  const first = asst('m1', 'claude-haiku-5-5', { input_tokens: 2, cache_creation_input_tokens: 8302, cache_read_input_tokens: 8858, output_tokens: 7 });
+  const res: ClaudeMessage = { type: 'result', subtype: 'success', modelUsage: { 'claude-haiku-5-5': { contextWindow: 1000000, maxOutputTokens: 128000 } } } as ClaudeMessage;
+  assert.deepStrictEqual(ctx([first]), [], 'no window known yet: no event');
+  assert.deepStrictEqual(strip(ctx([first, res])), [{ type: 'context', tokens: 17169, limit: 1000000, model: 'claude-haiku-5-5' }], 'the window arrives with the result');
+  const second = asst('m2', 'claude-haiku-5-5', { input_tokens: 5, cache_read_input_tokens: 17169, output_tokens: 40 });
+  assert.deepStrictEqual(ctx([first, res, second]).map((e) => (e as { tokens: number }).tokens), [17169, 17214], 'the next message updates it at once');
+  assert.deepStrictEqual(ctx([first, res, second, res]).length, 2, 'an unchanged figure is not sent again');
+  const helper = asst('h1', 'claude-haiku-5-5', { input_tokens: 900000, output_tokens: 1 }, 'toolu_1');
+  assert.deepStrictEqual(ctx([first, res, helper]).length, 1, 'a helper message does not count');
+  const other: ClaudeMessage = { type: 'result', subtype: 'success', modelUsage: { 'claude-x': { contextWindow: 200000 }, 'claude-y': { contextWindow: 'big' } } } as ClaudeMessage;
+  assert.strictEqual((ctx([first, other])[0] as { limit: number }).limit, 200000, 'a model missing from modelUsage takes the largest window listed');
+  assert.deepStrictEqual(ctx([first, { type: 'result', subtype: 'success', modelUsage: { a: { contextWindow: -1 } } } as ClaudeMessage]), [], 'a bad window is ignored');
 }
 
 console.log('claude map tests passed');

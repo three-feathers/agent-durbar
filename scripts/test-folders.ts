@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { FolderStore, adapterOf, parseAdapterId, parseLabel, parseSavedFloors, parseSavedFolders, restoreMode } from '../src/main/folders';
+import { FolderStore, adapterOf, parseAdapterId, parseDefaultAgent, parseLabel, parseSavedFloors, parseSavedFolders, restoreMode } from '../src/main/folders';
 import { GROUND, GROUND_NAME } from '../src/shared/floors';
 
 const abs = (p: string): string => path.resolve('/', p);
@@ -362,6 +362,33 @@ assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: 
     assert.deepStrictEqual(bad.map((f) => f.label), [undefined, undefined], 'a bad saved label is ignored, the folder kept');
   } finally {
     fs.rmSync(d3, { recursive: true, force: true });
+  }
+}
+// spec 043 FR-009: the folder's default agent (an id only)
+{
+  assert.strictEqual(parseDefaultAgent('pirate'), 'pirate');
+  assert.strictEqual(parseDefaultAgent('user:reviewer@v2/x.y-z'), 'user:reviewer@v2/x.y-z');
+  assert.strictEqual(parseDefaultAgent(''), undefined);
+  assert.strictEqual(parseDefaultAgent('a b'), undefined);
+  assert.strictEqual(parseDefaultAgent('x'.repeat(101)), undefined);
+  assert.strictEqual(parseDefaultAgent(7), undefined);
+  const d4 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folders-'));
+  try {
+    const f4 = path.join(d4, 'f.json');
+    const st = new FolderStore(f4);
+    st.upsert({ workspace: abs('d1'), permMode: 'read-only' });
+    assert.deepStrictEqual(st.setDefaultAgent(abs('d1'), 'pirate'), { defaultAgent: 'pirate' });
+    assert.strictEqual(st.setDefaultAgent(abs('d1'), 'bad id'), false, 'a bad id changes nothing');
+    assert.strictEqual(st.setDefaultAgent(abs('nope'), 'pirate'), false);
+    assert.strictEqual(new FolderStore(f4).load()[0].defaultAgent, 'pirate', 'the default survives a restart');
+    st.upsert({ workspace: abs('d1'), permMode: 'ask' });
+    assert.strictEqual(new FolderStore(f4).load()[0].defaultAgent, 'pirate', 'a new session in the folder keeps the default');
+    assert.deepStrictEqual(st.setDefaultAgent(abs('d1'), null), { defaultAgent: undefined });
+    assert.ok(!('defaultAgent' in new FolderStore(f4).load()[0]), 'cleared means not written');
+    const bad = parseSavedFolders(JSON.stringify({ folders: [{ workspace: abs('d2'), permMode: 'ask', defaultAgent: 'a b' }, { workspace: abs('d3'), permMode: 'ask', defaultAgent: ['x'] }] }));
+    assert.deepStrictEqual(bad.map((f) => f.defaultAgent), [undefined, undefined], 'a bad saved default is ignored, the folder kept');
+  } finally {
+    fs.rmSync(d4, { recursive: true, force: true });
   }
 }
 console.log('folders tests passed');
