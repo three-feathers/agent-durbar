@@ -14,7 +14,7 @@
 ## Open
 
 - [ ] T020 Render assistant Markdown (sanitized, no HTML, links open externally) after a spec delta and clarification on scope. [FR-011]
-- [ ] T021 Verify on a real session what a second message during a turn does; then block, queue or label it. [FR-012]
+- [x] T021 Verify on a real session what a second message during a turn does; then block, queue or label it. [FR-012]
 - [ ] T022 Real verification of Stop/End/resume (feature 013). [FR-013]
 - [ ] T023 Decide whether chat history should persist across restarts (clarify; privacy implications). [FR-014]
 - [ ] T024 Copy message / copy code buttons. [FR-015]
