@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **MCP server groundwork: read tools (spec 041 T016).** The seven read tools (folders, agents, floors, usage totals, settings, MCP state, request status) answer from Durbar's own state with secret values masked: env and header key names only, secret flags and URL parts hidden. Not reachable yet (no server runs). No user-visible change, 0 AIU.
+
 - **MCP server groundwork: tool registry (spec 041 T013, issue #203).** The read-only tools an MCP client will see (folders, agents, floors, usage totals, settings, MCP state, request status), with argument checks and a gate before `initialize`. Change tools stay hidden until the confirmation dialog exists. Not wired yet: nothing listens. No user-visible change, 0 AIU.
 
 - **MCP server groundwork: agent state in the main process (spec 041 T014, issue #204).** The main process now keeps each agent's office word and sub-label (Working, Waiting for you, Limit reached…) with the same rules as the window, so the MCP read tools can report them later. Pausing in the window is reported to the main process. No visible change, 0 AIU.

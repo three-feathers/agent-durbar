@@ -70,6 +70,47 @@ export function redact(text: unknown, env?: Env): string {
   }
 }
 
+const MASK = '[redacted]';
+/** A flag name that looks secret: contains token/secret/password/apikey/credential, or has a `key`, `pass` or `auth` word (`--api-key`, `--access_token`, `--auth`). */
+function secretFlag(flag: string): boolean {
+  const n = flag.replace(/^-+/, '').toLowerCase();
+  if (!n) return false;
+  return /token|secret|passw|apikey|credential/.test(n) || n.split(/[-_.]/).some((w) => w === 'key' || w === 'pass' || w === 'auth' || w === 'authorization');
+}
+
+/**
+ * Command-line arguments for display (spec 041 FR-053): the value after a secret-looking flag (`--token abc`, `--api-key=abc`) is
+ * masked, then every argument goes through `redact()`. Never throws; returns a new array of the same length.
+ */
+export function maskSecretArgs(args: readonly string[], env?: Env): string[] {
+  const out: string[] = [];
+  let maskNext = false;
+  for (const raw of Array.isArray(args) ? args : []) {
+    const a = typeof raw === 'string' ? raw : String(raw ?? '');
+    if (maskNext) {
+      maskNext = false;
+      if (!a.startsWith('-')) { out.push(MASK); continue; }
+    }
+    if (a.startsWith('-')) {
+      const eq = a.indexOf('=');
+      if (eq > 0) {
+        out.push(secretFlag(a.slice(0, eq)) ? `${a.slice(0, eq)}=${MASK}` : redact(a, env));
+        continue;
+      }
+      maskNext = secretFlag(a);
+    }
+    out.push(redact(a, env));
+  }
+  return out;
+}
+
+/** A URL for display: `redact()` (user:password@ and key-like shapes) plus the value of any query parameter whose name looks secret. */
+export function maskSecretUrl(url: unknown, env?: Env): string {
+  const s = typeof url === 'string' ? url : '';
+  const masked = s.replace(/([?&;#])([^=&;#?\s]{1,100})=([^&;#\s]*)/g, (m, sep: string, name: string) => (secretFlag(name) ? `${sep}${name}=${MASK}` : m));
+  return redact(masked, env);
+}
+
 /**
  * The one debug-log sink (`DURBAR_LOG`): every record is JSON-encoded, redacted once, then appended as one line.
  * A record over the cap is written as `{"truncated":true,"head":"..."}`, so the file stays valid JSONL.
