@@ -250,3 +250,20 @@ Vikram answered Q1-Q8 one by one in a Claude Code session on 2026-10-19. The pro
 - **Q7 Folder default.** **The last model chosen in the folder**, with no separate setting. This is what is built.
 - **Q8 Real-account budget.** Run T041, T044 and T045 as soon as the paid Copilot plan exists, on the **two cheapest models** it lists, stopping at about **100 AI credits (USD 1)**. Where they apply, the same checks may run on Claude and Codex. Every run is recorded as `real:` with its cost.
 
+### 2026-10-19: new session with a reviewed summary (Q6, T061)
+
+The owner chose "build it now" (Q6). A new session can start from a **hand-off summary** of the current conversation. The user reviews and edits that summary, and nothing is sent until they press Start.
+
+- **FR-034** The adapter capability `handoff` (optional, false when missing) says that `handoffSummary(sessionId)` exists. It returns markdown text and **never changes the original conversation**:
+  - **Copilot:** `session.rpc.history.summarizeForHandoff()` (`@experimental` in SDK 1.0.22). An empty result counts as "no summary".
+  - **Claude Code:** a one-shot run of the user's `claude` on a **fork** of the session: `-p <fixed prompt> --resume <id> --fork-session --no-session-persistence --tools "" --strict-mcp-config --setting-sources "" --output-format json --max-budget-usd 0.50`. It has no tools, no MCP servers and no settings files, and the fork is not saved, so the original session file is not touched. Arguments go in an array, never through a shell.
+  - **Codex:** `thread/fork {threadId, ephemeral: true}` with the read-only sandbox and no approvals, then one turn with the same fixed prompt. The forked thread's final agent message is the summary. The fork is ephemeral (not saved), and its events are not shown in the chat.
+  - **Simulator:** a canned summary built from the agent's task and files.
+- **FR-035** The fixed prompt asks for a short markdown hand-off: goal, what was done, open items, important files and decisions, and next step. At most about 300 words, no secrets, no tool use. The summary is cut at 8,000 characters.
+- **FR-036** Where it shows:
+  - the start-fresh note gets **New session with a summary…**;
+  - the New session dialog gets a checkbox **Start with a summary of this conversation**, shown when the current agent is live and its kind has `handoff`.
+  - Either way, Durbar asks for the summary ("Preparing a summary…", which can be cancelled), then shows it in an **editable box**: *Cancel* or *Start new session*. On Start, the new session starts with the dialog's options, and the edited text is its **first message**. If the summary fails or comes back empty, Durbar says so and offers a plain new session. The new session can be another harness: the summary is plain text.
+- **FR-037** Cost: making the summary may use the model, so the box says "Making the summary used the model of this session (a small cost)". For Claude, the one-shot is capped at $0.50 and its estimate is added to the old agent's usage. `[UNVERIFIED]` whether Copilot's `summarizeForHandoff` spends credits (research): it is checked when the paid plan exists (Q8).
+- `test:` adapter units (Claude argv and parsing, Codex fork request and collection, Copilot call and empty result), the main IPC, and `test:runtime` contract. `sim:` the dialog, the edit and the first message at 1440x900 and 1280x800. `real:` a summary from a real Claude session and a real Codex thread.
+
