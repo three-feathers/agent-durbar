@@ -57,7 +57,7 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 - [ ] T047 (sim; the Claude half done as T110 on 2026-10-19, Codex `account/read` open) Availability and sign-in: Codex `account/read` probe, Claude version probe, the "sign in with the CLI in a terminal" message, no prompt ever sent, tests with fakes [FR-010, FR-012]
 - [ ] T048 (fixtures) History readers: Claude `listSessions`/`getSessionMessages` and Codex `thread/list`/`thread/turns/list` converted to previous sessions and chat history, same-folder check, size caps, tests [FR-019]
 - [ ] T049 (fixtures) Model and effort lists: Claude `supportedModels`, Codex `model/list` to the model picker shape; effort values per model; tests [FR-009]
-- [ ] T050 (fixtures) MCP status: Claude init `mcp_servers` and `mcpServerStatus`, `toggleMcpServer`; Codex `mcpServerStatus/list` read-only; capability `mcpToggle` per adapter; tests [FR-024]
+- [ ] T050 (fixtures; the Claude half done as T111 on 2026-10-19, Codex open) MCP status: Claude init `mcp_servers` and `mcpServerStatus`, `toggleMcpServer`; Codex `mcpServerStatus/list` read-only; capability `mcpToggle` per adapter; tests [FR-024]
 - [x] T051 (sim) Redaction: vendor stderr and `DURBAR_LOG` never contain environment values, tokens or key-like strings; tests with planted secrets [FR-006]
 - [ ] T052 (sim; Claude `AskUserQuestion` done as T107-T109 on 2026-10-19, elicitation and Codex still open) `AskUserQuestion`, MCP elicitation and `request_permissions` in v1: shown as a pending card, answered deny, recorded as `[KNOWN GAP]` (no question UI yet); tests [FR-004]
 - [ ] T053 (sim) Docs for Phase 3: README adapter section, CHANGELOG Unreleased line, converge spec/plan/tasks, update research.md where the build disproved a `docs:` claim [FR-008]
@@ -138,4 +138,8 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 ## Changes 2026-10-19 (issue #55, Claude half of T047)
 
 - [x] T110 (sim) Claude sign-in state from `claude auth status --json` after the version probe (only `loggedIn` read); fake-exec tests [FR-132]
+
+## Changes 2026-10-19 (issue #58, Claude half of T050)
+
+- [ ] T111 (sim) `setMcpEnabled` over `mcp_toggle` + `mcp_status`, kept for relaunches; `mcpToggle: true`; fake-CLI tests; real check with a stdio MCP server, no prompt [FR-133]
 
