@@ -106,3 +106,15 @@ gh-aw work queue; merge queue (not available for personal-account repos; not eva
   - Example the same day: #273 had a `js/bad-code-sanitization` finding from `github-advanced-security[bot]` on `scripts/check-office-overlap.js` while `main` had 0 alerts.
   - It was fixed at the cause with a `jsLiteral()` helper that also escapes `< > / U+2028 U+2029`.
 
+### 2026-10-19: an agent may merge another team's ready, quiet PR (owner)
+
+*Owner:* "you can also merge other's pr's as well if they are all ok and not work in progress or open questions and staying for quiet sometime (if their agent forgot merging it)".
+
+- `AGENTS.md` now says when any agent may merge another team's PR, and that it leaves a comment saying why. The conditions:
+  - not a draft or WIP, with no open question or requested change;
+  - CI green and the PR's own security results clean;
+  - approved;
+  - quiet for at least 2 hours (the owner said "sometime"; 2 hours is the agent's reading).
+
+  Stacked PRs and `needs-owner-approval` are excluded.
+
