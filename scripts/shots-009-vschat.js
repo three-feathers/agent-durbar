@@ -1,5 +1,5 @@
 /*
- * Spec 009 FR-015/FR-017 (task T026): the VS Code chat view opens at the latest message and has Continue in VS Code.
+ * Spec 009 FR-016/FR-018 (task T026): the VS Code chat view opens at the latest message and has Continue in VS Code.
  * Simulator only (no AI credits). Linux with xvfb-run:
  *
  *   npm run build

@@ -92,7 +92,7 @@ try {
   const fr = await readChat(flat);
   assert.ok(fr.ok && fr.transcript.blocks[1].type === 'assistant' && (fr.transcript.blocks[1] as { text: string }).text.startsWith('Plain string'), 'old flat JSON with string responses');
 
-  // FR-016: questionCarousel (read-only text) and mcpServersStarting (known, hidden); synthetic shapes only
+  // FR-017: questionCarousel (read-only text) and mcpServersStarting (known, hidden); synthetic shapes only
   const carousel = {
     kind: 'questionCarousel',
     questions: [

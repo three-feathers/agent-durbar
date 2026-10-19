@@ -446,7 +446,7 @@ async function driver(ctx) {
       rows.push({ label: `chat ${w}x${h} ${q}`, d: 'chat', h: '-', rooms: '-', plates: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: bad });
     }
   }
-  /* spec 009 FR-015 / T026: the VS Code chat view opens scrolled to the latest message (and has Continue in VS Code) */
+  /* spec 009 FR-016 / T026: the VS Code chat view opens scrolled to the latest message (and has Continue in VS Code) */
   for (const [w, h] of SIZES) {
     if (!mine()) continue;
     await load('sim=15&simfreeze=1', w, h);

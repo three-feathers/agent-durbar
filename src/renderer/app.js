@@ -2617,7 +2617,7 @@ async function viewVs(a,key,btn){
   document.querySelector('#panel .panel-in').classList.add('viewing');
   $('vsBack').onclick=leaveVsView; $('vsBack').focus({preventScroll:true});
   $('vsCont').onclick=()=>openLive(a);
-  /* FR-015: open at the latest message; again once layout (fonts) settles, unless the reader already scrolled up */
+  /* FR-016: open at the latest message; again once layout (fonts) settles, unless the reader already scrolled up */
   const toEnd=(again)=>{if(vsViewing&&c.contains(wrap)&&!(again&&c.scrollTop+c.clientHeight<c.scrollHeight-40))c.scrollTop=c.scrollHeight;};
   toEnd(false); requestAnimationFrame(()=>{toEnd(true);setTimeout(()=>toEnd(true),250);});
 }
