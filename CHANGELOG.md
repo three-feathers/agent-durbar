@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.6 tag)
 
+- **A cost cap in dollars for Claude Code (spec 012 FR-150).** Set it in the New session dialog or from the cap chip. When Claude's estimate reaches it, the chat shows *Cost cap reached* with Raise cap / Remove cap / Stop here. It is per session, soft, and enforced with Claude's own `--max-budget-usd`.
 - **Codex with MCP servers and helpers (spec 012 FR-147..FR-149).**
   - Your MCP servers, with the folder's extras, now reach Codex sessions.
   - Their state shows in the MCP panel and they can be switched on and off (from the next message).

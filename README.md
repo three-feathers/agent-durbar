@@ -48,7 +48,7 @@ Full list in [CHANGELOG.md](CHANGELOG.md). Short version, since alpha.5:
 - **Office:** a welcome card when there is no folder yet, and the arrow keys move between desks (spec 001).
 - **Permissions on Windows:** "Approve for this session" matches the same folder spelled with other capitals or slashes (spec 003).
 - **Folders:** remove one session of a folder, rename a folder (display name), a calm warning for your home folder or a drive root (spec 006).
-- **Claude Code, next to Copilot:** if `claude` is installed and signed in, it is a harness you can pick. The picker appears in the toolbar and the New session dialog (**Harness**) when two or more harnesses are ready. Its features: model and effort picker, live permission mode switch, previous sessions and resume, MCP switches, the context window, and its dollar estimate shown apart from AIU (spec 012). Checked on a real Claude Code.
+- **Claude Code, next to Copilot:** if `claude` is installed and signed in, it is a harness you can pick. The picker appears in the toolbar and the New session dialog (**Harness**) when two or more harnesses are ready. Its features: model and effort picker, live permission mode switch, previous sessions and resume, MCP switches, the context window, its dollar estimate shown apart from AIU, and an optional **cost cap in dollars** of that estimate (spec 012). Checked on a real Claude Code.
 - **Checked on a real Copilot session:** Stop, End and resume, lazy start, thinking, helpers and usage (spec 013).
 - **Layout:** room headers fit with many one-agent folders, short names are no longer cut by a long status (spec 001); each theme swatch shows its own colours (spec 037).
 
@@ -95,7 +95,7 @@ Since alpha.1:
 
 - **MCP:** the Copilot CLI's server list is global and read live; Agent Durbar's own extras are per folder.
 - **Tools:** *This session* and *All time* usage (all-time counts are kept on disk, names and counts only).
-- **Credit caps** per session (soft cap, runtime minimum 30 AI credits).
+- **Credit caps** per session (soft cap, runtime minimum 30 AI credits). Claude Code sessions take a **cost cap in dollars** of Claude's estimate instead (min $0.01, per session).
 - **Permissions:** change an agent's mode any time; the saved mode is restored exactly after a restart; reads outside the folder are asked or denied.
 - **About:** Three Feathers as owner, with credits.
 - **New app id `io.github.three-feathers.agentdurbar`.** An earlier test install (`io.github.vikramgorla.agentdurbar`) is a **separate app** and keeps its own settings; installing alpha.3 does not replace or migrate it.
@@ -120,7 +120,7 @@ The three mode names are the same for every agent kind, and Durbar maps them to 
 
 ## Agents and adapters
 
-Agent Durbar offers **GitHub Copilot**, **Claude Code** and **OpenAI Codex**, each when it is installed and signed in on your computer. Codex runs your own `codex` (ChatGPT sign-in or API key) through `codex app-server`. Claude Code runs your own installed `claude` with your own sign-in. Durbar enforces Read-only / Ask first / Allow all through its own permission broker and loads none of Claude's settings files. It was checked on a real Claude Code 2.1.302-2.1.303: every mode, interrupt, stop and resume, the full app end to end, and restarts. When two or more harnesses are ready, the toolbar and the New session dialog let you pick the **Harness**; with one, nothing extra is shown. Claude's cost is a dollar *estimate*: its cards show `≈ $… est.`, never as AIU and never added to an AIU total, and it has no credit cap (T081). Codex is planned ([spec 012](specs/012-claude-codex-adapters/spec.md)) and is "simulator/fixtures only".
+Agent Durbar offers **GitHub Copilot**, **Claude Code** and **OpenAI Codex**, each when it is installed and signed in on your computer. Codex runs your own `codex` (ChatGPT sign-in or API key) through `codex app-server`. Claude Code runs your own installed `claude` with your own sign-in. Durbar enforces Read-only / Ask first / Allow all through its own permission broker and loads none of Claude's settings files. It was checked on a real Claude Code 2.1.302-2.1.303: every mode, interrupt, stop and resume, the full app end to end, and restarts. When two or more harnesses are ready, the toolbar and the New session dialog let you pick the **Harness**; with one, nothing extra is shown. Claude's cost is a dollar *estimate*: its cards show `≈ $… est.`, never as AIU and never added to an AIU total. A Claude session can have a **cost cap in dollars** of that estimate: set it in the New session dialog or from the cap chip (`$0.02 / $0.50`). Durbar passes what is left to Claude's own `--max-budget-usd`, and when the cap is reached the chat shows **Cost cap reached** with *Raise cap / Remove cap / Stop here*; the next message waits until you choose. It is a soft cap (a first turn's cache write went from $0.01 to $0.06 in a real check), it counts only what the session used while Durbar ran it, and it is not saved with the folder; the AIU caps and the AIU default never apply to Claude. With a Claude subscription nothing is billed per token. Details: [spec 012](specs/012-claude-codex-adapters/spec.md).
 
 | Agent | Status | Simulator | Fixtures / fakes | Real account |
 | --- | --- | --- | --- | --- |

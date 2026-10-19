@@ -104,6 +104,22 @@ async function main(): Promise<void> {
     assert.strictEqual(f.maxAiCredits, 60);
   }
 
+  // (b2) spec 012 FR-150: a dollar-cap adapter takes cents, and its cap is never saved with the folder (that one is AIU)
+  {
+    const { full, mk, calls, deps } = setup();
+    Object.defineProperty(full, 'capabilities', { value: { ...full.capabilities, capUnit: 'usd' } });
+    const u = mk('u', full);
+    const bad = await setCapOp(deps(), 'u', 0.001);
+    assert.strictEqual(bad.ok, false);
+    assert.match(bad.error ?? '', /at least \$0\.01/, 'b2: the dollar minimum');
+    await full.start({ workspace: WS, sessionId: 'u', quiet: true });
+    assert.deepStrictEqual(await setCapOp(deps(), 'u', 0.5), { ok: true, maxAiCredits: 0.5 }, 'b2: $0.50 is fine (an AIU cap would need 30)');
+    assert.strictEqual(u.maxAiCredits, 0.5);
+    assert.deepStrictEqual(await setCapOp(deps(), 'u', null), { ok: true, maxAiCredits: undefined });
+    assert.deepStrictEqual(calls, [], 'b2: the folder store is not touched');
+    await full.stop('u');
+  }
+
   // (c) stopTurnOp
   {
     const { full, bare, mk, deps } = setup();

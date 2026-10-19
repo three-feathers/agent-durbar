@@ -18,7 +18,7 @@ export interface StartOptions {
   model?: string;
   /** For model 'auto': routing preference ('efficiency' is the cheapest). */
   autoTier?: 'efficiency' | 'balance' | 'intelligence';
-  /** Cap on AI credits for this session (treated as AIU), if the runtime supports it. Soft until verified (spec 011 FR-015). */
+  /** Cap for this session in the adapter's `capUnit`: AI credits (treated as AIU, spec 011 FR-015) or dollars (spec 012 FR-150). Soft. */
   maxAiCredits?: number;
   /** Resume an existing session by the vendor's own session id (disk-backed). */
   resumeSessionId?: string;
