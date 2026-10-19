@@ -6,6 +6,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **MCP server groundwork: agent state in the main process (spec 041 T014, issue #204).** The main process now keeps each agent's office word and sub-label (Working, Waiting for you, Limit reached…) with the same rules as the window, so the MCP read tools can report them later. Pausing in the window is reported to the main process. No visible change, 0 AIU.
 
+- **Move between desks with the arrow keys (spec 001 FR-019).** In the office, the arrow keys move the focus between desks, helper tiles and closed doors: left and right along a row, up and down to the nearest one. Enter opens the desk, as before.
+
 - **Permissions on Windows (spec 003).** "Approve for this session" on a folder now also covers the same folder spelled with other capitals or with `/` instead of `\`. Two permission requests that arrive in the same millisecond without an id no longer overwrite each other.
 
 - **Safer attachments (spec 004).** A picked file counts as an image only if its bytes say so (a renamed `.png` is sent as a file). Empty files are left out, and the image button only offers images. A sent file has to be picked again to be sent again, and temporary attachment folders left by a crash are cleaned up at start.

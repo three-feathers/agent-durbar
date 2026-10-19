@@ -24,7 +24,7 @@ what exists today, not what was originally intended. Each requirement carries a 
 
 | # | Feature | Status |
 | --- | --- | --- |
-| [001](001-office-view-and-densities/spec.md) | Office view, densities, list view, filters | implemented; delta 2026-10-18: main agents show their session title (issue #126); delta 2026-10-18: room headers fit with many one-agent folders (FR-023/FR-024); short names not cut by a long status (FR-025) |
+| [001](001-office-view-and-densities/spec.md) | Office view, densities, list view, filters | implemented; delta 2026-10-18: main agents show their session title (issue #126); delta 2026-10-18: room headers fit with many one-agent folders (FR-023/FR-024); short names not cut by a long status (FR-025); delta 2026-10-19: arrow keys between desks (FR-019) |
 | [002](002-copilot-adapter-and-events/spec.md) | Copilot adapter and normalized events | implemented; delta 2026-10-18: normalized `title` event from `session.title_changed`, `name.get` fallback (issue #126); delta 2026-10-19: questions from Copilot (`ask_user`, FR-058) |
 | [003](003-permissions-and-approvals/spec.md) | Permission modes, approvals, session grants | implemented; delta 2026-10-19: Windows grant keys, request ids (FR-088, FR-089) |
 | [004](004-attachments/spec.md) | Attachments (pick, drop, paste) and caps | implemented; delta 2026-10-19: FR-009/010/012/013/015 closed |
@@ -33,7 +33,7 @@ what exists today, not what was originally intended. Each requirement carries a 
 | [007](007-models-and-effort/spec.md) | Model and reasoning-effort pickers | implemented |
 | [008](008-packaging-and-release/spec.md) | Packaging, CI, draft releases | implemented (unsigned) |
 | [009](009-vscode-integration/spec.md) | Open in VS Code, VS Code chat history (read-only) | implemented |
-| [010](010-simulator/spec.md) | Simulator and dev/test hooks | implemented |
+| [010](010-simulator/spec.md) | Simulator and dev/test hooks | implemented; delta 2026-10-19: one event shape check for the simulator and adapters (FR-021) |
 
 ## Features 011-014: 011 built, 012 planned, 013-014 backlog drafts
 
