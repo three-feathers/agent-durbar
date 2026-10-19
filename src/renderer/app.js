@@ -464,7 +464,7 @@ function cardHTML(a,d,nSubs){
   return `<button class="desk card is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${use?' · '+use:''}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${sceneC(a)}</span>
     <span class="ci"><span class="l1"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a))}</span><span class="stl st-${st}">${label(a,true)}</span></span>
-    <span class="intent">${esc(taskOf(a))}</span>
+    <span class="intent" title="${esc(taskOf(a))}">${esc(taskOf(a))}</span>
     <span class="l3"><span class="pill st-${st}"><i></i>${label(a,true)}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${esc(use.split(' · ')[1])}</span>`:`${esc(use.split(' · ')[0]||'')}<span class="aiu">${use.includes(' · ')?' · '+esc(use.split(' · ')[1]):''}</span>`}</span></span></span></button>`;
 }
 function linksSVG(d,rows,extraMore){
@@ -492,7 +492,7 @@ function unitHTML(a,d){
     desk=`<button class="desk is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
       ${scene(a,false)}<span class="badge ${st}">${badgeSVG(st)}</span>
       <div class="info"><div class="who"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a))}</span></div>
-      <p class="task">${esc(taskOf(a))}</p><span class="pill st-${st}"><i></i>${label(a)}${pillWarn(a)}</span></div></button>`;
+      <p class="task" title="${esc(taskOf(a))}">${esc(taskOf(a))}</p><span class="pill st-${st}"><i></i>${label(a)}${pillWarn(a)}</span></div></button>`;
   } else desk=cardHTML(a,d,nSubs);
   return `<div class="unit${nSubs?' has-h':''}" data-key="unit:${esc(a.id)}">${desk}${helpers}</div>`;
 }

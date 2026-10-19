@@ -13,6 +13,9 @@
   const root=()=>$('screen');
   const fmt=n=>S.fmtTokens(n);
   const cap=(s,n)=>{s=String(s==null?'':s);return s.length>n?s.slice(0,n-1)+'…':s;};
+  /* spec 052 FR-055: bring a heading to the top of the screen's own scroller only. scrollIntoView also scrolled the
+     outer page (overflow:hidden still scrolls), which hid the top bar and left a blank strip at the bottom. */
+  const scrollInBody=h=>{const sc=h.closest('.scr-body');if(sc)sc.scrollTop+=h.getBoundingClientRect().top-sc.getBoundingClientRect().top-12;};
 
   /* ---------------- shared: frame, dialogs ---------------- */
   function open(kind,opts){
@@ -135,7 +138,7 @@
     const themeSec=`<section class="scr-sec" aria-labelledby="themeH"><h3 id="themeH">Theme</h3>
         <p class="scr-note">The look of the office; the choice applies at once and is kept on this computer.</p>
         <details class="scr-more"><summary>More</summary><p class="scr-note small">Colours, small art and scene words (places, lobby, doors). Status, permission and credit wording never change, and the layout always fits 15 agents at 1280×800. A theme is a folder with a data-only manifest.json (no scripts, no CSS).</p></details>
-        <ul class="thlist" id="thList">${themes.map((t)=>{const by=t.author&&t.author!==baseAuthor?t.author:'';return `<li class="throw"><button class="thpick" type="button" data-theme="${esc(t.id)}" aria-pressed="${t.id===curTheme}" aria-label="Theme ${esc(t.name)}${t.own?', yours':''}${by?esc(', by '+by):''}"><span class="thsw" data-theme-sw="${esc(t.id)}" aria-hidden="true"><i class="thsw-wall"></i><i class="thsw-desk"></i><i class="thsw-chair"></i><i class="thsw-ag"></i></span><span class="thtx"><b>${esc(t.name)}</b>${t.own?'<span class="mtag">yours</span>':''}${by?`<small>${esc(by)}</small>`:''}</span></button></li>`;}).join('')}</ul>
+        <ul class="thlist" id="thList">${themes.map((t)=>{const by=t.author&&t.author!==baseAuthor?t.author:'';const dm=/^Durbar · (.+)$/.exec(t.name||'');return `<li class="throw"><button class="thpick" type="button" data-theme="${esc(t.id)}" aria-pressed="${t.id===curTheme}" aria-label="Theme ${esc(t.name)}${t.own?', yours':''}${by?esc(', by '+by):''}"><span class="thsw" data-theme-sw="${esc(t.id)}" aria-hidden="true"><i class="thsw-wall"></i><i class="thsw-desk"></i><i class="thsw-chair"></i><i class="thsw-ag"></i></span><span class="thtx">${dm?'<span class="thover">Durbar</span>':''}<b title="${esc(t.name)}">${esc(dm?dm[1]:t.name)}</b>${t.own?'<span class="mtag">yours</span>':''}${by?`<small>${esc(by)}</small>`:''}</span></button></li>`;}).join('')}</ul>
         ${badThemes.length?`<p class="scr-note warn" role="status">${badThemes.length} theme folder${badThemes.length>1?'s were':' was'} ignored: ${esc(badThemes.map((b)=>b.id+': '+(b.error||'invalid')).join('; '))}</p>`:''}
         <div class="scr-tools">${X.bridge.generateTheme?'<button class="btn" type="button" id="thAi">Make a theme with AI…</button>':''}<button class="btn" type="button" id="thImport">Import a theme…</button><button class="btn" type="button" id="thExport" title="Copy the active theme's folder (one of your own themes) to a folder you pick">Export the active theme…</button></div></section>`;
     const ab=app.about;
@@ -172,8 +175,8 @@
       </section></details>${aboutSec}</div>`;
     wireHead();
     /* spec 051 FR-008: entry points open Settings at Agent apps */
-    if(cur.section==='harnesses'){cur.section=null;const h=$('hsH');if(h){h.scrollIntoView({block:'start'});h.focus({preventScroll:true});}}
-    if($('advMcp')){$('advMcp').ontoggle=()=>{advOpen=$('advMcp').open;};if(cur.section==='mcp'){cur.section=null;const h=$('mcpH');if(h){h.scrollIntoView({block:'start'});h.focus({preventScroll:true});}}}
+    if(cur.section==='harnesses'){cur.section=null;const h=$('hsH');if(h){scrollInBody(h);h.focus({preventScroll:true});}}
+    if($('advMcp')){$('advMcp').ontoggle=()=>{advOpen=$('advMcp').open;};if(cur.section==='mcp'){cur.section=null;const h=$('mcpH');if(h){scrollInBody(h);h.focus({preventScroll:true});}}}
     if(X.floors&&$('floorsSet'))X.floors.render();
     if(X.sched&&$('schedSet'))X.sched.render();
     if($('capSave'))$('capSave').onclick=async()=>{

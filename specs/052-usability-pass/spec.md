@@ -414,3 +414,34 @@ A UX writer found several words for the same thing (harness, agent kind; Approve
   - **"+ Workspace" stays** (title "Add a VS Code workspace (.code-workspace file)"): with **folder** used everywhere else, "workspace" now names only the VS Code `.code-workspace` file, which is what this button adds. (A first pass renamed it "+ VS Code"; the product lead kept "+ Workspace" as clearer.)
   - `docs/feature-history.md` keeps the old words: it is a record, unchanged by design. The README keeps "harness" where it explains the concept; its section heading "Harnesses" stays because the website (`scripts/build-site.js`) reads it by name.
   - [KNOWN GAP] No simulator run or screenshots in this change; the screenshots in `docs/screenshots/` still show the old words until the lead retakes them.
+### 2026-10-20: round 5, visual and accessibility
+
+A senior visual designer and a low-vision developer reviewed every theme. Colours, borders, art, words and radii only: no desk card, room, room header, top bar, lobby or place changes size, and themes still change no size, padding or font metric (check:geometry, the 15-agent office check). Status colours are unchanged. Built and checked with `npm run typecheck`, `npm run build` and `npm test`; not run in Electron or the simulator in this change (the lead takes the screenshots and runs the checks).
+
+- **FR-052** **Accessibility in every theme** [IMPLEMENTED] `test: test-themegen` (muted ratio), CSS read only; not yet run in the simulator, Windows High Contrast or with `prefers-contrast: more`.
+  - **Windows High Contrast** (`forced-colors: active`): pills, counters, chips, buttons and the room `+` get a `CanvasText` border; pressed and current items and the selected theme card a `Highlight` outline; the inbox shows `Highlight` while focused; status dots keep their colours and shapes (`forced-color-adjust: none`); disabled buttons use `GrayText`.
+  - **Two-tone focus ring:** `:focus-visible` is a 3px `--focus` outline (offset 1px) plus a 5px `--focus-halo` shadow (transparent by default). Retro Pixel uses a dark ring `#111122` with a yellow halo `#ffec27`, so it shows on cream and on navy. A component's own `box-shadow` rule still wins.
+  - **Dialogs fit the window:** `.dlg` has `max-height: calc(100vh - 32px)` and scrolls; the wide, import and palette dialogs keep their own rules.
+  - **Control borders at 3:1:** a new token `--line-ctl` (Clean `#8a8272`, about 3.6:1 on its surfaces; each built-in theme its own, Retro `#111122`) on inputs, selects, text areas and the room `+` / schedule buttons (Clean: when shown on hover or focus).
+  - **Selected is not colour only:** the selected list row has a 3px inset `--focus` bar; the selected theme card a 2px `--focus` outline next to its check mark.
+  - **Disabled and "off" stay readable:** disabled buttons, disabled mode-menu items, an off schedule and a disabled switch are no longer faded (`opacity` 1); they use `--muted` text and a dashed border. A disabled primary button drops its fill.
+  - **More contrast on request** (`prefers-contrast: more`): `--line` becomes `--line-ctl`, `--line-2` darker, `--muted` equals `--ink-2`; light themes only (`theme.js` marks a theme with a dark `--surface` with `data-dark`).
+  - **Status dots:** waiting has a 1px `--amber-ink` edge, idle a 1px `--pc-idle` edge (box-shadow; size unchanged).
+  - **Clamped card text:** the desk card's task line (full layout) and intent line (denser layouts) carry a `title` with the full, escaped text.
+  - **Generated themes:** `--muted` on `--surface` must reach 4.5:1 (was 3:1), in the check and in the prompt.
+- **FR-053** **A calmer toolbar and surfaces** [IMPLEMENTED] CSS read only; not yet run in the simulator.
+  - **Primary buttons are solid in every theme:** the base `.btn.primary` is `--sage-ink` with white text. Themed styles use their own accent: `--brand-bg` with `--brand-mark` text (Corporate 6.4:1, Retro 15:1, Indian 5.7:1, European 8:1, Japanese 5.2:1). Before, the themes' surface background left primary buttons pale.
+  - **Tools and Settings** are ghost buttons (transparent group, hover tint); same size.
+  - **Waiting desk cards** (Clean) drop the amber edge; the inset bar and the tint stay, and the border keeps its width at the normal `--line` colour.
+  - **Settings text:** paragraphs and notes at 68ch with line height 1.5; section headings 15px, weight 650.
+  - **Restore strip:** a calmer band (`--pb-waiting` mixed 55% into `--surface`) with a 1px bottom border; height unchanged, its amber main button unchanged.
+  - **Theme picker:** the name sits on one line with an ellipsis; "Durbar · X" shows "Durbar" as an 11px muted overline and "X" as the name (full name in a tooltip).
+  - **Radius tokens** `--r-sm 6px`, `--r-md 10px`, `--r-lg 14px`, `--r-xl 18px` on buttons, dialog controls, the inbox, Settings sections and dialogs (16px → 18px). Rooms and desks keep their radii.
+  - **Clean Office polish after switching back:** Clean Office now leaves `data-ui` unset, as at startup, so its `html:not([data-ui])` polish returns after another theme was tried (before, it was lost until a restart).
+- **FR-054** **Tasteful nostalgia in the themes** [IMPLEMENTED] CSS read only; not yet seen in the simulator, so the 2-4% strength is by value, not by eye.
+  - A period texture on each themed room, gradients and inline SVG only: Corporate a very faint 24px grid, Retro a 2px dither, Indian a faint block-print flower, European laid-paper lines, Japanese washi fibres. It replaces the faint tile pattern of denser rooms in those themes; text keeps its own surface.
+  - Room-name accents: European a double gilt rule under the name plate (box-shadow, no border width change; denser layouts, where the plate exists); Retro a 1px black drop shadow.
+- **FR-055** **Two bug fixes** [IMPLEMENTED] CSS and code read only; not yet run in Electron.
+  - **Settings > Agent apps from the welcome card** (and Settings > MCP): the heading is scrolled into view inside `.scr-body` only. `scrollIntoView` also scrolled the outer page (body `overflow: hidden` still scrolls), which hid the top bar and left a blank strip at the bottom.
+  - **Sign-in dialog:** the output box (`.hs-log`) is hidden while empty. [KNOWN GAP] Some screen readers may not announce the first line, as the live region appears with it.
+- [KNOWN GAP] Nothing was skipped for size reasons. The waiting card change and the primary buttons are Clean-first; a generated theme with a themed style is still only checked at 3:1 for `--brand-mark` on `--brand-bg` (raising it would flag Clean Office's own pair, 3.8:1, in every generated theme). `--line-ctl` falls back to Clean's `#8a8272` in generated themes (about 4.6:1 on a dark surface).

@@ -89,3 +89,10 @@
 ## Round 4: one word per concept (2026-10-20)
 
 - [x] T054 One term per concept in every user-visible text (agent app, profile, Allow / Deny, folder, spending limit / cost / AI credits, End session, Remove from office, Demo, mood phrases), drivers and tests follow [FR-051]
+
+## Round 5: visual and accessibility (2026-10-20)
+
+- [x] T055 High Contrast, two-tone focus ring (retro halo), dialogs fit the window, `--line-ctl` control borders, selected not colour only, readable disabled states, `prefers-contrast: more`, dot edges, card text titles, generated `--muted` at 4.5:1 [FR-052]
+- [x] T056 Solid primary buttons in every theme, ghost Tools and Settings, calmer waiting card, Settings measure and headings, restore strip band, theme picker overline, radius tokens, Clean polish after switching back [FR-053]
+- [x] T057 Period textures on themed rooms, European and Retro room-name accents [FR-054]
+- [x] T058 Settings heading scroll stays inside `.scr-body`; empty sign-in output hidden [FR-055]

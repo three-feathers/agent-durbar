@@ -80,7 +80,7 @@ export function buildThemePrompt(description: string, clean: Record<string, stri
     ...Object.entries(GEN_ART).map(([k, v]) => `  ${k}: ${v}`),
     svgRules,
     'The UI style matters for the top bar: "corporate" and "retro" fill it with --ink and "court-indian"/"court-european" with --brand-bg, under FIXED light text, so those tokens must be dark there; "clean" and "court-japanese" use --surface and --ink. For a dark page, "clean" or "court-japanese" is the safe choice.',
-    'Rules: light or dark are both fine, but be consistent: for a dark look set EVERY token, so nothing of the light default remains. Text must read well: --ink on --bg and --surface at least 4.5:1, --ink-2 on --surface 4.5:1, --muted on --surface 3:1, and each status pill text --pc-X on its background --pb-X at least 4.5:1. Keep the status meaning: working is blue-ish, thinking violet-ish, waiting amber, error red, done green, idle grey. Keep it calm: no neon on neon.',
+    'Rules: light or dark are both fine, but be consistent: for a dark look set EVERY token, so nothing of the light default remains. Text must read well: --ink on --bg and --surface at least 4.5:1, --ink-2 on --surface 4.5:1, --muted on --surface 4.5:1, and each status pill text --pc-X on its background --pb-X at least 4.5:1. Keep the status meaning: working is blue-ish, thinking violet-ish, waiting amber, error red, done green, idle grey. Keep it calm: no neon on neon.',
   ].join('\n');
 }
 
@@ -142,7 +142,7 @@ export function contrast(a: string, b: string): number {
 
 /** The pairs checked on every pass (FR-017): [text, background, minimum]. */
 export const CONTRAST_PAIRS: Array<[string, string, number]> = [
-  ['--ink', '--bg', 4.5], ['--ink', '--surface', 4.5], ['--ink', '--raised', 4.5], ['--ink', '--card', 4.5], ['--ink', '--card-waiting', 4.5], ['--ink', '--card-error', 4.5], ['--ink-2', '--soft', 4.5], ['--ink-2', '--note', 4.5], ['--ink-2', '--surface', 4.5], ['--muted', '--surface', 3], ['--room-path', '--bg', 3],
+  ['--ink', '--bg', 4.5], ['--ink', '--surface', 4.5], ['--ink', '--raised', 4.5], ['--ink', '--card', 4.5], ['--ink', '--card-waiting', 4.5], ['--ink', '--card-error', 4.5], ['--ink-2', '--soft', 4.5], ['--ink-2', '--note', 4.5], ['--ink-2', '--surface', 4.5], ['--muted', '--surface', 4.5] /* spec 052 FR-052: muted text is read, not decoration (was 3:1) */, ['--room-path', '--bg', 3],
   ...['working', 'thinking', 'waiting', 'idle', 'error', 'done'].map((s): [string, string, number] => [`--pc-${s}`, `--pb-${s}`, 4.5]),
   ['--drop-ink', '--drop-bg', 4.5], ['--brand-mark', '--brand-bg', 3], ['--idle-stub-ink', '--idle-stub', 3],
 ];
