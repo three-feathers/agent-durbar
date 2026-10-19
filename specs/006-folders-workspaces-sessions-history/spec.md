@@ -131,3 +131,12 @@ For a folder that has not been used yet in this run, a "Previous sessions" panel
 - **FR-018** `[IMPLEMENTED]` Folders > **Rename** sets a folder's display name (trimmed, 1 to 40 characters; an empty name goes back to the folder's own name). The room header, door plate, filter, Folders panel, list and tooltips use it; the folder path is unchanged and still shown. It is saved as `label` in `durbar-folders.json` and restored; a saved label that is not a string of 1 to 40 characters is ignored.
 - Both run on the simulator (no credits); `test:folders` covers the saved label; the main handlers are not unit-tested (FR-015). `sim:` `docs/screenshots/006-remove-session-*.png`, `006-rename-folder-*.png`, `006-folders-panel-*.png` (1440x900 and 1280x800). `[KNOWN GAP]` Not run against a real Copilot session (the remove path is the same `stop()` as End session).
 
+
+### 2026-10-19: a workspace's other folders are given to the session (T020)
+
+- **FR-019** A `.code-workspace` session still runs in its **first** folder, but now the agent is also told about the workspace's other folders, so it can work in all of them:
+  - Copilot gets them as `additionalDirectories` (SDK 1.0.22 `SessionConfig`, "additional directories the agent may access beyond the working directory"; given again on resume, as the SDK asks).
+  - Claude Code gets them as `--add-dir <folder>`, once per folder (argv, no shell).
+  - The permission broker already counts every workspace folder as a session root (spec 003 FR-023), so the modes behave the same in each folder: Read-only still denies writes there, and Ask first still asks.
+  - A plain folder adds nothing.
+  - This closes the known gap in FR-010 for these two kinds. `test:` the Copilot config on a fake session and the Claude argv. Not checked on a real account.
