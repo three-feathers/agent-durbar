@@ -53,3 +53,19 @@
 - [x] T042 Harness name on cards when several are in use [FR-039]
 - [x] T043 Visual pass (Clean Office) [FR-040]
 - [x] T044 Japanese court corrections [FR-041]
+- [ ] T036 Inbox focus, descriptions, keys, focus trap [FR-033]
+- [ ] T037 Live announcements; focus after the answer bar [FR-034]
+- [ ] T038 Ctrl+Shift+I / Ctrl+Shift+N, aria-keyshortcuts [FR-035]
+- [ ] T039 Confirmations focus Cancel for destructive choices [FR-036]
+- [ ] T040 Simple: tool lines collapsed, plain approval words, plain verbs, fewer top-bar controls [FR-037]
+- [ ] T041 Restore strip wording [FR-038]
+- [ ] T042 Harness name on cards when several are in use [FR-039]
+- [ ] T043 Visual pass (Clean Office) [FR-040]
+- [ ] T044 Japanese court corrections [FR-041]
+
+## Command palette (2026-10-20)
+
+- [x] T045 Command palette (Ctrl+K) and keyboard shortcut sheet (?), ⋯ menu entry, driver section in `scripts/shots-052-ux.js` (#316) [FR-042, FR-043]
+## Cost per folder (2026-10-20)
+
+- [x] T046 Tools > Cost: one row per folder, This run / Since <date>, Copy as CSV, room cost opens it (#315) [FR-044]

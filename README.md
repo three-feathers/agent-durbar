@@ -71,7 +71,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - **MCP servers:**
   - your Copilot CLI list (`~/.copilot/mcp-config.json`) is used first;
   - each folder can add extras (with a trust prompt), import them from `.vscode/mcp.json`, and switch a server on or off per session.
-- **Tools** shows what each agent used, for *This session* and *All time*.
+- **Tools** shows what each agent used, for *This session* and *All time*, and a **Cost** tab with each folder's ≈ money, AIU, Claude estimate, tokens and calls (*This run* or *Since <date>*), with **Copy as CSV**. Clicking a room's cost opens it.
 
 ![Full-screen chat with the other agents in a slim strip, 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
 
