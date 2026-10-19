@@ -97,3 +97,11 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 ## Assumptions
 
 - Chat content is not persisted by Agent Durbar; the Copilot runtime keeps the session history on disk.
+
+## Changes
+
+
+### 2026-10-19: the chat view is checked automatically (task T025)
+
+- `test:` `npm run check:office` now opens the chat of every main agent at 1440x900 and 1280x800 for three rosters (Copilot only, mixed kinds, session titles) and fails when the page overflows sideways or a chip or button of the chat header leaves the window or overlaps another (84 more checks; 302/302 with the CI fonts on 2026-10-19). This keeps SC-001 checked as the header gains controls (agent chip, Remove session, estimates).
+
