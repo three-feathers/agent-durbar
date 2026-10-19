@@ -16,6 +16,8 @@
  *   - the lobby (spec 024): missing, sticking out of the floor, overlapping a room or the door plates, not holding its places (5 plus the custom ones, spec 024 FR-026), more than one row of tiles, a missing Add button below 8 tiles or one at 8, a place or slot
  *     sticking out of its tile, a walking figure that is not standing on a slot once the walks have settled, or more figures than empty chairs.
  *   - room headers (spec 001 FR-023/FR-024, also `simrooms=solo`: one agent per folder): two header parts overlapping, or one leaving its header;
+ *   - the chat panel (spec 005 SC-001): for every main agent, Copilot-only and mixed kinds, no page overflow and the header's chips and
+ *     buttons inside the window without overlapping;
  *   - floors (spec 033, `simfloors=1`): with two or more floors on, a room header or door plate without its floor tag; with one floor on,
  *     any floor tag; the top bar controls overlapping each other or sticking out of the window (the Floors button must fit at 1280x800);
  *     a 40-character floor name (renamed through the panel) breaking a room header, a plate or the top bar; a floor that is off with agents
@@ -397,6 +399,41 @@ async function driver(ctx) {
     total++;
     if (row2.max - row2.min > 3) { failed++; console.log(`FAIL ${tag} claude chosen: the toolbar wraps ${JSON.stringify(row2)}`); }
   }
+  /* spec 005 SC-001 / T025: the chat panel of every main agent at both sizes, Copilot-only and mixed kinds: no page overflow,
+     the header's chips and buttons inside the window and not overlapping each other */
+  const chatCheck = () => {
+    const P = [], R = (e) => e.getBoundingClientRect(), T = 0.5;
+    const de = document.documentElement;
+    if (de.scrollWidth > innerWidth + 1) P.push(`page overflows horizontally (${de.scrollWidth} > ${innerWidth})`);
+    const groups = [...document.querySelectorAll('#panelHead .actions, #panelHead .ph-meta')];
+    for (const g of groups) {
+      const kids = [...g.children].filter((c) => c.getClientRects().length && R(c).width > 0);
+      for (const c of kids) { const r = R(c); if (r.left < -1 || r.right > innerWidth + 1) P.push(`${c.id || c.className.split(' ')[0]} leaves the window (${Math.round(r.left)}-${Math.round(r.right)})`); }
+      for (let i = 0; i < kids.length; i++) for (let j = i + 1; j < kids.length; j++) {
+        const a = R(kids[i]), b = R(kids[j]); const ox = Math.min(a.right, b.right) - Math.max(a.left, b.left), oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        if (ox > T && oy > T) P.push(`${kids[i].id || kids[i].className.split(' ')[0]} overlaps ${kids[j].id || kids[j].className.split(' ')[0]}`);
+      }
+    }
+    const strip = document.getElementById('stripList');
+    if (strip && R(strip).right > innerWidth + 1) P.push('the agent strip leaves the window');
+    return P;
+  };
+  for (const [w, h] of SIZES) {
+    for (const q of ['sim=15&simfreeze=1', 'sim=15&simfreeze=1&simkinds=mixed', 'sim=12&simfreeze=1&simtitles=1']) {
+      await load(q, w, h);
+      const ids = await ctx.js(`[...document.querySelectorAll('#stage .desk')].map((d)=>d.dataset.id)`);
+      let bad = 0;
+      for (const id of ids) {
+        await ctx.js(`(async()=>{const d=document.querySelector('#stage .desk[data-id="${id}"]');if(d)d.click();await new Promise(r=>setTimeout(r,250));return true})()`);
+        const p = await ctx.js(`(${chatCheck.toString()})()`);
+        total++;
+        if (p.length) { failed++; bad++; if (bad <= 3) console.log(`FAIL chat ${w}x${h} ${q} agent ${id}: ${p.slice(0, 4).join('; ')}`); }
+        await ctx.js(`(async()=>{const b=document.getElementById('backBtn');if(b)b.click();await new Promise(r=>setTimeout(r,120));return true})()`);
+      }
+      rows.push({ label: `chat ${w}x${h} ${q}`, d: 'chat', h: '-', rooms: '-', plates: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: bad });
+    }
+  }
+
   console.log('\nlayout summary (density/helpers shown, stage height vs floor):');
   rows.forEach((r) => console.log(`  ${r.problems ? 'FAIL' : 'ok  '} ${r.label.padEnd(60)} ${String(r.d).padEnd(5)} h=${r.h} rooms=${r.rooms} plates=${r.plates} desks=${r.desks} stage ${r.stageH}/${r.floorH}px minFont=${r.minFont}`));
   console.log(`\noffice check: ${total - failed}/${total} checks passed, ${failed} failed`);
