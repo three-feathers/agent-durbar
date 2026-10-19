@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.6 tag)
 
+- **Linux: the running window shows the app icon (spec 008 FR-025/FR-026, issue #247).** The window now has the icon. The AppImage's desktop entry also matches the window (`StartupWMClass=agent-durbar`; alpha.6 had `Agent Durbar`), so docks can link the two.
+
 - **Removing a folder is easy to find (spec 006 FR-022).** Each room has a **⋯** button (or right-click its header) with New session, Rename, Hide and **Remove folder**. A folder's only session shows **Remove folder** in its chat header. Before, Remove was only in the Folders panel.
 
 - **Faster CI and tests (spec 008 FR-020..FR-023).** `npm test` compiles the test scripts once and runs the suites in parallel, about 16 s instead of about 4 minutes. The office check runs in four parallel shards. The package smoke no longer waits for the other jobs. A pull request that changes only docs, specs or Markdown skips the build and test jobs. A daily **Branch cleanup** workflow deletes branches whose pull request merged more than a day ago.

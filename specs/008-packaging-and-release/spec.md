@@ -135,6 +135,11 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
 - `package.json` had no `desktopName`, so a desktop could not link the running AppImage window to its `.desktop` entry, and showed a generic icon in the dock.
 - Windows and macOS take the icon from the `.exe` and `.icns`.
 
-- **FR-025** On Linux the window is created with `icon` set to the app icon (`build/icon.png`, copied to `dist/icon.png` by the build, so the packaged app has it in `app.asar`). Other platforms are unchanged.
-- **FR-026** `package.json` has `"desktopName": "agent-durbar.desktop"` and `build.linux.syncDesktopName: true`. Electron then uses `agent-durbar` as the window's app_id / WM_CLASS, and the AppImage's desktop entry has the same name and `StartupWMClass`. Without it, electron-builder warned.
-- `test:` the built `.desktop` entry inside the AppImage (`pack:dir`) has `StartupWMClass=agent-durbar`; the running window's `WM_CLASS` (`xprop` under xvfb) is `agent-durbar`; the window icon property is set. Not checked by eye on a GNOME or KDE dock.
+- **FR-025** `[IMPLEMENTED]` On Linux the window is created with `icon` set to the app icon (`build/icon.png`, copied to `dist/icon.png` by the build, so the packaged app has it in `app.asar`). Other platforms are unchanged.
+- **FR-026** `[IMPLEMENTED]` `package.json` has `"desktopName": "agent-durbar.desktop"` and `build.linux.syncDesktopName: true`. Electron then uses `agent-durbar` as the window's app_id / WM_CLASS, and the AppImage's desktop entry has the same name and `StartupWMClass`. Without it, electron-builder warned.
+- `test:` (2026-10-19, Linux, xvfb):
+  - the AppImage built from this branch has `agent-durbar.desktop` with `StartupWMClass=agent-durbar`; the published alpha.6 AppImage has `StartupWMClass=Agent Durbar`, which does not match the window, so that was the bug;
+  - the running packaged window has `WM_CLASS` `agent-durbar` and a `_NET_WM_ICON`; on main, `_NET_WM_ICON` was missing;
+  - `dist/icon.png` is in `app.asar`.
+  
+  Not checked by eye on a GNOME or KDE dock.

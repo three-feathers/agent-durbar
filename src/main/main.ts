@@ -901,6 +901,8 @@ function createWindow(): void {
     useContentSize: true,
     title: 'Agent Durbar',
     backgroundColor: '#f6f1e7',
+    // spec 008 FR-025: Windows and macOS take the icon from the .exe/.icns; Linux needs it on the window
+    ...(process.platform === 'linux' ? { icon: path.join(__dirname, '..', 'icon.png') } : {}),
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'preload.js'),
       contextIsolation: true,
