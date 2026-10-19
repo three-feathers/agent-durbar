@@ -6,7 +6,7 @@
 
 <p align="center"><em>A calm command center for your AI agents</em></p>
 
-Agent Durbar is an office-style desktop app to **see, chat with and coordinate AI agents across several harnesses**: GitHub Copilot, Claude Code and OpenAI Codex. It is for **anyone who works with agents**, not only developers. A room is any folder an agent works in: code, documents, research or notes.
+Agent Durbar is an office-style desktop app to **see, chat with and coordinate AI agents across several agent apps (harnesses)**: GitHub Copilot, Claude Code and OpenAI Codex. It is for **anyone who works with agents**, not only developers. A room is any folder an agent works in: code, documents, research or notes.
 
 **Website:** <https://three-feathers.github.io/agent-durbar/>
 
@@ -77,7 +77,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 
 ## Harnesses
 
-Durbar offers each harness that is **installed and signed in on your computer**. When two or more are ready, the toolbar and the New session dialog show a **Harness** picker; with one, nothing extra is shown.
+Durbar offers each agent app (harness) that is **installed and signed in on your computer**. When two or more are ready, the toolbar and the New session dialog show an **Agent app** picker; with one, nothing extra is shown.
 
 | Harness | What Durbar runs | Checked on a real account |
 | --- | --- | --- |
@@ -107,7 +107,7 @@ Codex also ships its own `bwrap` inside its npm package (`…/@openai/codex-linu
 ## Install
 
 **Requirements**
-- At least one harness: GitHub Copilot (a free plan works), Claude Code, or OpenAI Codex. **Settings > Harnesses** can install it through a package manager (winget, Homebrew, npm), with the command shown first, and sign you in with the vendor's own page and a one-time code. Or install and sign in yourself, for example with `copilot login`.
+- At least one agent app: GitHub Copilot (a free plan works), Claude Code, or OpenAI Codex. **Settings > Agent apps** can install it through a package manager (winget, Homebrew, npm), with the command shown first, and sign you in with the vendor's own page and a one-time code. Or install and sign in yourself, for example with `copilot login`.
   - Not tried yet: installs through winget or Homebrew, and the flows on macOS and Windows.
 - Durbar never sees, stores or sends your tokens: each harness reads its own sign-in. Durbar has no accounts, no servers and no telemetry.
 - Usage bills against **your** plans. Several agents in parallel can use credits quickly; see [Costs and caps](#costs-and-caps).
@@ -132,7 +132,7 @@ Codex also ships its own `bwrap` inside its npm package (`…/@openai/codex-linu
 Agents run **locally, on your machine, as you**, in the folders you add. Every agent has a permission mode. The names are the same for every harness, and Durbar maps them to each tool's own controls.
 
 - **Read-only** (the default): reads inside the session's folders only; everything else is denied.
-- **Ask first**: writes, shell commands, URLs and tools wait for *Approve*, *Approve for this session* or *Deny*.
+- **Ask first**: writes, shell commands, URLs and tools wait for *Allow once*, *Allow “…” for this session* or *Deny* (the same words in Simple and Expert).
 - **Allow all**: no prompts. Use it only in folders you trust; it asks once to confirm.
 
 Change the mode any time from the chat header chip or the agent's card menu.
@@ -140,7 +140,7 @@ Change the mode any time from the chat header chip or the agent's card menu.
 Rules that always apply:
 - **Add project folders, not your home folder or a drive root.** Everything under an added folder counts as the agent's own; Durbar warns calmly when you add one of those.
 - **Answering a question** an agent asks is allowed in every mode; it is not an action.
-- **A custom agent from a folder's repository** asks once before it is used and never changes your mode.
+- **A profile (custom agent) from a folder's repository** asks once before it is used and never changes your mode.
 - **Durbar never stores or logs** tokens, session content or your prompts. Debug logs are redacted.
 
 Codex in Read-only and Ask first gets an OS-enforced permission profile limited to the session's folders, and Durbar refuses those modes when the profile cannot be enforced. Claude Code gets its permission mode, allowed read tools and a check that reads stay inside your folders. Details: [spec 003](specs/003-permissions-and-approvals/spec.md) and [spec 012](specs/012-claude-codex-adapters/spec.md). To report a security problem, see [SECURITY.md](SECURITY.md).
@@ -149,16 +149,16 @@ Codex in Read-only and Ask first gets an OS-enforced permission profile limited 
 
 ## Costs and caps
 
-- **Copilot** reports usage in AI credits (shown as AIU). A session can have a **credit cap**, at least 30 credits:
-  - set it in the New session dialog or the cap chip;
+- **Copilot** reports usage in AI credits (shown as AIU). A session can have a **spending limit**, at least 30 AI credits:
+  - set it in the New session dialog or the limit chip;
   - a global default is in Settings;
   - it is saved per folder.
 
-  It is a soft cap: when it is reached, the chat offers *Add credits / Remove cap / Stop here*. The office and each room show usage totals, kept across restarts, with a reset in Settings.
-- **Claude Code** reports a dollar *estimate*, shown as `≈ $… est.` and never mixed with AIU. A session can have a **cost cap in dollars** (at least $0.01):
+  It is a soft limit: when it is reached (*Spending limit reached*), the chat offers *Add credits / Remove limit / Stop here*. The office and each room show usage totals, kept across restarts, with a reset in Settings.
+- **Claude Code** reports a dollar *estimate*, shown as `≈ $… est.` and never mixed with AIU. A session can have a **spending limit in dollars** (at least $0.01):
   - Durbar passes what is left to Claude's own `--max-budget-usd`;
-  - when the cap is reached, the chat offers *Raise cap / Remove cap / Stop here*;
-  - the cap is per session.
+  - when the limit is reached, the chat offers *Raise limit / Remove limit / Stop here*;
+  - the limit is per session.
 
   With a Claude subscription, nothing is billed per token.
 - **Codex** reports tokens, with no price.

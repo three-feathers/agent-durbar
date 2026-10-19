@@ -389,3 +389,28 @@ Reviewers found the first run still assumed a developer (hints that say "run …
   - **Each waiting agent asks for its own thing:** Jonas (reviewer) "Edit src/tools/companies.ts (rename find_company to search_companies)", Kenji (evaluator) "Run python evals/baseline.py --compare" (a shell request), Lena (accessibility) "Edit src/styles/focus.css (focus ring colour)". Before, every waiting agent showed the rename.
   - **No permission card in Allow all:** a simulated agent that waits for a permission starts in **Ask first**, the only mode where a card appears. Jonas changes from Allow all (restored) to Ask first, Lena from Read-only to Ask first. The restore strip still names a restored Allow-all folder: Tomas's (swisscontract-ai). The driver `scripts/shots-018.js` now opens Maya (Copilot, Allow all) for its new-session check instead of Jonas.
   - The simulator stays deterministic (no new random draws).
+### 2026-10-20: round 4, one word per concept
+
+A UX writer found several words for the same thing (harness, agent kind; Approve, Allow this once; Workspace, room; cap, limit, money). The product lead approved one term per concept. Text only: no identifier, IPC channel, CSS class, id or layout size changes.
+
+- **FR-051** **Terminology** [IMPLEMENTED] `test: test-mood` (mood phrases), `npm test`; the Electron drivers were updated by reading the code and not run in this change.
+
+  | Concept | Term in the UI |
+  |---|---|
+  | Copilot, Claude Code, Codex | **agent app** (was harness, agent kind): Settings > **Agent apps**, "Set up an agent app once", "Set up agent apps…", the **Agent app** picker, "About agent apps", the toast "<Name> isn't ready yet. Set it up in Settings > Agent apps." |
+  | Copilot custom agents | **profile**: the chip "Profile: Default", the **Profile** select |
+  | Answering a permission | **Allow once**, **Allow “<scope>” for this session**, **Deny**, the same in Simple and Expert; card label "Needs your OK:"; inbox "✓ Allowed" / "Denied"; keys line "J/K or ↑/↓ to move · A allow once · S allow for this session · D deny · O open chat · Esc close" (keys unchanged) |
+  | A folder in the office | **folder**: list column, aria-label "Folder X"; "room" stays for the picture |
+  | Money | **spending limit** (No limit, Remove limit, Raise limit, "Spending limit reached:", "Spending limit (AI credits). Leave empty for none.", "Default limit (AI credits)"); **cost** (Cost tab "Est. cost", note "Estimated cost: Copilot AI credits at $0.01 each, plus Claude Code's own estimate. Not a bill."); **AI credits** (AIU stays as a short unit in Expert numbers) |
+  | Stop / End / Remove | Stop ("Stops this reply"); "End session" / "Send a message to pick up where you left off"; "Remove from office…" / "Ends the session; its history stays in Previous sessions" |
+  | Demo | the badge "Demo" (simulator) or "Demo: sample data"; composer hint "Enter to send, Shift+Enter for a new line. Drop or paste images to attach. Demo, no AI credits used · Allow all" |
+  | Restore strip | "Still on Allow all from last time: X. Agents there can edit or delete files and run commands without asking." with **Switch to Ask first** / **Keep Allow all** |
+  | Mood | "Context almost full (95%)", "Error: needs a look", "Spending limit reached", "Waiting 3 min for you", "3 tool calls failed in a row" |
+  | Detail level | "Simple / Expert" (the welcome text and palette drop "view") |
+  | Sign-in | "You sign in on <App>'s own page. Durbar never sees or stores your password."; a simulated card says "Simulated version." |
+
+  - The AI theme dialog blurb is two sentences (one request, no tools, nothing kept, small cost on your own plan; safe values and readable text, try before saving).
+  - Main-process and adapter messages follow (router, `detect.ts` hints, `main.ts`/`agentops.ts` errors, the "Allowed" status intent).
+  - **"+ Workspace" stays** (title "Add a VS Code workspace (.code-workspace file)"): with **folder** used everywhere else, "workspace" now names only the VS Code `.code-workspace` file, which is what this button adds. (A first pass renamed it "+ VS Code"; the product lead kept "+ Workspace" as clearer.)
+  - `docs/feature-history.md` keeps the old words: it is a record, unchanged by design. The README keeps "harness" where it explains the concept; its section heading "Harnesses" stays because the website (`scripts/build-site.js`) reads it by name.
+  - [KNOWN GAP] No simulator run or screenshots in this change; the screenshots in `docs/screenshots/` still show the old words until the lead retakes them.

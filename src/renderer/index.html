@@ -15,7 +15,7 @@
 <header class="topbar">
   <div class="brand">
     <div class="brand-mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="var(--brand-mark,#4f7f65)" stroke-width="1.7" stroke-linejoin="round"><rect x="2.5" y="2.5" width="6" height="7" rx="1.5"/><rect x="11.5" y="2.5" width="6" height="4" rx="1.5"/><rect x="11.5" y="9" width="6" height="8.5" rx="1.5"/><rect x="2.5" y="12.5" width="6" height="5" rx="1.5"/></svg></div>
-    <div><h1>Agent Durbar</h1><span class="proto" id="protoBadge">Prototype - sample data</span></div>
+    <div><h1>Agent Durbar</h1><span class="proto" id="protoBadge">Demo: sample data</span></div>
   </div>
   <!-- spec 052 FR-027 (#305): the Needs you inbox -->
   <button class="btn inbox-btn" id="inboxBtn" type="button" title="Needs you: every request in one queue (I or Ctrl+Shift+A). N or Ctrl+Shift+N opens the next agent." aria-keyshortcuts="Control+Shift+A I" hidden><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M2 9.5l1.6-5.2A1.4 1.4 0 0 1 5 3.3h6a1.4 1.4 0 0 1 1.4 1l1.6 5.2v2.8a1.4 1.4 0 0 1-1.4 1.4H3.4A1.4 1.4 0 0 1 2 12.3z"/><path d="M2 9.5h3.2l.9 1.6h3.8l.9-1.6H14"/></svg>Needs you <b>0</b></button>
@@ -23,12 +23,12 @@
   <div class="controls">
     <div id="liveBar">
       <button class="btn" id="addFolder" type="button" title="Add a folder">+ Folder</button>
-      <button class="btn" id="addWs" type="button" title="Add a .code-workspace file">+ Workspace</button>
+      <button class="btn" id="addWs" type="button" title="Add a VS Code workspace (.code-workspace file)">+ Workspace</button>
       <!-- spec 052 #308: the defaults for new sessions, one quiet group (each agent shows its own values in its chat) -->
       <div class="defaults-grp" role="group" aria-label="Defaults for new sessions" title="Defaults for new sessions">
-        <label class="sr-only" for="kindSel">Default harness (agent kind) for new folders and sessions</label>
-        <select id="kindSel" title="Harness (agent kind) for new folders and sessions" style="max-width:128px" hidden></select>
-        <button class="btn" id="kindHelp" type="button" aria-label="About agent kinds" title="About agent kinds" style="padding:0 8px" hidden>?</button>
+        <label class="sr-only" for="kindSel">Default agent app for new folders and sessions</label>
+        <select id="kindSel" title="Agent app for new folders and sessions" style="max-width:128px" hidden></select>
+        <button class="btn" id="kindHelp" type="button" aria-label="About agent apps" title="About agent apps" style="padding:0 8px" hidden>?</button>
         <label class="sr-only" for="permMode">Default permission mode for new sessions</label>
         <select id="permMode" title="Default permission mode for new sessions. Each agent shows its own mode in its chat."><option value="read-only">New: Read-only</option><option value="ask">New: Ask first</option><option value="allow">New: Allow all</option></select>
         <label class="sr-only" for="modelSel">Default model for new sessions</label>

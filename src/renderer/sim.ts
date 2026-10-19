@@ -61,7 +61,7 @@ interface SimAgent {
   files: string[];
   /** Pending permission request (the agent is waiting for the user). */
   perm?: { requestId: string; kind: string; summary: string; scopeKey: string; scopeLabel: string; file: string; cont: 'tool' | 'edit' };
-  /** "Approve for this session" grants: key -> chip label. */
+  /** "Allow for this session" grants: key -> chip label. */
   grants: Map<string, string>;
   /** Context window of the fake session (tokens now / size). */
   ctx?: { tokens: number; limit: number };
@@ -858,7 +858,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
         const usd = caps(s.info.adapterId ?? 'copilot').capUnit === 'usd';
-        if (c !== null && !(c >= (usd ? 0.01 : 30))) return { ok: false, error: usd ? 'The cost cap must be at least $0.01.' : 'The cap must be a number of at least 30 AI credits (the runtime minimum).' };
+        if (c !== null && !(c >= (usd ? 0.01 : 30))) return { ok: false, error: usd ? 'The spending limit must be at least $0.01.' : 'The spending limit must be a number of at least 30 AI credits (the runtime minimum).' };
         s.info.maxAiCredits = c ?? undefined;
         emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'changed', maxAiCredits: c });
         return { ok: true, maxAiCredits: c ?? undefined };
@@ -872,7 +872,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
       listProfiles: async (id) => {
         const s = sims.find((x) => x.info.id === id);
-        if (!s || (s.info.adapterId && s.info.adapterId !== 'copilot')) return { ok: false, error: 'This agent cannot use custom agents.', profiles: [] };
+        if (!s || (s.info.adapterId && s.info.adapterId !== 'copilot')) return { ok: false, error: 'This agent app has no profiles.', profiles: [] };
         return { ok: true, profiles: SIM_PROFILES.map((p) => ({ ...p, trusted: p.source !== 'repo' || simTrusted.has(p.id) })) };
       },
       selectProfile: async (id, profileId, confirm) => {
@@ -923,10 +923,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'changed', maxAiCredits: s.info.maxAiCredits ?? null });
         emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'resolved', requestId, action: choice.kind });
         s.state = 'working';
-        emit({ type: 'status', sessionId: id, timestamp: now(), status: 'working', intent: 'Continuing after the credit limit' });
+        emit({ type: 'status', sessionId: id, timestamp: now(), status: 'working', intent: 'Continuing after the spending limit' });
         window.setTimeout(() => {
           if (s.limitReq) return;
-          const text = '**Done.** Continued after the credit limit was raised: ' + s.intent;
+          const text = '**Done.** Continued after the spending limit was raised: ' + s.intent;
           emit({ type: 'output', sessionId: id, timestamp: now(), delta: text, final: true, text });
           emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle' });
           s.state = 'done';
@@ -1031,7 +1031,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       // spec 040 FR-014: the AI theme maker in the simulator: a canned, valid theme after a short wait (no harness, no credits)
       generateTheme: async (description, adapterId) => {
         if (!String(description ?? '').trim()) return { ok: false, error: 'Describe the look in a few words.' };
-        if (adapterId === 'copilot') return { ok: false, error: 'That harness cannot make a theme. Pick Claude Code or Codex.' };
+        if (adapterId === 'copilot') return { ok: false, error: 'That agent app cannot make a theme. Pick Claude Code or Codex.' };
         await new Promise((r) => window.setTimeout(r, 700));
         const n = ++simThemeN;
         return { ok: true, costUsd: 0.004, warnings: [], manifest: { id: 'ai-night-shift-newsroom' + (n > 1 ? '-' + n : ''), name: 'Night-shift newsroom', author: 'AI theme maker', version: '1.0', description: String(description).slice(0, 300), extends: 'clean-office', ui: 'corporate', scene: 'corporate',
@@ -1046,7 +1046,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       handoff: async (id) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
-        if (!caps(s.info.adapterId ?? 'copilot').handoff) return { ok: false, error: 'This agent kind cannot make a summary.' };
+        if (!caps(s.info.adapterId ?? 'copilot').handoff) return { ok: false, error: 'This agent app cannot make a summary.' };
         await new Promise((r) => window.setTimeout(r, 900));
         const files = (s.files ?? []).slice(0, 3).map((f) => '- `' + f + '`').join('\n') || '- none yet';
         return { ok: true, summary: `## Goal\n${s.intent || 'Continue the current task.'}\n\n## What was done\n- Read the relevant code and ran the tests once (simulated).\n\n## Open items\n- Finish the change and run the tests again.\n\n## Important files and decisions\n${files}\n\n## Next step\nPick up from the open items above.` };
@@ -1152,7 +1152,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     ];
     const notReady = (adapterId: string): string | undefined => {
       const k = simAdapters().find((x) => x.id === adapterId);
-      return k && k.state === 'ready' ? undefined : 'This agent kind is not ready on this computer. Open "About agent kinds" for what is missing.';
+      return k && k.state === 'ready' ? undefined : 'This agent app is not ready on this computer. Set it up in Settings > Agent apps.';
     };
     let started = false;
     let extra = 0;
@@ -1247,7 +1247,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
         if (s.perm) return { ok: false, error: 'Waiting for your permission decision first.' };
-        if (s.limitReq) return { ok: false, error: 'The credit limit was reached. Choose Add credits, Remove cap or Stop here first.' };
+        if (s.limitReq) return { ok: false, error: 'The spending limit was reached. Choose Add credits, Remove limit or Stop here first.' };
         window.setTimeout(() => void reply(s, text), 400);
         return { ok: true };
       },
@@ -1284,7 +1284,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (keep) { s.grants.set(p.scopeKey, p.scopeLabel); grantsEvent(s); }
         emit({ type: 'permission', sessionId: id, timestamp: now(), permission: { ...p, state: approve ? 'approved' : 'denied', via: 'user', remembered: keep || undefined } });
         s.state = 'working';
-        emit({ type: 'status', sessionId: id, timestamp: now(), status: 'working', intent: (approve ? 'Approved: ' : 'Denied: ') + file });
+        emit({ type: 'status', sessionId: id, timestamp: now(), status: 'working', intent: (approve ? 'Allowed: ' : 'Denied: ') + file });
         if (cont === 'edit') { editTool(s, file, approve); finishReply(s, approve, file); } else toolStep(s, true);
       },
       revokeGrant: async (id, key) => {

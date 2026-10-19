@@ -209,7 +209,7 @@ export class CopilotAdapter implements AgentAdapter {
             this.emit(sid, { type: 'permission', permission: e.permission });
             // Back to work unless the session is being stopped (then 'stopped' follows).
             if (e.permission.via !== 'stopped') {
-              const word = e.permission.state === 'approved' ? (e.permission.via === 'session' ? 'Allowed for this session' : 'Approved') : 'Denied';
+              const word = e.permission.state === 'approved' ? (e.permission.via === 'session' ? 'Allowed for this session' : 'Allowed') : 'Denied';
               this.emit(sid, { type: 'status', status: 'working', intent: `${word}: ${e.permission.summary}` });
             }
             return;

@@ -94,7 +94,7 @@ module.exports = async (ctx) => {
     assert.ok(k.vis, `${w}: the kind select is shown`);
     assert.deepStrictEqual(k.opts.map((o) => [o.v, o.t, o.d]), [['copilot', 'Copilot', false], ['claude', 'Claude Code', false], ['codex', 'Codex', false], ['basic', 'Basic agent', false]], `${w}: four ready kinds with short names`);
     await js(`document.getElementById('kindHelp').click()`);
-    assert.ok(await ctx.waitFor(`document.getElementById('modeDlg')`, 3000), 'About agent kinds opens');
+    assert.ok(await ctx.waitFor(`document.getElementById('modeDlg')`, 3000), 'About agent apps opens');
     const about = await js(`document.getElementById('modeDlg').innerText.replace(/\\s+/g,' ')`);
     for (const need of ['Copilot: ready', 'Claude Code (simulated): ready', 'Codex (simulated): ready', 'Basic agent (simulated): ready']) assert.ok(about.includes(need), `${w}: About says "${need}": ${about}`);
     await js(`[...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent==='Close').click()`);
@@ -163,7 +163,7 @@ module.exports = async (ctx) => {
       if (toggle) assert.ok(m.enabled > 0, `${w} ${id}: Copilot has switches that work (${m.enabled}/${m.n})`);
       else {
         assert.strictEqual(m.enabled, 0, `${w} ${id}: no enabled switch for a kind without mcpToggle (${m.enabled}/${m.n})`);
-        assert.ok(m.text.includes('The switches are off for this agent kind'), `${w} ${id}: the reason is written in the dialog`);
+        assert.ok(m.text.includes('The switches are off for this agent app'), `${w} ${id}: the reason is written in the dialog`);
       }
       await js(`[...document.querySelectorAll('.dlg .btn, #modeDlg .btn, [role="dialog"] .btn')].find(b=>b.textContent==='Done').click()`);
       await ctx.sleep(250);

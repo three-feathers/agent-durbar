@@ -1,4 +1,4 @@
-/* Settings > Harnesses (spec 051): one card per harness with its state and one next step (Install / Update / Sign in / Check again).
+/* Settings > Agent apps (spec 051; called harnesses in the code): one card per agent app with its state and one next step (Install / Update / Sign in / Check again).
    Durbar runs only fixed commands from main (shown before they run); the window never names a command. Plain script, no secrets:
    a sign-in shows the vendor's own link and one-time code, and a code pasted for Claude goes straight to Claude's process. */
 (function () {
@@ -34,13 +34,13 @@
       const [cls, word] = STATE[st] || STATE.unknown;
       const act = st === 'not-installed' ? 'install' : st === 'too-old' ? 'update' : st === 'not-signed-in' ? 'signin' : '';
       const label = { install: 'Install…', update: 'Update…', signin: 'Sign in…' }[act];
-      const hint = st === 'ready' ? (k.version ? 'Version ' + k.version + '.' : 'Ready to use.') : st === 'not-signed-in' ? 'Installed; sign in once to use it.' : st === 'too-old' ? (k.hint || 'This version is too old for Durbar.') : st === 'not-installed' ? 'Not on this computer yet.' : 'Durbar could not tell; try Check again.';
+      const hint = st === 'ready' ? (k.version === 'sim' ? 'Simulated version.' : k.version ? 'Version ' + k.version + '.' : 'Ready to use.') : st === 'not-signed-in' ? 'Installed; sign in once to use it.' : st === 'too-old' ? (k.hint || 'This version is too old for Durbar.') : st === 'not-installed' ? 'Not on this computer yet.' : 'Durbar could not tell; try Check again.';
       return `<li class="hs-card" data-kind="${esc(k.id)}"><div class="hs-top"><b>${esc(k.displayName || k.id)}</b><span class="hs-st hs-${cls}">${esc(word)}</span></div>
         ${PLAN[k.id] ? `<p class="scr-note small hs-plan-uses">${esc(PLAN[k.id])}</p>` : ''}<p class="scr-note small">${esc(hint)}</p>
         <div class="hs-act">${act ? `<button class="btn primary" type="button" data-hs="${act}" data-kind="${esc(k.id)}">${esc(label)}</button>` : ''}<button class="btn" type="button" data-hs="check" data-kind="${esc(k.id)}">Check again</button></div></li>`;
     }).join('');
-    return `<section class="scr-sec" aria-labelledby="hsH"><h3 id="hsH" tabindex="-1">Harnesses</h3>
-      <p class="scr-note">The AI tools Durbar can run. Install, update or sign in here; Durbar shows every command before it runs and never sees your password.</p>
+    return `<section class="scr-sec" aria-labelledby="hsH"><h3 id="hsH" tabindex="-1">Agent apps</h3>
+      <p class="scr-note">The agent apps Durbar can run. Install, update or sign in here; Durbar shows every command before it runs and never sees your password.</p>
       <ul class="hs-list">${cards}</ul></section>`;
   }
 
@@ -73,7 +73,7 @@
         const log = m.root.querySelector('#hsLog'); if (log) log.textContent = (p.lines || []).join('\n');
         const t = m.root.querySelector('#hsTime'); if (t) t.textContent = Math.round((p.elapsedMs || 0) / 1000) + ' s';
         if (isSign) {
-          if (p.url && !url) { url = p.url; m.root.querySelector('#hsSign').hidden = false; m.root.querySelector('#hsLead').textContent = 'Signing in with the official page; nothing is stored by Durbar.'; }
+          if (p.url && !url) { url = p.url; m.root.querySelector('#hsSign').hidden = false; m.root.querySelector('#hsLead').textContent = 'You sign in on ' + name + '\'s own page. Durbar never sees or stores your password.'; }
           if (p.code) { const c = m.root.querySelector('#hsCode'); if (c.textContent !== p.code) { c.textContent = p.code; m.root.querySelector('#hsCodeBox').hidden = false; } }
           if (p.needsPaste) m.root.querySelector('#hsPasteBox').hidden = false;
         }

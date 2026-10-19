@@ -60,7 +60,7 @@ module.exports = async (ctx) => {
     out('M5 chips:', JSON.stringify(await ctx.js(`[...document.querySelectorAll('#attached .att')].map(e=>e.innerText.trim()+' '+e.title)`)));
     out('M5 note:', await ctx.js(`document.getElementById('attNote').hidden?'(none)':document.getElementById('attNote').innerText`));
     await ctx.shot(path.join(SHOTS, 'm5-electron-attach-cap.png'));
-    // 3) permission UI: Approve for this session + chip + revoke
+    // 3) permission UI: Allow for this session + chip + revoke
     send({ type: 'user', text: 'Edit index.js and README.md' });
     send({ type: 'status', status: 'working', intent: 'Thinking' });
     send({ type: 'toolCall', callId: 'r1', tool: 'view', phase: 'start', args: { path: HELLO + '/index.js' } });
@@ -81,7 +81,7 @@ module.exports = async (ctx) => {
     await ctx.js(`document.querySelector('#grants [data-revoke]').click()`); await ctx.sleep(300);
     send({ type: 'grants', grants: [] }); await ctx.sleep(300);
     out('M5 chips after revoke:', await ctx.js(`document.querySelectorAll('#grants .gchip').length`));
-    // 4) stop while pending: the real adapter stop() emits 'stopped'; Approve/Deny must be gone
+    // 4) stop while pending: the real adapter stop() emits 'stopped'; Allow/Deny must be gone
     send({ type: 'status', status: 'needs-permission', intent: 'Waiting for permission', permission: { requestId: 'p3', kind: 'write', summary: 'write ' + HELLO + '/index.js', state: 'pending', scopeKey: 'k', scopeLabel: 'write' } });
     await ctx.sleep(400);
     out('M5 before stop buttons:', JSON.stringify(await btns()));
@@ -90,11 +90,11 @@ module.exports = async (ctx) => {
     await ctx.shot(path.join(SHOTS, 'm5-electron-stop-pending.png'));
     return;
   }
-  if (phases.includes('real')) { // ONE tiny real prompt: Approve for this session across two edits (uses AI credits, see DURBAR_LOG usage events)
+  if (phases.includes('real')) { // ONE tiny real prompt: Allow for this session across two edits (uses AI credits, see DURBAR_LOG usage events)
     execSync('git checkout -- .', { cwd: HELLO });
     const r = await ctx.addMany([HELLO], 'ask'); const id = r.agents[0].id; await ctx.sleep(800);
     await sendViaUi(ctx, id, 'Make two separate edit tool calls, one file each: add the one-line comment "// hello" at the top of index.js, then add the line "hello" at the end of README.md. Nothing else, no summary.');
-    const appr = `[...document.querySelectorAll('#panel .note-actions button')].some(b=>b.textContent==='Approve for this session')`;
+    const appr = `[...document.querySelectorAll('#panel .note-actions button')].some(b=>/^Allow “.+” for this session$/.test(b.textContent))`;
     out('REAL first request pending:', await ctx.waitFor(appr, 90000), 'card:', await ctx.js(cardState(id)));
     await ctx.shot(path.join(SHOTS, 'm5-real-pending.png'));
     await ctx.js(`[...document.querySelectorAll('#panel .note-actions button')].find(b=>b.dataset.act==='session').click()`);
@@ -127,7 +127,7 @@ module.exports = async (ctx) => {
     const r = await ctx.addMany([HELLO], 'ask'); const id = r.agents[0].id; await ctx.sleep(800);
     const before = fs.readFileSync(HELLO + '/index.js', 'utf8');
     await sendViaUi(ctx, id, 'Add a one-line comment at the top of index.js saying hello. ');
-    const waited = await ctx.waitFor(`[...document.querySelectorAll('#panel button')].some(b=>b.textContent==='Approve')`, 90000);
+    const waited = await ctx.waitFor(`[...document.querySelectorAll('#panel button')].some(b=>b.textContent==='Allow once')`, 90000);
     out('ASK1 approve button appeared:', waited, 'card:', await ctx.js(cardState(id)));
     await ctx.sleep(500);
     out('ASK1 note:', await ctx.js(`[...document.querySelectorAll('#panel .note')].map(n=>n.innerText).join(' | ')`));
@@ -140,9 +140,9 @@ module.exports = async (ctx) => {
     await ctx.shot(path.join(SHOTS, 'm3-approval-denied.png'));
     // second prompt: approve
     await sendViaUi(ctx, id, 'Please try again: add that one-line comment at the top of index.js.');
-    const w2 = await ctx.waitFor(`[...document.querySelectorAll('#panel button')].some(b=>b.textContent==='Approve')`, 90000);
+    const w2 = await ctx.waitFor(`[...document.querySelectorAll('#panel button')].some(b=>b.textContent==='Allow once')`, 90000);
     out('ASK2 approve button appeared:', w2, 'card:', await ctx.js(cardState(id)));
-    await ctx.js(`[...document.querySelectorAll('#panel button')].find(b=>b.textContent==='Approve').click()`);
+    await ctx.js(`[...document.querySelectorAll('#panel button')].find(b=>b.textContent==='Allow once').click()`);
     const done2 = await ctx.waitFor(`/is-(done|idle|error)/.test(${cardState(id)})`, 90000);
     await ctx.sleep(800);
     out('ASK2 finished:', done2, 'card:', await ctx.js(cardState(id)));

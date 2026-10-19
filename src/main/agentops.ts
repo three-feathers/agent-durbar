@@ -47,7 +47,7 @@ export async function setCapOp(d: OpsDeps, id: unknown, credits: unknown): Promi
   if (!a || !ad) return { ok: false, error: 'unknown agent' };
   const usd = ad.capabilities?.capUnit === 'usd';
   const cap = credits === null ? undefined : parseCapIn(ad.capabilities?.capUnit, credits);
-  if (credits !== null && cap === undefined) return { ok: false, error: usd ? 'The cost cap must be at least $0.01.' : 'The cap must be a number of at least 30 AI credits (the runtime minimum).' };
+  if (credits !== null && cap === undefined) return { ok: false, error: usd ? 'The spending limit must be at least $0.01.' : 'The spending limit must be a number of at least 30 AI credits (the runtime minimum).' };
   try {
     // Not started yet: nothing to change now, the cap goes in the start options. A live session whose adapter cannot take it is refused, not saved (spec 012 FR-050).
     if (ad.isLive(a.id) && refusesLive(ad, a.id, await setCapOf(ad, a.id, cap ?? null))) return { ok: false, error: NO_LIVE_SETTING };

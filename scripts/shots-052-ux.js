@@ -32,10 +32,10 @@ module.exports = async (ctx) => {
     // FR-015 (round 2): the restore notice is a strip under the top bar that names the folders and covers nothing
     const strip = await js(`(()=>{const e=document.getElementById('restoreStrip');if(!e||e.hidden)return null;const r=e.getBoundingClientRect(),f=document.getElementById('floor').getBoundingClientRect();return {text:e.innerText,below:f.top>=r.bottom-1,btns:[...e.querySelectorAll('button')].map(b=>b.textContent)}})()`);
     assert.ok(strip, 'the restore strip is shown');
-    assert.match(strip.text, /Allow all, restored from your last run: .+/);
+    assert.match(strip.text, /Still on Allow all from last time: .+/);
     assert.ok(/swisscontract-ai|command-center/.test(strip.text), 'it names the folders: ' + strip.text);
     assert.ok(strip.below, 'the office starts below it (nothing covered)');
-    assert.deepStrictEqual(strip.btns, ['Ask me first (safer)', 'Keep as it is']);
+    assert.deepStrictEqual(strip.btns, ['Switch to Ask first', 'Keep Allow all']);
     // FR-006: room counts in words
     const dots = await js(`[...document.querySelectorAll('#stage .room-dots[role="img"]')].map(x=>x.getAttribute('aria-label'))`);
     assert.ok(dots.length && dots.every((l) => /\d+ (waiting for you|error|working|done|idle)/.test(l)), 'room counts have words: ' + dots[0]);
@@ -49,7 +49,7 @@ module.exports = async (ctx) => {
     key('Escape'); await ctx.sleep(250);
     assert.ok(await js(`document.getElementById('topMoreMenu').hidden&&document.activeElement.id==='topMoreBtn'`), '⋯ closes on Esc');
 
-    // FR-027 (#305): the inbox lists every agent that needs you; a row's Approve settles that agent's card
+    // FR-027 (#305): the inbox lists every agent that needs you; a row's Allow once settles that agent's card
     await js(`document.activeElement&&document.activeElement.blur()`);
     key('I'); await ctx.sleep(900);
     const ib = await js(`(()=>{const d=document.getElementById('inboxDlg');if(!d)return null;return {rows:[...d.querySelectorAll('.inbox-row')].map(r=>r.querySelector('.ib-h b').textContent),btn:document.getElementById('inboxBtn').innerText}})()`);
@@ -69,11 +69,11 @@ module.exports = async (ctx) => {
         for (let t = 0; t < 40 && n1 === n0; t++) { await ctx.sleep(100); n1 = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`); }
         assert.ok(n1 === n0 - 1, `A approves the focused row (${target}: ${n0} -> ${n1})`);
         assert.ok(await js(`document.activeElement&&document.activeElement.classList.contains('ib-h')`), 'after an answer, focus is on the next heading');
-        assert.match(await js(`document.getElementById('srAnnounce').textContent`), /Approved .+\. /, 'the answer is announced');
+        assert.match(await js(`document.getElementById('srAnnounce').textContent`), /Allowed .+\. /, 'the answer is announced');
       }
       // approve the first request that is not Jonas's (the chat checks below use Jonas)
       const before2 = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`);
-      const who = await js(`(()=>{const r=[...document.querySelectorAll('#inboxDlg .inbox-row')].find(x=>x.querySelector('.ib-h b').textContent!=='Jonas'&&[...x.querySelectorAll('.ib-act button')].some(b=>b.textContent==='Approve'));if(!r)return null;[...r.querySelectorAll('.ib-act button')].find(b=>b.textContent==='Approve').click();return r.querySelector('.ib-h b').textContent;})()`); await ctx.sleep(1200);
+      const who = await js(`(()=>{const r=[...document.querySelectorAll('#inboxDlg .inbox-row')].find(x=>x.querySelector('.ib-h b').textContent!=='Jonas'&&[...x.querySelectorAll('.ib-act button')].some(b=>b.textContent==='Allow once'));if(!r)return null;[...r.querySelectorAll('.ib-act button')].find(b=>b.textContent==='Allow once').click();return r.querySelector('.ib-h b').textContent;})()`); await ctx.sleep(700);
       let after = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`);
       for (let t = 0; t < 40 && who && after === before2; t++) { await ctx.sleep(100); after = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`); } 
       if (who) assert.ok(after === before2 - 1, `approving ${who} from the inbox removes the row (${before2} -> ${after})`);
@@ -100,11 +100,11 @@ module.exports = async (ctx) => {
     await shot(`052-chat-waiting-${w}x${h}.png`);
     await js(`document.getElementById('chat').scrollTop=0`); await ctx.sleep(600);
     st = await answerable();
-    assert.ok(!st.inView && st.bar && st.btns.includes('Approve') && st.btns.includes('Deny'), 'scrolled away: the bar answers: ' + JSON.stringify(st));
-    assert.ok(st.btns.some((t) => /^Approve “.+” for this session$/.test(t)), 'the session approval names its scope (FR-019): ' + st.btns.join(' | '));
+    assert.ok(!st.inView && st.bar && st.btns.includes('Allow once') && st.btns.includes('Deny'), 'scrolled away: the bar answers: ' + JSON.stringify(st));
+    assert.ok(st.btns.some((t) => /^Allow “.+” for this session$/.test(t)), 'the session approval names its scope (FR-019): ' + st.btns.join(' | '));
     await shot(`052-chat-answerbar-${w}x${h}.png`);
-    // the bar's Approve presses the card's own Approve
-    await js(`[...document.querySelectorAll('#answerBar button')].find(b=>b.textContent==='Approve').click()`); await ctx.sleep(700);
+    // the bar's Allow once presses the card's own Allow once
+    await js(`[...document.querySelectorAll('#answerBar button')].find(b=>b.textContent==='Allow once').click()`); await ctx.sleep(700);
     assert.ok(await js(`document.getElementById('answerBar').hidden`), 'answered: the bar goes away');
     assert.ok(await js(`!!document.querySelector('#chat .note.perm.settled.approved')`), 'the card shows it was approved');
     // FR-003: More by keyboard

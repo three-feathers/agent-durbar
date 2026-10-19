@@ -6,7 +6,7 @@
  *   OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
  *     DURBAR_DRIVER=$PWD/scripts/shots-051-setup.js xvfb-run -a npx electron . --no-sandbox
  *
- * Checks: Settings > Harnesses shows one card per harness with its state (Ready / Not installed / Update needed); Install shows the
+ * Checks: Settings > Agent apps shows one card per agent app with its state (Ready / Not installed / Update needed); Install shows the
  * exact commands before anything runs and finishes; the sign-in dialog shows the link button and the one-time code. Prints "[051] PASS".
  */
 const assert = require('assert');
@@ -27,6 +27,7 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(cards.map((c) => c.kind), ['copilot', 'claude', 'codex'], 'one card per harness: ' + JSON.stringify(cards));
     assert.deepStrictEqual(cards.map((c) => c.st), ['Ready', 'Not installed', 'Update needed']);
     assert.ok(cards[1].act.includes('Install…') && cards[2].act.includes('Update…'), 'one next step each');
+    assert.strictEqual(await js(`document.getElementById('hsH').textContent`), 'Agent apps', 'the section is called Agent apps (spec 052 FR-051)');
     await js(`document.getElementById('hsH').scrollIntoView()`); await ctx.sleep(300);
     await shot(`051-harnesses-${w}x${h}.png`);
     // Install: the exact commands first
