@@ -47,7 +47,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - You see its thinking, tool calls and replies as they stream in, with Markdown and copy buttons.
 - Attach files and images by picking, dropping or pasting.
 - Questions an agent asks you appear as a card with its choices, an "Other" answer and Skip.
-- **Stop** a turn or **End** a session from the chat header or from the agent's card menu.
+- **Stop** a turn or **End** a session from the chat header or from the agent's card menu ([screenshot](docs/screenshots/005-card-menu-stop-end-1440x900.png)).
 
 **Sessions and folders**
 - One session per folder or `.code-workspace` file, or several per folder (**+ New session**).

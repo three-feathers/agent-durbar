@@ -805,6 +805,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .mode-menu .mm-danger b{color:var(--red-ink)}
 .mode-menu .mt{display:flex;flex-direction:column;flex:1;min-width:0}.mode-menu b{font-size:13px}.mode-menu small{font-size:11.5px;color:var(--muted);line-height:1.35}
 .mode-menu .ck{color:var(--sage-ink);font-weight:700;width:14px;flex:none}
+.mode-menu .mm-sep{height:1px;margin:4px 6px;background:var(--line)}
+.mode-menu [aria-disabled="true"]{opacity:.6;cursor:not-allowed}
 .mm-note{margin:4px 10px 4px;font-size:11.5px;color:var(--muted)}
 .dlg .chk{flex-direction:row;align-items:center;gap:8px;font-weight:500}
 .btn.primary.warn{background:#fdf3df;border-color:#e5be78;color:var(--amber-ink)}
