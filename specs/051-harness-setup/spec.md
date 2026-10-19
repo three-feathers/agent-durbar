@@ -59,6 +59,14 @@ Each sign-in was started **without a terminal** (stdin closed, output to a file)
   - a 15-minute limit; one setup operation at a time;
   - on exit 0, detection runs again and the card updates; otherwise the dialog shows the exit code and the last lines, and suggests the official page.
   - Package managers may ask for admin rights (winget UAC, brew `sudo` for some casks): the dialog says so up front. Durbar never asks for a password itself.
+- **FR-004b** **Consent the page cannot fake** (security review, 2026-10-20) `[IMPLEMENTED]`:
+  - the main process resolves the operation first (`prepare`: the binary's **real path**, symlinks resolved, and its fixed arguments), then asks in a **native dialog** (`dialog.showMessageBox`, Cancel is the default) showing that path and those arguments; only *Install*/*Update* there starts it (`start`). The page's own plan dialog stays as the place to choose; it is no longer the consent.
+  - Sign-in is not confirmed natively: it runs the harness's own fixed login, changes nothing else, and is finished by the user in the browser.
+  - every `harness:*` IPC call is answered only for the app's own page in the window's main frame (`senderAllowed`).
+  - macOS/Linux: a binary that is world-writable, or sits in a world-writable folder (even a sticky one such as `/tmp`), is not run. `[KNOWN GAP]` Windows ACLs are not read.
+  - winget installs and upgrades name `--source winget`. `taskkill` runs from `%SystemRoot%\System32`; no SIGKILL to a process group after its leader has exited.
+  - `harness:openSignIn` opens the parsed, normalised URL (`new URL(url).href`) after the host check.
+- **FR-004c** **Output handling** `[IMPLEMENTED]`: progress events at most about 4 a second (the last state always arrives); bytes are decoded as whole UTF-8 characters; in the plain lines the sign-in link and code (shown on their own) are replaced and OAuth values in URLs (`code`, `state`, `device_code`, tokens) are hidden; a child that fails to start ends the operation (once) and frees the runner.
 - **FR-005** **Sign-in** runs the harness's own command (argv, no shell, the found binary):
   - Codex `login --device-auth`; Copilot CLI `login --device-code`; Claude Code `auth login`.
   - Durbar reads the output as it comes (ANSI removed) and shows:
@@ -121,4 +129,5 @@ Each sign-in was started **without a terminal** (stdin closed, output to a file)
 
 ## Changes
 
-*(none yet)*
+- **2026-10-20 (spec 052 FR-045):** the cards say which plan each harness uses; the Claude and Codex sign-in and install hints point to Settings > Harnesses (the command stays in brackets); an install that worked goes straight to the sign-in when the harness needs one; the sign-in dialog names the account, adds a step 3 and no longer shows seconds; install choices lead with "Using Homebrew (recommended)" / "Using npm" above the command.
+- **2026-10-20 (security review, FR-004b/FR-004c):** a round-4 security reviewer found that consent lived only in the page. Installs and updates now need a native main-side confirmation with the real path; harness calls check the sender frame; world-writable binaries are refused on macOS/Linux; winget names its source; output lines hide the link, the code and OAuth values; progress is throttled. `test:` `scripts/test-harnesssetup.ts`. Not checked on Windows or macOS (`read:`); the native dialog was checked in the simulator only as far as the page goes (the simulator has its own canned runner).

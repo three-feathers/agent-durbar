@@ -388,6 +388,17 @@ function holdTimer(t,ms,kill){
   t.addEventListener('mouseenter',pause);t.addEventListener('focusin',pause);t.addEventListener('mouseleave',resume);t.addEventListener('focusout',()=>setTimeout(resume,0));
 }
 function toast(html,ms){const t=document.createElement('div');t.className='toast';t.innerHTML=html;$('toasts').appendChild(t);holdTimer(t,ms||3200,()=>{t.style.transition='opacity .3s';t.style.opacity='0';setTimeout(()=>t.remove(),320)});return t;}
+/* spec 052 FR-047: a button that awaits a bridge call shows it is busy: disabled + aria-busy, same width, the given label, and a 12px spinner
+   after 150ms (none under reduced motion: the label alone). Returns done(), which restores the button. busy(null) is a no-op. */
+const reducedMotion=()=>{try{return matchMedia('(prefers-reduced-motion: reduce)').matches;}catch(e){return false;}};
+function busy(btn,label){
+  if(!btn||btn.getAttribute('aria-busy')==='true')return ()=>{};
+  const html=btn.innerHTML,mw=btn.style.minWidth,was=btn.disabled;
+  btn.style.minWidth=btn.offsetWidth+'px';btn.disabled=true;btn.setAttribute('aria-busy','true');
+  btn.textContent=label||btn.textContent;
+  const t=reducedMotion()?0:setTimeout(()=>{if(btn.getAttribute('aria-busy')!=='true')return;const sp=document.createElement('span');sp.className='spin';sp.setAttribute('aria-hidden','true');btn.prepend(sp);},150);
+  return ()=>{clearTimeout(t);if(btn.getAttribute('aria-busy')!=='true')return;btn.innerHTML=html;btn.style.minWidth=mw;btn.disabled=was;btn.removeAttribute('aria-busy');};
+}
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 /* the inverse of esc, in one pass (spec 045 FR-002: chained replacements turned "&amp;lt;" into "<") */
 const unesc=s=>String(s).replace(/&(amp|lt|gt|quot);/g,(m,k)=>({amp:'&',lt:'<',gt:'>',quot:'"'}[k]));
@@ -665,7 +676,7 @@ let layoutKey='', layout=null;
 const WELCOME_HTML=`<section class="welcome" aria-labelledby="wlT"><h2 id="wlT">Welcome to Agent Durbar</h2>
   <p class="wl-sub">Your AI agents in one office: see what each one is doing, chat with it, and decide what it may do. For code, documents, research or notes, with GitHub Copilot, Claude Code or OpenAI Codex side by side.</p>
   <ol class="wl-steps">
-    <li><b>Set up an agent harness once</b>: GitHub Copilot (a free plan works), Claude Code or OpenAI Codex. <b>Set up harnesses…</b> installs and signs in for you, showing every step; nothing is typed in a terminal.</li>
+    <li><b>Set up an agent harness once</b>: GitHub Copilot (a free plan works), Claude Code or OpenAI Codex. <b>Set up harnesses…</b> installs and signs in for you, showing every step; nothing is typed in a terminal.<br><span class="wl-which">Which one? Have ChatGPT: Codex. Have Claude: Claude Code. Neither: GitHub Copilot (free).</span></li>
     <li><b>Add a folder</b> with <b>+ Folder</b>: a project, a set of documents, any folder your agent should work in. Each folder becomes a room with its own agent. Agents start in <b>Read-only</b>: they can read the folder, nothing else.</li>
     <li><b>Send a message</b> to start. Switch to <b>Ask first</b> or <b>Allow all</b> only for folders you trust.</li>
   </ol>
@@ -1035,13 +1046,13 @@ function openPanel(id,focus){
   chatEl.onscroll=()=>{chatEl.dataset.pin=(chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight<80)?'1':'0';};
   $('panel').querySelector('.panel-in').classList.toggle('ro',!!(a.live&&a.parent));
   $('backBtn').onclick=closePanel;
-  $('vscodeBtn').onclick=()=>a.live?openLive(a):toast('Would run <code>code '+esc(room.path)+'</code>',3800);
+  $('vscodeBtn').onclick=e=>a.live?openLive(a,e.currentTarget):toast('Would run <code>code '+esc(room.path)+'</code>',3800);
   if(a.live)$('pauseBtn').hidden=true;
   if($('newSessBtn'))$('newSessBtn').onclick=()=>newSession(a);
   if($('schedHdrBtn'))$('schedHdrBtn').onclick=()=>openSchedules(room);
   if($('toolsHdrBtn'))$('toolsHdrBtn').onclick=()=>window.DurbarScreens.openTools(liveRoot(a).id);
   if($('mcpBtn'))$('mcpBtn').onclick=()=>window.DurbarScreens.agentMcp(liveRoot(a),{toggle:feat(liveRoot(a),'mcpToggle')});
-  if($('endBtn'))$('endBtn').onclick=()=>endLive(a);
+  if($('endBtn'))$('endBtn').onclick=e=>endLive(a,e.currentTarget).catch(failToast('end'));
   if($('rmSessBtn'))$('rmSessBtn').onclick=()=>removeSessionUi(a);
   if($('rmFolderBtn'))$('rmFolderBtn').onclick=()=>removeFolder(room); /* spec 006 FR-022: the only session of the folder */
   if($('copyResBtn'))$('copyResBtn').onclick=()=>copyResume(a);
@@ -1051,7 +1062,7 @@ function openPanel(id,focus){
   wireAnswerBar(a);
   if(needsMe(a)){const c=pendingCardOf(a);if(c)announce(a.name+(c.classList.contains('question')?' asks: ':' needs your OK: ')+requestText(c));}
   $('pauseBtn').onclick=()=>{a.paused=!a.paused;if(a.live&&bridge.setPaused)bridge.setPaused(a.id,a.paused);toast(esc(a.name)+(a.paused?' paused.':' resumed.'));renderAll();};
-  if($('stopBtn'))$('stopBtn').onclick=()=>{if(a.live)return stopLive(a);a.paused=false;a.state='idle';a.label='Stopped';a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
+  if($('stopBtn'))$('stopBtn').onclick=e=>{if(a.live)return stopLive(a,e.currentTarget).catch(failToast('stop'));a.paused=false;a.state='idle';a.label='Stopped';a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
   $('attFile').onclick=()=>{if(a.live)return pickLive();addPicked([{name:SAMPLE_FILES[fi++%SAMPLE_FILES.length],kind:'file',size:12*1024}]);};
   $('attImg').onclick=()=>{if(a.live)return pickLive('image');addPicked([{name:SAMPLE_IMGS[ii++%SAMPLE_IMGS.length],kind:'image',size:240*1024}]);};
   /* drag and drop anywhere on the panel, paste into the message box */
@@ -1091,8 +1102,8 @@ document.addEventListener('click',e=>{
     return;}
   const cp=e.target.closest('.codebox .copy');
   if(cp){const code=cp.parentNode.querySelector('code');const txt=code?code.textContent:'';
-    const done=()=>{cp.textContent='Copied';setTimeout(()=>{cp.textContent='Copy';},1400);};
-    if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(done,()=>toast('Could not copy.'));else{const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');done();}catch(_){toast('Could not copy.');}ta.remove();}
+    const done=()=>copiedLabel(cp);
+    if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(done,()=>toast('Could not copy.').classList.add('err'));else{const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');done();}catch(_){toast('Could not copy.').classList.add('err');}ta.remove();}
     return;}
   const so=e.target.closest('.sub-open');
   if(so){const blk=so.closest('.subblk'),id=blk&&blk.dataset.sub,par=ui.selected&&byId(ui.selected),card=par&&liveById(par.id+':'+id);if(card)openPanel(card.id,false);return;}
@@ -1171,7 +1182,7 @@ function renderRestoreStrip(){
   el.querySelector('[data-ns="ask"]').onclick=async()=>{
     const bad=[];
     for(const a of ags){const r=await bridge.setPermMode(a.id,'ask',{}).catch(e=>({ok:false,error:String(e&&e.message||e)}));if(r&&r.ok){a.info.permMode='ask';a.info.permRestored=undefined;a.role=roleFor(a.info);}else bad.push(a.name);}
-    toast(bad.length?'Could not switch '+esc(bad.join(', '))+'.':(ags.length>1?ags.length+' sessions are':'The session is')+' on <b>Ask first</b> from the next request.',4200);
+    toast(bad.length?'Could not switch '+esc(bad.join(', '))+'.':(ags.length>1?ags.length+' sessions are':'The session is')+' on <b>Ask first</b> from the next request.',4200).classList.add(bad.length?'err':'ok');
     renderRestoreStrip();if(ui.selected)updatePanelHeader();scheduleRender();
   };
   scheduleRender();
@@ -1189,12 +1200,16 @@ function renderInboxBtn(){
   b.setAttribute('aria-label',n?n+(n===1?' agent needs':' agents need')+' you. Open the inbox (I or Ctrl+Shift+A).':'Nobody needs you. Open the inbox (I or Ctrl+Shift+A).');
 }
 function pendingCardOf(a){const c=getChat(a);const all=[...c.el.querySelectorAll('.note.perm:not(.settled)')].filter(n=>n.querySelector(':scope > .note-actions button'));return all[0]||null;}
-function closeInbox(){const d=$('inboxDlg');if(!d)return;d.remove();const b=$('inboxBtn');if(b&&b.getClientRects().length)b.focus();}
+/* spec 052 FR-048: focus goes back to where it was when the inbox opened (still in the page and shown), else to the inbox button */
+let inboxBack=null;
+function closeInbox(){const d=$('inboxDlg');if(!d)return;d.remove();const back=inboxBack;inboxBack=null;
+  const b=back&&back.isConnected&&back.getClientRects().length&&!back.disabled?back:$('inboxBtn');if(b&&b.getClientRects().length)b.focus();}
 /* spec 052 FR-034: one polite live region for requests and answers (screen readers hear them; nothing visible changes) */
 let announceT=0;
 function announce(text){const el=$('srAnnounce');if(!el||!text)return;clearTimeout(announceT);el.textContent='';announceT=setTimeout(()=>{el.textContent=String(text).slice(0,300);},60);}
 function openInbox(){
-  closeInbox();
+  const back=$('inboxDlg')?inboxBack:document.activeElement;
+  closeInbox(); inboxBack=back&&back!==document.body?back:null;
   const d=document.createElement('div');d.id='inboxDlg';d.className='dlg-ov';
   d.innerHTML='<div class="dlg wide inbox-dlg" role="dialog" aria-modal="true" aria-labelledby="inboxT" aria-describedby="inboxKeys"><h3 id="inboxT">Needs you</h3><div class="dbody" id="inboxBody"></div><p class="inbox-keys" id="inboxKeys">Keys: J/K or ↑/↓ move, A approve, D deny, S allow for the session, O open the chat, Esc close.</p><div class="dbtn"><button class="btn" type="button" id="inboxClose">Close</button></div></div>';
   document.body.appendChild(d);
@@ -1222,7 +1237,7 @@ function inboxKey(e){
 function paintInbox(focusIndex){
   const body=$('inboxBody'); if(!body)return;
   const list=needsMeOrder();
-  body.innerHTML=list.length?'':'<p class="inbox-empty" tabindex="-1">Nobody needs you right now. Agents that ask for permission, ask a question, reach their limit or hit an error appear here.</p>';
+  body.innerHTML=list.length?'':'<p class="inbox-empty" tabindex="-1"><span class="ib-ok" aria-hidden="true"></span><span><b>All clear. Nobody needs you right now.</b><small>Agents that ask for permission, ask a question, reach their limit or hit an error appear here.</small></span></p>'; /* spec 052 FR-048 */
   list.forEach((a,i)=>{
     const card=pendingCardOf(a), row=document.createElement('section');row.className='inbox-row';
     const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?'stopped':'needs your OK'):(st==='error'?'hit an error':a.limit?'reached its limit':LABELS[st]||st);
@@ -1235,7 +1250,16 @@ function paintInbox(focusIndex){
     if(card&&!q)for(const src of card.querySelectorAll(':scope > .note-actions button')){
       if(src.dataset.broad)continue;
       const k=src.dataset.act==='session'?'session':/danger/.test(src.className)?'deny':/primary/.test(src.className)?'approve':'other';
-      add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],k,()=>{const word=k==='deny'?'Denied':k==='other'?src.textContent:'Approved';src.click();setTimeout(()=>{const left=needsMeOrder().length;announce(word+' '+a.name+'. '+(left?left+' left.':'Nobody else needs you.'));paintInbox(i);renderInboxBtn();},250);},src.title);
+      add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],k,ev=>{const word=k==='deny'?'Denied':k==='other'?src.textContent:'Approved';
+        /* spec 052 FR-047/FR-048: the row's buttons go busy, then the row shows the answer for 600ms, folds away in 200ms, then the list repaints */
+        if(row.classList.contains('settled')||row.dataset.answering)return; row.dataset.answering='1';
+        act.querySelectorAll('button').forEach(x=>{if(x!==ev.currentTarget)x.disabled=true;});const done=busy(ev.currentTarget,'Sending…');
+        row.querySelector('.ib-h').focus();src.click();
+        setTimeout(()=>{const left=needsMeOrder().length;announce(word+' '+a.name+'. '+(left?left+' left.':'Nobody else needs you.'));renderInboxBtn();
+          if(!row.isConnected){done();paintInbox(i);return;}
+          row.classList.add('settled');act.innerHTML='';const p=document.createElement('p');p.className='ib-done '+(k==='deny'?'no':k==='other'?'':'yes');p.textContent=k==='deny'?'Denied':k==='other'?word:'✓ '+word;act.appendChild(p);
+          setTimeout(()=>{if(!row.isConnected)return paintInbox(i);if(reducedMotion())return paintInbox(i);
+            row.style.height=row.offsetHeight+'px';void row.offsetHeight;row.classList.add('gone');setTimeout(()=>paintInbox(i),210);},600);},250);},src.title);
     }
     add(q?'Answer in chat':'Open chat',q?'primary':'','open',()=>{closeInbox();openPanel(a.id,true);});
     body.appendChild(row);
@@ -1596,10 +1620,12 @@ function addCopyButtons(el){
 document.addEventListener('click',async e=>{
   const b=e.target.closest('.cp-btn');if(!b)return;
   e.stopPropagation();
-  const text=b.classList.contains('cp-code')?((b.parentElement.querySelector('code')||b.parentElement).textContent||'').replace(/Copy$/,''):(b.closest('.bubble')||{})._raw||'';
-  try{await navigator.clipboard.writeText(text);b.textContent='Copied';setTimeout(()=>{b.textContent='Copy';},1500);}
-  catch{toast('Could not copy to the clipboard.',3000);}
+  const text=b.classList.contains('cp-code')?((b.parentElement.querySelector('code')||b.parentElement).textContent||'').replace(/(Copy|Copied ✓)$/,''):(b.closest('.bubble')||{})._raw||'';
+  try{await navigator.clipboard.writeText(text);copiedLabel(b);}
+  catch{toast('Could not copy to the clipboard.',3000).classList.add('err');}
 });
+/* spec 052 FR-049: after a copy the button says "Copied ✓" for 1200ms, then "Copy" again */
+function copiedLabel(b){clearTimeout(b._cpT);b.textContent='Copied ✓';b._cpT=setTimeout(()=>{b.textContent='Copy';},1200);}
 function mdFlush(){const l=[...MDQ];MDQ.clear();l.forEach(mdPaint);}
 let mdRaf=0;
 function mdSet(el,raw,now){
@@ -2145,14 +2171,19 @@ async function sendLive(text,forId){
   if(!r.ok){closeTurn(a);addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);setState(a,'error',null,'Send failed: '+SHORT(r.error,100));}
 }
 async function pickLive(want){addPicked(await bridge.pickAttachments(want));}
-async function openLive(a){
-  const r=await bridge.openInVSCode(liveRoot(a).id);
-  toast(r.ok?'Opening in '+esc(r.edition||'VS Code')+'…':'Could not open VS Code: '+esc(r.error||'unknown error'),4200);
+/* spec 052 FR-047: btn (optional) shows the busy state while the bridge call runs; FR-050: success and failure toasts are typed */
+async function openLive(a,btn){
+  const done=busy(btn,'Opening…');
+  try{const r=await bridge.openInVSCode(liveRoot(a).id);
+    toast(r.ok?'Opening in '+esc(r.edition||'VS Code')+'…':'Could not open VS Code: '+esc(r.error||'unknown error'),4200).classList.add(r.ok?'ok':'err');}
+  catch(err){toast('Could not open VS Code: '+esc(String(err&&err.message||err)),5000).classList.add('err');}
+  finally{done();}
 }
-async function stopLive(a){const r=liveRoot(a);await bridge.stop(r.id);toast(esc(r.name)+': stopped the current turn. It is ready for your next message.');}
-async function endLive(a){const r=liveRoot(a);await (bridge.end||bridge.stop)(r.id);toast(esc(r.name)+': session ended. Sending a message resumes it.',4200);}
+async function stopLive(a,btn){const r=liveRoot(a),done=busy(btn,'Stopping…');try{await bridge.stop(r.id);}finally{done();}toast(esc(r.name)+': stopped the current turn. It is ready for your next message.').classList.add('ok');}
+async function endLive(a,btn){const r=liveRoot(a),done=busy(btn,'Ending…');try{await (bridge.end||bridge.stop)(r.id);}finally{done();}toast(esc(r.name)+': session ended. Sending a message resumes it.',4200).classList.add('ok');}
+const failToast=what=>err=>toast('Could not '+what+': '+esc(String(err&&err.message||err)),5000).classList.add('err');
 async function copyResume(a){const r=liveRoot(a),cmd=resumeCmdOf(r); if(!cmd)return;
-  try{await navigator.clipboard.writeText(cmd);toast('Copied <code>'+esc(cmd)+'</code>. End the session here first, then run it in a terminal in '+esc(roomOf(r).path)+'. In VS Code, turn on the sessions list filter External to see sessions started here.',9000);}
+  try{await navigator.clipboard.writeText(cmd);toast('Copied <code>'+esc(cmd)+'</code>. End the session here first, then run it in a terminal in '+esc(roomOf(r).path)+'. In VS Code, turn on the sessions list filter External to see sessions started here.',9000).classList.add('ok');}
   catch{toast('Run <code>'+esc(cmd)+'</code> in a terminal in '+esc(roomOf(r).path)+' (end the session here first).',8000);}}
 /* ---------------- full-screen chat: the strip of all agents ---------------- */
 function stripAgents(){
@@ -2204,7 +2235,7 @@ async function cardOp(a,op,anchor){
       if(!ok)return;
     }
     await endLive(a);
-  }catch(err){toast('Could not '+(op==='stop'?'stop':'end')+': '+esc(String(err&&err.message||err)),5000);}
+  }catch(err){toast('Could not '+(op==='stop'?'stop':'end')+': '+esc(String(err&&err.message||err)),5000).classList.add('err');}
   finally{refocusAnchor(anchor);}
 }
 /* small modal: returns {value, checked} or null when dismissed. Focus trap, Escape and focus return live in dialog.js (spec 003 FR-033). */
@@ -2886,13 +2917,13 @@ async function removeFolder(r){
   const msg=busy?`${esc(r.name)} has ${busy} agent${busy===1?'':'s'} still working. Remove the folder and end ${busy===1?'it':'them'}?`:`Remove ${esc(r.name)}? Its sessions end here; your earlier ${esc(kindWord(((ags.find(x=>!x.parent)||{}).info||{}).adapterId))} sessions stay on disk and can be resumed if you add the folder again.`;
   if(!window.confirm(unesc(msg)))return;
   const root=ags.find(x=>!x.parent); const res=root&&bridge.removeFolder?await bridge.removeFolder(root.id):{ok:true,removedIds:[]};
-  if(!res.ok){toast('Could not remove the folder.',4000);return;}
+  if(!res.ok){toast('Could not remove the folder.',4000).classList.add('err');return;}
   if(ui.selected&&(byId(ui.selected)||{}).room===r.id)closePanel();
   const gone=new Set(ags.map(x=>x.id));
   for(let i=agents.length-1;i>=0;i--){if(gone.has(agents[i].id)||gone.has(agents[i].parent)){delete chats[agents[i].id];delete prev[agents[i].id];agents.splice(i,1);}}
   const ri=ROOMS.indexOf(r); if(ri>=0)ROOMS.splice(ri,1);
   if(ui.ws===r.id)ui.ws='all';
-  renderFilter(); renderFolders(); scheduleRender(); toast(esc(r.name)+' removed.',3200);
+  renderFilter(); renderFolders(); scheduleRender(); toast(esc(r.name)+' removed.',3200).classList.add('ok');
 }
 /* spec 006 FR-018: a display name for the room; empty goes back to the folder's own name */
 async function renameFolder(r,el){
@@ -2915,8 +2946,8 @@ async function removeSessionUi(a){
     buttons:[{label:'Cancel',value:null},{label:'Remove session',value:'ok',cls:'primary warn'}]});
   if(!ok)return;
   const out=await bridge.removeSession(r.id).catch(e=>({ok:false,error:String(e&&e.message||e)}));
-  if(!out.ok){toast('Could not remove: '+esc(out.error||'unknown error'),5000);return;}
-  const name=r.name; removeLiveAgent(r.id); renderFolders(); scheduleRender(); toast(esc(name)+' removed. Its history is under Previous sessions.',3600);
+  if(!out.ok){toast('Could not remove: '+esc(out.error||'unknown error'),5000).classList.add('err');return;}
+  const name=r.name; removeLiveAgent(r.id); renderFolders(); scheduleRender(); toast(esc(name)+' removed. Its history is under Previous sessions.',3600).classList.add('ok');
 }
 function removeLiveAgent(id){
   STATS.forget(id); MOOD.forget(id);
@@ -3010,9 +3041,9 @@ function replayHistory(a,h,title,lead){
   addNote(chat,(lead||'Resumed')+': '+esc((title||'earlier session').replace(/[.!?…]+$/,''))+'. New messages continue this session.');
 }
 async function resumePrev(a,sid,btn){
-  if(btn){btn.disabled=true;btn.textContent='Resuming…';}
+  const done=busy(btn,'Resuming…'); /* spec 052 FR-047: the shared busy state (it was a hand-made one) */
   const r=await bridge.resumeSession(a.id,sid,pristine(a)).catch(e=>({ok:false,error:String(e&&e.message||e)}));
-  if(!r.ok){toast('Could not resume: '+esc(r.error||'unknown error'),7000);if(btn){btn.disabled=false;btn.textContent='Resume';}return;}
+  if(!r.ok){toast('Could not resume: '+esc(r.error||'unknown error'),7000).classList.add('err');done();return;}
   if(r.removedId)removeLiveAgent(r.removedId);
   if(ui.selected&&!byId(ui.selected))closePanel();
   addLiveAgent(r.agent);
@@ -3044,7 +3075,7 @@ async function viewVs(a,key,btn){
   const c=$('chat'); c.replaceChildren(wrap); vsViewing=true;
   document.querySelector('#panel .panel-in').classList.add('viewing');
   $('vsBack').onclick=leaveVsView; $('vsBack').focus({preventScroll:true});
-  $('vsCont').onclick=()=>openLive(a);
+  $('vsCont').onclick=e=>openLive(a,e.currentTarget);
   /* FR-016: open at the latest message; again once layout (fonts) settles, unless the reader already scrolled up */
   const toEnd=(again)=>{if(vsViewing&&c.contains(wrap)&&!(again&&c.scrollTop+c.clientHeight<c.scrollHeight-40))c.scrollTop=c.scrollHeight;};
   toEnd(false); requestAnimationFrame(()=>{toEnd(true);setTimeout(()=>toEnd(true),250);});

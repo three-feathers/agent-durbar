@@ -57,7 +57,7 @@ module.exports = async (ctx) => {
   const optionsOf = (id) => js(`[...document.getElementById('${id}').options].map(o=>o.value)`);
   const setSel = (id, v) => js(`(()=>{const s=document.getElementById('${id}');s.value=${jsLiteral(v)};s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
   /* buttons with a handler: an onclick property, a data-* action, or the ones the page wires through a delegated listener on the document */
-  const DELEGATED = ['modeChip', 'modelChip', 'compactBtn', 'ctxChip', 'capChip']; // document-level click handlers in app.js
+  const DELEGATED = ['agentChip', 'modeChip', 'modelChip', 'compactBtn', 'ctxChip', 'capChip']; // document-level click handlers in app.js
   const deadButtons = (root) => js(`(()=>{const D=${jsLiteral(DELEGATED)};return [...document.querySelectorAll('${root} button')].filter(b=>!b.disabled&&!b.hidden&&b.getClientRects().length)
     .filter(b=>typeof b.onclick!=='function'&&!Object.keys(b.dataset).length&&!D.includes(b.id)).map(b=>(b.id||b.className||b.textContent).toString().slice(0,40))})()`);
 
@@ -70,9 +70,9 @@ module.exports = async (ctx) => {
       evs.forEach(e=>{const k=kind[e.sessionId]||'?';const o=by[k]=by[k]||{usage:0,nano:0,cost:0,estimate:0,unavail:0,limit:0,sub:0};
         if(e.type==='usage'){o.usage++;if('nanoAiu' in e)o.nano++;if('costUsd' in e)o.cost++;if(e.costBasis==='estimate')o.estimate++;if(e.creditsStatus==='unavailable')o.unavail++;}
         if(e.type==='limit')o.limit++;if(e.type==='subagent')o.sub++;});
-      return {by,caps:infos.filter(i=>i.adapterId!=='copilot'&&i.maxAiCredits!==undefined).map(i=>i.name),kinds:infos.map(i=>i.adapterId)}})()`);
+      return {by,caps:infos.filter(i=>i.adapterId!=='copilot'&&i.adapterId!=='claude'&&i.maxAiCredits!==undefined).map(i=>i.name),kinds:infos.map(i=>i.adapterId)}})()`);
     const kc = (k) => ev.by[k] || { usage: 0, nano: 0, cost: 0, estimate: 0, unavail: 0, limit: 0, sub: 0 };
-    assert.deepStrictEqual(ev.caps, [], `${w}: only Copilot agents carry a credit cap (${ev.caps})`);
+    assert.deepStrictEqual(ev.caps, [], `${w}: only Copilot (AIU) and Claude Code (dollar cap, spec 012 FR-150) carry a cap (${ev.caps})`);
     assert.ok(kc('claude').usage > 0 && kc('codex').usage > 0 && kc('copilot').usage > 0, `${w}: every kind reports usage (${JSON.stringify(ev.by)})`);
     assert.strictEqual(kc('claude').nano, 0, `${w}: claude-like usage has no nanoAiu`);
     assert.strictEqual(kc('codex').nano + kc('basic').nano, 0, `${w}: codex-like and basic usage have no nanoAiu`);
@@ -129,7 +129,7 @@ module.exports = async (ctx) => {
       if (kind === 'copilot') {
         assert.ok(p.cap && p.stop && p.model && p.mcp && p.newSess, `${w} ${id}: Copilot keeps cap chip, Stop, model chip, MCP and new session (${JSON.stringify(p)})`);
         assert.strictEqual(p.modeBtn, 'BUTTON', `${id}: Copilot mode chip is a button`);
-      } else assert.strictEqual(p.cap, false, `${w} ${id}: a ${kind} agent has no #capChip`);
+      } else if (kind !== 'claude') assert.strictEqual(p.cap, false, `${w} ${id}: a ${kind} agent has no #capChip`); // Claude Code has a dollar cap (spec 012 FR-150)
       if (kind === 'claude' || kind === 'codex') {
         assert.ok(p.stop && p.model && p.mcp && p.newSess, `${w} ${id}: ${kind} keeps Stop, model chip, MCP and new session (${JSON.stringify(p)})`);
         assert.strictEqual(p.modeBtn, 'BUTTON', `${id}: ${kind} mode chip is a button`);
@@ -208,7 +208,7 @@ module.exports = async (ctx) => {
     await setSel('kindSel', 'copilot');
 
     // ---- the new-session dialog follows the kind too ----
-    await openPanel('sim-3'); // Jonas, Copilot, Allow all
+    await openPanel('sim-15'); // Maya, Copilot, Allow all (Jonas waits for a permission, so he is in Ask first since spec 052 FR-046)
     await js(`document.getElementById('newSessBtn').click()`);
     assert.ok(await ctx.waitFor(`!!document.getElementById('sdPerm')`, 3000), 'the new-session dialog opens');
     assert.strictEqual(await js(`document.getElementById('sdPerm').value`), 'allow', 'the dialog starts at the current mode');
