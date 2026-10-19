@@ -578,3 +578,8 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
   - **Sub-agent:** asked to use a sub-agent, Claude called its **`Agent`** tool (the current name; `Task` is the older one, both are mapped); a `subagent` started (`general-purpose`), the helper's `Glob` and `Bash` calls were attributed to it, the helper's shell command still went through the Ask first card, and the helper completed; the main agent answered with the right count.
   - Seen but not asked about: `ToolSearch` (Claude's own tool lookup) ran without a permission request in Ask first; it reads no files. Not changed.
 
+### 2026-10-19: the SDK path in a packaged build (issue #52, T044 part)
+
+- `real:` (local, Linux) `npm run pack:dir`, then the packaged binary `release/linux-unpacked/agent-durbar` with `DURBAR_DEV=1 DURBAR_CLAUDE=1 DURBAR_CLAUDE_TRANSPORT=sdk` and the driver `scripts/pack-esm-check.js` running inside the packaged main process (from `app.asar`): `{"packaged":true,"esmBuiltin":true,"esmFromAsar":true,"loadSdk":"undefined","registered":["claude"],"transport":"cli"}`. So the real ESM `import()` (the `new Function` wrapper in `claudeSdk.ts`) works from the CommonJS main process inside `app.asar`, a missing SDK is reported as "not available" without an error, the experimental registration works in a packaged build with the developer opt-in, and the SDK transport falls back to the CLI. No SDK, no `claude` run, no credits.
+- `[KNOWN GAP]` Not in CI and not on macOS or Windows (T044 stays open: it needs a CI change the owner should agree to). The SDK itself is not a dependency (Q3), so `asarUnpack` has nothing to unpack for it.
+
