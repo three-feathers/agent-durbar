@@ -54,7 +54,12 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - After a restart, each folder **continues its last session**.
 - *Previous sessions* lists a folder's earlier sessions to **Resume**, and VS Code's Copilot Chat history as a read-only copy.
 - **New session with a summary:** start fresh from a hand-off summary of the current conversation, which you edit before it is sent.
-- **Scheduled prompts** per folder, at a time or an interval, while the app is open.
+- **Scheduled prompts** per folder (once, every N minutes, or every day at a time), while the app is open. A **starter kit** has templates:
+  - *Start my day* (a morning briefing from your mail and calendar MCP servers);
+  - *Summarize my day*, *Plan my day*;
+  - *Open pull requests and CI*, and a dependency check.
+
+  The briefing and planning ones end by **asking you what to do next** with a question card, and the agent waits for you in the office.
 - **Custom agents** per session: `.github/agents` or `~/.copilot/agents` for Copilot, `.claude/agents` for Claude.
 - **Open in VS Code** opens the folder (VS Code, then Insiders, then VSCodium).
 
