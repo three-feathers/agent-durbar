@@ -551,3 +551,10 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 - **FR-131** `[IMPLEMENTED]` Tests: the event shape and caps, the hook answer and skip, cancellation on Stop, on the fake CLI. `real:` 2026-10-19 with `haiku`: in **Read-only, Ask first and Allow all** a prompt that must ask with `AskUserQuestion` produced the question, the answer "Blue" went back through the hook, and Claude replied "You chose Blue." ($0.007 for the three); **the hook's `updatedInput` is accepted in every mode, `dontAsk` and `bypassPermissions` included**. In the real app (`DURBAR_CLAUDE=1`) the card showed Red/Blue, the agent said "Waiting for your answer", and after Blue → Answer Claude replied "You chose Blue." Screenshots: `docs/screenshots/012-question-card-*.png` (simulator), `012-question-real-1440x900.png`.
 - MCP elicitation and Codex `request_permissions` are still refused (unchanged, `[KNOWN GAP]`).
 
+### 2026-10-19: Claude sign-in state without a prompt (issue #55, T047 Claude half)
+
+*Missing:* the Claude detector stopped at `--version`, so a `claude` that was installed but not signed in showed as ready, and the first message failed with Claude's own error.
+
+*Corrected:*
+- **FR-132** `[IMPLEMENTED]` After a good `--version`, the detector runs `claude auth status --json` (argv only, no shell, the same Windows `.cmd` handling and 5 s timeout; it sends no prompt and costs nothing). Only `loggedIn` is read; the email, organisation and subscription in that output are never read into the app, shown, logged or stored. `loggedIn: false` gives the state `not-signed-in` with the hint "Sign in first: run `claude auth login` in a terminal, then refresh the agent kinds."; anything else (an older CLI without the command, a timeout, output that is not JSON) keeps `ready`, as before. Tests with a fake exec. `real:` the installed `claude` 2.1.302 reports `loggedIn: true` (ready); the signed-out case is not run on this box (it would sign the owner out).
+

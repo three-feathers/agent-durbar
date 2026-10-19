@@ -54,7 +54,7 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 - [ ] T044 (sim) Packaged-build check without a vendor: the ESM SDK is imported from the CommonJS main process, `asarUnpack` entries are right, run in CI on three OSes; documents the result [FR-021]
 - [ ] T045 (sim) `ClaudeAdapter` on a fake `query()` object seam: input queue, `canUseTool` to broker, hooks, interrupt, close, resume with `sessionId`; the folder's `CLAUDE.md` with its `@` imports (for example `AGENTS.md`, inside the folder only, bounded size) as an appended system prompt while `settingSources` stays `[]` (owner, 2026-10-18, review of #160); contract suite. Depends on T040, T041 [FR-003, FR-017, SC-002]
 - [x] T046 (sim, Claude half; done as T096-T098, Codex half with #51) Live permission mode switch (spec 018): Claude `setPermissionMode` immediately, Codex from the next `turn/start`; tests and the toast wording [FR-009, C8]
-- [ ] T047 (sim) Availability and sign-in: Codex `account/read` probe, Claude version probe, the "sign in with the CLI in a terminal" message, no prompt ever sent, tests with fakes [FR-010, FR-012]
+- [ ] T047 (sim; the Claude half done as T110 on 2026-10-19, Codex `account/read` open) Availability and sign-in: Codex `account/read` probe, Claude version probe, the "sign in with the CLI in a terminal" message, no prompt ever sent, tests with fakes [FR-010, FR-012]
 - [ ] T048 (fixtures) History readers: Claude `listSessions`/`getSessionMessages` and Codex `thread/list`/`thread/turns/list` converted to previous sessions and chat history, same-folder check, size caps, tests [FR-019]
 - [ ] T049 (fixtures) Model and effort lists: Claude `supportedModels`, Codex `model/list` to the model picker shape; effort values per model; tests [FR-009]
 - [ ] T050 (fixtures) MCP status: Claude init `mcp_servers` and `mcpServerStatus`, `toggleMcpServer`; Codex `mcpServerStatus/list` read-only; capability `mcpToggle` per adapter; tests [FR-024]
@@ -134,4 +134,8 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 - [x] T107 (sim) `question` event and `answerQuestion` (types, main IPC, preload); Claude: the `PreToolUse` hook asks and answers `AskUserQuestion` in every mode [FR-128, FR-129]
 - [x] T108 (sim) Question card in the chat, waiting status, simulator question [FR-130]
 - [x] T109 Tests on the fake CLI; real check in the three modes with `haiku` [FR-131]
+
+## Changes 2026-10-19 (issue #55, Claude half of T047)
+
+- [ ] T110 (sim) Claude sign-in state from `claude auth status --json` after the version probe (only `loggedIn` read); fake-exec tests [FR-132]
 
