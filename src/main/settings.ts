@@ -73,6 +73,22 @@ export class SettingsStore {
     return v;
   }
 
+  /** OS notifications when an agent needs you (spec 052 FR-059): on by default; only `false` is written. */
+  get notifyNeedsMe(): boolean {
+    return this.s.notifyNeedsMe !== false;
+  }
+
+  /** Only a real boolean changes it; anything else keeps the current value. Returns the value now in force. */
+  setNotifyNeedsMe(v: unknown): boolean {
+    if (typeof v !== 'boolean') return this.notifyNeedsMe;
+    const next: AppSettings = { ...this.s };
+    if (v) delete next.notifyNeedsMe;
+    else next.notifyNeedsMe = false;
+    this.s = next;
+    this.save();
+    return v;
+  }
+
   /** Active theme id (spec 037). Undefined = Clean Office; the renderer resolves unknown ids itself. */
   get theme(): string | undefined {
     return this.s.theme;

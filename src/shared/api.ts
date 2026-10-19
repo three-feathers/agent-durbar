@@ -137,6 +137,8 @@ export interface AppSettingsView {
   seriousMode?: boolean;
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
   theme?: string;
+  /** OS notifications when an agent needs you while the window is in the background (spec 052 FR-059). On unless turned off. */
+  notifyNeedsMe?: boolean;
 }
 
 /** A custom agent profile as the renderer sees it (spec 043; same shape as the adapter's `AgentProfile`). */
@@ -425,6 +427,12 @@ export interface DurbarApi {
   removePlace?(id: string): Promise<CustomPlaceResult>;
   /** Turn Serious mode on or off (spec 034). */
   setSeriousMode?(on: boolean): Promise<{ ok: boolean; seriousMode?: boolean }>;
+  /** Turn the "needs you" OS notifications on or off (spec 052 FR-059). */
+  setNotifyNeedsMe?(on: boolean): Promise<{ ok: boolean; notifyNeedsMe?: boolean }>;
+  /** The "needs you" count on the app icon (spec 052 FR-059): an integer from 0 to 999. Badge on macOS and Linux where supported; on Windows the taskbar button flashes when it grows in the background. */
+  setBadge?(count: number): Promise<{ ok: boolean }>;
+  /** Bring the window to the front (a click on a "needs you" notification, spec 052 FR-059). */
+  focusWindow?(): Promise<{ ok: boolean }>;
   /** Set the theme (specs 037-040): a built-in id or an imported user theme id. */
   setTheme?(id: string): Promise<{ ok: boolean; theme?: string }>;
   /** User themes (spec 040): scan userData/themes; each valid pack listed, each invalid one given back with a reason. */

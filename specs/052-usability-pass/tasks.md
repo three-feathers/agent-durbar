@@ -89,3 +89,9 @@
 ## Round 4: one word per concept (2026-10-20)
 
 - [x] T054 One term per concept in every user-visible text (agent app, profile, Allow / Deny, folder, spending limit / cost / AI credits, End session, Remove from office, Demo, mood phrases), drivers and tests follow [FR-051]
+
+## Round 5: signals for heavy use (2026-10-20)
+
+- [x] T062 "Needs you" outside the window: title count, one coalesced and throttled OS notification with a setting, app badge or taskbar flash, `notifications` allowed [FR-059]
+- [x] T063 Alt+A / Alt+S / Alt+D / Alt+N in a waiting chat, keys in the bar's buttons and the shortcuts sheet [FR-060]
+- [x] T064 Inbox oldest first with "waiting N min" on each row, refreshed every 30 s while open [FR-061]
