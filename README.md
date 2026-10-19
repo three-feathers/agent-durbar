@@ -8,6 +8,8 @@
 
 Agent Durbar is an office-style desktop app to **see, chat with and coordinate AI agents across several harnesses**: GitHub Copilot, Claude Code and OpenAI Codex. It is for **anyone who works with agents**, not only developers. A room is any folder an agent works in: code, documents, research or notes.
 
+**Website:** <https://three-feathers.github.io/agent-durbar/>
+
 > **Status: alpha.**
 > - The newest pre-release is [`v0.1.0-alpha.7`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.7). It is unsigned and not notarized.
 > - What changed in each release is in the [CHANGELOG](CHANGELOG.md).
