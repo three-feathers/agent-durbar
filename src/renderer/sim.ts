@@ -89,6 +89,12 @@ const SIM_CLAUDE_MODELS: ModelChoice[] = [
   { id: 'sonnet', name: 'Sim Sonnet', efforts: ['low', 'medium', 'high'] },
   { id: 'haiku', name: 'Sim Haiku', efforts: [] },
 ];
+/* spec 043: what a session's custom agents look like (made up; no real agent files) */
+const SIM_PROFILES = [
+  { id: 'reviewer', name: 'Reviewer', description: 'Reviews changes and points at risks; never edits files', source: 'repo' as const, path: '~/work/mcp-swiss/.github/agents/reviewer.agent.md', tools: ['view', 'grep', 'glob'], model: 'sim-deep' },
+  { id: 'docs-writer', name: 'Docs writer', description: 'Writes and tidies documentation in plain English', source: 'user' as const, path: '~/.copilot/agents/docs-writer.agent.md' },
+  { id: 'release-helper', name: 'Release helper', description: 'Prepares release notes from merged pull requests', source: 'repo' as const, path: '~/work/mcp-swiss/.github/agents/release-helper.agent.md', mcpServers: ['github'] },
+];
 const SIM_MODELS: ModelChoice[] = [
   { id: 'auto', name: 'Auto', efforts: [] },
   { id: 'sim-fast', name: 'Sim Fast', multiplier: 0.33, efforts: [], contextWindow: 128000, priceClass: 'low', pricing: { inputPerMTok: 20, outputPerMTok: 100, cachedPerMTok: 2 } },
@@ -206,7 +212,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       const [name, role, room, state, intent, helpers, files] = r;
       const roomName = opts.solo ? name.toLowerCase() + '-app' : room;
       const cwd = opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
-      const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], adapterId: mixed ? SIM_KIND_BY_AGENT[i] ?? 'copilot' : 'copilot', permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true } } as AgentInfo;
+      const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], adapterId: mixed ? SIM_KIND_BY_AGENT[i] ?? 'copilot' : 'copilot', permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true }, profiles: true } as AgentInfo;
       if (mixed && info.adapterId !== 'copilot') {
         const k = caps(info.adapterId ?? 'copilot');
         if (!k.caps) info.maxAiCredits = undefined; // no credit cap on a kind that has none
@@ -304,6 +310,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         emit({ type: 'status', sessionId: s.info.id, timestamp: now(), status: 'needs-permission', intent: 'Waiting for your answer' });
       }, 300);
     }
+    const simTrusted = new Set<string>(); // spec 043: repository agents confirmed in this run
     const sid = (s: SimAgent) => s.info.id;
     const pick = <T,>(a: T[]): T => a[Math.floor(rnd() * a.length)];
     const MODELS = ['gpt-6-luna', 'gpt-6-luna', 'gpt-5.6-luna', 'claude-sonnet-4.6'];
@@ -814,6 +821,27 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         emit({ type: 'question', sessionId: id, timestamp: now(), phase: answers ? 'answered' : 'cancelled', requestId, ...(answers ? { answers } : {}) });
         emit({ type: 'output', sessionId: id, timestamp: now(), text: answers ? 'Thanks: ' + Object.values(answers).join('; ') + '.' : 'No answer; I will pick Sage for now.', final: true } as AgentEvent);
         return { ok: true };
+      },
+      listProfiles: async (id) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s || (s.info.adapterId && s.info.adapterId !== 'copilot')) return { ok: false, error: 'This agent cannot use custom agents.', profiles: [] };
+        return { ok: true, profiles: SIM_PROFILES.map((p) => ({ ...p, trusted: p.source !== 'repo' || simTrusted.has(p.id) })) };
+      },
+      selectProfile: async (id, profileId, confirm) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'unknown agent' };
+        if (profileId === null) {
+          emit({ type: 'agentProfile', sessionId: id, timestamp: now(), profile: null } as AgentEvent);
+          return { ok: true, profile: null };
+        }
+        const p = SIM_PROFILES.find((x) => x.id === profileId);
+        if (!p) return { ok: false, error: 'That agent is not available in this session.' };
+        if (p.source === 'repo' && !simTrusted.has(p.id)) {
+          if (confirm !== true) return { ok: false, needsConfirm: true, profile: p };
+          simTrusted.add(p.id);
+        }
+        emit({ type: 'agentProfile', sessionId: id, timestamp: now(), profile: p } as AgentEvent);
+        return { ok: true, profile: p };
       },
       resolveLimit: async (id, requestId, choice) => {
         const s = sims.find((x) => x.info.id === id);

@@ -2,7 +2,7 @@
 
 **Feature Branch**: `043-custom-agents`
 **Created**: 2026-10-19
-**Status**: Phase 1 built (simulator, unit tests, one real check)
+**Status**: Phase 1 built (simulator, unit tests, real check 2026-10-19); Phase 2 not started
 **Input**: Issue #127 (owner's idea, 2026-10-17, with research notes on SDK 1.0.22 / runtime 1.0.98): let the user pick a custom agent for a session and change it mid-session, like Copilot and other harnesses do.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -68,3 +68,17 @@ The runtime has no queue for an agent switch. A choice made while the agent work
 
 - SDK 1.0.22 `rpc.agent.*` is `@experimental`; recorded as such.
 - Phase 2 (not in this spec's Phase 1): the agent in the New session dialog, a per-folder default, Claude/Codex mapping.
+
+## Changes
+
+### 2026-10-19: Phase 1 built and checked
+
+- `sim:` the Agent chip and menu (Default agent, "from this folder", "your agents"), the confirmation dialog for a repository agent (tools, model, MCP servers, file), no dialog for a user agent or a confirmed one, the card subtitle, the waiting switch ("Default agent → Docs writer") and its drop on Stop, at 1440x900 and 1280x800 (`docs/screenshots/043-*.png`).
+- `test:` `npm run test:agentprofiles` (profile mapping, agent folders, event mapping, confirmation store and file hash).
+- `real:` 2026-10-19, Free plan, `auto`, Read-only, the real app with a throwaway folder holding `.github/agents/pirate.agent.md` (about 3 prompts, under 0.6 AIU with the adapter-level run):
+  - the menu listed "pirate · from this folder"; the confirmation dialog appeared; after **Use this agent** the chip said "pirate" and the reply began "Arr, hello!";
+  - **Read-only still applied**: asked to create a file with the pirate agent selected, no file was written and it answered that the workspace is read-only;
+  - back to **Default agent**, the next reply was still pirate-flavoured ("Ahoy, hello…"): the conversation so far keeps shaping replies. In an adapter-level run without that history the default agent answered normally. Deselect itself works (the runtime sent `subagent.deselected`).
+  - Findings fixed: agents loaded through `agentDirectories` are all reported as `source: user`, so the source is decided by the file's path (inside a session folder = repository); "all tools" is reported as `["*"]` and is shown as all tools.
+- `[KNOWN GAP]` Not run: an agent with its own MCP servers or tools list on a real session, switching during a running turn on a real session (simulator only), company-level agents, macOS and Windows.
+
