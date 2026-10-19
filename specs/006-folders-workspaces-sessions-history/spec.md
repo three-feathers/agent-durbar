@@ -86,7 +86,7 @@ For a folder that has not been used yet in this run, a "Previous sessions" panel
 - **FR-007** `[IMPLEMENTED]` read: `sessions:resume` re-checks that the id belongs to the agent's folder, resumes with the agent's permission mode, replays history, and retires the untouched agent only afterwards.
 - **FR-008** `[IMPLEMENTED]` read: Agents in a folder that has earlier sessions get a toast and the panel auto-opens once.
 - **FR-009** `[IMPLEMENTED]` real: (2026-10-19, spec 013 C3 and C4) lazy start and `ensureLive` on a real Copilot session: a restored folder showed "Not started" and its first message started the session; an ended agent resumed with its context on the next message. Resume from Previous sessions by id was run in spec 002 T030 (2026-10-18). The `events.jsonl`/`getEvents()` replay shape is still checked on synthetic fixtures only (T023). Earlier text: Resume, lazy start and `ensureLive` were built and tested on the simulator, fixtures and unit tests; they have **not been run against a real Copilot session** (README: milestone 6 used no real prompts). The `events.jsonl`/`getEvents()` shape used by `eventsToHistory` comes from SDK docs and synthetic fixtures, not from a captured real session. (Feature 013.)
-- **FR-010** `[KNOWN GAP]` A `.code-workspace` runs one session in its **first** folder only; the other roots are not given to the session (they are used only to match VS Code chats). `read:` (Task T020.)
+- **FR-010** `[IMPLEMENTED]` (2026-10-19, FR-019: the other folders are now given to the session; Copilot and Claude) Was a known gap: a `.code-workspace` runs one session in its **first** folder only; the other roots are not given to the session (they are used only to match VS Code chats). `read:` (Task T020.)
 - **FR-011** `[KNOWN GAP]` Only folders are persisted, not individual sessions: after a restart a folder returns as **one** lazy agent even if it had several sessions; the others are reachable only through Previous sessions. `read:` (Task T021.)
 - **FR-012** `[KNOWN GAP]` A saved `allow` mode is restored without confirmation (see feature 003 FR-012).
 - **FR-013** `[KNOWN GAP]` Previous sessions are matched by working directory only; sessions started in a subfolder or from another checkout path are not listed. `read:`
@@ -134,9 +134,9 @@ For a folder that has not been used yet in this run, a "Previous sessions" panel
 
 ### 2026-10-19: a workspace's other folders are given to the session (T020)
 
-- **FR-019** A `.code-workspace` session still runs in its **first** folder, but now the agent is also told about the workspace's other folders, so it can work in all of them:
+- **FR-019** `[IMPLEMENTED]` A `.code-workspace` session still runs in its **first** folder, but now the agent is also told about the workspace's other folders, so it can work in all of them:
   - Copilot gets them as `additionalDirectories` (SDK 1.0.22 `SessionConfig`, "additional directories the agent may access beyond the working directory"; given again on resume, as the SDK asks).
   - Claude Code gets them as `--add-dir <folder>`, once per folder (argv, no shell).
   - The permission broker already counts every workspace folder as a session root (spec 003 FR-023), so the modes behave the same in each folder: Read-only still denies writes there, and Ask first still asks.
   - A plain folder adds nothing.
-  - This closes the known gap in FR-010 for these two kinds. `test:` the Copilot config on a fake session and the Claude argv. Not checked on a real account.
+  - This closes the known gap in FR-010 for these two kinds. `test:` `npm run test:wsroots`: the Copilot config on a fake session (create and resume), the Claude argv and the SDK options. `real:` 2026-10-19, Claude Code 2.1.303 with `haiku` on a two-folder workspace in Read-only, through the adapter. Asked to list its working directories without tools, the agent named only `app` before this change and `app` and `lib` after it. Reading `lib/word.txt` by its absolute path worked both before and after, because the broker already counted it as a root. About $0.009 in all. Copilot was not run on a real account.

@@ -115,6 +115,8 @@ export interface ClaudeLaunch {
   /** `--mcp-config` JSON (`{"mcpServers": {...}}`); never logged. */
   mcpConfig?: string;
   appendSystemPrompt?: string;
+  /** spec 006 FR-019: the workspace's other folders (`--add-dir`, once each). */
+  addDirs?: string[];
 }
 
 const CLAUDE_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
@@ -156,6 +158,7 @@ export function claudeArgs(i: ClaudeLaunch): string[] {
   if (i.effort && CLAUDE_EFFORTS.has(i.effort)) a.push('--effort', i.effort);
   if (i.appendSystemPrompt) a.push('--append-system-prompt', i.appendSystemPrompt);
   if (i.agent && /^[A-Za-z0-9._-]{1,64}$/.test(i.agent.name)) a.push('--agents', i.agent.json, '--agent', i.agent.name);
+  for (const d of i.addDirs ?? []) a.push('--add-dir', d);
   a.push(i.resume ? '--resume' : '--session-id', i.sessionId);
   return a;
 }
@@ -579,6 +582,7 @@ export class ClaudeAdapter implements AgentAdapter {
       ...(s.agent ? { agent: { name: s.agent.profile.id, json: agentsArg(s.agent) } } : {}),
       mcpConfig: mcpConfigOf(o.mcpServers, o.disabledMcpServers),
       appendSystemPrompt: (this.deps.claudeMd ?? claudeMdPrompt)(s.cwd),
+      ...(s.roots.length > 1 ? { addDirs: s.roots.filter((r) => r !== s.cwd) } : {}),
     };
     const handlers: TransportHandlers = {
       message: (m) => this.onMessage(s, m),
