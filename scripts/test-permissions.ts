@@ -6,7 +6,7 @@ import type { BrokerEvent } from '../src/adapters/permissions';
 
 async function main(): Promise<void> {
   // scopes
-  assert.deepStrictEqual(grantScope({ kind: 'write', fileName: '/a/b/src/x.ts' }).key, 'write:/a/b/src');
+  assert.deepStrictEqual(grantScope({ kind: 'write', fileName: '/a/b/src/x.ts' }, path.posix).key, 'write:/a/b/src');
   assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'npm test' }).key, 'shell-exact:npm test', 'shell grants are exact by default (spec 003 FR-022)');
   assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'npm test' }).broad?.key, 'shell:npm', 'any-arguments is offered for simple commands');
   assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'npm test && rm -rf /' }).key, 'shell-exact:npm test && rm -rf /');
@@ -55,7 +55,7 @@ async function main(): Promise<void> {
   await tick();
   assert.strictEqual(t.b.resolve('w4', false), true);
   assert.strictEqual((await p).kind, 'reject');
-  assert.strictEqual(t.b.revoke('write:/x'), true);
+  assert.strictEqual(t.b.revoke(t.b.listGrants()[0].key), true); // the key's spelling depends on the host path flavor
   p = t.b.request({ kind: 'write', fileName: '/x/z.ts', toolCallId: 'w5' });
   await tick();
   assert.strictEqual(t.ev[t.ev.length - 1].type, 'pending');
@@ -206,16 +206,18 @@ async function main(): Promise<void> {
   assert.strictEqual((await r.b.request({ kind: 'read', path: '/etc/passwd', toolCallId: 'r8' })).kind, 'approve-once', 'Allow all approves everything');
   // spec 003 FR-031/FR-032: grant scopes with Windows paths (injectable flavor), on any host
   const w = path.win32;
-  assert.deepStrictEqual(grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\x.ts' }, w), { key: 'write:C:\\repo\\src', label: 'write in repo/src/' });
-  assert.strictEqual(grantScope({ kind: 'read', path: 'D:\\data\\in.csv' }, w).key, 'read:D:\\data');
-  assert.strictEqual(grantScope({ kind: 'write', fileName: 'C:\\x.ts' }, w).key, 'write:C:\\', 'a file at the drive root');
+  assert.deepStrictEqual(grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\x.ts' }, w), { key: 'write:c:\\repo\\src', label: 'write in repo/src/' });
+  assert.strictEqual(grantScope({ kind: 'read', path: 'D:\\data\\in.csv' }, w).key, 'read:d:\\data');
+  assert.strictEqual(grantScope({ kind: 'write', fileName: 'C:\\x.ts' }, w).key, 'write:c:\\', 'a file at the drive root');
   assert.strictEqual(grantScope({ kind: 'write', fileName: '\\\\server\\share\\dir\\f.txt' }, w).key, 'write:\\\\server\\share\\dir', 'UNC path');
   assert.strictEqual(grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\a.ts' }, w).key, grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\b.ts' }, w).key, 'same folder, same key');
   assert.notStrictEqual(grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\sub\\a.ts' }, w).key, grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\b.ts' }, w).key, 'a subfolder is a different scope');
   assert.strictEqual(grantScope({ kind: 'write', fileName: '/a/b/src/x.ts' }, path.posix).key, 'write:/a/b/src');
   // documented limit (FR-032, T028): keys are exact, so case or separator differences make a different key; the broker asks again
-  assert.notStrictEqual(grantScope({ kind: 'write', fileName: 'C:\\Repo\\src\\a.ts' }, w).key, grantScope({ kind: 'write', fileName: 'c:\\repo\\src\\a.ts' }, w).key, 'case differs: different key (known gap)');
-  assert.notStrictEqual(grantScope({ kind: 'write', fileName: 'C:/repo/src/a.ts' }, w).key, grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\a.ts' }, w).key, 'separator differs: different key (known gap)');
+  assert.strictEqual(grantScope({ kind: 'write', fileName: 'C:\\Repo\\src\\a.ts' }, w).key, grantScope({ kind: 'write', fileName: 'c:\\repo\\src\\a.ts' }, w).key, 'T028: case does not make another key on Windows');
+  assert.strictEqual(grantScope({ kind: 'write', fileName: 'C:/repo/src/a.ts' }, w).key, grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\a.ts' }, w).key, 'T028: / and \\ are the same folder on Windows');
+  assert.strictEqual(grantScope({ kind: 'write', fileName: 'C:\\Repo\\Src\\a.ts' }, w).label, 'write in Repo/Src/', 'the label keeps the spelling');
+  assert.notStrictEqual(grantScope({ kind: 'write', fileName: '/Repo/src/a.ts' }, path.posix).key, grantScope({ kind: 'write', fileName: '/repo/src/a.ts' }, path.posix).key, 'POSIX stays case-sensitive');
   {
     const ev: BrokerEvent[] = [];
     const b = new PermissionBroker({ ask: true, pathCheck: { flavor: w, caseInsensitive: true, realpath: (x) => x }, emit: (e) => ev.push(e) });
@@ -223,7 +225,7 @@ async function main(): Promise<void> {
     await tick();
     b.resolve('win1', true, true);
     await first;
-    assert.deepStrictEqual(b.listGrants().map((g) => g.key), ['write:C:\\repo\\src'], 'the broker uses its path-check flavor for scopes');
+    assert.deepStrictEqual(b.listGrants().map((g) => g.key), ['write:c:\\repo\\src'], 'the broker uses its path-check flavor for scopes (Windows keys in lower case)');
     assert.strictEqual((await b.request({ kind: 'write', fileName: 'C:\\repo\\src\\b.ts', toolCallId: 'win2' })).kind, 'approve-once', 'second file in the granted Windows folder');
     const other = b.request({ kind: 'write', fileName: 'C:\\repo\\docs\\c.md', toolCallId: 'win3' });
     await tick();
@@ -232,9 +234,19 @@ async function main(): Promise<void> {
     await other;
     const cased = b.request({ kind: 'write', fileName: 'c:\\REPO\\SRC\\d.ts', toolCallId: 'win4' });
     await tick();
-    assert.strictEqual(b.pendingCount(), 1, 'same folder spelled in another case asks again, never approves extra (known gap T028)');
-    b.resolve('win4', false);
-    await cased;
+    assert.strictEqual((await cased).kind, 'approve-once', 'T028: the same Windows folder in another case is covered by the grant');
+  }
+
+  // T026: requests without a toolCallId in the same millisecond get different ids
+  {
+    const b = new PermissionBroker({ roots: ['/w'], mode: 'ask', emit: () => undefined });
+    const fixed = (): number => 1000;
+    const p1 = b.request({ kind: 'write', fileName: '/w/a' }, fixed);
+    const p2 = b.request({ kind: 'write', fileName: '/w/b' }, fixed);
+    await tick();
+    assert.strictEqual(b.pendingCount(), 2, 'two pending requests, not one overwriting the other');
+    b.denyPending();
+    await Promise.all([p1, p2]);
   }
 
   console.log('permissions: all checks passed');
