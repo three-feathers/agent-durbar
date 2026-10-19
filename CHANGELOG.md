@@ -6,6 +6,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **MCP server groundwork: tool registry (spec 041 T013, issue #203).** The read-only tools an MCP client will see (folders, agents, floors, usage totals, settings, MCP state, request status), with argument checks and a gate before `initialize`. Change tools stay hidden until the confirmation dialog exists. Not wired yet: nothing listens. No user-visible change, 0 AIU.
 
+- **Claude Code: a signed-out `claude` is shown as not signed in (spec 012 FR-132, issue #55).** The agent-kind check now also runs `claude auth status` (no prompt, nothing billed). If you're not signed in, the kind is marked "not signed in" with how to fix it, instead of failing at your first message. Only the signed-in flag is read, never your email or organisation.
+
 - **Live verification on a real Copilot session (spec 013, issue #3).** Stop, End and resume with context, the lazy start of a restored folder, thinking, a helper agent and usage were checked in the real app (9 prompts, about 0.31 AIU) and now count as verified in specs 005 and 006. A second message sent during a turn is queued by Copilot and answered afterwards. Several models, a real cap, VS Code visibility and macOS/Windows remain open.
 
 - **MCP server groundwork: key file and handshake (spec 041 T011, issue #180).** A per-install secret kept in a private file, and a mutual HMAC handshake so the bridge and Durbar prove the key to each other without sending it. Not wired yet: nothing listens. No user-visible change, 0 AIU.

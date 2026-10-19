@@ -1,6 +1,6 @@
 /** Binary detection for Claude and Codex (spec 012 T012, FR-035..FR-041): fake isFile and fake exec only. No process, no credits. */
 import * as assert from 'assert';
-import { CLAUDE_BINARY, CODEX_BINARY, candidates, compareVersions, detectBinary, detectCopilot, detectorFor, parseVersion } from '../src/adapters/detect';
+import { CLAUDE_BINARY, CLAUDE_SIGN_IN_HINT, CODEX_BINARY, candidates, compareVersions, detectBinary, detectClaude, detectCopilot, detectorFor, parseVersion } from '../src/adapters/detect';
 import type { DetectEnv, Exec, ExecResult } from '../src/adapters/detect';
 import { createRegistry, detectAll } from '../src/adapters/registry';
 import type { AdapterDescriptor } from '../src/adapters/capabilities';
@@ -206,6 +206,31 @@ async function main(): Promise<void> {
     assert.ok(!x.calls[0].verbatim, 'd: POSIX is not verbatim');
   }
 
+  // spec 012 FR-132: Claude's sign-in state from `auth status --json` after the version (no prompt); only loggedIn is read
+  {
+    const e = mkEnv('linux', { PATH: '/usr/bin' }, ['/usr/bin/claude'], '/home/u');
+    const seq = (outs: ExecResult[]): { exec: Exec; calls: Call[] } => { let i = 0; return mkExec(async () => outs[Math.min(i++, outs.length - 1)]); };
+    const out = (o: unknown): ExecResult => ok(JSON.stringify(o));
+    const s1 = seq([ok('2.1.302 (Claude Code)'), out({ loggedIn: true, email: 'secret@example.com', orgName: 'Org' })]);
+    const r1 = await detectClaude(e, s1.exec);
+    assert.strictEqual(r1.state, 'ready');
+    assert.strictEqual(r1.hint, 'Signed in to Claude Code on this computer.');
+    assert.deepStrictEqual(s1.calls.map((c) => c.args.join(' ')), ['--version', 'auth status --json'], 'version, then auth status; no prompt');
+    assert.ok(!JSON.stringify(r1).includes('secret') && !JSON.stringify(r1).includes('Org'), 'nothing from the account is kept');
+    const r2 = await detectClaude(e, seq([ok('2.1.302'), out({ loggedIn: false })]).exec);
+    assert.deepStrictEqual([r2.state, r2.hint, r2.version], ['not-signed-in', CLAUDE_SIGN_IN_HINT, '2.1.302']);
+    for (const bad of [ok('not json'), { code: 1, stdout: '', stderr: 'unknown command' }, { code: null, stdout: '', stderr: '', timedOut: true }, out({}), out(null)] as ExecResult[]) {
+      assert.strictEqual((await detectClaude(e, seq([ok('2.1.302'), bad]).exec)).state, 'ready', 'unclear sign-in keeps ready: ' + JSON.stringify(bad));
+    }
+    const s3 = seq([ok('garbage')]);
+    assert.strictEqual((await detectClaude(e, s3.exec)).state, 'unknown');
+    assert.strictEqual(s3.calls.length, 1, 'no auth call when the version is unreadable');
+    // Windows .cmd shim: both calls go through cmd /d /s /c with the shim quoted
+    const w = mkEnv('win32', { PATH: 'C:\\npm', ComSpec: 'C:\\Windows\\cmd.exe' }, ['C:\\npm\\claude.cmd'], 'C:\\Users\\u');
+    const s4 = seq([ok('2.1.302'), out({ loggedIn: false })]);
+    assert.strictEqual((await detectClaude(w, s4.exec)).state, 'not-signed-in');
+    assert.deepStrictEqual(s4.calls.map((c) => [c.file, c.args[c.args.length - 1], c.verbatim]), [['C:\\Windows\\cmd.exe', '"C:\\npm\\claude.cmd" --version', true], ['C:\\Windows\\cmd.exe', '"C:\\npm\\claude.cmd" auth status --json', true]]);
+  }
   console.log('detect tests passed');
 }
 
