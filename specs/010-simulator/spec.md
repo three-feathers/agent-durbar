@@ -97,3 +97,8 @@ Developers capture screenshots at fixed sizes and drive the real window with scr
 ### 2026-10-17: spec 024 simulator changes (cross-reference)
 
 For spec [024](../024-office-places/spec.md): `bash`, `github`, `playwright` and `my-notes` calls take 1.5-4 s (seeded) unless the simulator is frozen, and the calls agents leave open take turns between those four. A simulator-only test hook `window.__durbarSimEmit(event)` lets a driver send one normalized event (used by `scripts/shots-024.js`); it exists only in simulator mode, which packaged builds do not start without `DURBAR_DEV=1`.
+
+### 2026-10-19: one event shape check for the simulator and the adapters (sweep; task T023)
+
+- **FR-021** `[IMPLEMENTED]` `src/adapters/eventguard.ts` (`eventProblems`) checks the normalized events: a known type, `sessionId`, `timestamp`, and the fields the renderer relies on per type (status values, tool call phases, non-negative usage numbers, a dollar figure only as an `estimate`, question and agent-profile shapes, and so on). `test:` `npm run test:simevents` runs the real simulator (three rosters, a question, a title, an unreported folder, one-agent folders) with fast timers, drives sends, mode switches and agent profiles, and requires every event to pass (11,210 events, 14 types, on 2026-10-19); the adapter contract suite applies the same check to every event of every registered adapter (fakes, Copilot, Claude, Codex). This narrows FR-010 (drift between the simulator and real adapters) to timing and behaviour; event shapes can no longer drift silently.
+
