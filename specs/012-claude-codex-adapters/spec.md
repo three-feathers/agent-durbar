@@ -635,3 +635,17 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 - **FR-136** `[IMPLEMENTED]` The harness picker (the toolbar select for new folders and the New session dialog) is shown only when **two or more** harnesses are ready. With one ready harness there is nothing to choose: the select stays hidden but holds that harness, so a computer with only Claude Code adds Claude folders. In the New session dialog the select is labelled **Harness**, so it no longer shares the word "Agent" with the custom-agent select (spec 043).
 - Unchanged: no credit cap for Claude (T081 open); its dollar estimate stays apart from AIU (FR-122); Read-only / Ask first / Allow all as mapped (FR-069..FR-071).
 - `test:` `showsKindPicker` counts ready harnesses; the registry has Claude without the hook. `sim:` the mixed roster at both sizes. `real:` already done for the real app (T095 part 1, T106) and the checks T066..T069. `real:` 2026-10-19, the built app with a fresh profile and no `DURBAR_CLAUDE`: `listAdapters` gave `copilot: ready` and `claude: ready`, and the toolbar shows the picker (GitHub Copilot, Claude Code). No prompt was sent.
+
+### 2026-10-19: owner decision record (T060, issue #62)
+
+The owner's answers so far, quoted from the sessions where they were given. Q6, Q7 and Q9 have no answer yet.
+
+- **Q1 Subscription login. Answered.** 2026-10-19: "for claude, lets support claude same as copilot if it is installed" (FR-135), and for Codex: "you can install codex, i have chatgpt plus subscription". Durbar drives the user's own installed and signed-in CLI (`claude`, `codex`), the same as Copilot's. It handles no credentials and loads no vendor settings files (Q8). The earlier policy check (T071) is closed on this basis.
+- **Q2 Budget for real checks. Answered.** 2026-10-18: "it is ok to spend tokens - no need to wait for me or someone to approve if you have tested things and they are good". The accounts are the owner's: GitHub Copilot (free plan: `auto` only), Claude (claude.ai login), and ChatGPT Plus for Codex. Rule kept: small runs (`haiku` / `auto`, a few prompts each), every one recorded as `real:` with its cost.
+- **Q3 Claude Agent SDK as a dependency. Settled by the build.** It is **not** a dependency. An optional transport loads it by dynamic `import()` only if the user installed it and set `DURBAR_CLAUDE_TRANSPORT=sdk` (FR-113). The default CLI transport needs no SDK, so the non-OSI licence question does not arise for the shipped app.
+- **Q4 SDK binary or the user's CLI. Settled by the build.** The user's installed `claude`, found by detection, with a version probe (FR-036..FR-040). No bundled binary.
+- **Q5 Order (C3). Reversed in practice.** C3 proposed Codex first; Claude Code was built, checked and shipped first (v0.1.0-alpha.6), as the owner asked. Codex follows (#51).
+- **Q6 Codex Read-only wording. Open.**
+- **Q7 Dollar cap for Claude. Open** (T081, issue #75). Today Claude shows a dollar estimate apart from AIU and has no cap.
+- **Q8 Project settings. Answered** 2026-10-18 (recorded above): never load any.
+- **Q9 Windows check of the Codex sandbox. Open** (T070, issue #72): it needs a Windows machine.
