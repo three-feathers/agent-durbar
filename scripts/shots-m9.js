@@ -33,7 +33,7 @@ module.exports = async (ctx) => {
     // sending is refused while the question is open
     await ctx.js(`(()=>{const t=document.getElementById('msgInput');t.value='hello';t.dispatchEvent(new Event('input'));document.getElementById('sendBtn').click();})()`);
     await ctx.sleep(500);
-    assert.match(await text('#chat'), /credit limit was reached/, 'send is refused with a clear message');
+    assert.match(await text('#chat'), /spending limit was reached/, 'send is refused with a clear message');
     // raise the cap and continue
     await click('.note.limit .btn.primary'); await ctx.sleep(1800);
     assert.ok(await ctx.js(`!document.querySelector('.note.limit:not(.settled)')`), 'notice is settled');

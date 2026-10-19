@@ -651,7 +651,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
   private async launch(s: Session): Promise<ClaudeTransport> {
     const file = await this.deps.claudePath();
-    if (!file) throw new Error('Claude Code is not installed or could not be found. Open Settings > Harnesses and choose Install…, then Sign in… there.');
+    if (!file) throw new Error('Claude Code is not installed or could not be found. Open Settings > Agent apps and choose Install…, then Sign in… there.');
     const o = s.options;
     const launch: ClaudeLaunch = {
       mode: s.broker.getMode(),
@@ -890,7 +890,7 @@ export class ClaudeAdapter implements AgentAdapter {
       case 'resolved':
         this.emit(sid, { type: 'permission', permission: e.permission });
         if (e.permission.via !== 'stopped') {
-          const word = e.permission.state === 'approved' ? (e.permission.via === 'session' ? 'Allowed for this session' : 'Approved') : 'Denied';
+          const word = e.permission.state === 'approved' ? (e.permission.via === 'session' ? 'Allowed for this session' : 'Allowed') : 'Denied';
           this.emit(sid, { type: 'status', status: 'working', intent: `${word}: ${e.permission.summary}` });
         }
         return;
@@ -916,7 +916,7 @@ export function claudeDescriptor(makeTransport: TransportFactory = cliTransportF
   return {
     id: CLAUDE_ID,
     displayName: CLAUDE_NAME,
-    installHint: 'Open Settings > Harnesses and choose Install…, then Sign in… (or run `npm install -g @anthropic-ai/claude-code`, then `claude auth login`).',
+    installHint: 'Open Settings > Agent apps and choose Install…, then Sign in… (or run `npm install -g @anthropic-ai/claude-code`, then `claude auth login`).',
     capabilities: CLAUDE_CAPABILITIES,
     create: () => new ClaudeAdapter({ claudePath: claudeBinaryPath, makeTransport }),
   };

@@ -107,7 +107,7 @@ module.exports = async (ctx) => {
     await panel(true);
     const att = await js(`(()=>{const e=document.querySelector('#floorsPop [data-att="f-personal"]');return e&&!e.hidden?e.textContent:''})()`);
     console.log('[033]', w, 'off-floor row:', att);
-    assert.ok(/^Off, /.test(att) && /waiting|at credit limit/.test(att), 'FR-010: the off floor says what waits there');
+    assert.ok(/^Off, /.test(att) && /waiting|at spending limit/.test(att), 'FR-010: the off floor says what waits there');
     assert.strictEqual(await js(`document.getElementById('floorsBtn').textContent.trim()`), '2/3', 'FR-010: the button is unchanged');
     assert.deepStrictEqual((await state()).pills, s.pills, 'FR-010: the pills are unchanged');
     await shot('floor-off-panel', w, h);

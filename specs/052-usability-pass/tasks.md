@@ -85,3 +85,7 @@
 ## Round 4: security review of harness setup (2026-10-20)
 
 - [x] T053 Spec 051 FR-004b/FR-004c: native main-side confirmation with the real path, sender check, world-writable refusal, winget source, masked output, throttled progress (see spec 051 *Changes*)
+
+## Round 4: one word per concept (2026-10-20)
+
+- [x] T054 One term per concept in every user-visible text (agent app, profile, Allow / Deny, folder, spending limit / cost / AI credits, End session, Remove from office, Demo, mood phrases), drivers and tests follow [FR-051]

@@ -96,11 +96,11 @@
   /* Words for the accessible label and tooltip (the drawing is extra: these say the same thing). From 90% context only. */
   function phrases(o){
     const s=o||{}, out=[];
-    if(s.body==='monster'&&typeof s.pct==='number')out.push('Memory nearly full ('+s.pct+'% of the context)');
-    if(s.trouble==='ambulance')out.push('Needs help: error');
-    else if(s.trouble==='faint')out.push('Out of credit: limit reached');
-    else if(s.trouble==='impatient')out.push('impatient: waiting '+fmtWait(s.waitingMs||0)+' for you');
-    else if(s.trouble==='dizzy')out.push('Stuck: '+(s.failStreak||DIZZY_STREAK)+' tool calls failed in a row');
+    if(s.body==='monster'&&typeof s.pct==='number')out.push('Context almost full ('+s.pct+'%)');
+    if(s.trouble==='ambulance')out.push('Error: needs a look');
+    else if(s.trouble==='faint')out.push('Spending limit reached');
+    else if(s.trouble==='impatient')out.push('Waiting '+fmtWait(s.waitingMs||0)+' for you');
+    else if(s.trouble==='dizzy')out.push((s.failStreak||DIZZY_STREAK)+' tool calls failed in a row');
     return out;
   }
 

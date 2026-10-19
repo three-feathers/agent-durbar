@@ -576,7 +576,7 @@ ipcMain.handle('theme:generate', async (_e, description: unknown, adapterId: unk
   if (d.length < 3) return { ok: false, error: 'Describe the look in a few words.' };
   const kind = typeof adapterId === 'string' && registry.has(adapterId) ? adapterId : undefined;
   const ad = kind ? router.instance(kind) : undefined;
-  if (!ad || typeof ad.generateText !== 'function') return { ok: false, error: 'That harness cannot make a theme. Pick Claude Code or Codex.' };
+  if (!ad || typeof ad.generateText !== 'function') return { ok: false, error: 'That agent app cannot make a theme. Pick Claude Code or Codex.' };
   // the renderer's own theme module: Clean Office's tokens and the art sanitizer, so the result is exactly what the app draws
   const T = require(path.join(__dirname, '..', 'renderer', 'theme.js')) as { _tokens(): Record<string, string>; _sanitizeSlot(s: string): string | null };
   // main never sets a theme on this module, so `_tokens()` is Clean Office's full set
@@ -722,7 +722,7 @@ ipcMain.handle('agents:answerQuestion', (_e, id: unknown, requestId: unknown, an
 ipcMain.handle('agents:listProfiles', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
-  if (!a || !ad?.listAgentProfiles) return { ok: false, error: 'This agent cannot use custom agents.', profiles: [] };
+  if (!a || !ad?.listAgentProfiles) return { ok: false, error: 'This agent app has no profiles.', profiles: [] };
   try {
     await ensureLive(a); // a restored or ended agent starts its session (no prompt, no credits)
     const profiles = (await ad.listAgentProfiles(a.id)).map((p) => ({ ...p, trusted: p.source !== 'repo' || (!!p.path && agentTrust?.isTrusted(wsKey(a), p.id, hashAgentFile(p.path))) }));
@@ -734,7 +734,7 @@ ipcMain.handle('agents:listProfiles', async (_e, id: unknown) => {
 ipcMain.handle('agents:selectProfile', async (_e, id: unknown, profileId: unknown, confirm: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
-  if (!a || !ad?.selectAgentProfile) return { ok: false, error: 'This agent cannot use custom agents.' };
+  if (!a || !ad?.selectAgentProfile) return { ok: false, error: 'This agent app has no profiles.' };
   if (profileId !== null && (typeof profileId !== 'string' || !PROFILE_ID.test(profileId))) return { ok: false, error: 'Unknown agent.' };
   try {
     await ensureLive(a);
@@ -825,7 +825,7 @@ ipcMain.handle('agents:handoff', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad) return { ok: false, error: 'unknown agent' };
-  if (typeof ad.handoffSummary !== 'function') return { ok: false, error: 'This agent kind cannot make a summary.' };
+  if (typeof ad.handoffSummary !== 'function') return { ok: false, error: 'This agent app cannot make a summary.' };
   if (!ad.isLive(a.id)) return { ok: false, error: 'This session has not started yet, so there is nothing to summarize.' };
   try {
     const r = await ad.handoffSummary(a.id);
@@ -851,7 +851,7 @@ ipcMain.handle('agents:compact', async (_e, id: unknown, focus: unknown) => {
 ipcMain.handle('models:list', async (_e, kind: unknown): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }> => {
   // spec 012 FR-120: one list per agent kind; no kind = the default kind (as before); an unknown kind is refused
   const id = kind === undefined || kind === null || kind === '' ? registry.defaultId : typeof kind === 'string' && registry.has(kind) ? kind : undefined;
-  if (!id) return { ok: false, error: 'unknown agent kind', models: [] };
+  if (!id) return { ok: false, error: 'unknown agent app', models: [] };
   try {
     const models = (await modelOptionsOf(router.instance(id))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
     if (id !== registry.defaultId) return { ok: true, models };

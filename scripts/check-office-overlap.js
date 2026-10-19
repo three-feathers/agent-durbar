@@ -197,7 +197,7 @@ function offAttentionCheck() {
   if (pop.hidden) document.getElementById('floorsBtn').click();
   const att = document.querySelector('#floorsPop [data-att="f-personal"]');
   const text = att && !att.hidden ? att.textContent : '';
-  if (!/^Off, .*\d+ (waiting|errors?|at credit limit)/.test(text)) problems.push(`no attention text on the off floor's row (got "${text}")`);
+  if (!/^Off, .*\d+ (waiting|errors?|at spending limit)/.test(text)) problems.push(`no attention text on the off floor's row (got "${text}")`);
   if (document.querySelector('#floorsPop [data-att="ground"]:not([hidden])')) problems.push('attention text on a floor that is on');
   const btn = document.getElementById('floorsBtn').textContent.trim();
   if (btn !== '2/3') problems.push(`button changed: ${btn}`);
