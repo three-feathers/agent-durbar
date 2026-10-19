@@ -2,6 +2,9 @@
 import * as assert from 'assert';
 import { OFFICIAL_PAGES, SIGN_IN, allowedSignInUrl, installPlans, lastLines, managersFor, parseSignIn, stripAnsi, updatePlans, validPaste } from '../src/shared/harnesssetup';
 import type { PackageManager } from '../src/shared/harnesssetup';
+import { EventEmitter } from 'events';
+import { HarnessSetup } from '../src/main/harnesssetup';
+import type { ChildLike, SetupDone, SetupProgress } from '../src/main/harnesssetup';
 
 const all = new Set<PackageManager>(['winget', 'brew', 'npm']);
 const only = (...m: PackageManager[]) => new Set<PackageManager>(m);
@@ -93,4 +96,114 @@ const only = (...m: PackageManager[]) => new Set<PackageManager>(m);
   assert.deepStrictEqual(Object.keys(SIGN_IN).sort(), ['claude', 'codex', 'copilot']);
 }
 
-console.log('harnesssetup: all checks passed');
+// FR-004/FR-005: the runner, with a fake process (nothing runs)
+void (async () => {
+  type Call = { file: string; args: readonly string[]; opts: { stdio: unknown[]; windowsVerbatimArguments?: boolean; detached?: boolean } };
+  const mk = (platform: NodeJS.Platform, files: string[], extra: Partial<{ limits: { install: number; signin: number } }> = {}) => {
+    const calls: Call[] = [], prog: SetupProgress[] = [], done: SetupDone[] = [], killed: ChildLike[] = [], written: string[] = [];
+    let redetects = 0, child!: ChildLike & EventEmitter & { out: EventEmitter; err: EventEmitter };
+    const setup = new HarnessSetup({
+      detectEnv: { platform, env: platform === 'win32' ? { PATH: 'C:\\Program Files\\nodejs', SystemRoot: 'C:\\Windows' } : { PATH: '/usr/bin' }, homedir: platform === 'win32' ? 'C:\\Users\\u' : '/home/u', isFile: (f) => files.includes(f) },
+      spawn: (file, args, opts) => {
+        calls.push({ file, args, opts });
+        const out = new EventEmitter(), err = new EventEmitter();
+        child = Object.assign(new EventEmitter(), { pid: 42, out, err, stdout: out, stderr: err, stdin: { write: (x: string) => written.push(x), end: () => undefined } }) as unknown as typeof child;
+        return child;
+      },
+      killTree: (c) => { killed.push(c); setImmediate(() => (c as unknown as EventEmitter).emit('close', null)); },
+      send: ((ch: string, p: SetupProgress | SetupDone) => (ch === 'harness:done' ? done.push(p as SetupDone) : prog.push(p as SetupProgress))) as never,
+      redetect: async () => { redetects++; },
+      ...extra,
+    });
+    return { setup, calls, prog, done, killed, written, child: () => child, redetects: () => redetects };
+  };
+  const tick = () => new Promise((r) => setImmediate(r));
+
+  // Codex sign-in: argv, no stdin, link and code streamed, re-check on exit
+  {
+    const t = mk('linux', ['/usr/bin/codex']);
+    assert.deepStrictEqual(t.setup.run('codex', 'signin'), { ok: true });
+    assert.strictEqual(t.calls[0].file, '/usr/bin/codex');
+    assert.deepStrictEqual(t.calls[0].args, ['login', '--device-auth']);
+    assert.strictEqual(t.calls[0].opts.stdio[0], 'ignore', 'device flow: no input');
+    assert.strictEqual(t.calls[0].opts.detached, true, 'own process group (tree kill)');
+    assert.deepStrictEqual(t.setup.run('codex', 'signin'), { ok: false, error: 'Another setup step is still running.' }, 'one at a time');
+    t.child().out.emit('data', '1. Open https://auth.openai.com/codex/device\n2. Enter this one-time code\n   AB12-CD34E\n');
+    const last = t.prog[t.prog.length - 1];
+    assert.strictEqual(last.url, 'https://auth.openai.com/codex/device');
+    assert.strictEqual(last.code, 'AB12-CD34E');
+    t.child().emit('close', 0); await tick(); await tick();
+    assert.strictEqual(t.redetects(), 1);
+    assert.strictEqual(t.done[0].ok, true);
+    assert.ok(!t.setup.busy);
+  }
+  // Claude: the pasted code goes to its input only; bad pastes are refused; device flows take no paste
+  {
+    const t = mk('linux', ['/usr/bin/claude']);
+    assert.ok(t.setup.run('claude', 'signin').ok);
+    assert.strictEqual(t.calls[0].opts.stdio[0], 'pipe');
+    t.child().out.emit('data', 'visit: https://claude.com/cai/oauth/authorize?x=1\nPaste code here if prompted > ');
+    assert.strictEqual(t.prog[t.prog.length - 1].needsPaste, true);
+    assert.deepStrictEqual(t.setup.paste('a\nb'), { ok: false, error: 'Paste the code from the sign-in page (one line).' });
+    assert.deepStrictEqual(t.setup.paste('  code#123  '), { ok: true });
+    assert.deepStrictEqual(t.written, ['code#123\n']);
+    t.child().emit('close', 0); await tick(); await tick();
+    const d = mk('linux', ['/usr/bin/codex']); d.setup.run('codex', 'signin');
+    assert.strictEqual(d.setup.paste('x').ok, false, 'Codex takes no pasted text');
+  }
+  // Copilot sign-in needs the Copilot CLI (FR-006)
+  {
+    const t = mk('linux', []);
+    const r = t.setup.run('copilot', 'signin');
+    assert.ok(!r.ok && /Copilot CLI is not installed/.test((r as { error: string }).error));
+    assert.strictEqual(t.calls.length, 0);
+  }
+  // cancel and timeout stop the tree and report it
+  {
+    const t = mk('linux', ['/usr/bin/codex']);
+    t.setup.run('codex', 'signin');
+    assert.ok(t.setup.cancel());
+    await tick(); await tick(); await tick();
+    assert.strictEqual(t.killed.length, 1);
+    assert.deepStrictEqual([t.done[0].ok, t.done[0].reason], [false, 'cancelled']);
+    const o = mk('linux', ['/usr/bin/npm'], { limits: { install: 20, signin: 20 } });
+    assert.ok(o.setup.run('codex', 'install').ok);
+    assert.deepStrictEqual(o.calls[0].args, ['install', '-g', '@openai/codex']);
+    await new Promise((r) => setTimeout(r, 60)); await tick(); await tick();
+    assert.deepStrictEqual([o.done[0].ok, o.done[0].reason], [false, 'timeout']);
+  }
+  // install: the plan the user picked, only managers that exist; nothing found = no plan
+  {
+    const t = mk('linux', []);
+    assert.deepStrictEqual(t.setup.plans('codex', 'install').plans, []);
+    assert.match(t.setup.plans('codex', 'install').page, /^https:\/\//);
+    const r = t.setup.run('codex', 'install');
+    assert.ok(!r.ok && /official page/.test((r as { error: string }).error));
+    const b = mk('linux', ['/home/linuxbrew/.linuxbrew/bin/brew', '/usr/bin/npm']);
+    assert.deepStrictEqual(b.setup.plans('claude', 'install').plans.map((p) => p.manager), ['brew', 'npm'], 'Linuxbrew is found');
+    b.setup.run('claude', 'install', 1);
+    assert.deepStrictEqual(b.calls[0].args, ['install', '-g', '@anthropic-ai/claude-code']);
+  }
+  // Windows: npm.cmd through cmd /d /s /c with its own quotes; an unsafe path is refused
+  {
+    const t = mk('win32', ['C:\\Program Files\\nodejs\\npm.cmd']);
+    assert.ok(t.setup.run('codex', 'install').ok);
+    assert.strictEqual(t.calls[0].file, 'C:\\Windows\\System32\\cmd.exe');
+    assert.deepStrictEqual(t.calls[0].args, ['/d', '/s', '/c', '"C:\\Program Files\\nodejs\\npm.cmd" install -g @openai/codex']);
+    assert.strictEqual(t.calls[0].opts.windowsVerbatimArguments, true);
+    assert.strictEqual(t.calls[0].opts.detached, false);
+    const u = mk('win32', ['C:\\a&b\\npm.cmd']);
+    (u.setup['deps'].detectEnv.env as Record<string, string>).PATH = 'C:\\a&b';
+    assert.ok(!u.setup.run('codex', 'install').ok, 'a path with & is refused');
+  }
+  // output lines are redacted before they reach the window
+  {
+    const t = mk('linux', ['/usr/bin/npm']);
+    t.setup.run('codex', 'install');
+    t.child().err.emit('data', 'npm ERR! token ghp_0123456789abcdefghijABCDEFGHIJ0123456789 rejected\n');
+    assert.ok(!t.prog[t.prog.length - 1].lines.join(' ').includes('ghp_0123456789'), 'redacted');
+    t.child().emit('close', 1); await tick(); await tick();
+    assert.deepStrictEqual([t.done[0].ok, t.done[0].exitCode], [false, 1]);
+  }
+  console.log('harnesssetup: all checks passed');
+})().catch((e) => { console.error(e); process.exit(1); });
