@@ -7,6 +7,7 @@
 import type { McpServerSpec } from '../shared/mcp';
 import type { CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import type { AdapterCapabilities, PermissionMode } from './capabilities';
+import type { HandoffResult } from './handoff';
 import type { HistoryResult, PreviousSession } from './history';
 export type { McpServerSpec, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult, AdapterCapabilities, PermissionMode };
 
@@ -376,6 +377,8 @@ export interface AgentAdapter {
   cancelQueuedModel?(sessionId: string, queueId: string): Promise<void>;
   /** Compact the context now (spends a model call); `focus` steers the summary. Optional. */
   compact?(sessionId: string, focus?: string): Promise<CompactResult>;
+  /** A markdown hand-off summary of the conversation, made without changing it (spec 030 FR-034). Optional (`capabilities.handoff`). */
+  handoffSummary?(sessionId: string): Promise<HandoffResult>;
   /** True while the session is open in this adapter. */
   isLive(sessionId: string): boolean;
   /** Stop every session and free the runtime. */

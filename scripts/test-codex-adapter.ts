@@ -94,7 +94,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(CODEX_CAPABILITIES)), {
       interrupt: true, resume: true, images: true, models: true, effort: true,
       permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'next-message',
-      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true,
+      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true,
     });
     assert.ok(Object.isFrozen(CODEX_CAPABILITIES) && Object.isFrozen(CODEX_CAPABILITIES.permissionModes) && Object.isFrozen(CODEX_CAPABILITIES.usage), 'capabilities are deeply frozen');
     const { ad } = make();
@@ -981,6 +981,29 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(got.slice(1).filter((e) => (e as { type: string }).type !== 'mcp'), want, `${f}: adapter events equal the fixture's expected list`);
       await ad.dispose();
     }
+  }
+
+  // ---- spec 030 FR-034: the hand-off summary comes from an ephemeral, read-only fork; its events never reach the chat
+  {
+    const { server, ad, events } = make();
+    const sid = await ad.start({ workspace: dir(), permissionMode: 'read-only', quiet: true });
+    await ad.send(sid, { text: 'hello' });
+    await until('turn done', () => events.some((e) => e.type === 'status' && (e as { status: string }).status === 'idle'));
+    await settle(50);
+    const before = events.length;
+    const r = await settles('summary', ad.handoffSummary!(sid));
+    assert.strictEqual(r.summary, '## Goal\nFake fork summary.');
+    const fork = server.wire.find((w) => w.method === 'thread/fork')!.params as Record<string, unknown>;
+    assert.strictEqual(fork.ephemeral, true, 'the fork is not saved');
+    assert.strictEqual(fork.approvalPolicy, 'never');
+    assert.strictEqual(fork.sandbox, 'read-only', 'the fork cannot write');
+    const turn = server.wire.filter((w) => w.method === 'turn/start').pop()!.params as { threadId: string; input: Array<{ text: string }> };
+    assert.notStrictEqual(turn.threadId, fork.threadId, 'the prompt goes to the fork, not the session thread');
+    assert.match(turn.input[0].text, /hand-off summary/);
+    await until('fork unsubscribed', () => server.wire.some((w) => w.method === 'thread/unsubscribe' && (w.params as { threadId: string }).threadId === turn.threadId));
+    const leaked = events.slice(before).filter((e) => e.type === 'output' || e.type === 'toolCall' || e.type === 'status');
+    assert.deepStrictEqual(leaked.map(strip), [], 'nothing from the fork reaches the chat');
+    await ad.stop(sid);
   }
 
   for (const d of tmp) fs.rmSync(d, { recursive: true, force: true });
