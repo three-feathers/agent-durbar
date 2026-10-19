@@ -40,7 +40,16 @@ const CONFIRM = ' Every change needs your confirmation in Durbar\'s own window b
 const NO_ARGS: JsonSchema = { type: 'object', properties: {}, additionalProperties: false };
 const TARGET = { type: 'string', maxLength: 64, description: 'Agent id' } as const;
 
-export const READ_TOOLS: readonly ToolDef[] = [
+/** Frozen all the way down: nothing can add a change tool to a list, or loosen a schema, at runtime. */
+function deepFreeze<T>(v: T): T {
+  if (typeof v === 'object' && v !== null && !Object.isFrozen(v)) {
+    Object.freeze(v);
+    for (const k of Object.keys(v)) deepFreeze((v as Record<string, unknown>)[k]);
+  }
+  return v;
+}
+
+export const READ_TOOLS: readonly ToolDef[] = deepFreeze<ToolDef[]>([
   { kind: 'read', name: 'durbar_list_folders', description: 'List the folders in Durbar: key, name, floor, hidden, door, adapter kind, mode, cap and number of agents.', inputSchema: NO_ARGS },
   { kind: 'read', name: 'durbar_list_agents', description: 'List the agents: id, name, folder, floor, adapter kind, mode, model, cap, state (the office word and sub-label) and whether it is lazy.', inputSchema: NO_ARGS },
   { kind: 'read', name: 'durbar_list_floors', description: 'List the floors of the office and which are on.', inputSchema: NO_ARGS },
@@ -53,10 +62,10 @@ export const READ_TOOLS: readonly ToolDef[] = [
     description: 'Status of a change request made earlier through this server (pending, applied, denied, expired, stale, failed, busy or refused).',
     inputSchema: { type: 'object', properties: { requestId: { type: 'string', maxLength: 64, description: 'Id returned by a change tool' } }, required: ['requestId'], additionalProperties: false },
   },
-];
+]);
 
 /** Defined now so the flag has something to switch; listed and dispatched only when the flag is on (T038). */
-export const CHANGE_TOOLS: readonly ToolDef[] = [
+export const CHANGE_TOOLS: readonly ToolDef[] = deepFreeze<ToolDef[]>([
   {
     kind: 'change',
     name: 'durbar_set_mode',
@@ -111,7 +120,7 @@ export const CHANGE_TOOLS: readonly ToolDef[] = [
     description: 'Ask to turn a per-folder MCP extra on or off. Only an extra you already trusted in Durbar\'s window can be turned on.' + CONFIRM,
     inputSchema: { type: 'object', properties: { folder: { type: 'string', maxLength: 4096 }, name: { type: 'string', maxLength: 64 }, enabled: { type: 'boolean' } }, required: ['folder', 'name', 'enabled'], additionalProperties: false },
   },
-];
+]);
 
 /** What a tool returns: MCP `tools/call` result content. */
 export interface ToolResult {
@@ -150,7 +159,7 @@ export function matches(schema: JsonSchema, v: unknown): boolean {
       return true;
     }
     default:
-      return true;
+      return false; // a node with no known type (and no anyOf) accepts nothing: fail closed
   }
 }
 

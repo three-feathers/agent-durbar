@@ -4,11 +4,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { LineFramer, parseMessage } from '../src/main/mcp/jsonrpc';
 import { MCP_LIMITS } from '../src/shared/mcpserver';
-
-const MAX_MESSAGE_BYTES = MCP_LIMITS.maxMessageBytes;
 import { LATEST_PROTOCOL_VERSION, McpSession, SUPPORTED_PROTOCOL_VERSIONS, McpError } from '../src/main/mcp/protocol';
 import { CLOSE_AFTER_DROPPED, RATE_PER_SECOND } from '../src/main/mcp/connection';
 import { FakeMcpClient, loopback } from './fakes/mcp-client';
+
+const MAX_MESSAGE_BYTES = MCP_LIMITS.maxMessageBytes;
 
 const mk = (): McpSession => new McpSession({ serverInfo: { name: 'agent-durbar', version: '9.9.9' } });
 const INIT = { protocolVersion: SUPPORTED_PROTOCOL_VERSIONS[0], clientInfo: { name: 'c', version: '1' } };

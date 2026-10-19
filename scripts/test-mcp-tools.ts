@@ -1,6 +1,6 @@
 /** Unit test for the MCP tool registry, dispatch and init gate (spec 041 T013): `npm run test:runtime`. */
 import * as assert from 'assert';
-import { CHANGE_TOOLS, CHANGE_TOOLS_ENABLED, READ_TOOLS, ToolHandlers, createToolRegistry } from '../src/main/mcp/tools';
+import { JsonSchema, CHANGE_TOOLS, CHANGE_TOOLS_ENABLED, READ_TOOLS, ToolDef, ToolHandlers, matches, createToolRegistry } from '../src/main/mcp/tools';
 import { LATEST_PROTOCOL_VERSION, McpSession } from '../src/main/mcp/protocol';
 import { FakeMcpClient, loopback } from './fakes/mcp-client';
 
@@ -24,7 +24,6 @@ const names = (c: FakeMcpClient): string[] => c.request('tools/list').result.too
 
 // FR-028: nothing that starts sessions, sends prompts, resolves permissions or limits, or resets totals
 const FORBIDDEN = /session|prompt|send|start|stop|end_turn|permission|resolve|grant|approve|limit|reset|usage_reset|turn/i;
-const ALLOWED_WITH_FORBIDDEN_WORDS = new Set<string>([]);
 
 async function main(): Promise<void> {
   // the shipped build flag is off until T038
@@ -71,7 +70,7 @@ async function main(): Promise<void> {
   {
     for (const flag of [false, true]) {
       for (const n of names(client(flag))) {
-        assert.ok(!FORBIDDEN.test(n.replace(/^durbar_/, '')) || ALLOWED_WITH_FORBIDDEN_WORDS.has(n), `FR-028: ${n} must not exist`);
+        assert.ok(!FORBIDDEN.test(n.replace(/^durbar_/, '')), `FR-028: ${n} must not exist`);
       }
     }
     const all = [...READ_TOOLS, ...CHANGE_TOOLS].map((t) => t.name);
@@ -153,6 +152,48 @@ async function main(): Promise<void> {
     assert.strictEqual(c.request('tools/list').error.code, -32002, 'still closed after a failed initialize');
     assert.ok(c.request('initialize', { protocolVersion: LATEST_PROTOCOL_VERSION }).result);
     assert.ok(Array.isArray(c.request('tools/list').result.tools), 'open after a successful initialize');
+  }
+
+  // 7. hardening: fail-closed schemas, frozen registry, name and argument tricks
+  {
+    const walk = (n: JsonSchema, where: string): void => {
+      assert.ok(n.type !== undefined || n.anyOf !== undefined, `${where}: schema node needs a type or anyOf`);
+      for (const [k, v] of Object.entries(n.properties ?? {})) walk(v, `${where}.${k}`);
+      (n.anyOf ?? []).forEach((v, i) => walk(v, `${where}[${i}]`));
+    };
+    for (const t of [...READ_TOOLS, ...CHANGE_TOOLS]) walk(t.inputSchema, t.name);
+    assert.strictEqual(matches({} as JsonSchema, 'x'), false, 'an empty schema node accepts nothing');
+    assert.strictEqual(matches({ type: 'object', properties: { a: {} }, additionalProperties: false }, { a: 1 }), false, 'a typeless property accepts nothing');
+
+    assert.ok(Object.isFrozen(READ_TOOLS) && Object.isFrozen(CHANGE_TOOLS), 'lists frozen');
+    for (const t of [...READ_TOOLS, ...CHANGE_TOOLS]) {
+      assert.ok(Object.isFrozen(t) && Object.isFrozen(t.inputSchema) && Object.isFrozen(t.inputSchema.properties), `${t.name} frozen`);
+      if (t.inputSchema.required) assert.ok(Object.isFrozen(t.inputSchema.required), `${t.name} required frozen`);
+    }
+    assert.throws(() => (READ_TOOLS as ToolDef[]).push(CHANGE_TOOLS[0]), TypeError, 'cannot push a change tool into the read list');
+
+    const c = client(true);
+    for (const n of ['DURBAR_LIST_FOLDERS', ' durbar_list_folders', 'durbar_list_folders ', 'durbar_list_folders\u0000', 'durbar_list_folders\n', '']) {
+      const r = await c.requestAsync('tools/call', { name: n, arguments: {} });
+      assert.strictEqual(r.error.message, 'Unknown tool', `name variant ${JSON.stringify(n)}`);
+    }
+    c.sendRaw('{"jsonrpc":"2.0","id":9001,"method":"tools/call","params":{"name":"durbar_set_cap","arguments":{"__proto__":{"polluted":1},"target":"a","cap":null}}}\n');
+    await new Promise((r) => setImmediate(r));
+    assert.strictEqual(c.replies.find((x) => x.id === 9001).error.code, -32602, '__proto__ argument refused');
+    assert.strictEqual(({} as any).polluted, undefined, 'no prototype pollution');
+    c.sendRaw('{"jsonrpc":"2.0","id":9002,"method":"tools/call","params":{"name":"durbar_set_cap","arguments":{"target":"a","cap":1e400}}}\n');
+    await new Promise((r) => setImmediate(r));
+    assert.strictEqual(c.replies.find((x) => x.id === 9002).error.code, -32602, '1e400 (Infinity) refused');
+
+    let ran = 0;
+    const h = stubs();
+    h.durbar_list_folders = () => { ran++; return text('x'); };
+    const n = client(false, h);
+    const before = n.replies.length;
+    n.notify('tools/call', { name: 'durbar_list_folders', arguments: {} });
+    await new Promise((r) => setImmediate(r));
+    assert.strictEqual(ran, 0, 'a tools/call notification runs no handler');
+    assert.strictEqual(n.replies.length, before, 'and gets no reply');
   }
 
   console.log('mcp tools: ok');
