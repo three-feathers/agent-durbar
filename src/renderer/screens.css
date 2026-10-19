@@ -225,3 +225,14 @@ body.has-bridge #topBtns{display:flex}
 .hs-code{font-size:18px;font-weight:700;letter-spacing:.08em;padding:4px 10px;border-radius:8px;background:var(--surface-2);border:1px solid var(--line)}
 .hs-plan{display:flex;gap:8px;align-items:flex-start;margin:6px 0}.hs-plan small{display:block;color:var(--muted);font-size:11.5px}
 #hsPaste{flex:1 1 240px;height:32px;border:1px solid var(--line-2);border-radius:8px;padding:0 10px;font:inherit}
+/* Tools > Cost (spec 052 FR-044): one row per folder, a total row; folders with no usage in grey */
+.scr-body .ttab.cost{table-layout:auto}
+.scr-body .ttab.cost thead th:first-child{width:auto}
+.ttab.cost .num{width:auto;white-space:nowrap}
+.ttab.cost thead small{font-weight:500;font-size:10.5px}
+.ttab.cost tbody th[scope=row]{max-width:28ch;white-space:nowrap}
+.ttab.cost tr.empty th,.ttab.cost tr.empty td{color:var(--muted)}
+.ttab.cost tr.other th{font-style:italic}
+.ttab.cost .unk{color:var(--muted)}
+.ttab.cost .cnote{font-size:11.5px;color:var(--ink-2)}
+.ttab.cost tfoot th,.ttab.cost tfoot td{font-weight:650;border-top:2px solid var(--line-2,var(--line))}

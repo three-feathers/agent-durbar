@@ -50,6 +50,17 @@ const floorRank=r=>{const f=floorById(r.floor);return f?FLOORS.floors.indexOf(f)
 const roomsInOrder=()=>ROOMS.map((r,i)=>[r,i]).sort((x,y)=>floorRank(x[0])-floorRank(y[0])||x[1]-y[1]).map(p=>p[0]);
 const floorTag=r=>{if(!floorTagsOn())return '';const f=floorById(r.floor);return f?`<span class="floor-tag" title="Floor: ${esc(f.name)}">${esc(f.name)}</span>`:'';};
 /* the dollar estimates of the agents whose kind reports them (Claude Code), in a room or the whole office */
+/* spec 052 FR-044 (#315): the Tools > Cost rows, one per folder. period 'run' = since the app opened (or the last reset), 'since' = the
+   saved totals plus this run. Claude's dollar estimate and the tokens come from the sessions open now (this run only). */
+function costData(period){
+  const since=LEDGER.since(),run=period!=='since'||!since;
+  if(demoOn)return {since,period:run?'run':'since',rows:[],office:null};
+  const live=agents.filter(a=>!a.parent&&a.usage);
+  const rows=ROOMS.map(r=>{const f=folderOfRoom(r.id),t=run?LEDGER.roomRun(r.id):LEDGER.room(r.id,(f&&f.key)||r.path),mine=live.filter(a=>a.room===r.id);
+    return {id:r.id,name:r.name,path:r.path,nano:t.nano,calls:t.calls,unreported:t.unreported,usd:usdEstimates(r.id),
+      tokens:mine.reduce((n,a)=>n+(a.usage.inT||0)+(a.usage.outT||0),0),tokensOnly:mine.some(a=>a.info&&a.info.adapterId==='codex')};});
+  return {since,period:run?'run':'since',rows,office:run?LEDGER.officeRun():LEDGER.office()};
+}
 function usdEstimates(roomId){return agents.filter(a=>!a.parent&&a.usage&&(!roomId||a.room===roomId)&&usageCaps(a).costUsd&&!usageCaps(a).nanoAiu).reduce((n,a)=>n+(a.usage.usd||0),0);}
 function aiuChip(){
   const t=LEDGER.office(); if(!t.calls||demoOn)return '';
@@ -558,7 +569,7 @@ function roomHTML({r,mains,all},d,aw,cap){
   const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':(k==='done'||k==='idle')?' calm':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}</span>`:''}).join('');
   /* spec 052 FR-006: the counts in words too (screen readers, and a tooltip for colour-blind users) */
   const dotsLabel=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?n+' '+LABELS[k].toLowerCase():'';}).filter(Boolean).join(', ');
-  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="${esc(wordOf('door-close'))} ${esc(r.name)}" title="${esc(wordOf('door-title-prefix'))}: ${esc(r.name)} ${esc(wordOf('door-plate-suffix'))}">${doorSvg(true)}</button><span class="room-name" title="${esc(r.name)}${(()=>{const u=roomAiu(r);return u?' · '+esc(u.long):'';})()}">${esc(r.name)}</span>${al.siren?SIREN():''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span>${(()=>{const u=roomAiu(r);return u?`<span class="room-aiu" title="${esc(u.tip)}">${esc(u.long)}</span>`:'';})()}${dotsLabel?`<span class="room-dots" role="img" aria-label="${esc(dotsLabel)}" title="${esc(dotsLabel)}">${dots}</span>`:`<span class="room-dots" aria-hidden="true">${dots}</span>`}${bridge&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.removeFolder&&!demoOn?`<button class="room-new room-more" type="button" data-foldermenu="${esc(r.id)}" title="Folder actions: new session, schedules, rename, hide, remove" aria-label="Folder actions for ${esc(r.name)}" aria-haspopup="menu">⋯</button>`:''}${roomSchedChip(r)}${bridge&&bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT()}</div>`;
+  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="${esc(wordOf('door-close'))} ${esc(r.name)}" title="${esc(wordOf('door-title-prefix'))}: ${esc(r.name)} ${esc(wordOf('door-plate-suffix'))}">${doorSvg(true)}</button><span class="room-name" title="${esc(r.name)}${(()=>{const u=roomAiu(r);return u?' · '+esc(u.long):'';})()}">${esc(r.name)}</span>${al.siren?SIREN():''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span>${(()=>{const u=roomAiu(r);return u?`<button class="room-aiu" type="button" data-costview="${esc(r.id)}" title="${esc(u.tip+'\nClick for the cost by folder.')}">${esc(u.long)}</button>`:'';})()}${dotsLabel?`<span class="room-dots" role="img" aria-label="${esc(dotsLabel)}" title="${esc(dotsLabel)}">${dots}</span>`:`<span class="room-dots" aria-hidden="true">${dots}</span>`}${bridge&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.removeFolder&&!demoOn?`<button class="room-new room-more" type="button" data-foldermenu="${esc(r.id)}" title="Folder actions: new session, schedules, rename, hide, remove" aria-label="Folder actions for ${esc(r.name)}" aria-haspopup="menu">⋯</button>`:''}${roomSchedChip(r)}${bridge&&bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT()}</div>`;
   if(d==='full'){
     const gap=6, pad=12;
     const widths=mains.map(a=>unitWidth(a,d));
@@ -1096,6 +1107,7 @@ document.addEventListener('click',e=>{
   const cm=e.target.closest('.chips-more'); if(cm){const box=cm.parentNode;box.dataset.exp=box.dataset.exp==='1'?'0':'1';refreshChips(box);return;}
   const chip=e.target.closest('#chat .chip:not(.att-chip)'); if(chip){const o=chip.classList.toggle('open');chip.setAttribute('aria-expanded',String(o));return;}
   const sw=e.target.closest('[data-sw]'); if(sw){openPanel(sw.dataset.sw,e.detail===0);return;}
+  if(e.target.closest('[data-costview]')){window.DurbarScreens.openTools(null,'cost');return;}
   const mr=e.target.closest('[data-mcproom]'); if(mr){const f=folderOfRoom(mr.dataset.mcproom);if(f)window.DurbarScreens.folderMcp(f.key,f.name);return;}
   const sc=e.target.closest('[data-schedroom]'); if(sc){const r=ROOMS.find(x=>x.id===sc.dataset.schedroom);if(r)openSchedules(r);return;}
   const fm=e.target.closest('[data-foldermenu]'); if(fm){const r=ROOMS.find(x=>x.id===fm.dataset.foldermenu),b=fm.getBoundingClientRect();openFolderMenu(r,b.left,b.bottom+4,fm);return;}
@@ -1107,6 +1119,8 @@ document.addEventListener('click',e=>{
 document.addEventListener('keydown',e=>{
   /* spec 052 FR-035: Ctrl+Shift+A (attention: the inbox) and Ctrl+Shift+N (next agent) work everywhere, also in text fields and in a
      screen reader's browse mode, where single letters are taken. Not Ctrl+Shift+I: Electron's default menu opens DevTools there. */
+  /* spec 052 FR-042: Ctrl+K (Cmd+K) opens the command palette from anywhere, also from text fields */
+  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&!e.altKey&&(e.key==='k'||e.key==='K'||e.code==='KeyK')){e.preventDefault();closeKbdHelp();openPalette();return;}
   if((e.ctrlKey||e.metaKey)&&e.shiftKey&&!e.altKey&&(e.key==='A'||e.key==='a'||e.code==='KeyA')){e.preventDefault();openInbox();return;}
   if((e.ctrlKey||e.metaKey)&&e.shiftKey&&!e.altKey&&(e.key==='N'||e.key==='n'||e.code==='KeyN')){e.preventDefault();closeInbox();openNextNeedsMe();return;}
   if(e.key==='Escape'){
@@ -1122,6 +1136,8 @@ document.addEventListener('keydown',e=>{
   if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('#chat .chip:not(.att-chip)')){e.preventDefault();e.target.click();}
   /* spec 052 FR-014: N opens the next agent that needs you (waiting, error or at its limit), outside text fields and dialogs */
   if((e.key==='i'||e.key==='I')&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]'))&&!document.querySelector('[role="dialog"][aria-modal="true"]')){e.preventDefault();openInbox();return;}
+  /* spec 052 FR-043: ? opens the keyboard shortcut sheet, outside text fields and dialogs */
+  if(e.key==='?'&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]'))&&!document.querySelector('[role="dialog"][aria-modal="true"]')){e.preventDefault();openKbdHelp();return;}
   if((e.key==='n'||e.key==='N')&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]'))&&!document.querySelector('[role="dialog"][aria-modal="true"]')){e.preventDefault();openNextNeedsMe();return;}
   /* spec 001 FR-019: arrow keys move between desks, helpers and door plates; left/right in reading order, up/down to the nearest one in that direction */
   if(/^Arrow(Left|Right|Up|Down)$/.test(e.key)&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&e.target.matches&&e.target.matches(DESK_NAV)){
@@ -1232,6 +1248,121 @@ function openNextNeedsMe(){
   const cur=list.findIndex(a=>a.id===ui.selected), nx=list[(cur+1)%list.length];
   openPanel(nx.id,true);
 }
+/* ---- spec 052 FR-042 / FR-043 (#316): command palette (Ctrl+K) and keyboard shortcut sheet (?) ---- */
+let palBack=null, palItems=[], palActive=0;
+const palUsable=id=>{const el=$(id);return !!el&&!el.disabled&&!el.hidden&&!el.closest('[hidden]:not(#topMoreMenu)');};
+const palClick=id=>()=>{const el=$(id);if(el)el.click();};
+function palActions(){
+  return [
+    {label:'Needs you',hint:'The inbox of agents that need you',kw:'inbox attention waiting approve',keys:['I'],run:openInbox},
+    {label:'Next agent that needs you',hint:'Open the next waiting chat',kw:'next waiting jump',keys:['N'],run:openNextNeedsMe},
+    {label:'Office view',kw:'view office desks rooms',run:palClick('vOffice'),ok:()=>palUsable('vOffice')},
+    {label:'List view',kw:'view list table rows',run:palClick('vList'),ok:()=>palUsable('vList')},
+    {label:'Tools',kw:'tools usage mcp',run:palClick('toolsBtn'),ok:()=>palUsable('toolsBtn')},
+    {label:'Settings',kw:'settings preferences theme options',run:palClick('settingsBtn'),ok:()=>palUsable('settingsBtn')},
+    {label:'Add folder',kw:'add folder workspace project new',run:palClick('addFolder'),ok:()=>palUsable('addFolder')},
+    {label:'Simple view',kw:'simple detail beginner',run:()=>setDetail('simple')},
+    {label:'Expert view',kw:'expert detail developer',run:()=>setDetail('expert')},
+    {label:'Close all room doors',kw:'doors close compact plates',run:palClick('closeAll'),ok:()=>palUsable('closeAll')},
+    {label:'Open all room doors',kw:'doors open expand',run:palClick('openAll'),ok:()=>palUsable('openAll')},
+    {label:'Keyboard shortcuts',kw:'keys shortcuts help hotkeys',keys:['?'],run:openKbdHelp},
+  ].filter(x=>!x.ok||x.ok()).map(x=>({...x,group:'Actions'}));
+}
+function palAll(){
+  const ags=agents.filter(a=>!a.parent).map(a=>{const r=roomOf(a);return {group:'Agents',label:a.name,
+    hint:[r&&r.name,LABELS[vis(a)]||vis(a),a.info?kindWord(a.info.adapterId):''].filter(Boolean).join(' · '),
+    kw:[r&&r.name,LABELS[vis(a)],a.info?kindWord(a.info.adapterId):''].filter(Boolean).join(' '),run:()=>openPanel(a.id,true)};});
+  const rooms=roomsInOrder().filter(roomShown).map(r=>({group:'Folders',label:r.name,hint:'Show only this folder',kw:'folder filter',
+    run:()=>{if(ui.selected)closePanel();ui.ws=r.id;renderAll();}}));
+  if(ui.ws!=='all')rooms.unshift({group:'Folders',label:'All folders',hint:'Show every folder',kw:'folder filter all',run:()=>{if(ui.selected)closePanel();ui.ws='all';renderAll();}});
+  return [...ags,...rooms,...palActions()];
+}
+function palFilter(q){
+  q=q.trim().toLowerCase(); const all=palAll(); if(!q)return all;
+  const scored=[];
+  all.forEach((x,i)=>{const l=x.label.toLowerCase(),k=(x.kw||'').toLowerCase();
+    const s=l.startsWith(q)?0:l.split(/[\s\-_.]+/).some(w=>w.startsWith(q))?1:l.includes(q)?2:k.includes(q)?3:-1;
+    if(s>=0)scored.push({x,s,i});});
+  return scored.sort((a,b)=>a.s-b.s||a.i-b.i).map(o=>o.x);
+}
+const kbdHTML=keys=>(keys||[]).map(k=>'<kbd>'+esc(k)+'</kbd>').join('');
+function closePalette(back){const d=$('palDlg');if(!d)return;d.remove();const b=palBack;palBack=null;if(back!==false&&b&&b.isConnected&&b.getClientRects().length)b.focus();}
+function openPalette(){
+  if($('palDlg')){$('palIn').focus();return;}
+  closeInbox();
+  palBack=document.activeElement&&document.activeElement!==document.body?document.activeElement:null;
+  const d=document.createElement('div');d.id='palDlg';d.className='dlg-ov pal-ov';
+  d.innerHTML='<div class="dlg pal-dlg" role="dialog" aria-modal="true" aria-label="Command palette"><div class="pal-top"><input id="palIn" type="text" role="combobox" aria-expanded="true" aria-controls="palList" aria-autocomplete="list" aria-activedescendant="" aria-label="Search agents, folders and actions" placeholder="Search agents, folders and actions…" autocomplete="off" spellcheck="false"></div><div class="pal-list" id="palList" role="listbox" aria-label="Results"></div><p class="pal-foot" aria-hidden="true"><kbd>↑</kbd><kbd>↓</kbd> move <kbd>Enter</kbd> open <kbd>Esc</kbd> close</p></div>';
+  document.body.appendChild(d);
+  const inp=$('palIn');
+  d.addEventListener('click',e=>{if(e.target===d){closePalette();return;}const o=e.target.closest('[role="option"]');if(o)palRun(+o.dataset.i);});
+  d.addEventListener('mousemove',e=>{const o=e.target.closest('[role="option"]');if(o&&+o.dataset.i!==palActive)palSetActive(+o.dataset.i);});
+  d.addEventListener('keydown',e=>{
+    if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closePalette();return;}
+    if(e.key==='Tab'){e.preventDefault();inp.focus();return;} /* the input is the only stop: Tab stays inside */
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(palItems.length)palSetActive((palActive+(e.key==='ArrowDown'?1:-1)+palItems.length)%palItems.length);return;}
+    if(e.key==='Home'&&e.ctrlKey){e.preventDefault();palSetActive(0);return;}
+    if(e.key==='End'&&e.ctrlKey){e.preventDefault();palSetActive(palItems.length-1);return;}
+    if(e.key==='Enter'){e.preventDefault();palRun(palActive);return;}
+    e.stopPropagation(); /* typing here never reaches the office's single-letter keys */
+  });
+  inp.addEventListener('input',()=>palPaint(inp.value));
+  palPaint('');
+  inp.focus();
+}
+function palPaint(q){
+  palItems=palFilter(q); palActive=0;
+  const list=$('palList'); if(!list)return;
+  let html='',g='';
+  palItems.forEach((x,i)=>{
+    if(x.group!==g){g=x.group;html+='<div class="pal-g" role="presentation">'+esc(g)+'</div>';}
+    html+='<div class="pal-o" role="option" id="palO'+i+'" data-i="'+i+'" aria-selected="false"><span class="pal-l">'+esc(x.label)+'</span>'+(x.hint?'<span class="pal-h">'+esc(x.hint)+'</span>':'')+(x.keys?'<span class="pal-k">'+kbdHTML(x.keys)+'</span>':'')+'</div>';
+  });
+  list.innerHTML=html||'<p class="pal-empty">No matches.</p>';
+  palSetActive(0);
+  announce(palItems.length===1?'1 result':palItems.length+' results');
+}
+function palSetActive(i){
+  const list=$('palList'),inp=$('palIn'); if(!list||!inp)return;
+  palActive=i;
+  list.querySelectorAll('[role="option"]').forEach(o=>o.setAttribute('aria-selected',String(+o.dataset.i===i)));
+  const o=$('palO'+i);
+  inp.setAttribute('aria-activedescendant',o?o.id:'');
+  if(o)o.scrollIntoView({block:'nearest'});
+}
+function palRun(i){
+  const x=palItems[i]; if(!x)return;
+  const b=palBack; closePalette(false);
+  if(x.run===openKbdHelp){openKbdHelp(b);return;}
+  x.run();
+  /* an action that moves focus (a chat, the inbox, Settings) keeps it; otherwise focus goes back to where it was */
+  setTimeout(()=>{const f=document.activeElement;if((!f||f===document.body)&&b&&b.isConnected&&b.getClientRects().length)b.focus();},0);
+}
+/* FR-043: the shortcut sheet */
+function closeKbdHelp(){const d=$('kbdDlg');if(!d)return;d.remove();const b=palBack;palBack=null;if(b&&b.isConnected&&b.getClientRects().length)b.focus();}
+function openKbdHelp(back){
+  if($('kbdDlg'))return;
+  palBack=back instanceof Element?back:(document.activeElement&&document.activeElement!==document.body?document.activeElement:null);
+  const rows=[
+    [['Ctrl','K'],'Command palette: agents, folders and actions'],
+    [['I'],'Needs you inbox',['Ctrl','Shift','A']],
+    [['N'],'Next agent that needs you',['Ctrl','Shift','N']],
+    [['←','→','↑','↓'],'Move between desks'],
+    [['Esc'],'Back, or close'],
+    [['?'],'This list'],
+  ];
+  const inbox=[[['J'],['K'],'Next or previous request (also ↓ ↑)'],[['A'],'Approve'],[['D'],'Deny'],[['S'],'Allow for the session'],[['O'],'Open the chat']];
+  const row=(keys,what,alt)=>'<tr><td class="kb-k">'+kbdHTML(keys)+(alt?' <span class="kb-or">or</span> '+kbdHTML(alt):'')+'</td><td>'+esc(what)+'</td></tr>';
+  const d=document.createElement('div');d.id='kbdDlg';d.className='dlg-ov';
+  d.innerHTML='<div class="dlg kbd-dlg" role="dialog" aria-modal="true" aria-labelledby="kbdT"><h3 id="kbdT">Keyboard shortcuts</h3><table class="kb-t"><tbody>'+rows.map(r=>row(r[0],r[1],r[2])).join('')+'</tbody></table><h4 class="kb-h">In the Needs you inbox</h4><table class="kb-t"><tbody>'+inbox.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><p class="kb-note">On a Mac, Cmd works where Ctrl is shown.</p><div class="dbtn"><button class="btn" type="button" id="kbdClose">Close</button></div></div>';
+  document.body.appendChild(d);
+  d.addEventListener('click',e=>{if(e.target===d)closeKbdHelp();});
+  d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeKbdHelp();}else if(e.key==='Tab'){e.preventDefault();$('kbdClose').focus();}});
+  $('kbdClose').onclick=closeKbdHelp;
+  $('kbdClose').focus();
+}
+$('kbdHelpBtn').onclick=()=>openKbdHelp($('topMoreBtn'));
+/* ---- end spec 052 FR-042 / FR-043 ---- */
 const DESK_NAV='#stage .desk, #stage .helper, #stage .plate';
 $('wsFilter').addEventListener('change',e=>{ui.ws=e.target.value;renderAll();});
 function setView(v){ui.view=v;document.body.classList.toggle('list-mode',v==='list');
@@ -2992,7 +3123,7 @@ if(bridge){
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
   document.body.classList.toggle('simple',SIMPLE);
-  window.DurbarScreens.init({refreshKinds:()=>loadKinds(true),detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,setSerious:on=>{SERIOUS=!!on;scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),usageError:()=>usageSaveError,
+  window.DurbarScreens.init({refreshKinds:()=>loadKinds(true),detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,setSerious:on=>{SERIOUS=!!on;scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     previewTheme:(m)=>{THEME.setTheme(m);SC_CACHE.clear();renderAll();}, /* spec 040 FR-014: Try it / Discard, nothing saved */
