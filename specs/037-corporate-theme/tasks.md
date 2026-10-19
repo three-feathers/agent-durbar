@@ -8,5 +8,5 @@
 
 ## Changes 2026-10-19
 
-- [ ] T006 `THEME.preview(id)` and swatches painted per theme in the picker; test; screenshots [FR-014]
+- [x] T006 `THEME.preview(id)` and swatches painted per theme in the picker; test; screenshots [FR-014]
 

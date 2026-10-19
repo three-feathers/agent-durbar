@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **Theme swatches show their own theme (spec 037 FR-014).** In Settings, each theme's little swatch now shows that theme's colours. Before, all six were painted with the active theme's colours and looked the same.
+
 - **Choose a custom agent per session (spec 043, issue #127).** The chat header has an **Agent** chip. It lists the session's custom agents (`.github/agents/*.agent.md` in the folder and `~/.copilot/agents`) and switches between them or back to the default agent. An agent from the folder's repository asks once before use and shows its tools, model and MCP servers. A switch made while the agent works waits for the reply to end, and Stop drops it. Your permission mode always stays. Checked on a real Copilot session: the selected agent answered in its own style, and Read-only still blocked a write.
 
 - **Claude Code: a signed-out `claude` is shown as not signed in (spec 012 FR-132, issue #55).** The agent-kind check now also runs `claude auth status` (no prompt, nothing billed). If you're not signed in, the kind is marked "not signed in" with how to fix it, instead of failing at your first message. Only the signed-in flag is read, never your email or organisation.

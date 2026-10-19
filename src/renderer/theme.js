@@ -408,6 +408,13 @@
     return Object.keys(BUILT_IN).map(id=>({id,name:BUILT_IN[id].name,author:BUILT_IN[id].author||''}));
   }
 
+  /* spec 037 FR-014: a few of a theme's own colours for its swatch in the picker (validated tokens, Clean Office as fallback) */
+  function preview(id){
+    const m=typeof id==='string'?loadManifest(id):null, t=(m&&m.tokens)||{};
+    const pick=k=>{const v=t[k]!==undefined?t[k]:CLEAN_TOKENS[k];return typeof v==='string'&&/^(#[0-9a-fA-F]{3,8}|rgba?\([0-9.,\s%]+\)|hsla?\([0-9.,\s%deg]+\))$/.test(v.trim())?v.trim():null;};
+    return ['--bg','--tint-sage','--wall-blue'].map(pick).filter(Boolean);
+  }
+
   function loadManifest(idOrManifest){
     if(typeof idOrManifest==='string'){if(BUILT_IN[idOrManifest])return validateManifest(BUILT_IN[idOrManifest]);if(USER_MANIFESTS[idOrManifest])return validateManifest(USER_MANIFESTS[idOrManifest]);return null;}
     if(typeof idOrManifest==='object')return validateManifest(idOrManifest);
@@ -804,6 +811,7 @@
     word,
     motion,
     list,
+    preview,
     onChange,
     themeIdForCache,
     registerBuiltIn,
