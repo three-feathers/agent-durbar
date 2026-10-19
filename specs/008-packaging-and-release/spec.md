@@ -127,3 +127,14 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
   - office shards 122-129 s each, in parallel; package smoke 25 s;
   - the What changed job 7 s and the aggregator 2 s.
 - The branch cleanup workflow had not run yet when this was written.
+
+### 2026-10-19: the running window shows the app icon on Linux (issue #247)
+
+*Found* (after the new icon, #246):
+- `BrowserWindow` got no `icon`, so `npm start` on Linux showed Electron's default icon.
+- `package.json` had no `desktopName`, so a desktop could not link the running AppImage window to its `.desktop` entry, and showed a generic icon in the dock.
+- Windows and macOS take the icon from the `.exe` and `.icns`.
+
+- **FR-025** On Linux the window is created with `icon` set to the app icon (`build/icon.png`, copied to `dist/icon.png` by the build, so the packaged app has it in `app.asar`). Other platforms are unchanged.
+- **FR-026** `package.json` has `"desktopName": "agent-durbar.desktop"` and `build.linux.syncDesktopName: true`. Electron then uses `agent-durbar` as the window's app_id / WM_CLASS, and the AppImage's desktop entry has the same name and `StartupWMClass`. Without it, electron-builder warned.
+- `test:` the built `.desktop` entry inside the AppImage (`pack:dir`) has `StartupWMClass=agent-durbar`; the running window's `WM_CLASS` (`xprop` under xvfb) is `agent-durbar`; the window icon property is set. Not checked by eye on a GNOME or KDE dock.
