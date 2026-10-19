@@ -121,4 +121,9 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
   - a branch that no longer points at the commit its pull request merged (new work after the merge is kept).
   
   It uses the workflow's own token (`contents: write`). A deleted branch can be restored from its pull request page. `test:` the same script dry-run locally against the repository listed 7 branches to delete and skipped the ones already gone. Not yet run as a workflow.
-- `[KNOWN GAP]` The CI timings after the change are measured on this pull request's own run, recorded below once it has run.
+- **Measured after the change** (PR #250's own run, 2026-10-19):
+  - wall time **2.5 min**, against about 7 min;
+  - build and test: ubuntu 26 s, macOS 36 s, Windows 87 s (each about 270 s before);
+  - office shards 122-129 s each, in parallel; package smoke 25 s;
+  - the What changed job 7 s and the aggregator 2 s.
+- The branch cleanup workflow had not run yet when this was written.
