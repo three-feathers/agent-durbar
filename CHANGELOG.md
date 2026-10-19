@@ -6,7 +6,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **New app icon: a lead and a working team.** A lead with one arm raised toward a small status board, above three seated workers at laptops, on a navy rounded square (design F2a). Same file names in `build/` (`icon.svg`, 1024x1024 `icon.png`, `icon.ico` with 16-256 px, `icon.icns`), so the packaging config is unchanged. The 16 px entry of `icon.ico` and `icon.icns` is a hand-tuned pixel version (`build/icon-16.svg`: the lead and the board, no team) so it stays readable in the taskbar and title bar; the README header shows it. Asset-only change, 0 AIU.
 
-## v0.1.0-alpha.6 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.6), 2026-10-19)
+## v0.1.0-alpha.6 ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.6), 2026-10-19)
 
 Unsigned and not notarized; only Linux was run by hand. Claude Code is offered when it is installed and signed in; its cost is a dollar estimate, never AIU, and it has no credit cap. An in-place upgrade from alpha.5 was not checked.
 
