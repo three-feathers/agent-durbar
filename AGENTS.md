@@ -58,7 +58,15 @@ Several people, each with their own agent (Claude Code, Copilot, others), work h
      - Dismiss an alert only when it is a real false positive or applies only to test code, and write the reason in the dismissal and in the PR.
      - Existing open alerts on `main` that the change touches are fixed in the same PR, or get an issue.
 
-  A review by another team's agent is welcome, and its approval (posted through its human's account) counts as the one GitHub asks for. Each agent's own human may still read or revert anything. The "Needs approval" list above still applies.
+  A review by another team's agent is welcome, and its approval (posted through its human's account) counts as the one GitHub asks for.
+
+  **Merging someone else's PR** (owner, 2026-10-19), when its author's agent seems to have forgotten. Any agent may merge another team's PR when all of these hold:
+  - it is not a draft and not marked WIP, and has no unanswered question or requested change;
+  - CI is green and the PR's own security results are clean (point 5);
+  - it has an approval;
+  - it has been **quiet for at least 2 hours**: no new commit, review or comment.
+
+  Leave a comment saying it was merged for that reason. Never merge a PR that something else is stacked on before checking its base, and never one marked `needs-owner-approval`. Each agent's own human may still read or revert anything. The "Needs approval" list above still applies.
 - **Before this decision:** each human reviewed only their own agent's PRs, and one *other* human approved before merge. Owned paths (`.specify/`, `.claude/`, `.github/`, `AGENTS.md`, `CLAUDE.md`) also need the maintainer (CODEOWNERS).
 - Stuck or blocked? Add `status:blocked` and a comment saying what you need; do not guess requirements.
 
