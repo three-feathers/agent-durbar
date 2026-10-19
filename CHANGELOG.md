@@ -16,6 +16,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
   - **Japanese court:** Tanmatsu-shitsu, Dōgu-beya, the Ō-hiroma, fusuma doors, a bonsai, and plain short hair.
 - **The usability follow-ups, built (spec 052, #305-#311).**
   - **Needs you inbox:** every request in one queue, answered with each request's own choices; press **I**.
+  - **Command palette:** **Ctrl+K** (Cmd+K) finds an agent, a folder or an action by typing; **?** lists every keyboard shortcut (#316).
   - **Cost in money:** "≈ $0.36" in the header, rooms and cards, with AIU and Claude estimates in the tooltip.
   - **Simple / Expert:** a detail level in Settings and on the welcome card. Simple uses plain verbs ("Running a command") and hides developer details.
   - **Settings:** themes as a preview grid, one lead sentence per section, MCP under *Advanced*.
