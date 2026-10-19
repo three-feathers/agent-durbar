@@ -31,6 +31,7 @@ import type { ToolDef } from './tools';
 export const BRIDGE_TEXT = {
   notRunning: 'Durbar is not running. Start Durbar and call this tool again: the bridge connects on the next call.',
   off: "Durbar's MCP server is off. Turn it on in Durbar, Settings > MCP server.",
+  noAnswer: 'Durbar is not answering. Try again in a moment, or restart Durbar.',
   authFailed: "Durbar did not accept the connection key. In Durbar, Settings > MCP server, turn the server off and on again.",
   keyUnusable: 'The connection key file is not safe to use. In Durbar, Settings > MCP server, turn the server off and on again.',
   agent: 'Durbar does not accept connections from inside an agent.',
@@ -86,7 +87,7 @@ interface Up {
   pending: Map<string, string>;
 }
 
-type Offline = 'not-running' | 'off' | 'auth-failed' | 'key-unusable';
+type Offline = 'not-running' | 'off' | 'auth-failed' | 'no-answer' | 'key-unusable';
 
 const idKey = (id: JsonRpcId): string => `${typeof id}:${String(id)}`;
 
@@ -174,7 +175,7 @@ export class BridgeCore {
       case 'invalid':
         return this.emit(parsed.reply);
       case 'response':
-        return; // the client answering a request of ours: we send none
+        return; // a client reply to a Durbar-initiated request is dropped: the server sends none today
       case 'notification': {
         if (parsed.msg.method === 'notifications/initialized' && this.local.protocolVersion !== null && !this.clientInitialized) {
           this.clientInitialized = true;
@@ -208,7 +209,7 @@ export class BridgeCore {
   // ---- Durbar side ----
 
   private setOffline(code: Offline): null {
-    const text = code === 'off' ? BRIDGE_TEXT.off : code === 'auth-failed' ? BRIDGE_TEXT.authFailed : code === 'key-unusable' ? BRIDGE_TEXT.keyUnusable : BRIDGE_TEXT.notRunning;
+    const text = code === 'off' ? BRIDGE_TEXT.off : code === 'auth-failed' ? BRIDGE_TEXT.authFailed : code === 'no-answer' ? BRIDGE_TEXT.noAnswer : code === 'key-unusable' ? BRIDGE_TEXT.keyUnusable : BRIDGE_TEXT.notRunning;
     this.offline = { code, text };
     return null;
   }
@@ -223,23 +224,25 @@ export class BridgeCore {
     let link: Link;
     try { link = await this.d.connect(socket); } catch { return this.setOffline('not-running'); }
     const up = await this.authenticate(link, k.material.key);
-    if (!up) return this.setOffline('auth-failed');
+    if (typeof up === 'string') return this.setOffline(up);
     if (this.exited) { up.phase = 'dead'; try { link.end(); } catch { /* closing */ } return null; }
     this.up = up;
     return up;
   }
 
-  private authenticate(link: Link, key: Buffer): Promise<Up | null> {
-    return new Promise<Up | null>((resolve) => {
+  /** `auth-failed`: the handshake did not finish. `no-answer`: it did, but the replayed `initialize` timed out, failed or the link closed. */
+  private authenticate(link: Link, key: Buffer): Promise<Up | 'auth-failed' | 'no-answer'> {
+    return new Promise<Up | 'auth-failed' | 'no-answer'>((resolve) => {
       const up: Up = { link, phase: 'handshake', framer: new LineFramer(MCP_LIMITS.maxMessageBytes), pending: new Map() };
       let settled = false;
       let initTimer: unknown = null;
+      let wasInit = false; // set when the failure came after the handshake
       const settle = (ok: boolean) => {
         if (settled) return;
         settled = true;
         if (initTimer !== null) { try { this.d.timers.clearTimeout(initTimer); } catch { /* ignore */ } initTimer = null; }
-        if (!ok) { up.phase = 'dead'; try { link.end(); } catch { /* closing */ } }
-        resolve(ok ? up : null);
+        if (!ok) { wasInit = up.phase === 'init'; up.phase = 'dead'; try { link.end(); } catch { /* closing */ } }
+        resolve(ok ? up : wasInit ? 'no-answer' : 'auth-failed');
       };
       const peer: PeerInfo = { marker: false, ...(this.d.parent !== undefined ? { parent: this.d.parent } : {}) };
       const hs = createBridgeHandshake({
@@ -262,9 +265,9 @@ export class BridgeCore {
       const rx = new LineFramer(MAX_UPSTREAM_LINE_BYTES);
       link.onClose(() => {
         if (up.phase === 'live') this.lost(up);
-        up.phase = 'dead';
         hs.abort();
-        settle(false);
+        settle(false); // reads the phase before it is marked dead
+        up.phase = 'dead';
       });
       link.onData((chunk) => {
         for (const ev of rx.push(chunk)) {

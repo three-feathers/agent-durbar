@@ -13,7 +13,7 @@ import { createKeyFile, createServerHandshake, nodeMcpFs, readKeyFile } from '..
 import { AgentStateTracker } from '../src/main/mcp/agentstate';
 import { BRIDGE_TEXT, BridgeCore } from '../src/main/mcp/bridgecore';
 import type { BridgeDeps } from '../src/main/mcp/bridgecore';
-import { locate, netConnect, prepareBridge, realUserDataOf, startBridge } from '../src/main/mcp/bridge';
+import { BRIDGE_CRASH_TEXT, locate, netConnect, prepareBridge, realUserDataOf, runMcpBridge, startBridge } from '../src/main/mcp/bridge';
 import type { BridgeApp, BridgeLocation, BridgePlatform } from '../src/main/mcp/bridge';
 import { LineFramer } from '../src/main/mcp/jsonrpc';
 import { mcpPaths } from '../src/main/mcp/paths';
@@ -588,6 +588,65 @@ const echoer = (extra?: (m: any, line: string, write: (s: string) => void, sock:
     for (const r of rs) r.core.onStdinEnd();
     assert.ok(await until(() => h.state().connections === 0), 'closing stdin closes the connection to Durbar');
     await h.stop();
+  }
+
+  // 16. Signals end the bridge like stdin end does (folder removed, then app.exit); an unexpected error exits 1 with a fixed line.
+  {
+    const mkApp = (exits: number[]): BridgeApp => ({
+      isPackaged: false, getPath: () => mkRoot(), setPath: () => undefined, getVersion: () => '1', disableHardwareAcceleration: () => undefined,
+      whenReady: () => new Promise<void>(() => undefined), exit: (c) => { exits.push(c ?? 0); },
+    });
+    const mkIo = () => ({ stdin: new EventEmitter() as any, stdout: Object.assign(new EventEmitter(), { write: () => true }) as any });
+    const mkProc = () => Object.assign(new EventEmitter(), { stderr: { text: '', write(x: string) { this.text += x; } } }) as any;
+    for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
+      const exits: number[] = [];
+      const proc = mkProc();
+      const dir = mkRoot();
+      fs.writeFileSync(path.join(dir, 'Local State'), 'x');
+      fs.mkdirSync(path.join(dir, 'GPUPersistentCache'));
+      runMcpBridge(mkApp(exits), {}, proc, mkIo(), () => dir);
+      assert.strictEqual(exits.length, 0);
+      proc.emit(sig);
+      assert.deepStrictEqual(exits, [0], sig + ' exits');
+      assert.ok(!fs.existsSync(dir), sig + ' removes the bridge folder');
+      proc.emit(sig);
+      assert.strictEqual(exits.length, 1, 'once');
+    }
+    {
+      const exits: number[] = [];
+      const proc = mkProc();
+      const dir = mkRoot();
+      runMcpBridge(mkApp(exits), {}, proc, mkIo(), () => dir);
+      proc.emit('uncaughtException', new Error('secret-looking ' + 'ab'.repeat(32)));
+      assert.deepStrictEqual(exits, [1]);
+      assert.ok(!fs.existsSync(dir));
+      assert.strictEqual(proc.stderr.text, BRIDGE_CRASH_TEXT, 'one fixed line, the error text is not printed');
+    }
+    {
+      // the folder cannot even be created: the guard is already in place and ends the process
+      const exits: number[] = [];
+      const proc = mkProc();
+      assert.throws(() => runMcpBridge(mkApp(exits), {}, proc, mkIo(), () => { throw new Error('EACCES'); }));
+      proc.emit('uncaughtException', new Error('EACCES'));
+      assert.deepStrictEqual(exits, [1]);
+      assert.strictEqual(proc.stderr.text, BRIDGE_CRASH_TEXT);
+    }
+  }
+
+  // 17. The replayed initialize gets no answer, or an error: "not answering", not a key problem.
+  for (const mode of ['silent', 'error', 'close']) {
+    const rg = await rogue(echoer((m, _l, write, s) => {
+      if (m.method !== 'initialize') return false;
+      if (mode === 'error') write(JSON.stringify({ jsonrpc: '2.0', id: m.id, error: { code: -32603, message: 'x' } }) + '\n');
+      if (mode === 'close') s.destroy();
+      return true;
+    }));
+    const r = rig(rg.loc, { initTimeoutMs: 100 });
+    await r.init();
+    const c = await r.call(1, 'x');
+    assert.strictEqual(c.result.isError, true);
+    assert.strictEqual(textOf(c), BRIDGE_TEXT.noAnswer, mode);
+    assert.ok(/not answering/.test(textOf(c)) && textOf(c) !== BRIDGE_TEXT.authFailed);
   }
 
   console.log('mcp bridge OK');

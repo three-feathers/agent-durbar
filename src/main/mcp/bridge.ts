@@ -134,15 +134,52 @@ export function startBridge(deps: Omit<BridgeDeps, 'stdout' | 'exit'>, io: Bridg
   return core;
 }
 
-/** Called by `entry.ts` when the bridge flag is present. Never returns control to the app code. */
-export function runMcpBridge(app: BridgeApp, env: NodeJS.ProcessEnv): void {
-  // stdout is the protocol: nothing else may be written there, not even by a stray console.log
-  console.log = (...a: unknown[]) => console.error(...a);
-  console.info = console.log;
-  console.debug = console.log;
+/** The part of `process` the guards use. */
+export interface BridgeProc {
+  on(ev: string, cb: () => void): unknown;
+  stderr: { write(s: string): unknown };
+}
+
+/** Text written to stderr on an unexpected error. Fixed: the error itself is never printed (it could hold anything). */
+export const BRIDGE_CRASH_TEXT = 'Agent Durbar MCP bridge: unexpected error, exiting.\n';
+
+/** A signal ends the bridge like stdin end does; an unexpected error exits 1 instead of Electron's modal dialog (which would hang a headless bridge). */
+export function installProcessGuards(proc: BridgeProc, shutdown: (code: number) => void): void {
+  for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) proc.on(sig, () => shutdown(0));
+  proc.on('uncaughtException', () => {
+    try { proc.stderr.write(BRIDGE_CRASH_TEXT); } catch { /* nowhere to write */ }
+    shutdown(1);
+  });
+}
+
+/** Called by `entry.ts` when the bridge flag is present. Never returns control to the app code. The last two arguments are test seams. */
+export function runMcpBridge(
+  app: BridgeApp,
+  env: NodeJS.ProcessEnv,
+  proc: BridgeProc = process,
+  io: BridgeIo = { stdin: process.stdin, stdout: process.stdout },
+  makeDir?: (tmpdir: string) => string,
+): void {
+  let bridgeDir: string | null = null;
+  let closing = false;
+  const shutdown = (code: number) => {
+    if (closing) return;
+    closing = true;
+    if (bridgeDir) { try { fs.rmSync(bridgeDir, { recursive: true, force: true }); } catch { /* best effort */ } }
+    app.exit(code);
+  };
+  installProcessGuards(proc, shutdown); // first, so even a failure below ends the process
+  if (proc === process) {
+    // stdout is the protocol: nothing else may be written there, not even by a stray console.log
+    console.log = (...a: unknown[]) => console.error(...a);
+    console.info = console.log;
+    console.debug = console.log;
+  }
   const dev = devEnv(env, app.isPackaged);
   const plat: BridgePlatform = { platform: process.platform, uid: typeof process.getuid === 'function' ? process.getuid() : null, tmpdir: os.tmpdir() };
-  const { loc, bridgeDir } = prepareBridge(app, env, dev, plat);
+  const prepared = prepareBridge(app, env, dev, plat, makeDir);
+  bridgeDir = prepared.bridgeDir;
+  const loc = prepared.loc;
   const timers = { setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms), clearTimeout: (h: unknown) => clearTimeout(h as NodeJS.Timeout) };
   startBridge(
     {
@@ -153,10 +190,7 @@ export function runMcpBridge(app: BridgeApp, env: NodeJS.ProcessEnv): void {
       version: app.getVersion(),
       timers,
     },
-    { stdin: process.stdin, stdout: process.stdout },
-    (code) => {
-      try { fs.rmSync(bridgeDir, { recursive: true, force: true }); } catch { /* best effort */ }
-      app.exit(code);
-    },
+    io,
+    shutdown,
   );
 }
