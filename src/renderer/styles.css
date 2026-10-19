@@ -380,7 +380,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .stage .room{container:room / inline-size}
 .stage .room-head .room-name{min-width:0;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
 .stage .room-head:has(.room-aiu) .room-name{flex-shrink:1}
-.stage .room-head .door,.stage .room-head .room-new,.stage .room-head .room-mcp,.stage .room-head .siren,.stage .room-head .floor-tag{flex:none}
+.stage .room-head .door,.stage .room-head .room-new,.stage .room-head .room-more,.stage .room-head .room-mcp,.stage .room-head .siren,.stage .room-head .floor-tag{flex:none}
 @container room (max-width:340px){
   .stage .room .room-head .room-plant{display:none}
   .stage .room .room-head.room-head{padding-right:0}
@@ -388,6 +388,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
   .stage .room-head .room-dots{gap:5px}
 }
 @container room (max-width:280px){.stage .room-head .room-aiu{display:none}}
+/* spec 006 FR-022: in a narrow room the ⋯ folder menu (which has New session) stands in for the + button */
+@container room (max-width:340px){.stage .room-head .room-new:not(.room-more){display:none}}
 @container room (max-width:460px){.stage .room .room-head .room-path{display:none}} /* the path (also in the name's tooltip) goes before the name is cut */
 @container (max-width:250px){.rd.calm{display:none}}
 .stage:not([data-d="full"]) .room-name{flex:0 .05 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -789,6 +791,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .mode-menu button:hover,.mode-menu button:focus-visible{background:#f3efe6}
 .mode-menu .mi{width:16px;height:16px;margin-top:2px;flex:none;color:var(--muted)}.mode-menu .mi svg{width:16px;height:16px}
 .mode-menu .mm-ask .mi{color:var(--blue-ink)}.mode-menu .mm-allow .mi{color:var(--amber-ink)}
+.mode-menu .mm-danger b{color:var(--red-ink)}
 .mode-menu .mt{display:flex;flex-direction:column;flex:1;min-width:0}.mode-menu b{font-size:13px}.mode-menu small{font-size:11.5px;color:var(--muted);line-height:1.35}
 .mode-menu .ck{color:var(--sage-ink);font-weight:700;width:14px;flex:none}
 .mm-note{margin:4px 10px 4px;font-size:11.5px;color:var(--muted)}

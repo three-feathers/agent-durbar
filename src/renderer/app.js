@@ -501,7 +501,7 @@ function folderOfRoom(roomId){
 function roomHTML({r,mains,all},d,aw,cap){
   const al=roomAlert(r), alAttr=(al.tone==='calm'?'':` data-alert="${al.tone}"`)+(al.siren?' data-siren="1"':''), alLabel=al.siren?'. '+ALERT_WORDS:'';
   const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':(k==='done'||k==='idle')?' calm':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}</span>`:''}).join('');
-  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="${esc(wordOf('door-close'))} ${esc(r.name)}" title="${esc(wordOf('door-title-prefix'))}: ${esc(r.name)} ${esc(wordOf('door-plate-suffix'))}">${doorSvg(true)}</button><span class="room-name" title="${esc(r.name)}${(()=>{const u=roomAiu(r);return u?' · '+esc(u.long):'';})()}">${esc(r.name)}</span>${al.siren?SIREN():''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span>${(()=>{const u=roomAiu(r);return u?`<span class="room-aiu" title="${esc(u.tip)}">${esc(u.long)}</span>`:'';})()}<span class="room-dots" aria-hidden="true">${dots}</span>${bridge&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT()}</div>`;
+  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="${esc(wordOf('door-close'))} ${esc(r.name)}" title="${esc(wordOf('door-title-prefix'))}: ${esc(r.name)} ${esc(wordOf('door-plate-suffix'))}">${doorSvg(true)}</button><span class="room-name" title="${esc(r.name)}${(()=>{const u=roomAiu(r);return u?' · '+esc(u.long):'';})()}">${esc(r.name)}</span>${al.siren?SIREN():''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span>${(()=>{const u=roomAiu(r);return u?`<span class="room-aiu" title="${esc(u.tip)}">${esc(u.long)}</span>`:'';})()}<span class="room-dots" aria-hidden="true">${dots}</span>${bridge&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.removeFolder&&!demoOn?`<button class="room-new room-more" type="button" data-foldermenu="${esc(r.id)}" title="Folder actions: new session, rename, hide, remove" aria-label="Folder actions for ${esc(r.name)}" aria-haspopup="menu">⋯</button>`:''}${bridge&&bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT()}</div>`;
   if(d==='full'){
     const gap=6, pad=12;
     const widths=mains.map(a=>unitWidth(a,d));
@@ -881,7 +881,7 @@ function openPanel(id,focus){
         ${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="btn" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)">Copy resume command</button>`:''}
         <button class="btn" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
         ${a.live&&!feat(liveRoot(a),'stop')?'':`<button class="btn danger" id="stopBtn" type="button" title="${a.live?'Interrupt the current turn. The agent stays open and ready.':'Stop'}"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>Stop</button>`}
-        ${a.live&&bridge.end&&!a.parent?`<button class="btn" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it.">End session</button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="btn danger" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The other sessions in ${esc(room.name)} stay.">Remove session</button>`:''}</div></div>
+        ${a.live&&bridge.end&&!a.parent?`<button class="btn" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it.">End session</button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="btn danger" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The other sessions in ${esc(room.name)} stay.">Remove session</button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="btn danger" id="rmFolderBtn" type="button" title="Take ${esc(room.name)} out of Agent Durbar: its session ends and the folder is no longer remembered. Nothing on disk is deleted.">Remove folder</button>`:'')}</div></div>
     <p class="ptask" data-f="task"></p><p class="pusage" data-f="usage"></p>
     <div class="grants" id="grants" aria-label="Permissions allowed for this session" hidden></div></div>
    <div class="prev" id="prev" hidden></div>
@@ -906,6 +906,7 @@ function openPanel(id,focus){
   if($('mcpBtn'))$('mcpBtn').onclick=()=>window.DurbarScreens.agentMcp(liveRoot(a),{toggle:feat(liveRoot(a),'mcpToggle')});
   if($('endBtn'))$('endBtn').onclick=()=>endLive(a);
   if($('rmSessBtn'))$('rmSessBtn').onclick=()=>removeSessionUi(a);
+  if($('rmFolderBtn'))$('rmFolderBtn').onclick=()=>removeFolder(room); /* spec 006 FR-022: the only session of the folder */
   if($('copyResBtn'))$('copyResBtn').onclick=()=>copyResume(a);
   if(a.live&&!a.parent)initPrev(a); else {const pv=$('prev');if(pv)pv.hidden=true;}
   if(a.live&&!a.parent&&a.info&&a.info.resumeLast&&bridge.wake)wakeLast(a);
@@ -967,6 +968,7 @@ document.addEventListener('click',e=>{
   const chip=e.target.closest('#chat .chip:not(.att-chip)'); if(chip){const o=chip.classList.toggle('open');chip.setAttribute('aria-expanded',String(o));return;}
   const sw=e.target.closest('[data-sw]'); if(sw){openPanel(sw.dataset.sw,e.detail===0);return;}
   const mr=e.target.closest('[data-mcproom]'); if(mr){const f=folderOfRoom(mr.dataset.mcproom);if(f)window.DurbarScreens.folderMcp(f.key,f.name);return;}
+  const fm=e.target.closest('[data-foldermenu]'); if(fm){const r=ROOMS.find(x=>x.id===fm.dataset.foldermenu),b=fm.getBoundingClientRect();openFolderMenu(r,b.left,b.bottom+4,fm);return;}
   const ns=e.target.closest('[data-newsess]'); if(ns){const r=ROOMS.find(x=>x.id===ns.dataset.newsess),ag=r&&agents.find(x=>!x.parent&&x.room===r.id);if(ag)newSession(ag);return;}
   const t=e.target.closest('[data-id]'); if(t&&!t.closest('#panel')){openPanel(t.dataset.id,e.detail===0);}
 });
@@ -1858,7 +1860,29 @@ document.addEventListener('click',e=>{
   if(chip){e.stopPropagation();if(document.getElementById('modeMenu')){closeModeMenu();return;}const r=chip.getBoundingClientRect(),a=byId(ui.selected);if(a)openModeMenu(a,r.left,r.bottom+6,chip);return;}
   if(!e.target.closest('#modeMenu'))closeModeMenu();
 },true);
+/* spec 006 FR-022: folder actions on a room's header (right-click, or the context-menu key on its door), same menu element as the mode menu */
+function openFolderMenu(r,x,y,anchor){
+  if(!r||demoOn||!bridge||!bridge.removeFolder)return;
+  closeModeMenu();
+  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Folder '+r.name);
+  const it=(act,label,sub,cls)=>`<button type="button" role="menuitem" data-fact="${act}"${cls?` class="${cls}"`:''}><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
+  m.innerHTML=(bridge.newSession&&anyKindReady()?it('new','New session','Another agent with its own chat here'):'')
+    +(bridge.renameFolder?it('rename','Rename…','A display name for this room'):'')
+    +(bridge.setFolderHidden?it('hide','Hide','Out of the office; its sessions keep running'):'')
+    +it('rm','Remove folder…','Ends its sessions; nothing on disk is deleted','mm-danger');
+  document.body.appendChild(m);
+  const b=m.getBoundingClientRect(); m.style.left=Math.max(8,Math.min(x,innerWidth-b.width-8))+'px'; m.style.top=Math.max(8,Math.min(y,innerHeight-b.height-8))+'px';
+  m.addEventListener('click',e=>{const t=e.target.closest('[data-fact]');if(!t)return;closeModeMenu();const ag=agents.find(q=>!q.parent&&q.room===r.id);
+    if(t.dataset.fact==='new'){if(ag)newSession(ag);}else if(t.dataset.fact==='rename')renameFolder(r,anchor);else if(t.dataset.fact==='hide')hideFolder(r,true);else removeFolder(r);});
+  m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-fact]')],i=its.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'){e.preventDefault();its[(i+1)%its.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();its[(i+its.length-1)%its.length].focus();}
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&anchor.focus&&document.contains(anchor))anchor.focus();}});
+  m.querySelector('button').focus();
+}
 document.addEventListener('contextmenu',e=>{
+  const h=e.target.closest('#stage .room-head');
+  if(h&&!e.target.closest('.desk')){const door=h.querySelector('[data-door]'),r=door&&ROOMS.find(x=>x.id===door.dataset.door);
+    if(r&&bridge&&bridge.removeFolder&&!demoOn){e.preventDefault();const b=h.getBoundingClientRect();openFolderMenu(r,e.clientX||b.left+16,e.clientY||b.bottom,door);return;}}
   const d=e.target.closest('.desk[data-id], .helper[data-id], .lrow[data-id]');if(!d||d.closest('#panel'))return;
   const a=byId(d.dataset.id),ra=a&&liveRoot(a);if(!ra||!ra.live||!bridge.setPermMode)return;
   e.preventDefault();const r=d.getBoundingClientRect();
