@@ -94,12 +94,12 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(CODEX_CAPABILITIES)), {
       interrupt: true, resume: true, images: true, models: true, effort: true,
       permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'next-message',
-      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: false, history: true, mcpStatus: false, mcpToggle: false,
+      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true,
     });
     assert.ok(Object.isFrozen(CODEX_CAPABILITIES) && Object.isFrozen(CODEX_CAPABILITIES.permissionModes) && Object.isFrozen(CODEX_CAPABILITIES.usage), 'capabilities are deeply frozen');
     const { ad } = make();
     for (const m of ['interrupt', 'resolvePermission', 'revokeGrant']) assert.strictEqual(typeof (ad as unknown as Record<string, unknown>)[m], 'function', `${m} is present`);
-    for (const m of ['setCap', 'resolveLimit', 'setMcpEnabled', 'setModel', 'cancelQueuedModel', 'compact']) assert.strictEqual((ad as unknown as Record<string, unknown>)[m], undefined, `${m} is absent`);
+    for (const m of ['setCap', 'resolveLimit', 'setModel', 'cancelQueuedModel', 'compact']) assert.strictEqual((ad as unknown as Record<string, unknown>)[m], undefined, `${m} is absent`);
     for (const m of ['listModelOptions', 'listPreviousSessions', 'history', 'setPermMode', 'resumeIdOf']) assert.strictEqual(typeof (ad as unknown as Record<string, unknown>)[m], 'function', `${m} is there (FR-141..FR-144)`);
     assert.strictEqual(ad.capabilities, CODEX_CAPABILITIES);
     // D1 option B: described, but not in the production list.
@@ -123,7 +123,7 @@ async function main(): Promise<void> {
     assert.strictEqual(sp.options.cwd, ws);
     assert.deepStrictEqual(sp.options.env, env, 'the child gets the injected environment');
     const methods = server.wire.map((w) => w.method);
-    assert.deepStrictEqual(methods, ['initialize', 'initialized', 'thread/start'], 'initialize, initialized, then thread/start');
+    assert.deepStrictEqual(methods, ['initialize', 'initialized', 'thread/start'], 'initialize, initialized, then thread/start (a quiet start reads the MCP list with its first message, FR-147)');
     const init = server.requests('initialize')[0].params as Record<string, unknown>;
     assert.deepStrictEqual(init.capabilities, CODEX_INITIALIZE_CAPABILITIES);
     assert.deepStrictEqual(init.clientInfo, { name: 'agent_durbar', title: 'Agent Durbar', version: '9.9.9' });
@@ -349,9 +349,9 @@ async function main(): Promise<void> {
     const { server, ad, events } = make();
     const sid = await ad.start({ workspace: ws, permissionMode: 'read-only' });
     assert.strictEqual(sid, 'thr_1', 'the Durbar session id is the thread id');
-    assert.deepStrictEqual(events.map((e) => [e.type, (e as { intent?: string }).intent]), [['status', `Ready in ${ws}`]], 'a loud start says Ready once (the thread/started idle is not doubled)');
+    assert.deepStrictEqual(events.filter((e) => e.type !== 'mcp').map((e) => [e.type, (e as { intent?: string }).intent]), [['status', `Ready in ${ws}`]], 'a loud start says Ready once (the thread/started idle is not doubled)');
     await server.flush();
-    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events.filter((e) => e.type !== 'mcp').length, 1);
     const named = await ad.start({ workspace: ws, sessionId: 'agent-7', permissionMode: 'read-only', quiet: true });
     assert.strictEqual(named, 'agent-7', 'a caller-named id is kept');
     await ad.send(named, { text: 'x' });
@@ -565,6 +565,31 @@ async function main(): Promise<void> {
     // FR-140: the Linux sandbox error (real text, Ubuntu with unprivileged user namespaces blocked) gets a plain hint; other errors none
     assert.ok(linuxSandboxHint('error creating thread: failed to load AGENTS.md instructions for environment `local`: fs sandbox helper failed with status exit status: 1: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted').includes('blocks unprivileged user namespaces'));
     assert.strictEqual(linuxSandboxHint('permissions profile not supported'), '');
+    // FR-147: Durbar's MCP servers go to Codex as config.mcp_servers; the list and startup states become `mcp` events; a switch applies next message
+    {
+      const { server, ad, events } = make();
+      const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', mcpServers: { echo: { type: 'stdio', command: 'node', args: ['s.js'], env: { TOKEN: 'x' } }, web: { type: 'http', url: 'https://example.com/mcp', headers: { Authorization: 'Bearer y' }, tools: ['search'] } }, disabledMcpServers: ['github'] });
+      const cfg = (server.requests('thread/start').pop()!.params as { config?: { mcp_servers?: Record<string, Record<string, unknown>> } }).config;
+      assert.deepStrictEqual(cfg?.mcp_servers, {
+        echo: { command: 'node', args: ['s.js'], env: { TOKEN: 'x' } },
+        web: { url: 'https://example.com/mcp', http_headers: { Authorization: 'Bearer y' }, enabled_tools: ['search'] },
+        github: { enabled: false },
+      });
+      await until('mcp list', () => events.some((e) => e.type === 'mcp'));
+      assert.deepStrictEqual((events.filter((e) => e.type === 'mcp').pop() as { servers: unknown[] }).servers, [{ name: 'echo', status: 'connected' }]);
+      server.notifyAll('mcpServer/startupStatus/updated', { name: 'web', status: 'failed', error: 'refused', threadId: sid });
+      await until('web failed', () => events.some((e) => e.type === 'mcp' && (e as { servers: Array<{ name: string; status: string }> }).servers.some((s) => s.name === 'web' && s.status === 'failed')));
+      await ad.setMcpEnabled!(sid, 'echo', false);
+      const last = events.filter((e) => e.type === 'mcp').pop() as { servers: Array<{ name: string; status: string }> };
+      assert.strictEqual(last.servers.find((s) => s.name === 'echo')?.status, 'disabled', 'shown as off at once');
+      const starts = server.spawns.length;
+      await ad.send(sid, { text: 'next' });
+      await server.flush();
+      assert.strictEqual(server.spawns.length, starts + 1, 'applies with the next message on a fresh child');
+      const rc = (server.requests('thread/resume').pop()!.params as { config?: { mcp_servers?: Record<string, Record<string, unknown>> } }).config;
+      assert.strictEqual(rc?.mcp_servers?.echo?.enabled, false, 'the resumed thread gets the server switched off');
+      await ad.dispose();
+    }
     // FR-146: Codex's request_user_input goes to the question card; the answer goes back by question id; secret questions never shown
     {
       const { server, ad, events } = make({ server: { holdTurn: true } });
@@ -952,7 +977,8 @@ async function main(): Promise<void> {
         want.shift();
       }
       if (!fx.notifications.some((n) => n.method === 'turn/completed')) want.push({ type: 'status', status: 'idle' });
-      assert.deepStrictEqual(got.slice(1), want, `${f}: adapter events equal the fixture's expected list`);
+      // FR-147: the adapter itself turns mcpServer/startupStatus/updated into `mcp` events; the mapper fixtures do not cover them
+      assert.deepStrictEqual(got.slice(1).filter((e) => (e as { type: string }).type !== 'mcp'), want, `${f}: adapter events equal the fixture's expected list`);
       await ad.dispose();
     }
   }

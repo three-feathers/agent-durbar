@@ -249,8 +249,11 @@ export function codexPermission(method: string, params: unknown): CodexPermissio
     case 'item/tool/requestUserInput': {
       // Mapped to `mcp` only because it is a non-read kind that asks the user; it is not a claim that an MCP server sent it.
       const serverName = str(params, 'serverName');
-      const toolName = str(params, 'toolName');
-      return { kind: 'mcp', serverName, toolName, summary: `mcp ${serverName ? serverName + ' › ' : ''}${toolName ?? ''}`.trim() };
+      // FR-148 (real, Codex 0.163): a tool-call elicitation names the tool only in its message ("… to run tool \"echo\"?")
+      const toolName = str(params, 'toolName') ?? str(params, 'message')?.match(/run tool "([^"]{1,80})"/)?.[1];
+      // FR-148: an elicitation's own question (for example "Allow the echo tool to run?"), cut to one short line
+      const message = str(params, 'message')?.replace(/\s+/g, ' ').slice(0, 160);
+      return { kind: 'mcp', serverName, toolName, summary: `mcp ${serverName ? serverName + ' › ' : ''}${toolName ?? message ?? ''}`.trim() };
     }
     default: {
       const name = typeof method === 'string' ? method.slice(0, 100) : 'unknown';

@@ -774,3 +774,29 @@ The owner handed the Codex track to this agent ("ruben does not have chatgpt acc
 - `[KNOWN GAP]` Codex 0.163 offers the `request_user_input` tool only when its feature `default_mode_request_user_input` is on, and that feature is "under development" and off by default. Durbar does not turn it on, so Codex usually asks in plain text instead.
 - `test:` the fake app-server covers: the answer by id; the secret question not shown; `needs-permission`; Skip; Stop.
 - `real:` 2026-10-19, Codex 0.163 with the feature turned on **for this check only**, Ask first: Codex asked "Which colour do you prefer, Sage or Blue?" with both options; the card's answer "Sage" went back by id; Codex replied "You chose Sage."
+
+### 2026-10-19: Codex with MCP servers and sub-agents (T050, T065 Codex halves)
+
+- **FR-147** `[IMPLEMENTED]` Durbar's MCP servers for a session (the Copilot-CLI list and the folder's extras, specs 019/020) go to Codex as `config.mcp_servers` on `thread/start` and `thread/resume`:
+  - stdio becomes `command`, `args`, `env`, `cwd`; http becomes `url`, `http_headers`; a tool filter becomes `enabled_tools`;
+  - switched-off names get `enabled: false`;
+  - names are checked.
+  
+  Codex's own servers (from its `config.toml`, and the built-in `codex_apps`) still run. State:
+  - `mcpServerStatus/list` runs at a loud start, or with the first message after a quiet start (contract C3: a quiet start emits nothing);
+  - `mcpServer/startupStatus/updated` notifications follow;
+  - both become Durbar's `mcp` event (connected, pending, failed, needs-auth, disabled).
+  
+  `setMcpEnabled` shows the change at once and applies it with the next message, on a fresh child that resumes the thread (as FR-144 does). `mcpStatus: true`, `mcpToggle: true`. Secret values go to Codex only; they are never logged.
+- **FR-148** `[IMPLEMENTED]` *Found on the real account:* Codex asks for an MCP tool call with `mcpServer/elicitation/request`, carrying `_meta.codex_approval_kind: "mcp_tool_call"`, the message `Allow the echo MCP server to run tool "echo"?` and an empty form. The answer must be `{action: accept | decline | cancel, content?}`; the adapter sent `{decision}`, so an approved call never ran.
+  - A plain confirmation (no form fields) now goes through Durbar's approval. The tool name is taken from the message, so the card reads "mcp echo › echo". The reply is `{action: 'accept', content: {}}`, `decline` or `cancel`.
+  - An elicitation with form fields, or a URL flow, is **declined**: Durbar cannot fill forms yet (`[KNOWN GAP]`).
+- **FR-149** `[IMPLEMENTED]` *Found on the real account:* a sub-agent comes as `subAgentActivity` items, **one item per activity** (`kind: started` and `kind: completed`, each with its own id, each opened and closed at once). They are linked by `agentThreadId`. The mapper keyed by item id, so one helper showed up twice. Now:
+  - the helper is the **agent thread**, started and ended once, named by the last part of `agentPath` (`/root/pelican` becomes `pelican`);
+  - `collabAgentToolCall` creates a helper only for a spawn tool; Codex's `wait`, `send_input` and the like coordinate helpers and are not helpers themselves;
+  - `helpers: true`.
+- `test:` `test-codex-adapter`: the config, the list and startup states, and a switch applied with the next message on resume. `test-codex-map`: the real sub-agent shape, `wait` ignored, the helper's output attributed to it.
+- `real:` 2026-10-19, Codex 0.163 (ChatGPT Plus), Ask first, with Durbar's config giving a local stdio echo server:
+  - `echo` was connected (and Codex's `codex_apps`);
+  - the tool call asked for approval as "mcp echo › echo"; approved, it returned "echo: hello durbar";
+  - asked to use a sub-agent, Codex spawned one, shown as the helper "pelican", started and completed once; the answer was "pelican".
