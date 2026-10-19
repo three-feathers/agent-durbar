@@ -159,3 +159,4 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | [049](049-profiles/spec.md) | Profiles: separate offices per profile (Phase 1), then separate sign-ins through each harness's own home folder (`COPILOT_HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`), never a token in Durbar (issue #131) | **draft for the owner's review**; Phase 2 needs research R1 |
 | [050](050-project-site/spec.md) | Project website on GitHub Pages, generated from the README, the specs index, screenshots, the CHANGELOG and the latest release; deployed by CI (issue #293) | **built and live** at https://three-feathers.github.io/agent-durbar/ |
 | [051](051-harness-setup/spec.md) | Harness setup inside the app: Settings > Harnesses with install, update and sign-in (issue #299) | in progress |
+| [052](052-usability-pass/spec.md) | Usability pass from four persona reviews: answer bar, calmer chat header, restore banner, contrast, plain words, keyboard N | in progress |

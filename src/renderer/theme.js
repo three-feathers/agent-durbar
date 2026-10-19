@@ -23,14 +23,14 @@
      refactored in the next spec. */
   const CLEAN_TOKENS={
     /* core UI */
-    '--bg':'#f6f3ee',
+    '--bg':'#f7f6f3', // spec 052 FR-024: warm neutral (was #f6f3ee)
     '--surface':'#fffdf9','--raised':'#ffffff','--card':'#fffdf9','--card-waiting':'#fef5e0','--card-waiting-line':'#e3bd75','--card-error':'#fcefec','--card-error-line':'#e2b6b0','--soft':'#fbf9f4','--note':'#f4f0e6','--warn-bg':'#fdf3df','--bad-bg':'#f9ece9',
     '--surface-2':'#faf7f1',
-    '--line':'#e2dbcf',
+    '--line':'#e7e3dc', // spec 052 FR-024: warm neutral (was #e2dbcf)
     '--line-2':'#d3cabb',
     '--ink':'#2c3733',
     '--ink-2':'#56605b',
-    '--muted':'#6a716c',
+    '--muted':'#535a55', // spec 052 FR-009: 4.5:1 on every room wall (was #6a716c)
     '--room-path':'#5c635e',
 
     /* brand / accent */
@@ -121,7 +121,7 @@
     '--door-panel':'#e8dcc6',
     '--brand-mark':'#4f7f65',
     '--brand-bg':'#e4ece6',
-    '--focus':'#4f7fa8',
+    '--focus':'#2f5f8a', // spec 052 FR-009: 3:1 on every surface (was #4f7fa8)
     '--sel-border':'#7fa0bd',
     '--sel-ring':'#d9e6f0',
     '--sel-ring-2':'#dde8f1',
@@ -414,6 +414,14 @@
     const pick=k=>{const v=t[k]!==undefined?t[k]:CLEAN_TOKENS[k];return typeof v==='string'&&/^(#[0-9a-fA-F]{3,8}|rgba?\([0-9.,\s%]+\)|hsla?\([0-9.,\s%deg]+\))$/.test(v.trim())?v.trim():null;};
     return ['--bg','--tint-sage','--wall-blue'].map(pick).filter(Boolean);
   }
+  /* FR-030 (#309): the colours of a theme's mini room on its Settings card; every value passes the colour grammar (Clean Office as fallback) */
+  const ROOM_KEYS={bg:'--bg',tint:'--tint-blue',wall:'--wall-blue',desk:'--desk',chair:'--chair',ink:'--ink',agent:'--sage'};
+  function previewRoom(id){
+    const m=typeof id==='string'?loadManifest(id):null, t=(m&&m.tokens)||{}, ok=v=>typeof v==='string'&&/^(#[0-9a-fA-F]{3,8}|rgba?\([0-9.,\s%]+\)|hsla?\([0-9.,\s%deg]+\))$/.test(v.trim());
+    const out={};
+    for(const [k,tok] of Object.entries(ROOM_KEYS)){const v=ok(t[tok])?t[tok]:CLEAN_TOKENS[tok];if(ok(v))out[k]=v.trim();}
+    return out;
+  }
 
   function loadManifest(idOrManifest){
     if(typeof idOrManifest==='string'){if(BUILT_IN[idOrManifest])return validateManifest(BUILT_IN[idOrManifest]);if(USER_MANIFESTS[idOrManifest])return validateManifest(USER_MANIFESTS[idOrManifest]);return null;}
@@ -499,7 +507,7 @@
     ui:'corporate',
     scene:'corporate',
     tokens:{
-      '--bg':'#e6eaef','--surface':'#ffffff','--surface-2':'#f3f5f8','--line':'#d2d9e1','--line-2':'#b4bfcc',
+      '--bg':'#e6eaef','--surface':'#ffffff','--surface-2':'#eceff3' /* spec 052 FR-032: a greyer 1997-office panel */,'--line':'#d2d9e1','--line-2':'#b4bfcc',
       '--ink':'#142131','--ink-2':'#33455a','--muted':'#55677b','--room-path':'#4b5d71',
       '--sage':'#7fa3b8','--sage-ink':'#2c5468','--blue':'#5b83ad','--blue-ink':'#2a5578',
       '--amber':'#c98f2b','--amber-ink':'#7a5505','--red':'#c05a50','--red-ink':'#8e382f','--green':'#4f8f6a','--gray':'#8f99a3',
@@ -518,7 +526,7 @@
       '--sel-border':'#2f74c0','--sel-ring':'#cfe0f4','--sel-ring-2':'#d6e5f5','--stat-sel-border':'#2f74c0','--stat-sel-ring':'#d6e5f5',
       '--avatar-bg':'#dfe7ee','--walker-bg':'#ffffff','--drop':'#6b93b8','--drop-bg':'rgb(229 238 246 / .93)','--drop-ink':'#23415c',
       '--badge-idle':'#aab2ba','--place-busy':'#7fa7d1',
-      '--tint-sage':'#f7faf9','--wall-sage':'#1f8a70','--tint-blue':'#f6f9fc','--wall-blue':'#2f6fb5','--tint-sand':'#fbfaf6','--wall-sand':'#b08427','--tint-clay':'#fcf8f7','--wall-clay':'#b0524a',
+      '--tint-sage':'#eef6f3','--wall-sage':'#1f8a70','--tint-blue':'#edf3fa','--wall-blue':'#2f6fb5','--tint-sand':'#f8f3e6','--wall-sand':'#b08427','--tint-clay':'#f9efed','--wall-clay':'#b0524a',
       '--cwall-sage':'#1f8a70','--cwall-blue':'#2f6fb5','--cwall-sand':'#b08427','--cwall-clay':'#b0524a',
       '--pb-working':'#dfe9f2','--pc-working':'#29506f','--pb-thinking':'#e6e9f1','--pc-thinking':'#3d4a72',
       '--pb-waiting':'#f7ecd2','--pc-waiting':'#7a5505','--pb-idle':'#e7eaeb','--pc-idle':'#50575c',
@@ -556,7 +564,7 @@
       '--red':'#d8564a','--red-ink':'#8e2f26','--green':'#4fa760','--gray':'#9a987e',
       '--c-working':'#5f87c8','--c-thinking':'#8b8fc9','--c-waiting':'#e0a92c','--c-idle':'#a3a08e','--c-error':'#d8564a','--c-done':'#4fa760',
       '--halo-working':'#5f87c8','--halo-thinking':'#8b8fc9','--halo-waiting':'#e0a92c','--halo-error':'#d8564a',
-      '--chair':'#83769c','--desk':'#ab5236','--desk-front':'#c97d45','--desk-drawer':'#ffa300',
+      '--chair':'#83769c','--desk':'#ab5236','--desk-front':'#c97d45','--desk-drawer':'#c97d45',
       '--monitor-stand':'#5f574f','--monitor-frame':'#c2c3c7','--laptop':'#5f574f',
       '--screen-working':'#dfeaf8','--screen-thinking':'#e4e4f6','--screen-waiting':'#faedd2','--screen-idle':'#d2d2c6','--screen-error':'#f8e0d8','--screen-done':'#dcefdc',
       '--bar-sage':'#5fae76','--bar-blue':'#5f87c8','--bar-blue-2':'#93aede',
@@ -569,7 +577,7 @@
       '--sel-border':'#ff004d','--sel-ring':'#ffccaa','--sel-ring-2':'#ffccaa','--stat-sel-border':'#ff004d','--stat-sel-ring':'#ffccaa',
       '--avatar-bg':'#e0ead2','--walker-bg':'#fff1e8','--drop':'#6d8cc2','--drop-bg':'rgb(230 236 248 / .93)','--drop-ink':'#26456e',
       '--badge-idle':'#b8b49c','--place-busy':'#29adff',
-      '--tint-sage':'#b9f2c6','--wall-sage':'#111122','--tint-blue':'#c2e7ff','--wall-blue':'#111122','--tint-sand':'#ffe9a6','--wall-sand':'#111122','--tint-clay':'#ffcdbd','--wall-clay':'#111122',
+      '--tint-sage':'#a8e4a0','--wall-sage':'#111122','--tint-blue':'#9fc3e8','--wall-blue':'#111122','--tint-sand':'#f2d48a','--wall-sand':'#111122','--tint-clay':'#f0b8a8','--wall-clay':'#111122',
       '--cwall-sage':'#111122','--cwall-blue':'#111122','--cwall-sand':'#111122','--cwall-clay':'#111122',
       '--pb-working':'#dce6f6','--pc-working':'#26456e','--pb-thinking':'#e4e3f6','--pc-thinking':'#3c3f78',
       '--pb-waiting':'#faecd0','--pc-waiting':'#7c5a06','--pb-idle':'#e6e4d6','--pc-idle':'#585647',
@@ -595,25 +603,12 @@
         'w'.repeat(30),
         'wkwkwkwkwkwkwkwkwkwkwkwkwkwkwk',
       ]},
-      'room-floor':{cell:3,palette:{f:'#c9bfa4',g:'#a89f86',a:'#3d9b58',r:'#d8564a',b:'#5f87c8'},rows:[
-        'f'.repeat(30),
-        'ffffgffffgffffgffffgffffgff',
-        'f'.repeat(30),
-        'fa'+'fffgffffgffffgfffffffr'.padEnd(28,'f'),
-        'f'.repeat(30),
-        'ffffgffffgffffgffffgffffgff',
-        'f'.repeat(14)+'b'+'f'.repeat(15),
-        'ffffgffffgffffgffffgffffgff',
-        'f'.repeat(30),
-        'fffffffr'+'fgffffgffffgffffgff',
-        'f'.repeat(30),
-        'ffffgffffgffffgffffgffffgff',
-        'f'.repeat(22)+'a'+'f'.repeat(7),
-        'ffffgffffgffffgffffgffffgff',
-        'f'.repeat(30),
-        'ffffgffffbffffgffffgffffgff',
-        'f'.repeat(30),
-      ]},
+      /* spec 052 FR-032: the old 90x51 map filled only a corner of the 320x118 floor and stretched into faint smeared
+         stripes. Now a checkerboard that covers the whole floor in two opaque palette colours, with a few dark studs. */
+      'room-floor':{cell:11,palette:{s:'var(--surface-2)',k:'var(--line)'},rows:(()=>{
+        const a='ss..'.repeat(7)+'ss', b='..ss'.repeat(7)+'..', a2='ss..ss.kss..ss..ss..ss..ss.kss';
+        return [a,a2,b,b,a,a2,b,b,a,a2,b];
+      })()},
       'door-art':{cell:1,palette:{c:'#e0a92c',s:'#988a6c',b:'#23233a'},rows:[
         '..ccccccccc....',
         '.cssssssssc....',
@@ -647,7 +642,7 @@
     ui:'court-indian',
     scene:'court-indian',
     tokens:{
-      '--bg':'#f3e6cc','--surface':'#fffaf0','--surface-2':'#fbf1dd','--line':'#e2c991','--line-2':'#c9a35a',
+      '--bg':'#f3e6cc','--surface':'#fffaf0','--surface-2':'#fbf1dd','--line':'#e2c991','--line-2':'#b8892f',
       '--ink':'#3b1d14','--ink-2':'#5e3424','--muted':'#76503e','--room-path':'#6b4130',
       '--sage':'#8aab84','--sage-ink':'#3f6238','--blue':'#7d95b5','--blue-ink':'#3a5a80','--amber':'#d9962b','--amber-ink':'#80530a',
       '--red':'#b85448','--red-ink':'#8e3226','--green':'#5f9a76','--gray':'#a39a87',
@@ -678,7 +673,8 @@
       'plant':'<circle cx="13" cy="10" r="4.5" fill="var(--plant-mid)"/><circle cx="8" cy="14" r="3" fill="var(--plant-dark)"/><circle cx="18" cy="14" r="3" fill="var(--plant-light)"/><path d="M8 21h10l-1.5 8h-7z" fill="var(--pot)"/>',
       /* court attire: a sherwani/robe silhouette over the torso + sash; drawn before the head so hair/turban stay on top */
       /* royal durbar hall: arched colonnade + jharokha panels on the wall, a rich carpet below */
-      'room-back-wall':'<g fill="none" stroke="#b98a3c" stroke-width="2.4" opacity=".75"><path d="M8 118V50Q8 22 30 22Q52 22 52 50V118"/><path d="M134 118V50Q134 22 160 22Q186 22 186 50V118"/><path d="M268 118V50Q268 22 290 22Q312 22 312 50V118"/></g><path d="M8 44Q30 36 52 44M134 44Q160 36 186 44M268 44Q290 36 312 44" fill="none" stroke="#8c2f3e" stroke-width="1.6" opacity=".8"/><circle cx="30" cy="28" r="2.6" fill="#d9a441"/><circle cx="160" cy="28" r="2.6" fill="#d9a441"/><circle cx="290" cy="28" r="2.6" fill="#d9a441"/><path d="M60 30h62v16H60zM196 30h62v16h-62z" fill="#efe0c0" stroke="#b98a3c" stroke-width="1.2" opacity=".8"/><path d="M64 34h54M64 38h54M64 42h54M200 34h50M200 38h50M200 42h50" stroke="#c9a85c" stroke-width=".8" opacity=".7"/>',
+      /* spec 052 FR-032: the colonnade is pale gold (--line) and faint, so its pillars read as the wall behind the cards, not table legs */
+      'room-back-wall':'<g fill="none" stroke="#e2c991" stroke-width="2.4" opacity=".45"><path d="M8 118V50Q8 22 30 22Q52 22 52 50V118"/><path d="M134 118V50Q134 22 160 22Q186 22 186 50V118"/><path d="M268 118V50Q268 22 290 22Q312 22 312 50V118"/></g><path d="M8 44Q30 36 52 44M134 44Q160 36 186 44M268 44Q290 36 312 44" fill="none" stroke="#8c2f3e" stroke-width="1.6" opacity=".8"/><circle cx="30" cy="28" r="2.6" fill="#d9a441"/><circle cx="160" cy="28" r="2.6" fill="#d9a441"/><circle cx="290" cy="28" r="2.6" fill="#d9a441"/><path d="M60 30h62v16H60zM196 30h62v16h-62z" fill="#efe0c0" stroke="#b98a3c" stroke-width="1.2" opacity=".8"/><path d="M64 34h54M64 38h54M64 42h54M200 34h50M200 38h50M200 42h50" stroke="#c9a85c" stroke-width=".8" opacity=".7"/>',
       'room-floor':'<path d="M40 118L80 52h168l40 66z" fill="#8c2f3e" opacity=".9"/><path d="M50 118L86 58h156l36 60" fill="none" stroke="#d9a441" stroke-width="2.4"/><path d="M58 118L90 64h148l32 54" fill="none" stroke="#e8d0a0" stroke-width="1.2" stroke-dasharray="6 4" opacity=".8"/><path d="M78 94h172" stroke="#d9a441" stroke-width="1.4" opacity=".7"/><path d="M70 106h188" stroke="#d9a441" stroke-width="1.1" opacity=".55"/>',
       'door-art':'<path d="M9.6 2.5Q9.6 6.6 6.4 8.2M10.2 2.5Q10.2 6.9 7.4 9" fill="none" stroke="#a98b62" stroke-width=".9"/><circle cx="13.6" cy="4.4" r=".9" fill="#d9a441"/><circle cx="13.6" cy="4.4" r=".45" fill="#8c2f3e"/>',
       'lobby-art':'<path d="M0 33h320" stroke="#b98a3c" stroke-width="1.6" opacity=".7"/><path d="M0 30h320" stroke="#e3d0a8" stroke-width=".9" stroke-dasharray="10 6" opacity=".7"/><path d="M20 30Q24 18 30 30M290 30Q296 18 300 30" fill="none" stroke="#8c2f3e" stroke-width="1.4" opacity=".8"/>',
@@ -740,7 +736,7 @@
       'place-web':'<circle cx="10" cy="10" r="6.4"/><path d="M3.6 10h12.8M10 3.6q3.4 3 0 12.8M10 3.6q-3.4 3 0 12.8"/>',
       'place-other':'<path d="M10 4.2l1.8 3.8 4.2.6-3 3 .7 4.2-3.7-2-3.7 2 .7-4.2-3-3 4.2-.6z"/>',
     },
-    words:{'place-library':'The Archive','place-software':'The Atelier','place-terminal':'Engine Room','place-web':'Signal Tower','place-other':'The Pantry','lobby-label':'The court: the places where agents work'},
+    words:{'place-library':'The Archive','place-software':'The Atelier','place-terminal':'The Forge','place-web':'The Messenger Hall','place-other':'The Household', /* spec 052 FR-023: court words, not Victorian industry */'lobby-label':'The court: the places where agents work'},
     motion:{preset:'court'},
   });
 
@@ -756,20 +752,20 @@
       '--red':'#c24a42','--red-ink':'#8c2e26','--green':'#5c9a70','--gray':'#9c9886',
       '--c-working':'#5878ac','--c-thinking':'#8b90bc','--c-waiting':'#d29838','--c-idle':'#a8a496','--c-error':'#c24a42','--c-done':'#5c9a70',
       '--halo-working':'#5878ac','--halo-thinking':'#8b90bc','--halo-waiting':'#d29838','--halo-error':'#c24a42',
-      '--chair':'#c3bca8','--desk':'#3d3a34','--desk-front':'#54504a','--desk-drawer':'#484540',
-      '--monitor-stand':'#5e626e','--monitor-frame':'#363a46','--laptop':'#6e7380',
+      '--chair':'#c3bca8','--desk':'#4a3b2c','--desk-front':'#5c4936','--desk-drawer':'#3f3226', /* spec 052 FR-032: warm lacquer */
+      '--monitor-stand':'#2b2420','--monitor-frame':'#1c1a17','--laptop':'#4a3b2c' /* lacquer, not office grey */,
       '--screen-working':'#e7eef8','--screen-thinking':'#eae9f2','--screen-waiting':'#f7eed4','--screen-idle':'#d5d6ce','--screen-error':'#f6e2dc','--screen-done':'#e1efe2',
       '--bar-sage':'#8aa88e','--bar-blue':'#5878ac','--bar-blue-2':'#9cb2d4',
       '--face-dark':'#262430','--mouth':'#7c443a',
       '--bubble-line':'#c4c8e0','--think-dot':'#8b90bc',
-      '--plant-mid':'#96b296','--plant-dark':'#7a9a7a','--plant-light':'#aabf9f','--pot':'#9a4a44',
+      '--plant-mid':'#96b296','--plant-dark':'#7a9a7a','--plant-light':'#aabf9f','--pot':'#c23b22' /* shu vermilion */,
       '--link':'#9aa0ac','--star':'#d29838',
       '--door-bg':'#e9e3d3','--door-line':'#a39874','--door-leaf':'#c0ab7c','--door-leaf-line':'#9c8c62','--door-knob':'#6e5c36','--door-panel':'#ddd2b8',
       '--brand-mark':'#fdfbf5','--brand-bg':'#c23b22','--focus':'#2c4a7e',
       '--sel-border':'#c23b22','--sel-ring':'#f0d5cc','--sel-ring-2':'#f0d5cc','--stat-sel-border':'#c23b22','--stat-sel-ring':'#f0d5cc',
       '--avatar-bg':'#e2e2da','--walker-bg':'#fdfbf5','--drop':'#7d90bc','--drop-bg':'rgb(233 236 246 / .93)','--drop-ink':'#2a3c64',
       '--badge-idle':'#b8b4a2','--place-busy':'#8c9db8',
-      '--tint-sage':'#e8ecdd','--wall-sage':'#6b7d4a','--tint-blue':'#e3e8f0','--wall-blue':'#2c4a7e','--tint-sand':'#f3ecdb','--wall-sand':'#a88a52','--tint-clay':'#f4e5e1','--wall-clay':'#b5432e',
+      '--tint-sage':'#e8ecdd','--wall-sage':'#6b7d4a','--tint-blue':'#e3e8f0','--wall-blue':'#2c4a7e','--tint-sand':'#f3ecdb','--wall-sand':'#a88a52','--tint-clay':'#efe4dc','--wall-clay':'#b5432e',
       '--cwall-sage':'#6b7d4a','--cwall-blue':'#2c4a7e','--cwall-sand':'#a88a52','--cwall-clay':'#b5432e',
       '--pb-working':'#dfe6f2','--pc-working':'#28466e','--pb-thinking':'#e6e4f2','--pc-thinking':'#41427c',
       '--pb-waiting':'#f7ecd1','--pc-waiting':'#7a580e','--pb-idle':'#e8e5da','--pc-idle':'#565450',
@@ -778,13 +774,13 @@
       '--ic-read':'#4e6c92','--ic-edit':'#7c804e','--ic-run':'#40548e','--ic-search':'#846c3c','--ic-tool':'#6c7080',
     },
     art:{
-      /* a kanzashi hair pin: a bar across the bun line with a small blossom dot */
-      'plant':'<path d="M13 4C10 10 8 14 8 18h10c0-4-2-8-5-14z" fill="var(--plant-dark)"/><circle cx="8" cy="15" r="2.4" fill="var(--plant-mid)"/><circle cx="18" cy="16" r="2.2" fill="var(--plant-light)"/><path d="M8 21h10l-1.5 8h-7z" fill="var(--pot)"/>',
-      /* kimono silhouette over the torso: wide sleeves and an obi band */
-      /* low desk: a flat lacquer slab under the drawn desk; no height change */
+      /* a small bonsai pine: a short twisted trunk, three flat cloud pads, a shallow vermilion pot */
+      'plant':'<path d="M12.4 23.4c-1.8-2.4 1.6-4 .2-6.4c-.9-1.7 1.2-3.2 1.6-6" fill="none" stroke="#4a3424" stroke-width="2.2" stroke-linecap="round"/><path d="M12.4 17.6c-1.8-.7-3.6-.4-5.2.6M13.8 13.4c1.8-.5 3.6-.2 5 .9" fill="none" stroke="#4a3424" stroke-width="1.2" stroke-linecap="round"/><g fill="#2f5233"><ellipse cx="7" cy="17.6" rx="4.6" ry="1.9"/><ellipse cx="19.4" cy="13.8" rx="4.4" ry="1.8"/><ellipse cx="13.6" cy="8.8" rx="5.2" ry="2.2"/></g><g fill="#4a6e44"><ellipse cx="7.4" cy="16.9" rx="3" ry=".9"/><ellipse cx="19.6" cy="13.1" rx="2.8" ry=".8"/><ellipse cx="13.8" cy="8" rx="3.4" ry="1"/></g><rect x="5" y="23" width="16" height="1.6" rx=".4" fill="var(--pot)"/><rect x="6.5" y="24.4" width="13" height="3.6" fill="var(--pot)"/><rect x="7.5" y="28" width="2" height="1" fill="#2b2420"/><rect x="16.5" y="28" width="2" height="1" fill="#2b2420"/>',
       /* tatami floor (woven mats), shoji screen wall panels, hanging scroll hints */
       'room-back-wall':'<g fill="#f3efe2" stroke="#a89a74" stroke-width="1.6" opacity=".92"><rect x="16" y="14" width="76" height="52" rx="1.5"/><rect x="104" y="14" width="76" height="52" rx="1.5"/><rect x="192" y="14" width="76" height="52" rx="1.5"/><rect x="280" y="14" width="28" height="52" rx="1.5"/></g><g stroke="#c2b48e" stroke-width=".8" opacity=".75"><path d="M35 14v52M54 14v52M73 14v52M123 14v52M142 14v52M161 14v52M211 14v52M230 14v52M249 14v52M290 14v52M299 14v52M16 31h76M16 48h76M104 31h76M104 48h76M192 31h76M192 48h76M280 31h28M280 48h28"/></g><rect x="94" y="8" width="3.4" height="58" fill="#8a7a52" opacity=".6"/><rect x="182" y="8" width="3.4" height="58" fill="#8a7a52" opacity=".6"/><rect x="270" y="8" width="3.4" height="58" fill="#8a7a52" opacity=".6"/>',
-      'room-floor':'<g opacity=".9"><rect x="24" y="74" width="120" height="22" rx="2" fill="#d8cfae" stroke="#a89a74" stroke-width="1.4"/><rect x="156" y="74" width="120" height="22" rx="2" fill="#cfc5a0" stroke="#a89a74" stroke-width="1.4"/><rect x="24" y="98" width="120" height="22" rx="2" fill="#cfc5a0" stroke="#a89a74" stroke-width="1.4"/><rect x="156" y="98" width="120" height="22" rx="2" fill="#d8cfae" stroke="#a89a74" stroke-width="1.4"/></g><path d="M84 74v22M84 98v22M216 74v22M216 98v22" stroke="#b3a582" stroke-width=".9" stroke-dasharray="4 4" opacity=".8"/>',
+      /* spec 052 FR-032: tatami, not beige strips: rush-straw mats (#d9cfa8) with a thin darker edge, a dark cloth
+         border (heri, #3a2f22, full opacity) on the long sides and a faint weave */
+      'room-floor':'<g stroke="#8f7f58" stroke-width=".8"><rect x="24" y="74" width="120" height="22" rx="1" fill="#d9cfa8"/><rect x="156" y="74" width="120" height="22" rx="1" fill="#d3c89f"/><rect x="24" y="98" width="120" height="22" rx="1" fill="#d3c89f"/><rect x="156" y="98" width="120" height="22" rx="1" fill="#d9cfa8"/></g><path d="M30 74v22M30 98v22M36 74v22M36 98v22M42 74v22M42 98v22M48 74v22M48 98v22M54 74v22M54 98v22M60 74v22M60 98v22M66 74v22M66 98v22M72 74v22M72 98v22M78 74v22M78 98v22M84 74v22M84 98v22M90 74v22M90 98v22M96 74v22M96 98v22M102 74v22M102 98v22M108 74v22M108 98v22M114 74v22M114 98v22M120 74v22M120 98v22M126 74v22M126 98v22M132 74v22M132 98v22M138 74v22M138 98v22M162 74v22M162 98v22M168 74v22M168 98v22M174 74v22M174 98v22M180 74v22M180 98v22M186 74v22M186 98v22M192 74v22M192 98v22M198 74v22M198 98v22M204 74v22M204 98v22M210 74v22M210 98v22M216 74v22M216 98v22M222 74v22M222 98v22M228 74v22M228 98v22M234 74v22M234 98v22M240 74v22M240 98v22M246 74v22M246 98v22M252 74v22M252 98v22M258 74v22M258 98v22M264 74v22M264 98v22M270 74v22M270 98v22" stroke="#b5a77e" stroke-width=".5" opacity=".6"/><g fill="#3a2f22"><rect x="24" y="74" width="120" height="2"/><rect x="24" y="94" width="120" height="2"/><rect x="156" y="74" width="120" height="2"/><rect x="156" y="94" width="120" height="2"/><rect x="24" y="98" width="120" height="2"/><rect x="24" y="118" width="120" height="2"/><rect x="156" y="98" width="120" height="2"/><rect x="156" y="118" width="120" height="2"/></g>',
       'door-art':'<rect x="5.6" y="3.8" width="8.8" height="12.4" rx=".8" fill="none" stroke="#9c8c62" stroke-width=".9"/><path d="M8 3.8v12.4M11.6 3.8v12.4M5.6 8h8.8M5.6 12.2h8.8" stroke="#c2b48e" stroke-width=".6"/>',
       'lobby-art':'<path d="M0 32h320" stroke="#a89a74" stroke-width="1.5" opacity=".7"/><path d="M30 32V12M60 32V12M90 32V12M230 32V12M260 32V12M290 32V12" stroke="#c2b48e" stroke-width=".9" opacity=".55"/><rect x="140" y="6" width="40" height="10" rx="2" fill="none" stroke="#8a7a52" stroke-width="1.1" opacity=".7"/><path d="M144 11h32" stroke="#c24a42" stroke-width="1.3" opacity=".75"/>',
       'place-library':'<path d="M4 17V6h5v11zM9 17V8h5v9z"/><path d="M14 16.6l1.5-9.4 2.8 1-1.6 9.4"/><path d="M3.4 17h13.4"/>',
@@ -793,7 +789,7 @@
       'place-web':'<circle cx="10" cy="10" r="6.2"/><path d="M4 10h12M10 3.8q3.3 3 0 12.4M10 3.8q-3.3 3 0 12.4"/>',
       'place-other':'<path d="M7 16.6V9.8L10 5.4l3 4.4v6.8"/><path d="M7 13h6"/>',
     },
-    words:{'place-library':'The Library','place-software':'The Workshop','place-terminal':'Machine Room','place-web':'The Radio Room','place-other':'Odd Jobs','lobby-label':'The tea hall: the places where agents work'},
+    words:{'place-library':'Bunko','place-software':'Kōbō','place-terminal':'Tanmatsu-shitsu','place-web':'Tsūshinjo','place-other':'Dōgu-beya', /* spec 052 FR-023: Japanese words in the Japanese court (the plain names are in the tooltips, FR-013) */'lobby-label':'The Ō-hiroma: the places where agents work','door-close':'Slide shut','door-open':'Slide open','door-title-prefix':'Slide the fusuma shut'},
     motion:{preset:'court'},
   });
 
@@ -809,9 +805,12 @@
     token,
     slot,
     word,
+    /* spec 052 FR-013: the plain (Clean Office) word, so a themed place can still say what it is */
+    plainWord: (key) => (Object.prototype.hasOwnProperty.call(CLEAN_WORDS, key) ? CLEAN_WORDS[key] : key),
     motion,
     list,
     preview,
+    previewRoom,
     onChange,
     themeIdForCache,
     registerBuiltIn,

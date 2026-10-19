@@ -4,6 +4,37 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.7 tag)
 
+- **Round 3 of the usability pass (spec 052, five new personas).**
+  - **Inbox:** it opens on a request, never on a button, and every button is described by its request. After an answer, focus moves to the next request and the outcome is announced. Keys: J/K, A, D, S, O.
+  - **Announcements:** new requests are announced to screen readers.
+  - **Shortcuts:** Ctrl+Shift+A (inbox) and Ctrl+Shift+N (next agent) work everywhere.
+  - **Confirmations:** destructive ones start on Cancel.
+  - **Simple:** tool steps fold, approvals say "Allow this once" / "Don't allow", and the top bar is lighter.
+  - **The restore strip** says what the risk is, and offers "Ask me first (safer)".
+  - **Cards** name their harness when several are in use.
+  - **Visual pass:** a solid primary button, one segmented status bar, quieter room controls and lobby, status edges on waiting and error cards.
+  - **Japanese court:** Tanmatsu-shitsu, Dōgu-beya, the Ō-hiroma, fusuma doors, a bonsai, and plain short hair.
+- **The usability follow-ups, built (spec 052, #305-#311).**
+  - **Needs you inbox:** every request in one queue, answered with each request's own choices; press **I**.
+  - **Cost in money:** "≈ $0.36" in the header, rooms and cards, with AIU and Claude estimates in the tooltip.
+  - **Simple / Expert:** a detail level in Settings and on the welcome card. Simple uses plain verbs ("Running a command") and hides developer details.
+  - **Settings:** themes as a preview grid, one lead sentence per section, MCP under *Advanced*.
+  - **Controls:** one size scale, and 24px room-header targets.
+  - **Themes:** Corporate bevels, quieter Indian pillars, a lacquer Japanese desk with tatami, and a crisp Retro floor.
+- **Round 2 of the usability pass (spec 052, four new personas).**
+  - **Restored Allow all:** a strip under the top bar names the folders, with **Switch to Ask first** and **Keep**.
+  - **Answer bar:** it never cuts a request next to Approve, and shows "1 of N", oldest first.
+  - **Switching to Allow all** no longer approves waiting requests by default.
+  - **Wording and glyphs:** Allow all is an open padlock in the warning ink. Session approvals name their scope. The More menu explains Stop, End and Remove.
+  - **Office cards** show ⚠ when an agent is stuck or nearly out of memory.
+  - **Settings read easily:** themes are a grid of cards, each with a mini room in its own colours. Each section leads with one sentence, the rest is behind *More*. MCP sits in a closed *Advanced* group.
+  - **Themes:** Retro and Corporate are retuned, and the Japanese and European courts use place names from their own culture. Clean Office uses soft shadows, one radius scale and tabular numbers.
+- **Calmer and clearer, from four persona reviews (spec 052).**
+  - **Answering:** a waiting agent's request is pinned above the message box when its card scrolls away, with the same Approve / Deny buttons. *Previous sessions* no longer opens over a conversation. **N** jumps to the next agent that needs you.
+  - **Chat header:** Open in VS Code, Stop and a **More** menu, with End and Remove last.
+  - **Permissions:** the "restored in Allow all" notice stays until you close it, in plain words. The top bar's mode says **New: Read-only**, because it is the default for new sessions.
+  - **Status and wording:** status counts have shapes (◆ waiting, ▲ error) and spoken labels. Muted text and the focus ring meet contrast. Plain words replace "fainted", "dizzy" and "credits not reported", and themed places keep their plain names in tooltips.
+  - **Fixed:** the List view's header row nodded along with the cartoon heads.
 - **Make a theme with AI (spec 040 FR-014..FR-021, #182).** Describe a look, or pick one of the ideas, and Claude Code or Codex designs a light or dark theme: every colour, a style, place names and art for the people and furniture. Only safe values are kept, art goes through the same sanitiser as imported packs, and readable text is checked; up to 3 passes fix what fails. Try it on the whole app before you save it.
 - **Fixed: Export the active theme** (spec 040 FR-019). It exports the theme that is active now. On a built-in theme it explains why there is nothing to export, and the export picker can create a new folder.
 - **Faster checks that keep the computer usable** (spec 008 FR-028..FR-031). The full office layout check runs in Clean Office, and a one-minute **theme geometry** check proves every other theme lays out identically (every box and font size) and passes the layout rules in its own fonts. The full check in every theme runs on demand. Locally, `npm run check:themes` runs a few checks at a time, at low priority, and stops a job when memory runs low. Animation is checked once, in the plain office check. `npm test` leaves a core free.

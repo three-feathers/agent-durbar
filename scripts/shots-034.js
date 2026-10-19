@@ -9,7 +9,7 @@
  *
  * It reads only the page (app.js keeps its state private: each desk scene says its mood in data-sig) and prints
  * "DRIVER FAILED" on a miss. What it checks, at 1440x900 and 1280x800:
- *   - US1  heavy and monster bodies exist; a monster's card label says "context nearly full (N%)" with N above 90;
+ *   - US1  heavy and monster bodies exist; a monster's card label says "Memory nearly full (N%)" with N above 90;
  *   - US2  one ambulance, on an agent in Error; a second, newer error takes it and gives it back when it ends; a fainted agent
  *          at its credit limit; impatient agents only with simwaitold=1 (a fresh request is not impatient); 3 failed calls in a
  *          row make an agent at its desk dizzy and a successful call clears it (sent with window.__durbarSimEmit);
@@ -25,6 +25,7 @@
  * Crops of single desks (device pixels) go to 034-crop-<state>.png for a close look at the drawings.
  */
 const fs = require('fs');
+const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
 const path = require('path');
 const assert = require('assert');
 const OUT = process.env.SHOTS_034 || '/tmp';
@@ -48,18 +49,18 @@ module.exports = async (ctx) => {
       amb:d.querySelectorAll('.amb').length,dizzy:d.querySelectorAll('.dizzy').length,sweat:d.querySelectorAll('.sweat').length,tap:d.querySelectorAll('.tap').length}})`);
   const one = async (pred, what) => { const d = (await desks()).find(pred); assert.ok(d, what); return d; };
   const crop = async (id, name) => {
-    const r = await js(`(()=>{const d=document.querySelector('#stage .desk[data-id=${JSON.stringify(JSON.stringify(id)).slice(1, -1)}]');d.scrollIntoView({block:'center'});const b=d.getBoundingClientRect();return {x:Math.floor(b.left),y:Math.floor(b.top),width:Math.ceil(b.width),height:Math.ceil(b.height)}})()`);
+    const r = await js(`(()=>{const d=document.querySelector('#stage .desk[data-id=${jsLiteral(JSON.stringify(id)).slice(1, -1)}]');d.scrollIntoView({block:'center'});const b=d.getBoundingClientRect();return {x:Math.floor(b.left),y:Math.floor(b.top),width:Math.ceil(b.width),height:Math.ceil(b.height)}})()`);
     await ctx.sleep(250);
     const img = await ctx.win.webContents.capturePage(r);
     fs.writeFileSync(path.join(OUT, `034-crop-${name}.png`), img.toPNG());
     console.log('[034] saved crop', name);
   };
-  const emit = (e) => js(`window.__durbarSimEmit(${JSON.stringify(e)})`);
+  const emit = (e) => js(`window.__durbarSimEmit(${jsLiteral(e)})`);
   const rooms = () => js(`[...document.querySelectorAll('#stage .room')].reduce((o,r)=>{o[r.querySelector('.room-name').textContent.trim()]={tone:r.dataset.alert||'calm',siren:!!r.querySelector('.room-head .siren'),label:r.getAttribute('aria-label')};return o;},{})`);
   /* WCAG contrast of a header text against the pixels right next to it (the real, darkened floor) */
   const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
   const contrast = async (roomName, sel) => {
-    const q = await js(`(()=>{const r=[...document.querySelectorAll('#stage .room')].find(x=>x.querySelector('.room-name').textContent.trim()===${JSON.stringify(roomName)});const e=r&&r.querySelector(${JSON.stringify(sel)});if(!e||!e.getClientRects().length)return null;const b=e.getBoundingClientRect(),c=getComputedStyle(e).color.match(/[\\d.]+/g).map(Number);return {x:Math.round(b.left)-5,y:Math.round(b.top+b.height/2)-1,c}})()`);
+    const q = await js(`(()=>{const r=[...document.querySelectorAll('#stage .room')].find(x=>x.querySelector('.room-name').textContent.trim()===${jsLiteral(roomName)});const e=r&&r.querySelector(${jsLiteral(sel)});if(!e||!e.getClientRects().length)return null;const b=e.getBoundingClientRect(),c=getComputedStyle(e).color.match(/[\\d.]+/g).map(Number);return {x:Math.round(b.left)-5,y:Math.round(b.top+b.height/2)-1,c}})()`);
     if (!q) return null;
     const img = await ctx.win.webContents.capturePage({ x: q.x, y: q.y, width: 2, height: 2 });
     const bm = img.toBitmap(), n = bm.length / 4; let r = 0, g = 0, bl = 0;
@@ -91,27 +92,27 @@ module.exports = async (ctx) => {
     const heavy = ds.filter((d) => d.body === 'heavy'), monsters = ds.filter((d) => d.body === 'monster');
     assert.ok(heavy.length >= 1 && monsters.length >= 1, 'heavy and monster bodies are on screen');
     for (const m of monsters) {
-      const n = /context nearly full \((\d+)%\)/.exec(m.label);
+      const n = /Memory nearly full \((\d+)% of the context\)/.exec(m.label);
       assert.ok(n && +n[1] > 90 && m.title.includes(n[0]), `${m.name}: label and tooltip say the context is nearly full`);
-      assert.ok(!m.text.includes('context nearly full'), `${m.name}: the visible text does not change`);
+      assert.ok(!m.text.includes('Memory nearly full'), `${m.name}: the visible text does not change`);
     }
-    assert.ok(heavy.every((d) => !/context nearly full/.test(d.label)), 'heavy agents (70-90%) get no extra words');
+    assert.ok(heavy.every((d) => !/Memory nearly full/.test(d.label)), 'heavy agents (70-90%) get no extra words');
 
     // US2: one ambulance, on an agent in error
     const amb = ds.filter((d) => d.trouble === 'ambulance');
     assert.strictEqual(amb.length, 1, 'exactly one ambulance');
     assert.strictEqual(amb[0].st, 'error', 'the ambulance is at an agent in Error');
     assert.strictEqual(ds.reduce((n, d) => n + d.amb, 0), 1, 'one ambulance drawing in the page');
-    assert.ok(/needs help: error/.test(amb[0].label), 'the ambulance is named');
+    assert.ok(/Needs help: error/.test(amb[0].label), 'the ambulance is named');
     const faint = await one((d) => d.trouble === 'faint', 'an agent fainted at its credit limit');
-    assert.ok(/Limit reached/i.test(faint.text) && /fainted: credit limit reached/.test(faint.label), 'faint: limit pill and label');
-    assert.strictEqual(await js(`[...document.querySelectorAll('#stage .desk[data-id]')].find(d=>d.dataset.id===${JSON.stringify(faint.id)}).querySelectorAll('svg.scene animateTransform, svg.scene .wave').length`), 0, 'a fainted agent does not wave');
+    assert.ok(/Limit reached/i.test(faint.text) && /Out of credit: limit reached/.test(faint.label), 'faint: limit pill and label');
+    assert.strictEqual(await js(`[...document.querySelectorAll('#stage .desk[data-id]')].find(d=>d.dataset.id===${jsLiteral(faint.id)}).querySelectorAll('svg.scene animateTransform, svg.scene .wave').length`), 0, 'a fainted agent does not wave');
     const imp = ds.filter((d) => d.trouble === 'impatient');
     assert.ok(imp.length >= 1 && imp.every((d) => d.st === 'waiting' && /impatient: waiting 2 min for you/.test(d.label)), 'impatient agents wait 2 min');
     assert.ok(imp.some((d) => !d.away && d.tap === 1), 'an impatient agent at its desk taps it');
     // [KNOWN GAP] an agent away at a place (spec 024) shows an empty chair: its mood drawing is there but hidden, the words stay
     const awayDz = ds.find((d) => d.away && d.trouble);
-    if (awayDz) assert.strictEqual(await js(`getComputedStyle([...document.querySelectorAll('#stage .desk[data-id]')].find(d=>d.dataset.id===${JSON.stringify(awayDz.id)}).querySelector('svg.scene .pp:last-of-type')).display`), 'none', `${awayDz.name}: away, so the drawing is hidden`);
+    if (awayDz) assert.strictEqual(await js(`getComputedStyle([...document.querySelectorAll('#stage .desk[data-id]')].find(d=>d.dataset.id===${jsLiteral(awayDz.id)}).querySelector('svg.scene .pp:last-of-type')).display`), 'none', `${awayDz.name}: away, so the drawing is hidden`);
     if (awayDz) assert.ok(/needs help|fainted|impatient|dizzy/.test(awayDz.label), `${awayDz.name}: the words stay while away`);
     // Rooms (issue #135): tone of the worst agent, siren where the ambulance or a faint is
     let rm = await rooms();
@@ -161,7 +162,7 @@ module.exports = async (ctx) => {
     assert.strictEqual((await desks()).find((d) => d.id === dz.id).trouble, null, 'two failed calls are not dizzy yet');
     await call(2, 'start'); await call(2, 'failed'); await ctx.sleep(5600);
     let d = (await desks()).find((x) => x.id === dz.id);
-    assert.ok(d.trouble === 'dizzy' && d.dizzy === 1 && /dizzy: 3 failed tool calls in a row/.test(d.label), 'three failed calls: dizzy');
+    assert.ok(d.trouble === 'dizzy' && d.dizzy === 1 && /Stuck: 3 tool calls failed in a row/.test(d.label), 'three failed calls: dizzy');
     if (w === 1440) await crop(dz.id, 'dizzy');
     await shot('dizzy', w, h);
     await call(3, 'start'); await call(3, 'complete'); await ctx.sleep(5600);
@@ -174,7 +175,7 @@ module.exports = async (ctx) => {
     ds = await desks();
     assert.ok(ds.every((x) => x.body === 'normal' && !x.trouble), 'Serious mode: every scene is plain');
     assert.strictEqual(await js(`document.querySelectorAll('#stage .amb, #stage .dizzy, #stage .sweat, #stage .tap').length`), 0, 'Serious mode: no mood drawing in the page');
-    assert.ok(ds.every((x) => !/context nearly full|needs help|fainted|impatient|dizzy/.test(x.label)), 'Serious mode: no mood words');
+    assert.ok(ds.every((x) => !/Memory nearly full|Needs help|Out of credit|impatient|Stuck/.test(x.label)), 'Serious mode: no mood words');
     assert.strictEqual(await js(`document.querySelectorAll('#stage .room[data-alert], #stage .siren').length`), 0, 'Serious mode: no room tone and no siren');
     assert.ok(Object.values(await rooms()).every((v) => !/Alert:/.test(v.label)), 'Serious mode: no alert words');
     await shot('serious', w, h);

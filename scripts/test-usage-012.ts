@@ -58,7 +58,7 @@ const codexUsage = codex([START, tokenUpdate(null), tokenUpdate(272000)]).filter
 assert.strictEqual(codexUsage.length, 2);
 for (const e of codexUsage) assert.ok(!('costUsd' in e) && !('costBasis' in e) && !('nanoAiu' in e) && !('creditsStatus' in e), 'no cost, no credits on a Codex usage event');
 
-// 4. End to end into the renderer ledger: Codex shows "credits not reported", never 0 AIU or a dollar figure (d).
+// 4. End to end into the renderer ledger: Codex shows "cost not reported", never 0 AIU or a dollar figure (d).
 {
   const l = U.createLedger();
   for (const e of codexUsage) l.record('cx', e);
@@ -66,7 +66,7 @@ for (const e of codexUsage) assert.ok(!('costUsd' in e) && !('costBasis' in e) &
   assert.strictEqual(t.calls, 2);
   assert.strictEqual(t.unreported, 2);
   assert.strictEqual(t.nano, 0);
-  assert.strictEqual(U.fmtTotal(t), 'credits not reported');
+  assert.strictEqual(U.fmtTotal(t), 'cost not reported');
   assert.strictEqual(U.fmtShort(t), 'n/r');
   assert.ok(!/AIU|\$|USD/.test(U.fmtTotal(t)), 'no AIU or dollar figure');
 }
@@ -83,8 +83,8 @@ for (const e of codexUsage) assert.ok(!('costUsd' in e) && !('costBasis' in e) &
   codexUsage.forEach((e) => l.record('codex', e));
   assert.strictEqual(l.office().nano, 0.5 * AIU, 'only Copilot AIU is summed: USD never enters AIU');
   assert.strictEqual(l.room('claude').nano, 0, 'a Claude folder has no AIU');
-  assert.strictEqual(l.room('claude').unreported, l.room('claude').calls, 'every Claude call is "credits not reported"');
-  assert.strictEqual(U.fmtTotal(l.room('claude')), 'credits not reported');
+  assert.strictEqual(l.room('claude').unreported, l.room('claude').calls, 'every Claude call is "cost not reported"');
+  assert.strictEqual(U.fmtTotal(l.room('claude')), 'cost not reported');
   assert.strictEqual(l.office().unreported, l.room('claude').calls + 2, 'office counts Claude and Codex calls as unreported');
   assert.ok(/AIU/.test(U.fmtTotal(l.office())) && !/3\.5|\$/.test(U.fmtTotal(l.office())), 'office shows AIU only, no dollars');
 
