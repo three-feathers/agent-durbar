@@ -52,19 +52,21 @@ export interface AppSettings {
   seriousMode?: boolean;
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
   theme?: string;
+  /** Durbar MCP server (spec 041 FR-001): off by default; only `true` is kept. */
+  mcpServer?: boolean;
 }
 
 /** Tolerant parse: a missing, corrupt or odd file means no settings. */
 export function parseSettings(text: string): AppSettings {
   try {
-    const doc = JSON.parse(text) as { defaultMaxAiCredits?: unknown; placeMap?: unknown; customPlaces?: unknown; seriousMode?: unknown; theme?: unknown } | null;
+    const doc = JSON.parse(text) as { defaultMaxAiCredits?: unknown; placeMap?: unknown; customPlaces?: unknown; seriousMode?: unknown; theme?: unknown; mcpServer?: unknown } | null;
     const obj = doc && typeof doc === 'object' && !Array.isArray(doc) ? doc : {};
     const cap = parseCap((obj as { defaultMaxAiCredits?: unknown }).defaultMaxAiCredits);
     // the custom places first: the mapping may only point to ones that exist (spec 024 FR-019)
     const custom = parseCustomPlaces((obj as { customPlaces?: unknown }).customPlaces);
     const places = parsePlaceMap((obj as { placeMap?: unknown }).placeMap, custom.map((p) => p.id));
     const theme = parseThemeId((obj as { theme?: unknown }).theme);
-    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...(custom.length ? { customPlaces: custom } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}), ...(theme === undefined ? {} : { theme }) };
+    return { ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...(custom.length ? { customPlaces: custom } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}), ...(theme === undefined ? {} : { theme }), ...((obj as { mcpServer?: unknown }).mcpServer === true ? { mcpServer: true } : {}) };
   } catch {
     return {};
   }

@@ -26,6 +26,11 @@ import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '..
 import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
 import { AgentStateTracker } from './mcp/agentstate';
+import { createReadToolHandlers } from './mcp/readtools';
+import { McpServerHost } from './mcp/server';
+import { simMainPlanFor, simMainView, startSimMain } from './mcp/simmain';
+import type { SimMainHandle } from './mcp/simmain';
+import { cliServers, copilotDir } from './mcpfiles';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { UsageStore } from './usagestore';
 import { AgentTrustStore, hashAgentFile } from './agenttrust';
@@ -99,6 +104,43 @@ router.onEvent((e) => {
   agentState.ensure(a.id, a.lazy);
   agentState.onEvent(e);
 });
+/** The Durbar MCP server (spec 041 FR-001): created when the app is ready, listens only while the `mcpServer` setting is on (default off). */
+let mcpHost: McpServerHost | undefined;
+/** `DURBAR_SIM_MAIN=N` (dev only): scripted agents in main so the server has something to show (spec 041 T015). */
+let simMain: SimMainHandle | undefined;
+/** The simulated agents as the read tools see them (not in `agents`, the stores or the window). */
+let simView: ReturnType<typeof simMainView> | undefined;
+function createMcpHost(): McpServerHost {
+  const settings = (): SettingsStore => settingsStore as SettingsStore;
+  const handlers = createReadToolHandlers({
+    folders: () => [...(folderStore?.list() ?? []), ...(simView?.folders ?? [])],
+    agents: () => [...agents.values(), ...(simView?.agents ?? [])],
+    tracker: agentState,
+    floors: () => {
+      const doc = folderStore?.floors() ?? { floors: [{ id: GROUND, name: 'Ground floor', on: true }], lastFloor: GROUND };
+      const extra = (simView?.floors.floors ?? []).filter((f) => !doc.floors.some((x) => x.id === f.id));
+      return extra.length ? { ...doc, floors: [...doc.floors, ...extra] } : doc;
+    },
+    usage: { view: () => (usageTotalsStore as UsageTotalsStore).view(), keyFor: (k) => (usageTotalsStore as UsageTotalsStore).keyFor(k) },
+    settings: () => settings().snapshot(),
+    mcpCli: () => {
+      const r = cliServers(copilotDir(dev), new Set(mcpStore?.ambientDisabled() ?? []));
+      return { cli: r.servers, file: r.file, secretsPersist: mcpStore?.secretsPersist ?? false };
+    },
+    mcpExtras: (key) => mcpStore?.list(key) ?? [],
+    windowSim: () => parseInt(dev.DURBAR_SIM ?? '', 10) > 0,
+  });
+  return new McpServerHost({
+    userData: app.getPath('userData'),
+    // a dev hook that moves userData keeps the socket there too (tests never touch the real runtime dir)
+    xdgRuntimeDir: dev.DURBAR_USER_DATA ? undefined : process.env.XDG_RUNTIME_DIR,
+    version: app.getVersion(),
+    handlers,
+    // Demo/sample mode is the window's own toggle; main has no such mode, so it never blocks here (spec 041 T017, open question).
+    demo: () => false,
+  });
+}
+
 /** Key an agent's all-time counts are kept under: "<agent name> · <folder name>" (base name only, spec 020). */
 const usageLabel = (a: AgentInfo): string => agentLabel(a.name, a.workspaceFile ? path.basename(a.workspaceFile).replace(/\.code-workspace$/i, '') : a.cwd);
 // All-time tool usage is counted here, not in the window, so it also counts while the Tools view is closed (spec 020 FR-006).
@@ -867,6 +909,15 @@ app.whenReady().then(() => {
   agentTrust.load();
   usageTotalsStore.load();
   restoreFolders();
+  mcpHost = createMcpHost();
+  void mcpHost.apply(settingsStore.mcpServer); // off by default: nothing is created unless the setting is on
+  if (dev.DURBAR_SIM_MAIN) {
+    // Scripted agents for the server only (spec 041 T015): their events feed the state tracker, nothing else.
+    const sim = simMainPlanFor(dev);
+    simView = simMainView(sim);
+    for (const a of simView.agents) agentState.ensure(a.id, a.lazy);
+    void startSimMain(dev, (e) => agentState.onEvent(e)).then((h) => { simMain = h; });
+  }
   createWindow();
   // Dev/headless convenience: DURBAR_OPEN="/path/a:/path/b" starts agents (read-only) on launch.
   const open = (dev.DURBAR_OPEN ?? '').split(path.delimiter).filter((p) => p && fs.existsSync(p));
@@ -902,6 +953,8 @@ app.whenReady().then(() => {
 });
 
 app.on('will-quit', () => {
+  void mcpHost?.stop(); // closes connections, removes the socket and the key file (spec 041 SC-005)
+  void simMain?.stop();
   usageStore?.flush();
   usageTotalsStore?.flush();
   if (stageDir) fs.rmSync(stageDir, { recursive: true, force: true });

@@ -268,6 +268,11 @@ export class FakeAdapter implements AgentAdapter {
     return s;
   }
 
+  /** Test hook: pushes one scripted event through the normal event stream, as if the session had produced it (spec 041 T015: the main-process simulator). */
+  emitForTest(sessionId: string, body: EventBody): void {
+    this.emit(sessionId, body);
+  }
+
   private emit(sessionId: string, body: EventBody): void {
     const event = { ...body, sessionId, timestamp: Date.now() } as AgentEvent;
     for (const l of [...this.listeners]) l(event);

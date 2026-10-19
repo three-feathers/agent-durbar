@@ -73,6 +73,27 @@ export class SettingsStore {
     return v;
   }
 
+  /** Durbar MCP server (spec 041 FR-001): off by default. */
+  get mcpServer(): boolean {
+    return this.s.mcpServer === true;
+  }
+
+  /** Only a real boolean changes it; anything else keeps the current value. Returns the value now in force (false if it could not be kept). */
+  setMcpServer(v: unknown): boolean {
+    if (typeof v !== 'boolean') return this.mcpServer;
+    const next: AppSettings = { ...this.s };
+    if (v) next.mcpServer = true;
+    else delete next.mcpServer;
+    this.s = next;
+    this.save();
+    return v;
+  }
+
+  /** A copy of the settings in memory (no file read); the MCP read tools use it (spec 041 T016). */
+  snapshot(): AppSettings {
+    return JSON.parse(JSON.stringify(this.s)) as AppSettings;
+  }
+
   /** Active theme id (spec 037). Undefined = Clean Office; the renderer resolves unknown ids itself. */
   get theme(): string | undefined {
     return this.s.theme;

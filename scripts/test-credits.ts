@@ -84,6 +84,23 @@ try {
   assert.ok(!('seriousMode' in JSON.parse(fs.readFileSync(f3, 'utf8'))), 'off is not written');
   assert.strictEqual(sb.setDefaultMaxAiCredits(''), undefined); assert.deepStrictEqual({ ...sb.placeMap }, { 'acme-tools': 'library' }, 'clearing the cap keeps the mapping');
   assert.strictEqual(sb.setSeriousMode(true), true); assert.strictEqual(sb.setDefaultMaxAiCredits(70), 70); assert.strictEqual(sb.seriousMode, true, 'a cap change keeps Serious mode');
+  {
+    const fm = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-mcpset-')), 's.json');
+    const ms = new SettingsStore(fm); ms.load();
+    assert.strictEqual(ms.mcpServer, false, 'off by default');
+    assert.strictEqual(ms.setMcpServer('yes'), false, 'a non-boolean changes nothing');
+    assert.strictEqual(ms.setMcpServer(true), true);
+    assert.strictEqual(new SettingsStore(fm).load().mcpServer, true, 'kept after a restart');
+    assert.strictEqual(ms.setSeriousMode(true), true); assert.strictEqual(ms.mcpServer, true, 'another setting keeps it');
+    assert.deepStrictEqual(ms.snapshot(), { mcpServer: true, seriousMode: true });
+    assert.strictEqual(ms.setMcpServer(false), false);
+    assert.ok(!('mcpServer' in JSON.parse(fs.readFileSync(fm, 'utf8'))), 'off is not written');
+  }
+  // MCP server setting (spec 041 T017): off by default, only a real true is kept, old files parse unchanged
+  assert.deepStrictEqual(parseSettings('{"mcpServer":true}'), { mcpServer: true });
+  for (const v of ['false', '"true"', '1', 'null', '"yes"', '[]']) assert.deepStrictEqual(parseSettings(`{"mcpServer":${v}}`), {}, 'only true is kept: ' + v);
+  assert.strictEqual(parseSettings('{}').mcpServer, undefined, 'default is off');
+  assert.deepStrictEqual(parseSettings('{"defaultMaxAiCredits":75,"seriousMode":true,"theme":"retro"}'), { defaultMaxAiCredits: 75, seriousMode: true, theme: 'retro' }, 'an old file without mcpServer parses as before');
   assert.deepStrictEqual(parseSettings('{"seriousMode":true}'), { seriousMode: true });
   for (const bad of ['"yes"', '1', '0', 'null', '[]', '{}', '"true"', '{"seriousMode":"true"}', '{"seriousMode":1}', '{"seriousMode":false}']) assert.deepStrictEqual(parseSettings(bad.startsWith('{') ? bad : '{"seriousMode":' + bad + '}'), {}, 'only true is kept: ' + bad);
 

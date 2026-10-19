@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
 import type { AgentEvent } from '../src/adapters/types';
 import { devEnv } from '../src/main/devhooks';
-import { parseSimMainCount, planSimMain, simMainPlanFor, startSimMain } from '../src/main/mcp/simmain';
+import { parseSimMainCount, planSimMain, simMainPlanFor, simMainView, startSimMain } from '../src/main/mcp/simmain';
 import { parseFloors } from '../src/shared/floors';
 
 (async () => {
@@ -49,6 +49,24 @@ import { parseFloors } from '../src/shared/floors';
   assert.deepStrictEqual(planSimMain(15), plan, 'deterministic');
   assert.strictEqual(planSimMain(3).agents.length, 3);
   assert.strictEqual(planSimMain(1).agents[0].kind, 'waiting');
+
+  // simMainView: what the read tools see of the plan (spec 041 T017)
+  {
+    const v = simMainView(plan);
+    assert.strictEqual(v.agents.length, plan.agents.length, 'one agent per plan agent');
+    assert.strictEqual(v.folders.length, plan.agents.length, 'one folder per plan agent');
+    assert.deepStrictEqual(v.floors.floors, plan.floors, 'floors match the plan');
+    assert.strictEqual(new Set(v.agents.map((a) => a.id)).size, v.agents.length, 'unique agent ids');
+    assert.strictEqual(new Set(v.folders.map((f) => f.workspace)).size, v.folders.length, 'unique folders');
+    const floorIds = new Set(v.floors.floors.map((f) => f.id));
+    plan.agents.forEach((p, i) => {
+      const a = v.agents[i], f = v.folders[i];
+      assert.deepStrictEqual([a.id, a.name, a.cwd, a.floor, a.lazy], [p.id, p.name, p.folder, p.floor, p.lazy]);
+      assert.deepStrictEqual([f.workspace, f.floor], [p.folder, p.floor]);
+      assert.ok(floorIds.has(a.floor as string) && floorIds.has(f.floor as string), 'floor exists');
+    });
+    assert.ok(floorIds.has(v.floors.lastFloor));
+  }
 
   // starter: the events go through the adapter's normal stream; the registry is separate from production
   const seen: AgentEvent[] = [];

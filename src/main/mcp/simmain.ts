@@ -9,6 +9,9 @@ import type { AdapterRegistry } from '../../adapters/registry';
 import { FakeAdapter } from '../../adapters/fake';
 import type { EventBody } from '../../adapters/map';
 import type { AgentAdapter, AgentEvent } from '../../adapters/types';
+import type { AgentInfo } from '../../shared/api';
+import type { FloorsDoc } from '../../shared/floors';
+import type { SavedFolder } from '../folders';
 import { GROUND, GROUND_NAME } from '../../shared/floors';
 import type { Floor } from '../../shared/floors';
 import type { DevEnv } from '../devhooks';
@@ -99,6 +102,23 @@ export function simMainPlanFor(env: DevEnv): SimMainPlan {
   return planSimMain(parseSimMainCount(env[SIM_MAIN_ENV]));
 }
 
+/** What the read tools see of the simulated agents: same shapes as main's own state, never written to the real stores or the window. */
+export interface SimMainView {
+  agents: AgentInfo[];
+  folders: SavedFolder[];
+  floors: FloorsDoc;
+}
+
+export function simMainView(plan: SimMainPlan): SimMainView {
+  return {
+    agents: plan.agents.map((a) => ({
+      id: a.id, name: a.name, cwd: a.folder, folders: [a.folder], permMode: 'ask' as const, model: 'fake-model', lazy: a.lazy, floor: a.floor, adapterId: SIM_ADAPTER_ID,
+    })),
+    folders: plan.agents.map((a) => ({ workspace: a.folder, permMode: 'ask' as const, hidden: false, floor: a.floor, adapterId: SIM_ADAPTER_ID, label: a.name })),
+    floors: { floors: plan.floors.map((f) => ({ ...f })), lastFloor: GROUND },
+  };
+}
+
 export interface SimMainHandle {
   plan: SimMainPlan;
   /** The dev-only registry (never `PRODUCTION_DESCRIPTORS`). */
@@ -119,12 +139,10 @@ export async function startSimMain(env: DevEnv, onEvent?: (event: AgentEvent) =>
   const registry = createRegistry([{ id: SIM_ADAPTER_ID, displayName: probe.displayName, capabilities: probe.capabilities, create: () => probe }]);
   const adapter = registry.create(SIM_ADAPTER_ID);
   if (onEvent) adapter.onEvent(onEvent);
-  // `emit` is private on purpose (test double): the simulator is the one place that pushes scripted events through it.
-  const emit = (sid: string, body: EventBody): void => (adapter as unknown as { emit(s: string, b: EventBody): void }).emit(sid, body);
   for (const a of plan.agents) {
     if (a.lazy) continue;
     await adapter.start({ workspace: a.folder, sessionId: a.id, permissionMode: 'ask' });
-    for (const body of a.events) emit(a.id, body);
+    for (const body of a.events) probe.emitForTest(a.id, body);
   }
   return { plan, registry, adapter, stop: () => adapter.dispose() };
 }
