@@ -486,6 +486,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     }
 
     function play(s: SimAgent): void {
+      if (s.info.resumeLast) return; // spec 006 FR-021 (simresume=1): restored, nothing runs until its chat is opened
       emit({ type: 'user', sessionId: sid(s), timestamp: now(), text: s.prompt, attachments: (s.attachments ?? []).map((p) => ({ path: p, kind: /\.(png|jpe?g|gif)$/i.test(p) ? 'image' as const : 'file' as const })) });
       if (s.state === 'idle') return;
       mcpStatus(s, sims.indexOf(s));
@@ -1142,7 +1143,24 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
             if (!opts.freeze) timer = window.setInterval(tick, 2600);
           }, 0);
         }
+        /* simresume=1 (spec 006 FR-021): Priya's folder came back after a restart as its last session, not started yet */
+        if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simresume') === '1') {
+          const r = sims.find((x) => x.info.name === 'Priya');
+          if (r && r.info.resumeLast === undefined) { r.info.lazy = true; r.info.resumeLast = true; }
+        }
         return sims.map((s) => s.info);
+      },
+      wake: async (id) => { // FR-021: the canned last session comes back, as the main process resumes it (no prompt)
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'unknown agent' };
+        if (!s.info.resumeLast) return { ok: true };
+        s.info.resumeLast = false;
+        s.info.lazy = false;
+        return { ok: true, resumed: true, title: 'Add the clause-type column migration', history: { total: 3, truncated: false, items: [
+          { type: 'user', text: 'Add a migration for the new clause_type column, nullable for now.' },
+          { type: 'tool', callId: 'r1', tool: 'view', label: 'db/migrations/0006_parties.sql', output: '-- 0006: parties table' },
+          { type: 'output', text: 'Added `db/migrations/0007_clause_type.sql`. It adds `clause_type TEXT NULL`; nothing is backfilled yet.' },
+        ] } };
       },
       pickAttachments: async (): Promise<PickedFile[]> => [
         { path: '/home/vikram/notes/api-design-notes.md', name: 'api-design-notes.md', kind: 'file' },
