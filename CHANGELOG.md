@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **Claude Code: the context chip shows how full the window is (spec 012 FR-134).** It used to say "Context: unknown" for a Claude agent. The window now comes from Claude's own per-model report at the end of each turn, and the tokens in use from the last message. Checked on a real Claude Code.
+
 - **Moods in the List view and on the walking figure (spec 034 FR-014/FR-015).** The List view has no figures, so an agent whose context is nearly full, that needs help, fainted, waits impatiently or is dizzy now says so in amber at the start of its task, and to screen readers. An agent walking to a place in the lobby keeps its mood too: an amber ring when heavy, horns when nearly full, a small dot when in trouble. Serious mode hides all of it, as on the cards.
 
 - **A workspace's other folders reach the agent (spec 006 FR-019).** A `.code-workspace` session still runs in its first folder. Its other folders are now given to the agent as well: Copilot's `additionalDirectories`, Claude's `--add-dir`. The agent can work in all of them, with the same permission mode in each.
