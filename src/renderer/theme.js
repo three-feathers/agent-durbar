@@ -30,7 +30,7 @@
     '--line-2':'#d3cabb',
     '--ink':'#2c3733',
     '--ink-2':'#56605b',
-    '--muted':'#6a716c',
+    '--muted':'#535a55', // spec 052 FR-009: 4.5:1 on every room wall (was #6a716c)
     '--room-path':'#5c635e',
 
     /* brand / accent */
@@ -121,7 +121,7 @@
     '--door-panel':'#e8dcc6',
     '--brand-mark':'#4f7f65',
     '--brand-bg':'#e4ece6',
-    '--focus':'#4f7fa8',
+    '--focus':'#2f5f8a', // spec 052 FR-009: 3:1 on every surface (was #4f7fa8)
     '--sel-border':'#7fa0bd',
     '--sel-ring':'#d9e6f0',
     '--sel-ring-2':'#dde8f1',
@@ -809,6 +809,8 @@
     token,
     slot,
     word,
+    /* spec 052 FR-013: the plain (Clean Office) word, so a themed place can still say what it is */
+    plainWord: (key) => (Object.prototype.hasOwnProperty.call(CLEAN_WORDS, key) ? CLEAN_WORDS[key] : key),
     motion,
     list,
     preview,

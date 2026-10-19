@@ -2,7 +2,7 @@
 
 **Feature Branch**: `052-usability-pass`
 **Created**: 2026-10-19
-**Status**: In progress
+**Status**: Round 1 built (FR-001..FR-014); rounds 2 and 3 of the review follow (owner: "run at least 3 rounds selecting different personas")
 **Input**: The owner, 2026-10-19: "have some sub agents (with different personas) perform some usability review sessions and get feedback from them and implement feedback - we want the app to be legible, does not feel messy or confusing, the app must feel that it is an app developed in 2026 and has some nostalgic feels with themes, clean design principles."
 
 ## The review sessions (2026-10-19)
@@ -42,10 +42,7 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
   - Wording: "**2 folders can still act without asking you**, as you left them (Allow all). Change it in each folder's mode menu."
   - It has a *Got it* button and no timeout, it sits where it covers nothing the user needs, and it pauses on hover or focus.
   - Other toasts keep their timers, but any toast pauses while hovered or focused.
-- **FR-005** **Top bar: the defaults say they are defaults.**
-  - The harness, mode and model selects are grouped under a small caption, "New sessions".
-  - Each one's accessible name and title starts with "Default for new sessions:".
-  - Sizes do not change (the office fit and `check:geometry` must pass).
+- **FR-005** **Top bar: the defaults say they are defaults.** The mode select reads **New: Read-only / New: Ask first / New: Allow all**. That is narrower than the old widest option, "Allow all (no prompts)", so the 1280 fit only gains room. The harness, mode and model selects get accessible names and tooltips that start with "Default … for new sessions" and say each agent shows its own value in its chat. *Decision while building:* a visible "New sessions" caption was tried on paper, but it would widen the top bar at 1280x800. The three-cluster bar is #308.
 - **FR-006** **Room-header counts in words and shapes.**
   - Each count has a shape as well as a colour: waiting ◆, error ▲, working ●, ready/idle ○, done ✓.
   - The group has a text alternative ("1 waiting, 4 working, 1 done") for screen readers and as a title.
@@ -66,13 +63,13 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 
 ## Follow-ups (issues, not this phase)
 
-- "Needs you" inbox: one queue, answer each request without opening its chat.
-- Simple / Expert mode: hide tokens, MCP, context and model for non-developers.
-- Cost in money: one unit, with today's spend in the user's currency, and AIU as detail.
-- Top bar: three clusters (Create, Defaults, View), with the rest in an overflow menu.
-- Settings: theme grid with previews, help behind *Details*, MCP under *Advanced*.
-- Per-theme polish: Corporate's 90s office, softer Retro floors, Indian Court carpet only on empty floor, a real tatami grid.
-- One control-size scale (32 / 26 / 22 px) as tokens; 24px targets in the room header.
+- "Needs you" inbox (#305): one queue, answer each request without opening its chat.
+- Simple / Expert mode (#306): hide tokens, MCP, context and model for non-developers.
+- Cost in money (#307): one unit, with today's spend in the user's currency, and AIU as detail.
+- Top bar: three clusters (#308) (Create, Defaults, View), with the rest in an overflow menu.
+- Settings: theme grid (#309) with previews, help behind *Details*, MCP under *Advanced*.
+- Per-theme polish (#310): Corporate's 90s office, softer Retro floors, Indian Court carpet only on empty floor, a real tatami grid.
+- One control-size scale (#311) (32 / 26 / 22 px) as tokens; 24px targets in the room header.
 
 ## Success criteria
 
@@ -80,6 +77,25 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 - **SC-002** The chat header shows at most 3 action buttons.
 - **SC-003** `check:office`, `check:geometry` and `npm test` pass; screenshots at both sizes are replaced.
 - **SC-004** The four reviewers' screens are captured again after the change; the before-and-after shots go in the PR.
+
+## Evidence (round 1)
+
+- `[IMPLEMENTED]` FR-001..FR-014 in `src/renderer/` (`app.js`, `styles.css`, `index.html`, `theme.js`, `mood.js`, `usagetotals.js`, `screens.js`).
+- **Causes found while building:**
+  - FR-008: the list header row had the class `head`. The avatars' heads nod (`.head{animation:nod}`), so the whole header row nodded with them. It is now `lhead`.
+  - FR-002: "untouched" counted only messages sent in this app, so a restored or simulated chat with a conversation still opened Previous sessions over it.
+- `sim:` `scripts/shots-052-ux.js` passes at 1440x900 and 1280x800:
+  - the banner stays after 10 s, Got it closes it, and it sits bottom left;
+  - the room counts have words;
+  - Jonas's request is answerable without scrolling (the card in view, or the bar);
+  - with the chat scrolled away, the bar's Approve settles the card;
+  - 3 header actions (Open in VS Code, Stop, More); the More menu opens on Down and closes on Esc, with focus back on More, and End and Remove are last;
+  - Previous sessions is closed; the list header is straight (column tops within 1px);
+  - N goes Kenji → Tomas (Jonas had just been approved).
+  - Screenshots: `docs/screenshots/052-*.png`.
+- `test:` `test:mood`, `test:usagetotals` and `test-usage-012` cover the new wording; `npm test` (45 suites) passes.
+- Contrast (FR-009), computed from the tokens: `--muted` #535a55 is at least 4.88:1 on every room wall; `--focus` #2f5f8a is at least 3.7:1 on every surface and card line.
+- `[KNOWN GAP]`: the reviews were AI personas working from screenshots and the source, not people; nobody ran a screen reader or 150% zoom.
 
 ## Changes
 

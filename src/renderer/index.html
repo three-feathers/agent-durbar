@@ -17,19 +17,19 @@
     <div class="brand-mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="var(--brand-mark,#4f7f65)" stroke-width="1.7" stroke-linejoin="round"><rect x="2.5" y="2.5" width="6" height="7" rx="1.5"/><rect x="11.5" y="2.5" width="6" height="4" rx="1.5"/><rect x="11.5" y="9" width="6" height="8.5" rx="1.5"/><rect x="2.5" y="12.5" width="6" height="5" rx="1.5"/></svg></div>
     <div><h1>Agent Durbar</h1><span class="proto" id="protoBadge">Prototype - sample data</span></div>
   </div>
-  <div class="stats" id="stats" role="group" aria-label="Agent status counts. Select one to filter."></div>
+  <div class="stats" id="stats" role="group" aria-label="Agent status counts. Select one to filter. Press N for the next agent that needs you." title="Select a count to filter. Press N for the next agent that needs you."></div>
   <div class="controls">
     <div id="liveBar">
       <label class="tgl"><input type="checkbox" id="demoToggle"> Demo</label>
       <button class="btn" id="addFolder" type="button" title="Add a folder">+ Folder</button>
       <button class="btn" id="addWs" type="button" title="Add a .code-workspace file">+ Workspace</button>
-      <label class="sr-only" for="kindSel">Harness (agent kind) for new folders and sessions</label>
+      <label class="sr-only" for="kindSel">Default harness (agent kind) for new folders and sessions</label>
       <select id="kindSel" title="Harness (agent kind) for new folders and sessions" style="max-width:128px" hidden></select>
       <button class="btn" id="kindHelp" type="button" aria-label="About agent kinds" title="About agent kinds" style="padding:0 8px" hidden>?</button>
-      <label class="sr-only" for="permMode">Permissions for new agents</label>
-      <select id="permMode" title="Permissions for newly added agents"><option value="read-only">Read-only</option><option value="ask">Ask first</option><option value="allow">Allow all (no prompts)</option></select>
-      <label class="sr-only" for="modelSel">Model for new sessions</label>
-      <select id="modelSel" title="Model for new sessions (what your Copilot account offers)"><option value="auto">Model: Auto</option></select>
+      <label class="sr-only" for="permMode">Default permission mode for new sessions</label>
+      <select id="permMode" title="Default permission mode for new sessions. Each agent shows its own mode in its chat."><option value="read-only">New: Read-only</option><option value="ask">New: Ask first</option><option value="allow">New: Allow all</option></select>
+      <label class="sr-only" for="modelSel">Default model for new sessions</label>
+      <select id="modelSel" title="Default model for new sessions (what your account offers). Each agent shows its own model in its chat."><option value="auto">Model: Auto</option></select>
       <label class="sr-only" for="effortSel">Reasoning effort for new sessions</label>
       <select id="effortSel" title="Reasoning effort (only for models that support it)" hidden></select>
       <button class="btn" id="foldersBtn" type="button" aria-haspopup="true" aria-expanded="false" title="Manage folders: new session, hide, remove">Folders</button>
