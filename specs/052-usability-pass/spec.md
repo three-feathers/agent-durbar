@@ -101,4 +101,144 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 
 ## Changes
 
-*(none yet)*
+### 2026-10-19: round 2, new personas on the round-1 build
+
+**The panel:**
+- **Aiko**, a junior developer in her first week who uses Codex only;
+- **Rafael**, a team lead on a 13-inch laptop (1280x800) who triages between meetings;
+- **Noor**, an application-security engineer deciding on a company rollout;
+- **Kaito**, an art director at a retro games studio.
+
+All four were AI personas with 21 new screenshots and the source.
+
+**Verdicts on round 1:**
+- the answer bar, Previous sessions, "New: Read-only", the status shapes and the plain words work;
+- the More menu works only partly (Stop vs End vs Remove is unclear);
+- the restore banner works only partly: it names nothing, covers the composer, counts sessions but says "folders", and gives no route to the fix;
+- N works but nobody can discover it.
+
+**New findings, by risk:**
+1. The answer bar could cut a long command at 160 characters right next to Approve [Noor].
+2. Switching to Allow all ticks "also approve the N waiting requests" by default [Noor].
+3. Allow all is a small pencil on the desk, which reads as "editable", not as unguarded [Noor, Rafael, Aiko].
+4. *Approve for this session* hides its scope in a tooltip, and says "until you stop" although Stop does not end the grant [Noor].
+5. "Stuck" and "memory nearly full" show only in the List view [Rafael, Aiko].
+6. Theme craft [Kaito]:
+   - Retro's pastel tints and orange drawers break the arcade night;
+   - Corporate's rooms all look the same;
+   - the Japanese and European courts use place words from the wrong culture;
+   - the European court's small caps render tiny;
+   - Clean Office reads as 2021: outlines everywhere and five corner radii.
+
+**Requirements (round 2):**
+- **FR-015** **The restore notice is a strip under the top bar, not an overlay.**
+  - It names the folders: "Allow all, restored from your last run: *swisscontract-ai*, *command-center*".
+  - It offers **Switch to Ask first** (all of them, one click; lowering a mode needs no confirmation) and **Keep**, which dismisses it.
+  - It counts folders, not sessions.
+  - It covers nothing; the office lays out below it.
+- **FR-016** **The answer bar never shortens what you approve.**
+  - The request text is shown in full and wraps, up to 6 lines, then the bar shows only *Show in chat*.
+  - Several pending requests show "1 of 3", oldest first.
+  - The wide grant ("any arguments") stays in the card only.
+  - *Show in chat* moves focus to the request card, not to Approve.
+- **FR-017** **Switching to Allow all asks separately** about requests waiting now: the box is not ticked, and the dialog lists them.
+- **FR-018** **Allow all looks different on the desk:** an open padlock in the warning ink, with the tooltip "Allow all: runs edits, commands and tools without asking" (plus "(restored)").
+- **FR-019** **Wording:**
+  - *Approve for this session* names its scope in the button: "Allow *scope* this session", cut to 32 characters with the full text in the tooltip;
+  - grants last "until you end this session";
+  - the denied note says "Ask first";
+  - Read-only's help says read-only MCP tools still run;
+  - "1 Error", not "1 Errors".
+- **FR-020** **The More menu explains each item:**
+  - Stop: "interrupts this reply; the chat stays";
+  - End session: "frees it; your next message resumes it";
+  - Remove session: "takes the card out; history stays on disk".
+- **FR-021** **Office cards show a warning glyph** (⚠ in the status pill) when an agent is stuck (3 failed tool calls) or its memory is nearly full; the reason is in the tooltip and the accessible name.
+- **FR-022** **Settings say which harness a section applies to:**
+  - *Spending limit* is "Copilot sessions (AI credits). Claude Code sessions have a dollar cap in their chat header";
+  - *MCP servers* says Claude Code and Codex use their own MCP settings.
+- **FR-023** **Theme craft, within the theme rules** (colours, borders, words only; no size changes):
+  - **Retro:** PICO-8 tints `--tint-sage` #a8e4a0, `--tint-blue` #9fc3e8, `--tint-sand` #f2d48a, `--tint-clay` #f0b8a8; `--desk-drawer` the same as `--desk-front`.
+  - **Corporate:** tints carry the wall colour (#eef6f3, #edf3fa, #f8f3e6, #f9efed).
+  - **Indian court:** room border `--line-2` #b8892f.
+  - **Japanese court** place words Bunko, Kōbō, Kikan-shitsu, Tsūshinjo, Zatsumu.
+  - **European court:** places The Forge, The Messenger Hall, The Household; room names in uppercase with letter spacing, not small caps.
+- **FR-024** **Clean Office toward 2026** (sizes unchanged):
+  - cards lose their outline for a soft two-layer shadow;
+  - one radius scale: rooms 16, units 12, cards 10, buttons and selects 8, pills 999;
+  - numbers use tabular figures;
+  - `--bg` #f7f6f3 and `--line` #e7e3dc (warm neutral rather than cream).
+
+- **FR-025** **Top bar in clusters (#308).**
+  - *Create:* + Folder, + Workspace.
+  - *Defaults for new sessions:* harness, mode, model and effort in one quiet group, labelled for screen readers.
+  - *View:* Folders, the folder filter, Tools, Settings, Office/List.
+  - **⋯** holds the rarely used controls with a line each: Close all and Open all room doors, and the Demo switch.
+  - The ids are kept; at 1280x800 the bar is one row.
+- **FR-026** **Security finding fixed (alert 35, from #312):** `js/bad-code-sanitization` in `scripts/shots-052-ux.js`, a name spliced into page code with `JSON.stringify`. Every driver now splices values with `jsLiteral` (exported by `check-office-overlap.js`); 13 scripts were swept, including spots CodeQL had not flagged. The merge script now blocks on any `github-advanced-security[bot]` comment as well as on open alerts on the merge ref.
+- **Layout fixes found by `check:office` while building round 2:**
+  - the strip is 31px, so 14 one-agent rooms still fit at 1280x800;
+  - a room header's floor tag shrinks with an ellipsis (its title has the full name), so the controls never reach the plant in the micro layout.
+
+**Kept as they are, deliberately:**
+- Themed place names stay in card text: the nostalgia is the point, and the plain name is in the tooltip (FR-013).
+- Today's cost (#307) and splitting *Limit* from *Waiting* stay follow-ups.
+
+
+**Evidence (round 2):**
+- `sim:` `scripts/shots-052-ux.js` passes at both sizes:
+  - the strip names the folders and the office starts below it;
+  - *Switch to Ask first* clears it (1440x900), and *Keep* dismisses it (1280x800);
+  - the bar's session approval reads "Approve “…” for this session".
+- **A bug caught by that check:** a marker line placed after an `if(…)` without braces flagged the session button as the wide grant, so the bar dropped it. The marker now sits inside the `if` block.
+- `test:` `test:theme` follows the new `--bg`; `npm test` passes.
+
+### 2026-10-19: the follow-ups, built for alpha.8
+
+*Owner:* "implement things which you created as issues from usability feedback for tomorrow's pre-release and not just park them there", and "this a brand new app only seen by 3 people - dont worry too much about compatibility - if you find good feedback from personas go ahead and do changes even if they are drastic".
+
+- **FR-027** **Needs you inbox (#305).**
+  - A **Needs you** button next to the status counts shows how many agents need you. Agents count when they are waiting on a permission or a question, are at their limit, or are in error.
+  - It opens one queue, oldest first. Each row shows:
+    - the agent and its folder;
+    - the request in full;
+    - the same choices as its card in the chat (the wide grant stays in the chat);
+    - *Open chat*.
+  - Answering a row settles the agent's card, as the answer bar does.
+  - **I** opens the inbox; Esc closes it; when nobody needs you it says so.
+- **FR-028** **Cost in one unit (#307).**
+  - The header and room totals show money, "≈ $0.35": Copilot credits at USD 0.01 each, plus Claude's dollar estimates.
+  - The tooltip splits it out ("33.16 AIU (Copilot credits, USD 0.01 each) + $0.02 Claude estimate"), says it is an estimate and when counting began, and says which harnesses report no cost.
+  - Cards show "≈ $" with "<$0.01" for small amounts, and AIU in the tooltip. Codex stays "cost not reported".
+- **FR-029** **One control-size scale (#311):** `--h-ctl` 32px for buttons and selects, `--h-chip` 26px for chips, `--h-pill` 22px for status pills; the room header's +, ⋯ and MCP buttons at 24px (WCAG 2.5.8). `check:office` must pass at 1280x800.
+- **FR-030** **Settings that read easily (#309):**
+  - themes as a grid of preview cards, each with a mini room in its own colours and its name, plus "yours" for your own themes;
+  - every section leads with one sentence, details behind *More*;
+  - MCP sits under an **Advanced** heading;
+  - paragraphs at most 72ch wide.
+- **FR-031** **Simple and Expert (#306).** Settings > *Detail level*: **Expert** (today's app, the default) or **Simple**.
+  - Simple hides token counts, the model, agent, context and Compact chips, the room paths, MCP buttons, Open in VS Code and Copy resume command, and shows cost in money only.
+  - Card activity reads in plain verbs, "Running a command" or "Searching the web", not "At Terminal: bash".
+  - The welcome card offers Simple, and the choice is kept.
+  - Permissions, status and answering are identical in both.
+- **FR-032** **Theme polish, the rest of #310:**
+  - Corporate buttons get a 1997-style bevel;
+  - the Indian court's pillars sit behind the cards in a lighter gold;
+  - the Japanese court's furniture is warm lacquer (`--desk` #4a3b2c);
+  - Retro's floor art is drawn opaque in two colours instead of smeared.
+
+**Evidence (follow-ups):**
+- **Built:** #305, #307 and #306 by the lead. #309, #310 and #311 by three implementation sub-agents in their own worktrees (typecheck and unit tests only), merged and checked by the lead.
+- `sim:` `scripts/shots-052-ux.js` passes at both sizes:
+  - **I** opens the inbox, which lists every agent that needs you; approving from a row removes it; Esc closes the inbox;
+  - Simple hides paths, chips and VS Code, keeps the mode and the answers, and shows plain verbs and money; switching back to Expert works;
+  - the top-bar group and ⋯.
+- **Layout:** `check:office` (2 shards) and `check:geometry` (60/60) pass.
+  - The 24px room-header targets (#311) pushed MCP into the plant at 1280. Decision: the plant is drawn only in the full layout, and denser rooms give its space to the controls (the designer's round-1 advice).
+- **Bugs found while building:**
+  - the answer bar now decides "in view" by geometry, on scroll and on changes;
+  - a redraw of the inbox keeps focus inside it, so Esc still closes it.
+- **Money wording:** "≈ $0.33"; small amounts read "<$0.01" without "≈".
+- `[KNOWN GAP]`:
+  - Simple is a display preference of this window (`localStorage`), not a synced setting;
+  - money for Copilot credits uses GitHub's USD 0.01 price per credit, so it is an estimate where a plan includes credits.

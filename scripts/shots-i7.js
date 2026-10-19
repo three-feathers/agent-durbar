@@ -9,14 +9,15 @@
  * It asserts what the pictures show and fails (driver failure) on a miss.
  */
 const path = require('path');
+const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
 const assert = require('assert');
 const OUT = process.env.I7_OUT || '/tmp';
 const SIZES = [[1440, 900], [1280, 800]];
 
 module.exports = async (ctx) => {
-  const click = (sel) => ctx.js(`(()=>{const e=document.querySelector(${JSON.stringify(sel)});if(!e)return false;e.click();return true})()`);
-  const text = (sel) => ctx.js(`(document.querySelector(${JSON.stringify(sel)})||{}).textContent||''`);
-  const count = (sel) => ctx.js(`document.querySelectorAll(${JSON.stringify(sel)}).length`);
+  const click = (sel) => ctx.js(`(()=>{const e=document.querySelector(${jsLiteral(sel)});if(!e)return false;e.click();return true})()`);
+  const text = (sel) => ctx.js(`(document.querySelector(${jsLiteral(sel)})||{}).textContent||''`);
+  const count = (sel) => ctx.js(`document.querySelectorAll(${jsLiteral(sel)}).length`);
   const shot = async (name, w, h) => { await ctx.sleep(450); await ctx.shot(path.join(OUT, `${name}-${w}x${h}.png`)); console.log('[i7] saved', name, w, h); };
   const closeDlg = () => ctx.js(`(()=>{const d=document.getElementById('scrDlg');if(d&&d._close)d._close();})()`);
   const roomBtn = (name) => `[data-mcproom][aria-label="MCP extras for ${name}"]`;

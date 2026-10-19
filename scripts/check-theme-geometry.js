@@ -16,7 +16,7 @@
  * The full layout matrix in every theme stays available on demand: npm run check:themes.
  */
 const fs = require('fs');
-const { pageCheck } = require('./check-office-overlap.js');
+const { pageCheck, jsLiteral } = require('./check-office-overlap.js');
 const os = require('os');
 const path = require('path');
 
@@ -57,7 +57,7 @@ async function driver(ctx) {
     await ctx.win.loadFile(INDEX, { query: query(theme, sim) });
     await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
     const want = theme === 'user' ? userTheme.id : theme;
-    await ctx.waitFor(`window.THEME&&window.THEME.current().id===${JSON.stringify(want)}`, 5000);
+    await ctx.waitFor(`window.THEME&&window.THEME.current().id===${jsLiteral(want)}`, 5000);
     const on = await ctx.js(`window.THEME.current().id`);
     if (on !== want) throw new Error(`theme ${want} was not applied (on screen: ${on})`);
     await ctx.js(`document.fonts.ready.then(()=>true)`);

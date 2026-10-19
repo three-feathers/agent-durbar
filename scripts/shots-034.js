@@ -25,6 +25,7 @@
  * Crops of single desks (device pixels) go to 034-crop-<state>.png for a close look at the drawings.
  */
 const fs = require('fs');
+const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
 const path = require('path');
 const assert = require('assert');
 const OUT = process.env.SHOTS_034 || '/tmp';
@@ -48,18 +49,18 @@ module.exports = async (ctx) => {
       amb:d.querySelectorAll('.amb').length,dizzy:d.querySelectorAll('.dizzy').length,sweat:d.querySelectorAll('.sweat').length,tap:d.querySelectorAll('.tap').length}})`);
   const one = async (pred, what) => { const d = (await desks()).find(pred); assert.ok(d, what); return d; };
   const crop = async (id, name) => {
-    const r = await js(`(()=>{const d=document.querySelector('#stage .desk[data-id=${JSON.stringify(JSON.stringify(id)).slice(1, -1)}]');d.scrollIntoView({block:'center'});const b=d.getBoundingClientRect();return {x:Math.floor(b.left),y:Math.floor(b.top),width:Math.ceil(b.width),height:Math.ceil(b.height)}})()`);
+    const r = await js(`(()=>{const d=document.querySelector('#stage .desk[data-id=${jsLiteral(JSON.stringify(id)).slice(1, -1)}]');d.scrollIntoView({block:'center'});const b=d.getBoundingClientRect();return {x:Math.floor(b.left),y:Math.floor(b.top),width:Math.ceil(b.width),height:Math.ceil(b.height)}})()`);
     await ctx.sleep(250);
     const img = await ctx.win.webContents.capturePage(r);
     fs.writeFileSync(path.join(OUT, `034-crop-${name}.png`), img.toPNG());
     console.log('[034] saved crop', name);
   };
-  const emit = (e) => js(`window.__durbarSimEmit(${JSON.stringify(e)})`);
+  const emit = (e) => js(`window.__durbarSimEmit(${jsLiteral(e)})`);
   const rooms = () => js(`[...document.querySelectorAll('#stage .room')].reduce((o,r)=>{o[r.querySelector('.room-name').textContent.trim()]={tone:r.dataset.alert||'calm',siren:!!r.querySelector('.room-head .siren'),label:r.getAttribute('aria-label')};return o;},{})`);
   /* WCAG contrast of a header text against the pixels right next to it (the real, darkened floor) */
   const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
   const contrast = async (roomName, sel) => {
-    const q = await js(`(()=>{const r=[...document.querySelectorAll('#stage .room')].find(x=>x.querySelector('.room-name').textContent.trim()===${JSON.stringify(roomName)});const e=r&&r.querySelector(${JSON.stringify(sel)});if(!e||!e.getClientRects().length)return null;const b=e.getBoundingClientRect(),c=getComputedStyle(e).color.match(/[\\d.]+/g).map(Number);return {x:Math.round(b.left)-5,y:Math.round(b.top+b.height/2)-1,c}})()`);
+    const q = await js(`(()=>{const r=[...document.querySelectorAll('#stage .room')].find(x=>x.querySelector('.room-name').textContent.trim()===${jsLiteral(roomName)});const e=r&&r.querySelector(${jsLiteral(sel)});if(!e||!e.getClientRects().length)return null;const b=e.getBoundingClientRect(),c=getComputedStyle(e).color.match(/[\\d.]+/g).map(Number);return {x:Math.round(b.left)-5,y:Math.round(b.top+b.height/2)-1,c}})()`);
     if (!q) return null;
     const img = await ctx.win.webContents.capturePage({ x: q.x, y: q.y, width: 2, height: 2 });
     const bm = img.toBitmap(), n = bm.length / 4; let r = 0, g = 0, bl = 0;
@@ -105,13 +106,13 @@ module.exports = async (ctx) => {
     assert.ok(/Needs help: error/.test(amb[0].label), 'the ambulance is named');
     const faint = await one((d) => d.trouble === 'faint', 'an agent fainted at its credit limit');
     assert.ok(/Limit reached/i.test(faint.text) && /Out of credit: limit reached/.test(faint.label), 'faint: limit pill and label');
-    assert.strictEqual(await js(`[...document.querySelectorAll('#stage .desk[data-id]')].find(d=>d.dataset.id===${JSON.stringify(faint.id)}).querySelectorAll('svg.scene animateTransform, svg.scene .wave').length`), 0, 'a fainted agent does not wave');
+    assert.strictEqual(await js(`[...document.querySelectorAll('#stage .desk[data-id]')].find(d=>d.dataset.id===${jsLiteral(faint.id)}).querySelectorAll('svg.scene animateTransform, svg.scene .wave').length`), 0, 'a fainted agent does not wave');
     const imp = ds.filter((d) => d.trouble === 'impatient');
     assert.ok(imp.length >= 1 && imp.every((d) => d.st === 'waiting' && /impatient: waiting 2 min for you/.test(d.label)), 'impatient agents wait 2 min');
     assert.ok(imp.some((d) => !d.away && d.tap === 1), 'an impatient agent at its desk taps it');
     // [KNOWN GAP] an agent away at a place (spec 024) shows an empty chair: its mood drawing is there but hidden, the words stay
     const awayDz = ds.find((d) => d.away && d.trouble);
-    if (awayDz) assert.strictEqual(await js(`getComputedStyle([...document.querySelectorAll('#stage .desk[data-id]')].find(d=>d.dataset.id===${JSON.stringify(awayDz.id)}).querySelector('svg.scene .pp:last-of-type')).display`), 'none', `${awayDz.name}: away, so the drawing is hidden`);
+    if (awayDz) assert.strictEqual(await js(`getComputedStyle([...document.querySelectorAll('#stage .desk[data-id]')].find(d=>d.dataset.id===${jsLiteral(awayDz.id)}).querySelector('svg.scene .pp:last-of-type')).display`), 'none', `${awayDz.name}: away, so the drawing is hidden`);
     if (awayDz) assert.ok(/needs help|fainted|impatient|dizzy/.test(awayDz.label), `${awayDz.name}: the words stay while away`);
     // Rooms (issue #135): tone of the worst agent, siren where the ambulance or a faint is
     let rm = await rooms();

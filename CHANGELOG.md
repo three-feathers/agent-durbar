@@ -4,6 +4,21 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.7 tag)
 
+- **The usability follow-ups, built (spec 052, #305-#311).**
+  - **Needs you inbox:** every request in one queue, answered with each request's own choices; press **I**.
+  - **Cost in money:** "≈ $0.36" in the header, rooms and cards, with AIU and Claude estimates in the tooltip.
+  - **Simple / Expert:** a detail level in Settings and on the welcome card. Simple uses plain verbs ("Running a command") and hides developer details.
+  - **Settings:** themes as a preview grid, one lead sentence per section, MCP under *Advanced*.
+  - **Controls:** one size scale, and 24px room-header targets.
+  - **Themes:** Corporate bevels, quieter Indian pillars, a lacquer Japanese desk with tatami, and a crisp Retro floor.
+- **Round 2 of the usability pass (spec 052, four new personas).**
+  - **Restored Allow all:** a strip under the top bar names the folders, with **Switch to Ask first** and **Keep**.
+  - **Answer bar:** it never cuts a request next to Approve, and shows "1 of N", oldest first.
+  - **Switching to Allow all** no longer approves waiting requests by default.
+  - **Wording and glyphs:** Allow all is an open padlock in the warning ink. Session approvals name their scope. The More menu explains Stop, End and Remove.
+  - **Office cards** show ⚠ when an agent is stuck or nearly out of memory.
+  - **Settings read easily:** themes are a grid of cards, each with a mini room in its own colours. Each section leads with one sentence, the rest is behind *More*. MCP sits in a closed *Advanced* group.
+  - **Themes:** Retro and Corporate are retuned, and the Japanese and European courts use place names from their own culture. Clean Office uses soft shadows, one radius scale and tabular numbers.
 - **Calmer and clearer, from four persona reviews (spec 052).**
   - **Answering:** a waiting agent's request is pinned above the message box when its card scrolls away, with the same Approve / Deny buttons. *Previous sessions* no longer opens over a conversation. **N** jumps to the next agent that needs you.
   - **Chat header:** Open in VS Code, Stop and a **More** menu, with End and Remove last.

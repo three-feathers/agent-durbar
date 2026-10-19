@@ -1,4 +1,5 @@
 const fs = require('fs');
+const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
 const { execSync } = require('child_process');
 const os = require('os');
 const path = require('path');
@@ -13,10 +14,10 @@ const out = (...a) => { const l = a.join(' '); console.log('[driver] ' + l); fs.
 const diff = (d) => execSync('git diff --stat; git diff', { cwd: d }).toString();
 
 async function sendViaUi(ctx, id, text, attach) {
-  await ctx.js(`document.querySelector('[data-id=${JSON.stringify(id)}]').click()`);
+  await ctx.js(`document.querySelector('[data-id=${jsLiteral(id)}]').click()`);
   await ctx.sleep(500);
   if (attach) { await ctx.js(`document.getElementById('${attach}').click()`); await ctx.sleep(500); }
-  await ctx.js(`(()=>{const t=document.getElementById('msgInput');t.value=${JSON.stringify(text)};t.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+  await ctx.js(`(()=>{const t=document.getElementById('msgInput');t.value=${jsLiteral(text)};t.dispatchEvent(new Event('input',{bubbles:true}));})()`);
   await ctx.sleep(200);
   await ctx.js(`document.getElementById('sendBtn').click()`);
 }
@@ -27,7 +28,7 @@ module.exports = async (ctx) => {
   if (phases.includes('dry')) {
     const r = await ctx.addMany([HELLO], 'ask'); const id = r.agents[0].id;
     await ctx.sleep(800);
-    await ctx.js(`document.querySelector('[data-id=${JSON.stringify(id)}]').click()`); await ctx.sleep(500);
+    await ctx.js(`document.querySelector('[data-id=${jsLiteral(id)}]').click()`); await ctx.sleep(500);
     await ctx.js(`document.getElementById('attFile').click()`); await ctx.sleep(600);
     out('chips', await ctx.js(`document.getElementById('attached').innerText`));
     out('card class', await ctx.js(cardState(id)));
@@ -36,14 +37,14 @@ module.exports = async (ctx) => {
   }
   if (phases.includes('m5')) { // no AI: real main process + real session start (no prompt), synthetic events through the real renderer path
     const r = await ctx.addMany([HELLO], 'ask'); const id = r.agents[0].id; await ctx.sleep(800);
-    const open = () => ctx.js(`document.querySelector('#stage [data-id=${JSON.stringify(id)}]').click()`);
+    const open = () => ctx.js(`document.querySelector('#stage [data-id=${jsLiteral(id)}]').click()`);
     const send = (e) => ctx.win.webContents.send('agent:event', { sessionId: id, timestamp: Date.now(), ...e });
     const notes = () => ctx.js(`[...document.querySelectorAll('#panel .note')].map(n=>n.innerText.replace(/\\n/g,' | '))`);
     const btns = () => ctx.js(`[...document.querySelectorAll('#panel .note-actions button')].map(b=>b.textContent)`);
     await open(); await ctx.sleep(500);
     // 1) staging through the real main process: sanitize, caps, real image check
     const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
-    const stage = (name, mime, expr) => ctx.js(`(async()=>{const b=${expr};return JSON.stringify(await window.agentDurbar.stageAttachment(${JSON.stringify(name)},${JSON.stringify(mime)},b))})()`);
+    const stage = (name, mime, expr) => ctx.js(`(async()=>{const b=${expr};return JSON.stringify(await window.agentDurbar.stageAttachment(${jsLiteral(name)},${jsLiteral(mime)},b))})()`);
     const pngExpr = `Uint8Array.from(atob('${png}'),c=>c.charCodeAt(0)).buffer`;
     out('M5 stage png:', await stage('../../evil/shot.jpeg', 'image/jpeg', pngExpr));
     out('M5 stage svg:', await stage('x.png', 'image/png', `new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><script>1</script></svg>').buffer`));
@@ -67,7 +68,7 @@ module.exports = async (ctx) => {
     send({ type: 'status', status: 'needs-permission', intent: 'Waiting for permission', permission: { requestId: 'p1', kind: 'write', summary: 'write ' + HELLO + '/index.js', state: 'pending', scopeKey: 'write:' + HELLO, scopeLabel: 'write in durbar-test/hello-app/' } });
     await ctx.sleep(600);
     out('M5 pending buttons:', JSON.stringify(await btns()), 'card:', await ctx.js(cardState(id)));
-    await ctx.js(`[...document.querySelectorAll('#panel .note-actions button')].find(b=>b.textContent==='Approve for this session').click()`);
+    await ctx.js(`[...document.querySelectorAll('#panel .note-actions button')].find(b=>b.dataset.act==='session').click()`);
     send({ type: 'grants', grants: [{ key: 'write:' + HELLO, kind: 'write', label: 'write in durbar-test/hello-app/' }] });
     send({ type: 'toolCall', callId: 'w1', tool: 'apply_patch', phase: 'start', args: { path: HELLO + '/index.js' } });
     send({ type: 'permission', permission: { requestId: 'p2', kind: 'write', summary: 'write ' + HELLO + '/README.md', state: 'approved', via: 'session' } });
@@ -96,7 +97,7 @@ module.exports = async (ctx) => {
     const appr = `[...document.querySelectorAll('#panel .note-actions button')].some(b=>b.textContent==='Approve for this session')`;
     out('REAL first request pending:', await ctx.waitFor(appr, 90000), 'card:', await ctx.js(cardState(id)));
     await ctx.shot(path.join(SHOTS, 'm5-real-pending.png'));
-    await ctx.js(`[...document.querySelectorAll('#panel .note-actions button')].find(b=>b.textContent==='Approve for this session').click()`);
+    await ctx.js(`[...document.querySelectorAll('#panel .note-actions button')].find(b=>b.dataset.act==='session').click()`);
     await ctx.sleep(1500);
     out('REAL chips after approve:', JSON.stringify(await ctx.js(`[...document.querySelectorAll('#grants .gchip')].map(c=>c.innerText)`)));
     const done = await ctx.waitFor(`/is-(done|idle|error)/.test(${cardState(id)})`, 90000);
@@ -110,7 +111,7 @@ module.exports = async (ctx) => {
   }
   if (phases.includes('fake')) { // no AI: synthetic events through the real renderer path
     const r = await ctx.addMany([HELLO], 'ask'); const id = r.agents[0].id; await ctx.sleep(800);
-    await ctx.js(`document.querySelector('[data-id=${JSON.stringify(id)}]').click()`); await ctx.sleep(500);
+    await ctx.js(`document.querySelector('[data-id=${jsLiteral(id)}]').click()`); await ctx.sleep(500);
     const send = (e) => ctx.win.webContents.send('agent:event', { sessionId: id, timestamp: Date.now(), ...e });
     send({ type: 'user', text: 'Add a one-line comment at the top of index.js saying hello.' });
     send({ type: 'status', status: 'working', intent: 'Thinking' });
@@ -162,7 +163,7 @@ module.exports = async (ctx) => {
   }
   if (phases.includes('att')) {
     const r = await ctx.addMany([NOTES], 'read-only'); const id = r.agents[0].id; await ctx.sleep(800);
-    await ctx.js(`document.querySelector('[data-id=${JSON.stringify(id)}]').click()`); await ctx.sleep(500);
+    await ctx.js(`document.querySelector('[data-id=${jsLiteral(id)}]').click()`); await ctx.sleep(500);
     await ctx.js(`document.getElementById('attFile').click()`); await ctx.sleep(600); // DURBAR_PICK answers with both files
     out('ATT chips before send:', JSON.stringify(await ctx.js(`[...document.querySelectorAll('#attached .att')].map(e=>e.innerText.trim()+(e.classList.contains('img')?' [img]':''))`)));
     await ctx.shot(path.join(SHOTS, 'm3-attachments-composer.png'));

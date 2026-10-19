@@ -21,6 +21,7 @@
  * Shots: 012-mixed-<w>x<h>.png.
  */
 const os = require('os');
+const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
@@ -52,12 +53,12 @@ module.exports = async (ctx) => {
   };
   const toasts = () => js(`[...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' | ')`);
   const minFont = (root) => js(`(()=>{let min=99,who='';document.querySelectorAll('${root}, ${root} *').forEach(e=>{if(!e.getClientRects().length)return;const own=[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim());if(!own&&!/^(INPUT|SELECT|BUTTON)$/.test(e.tagName))return;const f=parseFloat(getComputedStyle(e).fontSize);if(f<min){min=f;who=e.tagName+'#'+e.id+'.'+e.className}});return {min,who}})()`);
-  const exists = (sel) => js(`!!document.querySelector(${JSON.stringify(sel)})`);
+  const exists = (sel) => js(`!!document.querySelector(${jsLiteral(sel)})`);
   const optionsOf = (id) => js(`[...document.getElementById('${id}').options].map(o=>o.value)`);
-  const setSel = (id, v) => js(`(()=>{const s=document.getElementById('${id}');s.value=${JSON.stringify(v)};s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+  const setSel = (id, v) => js(`(()=>{const s=document.getElementById('${id}');s.value=${jsLiteral(v)};s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
   /* buttons with a handler: an onclick property, a data-* action, or the ones the page wires through a delegated listener on the document */
   const DELEGATED = ['modeChip', 'modelChip', 'compactBtn', 'ctxChip', 'capChip']; // document-level click handlers in app.js
-  const deadButtons = (root) => js(`(()=>{const D=${JSON.stringify(DELEGATED)};return [...document.querySelectorAll('${root} button')].filter(b=>!b.disabled&&!b.hidden&&b.getClientRects().length)
+  const deadButtons = (root) => js(`(()=>{const D=${jsLiteral(DELEGATED)};return [...document.querySelectorAll('${root} button')].filter(b=>!b.disabled&&!b.hidden&&b.getClientRects().length)
     .filter(b=>typeof b.onclick!=='function'&&!Object.keys(b.dataset).length&&!D.includes(b.id)).map(b=>(b.id||b.className||b.textContent).toString().slice(0,40))})()`);
 
   for (const [w, h] of SIZES) {

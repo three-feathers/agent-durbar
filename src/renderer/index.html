@@ -17,30 +17,30 @@
     <div class="brand-mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="var(--brand-mark,#4f7f65)" stroke-width="1.7" stroke-linejoin="round"><rect x="2.5" y="2.5" width="6" height="7" rx="1.5"/><rect x="11.5" y="2.5" width="6" height="4" rx="1.5"/><rect x="11.5" y="9" width="6" height="8.5" rx="1.5"/><rect x="2.5" y="12.5" width="6" height="5" rx="1.5"/></svg></div>
     <div><h1>Agent Durbar</h1><span class="proto" id="protoBadge">Prototype - sample data</span></div>
   </div>
+  <!-- spec 052 FR-027 (#305): the Needs you inbox -->
+  <button class="btn inbox-btn" id="inboxBtn" type="button" title="Needs you: every request in one queue (I). N opens the next agent." hidden><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M2 9.5l1.6-5.2A1.4 1.4 0 0 1 5 3.3h6a1.4 1.4 0 0 1 1.4 1l1.6 5.2v2.8a1.4 1.4 0 0 1-1.4 1.4H3.4A1.4 1.4 0 0 1 2 12.3z"/><path d="M2 9.5h3.2l.9 1.6h3.8l.9-1.6H14"/></svg>Needs you <b>0</b></button>
   <div class="stats" id="stats" role="group" aria-label="Agent status counts. Select one to filter. Press N for the next agent that needs you." title="Select a count to filter. Press N for the next agent that needs you."></div>
   <div class="controls">
     <div id="liveBar">
-      <label class="tgl"><input type="checkbox" id="demoToggle"> Demo</label>
       <button class="btn" id="addFolder" type="button" title="Add a folder">+ Folder</button>
       <button class="btn" id="addWs" type="button" title="Add a .code-workspace file">+ Workspace</button>
-      <label class="sr-only" for="kindSel">Default harness (agent kind) for new folders and sessions</label>
-      <select id="kindSel" title="Harness (agent kind) for new folders and sessions" style="max-width:128px" hidden></select>
-      <button class="btn" id="kindHelp" type="button" aria-label="About agent kinds" title="About agent kinds" style="padding:0 8px" hidden>?</button>
-      <label class="sr-only" for="permMode">Default permission mode for new sessions</label>
-      <select id="permMode" title="Default permission mode for new sessions. Each agent shows its own mode in its chat."><option value="read-only">New: Read-only</option><option value="ask">New: Ask first</option><option value="allow">New: Allow all</option></select>
-      <label class="sr-only" for="modelSel">Default model for new sessions</label>
-      <select id="modelSel" title="Default model for new sessions (what your account offers). Each agent shows its own model in its chat."><option value="auto">Model: Auto</option></select>
-      <label class="sr-only" for="effortSel">Reasoning effort for new sessions</label>
-      <select id="effortSel" title="Reasoning effort (only for models that support it)" hidden></select>
+      <!-- spec 052 #308: the defaults for new sessions, one quiet group (each agent shows its own values in its chat) -->
+      <div class="defaults-grp" role="group" aria-label="Defaults for new sessions" title="Defaults for new sessions">
+        <label class="sr-only" for="kindSel">Default harness (agent kind) for new folders and sessions</label>
+        <select id="kindSel" title="Harness (agent kind) for new folders and sessions" style="max-width:128px" hidden></select>
+        <button class="btn" id="kindHelp" type="button" aria-label="About agent kinds" title="About agent kinds" style="padding:0 8px" hidden>?</button>
+        <label class="sr-only" for="permMode">Default permission mode for new sessions</label>
+        <select id="permMode" title="Default permission mode for new sessions. Each agent shows its own mode in its chat."><option value="read-only">New: Read-only</option><option value="ask">New: Ask first</option><option value="allow">New: Allow all</option></select>
+        <label class="sr-only" for="modelSel">Default model for new sessions</label>
+        <select id="modelSel" title="Default model for new sessions (what your account offers). Each agent shows its own model in its chat."><option value="auto">Model: Auto</option></select>
+        <label class="sr-only" for="effortSel">Reasoning effort for new sessions</label>
+        <select id="effortSel" title="Reasoning effort (only for models that support it)" hidden></select>
+      </div>
       <button class="btn" id="foldersBtn" type="button" aria-haspopup="true" aria-expanded="false" title="Manage folders: new session, hide, remove">Folders</button>
       <button class="btn" id="floorsBtn" type="button" aria-haspopup="true" aria-expanded="false" title="Floors: groups of folders you can switch off" hidden></button>
     </div>
     <label class="select-wrap"><span class="sr-only">Filter by folder</span>
       <select id="wsFilter"></select></label>
-    <div class="seg" id="doorBar" role="group" aria-label="Room doors" hidden>
-      <button id="closeAll" type="button" title="Close the door of every room (compact door plates)">Close all</button>
-      <button id="openAll" type="button" title="Open the door of every room">Open all</button>
-    </div>
     <div class="seg" id="topBtns" role="group" aria-label="Tools and settings">
       <button id="toolsBtn" type="button" aria-pressed="false" title="Which tools agents used and how often; models and context window per agent">Tools</button>
       <button id="settingsBtn" type="button" aria-pressed="false" title="Settings: MCP servers for all agents">Settings</button>
@@ -49,8 +49,22 @@
       <button id="vOffice" aria-pressed="true">Office</button>
       <button id="vList" aria-pressed="false">List</button>
     </div>
+    <!-- spec 052 #308: rarely used controls in one overflow (ids kept) -->
+    <div class="top-more">
+      <button class="btn" id="topMoreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="topMoreMenu" aria-label="More: room doors and the demo" title="More: room doors and the demo">⋯</button>
+      <div class="more-menu" id="topMoreMenu" role="menu" aria-label="More" hidden>
+        <div id="doorBar" role="group" aria-label="Room doors" hidden>
+          <button class="more-it" role="menuitem" tabindex="-1" id="closeAll" type="button" title="Close the door of every room (compact door plates)"><span class="mt">Close all room doors<small>Rooms become door plates</small></span></button>
+          <button class="more-it" role="menuitem" tabindex="-1" id="openAll" type="button" title="Open the door of every room"><span class="mt">Open all room doors<small>Every room shows its desks</small></span></button>
+          <div class="more-sep" role="separator"></div>
+        </div>
+        <label class="more-it tgl"><input type="checkbox" id="demoToggle"> <span class="mt">Demo<small>Sample agents to look around; nothing runs</small></span></label>
+      </div>
+    </div>
   </div>
 </header>
+<!-- spec 052 FR-015: the restored-Allow-all notice, a strip that takes its own room (nothing is covered) -->
+<div class="notice-strip" id="restoreStrip" role="alert" hidden></div>
 
 <div class="workspace">
   <div id="stage-host">

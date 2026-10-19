@@ -236,9 +236,9 @@ async function driver(ctx) {
     if (!FONTS.regular) return;
     await ctx.js(`(async()=>{const buf=b=>{const s=atob(b),a=new Uint8Array(s.length);for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i);return a.buffer;};
       const add=async(b,fam,o)=>{if(!b)return;const f=new FontFace(fam,buf(b),o);await f.load();document.fonts.add(f);};
-      await add(${JSON.stringify(FONTS.regular)},'CheckSans',{weight:'100 599'});
-      await add(${JSON.stringify(FONTS.bold || FONTS.regular)},'CheckSans',{weight:'600 900'});
-      await add(${JSON.stringify(FONTS.mono || FONTS.regular)},'CheckMono',{});
+      await add(${jsLiteral(FONTS.regular)},'CheckSans',{weight:'100 599'});
+      await add(${jsLiteral(FONTS.bold || FONTS.regular)},'CheckSans',{weight:'600 900'});
+      await add(${jsLiteral(FONTS.mono || FONTS.regular)},'CheckMono',{});
       const st=document.createElement('style');st.textContent='*{font-family:CheckSans!important}.room-path,.mono,.lcell.mono,.folder,code,pre,kbd{font-family:CheckMono!important}';document.head.appendChild(st);})()`);
     /* the layout is cached by size: nudge the window so the office is laid out again with the new font */
     ctx.win.setContentSize(w - 1, h); await sleep(150); ctx.win.setContentSize(w, h); await sleep(300);
@@ -256,7 +256,7 @@ async function driver(ctx) {
     await ctx.win.loadFile(INDEX, { query: Object.fromEntries(new URLSearchParams(query + themeQuery)) });
     await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
     if (wantTheme) {
-      try { await ctx.waitFor(`window.THEME&&window.THEME.current().id===${JSON.stringify(wantTheme)}`, 5000); } catch (e) { /* reported below */ }
+      try { await ctx.waitFor(`window.THEME&&window.THEME.current().id===${jsLiteral(wantTheme)}`, 5000); } catch (e) { /* reported below */ }
       const on = await ctx.js(`({id:window.THEME.current().id,ui:document.documentElement.dataset.ui||'clean',want:(window.THEME.current().manifest||{}).ui||'clean'})`);
       if (on.id !== wantTheme || on.ui !== on.want) throw new Error(`theme ${wantTheme} was not applied (on screen: ${on.id}, data-ui ${on.ui})`);
     }
@@ -546,6 +546,7 @@ async function driver(ctx) {
 
 module.exports = driver;
 module.exports.pageCheck = pageCheck; /* reused by check-theme-geometry.js */
+module.exports.jsLiteral = jsLiteral; /* reused by the screenshot drivers */
 
 if (require.main === module) {
   const { spawnSync } = require('child_process');
