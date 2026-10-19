@@ -8,7 +8,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CODEX_CAPABILITIES, CODEX_DESCRIPTOR, CodexAdapter, codexChildEnv } from '../src/adapters/codex';
+import { CODEX_CAPABILITIES, CODEX_DESCRIPTOR, CodexAdapter, codexChildEnv, linuxSandboxHint } from '../src/adapters/codex';
 import { CodexMapper } from '../src/adapters/codexMap';
 import { CODEX_INITIALIZE_CAPABILITIES, codexProfileArgs, codexWorkspaceRoots } from '../src/adapters/codexModes';
 import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
@@ -503,6 +503,24 @@ async function main(): Promise<void> {
       const r = await req(server, 'item/commandExecution/requestApproval', { itemId: 'c1', command: 'ls' }, server.childOfThread(sid)!);
       assert.strictEqual((r.result as { decision: string }).decision, 'accept');
       assert.ok(!decisions(server).includes('acceptForSession'));
+      await ad.dispose();
+    }
+    // FR-140: the Linux sandbox error (real text, Ubuntu with unprivileged user namespaces blocked) gets a plain hint; other errors none
+    assert.ok(linuxSandboxHint('error creating thread: failed to load AGENTS.md instructions for environment `local`: fs sandbox helper failed with status exit status: 1: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted').includes('blocks unprivileged user namespaces'));
+    assert.strictEqual(linuxSandboxHint('permissions profile not supported'), '');
+    // FR-139: a shell command that already started keeps running after turn/interrupt (real, Codex 0.163); Aborted says so
+    {
+      const started = { method: 'item/started', params: { threadId: 'thr_main', item: { id: 'cmd_9', type: 'commandExecution', command: 'sleep 20', cwd: ws, status: 'inProgress' } } };
+      const { server, ad, events } = make({ server: { turnScript: [started], holdTurn: true } });
+      const sid = await ad.start({ workspace: ws, permissionMode: 'allow', quiet: true });
+      await ad.send(sid, { text: 'go' });
+      await server.flush();
+      assert.ok(events.some((e) => e.type === 'toolCall' && e.phase === 'start'), 'the command started');
+      await ad.interrupt(sid);
+      await server.flush();
+      const ab = events.filter((e) => e.type === 'status' && e.status === 'idle' && String((e as { intent?: string }).intent).startsWith('Aborted'));
+      assert.strictEqual(ab.length, 1);
+      assert.strictEqual((ab[0] as { intent?: string }).intent, 'Aborted (a command that already started may still finish; End session stops it)');
       await ad.dispose();
     }
     // Interrupt: pending cancelled, turn/interrupt with the turn id, one Aborted, session stays live, next turn runs

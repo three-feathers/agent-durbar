@@ -15,7 +15,7 @@ import type { EventBody } from './map';
 import { CodexMapper } from './codexMap';
 import { createCodexRpc, realSpawn } from './codexRpc';
 import type { CodexRpc, RequestOutcome, SpawnFn } from './codexRpc';
-import { CODEX_INITIALIZE_CAPABILITIES, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexWorkspaceRoots } from './codexModes';
+import { CODEX_INITIALIZE_CAPABILITIES, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexWorkspaceRoots } from './codexModes';
 import type { DurbarAnswer } from './codexModes';
 import { CODEX_BINARY, detectBinary, nodeExec } from './detect';
 import type { DetectEnv } from './detect';
@@ -112,6 +112,16 @@ function isInside(parent: string, child: string): boolean {
   return rel === '' || (rel !== '..' && !rel.startsWith('..' + api.sep) && !api.isAbsolute(rel));
 }
 
+/**
+ * FR-140 (real, Ubuntu 24.04+): Codex's Linux sandbox (bubblewrap) cannot start where unprivileged user namespaces are blocked
+ * (`kernel.apparmor_restrict_unprivileged_userns=1`). Read-only and Ask first then fail at start (closed, as they must); say why.
+ */
+export function linuxSandboxHint(reason: string): string {
+  return /bwrap|bubblewrap|user namespace|RTM_NEWADDR/i.test(reason)
+    ? ' Codex could not start its Linux sandbox: this system blocks unprivileged user namespaces (Ubuntu AppArmor). Read-only and Ask first need that sandbox; allow it for bubblewrap (see the README, Codex) or use Allow all in a folder you trust.'
+    : '';
+}
+
 const isShim = (file: string): boolean => /\.(cmd|bat)$/i.test(file);
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 /** A short, single-line reason: control characters stripped, 300 characters at most (server text is never trusted to be small or clean). */
@@ -128,6 +138,8 @@ interface Live {
   broker: PermissionBroker;
   /** Resolves when the child has exited. */
   exited: Promise<void>;
+  /** Shell tool calls started and not yet ended (FR-139). */
+  runningCommands: Set<string>;
   /** Drops mapper events (while starting with `quiet`, and once the session is stopping or dead). */
   muted: boolean;
   turnId?: string;
@@ -189,13 +201,19 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   /** Spawn one `codex app-server` child (argv array, no shell). `onExit` and the handlers are given by the caller. */
+  /** FR-138: Codex's own install folder, readable inside the Read-only profile (it runs its binary again in the sandbox). */
+  private installRoots(file: string): string[] {
+    const r = codexInstallRoot(file, this.realpath);
+    return r ? [r] : [];
+  }
+
   private spawnChild(file: string, cwd: string, handlers: { onNotification: (m: string, p: unknown) => void; onRequest: (m: string, p: unknown) => Promise<RequestOutcome>; onExit: (code: number | null, signal: NodeJS.Signals | null) => void }): Child {
     let done!: () => void;
     const exited = new Promise<void>((r) => (done = r));
     const rpc = createCodexRpc({
       spawn: this.spawnFn,
       file,
-      args: ['app-server', ...codexProfileArgs()],
+      args: ['app-server', ...codexProfileArgs(this.installRoots(file))],
       cwd,
       env: this.env,
       onNotification: handlers.onNotification,
@@ -301,6 +319,7 @@ export class CodexAdapter implements AgentAdapter {
       muted: true, // until the session is up: the start itself reports "Ready" (or nothing, when quiet)
       stopping: false,
       doneTurns: [],
+      runningCommands: new Set<string>(),
       turnStarting: false,
       pendingInterrupt: false,
       interrupting: false,
@@ -359,7 +378,7 @@ export class CodexAdapter implements AgentAdapter {
         started = await child.rpc.request('thread/start', { cwd: limited ? realCwd : cwd, ...settings, ...(limited ? { runtimeWorkspaceRoots: roots } : {}) });
       } catch (e) {
         // Never retried with a weaker setting (FR-087).
-        throw new Error(`Codex refused the session settings: ${reasonOf(e)}`);
+        throw new Error(`Codex refused the session settings: ${reasonOf(e)}${linuxSandboxHint(reasonOf(e))}`);
       }
       const thread = isObj(started) && isObj(started.thread) ? started.thread : undefined;
       const threadId = thread && typeof thread.id === 'string' && thread.id ? thread.id : undefined;
@@ -453,7 +472,9 @@ export class CodexAdapter implements AgentAdapter {
     } catch {
       /* the turn ended on its own, or the child is gone */
     }
-    if (this.sessions.get(live.sid) === live) this.emit(live.sid, { type: 'status', status: 'idle', intent: 'Aborted' });
+    // FR-139 (real, Codex 0.163): a command that already started keeps running after turn/interrupt; End session stops it
+    const intent = live.runningCommands.size ? 'Aborted (a command that already started may still finish; End session stops it)' : 'Aborted';
+    if (this.sessions.get(live.sid) === live) this.emit(live.sid, { type: 'status', status: 'idle', intent });
   }
 
   /** End the session: pending permissions are denied, the turn interrupted, the thread unsubscribed, the child closed. */
@@ -518,6 +539,11 @@ export class CodexAdapter implements AgentAdapter {
 
   private fromMapper(live: Live, body: EventBody): void {
     if (live.muted) return;
+    // FR-139: shell commands that are running now (Codex's turn/interrupt does not end one that already started)
+    if (body.type === 'toolCall' && body.tool === 'shell' && typeof body.callId === 'string') {
+      if (body.phase === 'start') live.runningCommands.add(body.callId);
+      else if (body.phase !== 'update') live.runningCommands.delete(body.callId);
+    }
     if (live.expectAborted && body.type === 'status' && body.status === 'idle' && body.intent === 'Aborted' && (body as { agentId?: string }).agentId === undefined) {
       live.expectAborted = false; // `interrupt` reports it itself, once
       return;

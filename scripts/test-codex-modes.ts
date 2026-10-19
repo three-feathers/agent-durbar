@@ -4,7 +4,7 @@ import { grantScope } from '../src/adapters/permissions';
 import { CODEX_BINARY, CODEX_MIN_VERSION, compareVersions, parseVersion } from '../src/adapters/detect';
 import {
   CODEX_APPROVAL_METHODS, CODEX_INITIALIZE_CAPABILITIES, CODEX_MIN_PERMISSIONS_VERSION, CODEX_RO_FILESYSTEM,
-  codexModeSettings, codexProfileArgs, codexProfileToml, codexReadEnforceable, codexWorkspaceRoots, codexPermission, codexReply,
+  codexInstallRoot, codexModeSettings, codexProfileArgs, codexProfileToml, codexReadRoot, codexReadEnforceable, codexWorkspaceRoots, codexPermission, codexReply,
 } from '../src/adapters/codexModes';
 
 // modes (FR-086): profile instead of sandbox in Read-only and Ask first
@@ -25,10 +25,22 @@ assert.deepStrictEqual({ ...CODEX_RO_FILESYSTEM }, { ':minimal': 'read', ':works
 assert.ok(!(':root' in CODEX_RO_FILESYSTEM), 'no :root');
 assert.ok(Object.values(CODEX_RO_FILESYSTEM).every((v) => v === 'read'), 'no write or deny entry');
 assert.strictEqual(codexProfileToml(), '{":minimal"="read",":workspace_roots"="read"}', 'inline TOML');
-assert.deepStrictEqual(codexProfileArgs(), ['-c', 'permissions.durbar_ro.filesystem={":minimal"="read",":workspace_roots"="read"}'], 'spawn argv: one -c and one value');
+assert.deepStrictEqual(codexProfileArgs(), ['-c', 'permissions.durbar_ro.filesystem={":minimal"="read",":workspace_roots"="read"}', '-c', 'default_permissions="durbar_ro"'], 'spawn argv: the profile and, as Codex 0.163 requires, the default that names it (FR-138)');
 const argText = codexProfileArgs().join(' ');
 assert.ok(!argText.includes(':root') && !argText.includes('"write"') && !argText.includes('"deny"'), 'argv has no :root or write entry');
 assert.deepStrictEqual(CODEX_INITIALIZE_CAPABILITIES, { experimentalApi: true }, 'initialize sends experimentalApi');
+// FR-138: Codex's own install folder is readable in the profile (real, 2026-10-19: Codex runs its binary again inside the sandbox)
+assert.strictEqual(codexInstallRoot('/home/u/.npm-global/bin/codex', () => '/home/u/.npm-global/lib/node_modules/@openai/codex/bin/codex.js'), '/home/u/.npm-global/lib/node_modules/@openai/codex', 'npm: the package folder');
+assert.strictEqual(codexInstallRoot('/usr/local/bin/codex', (p) => p), '/usr/local', 'a binary in bin: its parent');
+assert.strictEqual(codexInstallRoot('/opt/codex/codex', (p) => p), '/opt/codex');
+assert.strictEqual(codexInstallRoot('C:\\Users\\u\\AppData\\Roaming\\npm\\codex.cmd', (p) => p), 'C:\\Users\\u\\AppData\\Roaming\\npm');
+assert.strictEqual(codexInstallRoot('/x', () => { throw new Error('gone'); }), undefined, 'unresolvable: no extra root');
+assert.strictEqual(codexInstallRoot('/codex', (p) => p), undefined, 'never the whole disk');
+for (const bad of ['relative/dir', '/a"b', '/a\nb', '', '/']) assert.strictEqual(codexReadRoot(bad), undefined, `refused: ${JSON.stringify(bad)}`);
+assert.strictEqual(codexProfileToml(['/opt/codex']), '{":minimal"="read",":workspace_roots"="read","/opt/codex"="read"}');
+assert.strictEqual(codexProfileToml(['C:\\Codex']), '{":minimal"="read",":workspace_roots"="read","C:\\\\Codex"="read"}', 'Windows backslashes are escaped for TOML');
+assert.strictEqual(codexProfileToml(['/a"b', 'rel']), codexProfileToml(), 'bad roots are left out: the profile only gets narrower');
+assert.deepStrictEqual(codexProfileArgs(['/opt/codex']).slice(2), ['-c', 'default_permissions="durbar_ro"']);
 
 // runtimeWorkspaceRoots (path-only cases use an identity resolver)
 const ident = (p: string): string => p;
