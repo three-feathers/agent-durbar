@@ -616,3 +616,13 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 - It is `scripts/fixtures/claude/real-readonly-read.json` (`provenance: real-redacted`). `test-claude-map` maps it to its recorded `expected` list (status, mcp, tool start and complete, three streamed outputs, usage, `context 14767/1000000`, cost, idle) and scans it for real paths, keys and e-mail addresses. `test:`
 - The synthetic fixtures stay. Their shapes matched the real one in every field the mapper reads (nothing dropped).
 
+### 2026-10-19: real check, the no-prompt probes (T066)
+
+- `real:` Claude Code 2.1.303 on Linux, through `dist/`:
+  - `detectClaude` gave `ready 2.1.303` and "Signed in to Claude Code on this computer.";
+  - `ClaudeAdapter.listModelOptions()` gave 13 models from the `initialize` reply in 1.5 s;
+  - neither wrote a prompt.
+- **Nothing was billed:** no conversation took place. Claude's per-folder session store for the probe's working folder (`/tmp`) did not exist before or after the run, while every prompted run leaves a session file there.
+- `claude auth status --json` returns the fields `analyticsDisabled`, `apiProvider`, `authMethod`, `configDirectory`, `email`, `loggedIn`, `orgId`, `orgName`, `projectsDirectory` and `subscriptionType`. Durbar reads **only `loggedIn`** (FR-132); the e-mail, organisation and plan are never kept or logged. The values were not printed for this check.
+- The `init` message's `apiKeySource` was `none` for a claude.ai sign-in (from the T067 capture). `accountInfo()` is an SDK call; the CLI transport has no equivalent and does not need one.
+
