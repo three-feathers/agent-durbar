@@ -4,7 +4,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { randomBytes } from 'crypto';
+import { randomInt } from 'crypto';
 import { parseCap, parseSettings, parseThemeId } from '../shared/credits';
 import type { AppSettings } from '../shared/credits';
 import { addCustomPlace, removeCustomPlace, setPlaceEntry, updateCustomPlace } from '../shared/places';
@@ -21,10 +21,10 @@ export interface PlaceCallResult {
 }
 
 const ID_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
-/** `c-` and six random lowercase letters or digits. */
+/** `c-` and six random lowercase letters or digits, each drawn uniformly (spec 045 FR-001: no modulo bias). */
 export function randomPlaceId(): string {
   let s = 'c-';
-  for (const b of randomBytes(6)) s += ID_CHARS[b % ID_CHARS.length];
+  for (let i = 0; i < 6; i++) s += ID_CHARS[randomInt(ID_CHARS.length)];
   return s;
 }
 

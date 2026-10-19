@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { AdapterDescriptor, DetectResult } from './capabilities';
+import { windowsCmd } from '../shared/wincmd';
 
 export interface DetectEnv {
   platform: NodeJS.Platform;
@@ -176,7 +177,7 @@ export async function detectBinary(spec: BinarySpec, env: DetectEnv, exec: Exec,
 /** Runs a found binary with fixed arguments: argv only; a Windows `.cmd` shim goes through `cmd /d /s /c` with its own quotes (the caller checked CMD_UNSAFE). */
 function execFound(found: string, args: readonly string[], env: DetectEnv, exec: Exec): Promise<ExecResult> {
   if (env.platform === 'win32' && found.toLowerCase().endsWith('.cmd')) {
-    const file = env.env.ComSpec || env.env.COMSPEC || 'cmd.exe';
+    const file = windowsCmd(env.env); // spec 045 FR-003: never a command taken from the environment as is
     // the /c argument carries its own quotes; Node must not re-quote them
     return exec(file, ['/d', '/s', '/c', `"${found}" ${args.join(' ')}`], { timeoutMs: TIMEOUT_MS, verbatim: true });
   }

@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { windowsCmd } from '../shared/wincmd';
 
 export interface LaunchPlan {
   command: string;
@@ -97,7 +98,7 @@ export function planVSCodeLaunch(target: string, e: LaunchEnv = defaultEnv()): L
 /** Last resort on Windows: run code.cmd through cmd.exe, only when nothing in the arguments can be interpreted. */
 function planCmd(cmdFile: string, target: string, e: LaunchEnv): LaunchPlan | undefined {
   if (CMD_UNSAFE.test(target) || CMD_UNSAFE.test(cmdFile)) return undefined;
-  const comspec = e.env.ComSpec || e.env.COMSPEC || 'cmd.exe';
+  const comspec = windowsCmd(e.env); // spec 045 FR-003
   return { command: comspec, args: ['/d', '/s', '/c', `"${cmdFile}" "${target}"`], via: cmdFile };
 }
 

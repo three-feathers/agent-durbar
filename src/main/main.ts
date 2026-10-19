@@ -22,6 +22,7 @@ import type { FloorOp } from '../shared/floors';
 import { openInVSCode } from './vscode';
 import { isHttpUrl } from '../shared/url';
 import { DEFAULT_ADAPTER, FolderStore, PROFILE_ID, restoreMode } from './folders';
+import { navigationAllowed, permissionAllowed } from './hardening';
 import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '../adapters/vscodeChat';
 import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
@@ -909,9 +910,16 @@ function createWindow(): void {
   });
   // Links never navigate this window or open new windows; chat links go through app:openExternal (http/https only).
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  win.webContents.on('will-navigate', (e, url) => {
-    if (!url.startsWith('file://')) e.preventDefault();
-  });
+  // spec 045 FR-004: only the app's own page, never another local file (it would get the preload bridge) or a web page
+  const INDEX_HTML = path.join(__dirname, '..', 'renderer', 'index.html');
+  const guardNav = (e: { preventDefault(): void }, url: string): void => {
+    if (!navigationAllowed(url, INDEX_HTML)) e.preventDefault();
+  };
+  win.webContents.on('will-navigate', guardNav);
+  win.webContents.on('will-redirect', guardNav);
+  // spec 045 FR-005: Electron grants web permissions by default; this page needs only clipboard writes (Copy buttons)
+  win.webContents.session.setPermissionRequestHandler((_wc, permission, done) => done(permissionAllowed(permission)));
+  win.webContents.session.setPermissionCheckHandler((_wc, permission) => permissionAllowed(permission));
   // DURBAR_SIM=N: simulated live agents (fake events, no sessions, no AI credits). See src/renderer/sim.ts.
   const sim = parseInt(dev.DURBAR_SIM ?? '', 10);
   const query: Record<string, string> = {};
@@ -926,7 +934,7 @@ function createWindow(): void {
     if (dev.DURBAR_SIM_FLOORS_OFF) query.floorsoff = dev.DURBAR_SIM_FLOORS_OFF.slice(0, 200);
   }
   win.webContents.on('did-finish-load', () => agentState.clearPaused()); // a fresh page starts with nobody paused (Paused is window-only, spec 041 T014)
-  void win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query });
+  void win.loadFile(INDEX_HTML, { query });
   // Dev: DURBAR_SHOT=/tmp/out.png [DURBAR_SHOT_SIZE=1280x800] [DURBAR_SHOT_CLICK=sim-1] saves a screenshot and quits.
   const shot = dev.DURBAR_SHOT;
   if (shot) {
