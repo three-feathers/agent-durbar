@@ -645,7 +645,7 @@ The owner's answers so far, quoted from the sessions where they were given. Q6, 
 - **Q3 Claude Agent SDK as a dependency. Settled by the build.** It is **not** a dependency. An optional transport loads it by dynamic `import()` only if the user installed it and set `DURBAR_CLAUDE_TRANSPORT=sdk` (FR-113). The default CLI transport needs no SDK, so the non-OSI licence question does not arise for the shipped app.
 - **Q4 SDK binary or the user's CLI. Settled by the build.** The user's installed `claude`, found by detection, with a version probe (FR-036..FR-040). No bundled binary.
 - **Q5 Order (C3). Reversed in practice.** C3 proposed Codex first; Claude Code was built, checked and shipped first (v0.1.0-alpha.6), as the owner asked. Codex follows (#51).
-- **Q6 Codex Read-only wording. Open.**
+- **Q6 Codex Read-only wording. Answered by the build (2026-10-19).** Read-only is enforced by a read-limited profile: reads inside the session folders, no writes, nothing outside visible (real check, FR-138 and the research findings). It is shown as plain Read-only.
 - **Q7 Dollar cap for Claude. Open** (T081, issue #75). Today Claude shows a dollar estimate apart from AIU and has no cap.
 - **Q8 Project settings. Answered** 2026-10-18 (recorded above): never load any.
 - **Q9 Windows check of the Codex sandbox. Open** (T070, issue #72): it needs a Windows machine.
