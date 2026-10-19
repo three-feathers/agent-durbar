@@ -381,6 +381,8 @@ export interface AgentAdapter {
   handoffSummary?(sessionId: string): Promise<HandoffResult>;
   /** One prompt answered with no tools, no MCP and no session kept, in an empty temp folder (spec 040 FR-015). Optional (`capabilities.oneShot`). */
   generateText?(prompt: string): Promise<{ text: string; costUsd?: number }>;
+  /** Spec 051 FR-007: whether this harness is signed in, checked without a prompt (no credits). Only the yes/no leaves the adapter. */
+  authStatus?(): Promise<{ signedIn: boolean }>;
   /** True while the session is open in this adapter. */
   isLive(sessionId: string): boolean;
   /** Stop every session and free the runtime. */

@@ -436,6 +436,16 @@ export interface DurbarApi {
   saveGeneratedTheme?(manifest: Record<string, unknown>): Promise<{ ok: boolean; id?: string; name?: string; error?: string }>;
   /** Example looks for the AI theme maker (spec 040 FR-021). */
   themeIdeas?(): Promise<string[]>;
+  /* Spec 051: harness setup inside the app (install, update, sign in). Fixed commands only; the window never names a command. */
+  harnessPlans?(kind: string, op: 'install' | 'update'): Promise<{ plans: Array<{ manager: string; display: string; note?: string }>; page: string; name: string }>;
+  harnessRun?(kind: string, op: 'install' | 'update' | 'signin', planIndex?: number): Promise<{ ok: boolean; error?: string }>;
+  harnessPaste?(text: string): Promise<{ ok: boolean; error?: string }>;
+  harnessCancel?(): Promise<boolean>;
+  harnessOpenPage?(kind: string): Promise<{ ok: boolean }>;
+  harnessOpenSignIn?(kind: string, url: string): Promise<{ ok: boolean }>;
+  copilotAuth?(): Promise<{ known: boolean; signedIn?: boolean }>;
+  onHarnessProgress?(cb: (p: { kind: string; op: string; lines: string[]; elapsedMs: number; url?: string; code?: string; needsPaste?: boolean }) => void): () => void;
+  onHarnessDone?(cb: (p: { kind: string; op: string; ok: boolean; exitCode?: number | null; reason?: string; lines: string[] }) => void): () => void;
   exportTheme?(id: string): Promise<{ ok: boolean; to?: string; error?: string; cancelled?: boolean }>;
   setCap?(id: string, credits: number | null): Promise<{ ok: boolean; error?: string; maxAiCredits?: number }>;
   /** One-way: the window tells main an agent was paused or resumed (spec 041 T014); Paused exists only in the window. */

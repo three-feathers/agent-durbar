@@ -134,7 +134,14 @@
         <p class="scr-note"><b>${esc(ab.name)}</b> ${esc(ab.version)} · by <b>${esc(ab.owner)}</b></p>
         <p class="scr-note small" id="aboutCredits">Contributors: ${ab.contributors.map(c=>esc(c.label)).join(', ')}</p>
         <p class="scr-note small">${esc(ab.copyright)} · MIT License</p></section>`:'';
-    r.innerHTML=head('Settings')+`<div class="scr-body">${themeSec}${capSec}${moodSec}${schedSec}${floorsSec}${placesSec}
+    /* spec 051: Settings > Harnesses (install, update, sign in) */
+    let hsSec='';
+    if(window.DurbarHarnesses&&window.DurbarHarnesses.available()&&X.bridge.listAdapters){
+      let kinds=[],cp=null;try{kinds=(await X.bridge.listAdapters(!!X._hsRefresh))||[];}catch(e){kinds=[];}X._hsRefresh=false;
+      if(X.bridge.copilotAuth&&kinds.some(k=>k.id==='copilot'&&k.state==='ready')){try{cp=await X.bridge.copilotAuth();}catch(e){cp=null;}}
+      hsSec=window.DurbarHarnesses.sectionHTML(kinds,cp);
+    }
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${themeSec}${capSec}${moodSec}${schedSec}${floorsSec}${placesSec}
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH">MCP servers</h3>
         <p class="scr-note">MCP servers give agents extra tools. Your <b>Copilot CLI list</b> is the one global list: every agent gets those servers, with nothing to configure or import here. Each agent can switch single servers off from its own header (MCP button).</p>
         <p class="scr-warn" role="note"><b>MCP servers run local commands with your user rights.</b> The Copilot runtime starts the servers of your CLI list in every session, exactly as the CLI does. Read-only MCP tools can run without asking even in Read-only mode.</p>
@@ -371,6 +378,7 @@
       else if(act==='delete')await deletePlace(id);
       return;
     }
+    if(window.DurbarHarnesses&&window.DurbarHarnesses.onClick(e))return;
     const ss=e.target.closest('#seriousSw');
     if(ss&&X.bridge.setSeriousMode){
       const on=ss.getAttribute('aria-checked')!=='true';
@@ -713,7 +721,7 @@
   }
 
   window.DurbarScreens={
-    init(ctx){X=ctx;},
+    init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,toast:(t)=>ctx.toast(ctx.esc(t),3600),onChange:(again)=>{X._hsRefresh=true;if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
     openSettings:()=>{mcp=null;open('settings');},
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},
