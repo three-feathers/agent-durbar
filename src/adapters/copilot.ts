@@ -149,6 +149,12 @@ export class CopilotAdapter implements AgentAdapter {
     return this.starting;
   }
 
+  /** Spec 051 FR-007: the runtime's own sign-in status (no prompt, no credits). The login name, host and message are dropped. */
+  async authStatus(): Promise<{ signedIn: boolean }> {
+    const s = await (await this.getClient()).getAuthStatus();
+    return { signedIn: !!s.isAuthenticated };
+  }
+
   /** Models visible to the logged-in user (no inference, no credits). */
   async listModels(): Promise<ModelInfo[]> {
     return (await this.getClient()).listModels();

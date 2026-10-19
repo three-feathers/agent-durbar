@@ -6,7 +6,8 @@ import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
 import { offeredDescriptors } from '../adapters/experimental';
 import { createRegistry, detectAll } from '../adapters/registry';
-import { detectorFor } from '../adapters/detect';
+import { detectorFor, nodeDetectEnv } from '../adapters/detect';
+import { execFile, spawn } from 'child_process';
 import { adapterForAdd, createRouter, historyOf, modelOptionsOf, previousSessionsOf } from '../adapters/router';
 import { errText, restorable, setCapOp, setModeOp, stopTurnOp, validMode } from './agentops';
 import type { OpsDeps } from './agentops';
@@ -37,6 +38,8 @@ import { folderKeyOf, folderNameOf } from '../shared/usagedoc';
 import { agentLabel } from '../shared/toolusage';
 import { devEnv, devWarning } from './devhooks';
 import { UserThemeStore } from './themes';
+import { HarnessSetup } from './harnesssetup';
+import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind } from '../shared/harnesssetup';
 import { MAX_DESCRIPTION, MAX_PASSES, THEME_IDEAS, TOP_BAR_ISSUE, buildFixPrompt, buildRetryPrompt, buildThemePrompt, isBlocking, keepArt, parseGeneratedTheme } from '../shared/themegen';
 import { SettingsStore } from './settings';
 import { parseAmount, parseCapIn, parseThemeId, startCap } from '../shared/credits';
@@ -612,6 +615,47 @@ ipcMain.handle('theme:generate', async (_e, description: unknown, adapterId: unk
   }
 });
 ipcMain.handle('theme:ideas', () => THEME_IDEAS.slice());
+/* Spec 051: harness setup inside the app. One fixed install, update or sign-in at a time (argv, no shell); progress and the end go to
+   the window; detection runs again when it ends. Nothing of the output is logged. */
+const harnessSetup = new HarnessSetup({
+  detectEnv: nodeDetectEnv(),
+  spawn: (file, args, opts) => spawn(file, args as string[], opts),
+  killTree: (c) => {
+    const pid = c.pid;
+    if (!pid) return;
+    if (process.platform === 'win32') execFile('taskkill', ['/pid', String(pid), '/t', '/f'], () => undefined);
+    else { try { process.kill(-pid, 'SIGTERM'); } catch { /* gone */ } setTimeout(() => { try { process.kill(-pid, 'SIGKILL'); } catch { /* gone */ } }, 3000).unref(); }
+  },
+  send: (channel: string, p: unknown) => toRenderer(channel, p),
+  redetect: async () => { await adaptersList(true); },
+} as ConstructorParameters<typeof HarnessSetup>[0]);
+ipcMain.handle('harness:plans', (_e, kind: unknown, op: unknown) => (isSetupKind(kind) && (op === 'install' || op === 'update') ? harnessSetup.plans(kind, op) : { plans: [], page: '', name: '' }));
+ipcMain.handle('harness:run', (_e, kind: unknown, op: unknown, planIndex: unknown) => {
+  if (!isSetupKind(kind) || (op !== 'install' && op !== 'update' && op !== 'signin')) return { ok: false, error: 'invalid request' };
+  return harnessSetup.run(kind, op, typeof planIndex === 'number' && Number.isInteger(planIndex) && planIndex >= 0 && planIndex < 8 ? planIndex : 0);
+});
+ipcMain.handle('harness:paste', (_e, text: unknown) => harnessSetup.paste(text));
+ipcMain.handle('harness:cancel', () => harnessSetup.cancel());
+ipcMain.handle('harness:openPage', async (_e, kind: unknown) => {
+  if (!isSetupKind(kind)) return { ok: false };
+  await shell.openExternal(OFFICIAL_PAGES[kind]);
+  return { ok: true };
+});
+ipcMain.handle('harness:openSignIn', async (_e, kind: unknown, url: unknown) => {
+  // FR-005: only a link on that harness's own sign-in hosts is ever opened
+  if (!isSetupKind(kind) || typeof url !== 'string' || !allowedSignInUrl(kind, url)) return { ok: false };
+  await shell.openExternal(url);
+  return { ok: true };
+});
+ipcMain.handle('harness:copilotAuth', async () => {
+  try {
+    const ad = registry.has('copilot') ? router.instance('copilot') : undefined;
+    if (!ad || typeof ad.authStatus !== 'function') return { known: false };
+    return { known: true, ...(await ad.authStatus()) };
+  } catch {
+    return { known: false };
+  }
+});
 ipcMain.handle('theme:saveGenerated', (_e, manifest: unknown) => {
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return { ok: false, error: 'invalid theme' };
   return userThemes.saveManifest(manifest as Record<string, unknown>, (id) => BUILT_IN_THEME_IDS.includes(id));

@@ -143,12 +143,19 @@
         <p class="scr-note"><b>${esc(ab.name)}</b> ${esc(ab.version)} · by <b>${esc(ab.owner)}</b></p>
         <p class="scr-note small" id="aboutCredits">Contributors: ${ab.contributors.map(c=>esc(c.label)).join(', ')}</p>
         <p class="scr-note small">${esc(ab.copyright)} · MIT License</p></section>`:'';
+    /* spec 051: Settings > Harnesses (install, update, sign in) */
+    let hsSec='';
+    if(window.DurbarHarnesses&&window.DurbarHarnesses.available()&&X.bridge.listAdapters){
+      let kinds=[],cp=null;try{kinds=(await X.bridge.listAdapters(!!X._hsRefresh))||[];}catch(e){kinds=[];}X._hsRefresh=false;
+      if(X.bridge.copilotAuth&&kinds.some(k=>k.id==='copilot'&&k.state==='ready')){try{cp=await X.bridge.copilotAuth();}catch(e){cp=null;}}
+      hsSec=window.DurbarHarnesses.sectionHTML(kinds,cp);
+    }
     /* spec 052 FR-031 (#306): Simple or Expert */
     const dl=X.detail?X.detail.get():'expert';
     const detailSec=X.detail?`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Detail level</h3>
         <p class="scr-note"><b>Simple</b> shows what agents do in plain words and what they cost; <b>Expert</b> adds tokens, models, context, paths and developer tools. Permissions and answering are the same in both.</p>
         <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div></section>`:'';
-    r.innerHTML=head('Settings')+`<div class="scr-body">${detailSec}${themeSec}${capSec}${moodSec}${schedSec}${floorsSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${detailSec}${themeSec}${capSec}${moodSec}${schedSec}${floorsSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         <p class="scr-note">Every agent gets the servers of your <b>Copilot CLI list</b>, the one global list.</p>
@@ -164,6 +171,8 @@
         <details class="scr-more"><summary>More</summary><p class="scr-note small"><b>Folder extras…</b> in an agent's MCP menu opens the same list. Extras apply only to agents in that folder and are never shared with other folders. Switching one on shows its exact command first, and asks again if the command changes.</p></details>
       </section></details>${aboutSec}</div>`;
     wireHead();
+    /* spec 051 FR-008: entry points open Settings at Harnesses */
+    if(cur.section==='harnesses'){cur.section=null;const h=$('hsH');if(h){h.scrollIntoView({block:'start'});h.focus({preventScroll:true});}}
     if($('advMcp')){$('advMcp').ontoggle=()=>{advOpen=$('advMcp').open;};if(cur.section==='mcp'){cur.section=null;const h=$('mcpH');if(h){h.scrollIntoView({block:'start'});h.focus({preventScroll:true});}}}
     if(X.floors&&$('floorsSet'))X.floors.render();
     if(X.sched&&$('schedSet'))X.sched.render();
@@ -389,6 +398,7 @@
       else if(act==='delete')await deletePlace(id);
       return;
     }
+    if(window.DurbarHarnesses&&window.DurbarHarnesses.onClick(e))return;
     const dlb=e.target.closest('[data-detail]');
     if(dlb&&X.detail){X.detail.set(dlb.dataset.detail);paint();return;}
     const ss=e.target.closest('#seriousSw');
@@ -768,9 +778,9 @@
   }
 
   window.DurbarScreens={
-    init(ctx){X=ctx;},
+    init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,toast:(t)=>ctx.toast(ctx.esc(t),3600),onChange:(again)=>{X._hsRefresh=true;if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
-    openSettings:(section)=>{mcp=null;open('settings',section==='mcp'?{section:'mcp'}:null);},
+    openSettings:(section)=>{mcp=null;open('settings',section==='mcp'||section==='harnesses'?{section}:null);},
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},
     agentMcp,
     placeDialog,

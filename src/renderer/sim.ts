@@ -1144,6 +1144,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     };
     let started = false;
     let extra = 0;
+    type HsCb = (p: never) => void;
+    const simHarness: { progress: HsCb[]; done: HsCb[]; running: null | { kind: string; finish: () => void } } = { progress: [], done: [], running: null };
     const api: DurbarApi = {
       ...floorApi,
       ...mcpApi,
@@ -1152,6 +1154,29 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       version: async () => 'sim',
       // Spec 012 T017 (FR-063): only Copilot by default; simkinds=1 adds a Claude Code that is not installed and a Codex that is too old.
       listAdapters: async () => simAdapters(),
+      // Spec 051 FR-009: harness setup in the simulator: canned plans and output (a fake link and code), nothing runs
+      copilotAuth: async () => ({ known: true, signedIn: true }),
+      harnessPlans: async (kind, op) => ({ name: kind === 'copilot' ? 'the GitHub Copilot CLI' : kind === 'codex' ? 'the Codex CLI' : 'Claude Code', page: 'https://example.invalid/', plans: kind === 'codex' ? [{ manager: 'npm', display: (op === 'update' ? 'npm install -g @openai/codex@latest' : 'npm install -g @openai/codex') }] : [{ manager: 'brew', display: 'brew install --cask claude-code' }, { manager: 'npm', display: 'npm install -g @anthropic-ai/claude-code', note: 'Deprecated by Anthropic: use it only if nothing else works.' }] }),
+      harnessRun: async (kind, op) => {
+        const t0 = Date.now();
+        const prog = (p: Record<string, unknown>) => simHarness.progress.forEach((cb) => cb({ kind, op, elapsedMs: Date.now() - t0, lines: [], ...p } as never));
+        const done = (ok: boolean) => { simHarness.running = null; simHarness.done.forEach((cb) => cb({ kind, op, ok, exitCode: ok ? 0 : 1, lines: ['(simulated)'] } as never)); };
+        if (op === 'signin') {
+          setTimeout(() => prog({ url: kind === 'claude' ? 'https://claude.com/cai/oauth/authorize?simulated=1' : 'https://auth.openai.com/codex/device', ...(kind === 'claude' ? { needsPaste: true } : { code: 'SIM1-ABCDE' }) }), 300);
+          simHarness.running = { kind, finish: () => done(true) };
+          if (kind !== 'claude') setTimeout(() => { if (simHarness.running) done(true); }, 60000);
+        } else {
+          setTimeout(() => prog({ lines: ['added 1 package in 3s (simulated)'] }), 300);
+          setTimeout(() => done(true), 2500);
+        }
+        return { ok: true };
+      },
+      harnessPaste: async (text) => { if (!simHarness.running || !String(text || '').trim()) return { ok: false, error: 'Paste the code from the sign-in page (one line).' }; const r = simHarness.running; setTimeout(() => r.finish(), 400); return { ok: true }; },
+      harnessCancel: async () => { const r = simHarness.running; simHarness.running = null; if (r) simHarness.done.forEach((cb) => cb({ kind: r.kind, op: 'signin', ok: false, reason: 'cancelled', lines: [] } as never)); return !!r; },
+      harnessOpenPage: async () => ({ ok: true }),
+      harnessOpenSignIn: async () => ({ ok: true }),
+      onHarnessProgress: (cb) => { simHarness.progress.push(cb); return () => { simHarness.progress = simHarness.progress.filter((x) => x !== cb); }; },
+      onHarnessDone: (cb) => { simHarness.done.push(cb); return () => { simHarness.done = simHarness.done.filter((x) => x !== cb); }; },
       addFolder: async (_mode, o) => {
         const bad = o && o.adapterId !== undefined ? notReady(o.adapterId) : undefined;
         if (bad) return { ok: false, agents: [], error: bad }; // like main: nothing starts, nothing is written

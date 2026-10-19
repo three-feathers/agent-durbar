@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.7 tag)
 
+- **Set up harnesses inside the app (spec 051, #299).** Settings > Harnesses shows Copilot, Claude Code and Codex with their state and one next step: **Install…**, **Update…** or **Sign in…**. Durbar runs only fixed package-manager commands (winget, Homebrew, npm), shown before they run, and never a downloaded script. Sign-in uses the vendor's own flow: Durbar shows the link and the one-time code, and never sees a password or stores a token. The welcome card starts here.
 - **Round 3 of the usability pass (spec 052, five new personas).**
   - **Inbox:** it opens on a request, never on a button, and every button is described by its request. After an answer, focus moves to the next request and the outcome is announced. Keys: J/K, A, D, S, O.
   - **Announcements:** new requests are announced to screen readers.
