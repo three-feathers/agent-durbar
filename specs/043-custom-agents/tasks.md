@@ -14,4 +14,5 @@
 
 - [x] T010a (2026-10-19) Agent in the New session dialog (same list and confirmation as the chip; applied when the session has started)
 - [ ] T010 Per-folder default agent
-- [ ] T011 Claude and Codex mapping (spec 012)
+- [ ] T011 Claude and Codex mapping (spec 012); Claude half: T011a
+- [ ] T011a (Claude) agent files listed by the adapter, `--agents`/`--agent` on relaunch [FR-008]
