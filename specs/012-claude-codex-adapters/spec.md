@@ -558,3 +558,9 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 *Corrected:*
 - **FR-132** `[IMPLEMENTED]` After a good `--version`, the detector runs `claude auth status --json` (argv only, no shell, the same Windows `.cmd` handling and 5 s timeout; it sends no prompt and costs nothing). Only `loggedIn` is read; the email, organisation and subscription in that output are never read into the app, shown, logged or stored. `loggedIn: false` gives the state `not-signed-in` with the hint "Sign in first: run `claude auth login` in a terminal, then refresh the agent kinds."; anything else (an older CLI without the command, a timeout, output that is not JSON) keeps `ready`, as before. Tests with a fake exec. `loggedIn: true` gives `ready` with the hint "Signed in to Claude Code on this computer.". `real:` 2026-10-19, the installed `claude` 2.1.303: `ready`, signed in (no prompt). The signed-out case is not run on this box (it would sign the owner out).
 
+### 2026-10-19: chosen answers were hard to see in some themes (sweep)
+
+*Found:* in the Retro and Japanese Court themes the theme's primary button looks almost like a plain one, so a chosen option on the question card (FR-130) could not be told apart from the others.
+
+*Corrected:* **FR-130** (delta) a chosen option also gets a ring in the text colour and a check mark before its label, in every theme. `sim:` screenshots in Clean Office, Retro and Japanese Court (`docs/screenshots/012-question-chosen-*.png`).
+
