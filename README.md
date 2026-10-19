@@ -33,7 +33,11 @@ There is no auto-update: download a newer release to update.
 Full list under *Unreleased* in [CHANGELOG.md](CHANGELOG.md). Short version:
 
 - **Questions from agents:** when Copilot (`ask_user`) or Claude (`AskUserQuestion`) asks you to choose, a card in the chat offers the options, an "Other" answer and Skip (specs 002, 012).
-- **Custom agent per session:** an **Agent** chip in the chat header picks an `.agent.md` agent from the folder's `.github/agents` or `~/.copilot/agents`; an agent from the folder's repository asks once and shows its tools, model and MCP servers; the New session dialog can make one the folder's default for new sessions (spec 043).
+- **Scheduled prompts:** in **Folders**, a folder's **Schedules** send a prompt to its agent once at a time or every N minutes while the app is open (spec 044).
+- **Custom agent per session:** an **Agent** chip in the chat header picks an `.agent.md` agent from the folder's `.github/agents` or `~/.copilot/agents` (Claude: `.claude/agents`, chosen when a session starts), also in the New session dialog, which can make one the folder's default; an agent from the folder's repository asks once and shows its tools, model and MCP servers (spec 043).
+- **Chat:** **Copy** buttons on replies and code blocks (spec 005); safer attachments, where a file counts as an image only if its bytes say so (spec 004).
+- **Office:** a welcome card when there is no folder yet, and the arrow keys move between desks (spec 001).
+- **Permissions on Windows:** "Approve for this session" matches the same folder spelled with other capitals or slashes (spec 003).
 - **Folders:** remove one session of a folder, rename a folder (display name), a calm warning for your home folder or a drive root (spec 006).
 - **Claude Code (experimental, `DURBAR_CLAUDE=1`):** model and effort picker, live permission mode switch, previous sessions and resume, a sign-in check, MCP switches, and its dollar estimate shown apart from AIU (spec 012). Checked on a real Claude Code; it is not offered to everyone until the owner decides on subscription use (T071).
 - **Checked on a real Copilot session:** Stop, End and resume, lazy start, thinking, helpers and usage (spec 013).
