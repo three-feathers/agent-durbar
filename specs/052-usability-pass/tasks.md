@@ -66,3 +66,6 @@
 ## Command palette (2026-10-20)
 
 - [x] T045 Command palette (Ctrl+K) and keyboard shortcut sheet (?), ⋯ menu entry, driver section in `scripts/shots-052-ux.js` (#316) [FR-042, FR-043]
+## Cost per folder (2026-10-20)
+
+- [x] T046 Tools > Cost: one row per folder, This run / Since <date>, Copy as CSV, room cost opens it (#315) [FR-044]

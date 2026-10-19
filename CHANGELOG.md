@@ -14,6 +14,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
   - **Cards** name their harness when several are in use.
   - **Visual pass:** a solid primary button, one segmented status bar, quieter room controls and lobby, status edges on waiting and error cards.
   - **Japanese court:** Tanmatsu-shitsu, Dōgu-beya, the Ō-hiroma, fusuma doors, a bonsai, and plain short hair.
+- **Cost per folder (spec 052 FR-044, #315).** *Tools > Cost* lists each folder's ≈ money, Copilot AIU, Claude estimate, tokens and calls, for *This run* or *Since <date>*, with **Copy as CSV**. Clicking a room's cost opens it.
 - **The usability follow-ups, built (spec 052, #305-#311).**
   - **Needs you inbox:** every request in one queue, answered with each request's own choices; press **I**.
   - **Command palette:** **Ctrl+K** (Cmd+K) finds an agent, a folder or an action by typing; **?** lists every keyboard shortcut (#316).
