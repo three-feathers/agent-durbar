@@ -126,7 +126,20 @@ Agent Durbar offers **GitHub Copilot** and **Claude Code**, each when it is inst
 | --- | --- | --- | --- | --- |
 | GitHub Copilot | Supported, in use | Yes | Yes: adapter contract suite and recorded event fixtures replayed through a fake SDK client | Yes (milestones 1-11; some parts are flagged unverified, see Known limits) |
 | Claude Code | **Supported when installed** (spec 012 FR-135): adapter over your installed `claude` (CLI stream protocol; the Claude Agent SDK only if you install it and set `DURBAR_CLAUDE_TRANSPORT=sdk`); a model and effort picker (the models your `claude` lists, read without a prompt); previous sessions and resume (read-only from Claude's own session files); questions Claude asks you (`AskUserQuestion`) appear as a card in the chat; its MCP servers can be switched on and off while it runs; the context chip shows how full its window is; custom agents from `.claude/agents` (chosen when a session starts); the mode can be changed while it runs (a stricter mode applies at once, a looser one from Read-only from the next message, which resumes the session with the new flags) | Yes: mixed-kind roster (`simkinds=mixed`) with capability gating | Yes: adapter contract suite over the real CLI transport and a scripted fake `claude`; SDK transport on a fake module | **Yes, once** (2026-10-18, `haiku`, about $0.015): Read-only (outside read denied by the hook), Ask first approve and deny, Allow all, interrupt, stop and resume; live mode switch (Allow all to Read-only during a shell command blocked the next write; Read-only to Allow all resumed with the context kept; about $0.011) |
-| Codex CLI | Planned: same groundwork as Claude Code, plus a JSON-RPC client for `codex app-server`; no adapter yet | Yes: mixed-kind roster (`simkinds=mixed`) | Contract suite on a fake adapter; mode mapping, event mapper and JSON-RPC client on synthetic fixtures | No: never run |
+| Codex CLI | **In progress** (not offered yet): an adapter over your installed `codex app-server`, run for real on 2026-10-19 (Codex 0.163, ChatGPT Plus): Read-only, Ask first and Allow all enforced; Stop leaves a command that already started running (End session stops it) | Yes: mixed-kind roster (`simkinds=mixed`) | Contract suite on a fake adapter; mode mapping, event mapper and JSON-RPC client on synthetic fixtures | No: never run |
+
+**Codex on Ubuntu 24.04 and later.** Codex's Read-only and Ask first modes run commands in its Linux sandbox (bubblewrap). Ubuntu blocks that for unprivileged programs (`kernel.apparmor_restrict_unprivileged_userns=1`), so those modes fail at start with a message saying so. Allow all needs no sandbox. To allow only bubblewrap, keeping the protection for everything else, add an AppArmor profile (needs `sudo`):
+
+```
+# /etc/apparmor.d/bwrap, then: sudo apparmor_parser -r /etc/apparmor.d/bwrap
+abi <abi/4.0>,
+include <tunables/global>
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+}
+```
+
+Codex also ships its own `bwrap` inside its npm package (`…/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/…/codex-resources/bwrap`). Add a second profile with that path if `codex` still reports a sandbox error.
 
 What exists on `main` for the next agents (spec 012 Phase 1 T010-T019 and Phase 2/3 groundwork (T021-T024, T027, T042, T051); simulator and unit tests, **0 AIU**): one adapter interface with declared capabilities, a registry, `claude`/`codex` command detection (not shown in the app yet), an optional adapter id per saved folder (never written for Copilot), per-agent routing in the main process, a contract suite that Copilot also passes, the agent-kind picker with capability gating, pure Claude and Codex mode mappings and event mappers, a Codex JSON-RPC client, and redaction of the debug log. The adapters themselves, sign-in checks and Windows/macOS behaviour are **not built or not verified**. Supporting a Claude or Codex subscription login needs the owner's decision first (spec 012, T071). Older app builds ignore a saved adapter id, so going back to an older build would open a non-Copilot folder as Copilot (nothing writes one yet).
 

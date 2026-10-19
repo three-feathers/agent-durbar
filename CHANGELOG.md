@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.6 tag)
 
+- **Codex groundwork, first real run (spec 012 FR-138..FR-140).** The Codex adapter, not offered yet, now starts on Codex 0.163 and enforces Read-only, Ask first and Allow all on a real account. A blocked Linux sandbox gives a plain message, with an Ubuntu note in the README. Stop says when a command that already started may still finish.
+
 - **Codex groundwork: sign-in check (spec 012 FR-137).** Codex detection now runs `codex login status` after the version, so a signed-out Codex will show "not signed in" with how to sign in. It takes effect when the Codex adapter is offered (#51).
 
 - **Open in VS Code Insiders or VSCodium (spec 009 FR-015).** "Open in VS Code" now tries VS Code, then VS Code Insiders, then VSCodium, and says which one it opened.

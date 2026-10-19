@@ -665,3 +665,22 @@ The agent installed `@openai/codex` 0.163.0 at the owner's request ("you can ins
   - anything unclear (an older CLI, a timeout, other text) keeps **ready**, as for Claude (FR-132).
   
   Only the exit code and those two phrases are read; nothing of the output is kept. `test:` fake exec cases in `test-detect`. `real:` `detectCodex` on the installed CLI gave `ready` / "Signed in to Codex on this computer.", and with an empty `CODEX_HOME` gave `not-signed-in` with the hint. Codex stays unregistered until #51 lands; `detectorFor('codex')` is wired so it works once it is.
+
+### 2026-10-19: Codex on a real account, first run (T062-T064 part; issues #64-#66)
+
+The owner handed the Codex track to this agent ("ruben does not have chatgpt account, I have - so you can take all the work until completion"). These are the first real runs of `CodexAdapter` (T043a, built on a fake app-server), with Codex 0.163.0 and ChatGPT Plus on Linux (Ubuntu with AppArmor), each in a throwaway folder.
+
+*Found and fixed:*
+- **FR-138** Codex 0.163 refuses to start when the config defines a `[permissions]` profile without `default_permissions` ("config defines `[permissions]` profiles but does not set `default_permissions`"). The spawn arguments now add `-c default_permissions="durbar_ro"`. That is fail-closed: Allow all sends its own `sandbox`, which wins.
+- **FR-138** Inside the read-limited profile, Codex runs its own binary again (`bwrap: execvp …/codex: No such file or directory`). An npm install in the home folder is outside `:minimal`, so every command failed. The profile now also gets **Codex's install folder** as a read root:
+  - which folder: the real path of the located `codex`, then its folder, or the parent of a `bin` folder; for npm that is `…/@openai/codex`;
+  - validation: absolute, normalised, no quotes or control characters, never a disk root; anything else is left out, so the profile only gets narrower;
+  - Windows backslashes are escaped for TOML.
+- **FR-140** On a Linux that blocks unprivileged user namespaces (`kernel.apparmor_restrict_unprivileged_userns=1`, Ubuntu 24.04+), Codex's bubblewrap sandbox cannot start (`bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`). Read-only and Ask first then **fail at start**, which is closed, as they must. The error now ends with a plain hint: allow it for bubblewrap, or use Allow all in a trusted folder. On the test machine, with the owner's choice, an AppArmor profile lets only `/usr/bin/bwrap` and Codex's bundled `bwrap` create user namespaces; the global setting stays on.
+- **FR-139** `turn/interrupt` (Durbar's **Stop**) ends the turn at once, but a shell command that **already started keeps running** to its end. The real check: `sleep 20 && touch late.txt` created `late.txt` after the interrupt. Codex 0.163's `command/exec/terminate` only covers commands the client started itself. **End session** (closing the app-server) does stop it: no `late.txt`, and no process left. So when a command is running at the interrupt, "Aborted" now says "(a command that already started may still finish; End session stops it)". `[KNOWN GAP]` until Codex offers a way to stop a running tool command.
+
+*`real:` results (2026-10-19; ChatGPT Plus, so no dollar cost; about 9 short prompts):*
+- **Allow all:** read `note.txt` with a shell command and answered "pelican". It reported usage per turn (`inputTokens`, `outputTokens`, `cacheReadTokens`) and the context window (`475000`).
+- **Read-only (T064):** reading inside the folder worked ("pelican"). `echo hi > x.txt` failed with a read-only file system. `cat ~/.durbar-canary.txt` (outside the folder) failed: the file is not visible in the sandbox. No `x.txt` was created.
+- **Ask first (T064):** `echo hi > x.txt` raised a permission request through Durbar's broker ("run /bin/bash -lc 'echo hi > x.txt'"). Denied: "declined", no file. Approved: the file was created.
+- **Interrupt and Stop (T063 part):** as in FR-139. Resume (T043b) is not built yet.
