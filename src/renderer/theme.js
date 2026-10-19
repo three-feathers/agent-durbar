@@ -414,6 +414,14 @@
     const pick=k=>{const v=t[k]!==undefined?t[k]:CLEAN_TOKENS[k];return typeof v==='string'&&/^(#[0-9a-fA-F]{3,8}|rgba?\([0-9.,\s%]+\)|hsla?\([0-9.,\s%deg]+\))$/.test(v.trim())?v.trim():null;};
     return ['--bg','--tint-sage','--wall-blue'].map(pick).filter(Boolean);
   }
+  /* FR-030 (#309): the colours of a theme's mini room on its Settings card; every value passes the colour grammar (Clean Office as fallback) */
+  const ROOM_KEYS={bg:'--bg',tint:'--tint-blue',wall:'--wall-blue',desk:'--desk',chair:'--chair',ink:'--ink',agent:'--sage'};
+  function previewRoom(id){
+    const m=typeof id==='string'?loadManifest(id):null, t=(m&&m.tokens)||{}, ok=v=>typeof v==='string'&&/^(#[0-9a-fA-F]{3,8}|rgba?\([0-9.,\s%]+\)|hsla?\([0-9.,\s%deg]+\))$/.test(v.trim());
+    const out={};
+    for(const [k,tok] of Object.entries(ROOM_KEYS)){const v=ok(t[tok])?t[tok]:CLEAN_TOKENS[tok];if(ok(v))out[k]=v.trim();}
+    return out;
+  }
 
   function loadManifest(idOrManifest){
     if(typeof idOrManifest==='string'){if(BUILT_IN[idOrManifest])return validateManifest(BUILT_IN[idOrManifest]);if(USER_MANIFESTS[idOrManifest])return validateManifest(USER_MANIFESTS[idOrManifest]);return null;}
@@ -814,6 +822,7 @@
     motion,
     list,
     preview,
+    previewRoom,
     onChange,
     themeIdForCache,
     registerBuiltIn,

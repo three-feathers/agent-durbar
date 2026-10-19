@@ -38,6 +38,6 @@
 - [x] T030 Needs you inbox and the I key (#305) [FR-027]
 - [x] T031 Cost in one unit (#307) [FR-028]
 - [x] T032 Control-size scale and 24px targets (#311) [FR-029]
-- [ ] T033 Settings: theme grid, lead sentences, Advanced (#309) [FR-030]
+- [x] T033 Settings: theme grid, lead sentences, Advanced (#309) [FR-030]
 - [ ] T034 Simple and Expert (#306) [FR-031]
 - [ ] T035 Theme polish, the rest (#310) [FR-032]

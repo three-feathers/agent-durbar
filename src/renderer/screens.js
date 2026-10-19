@@ -16,6 +16,7 @@
   /* ---------------- shared: frame, dialogs ---------------- */
   function open(kind,opts){
     cur=Object.assign({kind},opts||{});
+    if(kind==='settings')advOpen=cur.section==='mcp';
     document.body.classList.add('screen-open');
     root().hidden=false;
     paint(true);
@@ -56,6 +57,7 @@
 
   /* ---------------- Settings: MCP servers ---------------- */
   let mcp=null; /* last McpState */
+  let advOpen=false; /* Settings > Advanced (MCP) open; kept across repaints, reset when Settings opens (FR-030) */
   async function loadMcp(){
     if(!X.bridge.mcpState){mcp=null;return;}
     try{mcp=await X.bridge.mcpState();}catch(e){mcp=null;}
@@ -104,7 +106,8 @@
       const rows=P.placeRows(names,map,mineIds).map(({name:n,aliases,value:v})=>{const note=aliases.length?' also '+aliases.join(', '):'';
         return `<li class="plrow" data-srv="${esc(n)}" data-alias="${esc(aliases.join('\n'))}"><span class="plname" title="${esc(n+note)}">${esc(n)}${note?` <small>${esc(note.trim())}</small>`:''}</span><select data-place-sel aria-label="Place for the tools of ${esc(n)}"><option value=""${v?'':' selected'}>Default (${esc(X.placeLabel(P.defaultServerPlace(n)))})</option>${P.allPlaces(mine).map(p=>`<option value="${esc(p.id)}"${v===p.id?' selected':''}>${esc(X.placeLabel(p.id))}</option>`).join('')}<option value="desk"${v==='desk'?' selected':''}>Stay at desk</option></select></li>`;}).join('');
       placesSec=`<section class="scr-sec" aria-labelledby="plH"><h3 id="plH" tabindex="-1">Places in the office</h3>
-        <p class="scr-note">In the lobby, an agent walks to a place while one of its tools runs: <b>Terminal</b> for shell commands, <b>Web</b> for web fetches, and the place you choose here for the tools of each MCP server. File tools (read, edit, search) never move an agent. The choice applies to the next tool call, for all folders, and is kept between runs. Only server names and places are saved.</p>
+        <p class="scr-note">In the lobby, an agent walks to a place while one of its tools runs.</p>
+        <details class="scr-more"><summary>More</summary><p class="scr-note small"><b>Terminal</b> for shell commands, <b>Web</b> for web fetches, and the place you choose here for the tools of each MCP server. File tools (read, edit, search) never move an agent. The choice applies to the next tool call, for all folders, and is kept between runs. Only server names and places are saved.</p></details>
         ${X.bridge.addPlace&&PI?`<h4 class="scr-sub">Your places</h4>
         ${mine.length?`<ul class="plrows" id="myPlaces">${mine.map(p=>`<li class="plrow" data-place="${esc(p.id)}"><span class="plname" title="${esc(X.placeLabel(p.id))}"><span class="plico">${PI.iconSvg(p.icon)}</span>${esc(X.placeLabel(p.id))}</span><button class="btn sm" type="button" data-pl-act="edit" aria-label="Edit ${esc(X.placeLabel(p.id))}">Edit</button><button class="btn sm" type="button" data-pl-act="delete" aria-label="Delete ${esc(X.placeLabel(p.id))}">Delete</button></li>`).join('')}</ul>`:'<p class="scr-note small">You have no places of your own yet. Make one for the servers that fit none of the places above.</p>'}
         ${mine.length<3?'<div class="scr-tools"><button class="btn" type="button" data-pl-act="add">Add a place</button></div>':'<p class="scr-note small" id="plCapNote">Up to 3 places of your own.</p>'}
@@ -113,31 +116,37 @@
     }
     /* Floors (spec 033 FR-023): the same controls as the top-bar Floors panel, painted by app.js into #floorsSet */
     const floorsSec=X.floors&&X.floors.on()?`<section class="scr-sec" aria-labelledby="flH"><h3 id="flH">Floors</h3>
-        <p class="scr-note">Groups of folders. A floor that is <b>off</b> is hidden from the office and not counted in Working, Waiting, Idle, Errors and Done. <b>Its agents keep running</b> and can spend credits; the office credit total still counts them, and an agent there that waits for you or has an error is shown <b>only here</b>, on its floor's row (for example "Off, 1 waiting"). With two or more floors, the same controls are also in the <b>Floors</b> button of the top bar.</p>
+        <p class="scr-note">Groups of folders: a floor that is <b>off</b> is hidden from the office, but <b>its agents keep running</b> and can spend credits.</p>
+        <details class="scr-more"><summary>More</summary><p class="scr-note small">An off floor is not counted in Working, Waiting, Idle, Errors and Done. The office credit total still counts its agents, and an agent there that waits for you or has an error is shown <b>only here</b>, on its floor's row (for example "Off, 1 waiting"). With two or more floors, the same controls are also in the <b>Floors</b> button of the top bar.</p></details>
         <div class="floors-ui floors-set" id="floorsSet" tabindex="-1"></div></section>`:'';
     /* Schedules (spec 044 FR-011): every folder's schedules, painted by app.js into #schedSet */
     const schedSec=X.sched&&X.sched.on()?`<section class="scr-sec" aria-labelledby="schH"><h3 id="schH">Schedules</h3>
-        <p class="scr-note">Prompts sent to a folder's agent at a time, every day or at an interval, <b>only while Agent Durbar is open</b>. A run is skipped when the agent is busy or waiting for you; the agent's own permission mode and cap apply. A folder's ⋯ menu, its clock in the room header and the Schedules button in its chat open the same list for that folder, with a starter kit of templates.</p>
+        <p class="scr-note">Prompts sent to a folder's agent at a time, every day or at an interval, <b>only while Agent Durbar is open</b>.</p>
+        <details class="scr-more"><summary>More</summary><p class="scr-note small">A run is skipped when the agent is busy or waiting for you; the agent's own permission mode and cap apply. A folder's ⋯ menu, its clock in the room header and the Schedules button in its chat open the same list for that folder, with a starter kit of templates.</p></details>
         <div class="sched-set" id="schedSet"></div></section>`:'';
     /* Theme (specs 037-040): pick a built-in or imported pack; applies live, no restart. */
     const curTheme=(app.theme||'clean-office');
     let userThemes=[];
     if(X.bridge.listUserThemes){try{userThemes=(await X.bridge.listUserThemes())||[];}catch(e){userThemes=[];}}
-    const themes=(window.THEME?window.THEME.list():[{id:'clean-office',name:'Clean Office'}]).map((t)=>({...t,own:false})).concat(userThemes.filter((u)=>u.ok!==false).map((u)=>({id:u.id,name:u.name||u.id,own:true})));
+    const themes=(window.THEME?window.THEME.list():[{id:'clean-office',name:'Clean Office'}]).map((t)=>({...t,own:false})).concat(userThemes.filter((u)=>u.ok!==false).map((u)=>({id:u.id,name:u.name||u.id,author:typeof u.author==='string'?u.author:'',own:true})));
+    const baseAuthor=(themes.find((t)=>t.id==='clean-office')||{}).author||'Three Feathers'; /* FR-030: a card names its author only when it is not the built-in one */
     const badThemes=userThemes.filter((u)=>u.ok===false);
     const themeSec=`<section class="scr-sec" aria-labelledby="themeH"><h3 id="themeH">Theme</h3>
-        <p class="scr-note">The look of the office: colours, small art and scene words (places, lobby, doors). Status, permission and credit wording never change, and the layout always fits 15 agents at 1280×800. The choice applies at once and is kept on this computer.</p>
-        <ul class="thlist" id="thList">${themes.map((t)=>`<li class="throw"><button class="thpick" type="button" data-theme="${esc(t.id)}" aria-pressed="${t.id===curTheme}" aria-label="Theme ${esc(t.name)}"><span class="thsw" data-theme-sw="${esc(t.id)}" aria-hidden="true"></span><span class="thtx"><b>${esc(t.name)}</b>${t.own?'<span class="mtag">yours</span>':''}${t.author?`<small>${esc(t.author)}</small>`:''}</span></button></li>`).join('')}</ul>
+        <p class="scr-note">The look of the office; the choice applies at once and is kept on this computer.</p>
+        <details class="scr-more"><summary>More</summary><p class="scr-note small">Colours, small art and scene words (places, lobby, doors). Status, permission and credit wording never change, and the layout always fits 15 agents at 1280×800. A theme is a folder with a data-only manifest.json (no scripts, no CSS).</p></details>
+        <ul class="thlist" id="thList">${themes.map((t)=>{const by=t.author&&t.author!==baseAuthor?t.author:'';return `<li class="throw"><button class="thpick" type="button" data-theme="${esc(t.id)}" aria-pressed="${t.id===curTheme}" aria-label="Theme ${esc(t.name)}${t.own?', yours':''}${by?esc(', by '+by):''}"><span class="thsw" data-theme-sw="${esc(t.id)}" aria-hidden="true"><i class="thsw-wall"></i><i class="thsw-desk"></i><i class="thsw-chair"></i><i class="thsw-ag"></i></span><span class="thtx"><b>${esc(t.name)}</b>${t.own?'<span class="mtag">yours</span>':''}${by?`<small>${esc(by)}</small>`:''}</span></button></li>`;}).join('')}</ul>
         ${badThemes.length?`<p class="scr-note warn" role="status">${badThemes.length} theme folder${badThemes.length>1?'s were':' was'} ignored: ${esc(badThemes.map((b)=>b.id+': '+(b.error||'invalid')).join('; '))}</p>`:''}
-        <div class="scr-tools">${X.bridge.generateTheme?'<button class="btn" type="button" id="thAi">Make a theme with AI…</button>':''}<button class="btn" type="button" id="thImport">Import a theme…</button><button class="btn" type="button" id="thExport" title="Copy the active theme's folder (one of your own themes) to a folder you pick">Export the active theme…</button><span class="scr-note small">A theme is a folder with a data-only manifest.json (no scripts, no CSS). The manifest format is spec 040.</span></div></section>`;
+        <div class="scr-tools">${X.bridge.generateTheme?'<button class="btn" type="button" id="thAi">Make a theme with AI…</button>':''}<button class="btn" type="button" id="thImport">Import a theme…</button><button class="btn" type="button" id="thExport" title="Copy the active theme's folder (one of your own themes) to a folder you pick">Export the active theme…</button></div></section>`;
     const ab=app.about;
     const aboutSec=ab?`<section class="scr-sec" aria-labelledby="aboutH"><h3 id="aboutH">About</h3>
         <p class="scr-note"><b>${esc(ab.name)}</b> ${esc(ab.version)} · by <b>${esc(ab.owner)}</b></p>
         <p class="scr-note small" id="aboutCredits">Contributors: ${ab.contributors.map(c=>esc(c.label)).join(', ')}</p>
         <p class="scr-note small">${esc(ab.copyright)} · MIT License</p></section>`:'';
     r.innerHTML=head('Settings')+`<div class="scr-body">${themeSec}${capSec}${moodSec}${schedSec}${floorsSec}${placesSec}
-      <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH">MCP servers</h3>
-        <p class="scr-note">MCP servers give agents extra tools. Your <b>Copilot CLI list</b> is the one global list: every agent gets those servers, with nothing to configure or import here. Each agent can switch single servers off from its own header (MCP button). Claude Code and Codex read their own MCP settings; each agent's <b>MCP</b> item (in its chat's More menu) shows what it uses.</p>
+      <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3></summary>
+      <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
+        <p class="scr-note">Every agent gets the servers of your <b>Copilot CLI list</b>, the one global list.</p>
+        <details class="scr-more"><summary>More</summary><p class="scr-note small">There is nothing to configure or import here. Each agent can switch single servers off from its own header (MCP button). Claude Code and Codex read their own MCP settings; each agent's <b>MCP</b> item (in its chat's More menu) shows what it uses.</p></details>
         <p class="scr-warn" role="note"><b>MCP servers run local commands with your user rights.</b> The Copilot runtime starts the servers of your CLI list in every session, exactly as the CLI does. Read-only MCP tools can run without asking even in Read-only mode.</p>
         ${fileNote}
         <h4 class="scr-sub">From the Copilot CLI list <small>all agents</small></h4>
@@ -145,9 +154,11 @@
         <p class="scr-note small">You cannot edit these here: change <code>${esc(f.label)}</code> with the Copilot CLI or an editor. The switch only controls whether <b>new</b> sessions started by this app start a server; a running session keeps its servers until it ends, or until you switch one in that agent's MCP menu.</p>
       </section>
       <section class="scr-sec" aria-labelledby="extH"><h3 id="extH">Extras for one folder <small>optional</small></h3>
-        <p class="scr-note">Agent Durbar can add its own servers, but <b>only per folder or workspace</b>: open the <b>MCP</b> button in a room's header (or <b>Folder extras…</b> in an agent's MCP menu). Extras apply only to agents in that folder and are never shared with other folders. Switching one on shows its exact command first, and asks again if the command changes.</p>
-      </section>${aboutSec}</div>`;
+        <p class="scr-note">Agent Durbar can add its own servers, but <b>only per folder or workspace</b>: open the <b>MCP</b> button in a room's header.</p>
+        <details class="scr-more"><summary>More</summary><p class="scr-note small"><b>Folder extras…</b> in an agent's MCP menu opens the same list. Extras apply only to agents in that folder and are never shared with other folders. Switching one on shows its exact command first, and asks again if the command changes.</p></details>
+      </section></details>${aboutSec}</div>`;
     wireHead();
+    if($('advMcp')){$('advMcp').ontoggle=()=>{advOpen=$('advMcp').open;};if(cur.section==='mcp'){cur.section=null;const h=$('mcpH');if(h){h.scrollIntoView({block:'start'});h.focus({preventScroll:true});}}}
     if(X.floors&&$('floorsSet'))X.floors.render();
     if(X.sched&&$('schedSet'))X.sched.render();
     if($('capSave'))$('capSave').onclick=async()=>{
@@ -168,10 +179,10 @@
     r.onchange=onPlaceChange;
     /* theme picker (spec 037): click applies live through app.js's applyTheme; no restart */
     /* spec 037 FR-014: each swatch shows its own theme's colours (validated colour values set through CSSOM) */
-    if($('thList')&&window.THEME&&window.THEME.preview)$('thList').querySelectorAll('[data-theme-sw]').forEach((sw)=>{
-      const c=window.THEME.preview(sw.dataset.themeSw);
-      if(c.length>=3)sw.style.background=`linear-gradient(135deg,${c[0]} 0 34%,${c[1]} 34% 67%,${c[2]} 67%)`;
-      else if(c.length)sw.style.background=c[0];
+    /* FR-030 (#309): a mini room per card; previewRoom returns only validated colour values, set as custom properties through CSSOM */
+    if($('thList')&&window.THEME&&window.THEME.previewRoom)$('thList').querySelectorAll('[data-theme-sw]').forEach((sw)=>{
+      const c=window.THEME.previewRoom(sw.dataset.themeSw);
+      for(const k of Object.keys(c))sw.style.setProperty('--sw-'+k,c[k]);
     });
     if($('thList'))$('thList').addEventListener('click',(e)=>{
       const b=e.target.closest&&e.target.closest('[data-theme]');if(!b||!X.applyTheme)return;
@@ -425,7 +436,7 @@
     wireHead();
     $('mcpAdd').onclick=()=>editServer(null,st);
     $('mcpImportVs').onclick=()=>importVSCode(st);
-    $('fxSettings').onclick=()=>open('settings');
+    $('fxSettings').onclick=()=>open('settings',{section:'mcp'});
     r.onclick=onFolderClick;
     if(focus){const h=r.querySelector('h2');if(h){h.tabIndex=-1;h.focus({preventScroll:true});}}
   }
@@ -638,7 +649,7 @@
     if($('tabAgents'))$('tabAgents').onclick=()=>{cur.tab='agents';paintTools();};
     r.onclick=async e=>{
       const l=e.target.closest('[data-open]');if(l){close();X.openAgent(l.dataset.open);return;}
-      if(e.target.closest('#cfgSettings')){open('settings');return;}
+      if(e.target.closest('#cfgSettings')){open('settings',{section:'mcp'});return;}
       if(e.target.closest('#usageReset')){
         const ok=await dialog({title:'Reset all-time counts?',html:'<p class="dsub">This clears the counts kept across restarts and starts again from today. It does not touch your agents or their history.</p>',buttons:[{label:'Cancel',value:null},{label:'Reset',value:'ok',cls:'primary warn'}]});
         if(ok&&X.bridge.usageReset){await X.bridge.usageReset();X.toast('All-time counts were reset.',2600);cur.scope=null;paintTools();}
@@ -716,7 +727,7 @@
   window.DurbarScreens={
     init(ctx){X=ctx;},
     folderMcp:openFolder,
-    openSettings:()=>{mcp=null;open('settings');},
+    openSettings:(section)=>{mcp=null;open('settings',section==='mcp'?{section:'mcp'}:null);},
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},
     agentMcp,
     placeDialog,

@@ -10,6 +10,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
   - **Switching to Allow all** no longer approves waiting requests by default.
   - **Wording and glyphs:** Allow all is an open padlock in the warning ink. Session approvals name their scope. The More menu explains Stop, End and Remove.
   - **Office cards** show ⚠ when an agent is stuck or nearly out of memory.
+  - **Settings read easily:** themes are a grid of cards, each with a mini room in its own colours. Each section leads with one sentence, the rest is behind *More*. MCP sits in a closed *Advanced* group.
   - **Themes:** Retro and Corporate are retuned, and the Japanese and European courts use place names from their own culture. Clean Office uses soft shadows, one radius scale and tabular numbers.
 - **Calmer and clearer, from four persona reviews (spec 052).**
   - **Answering:** a waiting agent's request is pinned above the message box when its card scrolls away, with the same Approve / Deny buttons. *Previous sessions* no longer opens over a conversation. **N** jumps to the next agent that needs you.
