@@ -447,6 +447,29 @@ async function driver(ctx) {
     }
   }
 
+  /* spec 005 FR-017 / T026: the card menu of a working main agent offers Stop and End session, a helper does not, and the menu fits the window */
+  const openCardMenu = (id) => ctx.js(`(async()=>{const m=document.getElementById('modeMenu');if(m)m.remove();const d=document.querySelector('#stage [data-id="${id}"]');if(!d)return null;const r=d.getBoundingClientRect();d.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.right-4,clientY:r.bottom-4}));await new Promise(r=>setTimeout(r,200));const mm=document.getElementById('modeMenu');if(!mm)return {open:false};const b=mm.getBoundingClientRect();return {open:true,stop:!!mm.querySelector('[data-op="stop"]'),end:!!mm.querySelector('[data-op="end"]'),fits:b.left>=0&&b.top>=0&&b.right<=innerWidth&&b.bottom<=innerHeight,minFont:Math.min(...[...mm.querySelectorAll('b,small,p')].map(e=>parseFloat(getComputedStyle(e).fontSize)))}})()`);
+  for (const [w, h] of SIZES) {
+    if (!mine()) continue;
+    await load('sim=15&simfreeze=1', w, h);
+    const ids = await ctx.js(`(()=>({w:[...document.querySelectorAll('#stage .desk.is-working:not(.is-away), #stage .desk.is-thinking:not(.is-away)')].map(d=>d.dataset.id),hp:[...document.querySelectorAll('#stage .helper')].map(d=>d.dataset.id)}))()`);
+    let bad = 0; const say = (m) => { bad++; failed++; console.log(`FAIL card menu ${w}x${h}: ${m}`); };
+    total++; if (!ids.w.length) say('no working main agent to open the menu on');
+    for (const id of ids.w.slice(0, 3)) {
+      const r = await openCardMenu(id); total++;
+      if (!r || !r.open) say(`menu did not open on ${id}`);
+      else if (!r.stop || !r.end) say(`missing Stop/End on working agent ${id} ${JSON.stringify(r)}`);
+      else if (!r.fits) say(`menu leaves the window on ${id}`);
+      else if (r.minFont < 10.5) say(`menu text below 10.5px on ${id}`);
+    }
+    for (const id of ids.hp.slice(0, 2)) {
+      const r = await openCardMenu(id); total++;
+      if (r && r.open && (r.stop || r.end)) say(`helper ${id} has Stop/End`);
+    }
+    await ctx.js(`(()=>{const m=document.getElementById('modeMenu');if(m)m.remove();return true})()`);
+    rows.push({ label: `card menu ${w}x${h}`, d: 'menu', h: '-', rooms: '-', plates: '-', desks: ids.w.length, stageH: 0, floorH: 0, minFont: '-', problems: bad });
+  }
+
   console.log('\nlayout summary (density/helpers shown, stage height vs floor):');
   rows.forEach((r) => console.log(`  ${r.problems ? 'FAIL' : 'ok  '} ${r.label.padEnd(60)} ${String(r.d).padEnd(5)} h=${r.h} rooms=${r.rooms} plates=${r.plates} desks=${r.desks} stage ${r.stageH}/${r.floorH}px minFont=${r.minFont}`));
   console.log(`\noffice check: ${total - failed}/${total} checks passed, ${failed} failed`);

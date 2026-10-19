@@ -26,6 +26,7 @@ const D = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'modelswit
   kindChoices: (adapters: unknown) => Array<{ id: string; name: string; shortName: string; state: string; stateText: string; disabled: boolean; label: string; version: string; hint: string }>;
   showsKindPicker: (adapters: unknown) => boolean;
   shows: (caps: unknown, feature: string, mode?: string) => boolean;
+  cardMenuActions: (a: unknown, caps: unknown) => { stop: { disabled: boolean; reason: string } | null; end: { confirm: boolean } | null };
 };
 
 const fast: M = { id: 'fast', name: 'Fast', pricing: { inputPerMTok: 20, outputPerMTok: 100 }, contextWindow: 128000 };
@@ -271,6 +272,27 @@ assert.strictEqual(modelControlFor({ compact() {} }).switch, 'none');
   assert.strictEqual(D.kindChoices([mk('ready', { displayName: 'Claude Code (simulated)' })])[0].shortName, 'Claude Code', 'e: the select shows the short name');
   assert.strictEqual(D.kindChoices([mk('ready', { displayName: 'Claude Code (simulated)' })])[0].name, 'Claude Code (simulated)', 'e: the About dialog keeps (simulated)');
   assert.strictEqual(D.kindChoices([cop])[0].shortName, 'Copilot');
+}
+
+/* spec 005 FR-017: Stop and End session in the card menu */
+{
+  const can = { interrupt: true }, cannot = { interrupt: false };
+  const ag = (o: Record<string, unknown>) => ({ live: true, state: 'working', label: 'Working', info: {}, ...o });
+  const ca = D.cardMenuActions;
+  assert.deepStrictEqual(ca(ag({}), can), { stop: { disabled: false, reason: '' }, end: { confirm: true } }, 'f: working main agent gets both, End asks');
+  assert.strictEqual(ca(ag({ state: 'thinking' }), can).stop?.disabled, false, 'f: thinking can stop');
+  const idle = ca(ag({ state: 'idle', label: 'Ready' }), can);
+  assert.strictEqual(idle.stop, null, 'f: an idle agent has no Stop');
+  assert.deepStrictEqual(idle.end, { confirm: false }, 'f: idle End does not ask');
+  assert.deepStrictEqual(ca(ag({ state: 'waiting' }), can).end, { confirm: true }, 'f: waiting End asks');
+  assert.strictEqual(ca(ag({ state: 'waiting' }), can).stop, null, 'f: waiting has no Stop');
+  const nc = ca(ag({}), cannot).stop;
+  assert.ok(nc && nc.disabled && nc.reason.length > 0, 'f: a kind that cannot interrupt shows Stop disabled with a reason');
+  assert.strictEqual(ca(ag({ state: 'idle', label: 'Not started', info: { lazy: true } }), can).end, null, 'f: not started has no End');
+  assert.strictEqual(ca(ag({ state: 'idle', label: 'Ended' }), can).end, null, 'f: ended has no End');
+  assert.deepStrictEqual(ca(ag({ parent: 'x' }), can), { stop: null, end: null }, 'f: a helper gets nothing');
+  assert.deepStrictEqual(ca(ag({ live: false }), can), { stop: null, end: null }, 'f: a non-live agent gets nothing');
+  assert.deepStrictEqual(ca(null, can), { stop: null, end: null }, 'f: no agent');
 }
 
 console.log('modelswitch tests passed');

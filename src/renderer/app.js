@@ -1793,19 +1793,35 @@ function modeChipHTML(a){const m=a.info.permMode, rs=m==='allow'&&a.info.permRes
   return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}. ${esc(MODE_HELP[m])}${rs?' Restored from your last run.':''} Click to change; it applies from the next request."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m])}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>`;}
 function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');}}
 function openModeMenu(a0,x,y,anchor){
-  const a=liveRoot(a0); if(!a||!a.live||!bridge.setPermMode||!feat(a,'modes'))return;
+  const a=liveRoot(a0); if(!a||!a.live)return;
+  /* spec 005 FR-017: Stop and End session for a main agent opened from its card (not from the chat header chip) */
+  const ops=anchor&&anchor.dataset&&anchor.dataset.id&&!a0.parent&&bridge.stop?DMK().cardMenuActions(a,capsFor(a)):{stop:null,end:null};
+  const hasMode=!!bridge.setPermMode&&feat(a,'modes'), hasOps=!!(ops.stop||(ops.end&&bridge.end));
+  if(!hasMode&&!hasOps)return;
   closeModeMenu();
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Permission mode for '+a.name);
-  m.innerHTML=['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>`<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(MODE_HELP[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`).join('')+(bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`;
+  m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>`<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(MODE_HELP[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`).join('')+(bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`:'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Interrupt the current turn. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end"><span class="mt"><b>End session</b><small>Frees the session. Sending a message resumes it.</small></span></button>`:''):'');
   document.body.appendChild(m);
   const r=m.getBoundingClientRect(); const px=Math.max(8,Math.min(x,innerWidth-r.width-8)), py=Math.max(8,Math.min(y,innerHeight-r.height-8));
   m.style.left=px+'px';m.style.top=py+'px';
-  m.addEventListener('click',e=>{const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}const b=e.target.closest('[data-mode]');if(!b)return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
-  m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('[data-mode],[data-act]')],i=it.indexOf(document.activeElement);
+  m.addEventListener('click',e=>{const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,!!(ops.end&&ops.end.confirm),anchor);return;}const b=e.target.closest('[data-mode]');if(!b)return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
+  m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('[data-mode],[data-act],[data-op]')],i=it.indexOf(document.activeElement);
     if(e.key==='ArrowDown'){e.preventDefault();it[(i+1)%it.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();it[(i+it.length-1)%it.length].focus();}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&anchor.focus&&document.contains(anchor))anchor.focus();}});
   (m.querySelector('[aria-checked="true"]')||m.querySelector('button')).focus();
   const c=$('modeChip');if(c&&anchor===c)c.setAttribute('aria-expanded','true');
+}
+/* spec 005 FR-017: Stop / End session from the card menu; the same calls and toasts as the chat header */
+async function cardOp(a,op,confirmEnd,anchor){
+  try{
+    if(op==='stop')return await stopLive(a);
+    if(confirmEnd){
+      const ok=await askDialog({title:'End '+a.name+'?',body:a.name+' is '+(a.state==='waiting'?'waiting for you':'still working')+'. The session ends and frees its place. Sending a message later resumes it.',returnFocus:anchor,
+        buttons:[{label:'Cancel',value:null},{label:'End session',value:'ok',cls:'primary warn'}]});
+      if(!ok)return;
+    }
+    await endLive(a);
+  }finally{refocusAnchor(anchor);}
 }
 /* small modal: returns {value, checked} or null when dismissed. Focus trap, Escape and focus return live in dialog.js (spec 003 FR-033). */
 const askDialog=DurbarDialog(document);
@@ -1859,9 +1875,9 @@ document.addEventListener('click',e=>{
 },true);
 document.addEventListener('contextmenu',e=>{
   const d=e.target.closest('.desk[data-id], .helper[data-id], .lrow[data-id]');if(!d||d.closest('#panel'))return;
-  const a=byId(d.dataset.id),ra=a&&liveRoot(a);if(!ra||!ra.live||!bridge.setPermMode)return;
+  const a=byId(d.dataset.id),ra=a&&liveRoot(a);if(!ra||!ra.live)return;
   e.preventDefault();const r=d.getBoundingClientRect();
-  openModeMenu(ra,e.clientX||r.left+16,e.clientY||r.top+16,d);
+  openModeMenu(a,e.clientX||r.left+16,e.clientY||r.top+16,d);
 });
 
 /* ---------------- model + effort ---------------- */

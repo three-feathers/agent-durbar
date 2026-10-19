@@ -201,6 +201,18 @@
     }
   }
 
+  /* Spec 005 FR-017: what the office card menu adds for a live main agent. Stop only while a turn runs (disabled with the reason when the kind cannot interrupt);
+     End session for a started, not yet ended session, and it asks first while the agent is busy or waiting. `a` is the main agent: {live,parent,state,label,info}. */
+  function cardMenuActions(a,caps){
+    const none={stop:null,end:null};
+    if(!a||!a.live||a.parent)return none;
+    const run=a.state==='working'||a.state==='thinking';
+    const out={stop:null,end:null};
+    if(run)out.stop=shows(caps,'stop')?{disabled:false,reason:''}:{disabled:true,reason:'This agent cannot interrupt a running turn.'};
+    const started=!(a.info&&a.info.lazy)&&a.label!=='Ended'&&a.label!=='Not started';
+    if(started)out.end={confirm:run||a.state==='waiting'};
+    return out;
+  }
   /* The modes an adapter can enforce, in the order the UI lists them. Missing or empty means read-only only (safe by default), unlike `shows`, which counts a missing caps object as all on. */
   const MODE_ORDER=['read-only','ask','allow'];
   function modesFor(caps){
@@ -214,5 +226,5 @@
     return m.includes(cur)?cur:'read-only';
   }
 
-  return {modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows};
+  return {modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows,cardMenuActions};
 })());

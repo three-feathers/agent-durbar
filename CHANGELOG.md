@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.6 tag)
 
+- **Stop and End session in the card menu (spec 005 FR-017, #251).** Right-click a live main agent: Stop (only while it works or thinks; disabled with the reason when the kind cannot interrupt) and End session (asks first when the agent is busy or waiting), the same calls and toasts as the chat header. Checked in the simulator by `npm run check:office` at 1440x900 and 1280x800; not run against a real session.
+
 - **Faster CI and tests (spec 008 FR-020..FR-023).** `npm test` compiles the test scripts once and runs the suites in parallel, about 16 s instead of about 4 minutes. The office check runs in four parallel shards. The package smoke no longer waits for the other jobs. A pull request that changes only docs, specs or Markdown skips the build and test jobs. A daily **Branch cleanup** workflow deletes branches whose pull request merged more than a day ago.
 
 - **New app icon: a lead and a working team.** A lead with one arm raised toward a small status board, above three seated workers at laptops, on a navy rounded square (design F2a). Same file names in `build/` (`icon.svg`, 1024x1024 `icon.png`, `icon.ico` with 16-256 px, `icon.icns`), so the packaging config is unchanged. The 16 px entry of `icon.ico` and `icon.icns` is a hand-tuned pixel version (`build/icon-16.svg`: the lead and the board, no team) so it stays readable in the taskbar and title bar; the README header shows it. Asset-only change, 0 AIU.
