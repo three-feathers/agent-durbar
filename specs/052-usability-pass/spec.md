@@ -101,4 +101,75 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 
 ## Changes
 
-*(none yet)*
+### 2026-10-19: round 2, new personas on the round-1 build
+
+**The panel:**
+- **Aiko**, a junior developer in her first week who uses Codex only;
+- **Rafael**, a team lead on a 13-inch laptop (1280x800) who triages between meetings;
+- **Noor**, an application-security engineer deciding on a company rollout;
+- **Kaito**, an art director at a retro games studio.
+
+All four were AI personas with 21 new screenshots and the source.
+
+**Verdicts on round 1:**
+- the answer bar, Previous sessions, "New: Read-only", the status shapes and the plain words work;
+- the More menu works only partly (Stop vs End vs Remove is unclear);
+- the restore banner works only partly: it names nothing, covers the composer, counts sessions but says "folders", and gives no route to the fix;
+- N works but nobody can discover it.
+
+**New findings, by risk:**
+1. The answer bar could cut a long command at 160 characters right next to Approve [Noor].
+2. Switching to Allow all ticks "also approve the N waiting requests" by default [Noor].
+3. Allow all is a small pencil on the desk, which reads as "editable", not as unguarded [Noor, Rafael, Aiko].
+4. *Approve for this session* hides its scope in a tooltip, and says "until you stop" although Stop does not end the grant [Noor].
+5. "Stuck" and "memory nearly full" show only in the List view [Rafael, Aiko].
+6. Theme craft [Kaito]:
+   - Retro's pastel tints and orange drawers break the arcade night;
+   - Corporate's rooms all look the same;
+   - the Japanese and European courts use place words from the wrong culture;
+   - the European court's small caps render tiny;
+   - Clean Office reads as 2021: outlines everywhere and five corner radii.
+
+**Requirements (round 2):**
+- **FR-015** **The restore notice is a strip under the top bar, not an overlay.**
+  - It names the folders: "Allow all, restored from your last run: *swisscontract-ai*, *command-center*".
+  - It offers **Switch to Ask first** (all of them, one click; lowering a mode needs no confirmation) and **Keep**, which dismisses it.
+  - It counts folders, not sessions.
+  - It covers nothing; the office lays out below it.
+- **FR-016** **The answer bar never shortens what you approve.**
+  - The request text is shown in full and wraps, up to 6 lines, then the bar shows only *Show in chat*.
+  - Several pending requests show "1 of 3", oldest first.
+  - The wide grant ("any arguments") stays in the card only.
+  - *Show in chat* moves focus to the request card, not to Approve.
+- **FR-017** **Switching to Allow all asks separately** about requests waiting now: the box is not ticked, and the dialog lists them.
+- **FR-018** **Allow all looks different on the desk:** an open padlock in the warning ink, with the tooltip "Allow all: runs edits, commands and tools without asking" (plus "(restored)").
+- **FR-019** **Wording:**
+  - *Approve for this session* names its scope in the button: "Allow *scope* this session", cut to 32 characters with the full text in the tooltip;
+  - grants last "until you end this session";
+  - the denied note says "Ask first";
+  - Read-only's help says read-only MCP tools still run;
+  - "1 Error", not "1 Errors".
+- **FR-020** **The More menu explains each item:**
+  - Stop: "interrupts this reply; the chat stays";
+  - End session: "frees it; your next message resumes it";
+  - Remove session: "takes the card out; history stays on disk".
+- **FR-021** **Office cards show a warning glyph** (⚠ in the status pill) when an agent is stuck (3 failed tool calls) or its memory is nearly full; the reason is in the tooltip and the accessible name.
+- **FR-022** **Settings say which harness a section applies to:**
+  - *Spending limit* is "Copilot sessions (AI credits). Claude Code sessions have a dollar cap in their chat header";
+  - *MCP servers* says Claude Code and Codex use their own MCP settings.
+- **FR-023** **Theme craft, within the theme rules** (colours, borders, words only; no size changes):
+  - **Retro:** PICO-8 tints `--tint-sage` #a8e4a0, `--tint-blue` #9fc3e8, `--tint-sand` #f2d48a, `--tint-clay` #f0b8a8; `--desk-drawer` the same as `--desk-front`.
+  - **Corporate:** tints carry the wall colour (#eef6f3, #edf3fa, #f8f3e6, #f9efed).
+  - **Indian court:** room border `--line-2` #b8892f.
+  - **Japanese court** place words Bunko, Kōbō, Kikan-shitsu, Tsūshinjo, Zatsumu.
+  - **European court:** places The Forge, The Messenger Hall, The Household; room names in uppercase with letter spacing, not small caps.
+- **FR-024** **Clean Office toward 2026** (sizes unchanged):
+  - cards lose their outline for a soft two-layer shadow;
+  - one radius scale: rooms 16, units 12, cards 10, buttons and selects 8, pills 999;
+  - numbers use tabular figures;
+  - `--bg` #f7f6f3 and `--line` #e7e3dc (warm neutral rather than cream).
+
+**Kept as they are, deliberately:**
+- Themed place names stay in card text: the nostalgia is the point, and the plain name is in the tooltip (FR-013).
+- Today's cost (#307) and splitting *Limit* from *Waiting* stay follow-ups.
+

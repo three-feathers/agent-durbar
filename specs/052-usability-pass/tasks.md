@@ -15,3 +15,17 @@
 - [x] T013 Plain names for themed places [FR-013]
 - [x] T014 N: next agent that needs you [FR-014]
 - [x] T015 Driver `scripts/shots-052-ux.js`, screenshots, `check:office`, `check:geometry`, docs; follow-up issues [SC-001..SC-004]
+
+## Round 2 (2026-10-19)
+
+- [ ] T016 Restore strip under the top bar: names, Switch to Ask first, Keep; count folders [FR-015]
+- [ ] T017 Answer bar: full text (wrap, 6 lines), "1 of N" oldest first, no wide grant, Show in chat focuses the card [FR-016]
+- [ ] T018 Allow all switch: waiting requests not approved by default, listed [FR-017]
+- [ ] T019 Allow all glyph and tooltip on the desk [FR-018]
+- [ ] T020 Wording: scoped session approval, "end this session", "Ask first", Read-only MCP note, "1 Error" [FR-019]
+- [ ] T021 More menu descriptions [FR-020]
+- [ ] T022 Warning glyph in the pill for stuck and memory nearly full [FR-021]
+- [ ] T023 Settings: harness per section [FR-022]
+- [ ] T024 Theme craft: Retro, Corporate, Indian, Japanese, European [FR-023]
+- [ ] T025 Clean Office: shadows, radius scale, tabular figures, warm neutral [FR-024]
+- [ ] T026 Driver, checks, screenshots; round 3 with new personas [SC-001..SC-004]
