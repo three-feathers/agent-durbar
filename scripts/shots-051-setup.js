@@ -32,7 +32,7 @@ module.exports = async (ctx) => {
     await shot(`051-harnesses-${w}x${h}.png`);
     // Install: the exact commands first
     await js(`document.querySelector('.hs-card[data-kind="claude"] [data-hs="install"]').click()`); await ctx.sleep(700);
-    const plans = await js(`[...document.querySelectorAll('#hsDlg .hs-plan code')].map(c=>c.textContent)`);
+    const plans = await js(`[...document.querySelectorAll('#hsDlg .hs-cmds code')].map(c=>c.textContent)`);
     assert.ok(plans.length === 2 && /brew install --cask claude-code/.test(plans[0]), 'the commands are shown before they run: ' + plans.join(' | '));
     await shot(`051-install-plan-${w}x${h}.png`);
     await js(`[...document.querySelectorAll('#hsDlg .btn')].find(b=>b.textContent==='Install').click()`); await ctx.sleep(1200);

@@ -89,3 +89,9 @@
 ## Round 4: one word per concept (2026-10-20)
 
 - [x] T054 One term per concept in every user-visible text (agent app, profile, Allow / Deny, folder, spending limit / cost / AI credits, End session, Remove from office, Demo, mood phrases), drivers and tests follow [FR-051]
+
+## Round 5: plain words for newcomers (2026-10-20)
+
+- [x] T059 Welcome card "Connect your AI account once", agent app cards name the account, install dialog in plain sentences with the exact command under a disclosure [FR-056]
+- [x] T060 Simple: spending-limit pause and rate-limit errors in plain words, folder grant label, inbox keys line hidden, More menu skips hidden items; restore strip text and buttons for everyone [FR-057]
+- [x] T061 Spending limit dialog: plans have a fixed price, Durbar never charges [FR-058]

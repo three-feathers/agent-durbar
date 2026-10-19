@@ -5,7 +5,7 @@
  *   OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_SIM_KINDS=mixed \
  *     DURBAR_DRIVER=$PWD/scripts/shots-052-ux.js xvfb-run -a npx electron . --no-sandbox
  *
- * Checks: the restore strip under the top bar (names the folders, covers nothing, Switch to Ask first / Keep); room counts in words; a waiting chat shows how to answer without
+ * Checks: the restore strip under the top bar (names the folders, covers nothing, Make it ask me first / Keep as it is); room counts in words; a waiting chat shows how to answer without
  * scrolling (its card in view, or the answer bar); at most 3 header actions; the More menu by keyboard; Previous sessions closed
  * for a chat with a conversation; the list header straight; N opens the next agent that needs you. Prints "[052] PASS".
  */
@@ -32,10 +32,10 @@ module.exports = async (ctx) => {
     // FR-015 (round 2): the restore notice is a strip under the top bar that names the folders and covers nothing
     const strip = await js(`(()=>{const e=document.getElementById('restoreStrip');if(!e||e.hidden)return null;const r=e.getBoundingClientRect(),f=document.getElementById('floor').getBoundingClientRect();return {text:e.innerText,below:f.top>=r.bottom-1,btns:[...e.querySelectorAll('button')].map(b=>b.textContent)}})()`);
     assert.ok(strip, 'the restore strip is shown');
-    assert.match(strip.text, /Still on Allow all from last time: .+/);
+    assert.match(strip.text, /^(One folder \(.+\) lets|\d+ folders \(.+\) let) agents change files without asking\.$/m);
     assert.ok(/swisscontract-ai|command-center/.test(strip.text), 'it names the folders: ' + strip.text);
     assert.ok(strip.below, 'the office starts below it (nothing covered)');
-    assert.deepStrictEqual(strip.btns, ['Switch to Ask first', 'Keep Allow all']);
+    assert.deepStrictEqual(strip.btns, ['Make it ask me first', 'Keep as it is']);
     // FR-006: room counts in words
     const dots = await js(`[...document.querySelectorAll('#stage .room-dots[role="img"]')].map(x=>x.getAttribute('aria-label'))`);
     assert.ok(dots.length && dots.every((l) => /\d+ (waiting for you|error|working|done|idle)/.test(l)), 'room counts have words: ' + dots[0]);
@@ -142,7 +142,7 @@ module.exports = async (ctx) => {
     console.log('[052] simple verbs on cards now:', simpleOffice.verb);
     await shot(`052-simple-office-${w}x${h}.png`);
     const jonasS = await deskId('Jonas'); await js(`document.querySelector('#stage [data-id="${jonasS}"]').click()`); await ctx.sleep(1200);
-    const simpleChat = await js(`({hidden:['modelChip','ctxChip','vscodeBtn'].every(i=>{const e=document.getElementById(i);return !e||!e.getClientRects().length}),answer:!!document.querySelector('#chat .note.perm .note-actions button, #chat .note.perm.settled'),mode:!!document.getElementById('modeChip')&&document.getElementById('modeChip').getClientRects().length>0})`);
+    const simpleChat = await js(`({hidden:['modelChip','ctxChip','vscodeBtn','copyResBtn','mcpBtn','toolsHdrBtn'].every(i=>{const e=document.getElementById(i);return !e||!e.getClientRects().length}),answer:!!document.querySelector('#chat .note.perm .note-actions button, #chat .note.perm.settled'),mode:!!document.getElementById('modeChip')&&document.getElementById('modeChip').getClientRects().length>0})`);
     assert.ok(simpleChat.hidden && simpleChat.answer && simpleChat.mode, 'Simple chat: developer chips gone, mode and answering kept: ' + JSON.stringify(simpleChat));
     await shot(`052-simple-chat-${w}x${h}.png`);
     await js(`document.getElementById('backBtn').click()`); await ctx.sleep(500);
@@ -175,7 +175,7 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('backBtn')&&document.getElementById('backBtn').click()`); await ctx.sleep(500);
     if (w === 1440) {
       await js(`document.querySelector('#restoreStrip [data-ns="ask"]').click()`); await ctx.sleep(900);
-      assert.ok(await js(`document.getElementById('restoreStrip').hidden`), 'Switch to Ask first clears it');
+      assert.ok(await js(`document.getElementById('restoreStrip').hidden`), 'Make it ask me first clears it');
     } else {
       await js(`document.querySelector('#restoreStrip [data-ns="keep"]').click()`); await ctx.sleep(500);
       assert.ok(await js(`document.getElementById('restoreStrip').hidden`), 'Keep dismisses it');

@@ -18,6 +18,8 @@
     claude: 'Uses your Claude plan (Pro or Max) or an Anthropic API key',
     copilot: 'Uses your GitHub account; a free plan works',
   };
+  /* spec 052 FR-056: the AI account each agent app connects, as a muted subtitle next to the card's title */
+  const FOR = { codex: 'for ChatGPT', claude: 'for Claude', copilot: 'for GitHub' };
   const ACCOUNT = { codex: 'your ChatGPT account', claude: 'your Claude account', copilot: 'your GitHub account' };
   /* FR-045: a plain label for each package manager in the install dialog; the command stays visible below it */
   const MANAGER = { brew: 'Homebrew', npm: 'npm', winget: 'winget (Windows Package Manager)' };
@@ -35,7 +37,7 @@
       const act = st === 'not-installed' ? 'install' : st === 'too-old' ? 'update' : st === 'not-signed-in' ? 'signin' : '';
       const label = { install: 'Install…', update: 'Update…', signin: 'Sign in…' }[act];
       const hint = st === 'ready' ? (k.version === 'sim' ? 'Simulated version.' : k.version ? 'Version ' + k.version + '.' : 'Ready to use.') : st === 'not-signed-in' ? 'Installed; sign in once to use it.' : st === 'too-old' ? (k.hint || 'This version is too old for Durbar.') : st === 'not-installed' ? 'Not on this computer yet.' : 'Durbar could not tell; try Check again.';
-      return `<li class="hs-card" data-kind="${esc(k.id)}"><div class="hs-top"><b>${esc(k.displayName || k.id)}</b><span class="hs-st hs-${cls}">${esc(word)}</span></div>
+      return `<li class="hs-card" data-kind="${esc(k.id)}"><div class="hs-top"><span class="hs-name"><b>${esc(k.displayName || k.id)}</b>${FOR[k.id] ? `<span class="hs-for"> · ${esc(FOR[k.id])}</span>` : ''}</span><span class="hs-st hs-${cls}">${esc(word)}</span></div>
         ${PLAN[k.id] ? `<p class="scr-note small hs-plan-uses">${esc(PLAN[k.id])}</p>` : ''}<p class="scr-note small">${esc(hint)}</p>
         <div class="hs-act">${act ? `<button class="btn primary" type="button" data-hs="${act}" data-kind="${esc(k.id)}">${esc(label)}</button>` : ''}<button class="btn" type="button" data-hs="check" data-kind="${esc(k.id)}">Check again</button></div></li>`;
     }).join('');
@@ -104,9 +106,14 @@
         [{ label: 'Close', cancel: true, onClick: (c) => c() }, { label: 'Open the official page', cls: 'primary', onClick: (c) => { B.harnessOpenPage(kind); c(); } }]);
       return;
     }
-    const opts = p.plans.map((pl, i) => `<label class="hs-plan"><input type="radio" name="hsPlan" value="${i}"${i === 0 ? ' checked' : ''}> <span><b>Using ${esc(MANAGER[pl.manager] || pl.manager)}${i === 0 && p.plans.length > 1 ? ' (recommended)' : ''}</b><code>${esc(pl.display)}</code>${pl.note ? `<small>${esc(pl.note)}</small>` : ''}</span></label>`).join('');
+    /* spec 052 FR-056: one plain sentence per way; the exact commands sit in a <details>, closed in Simple and open in Expert.
+       Main still shows the exact command in its native confirmation before anything runs (spec 051 FR-004b). */
+    const simple = document.body.classList.contains('simple');
+    const mgr = (pl) => MANAGER[pl.manager] || pl.manager;
+    const opts = p.plans.map((pl, i) => `<label class="hs-plan"><input type="radio" name="hsPlan" value="${i}"${i === 0 ? ' checked' : ''}> <span><b>Durbar ${op === 'update' ? 'updates' : 'installs'} ${esc(p.name)} for you with ${esc(mgr(pl))}${i === 0 && p.plans.length > 1 ? ' (recommended)' : ''}</b>${pl.note ? `<small>${esc(pl.note)}</small>` : ''}</span></label>`).join('');
+    const cmds = `<details class="hs-cmds"${simple ? '' : ' open'}><summary>Show the exact command</summary>${p.plans.map((pl) => `<p class="scr-note small">${esc(mgr(pl))}: <code>${esc(pl.display)}</code></p>`).join('')}</details>`;
     const choice = await new Promise((res) => {
-      modal((op === 'update' ? 'Update ' : 'Install ') + p.name, `<p class="scr-note">Choose how to install. Durbar runs the command shown, on your computer, as you:</p>${opts}<p class="scr-note small">Prefer to do it yourself? <a href="#" id="hsPage">Open the official page</a>.</p>`,
+      modal((op === 'update' ? 'Update ' : 'Install ') + p.name, `<p class="scr-note">Choose how. Durbar runs it on your computer, as you, and asks once more before it starts:</p>${opts}${cmds}<p class="scr-note small">Prefer to do it yourself? <a href="#" id="hsPage">Open the official page</a>.</p>`,
         [{ label: 'Cancel', cancel: true, onClick: (c) => { c(); res(null); } }, { label: op === 'update' ? 'Update' : 'Install', cls: 'primary', onClick: (c) => { const v = document.querySelector('#hsDlg input[name="hsPlan"]:checked'); const i = v ? Number(v.value) : 0; c(); res(i); } }]);
       const a = document.getElementById('hsPage'); if (a) a.onclick = (e) => { e.preventDefault(); B.harnessOpenPage(kind); };
     });
