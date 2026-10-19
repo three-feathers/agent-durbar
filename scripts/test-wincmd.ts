@@ -58,6 +58,7 @@ assert.ok(!navigationAllowed('file:///C:/Users/x/Downloads/index.html', WIN.repl
 
 // FR-005: only clipboard writes
 assert.ok(permissionAllowed('clipboard-sanitized-write'));
-for (const p of ['media', 'geolocation', 'notifications', 'clipboard-read', 'openExternal', 'fullscreen', 'midi', 'hid', 'serial', 'usb', 'display-capture', 'pointerLock', 'unknown']) assert.ok(!permissionAllowed(p), `${p} refused`);
+assert.ok(permissionAllowed('notifications'), 'spec 052 FR-059: "needs you" notifications (agent name and a short summary only)');
+for (const p of ['media', 'geolocation', 'clipboard-read', 'openExternal', 'fullscreen', 'midi', 'hid', 'serial', 'usb', 'display-capture', 'pointerLock', 'unknown']) assert.ok(!permissionAllowed(p), `${p} refused`);
 
 console.log('security sweep tests passed');

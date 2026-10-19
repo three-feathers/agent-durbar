@@ -968,7 +968,7 @@ html:not([data-ui]) .seg button{border-radius:6px}
 .inbox-row{display:grid;grid-template-columns:44px minmax(0,1fr);gap:12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--raised)}
 .inbox-row .ib-av svg{width:44px;height:44px}
 .inbox-row p{margin:0}
-.inbox-row .ib-h{font-size:13.5px}.inbox-row .ib-w{color:var(--amber-ink);font-weight:600}.inbox-row .ib-f{color:var(--muted)}
+.inbox-row .ib-h{font-size:13.5px}.inbox-row .ib-w{color:var(--amber-ink);font-weight:600}.inbox-row .ib-f{color:var(--muted)}.inbox-row .ib-wait{color:var(--muted);font-size:11.5px;font-weight:400;white-space:nowrap} /* spec 052 FR-061 */
 .inbox-row .ib-t{margin:4px 0 8px;font-size:13px;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
 .inbox-row .ib-act{display:flex;flex-wrap:wrap;gap:6px}
 .inbox-empty{color:var(--muted);font-size:13px;max-width:60ch}

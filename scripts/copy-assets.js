@@ -6,7 +6,7 @@ const root = path.resolve(__dirname, '..');
 const srcDir = path.join(root, 'src', 'renderer');
 const outDir = path.join(root, 'dist', 'renderer');
 fs.mkdirSync(outDir, { recursive: true });
-for (const f of ['index.html', 'styles.css', 'app.js', 'harnesses.js', 'demo.js', 'markdown.js', 'dialog.js', 'roomsummary.js', 'sessionsearch.js', 'usagetotals.js', 'costtable.js', 'modelswitch.js', 'schedtemplates.js', 'places.js', 'place-icons.js', 'mood.js', 'toolstats.js', 'theme.js', 'themes.css', 'scenekits.js', 'screens.js', 'screens.css']) {
+for (const f of ['index.html', 'styles.css', 'app.js', 'harnesses.js', 'demo.js', 'markdown.js', 'dialog.js', 'roomsummary.js', 'sessionsearch.js', 'usagetotals.js', 'costtable.js', 'modelswitch.js', 'schedtemplates.js', 'places.js', 'place-icons.js', 'mood.js', 'attention.js', 'toolstats.js', 'theme.js', 'themes.css', 'scenekits.js', 'screens.js', 'screens.css']) {
   fs.copyFileSync(path.join(srcDir, f), path.join(outDir, f));
 }
 // Markdown parser and sanitiser, bundled from node_modules (no CDN); exact versions are pinned in package.json.
