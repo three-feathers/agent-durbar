@@ -180,3 +180,9 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
 - **Rule** (`AGENTS.md`, *Before you finish*): make checks fast by building once and running in parallel, never by dropping checks. On your own machine keep the default limits; long matrices belong in CI.
 
 *Measured* (Linux, 4 cores, 15 GB), for FR-028 and FR-030: `OFFICE_QUICK=1 node scripts/check-parallel.js` with 2 jobs passed 242 checks in 150 s; available memory never fell below 10 GB; the 1-minute load peaked at 5.4. The CI timings are in the PR.
+
+### 2026-10-19: the redact ReDoS test without child processes (issue #303)
+
+*Found:* on PR #302, macOS CI failed `test:runtime` with "adversarial urlLong: child hung twice (ETIMEDOUT)". `redact()` itself takes about 38 ms on that input. What hung was the child process fed 1 MB on stdin, twice for 30 s, on a 3-core runner that runs 3 suites at once.
+
+- **FR-032** `scripts/test-redact.ts` section 9 runs each adversarial case in a **worker thread**: no process start, no stdin pipe. The worker times `redact()` and writes the result to shared memory, and the test waits with `Atomics.wait` (still synchronous), keeping the 30 s hang guard and one retry. The 1 s limit, the real ReDoS check, is unchanged. `test:` the whole file runs in 1.2 s locally. Stand-in modules confirm the guard: a 1.5 s function is measured at 1,499 ms and fails the limit; an endless loop times out; a throw is reported.
