@@ -14,6 +14,7 @@
 | CodeQL `js/shell-command-injection-from-environment` (medium) | #31 | `src/main/vscode.ts` (and the same pattern in `src/adapters/detect.ts`) | **Fix** (FR-003) |
 | CodeQL `js/incomplete-url-substring-sanitization` (high) | #33 | `scripts/test-codex-modes.ts` | False positive: a test assertion that a summary string mentions a host, not a URL check. Dismissed with that reason. |
 | CodeQL `js/bad-code-sanitization` (medium) | #2-#30 | `scripts/e2e-driver.js`, `scripts/shots-*.js` | Dev-only simulator drivers. They build page code from constants with `JSON.stringify` and run it in the local test window; nothing comes from outside. Dismissed as "used in tests". |
+| Own review: Electron window | - | `src/main/main.ts` | `will-navigate` let the window load **any** `file://` page, which would get the preload bridge; Electron **grants** web permissions (camera, microphone, notifications, ...) unless a handler says no. **Fix** (FR-004, FR-005). Already right: `contextIsolation`, `sandbox`, no `nodeIntegration`, new windows denied, a CSP without remote sources, `openExternal` only for http(s). |
 | Dependabot / `npm audit`: `sprintf-js` 1.1.3 DoS (moderate) | Dependabot #1, 8 audit lines | build-time only: `electron-builder` > `app-builder-lib` > `@electron/get` > `global-agent` > `roarr` > `sprintf-js` | **Not shipped in the app** and **no patched version exists**. The suggested `electron-builder` "fix" is an old major. Kept, recorded here and in the release notes; dismissed as tolerable risk. |
 
 ## Requirements
@@ -22,7 +23,10 @@
 - **FR-002** The remove-folder confirmation turns its escaped text back into plain text in **one pass** (`&amp;`, `&lt;`, `&gt;`, `&quot;` each read once). Before, four chained replacements turned `&amp;lt;`, a folder name with `&lt;` in it, into `<`. `test:` the unescape helper on such names.
 - **FR-003** On Windows, the `cmd.exe` used for a `.cmd` shim (VS Code's `code.cmd`, spec 009; agent CLIs' `.cmd` shims, spec 012 FR-036) is `%SystemRoot%\System32\cmd.exe` when `SystemRoot` is an absolute path. `ComSpec` is used only when it is an absolute path to a file named `cmd.exe`; otherwise plain `cmd.exe`. Before, any `ComSpec` value from the environment was run. `test:` the choice for each of these inputs.
 
+- **FR-004** The window navigates (`will-navigate`, `will-redirect`) only to the app's own `index.html`, with any query or hash. Any other `file://` page and any web page is refused. `test:` allowed and refused URLs on Linux and Windows paths. `sim:` in Electron, `location.href = 'file:///tmp/…html'` left the app on its own page.
+- **FR-005** Web permission requests and checks are refused, except `clipboard-sanitized-write`, which the Copy buttons need (spec 005 FR-015). `test:` the allow list. `sim:` in Electron, the microphone gave `NotAllowedError`, notifications gave `denied`, and a reply's Copy button still put the reply on the clipboard.
+
 ## Honest limits
 
-- FR-003 is unit-tested only; Windows was not run by hand (as for every Windows path in this project).
+- FR-003 and FR-004's Windows paths are unit-tested only; Windows was not run by hand (as for every Windows path in this project).
 - The dismissed alerts stay listed here, so the reasons are in the repository, not only on GitHub.
