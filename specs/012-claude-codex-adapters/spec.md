@@ -738,3 +738,27 @@ The owner handed the Codex track to this agent ("ruben does not have chatgpt acc
   - in Read-only `echo one > a.txt` failed (read-only file system, no file);
   - after `setPermMode('allow')` the next message wrote `a.txt`;
   - after End session, `start` with the same Durbar id resumed the same thread, which answered "a.txt" when asked what it wrote.
+
+### 2026-10-19: Codex offered like Copilot and Claude Code when installed (T043c, T043; owner)
+
+*Owner, 2026-10-19:* "you can take all the work until completion" (the Codex track), after "support claude same as copilot if it is installed" for Claude (FR-135).
+
+- **FR-145** `[IMPLEMENTED]` OpenAI Codex is registered in every build next to Copilot and Claude Code (`offeredDescriptors`). Whether it can be used is what detection says (FR-137): ready, not installed, not signed in, or too old. With two or more ready, the Harness picker offers it (FR-136). This replaces the `DURBAR_CODEX` hook of FR-100, which was never wired.
+- What a Codex agent has (FR-089..FR-099, FR-093, FR-137..FR-144):
+  - the three modes, enforced (Read-only limits reads to the session folders);
+  - approvals through Durbar's broker;
+  - interrupt, with the FR-139 caveat; End session; resume, also across restarts;
+  - a mode change from the next message;
+  - Codex's models and efforts per turn;
+  - previous sessions and history replay;
+  - usage tokens and the context window.
+  
+  Not yet: a credit cap (Codex reports no cost; ChatGPT plans have their own limits), MCP status and switches, helpers (sub-agents) and the question card (T050, T052, T065).
+- `real:` 2026-10-19, the built app, a fresh profile, Codex 0.163 (ChatGPT Plus), two launches:
+  - `listAdapters` gave `copilot`, `claude` and `codex` ready (Codex: "Signed in to Codex on this computer."), and the Harness picker offers GitHub Copilot, Claude Code and OpenAI Codex;
+  - Codex's 7 models were listed;
+  - first launch: a Read-only Codex folder answered;
+  - second launch: the card said "Your last session here"; opening it replayed the chat with "Continued after restart"; asked for the word, it answered **marmalade**;
+  - the folders file held the Codex thread id with `adapterId: codex`.
+  
+  Screenshot: `docs/screenshots/012-codex-real-continued-1440x900.png`. Not checked: Windows and macOS, and MCP or sub-agents through Codex (T065).
