@@ -158,19 +158,10 @@ export async function detectBinary(spec: BinarySpec, env: DetectEnv, exec: Exec,
   if (!found) return { state: 'not-installed', hint: spec.installHint };
   const shown = displayPath(found, env);
 
-  let file = found;
-  let args: readonly string[] = spec.versionArgs;
-  let verbatim = false;
-  if (env.platform === 'win32' && found.toLowerCase().endsWith('.cmd')) {
-    if (CMD_UNSAFE.test(found)) return { state: 'unknown', hint: `Found ${shown} but cannot run it safely; install the native binary.`, path: found };
-    file = env.env.ComSpec || env.env.COMSPEC || 'cmd.exe';
-    verbatim = true; // the /c argument carries its own quotes; Node must not re-quote them
-    args = ['/d', '/s', '/c', `"${found}" ${spec.versionArgs.join(' ')}`];
-  }
-
+  if (env.platform === 'win32' && found.toLowerCase().endsWith('.cmd') && CMD_UNSAFE.test(found)) return { state: 'unknown', hint: `Found ${shown} but cannot run it safely; install the native binary.`, path: found };
   let res: ExecResult;
   try {
-    res = await exec(file, args, verbatim ? { timeoutMs: TIMEOUT_MS, verbatim: true } : { timeoutMs: TIMEOUT_MS });
+    res = await execFound(found, spec.versionArgs, env, exec);
   } catch {
     return { state: 'unknown', hint: `Found ${shown} but could not read its version.`, path: found };
   }
@@ -180,6 +171,39 @@ export async function detectBinary(spec: BinarySpec, env: DetectEnv, exec: Exec,
     return { state: 'too-old', version, hint: `Found ${version}, needs ${spec.minVersion} or later`, path: found };
   }
   return { state: 'ready', version, hint: READY_HINT, path: found };
+}
+
+/** Runs a found binary with fixed arguments: argv only; a Windows `.cmd` shim goes through `cmd /d /s /c` with its own quotes (the caller checked CMD_UNSAFE). */
+function execFound(found: string, args: readonly string[], env: DetectEnv, exec: Exec): Promise<ExecResult> {
+  if (env.platform === 'win32' && found.toLowerCase().endsWith('.cmd')) {
+    const file = env.env.ComSpec || env.env.COMSPEC || 'cmd.exe';
+    // the /c argument carries its own quotes; Node must not re-quote them
+    return exec(file, ['/d', '/s', '/c', `"${found}" ${args.join(' ')}`], { timeoutMs: TIMEOUT_MS, verbatim: true });
+  }
+  return exec(found, args, { timeoutMs: TIMEOUT_MS });
+}
+
+export const CLAUDE_SIGN_IN_HINT = 'Sign in first: run `claude auth login` in a terminal, then refresh the agent kinds.';
+
+/**
+ * Claude Code (spec 012 FR-132): the version probe, then `claude auth status --json` (no prompt, nothing billed). Only `loggedIn`
+ * is read; the email, organisation and plan in that output are never kept. Not signed in = `not-signed-in`; anything unclear
+ * (an older CLI, a timeout, not JSON) keeps `ready` as before.
+ */
+export async function detectClaude(env: DetectEnv, exec: Exec, configuredPath?: string): Promise<DetectResult & { path?: string }> {
+  const r = await detectBinary(CLAUDE_BINARY, env, exec, configuredPath);
+  if (r.state !== 'ready' || !r.path) return r;
+  try {
+    const a = await execFound(r.path, ['auth', 'status', '--json'], env, exec);
+    if (a && !a.timedOut && !a.errorCode && a.stdout) {
+      const loggedIn = (JSON.parse(a.stdout) as { loggedIn?: unknown } | null)?.loggedIn;
+      if (loggedIn === false) return { ...r, state: 'not-signed-in', hint: CLAUDE_SIGN_IN_HINT };
+      if (loggedIn === true) return { ...r, hint: 'Signed in to Claude Code on this computer.' };
+    }
+  } catch {
+    /* unclear: ready, as before */
+  }
+  return r;
 }
 
 /** No I/O: the runtime ships with the app and its sign-in is learned at the first start (FR-041). */
@@ -205,7 +229,7 @@ export function nodeDetectEnv(): DetectEnv {
 
 export function detectorFor(id: string): ((d: AdapterDescriptor) => Promise<DetectResult>) | undefined {
   if (id === 'copilot') return () => detectCopilot();
-  if (id === 'claude') return () => detectBinary(CLAUDE_BINARY, nodeDetectEnv(), nodeExec).then(({ path: _p, ...r }) => r); // a `--version` call, never a prompt (FR-010)
+  if (id === 'claude') return () => detectClaude(nodeDetectEnv(), nodeExec).then(({ path: _p, ...r }) => r); // `--version`, then `auth status` (FR-132); never a prompt (FR-010)
   return undefined;
 }
 
