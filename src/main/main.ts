@@ -15,7 +15,7 @@ import type { AgentAdapter } from '../adapters/types';
 import type { AdapterInfo } from '../shared/adapters';
 import { startOptionsOf } from './startopts';
 import { resolveWorkspaceCwd } from '../adapters/workspace';
-import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, stageAttachment } from '../shared/attachments';
+import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, stageAttachment, kindOfFile, sweepStaleStageDirs } from '../shared/attachments';
 import type { AddResult, AgentInfo, FloorsResult, FloorsState, ModelChoice, PermMode, PickedFile, ResumeResult, SessionOptions, VsChatListResult } from '../shared/api';
 import { GROUND } from '../shared/floors';
 import type { FloorOp } from '../shared/floors';
@@ -66,7 +66,6 @@ let usageTotalsStore: UsageTotalsStore | undefined;
 let agentTrust: AgentTrustStore | undefined;
 /** The folder (or .code-workspace file) an agent belongs to; the key of the saved folder list. */
 const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
-const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
 
 /** Only Copilot is registered; every agent is routed to its adapter through the router (spec 012 FR-046..FR-050). Adapters are typed as the neutral interface: optional members say what each can do (spec 030 FR-017, spec 012 FR-027). */
 const registry = createRegistry([...PRODUCTION_DESCRIPTORS, ...enabledExperimental(dev)]); // DURBAR_CLAUDE=1 adds Claude Code (spec 012 FR-114)
@@ -375,21 +374,28 @@ ipcMain.handle('vschat:read', async (_e, id: unknown, key: unknown) => {
   return readChat(ref);
 });
 
-ipcMain.handle('agents:pickAttachments', async (): Promise<PickedFile[]> => {
+ipcMain.handle('agents:pickAttachments', async (_e, want: unknown): Promise<PickedFile[]> => {
+  const images = want === 'image'; // spec 004 FR-013: the image button opens the picker with an image filter
   // Dev/test hook: DURBAR_PICK="/a.txt:/b.png" answers the picker without a native dialog.
   const preset = (dev.DURBAR_PICK ?? '').split(path.delimiter).filter((p) => p && fs.existsSync(p));
-  if (preset.length) {
-    return preset.map((p) => {
-      pickedFiles.add(p);
-      return { path: p, name: path.basename(p), kind: IMAGE_EXT.has(path.extname(p).toLowerCase()) ? 'image' : 'file', size: sizeOf(p) };
+  let paths: string[] = preset;
+  if (!preset.length) {
+    const r = await dialog.showOpenDialog({
+      title: images ? 'Attach images' : 'Attach files or images',
+      properties: ['openFile', 'multiSelections'],
+      ...(images ? { filters: [{ name: 'Images (PNG, JPEG, GIF, WebP, BMP)', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'] }] } : {}),
     });
+    if (r.canceled) return [];
+    paths = r.filePaths;
   }
-  const r = await dialog.showOpenDialog({ title: 'Attach files or images', properties: ['openFile', 'multiSelections'] });
-  if (r.canceled) return [];
-  return r.filePaths.map((p) => {
+  const out: PickedFile[] = [];
+  for (const p of paths) {
+    const size = sizeOf(p);
+    if (!size) continue; // spec 004 FR-012: empty (or unreadable) files are not attached
     pickedFiles.add(p);
-    return { path: p, name: path.basename(p), kind: IMAGE_EXT.has(path.extname(p).toLowerCase()) ? 'image' : 'file', size: sizeOf(p) };
-  });
+    out.push({ path: p, name: path.basename(p), kind: kindOfFile(p), size }); // FR-009: the bytes decide, not the extension
+  }
+  return out;
 });
 
 ipcMain.handle('agents:stageAttachment', (_e, name: unknown, mime: unknown, data: unknown) => {
@@ -427,8 +433,9 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
     await ensureLive(agents.get(id) as AgentInfo); // an ended or not-yet-started agent starts (resumes) its session here
     await ad.send(id, {
       text: String(text),
-      attachments: safe.map((a) => ({ path: a.path, kind: a.kind === 'image' ? 'image' : 'file' })),
+      attachments: safe.map((a) => ({ path: a.path, kind: kindOfFile(a.path) })), // FR-009: checked again here, the renderer's kind is not trusted
     });
+    for (const a of safe) pickedFiles.delete(a.path); // spec 004 FR-015: a sent file must be picked again to be sent again
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -855,6 +862,7 @@ app.whenReady().then(() => {
   usageStore = new UsageStore(path.join(app.getPath('userData'), 'durbar-tool-usage.json'));
   usageStore.load();
   usageTotalsStore = new UsageTotalsStore(path.join(app.getPath('userData'), 'durbar-usage-totals.json'));
+  sweepStaleStageDirs(os.tmpdir()); // spec 004 FR-010: staging folders a crash left behind
   agentTrust = new AgentTrustStore(path.join(app.getPath('userData'), 'durbar-agent-trust.json'));
   agentTrust.load();
   usageTotalsStore.load();

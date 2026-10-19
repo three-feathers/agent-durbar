@@ -892,7 +892,7 @@ function openPanel(id,focus){
   $('pauseBtn').onclick=()=>{a.paused=!a.paused;if(a.live&&bridge.setPaused)bridge.setPaused(a.id,a.paused);toast(esc(a.name)+(a.paused?' paused.':' resumed.'));renderAll();};
   if($('stopBtn'))$('stopBtn').onclick=()=>{if(a.live)return stopLive(a);a.paused=false;a.state='idle';a.label='Stopped';a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
   $('attFile').onclick=()=>{if(a.live)return pickLive();addPicked([{name:SAMPLE_FILES[fi++%SAMPLE_FILES.length],kind:'file',size:12*1024}]);};
-  $('attImg').onclick=()=>{if(a.live)return pickLive();addPicked([{name:SAMPLE_IMGS[ii++%SAMPLE_IMGS.length],kind:'image',size:240*1024}]);};
+  $('attImg').onclick=()=>{if(a.live)return pickLive('image');addPicked([{name:SAMPLE_IMGS[ii++%SAMPLE_IMGS.length],kind:'image',size:240*1024}]);};
   /* drag and drop anywhere on the panel, paste into the message box */
   const panel=$('panel'), ov=$('dropOv'); let dragDepth=0;
   const hasFiles=e=>e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files');
@@ -1713,7 +1713,7 @@ async function sendLive(text,forId){
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})));
   if(!r.ok){closeTurn(a);addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);setState(a,'error',null,'Send failed: '+SHORT(r.error,100));}
 }
-async function pickLive(){addPicked(await bridge.pickAttachments());}
+async function pickLive(want){addPicked(await bridge.pickAttachments(want));}
 async function openLive(a){
   const r=await bridge.openInVSCode(liveRoot(a).id);
   toast(r.ok?'Opening in VS Code…':'Could not open VS Code: '+esc(r.error||'unknown error'),4200);
