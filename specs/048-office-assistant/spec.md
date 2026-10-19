@@ -62,6 +62,7 @@ I type a question the chips don't cover ("Summarize what the api folder did toda
 - A helper's activity counts towards its main agent.
 - Restarted app: "finished today" only knows what Durbar saw while it ran (the usage totals survive, the event timeline does not in Phase 1). The answer says "since Durbar started at 09:12".
 - Multiple profiles (spec 049): the assistant answers inside the active profile only.
+- The "Start my day" briefing is a starter template of Scheduled prompts (spec 044, issue #128), not part of this spec. It can use this query layer later for its *From the office* part.
 
 ## Requirements *(mandatory)*
 

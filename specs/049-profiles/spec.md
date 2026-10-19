@@ -56,7 +56,7 @@ When I add a folder whose Git remote owner looks like the other profile's (an ow
 
 - Deleting a profile: it asks, then deletes only Durbar's data for it. The vendor homes are listed with their paths, and Durbar does not delete them (they hold the user's sign-ins).
 - The old single-profile data becomes the profile *Default*, in place, with no copy and no migration risk.
-- A future Office assistant (spec 048) or Morning briefing (spec 050) answers inside the active profile only.
+- A future Office assistant (spec 048) and scheduled prompts with their starter templates (spec 044, including "Start my day") work inside the active profile only.
 
 ## Requirements *(mandatory)*
 
