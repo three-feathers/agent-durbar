@@ -29,4 +29,4 @@
 - [x] T032 (2026-10-19) Faster CI: compile tests once and run suites in parallel (FR-020), shard `check:office` with the required check kept as an aggregator (FR-021), package smoke without `needs` (FR-022), skip code jobs for docs-only PRs (FR-023)
 - [x] T033 (2026-10-19) Branch cleanup workflow: merged more than a day ago, same repo, not the default, no open PR, tip = merged head; daily and by hand with a dry run (FR-024)
 - [x] T034 (2026-10-19) Linux window icon and desktopName/syncDesktopName (#247) [FR-025, FR-026]
-- [x] T035 (2026-10-19) Theme layout matrix in CI behind the required office check (FR-027); a local parallel runner with CPU, memory and priority limits and per-run result files (FR-028); `npm test` leaves a core and runs niced (FR-029); reduced motion outside the plain office check (FR-030)
+- [x] T035 (2026-10-19) Theme geometry check per PR, the full theme matrix in CI on demand (FR-031, replacing FR-027); a local parallel runner with CPU, memory and priority limits and per-run result files (FR-028); `npm test` leaves a core and runs niced (FR-029); reduced motion outside the plain office check (FR-030)

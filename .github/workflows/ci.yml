@@ -4,6 +4,14 @@ on:
   pull_request:
   push:
     branches: [main]
+  # spec 008 FR-031: the full layout matrix in every theme runs only on demand:
+  #   gh workflow run ci.yml --ref <branch> -f full_themes=true
+  workflow_dispatch:
+    inputs:
+      full_themes:
+        description: Also run the full office layout check in every theme
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -32,8 +40,8 @@ jobs:
           if [ "${{ github.event_name }}" != "pull_request" ]; then echo "code=true" >> "$GITHUB_OUTPUT"; echo "themes=true" >> "$GITHUB_OUTPUT"; exit 0; fi
           files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
           echo "$files"
-          # spec 008 FR-027: the theme layout matrix runs when the look or the check itself can change
-          if echo "$files" | grep -qE '^(src/renderer/|scripts/check-office-overlap\.js|scripts/check-parallel\.js|scripts/fixtures/themes/|\.github/workflows/ci\.yml)'; then echo "themes=true" >> "$GITHUB_OUTPUT"; else echo "themes=false" >> "$GITHUB_OUTPUT"; fi
+          # spec 008 FR-031: the theme geometry check runs when the look or the checks themselves can change
+          if echo "$files" | grep -qE '^(src/renderer/|scripts/check-office-overlap\.js|scripts/check-theme-geometry\.js|scripts/check-parallel\.js|scripts/fixtures/themes/|\.github/workflows/ci\.yml)'; then echo "themes=true" >> "$GITHUB_OUTPUT"; else echo "themes=false" >> "$GITHUB_OUTPUT"; fi
           if echo "$files" | grep -qvE '^(docs/|specs/)|\.md$'; then echo "code=true" >> "$GITHUB_OUTPUT"; else echo "code=false" >> "$GITHUB_OUTPUT"; echo "Docs, specs and Markdown only: build, test and office checks are skipped."; fi
 
   build-test:
@@ -100,12 +108,30 @@ jobs:
           OFFICE_SHARDS: 4
           OFFICE_SHARD: ${{ matrix.index }}
 
-  # Spec 008 FR-027/FR-030: the office check in every other theme, on runners (not a laptop), with reduced motion: these check
-  # the layout per theme; the office shards above keep motion on. Clean Office is the plain check.
+  # Spec 008 FR-031: a theme may not change sizes, so the full layout check above runs in Clean Office only, and this job proves
+  # every other theme lays out the same (every box and font size, display text neutralised) and passes the office rules in its
+  # own fonts. About a minute for all themes.
+  theme-geometry:
+    name: Theme geometry
+    needs: changes
+    if: needs.changes.outputs.themes == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: sudo apt-get update && sudo apt-get install -y xvfb
+      - run: npm run check:geometry
+
+  # On demand only (workflow_dispatch with full_themes): the full office check in every other theme, reduced motion, 2 shards each.
   theme-shard:
     name: Theme layout ${{ matrix.theme }} ${{ matrix.shard }}/2
     needs: changes
-    if: needs.changes.outputs.themes == 'true'
+    if: github.event_name == 'workflow_dispatch' && inputs.full_themes
     runs-on: ubuntu-latest
     timeout-minutes: 12
     strategy:
@@ -131,18 +157,19 @@ jobs:
           if [ "$THEME" = user ]; then export OFFICE_USER_THEME=scripts/fixtures/themes/check-user.json; else export DURBAR_THEME="$THEME" OFFICE_THEME="$THEME"; fi
           npm run check:office
 
-  # The required check keeps its name: it passes when every office and theme shard passed (or was skipped).
+  # The required check keeps its name: it passes when the office shards, the theme geometry and (on demand) the full theme
+  # shards passed or were skipped.
   office-check:
     name: Office layout check (xvfb)
-    needs: [changes, office-shard, theme-shard]
+    needs: [changes, office-shard, theme-geometry, theme-shard]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - shell: bash
         run: |
-          r="${{ needs.office-shard.result }}"; t="${{ needs.theme-shard.result }}"
-          echo "office shards: $r; theme shards: $t"
+          r="${{ needs.office-shard.result }}"; g="${{ needs.theme-geometry.result }}"; t="${{ needs.theme-shard.result }}"
+          echo "office shards: $r; theme geometry: $g; full theme shards: $t"
           if [ "${{ needs.changes.result }}" != "success" ]; then exit 1; fi
           ok() { [ "$1" = "success" ] || [ "$1" = "skipped" ]; }
-          if ok "$r" && ok "$t"; then exit 0; fi
+          if ok "$r" && ok "$g" && ok "$t"; then exit 0; fi
           exit 1

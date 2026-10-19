@@ -541,6 +541,7 @@ async function driver(ctx) {
 }
 
 module.exports = driver;
+module.exports.pageCheck = pageCheck; /* reused by check-theme-geometry.js */
 
 if (require.main === module) {
   const { spawnSync } = require('child_process');
