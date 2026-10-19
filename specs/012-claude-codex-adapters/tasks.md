@@ -62,6 +62,7 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 - [ ] T050 (fixtures; the Claude half done as T111 on 2026-10-19, Codex open) MCP status: Claude init `mcp_servers` and `mcpServerStatus`, `toggleMcpServer`; Codex `mcpServerStatus/list` read-only; capability `mcpToggle` per adapter; tests [FR-024]
 - [x] T051 (sim) Redaction: vendor stderr and `DURBAR_LOG` never contain environment values, tokens or key-like strings; tests with planted secrets [FR-006]
 - [ ] T052 (sim; Claude `AskUserQuestion` done as T107-T109 on 2026-10-19, elicitation and Codex still open) `AskUserQuestion`, MCP elicitation and `request_permissions` in v1: shown as a pending card, answered deny, recorded as `[KNOWN GAP]` (no question UI yet); tests [FR-004]
+- [x] T052b (2026-10-19) Codex request_user_input to the question card [FR-146]; MCP elicitation still open
 - [ ] T053 (sim) Docs for Phase 3: README adapter section, CHANGELOG Unreleased line, converge spec/plan/tasks, update research.md where the build disproved a `docs:` claim [FR-008]
 - [x] T053a (2026-10-19) The Claude half: research.md findings section; README, CHANGELOG and the spec changes were updated in each pull request (#186-#228); the Codex half stays with #51
 

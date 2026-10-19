@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.6 tag)
 
+- **Questions from Codex use the question card (spec 012 FR-146).** When Codex asks you to choose, the same card as for Copilot and Claude shows the options. A secret question is never shown there. Codex offers this tool only with an experimental setting, so it often asks in plain text.
+
 - **OpenAI Codex is offered next to Copilot and Claude Code (spec 012 FR-145).** If `codex` is installed and signed in (`codex login`, for example with ChatGPT), it is a harness you can pick. It supports:
   - Read-only, Ask first and Allow all, enforced;
   - a mode switch from the next message, models and efforts;

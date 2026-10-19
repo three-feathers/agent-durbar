@@ -16,6 +16,7 @@ import { CodexMapper } from './codexMap';
 import { createCodexRpc, realSpawn } from './codexRpc';
 import type { CodexRpc, RequestOutcome, SpawnFn } from './codexRpc';
 import { codexHistory, codexModelOptions, codexPreviousSessions } from './codexHistory';
+import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
 import type { HistoryResult, PreviousSession } from './history';
 import type { ModelOption } from '../shared/modelswitch';
 import { CODEX_INITIALIZE_CAPABILITIES, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexWorkspaceRoots } from './codexModes';
@@ -179,6 +180,8 @@ interface Live {
   broker: PermissionBroker;
   /** Resolves when the child has exited. */
   exited: Promise<void>;
+  /** FR-146: questions waiting for the user, by request id. */
+  questions: Map<string, (answers: Record<string, string> | null) => void>;
   /** Shell tool calls started and not yet ended (FR-139). */
   runningCommands: Set<string>;
   /** Drops mapper events (while starting with `quiet`, and once the session is stopping or dead). */
@@ -417,6 +420,7 @@ export class CodexAdapter implements AgentAdapter {
       stopping: false,
       doneTurns: [],
       runningCommands: new Set<string>(),
+      questions: new Map(),
       turnStarting: false,
       pendingInterrupt: false,
       interrupting: false,
@@ -572,6 +576,7 @@ export class CodexAdapter implements AgentAdapter {
     live.interrupting = true;
     try {
       live.broker.denyPending();
+      for (const answer of [...live.questions.values()]) answer(null); // FR-146: an open question is skipped
       const turnId = live.turnId;
       if (!turnId) {
         // A turn is starting but its id is not known yet: remember the request and send it the moment the id arrives.
@@ -641,6 +646,7 @@ export class CodexAdapter implements AgentAdapter {
     live.stopping = true;
     live.muted = true;
     live.broker.stop();
+    for (const answer of [...live.questions.values()]) answer(null); // FR-146
     // Let the denied requests' answers (wire `cancel`) go out before the interrupt and the close.
     await new Promise<void>((r) => setImmediate(r));
     if (!live.rpc.exited) {
@@ -749,6 +755,7 @@ export class CodexAdapter implements AgentAdapter {
 
   /** A server request (approval or question). Read-only is double-locked: the broker denies and `codexReply` declines. Never `acceptForSession`. */
   private async onServerRequest(live: Live, method: string, params: unknown): Promise<RequestOutcome> {
+    if (method === 'item/tool/requestUserInput' || method === 'tool/requestUserInput') return this.askUser(live, params);
     const perm = codexPermission(method, params);
     const itemId = isObj(params) && typeof params.itemId === 'string' && params.itemId ? params.itemId : undefined;
     const toolCallId = itemId ?? `${method}#${++live.anon}`;
@@ -767,6 +774,46 @@ export class CodexAdapter implements AgentAdapter {
       void live.rpc.request('turn/interrupt', { threadId: live.threadId, turnId: live.turnId }).catch(() => undefined);
     }
     return { result: { decision: reply.decision } };
+  }
+
+  /**
+   * FR-146: Codex asks the user (`item/tool/requestUserInput`). The questions go to the question card (spec 012 FR-128); the
+   * answer goes back keyed by Codex's question id. Skip, Stop and End session answer with nothing. A secret question
+   * (`isSecret`) is never shown or answered here: what is typed into the card lands in the chat.
+   */
+  private async askUser(live: Live, params: unknown): Promise<RequestOutcome> {
+    const raw = isObj(params) && Array.isArray(params.questions) ? params.questions.filter((q) => isObj(q) && q.isSecret !== true) : [];
+    const { asked, originals } = parseQuestionsWithOriginals({ questions: raw });
+    const idOf = new Map<string, string>();
+    asked.forEach((q, i) => {
+      const src = raw.find((r) => isObj(r) && String(r.question) === originals[i]) as Record<string, unknown> | undefined;
+      if (src && typeof src.id === 'string') idOf.set(q.question, src.id);
+    });
+    if (!asked.length || live.stopping) return { result: { answers: {} } };
+    const requestId = `codex-q-${++live.anon}`;
+    const answers = await new Promise<Record<string, string> | null>((resolve) => {
+      live.questions.set(requestId, resolve);
+      this.emit(live.sid, { type: 'question', phase: 'asked', requestId, questions: asked });
+      this.emit(live.sid, { type: 'status', status: 'needs-permission', intent: 'Waiting for your answer' });
+    });
+    live.questions.delete(requestId);
+    const clean = answers ? cleanAnswers(asked, answers) : undefined;
+    if (!clean) {
+      this.emit(live.sid, { type: 'question', phase: 'cancelled', requestId });
+      return { result: { answers: {} } };
+    }
+    this.emit(live.sid, { type: 'question', phase: 'answered', requestId, answers: clean });
+    this.emit(live.sid, { type: 'status', status: 'working', intent: 'Answered' });
+    const out: Record<string, { answers: string[] }> = {};
+    for (const [q, a] of Object.entries(clean)) {
+      const id = idOf.get(q);
+      if (id) out[id] = { answers: a.split(/,\s*/).filter(Boolean) };
+    }
+    return { result: { answers: out } };
+  }
+
+  answerQuestion(sessionId: string, requestId: string, answers: Record<string, string> | null): void {
+    this.sessions.get(sessionId)?.questions.get(requestId)?.(answers);
   }
 
   /** The child exited. Not caused by `stop`: the session is over and says so (FR-097). */
