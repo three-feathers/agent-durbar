@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.5 tag)
 
+- **MCP server groundwork: stdio bridge (spec 041 T018).** `agent-durbar --durbar-mcp-bridge` is the command an MCP client will launch: it relays the client's requests to a running Durbar over the local socket after the key handshake, and answers clearly when Durbar is not running or the server is off. The app now starts from `dist/main/entry.js`, which checks the flag before anything else. Nothing turns the server on from the window yet (T020). 0 AIU.
+
 - **MCP server groundwork: server host (spec 041 T017).** Durbar can now serve its read tools on a local socket (named pipe on Windows), behind a new `mcpServer` setting that is **off by default**, with mutual key authentication, at most 3 clients and 10 calls per second each. There is no switch for it in the window yet (T020), so nothing changes for users. Developer hook `DURBAR_SIM_MAIN=N` feeds it simulated agents. 0 AIU.
 
 - **MCP server groundwork: read tools (spec 041 T016).** The seven read tools (folders, agents, floors, usage totals, settings, MCP state, request status) answer from Durbar's own state with secret values masked: env and header key names only, secret flags and URL parts hidden. Not reachable yet (no server runs). No user-visible change, 0 AIU.
