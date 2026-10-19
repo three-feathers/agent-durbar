@@ -9,6 +9,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { FakeAdapter } from '../src/adapters/fake';
 import type { OptionalMember } from '../src/adapters/fake';
+import { eventProblems } from '../src/adapters/eventguard';
 import { EventMapper } from '../src/adapters/map';
 import type { RawEvent } from '../src/adapters/map';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
@@ -85,7 +86,12 @@ export async function runContract(name: string, make: () => ContractTarget, hook
   const fresh = () => {
     const t = make();
     const events: AgentEvent[] = [];
-    t.ad.onEvent((e) => events.push(e));
+    // spec 010 T023: every event of every adapter passes the same shape check as the simulator's
+    t.ad.onEvent((e) => {
+      const p = eventProblems(e);
+      assert.deepStrictEqual(p, [], M('event shape', `${e.type}: ${p.join(', ')}`));
+      events.push(e);
+    });
     let n = 0;
     const cap = t.ad.capabilities;
     return {
