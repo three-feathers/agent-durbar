@@ -1,0 +1,52 @@
+/**
+ * Codex and MCP (spec 012 FR-147): Durbar's MCP servers for a session (the Copilot-CLI list and the folder's extras, spec 019/020)
+ * as Codex `config.mcp_servers` overrides on `thread/start`/`thread/resume`, and Codex's server states as Durbar's `mcp` event.
+ * Pure. Secret values (env, headers) pass through to Codex only; they are never logged or put in an error.
+ */
+import type { McpServerSpec } from '../shared/mcp';
+import type { McpServerStatus } from './types';
+
+const NAME = /^[A-Za-z0-9_-]{1,64}$/;
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** `{mcp_servers: {...}}` for the thread `config`, or undefined when there is nothing to say. Disabled names get `enabled: false`. */
+export function codexMcpConfig(servers: Readonly<Record<string, McpServerSpec>> | undefined, disabled: readonly string[] = []): { mcp_servers: Record<string, Record<string, unknown>> } | undefined {
+  const out: Record<string, Record<string, unknown>> = {};
+  for (const [name, s] of Object.entries(servers ?? {})) {
+    if (!NAME.test(name) || !isObj(s)) continue;
+    const tools = Array.isArray(s.tools) && s.tools.length && !s.tools.includes('*') ? { enabled_tools: s.tools.filter((t) => typeof t === 'string').slice(0, 200) } : {};
+    if (typeof s.command === 'string' && s.command && (s.type === 'stdio' || !s.url)) {
+      out[name] = {
+        command: s.command,
+        ...(Array.isArray(s.args) ? { args: s.args.filter((a) => typeof a === 'string') } : {}),
+        ...(isObj(s.env) ? { env: s.env } : {}),
+        ...(typeof s.workingDirectory === 'string' && s.workingDirectory ? { cwd: s.workingDirectory } : {}),
+        ...tools,
+      };
+    } else if (typeof s.url === 'string' && /^https?:\/\//i.test(s.url)) {
+      out[name] = { url: s.url, ...(isObj(s.headers) ? { http_headers: s.headers } : {}), ...tools };
+    }
+  }
+  for (const name of disabled) if (NAME.test(name)) out[name] = { ...(out[name] ?? {}), enabled: false };
+  return Object.keys(out).length ? { mcp_servers: out } : undefined;
+}
+
+const RUNTIME: Record<string, string> = { connected: 'connected', ready: 'connected', failed: 'failed', authenticationRequired: 'needs-auth', starting: 'pending', notStarted: 'pending', cancelled: 'stopped', disabled: 'disabled' };
+
+/** One Codex status word (`runtimeStatus` of `mcpServerStatus/list`, or `status` of `mcpServer/startupStatus/updated`) to Durbar's. */
+export function codexMcpState(v: unknown): string {
+  return typeof v === 'string' && RUNTIME[v] ? RUNTIME[v] : 'pending';
+}
+
+/** `mcpServerStatus/list` `data` to Durbar's list; names Durbar switched off read as disabled. */
+export function codexMcpServers(data: unknown, disabled: readonly string[] = []): McpServerStatus[] {
+  const out: McpServerStatus[] = [];
+  for (const s of Array.isArray(data) ? data.slice(0, 100) : []) {
+    if (!isObj(s) || typeof s.name !== 'string' || !s.name) continue;
+    const name = s.name.slice(0, 64);
+    const status = disabled.includes(name) ? 'disabled' : s.authStatus === 'notLoggedIn' ? 'needs-auth' : codexMcpState(s.runtimeStatus ?? 'notStarted');
+    const err = typeof s.toolsError === 'string' && s.toolsError ? { error: s.toolsError.slice(0, 300) } : {};
+    out.push({ name, status, ...(s.pluginId ? { source: 'plugin' } : {}), ...(s.httpOrigin ? { transport: 'http' } : {}), ...err });
+  }
+  return out;
+}

@@ -53,7 +53,7 @@ In **Previous sessions**, "VS Code chat history" lists chats VS Code saved for t
 - **FR-006** `[IMPLEMENTED]` read: IPC `vschat:list` / `vschat:read` use opaque keys remembered per agent; the renderer never supplies a path.
 - **FR-007** `[IMPLEMENTED]` read: **Copy resume command** puts `copilot --resume <id>` on the clipboard and says to end the session here first and to switch on the VS Code sessions filter "External".
 - **FR-008** `[KNOWN GAP]` **README says Cursor is read too** ("also Insiders, VSCodium, Cursor") but the code lists only `Code`, `Code - Insiders`, `VSCodium` (`vscodeUserDirs`). Either the code or the README is wrong. `read:` (Task T020.)
-- **FR-009** `[KNOWN GAP]` "Open in VS Code" starts only stable `code`; users with only VS Code Insiders or VSCodium get "VS Code was not found". `read:` (Task T021.)
+- **FR-009** `[IMPLEMENTED]` (2026-10-19, FR-015) Was a known gap: "Open in VS Code" started only stable `code`; users with only VS Code Insiders or VSCodium get "VS Code was not found". `read:` (Task T021.)
 - **FR-010** `[KNOWN GAP]` Not covered: portable-mode VS Code data, Flatpak/Snap config locations, remote/WSL/Dev Container workspaces, VS Code profiles' separate stores, and empty-window chats. `read:`
 - **FR-011** `[KNOWN GAP]` The VS Code store format is **undocumented**; the reader follows VS Code sources and third-party readers and was only run on **synthetic fixtures** in `scripts/fixtures/vscode-fixture.ts`, never on a real store. It can break with any VS Code update (stated to the user in the UI). (Feature 013.)
 - **FR-012** `[KNOWN GAP]` That sessions this app creates appear in VS Code's session list (with the "External" filter) is **documented by VS Code, not verified** end to end (no signed-in VS Code on the box). The README says so. Pushing our session into the VS Code *Local* chat view is not possible.
@@ -80,3 +80,15 @@ In **Previous sessions**, "VS Code chat history" lists chats VS Code saved for t
 ### 2026-10-16: FR-008 resolved by removing the claim
 
 README no longer says Cursor's chat history is read (the code lists only `Code`, `Code - Insiders`, `VSCodium`; Cursor's store layout was never checked). Adding Cursor honestly would need its real on-disk format; not done. T020 closed by correcting the README.
+
+### 2026-10-19: Open in VS Code Insiders or VSCodium (T021, FR-009)
+
+*Decision* (made by the agent under the owner's autonomy grant; no owner question was open): prefer stable VS Code, which is the common case and today's behaviour. Then VS Code **Insiders**, then **VSCodium**. The chat-history reader already reads all three (FR-011).
+
+- **FR-015** `[IMPLEMENTED]` "Open in VS Code" tries the editions in order: **VS Code**, **VS Code Insiders**, **VSCodium**. It uses the first one found, by the same rules as for stable:
+  - **Windows:** the edition's `.exe` in its usual install folders, then its `.cmd` shim on PATH (or the `.exe` next to it), then the `.cmd` shim in the install folder;
+  - **macOS:** the PATH command, then the app bundle's `bin` in `/Applications` and `~/Applications`, then Homebrew paths;
+  - **Linux:** the PATH command, then the usual `/usr/bin`, `/usr/local/bin` and `/snap/bin` paths.
+  
+  Always one absolute path argument, no shell (except the guarded `.cmd` case). The result names the edition it used, and the "not found" message names all three. This closes FR-009.
+- `test:` `npm run test:vscode`: the plan for each edition on Linux, macOS and Windows (exe, app bundle, PATH, the guarded `.cmd`) with fake file systems, the order when several are installed, and the old stable cases unchanged. Not run with a real Insiders or VSCodium install; none is installed on the test machine.

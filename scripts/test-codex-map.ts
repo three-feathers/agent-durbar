@@ -62,11 +62,11 @@ for (const f of files) {
 {
   const out = run(fx('subagent.json').notifications);
   const subs = out.filter((e) => e.type === 'subagent');
-  assert.deepStrictEqual(subs.map((e) => `${e.subagentId}:${e.phase}`), ['collab_1:started', 'collab_1:completed', 'sub_1:started', 'sub_1:failed']);
+  assert.deepStrictEqual(subs.map((e) => `${e.subagentId}:${e.phase}`), ['collab_1:started', 'collab_1:completed', 'thr_child2:started', 'thr_child2:failed']);
   assert.strictEqual(subs[0].task, 'Find the failing test');
   assert.ok(subs.every((e) => e.agentId === undefined), 'the sub-agent events themselves belong to the main agent');
   assert.deepStrictEqual(out.filter((e) => e.agentId === 'collab_1').map((e) => e.type), ['status', 'output', 'toolCall', 'toolCall']);
-  assert.deepStrictEqual(out.filter((e) => e.agentId === 'sub_1').map((e) => e.delta), ['hi']);
+  assert.deepStrictEqual(out.filter((e) => e.agentId === 'thr_child2').map((e) => e.delta), ['hi']);
   assert.ok(!out.some((e) => e.delta === 'ignored'), 'a thread nobody announced is ignored');
 }
 
@@ -127,7 +127,7 @@ for (const f of files) {
   assert.deepStrictEqual(run(bad), [
     { type: 'toolCall', callId: 'a', tool: 'mcp', phase: 'complete' },
     { type: 'toolCall', callId: 'b', tool: 'apply_patch', phase: 'complete' },
-    { type: 'subagent', subagentId: 'c', phase: 'completed' },
+    // (a collabAgentToolCall without a spawn tool is a coordination call, not a helper: FR-149)
   ], 'malformed input degrades to bare events only where id and type are valid');
   const T = { method: 'thread/started', params: { thread: { id: 't', cwd: '/w' } } };
   const READY = { type: 'status', status: 'idle', intent: 'Ready in /w' };
@@ -160,7 +160,7 @@ for (const f of files) {
   m2.map({ method: 'item/completed', params: { threadId: 't', item: { id: 'n', type: 'agentMessage', text: big + big } } });
   assert.strictEqual(out.filter((e) => e.final)[1].text.length, CODEX_TEXT_CAP, 'item text capped');
   // Children FIFO.
-  for (let i = 0; i < CODEX_CHILD_LIMIT + 10; i++) m.map({ method: 'item/started', params: { threadId: 't', item: { id: `s${i}`, type: 'subAgentActivity', agentThreadId: `c${i}` } } });
+  for (let i = 0; i < CODEX_CHILD_LIMIT + 10; i++) m.map({ method: 'item/started', params: { threadId: 't', item: { id: `s${i}`, type: 'subAgentActivity', kind: 'started', agentThreadId: `c${i}` } } });
   assert.strictEqual(priv.children.size, CODEX_CHILD_LIMIT);
   assert.ok(!priv.children.has('c0') && priv.children.has(`c${CODEX_CHILD_LIMIT + 9}`), 'oldest forgotten first');
 }
@@ -213,6 +213,26 @@ for (const f of files) {
   assert.strictEqual(m.threadId, 'thr_1');
   m.reset();
   assert.strictEqual(m.threadId, undefined);
+}
+
+// FR-149: the real Codex 0.163 shape. Each subAgentActivity is its own item, opened and closed at once, keyed by agentThreadId;
+// `wait` is a coordination call, not a helper
+{
+  const out: EventBody[] = [];
+  const m = new CodexMapper((b) => out.push(b));
+  m.adopt('main', '/w');
+  const act = (id: string, kind: string, model: string | null) => ({ type: 'subAgentActivity', id, kind, agentThreadId: 'thr_h', agentPath: '/root/pelican', model, reasoningEffort: null });
+  const n = (method: string, item: unknown) => m.map({ method, params: { threadId: 'main', item } } as CodexNotification);
+  n('item/started', act('call_a', 'started', 'gpt-6.1-sol'));
+  n('item/completed', act('call_a', 'started', 'gpt-6.1-sol'));
+  n('item/started', { type: 'collabAgentToolCall', id: 'call_w', tool: 'wait', status: 'inProgress', receiverThreadIds: [] });
+  m.map({ method: 'item/agentMessage/delta', params: { threadId: 'thr_h', itemId: 'x', delta: 'pelican' } } as CodexNotification);
+  n('item/started', act('subagent-completed-1', 'completed', null));
+  n('item/completed', act('subagent-completed-1', 'completed', null));
+  n('item/completed', { type: 'collabAgentToolCall', id: 'call_w', tool: 'wait', status: 'completed', receiverThreadIds: [] });
+  const subs = out.filter((e) => e.type === 'subagent') as Array<{ subagentId: string; phase: string; agentName?: string }>;
+  assert.deepStrictEqual(subs.map((e) => `${e.subagentId}:${e.phase}:${e.agentName}`), ['thr_h:started:pelican', 'thr_h:completed:pelican'], 'one helper, started and completed once; wait is not a helper');
+  assert.deepStrictEqual(out.filter((e) => (e as { agentId?: string }).agentId === 'thr_h').map((e) => (e as { delta?: string }).delta), ['pelican'], "the helper thread's output is attributed to it");
 }
 
 console.log('codex map: ok');

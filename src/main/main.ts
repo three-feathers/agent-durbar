@@ -38,7 +38,7 @@ import { agentLabel } from '../shared/toolusage';
 import { devEnv, devWarning } from './devhooks';
 import { UserThemeStore } from './themes';
 import { SettingsStore } from './settings';
-import { parseAmount, parseCap, parseThemeId } from '../shared/credits';
+import { parseAmount, parseCapIn, parseThemeId, startCap } from '../shared/credits';
 import { broadFolderKind } from '../shared/broadfolder';
 import { aboutPanelOptions, aboutView } from '../shared/about';
 import { modelControlFor, parseFocus, parseSwitchRequest } from '../shared/modelswitch';
@@ -149,8 +149,9 @@ router.onEvent((e) => {
   if (e.type !== 'limit' || e.phase !== 'changed') return;
   const a = agents.get(e.sessionId);
   if (!a) return;
-  a.maxAiCredits = parseCap(e.maxAiCredits);
-  folderStore?.setMaxAiCredits(wsKey(a), a.maxAiCredits);
+  const unit = router.forAgent(a.id)?.capabilities?.capUnit;
+  a.maxAiCredits = parseCapIn(unit, e.maxAiCredits);
+  if (unit !== 'usd') folderStore?.setMaxAiCredits(wsKey(a), a.maxAiCredits); // a dollar cap is per session only (FR-150)
 });
 
 /** Keep AgentInfo in step with the model the runtime reports. Only a switch the user asked for is saved with the folder; a runtime fallback (rate limit, refusal) is shown but never becomes the folder's choice (spec 030 FR-015). */
@@ -217,14 +218,15 @@ async function addWorkspace(
   const adapterId = picked.id;
   const ad = router.instance(adapterId);
   const draft = infoFor(workspace, permMode, '', model, effort, {}, ad);
-  // Cap: explicit choice (null = none) > the folder's saved cap > the global default (spec 011).
-  draft.maxAiCredits = opts.maxAiCredits === null ? undefined : (opts.maxAiCredits ?? folderStore?.get(wsKey(draft))?.maxAiCredits ?? settingsStore?.defaultMaxAiCredits);
+  // Cap: explicit choice (null = none) > the folder's saved cap > the global default (spec 011); a dollar cap only when chosen (FR-150).
+  const usdCap = ad.capabilities?.capUnit === 'usd';
+  draft.maxAiCredits = startCap(ad.capabilities?.capUnit, opts.maxAiCredits, folderStore?.get(wsKey(draft))?.maxAiCredits, settingsStore?.defaultMaxAiCredits);
   const id = await ad.start({ ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId });
   router.bind(id, adapterId);
   const saved = folderStore?.get(wsKey(draft));
   const info: AgentInfo = { ...draft, id, hidden: saved?.hidden, closed: saved?.closed, label: saved?.label, defaultAgent: saved?.defaultAgent };
   agents.set(id, info);
-  if (opts.persist) folderStore?.upsert({ workspace: wsKey(info), permMode, model, effort, maxAiCredits: info.maxAiCredits, floor: opts.floor, adapterId });
+  if (opts.persist) folderStore?.upsert({ workspace: wsKey(info), permMode, model, effort, maxAiCredits: usdCap ? saved?.maxAiCredits : info.maxAiCredits, floor: opts.floor, adapterId });
   // An existing folder keeps its floor; a new one gets the chosen floor (spec 033 FR-006).
   info.floor = folderStore?.floorOfFolder(wsKey(info)) ?? GROUND;
   if (!opts.silent) toRenderer('agent:added', info);
@@ -297,7 +299,7 @@ function restoreFolders(): void {
       // FR-021: the folder's last session comes back under its own id (resumed when first needed); a harness this build lacks starts fresh
       const ls = f.lastSession && registry.has(f.lastSession.adapterId ?? DEFAULT_ADAPTER) && !agents.has(f.lastSession.id) ? f.lastSession : undefined;
       const kind = ls ? (ls.adapterId ?? DEFAULT_ADAPTER) : adapterId;
-      const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, maxAiCredits: f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
+      const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, maxAiCredits: router.instance(kind).capabilities?.capUnit === 'usd' ? undefined : f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
       if (ls) info.resumeLast = true;
       if (f.label) info.label = f.label;
       if (f.defaultAgent) info.defaultAgent = f.defaultAgent;
@@ -314,7 +316,7 @@ ipcMain.handle('agents:list', () => [...agents.values()]);
 
 const sessionOpts = (o: unknown): SessionOptions & { persist: boolean } => {
   const x = (o && typeof o === 'object' ? o : {}) as Record<string, unknown>;
-  const cap = x.maxAiCredits === null ? null : parseCap(x.maxAiCredits);
+  const cap = x.maxAiCredits === null ? null : parseAmount(x.maxAiCredits); // checked in the adapter's unit by addWorkspace
   return { model: typeof x.model === 'string' ? x.model.slice(0, 100) : undefined, effort: asEffort(x.effort), maxAiCredits: cap, floor: typeof x.floor === 'string' ? x.floor.slice(0, 20) : undefined, adapterId: typeof x.adapterId === 'string' ? x.adapterId.slice(0, 40) : undefined, persist: true };
 };
 
@@ -524,7 +526,7 @@ ipcMain.handle('agents:newSession', async (_e, id: unknown, opts: unknown) => {
     // The dialog's kind (FR-059); none = the current agent's kind. A kind the user picked must be ready (FR-058).
     const picked = typeof o.adapterId === 'string' ? o.adapterId.slice(0, 40) : undefined;
     const readyIds = picked !== undefined ? await readyAdapterIds() : undefined;
-    const agent = await addWorkspace(wsKey(a), mode, { model: typeof o.model === 'string' ? o.model.slice(0, 100) : picked !== undefined && picked !== router.adapterIdOf(a.id) ? undefined : a.model, effort: asEffort(o.effort) ?? undefined, maxAiCredits: o.maxAiCredits === null ? null : parseCap(o.maxAiCredits), adapterId: picked ?? router.adapterIdOf(a.id), readyIds });
+    const agent = await addWorkspace(wsKey(a), mode, { model: typeof o.model === 'string' ? o.model.slice(0, 100) : picked !== undefined && picked !== router.adapterIdOf(a.id) ? undefined : a.model, effort: asEffort(o.effort) ?? undefined, maxAiCredits: o.maxAiCredits === null ? null : parseAmount(o.maxAiCredits), adapterId: picked ?? router.adapterIdOf(a.id), readyIds });
     return { ok: true, agent };
   } catch (err) {
     return { ok: false, error: errText(err) };
@@ -644,7 +646,7 @@ ipcMain.handle('agents:resolveLimit', async (_e, id: unknown, requestId: unknown
   if (!a || !ad || typeof requestId !== 'string' || !ad.isLive(a.id)) return { ok: false, error: 'unknown agent' };
   const c = (choice && typeof choice === 'object' ? choice : {}) as Record<string, unknown>;
   const add = parseAmount(c.credits);
-  const setTo = parseCap(c.credits);
+  const setTo = parseCapIn(ad.capabilities?.capUnit, c.credits);
   const action = c.kind === 'add' && add ? { kind: 'add' as const, credits: add } : c.kind === 'set' && setTo ? { kind: 'set' as const, credits: setTo } : c.kind === 'unset' ? { kind: 'unset' as const } : c.kind === 'cancel' ? { kind: 'cancel' as const } : undefined;
   if (!action) return { ok: false, error: 'Invalid choice.' };
   try {
@@ -854,7 +856,7 @@ ipcMain.handle('folders:setDefaultAgent', (_e, id: unknown, profileId: unknown) 
 
 /** Spec 006 FR-020: the session a folder continues after a restart is the one that last got a message. */
 function noteLastSession(a: AgentInfo | undefined): void {
-  if (a) folderStore?.setLastSession(wsKey(a), a.id, router.adapterIdOf(a.id));
+  if (a) folderStore?.setLastSession(wsKey(a), router.forAgent(a.id)?.resumeIdOf?.(a.id) ?? a.id, router.adapterIdOf(a.id)); // Codex: its thread id
 }
 
 /** Spec 006 FR-021: the chat of a restored agent was opened; start it now (a resume sends no prompt) and hand back what came back. */
@@ -901,6 +903,8 @@ function createWindow(): void {
     useContentSize: true,
     title: 'Agent Durbar',
     backgroundColor: '#f6f1e7',
+    // spec 008 FR-025: Windows and macOS take the icon from the .exe/.icns; Linux needs it on the window
+    ...(process.platform === 'linux' ? { icon: path.join(__dirname, '..', 'icon.png') } : {}),
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'preload.js'),
       contextIsolation: true,

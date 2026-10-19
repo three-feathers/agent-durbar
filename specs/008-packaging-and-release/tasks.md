@@ -28,3 +28,4 @@
 - [ ] T031 Look at the About panel and installer metadata on macOS and Windows builds. [FR-018]
 - [x] T032 (2026-10-19) Faster CI: compile tests once and run suites in parallel (FR-020), shard `check:office` with the required check kept as an aggregator (FR-021), package smoke without `needs` (FR-022), skip code jobs for docs-only PRs (FR-023)
 - [x] T033 (2026-10-19) Branch cleanup workflow: merged more than a day ago, same repo, not the default, no open PR, tip = merged head; daily and by hand with a dry run (FR-024)
+- [x] T034 (2026-10-19) Linux window icon and desktopName/syncDesktopName (#247) [FR-025, FR-026]

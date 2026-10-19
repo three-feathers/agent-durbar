@@ -1,6 +1,6 @@
 /** Binary detection for Claude and Codex (spec 012 T012, FR-035..FR-041): fake isFile and fake exec only. No process, no credits. */
 import * as assert from 'assert';
-import { CLAUDE_BINARY, CLAUDE_SIGN_IN_HINT, CODEX_BINARY, candidates, compareVersions, detectBinary, detectClaude, detectCopilot, detectorFor, parseVersion } from '../src/adapters/detect';
+import { CLAUDE_BINARY, CLAUDE_SIGN_IN_HINT, CODEX_BINARY, CODEX_SIGN_IN_HINT, detectCodex, candidates, compareVersions, detectBinary, detectClaude, detectCopilot, detectorFor, parseVersion } from '../src/adapters/detect';
 import type { DetectEnv, Exec, ExecResult } from '../src/adapters/detect';
 import { createRegistry, detectAll } from '../src/adapters/registry';
 import type { AdapterDescriptor } from '../src/adapters/capabilities';
@@ -163,7 +163,7 @@ async function main(): Promise<void> {
     const det = detectorFor('copilot');
     assert.ok(det, 'j: copilot detector');
     assert.strictEqual(typeof detectorFor('claude'), 'function', 'claude: a --version probe (spec 012 T093)');
-    assert.strictEqual(detectorFor('codex'), undefined);
+    assert.strictEqual(typeof detectorFor('codex'), 'function', 'codex: --version then login status (spec 012 FR-137)');
     const d = { id: 'copilot', displayName: 'Copilot', capabilities: {}, create: () => { throw new Error('no'); } } as unknown as AdapterDescriptor;
     const infos = await detectAll(createRegistry([d]), det!);
     assert.strictEqual(infos[0].state, 'ready');
@@ -230,6 +230,20 @@ async function main(): Promise<void> {
     const s4 = seq([ok('2.1.302'), out({ loggedIn: false })]);
     assert.strictEqual((await detectClaude(w, s4.exec)).state, 'not-signed-in');
     assert.deepStrictEqual(s4.calls.map((c) => [c.file, c.args[c.args.length - 1], c.verbatim]), [['C:\\Windows\\cmd.exe', '"C:\\npm\\claude.cmd" --version', true], ['C:\\Windows\\cmd.exe', '"C:\\npm\\claude.cmd" auth status --json', true]]);
+  }
+  // spec 012 FR-137: Codex's sign-in state from `codex login status` after the version (no prompt); only the phrase and exit code are read
+  {
+    const e = mkEnv('linux', { PATH: '/usr/bin' }, ['/usr/bin/codex'], '/home/u');
+    const seq = (outs: ExecResult[]): { exec: Exec; calls: Call[] } => { let i = 0; return mkExec(async () => outs[Math.min(i++, outs.length - 1)]); };
+    const s1 = seq([ok('codex-cli 0.163.0'), ok('Logged in using ChatGPT')]);
+    const r1 = await detectCodex(e, s1.exec);
+    assert.deepStrictEqual([r1.state, r1.hint, r1.version], ['ready', 'Signed in to Codex on this computer.', '0.163.0']);
+    assert.deepStrictEqual(s1.calls.map((c) => c.args.join(' ')), ['--version', 'login status'], 'version, then login status; no prompt');
+    const r2 = await detectCodex(e, seq([ok('codex-cli 0.163.0'), { code: 1, stdout: 'Not logged in\n', stderr: '' }]).exec);
+    assert.deepStrictEqual([r2.state, r2.hint], ['not-signed-in', CODEX_SIGN_IN_HINT]);
+    for (const bad of [{ code: 1, stdout: '', stderr: "error: unrecognized subcommand 'login'" }, { code: null, stdout: '', stderr: '', timedOut: true }, ok('something else')] as ExecResult[]) {
+      assert.strictEqual((await detectCodex(e, seq([ok('codex-cli 0.163.0'), bad]).exec)).state, 'ready', 'unclear sign-in keeps ready: ' + JSON.stringify(bad));
+    }
   }
   console.log('detect tests passed');
 }
