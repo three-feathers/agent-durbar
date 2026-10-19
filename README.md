@@ -282,6 +282,12 @@ Spec [030](specs/030-switch-model-context/spec.md) (extends [007](specs/007-mode
 - **Confirm or Undo.** A switch to a **pricier** model, to a model whose **price is not reported**, to the **long-context tier**, or that would not fit the **credit cap headroom** asks first (with the price comparison and an estimate, never a promise). A cheaper switch applies directly with an **Undo** toast. The credit cap is never changed.
 - **Context chip.** Shows the tier, says "Window: waiting for next message" right after a switch (the old figure belonged to the old window), and has a **Compact** action (idle agents only; asks first, optional focus text, one model call). Compaction (manual, automatic, before a switch to a smaller window, failed) leaves one quiet line in the chat.
 - **Start fresh.** Near the limit (90% or more, after a compaction already ran or failed, or at once for an agent that cannot compact) a dismissible note offers **New session** in the same folder. It never says "clear": a host app cannot clear a conversation.
+- **New session with a summary** (Q6, FR-034..FR-037). The start-fresh note and the New session dialog can begin the new session from a **hand-off summary** of this conversation:
+  - Copilot uses its own `summarizeForHandoff`;
+  - Claude Code uses a one-shot on a **fork** of the session (no tools, no MCP servers, not saved, at most $0.50);
+  - Codex uses an ephemeral, read-only fork.
+
+  The original conversation is not changed. The summary opens in an editable box, and nothing is sent until you press **Start new session**. Checked on a real Claude Code and a real Codex; whether Copilot's summary spends credits is not verified yet.
 - **The runtime's own changes are shown.** A rate-limit or refusal fallback to another model is a note and a toast, never silent, and is never saved as the folder's choice. The agent stays on "Auto" when you chose Auto.
 - **Saved per folder** in the app's own folder file (`model`, `effort`, `contextTier`), never in Copilot's settings.
 

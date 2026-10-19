@@ -117,7 +117,7 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
 /* Spec 012 T018 (FR-065, FR-066): the simulated kinds of `simkinds=mixed`. They are a simulation, not a statement about the real CLIs.
    Index in the 15-agent roster -> kind; every other agent is Copilot. Mcp-swiss holds two kinds (Ada, Mira); the basic agent is Priya (idle, never the first). */
 const SIM_KIND_BY_AGENT: Record<number, string> = { 0: 'claude', 3: 'claude', 4: 'codex', 5: 'claude', 6: 'basic', 7: 'codex', 8: 'claude', 9: 'codex', 11: 'claude' };
-const SIM_COPILOT_CAPS = { interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true } as AdapterInfo['capabilities'];
+const SIM_COPILOT_CAPS = { interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true } as AdapterInfo['capabilities'];
 const SIM_MIXED_KINDS: AdapterInfo[] = [
   { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true } },
   { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: false } },
@@ -1013,6 +1013,15 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!s || s.pendingModel?.queueId !== queueId) return { ok: false, error: 'Nothing queued to cancel.' };
         s.pendingModel = undefined;
         return { ok: true };
+      },
+      // spec 030 FR-034: a canned hand-off summary (no runtime): goal, files and next step from the simulated agent
+      handoff: async (id) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'unknown agent' };
+        if (!caps(s.info.adapterId ?? 'copilot').handoff) return { ok: false, error: 'This agent kind cannot make a summary.' };
+        await new Promise((r) => window.setTimeout(r, 900));
+        const files = (s.files ?? []).slice(0, 3).map((f) => '- `' + f + '`').join('\n') || '- none yet';
+        return { ok: true, summary: `## Goal\n${s.intent || 'Continue the current task.'}\n\n## What was done\n- Read the relevant code and ran the tests once (simulated).\n\n## Open items\n- Finish the change and run the tests again.\n\n## Important files and decisions\n${files}\n\n## Next step\nPick up from the open items above.` };
       },
       compact: async (id, focus) => {
         const s = sims.find((x) => x.info.id === id);

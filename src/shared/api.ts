@@ -385,6 +385,8 @@ export interface DurbarApi {
   cancelQueuedModel?(id: string, queueId: string): Promise<{ ok: boolean; error?: string }>;
   /** Compact the context of agent `id` now (spec 030); `focus` is an optional short text. */
   compact?(id: string, focus?: string): Promise<{ ok: boolean; error?: string; result?: CompactResult }>;
+  /** A hand-off summary of the session, for a new session's first message (spec 030 FR-034); never sent by itself. */
+  handoff?(id: string): Promise<{ ok: boolean; error?: string; summary?: string; costUsd?: number }>;
   /** Close or open the door of the room (folder) of agent `id`; remembered. */
   setRoomClosed?(id: string, closed: boolean): Promise<{ ok: boolean }>;
   /** Hide or show the folder of agent `id`; the choice is remembered. */

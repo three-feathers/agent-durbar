@@ -31,6 +31,8 @@ import { unpackedRuntimePath } from './runtime';
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
+import { cleanSummary } from './handoff';
+import type { HandoffResult } from './handoff';
 
 const IMAGE_MIME: Record<string, string> = {
   '.png': 'image/png',
@@ -108,6 +110,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   history: true,
   mcpStatus: true,
   mcpToggle: true,
+  handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
 });
 
 /**
@@ -494,6 +497,13 @@ export class CopilotAdapter implements AgentAdapter {
     } catch (err) {
       return { success: false, message: runtimeMessage(err, 'The runtime refused to compact.') };
     }
+  }
+
+  /** Spec 030 FR-034: the runtime's own hand-off summary (`rpc.history.summarizeForHandoff`, experimental); the conversation is not changed. */
+  async handoffSummary(sessionId: string): Promise<HandoffResult> {
+    const live = this.mustGet(sessionId);
+    const r = (await live.session.rpc.history.summarizeForHandoff()) as { summary?: unknown } | undefined;
+    return { summary: cleanSummary(r?.summary) };
   }
 
   /** True while a turn or a background continuation runs. When the runtime cannot say, assume it does (the safe side: nothing is compacted mid-turn). */
