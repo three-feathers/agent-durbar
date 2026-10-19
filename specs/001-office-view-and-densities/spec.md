@@ -181,3 +181,10 @@ Spec [024](../024-office-places/spec.md) adds a one-row **lobby** band between t
 *Corrected:*
 - **FR-025** `[IMPLEMENTED]` In `mini` and `micro` the name and the status word share the line: the status word gives way first (down to about two characters and an ellipsis); the name is not shrunk by the status and is cut only when it is longer than the line minus the mode icon and that short status. So a short name stays whole (`Omar  Limit r…`, before `O…  Limit reached`) and a long one keeps far more than three characters. The full status is still on the card's tooltip and colour. `check:office` fails, in every combination, when a cut desk name shows fewer than three characters (measured in the page with the same font).
 
+### 2026-10-19: a first-run welcome (sweep)
+
+*Found:* with no folder yet, the office showed one grey line ("No agents yet. Use \"+ Folder\"…"), with nothing about signing in to Copilot, what a folder becomes, or the Read-only default.
+
+*Corrected:*
+- **FR-026** `[IMPLEMENTED]` With no agents (and the demo off), the office shows a welcome card: three steps (sign in to Copilot once with `copilot login`; add a project folder, which becomes a room whose agent starts in Read-only; send a message, and use Ask first or Allow all only for trusted folders), **+ Add a folder** (the toolbar's own action) and **Look around in the demo** (switches the Demo toggle on), and one line that agents run as you and use your plan's AI credits. Other empty states (all folders hidden, all floors off) are unchanged. `sim:` the real app with a fresh user-data folder at 1440x900 and 1280x800.
+
