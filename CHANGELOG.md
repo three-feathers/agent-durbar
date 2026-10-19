@@ -8,6 +8,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 Unsigned and not notarized; only Linux was run by hand. **OpenAI Codex** is now offered next to Copilot and Claude Code when it is installed and signed in. Claude Code sessions can have a **cost cap in dollars**. A new session can start from a **reviewed summary**, and Schedules have a **starter kit** (Start my day, Plan my day) that ends by asking you what to do.
 
+- **Reviews include GitHub's security results** (owner, spec 021). Before merging, an agent reads CodeQL / code scanning, Dependabot and secret scanning on its PR, fixes every new finding at the cause, and dismisses only documented false positives.
 - **Schedules starter kit (spec 044 FR-006..FR-008, issue #128).** Templates such as *Start my day*, *Summarize my day* and *Plan my day*, plus a new **every day at** time. The briefing and planning templates end by asking you, with a question card, which suggested steps to do.
 - **Team rule: agents review and merge** (owner decision, spec 021). An agent merges when CI is green and it did a final review of the whole diff as a reviewer; another team's agent may review too. Humans set the roadmap and strategy.
 

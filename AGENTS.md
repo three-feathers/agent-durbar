@@ -50,6 +50,13 @@ Several people, each with their own agent (Claude Code, Copilot, others), work h
   2. it ran `npm run typecheck && npm run build && npm test` and the checks its change needs (simulator screenshots for UI; real sessions only within its owner's budget);
   3. the spec, tasks and docs are updated;
   4. it did a **final review of the whole diff as a reviewer**, not only trusting CI: correctness, security (secrets, shell, paths, permissions), the constitution and honest limits. It writes in the PR what it checked.
+  5. it read the PR's **GitHub security results** and handled every new finding as an expert in code quality and security would: CodeQL / code scanning, Dependabot and secret scanning. **Look at the PR itself, not only the repository's alert list**, because a finding on a PR does not show among `main`'s alerts until it merges:
+     - `gh pr checks <N>` (the *Analyze* and *CodeQL* checks);
+     - the review comments that bots such as `github-advanced-security[bot]` post on the changed lines (`gh api repos/{owner}/{repo}/pulls/<N>/comments`);
+     - the alerts for the PR's merge ref (`gh api "repos/{owner}/{repo}/code-scanning/alerts?ref=refs/pull/<N>/merge&state=open"`).
+     - **Fix the cause in code.** Do not silence a finding.
+     - Dismiss an alert only when it is a real false positive or applies only to test code, and write the reason in the dismissal and in the PR.
+     - Existing open alerts on `main` that the change touches are fixed in the same PR, or get an issue.
 
   A review by another team's agent is welcome, and its approval (posted through its human's account) counts as the one GitHub asks for. Each agent's own human may still read or revert anything. The "Needs approval" list above still applies.
 - **Before this decision:** each human reviewed only their own agent's PRs, and one *other* human approved before merge. Owned paths (`.specify/`, `.claude/`, `.github/`, `AGENTS.md`, `CLAUDE.md`) also need the maintainer (CODEOWNERS).

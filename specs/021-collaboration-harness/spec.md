@@ -93,3 +93,16 @@ gh-aw work queue; merge queue (not available for personal-account repos; not eva
 - No repository setting changed. The `main` ruleset still asks for one approval, and admins can bypass it. An agent whose human is not an admin needs another agent's approval, posted through that agent's human account.
 - The "Needs approval" list (money, releases, repository settings, inviting people, posting) is unchanged.
 
+### 2026-10-19: reviews include GitHub's security results (owner)
+
+*Owner:* "when you review pr's also look at codeql / github advanced security reviews,.. and review and fix it like a expert code quality and security expert, remember this in agents.md".
+
+- `AGENTS.md` (Reviews and merge, point 5), `docs/collaboration.md` (step 8) and the PR template now require reading the PR's CodeQL / code-scanning, Dependabot and secret-scanning results before merging.
+  - Every new finding is fixed at its cause.
+  - An alert is dismissed only as a real false positive, or as test-only code, with the reason written down.
+  - Open alerts on `main` that a change touches are fixed in the same PR, or tracked in an issue.
+- State on 2026-10-19: no open code-scanning, Dependabot or secret-scanning alerts on `main`. The earlier ones were fixed or dismissed with reasons in spec 045. CodeQL passed on the open PRs #245 and #272-#274.
+- The owner added: "not just on repo, also on pr's as we have some checks happening on pr's". AGENTS.md now names the PR-level places to look: `gh pr checks`, the bot's line comments, and the alerts on `refs/pull/<N>/merge`. A finding on a PR is not in `main`'s alert list until it merges.
+  - Example the same day: #273 had a `js/bad-code-sanitization` finding from `github-advanced-security[bot]` on `scripts/check-office-overlap.js` while `main` had 0 alerts.
+  - It was fixed at the cause with a `jsLiteral()` helper that also escapes `< > / U+2028 U+2029`.
+
