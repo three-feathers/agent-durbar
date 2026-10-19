@@ -2,8 +2,18 @@
 
 Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on Linux (see "Honest limits"). Each entry names the spec that describes the behavior and how it was checked.
 
-## Unreleased (on `main`, after the alpha.6 tag)
+## Unreleased (on `main`, after the alpha.7 tag)
 
+- **Schedules are easy to find (spec 044 FR-009..FR-011).** *Schedules…* in each room's ⋯ menu, a clock chip in the room header with the next run, a *Schedules* button in the chat, and **Settings > Schedules** for all folders.
+- **Team rule: check the linked issue before merging** (owner, spec 021). An issue closes only when everything in it is done; otherwise what is left is written on it, or in a follow-up issue.
+- **CI on `main` runs every merge to the end** (spec 008). Only pull-request runs are cancelled by a newer push, so a release commit always has a complete CI run.
+- **Team rule: merging a forgotten PR** (owner, spec 021). Any agent may merge another team's PR that is approved, green, clean on security, not WIP, and quiet for 2 hours, with a comment saying why.
+
+## v0.1.0-alpha.7 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.7), 2026-10-19)
+
+Unsigned and not notarized; only Linux was run by hand. **OpenAI Codex** is now offered next to Copilot and Claude Code when it is installed and signed in. Claude Code sessions can have a **cost cap in dollars**. A new session can start from a **reviewed summary**, and Schedules have a **starter kit** (Start my day, Plan my day) that ends by asking you what to do.
+
+- **Reviews include GitHub's security results** (owner, spec 021). Before merging, an agent reads CodeQL / code scanning, Dependabot and secret scanning on its PR, fixes every new finding at the cause, and dismisses only documented false positives.
 - **Schedules starter kit (spec 044 FR-006..FR-008, issue #128).** Templates such as *Start my day*, *Summarize my day* and *Plan my day*, plus a new **every day at** time. The briefing and planning templates end by asking you, with a question card, which suggested steps to do.
 - **Team rule: agents review and merge** (owner decision, spec 021). An agent merges when CI is green and it did a final review of the whole diff as a reviewer; another team's agent may review too. Humans set the roadmap and strategy.
 
@@ -44,17 +54,20 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **Linux: the running window shows the app icon (spec 008 FR-025/FR-026, issue #247).** The window now has the icon. The AppImage's desktop entry also matches the window (`StartupWMClass=agent-durbar`; alpha.6 had `Agent Durbar`), so docks can link the two.
 
+- **Stop and End session in the card menu (spec 005 FR-017, #251).** Right-click a live main agent: Stop (only while it works or thinks; disabled with the reason when the kind cannot interrupt) and End session (asks first when the agent is busy or waiting), the same calls and toasts as the chat header. Checked in the simulator by `npm run check:office` at 1440x900 and 1280x800; not run against a real session.
 - Previous sessions has a search box (shown with 2 or more entries): it filters Copilot sessions and VS Code chats by title, ignoring case and accents, with "N of M" per group and Escape to clear; titles only, nothing is sent anywhere (spec 006 FR-023, issue #252).
 
 - **Removing a folder is easy to find (spec 006 FR-022).** Each room has a **⋯** button (or right-click its header) with New session, Rename, Hide and **Remove folder**. A folder's only session shows **Remove folder** in its chat header. Before, Remove was only in the Folders panel.
 
 - **Faster CI and tests (spec 008 FR-020..FR-023).** `npm test` compiles the test scripts once and runs the suites in parallel, about 16 s instead of about 4 minutes. The office check runs in four parallel shards. The package smoke no longer waits for the other jobs. A pull request that changes only docs, specs or Markdown skips the build and test jobs. A daily **Branch cleanup** workflow deletes branches whose pull request merged more than a day ago.
 
-- **New app icon: a lead and a working team.** A lead with one arm raised toward a small status board, above three seated workers at laptops, on a navy rounded square (design F2a). Same file names in `build/` (`icon.svg`, 1024x1024 `icon.png`, `icon.ico` with 16-256 px, `icon.icns`), so the packaging config is unchanged. The 16 px entry of `icon.ico` and `icon.icns` is a hand-tuned pixel version (`build/icon-16.svg`: the lead and the board, no team) so it stays readable in the taskbar and title bar; the README header shows it. Asset-only change, 0 AIU.
-
 ## v0.1.0-alpha.6 ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.6), 2026-10-19)
 
 Unsigned and not notarized; only Linux was run by hand. Claude Code is offered when it is installed and signed in; its cost is a dollar estimate, never AIU, and it has no credit cap. An in-place upgrade from alpha.5 was not checked.
+
+- **New app icon: a lead and a working team.** A lead with one arm raised toward a small status board, above three seated workers at laptops, on a navy rounded square (design F2a). Same file names in `build/` (`icon.svg`, 1024x1024 `icon.png`, `icon.ico` with 16-256 px, `icon.icns`), so the packaging config is unchanged. The 16 px entry of `icon.ico` and `icon.icns` is a hand-tuned pixel version (`build/icon-16.svg`: the lead and the board, no team) so it stays readable in the taskbar and title bar; the README header shows it. Asset-only change, 0 AIU.
+
+- **MCP server groundwork: read tools (spec 041 T016).** The seven read tools (folders, agents, floors, usage totals, settings, MCP state, request status) answer from Durbar's own state with secret values masked: env and header key names only, secret flags and URL parts hidden. Not reachable yet (no server runs). No user-visible change, 0 AIU.
 
 - **MCP server groundwork: agent state in the main process (spec 041 T014, issue #204).** The main process now keeps each agent's office word and sub-label (Working, Waiting for you, Limit reached…) with the same rules as the window, so the MCP read tools can report them later. Pausing in the window is reported to the main process. No visible change, 0 AIU.
 

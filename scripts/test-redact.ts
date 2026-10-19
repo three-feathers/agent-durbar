@@ -1,7 +1,7 @@
 /** Unit test for secret redaction and the debug sink (spec 012 T051): `npm run test:runtime`. */
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
-import { REDACT_MAX_CHARS, createDebugSink, redact } from '../src/shared/redact';
+import { REDACT_MAX_CHARS, createDebugSink, maskSecretArgs, maskSecretUrl, redact } from '../src/shared/redact';
 
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const env = {
@@ -225,6 +225,38 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   const saved = g.process;
   g.process = undefined;
   try { assert.doesNotThrow(() => redact('x')); } finally { g.process = saved; }
+}
+
+// 14. maskSecretArgs / maskSecretUrl (spec 041 FR-053)
+{
+  const SEC = 'sEcReT-value-1234567';
+  assert.deepStrictEqual(maskSecretArgs(['--token', SEC, '--key', SEC, '--secret', SEC, '--password', SEC, '--auth', SEC, '--api-key', SEC, '--verbose']),
+    ['--token', '[redacted]', '--key', '[redacted]', '--secret', '[redacted]', '--password', '[redacted]', '--auth', '[redacted]', '--api-key', '[redacted]', '--verbose'], 'value after a secret flag');
+  assert.deepStrictEqual(maskSecretArgs(['--token=' + SEC, '--api-key=' + SEC, '--access_token=' + SEC, '--name=' + SEC]), ['--token=[redacted]', '--api-key=[redacted]', '--access_token=[redacted]', '--name=' + SEC], '--flag=value, only for secret-looking flags');
+  assert.deepStrictEqual(maskSecretArgs(['--TOKEN', SEC, '--Access-Token', SEC]), ['--TOKEN', '[redacted]', '--Access-Token', '[redacted]'], 'case does not matter');
+  assert.deepStrictEqual(maskSecretArgs(['--token', '--verbose', 'plain']), ['--token', '--verbose', 'plain'], 'a flag after a flag is not a value');
+  assert.deepStrictEqual(maskSecretArgs(['--token']), ['--token'], 'a trailing flag has nothing to mask');
+  assert.deepStrictEqual(maskSecretArgs(['--keyboard', 'x', '--monkey', 'y', '--path', '/a']), ['--keyboard', 'x', '--monkey', 'y', '--path', '/a'], 'only whole key words count');
+  assert.deepStrictEqual(maskSecretArgs(['-y', 'server', 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4']), ['-y', 'server', '[redacted]'], 'other args still go through redact()');
+  assert.ok(!maskSecretArgs(['run', SEC], { MY_TOKEN: SEC }).join(' ').includes(SEC), 'env values are redacted in args too');
+  assert.deepStrictEqual(maskSecretArgs(undefined as unknown as string[]), [], 'never throws');
+  const args = ['--token', SEC];
+  maskSecretArgs(args);
+  assert.deepStrictEqual(args, ['--token', SEC], 'the input is not changed');
+
+  assert.strictEqual(maskSecretUrl('https://u:' + SEC + '@h.test/p?api_key=' + SEC + '&x=1#frag'), 'https://[redacted]@h.test/p?api_key=[redacted]&x=1#frag');
+  assert.strictEqual(maskSecretUrl('https://h.test/a?token=' + SEC), 'https://h.test/a?token=[redacted]');
+  assert.strictEqual(maskSecretUrl('https://h.test/a?page=2'), 'https://h.test/a?page=2');
+  assert.strictEqual(maskSecretUrl(undefined), '');
+
+  // review fixes: NAME=value, Name: value, more words, empty URL user, deliberate over-masking
+  assert.deepStrictEqual(maskSecretArgs(['-e', 'GITHUB_TOKEN=abcdefSECRET1234', 'PORT=8080']), ['-e', 'GITHUB_TOKEN=[redacted]', 'PORT=8080'], 'NAME=value without a dash');
+  assert.deepStrictEqual(maskSecretArgs(['env', 'API_KEY=x']), ['env', 'API_KEY=[redacted]']);
+  assert.deepStrictEqual(maskSecretArgs(['--header', 'X-Api-Key: abc', '--header', 'Content-Type: json']), ['--header', 'X-Api-Key: [redacted]', '--header', 'Content-Type: json'], 'Name: value');
+  assert.deepStrictEqual(maskSecretArgs(['--header=X-Api-Key: abc', '--header=Content-Type: json', '--env=GH_TOKEN=abc']), ['--header=X-Api-Key: [redacted]', '--header=Content-Type: json', '--env=GH_TOKEN=[redacted]'], '--flag=Name: value');
+  assert.deepStrictEqual(maskSecretArgs(['--pat', 'a', '--bearer', 'b', '--pwd', 'c', '--path', 'd']), ['--pat', '[redacted]', '--bearer', '[redacted]', '--pwd', '[redacted]', '--path', 'd'], 'pat, bearer, pwd are whole words');
+  assert.strictEqual(maskSecretUrl('https://:' + SEC + '@h.test/p'), 'https://[redacted]@h.test/p', 'empty user');
+  assert.deepStrictEqual(maskSecretArgs(['--no-auth', 'value']), ['--no-auth', '[redacted]'], 'deliberate fail-safe: over-masking beats leaking');
 }
 
 console.log('redact: all checks passed');

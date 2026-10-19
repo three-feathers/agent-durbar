@@ -9,8 +9,8 @@
 Agent Durbar is an office-style desktop app to **see, chat with and coordinate AI agents across several harnesses**: GitHub Copilot, Claude Code and OpenAI Codex. It is for **anyone who works with agents**, not only developers. A room is any folder an agent works in: code, documents, research or notes.
 
 > **Status: alpha.**
-> - The newest pre-release is [`v0.1.0-alpha.6`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.6). It is unsigned and not notarized.
-> - `main` has more since then; see the [CHANGELOG](CHANGELOG.md).
+> - The newest pre-release is [`v0.1.0-alpha.7`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.7). It is unsigned and not notarized.
+> - What changed in each release is in the [CHANGELOG](CHANGELOG.md).
 > - Only Linux has been run by hand. macOS and Windows builds are made and checked in CI but are untested on real machines.
 > - Built by [Three Feathers](https://github.com/three-feathers), tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
 
@@ -47,14 +47,14 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - You see its thinking, tool calls and replies as they stream in, with Markdown and copy buttons.
 - Attach files and images by picking, dropping or pasting.
 - Questions an agent asks you appear as a card with its choices, an "Other" answer and Skip.
-- **Stop** a turn or **End** a session from the chat header or from the agent's card menu.
+- **Stop** a turn or **End** a session from the chat header or from the agent's card menu ([screenshot](docs/screenshots/005-card-menu-stop-end-1440x900.png)).
 
 **Sessions and folders**
 - One session per folder or `.code-workspace` file, or several per folder (**+ New session**).
 - After a restart, each folder **continues its last session**.
 - *Previous sessions* lists a folder's earlier sessions to **Resume**, and VS Code's Copilot Chat history as a read-only copy. With two or more entries, a **search box** filters them by title (case and accents ignored).
 - **New session with a summary:** start fresh from a hand-off summary of the current conversation, which you edit before it is sent.
-- **Scheduled prompts** per folder (once, every N minutes, or every day at a time), while the app is open. A **starter kit** has templates:
+- **Scheduled prompts** per folder (once, every N minutes, or every day at a time), while the app is open. Open them from a room's **⋯** menu, the **clock** in its header (shown once it has schedules), the **Schedules** button in its chat, or **Settings > Schedules** for all folders. A **starter kit** has templates:
   - *Start my day* (a morning briefing from your mail and calendar MCP servers);
   - *Summarize my day*, *Plan my day*;
   - *Open pull requests and CI*, and a dependency check.

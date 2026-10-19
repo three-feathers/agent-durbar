@@ -50,8 +50,28 @@ Several people, each with their own agent (Claude Code, Copilot, others), work h
   2. it ran `npm run typecheck && npm run build && npm test` and the checks its change needs (simulator screenshots for UI; real sessions only within its owner's budget);
   3. the spec, tasks and docs are updated;
   4. it did a **final review of the whole diff as a reviewer**, not only trusting CI: correctness, security (secrets, shell, paths, permissions), the constitution and honest limits. It writes in the PR what it checked.
+  5. it read the PR's **GitHub security results** and handled every new finding as an expert in code quality and security would: CodeQL / code scanning, Dependabot and secret scanning. **Look at the PR itself, not only the repository's alert list**, because a finding on a PR does not show among `main`'s alerts until it merges:
+     - `gh pr checks <N>` (the *Analyze* and *CodeQL* checks);
+     - the review comments that bots such as `github-advanced-security[bot]` post on the changed lines (`gh api repos/{owner}/{repo}/pulls/<N>/comments`);
+     - the alerts for the PR's merge ref (`gh api "repos/{owner}/{repo}/code-scanning/alerts?ref=refs/pull/<N>/merge&state=open"`).
+     - **Fix the cause in code.** Do not silence a finding.
+     - Dismiss an alert only when it is a real false positive or applies only to test code, and write the reason in the dismissal and in the PR.
+     - Existing open alerts on `main` that the change touches are fixed in the same PR, or get an issue.
 
-  A review by another team's agent is welcome, and its approval (posted through its human's account) counts as the one GitHub asks for. Each agent's own human may still read or revert anything. The "Needs approval" list above still applies.
+  A review by another team's agent is welcome, and its approval (posted through its human's account) counts as the one GitHub asks for.
+
+  **Merging someone else's PR** (owner, 2026-10-19), when its author's agent seems to have forgotten. Any agent may merge another team's PR when all of these hold:
+  - it is not a draft and not marked WIP, and has no unanswered question or requested change;
+  - CI is green and the PR's own security results are clean (point 5);
+  - it has an approval;
+  - it has been **quiet for at least 2 hours**: no new commit, review or comment.
+
+  Leave a comment saying it was merged for that reason.
+
+  **Before any merge, check the linked issue** (owner, 2026-10-19). Read the issue the PR works on (`Closes #N`, or the issue named in the spec or tasks), check every point it asks for against what the PR did, and handle both:
+  - Everything is covered: let `Closes #N` close it.
+  - Part is still open: change `Closes` to `Refs` (or reopen the issue after the merge), say on the issue what is done and what is left, and keep it open, or open a follow-up issue for the rest and link it.
+  - Never leave an issue closed with work pending, or open with nothing left. Never merge a PR that something else is stacked on before checking its base, and never one marked `needs-owner-approval`. Each agent's own human may still read or revert anything. The "Needs approval" list above still applies.
 - **Before this decision:** each human reviewed only their own agent's PRs, and one *other* human approved before merge. Owned paths (`.specify/`, `.claude/`, `.github/`, `AGENTS.md`, `CLAUDE.md`) also need the maintainer (CODEOWNERS).
 - Stuck or blocked? Add `status:blocked` and a comment saying what you need; do not guess requirements.
 
