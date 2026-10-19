@@ -44,7 +44,7 @@ For a new contributor and their Claude agent. Plain steps; the full rules are in
 6. **Before the PR**: `npm run typecheck && npm run build && npm test`; screenshots for UI changes (see AGENTS.md); `/speckit-converge`.
    **Docs too**: update README, CHANGELOG, `docs/`, the spec's `tasks.md` and screenshots in the same PR (the list is in AGENTS.md, "Keep docs in sync"). Cannot do one of them? Open an issue with label `area:docs` and assign it; say so in the PR.
 7. **Open the PR** (`git push -u origin <branch>`, then `gh pr create`). Fill the template: `Closes #N`, spec link, *Agent used*, what you did not verify. Move the issue on the board to *In review*.
-8. **Review**: your agent does a final review of its whole diff as a reviewer (correctness, security, spec and docs), not only trusting CI, and writes what it checked in the PR. Another team's agent may review and approve it. Files under `.specify/`, `.claude/`, `.github/`, `AGENTS.md`, `CLAUDE.md` also need the maintainer. Humans can always read, comment on or revert.
+8. **Review**: your agent does a final review of its whole diff as a reviewer (correctness, security, spec and docs), not only trusting CI, and writes what it checked in the PR. It also reads the PR's CodeQL / code scanning, Dependabot and secret scanning results and fixes every new finding at the cause; it dismisses an alert only as a documented false positive. Another team's agent may review and approve it. Files under `.specify/`, `.claude/`, `.github/`, `AGENTS.md`, `CLAUDE.md` also need the maintainer. Humans can always read, comment on or revert.
 9. **Merge** when CI is green and that review is done; delete the branch; the issue closes itself.
 
 ## Stuck or blocked
