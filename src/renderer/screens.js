@@ -683,7 +683,7 @@
     const seg=`<div class="seg" role="tablist" aria-label="Cost period"><button role="tab" id="costRun" aria-selected="${costPer!=='since'}" type="button" title="Since Agent Durbar opened (or the last reset)">This run</button>${day?`<button role="tab" id="costSince" aria-selected="${costPer==='since'}" type="button" title="The saved totals since the last reset in Settings, plus this run">Since ${esc(day)}</button>`:''}</div>`;
     if(!built.rows.length)return {seg,built,label,html:'<p class="scr-empty">No folders yet.<br><small>Add a folder and start a session; the cost of each folder shows here.</small></p>'};
     const n=v=>`<td class="num">${esc(v)}</td>`;
-    const moneyCell=r=>C.notReported(r)?'<td class="num unk">not reported</td>':r.empty?'<td class="num">–</td>':n('≈ '+C.money(r.money));
+    const moneyCell=r=>C.notReported(r)?'<td class="num unk">not reported</td>':r.empty?'<td class="num">–</td>':n((/^</.test(C.money(r.money))?'':'≈ ')+C.money(r.money)); /* "<$0.01" needs no "≈" (as on the cards) */
     const row=r=>{
       const note=[r.tokensOnly?'Codex: tokens only':'',r.other?'saved totals of folders no longer in the list':''].filter(Boolean).join(' · ');
       return `<tr class="${r.empty?'empty':''}${r.other?' other':''}"><th scope="row" title="${esc(r.path||r.name)}">${esc(r.name)}</th>${moneyCell(r)}${n(r.aiu.toFixed(2))}${n(r.usd?C.money(r.usd):'–')}${n(r.tokens?fmt(r.tokens):'–')}${n(String(r.calls))}<td class="cnote">${esc(note)}</td></tr>`;};
