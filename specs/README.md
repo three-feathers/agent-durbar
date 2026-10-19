@@ -154,3 +154,5 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | # | Feature | Status |
 | --- | --- | --- |
 | [046](046-release-alpha6/spec.md) | Release v0.1.0-alpha.6 as a pre-release (version bump, changelog, download notes) | built; **published as a pre-release** (2026-10-19) |
+| [048](048-office-assistant/spec.md) | Office assistant: ask the whole office (who waits, what finished, usage by folder and harness) through a free local query layer, plus an optional model layer with no tools (issue #130) | **draft for the owner's review** (spec, plan, tasks; no code) |
+| [049](049-profiles/spec.md) | Profiles: separate offices per profile (Phase 1), then separate sign-ins through each harness's own home folder (`COPILOT_HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`), never a token in Durbar (issue #131) | **draft for the owner's review**; Phase 2 needs research R1 |

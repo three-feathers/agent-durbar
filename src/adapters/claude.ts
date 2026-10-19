@@ -11,6 +11,7 @@
  * - Settings files are never loaded (`--setting-sources ""`, Q8); the folder's `CLAUDE.md` (with `@` imports inside the
  *   folder) goes in as an appended system prompt instead (owner decision, review of #160).
  */
+import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -26,6 +27,8 @@ import { PermissionBroker, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec, StartOptions, Unsubscribe } from './types';
 import { parseUsdCap } from '../shared/credits';
+import { HANDOFF_PROMPT, cleanSummary } from './handoff';
+import type { HandoffResult } from './handoff';
 import type { ModelOption } from '../shared/modelswitch';
 import { resolveWorkspaceCwd } from './workspace';
 import { listClaudeSessions, readClaudeHistory } from './claudeHistory';
@@ -54,6 +57,7 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   history: true, // FR-125/FR-126: read-only from Claude's own session files
   mcpStatus: true,
   mcpToggle: true, // FR-133: mcp_toggle + mcp_status
+  handoff: true, // spec 030 FR-034: a forked one-shot, the session is not changed
 }) as AdapterCapabilities;
 
 /** The hook callback id Durbar registers for `PreToolUse` (any string the CLI echoes back). */
@@ -305,6 +309,53 @@ export interface ClaudeAdapterDeps {
   env?: () => NodeJS.ProcessEnv;
   /** Claude's config folder (tests); default `CLAUDE_CONFIG_DIR` or `~/.claude`. */
   configDir?: string;
+  /** Runs `claude` once with fixed arguments (spec 030 FR-034: the hand-off summary); tests inject a fake. */
+  runOnce?: RunOnce;
+}
+
+export type RunOnce = (file: string, args: string[], o: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number }) => Promise<{ code: number | null; stdout: string }>;
+
+const execRunOnce: RunOnce = (file, args, o) =>
+  new Promise((resolve) => {
+    // stdin closed: with an open pipe `claude -p` waits 3 s for input
+    const child = spawn(file, args, { cwd: o.cwd, env: o.env, windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'ignore'] });
+    let out = '';
+    child.stdout?.on('data', (b: Buffer) => {
+      if (out.length < 4 * 1024 * 1024) out += b.toString('utf8');
+    });
+    const timer = setTimeout(() => child.kill(), o.timeoutMs);
+    child.on('error', () => {
+      clearTimeout(timer);
+      resolve({ code: null, stdout: out });
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code, stdout: out });
+    });
+  });
+
+/** Spec 030 FR-034: the one-shot that summarizes a FORK of the session: no tools, no MCP, no settings, not saved, at most $0.50. */
+export function handoffArgs(i: { sessionId: string; model?: string }): string[] {
+  const a = ['-p', HANDOFF_PROMPT, '--resume', i.sessionId, '--fork-session', '--no-session-persistence', '--tools', '', '--strict-mcp-config', '--setting-sources', '', '--output-format', 'json', '--max-budget-usd', '0.5'];
+  if (claudeModelFlag(i.model)) a.push('--model', i.model as string);
+  return a;
+}
+
+/** The `--output-format json` result of that one-shot: the summary text and Claude's cost estimate. */
+export function parseHandoffOutput(stdout: string): HandoffResult {
+  let o: Record<string, unknown> | undefined;
+  for (const line of stdout.split('\n').reverse()) {
+    const t = line.trim();
+    if (!t.startsWith('{')) continue;
+    try {
+      const v = JSON.parse(t) as unknown;
+      if (v && typeof v === 'object' && (v as { type?: unknown }).type === 'result') { o = v as Record<string, unknown>; break; }
+    } catch { /* not JSON */ }
+  }
+  if (!o) return { summary: '' };
+  const cost = typeof o.total_cost_usd === 'number' && Number.isFinite(o.total_cost_usd) && o.total_cost_usd > 0 ? o.total_cost_usd : undefined;
+  const ok = o.subtype === 'success' && o.is_error !== true;
+  return { summary: ok ? cleanSummary(o.result) : '', ...(cost !== undefined ? { costUsd: cost } : {}) };
 }
 
 interface Session {
@@ -655,6 +706,21 @@ export class ClaudeAdapter implements AgentAdapter {
     s.limit = { requestId: randomUUID() };
     this.emit(s.id, { type: 'limit', phase: 'exhausted', requestId: s.limit.requestId, maxAiCredits: s.capUsd ?? null, usedAiCredits: Math.round(s.spentUsd * 1e4) / 1e4 });
     return s.limit;
+  }
+
+  /** Spec 030 FR-034: a hand-off summary from a forked one-shot of the user's `claude`; the session itself is not changed. */
+  async handoffSummary(sessionId: string): Promise<HandoffResult> {
+    const s = this.mustGet(sessionId);
+    if (!s.resumable) return { summary: '' }; // nothing said yet: nothing to summarize
+    const file = await this.deps.claudePath();
+    if (!file) throw new Error('Claude Code is not installed or could not be found.');
+    if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(file)) throw new Error('A summary needs the native claude.exe, not a .cmd launcher.');
+    const run = this.deps.runOnce ?? execRunOnce;
+    const r = await run(file, handoffArgs({ sessionId: s.id, model: s.options.model }), { cwd: s.cwd, env: (this.deps.env ?? (() => process.env))(), timeoutMs: 180_000 });
+    const out = parseHandoffOutput(r.stdout);
+    if (out.costUsd) this.onMapped(s.id, { type: 'usage', costUsd: out.costUsd, costBasis: 'estimate' }); // counts towards the session's usage and its cap
+    if (!out.summary && r.code !== 0) throw new Error(`Claude could not make a summary (exit ${r.code ?? 'timeout'}).`);
+    return out;
   }
 
   /** FR-150: change (null = remove) the dollar cap; the running CLI gets the new budget with the next message. */
