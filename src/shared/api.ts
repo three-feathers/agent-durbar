@@ -431,6 +431,11 @@ export interface DurbarApi {
   listUserThemes?(): Promise<Array<{ id: string; name?: string; ok: boolean; error?: string }>>;
   getUserTheme?(id: string): Promise<Record<string, unknown> | null>;
   importTheme?(): Promise<{ ok: boolean; id?: string; name?: string; error?: string; cancelled?: boolean }>;
+  /** AI theme maker (spec 040 FR-014): one prompt to a harness with `oneShot`; returns a checked manifest (not saved). */
+  generateTheme?(description: string, adapterId: string): Promise<{ ok: boolean; manifest?: Record<string, unknown>; warnings?: string[]; passes?: number; costUsd?: number; error?: string }>;
+  saveGeneratedTheme?(manifest: Record<string, unknown>): Promise<{ ok: boolean; id?: string; name?: string; error?: string }>;
+  /** Example looks for the AI theme maker (spec 040 FR-021). */
+  themeIdeas?(): Promise<string[]>;
   exportTheme?(id: string): Promise<{ ok: boolean; to?: string; error?: string; cancelled?: boolean }>;
   setCap?(id: string, credits: number | null): Promise<{ ok: boolean; error?: string; maxAiCredits?: number }>;
   /** One-way: the window tells main an agent was paused or resumed (spec 041 T014); Paused exists only in the window. */

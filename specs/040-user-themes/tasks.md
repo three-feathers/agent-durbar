@@ -15,8 +15,10 @@
 
 ## 2026-10-19: AI theme maker (#182)
 
-- [ ] T020 `themegen.ts`: prompt, parse, safe subset, contrast, unique id; unit tests [FR-016, FR-017]
-- [ ] T021 `generateText` for Claude (CLI one-shot) and Codex (ephemeral thread), plus the simulator and the fake adapter; capability `oneShot` [FR-015]
-- [ ] T022 IPC `theme:generate` and `theme:saveGenerated`; the store writes a validated manifest [FR-014, FR-018]
-- [ ] T023 Settings dialog: describe, harness, Generate, preview, Try it / Save / Discard / Try again; screenshots; real checks on Claude and Codex [FR-014]
-
+- [x] T020 `themegen.ts`: prompt, parse, safe subset, contrast, unique id; unit tests [FR-016, FR-017]
+- [x] T021 `generateText` for Claude (CLI one-shot) and Codex (ephemeral thread), plus the simulator and the fake adapter; capability `oneShot` [FR-015]
+- [x] T022 IPC `theme:generate` and `theme:saveGenerated`; the store writes a validated manifest [FR-014, FR-018]
+- [x] T023 Settings dialog: describe, harness, Generate, preview, Try it / Save / Discard / Try again; screenshots; real checks on Claude and Codex [FR-014]
+- [x] T024 Export the active theme: read at click time, explain built-ins, mark the new pick at once, allow a new folder [FR-019]
+- [x] T025 Dark themes and generated art: all tokens, the CSS whites tokenized, contrast and top-bar checks, up to 3 fix passes, art through the sanitiser; idea chips and the try bar [FR-017, FR-020, FR-021]
+- [ ] T026 (later) Copilot `generateText` (a throw-away SDK session)

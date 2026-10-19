@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.7 tag)
 
+- **Make a theme with AI (spec 040 FR-014..FR-021, #182).** Describe a look, or pick one of the ideas, and Claude Code or Codex designs a light or dark theme: every colour, a style, place names and art for the people and furniture. Only safe values are kept, art goes through the same sanitiser as imported packs, and readable text is checked; up to 3 passes fix what fails. Try it on the whole app before you save it.
+- **Fixed: Export the active theme** (spec 040 FR-019). It exports the theme that is active now. On a built-in theme it explains why there is nothing to export, and the export picker can create a new folder.
 - **A project website** at <https://three-feathers.github.io/agent-durbar/> (spec 050, #293). It is generated from the README, the specs index, screenshots, the CHANGELOG and the latest release, and CI republishes it when those change.
 - **Schedules are easy to find (spec 044 FR-009..FR-011).** *Schedules…* in each room's ⋯ menu, a clock chip in the room header with the next run, a *Schedules* button in the chat, and **Settings > Schedules** for all folders.
 - **Team rule: check the linked issue before merging** (owner, spec 021). An issue closes only when everything in it is done; otherwise what is left is written on it, or in a follow-up issue.
