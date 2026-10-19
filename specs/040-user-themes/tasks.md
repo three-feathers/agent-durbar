@@ -21,4 +21,4 @@
 - [x] T023 Settings dialog: describe, harness, Generate, preview, Try it / Save / Discard / Try again; screenshots; real checks on Claude and Codex [FR-014]
 - [x] T024 Export the active theme: read at click time, explain built-ins, mark the new pick at once, allow a new folder [FR-019]
 - [x] T025 Dark themes and generated art: all tokens, the CSS whites tokenized, contrast and top-bar checks, up to 3 fix passes, art through the sanitiser; idea chips and the try bar [FR-017, FR-020, FR-021]
-- [ ] T026 (later) Copilot `generateText` (a throw-away SDK session)
+- [ ] T026 (later, #301) Copilot `generateText` (a throw-away SDK session)
