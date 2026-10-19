@@ -595,14 +595,14 @@ function chooseLayout(sizing,aw,ah){
 let layoutKey='', layout=null;
 /* spec 001 FR-026: what a new user needs before the first folder: sign in once, add a folder (Read-only), or look around in the demo */
 const WELCOME_HTML=`<section class="welcome" aria-labelledby="wlT"><h2 id="wlT">Welcome to Agent Durbar</h2>
-  <p class="wl-sub">Your coding agents in one office: see what each one is doing, chat with it, and decide what it may do.</p>
+  <p class="wl-sub">Your AI agents in one office: see what each one is doing, chat with it, and decide what it may do. For code, documents, research or notes, with GitHub Copilot or Claude Code side by side.</p>
   <ol class="wl-steps">
-    <li><b>Sign in to GitHub Copilot once</b> on this computer: run <code>copilot login</code> in a terminal (a free plan works).</li>
-    <li><b>Add a project folder</b> with <b>+ Folder</b>. Each folder becomes a room with its own agent. Agents start in <b>Read-only</b>: they can read the folder, nothing else.</li>
+    <li><b>Sign in to an agent harness once</b> on this computer: GitHub Copilot (<code>copilot login</code>, a free plan works) or Claude Code (<code>claude auth login</code>). Several can be used side by side.</li>
+    <li><b>Add a folder</b> with <b>+ Folder</b>: a project, a set of documents, any folder your agent should work in. Each folder becomes a room with its own agent. Agents start in <b>Read-only</b>: they can read the folder, nothing else.</li>
     <li><b>Send a message</b> to start. Switch to <b>Ask first</b> or <b>Allow all</b> only for folders you trust.</li>
   </ol>
   <div class="wl-actions"><button class="btn primary" type="button" data-wl="add">+ Add a folder</button><button class="btn" type="button" data-wl="demo">Look around in the demo</button></div>
-  <p class="wl-note">Agents run on your computer, as you, and use your Copilot plan's AI credits.</p></section>`;
+  <p class="wl-note">Agents run on your computer, as you, and use your own plan (Copilot AI credits, your Claude plan).</p></section>`;
 document.addEventListener('click',e=>{const b=e.target.closest('[data-wl]');if(!b)return;
   if(b.dataset.wl==='add')$('addFolder').click();
   else{const t=$('demoToggle');t.checked=true;t.dispatchEvent(new Event('change'));}});
@@ -1033,7 +1033,9 @@ const liveRoot=a=>a.parent?byId(a.parent):a;
 let renderQueued=false;
 function scheduleRender(){if(renderQueued)return;renderQueued=true;requestAnimationFrame(()=>{renderQueued=false;renderAll();});}
 function setBadge(){const b=$('protoBadge'); if(!b)return; b.className='proto'+(SIM&&!demoOn?' sim':'');
-  b.title=SIM&&!demoOn?'Fake events, no sessions started, no AI credits used':'';b.textContent=demoOn?'Prototype - sample data':SIM?'Simulated agents':'Live - Copilot';}
+  /* spec 001 FR-027: not one harness; the tooltip names the ready ones */
+  const ready=DMK().kindChoices(KINDS).filter(k=>!k.disabled).map(k=>k.name);
+  b.title=SIM&&!demoOn?'Fake events, no sessions started, no AI credits used':(!demoOn&&ready.length?'Live: '+ready.join(', '):'');b.textContent=demoOn?'Prototype - sample data':SIM?'Simulated agents':'Live';}
 function applyMode(){
   agents=demoOn?DEMO.agents:LIVE.agents; ROOMS=demoOn?DEMO.rooms:LIVE.rooms;
   ui.ws='all'; ui.status=null;
@@ -1967,6 +1969,7 @@ function applyKinds(){
   /* the other ready kinds' model lists, for their agents' model chips (spec 012 FR-120); a CLI probe, no prompt */
   (KINDS||[]).forEach(k=>{if(!isDefaultKind(k.id)&&k.state==='ready'&&DMK().shows(kindCaps(k.id),'models'))ensureModels(k.id).then(()=>scheduleRender());});
   syncKindModel();
+  setBadge(); /* FR-027: the badge's tooltip lists the ready harnesses */
 }
 async function loadKinds(refresh){
   if(!bridge||!bridge.listAdapters)return;
@@ -1977,7 +1980,7 @@ async function loadKinds(refresh){
 async function aboutKinds(){
   for(;;){
     const ch=DMK().kindChoices(KINDS);
-    const r=await askDialog({title:'About agent kinds',body:'Each kind is a different coding agent. Only a kind that is ready can be chosen. Nothing is installed or run from here: copy the hint if you need to set one up.',
+    const r=await askDialog({title:'About agent kinds',body:'Each kind is a different agent harness. Only a kind that is ready can be chosen. Nothing is installed or run from here: copy the hint if you need to set one up.',
       lines:ch.map(k=>k.name+': '+(k.state==='ready'?'ready':k.stateText)+(k.version?' · version '+k.version:'')+(k.hint?' · '+k.hint:'')),
       buttons:[{label:'Close',value:null},{label:'Check again',value:'again',cls:'primary'}],returnFocus:()=>$('kindHelp')});
     if(!r||r.value!=='again')return;
