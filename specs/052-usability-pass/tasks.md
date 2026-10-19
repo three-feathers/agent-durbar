@@ -1,0 +1,17 @@
+# Tasks: Usability pass from persona reviews (spec 052)
+
+- [ ] T001 Answer bar above the composer for a pending permission request or question [FR-001]
+- [ ] T002 Previous sessions open by themselves only for an empty chat [FR-002]
+- [ ] T003 Chat header: Stop, Open in VS Code, More menu (keyboard, ids kept, destructive last) [FR-003]
+- [ ] T004 Restore banner with Got it and no timer; toasts pause on hover and focus [FR-004]
+- [ ] T005 Top bar "New sessions" caption and accessible names [FR-005]
+- [ ] T006 Room-header counts with shapes and a text alternative [FR-006]
+- [ ] T007 No ring on programmatically focused headings [FR-007]
+- [ ] T008 List view header row straight [FR-008]
+- [ ] T009 Contrast: `--muted`, `--focus`, information chips [FR-009]
+- [ ] T010 Copy buttons visible at rest [FR-010]
+- [ ] T011 Desk accessible name with the permission mode [FR-011]
+- [ ] T012 Plain words in the list, room header and Settings [FR-012]
+- [ ] T013 Plain names for themed places [FR-013]
+- [ ] T014 N: next agent that needs you [FR-014]
+- [ ] T015 Driver `scripts/shots-052-ux.js`, screenshots, `check:office`, `check:geometry`, docs; follow-up issues [SC-001..SC-004]
