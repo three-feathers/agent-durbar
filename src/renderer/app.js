@@ -976,7 +976,7 @@ document.addEventListener('click',e=>{
 ['dragover','drop'].forEach(t=>window.addEventListener(t,e=>{if(e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files'))e.preventDefault();}));
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
-    if(e.target&&e.target.id==='prevQ'&&e.target.value){e.target.value='';e.target.dispatchEvent(new Event('input',{bubbles:true}));return;} /* spec 006 FR-022: Escape clears the search first */
+    if(e.target&&e.target.id==='prevQ'&&e.target.value){e.target.value='';e.target.dispatchEvent(new Event('input',{bubbles:true}));return;} /* spec 006 FR-023: Escape clears the search first */
     if(window.DurbarScreens&&window.DurbarScreens.isOpen()&&!document.getElementById('scrDlg')&&!document.getElementById('modeDlg')){window.DurbarScreens.close();return;}
     if(document.getElementById('sessDlg')){closeSessDlg();return;}
     if(!$('foldersPop').hidden){toggleFolders(false);return;}
@@ -2466,7 +2466,7 @@ function prevListsHtml(a){
   const st=prevOf(a), c=st.cli, v=st.vs, kw=kindWord(a.info&&a.info.adapterId), hasHist=!!c, q=(st.q||'').trim();
   const S=window.DurbarSessionSearch, nc=c&&c.ok?c.sessions.length:0, nv=v&&v.ok?v.sessions.length:0;
   const fc=c&&c.ok?(q?S.filterSessions(c.sessions,q):c.sessions):[], fv=v&&v.ok?(q?S.filterSessions(v.sessions,q):v.sessions):[];
-  const cnt=(n,m)=>q?` <span class="prev-n">${n} of ${m}</span>`:'';
+  const cnt=(n,m)=>q&&m?` <span class="prev-n">${n} of ${m}</span>`:'';
   const none='<p class="prev-empty prev-nomatch">No sessions match</p>';
   let h='';
   if(hasHist){h+='<div class="prev-h">'+esc(kw)+' sessions in this folder'+cnt(fc.length,nc)+' <small>Resume continues the same session; earlier messages are shown here.</small></div>';

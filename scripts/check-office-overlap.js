@@ -479,8 +479,9 @@ async function driver(ctx) {
       await sleep(250);
       const cleared = await ctx.js(`({v:document.getElementById('prevQ')&&document.getElementById('prevQ').value,rows:document.querySelectorAll('#prevLists .prev-row').length})`);
       if (cleared.v !== '' || cleared.rows < 3) P.push(`Escape did not clear the query: ${JSON.stringify(cleared)}`);
-      const box = await ctx.js(`(()=>{const r=document.getElementById('prev').getBoundingClientRect(),q=document.getElementById('prevQ').getBoundingClientRect(),de=document.documentElement;return {right:r.right,qr:q.right,ql:q.left,qh:q.height,w:innerWidth,sw:de.scrollWidth,fs:parseFloat(getComputedStyle(document.getElementById('prevQ')).fontSize)}})()`);
-      if (box.right > box.w + 1 || box.qr > box.w + 1 || box.ql < -1 || box.sw > box.w + 1 || box.fs < 10.5) P.push(`layout: ${JSON.stringify(box)}`);
+      const box = !(await ctx.js(`!!document.getElementById('prev')&&!!document.getElementById('prevQ')`)) ? null : await ctx.js(`(()=>{const r=document.getElementById('prev').getBoundingClientRect(),q=document.getElementById('prevQ').getBoundingClientRect(),de=document.documentElement;return {right:r.right,qr:q.right,ql:q.left,qh:q.height,w:innerWidth,sw:de.scrollWidth,fs:parseFloat(getComputedStyle(document.getElementById('prevQ')).fontSize)}})()`);
+      if (!box) P.push('the search box is gone after Escape (the panel closed)');
+      else if (box.right > box.w + 1 || box.qr > box.w + 1 || box.ql < -1 || box.sw > box.w + 1 || box.fs < 10.5) P.push(`layout: ${JSON.stringify(box)}`);
     }
     total++;
     if (P.length) { failed++; console.log(`FAIL ${tag}: ${P.join('; ')}`); }
