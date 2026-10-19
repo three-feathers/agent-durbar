@@ -28,6 +28,7 @@ const api: DurbarApi = {
   removeFolder: (id) => ipcRenderer.invoke('folders:remove', id),
   removeSession: (id) => ipcRenderer.invoke('agents:remove', id),
   renameFolder: (id, label) => ipcRenderer.invoke('folders:rename', id, label),
+  setFolderDefaultAgent: (id, profileId) => ipcRenderer.invoke('folders:setDefaultAgent', id, profileId),
   floorsState: () => ipcRenderer.invoke('floors:state'),
   createFloor: (name) => ipcRenderer.invoke('floors:create', name),
   renameFloor: (id, name) => ipcRenderer.invoke('floors:rename', id, name),
