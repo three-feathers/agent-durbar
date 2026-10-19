@@ -972,3 +972,15 @@ body.simple .room-path,body.simple .room-mcp,body.simple #vscodeBtn,body.simple 
 body.simple .pusage,body.simple .defaults-grp #modelSel,body.simple .defaults-grp #effortSel,body.simple .lrow .lcell.mono{display:none!important}
 .wl-simple{display:flex;gap:8px;align-items:flex-start;margin:12px 0 0;font-size:13px;color:var(--ink-2);cursor:pointer}
 .wl-simple input{margin-top:3px}
+
+/* spec 052 FR-033: the inbox heading takes focus (a row, not a button) */
+.inbox-row .ib-h{margin:0;font-size:13.5px;font-weight:400;border-radius:6px}
+.inbox-row .ib-h:focus{outline:2px solid var(--focus);outline-offset:3px}
+.inbox-row:focus-within{border-color:var(--focus)}
+.inbox-keys{margin:8px 0 0;font-size:11.5px;color:var(--muted)}
+
+/* spec 052 FR-037: Simple goes further: tool rows fold into one line, Thinking stays folded, fewer top-bar controls */
+body.simple #chat .chips>.chip,body.simple #chat .chips>.chips-more{display:none}
+body.simple #chat .chips:has(>.chip)::before{content:"Worked with its tools (Expert shows each step)";display:block;font-size:12.5px;color:var(--muted);padding:2px 0}
+body.simple #chat .think .think-body{display:none}
+body.simple #addWs,body.simple #foldersBtn,body.simple #vList{display:none!important}

@@ -35,7 +35,7 @@ module.exports = async (ctx) => {
     assert.match(strip.text, /Allow all, restored from your last run: .+/);
     assert.ok(/swisscontract-ai|command-center/.test(strip.text), 'it names the folders: ' + strip.text);
     assert.ok(strip.below, 'the office starts below it (nothing covered)');
-    assert.deepStrictEqual(strip.btns, ['Switch to Ask first', 'Keep']);
+    assert.deepStrictEqual(strip.btns, ['Ask me first (safer)', 'Keep as it is']);
     // FR-006: room counts in words
     const dots = await js(`[...document.querySelectorAll('#stage .room-dots[role="img"]')].map(x=>x.getAttribute('aria-label'))`);
     assert.ok(dots.length && dots.every((l) => /\d+ (waiting for you|error|working|done|idle)/.test(l)), 'room counts have words: ' + dots[0]);

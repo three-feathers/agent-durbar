@@ -68,7 +68,7 @@ let SERIOUS=false; /* Serious mode (Settings): no mood drawings at all */
    command) and says what agents do in plain verbs; Expert is everything. A display preference of this window (localStorage). */
 let SIMPLE=(()=>{try{return localStorage.getItem('durbar.detail')==='simple';}catch(e){return false;}})();
 function setDetail(level){SIMPLE=level==='simple';try{localStorage.setItem('durbar.detail',SIMPLE?'simple':'expert');}catch(e){}document.body.classList.toggle('simple',SIMPLE);renderAll();if(ui.selected)updatePanelHeader();}
-const PLACE_VERB={library:'Reading notes',software:'Searching code',terminal:'Running a command',web:'Searching the web',other:'Using a tool'};
+const PLACE_VERB={library:'Reading notes',software:'Searching files',terminal:'Using the computer',web:'Searching the web',other:'Using a tool'}; /* FR-037: words for people who do not write code */
 let AMB_ID=null;   /* the one agent that has the ambulance (the most recent error), chosen once per render */
 const NO_MOOD={body:'normal',trouble:null,pct:null,words:''};
 function moodFor(a){
@@ -441,7 +441,7 @@ function cardHTML(a,d,nSubs){
   const st=vis(a), use=usageShort(a);
   return `<button class="desk card is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${use?' · '+use:''}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${sceneC(a)}</span>
-    <span class="ci"><span class="l1"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc(a.profile?a.profile.name+" · "+a.role:a.role)}</span><span class="stl st-${st}">${label(a,true)}</span></span>
+    <span class="ci"><span class="l1"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a))}</span><span class="stl st-${st}">${label(a,true)}</span></span>
     <span class="intent">${esc(taskOf(a))}</span>
     <span class="l3"><span class="pill st-${st}"><i></i>${label(a,true)}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${esc(use.split(' · ')[1])}</span>`:`${esc(use.split(' · ')[0]||'')}<span class="aiu">${use.includes(' · ')?' · '+esc(use.split(' · ')[1]):''}</span>`}</span></span></span></button>`;
 }
@@ -469,7 +469,7 @@ function unitHTML(a,d){
   if(d==='full'){
     desk=`<button class="desk is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
       ${scene(a,false)}<span class="badge ${st}">${badgeSVG(st)}</span>
-      <div class="info"><div class="who"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc(a.profile?a.profile.name+" · "+a.role:a.role)}</span></div>
+      <div class="info"><div class="who"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a))}</span></div>
       <p class="task">${esc(taskOf(a))}</p><span class="pill st-${st}"><i></i>${label(a)}${pillWarn(a)}</span></div></button>`;
   } else desk=cardHTML(a,d,nSubs);
   return `<div class="unit${nSubs?' has-h':''}" data-key="unit:${esc(a.id)}">${desk}${helpers}</div>`;
@@ -982,7 +982,7 @@ function wireAnswerBar(a){
     const add=(label,cls,fn,title)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;b.onclick=fn;act.appendChild(b);};
     if(q)add('Answer in chat','primary',show);
     /* FR-016: a long request is answered in the chat only; the wide grant (any arguments) stays in the card */
-    else if(!long)for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad)add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],()=>src.click(),src.title);
+    else if(!long)for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad)add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],()=>{const word=src.textContent,what=text;src.click();announce(word+': '+what);const m=$('msgInput');if(m)m.focus();},src.title);
     add('Show in chat','ghost',show,'Scroll to the request in the chat');
     bar.hidden=false;
   }
@@ -1037,6 +1037,7 @@ function openPanel(id,focus){
   if(a.live&&!a.parent&&a.info&&a.info.resumeLast&&bridge.wake)wakeLast(a);
   wireMoreMenu();
   wireAnswerBar(a);
+  if(needsMe(a)){const c=pendingCardOf(a);if(c)announce(a.name+(c.classList.contains('question')?' asks: ':' needs your OK: ')+requestText(c));}
   $('pauseBtn').onclick=()=>{a.paused=!a.paused;if(a.live&&bridge.setPaused)bridge.setPaused(a.id,a.paused);toast(esc(a.name)+(a.paused?' paused.':' resumed.'));renderAll();};
   if($('stopBtn'))$('stopBtn').onclick=()=>{if(a.live)return stopLive(a);a.paused=false;a.state='idle';a.label='Stopped';a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
   $('attFile').onclick=()=>{if(a.live)return pickLive();addPicked([{name:SAMPLE_FILES[fi++%SAMPLE_FILES.length],kind:'file',size:12*1024}]);};
@@ -1103,6 +1104,10 @@ document.addEventListener('click',e=>{
 /* a file dropped anywhere else must not navigate the window away */
 ['dragover','drop'].forEach(t=>window.addEventListener(t,e=>{if(e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files'))e.preventDefault();}));
 document.addEventListener('keydown',e=>{
+  /* spec 052 FR-035: Ctrl+Shift+A (attention: the inbox) and Ctrl+Shift+N (next agent) work everywhere, also in text fields and in a
+     screen reader's browse mode, where single letters are taken. Not Ctrl+Shift+I: Electron's default menu opens DevTools there. */
+  if((e.ctrlKey||e.metaKey)&&e.shiftKey&&!e.altKey&&(e.key==='A'||e.key==='a'||e.code==='KeyA')){e.preventDefault();openInbox();return;}
+  if((e.ctrlKey||e.metaKey)&&e.shiftKey&&!e.altKey&&(e.key==='N'||e.key==='n'||e.code==='KeyN')){e.preventDefault();closeInbox();openNextNeedsMe();return;}
   if(e.key==='Escape'){
     if($('inboxDlg')){closeInbox();return;}
     if(e.target&&e.target.id==='prevQ'&&e.target.value){e.target.value='';e.target.dispatchEvent(new Event('input',{bubbles:true}));return;} /* spec 006 FR-023: Escape clears the search first */
@@ -1142,7 +1147,7 @@ function renderRestoreStrip(){
   const ags=agents.filter(a=>a.live&&!a.parent&&a.info&&a.info.permMode==='allow'&&a.info.permRestored);
   const rooms=[...new Map(ags.map(a=>[roomOf(a).id,roomOf(a)])).values()];
   if(!rooms.length||el.dataset.kept==='1'){el.hidden=true;el.innerHTML='';return;}
-  el.innerHTML='<span class="ns-ic" aria-hidden="true">!</span><span class="ns-t"><b>Allow all, restored from your last run:</b> <span></span>. '+(rooms.length>1?'These folders':'This folder')+' can act without asking you.</span><span class="ns-act"><button class="btn primary" type="button" data-ns="ask">Switch to Ask first</button><button class="btn" type="button" data-ns="keep">Keep</button></span>';
+  el.innerHTML='<span class="ns-ic" aria-hidden="true">!</span><span class="ns-t"><b>Allow all, restored from your last run:</b> <span></span>. Agents there can change or delete files and run commands without asking you.</span><span class="ns-act"><button class="btn primary" type="button" data-ns="ask">Ask me first (safer)</button><button class="btn" type="button" data-ns="keep">Keep as it is</button></span>';
   el.querySelector('.ns-t span').textContent=rooms.map(r=>r.name).join(', ');
   el.hidden=false;
   el.querySelector('[data-ns="keep"]').onclick=()=>{el.dataset.kept='1';renderRestoreStrip();scheduleRender();};
@@ -1164,38 +1169,62 @@ function renderInboxBtn(){
   const n=needsMeOrder().length;
   b.hidden=!agents.length; b.classList.toggle('attn',n>0);
   b.querySelector('b').textContent=String(n);
-  b.setAttribute('aria-label',n?n+(n===1?' agent needs':' agents need')+' you. Open the inbox (I).':'Nobody needs you. Open the inbox (I).');
+  b.setAttribute('aria-label',n?n+(n===1?' agent needs':' agents need')+' you. Open the inbox (I or Ctrl+Shift+A).':'Nobody needs you. Open the inbox (I or Ctrl+Shift+A).');
 }
 function pendingCardOf(a){const c=getChat(a);const all=[...c.el.querySelectorAll('.note.perm:not(.settled)')].filter(n=>n.querySelector(':scope > .note-actions button'));return all[0]||null;}
-function closeInbox(){const d=$('inboxDlg');if(!d)return;d.remove();const b=$('inboxBtn');if(b)b.focus();}
+function closeInbox(){const d=$('inboxDlg');if(!d)return;d.remove();const b=$('inboxBtn');if(b&&b.getClientRects().length)b.focus();}
+/* spec 052 FR-034: one polite live region for requests and answers (screen readers hear them; nothing visible changes) */
+let announceT=0;
+function announce(text){const el=$('srAnnounce');if(!el||!text)return;clearTimeout(announceT);el.textContent='';announceT=setTimeout(()=>{el.textContent=String(text).slice(0,300);},60);}
 function openInbox(){
   closeInbox();
   const d=document.createElement('div');d.id='inboxDlg';d.className='dlg-ov';
-  d.innerHTML='<div class="dlg wide inbox-dlg" role="dialog" aria-modal="true" aria-labelledby="inboxT"><h3 id="inboxT">Needs you</h3><div class="dbody" id="inboxBody"></div><div class="dbtn"><button class="btn" type="button" id="inboxClose">Close</button></div></div>';
+  d.innerHTML='<div class="dlg wide inbox-dlg" role="dialog" aria-modal="true" aria-labelledby="inboxT" aria-describedby="inboxKeys"><h3 id="inboxT">Needs you</h3><div class="dbody" id="inboxBody"></div><p class="inbox-keys" id="inboxKeys">Keys: J/K or ↑/↓ move, A approve, D deny, S allow for the session, O open the chat, Esc close.</p><div class="dbtn"><button class="btn" type="button" id="inboxClose">Close</button></div></div>';
   document.body.appendChild(d);
   d.addEventListener('click',e=>{if(e.target===d)closeInbox();});
-  d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeInbox();}});
+  d.addEventListener('keydown',inboxKey);
   $('inboxClose').onclick=closeInbox;
-  paintInbox(true);
+  paintInbox(0);
 }
-function paintInbox(focus){
+/* FR-033: keys inside the inbox act on the row that holds focus; Tab stays inside the dialog */
+function inboxKey(e){
+  const d=$('inboxDlg'); if(!d)return;
+  if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeInbox();return;}
+  if(e.key==='Tab'){const f=[...d.querySelectorAll('button,[tabindex="-1"].ib-h,input')].filter(x=>x.getClientRects().length);if(!f.length)return;const i=f.indexOf(document.activeElement);if(e.shiftKey&&(i<=0)){e.preventDefault();f[f.length-1].focus();}else if(!e.shiftKey&&i===f.length-1){e.preventDefault();f[0].focus();}return;}
+  if(e.altKey||e.ctrlKey||e.metaKey)return;
+  const rows=[...d.querySelectorAll('.inbox-row')], row=document.activeElement&&document.activeElement.closest('.inbox-row'), ri=rows.indexOf(row);
+  const go=i=>{const r=rows[Math.max(0,Math.min(rows.length-1,i))];if(r)r.querySelector('.ib-h').focus();};
+  const k=e.key.toLowerCase();
+  if(k==='j'||e.key==='ArrowDown'){e.preventDefault();go(ri+1);return;}
+  if(k==='k'||e.key==='ArrowUp'){e.preventDefault();go(ri<0?0:ri-1);return;}
+  if(!row)return;
+  const act=x=>{const b=row.querySelector(`[data-k="${x}"]`);if(b){e.preventDefault();b.click();}};
+  if(k==='a')act('approve');else if(k==='d')act('deny');else if(k==='s')act('session');
+  else if(k==='o'||(e.key==='Enter'&&document.activeElement.classList.contains('ib-h'))){e.preventDefault();row.querySelector('[data-k="open"]').click();}
+}
+function paintInbox(focusIndex){
   const body=$('inboxBody'); if(!body)return;
   const list=needsMeOrder();
-  body.innerHTML=list.length?'':'<p class="inbox-empty">Nobody needs you right now. Agents that ask for permission, ask a question, reach their limit or hit an error appear here.</p>';
-  for(const a of list){
-    const card=pendingCardOf(a), row=document.createElement('section');row.className='inbox-row';row.setAttribute('aria-label',a.name);
-    const st=vis(a), what=card?(card.classList.contains('question')?'asks':card.classList.contains('limit')?'stopped':'needs your OK'):(st==='error'?'hit an error':a.limit?'reached its limit':LABELS[st]||st);
-    row.innerHTML='<div class="ib-av" aria-hidden="true">'+avatar(a)+'</div><div class="ib-main"><p class="ib-h"><b></b> <span class="ib-w"></span> <span class="ib-f"></span></p><p class="ib-t"></p><div class="ib-act"></div></div>';
+  body.innerHTML=list.length?'':'<p class="inbox-empty" tabindex="-1">Nobody needs you right now. Agents that ask for permission, ask a question, reach their limit or hit an error appear here.</p>';
+  list.forEach((a,i)=>{
+    const card=pendingCardOf(a), row=document.createElement('section');row.className='inbox-row';
+    const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?'stopped':'needs your OK'):(st==='error'?'hit an error':a.limit?'reached its limit':LABELS[st]||st);
+    row.setAttribute('aria-labelledby','ibh'+i);
+    row.innerHTML='<div class="ib-av" aria-hidden="true">'+avatar(a)+'</div><div class="ib-main"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b></b> <span class="ib-w"></span> <span class="ib-f"></span></h4><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
     row.querySelector('.ib-h b').textContent=a.name;row.querySelector('.ib-w').textContent=what;row.querySelector('.ib-f').textContent='· '+roomOf(a).name;
-    row.querySelector('.ib-t').textContent=card?requestText(card):(taskOf(a)||'');
+    const text=card?requestText(card):(taskOf(a)||'');row.querySelector('.ib-t').textContent=text;
     const act=row.querySelector('.ib-act');
-    const add=(label,cls,fn,title)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;b.onclick=fn;act.appendChild(b);};
-    if(card&&!card.classList.contains('question'))for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad)add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],()=>{src.click();setTimeout(()=>{paintInbox(false);renderInboxBtn();},250);},src.title);
-    add(card&&card.classList.contains('question')?'Answer in chat':'Open chat',card&&card.classList.contains('question')?'primary':'',()=>{closeInbox();openPanel(a.id,true);});
+    const add=(label,cls,k,fn,title)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;b.dataset.k=k;b.setAttribute('aria-describedby','ibh'+i+' ibt'+i);if(title)b.title=title;b.onclick=fn;act.appendChild(b);};
+    if(card&&!q)for(const src of card.querySelectorAll(':scope > .note-actions button')){
+      if(src.dataset.broad)continue;
+      const k=src.dataset.act==='session'?'session':/danger/.test(src.className)?'deny':/primary/.test(src.className)?'approve':'other';
+      add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],k,()=>{const word=k==='deny'?'Denied':k==='other'?src.textContent:'Approved';src.click();setTimeout(()=>{const left=needsMeOrder().length;announce(word+' '+a.name+'. '+(left?left+' left.':'Nobody else needs you.'));paintInbox(i);renderInboxBtn();},250);},src.title);
+    }
+    add(q?'Answer in chat':'Open chat',q?'primary':'','open',()=>{closeInbox();openPanel(a.id,true);});
     body.appendChild(row);
-  }
-  /* a redraw after an answer keeps focus inside the inbox (the pressed button is gone) */
-  if(focus||!body.contains(document.activeElement)){const f=body.querySelector('.ib-act .btn.primary')||$('inboxClose');if(f)f.focus();}
+  });
+  /* FR-033: focus a heading (it reads the agent and its request through the row), never a button */
+  if(focusIndex!=null){const hs=body.querySelectorAll('.ib-h');const h=hs[Math.min(focusIndex,hs.length-1)]||body.querySelector('.inbox-empty')||$('inboxClose');if(h)h.focus();}
 }
 function openNextNeedsMe(){
   const list=needsMeOrder(); if(!list.length){toast('Nobody needs you right now.',2600);return;}
@@ -1264,6 +1293,8 @@ const MODE_IC={
  /* spec 052 FR-018: an open padlock, not a pencil: Allow all is unguarded, not "editable" */
  'allow':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><rect x="3.2" y="7" width="9.6" height="6.6" rx="1.6"/><path d="M5.6 7V5.2a2.4 2.4 0 0 1 4.7-.7"/></svg>'};
 /* spec 052 FR-011: the desk's accessible name says its permission mode; the glyph next to the name is decoration for screen readers */
+/* spec 052 FR-039: with more than one harness in the office, each card says which one runs it ("Reviewer · Codex") */
+const kindTag=a=>{const r=a&&a.parent?byId(a.parent):a;if(!r||!r.live||!r.info)return '';const ks=new Set(agents.filter(x=>x.live&&!x.parent&&x.info).map(x=>x.info.adapterId||'copilot'));return ks.size>1?' · '+kindWord(r.info.adapterId):'';};
 const modeWords=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?', '+MODE_NAME[a.info.permMode]+(a.info.permMode==='allow'&&a.info.permRestored?' (restored)':''):'';
 const modeIcon=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}${a.info.permMode==='allow'&&a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_HELP[a.info.permMode])} (right-click for options)" aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`:'';
 /* Floors state from the bridge (spec 033): rooms take their floor from it, then everything that depends on visibility re-renders. */
@@ -1797,6 +1828,7 @@ function showQuestion(a,e){
   row.appendChild(ok);row.appendChild(skip);n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st};
   tChips(t.T).appendChild(n);scrollChat(liveChat(a));
+  announce(a.name+' asks: '+((qs[0]&&qs[0].question)||'a question'));renderInboxBtn();
 }
 function settleQuestion(a,answers){
   const Q=a.question;if(!Q)return;a.question=null;
@@ -1828,14 +1860,16 @@ function showPerm(a,p){
     const row=document.createElement('div');row.className='note-actions';
     const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);};
     const answer=(approve,remember,broad)=>{bridge.resolvePermission(a.id,p.requestId,approve,remember,!!broad);settlePerm(a,{requestId:p.requestId,state:approve?'approved':'denied',via:'user',remembered:approve&&remember,scopeLabel:broad?p.broadScopeLabel:p.scopeLabel,summary:p.summary});};
-    mk('Approve','primary','Allow this one request',()=>answer(true,false));
-    if(p.scopeKey){mk('Approve “'+(()=>{const t=String(p.scopeLabel||p.kind||'this');return t.length>32?t.slice(0,31)+'…':t;})()+'” for this session','session','Allow "'+(p.scopeLabel||p.kind)+'" until you end this session'+(p.kind==='shell'?' (this exact command only)':'')+'. Shown as a chip you can revoke.',()=>answer(true,true));row.lastElementChild.dataset.act='session';}
+    mk(SIMPLE?'Allow this once':'Approve','primary','Allow this one request',()=>answer(true,false)); /* spec 052 FR-037: plain words in Simple */
+    if(p.scopeKey){mk((SIMPLE?'Allow “':'Approve “')+(()=>{const t=String(p.scopeLabel||p.kind||'this');return t.length>32?t.slice(0,31)+'…':t;})()+(SIMPLE?'” until you end this session':'” for this session'),'session','Allow "'+(p.scopeLabel||p.kind)+'" until you end this session'+(p.kind==='shell'?' (this exact command only)':'')+'. Shown as a chip you can revoke.',()=>answer(true,true));row.lastElementChild.dataset.act='session';}
     if(p.broadScopeKey){mk('Approve for session: any arguments','session','Allow every simple "'+(p.broadScopeLabel||p.kind)+'" command (no pipes, redirects or substitutions) until you end this session. Wider than the exact command above; shown as a chip you can revoke.',()=>answer(true,true,true));row.lastElementChild.dataset.broad='1';}
-    mk('Deny','danger','Deny this request',()=>answer(false,false));
+    mk(SIMPLE?'Don\'t allow':'Deny','danger','Deny this request',()=>answer(false,false));
     n.appendChild(row);
     a.pend.set(p.requestId,{n,row,st});
   }
   tChips(t.T).appendChild(n);scrollChat(liveChat(a));
+  if(p.state==='pending')announce(a.name+' needs your OK: '+p.summary);
+  renderInboxBtn();
 }
 function settlePerm(a,p){
   let e=a.pend.get(p.requestId);
