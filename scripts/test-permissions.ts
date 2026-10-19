@@ -6,7 +6,7 @@ import type { BrokerEvent } from '../src/adapters/permissions';
 
 async function main(): Promise<void> {
   // scopes
-  assert.deepStrictEqual(grantScope({ kind: 'write', fileName: '/a/b/src/x.ts' }).key, 'write:/a/b/src');
+  assert.deepStrictEqual(grantScope({ kind: 'write', fileName: '/a/b/src/x.ts' }, path.posix).key, 'write:/a/b/src');
   assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'npm test' }).key, 'shell-exact:npm test', 'shell grants are exact by default (spec 003 FR-022)');
   assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'npm test' }).broad?.key, 'shell:npm', 'any-arguments is offered for simple commands');
   assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'npm test && rm -rf /' }).key, 'shell-exact:npm test && rm -rf /');
@@ -55,7 +55,7 @@ async function main(): Promise<void> {
   await tick();
   assert.strictEqual(t.b.resolve('w4', false), true);
   assert.strictEqual((await p).kind, 'reject');
-  assert.strictEqual(t.b.revoke('write:/x'), true);
+  assert.strictEqual(t.b.revoke(t.b.listGrants()[0].key), true); // the key's spelling depends on the host path flavor
   p = t.b.request({ kind: 'write', fileName: '/x/z.ts', toolCallId: 'w5' });
   await tick();
   assert.strictEqual(t.ev[t.ev.length - 1].type, 'pending');
@@ -217,7 +217,7 @@ async function main(): Promise<void> {
   assert.strictEqual(grantScope({ kind: 'write', fileName: 'C:\\Repo\\src\\a.ts' }, w).key, grantScope({ kind: 'write', fileName: 'c:\\repo\\src\\a.ts' }, w).key, 'T028: case does not make another key on Windows');
   assert.strictEqual(grantScope({ kind: 'write', fileName: 'C:/repo/src/a.ts' }, w).key, grantScope({ kind: 'write', fileName: 'C:\\repo\\src\\a.ts' }, w).key, 'T028: / and \\ are the same folder on Windows');
   assert.strictEqual(grantScope({ kind: 'write', fileName: 'C:\\Repo\\Src\\a.ts' }, w).label, 'write in Repo/Src/', 'the label keeps the spelling');
-  assert.notStrictEqual(grantScope({ kind: 'write', fileName: '/Repo/src/a.ts' }).key, grantScope({ kind: 'write', fileName: '/repo/src/a.ts' }).key, 'POSIX stays case-sensitive');
+  assert.notStrictEqual(grantScope({ kind: 'write', fileName: '/Repo/src/a.ts' }, path.posix).key, grantScope({ kind: 'write', fileName: '/repo/src/a.ts' }, path.posix).key, 'POSIX stays case-sensitive');
   {
     const ev: BrokerEvent[] = [];
     const b = new PermissionBroker({ ask: true, pathCheck: { flavor: w, caseInsensitive: true, realpath: (x) => x }, emit: (e) => ev.push(e) });
