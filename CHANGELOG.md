@@ -6,6 +6,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **MCP server groundwork: main-process simulator (spec 041 T015, issue #215).** A developer hook, `DURBAR_SIM_MAIN=N`, plans N simulated agents in the main process (several floors, one off, with waiting, limit, error and not-started agents) on a fake adapter, so the MCP server can be tested later. Ignored in packaged builds; not wired into the app start yet. No user-visible change, 0 AIU.
 
+- **Copy buttons in the chat (spec 005 FR-015).** Each agent reply has a **Copy** button that copies the reply as written, and each code block has its own button for the code only. They appear when you point at a reply or move to them with the keyboard.
+
 - **Move between desks with the arrow keys (spec 001 FR-019).** In the office, the arrow keys move the focus between desks, helper tiles and closed doors: left and right along a row, up and down to the nearest one. Enter opens the desk, as before.
 
 - **Permissions on Windows (spec 003).** "Approve for this session" on a folder now also covers the same folder spelled with other capitals or with `/` instead of `\`. Two permission requests that arrive in the same millisecond without an id no longer overwrite each other.
