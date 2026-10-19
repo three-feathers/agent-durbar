@@ -1770,7 +1770,7 @@ async function sendLive(text,forId){
 async function pickLive(want){addPicked(await bridge.pickAttachments(want));}
 async function openLive(a){
   const r=await bridge.openInVSCode(liveRoot(a).id);
-  toast(r.ok?'Opening in VS Code…':'Could not open VS Code: '+esc(r.error||'unknown error'),4200);
+  toast(r.ok?'Opening in '+esc(r.edition||'VS Code')+'…':'Could not open VS Code: '+esc(r.error||'unknown error'),4200);
 }
 async function stopLive(a){const r=liveRoot(a);await bridge.stop(r.id);toast(esc(r.name)+': stopped the current turn. It is ready for your next message.');}
 async function endLive(a){const r=liveRoot(a);await (bridge.end||bridge.stop)(r.id);toast(esc(r.name)+': session ended. Sending a message resumes it.',4200);}

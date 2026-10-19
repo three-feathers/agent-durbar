@@ -13,7 +13,7 @@
 ## Open
 
 - [x] T020 Reconcile Cursor: README claim removed 2026-10-16 (code unchanged; adding Cursor needs a verified store layout). [FR-008]
-- [ ] T021 Offer Insiders/VSCodium for "Open in" (clarify which binary to prefer). [FR-009, FR-015: stable, then Insiders, then VSCodium]
+- [x] T021 (2026-10-19) Offer Insiders/VSCodium for "Open in" (clarify which binary to prefer). [FR-009, FR-015: stable, then Insiders, then VSCodium]
 - [ ] T022 Run the real launch on macOS and Windows and record it. [FR-014]
 - [ ] T023 Check the reader against a real VS Code chat store (redacted sample as a new fixture) (feature 013). [FR-011]
 - [ ] T024 Verify that our sessions appear in VS Code's session list with the External filter (feature 013). [FR-012]
