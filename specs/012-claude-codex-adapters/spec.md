@@ -800,3 +800,16 @@ The owner handed the Codex track to this agent ("ruben does not have chatgpt acc
   - `echo` was connected (and Codex's `codex_apps`);
   - the tool call asked for approval as "mcp echo › echo"; approved, it returned "echo: hello durbar";
   - asked to use a sub-agent, Codex spawned one, shown as the helper "pelican", started and completed once; the answer was "pelican".
+
+### 2026-10-19: a dollar cap for Claude Code (Q7, T081)
+
+*Decision* (made by the agent under the owner's "you can handle what you can handle" and "support claude same as copilot"): Q7 is answered **yes**, as a separate unit. Claude reports a dollar **estimate** (FR-122), never AIU, so its cap is in dollars, kept apart from the AIU caps of Copilot. It is off unless the user sets one, and it never borrows an AIU cap. Claude's own `--max-budget-usd` exists in 2.1.303 (`claude --help`).
+
+- **FR-150** A Claude session can have a **cost cap in dollars** (`capUnit: 'usd'` in the capabilities; `caps: true`):
+  - Set it in the New session dialog ("Cost cap ($, estimate)") or from the cap chip, which shows `$0.03 / $0.50`.
+  - The minimum is $0.01. The folder's saved AIU cap and the settings default (AIU) are **never** applied to Claude, and a Claude cap is not saved per folder (`[KNOWN GAP]`: per session only).
+- **Enforcement**, two locks:
+  - each CLI launch gets `--max-budget-usd <cap minus what the session has spent>`, so Claude itself stops a turn at the limit;
+  - after each result, when the session's estimate reaches the cap, the adapter emits the same `limit exhausted` event as Copilot, and the next message is held until the user adds to the cap, removes it, or stops (`resolveLimit`: `add`, `set`, `unset`, `cancel`).
+- Like Copilot's, it is a soft cap: one turn can go a little past it, and the figure is Claude's estimate, not a bill. With a Claude subscription nothing is billed per token.
+- `test:` the argv and the remaining budget, the limit event and its resolution, and the main-side rule that an AIU default is not used. `real:` a tiny cap reached on `haiku`.
