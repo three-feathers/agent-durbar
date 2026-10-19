@@ -6,6 +6,7 @@
   let X=null; /* ctx from app.js: {bridge, stats, esc, toast, floors:{on(),render()}, agents(), staticLimit(a), openAgent(id), sim, places, placeServers(), setPlaceMap(m)} */
   let cur=null; /* {kind:'settings'|'tools'|'folder', ...} */
   let period='session'; /* Tools view: 'session' | 'all' (remembered for the run) */
+  let costPer='run'; /* Tools > Cost: 'run' | 'since' (spec 052 FR-044; remembered for the run) */
   let usage=null; /* last all-time view {doc,labels,error} from main */
   const $=id=>document.getElementById(id);
   const esc=s=>X.esc(s);
@@ -625,7 +626,7 @@
     const r=root();
     const all=period==='all';
     const agents=X.agents();
-    const tab=all?'tools':(cur.tab||'tools');
+    let tab=cur.tab||'tools'; if(all&&tab==='agents')tab='tools';
     let scope=cur.scope||null; /* session: an agent id; all time: an agent label */
     let tot,groups,scopeSel;
     if(all){
@@ -643,17 +644,23 @@
       scopeSel=`<label class="select-wrap"><span class="sr-only">Show</span><select id="toolScope"><option value="">All agents</option>${agents.map(a=>`<option value="${esc(a.id)}"${a.id===scope?' selected':''}>${esc(a.name)}</option>`).join('')}</select></label>`;
     }
     const per=`<div class="seg" role="tablist" aria-label="Period"><button role="tab" id="perSession" aria-selected="${!all}" type="button">This session</button><button role="tab" id="perAll" aria-selected="${all}" type="button">All time</button></div>`;
-    const tabs=all?'':`<div class="seg" role="tablist" aria-label="Tools view"><button role="tab" id="tabTools" aria-selected="${tab==='tools'}" type="button">Tool usage</button><button role="tab" id="tabAgents" aria-selected="${tab==='agents'}" type="button">Models &amp; context</button></div>`;
-    const body=tab==='tools'?await toolsTab(scope,tot,groups,all):agentsTab(scope,agents);
+    const tabs=`<div class="seg" role="tablist" aria-label="Tools view"><button role="tab" id="tabTools" aria-selected="${tab==='tools'}" type="button">Tool usage</button><button role="tab" id="tabAgents" aria-selected="${tab==='agents'}" type="button">Models &amp; context</button><button role="tab" id="tabCost" aria-selected="${tab==='cost'}" type="button">Cost</button></div>`;
+    const cost=tab==='cost'?costView():null;
+    const body=cost?cost.html:tab==='tools'?await toolsTab(scope,tot,groups,all):agentsTab(scope,agents);
     if(!cur||cur.kind!=='tools')return;
-    r.innerHTML=`<div class="scr-head"><h2>Tools</h2>${per}${scopeSel}${tabs}<span class="grow"></span><button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>
+    const head=cost?`${tabs}${cost.seg}<span class="grow"></span><button class="btn" type="button" id="costCsv"${cost.built.rows.length?'':' disabled'}>Copy as CSV</button>`:`${per}${scopeSel}${tabs}<span class="grow"></span>`;
+    r.innerHTML=`<div class="scr-head"><h2>Tools</h2>${head}<button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>
       <div class="scr-body">${body}</div>`;
     wireHead();
-    $('toolScope').onchange=e=>{cur.scope=e.target.value||null;paintTools();};
-    $('perSession').onclick=()=>{if(period==='session')return;period='session';cur.scope=null;paintTools();};
-    $('perAll').onclick=()=>{if(period==='all')return;period='all';paintTools();};
-    if($('tabTools'))$('tabTools').onclick=()=>{cur.tab='tools';paintTools();};
-    if($('tabAgents'))$('tabAgents').onclick=()=>{cur.tab='agents';paintTools();};
+    if($('toolScope'))$('toolScope').onchange=e=>{cur.scope=e.target.value||null;paintTools();};
+    if($('perSession'))$('perSession').onclick=()=>{if(period==='session')return;period='session';cur.scope=null;paintTools();};
+    if($('perAll'))$('perAll').onclick=()=>{if(period==='all')return;period='all';paintTools();};
+    $('tabTools').onclick=()=>{cur.tab='tools';paintTools();};
+    $('tabAgents').onclick=()=>{cur.tab='agents';if(period==='all'){period='session';cur.scope=null;}paintTools();};
+    $('tabCost').onclick=()=>{cur.tab='cost';paintTools();};
+    if($('costRun'))$('costRun').onclick=()=>{costPer='run';paintTools();};
+    if($('costSince'))$('costSince').onclick=()=>{costPer='since';paintTools();};
+    if(cost&&$('costCsv'))$('costCsv').onclick=()=>copyCostCsv(cost);
     r.onclick=async e=>{
       const l=e.target.closest('[data-open]');if(l){close();X.openAgent(l.dataset.open);return;}
       if(e.target.closest('#cfgSettings')){open('settings',{section:'mcp'});return;}
@@ -663,6 +670,35 @@
       }
     };
     if(focus){const h=r.querySelector('h2');if(h){h.tabIndex=-1;h.focus({preventScroll:true});}}
+  }
+  /* ---------------- Tools > Cost (spec 052 FR-044, #315) ---------------- */
+  const sinceDay=s=>typeof s==='string'&&/^\d{4}-\d{2}-\d{2}/.test(s)?s.slice(0,10):'';
+  function costView(){
+    const C=window.DurbarCost;
+    const day=sinceDay(X.usageSince?X.usageSince():'');
+    if(!day)costPer='run';
+    const d=X.costData?X.costData(costPer):{rows:[],office:null,period:'run'};
+    const built=C.build(d.rows,d.office);
+    const label=costPer==='since'&&day?'Since '+day:'This run';
+    const seg=`<div class="seg" role="tablist" aria-label="Cost period"><button role="tab" id="costRun" aria-selected="${costPer!=='since'}" type="button" title="Since Agent Durbar opened (or the last reset)">This run</button>${day?`<button role="tab" id="costSince" aria-selected="${costPer==='since'}" type="button" title="The saved totals since the last reset in Settings, plus this run">Since ${esc(day)}</button>`:''}</div>`;
+    if(!built.rows.length)return {seg,built,label,html:'<p class="scr-empty">No folders yet.<br><small>Add a folder and start a session; the cost of each folder shows here.</small></p>'};
+    const n=v=>`<td class="num">${esc(v)}</td>`;
+    const moneyCell=r=>C.notReported(r)?'<td class="num unk">not reported</td>':r.empty?'<td class="num">–</td>':n('≈ '+C.money(r.money));
+    const row=r=>{
+      const note=[r.tokensOnly?'Codex: tokens only':'',r.other?'saved totals of folders no longer in the list':''].filter(Boolean).join(' · ');
+      return `<tr class="${r.empty?'empty':''}${r.other?' other':''}"><th scope="row" title="${esc(r.path||r.name)}">${esc(r.name)}</th>${moneyCell(r)}${n(r.aiu.toFixed(2))}${n(r.usd?C.money(r.usd):'–')}${n(r.tokens?fmt(r.tokens):'–')}${n(String(r.calls))}<td class="cnote">${esc(note)}</td></tr>`;};
+    const head=`<thead><tr><th scope="col">Folder</th><th scope="col" class="num">≈ Money</th><th scope="col" class="num">Copilot AIU</th><th scope="col" class="num">Claude $ est.<br><small>this run</small></th><th scope="col" class="num">Tokens<br><small>this run</small></th><th scope="col" class="num">Calls</th><th scope="col">Note</th></tr></thead>`;
+    const sum=`<p class="scr-sum">Cost by folder, <b>${esc(label==='This run'?'this run':label.toLowerCase())}</b>. ≈ Money = Copilot AI credits × USD 0.01 + Claude Code's dollar estimate. Estimates as the agents report them, not a bill.</p>`;
+    const notes=`<p class="scr-note small">Copilot AIU and calls: ${costPer==='since'?'the totals saved since '+esc(day)+' (reset in Settings) plus this run':'since Agent Durbar opened (or the last reset)'}; ended sessions are included. Claude $ and tokens: the sessions open now, this run only. Codex reports tokens but no cost. A budget per folder is not available yet.</p>`;
+    return {seg,built,label,html:sum+`<table class="ttab cost">${head}<tbody>${built.rows.map(row).join('')}</tbody><tfoot>${row(Object.assign({empty:false,other:false,path:''},built.total,{tokensOnly:false}))}</tfoot></table>`+notes};
+  }
+  async function copyCostCsv(cost){
+    const text=window.DurbarCost.toCsv(cost.built,cost.label), k=cost.built.rows.length;
+    try{
+      if(!navigator.clipboard||!navigator.clipboard.writeText)throw new Error('no clipboard');
+      await navigator.clipboard.writeText(text);
+      X.toast('Copied '+k+' folder'+(k===1?'':'s')+' as CSV',2600);
+    }catch(e){X.toast('Could not copy to the clipboard.',3200);}
   }
   const fmtDate=iso=>{const d=new Date(iso);return isNaN(d)?'':d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});};
   async function toolsTab(scope,tot,groups,all){

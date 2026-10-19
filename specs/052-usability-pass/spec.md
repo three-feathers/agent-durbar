@@ -297,6 +297,23 @@ All five were AI personas, working from 29 screenshots and the source.
   - dark heri on the tatami.
 
 **Not now:**
-- a per-folder cost view with periods and CSV export, a per-folder budget, and a Codex price table [Sofia] (#315);
+- a per-folder budget and a Codex price table [Sofia] (#315; the cost view and CSV are built, see FR-044 below);
 - a command palette (Ctrl+K) [Sofia] (#316);
 - a bundled variable font [Marco], which needs a licence and size review.
+
+### 2026-10-20: cost per folder (#315)
+
+[Sofia] wanted to see what each folder (each client or project she bills) costs, and to paste it into a spreadsheet. Renderer only; no main-process or stored-data change.
+
+- **FR-044** **Cost per folder in Tools** [IMPLEMENTED] `test: test-costtable` (unit), not yet run in the simulator or on a real session.
+  - **Tools > Cost**, a third tab next to *Tool usage* and *Models & context*. One row per folder with: folder name, **≈ money** (Copilot AI credits × USD 0.01 + Claude Code's dollar estimate), **Copilot AIU**, **Claude $ est.**, **tokens** (in + out), **calls**, and a note **"Codex: tokens only"** when a Codex agent works in that folder.
+  - Sorted by money, high to low. Folders with no usage are listed last, in grey. A **Total** row closes the table. When the saved office total holds calls of folders that are no longer in the list, one row **"Folders no longer shown"** carries the difference, so the total stays the office total.
+  - **Two periods, exactly the data the app keeps:** **This run** (since the app opened, or the last reset) and **Since <date>** (the saved totals since the last reset in Settings, plus this run). The second shows only when saved totals exist. No per-day data is shown, because the ledger does not keep it.
+  - Claude's estimate and the tokens come from the sessions open now, so those two columns say **"this run"** in both periods. AIU and calls come from the ledger and follow the period.
+  - A folder whose calls all lacked credits and has no Claude estimate says **"not reported"**, never $0.00.
+  - **Copy as CSV** copies the table to the clipboard (`navigator.clipboard.writeText`; no file is written). Columns: `folder, money_usd_estimate, copilot_aiu, claude_usd_estimate, tokens, calls, period`, one line per row, then the total. Every field is quoted with `"` doubled (RFC 4180), lines end in CRLF, and a value starting with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading `'` so a spreadsheet does not run it as a formula. A toast says "Copied N folders as CSV".
+  - **The room header's cost** is now a borderless button of the same size (padding 0, border 0, transparent, same font). Its tooltip ends with "Click for the cost by folder." and a click opens Tools on the Cost tab.
+  - Pure helper `src/renderer/costtable.js` (`window.DurbarCost`: rows, sort, total, CSV); every value in the table is escaped.
+- [KNOWN GAP] **A budget per folder** is not built: it needs a stored setting (per folder, kept across restarts) and a decision on what happens when it is reached.
+- [KNOWN GAP] **A Codex price table** is not built: Codex reports tokens but no cost, and turning tokens into dollars needs a decision about which prices to use and how to keep them current.
+- [KNOWN GAP] Not checked in the simulator or with screenshots in this change (no Electron run); the lead takes the screenshots.

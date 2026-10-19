@@ -116,6 +116,8 @@ body.has-bridge #liveBar{display:flex}
 .room-dots{margin-left:auto;display:flex;gap:8px;align-items:center;flex:none}
 /* folder usage total (spec 011 FR-020): sits next to the status dots and never shrinks; the path gives way first */
 .room-aiu{margin-left:auto;flex:none;white-space:nowrap;font-size:11.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+button.room-aiu{padding:0;border:0;background:transparent;font:inherit;font-size:11.5px;font-variant-numeric:tabular-nums;color:var(--ink-2);cursor:pointer} /* spec 052 FR-044: opens Tools > Cost; same size as the old span */
+button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .room-aiu+.room-dots{margin-left:0}
 .stage .room-head:has(.room-aiu) .room-path{flex-shrink:1000} /* the path, not the room name, gives way to the total */
 .stage .room-head:has(.room-aiu) .room-name{flex-shrink:0}

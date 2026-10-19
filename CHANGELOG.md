@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.7 tag)
 
+- **Cost per folder (spec 052 FR-044, #315).** *Tools > Cost* lists each folder's ≈ money, Copilot AIU, Claude estimate, tokens and calls, for *This run* or *Since <date>*, with **Copy as CSV**. Clicking a room's cost opens it.
 - **The usability follow-ups, built (spec 052, #305-#311).**
   - **Needs you inbox:** every request in one queue, answered with each request's own choices; press **I**.
   - **Cost in money:** "≈ $0.36" in the header, rooms and cards, with AIU and Claude estimates in the tooltip.
