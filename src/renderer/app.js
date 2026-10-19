@@ -2392,7 +2392,9 @@ const schedulesOf=r=>SCHED.schedules.filter(s=>s.folder===folderKeyOf(r));
 const clock=ms=>{const d=new Date(ms),n=new Date(),t=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});return d.toDateString()===n.toDateString()?t:d.toLocaleDateString([],{month:'short',day:'numeric'})+' '+t;};
 const nextRunOf=ss=>{const t=ss.filter(s=>!s.paused&&!s.done).map(s=>s.every!==undefined?s.next:s.at).filter(Boolean).sort((a,b)=>a-b)[0];return t&&!SCHED.pausedAll?clock(t):'';};
 const OUTCOME_WORD={sent:'sent','skipped-busy':'skipped: the agent was busy','skipped-paused':'skipped: paused',missed:'missed: the app was closed',failed:'could not send'};
-const whenOf=s=>s.every!==undefined?(s.every%60===0?'every '+(s.every/60)+' h':'every '+s.every+' min'):'once at '+clock(s.at);
+const hm=ms=>{const d=new Date(ms);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
+const whenOf=s=>s.every!==undefined&&s.at!==undefined?(s.every===1440?'every day at '+hm(s.at):'every '+(s.every%60===0?(s.every/60)+' h':s.every+' min')+' from '+hm(s.at)) /* spec 044 FR-007 */
+  :s.every!==undefined?(s.every%60===0?'every '+(s.every/60)+' h':'every '+s.every+' min'):'once at '+clock(s.at);
 function renderSchedDlg(){
   const d=$('schedDlg'); if(!d)return; const r=ROOMS.find(x=>x.id===d.dataset.room); if(!r){closeSchedDlg();return;}
   const ss=schedulesOf(r), list=$('sdList');
@@ -2409,8 +2411,9 @@ function openSchedules(r){
    <p class="dsub">A prompt sent to this folder's agent at a time or an interval, <b>only while Agent Durbar is open</b>. A run is skipped when the agent is busy or waiting for you; missed runs are not caught up. The agent's own permission mode and credit cap apply.</p>
    <p class="sc-paused" id="sdPausedNote" hidden>All schedules are paused (Folders panel).</p>
    <div class="sc-list" id="sdList"></div>
-   <div class="sc-form"><label>Prompt<textarea id="scPrompt" rows="3" maxlength="2000" placeholder="For example: Summarise the open pull requests in three bullet points."></textarea></label>
+   <div class="sc-form">${window.DurbarSchedTemplates?`<label>Start from a template<select id="scTpl"><option value="">Blank prompt</option>${DurbarSchedTemplates.TEMPLATES.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')}</select></label><p class="sc-tpl-note" id="scTplNote" hidden></p>`:''}<label>Prompt<textarea id="scPrompt" rows="3" maxlength="2000" placeholder="For example: Summarise the open pull requests in three bullet points."></textarea></label>
     <div class="sc-when"><label class="chk"><input type="radio" name="scKind" value="every" checked> Every <input type="number" id="scEvery" min="5" max="1440" step="5" value="60" aria-label="Minutes between runs"> minutes</label>
+    <label class="chk"><input type="radio" name="scKind" value="daily"> Every day at <input type="time" id="scDaily" value="08:30" aria-label="Time of day"></label>
     <label class="chk"><input type="radio" name="scKind" value="once"> Once at <input type="datetime-local" id="scAt" value="${local}" aria-label="Date and time"></label></div></div>
    <div class="dbtn"><button class="btn" id="scClose" type="button">Close</button><button class="btn primary" id="scAdd" type="button">Add schedule</button></div></div>`;
   document.body.appendChild(d);
@@ -2421,9 +2424,10 @@ function openSchedules(r){
     if(b.id==='scClose'){closeSchedDlg();return;}
     if(b.id==='scAdd'){
       const prompt=$('scPrompt').value.trim();if(!prompt){$('scPrompt').focus();toast('Write the prompt first.',3000);return;}
-      const once=d.querySelector('input[name="scKind"]:checked').value==='once';
+      const kind=d.querySelector('input[name="scKind"]:checked').value,once=kind==='once';
       const input={folder:folderKeyOf(r),prompt};
-      if(once){const t=new Date($('scAt').value).getTime();if(!(t>Date.now())){toast('Choose a time in the future.',3500);return;}input.at=t;}
+      if(kind==='daily'){const t=DurbarSchedTemplates.nextDaily($('scDaily').value,Date.now());if(!t){toast('Choose a time of day.',3500);return;}input.every=1440;input.at=t;} /* spec 044 FR-007 */
+      else if(once){const t=new Date($('scAt').value).getTime();if(!(t>Date.now())){toast('Choose a time in the future.',3500);return;}input.at=t;}
       else{const m=Math.round(Number($('scEvery').value));if(!(m>=5&&m<=1440)){toast('Choose 5 to 1440 minutes.',3500);return;}input.every=m;}
       const res=await bridge.saveSchedule(input);
       if(!res.ok){toast(esc(res.error||'Could not add the schedule.'),5000);return;}
@@ -2434,7 +2438,16 @@ function openSchedules(r){
     else if(b.dataset.sc==='pause'){await bridge.saveSchedule(Object.assign({},s,{paused:!s.paused}));await refreshSchedules();}
   });
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeSchedDlg();}});
-  $('scPrompt').focus();
+  /* spec 044 FR-006: a template fills the form (prompt and when); nothing is saved until Add schedule */
+  const tpl=$('scTpl');if(tpl)tpl.addEventListener('change',()=>{
+    const t=DurbarSchedTemplates.byId(tpl.value),note=$('scTplNote');
+    if(!t){note.hidden=true;return;}
+    $('scPrompt').value=t.prompt;
+    if(t.daily){d.querySelector('input[name="scKind"][value="daily"]').checked=true;$('scDaily').value=t.daily;}
+    else if(t.every){d.querySelector('input[name="scKind"][value="every"]').checked=true;$('scEvery').value=String(t.every);}
+    note.textContent=t.needs+(t.decides?' At the end it asks you what to do next: the agent shows as Waiting for you, with a question card in its chat.':'')+' You can edit the prompt and the time before adding it.';note.hidden=false;
+  });
+  (tpl||$('scPrompt')).focus();
 }
 async function refreshSchedules(){if(!bridge.listSchedules)return;SCHED=await bridge.listSchedules();renderFolders();renderSchedDlg();}
 document.addEventListener('change',async e=>{if(e.target&&e.target.id==='schedPauseAll'){const r=await bridge.setSchedulesPaused(e.target.checked);SCHED.pausedAll=r.pausedAll;renderFolders();renderSchedDlg();}});

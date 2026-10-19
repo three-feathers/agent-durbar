@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.6 tag)
 
+- **Schedules starter kit (spec 044 FR-006..FR-008, issue #128).** Templates such as *Start my day*, *Summarize my day* and *Plan my day*, plus a new **every day at** time. The briefing and planning templates end by asking you, with a question card, which suggested steps to do.
 - **Team rule: agents review and merge** (owner decision, spec 021). An agent merges when CI is green and it did a final review of the whole diff as a reviewer; another team's agent may review too. Humans set the roadmap and strategy.
 
 - **A shorter, current README.** It is organised by what you need: what you can do, harnesses, install, safety, costs, themes (new), build, limits and roadmap. The milestone and release sections moved, unchanged, to [docs/feature-history.md](docs/feature-history.md).
