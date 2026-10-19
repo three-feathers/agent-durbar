@@ -81,6 +81,7 @@ Docs are part of the change, not a follow-up. **When a PR changes user-visible b
 
 - `README.md`: status block and feature list, the *Safety model* (permission mode names: **Read-only / Ask first / Allow all**), MCP and Tools text (Copilot CLI list `~/.copilot/mcp-config.json`, per-folder extras with trust prompt, *This session / All time*), credit caps and usage totals, *Install from releases* (release status, unsigned), *Development* (the `npm run ...` names in `package.json`), roadmap, known limits, credits and links (repo, [board](https://github.com/orgs/three-feathers/projects/1)).
 - `CHANGELOG.md`: one line under *Unreleased*; the release entry when a release is cut.
+- The website (spec 050) is generated from these files, so it follows them by itself. Edit `docs/site/gallery.json` only to show a new key screenshot or to drop a replaced one; `npm test` (`test:site`) fails on a broken link.
 - `docs/` (`collaboration.md`, `research.md`), `CONTRIBUTING.md`, `SECURITY.md`: only the pages the change touches (workflow, setup, mode names, reporting).
 - The spec in `specs/NNN-*/`: tick the task in `tasks.md`, update `spec.md` status and `[IMPLEMENTED]`/`[KNOWN GAP]` tags, and the row in `specs/README.md`.
 - `docs/screenshots/` and the images the README links: replace a picture that shows old wording or a changed screen (simulator, 1440x900 and 1280x800). If you cannot capture it, say so in the PR under "Screenshots" and open an issue.
