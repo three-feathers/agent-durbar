@@ -40,4 +40,4 @@
 - [ ] T032 Control-size scale and 24px targets (#311) [FR-029]
 - [ ] T033 Settings: theme grid, lead sentences, Advanced (#309) [FR-030]
 - [ ] T034 Simple and Expert (#306) [FR-031]
-- [ ] T035 Theme polish, the rest (#310) [FR-032]
+- [x] T035 Theme polish, the rest (#310) [FR-032]
