@@ -416,6 +416,62 @@ async function connects(sock: string): Promise<boolean> {
     await h.stop();
   }
 
+  // 13b. A line over 64 KB sent in the same write as the proof: -32600 "Message too large", and the connection stays usable.
+  {
+    const ud = mkRoot();
+    const h = mkHost(ud);
+    await h.start();
+    const s = await dialRaw(h.socket as string);
+    const rx = new LineFramer();
+    const replies: any[] = [];
+    let proof = '';
+    let sent = false;
+    const hs = createBridgeHandshake({
+      key: keyOf(ud),
+      send: (m) => { proof = m + '\n'; },
+      timers: { setTimeout: (f, ms) => setTimeout(f, ms), clearTimeout: (x) => clearTimeout(x as NodeJS.Timeout) },
+      onDone: () => undefined,
+    });
+    hs.start();
+    s.on('data', (chunk: Buffer) => {
+      for (const ev of rx.push(chunk)) {
+        if (ev.type !== 'line') continue;
+        if (!hs.done) {
+          hs.receive(ev.line);
+          if (proof && !sent) {
+            sent = true;
+            const big = JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'ping', params: { pad: 'x'.repeat(MCP_LIMITS.maxMessageBytes + 100) } }) + '\n';
+            s.write(Buffer.concat([Buffer.from(proof), Buffer.from(big)]));
+          }
+        } else replies.push(JSON.parse(ev.line));
+      }
+    });
+    assert.ok(await until(() => replies.length > 0, 3000), 'the oversize line was answered');
+    assert.strictEqual(replies[0].error.code, -32600);
+    assert.ok(/Message too large/.test(replies[0].error.message));
+    assert.ok(!s.gone, 'the connection stays open');
+    s.write(JSON.stringify({ jsonrpc: '2.0', id: 6, method: 'ping' }) + '\n');
+    assert.ok(await until(() => replies.some((r) => r.id === 6 && r.result), 2000), 'a ping still gets a reply');
+    await h.stop();
+  }
+
+  // 13c. Pre-handshake garbage with no newline: over 2048 bytes closes the socket at once; exactly 2048 does not.
+  {
+    const ud = mkRoot();
+    const h = mkHost(ud); // default 2 s handshake timeout: a close well before it comes from the size check
+    await h.start();
+    const over = await dialRaw(h.socket as string);
+    const t0 = Date.now();
+    over.write(Buffer.alloc(2049, 0x61));
+    assert.ok(await until(() => over.gone, 500), 'closed under 500 ms');
+    assert.ok(over.goneAt - t0 < 500, `closed in ${over.goneAt - t0} ms`);
+    const edge = await dialRaw(h.socket as string);
+    edge.write(Buffer.alloc(2048, 0x61));
+    await sleep(100);
+    assert.ok(!edge.gone, '2048 bytes without a newline are still waiting');
+    await h.stop();
+  }
+
   // 14. Requests before the handshake get no answer with data and the socket is closed.
   {
     const ud = mkRoot();
