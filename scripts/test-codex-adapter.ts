@@ -305,7 +305,7 @@ async function main(): Promise<void> {
       const resumes = server.requests('thread/resume').length;
       await assert.rejects(() => ad.start({ workspace: other, permissionMode: 'read-only', resumeSessionId: sid, quiet: true }), /another folder/);
       assert.strictEqual(server.requests('thread/resume').length, resumes, 'no thread/resume was sent');
-      assert.strictEqual(server.threads.get(sid), fs.realpathSync(ws), 'the stored folder is unchanged');
+      assert.strictEqual(server.threads.get(sid), fs.realpathSync.native(ws), 'the stored folder is unchanged (native realpath, as the adapter uses: long names on Windows)');
       await ad.dispose();
     }
     // FR-093 profile check: in Read-only a resumed thread that reports a wider sandbox is refused
