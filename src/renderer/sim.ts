@@ -1331,11 +1331,18 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
             { key: 'h1/c2', title: 'Explicación del diseño de la caché', updated: Date.now() - 9 * 86400e3, requests: 3, format: 'jsonl' },
           ] };
       },
-      readVsChat: async () => ({ ok: true, transcript: { title: 'Explain the registry design', totalRequests: 2, shownRequests: 2, notes: [],
+      readVsChat: async () => ({ ok: true, transcript: { title: 'Explain the registry design', totalRequests: 346, shownRequests: 26,
+        notes: ['Only the last 26 of 346 messages are shown.', '1 kind(s) of content were not recognised and skipped (futureThing2027). VS Code\'s format may have changed.'],
         blocks: [
-          { type: 'user', text: 'Explain how the tool registry is organised.' },
-          { type: 'assistant', text: 'Tools are registered in registry.ts and looked up by name. Each domain exports a list that the registry concatenates.' },
-          { type: 'tool', label: 'Read src/tools/registry.ts' },
+          { type: 'user' as const, text: 'Explain how the tool registry is organised.' },
+          { type: 'assistant' as const, text: 'Tools are registered in registry.ts and looked up by name. Each domain exports a list that the registry concatenates.' },
+          { type: 'tool' as const, label: 'Read src/tools/registry.ts' },
+          ...Array.from({ length: 23 }, (_, i) => [
+            { type: 'user' as const, text: `Follow-up ${i + 1}: how does the registry handle name clashes between two domains?` },
+            { type: 'assistant' as const, text: `Answer ${i + 1}: the last domain wins and a warning is logged at startup.\n\nThe registry keeps one map from name to handler, so a clash replaces the earlier entry.` },
+          ]).flat(),
+          { type: 'user' as const, text: 'Thanks. This is the latest message in the chat.' },
+          { type: 'assistant' as const, text: 'You are welcome. This is the last reply.' },
         ] } }),
       openInVSCode: async () => ({ ok: true }),
       onEvent: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },

@@ -32,7 +32,7 @@ what exists today, not what was originally intended. Each requirement carries a 
 | [006](006-folders-workspaces-sessions-history/spec.md) | Folders, workspaces, sessions, history | implemented; delta 2026-10-18: warning for a home folder or a root (issue #170); delta 2026-10-18: remove one session, rename a folder (FR-017/FR-018); delta 2026-10-19: a workspace's other folders given to the session (FR-019, T020); delta 2026-10-19: a folder continues its last session after a restart (FR-020/FR-021, T021, owner decision); delta 2026-10-19: Remove folder from a room's ⋯ menu and a single-session chat header (FR-022); delta 2026-10-19: search box in Previous sessions (FR-023, T031, issue #252) built |
 | [007](007-models-and-effort/spec.md) | Model and reasoning-effort pickers | implemented |
 | [008](008-packaging-and-release/spec.md) | Packaging, CI, draft releases | implemented (unsigned) |
-| [009](009-vscode-integration/spec.md) | Open in VS Code, VS Code chat history (read-only) | implemented |
+| [009](009-vscode-integration/spec.md) | Open in VS Code, VS Code chat history (read-only) | implemented; delta 2026-10-19: FR-016..017 (opens at latest message, question kinds, Continue in VS Code) built |
 | [010](010-simulator/spec.md) | Simulator and dev/test hooks | implemented; delta 2026-10-19: one event shape check for the simulator and adapters (FR-021) |
 
 ## Features 011-014: 011 and 012 built, 013 run, 014 backlog draft
