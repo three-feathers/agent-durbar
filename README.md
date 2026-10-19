@@ -366,7 +366,7 @@ Simulator keywords: `quick` (no reasoning), `markdown`, `sub-agent`/`helper`/`de
 
 ## Status (milestone 6: full-screen chat, previous sessions, new sessions, folders, models)
 
-Built and tested on simulated agents and fixtures (`DURBAR_SIM`, no AI credits, no prompts to real models). 
+Built and tested on simulated agents and fixtures (`DURBAR_SIM`, no AI credits). Checked on a real Copilot session on 2026-10-19 ([spec 013](specs/013-live-verification-stop-resume-thinking/spec.md), 9 prompts, about 0.31 AIU): Stop (Ready 0.3 s after the click), End and resume with context, lazy start of a restored folder, thinking, a helper (sub-agent) and usage; a second message sent during a turn is queued by Copilot and answered after it. 
 
 **Full-screen chat.** Opening an agent replaces the office with the chat; the docked right panel is gone. Every other agent stays visible in a slim 64px strip at the top (avatar, name, status dot and word, a short intent), horizontally scrollable, **waiting and error agents first and highlighted**. Click one to switch chat, **Office** (top left) or **Esc** goes back. Thinking block, tool chips, attachments, approvals, model name, Stop / End session and Open in VS Code are all still there. Checked with SIM=15 at 1440x900 and 1280x800: no page overflow, no horizontal overflow in the chat.
 
