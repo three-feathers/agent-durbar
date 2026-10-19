@@ -49,6 +49,7 @@ const api: DurbarApi = {
   importTheme: () => ipcRenderer.invoke('theme:import'),
   exportTheme: (id) => ipcRenderer.invoke('theme:export', id),
   setCap: (id, credits) => ipcRenderer.invoke('agents:setCap', id, credits),
+  setPaused: (id, paused) => ipcRenderer.send('agents:setPaused', id, paused),
   resolveLimit: (id, requestId, choice) => ipcRenderer.invoke('agents:resolveLimit', id, requestId, choice),
   answerQuestion: (id, requestId, answers) => ipcRenderer.invoke('agents:answerQuestion', id, requestId, answers),
   listProfiles: (id) => ipcRenderer.invoke('agents:listProfiles', id),
