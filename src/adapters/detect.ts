@@ -31,7 +31,7 @@ export interface ExecResult {
 export type Exec = (file: string, args: readonly string[], opts: { timeoutMs: number; verbatim?: boolean }) => Promise<ExecResult>;
 
 export interface BinarySpec {
-  name: 'claude' | 'codex';
+  name: string;
   versionArgs: readonly string[];
   minVersion?: string;
   installHint: string;
@@ -58,7 +58,7 @@ const READY_HINT = 'Sign-in is checked when the agent starts.';
 const COPILOT_HINT = 'Uses the Copilot login on this computer when the agent starts.';
 
 /** Characters that cmd.exe would interpret, or that could break out of a quoted argument (same check as `src/main/vscode.ts`). */
-const CMD_UNSAFE = /[\r\n\0"&|<>^%!`(),;=]/;
+export const CMD_UNSAFE = /[\r\n\0"&|<>^%!`(),;=]/;
 
 function pathFor(platform: NodeJS.Platform): path.PlatformPath {
   return platform === 'win32' ? path.win32 : path.posix;
