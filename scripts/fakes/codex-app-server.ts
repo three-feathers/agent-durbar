@@ -253,6 +253,15 @@ export class FakeCodexServer {
         this.enqueue(child, { method: 'thread/started', params: { thread: { id: tid, cwd } } });
         return;
       }
+      case 'thread/list': {
+        const data = [...this.threads.entries()].map(([tid, cwd], i) => ({ id: tid, cwd, preview: `Prompt ${i + 1}`, createdAt: 1792403000 + i, updatedAt: 1792403100 + i, ephemeral: false, parentThreadId: null, gitInfo: null }));
+        return this.reply(child, id, { data, nextCursor: null });
+      }
+      case 'model/list':
+        return this.reply(child, id, { data: [
+          { id: 'gpt-6-luna', model: 'gpt-6-luna', displayName: 'GPT-6-Luna', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }], defaultReasoningEffort: 'medium', isDefault: false, hidden: false },
+          { id: 'gpt-6.1-sol', model: 'gpt-6.1-sol', displayName: 'GPT-6.1-Sol', supportedReasoningEfforts: [{ reasoningEffort: 'low' }], defaultReasoningEffort: 'low', isDefault: true, hidden: false },
+        ] });
       case 'thread/read': {
         const tid = isObj(params) && typeof params.threadId === 'string' ? params.threadId : '';
         const cwd = this.threads.get(tid);

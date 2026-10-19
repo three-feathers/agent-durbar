@@ -702,3 +702,23 @@ The owner handed the Codex track to this agent ("ruben does not have chatgpt acc
   - a wider sandbox is refused in Read-only and accepted in Allow all.
 - `real:` 2026-10-19, Codex 0.163.0 (ChatGPT Plus), Read-only, two adapter instances. Session 1 was asked to remember "marmalade". A fresh adapter resumed the thread under the same id and answered **marmalade**. A resume from another folder was refused, and `thread/read` showed the thread's folder unchanged.
 
+
+### 2026-10-19: Codex previous sessions, history and models (T048, T049 Codex halves)
+
+- **FR-141** `[IMPLEMENTED]` `CodexAdapter.listPreviousSessions(cwd)` lists the folder's earlier Codex threads with `thread/list {cwd, limit: 100}` on a short-lived **probe** child (temp folder, same environment rules, no thread, no prompt, always closed):
+  - same folder only (`sameDir`), newest first;
+  - left out: threads open now, sub-agent threads (`parentThreadId`), ephemeral threads and malformed ids;
+  - title: the thread's `name`, else its `preview` (the first prompt); times are seconds turned into ms; the git branch unless `HEAD`.
+  
+  `history(sid)` maps `thread/read {includeTurns: true}` (the live child, or a probe after the session ended) to the chat replay:
+  - prompts, final answers, commands (with output, failed when failed or declined) and file changes;
+  - other items are skipped; the last 300 items are kept.
+  
+  `history: true`.
+- **FR-142** `[IMPLEMENTED]` `listModelOptions()` maps `model/list` to the model picker: visible models, their `supportedReasoningEfforts` and default effort, and Codex's default model first. It is cached for 10 minutes; a failure gives an empty list. The chosen model and effort go with **each turn** (`turn/start {model, effort}`). Only a Codex model id (`gpt…`, `o…`, `codex…`) is sent; `auto` and a Copilot or Claude id saved for the folder are left to Codex's default. `models: true`, `effort: true`. `[KNOWN GAP]` Codex offers an `ultra` effort on some models; Durbar's effort values stop at `max`, so `ultra` is not offered yet.
+- `test:` `scripts/test-codex-history.ts` (new) covers the three mappers and the model-id rule. `test-codex-adapter` uses the fake app-server's `thread/list` and `model/list` to check the probes, exclusion of open sessions, model and effort on the turn, and a non-Codex id left out.
+- `real:` 2026-10-19, Codex 0.163.0 (ChatGPT Plus):
+  - `listModelOptions` gave 7 models in 0.5 s (`gpt-6.1-sol` first, the default);
+  - a Read-only turn on `gpt-5.6-luna` / `low` answered;
+  - while open the session was not listed; after stop it was listed with its first prompt as title, and not in another folder;
+  - `history` after stop gave prompt, shell command and answer.

@@ -92,14 +92,15 @@ async function main(): Promise<void> {
   // ---- FR-089: capabilities and optional members
   {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(CODEX_CAPABILITIES)), {
-      interrupt: true, resume: true, images: true, models: false, effort: false,
+      interrupt: true, resume: true, images: true, models: true, effort: true,
       permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'none',
-      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: false, history: false, mcpStatus: false, mcpToggle: false,
+      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: false, history: true, mcpStatus: false, mcpToggle: false,
     });
     assert.ok(Object.isFrozen(CODEX_CAPABILITIES) && Object.isFrozen(CODEX_CAPABILITIES.permissionModes) && Object.isFrozen(CODEX_CAPABILITIES.usage), 'capabilities are deeply frozen');
     const { ad } = make();
     for (const m of ['interrupt', 'resolvePermission', 'revokeGrant']) assert.strictEqual(typeof (ad as unknown as Record<string, unknown>)[m], 'function', `${m} is present`);
-    for (const m of ['setCap', 'resolveLimit', 'setMcpEnabled', 'setModel', 'cancelQueuedModel', 'compact', 'listModelOptions', 'setPermMode', 'listPreviousSessions', 'history']) assert.strictEqual((ad as unknown as Record<string, unknown>)[m], undefined, `${m} is absent`);
+    for (const m of ['setCap', 'resolveLimit', 'setMcpEnabled', 'setModel', 'cancelQueuedModel', 'compact', 'setPermMode']) assert.strictEqual((ad as unknown as Record<string, unknown>)[m], undefined, `${m} is absent`);
+    for (const m of ['listModelOptions', 'listPreviousSessions', 'history']) assert.strictEqual(typeof (ad as unknown as Record<string, unknown>)[m], 'function', `${m} is there (FR-141, FR-142)`);
     assert.strictEqual(ad.capabilities, CODEX_CAPABILITIES);
     // D1 option B: described, but not in the production list.
     assert.strictEqual(CODEX_DESCRIPTOR.capabilities, CODEX_CAPABILITIES);
@@ -306,6 +307,29 @@ async function main(): Promise<void> {
       await assert.rejects(() => ad.start({ workspace: other, permissionMode: 'read-only', resumeSessionId: sid, quiet: true }), /another folder/);
       assert.strictEqual(server.requests('thread/resume').length, resumes, 'no thread/resume was sent');
       assert.strictEqual(server.threads.get(sid), fs.realpathSync.native(ws), 'the stored folder is unchanged (native realpath, as the adapter uses: long names on Windows)');
+      await ad.dispose();
+    }
+    // FR-141 / FR-142: previous sessions, history and models through a short-lived probe child; model and effort on each turn
+    {
+      const { server, ad } = make();
+      const models = await ad.listModelOptions!();
+      assert.deepStrictEqual(models.map((m) => m.id), ['gpt-6.1-sol', 'gpt-6-luna'], "Codex's default first");
+      const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', model: 'gpt-6-luna', reasoningEffort: 'low', quiet: true });
+      assert.deepStrictEqual((await ad.listPreviousSessions!(ws)).map((p) => p.id).includes(sid), false, 'an open session is not a previous one');
+      await ad.send(sid, { text: 'hi' });
+      await server.flush();
+      const tp = server.requests('turn/start').pop()!.params as Record<string, unknown>;
+      assert.deepStrictEqual([tp.model, tp.effort], ['gpt-6-luna', 'low'], 'model and effort go with the turn');
+      await ad.stop(sid);
+      const prev = await ad.listPreviousSessions!(ws);
+      assert.ok(prev.some((p) => p.id === sid), 'listed after stop');
+      assert.ok(!(await ad.listPreviousSessions!(dir())).some((p) => p.id === sid), 'not in another folder');
+      assert.deepStrictEqual((await ad.history!(sid)).items, [], 'history of a thread with no turns');
+      const live = server.spawns.filter((s) => (s.args as string[]).includes('app-server')).length;
+      assert.ok(live >= 4, 'probes are their own children');
+      const s2 = await ad.start({ workspace: ws, permissionMode: 'read-only', model: 'haiku', quiet: true });
+      await ad.send(s2, { text: 'x' }); await server.flush();
+      assert.strictEqual((server.requests('turn/start').pop()!.params as Record<string, unknown>).model, undefined, 'a non-Codex model id is not sent');
       await ad.dispose();
     }
     // FR-093 profile check: in Read-only a resumed thread that reports a wider sandbox is refused
