@@ -4,7 +4,7 @@
  * which stays the single list and still runs everything one by one. Here the scripts are compiled ONCE (each `test:*` script
  * starts with its own `tsc`, 40 compiles of about 5 s), then the suites run in parallel, each suite's own steps in order.
  *
- *   npm test                     all suites, parallel (TEST_JOBS=n to change the worker count; default: CPUs, at most 8)
+ *   npm test                     all suites, parallel (TEST_JOBS=n to change the worker count; default: CPUs minus one, at most 8; nice 10)
  *   npm test -- folders claude   only suites whose name contains one of the words
  *   npm run test:serial          the old way, one after another
  *
@@ -35,7 +35,9 @@ const tsc = spawnSync(process.execPath, [require.resolve('typescript/bin/tsc'), 
 if (tsc.status !== 0) process.exit(tsc.status || 1);
 console.log(`compiled the test scripts once in ${((Date.now() - t0) / 1000).toFixed(1)} s; ${suites.length} suites`);
 
-const jobs = Math.max(1, Number(process.env.TEST_JOBS) || Math.min(os.cpus().length, 8));
+// leave a core for the desktop and run at low priority, so the machine stays usable while the suites run
+const jobs = Math.max(1, Number(process.env.TEST_JOBS) || Math.min(os.cpus().length - 1, 8));
+try { os.setPriority(10); } catch (_) { /* not allowed: normal priority */ }
 const runStep = (args) =>
   new Promise((resolve) => {
     const p = spawn(process.execPath, args, { cwd: ROOT, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });

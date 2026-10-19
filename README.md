@@ -186,6 +186,8 @@ npm run typecheck && npm run build && npm test   # unit suites in parallel (~20 
 npm start                 # the app, with the harnesses you have installed and signed in
 DURBAR_SIM=15 npm start   # 15 simulated agents: no sessions, no AI credits
 npm run check:office      # layout check at 1440x900 and 1280x800 (Electron; xvfb on Linux), simulator only
+npm run check:geometry    # every theme lays out exactly like Clean Office (about a minute)
+npm run check:themes      # on demand: the full layout check in every theme, a few at a time, low priority, memory limits
 npm run pack:dir          # unpacked app for this OS in release/ (also dist, dist:mac:arm64, dist:mac:x64, dist:win, dist:linux; unsigned)
 ```
 

@@ -87,7 +87,9 @@
     "test:dialog": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-dialog.js",
     "check:model": "npm run build && xvfb-run -a sh -c \"L=\\$(mktemp); DURBAR_USER_DATA=\\$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=\\$PWD/scripts/shots-model.js electron . --no-sandbox 2>&1 | tee \\$L; grep -q 'model] all checks passed' \\$L\"",
     "check:dialog-focus": "npm run build && xvfb-run -a sh -c \"L=\\$(mktemp); DURBAR_USER_DATA=\\$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=\\$PWD/scripts/check-dialog-focus.js electron . --no-sandbox 2>&1 | tee \\$L; grep -q 'dialog-focus] all checks passed' \\$L\"",
-    "check:themes": "for t in clean-office corporate retro durbar-indian durbar-european durbar-japanese; do DURBAR_THEME=$t OFFICE_THEME=$t npm run check:office || exit 1; done && OFFICE_USER_THEME=scripts/fixtures/themes/check-user.json npm run check:office",
+    "check:themes": "npm run build && node scripts/check-parallel.js --themes",
+    "check:office:fast": "npm run build && node scripts/check-parallel.js",
+    "check:geometry": "npm run build && node scripts/check-theme-geometry.js",
     "test:userthemes": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-userthemes.js",
     "test:scenekits": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-scenekits.js"
   },
