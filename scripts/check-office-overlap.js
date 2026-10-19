@@ -43,6 +43,10 @@ const INDEX = path.join(ROOT, 'dist', 'renderer', 'index.html');
 const SIZES = [[1440, 900], [1280, 800]];
 const SIMS = [12, 15];
 const TOL = 0.5;
+/* A value as a JavaScript literal that is safe to splice into code run in the page: JSON, with the characters that could end a
+   script or a string in some contexts escaped (CodeQL js/bad-code-sanitization; the recommended escaping). */
+const UNSAFE = { '<': '\\u003C', '>': '\\u003E', '/': '\\u002F', '\u2028': '\\u2028', '\u2029': '\\u2029' };
+const jsLiteral = (v) => JSON.stringify(v).replace(/[<>/\u2028\u2029]/g, (c) => UNSAFE[c]);
 
 /* runs inside the page; returns {problems:[...], info:{...}} */
 function pageCheck(expanded, expectPlaces) {
@@ -464,7 +468,7 @@ async function driver(ctx) {
     const P = [];
     if (!found) P.push('no agent shows the search box (the simulator folder has Copilot sessions and VS Code chats)');
     else {
-      const type = (q) => ctx.js(`(async()=>{const i=document.getElementById('prevQ');i.focus();i.value=${JSON.stringify(q)};i.dispatchEvent(new Event('input',{bubbles:true}));await new Promise(r=>setTimeout(r,80));
+      const type = (q) => ctx.js(`(async()=>{const i=document.getElementById('prevQ');i.focus();i.value=${jsLiteral(q)};i.dispatchEvent(new Event('input',{bubbles:true}));await new Promise(r=>setTimeout(r,80));
         return {rows:[...document.querySelectorAll('#prevLists .prev-row b')].map(b=>b.textContent),heads:[...document.querySelectorAll('#prevLists .prev-h')].map(x=>x.textContent.replace(/\\s+/g,' ')),empty:[...document.querySelectorAll('#prevLists .prev-nomatch')].length}})()`);
       const all = await type('');
       if (all.rows.length < 3 || /\d of \d/.test(all.heads.join(' '))) P.push(`empty query: ${JSON.stringify(all)}`);
