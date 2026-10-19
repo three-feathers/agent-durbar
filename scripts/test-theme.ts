@@ -251,4 +251,13 @@ assert.deepStrictEqual(partial.tokens, {});
 assert.strictEqual(partial.art['door-art'], undefined, 'unsafe art is dropped');
 assert.ok(partial.art['lobby-art'], 'safe art on a real slot is kept');
 
+// spec 037 FR-014: each built-in theme previews its own colours; unknown ids fall back to Clean Office; only colour values
+{
+  const ids = T.list().map((x: any) => x.id);
+  const prev = ids.map((id: string) => JSON.stringify(T.preview(id)));
+  assert.strictEqual(new Set(prev).size, ids.length, 'every built-in theme has its own swatch colours');
+  for (const id of ids) { const c = T.preview(id); assert.strictEqual(c.length, 3, id + ': three colours'); for (const v of c) assert.ok(/^(#|rgb|hsl)/.test(v), id + ': ' + v); }
+  assert.deepStrictEqual(T.preview('no-such-theme'), T.preview(T.CLEAN_ID));
+  assert.deepStrictEqual(T.preview(42 as any), T.preview(T.CLEAN_ID));
+}
 console.log('theme tests passed');
