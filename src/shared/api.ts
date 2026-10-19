@@ -431,6 +431,8 @@ export interface DurbarApi {
   importTheme?(): Promise<{ ok: boolean; id?: string; name?: string; error?: string; cancelled?: boolean }>;
   exportTheme?(id: string): Promise<{ ok: boolean; to?: string; error?: string; cancelled?: boolean }>;
   setCap?(id: string, credits: number | null): Promise<{ ok: boolean; error?: string; maxAiCredits?: number }>;
+  /** One-way: the window tells main an agent was paused or resumed (spec 041 T014); Paused exists only in the window. */
+  setPaused?(id: string, paused: boolean): void;
   resolveLimit?(id: string, requestId: string, choice: LimitChoice): Promise<{ ok: boolean; error?: string }>;
   /** Scheduled prompts (spec 044). */
   listSchedules?(): Promise<SchedulesInfo>;

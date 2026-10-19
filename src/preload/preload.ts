@@ -51,6 +51,7 @@ const api: DurbarApi = {
   importTheme: () => ipcRenderer.invoke('theme:import'),
   exportTheme: (id) => ipcRenderer.invoke('theme:export', id),
   setCap: (id, credits) => ipcRenderer.invoke('agents:setCap', id, credits),
+  setPaused: (id, paused) => ipcRenderer.send('agents:setPaused', id, paused),
   resolveLimit: (id, requestId, choice) => ipcRenderer.invoke('agents:resolveLimit', id, requestId, choice),
   listSchedules: () => ipcRenderer.invoke('schedules:list'),
   saveSchedule: (input) => ipcRenderer.invoke('schedules:save', input),

@@ -25,6 +25,7 @@ import { DEFAULT_ADAPTER, FolderStore, PROFILE_ID, restoreMode } from './folders
 import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '../adapters/vscodeChat';
 import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
+import { AgentStateTracker, applySetPaused } from './mcp/agentstate';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { UsageStore } from './usagestore';
 import { AgentTrustStore, hashAgentFile } from './agenttrust';
@@ -92,6 +93,14 @@ const toRenderer = (channel: string, payload: unknown): void => {
 };
 
 router.onEvent((e) => toRenderer('agent:event', e));
+/** The office's state word and sub-label per agent, kept from the same events (spec 041 T014); read tools use it. "Paused" comes from the window (agents:setPaused). */
+const agentState = new AgentStateTracker();
+router.onEvent((e) => {
+  const a = agents.get(e.sessionId);
+  if (!a) return; // removed or unknown: the tracker drops it too
+  agentState.ensure(a.id, a.lazy);
+  agentState.onEvent(e);
+});
 /** Each main agent's last status (spec 044: a scheduled run is skipped while the folder's agent is busy). */
 const lastStatus = new Map<string, string>();
 router.onEvent((e) => {
@@ -362,6 +371,7 @@ ipcMain.handle('sessions:resume', async (_e, id: unknown, sessionId: unknown, re
       await ad.stop(removedId);
       router.unbind(removedId);
       agents.delete(removedId);
+      agentState.remove(removedId);
     }
     if (prev.title && prev.title !== 'Untitled session') info.title = prev.title; // the list's title (name, else summary) until the runtime sends its own
     return { ok: true, agent: info, removedId, title: prev.title, history };
@@ -429,6 +439,13 @@ ipcMain.handle('agents:stageAttachment', (_e, name: unknown, mime: unknown, data
 ipcMain.handle('agents:send', async (_e, id: string, text: string, attachments: PickedFile[]) => {
   const ad = agents.has(id) ? router.forAgent(id) : undefined;
   if (!ad) return { ok: false, error: 'unknown agent' };
+  agentState.ensure(id, agents.get(id)?.lazy);
+  agentState.noteSend(id); // the window shows Thinking from the moment the user sends (app.js sendLive)
+  const r = await sendOp(id, text, attachments, ad);
+  if (!r.ok) agentState.noteSendFailed(id); // and Error when the send fails (app.js sendLive)
+  return r;
+});
+async function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter): Promise<{ ok: boolean; error?: string }> {
   const safe = (Array.isArray(attachments) ? attachments : []).filter((a) => pickedFiles.has(a.path));
   // Caps are enforced here too, not only in the UI.
   if (safe.length > MAX_ATTACH_FILES) return { ok: false, error: `Up to ${MAX_ATTACH_FILES} attachments per message (got ${safe.length}).` };
@@ -449,7 +466,7 @@ ipcMain.handle('agents:send', async (_e, id: string, text: string, attachments: 
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
-});
+}
 
 // ---- scheduled prompts (spec 044): per folder, while the app runs; the run goes through the user's own send path ----
 let scheduler: Scheduler | undefined;
@@ -461,11 +478,18 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
     const a = folderAgent(folder);
     const ad = a ? router.forAgent(a.id) : undefined;
     if (!a || !ad) return false;
-    await ensureLive(a);
-    toRenderer('agent:event', { type: 'user', sessionId: a.id, timestamp: Date.now(), text: prompt });
-    toRenderer('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at });
-    await ad.send(a.id, { text: prompt });
-    noteLastSession(a);
+    agentState.ensure(a.id, a.lazy);
+    agentState.noteSend(a.id); // same as the interactive send: the window shows Thinking from the moment a prompt goes out
+    try {
+      await ensureLive(a);
+      toRenderer('agent:event', { type: 'user', sessionId: a.id, timestamp: Date.now(), text: prompt });
+      toRenderer('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at });
+      await ad.send(a.id, { text: prompt });
+      noteLastSession(a);
+    } catch (err) {
+      agentState.noteSendFailed(a.id);
+      throw err;
+    }
     return true;
   },
   setTimer: (ms, fn) => setTimeout(fn, ms),
@@ -778,10 +802,16 @@ ipcMain.handle('folders:remove', async (_e, id: unknown) => {
     }
     router.unbind(rid);
     agents.delete(rid);
+    agentState.remove(rid);
     vsChatRefs.delete(rid);
   }
   folderStore?.remove(key);
   return { ok: true, removedIds };
+});
+
+// One-way from the window: the pause button (spec 041 T014). Unknown ids and non-boolean values are ignored.
+ipcMain.on('agents:setPaused', (_e, id: unknown, paused: unknown) => {
+  applySetPaused(agentState, (k) => agents.get(k), id, paused);
 });
 
 // One main session out of the office (spec 006 FR-017). The last main session of a folder stays (Folders > Remove is for that).
@@ -797,6 +827,7 @@ ipcMain.handle('agents:remove', async (_e, id: unknown) => {
   }
   router.unbind(a.id);
   agents.delete(a.id);
+  agentState.remove(a.id);
   vsChatRefs.delete(a.id);
   folderStore?.clearLastSession(key, a.id); // FR-020: a removed session does not come back after a restart
   return { ok: true };
@@ -894,6 +925,7 @@ function createWindow(): void {
     if (/^[0-3]$/.test(dev.DURBAR_SIM_PLACES ?? '')) query.simplaces = dev.DURBAR_SIM_PLACES as string; // spec 024 FR-026: custom places seeded in the simulator
     if (dev.DURBAR_SIM_FLOORS_OFF) query.floorsoff = dev.DURBAR_SIM_FLOORS_OFF.slice(0, 200);
   }
+  win.webContents.on('did-finish-load', () => agentState.clearPaused()); // a fresh page starts with nobody paused (Paused is window-only, spec 041 T014)
   void win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query });
   // Dev: DURBAR_SHOT=/tmp/out.png [DURBAR_SHOT_SIZE=1280x800] [DURBAR_SHOT_CLICK=sim-1] saves a screenshot and quits.
   const shot = dev.DURBAR_SHOT;
