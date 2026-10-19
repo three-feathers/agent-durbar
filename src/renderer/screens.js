@@ -658,7 +658,7 @@
     const cost=tab==='cost'?costView():null;
     const body=cost?cost.html:tab==='tools'?await toolsTab(scope,tot,groups,all):agentsTab(scope,agents);
     if(!cur||cur.kind!=='tools')return;
-    const head=cost?`${tabs}${cost.seg}<span class="grow"></span><button class="btn" type="button" id="costCsv"${cost.built.rows.length?'':' disabled'}>Copy as CSV</button>`:`${per}${scopeSel}${tabs}<span class="grow"></span>`;
+    const head=cost?`${tabs}${cost.seg}<span class="grow"></span><button class="btn" type="button" id="costCsv"${cost.built.rows.length&&!cost.none?'':' disabled'}>Copy as CSV</button>`:`${per}${scopeSel}${tabs}<span class="grow"></span>`;
     r.innerHTML=`<div class="scr-head"><h2>Tools</h2>${head}<button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>
       <div class="scr-body">${body}</div>`;
     wireHead();
@@ -692,6 +692,8 @@
     const label=costPer==='since'&&day?'Since '+day:'This run';
     const seg=`<div class="seg" role="tablist" aria-label="Cost period"><button role="tab" id="costRun" aria-selected="${costPer!=='since'}" type="button" title="Since Agent Durbar opened (or the last reset)">This run</button>${day?`<button role="tab" id="costSince" aria-selected="${costPer==='since'}" type="button" title="The saved totals since the last reset in Settings, plus this run">Since ${esc(day)}</button>`:''}</div>`;
     if(!built.rows.length)return {seg,built,label,html:'<p class="scr-empty">No folders yet.<br><small>Add a folder and start a session; the cost of each folder shows here.</small></p>'};
+    /* spec 052 FR-050: no usage at all yet: a plain sentence instead of a table of dashes */
+    if(built.rows.every(r=>r.empty))return {seg,built,label,none:true,html:'<p class="scr-empty">No costs yet. Numbers appear after an agent\'s first reply.</p>'};
     const n=v=>`<td class="num">${esc(v)}</td>`;
     const moneyCell=r=>C.notReported(r)?'<td class="num unk">not reported</td>':r.empty?'<td class="num">–</td>':n((/^</.test(C.money(r.money))?'':'≈ ')+C.money(r.money)); /* "<$0.01" needs no "≈" (as on the cards) */
     const row=r=>{
@@ -707,8 +709,8 @@
     try{
       if(!navigator.clipboard||!navigator.clipboard.writeText)throw new Error('no clipboard');
       await navigator.clipboard.writeText(text);
-      X.toast('Copied '+k+' folder'+(k===1?'':'s')+' as CSV',2600);
-    }catch(e){X.toast('Could not copy to the clipboard.',3200);}
+      X.toast('Copied '+k+' folder'+(k===1?'':'s')+' as CSV',2600).classList.add('ok'); /* FR-050 */
+    }catch(e){X.toast('Could not copy to the clipboard.',3200).classList.add('err');}
   }
   const fmtDate=iso=>{const d=new Date(iso);return isNaN(d)?'':d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});};
   async function toolsTab(scope,tot,groups,all){

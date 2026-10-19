@@ -69,3 +69,10 @@
 ## Cost per folder (2026-10-20)
 
 - [x] T046 Tools > Cost: one row per folder, This run / Since <date>, Copy as CSV, room cost opens it (#315) [FR-044]
+
+## Round 4, interaction polish (2026-10-20)
+
+- [x] T047 Pressed, disabled and busy states; `busy()` for Stop, End session, Open in VS Code, inbox rows and Resume [FR-047]
+- [x] T048 Inbox: answered row shows the answer, folds away; "All clear" empty state; focus returns to where it was [FR-048]
+- [x] T049 Dialog entrance, install plan cards, copy buttons ("Copied ✓", 70% opacity, Thinking box padding) [FR-049]
+- [x] T050 Typed toasts (`ok`, `err`); empty Cost view [FR-050]
