@@ -2,7 +2,11 @@
 
 Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on Linux (see "Honest limits"). Each entry names the spec that describes the behavior and how it was checked.
 
-## Unreleased (on `main`, after the alpha.6 tag)
+## Unreleased (on `main`, after the alpha.7 tag)
+
+## v0.1.0-alpha.7 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.7), 2026-10-19)
+
+Unsigned and not notarized; only Linux was run by hand. **OpenAI Codex** is now offered next to Copilot and Claude Code when it is installed and signed in. Claude Code sessions can have a **cost cap in dollars**. A new session can start from a **reviewed summary**, and Schedules have a **starter kit** (Start my day, Plan my day) that ends by asking you what to do.
 
 - **Schedules starter kit (spec 044 FR-006..FR-008, issue #128).** Templates such as *Start my day*, *Summarize my day* and *Plan my day*, plus a new **every day at** time. The briefing and planning templates end by asking you, with a question card, which suggested steps to do.
 - **Team rule: agents review and merge** (owner decision, spec 021). An agent merges when CI is green and it did a final review of the whole diff as a reviewer; another team's agent may review too. Humans set the roadmap and strategy.
@@ -48,11 +52,11 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 - **Faster CI and tests (spec 008 FR-020..FR-023).** `npm test` compiles the test scripts once and runs the suites in parallel, about 16 s instead of about 4 minutes. The office check runs in four parallel shards. The package smoke no longer waits for the other jobs. A pull request that changes only docs, specs or Markdown skips the build and test jobs. A daily **Branch cleanup** workflow deletes branches whose pull request merged more than a day ago.
 
-- **New app icon: a lead and a working team.** A lead with one arm raised toward a small status board, above three seated workers at laptops, on a navy rounded square (design F2a). Same file names in `build/` (`icon.svg`, 1024x1024 `icon.png`, `icon.ico` with 16-256 px, `icon.icns`), so the packaging config is unchanged. The 16 px entry of `icon.ico` and `icon.icns` is a hand-tuned pixel version (`build/icon-16.svg`: the lead and the board, no team) so it stays readable in the taskbar and title bar; the README header shows it. Asset-only change, 0 AIU.
-
 ## v0.1.0-alpha.6 ([published pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.6), 2026-10-19)
 
 Unsigned and not notarized; only Linux was run by hand. Claude Code is offered when it is installed and signed in; its cost is a dollar estimate, never AIU, and it has no credit cap. An in-place upgrade from alpha.5 was not checked.
+
+- **New app icon: a lead and a working team.** A lead with one arm raised toward a small status board, above three seated workers at laptops, on a navy rounded square (design F2a). Same file names in `build/` (`icon.svg`, 1024x1024 `icon.png`, `icon.ico` with 16-256 px, `icon.icns`), so the packaging config is unchanged. The 16 px entry of `icon.ico` and `icon.icns` is a hand-tuned pixel version (`build/icon-16.svg`: the lead and the board, no team) so it stays readable in the taskbar and title bar; the README header shows it. Asset-only change, 0 AIU.
 
 - **MCP server groundwork: agent state in the main process (spec 041 T014, issue #204).** The main process now keeps each agent's office word and sub-label (Working, Waiting for you, Limit reached…) with the same rules as the window, so the MCP read tools can report them later. Pausing in the window is reported to the main process. No visible change, 0 AIU.
 
