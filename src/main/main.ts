@@ -703,6 +703,21 @@ ipcMain.handle('agents:cancelQueuedModel', async (_e, id: unknown, queueId: unkn
   }
 });
 
+// Spec 030 FR-034: a hand-off summary of a live session (user content: never logged; shown for editing in the window).
+ipcMain.handle('agents:handoff', async (_e, id: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  const ad = a ? router.forAgent(a.id) : undefined;
+  if (!a || !ad) return { ok: false, error: 'unknown agent' };
+  if (typeof ad.handoffSummary !== 'function') return { ok: false, error: 'This agent kind cannot make a summary.' };
+  if (!ad.isLive(a.id)) return { ok: false, error: 'This session has not started yet, so there is nothing to summarize.' };
+  try {
+    const r = await ad.handoffSummary(a.id);
+    return { ok: true, summary: r.summary, ...(r.costUsd !== undefined ? { costUsd: r.costUsd } : {}) };
+  } catch (err) {
+    return { ok: false, error: errText(err) };
+  }
+});
+
 ipcMain.handle('agents:compact', async (_e, id: unknown, focus: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;

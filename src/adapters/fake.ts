@@ -6,6 +6,7 @@
  * follows the same permission rules as the real adapters through `PermissionBroker` and `startModeOf` (FR-028, FR-052).
  */
 import type { AdapterCapabilities } from './capabilities';
+import type { HandoffResult } from './handoff';
 import type { EventBody } from './map';
 import { PermissionBroker, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
@@ -14,7 +15,7 @@ import type { HistoryResult, PreviousSession } from './history';
 
 export type OptionalMember =
   | 'interrupt' | 'resolvePermission' | 'revokeGrant' | 'setCap' | 'resolveLimit' | 'setMcpEnabled' | 'setModel'
-  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode';
+  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary';
 
 export type Step =
   | { output: string }
@@ -47,6 +48,7 @@ const DEFAULT_CAPS: AdapterCapabilities = {
   history: true,
   mcpStatus: true,
   mcpToggle: true,
+  handoff: true,
 };
 
 interface FakeSession {
@@ -77,6 +79,7 @@ export class FakeAdapter implements AgentAdapter {
   declare listModelOptions?: () => Promise<ModelOption[]>;
   declare listPreviousSessions?: (cwd: string, excludeIds?: ReadonlySet<string>) => Promise<PreviousSession[]>;
   declare history?: (sessionId: string) => Promise<HistoryResult>;
+  declare handoffSummary?: (sessionId: string) => Promise<HandoffResult>;
   declare setPermMode?: (sessionId: string, mode: PermissionMode, opts?: { clearGrants?: boolean; approvePending?: boolean }) => { pending: number };
 
   private listeners = new Set<(event: AgentEvent) => void>();
@@ -99,6 +102,7 @@ export class FakeAdapter implements AgentAdapter {
       history: c.history && !omit.has('listPreviousSessions') && !omit.has('history'),
       caps: c.caps && !omit.has('setCap') && !omit.has('resolveLimit'),
       mcpToggle: c.mcpToggle && !omit.has('setMcpEnabled'),
+      handoff: !!c.handoff && !omit.has('handoffSummary'),
       permModeSwitch: omit.has('setPermMode') ? ('none' as const) : c.permModeSwitch,
     };
     this.capabilities = caps;
@@ -118,6 +122,7 @@ export class FakeAdapter implements AgentAdapter {
       };
     }
     if (caps.mcpToggle) this.setMcpEnabled = async (sid) => void this.mustGet(sid);
+    if (caps.handoff) this.handoffSummary = async (sid) => (this.mustGet(sid), { summary: '## Goal\nFake hand-off summary.' });
     if (has('setModel')) this.setModel = async (sid, request) => (this.mustGet(sid), { status: 'applied', model: request.model });
     if (has('cancelQueuedModel')) this.cancelQueuedModel = async (sid) => void this.mustGet(sid);
     if (has('compact')) this.compact = async (sid) => (this.mustGet(sid), { success: true, tokensRemoved: 0 });
