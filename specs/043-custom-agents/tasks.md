@@ -12,5 +12,6 @@
 
 ## Phase 2 (not started)
 
-- [ ] T010 Agent in the New session dialog; per-folder default
+- [x] T010a (2026-10-19) Agent in the New session dialog (same list and confirmation as the chip; applied when the session has started)
+- [ ] T010 Per-folder default agent
 - [ ] T011 Claude and Codex mapping (spec 012)
