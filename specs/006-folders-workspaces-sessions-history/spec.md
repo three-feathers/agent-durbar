@@ -112,6 +112,14 @@ For a folder that has not been used yet in this run, a "Previous sessions" panel
 
 ## Changes
 
+### 2026-10-19: search box in Previous sessions (issue #252, task T031)
+
+*Missing:* a folder's *Previous sessions* panel lists earlier Copilot sessions and VS Code chats newest first, with no way to find one when there are many (for example 2 Copilot sessions and 14 VS Code chats).
+
+*Corrected:*
+- **FR-022** *Previous sessions* has a search box above the lists, shown when there are at least 2 entries in total. Typing filters both groups (Copilot sessions and VS Code chats) by **title**, ignoring case and accents; the newest-first order is kept. Each group header shows "N of M" while a query is active, and a group with no match says "No sessions match". **Escape** clears the box. The query is per panel, not saved, and never sent anywhere. Only titles are searched, not conversation content (that would read more data; out of scope).
+- Simulator and unit tests (the matcher), `check:office` at 1440x900 and 1280x800 with the box shown; no AI credits.
+
 - **2026-10-17, spec 033 (floors), cross-reference.** Folders now belong to a floor (`floor` in `durbar-folders.json`, absent = Ground floor). **Hide (US4, FR-005) is unchanged** and combines with floors: a room shows only when it is not hidden and its floor is on; the Floors panel marks hidden folders. `+ Folder` / `+ Workspace` add to the floor chosen in the Floors panel. No requirement of this spec changes.
 
 ### 2026-10-18: a calm warning when the folder is your home, a parent of it, or a root (issue #170)
