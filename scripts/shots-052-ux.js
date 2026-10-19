@@ -56,6 +56,23 @@ module.exports = async (ctx) => {
       assert.ok(await js(`document.getElementById('restoreStrip').hidden`), 'Keep dismisses it');
     }
 
+    // FR-027 (#305): the inbox lists every agent that needs you; a row's Approve settles that agent's card
+    await js(`document.activeElement&&document.activeElement.blur()`);
+    key('I'); await ctx.sleep(900);
+    const ib = await js(`(()=>{const d=document.getElementById('inboxDlg');if(!d)return null;return {rows:[...d.querySelectorAll('.inbox-row')].map(r=>r.querySelector('.ib-h b').textContent),btn:document.getElementById('inboxBtn').innerText}})()`);
+    assert.ok(ib && ib.rows.length >= 3, 'the inbox lists the agents that need you: ' + JSON.stringify(ib));
+    await shot(`052-inbox-${w}x${h}.png`);
+    if (w === 1440) {
+      const before = ib.rows.length;
+      // approve the first request that is not Jonas's (the chat checks below use Jonas)
+      const who = await js(`(()=>{const r=[...document.querySelectorAll('#inboxDlg .inbox-row')].find(x=>x.querySelector('.ib-h b').textContent!=='Jonas'&&[...x.querySelectorAll('.ib-act button')].some(b=>b.textContent==='Approve'));if(!r)return null;[...r.querySelectorAll('.ib-act button')].find(b=>b.textContent==='Approve').click();return r.querySelector('.ib-h b').textContent;})()`); await ctx.sleep(700);
+      const after = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`);
+      if (who) assert.ok(after === before - 1, `approving ${who} from the inbox removes the row (${before} -> ${after})`);
+      else console.log('[052] note: no second permission request in the simulator; inbox approval checked only by its buttons');
+    }
+    key('Escape'); await ctx.sleep(300);
+    assert.ok(await js(`!document.getElementById('inboxDlg')`), 'Esc closes the inbox');
+
     // waiting agent's chat
     const jonas = await deskId('Jonas');
     await js(`document.querySelector('#stage [data-id="${jonas}"]').click()`); await ctx.sleep(1500);

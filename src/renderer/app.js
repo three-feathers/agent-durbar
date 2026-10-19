@@ -369,6 +369,7 @@ const unesc=s=>String(s).replace(/&(amp|lt|gt|quot);/g,(m,k)=>({amp:'&',lt:'<',g
 /* ---------------- top bar ---------------- */
 function visibleAgents(){return agents.filter(a=>roomShown(roomOf(a))&&(ui.ws==='all'||wsOf(a)===ui.ws));}
 function renderStats(){
+  renderInboxBtn();
   const list=visibleAgents().filter(a=>!a.parent); const c={working:0,waiting:0,idle:0,error:0,done:0};
   list.forEach(a=>{const s=vis(a); if(s==='working'||s==='thinking')c.working++; else c[s]++;});
   const defs=[['working','Working','working or thinking'],['waiting','Waiting','waiting for you'],['idle','Idle','idle or paused'],['error',c.error===1?'Error':'Errors','with errors'],['done','Done','done']];
@@ -934,6 +935,8 @@ function wireMenu(btnId,menuId){
 /* spec 052 FR-001: the answer bar. While a request in the chat waits for you (permission, question, cost limit) and its card is out
    of view, a bar above the composer shows it with the same choices; its buttons press the card's own buttons, so there is one code
    path. A question is answered in its card (options and text): the bar takes you there. */
+/* the words of a request card (permission, question, limit), in full: the answer bar and the inbox show exactly this (FR-016, FR-027) */
+function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.pstate').forEach(x=>x.remove());const q=n.querySelector('.q-text');return (q?q.textContent:c.textContent).replace(/\s+/g,' ').trim().replace(/^(Permission|Question from the agent|Questions from the agent):?\s*/,'');}
 let answerObs=null;
 function wireAnswerBar(a){
   if(answerObs){answerObs.m.disconnect();answerObs.i.disconnect();answerObs=null;}
@@ -943,7 +946,7 @@ function wireAnswerBar(a){
   /* FR-016: the oldest waiting request first, and how many there are */
   const waiting=()=>[...chat.querySelectorAll('.note.perm:not(.settled)')].filter(n=>n.querySelector(':scope > .note-actions button'));
   const pending=()=>waiting()[0]||null;
-  const textOf=n=>{const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.pstate').forEach(x=>x.remove());const q=n.querySelector('.q-text');return (q?q.textContent:c.textContent).replace(/\s+/g,' ').trim().replace(/^(Permission|Question from the agent|Questions from the agent):?\s*/,'');}; /* FR-016: never shortened next to an Approve button */
+  const textOf=requestText;
   /* FR-016: to the request itself, not to its Approve button (an Enter right after must not approve) */
   const show=()=>{if(!card)return;card.scrollIntoView({block:'center'});const f=card.classList.contains('question')?card.querySelector('.q-opt,.q-other'):null;if(f){f.focus();return;}if(!card.hasAttribute('tabindex'))card.setAttribute('tabindex','-1');card.focus();};
   function paint(){
@@ -1079,6 +1082,7 @@ document.addEventListener('click',e=>{
 ['dragover','drop'].forEach(t=>window.addEventListener(t,e=>{if(e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files'))e.preventDefault();}));
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
+    if($('inboxDlg')){closeInbox();return;}
     if(e.target&&e.target.id==='prevQ'&&e.target.value){e.target.value='';e.target.dispatchEvent(new Event('input',{bubbles:true}));return;} /* spec 006 FR-023: Escape clears the search first */
     if(window.DurbarScreens&&window.DurbarScreens.isOpen()&&!document.getElementById('scrDlg')&&!document.getElementById('modeDlg')){window.DurbarScreens.close();return;}
     if(document.getElementById('sessDlg')){closeSessDlg();return;}
@@ -1089,6 +1093,7 @@ document.addEventListener('keydown',e=>{
   }
   if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('#chat .chip:not(.att-chip)')){e.preventDefault();e.target.click();}
   /* spec 052 FR-014: N opens the next agent that needs you (waiting, error or at its limit), outside text fields and dialogs */
+  if((e.key==='i'||e.key==='I')&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]'))&&!document.querySelector('[role="dialog"][aria-modal="true"]')){e.preventDefault();openInbox();return;}
   if((e.key==='n'||e.key==='N')&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]'))&&!document.querySelector('[role="dialog"][aria-modal="true"]')){e.preventDefault();openNextNeedsMe();return;}
   /* spec 001 FR-019: arrow keys move between desks, helpers and door plates; left/right in reading order, up/down to the nearest one in that direction */
   if(/^Arrow(Left|Right|Up|Down)$/.test(e.key)&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&e.target.matches&&e.target.matches(DESK_NAV)){
@@ -1130,6 +1135,46 @@ function renderRestoreStrip(){
 /* spec 052 FR-014: the agents that need you, in office order (desks on screen first, then the rest), and the next one after the open chat */
 const needsMe=a=>!!a&&!a.parent&&(vis(a)==='waiting'||vis(a)==='error'||!!a.limit);
 function needsMeOrder(){const ids=[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>d.dataset.id);return [...ids,...agents.map(a=>a.id).filter(id=>!ids.includes(id))].map(byId).filter(needsMe);}
+/* spec 052 FR-027 (#305): the Needs you inbox. One queue of every agent that needs you, oldest first; each row holds its request in full
+   and the same choices as its card (the buttons press the card's own buttons; the wide grant stays in the chat). */
+function renderInboxBtn(){
+  const b=$('inboxBtn'); if(!b)return;
+  const n=needsMeOrder().length;
+  b.hidden=!agents.length; b.classList.toggle('attn',n>0);
+  b.querySelector('b').textContent=String(n);
+  b.setAttribute('aria-label',n?n+(n===1?' agent needs':' agents need')+' you. Open the inbox (I).':'Nobody needs you. Open the inbox (I).');
+}
+function pendingCardOf(a){const c=getChat(a);const all=[...c.el.querySelectorAll('.note.perm:not(.settled)')].filter(n=>n.querySelector(':scope > .note-actions button'));return all[0]||null;}
+function closeInbox(){const d=$('inboxDlg');if(!d)return;d.remove();const b=$('inboxBtn');if(b)b.focus();}
+function openInbox(){
+  closeInbox();
+  const d=document.createElement('div');d.id='inboxDlg';d.className='dlg-ov';
+  d.innerHTML='<div class="dlg wide inbox-dlg" role="dialog" aria-modal="true" aria-labelledby="inboxT"><h3 id="inboxT">Needs you</h3><div class="dbody" id="inboxBody"></div><div class="dbtn"><button class="btn" type="button" id="inboxClose">Close</button></div></div>';
+  document.body.appendChild(d);
+  d.addEventListener('click',e=>{if(e.target===d)closeInbox();});
+  d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeInbox();}});
+  $('inboxClose').onclick=closeInbox;
+  paintInbox(true);
+}
+function paintInbox(focus){
+  const body=$('inboxBody'); if(!body)return;
+  const list=needsMeOrder();
+  body.innerHTML=list.length?'':'<p class="inbox-empty">Nobody needs you right now. Agents that ask for permission, ask a question, reach their limit or hit an error appear here.</p>';
+  for(const a of list){
+    const card=pendingCardOf(a), row=document.createElement('section');row.className='inbox-row';row.setAttribute('aria-label',a.name);
+    const st=vis(a), what=card?(card.classList.contains('question')?'asks':card.classList.contains('limit')?'stopped':'needs your OK'):(st==='error'?'hit an error':a.limit?'reached its limit':LABELS[st]||st);
+    row.innerHTML='<div class="ib-av" aria-hidden="true">'+avatar(a)+'</div><div class="ib-main"><p class="ib-h"><b></b> <span class="ib-w"></span> <span class="ib-f"></span></p><p class="ib-t"></p><div class="ib-act"></div></div>';
+    row.querySelector('.ib-h b').textContent=a.name;row.querySelector('.ib-w').textContent=what;row.querySelector('.ib-f').textContent='· '+roomOf(a).name;
+    row.querySelector('.ib-t').textContent=card?requestText(card):(taskOf(a)||'');
+    const act=row.querySelector('.ib-act');
+    const add=(label,cls,fn,title)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;b.onclick=fn;act.appendChild(b);};
+    if(card&&!card.classList.contains('question'))for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad)add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],()=>{src.click();setTimeout(()=>{paintInbox(false);renderInboxBtn();},250);},src.title);
+    add(card&&card.classList.contains('question')?'Answer in chat':'Open chat',card&&card.classList.contains('question')?'primary':'',()=>{closeInbox();openPanel(a.id,true);});
+    body.appendChild(row);
+  }
+  /* a redraw after an answer keeps focus inside the inbox (the pressed button is gone) */
+  if(focus||!body.contains(document.activeElement)){const f=body.querySelector('.ib-act .btn.primary')||$('inboxClose');if(f)f.focus();}
+}
 function openNextNeedsMe(){
   const list=needsMeOrder(); if(!list.length){toast('Nobody needs you right now.',2600);return;}
   const cur=list.findIndex(a=>a.id===ui.selected), nx=list[(cur+1)%list.length];
@@ -2879,6 +2924,7 @@ if(bridge){
   document.body.classList.add('has-bridge');
   $('demoToggle').onchange=e=>{demoOn=e.target.checked;applyMode();};
   wireMenu('topMoreBtn','topMoreMenu');
+  $('inboxBtn').onclick=openInbox;
   $('addFolder').onclick=()=>addVia(bridge.addFolder);
   $('addWs').onclick=()=>addVia(bridge.addWorkspaceFile);
   $('foldersBtn').onclick=()=>toggleFolders();

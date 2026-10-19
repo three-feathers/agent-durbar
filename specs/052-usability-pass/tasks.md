@@ -35,7 +35,7 @@
 
 ## Follow-ups for alpha.8
 
-- [ ] T030 Needs you inbox and the I key (#305) [FR-027]
+- [x] T030 Needs you inbox and the I key (#305) [FR-027]
 - [ ] T031 Cost in one unit (#307) [FR-028]
 - [ ] T032 Control-size scale and 24px targets (#311) [FR-029]
 - [ ] T033 Settings: theme grid, lead sentences, Advanced (#309) [FR-030]
