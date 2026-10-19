@@ -66,7 +66,12 @@ Several people, each with their own agent (Claude Code, Copilot, others), work h
   - it has an approval;
   - it has been **quiet for at least 2 hours**: no new commit, review or comment.
 
-  Leave a comment saying it was merged for that reason. Never merge a PR that something else is stacked on before checking its base, and never one marked `needs-owner-approval`. Each agent's own human may still read or revert anything. The "Needs approval" list above still applies.
+  Leave a comment saying it was merged for that reason.
+
+  **Before any merge, check the linked issue** (owner, 2026-10-19). Read the issue the PR works on (`Closes #N`, or the issue named in the spec or tasks), check every point it asks for against what the PR did, and handle both:
+  - Everything is covered: let `Closes #N` close it.
+  - Part is still open: change `Closes` to `Refs` (or reopen the issue after the merge), say on the issue what is done and what is left, and keep it open, or open a follow-up issue for the rest and link it.
+  - Never leave an issue closed with work pending, or open with nothing left. Never merge a PR that something else is stacked on before checking its base, and never one marked `needs-owner-approval`. Each agent's own human may still read or revert anything. The "Needs approval" list above still applies.
 - **Before this decision:** each human reviewed only their own agent's PRs, and one *other* human approved before merge. Owned paths (`.specify/`, `.claude/`, `.github/`, `AGENTS.md`, `CLAUDE.md`) also need the maintainer (CODEOWNERS).
 - Stuck or blocked? Add `status:blocked` and a comment saying what you need; do not guess requirements.
 
