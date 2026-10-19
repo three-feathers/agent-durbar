@@ -25,7 +25,7 @@ import { FolderStore, PROFILE_ID, restoreMode } from './folders';
 import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '../adapters/vscodeChat';
 import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
-import { AgentStateTracker } from './mcp/agentstate';
+import { AgentStateTracker, applySetPaused } from './mcp/agentstate';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { UsageStore } from './usagestore';
 import { AgentTrustStore, hashAgentFile } from './agenttrust';
@@ -460,10 +460,17 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
     const a = folderAgent(folder);
     const ad = a ? router.forAgent(a.id) : undefined;
     if (!a || !ad) return false;
-    await ensureLive(a);
-    toRenderer('agent:event', { type: 'user', sessionId: a.id, timestamp: Date.now(), text: prompt });
-    toRenderer('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at });
-    await ad.send(a.id, { text: prompt });
+    agentState.ensure(a.id, a.lazy);
+    agentState.noteSend(a.id); // same as the interactive send: the window shows Thinking from the moment a prompt goes out
+    try {
+      await ensureLive(a);
+      toRenderer('agent:event', { type: 'user', sessionId: a.id, timestamp: Date.now(), text: prompt });
+      toRenderer('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at });
+      await ad.send(a.id, { text: prompt });
+    } catch (err) {
+      agentState.noteSendFailed(a.id);
+      throw err;
+    }
     return true;
   },
   setTimer: (ms, fn) => setTimeout(fn, ms),
@@ -785,10 +792,7 @@ ipcMain.handle('folders:remove', async (_e, id: unknown) => {
 
 // One-way from the window: the pause button (spec 041 T014). Unknown ids and non-boolean values are ignored.
 ipcMain.on('agents:setPaused', (_e, id: unknown, paused: unknown) => {
-  const a = typeof id === 'string' ? agents.get(id) : undefined;
-  if (!a || typeof paused !== 'boolean') return;
-  agentState.ensure(a.id, a.lazy);
-  agentState.setPaused(a.id, paused);
+  applySetPaused(agentState, (k) => agents.get(k), id, paused);
 });
 
 // One main session out of the office (spec 006 FR-017). The last main session of a folder stays (Folders > Remove is for that).

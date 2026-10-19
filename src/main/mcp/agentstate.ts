@@ -167,3 +167,11 @@ export class AgentStateTracker {
     }
   }
 }
+
+/** The window's pause button (agents:setPaused): unknown ids and non-boolean values are ignored; true pauses, false clears. Returns whether it changed anything. */
+export function applySetPaused(tracker: AgentStateTracker, lookup: (id: string) => { id: string; lazy?: boolean } | undefined, id: unknown, paused: unknown): boolean {
+  const a = typeof id === 'string' ? lookup(id) : undefined;
+  if (!a || typeof paused !== 'boolean') return false;
+  tracker.ensure(a.id, a.lazy);
+  return tracker.setPaused(a.id, paused);
+}

@@ -2,7 +2,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { AgentStateTracker } from '../src/main/mcp/agentstate';
+import { AgentStateTracker, applySetPaused } from '../src/main/mcp/agentstate';
 import type { AgentEvent } from '../src/adapters/types';
 
 const ID = 'a1';
@@ -144,8 +144,31 @@ for (const r of ROWS) {
 {
   const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
   for (const f of ['agentState.noteSend(id)', 'agentState.noteSendFailed(id)', "'did-finish-load', () => agentState.clearPaused()", "ipcMain.on('agents:setPaused'", 'agentState.onEvent(e)']) assert.ok(main.includes(f), `main.ts no longer has: ${f}`);
+  // The scheduled send (spec 044) must note the send and its failure like the interactive one.
+  const i = main.indexOf('send: async (folder, prompt, s)');
+  const sched = main.slice(i, main.indexOf('setTimer:', i));
+  assert.ok(i > 0 && sched.includes('agentState.noteSend(a.id)') && sched.includes('agentState.noteSendFailed(a.id)'), 'the scheduled send path notes the send and its failure');
+  assert.ok(main.includes('applySetPaused(agentState'), 'agents:setPaused goes through applySetPaused');
   const count = (s: string, f: string): number => s.split(f).length - 1;
   assert.ok(count(main, 'agentState.remove(') >= count(main, 'agents.delete('), 'every agents.delete( in main.ts has an agentState.remove( next to it');
+}
+
+// applySetPaused: only a real boolean on a known id changes anything.
+{
+  const t = new AgentStateTracker();
+  const lookup = (k: string) => (k === ID ? { id: ID, lazy: false } : undefined);
+  for (const bad of [1, 'true', null, undefined, {}]) {
+    applySetPaused(t, lookup, ID, bad);
+    assert.strictEqual(t.get(ID)?.paused ?? false, false, `non-boolean ${String(bad)} must not pause`);
+  }
+  assert.strictEqual(applySetPaused(t, lookup, 'nope', true), false);
+  assert.strictEqual(t.has('nope'), false, 'unknown id is not tracked');
+  assert.strictEqual(applySetPaused(t, lookup, 7, true), false);
+  assert.strictEqual(applySetPaused(t, lookup, ID, true), true);
+  assert.strictEqual(t.get(ID)?.word, 'Paused');
+  for (const bad of [0, 'false', null]) { applySetPaused(t, lookup, ID, bad); assert.strictEqual(t.get(ID)?.paused, true, `non-boolean ${String(bad)} must not unpause`); }
+  applySetPaused(t, lookup, ID, false);
+  assert.strictEqual(t.get(ID)?.paused, false);
 }
 
 console.log(`mcp agentstate: ${ROWS.length} rule rows + pause, removal and drift guard OK`);
