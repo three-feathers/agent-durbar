@@ -208,7 +208,7 @@ module.exports = async (ctx) => {
     await setSel('kindSel', 'copilot');
 
     // ---- the new-session dialog follows the kind too ----
-    await openPanel('sim-3'); // Jonas, Copilot, Allow all
+    await openPanel('sim-15'); // Maya, Copilot, Allow all (Jonas waits for a permission, so he is in Ask first since spec 052 FR-046)
     await js(`document.getElementById('newSessBtn').click()`);
     assert.ok(await ctx.waitFor(`!!document.getElementById('sdPerm')`, 3000), 'the new-session dialog opens');
     assert.strictEqual(await js(`document.getElementById('sdPerm').value`), 'allow', 'the dialog starts at the current mode');

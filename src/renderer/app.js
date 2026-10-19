@@ -676,7 +676,7 @@ let layoutKey='', layout=null;
 const WELCOME_HTML=`<section class="welcome" aria-labelledby="wlT"><h2 id="wlT">Welcome to Agent Durbar</h2>
   <p class="wl-sub">Your AI agents in one office: see what each one is doing, chat with it, and decide what it may do. For code, documents, research or notes, with GitHub Copilot, Claude Code or OpenAI Codex side by side.</p>
   <ol class="wl-steps">
-    <li><b>Set up an agent harness once</b>: GitHub Copilot (a free plan works), Claude Code or OpenAI Codex. <b>Set up harnesses…</b> installs and signs in for you, showing every step; nothing is typed in a terminal.</li>
+    <li><b>Set up an agent harness once</b>: GitHub Copilot (a free plan works), Claude Code or OpenAI Codex. <b>Set up harnesses…</b> installs and signs in for you, showing every step; nothing is typed in a terminal.<br><span class="wl-which">Which one? Have ChatGPT: Codex. Have Claude: Claude Code. Neither: GitHub Copilot (free).</span></li>
     <li><b>Add a folder</b> with <b>+ Folder</b>: a project, a set of documents, any folder your agent should work in. Each folder becomes a room with its own agent. Agents start in <b>Read-only</b>: they can read the folder, nothing else.</li>
     <li><b>Send a message</b> to start. Switch to <b>Ask first</b> or <b>Allow all</b> only for folders you trust.</li>
   </ol>

@@ -40,7 +40,7 @@ export interface BinarySpec {
 export const CLAUDE_BINARY: BinarySpec = {
   name: 'claude',
   versionArgs: ['--version'],
-  installHint: 'Install Claude Code (npm install -g @anthropic-ai/claude-code), then restart Durbar.',
+  installHint: 'Open Settings > Harnesses and choose Install… (or run `npm install -g @anthropic-ai/claude-code`).',
 };
 
 /** Minimum Codex version: the one researched for the read-limiting profile (spec 012 FR-087), also the detect minimum. Older versions are refused because they are unchecked; T061 confirms it on a real Codex. */
@@ -50,7 +50,7 @@ export const CODEX_BINARY: BinarySpec = {
   name: 'codex',
   versionArgs: ['--version'],
   minVersion: CODEX_MIN_VERSION,
-  installHint: 'Install the Codex CLI (npm install -g @openai/codex), then restart Durbar.',
+  installHint: 'Open Settings > Harnesses and choose Install… (or run `npm install -g @openai/codex`).',
 };
 
 const TIMEOUT_MS = 5000;
@@ -184,7 +184,7 @@ function execFound(found: string, args: readonly string[], env: DetectEnv, exec:
   return exec(found, args, { timeoutMs: TIMEOUT_MS });
 }
 
-export const CLAUDE_SIGN_IN_HINT = 'Sign in first: run `claude auth login` in a terminal, then refresh the agent kinds.';
+export const CLAUDE_SIGN_IN_HINT = 'Sign in first: open Settings > Harnesses and choose Sign in… (or run `claude auth login`).';
 
 /**
  * Claude Code (spec 012 FR-132): the version probe, then `claude auth status --json` (no prompt, nothing billed). Only `loggedIn`
@@ -207,7 +207,7 @@ export async function detectClaude(env: DetectEnv, exec: Exec, configuredPath?: 
   return r;
 }
 
-export const CODEX_SIGN_IN_HINT = 'Sign in first: run `codex login` in a terminal, then refresh the agent kinds.';
+export const CODEX_SIGN_IN_HINT = 'Sign in first: open Settings > Harnesses and choose Sign in… (or run `codex login`).';
 
 /**
  * Codex (spec 012 FR-137): the version probe, then `codex login status` (no prompt, nothing billed). "Not logged in" (it exits 1)

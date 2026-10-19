@@ -152,6 +152,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     ['Rosa', 'Social snippets', 'infra-notes', 'working', 'Drafting three post snippets from the MCP article', 0, ['posts/snippets.md']],
     ['Maya', 'Release notes', 'infra-notes', 'done', 'v0.3 release notes drafted and grouped by user-visible change', 0, ['CHANGELOG.md']],
   ];
+  // Spec 052 FR-046: each waiting agent asks for its own thing, tied to its role and task (was one rename request for all of them)
+  const WAIT_REQ: Record<string, { kind: 'write' | 'shell'; summary: string; target: string }> = {
+    Jonas: { kind: 'write', summary: 'Edit src/tools/companies.ts (rename find_company to search_companies)', target: 'src/tools/companies.ts' },
+    Kenji: { kind: 'shell', summary: 'Run python evals/baseline.py --compare', target: 'python evals/baseline.py' },
+    Lena: { kind: 'write', summary: 'Edit src/styles/focus.css (focus ring colour)', target: 'src/styles/focus.css' },
+  };
   const HELPER_NAMES: [string, string, string][] = [
     ['Tests', 'Running vitest on the changed modules', 'working'],
     ['Lint', 'Checking eslint and prettier on touched files', 'thinking'],
@@ -219,6 +225,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       const roomName = opts.solo ? name.toLowerCase() + '-app' : room;
       const cwd = opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
       const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], adapterId: mixed ? SIM_KIND_BY_AGENT[i] ?? 'copilot' : 'copilot', permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true }, profiles: true } as AgentInfo;
+      // Spec 052 FR-046: a pending permission card only happens in Ask first, so a waiting agent starts in Ask first (Jonas was Allow all
+      // and restored, Lena Read-only); the restored Allow-all folder the restore strip names is then Tomas's (swisscontract-ai).
+      if (state === 'waiting' && info.permMode !== 'ask') { info.permMode = 'ask'; info.permRestored = undefined; }
       if (mixed && info.adapterId !== 'copilot') {
         const k = caps(info.adapterId ?? 'copilot');
         if (!k.caps) info.maxAiCredits = undefined; // no credit cap on a kind that has none
@@ -462,15 +471,15 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const grantsEvent = (s: SimAgent): void =>
       emit({ type: 'grants', sessionId: sid(s), timestamp: now(), grants: [...s.grants].map(([key, label]) => ({ key, kind: 'write', label })) });
     /** Like the real broker: auto-approve under a session grant, otherwise leave the request pending. */
-    function askWrite(s: SimAgent, file: string, summary: string, cont: 'tool' | 'edit', intent: string, force = false): boolean | 'denied' {
-      const sc = scopeOf(file);
+    function askWrite(s: SimAgent, file: string, summary: string, cont: 'tool' | 'edit', intent: string, force = false, kind: 'write' | 'shell' = 'write'): boolean | 'denied' {
+      const sc = kind === 'shell' ? { key: 'shell:' + file, label: 'run ' + file } : scopeOf(file);
       if (!force && s.info.permMode === 'allow') return true; // Allow all: no question asked
       if (!force && s.info.permMode === 'read-only') {
-        emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { requestId: 'perm-' + sid(s) + '-' + now(), kind: 'write', summary, state: 'denied' } });
+        emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { requestId: 'perm-' + sid(s) + '-' + now(), kind, summary, state: 'denied' } });
         return 'denied';
       }
       const requestId = 'perm-' + sid(s) + '-' + now();
-      const base = { requestId, kind: 'write', summary, scopeKey: sc.key, scopeLabel: sc.label };
+      const base = { requestId, kind, summary, scopeKey: sc.key, scopeLabel: sc.label };
       if (s.grants.has(sc.key)) {
         emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { ...base, state: 'approved', via: 'session' } });
         return true;
@@ -524,9 +533,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         case 'thinking':
           think(s, 2);
           break;
-        case 'waiting':
-          askWrite(s, s.files[0], 'Edit ' + s.files[0] + ' (rename find_company to search_companies)', 'tool', s.intent, true);
+        case 'waiting': {
+          const w = WAIT_REQ[s.info.name] ?? { kind: 'write' as const, summary: 'Edit ' + s.files[0], target: s.files[0] };
+          askWrite(s, w.target, w.summary, 'tool', s.intent, true, w.kind);
           break;
+        }
         case 'error':
           emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: sid(s) + '-fail', tool: 'bash', phase: 'start', args: { command: 'python evals/run.py --prompt v7 --concurrency 8' } });
           emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: sid(s) + '-fail', tool: 'bash', phase: 'failed', output: 'RateLimitError: 429 Too Many Requests (retry after 38s)\nStopped at case 38 of 120. Partial results saved to evals/out/v7-partial.json' });
