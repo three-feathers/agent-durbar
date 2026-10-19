@@ -684,3 +684,21 @@ The owner handed the Codex track to this agent ("ruben does not have chatgpt acc
 - **Read-only (T064):** reading inside the folder worked ("pelican"). `echo hi > x.txt` failed with a read-only file system. `cat ~/.durbar-canary.txt` (outside the folder) failed: the file is not visible in the sandbox. No `x.txt` was created.
 - **Ask first (T064):** `echo hi > x.txt` raised a permission request through Durbar's broker ("run /bin/bash -lc 'echo hi > x.txt'"). Denied: "declined", no file. Approved: the file was created.
 - **Interrupt and Stop (T063 part):** as in FR-139. Resume (T043b) is not built yet.
+
+### 2026-10-19: Codex resume (T043b, FR-093 built)
+
+- **FR-093** `[IMPLEMENTED]` A Codex session is resumed with `resumeSessionId` (the Codex thread id) on a **fresh** child, never replaced by a new thread:
+  - an id that is not a plain id is refused;
+  - an unknown thread gives an error;
+  - `CODEX_CAPABILITIES.resume` is now `true`.
+  
+  *Found on the real account:* `thread/resume` with a `cwd` **rewrites the thread's stored folder**. A check on the resume response would therefore approve a resume from any folder, and it did, in a first try. So the adapter now **reads the stored thread first** (`thread/read {threadId, includeTurns: false}`) and refuses unless its `cwd` equals the session folder (spec 003: resumed sessions belong to the agent's folder). Nothing is changed before that check. Then it sends `thread/resume {threadId, excludeTurns: true}` with the same mode fields and `runtimeWorkspaceRoots` as a new thread.
+  
+  *Profile check:* in Read-only and Ask first, a response whose `sandbox` reports full access or workspace-write is refused; Codex 0.163 reports `{type: "readOnly", networkAccess: false}` in the read-limited profile.
+- `test:` the scripted fake now answers `thread/read`, and rewrites the folder on resume as the real server does. Cases:
+  - unknown thread and bad id;
+  - resume keeps the id, uses a fresh child, reads first, then resumes with the limited roots, and runs a turn;
+  - another folder is refused with no `thread/resume` sent and the stored folder unchanged;
+  - a wider sandbox is refused in Read-only and accepted in Allow all.
+- `real:` 2026-10-19, Codex 0.163.0 (ChatGPT Plus), Read-only, two adapter instances. Session 1 was asked to remember "marmalade". A fresh adapter resumed the thread under the same id and answered **marmalade**. A resume from another folder was refused, and `thread/read` showed the thread's folder unchanged.
+

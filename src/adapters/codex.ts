@@ -30,8 +30,7 @@ const CODEX_NAME = 'OpenAI Codex';
 /** From the plan and the modules (spec 012 FR-089); none of it verified on a real account. Deeply frozen. */
 export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   interrupt: true,
-  // T043b turns this on together with FR-093 resume.
-  resume: false,
+  resume: true, // FR-093 (T043b): thread/read, then thread/resume on a fresh child
   images: true,
   models: false,
   effort: false,
@@ -110,6 +109,34 @@ function isInside(parent: string, child: string): boolean {
   const api = win ? path.win32 : path.posix;
   const rel = api.relative(win ? parent.toLowerCase() : parent, win ? child.toLowerCase() : child);
   return rel === '' || (rel !== '..' && !rel.startsWith('..' + api.sep) && !api.isAbsolute(rel));
+}
+
+/**
+ * FR-093: a resumed thread must belong to the session folder (spec 003: resumed sessions belong to the agent's folder), and in
+ * Read-only and Ask first Codex must not report a wider sandbox than the read-limited profile. Throws to refuse; the caller
+ * closes the child. A field Codex does not send is not taken as permission: the fresh child with `default_permissions`
+ * (FR-138) is what holds then.
+ */
+export function codexResumeCheck(res: unknown, o: { cwd: string; limited: boolean; realpath: (p: string) => string; required?: boolean }): void {
+  const r = isObj(res) ? res : {};
+  const norm = (p: string): string => {
+    let x = p;
+    try {
+      x = o.realpath(p);
+    } catch {
+      /* compare as given */
+    }
+    const win = /^[A-Za-z]:[\\/]/.test(x);
+    const n = (win ? path.win32 : path.posix).normalize(x).replace(/[\\/]+$/, '');
+    return win ? n.toLowerCase() : n;
+  };
+  const cwd = typeof r.cwd === 'string' ? r.cwd : isObj(r.thread) && typeof r.thread.cwd === 'string' ? r.thread.cwd : undefined;
+  if (cwd === undefined && o.required) throw new Error('Codex did not say which folder that session belongs to, so it is not resumed.');
+  if (cwd !== undefined && norm(cwd) !== norm(o.cwd)) throw new Error('That Codex session belongs to another folder, so it is not resumed here.');
+  if (!o.limited) return;
+  const sb = r.sandbox;
+  const kind = typeof sb === 'string' ? sb : isObj(sb) && typeof sb.type === 'string' ? sb.type : undefined;
+  if (kind !== undefined && /danger|full|workspace.?write/i.test(kind)) throw new Error(`Codex resumed the session with a wider sandbox (${kind.slice(0, 40)}) than this mode allows, so it is not resumed.`);
 }
 
 /**
@@ -275,8 +302,9 @@ export class CodexAdapter implements AgentAdapter {
     };
     const mode = startModeOf(options);
     if (!this.capabilities.permissionModes.includes(mode)) throw new Error(`Codex cannot run in ${mode} mode.`);
-    // Resume of a known thread arrives with T043b (FR-093). Refuse rather than silently starting a different thread.
-    if (options.resumeSessionId) throw new Error('Resuming a Codex session is not available yet.');
+    // FR-093: a known thread is resumed on a fresh child (below), never silently replaced by a new one.
+    const resumeId = options.resumeSessionId;
+    if (resumeId !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(resumeId)) throw new Error('That is not a Codex session id.');
     const { cwd, folders } = resolveWorkspaceCwd(options.workspace);
     const roots = codexWorkspaceRoots([cwd, ...folders], this.realpath);
     const limited = mode !== 'allow';
@@ -374,12 +402,28 @@ export class CodexAdapter implements AgentAdapter {
       live.exited = child.exited;
       const settings = codexModeSettings(mode);
       let started: unknown;
+      const threadParams = { cwd: limited ? realCwd : cwd, ...settings, ...(limited ? { runtimeWorkspaceRoots: roots } : {}) };
+      if (resumeId !== undefined) {
+        // FR-093 (real, Codex 0.163): `thread/resume` with a cwd REWRITES the thread's folder, so the folder check reads the
+        // stored thread first and refuses before anything is changed.
+        let stored: unknown;
+        try {
+          stored = await child.rpc.request('thread/read', { threadId: resumeId, includeTurns: false });
+        } catch (e) {
+          throw new Error(`That Codex session could not be found: ${reasonOf(e)}`);
+        }
+        codexResumeCheck(isObj(stored) && isObj(stored.thread) ? { cwd: stored.thread.cwd } : {}, { cwd: (limited ? realCwd : cwd) as string, limited: false, realpath: this.realpath, required: true });
+      }
       try {
-        started = await child.rpc.request('thread/start', { cwd: limited ? realCwd : cwd, ...settings, ...(limited ? { runtimeWorkspaceRoots: roots } : {}) });
+        // FR-093: resume on this fresh child, so the thread is never already loaded with an older profile
+        started = resumeId !== undefined
+          ? await child.rpc.request('thread/resume', { threadId: resumeId, excludeTurns: true, ...threadParams })
+          : await child.rpc.request('thread/start', threadParams);
       } catch (e) {
         // Never retried with a weaker setting (FR-087).
         throw new Error(`Codex refused the session settings: ${reasonOf(e)}${linuxSandboxHint(reasonOf(e))}`);
       }
+      if (resumeId !== undefined) codexResumeCheck(started, { cwd: (limited ? realCwd : cwd) as string, limited, realpath: this.realpath });
       const thread = isObj(started) && isObj(started.thread) ? started.thread : undefined;
       const threadId = thread && typeof thread.id === 'string' && thread.id ? thread.id : undefined;
       if (!threadId) throw new Error('Codex did not return a thread id.');

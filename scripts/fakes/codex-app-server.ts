@@ -23,6 +23,8 @@ export interface FakeCodexOptions {
   completeBeforeResponse?: boolean;
   /** Text of the error `thread/start` answers with when it refuses `permissions` (default a short one). */
   threadStartError?: string;
+  /** What `thread/resume` reports as `sandbox` (default `{type: 'readOnly'}`, as real Codex 0.163 does in the read-limited profile). */
+  resumeSandbox?: unknown;
   /** Text of the `initialize` error. */
   initializeErrorText?: string;
   /** Withhold the `turn/start` response and the turn's notifications until `releaseTurnStart()` (the id is unknown to the adapter meanwhile). */
@@ -251,12 +253,20 @@ export class FakeCodexServer {
         this.enqueue(child, { method: 'thread/started', params: { thread: { id: tid, cwd } } });
         return;
       }
-      case 'thread/resume': {
+      case 'thread/read': {
         const tid = isObj(params) && typeof params.threadId === 'string' ? params.threadId : '';
         const cwd = this.threads.get(tid);
         if (cwd === undefined) return this.fail(child, id, -32600, 'no rollout found for thread');
-        this.threadChild.set(tid, child);
         return this.reply(child, id, { thread: { id: tid, cwd } });
+      }
+      case 'thread/resume': {
+        const tid = isObj(params) && typeof params.threadId === 'string' ? params.threadId : '';
+        if (this.threads.get(tid) === undefined) return this.fail(child, id, -32600, 'no rollout found for thread');
+        // like real Codex 0.163: a cwd in the request becomes the thread's folder
+        if (isObj(params) && typeof params.cwd === 'string') this.threads.set(tid, params.cwd);
+        const cwd = this.threads.get(tid) as string;
+        this.threadChild.set(tid, child);
+        return this.reply(child, id, { cwd, sandbox: this.opts.resumeSandbox ?? { type: 'readOnly', networkAccess: false }, thread: { id: tid, cwd } });
       }
       case 'turn/start': {
         const tid = isObj(params) && typeof params.threadId === 'string' ? params.threadId : '';
