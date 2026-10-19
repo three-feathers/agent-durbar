@@ -13,8 +13,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Spec 008 delta 2026-10-19 (faster CI): a pull request that only touches docs, specs or Markdown skips the build, test and
+  # office jobs (a skipped required job counts as passed). Pushes to main always run everything.
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: diff
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then echo "code=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          echo "$files"
+          if echo "$files" | grep -qvE '^(docs/|specs/)|\.md$'; then echo "code=true" >> "$GITHUB_OUTPUT"; else echo "code=false" >> "$GITHUB_OUTPUT"; echo "Docs, specs and Markdown only: build, test and office checks are skipped."; fi
+
   build-test:
     name: Build and test (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -29,12 +50,14 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
+      # compiles the test scripts once and runs the suites in parallel (scripts/run-tests.js)
       - run: npm test
 
   package-smoke:
     name: Package smoke (unpacked Linux app)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    needs: build-test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -45,10 +68,20 @@ jobs:
       # Builds the app with electron-builder and fails if the Copilot runtime is not unpacked (scripts/after-pack.js).
       - run: npm run pack:dir
 
-  office-check:
-    name: Office layout check (xvfb)
+  office-shard:
+    name: Office layout shard ${{ matrix.shard }}/4
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { shard: 1, index: 0 }
+          - { shard: 2, index: 1 }
+          - { shard: 3, index: 2 }
+          - { shard: 4, index: 3 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -56,7 +89,24 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Simulator only (no Copilot login, no AI credits). Runs Electron under xvfb: 95 combinations, about 70 s.
-      # The script itself starts xvfb-run when there is no DISPLAY; install it first (not preinstalled on the runner image).
+      # Simulator only (no Copilot login, no AI credits). Runs Electron under xvfb; each shard takes every 4th unit of the check.
       - run: sudo apt-get update && sudo apt-get install -y xvfb
       - run: npm run check:office
+        env:
+          OFFICE_SHARDS: 4
+          OFFICE_SHARD: ${{ matrix.index }}
+
+  # The required check keeps its name: it passes when every shard passed (or all were skipped for a docs-only change).
+  office-check:
+    name: Office layout check (xvfb)
+    needs: [changes, office-shard]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - shell: bash
+        run: |
+          r="${{ needs.office-shard.result }}"
+          echo "shards: $r"
+          if [ "${{ needs.changes.result }}" != "success" ]; then exit 1; fi
+          if [ "$r" = "success" ] || [ "$r" = "skipped" ]; then exit 0; fi
+          exit 1

@@ -7,7 +7,8 @@ Thanks for looking. This is an early alpha; small, focused pull requests are eas
 ```bash
 npm ci
 npm run build
-npm test            # permission broker, attachment rules, VS Code launcher; no Copilot, no credits
+npm test            # every unit suite, compiled once and run in parallel (~20 s); no Copilot, no credits
+# merged branches are deleted by the daily Branch cleanup workflow one day after the merge (spec 008 FR-024)
 DURBAR_SIM=15 npm start   # 15 simulated agents, no sessions, no AI credits
 ```
 
