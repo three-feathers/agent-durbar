@@ -10,7 +10,8 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push cancels a PR's older run; on main every merge commit runs to the end (a release is tagged on one).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Spec 008 delta 2026-10-19 (faster CI): a pull request that only touches docs, specs or Markdown skips the build, test and

@@ -143,3 +143,10 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
   - `dist/icon.png` is in `app.asar`.
   
   Not checked by eye on a GNOME or KDE dock.
+
+### 2026-10-19: CI on `main` no longer cancels itself
+
+*Found:* `ci.yml` had `cancel-in-progress: true` for every ref. When two PRs merged a few minutes apart, the release commit of alpha.7 (`d90fcd4`) had its CI cancelled twice, by the next merge and again during a re-run. Nothing proved that commit green, although the packaged check passed on it.
+
+*Corrected:* `cancel-in-progress` is true only for pull requests, where a newer push supersedes the old run. On `main`, every merge commit's run finishes, so a release can be tagged on a commit with a complete CI run. Runs on `main` now overlap a little more; the cost is runner minutes, which are free for this public repository.
+
