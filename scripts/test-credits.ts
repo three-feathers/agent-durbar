@@ -3,10 +3,26 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { MAX_CAP, MIN_CAP, fmtAiu, parseAmount, parseCap, parseSettings } from '../src/shared/credits';
+import { MAX_CAP, MIN_CAP, MIN_USD_CAP, fmtAiu, parseAmount, parseCap, parseCapIn, parseSettings, parseUsdCap, startCap } from '../src/shared/credits';
 import { SettingsStore } from '../src/main/settings';
 
 assert.strictEqual(MIN_CAP, 30, 'the runtime refuses caps below 30 AI credits');
+// spec 012 FR-150: dollar caps (Claude's estimate) and the start rule
+assert.strictEqual(MIN_USD_CAP, 0.01);
+assert.strictEqual(parseUsdCap(0.5), 0.5);
+assert.strictEqual(parseUsdCap('0.126'), 0.13);
+assert.strictEqual(parseUsdCap(0.001), undefined, 'below a cent');
+assert.strictEqual(parseUsdCap(10_001), undefined, 'above $10,000 is a typo');
+assert.strictEqual(parseCapIn('usd', 0.5), 0.5);
+assert.strictEqual(parseCapIn('aiu', 0.5), undefined, 'an AIU cap below 30 is refused');
+assert.strictEqual(parseCapIn(undefined, 45), 45, 'no unit means AIU');
+assert.strictEqual(startCap('aiu', undefined, 40, 80), 40, 'AIU: the folder cap first');
+assert.strictEqual(startCap('aiu', undefined, undefined, 80), 80, 'AIU: then the settings default');
+assert.strictEqual(startCap('aiu', 5, 40, 80), 40, 'AIU: an invalid explicit cap falls back as before');
+assert.strictEqual(startCap('aiu', null, 40, 80), undefined, 'null = no cap');
+assert.strictEqual(startCap('usd', undefined, 40, 80), undefined, 'dollars: the AIU folder cap and default are never used');
+assert.strictEqual(startCap('usd', 0.25, 40, 80), 0.25, 'dollars: only an explicit cap');
+assert.strictEqual(startCap('usd', 0.001, 40, 80), undefined);
 assert.strictEqual(parseCap(30), 30);
 assert.strictEqual(parseCap('45.5'), 45.5);
 assert.strictEqual(parseCap(30.126), 30.13);

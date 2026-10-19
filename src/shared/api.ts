@@ -486,7 +486,7 @@ export interface DurbarApi {
   resolvePermission(id: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean): Promise<void>;
   /** Forget one "Approve for this session" grant (key from the `grants` event). */
   revokeGrant(id: string, key: string): Promise<void>;
-  openInVSCode(id: string): Promise<{ ok: boolean; error?: string }>;
+  openInVSCode(id: string): Promise<{ ok: boolean; error?: string; edition?: string }>;
   /** Earlier Copilot CLI/SDK sessions in this agent's folder (newest first). Optional: not in the simulator. */
   listPrevious?(id: string): Promise<{ ok: boolean; error?: string; sessions: PreviousSession[] }>;
   /** Resume one of them as a new agent in the same folder; `replace` retires this agent if it was never used. */

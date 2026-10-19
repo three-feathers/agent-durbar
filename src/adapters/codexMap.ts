@@ -267,19 +267,40 @@ export class CodexMapper {
       case 'imageView':
         return call({ tool: type }, { path: ownStr(item, 'path') });
       case 'collabAgentToolCall': {
+        // FR-149 (real, Codex 0.163): `wait`, `send_input`, `close_agent` and the like coordinate helpers; only a spawn is one
+        if (!/spawn/i.test(ownStr(item, 'tool') ?? '')) return;
         const receivers = own(item, 'receiverThreadIds');
         if (Array.isArray(receivers)) for (const t of receivers) if (typeof t === 'string' && t) this.addChild(t, id);
         return this.subagent(id, phase, status, { task: ownStr(item, 'prompt'), model: ownStr(item, 'model'), agentName: ownStr(item, 'tool'), error: ownStr(own(item, 'error'), 'message') }, agentId);
       }
       case 'subAgentActivity': {
-        const t = ownStr(item, 'agentThreadId');
-        if (t) this.addChild(t, id);
-        return this.subagent(id, phase, status, { model: ownStr(item, 'model'), agentName: ownStr(item, 'agentPath'), error: ownStr(own(item, 'error'), 'message') }, agentId);
+        // FR-149 (real, Codex 0.163): one item per activity (`kind` started | completed, each with its own id, opened and closed at
+        // once); the helper is the agent thread. Key by `agentThreadId`, act once per kind, name it by the last part of `agentPath`.
+        const t = ownStr(item, 'agentThreadId') ?? id;
+        const kind = ownStr(item, 'kind');
+        const path = ownStr(item, 'agentPath');
+        const f = { model: ownStr(item, 'model'), agentName: path ? path.split('/').filter(Boolean).pop() ?? path : undefined, error: ownStr(own(item, 'error'), 'message') };
+        if (kind === 'started' && !this.helpersStarted.has(t)) {
+          this.helpersStarted.add(t);
+          if (this.helpersStarted.size > CODEX_CHILD_LIMIT) this.helpersStarted.delete(this.helpersStarted.values().next().value as string);
+          this.addChild(t, t);
+          return this.subagent(t, 'started', undefined, f, agentId);
+        }
+        if ((kind === 'completed' || kind === 'failed' || kind === 'errored' || status === 'failed') && phase === 'completed' && !this.helpersDone.has(t)) {
+          this.helpersDone.add(t);
+          if (this.helpersDone.size > CODEX_CHILD_LIMIT) this.helpersDone.delete(this.helpersDone.values().next().value as string);
+          return this.subagent(t, 'completed', kind === 'completed' && status !== 'failed' ? undefined : 'failed', f, agentId);
+        }
+        return;
       }
       default:
         return; // userMessage, plan, contextCompaction, review items, unknown
     }
   }
+
+  /** FR-149: helper threads already announced as started / ended (bounded by the session). */
+  private helpersStarted = new Set<string>();
+  private helpersDone = new Set<string>();
 
   private subagent(id: string, phase: 'started' | 'completed', status: string | undefined, f: { task?: string; model?: string; agentName?: string; error?: string }, agentId: string | undefined): void {
     const p = phase === 'started' ? 'started' : status === 'failed' ? 'failed' : 'completed';
