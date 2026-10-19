@@ -233,6 +233,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!k.caps) info.maxAiCredits = undefined; // no credit cap on a kind that has none
         else if (k.capUnit === 'usd') info.maxAiCredits = SIM_USD_CAPS[name]; // a dollar cap, never an AIU one (FR-150)
         if (!k.permissionModes.includes(info.permMode)) info.permMode = 'read-only';
+        info.profiles = undefined; // custom agents (spec 049) are Copilot's: no profile chip that opens nothing
         if (!k.models) info.modelControl = { switch: 'none', effort: false, contextTier: false, compact: false, windowKnown: true };
       }
       // Priya models an adapter that cannot switch or compact in place (spec 030): the UI shows the disabled state and offers a new session.
