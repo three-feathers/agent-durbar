@@ -33,7 +33,7 @@ what exists today, not what was originally intended. Each requirement carries a 
 | [007](007-models-and-effort/spec.md) | Model and reasoning-effort pickers | implemented |
 | [008](008-packaging-and-release/spec.md) | Packaging, CI, draft releases | implemented (unsigned) |
 | [009](009-vscode-integration/spec.md) | Open in VS Code, VS Code chat history (read-only) | implemented |
-| [010](010-simulator/spec.md) | Simulator and dev/test hooks | implemented; delta 2026-10-19: one event shape check for the simulator and adapters (FR-023) |
+| [010](010-simulator/spec.md) | Simulator and dev/test hooks | implemented; delta 2026-10-19: one event shape check for the simulator and adapters (FR-021) |
 
 ## Features 011-014: 011 built, 012 planned, 013-014 backlog drafts
 
