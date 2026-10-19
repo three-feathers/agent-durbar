@@ -2285,13 +2285,69 @@ function toggleFolders(on){
   pop.hidden=!show; btn.setAttribute('aria-expanded',String(show));
   if(show)renderFolders();
 }
+/* ---------------- scheduled prompts (spec 044): per folder, while the app is open ---------------- */
+let SCHED={pausedAll:false,schedules:[]};
+const folderKeyOf=r=>{const ag=agents.find(x=>!x.parent&&x.room===r.id);const i=ag&&ag.info;return i?(i.workspaceFile||i.cwd):r.path;};
+const schedulesOf=r=>SCHED.schedules.filter(s=>s.folder===folderKeyOf(r));
+const clock=ms=>{const d=new Date(ms),n=new Date(),t=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});return d.toDateString()===n.toDateString()?t:d.toLocaleDateString([],{month:'short',day:'numeric'})+' '+t;};
+const nextRunOf=ss=>{const t=ss.filter(s=>!s.paused&&!s.done).map(s=>s.every!==undefined?s.next:s.at).filter(Boolean).sort((a,b)=>a-b)[0];return t&&!SCHED.pausedAll?clock(t):'';};
+const OUTCOME_WORD={sent:'sent','skipped-busy':'skipped: the agent was busy','skipped-paused':'skipped: paused',missed:'missed: the app was closed',failed:'could not send'};
+const whenOf=s=>s.every!==undefined?(s.every%60===0?'every '+(s.every/60)+' h':'every '+s.every+' min'):'once at '+clock(s.at);
+function renderSchedDlg(){
+  const d=$('schedDlg'); if(!d)return; const r=ROOMS.find(x=>x.id===d.dataset.room); if(!r){closeSchedDlg();return;}
+  const ss=schedulesOf(r), list=$('sdList');
+  list.innerHTML=ss.length?ss.map(s=>`<div class="sc-row${s.paused||s.done?' off':''}"><div class="sc-t"><b title="${esc(s.prompt)}">${esc(s.prompt.length>90?s.prompt.slice(0,89)+'…':s.prompt)}</b><small>${esc(whenOf(s))}${s.done?' · done':s.paused?' · paused':(s.every!==undefined&&s.next&&!SCHED.pausedAll?' · next '+esc(clock(s.next)):'')}${s.last?' · last '+esc(clock(s.last.at))+': '+esc(OUTCOME_WORD[s.last.outcome]||s.last.outcome):''}</small></div>${s.done?'':`<button class="btn" type="button" data-sc="pause" data-id="${esc(s.id)}">${s.paused?'Resume':'Pause'}</button>`}<button class="btn danger" type="button" data-sc="del" data-id="${esc(s.id)}">Delete</button></div>`).join(''):'<p class="sc-empty">No schedules for this folder yet.</p>';
+  $('sdPausedNote').hidden=!SCHED.pausedAll;
+}
+function closeSchedDlg(){const d=$('schedDlg');if(d)d.remove();}
+function openSchedules(r){
+  closeSchedDlg();toggleFolders(false);
+  const d=document.createElement('div');d.id='schedDlg';d.className='dlg-ov';d.dataset.room=r.id;
+  const soon=new Date(Date.now()+60*60000);soon.setSeconds(0,0);const pad=n=>String(n).padStart(2,'0');
+  const local=`${soon.getFullYear()}-${pad(soon.getMonth()+1)}-${pad(soon.getDate())}T${pad(soon.getHours())}:${pad(soon.getMinutes())}`;
+  d.innerHTML=`<div class="dlg sched-dlg" role="dialog" aria-modal="true" aria-labelledby="sdhT"><h3 id="sdhT">Schedules for ${esc(r.name)}</h3>
+   <p class="dsub">A prompt sent to this folder's agent at a time or an interval, <b>only while Agent Durbar is open</b>. A run is skipped when the agent is busy or waiting for you; missed runs are not caught up. The agent's own permission mode and credit cap apply.</p>
+   <p class="sc-paused" id="sdPausedNote" hidden>All schedules are paused (Folders panel).</p>
+   <div class="sc-list" id="sdList"></div>
+   <div class="sc-form"><label>Prompt<textarea id="scPrompt" rows="3" maxlength="2000" placeholder="For example: Summarise the open pull requests in three bullet points."></textarea></label>
+    <div class="sc-when"><label class="chk"><input type="radio" name="scKind" value="every" checked> Every <input type="number" id="scEvery" min="5" max="1440" step="5" value="60" aria-label="Minutes between runs"> minutes</label>
+    <label class="chk"><input type="radio" name="scKind" value="once"> Once at <input type="datetime-local" id="scAt" value="${local}" aria-label="Date and time"></label></div></div>
+   <div class="dbtn"><button class="btn" id="scClose" type="button">Close</button><button class="btn primary" id="scAdd" type="button">Add schedule</button></div></div>`;
+  document.body.appendChild(d);
+  renderSchedDlg();
+  d.addEventListener('click',async e=>{
+    if(e.target===d){closeSchedDlg();return;}
+    const b=e.target.closest('button');if(!b)return;
+    if(b.id==='scClose'){closeSchedDlg();return;}
+    if(b.id==='scAdd'){
+      const prompt=$('scPrompt').value.trim();if(!prompt){$('scPrompt').focus();toast('Write the prompt first.',3000);return;}
+      const once=d.querySelector('input[name="scKind"]:checked').value==='once';
+      const input={folder:folderKeyOf(r),prompt};
+      if(once){const t=new Date($('scAt').value).getTime();if(!(t>Date.now())){toast('Choose a time in the future.',3500);return;}input.at=t;}
+      else{const m=Math.round(Number($('scEvery').value));if(!(m>=5&&m<=1440)){toast('Choose 5 to 1440 minutes.',3500);return;}input.every=m;}
+      const res=await bridge.saveSchedule(input);
+      if(!res.ok){toast(esc(res.error||'Could not add the schedule.'),5000);return;}
+      $('scPrompt').value='';await refreshSchedules();toast('Schedule added: '+esc(whenOf(res.schedule))+'.',3000);return;
+    }
+    const s=SCHED.schedules.find(x=>x.id===b.dataset.id);if(!s)return;
+    if(b.dataset.sc==='del'){await bridge.removeSchedule(s.id);await refreshSchedules();}
+    else if(b.dataset.sc==='pause'){await bridge.saveSchedule(Object.assign({},s,{paused:!s.paused}));await refreshSchedules();}
+  });
+  d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeSchedDlg();}});
+  $('scPrompt').focus();
+}
+async function refreshSchedules(){if(!bridge.listSchedules)return;SCHED=await bridge.listSchedules();renderFolders();renderSchedDlg();}
+document.addEventListener('change',async e=>{if(e.target&&e.target.id==='schedPauseAll'){const r=await bridge.setSchedulesPaused(e.target.checked);SCHED.pausedAll=r.pausedAll;renderFolders();renderSchedDlg();}});
+if(bridge&&bridge.onSchedules){bridge.onSchedules(doc=>{SCHED=doc;renderFolders();renderSchedDlg();});}
+if(bridge&&bridge.onScheduleRan){bridge.onScheduleRan(r=>{const a=liveById(r.agentId);if(!a)return;addNote(liveChat(a),'Scheduled prompt ('+esc(r.every!==undefined?whenOf({every:r.every}):'once')+').');});}
 function renderFolders(){
   const pop=$('foldersPop'); if(pop.hidden)return;
   if(!ROOMS.length){pop.innerHTML='<p class="fp-empty">No folders yet. Use + Folder or + Workspace. Folders you add are remembered next time.</p>';return;}
-  pop.innerHTML='<div class="fp-h">Folders <small>remembered across restarts</small></div>'+ROOMS.map(r=>{
-    const n=agents.filter(x=>!x.parent&&x.room===r.id).length;
-    return `<div class="fp-row${r.hidden?' hid':''}"><div class="fp-t"><b title="${esc(r.name)}">${esc(r.name)}${r.hidden?' <span class="tag">hidden</span>':''}</b><small title="${esc(r.path)}">${esc(r.path)} · ${n} agent${n===1?'':'s'}</small></div>
-     <button class="btn" type="button" data-fp="new" data-room="${esc(r.id)}">New session</button><button class="btn" type="button" data-fp="rename" data-room="${esc(r.id)}" title="Give ${esc(r.name)} a display name">Rename</button><button class="btn" type="button" data-fp="hide" data-room="${esc(r.id)}">${r.hidden?'Show':'Hide'}</button><button class="btn danger" type="button" data-fp="rm" data-room="${esc(r.id)}">Remove</button></div>`;}).join('');
+  const sched=bridge.listSchedules?`<label class="fp-pause" title="Nothing scheduled is sent while this is on (kept across restarts)"><input type="checkbox" id="schedPauseAll"${SCHED.pausedAll?' checked':''}> Pause all schedules</label>`:'';
+  pop.innerHTML='<div class="fp-h">Folders <small>remembered across restarts</small>'+sched+'</div>'+ROOMS.map(r=>{
+    const n=agents.filter(x=>!x.parent&&x.room===r.id).length, ss=schedulesOf(r).filter(s=>!s.done), nx=nextRunOf(ss);
+    return `<div class="fp-row${r.hidden?' hid':''}"><div class="fp-t"><b title="${esc(r.name)}">${esc(r.name)}${r.hidden?' <span class="tag">hidden</span>':''}</b><small title="${esc(r.path)}">${esc(r.path)} · ${n} agent${n===1?'':'s'}${nx?' · ⏰ next '+esc(nx):''}</small></div>
+     ${bridge.listSchedules?`<button class="btn" type="button" data-fp="sched" data-room="${esc(r.id)}" title="Prompts sent to ${esc(r.name)} at a time or an interval, while the app is open">Schedules${ss.length?' ('+ss.length+')':''}</button>`:''}<button class="btn" type="button" data-fp="new" data-room="${esc(r.id)}">New session</button><button class="btn" type="button" data-fp="rename" data-room="${esc(r.id)}" title="Give ${esc(r.name)} a display name">Rename</button><button class="btn" type="button" data-fp="hide" data-room="${esc(r.id)}">${r.hidden?'Show':'Hide'}</button><button class="btn danger" type="button" data-fp="rm" data-room="${esc(r.id)}">Remove</button></div>`;}).join('');
 }
 async function hideFolder(r,hidden){
   const ag=agents.find(x=>x.room===r.id); if(!ag)return;
@@ -2455,6 +2511,7 @@ document.addEventListener('click',e=>{
     else if(f.dataset.fp==='hide')hideFolder(r,!r.hidden);
     else if(f.dataset.fp==='rm')removeFolder(r);
     else if(f.dataset.fp==='rename')renameFolder(r,f);
+    else if(f.dataset.fp==='sched')openSchedules(r);
     return;}
   const pop=$('foldersPop');
   if(!pop.hidden&&!e.target.closest('#foldersPop')&&!e.target.closest('#foldersBtn'))toggleFolders(false);
@@ -2519,6 +2576,7 @@ if(bridge){
   bridge.onAgentAdded(addLiveAgent);
   bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});const rs=l.filter(x=>x.permRestored&&!x.parent).length;if(rs)toast(rs+' saved folder'+(rs>1?'s were':' was')+' restored in <b>Allow all</b>, as you left '+(rs>1?'them':'it')+'. Everything runs without asking there; the mode chip says <i>restored</i>. "Approve for this session" grants start empty.',9000);});
   loadModels();
+  refreshSchedules();
   /* User themes (spec 040): register imported packs, then apply the saved theme id */
   THEME.setTheme.resolveUser=bridge.getUserTheme?(id)=>bridge.getUserTheme(id):null;
   const themeBoot=(v)=>{
