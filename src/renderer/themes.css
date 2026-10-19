@@ -105,14 +105,14 @@ html[data-ui="court-indian"] .plate{border-radius:20px 20px 8px 8px}
 html[data-ui="court-european"]{--ui-display:Baskerville,"Baskerville Old Face","Libre Baskerville",Garamond,"EB Garamond",Georgia,"DejaVu Serif",serif;--ui-top-ink:#e8c873;--ui-top-ink-2:#efe3c4}
 html[data-ui="court-european"] body{background-image:linear-gradient(rgba(255,255,255,.35),rgba(120,95,40,.06))}
 html[data-ui="court-european"] .topbar{background:var(--brand-bg);border-bottom-color:var(--brand-bg);box-shadow:inset 0 -2px 0 #b8995a,inset 0 -4px 0 var(--brand-bg),inset 0 -5px 0 #b8995a}
-html[data-ui="court-european"] .brand h1{font-variant-caps:small-caps;letter-spacing:.06em;font-weight:700}
+html[data-ui="court-european"] .brand h1{text-transform:uppercase;letter-spacing:.08em;font-weight:700}
 html[data-ui="court-european"] .brand-mark{border-radius:4px;box-shadow:0 0 0 1px #b8995a}
 html[data-ui="court-european"] .stat,html[data-ui="court-european"] .btn,html[data-ui="court-european"] .seg,html[data-ui="court-european"] .select-wrap select,html[data-ui="court-european"] #liveBar select{border-radius:4px}
 html[data-ui="court-european"] .seg button,html[data-ui="court-european"] .pill{border-radius:3px}
 html[data-ui="court-european"] .topbar .btn,html[data-ui="court-european"] .topbar select,html[data-ui="court-european"] .topbar .stat{border-color:#b8995a}
 html[data-ui="court-european"] .stage .room{border-radius:6px}
 html[data-ui="court-european"] .stage .room:not([data-alert="uneasy"]):not([data-alert="alarm"]){border-color:var(--line-2);box-shadow:inset 0 0 0 4px var(--tint),inset 0 0 0 5px color-mix(in srgb,var(--line-2) 80%,transparent),0 1px 3px rgba(27,34,64,.12)}
-html[data-ui="court-european"] .stage .room-name{font-variant-caps:small-caps;letter-spacing:.05em;font-weight:700}
+html[data-ui="court-european"] .stage .room-name{text-transform:uppercase;letter-spacing:.08em;font-weight:700} /* spec 052 FR-023: small caps rendered lowercase letters near 8.5px */
 html[data-ui="court-european"] .stage:not([data-d="full"]) .room-name{border-color:var(--line-2);border-radius:2px;box-shadow:inset 0 -2px 0 var(--wall)}
 html[data-ui="court-european"] .stage .desk.card,html[data-ui="court-european"] .stage .helper.hc{border-radius:4px;border-color:var(--line);box-shadow:0 1px 3px rgba(27,34,64,.10)}
 html[data-ui="court-european"] .more{border-radius:3px}

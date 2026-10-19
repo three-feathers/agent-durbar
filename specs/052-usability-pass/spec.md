@@ -169,7 +169,26 @@ All four were AI personas with 21 new screenshots and the source.
   - numbers use tabular figures;
   - `--bg` #f7f6f3 and `--line` #e7e3dc (warm neutral rather than cream).
 
+- **FR-025** **Top bar in clusters (#308).**
+  - *Create:* + Folder, + Workspace.
+  - *Defaults for new sessions:* harness, mode, model and effort in one quiet group, labelled for screen readers.
+  - *View:* Folders, the folder filter, Tools, Settings, Office/List.
+  - **⋯** holds the rarely used controls with a line each: Close all and Open all room doors, and the Demo switch.
+  - The ids are kept; at 1280x800 the bar is one row.
+- **FR-026** **Security finding fixed (alert 35, from #312):** `js/bad-code-sanitization` in `scripts/shots-052-ux.js`, a name spliced into page code with `JSON.stringify`. Every driver now splices values with `jsLiteral` (exported by `check-office-overlap.js`); 13 scripts were swept, including spots CodeQL had not flagged. The merge script now blocks on any `github-advanced-security[bot]` comment as well as on open alerts on the merge ref.
+- **Layout fixes found by `check:office` while building round 2:**
+  - the strip is 31px, so 14 one-agent rooms still fit at 1280x800;
+  - a room header's floor tag shrinks with an ellipsis (its title has the full name), so the controls never reach the plant in the micro layout.
+
 **Kept as they are, deliberately:**
 - Themed place names stay in card text: the nostalgia is the point, and the plain name is in the tooltip (FR-013).
 - Today's cost (#307) and splitting *Limit* from *Waiting* stay follow-ups.
 
+
+**Evidence (round 2):**
+- `sim:` `scripts/shots-052-ux.js` passes at both sizes:
+  - the strip names the folders and the office starts below it;
+  - *Switch to Ask first* clears it (1440x900), and *Keep* dismisses it (1280x800);
+  - the bar's session approval reads "Approve “…” for this session".
+- **A bug caught by that check:** a marker line placed after an `if(…)` without braces flagged the session button as the wide grant, so the bar dropped it. The marker now sits inside the `if` block.
+- `test:` `test:theme` follows the new `--bg`; `npm test` passes.

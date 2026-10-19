@@ -1,7 +1,7 @@
 :root{
   /* Default token values: painted again by theme.js from the active pack; the literals
      here keep the page correct before scripts run and give every var() a sane fallback. */
-  --bg:#f6f3ee; --surface:#fffdf9; --surface-2:#faf7f1; --line:#e2dbcf; --line-2:#d3cabb;
+  --bg:#f7f6f3; --surface:#fffdf9; --surface-2:#faf7f1; --line:#e7e3dc; --line-2:#d3cabb;
   --ink:#2c3733; --ink-2:#56605b; --muted:#535a55;
   --sage:#8fb09a; --sage-ink:#3f6a54; --blue:#6f93b5; --blue-ink:#34607f;
   --amber:#d9962b; --amber-ink:#80530a; --red:#bf5a50; --red-ink:#8e3a32; --green:#5f9a76; --gray:#9b978d;
@@ -120,7 +120,7 @@ body.has-bridge #liveBar{display:flex}
 .rd.attn{color:var(--amber-ink);font-weight:650}
 .room-plant{display:none;position:absolute;right:12px;top:6px}
 .stage[data-d="full"] .room-plant{display:block}
-.stage[data-d="full"] .room-head{padding-right:32px} /* room for the plant after the last control (dots, +, MCP), spec 001 FR-023 */
+.stage[data-d="full"] .room-head{padding-right:32px} /* room for the plant after the last control (dots, +, MCP), spec 001 FR-023 */ /* room for the plant after the last control (dots, +, MCP), spec 001 FR-023 */
 .units{flex:1;margin:6px 0 0;display:flex;flex-wrap:wrap;align-content:flex-start;gap:var(--ugap,10px);padding:var(--upad,8px);background:color-mix(in srgb,var(--raised) 40%,transparent);border-radius:14px;position:relative}
 .unit{display:flex;align-items:flex-start;position:relative;--hx:0px}
 .unit.has-h{--hx:calc(var(--hw) + 18px)}
@@ -387,7 +387,9 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .stage .room{container:room / inline-size}
 .stage .room-head .room-name{min-width:0;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
 .stage .room-head:has(.room-aiu) .room-name{flex-shrink:1}
-.stage .room-head .door,.stage .room-head .room-new,.stage .room-head .room-more,.stage .room-head .room-mcp,.stage .room-head .siren,.stage .room-head .floor-tag{flex:none}
+.stage .room-head .door,.stage .room-head .room-new,.stage .room-head .room-more,.stage .room-head .room-mcp,.stage .room-head .siren{flex:none}
+/* spec 052: the floor tag gives way (ellipsis, full name in its title) before the controls touch the plant */
+.stage .room-head .floor-tag{flex:0 1 auto;min-width:28px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @container room (max-width:340px){
   .stage .room .room-head .room-plant{display:none}
   .stage .room .room-head.room-head{padding-right:0}
@@ -551,6 +553,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .more-it:hover,.more-it:focus-visible{background:var(--surface-2)}
 .more-it:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 .more-it.danger{color:var(--red-ink)}
+.more-it .mt{display:flex;flex-direction:column;gap:1px}
+.more-it .mt small{font-size:11.5px;color:var(--muted);font-weight:400}
 .more-sep{height:1px;margin:4px 6px;background:var(--line)}
 .ph .btn{height:32px;padding:0 11px;font-size:12.5px}
 .ph .avatar{width:40px;height:40px}
@@ -809,7 +813,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 /* ---------- permission mode (spec 018) ---------- */
 .modeic{display:inline-grid;place-items:center;width:15px;height:15px;flex:none;color:var(--muted);margin-left:2px;align-self:center}
 .modeic svg{width:13px;height:13px}
-.modeic.mode-ask{color:var(--blue-ink)}.modeic.mode-allow{color:var(--amber-ink)}
+.modeic.mode-ask{color:var(--blue-ink)}.modeic.mode-allow{color:var(--red-ink)} /* spec 052 FR-018: Allow all in the warning ink (amber is waiting) */
 .stage[data-d="full"] .who{align-items:center}
 .mode-chip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 8px 0 8px;border-radius:999px;border:1px solid var(--line-2);background:var(--raised);font-size:12px;font-weight:600;color:var(--ink-2);cursor:pointer}
 .mode-chip:hover{background:#f6f3ec}
@@ -905,8 +909,41 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 /* spec 052 FR-001: the answer bar above the composer, while a waiting request is out of view */
 .answer-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 auto 8px;width:min(860px,calc(100% - 32px));padding:8px 10px 8px 14px;background:var(--warn-bg);border:1px solid #e5be78;border-radius:12px;box-shadow:0 4px 14px rgba(40,35,25,.08)}
 .answer-bar[hidden]{display:none}
-.answer-bar .ab-q{flex:1 1 280px;min-width:0;font-size:13px;line-height:1.4;color:var(--ink)}
+.answer-bar .ab-q{flex:1 1 280px;min-width:0;font-size:13px;line-height:1.4;color:var(--ink);max-height:8.6em;overflow:auto;overflow-wrap:anywhere}
 .answer-bar .ab-q b{color:var(--amber-ink)}
 .answer-bar .ab-act{display:flex;gap:6px;flex-wrap:wrap}
 .answer-bar .btn{height:30px}
 .answer-bar .btn.ghost{background:transparent;border-color:transparent;text-decoration:underline;color:var(--ink-2)}
+
+/* spec 052 FR-015: a notice strip under the top bar (it takes its own room; the office lays out below it) */
+.notice-strip{flex:none;display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;padding:3px 20px;background:var(--warn-bg);border-bottom:1px solid #e5be78;color:var(--ink);font-size:12.5px;line-height:1.35}
+.notice-strip[hidden]{display:none}
+.notice-strip .ns-ic{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:999px;background:var(--amber-ink);color:#fff;font-weight:800;font-size:12px;flex:none}
+.notice-strip .ns-t{flex:1 1 360px;min-width:0}
+.notice-strip .ns-t b{color:var(--amber-ink)}
+.notice-strip .ns-act{display:flex;gap:6px}
+.notice-strip .btn{height:24px;padding:0 10px;font-size:12.5px}
+
+/* spec 052 FR-021: stuck or memory nearly full, on the pill (the reason is in the tooltip and the card's label) */
+.pwarn{margin-left:4px;color:var(--amber-ink);font-size:11px;line-height:1}
+
+/* spec 052 FR-024: Clean Office toward 2026 (Clean only: it has no data-ui; sizes unchanged, so check:geometry holds).
+   Surfaces rather than outlines: cards float on a soft two-layer shadow, room walls are softer; one radius scale
+   (rooms 16, units 12, cards 10, buttons and selects 8, pills round); numbers in tabular figures everywhere. */
+html:not([data-ui]) .room{border-radius:16px;border-color:color-mix(in srgb,var(--wall) 70%,transparent)}
+html:not([data-ui]) .stage .desk.card{border-radius:10px;box-shadow:0 1px 2px rgb(44 55 51/.05),0 4px 12px -4px rgb(44 55 51/.10)}
+html:not([data-ui]) .stage .desk.card:hover{box-shadow:0 1px 2px rgb(44 55 51/.06),0 8px 18px -6px rgb(44 55 51/.16)}
+html:not([data-ui]) .btn,html:not([data-ui]) .topbar select,html:not([data-ui]) .seg{border-radius:8px}
+html:not([data-ui]) .seg button{border-radius:6px}
+.use,.stat b,.ctxchip,.capchip,.mchip,.pusage,.lrow .lcell,.prev-c{font-variant-numeric:tabular-nums}
+
+/* spec 052 #308: the top bar in clusters: create, the defaults for new sessions (one quiet group), view; the rest under ⋯ */
+.defaults-grp{display:flex;align-items:center;gap:2px;padding:2px;border-radius:10px;background:var(--surface-2);border:1px solid var(--line)}
+#liveBar .defaults-grp select,#liveBar .defaults-grp .btn{border-color:transparent;background:transparent;height:28px}
+#liveBar .defaults-grp select:hover,#liveBar .defaults-grp .btn:hover{background:var(--raised)}
+#liveBar{gap:8px}
+.top-more{position:relative}
+#topMoreBtn{width:34px;padding:0;justify-content:center;font-size:16px;letter-spacing:.05em}
+#topMoreMenu{right:0;left:auto}
+#topMoreMenu .tgl{cursor:pointer}
+#topMoreMenu .tgl input{margin:2px 2px 0 0;align-self:flex-start}

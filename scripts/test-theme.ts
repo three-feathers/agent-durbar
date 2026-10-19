@@ -9,8 +9,8 @@ const T = require(path.resolve(process.cwd(), 'src', 'renderer', 'theme.js'));
 // --- Clean Office defaults ---
 assert.strictEqual(T.CLEAN_ID, 'clean-office');
 assert.ok(T.token('--bg'), 'Clean Office has --bg token');
-assert.strictEqual(T.token('--bg'), '#f6f3ee');
-assert.strictEqual(T.token('bg'), '#f6f3ee');
+assert.strictEqual(T.token('--bg'), '#f7f6f3'); // spec 052 FR-024
+assert.strictEqual(T.token('bg'), '#f7f6f3');
 assert.strictEqual(T.token('--made-up'), null);
 assert.ok(T.slot('plant'), 'Clean Office draws the room plant from a slot');
 assert.strictEqual(T.slot('chair-back'), null, 'no dead registry defaults (spec 040 FR-010)');

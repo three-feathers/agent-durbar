@@ -23,10 +23,10 @@
      refactored in the next spec. */
   const CLEAN_TOKENS={
     /* core UI */
-    '--bg':'#f6f3ee',
+    '--bg':'#f7f6f3', // spec 052 FR-024: warm neutral (was #f6f3ee)
     '--surface':'#fffdf9','--raised':'#ffffff','--card':'#fffdf9','--card-waiting':'#fef5e0','--card-waiting-line':'#e3bd75','--card-error':'#fcefec','--card-error-line':'#e2b6b0','--soft':'#fbf9f4','--note':'#f4f0e6','--warn-bg':'#fdf3df','--bad-bg':'#f9ece9',
     '--surface-2':'#faf7f1',
-    '--line':'#e2dbcf',
+    '--line':'#e7e3dc', // spec 052 FR-024: warm neutral (was #e2dbcf)
     '--line-2':'#d3cabb',
     '--ink':'#2c3733',
     '--ink-2':'#56605b',
@@ -518,7 +518,7 @@
       '--sel-border':'#2f74c0','--sel-ring':'#cfe0f4','--sel-ring-2':'#d6e5f5','--stat-sel-border':'#2f74c0','--stat-sel-ring':'#d6e5f5',
       '--avatar-bg':'#dfe7ee','--walker-bg':'#ffffff','--drop':'#6b93b8','--drop-bg':'rgb(229 238 246 / .93)','--drop-ink':'#23415c',
       '--badge-idle':'#aab2ba','--place-busy':'#7fa7d1',
-      '--tint-sage':'#f7faf9','--wall-sage':'#1f8a70','--tint-blue':'#f6f9fc','--wall-blue':'#2f6fb5','--tint-sand':'#fbfaf6','--wall-sand':'#b08427','--tint-clay':'#fcf8f7','--wall-clay':'#b0524a',
+      '--tint-sage':'#eef6f3','--wall-sage':'#1f8a70','--tint-blue':'#edf3fa','--wall-blue':'#2f6fb5','--tint-sand':'#f8f3e6','--wall-sand':'#b08427','--tint-clay':'#f9efed','--wall-clay':'#b0524a',
       '--cwall-sage':'#1f8a70','--cwall-blue':'#2f6fb5','--cwall-sand':'#b08427','--cwall-clay':'#b0524a',
       '--pb-working':'#dfe9f2','--pc-working':'#29506f','--pb-thinking':'#e6e9f1','--pc-thinking':'#3d4a72',
       '--pb-waiting':'#f7ecd2','--pc-waiting':'#7a5505','--pb-idle':'#e7eaeb','--pc-idle':'#50575c',
@@ -556,7 +556,7 @@
       '--red':'#d8564a','--red-ink':'#8e2f26','--green':'#4fa760','--gray':'#9a987e',
       '--c-working':'#5f87c8','--c-thinking':'#8b8fc9','--c-waiting':'#e0a92c','--c-idle':'#a3a08e','--c-error':'#d8564a','--c-done':'#4fa760',
       '--halo-working':'#5f87c8','--halo-thinking':'#8b8fc9','--halo-waiting':'#e0a92c','--halo-error':'#d8564a',
-      '--chair':'#83769c','--desk':'#ab5236','--desk-front':'#c97d45','--desk-drawer':'#ffa300',
+      '--chair':'#83769c','--desk':'#ab5236','--desk-front':'#c97d45','--desk-drawer':'#c97d45',
       '--monitor-stand':'#5f574f','--monitor-frame':'#c2c3c7','--laptop':'#5f574f',
       '--screen-working':'#dfeaf8','--screen-thinking':'#e4e4f6','--screen-waiting':'#faedd2','--screen-idle':'#d2d2c6','--screen-error':'#f8e0d8','--screen-done':'#dcefdc',
       '--bar-sage':'#5fae76','--bar-blue':'#5f87c8','--bar-blue-2':'#93aede',
@@ -569,7 +569,7 @@
       '--sel-border':'#ff004d','--sel-ring':'#ffccaa','--sel-ring-2':'#ffccaa','--stat-sel-border':'#ff004d','--stat-sel-ring':'#ffccaa',
       '--avatar-bg':'#e0ead2','--walker-bg':'#fff1e8','--drop':'#6d8cc2','--drop-bg':'rgb(230 236 248 / .93)','--drop-ink':'#26456e',
       '--badge-idle':'#b8b49c','--place-busy':'#29adff',
-      '--tint-sage':'#b9f2c6','--wall-sage':'#111122','--tint-blue':'#c2e7ff','--wall-blue':'#111122','--tint-sand':'#ffe9a6','--wall-sand':'#111122','--tint-clay':'#ffcdbd','--wall-clay':'#111122',
+      '--tint-sage':'#a8e4a0','--wall-sage':'#111122','--tint-blue':'#9fc3e8','--wall-blue':'#111122','--tint-sand':'#f2d48a','--wall-sand':'#111122','--tint-clay':'#f0b8a8','--wall-clay':'#111122',
       '--cwall-sage':'#111122','--cwall-blue':'#111122','--cwall-sand':'#111122','--cwall-clay':'#111122',
       '--pb-working':'#dce6f6','--pc-working':'#26456e','--pb-thinking':'#e4e3f6','--pc-thinking':'#3c3f78',
       '--pb-waiting':'#faecd0','--pc-waiting':'#7c5a06','--pb-idle':'#e6e4d6','--pc-idle':'#585647',
@@ -647,7 +647,7 @@
     ui:'court-indian',
     scene:'court-indian',
     tokens:{
-      '--bg':'#f3e6cc','--surface':'#fffaf0','--surface-2':'#fbf1dd','--line':'#e2c991','--line-2':'#c9a35a',
+      '--bg':'#f3e6cc','--surface':'#fffaf0','--surface-2':'#fbf1dd','--line':'#e2c991','--line-2':'#b8892f',
       '--ink':'#3b1d14','--ink-2':'#5e3424','--muted':'#76503e','--room-path':'#6b4130',
       '--sage':'#8aab84','--sage-ink':'#3f6238','--blue':'#7d95b5','--blue-ink':'#3a5a80','--amber':'#d9962b','--amber-ink':'#80530a',
       '--red':'#b85448','--red-ink':'#8e3226','--green':'#5f9a76','--gray':'#a39a87',
@@ -740,7 +740,7 @@
       'place-web':'<circle cx="10" cy="10" r="6.4"/><path d="M3.6 10h12.8M10 3.6q3.4 3 0 12.8M10 3.6q-3.4 3 0 12.8"/>',
       'place-other':'<path d="M10 4.2l1.8 3.8 4.2.6-3 3 .7 4.2-3.7-2-3.7 2 .7-4.2-3-3 4.2-.6z"/>',
     },
-    words:{'place-library':'The Archive','place-software':'The Atelier','place-terminal':'Engine Room','place-web':'Signal Tower','place-other':'The Pantry','lobby-label':'The court: the places where agents work'},
+    words:{'place-library':'The Archive','place-software':'The Atelier','place-terminal':'The Forge','place-web':'The Messenger Hall','place-other':'The Household', /* spec 052 FR-023: court words, not Victorian industry */'lobby-label':'The court: the places where agents work'},
     motion:{preset:'court'},
   });
 
@@ -793,7 +793,7 @@
       'place-web':'<circle cx="10" cy="10" r="6.2"/><path d="M4 10h12M10 3.8q3.3 3 0 12.4M10 3.8q-3.3 3 0 12.4"/>',
       'place-other':'<path d="M7 16.6V9.8L10 5.4l3 4.4v6.8"/><path d="M7 13h6"/>',
     },
-    words:{'place-library':'The Library','place-software':'The Workshop','place-terminal':'Machine Room','place-web':'The Radio Room','place-other':'Odd Jobs','lobby-label':'The tea hall: the places where agents work'},
+    words:{'place-library':'Bunko','place-software':'Kōbō','place-terminal':'Kikan-shitsu','place-web':'Tsūshinjo','place-other':'Zatsumu', /* spec 052 FR-023: Japanese words in the Japanese court (the plain names are in the tooltips, FR-013) */'lobby-label':'The tea hall: the places where agents work'},
     motion:{preset:'court'},
   });
 

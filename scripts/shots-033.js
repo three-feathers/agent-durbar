@@ -18,6 +18,7 @@
  * Screenshots: 033-floors-on, 033-floors-panel, 033-floor-off, 033-floor-off-panel, 033-settings-floors at both sizes.
  */
 const path = require('path');
+const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
 const assert = require('assert');
 const OUT = process.env.SHOTS_033 || '/tmp';
 const SIZES = [[1440, 900], [1280, 800]];
@@ -26,7 +27,7 @@ module.exports = async (ctx) => {
   const js = (code) => ctx.js(code);
   const shot = async (name, w, h) => { await ctx.sleep(300); await ctx.shot(path.join(OUT, `033-${name}-${w}x${h}.png`)); console.log('[033] saved', name, w, h); };
   const panel = async (open) => { await js(`(()=>{const p=document.getElementById('floorsPop');if(p.hidden===${open})document.getElementById('floorsBtn').click();})()`); await ctx.sleep(120); };
-  const click = async (sel) => { await panel(true); await js(`document.querySelector(${JSON.stringify(sel)}).click()`); };
+  const click = async (sel) => { await panel(true); await js(`document.querySelector(${jsLiteral(sel)}).click()`); };
   const state = () => js(`(()=>{
     const pills=Object.fromEntries([...document.querySelectorAll('#stats .stat[data-k]')].map(b=>[b.dataset.k,+b.querySelector('b').textContent]));
     const c={working:0,waiting:0,idle:0,error:0,done:0};

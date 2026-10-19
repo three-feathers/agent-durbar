@@ -80,7 +80,7 @@
         <div class="scr-tools"><button class="btn" type="button" id="usageTotalsReset">Reset usage totals</button><span class="scr-note small" id="usageTotalsMsg" role="status"></span></div>`;
     }
     const capSec=X.bridge.setDefaultCap?`<section class="scr-sec" aria-labelledby="capH"><h3 id="capH">Spending limit</h3>
-        <p class="scr-note">A spending limit for each <b>new</b> session, in AI credits (AIU; 1 credit = USD 0.01). Empty means no limit; each session can change its own from its chat header.</p>
+        <p class="scr-note">A spending limit for each <b>new Copilot</b> session, in AI credits (AIU; 1 credit = USD 0.01). Empty means no limit; each session can change its own from its chat header. Claude Code sessions have a dollar cap in their chat header; Codex does not report cost.</p>
         <details class="scr-more"><summary>More about the limit</summary><p class="scr-note small">Minimum 30 (the Copilot runtime refuses less). A session that reaches its limit stops and asks you. The limit is soft: it is checked after each model response, so one response can go past it. The stop-and-ask flow follows GitHub's documentation and has not been seen on a real account yet.</p></details>
         <div class="scr-tools"><label class="capf">Default cap (AIU)<input id="capDef" type="number" min="30" step="1" placeholder="No cap" value="${app.defaultMaxAiCredits||''}"></label><button class="btn primary" type="button" id="capSave">Save</button><span class="scr-note small" id="capMsg" role="status"></span></div>${usageSec}</section>`:'';
     const f=mcp.file;
@@ -137,7 +137,7 @@
         <p class="scr-note small">${esc(ab.copyright)} · MIT License</p></section>`:'';
     r.innerHTML=head('Settings')+`<div class="scr-body">${themeSec}${capSec}${moodSec}${schedSec}${floorsSec}${placesSec}
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH">MCP servers</h3>
-        <p class="scr-note">MCP servers give agents extra tools. Your <b>Copilot CLI list</b> is the one global list: every agent gets those servers, with nothing to configure or import here. Each agent can switch single servers off from its own header (MCP button).</p>
+        <p class="scr-note">MCP servers give agents extra tools. Your <b>Copilot CLI list</b> is the one global list: every agent gets those servers, with nothing to configure or import here. Each agent can switch single servers off from its own header (MCP button). Claude Code and Codex read their own MCP settings; each agent's <b>MCP</b> item (in its chat's More menu) shows what it uses.</p>
         <p class="scr-warn" role="note"><b>MCP servers run local commands with your user rights.</b> The Copilot runtime starts the servers of your CLI list in every session, exactly as the CLI does. Read-only MCP tools can run without asking even in Read-only mode.</p>
         ${fileNote}
         <h4 class="scr-sub">From the Copilot CLI list <small>all agents</small></h4>

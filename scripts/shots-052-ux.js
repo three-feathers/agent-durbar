@@ -5,12 +5,13 @@
  *   OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_SIM_KINDS=mixed \
  *     DURBAR_DRIVER=$PWD/scripts/shots-052-ux.js xvfb-run -a npx electron . --no-sandbox
  *
- * Checks: the restore banner (Got it, no timer, bottom left); room counts in words; a waiting chat shows how to answer without
+ * Checks: the restore strip under the top bar (names the folders, covers nothing, Switch to Ask first / Keep); room counts in words; a waiting chat shows how to answer without
  * scrolling (its card in view, or the answer bar); at most 3 header actions; the More menu by keyboard; Previous sessions closed
  * for a chat with a conversation; the list header straight; N opens the next agent that needs you. Prints "[052] PASS".
  */
 const assert = require('assert');
 const path = require('path');
+const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
 const OUT = process.env.OUT || '/tmp';
 const INDEX = path.join(process.cwd(), 'dist', 'renderer', 'index.html');
 
@@ -24,23 +25,36 @@ module.exports = async (ctx) => {
     await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
     await ctx.sleep(2000);
   };
-  const deskId = (name) => js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith(${JSON.stringify(name)}));return d?d.dataset.id:null})()`);
+  const deskId = (name) => js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith(${jsLiteral(name)}));return d?d.dataset.id:null})()`);
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await load(w, h);
-    // FR-004: the restore banner stays, has Got it, and sits bottom left
-    const ban = await js(`(()=>{const t=document.querySelector('#toasts .toast.warn');if(!t)return null;const r=t.getBoundingClientRect();return {text:t.innerText,left:r.left,act:!!t.querySelector('.toast-act')}})()`);
-    assert.ok(ban, 'the restore banner is shown');
-    assert.match(ban.text, /can still act without asking you/);
-    assert.ok(ban.act && ban.left < 40, 'Got it, bottom left');
+    // FR-015 (round 2): the restore notice is a strip under the top bar that names the folders and covers nothing
+    const strip = await js(`(()=>{const e=document.getElementById('restoreStrip');if(!e||e.hidden)return null;const r=e.getBoundingClientRect(),f=document.getElementById('floor').getBoundingClientRect();return {text:e.innerText,below:f.top>=r.bottom-1,btns:[...e.querySelectorAll('button')].map(b=>b.textContent)}})()`);
+    assert.ok(strip, 'the restore strip is shown');
+    assert.match(strip.text, /Allow all, restored from your last run: .+/);
+    assert.ok(/swisscontract-ai|command-center/.test(strip.text), 'it names the folders: ' + strip.text);
+    assert.ok(strip.below, 'the office starts below it (nothing covered)');
+    assert.deepStrictEqual(strip.btns, ['Switch to Ask first', 'Keep']);
     // FR-006: room counts in words
     const dots = await js(`[...document.querySelectorAll('#stage .room-dots[role="img"]')].map(x=>x.getAttribute('aria-label'))`);
     assert.ok(dots.length && dots.every((l) => /\d+ (waiting for you|error|working|done|idle)/.test(l)), 'room counts have words: ' + dots[0]);
     await shot(`052-office-${w}x${h}.png`);
-    await ctx.sleep(10000);
-    assert.ok(await js(`!!document.querySelector('#toasts .toast.warn')`), 'the banner is still there after 10 s');
-    await js(`document.querySelector('#toasts .toast.warn .toast-act').click()`); await ctx.sleep(500);
-    assert.ok(await js(`!document.querySelector('#toasts .toast.warn')`), 'Got it closes it');
+    // #308: the defaults are one group; doors and the demo live under ⋯
+    assert.ok(await js(`!!document.querySelector('.defaults-grp #permMode')&&!!document.querySelector('.defaults-grp #modelSel')`), 'defaults grouped');
+    await js(`document.getElementById('topMoreBtn').focus()`); key('Down'); await ctx.sleep(300);
+    const tm = await js(`({open:!document.getElementById('topMoreMenu').hidden,ids:['closeAll','openAll','demoToggle'].map(i=>!!document.querySelector('#topMoreMenu #'+i))})`);
+    assert.ok(tm.open && tm.ids.every(Boolean), 'the ⋯ menu holds the doors and the demo: ' + JSON.stringify(tm));
+    await shot(`052-topbar-more-${w}x${h}.png`);
+    key('Escape'); await ctx.sleep(250);
+    assert.ok(await js(`document.getElementById('topMoreMenu').hidden&&document.activeElement.id==='topMoreBtn'`), '⋯ closes on Esc');
+    if (w === 1440) {
+      await js(`document.querySelector('#restoreStrip [data-ns="ask"]').click()`); await ctx.sleep(900);
+      assert.ok(await js(`document.getElementById('restoreStrip').hidden`), 'Switch to Ask first clears it');
+    } else {
+      await js(`document.querySelector('#restoreStrip [data-ns="keep"]').click()`); await ctx.sleep(500);
+      assert.ok(await js(`document.getElementById('restoreStrip').hidden`), 'Keep dismisses it');
+    }
 
     // waiting agent's chat
     const jonas = await deskId('Jonas');
@@ -56,6 +70,7 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('chat').scrollTop=0`); await ctx.sleep(600);
     st = await answerable();
     assert.ok(!st.inView && st.bar && st.btns.includes('Approve') && st.btns.includes('Deny'), 'scrolled away: the bar answers: ' + JSON.stringify(st));
+    assert.ok(st.btns.some((t) => /^Approve “.+” for this session$/.test(t)), 'the session approval names its scope (FR-019): ' + st.btns.join(' | '));
     await shot(`052-chat-answerbar-${w}x${h}.png`);
     // the bar's Approve presses the card's own Approve
     await js(`[...document.querySelectorAll('#answerBar button')].find(b=>b.textContent==='Approve').click()`); await ctx.sleep(700);
