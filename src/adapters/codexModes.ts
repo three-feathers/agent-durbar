@@ -195,6 +195,7 @@ export const CODEX_APPROVAL_METHODS = [
   'item/permissions/requestApproval',
   'mcpServer/elicitation/request',
   'tool/requestUserInput',
+  'item/tool/requestUserInput', // the name Codex 0.163 really sends (schema, 2026-10-19); questions go to the question card (FR-146)
 ] as const;
 
 /** Broker-compatible permission fields (a subset of `PermissionLike`). `kind` is never `read`. */
@@ -244,7 +245,8 @@ export function codexPermission(method: string, params: unknown): CodexPermissio
     case 'item/permissions/requestApproval':
       return { kind: 'custom-tool', toolName: 'request_permissions', summary: `request_permissions ${str(params, 'reason') ?? ''}`.trim() };
     case 'mcpServer/elicitation/request':
-    case 'tool/requestUserInput': {
+    case 'tool/requestUserInput':
+    case 'item/tool/requestUserInput': {
       // Mapped to `mcp` only because it is a non-read kind that asks the user; it is not a claim that an MCP server sent it.
       const serverName = str(params, 'serverName');
       const toolName = str(params, 'toolName');

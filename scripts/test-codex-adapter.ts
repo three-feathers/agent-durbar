@@ -565,6 +565,39 @@ async function main(): Promise<void> {
     // FR-140: the Linux sandbox error (real text, Ubuntu with unprivileged user namespaces blocked) gets a plain hint; other errors none
     assert.ok(linuxSandboxHint('error creating thread: failed to load AGENTS.md instructions for environment `local`: fs sandbox helper failed with status exit status: 1: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted').includes('blocks unprivileged user namespaces'));
     assert.strictEqual(linuxSandboxHint('permissions profile not supported'), '');
+    // FR-146: Codex's request_user_input goes to the question card; the answer goes back by question id; secret questions never shown
+    {
+      const { server, ad, events } = make({ server: { holdTurn: true } });
+      const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', quiet: true });
+      await ad.send(sid, { text: 'go' });
+      await server.flush();
+      const child = server.childOfThread(sid)!;
+      const qs = { threadId: sid, turnId: 'turn_1', itemId: 'ui1', isBlocking: true, questions: [
+        { id: 'colour', header: 'Colour', question: 'Which colour?', options: [{ label: 'Sage', description: 'calm green' }, { label: 'Blue', description: '' }] },
+        { id: 'pw', header: 'Token', question: 'Paste your token', isSecret: true, options: null },
+      ] };
+      const p = req(server, 'item/tool/requestUserInput', qs, child);
+      await until('asked', () => events.some((e) => e.type === 'question' && e.phase === 'asked'));
+      const asked = events.find((e) => e.type === 'question' && e.phase === 'asked') as { requestId: string; questions: Array<{ question: string; options: unknown[] }> };
+      assert.deepStrictEqual(asked.questions.map((q) => q.question), ['Which colour?'], 'the secret question is not shown');
+      assert.ok(events.some((e) => e.type === 'status' && e.status === 'needs-permission'), 'the agent waits for the user');
+      ad.answerQuestion!(sid, asked.requestId, { 'Which colour?': 'Sage' });
+      const r = await settles('the answer', p);
+      assert.deepStrictEqual(r.result, { answers: { colour: { answers: ['Sage'] } } });
+      assert.ok(events.some((e) => e.type === 'question' && e.phase === 'answered'));
+      // Skip answers nothing; Stop answers an open question with nothing too
+      const p2 = req(server, 'item/tool/requestUserInput', { ...qs, itemId: 'ui2' }, child);
+      await until('asked again', () => events.filter((e) => e.type === 'question' && e.phase === 'asked').length === 2);
+      const asked2 = events.filter((e) => e.type === 'question' && e.phase === 'asked')[1] as { requestId: string };
+      ad.answerQuestion!(sid, asked2.requestId, null);
+      assert.deepStrictEqual((await settles('skip', p2)).result, { answers: {} });
+      assert.ok(events.some((e) => e.type === 'question' && e.phase === 'cancelled'));
+      const p3 = req(server, 'item/tool/requestUserInput', { ...qs, itemId: 'ui3' }, child);
+      await until('asked a third time', () => events.filter((e) => e.type === 'question' && e.phase === 'asked').length === 3);
+      await ad.stop(sid);
+      assert.deepStrictEqual((await settles('stop', p3)).result, { answers: {} });
+      await ad.dispose();
+    }
     // FR-139: a shell command that already started keeps running after turn/interrupt (real, Codex 0.163); Aborted says so
     {
       const started = { method: 'item/started', params: { threadId: 'thr_main', item: { id: 'cmd_9', type: 'commandExecution', command: 'sleep 20', cwd: ws, status: 'inProgress' } } };

@@ -762,3 +762,15 @@ The owner handed the Codex track to this agent ("ruben does not have chatgpt acc
   - the folders file held the Codex thread id with `adapterId: codex`.
   
   Screenshot: `docs/screenshots/012-codex-real-continued-1440x900.png`. Not checked: Windows and macOS, and MCP or sub-agents through Codex (T065).
+
+### 2026-10-19: questions from Codex (T052 Codex half)
+
+- **FR-146** `[IMPLEMENTED]` Codex's `item/tool/requestUserInput` (the name Codex 0.163 sends; `codexModes` listed only the older `tool/requestUserInput`, so it fell through to the approval path) goes to the **question card** (FR-128):
+  - the questions, options and header are parsed with the shared helpers, and each question's Codex `id` is remembered;
+  - while waiting, the agent shows "Waiting for your answer";
+  - the answer goes back as `{answers: {<id>: {answers: [...]}}}`; Skip, Stop or End session answer `{answers: {}}` and the card says cancelled.
+  
+  A **secret** question (`isSecret`) is never shown on the card and gets no answer, since what is typed into the card lands in the chat.
+- `[KNOWN GAP]` Codex 0.163 offers the `request_user_input` tool only when its feature `default_mode_request_user_input` is on, and that feature is "under development" and off by default. Durbar does not turn it on, so Codex usually asks in plain text instead.
+- `test:` the fake app-server covers: the answer by id; the secret question not shown; `needs-permission`; Skip; Stop.
+- `real:` 2026-10-19, Codex 0.163 with the feature turned on **for this check only**, Ask first: Codex asked "Which colour do you prefer, Sage or Blue?" with both options; the card's answer "Sage" went back by id; Codex replied "You chose Sage."
