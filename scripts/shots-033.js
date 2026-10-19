@@ -131,7 +131,7 @@ module.exports = async (ctx) => {
     await ctx.sleep(300);
     s = await state();
     assert.ok(!s.panelOpen, 'the chat closed when its floor went off');
-    assert.ok(/All floors are off/.test(s.empty), 'all-off message');
+    assert.ok(/All floors are off\. Open "Floors" above or Settings > Floors/.test(s.empty), 'all-off message names the Floors button (three floors) and Settings');
     assert.deepStrictEqual(Object.values(s.pills), [0, 0, 0, 0, 0], 'nothing counted with every floor off');
     console.log('[033]', w, 'ok');
   }

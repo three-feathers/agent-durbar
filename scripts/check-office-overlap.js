@@ -386,6 +386,21 @@ async function driver(ctx) {
       }
     }
   }
+  /* spec 033 FR-013 (issue #133, T042): the all-off message names only a control that is on screen, both sizes */
+  for (const [w, h] of SIZES) {
+    if (!mine()) continue;
+    const offCases = [
+      ['one floor, off', 'sim=15&simfreeze=1&floorsoff=Ground%20floor', false, /Your only floor is off\. Switch it on in Settings > Floors\./],
+      ['three floors, all off', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Ground%20floor,Client%20A,Personal', true, /All floors are off\. Open "Floors" above or Settings > Floors/],
+    ];
+    for (const [label, q, btnShown, re] of offCases) {
+      await load(q, w, h);
+      const o = await ctx.js(`({text:(document.querySelector('#stage .empty')||{}).textContent||'',hidden:document.getElementById('floorsBtn').hidden})`);
+      total++;
+      if (!re.test(o.text) || o.hidden === btnShown) { failed++; console.log(`FAIL all-off ${w}x${h} ${label}: text "${o.text}", Floors button ${o.hidden ? 'hidden' : 'visible'}`); }
+      if (!btnShown && /above/.test(o.text)) { failed++; console.log(`FAIL all-off ${w}x${h} ${label}: the message names a button that is not on screen`); }
+    }
+  }
   /* spec 001 FR-023/FR-024 (T030): many folders with one agent each (simrooms=solo), with and without a closed door, both sizes */
   for (const [w, h] of SIZES) {
     for (const sim of SIMS) {

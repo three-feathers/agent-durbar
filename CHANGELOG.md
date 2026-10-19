@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.7 tag)
 
+- **Floors: clearer "all floors off" message (spec 033 FR-013, #133).** The top-bar *Floors n/m* button shows only with two or more floors; with a single floor that is switched off, the office now says "Your only floor is off. Switch it on in Settings > Floors." instead of pointing to a button that is not there. Top-bar screenshots taken before the Floors change were retaken.
 - **A project website** at <https://three-feathers.github.io/agent-durbar/> (spec 050, #293). It is generated from the README, the specs index, screenshots, the CHANGELOG and the latest release, and CI republishes it when those change.
 - **Schedules are easy to find (spec 044 FR-009..FR-011).** *Schedules…* in each room's ⋯ menu, a clock chip in the room header with the next run, a *Schedules* button in the chat, and **Settings > Schedules** for all folders.
 - **Team rule: check the linked issue before merging** (owner, spec 021). An issue closes only when everything in it is done; otherwise what is left is written on it, or in a follow-up issue.
