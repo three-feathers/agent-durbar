@@ -25,6 +25,7 @@ export interface ClaudeUsage {
   input_tokens?: number;
   output_tokens?: number;
   cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
 }
 export interface ClaudeMessage {
   type: string;
@@ -279,8 +280,11 @@ export class ClaudeMapper {
     });
     const u = msg.usage;
     // Once per message.id (FR-082). A usage object with no numeric token field is not usage: no event, and the id stays unused.
-    if (u && typeof u === 'object' && [u.input_tokens, u.output_tokens, u.cache_read_input_tokens].some((v) => num(v) !== undefined)) {
-      const usage = this.usageToCount(id, num(u.input_tokens), num(u.output_tokens), num(u.cache_read_input_tokens));
+    if (u && typeof u === 'object' && [u.input_tokens, u.output_tokens, u.cache_read_input_tokens, u.cache_creation_input_tokens].some((v) => num(v) !== undefined)) {
+      // FR-124: all input of the call, as the other adapters count it; Claude reports cache writes and reads apart from `input_tokens`
+      const parts = [num(u.input_tokens), num(u.cache_creation_input_tokens), num(u.cache_read_input_tokens)];
+      const input = parts.some((v) => v !== undefined) ? parts.reduce<number>((s, v) => s + (v ?? 0), 0) : undefined;
+      const usage = this.usageToCount(id, input, num(u.output_tokens), num(u.cache_read_input_tokens));
       if (usage) this.emit({ type: 'usage', model: str(msg.model), ...usage, agentId });
     }
     if (m.aborted === true) this.emit({ type: 'status', status: 'idle', intent: 'Aborted' });

@@ -107,6 +107,15 @@ function pageCheck(expanded, expectPlaces) {
     const who = places.map((pl) => pl.getAttribute('aria-label')).join(', ');
     document.querySelectorAll('#stage .desk.is-away').forEach((d) => { const n = d.querySelector('.name'); if (n && !who.includes(n.textContent.trim())) problems.push(`empty chair of ${n.textContent.trim()} but nobody of that name is at a place`); });
   }
+  /* spec 001 FR-025 (T031): a desk name longer than three characters shows at least three of them */
+  stage.querySelectorAll('.desk .l1 .name').forEach((n) => {
+    const full = n.textContent.trim(); if ([...full].length <= 3 || !n.getClientRects().length) return;
+    if (n.scrollWidth <= n.clientWidth + 0.5) return; /* not cut */
+    const probe = n.cloneNode(false); probe.textContent = [...full].slice(0, 3).join('') + '…';
+    Object.assign(probe.style, { position: 'absolute', visibility: 'hidden', overflow: 'visible', minWidth: '0', maxWidth: 'none', width: 'auto' });
+    n.parentNode.appendChild(probe); const need = probe.getBoundingClientRect().width; probe.remove();
+    if (n.clientWidth + 0.5 < need) problems.push(`desk name "${full}" shows fewer than three characters (${n.clientWidth}px, needs ${need.toFixed(0)}px)`);
+  });
   /* spec 001 FR-023 (T030): a room header's parts (door, name, path, dots, +, MCP, AIU, plant, floor tag) never overlap or leave the header */
   stage.querySelectorAll('.room-head').forEach((hd) => {
     const H = R(hd), key = (hd.closest('.room') || {}).dataset?.key || '?';
@@ -379,6 +388,14 @@ async function driver(ctx) {
     const row = await ctx.js(`(()=>{const t=[...document.querySelectorAll('#liveBar > button, #liveBar > select')].filter(e=>e.getClientRects().length).map(e=>Math.round(e.getBoundingClientRect().top));return {min:Math.min(...t),max:Math.max(...t),n:t.length}})()`);
     total++;
     if (row.max - row.min > 3) { failed++; console.log(`FAIL ${tag}: the toolbar wraps ${JSON.stringify(row)}`); }
+    /* spec 012 FR-120: Claude chosen in the toolbar, its first model has efforts; the whole top bar stays inside the window */
+    await ctx.js(`(async()=>{const s=document.getElementById('kindSel');s.value='claude';s.dispatchEvent(new Event('change'));await new Promise(r=>setTimeout(r,400));return true})()`);
+    const fit = await ctx.js(`(()=>{const els=[...document.querySelectorAll('header button, header select, header .tgl, header .seg')].filter(e=>e.getClientRects().length);const r=els.map(e=>e.getBoundingClientRect());return {right:Math.max(...r.map(x=>x.right)),win:innerWidth,models:!document.getElementById('modelSel').hidden}})()`);
+    total++;
+    if (fit.right > fit.win + 0.5 || !fit.models) { failed++; console.log(`FAIL ${tag} claude chosen: top bar leaves the window or has no model list ${JSON.stringify(fit)}`); }
+    const row2 = await ctx.js(`(()=>{const t=[...document.querySelectorAll('#liveBar > button, #liveBar > select')].filter(e=>e.getClientRects().length).map(e=>Math.round(e.getBoundingClientRect().top));return {min:Math.min(...t),max:Math.max(...t)}})()`);
+    total++;
+    if (row2.max - row2.min > 3) { failed++; console.log(`FAIL ${tag} claude chosen: the toolbar wraps ${JSON.stringify(row2)}`); }
   }
   console.log('\nlayout summary (density/helpers shown, stage height vs floor):');
   rows.forEach((r) => console.log(`  ${r.problems ? 'FAIL' : 'ok  '} ${r.label.padEnd(60)} ${String(r.d).padEnd(5)} h=${r.h} rooms=${r.rooms} plates=${r.plates} desks=${r.desks} stage ${r.stageH}/${r.floorH}px minFont=${r.minFont}`));

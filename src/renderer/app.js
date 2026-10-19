@@ -218,8 +218,16 @@ const capOf=a=>{const c=a&&!a.parent&&a.info&&a.info.maxAiCredits;return c>0?c:0
 const MIN_CAP=30; /* the runtime's minimum session limit, AI credits (1 credit = USD 0.01; AIU as reported = credits per GitHub docs) */
 const capDigits=()=>2;
 const fmtCap=n=>Number.isInteger(n)?String(n):n.toFixed(2);
-function usageShort(a){const u=a.usage; if(!u||!u.calls)return ''; const c=capOf(a); return c?fmtTok(u.inT+u.outT)+' · '+(u.nano/1e9).toFixed(capDigits(c))+'/'+fmtCap(c)+' AIU':fmtTok(u.inT+u.outT)+' tok · '+(u.nano/1e9).toFixed(2)+' AIU';}
-function usageLong(a){const u=a.usage; if(!u||!u.calls)return ''; const c=capOf(a); return u.calls+' calls · '+fmtTok(u.inT)+' in / '+fmtTok(u.outT)+' out tokens · '+(u.nano/1e9).toFixed(3)+' AIU'+(c?' of '+fmtCap(c)+' cap':'');}
+/* spec 012 FR-122: what the agent's kind reports decides the money part: AIU, a labelled dollar estimate (never AIU), or nothing */
+const usageCaps=a=>{const r=a&&a.parent?(byId(a.parent)||a):a;const c=typeof capsFor==='function'&&r&&r.info?capsFor(r):null;return (c&&c.usage)||{nanoAiu:true};};
+const fmtUsd=v=>'≈ $'+(v>0&&v<0.01?v.toFixed(4):v.toFixed(2))+' est.';
+const USD_TIP='The agent\'s own estimate of the API price for these tokens, not a bill and not AIU.';
+function usageShort(a){const u=a.usage; if(!u||!u.calls)return ''; const k=usageCaps(a), c=capOf(a);
+  if(!k.nanoAiu)return fmtTok(u.inT+u.outT)+' tok'+(k.costUsd?' · '+fmtUsd(u.usd||0):'');
+  return c?fmtTok(u.inT+u.outT)+' · '+(u.nano/1e9).toFixed(capDigits(c))+'/'+fmtCap(c)+' AIU':fmtTok(u.inT+u.outT)+' tok · '+(u.nano/1e9).toFixed(2)+' AIU';}
+function usageLong(a){const u=a.usage; if(!u||!u.calls)return ''; const k=usageCaps(a), c=capOf(a), base=u.calls+' calls · '+fmtTok(u.inT)+' in / '+fmtTok(u.outT)+' out tokens';
+  if(!k.nanoAiu)return base+(k.costUsd?' · '+fmtUsd(u.usd||0):'');
+  return base+' · '+(u.nano/1e9).toFixed(3)+' AIU'+(c?' of '+fmtCap(c)+' cap':'');}
 
 /* ---------------- svg helpers ---------------- */
 
@@ -389,7 +397,7 @@ function cardHTML(a,d,nSubs){
     <span class="sc">${sceneC(a)}</span>
     <span class="ci"><span class="l1"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc(a.role)}</span><span class="stl st-${st}">${label(a,true)}</span></span>
     <span class="intent">${esc(taskOf(a))}</span>
-    <span class="l3"><span class="pill st-${st}"><i></i>${label(a,true)}</span><span class="use">${capOf(a)&&use.includes(' · ')?`<span class="aiu">${esc(use.split(' · ')[1])}</span>`:`${esc(use.split(' · ')[0]||'')}<span class="aiu">${use.includes(' · ')?' · '+esc(use.split(' · ')[1]):''}</span>`}</span></span></span></button>`;
+    <span class="l3"><span class="pill st-${st}"><i></i>${label(a,true)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${esc(use.split(' · ')[1])}</span>`:`${esc(use.split(' · ')[0]||'')}<span class="aiu">${use.includes(' · ')?' · '+esc(use.split(' · ')[1]):''}</span>`}</span></span></span></button>`;
 }
 function linksSVG(d,rows,extraMore){
   const D=DENS[d]; const n=rows+(extraMore?1:0);
@@ -835,7 +843,7 @@ function updatePanelHeader(){
   const ph=$('panelHead'); if(!ph)return;
   const sp=ph.querySelector('[data-f=status]'); sp.className='pill st-'+st; sp.innerHTML='<i></i>'+label(a);
   const t=ph.querySelector('[data-f=task]'); t.textContent=a.task; t.title=a.task;
-  ph.querySelector('[data-f=usage]').textContent=usageLong(a);
+  const ug=ph.querySelector('[data-f=usage]'); ug.textContent=usageLong(a); ug.title=ug.textContent.endsWith(' est.')?USD_TIP:'';
   updateCapChip(a);
   $('pauseBtn').querySelector('span').textContent=a.paused?'Resume':'Pause';
 }
@@ -851,7 +859,7 @@ function openPanel(id,focus){
    <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</h2><div class="sub">${esc(a.role)}${parent?' · helper of '+esc(parent.name):''}</div></div>
       <div class="ph-meta"><span data-f="status"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?(a.live&&a.info&&!a.parent&&bridge.setModel&&feat(a,'models')?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`):''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
       <div class="actions">${a.live&&!a.parent?`<button class="btn" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools</button>`:''}${a.live&&!a.parent&&bridge.agentMcp&&feat(liveRoot(a),'mcp')?`<button class="btn" id="mcpBtn" type="button" title="MCP servers for this agent (set globally in Settings)">MCP</button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="btn" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>`:''}<button class="btn primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
-        ${a.live&&!a.parent?`<button class="btn" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)">Copy resume command</button>`:''}
+        ${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="btn" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)">Copy resume command</button>`:''}
         <button class="btn" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
         ${a.live&&!feat(liveRoot(a),'stop')?'':`<button class="btn danger" id="stopBtn" type="button" title="${a.live?'Interrupt the current turn. The agent stays open and ready.':'Stop'}"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>Stop</button>`}
         ${a.live&&bridge.end&&!a.parent?`<button class="btn" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it.">End session</button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="btn danger" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The other sessions in ${esc(room.name)} stay.">Remove session</button>`:''}</div></div>
@@ -902,7 +910,7 @@ function openPanel(id,focus){
   input.addEventListener('input',autoGrow);
   input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(input.value);}});
   $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
-  if(a.live){const h=document.querySelector('#panel .hint');if(h)h.textContent='Enter sends, Shift+Enter adds a line. Drop or paste images to attach. '+(SIM?'Simulated session (no AI credits)':'Live Copilot session')+' ('+MODE_NAME[a.info.permMode]+').';}
+  if(a.live){const h=document.querySelector('#panel .hint');if(h)h.textContent='Enter sends, Shift+Enter adds a line. Drop or paste images to attach. '+(SIM?'Simulated session (no AI credits)':'Live '+kindWord(liveRoot(a).info&&liveRoot(a).info.adapterId)+' session')+' ('+MODE_NAME[a.info.permMode]+').';}
   setSend();
   renderAll(); const cur=document.querySelector('#stripList .sitem.sel'); if(cur)cur.scrollIntoView({inline:'nearest',block:'nearest'});
   if(focus!==false)$('panelTitle').focus({preventScroll:true});
@@ -970,7 +978,7 @@ window.addEventListener('resize',relayout);
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', question:qs.get('simquestion')==='1', solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
@@ -1002,7 +1010,12 @@ function addNote(chat,html,err){const n=document.createElement('div');n.classNam
 const MODE_NAME={'read-only':'Read-only','ask':'Ask first','allow':'Allow all'};
 const MODE_TEXT={'read-only':'read-only','allow':'no prompts','ask':'asks first'};
 const MODE_HELP={'read-only':'Reads only. Edits, commands and other changes are denied.','ask':'Asks before every edit or command. You can approve for the rest of the session.','allow':'Everything runs without asking: edits, shell commands, web requests and tools.'};
-const roleFor=info=>'Copilot ('+MODE_TEXT[info.permMode]+')'+(info.model&&info.model!=='auto'?' · '+info.model:'');
+/* spec 012 FR-123: the agent kind's own name in agent-facing text; Copilot's wording is unchanged */
+const KIND_WORD={copilot:'Copilot',claude:'Claude Code',codex:'Codex'};
+const kindWord=id=>{const k=id||'copilot';if(KIND_WORD[k])return KIND_WORD[k];const d=(KINDS||[]).find(x=>x.id===k);return d&&d.displayName?d.displayName:k;};
+const RESUME_CMD={copilot:id=>'copilot --resume '+id,claude:id=>'claude --resume '+id}; /* kinds with a terminal resume command */
+const resumeCmdOf=a=>{const r=liveRoot(a),f=r&&RESUME_CMD[(r.info&&r.info.adapterId)||'copilot'];return f?f(r.id):'';};
+const roleFor=info=>kindWord(info.adapterId)+' ('+MODE_TEXT[info.permMode]+')'+(info.model&&info.model!=='auto'?' · '+info.model:'');
 const MODE_IC={
  'read-only':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.2" y="7" width="9.6" height="6.6" rx="1.6"/><path d="M5.4 7V5.4a2.6 2.6 0 0 1 5.2 0V7"/></svg>',
  'ask':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.8l5 1.8v3.8c0 3-2.1 5.2-5 6.6-2.9-1.4-5-3.6-5-6.6V3.6z"/><path d="M6.2 7.8l1.4 1.4 2.4-2.6"/></svg>',
@@ -1322,9 +1335,9 @@ function subApply(v,e,replay){
 function onSubEvent(a,e){
   const s=subRec(a,e.agentId), card=s.card;
   if(e.type==='usage'){
-    const u=s.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;
-    const cu=card.usage;cu.calls=u.calls;cu.inT=u.inT;cu.outT=u.outT;cu.nano=u.nano;card.usageText=usageLong(card);
-    const p=a.usage;p.calls++;p.inT+=e.inputTokens||0;p.outT+=e.outputTokens||0;p.nano+=e.nanoAiu||0;a.usageText=usageLong(a);
+    const u=s.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;u.usd=(u.usd||0)+(e.costUsd>0?e.costUsd:0);
+    const cu=card.usage;cu.calls=u.calls;cu.inT=u.inT;cu.outT=u.outT;cu.nano=u.nano;cu.usd=u.usd;card.usageText=usageLong(card);
+    const p=a.usage;p.calls++;p.inT+=e.inputTokens||0;p.outT+=e.outputTokens||0;p.nano+=e.nanoAiu||0;p.usd=(p.usd||0)+(e.costUsd>0?e.costUsd:0);a.usageText=usageLong(a);
     recordUsage(a,e);
     scheduleRender();if(ui.selected===card.id||ui.selected===a.id)updatePanelHeader();return;
   }
@@ -1485,6 +1498,50 @@ function showLimit(a,e){
   a.limit={requestId:e.requestId,n,row,st:n.querySelector('.pstate')};
   tChips(t.T).appendChild(n);scrollChat(liveChat(a));
 }
+/* ---------- questions from the agent (spec 012 FR-130): options as buttons, "Other" text, Answer / Skip; text only, never HTML ---------- */
+function showQuestion(a,e){
+  const t=ensureTurn(a), qs=(e.questions||[]).slice(0,4);
+  const n=document.createElement('div');n.className='note perm question';n.setAttribute('role','group');n.setAttribute('aria-label','Question from the agent');
+  const head=document.createElement('b');head.textContent=qs.length>1?'Questions from the agent':'Question from the agent';n.appendChild(head);
+  const st=document.createElement('span');st.className='pstate';n.appendChild(st);
+  const picks=qs.map(()=>new Set()), others=[];
+  qs.forEach((q,i)=>{
+    const box=document.createElement('div');box.className='q-item';
+    const qt=document.createElement('p');qt.className='q-text';
+    if(q.header){const h=document.createElement('span');h.className='tag';h.textContent=q.header;qt.appendChild(h);qt.appendChild(document.createTextNode(' '));}
+    qt.appendChild(document.createTextNode(q.question));box.appendChild(qt);
+    const opts=document.createElement('div');opts.className='q-opts';opts.setAttribute('role',q.multiSelect?'group':'radiogroup');opts.setAttribute('aria-label',q.question);
+    (q.options||[]).forEach(o=>{const b=document.createElement('button');b.type='button';b.className='btn q-opt';b.setAttribute(q.multiSelect?'aria-pressed':'aria-checked','false');if(!q.multiSelect)b.setAttribute('role','radio');
+      b.textContent=o.label;if(o.description)b.title=o.description;
+      b.onclick=()=>{const s=picks[i];if(q.multiSelect){s.has(o.label)?s.delete(o.label):s.add(o.label);b.setAttribute('aria-pressed',String(s.has(o.label)));b.classList.toggle('primary',s.has(o.label));}
+        else{s.clear();s.add(o.label);opts.querySelectorAll('.q-opt').forEach(x=>{x.setAttribute('aria-checked',String(x===b));x.classList.toggle('primary',x===b);});others[i].value='';}};
+      opts.appendChild(b);});
+    const other=document.createElement('input');other.type='text';other.maxLength=500;other.className='q-other';other.placeholder='Other answer';other.setAttribute('aria-label','Other answer: '+q.question);
+    other.oninput=()=>{if(other.value.trim()&&!q.multiSelect){picks[i].clear();opts.querySelectorAll('.q-opt').forEach(x=>{x.setAttribute('aria-checked','false');x.classList.remove('primary');});}};
+    others.push(other);opts.appendChild(other);box.appendChild(opts);n.appendChild(box);
+  });
+  const row=document.createElement('div');row.className='note-actions';
+  const send=async answers=>{
+    const r=await bridge.answerQuestion(a.id,e.requestId,answers).catch(err=>({ok:false,error:String(err&&err.message||err)}));
+    if(!r||!r.ok){addNote(liveChat(a),'Could not answer: '+esc((r&&r.error)||'unknown error'),true);return;}
+    settleQuestion(a,answers);
+  };
+  const ok=document.createElement('button');ok.type='button';ok.className='btn primary';ok.textContent='Answer';
+  ok.onclick=()=>{const ans={};qs.forEach((q,i)=>{const o=others[i].value.replace(/\s+/g,' ').trim();const v=[...picks[i]].concat(o?[o]:[]).join(', ');if(v)ans[q.question]=v;});
+    if(Object.keys(ans).length<qs.length){const miss=qs.findIndex(q=>!ans[q.question]);(others[miss]||ok).focus();toast('Choose an answer for each question, or Skip.',3500);return;}send(ans);};
+  const skip=document.createElement('button');skip.type='button';skip.className='btn danger';skip.textContent='Skip';skip.title='Do not answer; the agent decides itself';skip.onclick=()=>send(null);
+  row.appendChild(ok);row.appendChild(skip);n.appendChild(row);
+  a.question={requestId:e.requestId,n,row,st};
+  tChips(t.T).appendChild(n);scrollChat(liveChat(a));
+}
+function settleQuestion(a,answers){
+  const Q=a.question;if(!Q)return;a.question=null;
+  if(Q.row)Q.row.remove();Q.n.querySelectorAll('.q-opts').forEach(x=>x.remove());
+  Q.st.textContent=answers?' → answered: '+Object.values(answers).join('; '):' → skipped';
+  Q.n.classList.add('settled',answers?'approved':'denied');
+  if(a.state==='waiting')setState(a,'working',null,answers?'Answered':'Question skipped'); /* a Stop already set it idle */
+  updatePanelHeader();scrollChat(liveChat(a));
+}
 function settleLimit(a,action){
   const L=a.limit;if(!L)return;a.limit=null;
   if(L.row)L.row.remove();
@@ -1596,7 +1653,7 @@ function onLiveEvent(e){
       ensureTurn(a); setState(a,'waiting',null,e.intent||'Waiting for permission');
       if(e.permission)showPerm(a,e.permission);
     }
-    else if(e.status==='idle'&&e.intent==='Aborted'){if(a.limit)settleLimit(a,'cancel');const was=a.worked;a.worked=false;closeTurn(a);
+    else if(e.status==='idle'&&e.intent==='Aborted'){if(a.limit)settleLimit(a,'cancel');if(a.question)settleQuestion(a,null);const was=a.worked;a.worked=false;closeTurn(a);
       [...a.pend.keys()].forEach(id=>settlePerm(a,{requestId:id,state:'denied',via:'stopped'}));
       if(was)addNote(chat,'Stopped by you. The agent is ready for your next message.');
       /* real:(spec 030 T042) the runtime drops a switch that was still queued when the turn is stopped: say so, never leave "Next: ..." behind */
@@ -1622,6 +1679,10 @@ function onLiveEvent(e){
     else if(e.phase==='exhausted'){if(a.limit&&a.limit.requestId===e.requestId)return;showLimit(a,e);setState(a,'waiting','Limit reached','Credit limit reached: '+fmtCap(e.maxAiCredits||0)+' AIU');updateCapChip(a);}
     else if(e.phase==='resolved'){if(a.limit&&a.limit.requestId===e.requestId)settleLimit(a,e.action||'add');}
     return;
+  case 'question': /* spec 012 FR-130 */
+    if(e.phase==='asked'){if(a.question&&a.question.requestId===e.requestId)return;showQuestion(a,e);setState(a,'waiting','Waiting for your answer','The agent asks you a question');updatePanelHeader();scheduleRender();}
+    else if(a.question&&a.question.requestId===e.requestId)settleQuestion(a,e.phase==='answered'?e.answers:null);
+    return;
   case 'model':onModelEvent(a,e);return;
   case 'compaction':onCompaction(a,e);return;
   case 'thinking':{const t=ensureTurn(a);tThink(t.T,e.reasoningId,e.delta);setState(a,'thinking',null);return;}
@@ -1631,7 +1692,7 @@ function onLiveEvent(e){
     else tTool(t.T,e);
     if(e.phase==='start'&&!isTaskTool(e.tool)){const label=toolLabel(e.args);setState(a,a.state==='thinking'?'working':a.state,null,a.intent||(e.tool+(label?' '+SHORT(label,90):'')));}
     scrollChat(chat);return;}
-  case 'usage':{const u=a.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;
+  case 'usage':{const u=a.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;u.usd=(u.usd||0)+(e.costUsd>0?e.costUsd:0);
     a.usageText=usageLong(a);recordUsage(a,e);scheduleRender();
     if(ui.selected===a.id||(byId(ui.selected)||{}).parent===a.id)updatePanelHeader();return;}
   }
@@ -1655,7 +1716,7 @@ async function openLive(a){
 }
 async function stopLive(a){const r=liveRoot(a);await bridge.stop(r.id);toast(esc(r.name)+': stopped the current turn. It is ready for your next message.');}
 async function endLive(a){const r=liveRoot(a);await (bridge.end||bridge.stop)(r.id);toast(esc(r.name)+': session ended. Sending a message resumes it.',4200);}
-async function copyResume(a){const r=liveRoot(a),cmd='copilot --resume '+r.id;
+async function copyResume(a){const r=liveRoot(a),cmd=resumeCmdOf(r); if(!cmd)return;
   try{await navigator.clipboard.writeText(cmd);toast('Copied <code>'+esc(cmd)+'</code>. End the session here first, then run it in a terminal in '+esc(roomOf(r).path)+'. In VS Code, turn on the sessions list filter External to see sessions started here.',9000);}
   catch{toast('Run <code>'+esc(cmd)+'</code> in a terminal in '+esc(roomOf(r).path)+' (end the session here first).',8000);}}
 /* ---------------- full-screen chat: the strip of all agents ---------------- */
@@ -1746,18 +1807,30 @@ document.addEventListener('contextmenu',e=>{
 
 /* ---------------- model + effort ---------------- */
 let MODELS=[];
+/* spec 012 FR-120: one model list per agent kind; MODELS is the default kind's. A kind without a list gets [] (selects hidden, FR-062). */
+const MODELS_BY={};
+const isDefaultKind=k=>!k||!KINDS||k===defaultKind();
+const modelsFor=k=>isDefaultKind(k)?MODELS:(MODELS_BY[k]||[]);
+const firstModelId=list=>list.some(m=>m.id==='auto')?'auto':list[0]?list[0].id:'auto';
+async function ensureModels(k){
+  if(isDefaultKind(k)||MODELS_BY[k]||!bridge.listModels)return;
+  MODELS_BY[k]=[];
+  const r=await bridge.listModels(k).catch(()=>null);
+  if(r&&r.ok)MODELS_BY[k]=r.models; else delete MODELS_BY[k]; /* asked again next time */
+}
 function modelLabel(info){
-  const m=MODELS.find(x=>x.id===(info.model||'auto')), nm=m?m.name:(info.model||'auto')==='auto'?'Auto':info.model;
+  const m=modelsFor(info.adapterId).find(x=>x.id===(info.model||'auto')), nm=m?m.name:(info.model||'auto')==='auto'?'Auto':info.model;
   const eff=(info.effort?' · '+info.effort+' effort':'')+(info.tier==='long'?' · long context':'');
   const mult=m&&m.multiplier!=null?' · ×'+m.multiplier+' credit multiplier':'';
   return {text:nm+eff,title:'Model: '+nm+eff+mult+(m&&m.multiplier!=null?' (as reported by your Copilot account)':'')};
 }
-function fillModelSelect(sel,cur){
-  sel.innerHTML=(MODELS.length?MODELS:[{id:'auto',name:'Auto'}]).map(m=>`<option value="${esc(m.id)}">${esc(m.name)}${m.multiplier!=null?' ×'+m.multiplier:''}</option>`).join('');
-  sel.value=MODELS.some(m=>m.id===cur)?cur:'auto';
+function fillModelSelect(sel,cur,kind,prefix){
+  const list=modelsFor(kind);
+  sel.innerHTML=(list.length?list:[{id:'auto',name:'Auto'}]).map(m=>`<option value="${esc(m.id)}">${prefix||''}${esc(m.name)}${m.multiplier!=null?' ×'+m.multiplier:''}</option>`).join('');
+  sel.value=list.some(m=>m.id===cur)?cur:firstModelId(list);
 }
-function fillEffortSelect(sel,modelId,cur,off){
-  const m=MODELS.find(x=>x.id===modelId), ef=off?[]:(m&&m.efforts)||[];
+function fillEffortSelect(sel,modelId,cur,off,kind){
+  const m=modelsFor(kind).find(x=>x.id===modelId), ef=off?[]:(m&&m.efforts)||[];
   sel.hidden=!ef.length; sel.innerHTML=ef.length?'<option value="">Effort: default'+(m.defaultEffort?' ('+esc(m.defaultEffort)+')':'')+'</option>'+ef.map(x=>`<option value="${esc(x)}">Effort: ${esc(x)}</option>`).join(''):'';
   if(ef.includes(cur))sel.value=cur;
 }
@@ -1768,8 +1841,7 @@ async function loadModels(){
   if(!r||!r.ok||!r.models.length)return;
   MODELS=r.models;
   const ms=$('modelSel');
-  ms.innerHTML=MODELS.map(m=>`<option value="${esc(m.id)}">Model: ${esc(m.name)}${m.multiplier!=null?' ×'+m.multiplier:''}</option>`).join('');
-  ms.value=MODELS.some(m=>m.id==='auto')?'auto':MODELS[0].id;
+  fillModelSelect(ms,'auto','','Model: ');ms.dataset.kind='';
   ms.title='Model for new sessions. This is what your Copilot account offers; × is the cost multiplier the API reports.';
   syncKindModel();
 }
@@ -1796,15 +1868,20 @@ const kindOptions=()=>DMK().kindChoices(KINDS).map(k=>`<option value="${esc(k.id
 function syncKindModel(){
   const ms=$('modelSel'),ef=$('effortSel');
   const id=$('kindSel').hidden?defaultKind():$('kindSel').value, other=!!KINDS&&!$('kindSel').hidden&&id!==defaultKind();
-  const c=KINDS?kindCaps(id):null, ok=!other&&(!c||DMK().shows(c,'models'));
+  const c=KINDS?kindCaps(id):null, can=!c||DMK().shows(c,'models');
+  if(other&&can&&!MODELS_BY[id]){ensureModels(id).then(()=>{if(MODELS_BY[id]&&MODELS_BY[id].length)syncKindModel();});}
+  const k=other?id:'', ok=can&&(!other||modelsFor(id).length>0);
+  if(ok&&(ms.dataset.kind||'')!==k){fillModelSelect(ms,undefined,k,'Model: ');ms.dataset.kind=k;ms.title=other?'Model for new sessions of this agent kind, as its CLI lists them.':'Model for new sessions. This is what your Copilot account offers; × is the cost multiplier the API reports.';}
   ms.hidden=!ok;
-  fillEffortSelect(ef,ms.value,undefined,!ok||(c&&!DMK().shows(c,'effort')));
+  fillEffortSelect(ef,ms.value,undefined,!ok||(c&&!DMK().shows(c,'effort')),k);
   fillPermSelect($('permMode'),kindCaps(id));
 }
 function applyKinds(){
   const show=DMK().showsKindPicker(KINDS), sel=$('kindSel'), keep=sel.value;
   $('kindHelp').hidden=!show; sel.hidden=!show;
   if(show){sel.innerHTML=kindOptions();sel.value=pickKind(keep||defaultKind());}
+  /* the other ready kinds' model lists, for their agents' model chips (spec 012 FR-120); a CLI probe, no prompt */
+  (KINDS||[]).forEach(k=>{if(!isDefaultKind(k.id)&&k.state==='ready'&&DMK().shows(kindCaps(k.id),'models'))ensureModels(k.id).then(()=>scheduleRender());});
   syncKindModel();
 }
 async function loadKinds(refresh){
@@ -1826,7 +1903,7 @@ async function aboutKinds(){
 
 /* ---------------- switch model and context, compact (spec 030) ---------------- */
 const DM=window.DurbarModels;
-const modelOf=id=>MODELS.find(m=>m.id===(id||'auto'))||{id:id||'auto',name:(id||'auto')==='auto'?'Auto':String(id),efforts:[]};
+const modelOf=(id,kind)=>modelsFor(kind).find(m=>m.id===(id||'auto'))||{id:id||'auto',name:(id||'auto')==='auto'?'Auto':String(id),efforts:[]};
 const ctrlOf=a=>(a.info&&a.info.modelControl)||{switch:'none',compact:false};
 const tierOf=a=>a.info&&a.info.tier==='long'?'long':'default';
 const busyNow=a=>a.state==='working'||a.state==='thinking'||a.state==='waiting'||!!a.worked||!!a.compacting;
@@ -1863,9 +1940,9 @@ function closeModelMenu(){const m=document.getElementById('modelMenu');if(m){m.r
 function openModelMenu(a0,x,y,anchor){
   const a=liveRoot(a0); if(!a||!a.live||!a.info||!bridge.setModel)return;
   closeModelMenu();closeModeMenu();
-  const on=ctrlOf(a).switch!=='none'&&!!bridge.setModel, curId=a.info.model||'auto', cur=modelOf(curId), tier=tierOf(a), pend=a.pendingModel;
+  const on=ctrlOf(a).switch!=='none'&&!!bridge.setModel, curId=a.info.model||'auto', cur=modelOf(curId,a.info.adapterId), tier=tierOf(a), pend=a.pendingModel;
   const dis=on?'':' aria-disabled="true"';
-  const list=MODELS.length?MODELS:[cur];
+  const kl=modelsFor(a.info.adapterId), list=kl.length?kl:[cur];
   let h=on?'':`<p class="mm-why" role="note">${esc(NO_SWITCH_WHY)}</p>`;
   h+='<p class="mm-h">Model</p>'+list.map(m=>{const chk=m.id===curId,w=DM.windowOf(m);
     return `<button type="button" role="menuitemradio" aria-checked="${chk}" data-pick="${esc(m.id)}"${dis}><span class="mt"><b>${esc(m.name)}${m.multiplier!=null?' ×'+esc(m.multiplier):''}</b><small>${esc(DM.priceLine(m))}${w?' · '+esc(DM.fmtTokens(w))+' window':''}</small></span><span class="ck">${chk?'✓':''}</span></button>`;}).join('');
@@ -1883,7 +1960,7 @@ function openModelMenu(a0,x,y,anchor){
     if(b.dataset.cancelq){closeModelMenu();cancelPendingModel(a,anchor);return;}
     if(b.getAttribute('aria-disabled')==='true')return;
     closeModelMenu();
-    if(b.dataset.pick!==undefined){const t=modelOf(b.dataset.pick);chooseModel(a,{model:t.id,contextTier:t.id===cur.id?tier:'default'},anchor);}
+    if(b.dataset.pick!==undefined){const t=modelOf(b.dataset.pick,a.info.adapterId);chooseModel(a,{model:t.id,contextTier:t.id===cur.id?tier:'default'},anchor);}
     else if(b.dataset.effort!==undefined)chooseModel(a,{model:cur.id,effort:b.dataset.effort||null,contextTier:tier},anchor);
     else if(b.dataset.tier)chooseModel(a,{model:cur.id,contextTier:tier==='long'?'default':'long'},anchor);
   });
@@ -1898,7 +1975,7 @@ async function chooseModel(a,req,anchor){
   try{await chooseModelInner(a,req,anchor);}finally{refocusAnchor(anchor);}
 }
 async function chooseModelInner(a,req,anchor){
-  const cur=modelOf(a.info.model),tgt=modelOf(req.model),tierFrom=tierOf(a),tierTo=req.contextTier==='long'?'long':'default';
+  const cur=modelOf(a.info.model,a.info.adapterId),tgt=modelOf(req.model,a.info.adapterId),tierFrom=tierOf(a),tierTo=req.contextTier==='long'?'long':'default';
   const sameEffort=req.effort===undefined||(req.effort||'')===(a.info.effort||'');
   const pend=a.pendingModel;
   if(!pend&&tgt.id===cur.id&&tierTo===tierFrom&&sameEffort)return;
@@ -1995,7 +2072,7 @@ function onCompaction(a,e){
 async function compactDialog(a,anchor){
   if(!bridge.compact||ctrlOf(a).compact!==true)return;
   if(busyNow(a)){toast('The agent is busy. Compact when it is idle.',3800);return;}
-  const cur=modelOf(a.info.model),c=STATS.agent(a.id).ctx,est=DM.estimateInputCredits(c&&c.tokens,cur,tierOf(a));
+  const cur=modelOf(a.info.model,a.info.adapterId),c=STATS.agent(a.id).ctx,est=DM.estimateInputCredits(c&&c.tokens,cur,tierOf(a));
   const lines=['Summarises the conversation so it takes less room. It costs one model call'+(est!==undefined?' (about '+DM.fmtCredits(est)+' AI credits to read the conversation, an estimate if nothing is cached)':' (the price of '+cur.name+' is not reported)')+' and cannot be undone.'];
   if(c&&c.limit>0)lines.push('Now: '+DM.fmtTokens(c.tokens)+' of '+DM.fmtTokens(c.limit)+' tokens.');
   if(ctrlOf(a).unverified)lines.push('Not verified on a real account yet; if it fails, the conversation stays as it is.');
@@ -2045,14 +2122,17 @@ function newSession(a0){
   document.body.appendChild(d);
   $('sdPerm').value=a.info.permMode||'read-only';
   if($('sdCap'))$('sdCap').value=APP_SETTINGS.defaultMaxAiCredits||'';
-  fillModelSelect($('sdModel'),a.info.model||'auto');
-  /* the chosen kind decides which fields exist: another kind than the default has no model list yet (FR-062); no credit cap field without the capability (FR-061) */
+  /* the chosen kind decides which fields exist: its own model list (spec 012 FR-120; none yet = hidden, FR-062); no credit cap field without the capability (FR-061) */
   const kindNow=()=>$('sdKind')?$('sdKind').value:'';
-  const other=()=>!!$('sdKind')&&kindNow()!==defaultKind();
+  const listKind=()=>{const k=kindNow()||a.info.adapterId||'';return isDefaultKind(k)?'':k;};
+  let filled=null;
   const eff=()=>{
-    const k=kindNow(),c=k?kindCaps(k):null,off=other()||(c&&!DMK().shows(c,'effort'));
-    $('sdModelL').hidden=other()||(c&&!DMK().shows(c,'models'));
-    fillEffortSelect($('sdEff'),$('sdModel').value,a.info.effort,off||$('sdModelL').hidden);$('sdEffL').hidden=$('sdEff').hidden;
+    const k=kindNow(),c=k?kindCaps(k):null,lk=listKind();
+    if(lk&&!MODELS_BY[lk]){ensureModels(lk).then(()=>{if($('sessDlg')&&listKind()===lk)eff();});}
+    if(filled!==lk){fillModelSelect($('sdModel'),(a.info.adapterId||'')===(k||a.info.adapterId||'')?a.info.model:undefined,lk);filled=lk;}
+    $('sdModelL').hidden=(!!lk&&!modelsFor(lk).length)||(c&&!DMK().shows(c,'models'));
+    const off=c&&!DMK().shows(c,'effort');
+    fillEffortSelect($('sdEff'),$('sdModel').value,a.info.effort,off||$('sdModelL').hidden,lk);$('sdEffL').hidden=$('sdEff').hidden;
     if($('sdCapL'))$('sdCapL').hidden=!!c&&!DMK().shows(c,'cap');
     if(c)fillPermSelect($('sdPerm'),c);
   };
@@ -2101,7 +2181,7 @@ async function hideFolder(r,hidden){
 }
 async function removeFolder(r){
   const ags=agents.filter(x=>x.room===r.id), busy=ags.filter(x=>['working','thinking','waiting'].includes(x.state)).length;
-  const msg=busy?`${esc(r.name)} has ${busy} agent${busy===1?'':'s'} still working. Remove the folder and end ${busy===1?'it':'them'}?`:`Remove ${esc(r.name)}? Its sessions end here; your earlier Copilot sessions stay on disk and can be resumed if you add the folder again.`;
+  const msg=busy?`${esc(r.name)} has ${busy} agent${busy===1?'':'s'} still working. Remove the folder and end ${busy===1?'it':'them'}?`:`Remove ${esc(r.name)}? Its sessions end here; your earlier ${esc(kindWord(((ags.find(x=>!x.parent)||{}).info||{}).adapterId))} sessions stay on disk and can be resumed if you add the folder again.`;
   if(!window.confirm(msg.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"')))return;
   const root=ags.find(x=>!x.parent); const res=root&&bridge.removeFolder?await bridge.removeFolder(root.id):{ok:true,removedIds:[]};
   if(!res.ok){toast('Could not remove the folder.',4000);return;}
@@ -2167,15 +2247,15 @@ function renderPrev(a){
   const box=$('prev'); if(!box||a.parent)return;
   const st=prevOf(a), c=st.cli, v=st.vs;
   if(!c&&!v){box.hidden=false;box.innerHTML='<div class="prev-bar"><span class="prev-t">Previous sessions</span><span class="prev-c">Looking…</span></div>';return;}
-  const nc=c&&c.ok?c.sessions.length:0, nv=v&&v.ok?v.sessions.length:0;
+  const nc=c&&c.ok?c.sessions.length:0, nv=v&&v.ok?v.sessions.length:0, kw=kindWord(a.info&&a.info.adapterId), hasHist=!!c; /* c is null for a kind without history (loadPrev) */
   const keepScroll=(box.querySelector('.prev-body')||{}).scrollTop||0;
-  let h=`<button class="prev-toggle" type="button" aria-expanded="${st.open}" data-pv="toggle">${ICON('chev')}<span class="prev-t">Previous sessions</span><span class="prev-c">${nc} Copilot · ${nv} VS Code chat${nv===1?'':'s'}</span></button>`;
+  let h=`<button class="prev-toggle" type="button" aria-expanded="${st.open}" data-pv="toggle">${ICON('chev')}<span class="prev-t">Previous sessions</span><span class="prev-c">${hasHist?nc+' '+esc(kw)+' · ':''}${nv} VS Code chat${nv===1?'':'s'}</span></button>`;
   if(st.open){
     h+='<div class="prev-body">';
-    h+='<div class="prev-h">Copilot sessions in this folder <small>Resume continues the same session; earlier messages are shown here.</small></div>';
-    if(!c||!c.ok)h+=`<p class="prev-empty">Could not list sessions${c&&c.error?': '+esc(c.error):''}.</p>`;
-    else if(!c.sessions.length)h+='<p class="prev-empty">No earlier Copilot sessions for this folder.</p>';
-    else h+=c.sessions.map(x=>`<div class="prev-row"><div class="prev-tx"><b title="${esc(x.title)}">${esc(x.title)}</b><small>${esc(when(x.modifiedTime))}${x.branch?' · '+esc(x.branch):''}</small></div><button class="btn" type="button" data-pv="resume" data-sid="${esc(x.id)}">Resume</button></div>`).join('');
+    if(hasHist){h+='<div class="prev-h">'+esc(kw)+' sessions in this folder <small>Resume continues the same session; earlier messages are shown here.</small></div>';
+    if(!c.ok)h+=`<p class="prev-empty">Could not list sessions${c.error?': '+esc(c.error):''}.</p>`;
+    else if(!c.sessions.length)h+='<p class="prev-empty">No earlier '+esc(kw)+' sessions for this folder.</p>';
+    else h+=c.sessions.map(x=>`<div class="prev-row"><div class="prev-tx"><b title="${esc(x.title)}">${esc(x.title)}</b><small>${esc(when(x.modifiedTime))}${x.branch?' · '+esc(x.branch):''}</small></div><button class="btn" type="button" data-pv="resume" data-sid="${esc(x.id)}">Resume</button></div>`).join('');}
     h+='<div class="prev-h">VS Code chat history <span class="tag">read-only</span> <small>A copy of what VS Code saved. It cannot be continued here.</small></div>';
     if(!v||!v.ok)h+=`<p class="prev-empty">Could not read VS Code chats${v&&v.error?': '+esc(v.error):''}.</p>`;
     else if(!v.sessions.length)h+='<p class="prev-empty">'+(v.storesFound?'No chats in the VS Code storage for this folder.':'No VS Code chats found for this folder (VS Code never opened it, or it is stored somewhere this app does not read).')+'</p>';
@@ -2197,7 +2277,7 @@ function replayHistory(a,h,title){
     else if(it.type==='output'){const b=document.createElement('div');b.className='bubble';agentMsg().appendChild(b);mdSet(b,it.text,true);}
     else{const full=it.output||'';addChip(chipBox(),makeChip({tool:it.tool,label:it.label,res:SHORT(full||(it.failed?'failed':'ok'),60),output:full.slice(0,2000),state:it.failed?'failed':'ok'}));}
   }
-  addNote(chat,'Resumed: '+esc(title||'earlier session')+'. New messages continue this session.');
+  addNote(chat,'Resumed: '+esc((title||'earlier session').replace(/[.!?…]+$/,''))+'. New messages continue this session.');
 }
 async function resumePrev(a,sid,btn){
   if(btn){btn.disabled=true;btn.textContent='Resuming…';}
@@ -2263,7 +2343,7 @@ async function announcePrevious(a){
   if(!bridge.listPrevious)return;
   const st=await loadPrev(a); const n=(st.cli&&st.cli.ok?st.cli.sessions.length:0), v=(st.vs&&st.vs.ok?st.vs.sessions.length:0);
   if(!n&&!v)return;
-  toast('Found '+(n?n+' earlier Copilot session'+(n===1?'':'s'):'')+(n&&v?' and ':'')+(v?v+' VS Code chat'+(v===1?'':'s'):'')+' for <b>'+esc(roomOf(a).name)+'</b>. Opening them.',4200);
+  toast('Found '+(n?n+' earlier '+esc(kindWord(a.info&&a.info.adapterId))+' session'+(n===1?'':'s'):'')+(n&&v?' and ':'')+(v?v+' VS Code chat'+(v===1?'':'s'):'')+' for <b>'+esc(roomOf(a).name)+'</b>. Opening them.',4200);
   if(!ui.selected){st.open=true;openPanel(a.id,false);}
 }
 async function confirmAllow(what){
@@ -2304,7 +2384,7 @@ if(bridge){
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
-    staticLimit:a=>{const m=MODELS.find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
+    staticLimit:a=>{const m=modelsFor(a.info&&a.info.adapterId).find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
     folderOf:x=>{const ag=LIVE.agents.find(y=>y.id===(x&&x.id||x));return ag?folderOfRoom(ag.room):null;},
     openAgent:id=>openPanel(id,false)});
   document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('.place-add'))window.DurbarScreens.placeDialog(null);});

@@ -494,6 +494,20 @@ ipcMain.handle('agents:setCap', async (_e, id: unknown, credits: unknown) => {
   return setCapOp(opsDeps, id, credits);
 });
 
+// spec 012 FR-128: the user's answer to an agent's question; strings only, capped; null = skipped
+ipcMain.handle('agents:answerQuestion', (_e, id: unknown, requestId: unknown, answers: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  const ad = a ? router.forAgent(a.id) : undefined;
+  if (!a || !ad?.answerQuestion || typeof requestId !== 'string' || requestId.length > 200) return { ok: false, error: 'unknown agent or question' };
+  let clean: Record<string, string> | null = null;
+  if (answers && typeof answers === 'object') {
+    clean = {};
+    for (const [k, v] of Object.entries(answers as Record<string, unknown>).slice(0, 4)) if (typeof v === 'string' && k.length <= 300) clean[k] = v.slice(0, 500);
+  }
+  ad.answerQuestion(a.id, requestId, clean);
+  return { ok: true };
+});
+
 ipcMain.handle('agents:resolveLimit', async (_e, id: unknown, requestId: unknown, choice: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
@@ -570,9 +584,13 @@ ipcMain.handle('agents:compact', async (_e, id: unknown, focus: unknown) => {
   }
 });
 
-ipcMain.handle('models:list', async (): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }> => {
+ipcMain.handle('models:list', async (_e, kind: unknown): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }> => {
+  // spec 012 FR-120: one list per agent kind; no kind = the default kind (as before); an unknown kind is refused
+  const id = kind === undefined || kind === null || kind === '' ? registry.defaultId : typeof kind === 'string' && registry.has(kind) ? kind : undefined;
+  if (!id) return { ok: false, error: 'unknown agent kind', models: [] };
   try {
-    const models = (await modelOptionsOf(router.instance(registry.defaultId))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
+    const models = (await modelOptionsOf(router.instance(id))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
+    if (id !== registry.defaultId) return { ok: true, models };
     lastModels = models;
     return { ok: true, models };
   } catch (err) {

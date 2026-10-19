@@ -25,7 +25,12 @@ import type { EventBody } from './map';
 import { PermissionBroker, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import type { AgentAdapter, AgentEvent, AgentMessage, McpServerSpec, StartOptions, Unsubscribe } from './types';
+import type { ModelOption } from '../shared/modelswitch';
 import { resolveWorkspaceCwd } from './workspace';
+import { listClaudeSessions, readClaudeHistory } from './claudeHistory';
+import type { HistoryResult, PreviousSession } from './history';
+import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
+import type { AskedQuestion } from './types';
 
 export const CLAUDE_ID = 'claude';
 export const CLAUDE_NAME = 'Claude Code';
@@ -34,15 +39,15 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   interrupt: true,
   resume: true,
   images: true,
-  models: false, // T049
-  effort: false,
+  models: true, // FR-118: from the CLI's initialize reply, no prompt
+  effort: true,
   permissionModes: Object.freeze(['read-only', 'ask', 'allow'] as PermissionMode[]),
-  permModeSwitch: 'none', // T046 (set_permission_mode) is not wired yet
+  permModeSwitch: 'live', // FR-115/FR-116: the broker and the hook at once, the CLI flags from the next message
   usage: Object.freeze({ tokens: true, costUsd: true, nanoAiu: false }),
   context: false,
   caps: false, // Q7 / T081
   helpers: true,
-  history: false, // T048
+  history: true, // FR-125/FR-126: read-only from Claude's own session files
   mcpStatus: true,
   mcpToggle: false, // T050
 }) as AdapterCapabilities;
@@ -102,9 +107,34 @@ export interface ClaudeLaunch {
   sessionId: string;
   resume: boolean;
   model?: string;
+  effort?: string;
   /** `--mcp-config` JSON (`{"mcpServers": {...}}`); never logged. */
   mcpConfig?: string;
   appendSystemPrompt?: string;
+}
+
+const CLAUDE_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
+/** FR-119: Claude ids, aliases and `[1m]` suffixes get `--model`; `auto` and `default` mean Claude's default (no flag). */
+export function claudeModelFlag(model: string | undefined): boolean {
+  if (!model || model === 'auto' || model === 'default') return false;
+  if (/^(gpt|o\d|gemini|grok|sim-)/i.test(model)) return false; // a Copilot or simulator id saved before the folder was Claude's
+  return /^[A-Za-z0-9][A-Za-z0-9._\-[\]]{0,79}$/.test(model);
+}
+
+/** FR-118: the `models` entries of the CLI's `initialize` reply in the model picker's shape; malformed entries are dropped. */
+export function claudeModelOptions(models: unknown): ModelOption[] {
+  if (!Array.isArray(models)) return [];
+  const out: ModelOption[] = [];
+  for (const m of models.slice(0, 50)) {
+    if (!m || typeof m !== 'object') continue;
+    const o = m as Record<string, unknown>;
+    const id = typeof o.value === 'string' ? o.value : '';
+    if (!/^[A-Za-z0-9][A-Za-z0-9._\-[\]]{0,79}$/.test(id) || out.some((x) => x.id === id)) continue;
+    const name = typeof o.displayName === 'string' && o.displayName.trim() ? o.displayName.trim().slice(0, 60) : id;
+    const efforts = Array.isArray(o.supportedEffortLevels) ? o.supportedEffortLevels.filter((e): e is string => typeof e === 'string' && CLAUDE_EFFORTS.has(e)) : [];
+    out.push({ id, name, efforts, disabled: false });
+  }
+  return out;
 }
 
 /** The CLI argv (FR-111). Mode flags come from `claudeOptionsFor`, so an unknown mode gets Read-only. */
@@ -118,7 +148,8 @@ export function claudeArgs(i: ClaudeLaunch): string[] {
   a.push('--setting-sources', o.settingSources.join(','));
   if (o.strictMcpConfig) a.push('--strict-mcp-config');
   if (i.mcpConfig) a.push('--mcp-config', i.mcpConfig);
-  if (i.model && /^(claude-|opus|sonnet|haiku)/i.test(i.model)) a.push('--model', i.model); // Copilot model ids (`auto`, `gpt-…`) are not Claude's
+  if (claudeModelFlag(i.model)) a.push('--model', i.model as string);
+  if (i.effort && CLAUDE_EFFORTS.has(i.effort)) a.push('--effort', i.effort);
   if (i.appendSystemPrompt) a.push('--append-system-prompt', i.appendSystemPrompt);
   a.push(i.resume ? '--resume' : '--session-id', i.sessionId);
   return a;
@@ -251,6 +282,8 @@ export interface ClaudeAdapterDeps {
   claudeMd?: (folder: string) => string | undefined;
   readImage?: (p: string) => Buffer | undefined;
   env?: () => NodeJS.ProcessEnv;
+  /** Claude's config folder (tests); default `CLAUDE_CONFIG_DIR` or `~/.claude`. */
+  configDir?: string;
 }
 
 interface Session {
@@ -268,6 +301,12 @@ interface Session {
   /** The CLI was started with --resume and exited before `init`: retry once as a new session under the same id. */
   resumeTried?: boolean;
   initSeen?: boolean;
+  /** The mode the running CLI was launched with (its flags); differs from the broker's mode after a live switch until the next send (FR-116). */
+  launchedMode?: PermissionMode;
+  /** A user message was sent and its `result` has not come yet (a relaunch would cut the turn). */
+  turnOpen?: boolean;
+  /** Questions waiting for the user (FR-128): request id -> what was asked, Claude's original texts, and the waiter. */
+  questions?: Map<string, { asked: AskedQuestion[]; originals: string[]; resolve: (a: Record<string, string> | null) => void }>;
 }
 
 export class ClaudeAdapter implements AgentAdapter {
@@ -283,6 +322,53 @@ export class ClaudeAdapter implements AgentAdapter {
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  private modelCache?: { at: number; list: Promise<ModelOption[]> };
+
+  /**
+   * FR-118: the models the user's `claude` offers, from its `initialize` reply. A short-lived CLI in Read-only in the temp
+   * folder; no prompt is written, so no tokens are spent. Cached 10 minutes; any failure is an empty list.
+   */
+  listModelOptions(): Promise<ModelOption[]> {
+    const now = Date.now();
+    if (this.modelCache && now - this.modelCache.at < 10 * 60_000) return this.modelCache.list;
+    const list = this.probeModels().catch((e) => {
+      this.debug?.(`claude: model list failed: ${e instanceof Error ? e.message : String(e)}`);
+      this.modelCache = undefined; // try again next time
+      return [] as ModelOption[];
+    });
+    this.modelCache = { at: now, list };
+    return list;
+  }
+
+  private async probeModels(): Promise<ModelOption[]> {
+    const file = await this.deps.claudePath();
+    if (!file) return [];
+    const make = this.deps.makeTransport ?? cliTransportFactory;
+    const t = await make({
+      file,
+      launch: { mode: 'read-only', sessionId: randomUUID(), resume: false },
+      cwd: os.tmpdir(),
+      env: (this.deps.env ?? (() => process.env))(),
+      handlers: { message: () => undefined, control: async () => ({ error: 'not handled in the model probe' }), exit: () => undefined },
+    });
+    try {
+      const r = await t.request({ subtype: 'initialize' }, 20_000);
+      return claudeModelOptions(r.models);
+    } finally {
+      await t.close().catch(() => undefined);
+    }
+  }
+
+  /** FR-125: this folder's earlier Claude sessions, read-only from Claude's session files. */
+  async listPreviousSessions(cwd: string, excludeIds?: ReadonlySet<string>): Promise<PreviousSession[]> {
+    return listClaudeSessions(cwd, excludeIds, this.deps.configDir);
+  }
+
+  /** FR-126: a session's chat for the replay after a resume. */
+  async history(sessionId: string): Promise<HistoryResult> {
+    return readClaudeHistory(sessionId, this.sessions.get(sessionId)?.cwd, this.deps.configDir);
   }
 
   isLive(sessionId: string): boolean {
@@ -311,11 +397,14 @@ export class ClaudeAdapter implements AgentAdapter {
     this.emit(sessionId, { type: 'status', status: 'working', intent: 'Thinking' });
     let t: ClaudeTransport;
     try {
+      // FR-116: new flags for a changed mode, but never in the middle of a turn (the hook keeps the current mode until then)
+      if (s.transport?.alive && !s.turnOpen && s.launchedMode !== undefined && s.launchedMode !== s.broker.getMode()) await this.relaunchForMode(s);
       t = await this.ensureTransport(s);
     } catch (e) {
       this.emit(sessionId, { type: 'status', status: 'error', intent: e instanceof Error ? e.message : 'Claude could not start' });
       return;
     }
+    s.turnOpen = true;
     t.sendUser(userContentOf(message, this.deps.readImage));
   }
 
@@ -323,6 +412,7 @@ export class ClaudeAdapter implements AgentAdapter {
     const s = this.sessions.get(sessionId);
     if (!s) return;
     s.broker.denyPending();
+    this.cancelQuestions(s);
     if (s.transport?.alive) {
       s.mapper.expectAbort();
       try {
@@ -339,6 +429,7 @@ export class ClaudeAdapter implements AgentAdapter {
     if (!s) return;
     s.stopping = true;
     s.broker.stop(); // pending permissions are answered deny; grants are dropped
+    this.cancelQuestions(s);
     try {
       await s.transport?.close();
     } catch {
@@ -346,6 +437,30 @@ export class ClaudeAdapter implements AgentAdapter {
     }
     this.sessions.delete(sessionId);
     this.emit(sessionId, { type: 'status', status: 'stopped' });
+  }
+
+  /**
+   * Live mode switch (spec 012 FR-115): the broker takes the new mode at once (the hook and `canUseTool` read it on every call);
+   * the CLI's own flags follow on the next send (FR-116). Same pending rules as Copilot.
+   */
+  setPermMode(sessionId: string, mode: PermissionMode, opts: { clearGrants?: boolean; approvePending?: boolean } = {}): { pending: number } {
+    const s = this.sessions.get(sessionId);
+    if (!s) return { pending: 0 };
+    s.broker.setMode(mode);
+    s.options = { ...s.options, permissionMode: mode };
+    if (opts.clearGrants) s.broker.clearGrants();
+    let pending = s.broker.pendingCount();
+    if (pending) {
+      if (opts.approvePending && mode !== 'read-only') pending -= s.broker.approvePending();
+      else if (mode === 'read-only') pending -= s.broker.denyPendingByUser();
+    }
+    return { pending };
+  }
+
+  /** FR-128: the user's answers (question text -> label(s)), or null when they skipped. */
+  answerQuestion(sessionId: string, requestId: string, answers: Record<string, string> | null): void {
+    const q = this.sessions.get(sessionId)?.questions?.get(requestId);
+    q?.resolve(answers);
   }
 
   resolvePermission(sessionId: string, requestId: string, approve: boolean, remember = false, broad = false): void {
@@ -368,6 +483,22 @@ export class ClaudeAdapter implements AgentAdapter {
     return s;
   }
 
+  /** Ends the running CLI so the next launch uses the current mode's flags; the session id is resumed (FR-116). */
+  private async relaunchForMode(s: Session): Promise<void> {
+    const t = s.transport;
+    if (!t) return;
+    s.stopping = true; // this exit is ours: no error status
+    try {
+      await t.close();
+    } catch {
+      /* already gone */
+    } finally {
+      s.stopping = false;
+      if (s.transport === t) s.transport = undefined;
+    }
+    this.debug?.(`claude: relaunching ${s.id} for mode ${s.broker.getMode()}`);
+  }
+
   private ensureTransport(s: Session): Promise<ClaudeTransport> {
     if (s.transport?.alive) return Promise.resolve(s.transport);
     if (!s.starting) {
@@ -387,6 +518,7 @@ export class ClaudeAdapter implements AgentAdapter {
       sessionId: s.id,
       resume: s.resumable,
       model: o.model,
+      effort: o.reasoningEffort,
       mcpConfig: mcpConfigOf(o.mcpServers, o.disabledMcpServers),
       appendSystemPrompt: (this.deps.claudeMd ?? claudeMdPrompt)(s.cwd),
     };
@@ -400,6 +532,7 @@ export class ClaudeAdapter implements AgentAdapter {
     s.mapper.reset();
     const t = await make({ file, launch, cwd: s.cwd, env: (this.deps.env ?? (() => process.env))(), handlers });
     s.transport = t;
+    s.launchedMode = launch.mode;
     // Register the PreToolUse hook (Read-only roots check) before the first prompt.
     await t.request({ subtype: 'initialize', hooks: { PreToolUse: [{ matcher: '*', hookCallbackIds: [PRE_TOOL_USE_HOOK] }] } });
     s.resumable = true; // from now on Claude has (or will have) this id on disk
@@ -408,6 +541,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
   private onMessage(s: Session, m: ClaudeMessage): void {
     if (m.type === 'system' && m.subtype === 'init') s.initSeen = true;
+    if (m.type === 'result') s.turnOpen = false;
     s.mapper.map(m);
   }
 
@@ -417,7 +551,14 @@ export class ClaudeAdapter implements AgentAdapter {
       const tool = typeof r.tool_name === 'string' ? r.tool_name : '';
       const input = r.input && typeof r.input === 'object' && !Array.isArray(r.input) ? (r.input as Record<string, unknown>) : {};
       const toolUseID = typeof r.tool_use_id === 'string' ? r.tool_use_id : undefined;
-      if (tool === 'AskUserQuestion') return { response: { behavior: 'deny', message: ASK_USER_DENY, ...(toolUseID ? { toolUseID } : {}) } }; // T052 [KNOWN GAP]: no question UI yet
+      if (tool === 'AskUserQuestion') {
+        // FR-129 fallback: the hook normally answers first; if Claude still asks for permission, ask the user here
+        if (input.answers && typeof input.answers === 'object') return { response: { behavior: 'allow', updatedInput: input, ...(toolUseID ? { toolUseID } : {}) } };
+        const h = (await this.askUser(s, input, toolUseID)) as { hookSpecificOutput?: { permissionDecision?: string; updatedInput?: Record<string, unknown> } };
+        const out = h.hookSpecificOutput;
+        if (out?.permissionDecision === 'allow') return { response: { behavior: 'allow', updatedInput: out.updatedInput ?? input, ...(toolUseID ? { toolUseID } : {}) } };
+        return { response: { behavior: 'deny', message: out ? 'The user skipped the question.' : ASK_USER_DENY, ...(toolUseID ? { toolUseID } : {}) } };
+      }
       const d = await s.broker.request(permissionLikeOf(tool, input, toolUseID));
       return d.kind === 'approve-once'
         ? { response: { behavior: 'allow', updatedInput: input, ...(toolUseID ? { toolUseID } : {}) } }
@@ -428,18 +569,78 @@ export class ClaudeAdapter implements AgentAdapter {
       const input = r.input && typeof r.input === 'object' ? (r.input as Record<string, unknown>) : {};
       const tool = typeof input.tool_name === 'string' ? input.tool_name : '';
       const toolInput = input.tool_input && typeof input.tool_input === 'object' ? (input.tool_input as Record<string, unknown>) : undefined;
-      const deny = preToolUseDecision(s.broker.getMode(), tool, toolInput, s.roots);
-      return { response: deny ? { ...deny } : {} };
+      return { response: await this.hookDecision(s, tool, toolInput, typeof input.tool_use_id === 'string' ? input.tool_use_id : undefined) };
     }
     // elicitation, mcp_message, ... are not supported yet (T052, FR-024): refuse explicitly
     return { error: `Agent Durbar does not handle ${req.subtype || 'this request'} yet.` };
   }
 
+  /**
+   * The `PreToolUse` answer with the launched and the current mode (FR-115). The CLI enforces its launch flags; this hook
+   * makes sure the user's current choice is never looser: Read-only (current or launched) gets the Read-only decision, and a
+   * process launched in Allow all (`bypassPermissions`, which never calls `canUseTool`) asks through the broker in Ask first.
+   */
+  private async hookDecision(s: Session, tool: string, toolInput: Record<string, unknown> | undefined, toolUseID: string | undefined): Promise<Record<string, unknown>> {
+    if (tool === 'AskUserQuestion') return this.askUser(s, toolInput ?? {}, toolUseID); // FR-129: a question, not an action: every mode
+    const current = s.broker.getMode();
+    const launched = s.launchedMode ?? current;
+    if (current === 'read-only' || launched === 'read-only') {
+      const deny = preToolUseDecision('read-only', tool, toolInput, s.roots);
+      if (!deny) return {};
+      if (current !== 'read-only') deny.hookSpecificOutput.permissionDecisionReason += ' The new permission mode applies from your next message.';
+      return { ...deny };
+    }
+    if (launched === 'allow' && current === 'ask') {
+      if (tool === 'AskUserQuestion') return {};
+      const d = await s.broker.request(permissionLikeOf(tool, toolInput ?? {}, toolUseID));
+      if (d.kind === 'approve-once') return {};
+      return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: d.feedback ?? 'Denied by user in Agent Durbar.' } };
+    }
+    return {};
+  }
+
+  /**
+   * FR-129: show the agent's questions and wait for the user. The answer goes back as `updatedInput.answers`, keyed by Claude's
+   * own question texts; a skip is a deny. Input without a usable question gets no opinion (Claude's own handling).
+   */
+  private async askUser(s: Session, input: Record<string, unknown>, toolUseID: string | undefined): Promise<Record<string, unknown>> {
+    if (input.answers && typeof input.answers === 'object') return {}; // already answered (a second check of the same call)
+    const { asked, originals } = parseQuestionsWithOriginals(input);
+    if (!asked.length) return {};
+    const requestId = toolUseID ?? randomUUID();
+    s.questions ??= new Map();
+    const answer = await new Promise<Record<string, string> | null>((resolve) => {
+      s.questions!.set(requestId, { asked, originals, resolve });
+      this.emit(s.id, { type: 'question', phase: 'asked', requestId, questions: asked });
+      this.emit(s.id, { type: 'status', status: 'needs-permission', intent: 'Waiting for your answer' });
+    });
+    s.questions.delete(requestId);
+    const clean = answer ? cleanAnswers(asked, answer) : undefined;
+    if (!clean) {
+      this.emit(s.id, { type: 'question', phase: 'cancelled', requestId });
+      return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'The user skipped the question. Decide yourself, or ask in your reply.' } };
+    }
+    const byOriginal: Record<string, string> = {};
+    asked.forEach((q, i) => {
+      if (clean[q.question] !== undefined) byOriginal[originals[i] ?? q.question] = clean[q.question];
+    });
+    this.emit(s.id, { type: 'question', phase: 'answered', requestId, answers: clean });
+    this.emit(s.id, { type: 'status', status: 'working', intent: 'Answered' });
+    return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Answered by the user in Agent Durbar.', updatedInput: { ...input, answers: byOriginal } } };
+  }
+
+  /** Stop, interrupt or a crash: unanswered questions are skipped (the hook answers deny). */
+  private cancelQuestions(s: Session): void {
+    for (const q of [...(s.questions?.values() ?? [])]) q.resolve(null);
+  }
+
   private onExit(s: Session, info: { code: number | null; signal: string | null; stderrTail: string }): void {
     s.transport = undefined;
+    s.turnOpen = false;
     if (s.stopping || !this.sessions.has(s.id)) return;
     if (info.stderrTail) this.debug?.(`claude stderr (exit ${String(info.code)}): ${info.stderrTail}`);
     s.broker.denyPending();
+    this.cancelQuestions(s);
     this.emit(s.id, { type: 'status', status: 'error', intent: info.code === 0 ? 'Claude ended the session; send a message to continue.' : `Claude stopped unexpectedly (exit ${info.code ?? info.signal ?? '?'}). Send a message to resume.` });
   }
 

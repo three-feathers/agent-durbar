@@ -328,6 +328,32 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(await ask({ allow: true }), { kind: 'approve-once', pending: false });
     assert.deepStrictEqual(await ask({}), { kind: 'reject', pending: false });
 
+    // spec 002 FR-058: ask_user as a question card, in any mode; choice, free text, skip, Stop
+    {
+      const t = await setup({ permissionMode: 'read-only' });
+      const iu = t.s.config.onUserInputRequest as (r: unknown) => Promise<{ answer: string; wasFreeform: boolean }>;
+      assert.strictEqual(typeof iu, 'function', 'the ask_user handler is passed to the SDK');
+      const askOnce = async (choices: string[] | undefined, reply: string | null): Promise<{ answer: string; wasFreeform: boolean }> => {
+        const from = t.events.length;
+        const p = iu({ question: 'Pick  one?', choices, allowFreeform: true });
+        await sleep(5);
+        const q = t.events.slice(from).find((e) => e.type === 'question' && e.phase === 'asked') as { requestId: string; questions: { question: string; options: { label: string }[] }[] } | undefined;
+        assert.ok(q, 'asked');
+        assert.strictEqual(q.questions[0].question, 'Pick one?');
+        t.ad.answerQuestion?.(t.sid, q.requestId, reply === null ? null : { [q.questions[0].question]: reply });
+        return p;
+      };
+      assert.deepStrictEqual(await askOnce(['A', 'B'], 'B'), { answer: 'B', wasFreeform: false });
+      assert.deepStrictEqual(await askOnce(['A', 'B'], '  my   own '), { answer: 'my own', wasFreeform: true });
+      assert.deepStrictEqual(await askOnce(undefined, null), { answer: '(The user skipped the question. Decide yourself.)', wasFreeform: true });
+      assert.ok(t.events.some((e) => e.type === 'status' && e.intent === 'Waiting for your answer'));
+      const pending = iu({ question: 'Still there?', choices: ['Yes'] });
+      await sleep(5);
+      await t.ad.stop(t.sid);
+      assert.deepStrictEqual(await pending, { answer: '(The user skipped the question. Decide yourself.)', wasFreeform: true }, 'Stop skips it');
+      assert.ok(t.events.some((e) => e.type === 'question' && e.phase === 'cancelled'));
+    }
+
     // isLive follows the session
     const t = await setup();
     assert.strictEqual(t.ad.isLive(t.sid), true);

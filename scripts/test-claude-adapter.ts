@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ClaudeAdapter, PRE_TOOL_USE_HOOK, claudeArgs, claudeMdPrompt, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
+import { ClaudeAdapter, PRE_TOOL_USE_HOOK, claudeArgs, claudeMdPrompt, claudeModelFlag, claudeModelOptions, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import type { AgentEvent } from '../src/adapters/types';
 import { FakeClaudeChild, fakeSpawn } from './fakes/claude-cli';
@@ -92,6 +92,26 @@ async function main(): Promise<void> {
     assert.ok(all.includes('--allow-dangerously-skip-permissions'));
     assert.ok(!all.includes('--model'), 'a Copilot model id is not passed');
     assert.strictEqual(at(claudeArgs({ mode: 'weird' as never, sessionId: 's', resume: false }), '--permission-mode'), 'dontAsk', 'unknown mode = Read-only');
+    // FR-119: Claude ids, aliases and [1m] suffixes; auto/default = no flag; Copilot ids and odd strings dropped; effort only from the known set
+    for (const m of ['fable', 'opus', 'sonnet[1m]', 'claude-haiku-5-5', 'claude-opus-5-5[1m]']) assert.strictEqual(at(claudeArgs({ mode: 'ask', sessionId: 's', resume: false, model: m }), '--model'), m, m);
+    for (const m of ['auto', 'default', 'gpt-5.1', 'o3', 'gemini-3', 'sim-fast', '-rf', 'a b', 'x;y', 'x'.repeat(81), '']) assert.ok(!claudeModelFlag(m), m);
+    assert.strictEqual(at(claudeArgs({ mode: 'ask', sessionId: 's', resume: false, model: 'opus', effort: 'xhigh' }), '--effort'), 'xhigh');
+    assert.ok(!claudeArgs({ mode: 'ask', sessionId: 's', resume: false, effort: 'extreme' }).includes('--effort'));
+    // FR-118: the initialize reply's models in the picker's shape
+    assert.deepStrictEqual(claudeModelOptions([
+      { value: 'default', displayName: 'Default (recommended)', supportedEffortLevels: ['low', 'high', 'bogus'] },
+      { value: 'haiku', displayName: 'Haiku 5.5' },
+      { value: 'haiku', displayName: 'dup' },
+      { value: 'bad id', displayName: 'x' },
+      { displayName: 'no value' },
+      null,
+      { value: 'fable', displayName: '   ' },
+    ]), [
+      { id: 'default', name: 'Default (recommended)', efforts: ['low', 'high'], disabled: false },
+      { id: 'haiku', name: 'Haiku 5.5', efforts: [], disabled: false },
+      { id: 'fable', name: 'fable', efforts: [], disabled: false },
+    ]);
+    assert.deepStrictEqual(claudeModelOptions(undefined), []);
   }
   {
     assert.deepStrictEqual(permissionLikeOf('Write', { file_path: '/w/a.txt', content: 'x' }, 'tu1'), { kind: 'write', toolName: 'Write', toolCallId: 'tu1', path: '/w/a.txt', fileName: '/w/a.txt' });
@@ -259,6 +279,240 @@ async function main(): Promise<void> {
     assert.strictEqual(answers['c-w'].behavior, 'deny');
     assert.match(String(answers['c-w'].message), /read-only/);
     assert.strictEqual(answers['c-q'].behavior, 'deny', 'AskUserQuestion is denied with guidance (T052 gap)');
+    await ad.stop(sid);
+  }
+
+  // ---- live mode switch (FR-115..FR-117): the hook uses launched + current mode; the next send relaunches with --resume ----
+  {
+    const answers: Record<string, Record<string, unknown>> = {};
+    let cur: FakeClaudeChild | undefined;
+    const { ad, sp, events } = make({
+      turn: (c) => {
+        cur = c;
+        if ((c as unknown as { rec?: boolean }).rec) return;
+        (c as unknown as { rec?: boolean }).rec = true;
+        const prev = c.onWrite;
+        c.onWrite = (o) => {
+          prev?.(o);
+          if (o.type === 'control_response') {
+            const r = o.response as { request_id: string; response: Record<string, unknown> };
+            answers[r.request_id] = r.response;
+          }
+        };
+      },
+    });
+    const hook = (id: string, tool: string, input: Record<string, unknown>, tu?: string): void =>
+      cur!.send({ type: 'control_request', request_id: id, request: { subtype: 'hook_callback', callback_id: PRE_TOOL_USE_HOOK, input: { hook_event_name: 'PreToolUse', tool_name: tool, tool_input: input, tool_use_id: tu } } });
+    const decision = (id: string): string | undefined => (answers[id]?.hookSpecificOutput as { permissionDecision?: string } | undefined)?.permissionDecision;
+    const endTurn = (): void => cur!.send({ type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0 });
+    const write = { file_path: path.join(WS, 'w.txt'), content: 'x' };
+
+    const sid = await ad.start({ workspace: WS, permissionMode: 'allow', quiet: true });
+    assert.strictEqual(ad.capabilities.permModeSwitch, 'live');
+    await ad.send(sid, { text: 'go' });
+    await until('turn', () => cur);
+    assert.ok(sp.calls[0].args.includes('bypassPermissions'), 'launched in Allow all');
+    hook('a1', 'Write', write);
+    await until('a1', () => answers.a1);
+    assert.deepStrictEqual(answers.a1, {}, 'Allow all: no opinion');
+    // Allow all -> Read-only during the turn: the hook denies writes and outside reads at once
+    assert.deepStrictEqual(ad.setPermMode(sid, 'read-only'), { pending: 0 });
+    hook('a2', 'Write', write);
+    hook('a3', 'Read', { file_path: '/etc/passwd' });
+    hook('a4', 'Read', { file_path: path.join(WS, 'README.md') });
+    await until('a2-a4', () => answers.a2 && answers.a3 && answers.a4);
+    assert.strictEqual(decision('a2'), 'deny', 'a write is denied at once after switching to Read-only');
+    assert.strictEqual(decision('a3'), 'deny');
+    assert.deepStrictEqual(answers.a4, {}, 'a read inside is fine');
+    // -> Ask first while launched in Allow all (bypassPermissions never calls can_use_tool): the hook asks through the broker
+    ad.setPermMode(sid, 'ask');
+    hook('a5', 'Write', write, 'tu-a5');
+    const p5 = await until('card a5', () => events.find((e) => e.type === 'status' && (e as { status: string }).status === 'needs-permission' && (e as { permission?: { requestId: string } }).permission?.requestId === 'tu-a5'));
+    assert.ok(p5);
+    assert.strictEqual(answers.a5, undefined, 'the hook waits for the user');
+    ad.resolvePermission(sid, 'tu-a5', true);
+    await until('a5', () => answers.a5);
+    assert.deepStrictEqual(answers.a5, {}, 'approved: the CLI goes on');
+    hook('a6', 'Bash', { command: 'rm -rf x' }, 'tu-a6');
+    await until('card a6', () => events.find((e) => (e as { permission?: { requestId: string; state?: string } }).permission?.requestId === 'tu-a6'));
+    ad.resolvePermission(sid, 'tu-a6', false);
+    await until('a6', () => answers.a6);
+    assert.strictEqual(decision('a6'), 'deny', 'denied by the user: the hook denies');
+    // a message while the turn is open does not relaunch
+    await ad.send(sid, { text: 'more' });
+    assert.strictEqual(sp.calls.length, 1, 'no relaunch in the middle of a turn');
+    endTurn();
+    await tick(10);
+    // the next message relaunches with the Ask first flags and --resume, same id
+    await ad.send(sid, { text: 'next' });
+    await until('relaunch', () => sp.calls.length === 2 ? true : undefined);
+    assert.ok(sp.children[0].ended || sp.children[0].killed.length, 'the old process was closed');
+    const args = sp.calls[1].args;
+    assert.ok(args.includes('--resume') && args.includes(sid), 'resumes the same session');
+    assert.ok(!args.includes('bypassPermissions') && args.includes('default'), 'launched with the Ask first mode');
+    assert.ok(!statuses(events, sid).includes('error'), 'the relaunch is not an error');
+    // now launched = current = ask: the hook has no opinion, can_use_tool asks
+    await until('new child turn', () => (cur === sp.children[1] ? true : undefined));
+    hook('a7', 'Write', write, 'tu-a7');
+    await until('a7', () => answers.a7);
+    assert.deepStrictEqual(answers.a7, {});
+    endTurn();
+    await ad.stop(sid);
+  }
+  {
+    // launched Read-only, switched to Allow all mid-turn: still denied (with a "next message" reason) until the relaunch
+    const answers: Record<string, Record<string, unknown>> = {};
+    let cur: FakeClaudeChild | undefined;
+    const { ad, sp } = make({
+      turn: (c) => {
+        cur = c;
+        if ((c as unknown as { rec?: boolean }).rec) return;
+        (c as unknown as { rec?: boolean }).rec = true;
+        const prev = c.onWrite;
+        c.onWrite = (o) => {
+          prev?.(o);
+          if (o.type === 'control_response') {
+            const r = o.response as { request_id: string; response: Record<string, unknown> };
+            answers[r.request_id] = r.response;
+          }
+        };
+      },
+    });
+    const sid = await ad.start({ workspace: WS, quiet: true });
+    await ad.send(sid, { text: 'go' });
+    await until('turn', () => cur);
+    ad.setPermMode(sid, 'allow');
+    cur!.send({ type: 'control_request', request_id: 'r1', request: { subtype: 'hook_callback', callback_id: PRE_TOOL_USE_HOOK, input: { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: '/etc/passwd' } } } });
+    await until('r1', () => answers.r1);
+    const out = answers.r1.hookSpecificOutput as { permissionDecision: string; permissionDecisionReason: string };
+    assert.strictEqual(out.permissionDecision, 'deny', 'launched Read-only: outside reads stay denied until the relaunch');
+    assert.match(out.permissionDecisionReason, /next message/);
+    cur!.send({ type: 'result', subtype: 'success', is_error: false });
+    await tick(10);
+    await ad.send(sid, { text: 'now' });
+    await until('relaunch', () => sp.calls.length === 2 ? true : undefined);
+    assert.ok(sp.calls[1].args.includes('bypassPermissions'), 'relaunched in Allow all');
+    await ad.stop(sid);
+  }
+  {
+    // switching with pending requests: Allow all approves them (approvePending), Read-only denies them
+    const answers: Record<string, Record<string, unknown>> = {};
+    const { ad } = make({
+      turn: (c) => {
+        const prev = c.onWrite;
+        c.onWrite = (o) => {
+          prev?.(o);
+          if (o.type === 'control_response') {
+            const r = o.response as { request_id: string; response: Record<string, unknown> };
+            answers[r.request_id] = r.response;
+          }
+        };
+        c.send({ type: 'control_request', request_id: 'p1', request: { subtype: 'can_use_tool', tool_name: 'Write', input: { file_path: path.join(WS, 'p.txt') }, tool_use_id: 'tu-p1' } });
+      },
+    });
+    const sid = await ad.start({ workspace: WS, permissionMode: 'ask', quiet: true });
+    await ad.send(sid, { text: 'go' });
+    await tick(20);
+    assert.deepStrictEqual(ad.setPermMode(sid, 'allow', { approvePending: true }), { pending: 0 });
+    await until('p1', () => answers.p1);
+    assert.strictEqual(answers.p1.behavior, 'allow');
+    await ad.stop(sid);
+  }
+  assert.deepStrictEqual(new ClaudeAdapter({ claudePath: async () => undefined }).setPermMode('nope', 'allow'), { pending: 0 });
+  // ---- model list (FR-118): an initialize-only probe, no prompt, closed, cached; a failure is an empty list ----
+  {
+    const sp = fakeSpawn();
+    let probes = 0;
+    sp.next = (c) => {
+      probes++;
+      c.onWrite = (o) => {
+        if (o.type === 'control_request' && (o.request as { subtype: string }).subtype === 'initialize')
+          setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response: { models: [{ value: 'sonnet', displayName: 'Sonnet', supportedEffortLevels: ['high'] }], account: { email: 'never@read' } } } }), 0);
+      };
+    };
+    const ad = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), env: () => ({}) });
+    const list = await ad.listModelOptions();
+    assert.deepStrictEqual(list, [{ id: 'sonnet', name: 'Sonnet', efforts: ['high'], disabled: false }]);
+    assert.strictEqual(sp.calls[0].args[sp.calls[0].args.indexOf('--permission-mode') + 1], 'dontAsk', 'the probe runs in Read-only');
+    assert.strictEqual(sp.calls[0].cwd, os.tmpdir(), 'in the temp folder, not a user folder');
+    assert.ok(!sp.children[0].objects().some((o) => o.type === 'user'), 'no prompt is written: no tokens');
+    await until('probe closed', () => (sp.children[0].ended || sp.children[0].killed.length ? true : undefined));
+    await ad.listModelOptions();
+    assert.strictEqual(probes, 1, 'cached');
+    const none = new ClaudeAdapter({ claudePath: async () => undefined });
+    assert.deepStrictEqual(await none.listModelOptions(), [], 'no claude: empty list');
+    const sp2 = fakeSpawn();
+    sp2.next = (c) => { c.onWrite = () => setTimeout(() => c.exit(1, null), 0); };
+    const broken = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp2.spawn, closeGraceMs: 10, killGraceMs: 10 }), env: () => ({}) });
+    assert.deepStrictEqual(await broken.listModelOptions(), [], 'a CLI that exits: empty list, no throw');
+    assert.strictEqual(ad.capabilities.models, true);
+    assert.strictEqual(ad.capabilities.effort, true);
+  }
+
+  // ---- questions (FR-128, FR-129): the hook asks the user and answers with updatedInput.answers; skip = deny; Stop cancels ----
+  {
+    const { parseQuestions, cleanAnswers } = await import('../src/adapters/questions');
+    const qs = parseQuestions({ questions: [{ question: '  Which   colour? ', header: 'Colour', multiSelect: false, options: [{ label: 'Red', description: 'warm' }, { label: '' }, 'x', { label: 'Blue' }] }, { question: '' }, { question: 'Q2', options: new Array(9).fill({ label: 'o' }), multiSelect: true }, { question: 'Q3' }, { question: 'Q4' }, { question: 'Q5' }] });
+    assert.strictEqual(qs.length, 4, 'at most 4 questions, empty ones dropped');
+    assert.deepStrictEqual(qs[0], { question: 'Which colour?', header: 'Colour', multiSelect: false, options: [{ label: 'Red', description: 'warm' }, { label: 'Blue' }] });
+    assert.strictEqual(qs[1].options.length, 6, 'at most 6 options');
+    assert.deepStrictEqual(cleanAnswers(qs, { 'Which colour?': '  Blue ', unknown: 'x', Q2: 5 }), { 'Which colour?': 'Blue' });
+    assert.strictEqual(cleanAnswers(qs, { 'Which colour?': '   ' }), undefined);
+    assert.deepStrictEqual(parseQuestions(null), []);
+
+    const answers: Record<string, Record<string, unknown>> = {};
+    let cur: FakeClaudeChild | undefined;
+    const { ad, events } = make({
+      turn: (c) => {
+        cur = c;
+        if ((c as unknown as { rec?: boolean }).rec) return;
+        (c as unknown as { rec?: boolean }).rec = true;
+        const prev = c.onWrite;
+        c.onWrite = (o) => {
+          prev?.(o);
+          if (o.type === 'control_response') {
+            const r = o.response as { request_id: string; response: Record<string, unknown> };
+            answers[r.request_id] = r.response;
+          }
+        };
+      },
+    });
+    const ask = (rid: string, tu: string): void =>
+      cur!.send({ type: 'control_request', request_id: rid, request: { subtype: 'hook_callback', callback_id: PRE_TOOL_USE_HOOK, input: { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_use_id: tu, tool_input: { questions: [{ question: 'Which  colour?', header: 'C', multiSelect: false, options: [{ label: 'Red' }, { label: 'Blue' }] }] } } } });
+    const sid = await ad.start({ workspace: WS, quiet: true }); // Read-only: a question is still allowed
+    await ad.send(sid, { text: 'go' });
+    await until('turn', () => cur);
+    ask('q1', 'tu-q1');
+    const asked = await until('asked', () => events.find((e) => e.type === 'question' && (e as { phase: string }).phase === 'asked') as { requestId: string; questions: { question: string }[] } | undefined);
+    assert.strictEqual(asked.requestId, 'tu-q1');
+    assert.strictEqual(asked.questions[0].question, 'Which colour?', 'cleaned for the UI');
+    assert.ok(events.some((e) => e.type === 'status' && (e as { intent?: string }).intent === 'Waiting for your answer'));
+    assert.strictEqual(answers.q1, undefined, 'the hook waits for the user');
+    ad.answerQuestion(sid, 'tu-q1', { 'Which colour?': 'Blue' });
+    await until('q1 answer', () => answers.q1);
+    const out = (answers.q1 as Record<string, unknown>).hookSpecificOutput as { permissionDecision: string; updatedInput: { answers: Record<string, string>; questions: unknown[] } };
+    assert.strictEqual(out.permissionDecision, 'allow');
+    assert.deepStrictEqual(out.updatedInput.answers, { 'Which  colour?': 'Blue' }, "keyed by Claude's own question text");
+    assert.ok(Array.isArray(out.updatedInput.questions), 'the rest of the input is kept');
+    assert.ok(events.some((e) => e.type === 'question' && (e as { phase: string }).phase === 'answered'));
+    // skip
+    ask('q2', 'tu-q2');
+    await until('asked 2', () => events.find((e) => e.type === 'question' && (e as { requestId?: string }).requestId === 'tu-q2'));
+    ad.answerQuestion(sid, 'tu-q2', null);
+    await until('q2 answer', () => answers.q2);
+    assert.strictEqual((answers.q2.hookSpecificOutput as { permissionDecision: string }).permissionDecision, 'deny');
+    // Stop while a question is open: answered deny, cancelled event
+    ask('q3', 'tu-q3');
+    await until('asked 3', () => events.find((e) => e.type === 'question' && (e as { requestId?: string }).requestId === 'tu-q3'));
+    await ad.interrupt(sid);
+    await until('q3 answer', () => answers.q3);
+    assert.strictEqual((answers.q3.hookSpecificOutput as { permissionDecision: string }).permissionDecision, 'deny');
+    assert.ok(events.some((e) => e.type === 'question' && (e as { requestId?: string; phase: string }).requestId === 'tu-q3' && (e as { phase: string }).phase === 'cancelled'));
+    // can_use_tool fallback asks too; an input that already has answers is allowed as it is
+    cur!.send({ type: 'control_request', request_id: 'c1', request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', input: { questions: [{ question: 'Q?', options: [{ label: 'A' }] }], answers: { 'Q?': 'A' } }, tool_use_id: 'tu-c1' } });
+    await until('c1', () => answers.c1);
+    assert.strictEqual(answers.c1.behavior, 'allow');
+    ad.answerQuestion(sid, 'nope', { x: 'y' }); // unknown ids are ignored
     await ad.stop(sid);
   }
 

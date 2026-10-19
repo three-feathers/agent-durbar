@@ -72,6 +72,14 @@ body.has-bridge #liveBar{display:flex}
 .chips>.note.perm{box-sizing:border-box}
 .note.perm.settled{background:#f4f0e6;border-color:#e4dcc6}
 .note.perm.settled.denied{background:#f9ece9;border-color:#ebc7c2}
+/* questions from the agent (spec 012 FR-130) */
+.note.question .q-item{margin-top:8px}
+.note.question .q-text{margin:0 0 6px;font-size:13px;line-height:1.4;color:var(--ink)}
+.note.question .q-text .tag{font-size:11px}
+.note.question .q-opts{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.note.question .q-opt{height:30px;padding:0 12px;font-size:12.5px}
+.note.question .q-opt.primary{font-weight:650} /* chosen: the theme's primary button look */
+.note.question .q-other{height:30px;min-width:180px;flex:1 1 180px;max-width:360px;border:1px solid var(--line);border-radius:9px;padding:0 9px;font:inherit;font-size:12.5px;background:var(--surface);color:var(--ink)}
 .note .btn.session{background:#e8f0f6;border-color:#c3d4e2;color:var(--drop-ink,#2a506c)}
 .note .btn.session:hover{background:#dce8f1}
 .grants{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
@@ -404,7 +412,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .stage[data-d="mini"] .l1{align-items:center}
 .stage[data-d="mini"] .l1 .name{font-size:13px}
 .stage[data-d="mini"] .l3{display:none}
-.stage[data-d="mini"] .stl,.stage[data-d="micro"] .stl{display:inline;margin-left:auto;flex:none;font-size:10.5px;font-weight:650;color:var(--pc);white-space:nowrap}
+.stage[data-d="mini"] .stl,.stage[data-d="micro"] .stl{display:inline;margin-left:auto;flex:0 1 auto;min-width:1.9em;overflow:hidden;text-overflow:ellipsis;font-size:10.5px;font-weight:650;color:var(--pc);white-space:nowrap} /* the status word gives way before the name (FR-025) */
+.stage[data-d="mini"] .l1 .name,.stage[data-d="micro"] .l1 .name{flex-shrink:0;max-width:calc(100% - 3.7em)} /* whole up to the room left for the mode icon and a short status */
 .stage[data-d="micro"] .desk.card{padding:3px 8px 3px 3px;column-gap:6px}
 .stage[data-d="micro"] .l3{display:none}
 .stage[data-d="micro"] .l1{align-items:center}
@@ -605,6 +614,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .room-mcp:hover{background:#fff;color:var(--ink)}
 #liveBar .btn{white-space:nowrap}
 #liveBar select[hidden]{display:none}
+/* spec 012 FR-120: with the agent-kind picker on a narrow window the toolbar selects are as wide as their choice, so Office / List usually stays on the row (it wraps as designed otherwise, PR #124) */
+@media (max-width:1399px){#liveBar:has(#kindSel:not([hidden])) select{field-sizing:content;min-width:64px}}
 
 /* ---------- milestone 7: timeline, thinking, sub-agents, markdown ---------- */
 .tl{display:flex;flex-direction:column;gap:7px;min-width:0;max-width:100%}

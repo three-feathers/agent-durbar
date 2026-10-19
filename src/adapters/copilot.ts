@@ -1,4 +1,6 @@
+import { randomUUID } from 'crypto';
 import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
+import { parseQuestions } from './questions';
 import type { CopilotSession, MCPServerConfig, ModelInfo, PermissionRequest, PermissionRequestResult, ResumeSessionConfig, SessionConfig, SessionEvent } from '@github/copilot-sdk';
 import type {
   AdapterCapabilities,
@@ -50,7 +52,12 @@ interface Live {
   /** A title reached the app (event or name.get), or name.get was already asked once (issue #126). */
   titled?: boolean;
   askedTitle?: boolean;
+  /** `ask_user` questions waiting for the user (spec 002 FR-058): request id -> waiter. */
+  questions?: Map<string, { choices: string[]; resolve: (answer: string | null) => void }>;
 }
+
+/** What Copilot gets when the user skips an `ask_user` question (spec 002 FR-058). */
+const SKIPPED_ANSWER = '(The user skipped the question. Decide yourself.)';
 
 const COPILOT_ID = 'copilot';
 const COPILOT_NAME = 'GitHub Copilot';
@@ -175,6 +182,28 @@ export class CopilotAdapter implements AgentAdapter {
     const onPermissionRequest = async (req: PermissionRequest): Promise<PermissionRequestResult> =>
       broker.request(req as unknown as PermissionLike);
 
+    // spec 002 FR-058: Copilot's `ask_user` (legacy form) as a question card; allowed in every mode (a question is not an action)
+    const onUserInputRequest = async (req: { question?: unknown; choices?: unknown; allowFreeform?: unknown }): Promise<{ answer: string; wasFreeform: boolean }> => {
+      const live = this.sessions.get(sid);
+      const asked = parseQuestions({ questions: [{ question: req.question, options: (Array.isArray(req.choices) ? req.choices : []).map((c) => ({ label: c })), multiSelect: false }] });
+      if (!live || !asked.length) return { answer: SKIPPED_ANSWER, wasFreeform: true };
+      const requestId = randomUUID();
+      live.questions ??= new Map();
+      const answer = await new Promise<string | null>((resolve) => {
+        live.questions!.set(requestId, { choices: asked[0].options.map((o) => o.label), resolve });
+        this.emit(sid, { type: 'question', phase: 'asked', requestId, questions: asked });
+        this.emit(sid, { type: 'status', status: 'needs-permission', intent: 'Waiting for your answer' });
+      });
+      live.questions.delete(requestId);
+      if (answer === null) {
+        this.emit(sid, { type: 'question', phase: 'cancelled', requestId });
+        return { answer: SKIPPED_ANSWER, wasFreeform: true };
+      }
+      this.emit(sid, { type: 'question', phase: 'answered', requestId, answers: { [asked[0].question]: answer } });
+      this.emit(sid, { type: 'status', status: 'working', intent: 'Answered' });
+      return { answer, wasFreeform: !asked[0].options.some((o) => o.label === answer) };
+    };
+
     const config = {
       workingDirectory: cwd,
       streaming: true,
@@ -186,6 +215,7 @@ export class CopilotAdapter implements AgentAdapter {
       // AI-credit cap (spec 011): the SDK calls it "AI Credits"; the app treats 1 AIU = 1 credit. `sessionLimits` is @experimental in SDK 1.0.22.
       ...(options.maxAiCredits && options.maxAiCredits > 0 && Number.isFinite(options.maxAiCredits) ? { sessionLimits: { maxAiCredits: options.maxAiCredits } } : {}),
       onPermissionRequest,
+      onUserInputRequest,
     };
     this.debug?.(`mcp: servers=[${Object.keys(options.mcpServers ?? {}).join(',')}] disabled=[${(options.disabledMcpServers ?? []).join(',')}]`);
     let session: CopilotSession;
@@ -251,10 +281,23 @@ export class CopilotAdapter implements AgentAdapter {
    * Stop = interrupt the current turn only. The session stays open and the agent returns to Ready, so the next
    * message just works. Pending permission requests are denied cleanly; "Approve for this session" grants stay.
    */
+  /** spec 002 FR-058: the user's answer to an `ask_user` question; null = skipped. */
+  answerQuestion(sessionId: string, requestId: string, answers: Record<string, string> | null): void {
+    const q = this.sessions.get(sessionId)?.questions?.get(requestId);
+    if (!q) return;
+    const v = answers ? Object.values(answers).find((x) => typeof x === 'string' && x.trim()) : undefined;
+    q.resolve(v ? v.replace(/\s+/g, ' ').trim().slice(0, 500) : null);
+  }
+
+  private cancelQuestions(live: Live): void {
+    for (const q of [...(live.questions?.values() ?? [])]) q.resolve(null);
+  }
+
   async interrupt(sessionId: string): Promise<void> {
     const live = this.sessions.get(sessionId);
     if (!live) return;
     live.broker.denyPending();
+    this.cancelQuestions(live);
     await this.cancelLimit(live);
     try {
       await live.session.abort();
@@ -270,6 +313,7 @@ export class CopilotAdapter implements AgentAdapter {
     if (!live) return;
     await this.cancelLimit(live);
     live.broker.stop(); // pending permissions are denied cleanly (renderer clears Approve/Deny) and grants are dropped
+    this.cancelQuestions(live);
     try {
       await live.session.abort();
     } catch {
