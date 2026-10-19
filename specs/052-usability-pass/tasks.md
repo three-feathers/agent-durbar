@@ -14,4 +14,4 @@
 - [x] T012 Plain words in the list, room header and Settings [FR-012]
 - [x] T013 Plain names for themed places [FR-013]
 - [x] T014 N: next agent that needs you [FR-014]
-- [ ] T015 Driver `scripts/shots-052-ux.js`, screenshots, `check:office`, `check:geometry`, docs; follow-up issues [SC-001..SC-004]
+- [x] T015 Driver `scripts/shots-052-ux.js`, screenshots, `check:office`, `check:geometry`, docs; follow-up issues [SC-001..SC-004]

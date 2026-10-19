@@ -94,6 +94,8 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
   - N goes Kenji → Tomas (Jonas had just been approved).
   - Screenshots: `docs/screenshots/052-*.png`.
 - `test:` `test:mood`, `test:usagetotals` and `test-usage-012` cover the new wording; `npm test` (45 suites) passes.
+- `check:office` (2 shards, default theme) and `check:geometry` (60/60) pass. Two checks were adapted to the intended behaviour: a themed place's label may continue "Name (plain name): …", and the previous-sessions check opens the closed list as a user would.
+- Found while checking: copy buttons in Thinking blocks and sub-agent prompts were placed in the panel's corner. They were invisible until FR-010 showed them; they now sit on their own block.
 - Contrast (FR-009), computed from the tokens: `--muted` #535a55 is at least 4.88:1 on every room wall; `--focus` #2f5f8a is at least 3.7:1 on every surface and card line.
 - `[KNOWN GAP]`: the reviews were AI personas working from screenshots and the source, not people; nobody ran a screen reader or 150% zoom.
 

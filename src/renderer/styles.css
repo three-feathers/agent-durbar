@@ -269,7 +269,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .msg.user .bubble{background:var(--pb-working,#e3ecf4);color:#1f3b52;border-bottom-right-radius:6px}
 .msg.agent .bubble{background:var(--surface-2);border:1px solid var(--line);border-bottom-left-radius:6px;align-self:flex-start}
 /* copy buttons (spec 005 FR-015): quiet until the reply or block is hovered or the button has keyboard focus; spec 052 FR-010: dimmed but visible at rest, so keyboard and touch users know they are there */
-.msg.agent .bubble.md{position:relative}
+.msg.agent .bubble.md,.think-body.md,.sub-prompt .pt.md{position:relative} /* spec 052: a copy button anchors to its own block (it sat in the panel corner while it was invisible) */
 .md pre{position:relative}
 .cp-btn{position:absolute;top:4px;right:4px;height:22px;padding:0 8px;font:inherit;font-size:11px;font-weight:600;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);cursor:pointer;opacity:.55;transition:opacity .12s}
 .cp-msg{top:auto;bottom:-11px;right:10px}
