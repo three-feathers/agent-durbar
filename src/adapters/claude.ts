@@ -27,6 +27,7 @@ import { PermissionBroker, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec, StartOptions, Unsubscribe } from './types';
 import { parseUsdCap } from '../shared/credits';
+import { simpleDiff, clipDiff } from '../shared/diff';
 import { HANDOFF_PROMPT, cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
 import type { ModelOption } from '../shared/modelswitch';
@@ -82,6 +83,10 @@ export function permissionLikeOf(toolName: string, input: Record<string, unknown
       like.path = p;
       like.fileName = p;
     }
+    if (kind === 'write') {
+      const d = editDiffOf(toolName, input, p);
+      if (d) like.diff = d;
+    }
   } else if (kind === 'shell') {
     const c = s('command');
     if (c) like.fullCommandText = c;
@@ -96,6 +101,26 @@ export function permissionLikeOf(toolName: string, input: Record<string, unknown
     }
   }
   return like;
+}
+
+/**
+ * Spec 052 FR-063: the change a Claude Edit, MultiEdit or Write would make, as a simple unified diff for the permission card; undefined
+ * when the input has no text to compare. Write shows every line as added (Durbar does not read the file to compare).
+ */
+export function editDiffOf(toolName: string, input: Record<string, unknown> | undefined, file?: string): string | undefined {
+  if (!input) return undefined;
+  const f = file ?? 'file';
+  const str = (v: unknown): v is string => typeof v === 'string';
+  if (toolName === 'Edit' && str(input.old_string) && str(input.new_string)) return simpleDiff(f, input.old_string, input.new_string) || undefined;
+  if (toolName === 'Write' && str(input.content)) return simpleDiff(f, '', input.content) || undefined;
+  if (toolName === 'MultiEdit' && Array.isArray(input.edits)) {
+    const parts = input.edits
+      .slice(0, 50)
+      .map((e) => (e && typeof e === 'object' && str((e as Record<string, unknown>).old_string) && str((e as Record<string, unknown>).new_string) ? simpleDiff(f, (e as Record<string, string>).old_string, (e as Record<string, string>).new_string) : ''))
+      .filter(Boolean);
+    return parts.length ? clipDiff(parts.join('\n')) : undefined;
+  }
+  return undefined;
 }
 
 /** Durbar's MCP servers as the CLI's `--mcp-config` JSON (`disabled` names left out). Never logged: env and headers may hold secrets. */

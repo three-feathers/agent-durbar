@@ -153,8 +153,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     ['Maya', 'Release notes', 'infra-notes', 'done', 'v0.3 release notes drafted and grouped by user-visible change', 0, ['CHANGELOG.md']],
   ];
   // Spec 052 FR-046: each waiting agent asks for its own thing, tied to its role and task (was one rename request for all of them)
-  const WAIT_REQ: Record<string, { kind: 'write' | 'shell'; summary: string; target: string }> = {
-    Jonas: { kind: 'write', summary: 'Edit src/tools/companies.ts (rename find_company to search_companies)', target: 'src/tools/companies.ts' },
+  // Spec 052 FR-063: Jonas's edit carries a diff, like a Claude Code Edit request (the card's "Show the change")
+  const WAIT_REQ: Record<string, { kind: 'write' | 'shell'; summary: string; target: string; diff?: string }> = {
+    Jonas: {
+      kind: 'write', summary: 'Edit src/tools/companies.ts (rename find_company to search_companies)', target: 'src/tools/companies.ts',
+      diff: ['--- a/src/tools/companies.ts', '+++ b/src/tools/companies.ts', '@@ -12,7 +12,7 @@', ' import { z } from \'zod\';', ' ', ' export const companyTools = {', "-  find_company: {", "+  search_companies: {", "     description: 'Look up Swiss companies by name or UID',", '     input: z.object({ query: z.string().min(2) }),', '     handler: findCompany,'].join('\n'),
+    },
     Kenji: { kind: 'shell', summary: 'Run python evals/baseline.py --compare', target: 'python evals/baseline.py' },
     Lena: { kind: 'write', summary: 'Edit src/styles/focus.css (focus ring colour)', target: 'src/styles/focus.css' },
   };
@@ -472,7 +476,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const grantsEvent = (s: SimAgent): void =>
       emit({ type: 'grants', sessionId: sid(s), timestamp: now(), grants: [...s.grants].map(([key, label]) => ({ key, kind: 'write', label })) });
     /** Like the real broker: auto-approve under a session grant, otherwise leave the request pending. */
-    function askWrite(s: SimAgent, file: string, summary: string, cont: 'tool' | 'edit', intent: string, force = false, kind: 'write' | 'shell' = 'write'): boolean | 'denied' {
+    function askWrite(s: SimAgent, file: string, summary: string, cont: 'tool' | 'edit', intent: string, force = false, kind: 'write' | 'shell' = 'write', diff?: string): boolean | 'denied' {
       const sc = kind === 'shell' ? { key: 'shell:' + file, label: 'run ' + file } : scopeOf(file);
       if (!force && s.info.permMode === 'allow') return true; // Allow all: no question asked
       if (!force && s.info.permMode === 'read-only') {
@@ -487,7 +491,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       }
       s.perm = { ...base, file, cont };
       s.state = 'waiting';
-      emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending' } });
+      emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending', ...(diff ? { diff } : {}) } });
       return false;
     }
     function editTool(s: SimAgent, file: string, ok: boolean): void {
@@ -536,7 +540,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           break;
         case 'waiting': {
           const w = WAIT_REQ[s.info.name] ?? { kind: 'write' as const, summary: 'Edit ' + s.files[0], target: s.files[0] };
-          askWrite(s, w.target, w.summary, 'tool', s.intent, true, w.kind);
+          askWrite(s, w.target, w.summary, 'tool', s.intent, true, w.kind, w.diff);
           break;
         }
         case 'error':

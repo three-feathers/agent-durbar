@@ -7,7 +7,9 @@
  *
  * Checks: the restore strip under the top bar (names the folders, covers nothing, Make it ask me first / Keep as it is); room counts in words; a waiting chat shows how to answer without
  * scrolling (its card in view, or the answer bar); at most 3 header actions; the More menu by keyboard; Previous sessions closed
- * for a chat with a conversation; the list header straight; N opens the next agent that needs you. Prints "[052] PASS".
+ * for a chat with a conversation; the list header straight; N opens the next agent that needs you. Round 6: Allow all badges inside their cards,
+ * Sven reads Failing with a last-activity tooltip, 34px list rows with the new columns, sorting (aria-sort) and J/K, Jonas's "Show the change".
+ * Prints "[052] PASS".
  */
 const assert = require('assert');
 const path = require('path');
@@ -36,6 +38,13 @@ module.exports = async (ctx) => {
     assert.ok(/swisscontract-ai|command-center/.test(strip.text), 'it names the folders: ' + strip.text);
     assert.ok(strip.below, 'the office starts below it (nothing covered)');
     assert.deepStrictEqual(strip.btns, ['Make it ask me first', 'Keep as it is']);
+    // FR-065 (round 6): every card in an Allow all folder says so, inside its card; FR-062: Sven (3 failed tool calls in the simulator) reads Failing
+    const aa = await js(`(()=>{const b=[...document.querySelectorAll('#stage .desk .modebadge')];return {n:b.length,text:[...new Set(b.map(x=>x.textContent))],inside:b.every(x=>{const r=x.getBoundingClientRect(),c=x.closest('.desk').getBoundingClientRect();return r.width>0&&r.left>=c.left-0.5&&r.right<=c.right+0.5&&r.top>=c.top-0.5&&r.bottom<=c.bottom+0.5;}),allow:[...document.querySelectorAll('#stage .desk[aria-label*="Allow all"]')].length}})()`);
+    assert.ok(aa.n > 0 && aa.n === aa.allow, 'one Allow all badge per Allow all card: ' + JSON.stringify(aa));
+    assert.deepStrictEqual(aa.text, ['Allow all']); assert.ok(aa.inside, 'the badge stays inside its card');
+    const sv = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith('Sven'));const p=d&&[...d.querySelectorAll('.pill,.stl')].find(x=>x.getClientRects().length);return p?{text:p.innerText.trim(),cls:p.className,title:d.getAttribute('title')||''}:null})()`);
+    assert.ok(sv && /^Failing/.test(sv.text) && /st-failing/.test(sv.cls), 'Sven reads Failing: ' + JSON.stringify(sv));
+    assert.ok(/Last activity (just now|\d+ min ago)/.test(sv.title), 'the card says when it last did something: ' + sv.title);
     // FR-006: room counts in words
     const dots = await js(`[...document.querySelectorAll('#stage .room-dots[role="img"]')].map(x=>x.getAttribute('aria-label'))`);
     assert.ok(dots.length && dots.every((l) => /\d+ (waiting for you|error|working|done|idle)/.test(l)), 'room counts have words: ' + dots[0]);
@@ -97,6 +106,10 @@ module.exports = async (ctx) => {
     const answerable = () => js(`(()=>{const c=document.getElementById('chat').getBoundingClientRect();const card=[...document.querySelectorAll('#chat .note.perm:not(.settled)')].pop();const r=card&&card.getBoundingClientRect();const inView=r&&r.top>=c.top-1&&r.bottom<=c.bottom+1;const bar=document.getElementById('answerBar');return {inView:!!inView,bar:!bar.hidden,btns:[...bar.querySelectorAll('button')].map(b=>b.textContent)}})()`);
     let st = await answerable();
     assert.ok(st.inView || st.bar, 'the request is visible or the bar is shown');
+    // FR-063 (round 6): Jonas's edit request has a collapsed "Show the change" with + and - lines; the chat header says when it was last active
+    const df = await js(`(()=>{const d=[...document.querySelectorAll('#chat .note.perm:not(.settled) > details.pdiff')].pop();if(!d)return null;const was=d.open;d.open=true;const r={was,sum:d.querySelector('summary').textContent,add:d.querySelectorAll('.dl.add').length,del:d.querySelectorAll('.dl.del').length};d.open=false;return r;})()`);
+    assert.ok(df && !df.was && /^Show the change/.test(df.sum) && df.add > 0 && df.del > 0, 'Jonas: a collapsed diff: ' + JSON.stringify(df));
+    assert.match(await js(`(document.querySelector('#panelHead [data-f=ago]')||{}).textContent||''`), /^active (just now|\d+m ago)$/);
     await shot(`052-chat-waiting-${w}x${h}.png`);
     await js(`document.getElementById('chat').scrollTop=0`); await ctx.sleep(600);
     st = await answerable();
@@ -121,6 +134,23 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('vList').click()`); await ctx.sleep(2500);
     const tops = await js(`[...document.querySelector('.lrow.lhead').children].map(c=>Math.round(c.getBoundingClientRect().top))`);
     assert.ok(Math.max(...tops) - Math.min(...tops) <= 1, 'list header straight: ' + tops.join(','));
+    // FR-064 (round 6): 34px rows, the new columns, sorting by a header (aria-sort), J/K between rows
+    const lv = await js(`(()=>{const rows=[...document.querySelectorAll('#list button.lrow')];return {n:rows.length,h:Math.max(...rows.map(r=>r.getBoundingClientRect().height)),cols:[...document.querySelectorAll('.lrow.lhead .lsort')].map(b=>b.firstChild.textContent),cells:rows.length?rows[0].children.length:0,pageW:document.documentElement.scrollWidth<=innerWidth+1}})()`);
+    assert.ok(lv.n >= 15 && lv.h <= 35, 'list rows are 34px: ' + JSON.stringify(lv));
+    assert.deepStrictEqual(lv.cols, ['Agent', 'Agent app', 'Role', 'Folder', 'Current task', 'Last activity', 'Cost', 'Status']);
+    assert.strictEqual(lv.cells, 8, 'one cell per column'); assert.ok(lv.pageW, 'the list does not widen the page');
+    await js(`document.querySelector('#list [data-lsort="name"]').click()`); await ctx.sleep(300);
+    const asc = await js(`({sort:document.querySelector('#list [data-lsort="name"]').parentNode.getAttribute('aria-sort'),focus:document.activeElement&&document.activeElement.dataset.lsort,names:[...document.querySelectorAll('#list button.lrow .lname > span:nth-child(2)')].filter(n=>!n.classList.contains('sub')).map(n=>n.textContent.trim())})`);
+    assert.strictEqual(asc.sort, 'ascending'); assert.strictEqual(asc.focus, 'name', 'focus stays on the header');
+    assert.deepStrictEqual(asc.names, asc.names.slice().sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true })), 'sorted by name: ' + asc.names.join(','));
+    await js(`document.querySelector('#list [data-lsort="name"]').click()`); await ctx.sleep(300);
+    assert.strictEqual(await js(`document.querySelector('#list [data-lsort="name"]').parentNode.getAttribute('aria-sort')`), 'descending');
+    await js(`document.querySelector('#list button.lrow').focus()`); key('J'); await ctx.sleep(200);
+    assert.ok(await js(`document.activeElement===document.querySelectorAll('#list button.lrow')[1]`), 'J moves to the next row');
+    key('K'); await ctx.sleep(200);
+    assert.ok(await js(`document.activeElement===document.querySelectorAll('#list button.lrow')[0]`), 'K moves back');
+    await js(`document.querySelector('#list [data-lsort="name"]').click()`); await ctx.sleep(300); /* back to ascending for the picture */
+    await js(`document.activeElement&&document.activeElement.blur()`);
     await shot(`052-list-${w}x${h}.png`);
     await js(`document.getElementById('vOffice').click()`); await ctx.sleep(800);
 

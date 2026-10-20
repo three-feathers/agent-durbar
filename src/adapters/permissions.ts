@@ -22,6 +22,8 @@ export interface PermissionLike {
   /** MCP requests: the server that hosts the tool. */
   serverName?: string;
   path?: string;
+  /** Spec 052 FR-063: the change an edit would make (unified diff text), shown on the pending card only. */
+  diff?: string;
 }
 
 export type Decision = { kind: 'approve-once' } | { kind: 'reject'; feedback: string };
@@ -298,7 +300,7 @@ export class PermissionBroker {
       this.opts.emit({ type: 'resolved', permission: { ...base, state: 'approved', via: 'session' } });
       return { kind: 'approve-once' };
     }
-    const info: PermissionInfo = { ...base, state: 'pending' };
+    const info: PermissionInfo = { ...base, state: 'pending', ...(typeof req.diff === 'string' && req.diff ? { diff: req.diff } : {}) }; // spec 052 FR-063: the diff rides on the pending request only
     this.opts.emit({ type: 'pending', permission: info });
     const r = await new Promise<Answer>((resolve) => this.pending.set(requestId, { info, resolve }));
     this.pending.delete(requestId);

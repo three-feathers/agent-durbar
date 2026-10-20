@@ -108,3 +108,11 @@
 - [x] T062 "Needs you" outside the window: title count, one coalesced and throttled OS notification with a setting, app badge or taskbar flash, `notifications` allowed [FR-059]
 - [x] T063 Alt+A / Alt+S / Alt+D / Alt+N in a waiting chat, keys in the bar's buttons and the shortcuts sheet [FR-060]
 - [x] T064 Inbox oldest first with "waiting N min" on each row, refreshed every 30 s while open [FR-061]
+
+## Round 6: truth and density (2026-10-20)
+
+- [x] T065 "Failing" pill (waiting colours) for a working agent with 3+ failed tool calls in a row on cards, list and chat header; last activity in card tooltips, a list column and the chat header, repainted by a 30 s tick [FR-062]
+- [x] T066 Tool chips: the whole command with Copy, 20000 characters of output with Show all, duration; optional `PermissionInfo.diff` filled by the Claude Code adapter (Edit, MultiEdit, Write) and the simulator (Jonas), "Show the change" on the permission card and inbox row [FR-063]
+- [x] T067 List: 34px rows, Agent app / Last activity / Cost columns, sort by header with `aria-sort` (memory only), J/K and Enter, Simple keeps the columns aligned; drivers `shots-052-ux.js`, `shots-034-list.js` [FR-064]
+- [x] T068 Red "Allow all" badge in the mode icon's slot on cards and list rows, the chat header's chip in the same red [FR-065]
+- [x] T069 "What Durbar does not do" in Settings and the README, each claim checked against the README [FR-066]

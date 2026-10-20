@@ -94,6 +94,12 @@ export interface PermissionInfo {
   via?: 'user' | 'session' | 'stopped';
   /** True when the user approved this one *and* remembered the scope for the session. */
   remembered?: boolean;
+  /**
+   * Spec 052 FR-063: what an edit would change, as unified-diff text ("--- a/x", "+++ b/x", "@@", "+", "-" lines), at most 20000
+   * characters. Optional: only pending requests that carry the edit's text have it (Claude Code Edit, MultiEdit and Write; the
+   * simulator). Copilot and Codex leave it out. Display text only: never run or applied.
+   */
+  diff?: string;
 }
 
 /** A remembered "Approve for this session" permission; can be revoked. */

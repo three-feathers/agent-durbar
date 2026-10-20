@@ -74,6 +74,7 @@ function aiuChip(){
 /* ---- how an agent is doing (spec 034, issue #20): the body follows the context window, trouble gets a drawing ---- */
 const MOODS=window.DurbarMood;
 const MOOD=MOODS.createMoodTracker();
+const ACT=window.DurbarActivity;
 let SERIOUS=false; /* Serious mode (Settings): no mood drawings at all */
 /* spec 052 FR-031 (#306): detail level. Simple hides the developer details (tokens, model and context chips, paths, MCP, VS Code, resume
    command) and says what agents do in plain verbs; Expert is everything. A display preference of this window (localStorage). */
@@ -92,15 +93,16 @@ function moodFor(a){
 }
 /* spec 052 FR-021: a problem that is not a status (stuck on failing tools, memory nearly full) also shows on the card's pill, in any mood
    setting: it is information, not decoration. '' when there is none. */
-function cardWarn(a){
+function cardWarn(a,pill){
   if(!a||a.parent||!a.live)return '';
   const c=STATS.agent(a.id).ctx, pct=c&&c.limit>0?window.DurbarStats.ctxLevel(c.tokens,c.limit).pct:null, fs=MOOD.failStreak(a.id);
   const out=[];
   if(MOODS.bodyOf(pct)==='monster')out.push('Context almost full ('+pct+'%)');
-  if(MOODS.troubleOf({state:vis(a),ambulance:false,limit:false,waitingMs:0,failStreak:fs})==='dizzy')out.push(fs+' tool calls failed in a row');
+  if(!(pill&&isFailing(a))&&MOODS.troubleOf({state:vis(a),ambulance:false,limit:false,waitingMs:0,failStreak:fs})==='dizzy')out.push(fs+' tool calls failed in a row');
   return out.join('; ');
 }
-const pillWarn=a=>{const w=cardWarn(a);return w?`<span class="pwarn" title="${esc(w)}" aria-hidden="true">⚠</span>`:'';};
+/* spec 052 FR-062: a pill that says "Failing" already tells the streak, so its ⚠ is left for the other warnings */
+const pillWarn=a=>{const w=cardWarn(a,true);return w?`<span class="pwarn" title="${esc(w)}" aria-hidden="true">⚠</span>`:'';};
 const moodWords=a=>{const w=moodFor(a).words;return w?' — '+esc(w):'';};
 const pickAmbulanceId=()=>MOODS.pickAmbulance(agents.filter(x=>x.live&&!x.parent&&roomShown(roomOf(x))).map(x=>({id:x.id,state:vis(x),errorAt:MOOD.errorAt(x.id)})));
 /* a room takes the tone of its worst main agent; the siren is on while it has the ambulance or a fainted agent (spec 034 delta, issue #135) */
@@ -126,6 +128,9 @@ const SIREN=()=>'<span class="siren" aria-hidden="true"><svg viewBox="0 0 14 14"
 /* "impatient" starts after 60 s without any event, so look every few seconds and redraw only when somebody's mood changed */
 let moodSig='';
 setInterval(()=>{if(SERIOUS||demoOn)return;const sig=agents.map(x=>x.live&&!x.parent?moodFor(x).trouble+'/'+moodFor(x).body:'').join('|');if(sig!==moodSig){moodSig=sig;scheduleRender();}},5000);
+/* spec 052 FR-062: "Last activity" labels follow the clock through the normal render, every 30 s and only when a label changed */
+let agoSig='';
+setInterval(()=>{if(demoOn)return;const sig=agents.map(x=>x.lastEventAt?ACT.agoShort(Date.now()-x.lastEventAt):'').join('|');if(sig!==agoSig){agoSig=sig;scheduleRender();}},30000);
 /* ---- places in the office (spec 024): a shared lobby; main agents walk to the place of the tool they are using ---- */
 const VISITS=window.DurbarPlaces.createVisits();
 const SEEN_SERVERS=new Set(); /* MCP server names seen in tool events this run (per-folder extras included): the Places settings list them */
@@ -241,6 +246,15 @@ const LABELS={working:'Working',thinking:'Thinking',waiting:'Waiting for you',id
 const LABELS_SHORT={waiting:'Waiting'};
 const vis = a => a.paused ? 'idle' : a.state;
 const label = (a,short) => a.paused ? 'Paused' : (a.label || (short&&LABELS_SHORT[a.state]) || LABELS[a.state]);
+/* spec 052 FR-062: Working (or Thinking) while its recent tool calls failed in a row (the mood's "dizzy" streak) reads "Failing", in the waiting
+   colours (.st-failing); the card keeps its is-working look and its place in the status filters. Main agents only (the tracker's scope). */
+const isFailing = a => !!a&&!a.parent&&!!a.live&&!a.paused&&(a.state==='working'||a.state==='thinking')&&MOOD.failStreak(a.id)>=MOODS.DIZZY_STREAK;
+const pillSt = a => isFailing(a)?'failing':vis(a);
+const stWord = (a,short) => isFailing(a)?'Failing':label(a,short);
+const pillTip = a => isFailing(a)?` title="${MOOD.failStreak(a.id)} tool calls failed in a row"`:'';
+/* spec 052 FR-062: last activity, from the last event of the agent or its helpers (a.lastEventAt, the time it arrived); repainted by the 30 s tick */
+const sinceLast = a => {const r=a&&a.parent?byId(a.parent)||a:a;return r&&r.lastEventAt?Math.max(0,Date.now()-r.lastEventAt):null;};
+const lastTip = a => {const t=ACT.agoLong(sinceLast(a));return t?' · Last activity '+t:'';};
 /* waiting-for-you first, then errors, everything else keeps its stable order (calm: no constant reshuffling) */
 const prio = a => {const s=vis(a);return s==='waiting'?0:s==='error'?1:2;};
 
@@ -467,11 +481,11 @@ function helperTileHTML(h){
 const visitPlace=a=>{const v=a.parent?null:VISITS.at(a.id);return v?v.place:(RETURNING.has(a.id)?null:null);};
 function cardHTML(a,d,nSubs){
   const st=vis(a), use=usageShort(a);
-  return `<button class="desk card is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${use?' · '+use:''}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
+  return `<button class="desk card is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${sceneC(a)}</span>
-    <span class="ci"><span class="l1"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a))}</span><span class="stl st-${st}">${label(a,true)}</span></span>
+    <span class="ci"><span class="l1"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a))}</span><span class="stl st-${pillSt(a)}">${esc(stWord(a,true))}</span></span>
     <span class="intent" title="${esc(taskOf(a))}">${esc(taskOf(a))}</span>
-    <span class="l3"><span class="pill st-${st}"><i></i>${label(a,true)}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${esc(use.split(' · ')[1])}</span>`:`${esc(use.split(' · ')[0]||'')}<span class="aiu">${use.includes(' · ')?' · '+esc(use.split(' · ')[1]):''}</span>`}</span></span></span></button>`;
+    <span class="l3"><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a,true))}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${esc(use.split(' · ')[1])}</span>`:`${esc(use.split(' · ')[0]||'')}<span class="aiu">${use.includes(' · ')?' · '+esc(use.split(' · ')[1]):''}</span>`}</span></span></span></button>`;
 }
 function linksSVG(d,rows,extraMore){
   const D=DENS[d]; const n=rows+(extraMore?1:0);
@@ -495,10 +509,10 @@ function unitHTML(a,d){
   }
   let desk;
   if(d==='full'){
-    desk=`<button class="desk is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
+    desk=`<button class="desk is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}"${lastTip(a)?` title="${esc(lastTip(a).slice(3))}"`:''} aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
       ${scene(a,false)}<span class="badge ${st}">${badgeSVG(st)}</span>
       <div class="info"><div class="who"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a))}</span></div>
-      <p class="task" title="${esc(taskOf(a))}">${esc(taskOf(a))}</p><span class="pill st-${st}"><i></i>${label(a)}${pillWarn(a)}</span></div></button>`;
+      <p class="task" title="${esc(taskOf(a))}">${esc(taskOf(a))}</p><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}${pillWarn(a)}</span></div></button>`;
   } else desk=cardHTML(a,d,nSubs);
   return `<div class="unit${nSubs?' has-h':''}" data-key="unit:${esc(a.id)}">${desk}${helpers}</div>`;
 }
@@ -723,24 +737,39 @@ function renderOffice(){
 }
 
 /* ---------------- list view ---------------- */
+/* spec 052 FR-064: sortable columns (click a header: ascending, then descending; in memory only), 34px rows. Unsorted it keeps the
+   office order with waiting and errors first. A helper stays under its main agent; main agents sort by the column. */
+const LCOLS=[['name','Agent'],['app','Agent app'],['role','Role'],['folder','Folder'],['task','Current task'],['ago','Last activity'],['cost','Cost'],['status','Status']];
+const ST_ORDER={waiting:0,error:1,failing:2,working:3,thinking:4,idle:5,done:6};
+let LSORT=null;
+const appOf=a=>{const r=a&&a.parent?byId(a.parent):a;return r&&r.live&&r.info?kindWord(r.info.adapterId):'';};
+/* the card's money words without the tokens: AIU as ≈ $, Claude's $ estimate; a kind with no price shows its tokens */
+const costVal=a=>{const u=a.usage;if(!u||!u.calls)return null;const k=usageCaps(a);return k.nanoAiu?u.nano/1e9*AIU_USD:k.costUsd?(u.usd||0):null;};
+const costText=a=>{const u=a.usage;if(!u||!u.calls)return '';const k=usageCaps(a);return k.nanoAiu?approx(u.nano/1e9*AIU_USD):k.costUsd?fmtUsd(u.usd||0):fmtTok(u.inT+u.outT)+' tok';};
+const LVAL={name:a=>a.name,app:appOf,role:a=>a.role,folder:a=>roomOf(a).name,task:a=>taskText(a),ago:sinceLast,cost:costVal,status:a=>ST_ORDER[pillSt(a)]};
 function renderList(){
-  const rows=[];
+  const groups=[];
   roomsInOrder().forEach(r=>{ if(!roomShown(r)||(ui.ws!=='all'&&ui.ws!==r.id))return;
     agents.filter(a=>!a.parent&&a.room===r.id).slice().sort((x,y)=>Math.min(prio(x),...helpersOf(x).map(prio))-Math.min(prio(y),...helpersOf(y).map(prio))).forEach(a=>{
-      const subs=helpersOf(a);
-      if(matchStatus(a)){rows.push([a,false]);subs.forEach(h=>rows.push([h,true]));}
+      if(matchStatus(a))groups.push(a);
     });});
+  const sorted=LSORT?ACT.sortBy(groups,LVAL[LSORT.key],LSORT.dir):groups;
+  const rows=[];sorted.forEach(a=>{rows.push([a,false]);(LSORT?ACT.sortBy(helpersOf(a),LVAL[LSORT.key],LSORT.dir):helpersOf(a)).forEach(h=>rows.push([h,true]));});
   /* spec 034 FR-014: no figures here, so the mood words (cards: drawing + label) are written at the start of the task cell */
-  const row=([a,sub])=>{const st=vis(a),mw=moodFor(a).words;return `<button class="lrow" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}, ${esc(roomOf(a).name)}, ${label(a)}: ${esc(taskText(a))}${moodWords(a)}">
-    <span class="lname"><span class="dot ${st}"></span><span class="${sub?'sub':''}">${esc(a.name)}</span></span><span class="lcell">${esc(a.role)}</span><span class="lcell mono">${esc(roomOf(a).name)}</span><span class="lcell"${mw?` title="${esc(mw)}"`:''}>${mw?`<span class="lmood">${esc(mw)}</span> · `:''}${esc(taskText(a))}</span><span><span class="pill st-${st}"><i></i>${label(a)}</span></span></button>`};
-  $('list').innerHTML=`<div class="list-wrap" role="group" aria-label="Agents"><div class="lrow lhead" aria-hidden="true"><span>Agent</span><span>Role</span><span>Folder</span><span>Current task</span><span>Status</span></div>${rows.map(row).join('')||'<div class="empty">No agents match these filters.</div>'}</div>`;
+  const row=([a,sub])=>{const st=vis(a),mw=moodFor(a).words,ago=ACT.agoShort(sinceLast(a)),agoL=ACT.agoLong(sinceLast(a)),cost=costText(a),app=appOf(a);return `<button class="lrow" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}${app?', '+esc(app):''}, ${esc(roomOf(a).name)}, ${esc(stWord(a))}: ${esc(taskText(a))}${moodWords(a)}${agoL?'. Last activity '+agoL:''}${cost?'. Cost '+esc(cost):''}">
+    <span class="lname"><span class="dot ${st}"></span><span class="${sub?'sub':''}">${esc(a.name)}</span>${modeIcon(a)}</span><span class="lcell">${esc(app)}</span><span class="lcell">${esc(a.role)}</span><span class="lcell mono lfold">${esc(roomOf(a).name)}</span><span class="lcell"${mw?` title="${esc(mw)}"`:''}>${mw?`<span class="lmood">${esc(mw)}</span> · `:''}${esc(taskText(a))}</span><span class="lcell num"${agoL?` title="Last activity ${esc(agoL)}"`:''}>${esc(ago)}</span><span class="lcell num"${cost&&cost.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${esc(cost)}</span><span><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}</span></span></button>`};
+  const head=LCOLS.map(([k,t])=>{const on=LSORT&&LSORT.key===k,dir=on?(LSORT.dir==='asc'?'ascending':'descending'):'none';
+    return `<span role="columnheader" aria-sort="${dir}"${k==='folder'?' class="lfold"':''}><button type="button" class="lsort" data-lsort="${k}" title="Sort by ${esc(t.toLowerCase())}">${esc(t)}<span class="sarr" aria-hidden="true">${on?(LSORT.dir==='asc'?'▲':'▼'):'↕'}</span></button></span>`;}).join('');
+  $('list').innerHTML=`<div class="list-wrap" role="group" aria-label="Agents"><div class="lrow lhead" role="row">${head}</div>${rows.map(row).join('')||'<div class="empty">No agents match these filters.</div>'}</div>`;
 }
+document.addEventListener('click',e=>{const b=e.target.closest('#list [data-lsort]');if(!b)return;
+  LSORT=ACT.nextSort(LSORT,b.dataset.lsort);renderList();const n=document.querySelector(`#list [data-lsort="${CSS.escape(b.dataset.lsort)}"]`);if(n)n.focus();});
 
 function renderAll(){
   AMB_ID=pickAmbulanceId();
   prepareWalkers();
-  const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.door), inPanel=ae&&ae.closest&&ae.closest('#panel');
-  const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':ae.dataset.door?'data-door':'');
+  const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.door||ae.dataset.lsort), inPanel=ae&&ae.closest&&ae.closest('#panel');
+  const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':ae.dataset.door?'data-door':ae.dataset.lsort?'data-lsort':''); /* spec 052 FR-064: a sort header keeps focus too */
   renderStats();
   updateFloorAttention();
   if(ui.view==='office')renderOffice(); else renderList();
@@ -781,17 +810,27 @@ async function typeInto(el,text,speed,chat){
 }
 /* Tool chip: one compact line that truncates; click expands it to show the full command and output. */
 const CHIPS_SHOWN=6;
-function makeChip({tool,kind,label,res,state,output}){
+/* spec 052 FR-063: open, it shows the whole command or argument (`full`, monospace, wrapped) with Copy, how long the call took (`ms`, from the
+   events' times) and up to OUT_SHOWN characters of output in a scrollable block, with "Show all" for the rest. The closed line stays one line. */
+const OUT_SHOWN=20000, OUT_KEEP=1000000;
+const fmtDur=ms=>ms<1000?Math.round(ms)+' ms':ms<60000?(ms/1000).toFixed(1)+' s':Math.floor(ms/60000)+' min '+Math.round(ms%60000/1000)+' s';
+function makeChip({tool,kind,label,res,state,output,full,ms}){
   const k=kind||toolKind(tool), name=TOOLNAME[tool]||tool||'tool';
   const el=document.createElement('div');
   el.className='chip'+(state==='failed'||state==='fail'?' fail':state==='run'?' run':'');
   el.setAttribute('role','button');el.tabIndex=0;el.setAttribute('aria-expanded','false');
   el.title=name+': '+label+(res?' ('+res+')':'');
-  const detail=output&&output!==res?output:'';
+  const out=output==null?'':String(output).slice(0,OUT_KEEP), detail=out&&out!==res?out:'', cmd=full&&String(full).trim()?String(full):'';
+  const dur=typeof ms==='number'&&Number.isFinite(ms)&&ms>0?fmtDur(ms):'';
   if(detail)el.classList.add('has-detail');
-  el.innerHTML=`${ICON(k)||ICON('tool')}<b>${esc(name)}</b><code>${esc(label)}</code>${res?`<span class="res">${el.className.includes('fail')?'Failed: ':''}${esc(res)}</span>`:''}<span class="detail">${esc(detail)}</span>`;
+  if(cmd)el.classList.add('has-cmd');
+  const more=detail.length>OUT_SHOWN;
+  el.innerHTML=`${ICON(k)||ICON('tool')}<b>${esc(name)}</b><code>${esc(label)}</code>${res?`<span class="res">${el.className.includes('fail')?'Failed: ':''}${esc(res)}</span>`:''}${cmd||dur||detail?`<span class="xbody">${cmd?`<span class="cmdbox"><pre class="cmd">${esc(cmd)}</pre><button type="button" class="cp-btn cp-cmd" aria-label="Copy the command" title="Copy the command">Copy</button></span>`:''}${dur||(state==='failed'&&res)?`<span class="xmeta">${state==='failed'?'Failed':'Done'}${dur?' · took '+esc(dur):''}</span>`:''}${detail?`<pre class="detail">${esc(more?detail.slice(0,OUT_SHOWN):detail)}</pre>${more?`<button type="button" class="xall">Show all (${detail.length.toLocaleString('en-US')} characters)</button>`:''}`:''}</span>`:''}`;
+  if(more)el._out=detail;
   return el;
 }
+/* the open chip's own buttons and text: Copy the command, Show all output; a click inside the open body never folds the chip (text can be selected) */
+document.addEventListener('click',e=>{const x=e.target.closest('#chat .chip .xall');if(!x)return;const c=x.closest('.chip'),p=c&&c.querySelector('.detail');if(p&&c._out){p.textContent=c._out;x.remove();}});
 function refreshChips(box){
   const chips=[...box.children].filter(c=>c.classList.contains('chip'));
   let more=box.querySelector('.chips-more');
@@ -949,7 +988,8 @@ function setSend(){const b=$('sendBtn'),t=$('msgInput');if(!b||!t)return;const a
 function updatePanelHeader(){
   const a=byId(ui.selected); if(!a)return; const st=vis(a);
   const ph=$('panelHead'); if(!ph)return;
-  const sp=ph.querySelector('[data-f=status]'); sp.className='pill st-'+st; sp.innerHTML='<i></i>'+label(a);
+  const sp=ph.querySelector('[data-f=status]'); sp.className='pill st-'+pillSt(a); sp.innerHTML='<i></i>'+esc(stWord(a)); sp.title=isFailing(a)?MOOD.failStreak(a.id)+' tool calls failed in a row':''; /* spec 052 FR-062 */
+  const ag=ph.querySelector('[data-f=ago]'); if(ag){const t=ACT.agoShort(sinceLast(a));ag.textContent=!t?'':t==='just now'?'active just now':'active '+t+' ago';ag.title=t?'Last activity '+ACT.agoLong(sinceLast(a)):'';}
   const t=ph.querySelector('[data-f=task]'); t.textContent=taskText(a); t.title=taskText(a);
   const ug=ph.querySelector('[data-f=usage]'); ug.textContent=usageLong(a); ug.title=ug.textContent.endsWith(' est.')?USD_TIP:'';
   updateCapChip(a);
@@ -984,7 +1024,7 @@ function wireMenu(btnId,menuId){
    of view, a bar above the composer shows it with the same choices; its buttons press the card's own buttons, so there is one code
    path. A question is answered in its card (options and text): the bar takes you there. */
 /* the words of a request card (permission, question, limit), in full: the answer bar and the inbox show exactly this (FR-016, FR-027) */
-function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.pstate').forEach(x=>x.remove());const q=n.querySelector('.q-text');return (q?q.textContent:c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,'');}
+function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.pstate,.pdiff').forEach(x=>x.remove());const q=n.querySelector('.q-text');return (q?q.textContent:c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,'');}
 let answerObs=null;
 /* spec 052 FR-060: the key of a permission card's button, and the one click path the bar and the keys share */
 const answerKeyOf=b=>b.dataset.act==='session'?'Alt+S':/\bdanger\b/.test(b.className)?'Alt+D':/\bprimary\b/.test(b.className)?'Alt+A':'';
@@ -1043,7 +1083,7 @@ function openPanel(id,focus){
   p.innerHTML=`<div class="panel-in">
    <div class="strip" role="navigation" aria-label="Agents"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><div class="strip-list" id="stripList"></div></div>
    <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</h2><div class="sub">${esc(a.role)}${parent?' · helper of '+esc(parent.name):''}</div></div>
-      <div class="ph-meta"><span data-f="status"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?(a.live&&a.info&&!a.parent&&bridge.setModel&&feat(a,'models')?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`):''}${a.live&&a.info&&!a.parent&&a.info.profiles&&bridge.listProfiles?agentChipHTML(a):''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
+      <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?(a.live&&a.info&&!a.parent&&bridge.setModel&&feat(a,'models')?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`):''}${a.live&&a.info&&!a.parent&&a.info.profiles&&bridge.listProfiles?agentChipHTML(a):''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
       <div class="actions"><!-- spec 052 FR-003: two actions in view, the rest under More (ids kept; End and Remove last) --><button class="btn primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
         <button class="btn" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
         ${a.live&&!feat(liveRoot(a),'stop')?'':`<button class="btn danger" id="stopBtn" type="button" title="${a.live?'Stop: interrupts this reply. The chat stays open and ready; nothing is removed.':'Stop'}"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>Stop</button>`}
@@ -1136,7 +1176,7 @@ document.addEventListener('click',e=>{
   const st=e.target.closest('.stat[data-k]'); if(st){const k=st.dataset.k;ui.status=ui.status===k?null:k;renderAll();const n=document.querySelector(`.stat[data-k="${k}"]`);if(n)n.focus();return;}
   const mo=e.target.closest('[data-more]'); if(mo){const id=mo.dataset.more;ui.expanded[id]=!ui.expanded[id];renderAll();return;}
   const cm=e.target.closest('.chips-more'); if(cm){const box=cm.parentNode;box.dataset.exp=box.dataset.exp==='1'?'0':'1';refreshChips(box);return;}
-  const chip=e.target.closest('#chat .chip:not(.att-chip)'); if(chip){const o=chip.classList.toggle('open');chip.setAttribute('aria-expanded',String(o));return;}
+  const chip=e.target.closest('#chat .chip:not(.att-chip)'); if(chip){if(e.target.closest('.xbody'))return;const o=chip.classList.toggle('open');chip.setAttribute('aria-expanded',String(o));return;} /* spec 052 FR-063: the open body (Copy, Show all, selecting text) keeps it open */
   const sw=e.target.closest('[data-sw]'); if(sw){openPanel(sw.dataset.sw,e.detail===0);return;}
   if(e.target.closest('[data-costview]')){window.DurbarScreens.openTools(null,'cost');return;}
   const mr=e.target.closest('[data-mcproom]'); if(mr){const f=folderOfRoom(mr.dataset.mcproom);if(f)window.DurbarScreens.folderMcp(f.key,f.name);return;}
@@ -1174,6 +1214,13 @@ document.addEventListener('keydown',e=>{
     if(ui.selected){closePanel();return;}
   }
   if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('#chat .chip:not(.att-chip)')){e.preventDefault();e.target.click();}
+  /* spec 052 FR-064: in the list, J/K (and ↓/↑) move between rows; Enter opens the chat (the row is a button). The inbox has its own J/K. */
+  if(!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.isComposing&&e.target.matches&&e.target.matches('#list button.lrow, #list .lsort')&&/^(j|k|J|K|ArrowDown|ArrowUp)$/.test(e.key)){
+    const rows=[...document.querySelectorAll('#list button.lrow')], i=rows.indexOf(e.target), down=/^(j|J|ArrowDown)$/.test(e.key);
+    const n=i<0?(down?rows[0]:null):rows[Math.max(0,Math.min(rows.length-1,i+(down?1:-1)))];
+    if(n){e.preventDefault();n.focus();n.scrollIntoView({block:'nearest'});}
+    return;
+  }
   /* spec 052 FR-014: N opens the next agent that needs you (waiting, error or at its limit), outside text fields and dialogs */
   if((e.key==='i'||e.key==='I')&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]'))&&!document.querySelector('[role="dialog"][aria-modal="true"]')){e.preventDefault();openInbox();return;}
   /* spec 052 FR-043: ? opens the keyboard shortcut sheet, outside text fields and dialogs */
@@ -1304,7 +1351,7 @@ function openInbox(focusId){
 function inboxKey(e){
   const d=$('inboxDlg'); if(!d)return;
   if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeInbox();return;}
-  if(e.key==='Tab'){const f=[...d.querySelectorAll('button,[tabindex="-1"].ib-h,input')].filter(x=>x.getClientRects().length);if(!f.length)return;const i=f.indexOf(document.activeElement);if(e.shiftKey&&(i<=0)){e.preventDefault();f[f.length-1].focus();}else if(!e.shiftKey&&i===f.length-1){e.preventDefault();f[0].focus();}return;}
+  if(e.key==='Tab'){const f=[...d.querySelectorAll('button,summary,[tabindex="-1"].ib-h,input')].filter(x=>x.getClientRects().length);if(!f.length)return;const i=f.indexOf(document.activeElement);if(e.shiftKey&&(i<=0)){e.preventDefault();f[f.length-1].focus();}else if(!e.shiftKey&&i===f.length-1){e.preventDefault();f[0].focus();}return;}
   if(e.altKey||e.ctrlKey||e.metaKey)return;
   const rows=[...d.querySelectorAll('.inbox-row')], row=document.activeElement&&document.activeElement.closest('.inbox-row'), ri=rows.indexOf(row);
   const go=i=>{const r=rows[Math.max(0,Math.min(rows.length-1,i))];if(r)r.querySelector('.ib-h').focus();};
@@ -1329,6 +1376,7 @@ function paintInbox(focusIndex){
     {const t=NEED_SINCE.get(a.id);row.querySelector('.ib-wait').textContent=t!=null?'· '+ATT.waitLabel(Date.now()-t):'';} /* FR-061 */
     const text=card?requestText(card):(taskOf(a)||'');row.querySelector('.ib-t').textContent=text;
     const act=row.querySelector('.ib-act');
+    {const dd=card&&card.querySelector(':scope > details.pdiff');if(dd){const c=dd.cloneNode(true);c.open=false;act.before(c);}} /* spec 052 FR-063: the card's "Show the change", collapsed */
     const add=(label,cls,k,fn,title)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;b.dataset.k=k;b.setAttribute('aria-describedby','ibh'+i+' ibt'+i);if(title)b.title=title;b.onclick=fn;act.appendChild(b);};
     if(card&&!q)for(const src of card.querySelectorAll(':scope > .note-actions button')){
       if(src.dataset.broad)continue;
@@ -1461,9 +1509,11 @@ function openKbdHelp(back){
   const inbox=[[['J'],['K'],'Next or previous request (also ↓ ↑)'],[['A'],'Allow once'],[['S'],'Allow for this session'],[['D'],'Deny'],[['O'],'Open chat']];
   /* spec 052 FR-060: in an open chat that waits for you */
   const inChat=[[['Alt','A'],'Allow once'],[['Alt','S'],'Allow for this session'],[['Alt','D'],'Deny'],[['Alt','N'],'Next agent that needs you']];
+  /* spec 052 FR-064 */
+  const inList=[[['J'],['K'],'Next or previous row (also ↓ ↑)'],[['Enter'],'Open chat']];
   const row=(keys,what,alt)=>'<tr><td class="kb-k">'+kbdHTML(keys)+(alt?' <span class="kb-or">or</span> '+kbdHTML(alt):'')+'</td><td>'+esc(what)+'</td></tr>';
   const d=document.createElement('div');d.id='kbdDlg';d.className='dlg-ov';
-  d.innerHTML='<div class="dlg kbd-dlg" role="dialog" aria-modal="true" aria-labelledby="kbdT"><h3 id="kbdT">Keyboard shortcuts</h3><table class="kb-t"><tbody>'+rows.map(r=>row(r[0],r[1],r[2])).join('')+'</tbody></table><h4 class="kb-h">In the Needs you inbox</h4><table class="kb-t"><tbody>'+inbox.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In a chat that waits for you</h4><table class="kb-t"><tbody>'+inChat.map(r=>row(r[0],r[1])).join('')+'</tbody></table><p class="kb-note">On a Mac, Cmd works where Ctrl is shown, and Option where Alt is shown.</p><div class="dbtn"><button class="btn" type="button" id="kbdClose">Close</button></div></div>';
+  d.innerHTML='<div class="dlg kbd-dlg" role="dialog" aria-modal="true" aria-labelledby="kbdT"><h3 id="kbdT">Keyboard shortcuts</h3><table class="kb-t"><tbody>'+rows.map(r=>row(r[0],r[1],r[2])).join('')+'</tbody></table><h4 class="kb-h">In the Needs you inbox</h4><table class="kb-t"><tbody>'+inbox.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In a chat that waits for you</h4><table class="kb-t"><tbody>'+inChat.map(r=>row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In the list view</h4><table class="kb-t"><tbody>'+inList.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><p class="kb-note">On a Mac, Cmd works where Ctrl is shown, and Option where Alt is shown.</p><div class="dbtn"><button class="btn" type="button" id="kbdClose">Close</button></div></div>';
   document.body.appendChild(d);
   d.addEventListener('click',e=>{if(e.target===d)closeKbdHelp();});
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeKbdHelp();}else if(e.key==='Tab'){e.preventDefault();$('kbdClose').focus();}});
@@ -1537,7 +1587,8 @@ const MODE_IC={
 /* spec 052 FR-039: with more than one harness in the office, each card says which one runs it ("Reviewer · Codex") */
 const kindTag=a=>{const r=a&&a.parent?byId(a.parent):a;if(!r||!r.live||!r.info)return '';const ks=new Set(agents.filter(x=>x.live&&!x.parent&&x.info).map(x=>x.info.adapterId||'copilot'));return ks.size>1?' · '+kindWord(r.info.adapterId):'';};
 const modeWords=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?', '+MODE_NAME[a.info.permMode]+(a.info.permMode==='allow'&&a.info.permRestored?' (restored)':''):'';
-const modeIcon=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}${a.info.permMode==='allow'&&a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_HELP[a.info.permMode])} (right-click for options)" aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`:'';
+/* spec 052 FR-065: Allow all is a small red "Allow all" text badge in the icon's slot (the words, not only a padlock); the other modes keep the icon */
+const modeIcon=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?(a.info.permMode==='allow'?`<span class="modebadge" title="${esc(MODE_NAME.allow)}${a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_HELP.allow)} (right-click for options)" aria-hidden="true">Allow all</span>`:`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}: ${esc(MODE_HELP[a.info.permMode])} (right-click for options)" aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`):'';
 /* Floors state from the bridge (spec 033): rooms take their floor from it, then everything that depends on visibility re-renders. */
 function applyFloors(state){
   if(!state||!Array.isArray(state.floors)||!state.floors.length)return;
@@ -1705,7 +1756,7 @@ function addCopyButtons(el){
 document.addEventListener('click',async e=>{
   const b=e.target.closest('.cp-btn');if(!b)return;
   e.stopPropagation();
-  const text=b.classList.contains('cp-code')?((b.parentElement.querySelector('code')||b.parentElement).textContent||'').replace(/(Copy|Copied ✓)$/,''):(b.closest('.bubble')||{})._raw||'';
+  const text=b.classList.contains('cp-cmd')?((b.parentElement.querySelector('pre.cmd')||{}).textContent||''):b.classList.contains('cp-code')?((b.parentElement.querySelector('code')||b.parentElement).textContent||'').replace(/(Copy|Copied ✓)$/,''):(b.closest('.bubble')||{})._raw||''; /* spec 052 FR-063: cp-cmd copies a tool call's command */
   try{await navigator.clipboard.writeText(text);copiedLabel(b);}
   catch{toast('Could not copy to the clipboard.',3000).classList.add('err');}
 });
@@ -1767,9 +1818,11 @@ function tIntent(T,txt){
 }
 function tTool(T,e){
   const box=tChips(T);
-  if(e.phase==='start'){const label=toolLabel(e.args);const el=makeChip({tool:e.tool,label,res:'running',state:'run'});addChip(box,el);T.chipEls[e.callId]={el,tool:e.tool,label,box};}
-  else{const c=T.chipEls[e.callId];if(c){const full=String(e.output||'');
-    const el=makeChip({tool:c.tool||e.tool,label:c.label,res:SHORT(full||(e.phase==='complete'?'ok':'failed'),60),output:full.slice(0,2000),state:e.phase==='failed'?'failed':'ok'});
+  if(e.phase==='start'){const label=toolLabel(e.args),cmd=toolFull(e.args);const el=makeChip({tool:e.tool,label,full:cmd,res:'running',state:'run'});addChip(box,el);T.chipEls[e.callId]={el,tool:e.tool,label,cmd,t0:e.timestamp,box};}
+  else if(e.phase!=='update'||e.output!=null){const c=T.chipEls[e.callId];if(c){const full=String(e.output||''),done=e.phase!=='update';
+    const ms=done&&typeof c.t0==='number'&&typeof e.timestamp==='number'?e.timestamp-c.t0:null; /* spec 052 FR-063: duration from the start and end events' times */
+    const el=makeChip({tool:c.tool||e.tool,label:c.label,full:c.cmd,ms,res:done?SHORT(full||(e.phase==='complete'?'ok':'failed'),60):'running',output:full,state:!done?'run':e.phase==='failed'?'failed':'ok'});
+    if(c.el.classList.contains('open')){el.classList.add('open');el.setAttribute('aria-expanded','true');}
     c.el.replaceWith(el);c.el=el;refreshChips(c.box);}}
   tScroll(T);
 }
@@ -1964,11 +2017,10 @@ function setState(a,state,label,task){
 }
 const plainMd=t=>String(t==null?'':t).replace(/```[\s\S]*?```/g,' code ').replace(/!?\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/^[#>\-*\s]+/gm,'').replace(/[*_`~]/g,'').replace(/\s+/g,' ').trim();
 const SHORT=(v,n)=>{v=String(v==null?'':v).replace(/\s+/g,' ');return v.length>n?v.slice(0,n-1)+'…':v;};
-function toolLabel(args){
-  if(!args||typeof args!=='object')return '';
-  const v=args.path||args.pattern||args.command||args.url||args.query||args.file_path||Object.values(args).find(x=>typeof x==='string')||'';
-  return String(v).replace(/\s+/g,' ').slice(0,400);
-}
+const toolArg=args=>!args||typeof args!=='object'?'':String(args.path||args.pattern||args.command||args.url||args.query||args.file_path||Object.values(args).find(x=>typeof x==='string')||'');
+function toolLabel(args){return toolArg(args).replace(/\s+/g,' ').slice(0,400);}
+/* spec 052 FR-063: the whole argument as written (line breaks kept), for the open chip; at most 20000 characters */
+const toolFull=args=>toolArg(args).slice(0,OUT_SHOWN);
 /* ---------------- AI-credit cap: chip, dialog, limit reached (spec 011) ---------------- */
 let APP_SETTINGS={};
 function capChipHTML(a){
@@ -2097,12 +2149,23 @@ function settleLimit(a,action){
 const simpleScopeLabel=(a,label)=>{const m=/^write in (.+?)\/*$/.exec(String(label||''));if(!m)return '';const seg=m[1].split(/[\\/]/).filter(Boolean).pop();if(!seg)return '';
   return 'Let '+a.name+' change files in “'+(seg.length>28?seg.slice(0,27)+'…':seg)+'” until the session ends';};
 const relabelScopes=()=>document.querySelectorAll('[data-lbl-simple]').forEach(b=>{b.textContent=SIMPLE?b.dataset.lblSimple:b.dataset.lblExpert;});
+/* spec 052 FR-063: "Show the change", collapsed: the request's diff as + / - lines in monospace (text only, escaped by textContent) */
+function diffBlock(diff){
+  const {lines,more}=ACT.diffLines(diff), d=document.createElement('details');d.className='pdiff';
+  const add=lines.filter(l=>l.t==='add').length, del=lines.filter(l=>l.t==='del').length;
+  const sm=document.createElement('summary');sm.textContent='Show the change'+(add||del?' (+'+add+' −'+del+')':'');d.appendChild(sm);
+  const pre=document.createElement('pre');pre.setAttribute('aria-label','The change, as removed and added lines');
+  lines.forEach(l=>{const s=document.createElement('span');s.className='dl '+l.t;s.textContent=l.s||' ';pre.appendChild(s);});
+  if(more){const m=document.createElement('span');m.className='dmore';m.textContent='… '+more+' more line'+(more===1?'':'s')+' not shown';pre.appendChild(m);}
+  d.appendChild(pre);return d;
+}
 /* ---------- permissions: inline note in the tool timeline, Allow once / Allow for this session / Deny, revocable chips ---------- */
 function showPerm(a,p){
   const t=ensureTurn(a);
   const n=document.createElement('div');n.className='note perm';n.setAttribute('role','group');n.setAttribute('aria-label','Permission request');
   n.innerHTML='<b>Needs your OK:</b> <span class="psum"></span><span class="pstate"></span>';
   n.querySelector('.psum').textContent=p.summary;
+  if(p.state==='pending'&&typeof p.diff==='string'&&p.diff)n.appendChild(diffBlock(p.diff)); /* spec 052 FR-063 */
   const st=n.querySelector('.pstate');
   if(p.state==='denied')st.innerHTML=' <i>(denied: this agent is in Read-only. Switch it to Ask first to be asked instead)</i>';
   else if(p.state==='pending'){
@@ -2177,6 +2240,7 @@ function applyTitle(a,title){
 }
 function onLiveEvent(e){
   const a=liveById(e.sessionId); if(!a)return;
+  a.lastEventAt=Date.now(); /* spec 052 FR-062: last activity (when it arrived here; a helper's event counts for its main agent) */
   feedStats(a,e);
   if(!e.agentId){ /* spec 034: only main-agent events change the mood */
     if(e.type==='toolCall')MOOD.onTool(a.id,e);
@@ -2291,7 +2355,7 @@ function renderStrip(){
 
 /* ---------------- permission mode: change it at any time (spec 018) ---------------- */
 function modeChipHTML(a){const m=a.info.permMode, rs=m==='allow'&&a.info.permRestored;
-  if(!feat(a,'modes'))return `<span class="modechip" title="Set when the session starts">${esc(MODE_NAME[m])}</span>`;
+  if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts">${esc(MODE_NAME[m])}</span>`; /* spec 052 FR-065 */
   return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}. ${esc(MODE_HELP[m])}${rs?' Restored from your last run.':''} Click to change; it applies from the next request."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m])}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>`;}
 function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');}}
 function openModeMenu(a0,x,y,anchor){
@@ -3130,7 +3194,7 @@ function replayHistory(a,h,title,lead){
   for(const it of ((h&&h.items)||[])){
     if(it.type==='user'){m=null;addUserMsg(chat,it.text,(it.attachments||[]).map(x=>({name:x.name,img:x.kind==='image'})),it.ts);}
     else if(it.type==='output'){const b=document.createElement('div');b.className='bubble';agentMsg().appendChild(b);mdSet(b,it.text,true);}
-    else{const full=it.output||'';addChip(chipBox(),makeChip({tool:it.tool,label:it.label,res:SHORT(full||(it.failed?'failed':'ok'),60),output:full.slice(0,2000),state:it.failed?'failed':'ok'}));}
+    else{const full=it.output||'';addChip(chipBox(),makeChip({tool:it.tool,label:it.label,res:SHORT(full||(it.failed?'failed':'ok'),60),output:full,state:it.failed?'failed':'ok'}));}
   }
   addNote(chat,(lead||'Resumed')+': '+esc((title||'earlier session').replace(/[.!?…]+$/,''))+'. New messages continue this session.');
 }

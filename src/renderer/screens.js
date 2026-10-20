@@ -162,7 +162,14 @@
     const detailSec=X.detail?`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Detail level</h3>
         <p class="scr-note"><b>Simple</b> shows what agents do in plain words and what they cost; <b>Expert</b> adds tokens, models, context, paths and developer tools. Permissions and answering are the same in both.</p>
         <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div></section>`:'';
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${detailSec}${themeSec}${capSec}${moodSec}${notifySec}${schedSec}${floorsSec}${placesSec}
+    /* spec 052 FR-066: what Durbar does not do, in plain words (checked against the README's Safety model and Costs and caps) */
+    const notSec=`<section class="scr-sec" aria-labelledby="notH"><h3 id="notH">What Durbar does not do</h3><ul class="scr-not">
+        <li>It does not sandbox Claude Code or Copilot; only Codex has OS-level enforcement (in Read-only and Ask first).</li>
+        <li>It does not stop a reply halfway: spending limits are checked between replies.</li>
+        <li>It does not see your bill; costs are estimates.</li>
+        <li>It sends nothing to any server of its own.</li>
+        <li>Floors that are off and hidden folders keep running and spending.</li></ul></section>`;
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${detailSec}${notSec}${themeSec}${capSec}${moodSec}${notifySec}${schedSec}${floorsSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         <p class="scr-note">Every agent gets the servers of your <b>Copilot CLI list</b>, the one global list.</p>

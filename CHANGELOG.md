@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.8 tag)
 
+- **Round 6 of the usability pass: truth and density (spec 052, FR-062..FR-066).** A working agent whose last 3 tool calls failed reads **Failing** (waiting colours) on its card, in the list and in the chat header, and every card, list row and chat header says when it last did something. An open tool call shows the whole command with **Copy**, how long it took and up to 20000 characters of output; an edit request from Claude Code (and the demo) has a collapsed **Show the change** diff on its card and in the inbox. The list has 34px rows, **Agent app**, **Last activity** and **Cost** columns, sorting by any column and J/K. Cards in an Allow all folder say **Allow all** in red, and Settings and the README list **What Durbar does not do**.
+
 ## v0.1.0-alpha.8 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.8), 2026-10-20)
 
 Unsigned and not notarized; only Linux was run by hand. **Set up agent apps inside Durbar**: install, update and sign in to Copilot, Claude Code and Codex from Settings > Agent apps, with a native confirmation that shows the exact program before anything runs. **Five rounds of persona usability reviews** (about 20 personas) reshaped the app: the "Needs you" inbox and answer bar, Simple and Expert views, one word per concept, calmer visuals with period textures in the themes, High Contrast and focus support, OS notifications and Alt+A/S/D answers. Also new: **Make a theme with AI**, a Cost view per folder and the project website.

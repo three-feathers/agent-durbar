@@ -37,16 +37,16 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 ## What you can do
 
 **The office**
-- Every agent is a person at a desk in its folder's room. You see at a glance who is idle, working, thinking, waiting for you or in trouble.
+- Every agent is a person at a desk in its folder's room. You see at a glance who is idle, working, thinking, waiting for you or in trouble. A working agent whose last tool calls failed in a row says **Failing**, a card in an Allow all folder says **Allow all**, and hovering a card tells when it last did something.
 - 10-15 agents stay readable on one 1440x900 or 1280x800 screen, and the desks get denser on their own.
 - Sub-agents (helpers) sit next to the agent that started them.
 - Agents show how they are doing: heavy, monster, ambulance, room sirens. Main agents walk to a **place** in a shared lobby for the tool they use.
-- **Floors** group rooms and can be switched off. A **List** view is there when you want rows instead of desks.
+- **Floors** group rooms and can be switched off. A **List** view is there when you want rows instead of desks: agent app, last activity and cost columns, sortable, with J/K to move.
 - A room's **⋯** menu offers New session, Rename, Hide and **Remove folder**.
 
 **Chat**
 - Click an agent to open a full-screen chat. All the other agents stay in a slim strip.
-- You see its thinking, tool calls and replies as they stream in, with Markdown and copy buttons.
+- You see its thinking, tool calls and replies as they stream in, with Markdown and copy buttons. An open tool call shows the whole command (with Copy), how long it took and its output; a Claude Code edit request has a **Show the change** diff.
 - Attach files and images by picking, dropping or pasting.
 - Questions an agent asks you appear as a card with its choices, an "Other" answer and Skip.
 - **Needs you:** one inbox of every agent waiting for you, oldest first with how long each has waited. While Durbar is in the background the window title ("(3) Agent Durbar"), the app icon and one notification tell you (Settings > Notifications turns it off; it shows only the agent's name and a short summary). In a waiting chat, **Alt+A** allows once, **Alt+S** allows for the session, **Alt+D** denies and **Alt+N** goes to the next agent; **?** lists every shortcut.
@@ -143,6 +143,13 @@ Rules that always apply:
 - **Answering a question** an agent asks is allowed in every mode; it is not an action.
 - **A profile (custom agent) from a folder's repository** asks once before it is used and never changes your mode.
 - **Durbar never stores or logs** tokens, session content or your prompts. Debug logs are redacted.
+
+What Durbar does not do (the same list is in Settings):
+- It does not sandbox Claude Code or Copilot; only Codex has OS-level enforcement (in Read-only and Ask first).
+- It does not stop a reply halfway: spending limits are checked between replies.
+- It does not see your bill; costs are estimates.
+- It sends nothing to any server of its own.
+- Floors that are off and hidden folders keep running and spending.
 
 Codex in Read-only and Ask first gets an OS-enforced permission profile limited to the session's folders, and Durbar refuses those modes when the profile cannot be enforced. Claude Code gets its permission mode, allowed read tools and a check that reads stay inside your folders. Details: [spec 003](specs/003-permissions-and-approvals/spec.md) and [spec 012](specs/012-claude-codex-adapters/spec.md). To report a security problem, see [SECURITY.md](SECURITY.md).
 
