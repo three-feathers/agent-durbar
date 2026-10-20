@@ -184,6 +184,17 @@
         version:typeof a.version==='string'?a.version.slice(0,HINT_MAX):'',hint:typeof a.hint==='string'?a.hint.slice(0,HINT_MAX):''};
     });
   }
+  /* spec 030 FR-042 (#409): the agent apps a conversation can continue in: every ready app except its own, in the list's order. */
+  function handoverTargets(adapters,currentKind){
+    const cur=currentKind||'copilot';
+    return kindChoices(adapters).filter(k=>!k.disabled&&k.id!==cur);
+  }
+  /* FR-043: the first line of a summary that moves to another app, so the new session (and the user) see where it came from. */
+  function provenanceLine(fromApp,agentName){
+    const app=String(fromApp||'').replace(/\s+/g,' ').trim().slice(0,60);
+    const who=String(agentName||'').replace(/\s+/g,' ').trim().slice(0,60);
+    return 'Continued from '+(app?'a '+app+' session':'another agent app')+(who?' ('+who+')':'')+' in this folder. Its summary:';
+  }
   /* The kind select appears only when there is a real choice. */
   const showsKindPicker=adapters=>Array.isArray(adapters)&&adapters.filter(a=>a&&a.state==='ready').length>=2; /* spec 012 FR-136: only a real choice between ready harnesses */
   /* Is a control shown? A feature the adapter lacks is hidden, never shown disabled (SC-003). `modeList` takes the mode: shows(caps,'modeList','ask'). */
@@ -231,5 +242,5 @@
     return m.includes(cur)?cur:'read-only';
   }
 
-  return {modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows,cardMenuActions};
+  return {handoverTargets,provenanceLine,modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows,cardMenuActions};
 })());
