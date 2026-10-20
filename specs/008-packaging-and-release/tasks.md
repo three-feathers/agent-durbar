@@ -31,6 +31,7 @@
 - [x] T034 (2026-10-19) Linux window icon and desktopName/syncDesktopName (#247) [FR-025, FR-026]
 - [x] T035 (2026-10-19) Theme geometry check per PR, the full theme matrix in CI on demand (FR-031, replacing FR-027); a local parallel runner with CPU, memory and priority limits and per-run result files (FR-028); `npm test` leaves a core and runs niced (FR-029); reduced motion outside the plain office check (FR-030)
 - [x] T036 (2026-10-19, #303) Redact ReDoS test in worker threads instead of child processes (FR-032)
+- [x] T038 (2026-10-20, #355) Electron fuses and no remote debugging in packaged builds (FR-037..FR-039). Files: `package.json` (`build.electronFuses`, `pack:dir` runs `scripts/check-fuses.js`, new `check:fuses-launch`), `scripts/check-fuses.js`, `scripts/check-fuses-launch.js`, `src/main/main.ts` (the FR-038 guard, packaged only), a unit test for the guard's decision function, README *Install from releases* / known limits, CHANGELOG. Rows: (a) the fuse wire of the Linux unpacked build matches FR-037; (b) changing one value in the config makes `check-fuses.js` fail; (c) launch probe on the packed Linux app: `--inspect=0` opens no inspector, `--remote-debugging-port` gives no `/json/version`, `ELECTRON_RUN_AS_NODE=1` starts the app (not Node), and the window opens; (d) the guard does nothing in dev runs (unit test, and `npm run check:office` still passes); (e) `npm run typecheck && npm run build && npm test` pass.
 
 ## 2026-10-20: UI checks on three OSes in Actions
 
