@@ -2,7 +2,14 @@
 
 <!--
 Sync Impact Report
-Version change: (template) -> 1.0.0
+Version change: 1.0.0 -> 1.1.0 (MINOR: a rule added to principle III), 2026-10-20, Amendment 1
+Modified principles: III Safe by default: a folder's own agent setup (MCP servers, hooks, permission rules) applies after the
+  user has seen it listed, unless turned off; the UI says plainly that hooks and allow rules act without asking.
+  Reason: the owner's decision on issue #289 (transparency, not restriction; spec 061).
+Templates reviewed: plan, spec and tasks templates (no edit needed; the plan's Constitution Check reads this file)
+Follow-ups: spec 061 builds the dialog, the chip and the adapters' support.
+
+Previous: Version change: (template) -> 1.0.0
 Added principles: I Spec Kit workflow is mandatory; II Agent adapters are plug-ins; III Safe by default, no stored secrets;
   IV No AI-credit spend in tests; V Calm, legible UI; VI Windows, macOS and Linux parity; VII Quality gates; VIII Honest limits
 Templates reviewed: .specify/templates/plan-template.md (Constitution Check is generated from this file, no edit needed),
@@ -70,6 +77,11 @@ Everything runtime-specific (Copilot today; Claude Code and Codex later) lives b
   by agent id, attachments are re-checked, resumed sessions must belong to the agent's folder).
 - Untrusted files (attachments, VS Code chat stores, session files) are parsed tolerantly with size caps and are never
   executed or uploaded.
+- **Amendment 1 (2026-10-20, owner, issue #289):** a folder's own agent setup (its MCP servers, hooks and permission rules,
+  in the formats each agent app reads) applies after the user has seen it listed when the folder was added, and stays on
+  unless the user turns it off. The UI says plainly that hooks and allow rules act without asking, even in Read-only.
+  Durbar's own mode governs everything else. Why: a folder's setup is there for a reason, and blocking it would break real
+  functionality; the goal is transparency, not restriction. Durbar still never runs anything the user has not seen listed.
 
 ### IV. No AI-credit spend in tests (simulator first)
 
@@ -151,4 +163,4 @@ request that states the reason and bumps the version (MAJOR: a principle removed
 added; PATCH: wording). Every plan's Constitution Check and every pull request review verifies compliance; a violation
 needs a written, time-boxed justification in the plan's Complexity Tracking table.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-16 | **Last Amended**: 2026-10-16
+**Version**: 1.1.0 | **Ratified**: 2026-10-16 | **Last Amended**: 2026-10-20
