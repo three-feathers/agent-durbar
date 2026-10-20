@@ -549,4 +549,10 @@ export interface DurbarApi {
   readVsChat?(id: string, key: string): Promise<{ ok: boolean; error?: string; transcript?: VsChatTranscript }>;
   onEvent(cb: (e: AgentEvent) => void): () => void;
   onAgentAdded(cb: (a: AgentInfo) => void): () => void;
+  /** The Settings… item of the macOS app menu (⌘,), spec 052 FR-083. */
+  onMenuSettings?(cb: () => void): () => void;
+  /** The window entered (true) or left (false) full screen, spec 052 FR-085. */
+  onFullScreen?(cb: (on: boolean) => void): () => void;
+  /** The OS the app runs on ('darwin', 'win32', 'linux'), spec 052 FR-085: the Mac title bar styles. */
+  platform?: string;
 }

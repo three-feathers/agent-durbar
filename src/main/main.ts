@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -48,10 +48,11 @@ import { HarnessSetup, confirmText, posixTrusted } from './harnesssetup';
 import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind } from '../shared/harnesssetup';
 import { MAX_DESCRIPTION, MAX_PASSES, THEME_IDEAS, TOP_BAR_ISSUE, buildFixPrompt, buildRetryPrompt, buildThemePrompt, isBlocking, keepArt, parseGeneratedTheme } from '../shared/themegen';
 import { SettingsStore } from './settings';
-import { parseBadgeCount, shouldFlash } from './badge';
+import { parseBadgeCount, shouldBounce, shouldFlash } from './badge';
+import { appMenuTemplate, disposeOnQuit, hideOnClose, windowChrome } from './appmenu';
 import { parseAmount, parseCapIn, parseThemeId, startCap } from '../shared/credits';
 import { broadFolderKind } from '../shared/broadfolder';
-import { aboutPanelOptions, aboutView } from '../shared/about';
+import { REPO_URL, aboutPanelOptions, aboutView } from '../shared/about';
 import { modelControlFor, parseFocus, parseSwitchRequest } from '../shared/modelswitch';
 import type { ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import { createDebugSink } from '../shared/redact';
@@ -101,6 +102,8 @@ const sizeOf = (p: string): number | undefined => {
   }
 };
 let win: BrowserWindow | undefined;
+/** Set in before-quit: from then on a close really closes (macOS hides the window otherwise, spec 052 FR-085). */
+let quitting = false;
 
 const toRenderer = (channel: string, payload: unknown): void => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
@@ -608,6 +611,7 @@ ipcMain.handle('app:setBadge', (_e, count: unknown) => {
   if (n === null) return { ok: false };
   const w = win && !win.isDestroyed() ? win : undefined;
   if (w && shouldFlash(badgeCount, n, w.isFocused())) w.flashFrame(true);
+  if (w && shouldBounce(badgeCount, n, w.isFocused())) app.dock?.bounce('informational'); // spec 052 FR-085: one bounce, not until focused
   if (w && n === 0) w.flashFrame(false);
   badgeCount = n;
   if (process.platform !== 'win32') {
@@ -1197,6 +1201,7 @@ function createWindow(): void {
     useContentSize: true,
     title: 'Agent Durbar',
     backgroundColor: '#f6f1e7',
+    ...windowChrome(process.platform), // spec 052 FR-085: macOS hides the title bar; the top bar is the drag area (styles.css)
     // spec 008 FR-025: Windows and macOS take the icon from the .exe/.icns; Linux needs it on the window
     ...(process.platform === 'linux' ? { icon: path.join(__dirname, '..', 'icon.png') } : {}),
     webPreferences: {
@@ -1232,6 +1237,21 @@ function createWindow(): void {
     if (dev.DURBAR_SIM_FLOORS_OFF) query.floorsoff = dev.DURBAR_SIM_FLOORS_OFF.slice(0, 200);
   }
   win.on('focus', () => win?.flashFrame(false)); // spec 052 FR-059: the taskbar flash stops when you come back
+  // spec 052 FR-085: on macOS closing the window hides it and the agents keep running; ⌘Q quits (quitting is set in before-quit)
+  {
+    const w = win;
+    w.on('close', (e) => {
+      if (!hideOnClose(process.platform, quitting)) return;
+      e.preventDefault();
+      if (w.isFullScreen()) {
+        w.once('leave-full-screen', () => w.hide()); // hiding a full-screen window would leave an empty Space
+        w.setFullScreen(false);
+      } else w.hide();
+    });
+    // the top bar drops the room it keeps for the traffic lights while the window is full screen (macOS only, see styles.css)
+    w.on('enter-full-screen', () => toRenderer('window:fullScreen', true));
+    w.on('leave-full-screen', () => toRenderer('window:fullScreen', false));
+  }
   win.webContents.on('did-finish-load', () => agentState.clearPaused()); // a fresh page starts with nobody paused (Paused is window-only, spec 041 T014)
   void win.loadFile(INDEX_HTML, { query });
   // Dev: DURBAR_SHOT=/tmp/out.png [DURBAR_SHOT_SIZE=1280x800] [DURBAR_SHOT_CLICK=sim-1] saves a screenshot and quits.
@@ -1257,6 +1277,17 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   app.setAboutPanelOptions(aboutPanelOptions(app.getVersion())); // owner and contributors: src/shared/about.ts (spec 008 FR-018)
+  // spec 052 FR-083: a Mac menu from roles (Settings… ⌘,); no menu on Windows and Linux (no Reload or DevTools for users)
+  const menu = appMenuTemplate(process.platform, {
+    openSettings: () => {
+      const w = win && !win.isDestroyed() ? win : undefined;
+      if (!w) return;
+      w.show();
+      toRenderer('menu:settings', null);
+    },
+    openRepo: () => void shell.openExternal(REPO_URL),
+  });
+  Menu.setApplicationMenu(menu ? Menu.buildFromTemplate(menu) : null);
   folderStore = new FolderStore(path.join(app.getPath('userData'), 'durbar-folders.json'));
   settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'durbar-settings.json'));
   settingsStore.load();
@@ -1308,18 +1339,30 @@ app.whenReady().then(() => {
       void driver(ctx).catch((err) => console.error('DRIVER FAILED', err)).finally(() => void router.disposeAll().finally(() => app.exit(0)));
     });
   }
+  // macOS: a click on the Dock icon brings back the hidden window (FR-085), or opens a new one
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (win && !win.isDestroyed()) win.show();
+    else createWindow();
   });
 });
 
 // spec 054 FR-011: remote control is turned off on GitHub before the app quits (best effort, at most 3 s)
+// spec 052 FR-085: on macOS the window only hides, and window-all-closed does not fire on ⌘Q, so the agents are ended here (at most 3 s), after the release
 let remoteReleased = false;
+let disposedOnQuit = false;
 app.on('before-quit', (ev) => {
-  if (remoteReleased || remoteOps.ids().length === 0) return;
+  quitting = true;
+  const release = !remoteReleased && remoteOps.ids().length > 0;
+  const dispose = !disposedOnQuit && disposeOnQuit(process.platform);
+  if (!release && !dispose) return;
   ev.preventDefault();
   remoteReleased = true;
-  void Promise.race([Promise.all(remoteOps.ids().map((id) => remoteOps.release(id))), new Promise((r) => setTimeout(r, 3000))]).finally(() => app.quit());
+  disposedOnQuit = true;
+  const capped = (p: Promise<unknown>): Promise<unknown> => Promise.race([p, new Promise((r) => setTimeout(r, 3000))]);
+  void (release ? capped(Promise.all(remoteOps.ids().map((id) => remoteOps.release(id)))) : Promise.resolve())
+    .then(() => (dispose ? capped(router.disposeAll()) : undefined))
+    .catch(() => undefined)
+    .finally(() => app.quit());
 });
 app.on('will-quit', () => {
   usageStore?.flush();

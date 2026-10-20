@@ -116,5 +116,9 @@ const api: DurbarApi = {
   openInVSCode: (id) => ipcRenderer.invoke('agents:openInVSCode', id),
   onEvent: (cb) => sub('agent:event', cb),
   onAgentAdded: (cb) => sub('agent:added', cb),
+  // spec 052 FR-083, FR-085: the Mac app menu's Settings… item, full screen (the top bar's traffic-light room) and the platform
+  onMenuSettings: (cb) => sub<null>('menu:settings', () => cb()),
+  onFullScreen: (cb) => sub<boolean>('window:fullScreen', (on) => cb(on === true)),
+  platform: process.platform,
 };
 contextBridge.exposeInMainWorld('agentDurbar', api);

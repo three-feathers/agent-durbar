@@ -1558,6 +1558,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       openInVSCode: async () => ({ ok: true }),
       onEvent: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },
       onAgentAdded: (cb) => { addedListeners.add(cb); return () => addedListeners.delete(cb); },
+      onMenuSettings: () => () => undefined, /* spec 052 FR-083: no app menu in the simulator */
+      onFullScreen: () => () => undefined,
     };
     void timer;
     return api;
