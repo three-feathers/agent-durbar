@@ -91,6 +91,19 @@ export const installPlans = (kind: SetupKind, platform: string, found: ReadonlyS
 /** FR-002: the same managers, upgrading. */
 export const updatePlans = (kind: SetupKind, platform: string, found: ReadonlySet<PackageManager>): SetupPlan[] => plansFor(kind, platform, found, 'update');
 
+/**
+ * Spec 060 FR-002: what the simulator assumes is installed, per OS, so its setup screen shows the real routes for a typical new
+ * machine: Windows 10/11 ship winget; a new Mac has no Homebrew and no Node; a Linux desktop usually has neither.
+ */
+export const SIM_FOUND: Readonly<Record<'win32' | 'darwin' | 'linux', readonly PackageManager[]>> = Object.freeze({ win32: ['winget'], darwin: [], linux: [] });
+export const simFoundFor = (platform: string): PackageManager[] => [...(SIM_FOUND[osOf(platform) ?? 'linux'] ?? [])];
+/** The simulator's managers: `DURBAR_SIM_MANAGERS=winget,brew,npm` (a driver that needs the command dialog), else `SIM_FOUND`; unknown names dropped. */
+export function simManagers(platform: string, override?: string): PackageManager[] {
+  if (override === undefined) return simFoundFor(platform);
+  const ok = new Set<PackageManager>(['winget', 'brew', 'npm']);
+  return [...new Set(override.split(',').map((x) => x.trim()).filter((x): x is PackageManager => ok.has(x as PackageManager)))];
+}
+
 /** Package managers worth looking for on this OS. */
 export const managersFor = (platform: string): PackageManager[] => (platform === 'win32' ? ['winget', 'npm'] : ['brew', 'npm']);
 
