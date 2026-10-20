@@ -52,3 +52,13 @@
   019/012/005/006/054 or the constitution.
 - PR #359 review notes (Vikram's agent, 2026-10-20) added as FR-026 (log folder realpath under the vendor root) and FR-027 (sign-in
   card on a failed Restart session), with tasks T054 and T044 and tests in FR-041; both fit constitution III and spec 012 FR-157.
+- Delta 2026-10-20 (issue #364, MCP OAuth sign-in): FR-060..FR-074, SC-010..SC-012, tasks T090-T109, research section 7 (read only,
+  no real session, no token or config file opened). Hand analyze pass: every new FR maps to a task (FR-060 T094-T096; FR-061 T091;
+  FR-062 T092; FR-063 T093/T094/T103; FR-064 T098-T100; FR-065 T101; FR-066 T102/T103; FR-067 T097; FR-068 T093/T102; FR-069 T102;
+  FR-070 T098 (Q12); FR-071 T104; FR-072 in each task's test; FR-073 T104; FR-074 T105-T108). Found and fixed in the same pass: a
+  duplicated fragment of *Relationship to other specs* under a stray "## Changes`." heading (removed); FR-052 now points to the delta.
+  Found outside the delta: `isAuthError` treats any `401` as the agent app's sign-in (FR-062 fixes it for MCP challenges); failed tool
+  cards are not masked (FR-067); the owner answered Q12-Q19 on 2026-10-20 (Q12 B, Q13-Q19 A; T090 done), so no open question is left for
+  the delta. Second pass after the answers: FR-070 now states `persistent`; FR-068, the edge cases, plan, data model, research and
+  tasks name the chosen answers; the not-chosen options are listed as out of scope in tasks.md. Constitution: II (vendor calls and phrases in adapters), III (no token-carrying call, address in main memory only,
+  https, click first), IV (fakes and simulator; real checks owner-gated), VIII (`read:` everywhere, KNOWN GAPs in FR-068/FR-074).

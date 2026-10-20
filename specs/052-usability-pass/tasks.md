@@ -183,3 +183,4 @@
 - [x] T110 Drivers: `shots-017.js` opens the Defaults popover; `check-office-overlap.js` checks the one-row top bar; the others grepped [FR-107]
 - [x] T111 Full simulator run before merge: geometry, office, every driver that touches the top bar, screenshot tour by eye; Manage folders popover anchored to its button; `shots-017` history check follows round 10's Previous button [FR-107]
 
+- [x] T128 Question options wrap and their title holds the label (+ description); `simquestion=long`; `scripts/check-question-options.js` (`npm run check:question-options`) at 1440x900 and 1280x800, Expert and Simple, card and inbox; mutation run; screenshots [FR-140, issue #365]
