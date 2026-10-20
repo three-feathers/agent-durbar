@@ -58,7 +58,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - After more than 30 minutes closed, a **Since you were away** strip says how long it was and which scheduled prompts did not run, with **Run missed now** for each.
 - **End of day:** quitting while agents are still working asks first ("2 agents are still working. Quit anyway?", Cancel is the default). **End all sessions** (top bar **⋯** and Ctrl+K) ends every running session after a confirmation; the chats stay.
 - **Ctrl+K** lists your 5 most recent chats first, and **Ctrl+`** jumps back to the previous chat.
-- *Previous sessions* lists a folder's earlier sessions to **Resume**, and VS Code's Copilot Chat history as a read-only copy (it opens at the latest message, and **Continue in VS Code** opens the folder there; [screenshot](docs/screenshots/009-vschat-latest-1440x900.png)). With two or more entries, a **search box** filters them by title (case and accents ignored).
+- **Previous (N)** in the chat header lists a folder's earlier sessions to **Resume**, and VS Code's Copilot Chat history as a read-only copy (it opens at the latest message, and **Continue in VS Code** opens the folder there; [screenshot](docs/screenshots/009-vschat-latest-1440x900.png)). With two or more entries, a **search box** filters them by title (case and accents ignored).
 - **New session with a summary:** start fresh from a hand-off summary of the current conversation, which you edit before it is sent.
 - **Scheduled prompts** per folder or for one session, while the app is open: once, every N minutes, or on a calendar (every day, weekdays, or weekly on chosen days, at a local time that stays put across daylight-saving changes). A schedule can have its own **limit** in AI credits or dollars (the agent app's unit): when its runs have spent that much, it pauses and says so. A schedule for a session that has ended pauses too, and is never sent elsewhere unless you choose the folder's agent. Prompts that Copilot itself schedules in a session (`/every`, `/after`) are listed read-only. Open them from a room's **⋯** menu, the **clock** in its header (shown once it has schedules), the **Schedules** button in its chat, or **Settings > Schedules** for all folders. A **starter kit** has templates:
   - *Start my day* (a morning briefing from your mail and calendar MCP servers);
@@ -206,6 +206,8 @@ Status, permission and credit wording, and the layout, are the same in every the
 | Corporate | Retro Pixel | Durbar · Indian |
 | --- | --- | --- |
 | ![Corporate theme](docs/screenshots/035-corporate-1440x900.png) | ![Retro Pixel theme](docs/screenshots/035-retro-1440x900.png) | ![Durbar Indian theme](docs/screenshots/035-durbar-indian-1440x900.png) |
+
+**Settings > Detail level > Spacing** picks *Comfortable* (the default) or *Compact*, which tightens the chat, Settings, Tools, dialogs and the inbox; the office and the top bar keep their sizes.
 
 ## Build from source
 

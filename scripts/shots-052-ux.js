@@ -99,7 +99,8 @@ module.exports = async (ctx) => {
     // waiting agent's chat
     const jonas = await deskId('Jonas');
     await js(`document.querySelector('#stage [data-id="${jonas}"]').click()`); await ctx.sleep(1500);
-    const hdr = await js(`[...document.querySelectorAll('#panelHead .actions > button')].filter(b=>b.getClientRects().length).map(b=>b.id)`);
+    // round 10 (FR-095): "Previous (N)" is a toggle for a panel, not an action, so it is not counted
+    const hdr = await js(`[...document.querySelectorAll('#panelHead .actions > button:not(#prevBtn)')].filter(b=>b.getClientRects().length).map(b=>b.id)`);
     assert.ok(hdr.length <= 3, 'at most 3 header actions: ' + hdr.join(','));
     assert.strictEqual(await js(`(document.querySelector('.prev-toggle')||{}).getAttribute?document.querySelector('.prev-toggle').getAttribute('aria-expanded'):'none'`), 'false', 'Previous sessions closed for a chat with a conversation');
     // SC-001: the request is answerable without scrolling (card in view, or the bar)

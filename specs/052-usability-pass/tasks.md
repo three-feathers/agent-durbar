@@ -159,3 +159,9 @@
 - [x] T095 Inbox session button shrinks with an ellipsis (Deny always visible); Thinking full width with no inner scroll; Failing in the palette, strip and list dot; folder note only next to plain words; Cost "This session / All time" before the tabs with a "since" subtitle; Agent apps "for …" line; wider Agent app column [FR-092]
 - [x] T096 Mode menu lines, "What Durbar does not do" (Settings and README), AI theme cost line per selected app, Simple limit and memory chips; Remove from office confirmation checked [FR-093]
 - [x] T097 Drivers grepped for every changed string; `shots-052-ux.js` memory chip check; README Tools line; CHANGELOG [FR-094]
+## Round 10: chrome density and type (2026-10-20)
+- [x] T098 Chat header on one row (32px avatar, T1 name, chips and `.btn.sm` at 28px, actions pinned right), task and usage on one line, **Previous (N)** in the actions instead of the bar, 48px strip, shorter composer hint, 13px bubbles [FR-095]
+- [x] T099 Compact inbox rows (32px avatar, 8px gaps, `.btn.sm`, **Open** on the heading line) [FR-096]
+- [x] T100 Settings and Tools: header on the 880px column, tighter sections, fluid agent app grid, "Simulated version." in the badge title, shorter blurbs [FR-097]
+- [x] T101 Type scale (`--t1..t5`), spacing scale, folded chrome sizes, body 13px with the office, list and top bar pinned at 14px, dialog padding, tokens for radii and colours; `docs/design-rules.md` [FR-098]
+- [x] T102 Settings > Detail level > Spacing (Comfortable / Compact, `html[data-density]`, `localStorage`), chrome-only overrides; copy (folders, demo, Open); drivers; README and CHANGELOG [FR-099]
