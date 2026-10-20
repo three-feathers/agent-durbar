@@ -33,6 +33,7 @@ import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '..
 import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
 import { AgentStateTracker, applySetPaused } from './mcp/agentstate';
+import { maskMcpStatuses } from './mcpmask';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { cliServers, copilotDir } from './mcpfiles';
 import { UsageStore } from './usagestore';
@@ -118,7 +119,8 @@ const toRenderer = (channel: string, payload: unknown): void => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 };
 
-router.onEvent((e) => toRenderer('agent:event', e));
+/** An MCP status event carries server error text: masked here, once, before the window sees it (spec 019 FR-021). */
+router.onEvent((e) => toRenderer('agent:event', e.type === 'mcp' ? { ...e, servers: maskMcpStatuses(e.servers, mcp.secretValuesFor(e.sessionId)) } : e));
 /** Open MCP elicitations (spec 012 FR-151): main checks each answer against the fields it was asked with. */
 const elicitTracker = createElicitTracker();
 router.onEvent((e) => elicitTracker.onEvent(e));

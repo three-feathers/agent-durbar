@@ -11,4 +11,4 @@
 - [x] T010 Simulator: MCP/built-in tool calls, context events, MCP status, in-memory MCP bridge
 - [x] T011 Screenshots m8-*.png (1440x900, 1280x800), office overlap check
 - [x] T012 README milestone 8, specs index, converge (spec/plan/tasks match the code)
-- [ ] T013 Mask MCP server error text in main before it reaches the window (FR-021, issue #360): pure `maskMcpError`, used by `agents:mcp` and the live `mcp` events; unit test `test-mcp-errormask`
+- [x] T013 Mask MCP server error text in main before it reaches the window (FR-021, issue #360): pure `maskMcpError`, used by `agents:mcp` and the live `mcp` events; unit test `test-mcp-errormask`

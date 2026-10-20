@@ -42,7 +42,7 @@
 - **FR-018** The simulator produces MCP and built-in tool calls (two fake servers), `context` events, MCP status, and a Settings backend in memory with fake secrets handling, so the whole feature is demonstrable without credits.
 - **FR-019** Unit tests (no credits): MCP store (validate, secrets masked and never in views, persistence with a fake codec, no-codec fallback, trust reset, resolve for session), import parsers (Copilot and VS Code fixtures), mapper (recorded sanitised events: MCP tool, `usage_info`, MCP status), tool stats aggregation, context percent/colour.
 - **FR-020** Screenshots `/workspace/command-center/m8-*.png` at 1440x900 and 1280x800; the office overlap check (spec 001) still passes.
-- **FR-021** An MCP server's error text is masked in main before it reaches the window, on every path (the `agents:mcp` answer and the live `mcp` status events): the session's stored secret values and the environment's secrets first, then secret shapes and URLs (`maskSecretUrl`), then cut to 300 characters (after masking, so a secret straddling the cut leaves no prefix). Added by the 2026-10-20 delta (issue #360).
+- **FR-021** An MCP server's error text is masked in main before it reaches the window, on every path (the `agents:mcp` answer and the live `mcp` status events): the session's stored secret values and the environment's secrets first, then secret shapes and URLs (`maskSecretUrl`), then cut to 300 characters (after masking, so a secret straddling the cut leaves no prefix). Added by the 2026-10-20 delta (issue #360). [IMPLEMENTED] test: `scripts/test-mcp-errormask.ts`; not seen on a real server error.
 
 ## Out of scope / known gaps
 - `[KNOWN GAP]` No MCP OAuth flow (servers that need auth show "needs auth").
