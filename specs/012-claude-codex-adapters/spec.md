@@ -900,4 +900,4 @@ The owner handed the Codex track to this agent ("ruben does not have chatgpt acc
     - a `CODEX_HOME` that does not exist stays `ready` with "could not confirm" (a configuration error, not a sign-in answer);
     - Copilot with empty `COPILOT_HOME`/`GH_CONFIG_DIR` and no token variables still verifies, because its login is in the system keyring. The signed-out Copilot path was not reproduced on a real account (`[KNOWN GAP]`).
     - The owner's real Claude Code error ("Failed to authenticate. API Error: 401 OAuth access token is invalid.") is a unit-test case for the chat sign-in card.
-
+  - FR-158 addition (lead review): a session that had remote control on is not remote after the reconnect, so main forgets its remote state first (an activity-log `remote-off` row), sends `agents:remoteOff`, and the chat drops the Remote chip with a note to turn it on again. `[KNOWN GAP]` Remote control is not turned back on automatically.
