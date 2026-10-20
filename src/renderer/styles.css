@@ -832,6 +832,12 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .sched-dlg .sc-days{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:6px;font-size:12px}
 .sched-dlg .sc-opts{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;margin-top:8px;font-size:13px}
 .sched-dlg .sc-opts label{display:inline-flex;flex-direction:row;align-items:center;gap:6px;font-weight:500}
+.sched-dlg .sc-opts .sc-lbl{flex:none;white-space:nowrap}
+.sched-dlg .sc-opts .sc-to{flex:1 1 260px;min-width:0}
+.sched-dlg .sc-opts .sc-to select{flex:1;min-width:0}
+.sched-dlg .sc-hint{margin:4px 0 0;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sched-dlg .sc-hint[hidden]{display:none}
+.sched-dlg .sc-opts #scCapU{white-space:nowrap}
 .sched-dlg .sc-opts label[hidden],.sched-dlg .sc-days[hidden],.sched-dlg .sc-own[hidden]{display:none}
 .sched-dlg .sc-opts input[type=number]{width:90px}
 .sched-dlg .sc-own{margin:0 0 10px;max-height:120px;overflow-y:auto}

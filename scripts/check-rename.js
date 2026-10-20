@@ -100,8 +100,8 @@ module.exports = async (ctx) => {
       if (await js(`!!document.getElementById('schedHdrBtn')`)) {
         await js(`document.getElementById('moreBtn').click()`); await ctx.sleep(150);
         await js(`document.getElementById('schedHdrBtn').click()`); await ctx.sleep(400);
-        const sc = await js(`(()=>{const o=document.querySelector('#scTarget option[value]:not([value=""])');return o?{t:o.textContent,tip:o.title}:null})()`);
-        assert.ok(sc && sc.t === 'This session (' + EVIL + ')' && sc.tip === EVIL, `${tag}: the Schedules option: ${JSON.stringify(sc)}`);
+        const sc = await js(`(()=>{const sel=document.getElementById('scTarget');const o=sel.querySelector('option[value]:not([value=""])');sel.value=o.value;sel.dispatchEvent(new Event('change',{bubbles:true}));const h=document.getElementById('scToHint');return {opt:o.textContent,hidden:h.hidden,text:h.textContent,tip:h.title}})()`);
+        assert.ok(sc.opt === 'This session' && !sc.hidden && sc.text === EVIL && sc.tip === EVIL, `${tag}: the Schedules hint shows the display name as text: ${JSON.stringify(sc)}`);
         await js(`document.getElementById('scClose').click()`); await ctx.sleep(200);
       }
       await closePanel(); await ctx.sleep(300);

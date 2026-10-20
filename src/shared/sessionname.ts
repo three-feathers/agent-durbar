@@ -46,13 +46,3 @@ export function syncEntry(entry: SessionNameEntry | undefined, runtimeTitle: str
 export function renameTarget(cap: RenameCap): 'now' | 'next-turn' | 'durbar' {
   return cap === 'any' ? 'now' : cap === 'next-turn' ? 'next-turn' : 'durbar';
 }
-
-/** FR-008 (spec 044 FR-021): at most `max` code points, cut on a word boundary when one is near the end, with "…". */
-export function shortName(name: string, max = 40): string {
-  const chars = [...name.trim()];
-  if (chars.length <= max) return chars.join('');
-  let cut = chars.slice(0, max - 1);
-  const space = cut.lastIndexOf(' ');
-  if (space >= Math.floor(max / 2)) cut = cut.slice(0, space);
-  return cut.join('').trimEnd() + '…';
-}

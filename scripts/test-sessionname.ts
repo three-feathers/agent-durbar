@@ -2,7 +2,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { displayNameOf, renameTarget, shortName, syncEntry } from '../src/shared/sessionname';
+import { displayNameOf, renameTarget, syncEntry } from '../src/shared/sessionname';
 import { nameError } from '../src/shared/names';
 import type { SessionNameEntry } from '../src/shared/sessionname';
 
@@ -32,13 +32,6 @@ assert.strictEqual(renameTarget('any'), 'now');
 assert.strictEqual(renameTarget('next-turn'), 'next-turn');
 assert.strictEqual(renameTarget(undefined), 'durbar');
 
-// shortName
-assert.strictEqual(shortName('Short'), 'Short');
-assert.strictEqual(shortName('a'.repeat(40)), 'a'.repeat(40));
-assert.strictEqual(shortName('a'.repeat(60)), 'a'.repeat(39) + '…');
-assert.strictEqual(shortName('Refactor the billing module and then fix the invoices list'), 'Refactor the billing module and then…');
-assert.strictEqual([...shortName('x '.repeat(60))].length <= 40, true);
-assert.strictEqual([...shortName('\u{1F600}'.repeat(60))].length, 40);
 
 // ---- the window's copy (src/renderer/sessionname.js) behaves like the shared rule (spec 059 FR-002, FR-008) ----
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -51,16 +44,21 @@ const SN = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'sessionn
   whereLine(cap: unknown, app: string, inApp?: boolean): string;
 };
 const root = path.join(__dirname, '..', '..');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const CUT = require(path.join(root, 'src', 'renderer', 'cuttext.js')) as { cutText(t: string, max: number, o?: { wordBoundary?: boolean }): string }; // the one shared cutter (spec 044 FR-021)
 const src = (p: string): string => fs.readFileSync(path.join(root, p), 'utf8').replace(/\r\n/g, '\n'); // CRLF-safe (Windows CI)
 {
   assert.strictEqual(SN.MAX, 60);
   for (const n of ['Short', 'a'.repeat(40), 'a'.repeat(60), 'Refactor the billing module and then fix the invoices list', 'x '.repeat(60), '\u{1F600}'.repeat(60)]) {
-    assert.strictEqual(SN.shortName(n), shortName(n), JSON.stringify(n));
-    assert.strictEqual(SN.shortName(n, 25), shortName(n, 25));
+    assert.strictEqual(SN.shortName(n), CUT.cutText(n, 40, { wordBoundary: true }), JSON.stringify(n));
+    assert.strictEqual(SN.shortName(n, 25), CUT.cutText(n, 25, { wordBoundary: true }));
+    assert.ok([...SN.shortName(n)].length <= 40, 'code points, at most 40 including the ellipsis');
   }
   for (const [a, t, f] of [['Mine', 'Title', 'repo'], [undefined, ' Title ', 'repo'], [undefined, undefined, 'repo #2'], ['  ', '', 'repo']] as const) assert.strictEqual(SN.displayName(a, t, f), displayNameOf(a?.trim() ? { name: a } : undefined, t, f));
   // the pre-check agrees with the shared rule (the secret check is main's)
   for (const v of ['ok', '', '  spaced  out ', 'a'.repeat(61), '\u{1F600}'.repeat(60), 'bad\u0000x', 'rtl\u202etrick', 'zero\u200bwidth', 'a\u0085b', 5, undefined]) assert.strictEqual(SN.nameError(v), nameError(v), JSON.stringify(v));
+  assert.ok(!/function shortName|shortName\(/.test(src('src/shared/sessionname.ts')), 'no second cut rule: the shared cutter is cuttext.js');
+  assert.strictEqual(SN.shortName('Refactor the billing module and then fix the invoices list'), 'Refactor the billing module and then…');
   // tooltips: the user's name and the folder, never the runtime title once named (FR-003)
   assert.strictEqual(SN.nameTip('Mine', 'Long first prompt', 'repo'), 'Mine \u00b7 repo');
   assert.strictEqual(SN.nameTip(undefined, 'Title', 'repo'), 'Title \u00b7 repo');
