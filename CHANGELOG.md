@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.8 tag)
 
+- **A new project website (spec 050, FR-006..FR-010).** A short landing page (what Durbar is, the honest alpha status right under the download button, the six themes, what each agent app was checked on, safety, downloads with first-run steps) and a separate docs page with the whole README and a table of contents. The curated text in `docs/site/landing.json` is checked against the README on every build.
+
 ## v0.1.0-alpha.8 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.8), 2026-10-20)
 
 Unsigned and not notarized; only Linux was run by hand. **Set up agent apps inside Durbar**: install, update and sign in to Copilot, Claude Code and Codex from Settings > Agent apps, with a native confirmation that shows the exact program before anything runs. **Five rounds of persona usability reviews** (about 20 personas) reshaped the app: the "Needs you" inbox and answer bar, Simple and Expert views, one word per concept, calmer visuals with period textures in the themes, High Contrast and focus support, OS notifications and Alt+A/S/D answers. Also new: **Make a theme with AI**, a Cost view per folder and the project website.
