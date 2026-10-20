@@ -33,3 +33,23 @@
 - [x] T031 Search box in Previous sessions: title filter (case- and accent-insensitive) over Copilot sessions and VS Code chats, "N of M", "No sessions match", Escape clears; matcher unit test, simulator, `check:office` at both sizes, docs (issue #252) [FR-023]
 
 - [x] T026 (2026-10-19) Remove folder where the user is: chat header for a single-session folder, right-click folder menu on the room header [FR-022]
+
+## Changes 2026-10-20 (issue #368): Pin, Hide and Delete in Previous sessions
+
+- [x] T032 `prevPinned`/`prevHidden` in `SavedFolder`: parse (shape, cap 200, duplicates), save, `markPrevious` (pin and hide exclusive, no rewrite when unchanged), `dropPrevious`, gone with the folder; `test:folders`; strict id allow-list in `src/shared/sessionid.ts` (Vikram's note 2: tests for `../`, `..\\`, `C:\\`, absolute paths, empty, overlong, control characters) [FR-026]
+- [x] T033 Pure `arrangeSessions` in `src/renderer/sessionsearch.js` (pinned first newest first, hidden out unless shown, search over what is shown, counts) with cases in `scripts/test-sessionsearch.ts` [FR-024, FR-025, FR-023]
+- [x] T034 `sessions:mark` IPC, preload and `api.ts` types; `pinned`/`hidden` in the `sessions:listPrevious` and `vschat:list` results (filtered to present ids); simulator marks in memory [FR-026]
+- [x] T035 Exclude resume ids of office agents from `sessions:listPrevious` and the resume re-check; unit test with a fake router [FR-032]
+- [x] T036 Renderer: per-row ⋯ button and row menu (shared `#modeMenu`, arrows, Escape, Shift+F10, right-click, focus return), Pin/Unpin, Hide/Unhide, Show hidden (N) toggle, pin mark, Hidden tag, visible counts in *Previous (N)*, toast and auto-open, live announcements, focus after Hide [FR-024, FR-025, FR-027]
+- [x] T037 Capability `deleteSession` and `deleteSession?()` in `capabilities.ts`/`types.ts`, router helper, fake adapter option with a call log, contract check C2 [FR-028]
+- [x] T038 Copilot `deleteSession` through `client.deleteSession` (refuses a live id), tested on a fake client only [FR-028]
+- [x] T039 Codex `deleteSession` through `thread/delete` on a probe (refuses live Durbar and thread ids), tested on a fake RPC only; Claude stays without it [FR-028]
+- [x] T040 `src/main/prevsessions.ts` delete op with injected deps and `scripts/test-prevsessions.ts` (no capability, bad id, refused with `code: 'in-office'` and the Q1 wording for a card by Durbar id / resume id / live / lazy / ended, not in folder, in flight, adapter error, success drops marks and logs once; Vikram's note 1: a test that no MCP tool, remote, channel or schedule module can reach `sessions:delete`); wire `sessions:delete` and the in-flight check in `sessions:resume`; preload and types [FR-029, FR-032]
+- [x] T041 Activity decision `session-deleted` (sanitizer, CSV/JSON, word "Session deleted"), recorded by T040's op with the action "Session deleted · <agent app> · <short id> · last used <date>" and no title (Q2); `test:activity` [FR-031]
+- [x] T042 Renderer delete flow: Delete… only for agent sessions, disabled with the reason when the adapter has no delete; red confirmation with Cancel focused and the FR-030 wording per app; busy state; success and error toasts; refusal dialog "This session is still in the office" with Go to session and Remove from office (left out, with the start-a-new-session line, for a folder's only session); assert no desk card, office List-view row, card menu or chat header offers Delete (Q1); simulator `deleteSession` and the refusal hook [FR-030]
+- [x] T043 `scripts/shots-006-prevmarks.js` at 1440x900 and 1280x800 (menu open, pinned rows, Show hidden on, delete confirmation, refusal, disabled Delete…), row-fit assertions; `npm run check:office`; screenshots `docs/screenshots/006-prev-*.png` [FR-027, FR-030]
+- [x] T044 Docs and converge: README (Previous sessions, Safety model: Delete only through the app's own API, never VS Code chats, not for Claude Code), CHANGELOG, `specs/README.md` row, `[IMPLEMENTED]` tags [all]
+
+## 2026-10-20: retro review sweep
+
+- [x] T047 Accent fold in `sessionsearch.js` written as `\u0300-\u036f` escapes (FR-023; review note on PR #273)

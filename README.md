@@ -53,13 +53,13 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - **Stop** a turn or **End** a session from the chat header or from the agent's card menu ([screenshot](docs/screenshots/005-card-menu-stop-end-1440x900.png)).
 
 **Sessions and folders**
-- One session per folder or `.code-workspace` file, or several per folder (**+ New session**).
+- One session per folder or `.code-workspace` file, or several per folder (**+ New** in a chat's header, or **+ New session** under More).
 - The top bar is one row: **+ New** adds a folder or a VS Code workspace, the **Defaults** chip (for example "Copilot · Read-only · Auto") sets the agent app, permission mode and model for new sessions, and **Manage folders** sits next to the folder filter. On narrower screens the status counters show a dot and a number (the words are in their tooltips).
 - After a restart, each folder **continues its open sessions** (up to 6 per folder, each resumed when you open its chat or send it a message), and Durbar **remembers where you were**: the window's place and size (back on a screen it fits, else 1440x900), Office or List, the folder filter and the open chat.
 - After more than 30 minutes closed, a **Since you were away** strip says how long it was and which scheduled prompts did not run, with **Run missed now** for each.
 - **End of day:** quitting while agents are still working asks first ("2 agents are still working. Quit anyway?", Cancel is the default). **End all sessions** (top bar **⋯** and Ctrl+K) ends every running session after a confirmation; the chats stay.
 - **Ctrl+K** lists your 5 most recent chats first, and **Ctrl+`** jumps back to the previous chat.
-- **Previous (N)** in the chat header lists a folder's earlier sessions to **Resume**, and VS Code's Copilot Chat history as a read-only copy (it opens at the latest message, and **Continue in VS Code** opens the folder there; [screenshot](docs/screenshots/009-vschat-latest-1440x900.png)). With two or more entries, a **search box** filters them by title (case and accents ignored).
+- **Previous (N)** in the chat header lists a folder's earlier sessions to **Resume**, and VS Code's Copilot Chat history as a read-only copy (it opens at the latest message, and **Continue in VS Code** opens the folder there; [screenshot](docs/screenshots/009-vschat-latest-1440x900.png)). With two or more entries, a **search box** filters them by title (case and accents ignored). Each row has a **⋯** menu (also right-click or Shift+F10): **Pin to top**, **Hide** (only in Durbar; the session stays in VS Code and the CLI; **Show hidden (N)** brings hidden rows back) and, for Copilot and Codex sessions, **Delete…**, which asks the agent app to delete that one session for good (after a red confirmation; Claude Code has no per-session delete, so it is shown disabled). A session that still has a card in the office cannot be deleted: end it and remove it from the office first. VS Code chats can be pinned or hidden, never deleted ([screenshot](docs/screenshots/006-prev-menu-1440x900.png)). Pins and hides are saved as ids only in `durbar-folders.json`; a delete adds a *Session deleted* row (app, short id, date, no title) to the activity log.
 - **New session with a summary:** start fresh from a hand-off summary of the current conversation, which you edit before it is sent.
 - **Scheduled prompts** per folder or for one session, while the app is open: once, every N minutes, or on a calendar (every day, weekdays, or weekly on chosen days, at a local time that stays put across daylight-saving changes). A schedule can have its own **limit** in AI credits or dollars (the agent app's unit): when its runs have spent that much, it pauses and says so. A schedule for a session that has ended pauses too, and is never sent elsewhere unless you choose the folder's agent. Prompts that Copilot itself schedules in a session (`/every`, `/after`) are listed read-only. Open them from a room's **⋯** menu, the **clock** in its header (shown once it has schedules), the **Schedules** button in its chat, or **Settings > Schedules** for all folders. A **starter kit** has templates:
   - *Start my day* (a morning briefing from your mail and calendar MCP servers);
@@ -71,7 +71,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - **Open in VS Code** opens the folder (VS Code, then Insiders, then VSCodium).
 
 **Models, context and tools**
-- Pick the model and reasoning effort per session, and switch them in a running session where the harness allows it.
+- Pick the model and reasoning effort per session, and switch them in a running session: Claude Code and Codex from the next message, the conversation kept (checked on real accounts 2026-10-20); Copilot too, but not yet seen on a paid plan.
 - A context chip shows how full the window is, with **Compact**.
 - **MCP servers:**
   - your Copilot CLI list (`~/.copilot/mcp-config.json`) is used first;
@@ -91,7 +91,7 @@ Durbar offers each agent app (harness) that is **installed and signed in on your
 | Harness | What Durbar runs | Checked on a real account |
 | --- | --- | --- |
 | **GitHub Copilot** | The Copilot runtime bundled with the official `@github/copilot-sdk`, with your `copilot login`. | Yes, since milestone 1. Not seen yet: switching between two real models, the long-context tier, `confirmation_required`, and a real credit cap being reached. The Copilot login on the test machine is still a free plan, and on 2026-10-20 it listed no models at all. |
-| **Claude Code** | Your installed `claude` over its stream protocol. Durbar loads none of Claude's settings files: a folder's own `.claude` hooks and `.mcp.json` do not run (checked 2026-10-20). | Yes (Claude Code 2.1.302-2.1.303): every mode, interrupt, stop, resume, the live mode switch, models, previous sessions, questions, MCP switches, sub-agents, custom agents, the context window, the cost cap, summaries, and the full app across a restart. |
+| **Claude Code** | Your installed `claude` over its stream protocol. Durbar loads none of Claude's settings files: a folder's own `.claude` hooks and `.mcp.json` do not run (checked 2026-10-20). Sessions are shared with the CLI both ways: Durbar lists the folder's earlier `claude` sessions, and sessions started in Durbar appear in `claude --resume` (checked on Claude Code 2.1.304; it relies on an undocumented setting, see spec 012 FR-159). | Yes (Claude Code 2.1.302-2.1.303): every mode, interrupt, stop, resume, the live mode switch, models, previous sessions, questions, MCP switches, sub-agents, custom agents, the context window, the cost cap, summaries, and the full app across a restart. |
 | **OpenAI Codex** | Your installed `codex app-server`, with a ChatGPT sign-in or an API key. | Yes (Codex 0.163, Linux): every mode, interrupt, End session, resume, a mode switch, models, history, questions, MCP tools, sub-agents, summaries, and the full app across a restart. |
 
 What each harness can do differs a little, and Durbar hides a control a harness cannot honour rather than faking it. Two Codex specifics:
@@ -147,6 +147,7 @@ Codex also ships its own `bwrap` inside its npm package (`…/@openai/codex-linu
 - Shortcuts use ⌘ and are shown that way: ⌘K command palette, ⇧⌘A the Needs you inbox, ⇧⌘N the next agent. In a chat that waits for you, ⌥⌘A / ⌥⌘S / ⌥⌘D answer and ⌥⌘N goes to the next agent (Option alone types accents on a Mac). macOS itself uses ⌥⌘D to show or hide the Dock, so Deny may not reach Durbar with the keys; click it instead.
 - **Agent Durbar > Settings…** (⌘,) opens Settings; the menu also has Edit, View (zoom, full screen), Window and Help.
 - Closing the window hides it and **your agents keep running**; click the Dock icon to bring it back. Quit with ⌘Q.
+- The title bar is hidden: you move the window by dragging the top bar (in a chat, the agent strip, a notice strip or a screen's header at the top). While a dialog or the command palette is open the window does not drag. The traffic-light room and these areas are checked in the simulator only (`npm run check:mac-titlebar`), **not on a real Mac** (real traffic-light position, double-click to zoom, full screen).
 - On Windows and Linux the window has no menu bar (no Reload or developer tools); copy and paste in text fields work as usual.
 
 > **Trying it on Windows?** Nobody on the team has run Durbar on a real Windows machine yet. If something does not work (the download, the installer, Settings > Agent apps, a harness that is not found), please [open an issue](https://github.com/three-feathers/agent-durbar/issues) with your Windows version and what you saw.
@@ -162,6 +163,7 @@ Agents run **locally, on your machine, as you**, in the folders you add. Every a
 Change the mode any time from the chat header chip or the agent's card menu.
 
 Rules that always apply:
+- **Durbar never deletes files itself.** *Delete…* in Previous sessions goes only through the agent app's own API (Copilot `deleteSession`, Codex `thread/delete`), only from Durbar's own window (not from MCP tools, remote control or schedules), never for a session still in the office, never for VS Code chats, and not for Claude Code. Not yet run against a real session.
 - **Add project folders, not your home folder or a drive root.** Everything under an added folder counts as the agent's own; Durbar warns calmly when you add one of those.
 - **Answering a question** an agent asks is allowed in every mode; it is not an action.
 - **A profile (custom agent) from a folder's repository** asks once before it is used and never changes your mode.

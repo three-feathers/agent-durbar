@@ -1,6 +1,9 @@
 /** Unit test: MCP server error text is masked before it reaches the window (spec 019 FR-021). */
 import * as assert from 'assert';
-import { maskMcpError, maskMcpStatuses, mcpSecretValues, MCP_ERROR_MAX_CHARS } from '../src/main/mcpmask';
+import { maskMcpError, maskMcpEvent, maskMcpStatuses, mcpSecretValues, MCP_ERROR_MAX_CHARS } from '../src/main/mcpmask';
+import type { AgentEvent } from '../src/adapters/types';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const SESSION = 'zq-hunter2-session-value';
@@ -50,4 +53,21 @@ assert.strictEqual(maskMcpError(undefined), undefined);
   assert.ok(!(out[0].error as string).includes(SESSION));
   assert.strictEqual(out[1].error, undefined);
 }
-console.log('mcp error mask: planted secrets, normal text, mask-then-cut, session values OK');
+// FR-022: one masked copy of the event for every outward path (window, DURBAR_LOG sink)
+{
+  const ev = { type: 'mcp', sessionId: 's1', timestamp: 1, servers: [{ name: 'x', status: 'failed', error: `401 header X-Api-Key: ${SESSION}` }] } as unknown as AgentEvent;
+  const out = maskMcpEvent(ev, [SESSION]);
+  assert.ok(!JSON.stringify(out).includes(SESSION), 'the extra secret is masked in the event copy');
+  assert.ok(JSON.stringify(ev).includes(SESSION), 'the original event is not changed (main keeps the raw state)');
+  const other = { type: 'status', sessionId: 's1', timestamp: 1, status: 'idle' } as unknown as AgentEvent;
+  assert.strictEqual(maskMcpEvent(other, [SESSION]), other, 'other events pass through as the same object');
+}
+// FR-022 wiring: both outward paths in main.ts send the masked copy, never the raw event
+{
+  const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
+  const sends = main.split('\n').filter((l) => l.includes('router.onEvent') && l.includes("'agent:event'")); // router events only (the window's own synthesized events carry no MCP text)
+  assert.ok(sends.length >= 1 && sends.every((x) => x.includes('outward(')), `agent:event to the window goes through outward(): ${sends.join(' | ')}`);
+  const sink = main.match(/write\(\{ t: Date\.now\(\), event: [^}]*\}/g) ?? [];
+  assert.ok(sink.length === 1 && sink[0].includes('outward('), `the DURBAR_LOG sink writes outward(e): ${sink.join(' | ')}`);
+}
+console.log('mcp error mask: planted secrets, normal text, mask-then-cut, session values, event copy OK');

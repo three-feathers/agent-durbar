@@ -275,6 +275,15 @@ export class FakeCodexServer {
         const data = [...this.threads.entries()].map(([tid, cwd], i) => ({ id: tid, cwd, preview: `Prompt ${i + 1}`, createdAt: 1792403000 + i, updatedAt: 1792403100 + i, ephemeral: false, parentThreadId: null, gitInfo: null }));
         return this.reply(child, id, { data, nextCursor: null });
       }
+      case 'thread/delete': {
+        const tid = isObj(params) && typeof params.threadId === 'string' ? params.threadId : '';
+        if (!this.threads.has(tid)) return this.fail(child, id, -32600, 'no rollout found for thread');
+        this.threads.delete(tid);
+        this.threadChild.delete(tid);
+        this.reply(child, id, {});
+        this.enqueue(child, { method: 'thread/deleted', params: { threadId: tid } });
+        return;
+      }
       case 'mcpServerStatus/list':
         return this.reply(child, id, { data: [{ name: 'echo', authStatus: 'unsupported', runtimeStatus: 'connected', tools: {}, resources: [], resourceTemplates: [] }], nextCursor: null });
       case 'model/list':

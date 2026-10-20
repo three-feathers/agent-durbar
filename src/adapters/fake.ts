@@ -15,7 +15,7 @@ import type { HistoryResult, PreviousSession } from './history';
 
 export type OptionalMember =
   | 'interrupt' | 'resolvePermission' | 'revokeGrant' | 'setCap' | 'resolveLimit' | 'setMcpEnabled' | 'setModel'
-  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText';
+  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText' | 'deleteSession';
 
 export type Step =
   | { output: string }
@@ -31,6 +31,8 @@ export interface FakeConfig {
   capabilities?: Partial<AdapterCapabilities>;
   omit?: OptionalMember[];
   script?: Step[];
+  /** Earlier sessions `listPreviousSessions` answers with (a delete removes one). */
+  previous?: PreviousSession[];
 }
 
 const DEFAULT_CAPS: AdapterCapabilities = {
@@ -82,11 +84,15 @@ export class FakeAdapter implements AgentAdapter {
   declare history?: (sessionId: string) => Promise<HistoryResult>;
   declare handoffSummary?: (sessionId: string) => Promise<HandoffResult>;
   declare generateText?: (prompt: string) => Promise<{ text: string; costUsd?: number }>;
+  declare deleteSession?: (sessionId: string) => Promise<void>;
+  /** Every id `deleteSession` was called with (test log; nothing real is deleted). */
+  readonly deleteCalls: string[] = [];
   declare setPermMode?: (sessionId: string, mode: PermissionMode, opts?: { clearGrants?: boolean; approvePending?: boolean }) => { pending: number };
 
   private listeners = new Set<(event: AgentEvent) => void>();
   private sessions = new Map<string, FakeSession>();
   private script: Step[];
+  private previous: PreviousSession[];
   private counter = 0;
   private calls = 0;
 
@@ -94,6 +100,7 @@ export class FakeAdapter implements AgentAdapter {
     this.id = cfg.id ?? 'fake';
     this.displayName = cfg.displayName ?? 'Fake agent';
     this.script = cfg.script ?? [{ output: 'fake reply' }];
+    this.previous = (cfg.previous ?? []).map((p) => ({ ...p }));
     const omit = new Set(cfg.omit ?? []);
     const c: AdapterCapabilities = { ...DEFAULT_CAPS, ...cfg.capabilities, usage: { ...DEFAULT_CAPS.usage, ...cfg.capabilities?.usage } };
     // An omitted member forces its capability off; a capability that is off removes every member it covers (FR-027).
@@ -106,6 +113,7 @@ export class FakeAdapter implements AgentAdapter {
       mcpToggle: c.mcpToggle && !omit.has('setMcpEnabled'),
       handoff: !!c.handoff && !omit.has('handoffSummary'),
       oneShot: !!c.oneShot && !omit.has('generateText'),
+      deleteSession: !!c.deleteSession && !omit.has('deleteSession'),
       permModeSwitch: omit.has('setPermMode') ? ('none' as const) : c.permModeSwitch,
     };
     this.capabilities = caps;
@@ -132,8 +140,17 @@ export class FakeAdapter implements AgentAdapter {
     if (has('compact')) this.compact = async (sid) => (this.mustGet(sid), { success: true, tokensRemoved: 0 });
     if (caps.models) this.listModelOptions = async () => [{ ...FAKE_MODEL }];
     if (caps.history) {
-      this.listPreviousSessions = async () => [];
+      this.listPreviousSessions = async (_cwd, exclude) => this.previous.filter((p) => !exclude?.has(p.id)).map((p) => ({ ...p }));
       this.history = async (sid) => (this.mustGet(sid), { items: [], total: 0, truncated: false });
+    }
+    if (caps.deleteSession) {
+      this.deleteSession = async (sid) => {
+        this.deleteCalls.push(sid);
+        if (this.sessions.has(sid)) throw new Error('That session is open.');
+        const at = this.previous.findIndex((p) => p.id === sid);
+        if (at < 0) throw new Error('Session not found.');
+        this.previous.splice(at, 1);
+      };
     }
     if (caps.permModeSwitch !== 'none') this.setPermMode = (sid, mode, opts = {}) => this.doSetPermMode(sid, mode, opts);
   }

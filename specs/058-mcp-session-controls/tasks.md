@@ -159,6 +159,11 @@ at the time of the run. Builds on T010 (`errorClass`), T011 (words), T020 (`agen
 - [ ] T104 Simulator `simmcpauth=1` / `simmcpauth=manual`; screenshots at 1440x900 and 1280x800 (`docs/screenshots/058-mcp-signin-*.png`)
   [FR-071, FR-073]
 
+- [ ] T110 Two-step confirm shows the server's origin tag next to the host, and the "different site" line when the registrable
+  domains differ (pure helper `signInSiteNote(serverUrl, pageHost)` with unit tests: same domain, other domain, `co.uk`, stdio) [FR-075]
+- [ ] T111 Trust confirmation of per-folder extras and the Copilot waiting text say a sign-in may be kept in the system keychain
+  after the session [FR-076]
+
 ### Phase 8c: real checks (needs-owner-approval; 0 AI credits, no prompt; a remote MCP server with OAuth; a browser sign-in on the owner's machine)
 
 Record results in research.md section 7 and change `read:` to `real:`. Do not open, copy or paste any token, keychain entry or log file.

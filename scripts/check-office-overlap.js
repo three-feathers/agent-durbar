@@ -460,7 +460,31 @@ async function driver(ctx) {
     }
     const strip = document.getElementById('stripList');
     if (strip && R(strip).right > innerWidth + 1) P.push('the agent strip leaves the window');
+    /* spec 052 FR-139: a main agent's header has + New next to Previous, named "New session in <folder>", on the same row as
+       the other actions and as the chips (the header does not wrap) */
+    const nb = document.getElementById('newSessHdrBtn');
+    if (!nb) P.push('no + New button in the chat header');
+    else {
+      if (!/^New session in .+/.test(nb.getAttribute('aria-label') || '') || nb.title !== nb.getAttribute('aria-label')) P.push(`+ New has the wrong name (${nb.getAttribute('aria-label')} / ${nb.title})`);
+      const tops = [...document.querySelectorAll('#panelHead .actions > button')].filter((c) => c.getClientRects().length).map((c) => Math.round(R(c).top));
+      if (Math.max(...tops) - Math.min(...tops) > 2) P.push('the header actions wrap ' + JSON.stringify(tops));
+      const id = document.querySelector('#panelHead .ph-id'), nr = R(nb);
+      if (id && Math.abs(R(id).top - nr.top) > 12) P.push('the header wraps: name and actions on different rows');
+      if (nr.height < 27 || nr.height > 29.5) P.push('+ New is not the 28px control height (' + nr.height + ')');
+    }
     return P;
+  };
+  /* FR-139: + New opens the new-session dialog; a helper's chat, the demo and an office without a ready app do not offer it */
+  const newBtnFlow = async (w, h) => {
+    await ctx.js(`(async()=>{const d=document.querySelector('#stage .desk[data-id]');if(d)d.click();await new Promise(r=>setTimeout(r,300));const b=document.getElementById('newSessHdrBtn');if(b)b.click();await new Promise(r=>setTimeout(r,300));return true})()`);
+    const dlg = await ctx.js(`(()=>{const t=document.querySelector('#sessDlg h3');const r={dlg:t?t.textContent:null,more:!!document.getElementById('newSessBtn')};const d=document.getElementById('sessDlg');if(d)d.remove();return r})()`);
+    total++;
+    if (!dlg.dlg || !/^New session in /.test(dlg.dlg) || !dlg.more) { failed++; console.log(`FAIL new session ${w}x${h}: + New did not open the dialog or More lost its item ${JSON.stringify(dlg)}`); }
+    const helper = await ctx.js(`(async()=>{const b0=document.getElementById('backBtn');if(b0)b0.click();await new Promise(r=>setTimeout(r,200));const h=document.querySelector('#stage .helper[data-id]');if(!h)return null;h.click();await new Promise(r=>setTimeout(r,300));return {open:!!document.querySelector('#panelHead'),btn:!!document.getElementById('newSessHdrBtn')}})()`);
+    total++;
+    if (helper && helper.open && helper.btn) { failed++; console.log(`FAIL new session ${w}x${h}: a helper's chat offers + New`); }
+    const demo = await ctx.js(`(async()=>{const b0=document.getElementById('backBtn');if(b0)b0.click();await new Promise(r=>setTimeout(r,200));const t=document.getElementById('demoToggle');if(!t)return null;t.checked=true;t.dispatchEvent(new Event('change'));await new Promise(r=>setTimeout(r,300));const d=document.querySelector('#stage .desk[data-id]');if(d)d.click();await new Promise(r=>setTimeout(r,300));const r={btn:!!document.getElementById('newSessHdrBtn')};t.checked=false;t.dispatchEvent(new Event('change'));await new Promise(r=>setTimeout(r,300));const b1=document.getElementById('backBtn');if(b1)b1.click();return r})()`);
+    if (demo) { total++; if (demo.btn) { failed++; console.log(`FAIL new session ${w}x${h}: the demo offers + New`); } }
   };
   for (const [w, h] of SIZES) {
     for (const q of ['sim=15&simfreeze=1', 'sim=15&simfreeze=1&simkinds=mixed', 'sim=12&simfreeze=1&simtitles=1']) {
@@ -474,6 +498,22 @@ async function driver(ctx) {
         total++;
         if (p.length) { failed++; bad++; if (bad <= 3) console.log(`FAIL chat ${w}x${h} ${q} agent ${id}: ${p.slice(0, 4).join('; ')}`); }
         await ctx.js(`(async()=>{const b=document.getElementById('backBtn');if(b)b.click();await new Promise(r=>setTimeout(r,120));return true})()`);
+      }
+      if (q === 'sim=15&simfreeze=1') {
+        /* Simple hides the developer details (VS Code, model chips); the header must still fit and keep + New */
+        await ctx.js(`(()=>{localStorage.setItem('durbar.detail','simple');return true})()`);
+        await load(q, w, h);
+        let badS = 0;
+        for (const id of ids) {
+          await ctx.js(`(async()=>{const d=document.querySelector('#stage .desk[data-id="${id}"]');if(d)d.click();await new Promise(r=>setTimeout(r,250));return true})()`);
+          const ps = await ctx.js(`(${chatCheck.toString()})()`);
+          total++;
+          if (ps.length) { failed++; badS++; if (badS <= 3) console.log(`FAIL chat ${w}x${h} ${q} agent ${id} (Simple): ${ps.slice(0, 4).join('; ')}`); }
+          await ctx.js(`(async()=>{const b=document.getElementById('backBtn');if(b)b.click();await new Promise(r=>setTimeout(r,120));return true})()`);
+        }
+        await newBtnFlow(w, h);
+        await ctx.js(`(()=>{localStorage.setItem('durbar.detail','expert');return true})()`);
+        await load(q, w, h);
       }
       rows.push({ label: `chat ${w}x${h} ${q}`, d: 'chat', h: '-', rooms: '-', plates: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: bad });
     }
@@ -542,9 +582,9 @@ async function driver(ctx) {
       const all = await type('');
       if (all.rows.length < 3 || /\d of \d/.test(all.heads.join(' '))) P.push(`empty query: ${JSON.stringify(all)}`);
       const a1 = await type('EXPLICACION');
-      if (a1.rows.length !== 1 || !/Explicaci/.test(a1.rows[0]) || !/0 of 2/.test(a1.heads[0]) || !/1 of 2/.test(a1.heads[1]) || a1.empty !== 1) P.push(`accent/case query: ${JSON.stringify(a1)}`);
+      if (a1.rows.length !== 1 || !/Explicaci/.test(a1.rows[0]) || !/0 of 4/.test(a1.heads[0]) || !/1 of 2/.test(a1.heads[1]) || a1.empty !== 1) P.push(`accent/case query: ${JSON.stringify(a1)}`);
       const none = await type('zzzz');
-      if (none.rows.length || none.empty !== 2 || !/0 of 2/.test(none.heads[0]) || !/0 of 2/.test(none.heads[1])) P.push(`no-match query: ${JSON.stringify(none)}`);
+      if (none.rows.length || none.empty !== 2 || !/0 of 4/.test(none.heads[0]) || !/0 of 2/.test(none.heads[1])) P.push(`no-match query: ${JSON.stringify(none)}`);
       await type('explicacion');
       if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-prevsearch-${w}x${h}.png`));
       await ctx.js(`document.getElementById('prevQ').focus()`);
