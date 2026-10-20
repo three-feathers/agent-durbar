@@ -40,7 +40,8 @@ module.exports = async (ctx) => {
     assert.match(await text('#extH'), /Extras for one folder/);
     assert.match(await text('#screen'), /only per folder or workspace/);
     // the CLI list is the first thing the picture is about: scroll it into view and prove it is inside the window
-    await ctx.js(`document.getElementById('ambList').scrollIntoView({block:'center'});document.scrollingElement.scrollTop=0`); await ctx.sleep(300);
+    await ctx.js(`(()=>{const d=document.getElementById('advMcp');if(d)d.open=true})()`); await ctx.sleep(200); /* spec 052: the MCP list sits in a collapsed section */
+    await ctx.js(`document.getElementById('ambList').scrollIntoView({block:'center',behavior:'instant'})`); await ctx.sleep(400);
     assert.strictEqual(await ctx.js(`(()=>{const r=document.getElementById('ambList').getBoundingClientRect();return r.top>=0&&r.bottom<=window.innerHeight&&r.left>=0&&r.right<=window.innerWidth})()`), true, 'the CLI list is inside the window for the picture');
     await shot('settings-cli-list', w, h);
     await closeScreen(); await ctx.sleep(300);

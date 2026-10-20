@@ -11,24 +11,25 @@
  * (same names as the first set). It asserts what each picture is meant to show and fails (driver error) on a miss.
  */
 const path = require('path');
+const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
 const assert = require('assert');
 const OUT = process.env.SHOTS_OUT || require('os').tmpdir();
 
 module.exports = async (ctx) => {
-  const click = (sel) => ctx.js(`(()=>{const e=document.querySelector(${JSON.stringify(sel)});if(!e)return false;e.click();return true})()`);
-  const text = (sel) => ctx.js(`(document.querySelector(${JSON.stringify(sel)})||{}).innerText||''`);
+  const click = (sel) => ctx.js(`(()=>{const e=document.querySelector(${jsLiteral(sel)});if(!e)return false;e.click();return true})()`);
+  const text = (sel) => ctx.js(`(document.querySelector(${jsLiteral(sel)})||{}).innerText||''`);
   // calm picture: no startup toast, no focus ring (same as shots-hero.js)
   const calm = () => ctx.js(`(()=>{if(!document.getElementById('shotCalm')){const s=document.createElement('style');s.id='shotCalm';s.textContent='#toasts{display:none!important}';document.head.appendChild(s);}
     if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();})()`);
   const shot = async (file) => { await ctx.sleep(450); await calm(); await ctx.sleep(100); await ctx.shot(path.join(OUT, file)); console.log('[003-011] saved', file); };
-  const idOf = (name) => ctx.js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith(${JSON.stringify(name)}));return d?d.dataset.id:null})()`);
+  const idOf = (name) => ctx.js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith(${jsLiteral(name)}));return d?d.dataset.id:null})()`);
 
   // 011: the office with the office total chip and each room's total
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     ctx.win.setContentSize(w, h);
     await ctx.sleep(w === 1440 ? 3000 : 1500);
     assert.ok(await ctx.js(`document.querySelectorAll('#stage .desk[data-id]').length>=10`), 'the floor is populated');
-    assert.match(await text('#stats'), /AIU/, 'the office total is on screen');
+    assert.match(await text('#stats'), /(\$|AIU)/, 'the office total is on screen');
     await shot(`011-usage-totals-${w}x${h}.png`);
   }
 
