@@ -17,6 +17,9 @@ const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-cod
 const OUT = process.env.OUT || '/tmp';
 const INDEX = path.join(process.cwd(), 'dist', 'renderer', 'index.html');
 
+/* spec 052 FR-084: the palette and inbox shortcuts are Cmd on a Mac, Ctrl elsewhere (Ctrl+` stays Control everywhere, FR-091) */
+const MOD = process.platform === 'darwin' ? 'meta' : 'control';
+
 module.exports = async (ctx) => {
   const js = (c) => ctx.js(c);
   const key = (k) => { ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: k }); ctx.win.webContents.sendInputEvent({ type: 'char', keyCode: k }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: k }); };
@@ -92,7 +95,7 @@ module.exports = async (ctx) => {
     assert.ok(await js(`!document.getElementById('inboxDlg')`), 'Esc closes the inbox');
     // FR-035: Ctrl+Shift+A opens the inbox even from a text field
     await js(`(()=>{const i=document.createElement('input');i.id='tmpIn';document.body.appendChild(i);i.focus();})()`);
-    const mod = process.platform === 'darwin' ? 'meta' : 'control'; /* FR-084: Cmd on a Mac, Ctrl elsewhere */ ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'A', modifiers: [mod, 'shift'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'A', modifiers: [mod, 'shift'] }); await ctx.sleep(700);
+    const mod = MOD; ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'A', modifiers: [mod, 'shift'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'A', modifiers: [mod, 'shift'] }); await ctx.sleep(700);
     assert.ok(await js(`!!document.getElementById('inboxDlg')`), 'Ctrl+Shift+A opens the inbox from a text field');
     key('Escape'); await ctx.sleep(300); await js(`document.getElementById('tmpIn').remove()`);
 
@@ -213,7 +216,7 @@ module.exports = async (ctx) => {
     assert.ok(await js(`!document.body.classList.contains('simple')`), 'back to Expert');
     // FR-042 (#316): Ctrl+K opens the palette; typing filters it; Enter opens the agent's chat
     await js(`document.activeElement&&document.activeElement.blur()`);
-    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'K', modifiers: ['control'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'K', modifiers: ['control'] }); await ctx.sleep(500);
+    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'K', modifiers: [MOD] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'K', modifiers: [MOD] }); await ctx.sleep(500);
     assert.ok(await js(`!!document.getElementById('palDlg')&&document.activeElement&&document.activeElement.id==='palIn'`), 'Ctrl+K opens the palette with focus in its input');
     await js(`(()=>{const i=document.getElementById('palIn');i.value=${jsLiteral('lena')};i.dispatchEvent(new Event('input',{bubbles:true}));})()`); await ctx.sleep(400);
     const pal = await js(`({opts:[...document.querySelectorAll('#palList [role="option"]')].map(o=>o.querySelector('.pal-l').textContent),active:document.getElementById('palIn').getAttribute('aria-activedescendant'),said:document.getElementById('srAnnounce').textContent})`);
@@ -226,7 +229,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`(document.getElementById('panelTitle')||{}).textContent||''`), 'Lena', 'Enter opens Lena\'s chat');
     await js(`document.getElementById('backBtn').click()`); await ctx.sleep(600);
     // FR-091 (round 8): with an empty search the palette starts with Recent (Lena, just opened); Ctrl+` goes back to her chat
-    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'K', modifiers: ['control'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'K', modifiers: ['control'] }); await ctx.sleep(500);
+    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'K', modifiers: [MOD] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'K', modifiers: [MOD] }); await ctx.sleep(500);
     const rec = await js(`({g:(document.querySelector('#palList .pal-g')||{}).textContent,first:(document.querySelector('#palList [role="option"] .pal-l')||{}).textContent,end:[...document.querySelectorAll('#palList .pal-l')].some(x=>x.textContent==='End all sessions')})`);
     assert.ok(rec.g === 'Recent' && rec.first === 'Lena', 'the palette lists recent chats first: ' + JSON.stringify(rec));
     key('Escape'); await ctx.sleep(300);
