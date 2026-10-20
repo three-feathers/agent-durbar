@@ -7,6 +7,8 @@ import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
 import { offeredDescriptors } from '../adapters/experimental';
 import { createRegistry, detectAll } from '../adapters/registry';
+import { folderGitStatus } from './gitstatus';
+import type { GitStatus } from './gitstatus';
 import { detectorFor, nodeDetectEnv } from '../adapters/detect';
 import { execFile, spawn } from 'child_process';
 import { adapterForAdd, createRouter, historyOf, modelOptionsOf, previousSessionsOf } from '../adapters/router';
@@ -1266,6 +1268,11 @@ ipcHandle('agents:revokeGrant', (_e, id: string, key: string) => {
   if (agents.has(id)) router.forAgent(id)?.revokeGrant?.(id, String(key));
 });
 
+// spec 063: the git branch and changed files of an agent's own folder (read-only; the window never passes a path)
+ipcHandle('agents:gitStatus', async (e, id: unknown): Promise<GitStatus> => {
+  const a = fromApp(e) && typeof id === 'string' ? agents.get(id) : undefined;
+  return a && a.cwd ? folderGitStatus(a.cwd) : { repo: false };
+});
 ipcHandle('agents:openInVSCode', (_e, id: string) => {
   const a = agents.get(id);
   // Only paths of agents we started: the workspace file if there is one, else the folder.

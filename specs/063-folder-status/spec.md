@@ -35,3 +35,19 @@ The status is read when the chat opens and again when the agent finishes a turn 
 
 ## Out of scope
 Committing, staging, discarding or diffs inside Durbar (VS Code does this). Status of folders without an open chat.
+
+## Changes
+
+### 2026-10-21: built
+- `test:` `scripts/test-gitstatus.ts` (in `npm test`) covers:
+  - parsing of porcelain v1 `-z` (upstream, ahead/behind, renames, untracked, conflicts, detached, no commits yet) and of numstat `-z` (binary, renames);
+  - the read-only argv (`--no-optional-locks`, no writing subcommand), the 200-file cap, and failures giving `{ repo: false }`;
+  - the window's words.
+- `sim:` `scripts/shots-063-folder-status.js` at 1440x900 and 1280x800:
+  - a folder with 3 changes: the chip says "· main · 3 changed", is a button, is at least 10.5px and fits the header; the dialog is titled with the folder name, lists the files in plain words ("changed", "new", "deleted") and has Open in VS Code and Done;
+  - a clean repository shows the branch only, and is not a button;
+  - a folder that is not a repository is unchanged.
+  - Screenshots: `docs/screenshots/063-folder-*`.
+- `real:` 2026-10-21, Linux: `folderGitStatus` on this repository's worktree listed the branch and all 11 changed files with their line counts; `/tmp` gave `{ repo: false }`.
+- Wording decision: plain words instead of git's one-letter codes (M/A/D/?), for people who do not use git.
+- `[KNOWN GAP]`: not run by hand on macOS or Windows (`git` from PATH, `-z` output, argv only, so nothing OS-specific is expected); a very large repository is bounded by the 4 s and 512 KB limits but was not timed.

@@ -326,6 +326,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .ph-meta{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;min-width:0}
 .folder{display:inline-flex;align-items:center;gap:4px;height:var(--h-chip);font-size:var(--t4-size);color:var(--ink-2);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:0 8px} /* spec 052 FR-076: a path chip, not a pill */
 .folder{max-width:100%;min-width:0}
+.folder .fst{color:var(--muted);white-space:nowrap;flex:none} /* spec 063: branch and changed files */
+.folder[role=button]{cursor:pointer}.folder[role=button]:hover{border-color:var(--line-2)}.folder[role=button]:focus-visible{outline:2px solid var(--focus,#2f6fde);outline-offset:1px}
 .folder-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .close{position:absolute;right:12px;top:12px;width:var(--h-ctl);height:var(--h-ctl);border-radius:var(--r-md);border:1px solid transparent;background:transparent;cursor:pointer;display:grid;place-items:center;color:var(--ink-2)}
 .close:hover{background:var(--surface-2);border-color:var(--line)}

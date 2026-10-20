@@ -122,6 +122,7 @@ const api: DurbarApi = {
   listVsChats: (id) => ipcRenderer.invoke('vschat:list', id),
   readVsChat: (id, key) => ipcRenderer.invoke('vschat:read', id, key),
   openInVSCode: (id) => ipcRenderer.invoke('agents:openInVSCode', id),
+  gitStatus: (id) => ipcRenderer.invoke('agents:gitStatus', id),
   onEvent: (cb) => sub('agent:event', cb),
   onAgentAdded: (cb) => sub('agent:added', cb),
   // spec 052 FR-083, FR-085: the Mac app menu's Settings… item, full screen (the top bar's traffic-light room) and the platform

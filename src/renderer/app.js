@@ -1174,6 +1174,37 @@ function wireAnswerBar(a){
   };
   answerObs={m:mo,i:io,answerKey};check();
 }
+/* ---------------- spec 063: the folder chip says the git branch and how many files changed; a click lists them ---------------- */
+const FSTAT=new Map(); /* main agent id -> {at, busy, st} */
+const GS=window.DurbarGitStatus;
+/* the folder's own name (the last part of its path) */
+const folderNameOf=a=>{const r=roomOf(a);const p=r&&r.path?String(r.path).replace(/[\\/]+$/,''):'';return p.split(/[\\/]/).pop()||'';};
+function refreshFolderStatus(a0){
+  const a=a0&&liveRoot(a0); if(!a||!a.live||!bridge.gitStatus||!GS)return;
+  const c=FSTAT.get(a.id)||{at:0};FSTAT.set(a.id,c);
+  if(c.busy||Date.now()-c.at<5000){paintFolderStatus(a);return;} /* FR-005: once per 5 s, one request at a time */
+  c.busy=true;c.at=Date.now();
+  bridge.gitStatus(a.id).then(st=>{c.st=st;},()=>{c.st={repo:false};}).finally(()=>{c.busy=false;paintFolderStatus(a);});
+}
+function paintFolderStatus(a){
+  const sel=ui.selected&&byId(ui.selected);if(!sel||liveRoot(sel)!==a)return;
+  const chip=document.querySelector('#panelHead .folder');if(!chip)return;
+  const st=(FSTAT.get(a.id)||{}).st;
+  let t=chip.querySelector('.fst');
+  const text=GS.chipText(st);
+  if(!text){if(t)t.remove();chip.removeAttribute('role');chip.removeAttribute('tabindex');chip.onclick=chip.onkeydown=null;return;}
+  if(!t){t=document.createElement('span');t.className='fst';chip.appendChild(t);}
+  t.textContent=text;
+  /* FR-003: a button only when there is something to show */
+  if(GS.count(st)){chip.setAttribute('role','button');chip.tabIndex=0;chip.setAttribute('aria-label',GS.chipLabel(st));
+    chip.onclick=()=>showFolderStatus(a,chip);chip.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();showFolderStatus(a,chip);}};}
+  else{chip.removeAttribute('role');chip.removeAttribute('tabindex');chip.setAttribute('aria-label',GS.chipLabel(st));chip.onclick=chip.onkeydown=null;}
+}
+async function showFolderStatus(a,chip){
+  const st=(FSTAT.get(a.id)||{}).st;if(!st||!st.repo)return;
+  const r=await askDialog({title:'Changes in '+(folderNameOf(a)||'this folder'),body:GS.body(st),lines:GS.lines(st),buttons:[{label:'Open in VS Code',value:'vscode'},{label:'Done',value:null,cls:'primary'}],returnFocus:chip});
+  if(r&&r.value==='vscode'&&bridge.openInVSCode)openLive(a,chip);
+}
 function openPanel(id,focus){
   const a=byId(id); if(!a)return; ui.selected=id; attached=[];
   noteRecentChat(a); rememberUi();
@@ -1207,6 +1238,7 @@ function openPanel(id,focus){
   chatEl.onscroll=()=>{chatEl.dataset.pin=(chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight<80)?'1':'0';};
   $('panel').querySelector('.panel-in').classList.toggle('ro',!!(a.live&&a.parent));
   $('backBtn').onclick=closePanel;
+  refreshFolderStatus(a); /* spec 063: branch and changed files on the folder chip */
   $('vscodeBtn').onclick=e=>a.live?openLive(a,e.currentTarget):toast('Would run <code>code '+esc(room.path)+'</code>',3800);
   if(a.live)$('pauseBtn').hidden=true;
   if($('newSessBtn'))$('newSessBtn').onclick=()=>newSession(a);
@@ -2682,6 +2714,7 @@ function onLiveEvent(e){
   case 'user':{addUserMsg(chat,e.text,(e.attachments||[]).map(x=>({name:String(x.path).split(/[\\/]/).pop(),img:x.kind==='image',path:x.path})));return;}
   case 'status':
     if(!main)return;
+    if(e.status==='idle')refreshFolderStatus(a); /* spec 063 FR-005: a finished turn may have changed files */
     if(e.status==='working'){a.worked=true; const tt=ensureTurn(a); if(e.intent){a.intent=e.intent;if(!/^(Thinking|Approved|Allowed|Denied|Waiting for permission)/.test(e.intent))tIntent(tt.T,e.intent);}
       if(a.state!=='working'&&a.state!=='thinking')setState(a,'working',null,e.intent||a.task); else if(e.intent)setState(a,a.state,undefined,e.intent);}
     else if(e.status==='needs-permission'){
