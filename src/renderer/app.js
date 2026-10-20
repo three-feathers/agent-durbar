@@ -576,7 +576,7 @@ function roomSchedChip(r){
   if(!ss.length)return '';
   const next=nextRunOf(ss),off=SCHED.pausedAll||ss.every(s=>s.paused);
   /* the chip stays short: the time when the next run is within a day, else the weekday and time */
-  const t=ss.filter(s=>!s.paused).map(s=>s.every!==undefined?s.next:s.at).filter(Boolean).sort((x,y)=>x-y)[0];
+  const t=ss.filter(s=>!s.paused).map(s=>s.next||s.at).filter(Boolean).sort((x,y)=>x-y)[0];
   const short=t?(t-Date.now()<86400000?hm(t):new Date(t).toLocaleDateString([],{weekday:'short'})+' '+hm(t)):'';
   const tip=ss.length+' schedule'+(ss.length>1?'s':'')+' for '+r.name+(off?' (paused)':next?', next run '+next:'')+'. Click to see or change them.';
   return `<button class="room-sched${off?' off':''}" type="button" data-schedroom="${esc(r.id)}" title="${esc(tip)}" aria-label="${esc(tip)}">${CLOCK_SVG}<span>${ss.length}${off?'':short?' · '+esc(short):''}</span></button>`;
