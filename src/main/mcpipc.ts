@@ -50,7 +50,12 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
   /** The secret values handed to one session (its folder's extras), used to mask server errors. */
   const secretValuesFor = (agentId: string): string[] => {
     const a = agents.get(agentId);
-    return a ? mcpSecretValues(store().forSession(keyOf(a), off.get(agentId) ?? [], cliNames()).mcpServers) : [];
+    if (!a) return [];
+    try {
+      return mcpSecretValues(store().forSession(keyOf(a), off.get(agentId) ?? [], cliNames()).mcpServers);
+    } catch {
+      return []; // store not ready or unreadable: the shape-based masking still runs, and the event is not lost
+    }
   };
   router.onEvent((e) => {
     if (e.type === 'mcp') live.set(e.sessionId, e.servers);
