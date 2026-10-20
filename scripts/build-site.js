@@ -24,14 +24,15 @@ const OUT = process.env.SITE_OUT ? path.resolve(process.env.SITE_OUT) : path.joi
 const REPO = 'three-feathers/agent-durbar';
 const GH = `https://github.com/${REPO}`;
 const SHOTS = 'docs/screenshots';
-const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+// line endings normalised: a Windows checkout has CRLF, and the parsers match whole lines
+const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n?/g, '\n');
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 /* GitHub's heading anchors: lower case, punctuation dropped, spaces to hyphens, duplicates numbered. */
 function slugger() {
   const seen = new Map();
   return (text) => {
-    const base = String(text).toLowerCase().replace(/<[^>]*>/g, '').replace(/[^\p{L}\p{N} _-]/gu, '').trim().replace(/ /g, '-');
+    const base = String(text).toLowerCase().replace(/[^\p{L}\p{N} _-]/gu, '').trim().replace(/ /g, '-');
     const n = seen.get(base) || 0;
     seen.set(base, n + 1);
     return n ? `${base}-${n}` : base;

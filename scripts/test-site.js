@@ -14,7 +14,7 @@ const { execFileSync } = require('child_process');
 
 const site = require('./build-site.js');
 const ROOT = path.join(__dirname, '..');
-const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
+const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8').replace(/\r\n?/g, '\n'); // a Windows checkout has CRLF
 const landing = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/site/landing.json'), 'utf8'));
 
 // landing.json stays in step with the README: the real file passes; a bad anchor, a missing screenshot or an unknown harness fail
