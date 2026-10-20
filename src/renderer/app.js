@@ -467,9 +467,9 @@ function helperTileHTML(h){
 const visitPlace=a=>{const v=a.parent?null:VISITS.at(a.id);return v?v.place:(RETURNING.has(a.id)?null:null);};
 function cardHTML(a,d,nSubs){
   const st=vis(a), use=usageShort(a);
-  return `<button class="desk card is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${use?' · '+use:''}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
+  return `<button class="desk card is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${use?' · '+use:''}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${sceneC(a)}</span>
-    <span class="ci"><span class="l1"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a))}</span><span class="stl st-${st}">${label(a,true)}</span></span>
+    <span class="ci"><span class="l1"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span><span class="stl st-${st}">${label(a,true)}</span></span>
     <span class="intent" title="${esc(taskOf(a))}">${esc(taskOf(a))}</span>
     <span class="l3"><span class="pill st-${st}"><i></i>${label(a,true)}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${esc(use.split(' · ')[1])}</span>`:`${esc(use.split(' · ')[0]||'')}<span class="aiu">${use.includes(' · ')?' · '+esc(use.split(' · ')[1]):''}</span>`}</span></span></span></button>`;
 }
@@ -495,9 +495,9 @@ function unitHTML(a,d){
   }
   let desk;
   if(d==='full'){
-    desk=`<button class="desk is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
+    desk=`<button class="desk is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
       ${scene(a,false)}<span class="badge ${st}">${badgeSVG(st)}</span>
-      <div class="info"><div class="who"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a))}</span></div>
+      <div class="info"><div class="who"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span></div>
       <p class="task" title="${esc(taskOf(a))}">${esc(taskOf(a))}</p><span class="pill st-${st}"><i></i>${label(a)}${pillWarn(a)}</span></div></button>`;
   } else desk=cardHTML(a,d,nSubs);
   return `<div class="unit${nSubs?' has-h':''}" data-key="unit:${esc(a.id)}">${desk}${helpers}</div>`;
@@ -1043,11 +1043,11 @@ function openPanel(id,focus){
   p.innerHTML=`<div class="panel-in">
    <div class="strip" role="navigation" aria-label="Agents"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><div class="strip-list" id="stripList"></div></div>
    <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</h2><div class="sub">${esc(a.role)}${parent?' · helper of '+esc(parent.name):''}</div></div>
-      <div class="ph-meta"><span data-f="status"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?(a.live&&a.info&&!a.parent&&bridge.setModel&&feat(a,'models')?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`):''}${a.live&&a.info&&!a.parent&&a.info.profiles&&bridge.listProfiles?agentChipHTML(a):''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
+      <div class="ph-meta"><span data-f="status"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?(a.live&&a.info&&!a.parent&&bridge.setModel&&feat(a,'models')?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`):''}${a.live&&a.info&&!a.parent&&a.info.profiles&&bridge.listProfiles?agentChipHTML(a):''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
       <div class="actions"><!-- spec 052 FR-003: two actions in view, the rest under More (ids kept; End and Remove last) --><button class="btn primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
         <button class="btn" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
         ${a.live&&!feat(liveRoot(a),'stop')?'':`<button class="btn danger" id="stopBtn" type="button" title="${a.live?'Stop: interrupts this reply. The chat stays open and ready; nothing is removed.':'Stop'}"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>Stop</button>`}
-        <button class="btn" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools and usage</button>`:''}${a.live&&!a.parent&&bridge.agentMcp&&feat(liveRoot(a),'mcp')?`<button class="more-it" role="menuitem" tabindex="-1" id="mcpBtn" type="button" title="MCP servers for this agent (set globally in Settings)">MCP servers</button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}</button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>Send a message to pick up where you left off</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The other sessions in ${esc(room.name)} stay."><span class="mt">Remove from office…<small>Ends the session; its history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Take ${esc(room.name)} out of Agent Durbar: its session ends and the folder is no longer remembered. Nothing on disk is deleted."><span class="mt">Remove folder…<small>Forgets the folder; nothing on disk is deleted</small></span></button>`:'')}</div></div></div>
+        <button class="btn" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools and usage</button>`:''}${a.live&&!a.parent&&bridge.agentMcp&&feat(liveRoot(a),'mcp')?`<button class="more-it" role="menuitem" tabindex="-1" id="mcpBtn" type="button" title="MCP servers for this agent (set globally in Settings)">MCP servers</button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}</button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>`:''}${canRemote(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>Send a message to pick up where you left off</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The other sessions in ${esc(room.name)} stay."><span class="mt">Remove from office…<small>Ends the session; its history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Take ${esc(room.name)} out of Agent Durbar: its session ends and the folder is no longer remembered. Nothing on disk is deleted."><span class="mt">Remove folder…<small>Forgets the folder; nothing on disk is deleted</small></span></button>`:'')}</div></div></div>
     <p class="ptask" data-f="task"></p><p class="pusage" data-f="usage"></p>
     <div class="grants" id="grants" aria-label="Permissions allowed for this session" hidden></div></div>
    <div class="prev" id="prev" hidden></div>
@@ -1076,6 +1076,8 @@ function openPanel(id,focus){
   if($('rmSessBtn'))$('rmSessBtn').onclick=()=>removeSessionUi(a);
   if($('rmFolderBtn'))$('rmFolderBtn').onclick=()=>removeFolder(room); /* spec 006 FR-022: the only session of the folder */
   if($('copyResBtn'))$('copyResBtn').onclick=()=>copyResume(a);
+  if($('remoteBtn'))$('remoteBtn').onclick=()=>(a.remote?remoteOff(a):remoteOn(a));
+  if($('remoteChip'))$('remoteChip').onclick=()=>remoteLinkDialog(a);
   if(a.live&&!a.parent)initPrev(a); else {const pv=$('prev');if(pv)pv.hidden=true;}
   if(a.live&&!a.parent&&a.info&&a.info.resumeLast&&bridge.wake)wakeLast(a);
   wireMoreMenu();
@@ -1373,6 +1375,7 @@ function palActions(){
     {label:'Close all room doors',kw:'doors close compact plates',run:palClick('closeAll'),ok:()=>palUsable('closeAll')},
     {label:'Open all room doors',kw:'doors open expand',run:palClick('openAll'),ok:()=>palUsable('openAll')},
     {label:'Keyboard shortcuts',kw:'keys shortcuts help hotkeys',keys:['?'],run:openKbdHelp},
+    ...remotePalItems(),
   ].filter(x=>!x.ok||x.ok()).map(x=>({...x,group:'Actions'}));
 }
 function palAll(){
@@ -1536,6 +1539,9 @@ const MODE_IC={
 /* spec 052 FR-011: the desk's accessible name says its permission mode; the glyph next to the name is decoration for screen readers */
 /* spec 052 FR-039: with more than one harness in the office, each card says which one runs it ("Reviewer · Codex") */
 const kindTag=a=>{const r=a&&a.parent?byId(a.parent):a;if(!r||!r.live||!r.info)return '';const ks=new Set(agents.filter(x=>x.live&&!x.parent&&x.info).map(x=>x.info.adapterId||'copilot'));return ks.size>1?' · '+kindWord(r.info.adapterId):'';};
+/* spec 054 FR-007: remote control on = text in the card's existing role line and its accessible name (no new element, no size change) */
+const remoteTag=a=>a&&!a.parent&&a.remote?' · Remote':'';
+const remoteWords=a=>a&&!a.parent&&a.remote?', remote control on':'';
 const modeWords=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?', '+MODE_NAME[a.info.permMode]+(a.info.permMode==='allow'&&a.info.permRestored?' (restored)':''):'';
 const modeIcon=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}${a.info.permMode==='allow'&&a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_HELP[a.info.permMode])} (right-click for options)" aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`:'';
 /* Floors state from the bridge (spec 033): rooms take their floor from it, then everything that depends on visibility re-renders. */
@@ -2219,6 +2225,7 @@ function onLiveEvent(e){
       /* a permission still pending when the session stops is denied cleanly: no Approve/Deny left behind, grants gone */
       [...a.pend.keys()].forEach(id=>settlePerm(a,{requestId:id,state:'denied',via:'stopped'}));
       setGrants(a,[]);
+      if(a.remote){a.remote=null;updateRemoteUi(a);} /* spec 054 FR-003: remote control ends with the session */
       closeTurn(a);setState(a,'idle','Ended','Session ended. Send a message to resume it.');}
     return;
   case 'permission':if(main)settlePerm(a,e.permission);return;
@@ -2779,6 +2786,60 @@ function maybeSuggestFresh(a){
 /* ---------------- new session (another agent in a folder) ---------------- */
 function closeSessDlg(){const d=document.getElementById('sessDlg');if(d)d.remove();}
 /* spec 030 FR-036: a live agent whose kind can make a hand-off summary */
+/* ---------------- spec 054: remote control from GitHub (web and mobile) ---------------- */
+/* Only for a live main agent whose kind reports `remote`; hidden otherwise (FR-006). State lives on the agent (`a.remote`) and in main. */
+const canRemote=a=>!!(bridge.setRemote&&a&&a.live&&!a.parent&&a.info&&feat(a,'remote'));
+const remoteVisText=v=>v==='repo'?'Visible to: anyone who can read the repository.':v==='unshared'?'Visible to: you and the repository\'s collaborators.':'';
+const remoteItemInner=a=>a.remote?'<span class="mt">Stop remote control<small>GitHub can no longer follow or steer it</small></span>':'<span class="mt">Control from GitHub (web and mobile)…<small>Follow and steer it from your phone</small></span>';
+const remoteChipHTML=a=>`<button class="mchip mchip-btn" id="remoteChip" type="button" title="Remote control is on: this session can be followed and steered from GitHub. Click for the link."${a.remote?'':' hidden'}>Remote</button>`;
+function remotePalItems(){
+  const a=ui.selected?byId(ui.selected):null; if(!canRemote(a))return [];
+  return [a.remote?{label:'Stop remote control',hint:a.name,kw:'remote github mobile phone steer',run:()=>remoteOff(a)}:{label:'Control from GitHub (web and mobile)…',hint:a.name,kw:'remote github mobile phone steer',run:()=>remoteOn(a)}];
+}
+/* the header chip and the More item follow the state in place (the composer keeps its text); the office re-renders the card */
+function updateRemoteUi(a){
+  if(ui.selected===a.id){const c=$('remoteChip');if(c)c.hidden=!a.remote;const b=$('remoteBtn');if(b)b.innerHTML=remoteItemInner(a);}
+  scheduleRender();
+}
+const remoteBack=()=>$('moreBtn')||$('panelTitle');
+let remoteBusy=false;
+async function remoteOn(a){
+  if(!canRemote(a)||remoteBusy||a.remote)return;
+  const r=await askDialog({title:'Control this session from GitHub?',
+    body:'Durbar turns on remote control for this session. Its messages are sent to GitHub, so you can follow and steer it from github.com and GitHub Mobile. Anyone who can see this session on GitHub can steer it.',
+    lines:['Who can see it is decided by GitHub: you and the repository\'s collaborators, or everyone who can read the repository. Durbar does not change that.'],
+    buttons:[{label:'Cancel',value:null},{label:'Turn on',value:'on',cls:'primary warn'}],returnFocus:remoteBack});
+  if(!r||r.value!=='on')return;
+  remoteBusy=true; let res;
+  try{res=await bridge.setRemote(a.id,true);}catch(e){res={ok:false,error:String(e&&e.message||e)};}finally{remoteBusy=false;}
+  if(!res||!res.ok){toast('Could not turn on remote control: '+esc(res&&res.error||'unknown error'),6000).classList.add('err');return;}
+  a.remote={url:typeof res.url==='string'?res.url:'',steerable:res.steerable!==false,visibility:res.visibility||''};
+  updateRemoteUi(a);
+  toast('Remote control is on for '+esc(a.name)+'.').classList.add('ok');
+  remoteLinkDialog(a);
+}
+async function remoteOff(a){
+  if(!a||!a.remote||remoteBusy||!bridge.setRemote)return;
+  remoteBusy=true; let res;
+  try{res=await bridge.setRemote(a.id,false);}catch(e){res={ok:false,error:String(e&&e.message||e)};}finally{remoteBusy=false;}
+  if(!res||!res.ok){toast('Could not stop remote control: '+esc(res&&res.error||'unknown error'),6000).classList.add('err');return;}
+  a.remote=null; updateRemoteUi(a);
+  toast('Remote control is off for '+esc(a.name)+'.').classList.add('ok');
+}
+/* FR-006: the link as text (never HTML), Copy link and Open on GitHub (main opens its own stored, github.com-only link) */
+async function remoteLinkDialog(a){
+  const rm=a&&a.remote; if(!rm)return;
+  const lines=[];
+  if(rm.url){lines.push(rm.url);lines.push('Open this link in GitHub Mobile to steer from your phone.');}
+  else lines.push('Remote control is on, but GitHub did not give a link. Find the session on github.com.');
+  if(!rm.steerable)lines.push('GitHub can show this session but cannot steer it yet.');
+  const vt=remoteVisText(rm.visibility); if(vt)lines.push(vt);
+  const r=await askDialog({title:'Remote control is on',body:'Follow and steer '+a.name+' from github.com or GitHub Mobile. Stop it any time from More > Stop remote control.',lines,
+    buttons:[...(rm.url?[{label:'Copy link',value:'copy'},{label:'Open on GitHub',value:'open',cls:'primary'}]:[]),{label:'Done',value:null}],returnFocus:()=>$('remoteChip')||remoteBack()});
+  if(!r)return;
+  if(r.value==='copy'){try{await navigator.clipboard.writeText(rm.url);toast('Link copied.').classList.add('ok');}catch(e){toast('Could not copy.').classList.add('err');}}
+  else if(r.value==='open'&&bridge.openRemote){const o=await bridge.openRemote(a.id).catch(()=>({ok:false}));if(!o||!o.ok)toast('Could not open the link.').classList.add('err');}
+}
 const canHandoff=a=>!!(bridge.handoff&&a&&a.live&&!a.parent&&feat(a,'handoff'));
 function newSession(a0,o){
   const a=liveRoot(a0); if(!bridge.newSession)return; o=o||{};
