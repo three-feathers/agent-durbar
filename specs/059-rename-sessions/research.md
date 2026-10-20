@@ -54,6 +54,9 @@ Vikram's agent asked for it on #372; the owner changed Q2. `read:` only, nothing
 - `[KNOWN GAP]` until T050: that a real stored session resumes without a model call, that `name.set` is accepted on it, and that a session
   open in another Copilot client (the CLI, VS Code) is not disturbed. Any error falls back to a Durbar name with the note (FR-010).
 
+**`real:` (Vikram's agent, 2026-10-20, CLI 1.0.98):** `rpc.name.set` works on a live session and after a prompt-free `resumeSession(id)`; `copilot --resume`
+lists "the name"; 0 AI credits. The `[KNOWN GAP]` list in R1b narrows to: another client holding the session open, and VS Code.
+
 ## R2. OpenAI Codex (app-server, minimum 0.163.0)
 
 **Decision:** `thread/name/set { threadId, name }`; capability `'any'` (open or stored threads).
@@ -75,7 +78,8 @@ Evidence (`read:` upstream source, `openai/codex` on GitHub, `main` on 2026-10-2
 - Durbar's short-lived app-server helper `probe` (`src/adapters/codex.ts:312`) is how `thread/list` runs today (`codex.ts:355`); the
   same helper fits a rename of a thread that is not open.
 
-**Shows in the CLI:** yes by construction (`read:`). **Shows in VS Code (Codex extension):** **unverified**. Codex is not installed on
+**`real:` (Vikram's agent, Codex 0.163.0):** `thread/name/set` works before or after a turn; `codex resume` lists the name, only for a thread that has had a turn.
+**Shows in the CLI:** yes (`real:`, with that limit). **Shows in VS Code (Codex extension):** **unverified**. Codex is not installed on
 this machine, so nothing was run (`[KNOWN GAP]` until Q9).
 
 ## R3. Claude Code (CLI 2.1.304, stream-json transport)
@@ -101,6 +105,7 @@ Evidence:
   "the desktop app, claude.ai/code, and the VS Code extension each keep their own session list". So where the title shows is
   `[KNOWN GAP]`: the `/resume` picker for `-p` sessions and the VS Code Claude extension's list (check on the owner's Mac, T050).
 - Rejected: the Agent SDK's `renameSession()` (not a dependency, spec 012 Q3) and writing the `.jsonl` ourselves (constitution III).
+- `real:` (Vikram's agent, 4 prompts, USD 0.007, `CLAUDE*` unset): `claude --resume <id>` shows the latest name in the prompt box; the `/resume` picker lists no `-p` session (named or not): "No conversations found in this project". `[KNOWN GAP]`: any flag that lists them; the VS Code extension's list.
 - Not known without a run: whether the title is written at launch or only with the first turn. The adapter treats the name as applied after
   the first turn that follows the launch (`result` message) and says so in the dialog ("at your next message").
 

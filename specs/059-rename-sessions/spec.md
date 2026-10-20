@@ -20,9 +20,9 @@ written there; otherwise it stays in Durbar only. Evidence for each agent app is
 
 | Agent app | Rename API | Durbar uses it for | Shows in the app's CLI | Shows in VS Code |
 | --- | --- | --- | --- | --- |
-| GitHub Copilot (SDK 1.0.22) | **Yes**, `session.rpc.name.set({ name })` (@experimental), on a session object | every session: a live one directly, one that is not live through a prompt-free resume, then released (Q2 B, 2026-10-20) | yes, the same field the CLI's `/rename` writes (`read:` SDK types, runtime strings) | unverified |
-| OpenAI Codex (app-server 0.163+) | **Yes**, `thread/name/set { threadId, name }`, works on a stored thread that is not loaded | every Codex session, open or not | yes, the same name the Codex TUI's `/rename` writes (`read:` upstream source) | unverified |
-| Claude Code (CLI 2.1.304, stream-json) | **Yes, at the next launch**: `--name <name>` together with `--resume <id>` keeps the session id and appends a `custom-title` that Claude writes itself (`real:` Vikram's agent, issue #372) | the next time Durbar starts that session's CLI (the next message); until then a Durbar name | yes (`/resume` picker, by the CLI's own help text) | unverified (`[KNOWN GAP]`, to check on a Mac) |
+| GitHub Copilot (SDK 1.0.22) | **Yes**, `session.rpc.name.set({ name })` (@experimental), on a session object | every session: a live one directly, one that is not live through a prompt-free resume, then released (Q2 B, 2026-10-20) | `real:` yes, `copilot --resume` lists the name (Vikram's agent, CLI 1.0.98, 0 credits) | unverified |
+| OpenAI Codex (app-server 0.163+) | **Yes**, `thread/name/set { threadId, name }`, works on a stored thread that is not loaded | every Codex session, open or not | `real:` yes, `codex resume` lists the name, but only a thread that has had a turn (Vikram's agent, Codex 0.163.0) | unverified |
+| Claude Code (CLI 2.1.304, stream-json) | **Yes, at the next launch**: `--name <name>` together with `--resume <id>` keeps the session id and appends a `custom-title` that Claude writes itself (`real:` Vikram's agent, issue #372) | the next time Durbar starts that session's CLI (the next message); until then a Durbar name | `real:` yes in the prompt box of `claude --resume <id>`; **no** in the `/resume` picker, which never lists `-p` sessions (named or not) | unverified (`[KNOWN GAP]`, to check on a Mac) |
 | VS Code chats (spec 009) | not ours (read-only) | no Rename (Q5 A) | n/a | n/a |
 
 ## Clarifications
@@ -133,7 +133,7 @@ FR-023) use the new name; Resume opens an agent with that name.
 - **FR-004** `[KNOWN GAP]` **Rename dialog.** A small dialog (the shared `askDialog`, as Rename folder and Rename floor; Q6 A):
   - Title **Rename session**. Body: "A short name for this session in Agent Durbar, 1 to 60 characters. Leave it empty to use
     <app>'s title again." plus one line on where the name goes (FR-007, FR-017): "Also saved in GitHub Copilot: its CLI shows the new name, and
-    it may sync with your account." / the same for Codex / "Also saved in Claude Code at your next message: its CLI shows it then." /
+    it may sync with your account." / the same for Codex / "Also saved in Claude Code at your next message: shown when you resume this session in Claude Code (`claude --resume <id>`); its /resume picker does not list sessions started by Durbar." /
     "Only in Agent Durbar. <app> keeps its own name."
     For a session that already has an app-side name, the line "Name in <app>: <name>".
   - One text field, label **Name**, prefilled with the current display name (cut to 60) and fully selected, `maxlength` 60.
@@ -176,14 +176,21 @@ FR-023) use the new name; Resume opens an agent with that name.
     before its next message, as for a mode change (`needsRelaunch`, no extra prompt). When the first turn after that launch finishes, the
     adapter reports the name as the session's `title`, and Durbar clears `pending` and sets `inApp` (FR-011). Durbar never writes the
     session file. If the CLI is not started again (Durbar closes first), main asks again on the next start (FR-014). Until then the
-    name is Durbar's, and the dialog says so.
+    name is Durbar's, and the dialog says so. The name is shown in the prompt box when the session is resumed by id; the CLI's `/resume`
+    picker never lists sessions started with `-p`, named or not (`real:` below), so the UI and README do not promise that it makes the session
+    findable there. **Copy resume command** (the More menu item that already exists) gives the id.
   - The fake adapter can be built with either flag and records calls. Tests use only fakes; no real store is touched.
   Main decides: if the adapter has the member, it calls it after the name passed FR-002 (any session, open or stored: the adapter
   decides how); on success the entry is saved with `inApp: true` (`pending: true` for `'next-turn'`); on error the entry is Durbar-only
   (FR-010). The dialog's FR-004 line is computed from the capability before the user saves, so it never promises what will not happen.
-  `real:` evidence for Claude (Vikram's agent, Vikram's account, 2026-10-20, Claude Code 2.1.304, haiku, 2 tiny prompts, USD 0.0037, issue #372):
+  `real:` evidence (Vikram's agent, Vikram's accounts, 2026-10-20, issue #372, docs/agent-notes.md). Claude Code 2.1.304, haiku, 2 tiny prompts, USD 0.0037:
   `claude -p … --name A` wrote `{"type":"custom-title","customTitle":"A"}` into the session; `claude -p … --resume <id> --name B` kept the
-  same session id and appended `B` (the last one wins).
+  same session id and appended `B` (the last one wins). With 4 prompts (USD 0.007) and the `CLAUDE*` variables unset: `claude --resume <id>` shows the
+  latest name in the prompt box; the `/resume` picker said "No conversations found in this project" (sessions of `-p` have `entrypoint: sdk-cli`).
+  `[KNOWN GAP]`: whether any flag lists SDK sessions in the picker; whether the VS Code Claude extension lists the title. Copilot (CLI 1.0.98):
+  `name.set` works live or after `resumeSession(id)` with no prompt, `copilot --resume` lists the name, 0 AI credits. Codex 0.163.0:
+  `thread/name/set` works before or after a turn, `codex resume` lists the name only for a thread that has had a turn (1 tiny turn in the test): a
+  thread with no turn keeps the name but is not listed until its first turn.
 - **FR-008** `[KNOWN GAP]` **Schedules** (spec 044 FR-014, FR-021). The *This session (…)* option shows the display name (FR-001), cut
   to 40 characters on a word boundary with "…" (spec 044 FR-021), full name in its `title`. A new schedule stores as `target.name` that
   short display name, never a longer title. The schedule list shows the **current** display name of the target session when that
