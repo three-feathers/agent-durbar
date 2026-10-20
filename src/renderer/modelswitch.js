@@ -198,6 +198,7 @@
       case 'models':return !!c.models;
       case 'effort':return !!c.effort;
       case 'handoff':return !!c.handoff; /* spec 030 FR-036 */
+      case 'deleteSession':return c.deleteSession===true; /* spec 006 FR-028: never assumed; the menu shows Delete… disabled with the reason */
       case 'remote':return !!c.remote; /* spec 054 FR-006: never assumed, also not when the kind is unknown */
       default:return true;
     }

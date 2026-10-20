@@ -130,7 +130,7 @@ module.exports = async (ctx) => {
   // ---- 8) Ada is working: the switch is queued, shown on the chip, and can be cancelled ----
   await open('Ada');
   await click('#modelChip'); await ctx.sleep(250); await pick('sim-mid'); await ctx.sleep(400);
-  dlg = await text('#modeDlg'); assert.match(dlg, /A reply is running/); assert.match(dlg, /credit cap of 50 AI credits is not changed/);
+  dlg = await text('#modeDlg'); assert.match(dlg, /A reply is running/); assert.match(dlg, /spending limit of 50 AI credits is not changed/); // wording since round 6 ("spending limit")
   await dlgButton('Switch'); await ctx.sleep(900);
   assert.match(await chipText(), /→ Sim Mid/, 'the chip shows the queued model');
   await click('#modelChip'); await ctx.sleep(250);

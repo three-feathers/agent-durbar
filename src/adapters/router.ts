@@ -98,6 +98,12 @@ export function createRouter(reg: AdapterRegistry): AdapterRouter {
 
 // Optional members of AgentAdapter with the same fallbacks main.ts used before routing (FR-050).
 export const previousSessionsOf = async (ad: AgentAdapter, cwd: string, exclude: ReadonlySet<string>): Promise<PreviousSession[]> => (await ad.listPreviousSessions?.(cwd, exclude)) ?? [];
+/** Spec 006 FR-028: the adapter's own delete; false when it has none (the caller says so, nothing is touched). */
+export const deleteSessionOf = async (ad: AgentAdapter, sessionId: string): Promise<boolean> => {
+  if (!ad.deleteSession) return false;
+  await ad.deleteSession(sessionId);
+  return true;
+};
 export const historyOf = async (ad: AgentAdapter, sessionId: string): Promise<HistoryResult> => (ad.history ? ad.history(sessionId) : { items: [], total: 0, truncated: false });
 export const modelOptionsOf = async (ad: AgentAdapter): Promise<ModelOption[]> => (await ad.listModelOptions?.()) ?? [];
 /** Reports whether the adapter has the member (`applied`); a live session whose adapter lacks it keeps its old setting, so callers must refuse instead of saving. */

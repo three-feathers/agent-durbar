@@ -138,6 +138,7 @@ export async function runContract(name: string, make: () => ContractTarget, hook
     assert.strictEqual(has('handoffSummary'), !!cap.handoff, M('C2', 'handoffSummary() <=> capabilities.handoff'));
     assert.strictEqual(has('generateText'), !!cap.oneShot, M('C2', 'generateText() <=> capabilities.oneShot'));
     assert.strictEqual(has('setRemote'), !!cap.remote, M('C2', 'setRemote() <=> capabilities.remote (spec 054 FR-001)'));
+    assert.strictEqual(has('deleteSession'), !!cap.deleteSession, M('C2', 'deleteSession() <=> capabilities.deleteSession (spec 006 FR-028)'));
     assert.strictEqual(has('setPermMode'), cap.permModeSwitch !== 'none', M('C2', "setPermMode() <=> permModeSwitch !== 'none'"));
     ran('C2');
   }

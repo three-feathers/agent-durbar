@@ -56,6 +56,13 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 - [x] T047 (2026-10-19: decision record in spec.md) Record Q1-Q8 answers from Vikram in the spec (decision record, like 012 T060) and turn the proposed defaults into decisions [spec Clarifications]
 - [ ] T048 (needs-owner-approval) Docs for Phase 3: spec `## Changes` with `real:` evidence and prompt counts, README honest-limits update, converge [FR-026] 2026-10-20: the blocked state is recorded in the spec and the README (Harnesses row); stays open until T041, T044 and T045 run.
 
+## Phase 4: Claude Code and Codex (2026-10-20, Q8; Copilot still blocked on a free plan)
+
+- [x] T070 `ClaudeAdapter.setModel` (validate, update start options, relaunch on the next message, `model` event) and unit tests on the fake CLI [FR-038, FR-040]
+- [x] T071 `CodexAdapter.setModel` (validate, next `turn/start` carries model and effort, `model` event) and unit tests on the fake app-server [FR-039, FR-040]
+- [x] T072 Real checks on Claude and Codex (two models, one message each side of the switch), recorded with cost [FR-041]
+- [x] T073 Docs: README model section, CHANGELOG, specs index row, issues #100/#103/#104/#288 updated [FR-038..FR-041]
+
 ## Later / optional (not scheduled)
 
 - [ ] T060 (sim) Auto routing tier choice (`auto` + efficiency/balance/intelligence) in the same menu (007 FR-009) [007 FR-009]
