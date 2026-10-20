@@ -14,7 +14,7 @@ import { adapterForAdd, createRouter, historyOf, modelOptionsOf, previousSession
 import { errText, restorable, setCapOp, setModeOp, stopTurnOp, validMode } from './agentops';
 import type { OpsDeps } from './agentops';
 import { adapterOf } from './folders';
-import type { AgentAdapter } from '../adapters/types';
+import type { AgentAdapter, AgentEvent } from '../adapters/types';
 import type { AdapterInfo } from '../shared/adapters';
 import { startOptionsOf } from './startopts';
 import { resolveWorkspaceCwd } from '../adapters/workspace';
@@ -34,7 +34,7 @@ import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '..
 import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
 import { AgentStateTracker, applySetPaused } from './mcp/agentstate';
-import { maskMcpStatuses } from './mcpmask';
+import { maskMcpEvent } from './mcpmask';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { cliServers, copilotDir } from './mcpfiles';
 import { UsageStore } from './usagestore';
@@ -121,7 +121,9 @@ const toRenderer = (channel: string, payload: unknown): void => {
 };
 
 /** An MCP status event carries server error text: masked here, once, before the window sees it (spec 019 FR-021). */
-router.onEvent((e) => toRenderer('agent:event', e.type === 'mcp' ? { ...e, servers: maskMcpStatuses(e.servers, mcp.secretValuesFor(e.sessionId)) } : e));
+/** Spec 019 FR-022: the masked copy of an `mcp` event, built once per event; every path out of main (window, debug sink) uses it. */
+const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' ? mcp.secretValuesFor(e.sessionId) : []);
+router.onEvent((e) => toRenderer('agent:event', outward(e)));
 /** Open MCP elicitations (spec 012 FR-151): main checks each answer against the fields it was asked with. */
 const elicitTracker = createElicitTracker();
 router.onEvent((e) => elicitTracker.onEvent(e));
@@ -219,7 +221,7 @@ router.onEvent((e) => {
 if (dev.DURBAR_LOG) {
   const logFile = dev.DURBAR_LOG;
   const write = createDebugSink(logFile, process.env, fs.appendFileSync); // redacts once, at the sink (spec 012 FR-006)
-  router.onEvent((e) => write({ t: Date.now(), event: e }));
+  router.onEvent((e) => write({ t: Date.now(), event: outward(e) })); // FR-022: the sink's redact() does not know a folder extra's secret values
   router.setDebug((m) => write({ t: Date.now(), debug: m }));
 }
 
