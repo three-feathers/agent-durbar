@@ -134,6 +134,11 @@ export class PrevSessions {
         return { ok: false, error: errText(err) };
       }
       if (!prev) return { ok: false, error: NOT_AVAILABLE };
+      // 3 again, right before the call: a card (e.g. a lazy restore) may have appeared during the await above
+      for (const other of d.agents.values()) {
+        if (other.id === sessionId || d.resumeIdFor(other.id) === sessionId) return { ok: false, code: 'in-office', agentId: other.id, error: IN_OFFICE };
+      }
+      if (ad.isLive(sessionId)) return { ok: false, code: 'in-office', error: IN_OFFICE };
       // 6. the adapter's own API; an error leaves everything as it was
       try {
         await deleteSessionOf(ad, sessionId);

@@ -86,6 +86,22 @@ async function main(): Promise<void> {
     cleanup(r);
   }
 
+  // ---- delete: a card that appears while the list is being re-read (e.g. a lazy restore) still stops the delete (review of PR #379)
+  {
+    const r = rig();
+    const orig = r.ad.listPreviousSessions!.bind(r.ad);
+    r.ad.listPreviousSessions = async (cwd, exclude) => {
+      const list = await orig(cwd, exclude);
+      r.agents.set('late-card', agent('late-card'));
+      r.resume.set('late-card', UUID(1));
+      return list;
+    };
+    assert.deepStrictEqual(await r.sessions.delete('card-1', UUID(1)), { ok: false, code: 'in-office', agentId: 'late-card', error: IN_OFFICE });
+    assert.deepStrictEqual(r.ad.deleteCalls, [], 'the adapter was never asked');
+    assert.deepStrictEqual(r.logged, []);
+    cleanup(r);
+  }
+
   // ---- delete: refused for a session that still has a card, by every route (Clarifications Q1)
   {
     const r = rig();
