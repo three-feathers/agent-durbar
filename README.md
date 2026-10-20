@@ -144,6 +144,7 @@ Codex also ships its own `bwrap` inside its npm package (`…/@openai/codex-linu
 - Shortcuts use ⌘ and are shown that way: ⌘K command palette, ⇧⌘A the Needs you inbox, ⇧⌘N the next agent. In a chat that waits for you, ⌥⌘A / ⌥⌘S / ⌥⌘D answer and ⌥⌘N goes to the next agent (Option alone types accents on a Mac). macOS itself uses ⌥⌘D to show or hide the Dock, so Deny may not reach Durbar with the keys; click it instead.
 - **Agent Durbar > Settings…** (⌘,) opens Settings; the menu also has Edit, View (zoom, full screen), Window and Help.
 - Closing the window hides it and **your agents keep running**; click the Dock icon to bring it back. Quit with ⌘Q.
+- The title bar is hidden: you move the window by dragging the top bar (in a chat, the agent strip, a notice strip or a screen's header at the top). While a dialog or the command palette is open the window does not drag. The traffic-light room and these areas are checked in the simulator only (`npm run check:mac-titlebar`), **not on a real Mac** (real traffic-light position, double-click to zoom, full screen).
 - On Windows and Linux the window has no menu bar (no Reload or developer tools); copy and paste in text fields work as usual.
 
 > **Trying it on Windows?** Nobody on the team has run Durbar on a real Windows machine yet. If something does not work (the download, the installer, Settings > Agent apps, a harness that is not found), please [open an issue](https://github.com/three-feathers/agent-durbar/issues) with your Windows version and what you saw.

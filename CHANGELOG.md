@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.9 tag)
 
+- **Mac: the title bar on every screen (spec 052 FR-105, #345).** A notice strip over an open chat is now the drag row with room for the traffic lights; dialogs, the palette, popovers and menus can be clicked (they no longer sit over a drag area); the chat strip keeps a grab area on its right and its scroller works; Settings or Tools over a chat keep their centred header. Mac-only CSS, new `npm run check:mac-titlebar` (simulator geometry, not run on a real Mac).
+
 ## v0.1.0-alpha.9 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.9), 2026-10-20)
 
 Unsigned and not notarized; only Linux was run by hand. **Steer a Copilot session from GitHub web and mobile** (remote control, behind a native confirmation, never in Allow all). **Scheduled prompts Phase 2**: weekdays and weekly rules, a daylight-saving fix, per-session schedules, a per-schedule limit. **MCP forms and URL requests** in the chat. **AI themes with Copilot.** **A new website** with a landing page and a docs page. And five more rounds of usability reviews by AI personas (rounds 6 to 10): truthful status and diffs, an Activity log, motion with meaning, plain words for people who don't code, house rules, macOS conventions, a remembered window and sessions, and a less bulky layout. Every IPC call now checks where it comes from.
