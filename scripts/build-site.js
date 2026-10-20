@@ -187,7 +187,9 @@ function shortChanges(changes, max = 5) {
     bullets.push(t);
     if (bullets.length >= max) break;
   }
-  return { head: changes.head, bullets };
+  // the release's own summary paragraph (the text before the first bullet), when it has one: it reads better than internal bullet leads
+  const intro = changes.body.split(/\n\s*\n/).map((x) => x.trim()).find((x) => x && !x.startsWith('- ') && !x.startsWith('#'));
+  return { head: changes.head, bullets, intro: intro ? stripRefs(intro.replace(/\s*\n\s*/g, ' ')) : '' };
 }
 
 /* landing.json must stay in step with the README and the screenshots. Returns a list of problems (empty: fine). */
@@ -310,8 +312,10 @@ section.sec{margin:var(--s7) auto 0}.sec.flush{margin-top:0}section.sec>.head{ma
 .steps li::before{content:counter(s);position:absolute;left:0;top:0;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-weight:700;background:var(--ink);color:var(--bg)}
 .steps h3{margin:4px 0 var(--s1);font-size:18px}.steps p{margin:0;color:var(--ink-2)}
 .shot{border-radius:12px;border:1px solid var(--line);box-shadow:0 18px 40px -20px #2b1d0f40;display:block}
+h1,h2,h3{text-wrap:balance}
+.os span{white-space:nowrap}
 .themes{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:var(--s3);margin:0;padding:0;list-style:none}
-.themes figure{margin:0}.themes img{display:block;width:100%;aspect-ratio:16/10;object-fit:cover;object-position:left top;border-radius:12px;border:1px solid var(--line)}
+.themes figure{margin:0}.themes .tz{aspect-ratio:16/10;overflow:hidden;border-radius:12px;border:1px solid var(--line);background:var(--surface)}.themes .tz img{display:block;width:230%;max-width:none;height:auto;border:0;border-radius:0}
 .themes figcaption{display:flex;align-items:center;gap:8px;margin-top:var(--s2);font-size:13.5px;color:var(--ink-2);line-height:1.3}
 .sw{flex:none;width:12px;height:12px;border-radius:50%;box-shadow:0 0 0 2px var(--surface),0 0 0 3px var(--line)}
 .ai{display:flex;align-items:center;gap:var(--s3);margin-top:var(--s4);color:var(--ink-2)}.ai img{width:120px;aspect-ratio:16/10;object-fit:cover;object-position:left top;border-radius:8px;border:1px solid var(--line)}
@@ -413,7 +417,7 @@ function landingHtml({ landing, readme, rel, changes }) {
 <div class="durbar" role="presentation"></div>
 
 <section class="sec flush" id="themes"><div class="head"><p class="eyebrow">Themes</p><h2>Make the office yours</h2><p class="lead">Six built-in looks change the whole app live: colours, frames, people and furniture. Status and permission words stay the same in every one.</p></div>
-<ul class="themes">${landing.themes.map((t) => `<li><figure>${img(t.screenshot, `The office in the ${t.name} theme`)}<figcaption><span class="sw" style="background:${esc(t.swatch)}"></span>${esc(t.name)}</figcaption></figure></li>`).join('')}</ul>
+<ul class="themes">${landing.themes.map((t) => `<li><figure><div class="tz">${img(t.screenshot, `The office in the ${t.name} theme`)}</div><figcaption><span class="sw" style="background:${esc(t.swatch)}"></span>${esc(t.name)}</figcaption></figure></li>`).join('')}</ul>
 ${landing.aiTheme ? `<p class="ai">${img(landing.aiTheme.screenshot, landing.aiTheme.alt || '')}<span>${esc(landing.aiTheme.text)}</span></p>` : ''}
 </section>
 
@@ -442,7 +446,7 @@ ${landing.aiTheme ? `<p class="ai">${img(landing.aiTheme.screenshot, landing.aiT
 </section>
 
 ${news ? `<section class="sec" id="new"><div class="head"><p class="eyebrow">What's new</p><h2>${esc(news.head)}</h2></div>
-<div class="news"><ul>${news.bullets.map((b) => `<li>${mdRoot.parseInline(b)}</li>`).join('')}</ul>
+<div class="news">${news.intro ? `<p class="lead">${mdRoot.parseInline(news.intro)}</p>` : `<ul>${news.bullets.map((b) => `<li>${mdRoot.parseInline(b)}</li>`).join('')}</ul>`}
 <p><a href="${GH}/blob/main/CHANGELOG.md">Full changelog on GitHub</a> · <a href="docs.html#whats-new">All of this release</a></p></div>
 </section>` : ''}
 </div>

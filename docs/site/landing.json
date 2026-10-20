@@ -8,7 +8,7 @@
   },
   "status": "Alpha · unsigned · run by hand on Linux only. Builds for macOS and Windows are checked in CI.",
   "cards": [
-    { "title": "Know who needs you", "text": "One inbox for every agent waiting on you, oldest first, with how long each has waited. Answer with a click or a key.", "icon": "inbox", "screenshot": "052-inbox-1440x900.png", "alt": "The Needs you inbox listing agents that wait for an answer", "readmeAnchor": "what-you-can-do" },
+    { "title": "Know who needs you", "text": "One inbox for every agent waiting on you, oldest first, with how long each has waited. Answer with a click or a key.", "icon": "inbox", "readmeAnchor": "what-you-can-do" },
     { "title": "Stay in control", "text": "Every agent starts Read-only. Switch to Ask first or Allow all only when you choose, per agent, any time.", "icon": "shield", "readmeAnchor": "safety-model" },
     { "title": "See the cost", "text": "Cost estimates per folder and spending limits per session. Usage bills against your own plans: Durbar never charges you.", "icon": "coins", "readmeAnchor": "costs-and-caps" },
     { "title": "Any folder, not only code", "text": "A room is a folder an agent works in: code, documents, research or notes.", "icon": "folder", "readmeAnchor": "what-you-can-do" }

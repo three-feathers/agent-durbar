@@ -13,4 +13,4 @@
 - [x] T022 `docs.html`: the whole README with a table of contents, the feature grid (process specs left out), the gallery and the full release notes [FR-006]
 - [x] T023 `scripts/test-site.js` extended for both pages and the validation function [FR-010]
 - [x] T024 `docs/site/gallery.json` leads with the current office screenshot; spec, tasks, specs index and CHANGELOG updated
-- [ ] T025 Screenshots of both pages at desktop and phone width, and the phone height target (lead, before merge) [FR-009]
+- [x] T025 Screenshots of both pages at desktop and phone width, and the phone height target (lead, before merge) [FR-009]
