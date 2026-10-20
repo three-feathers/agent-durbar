@@ -119,10 +119,10 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
 /* Spec 012 T018 (FR-065, FR-066): the simulated kinds of `simkinds=mixed`. They are a simulation, not a statement about the real CLIs.
    Index in the 15-agent roster -> kind; every other agent is Copilot. Mcp-swiss holds two kinds (Ada, Mira); the basic agent is Priya (idle, never the first). */
 const SIM_KIND_BY_AGENT: Record<number, string> = { 0: 'claude', 3: 'claude', 4: 'codex', 5: 'claude', 6: 'basic', 7: 'codex', 8: 'claude', 9: 'codex', 11: 'claude' };
-const SIM_COPILOT_CAPS = { interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true } as AdapterInfo['capabilities'];
+const SIM_COPILOT_CAPS = { interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, remote: true } as AdapterInfo['capabilities'];
 const SIM_MIXED_KINDS: AdapterInfo[] = [
-  { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true } },
-  { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: false } },
+  { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, remote: false, mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true } },
+  { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: false, remote: false } },
   { id: 'basic', displayName: 'Basic agent (simulated)', state: 'ready', version: 'sim', capabilities: { interrupt: false, resume: false, images: false, models: false, effort: false, permissionModes: ['read-only'], permModeSwitch: 'none', usage: { tokens: true, costUsd: false, nanoAiu: false }, context: false, caps: false, helpers: false, history: false, mcpStatus: false, mcpToggle: false } as AdapterInfo['capabilities'] },
 ];
 
@@ -1053,6 +1053,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       return { success: true, tokensAfter: after, tokensRemoved: before - after };
     }
 
+    const simRemote = new Map<string, string>(); // spec 054: agent id -> canned link while remote control is on
     const modelApi: Partial<DurbarApi> = {
       setModel: async (id, req) => {
         const s = sims.find((x) => x.info.id === id);
@@ -1105,6 +1106,26 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         await new Promise((r) => window.setTimeout(r, 900));
         const files = (s.files ?? []).slice(0, 3).map((f) => '- `' + f + '`').join('\n') || '- none yet';
         return { ok: true, summary: `## Goal\n${s.intent || 'Continue the current task.'}\n\n## What was done\n- Read the relevant code and ran the tests once (simulated).\n\n## Open items\n- Finish the change and run the tests again.\n\n## Important files and decisions\n${files}\n\n## Next step\nPick up from the open items above.` };
+      },
+      // spec 054 FR-008: remote control for Copilot sim agents only; a canned github.com link, nothing leaves the computer
+      setRemote: async (id, on) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s || typeof on !== 'boolean') return { ok: false, error: 'unknown agent' };
+        if (!caps(s.info.adapterId ?? 'copilot').remote) return { ok: false, error: 'This agent app cannot be controlled from GitHub.' };
+        await new Promise((r) => window.setTimeout(r, 600));
+        if (!on) {
+          simRemote.delete(id);
+          return { ok: true, on: false };
+        }
+        const url = 'https://github.com/three-feathers/agent-durbar/sessions/sim-' + (sims.indexOf(s) + 1);
+        simRemote.set(id, url);
+        return { ok: true, on: true, url, steerable: true, visibility: 'unshared' };
+      },
+      openRemote: async (id) => {
+        const url = simRemote.get(id);
+        if (!url) return { ok: false };
+        console.info('[sim] would open in the system browser:', url);
+        return { ok: true };
       },
       compact: async (id, focus) => {
         const s = sims.find((x) => x.info.id === id);
@@ -1199,9 +1220,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps } },
       ...(simKinds ? [
         simKindsParam === 'solo'
-          ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false } }
-          : { id: 'claude', displayName: 'Claude Code', state: 'ready', version: 'sim', capabilities: { ...copilotCaps, caps: false, mcpToggle: false } },
-        { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'] } },
+          ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } }
+          : { id: 'claude', displayName: 'Claude Code', state: 'ready', version: 'sim', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } },
+        { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'], remote: false } },
       ] as AdapterInfo[] : []),
       ...(mixed ? SIM_MIXED_KINDS : []),
     ];
@@ -1327,7 +1348,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = sims.find((x) => x.info.id === id);
         if (!s) return;
         if (s.grants.size) { s.grants.clear(); grantsEvent(s); }
-        s.state = 'idle'; closeOpen(s);
+        s.state = 'idle'; closeOpen(s); simRemote.delete(id); // spec 054 FR-003
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'stopped' });
       },
       resolvePermission: async (id, req, approve, remember) => {

@@ -35,6 +35,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
+import { allowedRemoteUrl, cleanRemoteError, isRemoteVisibility } from '../shared/remote';
+import type { RemoteState } from '../shared/remote';
 
 const IMAGE_MIME: Record<string, string> = {
   '.png': 'image/png',
@@ -115,6 +117,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpStatus: true,
   mcpToggle: true,
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
+  remote: true, // spec 054 FR-002: rpc.remote.enable/disable (@experimental; not run on a real account)
 });
 
 /**
@@ -529,6 +532,42 @@ export class CopilotAdapter implements AgentAdapter {
     const live = this.mustGet(sessionId);
     const r = (await live.session.rpc.history.summarizeForHandoff()) as { summary?: unknown } | undefined;
     return { summary: cleanSummary(r?.summary) };
+  }
+
+  /**
+   * Spec 054 FR-002: remote control from github.com and GitHub Mobile (`rpc.remote.enable({ mode: 'on' })` / `disable()`, @experimental).
+   * Feature-detected: an SDK without `rpc.remote` answers `ok: false`. Never called by Durbar on its own; `remoteSession` and the client's
+   * `enableRemoteSessions` are never set (spec 054 Q1). Only an allowed github.com URL leaves the adapter; nothing is logged.
+   */
+  async setRemote(sessionId: string, on: boolean): Promise<RemoteState> {
+    const live = this.sessions.get(sessionId);
+    if (!live) return { ok: false, error: 'This session is not running.' };
+    const rpc = (live.session as unknown as { rpc?: Record<string, unknown> }).rpc;
+    const remote = rpc?.remote as { enable?: (p: { mode: 'on' }) => Promise<unknown>; disable?: () => Promise<unknown> } | undefined;
+    const fn = on ? remote?.enable : remote?.disable;
+    if (!remote || typeof fn !== 'function') return { ok: false, error: 'This Copilot version cannot be controlled from GitHub.' };
+    try {
+      if (!on) {
+        await remote.disable!();
+        return { ok: true, on: false };
+      }
+      const r = ((await remote.enable!({ mode: 'on' })) ?? {}) as { url?: unknown; remoteSteerable?: unknown };
+      const out: RemoteState = { ok: true, on: true, steerable: r.remoteSteerable === true };
+      if (allowedRemoteUrl(r.url)) out.url = r.url;
+      const vis = rpc?.visibility as { get?: () => Promise<unknown> } | undefined;
+      if (vis && typeof vis.get === 'function') {
+        try {
+          const v = ((await vis.get()) ?? {}) as { synced?: unknown; status?: unknown; shareUrl?: unknown };
+          if (isRemoteVisibility(v.status)) out.visibility = v.status;
+          if (!out.url && allowedRemoteUrl(v.shareUrl)) out.url = v.shareUrl;
+        } catch {
+          // the visibility stays unknown; remote control itself is on
+        }
+      }
+      return out;
+    } catch (err) {
+      return { ok: false, error: cleanRemoteError(err) };
+    }
   }
 
   /** True while a turn or a background continuation runs. When the runtime cannot say, assume it does (the safe side: nothing is compacted mid-turn). */

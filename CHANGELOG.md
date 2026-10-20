@@ -5,6 +5,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 ## Unreleased (on `main`, after the alpha.8 tag)
 
 - **MCP servers can ask for input (spec 012 FR-151..FR-155, #290).** When an MCP server asks for a small form (text, number, yes/no, a choice) or for a step on a web page, the chat shows it in the question card with **Submit / Decline / Cancel**, instead of declining. Secret-looking fields are password inputs, main checks every answer before the agent gets it, and a page opens in your browser only after you click, only if it is https. Copilot, Claude Code and Codex; checked on the simulator and fake harnesses only, not yet with a real MCP server.
+- **Control a Copilot session from GitHub (spec 054 Phase 1, #298).** More > *Control from GitHub (web and mobile)…* turns on Copilot's remote control for one session after a dialog that says what is sent to GitHub, then shows the link (Copy link, Open on GitHub) and a *Remote* chip; *Stop remote control* turns it off. Never on by default; only `https://github.com` links are opened. Simulator and unit tests only: not run on a real account yet. Claude channels and Codex mobile are specified as planned research.
 
 ## v0.1.0-alpha.8 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.8), 2026-10-20)
 
