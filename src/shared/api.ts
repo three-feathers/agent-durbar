@@ -9,6 +9,7 @@ import type { McpServerInput, McpServerView, McpTransport, McpTrustInfo } from '
 export type { McpServerInput, McpServerView, McpTransport, McpTrustInfo };
 
 import type { AdapterInfo } from './adapters';
+import type { ActivityRow } from './activity';
 import type { RemoteState } from './remote';
 export type { RemoteState };
 export type { AdapterInfo };
@@ -467,7 +468,8 @@ export interface DurbarApi {
   harnessCancel?(): Promise<boolean>;
   harnessOpenPage?(kind: string): Promise<{ ok: boolean }>;
   harnessOpenSignIn?(kind: string, url: string): Promise<{ ok: boolean }>;
-  copilotAuth?(): Promise<{ known: boolean; signedIn?: boolean }>;
+  /** `pwshMissing` (spec 052 FR-073): Windows only, PowerShell 7 was not found; the Copilot card shows a hint. */
+  copilotAuth?(): Promise<{ known: boolean; signedIn?: boolean; pwshMissing?: boolean }>;
   onHarnessProgress?(cb: (p: { kind: string; op: string; lines: string[]; elapsedMs: number; url?: string; code?: string; needsPaste?: boolean }) => void): () => void;
   onHarnessDone?(cb: (p: { kind: string; op: string; ok: boolean; exitCode?: number | null; reason?: string; lines: string[] }) => void): () => void;
   exportTheme?(id: string): Promise<{ ok: boolean; to?: string; error?: string; cancelled?: boolean }>;
@@ -496,6 +498,12 @@ export interface DurbarApi {
   usageTotals?(): Promise<UsageTotalsView>;
   /** Set the saved credit totals to zero (Settings > Usage totals). Returns the now empty view. */
   usageResetTotals?(): Promise<UsageTotalsView>;
+  /** Local activity log (spec 052 FR-071), newest first. Rows are written by main only. */
+  activityList?(opts?: { limit?: number }): Promise<{ ok: boolean; rows: ActivityRow[] }>;
+  /** Save the whole log as CSV or JSON through the system save dialog. */
+  activityExport?(format: 'csv' | 'json'): Promise<{ ok: boolean; count?: number; to?: string; error?: string; cancelled?: boolean }>;
+  /** Empty the log (the window asks first). */
+  activityClear?(): Promise<{ ok: boolean }>;
   /** MCP (specs 019, 020): the Copilot CLI list is global and read live; extras are per folder/workspace key (`workspaceFile ?? cwd`). */
   mcpState?(): Promise<McpState>;
   /** Names of the extras of every saved folder (any state), nothing else: for the Places list (spec 024 FR-016). */

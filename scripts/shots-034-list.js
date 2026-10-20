@@ -24,7 +24,7 @@ module.exports = async (ctx) => {
     for (const m of r.mood) {
       assert.ok(!m.sub, 'helpers show no mood words');
       assert.ok(m.label.includes(m.words), 'the words are in the accessible label');
-      assert.ok(m.h <= 45, 'the row keeps its height');
+      assert.ok(m.h <= 35, 'the row keeps its height (34px since spec 052 FR-064)');
     }
     await ctx.js(`(()=>{const s=document.createElement('style');s.textContent='#toasts{display:none!important}';document.head.appendChild(s);if(document.activeElement)document.activeElement.blur();})()`);
     await ctx.sleep(300);

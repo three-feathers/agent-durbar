@@ -5,7 +5,7 @@
  *   M9_OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
  *     DURBAR_DRIVER=$PWD/scripts/shots-m9.js xvfb-run -a npx electron . --no-sandbox
  *
- * Besides the pictures it asserts: Omar (cap 30) is "Limit reached" with the inline notice, sending is refused, "Add credits"
+ * Besides the pictures it asserts: Omar (cap 30) is "Limit reached" with the inline notice, sending is refused, "Raise limit"
  * lets him continue, the cap chip shows used / cap, and the card shows used/cap AIU. Exits non-zero (driver failure) on a miss.
  */
 const path = require('path');

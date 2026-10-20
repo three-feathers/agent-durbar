@@ -12,6 +12,8 @@ body.screen-open .workspace{display:none}
 .scr-note{margin:6px 0;max-width:72ch;font-size:12.5px;color:var(--ink-2);overflow-wrap:anywhere}
 .scr-sec p,.scr-note{max-width:68ch;line-height:1.5} /* spec 052 FR-053: a readable measure */
 .scr-note.small{font-size:11.5px;color:var(--muted)}
+.scr-not{margin:6px 0 0;padding-left:20px;max-width:68ch;font-size:12.5px;line-height:1.5;color:var(--ink-2)} /* spec 052 FR-066 */
+.scr-not li+li{margin-top:2px}
 .scr-note.ok{color:#2f6a47}
 .scr-note.warn{color:var(--amber-ink);background:#fdf3df;border:1px solid #f0d9a6;border-radius:10px;padding:6px 10px}
 .scr-warn{margin:8px 0;font-size:12.5px;color:var(--amber-ink);background:#fdf3df;border:1px solid #e5be78;border-radius:10px;padding:8px 12px}
@@ -243,6 +245,13 @@ body.has-bridge #topBtns{display:flex}
 .ttab.cost .unk{color:var(--muted)}
 .ttab.cost .cnote{font-size:11.5px;color:var(--ink-2)}
 .ttab.cost tfoot th,.ttab.cost tfoot td{font-weight:650;border-top:2px solid var(--line-2,var(--line))}
+/* Tools > Activity (spec 052 FR-071) */
+.scr-body .ttab.act{table-layout:auto}
+.scr-body .ttab.act thead th:first-child{width:auto}
+.ttab.act td{font-size:12px;vertical-align:top}
+.ttab.act .act-t{white-space:nowrap;color:var(--ink-2)}
+.ttab.act .act-a{overflow-wrap:anywhere;max-width:48ch}
+.ttab.act tr.act-denied td:last-child{color:var(--red-ink,var(--ink))}
 /* spec 052 FR-049: install plan cards: radio beside its command (".dlg label" stacks them), the chosen card is outlined */
 .dlg .hs-plan{flex-direction:row;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer}
 .dlg .hs-plan:has(:checked){border-color:var(--focus);background:var(--pb-working)}

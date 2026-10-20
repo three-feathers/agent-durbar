@@ -107,7 +107,10 @@ export function candidates(spec: BinarySpec, env: DetectEnv, configuredPath?: st
     const appData = env.env.APPDATA;
     if (appData && p.isAbsolute(appData)) addDir(p.join(appData, 'npm'));
     const local = env.env.LOCALAPPDATA;
-    if (local && p.isAbsolute(local)) addDir(p.join(local, 'Programs', spec.name));
+    if (local && p.isAbsolute(local)) {
+      addDir(p.join(local, 'Programs', spec.name));
+      addDir(p.join(local, 'Microsoft', 'WinGet', 'Links')); // winget's command shims (spec 052 FR-072): found even before PATH is re-read
+    }
   } else {
     for (const d of [p.join(home, '.local/bin'), p.join(home, '.claude/local'), '/usr/local/bin', '/usr/bin', p.join(home, '.npm-global/bin')]) addDir(d);
   }

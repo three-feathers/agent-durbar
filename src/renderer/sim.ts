@@ -23,6 +23,7 @@ type SchedulesInfo = import('../shared/api').SchedulesInfo;
 type ModelSwitchRequest = import('../shared/modelswitch').ModelSwitchRequest;
 type ModelSwitchResult = import('../shared/modelswitch').ModelSwitchResult;
 type ContextTier = import('../shared/modelswitch').ContextTier;
+type ActivityRow = import('../shared/activity').ActivityRow;
 
 interface SimOptions {
   n: number;
@@ -153,8 +154,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     ['Maya', 'Release notes', 'infra-notes', 'done', 'v0.3 release notes drafted and grouped by user-visible change', 0, ['CHANGELOG.md']],
   ];
   // Spec 052 FR-046: each waiting agent asks for its own thing, tied to its role and task (was one rename request for all of them)
-  const WAIT_REQ: Record<string, { kind: 'write' | 'shell'; summary: string; target: string }> = {
-    Jonas: { kind: 'write', summary: 'Edit src/tools/companies.ts (rename find_company to search_companies)', target: 'src/tools/companies.ts' },
+  // Spec 052 FR-063: Jonas's edit carries a diff, like a Claude Code Edit request (the card's "Show the change")
+  const WAIT_REQ: Record<string, { kind: 'write' | 'shell'; summary: string; target: string; diff?: string }> = {
+    Jonas: {
+      kind: 'write', summary: 'Edit src/tools/companies.ts (rename find_company to search_companies)', target: 'src/tools/companies.ts',
+      diff: ['--- a/src/tools/companies.ts', '+++ b/src/tools/companies.ts', '@@ -12,7 +12,7 @@', ' import { z } from \'zod\';', ' ', ' export const companyTools = {', "-  find_company: {", "+  search_companies: {", "     description: 'Look up Swiss companies by name or UID',", '     input: z.object({ query: z.string().min(2) }),', '     handler: findCompany,'].join('\n'),
+    },
     Kenji: { kind: 'shell', summary: 'Run python evals/baseline.py --compare', target: 'python evals/baseline.py' },
     Lena: { kind: 'write', summary: 'Edit src/styles/focus.css (focus ring colour)', target: 'src/styles/focus.css' },
   };
@@ -503,10 +508,28 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const scopeOf = (f: string): { key: string; label: string } => ({ key: 'write:' + dirOf(f), label: 'write in ' + dirOf(f).split('/').slice(-2).join('/') + '/' });
     const grantsEvent = (s: SimAgent): void =>
       emit({ type: 'grants', sessionId: sid(s), timestamp: now(), grants: [...s.grants].map(([key, label]) => ({ key, kind: 'write', label })) });
+    /** Activity log (spec 052 FR-071): a few canned rows, plus a row for each answer, automatic approval, mode or limit change in the simulator. */
+    const SIM_APP: Record<string, string> = { copilot: 'GitHub Copilot', claude: 'Claude Code', codex: 'OpenAI Codex' };
+    const simActivity: ActivityRow[] = (() => {
+      const t = (minAgo: number): string => new Date(Date.now() - minAgo * 60_000).toISOString();
+      return [
+        { t: t(42), agent: 'Ana', folder: 'web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Edit src/cart.ts', decision: 'allowed-once' },
+        { t: t(37), agent: 'Ana', folder: 'web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Run npm test', decision: 'allowed-session' },
+        { t: t(31), agent: 'Ana', folder: 'web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Run npm test', decision: 'auto-session-grant' },
+        { t: t(25), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'ask', action: 'Fetch https://example.com/docs', decision: 'denied' },
+        { t: t(18), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'allow', action: 'Ask first to Allow all', decision: 'mode-change' },
+        { t: t(12), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'allow', action: 'Edit server/routes.ts', decision: 'auto-allow-all' },
+        { t: t(6), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'allow', action: 'Spending limit set to 300 AI credits', decision: 'limit-change' },
+      ] as ActivityRow[];
+    })();
+    const simLog = (s: SimAgent, decision: ActivityRow['decision'], action: string, mode: string = s.info.permMode): void => {
+      simActivity.push({ t: new Date().toISOString(), agent: s.info.label || s.info.name, folder: s.info.cwd.split(/[\\/]/).pop() || s.info.name, app: SIM_APP[s.info.adapterId ?? 'copilot'] ?? String(s.info.adapterId), mode, action: action.slice(0, 160), decision });
+      if (simActivity.length > 5000) simActivity.splice(0, simActivity.length - 5000);
+    };
     /** Like the real broker: auto-approve under a session grant, otherwise leave the request pending. */
-    function askWrite(s: SimAgent, file: string, summary: string, cont: 'tool' | 'edit', intent: string, force = false, kind: 'write' | 'shell' = 'write'): boolean | 'denied' {
+    function askWrite(s: SimAgent, file: string, summary: string, cont: 'tool' | 'edit', intent: string, force = false, kind: 'write' | 'shell' = 'write', diff?: string): boolean | 'denied' {
       const sc = kind === 'shell' ? { key: 'shell:' + file, label: 'run ' + file } : scopeOf(file);
-      if (!force && s.info.permMode === 'allow') return true; // Allow all: no question asked
+      if (!force && s.info.permMode === 'allow') { simLog(s, 'auto-allow-all', summary); return true; } // Allow all: no question asked
       if (!force && s.info.permMode === 'read-only') {
         emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { requestId: 'perm-' + sid(s) + '-' + now(), kind, summary, state: 'denied' } });
         return 'denied';
@@ -515,11 +538,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       const base = { requestId, kind, summary, scopeKey: sc.key, scopeLabel: sc.label };
       if (s.grants.has(sc.key)) {
         emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { ...base, state: 'approved', via: 'session' } });
+        simLog(s, 'auto-session-grant', summary);
         return true;
       }
       s.perm = { ...base, file, cont };
       s.state = 'waiting';
-      emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending' } });
+      emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending', ...(diff ? { diff } : {}) } });
       return false;
     }
     function editTool(s: SimAgent, file: string, ok: boolean): void {
@@ -568,7 +592,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           break;
         case 'waiting': {
           const w = WAIT_REQ[s.info.name] ?? { kind: 'write' as const, summary: 'Edit ' + s.files[0], target: s.files[0] };
-          askWrite(s, w.target, w.summary, 'tool', s.intent, true, w.kind);
+          askWrite(s, w.target, w.summary, 'tool', s.intent, true, w.kind, w.diff);
           break;
         }
         case 'error':
@@ -896,9 +920,13 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const usd = caps(s.info.adapterId ?? 'copilot').capUnit === 'usd';
         if (c !== null && !(c >= (usd ? 0.01 : 30))) return { ok: false, error: usd ? 'The spending limit must be at least $0.01.' : 'The spending limit must be a number of at least 30 AI credits (the runtime minimum).' };
         s.info.maxAiCredits = c ?? undefined;
+        simLog(s, 'limit-change', c === null ? 'Spending limit removed' : `Spending limit set to ${usd ? '$' + c.toFixed(2) : c + ' AI credits'}`);
         emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'changed', maxAiCredits: c });
         return { ok: true, maxAiCredits: c ?? undefined };
       },
+      activityList: async (o) => ({ ok: true, rows: simActivity.slice(-(o && typeof o.limit === 'number' && o.limit > 0 ? Math.min(o.limit, 5000) : 5000)).reverse().map((r) => ({ ...r })) }),
+      activityExport: async (format) => { console.info('[sim] would save the activity log as', format); return { ok: true, count: simActivity.length, to: 'durbar-activity.' + (format === 'json' ? 'json' : 'csv') }; },
+      activityClear: async () => { simActivity.length = 0; return { ok: true }; },
       answerQuestion: async (id, requestId, answers) => {
         if (!simQ || simQ.s.info.id !== id || simQ.requestId !== requestId) return { ok: false, error: 'That question is no longer open.' };
         simQ = undefined;
@@ -1216,14 +1244,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
 
     const simKinds = simKindsParam === '1' || simKindsParam === 'solo'; // spec 012 FR-136: '1' = two ready harnesses (picker shown), 'solo' = only Copilot ready (picker hidden)
     const copilotCaps = SIM_COPILOT_CAPS;
+    const simInstalled = new Set<string>(); // a simulated install that ended well: the next check finds it (like a real PATH that already had it)
     const simAdapters = (): AdapterInfo[] => [
       { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps } },
       ...(simKinds ? [
-        simKindsParam === 'solo'
+        simKindsParam === 'solo' && !simInstalled.has('claude')
           ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } }
           : { id: 'claude', displayName: 'Claude Code', state: 'ready', version: 'sim', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } },
-        { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'], remote: false } },
-      ] as AdapterInfo[] : []),
+        { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'], remote: false } },      ] as AdapterInfo[] : []),
       ...(mixed ? SIM_MIXED_KINDS : []),
     ];
     const notReady = (adapterId: string): string | undefined => {
@@ -1243,7 +1271,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       // Spec 012 T017 (FR-063): only Copilot by default; simkinds=1 adds a Claude Code that is not installed and a Codex that is too old.
       listAdapters: async () => simAdapters(),
       // Spec 051 FR-009: harness setup in the simulator: canned plans and output (a fake link and code), nothing runs
-      copilotAuth: async () => ({ known: true, signedIn: true }),
+      copilotAuth: async () => ({ known: true, signedIn: true, ...(simQuery.get('simnopwsh') === '1' ? { pwshMissing: true } : {}) }), // spec 052 FR-073: page address simnopwsh=1 shows the Windows PowerShell 7 hint
       harnessPlans: async (kind, op) => ({ name: kind === 'copilot' ? 'the GitHub Copilot CLI' : kind === 'codex' ? 'the Codex CLI' : 'Claude Code', page: 'https://example.invalid/', plans: kind === 'codex' ? [{ manager: 'npm', display: (op === 'update' ? 'npm install -g @openai/codex@latest' : 'npm install -g @openai/codex') }] : [{ manager: 'brew', display: 'brew install --cask claude-code' }, { manager: 'npm', display: 'npm install -g @anthropic-ai/claude-code', note: 'Deprecated by Anthropic: use it only if nothing else works.' }] }),
       harnessRun: async (kind, op) => {
         const t0 = Date.now();
@@ -1255,7 +1283,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           if (kind !== 'claude') setTimeout(() => { if (simHarness.running) done(true); }, 60000);
         } else {
           setTimeout(() => prog({ lines: ['added 1 package in 3s (simulated)'] }), 300);
-          setTimeout(() => done(true), 2500);
+          setTimeout(() => { if (op === 'install') simInstalled.add(kind); done(true); }, 2500);
         }
         return { ok: true };
       },
@@ -1323,7 +1351,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
         if (s.perm) return { ok: false, error: 'Waiting for your permission decision first.' };
-        if (s.limitReq) return { ok: false, error: 'The spending limit was reached. Choose Add credits, Remove limit or Stop here first.' };
+        if (s.limitReq) return { ok: false, error: 'The spending limit was reached. Choose Raise limit, Remove limit or Stop here first.' };
         window.setTimeout(() => void reply(s, text), 400);
         return { ok: true };
       },
@@ -1359,6 +1387,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const keep = approve && remember === true;
         if (keep) { s.grants.set(p.scopeKey, p.scopeLabel); grantsEvent(s); }
         emit({ type: 'permission', sessionId: id, timestamp: now(), permission: { ...p, state: approve ? 'approved' : 'denied', via: 'user', remembered: keep || undefined } });
+        simLog(s, !approve ? 'denied' : keep ? 'allowed-session' : 'allowed-once', p.summary);
         s.state = 'working';
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'working', intent: (approve ? 'Allowed: ' : 'Denied: ') + file });
         if (cont === 'edit') { editTool(s, file, approve); finishReply(s, approve, file); } else toolStep(s, true);
@@ -1394,6 +1423,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       setPermMode: async (id, mode, o) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
+        const MW: Record<string, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
+        simLog(s, 'mode-change', `${MW[s.info.permMode] ?? s.info.permMode} to ${MW[mode] ?? mode}`, mode);
         s.info.permMode = mode;
         s.info.permRestored = undefined;
         if (o?.clearGrants && s.grants.size) { s.grants.clear(); grantsEvent(s); }

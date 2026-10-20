@@ -108,3 +108,24 @@
 - [x] T062 "Needs you" outside the window: title count, one coalesced and throttled OS notification with a setting, app badge or taskbar flash, `notifications` allowed [FR-059]
 - [x] T063 Alt+A / Alt+S / Alt+D / Alt+N in a waiting chat, keys in the bar's buttons and the shortcuts sheet [FR-060]
 - [x] T064 Inbox oldest first with "waiting N min" on each row, refreshed every 30 s while open [FR-061]
+
+## Round 6: truth and density (2026-10-20)
+
+- [x] T065 "Failing" pill (waiting colours) for a working agent with 3+ failed tool calls in a row on cards, list and chat header; last activity in card tooltips, a list column and the chat header, repainted by a 30 s tick [FR-062]
+- [x] T066 Tool chips: the whole command with Copy, 20000 characters of output with Show all, duration; optional `PermissionInfo.diff` filled by the Claude Code adapter (Edit, MultiEdit, Write) and the simulator (Jonas), "Show the change" on the permission card and inbox row [FR-063]
+- [x] T067 List: 34px rows, Agent app / Last activity / Cost columns, sort by header with `aria-sort` (memory only), J/K and Enter, Simple keeps the columns aligned; drivers `shots-052-ux.js`, `shots-034-list.js` [FR-064]
+- [x] T068 Red "Allow all" badge in the mode icon's slot on cards and list rows, the chat header's chip in the same red [FR-065]
+- [x] T069 "What Durbar does not do" in Settings and the README, each claim checked against the README [FR-066]
+## Round 6: motion with meaning (2026-10-20)
+
+- [x] T070 Desk scene cross-fade on a signature change, done tick draws in, done pill pulses once, waiting badge pings 3 times [FR-067]
+- [x] T071 Inbox answer fades in place and the rows below slide up (FLIP), Needs you count rolls in a fixed box, All clear pops in [FR-068]
+- [x] T072 Ambulance light and siren breathe slowly for about 10 s instead of strobing; Serious mode stops every looping animation [FR-069]
+- [x] T073 Theme change cross-fades through a view transition; empty office shows an empty desk; "+ Folder" rings once on first run [FR-070]
+## Round 6: activity log and Windows first run (2026-10-20)
+
+- [x] T074 Activity log: `activitystore.ts` (5000 rows, redacted 160-character action, base folder names), recorded in main from permission events (broker `auto` event for Allow all) and `setModeOp`/`setCapOp`; `activity:list/export/clear`; Tools > Activity tab; simulator rows; `test-activity` [FR-071]
+- [x] T075 Windows: search `%LOCALAPPDATA%\Microsoft\WinGet\Links`; "close and reopen Durbar" dialog when an install still is not found; PATH re-read left as a known gap; `test-detect` [FR-072]
+- [x] T076 Copilot sign-in line about VS Code; PowerShell 7 hint on the Windows Copilot card (`pwshMissing`); `test-harnesssetup` [FR-073]
+- [x] T077 "Switch this agent to Ask first" under a Read-only denial, once per agent until the mode changes [FR-074]
+- [x] T078 Copilot plan note in Tools > Cost and the spending-limit dialog (one constant), "Raise limit" for Copilot, README Windows install notes [FR-075]

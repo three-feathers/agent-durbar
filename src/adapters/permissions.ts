@@ -22,6 +22,8 @@ export interface PermissionLike {
   /** MCP requests: the server that hosts the tool. */
   serverName?: string;
   path?: string;
+  /** Spec 052 FR-063: the change an edit would make (unified diff text), shown on the pending card only. */
+  diff?: string;
 }
 
 export type Decision = { kind: 'approve-once' } | { kind: 'reject'; feedback: string };
@@ -174,6 +176,8 @@ export type BrokerEvent =
   | { type: 'denied-policy'; permission: PermissionInfo }
   /** A request got its final answer (user, session grant, or the session was stopped). */
   | { type: 'resolved'; permission: PermissionInfo }
+  /** Allow all approved a non-read request without asking (spec 052 FR-071): for the local activity log only, never a chat card. */
+  | { type: 'auto'; permission: PermissionInfo }
   | { type: 'grants'; grants: SessionGrant[] };
 
 export type BrokerMode = 'read-only' | 'ask' | 'allow';
@@ -273,7 +277,11 @@ export class PermissionBroker {
     const summary = summarize(req);
     const requestId = String(req.toolCallId ?? `${kind}-${now()}-${++this.seq}`); // T026: two requests in the same millisecond get different ids
     const outsideRead = kind === 'read' && this.mode !== 'allow' && this.readIsOutside(req);
-    if ((kind === 'read' && !outsideRead) || this.mode === 'allow') return { kind: 'approve-once' };
+    if (kind === 'read' && !outsideRead) return { kind: 'approve-once' };
+    if (this.mode === 'allow') {
+      if (kind !== 'read') this.opts.emit({ type: 'auto', permission: { requestId, kind, summary, state: 'approved', via: 'policy' } });
+      return { kind: 'approve-once' };
+    }
     const scope = grantScope(req, this.opts.pathCheck?.flavor);
     const base = {
       requestId,
@@ -298,7 +306,7 @@ export class PermissionBroker {
       this.opts.emit({ type: 'resolved', permission: { ...base, state: 'approved', via: 'session' } });
       return { kind: 'approve-once' };
     }
-    const info: PermissionInfo = { ...base, state: 'pending' };
+    const info: PermissionInfo = { ...base, state: 'pending', ...(typeof req.diff === 'string' && req.diff ? { diff: req.diff } : {}) }; // spec 052 FR-063: the diff rides on the pending request only
     this.opts.emit({ type: 'pending', permission: info });
     const r = await new Promise<Answer>((resolve) => this.pending.set(requestId, { info, resolve }));
     this.pending.delete(requestId);
