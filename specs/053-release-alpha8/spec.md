@@ -2,7 +2,7 @@
 
 **Feature Branch**: `053-release-alpha8`
 **Created**: 2026-10-20
-**Status**: In progress (release record below).
+**Status**: Built and **published as a pre-release on 2026-10-20** (<https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.8>; release PR #323; tag on `dd9de65`, CI fully green on that commit).
 **Input**: Vikram, 2026-10-19, in his session: "cut a pre-release before 7 am tomorrow and continue working." AGENTS.md "Needs approval": publishing this release is approved in writing, for this release only. Release engineering only: a version bump, the changelog and the download notes.
 
 ## Requirements
@@ -30,4 +30,12 @@
 
 ## Release record
 
-(filled in when the release is published)
+- **Where the tag went:** the merge of #323, `dd9de65`. Every workflow on that commit passed: CI, the packaged check, the project site and the push checks. At tagging there were 0 open code-scanning alerts and 0 open Dependabot alerts.
+- **Build:** `release.yml` run 39347956615. The macOS, Windows, Linux and draft jobs succeeded.
+- **Draft checked:**
+  - draft and pre-release flags;
+  - eight files: arm64 and x64 dmg and zip, the Windows installer and portable exe, the Linux AppImage, and `SHA256SUMS.txt`;
+  - the portable exe and the AppImage were downloaded and match `SHA256SUMS.txt`;
+  - the AppImage extracts, has `app.asar`, and its `package.json` says `0.1.0-alpha.8`.
+- **Published:** the notes carry the honest limits above, and the release went out as a pre-release on 2026-10-20 at 00:36 UTC. The link was posted in the team's Telegram group.
+- `[KNOWN GAP]` Nobody has run the published files on macOS or Windows.
