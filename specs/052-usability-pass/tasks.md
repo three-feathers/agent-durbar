@@ -185,4 +185,4 @@
 
 
 ## New session in the chat header (2026-10-20, issue #363)
-- [ ] T127 `+ New` button next to Previous in the chat header (title and aria-label "New session in <folder>", same flow and conditions as the More item plus `!demoOn`, main agents only); icon-only if it does not fit; More item kept; `check-office-overlap.js` asserts it and the one-row header at both sizes; mutation; screenshots; README, CHANGELOG [FR-139]
+- [x] T127 `+ New` button next to Previous in the chat header (title and aria-label "New session in <folder>", same flow and conditions as the More item plus `!demoOn`, main agents only); icon-only if it does not fit; More item kept; `check-office-overlap.js` asserts it and the one-row header at both sizes; mutation; screenshots; README, CHANGELOG [FR-139]
