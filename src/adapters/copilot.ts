@@ -899,7 +899,8 @@ export class CopilotAdapter implements AgentAdapter {
     }
     for (let i = 0; i < 50 && live.turnOpen && this.sessions.get(sid) === live; i++) await new Promise((r) => setTimeout(r, 100));
     live.turnOpen = false;
-    if (this.sessions.get(sid) !== live) return;
+    // the session ended, or Stop answered meanwhile (it clears the placeholder): nothing to ask
+    if (this.sessions.get(sid) !== live || live.localLimit?.requestId !== 'durbar-cap-stopping') return;
     this.raiseLocalLimit(sid, live);
   }
 

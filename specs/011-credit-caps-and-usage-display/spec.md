@@ -185,7 +185,7 @@ Spec 012 adds two agent kinds that do not report AI credits. The units stay sepa
 
 ### 2026-10-20: Durbar enforces the Copilot cap itself (spec 013 C9, issue #288)
 
-`real:` 2026-10-20, Copilot Pro (spec 013 `## Changes`, about 75 AIU): the Copilot runtime does **not** stop a running session at `sessionLimits.maxAiCredits`, and it never sent `session_limits_exhausted.requested`, although Durbar registers interest in it. It checks the cap only when a session is created or resumed ("This session has already used 42.63 AI credits. The session limit must be above 42.63."). A 30-credit session reached 42.6, and a turn that **started** over its cap still ran. FR-015's assumption, from GitHub's docs, that "the runtime blocks the next model call" is wrong for this runtime. So the Copilot adapter enforces the cap itself, behind the same `limit` events, dialog and IPC (no new UI):
+`real:` 2026-10-20, Copilot Pro (spec 013 `## Changes`, about 75 AIU): the Copilot runtime does **not** stop a running session at `sessionLimits.maxAiCredits`, and it never sent `session_limits_exhausted.requested`, although Durbar registers interest in it. It checks the cap only when a session is created or resumed ("This session has already used 42.63 AI credits. The session limit must be above 42.63."). A 30-credit session reached 42.6, and a turn that **started** over its cap still ran. FR-015's assumption (from GitHub's docs) that "the runtime blocks the next model call" is wrong for this runtime. So the Copilot adapter enforces the cap itself, behind the same `limit` events, dialog and IPC (no new UI):
 
 - **FR-070** `[IMPLEMENTED]` **Used credits.** The adapter tracks each live session's used credits:
   - the last `session.usage_checkpoint.totalNanoAiu` (the runtime's own session total, resume included);
@@ -200,4 +200,9 @@ Spec 012 adds two agent kinds that do not report AI credits. The units stay sepa
 - **FR-072** `[IMPLEMENTED]` **During a turn.** When a usage report makes used ≥ cap while a turn runs, the adapter stops the turn (`abort`; what the call in flight already spent stays, as before: the cap is soft by one call) and emits the same `exhausted`, with nothing held. After *Raise* or *Remove*, the agent is idle and the next message goes through.
 - **FR-073** `[IMPLEMENTED]` Stop and End answer a Durbar-raised limit like a runtime one: the held message is dropped.
 - **FR-074** `[IMPLEMENTED]` A runtime-raised limit (`session_limits_exhausted.requested`), should a future runtime send one, still goes through `handlePendingSessionLimitsExhausted` as before.
-- `test:` `scripts/test-copilot-cap.ts` on a fake session: held send, add, set, unset and cancel, still over after add, mid-turn stop, Stop dropping the held message, and the runtime path unchanged. `real:` see the PR (one short check on a cheap model, under 3 credits).
+- `test:` `scripts/test-copilot-cap.ts` on a fake session: held send, add, set, unset and cancel, still over after add, mid-turn stop, Stop dropping the held message, and the runtime path unchanged. Also covered: a resumed session's first checkpoint over the cap during a turn.
+- `real:` 2026-10-20, Copilot Pro, **1.46 AIU**. The over-cap session from spec 013 C9 (75.73 used) was resumed on `gpt-6-luna` with a cap of 75.83:
+  - one tiny prompt crossed it, to 77.18. The adapter raised `limit exhausted` (`durbar-cap-1`, max 75.83, used 77.18) once the runtime's checkpoint arrived;
+  - after *Stop here*, the next message was **held**: `exhausted` `durbar-cap-2`, **no model call, 0 usage events**;
+  - *Stop here* dropped it.
+- `[KNOWN GAP]`: a long agentic turn is stopped only after the call that crosses the cap; that call's own cost is never cut. Durbar learns a resumed session's earlier spending only from the runtime's first checkpoint, so the first message after a resume is never held.
