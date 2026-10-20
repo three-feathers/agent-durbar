@@ -53,7 +53,7 @@ module.exports = async (ctx) => {
     await ctx.sleep(800);
     const solo = await rooms();
     await js(`document.querySelector('#stage .desk[data-id]').click()`); await ctx.sleep(700);
-    assert.ok(await js(`!!document.getElementById('rmFolderBtn')&&!document.getElementById('rmSessBtn')`), 'a single-session folder shows Remove folder, not Remove session');
+    assert.ok(await js(`!!document.getElementById('rmFolderBtn')&&!document.getElementById('rmSessBtn')`), 'a single-session folder shows Remove folder, not Remove from office');
     await hideToasts(); await ctx.sleep(200);
     await ctx.shot(path.join(OUT, `remove-folder-chat-${w}x${h}.png`));
     await js(`(window.confirm=()=>true,true)`);

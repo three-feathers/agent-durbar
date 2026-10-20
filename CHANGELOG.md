@@ -2,8 +2,59 @@
 
 Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on Linux (see "Honest limits"). Each entry names the spec that describes the behavior and how it was checked.
 
-## Unreleased (on `main`, after the alpha.7 tag)
+## Unreleased (on `main`, after the alpha.8 tag)
 
+- **Scheduled prompts, Phase 2 (spec 044 FR-012..FR-018, #291).** Calendar rules (**weekdays at**, **weekly on** chosen days), and *every day at* no longer drifts an hour across daylight saving. A schedule can target **one session** (it pauses when that session ends) and have its own **limit** in AI credits or dollars (it pauses at the limit). Copilot's own session schedules are shown read-only. Unit tests and the simulator; no real check yet.
+- **Control a Copilot session from GitHub (spec 054 Phase 1, #298).** More > *Control from GitHub (web and mobile)…* turns on Copilot's remote control for one session after a dialog that says what is sent to GitHub, then shows the link (Copy link, Open on GitHub) and a *Remote* chip; *Stop remote control* turns it off. Never on by default; only `https://github.com` links are opened. Simulator and unit tests only: not run on a real account yet. Claude channels and Codex mobile are specified as planned research.
+
+## v0.1.0-alpha.8 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.8), 2026-10-20)
+
+Unsigned and not notarized; only Linux was run by hand. **Set up agent apps inside Durbar**: install, update and sign in to Copilot, Claude Code and Codex from Settings > Agent apps, with a native confirmation that shows the exact program before anything runs. **Five rounds of persona usability reviews** (about 20 personas) reshaped the app: the "Needs you" inbox and answer bar, Simple and Expert views, one word per concept, calmer visuals with period textures in the themes, High Contrast and focus support, OS notifications and Alt+A/S/D answers. Also new: **Make a theme with AI**, a Cost view per folder and the project website.
+
+- **Round 5 of the usability pass: visual and accessibility (spec 052, FR-052..FR-055).** Windows High Contrast support, a two-tone focus ring (dark and yellow in Retro Pixel), stronger control borders, disabled items readable instead of faded, more contrast when the system asks for it, and dialogs that fit the window. Primary buttons are solid in every theme, Tools and Settings are quieter, themed rooms get a faint period texture, and Settings > Agent apps opened from the welcome card no longer scrolls the top bar away.
+- **Round 5 of the usability pass: plain words for newcomers (spec 052 FR-056..FR-058).** The welcome card says **Connect your AI account once** (ChatGPT through Codex, Claude through Claude Code, or GitHub Copilot); agent app cards name the account; the install dialog says what Durbar does in one sentence, with the exact command under *Show the exact command*. In Simple, a limit stop reads "Paused: reached the spending limit you set (about $0.30)", rate-limit errors say the AI service is busy, and a folder grant reads "Let Ada change files in “tools” until the session ends". The restore strip says "One folder (…) lets agents change files without asking" with **Make it ask me first** / **Keep as it is**, and the spending limit dialog says plans have a fixed price and Durbar never charges you.
+- **Round 5 of the usability pass: signals for heavy use (spec 052, FR-059..FR-061).** The window title shows how many agents need you ("(3) Agent Durbar"), the app icon gets a badge (a taskbar flash on Windows), and one notification, at most every 10 s, says who needs you while Durbar is in the background (name and a short summary only; Settings > Notifications, off in the demo). In a waiting chat, Alt+A / Alt+S / Alt+D answer and Alt+N goes to the next agent. The inbox lists the oldest request first and shows how long each has waited.
+- **One word per concept (spec 052 FR-051).** Copilot, Claude Code and Codex are **agent apps** (Settings > Agent apps); Copilot custom agents are **profiles**; permissions say **Allow once / Allow “…” for this session / Deny** in Simple and Expert; caps are **spending limits** and money is **cost**; the demo is **Demo**; the office says **folder** (the + Workspace button is only for VS Code .code-workspace files); End session and **Remove from office…** say what happens; mood words are plainer ("Context almost full (95%)", "Waiting 3 min for you").
+- **Set up agent apps inside the app (spec 051, #299).** Settings > Agent apps shows Copilot, Claude Code and Codex with their state and one next step: **Install…**, **Update…** or **Sign in…**. Durbar runs only fixed package-manager commands (winget, Homebrew, npm), shown before they run, and never a downloaded script. Sign-in uses the vendor's own flow: Durbar shows the link and the one-time code, and never sees a password or stores a token. The welcome card starts here.
+- **Agent app setup, hardened after a security review (spec 051 FR-004b/FR-004c).** An install or update now asks once more in a native window that shows the exact program (its real path) and arguments; the page alone can no longer start one. Only the app's own page may call setup; world-writable programs are not run on macOS/Linux; winget uses its own source; the sign-in code and any OAuth values are kept out of the output lines.
+- **Round 4 of the usability pass: interaction polish (spec 052, FR-047..FR-050).** Buttons look pressed, disabled and busy (Stop, End session, Open in VS Code, inbox answers and Resume show a spinner while they wait). An answered inbox row shows "✓ Allowed" or "Denied" before it folds away, the empty inbox says "All clear", and closing the inbox returns focus to where you were. Dialogs ease in, install plans are cards, copy buttons say "Copied ✓", toasts are marked green or red, and an empty Tools > Cost view says so.
+- **Round 4 of the usability pass (spec 052, FR-045/FR-046).** Agent app cards say which plan each one uses and the welcome card says which to pick; hints point to Settings > Agent apps instead of a terminal; a finished install goes straight to the sign-in; the restore strip's main button is readable in every theme; in the demo each waiting agent asks for its own thing and no agent in Allow all shows a permission card.
+- **Round 3 of the usability pass (spec 052, five new personas).**
+  - **Inbox:** it opens on a request, never on a button, and every button is described by its request. After an answer, focus moves to the next request and the outcome is announced. Keys: J/K, A, D, S, O.
+  - **Announcements:** new requests are announced to screen readers.
+  - **Shortcuts:** Ctrl+Shift+A (inbox) and Ctrl+Shift+N (next agent) work everywhere.
+  - **Confirmations:** destructive ones start on Cancel.
+  - **Simple:** tool steps fold, approvals say "Allow this once" / "Don't allow", and the top bar is lighter.
+  - **The restore strip** says what the risk is, and offers "Ask me first (safer)".
+  - **Cards** name their harness when several are in use.
+  - **Visual pass:** a solid primary button, one segmented status bar, quieter room controls and lobby, status edges on waiting and error cards.
+  - **Japanese court:** Tanmatsu-shitsu, Dōgu-beya, the Ō-hiroma, fusuma doors, a bonsai, and plain short hair.
+- **Cost per folder (spec 052 FR-044, #315).** *Tools > Cost* lists each folder's ≈ money, Copilot AIU, Claude estimate, tokens and calls, for *This run* or *Since <date>*, with **Copy as CSV**. Clicking a room's cost opens it.
+- **The usability follow-ups, built (spec 052, #305-#311).**
+  - **Needs you inbox:** every request in one queue, answered with each request's own choices; press **I**.
+  - **Command palette:** **Ctrl+K** (Cmd+K) finds an agent, a folder or an action by typing; **?** lists every keyboard shortcut (#316).
+  - **Cost in money:** "≈ $0.36" in the header, rooms and cards, with AIU and Claude estimates in the tooltip.
+  - **Simple / Expert:** a detail level in Settings and on the welcome card. Simple uses plain verbs ("Running a command") and hides developer details.
+  - **Settings:** themes as a preview grid, one lead sentence per section, MCP under *Advanced*.
+  - **Controls:** one size scale, and 24px room-header targets.
+  - **Themes:** Corporate bevels, quieter Indian pillars, a lacquer Japanese desk with tatami, and a crisp Retro floor.
+- **Round 2 of the usability pass (spec 052, four new personas).**
+  - **Restored Allow all:** a strip under the top bar names the folders, with **Switch to Ask first** and **Keep**.
+  - **Answer bar:** it never cuts a request next to Approve, and shows "1 of N", oldest first.
+  - **Switching to Allow all** no longer approves waiting requests by default.
+  - **Wording and glyphs:** Allow all is an open padlock in the warning ink. Session approvals name their scope. The More menu explains Stop, End and Remove.
+  - **Office cards** show ⚠ when an agent is stuck or nearly out of memory.
+  - **Settings read easily:** themes are a grid of cards, each with a mini room in its own colours. Each section leads with one sentence, the rest is behind *More*. MCP sits in a closed *Advanced* group.
+  - **Themes:** Retro and Corporate are retuned, and the Japanese and European courts use place names from their own culture. Clean Office uses soft shadows, one radius scale and tabular numbers.
+- **Calmer and clearer, from four persona reviews (spec 052).**
+  - **Answering:** a waiting agent's request is pinned above the message box when its card scrolls away, with the same Approve / Deny buttons. *Previous sessions* no longer opens over a conversation. **N** jumps to the next agent that needs you.
+  - **Chat header:** Open in VS Code, Stop and a **More** menu, with End and Remove last.
+  - **Permissions:** the "restored in Allow all" notice stays until you close it, in plain words. The top bar's mode says **New: Read-only**, because it is the default for new sessions.
+  - **Status and wording:** status counts have shapes (◆ waiting, ▲ error) and spoken labels. Muted text and the focus ring meet contrast. Plain words replace "fainted", "dizzy" and "credits not reported", and themed places keep their plain names in tooltips.
+  - **Fixed:** the List view's header row nodded along with the cartoon heads.
+- **Make a theme with AI (spec 040 FR-014..FR-021, #182).** Describe a look, or pick one of the ideas, and Claude Code or Codex designs a light or dark theme: every colour, a style, place names and art for the people and furniture. Only safe values are kept, art goes through the same sanitiser as imported packs, and readable text is checked; up to 3 passes fix what fails. Try it on the whole app before you save it.
+- **Fixed: Export the active theme** (spec 040 FR-019). It exports the theme that is active now. On a built-in theme it explains why there is nothing to export, and the export picker can create a new folder.
+- **Faster checks that keep the computer usable** (spec 008 FR-028..FR-031). The full office layout check runs in Clean Office, and a one-minute **theme geometry** check proves every other theme lays out identically (every box and font size) and passes the layout rules in its own fonts. The full check in every theme runs on demand. Locally, `npm run check:themes` runs a few checks at a time, at low priority, and stops a job when memory runs low. Animation is checked once, in the plain office check. `npm test` leaves a core free.
 - **A project website** at <https://three-feathers.github.io/agent-durbar/> (spec 050, #293). It is generated from the README, the specs index, screenshots, the CHANGELOG and the latest release, and CI republishes it when those change.
 - **Schedules are easy to find (spec 044 FR-009..FR-011).** *Schedules…* in each room's ⋯ menu, a clock chip in the room header with the next run, a *Schedules* button in the chat, and **Settings > Schedules** for all folders.
 - **Team rule: check the linked issue before merging** (owner, spec 021). An issue closes only when everything in it is done; otherwise what is left is written on it, or in a follow-up issue.

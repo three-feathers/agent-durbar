@@ -7,7 +7,7 @@
  *
  * At both sizes, with mixed kinds (simkinds=mixed): Ada is a simulated Claude Code agent with a $0.01 cap. Its chip shows dollars
  * ("$0.00 / $0.01"), the cap dialog asks for dollars (min $0.01), and when the estimate reaches the cap the chat shows
- * "Cost cap reached" with Raise cap / Remove cap / Stop here. Writes cost-cap-<w>x<h>.png and cost-cap-dialog-<w>x<h>.png.
+ * "Spending limit reached" with Raise limit / Remove limit / Stop here. Writes cost-cap-<w>x<h>.png and cost-cap-dialog-<w>x<h>.png.
  */
 const assert = require('assert');
 const path = require('path');
@@ -33,14 +33,14 @@ module.exports = async (ctx) => {
     await ctx.sleep(400);
     const note = await js(`document.querySelector('.note.limit').textContent`);
     console.log('[012-cap]', w, 'note', JSON.stringify(note));
-    assert.match(note, /Cost cap reached/);
-    assert.match(note, /Raise cap/);
+    assert.match(note, /Spending limit reached/);
+    assert.match(note, /Raise limit/);
     assert.ok(!/AIU/.test(note), 'no AIU on a dollar cap');
     await hideToasts(); await ctx.sleep(200);
     await ctx.shot(path.join(OUT, `cost-cap-${w}x${h}.png`));
     // the cap dialog asks for dollars
     await js(`document.getElementById('capChip').click()`); await ctx.sleep(400);
-    assert.match(await js(`document.getElementById('cdT').textContent`), /^Cost cap for/);
+    assert.match(await js(`document.getElementById('cdT').textContent`), /^Spending limit for/);
     assert.strictEqual(await js(`document.getElementById('cdVal').min`), '0.01');
     await ctx.shot(path.join(OUT, `cost-cap-dialog-${w}x${h}.png`));
     await js(`document.getElementById('cdCancel').click()`); await ctx.sleep(200);

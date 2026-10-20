@@ -101,7 +101,9 @@ function pageCheck(expanded, expectPlaces) {
     const addBtns = lobby.querySelectorAll('.place-add');
     if (addBtns.length !== (places.length < 8 ? 1 : 0)) problems.push(`${addBtns.length} Add buttons with ${places.length} places`);
     addBtns.forEach((b) => { inside(b, L, 'the lobby'); if (!b.getAttribute('aria-label')) problems.push('the Add button has no accessible name'); });
-    places.forEach((pl) => { const n = pl.querySelector('.pn'); if (!n || !pl.getAttribute('aria-label').startsWith(n.textContent + ':') || !pl.title.startsWith(n.textContent + ':')) problems.push(`place ${pl.dataset.place}: its full name is not in the tooltip and the label`); });
+    /* spec 052 FR-013: a themed place may add its plain name, "Cartridge Bay (Software library): …" */
+    const fullName = (t, n) => t.startsWith(n + ':') || t.startsWith(n + ' (');
+    places.forEach((pl) => { const n = pl.querySelector('.pn'); if (!n || !fullName(pl.getAttribute('aria-label'), n.textContent) || !fullName(pl.title, n.textContent)) problems.push(`place ${pl.dataset.place}: its full name is not in the tooltip and the label`); });
     places.forEach((pl) => { inside(pl, L, 'the lobby'); pl.querySelectorAll('.pic, .pn, .prow, .slot').forEach((e) => inside(e, R(pl), 'its place ' + pl.dataset.place)); });
     const slots = [...lobby.querySelectorAll('.slot.on')].map(R);
     const walkers = [...document.querySelectorAll('#walkers .walker')];
@@ -195,7 +197,7 @@ function offAttentionCheck() {
   if (pop.hidden) document.getElementById('floorsBtn').click();
   const att = document.querySelector('#floorsPop [data-att="f-personal"]');
   const text = att && !att.hidden ? att.textContent : '';
-  if (!/^Off, .*\d+ (waiting|errors?|at credit limit)/.test(text)) problems.push(`no attention text on the off floor's row (got "${text}")`);
+  if (!/^Off, .*\d+ (waiting|errors?|at spending limit)/.test(text)) problems.push(`no attention text on the off floor's row (got "${text}")`);
   if (document.querySelector('#floorsPop [data-att="ground"]:not([hidden])')) problems.push('attention text on a floor that is on');
   const btn = document.getElementById('floorsBtn').textContent.trim();
   if (btn !== '2/3') problems.push(`button changed: ${btn}`);
@@ -234,9 +236,9 @@ async function driver(ctx) {
     if (!FONTS.regular) return;
     await ctx.js(`(async()=>{const buf=b=>{const s=atob(b),a=new Uint8Array(s.length);for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i);return a.buffer;};
       const add=async(b,fam,o)=>{if(!b)return;const f=new FontFace(fam,buf(b),o);await f.load();document.fonts.add(f);};
-      await add(${JSON.stringify(FONTS.regular)},'CheckSans',{weight:'100 599'});
-      await add(${JSON.stringify(FONTS.bold || FONTS.regular)},'CheckSans',{weight:'600 900'});
-      await add(${JSON.stringify(FONTS.mono || FONTS.regular)},'CheckMono',{});
+      await add(${jsLiteral(FONTS.regular)},'CheckSans',{weight:'100 599'});
+      await add(${jsLiteral(FONTS.bold || FONTS.regular)},'CheckSans',{weight:'600 900'});
+      await add(${jsLiteral(FONTS.mono || FONTS.regular)},'CheckMono',{});
       const st=document.createElement('style');st.textContent='*{font-family:CheckSans!important}.room-path,.mono,.lcell.mono,.folder,code,pre,kbd{font-family:CheckMono!important}';document.head.appendChild(st);})()`);
     /* the layout is cached by size: nudge the window so the office is laid out again with the new font */
     ctx.win.setContentSize(w - 1, h); await sleep(150); ctx.win.setContentSize(w, h); await sleep(300);
@@ -246,6 +248,7 @@ async function driver(ctx) {
   const userTheme = process.env.OFFICE_USER_THEME ? JSON.parse(fs.readFileSync(process.env.OFFICE_USER_THEME, 'utf8')) : null;
   const wantTheme = userTheme ? userTheme.id : (process.env.OFFICE_THEME || '');
   const themeQuery = (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '');
+  let motionShown = false;
   if (wantTheme) console.log('check:office: theme ' + wantTheme + (userTheme ? ' (user theme from ' + path.basename(process.env.OFFICE_USER_THEME) + ')' : ''));
   const load = async (query, w, h) => {
     expectPlaces = 5 + Number((/(?:^|&)simplaces=([0-3])(?:&|$)/.exec(query) || [])[1] || 0);
@@ -253,10 +256,11 @@ async function driver(ctx) {
     await ctx.win.loadFile(INDEX, { query: Object.fromEntries(new URLSearchParams(query + themeQuery)) });
     await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
     if (wantTheme) {
-      try { await ctx.waitFor(`window.THEME&&window.THEME.current().id===${JSON.stringify(wantTheme)}`, 5000); } catch (e) { /* reported below */ }
+      try { await ctx.waitFor(`window.THEME&&window.THEME.current().id===${jsLiteral(wantTheme)}`, 5000); } catch (e) { /* reported below */ }
       const on = await ctx.js(`({id:window.THEME.current().id,ui:document.documentElement.dataset.ui||'clean',want:(window.THEME.current().manifest||{}).ui||'clean'})`);
       if (on.id !== wantTheme || on.ui !== on.want) throw new Error(`theme ${wantTheme} was not applied (on screen: ${on.id}, data-ui ${on.ui})`);
     }
+    if (!motionShown) { motionShown = true; console.log('check:office: motion ' + ((await ctx.js(`matchMedia('(prefers-reduced-motion: reduce)').matches`)) ? 'reduced' : 'on')); }
     await forceFonts(w, h);
     await sleep(500);
     /* spec 024: agents go to the lobby after 600 ms and the walk takes about 1 s: wait until somebody is there and nobody is walking */
@@ -500,6 +504,8 @@ async function driver(ctx) {
     let found = false;
     for (const id of ids) {
       await ctx.js(`(async()=>{const d=document.querySelector('#stage .desk[data-id="${id}"]');if(d)d.click();await new Promise(r=>setTimeout(r,350));return true})()`);
+      // spec 052 FR-002: the list stays closed over a conversation; open it like a user would
+      await ctx.js(`(async()=>{const t=document.querySelector('.prev-toggle[aria-expanded="false"]');if(t){t.click();await new Promise(r=>setTimeout(r,250));}return true})()`);
       found = await ctx.js(`!!document.getElementById('prevQ')&&!document.getElementById('prevQ').closest('[hidden]')`);
       if (found) break;
       await ctx.js(`(async()=>{const b=document.getElementById('backBtn');if(b)b.click();await new Promise(r=>setTimeout(r,120));return true})()`);
@@ -535,20 +541,25 @@ async function driver(ctx) {
   rows.forEach((r) => console.log(`  ${r.problems ? 'FAIL' : 'ok  '} ${r.label.padEnd(60)} ${String(r.d).padEnd(5)} h=${r.h} rooms=${r.rooms} plates=${r.plates} desks=${r.desks} stage ${r.stageH}/${r.floorH}px minFont=${r.minFont}`));
   console.log(`\noffice check: ${total - failed}/${total} checks passed, ${failed} failed`);
   if (failed) process.exitCode = 1;
-  if (failed) fs.writeFileSync(path.join(os.tmpdir(), 'durbar-office-check.fail'), String(failed));
+  if (failed) fs.writeFileSync(process.env.OFFICE_FAIL_MARKER || path.join(os.tmpdir(), 'durbar-office-check.fail'), String(failed));
 }
 
 module.exports = driver;
+module.exports.pageCheck = pageCheck; /* reused by check-theme-geometry.js */
+module.exports.jsLiteral = jsLiteral; /* reused by the screenshot drivers */
 
 if (require.main === module) {
   const { spawnSync } = require('child_process');
   if (!fs.existsSync(INDEX)) { console.error('dist/ missing: run npm run build first'); process.exit(2); }
-  const marker = path.join(os.tmpdir(), 'durbar-office-check.fail');
-  try { fs.rmSync(marker); } catch (_) { /* none */ }
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-check-'));
+  // one marker per run, so parallel runs (scripts/check-parallel.js) never read each other's result
+  const marker = path.join(userData, 'office-check.fail');
   const electron = require('electron'); /* path to the binary */
-  const env = { ...process.env, DURBAR_DRIVER: __filename, DURBAR_USER_DATA: fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-check-')), DURBAR_SIM: '15', DURBAR_SIM_FREEZE: '1' };
+  const env = { ...process.env, DURBAR_DRIVER: __filename, DURBAR_USER_DATA: userData, OFFICE_FAIL_MARKER: marker, DURBAR_SIM: '15', DURBAR_SIM_FREEZE: '1' };
   const useXvfb = process.platform === 'linux' && !process.env.DISPLAY;
-  const args = ['.', '--no-sandbox'];
+  // OFFICE_REDUCED_MOTION=1: Chromium reports prefers-reduced-motion, so walks are instant and nothing animates (spec 008 FR-030).
+  // The plain check keeps motion on, so walking and animated states are still checked there once.
+  const args = ['.', '--no-sandbox', ...(process.env.OFFICE_REDUCED_MOTION === '1' ? ['--force-prefers-reduced-motion'] : [])];
   const r = useXvfb ? spawnSync('xvfb-run', ['-a', electron, ...args], { cwd: ROOT, env, stdio: 'inherit' }) : spawnSync(electron, args, { cwd: ROOT, env, stdio: 'inherit' });
   if (r.error) { console.error(r.error.message); process.exit(2); }
   process.exit(fs.existsSync(marker) ? 1 : r.status === 0 ? 0 : r.status || 1);

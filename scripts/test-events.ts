@@ -3,6 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { EventMapper } from '../src/adapters/map';
+import { eventProblems } from '../src/adapters/eventguard';
 import type { EventBody, RawEvent } from '../src/adapters/map';
 
 const fx = (name: string): RawEvent[] => JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'fixtures', 'events', name), 'utf8'));
@@ -234,5 +235,27 @@ const run = (events: RawEvent[]): EventBody[] => {
   assert.strictEqual(internals.toolNames.size, 0, 'tool names of the stopped turn are gone');
   assert.strictEqual(internals.reasoningSeen.size, 0, 'reasoning ids of the stopped turn are gone');
   assert.ok(out.some((e) => e.type === 'status' && e.status === 'idle' && e.intent === 'Aborted'));
+}
+// spec 044 FR-016: the session's own scheduled prompts (Copilot /every, /after, manage_schedule) become read-only agentSchedule events
+{
+  const out: EventBody[] = [];
+  const m = new EventMapper((b) => out.push(b));
+  const ev = (type: string, data: Record<string, unknown>, agentId?: string): void => m.map({ type, data, agentId } as unknown as RawEvent);
+  ev('session.schedule_created', { id: 1, prompt: 'check CI\nnow', intervalMs: 600000, recurring: true, origin: 'user' });
+  ev('session.schedule_created', { id: 2, prompt: 'x'.repeat(500), displayPrompt: '/standup', cron: '0 9 * * 1-5', tz: 'Europe/Zurich', origin: 'model' });
+  ev('session.schedule_created', { id: 3, prompt: 'p', selfPaced: true, intervalMs: -5, origin: 'robot' });
+  ev('session.schedule_created', { id: 4, prompt: 'helper' }, 'sub-1');
+  ev('session.schedule_created', { prompt: 'no id' });
+  ev('session.schedule_rearmed', { id: 3, nextRunAt: 1_800_000_000_000 });
+  ev('session.schedule_cancelled', { id: 1 });
+  const s = out.filter((e): e is Extract<EventBody, { type: 'agentSchedule' }> => e.type === 'agentSchedule');
+  assert.strictEqual(s.length, 5, 'a helper\'s schedule and one without an id are dropped');
+  assert.deepStrictEqual(s[0], { type: 'agentSchedule', phase: 'created', scheduleId: '1', prompt: 'check CI now', everyMs: 600000, recurring: true, origin: 'user' });
+  assert.deepStrictEqual([s[1].prompt, s[1].cron, s[1].tz, s[1].origin], ['/standup', '0 9 * * 1-5', 'Europe/Zurich', 'model'], 'the app\'s short label is preferred');
+  assert.deepStrictEqual([s[2].selfPaced, s[2].everyMs, s[2].origin], [true, undefined, undefined], 'bad values are dropped');
+  assert.deepStrictEqual(s[3], { type: 'agentSchedule', phase: 'rearmed', scheduleId: '3', nextAt: 1_800_000_000_000 });
+  assert.deepStrictEqual(s[4], { type: 'agentSchedule', phase: 'cancelled', scheduleId: '1' });
+  for (const e of s) assert.deepStrictEqual(eventProblems({ ...e, sessionId: 's', timestamp: 1 }), [], 'passes the event guard');
+  assert.ok(eventProblems({ type: 'agentSchedule', sessionId: 's', timestamp: 1, phase: 'made', scheduleId: '' }).length >= 2);
 }
 console.log('event mapping tests passed');

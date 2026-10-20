@@ -10,18 +10,19 @@
  * It asserts that "Allow all" is shown and "Allow edits" is not, and exits non-zero (driver failure) on a miss.
  */
 const path = require('path');
+const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
 const assert = require('assert');
 const OUT = process.env.MODE_OUT || '/tmp';
 const W = 1440, H = 900;
 
 module.exports = async (ctx) => {
-  const click = (sel) => ctx.js(`(()=>{const e=document.querySelector(${JSON.stringify(sel)});if(!e)return false;e.click();return true})()`);
-  const text = (sel) => ctx.js(`(document.querySelector(${JSON.stringify(sel)})||{}).innerText||''`);
+  const click = (sel) => ctx.js(`(()=>{const e=document.querySelector(${jsLiteral(sel)});if(!e)return false;e.click();return true})()`);
+  const text = (sel) => ctx.js(`(document.querySelector(${jsLiteral(sel)})||{}).innerText||''`);
   // calm picture: no startup toast over the cards, no focus ring on the menu item
   const calm = () => ctx.js(`(()=>{if(!document.getElementById('shotCalm')){const s=document.createElement('style');s.id='shotCalm';s.textContent='#toasts{display:none!important}';document.head.appendChild(s);}
     if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();})()`);
   const shot = async (name) => { await ctx.sleep(450); await calm(); await ctx.shot(path.join(OUT, `m7-mode-${name}.png`)); console.log('[mode] saved', name); };
-  const idOf = (name) => ctx.js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.querySelector('.name,.nm,h3,b')&&x.innerText.trim().startsWith(${JSON.stringify(name)}));return d?d.dataset.id:null})()`);
+  const idOf = (name) => ctx.js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.querySelector('.name,.nm,h3,b')&&x.innerText.trim().startsWith(${jsLiteral(name)}));return d?d.dataset.id:null})()`);
   ctx.win.setContentSize(W, H);
   await ctx.sleep(2500);
 

@@ -58,6 +58,7 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpStatus: true,
   mcpToggle: true, // FR-133: mcp_toggle + mcp_status
   handoff: true, // spec 030 FR-034: a forked one-shot, the session is not changed
+  oneShot: true, // spec 040 FR-015: no tools, no MCP, no settings, not saved
 }) as AdapterCapabilities;
 
 /** The hook callback id Durbar registers for `PreToolUse` (any string the CLI echoes back). */
@@ -339,6 +340,11 @@ export function handoffArgs(i: { sessionId: string; model?: string }): string[] 
   const a = ['-p', HANDOFF_PROMPT, '--resume', i.sessionId, '--fork-session', '--no-session-persistence', '--tools', '', '--strict-mcp-config', '--setting-sources', '', '--output-format', 'json', '--max-budget-usd', '0.5'];
   if (claudeModelFlag(i.model)) a.push('--model', i.model as string);
   return a;
+}
+
+/** Spec 040 FR-015: a stand-alone one-shot (no session at all): no tools, no MCP, no settings, not saved, at most $0.25, on haiku. */
+export function oneShotArgs(prompt: string): string[] {
+  return ['-p', prompt, '--tools', '', '--no-session-persistence', '--strict-mcp-config', '--setting-sources', '', '--output-format', 'json', '--max-budget-usd', '0.25', '--model', 'haiku'];
 }
 
 /** The `--output-format json` result of that one-shot: the summary text and Claude's cost estimate. */
@@ -645,7 +651,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
   private async launch(s: Session): Promise<ClaudeTransport> {
     const file = await this.deps.claudePath();
-    if (!file) throw new Error('Claude Code is not installed or could not be found. Install it, sign in with `claude` in a terminal, then restart Durbar.');
+    if (!file) throw new Error('Claude Code is not installed or could not be found. Open Settings > Agent apps and choose Install…, then Sign in… there.');
     const o = s.options;
     const launch: ClaudeLaunch = {
       mode: s.broker.getMode(),
@@ -721,6 +727,22 @@ export class ClaudeAdapter implements AgentAdapter {
     if (out.costUsd) this.onMapped(s.id, { type: 'usage', costUsd: out.costUsd, costBasis: 'estimate' }); // counts towards the session's usage and its cap
     if (!out.summary && r.code !== 0) throw new Error(`Claude could not make a summary (exit ${r.code ?? 'timeout'}).`);
     return out;
+  }
+
+  /** Spec 040 FR-015: one prompt in an empty temp folder (the AI theme maker); no session is created or kept. */
+  async generateText(prompt: string): Promise<{ text: string; costUsd?: number }> {
+    const file = await this.deps.claudePath();
+    if (!file) throw new Error('Claude Code is not installed or could not be found.');
+    if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(file)) throw new Error('This needs the native claude.exe, not a .cmd launcher.');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-gen-'));
+    try {
+      const r = await (this.deps.runOnce ?? execRunOnce)(file, oneShotArgs(prompt), { cwd: dir, env: (this.deps.env ?? (() => process.env))(), timeoutMs: 180_000 });
+      const out = parseHandoffOutput(r.stdout);
+      if (!out.summary) throw new Error(`Claude gave no answer (exit ${r.code ?? 'timeout'}).`);
+      return { text: out.summary, ...(out.costUsd !== undefined ? { costUsd: out.costUsd } : {}) };
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   }
 
   /** FR-150: change (null = remove) the dollar cap; the running CLI gets the new budget with the next message. */
@@ -868,7 +890,7 @@ export class ClaudeAdapter implements AgentAdapter {
       case 'resolved':
         this.emit(sid, { type: 'permission', permission: e.permission });
         if (e.permission.via !== 'stopped') {
-          const word = e.permission.state === 'approved' ? (e.permission.via === 'session' ? 'Allowed for this session' : 'Approved') : 'Denied';
+          const word = e.permission.state === 'approved' ? (e.permission.via === 'session' ? 'Allowed for this session' : 'Allowed') : 'Denied';
           this.emit(sid, { type: 'status', status: 'working', intent: `${word}: ${e.permission.summary}` });
         }
         return;
@@ -894,7 +916,7 @@ export function claudeDescriptor(makeTransport: TransportFactory = cliTransportF
   return {
     id: CLAUDE_ID,
     displayName: CLAUDE_NAME,
-    installHint: 'Install Claude Code (npm install -g @anthropic-ai/claude-code), sign in with `claude` in a terminal, then restart Durbar.',
+    installHint: 'Open Settings > Agent apps and choose Install…, then Sign in… (or run `npm install -g @anthropic-ai/claude-code`, then `claude auth login`).',
     capabilities: CLAUDE_CAPABILITIES,
     create: () => new ClaudeAdapter({ claudePath: claudeBinaryPath, makeTransport }),
   };

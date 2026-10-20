@@ -105,7 +105,7 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | --- | --- | --- |
 | [042](042-release-alpha5/spec.md) | Release v0.1.0-alpha.5 as a pre-release (version bump, changelog, download notes) | built; **published as a pre-release** (2026-10-18) |
 | [043](043-custom-agents/spec.md) | Custom agent per session (issue #127) | Phase 1 built: Agent chip and menu, repository-agent confirmation, Copilot `rpc.agent.*` (simulator, unit tests, real check 2026-10-19); Phase 2: the agent in the New session dialog built (FR-007); Claude agents built (FR-008); per-folder default built (FR-009); Codex not started |
-| [044](044-scheduled-prompts/spec.md) | Scheduled prompts while the app is open (issue #125) | Phase 1 built: per-folder schedules, once or every N minutes, busy and missed runs skipped, pause all (unit tests, simulator, real check 2026-10-19) |
+| [044](044-scheduled-prompts/spec.md) | Scheduled prompts while the app is open (issue #125) | Phase 1 built: per-folder schedules, once or every N minutes, busy and missed runs skipped, pause all (unit tests, simulator, real check 2026-10-19). Phase 2 built 2026-10-20 (#291): calendar rules without DST drift, per-session schedules (pause when the session ends), a per-schedule limit, Copilot's own schedules read-only (unit tests, simulator; no real check; not available from Claude Code or Codex) |
 
 ## Feature 031: release v0.1.0-alpha.4
 
@@ -128,7 +128,7 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | [037](037-corporate-theme/spec.md) | Corporate theme (glass/steel) + Settings theme picker with live switch | **built**; delta 2026-10-19: each swatch shows its own theme (FR-014) |
 | [038](038-retro-pixel-theme/spec.md) | Retro pixel theme: 8-bit palette, palette pixel maps in art slots, arcade motion | **built**; dark arcade page allowed (FR-001 amended 2026-10-18) |
 | [039](039-durbar-theme/spec.md) | Durbar court styles: Indian, European, Japanese (head accessory slots, court words) | **built**; word lists await owner review in PR #137 |
-| [040](040-user-themes/spec.md) | User themes: `userData/themes/<id>/manifest.json`, import/export, validation | **built** (`test:userthemes`) |
+| [040](040-user-themes/spec.md) | User themes: `userData/themes/<id>/manifest.json`, import/export, validation | **built** (`test:userthemes`); delta 2026-10-19: make a theme with AI, light or dark with art, several passes, ideas (FR-014..FR-021, issue #182), and Export fixed (FR-019) built |
 
 ## Feature 034: agents show how they are doing
 
@@ -158,3 +158,7 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | [048](048-office-assistant/spec.md) | Office assistant: ask the whole office (who waits, what finished, usage by folder and harness) through a free local query layer, plus an optional model layer with no tools (issue #130) | **draft for the owner's review** (spec, plan, tasks; no code) |
 | [049](049-profiles/spec.md) | Profiles: separate offices per profile (Phase 1), then separate sign-ins through each harness's own home folder (`COPILOT_HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`), never a token in Durbar (issue #131) | **draft for the owner's review**; Phase 2 needs research R1 |
 | [050](050-project-site/spec.md) | Project website on GitHub Pages, generated from the README, the specs index, screenshots, the CHANGELOG and the latest release; deployed by CI (issue #293) | **built and live** at https://three-feathers.github.io/agent-durbar/ |
+| [051](051-harness-setup/spec.md) | Harness setup inside the app: Settings > Harnesses with install, update and sign-in (issue #299) | **built** (unit, simulator; real sign-in flows started and cancelled) |
+| [052](052-usability-pass/spec.md) | Usability pass from five rounds of persona reviews (about 20 personas): answer bar and inbox, Simple/Expert, restore strip, palette and Cost view, one word per concept, interaction polish, accessibility, calmer visuals, notifications | **built** through round 5 (simulator, unit; OS notifications, badge and High Contrast not checked on a real OS) |
+| [053](053-release-alpha8/spec.md) | Release v0.1.0-alpha.8 (pre-release): agent app setup inside the app, five usability rounds, AI themes | **published as a pre-release 2026-10-20** (tag on `dd9de65`, CI fully green) |
+| [054](054-remote-control/spec.md) | Remote control and chat channels: Copilot remote steering from github.com and GitHub Mobile per session (Phase 1); Claude Code channels wizard and Codex mobile planned (issue #298) | **Phase 1 built** (unit, simulator driver written; not run on a real account); Phases 2-3 planned |

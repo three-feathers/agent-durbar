@@ -18,6 +18,7 @@
  * Screenshots: 033-floors-on, 033-floors-panel, 033-floor-off, 033-floor-off-panel, 033-settings-floors at both sizes.
  */
 const path = require('path');
+const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
 const assert = require('assert');
 const OUT = process.env.SHOTS_033 || '/tmp';
 const SIZES = [[1440, 900], [1280, 800]];
@@ -26,7 +27,7 @@ module.exports = async (ctx) => {
   const js = (code) => ctx.js(code);
   const shot = async (name, w, h) => { await ctx.sleep(300); await ctx.shot(path.join(OUT, `033-${name}-${w}x${h}.png`)); console.log('[033] saved', name, w, h); };
   const panel = async (open) => { await js(`(()=>{const p=document.getElementById('floorsPop');if(p.hidden===${open})document.getElementById('floorsBtn').click();})()`); await ctx.sleep(120); };
-  const click = async (sel) => { await panel(true); await js(`document.querySelector(${JSON.stringify(sel)}).click()`); };
+  const click = async (sel) => { await panel(true); await js(`document.querySelector(${jsLiteral(sel)}).click()`); };
   const state = () => js(`(()=>{
     const pills=Object.fromEntries([...document.querySelectorAll('#stats .stat[data-k]')].map(b=>[b.dataset.k,+b.querySelector('b').textContent]));
     const c={working:0,waiting:0,idle:0,error:0,done:0};
@@ -106,7 +107,7 @@ module.exports = async (ctx) => {
     await panel(true);
     const att = await js(`(()=>{const e=document.querySelector('#floorsPop [data-att="f-personal"]');return e&&!e.hidden?e.textContent:''})()`);
     console.log('[033]', w, 'off-floor row:', att);
-    assert.ok(/^Off, /.test(att) && /waiting|at credit limit/.test(att), 'FR-010: the off floor says what waits there');
+    assert.ok(/^Off, /.test(att) && /waiting|at spending limit/.test(att), 'FR-010: the off floor says what waits there');
     assert.strictEqual(await js(`document.getElementById('floorsBtn').textContent.trim()`), '2/3', 'FR-010: the button is unchanged');
     assert.deepStrictEqual((await state()).pills, s.pills, 'FR-010: the pills are unchanged');
     await shot('floor-off-panel', w, h);

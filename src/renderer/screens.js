@@ -6,16 +6,21 @@
   let X=null; /* ctx from app.js: {bridge, stats, esc, toast, floors:{on(),render()}, agents(), staticLimit(a), openAgent(id), sim, places, placeServers(), setPlaceMap(m)} */
   let cur=null; /* {kind:'settings'|'tools'|'folder', ...} */
   let period='session'; /* Tools view: 'session' | 'all' (remembered for the run) */
+  let costPer='run'; /* Tools > Cost: 'run' | 'since' (spec 052 FR-044; remembered for the run) */
   let usage=null; /* last all-time view {doc,labels,error} from main */
   const $=id=>document.getElementById(id);
   const esc=s=>X.esc(s);
   const root=()=>$('screen');
   const fmt=n=>S.fmtTokens(n);
   const cap=(s,n)=>{s=String(s==null?'':s);return s.length>n?s.slice(0,n-1)+'…':s;};
+  /* spec 052 FR-055: bring a heading to the top of the screen's own scroller only. scrollIntoView also scrolled the
+     outer page (overflow:hidden still scrolls), which hid the top bar and left a blank strip at the bottom. */
+  const scrollInBody=h=>{const sc=h.closest('.scr-body');if(sc)sc.scrollTop+=h.getBoundingClientRect().top-sc.getBoundingClientRect().top-12;};
 
   /* ---------------- shared: frame, dialogs ---------------- */
   function open(kind,opts){
     cur=Object.assign({kind},opts||{});
+    if(kind==='settings')advOpen=cur.section==='mcp';
     document.body.classList.add('screen-open');
     root().hidden=false;
     paint(true);
@@ -56,6 +61,7 @@
 
   /* ---------------- Settings: MCP servers ---------------- */
   let mcp=null; /* last McpState */
+  let advOpen=false; /* Settings > Advanced (MCP) open; kept across repaints, reset when Settings opens (FR-030) */
   async function loadMcp(){
     if(!X.bridge.mcpState){mcp=null;return;}
     try{mcp=await X.bridge.mcpState();}catch(e){mcp=null;}
@@ -79,9 +85,10 @@
         ${X.usageError&&X.usageError()?`<p class="scr-note warn" role="status">The totals could not be saved to disk (${esc(X.usageError())}); counting continues for this run.</p>`:''}
         <div class="scr-tools"><button class="btn" type="button" id="usageTotalsReset">Reset usage totals</button><span class="scr-note small" id="usageTotalsMsg" role="status"></span></div>`;
     }
-    const capSec=X.bridge.setDefaultCap?`<section class="scr-sec" aria-labelledby="capH"><h3 id="capH">Credit cap</h3>
-        <p class="scr-note">The default cap, in AI credits (shown as AIU, the unit the Copilot runtime reports; 1 credit = USD 0.01), given to <b>new</b> sessions. Minimum 30 (the runtime refuses less); empty means no cap. Each session can change its own cap from its chat header; a session that reaches its cap stops and asks you. The cap is <b>soft</b>: it is checked after each model response, so one response can go past it. The stop-and-ask flow follows GitHub's documentation and is not yet verified on a real account (see spec 011).</p>
-        <div class="scr-tools"><label class="capf">Default cap (AIU)<input id="capDef" type="number" min="30" step="1" placeholder="No cap" value="${app.defaultMaxAiCredits||''}"></label><button class="btn primary" type="button" id="capSave">Save</button><span class="scr-note small" id="capMsg" role="status"></span></div>${usageSec}</section>`:'';
+    const capSec=X.bridge.setDefaultCap?`<section class="scr-sec" aria-labelledby="capH"><h3 id="capH">Spending limit</h3>
+        <p class="scr-note">A spending limit for each <b>new Copilot</b> session, in AI credits (AIU; 1 credit = USD 0.01). Empty means no limit; each session can change its own from its chat header. Claude Code sessions have a dollar limit in their chat header; Codex does not report cost.</p>
+        <details class="scr-more"><summary>More about the limit</summary><p class="scr-note small">Minimum 30 (the Copilot runtime refuses less). A session that reaches its limit stops and asks you. The limit is soft: it is checked after each model response, so one response can go past it. The stop-and-ask flow follows GitHub's documentation and has not been seen on a real account yet.</p></details>
+        <div class="scr-tools"><label class="capf">Default limit (AI credits)<input id="capDef" type="number" min="30" step="1" placeholder="No limit" value="${app.defaultMaxAiCredits||''}"></label><button class="btn primary" type="button" id="capSave">Save</button><span class="scr-note small" id="capMsg" role="status"></span></div>${usageSec}</section>`:'';
     const f=mcp.file;
     const fileNote=!f.found?`<p class="scr-note" role="status">No <code>${esc(f.label)}</code> yet. Servers you add with the Copilot CLI (<code>/mcp add</code>) or by editing that file appear here by themselves. The built-in GitHub server is always listed.</p>`
       :f.error?`<p class="scr-note warn" role="status"><code>${esc(f.label)}</code> could not be read (${esc(f.error)}). Fix the file; this list updates the next time you open this screen.</p>`
@@ -90,8 +97,12 @@
        extras, every server seen in tool events this run and any already mapped. */
     /* Agent mood (spec 034 FR-004): Serious mode turns the monster, ambulance and the other drawings off */
     const moodSec=X.bridge.setSeriousMode&&X.isSerious?`<section class="scr-sec" aria-labelledby="moodH"><h3 id="moodH">Agent mood</h3>
-        <p class="scr-note">Agent figures get heavier from 70% of their context window and turn into a grumpy monster above 90% (a hint to start a fresh session). Trouble gets a drawing too: an ambulance when a session errors (one at a time), a faint at the credit limit, an agent tapping the desk after 60 s waiting for you, and dizzy stars after 3 failed tool calls in a row. The text and percentages never change. Serious mode turns every drawing off.</p>
+        <p class="scr-note">Agent figures get heavier from 70% of their context window and turn into a grumpy monster above 90% (a hint to start a fresh session). Trouble gets a drawing too: an ambulance when a session errors (one at a time), a faint at the spending limit, an agent tapping the desk after 60 s waiting for you, and dizzy stars after 3 failed tool calls in a row. The text and percentages never change. Serious mode turns every drawing off.</p>
         <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Serious mode</b>${sw(!!X.isSerious(),'Serious mode: no mood drawings on the agent figures','id="seriousSw"')}</span><span class="scr-note small" id="seriousMsg" role="status"></span></div></section>`:'';
+    /* spec 052 FR-059: an OS notification when an agent needs you while Durbar is in the background (on for real sessions, off in the demo) */
+    const notifySec=X.bridge.setNotifyNeedsMe&&X.isNotify?`<section class="scr-sec" aria-labelledby="ntfH"><h3 id="ntfH">Notifications</h3>
+        <p class="scr-note">While Agent Durbar is in the background, one notification tells you when an agent asks for permission, asks a question, reaches its spending limit or hits an error. It shows only the agent's name and a short summary of the request, never file contents. The window title and the app icon show how many need you.</p>
+        <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Notify me when an agent needs me (when Durbar is in the background)</b>${sw(!!X.isNotify(),'Notify me when an agent needs me (when Durbar is in the background)','id="notifySw"')}</span><span class="scr-note small" id="notifyMsg" role="status"></span></div></section>`:'';
     let placesSec='';
     if(X.bridge.setPlace&&X.places){
       const P=X.places, map=app.placeMap||{};
@@ -103,7 +114,8 @@
       const rows=P.placeRows(names,map,mineIds).map(({name:n,aliases,value:v})=>{const note=aliases.length?' also '+aliases.join(', '):'';
         return `<li class="plrow" data-srv="${esc(n)}" data-alias="${esc(aliases.join('\n'))}"><span class="plname" title="${esc(n+note)}">${esc(n)}${note?` <small>${esc(note.trim())}</small>`:''}</span><select data-place-sel aria-label="Place for the tools of ${esc(n)}"><option value=""${v?'':' selected'}>Default (${esc(X.placeLabel(P.defaultServerPlace(n)))})</option>${P.allPlaces(mine).map(p=>`<option value="${esc(p.id)}"${v===p.id?' selected':''}>${esc(X.placeLabel(p.id))}</option>`).join('')}<option value="desk"${v==='desk'?' selected':''}>Stay at desk</option></select></li>`;}).join('');
       placesSec=`<section class="scr-sec" aria-labelledby="plH"><h3 id="plH" tabindex="-1">Places in the office</h3>
-        <p class="scr-note">In the lobby, an agent walks to a place while one of its tools runs: <b>Terminal</b> for shell commands, <b>Web</b> for web fetches, and the place you choose here for the tools of each MCP server. File tools (read, edit, search) never move an agent. The choice applies to the next tool call, for all folders, and is kept between runs. Only server names and places are saved.</p>
+        <p class="scr-note">In the lobby, an agent walks to a place while one of its tools runs.</p>
+        <details class="scr-more"><summary>More</summary><p class="scr-note small"><b>Terminal</b> for shell commands, <b>Web</b> for web fetches, and the place you choose here for the tools of each MCP server. File tools (read, edit, search) never move an agent. The choice applies to the next tool call, for all folders, and is kept between runs. Only server names and places are saved.</p></details>
         ${X.bridge.addPlace&&PI?`<h4 class="scr-sub">Your places</h4>
         ${mine.length?`<ul class="plrows" id="myPlaces">${mine.map(p=>`<li class="plrow" data-place="${esc(p.id)}"><span class="plname" title="${esc(X.placeLabel(p.id))}"><span class="plico">${PI.iconSvg(p.icon)}</span>${esc(X.placeLabel(p.id))}</span><button class="btn sm" type="button" data-pl-act="edit" aria-label="Edit ${esc(X.placeLabel(p.id))}">Edit</button><button class="btn sm" type="button" data-pl-act="delete" aria-label="Delete ${esc(X.placeLabel(p.id))}">Delete</button></li>`).join('')}</ul>`:'<p class="scr-note small">You have no places of your own yet. Make one for the servers that fit none of the places above.</p>'}
         ${mine.length<3?'<div class="scr-tools"><button class="btn" type="button" data-pl-act="add">Add a place</button></div>':'<p class="scr-note small" id="plCapNote">Up to 3 places of your own.</p>'}
@@ -112,31 +124,49 @@
     }
     /* Floors (spec 033 FR-023): the same controls as the top-bar Floors panel, painted by app.js into #floorsSet */
     const floorsSec=X.floors&&X.floors.on()?`<section class="scr-sec" aria-labelledby="flH"><h3 id="flH">Floors</h3>
-        <p class="scr-note">Groups of folders. A floor that is <b>off</b> is hidden from the office and not counted in Working, Waiting, Idle, Errors and Done. <b>Its agents keep running</b> and can spend credits; the office credit total still counts them, and an agent there that waits for you or has an error is shown <b>only here</b>, on its floor's row (for example "Off, 1 waiting"). With two or more floors, the same controls are also in the <b>Floors</b> button of the top bar.</p>
+        <p class="scr-note">Groups of folders: a floor that is <b>off</b> is hidden from the office, but <b>its agents keep running</b> and can spend credits.</p>
+        <details class="scr-more"><summary>More</summary><p class="scr-note small">An off floor is not counted in Working, Waiting, Idle, Errors and Done. The office credit total still counts its agents, and an agent there that waits for you or has an error is shown <b>only here</b>, on its floor's row (for example "Off, 1 waiting"). With two or more floors, the same controls are also in the <b>Floors</b> button of the top bar.</p></details>
         <div class="floors-ui floors-set" id="floorsSet" tabindex="-1"></div></section>`:'';
     /* Schedules (spec 044 FR-011): every folder's schedules, painted by app.js into #schedSet */
     const schedSec=X.sched&&X.sched.on()?`<section class="scr-sec" aria-labelledby="schH"><h3 id="schH">Schedules</h3>
-        <p class="scr-note">Prompts sent to a folder's agent at a time, every day or at an interval, <b>only while Agent Durbar is open</b>. A run is skipped when the agent is busy or waiting for you; the agent's own permission mode and cap apply. A folder's ⋯ menu, its clock in the room header and the Schedules button in its chat open the same list for that folder, with a starter kit of templates.</p>
+        <p class="scr-note">Prompts sent to a folder's agent at a time, every day or at an interval, <b>only while Agent Durbar is open</b>.</p>
+        <details class="scr-more"><summary>More</summary><p class="scr-note small">A run is skipped when the agent is busy or waiting for you; the agent's own permission mode and cap apply. A folder's ⋯ menu, its clock in the room header and the Schedules button in its chat open the same list for that folder, with a starter kit of templates.</p></details>
         <div class="sched-set" id="schedSet"></div></section>`:'';
     /* Theme (specs 037-040): pick a built-in or imported pack; applies live, no restart. */
     const curTheme=(app.theme||'clean-office');
     let userThemes=[];
     if(X.bridge.listUserThemes){try{userThemes=(await X.bridge.listUserThemes())||[];}catch(e){userThemes=[];}}
-    const themes=(window.THEME?window.THEME.list():[{id:'clean-office',name:'Clean Office'}]).map((t)=>({...t,own:false})).concat(userThemes.filter((u)=>u.ok!==false).map((u)=>({id:u.id,name:u.name||u.id,own:true})));
+    const themes=(window.THEME?window.THEME.list():[{id:'clean-office',name:'Clean Office'}]).map((t)=>({...t,own:false})).concat(userThemes.filter((u)=>u.ok!==false).map((u)=>({id:u.id,name:u.name||u.id,author:typeof u.author==='string'?u.author:'',own:true})));
+    const baseAuthor=(themes.find((t)=>t.id==='clean-office')||{}).author||'Three Feathers'; /* FR-030: a card names its author only when it is not the built-in one */
     const badThemes=userThemes.filter((u)=>u.ok===false);
     const themeSec=`<section class="scr-sec" aria-labelledby="themeH"><h3 id="themeH">Theme</h3>
-        <p class="scr-note">The look of the office: colours, small art and scene words (places, lobby, doors). Status, permission and credit wording never change, and the layout always fits 15 agents at 1280×800. The choice applies at once and is kept on this computer.</p>
-        <ul class="thlist" id="thList">${themes.map((t)=>`<li class="throw"><button class="thpick" type="button" data-theme="${esc(t.id)}" aria-pressed="${t.id===curTheme}" aria-label="Theme ${esc(t.name)}"><span class="thsw" data-theme-sw="${esc(t.id)}" aria-hidden="true"></span><span class="thtx"><b>${esc(t.name)}</b>${t.own?'<span class="mtag">yours</span>':''}${t.author?`<small>${esc(t.author)}</small>`:''}</span></button></li>`).join('')}</ul>
+        <p class="scr-note">The look of the office; the choice applies at once and is kept on this computer.</p>
+        <details class="scr-more"><summary>More</summary><p class="scr-note small">Colours, small art and scene words (places, lobby, doors). Status, permission and credit wording never change, and the layout always fits 15 agents at 1280×800. A theme is a folder with a data-only manifest.json (no scripts, no CSS).</p></details>
+        <ul class="thlist" id="thList">${themes.map((t)=>{const by=t.author&&t.author!==baseAuthor?t.author:'';const dm=/^Durbar · (.+)$/.exec(t.name||'');return `<li class="throw"><button class="thpick" type="button" data-theme="${esc(t.id)}" aria-pressed="${t.id===curTheme}" aria-label="Theme ${esc(t.name)}${t.own?', yours':''}${by?esc(', by '+by):''}"><span class="thsw" data-theme-sw="${esc(t.id)}" aria-hidden="true"><i class="thsw-wall"></i><i class="thsw-desk"></i><i class="thsw-chair"></i><i class="thsw-ag"></i></span><span class="thtx">${dm?'<span class="thover">Durbar</span>':''}<b title="${esc(t.name)}">${esc(dm?dm[1]:t.name)}</b>${t.own?'<span class="mtag">yours</span>':''}${by?`<small>${esc(by)}</small>`:''}</span></button></li>`;}).join('')}</ul>
         ${badThemes.length?`<p class="scr-note warn" role="status">${badThemes.length} theme folder${badThemes.length>1?'s were':' was'} ignored: ${esc(badThemes.map((b)=>b.id+': '+(b.error||'invalid')).join('; '))}</p>`:''}
-        <div class="scr-tools"><button class="btn" type="button" id="thImport">Import a theme…</button><button class="btn" type="button" id="thExport"${/^(clean-office|corporate|retro|durbar-)/.test(curTheme)?' disabled title="Built-in themes are in the app; export your own themes."':''}>Export the active theme…</button><span class="scr-note small">A theme is a folder with a data-only manifest.json (no scripts, no CSS). The manifest format is spec 040.</span></div></section>`;
+        <div class="scr-tools">${X.bridge.generateTheme?'<button class="btn" type="button" id="thAi">Make a theme with AI…</button>':''}<button class="btn" type="button" id="thImport">Import a theme…</button><button class="btn" type="button" id="thExport" title="Copy the active theme's folder (one of your own themes) to a folder you pick">Export the active theme…</button></div></section>`;
     const ab=app.about;
     const aboutSec=ab?`<section class="scr-sec" aria-labelledby="aboutH"><h3 id="aboutH">About</h3>
         <p class="scr-note"><b>${esc(ab.name)}</b> ${esc(ab.version)} · by <b>${esc(ab.owner)}</b></p>
         <p class="scr-note small" id="aboutCredits">Contributors: ${ab.contributors.map(c=>esc(c.label)).join(', ')}</p>
         <p class="scr-note small">${esc(ab.copyright)} · MIT License</p></section>`:'';
-    r.innerHTML=head('Settings')+`<div class="scr-body">${themeSec}${capSec}${moodSec}${schedSec}${floorsSec}${placesSec}
-      <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH">MCP servers</h3>
-        <p class="scr-note">MCP servers give agents extra tools. Your <b>Copilot CLI list</b> is the one global list: every agent gets those servers, with nothing to configure or import here. Each agent can switch single servers off from its own header (MCP button).</p>
+    /* spec 051: Settings > Agent apps (install, update, sign in) */
+    let hsSec='';
+    if(window.DurbarHarnesses&&window.DurbarHarnesses.available()&&X.bridge.listAdapters){
+      let kinds=[],cp=null;try{kinds=(await X.bridge.listAdapters(!!X._hsRefresh))||[];}catch(e){kinds=[];}X._hsRefresh=false;
+      if(X.bridge.copilotAuth&&kinds.some(k=>k.id==='copilot'&&k.state==='ready')){try{cp=await X.bridge.copilotAuth();}catch(e){cp=null;}}
+      hsSec=window.DurbarHarnesses.sectionHTML(kinds,cp);
+    }
+    /* spec 052 FR-031 (#306): Simple or Expert */
+    const dl=X.detail?X.detail.get():'expert';
+    const detailSec=X.detail?`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Detail level</h3>
+        <p class="scr-note"><b>Simple</b> shows what agents do in plain words and what they cost; <b>Expert</b> adds tokens, models, context, paths and developer tools. Permissions and answering are the same in both.</p>
+        <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div></section>`:'';
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${detailSec}${themeSec}${capSec}${moodSec}${notifySec}${schedSec}${floorsSec}${placesSec}
+      <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3></summary>
+      <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
+        <p class="scr-note">Every agent gets the servers of your <b>Copilot CLI list</b>, the one global list.</p>
+        <details class="scr-more"><summary>More</summary><p class="scr-note small">There is nothing to configure or import here. Each agent can switch single servers off from its own header (MCP button). Claude Code and Codex read their own MCP settings; each agent's <b>MCP</b> item (in its chat's More menu) shows what it uses.</p></details>
         <p class="scr-warn" role="note"><b>MCP servers run local commands with your user rights.</b> The Copilot runtime starts the servers of your CLI list in every session, exactly as the CLI does. Read-only MCP tools can run without asking even in Read-only mode.</p>
         ${fileNote}
         <h4 class="scr-sub">From the Copilot CLI list <small>all agents</small></h4>
@@ -144,9 +174,13 @@
         <p class="scr-note small">You cannot edit these here: change <code>${esc(f.label)}</code> with the Copilot CLI or an editor. The switch only controls whether <b>new</b> sessions started by this app start a server; a running session keeps its servers until it ends, or until you switch one in that agent's MCP menu.</p>
       </section>
       <section class="scr-sec" aria-labelledby="extH"><h3 id="extH">Extras for one folder <small>optional</small></h3>
-        <p class="scr-note">Agent Durbar can add its own servers, but <b>only per folder or workspace</b>: open the <b>MCP</b> button in a room's header (or <b>Folder extras…</b> in an agent's MCP menu). Extras apply only to agents in that folder and are never shared with other folders. Switching one on shows its exact command first, and asks again if the command changes.</p>
-      </section>${aboutSec}</div>`;
+        <p class="scr-note">Agent Durbar can add its own servers, but <b>only per folder or workspace</b>: open the <b>MCP</b> button in a room's header.</p>
+        <details class="scr-more"><summary>More</summary><p class="scr-note small"><b>Folder extras…</b> in an agent's MCP menu opens the same list. Extras apply only to agents in that folder and are never shared with other folders. Switching one on shows its exact command first, and asks again if the command changes.</p></details>
+      </section></details>${aboutSec}</div>`;
     wireHead();
+    /* spec 051 FR-008: entry points open Settings at Agent apps */
+    if(cur.section==='harnesses'){cur.section=null;const h=$('hsH');if(h){scrollInBody(h);h.focus({preventScroll:true});}}
+    if($('advMcp')){$('advMcp').ontoggle=()=>{advOpen=$('advMcp').open;};if(cur.section==='mcp'){cur.section=null;const h=$('mcpH');if(h){scrollInBody(h);h.focus({preventScroll:true});}}}
     if(X.floors&&$('floorsSet'))X.floors.render();
     if(X.sched&&$('schedSet'))X.sched.render();
     if($('capSave'))$('capSave').onclick=async()=>{
@@ -167,14 +201,16 @@
     r.onchange=onPlaceChange;
     /* theme picker (spec 037): click applies live through app.js's applyTheme; no restart */
     /* spec 037 FR-014: each swatch shows its own theme's colours (validated colour values set through CSSOM) */
-    if($('thList')&&window.THEME&&window.THEME.preview)$('thList').querySelectorAll('[data-theme-sw]').forEach((sw)=>{
-      const c=window.THEME.preview(sw.dataset.themeSw);
-      if(c.length>=3)sw.style.background=`linear-gradient(135deg,${c[0]} 0 34%,${c[1]} 34% 67%,${c[2]} 67%)`;
-      else if(c.length)sw.style.background=c[0];
+    /* FR-030 (#309): a mini room per card; previewRoom returns only validated colour values, set as custom properties through CSSOM */
+    if($('thList')&&window.THEME&&window.THEME.previewRoom)$('thList').querySelectorAll('[data-theme-sw]').forEach((sw)=>{
+      const c=window.THEME.previewRoom(sw.dataset.themeSw);
+      for(const k of Object.keys(c))sw.style.setProperty('--sw-'+k,c[k]);
     });
     if($('thList'))$('thList').addEventListener('click',(e)=>{
       const b=e.target.closest&&e.target.closest('[data-theme]');if(!b||!X.applyTheme)return;
       X.applyTheme(b.dataset.theme);
+      /* spec 040 FR-019: the list shows the new choice at once (it was only repainted when Settings reopened) */
+      $('thList').querySelectorAll('[data-theme]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
     });
     if($('thImport'))$('thImport').onclick=async()=>{
       if(!X.bridge.importTheme)return;
@@ -184,13 +220,110 @@
       if(X.applyTheme)X.applyTheme(res.id);
       paintSettings();
     };
+    if($('thAi'))$('thAi').onclick=()=>aiTheme(curTheme);
     if($('thExport'))$('thExport').onclick=async()=>{
       if(!X.bridge.exportTheme)return;
-      const res=await X.bridge.exportTheme(curTheme).catch(()=>null);
+      /* spec 040 FR-019: the theme active NOW, not the one when Settings was painted; a built-in one says why it cannot be exported */
+      const active=(window.THEME&&window.THEME.current&&window.THEME.current().id)||curTheme;
+      if(window.THEME&&window.THEME.list().some((t)=>t.id===active&&!userThemes.some((u)=>u.id===active))){
+        X.toast(esc((window.THEME.list().find((t)=>t.id===active)||{name:active}).name)+' is built into the app, so there is nothing to export. Pick one of your own themes (marked "yours") first, or make one with AI.',6000);return;
+      }
+      const res=await X.bridge.exportTheme(active).catch(()=>null);
       if(!res||!res.ok){X.toast(esc(res&&res.error||'Export did not work (cancelled, or only your own themes can be exported).'),4200);return;}
       X.toast('Theme copied to <b>'+esc(res.to)+'</b>.',4200);
     };
     if(focus){const h=r.querySelector('h2');if(h){h.tabIndex=-1;h.focus({preventScroll:true});}}
+  }
+  /* spec 040 FR-014..FR-018: AI theme maker. Describe -> one prompt to a harness with `oneShot` -> a checked manifest ->
+     preview (Try it, live, not saved) -> Save as my theme, Try again or Discard (back to the theme that was active). User text is never logged. */
+  async function aiTheme(){
+    const before=(window.THEME&&window.THEME.current&&window.THEME.current().id)||'clean-office';
+    let kinds=[];
+    if(X.bridge.listAdapters){try{kinds=((await X.bridge.listAdapters())||[]).filter((k)=>k&&k.state==='ready'&&k.capabilities&&k.capabilities.oneShot);}catch(e){kinds=[];}}
+    if(!kinds.length){await dialog({title:'Make a theme with AI',html:'<p class="dsub">This needs Claude Code or OpenAI Codex, installed and signed in on this computer. Copilot cannot do it yet.</p>',buttons:[{label:'Close',value:'ok',cls:'primary'}]});return;}
+    let desc='',kind=kinds[0].id;
+    /* spec 040 FR-021: a few example looks at random, so people see how to describe one */
+    let ideas=[];
+    if(X.bridge.themeIdeas){try{ideas=(await X.bridge.themeIdeas())||[];}catch(e){ideas=[];}}
+    const pick=()=>{const p=ideas.slice(),o=[];while(o.length<4&&p.length)o.push(p.splice(Math.floor(Math.random()*p.length),1)[0]);return o;};
+    const ideaHtml=()=>ideas.length?`<div class="ai-ideas" id="aiIdeas"><span class="scr-note small">Ideas:</span>${pick().map((i)=>`<button class="btn ai-idea" type="button" data-idea="${esc(i)}">${esc(i)}</button>`).join('')}<button class="btn ai-more" type="button" id="aiMore" title="Show other ideas">More ideas</button></div>`:'';
+    for(;;){
+      const r=await dialog({title:'Make a theme with AI',html:`<p class="dsub">Describe a look in a few words, for example <i>a night-shift newsroom</i> or <i>a ship's bridge at dawn</i>. The agent app you pick designs a light or dark theme in one request, with no tools and nothing kept, at a small cost on your own plan. Durbar keeps only safe values and checks that text stays readable, and you can try the theme before you save it.</p>
+        <label>Look<textarea id="aiDesc" rows="3" maxlength="300" placeholder="A calm library at night">${esc(desc)}</textarea></label>
+        ${ideaHtml()}
+        <label>Made by<select id="aiKind">${kinds.map((k)=>`<option value="${esc(k.id)}"${k.id===kind?' selected':''}>${esc(k.displayName||k.id)}</option>`).join('')}</select></label>
+        <p class="scr-note small">Uses your own ${esc(kinds.map((k)=>k.displayName||k.id).join(' or '))} account: a small cost (Claude: at most $0.25, usually about a cent).</p>`,
+        buttons:[{label:'Cancel',value:null},{label:'Make the theme',value:'go',cls:'primary'}],
+        validate:(d)=>{const v=d.querySelector('#aiDesc').value.trim();return v.length<3?'Describe the look in a few words.':false;},
+        onOpen:(d)=>{const t=d.querySelector('#aiDesc');t.addEventListener('input',()=>{desc=t.value;});
+          d.addEventListener('click',(e)=>{const b=e.target.closest&&e.target.closest('.ai-idea');if(b){t.value=b.dataset.idea;desc=t.value;t.focus();return;}
+            if(e.target.closest&&e.target.closest('#aiMore')){const box=d.querySelector('#aiIdeas');if(box)box.outerHTML=ideaHtml();}});d.querySelector('#aiKind').addEventListener('change',(e)=>{kind=e.target.value;});}});
+      if(!r||r.value!=='go')return;
+      const busy=X.toast?X.toast('Making the theme… this can take up to a minute.',60000):null;
+      let g=null;
+      try{g=await X.bridge.generateTheme(desc.trim(),kind);}catch(e){g={ok:false,error:String(e&&e.message||e)};}
+      if(busy&&busy.remove)busy.remove();
+      if(!g||!g.ok){
+        const again=await dialog({title:'No theme this time',html:`<p class="dsub">${esc((g&&g.error)||'Unknown error.')}</p>${g&&g.costUsd?`<p class="scr-note small">Cost: about $${esc(g.costUsd.toFixed(4))} (estimate).</p>`:''}`,buttons:[{label:'Close',value:null},{label:'Try again',value:'again',cls:'primary'}]});
+        if(again&&again.value==='again')continue;return;
+      }
+      const m=g.manifest, toks=m.tokens||{}, hex=/^#[0-9a-f]{3,6}$/i;
+      const swatches=['--bg','--surface','--ink','--sage','--blue','--amber','--brand-bg','--desk'].filter((k)=>hex.test(toks[k]||'')).map((k)=>`<span class="ai-sw" title="${esc(k)}" data-col="${esc(toks[k])}"></span>`).join('');
+      const words=Object.entries(m.words||{}).map(([k,v])=>`<li><small>${esc(k)}</small> ${esc(v)}</li>`).join('');
+      for(;;){
+        const pick=await dialog({title:'Theme: '+m.name,wide:true,html:`<div class="ai-sws" aria-hidden="true">${swatches}</div>
+          <p class="dsub">Style <b>${esc(m.ui)}</b>, people and furniture <b>${esc(m.scene)}</b>, ${Object.keys(toks).length} colours.${g.costUsd?` Made for about $${esc(g.costUsd.toFixed(4))} (estimate).`:''}</p>
+          ${words?`<ul class="ai-words">${words}</ul>`:''}
+          ${g.warnings&&g.warnings.length?`<p class="scr-note small">${esc(g.warnings.join('; '))}.</p>`:''}
+          <p class="scr-note small">Try it shows it now without saving. Discard goes back to the theme you had.</p>`,
+          buttons:[{label:'Discard',value:null},{label:'Try again',value:'again'},{label:'Try it',value:'try'},{label:'Save as my theme',value:'save',cls:'primary'}],
+          onOpen:(d)=>d.querySelectorAll('[data-col]').forEach((el)=>{if(hex.test(el.dataset.col))el.style.background=el.dataset.col;})}); /* CSSOM, validated hex only */
+        const choice=pick&&pick.value;
+        if(choice==='try'){
+          /* spec 040 FR-021: look at it in the real office: Settings closes, a small bar offers Save / Details / Try again / Discard */
+          if(X.previewTheme)X.previewTheme(m);
+          close();
+          const next=await tryBar(m.name);
+          if(next==='save'||next==='details'){open('settings');await new Promise((r)=>setTimeout(r,60));}
+          if(next==='details')continue;
+          if(next==='save'){
+            const res=await X.bridge.saveGeneratedTheme(m).catch(()=>null);
+            if(!res||!res.ok){X.toast(esc((res&&res.error)||'The theme could not be saved.'),5000);if(X.previewTheme)X.previewTheme(before);return;}
+            if(X.applyTheme)X.applyTheme(res.id);
+            X.toast('Theme <b>'+esc(res.name||res.id)+'</b> saved. It is in the list as one of yours.',3600);
+            paintSettings();return;
+          }
+          if(X.previewTheme)X.previewTheme(before);
+          if(next==='again'){open('settings');await new Promise((r)=>setTimeout(r,60));break;}
+          return;
+        }
+        if(choice==='save'){
+          const res=await X.bridge.saveGeneratedTheme(m).catch(()=>null);
+          if(!res||!res.ok){X.toast(esc((res&&res.error)||'The theme could not be saved.'),5000);continue;}
+          if(X.applyTheme)X.applyTheme(res.id);
+          X.toast('Theme <b>'+esc(res.name||res.id)+'</b> saved. It is in the list as one of yours.',3600);
+          paintSettings();return;
+        }
+        if(X.previewTheme)X.previewTheme(before); /* Discard or Try again: back to the theme that was active */
+        if(choice==='again')break;
+        return;
+      }
+    }
+  }
+  /* the "trying a theme" bar over the live office; resolves 'save' | 'details' | 'again' | 'discard' (Escape) */
+  function tryBar(name){
+    return new Promise((resolve)=>{
+      const old=document.getElementById('aiTryBar');if(old)old.remove();
+      const b=document.createElement('div');b.id='aiTryBar';b.className='ai-trybar';b.setAttribute('role','dialog');b.setAttribute('aria-label','Trying a theme');
+      b.innerHTML=`<span>Trying <b></b>. Nothing is saved yet.</span><button class="btn" type="button" data-t="discard">Discard</button><button class="btn" type="button" data-t="again">Try again</button><button class="btn" type="button" data-t="details">Details</button><button class="btn primary" type="button" data-t="save">Save as my theme</button>`;
+      b.querySelector('b').textContent=name;
+      const done=(v)=>{b.remove();document.removeEventListener('keydown',onKey,true);resolve(v);};
+      const onKey=(e)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();done('discard');}};
+      b.addEventListener('click',(e)=>{const t=e.target.closest&&e.target.closest('[data-t]');if(t)done(t.dataset.t);});
+      document.addEventListener('keydown',onKey,true);
+      document.body.appendChild(b);
+      b.querySelector('[data-t="save"]').focus();
+    });
   }
   /* one server of the Copilot CLI list (or the built-in one): read-only, with its exact command/URL and a switch for new sessions */
   function cliRow(a){
@@ -272,11 +405,21 @@
       else if(act==='delete')await deletePlace(id);
       return;
     }
+    if(window.DurbarHarnesses&&window.DurbarHarnesses.onClick(e))return;
+    const dlb=e.target.closest('[data-detail]');
+    if(dlb&&X.detail){X.detail.set(dlb.dataset.detail);paint();return;}
     const ss=e.target.closest('#seriousSw');
     if(ss&&X.bridge.setSeriousMode){
       const on=ss.getAttribute('aria-checked')!=='true';
       let res=null; try{res=await X.bridge.setSeriousMode(on);}catch(err){res=null;}
       if(res&&res.ok){X.setSerious(!!res.seriousMode);ss.classList.toggle('on',!!res.seriousMode);ss.setAttribute('aria-checked',res.seriousMode?'true':'false');const m=$('seriousMsg');if(m)m.textContent=res.seriousMode?'Serious mode is on: no mood drawings.':'Serious mode is off.';}
+      return;
+    }
+    const ns=e.target.closest('#notifySw');
+    if(ns&&X.bridge.setNotifyNeedsMe){
+      const on=ns.getAttribute('aria-checked')!=='true';
+      let res=null; try{res=await X.bridge.setNotifyNeedsMe(on);}catch(err){res=null;}
+      if(res&&res.ok){const v=!!res.notifyNeedsMe;if(X.setNotify)X.setNotify(v);ns.classList.toggle('on',v);ns.setAttribute('aria-checked',v?'true':'false');const m=$('notifyMsg');if(m)m.textContent=v?'Notifications are on.':'Notifications are off.';}
       return;
     }
     const li=e.target.closest('li.srv');if(!li||!li.dataset.amb)return;
@@ -312,7 +455,7 @@
       <div class="srv-act"><button class="btn sm" type="button" data-act="move">Move here</button><button class="btn sm danger" type="button" data-act="rmlegacy">Remove</button></div></li>`).join('');
     r.innerHTML=head('MCP extras · '+st.name)+`<div class="scr-body">
       <section class="scr-sec" aria-labelledby="fxH"><h3 id="fxH">Extra servers for <code>${esc(st.name)}</code> <small>${FOLDER_NOTE.toLowerCase()}</small></h3>
-        <p class="scr-note">These servers are optional and belong to <b>this folder or workspace only</b>: agents in other folders do not get them. Servers from your Copilot CLI list are available to every agent and are not edited here.</p>
+        <p class="scr-note">These servers are optional and belong to <b>this folder only</b>: agents in other folders do not get them. Servers from your Copilot CLI list are available to every agent and are not edited here.</p>
         <p class="scr-warn" role="note"><b>MCP servers run local commands with your user rights.</b> You see the exact command before a server is switched on for the first time, and again whenever its command or URL changes. Removing the folder from the office keeps these extras; they come back if you add the folder again.</p>
         <p class="scr-note ${st.secretsPersist?'ok':'warn'}" role="status">${st.secretsPersist?'Secret values (environment variables, headers) are stored encrypted by your operating system and are never shown again, logged or exported.':'<b>No OS-protected secret store is available here.</b> Secret values are kept in memory for this run only and are not saved: you will need to enter them again after a restart.'}</p>
         <div class="scr-tools"><button class="btn primary" type="button" id="mcpAdd">+ Add extra server</button><button class="btn" type="button" id="mcpImportVs" title="Read this folder's .vscode/mcp.json and pick servers to add (nothing is switched on)">Import from VS Code…</button><button class="btn" type="button" id="fxSettings">Copilot CLI list…</button></div>
@@ -325,7 +468,7 @@
     wireHead();
     $('mcpAdd').onclick=()=>editServer(null,st);
     $('mcpImportVs').onclick=()=>importVSCode(st);
-    $('fxSettings').onclick=()=>open('settings');
+    $('fxSettings').onclick=()=>open('settings',{section:'mcp'});
     r.onclick=onFolderClick;
     if(focus){const h=r.querySelector('h2');if(h){h.tabIndex=-1;h.focus({preventScroll:true});}}
   }
@@ -477,7 +620,7 @@
         const stat=x.status?`<span class="mst ${esc(x.status)}"><i></i>${esc(x.status)}</span>`:'<span class="mst none">not started</span>';
         return `<li class="srv sm" data-n="${esc(x.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(x.name)}</b><span class="mtag${x.origin==='folder'?' extra':' src'}">${x.origin==='cli'?'Copilot CLI list':x.origin==='folder'?'this folder only':'runtime'}</span>${stat}${!x.defaultOn?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${x.error?`<span class="imp-note">${esc(cap(x.error,160))}</span>`:''}</div>
           <div class="srv-act">${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name,'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed?' disabled':''))}</div></li>`;}).join('');
-      return `<p class="dsub">${s.live?(fixed?'This agent is running.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Your Copilot CLI servers are global (see <b>Settings</b>); extras belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent kind:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul><p class="dsub small">Applies to this agent until the app is closed.</p>`;
+      return `<p class="dsub">${s.live?(fixed?'This agent is running.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Your Copilot CLI servers are global (see <b>Settings</b>); extras belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul><p class="dsub small">Applies to this agent until the app is closed.</p>`;
     };
     const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings…',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
       onOpen:d=>{d.addEventListener('click',async e=>{const b=e.target.closest('button.swt');if(!b||b.disabled)return;const on=b.getAttribute('aria-checked')!=='true';
@@ -507,7 +650,7 @@
     const r=root();
     const all=period==='all';
     const agents=X.agents();
-    const tab=all?'tools':(cur.tab||'tools');
+    let tab=cur.tab||'tools'; if(all&&tab==='agents')tab='tools';
     let scope=cur.scope||null; /* session: an agent id; all time: an agent label */
     let tot,groups,scopeSel;
     if(all){
@@ -525,26 +668,63 @@
       scopeSel=`<label class="select-wrap"><span class="sr-only">Show</span><select id="toolScope"><option value="">All agents</option>${agents.map(a=>`<option value="${esc(a.id)}"${a.id===scope?' selected':''}>${esc(a.name)}</option>`).join('')}</select></label>`;
     }
     const per=`<div class="seg" role="tablist" aria-label="Period"><button role="tab" id="perSession" aria-selected="${!all}" type="button">This session</button><button role="tab" id="perAll" aria-selected="${all}" type="button">All time</button></div>`;
-    const tabs=all?'':`<div class="seg" role="tablist" aria-label="Tools view"><button role="tab" id="tabTools" aria-selected="${tab==='tools'}" type="button">Tool usage</button><button role="tab" id="tabAgents" aria-selected="${tab==='agents'}" type="button">Models &amp; context</button></div>`;
-    const body=tab==='tools'?await toolsTab(scope,tot,groups,all):agentsTab(scope,agents);
+    const tabs=`<div class="seg" role="tablist" aria-label="Tools view"><button role="tab" id="tabTools" aria-selected="${tab==='tools'}" type="button">Tool usage</button><button role="tab" id="tabAgents" aria-selected="${tab==='agents'}" type="button">Models &amp; context</button><button role="tab" id="tabCost" aria-selected="${tab==='cost'}" type="button">Cost</button></div>`;
+    const cost=tab==='cost'?costView():null;
+    const body=cost?cost.html:tab==='tools'?await toolsTab(scope,tot,groups,all):agentsTab(scope,agents);
     if(!cur||cur.kind!=='tools')return;
-    r.innerHTML=`<div class="scr-head"><h2>Tools</h2>${per}${scopeSel}${tabs}<span class="grow"></span><button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>
+    const head=cost?`${tabs}${cost.seg}<span class="grow"></span><button class="btn" type="button" id="costCsv"${cost.built.rows.length&&!cost.none?'':' disabled'}>Copy as CSV</button>`:`${per}${scopeSel}${tabs}<span class="grow"></span>`;
+    r.innerHTML=`<div class="scr-head"><h2>Tools</h2>${head}<button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>
       <div class="scr-body">${body}</div>`;
     wireHead();
-    $('toolScope').onchange=e=>{cur.scope=e.target.value||null;paintTools();};
-    $('perSession').onclick=()=>{if(period==='session')return;period='session';cur.scope=null;paintTools();};
-    $('perAll').onclick=()=>{if(period==='all')return;period='all';paintTools();};
-    if($('tabTools'))$('tabTools').onclick=()=>{cur.tab='tools';paintTools();};
-    if($('tabAgents'))$('tabAgents').onclick=()=>{cur.tab='agents';paintTools();};
+    if($('toolScope'))$('toolScope').onchange=e=>{cur.scope=e.target.value||null;paintTools();};
+    if($('perSession'))$('perSession').onclick=()=>{if(period==='session')return;period='session';cur.scope=null;paintTools();};
+    if($('perAll'))$('perAll').onclick=()=>{if(period==='all')return;period='all';paintTools();};
+    $('tabTools').onclick=()=>{cur.tab='tools';paintTools();};
+    $('tabAgents').onclick=()=>{cur.tab='agents';if(period==='all'){period='session';cur.scope=null;}paintTools();};
+    $('tabCost').onclick=()=>{cur.tab='cost';paintTools();};
+    if($('costRun'))$('costRun').onclick=()=>{costPer='run';paintTools();};
+    if($('costSince'))$('costSince').onclick=()=>{costPer='since';paintTools();};
+    if(cost&&$('costCsv'))$('costCsv').onclick=()=>copyCostCsv(cost);
     r.onclick=async e=>{
       const l=e.target.closest('[data-open]');if(l){close();X.openAgent(l.dataset.open);return;}
-      if(e.target.closest('#cfgSettings')){open('settings');return;}
+      if(e.target.closest('#cfgSettings')){open('settings',{section:'mcp'});return;}
       if(e.target.closest('#usageReset')){
         const ok=await dialog({title:'Reset all-time counts?',html:'<p class="dsub">This clears the counts kept across restarts and starts again from today. It does not touch your agents or their history.</p>',buttons:[{label:'Cancel',value:null},{label:'Reset',value:'ok',cls:'primary warn'}]});
         if(ok&&X.bridge.usageReset){await X.bridge.usageReset();X.toast('All-time counts were reset.',2600);cur.scope=null;paintTools();}
       }
     };
     if(focus){const h=r.querySelector('h2');if(h){h.tabIndex=-1;h.focus({preventScroll:true});}}
+  }
+  /* ---------------- Tools > Cost (spec 052 FR-044, #315) ---------------- */
+  const sinceDay=s=>typeof s==='string'&&/^\d{4}-\d{2}-\d{2}/.test(s)?s.slice(0,10):'';
+  function costView(){
+    const C=window.DurbarCost;
+    const day=sinceDay(X.usageSince?X.usageSince():'');
+    if(!day)costPer='run';
+    const d=X.costData?X.costData(costPer):{rows:[],office:null,period:'run'};
+    const built=C.build(d.rows,d.office);
+    const label=costPer==='since'&&day?'Since '+day:'This run';
+    const seg=`<div class="seg" role="tablist" aria-label="Cost period"><button role="tab" id="costRun" aria-selected="${costPer!=='since'}" type="button" title="Since Agent Durbar opened (or the last reset)">This run</button>${day?`<button role="tab" id="costSince" aria-selected="${costPer==='since'}" type="button" title="The saved totals since the last reset in Settings, plus this run">Since ${esc(day)}</button>`:''}</div>`;
+    if(!built.rows.length)return {seg,built,label,html:'<p class="scr-empty">No folders yet.<br><small>Add a folder and start a session; the cost of each folder shows here.</small></p>'};
+    /* spec 052 FR-050: no usage at all yet: a plain sentence instead of a table of dashes */
+    if(built.rows.every(r=>r.empty))return {seg,built,label,none:true,html:'<p class="scr-empty">No costs yet. Numbers appear after an agent\'s first reply.</p>'};
+    const n=v=>`<td class="num">${esc(v)}</td>`;
+    const moneyCell=r=>C.notReported(r)?'<td class="num unk">not reported</td>':r.empty?'<td class="num">–</td>':n((/^</.test(C.money(r.money))?'':'≈ ')+C.money(r.money)); /* "<$0.01" needs no "≈" (as on the cards) */
+    const row=r=>{
+      const note=[r.tokensOnly?'Codex: tokens only':'',r.other?'saved totals of folders no longer in the list':''].filter(Boolean).join(' · ');
+      return `<tr class="${r.empty?'empty':''}${r.other?' other':''}"><th scope="row" title="${esc(r.path||r.name)}">${esc(r.name)}</th>${moneyCell(r)}${n(r.aiu.toFixed(2))}${n(r.usd?C.money(r.usd):'–')}${n(r.tokens?fmt(r.tokens):'–')}${n(String(r.calls))}<td class="cnote">${esc(note)}</td></tr>`;};
+    const head=`<thead><tr><th scope="col">Folder</th><th scope="col" class="num">Est. cost</th><th scope="col" class="num">Copilot AIU</th><th scope="col" class="num">Claude $ est.<br><small>this run</small></th><th scope="col" class="num">Tokens<br><small>this run</small></th><th scope="col" class="num">Calls</th><th scope="col">Note</th></tr></thead>`;
+    const sum=`<p class="scr-sum">Cost by folder, <b>${esc(label==='This run'?'this run':label.toLowerCase())}</b>. Estimated cost: Copilot AI credits at $0.01 each, plus Claude Code's own estimate. Not a bill.</p>`;
+    const notes=`<p class="scr-note small">Copilot AIU and calls: ${costPer==='since'?'the totals saved since '+esc(day)+' (reset in Settings) plus this run':'since Agent Durbar opened (or the last reset)'}; ended sessions are included. Claude $ and tokens: the sessions open now, this run only. Codex reports tokens but no cost. A budget per folder is not available yet.</p>`;
+    return {seg,built,label,html:sum+`<table class="ttab cost">${head}<tbody>${built.rows.map(row).join('')}</tbody><tfoot>${row(Object.assign({empty:false,other:false,path:''},built.total,{tokensOnly:false}))}</tfoot></table>`+notes};
+  }
+  async function copyCostCsv(cost){
+    const text=window.DurbarCost.toCsv(cost.built,cost.label), k=cost.built.rows.length;
+    try{
+      if(!navigator.clipboard||!navigator.clipboard.writeText)throw new Error('no clipboard');
+      await navigator.clipboard.writeText(text);
+      X.toast('Copied '+k+' folder'+(k===1?'':'s')+' as CSV',2600).classList.add('ok'); /* FR-050 */
+    }catch(e){X.toast('Could not copy to the clipboard.',3200).classList.add('err');}
   }
   const fmtDate=iso=>{const d=new Date(iso);return isNaN(d)?'':d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});};
   async function toolsTab(scope,tot,groups,all){
@@ -614,9 +794,9 @@
   }
 
   window.DurbarScreens={
-    init(ctx){X=ctx;},
+    init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,toast:(t)=>ctx.toast(ctx.esc(t),3600),onChange:(again)=>{X._hsRefresh=true;if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
-    openSettings:()=>{mcp=null;open('settings');},
+    openSettings:(section)=>{mcp=null;open('settings',section==='mcp'||section==='harnesses'?{section}:null);},
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},
     agentMcp,
     placeDialog,
