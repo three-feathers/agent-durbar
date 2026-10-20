@@ -30,7 +30,7 @@ permissions:
 
 concurrency:
   group: ui-platforms-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }} # only superseded PR runs; main and nightly always finish (as ci.yml, #286)
 
 jobs:
   ui:
