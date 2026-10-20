@@ -2751,7 +2751,17 @@ async function sendLive(text,forId){
   const input=$('msgInput');if(input){input.value='';autoGrow();}
   a.worked=true; a.intent=''; closeTurn(a); ensureTurn(a); setState(a,'thinking',null,'Thinking');
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})));
-  if(!r.ok){closeTurn(a);addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);setState(a,'error',null,'Send failed: '+SHORT(r.error,100));}
+  if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+SHORT(r.error,100));}
+}
+/* spec 012 FR-087 (owner 2026-10-20, option c): a refusal of Read-only / Ask first (Codex's sandbox could not start, or Codex cannot
+   limit reads) never suggests a mode in its text; a "Change mode…" button opens the usual mode menu, with every mode and its help */
+const MODE_REFUSAL=/Read-only and Ask first need|limit reads to the session's folders/;
+function modeRefusalAction(a,note,error){
+  if(!note||!MODE_REFUSAL.test(String(error||''))||!bridge.setPermMode||!feat(a,'modes'))return;
+  const row=document.createElement('div');row.className='note-actions';
+  const b=document.createElement('button');b.type='button';b.className='btn';b.textContent='Change mode…';b.dataset.act='modeRefusal';
+  b.onclick=()=>{const r=b.getBoundingClientRect();openModeMenu(a,r.left,r.bottom+4,b);};
+  row.appendChild(b);note.appendChild(row);
 }
 /* ---------------- sign in again from the chat (spec 012 FR-157) ---------------- */
 const SIGNIN=window.DurbarSignIn||null;

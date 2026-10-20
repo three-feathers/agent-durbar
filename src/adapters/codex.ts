@@ -165,10 +165,11 @@ export function codexElicitationHasFields(params: unknown): boolean {
 /**
  * FR-140 (real, Ubuntu 24.04+): Codex's Linux sandbox (bubblewrap) cannot start where unprivileged user namespaces are blocked
  * (`kernel.apparmor_restrict_unprivileged_userns=1`). Read-only and Ask first then fail at start (closed, as they must); say why.
+ * FR-087 (owner 2026-10-20, option c): the text never suggests Allow all; the window adds a "Change mode…" button instead.
  */
 export function linuxSandboxHint(reason: string): string {
   return /bwrap|bubblewrap|user namespace|RTM_NEWADDR/i.test(reason)
-    ? ' Codex could not start its Linux sandbox: this system blocks unprivileged user namespaces (Ubuntu AppArmor). Read-only and Ask first need that sandbox; allow it for bubblewrap (see the README, Codex) or use Allow all in a folder you trust.'
+    ? ' Codex could not start its Linux sandbox: this system blocks unprivileged user namespaces (Ubuntu AppArmor). Read-only and Ask first need that sandbox, so nothing ran. To allow it for bubblewrap, see the README (Codex).'
     : '';
 }
 
@@ -178,7 +179,7 @@ export function linuxSandboxHint(reason: string): string {
  */
 export function macSandboxHint(reason: string): string {
   return /sandbox-exec/i.test(reason)
-    ? ' Codex could not start its macOS sandbox (macOS refused sandbox-exec). Read-only and Ask first need that sandbox, so nothing ran. This can happen when Agent Durbar itself runs restricted (a managed Mac or a CI machine); start Durbar normally and try again, or use Allow all only in a folder you trust.'
+    ? ' Codex could not start its macOS sandbox (macOS refused sandbox-exec). Read-only and Ask first need that sandbox, so nothing ran. This can happen when Agent Durbar itself runs restricted (a managed Mac or a CI machine); start Durbar normally and try again.'
     : '';
 }
 
