@@ -170,7 +170,13 @@ function maskJsonPairs(v: string, force = false): string {
 /** One `NAME=value` or `Name: value` piece: masked when the name looks secret; otherwise its value is masked recursively (a URL, JSON). */
 function maskKv(part: string, depth: number, env?: Env): string {
   const kv = KV.exec(part);
-  if (kv) return secretFlag(kv[2].replace(ENV_PREFIX, '')) ? `${kv[1]}${kv[2]}=${MASK}` : depth > 0 ? `${kv[1]}${kv[2]}${kv[3]}${maskText(kv[4], depth - 1, env)}` : kv[4].trim() === '' ? part : `${kv[1]}${kv[2]}=${MASK}`; // budget spent: fail-safe
+  if (kv) {
+    if (secretFlag(kv[2].replace(ENV_PREFIX, ''))) return `${kv[1]}${kv[2]}=${MASK}`;
+    // `OPTS=\"--token x\"`: a stray quote in front of a flag-shaped value is set aside so the flag is seen
+    const lead = depth > 0 ? /^[\\"'`]+/.exec(kv[4])?.[0] ?? '' : '';
+    if (lead && /^[-/]/.test(kv[4].slice(lead.length))) return `${kv[1]}${kv[2]}${kv[3]}${lead}${maskText(kv[4].slice(lead.length), depth - 1, env)}`;
+  }
+  if (kv) return depth > 0 ? `${kv[1]}${kv[2]}${kv[3]}${maskText(kv[4], depth - 1, env)}` : kv[4].trim() === '' ? part : `${kv[1]}${kv[2]}=${MASK}`; // budget spent: fail-safe
   const h = HDR.exec(part);
   if (h && !URL_SHAPE.test(part)) return secretFlag(h[1]) ? `${h[1]}: ${MASK}` : part;
   const b = BEARER.exec(part);
@@ -239,11 +245,12 @@ function maskShellString(v0: string, depth: number, env?: Env, plain = false): s
   const tails: string[] = [];
   const outWords: string[] = [];
   words.forEach((w, i) => {
-    const m = /[;&|]+$/.exec(w);
-    const body = m ? w.slice(0, m.index) : w;
-    const tail = m ? m[0] : '';
+    let e = w.length; // the trailing run of `;`, `&`, `|` (a backward loop: a regex `[;&|]+$` is quadratic on a long run)
+    while (e > 0 && ';&|'.includes(w[e - 1])) e--;
+    const body = w.slice(0, e);
+    const tail = w.slice(e);
     // a stray quote or backslash in front of an unquoted word (`\"--token`, an unmatched `"`) is set aside, so the flag behind it is seen
-    const lead = unquote(body)[1] === '' ? (/^[\\"'`]+/.exec(body) ?? (/^[-/]/.test(body) ? null : /^[^\s"'\\]*[\\"'`]+(?=[-/])/.exec(body)))?.[0] ?? '' : '';
+    const lead = unquote(body)[1] === '' ? (/^[\\"'`]+/.exec(body) ?? (/^[-/]/.test(body) ? null : /^[^\s"'\\`]*[\\"'`]+(?=[-/])/.exec(body)))?.[0] ?? '' : '';
     const core = body.slice(lead.length);
     leads[i] = lead;
     tails[i] = tail;
@@ -341,6 +348,13 @@ function maskArgs(args: readonly string[], env: Env, d: number, top = false): st
         else if (HEADER_FLAGS.has(f.name.toLowerCase())) out.push(W(`${f.name}${f.sep}${maskHeaderValue(f.rest, env, d)}`));
         else out.push(W(`${f.name}${f.sep}${rd(maskText(f.rest, d, env))}`));
         continue;
+      }
+      {
+        // `OPTS=\"--token` (a secret flag with no value, as the value of NAME=): the next word is its value
+        const kvm = KV.exec(a.replace(/^[\\"'`]+/, ''));
+        const inner = kvm ? kvm[4].replace(/^[\\"'`]+/, '') : '';
+        const f2 = inner.startsWith('-') || inner.startsWith('/') ? parseFlag(inner) : undefined;
+        if (f2 && f2.rest === undefined && secretFlag(f2.name) && !secretFlag(kvm![2].replace(ENV_PREFIX, ''))) pending = 'secret';
       }
       out.push(W(rd(maskText(a, d, env))));
     } catch {

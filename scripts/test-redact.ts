@@ -513,6 +513,11 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.strictEqual(maskSecretArgs(['-c', 'srv `--token ' + SEC + '`'])[1], 'srv `--token ' + R, 'backtick before a flag');
   // the plain-whitespace fallback on its own: one glued word with spaces, no whole-quoted word, no leading quote
   assert.strictEqual(maskSecretArgs(['-c', 'srv a"b --token ' + SEC + '"c'])[1], 'srv a"b --token ' + R, 'fallback: plain split of a glued word');
+  // Paco's review: a flag opened inside a KV value behind a stray quote marks the next word (three forms)
+  assert.strictEqual(maskSecretArgs(['-c', 'bash -c "OPTS=\\"--token ' + SEC + '\\" srv"'])[1], 'bash -c "OPTS=\\"--token ' + R, 'Paco 2a: args');
+  noSec(maskSecretCommand('bash -c "OPTS=\\"--token ' + SEC + '\\" srv"'), 'Paco 2b: command');
+  noSec(maskSecretArgs(['X="X=\\"--token ' + SEC + '\\""']), 'Paco 2c: X="X=\\"--token SEC\\""');
+  noSec(maskSecretArgs(['OPTS=\\"--token=' + SEC + '\\"']), 'Paco 2d: --token=SEC behind a stray quote');
   // (m of 14b still) env prefix keeps other names
   assert.deepStrictEqual(maskSecretArgs(["$env:PORT='8080'; srv"]), ["$env:PORT='8080'; srv"], 'b: $env:PORT unchanged');
 
@@ -536,6 +541,24 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     const ratio = tBig / Math.max(tSmall, 20);
     console.log(`redact: 14c linearity ${JSON.stringify(unit)} 50k=${Math.round(tSmall)} ms 400k=${Math.round(tBig)} ms ratio ${ratio.toFixed(1)}`);
     assert.ok(tBig < 8000 && ratio < 24, `14c: ${JSON.stringify(unit)} grew too fast: ${tSmall} -> ${tBig} ms (ratio ${ratio.toFixed(1)})`);
+  }
+  // single-character runs (a regex with an unanchored `+$`, or overlapping classes, is quadratic here): same interleaved ratio check
+  const runs: Array<[string, (n: number) => string]> = [
+    [';;; x', (n) => ';'.repeat(n) + ' x'], ['&&& x', (n) => '&'.repeat(n) + ' x'], ['||| x', (n) => '|'.repeat(n) + ' x'], ['a``` x', (n) => 'a' + '`'.repeat(n) + ' x'],
+    [';;;x y', (n) => ';'.repeat(n) + 'x y'], ['&&&x y', (n) => '&'.repeat(n) + 'x y'], ['|||x y', (n) => '|'.repeat(n) + 'x y'], ['a```b y', (n) => 'a' + '`'.repeat(n) + 'b y'],
+  ];
+  for (const [name, gen] of runs) {
+    const time = (x: string): number => { const t = process.hrtime.bigint(); run(x); return Number(process.hrtime.bigint() - t) / 1e6; };
+    const small = gen(50_000);
+    const big = gen(400_000);
+    let tSmall = time(small);
+    assert.ok(tSmall < 3000, `14c: run ${name} at 50k took ${tSmall} ms (quadratic?)`); // a quadratic one would take minutes at 400k
+    let tBig = Infinity;
+    for (let i = 0; i < 5; i++) { tSmall = Math.min(tSmall, time(small)); tBig = Math.min(tBig, time(big)); }
+    const ratio = tBig / Math.max(tSmall, 20);
+    const t200 = time(gen(200_000));
+    console.log(`redact: 14c run ${name} 50k=${Math.round(tSmall)} ms 400k=${Math.round(tBig)} ms ratio ${ratio.toFixed(1)} 200k=${Math.round(t200)} ms`);
+    assert.ok(t200 < 5000 && tBig < 8000 && ratio < 24, `14c: run ${name} grew too fast: ${tSmall} -> ${tBig} ms (ratio ${ratio.toFixed(1)}), 200k ${t200} ms`);
   }
 }
 
