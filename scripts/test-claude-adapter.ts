@@ -829,6 +829,28 @@ async function main(): Promise<void> {
     await ad.stop(sid);
     await ad.dispose();
   }
+  // spec 030 FR-038/FR-040: a switch applies from the next message: the CLI is relaunched with --resume and the new --model/--effort
+  {
+    const { ad, sp, events } = make();
+    const sid = await ad.start({ workspace: WS, permissionMode: 'ask', model: 'haiku' });
+    await ad.send(sid, { text: 'one' });
+    await until('first turn', () => (events.filter((e) => e.sessionId === sid && e.type === 'status' && (e as { status: string }).status === 'idle').length >= 2 ? true : undefined)); // 'Ready', then the end of the turn
+    const at = (a: string[], f: string) => (a.includes(f) ? a[a.indexOf(f) + 1] : undefined);
+    assert.strictEqual(at(sp.calls[0].args, '--model'), 'haiku');
+    const ev0 = events.length;
+    assert.deepStrictEqual((await ad.setModel!(sid, { model: 'sonnet', effort: 'high' })).status, 'applied');
+    const me = events.slice(ev0).find((e) => e.type === 'model') as { model: string; previousModel?: string; effort?: string; cause: string } | undefined;
+    assert.deepStrictEqual(me && [me.model, me.previousModel, me.effort, me.cause], ['sonnet', 'haiku', 'high', 'user']);
+    assert.strictEqual(sp.calls.length, 1, 'nothing is relaunched until the next message');
+    assert.strictEqual((await ad.setModel!(sid, { model: 'gpt-5.1' })).status, 'rejected', 'not a Claude model');
+    assert.strictEqual((await ad.setModel!(sid, { model: 'sonnet', effort: 'extreme' })).status, 'rejected', 'not a Claude effort');
+    await ad.send(sid, { text: 'two' });
+    await until('relaunch', () => (sp.calls.length >= 2 ? sp.calls[1] : undefined));
+    const a2 = sp.calls[1].args;
+    assert.deepStrictEqual([at(a2, '--model'), at(a2, '--effort'), at(a2, '--resume')], ['sonnet', 'high', sid], 'same session, new model and effort');
+    await ad.stop(sid);
+    await ad.dispose();
+  }
   fs.rmSync(WS, { recursive: true, force: true });
   console.log('claude adapter tests passed');
 }

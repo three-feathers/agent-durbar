@@ -241,8 +241,8 @@ const infoFor = (workspace: string, permMode: PermMode, id: string, model: strin
     permMode,
     model,
     effort,
-    // `unverified`: the real adapter's switch/compact calls come from the SDK docs and were never run on an account (spec 030 Phase 3).
-    modelControl: modelControlFor(ad, { unverified: true }),
+    // spec 030 FR-040: the adapter says whether its switch was checked on a real account and whether it has a context tier
+    modelControl: modelControlFor(ad, { unverified: !ad.capabilities.modelSwitch?.verified, contextTier: ad.capabilities.modelSwitch?.contextTier }),
     profiles: typeof ad.listAgentProfiles === 'function' && typeof ad.selectAgentProfile === 'function' ? true : undefined, // spec 043
     adapterId: ad.id,
     ...extra,
