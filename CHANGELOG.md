@@ -4,6 +4,10 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.9 tag)
 
+- Idea research: issues #128, #130, #131, #132 and #289 answered with recommendations; a draft spec 057 (briefing follow-through: safe mail reads and proposed actions in the inbox) and a research note in spec 048 (most of the office assistant is already covered by specs 041, 052 and 054). Specs only, no code.
+- Sign-in is checked with the service where the app allows it (Copilot: GitHub quota; Codex: OpenAI rate limits; Claude Code: local only), and a chat message refused because of the sign-in shows a calm card with **Sign in** and **Send again** instead of the raw 401 (spec 012 FR-156, FR-157; fakes and simulator, not yet on real accounts).
+- After a sign-in, Copilot's shared runtime is restarted so it uses the new login; open Copilot sessions reconnect on their own ("Reconnecting Copilot…") and keep their permissions and grants (spec 012 FR-158; fakes only, not yet on a real account).
+
 ## v0.1.0-alpha.9 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.9), 2026-10-20)
 
 Unsigned and not notarized; only Linux was run by hand. **Steer a Copilot session from GitHub web and mobile** (remote control, behind a native confirmation, never in Allow all). **Scheduled prompts Phase 2**: weekdays and weekly rules, a daylight-saving fix, per-session schedules, a per-schedule limit. **MCP forms and URL requests** in the chat. **AI themes with Copilot.** **A new website** with a landing page and a docs page. And five more rounds of usability reviews by AI personas (rounds 6 to 10): truthful status and diffs, an Activity log, motion with meaning, plain words for people who don't code, house rules, macOS conventions, a remembered window and sessions, and a less bulky layout. Every IPC call now checks where it comes from.

@@ -105,3 +105,28 @@ I type a question the chips don't cover ("Summarize what the api folder did toda
 
 - It builds on spec 002 (normalized events), 011 (usage totals), 020 (tool usage), 033 (floors), 012 (harnesses) and 030 FR-034 (a session in a chosen harness).
 - It is independent of spec 041 (the Durbar MCP server). The two could share the query layer later.
+
+## Changes
+
+### 2026-10-20: research for issue #130: what is already covered, and a slimmer first slice
+
+*Status of this spec is unchanged: draft, awaiting the owner's pick.* Since this draft was written (2026-10-19), other specs built much of what it asks for. Nothing here should be built twice:
+
+| Ask in #130 / this spec | Already covered by |
+| --- | --- |
+| "Who is waiting for me?" (US1) | **Needs you** inbox and answer bar, spec 052 FR-001, FR-027, FR-033 (built) |
+| Usage by folder, periods (US2) | **Cost** tab in Tools with periods and CSV, spec 052 FR-044 (built); usage totals, spec 011 |
+| What was approved, mode and limit changes | **Activity log**, spec 052 FR-071 (built) |
+| Free-form questions about the office with a model (US3) | **Durbar MCP server**, spec 041: the user's own MCP client (Claude Code, Copilot CLI, Claude Desktop, VS Code) reads folders, agents with their state, floors and usage totals, read-only, with no prompts or chat text (FR-010..FR-013). In progress: read tools built, the server does not listen yet (T017). The user's client pays for the model, so Durbar needs no assistant session, cap or snapshot of its own. |
+| Mobile access (Phase 2, Q3) | **Remote control**, spec 054 (Copilot per session, built; Claude channels and Codex planned). A phone can also reach spec 041 through a client that has its own remote route. |
+| Notifications | OS notifications, spec 052 and spec 054 FR-011 (built) |
+| Missed runs while away | **Since you were away**, spec 052 FR-089 (built) |
+
+**Still missing (the slim slice proposed to the owner):**
+- FR-003, the bounded per-agent **status timeline** (status changes and times only, no text), so "what finished today" and "what happened in the last hour" can be answered.
+- A small part of FR-002: the query functions *working on*, *finished today*, *last hour*, *longest running*, as pure code in `src/shared`.
+- Shown in two places only: a **Today** tab in Tools next to Activity (rows link to the chat), and one more read tool in spec 041 (*office timeline*), so the user's own MCP client can answer "what finished today?".
+
+**Proposed to park:** the Office assistant panel with its own model session (FR-001, FR-005, FR-006; open question Q1), and supervised actions (US4, Q5). Revisit after spec 041 ships and someone has used it from a real client.
+
+**New open question Q6:** is the slim slice above (timeline + Today tab + a spec 041 read tool) the version to build, instead of the panel?

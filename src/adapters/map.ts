@@ -277,7 +277,8 @@ export class EventMapper {
         this.reasoningSeen.clear();
         return this.emit({ type: 'status', status: 'idle', intent: d.aborted ? 'Aborted' : undefined });
       case 'session.error':
-        return this.emit({ type: 'status', status: 'error', intent: `${d.errorType}: ${d.message}`, agentId });
+        // spec 012 FR-157: the runtime's own category decides when it has one; otherwise the message is read (markAuthError)
+        return this.emit({ type: 'status', status: 'error', intent: `${d.errorType}: ${d.message}`, agentId, ...copilotErrorKind(d.errorType) });
       default:
         return;
     }
@@ -297,4 +298,12 @@ function contentOf(result: unknown): string | undefined {
   if (typeof result === 'string') return result;
   const c = (result as { content?: unknown }).content;
   return typeof c === 'string' ? c : undefined;
+}
+
+/** FR-157: Copilot's `session.error` category: `authentication` is a sign-in failure; a known other category never is (a 403 for a model policy is not a sign-in problem). */
+const NOT_SIGN_IN = ['authorization', 'policy', 'quota', 'rate_limit', 'context_limit', 'query'];
+export function copilotErrorKind(errorType: unknown): { errorKind?: 'auth' } {
+  if (errorType === 'authentication') return { errorKind: 'auth' };
+  if (typeof errorType === 'string' && NOT_SIGN_IN.includes(errorType)) return { errorKind: undefined };
+  return {};
 }

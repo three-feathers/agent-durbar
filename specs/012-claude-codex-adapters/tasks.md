@@ -165,3 +165,16 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 - [x] T116 (sim) Question card form (inputs, select, checkbox, password for secrets, labels, required marks, inline messages, Submit / Decline / Cancel), URL mode (host, Open in browser through main, Done / Cancel), IPC and preload, simulator `simelicit=1|url` [FR-153, FR-154]
 - [x] T117 Tests: `scripts/test-elicit.ts` (registered as `test:elicit`), Codex and Claude fake-harness cases [FR-151..FR-155]
 - [ ] T118 (needs-owner-approval) (real-account) One real MCP server that elicits a form and a URL, on Copilot, Claude Code and Codex [FR-152..FR-154]. (Simulator screenshots of the form and URL cards at 1440x900 and 1280x800: done, `scripts/shots-012-elicit.js`, `docs/screenshots/012-elicit-*`.)
+
+## Changes 2026-10-20 (sign-in checked with the service; a refused session offers Sign in)
+
+- [x] T119 (fakes) `verifySignIn` in the adapter interface; `src/adapters/autherrors.ts` classifier; `withSignIn` uses it (6 s), hints per answer, cached with the list [FR-156]
+- [x] T120 (fakes) Copilot `verifySignIn` (`getAuthStatus`, `account.getQuota`, `models.list`), Codex `verifySignIn` (`account/rateLimits/read`, `getAuthStatus` fallback without the token), Claude `verifySignIn` (local only); fake SDK and fake app-server switches; tests [FR-156]
+- [x] T121 (fakes) `errorKind: 'auth'` on the normalized `error` status; Copilot, Codex and Claude mapping (result, assistant marker, synthetic message, stderr at exit); event guard; tests with the owner's real 401 text [FR-157]
+- [x] T122 (sim) Main marks the app `not-signed-in` and sends `adapters:changed`; chat sign-in card (Sign in through `DurbarHarnesses.signIn`, Signed in ✓, Send again after a restart, the before-send card that keeps the typed text); `src/renderer/signin.js` with tests [FR-157]
+- [x] T123 (sim) Simulator `simauth=out|expired`; driver `scripts/shots-012-signin-chat.js` [FR-157]
+- [ ] T124 (real-account) The lead checks on real accounts: an expired or revoked sign-in for Copilot, Claude Code and Codex shows Not signed in after Check again (Copilot, Codex) or at the first message (Claude), the card's Sign in and Send again work, and the screenshots from `scripts/shots-012-signin-chat.js` at 1440x900 and 1280x800 [FR-156, FR-157]
+
+## Changes 2026-10-20 (Copilot's shared runtime picks up a new sign-in)
+
+- [x] T125 (fakes) Optional `refreshAuth()` in the adapter interface; Copilot stops and recreates its shared client and resumes the live sessions on it ("Reconnecting Copilot…"); main calls it after a sign-in that ended well, before detection and `harness:done` (`afterSignIn`); `RestartingFakeCopilot` and tests in `test:authcheck` [FR-158]

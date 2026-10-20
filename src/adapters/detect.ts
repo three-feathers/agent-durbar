@@ -197,17 +197,27 @@ export const CLAUDE_SIGN_IN_HINT = 'Sign in first: open Settings > Agent apps an
 export async function detectClaude(env: DetectEnv, exec: Exec, configuredPath?: string): Promise<DetectResult & { path?: string }> {
   const r = await detectBinary(CLAUDE_BINARY, env, exec, configuredPath);
   if (r.state !== 'ready' || !r.path) return r;
+  const loggedIn = await claudeLoggedIn(r.path, env, exec);
+  if (loggedIn === false) return { ...r, state: 'not-signed-in', hint: CLAUDE_SIGN_IN_HINT };
+  if (loggedIn === true) return { ...r, hint: 'Signed in to Claude Code on this computer.' };
+  return r;
+}
+
+/**
+ * `claude auth status --json` of a found `claude` (local, no prompt, nothing billed): its `loggedIn`, or undefined when unclear
+ * (an older CLI, a timeout, not JSON). Nothing else of the output (email, organisation, plan) is read or kept. Spec 012 FR-132, FR-156.
+ */
+export async function claudeLoggedIn(found: string, env: DetectEnv, exec: Exec): Promise<boolean | undefined> {
   try {
-    const a = await execFound(r.path, ['auth', 'status', '--json'], env, exec);
+    const a = await execFound(found, ['auth', 'status', '--json'], env, exec);
     if (a && !a.timedOut && !a.errorCode && a.stdout) {
       const loggedIn = (JSON.parse(a.stdout) as { loggedIn?: unknown } | null)?.loggedIn;
-      if (loggedIn === false) return { ...r, state: 'not-signed-in', hint: CLAUDE_SIGN_IN_HINT };
-      if (loggedIn === true) return { ...r, hint: 'Signed in to Claude Code on this computer.' };
+      if (typeof loggedIn === 'boolean') return loggedIn;
     }
   } catch {
-    /* unclear: ready, as before */
+    /* unclear */
   }
-  return r;
+  return undefined;
 }
 
 export const CODEX_SIGN_IN_HINT = 'Sign in first: open Settings > Agent apps and choose Sign in… (or run `codex login`).';

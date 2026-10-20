@@ -11,6 +11,7 @@
  * - Settings files are never loaded (`--setting-sources ""`, Q8); the folder's `CLAUDE.md` (with `@` imports inside the
  *   folder) goes in as an appended system prompt instead (owner decision, review of #160).
  */
+import { isAuthError, markAuthError } from './autherrors';
 import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
@@ -25,7 +26,10 @@ import type { AdapterCapabilities, AdapterDescriptor, PermissionMode } from './c
 import type { EventBody } from './map';
 import { PermissionBroker, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
-import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec, StartOptions, Unsubscribe } from './types';
+import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec, SignInCheck, StartOptions, Unsubscribe } from './types';
+
+/** FR-156: what Settings says of a Claude Code that `auth status` calls signed in: only the first message can confirm it. */
+export const CLAUDE_LOCAL_SIGN_IN = 'Signed in on this computer; confirmed at the first message.';
 import { parseUsdCap } from '../shared/credits';
 import { simpleDiff, clipDiff } from '../shared/diff';
 import { HANDOFF_PROMPT, cleanSummary } from './handoff';
@@ -338,6 +342,8 @@ export interface ClaudeAdapterDeps {
   configDir?: string;
   /** Runs `claude` once with fixed arguments (spec 030 FR-034: the hand-off summary); tests inject a fake. */
   runOnce?: RunOnce;
+  /** Spec 012 FR-156: `loggedIn` of `claude auth status --json` (local); tests inject a fake. Default: runs it on the found `claude`. */
+  loggedIn?: () => Promise<boolean | undefined>;
 }
 
 export type RunOnce = (file: string, args: string[], o: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number }) => Promise<{ code: number | null; stdout: string }>;
@@ -438,6 +444,23 @@ export class ClaudeAdapter implements AgentAdapter {
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * Spec 012 FR-156: Claude Code offers no free server-side check (`claude auth status` reads this computer only; any real request
+   * spends tokens). So a sign-in that `auth status` denies is `signed-out`, and anything else is `unknown`: an expired or refused
+   * sign-in is learned at the first message (FR-157).
+   */
+  async verifySignIn(): Promise<SignInCheck> {
+    const probe = this.deps.loggedIn ?? (async () => {
+      const p = await this.deps.claudePath();
+      if (!p) return undefined;
+      const { claudeLoggedIn, nodeDetectEnv, nodeExec } = await import('./detect');
+      return claudeLoggedIn(p, nodeDetectEnv(), nodeExec);
+    });
+    const loggedIn = await probe().catch(() => undefined);
+    if (loggedIn === false) return { status: 'signed-out', detail: 'No Claude Code sign-in on this computer.' };
+    return { status: 'unknown', detail: CLAUDE_LOCAL_SIGN_IN };
   }
 
   private modelCache?: { at: number; list: Promise<ModelOption[]> };
@@ -920,6 +943,8 @@ export class ClaudeAdapter implements AgentAdapter {
     if (info.stderrTail) this.debug?.(`claude stderr (exit ${String(info.code)}): ${info.stderrTail}`);
     s.broker.denyPending();
     this.cancelQuestions(s);
+    // FR-157: Claude ended because its sign-in failed; the stderr text itself is never shown (only this sentence)
+    if (isAuthError(info.stderrTail)) return this.emit(s.id, { type: 'status', status: 'error', intent: 'Claude Code could not authenticate: its sign-in is missing or has expired.', errorKind: 'auth' });
     this.emit(s.id, { type: 'status', status: 'error', intent: info.code === 0 ? 'Claude ended the session; send a message to continue.' : `Claude stopped unexpectedly (exit ${info.code ?? info.signal ?? '?'}). Send a message to resume.` });
   }
 
@@ -944,7 +969,7 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 
   private emit(sessionId: string, body: EventBody): void {
-    const event = { ...body, sessionId, timestamp: Date.now() } as AgentEvent;
+    const event = { ...markAuthError(body), sessionId, timestamp: Date.now() } as AgentEvent; // FR-157: a sign-in failure is marked
     for (const l of this.listeners) {
       try {
         l(event);

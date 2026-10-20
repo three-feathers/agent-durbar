@@ -31,6 +31,13 @@ export interface FakeCodexOptions {
   holdTurnStart?: boolean;
   /** Withhold the `initialize` answer until `releaseInitialize()`. */
   holdInitialize?: boolean;
+  /**
+   * Spec 012 FR-156: how `account/rateLimits/read` answers: `ok` (default, a rate-limit snapshot), `unauthorized` (an auth error),
+   * `network` (another error), `missing` (method not found, an older Codex).
+   */
+  rateLimits?: 'ok' | 'unauthorized' | 'network' | 'missing';
+  /** What `getAuthStatus` reports as `authMethod` (default `chatgpt`; null = not signed in). */
+  authMethod?: string | null;
   /** Exit (no answer) when a request with this method arrives. */
   exitOn?: { method: string; code?: number | null; signal?: NodeJS.Signals | null };
 }
@@ -326,6 +333,15 @@ export class FakeCodexServer {
         if (open) this.completeTurn(child, tid, open, 'interrupted');
         return;
       }
+      case 'account/rateLimits/read': {
+        const r = this.opts.rateLimits ?? 'ok';
+        if (r === 'missing') return this.fail(child, id, -32601, `method not found: ${method}`);
+        if (r === 'unauthorized') return this.fail(child, id, -32603, 'failed to fetch codex rate limits: 401 Unauthorized');
+        if (r === 'network') return this.fail(child, id, -32603, 'failed to fetch codex rate limits: error sending request');
+        return this.reply(child, id, { rateLimits: { primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: 1792403999 }, secondary: null } });
+      }
+      case 'getAuthStatus':
+        return this.reply(child, id, { authMethod: this.opts.authMethod === undefined ? 'chatgpt' : this.opts.authMethod, authToken: null, requiresOpenaiAuth: true });
       case 'thread/unsubscribe':
         return this.reply(child, id, { status: 'unsubscribed' });
       default:

@@ -1296,7 +1296,18 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const simKinds = simKindsParam === '1' || simKindsParam === 'solo'; // spec 012 FR-136: '1' = two ready harnesses (picker shown), 'solo' = only Copilot ready (picker hidden)
     const copilotCaps = SIM_COPILOT_CAPS;
     const simInstalled = new Set<string>(); // a simulated install that ended well: the next check finds it (like a real PATH that already had it)
-    const simAdapters = (): AdapterInfo[] => [
+    /*
+     * Spec 012 FR-157: `simauth=out` = Copilot and Claude Code are not signed in from the start (the chat shows the sign-in card
+     * instead of sending); `simauth=expired` = they look signed in, but the next message fails with Claude's real 401 text and flips
+     * them to not signed in. The simulated sign-in (Settings or the chat's card) signs them in again.
+     */
+    const simAuthMode = simQuery.get('simauth');
+    const simSignedOut = new Set<string>(simAuthMode === 'out' ? ['copilot', 'claude'] : []);
+    const simExpired = new Set<string>(simAuthMode === 'expired' ? ['copilot', 'claude'] : []);
+    const SIM_AUTH_ERROR = 'Failed to authenticate. API Error: 401 OAuth access token is invalid.';
+    const signInState = (a: AdapterInfo): AdapterInfo => (a.state === 'ready' && simSignedOut.has(a.id) ? { ...a, state: 'not-signed-in', hint: 'Sign in first: open Settings > Agent apps and choose Sign in….' } : a);
+    const simAdapters = (): AdapterInfo[] => simAdapterList().map(signInState);
+    const simAdapterList = (): AdapterInfo[] => [
       { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps } },
       ...(simKinds ? [
         simKindsParam === 'solo' && !simInstalled.has('claude')
@@ -1321,13 +1332,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       version: async () => 'sim',
       // Spec 012 T017 (FR-063): only Copilot by default; simkinds=1 adds a Claude Code that is not installed and a Codex that is too old.
       listAdapters: async () => simAdapters(),
+      onAdaptersChanged: () => () => undefined, // FR-157: the window marks the app itself from the auth error; nothing else pushes here
       // Spec 051 FR-009: harness setup in the simulator: canned plans and output (a fake link and code), nothing runs
       copilotAuth: async () => ({ known: true, signedIn: true, ...(simQuery.get('simnopwsh') === '1' ? { pwshMissing: true } : {}) }), // spec 052 FR-073: page address simnopwsh=1 shows the Windows PowerShell 7 hint
       harnessPlans: async (kind, op) => ({ name: kind === 'copilot' ? 'the GitHub Copilot CLI' : kind === 'codex' ? 'the Codex CLI' : 'Claude Code', page: 'https://example.invalid/', plans: kind === 'codex' ? [{ manager: 'npm', display: (op === 'update' ? 'npm install -g @openai/codex@latest' : 'npm install -g @openai/codex') }] : [{ manager: 'brew', display: 'brew install --cask claude-code' }, { manager: 'npm', display: 'npm install -g @anthropic-ai/claude-code', note: 'Deprecated by Anthropic: use it only if nothing else works.' }] }),
       harnessRun: async (kind, op) => {
         const t0 = Date.now();
         const prog = (p: Record<string, unknown>) => simHarness.progress.forEach((cb) => cb({ kind, op, elapsedMs: Date.now() - t0, lines: [], ...p } as never));
-        const done = (ok: boolean) => { simHarness.running = null; simHarness.done.forEach((cb) => cb({ kind, op, ok, exitCode: ok ? 0 : 1, lines: ['(simulated)'] } as never)); };
+        const done = (ok: boolean) => { simHarness.running = null; if (ok && op === 'signin') { simSignedOut.delete(kind); simExpired.delete(kind); } simHarness.done.forEach((cb) => cb({ kind, op, ok, exitCode: ok ? 0 : 1, lines: ['(simulated)'] } as never)); };
         if (op === 'signin') {
           setTimeout(() => prog({ url: kind === 'claude' ? 'https://claude.com/cai/oauth/authorize?simulated=1' : 'https://auth.openai.com/codex/device', ...(kind === 'claude' ? { needsPaste: true } : { code: 'SIM1-ABCDE' }) }), 300);
           simHarness.running = { kind, finish: () => done(true) };
@@ -1403,6 +1415,17 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!s) return { ok: false, error: 'unknown agent' };
         if (s.perm) return { ok: false, error: 'Waiting for your permission decision first.' };
         if (s.limitReq) return { ok: false, error: 'The spending limit was reached. Choose Raise limit, Remove limit or Stop here first.' };
+        const kind = s.info.adapterId ?? 'copilot';
+        if (simExpired.has(kind) || simSignedOut.has(kind)) {
+          // FR-157: the app refuses the turn because of the sign-in, as Claude Code did on a real account
+          simExpired.delete(kind);
+          simSignedOut.add(kind);
+          window.setTimeout(() => {
+            emit({ type: 'status', sessionId: id, timestamp: now(), status: 'working', intent: 'Thinking' });
+            emit({ type: 'status', sessionId: id, timestamp: now(), status: 'error', intent: SIM_AUTH_ERROR, errorKind: 'auth' });
+          }, 300);
+          return { ok: true };
+        }
         window.setTimeout(() => void reply(s, text), 400);
         return { ok: true };
       },

@@ -6,6 +6,7 @@
  * Same pattern as `EventMapper` in map.ts: stateful, emits event bodies (the adapter adds `sessionId` and `timestamp`).
  * Needs the SDK options `includePartialMessages: true` and `forwardSubagentText: true`.
  */
+import { isAuthError } from './autherrors';
 import type { EventBody } from './map';
 import type { McpServerStatus } from './types';
 
@@ -128,6 +129,8 @@ export class ClaudeMapper {
 
   /** The adapter asked the CLI to interrupt: the turn's closing `error_during_execution` result is an abort, not an error (seen on a real run, spec 012 T094). */
   private abortExpected = false;
+  /** FR-157: an assistant message of this turn carried Claude's `error: authentication_failed`. */
+  private authFailed = false;
   expectAbort(): void {
     this.abortExpected = true;
   }
@@ -172,6 +175,7 @@ export class ClaudeMapper {
       case 'stream_event':
         return this.stream(m, agentId);
       case 'assistant':
+        if (!agentId && claudeAuthFailure(m)) this.authFailed = true;
         return this.assistant(m, agentId);
       case 'user':
         return this.user(m, agentId);
@@ -370,10 +374,26 @@ export class ClaudeMapper {
     const subtype = str(m.subtype) ?? 'success';
     const aborted = this.abortExpected;
     this.abortExpected = false;
-    if (subtype === 'success' && m.is_error !== true) return this.emit({ type: 'status', status: 'idle' });
-    if (aborted && subtype === 'error_during_execution') return; // the adapter already reported "Aborted"
+    // FR-157: "Failed to authenticate. API Error: 401 …", "Invalid API key · Please run /login": the sign-in, not the turn, failed.
+    // The text of a turn that ended well is never read (an answer may well talk about a 401); Claude's own error marker is.
+    const auth = this.authFailed || ((subtype !== 'success' || m.is_error === true) && isAuthError(m.result));
+    this.authFailed = false;
+    if (!auth && subtype === 'success' && m.is_error !== true) return this.emit({ type: 'status', status: 'idle' });
+    if (!auth && aborted && subtype === 'error_during_execution') return; // the adapter already reported "Aborted"
+    if (auth) return this.emit({ type: 'status', status: 'error', intent: (str(m.result) ?? 'Claude Code could not authenticate.').replace(/\s+/g, ' ').slice(0, 300), errorKind: 'auth' });
     const denials = Array.isArray(m.permission_denials) ? m.permission_denials.length : 0;
     const text = subtype === 'success' ? 'error' : subtype;
     this.emit({ type: 'status', status: 'error', intent: denials ? `${text} (${denials} permission denial${denials === 1 ? '' : 's'})` : text });
   }
+}
+
+/**
+ * FR-157: an assistant message that is Claude Code's own sign-in error, not the model's words: it carries `error`
+ * (`authentication_failed`) or it is a synthetic message (no model call happened) whose text reads like a sign-in failure.
+ */
+export function claudeAuthFailure(m: ClaudeMessage): boolean {
+  if (typeof m.error === 'string' && /auth/i.test(m.error)) return true;
+  const msg = m.message as { model?: unknown; content?: unknown } | undefined;
+  if (!msg || msg.model !== '<synthetic>' || !Array.isArray(msg.content)) return false;
+  return msg.content.some((b) => !!b && typeof b === 'object' && (b as { type?: unknown }).type === 'text' && isAuthError((b as { text?: unknown }).text));
 }
