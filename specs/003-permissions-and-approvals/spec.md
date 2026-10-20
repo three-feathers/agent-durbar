@@ -175,3 +175,8 @@ The mode names stay **Read-only / Ask first / Allow all** (internal `read-only` 
 - **FR-088** `[IMPLEMENTED]` (closes the FR-032 known gap, T028) With the Windows path flavor, a grant's folder key ignores case and treats `/` and `\` alike (`C:/Repo/src` and `c:\repo\src` are one folder, key `write:c:\repo\src`); the label keeps the spelling. POSIX keys stay case-sensitive. FR-032's example keys are now lower case. `test:` `test:permissions` (a grant for `C:\repo\src` covers `c:\REPO\SRC\d.ts`).
 - **FR-089** `[IMPLEMENTED]` (T026) A request without a `toolCallId` gets the id `<kind>-<time>-<n>` with a counter per broker, so two requests in the same millisecond never share an id (before, the second replaced the first in the pending list). `test:` `test:permissions`.
 
+
+### 2026-10-20: MCP tools in Read-only on a real Copilot session (cross-reference to spec 044)
+
+- `real:` 2026-10-20 (details and cost in spec 044 `## Changes`): in Read-only, a Copilot MCP tool whose server marks it `readOnlyHint: true` runs **without any permission request reaching the broker**; the same tool without the hint arrives as kind `mcp` and the broker denies it. So "Read-only denies MCP" holds only for tools the server does not mark read-only.
+- `[KNOWN GAP]` The runtime trusts the server's own hint: a server that marks a writing tool read-only runs it in Read-only, and Durbar never sees the call as a permission request (it still shows in the chat as a tool call). Not checked on Claude Code or Codex.

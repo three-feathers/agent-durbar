@@ -4,9 +4,12 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.9 tag)
 
+- Real-account checks (2026-10-20, about 1 AI credit and $0.004): the Copilot AI theme maker now reads token names written without `--` (Copilot wrote them that way, so every theme failed); remote control that Copilot answers "not started" is no longer shown as on; Copilot's refused-sign-in error at Send is now recognised; a folder's `.claude` hooks and `.mcp.json` confirmed not to run in Claude; read-only MCP tools confirmed to run in Read-only on Copilot (specs 012, 040, 044, 054).
+- Idea research: issues #128, #130, #131, #132 and #289 answered with recommendations; a draft spec 057 (briefing follow-through: safe mail reads and proposed actions in the inbox) and a research note in spec 048 (most of the office assistant is already covered by specs 041, 052 and 054). Specs only, no code.
 - **Mac: the title bar on every screen (spec 052 FR-105, #345).** A notice strip over an open chat is now the drag row with room for the traffic lights; dialogs, the palette, popovers and menus can be clicked (they no longer sit over a drag area); the chat strip keeps a grab area on its right and its scroller is meant to work (not checked on a real Mac); the top bar reserves the traffic-light room on its first row only; Settings or Tools over a chat keep their centred header. Mac-only CSS, new `npm run check:mac-titlebar` (simulator geometry, not run on a real Mac).
 
 - Sign-in is checked with the service where the app allows it (Copilot: GitHub quota; Codex: OpenAI rate limits; Claude Code: local only), and a chat message refused because of the sign-in shows a calm card with **Sign in** and **Send again** instead of the raw 401 (spec 012 FR-156, FR-157; fakes and simulator, not yet on real accounts).
+- After a sign-in, Copilot's shared runtime is restarted so it uses the new login; open Copilot sessions reconnect on their own ("Reconnecting Copilot…") and keep their permissions and grants (spec 012 FR-158; fakes only, not yet on a real account).
 
 ## v0.1.0-alpha.9 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.9), 2026-10-20)
 

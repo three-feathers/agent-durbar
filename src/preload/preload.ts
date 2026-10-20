@@ -68,6 +68,7 @@ const api: DurbarApi = {
   copilotAuth: () => ipcRenderer.invoke('harness:copilotAuth'),
   onHarnessProgress: (cb) => sub('harness:progress', cb),
   onHarnessDone: (cb) => sub('harness:done', cb),
+  onRemoteOff: (cb) => sub('agents:remoteOff', cb),
   exportTheme: (id) => ipcRenderer.invoke('theme:export', id),
   setCap: (id, credits) => ipcRenderer.invoke('agents:setCap', id, credits),
   setPaused: (id, paused) => ipcRenderer.send('agents:setPaused', id, paused),

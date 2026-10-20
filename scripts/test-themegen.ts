@@ -60,6 +60,18 @@ assert.deepStrictEqual(firstJsonObject('{bad} then {"ok":true}'), { ok: true });
   }
 }
 
+// token names without the leading `--` (what Copilot's `auto` wrote on 2026-10-20) are read as the same tokens; unknown bare names still drop
+{
+  const bare = { ...(light as Record<string, unknown>), tokens: { ...Object.fromEntries(Object.entries((light as { tokens: Record<string, string> }).tokens).map(([k, v]) => [k.replace(/^--/, ''), v])), 'not-a-token': '#123456' } };
+  const a = parseGeneratedTheme(JSON.stringify(light), 'a newsroom', ctx);
+  const b = parseGeneratedTheme(JSON.stringify(bare), 'a newsroom', ctx);
+  assert.ok(a.ok && b.ok, JSON.stringify(b).slice(0, 200));
+  if (a.ok && b.ok) {
+    assert.deepStrictEqual((b.manifest as { tokens: unknown }).tokens, (a.manifest as { tokens: unknown }).tokens);
+    assert.ok(b.warnings.some((w) => /1 colour was not usable/.test(w)), 'the unknown bare name is dropped');
+  }
+}
+
 // a good light reply: valid user theme, art rebuilt by the sanitizer, no issues
 {
   const r = parseGeneratedTheme(JSON.stringify(light), 'a newsroom', ctx);

@@ -27,6 +27,8 @@ const AUTH = [
   /\brun `?(?:copilot|codex|claude)(?: auth)? login`?/i,
   /\blogin required\b/i,
   /\bre-?authenticate\b/i,
+  // Copilot runtime 1.0.98 at Send with a refused token (real, 2026-10-20): "... get_model_list: GenericFailure, Session was not created with authentication info or custom provider"
+  /not created with authentication info/i,
 ];
 
 /** True when `message` reads like a failed or missing sign-in. */
