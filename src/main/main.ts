@@ -737,6 +737,8 @@ const harnessSetup = new HarnessSetup({
   },
   send: (channel: string, p: unknown) => toRenderer(channel, p),
   redetect: async () => { await adaptersList(true); },
+  // spec 012 FR-158: only an adapter already created is refreshed (none is created here); Copilot restarts its shared client
+  afterSignIn: async (kind: string) => { await router.created().find((ad) => ad.id === kind)?.refreshAuth?.(); },
   realpath: (p: string) => fs.realpathSync(p),
   trustedPath: (p: string) => process.platform === 'win32' || posixTrusted(p, (q) => fs.statSync(q).mode),
 } as ConstructorParameters<typeof HarnessSetup>[0]);
