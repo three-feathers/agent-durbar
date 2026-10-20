@@ -71,14 +71,22 @@ small PR-sized step with its own test. No task spends AI credits except Phase 6,
 - [ ] T042 [US4] Dialog footer button and the confirmation text (Cancel focused) when working/thinking/waiting, grants or remote on;
   after the restart the dialog refreshes; Claude line "servers start with your next message" (Q11) [FR-023, FR-030]
 - [ ] T043 [US4] Simulator: canned Restart session; screenshots of the confirmation [FR-040, FR-042]
+- [ ] T044 [US4] Sign-in on Restart session (review note 2): a resume that fails for sign-in returns `errorKind: 'auth'`, marks the app
+  signed out and the renderer shows spec 012 FR-157's sign-in card in the chat instead of a toast; `simauth=expired` makes the simulator
+  fail the restart that way; test in `test-mcp-session` (auth error vs other error) [FR-027, FR-040, FR-041]
 
 ## Phase 5: User Story 5, Open log folder (P3)
 
 - [ ] T050 [P] [US5] `src/adapters/mcplogdirs.ts` (pure, injected env and platform): Copilot, Claude per server (Q6), Codex (Q7);
   `scripts/test-mcplogdirs.ts` for Linux, macOS and Windows with `COPILOT_HOME`, `CODEX_HOME`, `XDG_CACHE_HOME`, `LOCALAPPDATA`, long
   names -> undefined [FR-013]
-- [ ] T051 [US5] `mcpLogFolder` on the three adapters and the `mcpLogs` capability values; contract C2 lines [FR-010, FR-013]
-- [ ] T052 [US5] `agents:mcpRevealLogs(id, name?)`: folder from the adapter, `fs.stat` directory check, `shell.showItemInFolder`; never
+- [ ] T051 [US5] `mcpLogFolder` on the three adapters (returns `{root, folder}`) and the `mcpLogs` capability values; contract C2 lines
+  [FR-010, FR-013]
+- [ ] T054 [P] [US5] `insideRoot(realRoot, realFolder, pathImpl)` (pure) and the realpath step in main (review note 1); tests: symlink out
+  of the root (real temp folders on POSIX), `..` in a server name, other Windows drive (`path.win32`), missing root, the normal case
+  [FR-026, FR-041]
+- [ ] T052 [US5] `agents:mcpRevealLogs(id, name?)`: folder from the adapter, the FR-026 check (T054), `fs.stat` directory check,
+  `shell.showItemInFolder`; never
   lists or reads files; `logFolder` flags in `agents:mcp`; test with an injected `shell` and fs [FR-020, FR-024, FR-025]
 - [ ] T053 [US5] Dialog: *Open log folder* in the footer (session folders) and in a row's *Details* (per-server folders), worded as "the
   agent app's log folder" with no promise of server output, Claude's link labelled "not documented by Anthropic" (Q6); simulator toast [FR-030, FR-040, FR-051]
@@ -112,6 +120,6 @@ research.md and change `read:` to `real:` where confirmed. Do not open or paste 
 
 ## Dependencies
 
-- T001 (done) before everything. Phase 1 before Phases 2-5. T020 before T021, T026, T032, T041, T052. T040 before T041.
+- T001 (done) before everything. Phase 1 before Phases 2-5. T020 before T021, T026, T032, T041, T052. T040 before T041 before T044. T054 before T052.
 - Phases 3, 4 and 5 are independent of each other after Phase 2. Phase 6 after the phase it checks. Phase 7 last.
 - MVP = Phases 1-2 (words, masked errors, live refresh): it answers the owner's "not clear how to start them" on its own.

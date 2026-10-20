@@ -61,7 +61,8 @@ Simulator and fakes first; real checks are no-prompt and need the owner's go-ahe
 7. **Log folders** `src/adapters/mcplogdirs.ts` (pure): Copilot `join(env.COPILOT_HOME || home/.copilot, 'logs')`; Codex
    `join(env.CODEX_HOME || home/.codex, 'log')`; Claude cache root per OS (`$XDG_CACHE_HOME` or `~/.cache` on Linux,
    `~/Library/Caches` on macOS, `%LOCALAPPDATA%` + `\claude-cli-nodejs\Cache` on Windows) + sanitized project + `mcp-logs-` + sanitized
-   server; names over 200 characters give `undefined`. Unit test for each OS.
+   server; names over 200 characters give `undefined`. Each result also returns its vendor root. Unit test for each OS.
+   `insideRoot(realRoot, realFolder, pathImpl)` (pure, FR-026): `path.relative` non-empty, not `..`-prefixed, not absolute.
 8. **Main** (`mcpipc.ts`, `agentops.ts`, `main.ts`):
    - `agents:mcp`: add the fields of data-model.md; mask `error` with `maskMcpError(text, secretValues)` (new pure helper next to
      `redact` in `src/shared/redact.ts`, unit-tested), where `secretValues` comes from `McpStore.forSession(...)` for that agent's folder
@@ -69,9 +70,12 @@ Simulator and fakes first; real checks are no-prompt and need the owner's go-ahe
    - `agents:mcpRestart`: validation, one-at-a-time guard, adapter call, masked error, activity row.
    - `agents:mcpRestartSession`: validation, busy check from main's agent state tracker, `remoteOps.release`, `adapter.stop`,
      `ensureLive(a)` with the same id (Q4; no new-session variant); for Claude `ensureLive` does not launch the CLI, so its servers start
-     with the next message (Q11); result to the renderer. Shares the End path with `agents:end` (extract a small `endSession(a)` helper so both stay
+     with the next message (Q11); result to the renderer. A thrown resume error that `isAuthError` classifies (or an adapter `auth`
+     error status) gives `errorKind: 'auth'` and `markSignedOut`, and the renderer shows the spec 012 FR-157 card from `signin.js`
+     (FR-027). Shares the End path with `agents:end` (extract a small `endSession(a)` helper so both stay
      the same).
-   - `agents:mcpRevealLogs`: adapter folder, stat check, `shell.showItemInFolder`.
+   - `agents:mcpRevealLogs`: adapter `{root, folder}`, `fs.realpathSync` on both, `insideRoot` (FR-026), stat check,
+     `shell.showItemInFolder`; refuse otherwise.
    - Preload and `DurbarApi`: `mcpRestart`, `mcpRestartSession`, `mcpRevealLogs`.
 9. **Renderer** (`screens.js` `agentMcp`): new row layout and footer (FR-030..FR-033); words and hints from `mcpwords.js`; live refresh
    by re-rendering the list when an `mcp` event for the agent arrives (hook from `app.js` where `a.mcp` is set, `app.js:2582`), keeping

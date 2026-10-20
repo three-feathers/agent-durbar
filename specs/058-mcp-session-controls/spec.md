@@ -199,11 +199,13 @@ and nothing is opened; simulator shows the button and a toast.
     that was off at launch is not in the running CLI: "Switch it on first; it starts with your next message";
   - Codex: not present.
   - A session that is not live: rejects with "This session is not running." Nothing is started.
-- **FR-013** `AgentAdapter.mcpLogFolder?(sessionId, name?): string | undefined` returns the folder where the agent app keeps logs
+- **FR-013** `AgentAdapter.mcpLogFolder?(sessionId, name?): { root: string; folder: string } | undefined` returns the folder where the
+  agent app keeps logs, and the vendor root it must stay under (FR-026)
   (per server when `mcpLogs` is `per-server`), from a pure per-OS function with injected environment (research sections 2-4):
   Copilot `<COPILOT_HOME or ~/.copilot>/logs`; Claude `<cache>/claude-cli-nodejs/<project>/mcp-logs-<server>` (env-paths
   convention per OS, project and server names sanitized as the CLI does; a name longer than 200 characters gives no folder); Codex
-  `<CODEX_HOME or ~/.codex>/log`. The path never reaches the renderer.
+  `<CODEX_HOME or ~/.codex>/log`. Roots: Copilot `<COPILOT_HOME or ~/.copilot>`, Claude the `claude-cli-nodejs` cache root, Codex
+  `<CODEX_HOME or ~/.codex>`. The path never reaches the renderer.
 
 ### Main process and IPC (constitution III)
 
@@ -224,6 +226,11 @@ and nothing is opened; simulator shows the button and a toast.
     all apply. No prompt is sent.
   - The renderer is told the result; the chat keeps its history (nothing is reloaded unless the adapter reports a new session id).
   - If the resume fails, the agent stays ended (as after *End session*) and the error is shown; sending a message tries again.
+  - **FR-027** If the resume fails because the sign-in expired (review note 2, PR #359), the result carries `errorKind: 'auth'`
+    (the thrown error classified with the existing `isAuthError` / the adapter's `auth` error status), and the renderer closes the MCP
+    dialog and shows spec 012 FR-157's sign-in card in that chat (*Sign in*, *Open Settings > Agent apps*, raw text only in *Details*),
+    not a plain toast; the app is marked signed out as FR-157 does. For Claude the CLI is not launched by the restart (Q11), so an
+    expired sign-in shows with the next message through FR-157's existing path.
   - Always the same session (Q4); there is no new-session variant. For Claude the CLI is not launched by the restart: its servers start
     with the next message, and the dialog says so (Q11). The button lives only in the MCP dialog (Q10).
 - **FR-023** Confirmation text (renderer, Cancel focused): "Restart <name>'s session with the current MCP servers? The conversation is
@@ -233,7 +240,13 @@ and nothing is opened; simulator shows the button and a toast.
 - **FR-024** `agents:mcpRevealLogs(id, name?)`: main asks the agent's adapter for the folder (FR-013), checks with `fs.stat` that it is an
   existing directory (it never lists, opens or reads files in it), then calls Electron `shell.showItemInFolder(folder)` (no shell, no
   command string). A missing folder returns `{ ok: false, error: 'No log folder found for this agent app yet.' }`. The flag in FR-020
-  is true only when the adapter has `mcpLogs` and the folder exists at the time of the `agents:mcp` call.
+  is true only when the adapter has `mcpLogs` and the folder exists and passes FR-026 at the time of the `agents:mcp` call.
+- **FR-026** **The log folder stays under the vendor's own root** (review note 1, PR #359; defence in depth: a server name can come from
+  a folder extra the user did not write). Before `fs.stat` and `shell.showItemInFolder`, main resolves both the root and the folder
+  with `fs.realpathSync` (so symlinks and `..` are resolved), then requires `path.relative(realRoot, realFolder)` to be non-empty, not
+  start with `..` and not be absolute (on Windows a different drive gives an absolute relative path). Anything else, a missing root
+  included, is refused with the same "No log folder found" message, nothing is opened, and the flag in FR-020 is false. The check is a
+  pure function (`insideRoot(realRoot, realFolder, pathImpl)`) plus the realpath step in main.
 - **FR-025** Durbar never copies, uploads or stores a vendor log file and never shows log lines in the app. The owner chose no log viewer
   (Q5); a viewer would need a new spec and the owner's approval.
 
@@ -256,13 +269,17 @@ and nothing is opened; simulator shows the button and a toast.
 
 - **FR-040** The simulator gives each kind its real capability values (fixes today's `mcpToggle: false` for the Claude and Codex sim
   kinds) and servers in every state, including a failed one with a hint and a canned Restart that goes Starting -> Running, and a
-  canned *Restart session*. *Open log folder* in the simulator shows a toast, never opens a folder.
+  canned *Restart session*. *Open log folder* in the simulator shows a toast, never opens a folder. With the page address
+  `simauth=expired` (spec 012 FR-157), *Restart session* fails with the sign-in text and shows the sign-in card (FR-027).
 - **FR-041** Unit tests (0 credits): the word and hint tables; masking in `agents:mcp` (an extra's header and env value, a URL with
   credentials, a `ghp_` token); `agents:mcpRestart` and `agents:mcpRestartSession` validation and order (stop then start with the same
   id and the new options; refuse without confirmation while busy); the per-OS log folder function (Linux, macOS, Windows, with
   `COPILOT_HOME`, `CODEX_HOME`, `XDG_CACHE_HOME`, `LOCALAPPDATA`); the Copilot adapter on the fake SDK (`restartServer`, the
   fallback, never `stopServer`); the Claude adapter on the fake CLI (`mcp_reconnect` then `mcp_status`); contract C2 lines for the new
-  members; the mappers for `errorClassification`, `needs_reconnect`, `failureReason`, `mcp_server_errors`.
+  members; the mappers for `errorClassification`, `needs_reconnect`, `failureReason`, `mcp_server_errors`; `insideRoot` and the
+  realpath step (a folder that is a symlink out of the root, `..` in a server name, a different Windows drive, a missing root: all
+  refused; a real temp-folder symlink case on POSIX, FR-026); `agents:mcpRestartSession` with a resume that throws a sign-in error
+  returns `errorKind: 'auth'` and marks the app signed out, while another error does not (FR-027).
 - **FR-042** Screenshots of the dialog at 1440x900 and 1280x800 on the simulator (constitution VII).
 
 ### Honest limits
@@ -308,7 +325,7 @@ additions and the capability fields.
   dialog of FR-009. Dated note added under 019's `## Changes`.
 - **020** (CLI list first, folder extras): the "New sessions" scope in FR-003 is 020's; no change to its stores.
 - **012** (FR-133 Claude toggle, FR-147 Codex MCP): the switch behaviour stays; FR-012 adds Claude `mcp_reconnect`; FR-002 fixes the
-  dialog's wording for Codex's next-message switch.
+  dialog's wording for Codex's next-message switch. FR-027 reuses FR-157's sign-in card for a Restart session that fails for sign-in.
 - **005 / 006** (End session, resume): Restart session reuses *End session* and the existing resume path, with the same confirmation
   rule (005 FR-017).
 - **054** (remote control): ended by Restart session as by End session.
@@ -316,7 +333,7 @@ additions and the capability fields.
 ## Changes`.
 - **020** (CLI list first, folder extras): the "New sessions" scope in FR-003 is 020's; no change to its stores.
 - **012** (FR-133 Claude toggle, FR-147 Codex MCP): the switch behaviour stays; FR-012 adds Claude `mcp_reconnect`; FR-002 fixes the
-  dialog's wording for Codex's next-message switch.
+  dialog's wording for Codex's next-message switch. FR-027 reuses FR-157's sign-in card for a Restart session that fails for sign-in.
 - **005 / 006** (End session, resume): Restart session reuses *End session* and the existing resume path, with the same confirmation
   rule (005 FR-017).
 - **054** (remote control): ended by Restart session as by End session.

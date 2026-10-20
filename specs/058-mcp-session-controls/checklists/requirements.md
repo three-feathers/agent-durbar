@@ -50,3 +50,5 @@
   name the chosen answers; the non-chosen options were removed from the work (T080 log viewer dropped, no new-session restart, no Codex
   reload, no early Claude launch, no `stopServer`) and are listed as out of scope in tasks.md. No contradiction left with specs
   019/012/005/006/054 or the constitution.
+- PR #359 review notes (Vikram's agent, 2026-10-20) added as FR-026 (log folder realpath under the vendor root) and FR-027 (sign-in
+  card on a failed Restart session), with tasks T054 and T044 and tests in FR-041; both fit constitution III and spec 012 FR-157.

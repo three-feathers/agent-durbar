@@ -29,7 +29,7 @@ it is masked in main, not in the adapter (the adapter does not know the folder's
 
 ```ts
 restartMcpServer?(sessionId: string, name: string): Promise<void>;          // present iff capabilities.mcpRestart
-mcpLogFolder?(sessionId: string, name?: string): string | undefined;        // present iff capabilities.mcpLogs
+mcpLogFolder?(sessionId: string, name?: string): { root: string; folder: string } | undefined; // present iff capabilities.mcpLogs; main checks folder is under root (FR-026)
 ```
 
 ## IPC shapes (`src/shared/api.ts`)
@@ -59,7 +59,7 @@ New calls (all validated in main; results carry no path):
 | Channel | Arguments | Result |
 | --- | --- | --- |
 | `agents:mcpRestart` | `id: string`, `name: string` | `{ ok: boolean; error?: string }` |
-| `agents:mcpRestartSession` | `id: string`, `confirmed: boolean` | `{ ok: boolean; needsConfirm?: boolean; error?: string }` |
+| `agents:mcpRestartSession` | `id: string`, `confirmed: boolean` | `{ ok: boolean; needsConfirm?: boolean; errorKind?: 'auth'; error?: string }` (FR-027) |
 | `agents:mcpRevealLogs` | `id: string`, `name?: string` | `{ ok: boolean; error?: string }` |
 
 ## Main-process state

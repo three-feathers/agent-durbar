@@ -158,3 +158,5 @@ is **unknown** (`[KNOWN GAP]`).
 3. Logs: only **reveal the folder** in the system file manager, after main checks that it is an existing directory. Durbar never opens,
    reads, copies or uploads a log file in this feature.
 4. Real checks: no-prompt only (0 credits), with a throw-away local stdio server, and only with the owner's go-ahead.
+5. Review notes from PR #359 (Vikram's agent, non-blocking, 2026-10-20): the log folder must resolve (realpath) under the vendor's own
+   root (spec FR-026); a sign-in failure on Restart session goes to spec 012 FR-157's sign-in card (spec FR-027).
