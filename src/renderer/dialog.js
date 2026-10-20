@@ -1,7 +1,9 @@
 /* Small confirmation dialog (spec 003 FR-033, spec 018). Plain script: in the page it defines window.DurbarDialog;
    in Node (tests) `require` gives the same factory. DurbarDialog(document) returns askDialog(opts).
-   askDialog({title,body,lines:[text],input:{label,placeholder,max,value,focus},buttons:[{label,value,cls}],check:{label,checked},returnFocus}) resolves {value,checked,text} for a
+   askDialog({title,body,lines:[text],input:{label,placeholder,max,value,focus,submitOnEnter,check},buttons:[{label,value,cls}],check:{label,checked},returnFocus}) resolves {value,checked,text} for a
    button (`text` = the optional input's value, `lines` = a short list under the body; all set with textContent, never HTML), or null when dismissed (Cancel button with value null, Escape, click on the backdrop).
+   `input.submitOnEnter`: Enter in the field presses the primary button (Escape still cancels). `input.check(text)` returns an error line or '': when
+   it returns one, the confirming buttons do not close the dialog; the line shows under the field (role=alert, linked with aria-describedby) and focus stays in the field (spec 059 FR-004).
    Keyboard contract: focus goes into the dialog when it opens and cannot leave it (Tab and Shift+Tab wrap; anything that
    steals focus is undone); Escape dismisses it (never confirms); when it closes focus goes back to `returnFocus` (an element
    or a function returning one), by default the element that had focus when it opened. Confirming is only ever an explicit
@@ -17,7 +19,7 @@
       const old=doc.getElementById('modeDlg');if(old)old.remove();
       const opener=returnFocus||(doc.activeElement&&doc.activeElement!==doc.body?doc.activeElement:null);
       const d=doc.createElement('div');d.id='modeDlg';d.className='dlg-ov';
-      d.innerHTML=`<div class="dlg" role="alertdialog" aria-modal="true" aria-labelledby="mdT" aria-describedby="mdB mdL"><h3 id="mdT"></h3><p class="dsub" id="mdB"></p>${lines&&lines.length?'<ul class="dlist" id="mdL"></ul>':''}${input?'<label class="dinput"><span></span><input type="text" id="mdIn" autocomplete="off" spellcheck="false"></label>':''}${check?'<label class="chk"><input type="checkbox" id="mdChk"><span></span></label>':''}<div class="dbtn"></div></div>`;
+      d.innerHTML=`<div class="dlg" role="alertdialog" aria-modal="true" aria-labelledby="mdT" aria-describedby="mdB mdL"><h3 id="mdT"></h3><p class="dsub" id="mdB"></p>${lines&&lines.length?'<ul class="dlist" id="mdL"></ul>':''}${input?'<label class="dinput"><span></span><input type="text" id="mdIn" autocomplete="off" spellcheck="false"></label><p class="derr" id="mdErr" hidden></p>':''}${check?'<label class="chk"><input type="checkbox" id="mdChk"><span></span></label>':''}<div class="dbtn"></div></div>`;
       d.querySelector('#mdT').textContent=title;d.querySelector('#mdB').textContent=body;
       if(lines&&lines.length)lines.forEach(t=>{const li=doc.createElement('li');li.textContent=t;d.querySelector('#mdL').appendChild(li);});
       if(input){d.querySelector('.dinput span').textContent=input.label||'';const inp=d.querySelector('#mdIn');inp.placeholder=input.placeholder||'';inp.maxLength=input.max||200;inp.value=input.value||'';}
@@ -38,6 +40,7 @@
       const textOf=()=>input?d.querySelector('#mdIn').value:undefined;
       /* while open: Escape cancels, Tab wraps. On the document in the capture phase, so it also works when focus slipped out. */
       const onKey=e=>{
+        if(e.key==='Enter'&&input&&input.submitOnEnter&&e.target&&e.target.id==='mdIn'&&!e.isComposing){const p=row.querySelector('.primary');if(p){e.preventDefault();p.click();return;}}
         if(e.key==='Escape'){e.preventDefault();e.stopPropagation();done(null);return;}
         if(e.key!=='Tab')return;
         const it=items();if(!it.length)return;
@@ -48,7 +51,13 @@
       };
       /* focus must not leave the dialog (a stray focus() on the control behind it, a click on the backdrop) */
       const onFocusIn=e=>{if(!d.contains(e.target)){const f=first();if(f)f.focus();}};
-      buttons.forEach(b=>{const el=doc.createElement('button');el.type='button';el.className='btn'+(b.cls?' '+b.cls:'');el.textContent=b.label;if(b.value===null)el.dataset.cancel='1';el.onclick=()=>done(b.value===null?null:Object.assign({value:b.value,checked:check?d.querySelector('#mdChk').checked:false},input?{text:textOf()}:{}));row.appendChild(el);});
+      buttons.forEach(b=>{const el=doc.createElement('button');el.type='button';el.className='btn'+(b.cls?' '+b.cls:'');el.textContent=b.label;if(b.value===null)el.dataset.cancel='1';el.onclick=()=>{
+        if(b.value!==null&&input&&typeof input.check==='function'){
+          const msg=input.check(textOf());const er=d.querySelector('#mdErr'),inp=d.querySelector('#mdIn');
+          if(msg){er.textContent=msg;er.hidden=false;er.setAttribute('role','alert');inp.setAttribute('aria-invalid','true');inp.setAttribute('aria-describedby','mdErr');inp.focus();return;}
+        }
+        done(b.value===null?null:Object.assign({value:b.value,checked:check?d.querySelector('#mdChk').checked:false},input?{text:textOf()}:{}));
+      };row.appendChild(el);});
       d.addEventListener('click',e=>{if(e.target===d)done(null);});
       doc.addEventListener('keydown',onKey,true);doc.addEventListener('focusin',onFocusIn,true);
       doc.body.appendChild(d);

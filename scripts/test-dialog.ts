@@ -138,5 +138,42 @@ const setup = () => {
     t.btn('Allow all').click();
     assert.deepStrictEqual(await p, { value: 'ok', checked: false, text: 'keep notes' });
   }
+  // spec 059 FR-004: Enter in the field saves (submitOnEnter), a failing check keeps the dialog open with the reason under the field, Escape cancels
+  {
+    const t = setup(); t.chip.focus();
+    const opts = (check?: (v: string) => string) => ({ ...t.opts({ title: 'Rename session', input: { label: 'Name', value: 'Old', max: 60, focus: true, submitOnEnter: true, ...(check ? { check } : {}) } }), buttons: [{ label: 'Cancel', value: null }, { label: 'Rename', value: 'ok', cls: 'primary' }] });
+    const p = t.ask(opts((v) => (v.includes('!') ? 'Remove control or hidden characters.' : '')));
+    const inp = t.doc.getElementById('mdIn') as HTMLInputElement;
+    assert.strictEqual(t.doc.activeElement, inp);
+    assert.strictEqual((t.doc.getElementById('mdErr') as HTMLElement).hidden, true, 'no error at first');
+    inp.value = 'bad!';
+    t.key('Enter');
+    assert.ok(t.dlg(), 'a refused name keeps the dialog open');
+    const er = t.doc.getElementById('mdErr') as HTMLElement;
+    assert.strictEqual(er.hidden, false);
+    assert.strictEqual(er.textContent, 'Remove control or hidden characters.');
+    assert.strictEqual(er.getAttribute('role'), 'alert');
+    assert.strictEqual(inp.getAttribute('aria-describedby'), 'mdErr');
+    assert.strictEqual(t.doc.activeElement, inp, 'focus stays in the field');
+    inp.value = 'Good';
+    t.key('Enter');
+    assert.deepStrictEqual(await p, { value: 'ok', checked: false, text: 'Good' }, 'Enter in the field presses the primary button');
+    assert.strictEqual(t.doc.activeElement, t.chip, 'focus returns to the opener');
+    // without the option, Enter in the field does nothing (as before)
+    const q = t.ask(t.opts({ input: { label: 'Name', value: 'x' } }));
+    t.key('Enter');
+    assert.ok(t.dlg(), 'no submitOnEnter: still open');
+    t.key('Escape'); assert.strictEqual(await q, null);
+    // Escape cancels without running the check; Cancel never checks
+    let ran = 0;
+    const r = t.ask(opts(() => (ran++, 'x')));
+    t.btn('Cancel').click();
+    assert.strictEqual(await r, null); assert.strictEqual(ran, 0);
+    // an empty field is allowed through (a reset) when the check says ''
+    const u = t.ask(opts(() => ''));
+    (t.doc.getElementById('mdIn') as HTMLInputElement).value = '';
+    t.key('Enter');
+    assert.deepStrictEqual(await u, { value: 'ok', checked: false, text: '' });
+  }
   console.log('dialog tests passed');
 })().catch((e) => { console.error(e); process.exit(1); });
