@@ -52,6 +52,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx tsc -p tsconfig.scripts.json
+      # Codex's read-only sandbox on Linux needs unprivileged user namespaces, which Ubuntu 24.04 restricts by default (Durbar tells
+      # users the same). The runner allows them so the read-only path is really tested here.
+      - name: Allow unprivileged user namespaces (Linux)
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
       # the only step that sees the secrets; the script prints nothing of them (redact, stdin for the Codex key)
       - name: Install, sign in, list models, one turn
         shell: bash

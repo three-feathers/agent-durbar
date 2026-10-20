@@ -1087,6 +1087,7 @@ async function main(): Promise<void> {
     const cases: Array<[FakeCodexOptions, string]> = [
       [{}, 'signed-in'],
       [{ rateLimits: 'unauthorized' }, 'signed-out'],
+      [{ rateLimits: 'unauthorized', authMethod: 'apikey' }, 'signed-in'], // real 2026-10-20: rate limits refuse an API-key sign-in that works
       [{ rateLimits: 'network' }, 'unknown'],
       [{ rateLimits: 'missing' }, 'unknown'], // falls back to getAuthStatus: signed in on this computer, not confirmed
       [{ rateLimits: 'missing', authMethod: null }, 'signed-out'],
@@ -1100,7 +1101,7 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(methods.slice(0, 3), ['initialize', 'initialized', 'account/rateLimits/read']);
       assert.ok(!methods.some((m) => m.startsWith('thread/') || m.startsWith('turn/')), 'no thread, no turn, no prompt');
       const auth = server.requests('getAuthStatus');
-      assert.strictEqual(auth.length, opts.rateLimits === 'missing' ? 1 : 0, 'getAuthStatus only as the fallback');
+      assert.strictEqual(auth.length, opts.rateLimits === 'missing' || opts.rateLimits === 'unauthorized' ? 1 : 0, 'getAuthStatus only as the fallback');
       for (const a of auth) assert.deepStrictEqual(a.params, { includeToken: false, refreshToken: false }, 'the token is never asked for');
       await server.flush();
       assert.deepStrictEqual(server.live, [], 'the probe child is closed');

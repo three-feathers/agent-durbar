@@ -24,7 +24,7 @@ import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
 import { redact } from '../src/shared/redact';
 
 type Step = 'install' | 'detect' | 'sign-in' | 'models' | 'turn';
-interface Row { app: SetupKind; os: string; ok: boolean; failedAt?: Step; route?: string; version?: string; signIn?: string; models?: number; sampleModels?: string; answer?: string; usage?: string; secs: number; detail?: string }
+interface Row { app: SetupKind; os: string; ok: boolean; failedAt?: Step; route?: string; version?: string; signIn?: string; models?: number; sampleModels?: string; readOnly?: string; answer?: string; usage?: string; secs: number; detail?: string }
 
 const APPS: { kind: SetupKind; model?: string; descriptor: { create(): AgentAdapter } }[] = [
   { kind: 'copilot', model: 'auto', descriptor: COPILOT_DESCRIPTOR },
@@ -65,6 +65,9 @@ async function install(kind: SetupKind): Promise<{ ok: boolean; route?: string; 
   const d = await end;
   return { ok: d.ok, route: plans[0].manager, detail: d.ok ? undefined : `${d.reason ?? 'exit ' + d.exitCode}: ${d.lines.slice(-2).join(' | ')}` };
 }
+
+/** Only the kind of sign-in a CLI reports: its own line can carry a masked key tail, which never goes to a public log. */
+const signInKind = (line: string): string => (/api key/i.test(line) ? 'API key' : /chatgpt/i.test(line) ? 'ChatGPT' : /not logged in|not signed in/i.test(line) ? 'not signed in' : 'unknown');
 
 /** One short, redacted line of a CLI's own answer (never with a secret on the command line). */
 function cliLine(bin: string, args: string[]): Promise<string> {
@@ -115,16 +118,35 @@ async function check(app: (typeof APPS)[number]): Promise<Row> {
     // that the app's check recognises, which is itself a finding)
     const si = ad.verifySignIn ? await ad.verifySignIn() : undefined;
     row.signIn = si ? `${si.status}${si.detail ? ' (' + si.detail + ')' : ''}` : 'not checked';
-    if (app.kind === 'codex' && bin) row.signIn += `; codex login status: ${await cliLine(bin, ['login', 'status'])}`;
+    if (app.kind === 'codex' && bin) row.signIn += `; codex says: ${signInKind(await cliLine(bin, ['login', 'status']))}`;
 
     const models = ad.listModelOptions ? await ad.listModelOptions() : [];
     row.models = models.length;
     row.sampleModels = models.slice(0, 4).map((m) => m.id).join(', ');
     if (ad.listModelOptions && !models.length) return fail('models', 'no model listed');
 
+    // the turn, read-only first (Durbar's default). Codex's read-only sandbox depends on the OS (Linux user namespaces, macOS
+    // sandbox-exec, the Windows elevated sandbox): when it cannot start, that is recorded and the same one-line prompt, which uses
+    // no tool, runs once more with full access in a throw-away folder, to prove the account and the turn itself.
+    const ro = await turn(ad, app, events, 'read-only');
+    row.readOnly = ro.ok ? 'ok' : ro.detail;
+    const t = ro.ok || app.kind !== 'codex' ? ro : await turn(ad, app, events, 'allow');
+    row.answer = t.answer;
+    row.usage = t.usage;
+    if (!t.ok) return fail('turn', t.detail);
+  } catch (e) {
+    return fail(row.models === undefined ? (row.signIn === undefined ? 'sign-in' : 'models') : 'turn', e instanceof Error ? e.message : e);
+  } finally {
+    await ad.dispose().catch(() => undefined);
+  }
+  return { ...row, ok: true, secs: Math.round((Date.now() - t0) / 1000) };
+}
+
+async function turn(ad: AgentAdapter, app: (typeof APPS)[number], events: AgentEvent[], mode: 'read-only' | 'allow'): Promise<{ ok: boolean; detail?: string; answer?: string; usage?: string }> {
+  {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), `durbar-e2e-${app.kind}-`));
     try {
-      const sid = await ad.start({ workspace: dir, permissionMode: 'read-only', ...(app.model ? { model: app.model } : {}), quiet: true });
+      const sid = await ad.start({ workspace: dir, permissionMode: mode, ...(app.model ? { model: app.model } : {}), quiet: true });
       await ad.send(sid, { text: 'Reply with only the word ok.' });
       const deadline = Date.now() + 180_000;
       while (Date.now() < deadline && !events.some((e) => e.type === 'status' && (e.status === 'idle' || e.status === 'error') && e.sessionId === sid)) await sleep(250);
@@ -134,20 +156,18 @@ async function check(app: (typeof APPS)[number]): Promise<Row> {
       const out = (finals.length ? finals.map((e) => e.text).join(' ') : outs.map((e) => e.delta ?? '').join('')).trim();
       const err = events.find((e) => e.type === 'status' && e.status === 'error' && e.sessionId === sid) as { intent?: string } | undefined;
       const use = events.filter((e) => e.type === 'usage' && e.sessionId === sid) as Array<{ inputTokens?: number; outputTokens?: number; nanoAiu?: number; costUsd?: number }>;
-      row.answer = clean(out).slice(0, 40);
-      row.usage = use.length ? `${use.reduce((s, u) => s + (u.inputTokens ?? 0), 0)} in / ${use.reduce((s, u) => s + (u.outputTokens ?? 0), 0)} out${use.some((u) => u.nanoAiu) ? `, ${(use.reduce((s, u) => s + (u.nanoAiu ?? 0), 0) / 1e9).toFixed(3)} AIU` : ''}${use.some((u) => u.costUsd) ? `, ≈ $${use.reduce((s, u) => s + (u.costUsd ?? 0), 0).toFixed(4)}` : ''}` : 'none reported';
+      const answer = clean(out).slice(0, 40);
+      const usage = use.length ? `${use.reduce((s, u) => s + (u.inputTokens ?? 0), 0)} in / ${use.reduce((s, u) => s + (u.outputTokens ?? 0), 0)} out${use.some((u) => u.nanoAiu) ? `, ${(use.reduce((s, u) => s + (u.nanoAiu ?? 0), 0) / 1e9).toFixed(3)} AIU` : ''}${use.some((u) => u.costUsd) ? `, ≈ $${use.reduce((s, u) => s + (u.costUsd ?? 0), 0).toFixed(4)}` : ''}` : 'none reported';
       await ad.stop(sid).catch(() => undefined);
-      if (err) return fail('turn', err.intent ?? 'error');
-      if (!/\bok\b/i.test(out)) return fail('turn', `no "ok" in the answer: ${out.slice(0, 80) || '(empty)'}`);
+      if (err) return { ok: false, detail: clean(err.intent ?? 'error'), answer, usage };
+      if (!/\bok\b/i.test(out)) return { ok: false, detail: clean(`no "ok" in the answer: ${out.slice(0, 80) || '(empty)'}`), answer, usage };
+      return { ok: true, answer, usage };
+    } catch (e) {
+      return { ok: false, detail: clean(e instanceof Error ? e.message : e) };
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
-  } catch (e) {
-    return fail(row.models === undefined ? (row.signIn === undefined ? 'sign-in' : 'models') : 'turn', e instanceof Error ? e.message : e);
-  } finally {
-    await ad.dispose().catch(() => undefined);
   }
-  return { ...row, ok: true, secs: Math.round((Date.now() - t0) / 1000) };
 }
 
 async function main(): Promise<void> {
@@ -159,8 +179,8 @@ async function main(): Promise<void> {
   for (const app of APPS) if (!only || only.has(app.kind)) { const r = await check(app); rows.push(r); console.log(clean(`${r.ok ? 'ok  ' : 'FAIL'} ${r.app} ${r.failedAt ? 'at ' + r.failedAt + ': ' + r.detail : ''}`)); }
   fs.writeFileSync(outFile, JSON.stringify(rows, null, 2));
   const esc = (v: unknown) => clean(v).replace(/\|/g, '\\|');
-  console.log(`\n### E2E with real accounts on ${process.platform}\n\n| App | Result | Install route | Version | Sign-in | Models | Answer | Usage | Time | Detail |\n|---|---|---|---|---|---|---|---|---|---|`);
-  for (const r of rows) console.log(`| ${r.app} | ${r.ok ? 'ok' : 'FAIL at ' + r.failedAt} | ${esc(r.route)} | ${esc(r.version)} | ${esc(r.signIn)} | ${r.models ?? ''} ${r.sampleModels ? '(' + esc(r.sampleModels) + ')' : ''} | ${esc(r.answer)} | ${esc(r.usage)} | ${r.secs} s | ${esc(r.detail)} |`);
+  console.log(`\n### E2E with real accounts on ${process.platform}\n\n| App | Result | Install route | Version | Sign-in | Models | Read-only turn | Answer | Usage | Time | Detail |\n|---|---|---|---|---|---|---|---|---|---|---|`);
+  for (const r of rows) console.log(`| ${r.app} | ${r.ok ? 'ok' : 'FAIL at ' + r.failedAt} | ${esc(r.route)} | ${esc(r.version)} | ${esc(r.signIn)} | ${r.models ?? ''} ${r.sampleModels ? '(' + esc(r.sampleModels) + ')' : ''} | ${esc(r.readOnly)} | ${esc(r.answer)} | ${esc(r.usage)} | ${r.secs} s | ${esc(r.detail)} |`);
   if (rows.some((r) => !r.ok)) process.exitCode = 1;
 }
 main().catch((e) => { console.error('e2e-real:', clean(e instanceof Error ? e.message : e)); process.exit(1); });

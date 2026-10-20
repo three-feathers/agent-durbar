@@ -392,7 +392,13 @@ export class CodexAdapter implements AgentAdapter {
           await rpc.request('account/rateLimits/read', {});
           return { status: 'signed-in', detail: 'Signed in (checked with OpenAI).' } as SignInCheck;
         } catch (e) {
-          if (isAuthError(e)) return { status: 'signed-out', detail: 'OpenAI did not accept the Codex sign-in.' } as SignInCheck;
+          if (isAuthError(e)) {
+            // spec 012 FR-156 delta (real e2e 2026-10-20): rate limits belong to a ChatGPT sign-in, so an API-key sign-in is
+            // refused here although it works (`codex login status`: "Logged in using an API key", model/list and turns work)
+            const a = await rpc.request('getAuthStatus', { includeToken: false, refreshToken: false }).catch(() => undefined);
+            if (isObj(a) && a.authMethod === 'apikey') return { status: 'signed-in', detail: 'Signed in with an OpenAI API key.' } as SignInCheck;
+            return { status: 'signed-out', detail: 'OpenAI did not accept the Codex sign-in.' } as SignInCheck;
+          }
           if (!(e instanceof CodexRpcError && e.kind === 'rpc' && (e.code === -32601 || /method not found|unknown variant|unknown method/i.test(e.message)))) return { status: 'unknown' } as SignInCheck;
         }
         const r = await rpc.request('getAuthStatus', { includeToken: false, refreshToken: false });
