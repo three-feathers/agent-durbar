@@ -7,6 +7,8 @@
 export const HANDOFF_PROMPT = [
   'Write a hand-off summary of this conversation so that a new session can continue the work without it.',
   'Use short markdown with these parts: Goal; What was done; Open items; Important files and decisions; Next step.',
+  // spec 030 FR-043 (#409): the next session may run in another agent app, which knows neither this app's tools nor its paths
+  'Name files by their paths relative to the project folder, and describe actions in plain words, not by tool names: the next session may use a different agent app.',
   'At most about 300 words. Do not use any tools. Do not include secrets, tokens or passwords. Reply with the summary only.',
 ].join(' ');
 
