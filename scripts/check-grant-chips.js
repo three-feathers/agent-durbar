@@ -115,6 +115,7 @@ module.exports = async (ctx) => {
         assert.ok(d.includes('Cancel') && d.includes('Revoke all'), `${tag}: Revoke all asks first: ${d}`);
         await js(`[...document.querySelectorAll('.dlg-ov button')].find(x=>x.textContent.trim()==='Cancel').click()`); await ctx.sleep(400);
         assert.strictEqual(await js(`document.querySelectorAll('#grantsPop .gp-row').length`), 7, `${tag}: Cancel keeps the grants`);
+        assert.strictEqual(await js(`document.getElementById('grantsBtn').getAttribute('aria-expanded')+'/'+document.getElementById('grantsPop').hidden`), 'true/false', `${tag}: Cancel keeps the list open, like Esc`);
         await js(`document.getElementById('grantsBtn').getAttribute('aria-expanded')==='true'||document.getElementById('grantsBtn').click()`); await ctx.sleep(200);
         await js(`document.getElementById('grantsAll').click()`); await ctx.sleep(400);
         await js(`[...document.querySelectorAll('.dlg-ov button')].find(x=>x.textContent.trim()==='Revoke all').click()`); await ctx.sleep(500);
@@ -126,5 +127,23 @@ module.exports = async (ctx) => {
       console.log('[grant-chips]', w, level, 'ok');
     }
   }
+  // A Revoke all that fails (the revokes never remove anything) leaves the grants and the page working; after switching to an agent
+  // without grants the focus is not taken and nothing is announced.
+  ctx.win.setContentSize(1440, 900);
+  const QS = { sim: '15', simfreeze: '1', simgrants: 'stuck' };
+  await ctx.win.loadFile(INDEX, { query: QS });
+  await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
+  await ctx.sleep(2000);
+  const ids = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')];let a='';for(const x of d){x.click();const g=document.getElementById('grants');if(g&&!g.hidden){a=x.dataset.id;break;}const b=document.getElementById('backBtn');if(b)b.click();}return [a,d.map(x=>x.dataset.id).find(i=>i!==a)]})()`);
+  await ctx.sleep(500);
+  await js(`document.getElementById('grantsBtn').click()`); await ctx.sleep(200);
+  await js(`document.getElementById('grantsAll').click()`); await ctx.sleep(400);
+  await js(`[...document.querySelectorAll('.dlg-ov button')].find(x=>x.textContent.trim()==='Revoke all').click()`); await ctx.sleep(100); // quick: inside the 1s the flag may live
+  assert.strictEqual(await js(`document.querySelectorAll('#grantsPop .gp-row').length`), 8, 'stuck: a revoke that fails leaves the grants');
+  await js(`document.getElementById('backBtn').click()`); await ctx.sleep(100);
+  await js(`document.querySelector('#stage .desk[data-id="${ids[1]}"]').click()`); await ctx.sleep(150);
+  assert.ok(await js(`document.getElementById('grants').hidden`), 'stuck: the other agent has no grants');
+  assert.notStrictEqual(await js(`document.getElementById('srAnnounce').textContent`), 'All permissions revoked.', 'stuck: a failed Revoke all on one agent does not announce for another');
+  assert.notStrictEqual(await js(`document.activeElement.id`), 'msgInput', 'stuck: the focus is not taken to the composer of another agent');
   console.log('[grant-chips] all checks passed');
 };

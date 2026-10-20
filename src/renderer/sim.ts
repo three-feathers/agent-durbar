@@ -36,7 +36,7 @@ interface SimOptions {
   titles?: boolean;
   /** Spec 012 FR-130: the first Claude agent (or the first agent) asks a question (page address `simquestion=1`). */
   /** Spec 052 FR-141 (issue #367): the first agent has eight session grants with long names (page address `simgrants=many`). */
-  grants?: 'many';
+  grants?: 'many' | 'stuck'; /* 'stuck': revokes are accepted but never remove anything (a failed revoke) */
   question?: boolean | 'long'; /* 'long' (spec 052 FR-140): a long question text and long option labels */
   /** Spec 012 FR-151: an MCP server asks one agent for input: a small form (`simelicit=1`) or an https page to open (`simelicit=url`). */
   elicit?: string;
@@ -324,7 +324,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       }, 200);
     }
     /* simgrants=many (spec 052 FR-141): the first agent has eight grants, some with a tool name that repeats the server name */
-    if (opts.grants === 'many') {
+    if (opts.grants) {
       window.setTimeout(() => {
         const s = sims[0];
         if (!s) return;
@@ -1486,7 +1486,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
       revokeGrant: async (id, key) => {
         const s = sims.find((x) => x.info.id === id);
-        if (s && s.grants.delete(key)) grantsEvent(s);
+        if (opts.grants !== 'stuck' && s && s.grants.delete(key)) grantsEvent(s);
       },
       // No disk, no account: canned answers so the new folder / session / history UI can be exercised without credits.
       listModels: async (kind) => ({ ok: true, models: (kind === 'claude' ? SIM_CLAUDE_MODELS : !kind || kind === 'copilot' ? SIM_MODELS : []).map((m) => ({ ...m })) }),
