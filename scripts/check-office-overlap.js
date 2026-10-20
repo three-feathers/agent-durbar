@@ -542,9 +542,9 @@ async function driver(ctx) {
       const all = await type('');
       if (all.rows.length < 3 || /\d of \d/.test(all.heads.join(' '))) P.push(`empty query: ${JSON.stringify(all)}`);
       const a1 = await type('EXPLICACION');
-      if (a1.rows.length !== 1 || !/Explicaci/.test(a1.rows[0]) || !/0 of 2/.test(a1.heads[0]) || !/1 of 2/.test(a1.heads[1]) || a1.empty !== 1) P.push(`accent/case query: ${JSON.stringify(a1)}`);
+      if (a1.rows.length !== 1 || !/Explicaci/.test(a1.rows[0]) || !/0 of 4/.test(a1.heads[0]) || !/1 of 2/.test(a1.heads[1]) || a1.empty !== 1) P.push(`accent/case query: ${JSON.stringify(a1)}`);
       const none = await type('zzzz');
-      if (none.rows.length || none.empty !== 2 || !/0 of 2/.test(none.heads[0]) || !/0 of 2/.test(none.heads[1])) P.push(`no-match query: ${JSON.stringify(none)}`);
+      if (none.rows.length || none.empty !== 2 || !/0 of 4/.test(none.heads[0]) || !/0 of 2/.test(none.heads[1])) P.push(`no-match query: ${JSON.stringify(none)}`);
       await type('explicacion');
       if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-prevsearch-${w}x${h}.png`));
       await ctx.js(`document.getElementById('prevQ').focus()`);

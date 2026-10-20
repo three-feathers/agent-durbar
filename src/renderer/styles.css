@@ -705,6 +705,15 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .prev-tx b{font-size:var(--t4-size);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .prev-tx small{font-size:var(--t5-size);color:var(--muted)}
 .prev-row .btn{height:28px;padding:0 10px;font-size:var(--t4-size)}
+.prev-row .btn.prev-more{width:28px;min-width:28px;padding:0;flex:none;line-height:1;letter-spacing:1px} /* spec 006 FR-027: one 28px control after Resume/View; neither ever wraps or leaves the row */
+.prev-row .btn:not(.prev-more){flex:none;white-space:nowrap}
+.prev-tx b{display:flex;align-items:center;gap:5px;min-width:0}
+.prev-tx b .prev-t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prev-pin{display:inline-flex;flex:none;color:var(--amber-ink,#8a5a00)}
+.prev-hidtag{flex:none}
+.prev-row.is-hidden .prev-t,.prev-row.is-hidden small{color:var(--muted)}
+.prev-showhid{margin:8px 0 2px}
+.mode-menu button[aria-disabled="true"]{cursor:not-allowed}.mode-menu button[aria-disabled="true"] b{color:var(--muted)}
 .prev-empty,.prev-fine{margin:4px 0;font-size:var(--t4-size);color:var(--muted)}
 .prev-fine{font-size:11px}
 

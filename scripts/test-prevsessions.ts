@@ -232,6 +232,16 @@ async function main(): Promise<void> {
     assert.ok(/ipcHandle\('sessions:delete'/.test(main), 'registered through ipcHandle (the sender check)');
     assert.strictEqual((main.match(/prevSessions\.delete\(/g) ?? []).length, 1, 'called from that one handler only');
     assert.ok(!/ipcMain\.(handle|on)\('sessions:/.test(main));
+    // Clarifications Q1: Delete… is offered only on a row of Previous sessions, never on an office card, List-view row, card menu or chat header
+    const app = read('src/renderer/app.js');
+    const from = app.indexOf('function openPrevMenu(');
+    const to = app.indexOf('\nasync function deletePrev(');
+    assert.ok(from > 0 && to > from);
+    const outside = app.slice(0, from) + app.slice(to);
+    const inMenu = app.slice(from, to);
+    assert.ok(inMenu.includes('Delete…'));
+    assert.ok(!/Delete…|data-pact="delete"/.test(outside.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')), 'no other menu or header offers Delete…');
+    assert.strictEqual((app.match(/bridge\.deletePrevious\(/g) ?? []).length, 1, 'one caller of the bridge delete');
     // the renderer sends ids only: the bridge has no path argument for delete
     assert.ok(/deletePrevious: \(id, sessionId\) => ipcRenderer\.invoke\('sessions:delete', id, sessionId\)/.test(read('src/preload/preload.ts')));
   }

@@ -2,8 +2,13 @@
 import * as assert from 'assert';
 import * as path from 'path';
 type S = { id: string; title: string };
-const { filterSessions, terms, arrangeSessions } = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'sessionsearch.js')) as {
+const { filterSessions, terms, arrangeSessions, applyMark, visibleCount, deleteDialogText, refusalDialogText, noDeleteReason } = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'sessionsearch.js')) as {
   filterSessions: (l: S[], q: string) => S[]; terms: (q: string) => string[];
+  applyMark: (m: { pinned?: string[]; hidden?: string[] }, k: string, mark: string) => { pinned: string[]; hidden: string[] };
+  visibleCount: (l: unknown[], hidden: string[]) => number;
+  deleteDialogText: (o: { title?: string; app?: string; cli?: string; codex?: boolean }) => { title: string; body: string; lines: string[] };
+  refusalDialogText: (canRemove: boolean) => { title: string; body: string; lines: string[] };
+  noDeleteReason: (app?: string) => string;
   arrangeSessions: (l: unknown[], o: { pinned?: string[]; hidden?: string[]; showHidden?: boolean; query?: string; timeKey?: string }) => { rows: Array<{ item: { id?: string; key?: string }; pinned: boolean; hidden: boolean }>; hiddenCount: number; total: number };
 };
 const L: S[] = [
@@ -62,5 +67,25 @@ console.log('sessionsearch: all checks passed');
   const V = [{ key: 'h/a', updated: 10 }, { key: 'h/b', updated: 30 }, { key: 'h/c', updated: 20 }];
   assert.deepStrictEqual(arrangeSessions(V, { pinned: ['h/a', 'h/c'], timeKey: 'updated' }).rows.map((r) => r.item.key), ['h/c', 'h/a', 'h/b']);
   assert.deepStrictEqual(arrangeSessions(null as unknown as unknown[], {}), { rows: [], hiddenCount: 0, total: 0 }, 'not a list');
+}
+
+// the same exclusive rule as the folder store, applied in the window
+assert.deepStrictEqual(applyMark({ pinned: ['a'], hidden: ['b'] }, 'b', 'pin'), { pinned: ['a', 'b'], hidden: [] }, 'pin clears hide');
+assert.deepStrictEqual(applyMark({ pinned: ['a'], hidden: ['b'] }, 'a', 'hide'), { pinned: [], hidden: ['b', 'a'] }, 'hide clears pin');
+assert.deepStrictEqual(applyMark({ pinned: ['a'], hidden: [] }, 'a', 'unpin'), { pinned: [], hidden: [] });
+assert.deepStrictEqual(applyMark({ pinned: [], hidden: ['b'] }, 'b', 'unhide'), { pinned: [], hidden: [] });
+assert.deepStrictEqual(applyMark({}, 'x', 'pin'), { pinned: ['x'], hidden: [] });
+assert.strictEqual(visibleCount([{ id: 'a' }, { id: 'b' }, { key: 'k' }], ['b', 'k']), 1, 'hidden rows are not counted');
+assert.strictEqual(visibleCount(null as unknown as unknown[], []), 0);
+// the words of FR-030
+{
+  const d = deleteDialogText({ title: 'Fix the parser', app: 'GitHub Copilot', cli: 'Copilot CLI' });
+  assert.strictEqual(d.title, 'Delete this session?');
+  assert.strictEqual(d.body, '\u201cFix the parser\u201d will be deleted from GitHub Copilot on this computer.');
+  assert.deepStrictEqual(d.lines, ['It will also be gone from VS Code and the Copilot CLI, and it cannot be resumed again.', 'This cannot be undone. To only take it out of this list, use Hide.']);
+  assert.deepStrictEqual(deleteDialogText({ title: 't', app: 'Codex', cli: 'Codex CLI', codex: true }).lines, ['It will also be gone from VS Code and the Codex CLI, and it cannot be resumed again.', 'Its helper threads are deleted too.', 'This cannot be undone. To only take it out of this list, use Hide.'], 'Codex only: helper threads, third in order');
+  assert.deepStrictEqual(refusalDialogText(true), { title: 'This session is still in the office', body: 'This session is still in the office. End it and remove it from the office first.', lines: [] });
+  assert.deepStrictEqual(refusalDialogText(false).lines, ['It is the only session in this folder: start a new session there first.']);
+  assert.strictEqual(noDeleteReason('Claude Code'), 'Claude Code cannot delete one session. Hide it instead.');
 }
 console.log('sessionsearch pin/hide tests passed');

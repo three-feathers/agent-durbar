@@ -3704,51 +3704,79 @@ const when=ms=>{if(!ms)return '';const d=new Date(ms),n=new Date(),t=d.toLocaleT
   return d.toDateString()===n.toDateString()?'Today '+t:d.toLocaleDateString([],{month:'short',day:'numeric',year:d.getFullYear()===n.getFullYear()?undefined:'numeric'})+' '+t;};
 /* spec 052 FR-002: Previous sessions open by themselves only for an empty chat (no message sent here, nothing resumed, nothing on screen) */
 const pristine=a=>!a.sent&&!a.resumed&&!((chats[a.id]||{}).el&&chats[a.id].el.querySelector(':scope > :not(.note)'));
-const prevOf=a=>prev[a.id]||(prev[a.id]={open:false,touched:false,cli:null,vs:null,q:''});
+const prevOf=a=>prev[a.id]||(prev[a.id]={open:false,touched:false,cli:null,vs:null,q:'',showHidden:false});
+/* spec 006 FR-024..FR-026: pins and hides come with each list as arrays of ids; every count the user sees leaves hidden rows out (FR-025) */
+const prevMarks=(g,st)=>{const r=g==='vs'?st.vs:st.cli;return {pinned:(r&&r.pinned)||[],hidden:(r&&r.hidden)||[]};};
+function prevCounts(st){const S=window.DurbarSessionSearch,c=st.cli,v=st.vs,mc=prevMarks('cli',st),mv=prevMarks('vs',st);
+  const lc=c&&c.ok?c.sessions:[],lv=v&&v.ok?v.sessions:[],nc=S.visibleCount(lc,mc.hidden),nv=S.visibleCount(lv,mv.hidden);
+  return {nc,nv,hid:lc.length-nc+lv.length-nv};}
+/* the app's name and its CLI in the delete confirmation (FR-030) */
+const DEL_WORDS={copilot:{app:'GitHub Copilot',cli:'Copilot CLI'},codex:{app:'Codex',cli:'Codex CLI'}};
+const prevSrc=(a,g)=>g==='vs'?'vscode':((liveRoot(a).info||{}).adapterId||'copilot');
 async function loadPrev(a){
   const st=prevOf(a);
   const safe=(f,empty)=>f?f(a.id).catch(e=>Object.assign({ok:false,error:String(e&&e.message||e)},empty)):null;
   const [c,v]=await Promise.all([safe(feat(a,'history')?bridge.listPrevious:null,{sessions:[]}),safe(bridge.listVsChats,{sessions:[],storesFound:0,unreadable:0,tooLarge:0,formatNote:''})]);
   st.cli=c; st.vs=v;
-  if(!st.touched&&pristine(a)&&((c&&c.sessions.length)||(v&&v.sessions.length)))st.open=true;
+  const vis=prevCounts(st);
+  if(!st.touched&&pristine(a)&&(vis.nc||vis.nv))st.open=true; /* spec 006 FR-025: hidden rows do not open the panel by themselves */
   if(ui.selected===a.id)renderPrev(a);
   return st;
 }
 function initPrev(a){
   const box=$('prev'); if(!box)return;
   if((!bridge.listPrevious||!feat(a,'history'))&&!bridge.listVsChats){box.hidden=true;const pb=$('prevBtn');if(pb)pb.hidden=true;return;}
-  vsViewing=false; renderPrev(a); loadPrev(a);
+  vsViewing=false; prevOf(a).showHidden=false; renderPrev(a); loadPrev(a); /* Show hidden is per panel, not saved */
 }
-/* the two groups of Previous sessions, filtered by the title query (spec 006 FR-023) */
+/* the two groups of Previous sessions, pinned first, hidden ones out unless shown, filtered by the title query (spec 006 FR-023..FR-027) */
+const PIN_SVG='<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" focusable="false"><path d="M9.5 1.5l5 5-2 .5-2.5 2.5.5 3.5-1 1L6.5 10 3 13.5l-.5-.5L6 9.5 2.5 6l1-1 3.5.5L9.5 3z" fill="currentColor"/></svg>';
+function prevRow(x,g,k,title,sub,main,info,a){
+  const hid=info.hidden, mark=(info.pinned?`<span class="prev-pin" title="Pinned">${PIN_SVG}<span class="sr-only">Pinned</span></span>`:'')+(hid?'<span class="tag prev-hidtag">Hidden</span>':'');
+  return `<div class="prev-row${hid?' is-hidden':''}" data-pg="${g}" data-pk="${esc(k)}"><div class="prev-tx"><b title="${esc(title)}">${mark}<span class="prev-t">${esc(title)}</span></b><small>${sub}</small></div>${main}<button class="btn sm prev-more" type="button" data-pv="more" aria-haspopup="menu" aria-label="Actions for ${esc(title)}" title="Pin, hide or delete">⋯</button></div>`;
+}
 function prevListsHtml(a){
   const st=prevOf(a), c=st.cli, v=st.vs, kw=kindWord(a.info&&a.info.adapterId), hasHist=!!c, q=(st.q||'').trim();
-  const S=window.DurbarSessionSearch, nc=c&&c.ok?c.sessions.length:0, nv=v&&v.ok?v.sessions.length:0;
-  const fc=c&&c.ok?(q?S.filterSessions(c.sessions,q):c.sessions):[], fv=v&&v.ok?(q?S.filterSessions(v.sessions,q):v.sessions):[];
+  const S=window.DurbarSessionSearch, sh=st.showHidden===true;
+  const mc=prevMarks('cli',st), mv=prevMarks('vs',st);
+  const ac=c&&c.ok?S.arrangeSessions(c.sessions,{pinned:mc.pinned,hidden:mc.hidden,showHidden:sh,query:q,timeKey:'modifiedTime'}):{rows:[],hiddenCount:0,total:0};
+  const av=v&&v.ok?S.arrangeSessions(v.sessions,{pinned:mv.pinned,hidden:mv.hidden,showHidden:sh,query:q,timeKey:'updated'}):{rows:[],hiddenCount:0,total:0};
   const cnt=(n,m)=>q&&m?` <span class="prev-n">${n} of ${m}</span>`:'';
   const none='<p class="prev-empty prev-nomatch">No sessions match</p>';
   let h='';
-  if(hasHist){h+='<div class="prev-h">'+esc(kw)+' sessions in this folder'+cnt(fc.length,nc)+' <small>Resume continues the same session; earlier messages are shown here.</small></div>';
+  if(hasHist){h+='<div class="prev-h">'+esc(kw)+' sessions in this folder'+cnt(ac.rows.length,ac.total)+' <small>Resume continues the same session; earlier messages are shown here.</small></div>';
     if(!c.ok)h+=`<p class="prev-empty">Could not list sessions${c.error?': '+esc(c.error):''}.</p>`;
     else if(!c.sessions.length)h+='<p class="prev-empty">No earlier '+esc(kw)+' sessions for this folder.</p>';
-    else if(!fc.length)h+=none;
-    else h+=fc.map(x=>`<div class="prev-row"><div class="prev-tx"><b title="${esc(x.title)}">${esc(x.title)}</b><small>${esc(when(x.modifiedTime))}${x.branch?' · '+esc(x.branch):''}</small></div><button class="btn" type="button" data-pv="resume" data-sid="${esc(x.id)}">Resume</button></div>`).join('');}
-  h+='<div class="prev-h">VS Code chat history <span class="tag">read-only</span>'+cnt(fv.length,nv)+' <small>A copy of what VS Code saved. It cannot be continued here.</small></div>';
+    else if(!ac.total)h+='<p class="prev-empty">All earlier '+esc(kw)+' sessions here are hidden.</p>';
+    else if(!ac.rows.length)h+=none;
+    else h+=ac.rows.map(r=>{const x=r.item;return prevRow(x,'cli',x.id,x.title,esc(when(x.modifiedTime))+(x.branch?' · '+esc(x.branch):''),`<button class="btn" type="button" data-pv="resume" data-sid="${esc(x.id)}">Resume</button>`,r,a);}).join('');}
+  h+='<div class="prev-h">VS Code chat history <span class="tag">read-only</span>'+cnt(av.rows.length,av.total)+' <small>A copy of what VS Code saved. It cannot be continued here.</small></div>';
   if(!v||!v.ok)h+=`<p class="prev-empty">Could not read VS Code chats${v&&v.error?': '+esc(v.error):''}.</p>`;
   else if(!v.sessions.length)h+='<p class="prev-empty">'+(v.storesFound?'No chats in the VS Code storage for this folder.':'No VS Code chats found for this folder (VS Code never opened it, or it is stored somewhere this app does not read).')+'</p>';
-  else if(!fv.length)h+=none;
-  else h+=fv.map(x=>`<div class="prev-row"><div class="prev-tx"><b title="${esc(x.title)}">${esc(x.title)}</b><small>${esc(when(x.updated))} · ${x.requests} message${x.requests===1?'':'s'}</small></div><button class="btn" type="button" data-pv="view" data-key="${esc(x.key)}">View</button></div>`).join('');
+  else if(!av.total)h+='<p class="prev-empty">All VS Code chats here are hidden.</p>';
+  else if(!av.rows.length)h+=none;
+  else h+=av.rows.map(r=>{const x=r.item;return prevRow(x,'vs',x.key,x.title,`${esc(when(x.updated))} · ${x.requests} message${x.requests===1?'':'s'}`,`<button class="btn" type="button" data-pv="view" data-key="${esc(x.key)}">View</button>`,r,a);}).join('');
   if(v&&(v.unreadable||v.tooLarge))h+=`<p class="prev-fine">${v.unreadable?v.unreadable+' chat file(s) could not be read. ':''}${v.tooLarge?v.tooLarge+' file(s) skipped for size.':''}</p>`;
   if(v&&v.formatNote)h+=`<p class="prev-fine">${esc(v.formatNote)}</p>`;
+  const nh=ac.hiddenCount+av.hiddenCount;
+  if(nh>0)h+=`<div class="prev-showhid"><button class="btn sm" type="button" data-pv="showhidden" aria-pressed="${sh}">${sh?'Hide hidden again':'Show hidden ('+nh+')'}</button></div>`;
   return h;
+}
+/* the header's Previous (N) button: visible rows only, "K hidden" in its tooltip (spec 006 FR-025) */
+function prevButton(a){
+  const btn=$('prevBtn'); if(!btn)return;
+  const st=prevOf(a), kw=kindWord(a.info&&a.info.adapterId), n=prevCounts(st);
+  btn.hidden=false;btn.textContent='Previous ('+(n.nc+n.nv)+')';
+  btn.title='Previous sessions: '+(st.cli?n.nc+' '+kw+' · ':'')+n.nv+' VS Code chat'+(n.nv===1?'':'s')+(n.hid?' · '+n.hid+' hidden':'');
+  btn.setAttribute('aria-expanded',String(!!st.open));
 }
 function renderPrev(a){
   const box=$('prev'), btn=$('prevBtn'); if(!box||a.parent)return;
   const st=prevOf(a), c=st.cli, v=st.vs;
   /* spec 052 FR-095 (round 10): "Previous (N)" in the header's actions; the panel under the header shows only while it is open */
   if(!c&&!v){if(btn){btn.hidden=false;btn.textContent='Previous';btn.title='Previous sessions: looking…';btn.setAttribute('aria-expanded','false');}box.hidden=true;box.innerHTML='';return;}
-  const nc=c&&c.ok?c.sessions.length:0, nv=v&&v.ok?v.sessions.length:0, kw=kindWord(a.info&&a.info.adapterId), hasHist=!!c; /* c is null for a kind without history (loadPrev) */
+  const nc=c&&c.ok?c.sessions.length:0, nv=v&&v.ok?v.sessions.length:0; /* the search box counts every row, hidden or not */
   const keepScroll=(box.querySelector('.prev-body')||{}).scrollTop||0;
-  if(btn){btn.hidden=false;btn.textContent='Previous ('+(nc+nv)+')';btn.title='Previous sessions: '+(hasHist?nc+' '+kw+' · ':'')+nv+' VS Code chat'+(nv===1?'':'s');btn.setAttribute('aria-expanded',String(!!st.open));}
+  prevButton(a);
   let h='';
   if(st.open){
     h+='<div class="prev-body">';
@@ -3824,6 +3852,90 @@ async function viewVs(a,key,btn){
   const toEnd=(again)=>{if(vsViewing&&c.contains(wrap)&&!(again&&c.scrollTop+c.clientHeight<c.scrollHeight-40))c.scrollTop=c.scrollHeight;};
   toEnd(false); requestAnimationFrame(()=>{toEnd(true);setTimeout(()=>toEnd(true),250);});
 }
+/* ---- spec 006 FR-024..FR-031: Pin, Hide and Delete on a row of Previous sessions ----
+   The window sends ids only (the agent, the source, the session id); main re-checks everything. Delete is offered here and nowhere else:
+   not on a desk card, an office List-view row, the card menu or the chat header (Clarifications Q1). */
+const prevItem=(st,g,k)=>{const r=g==='vs'?st.vs:st.cli;return r&&r.ok?r.sessions.find(x=>(g==='vs'?x.key:x.id)===k):null;};
+function prevRowEl(g,k){return [...document.querySelectorAll('#prevLists .prev-row')].find(r=>r.dataset.pg===g&&r.dataset.pk===k)||null;}
+function refreshPrevLists(a){const l=$('prevLists');if(l)l.innerHTML=prevListsHtml(a);prevButton(a);}
+/* after Hide or Delete: the next row's ⋯, else the previous row's, else the search box, else the Previous button (FR-027) */
+function focusAfterRow(rows,idx){
+  const all=[...document.querySelectorAll('#prevLists .prev-row')];
+  const keyed=rows.map(r=>all.find(e=>e.dataset.pg===r.g&&e.dataset.pk===r.k)).filter(Boolean);
+  const t=keyed[idx]||keyed[idx-1]||null;
+  const f=t?t.querySelector('.prev-more'):($('prevQ')||$('prevBtn'));
+  if(f&&f.focus)f.focus();
+}
+function visibleRows(a){const r=[];document.querySelectorAll('#prevLists .prev-row').forEach(e=>r.push({g:e.dataset.pg,k:e.dataset.pk}));return r;}
+async function markPrev(a,g,k,mark){
+  const st=prevOf(a), res=st[g==='vs'?'vs':'cli'];
+  if(!bridge.markPrevious||!res)return false;
+  const before=visibleRows(a), at=before.findIndex(r=>r.g===g&&r.k===k);
+  const out=await bridge.markPrevious(a.id,prevSrc(a,g),k,mark).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  if(!out||!out.ok){toast('Could not change that: '+esc((out&&out.error)||'unknown error'),5000).classList.add('err');return false;}
+  Object.assign(res,window.DurbarSessionSearch.applyMark({pinned:res.pinned,hidden:res.hidden},k,mark));
+  refreshPrevLists(a);
+  announce(mark==='hide'?'Hidden. Show hidden brings it back.':mark==='pin'?'Pinned to top.':mark==='unpin'?'Unpinned.':'Shown again.');
+  if(mark==='hide'&&!st.showHidden){const after=visibleRows(a);focusAfterRow(after,Math.min(at,after.length));}
+  else{const e=prevRowEl(g,k);const f=e&&e.querySelector('.prev-more');if(f)f.focus();}
+  return true;
+}
+function openPrevMenu(a,g,k,anchor,x,y){
+  closeModeMenu();
+  const st=prevOf(a), item=prevItem(st,g,k); if(!item)return;
+  const mk=prevMarks(g,st), hid=mk.hidden.includes(k), pinned=mk.pinned.includes(k), title=item.title||'this session';
+  const canDel=g!=='vs'&&bridge.deletePrevious;
+  const it=(act,label,sub,cls,dis)=>`<button type="button" role="menuitem" data-pact="${act}"${cls?` class="${cls}"`:''}${dis?` aria-disabled="true" title="${esc(dis)}"`:` title="${esc(sub)}"`}><span class="mt"><b>${esc(label)}</b><small>${esc(dis||sub)}</small></span></button>`;
+  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Actions for '+title);
+  m.innerHTML=(hid?'':pinned?it('unpin','Unpin','Back to its place by date'):it('pin','Pin to top','Keep it first in this list'))
+    +(hid?it('unhide','Unhide','Show it in the list again'):it('hide','Hide','Only in Durbar; it stays in VS Code and the CLI'))
+    +(canDel?(feat(a,'deleteSession')?it('delete','Delete…','Removes it from the agent app, VS Code and the CLI','mm-danger'):it('delete','Delete…','','mm-danger',window.DurbarSessionSearch.noDeleteReason(kindWord(a.info&&a.info.adapterId)))):'');
+  document.body.appendChild(m);
+  const b=m.getBoundingClientRect(); m.style.left=Math.max(8,Math.min(x,innerWidth-b.width-8))+'px'; m.style.top=Math.max(8,Math.min(y,innerHeight-b.height-8))+'px';
+  const back=()=>{const e=prevRowEl(g,k),f=e&&e.querySelector('.prev-more');if(f)f.focus();else if(anchor.focus&&document.contains(anchor))anchor.focus();};
+  m.addEventListener('click',e=>{const t=e.target.closest('[data-pact]');if(!t)return;
+    if(t.getAttribute('aria-disabled')==='true'){e.preventDefault();return;}
+    closeModeMenu();
+    const act=t.dataset.pact;
+    if(act==='delete')deletePrev(a,g,k,item);else markPrev(a,g,k,act);});
+  m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-pact]')],i=its.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'){e.preventDefault();its[(i+1)%its.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();its[(i+its.length-1)%its.length].focus();}
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();back();}});
+  m.querySelector('button').focus();
+}
+async function deletePrev(a,g,k,item){
+  const st=prevOf(a), root=liveRoot(a), kind=(root.info&&root.info.adapterId)||'copilot', w=DEL_WORDS[kind]||{app:kindWord(kind),cli:kindWord(kind)+' CLI'};
+  const row=prevRowEl(g,k), more=row&&row.querySelector('.prev-more');
+  const d=window.DurbarSessionSearch.deleteDialogText({title:item.title,app:w.app,cli:w.cli,codex:kind==='codex'});
+  const ok=await askDialog({title:d.title,body:d.body,lines:d.lines,returnFocus:more||$('prevBtn'),buttons:[{label:'Cancel',value:null},{label:'Delete',value:'ok',cls:'primary danger'}]});
+  if(!ok)return;
+  const before=visibleRows(a), at=before.findIndex(r=>r.g===g&&r.k===k);
+  const rowBtns=row?[...row.querySelectorAll('button')]:[]; rowBtns.forEach(b=>{if(b!==more)b.disabled=true;});
+  const done=busy(more,'…');
+  const out=await bridge.deletePrevious(a.id,k).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  done(); rowBtns.forEach(b=>{b.disabled=false;});
+  if(out&&out.ok){
+    const res=st.cli; if(res&&res.sessions){res.sessions=res.sessions.filter(x=>x.id!==k);res.pinned=(res.pinned||[]).filter(x=>x!==k);res.hidden=(res.hidden||[]).filter(x=>x!==k);}
+    refreshPrevLists(a); toast('Session deleted.',3200).classList.add('ok'); announce('Deleted.');
+    const after=visibleRows(a); focusAfterRow(after,Math.min(at,after.length)); return;
+  }
+  if(out&&out.code==='in-office'){inOfficeDialog(a,out,more);return;}
+  toast('Could not delete: '+esc((out&&out.error)||'unknown error'),7000).classList.add('err');
+  loadPrev(a); /* the list may be stale (the session is gone, or no longer in this folder) */
+}
+/* FR-030: Delete was refused because the session still has a card. Durbar never ends, removes or deletes anything by itself here. */
+async function inOfficeDialog(a,out,returnTo){
+  const card=out.agentId?byId(out.agentId):null, croot=card&&liveRoot(card);
+  const canRemove=!!(croot&&bridge.removeSession&&siblingsOf(croot).length);
+  const d=window.DurbarSessionSearch.refusalDialogText(canRemove);
+  const buttons=[{label:'Cancel',value:null}];
+  if(croot)buttons.push({label:'Go to session',value:'go',cls:'primary'});
+  if(canRemove)buttons.push({label:'Remove from office',value:'rm'});
+  const r=await askDialog({title:d.title,body:d.body,lines:d.lines,returnFocus:returnTo||$('prevBtn'),buttons});
+  if(!r||!croot)return;
+  if(r.value==='go')openPanel(croot.id,false);
+  else if(r.value==='rm')removeSessionUi(croot);
+}
 document.addEventListener('input',e=>{
   if(!e.target||e.target.id!=='prevQ')return;
   const a=byId(ui.selected); if(!a)return; const ra=liveRoot(a), l=$('prevLists'); if(!l)return;
@@ -3835,6 +3947,20 @@ document.addEventListener('click',e=>{
   if(b.dataset.pv==='toggle'){const st=prevOf(ra);st.open=!st.open;st.touched=true;renderPrev(ra);}
   else if(b.dataset.pv==='resume')resumePrev(ra,b.dataset.sid,b);
   else if(b.dataset.pv==='view')viewVs(ra,b.dataset.key,b);
+  else if(b.dataset.pv==='showhidden'){const st=prevOf(ra);st.showHidden=!st.showHidden;refreshPrevLists(ra);const nb=document.querySelector('#prevLists [data-pv="showhidden"]');if(nb)nb.focus();}
+  else if(b.dataset.pv==='more'){const row=b.closest('.prev-row');if(row){const r=b.getBoundingClientRect();openPrevMenu(ra,row.dataset.pg,row.dataset.pk,b,r.left,r.bottom+4);}}
+});
+/* FR-027: right-click, Shift+F10 or the context-menu key on a row open the same menu as its ⋯ */
+document.addEventListener('contextmenu',e=>{
+  const row=e.target.closest('#prev .prev-row'); if(!row||!bridge.markPrevious)return;
+  const a=byId(ui.selected); if(!a)return; e.preventDefault();
+  const more=row.querySelector('.prev-more'); if(more)openPrevMenu(liveRoot(a),row.dataset.pg,row.dataset.pk,more,e.clientX||more.getBoundingClientRect().left,e.clientY||more.getBoundingClientRect().bottom);
+});
+document.addEventListener('keydown',e=>{
+  if(!((e.key==='F10'&&e.shiftKey)||e.key==='ContextMenu'))return;
+  const row=e.target.closest&&e.target.closest('#prev .prev-row'); if(!row||!bridge.markPrevious)return;
+  const a=byId(ui.selected); if(!a)return; e.preventDefault();
+  const more=row.querySelector('.prev-more'),r=more.getBoundingClientRect(); openPrevMenu(liveRoot(a),row.dataset.pg,row.dataset.pk,more,r.left,r.bottom+4);
 });
 document.addEventListener('click',e=>{
   const fb=e.target.closest('.floors-ui [data-fl]');
@@ -3856,7 +3982,7 @@ document.addEventListener('click',e=>{
 /* After adding a folder: if it already has earlier Copilot sessions or VS Code chats, say so and show them. */
 async function announcePrevious(a){
   if(!bridge.listPrevious)return;
-  const st=await loadPrev(a); const n=(st.cli&&st.cli.ok?st.cli.sessions.length:0), v=(st.vs&&st.vs.ok?st.vs.sessions.length:0);
+  const st=await loadPrev(a); const vis=prevCounts(st), n=vis.nc, v=vis.nv; /* hidden rows are not announced (spec 006 FR-025) */
   if(!n&&!v)return;
   toast('Found '+(n?n+' earlier '+esc(kindWord(a.info&&a.info.adapterId))+' session'+(n===1?'':'s'):'')+(n&&v?' and ':'')+(v?v+' VS Code chat'+(v===1?'':'s'):'')+' for <b>'+esc(roomOf(a).name)+'</b>. Opening them.',4200);
   if(!ui.selected){st.open=true;openPanel(a.id,false);}

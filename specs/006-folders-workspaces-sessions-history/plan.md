@@ -65,7 +65,7 @@ specs/006-folders-workspaces-sessions-history/
 sessions:listPrevious(agentId)       -> { ok, sessions, pinned: id[], hidden: id[] }   exclude = agent ids ∪ resumeIdFor(ids)  (FR-032)
 vschat:list(agentId)                 -> { ...as today, pinned: key[], hidden: key[] }
 sessions:mark(agentId, src, id, mark) -> { ok }       src ∈ {adapterId of the agent, 'vscode'}; mark ∈ pin|unpin|hide|unhide
-sessions:delete(agentId, sessionId)  -> { ok } | { ok:false, error, code?: 'open', agentId? }
+sessions:delete(agentId, sessionId)  -> { ok } | { ok:false, error, code?: 'in-office', agentId? }
 ```
 
 `sessions:delete` body in a new `src/main/prevsessions.ts` (deps: agents, router, store, resumeIdFor, log, inFlight set), tested by `scripts/test-prevsessions.ts` with `FakeAdapter`. `sessions:resume` checks the same in-flight set.
@@ -77,6 +77,8 @@ sessions:delete(agentId, sessionId)  -> { ok } | { ok:false, error, code?: 'open
 **Activity.** `session-deleted` in `src/shared/activity.ts` and its word in `activitytable.js`; `test:activity` covers the sanitizer and word.
 
 **Simulator.** `src/renderer/sim.ts` keeps marks in memory per folder, offers `deleteSession` on the `mcp-swiss` rows (removes them from its list) and a hook that makes the next delete answer `code: 'in-office'`, for screenshots. One sim agent kind without delete shows the disabled item.
+
+**Review notes (Vikram, PR #373).** (1) `sessions:delete` is reachable only from the window's IPC: one `ipcHandle` registration in `main.ts`, no import of `prevsessions.ts` elsewhere, no MCP tool, remote, channel or schedule path; a source-reading test in `scripts/test-prevsessions.ts` pins it. (2) Session ids use a strict per-adapter allow-list (`src/shared/sessionid.ts`: letters, digits, `_`, `-`; no `/`, `\\`, `.`, `:`, NUL, control characters, drive letters or absolute paths), applied in the store, in both IPC calls and inside the Copilot and Codex adapters, with tests for `../x`, `..\\x`, `C:\\x`, absolute paths, empty, overlong and control characters (the fake adapter is never called).
 
 **Constitution check.** I (adapters as plug-ins): delete behind `AgentAdapter`, renderer sees a boolean. III (safe, no secrets): ids only in the store; Durbar deletes no files; confirmation with Cancel focused; refusal for open sessions; IPC takes ids, re-checked against the folder's list; the window reads the flag from the capabilities it already gets (`capsFor`, `app.js:2947`). IV (no credits): fake adapter, simulator; no real delete in tests. V (calm UI): one ⋯ per row, fits 1280x800. VI (parity): no paths, no shell. VIII (honest limits): real deletes, concurrent use by another process and macOS/Windows are `[KNOWN GAP]` until run.
 

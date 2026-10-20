@@ -120,9 +120,9 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
 /* Spec 012 T018 (FR-065, FR-066): the simulated kinds of `simkinds=mixed`. They are a simulation, not a statement about the real CLIs.
    Index in the 15-agent roster -> kind; every other agent is Copilot. Mcp-swiss holds two kinds (Ada, Mira); the basic agent is Priya (idle, never the first). */
 const SIM_KIND_BY_AGENT: Record<number, string> = { 0: 'claude', 3: 'claude', 4: 'codex', 5: 'claude', 6: 'basic', 7: 'codex', 8: 'claude', 9: 'codex', 11: 'claude' };
-const SIM_COPILOT_CAPS = { interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, remote: true, oneShot: true } as AdapterInfo['capabilities'];
+const SIM_COPILOT_CAPS = { interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, remote: true, oneShot: true, deleteSession: true } as AdapterInfo['capabilities'];
 const SIM_MIXED_KINDS: AdapterInfo[] = [
-  { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, remote: false, mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true } },
+  { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, remote: false, mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true, deleteSession: false } }, // spec 006 FR-028: Claude Code has no per-session delete
   { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: false, remote: false } },
   { id: 'basic', displayName: 'Basic agent (simulated)', state: 'ready', version: 'sim', capabilities: { interrupt: false, resume: false, images: false, models: false, effort: false, permissionModes: ['read-only'], permModeSwitch: 'none', usage: { tokens: true, costUsd: false, nanoAiu: false }, context: false, caps: false, helpers: false, history: false, mcpStatus: false, mcpToggle: false } as AdapterInfo['capabilities'] },
 ];
@@ -1300,7 +1300,16 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     };
 
     const simKinds = simKindsParam === '1' || simKindsParam === 'solo'; // spec 012 FR-136: '1' = two ready harnesses (picker shown), 'solo' = only Copilot ready (picker hidden)
-    const copilotCaps = SIM_COPILOT_CAPS;
+    // Spec 006 FR-028 (page address `simprev=nodelete`): the Copilot kind without a delete, to see Delete… disabled with its reason.
+    const simPrev = simQuery.get('simprev') ?? '';
+    const prevMarks = new Map<string, { pinned: string[]; hidden: string[] }>(); // key = 'vscode' or the agent app's id; ids only
+    const prevDeleted = new Set<string>();
+    const hasPrev = (x: SimAgent): boolean => x.info.cwd === '~/work/mcp-swiss' || (!!opts.solo && x.info.name === 'Ada'); // earlier sessions live in mcp-swiss (or in Ada's own folder with `simrooms=solo`)
+    const prevMarksOf = (src: string, present: string[]): { pinned: string[]; hidden: string[] } => {
+      const m = prevMarks.get(src);
+      return { pinned: (m?.pinned ?? []).filter((k) => present.includes(k)), hidden: (m?.hidden ?? []).filter((k) => present.includes(k)) };
+    };
+    const copilotCaps = simPrev === 'nodelete' ? { ...SIM_COPILOT_CAPS, deleteSession: false } as AdapterInfo['capabilities'] : SIM_COPILOT_CAPS;
     const simInstalled = new Set<string>(); // a simulated install that ended well: the next check finds it (like a real PATH that already had it)
     /*
      * Spec 012 FR-157: `simauth=out` = Copilot and Claude Code are not signed in from the start (the chat shows the sign-in card
@@ -1541,12 +1550,42 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
       listPrevious: async (id) => {
         const src = sims.find((x) => x.info.id === id);
-        if (!src || src.info.cwd !== '~/work/mcp-swiss') return { ok: true, sessions: [] };
+        if (!src || !hasPrev(src)) return { ok: true, sessions: [], pinned: [], hidden: [] };
         const t = Date.now();
-        return { ok: true, sessions: [
+        const all = [
           { id: 'prev-1', title: 'Rename the filings handler and update its tests', startTime: t - 3 * 3600e3, modifiedTime: t - 2 * 3600e3, branch: 'refactor/filings' },
           { id: 'prev-2', title: 'Why does the canton lookup return duplicates?', startTime: t - 30 * 3600e3, modifiedTime: t - 29 * 3600e3, branch: 'main' },
-        ] };
+          { id: 'prev-3', title: 'Add a retry with backoff to the registry client', startTime: t - 50 * 3600e3, modifiedTime: t - 49 * 3600e3, branch: 'feature/retry' },
+          { id: 'prev-4', title: 'Explain why the release workflow failed on the Windows runner and how to fix the path handling', startTime: t - 80 * 3600e3, modifiedTime: t - 79 * 3600e3, branch: 'fix/windows-paths' },
+        ].filter((x) => !prevDeleted.has(x.id));
+        return { ok: true, sessions: all, ...prevMarksOf(src.info.adapterId ?? 'copilot', all.map((x) => x.id)) };
+      },
+      // Spec 006 FR-026: pins and hides kept in memory for this run (the real ones are ids in durbar-folders.json), same exclusive rule and id shape as main.
+      markPrevious: async (id, src, sessionId, mark) => {
+        const a = sims.find((x) => x.info.id === id);
+        const okId = src === 'vscode' ? /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(sessionId) : /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(sessionId);
+        if (!a || !okId || !['pin', 'unpin', 'hide', 'unhide'].includes(mark)) return { ok: false, error: 'That is not a session id.' };
+        const m = prevMarks.get(src) ?? { pinned: [] as string[], hidden: [] as string[] };
+        m.pinned = m.pinned.filter((k) => k !== sessionId);
+        m.hidden = m.hidden.filter((k) => k !== sessionId);
+        if (mark === 'pin') m.pinned.push(sessionId);
+        if (mark === 'hide') m.hidden.push(sessionId);
+        prevMarks.set(src, m);
+        return { ok: true };
+      },
+      // Spec 006 FR-029: nothing is deleted; the rows only leave the simulated list. `simprev=inoffice` answers the refusal for the next delete.
+      deletePrevious: async (id, sessionId) => {
+        const a = sims.find((x) => x.info.id === id);
+        if (!a) return { ok: false, error: 'unknown agent' };
+        if (!simAdapterList().find((k) => k.id === (a.info.adapterId ?? 'copilot'))?.capabilities.deleteSession) return { ok: false, error: 'This agent app cannot delete sessions. Hide it instead.' };
+        if (simPrev === 'inoffice' || simPrev === 'inoffice-solo') {
+          const alone = sims.find((x) => sims.filter((y) => y.room === x.room).length === 1); // simrooms=solo: every folder has one session
+          return { ok: false, code: 'in-office', agentId: (simPrev === 'inoffice-solo' && alone ? alone : a).info.id, error: 'This session is still in the office. End it and remove it from the office first.' };
+        }
+        if (simPrev === 'error') return { ok: false, error: 'session not found' };
+        await new Promise((r) => setTimeout(r, 350));
+        prevDeleted.add(sessionId);
+        return { ok: true };
       },
       resumeSession: async (id, sessionId, replace) => {
         const src = sims.find((x) => x.info.id === id);
@@ -1564,12 +1603,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
       listVsChats: async (id) => {
         const src = sims.find((x) => x.info.id === id);
-        if (!src || src.info.cwd !== '~/work/mcp-swiss') return { ok: true, sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0, formatNote: '' };
+        if (!src || !hasPrev(src)) return { ok: true, sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0, formatNote: '' };
         return { ok: true, storesFound: 1, unreadable: 0, tooLarge: 0, formatNote: 'VS Code does not document this format; unknown parts are skipped.',
           sessions: [
             { key: 'h1/c1', title: 'Explain the registry design', updated: Date.now() - 5 * 86400e3, requests: 2, format: 'jsonl' },
             { key: 'h1/c2', title: 'Explicación del diseño de la caché', updated: Date.now() - 9 * 86400e3, requests: 3, format: 'jsonl' },
-          ] };
+          ], ...prevMarksOf('vscode', ['h1/c1', 'h1/c2']) };
       },
       readVsChat: async () => ({ ok: true, transcript: { title: 'Explain the registry design', totalRequests: 346, shownRequests: 26,
         notes: ['Only the last 26 of 346 messages are shown.', '1 kind(s) of content were not recognised and skipped (futureThing2027). VS Code\'s format may have changed.'],
