@@ -7,7 +7,7 @@ at the next launch (capability `'next-turn'`, entry flag `pending`), the dialog 
 
 ## Summary
 
-A user name per session, kept in Durbar's folder store and, where the agent app has an API, also written there (Copilot live sessions,
+A user name per session, kept in Durbar's folder store and, where the agent app has an API, also written there (Copilot and Codex now, Claude at its next launch,
 Codex threads). One pure module decides the name rule and which name to show; main owns validation, the store and the app call; the
 window shows `alias || title || folder label` everywhere it shows `a.name` today, and offers **Rename…** from three menus through one
 dialog.
@@ -60,19 +60,19 @@ src/adapters/types.ts               renameSession?(sessionId, name): Promise<voi
 src/adapters/copilot.ts             'any'; live.session.rpc.name.set({ name }); a non-live id: resumeSession (no prompt) + name.set + disconnect; refuses '"'.
 src/adapters/claude.ts              'next-turn'; pending name per session, `--name` in claudeArgs, relaunch before the next message, title event after the turn.
 src/adapters/codex.ts               'any'; thread/name/set on the live child or on probe(); maps thread/name/updated to a `title` event.
-src/adapters/fake.ts                option renameSession: 'live' | 'any' | undefined, call log, failure switch.
+src/adapters/fake.ts                option renameSession: 'any' | 'next-turn' | undefined, call log, failure switch.
 src/shared/api.ts, src/preload/preload.ts   renameSession bridge, ResumeResult/AgentInfo.alias, listPrevious `names`.
 src/renderer/dialog.js              input.submitOnEnter (Enter in the field activates the primary button).
 src/renderer/app.js                 renameSessionUi(a | prevRow, opener); items in More menu, card menu and Previous ⋯ menu; applyTitle
                                     honours alias; tooltips without the runtime title when aliased; Schedules option/list use the
                                     display name (FR-008); search over names (FR-009).
 src/renderer/modelswitch.js         cardMenuActions(a, caps).rename
-src/renderer/sim.ts                 renameSession in memory, kinds with 'any', 'live' and none, failure hook (FR-015).
+src/renderer/sim.ts                 renameSession in memory, kinds with 'any', 'next-turn' and none, failure hook (FR-015).
 scripts/test-names.ts          NEW  rule table; floors tests still pass.
 scripts/test-sessionname.ts    NEW  displayNameOf / syncEntry / renameTarget / shortName.
 scripts/test-folders.ts             sessionNames parse, set, reset, cap, drop with folder.
 scripts/test-sessionnames.ts   NEW  renameOp with FakeAdapter: own session, previous row, not in folder, bad name, reset, app ok, app
-                                    error -> Durbar-only + note, 'live' with a non-live session, in flight.
+                                    error -> Durbar-only + note, Copilot-style non-live resume failure, 'next-turn' pending, in flight.
 scripts/test-copilot-*.ts, test-codex-adapter.ts   fake session / fake RPC calls.
 scripts/test-adapter-contract.ts    C2: member <=> flag.
 scripts/check-rename.js        NEW  simulator driver, both sizes, Simple and Expert, every FR-001 surface, screenshots.
@@ -95,7 +95,7 @@ scripts/check-rename.js        NEW  simulator driver, both sizes, Simple and Exp
 
 - **Phase 1 (US1, MVP):** Durbar-only names for every app (rule, store, op, dialog, three menus, every surface, schedules, activity).
   Works for all three apps on its own.
-- **Phase 2 (US2):** the app-side rename for Copilot (live) and Codex (any), the dialog's "where it goes" line, partial results.
+- **Phase 2 (US2):** the app-side rename for Copilot and Codex (any) and Claude (next-turn), the dialog's "where it goes" line, partial results.
 - **Phase 3 (US3):** the Previous sessions row item, after spec 006 T036 (issue #368, PR #373) is merged.
 - **Phase 4:** real checks (Q9 A: one per app, 0 prompts), owner-gated, not in CI.
 - **Phase 5:** docs and converge.
