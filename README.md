@@ -226,7 +226,8 @@ npm run check:question-options  # question card options wrap and are never cut o
 npm run check:sched-sendto      # Schedules dialog: Send to / Limit labels on one line, every option fits, session name on a hint line (simulator, xvfb on Linux)
 npm run check:geometry    # every theme lays out exactly like Clean Office (about a minute)
 npm run check:themes      # on demand: the full layout check in every theme, a few at a time, low priority, memory limits
-npm run pack:dir          # unpacked app for this OS in release/ (also dist, dist:mac:arm64, dist:mac:x64, dist:win, dist:linux; unsigned)
+npm run pack:dir          # unpacked app for this OS in release/ (also dist, dist:mac:arm64, dist:mac:x64, dist:win, dist:linux; unsigned); then checks the Electron fuses
+npm run check:fuses-launch  # on demand, after pack:dir: the packed Linux app opens its window and offers no debugger (xvfb on Linux)
 ```
 
 `npm run smoke` and `npm run verify:cap` use a real Copilot login and may spend credits: run them only on purpose. Releases are built by GitHub Actions from `v*` tags into a draft release that the maintainer publishes by hand.
@@ -240,6 +241,7 @@ npm run pack:dir          # unpacked app for this OS in release/ (also dist, dis
 
 - **Only Linux has been run by hand.** macOS and Windows packages are built, and a packaged-app check runs on all three in CI, but nobody has used them on real machines yet.
 - **Unsigned builds:** expect the OS warnings above.
+- **No debugger in packaged builds:** release builds ignore `--inspect`, `NODE_OPTIONS` and `ELECTRON_RUN_AS_NODE` (Electron fuses, checked on every package build) and always drop `remote-debugging-port` and `remote-debugging-pipe`, whatever the spelling. Run from source (`npm start`) to debug. Checked on the packed Linux build, including `-remote-debugging-port` with one dash (`npm run check:fuses-launch`); macOS and Windows use the same code but have not been tried by hand (on Windows Chromium also accepts `/` and any case, which the guard covers by removing the switches by name). The ASAR integrity fuse has no effect on Linux.
 - **VS Code's own chats are read-only.** VS Code keeps them in an undocumented store that cannot be continued from outside; Durbar shows a copy. Copilot CLI/SDK sessions *can* be resumed.
 - **Caps are soft:** one model response can overshoot them, and the figures are what each harness reports.
 - **Floors that are off are quiet:** their agents keep running and can spend credits or wait for an approval.

@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.9 tag)
 
+- Packaged builds refuse debuggers: Electron fuses turn off `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` and `--inspect`, the app always removes `remote-debugging-port` and `remote-debugging-pipe` (any spelling), `npm run pack:dir` fails if a fuse is wrong, and `npm run check:fuses-launch` probes the packed Linux app (spec 008 FR-037..FR-039, #355). Linux checked; macOS and Windows not tried.
 - Agents read every review and comment before a merge: new rule in `AGENTS.md`, and `scripts/pr-gate.sh <N>` (verdict only) checks requested changes, open threads, unanswered comments, checks, CodeQL and alerts (spec 021).
 - **Switch the model inside Claude Code and Codex sessions** (spec 030 FR-038..FR-041). The model menu in a Claude or Codex chat now changes the model and effort from the next message and keeps the conversation (Claude relaunches with `--resume`, Codex sends them with the next turn). Checked on real accounts: Haiku to Sonnet in one Claude session, `gpt-5.6-luna` to `gpt-6.1-sol` in one Codex thread.
 - Claude Code sessions started in Durbar now appear in the Claude CLI's `claude --resume` list, by name if they have one (they were hidden because the CLI leaves out sessions it marks as SDK runs; spec 012 FR-159). Sessions started in the CLI were already in Durbar's Previous sessions.
