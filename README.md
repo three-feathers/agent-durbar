@@ -86,7 +86,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 
 Durbar offers each agent app (harness) that is **installed and signed in on your computer**. When two or more are ready, the toolbar and the New session dialog show an **Agent app** picker; with one, nothing extra is shown.
 
-**What "signed in" means.** For Copilot and Codex, Durbar asks the service with a free call that needs a valid sign-in (Copilot: your GitHub quota; Codex: your OpenAI rate limits), so an expired sign-in shows as *Not signed in* after **Check again**. Claude Code offers no free check, so Durbar trusts `claude auth status` and learns at the first message; if any app refuses a message because of its sign-in, the chat shows **Sign in** and then **Send again**. Not yet checked on real accounts.
+**What "signed in" means.** For Copilot and Codex, Durbar asks the service with a free call that needs a valid sign-in (Copilot: your GitHub quota; Codex: your OpenAI rate limits), so an expired sign-in shows as *Not signed in* after **Check again**. Claude Code offers no free check, so Durbar trusts `claude auth status` and learns at the first message; if any app refuses a message because of its sign-in, the chat shows **Sign in** and then **Send again**. After a Copilot sign-in, its shared runtime restarts so open Copilot sessions reconnect with the new login ("Reconnecting Copilot…"). Not yet checked on real accounts.
 
 | Harness | What Durbar runs | Checked on a real account |
 | --- | --- | --- |

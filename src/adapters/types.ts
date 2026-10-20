@@ -458,6 +458,12 @@ export interface AgentAdapter {
    * credits); `unknown` when it cannot tell. `detail` is a short, safe sentence: never a token, email or account name.
    */
   verifySignIn?(): Promise<SignInCheck>;
+  /**
+   * Spec 012 FR-158: pick up a new sign-in made outside the adapter (Settings or the chat's sign-in card) in anything the adapter
+   * keeps across sessions (Copilot's shared runtime client). Live sessions survive it. Optional: an adapter that starts a
+   * process per session needs nothing. Never takes or returns a token.
+   */
+  refreshAuth?(): Promise<void>;
   /** True while the session is open in this adapter. */
   isLive(sessionId: string): boolean;
   /** Stop every session and free the runtime. */

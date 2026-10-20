@@ -3628,6 +3628,8 @@ document.addEventListener('click',async e=>{
   await schedAct(act,s);
 });
 document.addEventListener('change',async e=>{if(e.target&&e.target.id==='schedPauseAllSet'){const r=await bridge.setSchedulesPaused(e.target.checked);SCHED.pausedAll=r.pausedAll;schedChanged();}});
+/* spec 012 FR-158: a new sign-in reconnected the agent app, so remote control ended for this session */
+if(bridge&&bridge.onRemoteOff){bridge.onRemoteOff(id=>{const a=liveById(id);if(!a||!a.remote)return;a.remote=null;updateRemoteUi(a);addNote(liveChat(a),'Remote control ended: '+esc(a.name)+' reconnected after the new sign-in. Turn it on again from More if you still need it.');});}
 if(bridge&&bridge.onScheduleRan){bridge.onScheduleRan(r=>{const a=liveById(r.agentId);if(!a)return;addNote(liveChat(a),'Scheduled prompt ('+esc(r.rule?ruleText(r.rule):r.every!==undefined?whenOf({every:r.every}):'once')+').');});}
 function renderFolders(){
   const pop=$('foldersPop'); if(pop.hidden)return;

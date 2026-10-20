@@ -27,7 +27,7 @@
   }
 
   /* After a new sign-in, a running session may still hold the old one: Claude Code and Codex read it when their process starts, and
-     Copilot's runtime is not known to reload it, so the session is restarted (ended, then resumed by Send again) for every app. */
+     Copilot's shared runtime is restarted by main after the sign-in (spec 012 FR-158); the session is still restarted (ended, then resumed by Send again) for every app. */
   function restartBeforeResend(){return true;}
 
   /* the last prompt per session, in memory only; bounded */

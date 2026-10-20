@@ -17,7 +17,12 @@ import type { SignInAnswer } from '../src/main/authcheck';
 import { CLAUDE_SIGN_IN_HINT, CODEX_SIGN_IN_HINT } from '../src/adapters/detect';
 import { ClaudeAdapter, CLAUDE_LOCAL_SIGN_IN } from '../src/adapters/claude';
 import type { AdapterInfo } from '../src/shared/adapters';
-import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
+import { FakeClient, FakeCopilot, RestartingFakeCopilot } from './fakes/copilot-sdk';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { HarnessSetup } from '../src/main/harnesssetup';
+import type { AgentEvent } from '../src/adapters/types';
 
 const info = (id: string, state: AdapterInfo['state'], hint?: string): AdapterInfo => ({ id, displayName: id, state, capabilities: {}, ...(hint ? { hint } : {}) } as unknown as AdapterInfo);
 const answer = (a: SignInAnswer) => async () => a;
@@ -125,6 +130,90 @@ void (async () => {
     assert.strictEqual((await mk('throw').verifySignIn()).status, 'unknown');
     // default probe without a found claude: unknown, nothing runs
     assert.strictEqual((await new ClaudeAdapter({ claudePath: async () => undefined }).verifySignIn()).status, 'unknown');
+  }
+  // ---- FR-158: refreshAuth restarts Copilot's shared client and resumes the live sessions on the new one
+  {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-refresh-'));
+    // nothing started yet: nothing to stop, no client is created
+    const idle = new RestartingFakeCopilot();
+    await idle.refreshAuth();
+    assert.strictEqual(idle.clients.length, 0, 'no client is started by a refresh');
+
+    const ad = new RestartingFakeCopilot();
+    const events: AgentEvent[] = [];
+    ad.onEvent((e) => events.push(e));
+    const c1 = await ad.currentClient();
+    assert.strictEqual(await ad.currentClient(), c1, 'the client is shared');
+    const a = await ad.start({ workspace: dir, model: 'sim-fast', maxAiCredits: 5, quiet: true });
+    const b = await ad.start({ workspace: dir, model: 'sim-deep', quiet: true });
+    c1.sessions.get(a)!.processing = true; // a turn is running in a
+    await ad.setCap(b, 7);
+    await ad.setMcpEnabled(b, 'github', false);
+    await ad.refreshAuth();
+    assert.strictEqual(c1.stopped, 1, 'the old client is stopped gracefully');
+    const c2 = await ad.currentClient();
+    assert.notStrictEqual(c2, c1, 'getClient returns a new client');
+    assert.strictEqual(ad.clients.length, 2);
+    assert.deepStrictEqual(c2.resumed.map((r) => r.id), [a, b], 'both live sessions are resumed on the new client');
+    assert.ok(ad.isLive(a) && ad.isLive(b));
+    const ra = c2.resumed[0].config, rb = c2.resumed[1].config;
+    assert.strictEqual(typeof ra.onPermissionRequest, 'function', 'same handlers');
+    assert.strictEqual(ra.model, undefined, 'no model: the runtime keeps the model the session has now');
+    assert.deepStrictEqual(ra.sessionLimits, { maxAiCredits: 5 }, 'the start cap stays');
+    assert.deepStrictEqual(rb.sessionLimits, { maxAiCredits: 7 }, 'a cap changed while running is put back');
+    assert.ok(c2.sessions.get(b)!.calls.some((x) => x.name === 'mcp.disable'), 'an MCP server switched off stays off');
+    const intents = (sid: string) => events.filter((e) => e.sessionId === sid && e.type === 'status').map((e) => (e as { intent?: string }).intent);
+    assert.ok(intents(a).includes('Reconnecting Copilot…'));
+    assert.ok(intents(a).some((t) => t && /running turn was stopped/.test(t)), 'a cut turn is said');
+    assert.ok(intents(b).includes('Reconnected with the new sign-in.'));
+    // events of the new session reach the app; the old one is unsubscribed
+    assert.strictEqual(c1.sessions.get(a)!.handler, undefined);
+    assert.ok(c2.sessions.get(a)!.handler);
+    // sending uses the new session
+    await ad.send(a, { text: 'hi' });
+    assert.ok(c2.sessions.get(a)!.calls.some((x) => x.name === 'send'));
+    assert.ok(!c1.sessions.get(a)!.calls.some((x) => x.name === 'send'));
+
+    // a session that cannot be resumed is ended (history stays); a stop failure on the old client does not block
+    const bad = new RestartingFakeCopilot((c, n) => { if (n === 0) c.stopFail = 'boom'; if (n === 1) c.resumeFail.add('keep-me'); });
+    const bev: AgentEvent[] = [];
+    bad.onEvent((e) => bev.push(e));
+    await bad.start({ workspace: dir, sessionId: 'keep-me', quiet: true });
+    await bad.refreshAuth();
+    assert.strictEqual(bad.isLive('keep-me'), false);
+    assert.ok(bev.some((e) => e.type === 'status' && (e as { status?: string }).status === 'stopped'));
+    assert.strictEqual(bad.clients.length, 2);
+    // two refreshes at once share one restart
+    const twice = new RestartingFakeCopilot();
+    await twice.currentClient();
+    await Promise.all([twice.refreshAuth(), twice.refreshAuth()]);
+    assert.strictEqual(twice.clients[0].stopped, 1);
+    // the token-free fake adapter (getClient overridden): a refresh is a no-op
+    await new FakeCopilot(new FakeClient()).refreshAuth();
+  }
+
+  // ---- FR-158: a sign-in that ended well calls afterSignIn before detection and harness:done; a failed one does not
+  {
+    const order: string[] = [];
+    const mk = () => {
+      const setup = new HarnessSetup({
+        detectEnv: { platform: 'linux', env: {}, exists: () => false, which: async () => '/usr/bin/copilot' } as never,
+        spawn: (() => { throw new Error('unused'); }) as never,
+        killTree: () => undefined,
+        send: ((ch: string) => order.push(ch)) as never,
+        redetect: async () => { order.push('redetect'); },
+        afterSignIn: async (k) => { order.push('after:' + k); },
+      });
+      return setup as unknown as { finish(r: unknown, code: number | null): Promise<void> };
+    };
+    await mk().finish({ kind: 'copilot', op: 'signin', out: '', started: 0 }, 0);
+    assert.deepStrictEqual(order, ['after:copilot', 'redetect', 'harness:done']);
+    order.length = 0;
+    await mk().finish({ kind: 'copilot', op: 'signin', out: '', started: 0 }, 1);
+    assert.deepStrictEqual(order, ['redetect', 'harness:done'], 'a failed sign-in refreshes nothing');
+    order.length = 0;
+    await mk().finish({ kind: 'copilot', op: 'install', out: '', started: 0 }, 0);
+    assert.deepStrictEqual(order, ['redetect', 'harness:done'], 'only a sign-in');
   }
   console.log('authcheck: all checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });
