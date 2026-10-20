@@ -30,6 +30,10 @@ const auth = [
   'Please log in again',
   'login required',
   'unauthorized: unexpected status 401',
+  // real texts, spec 012 T124 (2026-10-20): Copilot runtime 1.0.98 with a refused token, and Codex 0.163 with a broken access token
+  'Request account.getQuota failed with message: Not authenticated. Please authenticate first.',
+  'query: Execution failed: model resolution leaf failed: get_model_list: GenericFailure, Session was not created with authentication info or custom provider',
+  'failed to fetch codex rate limits: GET https://chatgpt.com/backend-api/wham/usage failed: 401 Unauthorized; content-type=text/plain; body={ "error": { "message": "Could not parse your authentication token. Please try signing in again.", "code": "unauthorized_unknown" } }',
 ];
 const notAuth = [
   '',
@@ -75,6 +79,9 @@ assert.strictEqual(signInFromError(new Error('ECONNRESET')), 'unknown');
   assert.deepStrictEqual(copilotErrorKind('authentication'), { errorKind: 'auth' });
   for (const t of ['authorization', 'policy', 'quota', 'rate_limit', 'context_limit', 'query']) assert.ok('errorKind' in copilotErrorKind(t) && copilotErrorKind(t).errorKind === undefined, t);
   assert.deepStrictEqual(copilotErrorKind('weird'), {});
+  // T124 real text: a `query` error that says the session has no sign-in is a sign-in failure; other `query` errors are not
+  assert.deepStrictEqual(copilotErrorKind('query', 'Execution failed: model resolution leaf failed: get_model_list: GenericFailure, Session was not created with authentication info or custom provider'), { errorKind: 'auth' });
+  assert.ok('errorKind' in copilotErrorKind('query', 'HTTP 403 Forbidden') && copilotErrorKind('query', 'HTTP 403 Forbidden').errorKind === undefined);
   const out: EventBody[] = [];
   const m = new EventMapper((b) => out.push(markAuthError(b)));
   m.map({ type: 'session.error', data: { errorType: 'authentication', message: 'Not authorized' } } as never);

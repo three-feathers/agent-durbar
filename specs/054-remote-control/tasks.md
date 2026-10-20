@@ -16,6 +16,7 @@
 ## Phase 1: real check (needs the owner's go-ahead: it exports a session to GitHub)
 
 - [ ] T020 On a real Copilot account, in a throw-away GitHub repository folder: one read-only session, one tiny prompt (about 1 premium request), then Control from GitHub. Record: does `enable` work without `enableRemoteSessions` (Q1); is a GitHub repository folder required (Q2); `url` vs `shareUrl` (Q3); plan and cost (Q4); does the GitHub task stay after End session (FR-003); does steering from github.com reach Durbar's chat; does `remote_steerable_changed` arrive. Then Stop remote control and End session.
+  - 2026-10-20 partly run (2 prompts, 0.24 AI credits, `scripts/remote-copilot-real.ts`; the throw-away folders had no GitHub remote, so nothing was published): in a plain folder and in a `git init` folder with no remote, `remote.enable({mode:'on'})` answered `{ started: false, remoteSteerable: false }` with no error and no URL; `visibility.get` said `{ synced: false }`; no remote event arrived; `disable()` worked. Q1 partly answered (no error without `enableRemoteSessions`, but nothing started either); Q2: not a plain folder and not a local-only git folder. Fixed: `started: false` is no longer shown as on (FR-002 delta). Still open: a folder with a GitHub remote (needs a throw-away GitHub repository, which is the owner's call), Q3, FR-003, steering from github.com.
 
 ## Phase 2: Claude Code channels wizard (planned; research first, on a real account)
 
