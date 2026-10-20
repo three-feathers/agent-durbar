@@ -14,6 +14,7 @@ import { CODEX_INITIALIZE_CAPABILITIES, codexProfileArgs, codexWorkspaceRoots } 
 import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
 import { CODEX_EXPERIMENTAL_DESCRIPTORS } from '../src/adapters/experimentalCodex';
 import type { AgentEvent, PermissionMode } from '../src/adapters/types';
+import { eventProblems } from '../src/adapters/eventguard';
 import { FakeCodexServer } from './fakes/codex-app-server';
 import type { FakeCodexOptions } from './fakes/codex-app-server';
 
@@ -1045,6 +1046,51 @@ async function main(): Promise<void> {
     assert.strictEqual(start.approvalPolicy, 'never');
     assert.ok(typeof start.cwd === 'string' && !fs.existsSync(start.cwd as string), 'the temp folder is removed after');
     assert.strictEqual(events.length, 0, 'no session events');
+  }
+
+  // ---- spec 012 FR-156: verifySignIn asks OpenAI through account/rateLimits/read on a short-lived child; never the token
+  {
+    const cases: Array<[FakeCodexOptions, string]> = [
+      [{}, 'signed-in'],
+      [{ rateLimits: 'unauthorized' }, 'signed-out'],
+      [{ rateLimits: 'network' }, 'unknown'],
+      [{ rateLimits: 'missing' }, 'unknown'], // falls back to getAuthStatus: signed in on this computer, not confirmed
+      [{ rateLimits: 'missing', authMethod: null }, 'signed-out'],
+    ];
+    for (const [opts, want] of cases) {
+      const { server, ad, events } = make({ server: opts });
+      const r = await ad.verifySignIn!();
+      assert.strictEqual(r.status, want, `verifySignIn with ${JSON.stringify(opts)}`);
+      assert.ok(!r.detail || !/token|@/i.test(r.detail), 'the detail names no token or account');
+      const methods = server.wire.map((w) => w.method);
+      assert.deepStrictEqual(methods.slice(0, 3), ['initialize', 'initialized', 'account/rateLimits/read']);
+      assert.ok(!methods.some((m) => m.startsWith('thread/') || m.startsWith('turn/')), 'no thread, no turn, no prompt');
+      const auth = server.requests('getAuthStatus');
+      assert.strictEqual(auth.length, opts.rateLimits === 'missing' ? 1 : 0, 'getAuthStatus only as the fallback');
+      for (const a of auth) assert.deepStrictEqual(a.params, { includeToken: false, refreshToken: false }, 'the token is never asked for');
+      await server.flush();
+      assert.deepStrictEqual(server.live, [], 'the probe child is closed');
+      assert.strictEqual(events.length, 0);
+      await ad.dispose();
+    }
+    // Codex not found: unknown, nothing spawned
+    const server = new FakeCodexServer();
+    const ad = new CodexAdapter({ spawn: server.spawn, locate: async () => undefined, platform: 'linux', env: {} });
+    assert.strictEqual((await ad.verifySignIn!()).status, 'unknown');
+    assert.strictEqual(server.spawns.length, 0);
+  }
+
+  // ---- spec 012 FR-157: a turn that fails because of the sign-in is marked errorKind 'auth'; a usage limit is not
+  {
+    for (const [err, kind] of [[{ message: 'unexpected status 401 Unauthorized: token expired', codexErrorInfo: 'unauthorized' }, 'auth'], [{ message: 'You hit your usage limit', codexErrorInfo: 'usageLimitExceeded' }, undefined]] as const) {
+      const { ad, events } = make({ server: { turnScript: [{ method: 'turn/completed', params: { threadId: 'thr_main', turn: { id: 'turn_1', status: 'failed', error: err } } }] } });
+      const sid = await ad.start({ workspace: dir(), permissionMode: 'read-only', quiet: true });
+      await ad.send(sid, { text: 'hi' });
+      const e = await until('error status', () => events.find((x) => x.type === 'status' && x.status === 'error'));
+      assert.strictEqual((e as { errorKind?: string }).errorKind, kind, `errorKind for ${err.message}`);
+      assert.deepStrictEqual(eventProblems(e), []);
+      await ad.dispose();
+    }
   }
 
   for (const d of tmp) fs.rmSync(d, { recursive: true, force: true });

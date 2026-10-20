@@ -6,14 +6,15 @@
  *
  * Not in this file yet (T043b): resume of a known thread (FR-093) and its folder and profile checks.
  */
+import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, StartOptions, Unsubscribe } from './types';
+import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, SignInCheck, StartOptions, Unsubscribe } from './types';
 import type { AdapterDescriptor } from './capabilities';
 import type { EventBody } from './map';
 import { CodexMapper } from './codexMap';
-import { createCodexRpc, realSpawn } from './codexRpc';
+import { CodexRpcError, createCodexRpc, realSpawn } from './codexRpc';
 import type { CodexRpc, RequestOutcome, SpawnFn } from './codexRpc';
 import { codexHistory, codexModelOptions, codexPreviousSessions } from './codexHistory';
 import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
@@ -362,6 +363,32 @@ export class CodexAdapter implements AgentAdapter {
     const read = (rpc: CodexRpc): Promise<unknown> => rpc.request('thread/read', { threadId, includeTurns: true });
     const res = live ? await read(live.rpc) : await this.probe(read);
     return codexHistory(isObj(res) ? res.thread : undefined);
+  }
+
+  /**
+   * Spec 012 FR-156: is the Codex sign-in really valid? Detection already ran `codex login status` (local) and only a `ready`
+   * Codex is asked. A short-lived app-server sends `account/rateLimits/read` (a read-only call to OpenAI that needs a valid
+   * ChatGPT login; no prompt, nothing billed). A Codex without that method falls back to `getAuthStatus` with
+   * `includeToken: false` and `refreshToken: false` (local: a missing login only). The token is never asked for or kept.
+   */
+  async verifySignIn(): Promise<SignInCheck> {
+    try {
+      return await this.probe(async (rpc) => {
+        try {
+          await rpc.request('account/rateLimits/read', {});
+          return { status: 'signed-in', detail: 'Signed in (checked with OpenAI).' } as SignInCheck;
+        } catch (e) {
+          if (isAuthError(e)) return { status: 'signed-out', detail: 'OpenAI did not accept the Codex sign-in.' } as SignInCheck;
+          if (!(e instanceof CodexRpcError && e.kind === 'rpc' && (e.code === -32601 || /method not found|unknown variant|unknown method/i.test(e.message)))) return { status: 'unknown' } as SignInCheck;
+        }
+        const r = await rpc.request('getAuthStatus', { includeToken: false, refreshToken: false });
+        const method = isObj(r) ? r.authMethod : undefined;
+        if (method === null || (isObj(r) && r.requiresOpenaiAuth === true && !method)) return { status: 'signed-out', detail: 'No Codex sign-in on this computer.' } as SignInCheck;
+        return { status: 'unknown' } as SignInCheck;
+      });
+    } catch (e) {
+      return { status: signInFromError(e) };
+    }
   }
 
   private modelCache?: { at: number; list: Promise<ModelOption[]> };
@@ -771,7 +798,7 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   protected emit(sessionId: string, body: EventBody): void {
-    const event = { ...body, sessionId, timestamp: Date.now() } as AgentEvent;
+    const event = { ...markAuthError(body), sessionId, timestamp: Date.now() } as AgentEvent; // FR-157: a sign-in failure is marked
     for (const l of this.listeners) l(event);
   }
 

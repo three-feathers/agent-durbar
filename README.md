@@ -11,7 +11,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 **Website:** <https://three-feathers.github.io/agent-durbar/>
 
 > **Status: alpha.**
-> - The newest pre-release is [`v0.1.0-alpha.8`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.8). It is unsigned and not notarized.
+> - The newest pre-release is [`v0.1.0-alpha.9`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.9). It is unsigned and not notarized.
 > - What changed in each release is in the [CHANGELOG](CHANGELOG.md).
 > - Only Linux has been run by hand. macOS and Windows builds are made and checked in CI but are untested on real machines.
 > - Built by [Three Feathers](https://github.com/three-feathers), tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
@@ -84,6 +84,8 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 ## Harnesses
 
 Durbar offers each agent app (harness) that is **installed and signed in on your computer**. When two or more are ready, the toolbar and the New session dialog show an **Agent app** picker; with one, nothing extra is shown.
+
+**What "signed in" means.** For Copilot and Codex, Durbar asks the service with a free call that needs a valid sign-in (Copilot: your GitHub quota; Codex: your OpenAI rate limits), so an expired sign-in shows as *Not signed in* after **Check again**. Claude Code offers no free check, so Durbar trusts `claude auth status` and learns at the first message; if any app refuses a message because of its sign-in, the chat shows **Sign in** and then **Send again**. Not yet checked on real accounts.
 
 | Harness | What Durbar runs | Checked on a real account |
 | --- | --- | --- |

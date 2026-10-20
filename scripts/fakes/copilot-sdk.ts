@@ -103,7 +103,28 @@ export class FakeClient {
     if (!this.onDisk.delete(id)) throw new Error(`session ${id} not found`);
   }
   async getSessionMetadata(id: string): Promise<unknown> { return this.onDisk.has(id) ? { sessionId: id } : undefined; }
-  async listModels(): Promise<unknown[]> { return []; }
+  async listModels(): Promise<unknown[]> { this.authCalls.push('listModels'); if (this.listModelsFail) throw new Error(this.listModelsFail); return []; }
+  /** Spec 012 FR-156: what `getAuthStatus()` says (local), and the server calls `verifySignIn` makes, in order. */
+  authenticated = true;
+  authStatusFail = '';
+  authCalls: string[] = [];
+  /** `rpc.account.getQuota` / `rpc.models.list` / `listModels` reject with this message; `noQuota` / `noRpcModels` leave the method out. */
+  quotaFail = '';
+  modelsFail = '';
+  listModelsFail = '';
+  noQuota = false;
+  noRpcModels = false;
+  async getAuthStatus(): Promise<unknown> {
+    this.authCalls.push('getAuthStatus');
+    if (this.authStatusFail) throw new Error(this.authStatusFail);
+    return { isAuthenticated: this.authenticated, authType: 'user', login: 'someone', statusMessage: 'ok' };
+  }
+  get rpc(): Record<string, unknown> {
+    return {
+      ...(this.noQuota ? {} : { account: { getQuota: async (p: unknown) => { this.authCalls.push('account.getQuota'); void p; if (this.quotaFail) throw new Error(this.quotaFail); return { quotaSnapshots: {} }; } } }),
+      ...(this.noRpcModels ? {} : { models: { list: async () => { this.authCalls.push('models.list'); if (this.modelsFail) throw new Error(this.modelsFail); return { models: [] }; } } }),
+    };
+  }
 }
 
 export class FakeCopilot extends CopilotAdapter {

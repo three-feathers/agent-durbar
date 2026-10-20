@@ -2646,6 +2646,7 @@ function onLiveEvent(e){
       updateCtxChip(a);maybeSuggestFresh(a);
       /* a queued switch applies when the turn ends (its model event follows at once); if none came, do not leave "Next: ..." standing */
       if(a.pendingModel){const p=a.pendingModel;setTimeout(()=>{if(a.pendingModel===p){a.pendingModel=undefined;updateModelChip(a);}},2000);}}
+    else if(e.status==='error'&&e.errorKind==='auth'){closeTurn(a);a.worked=false;markKindSignedOut(kindOf(a));showSignInCard(a,{detail:e.intent||''});setState(a,'error',null,kindWord(kindOf(a))+' needs you to sign in again.');} /* spec 012 FR-157 */
     else if(e.status==='error'){closeTurn(a);addNote(chat,esc(e.intent||'Error'),true);setState(a,'error',null,SHORT(e.intent||'Error',140));}
     else if(e.status==='stopped'){
       if(a.limit)settleLimit(a,'cancel');
@@ -2687,6 +2688,9 @@ function onLiveEvent(e){
 async function sendLive(text,forId){
   const a0=byId(forId||ui.selected); if(!a0)return; const a=liveRoot(a0);
   text=(text||'').trim(); if(!text&&!attached.length)return;
+  /* spec 012 FR-157: an app that is known to be signed out gets the sign-in card first; the typed text stays in the box */
+  if(SIGNIN&&SIGNIN.needsSignIn(KINDS,kindOf(a))){PROMPTS.set(a.id,text,attached.slice());showSignInCard(a,{before:true});return;}
+  if(PROMPTS)PROMPTS.set(a.id,text,attached.slice()); /* memory only, for Send again after a sign-in (never stored) */
   a.sent=true;
   const chat=liveChat(a), atts=attached.slice();
   addUserMsg(chat,text||'(attachment)',atts);
@@ -2695,6 +2699,52 @@ async function sendLive(text,forId){
   a.worked=true; a.intent=''; closeTurn(a); ensureTurn(a); setState(a,'thinking',null,'Thinking');
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})));
   if(!r.ok){closeTurn(a);addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);setState(a,'error',null,'Send failed: '+SHORT(r.error,100));}
+}
+/* ---------------- sign in again from the chat (spec 012 FR-157) ---------------- */
+const SIGNIN=window.DurbarSignIn||null;
+const PROMPTS=SIGNIN?SIGNIN.createPromptMemory():null;
+const kindOf=a=>(liveRoot(a).info&&liveRoot(a).info.adapterId)||'copilot';
+/* the window's own copy of the adapter list follows at once (main also sends the changed list; the simulator has no main) */
+function markKindSignedOut(kind){
+  if(!KINDS)return;
+  let changed=false;
+  KINDS=KINDS.map(k=>{if(k.id!==kind||k.state!=='ready')return k;changed=true;return Object.assign({},k,{state:'not-signed-in'});});
+  if(changed)applyKinds();
+}
+function showSignInCard(a0,o){
+  const a=liveRoot(a0), chat=liveChat(a), kind=kindOf(a), name=kindWord(kind), opts=o||{};
+  if(a.signCard&&a.signCard.isConnected&&!a.signCard.classList.contains('settled'))a.signCard.remove(); /* one open card per chat */
+  const n=document.createElement('div');n.className='note perm signin';n.setAttribute('role','group');n.setAttribute('aria-label',name+': sign in');
+  n.innerHTML='<b class="signin-title"></b> <span class="psum"></span><div class="note-actions"></div>'+(opts.detail?'<details class="signin-details"><summary>Details</summary><pre></pre></details>':'');
+  if(opts.detail)n.querySelector('pre').textContent=opts.detail;
+  let phase='needed';
+  const paint=()=>{
+    const t=SIGNIN.cardText(name,phase,{before:!!opts.before,hasPrompt:!!PROMPTS.get(a.id),restart:!opts.before&&SIGNIN.restartBeforeResend(kind)});
+    n.querySelector('.signin-title').textContent=t.title;n.querySelector('.psum').textContent=' '+t.note;
+    const row=n.querySelector('.note-actions');row.textContent='';
+    if(t.button){const b=document.createElement('button');b.type='button';b.className='btn primary';b.textContent=t.button;b.onclick=()=>phase==='done'?resend(b):signIn();row.appendChild(b);}
+    if(phase!=='done'&&phase!=='signing'){const l=document.createElement('button');l.type='button';l.className='linkbtn';l.textContent='Open Settings > Agent apps';l.onclick=()=>window.DurbarScreens.openSettings('harnesses');row.appendChild(l);}
+    n.classList.toggle('settled',phase==='done'||phase==='sent');
+  };
+  const signIn=async()=>{
+    const H=window.DurbarHarnesses;
+    if(!H||!H.available()||!H.signIn){window.DurbarScreens.openSettings('harnesses');return;}
+    phase='signing';paint();
+    const r=await H.signIn(kind,name).catch(()=>({ok:false}));
+    await loadKinds(true);
+    phase=r&&r.ok&&!SIGNIN.needsSignIn(KINDS,kind)?'done':'failed';paint();
+    if(phase==='done'&&a.state==='error')setState(a,'idle',null,'Signed in again. Ready for your message.');
+  };
+  const resend=async b=>{
+    const p=PROMPTS.get(a.id);if(!p)return;
+    b.disabled=true;
+    if(!opts.before&&SIGNIN.restartBeforeResend(kind)){const done=busy(b,'Restarting the session…');try{await (bridge.end||bridge.stop)(a.id);}catch(err){/* not running: the message starts it */}finally{done();}}
+    phase='sent';n.querySelector('.note-actions').textContent='';n.querySelector('.psum').textContent=opts.before?' Sent.':' Restarted the session and sent your last message again.';n.classList.add('settled');
+    attached=p.atts.slice();sendLive(p.text,a.id);
+  };
+  paint();chat.el.appendChild(n);scrollChat(chat);a.signCard=n;
+  if(opts.before)setState(a,a.state==='error'?'error':a.state,null,name+' needs you to sign in first.');
+  return n;
 }
 async function pickLive(want){addPicked(await bridge.pickAttachments(want));}
 /* spec 052 FR-047: btn (optional) shows the busy state while the bridge call runs; FR-050: success and failure toasts are typed */
@@ -2876,6 +2926,8 @@ function fillEffortSelect(sel,modelId,cur,off,kind){
 }
 async function loadModels(){
   loadKinds();
+  /* spec 012 FR-157: main changed the list itself (a session was refused because of the sign-in) */
+  if(bridge.onAdaptersChanged)bridge.onAdaptersChanged(list=>{if(Array.isArray(list)&&list.length){KINDS=list;applyKinds();}});
   if(!bridge.listModels)return;
   const r=await bridge.listModels().catch(()=>null);
   if(!r||!r.ok||!r.models.length)return;

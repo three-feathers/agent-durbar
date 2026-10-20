@@ -101,6 +101,9 @@ body.has-bridge #liveBar{display:flex}
 .note.err{background:var(--pb-error,#f6e2df);border-color:#ebc7c2;color:var(--red-ink)}
 .note .btn{height:28px;margin:0;padding:0 10px}
 .note-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+/* spec 012 FR-157: the chat's sign-in card; the raw error only in a small, closed Details */
+.note.signin .signin-details{margin-top:6px;font-size:11px;color:var(--muted)}
+.note.signin .signin-details pre{white-space:pre-wrap;word-break:break-word;margin:4px 0 0;font-size:11px}
 .note .btn{margin:0}
 .note.perm{flex:1 1 100%;max-width:100%;align-self:stretch}
 .chips>.note.perm{box-sizing:border-box}
