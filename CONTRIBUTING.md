@@ -21,6 +21,7 @@ Node 20.19+ or 22.12+ is required. `npm start` with real sessions needs a GitHub
 - Never commit tokens, `.env` files, Copilot config or session data, or personal paths. Do not add code that stores credentials; sign-in belongs to the Copilot runtime.
 - Add or update a test in `scripts/` when you change the permission broker, attachments or launcher logic.
 - Run `npm run typecheck && npm run build && npm test` before opening a PR; CI runs the same. For UI changes attach screenshots at 1440x900 and 1280x800 with 15 simulated agents (`DURBAR_SIM=15`).
+- **Design and UI:** follow the ten house rules in [docs/design-rules.md](docs/design-rules.md) (control heights, radius and colour tokens, one primary button, the "…" rule, one word per status, dialog layout, states, chevrons) and keep text at 10.5px or more.
 - Use the pull request template and tick the checklist honestly; state what you did *not* verify.
 - **Keep the docs in sync, in the same PR.** If you change something a user can see, a script, a permission, a setting, MCP or tool behavior, the release status or the contributors, update `README.md`, the relevant `docs/` page, the spec's `tasks.md`, `CHANGELOG.md` and the screenshots it shows. The exact list is in [AGENTS.md](AGENTS.md#keep-docs-in-sync). No docs impact? Write `Docs: n/a <reason>` in the PR description. A CI check only *warns* about it; it never blocks.
 

@@ -53,7 +53,7 @@ module.exports = async (ctx) => {
     assert.match(await text('.scr-sum'), /tool calls by \d+ agents since /);
     assert.match(await text('#screen'), /Zoe · old-prototype/, 'history of agents that are gone is kept');
     assert.match(await text('#screen'), /never arguments/);
-    assert.strictEqual(await count('#tabAgents'), 0, 'Models & context is a This session view');
+    assert.strictEqual(await count('#tabAgents'), 0, 'Models and context is a This session view');
     await shot('tools-all-time', w, h);
     // scope to one agent label
     await ctx.js(`(()=>{const s=document.getElementById('toolScope');const o=[...s.options].find(o=>/^Ada · /.test(o.textContent));s.value=o.value;s.onchange({target:s});})()`); await ctx.sleep(600);

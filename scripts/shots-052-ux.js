@@ -167,14 +167,34 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('[data-detail="simple"]').click()`); await ctx.sleep(600);
     assert.ok(await js(`document.body.classList.contains('simple')`), 'Simple is on');
     await js(`document.getElementById('scrClose')&&document.getElementById('scrClose').click()`); await ctx.sleep(600);
-    const simpleOffice = await js(`({paths:[...document.querySelectorAll('#stage .room-path')].filter(e=>e.getClientRects().length).length,at:[...document.querySelectorAll('#stage .desk')].some(t=>/\bAt [^:]{1,40}: /.test(t.innerText)),verb:[...document.querySelectorAll('#stage .desk')].some(t=>/(Running a command|Searching (code|the web)|Reading notes|Using a tool) · /.test(t.innerText))})`);
+    const simpleOffice = await js(`({paths:[...document.querySelectorAll('#stage .room-path')].filter(e=>e.getClientRects().length).length,at:[...document.querySelectorAll('#stage .desk')].some(t=>/\bAt [^:]{1,40}: /.test(t.innerText)),verb:[...document.querySelectorAll('#stage .desk')].some(t=>/(Running a command|Searching (files|code|the web)|Reading notes|Using a tool) · /.test(t.innerText))})`);
     assert.ok(simpleOffice.paths === 0 && !simpleOffice.at, 'Simple office: no paths, no "At <place>: <tool>": ' + JSON.stringify(simpleOffice));
     console.log('[052] simple verbs on cards now:', simpleOffice.verb);
     await shot(`052-simple-office-${w}x${h}.png`);
+    // a fresh office in Simple (the level is remembered): Jonas's request is drawn in Simple from the start (round 7 FR-080)
+    ctx.win.webContents.reload(); await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000); await ctx.sleep(2500);
+    assert.ok(await js(`document.body.classList.contains('simple')`), 'Simple is remembered after a reload');
     const jonasS = await deskId('Jonas'); await js(`document.querySelector('#stage [data-id="${jonasS}"]').click()`); await ctx.sleep(1200);
-    const simpleChat = await js(`({hidden:['modelChip','ctxChip','vscodeBtn','copyResBtn','mcpBtn','toolsHdrBtn'].every(i=>{const e=document.getElementById(i);return !e||!e.getClientRects().length}),answer:!!document.querySelector('#chat .note.perm .note-actions button, #chat .note.perm.settled'),mode:!!document.getElementById('modeChip')&&document.getElementById('modeChip').getClientRects().length>0})`);
+    const simpleChat = await js(`({hidden:['modelChip','vscodeBtn','copyResBtn','mcpBtn','toolsHdrBtn'].every(i=>{const e=document.getElementById(i);return !e||!e.getClientRects().length}),answer:!!document.querySelector('#chat .note.perm .note-actions button, #chat .note.perm.settled'),mode:!!document.getElementById('modeChip')&&document.getElementById('modeChip').getClientRects().length>0})`);
     assert.ok(simpleChat.hidden && simpleChat.answer && simpleChat.mode, 'Simple chat: developer chips gone, mode and answering kept: ' + JSON.stringify(simpleChat));
+    // round 7 FR-081: the memory chip stays in Simple, in plain words
+    assert.match(await js(`(document.getElementById('ctxChip')||{}).textContent||''`), /Memory \d+% full/, 'Simple: the context chip reads Memory N% full');
+    // FR-080/FR-081 (round 7): the request in plain words, the folder in small text, "See what changes"; memory chip, no tokens, no remote item
+    const plainChat = await js(`(()=>{const cs=[...document.querySelectorAll('#chat .note.perm:not(.limit):not(.question)')],c=cs.find(x=>!x.classList.contains('settled'))||cs[cs.length-1],v=e=>!!e&&e.getClientRects().length>0,cc=document.getElementById('ctxChip'),cb=document.getElementById('compactBtn'),ph=document.querySelector('#panel .ph');
+      return {sum:c?c.querySelector('.psum').textContent:'',fold:c&&v(c.querySelector('.pfold'))?c.querySelector('.pfold').textContent:'',diff:c&&c.querySelector('.pdiff>summary')?c.querySelector('.pdiff>summary').textContent:'',
+        ctx:v(cc)?cc.textContent.trim():null,compact:v(cb)?cb.textContent.trim():null,tok:/\btok(ens)?\b/.test(ph?ph.innerText:''),remote:v(document.getElementById('remoteBtn'))&&!document.getElementById('remoteBtn').classList.contains('on'),
+        chips:[...document.querySelectorAll('#chat .chip')].filter(v).map(x=>x.innerText.trim()).slice(-4),code:[...document.querySelectorAll('#chat .chip>code')].some(v)};})()`);
+    assert.ok(/^Jonas wants to change companies\.ts$/.test(plainChat.sum) && /^\s*in tools$/.test(plainChat.fold) && /^See what changes/.test(plainChat.diff), 'Simple request in plain words: ' + JSON.stringify(plainChat));
+    assert.ok((plainChat.ctx === null || /^Memory /.test(plainChat.ctx)) && (plainChat.compact === null || plainChat.compact === 'Tidy up memory') && !plainChat.tok && !plainChat.remote && !plainChat.code, 'Simple header and tool rows: ' + JSON.stringify(plainChat));
+    console.log('[052] simple tool rows:', plainChat.chips.join(' | '));
     await shot(`052-simple-chat-${w}x${h}.png`);
+    const kenjiS = await deskId('Kenji');
+    if (kenjiS) {
+      await js(`document.getElementById('backBtn').click()`); await ctx.sleep(500);
+      await js(`document.querySelector('#stage [data-id="${kenjiS}"]').click()`); await ctx.sleep(1200);
+      const k = await js(`(()=>{const c=document.querySelector('#chat .note.perm:not(.settled)');if(!c)return null;const d=c.querySelector('details.pcmd');return {sum:c.querySelector('.psum').textContent,open:d?d.open:null,cmd:d?d.querySelector('pre').textContent:'',vis:!!d&&d.getClientRects().length>0}})()`);
+      if (k) assert.ok(k.sum === 'Kenji wants to run a command' && k.vis && k.open === false && /baseline\.py/.test(k.cmd), 'Simple shell request: the command under a collapsed "Show the command": ' + JSON.stringify(k));
+    }
     await js(`document.getElementById('backBtn').click()`); await ctx.sleep(500);
     await js(`document.getElementById('settingsBtn').click()`); await ctx.sleep(900);
     await js(`document.querySelector('[data-detail="expert"]').click()`); await ctx.sleep(500);
