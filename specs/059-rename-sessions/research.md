@@ -94,8 +94,8 @@ Evidence:
 - Schedules: the option `This session (title)` (`app.js:3560`); a new schedule stores `target.name` = the first 80 characters of the title
   (`app.js:3582`); the list shows that stored name (`app.js:3502`). Spec 044 delta #371 (branch `044-sched-sendto`, not merged) caps the
   option at 40 characters and says "Once sessions can be renamed, the short name will come from the rename".
-- Previous sessions rows (`prevListsHtml`, `app.js:3723-3744`) show the listed title; spec 006 delta #368 (branch `006-prev-pin-hide`,
-  not merged) adds a per-row ⋯ menu (FR-027) and names "Rename…" as a later item via #372.
+- Previous sessions rows (`prevListsHtml`, `app.js:3723-3744`) show the listed title; spec 006 delta #368 (merged in PR #373; the
+  row menu itself is spec 006 T036, not built yet) adds a per-row ⋯ menu (FR-027) and names "Rename…" as a later item via #372.
 - Main: `AgentInfo.name` is the folder base name, `title` the runtime title (`src/shared/api.ts:25-28`); the title handler is at
   `src/main/main.ts:147-151`. The activity log writes `agent: a.label || a.name` (`main.ts:165-167`), that is the **folder label**, so the
   activity log never shows a session title today.
