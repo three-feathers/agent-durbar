@@ -243,7 +243,12 @@ module.exports = async (ctx) => {
     if (process.platform === 'darwin') await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'?',shiftKey:true,bubbles:true,cancelable:true}))`);
     else { ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: '/', modifiers: ['shift'] }); ctx.win.webContents.sendInputEvent({ type: 'char', keyCode: '?', modifiers: ['shift'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: '/', modifiers: ['shift'] }); }
     await ctx.waitFor(`!!document.getElementById('kbdDlg')`, 5000).catch(() => undefined);
-    assert.ok(await js(`!!document.getElementById('kbdDlg')&&/Ctrl.*K/.test(document.getElementById('kbdDlg').innerText)`), '? opens the shortcut sheet');
+    if (!(await js(`!!document.getElementById('kbdDlg')`))) {
+      // macOS CI failed here twice in a row (not a timing flake): say what blocks the '?' shortcut
+      const why = await js(`({active:(document.activeElement&&(document.activeElement.id||document.activeElement.tagName))||'none',dialogs:[...document.querySelectorAll('[role="dialog"]')].map(d=>(d.id||d.className)+(d.getAttribute('aria-modal')==='true'?' (modal)':'')),menus:[...document.querySelectorAll('[role="menu"]')].map(m=>m.id||m.className)})`);
+      assert.fail('? opens the shortcut sheet; blocked by: ' + JSON.stringify(why));
+    }
+    assert.ok(await js(`/Ctrl.*K|⌘.*K|Cmd.*K/.test(document.getElementById('kbdDlg').innerText)`), 'the shortcut sheet lists the palette shortcut');
     await shot(`052-shortcuts-${w}x${h}.png`);
     key('Escape'); await ctx.sleep(300);
     assert.ok(await js(`!document.getElementById('kbdDlg')`), 'Esc closes the shortcut sheet');
