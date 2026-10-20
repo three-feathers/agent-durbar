@@ -64,10 +64,11 @@ module.exports = async (ctx) => {
       // 3. open: all eight, revoke buttons, short labels
       await js(`document.getElementById('grantsBtn').click()`); await ctx.sleep(300);
       const o = await js(`(()=>{const p=document.getElementById('grantsPop'),pr=p.getBoundingClientRect();const rows=[...p.querySelectorAll('.gp-row')];
-        return {hidden:p.hidden,exp:document.getElementById('grantsBtn').getAttribute('aria-expanded'),list:p.querySelector('ul').getAttribute('role'),n:rows.length,
+        return {hidden:p.hidden,exp:document.getElementById('grantsBtn').getAttribute('aria-expanded'),list:p.querySelector('ul').getAttribute('role'),popRole:p.getAttribute('role'),popLabel:p.getAttribute('aria-label'),n:rows.length,
           revokes:rows.filter(r=>/^Revoke permission: /.test((r.querySelector('button')||{}).getAttribute&&r.querySelector('button').getAttribute('aria-label')||'')).length,
           texts:rows.map(r=>r.querySelector('.gp-t').textContent),titles:rows.map(r=>r.title),all:!!document.getElementById('grantsAll'),
           inside:pr.left>=0&&pr.right<=innerWidth&&pr.top>=0&&pr.bottom<=innerHeight,clipped:rows.some(r=>r.getBoundingClientRect().height<20),focus:document.activeElement&&document.activeElement.dataset.revoke!==undefined}})()`);
+      assert.ok(o.popRole === 'group' && o.popLabel === 'Allowed for this session', `${tag}: the list is a named group: ${JSON.stringify({ role: o.popRole, label: o.popLabel })}`);
       assert.ok(!o.hidden && o.exp === 'true' && o.list === 'list', `${tag}: the list is open: ${JSON.stringify(o)}`);
       assert.strictEqual(o.n, 8, `${tag}: all eight grants are listed`);
       assert.strictEqual(o.revokes, 8, `${tag}: each row has a named revoke button`);
