@@ -129,3 +129,9 @@
 - [x] T076 Copilot sign-in line about VS Code; PowerShell 7 hint on the Windows Copilot card (`pwshMissing`); `test-harnesssetup` [FR-073]
 - [x] T077 "Switch this agent to Ask first" under a Read-only denial, once per agent until the mode changes [FR-074]
 - [x] T078 Copilot plan note in Tools > Cost and the spending-limit dialog (one constant), "Raise limit" for Copilot, README Windows install notes [FR-075]
+
+## Round 7: plain words for people who don't code (2026-10-20)
+
+- [x] T083 Simple approval cards, answer bar, inbox and notification in plain words ("<Name> wants to change companies.ts", "in tools", "wants to run a command" with a collapsed "Show the command", "See what changes"); waiting status lines without the command [FR-080]
+- [x] T084 Simple hides developer details: memory chip and "Tidy up memory", money-only usage line and list cost, tool rows in plain words, "Running a command" place word, Control from GitHub hidden, Tools "Activity summary" without Models and context or Tokens [FR-081]
+- [x] T085 Welcome card asks "Do you write code?" with two buttons that set and remember the detail level; welcome driver checks it [FR-082]

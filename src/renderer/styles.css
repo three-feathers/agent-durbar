@@ -1042,8 +1042,6 @@ body.simple #modelChip,body.simple .mchip,body.simple #agentChip,body.simple #ct
 body.simple .room-path,body.simple .room-mcp,body.simple #vscodeBtn,body.simple #copyResBtn,body.simple #mcpBtn,body.simple #toolsHdrBtn,
 body.simple .pusage,body.simple .defaults-grp #modelSel,body.simple .defaults-grp #effortSel{display:none!important}
 body.simple .lrow .lfold{visibility:hidden} /* spec 052 FR-064: the folder column stays in the grid (display:none moved the next cells under the wrong headers) */
-.wl-simple{display:flex;gap:8px;align-items:flex-start;margin:12px 0 0;font-size:13px;color:var(--ink-2);cursor:pointer}
-.wl-simple input{margin-top:3px}
 
 /* spec 052 FR-033: the inbox heading takes focus (a row, not a button) */
 .inbox-row .ib-h{margin:0;font-size:13.5px;font-weight:400;border-radius:6px}
@@ -1052,8 +1050,10 @@ body.simple .lrow .lfold{visibility:hidden} /* spec 052 FR-064: the folder colum
 .inbox-keys{margin:8px 0 0;font-size:11.5px;color:var(--muted)}
 
 /* spec 052 FR-037: Simple goes further: tool rows fold into one line, Thinking stays folded, fewer top-bar controls */
-body.simple #chat .chips>.chip,body.simple #chat .chips>.chips-more{display:none}
-body.simple #chat .chips:has(>.chip)::before{content:"Worked with its tools (Expert shows each step)";display:block;font-size:12.5px;color:var(--muted);padding:2px 0}
+/* spec 052 FR-081 (round 7): the tool rows stay, in plain words ("Read companies.ts", "Ran a command"); Expert shows the tool name and argument */
+#chat .chip>.plain{display:none}
+body.simple #chat .chip>.plain{display:inline;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--ink)}
+body.simple #chat .chip>b,body.simple #chat .chip>code,body.simple #chat .chip:not(.fail)>.res{display:none}
 body.simple #chat .think .think-body{display:none}
 body.simple #addWs,body.simple #foldersBtn,body.simple #vList{display:none!important}
 /* spec 052 R3 design polish (Clean Office only unless noted; colour, border colour, background, shadow, radius, weight and
@@ -1219,4 +1219,18 @@ html:not([data-ui]) #topBtns button:not([aria-pressed="true"]):hover{background:
 html[data-serious] :is(.bar,.glow,.hand-l,.hand-r,.head,.bubble-g,.td,.steam,.halo,.wave,.cursor,.tap,.dizzy,.amb-light,.siren-light,.live i,.typing i,.walker.walking .wk),
 html[data-serious] :is(.caret,.bubble.caret.md>*:last-child)::after,
 html[data-serious] .subblk.running .sub-st::before{animation:none!important}
-
+/* spec 052 FR-080..FR-082 (round 7, plain words): Simple shows the memory chip and Tidy up memory, the cost line (money only), the
+   request's folder and its collapsed command; it hides Control from GitHub unless remote control is on (the chip shows then) */
+body.simple .ctxgrp>#ctxChip,body.simple .ctxgrp>#compactBtn{display:inline-flex!important}
+body.simple p.pusage:not(:empty){display:block!important}
+body.simple #remoteBtn:not(.on){display:none!important}
+.note.perm .pfold{display:none;font-size:11.5px;color:var(--muted)}
+body.simple .note.perm .pfold{display:inline}
+details.pcmd{display:none;margin:6px 0 0}
+body.simple details.pcmd{display:block}
+details.pcmd>summary{cursor:pointer;font-size:12px;color:var(--ink-2)}
+details.pcmd>pre{margin:4px 0 0;padding:6px 8px;border-radius:6px;background:var(--surface-2,#f4f4f2);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow:auto}
+.wl-level{margin:14px 0 0;font-size:13px;color:var(--ink-2)}
+.wl-level p{margin:0 0 8px}
+.wl-lv-btns{display:flex;flex-wrap:wrap;gap:8px}
+.wl-level .btn[aria-pressed="true"]{border-color:var(--focus);box-shadow:inset 0 0 0 1px var(--focus)}
