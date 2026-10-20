@@ -530,7 +530,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 @container room (max-width:460px){.stage .room .room-head .room-path{display:none}} /* the path (also in the name's tooltip) goes before the name is cut */
 @container (max-width:250px){.rd.calm{display:none}}
 .stage:not([data-d="full"]) .room-name{flex:0 .05 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.stage:not([data-d="full"]) .room-path{font-size:11px;flex-shrink:4}
+.stage:not([data-d="full"]) .room-path{font-size:11px;flex-shrink:1000} /* spec 052 (2026-10-21): the path gives way completely before the room name is cut */
 .stage:not([data-d="full"]) .room-dots{gap:6px;min-width:0}
 .stage:not([data-d="full"]) .room-dots{padding-right:0}
 .stage:not([data-d="full"]) .room-plant{display:none}
@@ -1431,3 +1431,6 @@ html[data-platform="darwin"] :is(.dlg-ov,#foldersPop,#floorsPop,#defaultsPop,.mo
 /* spec 052 (2026-10-21, round 3, accessibility): small controls get a 24px hit area (WCAG 2.2 target size) without changing the layout */
 button.room-aiu,.lsort,.linkbtn{position:relative}
 button.room-aiu::after,.lsort::after,.linkbtn::after{content:"";position:absolute;left:-2px;right:-2px;top:50%;height:24px;transform:translateY(-50%)}
+/* spec 052 (2026-10-21, round 6, design): no lone word on the last line of a paragraph, balanced headings */
+p,.dsub,.scr-note,.note,li{text-wrap:pretty}
+h2,h3,h4{text-wrap:balance}
