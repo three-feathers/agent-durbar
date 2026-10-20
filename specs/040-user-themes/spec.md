@@ -141,4 +141,15 @@
 
   The reply is the last top-level `assistant.message` (not a helper's) once `session.idle` arrives; a `session.error` ends it with its type only. The AI credits are the sum of `assistant.usage` `copilotUsage.totalNanoAiu`, returned as `nanoAiu`; `theme:generate` adds them up over the passes and the dialog shows "Used N AI credits (as reported by Copilot)". `GenerateTextResult` (`text`, `costUsd?`, `nanoAiu?`) is the shared result type. The simulator offers Copilot with a canned credit figure.
 - `test:` `test:copilotoneshot` on the fake SDK: the config (tools, MCP, skills, agents, persistence off), denied permissions, the reply taken from the events (helper and tool-call messages ignored), usage summed, and disconnect, deletion and temp-folder removal on success, an empty answer, a session error, a failed send, a timeout (aborted first), a session that was never on disk, and a failed create.
-- `[KNOWN GAP]` Not run on a real account. Unverified: that `availableTools: []` really leaves the model with no tool, that `deleteSession` leaves nothing in `~/.copilot/session-state`, the real credit cost, and whether `excludedTools` patterns are accepted together with an empty `availableTools`. `real:` open (T027): needs the owner's go-ahead: 1 prompt on a free plan. The screenshots still show the dialog without Copilot (T028).
+- `[KNOWN GAP]` (superseded 2026-10-20, see below) Not run on a real account. Unverified: that `availableTools: []` really leaves the model with no tool, that `deleteSession` leaves nothing in `~/.copilot/session-state`, the real credit cost, and whether `excludedTools` patterns are accepted together with an empty `availableTools`. `real:` open (T027): needs the owner's go-ahead: 1 prompt on a free plan. The screenshots still show the dialog without Copilot (T028).
+
+### 2026-10-20: real check of the Copilot theme maker (T027, issue #301)
+
+- `real:` 2026-10-20, Copilot runtime 1.0.98, free plan, `auto`; the real `CopilotAdapter.generateText` with `buildThemePrompt("calm forest library")` and the built-in GitHub MCP server switched off by name, as `theme:generate` sends it (`scripts/themegen-copilot-real.ts`). **2 prompts, 0.26 + 0.24 = 0.50 AI credits**, about 30 s each:
+  - text came back (about 8,000 characters of theme JSON);
+  - **no tool ran**: the session's events had no `tool.*` and no permission request (`availableTools: []` with `excludedTools` was accepted);
+  - **nothing kept**: `~/.copilot/session-state` had the same names before and after (compared by name only);
+  - credits were reported through `assistant.usage`, so the dialog's "Used N AI credits" works.
+- **Bug found:** Copilot wrote every token name without the leading `--` (`"bg"`, not `"--bg"`), so all 147 colours were dropped and the reply failed with "too few usable colours" on both runs.
+- **FR-022** (fix) `[IMPLEMENTED]` A token name without `--` whose `--` form is a Clean Office token is read as that token; any other unknown name is still dropped. With the fix, the saved real reply parses to a full theme: 147 colours, 15 art slots, no issues. `test:` `test:themegen` (bare names give the same tokens as prefixed ones; an unknown bare name is dropped with the warning).
+- The Copilot capability comment and the README no longer say "fake SDK only". The screenshots of the dialog with Copilot (T028) are unchanged.
