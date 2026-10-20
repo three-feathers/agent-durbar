@@ -123,3 +123,5 @@ Rerun after those fixes (run 39485719890, `d600c68`): `real:` **Codex official o
 
 - **Claude** `install.ps1`: `Get-FileHash` not found. Windows PowerShell 5.1 started from PowerShell 7 inherits 7's `PSModulePath` and cannot load its own modules. This also happens on a user's machine when Durbar is started from a PowerShell 7 terminal. An official installer now runs without `PSModulePath`, so 5.1 builds its default (`setupEnv`, unit test).
 - **Codex** `install.ps1`: access denied on the admin's `AppData\Local` (CI only: the test user inherited `LOCALAPPDATA`). `install-check.ts` now sets the user's own `APPDATA` and `LOCALAPPDATA`.
+
+`real:` 2026-10-20, spec 062's first e2e run (Windows runner): after OpenAI's official `install.ps1` succeeded, **detection said Codex was not installed**. The script installs to `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe`, but detection looked in `%LOCALAPPDATA%\Programs\codex`. Detection now also looks in OpenAI's folder (unit test).

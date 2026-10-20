@@ -50,7 +50,7 @@ async function main(): Promise<void> {
     assert.strictEqual(x.calls[0].file, 'C:\\Program Files\\x\\codex.exe', 'b: exe runs directly');
     assert.ok(!x.calls[0].verbatim, 'd: .exe is not verbatim');
     const k = candidates(CODEX_BINARY, mkEnv('win32', { APPDATA: 'C:\\A', LOCALAPPDATA: 'C:\\L' }, [], 'C:\\Users\\u'));
-    assert.ok(k.includes('C:\\Users\\u\\.local\\bin\\codex.exe') && k.includes('C:\\A\\npm\\codex.cmd') && k.includes('C:\\L\\Programs\\codex\\codex.exe'), 'b: Windows known folders');
+    assert.ok(k.includes('C:\\Users\\u\\.local\\bin\\codex.exe') && k.includes('C:\\A\\npm\\codex.cmd') && k.includes('C:\\L\\Programs\\codex\\codex.exe') && k.includes('C:\\L\\Programs\\OpenAI\\Codex\\bin\\codex.exe'), 'b: Windows known folders (and the official install.ps1 folder)');
     // spec 052 FR-072: winget's command shims folder, built from LOCALAPPDATA with Windows path rules
     assert.ok(k.includes('C:\\L\\Microsoft\\WinGet\\Links\\codex.exe'), 'b: winget Links folder is searched');
     const w = mkEnv('win32', { LOCALAPPDATA: 'C:\\Users\\u\\AppData\\Local' }, ['C:\\Users\\u\\AppData\\Local\\Microsoft\\WinGet\\Links\\codex.exe'], 'C:\\Users\\u');
