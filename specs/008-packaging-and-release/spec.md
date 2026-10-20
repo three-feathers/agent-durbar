@@ -196,4 +196,10 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
   - **Linux:** the AppImage, with its `.desktop` `Name=` and `StartupWMClass`.
 
   Then it starts the **installed** app on the simulator (`DURBAR_DEV=1`, no account, no credits). It checks that the office renders the 15 agents and records the app's name and window title, with a screenshot artifact. It runs on demand, on `main` when packaging changes, and on a PR that changes the check. `real:` see the PR's first run.
+
+  `real:` run 39498528735 (2026-10-21), **passed on all three**:
+  - **Windows:** `Agent-Durbar-Setup-0.1.0-alpha.9.exe /S` installed to `%LOCALAPPDATA%\Programs\Agent Durbar`, with the Start menu entry `Agent Durbar.lnk`; the uninstaller `/S` exited 0.
+  - **macOS (arm64):** the `.dmg` installed to `~/Applications`, with `CFBundleName` and `CFBundleDisplayName` both `Agent Durbar` and `CFBundleIdentifier` `io.github.three-feathers.agentdurbar`.
+  - **Linux:** the AppImage, with `.desktop` `Name=Agent Durbar` and `StartupWMClass=agent-durbar`.
+  - On each OS the installed app rendered the office with 15 agents, window title "(5) Agent Durbar". Its run-time name is `agent-durbar` on purpose (D2).
 - Not covered, still `[KNOWN GAP]`: a person's own Mac or PC (Gatekeeper and SmartScreen on a downloaded, unsigned build: the runner's copy is not quarantined), and code signing (spec 014, needs a purchase).
