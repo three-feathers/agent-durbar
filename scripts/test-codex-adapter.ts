@@ -314,8 +314,9 @@ async function main(): Promise<void> {
     {
       const { server, ad } = make();
       assert.strictEqual(ad.capabilities.deleteSession, true);
-      const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', quiet: true });
+      const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', sessionId: 'durbar-x', quiet: true }); // a Durbar id that is not the thread id
       const thread = ad.resumeIdOf!(sid) as string;
+      assert.notStrictEqual(thread, sid, 'the Durbar id differs from the thread id');
       await assert.rejects(() => ad.deleteSession!(sid), /open/);
       await assert.rejects(() => ad.deleteSession!(thread), /open/, 'the thread id of a live session is refused too');
       for (const bad of ['../x', '..\\x', 'C:\\x', '/abs', '', 'a'.repeat(101), 'a\u0000b']) await assert.rejects(() => ad.deleteSession!(bad), /not a session id/, JSON.stringify(bad));

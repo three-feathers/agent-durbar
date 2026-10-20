@@ -125,10 +125,10 @@ module.exports = async (ctx) => {
       await js(`document.querySelector('#modeDlg [data-cancel]').click()`); await ctx.sleep(200);
     }
     // an agent app with no delete: Delete… is shown disabled with the reason
-    await load(w, h, { simprev: 'nodelete' }, 'expert');
+    await load(w, h, { simkinds: 'mixed' }, 'expert'); // Ada is a Claude Code agent: no per-session delete
     await openMore('prev-1');
     const dis = await js(`(()=>{const b=document.querySelector('#modeMenu [data-pact="delete"]');return {dis:b.getAttribute('aria-disabled'),tip:b.title,tab:b.tabIndex}})()`);
-    assert.deepStrictEqual(dis, { dis: 'true', tip: 'Copilot cannot delete one session. Hide it instead.', tab: 0 }, 'disabled, focusable, with the reason');
+    assert.deepStrictEqual(dis, { dis: 'true', tip: 'Claude Code cannot delete one session. Hide it instead.', tab: 0 }, 'disabled, focusable, with the reason');
     await js(`document.querySelector('#modeMenu [data-pact="delete"]').click()`); await ctx.sleep(250);
     assert.ok(await js(`!document.getElementById('modeDlg')`), 'a disabled Delete… does nothing');
     await shot('nodelete', w, h);

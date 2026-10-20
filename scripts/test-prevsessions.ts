@@ -232,6 +232,11 @@ async function main(): Promise<void> {
     assert.ok(/ipcHandle\('sessions:delete'/.test(main), 'registered through ipcHandle (the sender check)');
     assert.strictEqual((main.match(/prevSessions\.delete\(/g) ?? []).length, 1, 'called from that one handler only');
     assert.ok(!/ipcMain\.(handle|on)\('sessions:/.test(main));
+    // nothing else in main.ts names the delete: every line that does is the single registration (`ipcHandle('sessions:delete', ... prevSessions.delete(`)
+    const namers = main.split('\n').filter((l) => /deleteSessionOf|\.deleteSession\(|'sessions:delete'|prevSessions\.delete\(/.test(l.replace(/^\s*\/\/.*$/, '')));
+    assert.strictEqual(namers.length, 1, `one line in main.ts reaches the delete: ${namers.join(' | ')}`);
+    assert.ok(/^ipcHandle\('sessions:delete', \(_e, id: unknown, sessionId: unknown\) => prevSessions\.delete\(id, sessionId\)\);$/.test(namers[0]));
+    // Known limit (spec 006 R2): this reads source text, so an obfuscated call (a computed property name, a string built at run time) would not be seen.
     // Clarifications Q1: Delete… is offered only on a row of Previous sessions, never on an office card, List-view row, card menu or chat header
     const app = read('src/renderer/app.js');
     const from = app.indexOf('function openPrevMenu(');

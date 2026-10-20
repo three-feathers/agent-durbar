@@ -1300,7 +1300,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     };
 
     const simKinds = simKindsParam === '1' || simKindsParam === 'solo'; // spec 012 FR-136: '1' = two ready harnesses (picker shown), 'solo' = only Copilot ready (picker hidden)
-    // Spec 006 FR-028 (page address `simprev=nodelete`): the Copilot kind without a delete, to see Delete… disabled with its reason.
+    // Spec 006 FR-028: `simprev=inoffice|inoffice-solo|error` make the next delete answer a refusal or an error. Delete… disabled (no per-session delete) is seen with `simkinds=mixed`, where Ada is Claude Code.
     const simPrev = simQuery.get('simprev') ?? '';
     const prevMarks = new Map<string, { pinned: string[]; hidden: string[] }>(); // key = 'vscode' or the agent app's id; ids only
     const prevDeleted = new Set<string>();
@@ -1309,7 +1309,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       const m = prevMarks.get(src);
       return { pinned: (m?.pinned ?? []).filter((k) => present.includes(k)), hidden: (m?.hidden ?? []).filter((k) => present.includes(k)) };
     };
-    const copilotCaps = simPrev === 'nodelete' ? { ...SIM_COPILOT_CAPS, deleteSession: false } as AdapterInfo['capabilities'] : SIM_COPILOT_CAPS;
+    const copilotCaps = SIM_COPILOT_CAPS;
     const simInstalled = new Set<string>(); // a simulated install that ended well: the next check finds it (like a real PATH that already had it)
     /*
      * Spec 012 FR-157: `simauth=out` = Copilot and Claude Code are not signed in from the start (the chat shows the sign-in card
