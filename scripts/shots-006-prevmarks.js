@@ -44,7 +44,10 @@ module.exports = async (ctx) => {
       if(r.scrollWidth>r.clientWidth+1)out.push('scrolls '+r.dataset.pk);
       bs.forEach((b,i)=>{if(b.left<R.left-0.5||b.right>R.right+0.5||b.height>32)out.push('outside/tall '+r.dataset.pk+' '+i);if(i&&b.left<bs[i-1].right-0.5)out.push('overlap '+r.dataset.pk);});
       const t=r.querySelector('.prev-tx').getBoundingClientRect();if(bs.length&&t.right>bs[0].left+0.5)out.push('title overlaps '+r.dataset.pk);}
-      const body=document.querySelector('#prev .prev-body');if(body&&body.scrollWidth>body.clientWidth+1)out.push('panel scrolls sideways');return out;})()`);
+      const body=document.querySelector('#prev .prev-body');if(body&&body.scrollWidth>body.clientWidth+1)out.push('panel scrolls sideways');
+      /* macOS draws an overlay scrollbar over the last ~12px of the scroller (real, Paco's Mac, 2026-10-20): no ⋯ may reach it (it would hide the glyph and take the clicks) */
+      if(body){const bb=body.getBoundingClientRect(),BR=bb.left+body.clientLeft+body.clientWidth; /* the scroller's content edge: a classic scrollbar is already outside it, an overlay one is not */for(const m of document.querySelectorAll('#prevLists .prev-more'))if(m.getBoundingClientRect().right>BR-12+0.5)out.push('⋯ under the scrollbar '+m.closest('.prev-row').dataset.pk);}
+      return out;})()`);
     assert.deepStrictEqual(bad, [], `${label}: rows fit the panel`);
   };
 
