@@ -71,12 +71,12 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
 - **FR-007** `[IMPLEMENTED]` real: Release (`release.yml`): on tag `v*`; checks tag == `package.json` version; typecheck + tests per OS; unsigned package; upload artifacts (14 days); `draft-release` job with `contents: write` creates/updates a **draft**, `--prerelease` when the tag has a `-`, attaches artifacts + `SHA256SUMS.txt`.
 - **FR-008** `[IMPLEMENTED]` read: No auto-update; README says so and documents the macOS Gatekeeper, Windows SmartScreen and Linux AppImage first-run steps.
 - **FR-009** `[KNOWN GAP]` **Not code-signed or notarized** (macOS Developer ID + notarization, Windows Authenticode). Needs paid certificates: feature 014, **needs approval**.
-- **FR-010** `[KNOWN GAP]` Installed builds were never run on macOS or Windows by a person; CI only proves they build and that unit tests pass there. The Linux packaged app was built here; no recorded launch of the packaged binary talking to Copilot. (Feature 013/014.)
+- **FR-010** `[KNOWN GAP]` (narrowed 2026-10-21, see Changes) Installed builds were never run on macOS or Windows by a person; CI only proves they build and that unit tests pass there. The Linux packaged app was built here; no recorded launch of the packaged binary talking to Copilot. (Feature 013/014.)
 - **FR-011** `[KNOWN GAP]` Only x64 for Windows and Linux; no arm64 builds, no `.deb`/`.rpm`, no Flatpak/Snap/winget/Homebrew. `read:`
 - **FR-012** `[KNOWN GAP]` No provenance: no build attestation, and checksums are uploaded by the same workflow that builds the files. `read:`
 - **FR-013** `[IMPLEMENTED]` (2026-10-19) `package.json` has `engines.node` `^20.19.0 || >=22.12.0`, matching CONTRIBUTING; CI builds with Node 22 (20.19 is not run in CI). Was: no `engines` field. (Task T022.)
 - **FR-014** `[KNOWN GAP]` `.github/workflows/spec-kit.yml` ("Spec Kit gate") fails PRs that change `src/` without `specs/` or a `Spec-Exempt` reason; it checks presence only, not that each spec has plan/tasks, and it is not a required status check unless the maintainer sets it in branch protection.
-- **FR-015** `[KNOWN GAP]` `package-smoke` runs `pack:dir` for Linux only; macOS/Windows packaging is first exercised by the tag workflow. `read:`
+- **FR-015** ~~`[KNOWN GAP]`~~ closed 2026-10-21 (see Changes): `package-smoke` runs `pack:dir` for Linux only; macOS/Windows packaging is first exercised by the tag workflow. `read:`
 - **FR-016** `[KNOWN GAP]` Dependency updates are manual (no Dependabot). `read:`
 
 ### Key Entities
@@ -186,3 +186,15 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
 *Found:* on PR #302, macOS CI failed `test:runtime` with "adversarial urlLong: child hung twice (ETIMEDOUT)". `redact()` itself takes about 38 ms on that input. What hung was the child process fed 1 MB on stdin, twice for 30 s, on a 3-core runner that runs 3 suites at once.
 
 - **FR-032** `scripts/test-redact.ts` section 9 runs each adversarial case in a **worker thread**: no process start, no stdin pipe. The worker times `redact()` and writes the result to shared memory, and the test waits with `Atomics.wait` (still synchronous), keeping the 30 s hang guard and one retry. The 1 s limit, the real ReDoS check, is unchanged. `test:` the whole file runs in 1.2 s locally. Stand-in modules confirm the guard: a 1.5 s function is measured at 1,499 ms and fails the limit; an endless loop times out; a throw is reported.
+
+### 2026-10-21: known gaps revalidated
+
+- **FR-015** closed. `.github/workflows/packaged-check.yml` packages the app (`--dir`) on ubuntu, macOS and Windows runners and runs the ESM check inside each packaged main process. It runs on `main` (green, latest run 39497504364).
+- **FR-010** narrowed. What CI now runs on macOS and Windows runners:
+  - the packaged check above;
+  - the UI checks (#389, in review): theme geometry, the 15-agent office layout at both sizes and the Mac title bar pass on macOS; on Windows all 18 simulator drivers pass too (run 39492231461);
+  - real installs of the three agent apps as a standard user and as admin (#393);
+  - the real-account e2e, 9/9 (#402, run 39496442403).
+
+  **Still open:** a person installing and using the packaged app on their own Mac or Windows PC (issues #9, #10).
+- Still open, unchanged: FR-009 signing (needs a purchase), FR-011 (arm64, `.deb`), FR-012 (no build attestation), FR-014 (the Spec Kit gate checks presence only), FR-016 (no `.github/dependabot.yml`). The About panel and installer metadata on macOS and Windows are tracked in #384.

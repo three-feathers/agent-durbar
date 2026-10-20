@@ -70,3 +70,23 @@ Evidence:
 - `test:` `npm run test:site` (in `npm test`); the build run locally with and without release info (index ≈ 25 KB, docs ≈ 56 KB of HTML).
 - `[KNOWN GAP]` Not yet rendered by the author of this change: the desktop and phone screenshots and the phone height target (under about 7,000px) are checked by the lead before merge.
 - **2026-10-20 (round 8, a marketing review):** the hero says the pain it removes ("Run all your AI coding agents. Answer only the ones that need you."); the secondary button is *View on GitHub*; under the hero screenshot, "Simulator demo data: names, costs and tasks are invented."; the status line says the macOS and Windows builds are made in CI but not tried by hand; card titles say outcomes; a short "built in the open, spec-driven" line links to the specs and the board (no invented numbers); the OS links hide on phones (they overflowed); Open Graph and theme-color meta tags with an absolute `og:image`; "never logs your prompts" was dropped (not backed by a check). `test:` `scripts/test-site.js`.
+- **2026-10-20 (overnight, 5 visitor rounds: usability, understandability, curiosity):** `sim:` the built site screenshotted at 1440x900 and 390x844 in Electron.
+  - **Visitors:** a developer who never heard of Durbar, a team lead, a skeptical security reviewer, a curious non-expert, a phone visitor.
+  - **Usability:**
+    - `docs.html` scrolled sideways on phones (836 px in 375 px; the column was `1fr` and grew with long code). Now `minmax(0,1fr)`, inline code wraps, `pre` and tables scroll inside themselves;
+    - the phone header keeps **Download** on both pages;
+    - every landing screenshot (hero, how it works, the six themes, the AI theme) opens at full size in the same tab, with no script;
+    - on phones, the hero caption says "Tap the picture to see it full size."
+  - **Understandability:**
+    - the how-it-works screenshot shows only the Agent apps cards (`crop` in landing.json: a pixel box on the source image, done with plain CSS), with a caption;
+    - long install notes (Windows) show their first sentence, and the rest sits under "More for Windows";
+    - "What's new" on the landing page is cut at a sentence near 360 characters, with the full text one link away;
+    - a 7-question FAQ, "Before you try it", sits between Safety and Download: what an AI agent is, whether you need all three apps, accounts and keys, whether your code goes anywhere new, team use, cost, not only code. Each answer links to its README section, and the build checks those anchors.
+  - **Honesty** (found by the skeptic):
+    - "reads inside its folders only" → "Durbar asks agents to stay in their folders; only Codex is held there by its own sandbox";
+    - the spending-limit line now says limits are checked between replies;
+    - "Agents ask before they act" → "Agents act only as far as you allow" (Read-only denies, it does not ask);
+    - a "Report a security problem" link (SECURITY.md) next to the safety links.
+  - **Curiosity:** a one-line name note under the hero ("A durbar is a royal court where everyone gets a hearing…").
+  - `test:` `scripts/test-site.js` asserts each of these (zoom links, crop, FAQ and its anchors, no overclaim, security link, phone Download, phone hint, docs `minmax`).
+  - Not changed here (owned by the docs sweep, #404): the hero status line and the agent apps' "not yet" lines. Measured: no text under 10.5 px and no sideways scroll on either page at either width.
