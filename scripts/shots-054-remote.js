@@ -53,9 +53,13 @@ module.exports = async (ctx) => {
     await ctx.sleep(500);
     const on = await js(`({chip:!!document.getElementById('remoteChip')&&!document.getElementById('remoteChip').hidden,card:(document.querySelector('.desk[data-id=' + JSON.stringify(${jsLiteral(id)}) + '] .role')||{}).textContent||'',item:(document.getElementById('remoteBtn')||{}).textContent||''})`);
     assert.ok(on.chip, 'the Remote chip shows in the chat header');
-    assert.ok(/ · Remote$/.test(on.card), 'the desk card says Remote: ' + on.card);
     assert.ok(/^Stop remote control/.test(on.item), 'the item now stops it: ' + on.item);
     await shot(`054-remote-on-${w}x${h}.png`);
+    // the office is drawn again when the chat closes: the desk card names it there
+    await js(`document.getElementById('backBtn').click()`); await ctx.sleep(900);
+    const card = await js(`(document.querySelector('.desk[data-id=' + JSON.stringify(${jsLiteral(id)}) + '] .role')||{}).textContent||''`);
+    assert.ok(/ · Remote$/.test(card), 'the desk card says Remote: ' + card);
+    await js(`document.querySelector('.desk[data-id=' + JSON.stringify(${jsLiteral(id)}) + ']').click()`); await ctx.sleep(900);
     await js(`document.getElementById('moreBtn').click()`); await ctx.sleep(300);
     await js(`document.getElementById('remoteBtn').click()`); await ctx.sleep(1200);
     const off = await js(`({chip:document.getElementById('remoteChip').hidden,item:(document.getElementById('remoteBtn')||{}).textContent||''})`);
