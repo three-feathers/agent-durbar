@@ -89,6 +89,11 @@ export interface StatusEvent extends BaseEvent {
   intent?: string;
   /** Set when status is 'needs-permission'. */
   permission?: PermissionInfo;
+  /**
+   * Spec 012 FR-157: set on an `error` status when the agent app refused the turn because its sign-in is missing, expired or
+   * invalid. Main then marks the app `not-signed-in` and the chat offers Sign in. Only this word leaves the adapter, never the account.
+   */
+  errorKind?: 'auth';
 }
 
 export interface PermissionInfo {
@@ -385,6 +390,12 @@ export type AgentEvent =
   | LimitEvent
   | TitleEvent;
 
+/** Spec 012 FR-156: the answer of `verifySignIn`. */
+export interface SignInCheck {
+  status: 'signed-in' | 'signed-out' | 'unknown';
+  detail?: string;
+}
+
 export type LimitAction = { kind: 'add'; credits: number } | { kind: 'set'; credits: number } | { kind: 'unset' } | { kind: 'cancel' };
 
 export type Unsubscribe = () => void;
@@ -442,6 +453,11 @@ export interface AgentAdapter {
   setRemote?(sessionId: string, on: boolean): Promise<RemoteState>;
   /** Spec 051 FR-007: whether this harness is signed in, checked without a prompt (no credits). Only the yes/no leaves the adapter. */
   authStatus?(): Promise<{ signedIn: boolean }>;
+  /**
+   * Spec 012 FR-156: whether the sign-in really works, asked of the service where the app offers a free call (no prompt, no
+   * credits); `unknown` when it cannot tell. `detail` is a short, safe sentence: never a token, email or account name.
+   */
+  verifySignIn?(): Promise<SignInCheck>;
   /** True while the session is open in this adapter. */
   isLive(sessionId: string): boolean;
   /** Stop every session and free the runtime. */
