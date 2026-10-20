@@ -1,8 +1,8 @@
 # Implementation Plan: Rename sessions
 
 **Branch**: `059-rename-sessions` | **Date**: 2026-10-20 | **Spec**: [spec.md](spec.md) | **Research**: [research.md](research.md)
-**Input**: Feature specification from `specs/059-rename-sessions/spec.md` (issue #372). Assumes the recommended option of Q1-Q9 until
-the owner answers; the tasks that depend on an answer name it.
+**Input**: Feature specification from `specs/059-rename-sessions/spec.md` (issue #372). The owner answered Q1-Q9 on 2026-10-20 (all A,
+spec.md *Clarifications*); the plan follows those answers.
 
 ## Summary
 
@@ -26,11 +26,11 @@ dialog.
 | I Spec Kit | This spec, plan and tasks first; spec-only PR before any `src/` change. |
 | II Adapters as plug-ins | `renameSession` capability and member behind `AgentAdapter`; Copilot `rpc.name.set` and Codex `thread/name/set` stay in their adapters; the renderer gets a capability value and words. |
 | III Safe, no secrets | Names pass a rule that refuses controls, hidden characters and anything `redact()` changes; ids only plus the user's own short name in the store; no file of another tool is written; main validates every IPC argument and re-checks the session belongs to the folder. |
-| IV No credits | Simulator and fakes; `/rename` is never sent (without a name it spends credits); real checks only with the owner (Q9). |
+| IV No credits | Simulator and fakes; `/rename` is never sent (without a name it spends credits); real checks only with the owner's go-ahead (Q9 A). |
 | V Calm UI | One dialog, existing menus, no new top-bar control; 60-character cap; ellipsis plus tooltip; `check:office` with long names. |
 | VI Parity | Nothing per OS; pure functions tested anywhere. |
 | VII Gates | Unit tests for the rule, the store, the decision and both adapters; screenshots at both sizes. |
-| VIII Honest limits | VS Code visibility, real app calls and macOS/Windows are `[KNOWN GAP]` until Q9's check. |
+| VIII Honest limits | VS Code visibility, real app calls and macOS/Windows are `[KNOWN GAP]` until the Q9 check (T050). |
 
 ## Project Structure
 
@@ -94,8 +94,8 @@ scripts/check-rename.js        NEW  simulator driver, both sizes, Simple and Exp
 - **Phase 1 (US1, MVP):** Durbar-only names for every app (rule, store, op, dialog, three menus, every surface, schedules, activity).
   Works for all three apps on its own.
 - **Phase 2 (US2):** the app-side rename for Copilot (live) and Codex (any), the dialog's "where it goes" line, partial results.
-- **Phase 3 (US3):** the Previous sessions row item, after spec 006 T036 (issue #368) is merged.
-- **Phase 4:** real checks (Q9), owner-gated, not in CI.
+- **Phase 3 (US3):** the Previous sessions row item, after spec 006 T036 (issue #368, PR #373) is merged.
+- **Phase 4:** real checks (Q9 A: one per app, 0 prompts), owner-gated, not in CI.
 - **Phase 5:** docs and converge.
 
 ## Verification plan

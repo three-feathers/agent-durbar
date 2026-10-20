@@ -14,7 +14,7 @@
 
 ## Requirement Completeness
 
-- [ ] No open questions remain: Q1-Q9 wait for the owner (each has a recommended option)
+- [x] No open questions remain: Q1-Q9 answered by the owner on 2026-10-20 (all A)
 - [x] Requirements are testable (each FR maps to a unit test, a fake test, a simulator step or a real-check task)
 - [x] Success criteria are measurable (SC-001..SC-005)
 - [x] Acceptance scenarios defined per user story
@@ -35,12 +35,12 @@
 
 - [x] Every FR has a task (tasks.md names the FRs)
 - [x] User stories are independently testable; MVP = US1
-- [ ] Ready for `/speckit-implement`: after T001 (owner answers)
+- [x] Ready for `/speckit-implement` (T001 done)
 
 ## Analyze pass (2026-10-20)
 
 - Coverage: FR-001..FR-016 each appear in at least one task; SC-001..SC-005 map to T029, T010, T033.
-- Consistency: the 60-character cap appears in FR-002, FR-004, FR-016 and T010 (Q3 may change all four together); the schedules cap 40
+- Consistency: the 60-character cap appears in FR-002, FR-004, FR-016 and T010 (Q3 A confirmed 60); the schedules cap 40
   matches spec 044 FR-021 (#371).
 - Cross-spec: spec 006 FR-027 (#368) owns the row menu; this spec only adds an item (T040). Spec 006 FR-031 says a later change may show
   the alias in the delete row; FR-012 covers it. Spec 001's 2026-10-18 delta (titles on cards) is extended, not contradicted: FR-003 hides
