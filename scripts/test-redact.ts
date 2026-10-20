@@ -524,13 +524,18 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   const total = Date.now() - tt;
   console.log(`redact: 14c masking 200k-char adversarial inputs in ${total} ms`);
   assert.ok(total < 20000, `14c: masking 200k-char adversarial inputs took ${total} ms`);
-  // doubling: 100k vs 200k, best of 3 each (a busy server only slows both); ratio far below 4
+  // linearity: 50k vs 400k (8x apart), 5 interleaved pairs, min of each size, so a load burst hits both sizes.
+  // Linear is a ratio of about 8; three doublings at up to 3x each allow 24; quadratic would be about 64.
   for (const unit of ['{"a":"x y ', 'x ', '"a ']) {
-    const best = (n: number): number => { const s = unit.repeat(Math.ceil(n / unit.length)); let m = Infinity; for (let i = 0; i < 3; i++) { const t = process.hrtime.bigint(); run(s); m = Math.min(m, Number(process.hrtime.bigint() - t) / 1e6); } return m; };
-    const t1 = best(100_000);
-    const t2 = best(200_000);
-    console.log(`redact: 14c doubling ${JSON.stringify(unit)} 100k=${Math.round(t1)} ms 200k=${Math.round(t2)} ms`);
-    assert.ok(t2 < 8000 && t2 < Math.max(t1, 50) * 3.5, `14c: ${JSON.stringify(unit)} grew too fast: ${t1} -> ${t2} ms`);
+    const small = unit.repeat(Math.ceil(50_000 / unit.length));
+    const big = unit.repeat(Math.ceil(400_000 / unit.length));
+    const time = (x: string): number => { const t = process.hrtime.bigint(); run(x); return Number(process.hrtime.bigint() - t) / 1e6; };
+    let tSmall = Infinity;
+    let tBig = Infinity;
+    for (let i = 0; i < 5; i++) { tSmall = Math.min(tSmall, time(small)); tBig = Math.min(tBig, time(big)); }
+    const ratio = tBig / Math.max(tSmall, 20);
+    console.log(`redact: 14c linearity ${JSON.stringify(unit)} 50k=${Math.round(tSmall)} ms 400k=${Math.round(tBig)} ms ratio ${ratio.toFixed(1)}`);
+    assert.ok(tBig < 8000 && ratio < 24, `14c: ${JSON.stringify(unit)} grew too fast: ${tSmall} -> ${tBig} ms (ratio ${ratio.toFixed(1)})`);
   }
 }
 
