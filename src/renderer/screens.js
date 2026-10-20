@@ -661,7 +661,8 @@
     const all=period==='all';
     const agents=X.agents();
     const hasActivity=!!X.bridge.activityList;
-    let tab=cur.tab||'tools'; if(all&&tab==='agents')tab='tools'; if(tab==='activity'&&!hasActivity)tab='tools';
+    const simple=!!(X.detail&&X.detail.get()==='simple'); /* spec 052 FR-081: Simple has no Models and context tab and no token column */
+    let tab=cur.tab||'tools'; if((all||simple)&&tab==='agents')tab='tools'; if(tab==='activity'&&!hasActivity)tab='tools';
     let scope=cur.scope||null; /* session: an agent id; all time: an agent label */
     let tot,groups,scopeSel;
     if(all){
@@ -679,8 +680,8 @@
       scopeSel=`<label class="select-wrap"><span class="sr-only">Show</span><select id="toolScope"><option value="">All agents</option>${agents.map(a=>`<option value="${esc(a.id)}"${a.id===scope?' selected':''}>${esc(a.name)}</option>`).join('')}</select></label>`;
     }
     const per=`<div class="seg" role="tablist" aria-label="Period"><button role="tab" id="perSession" aria-selected="${!all}" type="button">This session</button><button role="tab" id="perAll" aria-selected="${all}" type="button">All time</button></div>`;
-    const tabs=`<div class="seg" role="tablist" aria-label="Tools view"><button role="tab" id="tabTools" aria-selected="${tab==='tools'}" type="button">Tool usage</button><button role="tab" id="tabAgents" aria-selected="${tab==='agents'}" type="button">Models and context</button><button role="tab" id="tabCost" aria-selected="${tab==='cost'}" type="button">Cost</button>${hasActivity?`<button role="tab" id="tabActivity" aria-selected="${tab==='activity'}" type="button">Activity</button>`:''}</div>`;
-    const cost=tab==='cost'?costView():null;
+    const tabs=`<div class="seg" role="tablist" aria-label="Tools view"><button role="tab" id="tabTools" aria-selected="${tab==='tools'}" type="button">${simple?'Activity summary':'Tool usage'}</button>${simple?'':`<button role="tab" id="tabAgents" aria-selected="${tab==='agents'}" type="button">Models and context</button>`}<button role="tab" id="tabCost" aria-selected="${tab==='cost'}" type="button">Cost</button>${hasActivity?`<button role="tab" id="tabActivity" aria-selected="${tab==='activity'}" type="button">Activity</button>`:''}</div>`;
+    const cost=tab==='cost'?costView(simple):null;
     const act=tab==='activity'?await activityView():null;
     const body=act?act.html:cost?cost.html:tab==='tools'?await toolsTab(scope,tot,groups,all):agentsTab(scope,agents);
     if(!cur||cur.kind!=='tools')return;
@@ -693,7 +694,7 @@
     if($('perSession'))$('perSession').onclick=()=>{if(period==='session')return;period='session';cur.scope=null;paintTools();};
     if($('perAll'))$('perAll').onclick=()=>{if(period==='all')return;period='all';paintTools();};
     $('tabTools').onclick=()=>{cur.tab='tools';paintTools();};
-    $('tabAgents').onclick=()=>{cur.tab='agents';if(period==='all'){period='session';cur.scope=null;}paintTools();};
+    if($('tabAgents'))$('tabAgents').onclick=()=>{cur.tab='agents';if(period==='all'){period='session';cur.scope=null;}paintTools();};
     $('tabCost').onclick=()=>{cur.tab='cost';paintTools();};
     if($('costRun'))$('costRun').onclick=()=>{costPer='run';paintTools();};
     if($('costSince'))$('costSince').onclick=()=>{costPer='since';paintTools();};
@@ -736,7 +737,7 @@
   }
   /* ---------------- Tools > Cost (spec 052 FR-044, #315) ---------------- */
   const sinceDay=s=>typeof s==='string'&&/^\d{4}-\d{2}-\d{2}/.test(s)?s.slice(0,10):'';
-  function costView(){
+  function costView(simple){
     const C=window.DurbarCost;
     const day=sinceDay(X.usageSince?X.usageSince():'');
     if(!day)costPer='run';
@@ -753,8 +754,8 @@
     const moneyCell=r=>C.notReported(r)?'<td class="num unk">not reported</td>':r.empty?'<td class="num">–</td>':n((/^</.test(C.money(r.money))?'':'≈ ')+C.money(r.money)); /* "<$0.01" needs no "≈" (as on the cards) */
     const row=r=>{
       const note=[r.tokensOnly?'Codex: tokens only':'',r.other?'saved totals of folders no longer in the list':''].filter(Boolean).join(' · ');
-      return `<tr class="${r.empty?'empty':''}${r.other?' other':''}"><th scope="row" title="${esc(r.path||r.name)}">${esc(r.name)}</th>${moneyCell(r)}${n(r.aiu.toFixed(2))}${n(r.usd?C.money(r.usd):'–')}${n(r.tokens?fmt(r.tokens):'–')}${n(String(r.calls))}<td class="cnote">${esc(note)}</td></tr>`;};
-    const head=`<thead><tr><th scope="col">Folder</th><th scope="col" class="num">Est. cost</th><th scope="col" class="num">Copilot AIU</th><th scope="col" class="num">Claude $ est.<br><small>this run</small></th><th scope="col" class="num">Tokens<br><small>this run</small></th><th scope="col" class="num">Calls</th><th scope="col">Note</th></tr></thead>`;
+      return `<tr class="${r.empty?'empty':''}${r.other?' other':''}"><th scope="row" title="${esc(r.path||r.name)}">${esc(r.name)}</th>${moneyCell(r)}${n(r.aiu.toFixed(2))}${n(r.usd?C.money(r.usd):'–')}${simple?'':n(r.tokens?fmt(r.tokens):'–')}${n(String(r.calls))}<td class="cnote">${esc(note)}</td></tr>`;};
+    const head=`<thead><tr><th scope="col">Folder</th><th scope="col" class="num">Est. cost</th><th scope="col" class="num">Copilot AIU</th><th scope="col" class="num">Claude $ est.<br><small>this run</small></th>${simple?'':'<th scope="col" class="num">Tokens<br><small>this run</small></th>'}<th scope="col" class="num">Calls</th><th scope="col">Note</th></tr></thead>`;
     const sum=`<p class="scr-sum">Cost by folder, <b>${esc(label==='This run'?'this run':label.toLowerCase())}</b>. Estimated cost: Copilot AI credits at $0.01 each, plus Claude Code's own estimate. Not a bill.</p>`;
     const notes=`<p class="scr-note small">Copilot AIU and calls: ${costPer==='since'?'the totals saved since '+esc(day)+' (reset in Settings) plus this run':'since Agent Durbar opened (or the last reset)'}; ended sessions are included. Claude $ and tokens: the sessions open now, this run only. Codex reports tokens but no cost. A budget per folder is not available yet.</p>`;
     return {seg,built,label,html:sum+`<table class="ttab cost">${head}<tbody>${built.rows.map(row).join('')}</tbody><tfoot>${row(Object.assign({empty:false,other:false,path:''},built.total,{tokensOnly:false}))}</tfoot></table>`+notes+plan};

@@ -81,8 +81,8 @@ function markSerious(){document.documentElement.toggleAttribute('data-serious',S
 /* spec 052 FR-031 (#306): detail level. Simple hides the developer details (tokens, model and context chips, paths, MCP, VS Code, resume
    command) and says what agents do in plain verbs; Expert is everything. A display preference of this window (localStorage). */
 let SIMPLE=(()=>{try{return localStorage.getItem('durbar.detail')==='simple';}catch(e){return false;}})();
-function setDetail(level){SIMPLE=level==='simple';try{localStorage.setItem('durbar.detail',SIMPLE?'simple':'expert');}catch(e){}document.body.classList.toggle('simple',SIMPLE);relabelScopes();renderAll();if(ui.selected)updatePanelHeader();}
-const PLACE_VERB={library:'Reading notes',software:'Searching files',terminal:'Using the computer',web:'Searching the web',other:'Using a tool'}; /* FR-037: words for people who do not write code */
+function setDetail(level){SIMPLE=level==='simple';try{localStorage.setItem('durbar.detail',SIMPLE?'simple':'expert');}catch(e){}document.body.classList.toggle('simple',SIMPLE);relabelScopes();renderAll();if(ui.selected){updatePanelHeader();const s=byId(ui.selected);if(s)updateCtxChip(liveRoot(s));}}
+const PLACE_VERB={library:'Reading notes',software:'Searching files',terminal:'Running a command',web:'Searching the web',other:'Using a tool'}; /* FR-037: words for people who do not write code */
 let AMB_ID=null;   /* the one agent that has the ambulance (the most recent error), chosen once per render */
 const NO_MOOD={body:'normal',trouble:null,pct:null,words:''};
 function moodFor(a){
@@ -289,8 +289,38 @@ const usageCaps=a=>{const r=a&&a.parent?(byId(a.parent)||a):a;const c=typeof cap
 const fmtMoney=v=>v>0&&v<0.005?'<$0.01':'$'+v.toFixed(2);
 const approx=v=>(v>0&&v<0.005?'':'≈ ')+fmtMoney(v); /* "<$0.01" needs no "≈" */
 const AIU_USD=0.01; /* 1 Copilot AI credit = USD 0.01 (GitHub's price; Settings says the same) */
+/* spec 052 FR-080: a request in plain words for Simple, from the event's kind and summary ("write src/tools/companies.ts", "run npm test"):
+   {what,folder,cmd}, or null for a kind that keeps its summary. The event data is unchanged; callers set the words with textContent. */
+const baseOf=p=>{const parts=String(p||'').split(/[\\/]/).filter(Boolean);return {base:parts.pop()||'',dir:parts.pop()||''};};
+const clipName=s=>s.length>40?s.slice(0,39)+'…':s;
+function plainAsk(kind,summary){
+  const s=String(summary||'').trim(), k=String(kind||'');
+  if(k==='write'||k==='read'){
+    let rest=s.replace(/^(write|edit|create|read)(\s+|$)/i,''), more='';
+    const m=/\s+\(\+(\d+) more\)$/.exec(rest);if(m){more=' and '+m[1]+' more file'+(m[1]==='1'?'':'s');rest=rest.slice(0,m.index);}
+    const {base,dir}=baseOf(rest.replace(/\s+\([^()]*\)$/,'').trim());
+    return {what:(k==='write'?'change ':'read ')+(base?clipName(base):'a file')+more,folder:dir?'in '+dir:'',cmd:''};
+  }
+  if(k==='shell')return {what:'run a command',folder:'',cmd:s.replace(/^run\s+/i,'')};
+  if(k==='url')return {what:'open a web page',folder:'',cmd:''};
+  if(k==='mcp'||k==='custom-tool')return {what:'use one of its tools',folder:'',cmd:''};
+  return null;
+}
+/* spec 052 FR-081: a tool row of the chat in plain words for Simple ("Read companies.ts", "Searched files", "Ran a command") */
+function plainChip(k,tool,label,running){
+  const t=String(tool||'').toLowerCase(), first=String(label||'').trim().split(/\s+/)[0]||'', {base}=baseOf(first), file=/[\\/.]/.test(first)&&base?clipName(base):'a file';
+  if(/fetch|web|url|http/.test(t))return running?'Looking at a web page':'Looked at a web page';
+  if(k==='read')return (running?'Reading ':'Read ')+file;
+  if(k==='edit')return (running?'Changing ':'Changed ')+file;
+  if(k==='run')return running?'Running a command':'Ran a command';
+  if(k==='search')return running?'Searching files':'Searched files';
+  return running?'Using a tool':'Used a tool';
+}
 /* spec 052 FR-057: in Simple, the stop at the spending limit and a rate-limit error read in plain words; Expert keeps the exact text */
 const taskText=a=>{const t=a.task==null?'':String(a.task);if(!SIMPLE)return t;
+  {const w=/^(Waiting for permission|Denied \(read-only mode\)): (write|edit|run|read|fetch|mcp)\b ?(.*)$/i.exec(t); /* FR-080: never the command itself */
+    const p=w&&plainAsk({write:'write',edit:'write',run:'shell',read:'read',fetch:'url',mcp:'mcp'}[w[2].toLowerCase()],w[2]+' '+w[3]);
+    if(p)return (/^W/.test(w[1])?'Waiting for your OK to ':'Read-only stopped it: wanted to ')+p.what;}
   const m=/^Stopped at (\$?)(\d+(?:\.\d+)?)( AIU)?\. Raise the limit to go on\.$/.exec(t);
   if(m){const n=parseFloat(m[2]);return 'Paused: reached the spending limit you set ('+(m[1]?fmtMoney(n):'about '+fmtMoney(n*AIU_USD))+')';}
   if(a.state==='error'&&/\b429\b|rate[ -]?limit/i.test(t))return 'The AI service is busy. Try again in a minute.';
@@ -301,7 +331,7 @@ function usageShort(a){const u=a.usage; if(!u||!u.calls)return ''; const k=usage
   if(SIMPLE){const m=k.nanoAiu?u.nano/1e9*AIU_USD:(k.costUsd?(u.usd||0):null);return m==null?'':approx(m);}
   if(!k.nanoAiu)return c&&k.costUsd&&isUsdCap(a)?fmtTok(u.inT+u.outT)+' · $'+(u.usd||0).toFixed(2)+'/$'+c.toFixed(2)+' est.':fmtTok(u.inT+u.outT)+' tok'+(k.costUsd?' · '+fmtUsd(u.usd||0):'');
   return c?fmtTok(u.inT+u.outT)+' · '+(u.nano/1e9).toFixed(capDigits(c))+'/'+fmtCap(c)+' AIU':fmtTok(u.inT+u.outT)+' tok · '+approx(u.nano/1e9*AIU_USD);}
-function usageLong(a){const u=a.usage; if(!u||!u.calls)return ''; const k=usageCaps(a), c=capOf(a), base=u.calls+' calls · '+fmtTok(u.inT)+' in / '+fmtTok(u.outT)+' out tokens';
+function usageLong(a){const u=a.usage; if(!u||!u.calls)return ''; if(SIMPLE){const m=usageShort(a);return m?'Cost so far: '+m:'';} /* spec 052 FR-081: money only */ const k=usageCaps(a), c=capOf(a), base=u.calls+' calls · '+fmtTok(u.inT)+' in / '+fmtTok(u.outT)+' out tokens';
   if(!k.nanoAiu)return base+(k.costUsd?' · '+(c&&isUsdCap(a)?fmtUsd(u.usd||0).replace(/ est\.$/,' of a $'+c.toFixed(2)+' limit est.'):fmtUsd(u.usd||0)):'');
   return base+' · '+(u.nano/1e9).toFixed(3)+' AIU'+(c?' of '+fmtCap(c)+' limit':'');}
 
@@ -737,10 +767,15 @@ const WELCOME_HTML=`<section class="welcome" aria-labelledby="wlT"><h2 id="wlT">
     <li><b>Send a message</b> to start. Switch to <b>Ask first</b> or <b>Allow all</b> only for folders you trust.</li>
   </ol>
   <div class="wl-actions"><button class="btn" type="button" data-wl="setup">Connect an AI account…</button><button class="btn primary" type="button" data-wl="add">+ Add a folder</button><button class="btn" type="button" data-wl="demo">Look around in the demo</button></div>
-  <label class="wl-simple"><input type="checkbox" data-wl-simple> <span><b>Simple</b>: plain words and the cost in dollars, without developer details. You can change it any time in Settings.</span></label>
+  <div class="wl-level" role="group" aria-labelledby="wlLv"><p id="wlLv"><b>Do you write code?</b> <span>You can change this any time in Settings (Detail level).</span></p>
+    <span class="wl-lv-btns"><button class="btn" type="button" data-wl-level="expert" aria-pressed="false">Yes, show me the details</button><button class="btn" type="button" data-wl-level="simple" aria-pressed="false">No, keep it simple</button></span></div>
   <p class="wl-note">Agents run on your computer, as you, and use your own plan (Copilot AI credits, your Claude or ChatGPT plan).</p></section>`;
-/* spec 052 FR-031: the welcome card offers Simple */
-document.addEventListener('change',e=>{if(e.target&&e.target.matches&&e.target.matches('[data-wl-simple]'))setDetail(e.target.checked?'simple':'expert');});
+/* spec 052 FR-031, FR-082: the welcome card asks "Do you write code?"; the answer sets the detail level (remembered like the Settings choice).
+   Nothing chosen: Expert, and neither button is pressed. */
+const detailChosen=()=>{try{return localStorage.getItem('durbar.detail');}catch(e){return null;}};
+const welcomeHTML=()=>{const c=detailChosen();return WELCOME_HTML.replace(/data-wl-level="(expert|simple)" aria-pressed="false"/g,(m,l)=>c===l?'data-wl-level="'+l+'" aria-pressed="true"':m);};
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('[data-wl-level]');if(!b)return;const l=b.dataset.wlLevel;setDetail(l);
+  const again=document.querySelector('[data-wl-level="'+l+'"]');if(again)again.focus();announce(l==='simple'?'Simple: plain words, without developer details.':'Expert: every detail is shown.');});
 document.addEventListener('click',e=>{const b=e.target.closest('[data-wl]');if(!b)return;
   if(b.dataset.wl==='add')$('addFolder').click();
   else if(b.dataset.wl==='setup')window.DurbarScreens.openSettings('harnesses'); /* spec 051 FR-008 */
@@ -763,7 +798,7 @@ function renderOffice(){
   const model=officeModel();
   if(!model.length){
     stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey='';
-    if(!agents.length&&!demoOn){if(!stage.querySelector('.welcome'))ringFolder();stage.innerHTML=WELCOME_HTML;floor.classList.remove('scrolls');return;} /* spec 001 FR-026: first run */
+    if(!agents.length&&!demoOn){if(!stage.querySelector('.welcome'))ringFolder();stage.innerHTML=welcomeHTML();floor.classList.remove('scrolls');return;} /* spec 001 FR-026: first run */
     stage.innerHTML='<div class="empty">'+EMPTY_DESK+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" above (or "+ Workspace" for a VS Code .code-workspace file).':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open "Folders" above to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?'All floors are off. Open "Floors" above to switch one on.':agents.length&&ROOMS.every(r=>!roomShown(r))?'Nothing to show: every folder is hidden or on a floor that is off. Open "Floors" or "Folders" above.':'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
   }
@@ -790,7 +825,7 @@ let LSORT=null;
 const appOf=a=>{const r=a&&a.parent?byId(a.parent):a;return r&&r.live&&r.info?kindWord(r.info.adapterId):'';};
 /* the card's money words without the tokens: AIU as ≈ $, Claude's $ estimate; a kind with no price shows its tokens */
 const costVal=a=>{const u=a.usage;if(!u||!u.calls)return null;const k=usageCaps(a);return k.nanoAiu?u.nano/1e9*AIU_USD:k.costUsd?(u.usd||0):null;};
-const costText=a=>{const u=a.usage;if(!u||!u.calls)return '';const k=usageCaps(a);return k.nanoAiu?approx(u.nano/1e9*AIU_USD):k.costUsd?fmtUsd(u.usd||0):fmtTok(u.inT+u.outT)+' tok';};
+const costText=a=>{const u=a.usage;if(!u||!u.calls)return '';const k=usageCaps(a);return k.nanoAiu?approx(u.nano/1e9*AIU_USD):k.costUsd?fmtUsd(u.usd||0):SIMPLE?'':fmtTok(u.inT+u.outT)+' tok';}; /* spec 052 FR-081: no token counts in Simple */
 const LVAL={name:a=>a.name,app:appOf,role:a=>a.role,folder:a=>roomOf(a).name,task:a=>taskText(a),ago:sinceLast,cost:costVal,status:a=>ST_ORDER[pillSt(a)]};
 function renderList(){
   const groups=[];
@@ -870,7 +905,7 @@ function makeChip({tool,kind,label,res,state,output,full,ms}){
   if(detail)el.classList.add('has-detail');
   if(cmd)el.classList.add('has-cmd');
   const more=detail.length>OUT_SHOWN;
-  el.innerHTML=`${ICON(k)||ICON('tool')}<b>${esc(name)}</b><code>${esc(label)}</code>${res?`<span class="res">${el.className.includes('fail')?'Failed: ':''}${esc(res)}</span>`:''}${cmd||dur||detail?`<span class="xbody">${cmd?`<span class="cmdbox"><pre class="cmd">${esc(cmd)}</pre><button type="button" class="cp-btn cp-cmd" aria-label="Copy the command" title="Copy the command">Copy</button></span>`:''}${dur||(state==='failed'&&res)?`<span class="xmeta">${state==='failed'?'Failed':'Done'}${dur?' · took '+esc(dur):''}</span>`:''}${detail?`<pre class="detail">${esc(more?detail.slice(0,OUT_SHOWN):detail)}</pre>${more?`<button type="button" class="xall">Show all (${detail.length.toLocaleString('en-US')} characters)</button>`:''}`:''}</span>`:''}`;
+  el.innerHTML=`${ICON(k)||ICON('tool')}<span class="plain">${esc(plainChip(k,tool,label,state==='run'))}</span><b>${esc(name)}</b><code>${esc(label)}</code>${res?`<span class="res">${el.className.includes('fail')?'Failed: ':''}${esc(res)}</span>`:''}${cmd||dur||detail?`<span class="xbody">${cmd?`<span class="cmdbox"><pre class="cmd">${esc(cmd)}</pre><button type="button" class="cp-btn cp-cmd" aria-label="Copy the command" title="Copy the command">Copy</button></span>`:''}${dur||(state==='failed'&&res)?`<span class="xmeta">${state==='failed'?'Failed':'Done'}${dur?' · took '+esc(dur):''}</span>`:''}${detail?`<pre class="detail">${esc(more?detail.slice(0,OUT_SHOWN):detail)}</pre>${more?`<button type="button" class="xall">Show all (${detail.length.toLocaleString('en-US')} characters)</button>`:''}`:''}</span>`:''}`;
   if(more)el._out=detail;
   return el;
 }
@@ -1046,7 +1081,7 @@ function wireMoreMenu(){wireMenu('moreBtn','moreMenu');}
 /* spec 052 FR-003, #308: one menu behaviour for the chat's More and the top bar's ⋯ */
 function wireMenu(btnId,menuId){
   const btn=$(btnId), m=$(menuId); if(!btn||!m)return;
-  /* spec 052 FR-057: skip items Simple hides with CSS (Copy resume command, MCP servers, Tools and usage), so arrows never land on them */
+  /* spec 052 FR-057, FR-081: skip items Simple hides with CSS (Copy resume command, MCP servers, Tools and usage, Control from GitHub), so arrows never land on them */
   const items=()=>[...m.querySelectorAll('[role="menuitem"],input')].filter(x=>!x.hidden&&!x.disabled&&!x.closest('[hidden]')&&x.getClientRects().length);
   const close=(back)=>{if(m.hidden)return;m.hidden=true;btn.setAttribute('aria-expanded','false');document.removeEventListener('mousedown',outside,true);if(back)btn.focus();};
   const outside=e=>{if(!m.contains(e.target)&&e.target!==btn&&!btn.contains(e.target))close(false);};
@@ -1069,7 +1104,7 @@ function wireMenu(btnId,menuId){
    of view, a bar above the composer shows it with the same choices; its buttons press the card's own buttons, so there is one code
    path. A question is answered in its card (options and text): the bar takes you there. */
 /* the words of a request card (permission, question, limit), in full: the answer bar and the inbox show exactly this (FR-016, FR-027) */
-function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.q-form,.q-urlbox,.pstate,.pdiff').forEach(x=>x.remove());const q=n.querySelector('.q-text');return (q?q.textContent:c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,'');}let answerObs=null;
+function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.q-form,.q-urlbox,.pstate,.pdiff,.pcmd'+(SIMPLE?'':',.pfold')).forEach(x=>x.remove()); /* spec 052 FR-080: the command never (notifications use this text) */const q=n.querySelector('.q-text');return (q?q.textContent:c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,'');}let answerObs=null;
 /* spec 052 FR-060: the key of a permission card's button, and the one click path the bar and the keys share */
 const answerKeyOf=b=>b.dataset.act==='session'?'Alt+S':/\bdanger\b/.test(b.className)?'Alt+D':/\bprimary\b/.test(b.className)?'Alt+A':'';
 const answerPress=(src,what)=>()=>{const word=src.textContent;src.click();announce(word+': '+what);const m=$('msgInput');if(m)m.focus();};
@@ -1130,7 +1165,7 @@ function openPanel(id,focus){
       <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?(a.live&&a.info&&!a.parent&&bridge.setModel&&feat(a,'models')?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">Model: ${esc(mdlName.text)}</span>`):''}${a.live&&a.info&&!a.parent&&a.info.profiles&&bridge.listProfiles?agentChipHTML(a):''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>      <div class="actions"><!-- spec 052 FR-003: two actions in view, the rest under More (ids kept; End and Remove last) --><button class="btn primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
         <button class="btn" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
         ${a.live&&!feat(liveRoot(a),'stop')?'':`<button class="btn danger" id="stopBtn" type="button" title="${a.live?'Stop: interrupts this reply. The chat stays open and ready; nothing is removed.':'Stop'}"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>Stop</button>`}
-        <button class="btn" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools and usage</button>`:''}${a.live&&!a.parent&&bridge.agentMcp&&feat(liveRoot(a),'mcp')?`<button class="more-it" role="menuitem" tabindex="-1" id="mcpBtn" type="button" title="MCP servers for this agent (set globally in Settings)">MCP servers</button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}</button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>`:''}${canRemote(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it danger" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>Send a message to pick up where you left off</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The other sessions in ${esc(room.name)} stay."><span class="mt">Remove from office<small>Ends the session; its history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Take ${esc(room.name)} out of Agent Durbar: its session ends and the folder is no longer remembered. Nothing on disk is deleted."><span class="mt">Remove folder<small>Forgets the folder; nothing on disk is deleted</small></span></button>`:'')}</div></div></div>
+        <button class="btn" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools and usage</button>`:''}${a.live&&!a.parent&&bridge.agentMcp&&feat(liveRoot(a),'mcp')?`<button class="more-it" role="menuitem" tabindex="-1" id="mcpBtn" type="button" title="MCP servers for this agent (set globally in Settings)">MCP servers</button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}</button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>`:''}${canRemote(a)?`<button class="more-it${a.remote?' on':''}" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it danger" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>Send a message to pick up where you left off</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The other sessions in ${esc(room.name)} stay."><span class="mt">Remove from office<small>Ends the session; its history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Take ${esc(room.name)} out of Agent Durbar: its session ends and the folder is no longer remembered. Nothing on disk is deleted."><span class="mt">Remove folder<small>Forgets the folder; nothing on disk is deleted</small></span></button>`:'')}</div></div></div>
     <p class="ptask" data-f="task"></p><p class="pusage" data-f="usage"></p>
     <div class="grants" id="grants" aria-label="Permissions allowed for this session" hidden></div></div>
    <div class="prev" id="prev" hidden></div>
@@ -1440,7 +1475,7 @@ function paintInbox(focusIndex){
     {const t=NEED_SINCE.get(a.id);row.querySelector('.ib-wait').textContent=t!=null?'· '+ATT.waitLabel(Date.now()-t):'';} /* FR-061 */
     const text=card?requestText(card):(taskOf(a)||'');row.querySelector('.ib-t').textContent=text;
     const act=row.querySelector('.ib-act');
-    {const dd=card&&card.querySelector(':scope > details.pdiff');if(dd){const c=dd.cloneNode(true);c.open=false;act.before(c);}} /* spec 052 FR-063: the card's "Show the change", collapsed */
+    for(const dd of card?card.querySelectorAll(':scope > details.pdiff, :scope > details.pcmd'):[]){const c=dd.cloneNode(true);c.open=false;act.before(c);} /* spec 052 FR-063, FR-080: the card's "Show the change" and (Simple) "Show the command", collapsed */
     /* spec 052 FR-076: Allow, Allow for session, Deny in one fixed order inside a group that never wraps; "Open chat" comes last and is the only thing that wraps.
        FR-077: each button names its key in its title and aria-keyshortcuts. */
     const KEY={approve:'A',session:'S',deny:'D',open:'O'}, RANK={approve:0,session:1,deny:2,other:3};
@@ -2338,7 +2373,7 @@ const relabelScopes=()=>document.querySelectorAll('[data-lbl-simple]').forEach(b
 function diffBlock(diff){
   const {lines,more}=ACT.diffLines(diff), d=document.createElement('details');d.className='pdiff';
   const add=lines.filter(l=>l.t==='add').length, del=lines.filter(l=>l.t==='del').length;
-  const sm=document.createElement('summary');sm.textContent='Show the change'+(add||del?' (+'+add+' −'+del+')':'');d.appendChild(sm);
+  const sm=document.createElement('summary'),cnt=add||del?' (+'+add+' −'+del+')':'';sm.dataset.lblExpert='Show the change'+cnt;sm.dataset.lblSimple='See what changes'+cnt;sm.textContent=SIMPLE?sm.dataset.lblSimple:sm.dataset.lblExpert;d.appendChild(sm); /* FR-080: Simple words */
   const pre=document.createElement('pre');pre.setAttribute('aria-label','The change, as removed and added lines');
   lines.forEach(l=>{const s=document.createElement('span');s.className='dl '+l.t;s.textContent=l.s||' ';pre.appendChild(s);});
   if(more){const m=document.createElement('span');m.className='dmore';m.textContent='… '+more+' more line'+(more===1?'':'s')+' not shown';pre.appendChild(m);}
@@ -2349,8 +2384,15 @@ function showPerm(a,p){
   const t=ensureTurn(a);
   const n=document.createElement('div');n.className='note perm';n.setAttribute('role','group');n.setAttribute('aria-label','Permission request');
   n.innerHTML='<b>Needs your OK:</b> <span class="psum"></span><span class="pstate"></span>';
-  n.querySelector('.psum').textContent=p.summary;
+  /* spec 052 FR-080: in Simple, "Ada wants to change companies.ts" (the folder in small text) or "Ada wants to run a command" (the command
+     under a collapsed "Show the command"); Expert keeps the summary. Both texts sit on the element so the detail level can switch live. */
+  const ps=n.querySelector('.psum'), pl=plainAsk(p.kind,p.summary), plain=pl?a.name+' wants to '+pl.what:'';
+  ps.textContent=SIMPLE&&pl?plain:p.summary;
+  if(pl){ps.dataset.lblSimple=plain;ps.dataset.lblExpert=p.summary;
+    if(pl.folder){const f=document.createElement('small');f.className='pfold';f.textContent=' '+pl.folder;ps.after(f);}}
   if(p.state==='pending'&&typeof p.diff==='string'&&p.diff)n.appendChild(diffBlock(p.diff)); /* spec 052 FR-063 */
+  if(pl&&pl.cmd){const d=document.createElement('details');d.className='pcmd';const sm=document.createElement('summary');sm.textContent='Show the command';
+    const pre=document.createElement('pre');pre.textContent=pl.cmd;d.append(sm,pre);n.appendChild(d);}
   const st=n.querySelector('.pstate');
   if(p.state==='denied'){st.innerHTML=' <i>(denied: this agent is in Read-only. Switch it to Ask first to be asked instead)</i>';
     roAskHint(a,n);
@@ -2368,7 +2410,7 @@ function showPerm(a,p){
     a.pend.set(p.requestId,{n,row,st});
   }
   tChips(t.T).appendChild(n);scrollChat(liveChat(a));
-  if(p.state==='pending')announce(a.name+' needs your OK: '+p.summary);
+  if(p.state==='pending')announce(SIMPLE&&pl?plain:a.name+' needs your OK: '+p.summary);
   renderInboxBtn();
 }
 /* spec 052 FR-074: under a request denied by Read-only, one inline "Switch this agent to Ask first", once per agent until its mode
@@ -2423,8 +2465,10 @@ function feedStats(a,e){
 }
 function ctxChipHTML(a){const c=window.DurbarScreens.ctxChip(a);
   return `<span class="ctxgrp" id="ctxGrp">${ctxChipBtn(a,c)}${compactBtnHTML(a)}</span>`;}
+/* spec 052 FR-081: Simple says "Memory 74% full" (same id, same click) */
 function ctxChipBtn(a,c){
-  return `<button class="ctxchip ${c.cls}" id="ctxChip" type="button" title="${esc(c.title)} Click for models and context of all agents."><span class="bar" aria-hidden="true"><i style="width:${c.pct}%"></i></span><span>${esc(c.text)}</span></button>`;}
+  const text=SIMPLE?(c.cls==='unk'?'Memory: not known yet':'Memory '+c.pct+'% full'):c.text, title=SIMPLE?'How full the agent\'s memory of this conversation is. When it is nearly full, Tidy up memory makes room.':c.title+' Click for models and context of all agents.';
+  return `<button class="ctxchip ${c.cls}" id="ctxChip" type="button" title="${esc(title)}"><span class="bar" aria-hidden="true"><i style="width:${c.pct}%"></i></span><span>${esc(text)}</span></button>`;}
 function updateCtxChip(a){
   const el=$('ctxGrp');if(!el||!ui.selected)return;const cur=byId(ui.selected);if(!cur||liveRoot(cur)!==a)return;
   const g=$('ctxGrp');if(g)g.outerHTML=ctxChipHTML(a);
@@ -2811,7 +2855,7 @@ function updateModelChip(a){
 function compactBtnHTML(a){
   const c=ctrlOf(a);if(!c.compact||!bridge.compact)return '';
   const busy=busyNow(a);
-  return `<button class="mchip mchip-btn" id="compactBtn" type="button"${busy?' aria-disabled="true"':''} title="${busy?'The agent is busy. Compact when it is idle.':'Summarise the conversation to free space in the context window. Costs one model call.'}">Compact</button>`;
+  return `<button class="mchip mchip-btn" id="compactBtn" type="button"${busy?' aria-disabled="true"':''} title="${busy?(SIMPLE?'The agent is busy. Tidy up when it is idle.':'The agent is busy. Compact when it is idle.'):(SIMPLE?'Summarise the conversation so the agent has room to keep going. Costs one model call.':'Summarise the conversation to free space in the context window. Costs one model call.')}">${SIMPLE?'Tidy up memory':'Compact'}</button>`; /* spec 052 FR-081: Simple words */
 }
 
 /* ---------------- custom agent per session (spec 043) ---------------- */
@@ -3057,7 +3101,7 @@ function remotePalItems(){
 }
 /* the header chip and the More item follow the state in place (the composer keeps its text); the office re-renders the card */
 function updateRemoteUi(a){
-  if(ui.selected===a.id){const c=$('remoteChip');if(c)c.hidden=!a.remote;const b=$('remoteBtn');if(b)b.innerHTML=remoteItemInner(a);}
+  if(ui.selected===a.id){const c=$('remoteChip');if(c)c.hidden=!a.remote;const b=$('remoteBtn');if(b){b.innerHTML=remoteItemInner(a);b.classList.toggle('on',!!a.remote);}}
   scheduleRender();
 }
 const remoteBack=()=>$('moreBtn')||$('panelTitle');
