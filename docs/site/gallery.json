@@ -1,5 +1,5 @@
 [
-  { "file": "m5-sim15-1440x900-closed.png", "caption": "The office: 15 agents in their folders' rooms, each with its state at a glance.", "alt": "Agent Durbar office with 15 simulated agents at desks in five rooms" },
+  { "file": "052-office-1440x900.png", "caption": "The office: every agent at a desk in its folder's room, with its state at a glance.", "alt": "Agent Durbar office with simulated agents at desks in their folders' rooms" },
   { "file": "m6-fullchat-sim15-1440x900.png", "caption": "Full-screen chat with live thinking and tool calls; every other agent stays in a slim strip.", "alt": "Full-screen chat with the other agents in a strip" },
   { "file": "012-harness-picker-1440x900.png", "caption": "Copilot, Claude Code and Codex side by side: pick the harness for a new session.", "alt": "New session dialog with a harness picker" },
   { "file": "003-allow-all-menu-1440x900.png", "caption": "Permission modes per agent: Read-only, Ask first, Allow all.", "alt": "Permission mode menu on an agent card" },
