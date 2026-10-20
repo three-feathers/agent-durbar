@@ -184,7 +184,7 @@ export function codexReadEnforceable(c: CodexReadCheck): CodexReadResult {
   if (compareVersions(have, CODEX_MIN_VERSION) < 0) return { ok: false, reason: `This Codex is too old to limit reads to the session's folders.`, advice: `Upgrade Codex to ${CODEX_MIN_PERMISSIONS_VERSION} or later.` };
   if (c.experimentalApi !== true) return { ok: false, reason: `This Codex did not accept the experimental API, which Durbar needs to limit reads to the session's folders.`, advice: `Upgrade Codex to ${CODEX_MIN_PERMISSIONS_VERSION} or later and make sure the app-server accepts the experimental API.` };
   if (typeof c.platform !== 'string' || !c.platform) return { ok: false, reason: 'The platform is unknown, so Durbar cannot confirm Codex can limit reads.', advice: 'Restart Durbar; if it persists, report it.' };
-  if (c.platform === 'win32' && c.elevatedSandbox !== true) return { ok: false, reason: `On Windows, Codex needs its elevated sandbox set up to limit reads to the session's folders.`, advice: 'Set up the Codex elevated sandbox on Windows, and use the native codex.exe instead of a .cmd shim.' };
+  if (c.platform === 'win32' && c.elevatedSandbox !== true) return { ok: false, reason: `On Windows, Codex needs its elevated sandbox set up to limit reads to the session's folders.`, advice: 'Set up the Codex elevated sandbox on Windows, and use the native codex.exe instead of a .cmd shim. Until then, Allow all works without the sandbox: use it only in a folder you trust.' };
   return { ok: true };
 }
 
