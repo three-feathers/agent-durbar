@@ -76,7 +76,7 @@ sessions:delete(agentId, sessionId)  -> { ok } | { ok:false, error, code?: 'open
 
 **Activity.** `session-deleted` in `src/shared/activity.ts` and its word in `activitytable.js`; `test:activity` covers the sanitizer and word.
 
-**Simulator.** `src/renderer/sim.ts` keeps marks in memory per folder, offers `deleteSession` on the `mcp-swiss` rows (removes them from its list) and a hook that makes the next delete answer `code: 'open'`, for screenshots. One sim agent kind without delete shows the disabled item.
+**Simulator.** `src/renderer/sim.ts` keeps marks in memory per folder, offers `deleteSession` on the `mcp-swiss` rows (removes them from its list) and a hook that makes the next delete answer `code: 'in-office'`, for screenshots. One sim agent kind without delete shows the disabled item.
 
 **Constitution check.** I (adapters as plug-ins): delete behind `AgentAdapter`, renderer sees a boolean. III (safe, no secrets): ids only in the store; Durbar deletes no files; confirmation with Cancel focused; refusal for open sessions; IPC takes ids, re-checked against the folder's list; the window reads the flag from the capabilities it already gets (`capsFor`, `app.js:2947`). IV (no credits): fake adapter, simulator; no real delete in tests. V (calm UI): one ⋯ per row, fits 1280x800. VI (parity): no paths, no shell. VIII (honest limits): real deletes, concurrent use by another process and macOS/Windows are `[KNOWN GAP]` until run.
 
