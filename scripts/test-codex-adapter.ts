@@ -623,6 +623,31 @@ async function main(): Promise<void> {
       assert.deepStrictEqual((await settles('stop', p3)).result, { answers: {} });
       await ad.dispose();
     }
+    // FR-151: an MCP elicitation with form fields goes to the question card; the answer is {action, content}; Stop cancels
+    {
+      const { server, ad, events } = make({ server: { holdTurn: true } });
+      const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', quiet: true });
+      await ad.send(sid, { text: 'go' });
+      await server.flush();
+      const child = server.childOfThread(sid)!;
+      const form = { threadId: sid, serverName: 'deploy', mode: 'form', message: 'Where?', requestedSchema: { type: 'object', properties: { env: { type: 'string', enum: ['staging', 'production'] }, ticket: { type: 'integer' } }, required: ['env'] } };
+      const p = req(server, 'mcpServer/elicitation/request', form, child);
+      await until('form asked', () => events.some((e) => e.type === 'question' && e.phase === 'asked'));
+      const asked = events.find((e) => e.type === 'question' && e.phase === 'asked') as { requestId: string; elicitation?: { source?: string; fields?: Array<{ name: string }> } };
+      assert.deepStrictEqual(asked.elicitation?.fields?.map((f) => f.name), ['env', 'ticket']);
+      assert.strictEqual(asked.elicitation?.source, 'deploy');
+      ad.answerElicitation!(sid, asked.requestId, { action: 'accept', content: { env: 'staging', ticket: 4 } });
+      assert.deepStrictEqual((await settles('the form answer', p)).result, { action: 'accept', content: { env: 'staging', ticket: 4 } });
+      // a required field Durbar cannot show: declined at once
+      const p2 = req(server, 'mcpServer/elicitation/request', { ...form, requestedSchema: { properties: { tags: { type: 'array' } }, required: ['tags'] } }, child);
+      assert.deepStrictEqual((await settles('declined', p2)).result, { action: 'decline' });
+      // a URL flow, then Stop: cancel
+      const p3 = req(server, 'mcpServer/elicitation/request', { threadId: sid, serverName: 'deploy', mode: 'url', message: 'Sign in', url: 'https://auth.example.com/x' }, child);
+      await until('url asked', () => events.filter((e) => e.type === 'question' && e.phase === 'asked').length === 2);
+      await ad.stop(sid);
+      assert.deepStrictEqual((await settles('stop', p3)).result, { action: 'cancel' });
+      await ad.dispose();
+    }
     // FR-139: a shell command that already started keeps running after turn/interrupt (real, Codex 0.163); Aborted says so
     {
       const started = { method: 'item/started', params: { threadId: 'thr_main', item: { id: 'cmd_9', type: 'commandExecution', command: 'sleep 20', cwd: ws, status: 'inProgress' } } };

@@ -1,6 +1,8 @@
 import { randomUUID } from 'crypto';
 import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
 import { parseQuestions } from './questions';
+import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
+import type { ElicitAnswer } from '../shared/elicit';
 import type { CopilotSession, MCPServerConfig, ModelInfo, PermissionRequest, PermissionRequestResult, ResumeSessionConfig, SessionConfig, SessionEvent } from '@github/copilot-sdk';
 import type {
   AdapterCapabilities,
@@ -61,6 +63,8 @@ interface Live {
   askedTitle?: boolean;
   /** `ask_user` questions waiting for the user (spec 002 FR-058): request id -> waiter. */
   questions?: Map<string, { choices: string[]; resolve: (answer: string | null) => void }>;
+  /** MCP elicitations waiting for the user (spec 012 FR-151): request id -> waiter. */
+  elicitations?: Map<string, ElicitWaiter>;
   /** The session's folders (spec 043: a profile file inside one is the repository's). */
   folders?: string[];
 }
@@ -287,6 +291,14 @@ export class CopilotAdapter implements AgentAdapter {
       return { answer, wasFreeform: !asked[0].options.some((o) => o.label === answer) };
     };
 
+    // spec 012 FR-151: an MCP server's elicitation (a form, or a URL flow) in the question card; like a question, every mode
+    const onElicitationRequest = async (ctx: { message?: unknown; requestedSchema?: unknown; mode?: unknown; url?: unknown; elicitationSource?: unknown }): Promise<ElicitAnswer> => {
+      const live = this.sessions.get(sid);
+      if (!live) return { action: 'cancel' };
+      live.elicitations ??= new Map();
+      return runElicitation((b) => this.emit(sid, b), live.elicitations, randomUUID(), { message: ctx.message, schema: ctx.requestedSchema, mode: ctx.mode, url: ctx.url, source: ctx.elicitationSource }, (m) => this.debug?.(m));
+    };
+
     const config = {
       workingDirectory: cwd,
       // spec 006 FR-019: a workspace's other folders (the SDK asks for them again on resume, which this config does)
@@ -301,6 +313,7 @@ export class CopilotAdapter implements AgentAdapter {
       ...(options.maxAiCredits && options.maxAiCredits > 0 && Number.isFinite(options.maxAiCredits) ? { sessionLimits: { maxAiCredits: options.maxAiCredits } } : {}),
       onPermissionRequest,
       onUserInputRequest,
+      onElicitationRequest,
       // spec 043 FR-002: custom agents from explicit folders only (no config discovery, so no repository skills)
       agentDirectories: agentDirsFor([cwd, ...folders]),
     };
@@ -385,8 +398,14 @@ export class CopilotAdapter implements AgentAdapter {
     q.resolve(v ? v.replace(/\s+/g, ' ').trim().slice(0, 500) : null);
   }
 
+  /** spec 012 FR-151: the user's answer to an MCP elicitation (main checked it against the fields). */
+  answerElicitation(sessionId: string, requestId: string, answer: ElicitAnswer): void {
+    answerElicitation(this.sessions.get(sessionId)?.elicitations, requestId, answer);
+  }
+
   private cancelQuestions(live: Live): void {
     for (const q of [...(live.questions?.values() ?? [])]) q.resolve(null);
+    cancelElicitations(live.elicitations);
   }
 
   /** spec 043 FR-002: the session's selectable custom agents (`rpc.agent.list`, @experimental). */

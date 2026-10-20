@@ -549,7 +549,7 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 - **FR-129** `[IMPLEMENTED]` `ClaudeAdapter` answers `AskUserQuestion` from the `PreToolUse` hook, which runs in every mode: it emits `question`, waits for the user, and returns `permissionDecision: 'allow'` with `updatedInput` = the tool input plus `answers` (`{ question text: chosen label(s), comma-separated for several }`), or `deny` with "The user skipped the question." A question is not an action, so it is allowed in Read-only too. The old `can_use_tool` deny stays only as a fallback when the hook did not run.
 - **FR-130** `[IMPLEMENTED]` The chat shows a question card (header, question, one button per option, several selectable when `multiSelect`, an "Other" text field of up to 500 characters, **Answer** and **Skip**); the agent's status is "Waiting for your answer" (waiting, amber). After answering, the card shows what was chosen. Text is shown as text, never as HTML. The simulator has a question on one Claude agent (`simkinds=mixed`).
 - **FR-131** `[IMPLEMENTED]` Tests: the event shape and caps, the hook answer and skip, cancellation on Stop, on the fake CLI. `real:` 2026-10-19 with `haiku`: in **Read-only, Ask first and Allow all** a prompt that must ask with `AskUserQuestion` produced the question, the answer "Blue" went back through the hook, and Claude replied "You chose Blue." ($0.007 for the three); **the hook's `updatedInput` is accepted in every mode, `dontAsk` and `bypassPermissions` included**. In the real app (`DURBAR_CLAUDE=1`) the card showed Red/Blue, the agent said "Waiting for your answer", and after Blue → Answer Claude replied "You chose Blue." Screenshots: `docs/screenshots/012-question-card-*.png` (simulator), `012-question-real-1440x900.png`.
-- MCP elicitation and Codex `request_permissions` are still refused (unchanged, `[KNOWN GAP]`).
+- MCP elicitation and Codex `request_permissions` are still refused (unchanged, `[KNOWN GAP]`). *2026-10-20:* MCP elicitation is shown and answered since FR-151; Codex `request_permissions` is unchanged.
 
 ### 2026-10-19: Claude sign-in state without a prompt (issue #55, T047 Claude half)
 
@@ -790,7 +790,7 @@ The owner handed the Codex track to this agent ("ruben does not have chatgpt acc
   `setMcpEnabled` shows the change at once and applies it with the next message, on a fresh child that resumes the thread (as FR-144 does). `mcpStatus: true`, `mcpToggle: true`. Secret values go to Codex only; they are never logged.
 - **FR-148** `[IMPLEMENTED]` *Found on the real account:* Codex asks for an MCP tool call with `mcpServer/elicitation/request`, carrying `_meta.codex_approval_kind: "mcp_tool_call"`, the message `Allow the echo MCP server to run tool "echo"?` and an empty form. The answer must be `{action: accept | decline | cancel, content?}`; the adapter sent `{decision}`, so an approved call never ran.
   - A plain confirmation (no form fields) now goes through Durbar's approval. The tool name is taken from the message, so the card reads "mcp echo › echo". The reply is `{action: 'accept', content: {}}`, `decline` or `cancel`.
-  - An elicitation with form fields, or a URL flow, is **declined**: Durbar cannot fill forms yet (`[KNOWN GAP]`).
+  - An elicitation with form fields, or a URL flow, was **declined** (Durbar could not fill forms). *Superseded 2026-10-20 by FR-151* (`[IMPLEMENTED]` on the simulator and fakes): it now goes to the question card.
 - **FR-149** `[IMPLEMENTED]` *Found on the real account:* a sub-agent comes as `subAgentActivity` items, **one item per activity** (`kind: started` and `kind: completed`, each with its own id, each opened and closed at once). They are linked by `agentThreadId`. The mapper keyed by item id, so one helper showed up twice. Now:
   - the helper is the **agent thread**, started and ended once, named by the last part of `agentPath` (`/root/pelican` becomes `pelican`);
   - `collabAgentToolCall` creates a helper only for a spawn tool; Codex's `wait`, `send_input` and the like coordinate helpers and are not helpers themselves;
@@ -830,6 +830,33 @@ The owner handed the Codex track to this agent ("ruben does not have chatgpt acc
   - An earlier run showed the overshoot: a cold cache made the first turn $0.06 on a $0.01 cap, and "add to the cap" stayed below the spend, hence the rule above.
   - On `haiku`, four short turns cost about $0.004 together, under a $0.01 cap: no notice.
   - About $0.13 of estimate in all (a Claude subscription: nothing billed per token).
+
+### 2026-10-20: MCP elicitation with form fields or a URL (issue #290, T114-T117)
+
+*Missing:* an MCP server that asked the user for input (*elicitation*) with form fields, or with a URL to open, was declined by Codex (FR-148), refused with an error by Claude, and never offered by Copilot (Durbar did not register an elicitation handler, so the SDK told servers the client cannot elicit). The server had to give up or guess.
+
+- **FR-151** `[IMPLEMENTED]` (sim, fakes) An adapter-neutral elicitation in the normalized `question` event (`src/shared/elicit.ts`, no vendor types):
+  - `elicitation: { message, source?, fields? }` for a form, or `{ message, source?, url, host }` for a URL flow, on `phase: 'asked'` (the event still carries one question with the message, so the inbox, the answer bar and the event guard treat it as a question);
+  - each field: `name`, `title`, `description?`, `type: string | number | integer | boolean | enum`, `enumValues?`, `enumNames?`, `required?`, `min?`, `max?`, `minLength?`, `maxLength?`, `format?: email | uri | date | date-time`, `secret?`, `default?`;
+  - the schema's simple properties are read (an enum from `enum` + `enumNames` or `oneOf: [{const, title}]`); unsupported **optional** ones (arrays, objects, other formats, odd names, more than 12) are dropped; an unsupported **required** one, or a non-https URL, **declines** the request, and the agent's status says why;
+  - the answer goes back as the MCP `{action: 'accept', content}`, `{action: 'decline'}` or `{action: 'cancel'}` through the optional adapter member `answerElicitation(sessionId, requestId, answer)`; Stop, interrupt and End session cancel it;
+  - `answered` carries `elicitAction` and **never the values** (they can be secrets); nothing logs them.
+- **FR-152** `[IMPLEMENTED]` (fakes) Adapters:
+  - **Copilot**: `onElicitationRequest` (SDK `ElicitationContext`: `message`, `requestedSchema`, `mode`, `url`, `elicitationSource`), so MCP servers now see that Durbar can elicit;
+  - **Codex**: `mcpServer/elicitation/request` with fields or `mode: 'url'` (`message`, `requestedSchema`, `url`, `serverName`); a plain confirmation still goes through the approval (FR-148);
+  - **Claude**: the control request `subtype: 'elicitation'` (`mcp_server_name`, `message`, `mode`, `url`, `elicitation_id`, `requested_schema`), answered `{action, content}`. `read:` the field names follow the Agent SDK's control protocol; `[KNOWN GAP]` not yet seen from a real CLI.
+  - An elicitation is a question, not an action: it is shown in every permission mode, Read-only included.
+- **FR-153** `[IMPLEMENTED]` (sim) The question card renders the form:
+  - text inputs (`email`, `url`, `date`, `datetime-local` by format), number inputs with min/max, a checkbox, a select for an enum (showing `enumNames`);
+  - fields named or titled like a password, token, secret, API key or PIN are `type=password` and never get a default;
+  - labels tied to the inputs, a required marker, plain inline messages (`Fill in "Ticket number".`) checked on Submit, Enter submits;
+  - **Submit / Decline / Cancel**; afterwards the card says *submitted*, *declined* or *cancelled*, never the values;
+  - the inbox and the answer bar say **Answer in chat** (forms are filled in the chat only). Text 11.5px and up; no office layout change.
+- **FR-154** `[IMPLEMENTED]` (sim) URL mode: the card shows the page's **host** in bold and the full address, and **Open in browser**. Main opens the address it holds for that request (never one sent by the window), only `https:` without user:password, only after the click, with `shell.openExternal` and no shell. Then **Done** (accept) or **Cancel**.
+- **FR-155** `[IMPLEMENTED]` Main checks every answer against the open request before the adapter gets it (`agents:answerElicitation`): the action; for a submitted form the types, enum membership, min/max, lengths (at most 2000 characters), formats and required fields; unknown keys are dropped. A failure names the field, never its value, and the card marks it. The adapter checks again and declines a bad answer.
+- `test:` `scripts/test-elicit.ts` (schema mapping, dropped and declining fields, main's check, the accept payload, URL validation, the tracker, the shared adapter flow, values never in events); `test-codex-adapter` (a form answered, a required array declined, a URL flow cancelled by Stop); `test-claude-adapter` (a form in Read-only answered `{action, content}`).
+- `sim:` `DURBAR_SIM=15` with page address `simelicit=1` (a *deploy-mcp* form: "Which environment?" enum, "Ticket number" integer required, "Notify me" yes/no) or `simelicit=url` (a sign-in page on `auth.example.com`).
+- `[KNOWN GAP]` Not run against a real MCP server on any of the three harnesses (no real session was spent); multi-select (array) fields are not shown; no screenshot was captured in this change (no Electron run).
 
 ### 2026-10-19: the packaged check in CI on three OSes (T044, issue #52)
 

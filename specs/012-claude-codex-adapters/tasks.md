@@ -105,7 +105,7 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 
 - Coverage: FR-001 T011/T014; FR-002 T010/T014; FR-003 T040-T045; FR-004 T021/T022/T052; FR-005 T010/T028; FR-006 T012/T042/T051; FR-007 T015/T016/T023/T024; FR-008 T019/T028/T053/T082; FR-009 T011/T046/T049; FR-010 T012/T047/T061/T066; FR-011 T013; FR-012 T047/T071; FR-013 T021/T022/T026/T064/T068; FR-014 T023/T024/T065/T069; FR-015/FR-016 T025/T062/T067; FR-017 T026/T043/T045/T063; FR-018 T023/T024/T065/T069; FR-019 T048/T080; FR-020 T023/T024/T040/T042; FR-021 T041/T044/T070; FR-022 T060-T070; FR-023 T017; FR-024 T050/T065; FR-025 T027/T083. SC-001 T018; SC-002 T015/T043/T045; SC-003 T017/T018; SC-004 T026; SC-005 T019/T082.
 - Ordering: T010 before T011 to T016; T015 before T026, T043, T045; T021/T022 before T026; T040 and T041 before T045; T048 before T080. T042 to T044 and T047 have no vendor dependency and can run in parallel after Phase 1.
-- Gaps recorded rather than hidden (2026-10-19): `[KNOWN GAP]` MCP elicitation with form fields or a URL is declined (FR-147), Windows Codex sandbox (T070), repo `.claude` hooks/agents/`.mcp.json` not run (T083). Closed since: question UI (T052, T052b), Codex per-session MCP and helpers (T065, FR-147..FR-149), the dollar cap (T081, FR-150), Codex reads outside the session folders (T084).
+- Gaps recorded rather than hidden (2026-10-19): `[KNOWN GAP]` MCP elicitation with form fields or a URL is declined (FR-147; closed on the simulator and fakes 2026-10-20 by FR-151..FR-155, T114-T117, real check open), Windows Codex sandbox (T070), repo `.claude` hooks/agents/`.mcp.json` not run (T083). Closed since: question UI (T052, T052b), Codex per-session MCP and helpers (T065, FR-147..FR-149), the dollar cap (T081, FR-150), Codex reads outside the session folders (T084).
 - Contradictions found and fixed while writing: the 2026-10-16 spec said the simulator could be wrapped as an adapter (it is renderer-side: `FakeAdapter` is new, T015); it said `AgentAdapter` was Copilot-agnostic apart from a few parts (`main.ts` also calls six non-interface members: T010).
 - No open `[NEEDS CLARIFICATION]` remains in spec.md; the owner questions are Q1 to Q9, each mapped to a blocked task.
 
@@ -158,3 +158,10 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 - [x] T111 (sim) `setMcpEnabled` over `mcp_toggle` + `mcp_status`, kept for relaunches; `mcpToggle: true`; fake-CLI tests; real check with a stdio MCP server, no prompt [FR-133]
 - [x] T112 (2026-10-19) (fixtures, real) Claude context window from `modelUsage.contextWindow` and the last main message's usage; capability `context: true` [FR-134]
 
+## Changes 2026-10-20 (issue #290, MCP elicitation with form fields or a URL)
+
+- [x] T114 (sim) `src/shared/elicit.ts`: the neutral form (fields or URL), schema mapping, main's check, https-only URLs; `question.elicitation`, `elicitAction`, `answerElicitation` in the adapter interface and the event guard [FR-151, FR-155]
+- [x] T115 (fakes) Adapters: Copilot `onElicitationRequest`, Codex `mcpServer/elicitation/request` with fields or a URL, Claude control `elicitation`; shared wait-and-answer helper; Stop cancels [FR-152]
+- [x] T116 (sim) Question card form (inputs, select, checkbox, password for secrets, labels, required marks, inline messages, Submit / Decline / Cancel), URL mode (host, Open in browser through main, Done / Cancel), IPC and preload, simulator `simelicit=1|url` [FR-153, FR-154]
+- [x] T117 Tests: `scripts/test-elicit.ts` (registered as `test:elicit`), Codex and Claude fake-harness cases [FR-151..FR-155]
+- [ ] T118 (needs-owner-approval) (real-account) One real MCP server that elicits a form and a URL, on Copilot, Claude Code and Codex [FR-152..FR-154]. (Simulator screenshots of the form and URL cards at 1440x900 and 1280x800: done, `scripts/shots-012-elicit.js`, `docs/screenshots/012-elicit-*`.)

@@ -4,13 +4,14 @@
  * Every adapter translates its native protocol into the normalized events below.
  */
 
+import type { ElicitAction, ElicitAnswer, ElicitRequest } from '../shared/elicit';
 import type { McpServerSpec } from '../shared/mcp';
 import type { CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import type { AdapterCapabilities, PermissionMode } from './capabilities';
 import type { HandoffResult } from './handoff';
 import type { HistoryResult, PreviousSession } from './history';
 import type { RemoteState } from '../shared/remote';
-export type { McpServerSpec, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult, AdapterCapabilities, PermissionMode };
+export type { ElicitAction, ElicitAnswer, ElicitRequest, McpServerSpec, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult, AdapterCapabilities, PermissionMode };
 
 export type AgentStatus = 'idle' | 'working' | 'needs-permission' | 'error' | 'stopped';
 
@@ -307,8 +308,12 @@ export interface QuestionEvent extends BaseEvent {
   phase: 'asked' | 'answered' | 'cancelled';
   requestId: string;
   questions?: AskedQuestion[];
-  /** `answered` only: question text -> chosen label(s), comma-separated. */
+  /** `answered` only: question text -> chosen label(s), comma-separated. Never set for an elicitation (its values can be secrets). */
   answers?: Record<string, string>;
+  /** `asked` only (spec 012 FR-151): an MCP elicitation, a form (`fields`) or a URL flow (`url`); answered with `answerElicitation`. */
+  elicitation?: ElicitRequest;
+  /** `answered` of an elicitation: what the user did (`accept` = submitted or Done, `decline`); a cancel is `phase: 'cancelled'`. */
+  elicitAction?: ElicitAction;
 }
 
 /** A custom agent the user can select for a session (spec 043 FR-001); generic across adapters. */
@@ -411,6 +416,8 @@ export interface AgentAdapter {
   resolveLimit?(sessionId: string, requestId: string, action: LimitAction): Promise<void>;
   /** Answer a `question` event (spec 012 FR-128); `null` = the user skipped it. Unknown ids are ignored. */
   answerQuestion?(sessionId: string, requestId: string, answers: Record<string, string> | null): void;
+  /** Answer an elicitation `question` event (spec 012 FR-151); main has checked it against the fields. Unknown ids are ignored. */
+  answerElicitation?(sessionId: string, requestId: string, answer: ElicitAnswer): void;
   /** Agent profiles the session can use (spec 043 FR-001). */
   listAgentProfiles?(sessionId: string): Promise<AgentProfile[]>;
   /** Select a profile for the next turns, or null for the default agent (spec 043 FR-001). Emits `agentProfile`. */

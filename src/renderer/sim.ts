@@ -36,6 +36,8 @@ interface SimOptions {
   titles?: boolean;
   /** Spec 012 FR-130: the first Claude agent (or the first agent) asks a question (page address `simquestion=1`). */
   question?: boolean;
+  /** Spec 012 FR-151: an MCP server asks one agent for input: a small form (`simelicit=1`) or an https page to open (`simelicit=url`). */
+  elicit?: string;
   /** Spec 033: names of floors that start switched off. */
   floorsOff?: string[];
   /** Room name whose agents report usage without a credit figure (spec 011 FR-029): shows "credits not reported". */
@@ -333,6 +335,33 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         ] });
         emit({ type: 'status', sessionId: s.info.id, timestamp: now(), status: 'needs-permission', intent: 'Waiting for your answer' });
       }, 300);
+    }
+    /* simelicit=1|url (spec 012 FR-151): an MCP server asks one agent for input, as an MCP elicitation does (a form, or a page to open) */
+    type SimElicitField = { name: string; title: string; type: string; required?: boolean; enumValues?: string[]; min?: number; max?: number };
+    let simE: { s: SimAgent; requestId: string; url?: string; fields: SimElicitField[] } | undefined;
+    if (opts.elicit) {
+      window.setTimeout(() => {
+        const s = sims.find((x) => x.info.adapterId === 'copilot' && x !== simQ?.s) ?? sims.find((x) => x !== simQ?.s);
+        if (!s) return;
+        const url = opts.elicit === 'url';
+        const fields: SimElicitField[] = [
+          { name: 'environment', title: 'Which environment?', type: 'enum', required: true, enumValues: ['staging', 'production'] },
+          { name: 'ticket', title: 'Ticket number', type: 'integer', required: true, min: 1, max: 999999 },
+          { name: 'notify', title: 'Notify me', type: 'boolean' },
+        ];
+        simE = { s, requestId: 'e-' + s.info.id, fields: url ? [] : fields, ...(url ? { url: 'https://auth.example.com/device?code=DURBAR-1234' } : {}) };
+        s.state = 'waiting';
+        const message = url ? 'Sign in to the deploy service to continue.' : 'Where should this deploy go?';
+        emit({ type: 'question', sessionId: s.info.id, timestamp: now(), phase: 'asked', requestId: simE.requestId, questions: [{ question: message, header: 'deploy-mcp', multiSelect: false, options: [] }],
+          elicitation: url
+            ? { message, source: 'deploy-mcp', url: simE.url, host: 'auth.example.com' }
+            : { message, source: 'deploy-mcp', fields: [
+                { name: 'environment', title: 'Which environment?', type: 'enum', required: true, enumValues: ['staging', 'production'], enumNames: ['Staging', 'Production'], description: 'Production needs a ticket.' },
+                { name: 'ticket', title: 'Ticket number', type: 'integer', required: true, min: 1, max: 999999 },
+                { name: 'notify', title: 'Notify me', type: 'boolean', default: true },
+              ] } } as AgentEvent);
+        emit({ type: 'status', sessionId: s.info.id, timestamp: now(), status: 'needs-permission', intent: 'Waiting for your answer' });
+      }, 400);
     }
     const simTrusted = new Set<string>(); // spec 043: repository agents confirmed in this run
     const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void)[],
@@ -932,6 +961,28 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         simQ = undefined;
         emit({ type: 'question', sessionId: id, timestamp: now(), phase: answers ? 'answered' : 'cancelled', requestId, ...(answers ? { answers } : {}) });
         emit({ type: 'output', sessionId: id, timestamp: now(), text: answers ? 'Thanks: ' + Object.values(answers).join('; ') + '.' : 'No answer; I will pick Sage for now.', final: true } as AgentEvent);
+        return { ok: true };
+      },
+      answerElicitation: async (id, requestId, action, values) => {
+        if (!simE || simE.s.info.id !== id || simE.requestId !== requestId) return { ok: false, error: 'That request is no longer open.' };
+        if (action === 'accept' && !simE.url) {
+          // the same rules main applies (spec 012 FR-151), for the three sim fields only
+          for (const f of simE.fields) {
+            const v = values?.[f.name];
+            if (v === undefined || v === '') { if (f.required) return { ok: false, error: `Fill in "${f.title}".`, field: f.name }; continue; }
+            if (f.type === 'enum' && !(f.enumValues ?? []).includes(String(v))) return { ok: false, error: `"${f.title}" must be one of the choices.`, field: f.name };
+            if (f.type === 'integer' && (typeof v !== 'number' || !Number.isInteger(v) || (f.min !== undefined && v < f.min) || (f.max !== undefined && v > f.max))) return { ok: false, error: `"${f.title}" must be a whole number from ${f.min} to ${f.max}.`, field: f.name };
+            if (f.type === 'boolean' && typeof v !== 'boolean') return { ok: false, error: `"${f.title}" must be yes or no.`, field: f.name };
+          }
+        }
+        simE = undefined;
+        emit({ type: 'question', sessionId: id, timestamp: now(), phase: action === 'cancel' ? 'cancelled' : 'answered', requestId, ...(action === 'cancel' ? {} : { elicitAction: action }) } as AgentEvent);
+        emit({ type: 'output', sessionId: id, timestamp: now(), text: action === 'accept' ? 'Thanks, the MCP server has what it needs.' : 'The MCP request was ' + (action === 'decline' ? 'declined' : 'cancelled') + '; I will continue without it.', final: true } as AgentEvent);
+        return { ok: true };
+      },
+      openElicitationUrl: async (id, requestId) => {
+        if (!simE?.url || simE.s.info.id !== id || simE.requestId !== requestId) return { ok: false, error: 'That request has no https page to open.' };
+        console.info('[sim] would open in the system browser:', simE.url);
         return { ok: true };
       },
       listProfiles: async (id) => {
