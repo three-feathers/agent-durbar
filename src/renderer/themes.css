@@ -12,8 +12,16 @@ html[data-ui]:not([data-ui="clean"]) .stage .desk.card,html[data-ui]:not([data-u
 html[data-ui]:not([data-ui="clean"]) .stage .desk.card.is-waiting,html[data-ui]:not([data-ui="clean"]) .stage .helper.hc.is-waiting{background:color-mix(in srgb,var(--pb-waiting) 75%,var(--surface));border-color:var(--c-waiting)}
 html[data-ui]:not([data-ui="clean"]) .stage .desk.card.is-error{background:color-mix(in srgb,var(--pb-error) 75%,var(--surface));border-color:var(--c-error)}
 html[data-ui]:not([data-ui="clean"]) .stage .room-name{background:var(--surface)}
-html[data-ui]:not([data-ui="clean"]) .btn,html[data-ui]:not([data-ui="clean"]) .seg button[aria-pressed="true"],html[data-ui]:not([data-ui="clean"]) .stat[aria-pressed="true"]{background:var(--surface)}
-html[data-ui]:not([data-ui="clean"]) .stat:hover,html[data-ui]:not([data-ui="clean"]) .plate:hover{background:var(--surface)}
+html[data-ui]:not([data-ui="clean"]) .btn,html[data-ui]:not([data-ui="clean"]) .seg button[aria-pressed="true"]{background:var(--surface)}
+html[data-ui]:not([data-ui="clean"]) .plate:hover{background:var(--surface)}
+/* spec 052 FR-103: the top-bar counters as one light strip in every style (also on a dark bar). The style's frame colour,
+   corners and shadow go on the group; each counter keeps its 1px border, transparent, so no size changes */
+html[data-ui]:not([data-ui="clean"]) .topbar .stats{background:var(--surface);border-radius:var(--r-md);box-shadow:inset 0 0 0 1px var(--line)}
+html[data-ui]:not([data-ui="clean"]) .topbar .stats>.stat{border-color:transparent;background-color:transparent;box-shadow:none}
+html[data-ui]:not([data-ui="clean"]) .topbar .stats>.stat:hover{background-color:var(--surface-2)}
+html[data-ui]:not([data-ui="clean"]) .topbar .stats>.stat[aria-pressed="true"]{background-color:var(--surface-2);box-shadow:inset 0 -2px 0 var(--stat-sel-border,var(--sel-border))}
+html[data-ui]:not([data-ui="clean"]) .topbar .stats>.stat.attn{background-color:var(--warn-bg)}
+html[data-ui]:not([data-ui="clean"]) .topbar .stats>.stat-aiu:hover{background-color:transparent}
 html[data-ui]:not([data-ui="clean"]) option{color:var(--ink);background:var(--surface)}
 /* display text: a style may give it another font; it is ellipsized, never wrapped, if that font is wider */
 html[data-ui]:not([data-ui="clean"]) .brand h1,html[data-ui]:not([data-ui="clean"]) .room-name,html[data-ui]:not([data-ui="clean"]) .place .pn,
@@ -168,3 +176,9 @@ html[data-ui="court-japanese"] .stage .room{background-image:url("data:image/svg
 html[data-ui="court-european"] .stage:not([data-d="full"]) .room-name{box-shadow:inset 0 -1px 0 var(--line-2),inset 0 -3px 0 var(--surface),inset 0 -4px 0 var(--line-2)}
 /* Retro: an 8-bit drop shadow on the room name */
 html[data-ui="retro"] .stage .room-name{text-shadow:1px 1px 0 #000}
+/* spec 052 FR-103: the counter strip takes each style's frame (group rules above; these come last so they win) */
+html[data-ui="corporate"] .topbar .stats{border-radius:5px}
+html[data-ui="retro"] .topbar .stats{border-radius:0;box-shadow:0 0 0 1px var(--line),3px 3px 0 1px var(--sel-border)}
+html[data-ui="court-indian"] .topbar .stats{box-shadow:inset 0 0 0 1px #c9973a}
+html[data-ui="court-european"] .topbar .stats{border-radius:4px;box-shadow:inset 0 0 0 1px #b8995a}
+html[data-ui="court-japanese"] .topbar .stats{border-radius:3px}

@@ -162,8 +162,8 @@
     /* spec 052 FR-031 (#306): Simple or Expert */
     const dl=X.detail?X.detail.get():'expert';
     const detailSec=X.detail?`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Detail level</h3>
-        <p class="scr-note"><b>Simple</b> shows what agents do in plain words and what they cost; <b>Expert</b> adds tokens, models, context, paths and developer tools. Permissions and answering are the same in both.</p>
-        <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div></section>`:'';
+        <p class="scr-note">Expert adds tokens, models, context and paths. Permissions work the same in both.</p>
+        <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div>${X.density?densityRow():''}</section>`:'';
     /* spec 052 FR-066, FR-093: what Durbar does not do, in calm plain words (checked against the README's Safety model and Costs and caps) */
     const notSec=`<section class="scr-sec" aria-labelledby="notH"><h3 id="notH">What Durbar does not do</h3><ul class="scr-not">
         <li>Durbar asks Claude Code and Copilot to stay in their folders but cannot force them; only Codex is held there by the system (in Read-only and Ask first).</li>
@@ -348,6 +348,11 @@
       <div class="srv-act">${sw(a.enabled,(a.enabled?'Switch off ':'Switch on ')+a.name+' for new sessions','data-act="amb"')}</div></li>`;
   }
   const secretChip=(kind,s)=>`<span class="sec" title="${kind==='env'?'Environment variable':'Header'}: ${s.set?'value stored, hidden':'no value'}">${esc(s.key)}<i>${s.set?'••••••':'not set'}</i></span>`;
+  /* spec 052 FR-099 (round 10): Spacing, under Detail level; Compact tightens the chat, screens, dialogs and inbox (never the office) */
+  function densityRow(){
+    const d=X.density.get();
+    return `<div class="scr-row"><span class="scr-row-l" id="denL">Spacing</span><div class="seg" role="group" aria-labelledby="denL"><button type="button" data-density="comfortable" aria-pressed="${d!=='compact'}">Comfortable</button><button type="button" data-density="compact" aria-pressed="${d==='compact'}" title="Tighter chat, screens, dialogs and inbox. The office and the top bar keep their sizes.">Compact</button></div></div>`;
+  }
   function head(title){
     const tabs=cur&&cur.kind==='tools'?'':'';
     return `<div class="scr-head"><h2>${esc(title)}</h2>${tabs}<span class="grow"></span><button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>`;
@@ -423,6 +428,8 @@
     if(window.DurbarHarnesses&&window.DurbarHarnesses.onClick(e))return;
     const dlb=e.target.closest('[data-detail]');
     if(dlb&&X.detail){X.detail.set(dlb.dataset.detail);paint();return;}
+    const dnb=e.target.closest('button[data-density]');
+    if(dnb&&X.density){X.density.set(dnb.dataset.density);const g=dnb.parentElement;if(g)g.querySelectorAll('[data-density]').forEach(b=>b.setAttribute('aria-pressed',String(b===dnb)));return;}
     const ss=e.target.closest('#seriousSw');
     if(ss&&X.bridge.setSeriousMode){
       const on=ss.getAttribute('aria-checked')!=='true';
@@ -790,7 +797,7 @@
     return sum+groups.map(g=>`<section class="tgrp ${g.source}"><h3>${esc(g.title)} <small>${g.total} call${g.total===1?'':'s'}</small></h3>
       <table class="ttab"><thead><tr><th scope="col">Tool</th><th scope="col" class="num">Calls</th><th scope="col" class="barc"><span class="sr-only">Share</span></th>${scope?'':'<th scope="col">Used by</th>'}</tr></thead><tbody>${g.rows.map(r=>`<tr><th scope="row"><code>${esc(r.name)}</code>${r.failed?` <span class="mtag warn" title="${r.failed} failed call${r.failed>1?'s':''}">${r.failed} failed</span>`:''}</th><td class="num">${r.count}</td>
         <td class="barc"><span class="bar ${g.source}" role="img" aria-label="${r.count} of ${max}"><i style="width:${Math.max(3,Math.round(r.count/max*100))}%"></i></span></td>
-        ${scope?'':`<td class="by">${r.agents.slice(0,4).map(x=>x.id?`<button class="by-chip" type="button" data-open="${esc(x.id)}" title="Open ${esc(nameOf(x.id))}">${esc(nameOf(x.id))} <b>${x.count}</b></button>`:`<span class="by-chip static" title="${esc(x.label)}">${esc(x.label)} <b>${x.count}</b></span>`).join('')}${r.agents.length>4?`<span class="by-more">+${r.agents.length-4}</span>`:''}</td>`}</tr>`).join('')}</tbody></table></section>`).join('')+cfg;
+        ${scope?'':`<td class="by">${r.agents.slice(0,4).map(x=>x.id?`<button class="by-chip" type="button" data-open="${esc(x.id)}" title="Open ${esc(nameOf(x.id))}">${esc(nameOf(x.id))} <b>${x.count}</b></button>`:`<span class="by-chip static" title="${esc(x.label)}">${esc(x.label)} <b>${x.count}</b></span>`).concat(r.agents.length>4?[`<span class="by-more">+${r.agents.length-4}</span>`]:[]).join('<span class="by-sep" aria-hidden="true"> · </span>')}</td>`}</tr>`).join('')}</tbody></table></section>`).join('')+cfg;
   }
   /* "Configured MCP servers": the Copilot CLI list (and, for one session agent, its folder extras) with the calls of this period, 0 included */
   async function configuredServers(scope,all,groups){
