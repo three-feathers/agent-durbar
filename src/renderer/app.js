@@ -3537,6 +3537,9 @@ function renderSchedDlg(){
     +own.map(({x,v})=>`<div class="sc-row off"><div class="sc-t"><b title="${esc(v.prompt)}">${esc(v.prompt||'(no prompt text)')}</b><small>${esc(ownWhen(v)+' · '+(x.title||x.name)+(v.origin==='model'?' · made by the agent':v.origin==='user'?' · made by you':''))}</small></div></div>`).join(''):'';}
 }
 function closeSchedDlg(){const d=$('schedDlg');if(d)d.remove();}
+/* spec 044 FR-021: a session name of at most 40 characters, cut on a word boundary when there is one, ended with "…" (the full name goes in a title) */
+const SHORT_NAME_MAX=40;
+function shortName(t,max=SHORT_NAME_MAX){const s=String(t==null?'':t).replace(/\s+/g,' ').trim();if(s.length<=max)return s;let c=s.slice(0,max);const i=c.lastIndexOf(' ');if(i>=Math.floor(max/2)&&s[max]!==' ')c=c.slice(0,i);return c.replace(/[\s.,;:!?-]+$/,'')+'…';}
 /* `from`: the chat it was opened from (FR-014: then it can send to that session instead of the folder's agent) */
 function openSchedules(r,from){
   closeSchedDlg();toggleFolders(false);
@@ -3557,8 +3560,8 @@ function openSchedules(r,from){
     <label class="chk"><input type="radio" name="scKind" value="daily"> <select id="scCal" aria-label="Which days"><option value="daily">Every day</option><option value="weekdays">Weekdays (Mon–Fri)</option><option value="weekly">Weekly on</option></select> at <input type="time" id="scDaily" value="08:30" aria-label="Time of day"></label>
     <label class="chk"><input type="radio" name="scKind" value="once"> Once at <input type="datetime-local" id="scAt" value="${local}" aria-label="Date and time"></label></div>
     <div class="sc-days" id="scDays" role="group" aria-label="Days of the week" hidden>${[1,2,3,4,5,6,0].map(n=>`<label class="chk"><input type="checkbox" value="${n}"${n===today?' checked':''}> ${DAY3[n]}</label>`).join('')}</div>
-    <div class="sc-opts">${ag?`<label>Send to <select id="scTarget"><option value="">This folder's agent</option><option value="${esc(ag.id)}">This session (${esc(ag.title||ag.name)})</option></select></label>`:''}
-     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}>Limit <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div></div>
+    <div class="sc-opts">${ag?`<label class="sc-to"><span class="sc-lbl">Send to</span> <select id="scTarget"><option value="">This folder's agent</option><option value="${esc(ag.id)}" title="${esc(ag.title||ag.name)}">This session (${esc(shortName(ag.title||ag.name))})</option></select></label>`:''}
+     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}><span class="sc-lbl">Limit</span> <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div></div>
    <div class="dbtn"><button class="btn" id="scClose" type="button">Close</button><button class="btn primary" id="scAdd" type="button">Add schedule</button></div></div>`;
   document.body.appendChild(d);
   renderSchedDlg();

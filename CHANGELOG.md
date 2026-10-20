@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.9 tag)
 
+- Schedules dialog: the **Send to** and **Limit** labels no longer wrap mid-word or sit under their select, and the **This session (...)** option shows at most 40 characters of the session name (full name in its tooltip); new `npm run check:sched-sendto` (spec 044 FR-020, FR-021, issue #371).
 - The options of an agent's question card wrap instead of ending in "…", and each one's tooltip shows its label plus the description; new `npm run check:question-options` and a `simquestion=long` simulator fixture (spec 052 FR-140, issue #365; simulator only, to try on a real Mac).
 - An MCP server's error text is masked in main (session secret values, tokens, URL keys and `user:pass@`, `--token value`) before it reaches the window, in the MCP list and in the live status events, then cut to 300 characters (spec 019 FR-021, issue #360; unit tests, not seen on a real server error).
 - Read-only wording matches what was seen: *Start my day* and the Read-only help now say an MCP tool runs in Read-only only if its server marks it read-only; otherwise choose Ask first (spec 044).
