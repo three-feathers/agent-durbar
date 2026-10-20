@@ -11,7 +11,7 @@
   const DECIDE='When the summary is ready, ask me with your tool for asking the user a question (a multiple-choice question with your suggested next steps as the options, several can be chosen, plus "none"). Then do only what I chose, one step at a time; anything that sends, posts or changes something still needs my approval. If you have no such tool, end with the numbered suggestions and wait for my reply.';
   const TEMPLATES=[
     {id:'start-my-day',name:'Start my day (morning briefing)',daily:'08:30',
-     needs:'Reads your mail and calendar only through MCP servers you have set up (Settings > MCP, or this folder\'s extras). Works in Read-only.',
+     needs:'Reads your mail and calendar only through MCP servers you have set up (Settings > MCP, or this folder\'s extras). In Read-only, a mail or calendar tool runs only if its server marks it read-only; otherwise choose Ask first.',
      prompt:'Start my day. Prepare a short morning briefing for me.\n\nLook at what you can reach: my mail and calendar through the MCP servers that are available to you, this folder, and its open GitHub issues and pull requests if you can read them. Cover the last 24 hours and at most 50 mail threads.\n\nReply with these sections, most urgent first, each item one line with its source link:\n1. Needs my reply\n2. Waiting on others\n3. Blocked\n4. Due today (meetings, deadlines)\n5. Suggested next steps (drafts or tasks I could approve)\n\nIf a source is not available, say which one in one line. '+UNTRUSTED+'\n\n'+DECIDE,decides:true},
     {id:'summarize-my-day',name:'Summarize my day',daily:'18:00',
      needs:'Works in Read-only.',
