@@ -41,6 +41,8 @@ import { AgentTrustStore, hashAgentFile } from './agenttrust';
 import { Scheduler, loadSchedules, saveSchedules } from './schedules';
 import type { SchedulerDeps } from './schedules';
 import { UsageTotalsStore } from './usagetotalsstore';
+import { ALREADY_DELETING, BEING_OPENED, PrevSessions, listPreviousOp, markOp, marksFor, openIdsOf } from './prevsessions';
+import type { PrevDeps } from './prevsessions';
 import { ActivityStore } from './activitystore';
 import { activityCsv, activityJson, decisionOf } from '../shared/activity';
 import type { ActivityDecision } from '../shared/activity';
@@ -393,25 +395,23 @@ const vsUserDirs = (): UserDir[] =>
   dev.DURBAR_VSCODE_USER_DIR ? [{ product: 'Test', dir: dev.DURBAR_VSCODE_USER_DIR }] : vscodeUserDirs();
 const vsChatRefs = new Map<string, Map<string, ChatFileRef>>();
 
-ipcHandle('sessions:listPrevious', async (_e, id: unknown) => {
-  const a = typeof id === 'string' ? agents.get(id) : undefined;
-  const ad = a ? router.forAgent(a.id) : undefined;
-  if (!a || !ad) return { ok: false, error: 'unknown agent', sessions: [] };
-  try {
-    return { ok: true, sessions: await previousSessionsOf(ad, a.cwd, new Set(agents.keys())) };
-  } catch (err) {
-    return { ok: false, error: errText(err), sessions: [] };
-  }
-});
+// Spec 006 FR-024..FR-032: the list, pin/hide and delete bodies live in prevsessions.ts. `sessions:delete` exists only here, on the
+// window's own IPC (ipcHandle): the MCP tools, remote control, schedules and agents have no path to it (scripts/test-prevsessions.ts).
+const prevDeps: PrevDeps = { agents, router, get store() { return folderStore; }, wsKey, resumeIdFor: (id) => resumeIdFor(id), appName: (a) => registry.get(a.adapterId)?.displayName ?? a.adapterId, log: (a, decision, action) => logActivity(a, decision, action) };
+const prevSessions = new PrevSessions(prevDeps);
+ipcHandle('sessions:listPrevious', (_e, id: unknown) => listPreviousOp(prevDeps, id));
+ipcHandle('sessions:mark', (_e, id: unknown, src: unknown, sessionId: unknown, mark: unknown) => markOp(prevDeps, id, src, sessionId, mark));
+ipcHandle('sessions:delete', (_e, id: unknown, sessionId: unknown) => prevSessions.delete(id, sessionId));
 
 ipcHandle('sessions:resume', async (_e, id: unknown, sessionId: unknown, replace: unknown): Promise<ResumeResult> => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad) return { ok: false, error: 'unknown agent' };
-  if (typeof sessionId !== 'string' || agents.has(sessionId)) return { ok: false, error: 'That session is already open.' };
+  if (typeof sessionId !== 'string' || openIdsOf(prevDeps).has(sessionId)) return { ok: false, error: 'That session is already open.' }; // by Durbar id and resume id (FR-032)
+  if (!prevSessions.beginResume(sessionId)) return { ok: false, error: prevSessions.isDeleting(sessionId) ? ALREADY_DELETING : BEING_OPENED }; // FR-029 step 5
   try {
     // Only sessions that belong to this agent's folder can be resumed (re-checked here, not trusted from the UI).
-    const prev = (await previousSessionsOf(ad, a.cwd, new Set(agents.keys()))).find((s) => s.id === sessionId);
+    const prev = (await previousSessionsOf(ad, a.cwd, openIdsOf(prevDeps))).find((s) => s.id === sessionId);
     if (!prev) return { ok: false, error: 'That session is no longer available for this folder.' };
     // Resume first; only then retire the untouched agent, so a failed resume leaves everything as it was.
     const info = await addWorkspace(a.workspaceFile ?? a.cwd, a.permMode, { resumeSessionId: sessionId, silent: true, adapterId: router.adapterIdOf(a.id) });
@@ -436,6 +436,8 @@ ipcHandle('sessions:resume', async (_e, id: unknown, sessionId: unknown, replace
     return { ok: true, agent: info, removedId, title: prev.title, history };
   } catch (err) {
     return { ok: false, error: errText(err) };
+  } finally {
+    prevSessions.endResume(sessionId);
   }
 });
 
@@ -446,7 +448,7 @@ ipcHandle('vschat:list', async (_e, id: unknown): Promise<VsChatListResult> => {
   try {
     const l = await listChats(vsUserDirs(), { folders: a.folders, workspaceFile: a.workspaceFile });
     vsChatRefs.set(a.id, new Map(l.sessions.map((r) => [r.summary.key, r])));
-    return { ok: true, sessions: l.sessions.map((r) => r.summary), storesFound: l.storesFound, unreadable: l.unreadable, tooLarge: l.tooLarge, formatNote: VSCODE_CHAT_FORMAT_NOTE };
+    return { ok: true, sessions: l.sessions.map((r) => r.summary), ...marksFor(prevDeps, a, 'vscode', l.sessions.map((r) => r.summary.key)), storesFound: l.storesFound, unreadable: l.unreadable, tooLarge: l.tooLarge, formatNote: VSCODE_CHAT_FORMAT_NOTE };
   } catch (err) {
     return { ok: false, error: errText(err), ...empty };
   }
