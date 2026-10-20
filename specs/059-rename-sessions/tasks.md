@@ -78,7 +78,7 @@ PR-sized step with its own test. No task spends AI credits except Phase 5, which
 
 - [x] T060 README (feature list, Previous sessions, Safety model: names are local, the app-side rename and that it cannot be removed,
   Copilot keeps named sessions from cleanup), CHANGELOG *Unreleased*, `specs/README.md` row, `[IMPLEMENTED]` tags; spec 006 FR-031 and
-  #371 (spec 044 FR-021) cross-link [all]
+  #388 (spec 044 FR-021) cross-link: one cutter, `cuttext.js` [all]
 
 ## Dependencies
 

@@ -199,7 +199,7 @@ FR-023) use the new name; Resume opens an agent with that name.
   `thread/name/set` works before or after a turn, `codex resume` lists the name only for a thread that has had a turn (1 tiny turn in the test): a
   thread with no turn keeps the name but is not listed until its first turn.
 - **FR-008** `[IMPLEMENTED]` **Schedules** (spec 044 FR-014, FR-021). The *This session (…)* option shows the display name (FR-001), cut
-  to 40 characters on a word boundary with "…" (spec 044 FR-021 in the pending #371 branch; the cut rule is defined here: `shortName`, code points, at most 40 including the "…"), full name in its `title`. A new schedule stores as `target.name` that
+  to 40 characters on a word boundary with "…" (spec 044 FR-021, merged with #388: the one shared cutter `src/renderer/cuttext.js`, code points, at most `max` including the "…"; 059's `SN().shortName` calls it with `wordBoundary` and has no cut rule of its own), full name in its `title`. The hint line under *Send to* (#388) shows the session's display name `ag.name` (the user's rename), full text with its `title`, cut by CSS only. A new schedule stores as `target.name` that
   short display name, never a longer title. The schedule list shows the **current** display name of the target session when that
   session is known (by `target.session`), else the stored name, else "one session" (today: the stored name, `src/renderer/app.js:3502`).
   Stored names in existing files are not rewritten (Q7 A).
@@ -333,7 +333,7 @@ Owner (Paco, 2026-10-20, about 14:35 CEST): accept Vikram's requirements on issu
 
 - Spec 006's row menu (#379) is on `main`: **Rename…** is in it (FR-006, T040), and a deleted session's name goes with it (`dropSessionName`).
   Cross-links: spec 006 FR-027 gets this item; #371 (spec 044 FR-021, pending when this was built) says the short name will come from the rename: that is FR-008 here (the Schedules option
-  and a new schedule use `SN().shortName(ag.name, 40)`, the one cut rule). Whoever lands second keeps `ag.name`, that one rule, #371's `sc-to`/`sc-lbl` markup and `check:sched-sendto`.
+  and a new schedule use `SN().shortName(ag.name, 40)`, which is `cuttext.js`; the hint shows `ag.name`). #371/#388 is merged: `check:sched-sendto` and `check:rename` both pass.
 - Spec 012 FR-159 (#386): Claude's `--name` titles now show in the CLI's `/resume` list (FR-007 above).
 - Not rendered by any test: the Needs you inbox row and OS notification text. They were **read**: the inbox uses the display name like the other surfaces, notifications
   go through the Notification API as plain text; `test:sessionname` guards that no agent name or title is put into a template without `esc()`.
