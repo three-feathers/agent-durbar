@@ -12,7 +12,7 @@ import type { AppSettings } from '../../shared/credits';
 import { GROUND } from '../../shared/floors';
 import type { FloorsDoc } from '../../shared/floors';
 import type { McpServerView } from '../../shared/mcp';
-import { maskSecretArgs, maskSecretUrl, parseFlag, redact, splitCommand } from '../../shared/redact';
+import { cut, maskSecretArgs, maskSecretUrl, parseFlag, redact, splitCommand } from '../../shared/redact';
 import { officeTotals } from '../../shared/usagedoc';
 import type { UsageNumbers, UsageTotalsDoc } from '../../shared/usagedoc';
 import type { SavedFolder } from '../folders';
@@ -52,6 +52,18 @@ export const SIM_NOTE = 'The Durbar window is running DURBAR_SIM: its simulated 
 
 const MODE_NAMES: Record<PermMode, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
 const modeName = (m: unknown): string => MODE_NAMES[m as PermMode] ?? 'Read-only';
+
+/** T054 (FR-040): no string in a result is longer than this (plus the 12-character ` [truncated]`). */
+export const RESULT_STRING_MAX = 4096;
+
+/** The one place the per-string cap is applied, after the masking: every handler's result passes through here, so no tool can skip it. */
+function capResult(r: ToolResult): ToolResult {
+  return { ...r, content: r.content.map((c) => {
+    let parsed: unknown;
+    try { parsed = JSON.parse(c.text); } catch { return { ...c, text: cut(c.text, RESULT_STRING_MAX) }; }
+    return { ...c, text: JSON.stringify(parsed, (_k, v) => (typeof v === 'string' ? cut(v, RESULT_STRING_MAX) : v), 2) };
+  }) };
+}
 
 const json = (v: unknown): ToolResult => ({ content: [{ type: 'text', text: JSON.stringify(v, null, 2) }] });
 const baseName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
@@ -231,5 +243,7 @@ export function createReadToolHandlers(deps: ReadToolsDeps): ToolHandlers {
 
   // The handler set must cover exactly the read tools the registry lists.
   for (const t of READ_TOOLS) if (!handlers[t.name]) throw new Error(`read tool without a handler: ${t.name}`);
-  return handlers;
+  const capped: ToolHandlers = {};
+  for (const [name, h] of Object.entries(handlers)) capped[name] = async (a) => capResult(await h(a));
+  return capped;
 }

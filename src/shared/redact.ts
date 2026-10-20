@@ -46,11 +46,12 @@ const TOKEN_CHAR = /[A-Za-z0-9_\-.~+/=:@%]/;
 const TRUNCATED = ' [truncated]';
 
 /** Cut to `max` chars without leaving the start of a token (a secret may straddle the cut) or a newline. */
-function cut(s: string, max: number): string {
+export function cut(s: string, max: number): string {
   if (s.length <= max) return s;
   let end = max;
+  if (end > 0 && /[\ud800-\udbff]/.test(s[end - 1])) end--; // never leave half a surrogate pair
   while (end > 0 && TOKEN_CHAR.test(s[end - 1])) end--;
-  return s.slice(0, end) + TRUNCATED;
+  return s.slice(0, end).replace(/[ \t]+$/, '') + TRUNCATED;
 }
 
 /** Env snapshots made by the masking helpers: their secret list is computed once, so a 100 000-token command does not rescan the env per token. */
