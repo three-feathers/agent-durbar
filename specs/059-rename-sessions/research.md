@@ -105,7 +105,7 @@ Evidence:
   "the desktop app, claude.ai/code, and the VS Code extension each keep their own session list". So where the title shows is
   `[KNOWN GAP]`: the `/resume` picker for `-p` sessions and the VS Code Claude extension's list (check on the owner's Mac, T050).
 - Rejected: the Agent SDK's `renameSession()` (not a dependency, spec 012 Q3) and writing the `.jsonl` ourselves (constitution III).
-- `real:` (Vikram's agent, 4 prompts, USD 0.007, `CLAUDE*` unset): `claude --resume <id>` shows the latest name in the prompt box; the `/resume` picker lists no `-p` session (named or not): "No conversations found in this project". `[KNOWN GAP]`: any flag that lists them; the VS Code extension's list.
+- `real:` (Vikram's agent, 4 prompts, USD 0.007, `CLAUDE*` unset): `claude --resume <id>` shows the latest name in the prompt box; the `/resume` picker lists no `-p` session (named or not): "No conversations found in this project". `[KNOWN GAP]` then; **update 2026-10-20 (Vikram's agent, about $0.03):** with spec 012 FR-159 (PR #386) the picker lists Durbar's Claude sessions by their `--name` (the CLI marks sessions from `sdk-cli` as SDK runs and hides them; `CLAUDE_CODE_ENTRYPOINT=agent-durbar` avoids that; undocumented by Anthropic, recheck after updates). The picker's Ctrl+R rename changes the runtime title: spec 059 FR-011 drops a Durbar-written name then. `[KNOWN GAP]`: the VS Code extension's list.
 - Not known without a run: whether the title is written at launch or only with the first turn. The adapter treats the name as applied after
   the first turn that follows the launch (`result` message) and says so in the dialog ("at your next message").
 

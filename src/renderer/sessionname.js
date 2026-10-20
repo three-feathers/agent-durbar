@@ -42,7 +42,7 @@
     const a=app||'the agent app';
     if(inAppSession===false)return 'Only in Agent Durbar. This session is not in '+a+' yet.';
     if(cap==='any')return 'Also saved in '+a+': its CLI shows the new name, and it may sync with your account. A name saved there cannot be removed from here.';
-    if(cap==='next-turn')return 'Also saved in '+a+' at your next message. It shows when you resume this session in '+a+' by its id; the /resume list does not include sessions started here. It may sync with your account.';
+    if(cap==='next-turn')return 'Also saved in '+a+' at your next message: it then shows in its /resume list and when you resume this session by its id. It may sync with your account.';
     return 'Only in Agent Durbar. '+a+' keeps its own name.';
   }
   return {MAX,displayName,nameTip,shortName,nameError,whereLine};

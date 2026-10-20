@@ -67,8 +67,7 @@ const src = (p: string): string => fs.readFileSync(path.join(root, p), 'utf8').r
   assert.strictEqual(SN.nameTip(undefined, undefined, 'repo'), '');
   // FR-004, FR-017: where the name goes; may sync is said for every app that stores it; Claude does not promise the picker
   assert.ok(/^Also saved in GitHub Copilot:.*may sync/.test(SN.whereLine('any', 'GitHub Copilot')));
-  assert.ok(/at your next message.*resume this session.*by its id.*may sync/.test(SN.whereLine('next-turn', 'Claude Code')));
-  assert.ok(/does not include sessions started here/.test(SN.whereLine('next-turn', 'Claude Code')));
+  assert.ok(/at your next message.*\/resume list.*by its id.*may sync/.test(SN.whereLine('next-turn', 'Claude Code')));
   assert.strictEqual(SN.whereLine(undefined, 'Basic'), 'Only in Agent Durbar. Basic keeps its own name.');
   assert.ok(/not in Codex yet/.test(SN.whereLine('any', 'Codex', false)));
 

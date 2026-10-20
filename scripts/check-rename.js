@@ -56,7 +56,7 @@ module.exports = async (ctx) => {
         assert.ok(d, `${tag}: ${kind}: the dialog is open`);
         assert.strictEqual(d.title, 'Rename session');
         assert.ok(re.test(d.lines[0]), `${tag}: ${kind}: dialog line "${d.lines[0]}"`);
-        assert.ok(kind !== 'claude' || /claude --resume|resume this session/.test(d.lines[0]) && !/picker is shown/.test(d.lines[0]), `${tag}: claude does not promise the picker: ${d.lines[0]}`);
+        assert.ok(kind !== 'claude' || /\/resume list.*by its id/.test(d.lines[0]), `${tag}: the Claude line says where the name shows: ${d.lines[0]}`);
         assert.strictEqual(d.max, 60);
         assert.ok(d.focus && d.sel[0] === 0 && d.sel[1] === d.value.length, `${tag}: ${kind}: the field is focused and fully selected: ${JSON.stringify(d)}`);
         assert.deepStrictEqual(d.btns, ['Cancel', 'Rename*']);

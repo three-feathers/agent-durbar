@@ -60,9 +60,9 @@ PR-sized step with its own test. No task spends AI credits except Phase 5, which
   "Name in <app>: …" from the capability; partial-result toast; simulator shows all three [FR-004, FR-010, FR-017]
 - [x] T036 Escape test: an HTML-looking name through every display path and the MCP read tool text [FR-018]
 
-## Phase 4: User Story 3, Previous sessions (P3; after spec 006 T036, issue #368, PR #373)
+## Phase 4: User Story 3, Previous sessions (P3; spec 006's row menu, PR #379, is merged)
 
-- [ ] T040 **Rename…** in the Previous sessions row ⋯ menu for agent-session rows (not VS Code chats); row title and tooltip use the
+- [x] T040 **Rename…** in the Previous sessions row ⋯ menu for agent-session rows (not VS Code chats); row title and tooltip use the
   name; search matches it; Resume carries it; `check-rename.js` case [FR-006, FR-009] (Q5 A)
 
 ## Phase 5: Real checks (owner-gated, not in CI)
@@ -70,11 +70,13 @@ PR-sized step with its own test. No task spends AI credits except Phase 5, which
 - [ ] T050 With the owner's go-ahead (Q9 A): Copilot, rename a session already open in Durbar **and one that is not** (prompt-free resume) and
   look at the Copilot CLI's resume list and VS Code; Claude, look at the VS Code Claude extension's list and `/resume` for a renamed session
   (Mac); Codex, rename an existing thread and look at the Codex CLI's picker and VS Code. Record prompts and usage (expected 0)
-  and results in research.md; turn the matching `[KNOWN GAP]` lines into `real:` [FR-007]
+  and results in research.md; turn the matching `[KNOWN GAP]` lines into `real:` [FR-007]. Already `real:` (Vikram's agent, 2026-10-20, the calls
+  and the CLI lists of all three apps, see spec.md FR-007): left for the owner's Mac: VS Code lists, a run through Durbar itself, a session held open
+  by another client.
 
 ## Phase 6: Docs and converge
 
-- [ ] T060 README (feature list, Previous sessions, Safety model: names are local, the app-side rename and that it cannot be removed,
+- [x] T060 README (feature list, Previous sessions, Safety model: names are local, the app-side rename and that it cannot be removed,
   Copilot keeps named sessions from cleanup), CHANGELOG *Unreleased*, `specs/README.md` row, `[IMPLEMENTED]` tags; spec 006 FR-031 and
   spec 044 FR-021 cross-links [all]
 
