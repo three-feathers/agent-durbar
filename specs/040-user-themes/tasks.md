@@ -23,4 +23,4 @@
 - [x] T025 Dark themes and generated art: all tokens, the CSS whites tokenized, contrast and top-bar checks, up to 3 fix passes, art through the sanitiser; idea chips and the try bar [FR-017, FR-020, FR-021]
 - [x] T026 (#301) Copilot `generateText` on a throw-away SDK session (`oneShotConfig`: no tools, no MCP, no skills or agents, nothing kept; permissions denied; timeout; disconnect and delete in a `finally`); AI credits passed through `theme:generate` to the dialog; capability `oneShot`; simulator; `test:copilotoneshot` on the fake SDK [FR-015]
 - [ ] T027 (#301) Real check of T026: needs the owner's go-ahead: 1 prompt on a free plan (record as `real:` in FR-015; also confirm on disk that the session is gone and that `availableTools: []` really means no tools)
-- [ ] T028 Retake `docs/screenshots/040-aitheme-*.png` and `040-aitheme-preview-*.png`: the dialog now lists Copilot first in the simulator (`scripts/shots-040-aitheme.js` updated, not run here)
+- [x] T028 Retake `docs/screenshots/040-aitheme-*.png` and `040-aitheme-preview-*.png`: the dialog now lists Copilot first in the simulator (`scripts/shots-040-aitheme.js` updated, not run here)
