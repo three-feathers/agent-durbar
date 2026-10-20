@@ -245,11 +245,13 @@
   }
   /* spec 040 FR-014..FR-018: AI theme maker. Describe -> one prompt to a harness with `oneShot` -> a checked manifest ->
      preview (Try it, live, not saved) -> Save as my theme, Try again or Discard (back to the theme that was active). User text is never logged. */
+  /* spec 040 FR-015: AI credits a Copilot generation reported (1e9 nano = 1 credit) */
+  const aiCredits=(nano)=>(Number(nano)/1e9).toFixed(2);
   async function aiTheme(){
     const before=(window.THEME&&window.THEME.current&&window.THEME.current().id)||'clean-office';
     let kinds=[];
     if(X.bridge.listAdapters){try{kinds=((await X.bridge.listAdapters())||[]).filter((k)=>k&&k.state==='ready'&&k.capabilities&&k.capabilities.oneShot);}catch(e){kinds=[];}}
-    if(!kinds.length){await dialog({title:'Make a theme with AI',html:'<p class="dsub">This needs Claude Code or OpenAI Codex, installed and signed in on this computer. Copilot cannot do it yet.</p>',buttons:[{label:'Close',value:'ok',cls:'primary'}]});return;}
+    if(!kinds.length){await dialog({title:'Make a theme with AI',html:'<p class="dsub">This needs Claude Code, OpenAI Codex or GitHub Copilot, installed and signed in on this computer.</p>',buttons:[{label:'Close',value:'ok',cls:'primary'}]});return;}
     let desc='',kind=kinds[0].id;
     /* spec 040 FR-021: a few example looks at random, so people see how to describe one */
     let ideas=[];
@@ -262,7 +264,7 @@
         <label>Look<textarea id="aiDesc" rows="3" maxlength="300" placeholder="A calm library at night">${esc(desc)}</textarea></label>
         ${ideaHtml()}
         <label>Made by<select id="aiKind">${kinds.map((k)=>`<option value="${esc(k.id)}"${k.id===kind?' selected':''}>${esc(k.displayName||k.id)}</option>`).join('')}</select></label>
-        <p class="scr-note small">Uses your own ${esc(kinds.map((k)=>k.displayName||k.id).join(' or '))} account: a small cost (Claude: at most $0.25, usually about a cent).</p>`,
+        <p class="scr-note small">Uses your own ${esc(kinds.map((k)=>k.displayName||k.id).join(' or '))} account: a small cost (Claude: at most $0.25, usually about a cent; Copilot: AI credits from your plan).</p>`,
         buttons:[{label:'Cancel',value:null},{label:'Make the theme',value:'go',cls:'primary'}],
         validate:(d)=>{const v=d.querySelector('#aiDesc').value.trim();return v.length<3?'Describe the look in a few words.':false;},
         onOpen:(d)=>{const t=d.querySelector('#aiDesc');t.addEventListener('input',()=>{desc=t.value;});
@@ -274,7 +276,7 @@
       try{g=await X.bridge.generateTheme(desc.trim(),kind);}catch(e){g={ok:false,error:String(e&&e.message||e)};}
       if(busy&&busy.remove)busy.remove();
       if(!g||!g.ok){
-        const again=await dialog({title:'No theme this time',html:`<p class="dsub">${esc((g&&g.error)||'Unknown error.')}</p>${g&&g.costUsd?`<p class="scr-note small">Cost: about $${esc(g.costUsd.toFixed(4))} (estimate).</p>`:''}`,buttons:[{label:'Close',value:null},{label:'Try again',value:'again',cls:'primary'}]});
+        const again=await dialog({title:'No theme this time',html:`<p class="dsub">${esc((g&&g.error)||'Unknown error.')}</p>${g&&g.costUsd?`<p class="scr-note small">Cost: about $${esc(g.costUsd.toFixed(4))} (estimate).</p>`:''}${g&&g.nanoAiu?`<p class="scr-note small">Used ${esc(aiCredits(g.nanoAiu))} AI credits (as reported by Copilot).</p>`:''}`,buttons:[{label:'Close',value:null},{label:'Try again',value:'again',cls:'primary'}]});
         if(again&&again.value==='again')continue;return;
       }
       const m=g.manifest, toks=m.tokens||{}, hex=/^#[0-9a-f]{3,6}$/i;
@@ -282,7 +284,7 @@
       const words=Object.entries(m.words||{}).map(([k,v])=>`<li><small>${esc(k)}</small> ${esc(v)}</li>`).join('');
       for(;;){
         const pick=await dialog({title:'Theme: '+m.name,wide:true,html:`<div class="ai-sws" aria-hidden="true">${swatches}</div>
-          <p class="dsub">Style <b>${esc(m.ui)}</b>, people and furniture <b>${esc(m.scene)}</b>, ${Object.keys(toks).length} colours.${g.costUsd?` Made for about $${esc(g.costUsd.toFixed(4))} (estimate).`:''}</p>
+          <p class="dsub">Style <b>${esc(m.ui)}</b>, people and furniture <b>${esc(m.scene)}</b>, ${Object.keys(toks).length} colours.${g.costUsd?` Made for about $${esc(g.costUsd.toFixed(4))} (estimate).`:''}${g.nanoAiu?` Used ${esc(aiCredits(g.nanoAiu))} AI credits (as reported by Copilot).`:''}</p>
           ${words?`<ul class="ai-words">${words}</ul>`:''}
           ${g.warnings&&g.warnings.length?`<p class="scr-note small">${esc(g.warnings.join('; '))}.</p>`:''}
           <p class="scr-note small">Try it shows it now without saving. Discard goes back to the theme you had.</p>`,

@@ -63,7 +63,7 @@
 - **FR-015** **Harness.** The optional adapter capability `oneShot` with `generateText(prompt)` runs one prompt with **no tools, no MCP servers and no session kept**, in an empty temporary folder:
   - **Claude Code:** `claude -p <prompt> --tools "" --no-session-persistence --strict-mcp-config --setting-sources "" --output-format json --max-budget-usd 0.25`; its dollar estimate is shown with the result.
   - **Codex:** an ephemeral thread with the read-only sandbox and no approvals.
-  - **Copilot:** not in Phase 1 (`[KNOWN GAP]`; it needs a throw-away SDK session).
+  - **Copilot:** a throw-away SDK session, see the change of 2026-10-20 below.
   - **Simulator:** a canned theme.
 - **FR-016** **Only the safe subset.** `src/shared/themegen.ts` writes the prompt, which lists the allowed fields and values and asks for JSON only. It then takes from the reply **only**:
   - a name of up to 40 characters, which becomes an id `ai-<slug>` that clashes with no built-in or saved theme;
@@ -126,3 +126,19 @@
   - a dark theme from Codex was not tried after FR-020 (Claude was);
   - the full app with a real harness was not driven through the dialog. The adapters were checked for real, and the dialog in the simulator.
 
+### 2026-10-20: the AI theme maker on Copilot (issue #301, T026)
+
+*Owner (issue #301):* "Copilot is not offered yet: it needs a throw-away SDK session with no tools, no MCP servers and nothing kept, then disposed."
+
+- **FR-015** (Copilot) `[IMPLEMENTED]` (fake SDK only) The Copilot adapter reports `oneShot`. `generateText(prompt, { disabledMcpServers })` uses the shared runtime (no second process) and creates one session with `oneShotConfig`:
+  - **no tools:** `availableTools: []`, and `excludedTools: ['builtin:*', 'mcp:*', 'custom:*']` as a second lock;
+  - **no MCP:** `mcpServers: {}`, and `disabledMcpServers` naming every server the runtime would load by itself (the servers of `~/.copilot/mcp-config.json` and the built-in GitHub one; main reads the names, never the values);
+  - **nothing else loaded:** `enableConfigDiscovery: false`, `enableSkills: false`, `customAgents: []`, `skipCustomInstructions: true`, `enableOnDemandInstructionDiscovery: false`, `enableFileHooks: false`, `enableHostGitOperations: false`, and an empty temporary folder as the working directory;
+  - **nothing kept:** the SDK has no ephemeral session, so `infiniteSessions: { enabled: false }`, `memory: { enabled: false }`, `enableSessionStore: false`, `embeddingCacheStorage: 'in-memory'`, `remoteSession: 'off'`, no `name`; in a `finally` the session is disconnected and `client.deleteSession` removes it from disk (an error there is ignored), and the temp folder is removed;
+  - **every permission request is denied** (`reject`); no question handler;
+  - the model is `auto` with the `efficiency` routing, the same as a new `auto` session;
+  - **a 3-minute limit** (as Claude and Codex): the turn is aborted, then the session disposed.
+
+  The reply is the last top-level `assistant.message` (not a helper's) once `session.idle` arrives; a `session.error` ends it with its type only. The AI credits are the sum of `assistant.usage` `copilotUsage.totalNanoAiu`, returned as `nanoAiu`; `theme:generate` adds them up over the passes and the dialog shows "Used N AI credits (as reported by Copilot)". `GenerateTextResult` (`text`, `costUsd?`, `nanoAiu?`) is the shared result type. The simulator offers Copilot with a canned credit figure.
+- `test:` `test:copilotoneshot` on the fake SDK: the config (tools, MCP, skills, agents, persistence off), denied permissions, the reply taken from the events (helper and tool-call messages ignored), usage summed, and disconnect, deletion and temp-folder removal on success, an empty answer, a session error, a failed send, a timeout (aborted first), a session that was never on disk, and a failed create.
+- `[KNOWN GAP]` Not run on a real account. Unverified: that `availableTools: []` really leaves the model with no tool, that `deleteSession` leaves nothing in `~/.copilot/session-state`, the real credit cost, and whether `excludedTools` patterns are accepted together with an empty `availableTools`. `real:` open (T027): needs the owner's go-ahead: 1 prompt on a free plan. The screenshots still show the dialog without Copilot (T028).
