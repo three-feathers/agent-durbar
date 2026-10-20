@@ -13,10 +13,17 @@ export interface RemoteOpsDeps {
   adapterOf(id: string): AgentAdapter | undefined;
   /** Opens a checked https://github.com/... link in the system browser. */
   open(url: string): Promise<void>;
+  /** The agent's permission mode now (remote control is refused in Allow all). */
+  modeOf?(id: string): string | undefined;
+  /** FR-011: the main process asks the user itself (a native dialog the page cannot answer) before remote control turns on. */
+  confirm?(id: string): Promise<boolean>;
+  /** FR-011: remote control on or off, for the activity log. */
+  record?(id: string, on: boolean): void;
 }
 
 export const NO_REMOTE = 'This agent app cannot be controlled from GitHub.';
 export const NOT_RUNNING = 'Send a message first so the session is running, then turn on remote control.';
+export const NOT_IN_ALLOW_ALL = 'Remote control is off in Allow all: anyone who can steer this session on GitHub could make it run commands without asking you. Switch to Ask first, then turn it on.';
 
 export function createRemoteOps(deps: RemoteOpsDeps) {
   /** Last state per agent id while remote control is on; dropped when it is turned off, fails, or the session ends. */
@@ -27,6 +34,9 @@ export function createRemoteOps(deps: RemoteOpsDeps) {
       const ad = deps.adapterOf(id);
       if (!ad || typeof ad.setRemote !== 'function' || !ad.capabilities.remote) return { ok: false, error: NO_REMOTE };
       if (!ad.isLive(id)) return { ok: false, error: NOT_RUNNING };
+      // FR-011 (security review, 2026-10-20): never with Allow all, and only after the main process's own confirmation
+      if (on && deps.modeOf?.(id) === 'allow') return { ok: false, error: NOT_IN_ALLOW_ALL };
+      if (on && deps.confirm && !(await deps.confirm(id))) return { ok: false, cancelled: true, error: 'Cancelled.' };
       let r: RemoteState;
       try {
         r = await ad.setRemote(id, on);
@@ -40,7 +50,10 @@ export function createRemoteOps(deps: RemoteOpsDeps) {
         if (typeof r.steerable === 'boolean') out.steerable = r.steerable;
         if (r.visibility === 'repo' || r.visibility === 'unshared') out.visibility = r.visibility;
         state.set(id, out);
-      } else if (out.ok) state.delete(id);
+        deps.record?.(id, true);
+      } else if (out.ok) {
+        if (state.delete(id)) deps.record?.(id, false);
+      }
       return out;
     },
     /** FR-005: opens the stored link of agent `id` after checking it again; anything else is refused. */
@@ -52,7 +65,25 @@ export function createRemoteOps(deps: RemoteOpsDeps) {
     },
     /** FR-003: the session ended or the agent left the office. */
     forget(id: string): void {
+      if (state.delete(id)) deps.record?.(id, false);
+    },
+    /**
+     * FR-011: turns remote control off on GitHub too before a session ends, is removed or the app quits (best effort: the
+     * runtime may otherwise keep the session steerable after Durbar says it is off).
+     */
+    async release(id: string): Promise<void> {
+      if (!state.has(id)) return;
       state.delete(id);
+      deps.record?.(id, false);
+      const ad = deps.adapterOf(id);
+      try {
+        if (ad && typeof ad.setRemote === 'function') await ad.setRemote(id, false);
+      } catch {
+        /* the session is going away anyway */
+      }
+    },
+    ids(): string[] {
+      return [...state.keys()];
     },
     has(id: string): boolean {
       return state.has(id);

@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { allowedRemoteUrl, cleanRemoteError } from '../src/shared/remote';
-import { createRemoteOps, NO_REMOTE, NOT_RUNNING } from '../src/main/remoteops';
+import { createRemoteOps, NO_REMOTE, NOT_IN_ALLOW_ALL, NOT_RUNNING } from '../src/main/remoteops';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
 import type { FakeSession } from './fakes/copilot-sdk';
 import type { AgentAdapter } from '../src/adapters/types';
@@ -164,6 +164,30 @@ async function main(): Promise<void> {
     const throwing = { capabilities: { remote: true }, isLive: () => true, setRemote: async () => { throw new Error('kaboom'); } } as unknown as AgentAdapter;
     const ops2 = createRemoteOps({ known: () => true, adapterOf: () => throwing, open: async () => undefined });
     assert.deepStrictEqual(await ops2.setRemote('z', true), { ok: false, error: 'kaboom' });
+  }
+
+  // ---- FR-011 (security review): native confirmation, never in Allow all, off on GitHub before the session goes, logged
+  {
+    const calls: boolean[] = [], log: string[] = [];
+    let mode = 'ask', yes = false;
+    const ad = { capabilities: { remote: true }, isLive: () => true, setRemote: async (_id: string, on: boolean) => { calls.push(on); return on ? { ok: true, on: true, url: 'https://github.com/o/r/tasks/9' } : { ok: true, on: false }; } } as unknown as AgentAdapter;
+    const ops = createRemoteOps({ known: () => true, adapterOf: () => ad, open: async () => undefined, modeOf: () => mode, confirm: async () => yes, record: (id, on) => void log.push(id + (on ? ' on' : ' off')) });
+    mode = 'allow';
+    assert.deepStrictEqual(await ops.setRemote('a', true), { ok: false, error: NOT_IN_ALLOW_ALL }, 'refused in Allow all');
+    mode = 'ask';
+    assert.deepStrictEqual(await ops.setRemote('a', true), { ok: false, cancelled: true, error: 'Cancelled.' }, 'the native No stops it');
+    assert.deepStrictEqual(calls, [], 'nothing reached the adapter before consent');
+    yes = true;
+    assert.ok((await ops.setRemote('a', true)).ok);
+    assert.deepStrictEqual(log, ['a on']);
+    assert.deepStrictEqual(ops.ids(), ['a']);
+    await ops.release('a');
+    assert.deepStrictEqual(calls, [true, false], 'release turns it off on GitHub too');
+    assert.deepStrictEqual(log, ['a on', 'a off']);
+    assert.ok(!ops.has('a'));
+    await ops.release('a');
+    assert.deepStrictEqual(calls, [true, false], 'a second release does nothing');
+    assert.ok((await ops.setRemote('a', false)).ok, 'turning off needs no confirmation');
   }
 
   fs.rmSync(dir, { recursive: true, force: true });
