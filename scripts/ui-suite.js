@@ -6,6 +6,7 @@
  *   node scripts/ui-suite.js --only shots-017,shots-033
  *   UI_SUITE_OUT=<folder>                 where every screenshot goes (default: a new temp folder, printed at the end)
  *   UI_SUITE_XVFB=1                       Linux: run under xvfb-run even when a display is set
+ *   UI_SUITE_JOBS=<n>                     drivers at once (default 2; each has its own profile and, on Linux, its own xvfb display)
  *
  * Each driver gets a fresh DURBAR_USER_DATA, its own settings and the same output folder for all screenshot variables. A driver fails on
  * a non-zero exit (a failing driver exits 1, FR-090), a "DRIVER FAILED" line or its time limit. Linux without a display runs under xvfb-run.
@@ -85,15 +86,24 @@ async function main() {
   const outDir = process.env.UI_SUITE_OUT ? path.resolve(process.env.UI_SUITE_OUT) : fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ui-shots-'));
   fs.mkdirSync(outDir, { recursive: true });
   console.log(`ui-suite: ${todo.length} drivers on ${process.platform}, screenshots in ${outDir}`);
+  // fast checks (owner rule): in parallel, never fewer checks; each driver has its own profile and window (own xvfb display on Linux)
+  const jobs = Math.max(1, Math.min(6, Number(process.env.UI_SUITE_JOBS || 2) || 2));
   const failed = [];
-  for (const d of todo) {
-    const r = await runOne(d, outDir);
-    console.log(`  ${r.ok ? 'ok  ' : 'FAIL'} ${(d.label || d.name).padEnd(26)} ${String(r.secs).padStart(4)} s${r.ok ? '' : '  ' + r.why.trim().slice(0, 300)}`);
-    if (!r.ok) {
-      failed.push(d.label || d.name);
-      console.log(r.log.split(/\r?\n/).filter((l) => l.trim()).slice(-25).map((l) => '      | ' + l.slice(0, 240)).join('\n'));
+  const started = Date.now();
+  let next = 0;
+  const worker = async () => {
+    while (next < todo.length) {
+      const d = todo[next++];
+      const r = await runOne(d, outDir);
+      console.log(`  ${r.ok ? 'ok  ' : 'FAIL'} ${(d.label || d.name).padEnd(26)} ${String(r.secs).padStart(4)} s${r.ok ? '' : '  ' + r.why.trim().slice(0, 300)}`);
+      if (!r.ok) {
+        failed.push(d.label || d.name);
+        console.log(r.log.split(/\r?\n/).filter((l) => l.trim()).slice(-25).map((l) => '      | ' + l.slice(0, 240)).join('\n'));
+      }
     }
-  }
+  };
+  await Promise.all(Array.from({ length: jobs }, worker));
+  console.log(`ui-suite: ${jobs} at a time, ${Math.round((Date.now() - started) / 1000)} s in all`);
   console.log(`\nui-suite: ${todo.length - failed.length}/${todo.length} passed on ${process.platform}${failed.length ? '; failed: ' + failed.join(', ') : ''}`);
   if (failed.length) process.exitCode = 1;
 }
