@@ -22,6 +22,8 @@
   --r-sm:6px; --r-md:10px; --r-lg:14px; --r-xl:18px;
   /* spec 052 FR-052: control borders at 3:1, the second tone of the focus ring (theme.js sets both per theme) */
   --line-ctl:#8a8272; --focus-halo:transparent;
+  /* spec 052 FR-100, FR-104: hairlines computed here, on the root, so they keep the page's --line inside the office (the stage reuses --line for connectors) */
+  --line-hair:var(--line); --line-soft:color-mix(in srgb,var(--line) 60%,transparent);
   /* spec 052 FR-029 (#311): one control-size scale. Buttons and selects in toolbars and dialogs, chips in headers, status pills.
      Desk cards keep their own computed sizes (the office layout depends on them). */
   --h-ctl:32px; --h-chip:26px; --h-pill:22px;
@@ -41,16 +43,20 @@ button{font:inherit;color:inherit}
 .brand h1{margin:0;font-size:15px;line-height:1.15;font-weight:650;letter-spacing:-.01em;white-space:nowrap}
 .proto{display:inline-block;margin-top:2px;font-size:11px;font-weight:600;color:var(--pc-waiting);background:var(--pb-waiting);border:1px solid var(--proto-line);border-radius:999px;padding:0 8px;white-space:nowrap}
 .proto.sim{color:var(--blue-ink);background:var(--pb-working,#e3ecf4);border-color:#c5d6e5}
-.stats{display:flex;gap:5px;margin-left:auto;flex:none}
-.stat{display:flex;align-items:center;gap:6px;height:var(--h-ctl);padding:0 10px 0 9px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s}
-.stat:hover{border-color:var(--line-2);background:var(--raised)}
-.stat[aria-pressed="true"]{background:var(--raised);border-color:var(--stat-sel-border,#8aa7be);box-shadow:0 0 0 2px var(--sel-ring-2,#dde8f1)}
-.stat b{font-size:14px;font-weight:650;font-variant-numeric:tabular-nums}
+.stats{display:flex;gap:5px;margin-left:auto;flex:none;border-radius:var(--r-md);box-shadow:inset 0 0 0 1px var(--line)}
+/* spec 052 FR-103: the counters are one segmented strip. The frame is an inset shadow on the group and each counter keeps its 1px
+   (transparent) border and the 5px gap, with a hairline divider drawn in the gap, so every width and the 32px height stay */
+.stat{position:relative;display:flex;align-items:center;gap:6px;height:var(--h-ctl);padding:0 10px 0 9px;border:1px solid transparent;background:transparent;background-clip:padding-box;border-radius:var(--r-sm);cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s}
+.stats>.stat+.stat::before{content:"";position:absolute;left:-4px;top:-1px;bottom:-1px;width:1px;background:var(--line);pointer-events:none}
+.stat:hover{background:var(--surface-2)}
+.stat[aria-pressed="true"]{background:var(--surface-2);box-shadow:inset 0 -2px 0 var(--stat-sel-border,#8aa7be)}
+.stat[aria-pressed="true"] span.l{font-weight:650;color:var(--ink)}
+.stat b{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
 /* usage total chip (spec 011 FR-019): same pill as the counters, but a note, not a filter */
 .stat-aiu{cursor:default}
-.stat-aiu:hover{border-color:var(--line);background:var(--surface-2)}
+.stat-aiu:hover{background:transparent}
 .stat span.l{font-size:12px;color:var(--ink-2)}
-.stat.attn{background:var(--warn-bg);border-color:#e5be78}
+.stat.attn{background:var(--warn-bg)}
 .stat.attn span.l{color:var(--amber-ink);font-weight:600}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--gray);flex:none;display:inline-block}
 .dot.working{background:var(--c-working)} .dot.thinking{background:var(--c-thinking)} .dot.waiting{background:var(--c-waiting)} .dot.failing{background:var(--c-waiting)} /* spec 052 FR-092: Failing reuses the waiting colour */
@@ -177,6 +183,9 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .st-error{--pb:var(--pb-error);--pc:var(--red-ink);--pd:var(--c-error)} .st-done{--pb:var(--pb-done);--pc:var(--pc-done);--pd:var(--c-done)}
 .st-failing{--pb:var(--pb-waiting);--pc:var(--amber-ink);--pd:var(--c-waiting)} /* spec 052 FR-062: "Failing" reuses the waiting colours (no new status colour) */
 .st-idle i{background:transparent;border:1.5px solid var(--c-idle)}
+/* spec 052 FR-101: on cards and list rows a status that needs nothing from you is a dot and the word in its colour; Waiting, Error,
+   Failing and Limit reached (a waiting state) keep the filled pill. Only colours change: the pill keeps its height and padding */
+:is(.desk,.lrow) .pill:is(.st-working,.st-thinking,.st-idle,.st-done){background:transparent;border-color:transparent}
 .stage[data-d="full"] .desk.is-idle .scene,.stage[data-d="full"] .desk.is-idle .info{opacity:.7}
 
 /* sub-agents: beside the parent, connected by a line */
@@ -237,12 +246,12 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 #list{flex:1;min-width:0;overflow:auto;padding:16px 24px 20px;display:none}
 .list-wrap{background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
 /* spec 052 FR-064: 34px rows; Agent, Agent app, Role, Folder, Current task, Last activity, Cost, Status ; FR-092: the Agent app column grows ("Basic agent (simulated)" fits) */
-.lrow{display:grid;grid-template-columns:minmax(120px,1fr) minmax(100px,1.05fr) minmax(90px,.7fr) minmax(100px,.75fr) minmax(160px,2.4fr) 78px 88px 120px;gap:12px;align-items:center;width:100%;padding:0 16px;height:34px;border:0;border-bottom:1px solid #eee8dd;background:transparent;text-align:left;cursor:pointer;font-size:13px}
+.lrow{display:grid;grid-template-columns:minmax(120px,1fr) minmax(100px,1.05fr) minmax(90px,.7fr) minmax(100px,.75fr) minmax(160px,2.4fr) 78px 88px 120px;gap:12px;align-items:center;width:100%;padding:0 16px;height:34px;border:0;border-bottom:1px solid var(--line-soft);background:transparent;text-align:left;cursor:pointer;font-size:13px}
 .lrow:last-child{border-bottom:0}
 button.lrow:hover{background:var(--surface-2)}
 button.lrow[aria-pressed="true"]{background:#eaf1f7;box-shadow:inset 3px 0 0 var(--focus)} /* spec 052 FR-052: not colour only */
 /* spec 052 FR-008: "lhead", not "head": the avatars' .head nods (styles: animation nod), and the list header row nodded with them */
-.lrow.lhead{height:34px;cursor:default;font-size:11.5px;color:var(--muted);background:var(--surface-2);font-weight:600} /* spec 052 FR-077: sentence case */
+.lrow.lhead{height:34px;cursor:default;font-size:11px;color:var(--muted);background:transparent;font-weight:600;letter-spacing:.02em;border-bottom-color:var(--line)} /* spec 052 FR-104: one 1px rule, no fill */ /* spec 052 FR-077: sentence case */
 .lhead>span{min-width:0}
 .lsort{all:unset;box-sizing:border-box;display:inline-flex;align-items:center;gap:4px;max-width:100%;cursor:pointer;font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit;white-space:nowrap;overflow:hidden;border-radius:4px;padding:2px 2px}
 .lsort:hover{color:var(--ink)}
@@ -257,7 +266,9 @@ button.lrow[aria-pressed="true"]{background:#eaf1f7;box-shadow:inset 3px 0 0 var
 .lcell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-2)}
 .lmood{color:var(--amber-ink);font-weight:600;font-size:12px}
 .lcell.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
-.lcell.num{font-variant-numeric:tabular-nums;font-size:12px}
+.lcell.num{font-variant-numeric:tabular-nums;font-size:12px;text-align:right}
+.lhead>.num{text-align:right}
+.lhead>.num .lsort{flex-direction:row-reverse} /* spec 052 FR-104: number columns right-aligned; the arrow goes first so the label lines up with the numbers */
 #stage-host{display:contents}
 body.list-mode #stage-host{display:none}
 body.list-mode #list{display:block}
@@ -474,11 +485,15 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 
 /* the desk: tiny scene + text */
 .desk.card{width:100%;height:var(--ch);padding:5px 10px 5px 5px;border-radius:12px;display:grid;grid-template-columns:var(--sw) minmax(0,1fr);column-gap:8px;align-items:center;
-  background:color-mix(in srgb,var(--card) 78%,transparent);border:1px solid color-mix(in srgb,var(--raised) 85%,transparent);box-shadow:0 1px 2px rgba(60,50,30,.07)}
+  background:var(--surface);border:1px solid var(--line-hair);box-shadow:none} /* spec 052 FR-100: flat, one hairline, no shadow */
 .desk.card:hover{background:var(--raised);border-color:var(--line-2)}
-.desk.card[aria-pressed="true"],.helper.hc[aria-pressed="true"]{border-color:var(--sel-border,#7fa0bd);box-shadow:0 0 0 3px var(--sel-ring,#d9e6f0)}
-.desk.card.is-waiting{background:var(--card-waiting);border-color:var(--card-waiting-line)}
-.desk.card.is-error{background:var(--card-error);border-color:var(--card-error-line)}
+/* waiting, error and failing: a light tint, and a 3px edge inside the card as the main signal (no coloured border on top) */
+.desk.card.is-waiting{background:var(--card-waiting);border-color:var(--line-hair);box-shadow:inset 3px 0 0 var(--c-waiting)}
+.desk.card.is-failing{background:color-mix(in srgb,var(--card-waiting) 55%,var(--surface));box-shadow:inset 3px 0 0 var(--c-waiting)}
+.desk.card.is-error{background:var(--card-error);border-color:var(--line-hair);box-shadow:inset 3px 0 0 var(--c-error)}
+.desk.card[aria-pressed="true"],.helper.hc[aria-pressed="true"]{border-color:var(--sel-border,#7fa0bd);box-shadow:0 0 0 1.5px var(--sel-border,#7fa0bd)}
+.desk.card.is-waiting[aria-pressed="true"],.desk.card.is-failing[aria-pressed="true"],.helper.hc.is-waiting[aria-pressed="true"]{box-shadow:inset 3px 0 0 var(--c-waiting),0 0 0 1.5px var(--sel-border,#7fa0bd)}
+.desk.card.is-error[aria-pressed="true"],.helper.hc.is-error[aria-pressed="true"]{box-shadow:inset 3px 0 0 var(--c-error),0 0 0 1.5px var(--sel-border,#7fa0bd)}
 .sc{display:block;min-width:0}
 .sc>svg{width:100%;height:auto;display:block;overflow:visible}
 .is-idle .sc>svg{opacity:.68}
@@ -518,10 +533,10 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .helpers.hstrip>.fewer{grid-column:1/-1;height:22px}
 .helpers.hstrip>.fewer::before{display:none}
 .helper.hc{width:100%;height:var(--hh);padding:3px 6px 3px 4px;border-radius:10px;display:grid;grid-template-columns:var(--hsw) minmax(0,1fr);column-gap:5px;align-items:center;
-  background:color-mix(in srgb,var(--card) 78%,transparent);border:1px solid color-mix(in srgb,var(--raised) 85%,transparent);box-shadow:0 1px 2px rgba(60,50,30,.07)}
+  background:var(--surface);border:1px solid var(--line-hair);box-shadow:none} /* spec 052 FR-100 */
 .helper.hc:hover{background:var(--raised);border-color:var(--line-2)}
-.helper.hc.is-waiting{background:var(--card-waiting);border-color:var(--card-waiting-line)}
-.helper.hc.is-error{background:var(--card-error);border-color:var(--card-error-line)}
+.helper.hc.is-waiting{background:var(--card-waiting);border-color:var(--line-hair);box-shadow:inset 3px 0 0 var(--c-waiting)}
+.helper.hc.is-error{background:var(--card-error);border-color:var(--line-hair);box-shadow:inset 3px 0 0 var(--c-error)}
 .helper.hc .hi{display:flex;flex-direction:column;min-width:0}
 .helper.hc .hname{font-size:12px;line-height:15px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .helper.hc .hs{font-size:10.5px;line-height:13px;font-weight:600;color:var(--pc);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1010,9 +1025,8 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
    Surfaces rather than outlines: cards float on a soft two-layer shadow, room walls are softer; one radius scale
    (rooms 16, units 12, cards 10, buttons and selects 8, pills round); numbers in tabular figures everywhere. */
 html:not([data-ui]) .room{border-radius:16px;border-color:color-mix(in srgb,var(--wall) 70%,transparent)}
-html:not([data-ui]) .stage .desk.card{border-radius:10px;box-shadow:0 1px 2px rgb(44 55 51/.05),0 4px 12px -4px rgb(44 55 51/.10)}
-html:not([data-ui]) .stage .desk.card:hover{box-shadow:0 1px 2px rgb(44 55 51/.06),0 8px 18px -6px rgb(44 55 51/.16)}
-html:not([data-ui]) .btn,html:not([data-ui]) .topbar select,html:not([data-ui]) .seg,html:not([data-ui]) .stat,html:not([data-ui]) .dlg select,html:not([data-ui]) .dlg input[type=number],html:not([data-ui]) .dlg .dinput input{border-radius:8px}
+html:not([data-ui]) .stage .desk.card{border-radius:10px} /* spec 052 FR-100 (round 10): flat cards, the shadow is gone */
+html:not([data-ui]) .btn,html:not([data-ui]) .topbar select,html:not([data-ui]) .seg,html:not([data-ui]) .dlg select,html:not([data-ui]) .dlg input[type=number],html:not([data-ui]) .dlg .dinput input{border-radius:8px}
 html:not([data-ui]) .seg button{border-radius:6px}
 .use,.stat b,.ctxchip,.capchip,.mchip,.pusage,.lrow .lcell,.prev-c{font-variant-numeric:tabular-nums}
 
@@ -1070,15 +1084,7 @@ body.simple #addWs,body.simple #foldersBtn,body.simple #vList{display:none!impor
 /* spec 052 R3 design polish (Clean Office only unless noted; colour, border colour, background, shadow, radius, weight and
    letter-spacing only, so every size stays and check:geometry holds) */
 /* primary action: solid sage ink, now the base `.btn.primary` rule in every theme (spec 052 FR-053) */
-/* top-bar counters as one segmented surface. The ring is an inset shadow and the counters keep their 1px (transparent)
-   border, so the group stays 32px high; the gap stays too (widths unchanged) and reads as nothing on a transparent counter */
-html:not([data-ui]) .stats{background:var(--surface-2);border-radius:10px;box-shadow:inset 0 0 0 1px var(--line)}
-html:not([data-ui]) .stat{border-color:transparent;background:transparent;border-radius:8px;background-clip:padding-box}
-html:not([data-ui]) .stat:hover{border-color:transparent;background-color:color-mix(in srgb,var(--raised) 60%,transparent)}
-html:not([data-ui]) .stat-aiu:hover{background-color:transparent}
-html:not([data-ui]) .stat[aria-pressed="true"]{border-color:transparent;background-color:var(--raised);box-shadow:0 1px 2px rgb(44 55 51/.10)}
-html:not([data-ui]) .stat.attn{background-color:var(--warn-bg);border-color:color-mix(in srgb,#e5be78 70%,transparent)}
-html:not([data-ui]) .stat.attn[aria-pressed="true"]{border-color:#d9a54a}
+/* top-bar counters: one segmented strip in every style, see FR-103 at the .stats rule (round 10) */
 /* the Needs you button */
 html:not([data-ui]) .inbox-btn{border-radius:8px}
 html:not([data-ui]) .inbox-btn.attn{background:#fbe7bf;border-color:#d9a54a}
@@ -1090,11 +1096,7 @@ html:not([data-ui]) .room :is(.room-new,.room-more,.room-mcp,.room-sched):hover{
 /* denser layouts: the room name without a plate, softer walls, no tile pattern or inner glow */
 html:not([data-ui]) .stage:not([data-d="full"]) .room-name{border-color:transparent;background:transparent;letter-spacing:-.01em}
 html:not([data-ui]) .stage:not([data-d="full"]) .room{border-color:color-mix(in srgb,var(--wall) 45%,transparent);box-shadow:none;background-image:none}
-/* waiting and error cards: a 3px status edge inside the card, on top of the FR-024 card shadow */
-html:not([data-ui]) .stage .desk.card.is-waiting{border-color:var(--line) /* spec 052 FR-053: the inset bar and the tint carry it, no extra amber edge */;box-shadow:inset 3px 0 0 var(--c-waiting),0 1px 2px rgb(44 55 51/.05),0 4px 12px -4px rgb(44 55 51/.10)}
-html:not([data-ui]) .stage .desk.card.is-waiting:hover{box-shadow:inset 3px 0 0 var(--c-waiting),0 1px 2px rgb(44 55 51/.06),0 8px 18px -6px rgb(44 55 51/.16)}
-html:not([data-ui]) .stage .desk.card.is-error{border-color:color-mix(in srgb,var(--card-error-line) 60%,transparent);box-shadow:inset 3px 0 0 var(--c-error),0 1px 2px rgb(44 55 51/.05),0 4px 12px -4px rgb(44 55 51/.10)}
-html:not([data-ui]) .stage .desk.card.is-error:hover{box-shadow:inset 3px 0 0 var(--c-error),0 1px 2px rgb(44 55 51/.06),0 8px 18px -6px rgb(44 55 51/.16)}
+/* waiting, error and failing cards: the 3px inside edge is in the base .desk.card rules now (spec 052 FR-100, round 10) */
 /* lobby: empty seats as soft dots, places without an outline unless busy (border widths kept) */
 html:not([data-ui]) .slot:not(.more){border-color:transparent;background:color-mix(in srgb,var(--ink) 6%,transparent)}
 html:not([data-ui]) .place:not(.busy){border-color:transparent}

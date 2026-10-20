@@ -159,3 +159,9 @@
 - [x] T095 Inbox session button shrinks with an ellipsis (Deny always visible); Thinking full width with no inner scroll; Failing in the palette, strip and list dot; folder note only next to plain words; Cost "This session / All time" before the tabs with a "since" subtitle; Agent apps "for …" line; wider Agent app column [FR-092]
 - [x] T096 Mode menu lines, "What Durbar does not do" (Settings and README), AI theme cost line per selected app, Simple limit and memory chips; Remove from office confirmation checked [FR-093]
 - [x] T097 Drivers grepped for every changed string; `shots-052-ux.js` memory chip check; README Tools line; CHANGELOG [FR-094]
+## Round 10: office and tables (2026-10-20)
+- [x] T103 Flat desk and helper cards (surface, 1px `--line-hair`, no shadow; Clean shadow removed); 3px inside edge for Waiting, Error and Failing (`is-failing`); 1.5px selection ring [FR-100]
+- [x] T104 Calm statuses as a dot and a word on cards and list rows (transparent pill, same size); Waiting, Error, Failing and Limit reached keep the fill; driver check in `shots-052-ux.js` [FR-101]
+- [x] T105 Card tooltip names the role (hidden next to the name in mini and micro); usage line checked (cost only in Simple, tabular and right-aligned in Expert) [FR-102]
+- [x] T106 Top-bar counters as one segmented strip (inset frame, dividers in the gap, transparent 1px borders, same widths and height); selected state; theme frames in `themes.css` [FR-103]
+- [x] T107 List hairlines, header and right-aligned numbers; Tools groups without frames, `7px 8px` cells, plain-text "Used by", 4px bars; CHANGELOG [FR-104]
