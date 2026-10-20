@@ -114,7 +114,13 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(claudeModelOptions(undefined), []);
   }
   {
-    assert.deepStrictEqual(permissionLikeOf('Write', { file_path: '/w/a.txt', content: 'x' }, 'tu1'), { kind: 'write', toolName: 'Write', toolCallId: 'tu1', path: '/w/a.txt', fileName: '/w/a.txt' });
+    assert.deepStrictEqual(permissionLikeOf('Write', { file_path: '/w/a.txt', content: 'x' }, 'tu1'), { kind: 'write', toolName: 'Write', toolCallId: 'tu1', path: '/w/a.txt', fileName: '/w/a.txt', diff: '--- a//w/a.txt\n+++ b//w/a.txt\n@@ -0,0 +1,1 @@\n+x' });
+    // spec 052 FR-063: Edit and MultiEdit carry a diff of old_string -> new_string; Bash and reads do not
+    assert.strictEqual(permissionLikeOf('Edit', { file_path: 'a.ts', old_string: 'let x = 1;', new_string: 'let x = 2;' }).diff, '--- a/a.ts\n+++ b/a.ts\n@@ -1,1 +1,1 @@\n-let x = 1;\n+let x = 2;');
+    assert.ok(/^-a$/m.test(permissionLikeOf('MultiEdit', { file_path: 'a.ts', edits: [{ old_string: 'a', new_string: 'b' }, { old_string: 'c', new_string: 'd' }] }).diff ?? ''), 'MultiEdit: every edit is in the diff');
+    assert.strictEqual(permissionLikeOf('Edit', { file_path: 'a.ts', old_string: 'same', new_string: 'same' }).diff, undefined, 'no change: no diff');
+    assert.strictEqual(permissionLikeOf('Edit', { file_path: 'a.ts', old_string: 1, new_string: 'x' }).diff, undefined, 'not text: no diff');
+    assert.strictEqual(permissionLikeOf('Read', { file_path: 'a.ts' }).diff, undefined);
     assert.deepStrictEqual(permissionLikeOf('Bash', { command: 'rm -rf /tmp/x' }), { kind: 'shell', toolName: 'Bash', fullCommandText: 'rm -rf /tmp/x' });
     assert.deepStrictEqual(permissionLikeOf('WebFetch', { url: 'https://example.com' }), { kind: 'url', toolName: 'WebFetch', url: 'https://example.com' });
     assert.deepStrictEqual(permissionLikeOf('mcp__github__create_issue', {}), { kind: 'mcp', toolName: 'create_issue', serverName: 'github' });

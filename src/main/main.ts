@@ -36,6 +36,9 @@ import { AgentTrustStore, hashAgentFile } from './agenttrust';
 import { Scheduler, loadSchedules, saveSchedules } from './schedules';
 import type { SchedulerDeps } from './schedules';
 import { UsageTotalsStore } from './usagetotalsstore';
+import { ActivityStore } from './activitystore';
+import { activityCsv, activityJson, decisionOf } from '../shared/activity';
+import type { ActivityDecision } from '../shared/activity';
 import { folderKeyOf, folderNameOf } from '../shared/usagedoc';
 import { agentLabel } from '../shared/toolusage';
 import { devEnv, devWarning } from './devhooks';
@@ -74,6 +77,8 @@ let usageStore: UsageStore | undefined;
 /** Credit totals per folder kept across restarts (spec 011 FR-025, issue #21). */
 let usageTotalsStore: UsageTotalsStore | undefined;
 let agentTrust: AgentTrustStore | undefined;
+/** Local activity log (spec 052 FR-071): permission answers, automatic approvals, mode and limit changes. Created when the app is ready. */
+let activityStore: ActivityStore | undefined;
 /** The folder (or .code-workspace file) an agent belongs to; the key of the saved folder list. */
 const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 
@@ -140,6 +145,18 @@ router.onEvent((e) => {
   if (e.type !== 'usage') return;
   const a = agents.get(e.sessionId);
   if (a) usageTotalsStore?.record(folderKeyOf(a), folderNameOf(a), e);
+});
+/** One activity row for agent `a` (spec 052 FR-071): names, the folder's base name, the adapter's display name and a short summary. */
+const logActivity = (a: AgentInfo, decision: ActivityDecision, action: string, mode: string = a.permMode): void => {
+  activityStore?.record({ agent: a.label || a.name, folder: folderNameOf(a), app: registry.get(a.adapterId)?.displayName ?? a.adapterId, mode, action, decision });
+};
+// The answer to a permission request, or an automatic approval (Allow all, a session permission), arrives as a `permission` event;
+// it is logged here, in main, so the window cannot add or change rows. Pending requests, plain reads and stopped sessions are not logged.
+router.onEvent((e) => {
+  if (e.type !== 'permission') return;
+  const a = agents.get(e.sessionId);
+  const decision = decisionOf(e.permission);
+  if (a && decision) logActivity(a, decision, e.permission.summary);
 });
 /** What the window needs to show the totals: the saved figures from before this run (it adds this run's own on top). */
 const usageTotalsView = (): unknown => {
@@ -538,7 +555,7 @@ ipcMain.handle('schedules:setPausedAll', (_e, on: unknown) => {
 });
 
 // The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
-const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey };
+const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, log: (a, decision, action) => logActivity(a, decision, action) };
 // Stop only interrupts the running turn (the agent returns to Ready); End session frees the runtime session.
 ipcMain.handle('agents:stop', (_e, id: string) => stopTurnOp(opsDeps, id));
 
@@ -723,12 +740,13 @@ ipcMain.handle('harness:openSignIn', async (e, kind: unknown, url: unknown) => {
 });
 ipcMain.handle('harness:copilotAuth', async (e) => {
   if (!fromApp(e)) return { known: false };
+  const pw = harnessSetup.pwshMissing() ? { pwshMissing: true } : {}; // spec 052 FR-073: Windows only, a file check, no process
   try {
     const ad = registry.has('copilot') ? router.instance('copilot') : undefined;
-    if (!ad || typeof ad.authStatus !== 'function') return { known: false };
-    return { known: true, ...(await ad.authStatus()) };
+    if (!ad || typeof ad.authStatus !== 'function') return { known: false, ...pw };
+    return { known: true, ...(await ad.authStatus()), ...pw };
   } catch {
-    return { known: false };
+    return { known: false, ...pw };
   }
 });
 ipcMain.handle('theme:saveGenerated', (_e, manifest: unknown) => {
@@ -753,6 +771,32 @@ ipcMain.handle('settings:addPlace', (_e, name: unknown, icon: unknown) => settin
 ipcMain.handle('settings:updatePlace', (_e, id: unknown, patch: unknown) => settingsStore?.updatePlace(id, patch) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
 ipcMain.handle('settings:removePlace', (_e, id: unknown) => settingsStore?.removePlace(id) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
 ipcMain.handle('settings:setDefaultCap', (_e, credits: unknown) => ({ ok: true, defaultMaxAiCredits: settingsStore?.setDefaultMaxAiCredits(credits) }));
+
+// Activity log (spec 052 FR-071): read, export through the save dialog, clear (the window asks first).
+ipcMain.handle('activity:list', (e, opts: unknown) => {
+  if (!fromApp(e)) return { ok: false, rows: [] };
+  const limit = opts && typeof opts === 'object' ? (opts as { limit?: unknown }).limit : undefined;
+  return { ok: true, rows: activityStore?.list(limit) ?? [] };
+});
+ipcMain.handle('activity:export', async (e, format: unknown) => {
+  if (!fromApp(e) || (format !== 'csv' && format !== 'json')) return { ok: false, error: 'invalid request' };
+  const day = new Date().toISOString().slice(0, 10);
+  const opts: Electron.SaveDialogOptions = { title: 'Export activity', defaultPath: `durbar-activity-${day}.${format}`, filters: [format === 'csv' ? { name: 'CSV', extensions: ['csv'] } : { name: 'JSON', extensions: ['json'] }] };
+  const r = win && !win.isDestroyed() ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
+  if (r.canceled || !r.filePath) return { ok: false, cancelled: true };
+  const rows = activityStore?.all() ?? [];
+  try {
+    fs.writeFileSync(r.filePath, format === 'csv' ? activityCsv(rows) : activityJson(rows), { encoding: 'utf8', mode: 0o600 });
+    return { ok: true, count: rows.length, to: path.basename(r.filePath) };
+  } catch (err) {
+    return { ok: false, error: errText(err).slice(0, 160) };
+  }
+});
+ipcMain.handle('activity:clear', (e) => {
+  if (!fromApp(e)) return { ok: false };
+  activityStore?.clear();
+  return { ok: true };
+});
 
 ipcMain.handle('agents:setCap', async (_e, id: unknown, credits: unknown) => {
   return setCapOp(opsDeps, id, credits);
@@ -1194,6 +1238,8 @@ app.whenReady().then(() => {
   usageStore = new UsageStore(path.join(app.getPath('userData'), 'durbar-tool-usage.json'));
   usageStore.load();
   usageTotalsStore = new UsageTotalsStore(path.join(app.getPath('userData'), 'durbar-usage-totals.json'));
+  activityStore = new ActivityStore(path.join(app.getPath('userData'), 'activity.json'));
+  activityStore.load();
   sweepStaleStageDirs(os.tmpdir()); // spec 004 FR-010: staging folders a crash left behind
   agentTrust = new AgentTrustStore(path.join(app.getPath('userData'), 'durbar-agent-trust.json'));
   agentTrust.load();
@@ -1241,6 +1287,7 @@ app.whenReady().then(() => {
 app.on('will-quit', () => {
   usageStore?.flush();
   usageTotalsStore?.flush();
+  activityStore?.flush();
   if (stageDir) fs.rmSync(stageDir, { recursive: true, force: true });
 });
 

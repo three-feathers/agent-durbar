@@ -163,7 +163,7 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .badge{width:16px;height:16px;border-radius:50%;display:grid;place-items:center;background:var(--bd,var(--gray));box-shadow:0 0 0 3px rgba(255,253,249,.9)}
 .badge.working{--bd:var(--c-working)} .badge.thinking{--bd:var(--c-thinking)} .badge.waiting{--bd:var(--c-waiting)}
 .badge.idle{--bd:var(--badge-idle)} .badge.error{--bd:var(--c-error)} .badge.done{--bd:var(--c-done)}
-.badge.waiting::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid var(--c-waiting);opacity:0;animation:ping 2.8s ease-out infinite}
+.badge.waiting::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid var(--c-waiting);opacity:0;animation:ping 2.8s ease-out 3} /* spec 052 FR-067: three pings when an agent starts waiting, then rest (restarts when it waits again) */
 .badge svg{width:10px;height:10px;display:block}
 .desk .info{padding:2px 8px 0}
 .who{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
@@ -175,6 +175,7 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .st-working{--pb:var(--pb-working);--pc:var(--pc-working);--pd:var(--c-working)} .st-thinking{--pb:var(--pb-thinking);--pc:var(--pc-thinking);--pd:var(--c-thinking)}
 .st-waiting{--pb:var(--pb-waiting);--pc:var(--amber-ink);--pd:var(--c-waiting)} .st-idle{--pb:var(--pb-idle);--pc:var(--pc-idle);--pd:var(--c-idle)}
 .st-error{--pb:var(--pb-error);--pc:var(--red-ink);--pd:var(--c-error)} .st-done{--pb:var(--pb-done);--pc:var(--pc-done);--pd:var(--c-done)}
+.st-failing{--pb:var(--pb-waiting);--pc:var(--amber-ink);--pd:var(--c-waiting)} /* spec 052 FR-062: "Failing" reuses the waiting colours (no new status colour) */
 .st-idle i{background:transparent;border:1.5px solid var(--c-idle)}
 .stage[data-d="full"] .desk.is-idle .scene,.stage[data-d="full"] .desk.is-idle .info{opacity:.7}
 
@@ -235,18 +236,29 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 /* ---------- list view ---------- */
 #list{flex:1;min-width:0;overflow:auto;padding:16px 24px 20px;display:none}
 .list-wrap{background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
-.lrow{display:grid;grid-template-columns:minmax(150px,1.1fr) minmax(110px,.8fr) minmax(120px,.9fr) minmax(200px,2.6fr) 138px;gap:14px;align-items:center;width:100%;padding:0 18px;height:44px;border:0;border-bottom:1px solid #eee8dd;background:transparent;text-align:left;cursor:pointer;font-size:13px}
+/* spec 052 FR-064: 34px rows; Agent, Agent app, Role, Folder, Current task, Last activity, Cost, Status */
+.lrow{display:grid;grid-template-columns:minmax(120px,1fr) 92px minmax(90px,.7fr) minmax(100px,.75fr) minmax(160px,2.4fr) 78px 88px 120px;gap:12px;align-items:center;width:100%;padding:0 16px;height:34px;border:0;border-bottom:1px solid #eee8dd;background:transparent;text-align:left;cursor:pointer;font-size:13px}
 .lrow:last-child{border-bottom:0}
 button.lrow:hover{background:var(--surface-2)}
 button.lrow[aria-pressed="true"]{background:#eaf1f7;box-shadow:inset 3px 0 0 var(--focus)} /* spec 052 FR-052: not colour only */
 /* spec 052 FR-008: "lhead", not "head": the avatars' .head nods (styles: animation nod), and the list header row nodded with them */
-.lrow.lhead{height:36px;cursor:default;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;background:var(--surface-2);font-weight:600}
+.lrow.lhead{height:34px;cursor:default;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;background:var(--surface-2);font-weight:600}
+.lhead>span{min-width:0}
+.lsort{all:unset;box-sizing:border-box;display:inline-flex;align-items:center;gap:4px;max-width:100%;cursor:pointer;font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit;white-space:nowrap;overflow:hidden;border-radius:4px;padding:2px 2px}
+.lsort:hover{color:var(--ink)}
+.lsort:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.lsort .sarr{font-size:10.5px;opacity:.55}
+.lhead>[aria-sort="ascending"] .lsort,.lhead>[aria-sort="descending"] .lsort{color:var(--ink)}
+.lhead>[aria-sort="ascending"] .sarr,.lhead>[aria-sort="descending"] .sarr{opacity:1}
+.lrow .pill{height:22px}
 .lname{display:flex;align-items:center;gap:10px;font-weight:600;min-width:0}
 .lname .sub{margin-left:12px;font-weight:550}
+.lname>span:not(.dot):not(.modebadge):not(.modeic){overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .lname .sub::before{content:"";display:inline-block;width:10px;height:10px;border-left:1.5px solid var(--line-2);border-bottom:1.5px solid var(--line-2);margin-right:6px;transform:translateY(-3px);border-radius:0 0 0 4px}
 .lcell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-2)}
 .lmood{color:var(--amber-ink);font-weight:600;font-size:12px}
 .lcell.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
+.lcell.num{font-variant-numeric:tabular-nums;font-size:12px}
 #stage-host{display:contents}
 body.list-mode #stage-host{display:none}
 body.list-mode #list{display:block}
@@ -323,12 +335,34 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .chip.fail{background:#f8e8e5;border-color:#ebc7c2}.chip.fail .res{color:var(--red-ink);border-color:#e3bdb7}
 .chip.run .res{color:var(--blue-ink)}
 .chip[hidden]{display:none}
-.chip .detail{display:none}
+.chip .detail,.chip .xbody{display:none}
 .chip.open{display:flex;flex-wrap:wrap;width:100%;height:auto;min-height:var(--h-chip);padding:5px 10px 7px 8px;row-gap:4px}
 .chip.open code{white-space:pre-wrap;overflow-wrap:anywhere;flex:1 1 60%}
 .chip.open .res{max-width:100%;white-space:normal;overflow-wrap:anywhere}
 .chip.open.has-detail .res{display:none}
-.chip.open .detail{display:block;flex:1 1 100%;margin:2px 0 0;padding:6px 8px;background:color-mix(in srgb,var(--raised) 70%,transparent);border-radius:7px;font:11.5px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:150px;overflow-y:auto;color:var(--ink-2)}
+.chip.open .detail{display:block;flex:1 1 100%;margin:2px 0 0;padding:6px 8px;background:color-mix(in srgb,var(--raised) 70%,transparent);border-radius:7px;font:11.5px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow-y:auto;color:var(--ink-2)}
+/* spec 052 FR-063: the open chip shows the whole command (monospace, wrapped) with Copy, how long it took, and up to 20000 characters of output */
+.chip.open .xbody{display:flex;flex-direction:column;gap:4px;flex:1 1 100%;min-width:0;cursor:auto}
+.chip.open.has-cmd>code{display:none}
+.chip .cmdbox{position:relative;display:block}
+.chip pre.cmd{margin:0;padding:6px 64px 6px 8px;background:color-mix(in srgb,var(--raised) 70%,transparent);border-radius:7px;font:11.5px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:200px;overflow-y:auto;color:var(--ink);user-select:text}
+.chip .cmdbox .cp-btn{opacity:1}
+.chip .xmeta{font-size:11px;color:var(--muted)}
+.chip .detail{user-select:text}
+.chip .xall{align-self:flex-start;height:24px;padding:0 9px;font:inherit;font-size:11.5px;font-weight:600;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);cursor:pointer}
+/* spec 052 FR-063: "Show the change" on a permission card and its inbox row, collapsed by default; + green, - red, monospace */
+.pdiff{margin:6px 0 2px;font-size:12px}
+.pdiff>summary{cursor:pointer;color:var(--ink-2);font-weight:600;width:max-content;max-width:100%}
+.pdiff>pre{margin:4px 0 0;padding:6px 0;max-height:320px;overflow:auto;background:var(--raised);border:1px solid var(--line);border-radius:7px;font:11.5px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink-2)}
+.pdiff .dl{display:block;padding:0 8px;white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.45em}
+.pdiff .dl.add{background:var(--pb-done);color:var(--pc-done)}
+.pdiff .dl.del{background:var(--pb-error);color:var(--red-ink)}
+.pdiff .dl.hunk{color:var(--blue-ink)}
+.pdiff .dl.file{color:var(--muted);font-weight:600}
+.pdiff .dmore{display:block;padding:2px 8px 0;color:var(--muted);font-family:inherit}
+/* spec 052 FR-062: "active 2m ago" next to the chat header's status */
+.ph-ago{font-size:11.5px;color:var(--muted);white-space:nowrap}
+.ph-ago:empty{display:none}
 .chips-more{height:var(--h-chip);padding:0 10px;border-radius:8px;border:1px dashed var(--line-2);background:transparent;font-size:12px;color:var(--ink-2);cursor:pointer}
 .chips-more:hover{background:var(--surface-2)}
 .chip.att-chip{cursor:default;background:#e8eef4;border-color:#cfdbe6;color:#2f526e}
@@ -376,6 +410,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important} /* spec 052 FR-070 (app.js also skips the transition) */
 }
 
 /* =====================================================================
@@ -847,6 +882,9 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .modeic{display:inline-grid;place-items:center;width:15px;height:15px;flex:none;color:var(--muted);margin-left:2px;align-self:center}
 .modeic svg{width:13px;height:13px}
 .modeic.mode-ask{color:var(--blue-ink)}.modeic.mode-allow{color:var(--red-ink)} /* spec 052 FR-018: Allow all in the warning ink (amber is waiting) */
+/* spec 052 FR-065: the "Allow all" words on every card of an Allow all folder, in the icon's slot; same 15px line, so the card keeps its size */
+.modebadge{display:inline-block;flex:none;align-self:center;height:15px;line-height:13px;padding:0 4px;border:1px solid #e3bdb7;border-radius:4px;background:var(--pb-error);color:var(--red-ink);font-size:10.5px;font-weight:700;letter-spacing:.01em;white-space:nowrap;margin-left:2px}
+.stage[data-d="mini"] .l1:has(.modebadge) .name,.stage[data-d="micro"] .l1:has(.modebadge) .name{max-width:calc(100% - 3.7em - 52px)} /* room for the badge and a short status; the name still shows 3+ characters */
 .stage[data-d="full"] .who{align-items:center}
 .mode-chip{display:inline-flex;align-items:center;gap:6px;height:var(--h-chip);padding:0 8px 0 8px;border-radius:999px;border:1px solid var(--line-2);background:var(--raised);font-size:12px;font-weight:600;color:var(--ink-2);cursor:pointer}
 .mode-chip:hover{background:#f6f3ec}
@@ -854,7 +892,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .mode-chip .chev{width:10px;height:10px;transform:rotate(90deg);opacity:.6}
 .mode-chip.mode-ask{color:var(--blue-ink);background:#eef3f8;border-color:#c5d6e5}
 .mode-chip .mode-restored{font-size:10.5px;font-weight:600;letter-spacing:.02em;padding:1px 6px;border-radius:999px;background:var(--raised);border:1px solid #e5be78;color:var(--amber-ink)}
-.mode-chip.mode-allow{color:var(--amber-ink);background:var(--warn-bg);border-color:#e5be78}
+.mode-chip.mode-allow{color:var(--red-ink);background:var(--pb-error);border-color:#e3bdb7} /* spec 052 FR-065: the chat header says Allow all in the same red as the cards */
 .mode-menu{position:fixed;z-index:70;width:300px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:0 14px 40px rgba(40,35,25,.22);display:flex;flex-direction:column;gap:2px}
 .mode-menu button{display:flex;align-items:flex-start;gap:10px;text-align:left;padding:8px 10px;border:0;border-radius:10px;background:transparent;cursor:pointer}
 .mode-menu button:hover,.mode-menu button:focus-visible{background:#f3efe6}
@@ -902,8 +940,8 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .dlg .dinput input{height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:10px;background:var(--raised);padding:0 10px;font:inherit;font-size:13px;color:var(--ink);font-weight:400}
 
 /* ---- agent mood (spec 034, issue #20): small, flat, inside the scene box; nothing moves under reduced motion ---- */
-.amb-light{animation:ambblink 1.1s steps(1,end) infinite} /* colours from --amb-light/--amb-light-2 via the keyframes below */
-@keyframes ambblink{0%{fill:var(--amb-light,#d9534f)}50%{fill:var(--amb-light-2,#5b8fd1)}}
+.amb-light{animation:ambblink 1.6s ease-in-out 6} /* spec 052 FR-069: the red light breathes slowly for about 10 s, then stays on (was a red/blue strobe) */
+@keyframes ambblink{0%,100%{opacity:1}50%{opacity:.45}}
 .dizzy{transform-box:fill-box;transform-origin:center;animation:dizzyspin 2.4s linear infinite}
 @keyframes dizzyspin{to{transform:rotate(360deg)}}
 .tap{animation:tapdesk .5s ease-in-out infinite}
@@ -919,8 +957,8 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .stage .room[data-alert] .room-path,.stage .room[data-alert] .room-aiu{color:#465049} /* darker floor, darker header text: 4.5:1 or more on the real pixels (checked by shots-034.js) */
 .siren{display:inline-flex;flex:none;width:18px;height:18px;align-self:center}
 .siren svg{width:100%;height:100%;display:block}
-.siren-light{fill:var(--amb-light,#d9534f);animation:sirenblink 1s steps(1,end) infinite}
-@keyframes sirenblink{0%{fill:var(--amb-light,#d9534f)}50%{fill:var(--amb-light-2,#5b8fd1)}}
+.siren-light{fill:var(--amb-light,#d9534f);animation:sirenblink 1.6s ease-in-out 6} /* spec 052 FR-069: same slow breathe, still red and visible */
+@keyframes sirenblink{0%,100%{opacity:1}50%{opacity:.45}}
 @media (prefers-reduced-motion:reduce){.siren-light{animation:none}}
 /* on a door plate the siren sits on the corner of the door icon, so the plate keeps its size */
 .plate{position:relative}
@@ -1002,7 +1040,8 @@ html:not([data-ui]) .seg button{border-radius:6px}
 /* spec 052 FR-031 (#306): Simple hides the developer details; status, permissions and answering are the same */
 body.simple #modelChip,body.simple .mchip,body.simple #agentChip,body.simple #ctxChip,body.simple #compactBtn,body.simple .ph .folder,
 body.simple .room-path,body.simple .room-mcp,body.simple #vscodeBtn,body.simple #copyResBtn,body.simple #mcpBtn,body.simple #toolsHdrBtn,
-body.simple .pusage,body.simple .defaults-grp #modelSel,body.simple .defaults-grp #effortSel,body.simple .lrow .lcell.mono{display:none!important}
+body.simple .pusage,body.simple .defaults-grp #modelSel,body.simple .defaults-grp #effortSel{display:none!important}
+body.simple .lrow .lfold{visibility:hidden} /* spec 052 FR-064: the folder column stays in the grid (display:none moved the next cells under the wrong headers) */
 .wl-simple{display:flex;gap:8px;align-items:flex-start;margin:12px 0 0;font-size:13px;color:var(--ink-2);cursor:pointer}
 .wl-simple input{margin-top:3px}
 
@@ -1104,12 +1143,16 @@ html .notice-strip .btn.primary:hover{background:color-mix(in srgb,var(--amber-i
 .inbox-row.settled .ib-done{margin:0;font-size:13px;font-weight:650;color:var(--ink-2);min-height:var(--h-ctl);display:flex;align-items:center}
 .inbox-row.settled .ib-done.yes{color:var(--pc-done)}
 .inbox-row.settled .ib-done.no{color:var(--red-ink)}
-.inbox-row.gone{overflow:hidden;opacity:0;height:0!important;padding-top:0;padding-bottom:0;border-width:0;transition:opacity .2s,height .2s,padding .2s,border-width .2s}
+.inbox-row.gone{opacity:0;transform:scale(.98);transition:opacity .18s ease-out,transform .18s ease-out} /* spec 052 FR-068: fade and shrink in place (no height change); the rows below slide up with a FLIP in app.js */
 .inbox-empty{display:flex;align-items:flex-start;gap:10px}
 .inbox-empty b{display:block;color:var(--ink);font-size:13.5px;font-weight:650}
 .inbox-empty small{display:block;margin-top:2px;font-size:12px}
 .ib-ok{flex:none;position:relative;width:22px;height:22px;border-radius:50%;background:var(--pb-done);border:1px solid #bcd6c6}
 .ib-ok::after{content:"";position:absolute;left:7px;top:3.5px;width:5px;height:10px;border:solid var(--pc-done);border-width:0 2px 2px 0;transform:rotate(45deg)}
+.ib-ok{animation:ibpop .26s cubic-bezier(.3,1.4,.5,1) both} /* spec 052 FR-068: All clear pops in, its tick follows */
+.ib-ok::after{animation:ibtick .2s ease-out .16s both}
+@keyframes ibpop{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
+@keyframes ibtick{from{opacity:0;transform:rotate(45deg) scale(.3)}to{opacity:1;transform:rotate(45deg)}}
 /* FR-049: dialogs ease in (the global reduced-motion rule turns this off) */
 .dlg{animation:dlgin .16s cubic-bezier(.2,.8,.2,1)}
 .dlg-ov{animation:dlgov .12s ease-out}
@@ -1144,4 +1187,36 @@ html:not([data-ui]) #topBtns button:not([aria-pressed="true"]):hover{background:
 /* FR-053: radius tokens on panels and controls whose radius was already close */
 .dlg select,.dlg input[type=number],.dlg .dinput input{border-radius:var(--r-md)}
 .inbox{border-radius:var(--r-lg)}
+
+/* ---- spec 052 FR-067..FR-070 (round 6, motion with meaning): transform and opacity only, nothing changes size; the global
+   reduced-motion rule above stops every CSS animation here, and app.js skips its Web Animations under reduced motion ---- */
+/* FR-067: the old desk scene fades out on top of the new one (app.js morphNode), then goes */
+.scene-out{position:absolute;pointer-events:none;margin:0;z-index:1}
+.scene-out>svg{display:block;width:100%;height:100%;overflow:visible}
+/* FR-067: the done tick on the monitor draws in once, when the agent has just finished (the path is about 14.7 long) */
+.done-tick.draw{stroke-dasharray:16;animation:tickdraw .32s cubic-bezier(.2,.8,.2,1) both}
+@keyframes tickdraw{from{stroke-dashoffset:16}to{stroke-dashoffset:0}}
+/* FR-068: the Needs you count rolls in a fixed box (tabular digits, at least one digit wide: the width never changes between digits) */
+.inbox-btn b{flex:none;display:inline-block;position:relative;overflow:hidden;min-width:1ch;text-align:center;font-variant-numeric:tabular-nums}
+.inbox-btn b>span{display:block}
+.inbox-btn b>.roll-out{position:absolute;left:0;right:0;top:0}
+.roll-in.up{animation:rollinup .22s ease-out both}.roll-out.up{animation:rolloutup .22s ease-out both}
+.roll-in.down{animation:rollindown .22s ease-out both}.roll-out.down{animation:rolloutdown .22s ease-out both}
+@keyframes rollinup{from{opacity:0;transform:translateY(100%)}to{opacity:1;transform:none}}
+@keyframes rolloutup{from{opacity:1;transform:none}to{opacity:0;transform:translateY(-100%)}}
+@keyframes rollindown{from{opacity:0;transform:translateY(-100%)}to{opacity:1;transform:none}}
+@keyframes rolloutdown{from{opacity:1;transform:none}to{opacity:0;transform:translateY(100%)}}
+/* FR-070: the theme change cross-fades (document.startViewTransition in app.js) */
+::view-transition-old(root),::view-transition-new(root){animation-duration:240ms}
+/* FR-070: an empty office shows an empty desk above its sentence */
+.empty-desk{display:block;margin:0 auto 12px;width:120px;height:72px;color:var(--muted)}
+/* FR-070: on first run "+ Folder" rings once (a pseudo-element: opacity and scale, the button keeps its box) */
+#addFolder.ring-once{position:relative}
+#addFolder.ring-once::after{content:"";position:absolute;inset:-3px;border-radius:inherit;border:2px solid var(--sel-border,#7fa0bd);opacity:0;pointer-events:none;animation:ringonce 1.4s ease-out 1 both}
+@keyframes ringonce{0%{opacity:.8;transform:scale(.96)}100%{opacity:0;transform:scale(1.22)}}
+/* FR-069: Serious mode stops every looping animation (idle bob and nod, typing hands, steam, bars, halos, waving, thinking dots,
+   carets, walking bob, mood signs). One-shot signals (the done tick, the waiting pings, the pops) stay. The busy spinner stays: it is a progress sign. */
+html[data-serious] :is(.bar,.glow,.hand-l,.hand-r,.head,.bubble-g,.td,.steam,.halo,.wave,.cursor,.tap,.dizzy,.amb-light,.siren-light,.live i,.typing i,.walker.walking .wk),
+html[data-serious] :is(.caret,.bubble.caret.md>*:last-child)::after,
+html[data-serious] .subblk.running .sub-st::before{animation:none!important}
 
