@@ -140,6 +140,13 @@ module.exports = async (ctx) => {
     assert.ok(lv.n >= 15 && lv.h <= 35, 'list rows are 34px: ' + JSON.stringify(lv));
     assert.deepStrictEqual(lv.cols, ['Agent', 'Agent app', 'Role', 'Folder', 'Current task', 'Active', 'Cost', 'Status']);
     assert.strictEqual(lv.cells, 8, 'one cell per column'); assert.ok(lv.pageW, 'the list does not widen the page');
+    // FR-101, FR-104 (round 10): a status that needs nothing is a dot and a word (no fill), Waiting/Error/Failing keep the fill; numbers right-aligned
+    const pf = await js(`(()=>{const ps=[...document.querySelectorAll('#list button.lrow .pill')].map(p=>({c:(p.className.match(/st-(\\w+)/)||[])[1],bg:getComputedStyle(p).backgroundColor,h:p.getBoundingClientRect().height}));const num=document.querySelector('#list button.lrow .lcell.num');return {ps,align:num?getComputedStyle(num).textAlign:''}})()`);
+    const clear = (bg) => bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent';
+    assert.ok(pf.ps.filter((p) => /^(working|thinking|idle|done)$/.test(p.c)).every((p) => clear(p.bg)), 'calm statuses have no fill: ' + JSON.stringify(pf.ps.slice(0, 6)));
+    assert.ok(pf.ps.filter((p) => /^(waiting|error|failing)$/.test(p.c)).every((p) => !clear(p.bg)), 'statuses that need you keep the filled pill');
+    assert.ok(pf.ps.every((p) => Math.abs(p.h - 22) < 0.6), 'the pill keeps its 22px height');
+    assert.strictEqual(pf.align, 'right', 'number columns are right-aligned');
     await js(`document.querySelector('#list [data-lsort="name"]').click()`); await ctx.sleep(300);
     const asc = await js(`({sort:document.querySelector('#list [data-lsort="name"]').parentNode.getAttribute('aria-sort'),focus:document.activeElement&&document.activeElement.dataset.lsort,names:[...document.querySelectorAll('#list button.lrow .lname > span:nth-child(2)')].filter(n=>!n.classList.contains('sub')).map(n=>n.textContent.trim())})`);
     assert.strictEqual(asc.sort, 'ascending'); assert.strictEqual(asc.focus, 'name', 'focus stays on the header');

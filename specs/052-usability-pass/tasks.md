@@ -165,3 +165,11 @@
 - [x] T100 Settings and Tools: header on the 880px column, tighter sections, fluid agent app grid, "Simulated version." in the badge title, shorter blurbs [FR-097]
 - [x] T101 Type scale (`--t1..t5`), spacing scale, folded chrome sizes, body 13px with the office, list and top bar pinned at 14px, dialog padding, tokens for radii and colours; `docs/design-rules.md` [FR-098]
 - [x] T102 Settings > Detail level > Spacing (Comfortable / Compact, `html[data-density]`, `localStorage`), chrome-only overrides; copy (folders, demo, Open); drivers; README and CHANGELOG [FR-099]
+
+## Round 10: office and tables (2026-10-20)
+
+- [x] T103 Flat desk and helper cards (surface, 1px `--line-hair`, no shadow; Clean shadow removed); 3px inside edge for Waiting, Error and Failing (`is-failing`); 1.5px selection ring [FR-100]
+- [x] T104 Calm statuses as a dot and a word on cards and list rows (transparent pill, same size); Waiting, Error, Failing and Limit reached keep the fill; driver check in `shots-052-ux.js` [FR-101]
+- [x] T105 Card tooltip names the role (hidden next to the name in mini and micro); usage line checked (cost only in Simple, tabular and right-aligned in Expert) [FR-102]
+- [x] T106 Top-bar counters as one segmented strip (inset frame, dividers in the gap, transparent 1px borders, same widths and height); selected state; theme frames in `themes.css` [FR-103]
+- [x] T107 List hairlines, header and right-aligned numbers; Tools groups without frames, `7px 8px` cells, plain-text "Used by", 4px bars; CHANGELOG [FR-104]
