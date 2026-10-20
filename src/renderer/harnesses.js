@@ -23,6 +23,11 @@
   const ACCOUNT = { codex: 'your ChatGPT account', claude: 'your Claude account', copilot: 'your GitHub account' };
   /* FR-045: a plain label for each package manager in the install dialog; the command stays visible below it */
   const MANAGER = { brew: 'Homebrew', npm: 'npm', winget: 'winget (Windows Package Manager)' };
+  /* spec 052 FR-073: two plain hints for Copilot (the second only on Windows when PowerShell 7 is missing; text only, nothing is installed) */
+  const COPILOT_VSCODE_NOTE = 'Signed in to Copilot in VS Code? That sign-in is separate: this signs in the Copilot CLI once, with the same GitHub account.';
+  const PWSH_HINT = 'Copilot runs shell commands with PowerShell 7. Install it with winget: winget install --id Microsoft.PowerShell -e';
+  /* spec 052 FR-072: a CLI installed just now may need Durbar to restart before it shows up (the new PATH is not re-read) */
+  const RESTART_HINT = 'Installed? If Durbar still says Not installed, close and reopen Durbar, then choose Check again.';
   let B = null; /* the bridge */
   let onChange = () => {};
 
@@ -38,7 +43,7 @@
       const label = { install: 'Install…', update: 'Update…', signin: 'Sign in…' }[act];
       const hint = st === 'ready' ? (k.version === 'sim' ? 'Simulated version.' : k.version ? 'Version ' + k.version + '.' : 'Ready to use.') : st === 'not-signed-in' ? 'Installed; sign in once to use it.' : st === 'too-old' ? (k.hint || 'This version is too old for Durbar.') : st === 'not-installed' ? 'Not on this computer yet.' : 'Durbar could not tell; try Check again.';
       return `<li class="hs-card" data-kind="${esc(k.id)}"><div class="hs-top"><span class="hs-name"><b>${esc(k.displayName || k.id)}</b>${FOR[k.id] ? `<span class="hs-for"> · ${esc(FOR[k.id])}</span>` : ''}</span><span class="hs-st hs-${cls}">${esc(word)}</span></div>
-        ${PLAN[k.id] ? `<p class="scr-note small hs-plan-uses">${esc(PLAN[k.id])}</p>` : ''}<p class="scr-note small">${esc(hint)}</p>
+        ${PLAN[k.id] ? `<p class="scr-note small hs-plan-uses">${esc(PLAN[k.id])}</p>` : ''}<p class="scr-note small">${esc(hint)}</p>${k.id === 'copilot' && copilot && copilot.pwshMissing ? `<p class="scr-note small hs-pwsh">${esc(PWSH_HINT)}</p>` : ''}
         <div class="hs-act">${act ? `<button class="btn primary" type="button" data-hs="${act}" data-kind="${esc(k.id)}">${esc(label)}</button>` : ''}<button class="btn" type="button" data-hs="check" data-kind="${esc(k.id)}">Check again</button></div></li>`;
     }).join('');
     return `<section class="scr-sec" aria-labelledby="hsH"><h3 id="hsH" tabindex="-1">Agent apps</h3>
@@ -66,7 +71,7 @@
   function runDialog(kind, op, name, planIndex) {
     return new Promise((resolve) => {
       const isSign = op === 'signin';
-      const html = `${isSign ? `<p class="scr-note" id="hsLead">Starting the sign-in…</p><div class="hs-sign" id="hsSign" hidden><p class="scr-note">1. Open the sign-in page and sign in with ${esc(ACCOUNT[kind] || 'your account')}.</p><div class="hs-row"><button class="btn primary" type="button" id="hsOpen">Open the sign-in page</button></div><div id="hsCodeBox" hidden><p class="scr-note">2. Enter this code on that page:</p><div class="hs-row"><code class="hs-code" id="hsCode"></code><button class="btn" type="button" id="hsCopy">Copy</button></div></div><div id="hsPasteBox" hidden><p class="scr-note">2. After signing in, the page shows a code. Paste it here:</p><div class="hs-row"><input id="hsPaste" type="text" maxlength="512" autocomplete="off" spellcheck="false" aria-label="Code from the sign-in page"><button class="btn primary" type="button" id="hsPasteGo">Continue</button></div></div><p class="scr-note">3. Come back here. This window closes by itself when you are signed in.</p></div>` : '<p class="scr-note" id="hsLead">Installing… this can take a few minutes. A system prompt may ask for permission.</p>'}
+      const html = `${isSign ? `<p class="scr-note" id="hsLead">Starting the sign-in…</p>${kind === 'copilot' ? `<p class="scr-note small hs-vscode">${esc(COPILOT_VSCODE_NOTE)}</p>` : ''}<div class="hs-sign" id="hsSign" hidden><p class="scr-note">1. Open the sign-in page and sign in with ${esc(ACCOUNT[kind] || 'your account')}.</p><div class="hs-row"><button class="btn primary" type="button" id="hsOpen">Open the sign-in page</button></div><div id="hsCodeBox" hidden><p class="scr-note">2. Enter this code on that page:</p><div class="hs-row"><code class="hs-code" id="hsCode"></code><button class="btn" type="button" id="hsCopy">Copy</button></div></div><div id="hsPasteBox" hidden><p class="scr-note">2. After signing in, the page shows a code. Paste it here:</p><div class="hs-row"><input id="hsPaste" type="text" maxlength="512" autocomplete="off" spellcheck="false" aria-label="Code from the sign-in page"><button class="btn primary" type="button" id="hsPasteGo">Continue</button></div></div><p class="scr-note">3. Come back here. This window closes by itself when you are signed in.</p></div>` : '<p class="scr-note" id="hsLead">Installing… this can take a few minutes. A system prompt may ask for permission.</p>'}
         <pre class="hs-log" id="hsLog" aria-live="polite"></pre>${isSign ? '' : '<p class="scr-note small" id="hsTime"></p>'}`;
       const m = modal(isSign ? 'Sign in to ' + name : (op === 'update' ? 'Updating ' : 'Installing ') + name, html, [{ label: 'Cancel', cancel: true, onClick: (close) => { B.harnessCancel(); close(); } }]);
       let url = '';
@@ -128,6 +133,10 @@
     let k = null;
     try { const list = await B.listAdapters(true); k = (list || []).find((x) => x.id === kind) || null; } catch (e) { k = null; }
     if (!k) return;
+    if (k.state === 'not-installed') {
+      modal((k.displayName || kind) + ' not found yet', `<p class="scr-note">${esc(RESTART_HINT)}</p>`, [{ label: 'Close', cancel: true, onClick: (c) => c() }]);
+      return;
+    }
     let need = k.state === 'not-signed-in';
     if (!need && kind === 'copilot' && k.state === 'ready' && B.copilotAuth) {
       try { const a = await B.copilotAuth(); need = !!(a && a.known && a.signedIn === false); } catch (e) { need = false; }

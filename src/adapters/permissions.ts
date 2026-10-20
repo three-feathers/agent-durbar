@@ -174,6 +174,8 @@ export type BrokerEvent =
   | { type: 'denied-policy'; permission: PermissionInfo }
   /** A request got its final answer (user, session grant, or the session was stopped). */
   | { type: 'resolved'; permission: PermissionInfo }
+  /** Allow all approved a non-read request without asking (spec 052 FR-071): for the local activity log only, never a chat card. */
+  | { type: 'auto'; permission: PermissionInfo }
   | { type: 'grants'; grants: SessionGrant[] };
 
 export type BrokerMode = 'read-only' | 'ask' | 'allow';
@@ -273,7 +275,11 @@ export class PermissionBroker {
     const summary = summarize(req);
     const requestId = String(req.toolCallId ?? `${kind}-${now()}-${++this.seq}`); // T026: two requests in the same millisecond get different ids
     const outsideRead = kind === 'read' && this.mode !== 'allow' && this.readIsOutside(req);
-    if ((kind === 'read' && !outsideRead) || this.mode === 'allow') return { kind: 'approve-once' };
+    if (kind === 'read' && !outsideRead) return { kind: 'approve-once' };
+    if (this.mode === 'allow') {
+      if (kind !== 'read') this.opts.emit({ type: 'auto', permission: { requestId, kind, summary, state: 'approved', via: 'policy' } });
+      return { kind: 'approve-once' };
+    }
     const scope = grantScope(req, this.opts.pathCheck?.flavor);
     const base = {
       requestId,

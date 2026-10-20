@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.8 tag)
 
+- **Round 6 of the usability pass: activity log and Windows first run (spec 052 FR-071..FR-075).** Tools > **Activity** lists every permission answer, automatic approval, mode change and spending-limit change (newest 5000 kept on this computer, actions only, never prompts or file contents) with **Export CSV / JSON** and **Clear…**. On Windows, CLIs installed with winget are found, the Copilot card hints at PowerShell 7, and the README explains the download, the file to pick and the hash check. A Read-only denial offers **Switch this agent to Ask first**, the Copilot sign-in says it is separate from VS Code's, the limit stop says **Raise limit**, and Cost says Copilot plans have a fixed price. Unit tests and simulator only; not run on Windows.
+
 ## v0.1.0-alpha.8 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.8), 2026-10-20)
 
 Unsigned and not notarized; only Linux was run by hand. **Set up agent apps inside Durbar**: install, update and sign in to Copilot, Claude Code and Codex from Settings > Agent apps, with a native confirmation that shows the exact program before anything runs. **Five rounds of persona usability reviews** (about 20 personas) reshaped the app: the "Needs you" inbox and answer bar, Simple and Expert views, one word per concept, calmer visuals with period textures in the themes, High Contrast and focus support, OS notifications and Alt+A/S/D answers. Also new: **Make a theme with AI**, a Cost view per folder and the project website.

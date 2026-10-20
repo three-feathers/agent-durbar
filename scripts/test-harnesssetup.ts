@@ -121,6 +121,17 @@ void (async () => {
   };
   const tick = () => new Promise((r) => setImmediate(r));
 
+  // spec 052 FR-073: PowerShell 7 hint on Windows only; found on PATH or in Program Files means no hint
+  {
+    assert.strictEqual(mk('linux', []).setup.pwshMissing(), false, 'never on Linux');
+    assert.strictEqual(mk('darwin', []).setup.pwshMissing(), false, 'never on macOS');
+    assert.strictEqual(mk('win32', []).setup.pwshMissing(), true, 'Windows without pwsh.exe');
+    assert.strictEqual(mk('win32', ['C:\\Program Files\\nodejs\\pwsh.exe']).setup.pwshMissing(), false, 'pwsh.exe on PATH');
+    const w = mk('win32', ['C:\\Program Files\\PowerShell\\7\\pwsh.exe']);
+    (w.setup['deps'].detectEnv.env as Record<string, string>).ProgramFiles = 'C:\\Program Files';
+    assert.strictEqual(w.setup.pwshMissing(), false, 'pwsh.exe in Program Files\\PowerShell\\7');
+  }
+
   // Codex sign-in: argv, no stdin, link and code streamed, re-check on exit
   {
     const t = mk('linux', ['/usr/bin/codex']);

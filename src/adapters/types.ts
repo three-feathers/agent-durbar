@@ -90,8 +90,8 @@ export interface PermissionInfo {
   /** Shell only: the wider "any arguments of <command>" scope the user may pick instead (never the default). */
   broadScopeKey?: string;
   broadScopeLabel?: string;
-  /** Who decided: the user, an earlier "Approve for this session" grant, or the session being stopped. */
-  via?: 'user' | 'session' | 'stopped';
+  /** Who decided: the user, an earlier "Approve for this session" grant, the session being stopped, or Allow all (`policy`: no card is shown, spec 052 FR-071). */
+  via?: 'user' | 'session' | 'stopped' | 'policy';
   /** True when the user approved this one *and* remembered the scope for the session. */
   remembered?: boolean;
 }
