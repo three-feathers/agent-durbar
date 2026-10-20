@@ -38,7 +38,7 @@ PR-sized step with its own test. No task spends AI credits except Phase 5, which
 - [x] T026 Schedules: *This session (…)* option and the schedule list use the display name (40, word boundary, full name in `title`); a
   new schedule stores the short name; coordinate with spec 044 T041 (#371) [FR-008] (Q7 A)
 - [x] T027 Activity log: `logActivity` writes the alias in `agent` when set; `test:activity` case; no row for a rename [FR-012] (Q4 A)
-- [x] T028 Simulator: `renameSession` in memory, kinds with `'any'`, `'live'` and none, failure hook; `prev-1`/`prev-2` renameable
+- [x] T028 Simulator: `renameSession` in memory, kinds with `'any'`, `'next-turn'` and none, failure hook; `prev-1`/`prev-2` renameable
   [FR-015]
 - [x] T029 `scripts/check-rename.js` (`npm run check:rename`): every FR-001 surface shows the name, no runtime title in tooltips, Esc and
   empty reset, both sizes, Simple and Expert; `check:office` with 15 agents carrying 60-character names; screenshots
@@ -69,7 +69,7 @@ PR-sized step with its own test. No task spends AI credits except Phase 5, which
 
 - [ ] T050 With the owner's go-ahead (Q9 A): Copilot, rename a session already open in Durbar **and one that is not** (prompt-free resume) and
   look at the Copilot CLI's resume list and VS Code; Claude, look at the VS Code Claude extension's list and `/resume` for a renamed session
-  (Mac); Codex, rename an existing thread and look at the Codex CLI's picker and VS Code. Record prompts and usage (expected 0)
+  (Mac); which folder the rename-resume of a Copilot session runs in; Codex, rename an existing thread and look at the Codex CLI's picker and VS Code. Record prompts and usage (expected 0)
   and results in research.md; turn the matching `[KNOWN GAP]` lines into `real:` [FR-007]. Already `real:` (Vikram's agent, 2026-10-20, the calls
   and the CLI lists of all three apps, see spec.md FR-007): left for the owner's Mac: VS Code lists, a run through Durbar itself, a session held open
   by another client.
@@ -78,7 +78,7 @@ PR-sized step with its own test. No task spends AI credits except Phase 5, which
 
 - [x] T060 README (feature list, Previous sessions, Safety model: names are local, the app-side rename and that it cannot be removed,
   Copilot keeps named sessions from cleanup), CHANGELOG *Unreleased*, `specs/README.md` row, `[IMPLEMENTED]` tags; spec 006 FR-031 and
-  spec 044 FR-021 cross-links [all]
+  #371 (spec 044 FR-021) cross-link [all]
 
 ## Dependencies
 

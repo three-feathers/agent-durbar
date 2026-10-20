@@ -11,6 +11,7 @@ import { CODEX_CAPABILITIES, CodexAdapter } from '../src/adapters/codex';
 import { CLAUDE_CAPABILITIES, ClaudeAdapter, claudeArgs, claudeNameOk } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import type { AgentEvent } from '../src/adapters/types';
+import { offeredDescriptors } from '../src/adapters/experimental';
 import { FakeClient, TestAdapter } from './fakes/copilot-sdk';
 import { FakeCodexServer } from './fakes/codex-app-server';
 import { FakeClaudeChild, fakeSpawn } from './fakes/claude-cli';
@@ -39,7 +40,10 @@ async function copilot(): Promise<void> {
   assert.ok(copilotNameError('a\u0007b'));
   assert.ok(copilotNameError(''));
   // the prompt-free resume config: nothing can run, remote stays off
-  const cfg = renameResumeConfig();
+  const cfg = renameResumeConfig('/work/proj');
+  assert.strictEqual(cfg.workingDirectory, '/work/proj', 'the session\'s own folder');
+  assert.strictEqual(cfg.suppressResumeEvent, true);
+  assert.strictEqual(cfg.allowTranscriptRecovery, false);
   assert.deepStrictEqual([cfg.availableTools, cfg.mcpServers, cfg.enableSkills, cfg.enableFileHooks, cfg.remoteSession], [[], {}, false, false, 'off']);
   assert.strictEqual(((await (cfg.onPermissionRequest as () => Promise<{ kind: string }>)()).kind), 'reject');
 
@@ -56,8 +60,12 @@ async function copilot(): Promise<void> {
   // a stored session: resumed without a prompt, renamed, released
   {
     const fake = new FakeClient();
+    fake.storedDirs.set('stored-1', '/work/older');
     const ad = new TestAdapter(fake);
     await ad.renameSession('stored-1', 'Older work');
+    assert.strictEqual(fake.resumed[0].config.workingDirectory, '/work/older', 'resumed in the folder Copilot stored for it');
+    assert.strictEqual(fake.resumed[0].config.suppressResumeEvent, true);
+    assert.strictEqual(fake.resumed[0].config.allowTranscriptRecovery, false);
     assert.deepStrictEqual(fake.resumed.map((r) => r.id), ['stored-1']);
     const calls = fake.last.calls;
     assert.deepStrictEqual(names(calls).filter((n) => n !== 'registerInterest'), ['name.set', 'disconnect'], 'rename then release');
@@ -70,18 +78,63 @@ async function copilot(): Promise<void> {
   // failures: the name.set error and an unknown session are thrown, and the session is still released
   {
     const fake = new FakeClient();
+    fake.storedDirs.set('stored-2', '/w');
     fake.nameSetFail = 'not allowed';
     const ad = new TestAdapter(fake);
     await assert.rejects(() => ad.renameSession('stored-2', 'Name'), /not allowed/);
     assert.ok(names(fake.last.calls).includes('disconnect'), 'released after an error');
     const fake2 = new FakeClient();
+    fake2.storedDirs.set('gone', '/w');
     fake2.resumeFail.add('gone');
     await assert.rejects(() => new TestAdapter(fake2).renameSession('gone', 'Name'), /cannot resume/);
     // a name Copilot refuses never reaches it
     const fake3 = new FakeClient();
     const ad3 = new TestAdapter(fake3);
+    fake3.storedDirs.set('stored-3', '/w');
     await assert.rejects(() => ad3.renameSession('stored-3', 'say "hi"'), /double quotes/);
     assert.strictEqual(fake3.resumed.length, 0);
+    // a session Copilot has no folder for is not resumed at all
+    await assert.rejects(() => ad3.renameSession('unknown-1', 'Name'), /no folder stored/);
+    assert.strictEqual(fake3.resumed.length, 0);
+    // the strict id rule (spec 006 FR-026) before anything reaches the runtime
+    for (const bad of ['../x', '..\\x', 'C:\\x', '/abs', '', 'a.b', 'a'.repeat(101), 'a\u0000b']) await assert.rejects(() => ad3.renameSession(bad, 'Name'), /not a session id/, JSON.stringify(bad));
+    assert.strictEqual(fake3.resumed.length, 0);
+  }
+}
+
+async function copilotRaces(): Promise<void> {
+  // a start of the same session while its rename-resume is running waits, and is not disconnected by the rename's release
+  {
+    const fake = new FakeClient();
+    fake.storedDirs.set('race-1', ws);
+    let open: () => void = () => undefined;
+    fake.resumeGate = new Promise<void>((r) => (open = r));
+    const ad = new TestAdapter(fake);
+    const renaming = ad.renameSession('race-1', 'Name');
+    await tick(10);
+    const starting = ad.start({ workspace: ws, resumeSessionId: 'race-1', quiet: true });
+    await tick(20);
+    assert.strictEqual(fake.resumed.length, 0, 'neither resumed yet: the first is held, the start waits');
+    open();
+    await renaming;
+    await starting;
+    assert.deepStrictEqual(fake.resumed.map((r) => r.id), ['race-1', 'race-1'], 'the start resumes after the rename');
+    assert.ok(ad.isLive('race-1'), 'the started session is live');
+    assert.ok(!names(fake.last.calls).includes('disconnect'), 'and was not disconnected by the rename');
+  }
+  // an auto title right after a rename does not reach Durbar; the next one after an idle does
+  {
+    const fake = new FakeClient();
+    const ad = new TestAdapter(fake);
+    const events: AgentEvent[] = [];
+    ad.onEvent((e) => events.push(e));
+    const sid = await ad.start({ workspace: ws, quiet: true });
+    await ad.renameSession(sid, 'Mine');
+    fake.last.fire('session.title_changed', { title: 'Auto made title' });
+    assert.strictEqual(events.filter((e) => e.type === 'title').length, 0, 'ignored right after a rename');
+    fake.last.fire('session.idle', {});
+    fake.last.fire('session.title_changed', { title: 'Renamed in the CLI' });
+    assert.deepStrictEqual(events.filter((e) => e.type === 'title').map((e) => (e as { title: string }).title), ['Renamed in the CLI'], 'later titles pass again');
   }
 }
 
@@ -107,6 +160,9 @@ async function codex(): Promise<void> {
     // Codex refuses an unknown thread and an empty name: thrown
     await assert.rejects(() => ad.renameSession('nope', 'x'), /no rollout/);
     await assert.rejects(() => ad.renameSession('thr_old', '   '), /needs a name/);
+    const sent = server.requests('thread/name/set').length;
+    for (const bad of ['../x', 'C:\\x', '/abs', '', 'a.b', 'a'.repeat(101)]) await assert.rejects(() => ad.renameSession(bad, 'x'), /not a session id/, JSON.stringify(bad));
+    assert.strictEqual(server.requests('thread/name/set').length, sent, 'a bad id never reaches the app-server');
     await ad.dispose();
   }
   // an open thread: on its own child, and thread/name/updated becomes the title event
@@ -209,6 +265,18 @@ async function claude(): Promise<void> {
     assert.strictEqual((events.filter((e) => e.type === 'title').pop() as { title: string }).title, 'Second');
     await ad.stop(SID);
   }
+  // the SDK transport (dev opt-in) does not apply --name: no capability, no member, and the descriptor says the same
+  {
+    const sdk = new ClaudeAdapter({ claudePath: async () => '/c', sdkTransport: true });
+    assert.strictEqual(sdk.capabilities.renameSession, undefined);
+    assert.ok(typeof sdk.renameSession !== 'function', 'no member on the SDK transport');
+    const sdkDesc = offeredDescriptors({ DURBAR_CLAUDE_TRANSPORT: 'sdk' }).find((d) => d.id === 'claude')!;
+    const cliDesc = offeredDescriptors({}).find((d) => d.id === 'claude')!;
+    assert.strictEqual(sdkDesc.capabilities.renameSession, undefined);
+    assert.strictEqual(cliDesc.capabilities.renameSession, 'next-turn');
+    assert.strictEqual(typeof (cliDesc.create() as ClaudeAdapter).renameSession, 'function');
+    assert.ok(typeof (sdkDesc.create() as ClaudeAdapter).renameSession !== 'function');
+  }
   // bad input
   {
     const { ad } = make();
@@ -219,6 +287,7 @@ async function claude(): Promise<void> {
 
 (async () => {
   await copilot();
+  await copilotRaces();
   await codex();
   await claude();
   fs.rmSync(ws, { recursive: true, force: true });

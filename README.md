@@ -244,7 +244,7 @@ npm run pack:dir          # unpacked app for this OS in release/ (also dist, dis
 - **Caps are soft:** one model response can overshoot them, and the figures are what each harness reports.
 - **Floors that are off are quiet:** their agents keep running and can spend credits or wait for an approval.
 - **Schedules run only while the app is open**, and a schedule's limit counts usage from its send until that turn ends (a message you send during that turn counts too). The agent app's own schedules are only shown for Copilot and only when reported while Durbar runs; none of this has been tried on a real session yet.
-- **Session names:** the rename into Copilot, Codex and Claude Code was checked on real accounts only by another team member's agent (CLI lists), not in VS Code; Claude Code applies the name at the next message (it relies on the undocumented `CLAUDE_CODE_ENTRYPOINT` value of spec 012 FR-159 to show in `/resume`), and whether the VS Code Claude extension lists it is unchecked.
+- **Session names:** the rename into Copilot, Codex and Claude Code was checked on real accounts only by another team member's agent, which ran the raw protocol and CLI calls by hand and looked at the CLI lists (Durbar's own adapters ran on fakes only), not in VS Code; Claude Code applies the name at the next message (it relies on the undocumented `CLAUDE_CODE_ENTRYPOINT` value of spec 012 FR-159 to show in `/resume`), and whether the VS Code Claude extension lists it is unchecked.
 - **Imported MCP config:** importing from `.vscode/mcp.json` is a one-time copy per folder.
 - **Moving targets:** harness protocols change, so versions are pinned and checked.
 

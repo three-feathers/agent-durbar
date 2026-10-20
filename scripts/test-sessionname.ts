@@ -82,6 +82,15 @@ const src = (p: string): string => fs.readFileSync(path.join(root, p), 'utf8').r
     }
   });
   assert.deepStrictEqual(bare, [], 'alias interpolated without esc()');
+  // the same for every agent name or title in a template: a `${...}` that holds one must go through esc() (or the escaping tooltip helper)
+  const bareNames: string[] = [];
+  app.split('\n').forEach((line, i) => {
+    for (const m of line.matchAll(/\$\{([^}]*)\}/g)) {
+      const expr = m[1];
+      if (/\b(a|ag|x|s|src|na|tag|parent|root|ra|r|v|room|it|row)\.(name|title|alias|folderLabel|baseName)\b|SN\(\)\.(shortName|displayName|nameTip)\(/.test(expr) && !/esc\(|nameTipAttr/.test(expr)) bareNames.push(`${i + 1}: ${expr.slice(0, 80)}`);
+    }
+  });
+  assert.deepStrictEqual(bareNames, [], 'an agent name or title interpolated into a template without esc()');
   assert.ok(!/innerHTML\s*=\s*[^;\n]*\balias\b/.test(app), 'alias is never assigned through innerHTML');
   // every toast in renameSessionUi escapes what it shows
   assert.ok(/toast\(esc\(\(out&&out\.error\)/.test(app) && /toast\(esc\(out\.note\)/.test(app), 'rename toasts are escaped');

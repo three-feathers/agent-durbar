@@ -69,6 +69,13 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   renameSession: 'next-turn', // spec 059 FR-007: `--name` on the session's next CLI start (real: Vikram's agent, 2026-10-20, CLI 2.1.304)
 }) as AdapterCapabilities;
 
+/** Spec 059 FR-007: the SDK transport (dev opt-in, `DURBAR_CLAUDE_TRANSPORT=sdk`) does not apply `--name`, so it does not offer a rename. */
+export const CLAUDE_SDK_CAPABILITIES: AdapterCapabilities = Object.freeze((() => {
+  const { renameSession: _r, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown };
+  void _r;
+  return rest;
+})()) as AdapterCapabilities;
+
 /** The hook callback id Durbar registers for `PreToolUse` (any string the CLI echoes back). */
 export const PRE_TOOL_USE_HOOK = 'durbar_pre_tool_use';
 /** CLAUDE.md budget: total characters of the file and its imports, and import depth. */
@@ -348,6 +355,8 @@ export interface ClaudeAdapterDeps {
   claudePath: () => Promise<string | undefined>;
   /** Makes a transport (tests inject a fake; default: the CLI transport; the SDK transport when chosen, FR-113). */
   makeTransport?: TransportFactory;
+  /** The SDK transport is in use (dev opt-in): it does not apply `--name`, so the adapter offers no rename (spec 059). */
+  sdkTransport?: boolean;
   sessionExists?: (id: string) => boolean;
   claudeMd?: (folder: string) => string | undefined;
   readImage?: (p: string) => Buffer | undefined;
@@ -451,14 +460,18 @@ interface Session {
 export class ClaudeAdapter implements AgentAdapter {
   readonly id = CLAUDE_ID;
   readonly displayName = CLAUDE_NAME;
-  readonly capabilities = CLAUDE_CAPABILITIES;
+  readonly capabilities: AdapterCapabilities;
   debug?: (message: string) => void;
   private sessions = new Map<string, Session>();
   /** Spec 059 FR-007: names for sessions that are not open yet (by Claude session id); applied at their first start. */
   private pendingNames = new Map<string, string>();
   private listeners = new Set<(event: AgentEvent) => void>();
 
-  constructor(private readonly deps: ClaudeAdapterDeps) {}
+  constructor(private readonly deps: ClaudeAdapterDeps) {
+    // spec 059 FR-007: on the SDK transport `--name` is not applied, so no rename is offered (capability and member agree, contract C2)
+    this.capabilities = deps.sdkTransport ? CLAUDE_SDK_CAPABILITIES : CLAUDE_CAPABILITIES;
+    if (deps.sdkTransport) (this as { renameSession?: unknown }).renameSession = undefined;
+  }
 
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe {
     this.listeners.add(listener);
@@ -1055,13 +1068,13 @@ export class ClaudeAdapter implements AgentAdapter {
 }
 
 /** The descriptor; `makeTransport` chooses the transport (main passes the SDK one when it is chosen and available, FR-113/FR-114). */
-export function claudeDescriptor(makeTransport: TransportFactory = cliTransportFactory): AdapterDescriptor {
+export function claudeDescriptor(makeTransport: TransportFactory = cliTransportFactory, sdkTransport = false): AdapterDescriptor {
   return {
     id: CLAUDE_ID,
     displayName: CLAUDE_NAME,
     installHint: 'Open Settings > Agent apps and choose Install…, then Sign in… (or run `npm install -g @anthropic-ai/claude-code`, then `claude auth login`).',
-    capabilities: CLAUDE_CAPABILITIES,
-    create: () => new ClaudeAdapter({ claudePath: claudeBinaryPath, makeTransport }),
+    capabilities: sdkTransport ? CLAUDE_SDK_CAPABILITIES : CLAUDE_CAPABILITIES,
+    create: () => new ClaudeAdapter({ claudePath: claudeBinaryPath, makeTransport, sdkTransport }),
   };
 }
 export const CLAUDE_DESCRIPTOR: AdapterDescriptor = claudeDescriptor();

@@ -68,7 +68,7 @@ async function main(): Promise<void> {
     const bad = await t.run('a1', 'not-in-this-folder', 'X');
     assert.deepStrictEqual(bad, { ok: false, error: 'That session is no longer available for this folder.' });
     assert.strictEqual(t.ad.renameCalls.length, 2);
-    for (const evil of [5, '../../etc', 'a b', '', {}, 'x'.repeat(300)]) assert.deepStrictEqual(await t.run('a1', evil, 'X'), { ok: false, error: 'Unknown session.' }, JSON.stringify(evil));
+    for (const evil of [5, '../../etc', 'a b', '', {}, 'x'.repeat(300), 'a.b', 'x:y', 'x/y', 'C:\\x']) assert.deepStrictEqual(await t.run('a1', evil, 'X'), { ok: false, error: 'Unknown session.' }, JSON.stringify(evil));
   }
   // bad names and unknown agents: nothing stored, nothing called
   {

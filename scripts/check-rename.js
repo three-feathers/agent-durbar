@@ -95,7 +95,7 @@ module.exports = async (ctx) => {
       assert.strictEqual(hdr.aria, 'Chat with ' + EVIL);
       // strip (the other sessions of the panel) and the card behind
       const strip = await js(`(()=>{const s=document.querySelector('[data-sw="sim-1"] b');return s?s.textContent:null})()`);
-      assert.ok(strip === null || strip === EVIL, `${tag}: the strip shows the name as text: ${strip}`);
+      assert.ok(strip === EVIL, `${tag}: the strip shows the name as text: ${strip}`);
       // Schedules: the option and the list use the name, cut to 40 with the full name in the tooltip
       if (await js(`!!document.getElementById('schedHdrBtn')`)) {
         await js(`document.getElementById('moreBtn').click()`); await ctx.sleep(150);
@@ -111,7 +111,7 @@ module.exports = async (ctx) => {
       // list view
       await js(`document.getElementById('vList').click()`); await ctx.sleep(500);
       const lrow = await js(`(()=>{const r=document.querySelector('.lrow[data-id="sim-1"]');return r?r.textContent:null})()`);
-      assert.ok(lrow === null || lrow.includes(EVIL), `${tag}: the list row shows the name: ${lrow}`);
+      assert.ok(lrow !== null && lrow.includes(EVIL), `${tag}: the list row shows the name: ${lrow}`);
       await js(`document.getElementById('vOffice')&&document.getElementById('vOffice').click()`); await ctx.sleep(400);
       // nothing came from the markup
       const bad = await js(`({img:document.querySelectorAll('img[src="x"]').length,xss:window.__xss!==undefined})`);

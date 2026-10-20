@@ -7,7 +7,7 @@ import { cut, redact } from '../shared/redact';
 import { checkDisplayName } from '../shared/names';
 import { renameTarget, syncEntry } from '../shared/sessionname';
 import type { RenameCap, SessionNameEntry } from '../shared/sessionname';
-import { SESSION_NAME_ID } from './folders';
+import { sessionIdOk } from '../shared/sessionid';
 
 export type RenameResult = { ok: true; name?: string; inApp: boolean; pending?: boolean; note?: string } | { ok: false; error: string };
 
@@ -58,14 +58,14 @@ export function renameOp(deps: RenameDeps): (agentId: unknown, sessionId: unknow
     let rid: string;
     if (sessionId === null || sessionId === undefined) rid = deps.resumeIdFor(a.id);
     else {
-      if (typeof sessionId !== 'string' || !SESSION_NAME_ID.test(sessionId)) return { ok: false, error: 'Unknown session.' };
+      if (!sessionIdOk(src, sessionId)) return { ok: false, error: 'Unknown session.' };
       const own = deps.resumeIdFor(a.id);
       let known = sessionId === own || deps.otherOpenIds(a.id).includes(sessionId);
       if (!known) known = (await deps.previousIds(a.id).catch(() => [] as string[])).includes(sessionId);
       if (!known) return { ok: false, error: 'That session is no longer available for this folder.' };
       rid = sessionId;
     }
-    if (!SESSION_NAME_ID.test(rid)) return { ok: false, error: 'Unknown session.' };
+    if (!sessionIdOk(src, rid)) return { ok: false, error: 'Unknown session.' }; // the strict id rule of spec 006 FR-026, like deleteSession
 
     const key = `${src}:${rid}`;
     if (inFlight.has(key)) return { ok: false, error: 'Already renaming this session.' };

@@ -47,7 +47,7 @@ specs/059-rename-sessions/
 src/shared/names.ts            NEW  cleanDisplayName(v, max) and nameError(v, max): trim, collapse, length in code points, controls,
                                     hidden characters (moved from floors.ts), redact() check. floors.ts imports it (same behaviour, same tests).
 src/shared/sessionname.ts      NEW  displayNameOf(entry, runtimeTitle, folderLabel); syncEntry(entry, runtimeTitle) -> entry | undefined
-                                    (FR-011); renameTarget(cap) -> 'now' | 'next-turn' | 'durbar' (FR-007); shortName(name, 40) (spec 044 FR-021).
+                                    (FR-011); renameTarget(cap) -> 'now' | 'next-turn' | 'durbar' (FR-007); shortName(name, 40) (the cut rule of #371 / spec 044 FR-021, pending).
 src/main/folders.ts                 SavedFolder.sessionNames?: Array<{src,id,name,inApp?}>; parseSessionNames (cap 200, tolerant);
                                     FolderStore.setSessionName(key, src, id, name|undefined, inApp), sessionNameOf(key, id), dropSessionName.
 src/main/sessionnames.ts       NEW  renameOp(deps)(agentId, sessionId|null, name): validate, decide, call adapter, save, return

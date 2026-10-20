@@ -361,6 +361,7 @@ export class CodexAdapter implements AgentAdapter {
    * short-lived app-server (`probe`): no thread is started, no turn, no prompt. Codex refuses an empty name and an archived thread: thrown.
    */
   async renameSession(sessionId: string, name: string): Promise<void> {
+    if (!sessionIdOk('codex', sessionId)) throw new Error('That is not a session id.');
     const text = name.trim();
     if (!text) throw new Error('Codex needs a name.');
     const live = [...this.sessions.values()].find((l) => l.threadId === sessionId);
