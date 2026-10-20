@@ -33,3 +33,7 @@
 ## 2026-10-20: Read-only wording after the real MCP check
 
 - [x] T040 *Start my day* and the Read-only mode help say an MCP tool runs in Read-only only when its server marks it read-only [FR-019a]
+
+## 2026-10-20: Send to row and session names (issue #371)
+
+- [ ] T041 Schedules dialog: the Send to and Limit labels never wrap or sit under their control; the "This session" option is capped at 40 characters with the full name in its title; simulator check `check:sched-sendto`, CHANGELOG [FR-020, FR-021]

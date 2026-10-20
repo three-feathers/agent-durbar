@@ -54,6 +54,15 @@ In **Folders**, each folder has **Schedules**. The dialog lists the folder's sch
 
 ## Changes
 
+### 2026-10-20: Schedules dialog, Send to row and session names (issue #371)
+
+*Found (owner, real Mac, main):* in **Schedules for <folder>** the label "Send to" wrapped inside its own cell ("Sen" / "to") and was half covered by the select; the **Limit … AI credits** row was misaligned too. The **This session (…)** option showed the session's whole first prompt, a long sentence with private content.
+
+- **FR-020** **Rows keep their labels.** In the dialog's options row, **Send to** and **Limit** keep their label on one line (never cut mid-word, never covered by the control beside them) at the narrowest dialog width, at 1440x900 and 1280x800, in Simple and Expert. The label takes its own width; the select (or the number field) takes the rest of the line and may shrink, its text ellipsized. A row that does not fit wraps as a whole, under the other.
+- **FR-021** **A short session name.** The **This session (…)** option shows at most 40 characters of the session's name, cut on a word boundary when there is one and ended with "…". The full name is only in the option's `title`. Both are escaped; the option's value (the session id) is unchanged. Only this option changes: the session name elsewhere (agent strip, inbox) is not touched. Once sessions can be renamed, the short name will come from the rename.
+- `sim:` `scripts/check-sched-sendto.js` (`npm run check:sched-sendto`) at both sizes, Simple and Expert, with a session titled with a long sentence: the Send to and Limit labels are one line high and do not overlap their controls, the option text is at most the cap plus the "This session ()" frame, and its title is the full name. Screenshots are in the PR.
+- `[KNOWN GAP]` Not checked on the owner's Mac (macOS fonts are wider than the simulator's on Linux); the fix does not depend on a font width.
+
 ### 2026-10-19: Phase 1 built
 
 - `test:` `npm run test:schedules` (fake clock and sender): due times, interval runs, a busy agent skips (never queued or caught up), pause all and resume without a burst, once-schedules run once, a past time is refused, missed runs at start, removal, the limit of 50.
