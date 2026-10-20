@@ -22,6 +22,7 @@ import { GROUND } from '../shared/floors';
 import type { FloorOp } from '../shared/floors';
 import { openInVSCode } from './vscode';
 import { isHttpUrl } from '../shared/url';
+import { checkElicitAnswer, createElicitTracker, elicitHttpsUrl } from '../shared/elicit';
 import { createRemoteOps } from './remoteops';
 import { DEFAULT_ADAPTER, FolderStore, PROFILE_ID, restoreMode } from './folders';
 import { navigationAllowed, permissionAllowed, senderAllowed } from './hardening';
@@ -105,6 +106,9 @@ const toRenderer = (channel: string, payload: unknown): void => {
 };
 
 router.onEvent((e) => toRenderer('agent:event', e));
+/** Open MCP elicitations (spec 012 FR-151): main checks each answer against the fields it was asked with. */
+const elicitTracker = createElicitTracker();
+router.onEvent((e) => elicitTracker.onEvent(e));
 /** The office's state word and sub-label per agent, kept from the same events (spec 041 T014); read tools use it. "Paused" comes from the window (agents:setPaused). */
 const agentState = new AgentStateTracker();
 router.onEvent((e) => {
@@ -809,6 +813,27 @@ ipcMain.handle('agents:answerQuestion', (_e, id: unknown, requestId: unknown, an
     for (const [k, v] of Object.entries(answers as Record<string, unknown>).slice(0, 4)) if (typeof v === 'string' && k.length <= 300) clean[k] = v.slice(0, 500);
   }
   ad.answerQuestion(a.id, requestId, clean);
+  return { ok: true };
+});
+
+// spec 012 FR-151: the answer to an MCP elicitation, checked here against the open request (types, choices, lengths, required).
+// The values are never logged: they can be secrets.
+ipcMain.handle('agents:answerElicitation', (_e, id: unknown, requestId: unknown, action: unknown, values: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  const ad = a ? router.forAgent(a.id) : undefined;
+  const req = a && typeof requestId === 'string' && requestId.length <= 300 ? elicitTracker.get(a.id, requestId) : undefined;
+  if (!a || !ad?.answerElicitation || !req) return { ok: false, error: 'That request is no longer open.' };
+  const r = checkElicitAnswer(req, action, values);
+  if (!r.ok) return { ok: false, error: r.error, ...(r.field ? { field: r.field } : {}) };
+  ad.answerElicitation(a.id, requestId as string, r.answer);
+  return { ok: true };
+});
+// spec 012 FR-151: open the request's own https address (never one sent by the window), only after the user clicked
+ipcMain.handle('agents:openElicitationUrl', async (_e, id: unknown, requestId: unknown) => {
+  const req = typeof id === 'string' && typeof requestId === 'string' && requestId.length <= 300 ? elicitTracker.get(id, requestId) : undefined;
+  const u = req?.url ? elicitHttpsUrl(req.url) : undefined;
+  if (!u) return { ok: false, error: 'That request has no https page to open.' };
+  await shell.openExternal(u.url);
   return { ok: true };
 });
 

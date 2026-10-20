@@ -1069,8 +1069,7 @@ function wireMenu(btnId,menuId){
    of view, a bar above the composer shows it with the same choices; its buttons press the card's own buttons, so there is one code
    path. A question is answered in its card (options and text): the bar takes you there. */
 /* the words of a request card (permission, question, limit), in full: the answer bar and the inbox show exactly this (FR-016, FR-027) */
-function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.pstate,.pdiff').forEach(x=>x.remove());const q=n.querySelector('.q-text');return (q?q.textContent:c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,'');}
-let answerObs=null;
+function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.q-form,.q-urlbox,.pstate,.pdiff').forEach(x=>x.remove());const q=n.querySelector('.q-text');return (q?q.textContent:c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,'');}let answerObs=null;
 /* spec 052 FR-060: the key of a permission card's button, and the one click path the bar and the keys share */
 const answerKeyOf=b=>b.dataset.act==='session'?'Alt+S':/\bdanger\b/.test(b.className)?'Alt+D':/\bprimary\b/.test(b.className)?'Alt+A':'';
 const answerPress=(src,what)=>()=>{const word=src.textContent;src.click();announce(word+': '+what);const m=$('msgInput');if(m)m.focus();};
@@ -1088,7 +1087,7 @@ function wireAnswerBar(a){
   const pending=()=>waiting()[0]||null;
   const textOf=requestText;
   /* FR-016: to the request itself, not to its Approve button (an Enter right after must not approve) */
-  const show=()=>{if(!card)return;card.scrollIntoView({block:'center'});const f=card.classList.contains('question')?card.querySelector('.q-opt,.q-other'):null;if(f){f.focus();return;}if(!card.hasAttribute('tabindex'))card.setAttribute('tabindex','-1');card.focus();};
+  const show=()=>{if(!card)return;card.scrollIntoView({block:'center'});const f=card.classList.contains('question')?card.querySelector('.q-opt,.q-other,.q-form input,.q-form select,.q-open'):null;if(f){f.focus();return;}if(!card.hasAttribute('tabindex'))card.setAttribute('tabindex','-1');card.focus();};
   function paint(){
     if(!card||cardVisible){bar.hidden=true;bar.innerHTML='';return;}
     const q=card.classList.contains('question');
@@ -1604,7 +1603,7 @@ window.addEventListener('resize',relayout);
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', question:qs.get('simquestion')==='1', solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', question:qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
@@ -2162,6 +2161,7 @@ function showLimit(a,e){
 }
 /* ---------- questions from the agent (spec 012 FR-130): options as buttons, "Other" text, Answer / Skip; text only, never HTML ---------- */
 function showQuestion(a,e){
+  if(e.elicitation&&typeof e.elicitation==='object'){showElicitation(a,e);return;}
   const t=ensureTurn(a), qs=(e.questions||[]).slice(0,4);
   const n=document.createElement('div');n.className='note perm question';n.setAttribute('role','group');n.setAttribute('aria-label','Question from the agent');
   const head=document.createElement('b');head.textContent=qs.length>1?'Questions from the agent':'Question from the agent';n.appendChild(head);
@@ -2197,9 +2197,116 @@ function showQuestion(a,e){
   tChips(t.T).appendChild(n);scrollChat(liveChat(a));
   announce(a.name+' asks: '+((qs[0]&&qs[0].question)||'a question'));renderInboxBtn();
 }
-function settleQuestion(a,answers){
+/* ---------- MCP elicitation (spec 012 FR-151): a form in the question card, or an https page opened only after a click.
+   Text only, never HTML; values are never logged or shown afterwards. Main checks the answer again before the agent gets it. ---------- */
+const Q_SECRET=/pass(word|phrase|wd|code)?|token|secret|api[\s_.-]?key|private[\s_.-]?key|credential|\bpin\b|otp/i;
+let qFormSeq=0;
+/* the plain-words check of one field (the same rules main applies); '' = fine */
+function elicitCheck(f,el){
+  const name='"'+f.title+'"';
+  if(f.type==='boolean')return '';
+  const raw=el.value, v=f.type==='string'?raw:raw.trim();
+  if(v.trim()===''){if(f.required)return 'Fill in '+name+'.';if(f.type==='number'||f.type==='integer'){if(el.validity&&el.validity.badInput)return name+' must be a number.';}return '';}
+  if(f.type==='number'||f.type==='integer'){const n=Number(v);if(!isFinite(n))return name+' must be a number.';if(f.type==='integer'&&!Number.isInteger(n))return name+' must be a whole number.';
+    if(typeof f.min==='number'&&n<f.min)return name+' must be at least '+f.min+'.';if(typeof f.max==='number'&&n>f.max)return name+' must be at most '+f.max+'.';return '';}
+  if(f.type==='enum')return (f.enumValues||[]).includes(v)?'':name+' must be one of the choices.';
+  const mx=Math.min(typeof f.maxLength==='number'?f.maxLength:2000,2000);
+  if(v.length>mx)return name+' must be at most '+mx+' characters.';
+  if(typeof f.minLength==='number'&&v.length<f.minLength)return name+' must be at least '+f.minLength+' characters.';
+  const t=v.trim();
+  if(f.format==='email'&&!/^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{1,63}$/.test(t))return name+' must be an email address.';
+  if(f.format==='uri'){try{new URL(t);}catch(_){return name+' must be a web address.';}}
+  if(f.format==='date'&&!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(t))return name+' must be a date (YYYY-MM-DD).';
+  if(f.format==='date-time'&&isNaN(Date.parse(t)))return name+' must be a date and time.';
+  return '';
+}
+function showElicitation(a,e){
+  const t=ensureTurn(a), R=e.elicitation, isUrl=typeof R.url==='string'&&!!R.url, fields=Array.isArray(R.fields)?R.fields.slice(0,12):[];
+  const uid='qf'+(++qFormSeq);
+  const n=document.createElement('div');n.className='note perm question elicit';n.setAttribute('role','group');n.setAttribute('aria-label',isUrl?'An MCP server asks you to open a page':'An MCP server asks for input');
+  const head=document.createElement('b');head.textContent=isUrl?'An MCP server asks you to open a page':'An MCP server asks for input';n.appendChild(head);
+  const st=document.createElement('span');st.className='pstate';n.appendChild(st);
+  const qt=document.createElement('p');qt.className='q-text';qt.id=uid+'-msg';
+  if(R.source){const h=document.createElement('span');h.className='tag';h.textContent=SHORT(R.source,40);qt.appendChild(h);qt.appendChild(document.createTextNode(' '));}
+  qt.appendChild(document.createTextNode(SHORT(R.message||'',500)));n.appendChild(qt);n.setAttribute('aria-describedby',qt.id);
+  const row=document.createElement('div');row.className='note-actions';
+  const btn=(label,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;b.onclick=fn;return b;};
+  const inputs=[];
+  const busy=on=>row.querySelectorAll('button').forEach(b=>{if(on){b.dataset.was=b.disabled?'1':'';b.disabled=true;}else b.disabled=b.dataset.was==='1';});
+  const send=async(action,values)=>{
+    busy(true);
+    const r=bridge.answerElicitation?await bridge.answerElicitation(a.id,e.requestId,action,values).catch(err=>({ok:false,error:String(err&&err.message||err)})):{ok:false,error:'This build cannot answer MCP requests.'};
+    if(!r||!r.ok){busy(false);const bad=r&&r.field?inputs.find(x=>x.f.name===r.field):null;
+      if(bad){bad.err.textContent=r.error||'Check this field.';bad.el.setAttribute('aria-invalid','true');bad.el.focus();}
+      else addNote(liveChat(a),'Could not answer: '+esc((r&&r.error)||'unknown error'),true);return;}
+    settleQuestion(a,null,action);
+  };
+  if(isUrl){
+    const box=document.createElement('div');box.className='q-urlbox';
+    const lead=document.createElement('p');lead.className='q-help';lead.textContent='This opens a page on:';box.appendChild(lead);
+    const host=document.createElement('p');host.className='q-host';host.style.margin='0';host.textContent=R.host||'';box.appendChild(host);
+    const full=document.createElement('p');full.className='q-url';full.textContent=SHORT(R.url,240);box.appendChild(full);
+    n.appendChild(box);
+    const done=btn('Done','primary','I finished on that page',()=>send('accept'));done.hidden=true;
+    const open=btn('Open in browser','primary q-open','Open '+(R.host||'the page')+' in your browser',async()=>{
+      const r=bridge.openElicitationUrl?await bridge.openElicitationUrl(a.id,e.requestId).catch(()=>({ok:false})):{ok:false,error:'This build cannot open it.'};
+      if(!r||!r.ok){addNote(liveChat(a),'Could not open the page: '+esc((r&&r.error)||'unknown error'),true);return;}
+      open.className='btn q-open';open.textContent='Open again';done.hidden=false;done.focus();announce('Opened '+(R.host||'the page')+' in your browser. Press Done when you have finished there.');});
+    row.appendChild(open);row.appendChild(done);
+  }else{
+    const form=document.createElement('form');form.className='q-form';form.noValidate=true;form.setAttribute('aria-label','Form from '+(R.source||'an MCP server'));
+    fields.forEach((f,i)=>{
+      const id=uid+'-'+i, wrap=document.createElement('div');wrap.className='q-field';
+      const label=document.createElement('label');label.htmlFor=id;label.textContent=f.title||f.name;
+      if(f.required){const m=document.createElement('span');m.className='q-req';m.setAttribute('aria-hidden','true');m.textContent=' *';label.appendChild(m);}
+      let el;
+      if(f.type==='boolean'){el=document.createElement('input');el.type='checkbox';el.checked=f.default===true;const c=document.createElement('div');c.className='q-check';c.appendChild(el);c.appendChild(label);wrap.appendChild(c);}
+      else{
+        if(f.type==='enum'){el=document.createElement('select');const vals=f.enumValues||[];
+          const none=document.createElement('option');none.value='';none.textContent=f.required?'Choose…':'(none)';el.appendChild(none);
+          vals.forEach((v,j)=>{const o=document.createElement('option');o.value=v;o.textContent=(f.enumNames&&f.enumNames[j])||v;el.appendChild(o);});
+          if(typeof f.default==='string'&&vals.includes(f.default))el.value=f.default;}
+        else if(f.type==='number'||f.type==='integer'){el=document.createElement('input');el.type='number';el.step=f.type==='integer'?'1':'any';el.inputMode=f.type==='integer'?'numeric':'decimal';
+          if(typeof f.min==='number')el.min=String(f.min);if(typeof f.max==='number')el.max=String(f.max);if(typeof f.default==='number')el.value=String(f.default);}
+        else{el=document.createElement('input');const secret=f.secret||Q_SECRET.test(f.name+' '+(f.title||''));
+          el.type=secret?'password':f.format==='email'?'email':f.format==='uri'?'url':f.format==='date'?'date':f.format==='date-time'?'datetime-local':'text';
+          el.maxLength=Math.min(typeof f.maxLength==='number'?f.maxLength:2000,2000);el.autocomplete='off';el.spellcheck=false;
+          if(!secret&&typeof f.default==='string')el.value=f.default;}
+        el.className='q-input';wrap.appendChild(label);wrap.appendChild(el);
+      }
+      el.id=id;el.name=f.name;if(f.required)el.setAttribute('aria-required','true');
+      const desc=[];
+      if(f.description){const h=document.createElement('p');h.className='q-help';h.style.margin='0';h.id=id+'-help';h.textContent=f.description;wrap.appendChild(h);desc.push(h.id);}
+      const err=document.createElement('span');err.className='q-err';err.id=id+'-err';err.setAttribute('aria-live','polite');wrap.appendChild(err);desc.push(err.id);
+      el.setAttribute('aria-describedby',desc.join(' '));
+      el.addEventListener('input',()=>{if(err.textContent){err.textContent='';el.removeAttribute('aria-invalid');}});
+      inputs.push({f,el,err});form.appendChild(wrap);
+    });
+    const submit=()=>{
+      let first=null;const values={};
+      for(const x of inputs){const m=elicitCheck(x.f,x.el);x.err.textContent=m;if(m){x.el.setAttribute('aria-invalid','true');if(!first)first=x;}else x.el.removeAttribute('aria-invalid');
+        if(!m){if(x.f.type==='boolean')values[x.f.name]=x.el.checked;else{const v=x.el.value;if(v.trim()!=='')values[x.f.name]=(x.f.type==='number'||x.f.type==='integer')?Number(v):v;}}}
+      if(first){first.el.focus();announce(first.err.textContent);return;}
+      send('accept',values);
+    };
+    form.onsubmit=ev=>{ev.preventDefault();submit();};
+    form.addEventListener('keydown',ev=>{if(ev.key==='Enter'&&ev.target&&ev.target.tagName==='INPUT'&&ev.target.type!=='checkbox'){ev.preventDefault();submit();}});
+    n.appendChild(form);
+    row.appendChild(btn('Submit','primary','Send these answers to the MCP server',submit));
+  }
+  row.appendChild(btn('Decline','danger','Say no to this request',()=>send('decline')));
+  row.appendChild(btn('Cancel','ghost','Dismiss it without answering',()=>send('cancel')));
+  n.appendChild(row);
+  a.question={requestId:e.requestId,n,row,st,elicit:isUrl?'url':'form'};
+  tChips(t.T).appendChild(n);scrollChat(liveChat(a));
+  announce(a.name+': '+(R.source?R.source+' ':'an MCP server ')+(isUrl?'asks you to open a page on '+(R.host||'the web'):'asks for input')+'. '+SHORT(R.message||'',160));renderInboxBtn();
+}
+function settleQuestion(a,answers,action){
   const Q=a.question;if(!Q)return;a.question=null;
-  if(Q.row)Q.row.remove();Q.n.querySelectorAll('.q-opts').forEach(x=>x.remove());
+  if(Q.row)Q.row.remove();Q.n.querySelectorAll('.q-opts,.q-form,.q-urlbox').forEach(x=>x.remove());
+  /* spec 012 FR-151: an elicitation says what the user did, never the values (they can be secrets) */
+  if(Q.elicit){const acc=action==='accept';Q.st.textContent=' → '+(acc?(Q.elicit==='url'?'done':'submitted'):action==='decline'?'declined':'cancelled');Q.n.classList.add('settled',acc?'approved':'denied');
+    if(a.state==='waiting')setState(a,'working',null,acc?'Answered':action==='decline'?'Declined':'Cancelled');updatePanelHeader();scrollChat(liveChat(a));return;}
   Q.st.textContent=answers?' → answered: '+Object.values(answers).join('; '):' → skipped';
   Q.n.classList.add('settled',answers?'approved':'denied');
   if(a.state==='waiting')setState(a,'working',null,answers?'Answered':'Question skipped'); /* a Stop already set it idle */
@@ -2353,7 +2460,7 @@ function onLiveEvent(e){
       ensureTurn(a); setState(a,'waiting',null,e.intent||'Waiting for permission');
       if(e.permission)showPerm(a,e.permission);
     }
-    else if(e.status==='idle'&&e.intent==='Aborted'){if(a.limit)settleLimit(a,'cancel');if(a.question)settleQuestion(a,null);if(a.pendingProfile){const n=a.pendingProfile.name;a.pendingProfile=undefined;updateAgentChip(a);addNote(chat,'The waiting switch to the agent '+esc(n)+' was dropped when you stopped the reply.');}const was=a.worked;a.worked=false;closeTurn(a);
+    else if(e.status==='idle'&&e.intent==='Aborted'){if(a.limit)settleLimit(a,'cancel');if(a.question)settleQuestion(a,null,'cancel');if(a.pendingProfile){const n=a.pendingProfile.name;a.pendingProfile=undefined;updateAgentChip(a);addNote(chat,'The waiting switch to the agent '+esc(n)+' was dropped when you stopped the reply.');}const was=a.worked;a.worked=false;closeTurn(a);
       [...a.pend.keys()].forEach(id=>settlePerm(a,{requestId:id,state:'denied',via:'stopped'}));
       if(was)addNote(chat,'Stopped by you. The agent is ready for your next message.');
       /* real:(spec 030 T042) the runtime drops a switch that was still queued when the turn is stopped: say so, never leave "Next: ..." behind */
@@ -2382,7 +2489,7 @@ function onLiveEvent(e){
     return;
   case 'question': /* spec 012 FR-130 */
     if(e.phase==='asked'){if(a.question&&a.question.requestId===e.requestId)return;showQuestion(a,e);setState(a,'waiting','Waiting for your answer','The agent asks you a question');updatePanelHeader();scheduleRender();}
-    else if(a.question&&a.question.requestId===e.requestId)settleQuestion(a,e.phase==='answered'?e.answers:null);
+    else if(a.question&&a.question.requestId===e.requestId)settleQuestion(a,e.phase==='answered'?e.answers:null,a.question.elicit?(e.phase==='answered'?(e.elicitAction||'accept'):'cancel'):undefined);
     return;
   case 'agentProfile':{ /* spec 043: the session's custom agent; details from the last list when the event has none */
     const p=e.profile?Object.assign({},(a.profileList||[]).find(x=>x.id===e.profile.id)||{},e.profile.source==='other'&&(a.profileList||[]).some(x=>x.id===e.profile.id)?{}:e.profile):null;
