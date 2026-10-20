@@ -15,5 +15,6 @@ for (const wf of ['e2e-real.yml', 'install-check.yml']) {
 // the real-account workflow never runs PR code with the secrets
 const e2e = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'e2e-real.yml'), 'utf8');
 assert.ok(!/^\s*pull_request(_target)?\s*:/m.test(e2e), 'e2e-real.yml does not run on pull_request');
+assert.ok(/^\s*branches:\s*\[main\]\s*$/m.test(e2e), 'e2e-real.yml runs on pushes to main only (no branch with the secrets)');
 assert.strictEqual((e2e.match(/\$\{\{\s*secrets\./g) ?? []).length, 3, 'secrets are used in one step only (three names)');
 console.log(`platforms: ${(list as string[]).join(', ')}; e2e-real and install-check use the list; no pull_request with secrets`);

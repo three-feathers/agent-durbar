@@ -48,3 +48,9 @@ Each entry has the date it was learned, what happened, and how to apply it, with
 - **Codex `CODEX_HOME`**: an empty or missing folder reads as "not signed in". When a sign-in check says "could not confirm", first check that the folder you pointed at exists.
 - **Vendor install scripts on Windows** (2026-10-20, `real:` GitHub runners, spec 060 T060). (1) OpenAI's `install.ps1` calls `tar -xzf C:\...`. When Git's GNU tar (`Git\usr\bin`) comes before `System32` on PATH, it reads `C:` as a remote host and the install fails with "package layout". Run vendor scripts with `%SystemRoot%\System32` first on PATH. (2) Windows PowerShell 5.1 started from PowerShell 7 inherits 7's `PSModulePath` and loses built-ins such as `Get-FileHash`. Drop `PSModulePath` for the child. Both are in `setupEnv` (`src/main/harnesssetup.ts`).
 - **Testing as a standard user in CI** (2026-10-20, spec 060). On Windows, `Start-Process -Credential` keeps the admin's `TEMP`, `USERPROFILE`, `APPDATA` and `LOCALAPPDATA`; set them from `os.userInfo().homedir`. On macOS and Linux, Homebrew belongs to the admin account and fails for anyone else (exit 1), and npm with a system Node.js fails with exit 243. Vendor installers that write to `~/.local/bin` work without admin rights on all three OSes.
+- **Real-account CI** (2026-10-20, spec 062):
+  - Secrets: `COPILOT_CODEX_GITHUB_FINE_GRAINED_TOKEN` (given to Copilot as `COPILOT_GITHUB_TOKEN`), `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (to Codex through `codex login --with-api-key` on stdin).
+  - Only `e2e-real.yml` uses them: never on `pull_request`, `main` only, in one step.
+  - To try the workflow before it is on `main`, add a temporary `push` branch trigger and remove it before the PR (`test:platforms` checks that the trigger is `main` only).
+  - Never print a CLI's own sign-in line: Codex's shows a masked key tail.
+  - Copilot Free lists no models but runs `auto`.
