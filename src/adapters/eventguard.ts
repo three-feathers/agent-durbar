@@ -9,7 +9,7 @@ const optStr = (v: unknown): boolean => v === undefined || typeof v === 'string'
 const optNum = (v: unknown): boolean => v === undefined || (typeof v === 'number' && Number.isFinite(v) && v >= 0);
 const oneOf = (v: unknown, xs: readonly string[]): boolean => typeof v === 'string' && xs.includes(v);
 
-export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'title'] as const;
+export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'title', 'agentSchedule'] as const;
 const STATUSES = ['idle', 'working', 'needs-permission', 'error', 'stopped'] as const;
 
 function permissionProblems(p: unknown, where: string): string[] {
@@ -88,6 +88,12 @@ export function eventProblems(e: unknown): string[] {
       if (!oneOf(e.phase, ['asked', 'answered', 'cancelled'])) out.push(`question.phase ${String(e.phase)}`);
       if (!str(e.requestId) || !e.requestId) out.push('question.requestId missing');
       if (e.phase === 'asked' && (!Array.isArray(e.questions) || !e.questions.length || e.questions.some((q) => !isObj(q) || !str(q.question) || !Array.isArray(q.options)))) out.push('question.questions malformed');
+      break;
+    case 'agentSchedule':
+      if (!oneOf(e.phase, ['created', 'cancelled', 'rearmed'])) out.push(`agentSchedule.phase ${String(e.phase)}`);
+      if (!str(e.scheduleId) || !e.scheduleId) out.push('agentSchedule.scheduleId missing');
+      for (const k of ['everyMs', 'at', 'nextAt']) if (!optNum(e[k])) out.push(`agentSchedule.${k} is not a non-negative number`);
+      if (!optStr(e.prompt) || !optStr(e.cron) || !optStr(e.tz)) out.push('agentSchedule text is not a string');
       break;
     case 'agentProfile':
       if (e.profile !== null && (!isObj(e.profile) || !str(e.profile.id) || !str(e.profile.name) || !oneOf(e.profile.source, ['repo', 'user', 'other']))) out.push('agentProfile.profile malformed');

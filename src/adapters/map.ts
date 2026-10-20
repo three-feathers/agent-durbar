@@ -249,6 +249,28 @@ export class EventMapper {
         const title = agentId ? undefined : cleanSessionTitle(d.title);
         return title ? this.emit({ type: 'title', title }) : undefined;
       }
+      case 'session.schedule_created': {
+        // spec 044 FR-016: the session's own scheduled prompts (`/every`, `/after`, `manage_schedule`), shown read-only
+        if (agentId || (typeof d.id !== 'number' && typeof d.id !== 'string')) return;
+        const prompt = cleanSessionTitle(str(d.displayPrompt) ?? str(d.prompt), 300);
+        return this.emit({
+          type: 'agentSchedule', phase: 'created', scheduleId: String(d.id).slice(0, 64),
+          ...(prompt ? { prompt } : {}),
+          ...(positive(d.intervalMs) ? { everyMs: d.intervalMs } : {}),
+          ...(str(d.cron) ? { cron: (d.cron as string).slice(0, 100) } : {}),
+          ...(str(d.tz) ? { tz: (d.tz as string).slice(0, 64) } : {}),
+          ...(positive(d.at) ? { at: d.at } : {}),
+          ...(typeof d.recurring === 'boolean' ? { recurring: d.recurring } : {}),
+          ...(d.selfPaced === true ? { selfPaced: true } : {}),
+          ...(d.origin === 'user' || d.origin === 'model' ? { origin: d.origin } : {}),
+        });
+      }
+      case 'session.schedule_cancelled':
+        if (agentId || (typeof d.id !== 'number' && typeof d.id !== 'string')) return;
+        return this.emit({ type: 'agentSchedule', phase: 'cancelled', scheduleId: String(d.id).slice(0, 64) });
+      case 'session.schedule_rearmed':
+        if (agentId || (typeof d.id !== 'number' && typeof d.id !== 'string')) return;
+        return this.emit({ type: 'agentSchedule', phase: 'rearmed', scheduleId: String(d.id).slice(0, 64), ...(positive(d.nextRunAt) ? { nextAt: d.nextRunAt } : {}) });
       case 'session.idle':
         // spec 002 FR-016 (T024): what a turn left behind (a tool that never completed, reasoning never closed, e.g. after Stop) is dropped
         this.toolNames.clear();

@@ -9,6 +9,7 @@ import type { CompactResult, ContextTier, ModelOption, ModelSwitchRequest, Model
 import type { AdapterCapabilities, PermissionMode } from './capabilities';
 import type { HandoffResult } from './handoff';
 import type { HistoryResult, PreviousSession } from './history';
+import type { RemoteState } from '../shared/remote';
 export type { McpServerSpec, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult, AdapterCapabilities, PermissionMode };
 
 export type AgentStatus = 'idle' | 'working' | 'needs-permission' | 'error' | 'stopped';
@@ -321,7 +322,34 @@ export interface AgentProfileEvent extends BaseEvent {
   profile: AgentProfile | null;
 }
 
+/**
+ * A prompt scheduled inside the agent app's own session (spec 044 FR-016), e.g. Copilot `/every`, `/after` or its
+ * `manage_schedule` tool. Display only: Agent Durbar shows it read-only and never changes it. Text already cleaned and capped.
+ */
+export interface AgentScheduleEvent extends BaseEvent {
+  type: 'agentSchedule';
+  phase: 'created' | 'cancelled' | 'rearmed';
+  scheduleId: string;
+  /** `created`: the prompt (or the app's short label for it), one line, at most 300 characters. */
+  prompt?: string;
+  /** Relative interval between runs (ms). */
+  everyMs?: number;
+  /** Five-field cron expression and its IANA time zone. */
+  cron?: string;
+  tz?: string;
+  /** One-off run time (epoch ms). */
+  at?: number;
+  /** `rearmed`: the next run the agent chose (epoch ms). */
+  nextAt?: number;
+  recurring?: boolean;
+  /** No fixed cadence: the agent arms each next run itself. */
+  selfPaced?: boolean;
+  /** Who made it: the user (a command) or the agent (its tool). */
+  origin?: 'user' | 'model';
+}
+
 export type AgentEvent =
+  | AgentScheduleEvent
   | UserEvent
   | QuestionEvent
   | AgentProfileEvent
@@ -387,6 +415,8 @@ export interface AgentAdapter {
   handoffSummary?(sessionId: string): Promise<HandoffResult>;
   /** One prompt answered with no tools, no MCP and no session kept, in an empty temp folder (spec 040 FR-015). Optional (`capabilities.oneShot`). */
   generateText?(prompt: string): Promise<{ text: string; costUsd?: number }>;
+  /** Spec 054 FR-001: turn remote control (follow and steer from the vendor's web or mobile app) on or off for a live session. Optional (`capabilities.remote`). Never on by default. */
+  setRemote?(sessionId: string, on: boolean): Promise<RemoteState>;
   /** Spec 051 FR-007: whether this harness is signed in, checked without a prompt (no credits). Only the yes/no leaves the adapter. */
   authStatus?(): Promise<{ signedIn: boolean }>;
   /** True while the session is open in this adapter. */

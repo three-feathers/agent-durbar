@@ -57,7 +57,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - After a restart, each folder **continues its last session**.
 - *Previous sessions* lists a folder's earlier sessions to **Resume**, and VS Code's Copilot Chat history as a read-only copy (it opens at the latest message, and **Continue in VS Code** opens the folder there; [screenshot](docs/screenshots/009-vschat-latest-1440x900.png)). With two or more entries, a **search box** filters them by title (case and accents ignored).
 - **New session with a summary:** start fresh from a hand-off summary of the current conversation, which you edit before it is sent.
-- **Scheduled prompts** per folder (once, every N minutes, or every day at a time), while the app is open. Open them from a room's **⋯** menu, the **clock** in its header (shown once it has schedules), the **Schedules** button in its chat, or **Settings > Schedules** for all folders. A **starter kit** has templates:
+- **Scheduled prompts** per folder or for one session, while the app is open: once, every N minutes, or on a calendar (every day, weekdays, or weekly on chosen days, at a local time that stays put across daylight-saving changes). A schedule can have its own **limit** in AI credits or dollars (the agent app's unit): when its runs have spent that much, it pauses and says so. A schedule for a session that has ended pauses too, and is never sent elsewhere unless you choose the folder's agent. Prompts that Copilot itself schedules in a session (`/every`, `/after`) are listed read-only. Open them from a room's **⋯** menu, the **clock** in its header (shown once it has schedules), the **Schedules** button in its chat, or **Settings > Schedules** for all folders. A **starter kit** has templates:
   - *Start my day* (a morning briefing from your mail and calendar MCP servers);
   - *Summarize my day*, *Plan my day*;
   - *Open pull requests and CI*, and a dependency check.
@@ -92,6 +92,8 @@ What each harness can do differs a little, and Durbar hides a control a harness 
 - **Stop** does not kill a command that is already running; *End session* does.
 
 Details and evidence: [spec 012](specs/012-claude-codex-adapters/spec.md).
+
+**Remote control (Copilot, not verified on a real account).** In a running Copilot chat, **More > Control from GitHub (web and mobile)…** turns on Copilot's remote control for that one session, after a dialog that says its messages are sent to GitHub and that anyone who can see the session there can steer it. Durbar then shows the GitHub link (Copy link, Open on GitHub; open it in GitHub Mobile to steer from your phone), a **Remote** chip in the chat header and "· Remote" on the desk card. **Stop remote control** turns it off; ending the session does too. It is never on by default. Built on the SDK's experimental `remote` calls and checked only in the simulator and unit tests: whether it needs a GitHub repository folder or a plan or admin setting, and what GitHub shows, are open ([spec 054](specs/054-remote-control/spec.md)). Claude Code channels (Telegram) and Codex in the ChatGPT app are planned, not built.
 
 **Codex on Ubuntu 24.04 and later.** Codex's Read-only and Ask first modes run commands in its Linux sandbox (bubblewrap). Ubuntu blocks that for unprivileged programs, so those modes fail at start with a message saying so; Allow all needs no sandbox. To allow only bubblewrap, add an AppArmor profile (needs `sudo`):
 
@@ -222,6 +224,7 @@ npm run pack:dir          # unpacked app for this OS in release/ (also dist, dis
 - **VS Code's own chats are read-only.** VS Code keeps them in an undocumented store that cannot be continued from outside; Durbar shows a copy. Copilot CLI/SDK sessions *can* be resumed.
 - **Caps are soft:** one model response can overshoot them, and the figures are what each harness reports.
 - **Floors that are off are quiet:** their agents keep running and can spend credits or wait for an approval.
+- **Schedules run only while the app is open**, and a schedule's limit counts usage from its send until that turn ends (a message you send during that turn counts too). The agent app's own schedules are only shown for Copilot and only when reported while Durbar runs; none of this has been tried on a real session yet.
 - **Imported MCP config:** importing from `.vscode/mcp.json` is a one-time copy per folder.
 - **Moving targets:** harness protocols change, so versions are pinned and checked.
 

@@ -492,10 +492,9 @@ function helperTileHTML(h){
 const visitPlace=a=>{const v=a.parent?null:VISITS.at(a.id);return v?v.place:(RETURNING.has(a.id)?null:null);};
 function cardHTML(a,d,nSubs){
   const st=vis(a), use=usageShort(a);
-  return `<button class="desk card is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
+  return `<button class="desk card is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${sceneC(a)}</span>
-    <span class="ci"><span class="l1"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a))}</span><span class="stl st-${pillSt(a)}">${esc(stWord(a,true))}</span></span>
-    <span class="intent" title="${esc(taskOf(a))}">${esc(taskOf(a))}</span>
+    <span class="ci"><span class="l1"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span><span class="stl st-${pillSt(a)}">${esc(stWord(a,true))}</span></span>    <span class="intent" title="${esc(taskOf(a))}">${esc(taskOf(a))}</span>
     <span class="l3"><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a,true))}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${esc(use.split(' · ')[1])}</span>`:`${esc(use.split(' · ')[0]||'')}<span class="aiu">${use.includes(' · ')?' · '+esc(use.split(' · ')[1]):''}</span>`}</span></span></span></button>`;
 }
 function linksSVG(d,rows,extraMore){
@@ -520,11 +519,10 @@ function unitHTML(a,d){
   }
   let desk;
   if(d==='full'){
-    desk=`<button class="desk is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}"${lastTip(a)?` title="${esc(lastTip(a).slice(3))}"`:''} aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
+    desk=`<button class="desk is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}"${lastTip(a)?` title="${esc(lastTip(a).slice(3))}"`:''} aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
       ${scene(a,false)}<span class="badge ${st}">${badgeSVG(st)}</span>
-      <div class="info"><div class="who"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a))}</span></div>
-      <p class="task" title="${esc(taskOf(a))}">${esc(taskOf(a))}</p><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}${pillWarn(a)}</span></div></button>`;
-  } else desk=cardHTML(a,d,nSubs);
+      <div class="info"><div class="who"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span></div>
+      <p class="task" title="${esc(taskOf(a))}">${esc(taskOf(a))}</p><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}${pillWarn(a)}</span></div></button>`;  } else desk=cardHTML(a,d,nSubs);
   return `<div class="unit${nSubs?' has-h':''}" data-key="unit:${esc(a.id)}">${desk}${helpers}</div>`;
 }
 const unitWidth=(a,d)=>{const D=DENS[d];return D.cw+(helpersOf(a).length?(d==='full'?D.hw+14+8:D.hw+18):0);};
@@ -601,7 +599,7 @@ function roomSchedChip(r){
   if(!ss.length)return '';
   const next=nextRunOf(ss),off=SCHED.pausedAll||ss.every(s=>s.paused);
   /* the chip stays short: the time when the next run is within a day, else the weekday and time */
-  const t=ss.filter(s=>!s.paused).map(s=>s.every!==undefined?s.next:s.at).filter(Boolean).sort((x,y)=>x-y)[0];
+  const t=ss.filter(s=>!s.paused).map(s=>s.next||s.at).filter(Boolean).sort((x,y)=>x-y)[0];
   const short=t?(t-Date.now()<86400000?hm(t):new Date(t).toLocaleDateString([],{weekday:'short'})+' '+hm(t)):'';
   const tip=ss.length+' schedule'+(ss.length>1?'s':'')+' for '+r.name+(off?' (paused)':next?', next run '+next:'')+'. Click to see or change them.';
   return `<button class="room-sched${off?' off':''}" type="button" data-schedroom="${esc(r.id)}" title="${esc(tip)}" aria-label="${esc(tip)}">${CLOCK_SVG}<span>${ss.length}${off?'':short?' · '+esc(short):''}</span></button>`;
@@ -1130,11 +1128,10 @@ function openPanel(id,focus){
   p.innerHTML=`<div class="panel-in">
    <div class="strip" role="navigation" aria-label="Agents"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><div class="strip-list" id="stripList"></div></div>
    <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</h2><div class="sub">${esc(a.role)}${parent?' · helper of '+esc(parent.name):''}</div></div>
-      <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?(a.live&&a.info&&!a.parent&&bridge.setModel&&feat(a,'models')?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`):''}${a.live&&a.info&&!a.parent&&a.info.profiles&&bridge.listProfiles?agentChipHTML(a):''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
-      <div class="actions"><!-- spec 052 FR-003: two actions in view, the rest under More (ids kept; End and Remove last) --><button class="btn primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
+      <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?(a.live&&a.info&&!a.parent&&bridge.setModel&&feat(a,'models')?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`):''}${a.live&&a.info&&!a.parent&&a.info.profiles&&bridge.listProfiles?agentChipHTML(a):''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>      <div class="actions"><!-- spec 052 FR-003: two actions in view, the rest under More (ids kept; End and Remove last) --><button class="btn primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
         <button class="btn" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
         ${a.live&&!feat(liveRoot(a),'stop')?'':`<button class="btn danger" id="stopBtn" type="button" title="${a.live?'Stop: interrupts this reply. The chat stays open and ready; nothing is removed.':'Stop'}"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>Stop</button>`}
-        <button class="btn" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools and usage</button>`:''}${a.live&&!a.parent&&bridge.agentMcp&&feat(liveRoot(a),'mcp')?`<button class="more-it" role="menuitem" tabindex="-1" id="mcpBtn" type="button" title="MCP servers for this agent (set globally in Settings)">MCP servers</button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}</button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>Send a message to pick up where you left off</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The other sessions in ${esc(room.name)} stay."><span class="mt">Remove from office…<small>Ends the session; its history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Take ${esc(room.name)} out of Agent Durbar: its session ends and the folder is no longer remembered. Nothing on disk is deleted."><span class="mt">Remove folder…<small>Forgets the folder; nothing on disk is deleted</small></span></button>`:'')}</div></div></div>
+        <button class="btn" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools and usage</button>`:''}${a.live&&!a.parent&&bridge.agentMcp&&feat(liveRoot(a),'mcp')?`<button class="more-it" role="menuitem" tabindex="-1" id="mcpBtn" type="button" title="MCP servers for this agent (set globally in Settings)">MCP servers</button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}</button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>`:''}${canRemote(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>Send a message to pick up where you left off</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The other sessions in ${esc(room.name)} stay."><span class="mt">Remove from office…<small>Ends the session; its history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Take ${esc(room.name)} out of Agent Durbar: its session ends and the folder is no longer remembered. Nothing on disk is deleted."><span class="mt">Remove folder…<small>Forgets the folder; nothing on disk is deleted</small></span></button>`:'')}</div></div></div>
     <p class="ptask" data-f="task"></p><p class="pusage" data-f="usage"></p>
     <div class="grants" id="grants" aria-label="Permissions allowed for this session" hidden></div></div>
    <div class="prev" id="prev" hidden></div>
@@ -1156,13 +1153,15 @@ function openPanel(id,focus){
   $('vscodeBtn').onclick=e=>a.live?openLive(a,e.currentTarget):toast('Would run <code>code '+esc(room.path)+'</code>',3800);
   if(a.live)$('pauseBtn').hidden=true;
   if($('newSessBtn'))$('newSessBtn').onclick=()=>newSession(a);
-  if($('schedHdrBtn'))$('schedHdrBtn').onclick=()=>openSchedules(room);
+  if($('schedHdrBtn'))$('schedHdrBtn').onclick=()=>openSchedules(room,a);
   if($('toolsHdrBtn'))$('toolsHdrBtn').onclick=()=>window.DurbarScreens.openTools(liveRoot(a).id);
   if($('mcpBtn'))$('mcpBtn').onclick=()=>window.DurbarScreens.agentMcp(liveRoot(a),{toggle:feat(liveRoot(a),'mcpToggle')});
   if($('endBtn'))$('endBtn').onclick=e=>endLive(a,e.currentTarget).catch(failToast('end'));
   if($('rmSessBtn'))$('rmSessBtn').onclick=()=>removeSessionUi(a);
   if($('rmFolderBtn'))$('rmFolderBtn').onclick=()=>removeFolder(room); /* spec 006 FR-022: the only session of the folder */
   if($('copyResBtn'))$('copyResBtn').onclick=()=>copyResume(a);
+  if($('remoteBtn'))$('remoteBtn').onclick=()=>(a.remote?remoteOff(a):remoteOn(a));
+  if($('remoteChip'))$('remoteChip').onclick=()=>remoteLinkDialog(a);
   if(a.live&&!a.parent)initPrev(a); else {const pv=$('prev');if(pv)pv.hidden=true;}
   if(a.live&&!a.parent&&a.info&&a.info.resumeLast&&bridge.wake)wakeLast(a);
   wireMoreMenu();
@@ -1487,6 +1486,7 @@ function palActions(){
     {label:'Close all room doors',kw:'doors close compact plates',run:palClick('closeAll'),ok:()=>palUsable('closeAll')},
     {label:'Open all room doors',kw:'doors open expand',run:palClick('openAll'),ok:()=>palUsable('openAll')},
     {label:'Keyboard shortcuts',kw:'keys shortcuts help hotkeys',keys:['?'],run:openKbdHelp},
+    ...remotePalItems(),
   ].filter(x=>!x.ok||x.ok()).map(x=>({...x,group:'Actions'}));
 }
 function palAll(){
@@ -1652,6 +1652,9 @@ const MODE_IC={
 /* spec 052 FR-011: the desk's accessible name says its permission mode; the glyph next to the name is decoration for screen readers */
 /* spec 052 FR-039: with more than one harness in the office, each card says which one runs it ("Reviewer · Codex") */
 const kindTag=a=>{const r=a&&a.parent?byId(a.parent):a;if(!r||!r.live||!r.info)return '';const ks=new Set(agents.filter(x=>x.live&&!x.parent&&x.info).map(x=>x.info.adapterId||'copilot'));return ks.size>1?' · '+kindWord(r.info.adapterId):'';};
+/* spec 054 FR-007: remote control on = text in the card's existing role line and its accessible name (no new element, no size change) */
+const remoteTag=a=>a&&!a.parent&&a.remote?' · Remote':'';
+const remoteWords=a=>a&&!a.parent&&a.remote?', remote control on':'';
 const modeWords=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?', '+MODE_NAME[a.info.permMode]+(a.info.permMode==='allow'&&a.info.permRestored?' (restored)':''):'';
 /* spec 052 FR-065: Allow all is a small red "Allow all" text badge in the icon's slot (the words, not only a padlock); the other modes keep the icon */
 /* spec 052 FR-065: the list row says "Allow all" in a red badge (text=true); a desk card keeps the red icon, because a text badge
@@ -2336,6 +2339,7 @@ function onLiveEvent(e){
     else if(e.type==='status'){if(VISITS.onStatus(a.id,e.status))scheduleRender();}
   }
   if(e.type==='title'){if(!e.agentId)applyTitle(a,e.title);return;}
+  if(e.type==='agentSchedule'){if(!e.agentId)onAgentSchedule(a,e);return;}
   if(e.type==='subagent')return onSubagent(a,e);
   if(e.agentId&&e.type!=='permission'&&e.type!=='grants'&&e.type!=='limit')return onSubEvent(a,e);
   const chat=liveChat(a), main=true;
@@ -2366,6 +2370,7 @@ function onLiveEvent(e){
       /* a permission still pending when the session stops is denied cleanly: no Approve/Deny left behind, grants gone */
       [...a.pend.keys()].forEach(id=>settlePerm(a,{requestId:id,state:'denied',via:'stopped'}));
       setGrants(a,[]);
+      if(a.remote){a.remote=null;updateRemoteUi(a);} /* spec 054 FR-003: remote control ends with the session */
       closeTurn(a);setState(a,'idle','Ended','Session ended. Send a message to resume it.');}
     return;
   case 'permission':if(main)settlePerm(a,e.permission);return;
@@ -2926,6 +2931,60 @@ function maybeSuggestFresh(a){
 /* ---------------- new session (another agent in a folder) ---------------- */
 function closeSessDlg(){const d=document.getElementById('sessDlg');if(d)d.remove();}
 /* spec 030 FR-036: a live agent whose kind can make a hand-off summary */
+/* ---------------- spec 054: remote control from GitHub (web and mobile) ---------------- */
+/* Only for a live main agent whose kind reports `remote`; hidden otherwise (FR-006). State lives on the agent (`a.remote`) and in main. */
+const canRemote=a=>!!(bridge.setRemote&&a&&a.live&&!a.parent&&a.info&&feat(a,'remote'));
+const remoteVisText=v=>v==='repo'?'Visible to: anyone who can read the repository.':v==='unshared'?'Visible to: you and the repository\'s collaborators.':'';
+const remoteItemInner=a=>a.remote?'<span class="mt">Stop remote control<small>GitHub can no longer follow or steer it</small></span>':'<span class="mt">Control from GitHub (web and mobile)…<small>Follow and steer it from your phone</small></span>';
+const remoteChipHTML=a=>`<button class="mchip mchip-btn" id="remoteChip" type="button" title="Remote control is on: this session can be followed and steered from GitHub. Click for the link."${a.remote?'':' hidden'}>Remote</button>`;
+function remotePalItems(){
+  const a=ui.selected?byId(ui.selected):null; if(!canRemote(a))return [];
+  return [a.remote?{label:'Stop remote control',hint:a.name,kw:'remote github mobile phone steer',run:()=>remoteOff(a)}:{label:'Control from GitHub (web and mobile)…',hint:a.name,kw:'remote github mobile phone steer',run:()=>remoteOn(a)}];
+}
+/* the header chip and the More item follow the state in place (the composer keeps its text); the office re-renders the card */
+function updateRemoteUi(a){
+  if(ui.selected===a.id){const c=$('remoteChip');if(c)c.hidden=!a.remote;const b=$('remoteBtn');if(b)b.innerHTML=remoteItemInner(a);}
+  scheduleRender();
+}
+const remoteBack=()=>$('moreBtn')||$('panelTitle');
+let remoteBusy=false;
+async function remoteOn(a){
+  if(!canRemote(a)||remoteBusy||a.remote)return;
+  const r=await askDialog({title:'Control this session from GitHub?',
+    body:'Durbar turns on remote control for this session. Its messages are sent to GitHub, so you can follow and steer it from github.com and GitHub Mobile. Anyone who can see this session on GitHub can steer it.',
+    lines:['Who can see it is decided by GitHub: you and the repository\'s collaborators, or everyone who can read the repository. Durbar does not change that.'],
+    buttons:[{label:'Cancel',value:null},{label:'Turn on',value:'on',cls:'primary warn'}],returnFocus:remoteBack});
+  if(!r||r.value!=='on')return;
+  remoteBusy=true; let res;
+  try{res=await bridge.setRemote(a.id,true);}catch(e){res={ok:false,error:String(e&&e.message||e)};}finally{remoteBusy=false;}
+  if(!res||!res.ok){toast('Could not turn on remote control: '+esc(res&&res.error||'unknown error'),6000).classList.add('err');return;}
+  a.remote={url:typeof res.url==='string'?res.url:'',steerable:res.steerable!==false,visibility:res.visibility||''};
+  updateRemoteUi(a);
+  toast('Remote control is on for '+esc(a.name)+'.').classList.add('ok');
+  remoteLinkDialog(a);
+}
+async function remoteOff(a){
+  if(!a||!a.remote||remoteBusy||!bridge.setRemote)return;
+  remoteBusy=true; let res;
+  try{res=await bridge.setRemote(a.id,false);}catch(e){res={ok:false,error:String(e&&e.message||e)};}finally{remoteBusy=false;}
+  if(!res||!res.ok){toast('Could not stop remote control: '+esc(res&&res.error||'unknown error'),6000).classList.add('err');return;}
+  a.remote=null; updateRemoteUi(a);
+  toast('Remote control is off for '+esc(a.name)+'.').classList.add('ok');
+}
+/* FR-006: the link as text (never HTML), Copy link and Open on GitHub (main opens its own stored, github.com-only link) */
+async function remoteLinkDialog(a){
+  const rm=a&&a.remote; if(!rm)return;
+  const lines=[];
+  if(rm.url){lines.push(rm.url);lines.push('Open this link in GitHub Mobile to steer from your phone.');}
+  else lines.push('Remote control is on, but GitHub did not give a link. Find the session on github.com.');
+  if(!rm.steerable)lines.push('GitHub can show this session but cannot steer it yet.');
+  const vt=remoteVisText(rm.visibility); if(vt)lines.push(vt);
+  const r=await askDialog({title:'Remote control is on',body:'Follow and steer '+a.name+' from github.com or GitHub Mobile. Stop it any time from More > Stop remote control.',lines,
+    buttons:[...(rm.url?[{label:'Copy link',value:'copy'},{label:'Open on GitHub',value:'open',cls:'primary'}]:[]),{label:'Done',value:null}],returnFocus:()=>$('remoteChip')||remoteBack()});
+  if(!r)return;
+  if(r.value==='copy'){try{await navigator.clipboard.writeText(rm.url);toast('Link copied.').classList.add('ok');}catch(e){toast('Could not copy.').classList.add('err');}}
+  else if(r.value==='open'&&bridge.openRemote){const o=await bridge.openRemote(a.id).catch(()=>({ok:false}));if(!o||!o.ok)toast('Could not open the link.').classList.add('err');}
+}
 const canHandoff=a=>!!(bridge.handoff&&a&&a.live&&!a.parent&&feat(a,'handoff'));
 function newSession(a0,o){
   const a=liveRoot(a0); if(!bridge.newSession)return; o=o||{};
@@ -3049,31 +3108,78 @@ let SCHED={pausedAll:false,schedules:[]};
 const folderKeyOf=r=>{const ag=agents.find(x=>!x.parent&&x.room===r.id);const i=ag&&ag.info;return i?(i.workspaceFile||i.cwd):r.path;};
 const schedulesOf=r=>SCHED.schedules.filter(s=>s.folder===folderKeyOf(r));
 const clock=ms=>{const d=new Date(ms),n=new Date(),t=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});return d.toDateString()===n.toDateString()?t:d.toLocaleDateString([],{month:'short',day:'numeric'})+' '+t;};
-const nextRunOf=ss=>{const t=ss.filter(s=>!s.paused&&!s.done).map(s=>s.every!==undefined?s.next:s.at).filter(Boolean).sort((a,b)=>a-b)[0];return t&&!SCHED.pausedAll?clock(t):'';};
-const OUTCOME_WORD={sent:'sent','skipped-busy':'skipped: the agent was busy','skipped-paused':'skipped: paused',missed:'missed: the app was closed',failed:'could not send'};
+const recurringS=s=>s.every!==undefined||!!s.rule;
+const nextRunOf=ss=>{const t=ss.filter(s=>!s.paused&&!s.done).map(s=>recurringS(s)?s.next:s.at).filter(Boolean).sort((a,b)=>a-b)[0];return t&&!SCHED.pausedAll?clock(t):'';};
+const OUTCOME_WORD={sent:'sent','skipped-busy':'skipped: the agent was busy','skipped-paused':'skipped: paused','skipped-cap':'not sent: reached its limit','skipped-ended':'not sent: the session has ended',missed:'missed: the app was closed',failed:'could not send'};
+const DAY3=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+/* spec 044 FR-012: "every day at 08:30", "weekdays at 09:00", "weekly on Mon, Thu at 17:00" (Monday first) */
+const ruleText=r=>r.kind==='weekdays'?'weekdays at '+r.time:r.kind==='weekly'?'weekly on '+[...(r.days||[])].sort((a,b)=>((a+6)%7)-((b+6)%7)).map(d=>DAY3[d]).join(', ')+' at '+r.time:'every day at '+r.time;
+/* FR-015: the unit a limit is kept in for this agent (its app's cap unit), or '' when the app reports no spending in a unit */
+const schedCapUnit=a=>{const c=a&&a.info?capsFor(a):null;if(!c||!c.usage)return '';const u=c.capUnit==='usd'?'usd':'aiu';return (u==='usd'?c.usage.costUsd:c.usage.nanoAiu)?u:'';};
+const capAmt=(n,u)=>u==='usd'?'$'+(Number(n)||0).toFixed(2):(Math.round((Number(n)||0)*100)/100)+' AIU';
+/* one schedule's line under its prompt: when, target, state, spend, next and last run (escaped by the caller) */
+function schedLine(s){
+  const st=s.done?' · done':s.paused?(s.pausedReason==='session-ended'?' · Paused: the session has ended':s.pausedReason==='cap'?' · Paused: reached its limit':' · paused'):(recurringS(s)&&s.next&&!SCHED.pausedAll?' · next '+clock(s.next):'');
+  return whenOf(s)+(s.target?' · → '+(s.target.name||'one session'):'')+st
+    +(s.cap?' · spent '+capAmt(s.spent||0,s.cap.unit)+' of '+capAmt(s.cap.amount,s.cap.unit)+(s.spentUnknown?' (the spend was not fully reported)':''):'')
+    +(s.last?' · last '+clock(s.last.at)+': '+(OUTCOME_WORD[s.last.outcome]||s.last.outcome):'');
+}
+/* the row's buttons; `k` is the data attribute (sc in the dialog, ss in Settings). An ended session cannot be resumed, only moved to the folder's agent (FR-014). */
+const schedBtns=(s,k)=>(s.done?'':s.paused&&s.pausedReason==='session-ended'?`<button class="btn" type="button" data-${k}="retarget" data-id="${esc(s.id)}" title="Send it to this folder's agent from now on, and resume it">Use the folder's agent</button>`
+  :`<button class="btn" type="button" data-${k}="pause" data-id="${esc(s.id)}"${s.pausedReason==='cap'?' title="Resume starts counting its spending again from zero"':''}>${s.paused?'Resume':'Pause'}</button>`)
+  +`<button class="btn danger" type="button" data-${k}="del" data-id="${esc(s.id)}">Delete</button>`;
+const schedRow=(s,k)=>`<div class="sc-row${s.paused||s.done?' off':''}"><div class="sc-t"><b title="${esc(s.prompt)}">${esc(s.prompt.length>90?s.prompt.slice(0,89)+'…':s.prompt)}</b><small>${esc(schedLine(s))}</small></div>${schedBtns(s,k)}</div>`;
+/* pause/resume/retarget/delete from a row (dialog or Settings) */
+async function schedAct(act,s){
+  if(act==='del')await bridge.removeSchedule(s.id);
+  else{const r=await bridge.saveSchedule(act==='retarget'?Object.assign({},s,{target:null,paused:false}):Object.assign({},s,{paused:!s.paused}));if(r&&!r.ok)toast(esc(r.error||'Could not change the schedule.'),5000);}
+  await refreshSchedules();
+}
+/* spec 044 FR-016: prompts scheduled inside the agent app's own session (Copilot /every, /after, manage_schedule), read-only */
+function onAgentSchedule(a,e){
+  const m=a.agentScheds||(a.agentScheds=new Map());const id=String(e.scheduleId);
+  if(e.phase==='created')m.set(id,{prompt:e.prompt||'',everyMs:e.everyMs,cron:e.cron,tz:e.tz,at:e.at,recurring:e.recurring,selfPaced:e.selfPaced,origin:e.origin});
+  else if(e.phase==='cancelled')m.delete(id);
+  else if(e.phase==='rearmed'&&m.has(id))m.get(id).nextAt=e.nextAt;
+  renderSchedDlg();
+}
+const ownWhen=x=>x.selfPaced?'when the agent decides'+(x.nextAt?', next '+clock(x.nextAt):''):x.cron?'cron '+x.cron+(x.tz?' ('+x.tz+')':''):x.everyMs?'every '+Math.max(1,Math.round(x.everyMs/60000))+' min':x.at?'once at '+clock(x.at):'scheduled';
 const hm=ms=>{const d=new Date(ms);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
-const whenOf=s=>s.every!==undefined&&s.at!==undefined?(s.every===1440?'every day at '+hm(s.at):'every '+(s.every%60===0?(s.every/60)+' h':s.every+' min')+' from '+hm(s.at)) /* spec 044 FR-007 */
+const whenOf=s=>s.rule?ruleText(s.rule):s.every!==undefined&&s.at!==undefined?(s.every===1440?'every day at '+hm(s.at):'every '+(s.every%60===0?(s.every/60)+' h':s.every+' min')+' from '+hm(s.at)) /* spec 044 FR-007 */
   :s.every!==undefined?(s.every%60===0?'every '+(s.every/60)+' h':'every '+s.every+' min'):'once at '+clock(s.at);
 function renderSchedDlg(){
   const d=$('schedDlg'); if(!d)return; const r=ROOMS.find(x=>x.id===d.dataset.room); if(!r){closeSchedDlg();return;}
   const ss=schedulesOf(r), list=$('sdList');
-  list.innerHTML=ss.length?ss.map(s=>`<div class="sc-row${s.paused||s.done?' off':''}"><div class="sc-t"><b title="${esc(s.prompt)}">${esc(s.prompt.length>90?s.prompt.slice(0,89)+'…':s.prompt)}</b><small>${esc(whenOf(s))}${s.done?' · done':s.paused?' · paused':(s.every!==undefined&&s.next&&!SCHED.pausedAll?' · next '+esc(clock(s.next)):'')}${s.last?' · last '+esc(clock(s.last.at))+': '+esc(OUTCOME_WORD[s.last.outcome]||s.last.outcome):''}</small></div>${s.done?'':`<button class="btn" type="button" data-sc="pause" data-id="${esc(s.id)}">${s.paused?'Resume':'Pause'}</button>`}<button class="btn danger" type="button" data-sc="del" data-id="${esc(s.id)}">Delete</button></div>`).join(''):'<p class="sc-empty">No schedules for this folder yet.</p>';
+  list.innerHTML=ss.length?ss.map(s=>schedRow(s,'sc')).join(''):'<p class="sc-empty">No schedules for this folder yet.</p>';
   $('sdPausedNote').hidden=!SCHED.pausedAll;
+  /* FR-016: the agent app's own schedules of this folder's live sessions, read-only */
+  const own=agents.filter(x=>x.live&&!x.parent&&x.room===r.id&&x.agentScheds&&x.agentScheds.size).flatMap(x=>[...x.agentScheds.values()].map(v=>({x,v})));
+  const ow=$('sdOwn');if(ow){ow.hidden=!own.length;ow.innerHTML=own.length?'<h4>Scheduled in the agent app (read-only)</h4><p class="sc-tpl-note">Made with the app\'s own commands or by the agent. Agent Durbar shows them but cannot change them; ask the agent, or use the app\'s own schedule manager.</p>'
+    +own.map(({x,v})=>`<div class="sc-row off"><div class="sc-t"><b title="${esc(v.prompt)}">${esc(v.prompt||'(no prompt text)')}</b><small>${esc(ownWhen(v)+' · '+(x.title||x.name)+(v.origin==='model'?' · made by the agent':v.origin==='user'?' · made by you':''))}</small></div></div>`).join(''):'';}
 }
 function closeSchedDlg(){const d=$('schedDlg');if(d)d.remove();}
-function openSchedules(r){
+/* `from`: the chat it was opened from (FR-014: then it can send to that session instead of the folder's agent) */
+function openSchedules(r,from){
   closeSchedDlg();toggleFolders(false);
+  const ag=from&&from.live&&!from.parent&&from.info&&from.room===r.id?from:null;
+  const folderAg=agents.find(x=>!x.parent&&x.room===r.id&&x.live)||null;
   const d=document.createElement('div');d.id='schedDlg';d.className='dlg-ov';d.dataset.room=r.id;
+  const today=new Date().getDay();
+  const unitWord=u=>u==='usd'?'dollars (estimate)':u==='aiu'?'AI credits':'';
   const soon=new Date(Date.now()+60*60000);soon.setSeconds(0,0);const pad=n=>String(n).padStart(2,'0');
   const local=`${soon.getFullYear()}-${pad(soon.getMonth()+1)}-${pad(soon.getDate())}T${pad(soon.getHours())}:${pad(soon.getMinutes())}`;
   d.innerHTML=`<div class="dlg sched-dlg" role="dialog" aria-modal="true" aria-labelledby="sdhT"><h3 id="sdhT">Schedules for ${esc(r.name)}</h3>
    <p class="dsub">A prompt sent to this folder's agent at a time or an interval, <b>only while Agent Durbar is open</b>. A run is skipped when the agent is busy or waiting for you; missed runs are not caught up. The agent's own permission mode and spending limit apply.</p>
    <p class="sc-paused" id="sdPausedNote" hidden>All schedules are paused (Folders panel).</p>
    <div class="sc-list" id="sdList"></div>
+   <div class="sc-own" id="sdOwn" hidden></div>
    <div class="sc-form">${window.DurbarSchedTemplates?`<label>Start from a template<select id="scTpl"><option value="">Blank prompt</option>${DurbarSchedTemplates.TEMPLATES.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')}</select></label><p class="sc-tpl-note" id="scTplNote" hidden></p>`:''}<label>Prompt<textarea id="scPrompt" rows="3" maxlength="2000" placeholder="For example: Summarise the open pull requests in three bullet points."></textarea></label>
     <div class="sc-when"><label class="chk"><input type="radio" name="scKind" value="every" checked> Every <input type="number" id="scEvery" min="5" max="1440" step="5" value="60" aria-label="Minutes between runs"> minutes</label>
-    <label class="chk"><input type="radio" name="scKind" value="daily"> Every day at <input type="time" id="scDaily" value="08:30" aria-label="Time of day"></label>
-    <label class="chk"><input type="radio" name="scKind" value="once"> Once at <input type="datetime-local" id="scAt" value="${local}" aria-label="Date and time"></label></div></div>
+    <label class="chk"><input type="radio" name="scKind" value="daily"> <select id="scCal" aria-label="Which days"><option value="daily">Every day</option><option value="weekdays">Weekdays (Mon–Fri)</option><option value="weekly">Weekly on</option></select> at <input type="time" id="scDaily" value="08:30" aria-label="Time of day"></label>
+    <label class="chk"><input type="radio" name="scKind" value="once"> Once at <input type="datetime-local" id="scAt" value="${local}" aria-label="Date and time"></label></div>
+    <div class="sc-days" id="scDays" role="group" aria-label="Days of the week" hidden>${[1,2,3,4,5,6,0].map(n=>`<label class="chk"><input type="checkbox" value="${n}"${n===today?' checked':''}> ${DAY3[n]}</label>`).join('')}</div>
+    <div class="sc-opts">${ag?`<label>Send to <select id="scTarget"><option value="">This folder's agent</option><option value="${esc(ag.id)}">This session (${esc(ag.title||ag.name)})</option></select></label>`:''}
+     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}>Limit <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div></div>
    <div class="dbtn"><button class="btn" id="scClose" type="button">Close</button><button class="btn primary" id="scAdd" type="button">Add schedule</button></div></div>`;
   document.body.appendChild(d);
   renderSchedDlg();
@@ -3085,24 +3191,39 @@ function openSchedules(r){
       const prompt=$('scPrompt').value.trim();if(!prompt){$('scPrompt').focus();toast('Write the prompt first.',3000);return;}
       const kind=d.querySelector('input[name="scKind"]:checked').value,once=kind==='once';
       const input={folder:folderKeyOf(r),prompt};
-      if(kind==='daily'){const t=DurbarSchedTemplates.nextDaily($('scDaily').value,Date.now());if(!t){toast('Choose a time of day.',3500);return;}input.every=1440;input.at=t;} /* spec 044 FR-007 */
+      if(kind==='daily'){ /* spec 044 FR-012: a calendar rule; main computes the next run from the local wall clock */
+        const time=$('scDaily').value;if(!/^\d\d:\d\d$/.test(time)){toast('Choose a time of day.',3500);return;}
+        const cal=$('scCal').value,rule={kind:cal,time};
+        if(cal==='weekly'){rule.days=[...d.querySelectorAll('#scDays input:checked')].map(x=>Number(x.value));if(!rule.days.length){toast('Choose at least one day.',3500);return;}}
+        input.rule=rule;
+      }
       else if(once){const t=new Date($('scAt').value).getTime();if(!(t>Date.now())){toast('Choose a time in the future.',3500);return;}input.at=t;}
       else{const m=Math.round(Number($('scEvery').value));if(!(m>=5&&m<=1440)){toast('Choose 5 to 1440 minutes.',3500);return;}input.every=m;}
+      const tsel=$('scTarget'),tag=tsel&&tsel.value?ag:null; /* FR-014 */
+      if(tag&&tag.info)input.target={session:tag.id,agent:tag.info.adapterId||'copilot',name:String(tag.title||tag.name||'').slice(0,80)};
+      const capV=$('scCap')&&!$('scCapL').hidden?String($('scCap').value).trim():''; /* FR-015 */
+      if(capV){const n=Number(capV),u=schedCapUnit(tag||folderAg);if(!(n>0)||!u){toast('A limit must be a positive amount.',3500);return;}input.cap={amount:n,unit:u};}
       const res=await bridge.saveSchedule(input);
       if(!res.ok){toast(esc(res.error||'Could not add the schedule.'),5000);return;}
-      $('scPrompt').value='';await refreshSchedules();toast('Schedule added: '+esc(whenOf(res.schedule))+'.',3000);return;
+      $('scPrompt').value='';if($('scCap'))$('scCap').value='';await refreshSchedules();toast('Schedule added: '+esc(whenOf(res.schedule))+'.',3000);return;
     }
-    const s=SCHED.schedules.find(x=>x.id===b.dataset.id);if(!s)return;
-    if(b.dataset.sc==='del'){await bridge.removeSchedule(s.id);await refreshSchedules();}
-    else if(b.dataset.sc==='pause'){await bridge.saveSchedule(Object.assign({},s,{paused:!s.paused}));await refreshSchedules();}
+    const s=SCHED.schedules.find(x=>x.id===b.dataset.id);if(!s||!b.dataset.sc)return;
+    await schedAct(b.dataset.sc,s);
   });
+  /* the calendar choice: weekly shows the days; touching any of it picks "On a calendar" */
+  const calKind=()=>{d.querySelector('input[name="scKind"][value="daily"]').checked=true;};
+  const showDays=()=>{$('scDays').hidden=$('scCal').value!=='weekly';};
+  $('scCal').addEventListener('change',()=>{calKind();showDays();});
+  $('scDaily').addEventListener('input',calKind);
+  $('scDays').addEventListener('change',calKind);
+  if($('scTarget'))$('scTarget').addEventListener('change',()=>{const t=$('scTarget').value?ag:folderAg,u=schedCapUnit(t);$('scCapL').hidden=!u;$('scCapU').textContent=unitWord(u);});
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeSchedDlg();}});
   /* spec 044 FR-006: a template fills the form (prompt and when); nothing is saved until Add schedule */
   const tpl=$('scTpl');if(tpl)tpl.addEventListener('change',()=>{
     const t=DurbarSchedTemplates.byId(tpl.value),note=$('scTplNote');
     if(!t){note.hidden=true;return;}
     $('scPrompt').value=t.prompt;
-    if(t.daily){d.querySelector('input[name="scKind"][value="daily"]').checked=true;$('scDaily').value=t.daily;}
+    if(t.daily){d.querySelector('input[name="scKind"][value="daily"]').checked=true;$('scCal').value='daily';showDays();$('scDaily').value=t.daily;}
     else if(t.every){d.querySelector('input[name="scKind"][value="every"]').checked=true;$('scEvery').value=String(t.every);}
     note.textContent=t.needs+(t.decides?' At the end it asks you what to do next: the agent shows as Waiting for you, with a question card in its chat.':'')+' You can edit the prompt and the time before adding it.';note.hidden=false;
   });
@@ -3121,7 +3242,7 @@ function renderSchedSettings(){
   const without=rooms.filter(r=>!schedulesOf(r).length);
   host.innerHTML=`<label class="fp-pause"><input type="checkbox" id="schedPauseAllSet"${SCHED.pausedAll?' checked':''}> Pause all schedules</label>`
     +(groups.length?groups.map(({r,ss})=>`<div class="ss-group"><div class="ss-head"><b>${esc(r.name)}</b><small>${esc(r.path)}</small><button class="btn" type="button" data-ss="open" data-room="${esc(r.id)}">Open…</button></div>`
-      +ss.map(s=>`<div class="sc-row${s.paused||s.done?' off':''}"><div class="sc-t"><b title="${esc(s.prompt)}">${esc(s.prompt.length>90?s.prompt.slice(0,89)+'…':s.prompt)}</b><small>${esc(whenOf(s))}${s.done?' · done':s.paused?' · paused':(s.every!==undefined&&s.next&&!SCHED.pausedAll?' · next '+esc(clock(s.next)):'')}${s.last?' · last '+esc(clock(s.last.at))+': '+esc(OUTCOME_WORD[s.last.outcome]||s.last.outcome):''}</small></div>${s.done?'':`<button class="btn" type="button" data-ss="pause" data-id="${esc(s.id)}">${s.paused?'Resume':'Pause'}</button>`}<button class="btn danger" type="button" data-ss="del" data-id="${esc(s.id)}">Delete</button></div>`).join('')+'</div>').join('')
+      +ss.map(s=>schedRow(s,'ss')).join('')+'</div>').join('')
       :'<p class="scr-note small">No schedules yet.</p>')
     +(without.length?`<div class="scr-tools"><label class="ss-add">Add a schedule to<select id="ssRoom">${without.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label><button class="btn" type="button" data-ss="add">Add…</button></div>`:'');
 }
@@ -3131,11 +3252,10 @@ document.addEventListener('click',async e=>{
   if(act==='open'){const r=ROOMS.find(x=>x.id===b.dataset.room);if(r)openSchedules(r);return;}
   if(act==='add'){const r=ROOMS.find(x=>x.id===$('ssRoom').value);if(r)openSchedules(r);return;}
   const s=SCHED.schedules.find(x=>x.id===b.dataset.id);if(!s)return;
-  if(act==='del'){await bridge.removeSchedule(s.id);await refreshSchedules();}
-  else if(act==='pause'){await bridge.saveSchedule(Object.assign({},s,{paused:!s.paused}));await refreshSchedules();}
+  await schedAct(act,s);
 });
 document.addEventListener('change',async e=>{if(e.target&&e.target.id==='schedPauseAllSet'){const r=await bridge.setSchedulesPaused(e.target.checked);SCHED.pausedAll=r.pausedAll;schedChanged();}});
-if(bridge&&bridge.onScheduleRan){bridge.onScheduleRan(r=>{const a=liveById(r.agentId);if(!a)return;addNote(liveChat(a),'Scheduled prompt ('+esc(r.every!==undefined?whenOf({every:r.every}):'once')+').');});}
+if(bridge&&bridge.onScheduleRan){bridge.onScheduleRan(r=>{const a=liveById(r.agentId);if(!a)return;addNote(liveChat(a),'Scheduled prompt ('+esc(r.rule?ruleText(r.rule):r.every!==undefined?whenOf({every:r.every}):'once')+').');});}
 function renderFolders(){
   const pop=$('foldersPop'); if(pop.hidden)return;
   if(!ROOMS.length){pop.innerHTML='<p class="fp-empty">No folders yet. Use + Folder, or + Workspace for a VS Code .code-workspace file. Folders you add are remembered next time.</p>';return;}

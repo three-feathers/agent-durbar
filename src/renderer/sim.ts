@@ -118,10 +118,10 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
 /* Spec 012 T018 (FR-065, FR-066): the simulated kinds of `simkinds=mixed`. They are a simulation, not a statement about the real CLIs.
    Index in the 15-agent roster -> kind; every other agent is Copilot. Mcp-swiss holds two kinds (Ada, Mira); the basic agent is Priya (idle, never the first). */
 const SIM_KIND_BY_AGENT: Record<number, string> = { 0: 'claude', 3: 'claude', 4: 'codex', 5: 'claude', 6: 'basic', 7: 'codex', 8: 'claude', 9: 'codex', 11: 'claude' };
-const SIM_COPILOT_CAPS = { interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true } as AdapterInfo['capabilities'];
+const SIM_COPILOT_CAPS = { interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, remote: true } as AdapterInfo['capabilities'];
 const SIM_MIXED_KINDS: AdapterInfo[] = [
-  { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true } },
-  { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: false } },
+  { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, remote: false, mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true } },
+  { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: false, remote: false } },
   { id: 'basic', displayName: 'Basic agent (simulated)', state: 'ready', version: 'sim', capabilities: { interrupt: false, resume: false, images: false, models: false, effort: false, permissionModes: ['read-only'], permModeSwitch: 'none', usage: { tokens: true, costUsd: false, nanoAiu: false }, context: false, caps: false, helpers: false, history: false, mcpStatus: false, mcpToggle: false } as AdapterInfo['capabilities'] },
 ];
 
@@ -299,8 +299,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       (a.tools[key] ??= { calls: 0, failed: 0 })[f]++;
       if (server) (simDoc.servers[server] ??= { calls: 0, failed: 0 })[f]++;
     };
+    let simSchedHook: ((e: AgentEvent) => void) | undefined; // spec 044 FR-018: usage of a scheduled run counts toward its limit
     const emit = (e: AgentEvent): void => {
       listeners.forEach((l) => l(e));
+      simSchedHook?.(e);
       if (e.type === 'status' && e.status === 'idle') {
         const q = sims.find((x) => x.info.id === e.sessionId);
         if (q?.pendingModel) window.setTimeout(() => void applyPending(q), 0); // the turn ended: the queued switch applies
@@ -333,25 +335,55 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       }, 300);
     }
     const simTrusted = new Set<string>(); // spec 043: repository agents confirmed in this run
-    const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number }) => void)[],
-      changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); } };
+    const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void)[],
+      changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); },
+      attrib: new Map<string, string>() };
+    /* spec 044 FR-012: the rule copy in schedtemplates.js (main uses src/shared/schedrules.ts; test:schedules keeps them equal) */
+    type SimRules = { parseRule(v: unknown): ScheduleInfo['rule']; nextRuleRun(r: NonNullable<ScheduleInfo['rule']>, after: number): number | undefined };
+    const simRules = (): SimRules | undefined => (window as unknown as { DurbarSchedTemplates?: SimRules }).DurbarSchedTemplates;
+    const simNext = (sc: ScheduleInfo, now: number): number =>
+      sc.rule ? simRules()?.nextRuleRun(sc.rule, now) ?? now + 1440 * 60000
+        : sc.at !== undefined ? sc.at + (Math.floor((now - sc.at) / ((sc.every as number) * 60000)) + 1) * (sc.every as number) * 60000 : now + (sc.every as number) * 60000; // FR-007: anchored runs keep their time of day
+    const simUnit = (s: SimAgent | undefined): 'aiu' | 'usd' | undefined => {
+      if (!s) return undefined;
+      const kc = caps(s.info.adapterId ?? 'copilot');
+      const u = kc.capUnit === 'usd' ? 'usd' : 'aiu';
+      return (u === 'usd' ? kc.usage.costUsd : kc.usage.nanoAiu) ? u : undefined;
+    };
+    const simAgentOf = (sc: { folder: string; target?: { session: string } }): SimAgent | undefined =>
+      sc.target ? sims.find((x) => x.info.id === sc.target?.session) : sims.find((x) => (x.info.workspaceFile ?? x.info.cwd) === sc.folder);
+    simSchedHook = (e) => {
+      // FR-015: from a scheduled send until that session's turn ends, its usage counts toward the schedule
+      if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) { simSched.attrib.delete(e.sessionId); return; }
+      if (e.type !== 'usage') return;
+      const sc = simSched.list.find((x) => x.id === simSched.attrib.get(e.sessionId));
+      if (!sc?.cap) return;
+      const amt = sc.cap.unit === 'usd' ? e.costUsd : e.nanoAiu !== undefined ? e.nanoAiu / 1e9 : undefined;
+      if (amt === undefined) sc.spentUnknown = true;
+      else sc.spent = (sc.spent ?? 0) + amt;
+      simSched.changed();
+    };
     window.setInterval(() => {
       const now = Date.now();
       let any = false;
       for (const sc of simSched.list) {
-        const due = sc.done || sc.paused ? undefined : sc.every !== undefined ? sc.next : sc.at;
+        if (sc.target && !sc.done && !sc.paused && !sims.some((x) => x.info.id === sc.target?.session)) { sc.paused = true; sc.pausedReason = 'session-ended'; any = true; continue; } // FR-014
+        const recurring = sc.every !== undefined || !!sc.rule;
+        const due = sc.done || sc.paused ? undefined : recurring ? sc.next : sc.at;
         if (due === undefined || due > now) continue;
         any = true;
-        const s = sims.find((x) => (x.info.workspaceFile ?? x.info.cwd) === sc.folder);
+        const s = simAgentOf(sc);
         const busy = !!s && (s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.perm);
-        const outcome = simSched.pausedAll ? 'skipped-paused' : !s ? 'failed' : busy ? 'skipped-busy' : 'sent';
+        const outcome = simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : busy ? 'skipped-busy' : 'sent';
         if (outcome === 'sent' && s) {
           emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: sc.prompt } as AgentEvent);
-          simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at }));
+          simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
+          simSched.attrib.set(s.info.id, sc.id);
           void api.send(s.info.id, sc.prompt, []);
         }
         sc.last = { at: now, outcome };
-        if (sc.every !== undefined) sc.next = sc.at !== undefined ? sc.at + (Math.floor((now - sc.at) / (sc.every * 60000)) + 1) * sc.every * 60000 : now + sc.every * 60000; // spec 044 FR-007: anchored runs keep their time of day
+        if (outcome === 'skipped-cap') { sc.paused = true; sc.pausedReason = 'cap'; } // FR-015
+        else if (recurring) sc.next = simNext(sc, now);
         else sc.done = true;
       }
       if (any) simSched.changed();
@@ -928,9 +960,26 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       saveSchedule: async (input) => {
         const now = Date.now();
         const every = input.every !== undefined ? Math.round(Number(input.every)) : undefined;
-        if (!input.folder || !String(input.prompt ?? '').trim() || (every === undefined && !(Number(input.at) > now)) || (every !== undefined && !(every >= 5 && every <= 1440))) return { ok: false as const, error: 'A schedule needs a prompt and either a future time or 5 to 1440 minutes.' };
+        const rule = input.rule !== undefined ? simRules()?.parseRule(input.rule) : undefined;
+        if (input.rule !== undefined && !rule) return { ok: false as const, error: 'That calendar rule is not valid.' };
         const old = simSched.list.find((x) => x.id === input.id);
-        const sc: ScheduleInfo = { id: old?.id ?? 'sched-' + ++simSched.n, folder: input.folder, prompt: String(input.prompt).trim().slice(0, 2000), ...(every !== undefined ? { every, ...(Number(input.at) > 0 ? { at: Number(input.at) } : {}), next: old?.next ?? (Number(input.at) > now ? Number(input.at) : now + every * 60000) } : { at: Number(input.at) }), ...(input.paused ? { paused: true } : {}), ...(old?.last ? { last: old.last } : {}) };
+        if (!input.folder || !String(input.prompt ?? '').trim() || (!rule && every === undefined && !(Number(input.at) > now) && !(old && input.paused)) || (!rule && every !== undefined && !(every >= 5 && every <= 1440))) return { ok: false as const, error: 'A schedule needs a prompt and either a future time, 5 to 1440 minutes or a calendar rule.' };
+        const target = input.target && typeof input.target === 'object' ? input.target : undefined;
+        if (target && !input.paused && !sims.some((x) => x.info.id === target.session)) return { ok: false as const, error: "That session has ended. Send it to the folder's agent instead." };
+        let cap = input.cap && typeof input.cap === 'object' ? input.cap : undefined;
+        if (cap) {
+          const u = simUnit(simAgentOf({ folder: input.folder, target }));
+          if (!u) return { ok: false as const, error: 'This agent app does not report what a run costs, so a limit cannot be kept.' };
+          const amount = Math.round(Number(cap.amount) * 100) / 100;
+          if (!(amount >= 0.01 && amount <= (u === 'usd' ? 10_000 : 1_000_000))) return { ok: false as const, error: 'That limit is out of range.' };
+          cap = { amount, unit: u };
+        }
+        const when: Partial<ScheduleInfo> = rule ? { rule, next: old?.rule && old.paused && input.paused ? old.next : simRules()?.nextRuleRun(rule, now) } : every !== undefined ? { every, ...(Number(input.at) > 0 ? { at: Number(input.at) } : {}), next: old?.next ?? (Number(input.at) > now ? Number(input.at) : now + every * 60000) } : { at: Number(input.at) };
+        const resumedCap = !!old && old.pausedReason === 'cap' && !input.paused; // FR-015: Resume after the limit counts from zero
+        const sc: ScheduleInfo = { id: old?.id ?? 'sched-' + ++simSched.n, folder: input.folder, prompt: String(input.prompt).trim().slice(0, 2000), ...when, ...(input.paused ? { paused: true } : {}), ...(input.paused && old?.paused && old.pausedReason ? { pausedReason: old.pausedReason } : {}), ...(old?.last ? { last: old.last } : {}),
+          ...(target ? { target: { session: String(target.session), agent: String(target.agent), ...(target.name ? { name: String(target.name).slice(0, 80) } : {}) } } : {}),
+          ...(cap ? { cap, ...(!resumedCap && old?.spent ? { spent: old.spent } : {}), ...(!resumedCap && old?.spentUnknown ? { spentUnknown: true } : {}) } : {}) };
+        if (sc.next === undefined && (sc.rule || sc.every !== undefined)) return { ok: false as const, error: 'That calendar rule never runs.' };
         simSched.list = old ? simSched.list.map((x) => (x.id === sc.id ? sc : x)) : [...simSched.list, sc];
         simSched.changed();
         return { ok: true as const, schedule: sc };
@@ -1030,6 +1079,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       return { success: true, tokensAfter: after, tokensRemoved: before - after };
     }
 
+    const simRemote = new Map<string, string>(); // spec 054: agent id -> canned link while remote control is on
     const modelApi: Partial<DurbarApi> = {
       setModel: async (id, req) => {
         const s = sims.find((x) => x.info.id === id);
@@ -1082,6 +1132,26 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         await new Promise((r) => window.setTimeout(r, 900));
         const files = (s.files ?? []).slice(0, 3).map((f) => '- `' + f + '`').join('\n') || '- none yet';
         return { ok: true, summary: `## Goal\n${s.intent || 'Continue the current task.'}\n\n## What was done\n- Read the relevant code and ran the tests once (simulated).\n\n## Open items\n- Finish the change and run the tests again.\n\n## Important files and decisions\n${files}\n\n## Next step\nPick up from the open items above.` };
+      },
+      // spec 054 FR-008: remote control for Copilot sim agents only; a canned github.com link, nothing leaves the computer
+      setRemote: async (id, on) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s || typeof on !== 'boolean') return { ok: false, error: 'unknown agent' };
+        if (!caps(s.info.adapterId ?? 'copilot').remote) return { ok: false, error: 'This agent app cannot be controlled from GitHub.' };
+        await new Promise((r) => window.setTimeout(r, 600));
+        if (!on) {
+          simRemote.delete(id);
+          return { ok: true, on: false };
+        }
+        const url = 'https://github.com/three-feathers/agent-durbar/sessions/sim-' + (sims.indexOf(s) + 1);
+        simRemote.set(id, url);
+        return { ok: true, on: true, url, steerable: true, visibility: 'unshared' };
+      },
+      openRemote: async (id) => {
+        const url = simRemote.get(id);
+        if (!url) return { ok: false };
+        console.info('[sim] would open in the system browser:', url);
+        return { ok: true };
       },
       compact: async (id, focus) => {
         const s = sims.find((x) => x.info.id === id);
@@ -1177,10 +1247,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps } },
       ...(simKinds ? [
         simKindsParam === 'solo' && !simInstalled.has('claude')
-          ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false } }
-          : { id: 'claude', displayName: 'Claude Code', state: 'ready', version: 'sim', capabilities: { ...copilotCaps, caps: false, mcpToggle: false } },
-        { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'] } },
-      ] as AdapterInfo[] : []),
+          ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } }
+          : { id: 'claude', displayName: 'Claude Code', state: 'ready', version: 'sim', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } },
+        { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'], remote: false } },      ] as AdapterInfo[] : []),
       ...(mixed ? SIM_MIXED_KINDS : []),
     ];
     const notReady = (adapterId: string): string | undefined => {
@@ -1305,7 +1374,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = sims.find((x) => x.info.id === id);
         if (!s) return;
         if (s.grants.size) { s.grants.clear(); grantsEvent(s); }
-        s.state = 'idle'; closeOpen(s);
+        s.state = 'idle'; closeOpen(s); simRemote.delete(id); // spec 054 FR-003
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'stopped' });
       },
       resolvePermission: async (id, req, approve, remember) => {

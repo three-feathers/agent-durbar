@@ -10,6 +10,8 @@ export type { McpServerInput, McpServerView, McpTransport, McpTrustInfo };
 
 import type { AdapterInfo } from './adapters';
 import type { ActivityRow } from './activity';
+import type { RemoteState } from './remote';
+export type { RemoteState };
 export type { AdapterInfo };
 
 export type { HistoryItem, PreviousSession, VsChatSummary, VsChatTranscript };
@@ -161,10 +163,20 @@ export interface ScheduleInfo {
   prompt: string;
   every?: number;
   at?: number;
+  /** Phase 2 FR-012: every day, weekdays or weekly on days (0 = Sunday) at a local "HH:MM". */
+  rule?: { kind: 'daily' | 'weekdays' | 'weekly'; time: string; days?: number[] };
   next?: number;
   paused?: boolean;
+  /** Why the app paused it (FR-014, FR-015). */
+  pausedReason?: 'cap' | 'session-ended';
   done?: boolean;
-  last?: { at: number; outcome: 'sent' | 'skipped-busy' | 'skipped-paused' | 'missed' | 'failed' };
+  last?: { at: number; outcome: 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' };
+  /** FR-014: one session instead of the folder's agent. */
+  target?: { session: string; agent: string; name?: string };
+  /** FR-015: the schedule's own limit and what its runs spent. */
+  cap?: { amount: number; unit: 'aiu' | 'usd' };
+  spent?: number;
+  spentUnknown?: boolean;
 }
 export interface SchedulesInfo {
   pausedAll: boolean;
@@ -390,6 +402,10 @@ export interface DurbarApi {
   compact?(id: string, focus?: string): Promise<{ ok: boolean; error?: string; result?: CompactResult }>;
   /** A hand-off summary of the session, for a new session's first message (spec 030 FR-034); never sent by itself. */
   handoff?(id: string): Promise<{ ok: boolean; error?: string; summary?: string; costUsd?: number }>;
+  /** Turn remote control (follow and steer from the agent app's web or mobile app) on or off for live agent `id` (spec 054 FR-004). */
+  setRemote?(id: string, on: boolean): Promise<RemoteState>;
+  /** Open agent `id`'s remote link (stored in main, https://github.com only) in the system browser (spec 054 FR-005). */
+  openRemote?(id: string): Promise<{ ok: boolean }>;
   /** Close or open the door of the room (folder) of agent `id`; remembered. */
   setRoomClosed?(id: string, closed: boolean): Promise<{ ok: boolean }>;
   /** Hide or show the folder of agent `id`; the choice is remembered. */
@@ -467,7 +483,7 @@ export interface DurbarApi {
   removeSchedule?(id: string): Promise<{ ok: boolean }>;
   setSchedulesPaused?(on: boolean): Promise<{ ok: boolean; pausedAll: boolean }>;
   onSchedules?(cb: (doc: SchedulesInfo) => void): () => void;
-  onScheduleRan?(cb: (r: { agentId: string; scheduleId: string; every?: number; at?: number }) => void): () => void;
+  onScheduleRan?(cb: (r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void): () => void;
   /** Answer the agent's question (spec 012 FR-128): question text -> answer; null = skip. */
   answerQuestion?(id: string, requestId: string, answers: Record<string, string> | null): Promise<{ ok: boolean; error?: string }>;
   /** Custom agents the session can use (spec 043); `trusted` is false for a repository agent not yet confirmed for this folder and file. */
