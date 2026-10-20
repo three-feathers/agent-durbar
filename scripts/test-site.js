@@ -25,7 +25,8 @@ for (const m of html.matchAll(/\ssrc="([^"]+)"/g)) assert.ok(!/^https?:/.test(m[
 assert.ok(!/<script\b/i.test(html), 'no scripts');
 assert.ok(!/<link[^>]+rel="stylesheet"/i.test(html), 'no external stylesheets');
 assert.ok(!/@import|url\(\s*['"]?https?:/i.test(html), 'no external CSS resources');
-for (const m of html.matchAll(/\shref="(https?:[^"]+)"/g)) assert.ok(/^https:\/\/(github\.com|[a-z0-9.-]+\.githubusercontent\.com)\//.test(m[1]), `link outside GitHub: ${m[1]}`);
+// the site may link to itself (a released CHANGELOG entry names its address)
+for (const m of html.matchAll(/\shref="(https?:[^"]+)"/g)) assert.ok(/^https:\/\/(github\.com|[a-z0-9.-]+\.githubusercontent\.com|three-feathers\.github\.io\/agent-durbar)\//.test(m[1]), `link outside GitHub: ${m[1]}`);
 assert.match(html, /Content-Security-Policy" content="default-src 'none'/, 'CSP');
 assert.match(html, /not affiliated with, endorsed by or sponsored by GitHub, Microsoft, Anthropic or OpenAI/, 'disclaimer');
 assert.match(html, /<html lang="en">/);
