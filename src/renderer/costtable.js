@@ -5,6 +5,9 @@
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
   const AIU_USD=0.01; /* 1 Copilot AI credit = USD 0.01 */
+  /* Plan reassurance (spec 052 FR-058, FR-075): one place for the words, used by the spending-limit dialog and Tools > Cost. */
+  const PLAN_NOTE='Copilot, Claude and ChatGPT plans have a fixed monthly price; this limit only stops the agent. Durbar never charges you.';
+  const COPILOT_PLAN_NOTE='Copilot plans, the free one too, have a fixed price; Durbar shows usage, it does not charge you.';
   const num=x=>typeof x==='number'&&Number.isFinite(x)&&x>0?x:0;
   const money=v=>v>0&&v<0.005?'<$0.01':'$'+num(v).toFixed(2);
 
@@ -46,5 +49,5 @@
     return [CSV_COLUMNS.map(csvField).join(',')].concat(b.rows.map(line),[line(b.total)]).join('\r\n')+'\r\n';
   }
 
-  return {AIU_USD,build,notReported,money,csvField,toCsv,CSV_COLUMNS};
+  return {AIU_USD,PLAN_NOTE,COPILOT_PLAN_NOTE,build,notReported,money,csvField,toCsv,CSV_COLUMNS};
 })());

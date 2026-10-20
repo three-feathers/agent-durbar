@@ -101,6 +101,14 @@ async function main(): Promise<void> {
   assert.strictEqual((await t.b.request({ kind: 'write', fileName: '/m/a.ts', toolCallId: 'm1' })).kind, 'reject');
   t.b.setMode('allow');
   assert.strictEqual((await t.b.request({ kind: 'write', fileName: '/m/a.ts', toolCallId: 'm2' })).kind, 'approve-once', 'allow edits applies to the next request');
+  // spec 052 FR-071: Allow all approves without a card, but says so once (via 'policy') for the local activity log; reads stay silent
+  {
+    const last = t.ev[t.ev.length - 1];
+    assert.ok(last && last.type === 'auto' && last.permission.via === 'policy' && last.permission.state === 'approved' && last.permission.requestId === 'm2', 'allow emits one auto event');
+    const n = t.ev.length;
+    await t.b.request({ kind: 'read', path: '/m/a.ts' });
+    assert.strictEqual(t.ev.length, n, 'a read in Allow all emits nothing');
+  }
   t.b.setMode('ask');
   const askP = t.b.request({ kind: 'shell', fullCommandText: 'make', toolCallId: 'm3' });
   await tick();
