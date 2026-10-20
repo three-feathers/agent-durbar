@@ -1,5 +1,6 @@
 /** IPC for the Copilot CLI MCP list (global, read live), the per-folder MCP extras and the per-agent MCP switches (specs 019, 020). The renderer never receives a secret value or a file path. */
-import { ipcMain, safeStorage } from 'electron';
+import { safeStorage } from 'electron';
+import { ipcHandle } from './ipcguard';
 import * as path from 'path';
 import type { AgentInfo, AgentMcpEntry, McpFolderState, McpState } from '../shared/api';
 import type { McpServerStatus } from '../adapters/types';
@@ -82,16 +83,16 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
     return out.slice(0, MAX_IMPORT_FOLDERS);
   };
 
-  ipcMain.handle('mcp:state', () => state());
+  ipcHandle('mcp:state', () => state());
   /** Names of every saved folder's extras, nothing else (spec 024 FR-016). No arguments; names that equal a CLI/built-in server are left out. */
-  ipcMain.handle('mcp:extraNames', () => ({ ok: true, names: store().extraNames(cliNames()) }));
-  ipcMain.handle('mcp:setCli', (_e, name: unknown, enabled: unknown) => {
+  ipcHandle('mcp:extraNames', () => ({ ok: true, names: store().extraNames(cliNames()) }));
+  ipcHandle('mcp:setCli', (_e, name: unknown, enabled: unknown) => {
     if (typeof name !== 'string' || !name || name.length > 64) return { ok: false };
     store().setAmbientDisabled(name, enabled !== true);
     return { ok: true };
   });
-  ipcMain.handle('mcp:folderState', (_e, key: unknown): McpFolderState | { ok: false; error: string } => (knownKey(key) ? folderState(key) : bad));
-  ipcMain.handle('mcp:upsert', (_e, key: unknown, input: unknown, originalName: unknown) => {
+  ipcHandle('mcp:folderState', (_e, key: unknown): McpFolderState | { ok: false; error: string } => (knownKey(key) ? folderState(key) : bad));
+  ipcHandle('mcp:upsert', (_e, key: unknown, input: unknown, originalName: unknown) => {
     if (!knownKey(key)) return bad;
     try {
       return store().upsert(key, input, typeof originalName === 'string' ? originalName : undefined, cliNames());
@@ -99,16 +100,16 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
       return { ok: false, error: 'Could not save the server list.' };
     }
   });
-  ipcMain.handle('mcp:remove', (_e, key: unknown, name: unknown) => ({ ok: knownKey(key) && typeof name === 'string' && store().remove(key, name) }));
-  ipcMain.handle('mcp:setEnabled', (_e, key: unknown, name: unknown, enabled: unknown, trustAck: unknown) =>
+  ipcHandle('mcp:remove', (_e, key: unknown, name: unknown) => ({ ok: knownKey(key) && typeof name === 'string' && store().remove(key, name) }));
+  ipcHandle('mcp:setEnabled', (_e, key: unknown, name: unknown, enabled: unknown, trustAck: unknown) =>
     knownKey(key) && typeof name === 'string' ? store().setEnabled(key, name, enabled === true, trustAck === true) : { ok: false, error: 'Unknown server.' });
-  ipcMain.handle('mcp:moveLegacy', (_e, name: unknown, key: unknown) => (knownKey(key) && typeof name === 'string' ? store().moveLegacy(name, key, cliNames()) : bad));
+  ipcHandle('mcp:moveLegacy', (_e, name: unknown, key: unknown) => (knownKey(key) && typeof name === 'string' ? store().moveLegacy(name, key, cliNames()) : bad));
   /** Per-folder import from `.vscode/mcp.json` (spec 020 FR-020): preview, then apply the ticked ids. Read-only for the file; imported servers arrive off and untrusted. */
-  ipcMain.handle('mcp:importPreview', (_e, key: unknown) => {
+  ipcHandle('mcp:importPreview', (_e, key: unknown) => {
     if (!knownKey(key)) return { ...bad, label: '.vscode/mcp.json', files: [], items: [], digest: '', skipped: 0 };
     return previewFolderImport(dirsOf(key), store().list(key), cliNames());
   });
-  ipcMain.handle('mcp:importApply', (_e, key: unknown, ids: unknown, digest: unknown) => {
+  ipcHandle('mcp:importApply', (_e, key: unknown, ids: unknown, digest: unknown) => {
     if (!knownKey(key)) return { ...bad, imported: [], failed: [] };
     if (!Array.isArray(ids) || typeof digest !== 'string') return { ok: false, error: 'Nothing selected.', imported: [], failed: [] };
     try {
@@ -117,9 +118,9 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
       return { ok: false, error: 'Could not save the server list.', imported: [], failed: [] };
     }
   });
-  ipcMain.handle('mcp:removeLegacy', (_e, name: unknown) => ({ ok: typeof name === 'string' && store().removeLegacy(name) }));
+  ipcHandle('mcp:removeLegacy', (_e, name: unknown) => ({ ok: typeof name === 'string' && store().removeLegacy(name) }));
 
-  ipcMain.handle('agents:mcp', (_e, id: unknown): { ok: boolean; servers: AgentMcpEntry[]; live: boolean } => {
+  ipcHandle('agents:mcp', (_e, id: unknown): { ok: boolean; servers: AgentMcpEntry[]; live: boolean } => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;
     if (!a) return { ok: false, servers: [], live: false };
     const s = store();
@@ -141,7 +142,7 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
     for (const x of live.get(a.id) ?? []) add(x.name, 'runtime', !dis.has(x.name));
     return { ok: true, servers: entries, live: router.forAgent(a.id)?.isLive(a.id) ?? false };
   });
-  ipcMain.handle('agents:setMcp', (_e, id: unknown, name: unknown, enabled: unknown) => setMcpOp({ agents, router, wsKey: keyOf }, off, id, name, enabled));
+  ipcHandle('agents:setMcp', (_e, id: unknown, name: unknown, enabled: unknown) => setMcpOp({ agents, router, wsKey: keyOf }, off, id, name, enabled));
 
   return {
     optionsFor(agentId: string) {

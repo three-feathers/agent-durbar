@@ -143,7 +143,7 @@ for (const r of ROWS) {
 // Wiring guard: main.ts must feed the tracker (a pure unit cannot see these calls).
 {
   const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
-  for (const f of ['agentState.noteSend(id)', 'agentState.noteSendFailed(id)', "'did-finish-load', () => agentState.clearPaused()", "ipcMain.on('agents:setPaused'", 'agentState.onEvent(e)']) assert.ok(main.includes(f), `main.ts no longer has: ${f}`);
+  for (const f of ['agentState.noteSend(id)', 'agentState.noteSendFailed(id)', "'did-finish-load', () => agentState.clearPaused()", "ipcOn('agents:setPaused'", 'agentState.onEvent(e)']) assert.ok(main.includes(f), `main.ts no longer has: ${f}`);
   // The scheduled send (spec 044) must note the send and its failure like the interactive one.
   const i = main.indexOf('send: async (folder, prompt, s)');
   const sched = main.slice(i, main.indexOf('setTimer:', i));

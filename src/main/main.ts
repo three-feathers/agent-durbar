@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, shell } from 'electron';
+import { ipcHandle, ipcOn } from './ipcguard';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -205,7 +206,7 @@ if (dev.DURBAR_LOG) {
   router.setDebug((m) => write({ t: Date.now(), debug: m }));
 }
 
-ipcMain.handle('app:openExternal', async (_e, url: unknown) => {
+ipcHandle('app:openExternal', async (_e, url: unknown) => {
   if (!isHttpUrl(url)) return { ok: false };
   await shell.openExternal(url);
   return { ok: true };
@@ -341,8 +342,8 @@ function restoreFolders(): void {
   }
 }
 
-ipcMain.handle('app:version', () => app.getVersion());
-ipcMain.handle('agents:list', () => [...agents.values()]);
+ipcHandle('app:version', () => app.getVersion());
+ipcHandle('agents:list', () => [...agents.values()]);
 
 const sessionOpts = (o: unknown): SessionOptions & { persist: boolean } => {
   const x = (o && typeof o === 'object' ? o : {}) as Record<string, unknown>;
@@ -350,12 +351,12 @@ const sessionOpts = (o: unknown): SessionOptions & { persist: boolean } => {
   return { model: typeof x.model === 'string' ? x.model.slice(0, 100) : undefined, effort: asEffort(x.effort), maxAiCredits: cap, floor: typeof x.floor === 'string' ? x.floor.slice(0, 20) : undefined, adapterId: typeof x.adapterId === 'string' ? x.adapterId.slice(0, 40) : undefined, persist: true };
 };
 
-ipcMain.handle('agents:addFolder', async (_e, mode: unknown, opts: unknown) => {
+ipcHandle('agents:addFolder', async (_e, mode: unknown, opts: unknown) => {
   const r = await dialog.showOpenDialog({ title: 'Add folder', properties: ['openDirectory', 'multiSelections'] });
   return r.canceled ? { ok: true, agents: [] } : addMany(r.filePaths, validMode(mode), sessionOpts(opts));
 });
 
-ipcMain.handle('agents:addWorkspaceFile', async (_e, mode: unknown, opts: unknown) => {
+ipcHandle('agents:addWorkspaceFile', async (_e, mode: unknown, opts: unknown) => {
   const r = await dialog.showOpenDialog({
     title: 'Add .code-workspace file',
     properties: ['openFile'],
@@ -370,7 +371,7 @@ const vsUserDirs = (): UserDir[] =>
   dev.DURBAR_VSCODE_USER_DIR ? [{ product: 'Test', dir: dev.DURBAR_VSCODE_USER_DIR }] : vscodeUserDirs();
 const vsChatRefs = new Map<string, Map<string, ChatFileRef>>();
 
-ipcMain.handle('sessions:listPrevious', async (_e, id: unknown) => {
+ipcHandle('sessions:listPrevious', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad) return { ok: false, error: 'unknown agent', sessions: [] };
@@ -381,7 +382,7 @@ ipcMain.handle('sessions:listPrevious', async (_e, id: unknown) => {
   }
 });
 
-ipcMain.handle('sessions:resume', async (_e, id: unknown, sessionId: unknown, replace: unknown): Promise<ResumeResult> => {
+ipcHandle('sessions:resume', async (_e, id: unknown, sessionId: unknown, replace: unknown): Promise<ResumeResult> => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad) return { ok: false, error: 'unknown agent' };
@@ -414,7 +415,7 @@ ipcMain.handle('sessions:resume', async (_e, id: unknown, sessionId: unknown, re
   }
 });
 
-ipcMain.handle('vschat:list', async (_e, id: unknown): Promise<VsChatListResult> => {
+ipcHandle('vschat:list', async (_e, id: unknown): Promise<VsChatListResult> => {
   const empty = { sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0, formatNote: VSCODE_CHAT_FORMAT_NOTE };
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false, error: 'unknown agent', ...empty };
@@ -427,13 +428,13 @@ ipcMain.handle('vschat:list', async (_e, id: unknown): Promise<VsChatListResult>
   }
 });
 
-ipcMain.handle('vschat:read', async (_e, id: unknown, key: unknown) => {
+ipcHandle('vschat:read', async (_e, id: unknown, key: unknown) => {
   const ref = typeof id === 'string' && typeof key === 'string' ? vsChatRefs.get(id)?.get(key) : undefined;
   if (!ref) return { ok: false, error: 'That chat is not in the list any more. Reopen the list and try again.' };
   return readChat(ref);
 });
 
-ipcMain.handle('agents:pickAttachments', async (_e, want: unknown): Promise<PickedFile[]> => {
+ipcHandle('agents:pickAttachments', async (_e, want: unknown): Promise<PickedFile[]> => {
   const images = want === 'image'; // spec 004 FR-013: the image button opens the picker with an image filter
   // Dev/test hook: DURBAR_PICK="/a.txt:/b.png" answers the picker without a native dialog.
   const preset = (dev.DURBAR_PICK ?? '').split(path.delimiter).filter((p) => p && fs.existsSync(p));
@@ -457,7 +458,7 @@ ipcMain.handle('agents:pickAttachments', async (_e, want: unknown): Promise<Pick
   return out;
 });
 
-ipcMain.handle('agents:stageAttachment', (_e, name: unknown, mime: unknown, data: unknown) => {
+ipcHandle('agents:stageAttachment', (_e, name: unknown, mime: unknown, data: unknown) => {
   const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : undefined;
   if (!bytes) return { ok: false, error: 'No file data.' };
   try {
@@ -470,7 +471,7 @@ ipcMain.handle('agents:stageAttachment', (_e, name: unknown, mime: unknown, data
   }
 });
 
-ipcMain.handle('agents:send', async (_e, id: string, text: string, attachments: PickedFile[]) => {
+ipcHandle('agents:send', async (_e, id: string, text: string, attachments: PickedFile[]) => {
   const ad = agents.has(id) ? router.forAgent(id) : undefined;
   if (!ad) return { ok: false, error: 'unknown agent' };
   agentState.ensure(id, agents.get(id)?.lazy);
@@ -546,10 +547,10 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
   save: (doc) => saveSchedules(file, doc),
   changed: (doc) => toRenderer('schedules:changed', doc),
 });
-ipcMain.handle('schedules:list', () => scheduler?.doc ?? { pausedAll: false, schedules: [] });
-ipcMain.handle('schedules:save', (e, input: unknown) => (!fromApp(e) ? { ok: false, error: 'invalid request' } : scheduler ? scheduler.save(input, (f) => !!folderStore?.get(f)) : { ok: false, error: 'Schedules are not available.' }));
-ipcMain.handle('schedules:remove', (e, id: unknown) => ({ ok: fromApp(e) && typeof id === 'string' && !!scheduler?.remove(id) }));
-ipcMain.handle('schedules:setPausedAll', (_e, on: unknown) => {
+ipcHandle('schedules:list', () => scheduler?.doc ?? { pausedAll: false, schedules: [] });
+ipcHandle('schedules:save', (e, input: unknown) => (!fromApp(e) ? { ok: false, error: 'invalid request' } : scheduler ? scheduler.save(input, (f) => !!folderStore?.get(f)) : { ok: false, error: 'Schedules are not available.' }));
+ipcHandle('schedules:remove', (e, id: unknown) => ({ ok: fromApp(e) && typeof id === 'string' && !!scheduler?.remove(id) }));
+ipcHandle('schedules:setPausedAll', (_e, on: unknown) => {
   scheduler?.setPausedAll(on === true);
   return { ok: !!scheduler, pausedAll: scheduler?.doc.pausedAll ?? false };
 });
@@ -557,15 +558,15 @@ ipcMain.handle('schedules:setPausedAll', (_e, on: unknown) => {
 // The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
 const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, log: (a, decision, action) => logActivity(a, decision, action) };
 // Stop only interrupts the running turn (the agent returns to Ready); End session frees the runtime session.
-ipcMain.handle('agents:stop', (_e, id: string) => stopTurnOp(opsDeps, id));
+ipcHandle('agents:stop', (_e, id: string) => stopTurnOp(opsDeps, id));
 
-ipcMain.handle('agents:end', async (_e, id: string) => {
+ipcHandle('agents:end', async (_e, id: string) => {
   if (!agents.has(id)) return;
   await remoteOps.release(id); // spec 054 FR-011: off on GitHub too before the session ends
   await router.forAgent(id)?.stop(id);
 });
 
-ipcMain.handle('agents:newSession', async (_e, id: unknown, opts: unknown) => {
+ipcHandle('agents:newSession', async (_e, id: unknown, opts: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false, error: 'unknown agent' };
   const o = (opts && typeof opts === 'object' ? opts : {}) as Record<string, unknown>;
@@ -582,27 +583,27 @@ ipcMain.handle('agents:newSession', async (_e, id: unknown, opts: unknown) => {
 });
 
 // ---- AI-credit caps (spec 011): numbers only, validated here ----
-ipcMain.handle('usage:allTime', () => ({
+ipcHandle('usage:allTime', () => ({
   doc: usageStore?.view(),
   labels: Object.fromEntries([...agents.values()].map((a) => [a.id, usageLabel(a)])),
   error: usageStore?.lastError,
 }));
-ipcMain.handle('usage:totals', () => usageTotalsView());
-ipcMain.handle('usage:resetTotals', () => {
+ipcHandle('usage:totals', () => usageTotalsView());
+ipcHandle('usage:resetTotals', () => {
   usageTotalsStore?.reset();
   return usageTotalsView();
 });
-ipcMain.handle('usage:reset', () => {
+ipcHandle('usage:reset', () => {
   usageStore?.reset();
   return { ok: true, doc: usageStore?.view() };
 });
-ipcMain.handle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits, placeMap: settingsStore?.placeMap ?? {}, customPlaces: settingsStore?.customPlaces ?? [], seriousMode: settingsStore?.seriousMode ?? false, notifyNeedsMe: settingsStore?.notifyNeedsMe ?? true, theme: runTheme ?? settingsStore?.theme ?? 'clean-office', about: aboutView(app.getVersion()) }));
-ipcMain.handle('settings:setSeriousMode', (_e, on: unknown) => ({ ok: true, seriousMode: settingsStore?.setSeriousMode(on) ?? false }));
+ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits, placeMap: settingsStore?.placeMap ?? {}, customPlaces: settingsStore?.customPlaces ?? [], seriousMode: settingsStore?.seriousMode ?? false, notifyNeedsMe: settingsStore?.notifyNeedsMe ?? true, theme: runTheme ?? settingsStore?.theme ?? 'clean-office', about: aboutView(app.getVersion()) }));
+ipcHandle('settings:setSeriousMode', (_e, on: unknown) => ({ ok: true, seriousMode: settingsStore?.setSeriousMode(on) ?? false }));
 /* spec 052 FR-059: OS notifications when an agent needs you and the window is in the background (on unless turned off) */
-ipcMain.handle('settings:setNotifyNeedsMe', (_e, on: unknown) => ({ ok: true, notifyNeedsMe: settingsStore?.setNotifyNeedsMe(on) ?? true }));
+ipcHandle('settings:setNotifyNeedsMe', (_e, on: unknown) => ({ ok: true, notifyNeedsMe: settingsStore?.setNotifyNeedsMe(on) ?? true }));
 /* spec 052 FR-059: the "needs you" count on the app icon (macOS, Linux where the desktop supports it), a taskbar flash on Windows */
 let badgeCount = 0;
-ipcMain.handle('app:setBadge', (_e, count: unknown) => {
+ipcHandle('app:setBadge', (_e, count: unknown) => {
   const n = parseBadgeCount(count);
   if (n === null) return { ok: false };
   const w = win && !win.isDestroyed() ? win : undefined;
@@ -619,7 +620,7 @@ ipcMain.handle('app:setBadge', (_e, count: unknown) => {
   return { ok: true };
 });
 /* spec 052 FR-059: a click on a notification brings the window to the front */
-ipcMain.handle('app:focusWindow', () => {
+ipcHandle('app:focusWindow', () => {
   const w = win && !win.isDestroyed() ? win : undefined;
   if (!w) return { ok: false };
   if (w.isMinimized()) w.restore();
@@ -629,7 +630,7 @@ ipcMain.handle('app:focusWindow', () => {
 });
 /* DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it and is saved as usual. */
 let runTheme: string | undefined;
-ipcMain.handle('settings:setTheme', (_e, id: unknown) => {
+ipcHandle('settings:setTheme', (_e, id: unknown) => {
   runTheme = undefined;
   return settingsStore ? settingsStore.setTheme(id) : { ok: false };
 });
@@ -644,7 +645,7 @@ const pickFolder = async (title: string, create = false): Promise<string | null>
 };
 /* Spec 040 FR-014..FR-021: the AI theme maker. One prompt to a harness that has `generateText` (no tools, no session kept); the
    reply keeps only the safe subset and must pass the contrast rules and `checkUserManifest`. The description is never logged. */
-ipcMain.handle('theme:generate', async (_e, description: unknown, adapterId: unknown) => {
+ipcHandle('theme:generate', async (_e, description: unknown, adapterId: unknown) => {
   const d = typeof description === 'string' ? description.trim().slice(0, MAX_DESCRIPTION) : '';
   if (d.length < 3) return { ok: false, error: 'Describe the look in a few words.' };
   const kind = typeof adapterId === 'string' && registry.has(adapterId) ? adapterId : undefined;
@@ -687,7 +688,7 @@ ipcMain.handle('theme:generate', async (_e, description: unknown, adapterId: unk
     return { ok: false, error: errText(err), ...(cost ? { costUsd: cost } : {}) };
   }
 });
-ipcMain.handle('theme:ideas', () => THEME_IDEAS.slice());
+ipcHandle('theme:ideas', () => THEME_IDEAS.slice());
 /* Spec 051: harness setup inside the app. One fixed install, update or sign-in at a time (argv, no shell); progress and the end go to
    the window; detection runs again when it ends. Nothing of the output is logged. */
 const sysExe = (name: string): string => path.win32.join(process.env.SystemRoot && path.win32.isAbsolute(process.env.SystemRoot) ? process.env.SystemRoot : 'C:\\Windows', 'System32', name);
@@ -712,8 +713,8 @@ const harnessSetup = new HarnessSetup({
 } as ConstructorParameters<typeof HarnessSetup>[0]);
 /** FR-004b: harness setup answers only the app's own page in the main frame. */
 const fromApp = (e: Electron.IpcMainInvokeEvent): boolean => senderAllowed(e.senderFrame ? { url: e.senderFrame.url, isMain: e.senderFrame === e.sender.mainFrame } : null, path.join(__dirname, '..', 'renderer', 'index.html'));
-ipcMain.handle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? harnessSetup.plans(kind, op) : { plans: [], page: '', name: '' }));
-ipcMain.handle('harness:run', async (e, kind: unknown, op: unknown, planIndex: unknown) => {
+ipcHandle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? harnessSetup.plans(kind, op) : { plans: [], page: '', name: '' }));
+ipcHandle('harness:run', async (e, kind: unknown, op: unknown, planIndex: unknown) => {
   if (!fromApp(e) || !isSetupKind(kind) || (op !== 'install' && op !== 'update' && op !== 'signin')) return { ok: false, error: 'invalid request' };
   const p = harnessSetup.prepare(kind, op, typeof planIndex === 'number' && Number.isInteger(planIndex) && planIndex >= 0 && planIndex < 8 ? planIndex : 0);
   if (!p.ok) return p;
@@ -727,20 +728,20 @@ ipcMain.handle('harness:run', async (e, kind: unknown, op: unknown, planIndex: u
   }
   return harnessSetup.start(p.job);
 });
-ipcMain.handle('harness:paste', (e, text: unknown) => (fromApp(e) ? harnessSetup.paste(text) : { ok: false, error: 'invalid request' }));
-ipcMain.handle('harness:cancel', (e) => fromApp(e) && harnessSetup.cancel());
-ipcMain.handle('harness:openPage', async (e, kind: unknown) => {
+ipcHandle('harness:paste', (e, text: unknown) => (fromApp(e) ? harnessSetup.paste(text) : { ok: false, error: 'invalid request' }));
+ipcHandle('harness:cancel', (e) => fromApp(e) && harnessSetup.cancel());
+ipcHandle('harness:openPage', async (e, kind: unknown) => {
   if (!fromApp(e) || !isSetupKind(kind)) return { ok: false };
   await shell.openExternal(OFFICIAL_PAGES[kind]);
   return { ok: true };
 });
-ipcMain.handle('harness:openSignIn', async (e, kind: unknown, url: unknown) => {
+ipcHandle('harness:openSignIn', async (e, kind: unknown, url: unknown) => {
   // FR-005: only a link on that harness's own sign-in hosts is ever opened, and the parsed, normalised form of it
   if (!fromApp(e) || !isSetupKind(kind) || typeof url !== 'string' || !allowedSignInUrl(kind, url)) return { ok: false };
   await shell.openExternal(new URL(url).href);
   return { ok: true };
 });
-ipcMain.handle('harness:copilotAuth', async (e) => {
+ipcHandle('harness:copilotAuth', async (e) => {
   if (!fromApp(e)) return { known: false };
   const pw = harnessSetup.pwshMissing() ? { pwshMissing: true } : {}; // spec 052 FR-073: Windows only, a file check, no process
   try {
@@ -751,36 +752,36 @@ ipcMain.handle('harness:copilotAuth', async (e) => {
     return { known: false, ...pw };
   }
 });
-ipcMain.handle('theme:saveGenerated', (_e, manifest: unknown) => {
+ipcHandle('theme:saveGenerated', (_e, manifest: unknown) => {
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return { ok: false, error: 'invalid theme' };
   return userThemes.saveManifest(manifest as Record<string, unknown>, (id) => BUILT_IN_THEME_IDS.includes(id));
 });
-ipcMain.handle('theme:listUser', () => userThemes.list().map((t) => ({ id: t.id, name: t.name, ok: t.ok, error: t.error })));
-ipcMain.handle('theme:getUser', (_e, id: unknown) => (typeof id === 'string' ? userThemes.get(id) : null));
-ipcMain.handle('theme:import', async () => {
+ipcHandle('theme:listUser', () => userThemes.list().map((t) => ({ id: t.id, name: t.name, ok: t.ok, error: t.error })));
+ipcHandle('theme:getUser', (_e, id: unknown) => (typeof id === 'string' ? userThemes.get(id) : null));
+ipcHandle('theme:import', async () => {
   const dir = await pickFolder('Import a theme folder (with manifest.json)');
   if (!dir) return { ok: false, cancelled: true };
   return userThemes.importFolder(dir, (id) => BUILT_IN_THEME_IDS.includes(id));
 });
-ipcMain.handle('theme:export', async (_e, id: unknown) => {
+ipcHandle('theme:export', async (_e, id: unknown) => {
   if (typeof id !== 'string' || BUILT_IN_THEME_IDS.includes(id)) return { ok: false, error: 'Only your own imported themes can be exported.' };
   const dir = await pickFolder('Export the theme folder to…', true);
   if (!dir) return { ok: false, cancelled: true };
   return userThemes.exportFolder(id, dir);
 });
-ipcMain.handle('settings:setPlace', (_e, server: unknown, place: unknown) => settingsStore?.setPlace(server, place) ?? { ok: false });
-ipcMain.handle('settings:addPlace', (_e, name: unknown, icon: unknown) => settingsStore?.addPlace(name, icon) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
-ipcMain.handle('settings:updatePlace', (_e, id: unknown, patch: unknown) => settingsStore?.updatePlace(id, patch) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
-ipcMain.handle('settings:removePlace', (_e, id: unknown) => settingsStore?.removePlace(id) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
-ipcMain.handle('settings:setDefaultCap', (_e, credits: unknown) => ({ ok: true, defaultMaxAiCredits: settingsStore?.setDefaultMaxAiCredits(credits) }));
+ipcHandle('settings:setPlace', (_e, server: unknown, place: unknown) => settingsStore?.setPlace(server, place) ?? { ok: false });
+ipcHandle('settings:addPlace', (_e, name: unknown, icon: unknown) => settingsStore?.addPlace(name, icon) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
+ipcHandle('settings:updatePlace', (_e, id: unknown, patch: unknown) => settingsStore?.updatePlace(id, patch) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
+ipcHandle('settings:removePlace', (_e, id: unknown) => settingsStore?.removePlace(id) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
+ipcHandle('settings:setDefaultCap', (_e, credits: unknown) => ({ ok: true, defaultMaxAiCredits: settingsStore?.setDefaultMaxAiCredits(credits) }));
 
 // Activity log (spec 052 FR-071): read, export through the save dialog, clear (the window asks first).
-ipcMain.handle('activity:list', (e, opts: unknown) => {
+ipcHandle('activity:list', (e, opts: unknown) => {
   if (!fromApp(e)) return { ok: false, rows: [] };
   const limit = opts && typeof opts === 'object' ? (opts as { limit?: unknown }).limit : undefined;
   return { ok: true, rows: activityStore?.list(limit) ?? [] };
 });
-ipcMain.handle('activity:export', async (e, format: unknown) => {
+ipcHandle('activity:export', async (e, format: unknown) => {
   if (!fromApp(e) || (format !== 'csv' && format !== 'json')) return { ok: false, error: 'invalid request' };
   const day = new Date().toISOString().slice(0, 10);
   const opts: Electron.SaveDialogOptions = { title: 'Export activity', defaultPath: `durbar-activity-${day}.${format}`, filters: [format === 'csv' ? { name: 'CSV', extensions: ['csv'] } : { name: 'JSON', extensions: ['json'] }] };
@@ -794,18 +795,18 @@ ipcMain.handle('activity:export', async (e, format: unknown) => {
     return { ok: false, error: errText(err).slice(0, 160) };
   }
 });
-ipcMain.handle('activity:clear', (e) => {
+ipcHandle('activity:clear', (e) => {
   if (!fromApp(e)) return { ok: false };
   activityStore?.clear();
   return { ok: true };
 });
 
-ipcMain.handle('agents:setCap', async (_e, id: unknown, credits: unknown) => {
+ipcHandle('agents:setCap', async (_e, id: unknown, credits: unknown) => {
   return setCapOp(opsDeps, id, credits);
 });
 
 // spec 012 FR-128: the user's answer to an agent's question; strings only, capped; null = skipped
-ipcMain.handle('agents:answerQuestion', (_e, id: unknown, requestId: unknown, answers: unknown) => {
+ipcHandle('agents:answerQuestion', (_e, id: unknown, requestId: unknown, answers: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad?.answerQuestion || typeof requestId !== 'string' || requestId.length > 200) return { ok: false, error: 'unknown agent or question' };
@@ -820,7 +821,7 @@ ipcMain.handle('agents:answerQuestion', (_e, id: unknown, requestId: unknown, an
 
 // spec 012 FR-151: the answer to an MCP elicitation, checked here against the open request (types, choices, lengths, required).
 // The values are never logged: they can be secrets.
-ipcMain.handle('agents:answerElicitation', (_e, id: unknown, requestId: unknown, action: unknown, values: unknown) => {
+ipcHandle('agents:answerElicitation', (_e, id: unknown, requestId: unknown, action: unknown, values: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   const req = a && typeof requestId === 'string' && requestId.length <= 300 ? elicitTracker.get(a.id, requestId) : undefined;
@@ -831,7 +832,7 @@ ipcMain.handle('agents:answerElicitation', (_e, id: unknown, requestId: unknown,
   return { ok: true };
 });
 // spec 012 FR-151: open the request's own https address (never one sent by the window), only after the user clicked
-ipcMain.handle('agents:openElicitationUrl', async (_e, id: unknown, requestId: unknown) => {
+ipcHandle('agents:openElicitationUrl', async (_e, id: unknown, requestId: unknown) => {
   const req = typeof id === 'string' && typeof requestId === 'string' && requestId.length <= 300 ? elicitTracker.get(id, requestId) : undefined;
   const u = req?.url ? elicitHttpsUrl(req.url) : undefined;
   if (!u) return { ok: false, error: 'That request has no https page to open.' };
@@ -840,7 +841,7 @@ ipcMain.handle('agents:openElicitationUrl', async (_e, id: unknown, requestId: u
 });
 
 // ---- custom agent per session (spec 043 FR-003): list, select; a repository agent needs a confirmation for its exact file ----
-ipcMain.handle('agents:listProfiles', async (_e, id: unknown) => {
+ipcHandle('agents:listProfiles', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad?.listAgentProfiles) return { ok: false, error: 'This agent app has no profiles.', profiles: [] };
@@ -852,7 +853,7 @@ ipcMain.handle('agents:listProfiles', async (_e, id: unknown) => {
     return { ok: false, error: errText(err), profiles: [] };
   }
 });
-ipcMain.handle('agents:selectProfile', async (_e, id: unknown, profileId: unknown, confirm: unknown) => {
+ipcHandle('agents:selectProfile', async (_e, id: unknown, profileId: unknown, confirm: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad?.selectAgentProfile) return { ok: false, error: 'This agent app has no profiles.' };
@@ -878,7 +879,7 @@ ipcMain.handle('agents:selectProfile', async (_e, id: unknown, profileId: unknow
   }
 });
 
-ipcMain.handle('agents:resolveLimit', async (_e, id: unknown, requestId: unknown, choice: unknown) => {
+ipcHandle('agents:resolveLimit', async (_e, id: unknown, requestId: unknown, choice: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad || typeof requestId !== 'string' || !ad.isLive(a.id)) return { ok: false, error: 'unknown agent' };
@@ -903,7 +904,7 @@ const modelsForValidation = async (): Promise<ModelChoice[]> => {
 };
 const NO_SWITCH = 'This agent cannot change its model in place. Start a new session with the model you want.';
 
-ipcMain.handle('agents:setModel', async (_e, id: unknown, raw: unknown) => {
+ipcHandle('agents:setModel', async (_e, id: unknown, raw: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad) return { ok: false, error: 'unknown agent' };
@@ -928,7 +929,7 @@ ipcMain.handle('agents:setModel', async (_e, id: unknown, raw: unknown) => {
   }
 });
 
-ipcMain.handle('agents:cancelQueuedModel', async (_e, id: unknown, queueId: unknown) => {
+ipcHandle('agents:cancelQueuedModel', async (_e, id: unknown, queueId: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad || typeof queueId !== 'string' || !queueId || queueId.length > 200) return { ok: false, error: 'unknown agent' };
@@ -942,7 +943,7 @@ ipcMain.handle('agents:cancelQueuedModel', async (_e, id: unknown, queueId: unkn
 });
 
 // Spec 030 FR-034: a hand-off summary of a live session (user content: never logged; shown for editing in the window).
-ipcMain.handle('agents:handoff', async (_e, id: unknown) => {
+ipcHandle('agents:handoff', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad) return { ok: false, error: 'unknown agent' };
@@ -981,10 +982,10 @@ const remoteOps = createRemoteOps({
 router.onEvent((e) => {
   if (e.type === 'status' && e.status === 'stopped' && !e.agentId) remoteOps.forget(e.sessionId);
 });
-ipcMain.handle('agents:setRemote', (e, id: unknown, on: unknown) => (fromApp(e) ? remoteOps.setRemote(id, on) : { ok: false, error: 'invalid request' }));
-ipcMain.handle('agents:openRemote', (e, id: unknown) => (fromApp(e) ? remoteOps.openRemote(id) : { ok: false }));
+ipcHandle('agents:setRemote', (e, id: unknown, on: unknown) => (fromApp(e) ? remoteOps.setRemote(id, on) : { ok: false, error: 'invalid request' }));
+ipcHandle('agents:openRemote', (e, id: unknown) => (fromApp(e) ? remoteOps.openRemote(id) : { ok: false }));
 
-ipcMain.handle('agents:compact', async (_e, id: unknown, focus: unknown) => {
+ipcHandle('agents:compact', async (_e, id: unknown, focus: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad) return { ok: false, error: 'unknown agent' };
@@ -997,7 +998,7 @@ ipcMain.handle('agents:compact', async (_e, id: unknown, focus: unknown) => {
   }
 });
 
-ipcMain.handle('models:list', async (_e, kind: unknown): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }> => {
+ipcHandle('models:list', async (_e, kind: unknown): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }> => {
   // spec 012 FR-120: one list per agent kind; no kind = the default kind (as before); an unknown kind is refused
   const id = kind === undefined || kind === null || kind === '' ? registry.defaultId : typeof kind === 'string' && registry.has(kind) ? kind : undefined;
   if (!id) return { ok: false, error: 'unknown agent app', models: [] };
@@ -1017,7 +1018,7 @@ const adaptersList = (refresh: boolean): Promise<AdapterInfo[]> => {
   if (!adaptersInfo || refresh) adaptersInfo = detectAll(registry, (d) => detectorFor(d.id)?.(d) ?? Promise.resolve({ state: 'unknown' as const }));
   return adaptersInfo;
 };
-ipcMain.handle('adapters:list', (_e, refresh: unknown): Promise<AdapterInfo[]> => adaptersList(refresh === true));
+ipcHandle('adapters:list', (_e, refresh: unknown): Promise<AdapterInfo[]> => adaptersList(refresh === true));
 /** Ids whose cached state is `ready`; a failed probe counts as none (spec 012 FR-058). */
 const readyAdapterIds = async (): Promise<ReadonlySet<string>> => {
   try {
@@ -1027,7 +1028,7 @@ const readyAdapterIds = async (): Promise<ReadonlySet<string>> => {
   }
 };
 
-ipcMain.handle('folders:setHidden', (_e, id: unknown, hidden: unknown) => {
+ipcHandle('folders:setHidden', (_e, id: unknown, hidden: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false };
   const key = wsKey(a);
@@ -1048,20 +1049,20 @@ const floorsResult = (r: FloorOp | undefined): FloorsResult => {
   if (folderStore) for (const a of agents.values()) a.floor = folderStore.floorOfFolder(wsKey(a));
   return r && r.ok ? { ok: true, state: floorsState() } : { ok: false, error: r && !r.ok ? r.error : 'Floors are not available.', state: floorsState() };
 };
-ipcMain.handle('floors:state', () => floorsState());
-ipcMain.handle('floors:create', (_e, name: unknown) => floorsResult(folderStore?.createFloor(name)));
-ipcMain.handle('floors:rename', (_e, id: unknown, name: unknown) => floorsResult(folderStore?.renameFloor(id, name)));
-ipcMain.handle('floors:reorder', (_e, ids: unknown) => floorsResult(folderStore?.reorderFloors(ids)));
-ipcMain.handle('floors:delete', (_e, id: unknown) => floorsResult(folderStore?.deleteFloor(id)));
-ipcMain.handle('floors:setOn', (_e, id: unknown, on: unknown) => floorsResult(folderStore?.setFloorOn(id, on === true)));
-ipcMain.handle('floors:only', (_e, id: unknown) => floorsResult(folderStore?.onlyFloor(id)));
-ipcMain.handle('floors:moveFolder', (_e, agentId: unknown, floorId: unknown): FloorsResult => {
+ipcHandle('floors:state', () => floorsState());
+ipcHandle('floors:create', (_e, name: unknown) => floorsResult(folderStore?.createFloor(name)));
+ipcHandle('floors:rename', (_e, id: unknown, name: unknown) => floorsResult(folderStore?.renameFloor(id, name)));
+ipcHandle('floors:reorder', (_e, ids: unknown) => floorsResult(folderStore?.reorderFloors(ids)));
+ipcHandle('floors:delete', (_e, id: unknown) => floorsResult(folderStore?.deleteFloor(id)));
+ipcHandle('floors:setOn', (_e, id: unknown, on: unknown) => floorsResult(folderStore?.setFloorOn(id, on === true)));
+ipcHandle('floors:only', (_e, id: unknown) => floorsResult(folderStore?.onlyFloor(id)));
+ipcHandle('floors:moveFolder', (_e, agentId: unknown, floorId: unknown): FloorsResult => {
   const a = typeof agentId === 'string' ? agents.get(agentId) : undefined;
   if (!a || !folderStore || !folderStore.moveFolder(wsKey(a), floorId)) return { ok: false, error: 'Unknown folder or floor.', state: floorsState() };
   return floorsResult({ ok: true, doc: folderStore.floors() });
 });
 
-ipcMain.handle('folders:setClosed', (_e, id: unknown, closed: unknown) => {
+ipcHandle('folders:setClosed', (_e, id: unknown, closed: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false };
   const key = wsKey(a);
@@ -1070,14 +1071,14 @@ ipcMain.handle('folders:setClosed', (_e, id: unknown, closed: unknown) => {
   return { ok: true };
 });
 
-ipcMain.handle('agents:setMode', (e, id: unknown, mode: unknown, opts: unknown) => {
+ipcHandle('agents:setMode', (e, id: unknown, mode: unknown, opts: unknown) => {
   if (!fromApp(e)) return { ok: false, error: 'invalid request' };
   // spec 054 FR-011: Allow all and remote control never together (anyone steering on GitHub could run commands unasked)
   if (mode === 'allow' && typeof id === 'string' && remoteOps.has(id)) return { ok: false, error: 'Stop remote control first: Allow all and remote control from GitHub are never on together.' };
   return setModeOp(opsDeps, id, mode, opts);
 });
 
-ipcMain.handle('folders:remove', async (_e, id: unknown) => {
+ipcHandle('folders:remove', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false, removedIds: [] as string[] };
   const key = wsKey(a);
@@ -1100,12 +1101,12 @@ ipcMain.handle('folders:remove', async (_e, id: unknown) => {
 });
 
 // One-way from the window: the pause button (spec 041 T014). Unknown ids and non-boolean values are ignored.
-ipcMain.on('agents:setPaused', (_e, id: unknown, paused: unknown) => {
+ipcOn('agents:setPaused', (_e, id: unknown, paused: unknown) => {
   applySetPaused(agentState, (k) => agents.get(k), id, paused);
 });
 
 // One main session out of the office (spec 006 FR-017). The last main session of a folder stays (Folders > Remove is for that).
-ipcMain.handle('agents:remove', async (_e, id: unknown) => {
+ipcHandle('agents:remove', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false, error: 'unknown session' };
   const key = wsKey(a);
@@ -1125,7 +1126,7 @@ ipcMain.handle('agents:remove', async (_e, id: unknown) => {
   return { ok: true };
 });
 
-ipcMain.handle('folders:rename', (_e, id: unknown, label: unknown) => {
+ipcHandle('folders:rename', (_e, id: unknown, label: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a || !folderStore) return { ok: false };
   const r = folderStore.setLabel(wsKey(a), label);
@@ -1134,7 +1135,7 @@ ipcMain.handle('folders:rename', (_e, id: unknown, label: unknown) => {
   return { ok: true, label: r.label };
 });
 
-ipcMain.handle('folders:setDefaultAgent', (_e, id: unknown, profileId: unknown) => {
+ipcHandle('folders:setDefaultAgent', (_e, id: unknown, profileId: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a || !folderStore) return { ok: false };
   const r = folderStore.setDefaultAgent(wsKey(a), profileId);
@@ -1149,7 +1150,7 @@ function noteLastSession(a: AgentInfo | undefined): void {
 }
 
 /** Spec 006 FR-021: the chat of a restored agent was opened; start it now (a resume sends no prompt) and hand back what came back. */
-ipcMain.handle('agents:wake', async (_e, id: unknown) => {
+ipcHandle('agents:wake', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad) return { ok: false, error: 'unknown agent' };
@@ -1171,15 +1172,15 @@ ipcMain.handle('agents:wake', async (_e, id: unknown) => {
   return { ok: true, resumed: true, history, title: c.title };
 });
 
-ipcMain.handle('agents:resolvePermission', (_e, id: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean) => {
+ipcHandle('agents:resolvePermission', (_e, id: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean) => {
   if (agents.has(id)) router.forAgent(id)?.resolvePermission?.(id, String(requestId), approve === true, approve === true && remember === true, approve === true && remember === true && broad === true);
 });
 
-ipcMain.handle('agents:revokeGrant', (_e, id: string, key: string) => {
+ipcHandle('agents:revokeGrant', (_e, id: string, key: string) => {
   if (agents.has(id)) router.forAgent(id)?.revokeGrant?.(id, String(key));
 });
 
-ipcMain.handle('agents:openInVSCode', (_e, id: string) => {
+ipcHandle('agents:openInVSCode', (_e, id: string) => {
   const a = agents.get(id);
   // Only paths of agents we started: the workspace file if there is one, else the folder.
   return a ? openInVSCode(a.workspaceFile ?? a.cwd) : { ok: false, error: 'unknown agent' };

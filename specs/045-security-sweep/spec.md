@@ -30,3 +30,7 @@
 
 - FR-003 and FR-004's Windows paths are unit-tested only; Windows was not run by hand (as for every Windows path in this project).
 - The dismissed alerts stay listed here, so the reasons are in the repository, not only on GitHub.
+
+## Changes
+
+- **2026-10-20 (issue #332, from the round-7 security review):** **FR-008** every IPC handler in the main process is registered through `ipcHandle` / `ipcOn` (`src/main/ipcguard.ts`), which answer only the app's own page in the window's main frame (`senderAllowed`). A call from anywhere else is rejected before it reaches the handler, so a new handler cannot forget the check. This is defense in depth: the sandbox, the navigation guard, the deny-all window-open handler and the CSP already keep other pages and frames out. `test:` `scripts/test-wincmd.ts` fails if any file in `src/main` registers on `ipcMain` directly; `sim:` the welcome driver passes on the real bridge. `[KNOWN GAP]` The check itself needs Electron, so it is not unit-tested; the rule it applies (`senderAllowed`) is.

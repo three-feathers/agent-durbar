@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.8 tag)
 
+- **Every IPC call checks where it comes from (spec 045 FR-008, #332).** The main process answers only the app's own page in its main frame, for every handler, through one helper; a test fails if a handler is registered without it.
+
 - **Remote control and notifications, hardened after a security review (spec 054 FR-011).** Turning on remote control from GitHub now also asks in a native window the page cannot answer; it is refused in Allow all (and Allow all is refused while it is on); it is turned off on GitHub before a session ends, is removed or the app quits; on and off are in the activity log. OS notifications name only what is needed ("Asks for your OK"), never the command.
 
 - **MCP servers can ask for input (spec 012 FR-151..FR-155, #290).** When an MCP server asks for a small form (text, number, yes/no, a choice) or for a step on a web page, the chat shows it in the question card with **Submit / Decline / Cancel**, instead of declining. Secret-looking fields are password inputs, main checks every answer before the agent gets it, and a page opens in your browser only after you click, only if it is https. Copilot, Claude Code and Codex; checked on the simulator and fake harnesses only, not yet with a real MCP server.
