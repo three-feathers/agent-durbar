@@ -181,6 +181,9 @@ function floorsCheck(expectTags) {
   }
   const btn = document.getElementById('floorsBtn');
   if (!btn || btn.hidden) problems.push('Floors button missing');
+  /* spec 052 FR-105 (round 11): the top bar is one row of about 48px, also with the Floors button (its widest case) */
+  const tbh = R(document.querySelector('.topbar')).height;
+  if (tbh > 52.5) problems.push(`top bar is ${Math.round(tbh)}px tall: it wrapped to a second row`);
   /* every room header keeps the floor tag and the + / MCP buttons inside it (a long tag shrinks, it never pushes them out;
      the door button sits on the room's edge on purpose and is not checked) */
   stage.querySelectorAll('.room-head').forEach((h) => {
@@ -427,6 +430,10 @@ async function driver(ctx) {
     const row = await ctx.js(`(()=>{const t=[...document.querySelectorAll('#liveBar > button, #liveBar > select')].filter(e=>e.getClientRects().length).map(e=>Math.round(e.getBoundingClientRect().top));return {min:Math.min(...t),max:Math.max(...t),n:t.length}})()`);
     total++;
     if (row.max - row.min > 3) { failed++; console.log(`FAIL ${tag}: the toolbar wraps ${JSON.stringify(row)}`); }
+    /* spec 052 FR-105: the whole top bar is one row (about 48px) with the agent app named in the Defaults chip */
+    const tb = await ctx.js(`({h:document.querySelector('.topbar').getBoundingClientRect().height,chip:document.getElementById('defaultsBtn').textContent})`);
+    total++;
+    if (tb.h > 52.5 || !/^Copilot · /.test(tb.chip)) { failed++; console.log(`FAIL ${tag}: the top bar is not one row with the Defaults chip ${JSON.stringify(tb)}`); }
     /* spec 012 FR-120: Claude chosen in the toolbar, its first model has efforts; the whole top bar stays inside the window */
     await ctx.js(`(async()=>{const s=document.getElementById('kindSel');s.value='claude';s.dispatchEvent(new Event('change'));await new Promise(r=>setTimeout(r,400));return true})()`);
     const fit = await ctx.js(`(()=>{const els=[...document.querySelectorAll('header button, header select, header .tgl, header .seg')].filter(e=>e.getClientRects().length);const r=els.map(e=>e.getBoundingClientRect());return {right:Math.max(...r.map(x=>x.right)),win:innerWidth,models:!document.getElementById('modelSel').hidden}})()`);
