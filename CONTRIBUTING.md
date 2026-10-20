@@ -66,7 +66,7 @@ The gate checks **presence, not quality**: it cannot tell a good spec from a one
 1. Spec first: a short delta in the owning spec (002 adapter, 011 credit cap, 019 MCP) saying why you upgrade.
 2. `npm install --save-exact @github/copilot-sdk@<version>`, commit `package.json` and `package-lock.json` together.
 3. Read the new `node_modules/@github/copilot-sdk/dist/generated/session-events.d.ts` and `rpc.d.ts` for the calls above; `npm run typecheck` shows renamed or removed ones. Check `scripts/fixtures/events/` still describe what the runtime sends (the fixtures are sanitised real events: do not edit them to make tests pass).
-4. `npm run build && npm test && npm run check:office`; then `npm run pack:dir` (it fails when the unpacked runtime is missing, `scripts/after-pack.js`).
+4. `npm run build && npm test && npm run check:office` (and `npm run check:ui` for UI changes; CI runs both on macOS, Windows and Linux); then `npm run pack:dir` (it fails when the unpacked runtime is missing, `scripts/after-pack.js`).
 5. A real session costs credits: only with the maintainer's agreement, and say how many prompts and how many AIU it used in the spec and the pull request.
 
 ## Developer hooks

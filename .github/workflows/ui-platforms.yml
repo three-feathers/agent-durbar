@@ -1,0 +1,74 @@
+name: UI on three OSes
+
+# spec 008 FR-092: the simulator UI checks on macOS, Windows and Linux. The unit tests already run on all three in ci.yml; this
+# adds what only ran on Linux before: theme geometry, the 15-agent office layout (1440x900 and 1280x800, with that OS's fonts),
+# the Mac title bar check (on the Mac runner), and every assertion-bearing driver (`scripts/ui-suite.js`). Screenshots are
+# uploaded per OS so the real Mac and Windows rendering can be looked at. Simulator only: no account, no agent session, no
+# credits. Not a required check until it has been green for a while (making it required is a repo setting: the owner's call).
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ui-platforms.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ui-platforms.yml'
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-platforms-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ui:
+    name: UI checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      UI_SUITE_OUT: ${{ github.workspace }}/ui-shots
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+      - run: npm ci
+      - run: npm run build
+      - name: Theme geometry
+        run: node scripts/check-theme-geometry.js
+      - name: Office layout (15 agents, 1440x900 and 1280x800)
+        if: success() || failure()
+        run: node scripts/check-office-overlap.js
+      - name: Mac title bar
+        if: runner.os == 'macOS' && (success() || failure())
+        run: node scripts/check-mac-titlebar.js
+      - name: Simulator drivers (scripts/ui-suite.js)
+        if: success() || failure()
+        run: node scripts/ui-suite.js
+      - name: Screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ui-shots-${{ matrix.os }}
+          path: ui-shots
+          retention-days: 14
+          if-no-files-found: ignore

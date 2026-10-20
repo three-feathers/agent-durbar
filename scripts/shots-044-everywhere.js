@@ -50,9 +50,9 @@ module.exports = async (ctx) => {
     assert.strictEqual(btn, 'Schedules (1)');
     await js(`document.getElementById('schedHdrBtn').click()`); await ctx.sleep(300);
     assert.ok(await js(`!!document.getElementById('schedDlg')`), 'the chat button opens the dialog');
-    // Phase 2 FR-014: opened from a chat, "Send to" offers the folder's agent (the default) or this session
+    // Phase 2 FR-014: opened from a chat, "Send to" offers the folder's agent (the default) or this session (since PR #388 the option is plain "This session" and the name is on a hint line)
     const to = await js(`(()=>{const t=document.getElementById('scTarget');return t?{n:t.options.length,v:t.value,second:t.options[1].textContent}:null})()`);
-    assert.ok(to && to.n === 2 && to.v === '' && /^This session \(/.test(to.second), 'Send to: ' + JSON.stringify(to));
+    assert.ok(to && to.n === 2 && to.v === '' && to.second === 'This session', 'Send to: ' + JSON.stringify(to));
     await js(`document.getElementById('scClose').click()`); await ctx.sleep(200);
     await js(`document.getElementById('backBtn').click()`); await ctx.sleep(300);
     // 4) Settings > Schedules
