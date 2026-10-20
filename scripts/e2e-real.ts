@@ -123,7 +123,7 @@ async function check(app: (typeof APPS)[number]): Promise<Row> {
     const models = ad.listModelOptions ? await ad.listModelOptions() : [];
     row.models = models.length;
     row.sampleModels = models.slice(0, 4).map((m) => m.id).join(', ');
-    if (ad.listModelOptions && !models.length) return fail('models', 'no model listed');
+    // an empty list is recorded, not failed: a Copilot Free login lists none and still runs `auto` (real 2026-10-20); the turn decides
 
     // the turn, read-only first (Durbar's default). Codex's read-only sandbox depends on the OS (Linux user namespaces, macOS
     // sandbox-exec, the Windows elevated sandbox): when it cannot start, that is recorded and the same one-line prompt, which uses
@@ -165,7 +165,8 @@ async function turn(ad: AgentAdapter, app: (typeof APPS)[number], events: AgentE
     } catch (e) {
       return { ok: false, detail: clean(e instanceof Error ? e.message : e) };
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      // Windows: the agent's child may still hold the folder for a moment after stop (EBUSY, real 2026-10-20); cleanup never fails the check
+      try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }); } catch { /* a temp folder left behind */ }
     }
   }
 }
