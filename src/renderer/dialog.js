@@ -1,6 +1,6 @@
 /* Small confirmation dialog (spec 003 FR-033, spec 018). Plain script: in the page it defines window.DurbarDialog;
    in Node (tests) `require` gives the same factory. DurbarDialog(document) returns askDialog(opts).
-   askDialog({title,body,lines:[text],input:{label,placeholder,max,value,focus,submitOnEnter,check},buttons:[{label,value,cls}],check:{label,checked},returnFocus}) resolves {value,checked,text} for a
+   askDialog({title,body,lines:[text],input:{label,placeholder,max,value,focus,select,error,submitOnEnter,check},buttons:[{label,value,cls}],check:{label,checked},returnFocus}) resolves {value,checked,text} for a
    button (`text` = the optional input's value, `lines` = a short list under the body; all set with textContent, never HTML), or null when dismissed (Cancel button with value null, Escape, click on the backdrop).
    `input.submitOnEnter`: Enter in the field presses the primary button (Escape still cancels). `input.check(text)` returns an error line or '': when
    it returns one, the confirming buttons do not close the dialog; the line shows under the field (role=alert, linked with aria-describedby) and focus stays in the field (spec 059 FR-004).
@@ -61,7 +61,9 @@
       d.addEventListener('click',e=>{if(e.target===d)done(null);});
       doc.addEventListener('keydown',onKey,true);doc.addEventListener('focusin',onFocusIn,true);
       doc.body.appendChild(d);
-      (input&&input.focus?d.querySelector('#mdIn'):first()).focus(); /* input.focus: start in the text field (rename) */
+      (input&&input.focus?d.querySelector('#mdIn'):first()).focus();
+      if(input&&input.error){const er=d.querySelector('#mdErr'),inp=d.querySelector('#mdIn');er.textContent=input.error;er.hidden=false;er.setAttribute('role','alert');inp.setAttribute('aria-invalid','true');inp.setAttribute('aria-describedby','mdErr');} /* a reason from the caller (main refused the text) */
+      if(input&&input.select)d.querySelector('#mdIn').select(); /* spec 059: the prefilled text starts selected, so typing replaces it */ /* input.focus: start in the text field (rename) */
     });
   };
 });

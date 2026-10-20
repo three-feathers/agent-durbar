@@ -60,6 +60,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - **End of day:** quitting while agents are still working asks first ("2 agents are still working. Quit anyway?", Cancel is the default). **End all sessions** (top bar **⋯** and Ctrl+K) ends every running session after a confirmation; the chats stay.
 - **Ctrl+K** lists your 5 most recent chats first, and **Ctrl+`** jumps back to the previous chat.
 - **Previous (N)** in the chat header lists a folder's earlier sessions to **Resume**, and VS Code's Copilot Chat history as a read-only copy (it opens at the latest message, and **Continue in VS Code** opens the folder there; [screenshot](docs/screenshots/009-vschat-latest-1440x900.png)). With two or more entries, a **search box** filters them by title (case and accents ignored).
+- **Rename a session** (More menu, the card menu): give any main session a short name (1 to 60 characters; Enter saves, Esc cancels, empty brings the app's own title back). It shows on the card, the list, the chat header, the strip, the inbox, notifications, Schedules and Previous sessions, instead of the first prompt. The name is kept in Agent Durbar and also saved in the agent app, so it may sync with your account: Copilot and Codex now (a Copilot session that is not open is opened without sending anything, renamed and released again; a Codex thread shows in `codex resume` once it has had a turn), Claude Code at the session's next message (`--name`; it shows when you resume that session by its id). A name saved in an app cannot be removed from Durbar. Copilot keeps named sessions when it cleans up old ones.
 - **New session with a summary:** start fresh from a hand-off summary of the current conversation, which you edit before it is sent.
 - **Scheduled prompts** per folder or for one session, while the app is open: once, every N minutes, or on a calendar (every day, weekdays, or weekly on chosen days, at a local time that stays put across daylight-saving changes). A schedule can have its own **limit** in AI credits or dollars (the agent app's unit): when its runs have spent that much, it pauses and says so. A schedule for a session that has ended pauses too, and is never sent elsewhere unless you choose the folder's agent. Prompts that Copilot itself schedules in a session (`/every`, `/after`) are listed read-only. Open them from a room's **⋯** menu, the **clock** in its header (shown once it has schedules), the **Schedules** button in its chat, or **Settings > Schedules** for all folders. A **starter kit** has templates:
   - *Start my day* (a morning briefing from your mail and calendar MCP servers);
@@ -166,7 +167,7 @@ Rules that always apply:
 - **Add project folders, not your home folder or a drive root.** Everything under an added folder counts as the agent's own; Durbar warns calmly when you add one of those.
 - **Answering a question** an agent asks is allowed in every mode; it is not an action.
 - **A profile (custom agent) from a folder's repository** asks once before it is used and never changes your mode.
-- **Durbar never stores or logs** tokens, session content or your prompts. Debug logs are redacted.
+- **Durbar never stores or logs** tokens, session content or your prompts. Debug logs are redacted. A session name you choose is stored in Durbar's folder file and sent to the agent app that has the session.
 
 What Durbar does not do (the same list is in Settings):
 - Durbar asks Claude Code and Copilot to stay in their folders but cannot force them; only Codex is held there by the system (in Read-only and Ask first).
@@ -242,6 +243,7 @@ npm run pack:dir          # unpacked app for this OS in release/ (also dist, dis
 - **Caps are soft:** one model response can overshoot them, and the figures are what each harness reports.
 - **Floors that are off are quiet:** their agents keep running and can spend credits or wait for an approval.
 - **Schedules run only while the app is open**, and a schedule's limit counts usage from its send until that turn ends (a message you send during that turn counts too). The agent app's own schedules are only shown for Copilot and only when reported while Durbar runs; none of this has been tried on a real session yet.
+- **Session names:** the rename into Copilot, Codex and Claude Code was checked on real accounts only by another team member's agent (CLI lists), not in VS Code; Claude Code applies the name at the next message, and whether the VS Code Claude extension lists it is unchecked. The Previous sessions row menu item arrives with spec 006's row menu.
 - **Imported MCP config:** importing from `.vscode/mcp.json` is a one-time copy per folder.
 - **Moving targets:** harness protocols change, so versions are pinned and checked.
 
