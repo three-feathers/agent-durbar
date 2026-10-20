@@ -87,7 +87,7 @@ body.has-bridge #liveBar{display:flex}
 .note.question .q-text{margin:0 0 6px;font-size:13px;line-height:1.4;color:var(--ink)}
 .note.question .q-text .tag{font-size:11px}
 .note.question .q-opts{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.note.question .q-opt{height:30px;padding:0 12px;font-size:12.5px}
+.note.question .q-opt{height:28px;padding:0 10px;font-size:12.5px} /* spec 052 FR-076: .btn.sm height */
 .note.question .q-opt.primary{font-weight:650} /* chosen: the theme's primary button look */
 /* chosen must read in every theme (some primary buttons look like plain ones): a ring in the text colour and a check mark (FR-130 delta) */
 .note.question .q-opt[aria-checked="true"],.note.question .q-opt[aria-pressed="true"]{box-shadow:inset 0 0 0 2px currentColor}
@@ -242,11 +242,10 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 button.lrow:hover{background:var(--surface-2)}
 button.lrow[aria-pressed="true"]{background:#eaf1f7;box-shadow:inset 3px 0 0 var(--focus)} /* spec 052 FR-052: not colour only */
 /* spec 052 FR-008: "lhead", not "head": the avatars' .head nods (styles: animation nod), and the list header row nodded with them */
-.lrow.lhead{height:34px;cursor:default;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;background:var(--surface-2);font-weight:600}
+.lrow.lhead{height:34px;cursor:default;font-size:11.5px;color:var(--muted);background:var(--surface-2);font-weight:600} /* spec 052 FR-077: sentence case */
 .lhead>span{min-width:0}
 .lsort{all:unset;box-sizing:border-box;display:inline-flex;align-items:center;gap:4px;max-width:100%;cursor:pointer;font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit;white-space:nowrap;overflow:hidden;border-radius:4px;padding:2px 2px}
 .lsort:hover{color:var(--ink)}
-.lsort:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 .lsort .sarr{font-size:10.5px;opacity:.55}
 .lhead>[aria-sort="ascending"] .lsort,.lhead>[aria-sort="descending"] .lsort{color:var(--ink)}
 .lhead>[aria-sort="ascending"] .sarr,.lhead>[aria-sort="descending"] .sarr{opacity:1}
@@ -279,7 +278,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 :is(h1,h2,h3,h4)[tabindex="-1"]:focus,:is(h1,h2,h3,h4)[tabindex="-1"]:focus-visible{outline:none}
 .ph .sub{font-size:12.5px;color:var(--muted)}
 .ph-meta{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;min-width:0}
-.folder{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:2px 8px}
+.folder{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:2px 8px} /* spec 052 FR-076: a path chip, not a pill */
 .folder{max-width:100%;min-width:0}
 .folder-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .close{position:absolute;right:14px;top:14px;width:32px;height:32px;border-radius:10px;border:1px solid transparent;background:transparent;cursor:pointer;display:grid;place-items:center;color:var(--ink-2)}
@@ -316,17 +315,17 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .quick button:hover{background:#faecc9}
 .think{border:1px solid var(--line);border-radius:12px;background:var(--soft);overflow:hidden}
 .think-toggle{width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;border:0;background:transparent;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--ink-2);text-align:left}
-.think-toggle:hover{background:#f5f1e8}
+.think-toggle:hover{background:var(--surface-2)}
 .think-toggle .chev{width:12px;height:12px;transition:transform .2s;flex:none}
 .think-toggle[aria-expanded="true"] .chev{transform:rotate(90deg)}
 .think-toggle .live{margin-left:auto;display:none;gap:3px}
 .think.streaming .live{display:inline-flex}
 .live i{width:4px;height:4px;border-radius:50%;background:var(--c-thinking);animation:dotp 1.4s infinite}
 .live i:nth-child(2){animation-delay:.2s}.live i:nth-child(3){animation-delay:.4s}
-.think-body{margin:0 4px 8px 0;padding:0 8px 2px 32px;font-size:12.5px;color:var(--ink-2);line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;font-style:italic;max-height:190px;overflow-y:auto}
+.think-body{margin:0 4px 8px 0;padding:0 8px 2px 32px;font-size:12.5px;color:var(--ink-2);line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;max-height:190px;overflow-y:auto}
 .think-body[hidden]{display:none}
 .chips{display:flex;flex-wrap:wrap;gap:6px;min-width:0;max-width:100%}
-.chip{display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:100%;height:var(--h-chip);padding:0 10px 0 8px;border-radius:8px;background:#eef2f0;border:1px solid #d7e0da;font-size:12px;color:var(--ink-2);animation:pop .25s ease-out;cursor:pointer;text-align:left;font-family:inherit}
+.chip{display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:100%;height:var(--h-chip);padding:0 10px 0 8px;border-radius:var(--r-sm);background:#eef2f0;border:1px solid #d7e0da;font-size:12px;color:var(--ink-2);animation:pop .25s ease-out;cursor:pointer;text-align:left;font-family:inherit}
 .chip:hover{background:#e6ece8}
 .chip svg{width:13px;height:13px;flex:none}
 .chip b{font-weight:600;color:var(--ink);flex:none}
@@ -349,7 +348,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .chip .cmdbox .cp-btn{opacity:1}
 .chip .xmeta{font-size:11px;color:var(--muted)}
 .chip .detail{user-select:text}
-.chip .xall{align-self:flex-start;height:24px;padding:0 9px;font:inherit;font-size:11.5px;font-weight:600;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);cursor:pointer}
+.chip .xall{align-self:flex-start;height:28px;padding:0 10px;font:inherit;font-size:11.5px;font-weight:600;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);cursor:pointer}
 /* spec 052 FR-063: "Show the change" on a permission card and its inbox row, collapsed by default; + green, - red, monospace */
 .pdiff{margin:6px 0 2px;font-size:12px}
 .pdiff>summary{cursor:pointer;color:var(--ink-2);font-weight:600;width:max-content;max-width:100%}
@@ -623,8 +622,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .composer{padding:12px max(16px,calc((100% - 880px)/2)) 14px}
 .ph{padding-left:max(18px,calc((100% - 1240px)/2));padding-right:max(18px,calc((100% - 1240px)/2))}
 .panel-in.viewing .composer,.panel-in.viewing .prev{display:none}
-.nothink{font-size:11.5px;color:var(--muted);font-style:italic}
-.think.streaming .think-body:empty::before{content:"The model reasons privately first. A summary of its reasoning appears here when it finishes thinking.";font-style:italic;color:var(--muted)}
+.nothink{font-size:11.5px;color:var(--muted)}
+.think.streaming .think-body:empty::before{content:"The model reasons privately first. A summary of its reasoning appears here when it finishes thinking.";color:var(--muted)}
 
 /* previous sessions */
 .prev{flex:none;border-bottom:1px solid var(--line);background:var(--soft);padding:0 max(18px,calc((100% - 1240px)/2))}
@@ -636,7 +635,6 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .prev-c{margin-left:auto;font-weight:500;color:var(--muted);font-size:12px}
 .prev-body{max-height:min(30vh,250px);overflow-y:auto;padding:0 0 10px}
 .prev-q{display:block;box-sizing:border-box;width:100%;height:30px;margin:6px 0 2px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel,#fff);color:var(--ink);font:inherit;font-size:12.5px}
-.prev-q:focus-visible{outline:3px solid var(--focus,#4f7fa8);outline-offset:1px}
 .prev-n{font-weight:500;color:var(--muted);font-size:12px;margin-left:6px}
 .prev-h{font-size:12px;font-weight:650;color:var(--ink);margin:8px 0 4px}
 .prev-h small{font-weight:500;color:var(--muted);margin-left:6px}
@@ -662,13 +660,15 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .dlg-ov{position:fixed;inset:0;background:rgba(40,35,25,.28);display:grid;place-items:center;z-index:60}
 .dlg{width:min(420px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-xl);padding:18px 20px;box-shadow:0 18px 50px rgba(40,35,25,.25);display:flex;flex-direction:column;gap:10px}
 .dlg h3{margin:0;font-size:16px}
-.dlg .dsub{margin:0;font-size:12.5px;color:var(--ink-2);overflow-wrap:anywhere}
+.dlg .dsub{margin:0;font-size:12.5px;color:var(--ink-2);overflow-wrap:anywhere;line-height:1.5}
 .dlg label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--ink-2)}
 .dlg label[hidden]{display:none}
 .dlg .sd-agent{display:flex;flex-direction:column;gap:6px}
 .dlg .sd-agent[hidden]{display:none}
-.dlg select{height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:10px;background:var(--raised);padding:0 8px;font:inherit;font-size:13px;color:var(--ink)}
-.dlg input[type=number]{height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:10px;background:var(--raised);padding:0 10px;font:inherit;font-size:13px;color:var(--ink)}
+.dlg select{height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:0 8px;font:inherit;font-size:13px;color:var(--ink)}
+.dlg input[type=number]{height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:0 10px;font:inherit;font-size:13px;color:var(--ink)}
+/* spec 052 FR-076: text fields in dialogs look alike (proportional type; monospace only for code, e.g. the summary editor and MCP commands) */
+.dlg textarea{border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:8px 10px;font:inherit;font-size:13px;font-weight:400;color:var(--ink);resize:vertical}
 .ho-dlg{width:min(720px,calc(100vw - 32px))}
 .ho-dlg textarea{width:100%;box-sizing:border-box;min-height:260px;max-height:55vh;resize:vertical;border:1px solid var(--line-ctl);border-radius:10px;background:var(--raised);padding:10px 12px;font:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;color:var(--ink)}
 .dlg .dbtn{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}
@@ -768,10 +768,10 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .intent-line{font-size:12px;color:var(--muted);padding-left:2px}
 .intent-line::before{content:"\25B8";margin-right:6px;color:var(--c-thinking)}
 .nothink{font-size:12px;color:var(--muted);background:#f6f3ec;border:1px dashed var(--line-2);border-radius:10px;padding:6px 10px;align-self:flex-start}
-.think-body{font-style:normal;white-space:normal;max-height:260px}
+.think-body{font-style:normal;white-space:normal;max-height:260px;margin-left:18px;padding-left:12px;border-left:2px solid var(--line-2);max-width:70ch;font-size:13px;color:var(--muted)} /* spec 052 FR-077: no italic; a left rule, the muted colour, a 70ch measure */
 .think-prev{margin-left:6px;font-weight:400;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1 1 auto;font-size:12px}
 .think-toggle[aria-expanded="true"] .think-prev,.think.streaming .think-prev{display:none}
-.think-body.md{color:var(--ink-2)}
+.think-body.md{color:var(--muted)}
 /* markdown */
 .md{white-space:normal;overflow-wrap:anywhere}
 .md>*:first-child{margin-top:0}.md>*:last-child{margin-bottom:0}
@@ -790,9 +790,9 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .md .codebox{position:relative;margin:0 0 .6em}
 .md pre{margin:0;background:#f1eee6;border:1px solid var(--line);border-radius:10px;padding:10px 12px;overflow-x:auto;white-space:pre;font-size:12px;line-height:1.5}
 .md pre code{background:none;padding:0;font-size:inherit}
-.md .copy{position:absolute;top:6px;right:6px;height:24px;padding:0 9px;font-size:11.5px;border-radius:7px;border:1px solid var(--line-2);background:rgba(255,253,249,.92);color:var(--ink-2);cursor:pointer;opacity:.7;transition:opacity .15s}
+.md .copy{position:absolute;top:4px;right:4px;height:22px;padding:0 8px;font:inherit;font-size:11px;font-weight:600;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);cursor:pointer;opacity:.7;transition:opacity .12s} /* spec 052 FR-076: the same size as .cp-btn (one Copy size) */
 .md .codebox:hover .copy,.md .copy:focus-visible{opacity:1}
-.md .copy:hover{background:var(--raised)}
+.md .copy:hover{background:var(--surface-2)}
 .md .md-img{color:var(--muted)}
 .bubble.md{white-space:normal}
 .bubble.caret.md:not(:empty)::after{display:none}
@@ -809,8 +809,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .sub-st{font-size:11.5px;font-weight:600;color:var(--blue-ink);background:var(--pb-working,#e3ecf4);border-radius:999px;padding:1px 8px;flex:none}
 .subblk.done .sub-st,.sub-st.done{color:var(--sage-ink);background:#e2efe7}.subblk.failed .sub-st,.sub-st.failed{color:var(--red-ink);background:var(--pb-error,#f6e2df)}
 .subblk.running .sub-st::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:5px;animation:dotp 1.4s infinite}
-.sub-open{height:26px;padding:0 10px;border-radius:8px;border:1px solid var(--line-2);background:var(--raised);font-size:12px;cursor:pointer;color:var(--ink-2)}
-.sub-open:hover{background:#f3f7fa}.sub-open[hidden]{display:none}
+.sub-open{height:28px;padding:0 10px;border-radius:var(--r-md);border:1px solid var(--line-2);background:var(--raised);font-size:12px;cursor:pointer;color:var(--ink-2)}
+.sub-open:hover{background:var(--surface-2)}.sub-open[hidden]{display:none}
 .sub-in{padding:0 12px 10px 34px;display:flex;flex-direction:column;gap:7px;min-width:0}
 .sub-in[hidden]{display:none}
 .sub-prompt,.sub-res{font-size:12.5px;color:var(--ink-2);background:color-mix(in srgb,var(--raised) 65%,transparent);border:1px solid var(--line);border-radius:9px;padding:6px 10px}
@@ -887,7 +887,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .stage[data-d="mini"] .l1:has(.modebadge) .name,.stage[data-d="micro"] .l1:has(.modebadge) .name{max-width:calc(100% - 3.7em - 52px)} /* room for the badge and a short status; the name still shows 3+ characters */
 .stage[data-d="full"] .who{align-items:center}
 .mode-chip{display:inline-flex;align-items:center;gap:6px;height:var(--h-chip);padding:0 8px 0 8px;border-radius:999px;border:1px solid var(--line-2);background:var(--raised);font-size:12px;font-weight:600;color:var(--ink-2);cursor:pointer}
-.mode-chip:hover{background:#f6f3ec}
+.mode-chip:hover{background:var(--surface-2)}
 .mode-chip .mi{display:grid;width:14px;height:14px}.mode-chip .mi svg{width:14px;height:14px}
 .mode-chip .chev{width:10px;height:10px;transform:rotate(90deg);opacity:.6}
 .mode-chip.mode-ask{color:var(--blue-ink);background:#eef3f8;border-color:#c5d6e5}
@@ -895,11 +895,11 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .mode-chip.mode-allow{color:var(--red-ink);background:var(--pb-error);border-color:#e3bdb7} /* spec 052 FR-065: the chat header says Allow all in the same red as the cards */
 .mode-menu{position:fixed;z-index:70;width:300px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:0 14px 40px rgba(40,35,25,.22);display:flex;flex-direction:column;gap:2px}
 .mode-menu button{display:flex;align-items:flex-start;gap:10px;text-align:left;padding:8px 10px;border:0;border-radius:10px;background:transparent;cursor:pointer}
-.mode-menu button:hover,.mode-menu button:focus-visible{background:#f3efe6}
+.mode-menu button:hover,.mode-menu button:focus-visible{background:var(--surface-2)}
 .mode-menu .mi{width:16px;height:16px;margin-top:2px;flex:none;color:var(--muted)}.mode-menu .mi svg{width:16px;height:16px}
 .mode-menu .mm-ask .mi{color:var(--blue-ink)}.mode-menu .mm-allow .mi{color:var(--amber-ink)}
 .mode-menu .mm-danger b{color:var(--red-ink)}
-.mode-menu .mt{display:flex;flex-direction:column;flex:1;min-width:0}.mode-menu b{font-size:13px}.mode-menu small{font-size:11.5px;color:var(--muted);line-height:1.35}
+.mode-menu .mt{display:flex;flex-direction:column;flex:1;min-width:0}.mode-menu b{font-size:13px}.mode-menu small{font-size:11.5px;color:var(--ink-2);line-height:1.45} /* spec 052 FR-077 */
 .mode-menu .ck{color:var(--sage-ink);font-weight:700;width:14px;flex:none}
 .mode-menu .mm-sep{height:1px;margin:4px 6px;background:var(--line)}
 .mode-menu [aria-disabled="true"]{opacity:1;color:var(--muted);border-style:dashed;cursor:not-allowed}
@@ -907,14 +907,17 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .dlg .chk{flex-direction:row;align-items:center;gap:8px;font-weight:500}
 .btn.primary.warn{background:var(--warn-bg);border-color:#e5be78;color:var(--amber-ink)}
 .btn.primary.warn:hover{background:#faecc9}
+/* spec 052 FR-076: red means it deletes or ends (End session, Remove, Delete floor, Clear); amber .primary.warn only grants more power (Allow all, Turn on remote) */
+.btn.primary.danger{background:var(--red-ink);border-color:transparent;color:#fff}
+.btn.primary.danger:hover{background:color-mix(in srgb,var(--red-ink) 86%,#000);border-color:transparent}
 
 /* ---- switch model and context, compact (spec 030) ---- */
 .mchip-btn{cursor:pointer;font-family:inherit;gap:5px}
-.mchip-btn:hover{background:#e3e9f0}
+.mchip-btn:hover{background:var(--surface-2)}
 /* spec 054 FR-007: the Remote chip says the session can be steered from GitHub, so it shows in Simple too */
 body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 #remoteChip[hidden]{display:none!important}
-.mchip-btn[aria-disabled=true]{opacity:.6;cursor:not-allowed}
+.mchip-btn[aria-disabled=true]{color:var(--muted);border-style:dashed;cursor:not-allowed} /* spec 052 FR-076: disabled is muted and dashed, never opacity */
 .mchip .chev{flex:none;opacity:.75}
 .mchip-btn span{max-width:240px;overflow:hidden;text-overflow:ellipsis}
 .ctxgrp{display:inline-flex;align-items:center;gap:6px;min-width:0}
@@ -937,7 +940,7 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .toast-act{white-space:nowrap;flex:none;background:transparent;color:#f7f4ee;border:1px solid color-mix(in srgb,var(--raised) 45%,transparent);border-radius:8px;padding:2px 12px;font-size:12.5px;font-weight:700;cursor:pointer}
 .toast-act:hover{background:color-mix(in srgb,var(--raised) 14%,transparent)}
 .dlg .dlist{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--ink-2)}
-.dlg .dinput input{height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:10px;background:var(--raised);padding:0 10px;font:inherit;font-size:13px;color:var(--ink);font-weight:400}
+.dlg .dinput input{height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:0 10px;font:inherit;font-size:13px;color:var(--ink);font-weight:400}
 
 /* ---- agent mood (spec 034, issue #20): small, flat, inside the scene box; nothing moves under reduced motion ---- */
 .amb-light{animation:ambblink 1.6s ease-in-out 6} /* spec 052 FR-069: the red light breathes slowly for about 10 s, then stays on (was a red/blue strobe) */
@@ -986,17 +989,17 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .answer-bar .ab-q{flex:1 1 280px;min-width:0;font-size:13px;line-height:1.4;color:var(--ink);max-height:8.6em;overflow:auto;overflow-wrap:anywhere}
 .answer-bar .ab-q b{color:var(--amber-ink)}
 .answer-bar .ab-act{display:flex;gap:6px;flex-wrap:wrap}
-.answer-bar .btn{height:30px}
+.answer-bar .btn{height:var(--h-ctl)} /* spec 052 FR-076 */
 .answer-bar .btn.ghost{background:transparent;border-color:transparent;text-decoration:underline;color:var(--ink-2)}
 
 /* spec 052 FR-015: a notice strip under the top bar (it takes its own room; the office lays out below it) */
-.notice-strip{flex:none;display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;padding:3px 20px;background:var(--warn-bg);border-bottom:1px solid #e5be78;color:var(--ink);font-size:12.5px;line-height:1.35}
+.notice-strip{flex:none;display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;padding:1px 20px;background:var(--warn-bg);border-bottom:1px solid #e5be78;color:var(--ink);font-size:12.5px;line-height:1.35}
 .notice-strip[hidden]{display:none}
 .notice-strip .ns-ic{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:999px;background:var(--amber-ink);color:#fff;font-weight:800;font-size:12px;flex:none}
 .notice-strip .ns-t{flex:1 1 360px;min-width:0}
 .notice-strip .ns-t b{color:var(--amber-ink)}
 .notice-strip .ns-act{display:flex;gap:6px}
-.notice-strip .btn{height:24px;padding:0 10px;font-size:12.5px}
+.notice-strip .btn{height:28px;padding:0 10px;font-size:12px} /* spec 052 FR-076: .btn.sm; the strip stays 31px tall (1 + 28 + 1 padding, 1 border) */
 
 /* spec 052 FR-021: stuck or memory nearly full, on the pill (the reason is in the tooltip and the card's label) */
 .pwarn{margin-left:4px;color:var(--amber-ink);font-size:11px;line-height:1}
@@ -1029,12 +1032,13 @@ html:not([data-ui]) .seg button{border-radius:6px}
 .inbox-btn+.stats{margin-left:0}
 .inbox-dlg{max-width:760px}
 .inbox-dlg .dbody{max-height:min(64vh,620px);overflow:auto;display:flex;flex-direction:column;gap:10px;padding-right:4px}
-.inbox-row{display:grid;grid-template-columns:44px minmax(0,1fr);gap:12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--raised)}
+.inbox-row{display:grid;grid-template-columns:44px minmax(0,1fr);gap:12px;padding:12px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--raised)}
 .inbox-row .ib-av svg{width:44px;height:44px}
 .inbox-row p{margin:0}
 .inbox-row .ib-h{font-size:13.5px}.inbox-row .ib-w{color:var(--amber-ink);font-weight:600}.inbox-row .ib-f{color:var(--muted)}.inbox-row .ib-wait{color:var(--muted);font-size:11.5px;font-weight:400;white-space:nowrap} /* spec 052 FR-061 */
 .inbox-row .ib-t{margin:4px 0 8px;font-size:13px;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
 .inbox-row .ib-act{display:flex;flex-wrap:wrap;gap:6px}
+.inbox-row .ib-ans{display:flex;flex-wrap:nowrap;gap:6px}.inbox-row .ib-ans:empty{display:none} /* spec 052 FR-076: Allow, session, Deny never wrap apart; only Open chat moves to the next line */
 .inbox-empty{color:var(--muted);font-size:13px;max-width:60ch}
 
 /* spec 052 FR-031 (#306): Simple hides the developer details; status, permissions and answering are the same */
@@ -1042,8 +1046,6 @@ body.simple #modelChip,body.simple .mchip,body.simple #agentChip,body.simple #ct
 body.simple .room-path,body.simple .room-mcp,body.simple #vscodeBtn,body.simple #copyResBtn,body.simple #mcpBtn,body.simple #toolsHdrBtn,
 body.simple .pusage,body.simple .defaults-grp #modelSel,body.simple .defaults-grp #effortSel{display:none!important}
 body.simple .lrow .lfold{visibility:hidden} /* spec 052 FR-064: the folder column stays in the grid (display:none moved the next cells under the wrong headers) */
-.wl-simple{display:flex;gap:8px;align-items:flex-start;margin:12px 0 0;font-size:13px;color:var(--ink-2);cursor:pointer}
-.wl-simple input{margin-top:3px}
 
 /* spec 052 FR-033: the inbox heading takes focus (a row, not a button) */
 .inbox-row .ib-h{margin:0;font-size:13.5px;font-weight:400;border-radius:6px}
@@ -1052,8 +1054,10 @@ body.simple .lrow .lfold{visibility:hidden} /* spec 052 FR-064: the folder colum
 .inbox-keys{margin:8px 0 0;font-size:11.5px;color:var(--muted)}
 
 /* spec 052 FR-037: Simple goes further: tool rows fold into one line, Thinking stays folded, fewer top-bar controls */
-body.simple #chat .chips>.chip,body.simple #chat .chips>.chips-more{display:none}
-body.simple #chat .chips:has(>.chip)::before{content:"Worked with its tools (Expert shows each step)";display:block;font-size:12.5px;color:var(--muted);padding:2px 0}
+/* spec 052 FR-081 (round 7): the tool rows stay, in plain words ("Read companies.ts", "Ran a command"); Expert shows the tool name and argument */
+#chat .chip>.plain{display:none}
+body.simple #chat .chip>.plain{display:inline;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--ink)}
+body.simple #chat .chip>b,body.simple #chat .chip>code,body.simple #chat .chip:not(.fail)>.res{display:none}
 body.simple #chat .think .think-body{display:none}
 body.simple #addWs,body.simple #foldersBtn,body.simple #vList{display:none!important}
 /* spec 052 R3 design polish (Clean Office only unless noted; colour, border colour, background, shadow, radius, weight and
@@ -1104,12 +1108,12 @@ html .notice-strip .btn.primary:hover{background:color-mix(in srgb,var(--amber-i
 
 /* spec 052 FR-042/FR-043: command palette (Ctrl+K) and the keyboard shortcut sheet (?) */
 .pal-ov{place-items:start center;padding-top:min(14vh,120px)}
-.dlg.pal-dlg{width:min(560px,calc(100vw - 32px));padding:0;gap:0;overflow:hidden;border-radius:14px}
+.dlg.pal-dlg{width:min(560px,calc(100vw - 32px));padding:0;gap:0;overflow:hidden;border-radius:var(--r-xl)}
 .pal-top{border-bottom:1px solid var(--line);padding:4px 16px}
 .pal-top input{width:100%;height:48px;border:0;outline:0;background:transparent;font:inherit;font-size:15px;color:var(--ink)}
 .pal-top input::placeholder{color:var(--muted)}
 .pal-list{max-height:min(52vh,400px);overflow:auto;padding:6px}
-.pal-g{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);padding:8px 10px 4px}
+.pal-g{font-size:11.5px;font-weight:600;color:var(--muted);padding:8px 10px 4px} /* spec 052 FR-077: sentence case */
 .pal-o{display:flex;align-items:center;gap:10px;min-height:36px;padding:6px 10px;border-radius:8px;cursor:pointer;font-size:13.5px;color:var(--ink)}
 .pal-o[aria-selected=true]{background:var(--pb-working)}
 .pal-l{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none;max-width:55%}
@@ -1220,3 +1224,27 @@ html[data-serious] :is(.bar,.glow,.hand-l,.hand-r,.head,.bubble-g,.td,.steam,.ha
 html[data-serious] :is(.caret,.bubble.caret.md>*:last-child)::after,
 html[data-serious] .subblk.running .sub-st::before{animation:none!important}
 
+/* spec 052 FR-076: one expand arrow. "Show the change", "Show the exact command", Settings' "More" and the advanced section use the shared
+   chevron (the Thinking / Previous sessions SVG, drawn as a mask in currentColor) that turns 90° when open; the browser's marker is hidden. */
+:root{--chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 2l4 4-4 4'/%3E%3C/svg%3E")}
+:is(.pdiff,.hs-cmds,.scr-more,.scr-adv)>summary{list-style:none;display:inline-flex;align-items:center;gap:6px}
+:is(.pdiff,.hs-cmds,.scr-more,.scr-adv)>summary::-webkit-details-marker{display:none}
+:is(.pdiff,.hs-cmds,.scr-more,.scr-adv)>summary::before{content:"";width:12px;height:12px;flex:none;background:currentColor;-webkit-mask:var(--chev) center/12px 12px no-repeat;mask:var(--chev) center/12px 12px no-repeat;transition:transform .2s}
+:is(.pdiff,.hs-cmds,.scr-more,.scr-adv)[open]>summary::before{transform:rotate(90deg)}
+@media (prefers-reduced-motion:reduce){:is(.pdiff,.hs-cmds,.scr-more,.scr-adv)>summary::before{transition:none}}
+@media (forced-colors:active){:is(.pdiff,.hs-cmds,.scr-more,.scr-adv)>summary::before{forced-color-adjust:none;background:CanvasText}}
+/* spec 052 FR-080..FR-082 (round 7, plain words): Simple shows the memory chip and Tidy up memory, the cost line (money only), the
+   request's folder and its collapsed command; it hides Control from GitHub unless remote control is on (the chip shows then) */
+body.simple .ctxgrp>#ctxChip,body.simple .ctxgrp>#compactBtn{display:inline-flex!important}
+body.simple p.pusage:not(:empty){display:block!important}
+body.simple #remoteBtn:not(.on){display:none!important}
+.note.perm .pfold{display:none;font-size:11.5px;color:var(--muted)}
+body.simple .note.perm .pfold{display:inline}
+details.pcmd{display:none;margin:6px 0 0}
+body.simple details.pcmd{display:block}
+details.pcmd>summary{cursor:pointer;font-size:12px;color:var(--ink-2)}
+details.pcmd>pre{margin:4px 0 0;padding:6px 8px;border-radius:6px;background:var(--surface-2,#f4f4f2);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow:auto}
+.wl-level{margin:14px 0 0;font-size:13px;color:var(--ink-2)}
+.wl-level p{margin:0 0 8px}
+.wl-lv-btns{display:flex;flex-wrap:wrap;gap:8px}
+.wl-level .btn[aria-pressed="true"]{border-color:var(--focus);box-shadow:inset 0 0 0 1px var(--focus)}
