@@ -1,6 +1,6 @@
 # Tasks 061 (draft)
 
-- [ ] T001 [owner] Amend constitution principle III (text proposed in the spec)
+- [x] T001 [owner] Amend constitution principle III: Amendment 1, v1.1.0 (2026-10-20)
 - [ ] T002 R1 Claude, R2 Codex, R3 Copilot real checks (tiny; scratch folders)
 - [ ] T010 Scanner and unit tests [FR-001]
 - [ ] T020 Dialog, storage, change detection [FR-002, FR-003]
