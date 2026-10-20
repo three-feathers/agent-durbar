@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.9 tag)
 
+- **Folder status in the chat** (spec 063): the folder chip shows the git branch and how many files changed; a click lists the changed files with their +/− lines. Read-only.
 - A GitHub account without Copilot access no longer shows as "Signed in (checked with GitHub)": the card now says the account has no Copilot access yet and how to turn it on (spec 012 FR-156).
 - Packaged builds refuse debuggers: Electron fuses turn off `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` and `--inspect`, the app always removes `remote-debugging-port` and `remote-debugging-pipe` (any spelling), `npm run pack:dir` and the `dist*` scripts fail if a fuse is wrong in the packed Linux, macOS or Windows binary (so the packaged-check workflow and the release build check it), and `npm run check:fuses-launch` probes the packed Linux app (spec 008 FR-037..FR-039, #355). Run locally on Linux only; macOS and Windows not tried by hand.
 - **Continue a conversation in another agent app** (#409, spec 030 FR-042..FR-045): **More > Continue in another app…** starts a session of another ready app (Claude Code, Codex or Copilot) in the same folder from a reviewed summary that says where it came from. Checked on real accounts.
