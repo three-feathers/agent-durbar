@@ -124,8 +124,8 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
 const SIM_KIND_BY_AGENT: Record<number, string> = { 0: 'claude', 3: 'claude', 4: 'codex', 5: 'claude', 6: 'basic', 7: 'codex', 8: 'claude', 9: 'codex', 11: 'claude' };
 const SIM_COPILOT_CAPS = { interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, remote: true, oneShot: true, deleteSession: true } as AdapterInfo['capabilities'];
 const SIM_MIXED_KINDS: AdapterInfo[] = [
-  { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, remote: false, mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true, deleteSession: false } }, // spec 006 FR-028: Claude Code has no per-session delete
-  { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: false, remote: false } },
+  { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, remote: false, mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true, deleteSession: false } }, // spec 006 FR-028: Claude Code has no per-session delete
+  { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: false, remote: false } },
   { id: 'basic', displayName: 'Basic agent (simulated)', state: 'ready', version: 'sim', capabilities: { interrupt: false, resume: false, images: false, models: false, effort: false, permissionModes: ['read-only'], permModeSwitch: 'none', usage: { tokens: true, costUsd: false, nanoAiu: false }, context: false, caps: false, helpers: false, history: false, mcpStatus: false, mcpToggle: false } as AdapterInfo['capabilities'] },
 ];
 
@@ -244,6 +244,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!k.permissionModes.includes(info.permMode)) info.permMode = 'read-only';
         info.profiles = undefined; // custom agents (spec 049) are Copilot's: no profile chip that opens nothing
         if (!k.models) info.modelControl = { switch: 'none', effort: false, contextTier: false, compact: false, windowKnown: true };
+        else if (k.modelSwitch) info.modelControl = { switch: 'next-message', effort: true, contextTier: k.modelSwitch.contextTier, compact: false, windowKnown: true }; // spec 030 FR-040: no tier, no compaction, verified
       }
       // Priya models an adapter that cannot switch or compact in place (spec 030): the UI shows the disabled state and offers a new session.
       // Jonas models the real adapter's state until Phase 3: the controls work but are flagged as not verified on a real account.
@@ -1511,6 +1512,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           if (!k.caps || (k.capUnit === 'usd' && o.maxAiCredits === undefined)) info.maxAiCredits = undefined; // the AIU default is not a dollar cap
           if (!k.permissionModes.includes(info.permMode)) info.permMode = 'read-only';
           if (!k.models) info.modelControl = { switch: 'none', effort: false, contextTier: false, compact: false, windowKnown: true };
+          else if (k.modelSwitch) info.modelControl = { switch: 'next-message', effort: true, contextTier: k.modelSwitch.contextTier, compact: false, windowKnown: true };
         }
         sims.push({ info, room: src.room, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: src.files, grants: new Map() });
         return { ok: true, agent: info };
