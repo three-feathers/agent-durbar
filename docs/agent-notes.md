@@ -51,7 +51,7 @@ Each entry has the date it was learned, what happened, and how to apply it, with
   - **Windows:** the runtime's window (`usage_info.tokenLimit`) is the prompt budget, not `max_context_window_tokens`. `gpt-6-luna` 272k (1M listed), long tier 872k; `mai-code-1.1-flash` 128k.
   - **Prices:** `tokenPrices` are AI credits per `batchSize` tokens, and bills match exactly. Long-tier prices are not charged below the default window.
   - **Cost trap:** the prompt cache lives 5 minutes. A "tiny" prompt in a 125k-token session cost 15.7 credits after the cache expired, because it was written again and compacted. Keep paid probes inside 5 minutes, or on a model with a big window.
-  - **Caps:** `maxAiCredits` is checked when a session is created or resumed, not before each turn. A running session went past its cap without any `limit` event, so Durbar has to enforce it.
+  - **Caps:** `maxAiCredits` is checked when a session is created or resumed, not before each turn. A running session went past its cap without any `limit` event. Durbar enforces it in `CopilotAdapter` (spec 011 FR-070..FR-074): `durbar-cap-<n>` request ids are answered locally, every other id goes to `handlePendingSessionLimitsExhausted`.
   - An invalid `compactionDecision` is ignored silently, so the runtime does not reveal the allowed values.
 - **Codex `CODEX_HOME`**: an empty or missing folder reads as "not signed in". When a sign-in check says "could not confirm", first check that the folder you pointed at exists.
 - **Folder config per agent app** (2026-10-20/21, `real:`, spec 061 R1-R3):
