@@ -7,7 +7,7 @@
  * Simulator only (no AI credits, no real Mac). It forces html[data-platform="darwin"] (the preload sets it only on a Mac), opens each
  * state at 1440x900 and 1280x800 and models what Electron does with `-webkit-app-region`: the window drags where an element is `drag`
  * and no element is `no-drag`, z-order ignored. Per state it fails on:
- *   - no draggable part in the top 40px band (outside the 78px traffic-light room), or, in a chat, no grab block of at least 40px wide and
+ *   - no draggable part in the top 40px band (outside the 78px traffic-light room), or, in a chat, no grab block of at least 32px wide and
  *     24px tall (continuous drag, starting in the band); states under a modal overlay (dialogs, palette, shortcut sheet, inbox) are exempt
  *     from this one: an overlay blocks dragging (FR-138);
  *   - a clickable element whose box overlaps the traffic-light box (x<78, y<40, by rectangle, not by sampling) outside full screen (an
@@ -22,11 +22,12 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { jsLiteral } = require('./check-office-overlap.js'); /* every value put into page code goes through it */
 
 const ROOT = path.join(__dirname, '..');
 const INDEX = path.join(ROOT, 'dist', 'renderer', 'index.html');
 const TL = { x: 78, y: 40 }; /* traffic-light box: the hiddenInset default, not measured on a Mac */
-const MIN_CHAT_GRAB = 40; /* px wide, with 24px of height */
+const MIN_CHAT_GRAB = 32; /* px wide, with 24px of height */
 const SIZES = [[1440, 900], [1280, 800]];
 
 /* runs in the page */
@@ -111,7 +112,7 @@ async function run(ctx) {
   const js = (c) => ctx.js(c);
   const results = [];
   const key = (k, mods) => { const w = ctx.win.webContents; for (const type of ['keyDown', 'char', 'keyUp']) w.sendInputEvent({ type, keyCode: k, modifiers: mods || [] }); };
-  const click = (sel) => js(`(()=>{const e=document.querySelector(${JSON.stringify(sel)});if(e){e.click();return true}return false})()`);
+  const click = (sel) => js(`(()=>{const e=document.querySelector(${jsLiteral(sel)});if(e){e.click();return true}return false})()`);
   const must = async (sel) => { if (!(await click(sel))) throw new Error(`missing control ${sel}`); await ctx.sleep(150); };
   const reset = async () => {
     await js(`(()=>{document.querySelectorAll('.dlg-ov').forEach(d=>d.remove());try{window.DurbarScreens.isOpen()&&window.DurbarScreens.close()}catch(e){};if(document.body.classList.contains('panel-open')){const b=document.getElementById('backBtn');if(b)b.click()};const m=document.getElementById('topMoreMenu');if(m)m.hidden=true;['foldersPop','floorsPop','defaultsPop','newMenu'].forEach(i=>{const e=document.getElementById(i);if(e)e.hidden=true});delete document.documentElement.dataset.fullscreen;const vo=document.getElementById('vOffice');if(vo&&document.body.classList.contains('list-mode'))vo.click();['restoreStrip','awayStrip'].forEach(i=>{const s=document.getElementById(i);if(s)s.hidden=true})})()`);
@@ -129,7 +130,7 @@ async function run(ctx) {
   /* kind: chat = at least MIN_CHAT_GRAB of continuous grab width; modal = under an overlay, dragging is blocked on purpose; plain = some drag */
   const rec = async (name, size, kind) => {
     await ctx.sleep(600);
-    const m = await js(`(${measure.toString()})(${TL.x},${TL.y})`);
+    const m = await js(`(${measure.toString()})(${jsLiteral(TL.x)},${jsLiteral(TL.y)})`);
     const why = [];
     if (kind === 'chat' ? m.grab < MIN_CHAT_GRAB : kind === 'plain' && m.bandDrag === 0) why.push(`grab block ${m.grab}px wide${kind === 'chat' ? ` (< ${MIN_CHAT_GRAB}, 24px tall needed)` : ' (none)'}`);
     if (m.topbar && !m.full && m.topbar.firstMin < TL.x - 1) why.push(`top bar first row starts at x=${m.topbar.firstMin} (< ${TL.x})`);

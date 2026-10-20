@@ -120,7 +120,8 @@ const rules = [
   `${D} body.panel-open .notice-strip:not([hidden]) ~ .notice-strip{padding-left:20px}`,
   `${D} .notice-strip:not([hidden]) ~ .workspace .strip{padding-left:12px}`,
   `${D} .notice-strip:not([hidden]) ~ #screen .scr-head{padding-left:max(24px,calc((100% - 880px)/2 + 24px))}`,
-  `${D} .strip{padding-right:56px}`,
+  `${D} .strip{padding-right:0}`,
+  `${D} .strip::after{content:"";flex:none;align-self:stretch;width:32px;`, // the grab handle (grip dots)
   `${D} :is(.dlg-ov,#foldersPop,#floorsPop,#defaultsPop,.mode-menu,.more-menu){-webkit-app-region:no-drag}`,
 ];
 for (const rule of rules) assert.ok(css.includes(rule), `Mac title bar rule (FR-085, FR-138): ${rule.slice(0, 90)}`);
@@ -131,6 +132,7 @@ for (const sel of ['.mode-menu{', '.more-menu{', '#floorsPop{', '#foldersPop{', 
 assert.ok(screensCss.includes('.scr-head{'), 'selector exists in screens.css: .scr-head');
 for (const id of ['restoreStrip', 'awayStrip', 'foldersPop', 'floorsPop', 'defaultsPop']) assert.ok(html.includes(`id="${id}"`), `index.html has #${id}`);
 assert.ok(html.indexOf('id="restoreStrip"') < html.indexOf('class="workspace"') && html.indexOf('id="awayStrip"') < html.indexOf('id="screen"') && html.indexOf('class="workspace"') < html.indexOf('id="screen"'), 'notice strips come before .workspace and #screen (the ~ rules need it)');
+assert.ok(css.includes('@keyframes sl-fade') && css.includes('animation-timeline:scroll(self inline)') && /\.strip-list\{animation:sl-fade[^}]*mask-image/.test(css), 'the agent strip fades where it is cut off');
 assert.ok(css.includes(':root{color-scheme:light}') && css.includes(':root[data-dark]{color-scheme:dark}'), 'color-scheme follows the theme');
 
 console.log('macos tests passed');
