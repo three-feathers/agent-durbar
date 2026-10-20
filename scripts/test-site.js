@@ -7,6 +7,7 @@
  */
 'use strict';
 const assert = require('assert');
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -86,6 +87,19 @@ assert.match(docs, /<nav class="toc"/, 'table of contents');
 assert.ok((docs.match(/class="grid"><li>/g) || []).length === 1 && (docs.match(/<li><a href="https:\/\/github\.com\/[^"]+\/specs\//g) || []).length >= 10, 'the feature grid comes from the specs index');
 for (const n of landing.featuresExclude) assert.ok(!docs.includes(`<small>Spec ${n}</small>`), `process spec ${n} is not a feature`);
 for (const c of landing.cards) assert.ok(docs.includes(`id="${c.readmeAnchor}"`), `card anchor ${c.readmeAnchor} exists on the docs page`);
+
+// visitor rounds 2026-10-20 (spec 050): screenshots open full size, a FAQ for leads and skeptics, honest safety lines, phones
+for (const f of [landing.hero.image, ...landing.themes.map((t) => t.screenshot), landing.aiTheme.screenshot]) assert.ok(index.includes(`<a class="zoom" href="screenshots/${f}"`), `${f} opens full size`);
+assert.match(index, /<figure class="shot"><a class="zoom" href="screenshots\/051-harnesses-1440x900\.png"[^>]*><span class="crop"/, 'the how-it-works shot is cropped to what matters and opens full size');
+assert.ok(index.includes('id="faq"') && landing.faq.length >= 5 && landing.faq.every((f) => index.includes(esc(f.q))), 'FAQ section with every question');
+for (const f of landing.faq) if (f.readmeAnchor) assert.ok(docs.includes(`id="${f.readmeAnchor}"`), `FAQ anchor ${f.readmeAnchor} exists`);
+assert.ok(!/reads inside its folders only/.test(index), 'no overclaim: Durbar cannot force Claude Code and Copilot to stay in their folders');
+assert.match(index, /checked between replies/, 'the spending-limit line says when it is checked');
+assert.match(index, /href="https:\/\/github\.com\/three-feathers\/agent-durbar\/blob\/main\/SECURITY\.md">Report a security problem</, 'security report link in the safety section');
+assert.match(index, /<a class="keep" href="#download">Download<\/a>/, 'Download stays in the header on phones');
+assert.match(index, /class="phone-only"> Tap the picture to see it full size\./, 'phones are told the hero opens full size');
+assert.match(docs, /\.docs\{grid-template-columns:minmax\(0,1fr\)/, 'the docs column cannot grow past a phone screen');
+assert.match(docs, /<a class="keep" href="index\.html#download">Download<\/a>/, 'Download stays in the docs header on phones');
 
 const size = (dir) => fs.readdirSync(dir, { withFileTypes: true }).reduce((n, e) => n + (e.isDirectory() ? size(path.join(dir, e.name)) : fs.statSync(path.join(dir, e.name)).size), 0);
 const total = size(out);

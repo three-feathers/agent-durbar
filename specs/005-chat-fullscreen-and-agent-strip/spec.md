@@ -80,7 +80,7 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 - **FR-011** `[IMPLEMENTED]` Closed by [spec 016](../016-markdown-in-chat/spec.md): assistant text is rendered as safe Markdown (code blocks, links that open outside, no raw HTML). Was: plain text only. (Task T020.)
 - **FR-012** `[IMPLEMENTED]` real: (2026-10-19, spec 013 C2) a second message sent while a turn runs is shown at once and **queued** by the Copilot runtime: it is answered after the running turn finishes (not steered, no error). Product decision: keep it (queueing is useful); the disabled look of the send button while busy is only a hint. (Task T021.)
 - **FR-013** `[IMPLEMENTED]` real: (2026-10-19, spec 013 C1 and C3) on a real Copilot turn, Stop set the agent to Ready 0.3 s after the click with the "Stopped by you" note and the next message worked in the same session; End set it to Ended and the next message resumed the same session with its context (it recalled a word given before End).
-- **FR-014** `[KNOWN GAP]` Chat history lives only in renderer memory for the run; reopening the app shows an empty chat for a restored folder (earlier turns are available only through Previous sessions, feature 006). `read:`
+- **FR-014** ~~`[KNOWN GAP]`~~ closed 2026-10-21 (see Changes): Chat history lives only in renderer memory for the run; reopening the app shows an empty chat for a restored folder (earlier turns are available only through Previous sessions, feature 006). `read:`
 - **FR-015** Partly `[IMPLEMENTED]` (2026-10-19, T024): each agent reply has a **Copy** button (the reply's Markdown as written) and each code block its own (the code only); they show on hover or keyboard focus and say "Copied". `[KNOWN GAP]` still no search or export in the chat. `sim:` `docs/screenshots/005-copy-buttons-1280x800.png`, the clipboard read back from the main process.
 - **FR-016** `[KNOWN GAP]` The open-chat densities noted in the README (`card` at 1440x900, `mini` at 1280x800 for the office behind it) are not exercised by this feature's checks; only the chat layout was re-measured. See feature 001.
 
@@ -116,3 +116,6 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 
 - `test:` `npm run check:office` now opens the chat of every main agent at 1440x900 and 1280x800 for three rosters (Copilot only, mixed kinds, session titles) and fails when the page overflows sideways or a chip or button of the chat header leaves the window or overlaps another (84 more checks; 302/302 with the CI fonts on 2026-10-19). This keeps SC-001 checked as the header gains controls (agent chip, Remove session, estimates).
 
+### 2026-10-21: known gaps revalidated
+
+- **FR-014** closed by spec 006 FR-020/FR-021. After a restart a folder continues its last session, and opening its chat replays the earlier turns (`real:` 2026-10-19, two launches per harness, recorded in spec 006). Only that last session comes back; the folder's others stay under Previous sessions.
