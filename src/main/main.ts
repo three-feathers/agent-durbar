@@ -22,6 +22,7 @@ import { GROUND } from '../shared/floors';
 import type { FloorOp } from '../shared/floors';
 import { openInVSCode } from './vscode';
 import { isHttpUrl } from '../shared/url';
+import { createRemoteOps } from './remoteops';
 import { DEFAULT_ADAPTER, FolderStore, PROFILE_ID, restoreMode } from './folders';
 import { navigationAllowed, permissionAllowed, senderAllowed } from './hardening';
 import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '../adapters/vscodeChat';
@@ -864,6 +865,18 @@ ipcMain.handle('agents:handoff', async (_e, id: unknown) => {
     return { ok: false, error: errText(err) };
   }
 });
+
+// Spec 054 FR-003..FR-005: remote control of a live session (Copilot: github.com and GitHub Mobile). Validated in remoteops.ts; nothing is logged.
+const remoteOps = createRemoteOps({
+  known: (id) => agents.has(id),
+  adapterOf: (id) => router.forAgent(id),
+  open: (url) => shell.openExternal(url),
+});
+router.onEvent((e) => {
+  if (e.type === 'status' && e.status === 'stopped' && !e.agentId) remoteOps.forget(e.sessionId);
+});
+ipcMain.handle('agents:setRemote', (_e, id: unknown, on: unknown) => remoteOps.setRemote(id, on));
+ipcMain.handle('agents:openRemote', (_e, id: unknown) => remoteOps.openRemote(id));
 
 ipcMain.handle('agents:compact', async (_e, id: unknown, focus: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
