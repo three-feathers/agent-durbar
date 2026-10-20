@@ -162,10 +162,20 @@ export interface ScheduleInfo {
   prompt: string;
   every?: number;
   at?: number;
+  /** Phase 2 FR-012: every day, weekdays or weekly on days (0 = Sunday) at a local "HH:MM". */
+  rule?: { kind: 'daily' | 'weekdays' | 'weekly'; time: string; days?: number[] };
   next?: number;
   paused?: boolean;
+  /** Why the app paused it (FR-014, FR-015). */
+  pausedReason?: 'cap' | 'session-ended';
   done?: boolean;
-  last?: { at: number; outcome: 'sent' | 'skipped-busy' | 'skipped-paused' | 'missed' | 'failed' };
+  last?: { at: number; outcome: 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' };
+  /** FR-014: one session instead of the folder's agent. */
+  target?: { session: string; agent: string; name?: string };
+  /** FR-015: the schedule's own limit and what its runs spent. */
+  cap?: { amount: number; unit: 'aiu' | 'usd' };
+  spent?: number;
+  spentUnknown?: boolean;
 }
 export interface SchedulesInfo {
   pausedAll: boolean;
@@ -471,7 +481,7 @@ export interface DurbarApi {
   removeSchedule?(id: string): Promise<{ ok: boolean }>;
   setSchedulesPaused?(on: boolean): Promise<{ ok: boolean; pausedAll: boolean }>;
   onSchedules?(cb: (doc: SchedulesInfo) => void): () => void;
-  onScheduleRan?(cb: (r: { agentId: string; scheduleId: string; every?: number; at?: number }) => void): () => void;
+  onScheduleRan?(cb: (r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void): () => void;
   /** Answer the agent's question (spec 012 FR-128): question text -> answer; null = skip. */
   answerQuestion?(id: string, requestId: string, answers: Record<string, string> | null): Promise<{ ok: boolean; error?: string }>;
   /** Answer an MCP elicitation (spec 012 FR-151): `accept` with the form's values (checked in main), `decline` or `cancel`. `field` names a field that failed the check. */

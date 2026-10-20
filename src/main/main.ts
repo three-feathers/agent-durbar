@@ -116,6 +116,9 @@ router.onEvent((e) => {
 const lastStatus = new Map<string, string>();
 router.onEvent((e) => {
   if (e.type === 'status' && !e.agentId) lastStatus.set(e.sessionId, e.status);
+  // spec 044 FR-015: usage between a scheduled send and the end of that turn counts toward the schedule's own limit
+  if (e.type === 'usage') scheduler?.noteUsage(e.sessionId, e);
+  else if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) scheduler?.turnEnded(e.sessionId);
 });
 /** Key an agent's all-time counts are kept under: "<agent name> · <folder name>" (base name only, spec 020). */
 const usageLabel = (a: AgentInfo): string => agentLabel(a.name, a.workspaceFile ? path.basename(a.workspaceFile).replace(/\.code-workspace$/i, '') : a.cwd);
@@ -385,6 +388,7 @@ ipcMain.handle('sessions:resume', async (_e, id: unknown, sessionId: unknown, re
       router.unbind(removedId);
       agents.delete(removedId);
       agentState.remove(removedId);
+      scheduler?.sessionsChanged(); // spec 044 FR-014: a schedule for the replaced session pauses
     }
     if (prev.title && prev.title !== 'Untitled session') info.title = prev.title; // the list's title (name, else summary) until the runtime sends its own
     return { ok: true, agent: info, removedId, title: prev.title, history };
@@ -484,11 +488,26 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
 // ---- scheduled prompts (spec 044): per folder, while the app runs; the run goes through the user's own send path ----
 let scheduler: Scheduler | undefined;
 const folderAgent = (folder: string): AgentInfo | undefined => [...agents.values()].find((x) => wsKey(x) === folder);
+/** The session a schedule runs in: its target (FR-014), only while that session is in this folder, else the folder's agent. */
+const scheduleAgent = (s: { folder: string; target?: { session: string } }): AgentInfo | undefined => {
+  if (!s.target) return folderAgent(s.folder);
+  const a = agents.get(s.target.session);
+  return a && wsKey(a) === s.folder ? a : undefined;
+};
+const busyStatus = (id: string): boolean => ['working', 'needs-permission'].includes(lastStatus.get(id) ?? '');
 const scheduleDeps = (file: string): SchedulerDeps => ({
   now: () => Date.now(),
-  isBusy: (folder) => [...agents.values()].some((x) => wsKey(x) === folder && ['working', 'needs-permission'].includes(lastStatus.get(x.id) ?? '')),
+  isBusy: (folder, session) => (session ? busyStatus(session) : [...agents.values()].some((x) => wsKey(x) === folder && busyStatus(x.id))),
+  hasSession: (session) => agents.has(session),
+  capUnitOf: (s) => {
+    const a = scheduleAgent(s);
+    const caps = a ? router.forAgent(a.id)?.capabilities : undefined;
+    if (!caps) return undefined;
+    const unit = caps.capUnit === 'usd' ? 'usd' : 'aiu';
+    return (unit === 'usd' ? caps.usage.costUsd : caps.usage.nanoAiu) ? unit : undefined; // FR-015: a limit needs the spend in that unit
+  },
   send: async (folder, prompt, s) => {
-    const a = folderAgent(folder);
+    const a = scheduleAgent(s);
     const ad = a ? router.forAgent(a.id) : undefined;
     if (!a || !ad) return false;
     agentState.ensure(a.id, a.lazy);
@@ -496,14 +515,14 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
     try {
       await ensureLive(a);
       toRenderer('agent:event', { type: 'user', sessionId: a.id, timestamp: Date.now(), text: prompt });
-      toRenderer('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at });
+      toRenderer('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at, rule: s.rule });
       await ad.send(a.id, { text: prompt });
       noteLastSession(a);
     } catch (err) {
       agentState.noteSendFailed(a.id);
       throw err;
     }
-    return true;
+    return a.id;
   },
   setTimer: (ms, fn) => setTimeout(fn, ms),
   clearTimer: (t) => clearTimeout(t as NodeJS.Timeout),
@@ -1008,6 +1027,7 @@ ipcMain.handle('folders:remove', async (_e, id: unknown) => {
     agentState.remove(rid);
     vsChatRefs.delete(rid);
   }
+  scheduler?.sessionsChanged();
   folderStore?.remove(key);
   return { ok: true, removedIds };
 });
@@ -1033,6 +1053,7 @@ ipcMain.handle('agents:remove', async (_e, id: unknown) => {
   agentState.remove(a.id);
   vsChatRefs.delete(a.id);
   folderStore?.clearLastSession(key, a.id); // FR-020: a removed session does not come back after a restart
+  scheduler?.sessionsChanged(); // spec 044 FR-014: a schedule for this session pauses and says so
   return { ok: true };
 });
 
