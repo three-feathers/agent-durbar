@@ -312,7 +312,7 @@ const AIU_USD=0.01; /* 1 Copilot AI credit = USD 0.01 (GitHub's price; Settings 
 /* spec 052 FR-080: a request in plain words for Simple, from the event's kind and summary ("write src/tools/companies.ts", "run npm test"):
    {what,folder,cmd}, or null for a kind that keeps its summary. The event data is unchanged; callers set the words with textContent. */
 const baseOf=p=>{const parts=String(p||'').split(/[\\/]/).filter(Boolean);return {base:parts.pop()||'',dir:parts.pop()||''};};
-const clipName=s=>s.length>40?s.slice(0,39)+'…':s;
+const clipName=s=>DurbarCutText.cutText(s,40); /* shared helper (cuttext.js): a file name, at most 40 characters */
 function plainAsk(kind,summary){
   const s=String(summary||'').trim(), k=String(kind||'');
   if(k==='write'||k==='read'){
@@ -1248,7 +1248,7 @@ function openPanel(id,focus){
   grantsOpen=false;
   $('grants').addEventListener('focusout',e=>{if(grantsOpen&&e.relatedTarget&&!e.relatedTarget.closest('#grants')&&!e.relatedTarget.closest('.dlg-ov'))closeGrants(false);});
   $('grants').onkeydown=e=>{if(e.key==='Escape'&&grantsOpen){e.preventDefault();e.stopPropagation();closeGrants(true);}};
-  if(!window.__grantsOutside){window.__grantsOutside=true;document.addEventListener('click',e=>{if(grantsOpen&&!e.composedPath().some(n=>n.id==='grants'))closeGrants(false);}); /* composedPath: a revoke redraws the list, so the clicked button may already be detached here */}
+  if(!window.__grantsOutside){window.__grantsOutside=true;document.addEventListener('click',e=>{const path=e.composedPath();if(grantsOpen&&!path.some(n=>n.id==='grants')&&!path.some(n=>n.classList&&n.classList.contains('dlg-ov')))closeGrants(false);}); /* a click in the Revoke all dialog (Cancel) is not outside: it behaves like Esc and keeps the list open */ /* composedPath: a revoke redraws the list, so the clicked button may already be detached here */}
   $('attached').onclick=e=>{const b=e.target.closest('[data-rm]');if(b){attached.splice(+b.dataset.rm,1);renderAttached();setSend();attNotice([]);}};
   const input=$('msgInput');
   input.addEventListener('input',autoGrow);
@@ -1776,7 +1776,7 @@ window.addEventListener('resize',relayout);
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', grants:qs.get('simgrants')==='many'?'many':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
@@ -2263,7 +2263,7 @@ function setState(a,state,label,task){
   if(ch)scheduleRender();
 }
 const plainMd=t=>String(t==null?'':t).replace(/```[\s\S]*?```/g,' code ').replace(/!?\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/^[#>\-*\s]+/gm,'').replace(/[*_`~]/g,'').replace(/\s+/g,' ').trim();
-const SHORT=(v,n)=>{v=String(v==null?'':v).replace(/\s+/g,' ');return v.length>n?v.slice(0,n-1)+'…':v;};
+const SHORT=(v,n)=>DurbarCutText.cutText(v,n);
 const toolArg=args=>!args||typeof args!=='object'?'':String(args.path||args.pattern||args.command||args.url||args.query||args.file_path||Object.values(args).find(x=>typeof x==='string')||'');
 function toolLabel(args){return toolArg(args).replace(/\s+/g,' ').slice(0,400);}
 /* spec 052 FR-063: the whole argument as written (line breaks kept), for the open chip; at most 20000 characters */
@@ -2502,7 +2502,7 @@ function settleLimit(a,action){
 /* spec 052 FR-057: in Simple, a folder grant says what it lets the agent do: "Let Ada change files in “tools” until the session ends".
    Only for a "write in <folder>/" scope (the last path segment); any other scope keeps its label. The inbox and the answer bar copy the card's button. */
 const simpleScopeLabel=(a,label)=>{const m=/^write in (.+?)\/*$/.exec(String(label||''));if(!m)return '';const seg=m[1].split(/[\\/]/).filter(Boolean).pop();if(!seg)return '';
-  return 'Let '+a.name+' change files in “'+(seg.length>28?seg.slice(0,27)+'…':seg)+'” until the session ends';};
+  return 'Let '+a.name+' change files in “'+DurbarCutText.cutText(seg,28)+'” until the session ends';};
 const relabelScopes=()=>{document.querySelectorAll('[data-lbl-simple]').forEach(b=>{b.textContent=SIMPLE?b.dataset.lblSimple:b.dataset.lblExpert;});document.querySelectorAll('.note.perm .pfold').forEach(f=>{f.hidden=!SIMPLE;});};
 /* spec 052 FR-063: "Show the change", collapsed: the request's diff as + / - lines in monospace (text only, escaped by textContent) */
 function diffBlock(diff){
@@ -2537,7 +2537,7 @@ function showPerm(a,p){
     const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);};
     const answer=(approve,remember,broad)=>{bridge.resolvePermission(a.id,p.requestId,approve,remember,!!broad);settlePerm(a,{requestId:p.requestId,state:approve?'approved':'denied',via:'user',remembered:approve&&remember,scopeLabel:broad?p.broadScopeLabel:p.scopeLabel,summary:p.summary});};
     mk('Allow once','primary','Allow this one request',()=>answer(true,false)); /* spec 052 FR-037/FR-051: the same plain words in Simple and Expert */
-    if(p.scopeKey){const ex='Allow “'+(()=>{const t=String(p.scopeLabel||p.kind||'this');return t.length>32?t.slice(0,31)+'…':t;})()+'” for this session',sl=simpleScopeLabel(a,p.scopeLabel);
+    if(p.scopeKey){const ex='Allow “'+DurbarCutText.cutText(p.scopeLabel||p.kind||'this',32)+'” for this session',sl=simpleScopeLabel(a,p.scopeLabel);
       mk(SIMPLE&&sl?sl:ex,'session','Allow "'+(p.scopeLabel||p.kind)+'" until you end this session'+(p.kind==='shell'?' (this exact command only)':'')+'. Shown as a chip you can revoke.',()=>answer(true,true));const sb=row.lastElementChild;sb.dataset.act='session';if(sl){sb.dataset.lblSimple=sl;sb.dataset.lblExpert=ex;}}
     if(p.broadScopeKey){mk('Allow for this session: any arguments','session','Allow every simple "'+(p.broadScopeLabel||p.kind)+'" command (no pipes, redirects or substitutions) until you end this session. Wider than the exact command above; shown as a chip you can revoke.',()=>answer(true,true,true));row.lastElementChild.dataset.broad='1';}
     mk('Deny','danger','Deny this request',()=>answer(false,false));
@@ -2579,17 +2579,22 @@ function settlePerm(a,p){
 function setGrants(a,list){a.grants=list;if(ui.selected&&liveRoot(byId(ui.selected)||a)===a)renderGrants();}
 /* spec 052 FR-141: 1-2 grants are single chips; 3 or more are one "Allowed (N)" chip that opens a list (a row per grant, Revoke all).
    The label drops a tool-name prefix that repeats the server name; the title and the accessible name keep the full label. */
+let grantsAllBusy=''; /* the agent id while its Revoke all is under way (the revokes arrive one by one and the focus may be lost in between); '' otherwise */
+let grantsAgent='';
 let grantsOpen=false, grantsFocus=null; /* grantsFocus: where the focus goes after the next draw (a revoke button index, or 'chip') */
 function grantChipX(g){return `<button type="button" data-revoke="${esc(g.key)}" aria-label="Revoke permission: ${esc(g.label)}">${ICON('x')}</button>`;}
 function renderGrants(){
   const box=$('grants'),a0=byId(ui.selected);if(!box||!a0)return;const a=liveRoot(a0),gs=a.grants||[];
+  if(grantsAgent!==a.id){grantsAgent=a.id;grantsFocus=null;} /* a focus target left over from another agent */
+  grantsAllBusy=window.DurbarGrantLabel.grantsBusyFor(grantsAllBusy,a.id); /* another agent: that Revoke all is not ours to finish */
   const short=g=>window.DurbarGrantLabel.shortGrantLabel(g.label);
+  const hadFocus=box.contains(document.activeElement)||grantsFocus!==null||grantsAllBusy!==''; /* the user is working in the grants: do not let the focus fall to <body> when they all go */
   if(gs.length<=2){
     grantsOpen=false;
     box.innerHTML=gs.map(g=>`<span class="gchip" title="Allowed for this session: ${esc(g.label)}. Revoke to be asked again."><span>Allowed: ${esc(short(g))}</span>${grantChipX(g)}</span>`).join('');
   }else{
     box.innerHTML=`<button type="button" class="gchip gchip-btn" id="grantsBtn" aria-expanded="${grantsOpen}" aria-controls="grantsPop" title="${gs.length} permissions allowed for this session. Open the list to revoke them."><span>Allowed (${gs.length})</span><svg class="chev" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
-      <div class="grants-pop" id="grantsPop" aria-label="Allowed for this session"${grantsOpen?'':' hidden'}><ul role="list" class="gp-list">${gs.map(g=>`<li class="gp-row" title="Allowed for this session: ${esc(g.label)}. Revoke to be asked again."><span class="gp-t">${esc(short(g))}</span>${grantChipX(g)}</li>`).join('')}</ul><button type="button" class="btn sm gp-all" id="grantsAll">Revoke all</button></div>`;
+      <div class="grants-pop" id="grantsPop" role="group" aria-label="Allowed for this session"${grantsOpen?'':' hidden'}><ul role="list" class="gp-list">${gs.map(g=>`<li class="gp-row" title="Allowed for this session: ${esc(g.label)}. Revoke to be asked again."><span class="gp-t">${esc(short(g))}</span>${grantChipX(g)}</li>`).join('')}</ul><button type="button" class="btn sm gp-all" id="grantsAll">Revoke all</button></div>`;
   }
   box.hidden=!gs.length;
   if(grantsFocus!==null){
@@ -2597,6 +2602,9 @@ function renderGrants(){
     const btns=[...box.querySelectorAll('[data-revoke]')];
     const t=f==='chip'?$('grantsBtn'):btns[Math.min(f,btns.length-1)];
     if(t)t.focus();
+  }
+  if(!gs.length&&hadFocus&&!box.contains(document.activeElement)){ /* none left: the chips are gone; the composer is the same neighbour as after answering a card */
+    grantsFocus=null;grantsAllBusy='';const m=$('msgInput');if(m)m.focus();announce('All permissions revoked.');
   }
 }
 function closeGrants(toChip){
@@ -2611,8 +2619,10 @@ async function revokeAllGrants(){
       buttons:[{label:'Cancel',value:null},{label:'Revoke all',value:'ok',cls:'primary danger'}]});
     if(!ok)return;
   }
-  grantsOpen=false;grantsFocus='chip';
-  for(const g of gs)bridge.revokeGrant(r.id,g.key);
+  grantsOpen=false;grantsFocus='chip';grantsAllBusy=r.id;
+  /* it ends when every revoke has settled (a failed one included) and the events had a moment to arrive, whether or not the count reached 0 */
+  await Promise.allSettled(gs.map(g=>Promise.resolve().then(()=>bridge.revokeGrant(r.id,g.key))));
+  setTimeout(()=>{if(grantsAllBusy===r.id)grantsAllBusy='';grantsFocus=null;},1000);
 }
 /* ---------------- tool usage, models and context window (spec 019) ---------------- */
 const STATS=window.DurbarStats.createStats();
@@ -3548,7 +3558,7 @@ function schedLine(s){
 const schedBtns=(s,k)=>(s.done?'':s.paused&&s.pausedReason==='session-ended'?`<button class="btn" type="button" data-${k}="retarget" data-id="${esc(s.id)}" title="Send it to this folder's agent from now on, and resume it">Use the folder's agent</button>`
   :`<button class="btn" type="button" data-${k}="pause" data-id="${esc(s.id)}"${s.pausedReason==='cap'?' title="Resume starts counting its spending again from zero"':''}>${s.paused?'Resume':'Pause'}</button>`)
   +`<button class="btn danger" type="button" data-${k}="del" data-id="${esc(s.id)}">Delete</button>`;
-const schedRow=(s,k)=>`<div class="sc-row${s.paused||s.done?' off':''}"><div class="sc-t"><b title="${esc(s.prompt)}">${esc(s.prompt.length>90?s.prompt.slice(0,89)+'…':s.prompt)}</b><small>${esc(schedLine(s))}</small></div>${schedBtns(s,k)}</div>`;
+const schedRow=(s,k)=>`<div class="sc-row${s.paused||s.done?' off':''}"><div class="sc-t"><b title="${esc(s.prompt)}">${esc(DurbarCutText.cutText(s.prompt,90))}</b><small>${esc(schedLine(s))}</small></div>${schedBtns(s,k)}</div>`;
 /* pause/resume/retarget/delete from a row (dialog or Settings) */
 async function schedAct(act,s){
   if(act==='del')await bridge.removeSchedule(s.id);
@@ -3598,8 +3608,8 @@ function openSchedules(r,from){
     <label class="chk"><input type="radio" name="scKind" value="daily"> <select id="scCal" aria-label="Which days"><option value="daily">Every day</option><option value="weekdays">Weekdays (Mon–Fri)</option><option value="weekly">Weekly on</option></select> at <input type="time" id="scDaily" value="08:30" aria-label="Time of day"></label>
     <label class="chk"><input type="radio" name="scKind" value="once"> Once at <input type="datetime-local" id="scAt" value="${local}" aria-label="Date and time"></label></div>
     <div class="sc-days" id="scDays" role="group" aria-label="Days of the week" hidden>${[1,2,3,4,5,6,0].map(n=>`<label class="chk"><input type="checkbox" value="${n}"${n===today?' checked':''}> ${DAY3[n]}</label>`).join('')}</div>
-    <div class="sc-opts">${ag?`<label>Send to <select id="scTarget"><option value="">This folder's agent</option><option value="${esc(ag.id)}">This session (${esc(ag.title||ag.name)})</option></select></label>`:''}
-     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}>Limit <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div></div>
+    <div class="sc-opts">${ag?`<label class="sc-to"><span class="sc-lbl">Send to</span> <select id="scTarget" aria-describedby="scToHint"><option value="">This folder's agent</option><option value="${esc(ag.id)}">This session</option></select></label>`:''}
+     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}><span class="sc-lbl">Limit</span> <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div>${ag?`<p class="sc-hint" id="scToHint" title="${esc(ag.title||ag.name)}" hidden>${esc(ag.title||ag.name)}</p>`:''}</div>
    <div class="dbtn"><button class="btn" id="scClose" type="button">Close</button><button class="btn primary" id="scAdd" type="button">Add schedule</button></div></div>`;
   document.body.appendChild(d);
   renderSchedDlg();
@@ -3636,7 +3646,7 @@ function openSchedules(r,from){
   $('scCal').addEventListener('change',()=>{calKind();showDays();});
   $('scDaily').addEventListener('input',calKind);
   $('scDays').addEventListener('change',calKind);
-  if($('scTarget'))$('scTarget').addEventListener('change',()=>{const t=$('scTarget').value?ag:folderAg,u=schedCapUnit(t);$('scCapL').hidden=!u;$('scCapU').textContent=unitWord(u);});
+  if($('scTarget'))$('scTarget').addEventListener('change',()=>{$('scToHint').hidden=!$('scTarget').value;const t=$('scTarget').value?ag:folderAg,u=schedCapUnit(t);$('scCapL').hidden=!u;$('scCapU').textContent=unitWord(u);});
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeSchedDlg();}});
   /* spec 044 FR-006: a template fills the form (prompt and when); nothing is saved until Add schedule */
   const tpl=$('scTpl');if(tpl)tpl.addEventListener('change',()=>{
@@ -3745,51 +3755,79 @@ const when=ms=>{if(!ms)return '';const d=new Date(ms),n=new Date(),t=d.toLocaleT
   return d.toDateString()===n.toDateString()?'Today '+t:d.toLocaleDateString([],{month:'short',day:'numeric',year:d.getFullYear()===n.getFullYear()?undefined:'numeric'})+' '+t;};
 /* spec 052 FR-002: Previous sessions open by themselves only for an empty chat (no message sent here, nothing resumed, nothing on screen) */
 const pristine=a=>!a.sent&&!a.resumed&&!((chats[a.id]||{}).el&&chats[a.id].el.querySelector(':scope > :not(.note)'));
-const prevOf=a=>prev[a.id]||(prev[a.id]={open:false,touched:false,cli:null,vs:null,q:''});
+const prevOf=a=>prev[a.id]||(prev[a.id]={open:false,touched:false,cli:null,vs:null,q:'',showHidden:false});
+/* spec 006 FR-024..FR-026: pins and hides come with each list as arrays of ids; every count the user sees leaves hidden rows out (FR-025) */
+const prevMarks=(g,st)=>{const r=g==='vs'?st.vs:st.cli;return {pinned:(r&&r.pinned)||[],hidden:(r&&r.hidden)||[]};};
+function prevCounts(st){const S=window.DurbarSessionSearch,c=st.cli,v=st.vs,mc=prevMarks('cli',st),mv=prevMarks('vs',st);
+  const lc=c&&c.ok?c.sessions:[],lv=v&&v.ok?v.sessions:[],nc=S.visibleCount(lc,mc.hidden),nv=S.visibleCount(lv,mv.hidden);
+  return {nc,nv,hid:lc.length-nc+lv.length-nv};}
+/* the app's name and its CLI in the delete confirmation (FR-030) */
+const DEL_WORDS={copilot:{app:'GitHub Copilot',cli:'Copilot CLI'},codex:{app:'Codex',cli:'Codex CLI'}};
+const prevSrc=(a,g)=>g==='vs'?'vscode':((liveRoot(a).info||{}).adapterId||'copilot');
 async function loadPrev(a){
   const st=prevOf(a);
   const safe=(f,empty)=>f?f(a.id).catch(e=>Object.assign({ok:false,error:String(e&&e.message||e)},empty)):null;
   const [c,v]=await Promise.all([safe(feat(a,'history')?bridge.listPrevious:null,{sessions:[]}),safe(bridge.listVsChats,{sessions:[],storesFound:0,unreadable:0,tooLarge:0,formatNote:''})]);
   st.cli=c; st.vs=v;
-  if(!st.touched&&pristine(a)&&((c&&c.sessions.length)||(v&&v.sessions.length)))st.open=true;
+  const vis=prevCounts(st);
+  if(!st.touched&&pristine(a)&&(vis.nc||vis.nv))st.open=true; /* spec 006 FR-025: hidden rows do not open the panel by themselves */
   if(ui.selected===a.id)renderPrev(a);
   return st;
 }
 function initPrev(a){
   const box=$('prev'); if(!box)return;
   if((!bridge.listPrevious||!feat(a,'history'))&&!bridge.listVsChats){box.hidden=true;const pb=$('prevBtn');if(pb)pb.hidden=true;return;}
-  vsViewing=false; renderPrev(a); loadPrev(a);
+  vsViewing=false; prevOf(a).showHidden=false; renderPrev(a); loadPrev(a); /* Show hidden is per panel, not saved */
 }
-/* the two groups of Previous sessions, filtered by the title query (spec 006 FR-023) */
+/* the two groups of Previous sessions, pinned first, hidden ones out unless shown, filtered by the title query (spec 006 FR-023..FR-027) */
+const PIN_SVG='<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" focusable="false"><path d="M9.5 1.5l5 5-2 .5-2.5 2.5.5 3.5-1 1L6.5 10 3 13.5l-.5-.5L6 9.5 2.5 6l1-1 3.5.5L9.5 3z" fill="currentColor"/></svg>';
+function prevRow(x,g,k,title,sub,main,info,a){
+  const hid=info.hidden, mark=(info.pinned?`<span class="prev-pin" title="Pinned">${PIN_SVG}<span class="sr-only">Pinned</span></span>`:'')+(hid?'<span class="tag prev-hidtag">Hidden</span>':'');
+  return `<div class="prev-row${hid?' is-hidden':''}" data-pg="${g}" data-pk="${esc(k)}"><div class="prev-tx"><b title="${esc(title)}">${mark}<span class="prev-t">${esc(title)}</span></b><small>${sub}</small></div>${main}<button class="btn sm prev-more" type="button" data-pv="more" aria-haspopup="menu" aria-label="Actions for ${esc(title)}" title="Pin, hide or delete">⋯</button></div>`;
+}
 function prevListsHtml(a){
   const st=prevOf(a), c=st.cli, v=st.vs, kw=kindWord(a.info&&a.info.adapterId), hasHist=!!c, q=(st.q||'').trim();
-  const S=window.DurbarSessionSearch, nc=c&&c.ok?c.sessions.length:0, nv=v&&v.ok?v.sessions.length:0;
-  const fc=c&&c.ok?(q?S.filterSessions(c.sessions,q):c.sessions):[], fv=v&&v.ok?(q?S.filterSessions(v.sessions,q):v.sessions):[];
+  const S=window.DurbarSessionSearch, sh=st.showHidden===true;
+  const mc=prevMarks('cli',st), mv=prevMarks('vs',st);
+  const ac=c&&c.ok?S.arrangeSessions(c.sessions,{pinned:mc.pinned,hidden:mc.hidden,showHidden:sh,query:q,timeKey:'modifiedTime'}):{rows:[],hiddenCount:0,total:0};
+  const av=v&&v.ok?S.arrangeSessions(v.sessions,{pinned:mv.pinned,hidden:mv.hidden,showHidden:sh,query:q,timeKey:'updated'}):{rows:[],hiddenCount:0,total:0};
   const cnt=(n,m)=>q&&m?` <span class="prev-n">${n} of ${m}</span>`:'';
   const none='<p class="prev-empty prev-nomatch">No sessions match</p>';
   let h='';
-  if(hasHist){h+='<div class="prev-h">'+esc(kw)+' sessions in this folder'+cnt(fc.length,nc)+' <small>Resume continues the same session; earlier messages are shown here.</small></div>';
+  if(hasHist){h+='<div class="prev-h">'+esc(kw)+' sessions in this folder'+cnt(ac.rows.length,ac.total)+' <small>Resume continues the same session; earlier messages are shown here.</small></div>';
     if(!c.ok)h+=`<p class="prev-empty">Could not list sessions${c.error?': '+esc(c.error):''}.</p>`;
     else if(!c.sessions.length)h+='<p class="prev-empty">No earlier '+esc(kw)+' sessions for this folder.</p>';
-    else if(!fc.length)h+=none;
-    else h+=fc.map(x=>`<div class="prev-row"><div class="prev-tx"><b title="${esc(x.title)}">${esc(x.title)}</b><small>${esc(when(x.modifiedTime))}${x.branch?' · '+esc(x.branch):''}</small></div><button class="btn" type="button" data-pv="resume" data-sid="${esc(x.id)}">Resume</button></div>`).join('');}
-  h+='<div class="prev-h">VS Code chat history <span class="tag">read-only</span>'+cnt(fv.length,nv)+' <small>A copy of what VS Code saved. It cannot be continued here.</small></div>';
+    else if(!ac.total)h+='<p class="prev-empty">All earlier '+esc(kw)+' sessions here are hidden.</p>';
+    else if(!ac.rows.length)h+=none;
+    else h+=ac.rows.map(r=>{const x=r.item;return prevRow(x,'cli',x.id,x.title,esc(when(x.modifiedTime))+(x.branch?' · '+esc(x.branch):''),`<button class="btn" type="button" data-pv="resume" data-sid="${esc(x.id)}">Resume</button>`,r,a);}).join('');}
+  h+='<div class="prev-h">VS Code chat history <span class="tag">read-only</span>'+cnt(av.rows.length,av.total)+' <small>A copy of what VS Code saved. It cannot be continued here.</small></div>';
   if(!v||!v.ok)h+=`<p class="prev-empty">Could not read VS Code chats${v&&v.error?': '+esc(v.error):''}.</p>`;
   else if(!v.sessions.length)h+='<p class="prev-empty">'+(v.storesFound?'No chats in the VS Code storage for this folder.':'No VS Code chats found for this folder (VS Code never opened it, or it is stored somewhere this app does not read).')+'</p>';
-  else if(!fv.length)h+=none;
-  else h+=fv.map(x=>`<div class="prev-row"><div class="prev-tx"><b title="${esc(x.title)}">${esc(x.title)}</b><small>${esc(when(x.updated))} · ${x.requests} message${x.requests===1?'':'s'}</small></div><button class="btn" type="button" data-pv="view" data-key="${esc(x.key)}">View</button></div>`).join('');
+  else if(!av.total)h+='<p class="prev-empty">All VS Code chats here are hidden.</p>';
+  else if(!av.rows.length)h+=none;
+  else h+=av.rows.map(r=>{const x=r.item;return prevRow(x,'vs',x.key,x.title,`${esc(when(x.updated))} · ${x.requests} message${x.requests===1?'':'s'}`,`<button class="btn" type="button" data-pv="view" data-key="${esc(x.key)}">View</button>`,r,a);}).join('');
   if(v&&(v.unreadable||v.tooLarge))h+=`<p class="prev-fine">${v.unreadable?v.unreadable+' chat file(s) could not be read. ':''}${v.tooLarge?v.tooLarge+' file(s) skipped for size.':''}</p>`;
   if(v&&v.formatNote)h+=`<p class="prev-fine">${esc(v.formatNote)}</p>`;
+  const nh=ac.hiddenCount+av.hiddenCount;
+  if(nh>0)h+=`<div class="prev-showhid"><button class="btn sm" type="button" data-pv="showhidden" aria-pressed="${sh}">${sh?'Hide hidden again':'Show hidden ('+nh+')'}</button></div>`;
   return h;
+}
+/* the header's Previous (N) button: visible rows only, "K hidden" in its tooltip (spec 006 FR-025) */
+function prevButton(a){
+  const btn=$('prevBtn'); if(!btn)return;
+  const st=prevOf(a), kw=kindWord(a.info&&a.info.adapterId), n=prevCounts(st);
+  btn.hidden=false;btn.textContent='Previous ('+(n.nc+n.nv)+')';
+  btn.title='Previous sessions: '+(st.cli?n.nc+' '+kw+' · ':'')+n.nv+' VS Code chat'+(n.nv===1?'':'s')+(n.hid?' · '+n.hid+' hidden':'');
+  btn.setAttribute('aria-expanded',String(!!st.open));
 }
 function renderPrev(a){
   const box=$('prev'), btn=$('prevBtn'); if(!box||a.parent)return;
   const st=prevOf(a), c=st.cli, v=st.vs;
   /* spec 052 FR-095 (round 10): "Previous (N)" in the header's actions; the panel under the header shows only while it is open */
   if(!c&&!v){if(btn){btn.hidden=false;btn.textContent='Previous';btn.title='Previous sessions: looking…';btn.setAttribute('aria-expanded','false');}box.hidden=true;box.innerHTML='';return;}
-  const nc=c&&c.ok?c.sessions.length:0, nv=v&&v.ok?v.sessions.length:0, kw=kindWord(a.info&&a.info.adapterId), hasHist=!!c; /* c is null for a kind without history (loadPrev) */
+  const nc=c&&c.ok?c.sessions.length:0, nv=v&&v.ok?v.sessions.length:0; /* the search box counts every row, hidden or not */
   const keepScroll=(box.querySelector('.prev-body')||{}).scrollTop||0;
-  if(btn){btn.hidden=false;btn.textContent='Previous ('+(nc+nv)+')';btn.title='Previous sessions: '+(hasHist?nc+' '+kw+' · ':'')+nv+' VS Code chat'+(nv===1?'':'s');btn.setAttribute('aria-expanded',String(!!st.open));}
+  prevButton(a);
   let h='';
   if(st.open){
     h+='<div class="prev-body">';
@@ -3865,6 +3903,90 @@ async function viewVs(a,key,btn){
   const toEnd=(again)=>{if(vsViewing&&c.contains(wrap)&&!(again&&c.scrollTop+c.clientHeight<c.scrollHeight-40))c.scrollTop=c.scrollHeight;};
   toEnd(false); requestAnimationFrame(()=>{toEnd(true);setTimeout(()=>toEnd(true),250);});
 }
+/* ---- spec 006 FR-024..FR-031: Pin, Hide and Delete on a row of Previous sessions ----
+   The window sends ids only (the agent, the source, the session id); main re-checks everything. Delete is offered here and nowhere else:
+   not on a desk card, an office List-view row, the card menu or the chat header (Clarifications Q1). */
+const prevItem=(st,g,k)=>{const r=g==='vs'?st.vs:st.cli;return r&&r.ok?r.sessions.find(x=>(g==='vs'?x.key:x.id)===k):null;};
+function prevRowEl(g,k){return [...document.querySelectorAll('#prevLists .prev-row')].find(r=>r.dataset.pg===g&&r.dataset.pk===k)||null;}
+function refreshPrevLists(a){const l=$('prevLists');if(l)l.innerHTML=prevListsHtml(a);prevButton(a);}
+/* after Hide or Delete: the next row's ⋯, else the previous row's, else the search box, else the Previous button (FR-027) */
+function focusAfterRow(rows,idx){
+  const all=[...document.querySelectorAll('#prevLists .prev-row')];
+  const keyed=rows.map(r=>all.find(e=>e.dataset.pg===r.g&&e.dataset.pk===r.k)).filter(Boolean);
+  const t=keyed[idx]||keyed[idx-1]||null;
+  const f=t?t.querySelector('.prev-more'):($('prevQ')||$('prevBtn'));
+  if(f&&f.focus)f.focus();
+}
+function visibleRows(a){const r=[];document.querySelectorAll('#prevLists .prev-row').forEach(e=>r.push({g:e.dataset.pg,k:e.dataset.pk}));return r;}
+async function markPrev(a,g,k,mark){
+  const st=prevOf(a), res=st[g==='vs'?'vs':'cli'];
+  if(!bridge.markPrevious||!res)return false;
+  const before=visibleRows(a), at=before.findIndex(r=>r.g===g&&r.k===k);
+  const out=await bridge.markPrevious(a.id,prevSrc(a,g),k,mark).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  if(!out||!out.ok){toast('Could not change that: '+esc((out&&out.error)||'unknown error'),5000).classList.add('err');return false;}
+  Object.assign(res,window.DurbarSessionSearch.applyMark({pinned:res.pinned,hidden:res.hidden},k,mark));
+  refreshPrevLists(a);
+  announce(mark==='hide'?'Hidden. Show hidden brings it back.':mark==='pin'?'Pinned to top.':mark==='unpin'?'Unpinned.':'Shown again.');
+  if(mark==='hide'&&!st.showHidden){const after=visibleRows(a);focusAfterRow(after,Math.min(at,after.length));}
+  else{const e=prevRowEl(g,k);const f=e&&e.querySelector('.prev-more');if(f)f.focus();}
+  return true;
+}
+function openPrevMenu(a,g,k,anchor,x,y){
+  closeModeMenu();
+  const st=prevOf(a), item=prevItem(st,g,k); if(!item)return;
+  const mk=prevMarks(g,st), hid=mk.hidden.includes(k), pinned=mk.pinned.includes(k), title=item.title||'this session';
+  const canDel=g!=='vs'&&bridge.deletePrevious;
+  const it=(act,label,sub,cls,dis)=>`<button type="button" role="menuitem" data-pact="${act}"${cls?` class="${cls}"`:''}${dis?` aria-disabled="true" title="${esc(dis)}"`:` title="${esc(sub)}"`}><span class="mt"><b>${esc(label)}</b><small>${esc(dis||sub)}</small></span></button>`;
+  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Actions for '+title);
+  m.innerHTML=(hid?'':pinned?it('unpin','Unpin','Back to its place by date'):it('pin','Pin to top','Keep it first in this list'))
+    +(hid?it('unhide','Unhide','Show it in the list again'):it('hide','Hide','Only in Durbar; it stays in VS Code and the CLI'))
+    +(canDel?(feat(a,'deleteSession')?it('delete','Delete…','Removes it from the agent app, VS Code and the CLI','mm-danger'):it('delete','Delete…','','mm-danger',window.DurbarSessionSearch.noDeleteReason(kindWord(a.info&&a.info.adapterId)))):'');
+  document.body.appendChild(m);
+  const b=m.getBoundingClientRect(); m.style.left=Math.max(8,Math.min(x,innerWidth-b.width-8))+'px'; m.style.top=Math.max(8,Math.min(y,innerHeight-b.height-8))+'px';
+  const back=()=>{const e=prevRowEl(g,k),f=e&&e.querySelector('.prev-more');if(f)f.focus();else if(anchor.focus&&document.contains(anchor))anchor.focus();};
+  m.addEventListener('click',e=>{const t=e.target.closest('[data-pact]');if(!t)return;
+    if(t.getAttribute('aria-disabled')==='true'){e.preventDefault();return;}
+    closeModeMenu();
+    const act=t.dataset.pact;
+    if(act==='delete')deletePrev(a,g,k,item);else markPrev(a,g,k,act);});
+  m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-pact]')],i=its.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'){e.preventDefault();its[(i+1)%its.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();its[(i+its.length-1)%its.length].focus();}
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();back();}});
+  m.querySelector('button').focus();
+}
+async function deletePrev(a,g,k,item){
+  const st=prevOf(a), root=liveRoot(a), kind=(root.info&&root.info.adapterId)||'copilot', w=DEL_WORDS[kind]||{app:kindWord(kind),cli:kindWord(kind)+' CLI'};
+  const row=prevRowEl(g,k), more=row&&row.querySelector('.prev-more');
+  const d=window.DurbarSessionSearch.deleteDialogText({title:item.title,app:w.app,cli:w.cli,codex:kind==='codex'});
+  const ok=await askDialog({title:d.title,body:d.body,lines:d.lines,returnFocus:more||$('prevBtn'),buttons:[{label:'Cancel',value:null},{label:'Delete',value:'ok',cls:'primary danger'}]});
+  if(!ok)return;
+  const before=visibleRows(a), at=before.findIndex(r=>r.g===g&&r.k===k);
+  const rowBtns=row?[...row.querySelectorAll('button')]:[]; rowBtns.forEach(b=>{if(b!==more)b.disabled=true;});
+  const done=busy(more,'…');
+  const out=await bridge.deletePrevious(a.id,k).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  done(); rowBtns.forEach(b=>{b.disabled=false;});
+  if(out&&out.ok){
+    const res=st.cli; if(res&&res.sessions){res.sessions=res.sessions.filter(x=>x.id!==k);res.pinned=(res.pinned||[]).filter(x=>x!==k);res.hidden=(res.hidden||[]).filter(x=>x!==k);}
+    refreshPrevLists(a); toast('Session deleted.',3200).classList.add('ok'); announce('Deleted.');
+    const after=visibleRows(a); focusAfterRow(after,Math.min(at,after.length)); return;
+  }
+  if(out&&out.code==='in-office'){inOfficeDialog(a,out,more);return;}
+  toast('Could not delete: '+esc((out&&out.error)||'unknown error'),7000).classList.add('err');
+  loadPrev(a); /* the list may be stale (the session is gone, or no longer in this folder) */
+}
+/* FR-030: Delete was refused because the session still has a card. Durbar never ends, removes or deletes anything by itself here. */
+async function inOfficeDialog(a,out,returnTo){
+  const card=out.agentId?byId(out.agentId):null, croot=card&&liveRoot(card);
+  const canRemove=!!(croot&&bridge.removeSession&&siblingsOf(croot).length);
+  const d=window.DurbarSessionSearch.refusalDialogText(canRemove);
+  const buttons=[{label:'Cancel',value:null}];
+  if(croot)buttons.push({label:'Go to session',value:'go',cls:'primary'});
+  if(canRemove)buttons.push({label:'Remove from office',value:'rm'});
+  const r=await askDialog({title:d.title,body:d.body,lines:d.lines,returnFocus:returnTo||$('prevBtn'),buttons});
+  if(!r||!croot)return;
+  if(r.value==='go')openPanel(croot.id,false);
+  else if(r.value==='rm')removeSessionUi(croot);
+}
 document.addEventListener('input',e=>{
   if(!e.target||e.target.id!=='prevQ')return;
   const a=byId(ui.selected); if(!a)return; const ra=liveRoot(a), l=$('prevLists'); if(!l)return;
@@ -3876,6 +3998,20 @@ document.addEventListener('click',e=>{
   if(b.dataset.pv==='toggle'){const st=prevOf(ra);st.open=!st.open;st.touched=true;renderPrev(ra);}
   else if(b.dataset.pv==='resume')resumePrev(ra,b.dataset.sid,b);
   else if(b.dataset.pv==='view')viewVs(ra,b.dataset.key,b);
+  else if(b.dataset.pv==='showhidden'){const st=prevOf(ra);st.showHidden=!st.showHidden;refreshPrevLists(ra);const nb=document.querySelector('#prevLists [data-pv="showhidden"]');if(nb)nb.focus();}
+  else if(b.dataset.pv==='more'){const row=b.closest('.prev-row');if(row){const r=b.getBoundingClientRect();openPrevMenu(ra,row.dataset.pg,row.dataset.pk,b,r.left,r.bottom+4);}}
+});
+/* FR-027: right-click, Shift+F10 or the context-menu key on a row open the same menu as its ⋯ */
+document.addEventListener('contextmenu',e=>{
+  const row=e.target.closest('#prev .prev-row'); if(!row||!bridge.markPrevious)return;
+  const a=byId(ui.selected); if(!a)return; e.preventDefault();
+  const more=row.querySelector('.prev-more'); if(more)openPrevMenu(liveRoot(a),row.dataset.pg,row.dataset.pk,more,e.clientX||more.getBoundingClientRect().left,e.clientY||more.getBoundingClientRect().bottom);
+});
+document.addEventListener('keydown',e=>{
+  if(!((e.key==='F10'&&e.shiftKey)||e.key==='ContextMenu'))return;
+  const row=e.target.closest&&e.target.closest('#prev .prev-row'); if(!row||!bridge.markPrevious)return;
+  const a=byId(ui.selected); if(!a)return; e.preventDefault();
+  const more=row.querySelector('.prev-more'),r=more.getBoundingClientRect(); openPrevMenu(liveRoot(a),row.dataset.pg,row.dataset.pk,more,r.left,r.bottom+4);
 });
 document.addEventListener('click',e=>{
   const fb=e.target.closest('.floors-ui [data-fl]');
@@ -3897,7 +4033,7 @@ document.addEventListener('click',e=>{
 /* After adding a folder: if it already has earlier Copilot sessions or VS Code chats, say so and show them. */
 async function announcePrevious(a){
   if(!bridge.listPrevious)return;
-  const st=await loadPrev(a); const n=(st.cli&&st.cli.ok?st.cli.sessions.length:0), v=(st.vs&&st.vs.ok?st.vs.sessions.length:0);
+  const st=await loadPrev(a); const vis=prevCounts(st), n=vis.nc, v=vis.nv; /* hidden rows are not announced (spec 006 FR-025) */
   if(!n&&!v)return;
   toast('Found '+(n?n+' earlier '+esc(kindWord(a.info&&a.info.adapterId))+' session'+(n===1?'':'s'):'')+(n&&v?' and ':'')+(v?v+' VS Code chat'+(v===1?'':'s'):'')+' for <b>'+esc(roomOf(a).name)+'</b>. Opening them.',4200);
   if(!ui.selected){st.open=true;openPanel(a.id,false);}

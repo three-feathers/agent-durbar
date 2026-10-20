@@ -34,7 +34,7 @@ import { parseUsdCap } from '../shared/credits';
 import { simpleDiff, clipDiff } from '../shared/diff';
 import { HANDOFF_PROMPT, cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
-import type { ModelOption } from '../shared/modelswitch';
+import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import { resolveWorkspaceCwd } from './workspace';
 import { listClaudeSessions, readClaudeHistory } from './claudeHistory';
 import type { HistoryResult, PreviousSession } from './history';
@@ -52,6 +52,7 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   resume: true,
   images: true,
   models: true, // FR-118: from the CLI's initialize reply, no prompt
+  modelSwitch: Object.freeze({ verified: true, contextTier: false }), // spec 030 FR-038/FR-039 (real 2026-10-20): from the next message; no separate tier
   effort: true,
   permissionModes: Object.freeze(['read-only', 'ask', 'allow'] as PermissionMode[]),
   permModeSwitch: 'live', // FR-115/FR-116: the broker and the hook at once, the CLI flags from the next message
@@ -327,6 +328,9 @@ export interface TransportInput {
 export type TransportFactory = (o: TransportInput) => ClaudeTransport | Promise<ClaudeTransport>;
 
 /** The CLI transport (FR-111). */
+/** Spec 012 FR-159: the entrypoint Claude records for the chat sessions Durbar starts (not an SDK value, so `claude --resume` lists them). */
+export const CLAUDE_ENTRYPOINT = 'agent-durbar';
+
 export const cliTransportFactory: TransportFactory = (o) => createCliTransport({ file: o.file, args: claudeArgs(o.launch), cwd: o.cwd, env: o.env, handlers: o.handlers });
 
 export interface ClaudeAdapterDeps {
@@ -729,7 +733,10 @@ export class ClaudeAdapter implements AgentAdapter {
     const make = this.deps.makeTransport ?? cliTransportFactory;
     s.initSeen = false;
     s.mapper.reset();
-    const t = await make({ file, launch, cwd: s.cwd, env: (this.deps.env ?? (() => process.env))(), handlers });
+    // spec 012 FR-159 (real, 2.1.304): a `-p` session is recorded as entrypoint `sdk-cli`, which `claude --resume`'s picker leaves out;
+    // an entrypoint of our own keeps the user's own CLI able to list and open the sessions Durbar starts
+    const env = { ...(this.deps.env ?? (() => process.env))(), CLAUDE_CODE_ENTRYPOINT: CLAUDE_ENTRYPOINT };
+    const t = await make({ file, launch, cwd: s.cwd, env, handlers });
     s.transport = t;
     s.launchedMode = launch.mode;
     s.launchedOff = new Set(o.disabledMcpServers ?? []);
@@ -799,6 +806,26 @@ export class ClaudeAdapter implements AgentAdapter {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  }
+
+  /**
+   * Spec 030 FR-038: change the model (and effort) of this session from the next message. The CLI takes them per launch, so the
+   * next message relaunches it with `--resume` and the new `--model`/`--effort`; a turn in progress finishes on the old model.
+   */
+  async setModel(sessionId: string, request: ModelSwitchRequest): Promise<ModelSwitchResult> {
+    const s = this.mustGet(sessionId);
+    const raw = typeof request.model === 'string' ? request.model.trim() : '';
+    const toDefault = raw === 'auto' || raw === 'default';
+    if (!toDefault && !claudeModelFlag(raw)) return { status: 'rejected', model: raw, message: `Claude Code does not take "${raw.slice(0, 40)}" as a model.` };
+    if (typeof request.effort === 'string' && !CLAUDE_EFFORTS.has(request.effort)) return { status: 'rejected', model: raw, message: `Claude Code has no effort level "${request.effort.slice(0, 20)}".` };
+    const previousModel = s.options.model;
+    const previousEffort = s.options.reasoningEffort;
+    const model = toDefault ? undefined : raw;
+    const effort = request.effort === undefined ? previousEffort : request.effort === null ? undefined : request.effort;
+    s.options = { ...s.options, model, reasoningEffort: effort as typeof s.options.reasoningEffort }; // checked against CLAUDE_EFFORTS above
+    s.needsRelaunch = true; // the next message relaunches with --resume and the new flags; nothing is sent now
+    this.emit(sessionId, { type: 'model', cause: 'user', model: model ?? 'auto', ...(previousModel ? { previousModel } : {}), ...(effort ? { effort } : {}), ...(previousEffort ? { previousEffort } : {}) });
+    return { status: 'applied', model: model ?? 'auto', message: 'Applies from the next message.' };
   }
 
   /** FR-150: change (null = remove) the dollar cap; the running CLI gets the new budget with the next message. */

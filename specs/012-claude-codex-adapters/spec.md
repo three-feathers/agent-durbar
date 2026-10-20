@@ -910,3 +910,16 @@ The owner handed the Codex track to this agent ("ruben does not have chatgpt acc
     - Copilot with empty `COPILOT_HOME`/`GH_CONFIG_DIR` and no token variables still verifies, because its login is in the system keyring. The signed-out Copilot path was not reproduced on a real account (`[KNOWN GAP]`).
     - The owner's real Claude Code error ("Failed to authenticate. API Error: 401 OAuth access token is invalid.") is a unit-test case for the chat sign-in card.
   - FR-158 addition (lead review): a session that had remote control on is not remote after the reconnect, so main forgets its remote state first (an activity-log `remote-off` row), sends `agents:remoteOff`, and the chat drops the Remote chip with a note to turn it on again. `[KNOWN GAP]` Remote control is not turned back on automatically.
+
+### 2026-10-20: Claude sessions Durbar starts are listed in `claude --resume` (FR-159)
+
+The owner asked that sessions be shared between Durbar and the Claude Code CLI. One direction already worked: Durbar reads the CLI's own folder (`~/.claude/projects/<folder slug>/`, `claudeHistory.ts`), so sessions started in the CLI are in Durbar's *Previous sessions*. The other direction did not.
+
+- `real:` 2026-10-20, Claude Code 2.1.304, haiku, about $0.02 in all, scratch folders only, every `CLAUDE*` variable unset:
+  - a session started with `claude -p` records `"entrypoint":"sdk-cli"`, and the interactive `/resume` picker says "No conversations found in this project" for its folder, even though the session file is in that folder;
+  - `read:` the 2.1.304 bundle: the picker leaves out sessions whose entrypoint is in `{sdk-cli, sdk-ts, sdk-py}` (and daemon sessions), and print mode turns an entrypoint of `cli` into `sdk-cli`; other values are kept;
+  - with `CLAUDE_CODE_ENTRYPOINT=agent-durbar`, the same `-p` run (also with `--input-format stream-json`, as Durbar runs it) records `"entrypoint":"agent-durbar"`, answers normally, and the picker **lists the session by its name**.
+  - end to end on this branch: Durbar's own `claudeDescriptor().create()` started a Read-only session in a scratch folder and sent one message; Claude recorded `entrypoint: agent-durbar` and `claude --resume` in that folder listed it ("Shared — 27 seconds ago", Claude's own title). The picker also offers Ctrl+R to rename.
+- **FR-159** The Claude adapter starts its chat sessions with `CLAUDE_CODE_ENTRYPOINT=agent-durbar` in the child's environment, so they show in `claude --resume` like the user's own sessions; `claude --resume <id>` already worked. The throw-away runs keep the default and stay hidden: the model probe (`os.tmpdir()`), the handoff summary (`--no-session-persistence --fork-session`) and one-shot text (`--no-session-persistence`). test: `test-claude-adapter` (the chat transport gets the value; the user's other variables are kept).
+- `[KNOWN GAP]` `CLAUDE_CODE_ENTRYPOINT` is not documented by Anthropic: a later Claude Code may treat an unknown value differently or hide such sessions again. The value names Durbar honestly (it is not a value of another client, such as the VS Code extension's). Not checked: whether the VS Code Claude extension's list shows these sessions.
+
