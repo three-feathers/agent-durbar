@@ -91,7 +91,7 @@ function markSerious(){document.documentElement.toggleAttribute('data-serious',S
 /* spec 052 FR-031 (#306): detail level. Simple hides the developer details (tokens, model and context chips, paths, MCP, VS Code, resume
    command) and says what agents do in plain verbs; Expert is everything. A display preference of this window (localStorage). */
 let SIMPLE=(()=>{try{return localStorage.getItem('durbar.detail')==='simple';}catch(e){return false;}})();
-function setDetail(level){SIMPLE=level==='simple';try{localStorage.setItem('durbar.detail',SIMPLE?'simple':'expert');}catch(e){}document.body.classList.toggle('simple',SIMPLE);relabelScopes();renderAll();if(ui.selected){updatePanelHeader();const s=byId(ui.selected);if(s)updateCtxChip(liveRoot(s));}}
+function setDetail(level){SIMPLE=level==='simple';try{localStorage.setItem('durbar.detail',SIMPLE?'simple':'expert');}catch(e){}document.body.classList.toggle('simple',SIMPLE);relabelScopes();renderDefaultsChip();renderAll();if(ui.selected){updatePanelHeader();const s=byId(ui.selected);if(s)updateCtxChip(liveRoot(s));}}
 /* spec 052 FR-099 (round 10): Spacing, Comfortable or Compact. Compact tightens the chrome only (chat, screens, dialogs, inbox); the top bar,
    desk cards, rooms and the lobby never change. A display preference of this window (localStorage), like the detail level. */
 let DENSITY=(()=>{try{return localStorage.getItem('durbar.density')==='compact'?'compact':'comfortable';}catch(e){return 'comfortable';}})();
@@ -553,7 +553,7 @@ function linksSVG(d,rows,extraMore){
   if(d==='full'){py=78;for(let i=0;i<n;i++)ys.push(34+i*104);}
   else{py=D.ch/2;for(let i=0;i<rows;i++)ys.push(i*(D.hh+D.hgap)+D.hh/2);if(extraMore)ys.push(rows*(D.hh+D.hgap)+D.mh/2);}
   const w=d==='full'?24:16, mid=d==='full'?12:8;
-  return `<svg class="links" aria-hidden="true" focusable="false"><g fill="none" stroke="${T_('--link')}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${ys.map(y=>`<path d="M0 ${py}H${mid}V${y}H${w}"/>`).join('')}</g><circle cx="0" cy="${py}" r="2.6" fill="${T_('--link')}"/></svg>`;
+  return `<svg class="links" aria-hidden="true" focusable="false"><g fill="none" stroke="${T_('--link')}" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">${ys.map(y=>`<path d="M0 ${py}H${mid}V${y}H${w}"/>`).join('')}</g><circle cx="0" cy="${py}" r="2.6" fill="${T_('--link')}"/></svg>`;
 }
 function unitHTML(a,d){
   const st=vis(a), {shown,hidden}=visibleHelpers(a,d), nSubs=shown.length+hidden.length;
@@ -783,7 +783,7 @@ const WELCOME_HTML=`<section class="welcome" aria-labelledby="wlT"><h2 id="wlT">
   <p class="wl-sub">Your AI agents in one office: see what each one is doing, chat with it, and decide what it may do. For code, documents, research or notes, with GitHub Copilot, Claude Code or OpenAI Codex side by side.</p>
   <ol class="wl-steps">
     <li><b>Connect your AI account once</b>: ChatGPT (through Codex), Claude (through Claude Code) or GitHub Copilot (a free plan works). <b>Connect an AI account…</b> installs the agent app and signs in for you, showing every step; nothing is typed in a terminal.<br><span class="wl-which">Which one? Have ChatGPT: Codex. Have Claude: Claude Code. Neither: GitHub Copilot (free).</span></li>
-    <li><b>Add a folder</b> with <b>+ Folder</b>: a project, a set of documents, any folder your agent should work in. Each folder becomes a room with its own agent. Agents start in <b>Read-only</b>: they can read the folder, nothing else.</li>
+    <li><b>Add a folder</b> with <b>+ New</b>: a project, a set of documents, any folder your agent should work in. Each folder becomes a room with its own agent. Agents start in <b>Read-only</b>: they can read the folder, nothing else.</li>
     <li><b>Send a message</b> to start. Switch to <b>Ask first</b> or <b>Allow all</b> only for folders you trust.</li>
   </ol>
   <div class="wl-actions"><button class="btn" type="button" data-wl="setup">Connect an AI account…</button><button class="btn primary" type="button" data-wl="add">+ Add a folder</button><button class="btn" type="button" data-wl="demo">Look around in the demo</button></div>
@@ -805,9 +805,9 @@ const EMPTY_DESK='<svg class="empty-desk" viewBox="0 0 120 72" aria-hidden="true
   +'<rect x="24" y="22" width="30" height="30" rx="9" fill="currentColor" stroke="none" opacity=".14"/>'
   +'<rect x="70" y="14" width="38" height="27" rx="3.5"/><rect x="74" y="18" width="30" height="19" rx="2" fill="currentColor" stroke="none" opacity=".1"/>'
   +'<path d="M89 41v7M81 49h16"/><path d="M8 52h104" stroke-width="3.5"/><rect x="13" y="54" width="94" height="14" rx="3" fill="currentColor" stroke="none" opacity=".1"/></svg>';
-/* spec 052 FR-070: when the first-run card shows, "+ Folder" in the top bar rings once (CSS pseudo-element, opacity and scale).
+/* spec 052 FR-070: when the first-run card shows, "+ New" (FR-105: it holds Add folder) in the top bar rings once (CSS pseudo-element, opacity and scale).
    It waits 600ms and checks the card is still there, so a start that loads agents a moment later does not ring. */
-function ringFolder(){if(reducedMotion())return;setTimeout(()=>{const b=$('addFolder'),st=$('stage');if(!b||!st||!st.querySelector('.welcome')||!b.getClientRects().length)return;
+function ringFolder(){if(reducedMotion())return;setTimeout(()=>{const b=$('newBtn'),st=$('stage');if(!b||!st||!st.querySelector('.welcome')||!b.getClientRects().length)return;
   b.classList.remove('ring-once');void b.offsetWidth;b.classList.add('ring-once');setTimeout(()=>b.classList.remove('ring-once'),1600);},600);}
 function renderOffice(){
   if(ui.view!=='office')return;
@@ -819,7 +819,7 @@ function renderOffice(){
   if(!model.length){
     stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey='';
     if(!agents.length&&!demoOn){if(!stage.querySelector('.welcome'))ringFolder();stage.innerHTML=welcomeHTML();floor.classList.remove('scrolls');return;} /* spec 001 FR-026: first run */
-    stage.innerHTML='<div class="empty">'+EMPTY_DESK+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" above (or "+ Workspace" for a VS Code .code-workspace file).':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open "Folders" above to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?(FLOORS.floors.length>1?'All floors are off. Open "Floors" above or Settings > Floors to switch one on.':'Your only floor is off. Switch it on in Settings > Floors.'):agents.length&&ROOMS.every(r=>!roomShown(r))?('Nothing to show: every folder is hidden or on a floor that is off. Open '+(floorsLive()&&FLOORS.floors.length>1?(SIMPLE?'"Floors" above, or ':'"Floors" or "Folders" above, or '):(SIMPLE?'':'"Folders" above, or '))+'Settings > Floors.'):'No agents match these filters.'))+'</div>';
+    stage.innerHTML='<div class="empty">'+EMPTY_DESK+(!agents.length&&!demoOn?'No agents yet. Use "+ New" above to add a folder (or a VS Code .code-workspace file).':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open Manage folders (next to the folder filter) to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?(FLOORS.floors.length>1?'All floors are off. Open "Floors" above or Settings > Floors to switch one on.':'Your only floor is off. Switch it on in Settings > Floors.'):agents.length&&ROOMS.every(r=>!roomShown(r))?('Nothing to show: every folder is hidden or on a floor that is off. Open '+(floorsLive()&&FLOORS.floors.length>1?(SIMPLE?'"Floors" above, or ':'"Floors" or "Folders" above, or '):(SIMPLE?'':'"Folders" above, or '))+'Settings > Floors.'):'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
   }
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
@@ -1544,7 +1544,7 @@ function openNextNeedsMe(){
 }
 /* ---- spec 052 FR-042 / FR-043 (#316): command palette (Ctrl+K, ⌘K on a Mac) and keyboard shortcut sheet (?) ---- */
 let palBack=null, palItems=[], palActive=0;
-const palUsable=id=>{const el=$(id);return !!el&&!el.disabled&&!el.hidden&&!el.closest('[hidden]:not(#topMoreMenu)');};
+const palUsable=id=>{const el=$(id);return !!el&&!el.disabled&&!el.hidden&&!el.closest('[hidden]:not(#topMoreMenu):not(#newMenu)');}; /* items inside the top bar's closed menus still count */
 const palClick=id=>()=>{const el=$(id);if(el)el.click();};
 function palActions(){
   return [
@@ -1555,6 +1555,8 @@ function palActions(){
     {label:'Tools',kw:'tools usage mcp',run:palClick('toolsBtn'),ok:()=>palUsable('toolsBtn')},
     {label:'Settings',kw:'settings preferences theme options',...(IS_MAC?{keys:keyLabels(['mod',','])}:{}),run:palClick('settingsBtn'),ok:()=>palUsable('settingsBtn')},
     {label:'Add folder',kw:'add folder workspace project new',run:palClick('addFolder'),ok:()=>palUsable('addFolder')},
+    {label:'Add VS Code workspace',kw:'add workspace code-workspace vscode new',run:palClick('addWs'),ok:()=>palUsable('addWs')&&!SIMPLE},
+    {label:'Defaults for new sessions',kw:'defaults agent app mode permission model new session',run:()=>toggleDefaults(true),ok:()=>palUsable('defaultsBtn')},
     {label:'Detail level: Simple',kw:'simple detail beginner view',run:()=>setDetail('simple')},
     {label:'Detail level: Expert',kw:'expert detail developer view',run:()=>setDetail('expert')},
     {label:'Collapse all folders',kw:'doors close collapse compact plates rooms',run:palClick('closeAll'),ok:()=>palUsable('closeAll')},
@@ -1854,7 +1856,7 @@ function renderFloorsBtn(){
   b.setAttribute('aria-label',tip+'. Open the floors panel.');
 }
 /* Floor for the next added folder (FR-006): chosen in the Floors panel before the picker opens; default = the last one used.
-   The top bar has no room for one more select at 1280x800, so + Folder / + Workspace only name it in their tooltip. */
+   The top bar has no room for one more select at 1280x800, so Add folder / Add VS Code workspace only name it in their tooltip. */
 let INTO=null;
 const intoFloor=()=>{if(!floorsLive()||FLOORS.floors.length<2)return undefined;const f=(INTO&&FLOORS.floors.find(x=>x.id===INTO))||FLOORS.floors.find(x=>x.id===FLOORS.lastFloor)||FLOORS.floors[0];return f.id;};
 function renderIntoFloor(){
@@ -1892,7 +1894,7 @@ function floorsBodyHTML(px){
   const last=FLOORS.floors.length-1;
   const opts=sel=>FLOORS.floors.map(f=>`<option value="${esc(f.id)}"${f.id===sel?' selected':''}>${esc(f.name)}</option>`).join('');
   const into=intoFloor();
-  return (into?`<div class="fl-into"><label for="${px}Into">New folders go to</label><select id="${px}Into" class="fl-into-sel" title="Floor for the folders you add with + Folder or + Workspace">${opts(into)}</select></div>`:'')+
+  return (into?`<div class="fl-into"><label for="${px}Into">New folders go to</label><select id="${px}Into" class="fl-into-sel" title="Floor for the folders you add with + New">${opts(into)}</select></div>`:'')+
     FLOORS.floors.map((f,i)=>{
       const rooms=roomsOnFloor(f.id);
       return `<div class="fl-floor${f.on?'':' off'}"><div class="fl-row">
@@ -2968,6 +2970,40 @@ function syncKindModel(){
   ms.hidden=!ok;
   fillEffortSelect(ef,ms.value,undefined,!ok||(c&&!DMK().shows(c,'effort')),k);
   fillPermSelect($('permMode'),kindCaps(id));
+  renderDefaultsChip();
+}
+/* spec 052 FR-105 (round 11): the defaults for new sessions are one chip in the top bar ("Copilot · Read-only · Auto"); the selects
+   (ids kept) are in a small popover. The chip shows what each visible select holds, without the "New: " and "Model: " prefixes. */
+const optWord=s=>s&&!s.hidden&&s.selectedOptions&&s.selectedOptions[0]?s.selectedOptions[0].textContent.replace(/^(New|Model):\s*/,'').trim():'';
+function renderDefaultsChip(){
+  const b=$('defaultsBtn'); if(!b)return;
+  const parts=[optWord($('kindSel')),optWord($('permMode')),SIMPLE?'':optWord($('modelSel'))].filter(Boolean);
+  b.querySelector('.dv').textContent=parts.length?parts.join(' · '):'Defaults';
+  b.setAttribute('aria-label','Defaults for new sessions: '+(parts.join(' · ')||'none'));
+  b.title='Defaults for new sessions: '+(parts.join(', ')||'none')+'. Each agent shows its own values in its chat.';
+}
+function toggleDefaults(on,back){
+  const pop=$('defaultsPop'),btn=$('defaultsBtn'); if(!pop||!btn)return;
+  const show=on===undefined?pop.hidden:on;
+  if(show===!pop.hidden)return;
+  pop.hidden=!show; btn.setAttribute('aria-expanded',String(show));
+  if(show){
+    const r=btn.getBoundingClientRect();
+    pop.style.top=Math.round(r.bottom+6)+'px';
+    pop.style.left=Math.round(Math.max(14,Math.min(r.left,innerWidth-pop.offsetWidth-14)))+'px';
+    const first=[...pop.querySelectorAll('select,button')].find(x=>!x.hidden&&!x.disabled&&x.getClientRects().length);
+    if(first)first.focus();
+  }else if(back)btn.focus();
+}
+function wireDefaults(){
+  const pop=$('defaultsPop'),btn=$('defaultsBtn'); if(!pop||!btn)return;
+  btn.onclick=()=>toggleDefaults(undefined,true);
+  btn.onkeydown=e=>{if(e.key==='ArrowDown'){e.preventDefault();toggleDefaults(true);}};
+  pop.addEventListener('change',renderDefaultsChip);
+  pop.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();toggleDefaults(false,true);}});
+  /* Tab past the last control, or a click elsewhere, closes it (a dialog opened from it, such as About agent apps, does not) */
+  pop.addEventListener('focusout',e=>{const t=e.relatedTarget;if(t&&!pop.contains(t)&&t!==btn&&!t.closest('.dlg-ov,.dlg'))toggleDefaults(false);});
+  document.addEventListener('mousedown',e=>{if(!pop.hidden&&!pop.contains(e.target)&&!btn.contains(e.target)&&!e.target.closest('.dlg-ov,.dlg'))toggleDefaults(false);},true);
 }
 function applyKinds(){
   const show=DMK().showsKindPicker(KINDS), sel=$('kindSel'), keep=sel.value;
@@ -3595,7 +3631,7 @@ document.addEventListener('change',async e=>{if(e.target&&e.target.id==='schedPa
 if(bridge&&bridge.onScheduleRan){bridge.onScheduleRan(r=>{const a=liveById(r.agentId);if(!a)return;addNote(liveChat(a),'Scheduled prompt ('+esc(r.rule?ruleText(r.rule):r.every!==undefined?whenOf({every:r.every}):'once')+').');});}
 function renderFolders(){
   const pop=$('foldersPop'); if(pop.hidden)return;
-  if(!ROOMS.length){pop.innerHTML='<p class="fp-empty">No folders yet. Use + Folder, or + Workspace for a VS Code .code-workspace file. Folders you add are remembered next time.</p>';return;}
+  if(!ROOMS.length){pop.innerHTML='<p class="fp-empty">No folders yet. Use + New to add a folder or a VS Code .code-workspace file. Folders you add are remembered next time.</p>';return;}
   const sched=bridge.listSchedules?`<label class="fp-pause" title="Nothing scheduled is sent while this is on (kept across restarts)"><input type="checkbox" id="schedPauseAll"${SCHED.pausedAll?' checked':''}> Pause all schedules</label>`:'';
   pop.innerHTML='<div class="fp-h">Folders <small>remembered across restarts</small>'+sched+'</div>'+ROOMS.map(r=>{
     const n=agents.filter(x=>!x.parent&&x.room===r.id).length, ss=schedulesOf(r).filter(s=>!s.done), nx=nextRunOf(ss);
@@ -3608,7 +3644,7 @@ async function hideFolder(r,hidden){
   r.hidden=hidden; if(bridge.setFolderHidden)await bridge.setFolderHidden(liveRoot(ag).id,hidden);
   if(hidden&&ui.ws===r.id)ui.ws='all';
   renderFilter(); renderFolders(); scheduleRender();
-  toast(esc(r.name)+(hidden?' hidden. Its sessions keep running; show it from Folders.':' is shown again.'),3600);
+  toast(esc(r.name)+(hidden?' hidden. Its sessions keep running; show it from Manage folders.':' is shown again.'),3600);
 }
 async function removeFolder(r){
   const ags=agents.filter(x=>x.room===r.id), busy=ags.filter(x=>['working','thinking','waiting'].includes(x.state)).length;
@@ -3845,6 +3881,8 @@ if(bridge){
   $('demoToggle').onchange=e=>{demoOn=e.target.checked;applyMode();};
   labelDemo();
   wireMenu('topMoreBtn','topMoreMenu');
+  wireMenu('newBtn','newMenu'); /* spec 052 FR-105: + New holds Add folder and Add VS Code workspace */
+  wireDefaults();
   $('endAllBtn').hidden=$('endAllSep').hidden=!bridge.end; /* spec 052 FR-090 */
   $('inboxBtn').onclick=openInbox;
   $('addFolder').onclick=()=>addVia(bridge.addFolder);

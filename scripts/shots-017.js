@@ -7,6 +7,7 @@
  *     DURBAR_DRIVER=$PWD/scripts/shots-017.js npx electron .        (xvfb-run -a ... --no-sandbox on Linux)
  *
  * SHOTS_012 defaults to a temp directory, never to docs/screenshots. Exits non-zero ("DRIVER FAILED") on a miss. What it checks:
+ *   The defaults selects are in the popover of the top bar's Defaults chip (spec 052 FR-105); the driver opens it first.
  *   - One adapter (default): #kindSel and the "?" button are hidden, the new-session dialog has no kind select, and the toolbar
  *     has the same height as with the picker (FR-059). Shots: 012-single-<w>x<h>.png.
  *   - simkinds=solo (Copilot ready, Claude Code not installed, Codex too old): one ready harness, so no picker (FR-136).
@@ -43,6 +44,8 @@ module.exports = async (ctx) => {
     wc().focus();
   };
   const vis = (id) => `(()=>{const e=document.getElementById('${id}');return !!e&&!e.hidden&&e.getClientRects().length>0})()`;
+  /* spec 052 FR-105 (round 11): the defaults selects (ids kept) live in the popover of the top bar's Defaults chip; open it first */
+  const openDefaults = async () => { await js(`(()=>{const p=document.getElementById('defaultsPop');if(p.hidden)document.getElementById('defaultsBtn').click();return !p.hidden})()`); await ctx.sleep(150); };
   const headerH = () => js(`Math.round(document.querySelector('.controls').getBoundingClientRect().height)`);
   /* the smallest computed font size among visible elements with their own text, inside `root` */
   const minFont = (root) => js(`(()=>{let min=99,who='';document.querySelectorAll('${root}, ${root} *').forEach(e=>{if(!e.getClientRects().length)return;const own=[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim());if(!own&&!/^(INPUT|SELECT|BUTTON)$/.test(e.tagName))return;const f=parseFloat(getComputedStyle(e).fontSize);if(f<min){min=f;who=e.tagName+'#'+e.id+'.'+e.className}});return {min,who}})()`);
@@ -52,6 +55,7 @@ module.exports = async (ctx) => {
   for (const [w, h] of SIZES) {
     // ---- one adapter: nothing new is visible ----
     await load(w, h);
+    await openDefaults();
     assert.strictEqual(await js(vis('kindSel')), false, `${w}: single adapter, #kindSel hidden`);
     assert.strictEqual(await js(vis('kindHelp')), false, `${w}: single adapter, "?" hidden`);
     assert.strictEqual(await js(vis('modelSel')), true, `${w}: model select still shown`);
@@ -61,15 +65,17 @@ module.exports = async (ctx) => {
 
     // ---- FR-136: three kinds but only Copilot ready: no picker, no "?" ----
     await load(w, h, { simkinds: 'solo' });
+    await openDefaults();
     assert.strictEqual(await js(vis('kindSel')), false, `${w}: one ready harness, #kindSel hidden`);
     assert.strictEqual(await js(vis('kindHelp')), false, `${w}: one ready harness, "?" hidden`);
     assert.strictEqual(await js(`document.getElementById('kindSel').value`), 'copilot', 'the hidden select holds the ready harness');
 
     // ---- three kinds, two ready ----
     await load(w, h, { simkinds: '1' });
+    await openDefaults();
     assert.strictEqual(await js(vis('kindSel')), true, `${w}: #kindSel visible`);
     assert.strictEqual(await js(vis('kindHelp')), true, `${w}: "?" visible`);
-    const k = await js(`(()=>{const s=document.getElementById('kindSel'),l=document.querySelector('label.sr-only[for="kindSel"]'),p=document.getElementById('permMode'),b=document.getElementById('kindHelp');
+    const k = await js(`(()=>{const s=document.getElementById('kindSel'),l=document.querySelector('label[for="kindSel"]'),p=document.getElementById('permMode'),b=document.getElementById('kindHelp');
       return {opts:[...s.options].map(o=>({v:o.value,t:o.textContent.trim(),d:o.disabled})),value:s.value,label:l?l.textContent.trim():null,
         before:!!(s.compareDocumentPosition(p)&Node.DOCUMENT_POSITION_FOLLOWING),helpBefore:!!(b.compareDocumentPosition(p)&Node.DOCUMENT_POSITION_FOLLOWING),helpLabel:b.getAttribute('aria-label')}})()`);
     console.log('[017]', w, 'kinds', JSON.stringify(k.opts.map((o) => `${o.v}${o.d ? ' (disabled)' : ''}: ${o.t}`)));
@@ -89,6 +95,9 @@ module.exports = async (ctx) => {
     assert.ok(await js(`document.querySelectorAll('#stage .desk[data-id]').length>=15`), '15 agents are shown');
     const f1 = await minFont('.controls');
     assert.ok(f1.min >= 10.5, `${w}: toolbar text >= 10.5px (${JSON.stringify(f1)})`);
+    const f1p = await minFont('#defaultsPop');
+    assert.ok(f1p.min >= 10.5, `${w}: defaults popover text >= 10.5px (${JSON.stringify(f1p)})`);
+    assert.match(await js(`document.getElementById('defaultsBtn').textContent`), /^Copilot · /, `${w}: the Defaults chip names the agent app`);
     await shot('012-picker', w, h);
 
     // About agent apps: keyboard open, focus kept inside, state and hint as text, Check again, Esc returns focus

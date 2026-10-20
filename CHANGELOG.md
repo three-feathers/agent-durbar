@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.9 tag)
 
+- **Round 11 of the usability pass: one-row top bar and thinner walls (spec 052 FR-105..FR-107).** The top bar is one 48px row instead of two (about 92px): **+ New** holds Add folder and Add VS Code workspace, one **Defaults** chip ("Copilot · Read-only · Auto") opens the agent app, mode and model for new sessions, the folder filter has **Manage folders** next to it, and the counters show a dot and a number on narrower screens. The office gets the height. Room walls, lobby places and helper lines are 1px. Measured in headless Chromium on the simulator page at 1280 to 1800px; not run in Electron.
 - Sign-in is checked with the service where the app allows it (Copilot: GitHub quota; Codex: OpenAI rate limits; Claude Code: local only), and a chat message refused because of the sign-in shows a calm card with **Sign in** and **Send again** instead of the raw 401 (spec 012 FR-156, FR-157; fakes and simulator, not yet on real accounts).
 
 ## v0.1.0-alpha.9 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.9), 2026-10-20)

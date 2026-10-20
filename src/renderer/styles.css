@@ -52,16 +52,17 @@ button{font:inherit;color:inherit}
 /* spec 052 FR-099: Compact spacing, chrome only. The top bar, the office and the list are outside these scopes. */
 html[data-density="compact"]{--sec-pad:10px 14px; --sec-gap:10px; --dlg-pad:14px 16px; --row-pad:8px}
 html[data-density="compact"] :is(#panel,#screen,.dlg,.dlg-ov,.more-menu,.mode-menu){--h-ctl:28px; --h-chip:22px; --h-pill:20px}
-html[data-density="compact"] #topMoreMenu{--h-ctl:32px; --h-chip:26px; --h-pill:22px} /* the top bar's own menu keeps its sizes */
+html[data-density="compact"] :is(#topMoreMenu,#newMenu){--h-ctl:32px; --h-chip:26px; --h-pill:22px} /* the top bar's own menu keeps its sizes */
 
 /* ---------- top bar ---------- */
-.topbar{min-height:56px;flex:none;display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;padding:6px 20px;background:var(--surface);border-bottom:1px solid var(--line)}
+/* spec 052 FR-105 (round 11): one row of 48px (was two rows, about 92px); the freed height goes to the office */
+.topbar{min-height:48px;flex:none;display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px;padding:4px 20px;background:var(--surface);border-bottom:1px solid var(--line)}
 .brand{display:flex;align-items:center;gap:10px;min-width:0;flex:none}
 .brand-mark{width:32px;height:32px;border-radius:10px;background:var(--brand-bg,#e4ece6);display:grid;place-items:center;flex:none}
 .brand h1{margin:0;font-size:15px;line-height:1.15;font-weight:650;letter-spacing:-.01em;white-space:nowrap}
 .proto{display:inline-block;margin-top:2px;font-size:11px;font-weight:600;color:var(--pc-waiting);background:var(--pb-waiting);border:1px solid var(--proto-line);border-radius:999px;padding:0 8px;white-space:nowrap}
 .proto.sim{color:var(--blue-ink);background:var(--pb-working,#e3ecf4);border-color:#c5d6e5}
-.stats{display:flex;gap:5px;margin-left:auto;flex:none;border-radius:var(--r-md);box-shadow:inset 0 0 0 1px var(--line)}
+.stats{display:flex;gap:5px;flex:none;border-radius:var(--r-md);box-shadow:inset 0 0 0 1px var(--line)}
 /* spec 052 FR-103: the counters are one segmented strip. The frame is an inset shadow on the group and each counter keeps its 1px
    (transparent) border and the 5px gap, with a hairline divider drawn in the gap, so every width and the 32px height stay */
 .stat{position:relative;display:flex;align-items:center;gap:6px;height:var(--h-ctl);padding:0 10px 0 9px;border:1px solid transparent;background:transparent;background-clip:padding-box;border-radius:var(--r-sm);cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s}
@@ -95,8 +96,6 @@ html[data-density="compact"] #topMoreMenu{--h-ctl:32px; --h-chip:26px; --h-pill:
 body.has-bridge #liveBar{display:flex}
 #liveBar .tgl{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--ink-2);cursor:pointer;white-space:nowrap}
 #liveBar .btn{height:var(--h-ctl);padding:0 9px;font-size:12.5px}
-#liveBar select{height:var(--h-ctl);border:1px solid var(--line-ctl);background:var(--surface-2);border-radius:10px;padding:0 6px;font:inherit;font-size:12.5px;color:var(--ink);max-width:118px}
-#liveBar #permMode{max-width:180px} /* fits "Allow all (no prompts)" (spec 003 FR-028) */
 .note{font-size:var(--t3-size);color:var(--ink-2);background:var(--pb-waiting,#fbefd6);border:1px solid #f0d9a6;border-radius:12px;padding:8px 12px;max-width:92%;align-self:flex-start;overflow-wrap:anywhere}
 .note.err{background:var(--pb-error,#f6e2df);border-color:#ebc7c2;color:var(--red-ink)}
 .note .btn{height:28px;margin:0;padding:0 10px}
@@ -150,7 +149,7 @@ body.has-bridge #liveBar{display:flex}
 #floor{flex:1;min-width:0;position:relative;overflow:hidden;padding:12px 16px 12px}
 #floor.scrolls{overflow-y:auto}
 .stage{display:flex;flex-wrap:wrap;gap:12px;align-content:flex-start;align-items:stretch}
-.room{flex:var(--w) 1 calc(var(--w)*1px);min-width:var(--min);display:flex;flex-direction:column;border-radius:20px;border:1.5px solid var(--wall);background:var(--tint);padding:10px 12px 12px;position:relative}
+.room{flex:var(--w) 1 calc(var(--w)*1px);min-width:var(--min);display:flex;flex-direction:column;border-radius:20px;border:1px solid var(--wall);background:var(--tint);padding:10px 12px 12px;position:relative} /* spec 052 FR-106 (round 11): 1px walls (were 1.5px) */
 .room[data-tint="sage"]{--tint:var(--tint-sage,#eaf0e9);--wall:var(--wall-sage,#d3dfd3)}
 .room[data-tint="blue"]{--tint:var(--tint-blue,#e9eef3);--wall:var(--wall-blue,#d1dce6)}
 .room[data-tint="sand"]{--tint:var(--tint-sand,#f2ede1);--wall:var(--wall-sand,#e0d6c1)}
@@ -436,8 +435,27 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .toast code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:color-mix(in srgb,var(--raised) 14%,transparent);padding:1px 6px;border-radius:6px}
 
 @media (max-width:1320px){
-  .topbar{padding:6px 14px;gap:8px 10px}
+  .topbar{padding:4px 14px;gap:6px 8px}
   .stat{padding:0 9px 0 8px}
+}
+/* spec 052 FR-105 (round 11): the one row fits by width, measured with DejaVu Sans (the widest font, CI's). Below 1800px the
+   counters show the dot and the number (the words stay in each title and label); below 1600px Needs you shows its icon and
+   number; below 1440px the defaults chip, the segmented buttons, the folder filter and the gaps are a little narrower, so the
+   row fits at 1280 with floors and several agent apps. The chip's full text is in its title and label. */
+@media (max-width:1799px){
+  .stats>.stat:not(.stat-aiu) span.l{display:none}
+  .stats>.stat:not(.stat-aiu){padding:0 6px 0 5px}
+  .topbar #defaultsBtn{max-width:200px}
+}
+@media (max-width:1599px){
+  .inbox-btn .ib-word{display:none}
+  .inbox-btn{padding:0 10px}
+}
+@media (max-width:1439px){
+  .topbar #defaultsBtn{max-width:160px}
+  .topbar .seg button{padding:0 7px}
+  .topbar .select-wrap select{max-width:104px}
+  .topbar #liveBar{gap:6px}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
@@ -545,10 +563,10 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 
 /* helpers: mini-desks on a strip under the parent, joined by a connector */
 .helpers.hstrip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--gap);margin:10px 0 0;padding:0;position:relative;width:auto}
-.helpers.hstrip::before{content:"";position:absolute;left:var(--stub);top:-10px;height:5px;border-left:1.5px solid var(--line)}
+.helpers.hstrip::before{content:"";position:absolute;left:var(--stub);top:-10px;height:5px;border-left:1px solid var(--line)} /* spec 052 FR-106: 1px connectors */
 .helpers.hstrip::after{content:"";position:absolute;left:calc(var(--stub) - 3px);top:-12px;width:7px;height:7px;border-radius:50%;background:var(--line)}
 .helpers.hstrip>*{position:relative;min-width:0}
-.helpers.hstrip>*::before{content:"";position:absolute;left:var(--stub);right:calc(-1*(var(--gap) + var(--stub)));top:-5px;height:5px;border-left:1.5px solid var(--line);border-top:1.5px solid var(--line);pointer-events:none}
+.helpers.hstrip>*::before{content:"";position:absolute;left:var(--stub);right:calc(-1*(var(--gap) + var(--stub)));top:-5px;height:5px;border-left:1px solid var(--line);border-top:1px solid var(--line);pointer-events:none}
 .helpers.hstrip>*:last-child::before,.helpers.hstrip>*:nth-child(2)::before{right:auto;width:0}
 .helpers.hstrip>*:nth-child(n+3)::before{right:auto;width:0;top:calc(-1*var(--gap));height:var(--gap);border-top:0}
 .helpers.hstrip>.fewer{grid-column:1/-1;height:22px}
@@ -801,9 +819,6 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .sched-set .ss-add{display:inline-flex;align-items:center;gap:8px;font-size:13px}
 .sched-set .ss-add select{height:30px;border:1px solid var(--line-ctl);border-radius:8px;background:var(--raised);padding:0 8px;font:inherit;font-size:13px;color:var(--ink)}
 #liveBar .btn{white-space:nowrap}
-#liveBar select[hidden]{display:none}
-/* spec 012 FR-120: with the agent-kind picker on a narrow window the toolbar selects are as wide as their choice, so Office / List usually stays on the row (it wraps as designed otherwise, PR #124) */
-@media (max-width:1399px){#liveBar:has(#kindSel:not([hidden])) select{field-sizing:content;min-width:64px}}
 
 /* ---------- milestone 7: timeline, thinking, sub-agents, markdown ---------- */
 .tl{display:flex;flex-direction:column;gap:7px;min-width:0;max-width:100%}
@@ -880,7 +895,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .door:hover .door-svg .leaf{transform:scaleX(.82)}
 /* ---- lobby and walking figures (spec 024): one shared band with the places agents go to ---- */
 .lobby{flex:0 0 100%;display:flex;gap:8px;align-items:stretch;min-width:0}
-.place{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:7px;height:36px;box-sizing:border-box;padding:0 10px;border-radius:12px;border:1.5px solid var(--wall);background:color-mix(in srgb,var(--raised) 55%,transparent);color:var(--ink-2);transition:background .2s,border-color .2s}
+.place{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:7px;height:36px;box-sizing:border-box;padding:0 10px;border-radius:12px;border:1px solid var(--wall);background:color-mix(in srgb,var(--raised) 55%,transparent);color:var(--ink-2);transition:background .2s,border-color .2s}
 .place.busy{background:var(--raised);border-color:var(--place-busy)}
 .place .pic{flex:none;width:18px;height:18px}
 .place .pn{flex:0 1 auto;min-width:0;font-size:12.5px;font-weight:650;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1059,10 +1074,32 @@ html:not([data-ui]) .seg button{border-radius:6px}
 .use,.stat b,.ctxchip,.capchip,.mchip,.pusage,.lrow .lcell,.prev-c{font-variant-numeric:tabular-nums}
 
 /* spec 052 #308: the top bar in clusters: create, the defaults for new sessions (one quiet group), view; the rest under ⋯ */
-.defaults-grp{display:flex;align-items:center;gap:2px;padding:2px;border-radius:10px;background:var(--surface-2);border:1px solid var(--line)}
-#liveBar .defaults-grp select,#liveBar .defaults-grp .btn{border-color:transparent;background:transparent;height:28px}
-#liveBar .defaults-grp select:hover,#liveBar .defaults-grp .btn:hover{background:var(--raised)}
 #liveBar{gap:8px}
+/* spec 052 FR-105 (round 11): "+ New" opens a menu with the two add actions; the defaults are one chip with a small popover */
+.top-new{position:relative}
+#newMenu{left:0;right:auto;min-width:250px}
+#defaultsBtn{display:inline-flex;align-items:center;gap:6px;max-width:240px}
+#defaultsBtn .dv{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#defaultsBtn::after{content:"";flex:none;width:5px;height:5px;margin:-3px 1px 0 2px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);opacity:.7}
+#defaultsPop{position:fixed;top:52px;left:14px;z-index:55;width:max-content;max-width:calc(100vw - 28px);background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:var(--r-lg);padding:10px 12px 12px;box-shadow:0 14px 40px rgba(40,35,25,.22);font-size:13px}
+#defaultsPop[hidden]{display:none}
+#defaultsPop .dp-h{margin:0 0 8px;font-size:var(--t3-size);font-weight:600;display:flex;flex-direction:column;gap:1px}
+#defaultsPop .dp-h small{font-size:var(--t5-size);font-weight:400;color:var(--muted)}
+.defaults-grp{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 10px;align-items:center}
+.defaults-grp .dp-l{font-size:var(--t4-size);color:var(--ink-2);white-space:nowrap}
+.defaults-grp .dp-row{display:flex;align-items:center;gap:6px;min-width:0}
+.defaults-grp select{height:var(--h-ctl);min-width:200px;max-width:320px;border:1px solid var(--line-ctl);background:var(--surface-2);border-radius:var(--r-md);padding:0 6px;font:inherit;font-size:12.5px;color:var(--ink)}
+.defaults-grp .dp-row select{flex:1 1 auto}
+.defaults-grp select[hidden]{display:none}
+.defaults-grp #kindHelp{height:var(--h-ctl);padding:0 10px;flex:none}
+/* a label goes with its select when the select is hidden (one agent app, a kind without a model list, no efforts) */
+.defaults-grp .dp-l:has(+select[hidden]),.defaults-grp .dp-l:has(+.dp-row>select[hidden]),.defaults-grp .dp-row:has(>select[hidden]){display:none}
+/* FR-105: the folder filter and Manage folders are one joined control */
+.folder-ctl{display:flex;align-items:center}
+.folder-ctl #foldersBtn{width:32px;padding:0;justify-content:center}
+body:not(.has-bridge) .folder-ctl #foldersBtn{display:none}
+body.has-bridge:not(.simple) .folder-ctl #wsFilter{border-top-right-radius:0;border-bottom-right-radius:0}
+body.has-bridge:not(.simple) .folder-ctl #foldersBtn{border-top-left-radius:0;border-bottom-left-radius:0;border-left-width:0}
 .top-more{position:relative}
 #topMoreBtn{width:34px;padding:0;justify-content:center;font-size:16px;letter-spacing:.05em}
 #topMoreMenu{right:0;left:auto}
@@ -1070,10 +1107,11 @@ html:not([data-ui]) .seg button{border-radius:6px}
 #topMoreMenu .tgl input{margin:2px 2px 0 0;align-self:flex-start}
 
 /* spec 052 FR-027 (#305): the Needs you inbox */
-.inbox-btn{height:32px;padding:0 12px;border-radius:999px;font-size:12.5px;gap:6px;margin-left:auto}
+.inbox-btn{height:32px;padding:0 12px;border-radius:999px;font-size:12.5px;gap:6px}
+/* FR-105: the counters and Needs you sit at the right end of the one row */
+.inbox-btn:not([hidden]),.inbox-btn[hidden]+.stats{margin-left:auto}
 .inbox-btn b{font-variant-numeric:tabular-nums}
 .inbox-btn.attn{background:var(--warn-bg);border-color:#e5be78;color:var(--amber-ink)}
-.inbox-btn+.stats{margin-left:0}
 .inbox-dlg{max-width:760px}
 .inbox-dlg{padding:14px 16px} /* spec 052 FR-096 (round 10): compact rows, about 90 to 100px each */
 .inbox-dlg .dbody{max-height:min(64vh,620px);overflow:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px}
@@ -1100,7 +1138,7 @@ html:not([data-ui]) .seg button{border-radius:6px}
 /* spec 052 FR-031 (#306): Simple hides the developer details; status, permissions and answering are the same */
 body.simple #modelChip,body.simple .mchip,body.simple #agentChip,body.simple #ctxChip,body.simple #compactBtn,body.simple .ph .folder,
 body.simple .room-path,body.simple .room-mcp,body.simple #vscodeBtn,body.simple #copyResBtn,body.simple #mcpBtn,body.simple #toolsHdrBtn,
-body.simple .pusage,body.simple .defaults-grp #modelSel,body.simple .defaults-grp #effortSel{display:none!important}
+body.simple .pusage,body.simple .defaults-grp #modelSel,body.simple .defaults-grp #effortSel,body.simple .defaults-grp .dp-l:is([for="modelSel"],[for="effortSel"]){display:none!important}
 body.simple .lrow .lfold{visibility:hidden} /* spec 052 FR-064: the folder column stays in the grid (display:none moved the next cells under the wrong headers) */
 
 /* spec 052 FR-033: the inbox heading takes focus (a row, not a button) */
@@ -1267,8 +1305,8 @@ html:not([data-ui]) #topBtns button:not([aria-pressed="true"]):hover{background:
 /* FR-070: an empty office shows an empty desk above its sentence */
 .empty-desk{display:block;margin:0 auto 12px;width:120px;height:72px;color:var(--muted)}
 /* FR-070: on first run "+ Folder" rings once (a pseudo-element: opacity and scale, the button keeps its box) */
-#addFolder.ring-once{position:relative}
-#addFolder.ring-once::after{content:"";position:absolute;inset:-3px;border-radius:inherit;border:2px solid var(--sel-border,#7fa0bd);opacity:0;pointer-events:none;animation:ringonce 1.4s ease-out 1 both}
+#newBtn.ring-once{position:relative}
+#newBtn.ring-once::after{content:"";position:absolute;inset:-3px;border-radius:inherit;border:2px solid var(--sel-border,#7fa0bd);opacity:0;pointer-events:none;animation:ringonce 1.4s ease-out 1 both}
 @keyframes ringonce{0%{opacity:.8;transform:scale(.96)}100%{opacity:0;transform:scale(1.22)}}
 /* FR-069: Serious mode stops every looping animation (idle bob and nod, typing hands, steam, bars, halos, waving, thinking dots,
    carets, walking bob, mood signs). One-shot signals (the done tick, the waiting pings, the pops) stay. The busy spinner stays: it is a progress sign. */

@@ -17,30 +17,27 @@
     <div class="brand-mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="var(--brand-mark,#4f7f65)" stroke-width="1.7" stroke-linejoin="round"><rect x="2.5" y="2.5" width="6" height="7" rx="1.5"/><rect x="11.5" y="2.5" width="6" height="4" rx="1.5"/><rect x="11.5" y="9" width="6" height="8.5" rx="1.5"/><rect x="2.5" y="12.5" width="6" height="5" rx="1.5"/></svg></div>
     <div><h1>Agent Durbar</h1><span class="proto" id="protoBadge">Demo: sample data</span></div>
   </div>
-  <!-- spec 052 FR-027 (#305): the Needs you inbox -->
-  <button class="btn inbox-btn" id="inboxBtn" type="button" data-keys-text title="Needs you: every request in one queue (I or Ctrl+Shift+A). N or Ctrl+Shift+N opens the next agent." aria-keyshortcuts="Control+Shift+A I" hidden><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M2 9.5l1.6-5.2A1.4 1.4 0 0 1 5 3.3h6a1.4 1.4 0 0 1 1.4 1l1.6 5.2v2.8a1.4 1.4 0 0 1-1.4 1.4H3.4A1.4 1.4 0 0 1 2 12.3z"/><path d="M2 9.5h3.2l.9 1.6h3.8l.9-1.6H14"/></svg>Needs you <b>0</b></button>
-  <div class="stats" id="stats" role="group" aria-label="Agent status counts. Select one to filter. Press N for the next agent that needs you." title="Select a count to filter. Press N for the next agent that needs you."></div>
+  <!-- spec 052 FR-105 (round 11): one row. Create, the defaults chip, floors, the folder filter, Tools and Settings, the view, ⋯; the counters on the right -->
   <div class="controls">
     <div id="liveBar">
-      <button class="btn" id="addFolder" type="button" title="Add a folder">+ Folder</button>
-      <button class="btn" id="addWs" type="button" title="Add a VS Code workspace (.code-workspace file)">+ Workspace</button>
-      <!-- spec 052 #308: the defaults for new sessions, one quiet group (each agent shows its own values in its chat) -->
-      <div class="defaults-grp" role="group" aria-label="Defaults for new sessions" title="Defaults for new sessions">
-        <label class="sr-only" for="kindSel">Default agent app for new folders and sessions</label>
-        <select id="kindSel" title="Agent app for new folders and sessions" style="max-width:128px" hidden></select>
-        <button class="btn" id="kindHelp" type="button" aria-label="About agent apps" title="About agent apps" style="padding:0 8px" hidden>?</button>
-        <label class="sr-only" for="permMode">Default permission mode for new sessions</label>
-        <select id="permMode" title="Default permission mode for new sessions. Each agent shows its own mode in its chat."><option value="read-only">New: Read-only</option><option value="ask">New: Ask first</option><option value="allow">New: Allow all</option></select>
-        <label class="sr-only" for="modelSel">Default model for new sessions</label>
-        <select id="modelSel" title="Default model for new sessions (what your account offers). Each agent shows its own model in its chat."><option value="auto">Model: Auto</option></select>
-        <label class="sr-only" for="effortSel">Reasoning effort for new sessions</label>
-        <select id="effortSel" title="Reasoning effort (only for models that support it)" hidden></select>
+      <!-- FR-105: "+ New" holds the two add actions (their ids are kept, so drivers and the palette still find them) -->
+      <div class="top-new">
+        <button class="btn" id="newBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="newMenu" title="Add a folder or a VS Code workspace">+ New</button>
+        <div class="more-menu" id="newMenu" role="menu" aria-label="New" hidden>
+          <button class="more-it" role="menuitem" tabindex="-1" id="addFolder" type="button" title="Add a folder"><span class="mt">Add folder…<small>A folder on this computer becomes a room</small></span></button>
+          <button class="more-it" role="menuitem" tabindex="-1" id="addWs" type="button" title="Add a VS Code workspace (.code-workspace file)"><span class="mt">Add VS Code workspace…<small>A .code-workspace file and its folders</small></span></button>
+        </div>
       </div>
-      <button class="btn" id="foldersBtn" type="button" aria-haspopup="true" aria-expanded="false" title="Manage folders: new session, hide, remove">Folders</button>
+      <!-- spec 052 #308, FR-105: the defaults for new sessions, one chip; its popover (#defaultsPop, after the header) holds the selects with their ids -->
+      <button class="btn" id="defaultsBtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="defaultsPop" title="Defaults for new sessions. Each agent shows its own values in its chat."><span class="dv">Defaults</span></button>
       <button class="btn" id="floorsBtn" type="button" aria-haspopup="true" aria-expanded="false" title="Floors: groups of folders you can switch off" hidden></button>
     </div>
-    <label class="select-wrap"><span class="sr-only">Filter by folder</span>
-      <select id="wsFilter"></select></label>
+    <!-- FR-105: one folder control: the filter, and the button that manages folders (new session, hide, remove) -->
+    <div class="folder-ctl" role="group" aria-label="Folders">
+      <label class="select-wrap"><span class="sr-only">Filter by folder</span>
+        <select id="wsFilter"></select></label>
+      <button class="btn" id="foldersBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Manage folders" title="Manage folders: new session, hide, remove"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/><circle cx="5.5" cy="4" r="1.4" fill="currentColor"/><circle cx="10.5" cy="8" r="1.4" fill="currentColor"/><circle cx="6.5" cy="12" r="1.4" fill="currentColor"/></svg></button>
+    </div>
     <div class="seg" id="topBtns" role="group" aria-label="Tools and settings">
       <button id="toolsBtn" type="button" aria-pressed="false" title="Which tools agents used and how often; models and context window per agent">Tools</button>
       <button id="settingsBtn" type="button" aria-pressed="false" title="Settings: MCP servers for all agents">Settings</button>
@@ -67,7 +64,25 @@
       </div>
     </div>
   </div>
+  <!-- spec 052 FR-027 (#305): the Needs you inbox -->
+  <button class="btn inbox-btn" id="inboxBtn" type="button" data-keys-text title="Needs you: every request in one queue (I or Ctrl+Shift+A). N or Ctrl+Shift+N opens the next agent." aria-keyshortcuts="Control+Shift+A I" hidden><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M2 9.5l1.6-5.2A1.4 1.4 0 0 1 5 3.3h6a1.4 1.4 0 0 1 1.4 1l1.6 5.2v2.8a1.4 1.4 0 0 1-1.4 1.4H3.4A1.4 1.4 0 0 1 2 12.3z"/><path d="M2 9.5h3.2l.9 1.6h3.8l.9-1.6H14"/></svg><span class="ib-word">Needs you</span> <b>0</b></button>
+  <div class="stats" id="stats" role="group" aria-label="Agent status counts. Select one to filter. Press N for the next agent that needs you." title="Select a count to filter. Press N for the next agent that needs you."></div>
 </header>
+<!-- spec 052 #308, FR-105: the defaults for new sessions (each agent shows its own values in its chat); opened from the Defaults chip -->
+<div id="defaultsPop" role="dialog" aria-label="Defaults for new sessions" hidden>
+  <p class="dp-h">Defaults for new sessions <small>Each agent shows its own values in its chat</small></p>
+  <div class="defaults-grp" role="group" aria-label="Defaults for new sessions">
+    <label class="dp-l" for="kindSel">Agent app</label>
+    <div class="dp-row"><select id="kindSel" title="Agent app for new folders and sessions" hidden></select>
+      <button class="btn" id="kindHelp" type="button" aria-label="About agent apps" title="About agent apps" hidden>?</button></div>
+    <label class="dp-l" for="permMode">Permission mode</label>
+    <select id="permMode" title="Default permission mode for new sessions. Each agent shows its own mode in its chat."><option value="read-only">New: Read-only</option><option value="ask">New: Ask first</option><option value="allow">New: Allow all</option></select>
+    <label class="dp-l" for="modelSel">Model</label>
+    <select id="modelSel" title="Default model for new sessions (what your account offers). Each agent shows its own model in its chat."><option value="auto">Model: Auto</option></select>
+    <label class="dp-l" for="effortSel">Reasoning effort</label>
+    <select id="effortSel" title="Reasoning effort (only for models that support it)" hidden></select>
+  </div>
+</div>
 <!-- spec 052 FR-015: the restored-Allow-all notice, a strip that takes its own room (nothing is covered) -->
 <div class="notice-strip" id="restoreStrip" role="alert" hidden></div>
 <!-- spec 052 FR-089: Since you were away (shown once after more than 30 minutes closed; dismissible) -->

@@ -45,7 +45,9 @@ The chrome (chat, screens, dialogs, inbox, menus) uses one type scale and one sp
 ## How to check
 
 - Minimum text size is **10.5px**, everywhere, in every theme.
-- 15 agents must fit at 1440x900 and 1280x800 without overlap or scrolling the office. Do not change the size of desk cards, rooms, room headers, the top bar or the lobby.
+- 15 agents must fit at 1440x900 and 1280x800 without overlap or scrolling the office. Do not change the size of desk cards, rooms, room headers or the lobby.
+- The top bar is **one row of 48px** (spec 052 FR-105, round 11): brand, + New, Defaults chip, Floors, folder filter with Manage folders, Tools and Settings, Office / List, ⋯, then Needs you and the counters on the right. It must stay on one row at 1280px wide with floors and several agent apps, measured in DejaVu Sans (CI's font). A new control goes into an existing menu (+ New, ⋯) or popover (Defaults), not onto the row; if one must be added, make room with the width rules in `styles.css` (counters as dot and number, Needs you as icon and number, the chip's cap) and re-measure. Themes only recolour it.
+- Room walls, lobby places and helper connectors are 1px (FR-106).
 - `npm run check:geometry` (every theme lays out like Clean Office) and `npm run check:office` (no overlap at both sizes) guard those sizes; run them for any change to the office or the top bar.
 - `npm run typecheck && npm run build && npm test` before every pull request.
 - For UI changes, take screenshots with the simulator (`DURBAR_SIM=15 npm start`) at 1440x900 and 1280x800, as `AGENTS.md` describes.
