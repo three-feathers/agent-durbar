@@ -99,7 +99,11 @@ void (async () => {
       return { status: r.status, detail: r.detail, calls: c.authCalls };
     };
     let r = await run(() => undefined);
-    assert.deepStrictEqual([r.status, r.calls], ['signed-in', ['getAuthStatus', 'account.getQuota']]);
+    assert.deepStrictEqual([r.status, r.calls], ['signed-in', ['getAuthStatus', 'account.getQuota', 'models.list']], 'quota, then the free model list');
+    // FR-156 delta (real 2026-10-20): signed in to GitHub but Copilot not enabled: the quota call passes, every model call is 403
+    r = await run((c) => { c.modelsFail = 'Request models.list failed with message: GenericFailure, {"kind":"http","status":403,"body":"unauthorized: not authorized to use this Copilot feature"}'; });
+    assert.strictEqual(r.status, 'unknown', 'no Copilot access is neither signed in nor signed out');
+    assert.match(String(r.detail), /^Signed in to GitHub, but this account has no Copilot access yet/);
     assert.ok(!/someone/.test(r.detail ?? ''), 'the login name never leaves the adapter');
     r = await run((c) => { c.authenticated = false; });
     assert.deepStrictEqual([r.status, r.calls], ['signed-out', ['getAuthStatus']], 'no server call when there is no local sign-in');

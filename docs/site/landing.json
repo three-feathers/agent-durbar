@@ -8,7 +8,7 @@
     "caption": "Simulator demo data: names, costs and tasks are invented.",
     "nameNote": "Why “Durbar”? A durbar is a royal court where everyone gets a hearing. Here your agents are the court, and you decide who gets your attention."
   },
-  "status": "Alpha · unsigned · run by hand on Linux only; the macOS and Windows builds are made in CI but not tried by hand yet.",
+  "status": "Alpha · unsigned · used by hand on Linux and on real Macs; Windows only in CI so far (builds start on all three, and real-account end-to-end runs pass on all three, 9 of 9, in review).",
   "cards": [
     {
       "title": "Never miss a waiting agent",
@@ -99,17 +99,17 @@
     {
       "name": "GitHub Copilot",
       "verified": "Checked on a real account since the first milestone, with the Copilot runtime from the official SDK and your own login.",
-      "notYet": "Not seen yet: switching between two real models, the long-context tier and a real credit cap being reached."
+      "notYet": "On Copilot Pro (2026-10-20, in review): switching between two real models, the long-context tier and compact-and-switch work. Copilot's own runtime does not stop at a spending limit, so Durbar is getting its own stop (in review)."
     },
     {
       "name": "Claude Code",
       "verified": "Checked on a real account: every mode, stop, resume, models, questions, MCP, sub-agents, the cost limit and summaries.",
-      "notYet": "Not verified yet on real macOS or Windows machines."
+      "notYet": "Installed, signed in and answering on Linux, macOS and Windows CI machines (end-to-end run, in review); not yet used by hand on a Windows PC."
     },
     {
       "name": "OpenAI Codex",
-      "verified": "Checked on a real account on Linux: every mode, resume, models, history, questions, MCP tools, sub-agents and summaries.",
-      "notYet": "Not verified yet on macOS or Windows; on Ubuntu 24.04+ Read-only and Ask first need an AppArmor profile."
+      "verified": "Checked on a real account: every mode, resume, models, history, questions, MCP tools, sub-agents and summaries; signed in with an API key and answering on Linux, macOS and Windows CI machines (in review).",
+      "notYet": "Read-only and Ask first need Codex's own sandbox: on Ubuntu 24.04+ that takes an AppArmor profile, and on Windows Codex's elevated sandbox. Not yet used by hand on a Windows PC."
     }
   ],
   "safety": [
