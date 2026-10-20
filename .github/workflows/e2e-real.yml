@@ -1,0 +1,75 @@
+name: E2E real accounts
+
+# spec 062: on every supported OS (.github/platforms.json), install each agent app the way Durbar does, sign in with the CI
+# account's secrets, list models and run one tiny read-only turn, through Durbar's own adapters (scripts/e2e-real.ts).
+# USES A FEW CREDITS (one one-line prompt per app per OS). NEVER on pull_request: PR code never runs with these secrets.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 5 * * 1' # weekly, Monday 05:17 UTC
+  push:
+    branches: [main, 062-ci-real-e2e] # TEMPORARY: the branch entry is for the first verification run; removed before merge
+    paths:
+      - 'src/adapters/**'
+      - 'src/main/harnesssetup.ts'
+      - 'src/main/officialinstall.ts'
+      - 'src/shared/harnesssetup.ts'
+      - 'scripts/e2e-real.ts'
+      - '.github/workflows/e2e-real.yml'
+      - '.github/platforms.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-real
+  cancel-in-progress: false
+
+jobs:
+  platforms:
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.p.outputs.list }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: p
+        run: echo "list=$(jq -c . .github/platforms.json)" >> "$GITHUB_OUTPUT"
+
+  e2e:
+    name: E2E (${{ matrix.os }})
+    needs: platforms
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(needs.platforms.outputs.list) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc -p tsconfig.scripts.json
+      # the only step that sees the secrets; the script prints nothing of them (redact, stdin for the Codex key)
+      - name: Install, sign in, list models, one turn
+        shell: bash
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_CODEX_GITHUB_FINE_GRAINED_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: node dist-scripts/scripts/e2e-real.js "$RUNNER_TEMP/e2e.json" | tee "$RUNNER_TEMP/e2e.md"
+      - name: Summary
+        if: always()
+        shell: bash
+        run: '[ -f "$RUNNER_TEMP/e2e.md" ] && sed -n "/^### E2E/,\$p" "$RUNNER_TEMP/e2e.md" >> "$GITHUB_STEP_SUMMARY" || true'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: e2e-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/e2e.json
+            ${{ runner.temp }}/e2e.md
+          retention-days: 30
+          if-no-files-found: ignore
