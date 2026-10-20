@@ -36,6 +36,7 @@ import { redact } from '../shared/redact';
 import { sessionIdOk } from '../shared/sessionid';
 import { HANDOFF_PROMPT, cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
+import { isObj } from '../shared/guards';
 
 const CODEX_ID = 'codex';
 const CODEX_NAME = 'OpenAI Codex';
@@ -58,7 +59,7 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpStatus: true, // FR-147: mcpServerStatus/list and startup notifications
   mcpToggle: true, // FR-147: from the next message (fresh child, same thread)
   handoff: true, // spec 030 FR-034: an ephemeral fork, the thread is not changed
-  renameSession: 'any', // spec 059 FR-007: thread/name/set on the live child or a short-lived app-server (read: upstream source only, not run)
+  renameSession: 'any', // spec 059 FR-007: thread/name/set on the live child or a short-lived app-server (real 2026-10-20: codex resume lists the name once the thread has had a turn)
   deleteSession: true, // spec 006 FR-028: thread/delete (hard delete; read: upstream app-server protocol, Codex 0.163; never run on a real thread)
   oneShot: true, // spec 040 FR-015: an ephemeral read-only thread in an empty temp folder
 });
@@ -180,7 +181,6 @@ export function codexModelFlag(model: string | undefined): boolean {
 }
 
 const isShim = (file: string): boolean => /\.(cmd|bat)$/i.test(file);
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 /** A short, single-line reason: control characters stripped, 300 characters at most (server text is never trusted to be small or clean). */
 const reasonOf = (e: unknown): string => (e instanceof Error ? e.message : String(e)).replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').slice(0, 300);
 

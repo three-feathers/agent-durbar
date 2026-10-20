@@ -13,6 +13,7 @@
  */
 const path = require('path');
 const assert = require('assert');
+const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
 const OUT = process.env.OUT || require('os').tmpdir();
 const INDEX = path.join(process.cwd(), 'dist', 'renderer', 'index.html');
 const Q = { sim: '15', simfreeze: '1', simkinds: 'mixed', simtitles: '1' };
@@ -22,23 +23,23 @@ const LONG = 'Sixty characters long name for the layout check, ends here..';
 module.exports = async (ctx) => {
   const js = async (c) => { try { return await ctx.js(c); } catch (e) { console.log('JS ERR for', c.slice(0, 120)); throw e; } };
   const shot = async (name) => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(300); await ctx.shot(path.join(OUT, name)); console.log('[rename] saved', name); };
-  const key = async (k) => js(`(()=>{const t=document.activeElement||document.body;const e=new KeyboardEvent('keydown',{key:${JSON.stringify(k)},bubbles:true,cancelable:true});t.dispatchEvent(e);return e.defaultPrevented})()`);
+  const key = async (k) => js(`(()=>{const t=document.activeElement||document.body;const e=new KeyboardEvent('keydown',{key:${jsLiteral(k)},bubbles:true,cancelable:true});t.dispatchEvent(e);return e.defaultPrevented})()`);
   const dlg = () => js(`(()=>{const d=document.getElementById('modeDlg');if(!d)return null;const i=d.querySelector('#mdIn'),e=d.querySelector('#mdErr');return {title:d.querySelector('h3').textContent,lines:[...d.querySelectorAll('.dlist li')].map(x=>x.textContent),value:i.value,sel:[i.selectionStart,i.selectionEnd],max:i.maxLength,err:e&&!e.hidden?e.textContent:'',focus:document.activeElement===i,btns:[...d.querySelectorAll('.btn')].map(b=>b.textContent+(b.classList.contains('primary')?'*':''))}})()`);
-  const type = (v) => js(`(()=>{const i=document.getElementById('mdIn');i.value=${JSON.stringify(v)};i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+  const type = (v) => js(`(()=>{const i=document.getElementById('mdIn');i.value=${jsLiteral(v)};i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
   const openFromMore = async (id) => {
-    await js(`document.querySelector('#stage [data-id="${id}"], #list [data-id="${id}"]').click()`); await ctx.sleep(500);
+    await js(`document.querySelector(${jsLiteral(`#stage [data-id="${id}"], #list [data-id="${id}"]`)}).click()`); await ctx.sleep(500);
     await js(`document.getElementById('moreBtn').click()`); await ctx.sleep(200);
     await js(`document.getElementById('renameSessBtn').click()`); await ctx.sleep(300);
   };
   const closePanel = async () => { await js(`(()=>{const b=document.getElementById('backBtn');if(b)b.click();})()`); await ctx.sleep(300); };
-  const names = (id) => js(`(()=>{const a=__durbarSimUi.agents().find(x=>x.id===${JSON.stringify(id)});const d=document.querySelector('#stage .desk[data-id="${id}"] .name');return {name:a.name,alias:a.alias||'',card:d?d.textContent:null,cardTip:d?d.getAttribute('title')||'':null}})()`);
+  const names = (id) => js(`(()=>{const a=__durbarSimUi.agents().find(x=>x.id===${jsLiteral(id)});const d=document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"] .name`)});return {name:a.name,alias:a.alias||'',card:d?d.textContent:null,cardTip:d?d.getAttribute('title')||'':null}})()`);
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     for (const level of ['expert', 'simple']) {
       ctx.win.setContentSize(w, h);
       await ctx.win.loadFile(INDEX, { query: Q });
       await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-      await js(`localStorage.setItem('durbar.detail',${JSON.stringify(level)})`);
+      await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)})`);
       await ctx.win.loadFile(INDEX, { query: Q });
       await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
       await ctx.sleep(1800);
@@ -58,7 +59,7 @@ module.exports = async (ctx) => {
         assert.ok(re.test(d.lines[0]), `${tag}: ${kind}: dialog line "${d.lines[0]}"`);
         assert.ok(kind !== 'claude' || /\/resume list.*by its id/.test(d.lines[0]), `${tag}: the Claude line says where the name shows: ${d.lines[0]}`);
         assert.strictEqual(d.max, 60);
-        assert.ok(d.focus && d.sel[0] === 0 && d.sel[1] === d.value.length, `${tag}: ${kind}: the field is focused and fully selected: ${JSON.stringify(d)}`);
+        assert.ok(d.focus && d.sel[0] === 0 && d.sel[1] === d.value.length, `${tag}: ${kind}: the field is focused and fully selected: ${jsLiteral(d)}`);
         assert.deepStrictEqual(d.btns, ['Cancel', 'Rename*']);
         if (id === 'sim-1' && w === 1440 && level === 'expert') await shot('059-rename-dialog-1440x900.png');
         if (id === 'sim-1' && w === 1280 && level === 'simple') await shot('059-rename-dialog-simple-1280x800.png');
@@ -74,13 +75,13 @@ module.exports = async (ctx) => {
       await openFromMore('sim-1');
       await type('x'.repeat(61)); await key('Enter'); await ctx.sleep(200);
       let d = await dlg();
-      assert.ok(d && d.err === 'Use 1 to 60 characters.' && d.focus, `${tag}: a 61-character name is refused under the field: ${JSON.stringify(d)}`);
+      assert.ok(d && d.err === 'Use 1 to 60 characters.' && d.focus, `${tag}: a 61-character name is refused under the field: ${jsLiteral(d)}`);
       await type('bad\u0007name'); await key('Enter'); await ctx.sleep(200);
       d = await dlg();
-      assert.ok(d && d.err === 'Remove control or hidden characters.', `${tag}: control characters are refused: ${JSON.stringify(d)}`);
+      assert.ok(d && d.err === 'Remove control or hidden characters.', `${tag}: control characters are refused: ${jsLiteral(d)}`);
       await type('ghp_abcdefghijklmnopqrstuvwxyz0123456789'); await key('Enter'); await ctx.sleep(200);
       d = await dlg();
-      assert.ok(d && /secret/.test(d.err), `${tag}: a token-looking name is refused: ${JSON.stringify(d)}`);
+      assert.ok(d && /secret/.test(d.err), `${tag}: a token-looking name is refused: ${jsLiteral(d)}`);
 
       // 3. an HTML-looking name: saved with Enter, shown as text everywhere, nothing runs
       const runtimeTitle = (await names('sim-1')).name; // the sim title of the first agent
@@ -101,12 +102,12 @@ module.exports = async (ctx) => {
         await js(`document.getElementById('moreBtn').click()`); await ctx.sleep(150);
         await js(`document.getElementById('schedHdrBtn').click()`); await ctx.sleep(400);
         const sc = await js(`(()=>{const sel=document.getElementById('scTarget');const o=sel.querySelector('option[value]:not([value=""])');sel.value=o.value;sel.dispatchEvent(new Event('change',{bubbles:true}));const h=document.getElementById('scToHint');return {opt:o.textContent,hidden:h.hidden,text:h.textContent,tip:h.title}})()`);
-        assert.ok(sc.opt === 'This session' && !sc.hidden && sc.text === EVIL && sc.tip === EVIL, `${tag}: the Schedules hint shows the display name as text: ${JSON.stringify(sc)}`);
+        assert.ok(sc.opt === 'This session' && !sc.hidden && sc.text === EVIL && sc.tip === EVIL, `${tag}: the Schedules hint shows the display name as text: ${jsLiteral(sc)}`);
         await js(`document.getElementById('scClose').click()`); await ctx.sleep(200);
       }
       await closePanel(); await ctx.sleep(300);
       const n1b = await names('sim-1');
-      assert.strictEqual(n1b.card, EVIL, `${tag}: the desk card shows the name as text: ${JSON.stringify(n1b)}`);
+      assert.strictEqual(n1b.card, EVIL, `${tag}: the desk card shows the name as text: ${jsLiteral(n1b)}`);
       assert.ok(!n1b.cardTip.includes('Fix login bug') && n1b.cardTip.startsWith(EVIL), `${tag}: the card tooltip has the name, no runtime title: ${n1b.cardTip}`);
       // list view
       await js(`document.getElementById('vList').click()`); await ctx.sleep(500);
@@ -122,13 +123,13 @@ module.exports = async (ctx) => {
       await openFromMore('sim-1');
       await type(''); await key('Enter'); await ctx.sleep(400);
       let n2 = await names('sim-1');
-      assert.ok(n2.alias === '' && n2.name !== EVIL, `${tag}: an empty name resets: ${JSON.stringify(n2)}`);
+      assert.ok(n2.alias === '' && n2.name !== EVIL, `${tag}: an empty name resets: ${jsLiteral(n2)}`);
       await closePanel();
       await openFromMore('sim-1');
       await type(LONG); await key('Enter'); await ctx.sleep(400);
       assert.strictEqual([...LONG].length, 60);
       const fit = await js(`(()=>{const R=e=>e.getBoundingClientRect();const t=R(document.getElementById('panelTitle')),a=R(document.querySelector('#panelHead .actions'));return {titleRight:t.right,actLeft:a.left,overlap:t.right>a.left+0.5&&t.bottom>R(document.querySelector('#panelHead .actions')).top&&t.top<R(document.querySelector('#panelHead .actions')).bottom,inView:t.right<=innerWidth}})()`);
-      assert.ok(!fit.overlap && fit.inView, `${tag}: the 60-character name fits the header: ${JSON.stringify(fit)}`);
+      assert.ok(!fit.overlap && fit.inView, `${tag}: the 60-character name fits the header: ${jsLiteral(fit)}`);
       await closePanel();
 
       // 5. the card menu has Rename…
@@ -150,17 +151,17 @@ module.exports = async (ctx) => {
       // 6. Previous sessions rows (the row menu is spec 006 FR-027; here the function it calls)
       const pa = await js(`(()=>{const a=__durbarSimUi.agents().find(x=>x.live&&!x.parent&&x.info&&x.info.cwd==='~/work/mcp-swiss');return a?a.id:null})()`);
       assert.ok(pa, `${tag}: an agent in the folder with Previous sessions`);
-      await js(`document.querySelector('#stage [data-id="${pa}"]').click()`); await ctx.sleep(700);
+      await js(`document.querySelector(${jsLiteral(`#stage [data-id="${pa}"]`)}).click()`); await ctx.sleep(700);
       await js(`(()=>{const b=document.getElementById('prevBtn');if(b&&b.getAttribute('aria-expanded')!=='true')b.click();})()`); await ctx.sleep(400);
-      await js(`setTimeout(()=>__durbarSimUi.renamePrevRow(__durbarSimUi.agents().find(x=>x.id===${JSON.stringify(pa)}),'prev-1',document.getElementById('prevBtn')),0)`); await ctx.sleep(400);
+      await js(`setTimeout(()=>__durbarSimUi.renamePrevRow(__durbarSimUi.agents().find(x=>x.id===${jsLiteral(pa)}),'prev-1',document.getElementById('prevBtn')),0)`); await ctx.sleep(400);
       d = await dlg();
-      assert.ok(d && d.value === 'Rename the filings handler and update its tests'.slice(0, 60), `${tag}: the row dialog starts from the row title: ${JSON.stringify(d)}`);
+      assert.ok(d && d.value === 'Rename the filings handler and update its tests'.slice(0, 60), `${tag}: the row dialog starts from the row title: ${jsLiteral(d)}`);
       await type(EVIL); await key('Enter'); await ctx.sleep(500);
-      const row = await js(`(()=>{const r=[...document.querySelectorAll('.prev-row .prev-t')].find(b=>b.textContent===${JSON.stringify(EVIL)});return r?r.parentElement.getAttribute('title'):null})()`);
+      const row = await js(`(()=>{const r=[...document.querySelectorAll('.prev-row .prev-t')].find(b=>b.textContent===${jsLiteral(EVIL)});return r?r.parentElement.getAttribute('title'):null})()`);
       assert.strictEqual(row, EVIL, `${tag}: the Previous row shows the name as text`);
       assert.strictEqual(await js(`document.querySelectorAll('img[src="x"]').length`), 0);
       await js(`(()=>{const q=document.getElementById('prevQ');if(q){q.value='onerror';q.dispatchEvent(new Event('input',{bubbles:true}));}})()`); await ctx.sleep(300);
-      assert.ok(await js(`[...document.querySelectorAll('.prev-row .prev-t')].some(b=>b.textContent===${JSON.stringify(EVIL)})`), `${tag}: the search finds the row by its name`);
+      assert.ok(await js(`[...document.querySelectorAll('.prev-row .prev-t')].some(b=>b.textContent===${jsLiteral(EVIL)})`), `${tag}: the search finds the row by its name`);
       await js(`(()=>{const q=document.getElementById('prevQ');if(q){q.value='';q.dispatchEvent(new Event('input',{bubbles:true}));}})()`);
       await closePanel();
       console.log(`[rename] ${tag} ok`);

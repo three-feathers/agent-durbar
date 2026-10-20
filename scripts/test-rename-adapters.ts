@@ -122,19 +122,30 @@ async function copilotRaces(): Promise<void> {
     assert.ok(ad.isLive('race-1'), 'the started session is live');
     assert.ok(!names(fake.last.calls).includes('disconnect'), 'and was not disconnected by the rename');
   }
-  // an auto title right after a rename does not reach Durbar; the next one after an idle does
+  // spec 059 FR-011: after a rename no other title reaches Durbar while the session is open (not even after an idle or a compaction);
+  // the same title confirms; and only the title event is skipped: usage and cap events still reach trackCap and map
   {
     const fake = new FakeClient();
     const ad = new TestAdapter(fake);
     const events: AgentEvent[] = [];
     ad.onEvent((e) => events.push(e));
+    let tracked = 0;
+    const orig = (ad as unknown as { trackCap: (...a: unknown[]) => void }).trackCap.bind(ad);
+    (ad as unknown as { trackCap: (...a: unknown[]) => void }).trackCap = (...a) => { tracked++; orig(...a); };
     const sid = await ad.start({ workspace: ws, quiet: true });
     await ad.renameSession(sid, 'Mine');
+    const titles = (): string[] => events.filter((e) => e.type === 'title').map((e) => (e as { title: string }).title);
     fake.last.fire('session.title_changed', { title: 'Auto made title' });
-    assert.strictEqual(events.filter((e) => e.type === 'title').length, 0, 'ignored right after a rename');
+    assert.strictEqual(titles().length, 0, 'ignored right after a rename');
+    const before = tracked;
+    fake.last.fire('assistant.usage', { copilotUsage: { totalNanoAiu: 5 } });
+    fake.last.fire('session.usage_checkpoint', { totalNanoAiu: 9 });
+    assert.strictEqual(tracked, before + 2, 'usage events still reach trackCap');
     fake.last.fire('session.idle', {});
-    fake.last.fire('session.title_changed', { title: 'Renamed in the CLI' });
-    assert.deepStrictEqual(events.filter((e) => e.type === 'title').map((e) => (e as { title: string }).title), ['Renamed in the CLI'], 'later titles pass again');
+    fake.last.fire('session.title_changed', { title: 'Auto title after compaction' });
+    assert.strictEqual(titles().length, 0, 'still ignored after an idle: the user name stands');
+    fake.last.fire('session.title_changed', { title: 'Mine' });
+    assert.deepStrictEqual(titles(), ['Mine'], 'the same title is a confirmation');
   }
 }
 
@@ -263,6 +274,44 @@ async function claude(): Promise<void> {
     assert.deepStrictEqual(sp.calls[1].args.slice(-4), ['--name', 'Second', '--resume', SID]);
     await until('title', () => events.find((e) => e.type === 'title'));
     assert.strictEqual((events.filter((e) => e.type === 'title').pop() as { title: string }).title, 'Second');
+    await ad.stop(SID);
+  }
+  // spec 059 + 054 FR-062: rename while Remote Control is on: the relaunch carries `--name <n>` and only then is the remote_control request sent to the new process
+  {
+    const sp = fakeSpawn();
+    const order: string[] = [];
+    let child = 0;
+    sp.next = (c) => {
+      const me = ++child;
+      order.push(`spawn ${me}`);
+      c.onWrite = (o) => {
+        const sub = (o.request as { subtype?: string } | undefined)?.subtype;
+        if (o.type === 'control_request') {
+          if (sub === 'remote_control') order.push(`remote_control ${me} ${(o.request as { enabled?: unknown }).enabled}`);
+          const response = sub === 'remote_control' ? { session_url: 'https://claude.ai/code/session_01FAKE' } : {};
+          setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response } }), 0);
+        } else if (o.type === 'user') setTimeout(() => okTurn(c), 0);
+      };
+    };
+    const ad = new ClaudeAdapter({
+      claudePath: async () => '/usr/local/bin/claude',
+      makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }),
+      sessionExists: () => true,
+      claudeMd: () => undefined,
+      env: () => ({ PATH: '/usr/bin' }),
+    });
+    const events: AgentEvent[] = [];
+    ad.onEvent((e) => events.push(e));
+    await ad.start({ workspace: ws, permissionMode: 'read-only', resumeSessionId: SID, quiet: true });
+    await ad.send(SID, { text: 'one' });
+    await until('first turn', () => events.find((e) => e.type === 'usage' || (e.type === 'status' && e.status === 'idle')));
+    await tick(30);
+    assert.deepStrictEqual(await ad.setRemote!(SID, true), { ok: true, on: true, steerable: true, url: 'https://claude.ai/code/session_01FAKE' });
+    await ad.renameSession(SID, 'Both');
+    await ad.send(SID, { text: 'two' });
+    await until('relaunch with remote back on', () => (order.includes('remote_control 2 true') ? true : undefined));
+    assert.deepStrictEqual(sp.calls[1].args.slice(-4), ['--name', 'Both', '--resume', SID]);
+    assert.deepStrictEqual(order.filter((x) => x !== 'remote_control 1 true' && !x.endsWith('false')), ['spawn 1', 'spawn 2', 'remote_control 2 true'], 'relaunch with --name first, then remote_control');
     await ad.stop(SID);
   }
   // the SDK transport (dev opt-in) does not apply --name: no capability, no member, and the descriptor says the same

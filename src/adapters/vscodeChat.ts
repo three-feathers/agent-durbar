@@ -18,6 +18,7 @@ import { promises as fsp } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { normDir } from './history';
+import { isObj } from '../shared/guards';
 
 export const VSCODE_CHAT_FORMAT_NOTE =
   'VS Code keeps chat history in an internal, undocumented format (known: version 3, VS Code 1.109+ append log and older flat JSON). It can change in any VS Code update; unknown parts are skipped.';
@@ -29,7 +30,6 @@ const MAX_REQUESTS_SHOWN = 300;
 const MAX_TEXT_CHARS = 20_000;
 const MAX_TOTAL_CHARS = 1_500_000;
 
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
 /* ------------------------------------------------------------------ where VS Code keeps its data ------------------------------------------------------------------ */
 

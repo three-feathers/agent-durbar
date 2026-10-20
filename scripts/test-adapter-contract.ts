@@ -18,7 +18,6 @@ import type { PermissionLike } from '../src/adapters/permissions';
 import type { AgentAdapter, AgentEvent, PermissionInfo, PermissionMode } from '../src/adapters/types';
 import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
 import { offeredDescriptors } from '../src/adapters/experimental';
-import { CODEX_EXPERIMENTAL_DESCRIPTORS } from '../src/adapters/experimentalCodex';
 import { CodexAdapter } from '../src/adapters/codex';
 import { FakeCodexServer } from './fakes/codex-app-server';
 import { ClaudeAdapter, claudeArgs } from '../src/adapters/claude';
@@ -575,7 +574,7 @@ async function main(): Promise<void> {
 
   // ---- FR-085 (spec 012 T026): C6 (modes) and C7 (stop denies pending) ran once for the fake and for every registered adapter, so a new adapter cannot skip them.
   // A registered or experimental adapter without a contract run above fails here: add its run when it is added.
-  for (const id of ['fake-full', ...PRODUCTION_DESCRIPTORS.map((d) => d.id), ...offeredDescriptors({}).map((d) => d.id), ...CODEX_EXPERIMENTAL_DESCRIPTORS.map((d) => d.id)]) {
+  for (const id of ['fake-full', ...PRODUCTION_DESCRIPTORS.map((d) => d.id), ...offeredDescriptors({}).map((d) => d.id)]) {
     const r = reports.get(id);
     assert.ok(r, `FR-085: no contract run for the registered adapter ${id}`);
     for (const c of ['C6', 'C7']) assert.strictEqual(r.ran.filter((x) => x === c).length, 1, `FR-085: ${c} ran exactly once for ${id}`);

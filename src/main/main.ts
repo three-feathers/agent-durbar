@@ -1031,6 +1031,17 @@ const remoteOps = createRemoteOps({
 router.onEvent((e) => {
   if (e.type === 'status' && e.status === 'stopped' && !e.agentId) remoteOps.forget(e.sessionId);
 });
+// spec 054 FR-062: the adapter says remote control ended on its own (for example a relaunch could not turn it back on)
+router.onEvent((e) => {
+  if (e.type !== 'remote' || e.agentId) return;
+  if (e.on) {
+    const url = remoteOps.updateUrl(e.sessionId, e.url);
+    if (url) toRenderer('agents:remoteUrl', { id: e.sessionId, url });
+    return;
+  }
+  remoteOps.forget(e.sessionId);
+  toRenderer('agents:remoteOff', { id: e.sessionId, ...(e.reason ? { reason: e.reason } : {}) });
+});
 ipcHandle('agents:setRemote', (e, id: unknown, on: unknown) => (fromApp(e) ? remoteOps.setRemote(id, on) : { ok: false, error: 'invalid request' }));
 ipcHandle('agents:openRemote', (e, id: unknown) => (fromApp(e) ? remoteOps.openRemote(id) : { ok: false }));
 

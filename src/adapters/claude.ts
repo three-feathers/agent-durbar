@@ -35,6 +35,8 @@ import { simpleDiff, clipDiff } from '../shared/diff';
 import { HANDOFF_PROMPT, cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
 import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
+import { allowedRemoteUrl, cleanRemoteError } from '../shared/remote';
+import type { RemoteState } from '../shared/remote';
 import { resolveWorkspaceCwd } from './workspace';
 import { listClaudeSessions, readClaudeHistory } from './claudeHistory';
 import type { HistoryResult, PreviousSession } from './history';
@@ -67,6 +69,8 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   handoff: true, // spec 030 FR-034: a forked one-shot, the session is not changed
   oneShot: true, // spec 040 FR-015: no tools, no MCP, no settings, not saved
   renameSession: 'next-turn', // spec 059 FR-007: `--name` on the session's next CLI start (real: Vikram's agent, 2026-10-20, CLI 2.1.304)
+  remote: true, // spec 054 FR-061 (real 2026-10-20): `remote_control` over stream-json; claude.ai sign-in on Pro/Max/Team/Enterprise
+  remoteService: Object.freeze({ name: 'Claude', host: 'claude.ai', mobile: 'the Claude app' }),
 }) as AdapterCapabilities;
 
 /** Spec 059 FR-007: the SDK transport (dev opt-in, `DURBAR_CLAUDE_TRANSPORT=sdk`) does not apply `--name`, so it does not offer a rename. */
@@ -438,6 +442,10 @@ interface Session {
   launchedMode?: PermissionMode;
   /** A user message was sent and its `result` has not come yet (a relaunch would cut the turn). */
   turnOpen?: boolean;
+  /** Spec 054 FR-062: Remote Control is on; a relaunch turns it back on. */
+  remoteOn?: boolean;
+  /** The claude.ai link while it is on (a relaunch may give a new one). */
+  remoteUrl?: string;
   /** MCP servers left out of the running CLI's config at launch (FR-133): turning one on needs a relaunch. */
   launchedOff?: Set<string>;
   needsRelaunch?: boolean;
@@ -795,6 +803,20 @@ export class ClaudeAdapter implements AgentAdapter {
     // Register the PreToolUse hook (Read-only roots check) before the first prompt.
     await t.request({ subtype: 'initialize', hooks: { PreToolUse: [{ matcher: '*', hookCallbackIds: [PRE_TOOL_USE_HOOK] }] } });
     s.resumable = true; // from now on Claude has (or will have) this id on disk
+    if (s.remoteOn) {
+      // spec 054 FR-062: a relaunch (new mode, model or MCP set) starts a new CLI process; turn Remote Control back on in it
+      try {
+        const r = (await t.request({ subtype: 'remote_control', enabled: true }, 60_000)) as { session_url?: unknown };
+        const url = typeof r?.session_url === 'string' && allowedRemoteUrl(r.session_url, 'claude.ai') ? r.session_url : undefined;
+        if (url && url !== s.remoteUrl) {
+          s.remoteUrl = url;
+          this.emit(s.id, { type: 'remote', on: true, url });
+        }
+      } catch (e) {
+        s.remoteOn = false;
+        this.emit(s.id, { type: 'remote', on: false, reason: `Claude could not turn remote control back on after a restart (${cleanRemoteError(e)})` });
+      }
+    }
     return t;
   }
 
@@ -886,6 +908,29 @@ export class ClaudeAdapter implements AgentAdapter {
     s.needsRelaunch = true; // the next message relaunches with --resume and the new flags; nothing is sent now
     this.emit(sessionId, { type: 'model', cause: 'user', model: model ?? 'auto', ...(previousModel ? { previousModel } : {}), ...(effort ? { effort } : {}), ...(previousEffort ? { previousEffort } : {}) });
     return { status: 'applied', model: model ?? 'auto', message: 'Applies from the next message.' };
+  }
+
+  /**
+   * Spec 054 FR-061: turn Remote Control on or off for this session over the running CLI (`remote_control` control request).
+   * The link is `session_url` when it is on claude.ai; main checks it again and never lets the window open another host.
+   */
+  async setRemote(sessionId: string, on: boolean): Promise<RemoteState> {
+    const s = this.mustGet(sessionId);
+    if (!s.transport?.alive) {
+      // no CLI process: nothing is steerable, so "off" is already true; "on" needs a running session
+      if (!on) { s.remoteOn = false; s.remoteUrl = undefined; return { ok: true, on: false }; }
+      return { ok: false, error: 'Send a message first so the session is running, then turn on remote control.' };
+    }
+    try {
+      const r = (await s.transport.request({ subtype: 'remote_control', enabled: on }, 60_000)) as { session_url?: unknown };
+      s.remoteOn = on;
+      if (!on) { s.remoteUrl = undefined; return { ok: true, on: false }; }
+      const url = typeof r?.session_url === 'string' && allowedRemoteUrl(r.session_url, 'claude.ai') ? r.session_url : undefined;
+      s.remoteUrl = url;
+      return { ok: true, on: true, steerable: true, ...(url ? { url } : {}) };
+    } catch (e) {
+      return { ok: false, error: cleanRemoteError(e) };
+    }
   }
 
   /** FR-150: change (null = remove) the dollar cap; the running CLI gets the new budget with the next message. */

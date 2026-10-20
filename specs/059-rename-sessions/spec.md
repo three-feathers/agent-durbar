@@ -171,8 +171,10 @@ FR-023) use the new name; Resume opens an agent with that name.
     double quotes, at most 100 UTF-16 units, `read:` SDK `types.d.ts:2662`); such a name is kept Durbar-only with the FR-010 note (Q8 A).
   - Copilot details (review 2026-10-20): the prompt-free resume runs in the folder Copilot stored for that session (`getSessionMetadata().context.workingDirectory`; none = refused),
     with `suppressResumeEvent: true` and `allowTranscriptRecovery: false`. One lock per session id: a start or resume of the same session waits for a rename in flight
-    and the other way round, so a card waking up is never disconnected by the rename's release. After a rename of a live session, an auto `session.title_changed` is ignored until
-    the next idle, so Copilot's own auto title cannot make the sync rule (FR-011) drop the name.
+    and the other way round, so a card waking up is never disconnected by the rename's release. After a rename of a live session the adapter keeps the name it set; while the session is open a
+    `session.title_changed` with any other title (Copilot's auto title, also after a compaction; not cleared on idle) is not passed on, and the same title is a confirmation.
+    Only that one event is skipped: usage, cap and idle events always go on. `[KNOWN GAP]` until T050: a rename made elsewhere (the CLI) while the session is open in Durbar is not seen until the
+    session is reconnected, because the runtime does not mark an explicit rename apart from an auto title.
   - Codex: `'any'`; `thread/name/set { threadId, name }` on the session's own app-server when live, else on a short-lived one
     (`probe`, `src/adapters/codex.ts:312`), as `listPreviousSessions` does. An archived thread is refused by Codex (FR-010).
   - Claude Code: `'next-turn'`. The adapter keeps `{ sessionId -> name }` and adds `--name <name>` to the next CLI start of that session

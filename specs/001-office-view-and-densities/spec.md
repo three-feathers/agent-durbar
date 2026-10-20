@@ -112,7 +112,7 @@ Animations are subtle, CSS-only in compact densities and stop under reduced-moti
 - **FR-015** `[IMPLEMENTED]` partly, 2026-10-16: `npm run check:office` (`scripts/check-office-overlap.js`, Electron under xvfb) automates overlap/clipping/floor-overflow/10.5px checks (FR-021) over SIM=12/15 x 1440x900/1280x800 x closed-room variants. It is not part of `npm test` (needs a display); it runs in CI as job `office-check` (Ubuntu, xvfb, ~70 s, spec 008 FR-017). (Task T020.)
 - **FR-016** `[IMPLEMENTED]` (resolved 2026-10-16, Task T021) The README milestone-5 table had drifted. Re-measured with `npm run check:office` (xvfb, all rooms open, chat closed): SIM=12 -> `roomy` at 1440x900 and 1280x800; SIM=15 -> `card` at both (the table's `roomy` at 1440x900 predates the door row; the docked-panel columns predate the full-screen chat). An earlier run that saw `mini` at 1280x800 was not reproduced. Which density is chosen depends on font metrics; the check asserts only that the chosen one fits. The README states the new numbers. test: `scripts/check-office-overlap.js`
 - **FR-017** `[KNOWN GAP]` In `micro` the helper figures are very small (~34px wide), and long folder names truncate the nameplate when narrow (README "Remaining").
-- **FR-018** `[KNOWN GAP]` No record exists of 15 real live sessions running at once (cost); the layout is verified on simulated agents only.
+- **FR-018** ~~`[KNOWN GAP]`~~ closed 2026-10-21 (see Changes): No record exists of 15 real live sessions running at once (cost); the layout is verified on simulated agents only.
 - **FR-019** `[IMPLEMENTED]` (2026-10-19, T023) In the office, arrow keys move the focus between desks, helper tiles and closed door plates: Left and Right to the nearest one on the same row (at the end of a row, the next or previous one in reading order), Up and Down to the nearest one above or below; Enter opens the focused desk as before. Arrow keys with a modifier, and in text fields, are left alone. `sim:` a driver pressed the keys and checked the focus (1440x900 and 1280x800).
 
 ### Key Entities
@@ -200,3 +200,9 @@ Spec [024](../024-office-places/spec.md) adds a one-row **lobby** band between t
   - Honest limits stay: Codex is not offered yet, and agents still act on files in the folders you add.
   - The header badge says **Live**, with the ready harnesses in its tooltip; it no longer says "Live - Copilot". The harness select is 128 px wide, so "GitHub Copilot" is no longer cut to "GitHub Cc".
 - `sim:` `scripts/shots-001-welcome.js` (new; a real app with an empty profile, no prompt) at 1440x900 and 1280x800 checks the wording and that the card fits; the screenshots are replaced. `check:office` 302/302.
+
+### 2026-10-21: known gaps revalidated
+
+- **FR-018** closed. `real:` 2026-10-21, Linux, the built app with an isolated profile: **15 real Copilot sessions** (`auto`, Read-only, 15 throw-away folders) in the office at once. Each answered a one-line prompt, and all 15 cards ended *Done*. Then the simulator office check's own page rules (`pageCheck`: overlap, clipping, text at least 10.5px) ran on the real page: **no problems at 1440x900 or 1280x800** (smallest text 11px, density `roomy`). Durbar showed about $0.01 in total.
+- `[KNOWN GAP]`: on that real page at 1280x800, the bottom row's wider cards cut a small icon at the card's right edge, which `pageCheck` does not flag. Handed to the usability pass.
+- **FR-017** still open, unchanged (the `micro` density is used only with many agents in a narrow window).
