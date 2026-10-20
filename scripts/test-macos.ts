@@ -104,13 +104,13 @@ assert.ok(/'keys\.js'/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'copy-ass
 const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles.css'), 'utf8');
 for (const line of css.split('\n').filter((l) => /app-region|padding-left:(max\()?78px/.test(l))) assert.ok(line.startsWith('html[data-platform="darwin"]'), `darwin-only: ${line.slice(0, 80)}`);
 // an open chat hides the top bar (body.panel-open), so the agent strip is the drag area then, with the same room and no-drag controls;
-// a screen opened over a chat (body.screen-open) also hides the strip, so then the screen's header is; a notice strip shown with a chat open is the first row (FR-105)
+// a screen opened over a chat (body.screen-open) also hides the strip, so then the screen's header is; a notice strip shown with a chat open is the first row (FR-138)
 const D = 'html[data-platform="darwin"]';
 const rules = [
   `${D} :is(.topbar,.strip,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head){-webkit-app-region:drag}`,
   `${D}:not([data-fullscreen]) .strip{padding-left:78px}`,
   `${D}:not([data-fullscreen]) .topbar::before{content:"";flex:none;order:-1;width:58px;margin-right:-14px}`, // room on the first row only
-  `@media (max-width:1320px){${D}:not([data-fullscreen]) .topbar::before{width:64px;margin-right:-10px}}`,
+  `@media (max-width:1320px){${D}:not([data-fullscreen]) .topbar::before{width:64px;margin-right:-8px}}`,
   `${D} body.panel-open :is(#restoreStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip:not([hidden])){min-height:40px}`, // the first strip clears the 78x40 box
   `${D}:not([data-fullscreen]) body.panel-open .notice-strip{padding-left:78px}`,
   `${D}:not([data-fullscreen]) body.panel-open.screen-open .scr-head{padding-left:max(78px,calc((100% - 880px)/2 + 24px))}`, // FR-097 alignment kept
@@ -121,15 +121,15 @@ const rules = [
   `${D} .notice-strip:not([hidden]) ~ .workspace .strip{padding-left:12px}`,
   `${D} .notice-strip:not([hidden]) ~ #screen .scr-head{padding-left:max(24px,calc((100% - 880px)/2 + 24px))}`,
   `${D} .strip{padding-right:56px}`,
-  `${D} :is(.dlg-ov,#foldersPop,#floorsPop,.mode-menu,.more-menu){-webkit-app-region:no-drag}`,
+  `${D} :is(.dlg-ov,#foldersPop,#floorsPop,#defaultsPop,.mode-menu,.more-menu){-webkit-app-region:no-drag}`,
 ];
-for (const rule of rules) assert.ok(css.includes(rule), `Mac title bar rule (FR-085, FR-105): ${rule.slice(0, 90)}`);
+for (const rule of rules) assert.ok(css.includes(rule), `Mac title bar rule (FR-085, FR-138): ${rule.slice(0, 90)}`);
 assert.ok(!css.includes('scr-head){padding-left:78px}') && !/\.topbar[^{]*\{padding-left:78px/.test(css), 'no flat 78px on the screen header or the whole top bar');
 // the selectors the rules name exist in the page
 const screensCss = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.css'), 'utf8');
-for (const sel of ['.mode-menu{', '.more-menu{', '#floorsPop{', '#foldersPop{', '.notice-strip{', '.strip-list{', '.dlg-ov{']) assert.ok(css.includes(sel), `selector exists in styles.css: ${sel}`);
+for (const sel of ['.mode-menu{', '.more-menu{', '#floorsPop{', '#foldersPop{', '#defaultsPop{', '.notice-strip{', '.strip-list{', '.dlg-ov{']) assert.ok(css.includes(sel), `selector exists in styles.css: ${sel}`);
 assert.ok(screensCss.includes('.scr-head{'), 'selector exists in screens.css: .scr-head');
-for (const id of ['restoreStrip', 'awayStrip', 'foldersPop', 'floorsPop']) assert.ok(html.includes(`id="${id}"`), `index.html has #${id}`);
+for (const id of ['restoreStrip', 'awayStrip', 'foldersPop', 'floorsPop', 'defaultsPop']) assert.ok(html.includes(`id="${id}"`), `index.html has #${id}`);
 assert.ok(html.indexOf('id="restoreStrip"') < html.indexOf('class="workspace"') && html.indexOf('id="awayStrip"') < html.indexOf('id="screen"') && html.indexOf('class="workspace"') < html.indexOf('id="screen"'), 'notice strips come before .workspace and #screen (the ~ rules need it)');
 assert.ok(css.includes(':root{color-scheme:light}') && css.includes(':root[data-dark]{color-scheme:dark}'), 'color-scheme follows the theme');
 

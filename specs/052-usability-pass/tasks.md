@@ -175,10 +175,17 @@
 - [x] T105 Card tooltip names the role (hidden next to the name in mini and micro); usage line checked (cost only in Simple, tabular and right-aligned in Expert) [FR-102]
 - [x] T106 Top-bar counters as one segmented strip (inset frame, dividers in the gap, transparent 1px borders, same widths and height); selected state; theme frames in `themes.css` [FR-103]
 - [x] T107 List hairlines, header and right-aligned numbers; Tools groups without frames, `7px 8px` cells, plain-text "Used by", 4px bars; CHANGELOG [FR-104]
-## FR-105: macOS title bar on every screen (2026-10-20, #345)
-- [x] T121 Spec delta FR-105 (this entry), tasks and plan note [FR-105]
-- [x] T122 Darwin-only CSS: notice strip is the drag row with a chat open and the strip below drops the 78px; overlays, popovers and menus `no-drag`; chat strip grab area and no-drag `.strip-list`; `.scr-head` `max(78px, ...)` [FR-105]
-- [x] T123 `test-macos` static checks for the new rules and selectors [FR-105]
-- [x] T124 `scripts/check-mac-titlebar.js` and `npm run check:mac-titlebar` (geometry of every state at both sizes, non-zero on failure and on a driver exception) [FR-105]
-- [x] T125 Mutation: remove the `.dlg-ov` no-drag rule and see the check fail; screenshots in the scratchpad [FR-105]
-- [x] T126 Docs: CHANGELOG, README "On a Mac" limits, `specs/README.md` row, spec status tags; CI step proposed as a follow-up [FR-105]
+
+## Round 11: one-row top bar and thinner walls (2026-10-20)
+
+- [x] T108 Top bar on one 48px row: + New menu (Add folder…, Add VS Code workspace…, ids kept), Defaults chip with a popover holding the selects (ids kept), folder filter joined with Manage folders, counters as dot and number below 1800px, Needs you icon and number below 1600px; themes recolour only; texts and palette; `docs/design-rules.md`, README, CHANGELOG [FR-105]
+- [x] T109 Room, place and helper connector lines 1px in Clean Office and every theme (Retro's ring follows) [FR-106]
+- [x] T110 Drivers: `shots-017.js` opens the Defaults popover; `check-office-overlap.js` checks the one-row top bar; the others grepped [FR-107]
+- [x] T111 Full simulator run before merge: geometry, office, every driver that touches the top bar, screenshot tour by eye; Manage folders popover anchored to its button; `shots-017` history check follows round 10's Previous button [FR-107]
+## FR-138: macOS title bar on every screen (2026-10-20, #345)
+- [x] T121 Spec delta FR-138 (this entry), tasks and plan note [FR-138]
+- [x] T122 Darwin-only CSS: notice strip is the drag row with a chat open and the strip below drops the 78px; overlays, popovers and menus `no-drag`; chat strip grab area and no-drag `.strip-list`; `.scr-head` `max(78px, ...)` [FR-138]
+- [x] T123 `test-macos` static checks for the new rules and selectors [FR-138]
+- [x] T124 `scripts/check-mac-titlebar.js` and `npm run check:mac-titlebar` (geometry of every state at both sizes, non-zero on failure and on a driver exception) [FR-138]
+- [x] T125 Mutation: remove the `.dlg-ov` no-drag rule and see the check fail; screenshots in the scratchpad [FR-138]
+- [x] T126 Docs: CHANGELOG, README "On a Mac" limits, `specs/README.md` row, spec status tags; CI step proposed as a follow-up [FR-138]

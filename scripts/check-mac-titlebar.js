@@ -1,5 +1,5 @@
 /*
- * macOS title bar geometry check (spec 052 FR-105, issue #345).
+ * macOS title bar geometry check (spec 052 FR-138, issue #345).
  *
  *   npm run check:mac-titlebar                       (builds, then runs this file under Electron; xvfb-run on Linux without DISPLAY)
  *   MAC_TITLEBAR_SHOTS=/path/dir npm run check:mac-titlebar   also saves a screenshot per state and size
@@ -9,11 +9,11 @@
  * and no element is `no-drag`, z-order ignored. Per state it fails on:
  *   - no draggable part in the top 40px band (outside the 78px traffic-light room), or, in a chat, no grab block of at least 40px wide and
  *     24px tall (continuous drag, starting in the band); states under a modal overlay (dialogs, palette, shortcut sheet, inbox) are exempt
- *     from this one: an overlay blocks dragging (FR-105);
+ *     from this one: an overlay blocks dragging (FR-138);
  *   - a clickable element whose box overlaps the traffic-light box (x<78, y<40, by rectangle, not by sampling) outside full screen (an
  *     overlay's own backdrop is not counted: the native traffic lights sit above the page; a control inside a dialog is);
  *   - a screen header over a chat whose title is not on the centred content column (FR-097) at widths above 990px;
- *   - the top bar's wrapped rows: the first row's items start at x>=78, a second row at the normal padding (the room is for the first row only);
+ *   - the top bar's rows (one row at wide sizes, two when it wraps): the first row's items start at x>=78, a wrapped row at the normal padding (the room is for the first row only);
  *   - a clickable element over an effective drag region (it could not be clicked on a Mac).
  * It exits non-zero on a failure and also when the driver itself throws or does not finish (a marker file decides, Electron exits 0 after
  * a driver error). The real traffic-light position, SF fonts, double-click zoom and real full screen are not covered (see the spec).
@@ -114,7 +114,7 @@ async function run(ctx) {
   const click = (sel) => js(`(()=>{const e=document.querySelector(${JSON.stringify(sel)});if(e){e.click();return true}return false})()`);
   const must = async (sel) => { if (!(await click(sel))) throw new Error(`missing control ${sel}`); await ctx.sleep(150); };
   const reset = async () => {
-    await js(`(()=>{document.querySelectorAll('.dlg-ov').forEach(d=>d.remove());try{window.DurbarScreens.isOpen()&&window.DurbarScreens.close()}catch(e){};if(document.body.classList.contains('panel-open')){const b=document.getElementById('backBtn');if(b)b.click()};const m=document.getElementById('topMoreMenu');if(m)m.hidden=true;['foldersPop','floorsPop'].forEach(i=>{const e=document.getElementById(i);if(e)e.hidden=true});delete document.documentElement.dataset.fullscreen;const vo=document.getElementById('vOffice');if(vo&&document.body.classList.contains('list-mode'))vo.click();['restoreStrip','awayStrip'].forEach(i=>{const s=document.getElementById(i);if(s)s.hidden=true})})()`);
+    await js(`(()=>{document.querySelectorAll('.dlg-ov').forEach(d=>d.remove());try{window.DurbarScreens.isOpen()&&window.DurbarScreens.close()}catch(e){};if(document.body.classList.contains('panel-open')){const b=document.getElementById('backBtn');if(b)b.click()};const m=document.getElementById('topMoreMenu');if(m)m.hidden=true;['foldersPop','floorsPop','defaultsPop','newMenu'].forEach(i=>{const e=document.getElementById(i);if(e)e.hidden=true});delete document.documentElement.dataset.fullscreen;const vo=document.getElementById('vOffice');if(vo&&document.body.classList.contains('list-mode'))vo.click();['restoreStrip','awayStrip'].forEach(i=>{const s=document.getElementById(i);if(s)s.hidden=true})})()`);
     await ctx.sleep(350);
   };
   const openChat = async () => {
@@ -155,6 +155,8 @@ async function run(ctx) {
     await showRestore(); await rec('office-restoreStrip', size, 'plain'); await reset();
     await must('#vList'); await rec('list', size, 'plain'); await must('#vOffice');
     await must('#foldersBtn'); await rec('folders-popover', size, 'plain'); await reset();
+    await must('#defaultsBtn'); await rec('defaults-popover', size, 'plain'); await reset();
+    await must('#newBtn'); await rec('new-menu', size, 'plain'); await reset();
     await must('#settingsBtn'); await rec('settings', size, 'plain'); await reset();
     await must('#toolsBtn'); await rec('tools', size, 'plain'); await reset();
     await openChat(); await rec('chat', size, 'chat');

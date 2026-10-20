@@ -41,22 +41,18 @@ html[data-ui="corporate"]{--ui-display:"Segoe UI","Helvetica Neue",Arial,system-
 html[data-ui="corporate"] .topbar{background:var(--ink);border-bottom-color:var(--ink);box-shadow:inset 0 -3px 0 var(--brand-bg)}
 html[data-ui="corporate"] .brand-mark{border-radius:6px}
 html[data-ui="corporate"] .brand h1{font-weight:700;letter-spacing:.01em}
-html[data-ui="corporate"] .stat,html[data-ui="corporate"] .btn,html[data-ui="corporate"] .seg,html[data-ui="corporate"] .select-wrap select,html[data-ui="corporate"] #liveBar select{border-radius:5px}
+html[data-ui="corporate"] .stat,html[data-ui="corporate"] .btn,html[data-ui="corporate"] .seg,html[data-ui="corporate"] .select-wrap select,html[data-ui="corporate"] .defaults-grp select{border-radius:5px}
 html[data-ui="corporate"] .seg button{border-radius:3px}
 html[data-ui="corporate"] .topbar .btn{background:color-mix(in srgb,#fff 10%,transparent);border-color:color-mix(in srgb,#fff 30%,transparent);color:#fff}
 html[data-ui="corporate"] .topbar .btn:hover{background:color-mix(in srgb,#fff 18%,transparent)}
-html[data-ui="corporate"] .topbar #liveBar select,html[data-ui="corporate"] .topbar .select-wrap select{background:color-mix(in srgb,#fff 10%,transparent);border-color:color-mix(in srgb,#fff 30%,transparent);color:#fff}
-/* spec 052 FR-052: the defaults group (agent app, mode, model) sits on the dark bar too, so its white text keeps its contrast (it was white on a light group) */
-html[data-ui="corporate"] .topbar .defaults-grp{background:color-mix(in srgb,#fff 8%,transparent);border-color:color-mix(in srgb,#fff 28%,transparent)}
-html[data-ui="corporate"] .topbar .defaults-grp .btn{color:#fff}
-html[data-ui="corporate"] .topbar .defaults-grp select option{color:#1b2733;background:#fff}
+html[data-ui="corporate"] .topbar .select-wrap select{background:color-mix(in srgb,#fff 10%,transparent);border-color:color-mix(in srgb,#fff 30%,transparent);color:#fff}
 html[data-ui="corporate"] .topbar .select-wrap::after{border-color:#d5e2f0}
 /* spec 052 FR-032: a 1997-office bevel on buttons, segmented buttons and the top-bar selects, inverted when pressed.
    Inset shadows only, so no size changes; on the navy bar the dark edge is a shade of black, not the light --line-2. */
 html[data-ui="corporate"] .btn,html[data-ui="corporate"] .seg button{box-shadow:inset 1px 1px 0 #fff,inset -1px -1px 0 var(--line-2)}
 html[data-ui="corporate"] .btn:active:not(:disabled),html[data-ui="corporate"] .seg button:active,html[data-ui="corporate"] .seg button[aria-pressed="true"]{box-shadow:inset 1px 1px 0 var(--line-2),inset -1px -1px 0 #fff}
-html[data-ui="corporate"] .topbar .btn,html[data-ui="corporate"] .topbar .seg button,html[data-ui="corporate"] .topbar #liveBar select,html[data-ui="corporate"] .topbar .select-wrap select{box-shadow:inset 1px 1px 0 color-mix(in srgb,#fff 45%,transparent),inset -1px -1px 0 rgba(0,0,0,.35)}
-html[data-ui="corporate"] .topbar .btn:active:not(:disabled),html[data-ui="corporate"] .topbar .seg button:active,html[data-ui="corporate"] .topbar .seg button[aria-pressed="true"],html[data-ui="corporate"] .topbar #liveBar select:active,html[data-ui="corporate"] .topbar .select-wrap select:active{box-shadow:inset 1px 1px 0 rgba(0,0,0,.35),inset -1px -1px 0 color-mix(in srgb,#fff 45%,transparent)}
+html[data-ui="corporate"] .topbar .btn,html[data-ui="corporate"] .topbar .seg button,html[data-ui="corporate"] .topbar .select-wrap select{box-shadow:inset 1px 1px 0 color-mix(in srgb,#fff 45%,transparent),inset -1px -1px 0 rgba(0,0,0,.35)}
+html[data-ui="corporate"] .topbar .btn:active:not(:disabled),html[data-ui="corporate"] .topbar .seg button:active,html[data-ui="corporate"] .topbar .seg button[aria-pressed="true"],html[data-ui="corporate"] .topbar .select-wrap select:active{box-shadow:inset 1px 1px 0 rgba(0,0,0,.35),inset -1px -1px 0 color-mix(in srgb,#fff 45%,transparent)}
 html[data-ui="corporate"] .stage .room:not([data-alert="uneasy"]):not([data-alert="alarm"]){border-color:var(--line);box-shadow:inset 4px 0 0 var(--wall),0 1px 2px rgba(16,32,56,.07)}
 html[data-ui="corporate"] .stage .room{border-radius:8px}
 html[data-ui="corporate"] .stage .room-name{text-transform:uppercase;letter-spacing:.06em;font-weight:700}
@@ -76,16 +72,16 @@ html[data-ui="retro"] body{background-image:radial-gradient(rgba(255,255,255,.07
 html[data-ui="retro"] .topbar{background:var(--ink);border-bottom-color:var(--ink);box-shadow:inset 0 -4px 0 var(--sel-border)}
 html[data-ui="retro"] .brand h1{text-transform:uppercase;letter-spacing:.08em;font-weight:800}
 html[data-ui="retro"] .brand-mark{border-radius:0;box-shadow:3px 3px 0 var(--sel-border)}
-html[data-ui="retro"] .stat,html[data-ui="retro"] .btn,html[data-ui="retro"] .seg,html[data-ui="retro"] .seg button,html[data-ui="retro"] .select-wrap select,html[data-ui="retro"] #liveBar select,
+html[data-ui="retro"] .stat,html[data-ui="retro"] .btn,html[data-ui="retro"] .seg,html[data-ui="retro"] .seg button,html[data-ui="retro"] .select-wrap select,html[data-ui="retro"] .defaults-grp select,
 html[data-ui="retro"] .pill,html[data-ui="retro"] .proto,html[data-ui="retro"] .chip,html[data-ui="retro"] .toast,html[data-ui="retro"] .plate,html[data-ui="retro"] .door{border-radius:0}
-html[data-ui="retro"] .btn,html[data-ui="retro"] .stat,html[data-ui="retro"] .seg,html[data-ui="retro"] .select-wrap select,html[data-ui="retro"] #liveBar select{border-color:var(--line);box-shadow:0 0 0 1px var(--line),3px 3px 0 1px var(--line)}
+html[data-ui="retro"] .btn,html[data-ui="retro"] .stat,html[data-ui="retro"] .seg,html[data-ui="retro"] .select-wrap select,html[data-ui="retro"] .defaults-grp select{border-color:var(--line);box-shadow:0 0 0 1px var(--line),3px 3px 0 1px var(--line)}
 html[data-ui="retro"] .topbar .btn,html[data-ui="retro"] .topbar .stat,html[data-ui="retro"] .topbar .seg,html[data-ui="retro"] .topbar select{box-shadow:0 0 0 1px var(--line),3px 3px 0 1px var(--sel-border)}
 html[data-ui="retro"] .btn:active,html[data-ui="retro"] .stat:active{transform:translate(2px,2px);box-shadow:0 0 0 1px var(--line),1px 1px 0 1px var(--line)}
 html[data-ui="retro"] .topbar .seg{background:var(--surface)}
 html[data-ui="retro"] .topbar .seg button{color:var(--ink-2)}
 html[data-ui="retro"] .topbar .seg button[aria-pressed="true"]{background:var(--brand-bg);color:var(--ink)}
 html[data-ui="retro"] .stage .room{border-radius:0}
-html[data-ui="retro"] .stage .room:not([data-alert="uneasy"]):not([data-alert="alarm"]){border-color:var(--line);box-shadow:0 0 0 1.5px var(--line),6px 6px 0 1.5px #000}
+html[data-ui="retro"] .stage .room:not([data-alert="uneasy"]):not([data-alert="alarm"]){border-color:var(--line);box-shadow:0 0 0 1px var(--line),6px 6px 0 1px #000} /* spec 052 FR-106: the ring follows the 1px wall (a shadow, no size) */
 html[data-ui="retro"] .stage .room-name{text-transform:uppercase;letter-spacing:.05em;font-weight:800}
 html[data-ui="retro"] .stage:not([data-d="full"]) .room-name{background:var(--ink);color:var(--brand-bg);border-color:var(--ink);border-radius:0}
 html[data-ui="retro"] .stage .room-path{color:var(--ink-2)}
@@ -125,7 +121,7 @@ html[data-ui="court-european"] body{background-image:linear-gradient(rgba(255,25
 html[data-ui="court-european"] .topbar{background:var(--brand-bg);border-bottom-color:var(--brand-bg);box-shadow:inset 0 -2px 0 #b8995a,inset 0 -4px 0 var(--brand-bg),inset 0 -5px 0 #b8995a}
 html[data-ui="court-european"] .brand h1{text-transform:uppercase;letter-spacing:.08em;font-weight:700}
 html[data-ui="court-european"] .brand-mark{border-radius:4px;box-shadow:0 0 0 1px #b8995a}
-html[data-ui="court-european"] .stat,html[data-ui="court-european"] .btn,html[data-ui="court-european"] .seg,html[data-ui="court-european"] .select-wrap select,html[data-ui="court-european"] #liveBar select{border-radius:4px}
+html[data-ui="court-european"] .stat,html[data-ui="court-european"] .btn,html[data-ui="court-european"] .seg,html[data-ui="court-european"] .select-wrap select,html[data-ui="court-european"] .defaults-grp select{border-radius:4px}
 html[data-ui="court-european"] .seg button,html[data-ui="court-european"] .pill{border-radius:3px}
 html[data-ui="court-european"] .topbar .btn,html[data-ui="court-european"] .topbar select,html[data-ui="court-european"] .topbar .stat{border-color:#b8995a}
 html[data-ui="court-european"] .stage .room{border-radius:6px}
@@ -145,7 +141,7 @@ html[data-ui="court-japanese"] .topbar{background:var(--surface);box-shadow:inse
 html[data-ui="court-japanese"] .brand h1{font-weight:600;letter-spacing:.08em}
 html[data-ui="court-japanese"] .brand-mark{border-radius:3px}
 html[data-ui="court-japanese"] .stat,html[data-ui="court-japanese"] .btn,html[data-ui="court-japanese"] .seg,html[data-ui="court-japanese"] .seg button,html[data-ui="court-japanese"] .select-wrap select,
-html[data-ui="court-japanese"] #liveBar select,html[data-ui="court-japanese"] .pill,html[data-ui="court-japanese"] .more,html[data-ui="court-japanese"] .plate{border-radius:3px}
+html[data-ui="court-japanese"] .defaults-grp select,html[data-ui="court-japanese"] .pill,html[data-ui="court-japanese"] .more,html[data-ui="court-japanese"] .plate{border-radius:3px}
 html[data-ui="court-japanese"] .stage .room{border-radius:3px}
 html[data-ui="court-japanese"] .stage .room:not([data-alert="uneasy"]):not([data-alert="alarm"]){border-color:color-mix(in srgb,var(--ink) 45%,transparent);box-shadow:none}
 html[data-ui="court-japanese"] .stage .room-name{font-weight:600;letter-spacing:.06em}
