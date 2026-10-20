@@ -1,7 +1,7 @@
 # Tasks: Rename sessions (spec 059, issue #372)
 
 **Input**: [spec.md](spec.md), [plan.md](plan.md), [research.md](research.md).
-**Clarified**: the owner answered Q1-Q9 on 2026-10-20, option A for each (spec.md *Clarifications*). A task that rests on an
+**Clarified**: the owner answered Q1-Q9 on 2026-10-20, option A for each, then changed Q2 to B and added Q10 (spec.md *Changes*, 2026-10-20). A task that rests on an
 answer names it.
 **Format**: `[ID] [P?] [Story] Description [FR]`. `[P]` = can run in parallel (different files, no dependency). Each task is one small
 PR-sized step with its own test. No task spends AI credits except Phase 5, which needs the owner's go-ahead.
@@ -46,16 +46,19 @@ PR-sized step with its own test. No task spends AI credits except Phase 5, which
 
 ## Phase 3: User Story 2, rename in the agent app (P2)
 
-- [ ] T030 [P] Capability `renameSession?: 'live' | 'any'` and member `renameSession?()` in `capabilities.ts` / `types.ts`; fake adapter
+- [ ] T030 [P] Capability `renameSession?: 'any' | 'next-turn'` and member `renameSession?()` in `capabilities.ts` / `types.ts`; fake adapter
   option with a call log and a failure switch; contract C2 [FR-007]
-- [ ] T031 [P] Copilot: `'live'`; `rpc.name.set({ name })` on the live session; refuses a non-live id and a name with `"`; tested on a
-  fake session only [FR-007] (Q2 A, Q8 A)
-- [ ] T032 [P] Codex: `'any'`; `thread/name/set` on the live child or `probe()`; `thread/name/updated` → `title` event; tested on a fake
+- [ ] T031 [P] Copilot: `'any'`; live session -> `rpc.name.set({ name })`; not live -> prompt-free `resumeSession`, `name.set`, `disconnect`
+  (released also on error); refuses a name with `"` or over 100 UTF-16 units; tested on a fake client only [FR-007] (Q2 B, Q8 A)
+- [ ] T032 [P] Codex: `'any'`; `thread/name/set` on the live child or `probe()`; `thread/name/updated` -> `title` event; tested on a fake
   RPC only [FR-007, FR-011]
-- [ ] T033 `renameOp` calls the adapter when `renameTarget` says so; `inApp` on success; Durbar-only plus the note on error; cases in
-  `test:sessionnames` [FR-007, FR-010] (Q1 A)
-- [ ] T034 Dialog line "Also renames it in <app>…" / "Only in Agent Durbar…" / "Name in <app>: …" from the capability and liveness;
-  partial-result toast; simulator shows all three [FR-004, FR-010]
+- [ ] T035 [P] Claude: `'next-turn'`; `claudeArgs` adds `--name <name>`; a pending name per session, relaunch before the next message, the
+  `title` event after the first turn that follows; tested on fake transports and `claudeArgs` only [FR-007, FR-011] (Q10)
+- [ ] T033 `renameOp` calls the adapter for every session; `inApp` on success (`pending` for `'next-turn'`); Durbar-only plus the note on
+  error; requeue of a `pending` name on restore and resume; cases in `test:sessionnames` [FR-007, FR-010, FR-014] (Q1 A)
+- [ ] T034 Dialog line "Also saved in <app>… may sync" / "Also saved in Claude Code at your next message" / "Only in Agent Durbar…" /
+  "Name in <app>: …" from the capability; partial-result toast; simulator shows all three [FR-004, FR-010, FR-017]
+- [ ] T036 Escape test: an HTML-looking name through every display path and the MCP read tool text [FR-018]
 
 ## Phase 4: User Story 3, Previous sessions (P3; after spec 006 T036, issue #368, PR #373)
 
@@ -64,8 +67,9 @@ PR-sized step with its own test. No task spends AI credits except Phase 5, which
 
 ## Phase 5: Real checks (owner-gated, not in CI)
 
-- [ ] T050 With the owner's go-ahead (Q9 A): Copilot, rename a session already open in Durbar and look at the Copilot CLI's resume list
-  and VS Code; Codex, rename an existing thread and look at the Codex CLI's picker and VS Code. Record prompts and usage (expected 0)
+- [ ] T050 With the owner's go-ahead (Q9 A): Copilot, rename a session already open in Durbar **and one that is not** (prompt-free resume) and
+  look at the Copilot CLI's resume list and VS Code; Claude, look at the VS Code Claude extension's list and `/resume` for a renamed session
+  (Mac); Codex, rename an existing thread and look at the Codex CLI's picker and VS Code. Record prompts and usage (expected 0)
   and results in research.md; turn the matching `[KNOWN GAP]` lines into `real:` [FR-007]
 
 ## Phase 6: Docs and converge
@@ -77,6 +81,6 @@ PR-sized step with its own test. No task spends AI credits except Phase 5, which
 ## Dependencies
 
 - T010, T011 → T012 → T020 → T021 → T022, T024..T029. T023 any time before T024.
-- T030 → T031, T032 → T033 → T034.
+- T030 → T031, T032, T035 → T033 → T034, T036.
 - T040 needs spec 006 T036 merged (PR #373 carries the spec delta).
 - T050 after T034 and the owner's go-ahead. T060 last.

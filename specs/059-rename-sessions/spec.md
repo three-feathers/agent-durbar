@@ -2,8 +2,8 @@
 
 **Feature Branch**: `059-rename-sessions`
 **Created**: 2026-10-20
-**Status**: Specified and clarified (spec, research, plan, tasks; **no code**). The owner answered Q1-Q9 on 2026-10-20 (all the
-recommended option A, see *Clarifications*).
+**Status**: Specified and clarified; building (T010-T060 in one branch). The owner answered Q1-Q9 on 2026-10-20 (all A) and changed Q2 to B plus
+added Q10 (Claude `--name`) the same day (see *Changes*).
 **Input**: Issue #372. Owner (Paco, 2026-10-20): "it would be nice to be able to rename sessions". Rename in the agent app's own
 store where it has an API (so VS Code and the CLI see the new name too), else a Durbar-only name kept locally; **Rename…** in the
 chat header's More menu, the agent card menu and the Previous sessions row menu (spec 006, issue #368); the new name everywhere the
@@ -20,9 +20,9 @@ written there; otherwise it stays in Durbar only. Evidence for each agent app is
 
 | Agent app | Rename API | Durbar uses it for | Shows in the app's CLI | Shows in VS Code |
 | --- | --- | --- | --- | --- |
-| GitHub Copilot (SDK 1.0.22) | **Yes**, `session.rpc.name.set({ name })` (@experimental), on a session object | a session that is **live** in Durbar (Q2 A) | yes, the same field the CLI's `/rename` writes (`read:` SDK types, runtime strings) | unverified |
+| GitHub Copilot (SDK 1.0.22) | **Yes**, `session.rpc.name.set({ name })` (@experimental), on a session object | every session: a live one directly, one that is not live through a prompt-free resume, then released (Q2 B, 2026-10-20) | yes, the same field the CLI's `/rename` writes (`read:` SDK types, runtime strings) | unverified |
 | OpenAI Codex (app-server 0.163+) | **Yes**, `thread/name/set { threadId, name }`, works on a stored thread that is not loaded | every Codex session, open or not | yes, the same name the Codex TUI's `/rename` writes (`read:` upstream source) | unverified |
-| Claude Code (CLI 2.1.304, stream-json) | **No** for the CLI transport Durbar uses (`--name` names a *new* session; renaming an existing one needs the Agent SDK's `renameSession()`, not a dependency) | Durbar-only name | n/a | n/a |
+| Claude Code (CLI 2.1.304, stream-json) | **Yes, at the next launch**: `--name <name>` together with `--resume <id>` keeps the session id and appends a `custom-title` that Claude writes itself (`real:` Vikram's agent, issue #372) | the next time Durbar starts that session's CLI (the next message); until then a Durbar name | yes (`/resume` picker, by the CLI's own help text) | unverified (`[KNOWN GAP]`, to check on a Mac) |
 | VS Code chats (spec 009) | not ours (read-only) | no Rename (Q5 A) | n/a | n/a |
 
 ## Clarifications
@@ -33,14 +33,17 @@ Answered by the owner (Paco, about 10:55 CEST, through the coordinator). He chos
 
 - Q1 Where a rename goes when the agent app has an API → A: in the app too (Copilot live sessions, Codex always) and in Durbar; elsewhere
   Durbar only. The dialog says which before saving. An empty name clears only Durbar's copy; the app keeps its last name (FR-004, FR-007).
-- Q2 A Copilot session that is not live in Durbar → A: Durbar-only name; the dialog says "Open the session to rename it in GitHub
-  Copilot too." (FR-007).
+- Q2 A Copilot session that is not live in Durbar → ~~A: Durbar-only name~~ **changed to B on 2026-10-20** (owner, after Vikram's
+  requirements on #372): Durbar resumes it without a prompt (0 credits), calls `session.rpc.name.set`, and releases it again; if that
+  fails, the name stays a Durbar name with the FR-010 note (FR-007).
 - Q3 Length cap → A: 60 characters (FR-002).
 - Q4 Activity log → A: new rows of a renamed session show its user name in the agent column; a rename is not logged (FR-012).
 - Q5 VS Code chats in Previous sessions → A: no Rename (FR-006).
 - Q6 Dialog or inline edit → A: the small dialog everywhere (FR-004).
 - Q7 Names already in the schedules file → A: left as they are; the current display name is shown when the session is known (FR-008).
 - Q8 Copilot refuses double quotes → A: such a name stays Durbar-only for Copilot, with the FR-010 note (FR-007).
+- Q10 (2026-10-20, owner, Vikram's requirements) Claude Code → the CLI's own `--name` on the session's next launch (FR-007); Durbar
+  never writes the session file. The dialog says the name is also saved in the agent app and may sync (FR-004).
 - Q9 Real check → A: one check per app, 0 prompts, only with the owner's go-ahead at that time (T050).
 
 ## User Scenarios & Testing *(mandatory)*
@@ -99,7 +102,7 @@ FR-023) use the new name; Resume opens an agent with that name.
 ### Edge Cases
 
 - A helper (sub-agent) has no Rename; it keeps its own name.
-- A *Not started* (lazy) or ended card can be renamed; the Copilot path is Durbar-only for it (Q2 A).
+- A *Not started* (lazy) or ended card can be renamed; Copilot resumes it quietly for the call (Q2 B), Claude applies the name at its next launch.
 - Two sessions get the same name: allowed (names are labels, not ids); the folder in the tooltip tells them apart.
 - The runtime later sends a new title (Copilot `session.title_changed`, a resume, a Previous sessions list): FR-011 decides.
 - The session is deleted (spec 006 FR-029): its name entry goes with it. The folder is removed: all its names go.
@@ -129,8 +132,9 @@ FR-023) use the new name; Resume opens an agent with that name.
   ("Name in <app>: …", cut to 80) so the user can go back to it. Chat history is unchanged (it is the conversation).
 - **FR-004** `[KNOWN GAP]` **Rename dialog.** A small dialog (the shared `askDialog`, as Rename folder and Rename floor; Q6 A):
   - Title **Rename session**. Body: "A short name for this session in Agent Durbar, 1 to 60 characters. Leave it empty to use
-    <app>'s title again." plus one line on where the name goes (FR-007): "Also renames it in GitHub Copilot: the Copilot CLI shows the
-    new name." / "Also renames it in Codex: the Codex CLI shows the new name." / "Only in Agent Durbar. <app> keeps its own name."
+    <app>'s title again." plus one line on where the name goes (FR-007, FR-017): "Also saved in GitHub Copilot: its CLI shows the new name, and
+    it may sync with your account." / the same for Codex / "Also saved in Claude Code at your next message: its CLI shows it then." /
+    "Only in Agent Durbar. <app> keeps its own name."
     For a session that already has an app-side name, the line "Name in <app>: <name>".
   - One text field, label **Name**, prefilled with the current display name (cut to 60) and fully selected, `maxlength` 60.
   - Buttons **Cancel**, **Rename** (primary, last; no "…", design rule 6). **Enter in the field saves**, **Esc cancels** (both
@@ -140,10 +144,11 @@ FR-023) use the new name; Resume opens an agent with that name.
   - Success: polite announcement "Renamed." (or "Name reset."), toast only on a partial result (FR-010).
   - Same words and controls in Simple and Expert (spec 052). Fits 1280x800 and 1440x900 (the dialog is the existing size).
 - **FR-005** `[KNOWN GAP]` **Where the user's name is kept.** Each saved folder in `durbar-folders.json` (spec 006 FR-002; same file,
-  same version, key = workspace file or folder path) gets an optional list `sessionNames`: entries `{ src, id, name, inApp? }`.
+  same version, key = workspace file or folder path) gets an optional list `sessionNames`: entries `{ src, id, name, inApp?, pending? }`.
   `src` = adapter id (the `adapterId` rule); `id` = the runtime's session id (Codex: the thread id; the same id Previous sessions and
   `resumeIdFor` use, `src/main/main.ts:1215`), shape `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$` (spec 006 FR-026); `name` passes FR-002;
-  `inApp: true` when the agent app accepted the same name (FR-007). At most 200 entries per folder (least recently set dropped).
+  `inApp: true` when the agent app accepted the same name (FR-007); `pending: true` for Claude Code between the rename and the next
+  launch that carries `--name` (FR-011). At most 200 entries per folder (least recently set dropped).
   Tolerant load: bad entries dropped, duplicates collapse (last wins), nothing throws. **No migration**: no list = no names; an older
   build ignores the field. The entry is never sent to the agent app (except as the rename call itself, FR-007), never put in tool
   usage labels or usage totals (spec 020 / 011 keys stay the folder name), and never logged except as FR-012 says. Written through
@@ -155,18 +160,30 @@ FR-023) use the new name; Resume opens an agent with that name.
   3. the **Previous sessions** row menu (spec 006 FR-027, issue #368) for agent-session rows, between Pin/Unpin and Hide.
   The item is **Rename…** (it asks for input), tooltip "Give this session a short name". All three open the same dialog; focus returns
   to the menu button that opened it. Keyboard: the menus' existing arrows, Enter, Escape, Shift+F10.
-- **FR-007** `[KNOWN GAP]` **The app-side rename** (Q1 A, Q2 A, Q8 A). `AdapterCapabilities` gets `renameSession?: 'live' | 'any'` (missing = none);
-  `AgentAdapter` gets `renameSession?(sessionId: string, name: string): Promise<void>`, present exactly when the flag is set (spec 012
-  FR-027, contract check C2). `'live'`: only a session live in this adapter; `'any'`: also a stored session that is not open.
-  - Copilot: `'live'`; `session.rpc.name.set({ name })` on the live session. Copilot's own rule is stricter than FR-002 (no double
-    quotes, at most 100 UTF-16 units, `read:` SDK `types.d.ts:2662`); a name with `"` is kept Durbar-only with the FR-010 note (Q8 A).
+- **FR-007** `[KNOWN GAP]` **The app-side rename** (Q1 A, Q2 B, Q8 A, Q10; changed 2026-10-20). `AdapterCapabilities` gets
+  `renameSession?: 'any' | 'next-turn'` (missing = none); `AgentAdapter` gets `renameSession?(sessionId: string, name: string): Promise<void>`,
+  present exactly when the flag is set (spec 012 FR-027, contract check C2). `'any'`: the call renames the session now, open or stored.
+  `'next-turn'`: the call remembers the name and the adapter applies it the next time it starts that session's CLI. There is no `'live'`
+  value any more.
+  - Copilot: `'any'`. A session live in the adapter: `session.rpc.name.set({ name })`. A session that is not live: the adapter resumes it
+    **without sending a prompt** (0 credits, `resumeSession` only), calls `name.set`, and releases it (disconnect); a session id that cannot
+    be resumed, or any error, is a failure (FR-010). It must not leave the session open. Copilot's own rule is stricter than FR-002 (no
+    double quotes, at most 100 UTF-16 units, `read:` SDK `types.d.ts:2662`); such a name is kept Durbar-only with the FR-010 note (Q8 A).
   - Codex: `'any'`; `thread/name/set { threadId, name }` on the session's own app-server when live, else on a short-lived one
     (`probe`, `src/adapters/codex.ts:312`), as `listPreviousSessions` does. An archived thread is refused by Codex (FR-010).
-  - Claude Code: no member (no per-session rename on the CLI transport; research R3).
+  - Claude Code: `'next-turn'`. The adapter keeps `{ sessionId -> name }` and adds `--name <name>` to the next CLI start of that session
+    (`--resume <id> --name <name>` keeps the session id and appends a `custom-title`, `real:` below); a running session is relaunched
+    before its next message, as for a mode change (`needsRelaunch`, no extra prompt). When the first turn after that launch finishes, the
+    adapter reports the name as the session's `title`, and Durbar clears `pending` and sets `inApp` (FR-011). Durbar never writes the
+    session file. If the CLI is not started again (Durbar closes first), main asks again on the next start (FR-014). Until then the
+    name is Durbar's, and the dialog says so.
   - The fake adapter can be built with either flag and records calls. Tests use only fakes; no real store is touched.
-  Main decides: if the adapter has the member and the flag allows this session, it calls it after the name passed FR-002; on success the
-  entry is saved with `inApp: true`; otherwise (no member, flag `'live'` and the session is not live) the entry is Durbar-only. The
-  dialog's FR-004 line is computed from the same rule before the user saves, so it never promises what will not happen.
+  Main decides: if the adapter has the member, it calls it after the name passed FR-002 (any session, open or stored: the adapter
+  decides how); on success the entry is saved with `inApp: true` (`pending: true` for `'next-turn'`); on error the entry is Durbar-only
+  (FR-010). The dialog's FR-004 line is computed from the capability before the user saves, so it never promises what will not happen.
+  `real:` evidence for Claude (Vikram's agent, Vikram's account, 2026-10-20, Claude Code 2.1.304, haiku, 2 tiny prompts, USD 0.0037, issue #372):
+  `claude -p … --name A` wrote `{"type":"custom-title","customTitle":"A"}` into the session; `claude -p … --resume <id> --name B` kept the
+  same session id and appended `B` (the last one wins).
 - **FR-008** `[KNOWN GAP]` **Schedules** (spec 044 FR-014, FR-021). The *This session (…)* option shows the display name (FR-001), cut
   to 40 characters on a word boundary with "…" (spec 044 FR-021), full name in its `title`. A new schedule stores as `target.name` that
   short display name, never a longer title. The schedule list shows the **current** display name of the target session when that
@@ -183,10 +200,11 @@ FR-023) use the new name; Resume opens an agent with that name.
   session." A second rename of the same session while one is in flight is refused ("Already renaming this session.").
 - **FR-011** `[KNOWN GAP]` **When the runtime title changes later** (Copilot `session.title_changed` or `name.get`, a resumed session's
   list title, the Previous sessions list, a Codex `thread/name/updated`):
-  - a Durbar-only entry (`inApp` absent) **wins**: the display name does not change; the new runtime title is kept only for the dialog's
+  - a Durbar-only entry (`inApp` absent) or a `pending` one **wins**: the display name does not change; the new runtime title is kept only for the dialog's
     "Name in <app>" line;
   - an `inApp` entry whose app name now differs from the entry (renamed elsewhere, for example in the CLI) is **dropped**: the app's
     new name shows. Equal names change nothing;
+  - a `pending` entry whose title arrives equal to its name becomes `inApp` (the CLI stored it);
   - with no entry, the runtime title shows (today's behaviour).
   `applyTitle` (`src/renderer/app.js:2604`) and main's title handler (`src/main/main.ts:147`) follow this; a pure function decides it
   (`displayNameOf(entry, runtimeTitle, folderLabel)` plus `syncEntry(entry, runtimeTitle)`), unit-tested.
@@ -202,13 +220,22 @@ FR-023) use the new name; Resume opens an agent with that name.
   `{ ok: false, error }`. Office agents of that session get `AgentInfo.alias` and an `agents:renamed` event so every window updates;
   a reset clears `alias`. The renderer never sends a path or an adapter id.
 - **FR-014** `[KNOWN GAP]` **Restore.** On start, agents restored from `lastSession` / `openSessions` (spec 006 FR-020/021, spec 052
-  FR-088) get their `alias` from the folder's `sessionNames` by resume id. A resumed session (Previous sessions) gets it too.
+  FR-088) get their `alias` from the folder's `sessionNames` by resume id. A resumed session (Previous sessions) gets it too. A `pending` entry makes main call `renameSession` again for that session so a
+  `'next-turn'` adapter applies it at that launch.
 - **FR-015** `[KNOWN GAP]` **Simulator.** `src/renderer/sim.ts` implements `renameSession` in memory, with one sim agent kind that has
   `'any'`, one with `'live'` and one without (so the three dialog lines and the partial-result toast can be shown), and a hook that makes
   the next app-side rename fail. Previous sessions rows (`prev-1`, `prev-2`) can be renamed.
 - **FR-016** `[KNOWN GAP]` **Fit and legibility.** Names are escaped wherever shown; 60-character names ellipsize on cards, strip, inbox,
   header and rows with the full name in the tooltip; `check:office` passes with 15 agents carrying 60-character names at 1440x900 and
   1280x800; 10.5px floor; design rules 1, 4, 5, 6, 8, 9 hold.
+- **FR-017** `[KNOWN GAP]` **The dialog says where the name goes and that it may sync** (Vikram's requirement on #372 and PR #376). For
+  Copilot, Codex and Claude Code the dialog's second line (FR-004) says the name is also saved in the app and may sync (for example with
+  Copilot remote control on, spec 054); a name saved in an app cannot be removed again from Durbar (an empty name resets only Durbar's copy).
+- **FR-018** `[KNOWN GAP]` **Escaping is tested on every display path.** A unit test sends a name such as `<img src=x onerror=1>` (and
+  `"><script>`) through every renderer path that shows a session name (desk card, list row, chat header, strip, inbox, toasts,
+  Schedules option and list, Previous sessions rows, Rename dialog) and through the notification and MCP read-tool text, and checks the
+  output holds no raw markup. The Durbar MCP read tools show the folder label, not the session name; the test pins that. The repo has no
+  Telegram list (`[KNOWN GAP]`: if one is added it must use `displayNameOf` and the same escape).
 - **Constraints:** agent specifics stay behind `AgentAdapter` (the renderer gets a capability value and a computed "where it goes"
   line); no shell; no paths over IPC; Durbar never edits another tool's files (Claude's `.jsonl`, Copilot's session state, Codex's
   store); simulator, fakes and unit tests only; no real session in tests; Windows, macOS and Linux behave the same (no paths involved).
@@ -232,10 +259,11 @@ FR-023) use the new name; Resume opens an agent with that name.
 
 ## Assumptions
 
-- Copilot SDK pinned at 1.0.22 (`name.set` is @experimental and may change; the adapter catches and falls back, FR-010).
+- Copilot SDK pinned at 1.0.22 (`name.set` is @experimental and may change; the adapter catches and falls back, FR-010). That a prompt-free
+  `resumeSession` of a stored session works and costs nothing is `read:` only (`[KNOWN GAP]` until T050).
 - Codex 0.163.0 or later (`CODEX_MIN_VERSION`, `src/adapters/detect.ts:47`) has `thread/name/set` (`read:` the `rust-v0.163.0` tag).
-- Claude Code stays on the CLI transport; if the optional Agent SDK transport is present (`src/adapters/claudeSdk.ts`), it is still not
-  used for rename (research R3).
+- Claude Code stays on the CLI transport; the optional Agent SDK transport (`src/adapters/claudeSdk.ts`) is not used for rename (research R3).
+  Whether the VS Code Claude extension lists the `--name` title is `[KNOWN GAP]` (check on a Mac).
 - Spec 006's per-row ⋯ menu (issue #368, PR #373, T036) lands before US3; US1 and US2 do not depend on it.
 
 ## Open questions (answered 2026-10-20)
@@ -271,4 +299,16 @@ All answered with option A (see *Clarifications*); kept here for the record of t
 
 ## Changes
 
-(none yet)
+### 2026-10-20: owner changes Q2; Vikram's requirements (issue #372)
+
+Owner (Paco, 2026-10-20, about 14:35 CEST): accept Vikram's requirements on issue #372 and **change Q2** to B.
+- **Q2 → B.** A Copilot session that is not live is renamed in the app too, through a prompt-free resume + `session.rpc.name.set`
+  (0 credits, no message sent), then released; if that fails, the Durbar name stays with a note. Reason: names set in the app are found
+  outside Durbar (the CLI, VS Code), also for earlier sessions. FR-007 and the table are rewritten; the capability value `'live'` is gone.
+- **Claude Code** is renamed by Claude itself through `--name` on the session's next launch (Q10; FR-007; `real:` evidence from Vikram's
+  agent, see FR-007 and research R3). Capability `'next-turn'`; entry flag `pending` (FR-005, FR-011, FR-014). VS Code visibility stays
+  `[KNOWN GAP]`, to be checked on the owner's Mac.
+- **Dialog words** say the name is also saved in the app and may sync (FR-004, new FR-017). **Escape test** on every display path (new
+  FR-018). Tasks: T031 Copilot (resume + name.set), T032 Codex, new T035 Claude (`--name`), T030/T033/T034 adapted, T051 real checks
+  extended; see tasks.md. Research R1 and R3 are updated; plan follows.
+

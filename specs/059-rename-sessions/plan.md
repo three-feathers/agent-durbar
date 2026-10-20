@@ -2,7 +2,8 @@
 
 **Branch**: `059-rename-sessions` | **Date**: 2026-10-20 | **Spec**: [spec.md](spec.md) | **Research**: [research.md](research.md)
 **Input**: Feature specification from `specs/059-rename-sessions/spec.md` (issue #372). The owner answered Q1-Q9 on 2026-10-20 (all A,
-spec.md *Clarifications*); the plan follows those answers.
+spec.md *Clarifications*); changed 2026-10-20 (spec.md *Changes*): Q2 is B (Copilot resumes a stored session without a prompt), Claude uses `--name`
+at the next launch (capability `'next-turn'`, entry flag `pending`), the dialog says the name may sync, and an escaping test covers every surface.
 
 ## Summary
 
@@ -46,7 +47,7 @@ specs/059-rename-sessions/
 src/shared/names.ts            NEW  cleanDisplayName(v, max) and nameError(v, max): trim, collapse, length in code points, controls,
                                     hidden characters (moved from floors.ts), redact() check. floors.ts imports it (same behaviour, same tests).
 src/shared/sessionname.ts      NEW  displayNameOf(entry, runtimeTitle, folderLabel); syncEntry(entry, runtimeTitle) -> entry | undefined
-                                    (FR-011); renameTarget(cap, live) -> 'app' | 'durbar' (FR-007); shortName(name, 40) (spec 044 FR-021).
+                                    (FR-011); renameTarget(cap) -> 'now' | 'next-turn' | 'durbar' (FR-007); shortName(name, 40) (spec 044 FR-021).
 src/main/folders.ts                 SavedFolder.sessionNames?: Array<{src,id,name,inApp?}>; parseSessionNames (cap 200, tolerant);
                                     FolderStore.setSessionName(key, src, id, name|undefined, inApp), sessionNameOf(key, id), dropSessionName.
 src/main/sessionnames.ts       NEW  renameOp(deps)(agentId, sessionId|null, name): validate, decide, call adapter, save, return
@@ -54,9 +55,10 @@ src/main/sessionnames.ts       NEW  renameOp(deps)(agentId, sessionId|null, name
 src/main/main.ts                    ipcHandle('sessions:rename'); AgentInfo.alias on restore/resume/add (FR-014); title handler applies
                                     syncEntry (FR-011); sessions:listPrevious adds `names`; logActivity uses alias when set (FR-012);
                                     broadcast 'agents:renamed'.
-src/adapters/capabilities.ts        renameSession?: 'live' | 'any'
+src/adapters/capabilities.ts        renameSession?: 'any' | 'next-turn'
 src/adapters/types.ts               renameSession?(sessionId, name): Promise<void>
-src/adapters/copilot.ts             'live'; live.session.rpc.name.set({ name }); refuses a non-live id; refuses '"' with a clear error.
+src/adapters/copilot.ts             'any'; live.session.rpc.name.set({ name }); a non-live id: resumeSession (no prompt) + name.set + disconnect; refuses '"'.
+src/adapters/claude.ts              'next-turn'; pending name per session, `--name` in claudeArgs, relaunch before the next message, title event after the turn.
 src/adapters/codex.ts               'any'; thread/name/set on the live child or on probe(); maps thread/name/updated to a `title` event.
 src/adapters/fake.ts                option renameSession: 'live' | 'any' | undefined, call log, failure switch.
 src/shared/api.ts, src/preload/preload.ts   renameSession bridge, ResumeResult/AgentInfo.alias, listPrevious `names`.
@@ -78,7 +80,7 @@ scripts/check-rename.js        NEW  simulator driver, both sizes, Simple and Exp
 
 ## Data flow
 
-1. Window: Rename… → `renameSessionUi` computes the "where it goes" line from the agent's capability (`renameTarget(cap, live)`)
+1. Window: Rename… → `renameSessionUi` computes the "where it goes" line from the agent's capability (`renameTarget(cap)`)
    and the current names, opens `askDialog`, then calls `bridge.renameSession(agentId, sessionId|null, text)`.
 2. Main `renameOp`: agent exists; target id = `resumeIdFor(agentId)` or the given id, re-checked against `previousSessionsOf` (same
    adapter, same folder) or another office agent of the folder; `text` empty → reset; else `cleanDisplayName(text, 60)` or error.
@@ -109,4 +111,4 @@ adapter and contract tests, `test:activity`); `npm run check:office` with 60-cha
 | Item | Why | Simpler alternative rejected because |
 | --- | --- | --- |
 | `inApp` flag and sync rule | lets a later rename in the CLI win over a stale Durbar copy, while a Durbar-only name stays put | dropping the local copy after an app rename loses the activity-log name (FR-012) and the instant display |
-| Two capability values (`live`, `any`) | Copilot can only rename an open session; Codex any stored thread | one boolean would make the dialog promise a Copilot rename that cannot happen |
+| Two capability values (`any`, `next-turn`) | Claude applies the name at its next launch, Copilot and Codex now | one boolean would make the dialog promise a rename in Claude that has not happened yet |
