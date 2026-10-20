@@ -943,3 +943,8 @@ The owner asked that sessions be shared between Durbar and the Claude Code CLI. 
   - a Copilot runtime restart after a new login, with several sessions open.
 
   Claude Code has no free sign-in check by design: with an API key the card says "confirmed at the first message", and the e2e turn proved it on three OSes.
+
+### 2026-10-21: Copilot sign-in without Copilot access (FR-156 delta)
+
+- `real:` 2026-10-20, the CI account before Copilot was enabled for it (spec 062): `account.getQuota` succeeded, so `verifySignIn` said "Signed in (checked with GitHub)". But `models.list` and every session answered 403 "not authorized to use this Copilot feature". Found by the known-gap revalidation (#417).
+- **FR-156 delta** `[IMPLEMENTED]`: after the quota call, the free model list is also asked. A 403 "not authorized to use this Copilot feature" from either call gives `unknown` with "Signed in to GitHub, but this account has no Copilot access yet: turn on Copilot for it (Copilot Free is enough) at github.com/settings/copilot, then choose Check again." The card shows it (it starts with "Signed in"). `test:` `scripts/test-authcheck.ts`.
