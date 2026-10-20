@@ -7,6 +7,8 @@
  *   UI_SUITE_OUT=<folder>                 where every screenshot goes (default: a new temp folder, printed at the end)
  *   UI_SUITE_XVFB=1                       Linux: run under xvfb-run even when a display is set
  *   UI_SUITE_JOBS=<n>                     drivers at once (default 2; each has its own profile and, on Linux, its own xvfb display)
+ *   UI_SUITE_RETRY=1                      run each failed driver once more, alone, at the end; a pass then is reported as FLAKY
+ *                                         (listed in the summary and the GitHub job summary), never as a clean pass
  *
  * Each driver gets a fresh DURBAR_USER_DATA, its own settings and the same output folder for all screenshot variables. A driver fails on
  * a non-zero exit (a failing driver exits 1, FR-090), a "DRIVER FAILED" line or its time limit. Linux without a display runs under xvfb-run.
@@ -103,8 +105,19 @@ async function main() {
     }
   };
   await Promise.all(Array.from({ length: jobs }, worker));
+  // a slow runner (macOS in CI) can lose a race against a fixed delay: one more run alone, reported as FLAKY so it stays visible
+  const flaky = [];
+  if (process.env.UI_SUITE_RETRY === '1' && failed.length) {
+    for (const label of [...failed]) {
+      const d = todo.find((x) => (x.label || x.name) === label);
+      const r = await runOne(d, outDir);
+      console.log(`  ${r.ok ? 'FLAKY (passed on retry)' : 'FAIL again'} ${label}${r.ok ? '' : '  ' + r.why.trim().slice(0, 300)}`);
+      if (r.ok) { failed.splice(failed.indexOf(label), 1); flaky.push(label); }
+    }
+  }
   console.log(`ui-suite: ${jobs} at a time, ${Math.round((Date.now() - started) / 1000)} s in all`);
-  console.log(`\nui-suite: ${todo.length - failed.length}/${todo.length} passed on ${process.platform}${failed.length ? '; failed: ' + failed.join(', ') : ''}`);
+  console.log(`\nui-suite: ${todo.length - failed.length}/${todo.length} passed on ${process.platform}${flaky.length ? '; FLAKY (passed only on retry): ' + flaky.join(', ') : ''}${failed.length ? '; failed: ' + failed.join(', ') : ''}`);
+  if (flaky.length && process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n**Flaky drivers on ${process.platform}** (failed once, passed on retry): ${flaky.join(', ')}\n`);
   if (failed.length) process.exitCode = 1;
 }
 
