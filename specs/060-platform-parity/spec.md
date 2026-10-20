@@ -73,6 +73,7 @@
     - any failure gives an empty list.
 
     Main hands the list to detection with `setLoginPath`; adapters never spawn a shell.
+    Main also adds those folders after its own `PATH` (`mergeLoginPath`, no duplicates), so what detection finds also runs. An npm-installed agent app in an nvm or fnm folder is a `#!/usr/bin/env node` script; its `--version` probe, its sessions and MCP servers such as `npx` need that folder's `node` on PATH (review finding on #398).
   - **Where it was found:** `DetectResult.where` / `AdapterInfo.where` is the `displayPath` of the found binary: `~/…` under the home folder, otherwise only the file name, never the user name. The Agent apps card shows "Found at …" for an installed app (`shots-051-setup` asserts it; screenshots `051-harnesses-*`).
 - `test:` `scripts/test-detect.ts`: the folders per OS, newest-first order, dedupe, an unreadable folder, relative entries, the shell choice and fallbacks, the parser (markers, junk, caps) and the runner with a fake spawn (output, timeout, error, nothing on Windows).
 - `[KNOWN GAP]`:

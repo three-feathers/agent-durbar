@@ -90,6 +90,17 @@ export function readLoginShellPath(deps: LoginPathDeps): Promise<string[]> {
   });
 }
 
+/**
+ * The process PATH with the login shell's folders added after its own (no duplicates). Main applies it to `process.env.PATH`, so
+ * what detection finds also runs: an npm-installed agent app in an nvm or fnm folder starts with `#!/usr/bin/env node`, and the
+ * `--version` probe, the agent sessions and MCP servers such as `npx` need that folder's `node` on PATH too. Pure.
+ */
+export function mergeLoginPath(current: string | undefined, loginDirs: readonly string[]): string {
+  const own = (current ?? '').split(':').filter(Boolean);
+  const added = loginDirs.filter((d) => !own.includes(d));
+  return [...own, ...added].join(':');
+}
+
 /** The real dependencies. */
 export function nodeLoginPathDeps(): LoginPathDeps {
   return {

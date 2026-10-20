@@ -8,7 +8,7 @@ import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
 import { offeredDescriptors } from '../adapters/experimental';
 import { createRegistry, detectAll } from '../adapters/registry';
 import { detectorFor, nodeDetectEnv, setLoginPath } from '../adapters/detect';
-import { nodeLoginPathDeps, readLoginShellPath } from './loginpath';
+import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { execFile, spawn } from 'child_process';
 import { adapterForAdd, createRouter, historyOf, modelOptionsOf, previousSessionsOf } from '../adapters/router';
 import { errText, restorable, setCapOp, setModeOp, stopTurnOp, validMode } from './agentops';
@@ -1072,7 +1072,11 @@ const signInCheck = (id: string): (() => Promise<SignInAnswer>) | undefined => {
 /* spec 060 FR-003: the login shell's PATH, read once (at most 3 s) before the first detection; not under the simulator */
 let loginPathRead: Promise<void> | undefined;
 const loginPathReady = (): Promise<void> => {
-  if (!loginPathRead) loginPathRead = dev.DURBAR_SIM ? Promise.resolve() : readLoginShellPath(nodeLoginPathDeps()).then(setLoginPath, () => undefined);
+  if (!loginPathRead) loginPathRead = dev.DURBAR_SIM ? Promise.resolve() : readLoginShellPath(nodeLoginPathDeps()).then((dirs) => {
+    setLoginPath(dirs);
+    // what is found must also run: agent apps, their probes and MCP servers start with this PATH (an nvm `claude` needs its `node`)
+    if (dirs.length) process.env.PATH = mergeLoginPath(process.env.PATH, dirs);
+  }, () => undefined);
   return loginPathRead;
 };
 const adaptersList = (refresh: boolean): Promise<AdapterInfo[]> => {

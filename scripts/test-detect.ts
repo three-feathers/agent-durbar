@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import { CLAUDE_BINARY, CLAUDE_SIGN_IN_HINT, CODEX_BINARY, CODEX_SIGN_IN_HINT, detectCodex, candidates, compareVersions, detectBinary, detectClaude, detectCopilot, detectorFor, parseVersion } from '../src/adapters/detect';
 import type { DetectEnv, Exec, ExecResult } from '../src/adapters/detect';
 import { newestFirst } from '../src/adapters/detect';
-import { loginShellCommand, parseLoginPath, readLoginShellPath, MAX_LOGIN_DIRS } from '../src/main/loginpath';
+import { loginShellCommand, mergeLoginPath, parseLoginPath, readLoginShellPath, MAX_LOGIN_DIRS } from '../src/main/loginpath';
 import { EventEmitter } from 'events';
 import { createRegistry, detectAll } from '../src/adapters/registry';
 import type { AdapterDescriptor } from '../src/adapters/capabilities';
@@ -296,6 +296,10 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(loginShellCommand('/usr/local/bin/fish', isFile).args[2], 'printf "__DURBAR_PATH__%s__END__" (string join : $PATH)');
     for (const bad of [undefined, 'zsh', '/opt/evil/notashell', '/bin/bash' /* not a file here */, '/bin/zsh\n'])
       assert.strictEqual(loginShellCommand(bad, isFile).file, '/bin/sh', 'fallback for ' + String(bad));
+  // the login PATH is added after the process's own, without duplicates: an nvm `claude` then finds its `node` when it runs
+  assert.strictEqual(mergeLoginPath('/usr/bin:/bin', ['/home/u/.nvm/versions/node/v22.3.0/bin', '/usr/bin']), '/usr/bin:/bin:/home/u/.nvm/versions/node/v22.3.0/bin');
+  assert.strictEqual(mergeLoginPath(undefined, ['/opt/x']), '/opt/x');
+  assert.strictEqual(mergeLoginPath('/a::/b', []), '/a:/b');
     assert.deepStrictEqual(parseLoginPath('motd junk\n__DURBAR_PATH__/a/bin:rel:/b/bin::/a/bin__END__trailing'), ['/a/bin', '/b/bin'], 'markers, junk, relative and duplicate entries');
     assert.deepStrictEqual(parseLoginPath('no markers /a/bin'), []);
     assert.deepStrictEqual(parseLoginPath('__DURBAR_PATH__/a/bin'), [], 'no end marker');
