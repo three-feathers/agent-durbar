@@ -13,7 +13,7 @@ value crosses the IPC boundary.
 | `mcpLogs` | `'session' \| 'per-server'` | `session` | `per-server` | `session` | no log folder |
 
 `mcpRestart` and `mcpLogs` follow FR-027 of spec 012: the matching optional member exists exactly when the flag says so (contract C2).
-The Claude and Codex `mcpLogs` values depend on Q6 / Q7.
+Claude's per-server folder is shown labelled undocumented (Q6); Codex's folder only when it exists (Q7).
 
 ## Normalized status additions (`src/adapters/types.ts`, `McpServerStatus`)
 

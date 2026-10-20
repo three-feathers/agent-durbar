@@ -2,8 +2,8 @@
 
 **Branch**: `058-mcp-session-controls` | **Date**: 2026-10-20 | **Spec**: [spec.md](spec.md) | **Issue**: #349
 
-**Gate**: the owner answers Q1-Q11 (`/speckit-clarify`) before `/speckit-implement`. The plan follows the recommended options; a
-different answer changes only the steps named next to that question.
+**Clarified**: the owner answered Q1-Q11 on 2026-10-20, option A for each (spec.md *Clarifications*). The plan follows those answers;
+there are no open questions.
 
 ## Summary
 
@@ -25,7 +25,7 @@ Simulator and fakes first; real checks are no-prompt and need the owner's go-ahe
 
 ## Constitution Check
 
-- **I Spec Kit**: spec, research, plan, tasks before `src/`; Q1-Q11 go through clarify first.
+- **I Spec Kit**: spec, research, plan, tasks before `src/`; Q1-Q11 clarified by the owner on 2026-10-20 (all A).
 - **II Adapters are plug-ins**: new capability fields and optional members on `AgentAdapter`; vendor calls (`restartServer`,
   `mcp_reconnect`) and vendor log locations stay in `src/adapters/`. The renderer sees words and booleans only. `errorClass` is a
   normalized set; vendor strings are mapped inside the adapter.
@@ -52,12 +52,12 @@ Simulator and fakes first; real checks are no-prompt and need the owner's go-ahe
    `session.mcp_server_needs_reconnect` to `needsRestart: true`; Codex `codexMcp.ts` / `codex.ts` read `failureReason` and `authStatus`;
    Claude `claudeMap.ts` turns `init.mcp_server_errors` into `failed` rows. Tests in the existing mapper suites.
 4. **Copilot adapter** (`copilot.ts`): capability values; `restartMcpServer` = `rpc.mcp.restartServer({serverName})` when it is a
-   function, else `disable` then `enable` (Q3 A); never `stopServer` or `reload`; record the toggle state so FR-158's reconnect still
+   function, else `disable` then `enable` (Q3); never `stopServer` (Q2) or `reload`; record the toggle state so FR-158's reconnect still
    re-applies switches. `mcpLogFolder` from `mcplogdirs.ts`. Fake SDK gains `restartServer` and a mode without it.
 5. **Claude adapter** (`claude.ts`): capability values; `restartMcpServer` = `mcp_reconnect` then `mcp_status` (emit `mcp`); a server in
    `launchedOff` rejects with the "switch it on first" message; not live rejects. `mcpLogFolder(name)` per server.
 6. **Codex adapter** (`codex.ts`): `mcpStart: 'session'`, `mcpToggleApplies: 'next-message'`, `mcpRestart: false`, `mcpLogs: 'session'`
-   (Q7 A).
+   (Q7: shown only when the folder exists). No `config/mcpServer/reload` button (Q8).
 7. **Log folders** `src/adapters/mcplogdirs.ts` (pure): Copilot `join(env.COPILOT_HOME || home/.copilot, 'logs')`; Codex
    `join(env.CODEX_HOME || home/.codex, 'log')`; Claude cache root per OS (`$XDG_CACHE_HOME` or `~/.cache` on Linux,
    `~/Library/Caches` on macOS, `%LOCALAPPDATA%` + `\claude-cli-nodejs\Cache` on Windows) + sanitized project + `mcp-logs-` + sanitized
@@ -68,13 +68,15 @@ Simulator and fakes first; real checks are no-prompt and need the owner's go-ahe
      (env and header values of the extras actually passed) and the process env; `fs.statSync(dir).isDirectory()` for `logFolder`.
    - `agents:mcpRestart`: validation, one-at-a-time guard, adapter call, masked error, activity row.
    - `agents:mcpRestartSession`: validation, busy check from main's agent state tracker, `remoteOps.release`, `adapter.stop`,
-     `ensureLive(a)`; result to the renderer. Shares the End path with `agents:end` (extract a small `endSession(a)` helper so both stay
+     `ensureLive(a)` with the same id (Q4; no new-session variant); for Claude `ensureLive` does not launch the CLI, so its servers start
+     with the next message (Q11); result to the renderer. Shares the End path with `agents:end` (extract a small `endSession(a)` helper so both stay
      the same).
    - `agents:mcpRevealLogs`: adapter folder, stat check, `shell.showItemInFolder`.
    - Preload and `DurbarApi`: `mcpRestart`, `mcpRestartSession`, `mcpRevealLogs`.
 9. **Renderer** (`screens.js` `agentMcp`): new row layout and footer (FR-030..FR-033); words and hints from `mcpwords.js`; live refresh
    by re-rendering the list when an `mcp` event for the agent arrives (hook from `app.js` where `a.mcp` is set, `app.js:2582`), keeping
-   focus by server name; confirmation through the existing `askDialog` with Cancel focused. `index.html` loads `mcpwords.js`.
+   focus by server name; confirmation through the existing `askDialog` with Cancel focused. *Restart session* is only in this dialog,
+   not in the More or card menus (Q10). Claude's per-server log link is labelled "not documented by Anthropic" (Q6). `index.html` loads `mcpwords.js`.
 10. **Simulator** (`sim.ts`): real capability values per kind; states for every word; canned Restart, Restart session and a toast for
     the log folder.
 11. **Docs**: README MCP section (dialog controls, "not checked on a real account yet"), CHANGELOG line, specs index, screenshots.
@@ -102,4 +104,4 @@ scripts/        test-mcpwords.ts, test-mcplogdirs.ts, test-mcp-session.ts (new);
 ## Complexity Tracking
 
 None. The Copilot and Claude calls are experimental or undocumented (`read:`); feature detection and honest labels cover that, and
-Phase 6 removes the labels once checked.
+Phase 6 removes the labels once checked. No log viewer (Q5).

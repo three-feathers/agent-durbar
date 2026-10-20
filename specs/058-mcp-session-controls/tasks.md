@@ -1,14 +1,15 @@
 # Tasks: MCP servers in a session (spec 058, issue #349)
 
 **Input**: [spec.md](spec.md), [plan.md](plan.md), [research.md](research.md), [data-model.md](data-model.md)
-**Gate**: Q1-Q11 answered by the owner (`/speckit-clarify`) before T010. Tasks follow the recommended options; a task that depends on a
-question names it.
+**Clarified**: the owner answered Q1-Q11 on 2026-10-20, option A for each (spec.md *Clarifications*). A task that rests on an answer
+names it.
 **Format**: `[ID] [P?] [Story] Description [FR]`. `[P]` = can run in parallel (different files, no dependency). Each task is one
 small PR-sized step with its own test. No task spends AI credits except Phase 6, which needs the owner's go-ahead.
 
 ## Phase 0: Clarify (owner)
 
-- [ ] T001 Owner answers Q1-Q11 in spec.md; record the answers under spec.md `## Clarifications` and adjust the tasks below
+- [x] T001 Owner answers Q1-Q11 in spec.md; record the answers under spec.md `## Clarifications` and adjust the tasks below (2026-10-20,
+  all A)
 
 ## Phase 1: Foundation (blocking)
 
@@ -80,9 +81,9 @@ small PR-sized step with its own test. No task spends AI credits except Phase 6,
 - [ ] T052 [US5] `agents:mcpRevealLogs(id, name?)`: folder from the adapter, `fs.stat` directory check, `shell.showItemInFolder`; never
   lists or reads files; `logFolder` flags in `agents:mcp`; test with an injected `shell` and fs [FR-020, FR-024, FR-025]
 - [ ] T053 [US5] Dialog: *Open log folder* in the footer (session folders) and in a row's *Details* (per-server folders), worded as "the
-  agent app's log folder" with no promise of server output; simulator toast [FR-030, FR-040, FR-051]
+  agent app's log folder" with no promise of server output, Claude's link labelled "not documented by Anthropic" (Q6); simulator toast [FR-030, FR-040, FR-051]
 
-## Phase 6: Real checks (needs-owner-approval; 0 AI credits, no prompt)
+## Phase 6: Real checks (needs-owner-approval at the time of the run, Q9; 0 AI credits, no prompt)
 
 Each: a throw-away folder, a throw-away local stdio echo server as a folder extra, Ask first mode, **no prompt sent**. Record results in
 research.md and change `read:` to `real:` where confirmed. Do not open or paste log files.
@@ -103,13 +104,14 @@ research.md and change `read:` to `real:` where confirmed. Do not open or paste 
   account yet"; CHANGELOG *Unreleased* line; specs index row; spec 019 `## Changes` note updated from "specified" to "built"
 - [ ] T071 `/speckit-converge`: spec, plan and tasks match what was built; tick tasks
 
-## Later (not planned; owner decision Q5 B)
+## Out of scope (owner decisions 2026-10-20)
 
-- [ ] T080 [needs-owner-approval] Spec a masked last-lines view of a server's log (size caps, `redact` per line, no copy to Durbar's data,
-  read only on request) as a new delta; no code before that
+- No in-app log viewer (Q5); T080 removed. A viewer would need a new spec and the owner's approval.
+- No new-session variant of Restart session (Q4), no *Restart session* in the More or card menus (Q10), no Codex "Reload servers" (Q8),
+  no early Claude CLI launch after Restart session (Q11), no use of Copilot `stopServer` (Q2).
 
 ## Dependencies
 
-- T001 before everything. Phase 1 before Phases 2-5. T020 before T021, T026, T032, T041, T052. T040 before T041.
+- T001 (done) before everything. Phase 1 before Phases 2-5. T020 before T021, T026, T032, T041, T052. T040 before T041.
 - Phases 3, 4 and 5 are independent of each other after Phase 2. Phase 6 after the phase it checks. Phase 7 last.
 - MVP = Phases 1-2 (words, masked errors, live refresh): it answers the owner's "not clear how to start them" on its own.

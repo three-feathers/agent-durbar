@@ -50,7 +50,7 @@ All `session.rpc.mcp.*` methods are marked `@experimental` (`rpc.d.ts:33663`).
 | `reload()` | "Reloads MCP server connections for the session." All servers. | No (per-server restart exists). | `read:` `rpc.d.ts:33700` |
 | `startServer({serverName, config?})` | "Starts an individual MCP server on the live session ... Session-scoped and ephemeral ... Does NOT modify persistent user configuration." | Possible *Start* for a `stopped` server; not needed if Restart covers it. | `read:` `rpc.d.ts:33742`, request `rpc.d.ts:16783-16796` |
 | `restartServer({serverName, config?})` | "Restarts an individual MCP server on the live session (stops then starts) ... Session-scoped and ephemeral." | **Per-server Restart.** | `read:` `rpc.d.ts:33748`, request `rpc.d.ts:16666-16676` |
-| `stopServer({serverName})` | "Stops an individual MCP server **on the session's host**." No "session-scoped" wording, unlike start and restart. | **Not used** (Q2): Durbar runs one shared Copilot runtime for all its Copilot sessions, so "host" may mean every session. | `read:` `rpc.d.ts:33754`, request `rpc.d.ts:16822-16832` |
+| `stopServer({serverName})` | "Stops an individual MCP server **on the session's host**." No "session-scoped" wording, unlike start and restart. | **Not used** (owner, Q2 A): Durbar runs one shared Copilot runtime for all its Copilot sessions, so "host" may mean every session. | `read:` `rpc.d.ts:33754`, request `rpc.d.ts:16822-16832` |
 | `isServerRunning({serverName})` | `{running}`: "has an active client and transport". | Optional check after Restart. | `read:` `rpc.d.ts:33762`, result `rpc.d.ts:15672-15677` |
 | `oauth.*`, `headers.*`, `apps.*`, `resources.*`, `executeSampling`, `setEnvValueMode`, `removeGitHub`, `moveLoadingToBackground` | Sign-in, MCP Apps, sampling, etc. | Out of scope (sign-in stays spec 019's `[KNOWN GAP]`). | `read:` `rpc.d.ts:33706-33860` |
 | `session.rpc.debug.collectLogs(...)` | "Collects a session debug log bundle into a local archive or staging directory. Logs are redacted by default." | **Rejected**: it copies log files into a new archive, which this feature must not do. | `read:` `rpc.d.ts:33006-33012`, options `rpc.d.ts:10405-10437` |
@@ -119,7 +119,7 @@ Logs:
 | --- | --- | --- | --- |
 | `mcpServerStatus/list {cursor?, limit?, detail?, threadId?, serverName?}` | Per server: `runtimeStatus` (`notStarted`, `starting`, `connected`, `authenticationRequired`, `failed`, `cancelled`; null when unavailable), `authStatus` (`unknown`, `unsupported`, `notLoggedIn`, `bearerToken`, ...), `toolsError`, `serverInfo`, `httpOrigin`. With `threadId` it "reuses the thread's current MCP connection". | Already used. | `read:` `v2/mcp.rs:19-108`, `common.rs:1271-1275`, README "MCP server capabilities"; `real:` spec 012 FR-147 |
 | `mcpServer/startupStatus/updated {threadId?, name, status, error?, failureReason?}` | `status`: `starting`, `ready`, `failed`, `cancelled`; `failureReason`: `reauthenticationRequired`. | Already mapped; add `failureReason`. | `read:` `v2/mcp.rs:360-376`, `protocol.rs:3920-3922`, `common.rs:2028` |
-| `config/mcpServer/reload {}` | Reloads MCP configuration for loaded threads ("an error does not imply that no changes were applied"). Global scope `mcp-registry`, **no server name**. | **Not in Phase 1** (Q8): not per-server, and whether it keeps the thread's `config.mcp_servers` overrides that Durbar passes is unknown. | `read:` `common.rs:1265-1269`, `v2/mcp.rs:286-291`, README "MCP configuration reload" |
+| `config/mcpServer/reload {}` | Reloads MCP configuration for loaded threads ("an error does not imply that no changes were applied"). Global scope `mcp-registry`, **no server name**. | **Not used** (owner, Q8 A): not per-server, and whether it keeps the thread's `config.mcp_servers` overrides that Durbar passes is unknown. | `read:` `common.rs:1265-1269`, `v2/mcp.rs:286-291`, README "MCP configuration reload" |
 | `mcpServer/oauth/login`, `mcpServer/resource/read`, `mcpServer/tool/call`, `mcpServer/event/stream/*` (experimental) | Sign-in, resources, direct tool calls, a server's notification stream. | Out of scope. `event/stream` carries MCP notifications, not logs. | `read:` `common.rs:1259-1300`, `v2/mcp.rs:156-198` |
 | per-server start / stop / restart | **None** in the protocol. | Codex gets no per-server buttons. | `read:` `common.rs` (full client request list) |
 
@@ -148,9 +148,9 @@ is **unknown** (`[KNOWN GAP]`).
 | Failure text | `error` + `errorClassification` | `error` (+ `init.mcp_server_errors`) | `error` / `toolsError` + `failureReason`, `authStatus` |
 | Restart the session with the new set | End + resume same id: conversation kept, no model call (`real:` 013/019) | End + `--resume`: conversation kept, no model call; servers start with the next message (`real:` 012) | End + `thread/resume`: conversation kept, no turn (`real:` 012) |
 | Log folder | `<COPILOT_HOME or ~/.copilot>/logs` (`read:` docs); MCP stderr in it unknown | `<cache>/claude-cli-nodejs/<project>/mcp-logs-<server>` (`read:` program strings, undocumented); `~/.claude/debug` only with `--debug` | `<CODEX_HOME or ~/.codex>/log` (`read:` source); app-server content unknown |
-| In-app masked log tail | Later phase, owner decision (Q5) | same | same |
+| In-app log viewer | No (owner, Q5 A) | No | No |
 
-## 6. Decisions proposed (pending the owner's answers in spec.md)
+## 6. Decisions (confirmed by the owner on 2026-10-20: Q1-Q11 all option A, spec.md *Clarifications*)
 
 1. Keep the switch as the per-session Start/Stop and add **Restart** only where the runtime has a real per-server restart (Copilot,
    Claude). Codex gets none; every adapter that can resume gets **Restart session with these servers**.

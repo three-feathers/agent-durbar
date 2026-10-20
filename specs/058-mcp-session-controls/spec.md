@@ -2,7 +2,8 @@
 
 **Feature Branch**: `058-mcp-session-controls`
 **Created**: 2026-10-20
-**Status**: Specified (spec, research, plan and tasks; **no code**). Open questions Q1-Q11 wait for the owner (`/speckit-clarify`).
+**Status**: Specified and clarified (spec, research, plan and tasks; **no code**). The owner answered Q1-Q11 on 2026-10-20 (all option A,
+see *Clarifications*).
 **Input**: Issue #349. Owner (Paco, 2026-10-20): "in a session, when I open MCP I can enable and disable servers, but I miss VS Code's
 start/stop/show logs; it is not clear how to start them."
 
@@ -26,6 +27,24 @@ What each agent app can do (evidence in [research.md](research.md), section 5):
 | Per-server Restart | yes (`read:` SDK types) | yes (`read:` docs and CLI) | no |
 | Restart session with these servers | yes | yes | yes |
 | Log folder | yes (`read:` docs) | per server (`read:` program strings, undocumented) | maybe (`read:` source; content unknown) |
+
+## Clarifications
+
+### Session 2026-10-20
+
+Answered by the owner (Paco, about 08:45 CEST, through the coordinator). He chose option A for all eleven.
+
+- Q1 Controls shape → A: the switch stays as Start/Stop for this session, and each server gets a **Restart** button.
+- Q2 Copilot Stop → A: Stop = `mcp.disable` (this session only); `stopServer` is never used.
+- Q3 Copilot runtime without `restartServer` → A: Restart = switch that one server off, then on.
+- Q4 Restart session scope → A: end and resume the **same** session; the conversation is kept. No "start fresh" variant.
+- Q5 Logs → A: only *Open log folder*; no log viewer in the app, now or as a planned later phase.
+- Q6 Claude log folder → A: show the per-server folder when it exists, labelled undocumented.
+- Q7 Codex log folder → A: show `<CODEX_HOME>/log` when it exists.
+- Q8 Codex reload → A: Codex gets only *Restart session with these servers*; no "Reload servers" button.
+- Q9 Real checks → A: one no-prompt real check per agent app (0 AI credits), only with the owner's go-ahead at that time.
+- Q10 Where Restart session lives → A: only in the MCP dialog.
+- Q11 Claude after Restart session → A: Claude's servers start with the next message, and the dialog says so; the CLI is not launched early.
 
 ## User Scenarios & Testing
 
@@ -168,14 +187,14 @@ and nothing is opened; simulator shows the button and a toast.
   - `mcpToggleApplies?: 'live' | 'next-message'`: when the switch takes effect (Copilot and Claude `live`, Codex `next-message`);
   - `mcpRestart?: boolean`: `restartMcpServer()` exists (Copilot and Claude true, Codex false);
   - `mcpLogs?: 'session' | 'per-server'`: `mcpLogFolder()` exists (Copilot `session`, Claude `per-server`, Codex `session`;
-    each subject to Q5-Q7).
+    Claude's folder labelled undocumented, Q6; Codex's shown only when it exists, Q7).
 - **FR-011** `McpServerStatus` gains optional `errorClass?: 'auth' | 'not-found' | 'timeout' | 'exited' | 'config'` (set by the adapter
   only when the vendor says so: Copilot `errorClassification` values once seen, Codex `failureReason: reauthenticationRequired` ->
   `auth`, Codex `authStatus: notLoggedIn` -> `auth`) and `needsRestart?: boolean` (Copilot `session.mcp_server_needs_reconnect`).
   Claude's `init.mcp_server_errors` become `failed` rows with their text. No vendor type leaves the adapter.
 - **FR-012** `AgentAdapter.restartMcpServer?(sessionId, name): Promise<void>`, present exactly when `mcpRestart` is true (contract C2):
   - Copilot: `session.rpc.mcp.restartServer({ serverName })` when the method exists; when it does not (an older runtime), off then on
-    for that server only (`disable` then `enable`), subject to Q3; never `stopServer` (Q2); never `reload()` (all servers);
+    for that server only (`disable` then `enable`) (Q3); never `stopServer` (Q2); never `reload()` (all servers);
   - Claude: control request `mcp_reconnect { serverName }`, then `mcp_status` for the new list (as FR-133 does after a toggle). A server
     that was off at launch is not in the running CLI: "Switch it on first; it starts with your next message";
   - Codex: not present.
@@ -205,7 +224,8 @@ and nothing is opened; simulator shows the button and a toast.
     all apply. No prompt is sent.
   - The renderer is told the result; the chat keeps its history (nothing is reloaded unless the adapter reports a new session id).
   - If the resume fails, the agent stays ended (as after *End session*) and the error is shown; sending a message tries again.
-  - Subject to Q4 (resume vs new session) and Q11 (Claude's servers start with the next message).
+  - Always the same session (Q4); there is no new-session variant. For Claude the CLI is not launched by the restart: its servers start
+    with the next message, and the dialog says so (Q11). The button lives only in the MCP dialog (Q10).
 - **FR-023** Confirmation text (renderer, Cancel focused): "Restart <name>'s session with the current MCP servers? The conversation is
   kept and resuming spends no AI credits. <If working:> The running turn stops. <Always:> 'Approve for this session' grants are cleared.
   <If remote on:> Remote control turns off." Shown when the agent is working, thinking or waiting, or has session grants or remote
@@ -214,19 +234,21 @@ and nothing is opened; simulator shows the button and a toast.
   existing directory (it never lists, opens or reads files in it), then calls Electron `shell.showItemInFolder(folder)` (no shell, no
   command string). A missing folder returns `{ ok: false, error: 'No log folder found for this agent app yet.' }`. The flag in FR-020
   is true only when the adapter has `mcpLogs` and the folder exists at the time of the `agents:mcp` call.
-- **FR-025** Durbar never copies, uploads or stores a vendor log file and never shows raw log lines in this feature (Phase 1-3). A masked
-  in-app tail view is a later phase that needs the owner's approval (Q5); it is not specified here beyond that limit.
+- **FR-025** Durbar never copies, uploads or stores a vendor log file and never shows log lines in the app. The owner chose no log viewer
+  (Q5); a viewer would need a new spec and the owner's approval.
 
 ### Dialog (renderer)
 
 - **FR-030** Row layout: name, origin tag (as today), state word and icon, hint (failed only), switch, and **Restart** (only when
   `canRestart`, the session is live and the server's switch is on). Footer buttons: *Restart session with these servers* (when
-  `canRestartSession`), *Open log folder* (session-level folders; per-server folders are a small link in the row's *Details*),
+  `canRestartSession`), *Open log folder* (session-level folders; per-server folders are a small link in the row's *Details*, for Claude labelled "not
+  documented by Anthropic", Q6),
   *Settings*, *Folder extras…*, *Done*. Text at least 10.5px; the dialog fits 1280x800 with 12 servers without page overflow (the list
   scrolls inside the dialog).
 - **FR-031** Restart feedback: the button shows "Restarting…" and is disabled until the call returns; then a toast "Restarted <name>" or
   the masked error; the row then follows the runtime's events (FR-004).
 - **FR-032** Codex rows: no Restart; the footer line says "Codex cannot restart one server; use Restart session with these servers".
+  No "Reload servers" control (Q8).
 - **FR-033** Keyboard and screen readers: every new control is a focusable button with a name ("Restart <server> for <agent>"); state
   changes in the list are announced through the existing polite live region; Esc closes.
 
@@ -245,7 +267,8 @@ and nothing is opened; simulator shows the button and a toast.
 
 ### Honest limits
 
-- **FR-050** `[KNOWN GAP]` Until the real checks run (tasks Phase 6), Copilot `restartServer`, Claude `mcp_reconnect`, the log folders,
+- **FR-050** `[KNOWN GAP]` Until the real checks run (tasks Phase 6; one no-prompt check per agent app, only with the owner's go-ahead
+  at that time, Q9), Copilot `restartServer`, Claude `mcp_reconnect`, the log folders,
   `errorClassification` values and resume with a changed server set are `read:` only; the README and the dialog's *More* text say
   "not checked on a real account yet" for Restart and the log folder.
 - **FR-051** `[KNOWN GAP]` Whether a server's stderr reaches any of the three log folders is not documented; the dialog says "the
@@ -290,9 +313,17 @@ additions and the capability fields.
   rule (005 FR-017).
 - **054** (remote control): ended by Restart session as by End session.
 
-## Open questions for the owner
+## Changes`.
+- **020** (CLI list first, folder extras): the "New sessions" scope in FR-003 is 020's; no change to its stores.
+- **012** (FR-133 Claude toggle, FR-147 Codex MCP): the switch behaviour stays; FR-012 adds Claude `mcp_reconnect`; FR-002 fixes the
+  dialog's wording for Codex's next-message switch.
+- **005 / 006** (End session, resume): Restart session reuses *End session* and the existing resume path, with the same confirmation
+  rule (005 FR-017).
+- **054** (remote control): ended by Restart session as by End session.
 
-Each has a recommended option. None is decided here.
+## Open questions for the owner (resolved 2026-10-20)
+
+All answered by the owner: option A for each (see *Clarifications*). The options are kept below as the record of what was offered.
 
 - **Q1 Controls shape.** A) Keep the switch as Start/Stop for this session and add **Restart** per server (recommended: one control per
   meaning, no duplicate Stop). B) Replace the switch with VS Code-style Start / Stop / Restart buttons. C) Both.

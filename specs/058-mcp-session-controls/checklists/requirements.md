@@ -1,6 +1,6 @@
 # Specification Quality Checklist: MCP servers in a session (status words, Restart, last error, log folder)
 
-**Purpose**: Validate specification completeness and quality before proceeding to clarify and implement
+**Purpose**: Validate specification completeness and quality before proceeding to implement
 **Created**: 2026-10-20
 **Feature**: [spec.md](../spec.md)
 
@@ -14,7 +14,7 @@
 
 ## Requirement Completeness
 
-- [ ] No open questions remain: Q1-Q11 wait for the owner (clarify)
+- [x] No open questions remain: Q1-Q11 answered by the owner on 2026-10-20 (all A)
 - [x] Requirements are testable (each FR maps to a unit test, a fake test, a simulator step or a real-check task)
 - [x] Success criteria are measurable (SC-001..SC-005)
 - [x] Acceptance scenarios defined per user story
@@ -35,7 +35,7 @@
 
 - [x] Every FR has a task (see tasks.md cross-references)
 - [x] User stories are independently testable; MVP = US1 + US2
-- [ ] Ready for `/speckit-implement`: no, after clarify (T001)
+- [x] Ready for `/speckit-implement` (T001 done)
 
 ## Notes
 
@@ -46,3 +46,7 @@
   now points to 058's Restart session); spec 012 FR-024 still says Codex `mcpToggle: false` while FR-147 made it true (not changed here);
   the per-agent dialog passes MCP errors to the renderer unmasked and claims "applies right away" for Codex (both fixed by 058 FR-005 and
   FR-002 once built).
+- Clarify (2026-10-20): owner chose option A for Q1-Q11. Second hand analyze pass: the spec, plan, research, data model and tasks now
+  name the chosen answers; the non-chosen options were removed from the work (T080 log viewer dropped, no new-session restart, no Codex
+  reload, no early Claude launch, no `stopServer`) and are listed as out of scope in tasks.md. No contradiction left with specs
+  019/012/005/006/054 or the constitution.
