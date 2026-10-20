@@ -1110,9 +1110,9 @@ html .notice-strip .btn.primary:hover{background:color-mix(in srgb,var(--amber-i
 @media (prefers-contrast:more){
   html:not([data-dark]){--line:var(--line-ctl,#8a8272)!important;--line-2:color-mix(in srgb,var(--line-ctl,#8a8272) 65%,var(--ink,#2c3733))!important;--muted:var(--ink-2)!important}
 }
-/* FR-053: Tools and Settings are ghost buttons (same box: the group keeps its 1px border and padding, only transparent) */
-#topBtns{background:transparent;border-color:transparent}
-#topBtns button:not([aria-pressed="true"]):hover{background:color-mix(in srgb,currentColor 10%,transparent)}
+/* FR-053: Tools and Settings are ghost buttons in Clean Office (same box: the group keeps its 1px border and padding, only transparent); themed top bars keep their own .seg look, which carries their contrast */
+html:not([data-ui]) #topBtns{background:transparent;border-color:transparent}
+html:not([data-ui]) #topBtns button:not([aria-pressed="true"]):hover{background:color-mix(in srgb,currentColor 10%,transparent)}
 /* FR-053: the restore strip is a calm amber band (height unchanged: 3px padding, 24px buttons) */
 .notice-strip{background:color-mix(in srgb,var(--pb-waiting) 55%,var(--surface));border-bottom:1px solid color-mix(in srgb,var(--c-waiting) 45%,var(--line))}
 /* FR-053: radius tokens on panels and controls whose radius was already close */

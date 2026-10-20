@@ -38,6 +38,10 @@ html[data-ui="corporate"] .seg button{border-radius:3px}
 html[data-ui="corporate"] .topbar .btn{background:color-mix(in srgb,#fff 10%,transparent);border-color:color-mix(in srgb,#fff 30%,transparent);color:#fff}
 html[data-ui="corporate"] .topbar .btn:hover{background:color-mix(in srgb,#fff 18%,transparent)}
 html[data-ui="corporate"] .topbar #liveBar select,html[data-ui="corporate"] .topbar .select-wrap select{background:color-mix(in srgb,#fff 10%,transparent);border-color:color-mix(in srgb,#fff 30%,transparent);color:#fff}
+/* spec 052 FR-052: the defaults group (agent app, mode, model) sits on the dark bar too, so its white text keeps its contrast (it was white on a light group) */
+html[data-ui="corporate"] .topbar .defaults-grp{background:color-mix(in srgb,#fff 8%,transparent);border-color:color-mix(in srgb,#fff 28%,transparent)}
+html[data-ui="corporate"] .topbar .defaults-grp .btn{color:#fff}
+html[data-ui="corporate"] .topbar .defaults-grp select option{color:#1b2733;background:#fff}
 html[data-ui="corporate"] .topbar .select-wrap::after{border-color:#d5e2f0}
 /* spec 052 FR-032: a 1997-office bevel on buttons, segmented buttons and the top-bar selects, inverted when pressed.
    Inset shadows only, so no size changes; on the navy bar the dark edge is a shade of black, not the light --line-2. */
