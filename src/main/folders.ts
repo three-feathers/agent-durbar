@@ -156,6 +156,9 @@ export function parseSessionNames(v: unknown): SavedFolder['sessionNames'] {
     out.push(n);
   }
   const kept = out.slice(-MAX_SESSION_NAMES);
+  return kept.length ? kept : undefined;
+}
+
 /** Spec 006 FR-026: at most this many pins and this many hides per folder; the oldest are dropped. */
 export const MAX_PREV_MARKS = 200;
 
@@ -471,6 +474,8 @@ export class FolderStore {
   /** Removes the name of a session that Durbar deleted (spec 059 FR-005, spec 006 FR-029). */
   dropSessionName(workspace: string, src: string, id: string): void {
     this.setSessionName(workspace, src, id, undefined);
+  }
+
   /**
    * Pin, unpin, hide or unhide one row of Previous sessions (FR-024..FR-026). Pin and hide exclude each other: pinning clears a
    * hide and hiding clears a pin. A bad `src` or id, an unknown folder, or a no-op writes nothing. Returns false only for a refusal.
