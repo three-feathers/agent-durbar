@@ -60,6 +60,9 @@
         </div>
         <button class="more-it" role="menuitem" tabindex="-1" id="kbdHelpBtn" type="button" title="Every keyboard shortcut (?)"><span class="mt">Keyboard shortcuts<small>Ctrl+K palette, I inbox, N next (?)</small></span></button>
         <div class="more-sep" role="separator"></div>
+        <!-- spec 052 FR-090: end of day; asks first (red confirmation) -->
+        <button class="more-it danger" role="menuitem" tabindex="-1" id="endAllBtn" type="button" title="End every running session and free them. The chats stay; sending a message resumes one." hidden><span class="mt">End all sessions<small>The chats stay; a message resumes one</small></span></button>
+        <div class="more-sep" role="separator" id="endAllSep" hidden></div>
         <label class="more-it tgl"><input type="checkbox" id="demoToggle"> <span class="mt">Demo<small>Sample agents to look around; nothing runs</small></span></label>
       </div>
     </div>
@@ -67,6 +70,8 @@
 </header>
 <!-- spec 052 FR-015: the restored-Allow-all notice, a strip that takes its own room (nothing is covered) -->
 <div class="notice-strip" id="restoreStrip" role="alert" hidden></div>
+<!-- spec 052 FR-089: Since you were away (shown once after more than 30 minutes closed; dismissible) -->
+<div class="notice-strip info" id="awayStrip" role="status" hidden></div>
 
 <div class="workspace">
   <div id="stage-host">

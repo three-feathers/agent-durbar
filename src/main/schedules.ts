@@ -301,6 +301,34 @@ export class Scheduler {
     }
   }
 
+  /**
+   * Spec 052 FR-089: **Run missed now**: the user asks for one run of this schedule, now. It goes through the same `send`
+   * as a scheduled run and records its outcome; the next planned run (or a one-time schedule's done flag) is unchanged.
+   * Refused, with a reason and nothing sent, when Pause all is on, the schedule is paused, its session ended, its limit is
+   * reached, the agent is busy or another run is in progress.
+   */
+  async runNow(id: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
+    const s = typeof id === 'string' ? this.doc.schedules.find((x) => x.id === id) : undefined;
+    if (!s) return { ok: false, error: 'That schedule is gone.' };
+    if (this.running) return { ok: false, error: 'A scheduled run is going out. Try again in a moment.' };
+    if (this.doc.pausedAll) return { ok: false, error: 'Schedules are paused (Pause all). Resume them first.' };
+    if (s.paused) return { ok: false, error: 'This schedule is paused. Resume it first.' };
+    if (s.target && !this.deps.hasSession(s.target.session)) return { ok: false, error: 'That session has ended.' };
+    if (s.cap && (s.spent ?? 0) >= s.cap.amount) return { ok: false, error: 'This schedule has reached its limit.' };
+    if (this.deps.isBusy(s.folder, s.target?.session)) return { ok: false, error: 'The agent is busy. Try again when it is free.' };
+    this.running = true;
+    let r: boolean | string = false;
+    try {
+      r = await this.deps.send(s.folder, s.prompt, s).catch(() => false);
+      if (typeof r === 'string' && r) this.attrib.set(r, s.id);
+      s.last = { at: this.deps.now(), outcome: r ? 'sent' : 'failed' };
+    } finally {
+      this.running = false;
+      this.commit();
+    }
+    return r ? { ok: true } : { ok: false, error: 'Could not send it.' };
+  }
+
   /** Adds or replaces a schedule (validated); returns it, or an error. */
   save(input: unknown, folderExists: (f: string) => boolean): { ok: true; schedule: Schedule } | { ok: false; error: string } {
     const now = this.deps.now();

@@ -178,6 +178,12 @@ export interface ScheduleInfo {
   spent?: number;
   spentUnknown?: boolean;
 }
+/** Spec 052 FR-089: the Since you were away card's facts (src/main/daily.ts). */
+export interface SinceAwayInfo {
+  awayMs: number;
+  missed: Array<{ id: string; folderName: string; prompt: string; repeats: boolean }>;
+}
+
 export interface SchedulesInfo {
   pausedAll: boolean;
   schedules: ScheduleInfo[];
@@ -482,6 +488,11 @@ export interface DurbarApi {
   saveSchedule?(input: Partial<ScheduleInfo> & { folder: string; prompt: string }): Promise<{ ok: true; schedule: ScheduleInfo } | { ok: false; error: string }>;
   removeSchedule?(id: string): Promise<{ ok: boolean }>;
   setSchedulesPaused?(on: boolean): Promise<{ ok: boolean; pausedAll: boolean }>;
+  /** Spec 052 FR-089: one run of a schedule now ("Run missed now"), through the same path as a scheduled run. */
+  runScheduleNow?(id: string): Promise<{ ok: boolean; error?: string }>;
+  /** Spec 052 FR-089: what happened while the app was closed (more than 30 minutes), or null. */
+  sinceAway?(): Promise<SinceAwayInfo | null>;
+  dismissSinceAway?(): Promise<{ ok: boolean }>;
   onSchedules?(cb: (doc: SchedulesInfo) => void): () => void;
   onScheduleRan?(cb: (r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void): () => void;
   /** Answer the agent's question (spec 012 FR-128): question text -> answer; null = skip. */

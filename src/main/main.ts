@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, screen, shell } from 'electron';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -24,7 +24,9 @@ import { openInVSCode } from './vscode';
 import { isHttpUrl } from '../shared/url';
 import { checkElicitAnswer, createElicitTracker, elicitHttpsUrl } from '../shared/elicit';
 import { createRemoteOps } from './remoteops';
-import { DEFAULT_ADAPTER, FolderStore, PROFILE_ID, restoreMode } from './folders';
+import { DEFAULT_ADAPTER, FolderStore, PROFILE_ID, restoreMode, sessionsToRestore } from './folders';
+import { AppStateStore, buildSinceAway, placeWindow, quitMessage } from './daily';
+import type { SinceAway } from './daily';
 import { navigationAllowed, permissionAllowed, senderAllowed } from './hardening';
 import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '../adapters/vscodeChat';
 import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
@@ -80,6 +82,10 @@ let usageTotalsStore: UsageTotalsStore | undefined;
 let agentTrust: AgentTrustStore | undefined;
 /** Local activity log (spec 052 FR-071): permission answers, automatic approvals, mode and limit changes. Created when the app is ready. */
 let activityStore: ActivityStore | undefined;
+/** Spec 052 round 8: the window's place and size and the last quit time (not settings). Created when the app is ready. */
+let appState: AppStateStore | undefined;
+/** Spec 052 FR-089: what happened while the app was closed, built once at start; null after the card is dismissed. */
+let sinceAway: SinceAway | null = null;
 /** The folder (or .code-workspace file) an agent belongs to; the key of the saved folder list. */
 const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 
@@ -327,15 +333,18 @@ function restoreFolders(): void {
     try {
       if (!fs.existsSync(f.workspace)) continue; // e.g. an unplugged drive: stays saved, just not shown
       const rm = restoreMode(f.permMode); // exactly as saved, Allow all included, flagged so the UI shows "restored" (spec 003 FR-025/026)
-      // FR-021: the folder's last session comes back under its own id (resumed when first needed); a harness this build lacks starts fresh
-      const ls = f.lastSession && registry.has(f.lastSession.adapterId ?? DEFAULT_ADAPTER) && !agents.has(f.lastSession.id) ? f.lastSession : undefined;
-      const kind = ls ? (ls.adapterId ?? DEFAULT_ADAPTER) : adapterId;
-      const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, maxAiCredits: router.instance(kind).capabilities?.capUnit === 'usd' ? undefined : f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
-      if (ls) info.resumeLast = true;
-      if (f.label) info.label = f.label;
-      if (f.defaultAgent) info.defaultAgent = f.defaultAgent;
-      router.bind(info.id, kind);
-      agents.set(info.id, info);
+      // FR-021: the folder's last session comes back under its own id (resumed when first needed); a harness this build lacks starts fresh.
+      // Spec 052 FR-088: so does every other session that was open in the folder (at most 6), each resumed lazily the same way.
+      const sessions = sessionsToRestore(f).filter((s) => registry.has(s.adapterId ?? DEFAULT_ADAPTER) && !agents.has(s.id));
+      for (const ls of sessions.length ? sessions : [undefined]) {
+        const kind = ls ? (ls.adapterId ?? DEFAULT_ADAPTER) : adapterId;
+        const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, maxAiCredits: router.instance(kind).capabilities?.capUnit === 'usd' ? undefined : f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
+        if (ls) info.resumeLast = true;
+        if (f.label) info.label = f.label;
+        if (f.defaultAgent) info.defaultAgent = f.defaultAgent;
+        router.bind(info.id, kind);
+        agents.set(info.id, info);
+      }
     } catch {
       /* folder gone or not a folder any more */
     }
@@ -343,6 +352,11 @@ function restoreFolders(): void {
 }
 
 ipcMain.handle('app:version', () => app.getVersion());
+ipcMain.handle('app:sinceAway', (e) => (fromApp(e) ? sinceAway : null));
+ipcMain.handle('app:dismissSinceAway', (e) => {
+  if (fromApp(e)) sinceAway = null;
+  return { ok: true };
+});
 ipcMain.handle('agents:list', () => [...agents.values()]);
 
 const sessionOpts = (o: unknown): SessionOptions & { persist: boolean } => {
@@ -400,8 +414,10 @@ ipcMain.handle('sessions:resume', async (_e, id: unknown, sessionId: unknown, re
       history = { items: [], total: 0, truncated: false };
     }
     let removedId: string | undefined;
+    folderStore?.addOpenSession(wsKey(info), resumeIdFor(info.id), router.adapterIdOf(info.id)); // spec 052 FR-088: a resumed session is open in the folder and comes back after a restart
     if (replace === true) {
       removedId = id as string;
+      forgetOpenSession(wsKey(a), removedId);
       await ad.stop(removedId);
       router.unbind(removedId);
       agents.delete(removedId);
@@ -550,6 +566,8 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
 ipcMain.handle('schedules:list', () => scheduler?.doc ?? { pausedAll: false, schedules: [] });
 ipcMain.handle('schedules:save', (e, input: unknown) => (!fromApp(e) ? { ok: false, error: 'invalid request' } : scheduler ? scheduler.save(input, (f) => !!folderStore?.get(f)) : { ok: false, error: 'Schedules are not available.' }));
 ipcMain.handle('schedules:remove', (e, id: unknown) => ({ ok: fromApp(e) && typeof id === 'string' && !!scheduler?.remove(id) }));
+// spec 052 FR-089: "Run missed now" from the Since you were away card: one run through the same send path as a scheduled one
+ipcMain.handle('schedules:runNow', async (e, id: unknown) => (!fromApp(e) || typeof id !== 'string' || id.length > 100 ? { ok: false, error: 'invalid request' } : scheduler ? scheduler.runNow(id) : { ok: false, error: 'Schedules are not available.' }));
 ipcMain.handle('schedules:setPausedAll', (_e, on: unknown) => {
   scheduler?.setPausedAll(on === true);
   return { ok: !!scheduler, pausedAll: scheduler?.doc.pausedAll ?? false };
@@ -1115,6 +1133,7 @@ ipcMain.handle('agents:remove', async (_e, id: unknown) => {
   if (!a) return { ok: false, error: 'unknown session' };
   const key = wsKey(a);
   if ([...agents.values()].filter((x) => wsKey(x) === key).length < 2) return { ok: false, error: 'This is the only session in the folder. Remove the folder from Folders instead.' };
+  forgetOpenSession(key, a.id); // FR-020 and spec 052 FR-088: a removed session does not come back after a restart
   try {
     await remoteOps.release(a.id); // spec 054 FR-011
     await router.forAgent(a.id)?.stop(a.id); // the history stays on disk and is listed under Previous sessions
@@ -1125,7 +1144,6 @@ ipcMain.handle('agents:remove', async (_e, id: unknown) => {
   agents.delete(a.id);
   agentState.remove(a.id);
   vsChatRefs.delete(a.id);
-  folderStore?.clearLastSession(key, a.id); // FR-020: a removed session does not come back after a restart
   scheduler?.sessionsChanged(); // spec 044 FR-014: a schedule for this session pauses and says so
   return { ok: true };
 });
@@ -1150,7 +1168,18 @@ ipcMain.handle('folders:setDefaultAgent', (_e, id: unknown, profileId: unknown) 
 
 /** Spec 006 FR-020: the session a folder continues after a restart is the one that last got a message. */
 function noteLastSession(a: AgentInfo | undefined): void {
-  if (a) folderStore?.setLastSession(wsKey(a), router.forAgent(a.id)?.resumeIdOf?.(a.id) ?? a.id, router.adapterIdOf(a.id)); // Codex: its thread id
+  if (!a) return;
+  const rid = resumeIdFor(a.id); // Codex: its thread id
+  folderStore?.setLastSession(wsKey(a), rid, router.adapterIdOf(a.id));
+  folderStore?.addOpenSession(wsKey(a), rid, router.adapterIdOf(a.id)); // spec 052 FR-088: every open session comes back, not only the last
+}
+/** The id a session is resumed under after a restart (Codex: its thread id; others: the agent id). */
+const resumeIdFor = (id: string): string => router.forAgent(id)?.resumeIdOf?.(id) ?? id;
+/** Spec 052 FR-088: a session that leaves its folder (removed, or replaced by a resumed one) is not restored any more. Call before the session is unbound. */
+function forgetOpenSession(key: string, id: string): void {
+  const rid = resumeIdFor(id);
+  folderStore?.removeOpenSession(key, id);
+  if (rid !== id) folderStore?.removeOpenSession(key, rid);
 }
 
 /** Spec 006 FR-021: the chat of a restored agent was opened; start it now (a resume sends no prompt) and hand back what came back. */
@@ -1190,11 +1219,54 @@ ipcMain.handle('agents:openInVSCode', (_e, id: string) => {
   return a ? openInVSCode(a.workspaceFile ?? a.cwd) : { ok: false, error: 'unknown agent' };
 });
 
+/** Spec 052 FR-087: where the window opens: the saved place and size on a display it still fits, else 1440x900. Dev screenshot runs keep the default. */
+function initialPlacement(): ReturnType<typeof placeWindow> {
+  const saved = dev.DURBAR_SHOT || dev.DURBAR_DRIVER ? undefined : appState?.window;
+  return placeWindow(saved, saved ? screen.getDisplayMatching(saved).workArea : undefined);
+}
+
+/** FR-087: remember the window's normal (not maximized) place and size and whether it was maximized. */
+function saveWindowState(w: BrowserWindow): void {
+  if (dev.DURBAR_SHOT || dev.DURBAR_DRIVER || w.isDestroyed() || w.isMinimized() || w.isFullScreen()) return;
+  appState?.setWindow({ ...w.getNormalBounds(), maximized: w.isMaximized() });
+}
+
+/** Spec 052 FR-090: main agents in the middle of a turn (working, thinking, or waiting for an answer inside the turn). */
+function workingCount(): number {
+  let n = 0;
+  for (const id of agents.keys()) {
+    const st = agentState.get(id)?.state;
+    if (busyStatus(id) || st === 'working' || st === 'thinking') n++;
+  }
+  return n;
+}
+/** FR-090: true once the user chose Quit (or nothing was working), so later close and quit events do not ask again. */
+let quitConfirmed = false;
+let quitAsking = false;
+/** Asks once whether to quit while agents work; resolves true for Quit. Cancel is the default and the Escape answer. */
+async function confirmQuit(): Promise<boolean> {
+  const n = workingCount();
+  if (n === 0 || dev.DURBAR_SHOT || dev.DURBAR_DRIVER) return true;
+  if (quitAsking) return false;
+  quitAsking = true;
+  try {
+    const q = quitMessage(n);
+    const opts = { type: 'warning' as const, buttons: ['Quit', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true, title: 'Agent Durbar', message: q.message, detail: q.detail };
+    const r = win && !win.isDestroyed() ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
+    return r.response === 0;
+  } finally {
+    quitAsking = false;
+  }
+}
+
 function createWindow(): void {
+  quitConfirmed = false; // macOS: a window opened again after the last one closed asks again when its agents work
+  const place = initialPlacement();
   win = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    useContentSize: true,
+    ...place.bounds,
+    useContentSize: !place.restored, // the default is the office's content size; a restored window gets back its outer bounds
+    minWidth: 640,
+    minHeight: 480,
     title: 'Agent Durbar',
     backgroundColor: '#f6f1e7',
     // spec 008 FR-025: Windows and macOS take the icon from the .exe/.icns; Linux needs it on the window
@@ -1232,6 +1304,23 @@ function createWindow(): void {
     if (dev.DURBAR_SIM_FLOORS_OFF) query.floorsoff = dev.DURBAR_SIM_FLOORS_OFF.slice(0, 200);
   }
   win.on('focus', () => win?.flashFrame(false)); // spec 052 FR-059: the taskbar flash stops when you come back
+  if (place.maximized) win.maximize();
+  {
+    // Spec 052 FR-087 / FR-090: closing the window asks first while agents work (it ends their sessions), then remembers where the window was
+    const w = win;
+    w.on('close', (ev) => {
+      if (!quitConfirmed && workingCount() > 0 && !dev.DURBAR_SHOT && !dev.DURBAR_DRIVER) {
+        ev.preventDefault();
+        void confirmQuit().then((ok) => {
+          if (!ok) return;
+          quitConfirmed = true;
+          w.close();
+        });
+        return;
+      }
+      saveWindowState(w);
+    });
+  }
   win.webContents.on('did-finish-load', () => agentState.clearPaused()); // a fresh page starts with nobody paused (Paused is window-only, spec 041 T014)
   void win.loadFile(INDEX_HTML, { query });
   // Dev: DURBAR_SHOT=/tmp/out.png [DURBAR_SHOT_SIZE=1280x800] [DURBAR_SHOT_CLICK=sim-1] saves a screenshot and quits.
@@ -1267,6 +1356,11 @@ app.whenReady().then(() => {
   usageStore = new UsageStore(path.join(app.getPath('userData'), 'durbar-tool-usage.json'));
   usageStore.load();
   usageTotalsStore = new UsageTotalsStore(path.join(app.getPath('userData'), 'durbar-usage-totals.json'));
+  appState = new AppStateStore(path.join(app.getPath('userData'), 'durbar-app-state.json'));
+  appState.load();
+  const startedAt = Date.now();
+  const quitAt = appState.quitAt;
+  appState.setQuitAt(undefined); // spec 052 FR-089: a crash leaves no quit time, so it never shows a wrong "away" time
   activityStore = new ActivityStore(path.join(app.getPath('userData'), 'activity.json'));
   activityStore.load();
   sweepStaleStageDirs(os.tmpdir()); // spec 004 FR-010: staging folders a crash left behind
@@ -1278,6 +1372,8 @@ app.whenReady().then(() => {
     const file = path.join(app.getPath('userData'), 'durbar-schedules.json');
     scheduler = new Scheduler(loadSchedules(file, Date.now()), scheduleDeps(file));
     scheduler.start(); // missed once-runs are marked, intervals continue from now (spec 044 FR-002)
+    // spec 052 FR-089: the Since you were away card, from the saved quit time and the runs the scheduler just marked missed
+    sinceAway = buildSinceAway(quitAt, startedAt, scheduler.doc.schedules, (f) => folderStore?.get(f)?.label ?? folderNameOf(/\.code-workspace$/i.test(f) ? { workspaceFile: f, cwd: f } : { cwd: f })) ?? null;
   }
   createWindow();
   // Dev/headless convenience: DURBAR_OPEN="/path/a:/path/b" starts agents (read-only) on launch.
@@ -1313,9 +1409,30 @@ app.whenReady().then(() => {
   });
 });
 
-// spec 054 FR-011: remote control is turned off on GitHub before the app quits (best effort, at most 3 s)
+// One before-quit handler, in order (a second handler would run even after the first one called preventDefault):
+// 1. spec 052 FR-090: agents still working? Ask Quit / Cancel once (the window's close handler shares the answer).
+// 2. spec 052 FR-087 / FR-089: remember the window and the quit time.
+// 3. spec 054 FR-011: remote control is turned off on GitHub before the app quits (best effort, at most 3 s).
 let remoteReleased = false;
+let quitNoted = false;
 app.on('before-quit', (ev) => {
+  if (!quitConfirmed) {
+    if (workingCount() > 0 && !dev.DURBAR_SHOT && !dev.DURBAR_DRIVER) {
+      ev.preventDefault();
+      void confirmQuit().then((ok) => {
+        if (!ok) return;
+        quitConfirmed = true;
+        app.quit();
+      });
+      return;
+    }
+    quitConfirmed = true;
+  }
+  if (!quitNoted) {
+    quitNoted = true;
+    if (win && !win.isDestroyed()) saveWindowState(win);
+    appState?.setQuitAt(Date.now());
+  }
   if (remoteReleased || remoteOps.ids().length === 0) return;
   ev.preventDefault();
   remoteReleased = true;

@@ -269,6 +269,10 @@ const prio = a => {const s=vis(a);return s==='waiting'?0:s==='error'?1:2;};
 
 /* ---------------- state ---------------- */
 const ui = {view:'office', ws:'all', status:null, selected:null, expanded:{}};
+/* spec 052 FR-087 / FR-091: the last view, folder filter and open chat, and the most recently opened chats (ids only), kept in this
+   window's localStorage. Not in the simulator (its agents are made up each run) and not before the real agent list is back. */
+const UI_KEY='durbar.ui';
+let uiRestored=false, uiSaved='', RECENT=[];
 const $ = id => document.getElementById(id);
 
 const fmtTok = n => n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e4?Math.round(n/1e3)+'k':n>=1e3?(n/1e3).toFixed(1)+'k':String(n);
@@ -857,6 +861,7 @@ function renderAll(){
   syncWalkers();
   if(id&&!inPanel){const n=document.querySelector(`[${key}="${CSS.escape(id)}"]`); if(n&&ae!==n)n.focus({preventScroll:true});}
   if(ui.selected){updatePanelHeader();renderStrip();}
+  rememberUi();
 }
 
 
@@ -1154,6 +1159,7 @@ function wireAnswerBar(a){
 }
 function openPanel(id,focus){
   const a=byId(id); if(!a)return; ui.selected=id; attached=[];
+  noteRecentChat(a); rememberUi();
   document.body.classList.add('panel-open');
   const room=roomOf(a), parent=a.parent?byId(a.parent):null;
   const p=$('panel');
@@ -1273,6 +1279,8 @@ document.addEventListener('keydown',e=>{
   /* spec 052 FR-042: Ctrl+K (Cmd+K) opens the command palette from anywhere, also from text fields */
   if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&!e.altKey&&(e.key==='k'||e.key==='K'||e.code==='KeyK')){e.preventDefault();closeKbdHelp();openPalette();return;}
   if((e.ctrlKey||e.metaKey)&&e.shiftKey&&!e.altKey&&(e.key==='A'||e.key==='a'||e.code==='KeyA')){e.preventDefault();openInbox();return;}
+  /* spec 052 FR-091: Ctrl+` goes back to the previous chat (and again, back). Control also on a Mac: Cmd+` switches windows there. Not under a dialog. */
+  if(e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey&&e.code==='Backquote'&&!document.querySelector('[role="dialog"][aria-modal="true"]')){e.preventDefault();openPreviousChat();return;}
   if((e.ctrlKey||e.metaKey)&&e.shiftKey&&!e.altKey&&(e.key==='N'||e.key==='n'||e.code==='KeyN')){e.preventDefault();closeInbox();openNextNeedsMe();return;}
   /* spec 052 FR-060: in an open chat, Alt+A allow once, Alt+S allow for this session, Alt+D deny (the request the answer bar shows), Alt+N the
      next agent that needs you. By the key's position (e.code), so Option+letter on a Mac works too. Not while you type in a field with text,
@@ -1526,21 +1534,26 @@ function palActions(){
     {label:'Detail level: Expert',kw:'expert detail developer view',run:()=>setDetail('expert')},
     {label:'Close all room doors',kw:'doors close compact plates',run:palClick('closeAll'),ok:()=>palUsable('closeAll')},
     {label:'Open all room doors',kw:'doors open expand',run:palClick('openAll'),ok:()=>palUsable('openAll')},
+    {label:'Back to the previous chat',kw:'previous last recent chat toggle switch',keys:['Ctrl','`'],run:openPreviousChat,ok:()=>!!previousChat()},
     {label:'Keyboard shortcuts',kw:'keys shortcuts help hotkeys',keys:['?'],run:openKbdHelp},
+    {label:'End all sessions',hint:'Ends every running session; the chats stay',kw:'end stop all sessions quit day close',run:()=>endAllSessions(),ok:()=>!!bridge&&!!bridge.end&&endAllTargets().length>0},
     ...remotePalItems(),
   ].filter(x=>!x.ok||x.ok()).map(x=>({...x,group:'Actions'}));
 }
-function palAll(){
-  const ags=agents.filter(a=>!a.parent).map(a=>{const r=roomOf(a);return {group:'Agents',label:a.name,
+function palAll(withRecent){
+  /* spec 052 FR-091: with an empty search, the 5 most recently opened chats come first, as "Recent" (and are not repeated under Agents) */
+  const rec=withRecent?recentChats(5):[], recIds=new Set(rec.map(a=>a.id));
+  const agItem=(a,group)=>{const r=roomOf(a);return {group,label:a.name,
     hint:[r&&r.name,LABELS[vis(a)]||vis(a),a.info?kindWord(a.info.adapterId):''].filter(Boolean).join(' · '),
-    kw:[r&&r.name,LABELS[vis(a)],a.info?kindWord(a.info.adapterId):''].filter(Boolean).join(' '),run:()=>openPanel(a.id,true)};});
+    kw:[r&&r.name,LABELS[vis(a)],a.info?kindWord(a.info.adapterId):''].filter(Boolean).join(' '),run:()=>openPanel(a.id,true)};};
+  const ags=[...rec.map(a=>agItem(a,'Recent')),...agents.filter(a=>!a.parent&&!recIds.has(a.id)).map(a=>agItem(a,'Agents'))];
   const rooms=roomsInOrder().filter(roomShown).map(r=>({group:'Folders',label:r.name,hint:'Show only this folder',kw:'folder filter',
     run:()=>{if(ui.selected)closePanel();ui.ws=r.id;renderAll();}}));
   if(ui.ws!=='all')rooms.unshift({group:'Folders',label:'All folders',hint:'Show every folder',kw:'folder filter all',run:()=>{if(ui.selected)closePanel();ui.ws='all';renderAll();}});
   return [...ags,...rooms,...palActions()];
 }
 function palFilter(q){
-  q=q.trim().toLowerCase(); const all=palAll(); if(!q)return all;
+  q=q.trim().toLowerCase(); const all=palAll(!q); if(!q)return all;
   const scored=[];
   all.forEach((x,i)=>{const l=x.label.toLowerCase(),k=(x.kw||'').toLowerCase();
     const s=l.startsWith(q)?0:l.split(/[\s\-_.]+/).some(w=>w.startsWith(q))?1:l.includes(q)?2:k.includes(q)?3:-1;
@@ -1609,6 +1622,7 @@ function openKbdHelp(back){
     [['Ctrl','K'],'Command palette: agents, folders and actions'],
     [['I'],'Needs you inbox',['Ctrl','Shift','A']],
     [['N'],'Next agent that needs you',['Ctrl','Shift','N']],
+    [['Ctrl','`'],'Back to the previous chat (on a Mac too: Control, not Cmd)'],
     [['←','→','↑','↓'],'Move between desks'],
     [['Esc'],'Back, or close'],
     [['?'],'This list'],
@@ -1629,6 +1643,84 @@ function openKbdHelp(back){
 }
 $('kbdHelpBtn').onclick=()=>openKbdHelp($('topMoreBtn'));
 /* ---- end spec 052 FR-042 / FR-043 ---- */
+/* ---- spec 052 round 8, daily use (FR-087..FR-091) ---- */
+const rememberOn=()=>!!bridge&&!qs.get('sim')&&!demoOn;
+/* FR-087: written only when something changed (renderAll runs often); the folder is kept by its path, which stays the same across restarts */
+function rememberUi(){
+  if(!uiRestored||!rememberOn())return;
+  const sel=byId(ui.selected), root=sel&&(sel.parent?byId(sel.parent):sel);
+  const room=ui.ws!=='all'?ROOMS.find(r=>r.id===ui.ws):null;
+  const v=JSON.stringify({view:ui.view,ws:room?room.path:null,chat:root&&root.live?root.id:null,recent:RECENT.slice(0,10)});
+  if(v===uiSaved)return; uiSaved=v;
+  try{localStorage.setItem(UI_KEY,v);}catch(e){}
+}
+/* after the agent list loaded: the view, then the folder filter (if that folder is still shown), then the chat (only if that agent still exists) */
+function restoreUi(){
+  if(uiRestored)return; uiRestored=true;
+  if(!rememberOn())return;
+  let o=null; try{o=JSON.parse(localStorage.getItem(UI_KEY)||'null');}catch(e){o=null;}
+  if(!o||typeof o!=='object')return;
+  RECENT=Array.isArray(o.recent)?o.recent.filter(x=>typeof x==='string'&&x.length<=200).slice(0,10):[];
+  if(o.view==='list'&&ui.view!=='list'&&qs.get('view')!=='list')setView('list');
+  const room=typeof o.ws==='string'?ROOMS.find(r=>r.path===o.ws&&roomShown(r)):null;
+  if(room){ui.ws=room.id;renderFilter();renderAll();}
+  const a=typeof o.chat==='string'?byId(o.chat):null;
+  if(a&&!a.parent&&!ui.selected&&!pendingOpen)openPanel(a.id,false);
+  uiSaved='';rememberUi();
+}
+/* FR-091: the most recently opened chats, newest first (main agents; a helper's chat counts for its main agent) */
+function noteRecentChat(a){
+  const r=a&&(a.parent?byId(a.parent):a); if(!r||!r.live)return;
+  RECENT=[r.id,...RECENT.filter(x=>x!==r.id)].slice(0,10);
+}
+const recentChats=n=>RECENT.map(byId).filter(a=>a&&!a.parent&&a.live&&roomShown(roomOf(a))).slice(0,n);
+/* the chat to go back to: the newest one that is not open now */
+function previousChat(){
+  const sel=byId(ui.selected), cur=sel&&(sel.parent?sel.parent:sel.id);
+  return recentChats(10).find(a=>a.id!==cur)||null;
+}
+function openPreviousChat(){
+  const p=previousChat();
+  if(!p){toast('No earlier chat to go back to yet.',2600);return;}
+  closeInbox();openPanel(p.id,true);
+}
+/* FR-090: End all sessions: every main session that is running (the card menu's own rule: started, not ended), through the same end path */
+const endAllTargets=()=>agents.filter(a=>!a.parent&&a.live&&DMK().cardMenuActions(a,capsFor(a)).end);
+async function endAllSessions(anchor){
+  const list=endAllTargets();
+  if(!list.length){toast('No session is running.',2600);return;}
+  const busyN=list.filter(a=>a.state==='working'||a.state==='thinking'||a.state==='waiting').length;
+  const ok=await askDialog({title:'End all sessions?',body:(list.length===1?'1 session ends':list.length+' sessions end')+' and frees '+(list.length===1?'its place':'their places')+(busyN?' ('+busyN+' still working: '+(busyN===1?'its reply stops':'their replies stop')+')':'')+'. The chats stay; send a message to pick up where you left off.',returnFocus:anchor,
+    buttons:[{label:'Cancel',value:null},{label:'End all sessions',value:'ok',cls:'primary danger'}]});
+  if(!ok)return;
+  const bad=[];
+  for(const a of list){try{await (bridge.end||bridge.stop)(a.id);}catch(err){bad.push(a.name);}}
+  const n=list.length-bad.length;
+  toast(bad.length?'Could not end '+esc(bad.join(', '))+'.':(n===1?'1 session ended.':n+' sessions ended.')+' Sending a message resumes one.',4200).classList.add(bad.length?'err':'ok');
+}
+/* FR-089: "Since you were away": how long the app was closed and the scheduled prompts that did not run, from main's stores only */
+const awayWords=ms=>{const m=Math.round(ms/60000),d=Math.floor(m/1440),h=Math.floor((m%1440)/60),mm=m%60;
+  return d?d+(d===1?' day':' days')+(h?' '+h+' h':''):h?h+' h'+(mm?' '+mm+' min':''):mm+' min';};
+async function renderAwayStrip(){
+  const el=$('awayStrip'); if(!el||!bridge||!bridge.sinceAway||demoOn)return;
+  let s=null; try{s=await bridge.sinceAway();}catch(e){s=null;}
+  if(!s||typeof s.awayMs!=='number'){el.hidden=true;el.innerHTML='';return;}
+  const missed=Array.isArray(s.missed)?s.missed:[];
+  el.innerHTML='<span class="ns-ic" aria-hidden="true">i</span><span class="ns-t"><b>Since you were away</b> ('+esc(awayWords(s.awayMs))+'): '+
+    (missed.length?(missed.length===1?'1 scheduled prompt':missed.length+' scheduled prompts')+' did not run while the app was closed.':'nothing was scheduled while the app was closed.')+
+    '</span>'+(missed.length?'<span class="aw-list">'+missed.map(m=>'<span class="aw-it" data-sched="'+esc(m.id)+'"><span class="aw-w"><b>'+esc(m.folderName)+'</b>: “'+esc(m.prompt)+'”'+(m.repeats?' <small>(runs again as planned)</small>':'')+'</span>'+(bridge.runScheduleNow?'<button class="btn" type="button" data-awrun="'+esc(m.id)+'">Run missed now</button>':'')+'</span>').join('')+'</span>':'')+
+    '<span class="ns-act"><button class="btn" type="button" data-aw="close">Dismiss</button></span>';
+  el.hidden=false;
+  el.querySelector('[data-aw="close"]').onclick=()=>{el.hidden=true;el.innerHTML='';if(bridge.dismissSinceAway)bridge.dismissSinceAway().catch(()=>{});scheduleRender();};
+  el.querySelectorAll('[data-awrun]').forEach(b=>b.onclick=async()=>{
+    const done=busy(b,'Sending…');let r;
+    try{r=await bridge.runScheduleNow(b.dataset.awrun);}catch(err){r={ok:false,error:String(err&&err.message||err)};}finally{done();}
+    if(r&&r.ok){const it=b.closest('.aw-it');b.remove();if(it)it.insertAdjacentHTML('beforeend','<span class="aw-ok">Sent</span>');toast('Sent the scheduled prompt now.',3200).classList.add('ok');}
+    else toast('Could not run it: '+esc((r&&r.error)||'unknown error'),5000).classList.add('err');
+  });
+  scheduleRender();
+}
+$('endAllBtn').onclick=()=>endAllSessions($('topMoreBtn'));
 const DESK_NAV='#stage .desk, #stage .helper, #stage .plate';
 $('wsFilter').addEventListener('change',e=>{ui.ws=e.target.value;renderAll();});
 function setView(v){ui.view=v;document.body.classList.toggle('list-mode',v==='list');
@@ -3668,6 +3760,7 @@ if(bridge){
   document.body.classList.add('has-bridge');
   $('demoToggle').onchange=e=>{demoOn=e.target.checked;applyMode();};
   wireMenu('topMoreBtn','topMoreMenu');
+  $('endAllBtn').hidden=$('endAllSep').hidden=!bridge.end; /* spec 052 FR-090 */
   $('inboxBtn').onclick=openInbox;
   $('addFolder').onclick=()=>addVia(bridge.addFolder);
   $('addWs').onclick=()=>addVia(bridge.addWorkspaceFile);
@@ -3695,6 +3788,7 @@ if(bridge){
   bridge.onEvent(onLiveEvent);
   bridge.onAgentAdded(addLiveAgent);
   bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});renderRestoreStrip();
+    restoreUi();renderAwayStrip(); /* spec 052 FR-087 / FR-089 */
     /* spec 052 FR-059: what already needs you a few seconds after start is remembered, not notified */
     setTimeout(()=>{renderInboxBtn();ATT_ARMED=true;},3000);});
   loadModels();
