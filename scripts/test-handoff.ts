@@ -5,6 +5,7 @@ import { HANDOFF_MAX_CHARS, HANDOFF_PROMPT, cleanSummary } from '../src/adapters
 assert.match(HANDOFF_PROMPT, /Goal; What was done; Open items; Important files and decisions; Next step/);
 assert.match(HANDOFF_PROMPT, /Do not use any tools/);
 assert.match(HANDOFF_PROMPT, /secrets/);
+assert.match(HANDOFF_PROMPT, /relative to the project folder.*different agent app/, 'spec 030 FR-043: written for another app too');
 assert.strictEqual(cleanSummary(undefined), '');
 assert.strictEqual(cleanSummary(42), '');
 assert.strictEqual(cleanSummary('  \r\n## Goal\r\nX  \n'), '## Goal\nX');

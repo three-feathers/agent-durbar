@@ -7,6 +7,8 @@ import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
 import { offeredDescriptors } from '../adapters/experimental';
 import { createRegistry, detectAll } from '../adapters/registry';
+import { folderGitStatus } from './gitstatus';
+import type { GitStatus } from './gitstatus';
 import { detectorFor, nodeDetectEnv } from '../adapters/detect';
 import { execFile, spawn } from 'child_process';
 import { adapterForAdd, createRouter, historyOf, modelOptionsOf, previousSessionsOf } from '../adapters/router';
@@ -64,6 +66,10 @@ import { REPO_URL, aboutPanelOptions, aboutView } from '../shared/about';
 import { modelControlFor, parseFocus, parseSwitchRequest } from '../shared/modelswitch';
 import type { ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import { createDebugSink } from '../shared/redact';
+import { debugSwitchesToRemove } from './debugguard';
+
+// Spec 008 FR-038: no DevTools endpoint in a packaged build. No fuse covers these switches; removing them before ready is shown to work on the packed Linux app (npm run check:fuses-launch).
+for (const sw of debugSwitchesToRemove(app.isPackaged)) app.commandLine.removeSwitch(sw);
 
 // Developer/test hooks (spec 010): ignored in packaged builds unless DURBAR_DEV=1. Read hooks only from `dev`.
 const dev = devEnv(process.env, app.isPackaged);
@@ -1025,6 +1031,17 @@ const remoteOps = createRemoteOps({
 router.onEvent((e) => {
   if (e.type === 'status' && e.status === 'stopped' && !e.agentId) remoteOps.forget(e.sessionId);
 });
+// spec 054 FR-062: the adapter says remote control ended on its own (for example a relaunch could not turn it back on)
+router.onEvent((e) => {
+  if (e.type !== 'remote' || e.agentId) return;
+  if (e.on) {
+    const url = remoteOps.updateUrl(e.sessionId, e.url);
+    if (url) toRenderer('agents:remoteUrl', { id: e.sessionId, url });
+    return;
+  }
+  remoteOps.forget(e.sessionId);
+  toRenderer('agents:remoteOff', { id: e.sessionId, ...(e.reason ? { reason: e.reason } : {}) });
+});
 ipcHandle('agents:setRemote', (e, id: unknown, on: unknown) => (fromApp(e) ? remoteOps.setRemote(id, on) : { ok: false, error: 'invalid request' }));
 ipcHandle('agents:openRemote', (e, id: unknown) => (fromApp(e) ? remoteOps.openRemote(id) : { ok: false }));
 
@@ -1255,6 +1272,11 @@ ipcHandle('agents:revokeGrant', (_e, id: string, key: string) => {
   if (agents.has(id)) router.forAgent(id)?.revokeGrant?.(id, String(key));
 });
 
+// spec 063: the git branch and changed files of an agent's own folder (read-only; the window never passes a path)
+ipcHandle('agents:gitStatus', async (e, id: unknown): Promise<GitStatus> => {
+  const a = fromApp(e) && typeof id === 'string' ? agents.get(id) : undefined;
+  return a && a.cwd ? folderGitStatus(a.cwd) : { repo: false };
+});
 ipcHandle('agents:openInVSCode', (_e, id: string) => {
   const a = agents.get(id);
   // Only paths of agents we started: the workspace file if there is one, else the folder.

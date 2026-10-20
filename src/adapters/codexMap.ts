@@ -12,6 +12,7 @@
  * child-thread events on the parent's connection is unverified, so the adapter keeps `helpers: false` until it is recorded.
  */
 import type { EventBody } from './map';
+import { isObj, nonEmptyStr as str } from '../shared/guards';
 
 /** The shape of a JSON-RPC notification as read off the wire (`id` absent). Names mirror the protocol; not a vendor type. */
 export interface CodexNotification {
@@ -30,10 +31,8 @@ export const CODEX_INTENT_CAP = 300;
 /** Most child threads remembered (oldest forgotten first). */
 export const CODEX_CHILD_LIMIT = 256;
 
-const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
 /** Own property only (never from the prototype chain). */
 const own = (o: unknown, k: string): unknown => (isObj(o) && Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined);
-const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined);
 const cap = (s: string): string => (s.length > CODEX_OUTPUT_CAP ? s.slice(0, CODEX_OUTPUT_CAP) : s);
 const capText = (s: string): string => (s.length > CODEX_TEXT_CAP ? s.slice(0, CODEX_TEXT_CAP) : s);

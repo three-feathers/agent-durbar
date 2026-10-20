@@ -20,7 +20,7 @@ CI (`.github/workflows/spec-kit.yml`) fails a pull request that changes `src/` w
 ## Where things are
 
 - `.specify/memory/constitution.md`: the rules (I-VIII). Read it first. Principles I and III are non-negotiable.
-- `specs/README.md`: index; `specs/001..010` describe what is built, `011` is partly built (caps and usage totals), `012` is built (Claude Code and OpenAI Codex are offered next to Copilot when installed, checked on real accounts; open: T070 real macOS/Windows, T083), `013` (live verification) was run on 2026-10-19 (C1-C7 on a real Copilot session; several models, a real cap, VS Code and macOS/Windows still open), `014` stays a backlog draft that needs the owner's approval before any plan or purchase, `015..021`, `023`, `024` (places in the office, simulator and unit tests, one short real check), `025`, `026` (release alpha.3) and `031` (release alpha.4, published as a pre-release 2026-10-17) are built (`022` and `027..029` have no spec folder; the next free spec number is 032, check the index), `030` (change model and context window inside a session) has Phases 1-2 built (simulator, and the Copilot adapter tested on a fake session; real controls are flagged unverified); Phase 3 was run on a free plan (`auto` only, 0.56 AIU): switching between two real models, the long tier and `confirmation_required` are still unverified. Check the index and `origin` branches for the next free number. Evidence tags: `[IMPLEMENTED]`, `[KNOWN GAP]`, `test:`, `sim:`, `real:`, `read:`.
+- `specs/README.md`: the index of every spec and its status. It is the single place for status: do not repeat statuses here (a copy goes stale). Next free spec number: check that index, the remote branches (`git ls-remote --heads origin | grep NNN-`) and the open PRs. Evidence tags: `[IMPLEMENTED]`, `[KNOWN GAP]`, `test:`, `sim:`, `real:`, `read:`.
 - `docs/agent-notes.md`: what agents learned the hard way (tool pitfalls, checked vendor behaviour, review techniques). Read it before you start; add to it (see *Share what you learn*).
 - `src/main`, `src/preload`, `src/renderer` (plain HTML/CSS/JS), `src/adapters`, `src/shared`; tests in `scripts/test-*.ts`.
 
@@ -68,6 +68,8 @@ Several people, each with their own agent (Claude Code, Copilot, others), work h
   - it has been **quiet for at least 2 hours**: no new commit, review or comment.
 
   Leave a comment saying it was merged for that reason.
+
+  **Read every review and comment before a merge** (owner, 2026-10-20). CI and the bot are not the only reviewers. Before you merge any PR (yours or another team's), read **all** of it: the reviews (approve, comment, request changes), every review thread and line comment, and every plain PR comment, including those that arrived after your last look. A required change written as a plain comment ("one required change: …") counts exactly like *request changes*. Fix it or answer it on the PR, and do not merge while a request, an unresolved thread or an unanswered comment from someone else is open. `scripts/pr-gate.sh <N>` checks this, the checks, CodeQL and the open alerts, and prints the comments that still need an answer. It never merges; run it right before every merge.
 
   **Before any merge, check the linked issue** (owner, 2026-10-19). Read the issue the PR works on (`Closes #N`, or the issue named in the spec or tasks), check every point it asks for against what the PR did, and handle both:
   - Everything is covered: let `Closes #N` close it.

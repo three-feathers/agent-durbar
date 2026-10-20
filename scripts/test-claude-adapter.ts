@@ -851,6 +851,66 @@ async function main(): Promise<void> {
     await ad.stop(sid);
     await ad.dispose();
   }
+  // spec 054 FR-061/FR-062: Remote Control over the running CLI; turned back on after a relaunch; a `remote` event when that fails
+  {
+    const sp = fakeSpawn();
+    const remoteReqs: Array<{ child: number; enabled: unknown }> = [];
+    let failEnable = false;
+    let n = 0;
+    sp.next = (c: FakeClaudeChild) => {
+      const me = ++n;
+      scripted(okTurn)(c);
+      const base = c.onWrite;
+      c.onWrite = (o) => {
+        if (o.type === 'control_request' && (o.request as { subtype: string }).subtype === 'remote_control') {
+          const enabled = (o.request as { enabled?: unknown }).enabled;
+          remoteReqs.push({ child: me, enabled });
+          const response = enabled === true ? { session_url: me === 1 ? 'https://claude.ai/code/session_01FAKE' : me === 2 ? 'https://claude.ai/code/session_02NEW' : 'https://evil.example/x', connect_url: 'https://claude.ai/code', bridge_session_id: 'cse_x' } : {};
+          setTimeout(() => c.send(failEnable && me > 1 && enabled === true ? { type: 'control_response', response: { subtype: 'error', request_id: o.request_id, error: 'not signed in to claude.ai' } } : { type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response } }), 0);
+          return;
+        }
+        base?.(o);
+      };
+    };
+    const ad = new ClaudeAdapter({
+      claudePath: async () => '/usr/local/bin/claude',
+      makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }),
+      sessionExists: () => false, claudeMd: () => undefined, readImage: () => Buffer.from('img'), env: () => ({ PATH: '/usr/bin' }),
+    });
+    const events: AgentEvent[] = [];
+    ad.onEvent((e) => events.push(e));
+    assert.ok(ad.capabilities.remote && ad.capabilities.remoteService?.host === 'claude.ai', 'Claude reports remote control on claude.ai');
+    const sid = await ad.start({ workspace: WS, permissionMode: 'ask', model: 'haiku' });
+    assert.match(String((await ad.setRemote!(sid, true)).error), /Send a message first/, 'only while the CLI runs');
+    assert.deepStrictEqual(await ad.setRemote!(sid, false), { ok: true, on: false }, 'off with no CLI process is simply off');
+    await ad.send(sid, { text: 'one' });
+    await until('first turn', () => (events.filter((e) => e.sessionId === sid && e.type === 'status' && (e as { status: string }).status === 'idle').length >= 2 ? true : undefined));
+    assert.deepStrictEqual(await ad.setRemote!(sid, true), { ok: true, on: true, steerable: true, url: 'https://claude.ai/code/session_01FAKE' });
+    assert.deepStrictEqual(remoteReqs, [{ child: 1, enabled: true }]);
+    // a relaunch (a model switch) turns it back on in the new process; a new claude.ai link reaches main as a `remote` on event
+    await ad.setModel!(sid, { model: 'sonnet' });
+    await ad.send(sid, { text: 'two' });
+    await until('relaunch turns remote back on', () => (remoteReqs.some((r) => r.child === 2 && r.enabled === true) ? true : undefined));
+    const moved = await until('new link event', () => events.find((e) => e.type === 'remote')) as { on: boolean; url?: string };
+    assert.deepStrictEqual([moved.on, moved.url], [true, 'https://claude.ai/code/session_02NEW']);
+    await until('second turn', () => (events.filter((e) => e.sessionId === sid && e.type === 'status' && (e as { status: string }).status === 'idle').length >= 3 ? true : undefined));
+    // a link elsewhere than claude.ai is never passed on
+    await ad.setModel!(sid, { model: 'opus' });
+    await ad.send(sid, { text: 'two b' });
+    await until('third relaunch', () => (remoteReqs.some((r) => r.child === 3 && r.enabled === true) ? true : undefined));
+    await until('third turn', () => (events.filter((e) => e.sessionId === sid && e.type === 'status' && (e as { status: string }).status === 'idle').length >= 4 ? true : undefined));
+    assert.strictEqual(events.filter((e) => e.type === 'remote').length, 1, 'no event for a foreign link');
+    // when the new process refuses, the window is told
+    failEnable = true;
+    await ad.setModel!(sid, { model: 'haiku' });
+    await ad.send(sid, { text: 'three' });
+    const ev = await until('remote off event', () => events.find((e) => e.type === 'remote' && !(e as { on: boolean }).on)) as { on: boolean; reason?: string };
+    assert.strictEqual(ev.on, false);
+    assert.match(String(ev.reason), /could not turn remote control back on/);
+    assert.deepStrictEqual(await ad.setRemote!(sid, false), { ok: true, on: false });
+    await ad.stop(sid);
+    await ad.dispose();
+  }
   fs.rmSync(WS, { recursive: true, force: true });
   console.log('claude adapter tests passed');
 }

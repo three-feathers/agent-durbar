@@ -4,7 +4,6 @@
  * the OS About panel, Settings > About, the installer copyright, LICENSE and the README.
  */
 export const OWNER = 'Three Feathers';
-export const OWNER_URL = 'https://github.com/three-feathers';
 export const REPO_URL = 'https://github.com/three-feathers/agent-durbar';
 export const COPYRIGHT_YEAR = 2026;
 /** Same text as LICENSE and electron-builder "copyright". */
