@@ -159,6 +159,8 @@
 - [x] T095 Inbox session button shrinks with an ellipsis (Deny always visible); Thinking full width with no inner scroll; Failing in the palette, strip and list dot; folder note only next to plain words; Cost "This session / All time" before the tabs with a "since" subtitle; Agent apps "for …" line; wider Agent app column [FR-092]
 - [x] T096 Mode menu lines, "What Durbar does not do" (Settings and README), AI theme cost line per selected app, Simple limit and memory chips; Remove from office confirmation checked [FR-093]
 - [x] T097 Drivers grepped for every changed string; `shots-052-ux.js` memory chip check; README Tools line; CHANGELOG [FR-094]
+## FR-085 fix: Mac window from an open chat (2026-10-20)
+- [x] T120 Mac: the chat's agent strip is the drag area with the traffic-light room when the top bar is hidden, and so is a screen's header (Settings, Tools, folder) opened over a chat; `test-macos` checks both [FR-085 fix, 2026-10-20]
 ## Round 10: chrome density and type (2026-10-20)
 - [x] T098 Chat header on one row (32px avatar, T1 name, chips and `.btn.sm` at 28px, actions pinned right), task and usage on one line, **Previous (N)** in the actions instead of the bar, 48px strip, shorter composer hint, 13px bubbles [FR-095]
 - [x] T099 Compact inbox rows (32px avatar, 8px gaps, `.btn.sm`, **Open** on the heading line) [FR-096]
