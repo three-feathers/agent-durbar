@@ -1,5 +1,5 @@
 /** Masking of MCP server status text before it leaves main (spec 019 FR-021). Pure: no Electron, so it is unit tested. */
-import type { McpServerStatus } from '../adapters/types';
+import type { AgentEvent, McpServerStatus } from '../adapters/types';
 import type { McpServerSpec } from '../shared/mcp';
 import { cut, maskSecretUrl, redact, secretFlag } from '../shared/redact';
 
@@ -30,4 +30,9 @@ export function maskMcpError(text: unknown, values: readonly string[] = []): str
 /** The same list with every `error` masked. */
 export function maskMcpStatuses(servers: readonly McpServerStatus[], values: readonly string[] = []): McpServerStatus[] {
   return servers.map((x) => (x.error === undefined ? x : { ...x, error: maskMcpError(x.error, values) }));
+}
+
+/** Spec 019 FR-022: the copy of an event that may leave main (window, debug sink): an `mcp` event with its errors masked; any other event unchanged (same object). */
+export function maskMcpEvent<E extends AgentEvent>(e: E, values: readonly string[] = []): E {
+  return e.type === 'mcp' ? { ...e, servers: maskMcpStatuses(e.servers, values) } : e;
 }
