@@ -64,10 +64,11 @@ module.exports = async (ctx) => {
       // 3. open: all eight, revoke buttons, short labels
       await js(`document.getElementById('grantsBtn').click()`); await ctx.sleep(300);
       const o = await js(`(()=>{const p=document.getElementById('grantsPop'),pr=p.getBoundingClientRect();const rows=[...p.querySelectorAll('.gp-row')];
-        return {hidden:p.hidden,exp:document.getElementById('grantsBtn').getAttribute('aria-expanded'),list:p.querySelector('ul').getAttribute('role'),n:rows.length,
+        return {hidden:p.hidden,exp:document.getElementById('grantsBtn').getAttribute('aria-expanded'),list:p.querySelector('ul').getAttribute('role'),popRole:p.getAttribute('role'),popLabel:p.getAttribute('aria-label'),n:rows.length,
           revokes:rows.filter(r=>/^Revoke permission: /.test((r.querySelector('button')||{}).getAttribute&&r.querySelector('button').getAttribute('aria-label')||'')).length,
           texts:rows.map(r=>r.querySelector('.gp-t').textContent),titles:rows.map(r=>r.title),all:!!document.getElementById('grantsAll'),
           inside:pr.left>=0&&pr.right<=innerWidth&&pr.top>=0&&pr.bottom<=innerHeight,clipped:rows.some(r=>r.getBoundingClientRect().height<20),focus:document.activeElement&&document.activeElement.dataset.revoke!==undefined}})()`);
+      assert.ok(o.popRole === 'group' && o.popLabel === 'Allowed for this session', `${tag}: the list is a named group: ${JSON.stringify({ role: o.popRole, label: o.popLabel })}`);
       assert.ok(!o.hidden && o.exp === 'true' && o.list === 'list', `${tag}: the list is open: ${JSON.stringify(o)}`);
       assert.strictEqual(o.n, 8, `${tag}: all eight grants are listed`);
       assert.strictEqual(o.revokes, 8, `${tag}: each row has a named revoke button`);
@@ -105,6 +106,7 @@ module.exports = async (ctx) => {
         assert.strictEqual(await js(`document.querySelectorAll('#grants .gchip').length`), 1, `${tag}: one grant is one chip`);
         await js(`document.querySelector('#grants [data-revoke]').click()`); await ctx.sleep(250);
         assert.ok(await js(`document.getElementById('grants').hidden`), `${tag}: no grants, no row`);
+        assert.strictEqual(await js(`document.activeElement.id`), 'msgInput', `${tag}: after the last single chip is revoked the focus is on the composer, not <body>`);
       } else {
         // 8. Revoke all asks first: Cancel keeps them, the confirmation revokes them
         await js(`document.getElementById('grantsBtn').click()`); await ctx.sleep(200);
@@ -113,13 +115,35 @@ module.exports = async (ctx) => {
         assert.ok(d.includes('Cancel') && d.includes('Revoke all'), `${tag}: Revoke all asks first: ${d}`);
         await js(`[...document.querySelectorAll('.dlg-ov button')].find(x=>x.textContent.trim()==='Cancel').click()`); await ctx.sleep(400);
         assert.strictEqual(await js(`document.querySelectorAll('#grantsPop .gp-row').length`), 7, `${tag}: Cancel keeps the grants`);
+        assert.strictEqual(await js(`document.getElementById('grantsBtn').getAttribute('aria-expanded')+'/'+document.getElementById('grantsPop').hidden`), 'true/false', `${tag}: Cancel keeps the list open, like Esc`);
         await js(`document.getElementById('grantsBtn').getAttribute('aria-expanded')==='true'||document.getElementById('grantsBtn').click()`); await ctx.sleep(200);
         await js(`document.getElementById('grantsAll').click()`); await ctx.sleep(400);
         await js(`[...document.querySelectorAll('.dlg-ov button')].find(x=>x.textContent.trim()==='Revoke all').click()`); await ctx.sleep(500);
         assert.ok(await js(`document.getElementById('grants').hidden`), `${tag}: Revoke all removes every grant`);
+        await ctx.sleep(300);
+        assert.strictEqual(await js(`document.activeElement.id`), 'msgInput', `${tag}: after Revoke all the focus is on the composer, not <body>`);
+        assert.strictEqual(await js(`document.getElementById('srAnnounce').textContent`), 'All permissions revoked.', `${tag}: it is announced`);
       }
       console.log('[grant-chips]', w, level, 'ok');
     }
   }
+  // A Revoke all that fails (the revokes never remove anything) leaves the grants and the page working; after switching to an agent
+  // without grants the focus is not taken and nothing is announced.
+  ctx.win.setContentSize(1440, 900);
+  const QS = { sim: '15', simfreeze: '1', simgrants: 'stuck' };
+  await ctx.win.loadFile(INDEX, { query: QS });
+  await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
+  await ctx.sleep(2000);
+  const ids = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')];let a='';for(const x of d){x.click();const g=document.getElementById('grants');if(g&&!g.hidden){a=x.dataset.id;break;}const b=document.getElementById('backBtn');if(b)b.click();}return [a,d.map(x=>x.dataset.id).find(i=>i!==a)]})()`);
+  await ctx.sleep(500);
+  await js(`document.getElementById('grantsBtn').click()`); await ctx.sleep(200);
+  await js(`document.getElementById('grantsAll').click()`); await ctx.sleep(400);
+  await js(`[...document.querySelectorAll('.dlg-ov button')].find(x=>x.textContent.trim()==='Revoke all').click()`); await ctx.sleep(100); // quick: inside the 1s the flag may live
+  assert.strictEqual(await js(`document.querySelectorAll('#grantsPop .gp-row').length`), 8, 'stuck: a revoke that fails leaves the grants');
+  await js(`document.getElementById('backBtn').click()`); await ctx.sleep(100);
+  await js(`document.querySelector('#stage .desk[data-id="${ids[1]}"]').click()`); await ctx.sleep(150);
+  assert.ok(await js(`document.getElementById('grants').hidden`), 'stuck: the other agent has no grants');
+  assert.notStrictEqual(await js(`document.getElementById('srAnnounce').textContent`), 'All permissions revoked.', 'stuck: a failed Revoke all on one agent does not announce for another');
+  assert.notStrictEqual(await js(`document.activeElement.id`), 'msgInput', 'stuck: the focus is not taken to the composer of another agent');
   console.log('[grant-chips] all checks passed');
 };
