@@ -233,7 +233,7 @@ async function main(): Promise<void> {
   {
     const names = [...READ_TOOLS, ...CHANGE_TOOLS].map((t) => t.name);
     assert.ok(!names.some((n) => /delete|prev|history|session/i.test(n)), `no MCP tool deletes or touches previous sessions: ${names.join(', ')}`);
-    const read = (rel: string): string => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    const read = (rel: string): string => fs.readFileSync(path.join(ROOT, rel), 'utf8').replace(/\r\n/g, '\n'); // Windows checkouts have CRLF: the line rules below use ^ and $
     const walk = (dir: string): string[] => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : /\.(ts|js)$/.test(e.name) ? [path.join(dir, e.name)] : []));
     const DELETE_WORDS = /sessions:delete|deletePrevious|PrevSessions|prevsessions|\.deleteSession\b|deleteSessionOf/;
     // main-process files that other features run through: the MCP server and tools, remote control and channels, schedules, the shared ops
@@ -249,7 +249,7 @@ async function main(): Promise<void> {
     assert.strictEqual((main.match(/prevSessions\.delete\(/g) ?? []).length, 1, 'called from that one handler only');
     assert.ok(!/ipcMain\.(handle|on)\('sessions:/.test(main));
     // nothing else in main.ts names the delete: every line that does is the single registration (`ipcHandle('sessions:delete', ... prevSessions.delete(`)
-    const namers = main.split('\n').filter((l) => /deleteSessionOf|\.deleteSession\(|'sessions:delete'|prevSessions\.delete\(/.test(l.replace(/^\s*\/\/.*$/, '')));
+    const namers = main.split(/\r?\n/).filter((l) => /deleteSessionOf|\.deleteSession\(|'sessions:delete'|prevSessions\.delete\(/.test(l.replace(/^\s*\/\/.*$/, '')));
     assert.strictEqual(namers.length, 1, `one line in main.ts reaches the delete: ${namers.join(' | ')}`);
     assert.ok(/^ipcHandle\('sessions:delete', \(_e, id: unknown, sessionId: unknown\) => prevSessions\.delete\(id, sessionId\)\);$/.test(namers[0]));
     // Known limit (spec 006 R2): this reads source text, so an obfuscated call (a computed property name, a string built at run time) would not be seen.
