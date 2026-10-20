@@ -9,6 +9,9 @@ import type { McpServerInput, McpServerView, McpTransport, McpTrustInfo } from '
 export type { McpServerInput, McpServerView, McpTransport, McpTrustInfo };
 
 import type { AdapterInfo } from './adapters';
+import type { ActivityRow } from './activity';
+import type { RemoteState } from './remote';
+export type { RemoteState };
 export type { AdapterInfo };
 
 export type { HistoryItem, PreviousSession, VsChatSummary, VsChatTranscript };
@@ -137,6 +140,8 @@ export interface AppSettingsView {
   seriousMode?: boolean;
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
   theme?: string;
+  /** OS notifications when an agent needs you while the window is in the background (spec 052 FR-059). On unless turned off. */
+  notifyNeedsMe?: boolean;
 }
 
 /** A custom agent profile as the renderer sees it (spec 043; same shape as the adapter's `AgentProfile`). */
@@ -158,10 +163,20 @@ export interface ScheduleInfo {
   prompt: string;
   every?: number;
   at?: number;
+  /** Phase 2 FR-012: every day, weekdays or weekly on days (0 = Sunday) at a local "HH:MM". */
+  rule?: { kind: 'daily' | 'weekdays' | 'weekly'; time: string; days?: number[] };
   next?: number;
   paused?: boolean;
+  /** Why the app paused it (FR-014, FR-015). */
+  pausedReason?: 'cap' | 'session-ended';
   done?: boolean;
-  last?: { at: number; outcome: 'sent' | 'skipped-busy' | 'skipped-paused' | 'missed' | 'failed' };
+  last?: { at: number; outcome: 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' };
+  /** FR-014: one session instead of the folder's agent. */
+  target?: { session: string; agent: string; name?: string };
+  /** FR-015: the schedule's own limit and what its runs spent. */
+  cap?: { amount: number; unit: 'aiu' | 'usd' };
+  spent?: number;
+  spentUnknown?: boolean;
 }
 export interface SchedulesInfo {
   pausedAll: boolean;
@@ -387,6 +402,10 @@ export interface DurbarApi {
   compact?(id: string, focus?: string): Promise<{ ok: boolean; error?: string; result?: CompactResult }>;
   /** A hand-off summary of the session, for a new session's first message (spec 030 FR-034); never sent by itself. */
   handoff?(id: string): Promise<{ ok: boolean; error?: string; summary?: string; costUsd?: number }>;
+  /** Turn remote control (follow and steer from the agent app's web or mobile app) on or off for live agent `id` (spec 054 FR-004). */
+  setRemote?(id: string, on: boolean): Promise<RemoteState>;
+  /** Open agent `id`'s remote link (stored in main, https://github.com only) in the system browser (spec 054 FR-005). */
+  openRemote?(id: string): Promise<{ ok: boolean }>;
   /** Close or open the door of the room (folder) of agent `id`; remembered. */
   setRoomClosed?(id: string, closed: boolean): Promise<{ ok: boolean }>;
   /** Hide or show the folder of agent `id`; the choice is remembered. */
@@ -425,6 +444,12 @@ export interface DurbarApi {
   removePlace?(id: string): Promise<CustomPlaceResult>;
   /** Turn Serious mode on or off (spec 034). */
   setSeriousMode?(on: boolean): Promise<{ ok: boolean; seriousMode?: boolean }>;
+  /** Turn the "needs you" OS notifications on or off (spec 052 FR-059). */
+  setNotifyNeedsMe?(on: boolean): Promise<{ ok: boolean; notifyNeedsMe?: boolean }>;
+  /** The "needs you" count on the app icon (spec 052 FR-059): an integer from 0 to 999. Badge on macOS and Linux where supported; on Windows the taskbar button flashes when it grows in the background. */
+  setBadge?(count: number): Promise<{ ok: boolean }>;
+  /** Bring the window to the front (a click on a "needs you" notification, spec 052 FR-059). */
+  focusWindow?(): Promise<{ ok: boolean }>;
   /** Set the theme (specs 037-040): a built-in id or an imported user theme id. */
   setTheme?(id: string): Promise<{ ok: boolean; theme?: string }>;
   /** User themes (spec 040): scan userData/themes; each valid pack listed, each invalid one given back with a reason. */
@@ -432,10 +457,21 @@ export interface DurbarApi {
   getUserTheme?(id: string): Promise<Record<string, unknown> | null>;
   importTheme?(): Promise<{ ok: boolean; id?: string; name?: string; error?: string; cancelled?: boolean }>;
   /** AI theme maker (spec 040 FR-014): one prompt to a harness with `oneShot`; returns a checked manifest (not saved). */
-  generateTheme?(description: string, adapterId: string): Promise<{ ok: boolean; manifest?: Record<string, unknown>; warnings?: string[]; passes?: number; costUsd?: number; error?: string }>;
+  generateTheme?(description: string, adapterId: string): Promise<{ ok: boolean; manifest?: Record<string, unknown>; warnings?: string[]; passes?: number; costUsd?: number; nanoAiu?: number; error?: string }>;
   saveGeneratedTheme?(manifest: Record<string, unknown>): Promise<{ ok: boolean; id?: string; name?: string; error?: string }>;
   /** Example looks for the AI theme maker (spec 040 FR-021). */
   themeIdeas?(): Promise<string[]>;
+  /* Spec 051: harness setup inside the app (install, update, sign in). Fixed commands only; the window never names a command. */
+  harnessPlans?(kind: string, op: 'install' | 'update'): Promise<{ plans: Array<{ manager: string; display: string; note?: string }>; page: string; name: string }>;
+  harnessRun?(kind: string, op: 'install' | 'update' | 'signin', planIndex?: number): Promise<{ ok: boolean; error?: string; cancelled?: boolean }>;
+  harnessPaste?(text: string): Promise<{ ok: boolean; error?: string }>;
+  harnessCancel?(): Promise<boolean>;
+  harnessOpenPage?(kind: string): Promise<{ ok: boolean }>;
+  harnessOpenSignIn?(kind: string, url: string): Promise<{ ok: boolean }>;
+  /** `pwshMissing` (spec 052 FR-073): Windows only, PowerShell 7 was not found; the Copilot card shows a hint. */
+  copilotAuth?(): Promise<{ known: boolean; signedIn?: boolean; pwshMissing?: boolean }>;
+  onHarnessProgress?(cb: (p: { kind: string; op: string; lines: string[]; elapsedMs: number; url?: string; code?: string; needsPaste?: boolean }) => void): () => void;
+  onHarnessDone?(cb: (p: { kind: string; op: string; ok: boolean; exitCode?: number | null; reason?: string; lines: string[] }) => void): () => void;
   exportTheme?(id: string): Promise<{ ok: boolean; to?: string; error?: string; cancelled?: boolean }>;
   setCap?(id: string, credits: number | null): Promise<{ ok: boolean; error?: string; maxAiCredits?: number }>;
   /** One-way: the window tells main an agent was paused or resumed (spec 041 T014); Paused exists only in the window. */
@@ -447,9 +483,13 @@ export interface DurbarApi {
   removeSchedule?(id: string): Promise<{ ok: boolean }>;
   setSchedulesPaused?(on: boolean): Promise<{ ok: boolean; pausedAll: boolean }>;
   onSchedules?(cb: (doc: SchedulesInfo) => void): () => void;
-  onScheduleRan?(cb: (r: { agentId: string; scheduleId: string; every?: number; at?: number }) => void): () => void;
+  onScheduleRan?(cb: (r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void): () => void;
   /** Answer the agent's question (spec 012 FR-128): question text -> answer; null = skip. */
   answerQuestion?(id: string, requestId: string, answers: Record<string, string> | null): Promise<{ ok: boolean; error?: string }>;
+  /** Answer an MCP elicitation (spec 012 FR-151): `accept` with the form's values (checked in main), `decline` or `cancel`. `field` names a field that failed the check. */
+  answerElicitation?(id: string, requestId: string, action: 'accept' | 'decline' | 'cancel', values?: Record<string, string | number | boolean>): Promise<{ ok: boolean; error?: string; field?: string }>;
+  /** Open an elicitation's https page in the system browser (spec 012 FR-151); main opens the address it holds for that request, never one from the window. */
+  openElicitationUrl?(id: string, requestId: string): Promise<{ ok: boolean; error?: string }>;
   /** Custom agents the session can use (spec 043); `trusted` is false for a repository agent not yet confirmed for this folder and file. */
   listProfiles?(id: string): Promise<{ ok: boolean; error?: string; profiles: (ProfileInfo & { trusted: boolean })[] }>;
   /** Select a custom agent (null = default). A repository agent not yet confirmed answers `needsConfirm`; call again with `confirm` after the user agreed. */
@@ -462,6 +502,12 @@ export interface DurbarApi {
   usageTotals?(): Promise<UsageTotalsView>;
   /** Set the saved credit totals to zero (Settings > Usage totals). Returns the now empty view. */
   usageResetTotals?(): Promise<UsageTotalsView>;
+  /** Local activity log (spec 052 FR-071), newest first. Rows are written by main only. */
+  activityList?(opts?: { limit?: number }): Promise<{ ok: boolean; rows: ActivityRow[] }>;
+  /** Save the whole log as CSV or JSON through the system save dialog. */
+  activityExport?(format: 'csv' | 'json'): Promise<{ ok: boolean; count?: number; to?: string; error?: string; cancelled?: boolean }>;
+  /** Empty the log (the window asks first). */
+  activityClear?(): Promise<{ ok: boolean }>;
   /** MCP (specs 019, 020): the Copilot CLI list is global and read live; extras are per folder/workspace key (`workspaceFile ?? cwd`). */
   mcpState?(): Promise<McpState>;
   /** Names of the extras of every saved folder (any state), nothing else: for the Places list (spec 024 FR-016). */

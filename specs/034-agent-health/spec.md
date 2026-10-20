@@ -100,7 +100,7 @@
 
 - **Q: What makes a room darker?** **Its worst agent.** One room, one tone, taken from the main agent that is doing worst (helpers are not counted, as in the rest of this spec).
 - **Q: How does it darken?** **The room's own colour, darker** (sage, blue, sand, clay stay recognisable): a little darker when the worst agent is heavy, clearly darker when it is a monster or in trouble.
-- **Q: The sirens?** **A small light next to the room name** that blinks red/blue, and the same light on the door plate when the room is closed.
+- **Q: The sirens?** **A small light next to the room name** that blinks red/blue, and the same light on the door plate when the room is closed. *(Amended 2026-10-20 by spec 052 FR-069: the light breathes slowly in red for about 10 s, then stays on; no red/blue strobe. Same for the ambulance light.)*
 - **Q: When do the sirens come on?** **While the room has the ambulance or a fainted agent** (the two strongest signals of this spec).
 - Decided by default and recorded here (open to change in review):
   - **Tone steps**: `calm` (every agent normal and without trouble: the room looks as today), `uneasy` (worst agent heavy), `alarm` (a monster, an agent in Error, or any trouble: ambulance, faint, impatient, dizzy). An agent in Error without the ambulance counts as `alarm` too.

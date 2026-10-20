@@ -29,12 +29,13 @@ const setup = () => {
 };
 
 (async () => {
-  // opens with focus inside, on the primary button (the old bug: the caller focused the chip behind the dialog right after)
+  // opens with focus inside (the old bug: the caller focused the chip behind the dialog right after); spec 052 FR-036: a destructive
+  // confirmation (primary warn/danger) starts on Cancel, so Enter never confirms it unread
   {
     const t = setup(); t.chip.focus();
     const p = t.ask(t.opts());
     assert.ok(t.inDlg(), 'focus is inside the dialog when it opens');
-    assert.strictEqual(t.doc.activeElement, t.btn('Allow all'));
+    assert.strictEqual(t.doc.activeElement, t.btn('Cancel'), 'a destructive confirmation starts on Cancel');
     // a stray focus() on the control behind the dialog (what changeMode used to do) is undone
     t.chip.focus();
     assert.ok(t.inDlg(), 'focus cannot be moved to the control behind the dialog');
@@ -58,13 +59,17 @@ const setup = () => {
     t.btn('Allow all').click();
     const r = (await p) as unknown as { value: string; text: string };
     assert.strictEqual(r.text, 'Client B');
-    // without focus: true the primary button keeps the focus (the Compact dialog)
+    // without focus: true the first button is focused: Cancel for a destructive confirmation (FR-036); a plain primary keeps it
     const t2 = setup(); t2.chip.focus();
     const p2 = t2.ask(t2.opts({ input: { label: 'Focus' } }));
-    assert.strictEqual(t2.doc.activeElement, t2.btn('Allow all'));
+    assert.strictEqual(t2.doc.activeElement, t2.btn('Cancel'));
     assert.strictEqual((t2.doc.getElementById('mdIn') as HTMLInputElement).value, '', 'no value: empty');
     t2.key('Escape');
     assert.strictEqual(await p2, null);
+    const t3 = setup(); t3.chip.focus();
+    const p3 = t3.ask({ ...t3.opts(), buttons: [{ label: 'Cancel', value: null }, { label: 'Allow all', value: 'ok', cls: 'primary' }] });
+    assert.strictEqual(t3.doc.activeElement, t3.btn('Allow all'), 'a plain primary keeps the focus');
+    t3.key('Escape'); assert.strictEqual(await p3, null);
   }
   // Escape also works when focus slipped to <body> (click on the backdrop's blank area), and when the chip was the opener by default
   {

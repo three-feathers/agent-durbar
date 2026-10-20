@@ -4,16 +4,21 @@ import { Scheduler, alignedNext, cleanSchedule, dueAt, parseSchedules } from '..
 import type { Schedule, SchedulesDoc } from '../src/main/schedules';
 
 const MIN = 60_000;
-function harness(doc: SchedulesDoc, t0 = 1_000_000_000_000) {
+export function harness(doc: SchedulesDoc, t0 = 1_000_000_000_000) {
   let now = t0;
   const sent: string[] = [];
   const busy = new Set<string>();
+  /** Sessions that exist (FR-014); a schedule without a target sends to "folder-agent". */
+  const sessions = new Set<string>(['s1', 's2']);
+  const unit: { v: 'aiu' | 'usd' | undefined } = { v: 'aiu' };
   const timers: { at: number; fn: () => void }[] = [];
   let saved = 0;
   const sch = new Scheduler(doc, {
     now: () => now,
-    isBusy: (f) => busy.has(f),
-    send: async (f, p) => (sent.push(`${f}:${p}`), !f.includes('fail')),
+    isBusy: (f, session) => (session ? busy.has(session) : busy.has(f)),
+    hasSession: (id) => sessions.has(id),
+    capUnitOf: () => unit.v,
+    send: async (f, p, s) => (sent.push(`${f}:${p}`), f.includes('fail') ? false : s.target ? s.target.session : 'folder-agent'),
     setTimer: (ms, fn) => { const t = { at: now + ms, fn }; timers.push(t); return t; },
     clearTimer: (t) => { const i = timers.indexOf(t as never); if (i >= 0) timers.splice(i, 1); },
     save: () => { saved++; },
@@ -28,7 +33,7 @@ function harness(doc: SchedulesDoc, t0 = 1_000_000_000_000) {
       await new Promise((r) => setImmediate(r));
     }
   };
-  return { sch, sent, busy, timers, advance, get now() { return now; }, get saved() { return saved; } };
+  return { sch, sent, busy, sessions, unit, timers, advance, get now() { return now; }, get saved() { return saved; } };
 }
 
 async function main(): Promise<void> {
@@ -115,22 +120,23 @@ async function main(): Promise<void> {
     for (let i = 0; i < 50; i++) h.sch.save({ folder: '/c', prompt: 'p' + i, every: 10 }, () => true);
     assert.ok(!h.sch.save({ folder: '/c', prompt: 'one too many', every: 10 }, () => true).ok, 'at most 50');
   }
-  // FR-007: an interval with a first time keeps that time of day (every day at 08:30); missed and busy runs do not shift it
+  // FR-007: an interval with a first time keeps that time of day (here every 12 h from "08:30"); missed and busy runs do not shift it.
+  // (An "every day at" is a calendar rule since Phase 2, FR-012/FR-013; see below and test-schedrules.ts.)
   {
-    const DAY = 1440 * MIN;
+    const DAY = 720 * MIN;
     assert.strictEqual(alignedNext(1000, 10, 500), 1000, 'the first run when it is still ahead');
     assert.strictEqual(alignedNext(1000, 10, 1000), 1000 + 10 * MIN, 'exactly at the anchor: the next one');
     assert.strictEqual(alignedNext(1000, 10, 1000 + 25 * MIN), 1000 + 30 * MIN);
     const h = harness({ pausedAll: false, schedules: [] });
     h.sch.start();
     const first = h.now + 2 * 60 * MIN; // "08:30", two hours from now
-    const r = h.sch.save({ folder: '/w', prompt: 'start my day', every: 1440, at: first }, () => true);
+    const r = h.sch.save({ folder: '/w', prompt: 'start my day', every: 720, at: first }, () => true);
     assert.ok(r.ok);
     assert.strictEqual(r.ok && r.schedule.next, first, 'first run at the chosen time, not now + 24 h');
     assert.strictEqual(r.ok && r.schedule.at, first, 'the anchor is kept');
     await h.advance(2 * 60 * MIN);
     assert.deepStrictEqual(h.sent, ['/w:start my day']);
-    assert.strictEqual(h.sch.doc.schedules[0].next, first + DAY, 'next day, same time');
+    assert.strictEqual(h.sch.doc.schedules[0].next, first + DAY, 'the next anchored time');
     h.busy.add('/w');
     await h.advance(DAY + 3 * MIN); // the tick runs a little late
     assert.strictEqual(h.sch.doc.schedules[0].last?.outcome, 'skipped-busy');
@@ -178,6 +184,142 @@ async function main(): Promise<void> {
     assert.strictEqual(T.nextDaily('25:00', base), undefined);
     assert.strictEqual(T.nextDaily('', base), undefined);
   }
+  await phase2();
   console.log('schedules tests passed');
 }
-main().catch((e) => { console.error(e); process.exit(1); });
+/** Phase 2 (FR-013..FR-015, FR-017): migration, validation, a schedule for one session, a per-schedule limit. */
+async function phase2(): Promise<void> {
+  const now = 1_000_000_000_000;
+  // FR-013: an old "every day at" (every 1440 + at) is read as a daily rule at the local time of `at`; its saved next run is kept
+  {
+    const at = new Date(2026, 9, 19, 8, 30).getTime();
+    const old = cleanSchedule({ id: 'aaaaaaaa-old', folder: '/w', prompt: 'x', every: 1440, at, next: at + 86_400_000 }, now);
+    assert.deepStrictEqual(old?.rule, { kind: 'daily', time: '08:30' });
+    assert.strictEqual(old?.every, undefined, 'no 24 h interval any more');
+    assert.strictEqual(old?.next, at + 86_400_000, 'the saved next run is kept');
+    const p = parseSchedules(JSON.stringify({ schedules: [{ id: 'aaaaaaaa-p1', folder: '/w', prompt: 'plain', every: 30, next: now + 5 }, { id: 'aaaaaaaa-p2', folder: '/w', prompt: 'old daily', every: 1440, at }] }), now);
+    assert.deepStrictEqual(p.schedules.map((x) => [x.every, x.rule?.kind]), [[30, undefined], [undefined, 'daily']], 'Phase 1 files load; missing Phase 2 fields are defaults');
+    assert.strictEqual(p.schedules[0].target, undefined);
+    assert.strictEqual(p.schedules[0].cap, undefined);
+  }
+  // FR-017: validation of the new fields (a bad value drops the schedule; main's own fields never come from the renderer)
+  {
+    const ok = { folder: '/w', prompt: 'x', rule: { kind: 'weekly', time: '17:00', days: [4, 1, 1, 9] } };
+    assert.deepStrictEqual(cleanSchedule(ok, now)?.rule, { kind: 'weekly', time: '17:00', days: [1, 4] }, 'days sorted, unique, in range');
+    assert.strictEqual(cleanSchedule({ ...ok, rule: { kind: 'weekly', time: '17:00', days: [] } }, now), undefined, 'weekly needs a day');
+    assert.strictEqual(cleanSchedule({ ...ok, rule: { kind: 'monthly', time: '17:00' } }, now), undefined);
+    assert.strictEqual(cleanSchedule({ ...ok, rule: { kind: 'daily', time: '24:00' } }, now), undefined);
+    assert.strictEqual(cleanSchedule({ ...ok, rule: 'daily' }, now), undefined);
+    assert.strictEqual(cleanSchedule({ ...ok, target: { session: 'a b', agent: 'copilot' } }, now), undefined, 'a bad session id');
+    assert.strictEqual(cleanSchedule({ ...ok, target: { session: 's1', agent: '../x' } }, now), undefined, 'a bad agent id');
+    assert.strictEqual(cleanSchedule({ ...ok, target: { session: 's1', agent: 'copilot', name: 'a\nb\u2028c'.padEnd(200, 'z') } }, now)?.target?.name?.length, 80, 'one line, at most 80 characters');
+    assert.ok(!/[\n\u2028]/.test(cleanSchedule({ ...ok, target: { session: 's1', agent: 'copilot', name: 'a\nb\u2028c' } }, now)?.target?.name ?? ''));
+    assert.strictEqual(cleanSchedule({ ...ok, target: null }, now)?.target, undefined, 'null target = the folder\'s agent');
+    assert.strictEqual(cleanSchedule({ ...ok, cap: { amount: 0, unit: 'aiu' } }, now), undefined, 'a zero limit');
+    assert.strictEqual(cleanSchedule({ ...ok, cap: { amount: 5, unit: 'eur' } }, now), undefined, 'an unknown unit');
+    assert.strictEqual(cleanSchedule({ ...ok, cap: { amount: 20_000, unit: 'usd' } }, now), undefined, 'over the dollar range');
+    assert.deepStrictEqual(cleanSchedule({ ...ok, cap: { amount: 1.234, unit: 'usd' } }, now)?.cap, { amount: 1.23, unit: 'usd' });
+    const h = harness({ pausedAll: false, schedules: [] });
+    h.sch.start();
+    const r = h.sch.save({ ...ok, cap: { amount: 5, unit: 'aiu' }, spent: -3, spentUnknown: true, pausedReason: 'cap' }, () => true);
+    assert.ok(r.ok && r.schedule.spent === undefined && !r.schedule.spentUnknown && !r.schedule.pausedReason, 'spent and the pause reason are main\'s own');
+    h.unit.v = undefined;
+    assert.ok(!h.sch.save({ ...ok, cap: { amount: 5, unit: 'aiu' } }, () => true).ok, 'no limit when the agent app reports no spending');
+    h.unit.v = 'usd';
+    const u = h.sch.save({ ...ok, cap: { amount: 5, unit: 'aiu' } }, () => true);
+    assert.ok(u.ok && u.schedule.cap?.unit === 'usd', 'the unit is the agent app\'s, not the renderer\'s');
+    h.unit.v = 'usd';
+    assert.ok(!h.sch.save({ ...ok, cap: { amount: 50_000, unit: 'aiu' } }, () => true).ok, 're-checked in the agent app\'s unit');
+    assert.ok(!h.sch.save(null, () => true).ok);
+  }
+  // FR-014: a schedule for one session: busy is that session's; when the session is gone it pauses and is never sent elsewhere
+  {
+    const h = harness({ pausedAll: false, schedules: [] });
+    h.sch.start();
+    assert.ok(!h.sch.save({ folder: '/w', prompt: 'x', every: 10, target: { session: 'gone', agent: 'copilot' } }, () => true).ok, 'an ended session is refused');
+    const r = h.sch.save({ folder: '/w', prompt: 'mine', every: 10, target: { session: 's1', agent: 'copilot', name: 'Fix the tests' } }, () => true);
+    assert.ok(r.ok);
+    h.busy.add('/w'); // the folder's first agent is busy, the target is not
+    await h.advance(10 * MIN);
+    assert.deepStrictEqual(h.sent, ['/w:mine'], 'only the target session counts as busy');
+    h.busy.delete('/w');
+    h.busy.add('s1');
+    await h.advance(10 * MIN);
+    assert.strictEqual(h.sch.doc.schedules[0].last?.outcome, 'skipped-busy');
+    h.busy.delete('s1');
+    // the session ends while the app runs: paused at once with the reason
+    h.sessions.delete('s1');
+    h.sch.sessionsChanged();
+    assert.deepStrictEqual([h.sch.doc.schedules[0].paused, h.sch.doc.schedules[0].pausedReason], [true, 'session-ended']);
+    await h.advance(60 * MIN);
+    assert.strictEqual(h.sent.length, 1, 'nothing is sent to another session');
+    const s = h.sch.doc.schedules[0];
+    assert.ok(!h.sch.save({ ...s, paused: false }, () => true).ok, 'Resume is refused while the session is gone');
+    assert.ok(h.sch.save({ ...s, paused: true }, () => true).ok, 'it can still be saved paused');
+    assert.strictEqual(h.sch.doc.schedules[0].pausedReason, 'session-ended', 'the reason stays');
+    const moved = h.sch.save({ ...s, target: null, paused: false }, () => true);
+    assert.ok(moved.ok && !moved.schedule.target && !moved.schedule.paused && !moved.schedule.pausedReason, 'Use the folder\'s agent');
+    await h.advance(10 * MIN);
+    assert.strictEqual(h.sent.length, 2);
+    // at a due run the session is gone (no sessionsChanged call): recorded and paused
+    const t = h.sch.save({ folder: '/w', prompt: 'other', at: h.now + 5 * MIN, target: { session: 's2', agent: 'claude' } }, () => true);
+    assert.ok(t.ok);
+    h.sessions.delete('s2');
+    await h.advance(5 * MIN);
+    const ts = h.sch.doc.schedules.find((x) => x.prompt === 'other');
+    assert.deepStrictEqual([ts?.last?.outcome, ts?.paused, ts?.pausedReason, ts?.done], ['skipped-ended', true, 'session-ended', undefined]);
+    // at start: a schedule whose session did not come back pauses
+    const doc: SchedulesDoc = { pausedAll: false, schedules: [{ id: 'aaaaaaaa-st', folder: '/w', prompt: 'p', every: 10, next: now + MIN, target: { session: 'old', agent: 'copilot' } }] };
+    const h2 = harness(doc, now);
+    h2.sch.start();
+    assert.deepStrictEqual([h2.sch.doc.schedules[0].paused, h2.sch.doc.schedules[0].pausedReason], [true, 'session-ended']);
+  }
+  // FR-015: a per-schedule limit: usage between the scheduled send and the turn's end counts; at the limit the run is skipped and it pauses
+  {
+    const h = harness({ pausedAll: false, schedules: [] });
+    h.sch.start();
+    const r = h.sch.save({ folder: '/w', prompt: 'costly', every: 10, cap: { amount: 1, unit: 'aiu' }, target: { session: 's1', agent: 'copilot' } }, () => true);
+    assert.ok(r.ok);
+    h.sch.noteUsage('s1', { nanoAiu: 9e9 });
+    assert.strictEqual(h.sch.doc.schedules[0].spent, undefined, 'usage before any scheduled run is not counted');
+    await h.advance(10 * MIN);
+    assert.strictEqual(h.sent.length, 1);
+    h.sch.noteUsage('s2', { nanoAiu: 9e9 });
+    h.sch.noteUsage('s1', { nanoAiu: 6e8 });
+    h.sch.noteUsage('s1', { nanoAiu: 5e8, costUsd: 99 });
+    assert.ok(Math.abs((h.sch.doc.schedules[0].spent ?? 0) - 1.1) < 1e-9, 'AIU from nano-AIU; other sessions do not count');
+    h.sch.turnEnded('s1');
+    h.sch.noteUsage('s1', { nanoAiu: 9e9 });
+    assert.ok(Math.abs((h.sch.doc.schedules[0].spent ?? 0) - 1.1) < 1e-9, 'after the turn ends, usage is the user\'s again');
+    await h.advance(10 * MIN);
+    const s = h.sch.doc.schedules[0];
+    assert.deepStrictEqual([h.sent.length, s.last?.outcome, s.paused, s.pausedReason], [1, 'skipped-cap', true, 'cap'], 'Paused: reached its limit');
+    await h.advance(60 * MIN);
+    assert.strictEqual(h.sent.length, 1, 'stays paused');
+    assert.ok(h.sch.save({ ...s, paused: true }, () => true).ok);
+    assert.ok(Math.abs((h.sch.doc.schedules[0].spent ?? 0) - 1.1) < 1e-9, 'an edit keeps the spend');
+    const res = h.sch.save({ ...h.sch.doc.schedules[0], paused: false }, () => true);
+    assert.ok(res.ok && res.schedule.spent === undefined && !res.schedule.pausedReason, 'Resume counts from zero');
+    await h.advance(10 * MIN);
+    assert.strictEqual(h.sent.length, 2, 'runs again');
+    h.sch.noteUsage('s1', { creditsStatus: 'unavailable' } as never);
+    assert.strictEqual(h.sch.doc.schedules[0].spentUnknown, true, 'a usage event without a figure: the spend is a lower bound');
+    // dollars: from costUsd only
+    const d = harness({ pausedAll: false, schedules: [] });
+    d.unit.v = 'usd';
+    d.sch.start();
+    d.sch.save({ folder: '/w', prompt: 'usd', every: 10, cap: { amount: 0.05, unit: 'usd' } }, () => true);
+    await d.advance(10 * MIN);
+    d.sch.noteUsage('folder-agent', { costUsd: 0.03, nanoAiu: 9e9 });
+    d.sch.noteUsage('folder-agent', { costUsd: 0.03 });
+    assert.ok(Math.abs((d.sch.doc.schedules[0].spent ?? 0) - 0.06) < 1e-9);
+    d.sch.turnEnded('folder-agent');
+    await d.advance(10 * MIN);
+    assert.strictEqual(d.sch.doc.schedules[0].pausedReason, 'cap');
+    // the spend is saved with the schedule and read back
+    const back = parseSchedules(JSON.stringify(d.sch.doc), d.now);
+    assert.ok(Math.abs((back.schedules[0].spent ?? 0) - 0.06) < 1e-9 && back.schedules[0].pausedReason === 'cap');
+  }
+}
+
+if (require.main === module) main().catch((e) => { console.error(e); process.exit(1); });

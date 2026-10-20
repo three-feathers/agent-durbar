@@ -23,6 +23,7 @@ type SchedulesInfo = import('../shared/api').SchedulesInfo;
 type ModelSwitchRequest = import('../shared/modelswitch').ModelSwitchRequest;
 type ModelSwitchResult = import('../shared/modelswitch').ModelSwitchResult;
 type ContextTier = import('../shared/modelswitch').ContextTier;
+type ActivityRow = import('../shared/activity').ActivityRow;
 
 interface SimOptions {
   n: number;
@@ -35,6 +36,8 @@ interface SimOptions {
   titles?: boolean;
   /** Spec 012 FR-130: the first Claude agent (or the first agent) asks a question (page address `simquestion=1`). */
   question?: boolean;
+  /** Spec 012 FR-151: an MCP server asks one agent for input: a small form (`simelicit=1`) or an https page to open (`simelicit=url`). */
+  elicit?: string;
   /** Spec 033: names of floors that start switched off. */
   floorsOff?: string[];
   /** Room name whose agents report usage without a credit figure (spec 011 FR-029): shows "credits not reported". */
@@ -61,7 +64,7 @@ interface SimAgent {
   files: string[];
   /** Pending permission request (the agent is waiting for the user). */
   perm?: { requestId: string; kind: string; summary: string; scopeKey: string; scopeLabel: string; file: string; cont: 'tool' | 'edit' };
-  /** "Approve for this session" grants: key -> chip label. */
+  /** "Allow for this session" grants: key -> chip label. */
   grants: Map<string, string>;
   /** Context window of the fake session (tokens now / size). */
   ctx?: { tokens: number; limit: number };
@@ -117,10 +120,10 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
 /* Spec 012 T018 (FR-065, FR-066): the simulated kinds of `simkinds=mixed`. They are a simulation, not a statement about the real CLIs.
    Index in the 15-agent roster -> kind; every other agent is Copilot. Mcp-swiss holds two kinds (Ada, Mira); the basic agent is Priya (idle, never the first). */
 const SIM_KIND_BY_AGENT: Record<number, string> = { 0: 'claude', 3: 'claude', 4: 'codex', 5: 'claude', 6: 'basic', 7: 'codex', 8: 'claude', 9: 'codex', 11: 'claude' };
-const SIM_COPILOT_CAPS = { interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true } as AdapterInfo['capabilities'];
+const SIM_COPILOT_CAPS = { interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, remote: true, oneShot: true } as AdapterInfo['capabilities'];
 const SIM_MIXED_KINDS: AdapterInfo[] = [
-  { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true } },
-  { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: false } },
+  { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, remote: false, mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true } },
+  { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: false, remote: false } },
   { id: 'basic', displayName: 'Basic agent (simulated)', state: 'ready', version: 'sim', capabilities: { interrupt: false, resume: false, images: false, models: false, effort: false, permissionModes: ['read-only'], permModeSwitch: 'none', usage: { tokens: true, costUsd: false, nanoAiu: false }, context: false, caps: false, helpers: false, history: false, mcpStatus: false, mcpToggle: false } as AdapterInfo['capabilities'] },
 ];
 
@@ -152,6 +155,16 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     ['Rosa', 'Social snippets', 'infra-notes', 'working', 'Drafting three post snippets from the MCP article', 0, ['posts/snippets.md']],
     ['Maya', 'Release notes', 'infra-notes', 'done', 'v0.3 release notes drafted and grouped by user-visible change', 0, ['CHANGELOG.md']],
   ];
+  // Spec 052 FR-046: each waiting agent asks for its own thing, tied to its role and task (was one rename request for all of them)
+  // Spec 052 FR-063: Jonas's edit carries a diff, like a Claude Code Edit request (the card's "Show the change")
+  const WAIT_REQ: Record<string, { kind: 'write' | 'shell'; summary: string; target: string; diff?: string }> = {
+    Jonas: {
+      kind: 'write', summary: 'Edit src/tools/companies.ts (rename find_company to search_companies)', target: 'src/tools/companies.ts',
+      diff: ['--- a/src/tools/companies.ts', '+++ b/src/tools/companies.ts', '@@ -12,7 +12,7 @@', ' import { z } from \'zod\';', ' ', ' export const companyTools = {', "-  find_company: {", "+  search_companies: {", "     description: 'Look up Swiss companies by name or UID',", '     input: z.object({ query: z.string().min(2) }),', '     handler: findCompany,'].join('\n'),
+    },
+    Kenji: { kind: 'shell', summary: 'Run python evals/baseline.py --compare', target: 'python evals/baseline.py' },
+    Lena: { kind: 'write', summary: 'Edit src/styles/focus.css (focus ring colour)', target: 'src/styles/focus.css' },
+  };
   const HELPER_NAMES: [string, string, string][] = [
     ['Tests', 'Running vitest on the changed modules', 'working'],
     ['Lint', 'Checking eslint and prettier on touched files', 'thinking'],
@@ -219,11 +232,15 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       const roomName = opts.solo ? name.toLowerCase() + '-app' : room;
       const cwd = opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
       const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], adapterId: mixed ? SIM_KIND_BY_AGENT[i] ?? 'copilot' : 'copilot', permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true }, profiles: true } as AgentInfo;
+      // Spec 052 FR-046: a pending permission card only happens in Ask first, so a waiting agent starts in Ask first (Jonas was Allow all
+      // and restored, Lena Read-only); the restored Allow-all folder the restore strip names is then Tomas's (swisscontract-ai).
+      if (state === 'waiting' && info.permMode !== 'ask') { info.permMode = 'ask'; info.permRestored = undefined; }
       if (mixed && info.adapterId !== 'copilot') {
         const k = caps(info.adapterId ?? 'copilot');
         if (!k.caps) info.maxAiCredits = undefined; // no credit cap on a kind that has none
         else if (k.capUnit === 'usd') info.maxAiCredits = SIM_USD_CAPS[name]; // a dollar cap, never an AIU one (FR-150)
         if (!k.permissionModes.includes(info.permMode)) info.permMode = 'read-only';
+        info.profiles = undefined; // custom agents (spec 049) are Copilot's: no profile chip that opens nothing
         if (!k.models) info.modelControl = { switch: 'none', effort: false, contextTier: false, compact: false, windowKnown: true };
       }
       // Priya models an adapter that cannot switch or compact in place (spec 030): the UI shows the disabled state and offers a new session.
@@ -284,8 +301,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       (a.tools[key] ??= { calls: 0, failed: 0 })[f]++;
       if (server) (simDoc.servers[server] ??= { calls: 0, failed: 0 })[f]++;
     };
+    let simSchedHook: ((e: AgentEvent) => void) | undefined; // spec 044 FR-018: usage of a scheduled run counts toward its limit
     const emit = (e: AgentEvent): void => {
       listeners.forEach((l) => l(e));
+      simSchedHook?.(e);
       if (e.type === 'status' && e.status === 'idle') {
         const q = sims.find((x) => x.info.id === e.sessionId);
         if (q?.pendingModel) window.setTimeout(() => void applyPending(q), 0); // the turn ended: the queued switch applies
@@ -317,26 +336,83 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         emit({ type: 'status', sessionId: s.info.id, timestamp: now(), status: 'needs-permission', intent: 'Waiting for your answer' });
       }, 300);
     }
+    /* simelicit=1|url (spec 012 FR-151): an MCP server asks one agent for input, as an MCP elicitation does (a form, or a page to open) */
+    type SimElicitField = { name: string; title: string; type: string; required?: boolean; enumValues?: string[]; min?: number; max?: number };
+    let simE: { s: SimAgent; requestId: string; url?: string; fields: SimElicitField[] } | undefined;
+    if (opts.elicit) {
+      window.setTimeout(() => {
+        const s = sims.find((x) => x.info.adapterId === 'copilot' && x !== simQ?.s) ?? sims.find((x) => x !== simQ?.s);
+        if (!s) return;
+        const url = opts.elicit === 'url';
+        const fields: SimElicitField[] = [
+          { name: 'environment', title: 'Which environment?', type: 'enum', required: true, enumValues: ['staging', 'production'] },
+          { name: 'ticket', title: 'Ticket number', type: 'integer', required: true, min: 1, max: 999999 },
+          { name: 'notify', title: 'Notify me', type: 'boolean' },
+        ];
+        simE = { s, requestId: 'e-' + s.info.id, fields: url ? [] : fields, ...(url ? { url: 'https://auth.example.com/device?code=DURBAR-1234' } : {}) };
+        s.state = 'waiting';
+        const message = url ? 'Sign in to the deploy service to continue.' : 'Where should this deploy go?';
+        emit({ type: 'question', sessionId: s.info.id, timestamp: now(), phase: 'asked', requestId: simE.requestId, questions: [{ question: message, header: 'deploy-mcp', multiSelect: false, options: [] }],
+          elicitation: url
+            ? { message, source: 'deploy-mcp', url: simE.url, host: 'auth.example.com' }
+            : { message, source: 'deploy-mcp', fields: [
+                { name: 'environment', title: 'Which environment?', type: 'enum', required: true, enumValues: ['staging', 'production'], enumNames: ['Staging', 'Production'], description: 'Production needs a ticket.' },
+                { name: 'ticket', title: 'Ticket number', type: 'integer', required: true, min: 1, max: 999999 },
+                { name: 'notify', title: 'Notify me', type: 'boolean', default: true },
+              ] } } as AgentEvent);
+        emit({ type: 'status', sessionId: s.info.id, timestamp: now(), status: 'needs-permission', intent: 'Waiting for your answer' });
+      }, 400);
+    }
     const simTrusted = new Set<string>(); // spec 043: repository agents confirmed in this run
-    const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number }) => void)[],
-      changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); } };
+    const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void)[],
+      changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); },
+      attrib: new Map<string, string>() };
+    /* spec 044 FR-012: the rule copy in schedtemplates.js (main uses src/shared/schedrules.ts; test:schedules keeps them equal) */
+    type SimRules = { parseRule(v: unknown): ScheduleInfo['rule']; nextRuleRun(r: NonNullable<ScheduleInfo['rule']>, after: number): number | undefined };
+    const simRules = (): SimRules | undefined => (window as unknown as { DurbarSchedTemplates?: SimRules }).DurbarSchedTemplates;
+    const simNext = (sc: ScheduleInfo, now: number): number =>
+      sc.rule ? simRules()?.nextRuleRun(sc.rule, now) ?? now + 1440 * 60000
+        : sc.at !== undefined ? sc.at + (Math.floor((now - sc.at) / ((sc.every as number) * 60000)) + 1) * (sc.every as number) * 60000 : now + (sc.every as number) * 60000; // FR-007: anchored runs keep their time of day
+    const simUnit = (s: SimAgent | undefined): 'aiu' | 'usd' | undefined => {
+      if (!s) return undefined;
+      const kc = caps(s.info.adapterId ?? 'copilot');
+      const u = kc.capUnit === 'usd' ? 'usd' : 'aiu';
+      return (u === 'usd' ? kc.usage.costUsd : kc.usage.nanoAiu) ? u : undefined;
+    };
+    const simAgentOf = (sc: { folder: string; target?: { session: string } }): SimAgent | undefined =>
+      sc.target ? sims.find((x) => x.info.id === sc.target?.session) : sims.find((x) => (x.info.workspaceFile ?? x.info.cwd) === sc.folder);
+    simSchedHook = (e) => {
+      // FR-015: from a scheduled send until that session's turn ends, its usage counts toward the schedule
+      if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) { simSched.attrib.delete(e.sessionId); return; }
+      if (e.type !== 'usage') return;
+      const sc = simSched.list.find((x) => x.id === simSched.attrib.get(e.sessionId));
+      if (!sc?.cap) return;
+      const amt = sc.cap.unit === 'usd' ? e.costUsd : e.nanoAiu !== undefined ? e.nanoAiu / 1e9 : undefined;
+      if (amt === undefined) sc.spentUnknown = true;
+      else sc.spent = (sc.spent ?? 0) + amt;
+      simSched.changed();
+    };
     window.setInterval(() => {
       const now = Date.now();
       let any = false;
       for (const sc of simSched.list) {
-        const due = sc.done || sc.paused ? undefined : sc.every !== undefined ? sc.next : sc.at;
+        if (sc.target && !sc.done && !sc.paused && !sims.some((x) => x.info.id === sc.target?.session)) { sc.paused = true; sc.pausedReason = 'session-ended'; any = true; continue; } // FR-014
+        const recurring = sc.every !== undefined || !!sc.rule;
+        const due = sc.done || sc.paused ? undefined : recurring ? sc.next : sc.at;
         if (due === undefined || due > now) continue;
         any = true;
-        const s = sims.find((x) => (x.info.workspaceFile ?? x.info.cwd) === sc.folder);
+        const s = simAgentOf(sc);
         const busy = !!s && (s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.perm);
-        const outcome = simSched.pausedAll ? 'skipped-paused' : !s ? 'failed' : busy ? 'skipped-busy' : 'sent';
+        const outcome = simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : busy ? 'skipped-busy' : 'sent';
         if (outcome === 'sent' && s) {
           emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: sc.prompt } as AgentEvent);
-          simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at }));
+          simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
+          simSched.attrib.set(s.info.id, sc.id);
           void api.send(s.info.id, sc.prompt, []);
         }
         sc.last = { at: now, outcome };
-        if (sc.every !== undefined) sc.next = sc.at !== undefined ? sc.at + (Math.floor((now - sc.at) / (sc.every * 60000)) + 1) * sc.every * 60000 : now + sc.every * 60000; // spec 044 FR-007: anchored runs keep their time of day
+        if (outcome === 'skipped-cap') { sc.paused = true; sc.pausedReason = 'cap'; } // FR-015
+        else if (recurring) sc.next = simNext(sc, now);
         else sc.done = true;
       }
       if (any) simSched.changed();
@@ -461,23 +537,42 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const scopeOf = (f: string): { key: string; label: string } => ({ key: 'write:' + dirOf(f), label: 'write in ' + dirOf(f).split('/').slice(-2).join('/') + '/' });
     const grantsEvent = (s: SimAgent): void =>
       emit({ type: 'grants', sessionId: sid(s), timestamp: now(), grants: [...s.grants].map(([key, label]) => ({ key, kind: 'write', label })) });
+    /** Activity log (spec 052 FR-071): a few canned rows, plus a row for each answer, automatic approval, mode or limit change in the simulator. */
+    const SIM_APP: Record<string, string> = { copilot: 'GitHub Copilot', claude: 'Claude Code', codex: 'OpenAI Codex' };
+    const simActivity: ActivityRow[] = (() => {
+      const t = (minAgo: number): string => new Date(Date.now() - minAgo * 60_000).toISOString();
+      return [
+        { t: t(42), agent: 'Ana', folder: 'web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Edit src/cart.ts', decision: 'allowed-once' },
+        { t: t(37), agent: 'Ana', folder: 'web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Run npm test', decision: 'allowed-session' },
+        { t: t(31), agent: 'Ana', folder: 'web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Run npm test', decision: 'auto-session-grant' },
+        { t: t(25), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'ask', action: 'Fetch https://example.com/docs', decision: 'denied' },
+        { t: t(18), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'allow', action: 'Ask first to Allow all', decision: 'mode-change' },
+        { t: t(12), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'allow', action: 'Edit server/routes.ts', decision: 'auto-allow-all' },
+        { t: t(6), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'allow', action: 'Spending limit set to 300 AI credits', decision: 'limit-change' },
+      ] as ActivityRow[];
+    })();
+    const simLog = (s: SimAgent, decision: ActivityRow['decision'], action: string, mode: string = s.info.permMode): void => {
+      simActivity.push({ t: new Date().toISOString(), agent: s.info.label || s.info.name, folder: s.info.cwd.split(/[\\/]/).pop() || s.info.name, app: SIM_APP[s.info.adapterId ?? 'copilot'] ?? String(s.info.adapterId), mode, action: action.slice(0, 160), decision });
+      if (simActivity.length > 5000) simActivity.splice(0, simActivity.length - 5000);
+    };
     /** Like the real broker: auto-approve under a session grant, otherwise leave the request pending. */
-    function askWrite(s: SimAgent, file: string, summary: string, cont: 'tool' | 'edit', intent: string, force = false): boolean | 'denied' {
-      const sc = scopeOf(file);
-      if (!force && s.info.permMode === 'allow') return true; // Allow all: no question asked
+    function askWrite(s: SimAgent, file: string, summary: string, cont: 'tool' | 'edit', intent: string, force = false, kind: 'write' | 'shell' = 'write', diff?: string): boolean | 'denied' {
+      const sc = kind === 'shell' ? { key: 'shell:' + file, label: 'run ' + file } : scopeOf(file);
+      if (!force && s.info.permMode === 'allow') { simLog(s, 'auto-allow-all', summary); return true; } // Allow all: no question asked
       if (!force && s.info.permMode === 'read-only') {
-        emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { requestId: 'perm-' + sid(s) + '-' + now(), kind: 'write', summary, state: 'denied' } });
+        emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { requestId: 'perm-' + sid(s) + '-' + now(), kind, summary, state: 'denied' } });
         return 'denied';
       }
       const requestId = 'perm-' + sid(s) + '-' + now();
-      const base = { requestId, kind: 'write', summary, scopeKey: sc.key, scopeLabel: sc.label };
+      const base = { requestId, kind, summary, scopeKey: sc.key, scopeLabel: sc.label };
       if (s.grants.has(sc.key)) {
         emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { ...base, state: 'approved', via: 'session' } });
+        simLog(s, 'auto-session-grant', summary);
         return true;
       }
       s.perm = { ...base, file, cont };
       s.state = 'waiting';
-      emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending' } });
+      emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending', ...(diff ? { diff } : {}) } });
       return false;
     }
     function editTool(s: SimAgent, file: string, ok: boolean): void {
@@ -524,9 +619,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         case 'thinking':
           think(s, 2);
           break;
-        case 'waiting':
-          askWrite(s, s.files[0], 'Edit ' + s.files[0] + ' (rename find_company to search_companies)', 'tool', s.intent, true);
+        case 'waiting': {
+          const w = WAIT_REQ[s.info.name] ?? { kind: 'write' as const, summary: 'Edit ' + s.files[0], target: s.files[0] };
+          askWrite(s, w.target, w.summary, 'tool', s.intent, true, w.kind, w.diff);
           break;
+        }
         case 'error':
           emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: sid(s) + '-fail', tool: 'bash', phase: 'start', args: { command: 'python evals/run.py --prompt v7 --concurrency 8' } });
           emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: sid(s) + '-fail', tool: 'bash', phase: 'failed', output: 'RateLimitError: 429 Too Many Requests (retry after 38s)\nStopped at case 38 of 120. Partial results saved to evals/out/v7-partial.json' });
@@ -724,6 +821,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     /* spec 024: place mapping kept in memory (plain script: no imports, so the ids are listed here) */
     const placeMap: Record<string, string> = {};
     let seriousMode = false; /* spec 034 */
+    let notifyNeedsMe = false; /* spec 052 FR-059: off in the demo until you turn it on */
     const PLACE_CHOICES = ['library', 'software', 'terminal', 'web', 'other', 'desk'];
     /* spec 024 FR-018..FR-020: custom places in memory, with the rules of src/shared/places.ts repeated here (the renderer bundle cannot import
        it; scripts/test-places.ts runs both on the same cases and compares them). */
@@ -825,9 +923,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0-alpha.7 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, ...(simTheme ? { theme: simTheme } : {}), about: { name: 'Agent Durbar', version: '0.1.0-alpha.8 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
+      setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
+      setBadge: async () => ({ ok: true }), /* spec 052 FR-059: no app icon in the demo */
+      focusWindow: async () => { window.focus(); return { ok: true }; },
       setTheme: async (id) => { if (typeof id === 'string' && /^[a-z0-9_-]{1,64}$/.test(id)) simTheme = id; return { ok: true, theme: simTheme }; },
       listUserThemes: async () => [...(simUserTheme ? [simUserTheme] : []), ...simUserThemes].map((t) => ({ id: t.id as string, name: String(t.name ?? t.id), ok: true })),
       getUserTheme: async (id) => (simUserTheme && id === simUserTheme.id ? simUserTheme : simUserThemes.find((t) => t.id === id) ?? null),
@@ -846,11 +947,15 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
         const usd = caps(s.info.adapterId ?? 'copilot').capUnit === 'usd';
-        if (c !== null && !(c >= (usd ? 0.01 : 30))) return { ok: false, error: usd ? 'The cost cap must be at least $0.01.' : 'The cap must be a number of at least 30 AI credits (the runtime minimum).' };
+        if (c !== null && !(c >= (usd ? 0.01 : 30))) return { ok: false, error: usd ? 'The spending limit must be at least $0.01.' : 'The spending limit must be a number of at least 30 AI credits (the runtime minimum).' };
         s.info.maxAiCredits = c ?? undefined;
+        simLog(s, 'limit-change', c === null ? 'Spending limit removed' : `Spending limit set to ${usd ? '$' + c.toFixed(2) : c + ' AI credits'}`);
         emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'changed', maxAiCredits: c });
         return { ok: true, maxAiCredits: c ?? undefined };
       },
+      activityList: async (o) => ({ ok: true, rows: simActivity.slice(-(o && typeof o.limit === 'number' && o.limit > 0 ? Math.min(o.limit, 5000) : 5000)).reverse().map((r) => ({ ...r })) }),
+      activityExport: async (format) => { console.info('[sim] would save the activity log as', format); return { ok: true, count: simActivity.length, to: 'durbar-activity.' + (format === 'json' ? 'json' : 'csv') }; },
+      activityClear: async () => { simActivity.length = 0; return { ok: true }; },
       answerQuestion: async (id, requestId, answers) => {
         if (!simQ || simQ.s.info.id !== id || simQ.requestId !== requestId) return { ok: false, error: 'That question is no longer open.' };
         simQ = undefined;
@@ -858,9 +963,31 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         emit({ type: 'output', sessionId: id, timestamp: now(), text: answers ? 'Thanks: ' + Object.values(answers).join('; ') + '.' : 'No answer; I will pick Sage for now.', final: true } as AgentEvent);
         return { ok: true };
       },
+      answerElicitation: async (id, requestId, action, values) => {
+        if (!simE || simE.s.info.id !== id || simE.requestId !== requestId) return { ok: false, error: 'That request is no longer open.' };
+        if (action === 'accept' && !simE.url) {
+          // the same rules main applies (spec 012 FR-151), for the three sim fields only
+          for (const f of simE.fields) {
+            const v = values?.[f.name];
+            if (v === undefined || v === '') { if (f.required) return { ok: false, error: `Fill in "${f.title}".`, field: f.name }; continue; }
+            if (f.type === 'enum' && !(f.enumValues ?? []).includes(String(v))) return { ok: false, error: `"${f.title}" must be one of the choices.`, field: f.name };
+            if (f.type === 'integer' && (typeof v !== 'number' || !Number.isInteger(v) || (f.min !== undefined && v < f.min) || (f.max !== undefined && v > f.max))) return { ok: false, error: `"${f.title}" must be a whole number from ${f.min} to ${f.max}.`, field: f.name };
+            if (f.type === 'boolean' && typeof v !== 'boolean') return { ok: false, error: `"${f.title}" must be yes or no.`, field: f.name };
+          }
+        }
+        simE = undefined;
+        emit({ type: 'question', sessionId: id, timestamp: now(), phase: action === 'cancel' ? 'cancelled' : 'answered', requestId, ...(action === 'cancel' ? {} : { elicitAction: action }) } as AgentEvent);
+        emit({ type: 'output', sessionId: id, timestamp: now(), text: action === 'accept' ? 'Thanks, the MCP server has what it needs.' : 'The MCP request was ' + (action === 'decline' ? 'declined' : 'cancelled') + '; I will continue without it.', final: true } as AgentEvent);
+        return { ok: true };
+      },
+      openElicitationUrl: async (id, requestId) => {
+        if (!simE?.url || simE.s.info.id !== id || simE.requestId !== requestId) return { ok: false, error: 'That request has no https page to open.' };
+        console.info('[sim] would open in the system browser:', simE.url);
+        return { ok: true };
+      },
       listProfiles: async (id) => {
         const s = sims.find((x) => x.info.id === id);
-        if (!s || (s.info.adapterId && s.info.adapterId !== 'copilot')) return { ok: false, error: 'This agent cannot use custom agents.', profiles: [] };
+        if (!s || (s.info.adapterId && s.info.adapterId !== 'copilot')) return { ok: false, error: 'This agent app has no profiles.', profiles: [] };
         return { ok: true, profiles: SIM_PROFILES.map((p) => ({ ...p, trusted: p.source !== 'repo' || simTrusted.has(p.id) })) };
       },
       selectProfile: async (id, profileId, confirm) => {
@@ -884,9 +1011,26 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       saveSchedule: async (input) => {
         const now = Date.now();
         const every = input.every !== undefined ? Math.round(Number(input.every)) : undefined;
-        if (!input.folder || !String(input.prompt ?? '').trim() || (every === undefined && !(Number(input.at) > now)) || (every !== undefined && !(every >= 5 && every <= 1440))) return { ok: false as const, error: 'A schedule needs a prompt and either a future time or 5 to 1440 minutes.' };
+        const rule = input.rule !== undefined ? simRules()?.parseRule(input.rule) : undefined;
+        if (input.rule !== undefined && !rule) return { ok: false as const, error: 'That calendar rule is not valid.' };
         const old = simSched.list.find((x) => x.id === input.id);
-        const sc: ScheduleInfo = { id: old?.id ?? 'sched-' + ++simSched.n, folder: input.folder, prompt: String(input.prompt).trim().slice(0, 2000), ...(every !== undefined ? { every, ...(Number(input.at) > 0 ? { at: Number(input.at) } : {}), next: old?.next ?? (Number(input.at) > now ? Number(input.at) : now + every * 60000) } : { at: Number(input.at) }), ...(input.paused ? { paused: true } : {}), ...(old?.last ? { last: old.last } : {}) };
+        if (!input.folder || !String(input.prompt ?? '').trim() || (!rule && every === undefined && !(Number(input.at) > now) && !(old && input.paused)) || (!rule && every !== undefined && !(every >= 5 && every <= 1440))) return { ok: false as const, error: 'A schedule needs a prompt and either a future time, 5 to 1440 minutes or a calendar rule.' };
+        const target = input.target && typeof input.target === 'object' ? input.target : undefined;
+        if (target && !input.paused && !sims.some((x) => x.info.id === target.session)) return { ok: false as const, error: "That session has ended. Send it to the folder's agent instead." };
+        let cap = input.cap && typeof input.cap === 'object' ? input.cap : undefined;
+        if (cap) {
+          const u = simUnit(simAgentOf({ folder: input.folder, target }));
+          if (!u) return { ok: false as const, error: 'This agent app does not report what a run costs, so a limit cannot be kept.' };
+          const amount = Math.round(Number(cap.amount) * 100) / 100;
+          if (!(amount >= 0.01 && amount <= (u === 'usd' ? 10_000 : 1_000_000))) return { ok: false as const, error: 'That limit is out of range.' };
+          cap = { amount, unit: u };
+        }
+        const when: Partial<ScheduleInfo> = rule ? { rule, next: old?.rule && old.paused && input.paused ? old.next : simRules()?.nextRuleRun(rule, now) } : every !== undefined ? { every, ...(Number(input.at) > 0 ? { at: Number(input.at) } : {}), next: old?.next ?? (Number(input.at) > now ? Number(input.at) : now + every * 60000) } : { at: Number(input.at) };
+        const resumedCap = !!old && old.pausedReason === 'cap' && !input.paused; // FR-015: Resume after the limit counts from zero
+        const sc: ScheduleInfo = { id: old?.id ?? 'sched-' + ++simSched.n, folder: input.folder, prompt: String(input.prompt).trim().slice(0, 2000), ...when, ...(input.paused ? { paused: true } : {}), ...(input.paused && old?.paused && old.pausedReason ? { pausedReason: old.pausedReason } : {}), ...(old?.last ? { last: old.last } : {}),
+          ...(target ? { target: { session: String(target.session), agent: String(target.agent), ...(target.name ? { name: String(target.name).slice(0, 80) } : {}) } } : {}),
+          ...(cap ? { cap, ...(!resumedCap && old?.spent ? { spent: old.spent } : {}), ...(!resumedCap && old?.spentUnknown ? { spentUnknown: true } : {}) } : {}) };
+        if (sc.next === undefined && (sc.rule || sc.every !== undefined)) return { ok: false as const, error: 'That calendar rule never runs.' };
         simSched.list = old ? simSched.list.map((x) => (x.id === sc.id ? sc : x)) : [...simSched.list, sc];
         simSched.changed();
         return { ok: true as const, schedule: sc };
@@ -911,10 +1055,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'changed', maxAiCredits: s.info.maxAiCredits ?? null });
         emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'resolved', requestId, action: choice.kind });
         s.state = 'working';
-        emit({ type: 'status', sessionId: id, timestamp: now(), status: 'working', intent: 'Continuing after the credit limit' });
+        emit({ type: 'status', sessionId: id, timestamp: now(), status: 'working', intent: 'Continuing after the spending limit' });
         window.setTimeout(() => {
           if (s.limitReq) return;
-          const text = '**Done.** Continued after the credit limit was raised: ' + s.intent;
+          const text = '**Done.** Continued after the spending limit was raised: ' + s.intent;
           emit({ type: 'output', sessionId: id, timestamp: now(), delta: text, final: true, text });
           emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle' });
           s.state = 'done';
@@ -986,6 +1130,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       return { success: true, tokensAfter: after, tokensRemoved: before - after };
     }
 
+    const simRemote = new Map<string, string>(); // spec 054: agent id -> canned link while remote control is on
     const modelApi: Partial<DurbarApi> = {
       setModel: async (id, req) => {
         const s = sims.find((x) => x.info.id === id);
@@ -1019,10 +1164,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       // spec 040 FR-014: the AI theme maker in the simulator: a canned, valid theme after a short wait (no harness, no credits)
       generateTheme: async (description, adapterId) => {
         if (!String(description ?? '').trim()) return { ok: false, error: 'Describe the look in a few words.' };
-        if (adapterId === 'copilot') return { ok: false, error: 'That harness cannot make a theme. Pick Claude Code or Codex.' };
+        if (!caps(String(adapterId ?? 'copilot')).oneShot) return { ok: false, error: 'That agent app cannot make a theme. Pick Claude Code, Codex or Copilot.' };
         await new Promise((r) => window.setTimeout(r, 700));
         const n = ++simThemeN;
-        return { ok: true, costUsd: 0.004, warnings: [], manifest: { id: 'ai-night-shift-newsroom' + (n > 1 ? '-' + n : ''), name: 'Night-shift newsroom', author: 'AI theme maker', version: '1.0', description: String(description).slice(0, 300), extends: 'clean-office', ui: 'corporate', scene: 'corporate',
+        // spec 040 FR-015: Claude reports a dollar estimate, Copilot AI credits, Codex nothing
+        const spend = adapterId === 'claude' ? { costUsd: 0.004 } : adapterId === 'copilot' ? { nanoAiu: 20_000_000 } : {};
+        return { ok: true, ...spend, warnings: [], manifest: { id: 'ai-night-shift-newsroom' + (n > 1 ? '-' + n : ''), name: 'Night-shift newsroom', author: 'AI theme maker', version: '1.0', description: String(description).slice(0, 300), extends: 'clean-office', ui: 'corporate', scene: 'corporate',
           tokens: { '--bg': '#eceff3', '--surface': '#fbfcfd', '--surface-2': '#f2f4f7', '--line': '#d5dae2', '--line-2': '#b9c1cd', '--ink': '#1b2230', '--ink-2': '#3a4456', '--muted': '#5f6a7c', '--room-path': '#56617a', '--sage': '#3f7d6c', '--blue': '#3d5e9e', '--amber': '#c4862b', '--brand-bg': '#1b2230', '--brand-mark': '#f2c063', '--focus': '#c4862b', '--sel-border': '#c4862b', '--desk': '#c9d1de', '--desk-front': '#b7c1d0', '--chair': '#2b3344', '--monitor-frame': '#1b2230', '--tint-sage': '#f1f5f4', '--tint-blue': '#f0f3f9', '--tint-sand': '#f8f5ee', '--tint-clay': '#f8f2f1' },
           words: { 'place-library': 'Archive', 'place-software': 'Wire desk', 'place-terminal': 'Print room', 'place-web': 'Newswire', 'place-other': 'Copy desk', 'lobby-label': 'The newsroom floor' } } };
       },
@@ -1034,10 +1181,30 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       handoff: async (id) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
-        if (!caps(s.info.adapterId ?? 'copilot').handoff) return { ok: false, error: 'This agent kind cannot make a summary.' };
+        if (!caps(s.info.adapterId ?? 'copilot').handoff) return { ok: false, error: 'This agent app cannot make a summary.' };
         await new Promise((r) => window.setTimeout(r, 900));
         const files = (s.files ?? []).slice(0, 3).map((f) => '- `' + f + '`').join('\n') || '- none yet';
         return { ok: true, summary: `## Goal\n${s.intent || 'Continue the current task.'}\n\n## What was done\n- Read the relevant code and ran the tests once (simulated).\n\n## Open items\n- Finish the change and run the tests again.\n\n## Important files and decisions\n${files}\n\n## Next step\nPick up from the open items above.` };
+      },
+      // spec 054 FR-008: remote control for Copilot sim agents only; a canned github.com link, nothing leaves the computer
+      setRemote: async (id, on) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s || typeof on !== 'boolean') return { ok: false, error: 'unknown agent' };
+        if (!caps(s.info.adapterId ?? 'copilot').remote) return { ok: false, error: 'This agent app cannot be controlled from GitHub.' };
+        await new Promise((r) => window.setTimeout(r, 600));
+        if (!on) {
+          simRemote.delete(id);
+          return { ok: true, on: false };
+        }
+        const url = 'https://github.com/three-feathers/agent-durbar/sessions/sim-' + (sims.indexOf(s) + 1);
+        simRemote.set(id, url);
+        return { ok: true, on: true, url, steerable: true, visibility: 'unshared' };
+      },
+      openRemote: async (id) => {
+        const url = simRemote.get(id);
+        if (!url) return { ok: false };
+        console.info('[sim] would open in the system browser:', url);
+        return { ok: true };
       },
       compact: async (id, focus) => {
         const s = sims.find((x) => x.info.id === id);
@@ -1128,22 +1295,24 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
 
     const simKinds = simKindsParam === '1' || simKindsParam === 'solo'; // spec 012 FR-136: '1' = two ready harnesses (picker shown), 'solo' = only Copilot ready (picker hidden)
     const copilotCaps = SIM_COPILOT_CAPS;
+    const simInstalled = new Set<string>(); // a simulated install that ended well: the next check finds it (like a real PATH that already had it)
     const simAdapters = (): AdapterInfo[] => [
       { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps } },
       ...(simKinds ? [
-        simKindsParam === 'solo'
-          ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false } }
-          : { id: 'claude', displayName: 'Claude Code', state: 'ready', version: 'sim', capabilities: { ...copilotCaps, caps: false, mcpToggle: false } },
-        { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'] } },
-      ] as AdapterInfo[] : []),
+        simKindsParam === 'solo' && !simInstalled.has('claude')
+          ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } }
+          : { id: 'claude', displayName: 'Claude Code', state: 'ready', version: 'sim', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } },
+        { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'], remote: false } },      ] as AdapterInfo[] : []),
       ...(mixed ? SIM_MIXED_KINDS : []),
     ];
     const notReady = (adapterId: string): string | undefined => {
       const k = simAdapters().find((x) => x.id === adapterId);
-      return k && k.state === 'ready' ? undefined : 'This agent kind is not ready on this computer. Open "About agent kinds" for what is missing.';
+      return k && k.state === 'ready' ? undefined : 'This agent app is not ready on this computer. Set it up in Settings > Agent apps.';
     };
     let started = false;
     let extra = 0;
+    type HsCb = (p: never) => void;
+    const simHarness: { progress: HsCb[]; done: HsCb[]; running: null | { kind: string; finish: () => void } } = { progress: [], done: [], running: null };
     const api: DurbarApi = {
       ...floorApi,
       ...mcpApi,
@@ -1152,6 +1321,29 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       version: async () => 'sim',
       // Spec 012 T017 (FR-063): only Copilot by default; simkinds=1 adds a Claude Code that is not installed and a Codex that is too old.
       listAdapters: async () => simAdapters(),
+      // Spec 051 FR-009: harness setup in the simulator: canned plans and output (a fake link and code), nothing runs
+      copilotAuth: async () => ({ known: true, signedIn: true, ...(simQuery.get('simnopwsh') === '1' ? { pwshMissing: true } : {}) }), // spec 052 FR-073: page address simnopwsh=1 shows the Windows PowerShell 7 hint
+      harnessPlans: async (kind, op) => ({ name: kind === 'copilot' ? 'the GitHub Copilot CLI' : kind === 'codex' ? 'the Codex CLI' : 'Claude Code', page: 'https://example.invalid/', plans: kind === 'codex' ? [{ manager: 'npm', display: (op === 'update' ? 'npm install -g @openai/codex@latest' : 'npm install -g @openai/codex') }] : [{ manager: 'brew', display: 'brew install --cask claude-code' }, { manager: 'npm', display: 'npm install -g @anthropic-ai/claude-code', note: 'Deprecated by Anthropic: use it only if nothing else works.' }] }),
+      harnessRun: async (kind, op) => {
+        const t0 = Date.now();
+        const prog = (p: Record<string, unknown>) => simHarness.progress.forEach((cb) => cb({ kind, op, elapsedMs: Date.now() - t0, lines: [], ...p } as never));
+        const done = (ok: boolean) => { simHarness.running = null; simHarness.done.forEach((cb) => cb({ kind, op, ok, exitCode: ok ? 0 : 1, lines: ['(simulated)'] } as never)); };
+        if (op === 'signin') {
+          setTimeout(() => prog({ url: kind === 'claude' ? 'https://claude.com/cai/oauth/authorize?simulated=1' : 'https://auth.openai.com/codex/device', ...(kind === 'claude' ? { needsPaste: true } : { code: 'SIM1-ABCDE' }) }), 300);
+          simHarness.running = { kind, finish: () => done(true) };
+          if (kind !== 'claude') setTimeout(() => { if (simHarness.running) done(true); }, 60000);
+        } else {
+          setTimeout(() => prog({ lines: ['added 1 package in 3s (simulated)'] }), 300);
+          setTimeout(() => { if (op === 'install') simInstalled.add(kind); done(true); }, 2500);
+        }
+        return { ok: true };
+      },
+      harnessPaste: async (text) => { if (!simHarness.running || !String(text || '').trim()) return { ok: false, error: 'Paste the code from the sign-in page (one line).' }; const r = simHarness.running; setTimeout(() => r.finish(), 400); return { ok: true }; },
+      harnessCancel: async () => { const r = simHarness.running; simHarness.running = null; if (r) simHarness.done.forEach((cb) => cb({ kind: r.kind, op: 'signin', ok: false, reason: 'cancelled', lines: [] } as never)); return !!r; },
+      harnessOpenPage: async () => ({ ok: true }),
+      harnessOpenSignIn: async () => ({ ok: true }),
+      onHarnessProgress: (cb) => { simHarness.progress.push(cb); return () => { simHarness.progress = simHarness.progress.filter((x) => x !== cb); }; },
+      onHarnessDone: (cb) => { simHarness.done.push(cb); return () => { simHarness.done = simHarness.done.filter((x) => x !== cb); }; },
       addFolder: async (_mode, o) => {
         const bad = o && o.adapterId !== undefined ? notReady(o.adapterId) : undefined;
         if (bad) return { ok: false, agents: [], error: bad }; // like main: nothing starts, nothing is written
@@ -1210,7 +1402,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
         if (s.perm) return { ok: false, error: 'Waiting for your permission decision first.' };
-        if (s.limitReq) return { ok: false, error: 'The credit limit was reached. Choose Add credits, Remove cap or Stop here first.' };
+        if (s.limitReq) return { ok: false, error: 'The spending limit was reached. Choose Raise limit, Remove limit or Stop here first.' };
         window.setTimeout(() => void reply(s, text), 400);
         return { ok: true };
       },
@@ -1235,7 +1427,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = sims.find((x) => x.info.id === id);
         if (!s) return;
         if (s.grants.size) { s.grants.clear(); grantsEvent(s); }
-        s.state = 'idle'; closeOpen(s);
+        s.state = 'idle'; closeOpen(s); simRemote.delete(id); // spec 054 FR-003
         emit({ type: 'status', sessionId: id, timestamp: now(), status: 'stopped' });
       },
       resolvePermission: async (id, req, approve, remember) => {
@@ -1246,8 +1438,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const keep = approve && remember === true;
         if (keep) { s.grants.set(p.scopeKey, p.scopeLabel); grantsEvent(s); }
         emit({ type: 'permission', sessionId: id, timestamp: now(), permission: { ...p, state: approve ? 'approved' : 'denied', via: 'user', remembered: keep || undefined } });
+        simLog(s, !approve ? 'denied' : keep ? 'allowed-session' : 'allowed-once', p.summary);
         s.state = 'working';
-        emit({ type: 'status', sessionId: id, timestamp: now(), status: 'working', intent: (approve ? 'Approved: ' : 'Denied: ') + file });
+        emit({ type: 'status', sessionId: id, timestamp: now(), status: 'working', intent: (approve ? 'Allowed: ' : 'Denied: ') + file });
         if (cont === 'edit') { editTool(s, file, approve); finishReply(s, approve, file); } else toolStep(s, true);
       },
       revokeGrant: async (id, key) => {
@@ -1281,6 +1474,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       setPermMode: async (id, mode, o) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
+        const MW: Record<string, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
+        simLog(s, 'mode-change', `${MW[s.info.permMode] ?? s.info.permMode} to ${MW[mode] ?? mode}`, mode);
         s.info.permMode = mode;
         s.info.permRestored = undefined;
         if (o?.clearGrants && s.grants.size) { s.grants.clear(); grantsEvent(s); }

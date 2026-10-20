@@ -29,12 +29,12 @@ export interface AdapterRouter {
  */
 export function adapterForAdd(explicit: string | undefined, saved: string | undefined, has: (id: string) => boolean, def: string, ready?: (id: string) => boolean): { id: string } | { error: string } {
   if (explicit !== undefined) {
-    if (!has(explicit)) return { error: 'This agent kind is not supported by this version.' };
+    if (!has(explicit)) return { error: 'This agent app is not supported by this version.' };
     // Spec 012 FR-058 (T017): a kind the user picked must be ready; there is no fallback to another kind.
-    if (ready && !ready(explicit)) return { error: 'This agent kind is not ready on this computer. Open "About agent kinds" for what is missing.' };
+    if (ready && !ready(explicit)) return { error: 'This agent app is not ready on this computer. Set it up in Settings > Agent apps.' };
     return { id: explicit };
   }
-  if (saved !== undefined) return has(saved) ? { id: saved } : { error: 'This folder was saved for an agent kind this version does not support.' };
+  if (saved !== undefined) return has(saved) ? { id: saved } : { error: 'This folder was saved for an agent app this version does not support.' };
   return { id: def };
 }
 

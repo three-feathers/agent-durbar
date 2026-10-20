@@ -34,5 +34,26 @@
     if(d.getTime()<=now)d.setDate(d.getDate()+1);
     return d.getTime();
   }
-  return {TEMPLATES,byId,nextDaily};
+  /* spec 044 FR-012: calendar rules. A copy of src/shared/schedrules.ts (main is the source of truth) for the simulator and the
+     form; test:schedules checks both give the same next run. Built from the local Y/M/D and wall-clock time, never +24 h. */
+  const KINDS=['daily','weekdays','weekly'];
+  function parseRule(v){
+    if(!v||typeof v!=='object'||!KINDS.includes(v.kind)||!/^([01]\d|2[0-3]):([0-5]\d)$/.test(String(v.time)))return undefined;
+    const r={kind:v.kind,time:v.time};
+    if(r.kind==='weekly'){const days=[...new Set((Array.isArray(v.days)?v.days:[]).filter(d=>Number.isInteger(d)&&d>=0&&d<=6))].sort((a,b)=>a-b);if(!days.length)return undefined;r.days=days;}
+    return r;
+  }
+  function nextRuleRun(rule,after){
+    const m=/^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(rule&&rule.time||''));if(!m)return undefined;
+    const days=rule.kind==='daily'?[0,1,2,3,4,5,6]:rule.kind==='weekdays'?[1,2,3,4,5]:(rule.days||[]);
+    const b=new Date(after);
+    for(let i=0;i<=8;i++){
+      const day=new Date(b.getFullYear(),b.getMonth(),b.getDate()+i);
+      if(!days.includes(day.getDay()))continue;
+      const at=new Date(day.getFullYear(),day.getMonth(),day.getDate(),Number(m[1]),Number(m[2]),0,0).getTime();
+      if(at>after)return at;
+    }
+    return undefined;
+  }
+  return {TEMPLATES,byId,nextDaily,parseRule,nextRuleRun};
 })());

@@ -24,9 +24,13 @@
 - **FR-003** On Windows, the `cmd.exe` used for a `.cmd` shim (VS Code's `code.cmd`, spec 009; agent CLIs' `.cmd` shims, spec 012 FR-036) is `%SystemRoot%\System32\cmd.exe` when `SystemRoot` is an absolute path. `ComSpec` is used only when it is an absolute path to a file named `cmd.exe`; otherwise plain `cmd.exe`. Before, any `ComSpec` value from the environment was run. `test:` the choice for each of these inputs.
 
 - **FR-004** The window navigates (`will-navigate`, `will-redirect`) only to the app's own `index.html`, with any query or hash. Any other `file://` page and any web page is refused. `test:` allowed and refused URLs on Linux and Windows paths. `sim:` in Electron, `location.href = 'file:///tmp/…html'` left the app on its own page.
-- **FR-005** Web permission requests and checks are refused, except `clipboard-sanitized-write`, which the Copy buttons need (spec 005 FR-015). `test:` the allow list. `sim:` in Electron, the microphone gave `NotAllowedError`, notifications gave `denied`, and a reply's Copy button still put the reply on the clipboard.
+- **FR-005** Web permission requests and checks are refused, except `clipboard-sanitized-write`, which the Copy buttons need (spec 005 FR-015). `test:` the allow list. `sim:` in Electron, the microphone gave `NotAllowedError`, notifications gave `denied`, and a reply's Copy button still put the reply on the clipboard. *Amended 2026-10-20 by spec 052 FR-059:* `notifications` is allowed too, for the "needs you" notification (agent name and a short summary only).
 
 ## Honest limits
 
 - FR-003 and FR-004's Windows paths are unit-tested only; Windows was not run by hand (as for every Windows path in this project).
 - The dismissed alerts stay listed here, so the reasons are in the repository, not only on GitHub.
+
+## Changes
+
+- **2026-10-20 (issue #332, from the round-7 security review):** **FR-008** every IPC handler in the main process is registered through `ipcHandle` / `ipcOn` (`src/main/ipcguard.ts`), which answer only the app's own page in the window's main frame (`senderAllowed`). A call from anywhere else is rejected before it reaches the handler, so a new handler cannot forget the check. This is defense in depth: the sandbox, the navigation guard, the deny-all window-open handler and the CSP already keep other pages and frames out. `test:` `scripts/test-wincmd.ts` fails if any file in `src/main` registers on `ipcMain` directly; `sim:` the welcome driver passes on the real bridge. `[KNOWN GAP]` The check itself needs Electron, so it is not unit-tested; the rule it applies (`senderAllowed`) is.

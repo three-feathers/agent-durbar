@@ -1,15 +1,18 @@
 /**
- * Durbar MCP read tools, spec 041 T016 [FR-010..FR-013, FR-043, FR-053, FR-054, SC-001, SC-004]. A factory over injected getters
- * (no Electron, no store imports at runtime, no I/O of its own): every answer is built field by field from main's in-memory state,
- * so a value that is not named here cannot reach a client. No prompts, chat text, env or header values, no paths outside the saved
- * folders, no AI credits, no runtime call.
+ * Durbar MCP read tools, spec 041 T016 and T053 [FR-010..FR-013, FR-043, FR-053, FR-054, SC-001, SC-004]. A factory over injected
+ * getters: no Electron and no I/O of its own. Imports: `import * as path from 'path'` (pure path functions only), `adapterOf` (a pure function) and the `SavedFolder` type from `../folders`
+ * (which pulls in `fs` and `path` only), `../../shared/*` (`redact` for the masking) and `./tools`, `./agentstate` (types). Every
+ * answer is built field by field from main's in-memory state, so a value that is not named here cannot reach a client. No prompts,
+ * chat text, env or header values; secrets in `command`, `args` and `url` are masked, and an absolute path outside the saved folders
+ * is reduced to `…/<base name>` (T053, D2). No AI credits, no runtime call.
  */
+import * as path from 'path';
 import type { AgentInfo, McpAmbientView, McpState, PermMode } from '../../shared/api';
 import type { AppSettings } from '../../shared/credits';
 import { GROUND } from '../../shared/floors';
 import type { FloorsDoc } from '../../shared/floors';
 import type { McpServerView } from '../../shared/mcp';
-import { maskSecretArgs, maskSecretUrl, redact } from '../../shared/redact';
+import { maskSecretArgs, maskSecretUrl, parseFlag, redact, splitCommand } from '../../shared/redact';
 import { officeTotals } from '../../shared/usagedoc';
 import type { UsageNumbers, UsageTotalsDoc } from '../../shared/usagedoc';
 import type { SavedFolder } from '../folders';
@@ -38,6 +41,10 @@ export interface ReadToolsDeps {
   mcpExtras(folderKey: string): readonly McpServerView[];
   /** The window runs `DURBAR_SIM`: its agents exist only in the window, so the server cannot see them. */
   windowSim(): boolean;
+  /** The OS the paths belong to (`process.platform`); injected so the path rule is tested for all three from any OS (constitution VI). */
+  platform: NodeJS.Platform;
+  /** Secret values stored for one folder's extras (`McpStore`, main only). Replaced in that folder's `command`, `args` and `url`; never put in any view. */
+  extraSecretValues(folderKey: string): readonly string[];
 }
 
 /** Shown when `windowSim()` is true. */
@@ -55,18 +62,83 @@ const folderKeyOf = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 /** Key names only, never values: the one place an env or header entry is turned into output. */
 const keyNames = (l: readonly { key: string; set: boolean }[] | undefined): { key: string; set: boolean }[] => (l ?? []).map((e) => ({ key: redact(e.key), set: e.set === true }));
 
-const safeCommand = (c: string | undefined): string | undefined => (c === undefined ? undefined : redact(c));
-const safeArgs = (a: readonly string[] | undefined): string[] | undefined => (a === undefined ? undefined : maskSecretArgs(a));
-const safeUrl = (u: string | undefined): string | undefined => (u === undefined ? undefined : maskSecretUrl(u));
+const OUTSIDE = '\u2026/';
+const ABS_POSIX = /^\/+[^/\\]+[/\\]+[^/\\]/; // two segments or more: a one-segment `/name` is a Windows-style flag
+const ABS_WIN = /^(?:[A-Za-z]:[\\/]|\\\\)/; // drive path, UNC or `\\?\`
+const ABS_HOME = /^~[^/\\]*[/\\]/; // `~/x` and `~other/x`
 
-function cliView(s: McpAmbientView) {
-  return { name: s.name, origin: s.origin, transport: s.transport, command: safeCommand(s.command), args: safeArgs(s.args), url: safeUrl(s.url), enabled: s.enabled };
+/**
+ * Pure path reducer (T053, D2). Returns a function that turns an arg (or a command token) into its display form: an absolute path
+ * (POSIX with two segments or more, drive, UNC, `~/`) that is not the saved folder itself or below it becomes `…/<base name>`, also
+ * as a flag value (`--config=/x/y`, `--config /x/y`) or a `NAME=value` value. "Inside" uses `path.win32` or `path.posix` by `platform`,
+ * case-insensitive on Windows and macOS, exact on Linux; a `.code-workspace` counts as its directory. Paths inside a longer arg
+ * (`type=bind,src=/x/y`), `$HOME` and `%USERPROFILE%` forms and relative paths are not reduced (`[KNOWN GAP]`).
+ */
+export function makePathReducer(savedFolders: readonly string[], platform: NodeJS.Platform): (arg: string) => string {
+  const mod = platform === 'win32' ? path.win32 : path.posix;
+  const fold = platform === 'win32' || platform === 'darwin';
+  const norm = (p: string): string => { const n = mod.normalize(p); return fold ? n.toLowerCase() : n; };
+  const roots: string[] = [];
+  for (const f of savedFolders) {
+    if (typeof f !== 'string' || !mod.isAbsolute(f)) continue;
+    roots.push(norm(/\.code-workspace$/i.test(f) ? mod.dirname(f) : f));
+  }
+  const inside = (p: string): boolean => {
+    if (!mod.isAbsolute(p)) return false; // `relative` would resolve it against the working directory
+    const n = norm(p);
+    return roots.some((r) => {
+      const rel = mod.relative(r, n);
+      return rel === '' || (rel !== '..' && !rel.startsWith('..' + mod.sep) && !mod.isAbsolute(rel));
+    });
+  };
+  const isAbs = (v: string): boolean => ABS_POSIX.test(v) || ABS_WIN.test(v) || ABS_HOME.test(v);
+  // The base name stops at the first whitespace, so `C:\\a\\b.exe serve token=x` in one string never carries its arguments along.
+  const base = (v: string): string => (v.split(/[\\/]/).filter(Boolean).pop() ?? v).split(/\s/)[0];
+  const reduceAbs = (v: string): string => (!ABS_HOME.test(v) && inside(v) ? v : OUTSIDE + base(v));
+  const reduceValue = (v: string): string => {
+    const fu = /^file:\/\/(?:localhost)?(\/[\s\S]*)$/i.exec(v); // a file URL: its path goes through the same rule
+    if (fu) {
+      let p = fu[1];
+      try { p = decodeURIComponent(p); } catch { /* keep it raw */ }
+      if (/^\/[A-Za-z]:[\\/]/.test(p)) p = p.slice(1);
+      return isAbs(p) || /^[A-Za-z]:/.test(p) ? (!ABS_HOME.test(p) && inside(p) ? v : 'file://' + OUTSIDE + base(p)) : v;
+    }
+    if (isAbs(v)) return reduceAbs(v);
+    const kv = /^([A-Za-z_][A-Za-z0-9_.-]{0,127})=([\s\S]*)$/.exec(v);
+    return kv && isAbs(kv[2]) ? `${kv[1]}=${reduceAbs(kv[2])}` : v;
+  };
+  return (arg) => {
+    const f = arg.startsWith('-') || arg.startsWith('/') ? parseFlag(arg) : undefined;
+    return f && f.rest !== undefined ? `${f.name}${f.sep}${reduceValue(f.rest)}` : f ? arg : reduceValue(arg);
+  };
 }
 
-function extraView(s: McpServerView) {
+/** Replace a folder's stored secret values (longest first); values under 4 characters are skipped, since they would mangle every string. */
+function replaceValues(text: string, values: readonly string[]): string {
+  let t = text;
+  for (const v of [...values].filter((x) => typeof x === 'string' && x.length >= 4).sort((x, y) => y.length - x.length)) if (t.includes(v)) t = t.split(v).join('[redacted]');
+  return t;
+}
+
+/** The masking of `command`, `args` and `url` for one folder's server (T053): stored secret values, secret shapes, then outside paths. */
+function maskers(deps: ReadToolsDeps, folderKey?: string) {
+  const values = folderKey === undefined ? [] : deps.extraSecretValues(folderKey);
+  const reduce = makePathReducer(deps.folders().map((f) => f.workspace), deps.platform);
+  return {
+    command: (c: string | undefined): string | undefined => (c === undefined ? undefined : maskSecretArgs(splitCommand(replaceValues(c, values))).map(reduce).join(' ')),
+    args: (a: readonly string[] | undefined): string[] | undefined => (a === undefined ? undefined : maskSecretArgs(a.map((x) => replaceValues(String(x ?? ''), values))).map(reduce)),
+    url: (u: string | undefined): string | undefined => (u === undefined ? undefined : reduce(maskSecretUrl(replaceValues(u, values)))),
+  };
+}
+
+function cliView(s: McpAmbientView, m: ReturnType<typeof maskers>) {
+  return { name: s.name, origin: s.origin, transport: s.transport, command: m.command(s.command), args: m.args(s.args), url: m.url(s.url), enabled: s.enabled };
+}
+
+function extraView(s: McpServerView, m: ReturnType<typeof maskers>) {
   return {
     name: s.name, transport: s.transport, enabled: s.enabled, trusted: s.trusted, needsSecrets: s.needsSecrets,
-    command: safeCommand(s.command), args: safeArgs(s.args), url: safeUrl(s.url),
+    command: m.command(s.command), args: m.args(s.args), url: m.url(s.url),
     envKeys: keyNames(s.env), headerKeys: keyNames(s.headers),
   };
 }
@@ -148,8 +220,9 @@ export function createReadToolHandlers(deps: ReadToolsDeps): ToolHandlers {
 
     durbar_mcp_state: () => {
       const c = deps.mcpCli();
-      const extras = deps.folders().map((f) => ({ folder: f.workspace, servers: deps.mcpExtras(f.workspace).map(extraView) })).filter((e) => e.servers.length > 0);
-      return json({ copilotCli: { servers: c.cli.map(cliView), file: { label: c.file.label, found: c.file.found, skipped: c.file.skipped }, secretsPersist: c.secretsPersist }, extras });
+      const extras = deps.folders().map((f) => { const m = maskers(deps, f.workspace); return { folder: f.workspace, servers: deps.mcpExtras(f.workspace).map((x) => extraView(x, m)) }; }).filter((e) => e.servers.length > 0);
+      const cliMask = maskers(deps);
+      return json({ copilotCli: { servers: c.cli.map((x) => cliView(x, cliMask)), file: { label: c.file.label, found: c.file.found, skipped: c.file.skipped }, secretsPersist: c.secretsPersist }, extras });
     },
 
     // Stub until T031 (the change queue): nothing can have been requested yet, so there is no status to give.

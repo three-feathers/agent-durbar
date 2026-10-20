@@ -117,15 +117,15 @@ e1.onPermission(undefined as unknown as string, { requestId: 'r', state: 'pendin
 e1.forget('a'); assert.strictEqual(e1.waitingMs('a'), 0); assert.strictEqual(e1.failStreak('a'), 0); assert.strictEqual(e1.errorAt('a'), 0);
 
 // phrases (the same facts in words)
-assert.deepStrictEqual(M.phrases({ body: 'monster', pct: 93 }), ['context nearly full (93%)']);
+assert.deepStrictEqual(M.phrases({ body: 'monster', pct: 93 }), ['Context almost full (93%)']);
 assert.deepStrictEqual(M.phrases({ body: 'heavy', pct: 75 }), [], 'only from 90% in words');
 assert.deepStrictEqual(M.phrases({ body: 'normal', pct: 10 }), []);
-assert.deepStrictEqual(M.phrases({ body: 'monster', pct: 95, trouble: 'ambulance' }), ['context nearly full (95%)', 'needs help: error']);
-assert.deepStrictEqual(M.phrases({ trouble: 'faint' }), ['fainted: credit limit reached']);
-assert.deepStrictEqual(M.phrases({ trouble: 'impatient', waitingMs: 125_000 }), ['impatient: waiting 2 min for you']);
-assert.deepStrictEqual(M.phrases({ trouble: 'impatient', waitingMs: 60_000 }), ['impatient: waiting 1 min for you']);
-assert.deepStrictEqual(M.phrases({ trouble: 'dizzy', failStreak: 4 }), ['dizzy: 4 failed tool calls in a row']);
-assert.deepStrictEqual(M.phrases({ trouble: 'dizzy' }), ['dizzy: 3 failed tool calls in a row']);
+assert.deepStrictEqual(M.phrases({ body: 'monster', pct: 95, trouble: 'ambulance' }), ['Context almost full (95%)', 'Error: needs a look']);
+assert.deepStrictEqual(M.phrases({ trouble: 'faint' }), ['Spending limit reached']);
+assert.deepStrictEqual(M.phrases({ trouble: 'impatient', waitingMs: 125_000 }), ['Waiting 2 min for you']);
+assert.deepStrictEqual(M.phrases({ trouble: 'impatient', waitingMs: 60_000 }), ['Waiting 1 min for you']);
+assert.deepStrictEqual(M.phrases({ trouble: 'dizzy', failStreak: 4 }), ['4 tool calls failed in a row']);
+assert.deepStrictEqual(M.phrases({ trouble: 'dizzy' }), ['3 tool calls failed in a row']);
 assert.deepStrictEqual(M.phrases(), []); assert.deepStrictEqual(M.phrases({ trouble: 'unknown' }), []);
 
 // a room takes the tone of its worst agent (spec 034 delta, issue #135)

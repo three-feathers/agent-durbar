@@ -158,10 +158,12 @@ export class FakeAdapter implements AgentAdapter {
           case 'resolved':
             this.emit(sid, { type: 'permission', permission: e.permission });
             if (e.permission.via !== 'stopped') {
-              const word = e.permission.state === 'approved' ? (e.permission.via === 'session' ? 'Allowed for this session' : 'Approved') : 'Denied';
+              const word = e.permission.state === 'approved' ? (e.permission.via === 'session' ? 'Allowed for this session' : 'Allowed') : 'Denied';
               this.emit(sid, { type: 'status', status: 'working', intent: `${word}: ${e.permission.summary}` });
             }
             return;
+          case 'auto': // Allow all approved it: a permission event for the activity log; the window shows no card (spec 052 FR-071)
+            return this.emit(sid, { type: 'permission', permission: e.permission });
           case 'grants':
             return this.emit(sid, { type: 'grants', grants: e.grants });
         }

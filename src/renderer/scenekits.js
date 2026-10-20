@@ -31,7 +31,7 @@
     if (st === 'waiting') s += `<rect x="121" y="41" width="30" height="3.6" rx="1.8" fill="${T('--wait-dot')}" opacity=".5"/><rect x="123" y="49" width="42" height="19" rx="5" fill="${T('--wait-card')}" stroke="${T('--wait-note-stroke')}" stroke-width="1.2"/><circle cx="131" cy="58.5" r="3" fill="${T('--wait-dot')}"/><rect x="138" y="54" width="20" height="3" rx="1.5" fill="${T('--wait-note-line')}"/><rect x="138" y="60" width="14" height="3" rx="1.5" fill="${T('--wait-note-line-2')}"/>`;
     if (st === 'idle') s += `<circle cx="144" cy="54.5" r="7" fill="none" stroke="${T('--idle-clock')}" stroke-width="1.6"/><path d="M144 50.5v4l2.6 1.6" fill="none" stroke="${T('--idle-clock')}" stroke-width="1.6" stroke-linecap="round"/>`;
     if (st === 'error') s += `<circle cx="144" cy="52" r="9" fill="none" stroke="${T('--halo-error')}" stroke-width="2"/><path d="M144 47.5v5.5M144 56.6v.1" stroke="${T('--halo-error')}" stroke-width="2.2" stroke-linecap="round"/><rect x="127" y="65" width="34" height="3" rx="1.5" fill="${T('--err-mark')}"/>`;
-    if (st === 'done') s += `<circle cx="144" cy="54.5" r="10" fill="${T('--done-bg')}"/><path d="M139 54.5l3.6 3.6 6.6-7" fill="none" stroke="${T('--done-mark')}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`;
+    if (st === 'done') s += `<circle cx="144" cy="54.5" r="10" fill="${T('--done-bg')}"/><path class="done-tick" d="M139 54.5l3.6 3.6 6.6-7" fill="none" stroke="${T('--done-mark')}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`;
     return s;
   }
   const screenBg = (o) => ({ working: '--screen-working', thinking: '--screen-thinking', waiting: '--screen-waiting', idle: '--screen-idle', error: '--screen-error', done: '--screen-done' })[o.st];
@@ -263,7 +263,7 @@
     hand: (o, x, y) => `<circle cx="${x}" cy="${y}" r="4.4" fill="#fbf8f1" opacity=".95"/>` + roundHand(o, x, y),
   };
 
-  /* ---------- Durbar · Japanese: a gold folding screen, kimono and obi, topknots and kanzashi, a lacquer table ---------- */
+  /* ---------- Durbar · Japanese: a gold folding screen, kimono and obi, plain short hair or a bun with a kanzashi, a lacquer table ---------- */
   const VERMILION = '#c23b22', LACQUER = '#1c1a17';
   KIT['court-japanese'] = {
     chair: (o) => `<g><rect x="40" y="30" width="22" height="66" fill="#d9b95c"/><rect x="62" y="28" width="24" height="68" fill="#e3c66e"/><rect x="86" y="30" width="22" height="66" fill="#d9b95c"/><g fill="none" stroke="${LACQUER}" stroke-width="1.2"><rect x="40" y="30" width="22" height="66"/><rect x="62" y="28" width="24" height="68"/><rect x="86" y="30" width="22" height="66"/></g><path d="M44 60q8-10 16-4q6-12 18-6q10-8 26 2" fill="none" stroke="#3f5a3a" stroke-width="2.4" opacity=".7"/><circle cx="96" cy="40" r="4" fill="${VERMILION}" opacity=".85"/></g>`,
@@ -279,9 +279,11 @@
       if (st === 'bun') return base + `<path d="M66 31q8-9 16 0q-2 4-8 4q-6 0-8-4z" fill="${c}"/><path d="M80 26l8-6" stroke="${o.shade(c, 0.5)}" stroke-width="1.2"/><circle cx="88.5" cy="19.5" r="2.4" fill="${VERMILION}"/><path d="M87 21.5l-1 4M90 21.5l1 4" stroke="#d9b95c" stroke-width=".8"/>`;
       if (st === 'curly') return `<path d="M61 47C60 33 66 30 74 30C82 30 88 33 87 47L84 47L84 39L64 39L64 47Z" fill="${c}"/>`;
       if (st === 'long') return base + `<path d="M62 40q12-6 24 0" fill="none" stroke="${o.shade(c, 0.25)}" stroke-width="1"/>`;
-      return base + `<rect x="71" y="25" width="6" height="7" rx="2" fill="${c}"/><path d="M72 25.5q6-3 8 1" fill="none" stroke="${c}" stroke-width="3" stroke-linecap="round"/>`;
+      /* plain short hair (no topknot): the cap plus short sides at the temples */
+      return base + `<path d="M61.5 44L62 49.5H63.8V40.5Z M86.5 44L86 49.5H84.2V40.5Z" fill="${c}"/>`;
     },
-    desk: (o) => `<rect x="10" y="86" width="180" height="6" rx="1" fill="${LACQUER}"/><rect x="10" y="86" width="180" height="1.4" fill="${VERMILION}"/><rect x="10" y="92" width="180" height="2" fill="${o.shade(LACQUER, 0.2)}"/><path d="M18 94h8v20h-8zM174 94h8v20h-8z" fill="${LACQUER}"/><rect x="18" y="110" width="164" height="2" fill="${LACQUER}" opacity=".6"/>`,
+    /* spec 052 FR-032: the table is warm lacquer from the theme's desk tokens, not near-black ink */
+    desk: (o) => { const d = o.T('--desk'), f = o.T('--desk-front'); return `<rect x="10" y="86" width="180" height="6" rx="1" fill="${d}"/><rect x="10" y="86" width="180" height="1.4" fill="${VERMILION}"/><rect x="10" y="92" width="180" height="2" fill="${f}"/><path d="M18 94h8v20h-8zM174 94h8v20h-8z" fill="${o.T('--desk-drawer')}"/><rect x="18" y="110" width="164" height="2" fill="${d}" opacity=".6"/>`; },
     monitor: (o) => { const w = '#b48a5a'; return `<rect x="141" y="76" width="6" height="9" fill="${w}"/><rect x="130" y="84" width="28" height="2.4" fill="${LACQUER}"/><rect x="110" y="30" width="68" height="49" fill="${w}"/><rect x="108" y="27" width="72" height="4" fill="${LACQUER}"/><g fill="none" stroke="${o.shade(w, -0.25)}" stroke-width="1"><path d="M110 33h68M110 76h68M113 30v49M175 30v49"/></g>`; },
     keyboard: (o) => `<rect x="58" y="82.4" width="38" height="3.6" fill="#f6f1e6" stroke="#cdbf9f" stroke-width=".5"/><path d="M88 82l7-8" stroke="${LACQUER}" stroke-width="1.4" stroke-linecap="round"/><rect x="62" y="82" width="10" height="4" fill="${LACQUER}" opacity=".85"/>`,
     cup: (o) => `<path d="M98 79h11q-1 7-5.5 7q-4.5 0-5.5-7z" fill="#6b4b3a"/><path d="M98 79h11" stroke="#cdbf9f" stroke-width="1.2"/>` + steam(o),

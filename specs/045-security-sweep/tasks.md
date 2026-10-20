@@ -6,3 +6,4 @@
 - [x] T003a FR-004 navigation only to the app page, FR-005 web permissions refused except clipboard writes; tests and an Electron check
 - [x] T004 Docs: CHANGELOG, specs index, SECURITY.md if affected
 - [x] T005 After merge: dismiss the test-only and false-positive alerts with reasons; check the fixed ones closed (2026-10-19: #2-#30 dismissed as used in tests, #33 as a false positive, #31 as won't fix with the reason, Dependabot #1 as tolerable risk; #1 and #32 closed as fixed; 0 open alerts)
+- [x] T020 FR-008 every IPC handler through ipcHandle/ipcOn with the sender check; static test (#332)

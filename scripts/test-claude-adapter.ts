@@ -114,7 +114,13 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(claudeModelOptions(undefined), []);
   }
   {
-    assert.deepStrictEqual(permissionLikeOf('Write', { file_path: '/w/a.txt', content: 'x' }, 'tu1'), { kind: 'write', toolName: 'Write', toolCallId: 'tu1', path: '/w/a.txt', fileName: '/w/a.txt' });
+    assert.deepStrictEqual(permissionLikeOf('Write', { file_path: '/w/a.txt', content: 'x' }, 'tu1'), { kind: 'write', toolName: 'Write', toolCallId: 'tu1', path: '/w/a.txt', fileName: '/w/a.txt', diff: '--- a//w/a.txt\n+++ b//w/a.txt\n@@ -0,0 +1,1 @@\n+x' });
+    // spec 052 FR-063: Edit and MultiEdit carry a diff of old_string -> new_string; Bash and reads do not
+    assert.strictEqual(permissionLikeOf('Edit', { file_path: 'a.ts', old_string: 'let x = 1;', new_string: 'let x = 2;' }).diff, '--- a/a.ts\n+++ b/a.ts\n@@ -1,1 +1,1 @@\n-let x = 1;\n+let x = 2;');
+    assert.ok(/^-a$/m.test(permissionLikeOf('MultiEdit', { file_path: 'a.ts', edits: [{ old_string: 'a', new_string: 'b' }, { old_string: 'c', new_string: 'd' }] }).diff ?? ''), 'MultiEdit: every edit is in the diff');
+    assert.strictEqual(permissionLikeOf('Edit', { file_path: 'a.ts', old_string: 'same', new_string: 'same' }).diff, undefined, 'no change: no diff');
+    assert.strictEqual(permissionLikeOf('Edit', { file_path: 'a.ts', old_string: 1, new_string: 'x' }).diff, undefined, 'not text: no diff');
+    assert.strictEqual(permissionLikeOf('Read', { file_path: 'a.ts' }).diff, undefined);
     assert.deepStrictEqual(permissionLikeOf('Bash', { command: 'rm -rf /tmp/x' }), { kind: 'shell', toolName: 'Bash', fullCommandText: 'rm -rf /tmp/x' });
     assert.deepStrictEqual(permissionLikeOf('WebFetch', { url: 'https://example.com' }), { kind: 'url', toolName: 'WebFetch', url: 'https://example.com' });
     assert.deepStrictEqual(permissionLikeOf('mcp__github__create_issue', {}), { kind: 'mcp', toolName: 'create_issue', serverName: 'github' });
@@ -252,7 +258,7 @@ async function main(): Promise<void> {
   // ---- Read-only: the PreToolUse hook denies a read outside the folder and allows one inside; can_use_tool denies at once ----
   {
     const answers: Record<string, Record<string, unknown>> = {};
-    const { ad } = make({
+    const { ad, events } = make({
       turn: (c) => {
         const prev = c.onWrite;
         c.onWrite = (o) => {
@@ -267,7 +273,7 @@ async function main(): Promise<void> {
         c.send({ type: 'control_request', request_id: 'h-other', request: { subtype: 'hook_callback', callback_id: 'someone_else', input: {} } });
         c.send({ type: 'control_request', request_id: 'c-w', request: { subtype: 'can_use_tool', tool_name: 'Write', input: { file_path: path.join(WS, 'x') }, tool_use_id: 'tu-3' } });
         c.send({ type: 'control_request', request_id: 'c-q', request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', input: { questions: [] }, tool_use_id: 'tu-4' } });
-        c.send({ type: 'control_request', request_id: 'e-1', request: { subtype: 'elicitation', mcp_server_name: 'x' } });
+        c.send({ type: 'control_request', request_id: 'e-1', request: { subtype: 'elicitation', mcp_server_name: 'x', message: 'Pick one', requested_schema: { type: 'object', properties: { env: { type: 'string', enum: ['a', 'b'] } }, required: ['env'] } } });
       },
     });
     const sid = await ad.start({ workspace: WS, quiet: true }); // no mode = Read-only
@@ -279,6 +285,12 @@ async function main(): Promise<void> {
     assert.strictEqual(answers['c-w'].behavior, 'deny');
     assert.match(String(answers['c-w'].message), /read-only/);
     assert.strictEqual(answers['c-q'].behavior, 'deny', 'AskUserQuestion is denied with guidance (T052 gap)');
+    // FR-151: an MCP elicitation goes to the question card as a form, also in Read-only; the answer is {action, content}
+    const el = await until('elicitation asked', () => events.find((e) => e.type === 'question' && e.phase === 'asked' && !!(e as { elicitation?: unknown }).elicitation) as { requestId: string; elicitation: { source?: string; fields: Array<{ name: string }> } } | undefined);
+    assert.deepStrictEqual([el.elicitation.source, el.elicitation.fields.map((f) => f.name)], ['x', ['env']]);
+    ad.answerElicitation(sid, el.requestId, { action: 'accept', content: { env: 'b' } });
+    await until('elicitation answered', () => answers['e-1']);
+    assert.deepStrictEqual(answers['e-1'], { action: 'accept', content: { env: 'b' } });
     await ad.stop(sid);
   }
 

@@ -27,6 +27,7 @@ import { PermissionBroker, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec, StartOptions, Unsubscribe } from './types';
 import { parseUsdCap } from '../shared/credits';
+import { simpleDiff, clipDiff } from '../shared/diff';
 import { HANDOFF_PROMPT, cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
 import type { ModelOption } from '../shared/modelswitch';
@@ -36,7 +37,8 @@ import type { HistoryResult, PreviousSession } from './history';
 import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
 import { agentsArg, listClaudeAgents } from './claudeAgents';
 import type { ClaudeAgentDef } from './claudeAgents';
-import type { AgentProfile, AskedQuestion } from './types';
+import type { AgentProfile, AskedQuestion, ElicitAnswer } from './types';
+import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
 
 export const CLAUDE_ID = 'claude';
 export const CLAUDE_NAME = 'Claude Code';
@@ -82,6 +84,10 @@ export function permissionLikeOf(toolName: string, input: Record<string, unknown
       like.path = p;
       like.fileName = p;
     }
+    if (kind === 'write') {
+      const d = editDiffOf(toolName, input, p);
+      if (d) like.diff = d;
+    }
   } else if (kind === 'shell') {
     const c = s('command');
     if (c) like.fullCommandText = c;
@@ -96,6 +102,26 @@ export function permissionLikeOf(toolName: string, input: Record<string, unknown
     }
   }
   return like;
+}
+
+/**
+ * Spec 052 FR-063: the change a Claude Edit, MultiEdit or Write would make, as a simple unified diff for the permission card; undefined
+ * when the input has no text to compare. Write shows every line as added (Durbar does not read the file to compare).
+ */
+export function editDiffOf(toolName: string, input: Record<string, unknown> | undefined, file?: string): string | undefined {
+  if (!input) return undefined;
+  const f = file ?? 'file';
+  const str = (v: unknown): v is string => typeof v === 'string';
+  if (toolName === 'Edit' && str(input.old_string) && str(input.new_string)) return simpleDiff(f, input.old_string, input.new_string) || undefined;
+  if (toolName === 'Write' && str(input.content)) return simpleDiff(f, '', input.content) || undefined;
+  if (toolName === 'MultiEdit' && Array.isArray(input.edits)) {
+    const parts = input.edits
+      .slice(0, 50)
+      .map((e) => (e && typeof e === 'object' && str((e as Record<string, unknown>).old_string) && str((e as Record<string, unknown>).new_string) ? simpleDiff(f, (e as Record<string, string>).old_string, (e as Record<string, string>).new_string) : ''))
+      .filter(Boolean);
+    return parts.length ? clipDiff(parts.join('\n')) : undefined;
+  }
+  return undefined;
 }
 
 /** Durbar's MCP servers as the CLI's `--mcp-config` JSON (`disabled` names left out). Never logged: env and headers may hold secrets. */
@@ -395,6 +421,8 @@ interface Session {
   limit?: { requestId: string; held?: AgentMessage };
   /** Questions waiting for the user (FR-128): request id -> what was asked, Claude's original texts, and the waiter. */
   questions?: Map<string, { asked: AskedQuestion[]; originals: string[]; resolve: (a: Record<string, string> | null) => void }>;
+  /** MCP elicitations waiting for the user (FR-151): request id -> waiter. */
+  elicitations?: Map<string, ElicitWaiter>;
 }
 
 export class ClaudeAdapter implements AgentAdapter {
@@ -603,6 +631,11 @@ export class ClaudeAdapter implements AgentAdapter {
     q?.resolve(answers);
   }
 
+  /** FR-151: the user's answer to an MCP elicitation (main checked it against the fields). */
+  answerElicitation(sessionId: string, requestId: string, answer: ElicitAnswer): void {
+    answerElicitation(this.sessions.get(sessionId)?.elicitations, requestId, answer);
+  }
+
   resolvePermission(sessionId: string, requestId: string, approve: boolean, remember = false, broad = false): void {
     this.sessions.get(sessionId)?.broker.resolve(requestId, approve, remember, broad);
   }
@@ -651,7 +684,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
   private async launch(s: Session): Promise<ClaudeTransport> {
     const file = await this.deps.claudePath();
-    if (!file) throw new Error('Claude Code is not installed or could not be found. Install it, sign in with `claude` in a terminal, then restart Durbar.');
+    if (!file) throw new Error('Claude Code is not installed or could not be found. Open Settings > Agent apps and choose Install…, then Sign in… there.');
     const o = s.options;
     const launch: ClaudeLaunch = {
       mode: s.broker.getMode(),
@@ -808,7 +841,15 @@ export class ClaudeAdapter implements AgentAdapter {
       const toolInput = input.tool_input && typeof input.tool_input === 'object' ? (input.tool_input as Record<string, unknown>) : undefined;
       return { response: await this.hookDecision(s, tool, toolInput, typeof input.tool_use_id === 'string' ? input.tool_use_id : undefined) };
     }
-    // elicitation, mcp_message, ... are not supported yet (T052, FR-024): refuse explicitly
+    // FR-151: an MCP server's elicitation (a form or a URL flow) goes to the question card; the answer is the MCP `{action, content?}`.
+    // The field names follow the Agent SDK's control request (read:, not yet seen from a real CLI).
+    if (req.subtype === 'elicitation') {
+      s.elicitations ??= new Map();
+      const id = typeof r.elicitation_id === 'string' && r.elicitation_id.length <= 200 ? `claude-e-${r.elicitation_id}` : `claude-e-${randomUUID()}`;
+      const a = await runElicitation((b) => this.emit(s.id, b), s.elicitations, id, { message: r.message, schema: r.requested_schema, mode: r.mode, url: r.url, source: r.mcp_server_name }, (m) => this.debug?.(`claude: ${m}`));
+      return { response: { ...a } };
+    }
+    // mcp_message, ... are not supported yet (T052, FR-024): refuse explicitly
     return { error: `Agent Durbar does not handle ${req.subtype || 'this request'} yet.` };
   }
 
@@ -869,6 +910,7 @@ export class ClaudeAdapter implements AgentAdapter {
   /** Stop, interrupt or a crash: unanswered questions are skipped (the hook answers deny). */
   private cancelQuestions(s: Session): void {
     for (const q of [...(s.questions?.values() ?? [])]) q.resolve(null);
+    cancelElicitations(s.elicitations);
   }
 
   private onExit(s: Session, info: { code: number | null; signal: string | null; stderrTail: string }): void {
@@ -890,10 +932,12 @@ export class ClaudeAdapter implements AgentAdapter {
       case 'resolved':
         this.emit(sid, { type: 'permission', permission: e.permission });
         if (e.permission.via !== 'stopped') {
-          const word = e.permission.state === 'approved' ? (e.permission.via === 'session' ? 'Allowed for this session' : 'Approved') : 'Denied';
+          const word = e.permission.state === 'approved' ? (e.permission.via === 'session' ? 'Allowed for this session' : 'Allowed') : 'Denied';
           this.emit(sid, { type: 'status', status: 'working', intent: `${word}: ${e.permission.summary}` });
         }
         return;
+      case 'auto': // Allow all approved it: a permission event for the activity log; the window shows no card (spec 052 FR-071)
+        return this.emit(sid, { type: 'permission', permission: e.permission });
       case 'grants':
         return this.emit(sid, { type: 'grants', grants: e.grants });
     }
@@ -916,7 +960,7 @@ export function claudeDescriptor(makeTransport: TransportFactory = cliTransportF
   return {
     id: CLAUDE_ID,
     displayName: CLAUDE_NAME,
-    installHint: 'Install Claude Code (npm install -g @anthropic-ai/claude-code), sign in with `claude` in a terminal, then restart Durbar.',
+    installHint: 'Open Settings > Agent apps and choose Install…, then Sign in… (or run `npm install -g @anthropic-ai/claude-code`, then `claude auth login`).',
     capabilities: CLAUDE_CAPABILITIES,
     create: () => new ClaudeAdapter({ claudePath: claudeBinaryPath, makeTransport }),
   };

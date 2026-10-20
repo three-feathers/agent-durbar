@@ -1,15 +1,15 @@
 :root{
   /* Default token values: painted again by theme.js from the active pack; the literals
      here keep the page correct before scripts run and give every var() a sane fallback. */
-  --bg:#f6f3ee; --surface:#fffdf9; --surface-2:#faf7f1; --line:#e2dbcf; --line-2:#d3cabb;
-  --ink:#2c3733; --ink-2:#56605b; --muted:#6a716c;
+  --bg:#f7f6f3; --surface:#fffdf9; --surface-2:#faf7f1; --line:#e7e3dc; --line-2:#d3cabb;
+  --ink:#2c3733; --ink-2:#56605b; --muted:#535a55;
   --sage:#8fb09a; --sage-ink:#3f6a54; --blue:#6f93b5; --blue-ink:#34607f;
   --amber:#d9962b; --amber-ink:#80530a; --red:#bf5a50; --red-ink:#8e3a32; --green:#5f9a76; --gray:#9b978d;
   --c-working:#6f93b5; --c-thinking:#8a97bd; --c-waiting:#d9962b; --c-idle:#a29e94; --c-error:#bf5a50; --c-done:#5f9a76;
   --tint-sage:#eaf0e9; --wall-sage:#d3dfd3; --tint-blue:#e9eef3; --wall-blue:#d1dce6;
   --tint-sand:#f2ede1; --wall-sand:#e0d6c1; --tint-clay:#f3eae4; --wall-clay:#e4d3c9;
   --cwall-sage:#b7cdb9; --cwall-blue:#b5c8d8; --cwall-sand:#d2c4a4; --cwall-clay:#d8c1b3;
-  --focus:#4f7fa8; --sel-border:#7fa0bd; --sel-ring:#d9e6f0; --sel-ring-2:#dde8f1;
+  --focus:#2f5f8a; --sel-border:#7fa0bd; --sel-ring:#d9e6f0; --sel-ring-2:#dde8f1;
   --stat-sel-border:#8aa7be; --proto-line:#f0d9a6; --place-busy:#b5c8d8; --brand-mark:#4f7f65; --stat-sel-ring:#dde8f1; --badge-idle:#bdb9af;
   --avatar-bg:#e7eee8; --brand-bg:#e4ece6;
   --pb-working:#e3ecf4; --pc-working:#2f5a7a; --pb-thinking:#e8eaf3; --pc-thinking:#434f7a;
@@ -18,13 +18,20 @@
   --m-bar:3.4s ease-in-out infinite alternate; --m-glow:3.6s ease-in-out infinite alternate;
   --m-halo:3.6s ease-in-out infinite alternate; --m-wave:2.8s ease-in-out infinite; --m-cursor:1.6s ease-in-out infinite;
   --radius:16px;
+  /* spec 052 FR-053: radius scale for controls and panels (rooms and desks keep their own) */
+  --r-sm:6px; --r-md:10px; --r-lg:14px; --r-xl:18px;
+  /* spec 052 FR-052: control borders at 3:1, the second tone of the focus ring (theme.js sets both per theme) */
+  --line-ctl:#8a8272; --focus-halo:transparent;
+  /* spec 052 FR-029 (#311): one control-size scale. Buttons and selects in toolbars and dialogs, chips in headers, status pills.
+     Desk cards keep their own computed sizes (the office layout depends on them). */
+  --h-ctl:32px; --h-chip:26px; --h-pill:22px;
   --font:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   }
 *{box-sizing:border-box}
 html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.4;display:flex;flex-direction:column;overflow:hidden;-webkit-font-smoothing:antialiased}
 button{font:inherit;color:inherit}
-:focus-visible{outline:3px solid var(--focus,#4f7fa8);outline-offset:2px}
+:focus-visible{outline:3px solid var(--focus,#4f7fa8);outline-offset:1px;box-shadow:0 0 0 5px var(--focus-halo,transparent)} /* spec 052 FR-052: two tones (retro: dark ring, yellow halo); a component's own box-shadow rule still wins */
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 /* ---------- top bar ---------- */
@@ -35,7 +42,7 @@ button{font:inherit;color:inherit}
 .proto{display:inline-block;margin-top:2px;font-size:11px;font-weight:600;color:var(--pc-waiting);background:var(--pb-waiting);border:1px solid var(--proto-line);border-radius:999px;padding:0 8px;white-space:nowrap}
 .proto.sim{color:var(--blue-ink);background:var(--pb-working,#e3ecf4);border-color:#c5d6e5}
 .stats{display:flex;gap:5px;margin-left:auto;flex:none}
-.stat{display:flex;align-items:center;gap:6px;height:32px;padding:0 10px 0 9px;border:1px solid var(--line);background:var(--surface-2);border-radius:999px;cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s}
+.stat{display:flex;align-items:center;gap:6px;height:var(--h-ctl);padding:0 10px 0 9px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s}
 .stat:hover{border-color:var(--line-2);background:var(--raised)}
 .stat[aria-pressed="true"]{background:var(--raised);border-color:var(--stat-sel-border,#8aa7be);box-shadow:0 0 0 2px var(--sel-ring-2,#dde8f1)}
 .stat b{font-size:14px;font-weight:650;font-variant-numeric:tabular-nums}
@@ -47,21 +54,24 @@ button{font:inherit;color:inherit}
 .stat.attn span.l{color:var(--amber-ink);font-weight:600}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--gray);flex:none;display:inline-block}
 .dot.working{background:var(--c-working)} .dot.thinking{background:var(--c-thinking)} .dot.waiting{background:var(--c-waiting)}
-.dot.idle{background:transparent;border:2px solid var(--c-idle)} .dot.error{background:var(--c-error)} .dot.done{background:var(--c-done)}
+.dot.idle{background:transparent;border:2px solid var(--c-idle);box-shadow:0 0 0 1px var(--pc-idle)} .dot.error{background:var(--c-error)} .dot.done{background:var(--c-done)}
+/* spec 052 FR-006: a shape as well as a colour (deuteranopia): waiting is a diamond, error a triangle, idle a ring, working and done circles */
+.dot.waiting{border-radius:1.5px;transform:rotate(45deg) scale(.86);box-shadow:0 0 0 1px var(--amber-ink)} /* spec 052 FR-052: a darker edge so it shows on light surfaces (size unchanged) */
+.dot.error{border-radius:0;clip-path:polygon(50% 4%,100% 96%,0 96%)}
 .controls{display:flex;align-items:center;gap:6px;flex:none;flex-wrap:wrap;row-gap:6px;max-width:100%} /* never let Office / List leave the window (PR #124) */
 .select-wrap{position:relative}
-.select-wrap select{appearance:none;height:32px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:0 28px 0 10px;font:inherit;font-size:12.5px;color:var(--ink);cursor:pointer;max-width:112px}
+.select-wrap select{appearance:none;height:var(--h-ctl);border:1px solid var(--line-ctl);background:var(--surface-2);border-radius:10px;padding:0 28px 0 10px;font:inherit;font-size:12.5px;color:var(--ink);cursor:pointer;max-width:112px}
 .select-wrap::after{content:"";position:absolute;right:11px;top:12px;width:6px;height:6px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);pointer-events:none}
 .seg{display:flex;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:2px;gap:2px}
-.seg button{height:26px;padding:0 10px;border:0;background:transparent;border-radius:7px;font-size:12.5px;color:var(--ink-2);cursor:pointer;white-space:nowrap}
+.seg button{height:calc(var(--h-ctl) - 6px);padding:0 10px;border:0;background:transparent;border-radius:7px;font-size:12.5px;color:var(--ink-2);cursor:pointer;white-space:nowrap}
 .seg button[aria-pressed="true"]{background:var(--raised);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(60,50,30,.12)}
 
 /* live-mode controls (Electron / sim only) */
 #liveBar{display:none;align-items:center;gap:4px}
 body.has-bridge #liveBar{display:flex}
 #liveBar .tgl{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--ink-2);cursor:pointer;white-space:nowrap}
-#liveBar .btn{height:32px;padding:0 9px;font-size:12.5px}
-#liveBar select{height:32px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:0 6px;font:inherit;font-size:12.5px;color:var(--ink);max-width:118px}
+#liveBar .btn{height:var(--h-ctl);padding:0 9px;font-size:12.5px}
+#liveBar select{height:var(--h-ctl);border:1px solid var(--line-ctl);background:var(--surface-2);border-radius:10px;padding:0 6px;font:inherit;font-size:12.5px;color:var(--ink);max-width:118px}
 #liveBar #permMode{max-width:180px} /* fits "Allow all (no prompts)" (spec 003 FR-028) */
 .note{font-size:12.5px;color:var(--ink-2);background:var(--pb-waiting,#fbefd6);border:1px solid #f0d9a6;border-radius:12px;padding:8px 12px;max-width:92%;align-self:flex-start;overflow-wrap:anywhere}
 .note.err{background:var(--pb-error,#f6e2df);border-color:#ebc7c2;color:var(--red-ink)}
@@ -77,12 +87,26 @@ body.has-bridge #liveBar{display:flex}
 .note.question .q-text{margin:0 0 6px;font-size:13px;line-height:1.4;color:var(--ink)}
 .note.question .q-text .tag{font-size:11px}
 .note.question .q-opts{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.note.question .q-opt{height:30px;padding:0 12px;font-size:12.5px}
+.note.question .q-opt{height:28px;padding:0 10px;font-size:12.5px} /* spec 052 FR-076: .btn.sm height */
 .note.question .q-opt.primary{font-weight:650} /* chosen: the theme's primary button look */
 /* chosen must read in every theme (some primary buttons look like plain ones): a ring in the text colour and a check mark (FR-130 delta) */
 .note.question .q-opt[aria-checked="true"],.note.question .q-opt[aria-pressed="true"]{box-shadow:inset 0 0 0 2px currentColor}
 .note.question .q-opt[aria-checked="true"]::before,.note.question .q-opt[aria-pressed="true"]::before{content:"\2713\00a0"}
-.note.question .q-other{height:30px;min-width:180px;flex:1 1 180px;max-width:360px;border:1px solid var(--line);border-radius:9px;padding:0 9px;font:inherit;font-size:12.5px;background:var(--surface);color:var(--ink)}
+.note.question .q-other{height:30px;min-width:180px;flex:1 1 180px;max-width:360px;border:1px solid var(--line-ctl);border-radius:9px;padding:0 9px;font:inherit;font-size:12.5px;background:var(--surface);color:var(--ink)}
+/* MCP elicitation (spec 012 FR-151): a small form, or an https page to open; labels tied to inputs, text 11.5px and up */
+.note.question .q-form{display:grid;gap:9px;margin-top:8px}
+.note.question .q-field{display:grid;gap:3px;max-width:420px}
+.note.question .q-field>label,.note.question .q-check label{font-size:12.5px;font-weight:600;color:var(--ink)}
+.note.question .q-req{color:var(--red-ink)}
+.note.question .q-help{font-size:11.5px;color:var(--muted);line-height:1.35}
+.note.question .q-input{height:30px;border:1px solid var(--line-ctl);border-radius:9px;padding:0 9px;font:inherit;font-size:12.5px;background:var(--surface);color:var(--ink);box-sizing:border-box;width:100%}
+.note.question .q-input[aria-invalid="true"]{border-color:var(--red-ink);box-shadow:0 0 0 1px var(--red-ink)}
+.note.question .q-check{display:flex;align-items:center;gap:7px}
+.note.question .q-check input{width:16px;height:16px;margin:0}
+.note.question .q-err{font-size:11.5px;color:var(--red-ink)}
+.note.question .q-err:empty{display:none}
+.note.question .q-host{font-size:13px;font-weight:700;color:var(--ink);word-break:break-all}
+.note.question .q-url{font-size:11.5px;color:var(--muted);word-break:break-all;margin:2px 0 0}
 .note .btn.session{background:#e8f0f6;border-color:#c3d4e2;color:var(--drop-ink,#2a506c)}
 .note .btn.session:hover{background:#dce8f1}
 .grants{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
@@ -110,6 +134,8 @@ body.has-bridge #liveBar{display:flex}
 .room-dots{margin-left:auto;display:flex;gap:8px;align-items:center;flex:none}
 /* folder usage total (spec 011 FR-020): sits next to the status dots and never shrinks; the path gives way first */
 .room-aiu{margin-left:auto;flex:none;white-space:nowrap;font-size:11.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+button.room-aiu{padding:0;border:0;background:transparent;font:inherit;font-size:11.5px;font-variant-numeric:tabular-nums;color:var(--ink-2);cursor:pointer} /* spec 052 FR-044: opens Tools > Cost; same size as the old span */
+button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .room-aiu+.room-dots{margin-left:0}
 .stage .room-head:has(.room-aiu) .room-path{flex-shrink:1000} /* the path, not the room name, gives way to the total */
 .stage .room-head:has(.room-aiu) .room-name{flex-shrink:0}
@@ -117,7 +143,7 @@ body.has-bridge #liveBar{display:flex}
 .rd.attn{color:var(--amber-ink);font-weight:650}
 .room-plant{display:none;position:absolute;right:12px;top:6px}
 .stage[data-d="full"] .room-plant{display:block}
-.stage[data-d="full"] .room-head{padding-right:32px} /* room for the plant after the last control (dots, +, MCP), spec 001 FR-023 */
+.stage[data-d="full"] .room-head{padding-right:32px} /* room for the plant after the last control (dots, +, MCP), spec 001 FR-023 */ /* room for the plant after the last control (dots, +, MCP), spec 001 FR-023 */
 .units{flex:1;margin:6px 0 0;display:flex;flex-wrap:wrap;align-content:flex-start;gap:var(--ugap,10px);padding:var(--upad,8px);background:color-mix(in srgb,var(--raised) 40%,transparent);border-radius:14px;position:relative}
 .unit{display:flex;align-items:flex-start;position:relative;--hx:0px}
 .unit.has-h{--hx:calc(var(--hw) + 18px)}
@@ -137,18 +163,19 @@ body.has-bridge #liveBar{display:flex}
 .badge{width:16px;height:16px;border-radius:50%;display:grid;place-items:center;background:var(--bd,var(--gray));box-shadow:0 0 0 3px rgba(255,253,249,.9)}
 .badge.working{--bd:var(--c-working)} .badge.thinking{--bd:var(--c-thinking)} .badge.waiting{--bd:var(--c-waiting)}
 .badge.idle{--bd:var(--badge-idle)} .badge.error{--bd:var(--c-error)} .badge.done{--bd:var(--c-done)}
-.badge.waiting::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid var(--c-waiting);opacity:0;animation:ping 2.8s ease-out infinite}
+.badge.waiting::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid var(--c-waiting);opacity:0;animation:ping 2.8s ease-out 3} /* spec 052 FR-067: three pings when an agent starts waiting, then rest (restarts when it waits again) */
 .badge svg{width:10px;height:10px;display:block}
 .desk .info{padding:2px 8px 0}
 .who{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
 .name{font-weight:650;font-size:14px}
 .role{font-size:11.5px;color:var(--muted)}
 .task{margin:3px 0 7px;font-size:12px;color:var(--ink-2);line-height:1.35;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;min-height:48px}
-.pill{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px 0 8px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap;background:var(--pb);color:var(--pc)}
+.pill{display:inline-flex;align-items:center;gap:6px;height:var(--h-pill);padding:0 9px 0 8px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap;background:var(--pb);color:var(--pc)}
 .pill i{width:7px;height:7px;border-radius:50%;background:var(--pd);flex:none}
 .st-working{--pb:var(--pb-working);--pc:var(--pc-working);--pd:var(--c-working)} .st-thinking{--pb:var(--pb-thinking);--pc:var(--pc-thinking);--pd:var(--c-thinking)}
 .st-waiting{--pb:var(--pb-waiting);--pc:var(--amber-ink);--pd:var(--c-waiting)} .st-idle{--pb:var(--pb-idle);--pc:var(--pc-idle);--pd:var(--c-idle)}
 .st-error{--pb:var(--pb-error);--pc:var(--red-ink);--pd:var(--c-error)} .st-done{--pb:var(--pb-done);--pc:var(--pc-done);--pd:var(--c-done)}
+.st-failing{--pb:var(--pb-waiting);--pc:var(--amber-ink);--pd:var(--c-waiting)} /* spec 052 FR-062: "Failing" reuses the waiting colours (no new status colour) */
 .st-idle i{background:transparent;border:1.5px solid var(--c-idle)}
 .stage[data-d="full"] .desk.is-idle .scene,.stage[data-d="full"] .desk.is-idle .info{opacity:.7}
 
@@ -209,17 +236,28 @@ body.has-bridge #liveBar{display:flex}
 /* ---------- list view ---------- */
 #list{flex:1;min-width:0;overflow:auto;padding:16px 24px 20px;display:none}
 .list-wrap{background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
-.lrow{display:grid;grid-template-columns:minmax(150px,1.1fr) minmax(110px,.8fr) minmax(120px,.9fr) minmax(200px,2.6fr) 138px;gap:14px;align-items:center;width:100%;padding:0 18px;height:44px;border:0;border-bottom:1px solid #eee8dd;background:transparent;text-align:left;cursor:pointer;font-size:13px}
+/* spec 052 FR-064: 34px rows; Agent, Agent app, Role, Folder, Current task, Last activity, Cost, Status */
+.lrow{display:grid;grid-template-columns:minmax(120px,1fr) 92px minmax(90px,.7fr) minmax(100px,.75fr) minmax(160px,2.4fr) 78px 88px 120px;gap:12px;align-items:center;width:100%;padding:0 16px;height:34px;border:0;border-bottom:1px solid #eee8dd;background:transparent;text-align:left;cursor:pointer;font-size:13px}
 .lrow:last-child{border-bottom:0}
 button.lrow:hover{background:var(--surface-2)}
-button.lrow[aria-pressed="true"]{background:#eaf1f7}
-.lrow.head{height:36px;cursor:default;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;background:var(--surface-2);font-weight:600}
+button.lrow[aria-pressed="true"]{background:#eaf1f7;box-shadow:inset 3px 0 0 var(--focus)} /* spec 052 FR-052: not colour only */
+/* spec 052 FR-008: "lhead", not "head": the avatars' .head nods (styles: animation nod), and the list header row nodded with them */
+.lrow.lhead{height:34px;cursor:default;font-size:11.5px;color:var(--muted);background:var(--surface-2);font-weight:600} /* spec 052 FR-077: sentence case */
+.lhead>span{min-width:0}
+.lsort{all:unset;box-sizing:border-box;display:inline-flex;align-items:center;gap:4px;max-width:100%;cursor:pointer;font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit;white-space:nowrap;overflow:hidden;border-radius:4px;padding:2px 2px}
+.lsort:hover{color:var(--ink)}
+.lsort .sarr{font-size:10.5px;opacity:.55}
+.lhead>[aria-sort="ascending"] .lsort,.lhead>[aria-sort="descending"] .lsort{color:var(--ink)}
+.lhead>[aria-sort="ascending"] .sarr,.lhead>[aria-sort="descending"] .sarr{opacity:1}
+.lrow .pill{height:22px}
 .lname{display:flex;align-items:center;gap:10px;font-weight:600;min-width:0}
 .lname .sub{margin-left:12px;font-weight:550}
+.lname>span:not(.dot):not(.modebadge):not(.modeic){overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .lname .sub::before{content:"";display:inline-block;width:10px;height:10px;border-left:1.5px solid var(--line-2);border-bottom:1.5px solid var(--line-2);margin-right:6px;transform:translateY(-3px);border-radius:0 0 0 4px}
 .lcell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-2)}
 .lmood{color:var(--amber-ink);font-weight:600;font-size:12px}
 .lcell.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
+.lcell.num{font-variant-numeric:tabular-nums;font-size:12px}
 #stage-host{display:contents}
 body.list-mode #stage-host{display:none}
 body.list-mode #list{display:block}
@@ -236,10 +274,11 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .avatar{width:44px;height:44px;border-radius:50%;background:var(--avatar-bg,#e7eee8);overflow:hidden;flex:none}
 .ph h2{margin:0;font-size:17px;line-height:1.2;letter-spacing:-.01em}
 .ph h2:focus{outline:none}
-.ph h2:focus-visible{outline:3px solid var(--focus,#4f7fa8)}
+/* spec 052 FR-007: a heading the app focuses itself (tabindex=-1, so screen readers announce the new screen) is not a control: no ring */
+:is(h1,h2,h3,h4)[tabindex="-1"]:focus,:is(h1,h2,h3,h4)[tabindex="-1"]:focus-visible{outline:none}
 .ph .sub{font-size:12.5px;color:var(--muted)}
 .ph-meta{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;min-width:0}
-.folder{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:2px 8px}
+.folder{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:2px 8px} /* spec 052 FR-076: a path chip, not a pill */
 .folder{max-width:100%;min-width:0}
 .folder-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .close{position:absolute;right:14px;top:14px;width:32px;height:32px;border-radius:10px;border:1px solid transparent;background:transparent;cursor:pointer;display:grid;place-items:center;color:var(--ink-2)}
@@ -248,10 +287,11 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .pusage{margin:4px 0 0;font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
 .pusage:empty{display:none}
 .actions{display:flex;gap:8px;margin-top:12px}
-.btn{height:34px;padding:0 14px;border-radius:10px;border:1px solid var(--line-2);background:var(--raised);cursor:pointer;font-size:13px;font-weight:550;display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+.btn{height:var(--h-ctl);padding:0 14px;border-radius:var(--r-md);border:1px solid var(--line-2);background:var(--raised);cursor:pointer;font-size:13px;font-weight:550;display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
 .btn:hover{background:var(--surface-2);border-color:#bdb3a2}
-.btn.primary{background:#e4ede6;border-color:#bcd0c1;color:#2c5640}
-.btn.primary:hover{background:#d9e6dc}
+/* spec 052 FR-053: the primary action is solid in every theme (themes.css gives each theme its own accent) */
+.btn.primary{background:var(--sage-ink);border-color:transparent;color:#fff;font-weight:600}
+.btn.primary:hover{background:color-mix(in srgb,var(--sage-ink) 86%,#000)}
 .btn.danger{color:var(--red-ink)}
 .btn.danger:hover{background:#f9ecea;border-color:#e2bcb7}
 .btn svg{width:15px;height:15px;flex:none}
@@ -263,10 +303,10 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .bubble{padding:10px 14px;border-radius:16px;font-size:13.5px;line-height:1.5;max-width:92%;white-space:pre-wrap;overflow-wrap:anywhere;min-width:0}
 .msg.user .bubble{background:var(--pb-working,#e3ecf4);color:#1f3b52;border-bottom-right-radius:6px}
 .msg.agent .bubble{background:var(--surface-2);border:1px solid var(--line);border-bottom-left-radius:6px;align-self:flex-start}
-/* copy buttons (spec 005 FR-015): quiet until the reply or block is hovered or the button has keyboard focus */
-.msg.agent .bubble.md{position:relative}
+/* copy buttons (spec 005 FR-015): quiet until the reply or block is hovered or the button has keyboard focus; spec 052 FR-010: dimmed but visible at rest, so keyboard and touch users know they are there */
+.msg.agent .bubble.md,.think-body.md,.sub-prompt .pt.md{position:relative} /* spec 052: a copy button anchors to its own block (it sat in the panel corner while it was invisible) */
 .md pre{position:relative}
-.cp-btn{position:absolute;top:4px;right:4px;height:22px;padding:0 8px;font:inherit;font-size:11px;font-weight:600;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);cursor:pointer;opacity:0;transition:opacity .12s}
+.cp-btn{position:absolute;top:4px;right:4px;height:22px;padding:0 8px;font:inherit;font-size:11px;font-weight:600;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);cursor:pointer;opacity:.7;transition:opacity .12s}
 .cp-msg{top:auto;bottom:-11px;right:10px}
 .msg.agent .bubble:hover>.cp-msg,.md pre:hover>.cp-code,.cp-btn:focus-visible{opacity:1}
 @media (hover:none){.cp-btn{opacity:1}}
@@ -275,17 +315,17 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .quick button:hover{background:#faecc9}
 .think{border:1px solid var(--line);border-radius:12px;background:var(--soft);overflow:hidden}
 .think-toggle{width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;border:0;background:transparent;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--ink-2);text-align:left}
-.think-toggle:hover{background:#f5f1e8}
+.think-toggle:hover{background:var(--surface-2)}
 .think-toggle .chev{width:12px;height:12px;transition:transform .2s;flex:none}
 .think-toggle[aria-expanded="true"] .chev{transform:rotate(90deg)}
 .think-toggle .live{margin-left:auto;display:none;gap:3px}
 .think.streaming .live{display:inline-flex}
 .live i{width:4px;height:4px;border-radius:50%;background:var(--c-thinking);animation:dotp 1.4s infinite}
 .live i:nth-child(2){animation-delay:.2s}.live i:nth-child(3){animation-delay:.4s}
-.think-body{margin:0 4px 8px 0;padding:0 8px 2px 32px;font-size:12.5px;color:var(--ink-2);line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;font-style:italic;max-height:190px;overflow-y:auto}
+.think-body{margin:0 4px 8px 0;padding:0 8px 2px 32px;font-size:12.5px;color:var(--ink-2);line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;max-height:190px;overflow-y:auto}
 .think-body[hidden]{display:none}
 .chips{display:flex;flex-wrap:wrap;gap:6px;min-width:0;max-width:100%}
-.chip{display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:100%;height:28px;padding:0 10px 0 8px;border-radius:9px;background:#eef2f0;border:1px solid #d7e0da;font-size:12px;color:var(--ink-2);animation:pop .25s ease-out;cursor:pointer;text-align:left;font-family:inherit}
+.chip{display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:100%;height:var(--h-chip);padding:0 10px 0 8px;border-radius:var(--r-sm);background:#eef2f0;border:1px solid #d7e0da;font-size:12px;color:var(--ink-2);animation:pop .25s ease-out;cursor:pointer;text-align:left;font-family:inherit}
 .chip:hover{background:#e6ece8}
 .chip svg{width:13px;height:13px;flex:none}
 .chip b{font-weight:600;color:var(--ink);flex:none}
@@ -294,13 +334,35 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .chip.fail{background:#f8e8e5;border-color:#ebc7c2}.chip.fail .res{color:var(--red-ink);border-color:#e3bdb7}
 .chip.run .res{color:var(--blue-ink)}
 .chip[hidden]{display:none}
-.chip .detail{display:none}
-.chip.open{display:flex;flex-wrap:wrap;width:100%;height:auto;min-height:28px;padding:5px 10px 7px 8px;row-gap:4px}
+.chip .detail,.chip .xbody{display:none}
+.chip.open{display:flex;flex-wrap:wrap;width:100%;height:auto;min-height:var(--h-chip);padding:5px 10px 7px 8px;row-gap:4px}
 .chip.open code{white-space:pre-wrap;overflow-wrap:anywhere;flex:1 1 60%}
 .chip.open .res{max-width:100%;white-space:normal;overflow-wrap:anywhere}
 .chip.open.has-detail .res{display:none}
-.chip.open .detail{display:block;flex:1 1 100%;margin:2px 0 0;padding:6px 8px;background:color-mix(in srgb,var(--raised) 70%,transparent);border-radius:7px;font:11.5px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:150px;overflow-y:auto;color:var(--ink-2)}
-.chips-more{height:28px;padding:0 10px;border-radius:9px;border:1px dashed var(--line-2);background:transparent;font-size:12px;color:var(--ink-2);cursor:pointer}
+.chip.open .detail{display:block;flex:1 1 100%;margin:2px 0 0;padding:6px 8px;background:color-mix(in srgb,var(--raised) 70%,transparent);border-radius:7px;font:11.5px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow-y:auto;color:var(--ink-2)}
+/* spec 052 FR-063: the open chip shows the whole command (monospace, wrapped) with Copy, how long it took, and up to 20000 characters of output */
+.chip.open .xbody{display:flex;flex-direction:column;gap:4px;flex:1 1 100%;min-width:0;cursor:auto}
+.chip.open.has-cmd>code{display:none}
+.chip .cmdbox{position:relative;display:block}
+.chip pre.cmd{margin:0;padding:6px 64px 6px 8px;background:color-mix(in srgb,var(--raised) 70%,transparent);border-radius:7px;font:11.5px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:200px;overflow-y:auto;color:var(--ink);user-select:text}
+.chip .cmdbox .cp-btn{opacity:1}
+.chip .xmeta{font-size:11px;color:var(--muted)}
+.chip .detail{user-select:text}
+.chip .xall{align-self:flex-start;height:28px;padding:0 10px;font:inherit;font-size:11.5px;font-weight:600;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);cursor:pointer}
+/* spec 052 FR-063: "Show the change" on a permission card and its inbox row, collapsed by default; + green, - red, monospace */
+.pdiff{margin:6px 0 2px;font-size:12px}
+.pdiff>summary{cursor:pointer;color:var(--ink-2);font-weight:600;width:max-content;max-width:100%}
+.pdiff>pre{margin:4px 0 0;padding:6px 0;max-height:320px;overflow:auto;background:var(--raised);border:1px solid var(--line);border-radius:7px;font:11.5px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink-2)}
+.pdiff .dl{display:block;padding:0 8px;white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.45em}
+.pdiff .dl.add{background:var(--pb-done);color:var(--pc-done)}
+.pdiff .dl.del{background:var(--pb-error);color:var(--red-ink)}
+.pdiff .dl.hunk{color:var(--blue-ink)}
+.pdiff .dl.file{color:var(--muted);font-weight:600}
+.pdiff .dmore{display:block;padding:2px 8px 0;color:var(--muted);font-family:inherit}
+/* spec 052 FR-062: "active 2m ago" next to the chat header's status */
+.ph-ago{font-size:11.5px;color:var(--muted);white-space:nowrap}
+.ph-ago:empty{display:none}
+.chips-more{height:var(--h-chip);padding:0 10px;border-radius:8px;border:1px dashed var(--line-2);background:transparent;font-size:12px;color:var(--ink-2);cursor:pointer}
 .chips-more:hover{background:var(--surface-2)}
 .chip.att-chip{cursor:default;background:#e8eef4;border-color:#cfdbe6;color:#2f526e}
 .chip.att-chip.img{background:#eef2e8;border-color:#d6e0c9;color:#46602f}
@@ -335,8 +397,10 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .hint{font-size:11.5px;color:var(--muted);margin:7px 2px 0}
 
 /* toast */
-#toasts{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;align-items:center;z-index:50;pointer-events:none}
-.toast{background:#2f3a36;color:#f7f4ee;padding:10px 16px;border-radius:12px;font-size:13px;box-shadow:0 8px 24px rgba(40,35,25,.18);animation:pop .25s ease-out;max-width:560px}
+/* spec 052 FR-004: bottom left, clear of the centred composer; a toast takes the pointer so it can be hovered (timer pauses) and closed */
+#toasts{position:fixed;left:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;align-items:flex-start;z-index:50;pointer-events:none}
+.toast{pointer-events:auto;background:#2f3a36;color:#f7f4ee;padding:10px 16px;border-radius:12px;font-size:13px;line-height:1.45;box-shadow:0 8px 24px rgba(40,35,25,.18);animation:pop .25s ease-out;max-width:420px}
+.toast.warn{border-left:4px solid #e5be78}
 .toast code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:color-mix(in srgb,var(--raised) 14%,transparent);padding:1px 6px;border-radius:6px}
 
 @media (max-width:1320px){
@@ -345,6 +409,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important} /* spec 052 FR-070 (app.js also skips the transition) */
 }
 
 /* =====================================================================
@@ -370,7 +435,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .stage:not([data-d="full"]) .room[data-tint="sand"]{--wall:var(--cwall-sand,#d2c4a4)}
 .stage:not([data-d="full"]) .room[data-tint="clay"]{--wall:var(--cwall-clay,#d8c1b3)}
 .stage:not([data-d="full"]) .room::after{content:"";position:absolute;left:28px;bottom:-2px;width:30px;height:2px;background:var(--bg)}
-.stage:not([data-d="full"]) .room-head{min-height:calc(var(--rp) + 14px);gap:8px;padding-right:calc(var(--plw) + 4px)}
+.stage:not([data-d="full"]) .room-head{min-height:calc(var(--rp) + 14px);gap:8px;padding-right:4px} /* spec 052 (#311): the plant is decoration for the full layout only; denser rooms give its room to the 24px controls */
 .stage:not([data-d="full"]) .room-name{font-size:12.5px;line-height:18px;padding:0 9px;border-radius:6px;background:color-mix(in srgb,var(--raised) 72%,transparent);border:1px solid var(--wall)}
 .stage:not([data-d="full"]) .room-head{container-type:inline-size}
 @container (max-width:330px){.room-path{display:none}}
@@ -380,7 +445,9 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .stage .room{container:room / inline-size}
 .stage .room-head .room-name{min-width:0;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
 .stage .room-head:has(.room-aiu) .room-name{flex-shrink:1}
-.stage .room-head .door,.stage .room-head .room-new,.stage .room-head .room-more,.stage .room-head .room-mcp,.stage .room-head .siren,.stage .room-head .floor-tag{flex:none}
+.stage .room-head .door,.stage .room-head .room-new,.stage .room-head .room-more,.stage .room-head .room-mcp,.stage .room-head .siren{flex:none}
+/* spec 052: the floor tag gives way (ellipsis, full name in its title) before the controls touch the plant */
+.stage .room-head .floor-tag{flex:0 1 auto;min-width:28px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @container room (max-width:340px){
   .stage .room .room-head .room-plant{display:none}
   .stage .room .room-head.room-head{padding-right:0}
@@ -396,7 +463,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .stage:not([data-d="full"]) .room-path{font-size:11px;flex-shrink:4}
 .stage:not([data-d="full"]) .room-dots{gap:6px;min-width:0}
 .stage:not([data-d="full"]) .room-dots{padding-right:0}
-.stage:not([data-d="full"]) .room-plant{display:block;width:var(--plw);height:auto;right:var(--rp);top:calc(var(--rp) - 6px)}
+.stage:not([data-d="full"]) .room-plant{display:none}
 .stage[data-d="roomy"]{--plw:24px}
 .stage[data-d="card"]{--plw:22px}
 .stage[data-d="mini"]{--plw:20px}
@@ -534,16 +601,29 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .ph-id{min-width:0;flex:0 1 auto}
 .ph-meta{margin-top:0}
 .ph .actions{margin:0 0 0 auto;flex-wrap:wrap;justify-content:flex-end}
-.ph .btn{height:32px;padding:0 11px;font-size:12.5px}
+/* spec 052 FR-003: the chat header's More menu (two actions in view, the rest here; End and Remove last) */
+.ph .actions{position:relative}
+#moreBtn svg{width:12px;height:12px;margin-left:2px}
+.more-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:70;min-width:220px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:0 14px 40px rgba(40,35,25,.22);display:flex;flex-direction:column;gap:2px}
+.more-menu[hidden]{display:none}
+.more-it{display:flex;align-items:center;gap:8px;width:100%;min-height:32px;text-align:left;padding:6px 12px;border:0;border-radius:10px;background:transparent;color:var(--ink);font:inherit;font-size:13px;cursor:pointer}
+.more-it svg{width:14px;height:14px;flex:none}
+.more-it:hover,.more-it:focus-visible{background:var(--surface-2)}
+.more-it:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.more-it.danger{color:var(--red-ink)}
+.more-it .mt{display:flex;flex-direction:column;gap:1px}
+.more-it .mt small{font-size:11.5px;color:var(--muted);font-weight:400}
+.more-sep{height:1px;margin:4px 6px;background:var(--line)}
+.ph .btn{height:var(--h-ctl);padding:0 11px;font-size:12.5px}
 .ph .avatar{width:40px;height:40px}
-.mchip{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;background:#eef1f5;border:1px solid #d3dce6;color:#35566f;font-size:11.5px;font-weight:600;white-space:nowrap}
+.mchip{display:inline-flex;align-items:center;height:var(--h-chip);padding:0 9px;border-radius:999px;background:#eef1f5;border:1px solid #d3dce6;color:#35566f;font-size:11.5px;font-weight:600;white-space:nowrap}
 .ptask{-webkit-line-clamp:2}
 #chat{padding:16px max(18px,calc((100% - 880px)/2))}
 .composer{padding:12px max(16px,calc((100% - 880px)/2)) 14px}
 .ph{padding-left:max(18px,calc((100% - 1240px)/2));padding-right:max(18px,calc((100% - 1240px)/2))}
 .panel-in.viewing .composer,.panel-in.viewing .prev{display:none}
-.nothink{font-size:11.5px;color:var(--muted);font-style:italic}
-.think.streaming .think-body:empty::before{content:"The model reasons privately first. A summary of its reasoning appears here when it finishes thinking.";font-style:italic;color:var(--muted)}
+.nothink{font-size:11.5px;color:var(--muted)}
+.think.streaming .think-body:empty::before{content:"The model reasons privately first. A summary of its reasoning appears here when it finishes thinking.";color:var(--muted)}
 
 /* previous sessions */
 .prev{flex:none;border-bottom:1px solid var(--line);background:var(--soft);padding:0 max(18px,calc((100% - 1240px)/2))}
@@ -555,7 +635,6 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .prev-c{margin-left:auto;font-weight:500;color:var(--muted);font-size:12px}
 .prev-body{max-height:min(30vh,250px);overflow-y:auto;padding:0 0 10px}
 .prev-q{display:block;box-sizing:border-box;width:100%;height:30px;margin:6px 0 2px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel,#fff);color:var(--ink);font:inherit;font-size:12.5px}
-.prev-q:focus-visible{outline:3px solid var(--focus,#4f7fa8);outline-offset:1px}
 .prev-n{font-weight:500;color:var(--muted);font-size:12px;margin-left:6px}
 .prev-h{font-size:12px;font-weight:650;color:var(--ink);margin:8px 0 4px}
 .prev-h small{font-weight:500;color:var(--muted);margin-left:6px}
@@ -564,7 +643,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .prev-tx{flex:1;min-width:0;display:flex;flex-direction:column}
 .prev-tx b{font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .prev-tx small{font-size:11.5px;color:var(--muted)}
-.prev-row .btn{height:28px;padding:0 11px;font-size:12px}
+.prev-row .btn{height:var(--h-ctl);padding:0 11px;font-size:12px}
 .prev-empty,.prev-fine{margin:4px 0;font-size:12px;color:var(--muted)}
 .prev-fine{font-size:11px}
 
@@ -579,17 +658,19 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 
 /* new session dialog, folders popover, room "+" */
 .dlg-ov{position:fixed;inset:0;background:rgba(40,35,25,.28);display:grid;place-items:center;z-index:60}
-.dlg{width:min(420px,calc(100vw - 32px));background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 20px;box-shadow:0 18px 50px rgba(40,35,25,.25);display:flex;flex-direction:column;gap:10px}
+.dlg{width:min(420px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-xl);padding:18px 20px;box-shadow:0 18px 50px rgba(40,35,25,.25);display:flex;flex-direction:column;gap:10px}
 .dlg h3{margin:0;font-size:16px}
-.dlg .dsub{margin:0;font-size:12.5px;color:var(--ink-2);overflow-wrap:anywhere}
+.dlg .dsub{margin:0;font-size:12.5px;color:var(--ink-2);overflow-wrap:anywhere;line-height:1.5}
 .dlg label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--ink-2)}
 .dlg label[hidden]{display:none}
 .dlg .sd-agent{display:flex;flex-direction:column;gap:6px}
 .dlg .sd-agent[hidden]{display:none}
-.dlg select{height:34px;border:1px solid var(--line-2);border-radius:10px;background:var(--raised);padding:0 8px;font:inherit;font-size:13px;color:var(--ink)}
-.dlg input[type=number]{height:34px;border:1px solid var(--line-2);border-radius:10px;background:var(--raised);padding:0 10px;font:inherit;font-size:13px;color:var(--ink)}
+.dlg select{height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:0 8px;font:inherit;font-size:13px;color:var(--ink)}
+.dlg input[type=number]{height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:0 10px;font:inherit;font-size:13px;color:var(--ink)}
+/* spec 052 FR-076: text fields in dialogs look alike (proportional type; monospace only for code, e.g. the summary editor and MCP commands) */
+.dlg textarea{border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:8px 10px;font:inherit;font-size:13px;font-weight:400;color:var(--ink);resize:vertical}
 .ho-dlg{width:min(720px,calc(100vw - 32px))}
-.ho-dlg textarea{width:100%;box-sizing:border-box;min-height:260px;max-height:55vh;resize:vertical;border:1px solid var(--line-2);border-radius:10px;background:var(--raised);padding:10px 12px;font:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;color:var(--ink)}
+.ho-dlg textarea{width:100%;box-sizing:border-box;min-height:260px;max-height:55vh;resize:vertical;border:1px solid var(--line-ctl);border-radius:10px;background:var(--raised);padding:10px 12px;font:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;color:var(--ink)}
 .dlg .dbtn{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}
 #foldersPop{position:fixed;top:58px;right:14px;z-index:40;width:min(660px,calc(100vw - 28px));max-height:min(70vh,520px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(40,35,25,.2);padding:8px 14px 12px}
 #foldersPop[hidden]{display:none}
@@ -605,7 +686,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .floors-set:focus{outline:none}
 .fl-floor{border-top:1px solid #efe9dd;padding:6px 0}
 .fl-row{display:flex;align-items:center;gap:6px}
-.fl-row .btn{height:28px;padding:0 9px;font-size:12px}
+.fl-row .btn{height:var(--h-ctl);padding:0 9px;font-size:12px}
 .fl-sw{min-width:44px;height:28px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);font:inherit;font-size:12px;font-weight:650;color:var(--muted);cursor:pointer}
 .fl-sw[aria-pressed="true"]{background:#e3efe6;border-color:#a9c7b2;color:#2f5d43}
 .fl-t{flex:1;min-width:0;display:flex;flex-direction:column}
@@ -616,16 +697,16 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .fl-t .fl-att[hidden]{display:none}
 .fl-folder{display:flex;align-items:center;gap:6px;padding:4px 0 0 52px;font-size:12.5px}
 .fl-fn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.fl-folder select{height:26px;max-width:170px;border:1px solid var(--line);background:var(--surface-2);border-radius:8px;font:inherit;font-size:12px;color:var(--ink)}
+.fl-folder select{height:26px;max-width:170px;border:1px solid var(--line-ctl);background:var(--surface-2);border-radius:8px;font:inherit;font-size:12px;color:var(--ink)}
 .fl-new{display:flex;gap:6px;border-top:1px solid #efe9dd;padding-top:8px;margin-top:2px}
-.fl-new input{flex:1;min-width:0;height:28px;border:1px solid var(--line);border-radius:8px;padding:0 8px;font:inherit;font-size:12.5px;background:var(--surface-2);color:var(--ink)}
-.fl-new .btn{height:28px;padding:0 10px;font-size:12px}
+.fl-new input{flex:1;min-width:0;height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:8px;padding:0 8px;font:inherit;font-size:12.5px;background:var(--surface-2);color:var(--ink)}
+.fl-new .btn{height:var(--h-ctl);padding:0 10px;font-size:12px}
 .fl-err{margin:6px 0 0;font-size:12px;color:#9a3b30}
 .fl-err[hidden]{display:none}
 .floor-tag{flex:0 1 auto;min-width:0;max-width:16ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10.5px;font-weight:650;line-height:16px;padding:0 6px;border-radius:999px;border:1px solid #d9d1c0;background:color-mix(in srgb,var(--raised) 60%,transparent);color:var(--ink-2)}
 .plate-tx .floor-tag{display:inline-block;vertical-align:1px;margin-left:5px;max-width:12ch}
 .fl-into{display:flex;align-items:center;gap:8px;padding:2px 0 8px;font-size:12.5px;color:var(--ink-2)}
-.fl-into select{height:28px;max-width:220px;border:1px solid var(--line);background:var(--surface-2);border-radius:8px;font:inherit;font-size:12.5px;color:var(--ink)}
+.fl-into select{height:var(--h-ctl);max-width:220px;border:1px solid var(--line-ctl);background:var(--surface-2);border-radius:8px;font:inherit;font-size:12.5px;color:var(--ink)}
 .fp-h{font-size:13px;font-weight:650;padding:8px 0 4px}
 .fp-h small{font-weight:500;color:var(--muted);margin-left:6px}
 .fp-empty{font-size:12.5px;color:var(--muted)}
@@ -634,7 +715,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .fp-t{flex:1;min-width:0;display:flex;flex-direction:column}
 .fp-t b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fp-t small{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.fp-row .btn{height:28px;padding:0 10px;font-size:12px}
+.fp-row .btn{height:var(--h-ctl);padding:0 10px;font-size:12px}
 /* scheduled prompts (spec 044) */
 .fp-h .fp-pause{float:right;font-size:12px;color:var(--ink-2);display:inline-flex;gap:6px;align-items:center;cursor:pointer}
 .sched-dlg{width:min(620px,calc(100vw - 32px))}
@@ -644,29 +725,38 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .sched-dlg .sc-t,.sched-set .sc-t{flex:1;min-width:0;display:flex;flex-direction:column}
 .sched-dlg .sc-t b,.sched-set .sc-t b{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sched-dlg .sc-t small,.sched-set .sc-t small{font-size:11.5px;color:var(--muted)}
-.sched-dlg .sc-row .btn,.sched-set .sc-row .btn{height:28px;padding:0 10px;font-size:12px}
+.sched-dlg .sc-row .btn,.sched-set .sc-row .btn{height:var(--h-ctl);padding:0 10px;font-size:12px}
 .sched-dlg .sc-empty,.sched-dlg .sc-paused{font-size:12.5px;color:var(--muted);margin:6px 0}
 .sched-dlg .sc-paused{color:var(--amber-ink,#8a5a00)}
-.sched-dlg textarea{width:100%;box-sizing:border-box;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--surface);color:var(--ink);resize:vertical}
+.sched-dlg textarea{width:100%;box-sizing:border-box;font:inherit;font-size:13px;border:1px solid var(--line-ctl);border-radius:10px;padding:8px;background:var(--surface);color:var(--ink);resize:vertical}
 .sched-dlg .sc-when{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:8px;font-size:13px}
 .sched-dlg .sc-when input[type=number]{width:70px}
 .sched-dlg .sc-tpl-note{font-size:12px;color:var(--muted);margin:2px 0 6px;line-height:1.4}
-.sched-dlg .sc-when input{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:3px 6px;background:var(--surface);color:var(--ink)}
-.room-new{flex:none;width:22px;height:22px;border-radius:7px;border:1px solid var(--line-2);background:color-mix(in srgb,var(--raised) 70%,transparent);color:var(--ink-2);font-size:15px;line-height:1;cursor:pointer;padding:0;display:grid;place-items:center}
+.sched-dlg .sc-when input{font:inherit;font-size:13px;border:1px solid var(--line-ctl);border-radius:8px;padding:3px 6px;background:var(--surface);color:var(--ink)}
+/* spec 044 Phase 2: calendar days, Send to and Limit on one line, the agent app's own schedules (read-only) */
+.sched-dlg .sc-when select,.sched-dlg .sc-opts select,.sched-dlg .sc-opts input{font:inherit;font-size:13px;border:1px solid var(--line-ctl);border-radius:8px;padding:3px 6px;background:var(--surface);color:var(--ink)}
+.sched-dlg .sc-days{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:6px;font-size:12.5px}
+.sched-dlg .sc-opts{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;margin-top:8px;font-size:13px}
+.sched-dlg .sc-opts label{display:inline-flex;flex-direction:row;align-items:center;gap:6px;font-weight:500}
+.sched-dlg .sc-opts label[hidden],.sched-dlg .sc-days[hidden],.sched-dlg .sc-own[hidden]{display:none}
+.sched-dlg .sc-opts input[type=number]{width:90px}
+.sched-dlg .sc-own{margin:0 0 10px;max-height:120px;overflow-y:auto}
+.sched-dlg .sc-own h4{margin:4px 0 2px;font-size:12.5px;font-weight:600}
+.room-new{flex:none;width:24px;height:24px;border-radius:7px;border:1px solid var(--line-ctl);background:color-mix(in srgb,var(--raised) 70%,transparent);color:var(--ink-2);font-size:15px;line-height:1;cursor:pointer;padding:0;display:grid;place-items:center}
 .room-new:hover{background:var(--raised);color:var(--ink)}
-.room-mcp{flex:none;height:22px;border-radius:7px;border:1px solid var(--line-2);background:color-mix(in srgb,var(--raised) 70%,transparent);color:var(--ink-2);font-size:11px;font-weight:600;letter-spacing:.02em;line-height:1;cursor:pointer;padding:0 7px}
+.room-mcp{flex:none;height:24px;border-radius:7px;border:1px solid var(--line-2);background:color-mix(in srgb,var(--raised) 70%,transparent);color:var(--ink-2);font-size:11px;font-weight:600;letter-spacing:.02em;line-height:1;cursor:pointer;padding:0 7px}
 .room-mcp:hover{background:var(--raised);color:var(--ink)}
-.room-sched{flex:none;display:inline-flex;align-items:center;gap:4px;height:22px;border-radius:7px;border:1px solid var(--line-2);background:color-mix(in srgb,var(--raised) 70%,transparent);color:var(--ink-2);font-size:11px;font-weight:600;line-height:1;cursor:pointer;padding:0 7px;white-space:nowrap}
+.room-sched{flex:none;display:inline-flex;align-items:center;gap:4px;height:24px;border-radius:7px;border:1px solid var(--line-2);background:color-mix(in srgb,var(--raised) 70%,transparent);color:var(--ink-2);font-size:11px;font-weight:600;line-height:1;cursor:pointer;padding:0 7px;white-space:nowrap}
 .room-sched:hover{background:var(--raised);color:var(--ink)}
-.room-sched.off{opacity:.65}
+.room-sched.off{opacity:1;color:var(--muted);border-style:dashed} /* spec 052 FR-052: readable, not faded */
 .sched-set .fp-pause{display:inline-flex;align-items:center;gap:8px;font-size:13px;margin:4px 0 8px}
 .sched-set .ss-group{margin:8px 0 12px}
 .sched-set .ss-head{display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
 .sched-set .ss-head b{font-size:13px}
 .sched-set .ss-head small{flex:1;min-width:0;font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sched-set .ss-head .btn,.sched-set .scr-tools .btn{height:28px;padding:0 10px;font-size:12px}
+.sched-set .ss-head .btn,.sched-set .scr-tools .btn{height:var(--h-ctl);padding:0 10px;font-size:12px}
 .sched-set .ss-add{display:inline-flex;align-items:center;gap:8px;font-size:13px}
-.sched-set .ss-add select{height:30px;border:1px solid var(--line-2);border-radius:8px;background:var(--raised);padding:0 8px;font:inherit;font-size:13px;color:var(--ink)}
+.sched-set .ss-add select{height:30px;border:1px solid var(--line-ctl);border-radius:8px;background:var(--raised);padding:0 8px;font:inherit;font-size:13px;color:var(--ink)}
 #liveBar .btn{white-space:nowrap}
 #liveBar select[hidden]{display:none}
 /* spec 012 FR-120: with the agent-kind picker on a narrow window the toolbar selects are as wide as their choice, so Office / List usually stays on the row (it wraps as designed otherwise, PR #124) */
@@ -678,10 +768,10 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .intent-line{font-size:12px;color:var(--muted);padding-left:2px}
 .intent-line::before{content:"\25B8";margin-right:6px;color:var(--c-thinking)}
 .nothink{font-size:12px;color:var(--muted);background:#f6f3ec;border:1px dashed var(--line-2);border-radius:10px;padding:6px 10px;align-self:flex-start}
-.think-body{font-style:normal;white-space:normal;max-height:260px}
+.think-body{font-style:normal;white-space:normal;max-height:260px;margin-left:18px;padding-left:12px;border-left:2px solid var(--line-2);max-width:70ch;font-size:13px;color:var(--muted)} /* spec 052 FR-077: no italic; a left rule, the muted colour, a 70ch measure */
 .think-prev{margin-left:6px;font-weight:400;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1 1 auto;font-size:12px}
 .think-toggle[aria-expanded="true"] .think-prev,.think.streaming .think-prev{display:none}
-.think-body.md{color:var(--ink-2)}
+.think-body.md{color:var(--muted)}
 /* markdown */
 .md{white-space:normal;overflow-wrap:anywhere}
 .md>*:first-child{margin-top:0}.md>*:last-child{margin-bottom:0}
@@ -700,9 +790,9 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .md .codebox{position:relative;margin:0 0 .6em}
 .md pre{margin:0;background:#f1eee6;border:1px solid var(--line);border-radius:10px;padding:10px 12px;overflow-x:auto;white-space:pre;font-size:12px;line-height:1.5}
 .md pre code{background:none;padding:0;font-size:inherit}
-.md .copy{position:absolute;top:6px;right:6px;height:24px;padding:0 9px;font-size:11.5px;border-radius:7px;border:1px solid var(--line-2);background:rgba(255,253,249,.92);color:var(--ink-2);cursor:pointer;opacity:.0;transition:opacity .15s}
+.md .copy{position:absolute;top:4px;right:4px;height:22px;padding:0 8px;font:inherit;font-size:11px;font-weight:600;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);cursor:pointer;opacity:.7;transition:opacity .12s} /* spec 052 FR-076: the same size as .cp-btn (one Copy size) */
 .md .codebox:hover .copy,.md .copy:focus-visible{opacity:1}
-.md .copy:hover{background:var(--raised)}
+.md .copy:hover{background:var(--surface-2)}
 .md .md-img{color:var(--muted)}
 .bubble.md{white-space:normal}
 .bubble.caret.md:not(:empty)::after{display:none}
@@ -719,8 +809,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .sub-st{font-size:11.5px;font-weight:600;color:var(--blue-ink);background:var(--pb-working,#e3ecf4);border-radius:999px;padding:1px 8px;flex:none}
 .subblk.done .sub-st,.sub-st.done{color:var(--sage-ink);background:#e2efe7}.subblk.failed .sub-st,.sub-st.failed{color:var(--red-ink);background:var(--pb-error,#f6e2df)}
 .subblk.running .sub-st::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:5px;animation:dotp 1.4s infinite}
-.sub-open{height:26px;padding:0 10px;border-radius:8px;border:1px solid var(--line-2);background:var(--raised);font-size:12px;cursor:pointer;color:var(--ink-2)}
-.sub-open:hover{background:#f3f7fa}.sub-open[hidden]{display:none}
+.sub-open{height:28px;padding:0 10px;border-radius:var(--r-md);border:1px solid var(--line-2);background:var(--raised);font-size:12px;cursor:pointer;color:var(--ink-2)}
+.sub-open:hover{background:var(--surface-2)}.sub-open[hidden]{display:none}
 .sub-in{padding:0 12px 10px 34px;display:flex;flex-direction:column;gap:7px;min-width:0}
 .sub-in[hidden]{display:none}
 .sub-prompt,.sub-res{font-size:12.5px;color:var(--ink-2);background:color-mix(in srgb,var(--raised) 65%,transparent);border:1px solid var(--line);border-radius:9px;padding:6px 10px}
@@ -791,41 +881,50 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 /* ---------- permission mode (spec 018) ---------- */
 .modeic{display:inline-grid;place-items:center;width:15px;height:15px;flex:none;color:var(--muted);margin-left:2px;align-self:center}
 .modeic svg{width:13px;height:13px}
-.modeic.mode-ask{color:var(--blue-ink)}.modeic.mode-allow{color:var(--amber-ink)}
+.modeic.mode-ask{color:var(--blue-ink)}.modeic.mode-allow{color:var(--red-ink)} /* spec 052 FR-018: Allow all in the warning ink (amber is waiting) */
+/* spec 052 FR-065: the "Allow all" words on every card of an Allow all folder, in the icon's slot; same 15px line, so the card keeps its size */
+.modebadge{display:inline-block;flex:none;align-self:center;height:15px;line-height:13px;padding:0 4px;border:1px solid #e3bdb7;border-radius:4px;background:var(--pb-error);color:var(--red-ink);font-size:10.5px;font-weight:700;letter-spacing:.01em;white-space:nowrap;margin-left:2px}
+.stage[data-d="mini"] .l1:has(.modebadge) .name,.stage[data-d="micro"] .l1:has(.modebadge) .name{max-width:calc(100% - 3.7em - 52px)} /* room for the badge and a short status; the name still shows 3+ characters */
 .stage[data-d="full"] .who{align-items:center}
-.mode-chip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 8px 0 8px;border-radius:999px;border:1px solid var(--line-2);background:var(--raised);font-size:12px;font-weight:600;color:var(--ink-2);cursor:pointer}
-.mode-chip:hover{background:#f6f3ec}
+.mode-chip{display:inline-flex;align-items:center;gap:6px;height:var(--h-chip);padding:0 8px 0 8px;border-radius:999px;border:1px solid var(--line-2);background:var(--raised);font-size:12px;font-weight:600;color:var(--ink-2);cursor:pointer}
+.mode-chip:hover{background:var(--surface-2)}
 .mode-chip .mi{display:grid;width:14px;height:14px}.mode-chip .mi svg{width:14px;height:14px}
 .mode-chip .chev{width:10px;height:10px;transform:rotate(90deg);opacity:.6}
 .mode-chip.mode-ask{color:var(--blue-ink);background:#eef3f8;border-color:#c5d6e5}
 .mode-chip .mode-restored{font-size:10.5px;font-weight:600;letter-spacing:.02em;padding:1px 6px;border-radius:999px;background:var(--raised);border:1px solid #e5be78;color:var(--amber-ink)}
-.mode-chip.mode-allow{color:var(--amber-ink);background:var(--warn-bg);border-color:#e5be78}
+.mode-chip.mode-allow{color:var(--red-ink);background:var(--pb-error);border-color:#e3bdb7} /* spec 052 FR-065: the chat header says Allow all in the same red as the cards */
 .mode-menu{position:fixed;z-index:70;width:300px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:0 14px 40px rgba(40,35,25,.22);display:flex;flex-direction:column;gap:2px}
 .mode-menu button{display:flex;align-items:flex-start;gap:10px;text-align:left;padding:8px 10px;border:0;border-radius:10px;background:transparent;cursor:pointer}
-.mode-menu button:hover,.mode-menu button:focus-visible{background:#f3efe6}
+.mode-menu button:hover,.mode-menu button:focus-visible{background:var(--surface-2)}
 .mode-menu .mi{width:16px;height:16px;margin-top:2px;flex:none;color:var(--muted)}.mode-menu .mi svg{width:16px;height:16px}
 .mode-menu .mm-ask .mi{color:var(--blue-ink)}.mode-menu .mm-allow .mi{color:var(--amber-ink)}
 .mode-menu .mm-danger b{color:var(--red-ink)}
-.mode-menu .mt{display:flex;flex-direction:column;flex:1;min-width:0}.mode-menu b{font-size:13px}.mode-menu small{font-size:11.5px;color:var(--muted);line-height:1.35}
+.mode-menu .mt{display:flex;flex-direction:column;flex:1;min-width:0}.mode-menu b{font-size:13px}.mode-menu small{font-size:11.5px;color:var(--ink-2);line-height:1.45} /* spec 052 FR-077 */
 .mode-menu .ck{color:var(--sage-ink);font-weight:700;width:14px;flex:none}
 .mode-menu .mm-sep{height:1px;margin:4px 6px;background:var(--line)}
-.mode-menu [aria-disabled="true"]{opacity:.6;cursor:not-allowed}
+.mode-menu [aria-disabled="true"]{opacity:1;color:var(--muted);border-style:dashed;cursor:not-allowed}
 .mm-note{margin:4px 10px 4px;font-size:11.5px;color:var(--muted)}
 .dlg .chk{flex-direction:row;align-items:center;gap:8px;font-weight:500}
 .btn.primary.warn{background:var(--warn-bg);border-color:#e5be78;color:var(--amber-ink)}
 .btn.primary.warn:hover{background:#faecc9}
+/* spec 052 FR-076: red means it deletes or ends (End session, Remove, Delete floor, Clear); amber .primary.warn only grants more power (Allow all, Turn on remote) */
+.btn.primary.danger{background:var(--red-ink);border-color:transparent;color:#fff}
+.btn.primary.danger:hover{background:color-mix(in srgb,var(--red-ink) 86%,#000);border-color:transparent}
 
 /* ---- switch model and context, compact (spec 030) ---- */
 .mchip-btn{cursor:pointer;font-family:inherit;gap:5px}
-.mchip-btn:hover{background:#e3e9f0}
-.mchip-btn[aria-disabled=true]{opacity:.6;cursor:not-allowed}
+.mchip-btn:hover{background:var(--surface-2)}
+/* spec 054 FR-007: the Remote chip says the session can be steered from GitHub, so it shows in Simple too */
+body.simple #remoteChip:not([hidden]){display:inline-flex!important}
+#remoteChip[hidden]{display:none!important}
+.mchip-btn[aria-disabled=true]{color:var(--muted);border-style:dashed;cursor:not-allowed} /* spec 052 FR-076: disabled is muted and dashed, never opacity */
 .mchip .chev{flex:none;opacity:.75}
 .mchip-btn span{max-width:240px;overflow:hidden;text-overflow:ellipsis}
 .ctxgrp{display:inline-flex;align-items:center;gap:6px;min-width:0}
 .model-menu{width:340px;max-height:min(540px,calc(100vh - 24px));overflow:auto}
 .mode-menu .mm-h{margin:6px 10px 2px;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
 .mode-menu .mm-why{margin:4px 6px 2px;padding:8px 10px;font-size:12px;line-height:1.4;color:var(--amber-ink);background:var(--warn-bg);border:1px solid #e5be78;border-radius:10px}
-.mode-menu button[aria-disabled=true]{opacity:.6;cursor:not-allowed}
+.mode-menu button[aria-disabled=true]{opacity:1;color:var(--muted);cursor:not-allowed}
 .mode-menu .mm-seg{display:flex;flex-wrap:wrap;gap:4px;padding:2px 10px 6px}
 .mode-menu .mm-seg button{align-items:center;padding:3px 10px;border:1px solid var(--line-2);border-radius:999px;font-size:11.5px;background:var(--raised)}
 .mode-menu .mm-seg button[aria-pressed=true]{background:var(--pb-working,#e3ecf4);border-color:#9db8d0;font-weight:700;color:var(--blue-ink)}
@@ -838,14 +937,14 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .note.info.cline.failed{background:var(--bad-bg);border-color:#ebc7c2;color:var(--red-ink)}
 .note.fresh{max-width:560px}
 .toast.with-act{display:flex;align-items:center;gap:14px}
-.toast-act{background:transparent;color:#f7f4ee;border:1px solid color-mix(in srgb,var(--raised) 45%,transparent);border-radius:8px;padding:2px 12px;font-size:12.5px;font-weight:700;cursor:pointer}
+.toast-act{white-space:nowrap;flex:none;background:transparent;color:#f7f4ee;border:1px solid color-mix(in srgb,var(--raised) 45%,transparent);border-radius:8px;padding:2px 12px;font-size:12.5px;font-weight:700;cursor:pointer}
 .toast-act:hover{background:color-mix(in srgb,var(--raised) 14%,transparent)}
 .dlg .dlist{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--ink-2)}
-.dlg .dinput input{height:34px;border:1px solid var(--line-2);border-radius:10px;background:var(--raised);padding:0 10px;font:inherit;font-size:13px;color:var(--ink);font-weight:400}
+.dlg .dinput input{height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:0 10px;font:inherit;font-size:13px;color:var(--ink);font-weight:400}
 
 /* ---- agent mood (spec 034, issue #20): small, flat, inside the scene box; nothing moves under reduced motion ---- */
-.amb-light{animation:ambblink 1.1s steps(1,end) infinite} /* colours from --amb-light/--amb-light-2 via the keyframes below */
-@keyframes ambblink{0%{fill:var(--amb-light,#d9534f)}50%{fill:var(--amb-light-2,#5b8fd1)}}
+.amb-light{animation:ambblink 1.6s ease-in-out 6} /* spec 052 FR-069: the red light breathes slowly for about 10 s, then stays on (was a red/blue strobe) */
+@keyframes ambblink{0%,100%{opacity:1}50%{opacity:.45}}
 .dizzy{transform-box:fill-box;transform-origin:center;animation:dizzyspin 2.4s linear infinite}
 @keyframes dizzyspin{to{transform:rotate(360deg)}}
 .tap{animation:tapdesk .5s ease-in-out infinite}
@@ -861,8 +960,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .stage .room[data-alert] .room-path,.stage .room[data-alert] .room-aiu{color:#465049} /* darker floor, darker header text: 4.5:1 or more on the real pixels (checked by shots-034.js) */
 .siren{display:inline-flex;flex:none;width:18px;height:18px;align-self:center}
 .siren svg{width:100%;height:100%;display:block}
-.siren-light{fill:var(--amb-light,#d9534f);animation:sirenblink 1s steps(1,end) infinite}
-@keyframes sirenblink{0%{fill:var(--amb-light,#d9534f)}50%{fill:var(--amb-light-2,#5b8fd1)}}
+.siren-light{fill:var(--amb-light,#d9534f);animation:sirenblink 1.6s ease-in-out 6} /* spec 052 FR-069: same slow breathe, still red and visible */
+@keyframes sirenblink{0%,100%{opacity:1}50%{opacity:.45}}
 @media (prefers-reduced-motion:reduce){.siren-light{animation:none}}
 /* on a door plate the siren sits on the corner of the door icon, so the plate keeps its size */
 .plate{position:relative}
@@ -881,5 +980,271 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 /* spec 040 FR-014: AI theme maker preview */
 .ai-sws{display:flex;gap:6px;margin:4px 0 8px}.ai-sw{width:34px;height:34px;border-radius:8px;border:1px solid var(--line-2)}
 .ai-words{list-style:none;padding:0;margin:4px 0;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:4px 12px;font-size:13px}.ai-words small{display:block;color:var(--muted);font-size:11px}
-.ai-ideas{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:2px 0 6px}.ai-ideas .btn{height:28px;padding:0 10px;font-size:12px;font-weight:500}.ai-ideas .ai-more{border-style:dashed}
+.ai-ideas{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:2px 0 6px}.ai-ideas .btn{height:var(--h-ctl);padding:0 10px;font-size:12px;font-weight:500}.ai-ideas .ai-more{border-style:dashed}
 .ai-trybar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:8px;flex-wrap:wrap;max-width:calc(100vw - 32px);padding:10px 12px 10px 16px;border-radius:14px;background:var(--surface);color:var(--ink);border:1px solid var(--line-2);box-shadow:0 12px 36px rgba(0,0,0,.28);font-size:13.5px}.ai-trybar span{margin-right:6px}
+
+/* spec 052 FR-001: the answer bar above the composer, while a waiting request is out of view */
+.answer-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 auto 8px;width:min(860px,calc(100% - 32px));padding:8px 10px 8px 14px;background:var(--warn-bg);border:1px solid #e5be78;border-radius:12px;box-shadow:0 4px 14px rgba(40,35,25,.08)}
+.answer-bar[hidden]{display:none}
+.answer-bar .ab-q{flex:1 1 280px;min-width:0;font-size:13px;line-height:1.4;color:var(--ink);max-height:8.6em;overflow:auto;overflow-wrap:anywhere}
+.answer-bar .ab-q b{color:var(--amber-ink)}
+.answer-bar .ab-act{display:flex;gap:6px;flex-wrap:wrap}
+.answer-bar .btn{height:var(--h-ctl)} /* spec 052 FR-076 */
+.answer-bar .btn.ghost{background:transparent;border-color:transparent;text-decoration:underline;color:var(--ink-2)}
+
+/* spec 052 FR-015: a notice strip under the top bar (it takes its own room; the office lays out below it) */
+.notice-strip{flex:none;display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;padding:1px 20px;background:var(--warn-bg);border-bottom:1px solid #e5be78;color:var(--ink);font-size:12.5px;line-height:1.35}
+.notice-strip[hidden]{display:none}
+.notice-strip .ns-ic{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:999px;background:var(--amber-ink);color:#fff;font-weight:800;font-size:12px;flex:none}
+.notice-strip .ns-t{flex:1 1 360px;min-width:0}
+.notice-strip .ns-t b{color:var(--amber-ink)}
+.notice-strip .ns-act{display:flex;gap:6px}
+.notice-strip .btn{height:28px;padding:0 10px;font-size:12px} /* spec 052 FR-076: .btn.sm; the strip stays 31px tall (1 + 28 + 1 padding, 1 border) */
+
+/* spec 052 FR-021: stuck or memory nearly full, on the pill (the reason is in the tooltip and the card's label) */
+.pwarn{margin-left:4px;color:var(--amber-ink);font-size:11px;line-height:1}
+
+/* spec 052 FR-024: Clean Office toward 2026 (Clean only: it has no data-ui; sizes unchanged, so check:geometry holds).
+   Surfaces rather than outlines: cards float on a soft two-layer shadow, room walls are softer; one radius scale
+   (rooms 16, units 12, cards 10, buttons and selects 8, pills round); numbers in tabular figures everywhere. */
+html:not([data-ui]) .room{border-radius:16px;border-color:color-mix(in srgb,var(--wall) 70%,transparent)}
+html:not([data-ui]) .stage .desk.card{border-radius:10px;box-shadow:0 1px 2px rgb(44 55 51/.05),0 4px 12px -4px rgb(44 55 51/.10)}
+html:not([data-ui]) .stage .desk.card:hover{box-shadow:0 1px 2px rgb(44 55 51/.06),0 8px 18px -6px rgb(44 55 51/.16)}
+html:not([data-ui]) .btn,html:not([data-ui]) .topbar select,html:not([data-ui]) .seg,html:not([data-ui]) .stat,html:not([data-ui]) .dlg select,html:not([data-ui]) .dlg input[type=number],html:not([data-ui]) .dlg .dinput input{border-radius:8px}
+html:not([data-ui]) .seg button{border-radius:6px}
+.use,.stat b,.ctxchip,.capchip,.mchip,.pusage,.lrow .lcell,.prev-c{font-variant-numeric:tabular-nums}
+
+/* spec 052 #308: the top bar in clusters: create, the defaults for new sessions (one quiet group), view; the rest under ⋯ */
+.defaults-grp{display:flex;align-items:center;gap:2px;padding:2px;border-radius:10px;background:var(--surface-2);border:1px solid var(--line)}
+#liveBar .defaults-grp select,#liveBar .defaults-grp .btn{border-color:transparent;background:transparent;height:28px}
+#liveBar .defaults-grp select:hover,#liveBar .defaults-grp .btn:hover{background:var(--raised)}
+#liveBar{gap:8px}
+.top-more{position:relative}
+#topMoreBtn{width:34px;padding:0;justify-content:center;font-size:16px;letter-spacing:.05em}
+#topMoreMenu{right:0;left:auto}
+#topMoreMenu .tgl{cursor:pointer}
+#topMoreMenu .tgl input{margin:2px 2px 0 0;align-self:flex-start}
+
+/* spec 052 FR-027 (#305): the Needs you inbox */
+.inbox-btn{height:32px;padding:0 12px;border-radius:999px;font-size:12.5px;gap:6px;margin-left:auto}
+.inbox-btn b{font-variant-numeric:tabular-nums}
+.inbox-btn.attn{background:var(--warn-bg);border-color:#e5be78;color:var(--amber-ink)}
+.inbox-btn+.stats{margin-left:0}
+.inbox-dlg{max-width:760px}
+.inbox-dlg .dbody{max-height:min(64vh,620px);overflow:auto;display:flex;flex-direction:column;gap:10px;padding-right:4px}
+.inbox-row{display:grid;grid-template-columns:44px minmax(0,1fr);gap:12px;padding:12px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--raised)}
+.inbox-row .ib-av svg{width:44px;height:44px}
+.inbox-row p{margin:0}
+.inbox-row .ib-h{font-size:13.5px}.inbox-row .ib-w{color:var(--amber-ink);font-weight:600}.inbox-row .ib-f{color:var(--muted)}.inbox-row .ib-wait{color:var(--muted);font-size:11.5px;font-weight:400;white-space:nowrap} /* spec 052 FR-061 */
+.inbox-row .ib-t{margin:4px 0 8px;font-size:13px;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
+.inbox-row .ib-act{display:flex;flex-wrap:wrap;gap:6px}
+.inbox-row .ib-ans{display:flex;flex-wrap:nowrap;gap:6px}.inbox-row .ib-ans:empty{display:none} /* spec 052 FR-076: Allow, session, Deny never wrap apart; only Open chat moves to the next line */
+.inbox-empty{color:var(--muted);font-size:13px;max-width:60ch}
+
+/* spec 052 FR-031 (#306): Simple hides the developer details; status, permissions and answering are the same */
+body.simple #modelChip,body.simple .mchip,body.simple #agentChip,body.simple #ctxChip,body.simple #compactBtn,body.simple .ph .folder,
+body.simple .room-path,body.simple .room-mcp,body.simple #vscodeBtn,body.simple #copyResBtn,body.simple #mcpBtn,body.simple #toolsHdrBtn,
+body.simple .pusage,body.simple .defaults-grp #modelSel,body.simple .defaults-grp #effortSel{display:none!important}
+body.simple .lrow .lfold{visibility:hidden} /* spec 052 FR-064: the folder column stays in the grid (display:none moved the next cells under the wrong headers) */
+
+/* spec 052 FR-033: the inbox heading takes focus (a row, not a button) */
+.inbox-row .ib-h{margin:0;font-size:13.5px;font-weight:400;border-radius:6px}
+.inbox-row .ib-h:focus{outline:2px solid var(--focus);outline-offset:3px}
+.inbox-row:focus-within{border-color:var(--focus)}
+.inbox-keys{margin:8px 0 0;font-size:11.5px;color:var(--muted)}
+
+/* spec 052 FR-037: Simple goes further: tool rows fold into one line, Thinking stays folded, fewer top-bar controls */
+/* spec 052 FR-081 (round 7): the tool rows stay, in plain words ("Read companies.ts", "Ran a command"); Expert shows the tool name and argument */
+#chat .chip>.plain{display:none}
+body.simple #chat .chip>.plain{display:inline;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--ink)}
+body.simple #chat .chip>b,body.simple #chat .chip>code,body.simple #chat .chip:not(.fail)>.res{display:none}
+body.simple #chat .think .think-body{display:none}
+body.simple #addWs,body.simple #foldersBtn,body.simple #vList{display:none!important}
+/* spec 052 R3 design polish (Clean Office only unless noted; colour, border colour, background, shadow, radius, weight and
+   letter-spacing only, so every size stays and check:geometry holds) */
+/* primary action: solid sage ink, now the base `.btn.primary` rule in every theme (spec 052 FR-053) */
+/* top-bar counters as one segmented surface. The ring is an inset shadow and the counters keep their 1px (transparent)
+   border, so the group stays 32px high; the gap stays too (widths unchanged) and reads as nothing on a transparent counter */
+html:not([data-ui]) .stats{background:var(--surface-2);border-radius:10px;box-shadow:inset 0 0 0 1px var(--line)}
+html:not([data-ui]) .stat{border-color:transparent;background:transparent;border-radius:8px;background-clip:padding-box}
+html:not([data-ui]) .stat:hover{border-color:transparent;background-color:color-mix(in srgb,var(--raised) 60%,transparent)}
+html:not([data-ui]) .stat-aiu:hover{background-color:transparent}
+html:not([data-ui]) .stat[aria-pressed="true"]{border-color:transparent;background-color:var(--raised);box-shadow:0 1px 2px rgb(44 55 51/.10)}
+html:not([data-ui]) .stat.attn{background-color:var(--warn-bg);border-color:color-mix(in srgb,#e5be78 70%,transparent)}
+html:not([data-ui]) .stat.attn[aria-pressed="true"]{border-color:#d9a54a}
+/* the Needs you button */
+html:not([data-ui]) .inbox-btn{border-radius:8px}
+html:not([data-ui]) .inbox-btn.attn{background:#fbe7bf;border-color:#d9a54a}
+/* room-header controls: quiet at rest, shown when the room is hovered or holds focus (focus ring unchanged) */
+html:not([data-ui]) .room-new,html:not([data-ui]) .room-more,html:not([data-ui]) .room-mcp,html:not([data-ui]) .room-sched{border-color:transparent;background:transparent}
+html:not([data-ui]) .room:hover :is(.room-new,.room-more,.room-mcp,.room-sched),
+html:not([data-ui]) .room:focus-within :is(.room-new,.room-more,.room-mcp,.room-sched){border-color:var(--line-ctl);background:color-mix(in srgb,var(--raised) 70%,transparent)}
+html:not([data-ui]) .room :is(.room-new,.room-more,.room-mcp,.room-sched):hover{background:var(--raised)}
+/* denser layouts: the room name without a plate, softer walls, no tile pattern or inner glow */
+html:not([data-ui]) .stage:not([data-d="full"]) .room-name{border-color:transparent;background:transparent;letter-spacing:-.01em}
+html:not([data-ui]) .stage:not([data-d="full"]) .room{border-color:color-mix(in srgb,var(--wall) 45%,transparent);box-shadow:none;background-image:none}
+/* waiting and error cards: a 3px status edge inside the card, on top of the FR-024 card shadow */
+html:not([data-ui]) .stage .desk.card.is-waiting{border-color:var(--line) /* spec 052 FR-053: the inset bar and the tint carry it, no extra amber edge */;box-shadow:inset 3px 0 0 var(--c-waiting),0 1px 2px rgb(44 55 51/.05),0 4px 12px -4px rgb(44 55 51/.10)}
+html:not([data-ui]) .stage .desk.card.is-waiting:hover{box-shadow:inset 3px 0 0 var(--c-waiting),0 1px 2px rgb(44 55 51/.06),0 8px 18px -6px rgb(44 55 51/.16)}
+html:not([data-ui]) .stage .desk.card.is-error{border-color:color-mix(in srgb,var(--card-error-line) 60%,transparent);box-shadow:inset 3px 0 0 var(--c-error),0 1px 2px rgb(44 55 51/.05),0 4px 12px -4px rgb(44 55 51/.10)}
+html:not([data-ui]) .stage .desk.card.is-error:hover{box-shadow:inset 3px 0 0 var(--c-error),0 1px 2px rgb(44 55 51/.06),0 8px 18px -6px rgb(44 55 51/.16)}
+/* lobby: empty seats as soft dots, places without an outline unless busy (border widths kept) */
+html:not([data-ui]) .slot:not(.more){border-color:transparent;background:color-mix(in srgb,var(--ink) 6%,transparent)}
+html:not([data-ui]) .place:not(.busy){border-color:transparent}
+/* chat-header chips: neutral unless the context is filling up (warn, high keep their colours; the mode chip is unchanged) */
+html:not([data-ui]) .mchip,html:not([data-ui]) .ctxchip.ok{background:var(--surface-2);border-color:var(--line);color:var(--ink-2)}
+html:not([data-ui]) .mchip-btn:hover{background:var(--raised)}
+/* menus and dialogs: a clear keyboard row, layered popover shadows */
+html:not([data-ui]) .more-it:focus-visible,html:not([data-ui]) .mode-menu button:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;background:var(--pb-working)}
+html:not([data-ui]) .more-menu,html:not([data-ui]) .mode-menu,html:not([data-ui]) #foldersPop{box-shadow:0 0 0 1px rgb(44 55 51/.05),0 2px 6px rgb(44 55 51/.06),0 16px 36px -10px rgb(44 55 51/.22)}
+html:not([data-ui]) .dlg{box-shadow:0 0 0 1px rgb(44 55 51/.05),0 2px 6px rgb(44 55 51/.06),0 16px 36px -10px rgb(44 55 51/.24)}
+/* restore strip: an outlined mark; its primary button in amber ink in every theme */
+html:not([data-ui]) .notice-strip .ns-ic{background:transparent;color:var(--amber-ink);box-shadow:inset 0 0 0 1.5px currentColor;font-weight:700}
+.notice-strip .btn.primary,html:not([data-ui]) .notice-strip .btn.primary:not(.warn){background:var(--amber-ink);border-color:var(--amber-ink);color:#fff}
+.notice-strip .btn.primary:hover,html:not([data-ui]) .notice-strip .btn.primary:not(.warn):hover{background:color-mix(in srgb,var(--amber-ink) 88%,#000);border-color:color-mix(in srgb,var(--amber-ink) 88%,#000)}
+/* spec 052 FR-046: themes give every .btn a surface background (themes.css, `html[data-ui]:not([data-ui="clean"]) .btn`), which outranked the rule above and left white text on a light button; the strip's main button keeps its amber in every theme */
+html .notice-strip .btn.primary{background:var(--amber-ink)!important;border-color:var(--amber-ink)!important;color:#fff!important}
+html .notice-strip .btn.primary:hover{background:color-mix(in srgb,var(--amber-ink) 88%,#000)!important;border-color:color-mix(in srgb,var(--amber-ink) 88%,#000)!important}
+
+/* spec 052 FR-042/FR-043: command palette (Ctrl+K) and the keyboard shortcut sheet (?) */
+.pal-ov{place-items:start center;padding-top:min(14vh,120px)}
+.dlg.pal-dlg{width:min(560px,calc(100vw - 32px));padding:0;gap:0;overflow:hidden;border-radius:var(--r-xl)}
+.pal-top{border-bottom:1px solid var(--line);padding:4px 16px}
+.pal-top input{width:100%;height:48px;border:0;outline:0;background:transparent;font:inherit;font-size:15px;color:var(--ink)}
+.pal-top input::placeholder{color:var(--muted)}
+.pal-list{max-height:min(52vh,400px);overflow:auto;padding:6px}
+.pal-g{font-size:11.5px;font-weight:600;color:var(--muted);padding:8px 10px 4px} /* spec 052 FR-077: sentence case */
+.pal-o{display:flex;align-items:center;gap:10px;min-height:36px;padding:6px 10px;border-radius:8px;cursor:pointer;font-size:13.5px;color:var(--ink)}
+.pal-o[aria-selected=true]{background:var(--pb-working)}
+.pal-l{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none;max-width:55%}
+.pal-h{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.pal-k{margin-left:auto;display:flex;gap:4px;flex:none}
+.pal-empty{margin:0;padding:14px 10px;font-size:13px;color:var(--muted)}
+.pal-foot{margin:0;border-top:1px solid var(--line);padding:8px 16px;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.pal-foot kbd+kbd{margin-left:-2px}
+.pal-dlg kbd,.kbd-dlg kbd{display:inline-block;min-width:20px;padding:1px 6px;border:1px solid var(--line-2);border-bottom-width:2px;border-radius:5px;background:var(--surface-2);font-family:inherit;font-size:11px;font-weight:600;line-height:1.5;color:var(--ink-2);text-align:center}
+.dlg.kbd-dlg{width:min(460px,calc(100vw - 32px))}
+.kb-t{width:100%;border-collapse:collapse;font-size:13px;color:var(--ink)}
+.kb-t td{padding:5px 0;border-bottom:1px solid var(--line);vertical-align:middle}
+.kb-t tr:last-child td{border-bottom:0}
+.kb-t .kb-k{white-space:nowrap;padding-right:16px;width:1%}
+.kb-t .kb-k kbd+kbd{margin-left:3px}
+.kb-or{font-size:11px;color:var(--muted);margin:0 2px}
+.kb-h{margin:6px 0 0;font-size:13px}
+.kb-note{margin:0;font-size:11.5px;color:var(--muted)}
+
+/* ---- spec 052 FR-047..FR-050 (round 4, interaction polish) ---- */
+/* FR-047: pressed, disabled and busy states (theme rules in themes.css that set :active still win: they are more specific) */
+.btn,.more-it{transition:background .12s,border-color .12s,transform .06s}
+.stat,.chip{transition:background .12s,border-color .12s,transform .06s}
+.btn:active:not(:disabled),.stat:active,.chip:active,.more-it:active:not(:disabled){transform:translateY(1px);box-shadow:inset 0 1px 2px rgb(0 0 0/.12)}
+.btn:disabled,.btn[aria-disabled=true]{opacity:1;color:var(--muted);border-style:dashed;cursor:not-allowed} /* spec 052 FR-052: readable, not faded (was opacity .5) */
+.btn.primary:is(:disabled,[aria-disabled=true]){background:var(--surface-2);border-color:var(--line-ctl);color:var(--muted);font-weight:550}
+.btn[aria-busy=true],.more-it[aria-busy=true]{justify-content:center;cursor:progress;opacity:.8}
+.spin{display:inline-block;flex:none;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite;opacity:.8}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* FR-048: an answered inbox row shows the answer, then folds away; the empty state has a check badge */
+.inbox-row.settled .ib-done{margin:0;font-size:13px;font-weight:650;color:var(--ink-2);min-height:var(--h-ctl);display:flex;align-items:center}
+.inbox-row.settled .ib-done.yes{color:var(--pc-done)}
+.inbox-row.settled .ib-done.no{color:var(--red-ink)}
+.inbox-row.gone{opacity:0;transform:scale(.98);transition:opacity .18s ease-out,transform .18s ease-out} /* spec 052 FR-068: fade and shrink in place (no height change); the rows below slide up with a FLIP in app.js */
+.inbox-empty{display:flex;align-items:flex-start;gap:10px}
+.inbox-empty b{display:block;color:var(--ink);font-size:13.5px;font-weight:650}
+.inbox-empty small{display:block;margin-top:2px;font-size:12px}
+.ib-ok{flex:none;position:relative;width:22px;height:22px;border-radius:50%;background:var(--pb-done);border:1px solid #bcd6c6}
+.ib-ok::after{content:"";position:absolute;left:7px;top:3.5px;width:5px;height:10px;border:solid var(--pc-done);border-width:0 2px 2px 0;transform:rotate(45deg)}
+.ib-ok{animation:ibpop .26s cubic-bezier(.3,1.4,.5,1) both} /* spec 052 FR-068: All clear pops in, its tick follows */
+.ib-ok::after{animation:ibtick .2s ease-out .16s both}
+@keyframes ibpop{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
+@keyframes ibtick{from{opacity:0;transform:rotate(45deg) scale(.3)}to{opacity:1;transform:rotate(45deg)}}
+/* FR-049: dialogs ease in (the global reduced-motion rule turns this off) */
+.dlg{animation:dlgin .16s cubic-bezier(.2,.8,.2,1)}
+.dlg-ov{animation:dlgov .12s ease-out}
+@keyframes dlgin{from{opacity:0;transform:translateY(6px) scale(.985)}}
+@keyframes dlgov{from{opacity:0}}
+/* FR-049: room for a copy button at the bottom of the Thinking box */
+.think-body.md{padding-bottom:26px}
+.think-body.md>.cp-msg{bottom:4px} /* inside its own box: the box scrolls, so -11px was cut off */
+/* FR-050: typed toasts */
+.toast.ok{border-left:4px solid var(--c-done)}
+.toast.err{border-left:4px solid var(--c-error)}
+
+/* ---- spec 052 FR-052..FR-055 (round 5, visual and accessibility) ---- */
+/* FR-052: Windows High Contrast (forced colours) keeps edges, selection and the status shapes */
+@media (forced-colors:active){
+  .pill,.stat,.chip,.btn,.room-new{border:1px solid CanvasText}
+  [aria-pressed=true],[aria-current]:not([aria-current=false]){outline:2px solid Highlight;outline-offset:-2px}
+  .inbox:focus-within,.thpick[aria-pressed=true]{outline:2px solid Highlight}
+  .dot,.pill i{forced-color-adjust:none}
+  .btn:disabled,.btn[aria-disabled=true]{color:GrayText;border-color:GrayText}
+}
+/* FR-052: more contrast on request: stronger lines, muted text as dark as secondary text. Light themes only (a generated
+   dark theme sets data-dark); !important because theme tokens are inline styles on <html> */
+@media (prefers-contrast:more){
+  html:not([data-dark]){--line:var(--line-ctl,#8a8272)!important;--line-2:color-mix(in srgb,var(--line-ctl,#8a8272) 65%,var(--ink,#2c3733))!important;--muted:var(--ink-2)!important}
+}
+/* FR-053: Tools and Settings are ghost buttons in Clean Office (same box: the group keeps its 1px border and padding, only transparent); themed top bars keep their own .seg look, which carries their contrast */
+html:not([data-ui]) #topBtns{background:transparent;border-color:transparent}
+html:not([data-ui]) #topBtns button:not([aria-pressed="true"]):hover{background:color-mix(in srgb,currentColor 10%,transparent)}
+/* FR-053: the restore strip is a calm amber band (height unchanged: 3px padding, 24px buttons) */
+.notice-strip{background:color-mix(in srgb,var(--pb-waiting) 55%,var(--surface));border-bottom:1px solid color-mix(in srgb,var(--c-waiting) 45%,var(--line))}
+/* FR-053: radius tokens on panels and controls whose radius was already close */
+.dlg select,.dlg input[type=number],.dlg .dinput input{border-radius:var(--r-md)}
+.inbox{border-radius:var(--r-lg)}
+
+/* ---- spec 052 FR-067..FR-070 (round 6, motion with meaning): transform and opacity only, nothing changes size; the global
+   reduced-motion rule above stops every CSS animation here, and app.js skips its Web Animations under reduced motion ---- */
+/* FR-067: the old desk scene fades out on top of the new one (app.js morphNode), then goes */
+.scene-out{position:absolute;pointer-events:none;margin:0;z-index:1}
+.scene-out>svg{display:block;width:100%;height:100%;overflow:visible}
+/* FR-067: the done tick on the monitor draws in once, when the agent has just finished (the path is about 14.7 long) */
+.done-tick.draw{stroke-dasharray:16;animation:tickdraw .32s cubic-bezier(.2,.8,.2,1) both}
+@keyframes tickdraw{from{stroke-dashoffset:16}to{stroke-dashoffset:0}}
+/* FR-068: the Needs you count rolls in a fixed box (tabular digits, at least one digit wide: the width never changes between digits) */
+.inbox-btn b{flex:none;display:inline-block;position:relative;overflow:hidden;min-width:1ch;text-align:center;font-variant-numeric:tabular-nums}
+.inbox-btn b>span{display:block}
+.inbox-btn b>.roll-out{position:absolute;left:0;right:0;top:0}
+.roll-in.up{animation:rollinup .22s ease-out both}.roll-out.up{animation:rolloutup .22s ease-out both}
+.roll-in.down{animation:rollindown .22s ease-out both}.roll-out.down{animation:rolloutdown .22s ease-out both}
+@keyframes rollinup{from{opacity:0;transform:translateY(100%)}to{opacity:1;transform:none}}
+@keyframes rolloutup{from{opacity:1;transform:none}to{opacity:0;transform:translateY(-100%)}}
+@keyframes rollindown{from{opacity:0;transform:translateY(-100%)}to{opacity:1;transform:none}}
+@keyframes rolloutdown{from{opacity:1;transform:none}to{opacity:0;transform:translateY(100%)}}
+/* FR-070: the theme change cross-fades (document.startViewTransition in app.js) */
+::view-transition-old(root),::view-transition-new(root){animation-duration:240ms}
+/* FR-070: an empty office shows an empty desk above its sentence */
+.empty-desk{display:block;margin:0 auto 12px;width:120px;height:72px;color:var(--muted)}
+/* FR-070: on first run "+ Folder" rings once (a pseudo-element: opacity and scale, the button keeps its box) */
+#addFolder.ring-once{position:relative}
+#addFolder.ring-once::after{content:"";position:absolute;inset:-3px;border-radius:inherit;border:2px solid var(--sel-border,#7fa0bd);opacity:0;pointer-events:none;animation:ringonce 1.4s ease-out 1 both}
+@keyframes ringonce{0%{opacity:.8;transform:scale(.96)}100%{opacity:0;transform:scale(1.22)}}
+/* FR-069: Serious mode stops every looping animation (idle bob and nod, typing hands, steam, bars, halos, waving, thinking dots,
+   carets, walking bob, mood signs). One-shot signals (the done tick, the waiting pings, the pops) stay. The busy spinner stays: it is a progress sign. */
+html[data-serious] :is(.bar,.glow,.hand-l,.hand-r,.head,.bubble-g,.td,.steam,.halo,.wave,.cursor,.tap,.dizzy,.amb-light,.siren-light,.live i,.typing i,.walker.walking .wk),
+html[data-serious] :is(.caret,.bubble.caret.md>*:last-child)::after,
+html[data-serious] .subblk.running .sub-st::before{animation:none!important}
+
+/* spec 052 FR-076: one expand arrow. "Show the change", "Show the exact command", Settings' "More" and the advanced section use the shared
+   chevron (the Thinking / Previous sessions SVG, drawn as a mask in currentColor) that turns 90° when open; the browser's marker is hidden. */
+:root{--chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 2l4 4-4 4'/%3E%3C/svg%3E")}
+:is(.pdiff,.hs-cmds,.scr-more,.scr-adv)>summary{list-style:none;display:inline-flex;align-items:center;gap:6px}
+:is(.pdiff,.hs-cmds,.scr-more,.scr-adv)>summary::-webkit-details-marker{display:none}
+:is(.pdiff,.hs-cmds,.scr-more,.scr-adv)>summary::before{content:"";width:12px;height:12px;flex:none;background:currentColor;-webkit-mask:var(--chev) center/12px 12px no-repeat;mask:var(--chev) center/12px 12px no-repeat;transition:transform .2s}
+:is(.pdiff,.hs-cmds,.scr-more,.scr-adv)[open]>summary::before{transform:rotate(90deg)}
+@media (prefers-reduced-motion:reduce){:is(.pdiff,.hs-cmds,.scr-more,.scr-adv)>summary::before{transition:none}}
+@media (forced-colors:active){:is(.pdiff,.hs-cmds,.scr-more,.scr-adv)>summary::before{forced-color-adjust:none;background:CanvasText}}
+/* spec 052 FR-080..FR-082 (round 7, plain words): Simple shows the memory chip and Tidy up memory, the cost line (money only), the
+   request's folder and its collapsed command; it hides Control from GitHub unless remote control is on (the chip shows then) */
+body.simple .ctxgrp>#ctxChip,body.simple .ctxgrp>#compactBtn{display:inline-flex!important}
+body.simple p.pusage:not(:empty){display:block!important}
+body.simple #remoteBtn:not(.on){display:none!important}
+.note.perm .pfold{display:none;font-size:11.5px;color:var(--muted)}
+body.simple .note.perm .pfold{display:inline}
+details.pcmd{display:none;margin:6px 0 0}
+body.simple details.pcmd{display:block}
+details.pcmd>summary{cursor:pointer;font-size:12px;color:var(--ink-2)}
+details.pcmd>pre{margin:4px 0 0;padding:6px 8px;border-radius:6px;background:var(--surface-2,#f4f4f2);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow:auto}
+.wl-level{margin:14px 0 0;font-size:13px;color:var(--ink-2)}
+.wl-level p{margin:0 0 8px}
+.wl-lv-btns{display:flex;flex-wrap:wrap;gap:8px}
+.wl-level .btn[aria-pressed="true"]{border-color:var(--focus);box-shadow:inset 0 0 0 1px var(--focus)}

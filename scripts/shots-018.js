@@ -21,6 +21,7 @@
  * Shots: 012-mixed-<w>x<h>.png.
  */
 const os = require('os');
+const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
@@ -52,12 +53,12 @@ module.exports = async (ctx) => {
   };
   const toasts = () => js(`[...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' | ')`);
   const minFont = (root) => js(`(()=>{let min=99,who='';document.querySelectorAll('${root}, ${root} *').forEach(e=>{if(!e.getClientRects().length)return;const own=[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim());if(!own&&!/^(INPUT|SELECT|BUTTON)$/.test(e.tagName))return;const f=parseFloat(getComputedStyle(e).fontSize);if(f<min){min=f;who=e.tagName+'#'+e.id+'.'+e.className}});return {min,who}})()`);
-  const exists = (sel) => js(`!!document.querySelector(${JSON.stringify(sel)})`);
+  const exists = (sel) => js(`!!document.querySelector(${jsLiteral(sel)})`);
   const optionsOf = (id) => js(`[...document.getElementById('${id}').options].map(o=>o.value)`);
-  const setSel = (id, v) => js(`(()=>{const s=document.getElementById('${id}');s.value=${JSON.stringify(v)};s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+  const setSel = (id, v) => js(`(()=>{const s=document.getElementById('${id}');s.value=${jsLiteral(v)};s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
   /* buttons with a handler: an onclick property, a data-* action, or the ones the page wires through a delegated listener on the document */
-  const DELEGATED = ['modeChip', 'modelChip', 'compactBtn', 'ctxChip', 'capChip']; // document-level click handlers in app.js
-  const deadButtons = (root) => js(`(()=>{const D=${JSON.stringify(DELEGATED)};return [...document.querySelectorAll('${root} button')].filter(b=>!b.disabled&&!b.hidden&&b.getClientRects().length)
+  const DELEGATED = ['agentChip', 'modeChip', 'modelChip', 'compactBtn', 'ctxChip', 'capChip']; // document-level click handlers in app.js
+  const deadButtons = (root) => js(`(()=>{const D=${jsLiteral(DELEGATED)};return [...document.querySelectorAll('${root} button')].filter(b=>!b.disabled&&!b.hidden&&b.getClientRects().length)
     .filter(b=>typeof b.onclick!=='function'&&!Object.keys(b.dataset).length&&!D.includes(b.id)).map(b=>(b.id||b.className||b.textContent).toString().slice(0,40))})()`);
 
   for (const [w, h] of SIZES) {
@@ -69,9 +70,9 @@ module.exports = async (ctx) => {
       evs.forEach(e=>{const k=kind[e.sessionId]||'?';const o=by[k]=by[k]||{usage:0,nano:0,cost:0,estimate:0,unavail:0,limit:0,sub:0};
         if(e.type==='usage'){o.usage++;if('nanoAiu' in e)o.nano++;if('costUsd' in e)o.cost++;if(e.costBasis==='estimate')o.estimate++;if(e.creditsStatus==='unavailable')o.unavail++;}
         if(e.type==='limit')o.limit++;if(e.type==='subagent')o.sub++;});
-      return {by,caps:infos.filter(i=>i.adapterId!=='copilot'&&i.maxAiCredits!==undefined).map(i=>i.name),kinds:infos.map(i=>i.adapterId)}})()`);
+      return {by,caps:infos.filter(i=>i.adapterId!=='copilot'&&i.adapterId!=='claude'&&i.maxAiCredits!==undefined).map(i=>i.name),kinds:infos.map(i=>i.adapterId)}})()`);
     const kc = (k) => ev.by[k] || { usage: 0, nano: 0, cost: 0, estimate: 0, unavail: 0, limit: 0, sub: 0 };
-    assert.deepStrictEqual(ev.caps, [], `${w}: only Copilot agents carry a credit cap (${ev.caps})`);
+    assert.deepStrictEqual(ev.caps, [], `${w}: only Copilot (AIU) and Claude Code (dollar cap, spec 012 FR-150) carry a cap (${ev.caps})`);
     assert.ok(kc('claude').usage > 0 && kc('codex').usage > 0 && kc('copilot').usage > 0, `${w}: every kind reports usage (${JSON.stringify(ev.by)})`);
     assert.strictEqual(kc('claude').nano, 0, `${w}: claude-like usage has no nanoAiu`);
     assert.strictEqual(kc('codex').nano + kc('basic').nano, 0, `${w}: codex-like and basic usage have no nanoAiu`);
@@ -93,7 +94,7 @@ module.exports = async (ctx) => {
     assert.ok(k.vis, `${w}: the kind select is shown`);
     assert.deepStrictEqual(k.opts.map((o) => [o.v, o.t, o.d]), [['copilot', 'Copilot', false], ['claude', 'Claude Code', false], ['codex', 'Codex', false], ['basic', 'Basic agent', false]], `${w}: four ready kinds with short names`);
     await js(`document.getElementById('kindHelp').click()`);
-    assert.ok(await ctx.waitFor(`document.getElementById('modeDlg')`, 3000), 'About agent kinds opens');
+    assert.ok(await ctx.waitFor(`document.getElementById('modeDlg')`, 3000), 'About agent apps opens');
     const about = await js(`document.getElementById('modeDlg').innerText.replace(/\\s+/g,' ')`);
     for (const need of ['Copilot: ready', 'Claude Code (simulated): ready', 'Codex (simulated): ready', 'Basic agent (simulated): ready']) assert.ok(about.includes(need), `${w}: About says "${need}": ${about}`);
     await js(`[...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent==='Close').click()`);
@@ -128,7 +129,7 @@ module.exports = async (ctx) => {
       if (kind === 'copilot') {
         assert.ok(p.cap && p.stop && p.model && p.mcp && p.newSess, `${w} ${id}: Copilot keeps cap chip, Stop, model chip, MCP and new session (${JSON.stringify(p)})`);
         assert.strictEqual(p.modeBtn, 'BUTTON', `${id}: Copilot mode chip is a button`);
-      } else assert.strictEqual(p.cap, false, `${w} ${id}: a ${kind} agent has no #capChip`);
+      } else if (kind !== 'claude') assert.strictEqual(p.cap, false, `${w} ${id}: a ${kind} agent has no #capChip`); // Claude Code has a dollar cap (spec 012 FR-150)
       if (kind === 'claude' || kind === 'codex') {
         assert.ok(p.stop && p.model && p.mcp && p.newSess, `${w} ${id}: ${kind} keeps Stop, model chip, MCP and new session (${JSON.stringify(p)})`);
         assert.strictEqual(p.modeBtn, 'BUTTON', `${id}: ${kind} mode chip is a button`);
@@ -162,7 +163,7 @@ module.exports = async (ctx) => {
       if (toggle) assert.ok(m.enabled > 0, `${w} ${id}: Copilot has switches that work (${m.enabled}/${m.n})`);
       else {
         assert.strictEqual(m.enabled, 0, `${w} ${id}: no enabled switch for a kind without mcpToggle (${m.enabled}/${m.n})`);
-        assert.ok(m.text.includes('The switches are off for this agent kind'), `${w} ${id}: the reason is written in the dialog`);
+        assert.ok(m.text.includes('The switches are off for this agent app'), `${w} ${id}: the reason is written in the dialog`);
       }
       await js(`[...document.querySelectorAll('.dlg .btn, #modeDlg .btn, [role="dialog"] .btn')].find(b=>b.textContent==='Done').click()`);
       await ctx.sleep(250);
@@ -207,7 +208,7 @@ module.exports = async (ctx) => {
     await setSel('kindSel', 'copilot');
 
     // ---- the new-session dialog follows the kind too ----
-    await openPanel('sim-3'); // Jonas, Copilot, Allow all
+    await openPanel('sim-15'); // Maya, Copilot, Allow all (Jonas waits for a permission, so he is in Ask first since spec 052 FR-046)
     await js(`document.getElementById('newSessBtn').click()`);
     assert.ok(await ctx.waitFor(`!!document.getElementById('sdPerm')`, 3000), 'the new-session dialog opens');
     assert.strictEqual(await js(`document.getElementById('sdPerm').value`), 'allow', 'the dialog starts at the current mode');

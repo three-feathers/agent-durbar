@@ -4,14 +4,28 @@
  * Every adapter translates its native protocol into the normalized events below.
  */
 
+import type { ElicitAction, ElicitAnswer, ElicitRequest } from '../shared/elicit';
 import type { McpServerSpec } from '../shared/mcp';
 import type { CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import type { AdapterCapabilities, PermissionMode } from './capabilities';
 import type { HandoffResult } from './handoff';
 import type { HistoryResult, PreviousSession } from './history';
-export type { McpServerSpec, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult, AdapterCapabilities, PermissionMode };
+import type { RemoteState } from '../shared/remote';
+export type { ElicitAction, ElicitAnswer, ElicitRequest, McpServerSpec, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult, AdapterCapabilities, PermissionMode };
 
 export type AgentStatus = 'idle' | 'working' | 'needs-permission' | 'error' | 'stopped';
+
+/** Spec 040 FR-015: options of `generateText`. */
+export interface GenerateTextOptions {
+  disabledMcpServers?: string[];
+}
+
+/** Spec 040 FR-015: what `generateText` returns. */
+export interface GenerateTextResult {
+  text: string;
+  costUsd?: number;
+  nanoAiu?: number;
+}
 
 export interface StartOptions {
   /** Folder or .code-workspace file; one session per workspace. */
@@ -90,10 +104,16 @@ export interface PermissionInfo {
   /** Shell only: the wider "any arguments of <command>" scope the user may pick instead (never the default). */
   broadScopeKey?: string;
   broadScopeLabel?: string;
-  /** Who decided: the user, an earlier "Approve for this session" grant, or the session being stopped. */
-  via?: 'user' | 'session' | 'stopped';
+  /** Who decided: the user, an earlier "Approve for this session" grant, the session being stopped, or Allow all (`policy`: no card is shown, spec 052 FR-071). */
+  via?: 'user' | 'session' | 'stopped' | 'policy';
   /** True when the user approved this one *and* remembered the scope for the session. */
   remembered?: boolean;
+  /**
+   * Spec 052 FR-063: what an edit would change, as unified-diff text ("--- a/x", "+++ b/x", "@@", "+", "-" lines), at most 20000
+   * characters. Optional: only pending requests that carry the edit's text have it (Claude Code Edit, MultiEdit and Write; the
+   * simulator). Copilot and Codex leave it out. Display text only: never run or applied.
+   */
+  diff?: string;
 }
 
 /** A remembered "Approve for this session" permission; can be revoked. */
@@ -288,8 +308,12 @@ export interface QuestionEvent extends BaseEvent {
   phase: 'asked' | 'answered' | 'cancelled';
   requestId: string;
   questions?: AskedQuestion[];
-  /** `answered` only: question text -> chosen label(s), comma-separated. */
+  /** `answered` only: question text -> chosen label(s), comma-separated. Never set for an elicitation (its values can be secrets). */
   answers?: Record<string, string>;
+  /** `asked` only (spec 012 FR-151): an MCP elicitation, a form (`fields`) or a URL flow (`url`); answered with `answerElicitation`. */
+  elicitation?: ElicitRequest;
+  /** `answered` of an elicitation: what the user did (`accept` = submitted or Done, `decline`); a cancel is `phase: 'cancelled'`. */
+  elicitAction?: ElicitAction;
 }
 
 /** A custom agent the user can select for a session (spec 043 FR-001); generic across adapters. */
@@ -315,7 +339,34 @@ export interface AgentProfileEvent extends BaseEvent {
   profile: AgentProfile | null;
 }
 
+/**
+ * A prompt scheduled inside the agent app's own session (spec 044 FR-016), e.g. Copilot `/every`, `/after` or its
+ * `manage_schedule` tool. Display only: Agent Durbar shows it read-only and never changes it. Text already cleaned and capped.
+ */
+export interface AgentScheduleEvent extends BaseEvent {
+  type: 'agentSchedule';
+  phase: 'created' | 'cancelled' | 'rearmed';
+  scheduleId: string;
+  /** `created`: the prompt (or the app's short label for it), one line, at most 300 characters. */
+  prompt?: string;
+  /** Relative interval between runs (ms). */
+  everyMs?: number;
+  /** Five-field cron expression and its IANA time zone. */
+  cron?: string;
+  tz?: string;
+  /** One-off run time (epoch ms). */
+  at?: number;
+  /** `rearmed`: the next run the agent chose (epoch ms). */
+  nextAt?: number;
+  recurring?: boolean;
+  /** No fixed cadence: the agent arms each next run itself. */
+  selfPaced?: boolean;
+  /** Who made it: the user (a command) or the agent (its tool). */
+  origin?: 'user' | 'model';
+}
+
 export type AgentEvent =
+  | AgentScheduleEvent
   | UserEvent
   | QuestionEvent
   | AgentProfileEvent
@@ -365,6 +416,8 @@ export interface AgentAdapter {
   resolveLimit?(sessionId: string, requestId: string, action: LimitAction): Promise<void>;
   /** Answer a `question` event (spec 012 FR-128); `null` = the user skipped it. Unknown ids are ignored. */
   answerQuestion?(sessionId: string, requestId: string, answers: Record<string, string> | null): void;
+  /** Answer an elicitation `question` event (spec 012 FR-151); main has checked it against the fields. Unknown ids are ignored. */
+  answerElicitation?(sessionId: string, requestId: string, answer: ElicitAnswer): void;
   /** Agent profiles the session can use (spec 043 FR-001). */
   listAgentProfiles?(sessionId: string): Promise<AgentProfile[]>;
   /** Select a profile for the next turns, or null for the default agent (spec 043 FR-001). Emits `agentProfile`. */
@@ -379,8 +432,16 @@ export interface AgentAdapter {
   compact?(sessionId: string, focus?: string): Promise<CompactResult>;
   /** A markdown hand-off summary of the conversation, made without changing it (spec 030 FR-034). Optional (`capabilities.handoff`). */
   handoffSummary?(sessionId: string): Promise<HandoffResult>;
-  /** One prompt answered with no tools, no MCP and no session kept, in an empty temp folder (spec 040 FR-015). Optional (`capabilities.oneShot`). */
-  generateText?(prompt: string): Promise<{ text: string; costUsd?: number }>;
+  /**
+   * One prompt answered with no tools, no MCP and no session kept, in an empty temp folder (spec 040 FR-015). Optional (`capabilities.oneShot`).
+   * `opts.disabledMcpServers`: names of servers the harness would load on its own, to keep switched off (Copilot); others ignore it.
+   * The reply carries the spend the harness reports: a dollar estimate (`costUsd`) or AI credits (`nanoAiu`, 1e9 = 1 credit).
+   */
+  generateText?(prompt: string, opts?: GenerateTextOptions): Promise<GenerateTextResult>;
+  /** Spec 054 FR-001: turn remote control (follow and steer from the vendor's web or mobile app) on or off for a live session. Optional (`capabilities.remote`). Never on by default. */
+  setRemote?(sessionId: string, on: boolean): Promise<RemoteState>;
+  /** Spec 051 FR-007: whether this harness is signed in, checked without a prompt (no credits). Only the yes/no leaves the adapter. */
+  authStatus?(): Promise<{ signedIn: boolean }>;
   /** True while the session is open in this adapter. */
   isLive(sessionId: string): boolean;
   /** Stop every session and free the runtime. */

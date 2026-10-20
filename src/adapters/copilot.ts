@@ -1,6 +1,8 @@
 import { randomUUID } from 'crypto';
 import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
 import { parseQuestions } from './questions';
+import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
+import type { ElicitAnswer } from '../shared/elicit';
 import type { CopilotSession, MCPServerConfig, ModelInfo, PermissionRequest, PermissionRequestResult, ResumeSessionConfig, SessionConfig, SessionEvent } from '@github/copilot-sdk';
 import type {
   AdapterCapabilities,
@@ -13,6 +15,8 @@ import type {
   ModelSwitchResult,
   PermissionInfo,
   PermissionMode,
+  GenerateTextOptions,
+  GenerateTextResult,
   StartOptions,
   Unsubscribe,
 } from './types';
@@ -33,6 +37,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
+import { allowedRemoteUrl, cleanRemoteError, isRemoteVisibility } from '../shared/remote';
+import type { RemoteState } from '../shared/remote';
 
 const IMAGE_MIME: Record<string, string> = {
   '.png': 'image/png',
@@ -57,6 +63,8 @@ interface Live {
   askedTitle?: boolean;
   /** `ask_user` questions waiting for the user (spec 002 FR-058): request id -> waiter. */
   questions?: Map<string, { choices: string[]; resolve: (answer: string | null) => void }>;
+  /** MCP elicitations waiting for the user (spec 012 FR-151): request id -> waiter. */
+  elicitations?: Map<string, ElicitWaiter>;
   /** The session's folders (spec 043: a profile file inside one is the repository's). */
   folders?: string[];
 }
@@ -111,7 +119,42 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpStatus: true,
   mcpToggle: true,
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
+  remote: true, // spec 054 FR-002: rpc.remote.enable/disable (@experimental; not run on a real account)
+  oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (fake SDK only; not run on a real account)
 });
+
+/** Spec 040 FR-015: how long one `generateText` may take before it is aborted (the same 3 minutes as Claude and Codex). */
+export const ONE_SHOT_TIMEOUT_MS = 180_000;
+
+/**
+ * Spec 040 FR-015: the config of the throw-away session behind `generateText`. Nothing can act and nothing is kept:
+ * no tool from any source (`availableTools: []`, and `excludedTools` as a second lock), the MCP servers the runtime would load on its own
+ * switched off by name, no skills, custom agents, discovered config, instructions, hooks, git context, memory, session store or
+ * infinite-session workspace, an empty temp folder as the working directory, and the cheapest `auto` routing (as a new `auto` session).
+ */
+export function oneShotConfig(dir: string, disabledMcpServers: readonly string[] = []): Record<string, unknown> {
+  return {
+    workingDirectory: dir,
+    ...modelConfig({ model: 'auto', autoTier: 'efficiency' }, false),
+    streaming: false,
+    availableTools: [],
+    excludedTools: ['builtin:*', 'mcp:*', 'custom:*'],
+    mcpServers: {},
+    ...(disabledMcpServers.length ? { disabledMcpServers: [...disabledMcpServers] } : {}),
+    enableConfigDiscovery: false,
+    enableSkills: false,
+    customAgents: [],
+    skipCustomInstructions: true,
+    enableOnDemandInstructionDiscovery: false,
+    enableFileHooks: false,
+    enableHostGitOperations: false,
+    enableSessionStore: false,
+    memory: { enabled: false },
+    infiniteSessions: { enabled: false },
+    embeddingCacheStorage: 'in-memory',
+    remoteSession: 'off',
+  };
+}
 
 /**
  * Copilot adapter on the official `@github/copilot-sdk` (1.0.x, CLI runtime 1.0.98).
@@ -128,6 +171,8 @@ export class CopilotAdapter implements AgentAdapter {
   private sessions = new Map<string, Live>();
   /** Optional debug sink (DURBAR_LOG): what was actually handed to the SDK. */
   debug?: (message: string) => void;
+  /** Spec 040 FR-015: the `generateText` time limit; protected so a test can shorten it. */
+  protected oneShotTimeoutMs = ONE_SHOT_TIMEOUT_MS;
   /** One mapper per session (it remembers tool names, reasoning ids and sub-agent ids of that session). */
   private mappers = new Map<string, EventMapper>();
 
@@ -147,6 +192,12 @@ export class CopilotAdapter implements AgentAdapter {
       return c;
     })();
     return this.starting;
+  }
+
+  /** Spec 051 FR-007: the runtime's own sign-in status (no prompt, no credits). The login name, host and message are dropped. */
+  async authStatus(): Promise<{ signedIn: boolean }> {
+    const s = await (await this.getClient()).getAuthStatus();
+    return { signedIn: !!s.isAuthenticated };
   }
 
   /** Models visible to the logged-in user (no inference, no credits). */
@@ -203,10 +254,12 @@ export class CopilotAdapter implements AgentAdapter {
             this.emit(sid, { type: 'permission', permission: e.permission });
             // Back to work unless the session is being stopped (then 'stopped' follows).
             if (e.permission.via !== 'stopped') {
-              const word = e.permission.state === 'approved' ? (e.permission.via === 'session' ? 'Allowed for this session' : 'Approved') : 'Denied';
+              const word = e.permission.state === 'approved' ? (e.permission.via === 'session' ? 'Allowed for this session' : 'Allowed') : 'Denied';
               this.emit(sid, { type: 'status', status: 'working', intent: `${word}: ${e.permission.summary}` });
             }
             return;
+          case 'auto': // Allow all approved it: a permission event for the activity log; the window shows no card (spec 052 FR-071)
+            return this.emit(sid, { type: 'permission', permission: e.permission });
           case 'grants':
             return this.emit(sid, { type: 'grants', grants: e.grants });
         }
@@ -238,6 +291,14 @@ export class CopilotAdapter implements AgentAdapter {
       return { answer, wasFreeform: !asked[0].options.some((o) => o.label === answer) };
     };
 
+    // spec 012 FR-151: an MCP server's elicitation (a form, or a URL flow) in the question card; like a question, every mode
+    const onElicitationRequest = async (ctx: { message?: unknown; requestedSchema?: unknown; mode?: unknown; url?: unknown; elicitationSource?: unknown }): Promise<ElicitAnswer> => {
+      const live = this.sessions.get(sid);
+      if (!live) return { action: 'cancel' };
+      live.elicitations ??= new Map();
+      return runElicitation((b) => this.emit(sid, b), live.elicitations, randomUUID(), { message: ctx.message, schema: ctx.requestedSchema, mode: ctx.mode, url: ctx.url, source: ctx.elicitationSource }, (m) => this.debug?.(m));
+    };
+
     const config = {
       workingDirectory: cwd,
       // spec 006 FR-019: a workspace's other folders (the SDK asks for them again on resume, which this config does)
@@ -252,6 +313,7 @@ export class CopilotAdapter implements AgentAdapter {
       ...(options.maxAiCredits && options.maxAiCredits > 0 && Number.isFinite(options.maxAiCredits) ? { sessionLimits: { maxAiCredits: options.maxAiCredits } } : {}),
       onPermissionRequest,
       onUserInputRequest,
+      onElicitationRequest,
       // spec 043 FR-002: custom agents from explicit folders only (no config discovery, so no repository skills)
       agentDirectories: agentDirsFor([cwd, ...folders]),
     };
@@ -336,8 +398,14 @@ export class CopilotAdapter implements AgentAdapter {
     q.resolve(v ? v.replace(/\s+/g, ' ').trim().slice(0, 500) : null);
   }
 
+  /** spec 012 FR-151: the user's answer to an MCP elicitation (main checked it against the fields). */
+  answerElicitation(sessionId: string, requestId: string, answer: ElicitAnswer): void {
+    answerElicitation(this.sessions.get(sessionId)?.elicitations, requestId, answer);
+  }
+
   private cancelQuestions(live: Live): void {
     for (const q of [...(live.questions?.values() ?? [])]) q.resolve(null);
+    cancelElicitations(live.elicitations);
   }
 
   /** spec 043 FR-002: the session's selectable custom agents (`rpc.agent.list`, @experimental). */
@@ -504,6 +572,98 @@ export class CopilotAdapter implements AgentAdapter {
     const live = this.mustGet(sessionId);
     const r = (await live.session.rpc.history.summarizeForHandoff()) as { summary?: unknown } | undefined;
     return { summary: cleanSummary(r?.summary) };
+  }
+
+  /**
+   * Spec 040 FR-015: one prompt (the AI theme maker) on a throw-away session of the shared runtime (no second process): see `oneShotConfig`.
+   * Every permission request is denied; after `ONE_SHOT_TIMEOUT_MS` the turn is aborted. The session is disconnected and deleted from disk in
+   * a `finally`, also on an error or a timeout, and its temp folder removed. Returns the last top-level assistant message and the AI credits
+   * the runtime reported for the session (`assistant.usage`), if any. The prompt and the reply are never logged.
+   */
+  async generateText(prompt: string, opts: GenerateTextOptions = {}): Promise<GenerateTextResult> {
+    const client = await this.getClient();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-gen-'));
+    let session: CopilotSession | undefined;
+    let unsubscribe: () => void = () => undefined;
+    let timer: NodeJS.Timeout | undefined;
+    let timedOut = false;
+    try {
+      let text = '';
+      let nano = 0;
+      let finish: (err?: Error) => void = () => undefined;
+      const done = new Promise<void>((resolve, reject) => (finish = (err) => (err ? reject(err) : resolve())));
+      done.catch(() => undefined); // an error before `send` returns is still raised below, never unhandled
+      const config = {
+        ...oneShotConfig(dir, opts.disabledMcpServers ?? []),
+        onPermissionRequest: async (): Promise<PermissionRequestResult> => ({ kind: 'reject', feedback: 'Agent Durbar allows no tools here.' }) as PermissionRequestResult,
+      };
+      session = await client.createSession(config as unknown as SessionConfig);
+      unsubscribe = session.on((ev: SessionEvent) => {
+        const e = ev as unknown as { type: string; agentId?: string | null; data?: Record<string, unknown> };
+        const d = e.data ?? {};
+        if (e.type === 'assistant.message' && !e.agentId && !d.parentToolCallId && typeof d.content === 'string' && d.content.trim()) text = d.content;
+        else if (e.type === 'assistant.usage') {
+          const n = Number((d.copilotUsage as { totalNanoAiu?: unknown } | undefined)?.totalNanoAiu);
+          if (Number.isFinite(n) && n > 0) nano += n;
+        } else if (e.type === 'session.idle' && !e.agentId) finish();
+        else if (e.type === 'session.error' && !e.agentId) finish(new Error(`Copilot could not answer${typeof d.errorType === 'string' ? ` (${d.errorType.slice(0, 60)})` : ''}.`));
+      });
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          reject(new Error('Copilot gave no answer in time.'));
+        }, this.oneShotTimeoutMs);
+      });
+      await Promise.race([session.send({ prompt }).then(() => done), timeout]);
+      if (!text) throw new Error('Copilot gave no answer.');
+      return { text, ...(nano > 0 ? { nanoAiu: nano } : {}) };
+    } finally {
+      clearTimeout(timer);
+      unsubscribe();
+      if (session) {
+        const id = session.sessionId;
+        if (timedOut) await session.abort().catch(() => undefined);
+        await session.disconnect().catch(() => undefined);
+        await client.deleteSession(id).catch(() => undefined); // nothing kept (a session with no turn may not be on disk yet)
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * Spec 054 FR-002: remote control from github.com and GitHub Mobile (`rpc.remote.enable({ mode: 'on' })` / `disable()`, @experimental).
+   * Feature-detected: an SDK without `rpc.remote` answers `ok: false`. Never called by Durbar on its own; `remoteSession` and the client's
+   * `enableRemoteSessions` are never set (spec 054 Q1). Only an allowed github.com URL leaves the adapter; nothing is logged.
+   */
+  async setRemote(sessionId: string, on: boolean): Promise<RemoteState> {
+    const live = this.sessions.get(sessionId);
+    if (!live) return { ok: false, error: 'This session is not running.' };
+    const rpc = (live.session as unknown as { rpc?: Record<string, unknown> }).rpc;
+    const remote = rpc?.remote as { enable?: (p: { mode: 'on' }) => Promise<unknown>; disable?: () => Promise<unknown> } | undefined;
+    const fn = on ? remote?.enable : remote?.disable;
+    if (!remote || typeof fn !== 'function') return { ok: false, error: 'This Copilot version cannot be controlled from GitHub.' };
+    try {
+      if (!on) {
+        await remote.disable!();
+        return { ok: true, on: false };
+      }
+      const r = ((await remote.enable!({ mode: 'on' })) ?? {}) as { url?: unknown; remoteSteerable?: unknown };
+      const out: RemoteState = { ok: true, on: true, steerable: r.remoteSteerable === true };
+      if (allowedRemoteUrl(r.url)) out.url = r.url;
+      const vis = rpc?.visibility as { get?: () => Promise<unknown> } | undefined;
+      if (vis && typeof vis.get === 'function') {
+        try {
+          const v = ((await vis.get()) ?? {}) as { synced?: unknown; status?: unknown; shareUrl?: unknown };
+          if (isRemoteVisibility(v.status)) out.visibility = v.status;
+          if (!out.url && allowedRemoteUrl(v.shareUrl)) out.url = v.shareUrl;
+        } catch {
+          // the visibility stays unknown; remote control itself is on
+        }
+      }
+      return out;
+    } catch (err) {
+      return { ok: false, error: cleanRemoteError(err) };
+    }
   }
 
   /** True while a turn or a background continuation runs. When the runtime cannot say, assume it does (the safe side: nothing is compacted mid-turn). */
