@@ -118,8 +118,8 @@ Codex also ships its own `bwrap` inside its npm package (`…/@openai/codex-linu
 ## Install
 
 **Requirements**
-- At least one agent app: GitHub Copilot (a free plan works), Claude Code, or OpenAI Codex. **Settings > Agent apps** can install it through a package manager (winget, Homebrew, npm), with the command shown first, and sign you in with the vendor's own page and a one-time code. Or install and sign in yourself, for example with `copilot login`.
-  - Not tried yet: installs through winget or Homebrew, and the flows on macOS and Windows.
+- At least one agent app: GitHub Copilot (a free plan works), Claude Code, or OpenAI Codex. **Settings > Agent apps** can install it, least administrator rights first: the vendor's **official installer** (into your home folder, no admin; downloaded only from the vendor's own address), then npm, then winget or Homebrew (which may ask for admin), with the command shown first, and sign you in with the vendor's own page and a one-time code. Or install and sign in yourself, for example with `copilot login`.
+  - Not tried yet: installs through winget or Homebrew, the official installers on a real machine, and the flows on macOS and Windows (a manual CI check on clean macOS, Windows and Linux machines, with and without admin rights, is spec 060 T060).
 - Durbar never sees, stores or sends your tokens: each harness reads its own sign-in. Durbar has no accounts, no servers and no telemetry.
 - Usage bills against **your** plans. Several agents in parallel can use credits quickly; see [Costs and caps](#costs-and-caps).
 - Optional: VS Code, VS Code Insiders or VSCodium, for *Open in VS Code*.

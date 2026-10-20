@@ -22,7 +22,7 @@
   const FOR = { codex: 'for ChatGPT', claude: 'for Claude', copilot: 'for GitHub' };
   const ACCOUNT = { codex: 'your ChatGPT account', claude: 'your Claude account', copilot: 'your GitHub account' };
   /* FR-045: a plain label for each package manager in the install dialog; the command stays visible below it */
-  const MANAGER = { brew: 'Homebrew', npm: 'npm', winget: 'winget (Windows Package Manager)' };
+  const MANAGER = { official: 'Official installer', brew: 'Homebrew', npm: 'npm', winget: 'winget (Windows Package Manager)' }; /* spec 060 FR-001 */
   /* spec 052 FR-073: two plain hints for Copilot (the second only on Windows when PowerShell 7 is missing; text only, nothing is installed) */
   const COPILOT_VSCODE_NOTE = 'Signed in to Copilot in VS Code? That sign-in is separate: this signs in the Copilot CLI once, with the same GitHub account.';
   const PWSH_HINT = 'Copilot runs shell commands with PowerShell 7. Install it with winget: winget install --id Microsoft.PowerShell -e';

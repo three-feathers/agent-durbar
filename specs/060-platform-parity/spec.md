@@ -73,3 +73,22 @@
 - **FR-002** `[IMPLEMENTED]`. Under the simulator, main answers `harness:plans` with the real `installPlans()` for this OS and a per-OS set of found managers (`SIM_FOUND`: Windows winget; macOS and Linux none, a typical new machine), or `DURBAR_SIM_MANAGERS` for a driver that needs the command dialog; `sim.ts` asks main and keeps its made-up list only for a plain browser. So the Windows screenshot offers winget, never Homebrew, and a new Mac or Linux desktop shows the vendor page until FR-001 adds the official installers. test: `test-harnesssetup` (per-OS sets, no Homebrew on Windows or Linux, the assumed set does not look at the machine, the override parser). sim: `shots-051-setup` with `DURBAR_SIM_MANAGERS=winget,brew,npm` asserts the first route per OS and that no other OS's manager is offered.
 - **FR-006 (docs)** `[IMPLEMENTED]`: README Linux: FUSE 2 (`libfuse2t64` / `libfuse2`, `--appimage-extract-and-run`) and the keyring note (A9). The Copilot line says PowerShell 6 or later (GitHub's docs), not 7.
 
+### 2026-10-20: T020 design (FR-001, official installers, least privilege first)
+
+- **Routes, in order** (Q1: least admin first; a deprecated route is always last):
+
+  | Agent app | Windows | macOS | Linux |
+  |---|---|---|---|
+  | Claude Code | official `install.ps1` → winget → npm (deprecated) | official `install.sh` → Homebrew → npm (deprecated) | official `install.sh` → Homebrew → npm (deprecated) |
+  | Copilot CLI | npm (user folder, no admin) → winget | official script → npm → Homebrew | official script → npm → Homebrew |
+  | Codex | official `install.ps1` → npm | official `install.sh` → npm → Homebrew | official `install.sh` → npm |
+
+  Each route says what it needs: official is "installs into your home folder, no administrator rights"; npm on macOS and Linux is "no administrator rights" only when the found `npm` is inside the home folder (nvm, fnm, volta), otherwise "may need administrator rights (system Node)"; winget and Homebrew are "may ask for administrator rights".
+- **The official route** is offered whenever its interpreter exists (`bash` on macOS and Linux; Windows PowerShell 5.1, `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`, which every Windows 10/11 has). The confirmation names the URL, the interpreter and "no administrator rights".
+- **Download** (main process, only after the user confirms): HTTPS GET of the documented URL; at most 3 redirects, each to an allowed host for that vendor (Claude `claude.ai`, `downloads.claude.ai`; Copilot `gh.io`, `raw.githubusercontent.com` with a path under `/github/copilot-cli/`; Codex `chatgpt.com`, `releases.openai.com`), else refused; at most 1 MB; 30 s limit; written to a new private temp folder (`0700`, file `0600`). The script then runs as `bash <file>` or `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <file>` through the existing runner (argv, no shell, the same 15-minute limit, progress and cancel), and the folder is deleted when it ends. Durbar never adds `sudo`, and refuses the official route when it runs as root (uid 0). What the script downloads is checked by the script itself (SHA-256, research.md).
+- `[KNOWN GAP]` until T060: the routes run on real machines only through the CI install workflow (with and without admin, Q5).
+
+### 2026-10-20: T020 built (official installers, least privilege first)
+
+- **FR-001** `[IMPLEMENTED]` as designed above: route `official` (shared `ROUTES`, `SCRIPTS`), interpreter as a found manager (`bash`; Windows PowerShell from `%SystemRoot%` only), `src/main/officialinstall.ts` (allow-list per hop, 3 redirects, 1 MB, 30 s, private folder), `HarnessSetup.withScript` (download after the main-side confirmation, appended as the last argument, folder deleted when the run ends or fails to start), refused as root, the native confirmation names the URL, the hosts and "no administrator rights". npm on macOS/Linux says "may need administrator rights" when the found `npm` is outside the home folder. test: `test-officialinstall` (allow-list incl. look-alike hosts and the Copilot path prefix, redirect refusal before any fetch from a foreign host, redirect limit, HTTP errors, empty and oversized bodies, 0700/0600, bash argv, cleanup, root refusal, Windows PowerShell from the system folder only), `test-harnesssetup` (route order per OS with and without the interpreter, admin notes, scripts also update). sim: screenshots `060-install-official-*`. `[KNOWN GAP]` not run on a real machine yet: T060.
+
