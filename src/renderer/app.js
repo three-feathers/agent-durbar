@@ -312,7 +312,7 @@ const AIU_USD=0.01; /* 1 Copilot AI credit = USD 0.01 (GitHub's price; Settings 
 /* spec 052 FR-080: a request in plain words for Simple, from the event's kind and summary ("write src/tools/companies.ts", "run npm test"):
    {what,folder,cmd}, or null for a kind that keeps its summary. The event data is unchanged; callers set the words with textContent. */
 const baseOf=p=>{const parts=String(p||'').split(/[\\/]/).filter(Boolean);return {base:parts.pop()||'',dir:parts.pop()||''};};
-const clipName=s=>s.length>40?s.slice(0,39)+'…':s;
+const clipName=s=>DurbarCutText.cutText(s,40); /* shared helper (cuttext.js): a file name, at most 40 characters */
 function plainAsk(kind,summary){
   const s=String(summary||'').trim(), k=String(kind||'');
   if(k==='write'||k==='read'){
@@ -2263,7 +2263,7 @@ function setState(a,state,label,task){
   if(ch)scheduleRender();
 }
 const plainMd=t=>String(t==null?'':t).replace(/```[\s\S]*?```/g,' code ').replace(/!?\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/^[#>\-*\s]+/gm,'').replace(/[*_`~]/g,'').replace(/\s+/g,' ').trim();
-const SHORT=(v,n)=>{v=String(v==null?'':v).replace(/\s+/g,' ');return v.length>n?v.slice(0,n-1)+'…':v;};
+const SHORT=(v,n)=>DurbarCutText.cutText(v,n);
 const toolArg=args=>!args||typeof args!=='object'?'':String(args.path||args.pattern||args.command||args.url||args.query||args.file_path||Object.values(args).find(x=>typeof x==='string')||'');
 function toolLabel(args){return toolArg(args).replace(/\s+/g,' ').slice(0,400);}
 /* spec 052 FR-063: the whole argument as written (line breaks kept), for the open chip; at most 20000 characters */
@@ -2502,7 +2502,7 @@ function settleLimit(a,action){
 /* spec 052 FR-057: in Simple, a folder grant says what it lets the agent do: "Let Ada change files in “tools” until the session ends".
    Only for a "write in <folder>/" scope (the last path segment); any other scope keeps its label. The inbox and the answer bar copy the card's button. */
 const simpleScopeLabel=(a,label)=>{const m=/^write in (.+?)\/*$/.exec(String(label||''));if(!m)return '';const seg=m[1].split(/[\\/]/).filter(Boolean).pop();if(!seg)return '';
-  return 'Let '+a.name+' change files in “'+(seg.length>28?seg.slice(0,27)+'…':seg)+'” until the session ends';};
+  return 'Let '+a.name+' change files in “'+DurbarCutText.cutText(seg,28)+'” until the session ends';};
 const relabelScopes=()=>{document.querySelectorAll('[data-lbl-simple]').forEach(b=>{b.textContent=SIMPLE?b.dataset.lblSimple:b.dataset.lblExpert;});document.querySelectorAll('.note.perm .pfold').forEach(f=>{f.hidden=!SIMPLE;});};
 /* spec 052 FR-063: "Show the change", collapsed: the request's diff as + / - lines in monospace (text only, escaped by textContent) */
 function diffBlock(diff){
@@ -2537,7 +2537,7 @@ function showPerm(a,p){
     const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);};
     const answer=(approve,remember,broad)=>{bridge.resolvePermission(a.id,p.requestId,approve,remember,!!broad);settlePerm(a,{requestId:p.requestId,state:approve?'approved':'denied',via:'user',remembered:approve&&remember,scopeLabel:broad?p.broadScopeLabel:p.scopeLabel,summary:p.summary});};
     mk('Allow once','primary','Allow this one request',()=>answer(true,false)); /* spec 052 FR-037/FR-051: the same plain words in Simple and Expert */
-    if(p.scopeKey){const ex='Allow “'+(()=>{const t=String(p.scopeLabel||p.kind||'this');return t.length>32?t.slice(0,31)+'…':t;})()+'” for this session',sl=simpleScopeLabel(a,p.scopeLabel);
+    if(p.scopeKey){const ex='Allow “'+DurbarCutText.cutText(p.scopeLabel||p.kind||'this',32)+'” for this session',sl=simpleScopeLabel(a,p.scopeLabel);
       mk(SIMPLE&&sl?sl:ex,'session','Allow "'+(p.scopeLabel||p.kind)+'" until you end this session'+(p.kind==='shell'?' (this exact command only)':'')+'. Shown as a chip you can revoke.',()=>answer(true,true));const sb=row.lastElementChild;sb.dataset.act='session';if(sl){sb.dataset.lblSimple=sl;sb.dataset.lblExpert=ex;}}
     if(p.broadScopeKey){mk('Allow for this session: any arguments','session','Allow every simple "'+(p.broadScopeLabel||p.kind)+'" command (no pipes, redirects or substitutions) until you end this session. Wider than the exact command above; shown as a chip you can revoke.',()=>answer(true,true,true));row.lastElementChild.dataset.broad='1';}
     mk('Deny','danger','Deny this request',()=>answer(false,false));
@@ -3558,7 +3558,7 @@ function schedLine(s){
 const schedBtns=(s,k)=>(s.done?'':s.paused&&s.pausedReason==='session-ended'?`<button class="btn" type="button" data-${k}="retarget" data-id="${esc(s.id)}" title="Send it to this folder's agent from now on, and resume it">Use the folder's agent</button>`
   :`<button class="btn" type="button" data-${k}="pause" data-id="${esc(s.id)}"${s.pausedReason==='cap'?' title="Resume starts counting its spending again from zero"':''}>${s.paused?'Resume':'Pause'}</button>`)
   +`<button class="btn danger" type="button" data-${k}="del" data-id="${esc(s.id)}">Delete</button>`;
-const schedRow=(s,k)=>`<div class="sc-row${s.paused||s.done?' off':''}"><div class="sc-t"><b title="${esc(s.prompt)}">${esc(s.prompt.length>90?s.prompt.slice(0,89)+'…':s.prompt)}</b><small>${esc(schedLine(s))}</small></div>${schedBtns(s,k)}</div>`;
+const schedRow=(s,k)=>`<div class="sc-row${s.paused||s.done?' off':''}"><div class="sc-t"><b title="${esc(s.prompt)}">${esc(DurbarCutText.cutText(s.prompt,90))}</b><small>${esc(schedLine(s))}</small></div>${schedBtns(s,k)}</div>`;
 /* pause/resume/retarget/delete from a row (dialog or Settings) */
 async function schedAct(act,s){
   if(act==='del')await bridge.removeSchedule(s.id);
@@ -3608,8 +3608,8 @@ function openSchedules(r,from){
     <label class="chk"><input type="radio" name="scKind" value="daily"> <select id="scCal" aria-label="Which days"><option value="daily">Every day</option><option value="weekdays">Weekdays (Mon–Fri)</option><option value="weekly">Weekly on</option></select> at <input type="time" id="scDaily" value="08:30" aria-label="Time of day"></label>
     <label class="chk"><input type="radio" name="scKind" value="once"> Once at <input type="datetime-local" id="scAt" value="${local}" aria-label="Date and time"></label></div>
     <div class="sc-days" id="scDays" role="group" aria-label="Days of the week" hidden>${[1,2,3,4,5,6,0].map(n=>`<label class="chk"><input type="checkbox" value="${n}"${n===today?' checked':''}> ${DAY3[n]}</label>`).join('')}</div>
-    <div class="sc-opts">${ag?`<label>Send to <select id="scTarget"><option value="">This folder's agent</option><option value="${esc(ag.id)}">This session (${esc(ag.title||ag.name)})</option></select></label>`:''}
-     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}>Limit <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div></div>
+    <div class="sc-opts">${ag?`<label class="sc-to"><span class="sc-lbl">Send to</span> <select id="scTarget" aria-describedby="scToHint"><option value="">This folder's agent</option><option value="${esc(ag.id)}">This session</option></select></label>`:''}
+     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}><span class="sc-lbl">Limit</span> <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div>${ag?`<p class="sc-hint" id="scToHint" title="${esc(ag.title||ag.name)}" hidden>${esc(ag.title||ag.name)}</p>`:''}</div>
    <div class="dbtn"><button class="btn" id="scClose" type="button">Close</button><button class="btn primary" id="scAdd" type="button">Add schedule</button></div></div>`;
   document.body.appendChild(d);
   renderSchedDlg();
@@ -3646,7 +3646,7 @@ function openSchedules(r,from){
   $('scCal').addEventListener('change',()=>{calKind();showDays();});
   $('scDaily').addEventListener('input',calKind);
   $('scDays').addEventListener('change',calKind);
-  if($('scTarget'))$('scTarget').addEventListener('change',()=>{const t=$('scTarget').value?ag:folderAg,u=schedCapUnit(t);$('scCapL').hidden=!u;$('scCapU').textContent=unitWord(u);});
+  if($('scTarget'))$('scTarget').addEventListener('change',()=>{$('scToHint').hidden=!$('scTarget').value;const t=$('scTarget').value?ag:folderAg,u=schedCapUnit(t);$('scCapL').hidden=!u;$('scCapU').textContent=unitWord(u);});
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeSchedDlg();}});
   /* spec 044 FR-006: a template fills the form (prompt and when); nothing is saved until Add schedule */
   const tpl=$('scTpl');if(tpl)tpl.addEventListener('change',()=>{
