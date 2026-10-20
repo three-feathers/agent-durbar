@@ -176,7 +176,8 @@ module.exports = async (ctx) => {
     await ctx.sleep(200);
     assert.strictEqual(await js(`document.querySelectorAll('#modeMenu [role="menuitemradio"]').length`), 3, `${w}: the mode menu lists 3 modes`);
     await key('Escape');
-    assert.ok(await ctx.waitFor(`(()=>{const e=document.getElementById('prev');return !!e&&!e.hidden&&/[1-9]\\d* Copilot/.test(e.innerText)})()`, 3000), `${w}: Copilot keeps its history (earlier Copilot sessions listed)`);
+    // spec 052 FR-095 (round 10): the history sits behind "Previous (N)" in the chat header; its title counts the Copilot sessions
+    assert.ok(await ctx.waitFor(`(()=>{const e=document.getElementById('prevBtn');return !!e&&!e.hidden&&/[1-9]\\d* Copilot/.test(e.title)})()`, 3000), `${w}: Copilot keeps its history (earlier Copilot sessions listed)`);
     await js(`document.getElementById('newSessBtn').click()`);
     await ctx.sleep(300);
     assert.strictEqual(await js(`!!document.getElementById('sdKind')`), false, 'one adapter: no kind select in the dialog');

@@ -3474,7 +3474,13 @@ function toggleFolders(on){
   const pop=$('foldersPop'),btn=$('foldersBtn');
   const show=on===undefined?pop.hidden:on;
   pop.hidden=!show; btn.setAttribute('aria-expanded',String(show));
-  if(show)renderFolders();
+  if(show){
+    renderFolders();
+    const r=btn.getBoundingClientRect();
+    pop.style.top=Math.round(r.bottom+6)+'px';
+    pop.style.right='auto';
+    pop.style.left=Math.round(Math.max(14,Math.min(r.left,innerWidth-pop.offsetWidth-14)))+'px';
+  }
 }
 /* ---------------- scheduled prompts (spec 044): per folder, while the app is open ---------------- */
 let SCHED={pausedAll:false,schedules:[]};

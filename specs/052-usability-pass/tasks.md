@@ -181,4 +181,5 @@
 - [x] T108 Top bar on one 48px row: + New menu (Add folder…, Add VS Code workspace…, ids kept), Defaults chip with a popover holding the selects (ids kept), folder filter joined with Manage folders, counters as dot and number below 1800px, Needs you icon and number below 1600px; themes recolour only; texts and palette; `docs/design-rules.md`, README, CHANGELOG [FR-105]
 - [x] T109 Room, place and helper connector lines 1px in Clean Office and every theme (Retro's ring follows) [FR-106]
 - [x] T110 Drivers: `shots-017.js` opens the Defaults popover; `check-office-overlap.js` checks the one-row top bar; the others grepped [FR-107]
+- [x] T111 Full simulator run before merge: geometry, office, every driver that touches the top bar, screenshot tour by eye; Manage folders popover anchored to its button; `shots-017` history check follows round 10's Previous button [FR-107]
 
