@@ -66,7 +66,7 @@ assert.match(index, /Free · open source · early alpha/, 'hero eyebrow');
 assert.match(index, />Download alpha</, 'download button');
 assert.match(index, /class="btn secondary" href="https:\/\/github\.com\/three-feathers\/agent-durbar">View on GitHub</, 'GitHub button'); assert.match(index, /href="docs\.html"/, 'docs link');
 assert.match(index, /property="og:image" content="https:\/\/three-feathers\.github\.io\/agent-durbar\/screenshots\//, 'og:image is absolute'); assert.match(index, /Simulator demo data/, 'the hero says the data is invented');
-assert.match(index, /Alpha · unsigned · run by hand on Linux only/, 'status line in the hero');
+assert.match(index, /Alpha · unsigned · used by hand on Linux and on real Macs/, 'status line in the hero');
 assert.ok(index.indexOf('id="status"') < index.indexOf('id="features"'), 'the status line comes before the features');
 assert.match(index, /src="screenshots\/052-office-1440x900\.png"/, 'current hero screenshot');
 for (const t of landing.themes) assert.ok(index.includes(`screenshots/${t.screenshot}`) && index.includes(`>${t.name.replace(/&/g, '&amp;')}</figcaption>`), `theme ${t.name}`);
