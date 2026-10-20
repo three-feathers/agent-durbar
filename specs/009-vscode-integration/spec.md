@@ -79,7 +79,9 @@ In **Previous sessions**, "VS Code chat history" lists chats VS Code saved for t
 
 ### 2026-10-20: FR-018's open point is specified in spec 056 (planned, not built)
 
-Cross-reference only; nothing here changes yet. The owner chose option A for "resume it in Durbar" (issue #344): [spec 056](../056-continue-vscode-chat/spec.md) adds **Continue in Durbar…** to this view, which starts a **new** Durbar session in the same folder whose first message is a reviewed, redacted copy of the chat. This view stays read-only and nothing is written to VS Code storage. When 056 is built it changes the banner wording of US2 ("It cannot be continued here.") and reads the edge case "Content is never logged, uploaded or executed" as: the file is never uploaded; only text the user reviewed and confirmed is sent as their own message (056 FR-013a, open question Q9).
+Cross-reference only; nothing here changes yet. The owner chose option A for "resume it in Durbar" (issue #344): [spec 056](../056-continue-vscode-chat/spec.md) adds **Continue in Durbar…** to this view, which starts a **new** Durbar session in the same folder whose first message is a reviewed, redacted copy of the chat. This view stays read-only and nothing is written to VS Code storage. When 056 is built it changes the banner wording of US2 ("It cannot be continued here.") and reads the edge case "Content is never logged, uploaded or executed" as: the file is never uploaded; only text the user reviewed and confirmed is sent as their own message (056 FR-013a).
+
+*Owner decision (Paco, 2026-10-20, 056 Q9):* this reading is accepted. Sending a copy that the user reviewed, edited and confirmed with Start is the user's own message, not an upload of the VS Code chat file; the file itself is still never uploaded, logged or executed. No constitution change.
 
 ### 2026-10-19: VS Code chat view opens at the latest message; two new kinds; Continue in VS Code (issue #253, task T026)
 

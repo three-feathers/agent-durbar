@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [x] No [NEEDS CLARIFICATION] markers remain (open product choices are listed as Q1-Q8 with a recommended option; the spec is written for the recommended ones)
+- [x] No [NEEDS CLARIFICATION] markers remain (the owner answered Q1-Q9 on 2026-10-20; recorded under *Clarifications*)
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
