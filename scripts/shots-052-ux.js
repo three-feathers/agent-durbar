@@ -179,6 +179,9 @@ module.exports = async (ctx) => {
     assert.ok(simpleChat.hidden && simpleChat.answer && simpleChat.mode, 'Simple chat: developer chips gone, mode and answering kept: ' + JSON.stringify(simpleChat));
     // round 7 FR-081: the memory chip stays in Simple, in plain words
     assert.match(await js(`(document.getElementById('ctxChip')||{}).textContent||''`), /Memory \d+% full/, 'Simple: the context chip reads Memory N% full');
+    // round 9 FR-093: in Simple it shows only from 70% full
+    { const m = await js(`(()=>{const e=document.getElementById('ctxChip');if(!e)return null;const p=/Memory (\\d+)% full/.exec(e.textContent);return {pct:p?+p[1]:-1,vis:e.getClientRects().length>0};})()`);
+      assert.ok(!m || m.vis === (m.pct >= 70), 'Simple: the memory chip shows only from 70% full: ' + JSON.stringify(m)); }
     // FR-080/FR-081 (round 7): the request in plain words, the folder in small text, "See what changes"; memory chip, no tokens, no remote item
     const plainChat = await js(`(()=>{const cs=[...document.querySelectorAll('#chat .note.perm:not(.limit):not(.question)')],c=cs.find(x=>!x.classList.contains('settled'))||cs[cs.length-1],v=e=>!!e&&e.getClientRects().length>0,cc=document.getElementById('ctxChip'),cb=document.getElementById('compactBtn'),ph=document.querySelector('#panel .ph');
       return {sum:c?c.querySelector('.psum').textContent:'',fold:c&&v(c.querySelector('.pfold'))?c.querySelector('.pfold').textContent:'',diff:c&&c.querySelector('.pdiff>summary')?c.querySelector('.pdiff>summary').textContent:'',

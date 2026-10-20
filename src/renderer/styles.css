@@ -53,7 +53,7 @@ button{font:inherit;color:inherit}
 .stat.attn{background:var(--warn-bg);border-color:#e5be78}
 .stat.attn span.l{color:var(--amber-ink);font-weight:600}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--gray);flex:none;display:inline-block}
-.dot.working{background:var(--c-working)} .dot.thinking{background:var(--c-thinking)} .dot.waiting{background:var(--c-waiting)}
+.dot.working{background:var(--c-working)} .dot.thinking{background:var(--c-thinking)} .dot.waiting{background:var(--c-waiting)} .dot.failing{background:var(--c-waiting)} /* spec 052 FR-092: Failing reuses the waiting colour */
 .dot.idle{background:transparent;border:2px solid var(--c-idle);box-shadow:0 0 0 1px var(--pc-idle)} .dot.error{background:var(--c-error)} .dot.done{background:var(--c-done)}
 /* spec 052 FR-006: a shape as well as a colour (deuteranopia): waiting is a diamond, error a triangle, idle a ring, working and done circles */
 .dot.waiting{border-radius:1.5px;transform:rotate(45deg) scale(.86);box-shadow:0 0 0 1px var(--amber-ink)} /* spec 052 FR-052: a darker edge so it shows on light surfaces (size unchanged) */
@@ -236,8 +236,8 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 /* ---------- list view ---------- */
 #list{flex:1;min-width:0;overflow:auto;padding:16px 24px 20px;display:none}
 .list-wrap{background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
-/* spec 052 FR-064: 34px rows; Agent, Agent app, Role, Folder, Current task, Last activity, Cost, Status */
-.lrow{display:grid;grid-template-columns:minmax(120px,1fr) 92px minmax(90px,.7fr) minmax(100px,.75fr) minmax(160px,2.4fr) 78px 88px 120px;gap:12px;align-items:center;width:100%;padding:0 16px;height:34px;border:0;border-bottom:1px solid #eee8dd;background:transparent;text-align:left;cursor:pointer;font-size:13px}
+/* spec 052 FR-064: 34px rows; Agent, Agent app, Role, Folder, Current task, Last activity, Cost, Status ; FR-092: the Agent app column grows ("Basic agent (simulated)" fits) */
+.lrow{display:grid;grid-template-columns:minmax(120px,1fr) minmax(100px,1.05fr) minmax(90px,.7fr) minmax(100px,.75fr) minmax(160px,2.4fr) 78px 88px 120px;gap:12px;align-items:center;width:100%;padding:0 16px;height:34px;border:0;border-bottom:1px solid #eee8dd;background:transparent;text-align:left;cursor:pointer;font-size:13px}
 .lrow:last-child{border-bottom:0}
 button.lrow:hover{background:var(--surface-2)}
 button.lrow[aria-pressed="true"]{background:#eaf1f7;box-shadow:inset 3px 0 0 var(--focus)} /* spec 052 FR-052: not colour only */
@@ -768,7 +768,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .intent-line{font-size:12px;color:var(--muted);padding-left:2px}
 .intent-line::before{content:"\25B8";margin-right:6px;color:var(--c-thinking)}
 .nothink{font-size:12px;color:var(--muted);background:#f6f3ec;border:1px dashed var(--line-2);border-radius:10px;padding:6px 10px;align-self:flex-start}
-.think-body{font-style:normal;white-space:normal;max-height:260px;margin-left:18px;padding-left:12px;border-left:2px solid var(--line-2);max-width:70ch;font-size:13px;color:var(--muted)} /* spec 052 FR-077: no italic; a left rule, the muted colour, a 70ch measure */
+.think-body{font-style:normal;white-space:normal;max-height:none;overflow-y:visible;margin-left:18px;padding-left:12px;border-left:2px solid var(--line-2);font-size:13px;color:var(--muted)} /* spec 052 FR-077: no italic; a left rule, the muted colour. FR-092: full width and no inner scroll box (it hid the last section and trapped Copy) */
+.think-body p,.think-body li,.think-body h1,.think-body h2,.think-body h3,.think-body h4{max-width:70ch} /* FR-092: the 70ch measure is on the text, not the box */
 .think-prev{margin-left:6px;font-weight:400;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1 1 auto;font-size:12px}
 .think-toggle[aria-expanded="true"] .think-prev,.think.streaming .think-prev{display:none}
 .think-body.md{color:var(--muted)}
@@ -901,6 +902,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .mode-menu .mm-danger b{color:var(--red-ink)}
 .mode-menu .mt{display:flex;flex-direction:column;flex:1;min-width:0}.mode-menu b{font-size:13px}.mode-menu small{font-size:11.5px;color:var(--ink-2);line-height:1.45} /* spec 052 FR-077 */
 .mode-menu .ck{color:var(--sage-ink);font-weight:700;width:14px;flex:none}
+.mode-menu{width:min(360px,calc(100vw - 16px))} /* spec 052 FR-093: room for the accurate one-line mode descriptions */
 .mode-menu .mm-sep{height:1px;margin:4px 6px;background:var(--line)}
 .mode-menu [aria-disabled="true"]{opacity:1;color:var(--muted);border-style:dashed;cursor:not-allowed}
 .mm-note{margin:4px 10px 4px;font-size:11.5px;color:var(--muted)}
@@ -1039,6 +1041,11 @@ html:not([data-ui]) .seg button{border-radius:6px}
 .inbox-row .ib-t{margin:4px 0 8px;font-size:13px;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
 .inbox-row .ib-act{display:flex;flex-wrap:wrap;gap:6px}
 .inbox-row .ib-ans{display:flex;flex-wrap:nowrap;gap:6px}.inbox-row .ib-ans:empty{display:none} /* spec 052 FR-076: Allow, session, Deny never wrap apart; only Open chat moves to the next line */
+/* spec 052 FR-092: a long "Allow “…” for this session" shrinks with an ellipsis (full text in its title) so Deny never leaves the row */
+.inbox-row .ib-main{min-width:0}
+.inbox-row .ib-ans{min-width:0;max-width:100%;flex:0 1 auto}
+.inbox-row .ib-ans>.btn{flex:none}
+.inbox-row .ib-ans>.btn.session{flex:0 1 auto;min-width:0;display:block;line-height:calc(var(--h-ctl) - 2px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .inbox-empty{color:var(--muted);font-size:13px;max-width:60ch}
 
 /* spec 052 FR-031 (#306): Simple hides the developer details; status, permissions and answering are the same */
@@ -1172,7 +1179,7 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
 @keyframes dlgov{from{opacity:0}}
 /* FR-049: room for a copy button at the bottom of the Thinking box */
 .think-body.md{padding-bottom:26px}
-.think-body.md>.cp-msg{bottom:4px} /* inside its own box: the box scrolls, so -11px was cut off */
+.think-body.md>.cp-msg{bottom:4px} /* FR-092: the box no longer scrolls, so Copy stays at its bottom edge, outside any scroll area */
 /* FR-050: typed toasts */
 .toast.ok{border-left:4px solid var(--c-done)}
 .toast.err{border-left:4px solid var(--c-error)}
@@ -1244,10 +1251,11 @@ html[data-serious] .subblk.running .sub-st::before{animation:none!important}
 /* spec 052 FR-080..FR-082 (round 7, plain words): Simple shows the memory chip and Tidy up memory, the cost line (money only), the
    request's folder and its collapsed command; it hides Control from GitHub unless remote control is on (the chip shows then) */
 body.simple .ctxgrp>#ctxChip,body.simple .ctxgrp>#compactBtn{display:inline-flex!important}
+body.simple .ctxgrp>#ctxChip.mem-low{display:none!important} /* spec 052 FR-093: in Simple the memory chip shows from 70% full */
 body.simple p.pusage:not(:empty){display:block!important}
 body.simple #remoteBtn:not(.on){display:none!important}
 .note.perm .pfold{display:none;font-size:11.5px;color:var(--muted)}
-body.simple .note.perm .pfold{display:inline}
+body.simple .note.perm .pfold:not([hidden]){display:inline} /* FR-092: only next to the plain words */
 details.pcmd{display:none;margin:6px 0 0}
 body.simple details.pcmd{display:block}
 details.pcmd>summary{cursor:pointer;font-size:12px;color:var(--ink-2)}

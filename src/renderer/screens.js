@@ -164,13 +164,13 @@
     const detailSec=X.detail?`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Detail level</h3>
         <p class="scr-note"><b>Simple</b> shows what agents do in plain words and what they cost; <b>Expert</b> adds tokens, models, context, paths and developer tools. Permissions and answering are the same in both.</p>
         <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div></section>`:'';
-    /* spec 052 FR-066: what Durbar does not do, in plain words (checked against the README's Safety model and Costs and caps) */
+    /* spec 052 FR-066, FR-093: what Durbar does not do, in calm plain words (checked against the README's Safety model and Costs and caps) */
     const notSec=`<section class="scr-sec" aria-labelledby="notH"><h3 id="notH">What Durbar does not do</h3><ul class="scr-not">
-        <li>It does not sandbox Claude Code or Copilot; only Codex has OS-level enforcement (in Read-only and Ask first).</li>
+        <li>Durbar asks Claude Code and Copilot to stay in their folders but cannot force them; only Codex is held there by the system (in Read-only and Ask first).</li>
         <li>It does not stop a reply halfway: spending limits are checked between replies.</li>
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
-        <li>Floors that are off and hidden folders keep running and spending.</li></ul></section>`;
+        <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
     r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${detailSec}${notSec}${themeSec}${capSec}${moodSec}${notifySec}${schedSec}${floorsSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
@@ -253,6 +253,9 @@
     if(X.bridge.listAdapters){try{kinds=((await X.bridge.listAdapters())||[]).filter((k)=>k&&k.state==='ready'&&k.capabilities&&k.capabilities.oneShot);}catch(e){kinds=[];}}
     if(!kinds.length){await dialog({title:'Make a theme with AI',html:'<p class="dsub">This needs Claude Code, OpenAI Codex or GitHub Copilot, installed and signed in on this computer.</p>',buttons:[{label:'Close',value:'ok',cls:'primary'}]});return;}
     let desc='',kind=kinds[0].id;
+    /* spec 052 FR-093: the cost line names only the app picked in "Made by", and follows the selection */
+    const aiCostLine=(id)=>{const k=kinds.find((x)=>x.id===id)||kinds[0], n=k.displayName||k.id;
+      return 'Uses your own '+n+' account: '+(k.id==='claude'?'a small cost (at most $0.25, usually about a cent).':k.id==='copilot'?'a few AI credits from your plan.':k.id==='codex'?'a small part of your ChatGPT plan\'s usage.':'a small cost on your own plan.');};
     /* spec 040 FR-021: a few example looks at random, so people see how to describe one */
     let ideas=[];
     if(X.bridge.themeIdeas){try{ideas=(await X.bridge.themeIdeas())||[];}catch(e){ideas=[];}}
@@ -264,12 +267,12 @@
         <label>Look<textarea id="aiDesc" rows="3" maxlength="300" placeholder="A calm library at night">${esc(desc)}</textarea></label>
         ${ideaHtml()}
         <label>Made by<select id="aiKind">${kinds.map((k)=>`<option value="${esc(k.id)}"${k.id===kind?' selected':''}>${esc(k.displayName||k.id)}</option>`).join('')}</select></label>
-        <p class="scr-note small">Uses your own ${esc(kinds.map((k)=>k.displayName||k.id).join(' or '))} account: a small cost (Claude: at most $0.25, usually about a cent; Copilot: AI credits from your plan).</p>`,
+        <p class="scr-note small" id="aiCost">${esc(aiCostLine(kind))}</p>`,
         buttons:[{label:'Cancel',value:null},{label:'Make the theme',value:'go',cls:'primary'}],
         validate:(d)=>{const v=d.querySelector('#aiDesc').value.trim();return v.length<3?'Describe the look in a few words.':false;},
         onOpen:(d)=>{const t=d.querySelector('#aiDesc');t.addEventListener('input',()=>{desc=t.value;});
           d.addEventListener('click',(e)=>{const b=e.target.closest&&e.target.closest('.ai-idea');if(b){t.value=b.dataset.idea;desc=t.value;t.focus();return;}
-            if(e.target.closest&&e.target.closest('#aiMore')){const box=d.querySelector('#aiIdeas');if(box)box.outerHTML=ideaHtml();}});d.querySelector('#aiKind').addEventListener('change',(e)=>{kind=e.target.value;});}});
+            if(e.target.closest&&e.target.closest('#aiMore')){const box=d.querySelector('#aiIdeas');if(box)box.outerHTML=ideaHtml();}});d.querySelector('#aiKind').addEventListener('change',(e)=>{kind=e.target.value;const c=d.querySelector('#aiCost');if(c)c.textContent=aiCostLine(kind);});}});
       if(!r||r.value!=='go')return;
       const busy=X.toast?X.toast('Making the theme… this can take up to a minute.',60000):null;
       let g=null;
@@ -688,7 +691,7 @@
     const body=act?act.html:cost?cost.html:tab==='tools'?await toolsTab(scope,tot,groups,all):agentsTab(scope,agents);
     if(!cur||cur.kind!=='tools')return;
     const actBtns=act?`<button class="btn" type="button" id="actCsv"${act.n?'':' disabled'}>Export CSV</button><button class="btn" type="button" id="actJson"${act.n?'':' disabled'}>Export JSON</button><button class="btn danger" type="button" id="actClear"${act.n?'':' disabled'}>Clear activity</button>`:'';
-    const head=act?`${tabs}<span class="grow"></span>${actBtns}`:cost?`${tabs}${cost.seg}<span class="grow"></span><button class="btn" type="button" id="costCsv"${cost.built.rows.length&&!cost.none?'':' disabled'}>Copy as CSV</button>`:`${per}${scopeSel}${tabs}<span class="grow"></span>`;
+    const head=act?`${tabs}<span class="grow"></span>${actBtns}`:cost?`${cost.seg}${tabs}<span class="grow"></span><button class="btn" type="button" id="costCsv"${cost.built.rows.length&&!cost.none?'':' disabled'}>Copy as CSV</button>`:`${per}${scopeSel}${tabs}<span class="grow"></span>`;
     r.innerHTML=`<div class="scr-head"><h2>Tools</h2>${head}<button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>
       <div class="scr-body">${body}</div>`;
     wireHead();
@@ -745,8 +748,9 @@
     if(!day)costPer='run';
     const d=X.costData?X.costData(costPer):{rows:[],office:null,period:'run'};
     const built=C.build(d.rows,d.office);
-    const label=costPer==='since'&&day?'Since '+day:'This run';
-    const seg=`<div class="seg" role="tablist" aria-label="Cost period"><button role="tab" id="costRun" aria-selected="${costPer!=='since'}" type="button" title="Since Agent Durbar opened (or the last reset)">This run</button>${day?`<button role="tab" id="costSince" aria-selected="${costPer==='since'}" type="button" title="The saved totals since the last reset in Settings, plus this run">Since ${esc(day)}</button>`:''}</div>`;
+    /* spec 052 FR-092: the same pair as Tool usage ("This session" / "All time"), placed before the tabs; the start date is a small subtitle */
+    const allTime=costPer==='since'&&!!day, label=allTime?'All time (since '+day+')':'This session';
+    const seg=`<div class="seg" role="tablist" aria-label="Period"><button role="tab" id="costRun" aria-selected="${!allTime}" type="button" title="Since Agent Durbar opened (or the last reset)">This session</button>${day?`<button role="tab" id="costSince" aria-selected="${allTime}" type="button" title="The saved totals since the last reset in Settings (${esc(day)}), plus this session">All time</button>`:''}</div>${allTime?`<small class="per-since">since ${esc(day)}</small>`:''}`;
     if(!built.rows.length)return {seg,built,label,html:'<p class="scr-empty">No folders yet.<br><small>Add a folder and start a session; the cost of each folder shows here.</small></p>'};
     /* spec 052 FR-050: no usage at all yet: a plain sentence instead of a table of dashes */
     /* spec 052 FR-075: a Copilot agent in the office: say the plan has a fixed price (the same words as the spending-limit dialog) */
@@ -757,9 +761,9 @@
     const row=r=>{
       const note=[r.tokensOnly?'Codex: tokens only':'',r.other?'saved totals of folders no longer in the list':''].filter(Boolean).join(' · ');
       return `<tr class="${r.empty?'empty':''}${r.other?' other':''}"><th scope="row" title="${esc(r.path||r.name)}">${esc(r.name)}</th>${moneyCell(r)}${n(r.aiu.toFixed(2))}${n(r.usd?C.money(r.usd):'–')}${simple?'':n(r.tokens?fmt(r.tokens):'–')}${n(String(r.calls))}<td class="cnote">${esc(note)}</td></tr>`;};
-    const head=`<thead><tr><th scope="col">Folder</th><th scope="col" class="num">Est. cost</th><th scope="col" class="num">Copilot AIU</th><th scope="col" class="num">Claude $ est.<br><small>this run</small></th>${simple?'':'<th scope="col" class="num">Tokens<br><small>this run</small></th>'}<th scope="col" class="num">Calls</th><th scope="col">Note</th></tr></thead>`;
-    const sum=`<p class="scr-sum">Cost by folder, <b>${esc(label==='This run'?'this run':label.toLowerCase())}</b>. Estimated cost: Copilot AI credits at $0.01 each, plus Claude Code's own estimate. Not a bill.</p>`;
-    const notes=`<p class="scr-note small">Copilot AIU and calls: ${costPer==='since'?'the totals saved since '+esc(day)+' (reset in Settings) plus this run':'since Agent Durbar opened (or the last reset)'}; ended sessions are included. Claude $ and tokens: the sessions open now, this run only. Codex reports tokens but no cost. A budget per folder is not available yet.</p>`;
+    const head=`<thead><tr><th scope="col">Folder</th><th scope="col" class="num">Est. cost</th><th scope="col" class="num">Copilot AIU</th><th scope="col" class="num">Claude $ est.<br><small>this session</small></th>${simple?'':'<th scope="col" class="num">Tokens<br><small>this session</small></th>'}<th scope="col" class="num">Calls</th><th scope="col">Note</th></tr></thead>`;
+    const sum=`<p class="scr-sum">Cost by folder, <b>${allTime?'all time':'this session'}</b>${allTime?` (since ${esc(day)})`:''}. Estimated cost: Copilot AI credits at $0.01 each, plus Claude Code's own estimate. Not a bill.</p>`;
+    const notes=`<p class="scr-note small">Copilot AIU and calls: ${allTime?'the totals saved since '+esc(day)+' (reset in Settings) plus this session':'since Agent Durbar opened (or the last reset)'}; ended sessions are included. Claude $ and tokens: the sessions open now, this session only. Codex reports tokens but no cost. A budget per folder is not available yet.</p>`;
     return {seg,built,label,html:sum+`<table class="ttab cost">${head}<tbody>${built.rows.map(row).join('')}</tbody><tfoot>${row(Object.assign({empty:false,other:false,path:''},built.total,{tokensOnly:false}))}</tfoot></table>`+notes+plan};
   }
   async function copyCostCsv(cost){

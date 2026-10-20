@@ -76,7 +76,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
   - your Copilot CLI list (`~/.copilot/mcp-config.json`) is used first;
   - each folder can add extras (with a trust prompt), import them from `.vscode/mcp.json`, and switch a server on or off per session.
   - when a server asks you for input (a small form, or a sign-in page), the chat shows it with **Submit / Decline / Cancel**; a page opens in your browser only after you click, and only if it is https (simulator and test harnesses only so far, not yet tried with a real server).
-- **Tools** shows what each agent used, for *This session* and *All time*, and a **Cost** tab with each folder's ≈ money, AIU, Claude estimate, tokens and calls (*This run* or *Since <date>*), with **Copy as CSV**. Clicking a room's cost opens it.
+- **Tools** shows what each agent used, for *This session* and *All time*, and a **Cost** tab with each folder's ≈ money, AIU, Claude estimate, tokens and calls (the same *This session* or *All time*, with the start date under it), with **Copy as CSV**. Clicking a room's cost opens it.
 - **Activity** (Tools > Activity) is a local log for a team lead: every answer to a permission request, every automatic approval (Allow all or a session permission), and every mode or spending-limit change, with time, agent, folder, agent app and mode. It keeps the newest 5000 rows on this computer, holds actions and decisions only (never prompts, replies or file contents), and exports to CSV or JSON. Claude Code and Codex in Allow all approve inside their own process, so their automatic approvals are not listed (Copilot's are).
 
 ![Full-screen chat with the other agents in a slim strip, 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
@@ -165,11 +165,11 @@ Rules that always apply:
 - **Durbar never stores or logs** tokens, session content or your prompts. Debug logs are redacted.
 
 What Durbar does not do (the same list is in Settings):
-- It does not sandbox Claude Code or Copilot; only Codex has OS-level enforcement (in Read-only and Ask first).
+- Durbar asks Claude Code and Copilot to stay in their folders but cannot force them; only Codex is held there by the system (in Read-only and Ask first).
 - It does not stop a reply halfway: spending limits are checked between replies.
 - It does not see your bill; costs are estimates.
 - It sends nothing to any server of its own.
-- Floors that are off and hidden folders keep running and spending.
+- Rooms you hide or switch off still run and cost money.
 
 Codex in Read-only and Ask first gets an OS-enforced permission profile limited to the session's folders, and Durbar refuses those modes when the profile cannot be enforced. Claude Code gets its permission mode, allowed read tools and a check that reads stay inside your folders. Details: [spec 003](specs/003-permissions-and-approvals/spec.md) and [spec 012](specs/012-claude-codex-adapters/spec.md). To report a security problem, see [SECURITY.md](SECURITY.md).
 
