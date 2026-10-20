@@ -54,3 +54,30 @@ specs/006-folders-workspaces-sessions-history/
 | Lazy start, resume, replace-untouched, hide/remove UI | simulator, screenshots `m6-*` | `sim:` recorded, not re-run |
 | Real Copilot resume / lazy start | none | **not verified** |
 | macOS/Windows | none | untested |
+
+## Changes 2026-10-20: Pin, Hide and Delete in Previous sessions (issue #368, FR-024..FR-032)
+
+**Data model.** `SavedFolder` (`src/main/folders.ts:16`) gets `prevPinned?: Array<{src, id}>` and `prevHidden?: Array<{src, id}>` (ids only, at most 200 each, tolerant parse like `parseOpenSessions`, `folders.ts:99`). `FolderStore` gets `markPrevious(key, src, id, mark)` (pin clears hide and the reverse; no write when nothing changes) and `dropPrevious(key, src, id)`. Same file, same version; no migration.
+
+**IPC (main, ids only).**
+
+```text
+sessions:listPrevious(agentId)       -> { ok, sessions, pinned: id[], hidden: id[] }   exclude = agent ids ∪ resumeIdFor(ids)  (FR-032)
+vschat:list(agentId)                 -> { ...as today, pinned: key[], hidden: key[] }
+sessions:mark(agentId, src, id, mark) -> { ok }       src ∈ {adapterId of the agent, 'vscode'}; mark ∈ pin|unpin|hide|unhide
+sessions:delete(agentId, sessionId)  -> { ok } | { ok:false, error, code?: 'open', agentId? }
+```
+
+`sessions:delete` body in a new `src/main/prevsessions.ts` (deps: agents, router, store, resumeIdFor, log, inFlight set), tested by `scripts/test-prevsessions.ts` with `FakeAdapter`. `sessions:resume` checks the same in-flight set.
+
+**Adapters.** `capabilities.deleteSession` + `deleteSession?()` (`src/adapters/capabilities.ts`, `types.ts`), router helper `deleteSessionOf`. Copilot: `(await this.getClient()).deleteSession(id)`, refusing `this.sessions.has(id)`. Codex: `this.probe((rpc) => rpc.request('thread/delete', { threadId: id }))`, refusing live ids and live thread ids. Claude: nothing (flag false). Fake: option `deleteSession` with a call log. Contract check C2: member ⇔ flag.
+
+**Renderer.** Pure arranging in `src/renderer/sessionsearch.js` (`arrangeSessions(list, {pinned, hidden, showHidden, query, timeKey})` → `{rows:[{item, pinned, hidden}], hiddenCount, total}`), so ordering, hiding and search are unit-tested in `scripts/test-sessionsearch.ts`. `prevListsHtml` (`app.js:3722`) renders rows with the ⋯ button; a `openPrevMenu(row)` reuses the `#modeMenu` element and keyboard of `openFolderMenu` (`app.js:2871`). `prevOf()` state gains `showHidden` (not saved). Delete uses `askDialog` (danger primary, Cancel focused). The *Previous (N)* count and `announcePrevious` use the visible count.
+
+**Activity.** `session-deleted` in `src/shared/activity.ts` and its word in `activitytable.js`; `test:activity` covers the sanitizer and word.
+
+**Simulator.** `src/renderer/sim.ts` keeps marks in memory per folder, offers `deleteSession` on the `mcp-swiss` rows (removes them from its list) and a hook that makes the next delete answer `code: 'open'`, for screenshots. One sim agent kind without delete shows the disabled item.
+
+**Constitution check.** I (adapters as plug-ins): delete behind `AgentAdapter`, renderer sees a boolean. III (safe, no secrets): ids only in the store; Durbar deletes no files; confirmation with Cancel focused; refusal for open sessions; IPC takes ids, re-checked against the folder's list; the window reads the flag from the capabilities it already gets (`capsFor`, `app.js:2947`). IV (no credits): fake adapter, simulator; no real delete in tests. V (calm UI): one ⋯ per row, fits 1280x800. VI (parity): no paths, no shell. VIII (honest limits): real deletes, concurrent use by another process and macOS/Windows are `[KNOWN GAP]` until run.
+
+**Verification plan.** `npm run typecheck && npm run build && npm test` (`test:folders`, `test:sessionsearch`, `test:prevsessions`, `test:activity`, adapter contract, Copilot/Codex adapter unit tests on fakes); `npm run check:office`; `scripts/shots-006-prevmarks.js` at 1440x900 and 1280x800.
