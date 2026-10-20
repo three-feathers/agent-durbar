@@ -122,3 +122,10 @@
 - [x] T071 Inbox answer fades in place and the rows below slide up (FLIP), Needs you count rolls in a fixed box, All clear pops in [FR-068]
 - [x] T072 Ambulance light and siren breathe slowly for about 10 s instead of strobing; Serious mode stops every looping animation [FR-069]
 - [x] T073 Theme change cross-fades through a view transition; empty office shows an empty desk; "+ Folder" rings once on first run [FR-070]
+## Round 6: activity log and Windows first run (2026-10-20)
+
+- [x] T074 Activity log: `activitystore.ts` (5000 rows, redacted 160-character action, base folder names), recorded in main from permission events (broker `auto` event for Allow all) and `setModeOp`/`setCapOp`; `activity:list/export/clear`; Tools > Activity tab; simulator rows; `test-activity` [FR-071]
+- [x] T075 Windows: search `%LOCALAPPDATA%\Microsoft\WinGet\Links`; "close and reopen Durbar" dialog when an install still is not found; PATH re-read left as a known gap; `test-detect` [FR-072]
+- [x] T076 Copilot sign-in line about VS Code; PowerShell 7 hint on the Windows Copilot card (`pwshMissing`); `test-harnesssetup` [FR-073]
+- [x] T077 "Switch this agent to Ask first" under a Read-only denial, once per agent until the mode changes [FR-074]
+- [x] T078 Copilot plan note in Tools > Cost and the spending-limit dialog (one constant), "Raise limit" for Copilot, README Windows install notes [FR-075]

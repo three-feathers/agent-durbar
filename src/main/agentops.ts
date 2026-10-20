@@ -14,7 +14,11 @@ export interface OpsDeps {
   router: Pick<AdapterRouter, 'forAgent'>;
   store?: Pick<FolderStore, 'setPermMode' | 'setMaxAiCredits'>;
   wsKey(a: AgentInfo): string;
+  /** Local activity log (spec 052 FR-071): one row per applied mode or limit change. Recorded here, in main, never by the window. */
+  log?(a: AgentInfo, decision: 'mode-change' | 'limit-change', action: string): void;
 }
+
+const MODE_WORDS: Record<PermMode, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
 
 const NO_INTERRUPT = 'This agent cannot stop a running turn. End the session instead.';
 const NO_LIVE_SETTING = 'This agent cannot change that setting while its session is running. Start a new session with it.';
@@ -33,9 +37,12 @@ export function setModeOp(d: OpsDeps, id: unknown, mode: unknown, opts: unknown)
   const r = setPermModeOf(ad, a.id, m, { clearGrants: o.clearGrants === true, approvePending: o.approvePending === true });
   // A live session that cannot switch keeps its old mode: say so and save nothing (constitution III, spec 012 FR-050). Not live: it applies at the next start.
   if (refusesLive(ad, a.id, r.applied)) return { ok: false, error: NO_LIVE_SETTING };
+  const was = a.permMode;
   a.permMode = m;
   a.permRestored = undefined; // a fresh choice, no longer "restored"
   d.store?.setPermMode(d.wsKey(a), m);
+  const extra = [o.clearGrants === true ? 'session permissions cleared' : '', o.approvePending === true && m === 'allow' ? 'waiting requests approved' : ''].filter(Boolean).join(', ');
+  d.log?.(a, 'mode-change', `${MODE_WORDS[validMode(was)]} to ${MODE_WORDS[m]}${extra ? ` (${extra})` : ''}`);
   return { ok: true, mode: m, pending: r.pending };
 }
 
@@ -53,6 +60,7 @@ export async function setCapOp(d: OpsDeps, id: unknown, credits: unknown): Promi
     if (ad.isLive(a.id) && refusesLive(ad, a.id, await setCapOf(ad, a.id, cap ?? null))) return { ok: false, error: NO_LIVE_SETTING };
     a.maxAiCredits = cap;
     if (!usd) d.store?.setMaxAiCredits(d.wsKey(a), cap); // a dollar cap is per session only (FR-150)
+    d.log?.(a, 'limit-change', cap === undefined ? 'Spending limit removed' : `Spending limit set to ${usd ? `$${cap.toFixed(2)}` : `${cap} AI credits`}`);
     return { ok: true, maxAiCredits: cap };
   } catch (err) {
     return { ok: false, error: errText(err) };

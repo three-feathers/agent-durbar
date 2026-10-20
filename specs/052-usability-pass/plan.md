@@ -35,3 +35,10 @@ The renderer only: `src/renderer/app.js`, `screens.js`, `index.html`, `styles.cs
 - Unit: the room-dot text alternative and the "next that needs you" order, as pure functions where possible.
 - Simulator driver `scripts/shots-052-ux.js` at both sizes: the answer bar visible without scrolling, at most 3 header buttons, the More menu by keyboard, the banner closes, the list header straight, and N moves to the next waiting agent.
 - `check:office` and `check:geometry`.
+
+## Round 6 (2026-10-20): activity log
+
+- New main-side store `src/main/activitystore.ts` (same pattern as `usagetotalsstore.ts`: injected file path, debounced atomic write) with pure row rules in `src/shared/activity.ts` (sanitise, cap, CSV/JSON, decision from a permission answer).
+- Rows are recorded in `main.ts` from `router.onEvent` (`permission` events) and through an optional `log` hook in `OpsDeps` (`setModeOp`, `setCapOp`), so the window cannot write rows. The permission broker emits a new `auto` event in Allow all, forwarded by each adapter as `permission` with `via: 'policy'`; the renderer ignores those.
+- Renderer: `activitytable.js` (pure HTML builder, `window.DurbarActivity`) and an Activity tab in `screens.js`; the simulator keeps its own in-memory rows.
+- Testing: `scripts/test-activity.ts` (registered as `test:activity`).

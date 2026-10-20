@@ -51,6 +51,11 @@ async function main(): Promise<void> {
     assert.ok(!x.calls[0].verbatim, 'd: .exe is not verbatim');
     const k = candidates(CODEX_BINARY, mkEnv('win32', { APPDATA: 'C:\\A', LOCALAPPDATA: 'C:\\L' }, [], 'C:\\Users\\u'));
     assert.ok(k.includes('C:\\Users\\u\\.local\\bin\\codex.exe') && k.includes('C:\\A\\npm\\codex.cmd') && k.includes('C:\\L\\Programs\\codex\\codex.exe'), 'b: Windows known folders');
+    // spec 052 FR-072: winget's command shims folder, built from LOCALAPPDATA with Windows path rules
+    assert.ok(k.includes('C:\\L\\Microsoft\\WinGet\\Links\\codex.exe'), 'b: winget Links folder is searched');
+    const w = mkEnv('win32', { LOCALAPPDATA: 'C:\\Users\\u\\AppData\\Local' }, ['C:\\Users\\u\\AppData\\Local\\Microsoft\\WinGet\\Links\\codex.exe'], 'C:\\Users\\u');
+    assert.strictEqual((await detectBinary(CODEX_BINARY, w, mkExec(ok('0.200.0')).exec)).state, 'ready', 'b: a winget-installed CLI is found without PATH');
+    assert.ok(!candidates(CODEX_BINARY, mkEnv('win32', { LOCALAPPDATA: 'rel\\x' }, [], 'C:\\Users\\u')).some((c) => c.includes('WinGet')), 'b: a relative LOCALAPPDATA is ignored');
   }
 
   // (c) UNC

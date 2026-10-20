@@ -73,6 +73,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
   - your Copilot CLI list (`~/.copilot/mcp-config.json`) is used first;
   - each folder can add extras (with a trust prompt), import them from `.vscode/mcp.json`, and switch a server on or off per session.
 - **Tools** shows what each agent used, for *This session* and *All time*, and a **Cost** tab with each folder's ≈ money, AIU, Claude estimate, tokens and calls (*This run* or *Since <date>*), with **Copy as CSV**. Clicking a room's cost opens it.
+- **Activity** (Tools > Activity) is a local log for a team lead: every answer to a permission request, every automatic approval (Allow all or a session permission), and every mode or spending-limit change, with time, agent, folder, agent app and mode. It keeps the newest 5000 rows on this computer, holds actions and decisions only (never prompts, replies or file contents), and exports to CSV or JSON. Claude Code and Codex in Allow all approve inside their own process, so their automatic approvals are not listed (Copilot's are).
 
 ![Full-screen chat with the other agents in a slim strip, 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
 
@@ -125,8 +126,15 @@ Codex also ships its own `bwrap` inside its npm package (`…/@openai/codex-linu
 
 **The builds are not code-signed** (certificates cost money), so your OS warns you the first time. Only open files from this repository's Releases page.
 - **macOS:** right-click the app and choose **Open**, or allow it in System Settings > Privacy & Security. If macOS says it is damaged, run `xattr -dr com.apple.quarantine "/Applications/Agent Durbar.app"`.
-- **Windows:** on "Windows protected your PC", click **More info**, then **Run anyway**.
+- **Windows:**
+  - Which file: `Agent-Durbar-Setup-<version>.exe` installs to the Start menu; `Agent-Durbar-<version>-portable.exe` runs without installing.
+  - Edge may block the download ("isn't commonly downloaded"): open Downloads (**…**), choose **Keep**, then **Show more > Keep anyway**.
+  - Check the file in PowerShell: `Get-FileHash .\Agent-Durbar-Setup-<version>.exe -Algorithm SHA256` and compare the hash with the line for that file in `SHA256SUMS.txt`.
+  - On "Windows protected your PC", click **More info**, then **Run anyway**.
+  - Copilot runs shell commands with PowerShell 7 (from GitHub's docs, not checked by us). If the Copilot card says so, install it with `winget install --id Microsoft.PowerShell -e`.
 - **Linux:** run `chmod +x Agent-Durbar-*.AppImage && ./Agent-Durbar-*.AppImage`. Add `--no-sandbox` on systems without unprivileged user namespaces.
+
+> **Trying it on Windows?** Nobody on the team has run Durbar on a real Windows machine yet. If something does not work (the download, the installer, Settings > Agent apps, a harness that is not found), please [open an issue](https://github.com/three-feathers/agent-durbar/issues) with your Windows version and what you saw.
 
 ## Safety model
 
@@ -162,7 +170,7 @@ Codex in Read-only and Ask first gets an OS-enforced permission profile limited 
   - a global default is in Settings;
   - it is saved per folder.
 
-  It is a soft limit: when it is reached (*Spending limit reached*), the chat offers *Add credits / Remove limit / Stop here*. The office and each room show usage totals, kept across restarts, with a reset in Settings.
+  It is a soft limit: when it is reached (*Spending limit reached*), the chat offers *Raise limit / Remove limit / Stop here*. Copilot plans, the free one too, have a fixed price: Durbar shows usage, it does not charge you. The office and each room show usage totals, kept across restarts, with a reset in Settings.
 - **Claude Code** reports a dollar *estimate*, shown as `≈ $… est.` and never mixed with AIU. A session can have a **spending limit in dollars** (at least $0.01):
   - Durbar passes what is left to Claude's own `--max-budget-usd`;
   - when the limit is reached, the chat offers *Raise limit / Remove limit / Stop here*;

@@ -1,89 +1,146 @@
-/** Status that tells the truth, readable tool calls, a sortable list (spec 052 FR-062..FR-064): `npm run test:activity`. No credits spent. */
+/** Activity log (spec 052 FR-071): store cap, redaction, CSV escaping and formula-injection guard, only the listed fields. `npm run test:activity`. No credits spent. */
 import * as assert from 'assert';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
-import { simpleDiff, clipDiff, CONTEXT } from '../src/shared/diff';
-import { PermissionBroker } from '../src/adapters/permissions';
-import type { BrokerEvent } from '../src/adapters/permissions';
+import { ActivityStore } from '../src/main/activitystore';
+import { ACTIVITY_FIELDS, ACTIVITY_MAX_ROWS, activityCsv, activityJson, csvCell, decisionOf, sanitizeActivityRow } from '../src/shared/activity';
+import type { ActivityRow } from '../src/shared/activity';
+import { setCapOp, setModeOp } from '../src/main/agentops';
+import type { OpsDeps } from '../src/main/agentops';
+import type { AgentInfo } from '../src/shared/api';
 
-const ROOT = path.join(__dirname, '..', '..');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const A = require(path.join(ROOT, 'src', 'renderer', 'activity.js')) as {
-  agoLong: (ms: unknown) => string;
-  agoShort: (ms: unknown) => string;
-  sortBy: <T>(items: T[], valueOf: (x: T) => unknown, dir?: string) => T[];
-  nextSort: (cur: { key: string; dir: string } | null, key: string) => { key: string; dir: string };
-  diffLines: (diff: unknown, max?: number) => { lines: { t: string; s: string }[]; more: number };
+const T = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'activitytable.js')) as {
+  DECISION_WORDS: Record<string, string>;
+  NOTE: string;
+  EMPTY: string;
+  tableHtml: (rows: unknown, esc: (s: string) => string) => string;
 };
 
-// last activity labels (FR-062): long for tooltips and the chat header, short for the list column
-assert.strictEqual(A.agoLong(0), 'just now');
-assert.strictEqual(A.agoLong(59_999), 'just now');
-assert.strictEqual(A.agoLong(2 * 60000 + 5000), '2 min ago');
-assert.strictEqual(A.agoLong(3 * 3600000 + 1), '3 h ago');
-assert.strictEqual(A.agoLong(2 * 86400000), '2 d ago');
-assert.strictEqual(A.agoShort(1000), 'just now');
-assert.strictEqual(A.agoShort(2 * 60000), '2m');
-assert.strictEqual(A.agoShort(90 * 60000), '1h');
-assert.strictEqual(A.agoShort(50 * 3600000), '2d');
-for (const bad of [-1, NaN, undefined, null, 'x', Infinity]) {
-  assert.strictEqual(A.agoLong(bad), '', 'unknown: ' + String(bad));
-  assert.strictEqual(A.agoShort(bad), '', 'unknown: ' + String(bad));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-activity-'));
+const file = path.join(dir, 'activity.json');
+const noTimer = { setTimer: () => 1, clearTimer: () => undefined };
+const base = { agent: 'Ana', folder: '/home/u/work/web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Edit src/a.ts', decision: 'allowed-once' as const };
+
+try {
+  // only the listed fields are stored; the folder is a base name; extra keys (prompt, output, ...) are dropped
+  {
+    const st = new ActivityStore(file, { ...noTimer, env: {} });
+    const r = st.record({ ...base, prompt: 'secret prompt', reply: 'model reply', output: 'tool output', content: 'file body' });
+    assert.ok(r);
+    assert.deepStrictEqual(Object.keys(r!).sort(), [...ACTIVITY_FIELDS].sort(), 'a row has exactly the listed fields');
+    assert.strictEqual(r!.folder, 'web-shop', 'folder base name, not the full path');
+    assert.strictEqual(sanitizeActivityRow({ ...base, t: new Date().toISOString(), folder: 'C:\\Users\\u\\proj\\' })!.folder, 'proj', 'Windows path: base name');
+    st.flush();
+    const disk = fs.readFileSync(file, 'utf8');
+    for (const bad of ['secret prompt', 'model reply', 'tool output', 'file body', '/home/u']) assert.ok(!disk.includes(bad), `not on disk: ${bad}`);
+    const back = new ActivityStore(file, { ...noTimer, env: {} });
+    back.load();
+    assert.strictEqual(back.list().length, 1, 'reloaded');
+    assert.strictEqual(back.list()[0].action, 'Edit src/a.ts');
+    // unknown decisions and bad times are refused
+    assert.strictEqual(st.record({ ...base, decision: 'hacked' as never }), undefined);
+    assert.strictEqual(sanitizeActivityRow({ ...base, t: 'not a date' }), undefined);
+  }
+
+  // redaction and the 160-character action cap; one line only
+  {
+    const st = new ActivityStore(path.join(dir, 'r.json'), { ...noTimer, env: { MY_API_TOKEN: 'supersecretvalue123' } });
+    const r1 = st.record({ ...base, action: 'Run curl -H "Authorization: Bearer abcdefghijklmnop" with ghp_' + 'a'.repeat(36) });
+    assert.ok(!/abcdefghijklmnop/.test(r1!.action) && !/ghp_a{36}/.test(r1!.action) && /\[redacted\]/.test(r1!.action), r1!.action);
+    const r2 = st.record({ ...base, action: 'echo supersecretvalue123' });
+    assert.ok(!r2!.action.includes('supersecretvalue123'), 'environment secrets are redacted');
+    const r3 = st.record({ ...base, action: 'x'.repeat(500) + '\nsecond line' });
+    assert.strictEqual(r3!.action.length, 160, 'action cut to 160');
+    assert.ok(!/[\r\n]/.test(r3!.action));
+  }
+
+  // the cap: at most 5000 rows, newest kept; list is newest first
+  {
+    assert.strictEqual(ACTIVITY_MAX_ROWS, 5000);
+    const st = new ActivityStore(path.join(dir, 'cap.json'), { ...noTimer, env: {} });
+    for (let i = 0; i < ACTIVITY_MAX_ROWS + 25; i++) st.record({ ...base, action: `n${i}` });
+    const all = st.all();
+    assert.strictEqual(all.length, 5000, 'capped at 5000');
+    assert.strictEqual(all[0].action, 'n25', 'oldest dropped first');
+    assert.strictEqual(st.list(3).map((r) => r.action).join(','), `n5024,n5023,n5022`, 'newest first');
+    st.flush();
+    const back = new ActivityStore(path.join(dir, 'cap.json'), { ...noTimer, env: {}, max: 100 });
+    back.load();
+    assert.strictEqual(back.all().length, 100, 'a smaller cap applies on load too');
+    st.clear();
+    assert.strictEqual(st.list().length, 0, 'cleared');
+    const again = new ActivityStore(path.join(dir, 'cap.json'), { ...noTimer, env: {} });
+    again.load();
+    assert.strictEqual(again.list().length, 0, 'clear is written at once');
+  }
+
+  // a corrupt file is an empty log
+  {
+    fs.writeFileSync(path.join(dir, 'bad.json'), '{not json');
+    const st = new ActivityStore(path.join(dir, 'bad.json'), { ...noTimer, env: {} });
+    st.load();
+    assert.strictEqual(st.list().length, 0);
+  }
+
+  // CSV: quotes, commas and line breaks are escaped; formulas are neutralised
+  {
+    assert.strictEqual(csvCell('plain'), 'plain');
+    assert.strictEqual(csvCell('a,b'), '"a,b"');
+    assert.strictEqual(csvCell('say "hi"'), '"say ""hi"""');
+    assert.strictEqual(csvCell('=HYPERLINK("http://x")'), `"'=HYPERLINK(""http://x"")"`);
+    for (const c of ['=', '+', '-', '@']) assert.strictEqual(csvCell(`${c}1+1`)[0], "'", `formula guard for ${c}`);
+    assert.strictEqual(csvCell('\tx')[0], "'");
+    const rows: ActivityRow[] = [{ t: '2026-10-20T10:00:00.000Z', agent: '=cmd|"/c calc"!A1', folder: 'f', app: 'GitHub Copilot', mode: 'ask', action: '@SUM(1,2)', decision: 'denied' }];
+    const csv = activityCsv(rows);
+    const lines = csv.trimEnd().split('\r\n');
+    assert.strictEqual(lines[0], 't,agent,folder,app,mode,action,decision');
+    assert.strictEqual(lines[1], `2026-10-20T10:00:00.000Z,"'=cmd|""/c calc""!A1",f,GitHub Copilot,ask,"'@SUM(1,2)",denied`);
+    const json = JSON.parse(activityJson(rows)) as ActivityRow[];
+    assert.deepStrictEqual(Object.keys(json[0]), [...ACTIVITY_FIELDS]);
+  }
+
+  // decisions from final permission answers
+  {
+    assert.strictEqual(decisionOf({ state: 'pending' }), undefined);
+    assert.strictEqual(decisionOf({ state: 'approved', via: 'user' }), 'allowed-once');
+    assert.strictEqual(decisionOf({ state: 'approved', via: 'user', remembered: true }), 'allowed-session');
+    assert.strictEqual(decisionOf({ state: 'denied', via: 'user' }), 'denied');
+    assert.strictEqual(decisionOf({ state: 'approved', via: 'session' }), 'auto-session-grant');
+    assert.strictEqual(decisionOf({ state: 'approved', via: 'policy' }), 'auto-allow-all');
+    assert.strictEqual(decisionOf({ state: 'denied', via: 'stopped' }), undefined, 'a stopped session is not a decision');
+    assert.strictEqual(decisionOf({ state: 'denied' }), undefined, 'a Read-only denial is not logged');
+  }
+
+  // mode and limit changes are logged by main's own ops
+  void (async () => {
+    const logged: Array<[string, string]> = [];
+    const a = { id: 's1', name: 'web-shop', cwd: '/w/web-shop', folders: [], permMode: 'read-only', adapterId: 'copilot' } as unknown as AgentInfo;
+    const ad = { isLive: () => false, setPermMode: () => ({ pending: 0 }), capabilities: { capUnit: 'aiu' } };
+    const d: OpsDeps = { agents: new Map([[a.id, a]]), router: { forAgent: () => ad as never }, wsKey: (x) => x.cwd, log: (_a, dec, action) => logged.push([dec, action]) };
+    assert.ok(setModeOp(d, 's1', 'ask', {}).ok);
+    assert.deepStrictEqual(logged[0], ['mode-change', 'Read-only to Ask first']);
+    assert.ok((await setCapOp(d, 's1', 120)).ok);
+    assert.deepStrictEqual(logged[1], ['limit-change', 'Spending limit set to 120 AI credits']);
+    assert.ok((await setCapOp(d, 's1', null)).ok);
+    assert.deepStrictEqual(logged[2], ['limit-change', 'Spending limit removed']);
+    assert.ok(!(await setCapOp(d, 's1', 5)).ok);
+    assert.strictEqual(logged.length, 3, 'a refused change is not logged');
+
+    // the table: every value escaped, plain words for decisions, empty state
+    const esc = (s: string): string => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string);
+    assert.ok(T.tableHtml([], esc).includes(T.EMPTY));
+    assert.strictEqual(T.EMPTY, 'Nothing yet. Answers to permission requests appear here.');
+    assert.strictEqual(T.NOTE, 'Kept on this computer. Actions and decisions only; never prompts, replies or file contents.');
+    const html = T.tableHtml([{ t: '2026-10-20T10:00:00Z', agent: '<img src=x onerror=alert(1)>', folder: 'f', app: 'a', mode: 'allow', action: '"><script>', decision: 'auto-allow-all' }], esc);
+    assert.ok(!html.includes('<img') && !html.includes('<script>'), 'escaped');
+    assert.ok(html.includes('Automatic (Allow all)') && html.includes('Allow all'));
+    assert.deepStrictEqual(Object.values(T.DECISION_WORDS), ['Allowed once by you', 'Allowed for the session', 'Denied', 'Automatic (Allow all)', 'Automatic (session permission)', 'Mode changed', 'Limit changed']);
+    fs.rmSync(dir, { recursive: true, force: true });
+    console.log('activity tests passed');
+  })().catch((e) => { console.error(e); process.exit(1); });
+} catch (e) {
+  fs.rmSync(dir, { recursive: true, force: true });
+  throw e;
 }
-
-// the list's sort (FR-064): stable, case-insensitive text, numbers by size, missing values last both ways
-const rows = [{ n: 'bea', c: 2 }, { n: 'Ada', c: null }, { n: 'cem', c: 0.5 }, { n: 'ada', c: 2 }, { n: '', c: 10 }];
-assert.deepStrictEqual(A.sortBy(rows, (r) => r.n, 'asc').map((r) => r.n), ['Ada', 'ada', 'bea', 'cem', '']);
-assert.deepStrictEqual(A.sortBy(rows, (r) => r.n, 'desc').map((r) => r.n), ['cem', 'bea', 'Ada', 'ada', '']);
-assert.deepStrictEqual(A.sortBy(rows, (r) => r.c, 'asc').map((r) => r.n), ['cem', 'bea', 'ada', '', 'Ada']);
-assert.deepStrictEqual(A.sortBy(rows, (r) => r.c, 'desc').map((r) => r.n), ['', 'bea', 'ada', 'cem', 'Ada']);
-assert.deepStrictEqual(A.sortBy([{ n: 'agent 10' }, { n: 'agent 9' }], (r) => r.n, 'asc').map((r) => r.n), ['agent 9', 'agent 10'], 'numeric aware');
-assert.deepStrictEqual(rows.map((r) => r.n), ['bea', 'Ada', 'cem', 'ada', ''], 'the input is not changed');
-assert.deepStrictEqual(A.sortBy(null as unknown as never[], (r) => r), []);
-assert.deepStrictEqual(A.nextSort(null, 'cost'), { key: 'cost', dir: 'asc' });
-assert.deepStrictEqual(A.nextSort({ key: 'cost', dir: 'asc' }, 'cost'), { key: 'cost', dir: 'desc' });
-assert.deepStrictEqual(A.nextSort({ key: 'cost', dir: 'desc' }, 'cost'), { key: 'cost', dir: 'asc' });
-assert.deepStrictEqual(A.nextSort({ key: 'cost', dir: 'desc' }, 'name'), { key: 'name', dir: 'asc' });
-
-// diff lines for display (FR-063)
-const dl = A.diffLines('--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n keep\n-old\n+new\n');
-assert.deepStrictEqual(dl.lines.map((l) => l.t), ['file', 'file', 'hunk', 'ctx', 'del', 'add']);
-assert.strictEqual(dl.more, 0);
-const many = A.diffLines(Array.from({ length: 10 }, (_, i) => '+' + i).join('\n'), 4);
-assert.strictEqual(many.lines.length, 4); assert.strictEqual(many.more, 6);
-assert.deepStrictEqual(A.diffLines(''), { lines: [], more: 0 });
-assert.deepStrictEqual(A.diffLines(null), { lines: [], more: 0 });
-assert.strictEqual(A.diffLines('-- not a header\n--- a/f').lines[0].t, 'del', 'a removed line that starts with "--" stays a removed line');
-assert.deepStrictEqual(A.diffLines('--- a/f\n+++ b/f\n@@ -1 +1 @@\n--- SQL comment\n+++ x').lines.map((l) => l.t), ['file', 'file', 'hunk', 'del', 'add'], 'inside a hunk "---" is a removed line');
-
-// the diff builder (shared, used by the Claude Code mapper)
-assert.strictEqual(simpleDiff('a.ts', 'x', 'x'), '', 'no change');
-assert.strictEqual(simpleDiff('a.ts', 'one\ntwo\nthree', 'one\nTWO\nthree'), '--- a/a.ts\n+++ b/a.ts\n@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three');
-const ctx = Array.from({ length: 10 }, (_, i) => 'l' + i);
-const d = simpleDiff('f', ctx.join('\n'), [...ctx.slice(0, 5), 'NEW', ...ctx.slice(5)].join('\n'));
-assert.strictEqual(d.split('\n').filter((l) => l.startsWith(' ')).length, 2 * CONTEXT, 'at most CONTEXT lines of context on each side');
-assert.ok(d.includes('@@ -3,6 +3,7 @@'), d);
-assert.strictEqual(simpleDiff('new.txt', '', 'a\nb'), '--- a/new.txt\n+++ b/new.txt\n@@ -0,0 +1,2 @@\n+a\n+b');
-assert.strictEqual(simpleDiff('f\nx', 'a', 'b').split('\n')[0], '--- a/f x', 'a file name cannot add lines');
-const big = simpleDiff('f', '', Array.from({ length: 5000 }, (_, i) => 'line ' + i).join('\n'), 2000);
-assert.ok(big.length <= 2000 + 40 && /… \d+ more lines not shown$/.test(big), 'cut at a line, says how much is left');
-assert.strictEqual(clipDiff('short'), 'short');
-
-// the broker passes the diff on the pending request only
-(async () => {
-  const ev: BrokerEvent[] = [];
-  const b = new PermissionBroker({ mode: 'ask', emit: (e) => ev.push(e) });
-  void b.request({ kind: 'write', fileName: 'a.ts', path: 'a.ts', toolCallId: 't1', diff: '--- a/a.ts\n+++ b/a.ts' });
-  await new Promise((r) => setTimeout(r, 0));
-  const p = ev.find((e) => e.type === 'pending');
-  assert.ok(p && p.type === 'pending' && p.permission.diff === '--- a/a.ts\n+++ b/a.ts', 'pending carries the diff');
-  void b.request({ kind: 'shell', fullCommandText: 'ls', toolCallId: 't2' });
-  await new Promise((r) => setTimeout(r, 0));
-  const s = ev.filter((e) => e.type === 'pending')[1];
-  assert.ok(s && s.type === 'pending' && !('diff' in s.permission), 'no diff, no field');
-
-  const html = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');
-  assert.ok(html.indexOf('src="activity.js"') > 0 && html.indexOf('src="activity.js"') < html.indexOf('src="app.js"'), 'index.html loads activity.js before app.js');
-  assert.ok(/'activity\.js'/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8')), 'copy-assets.js copies activity.js');
-  console.log('activity tests passed');
-})().catch((e) => { console.error(e); process.exit(1); });

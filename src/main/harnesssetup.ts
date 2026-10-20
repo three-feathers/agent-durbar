@@ -72,6 +72,18 @@ export class HarnessSetup {
     return list.find((c) => env.isFile(c));
   }
 
+  /**
+   * Spec 052 FR-073: on Windows, true when PowerShell 7 (`pwsh.exe`) is on neither PATH, the usual folders nor
+   * `%ProgramFiles%\PowerShell\7`. The Copilot card then shows a hint (text only; nothing is installed). Always false elsewhere.
+   */
+  pwshMissing(): boolean {
+    const env = this.deps.detectEnv;
+    if (env.platform !== 'win32') return false;
+    if (this.find('pwsh')) return false;
+    const pf = env.env.ProgramFiles ?? env.env.PROGRAMFILES;
+    return !(pf && path.win32.isAbsolute(pf) && env.isFile(path.win32.join(pf, 'PowerShell', '7', 'pwsh.exe')));
+  }
+
   /** FR-002/FR-003: what the dialog offers for install or update, plus the official page. */
   plans(kind: SetupKind, op: 'install' | 'update'): { plans: SetupPlan[]; page: string; name: string } {
     const found = new Set<PackageManager>(managersFor(this.deps.detectEnv.platform).filter((m) => this.find(m)));

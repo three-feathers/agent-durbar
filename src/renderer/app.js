@@ -2115,7 +2115,7 @@ function openCapDialog(a){
    ${usd?`<p class="dsub">The most this session may cost, in dollars of Claude's own estimate (not a bill; with a Claude subscription nothing is billed per token). When it is reached the agent stops and asks you. It is a <b>soft</b> limit: one turn can go a little past it. It counts what the session used while Agent Durbar ran it, and it is not saved with the folder. The minimum is $${MIN_USD_CAP}.</p>`
    :`<p class="dsub">The most AI credits this session may use (1 credit = USD 0.01; shown as AIU, the unit the Copilot runtime reports). When it is reached the agent stops and asks you. It is a <b>soft</b> limit: it is checked after each model response, so one response can go past it. The minimum is ${MIN_CAP}.</p>`}
    <label>${usd?'Limit ($, estimate)':'Limit (AI credits)'}<input id="cdVal" type="number" min="${min}" step="${usd?'0.01':'1'}" placeholder="No limit" value="${cur||''}"></label>
-   <p class="dsub small cd-plan">Copilot, Claude and ChatGPT plans have a fixed monthly price; this limit only stops the agent. Durbar never charges you.</p><!-- spec 052 FR-058 -->
+   <p class="dsub small cd-plan">${esc(window.DurbarCost.PLAN_NOTE)}</p><!-- spec 052 FR-058 -->${(a.info&&a.info.adapterId||'copilot')==='copilot'?`<p class="dsub small cd-plan cd-copilot">${esc(window.DurbarCost.COPILOT_PLAN_NOTE)}</p>`:''}<!-- spec 052 FR-075 -->
    <p class="derr" id="cdErr" role="alert" hidden></p>
    <div class="dbtn"><button class="btn" id="cdCancel" type="button">Cancel</button><button class="btn" id="cdNone" type="button">Remove limit</button><button class="btn primary" id="cdSave" type="button">Save</button></div></div>`;
   document.body.appendChild(d);
@@ -2132,7 +2132,7 @@ function openCapDialog(a){
   $('cdVal').focus();
 }
 document.addEventListener('click',e=>{const c=e.target.closest('#capChip');if(!c)return;const a=byId(ui.selected);if(a)openCapDialog(liveRoot(a));});
-/* The runtime reached the cap and waits for the user: inline notice with Add credits (Raise limit) / Remove limit / Stop here. */
+/* The runtime reached the cap and waits for the user: inline notice with Raise limit / Remove limit / Stop here (spec 052 FR-075: "Raise limit" for both units: it raises Durbar's limit, it buys nothing). */
 function showLimit(a,e){
   const t=ensureTurn(a);
   const usd=isUsdCap(a),max=e.maxAiCredits||capOf(a),used=e.usedAiCredits!=null?e.usedAiCredits:capUsed(a);
@@ -2148,7 +2148,7 @@ function showLimit(a,e){
     settleLimit(a,choice.kind);
   };
   row.appendChild(amt);
-  mk(usd?'Raise limit':'Add credits','primary',usd?'Let the agent use this many more dollars (counted from what it used or the limit, whichever is higher) and continue':'Raise the limit by this many AI credits and let the agent continue',()=>{const v=parseFloat(amt.value);if(!(v>0)){amt.focus();return;}answer({kind:'add',credits:Math.round(v*100)/100});});
+  mk('Raise limit','primary',usd?'Let the agent use this many more dollars (counted from what it used or the limit, whichever is higher) and continue':'Raise the limit by this many AI credits and let the agent continue',()=>{const v=parseFloat(amt.value);if(!(v>0)){amt.focus();return;}answer({kind:'add',credits:Math.round(v*100)/100});});
   mk('Remove limit','session','Remove the limit and let the agent continue',()=>answer({kind:'unset'}));
   mk('Stop here','danger','Cancel the blocked request. The agent is ready for your next message (the limit stays).',()=>answer({kind:'cancel'}));
   n.appendChild(row);
@@ -2233,7 +2233,9 @@ function showPerm(a,p){
   n.querySelector('.psum').textContent=p.summary;
   if(p.state==='pending'&&typeof p.diff==='string'&&p.diff)n.appendChild(diffBlock(p.diff)); /* spec 052 FR-063 */
   const st=n.querySelector('.pstate');
-  if(p.state==='denied')st.innerHTML=' <i>(denied: this agent is in Read-only. Switch it to Ask first to be asked instead)</i>';
+  if(p.state==='denied'){st.innerHTML=' <i>(denied: this agent is in Read-only. Switch it to Ask first to be asked instead)</i>';
+    roAskHint(a,n);
+  }
   else if(p.state==='pending'){
     const row=document.createElement('div');row.className='note-actions';
     const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);};
@@ -2250,6 +2252,17 @@ function showPerm(a,p){
   if(p.state==='pending')announce(a.name+' needs your OK: '+p.summary);
   renderInboxBtn();
 }
+/* spec 052 FR-074: under a request denied by Read-only, one inline "Switch this agent to Ask first", once per agent until its mode
+   changes. It goes through the usual mode-change path (changeMode), with its dialogs. */
+function roAskHint(a,n){
+  if(!a.info||a.info.permMode!=='read-only'||a.roHintShown||!bridge.setPermMode||!feat(a,'modes'))return;
+  a.roHintShown=true;
+  const row=document.createElement('div');row.className='note-actions';
+  const b=document.createElement('button');b.type='button';b.className='btn';b.dataset.act='ro-ask';b.textContent='Switch this agent to Ask first';
+  b.title='Ask first: each edit, command or web request waits for your OK.';
+  b.onclick=async()=>{b.disabled=true;await changeMode(a,'ask',b);if(a.info.permMode==='ask')row.remove();else b.disabled=false;};
+  row.appendChild(b);n.appendChild(row);
+}
 function settlePerm(a,p){
   let e=a.pend.get(p.requestId);
   if(!e&&a.settled.has(p.requestId))return; /* already shown (the click settles locally, the adapter event follows) */
@@ -2264,6 +2277,7 @@ function settlePerm(a,p){
   const why=p.via==='stopped'?' (session stopped)':p.via==='session'?' (allowed for this session)':p.remembered?' (and remembered for this session)':'';
   e.st.textContent=' → '+(word==='approved'?'allowed':'denied')+why;
   e.n.classList.add('settled',word);
+  if(word==='denied'&&!p.via)roAskHint(a,e.n); /* denied by the mode (no one answered it): Read-only */
   scrollChat(liveChat(a));
 }
 function setGrants(a,list){a.grants=list;if(ui.selected&&liveRoot(byId(ui.selected)||a)===a)renderGrants();}
@@ -2306,6 +2320,7 @@ function applyTitle(a,title){
 }
 function onLiveEvent(e){
   const a=liveById(e.sessionId); if(!a)return;
+  if(e.type==='permission'&&e.permission&&e.permission.via==='policy')return; /* spec 052 FR-071: an Allow all approval is for the activity log in main, no card */
   a.lastEventAt=Date.now(); /* spec 052 FR-062: last activity (when it arrived here; a helper's event counts for its main agent) */
   feedStats(a,e);
   if(!e.agentId){ /* spec 034: only main-agent events change the mood */
@@ -2489,7 +2504,7 @@ async function changeModeInner(a,mode,anchor){
   }
   const res=await bridge.setPermMode(a.id,mode,opts).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(!res||!res.ok){toast('Could not change the mode: '+esc((res&&res.error)||'unknown error'),5000);return;}
-  a.info.permMode=mode; a.info.permRestored=undefined; a.role=roleFor(a.info);
+  a.info.permMode=mode; a.info.permRestored=undefined; a.role=roleFor(a.info); a.roHintShown=false;
   if(opts.clearGrants)setGrants(a,[]);
   renderRestoreStrip();
   toast(esc(a.name)+': <b>'+esc(MODE_NAME[mode])+(capsFor(a).permModeSwitch==='next-message'?'</b>. Applies from the next message.':'</b> from the next request.')+(mode==='allow'?' Everything runs without asking.':''),4200);
@@ -3382,7 +3397,7 @@ if(bridge){
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     previewTheme:(m)=>{swapView(()=>{THEME.setTheme(m);SC_CACHE.clear();renderAll();});}, /* spec 040 FR-014: Try it / Discard, nothing saved */
-    agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
+    agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,adapterId:x.info&&x.info.adapterId,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
     staticLimit:a=>{const m=modelsFor(a.info&&a.info.adapterId).find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
     folderOf:x=>{const ag=LIVE.agents.find(y=>y.id===(x&&x.id||x));return ag?folderOfRoom(ag.room):null;},
     openAgent:id=>openPanel(id,false)});
