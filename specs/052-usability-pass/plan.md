@@ -62,7 +62,7 @@ The renderer only: `src/renderer/app.js`, `screens.js`, `index.html`, `styles.cs
 
 ## FR-141 (2026-10-20): grant chips grouped, header chips flow
 
-- `renderGrants()` in `app.js` renders single chips for 1-2 grants and one `Allowed (N)` button plus a popover (a `.more-menu`-like panel inside `#grants`, positioned under the chip) for 3 or more. The label shortener is a pure function (`src/renderer/grant-label.js`, loaded like the other renderer helpers) so `scripts/test-grant-label.ts` can test it.
+- `renderGrants()` in `app.js` renders single chips for 1-2 grants and one `Allowed (N)` button plus a popover (a `.more-menu`-like panel inside `#grants`, positioned under the chip) for 3 or more. The label shortener is a pure function (`src/renderer/grantlabel.js`, loaded like the other renderer helpers) so `scripts/test-grant-label.ts` can test it.
 - Header chips: the cause is measured first (probe in the simulator at narrow widths); see the evidence in the spec. Renderer CSS only, no change to the darwin rules or the + New button.
 - Testing: `scripts/check-grant-chips.js` is an Electron driver (simulator `simgrants=many`), run under `xvfb-run` like `check:question-options`.
 
