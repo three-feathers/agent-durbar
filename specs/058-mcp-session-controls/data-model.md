@@ -73,3 +73,48 @@ New calls (all validated in main; results carry no path):
   sentence; error class or text -> hint. Used by the dialog in the real app and the simulator alike.
 - **Log folders** (`src/adapters/mcplogdirs.ts`, no Electron): `(app, { env, platform, home, cwd, server }) -> string | undefined`, with
   `path.win32` / `path.posix` chosen from `platform` so every OS is testable from Linux CI.
+
+## Delta: MCP OAuth sign-in (issue #364, 2026-10-20)
+
+Nothing new is persisted. **No token, authorization code, callback URL or client secret exists anywhere in Durbar.** The authorization
+address lives in main memory only and never crosses the IPC boundary.
+
+### Capability fields (`src/adapters/capabilities.ts`)
+
+| Field | Type | Copilot | Claude | Codex | Missing means |
+| --- | --- | --- | --- | --- | --- |
+| `mcpSignIn` | `boolean` | `true` | `true` | `true` | no Sign in button; steps only |
+| `mcpSignInSteps` | `string` (plain, `{name}` placeholder) | "In a terminal, run `copilot`, type `/mcp auth {name}` ..." | "In a terminal, run `claude mcp login {name}` ..." | "In a terminal, run `codex mcp login {name}` ..." | a generic "Sign in from the agent app" line |
+
+### Adapter member (`src/adapters/types.ts`, `AgentAdapter`)
+
+```ts
+// present iff capabilities.mcpSignIn; rejects with an McpSignInManual error when the runtime has no such call or refuses it
+startMcpSignIn?(sessionId: string, name: string): Promise<{ kind: 'browser'; url: string } | { kind: 'connected' }>;
+cancelMcpSignIn?(sessionId: string, name: string): Promise<void>; // optional; Codex account/login/cancel
+```
+
+### Normalized events
+
+| Event | Field | Notes |
+| --- | --- | --- |
+| `toolCall` (`phase: 'failed'`, `mcpServer` set) | `mcpAuth?: true` | FR-063; set by the adapter from `isMcpAuthChallenge`; the event guard drops it elsewhere |
+| `mcp` | server `status: 'needs-auth'`, `errorClass: 'auth'` | FR-060; `errorClass` is the T010 field |
+
+### IPC shapes (`src/shared/api.ts`)
+
+`AgentMcpEntry` gains `canSignIn: boolean` (adapter has `startMcpSignIn`, session live, state needs-auth or `errorClass: 'auth'`) and
+`signIn?: { host: string }` (a sign-in is open). The `agents:mcp` reply gains `signInSteps?: string` (the capability text, name filled by
+the renderer per row).
+
+| Channel | Arguments | Result |
+| --- | --- | --- |
+| `agents:mcpSignIn` | `id: string`, `name: string` | `{ ok: true; host: string } \| { ok: true; connected: true } \| { ok: false; manual?: true; error?: string }` |
+| `agents:mcpOpenSignIn` | `id: string`, `name: string` | `{ ok: boolean; error?: string }` |
+| `agents:mcpCancelSignIn` | `id: string`, `name: string` | `{ ok: boolean }` |
+
+### Main-process state
+
+- `signIns: Map<agentId, Map<serverName, { url: string; host: string; until: number }>>` (`src/main/mcpsignin.ts`): at most one per
+  server, 10 minutes, cleared on `connected`, Cancel, time limit, End, Restart session, quit. Never logged, never serialized.
+- Copilot only (Q12 B, owner 2026-10-20): the session config adds `mcpOAuthTokenStorage: 'persistent'` (a runtime setting, not Durbar storage).

@@ -160,3 +160,96 @@ is **unknown** (`[KNOWN GAP]`).
 4. Real checks: no-prompt only (0 credits), with a throw-away local stdio server, and only with the owner's go-ahead.
 5. Review notes from PR #359 (Vikram's agent, non-blocking, 2026-10-20): the log folder must resolve (realpath) under the vendor's own
    root (spec FR-026); a sign-in failure on Restart session goes to spec 012 FR-157's sign-in card (spec FR-027).
+
+## 7. Delta 2026-10-20: MCP OAuth sign-in (issue #364)
+
+Checked 2026-10-20 by reading only. **No session was started, no credits were spent, and no user config, token, keychain or log file
+was opened.** Sources (program files and public docs only):
+
+- Copilot: `@github/copilot-sdk` **1.0.22** (`package.json:121`), runtime **1.0.98**: `node_modules/@github/copilot-sdk/dist/generated/rpc.d.ts`,
+  `.../session-events.d.ts`, `dist/types.d.ts`, `dist/client.js`, `dist/session.js`, `README.md`; the runtime program's strings
+  (`node_modules/@github/copilot-sdk-linux-x64/prebuilds/linux-x64/runtime.node`, `strings` only); GitHub docs *GitHub Copilot CLI
+  command reference* (`docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference`, sections "Slash commands",
+  "OAuth re-authentication", `copilot login`).
+- Claude Code: the docs `code.claude.com/docs/en/mcp` ("Authenticate with remote MCP servers", "Authenticate from the command line") and
+  `/agent-sdk/typescript`; the installed CLI **2.1.304** program's strings (the program file, not user data).
+- Codex: `openai/codex` at `main` `0144894` (2026-10-20, through the GitHub API): `codex-rs/app-server-protocol/src/protocol/v2/mcp.rs`,
+  `.../common.rs`, `codex-rs/app-server/README.md` ("MCP OAuth login", "Enterprise sign-in"), `codex-rs/cli/src/mcp_cmd.rs`,
+  `codex-rs/config/defaults.toml`, `codex-rs/core/src/config/mod.rs`.
+
+### 7.1 What Durbar does today (code)
+
+| Topic | Today | Where |
+| --- | --- | --- |
+| Status `needs-auth` | Passed through from Copilot and Claude; Codex `authenticationRequired` and `authStatus: notLoggedIn` become `needs-auth`. The dialog shows the raw token. | `src/adapters/map.ts:182-191, 291-293`, `src/adapters/claudeMap.ts:87-97`, `src/adapters/codexMcp.ts:33, 47`, `src/renderer/screens.js:633-656` |
+| Codex `failureReason` | Not read (`reauthenticationRequired` is lost). | `src/adapters/codex.ts:829-835` |
+| Failed MCP tool | `tool.execution_complete.error.message` becomes the card's output; nothing marks the server. | `src/adapters/map.ts:117-122`, card `src/renderer/app.js:2062` |
+| Masking | `mcp` events are masked in main (spec 019 FR-021, #362); **tool output is not**. | `src/main/main.ts:123`, `src/main/mcpmask.ts` |
+| App sign-in classifier | `/\b401\b/` is a sign-in failure, so the issue's text would read as "Copilot needs you to sign in again" if it ever arrived as an `error` status. | `src/adapters/autherrors.ts:13, 35-41, 52-57` |
+| Opening a URL | `shell.openExternal` only for http(s) links (`app:openExternal`), a setup page, a harness sign-in host, and an elicitation's own https URL held in main (FR-154). | `src/main/main.ts:223-227, 772-781, 873-879`; `elicitHttpsUrl` `src/shared/elicit.ts:155-164` |
+| Copilot OAuth hooks | None: no `onMcpAuthRequest`, no `mcpOAuthTokenStorage` in the session config. | `src/adapters/copilot.ts:431-447` |
+
+### 7.2 Copilot (SDK 1.0.22)
+
+| Item | What the types or docs say | Use | Evidence |
+| --- | --- | --- | --- |
+| `session.rpc.mcp.oauth.login(McpOauthLoginRequest)` | "Starts OAuth authentication for a remote MCP server ... manual servers retain the existing direct login behaviour." Request: `serverName`, optional `forceReauth`, `clientName` ("callers driving interactive auth should pass their own surface-specific label"), `callbackSuccessMessage`, `clientId`, `clientSecret`, `publicClient`, `grantType`, `redirectUri`, `loginId`, `expectedInstallationId`. Result `authorizationUrl?`: "URL the caller should open in a browser ... Omitted when cached tokens were still valid ... the server is already reconnected. For the default loopback flow, the runtime starts its listener before returning ... signals completion via session.mcp_server_status_changed." | **Yes** (FR-064) with `serverName`, `clientName`, `callbackSuccessMessage` only. | `read:` `rpc.d.ts:33787-33794` (method), `15837-15877` (request), `15888-15900` (result) |
+| `oauth.prepareLogin` / `cancelLogin` | For **owned** installations (`expectedInstallationId`); "Manual MCP OAuth retains its direct `login` path." | No: Durbar's servers are configuration, not owned installations. Hence no cancel for a manual login. | `read:` `rpc.d.ts:33780-33786, 33810-33816`; SDK `README.md:328-333` |
+| `oauth.handlePendingRequest`, `oauth.respond`, event `mcp.oauth_required`, `onMcpAuthRequest` | The **host** acquires a token and hands it to the runtime (`McpAuthToken.accessToken`). The SDK registers interest in `mcp.oauth_required` only when `onMcpAuthRequest` is set. | **Never** (Durbar would handle a token; constitution III). | `read:` `rpc.d.ts:33766-33772, 33818-33824`; `types.d.ts:1738-1779, 2283-2288`; `client.js:1401-1405`; `session.js:835-846` |
+| `oauth.complete` (host-managed `redirectUri`) | The host receives the callback URL (with the code) and passes it on. | **Never** (the code would pass through Durbar). | `read:` `rpc.d.ts:33795-33801, 15793-15803` |
+| `oauth.probe` | "Passively probes ... whether OAuth is required ... Does not start OAuth ... or mutate MCP connection state." | Not now (a network call per dialog open); a later option to confirm a derived needs-auth. | `read:` `rpc.d.ts:33802-33808, 3379-3411` |
+| `mcpOAuthTokenStorage` (session config) | `"persistent"` = "tokens are stored in the OS keychain (shared across sessions)"; `"in-memory"` = "discarded when the session ends"; `@default "in-memory"`. Durbar does not set it. | `persistent` (Q12 B, FR-070). | `read:` `types.d.ts:2386-2393`; `client.js:1341, 1625` |
+| Status `needs-auth`, `errorClassification` | `McpServerStatus` includes `needs-auth`; `errorClassification` values are not listed ("Additional string values may be introduced"). | FR-060 (status); the auth value of `errorClassification` stays unknown. | `read:` `session-events.d.ts:1550-1565, 13301-13319` |
+| Tool error shape | `ToolExecutionCompleteError {code?, message, remediation?}`; `RemediationAction` values are about the Copilot account and sandbox (`sign_in` = "Authenticate again with the Copilot backend"), not MCP. | FR-061 reads `message`; `remediation: sign_in` must **not** be read as an MCP sign-in. | `read:` `session-events.d.ts:7564-7574, 64-76` |
+| Runtime texts | `MCP tool catalog changed before tool "`, `Failed to verify cached MCP tools: `, `MCP OAuth challenge required (HTTP `, `MCP server "<name>" requires authentication. Run \`/mcp auth <name>\` to authenticate.`, `Re-authentication required for MCP server "<name>". Run /mcp auth <name>`. | FR-061 phrases. | `real:` issue #364 (first text); `read:` `runtime.node` strings (all) |
+| CLI sign-in | `/mcp [config|list|show|add|edit|delete|disable|enable|auth|reload|search] [SERVER-NAME]`; "Use `/mcp auth <server-name>` to trigger a fresh OAuth flow. This opens a browser ... After completing the flow, the server reconnects automatically." `copilot mcp` subcommands are `list`, `get`, `add`, `enable`/`disable`, `remove`: **no** `copilot mcp login`. | FR-068 Copilot steps. | `read:` GitHub docs (command reference, "Slash commands", "OAuth re-authentication", "`copilot mcp` subcommands") |
+| Where the CLI keeps MCP tokens | Not stated for MCP. The SDK says `persistent` = OS keychain. (The docs' "system credential store ... or a plain text configuration file under `~/.copilot/`" is about the Copilot account login, not MCP.) | Durbar never touches either. | `read:` as above; `[KNOWN GAP]` |
+
+### 7.3 Claude Code (CLI 2.1.304)
+
+| Item | What the docs or program say | Use | Evidence |
+| --- | --- | --- | --- |
+| Control request `mcp_authenticate {serverName, redirectUri?}` | The CLI's own SDK sends it (`mcpAuthenticate(e,s){... subtype:"mcp_authenticate",serverName:e,redirectUri:s ...}`). The stream-json control loop handles it: finds the configured server (including `--mcp-config` ones), refuses a managed-policy block, then starts the OAuth flow with `skipBrowserOpen: true` and answers `{authUrl, requiresUserAction: true, callbackExpected: true, redirectScheme, state, callbackPort}` for its localhost callback, or `{requiresUserAction: false}` when no browser step is needed. After the callback it reconnects the server ("Authentication successful. Reconnected to"). | **Yes** (FR-064), with no `redirectUri`. | `read:` CLI 2.1.304 strings only (handler next to `set_prompt_suggestions_paused` and `channel_enable`); **not in the SDK docs** |
+| Docs on `-p` / SDK runs | "A `claude -p` or Agent SDK run has no `/mcp` panel, so Claude Code can't run the OAuth flow there. ... complete the sign-in from an interactive session first: run `/mcp` in the session, or `claude mcp login <name>` in your shell." | Contradicts the strings above: settle in T106 before building past the fake. | `read:` docs `/mcp` |
+| `mcp_oauth_callback_url {serverName, callbackUrl}` | Paste a callback URL when the localhost redirect fails ("call mcp_authenticate first"). | No (the browser and the CLI are on the same computer). | `read:` CLI strings |
+| `mcp_clear_auth {serverName}` | Clears stored credentials. | No (Q19). | `read:` CLI strings |
+| Status `needs-auth` | `McpServerStatus.status: "connected" | "failed" | "needs-auth" | "pending" | "disabled"`; "Claude Code marks a remote server as needing authentication when the server responds with `401 Unauthorized` or `403 Forbidden`" (not when the user configured an `Authorization` header). | FR-060. | `read:` docs `/agent-sdk/typescript`, `/mcp` |
+| Terminal sign-in | `claude mcp login <name>` ("runs a configured server's OAuth flow directly from your shell"), `--no-browser`, `claude mcp logout <name>`; or `/mcp` > Authenticate. "Claude Code stores OAuth sign-ins per endpoint"; "Authentication tokens are stored securely and refreshed automatically". | FR-068 Claude steps. Reuse for Durbar's `--mcp-config` copy of a server: unverified. | `read:` docs `/mcp` |
+
+### 7.4 Codex (`codex app-server`)
+
+| Item | What the source says | Use | Evidence |
+| --- | --- | --- | --- |
+| `mcpServer/oauth/login` | Params `name`, `threadId?`, `clientRegistration?` (`auto`/`cimd`/`dcr`), `scopes?`, `timeoutSecs?`; response `authorizationUrl`, `loginId?`. README: "only returns HTTP(S) authorization URLs"; "Call `mcpServer/oauth/login` with a directly configured server's `name` and its connected `threadId`. Open the returned `authorizationUrl` and match `mcpServer/oauthLogin/completed` by `loginId`. ... Use `account/login/cancel` to cancel explicitly. Start a fresh session after success to use the saved grant." | **Yes** (FR-064) with `name`, `threadId`. Whether Durbar's thread `config.mcp_servers` override counts as "directly configured" is unknown (T107). | `read:` `v2/mcp.rs:296-332`, `common.rs:1259-1263`, README "MCP OAuth login", "Enterprise sign-in" |
+| `mcpServer/oauthLogin/completed` | `name`, `threadId?`, `loginId?`, `success`, `error?`. | FR-064 completion. | `read:` `v2/mcp.rs:343-355`, `common.rs:2027` |
+| Status fields | `McpAuthStatus`: `unknown`, `unsupported`, `notLoggedIn`, `bearerToken`, `oAuth`; `McpServerStartupFailureReason`: `reauthenticationRequired`; `McpServerConnectionStatus` includes `authenticationRequired`. | FR-060. | `read:` `v2/mcp.rs:18-40, 370-378` |
+| Token store | `mcp_oauth_credentials_store = "auto"` by default: "keyring if available, otherwise file" (`CODEX_HOME/.credentials.json`). | Durbar never touches it. | `read:` `config/defaults.toml:8`, `core/src/config/mod.rs:930-935` |
+| Terminal sign-in | `codex mcp login <name>` ("authenticate with MCP server using OAuth"), `--no-browser`, `--scopes`, `--oauth-client-registration`; `codex mcp logout <name>`. | FR-068 Codex steps (servers in Codex's `config.toml`). | `read:` `cli/src/mcp_cmd.rs:62-80, 213-233` |
+| URL elicitation (spec 012 FR-147/FR-151/FR-154) | An MCP server may ask for a URL step through `mcpServer/elicitation/request` with `mode: 'url'`; Durbar already shows it with **Open in browser** (https only, held in main). That is the server's own request inside a working connection, not the transport's OAuth; it stays as built. | Reused pattern for FR-065. | `code:` `src/adapters/codex.ts:888-915`, `src/main/main.ts:873-879` |
+| Version | Durbar's minimum is Codex 0.163 (`src/adapters/detect.ts:47`); `main` may be newer. | Feature-detect; an unknown method gives the manual steps. | `[KNOWN GAP]` |
+
+### 7.5 Per-adapter decision table
+
+| | Copilot | Claude Code | Codex |
+| --- | --- | --- | --- |
+| Durbar can start the runtime's own flow | Yes: `oauth.login` (`read:`, experimental) | Probably: `mcp_authenticate` (`read:` strings; docs say no for `-p`) | Yes: `mcpServer/oauth/login` (`read:`; Durbar's overrides unknown) |
+| URL given back to Durbar | `authorizationUrl` | `authUrl` | `authorizationUrl` |
+| Callback and token exchange | runtime loopback | CLI localhost | Codex callback listener |
+| Durbar touches a token | No | No | No |
+| Completion signal | `session.mcp_server_status_changed` | `mcp_status` (asked again) | `mcpServer/oauthLogin/completed`, then a fresh child |
+| Cancel | none for a manual login | none documented | `account/login/cancel` |
+| Needs-auth signals | status, tool error text | status | status, `authStatus`, `failureReason` |
+| Manual fallback | `copilot` then `/mcp auth <name>` | `claude mcp login <name>` | `codex mcp login <name>` |
+| Token kept by | runtime (keychain: Durbar sets `persistent`, Q12 B) | CLI (per endpoint) | Codex (keyring or file) |
+
+### 7.6 Decisions (confirmed by the owner on 2026-10-20: Q12 B, Q13-Q19 A, spec.md *Clarifications*)
+
+1. Start each runtime's own flow on an explicit click; main holds the address, the window gets the host; https only; never a
+   token-carrying call (`handlePendingRequest`, `onMcpAuthRequest`, `oauth.complete`, `mcp_oauth_callback_url`).
+2. Map the issue's 401 to the server's needs-auth from the tool failure (Copilot), and keep it out of the app sign-in classifier.
+3. Offer **Switch off for this session** next to every needs-auth signal; mask the failed tool card.
+4. Real checks need a remote MCP server with OAuth and a browser sign-in on the owner's machine; they send no prompt (0 AI credits) but
+   use real accounts, so they wait for the owner (T105-T107).
+5. Owner answers (2026-10-20): Copilot sessions set `mcpOAuthTokenStorage: 'persistent'` (Q12 B); two-step open (Q13); Sign in in the
+   dialog row, the card opens the dialog there (Q14); Claude not launched: "Send a message first" + steps (Q15); https only (Q16);
+   switch-off offered, never automatic (Q17); Codex "applies with your next message" (Q18); no "another account" (Q19).
