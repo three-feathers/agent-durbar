@@ -4,6 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.8 tag)
 
+- **Control a Copilot session from GitHub (spec 054 Phase 1, #298).** More > *Control from GitHub (web and mobile)…* turns on Copilot's remote control for one session after a dialog that says what is sent to GitHub, then shows the link (Copy link, Open on GitHub) and a *Remote* chip; *Stop remote control* turns it off. Never on by default; only `https://github.com` links are opened. Simulator and unit tests only: not run on a real account yet. Claude channels and Codex mobile are specified as planned research.
+
 ## v0.1.0-alpha.8 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.8), 2026-10-20)
 
 Unsigned and not notarized; only Linux was run by hand. **Set up agent apps inside Durbar**: install, update and sign in to Copilot, Claude Code and Codex from Settings > Agent apps, with a native confirmation that shows the exact program before anything runs. **Five rounds of persona usability reviews** (about 20 personas) reshaped the app: the "Needs you" inbox and answer bar, Simple and Expert views, one word per concept, calmer visuals with period textures in the themes, High Contrast and focus support, OS notifications and Alt+A/S/D answers. Also new: **Make a theme with AI**, a Cost view per folder and the project website.
