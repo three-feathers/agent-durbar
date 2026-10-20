@@ -1270,7 +1270,7 @@ details.pcmd>pre{margin:4px 0 0;padding:6px 8px;border-radius:6px;background:var
 :root[data-dark]{color-scheme:dark}
 /* spec 052 FR-085: macOS only (html[data-platform="darwin"] comes from the preload; never set on Windows or Linux). The title bar is
    hidden ("hiddenInset"): the top bar is the window's drag area and keeps room on the left for the traffic lights, except in full
-   screen. Everything you can click in it stays clickable. */
-html[data-platform="darwin"] .topbar{-webkit-app-region:drag}
-html[data-platform="darwin"]:not([data-fullscreen]) .topbar{padding-left:78px}
-html[data-platform="darwin"] .topbar :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu){-webkit-app-region:no-drag}
+   screen. Everything you can click in it stays clickable. An open chat hides the top bar, so its agent strip takes the same rules. */
+html[data-platform="darwin"] :is(.topbar,.strip){-webkit-app-region:drag}
+html[data-platform="darwin"]:not([data-fullscreen]) :is(.topbar,.strip){padding-left:78px}
+html[data-platform="darwin"] :is(.topbar,.strip) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu){-webkit-app-region:no-drag}

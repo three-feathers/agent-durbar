@@ -103,6 +103,8 @@ assert.ok(/'keys\.js'/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'copy-ass
 // the Mac title bar rules apply only under html[data-platform="darwin"], so the office geometry on Linux and Windows is unchanged
 const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles.css'), 'utf8');
 for (const line of css.split('\n').filter((l) => /app-region|padding-left:78px/.test(l))) assert.ok(line.startsWith('html[data-platform="darwin"]'), `darwin-only: ${line.slice(0, 80)}`);
+// an open chat hides the top bar (body.panel-open), so the agent strip is the drag area then, with the same room and no-drag controls
+for (const rule of ['html[data-platform="darwin"] :is(.topbar,.strip){-webkit-app-region:drag}', 'html[data-platform="darwin"]:not([data-fullscreen]) :is(.topbar,.strip){padding-left:78px}', 'html[data-platform="darwin"] :is(.topbar,.strip) :is(button,']) assert.ok(css.includes(rule), `the chat strip shares the Mac title bar rule: ${rule.slice(0, 60)}`);
 assert.ok(css.includes(':root{color-scheme:light}') && css.includes(':root[data-dark]{color-scheme:dark}'), 'color-scheme follows the theme');
 
 console.log('macos tests passed');
