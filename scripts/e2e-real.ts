@@ -66,6 +66,13 @@ async function install(kind: SetupKind): Promise<{ ok: boolean; route?: string; 
   return { ok: d.ok, route: plans[0].manager, detail: d.ok ? undefined : `${d.reason ?? 'exit ' + d.exitCode}: ${d.lines.slice(-2).join(' | ')}` };
 }
 
+/** One short, redacted line of a CLI's own answer (never with a secret on the command line). */
+function cliLine(bin: string, args: string[]): Promise<string> {
+  return new Promise((resolve) => {
+    execFile(bin, args, { timeout: 30_000, windowsHide: true }, (_e, out, err) => resolve(clean(`${out || ''} ${err || ''}`).slice(0, 160) || '(no output)'));
+  });
+}
+
 /** Codex keeps its own sign-in: `codex login --with-api-key` reads the key from stdin (never argv). */
 function codexLogin(bin: string): Promise<string | undefined> {
   const key = process.env.OPENAI_API_KEY;
@@ -104,9 +111,11 @@ async function check(app: (typeof APPS)[number]): Promise<Row> {
   const events: AgentEvent[] = [];
   ad.onEvent((e) => events.push(e));
   try {
+    // Durbar's own verdict is recorded, not trusted blindly: the turn below is the proof (an API-key sign-in may not be one
+    // that the app's check recognises, which is itself a finding)
     const si = ad.verifySignIn ? await ad.verifySignIn() : undefined;
-    row.signIn = si?.status ?? 'not checked';
-    if (si && si.status === 'signed-out') return fail('sign-in', si.detail ?? 'signed out');
+    row.signIn = si ? `${si.status}${si.detail ? ' (' + si.detail + ')' : ''}` : 'not checked';
+    if (app.kind === 'codex' && bin) row.signIn += `; codex login status: ${await cliLine(bin, ['login', 'status'])}`;
 
     const models = ad.listModelOptions ? await ad.listModelOptions() : [];
     row.models = models.length;
