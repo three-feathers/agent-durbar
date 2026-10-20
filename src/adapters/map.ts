@@ -278,7 +278,7 @@ export class EventMapper {
         return this.emit({ type: 'status', status: 'idle', intent: d.aborted ? 'Aborted' : undefined });
       case 'session.error':
         // spec 012 FR-157: the runtime's own category decides when it has one; otherwise the message is read (markAuthError)
-        return this.emit({ type: 'status', status: 'error', intent: `${d.errorType}: ${d.message}`, agentId, ...copilotErrorKind(d.errorType) });
+        return this.emit({ type: 'status', status: 'error', intent: `${d.errorType}: ${d.message}`, agentId, ...copilotErrorKind(d.errorType, d.message) });
       default:
         return;
     }
@@ -301,9 +301,13 @@ function contentOf(result: unknown): string | undefined {
 }
 
 /** FR-157: Copilot's `session.error` category: `authentication` is a sign-in failure; a known other category never is (a 403 for a model policy is not a sign-in problem). */
+const NO_AUTH_SESSION = /not created with authentication info/i;
 const NOT_SIGN_IN = ['authorization', 'policy', 'quota', 'rate_limit', 'context_limit', 'query'];
-export function copilotErrorKind(errorType: unknown): { errorKind?: 'auth' } {
+export function copilotErrorKind(errorType: unknown, message?: unknown): { errorKind?: 'auth' } {
   if (errorType === 'authentication') return { errorKind: 'auth' };
+  // spec 012 T124 (real, 2026-10-20): with a refused token runtime 1.0.98 reports the first Send as `query` with this text; only this
+  // exact phrase is read, so other `query` errors stay "not a sign-in problem"
+  if (errorType === 'query' && typeof message === 'string' && NO_AUTH_SESSION.test(message)) return { errorKind: 'auth' };
   if (typeof errorType === 'string' && NOT_SIGN_IN.includes(errorType)) return { errorKind: undefined };
   return {};
 }

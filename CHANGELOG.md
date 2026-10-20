@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.9 tag)
 
+- Real-account checks (2026-10-20, about 1 AI credit and $0.004): the Copilot AI theme maker now reads token names written without `--` (Copilot wrote them that way, so every theme failed); remote control that Copilot answers "not started" is no longer shown as on; Copilot's refused-sign-in error at Send is now recognised; a folder's `.claude` hooks and `.mcp.json` confirmed not to run in Claude; read-only MCP tools confirmed to run in Read-only on Copilot (specs 012, 040, 044, 054).
 - Sign-in is checked with the service where the app allows it (Copilot: GitHub quota; Codex: OpenAI rate limits; Claude Code: local only), and a chat message refused because of the sign-in shows a calm card with **Sign in** and **Send again** instead of the raw 401 (spec 012 FR-156, FR-157; fakes and simulator, not yet on real accounts).
 
 ## v0.1.0-alpha.9 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.9), 2026-10-20)

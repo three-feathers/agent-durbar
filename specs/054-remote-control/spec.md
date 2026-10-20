@@ -116,7 +116,7 @@ Phase 1 adds one item to a live Copilot chat's **More** menu and to the command 
   - `src/renderer/sim.ts` (canned remote for Copilot sim agents).
 - `test:` `test:remote` (`scripts/test-remote.ts`): the allowlist (scheme, host, subdomain, look-alike hosts, user info, port, length, non-strings); the Copilot adapter on a fake session: enable sends `{ mode: 'on' }` and maps the URL, steerable and visibility; a missing `visibility` group or a failing `visibility.get` still succeeds; `shareUrl` fallback; a non-GitHub URL is dropped; disable calls `disable()`; no `rpc.remote` → `ok: false` with nothing called; a rejected call → `ok: false` with a one-line error; an unknown session; create and resume never set `remoteSession`. The main-side logic (`remoteops.ts`): invalid ids and non-boolean `on` refused, a kind without `remote`, a session not running, only a stored and allowed link opens, a misbehaving adapter's foreign URL or extra fields never pass, off / `forget` / errors drop the stored link. The contract test (C2) checks `setRemote() <=> capabilities.remote`.
 - `sim:` `scripts/shots-054-remote.js` is written (open a Copilot sim chat, More, Control from GitHub, Turn on, link and Remote chip, Stop remote control; screenshots `docs/screenshots/054-remote-*.png` at 1440x900 and 1280x800) but **not run in this change** (`[KNOWN GAP]` until the lead runs it).
-- `real:` none. `[KNOWN GAP]`: turning remote control on exports the session's messages to GitHub, so a real check needs the owner's go-ahead (T020). Q1..Q4 stay open until then.
+- `real:` none at the time (see 2026-10-20 below). `[KNOWN GAP]`: turning remote control on exports the session's messages to GitHub, so a real check needs the owner's go-ahead (T020).
 
 - **FR-011** **Consent and limits in the main process** (security review, 2026-10-20) `[IMPLEMENTED]` `test:` `scripts/test-remote.ts`:
   - turning remote control on needs a **native confirmation** in main (`dialog.showMessageBox`, Cancel is the default) on top of the page's dialog, so a compromised page cannot publish a session;
@@ -125,3 +125,14 @@ Phase 1 adds one item to a live Copilot chat's **More** menu and to the command 
   - remote on and off are written to the **activity log** (`remote-on`, `remote-off`);
   - `agents:setRemote`, `agents:openRemote`, `agents:setMode`, `schedules:save` and `schedules:remove` answer only the app's own page (`fromApp`).
 - **2026-10-20 (security review, FR-011):** a reviewer found the consent lived only in the page, remote and Allow all could be on together, and remote was not turned off on GitHub when a session ended. Fixed as FR-011. The OS notification body (spec 052 FR-059) now names only the kind of request ("Asks for your OK"), never the command, which could hold a token. `[KNOWN GAP]` Not checked on a real account.
+
+### 2026-10-20: first real check (T020, partly)
+
+- `real:` 2026-10-20, Copilot runtime 1.0.98, free plan, `auto`, Read-only, the real `CopilotAdapter.setRemote` on a live session after one tiny prompt (`scripts/remote-copilot-real.ts`). **2 prompts, 0.16 + 0.07 = 0.24 AI credits.** The runtime was started without `enableRemoteSessions`, as Durbar does.
+  - **Plain empty folder:** `remote.enable({ mode: 'on' })` resolved with `{ remoteSteerable: false, started: false }`: no error, no `url`. `visibility.get` gave `{ synced: false }` (no `status`, no `shareUrl`). No `remote`/`steerable` event arrived. `disable()` resolved.
+  - **`git init` folder with no remote:** the same answer.
+  - Nothing was published: there was no URL and no GitHub repository.
+- **Q1** (partly): `enable` does not fail without `enableRemoteSessions`, but it did not start either; whether it starts in a GitHub repository folder without that option is still open.
+- **Q2** (partly): a plain folder and a local-only git folder are not enough; Copilot gives no reason, it just answers `started: false`. A folder whose remote is a GitHub repository was not tried: that needs a throw-away GitHub repository, which is the owner's call.
+- Q3 (`url` vs `shareUrl`), Q4 (plan), FR-003 (does the GitHub task outlive the session) and steering from github.com stay open.
+- **FR-002 delta** `[IMPLEMENTED]` Before this, the adapter mapped that answer to `{ ok: true, on: true, steerable: false }`, so Durbar would show remote control as on with no link. Now `started: false` turns remote control off again (`disable()`, best effort) and returns `ok: false` with "Copilot did not start remote control for this session and gave no reason. It may need a folder that is a GitHub repository." (`REMOTE_NOT_STARTED`). `test:` `test:remote` (`started: false` is not on, `disable` is called, no visibility read; `started: true` is on).

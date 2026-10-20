@@ -13,6 +13,7 @@ import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
 import type { FakeSession } from './fakes/copilot-sdk';
 import type { AgentAdapter } from '../src/adapters/types';
 import type { RemoteState } from '../src/shared/remote';
+import { REMOTE_NOT_STARTED } from '../src/adapters/copilot';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-remote-'));
 const names = (s: FakeSession): string[] => s.calls.map((c) => c.name);
@@ -86,6 +87,16 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(await ad.setRemote(sid, true), { ok: true, on: true, steerable: true, url: 'https://github.com/o/r/tasks/2' }, 'an unknown visibility value is dropped');
     s.rpc.visibility = undefined;
     assert.deepStrictEqual(await ad.setRemote(sid, true), { ok: true, on: true, steerable: true, url: 'https://github.com/o/r/tasks/2' }, 'no visibility group: still on');
+  }
+  {
+    // T020 real answer: `started: false` with no error is not "on"; remote is switched off again and no visibility is read
+    const { ad, sid, s } = await setup();
+    s.remoteAnswer = { remoteSteerable: false, started: false };
+    assert.deepStrictEqual(await ad.setRemote(sid, true), { ok: false, error: REMOTE_NOT_STARTED });
+    assert.ok(names(s).includes('remote.disable'), 'switched off again');
+    assert.ok(!names(s).includes('visibility.get'));
+    s.remoteAnswer = { remoteSteerable: true, started: true, url: 'https://github.com/o/r/tasks/3' };
+    assert.deepStrictEqual((await ad.setRemote(sid, true)).ok, true, 'started: true is on');
   }
   {
     // errors

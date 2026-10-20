@@ -163,3 +163,13 @@ In **Folders**, each folder has **Schedules**. The dialog lists the folder's sch
 - `test:` `npm run test:events`: the Copilot `session.schedule_*` events map to `agentSchedule` (a helper's schedule and one without an id are dropped, text cleaned, bad values dropped), and pass the event guard.
 - `sim:` the simulator has rules, targets, limits (its simulated usage counts) and both pause states. `scripts/shots-044-templates.js` and `scripts/shots-044-everywhere.js` now also check the calendar choice (weekly shows the days) and the *Send to* choice in a dialog opened from a chat. `[KNOWN GAP]` These drivers were updated but not run in this change, and no new screenshots were taken. The read-only list of the agent's own schedules has no simulator source.
 - `[KNOWN GAP]` No real check of Phase 2: no real session ran a rule, a per-session schedule or a limit. The Copilot schedule events are mapped from the SDK's types, never seen live.
+
+### 2026-10-20: do MCP tools run in Read-only? (real check, Copilot)
+
+The mode help says "read-only MCP tools still run" (spec 052 FR-019), and the *Start my day* template says it "works in Read-only" while it reads mail through MCP. Checked on a real session:
+
+- `real:` 2026-10-20, Copilot runtime 1.0.98, free plan, `auto`, the real `CopilotAdapter` in **Read-only** with a tiny local stdio MCP server that has one tool `echo` (`scripts/mcp-readonly-copilot-real.ts`). **2 prompts, 0.18 + 0.09 = 0.27 AI credits.**
+  - **Tool marked `readOnlyHint: true`:** it **ran**. The runtime sent **no permission request** to Durbar (the broker saw nothing); the server received the call and the agent answered with its result.
+  - **The same tool without `readOnlyHint`:** the runtime sent a permission request of kind **`mcp`**; Durbar's broker **denied** it ("Agent Durbar is in read-only mode: this action was denied"); the server received nothing.
+- **Result:** on Copilot the help text is right, and *Start my day* works in Read-only **only if the mail and calendar servers mark their read tools `readOnlyHint`**; a server that does not is denied. The runtime decides from the server's own hint, so a server that wrongly marks a writing tool read-only also runs in Read-only (`[KNOWN GAP]`, for spec 003).
+- `[KNOWN GAP]` Not checked on Claude Code or Codex, and not with real mail or calendar servers. The template text is unchanged; its wording is for the owner to decide.

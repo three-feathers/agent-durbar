@@ -121,9 +121,12 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpStatus: true,
   mcpToggle: true,
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
-  remote: true, // spec 054 FR-002: rpc.remote.enable/disable (@experimental; not run on a real account)
-  oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (fake SDK only; not run on a real account)
+  remote: true, // spec 054 FR-002: rpc.remote.enable/disable (@experimental; real 2026-10-20: `started: false` outside a GitHub repository, never seen started)
+  oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (real 2026-10-20: no tool ran, nothing left on disk)
 });
+
+/** Spec 054 T020: what the user sees when the runtime answers `started: false` (seen in folders that are not a GitHub repository). */
+export const REMOTE_NOT_STARTED = 'Copilot did not start remote control for this session and gave no reason. It may need a folder that is a GitHub repository.';
 
 /** Spec 040 FR-015: how long one `generateText` may take before it is aborted (the same 3 minutes as Claude and Codex). */
 export const ONE_SHOT_TIMEOUT_MS = 180_000;
@@ -682,7 +685,13 @@ export class CopilotAdapter implements AgentAdapter {
         await remote.disable!();
         return { ok: true, on: false };
       }
-      const r = ((await remote.enable!({ mode: 'on' })) ?? {}) as { url?: unknown; remoteSteerable?: unknown };
+      const r = ((await remote.enable!({ mode: 'on' })) ?? {}) as { url?: unknown; remoteSteerable?: unknown; started?: unknown };
+      // spec 054 T020 (real, 2026-10-20): in a plain folder and in a `git init` folder with no remote the runtime answers
+      // `{ started: false, remoteSteerable: false }` with no error and no URL; that is not "on"
+      if (r.started === false) {
+        await remote.disable!().catch(() => undefined);
+        return { ok: false, error: REMOTE_NOT_STARTED };
+      }
       const out: RemoteState = { ok: true, on: true, steerable: r.remoteSteerable === true };
       if (allowedRemoteUrl(r.url)) out.url = r.url;
       const vis = rpc?.visibility as { get?: () => Promise<unknown> } | undefined;
