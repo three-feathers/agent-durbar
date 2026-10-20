@@ -181,6 +181,9 @@ function floorsCheck(expectTags) {
   }
   const btn = document.getElementById('floorsBtn');
   if (!btn || btn.hidden) problems.push('Floors button missing');
+  /* spec 052 FR-105 (round 11): the top bar is one row of about 48px, also with the Floors button (its widest case) */
+  const tbh = R(document.querySelector('.topbar')).height;
+  if (tbh > 52.5) problems.push(`top bar is ${Math.round(tbh)}px tall: it wrapped to a second row`);
   /* every room header keeps the floor tag and the + / MCP buttons inside it (a long tag shrinks, it never pushes them out;
      the door button sits on the room's edge on purpose and is not checked) */
   stage.querySelectorAll('.room-head').forEach((h) => {
@@ -390,6 +393,23 @@ async function driver(ctx) {
       }
     }
   }
+  /* spec 033 FR-013 (issue #133, T042): the all-off message names only a control that is on screen, both sizes */
+  for (const [w, h] of SIZES) {
+    if (!mine()) continue;
+    const offCases = [
+      ['one floor, off', 'sim=15&simfreeze=1&floorsoff=Ground%20floor', false, /Your only floor is off\. Switch it on in Settings > Floors\./],
+      ['three floors, all off', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Ground%20floor,Client%20A,Personal', true, /All floors are off\. Open "Floors" above or Settings > Floors/],
+    ];
+    for (const [label, q, btnShown, re] of offCases) {
+      await load(q, w, h);
+      const o = await ctx.js(`({text:(document.querySelector('#stage .empty')||{}).textContent||'',hidden:document.getElementById('floorsBtn').hidden})`);
+      total++;
+      const why = [];
+      if (!re.test(o.text) || o.hidden === btnShown) why.push(`text "${o.text}", Floors button ${o.hidden ? 'hidden' : 'visible'}`);
+      if (!btnShown && /above/.test(o.text)) why.push('the message names a button that is not on screen');
+      if (why.length) { failed++; console.log(`FAIL all-off ${w}x${h} ${label}: ${why.join('; ')}`); }
+    }
+  }
   /* spec 001 FR-023/FR-024 (T030): many folders with one agent each (simrooms=solo), with and without a closed door, both sizes */
   for (const [w, h] of SIZES) {
     for (const sim of SIMS) {
@@ -410,6 +430,10 @@ async function driver(ctx) {
     const row = await ctx.js(`(()=>{const t=[...document.querySelectorAll('#liveBar > button, #liveBar > select')].filter(e=>e.getClientRects().length).map(e=>Math.round(e.getBoundingClientRect().top));return {min:Math.min(...t),max:Math.max(...t),n:t.length}})()`);
     total++;
     if (row.max - row.min > 3) { failed++; console.log(`FAIL ${tag}: the toolbar wraps ${JSON.stringify(row)}`); }
+    /* spec 052 FR-105: the whole top bar is one row (about 48px) with the agent app named in the Defaults chip */
+    const tb = await ctx.js(`({h:document.querySelector('.topbar').getBoundingClientRect().height,chip:document.getElementById('defaultsBtn').textContent})`);
+    total++;
+    if (tb.h > 52.5 || !/^Copilot · /.test(tb.chip)) { failed++; console.log(`FAIL ${tag}: the top bar is not one row with the Defaults chip ${JSON.stringify(tb)}`); }
     /* spec 012 FR-120: Claude chosen in the toolbar, its first model has efforts; the whole top bar stays inside the window */
     await ctx.js(`(async()=>{const s=document.getElementById('kindSel');s.value='claude';s.dispatchEvent(new Event('change'));await new Promise(r=>setTimeout(r,400));return true})()`);
     const fit = await ctx.js(`(()=>{const els=[...document.querySelectorAll('header button, header select, header .tgl, header .seg')].filter(e=>e.getClientRects().length);const r=els.map(e=>e.getBoundingClientRect());return {right:Math.max(...r.map(x=>x.right)),win:innerWidth,models:!document.getElementById('modelSel').hidden}})()`);
@@ -460,7 +484,7 @@ async function driver(ctx) {
     await load('sim=15&simfreeze=1', w, h);
     await ctx.js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith('Ada'));if(d)d.click();return true})()`);
     await ctx.sleep(900);
-    await ctx.js(`(()=>{if(!document.querySelector('#prev [data-pv="view"]')){const t=document.querySelector('#prev [data-pv="toggle"]');if(t)t.click();}return true})()`);
+    await ctx.js(`(()=>{if(!document.querySelector('#prev [data-pv="view"]')){const t=document.getElementById('prevBtn');if(t)t.click();}return true})()`);
     await ctx.sleep(500);
     await ctx.js(`(()=>{const v=document.querySelector('#prev [data-pv="view"]');if(v)v.click();return true})()`);
     await ctx.sleep(1000);

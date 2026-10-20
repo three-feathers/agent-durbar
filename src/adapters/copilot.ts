@@ -1,3 +1,4 @@
+import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import { randomUUID } from 'crypto';
 import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
 import { parseQuestions } from './questions';
@@ -17,6 +18,7 @@ import type {
   PermissionMode,
   GenerateTextOptions,
   GenerateTextResult,
+  SignInCheck,
   StartOptions,
   Unsubscribe,
 } from './types';
@@ -67,6 +69,12 @@ interface Live {
   elicitations?: Map<string, ElicitWaiter>;
   /** The session's folders (spec 043: a profile file inside one is the repository's). */
   folders?: string[];
+  /** Spec 012 FR-158: what a reconnect after a sign-in needs to resume this session on a new client with the same handlers and broker. */
+  resumeConfig?: () => Record<string, unknown>;
+  onSessionEvent?: (ev: SessionEvent) => void;
+  /** Changes made while the session ran, put back after a reconnect (FR-158): the credit cap, and MCP servers switched on or off. */
+  cap?: number | null;
+  mcpToggles?: Map<string, boolean>;
 }
 
 /** spec 043 FR-002: the folders Copilot reads agent files from: each session folder's `.github/agents` and the user's `~/.copilot/agents`. */
@@ -119,9 +127,12 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpStatus: true,
   mcpToggle: true,
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
-  remote: true, // spec 054 FR-002: rpc.remote.enable/disable (@experimental; not run on a real account)
-  oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (fake SDK only; not run on a real account)
+  remote: true, // spec 054 FR-002: rpc.remote.enable/disable (@experimental; real 2026-10-20: `started: false` outside a GitHub repository, never seen started)
+  oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (real 2026-10-20: no tool ran, nothing left on disk)
 });
+
+/** Spec 054 T020: what the user sees when the runtime answers `started: false` (seen in folders that are not a GitHub repository). */
+export const REMOTE_NOT_STARTED = 'Copilot did not start remote control for this session and gave no reason. It may need a folder that is a GitHub repository.';
 
 /** Spec 040 FR-015: how long one `generateText` may take before it is aborted (the same 3 minutes as Claude and Codex). */
 export const ONE_SHOT_TIMEOUT_MS = 180_000;
@@ -168,6 +179,8 @@ export class CopilotAdapter implements AgentAdapter {
   private listeners = new Set<(event: AgentEvent) => void>();
   private client: CopilotClient | undefined;
   private starting: Promise<CopilotClient> | undefined;
+  /** Spec 012 FR-158: a running `refreshAuth` (calls that use a session wait for it). */
+  private refreshing: Promise<void> | undefined;
   private sessions = new Map<string, Live>();
   /** Optional debug sink (DURBAR_LOG): what was actually handed to the SDK. */
   debug?: (message: string) => void;
@@ -179,25 +192,140 @@ export class CopilotAdapter implements AgentAdapter {
   /** Lazily start the shared runtime. Uses the logged-in Copilot user (e.g. `copilot login`). Protected so a test can hand in a fake client (no runtime process, no credits). */
   protected async getClient(): Promise<CopilotClient> {
     if (this.client) return this.client;
-    this.starting ??= (async () => {
-      // Packaged app: run the runtime from app.asar.unpacked. Dev: let the SDK locate it.
-      // No token is passed or stored here; the runtime uses the Copilot login on this machine.
-      const runtimePath = unpackedRuntimePath();
-      this.debug?.(`runtime: ${runtimePath ?? 'sdk default'}`);
-      const c = new CopilotClient(
-        runtimePath ? { connection: RuntimeConnection.forStdio({ path: runtimePath }), workingDirectory: os.homedir() } : {},
-      );
-      await c.start();
-      this.client = c;
+    const starting = (this.starting ??= this.createClient().then((c) => {
+      if (this.starting === starting) this.client = c;
       return c;
-    })();
-    return this.starting;
+    }));
+    return starting;
+  }
+
+  /** Start one runtime client. Protected so a test can hand in a new fake client each time (spec 012 FR-158). */
+  protected async createClient(): Promise<CopilotClient> {
+    // Packaged app: run the runtime from app.asar.unpacked. Dev: let the SDK locate it.
+    // No token is passed or stored here; the runtime uses the Copilot login on this machine.
+    const runtimePath = unpackedRuntimePath();
+    this.debug?.(`runtime: ${runtimePath ?? 'sdk default'}`);
+    const c = new CopilotClient(
+      runtimePath ? { connection: RuntimeConnection.forStdio({ path: runtimePath }), workingDirectory: os.homedir() } : {},
+    );
+    await c.start();
+    return c;
+  }
+
+  /**
+   * Spec 012 FR-158: make the shared runtime use a new sign-in. The SDK has no call that reloads the machine's stored login
+   * (its `account.login` and `session.gitHubAuth.setCredentials` take a token, which Durbar never handles), so the client is
+   * stopped gracefully and dropped; the next `getClient()` starts a fresh one, and every live session is resumed on it with
+   * the same handlers, permission broker and grants. A card shows "Reconnecting Copilot…" meanwhile. A turn that was running
+   * is cut (its history stays). Nothing started yet: nothing to do, the first client reads the new sign-in.
+   */
+  async refreshAuth(): Promise<void> {
+    if (this.refreshing) return this.refreshing;
+    if (!this.client && !this.starting) return;
+    const run = this.reconnect().finally(() => {
+      if (this.refreshing === run) this.refreshing = undefined;
+    });
+    this.refreshing = run;
+    return run;
+  }
+
+  private async reconnect(): Promise<void> {
+    const old = this.client ?? (await this.starting?.catch(() => undefined));
+    const ids = [...this.sessions.keys()];
+    const busy = new Map<string, boolean>();
+    for (const sid of ids) {
+      const live = this.sessions.get(sid)!;
+      busy.set(sid, await this.processing(live));
+      live.unsubscribe();
+      live.broker.denyPending(); // the old runtime's requests and questions die with it
+      this.cancelQuestions(live);
+      live.limitRequestId = undefined;
+      this.emit(sid, { type: 'status', status: 'working', intent: 'Reconnecting Copilot…' });
+    }
+    this.client = undefined;
+    this.starting = undefined;
+    if (old) {
+      try {
+        const errors = await old.stop();
+        if (errors?.length) this.debug?.(`refreshAuth: ${errors.length} cleanup error(s) on the old client`);
+      } catch (e) {
+        this.debug?.(`refreshAuth: old client stop failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    let client: CopilotClient;
+    try {
+      client = await this.getClient();
+    } catch (e) {
+      for (const sid of ids) this.dropAfterReconnect(sid, e);
+      throw e;
+    }
+    for (const sid of ids) {
+      const live = this.sessions.get(sid);
+      if (!live?.resumeConfig || !live.onSessionEvent) continue;
+      try {
+        const cfg = { ...live.resumeConfig(), ...(live.cap !== undefined ? { sessionLimits: live.cap === null ? undefined : { maxAiCredits: live.cap } } : {}) };
+        const session = await client.resumeSession(sid, cfg as unknown as ResumeSessionConfig);
+        live.session = session;
+        live.unsubscribe = session.on(live.onSessionEvent);
+        void session.rpc.eventLog.registerInterest({ eventType: 'session_limits_exhausted.requested' }).catch(() => undefined);
+        for (const [name, on] of live.mcpToggles ?? []) {
+          await (on ? session.rpc.mcp.enable({ serverName: name }) : session.rpc.mcp.disable({ serverName: name })).catch(() => undefined);
+        }
+        this.emit(sid, { type: 'status', status: 'idle', intent: busy.get(sid) ? 'Reconnected with the new sign-in. The running turn was stopped; send it again if needed.' : 'Reconnected with the new sign-in.' });
+      } catch (e) {
+        this.dropAfterReconnect(sid, e);
+      }
+    }
+  }
+
+  /** A session that could not be resumed after a reconnect is ended (its history stays on disk; sending again resumes it). */
+  private dropAfterReconnect(sid: string, e: unknown): void {
+    const live = this.sessions.get(sid);
+    if (!live) return;
+    live.broker.stop();
+    this.sessions.delete(sid);
+    this.mappers.delete(sid);
+    this.debug?.(`refreshAuth: ${sid.slice(0, 8)} not resumed: ${e instanceof Error ? e.message : String(e)}`);
+    this.emit(sid, { type: 'status', status: 'stopped', intent: 'Could not reconnect after the sign-in. Send a message to resume.' });
   }
 
   /** Spec 051 FR-007: the runtime's own sign-in status (no prompt, no credits). The login name, host and message are dropped. */
   async authStatus(): Promise<{ signedIn: boolean }> {
     const s = await (await this.getClient()).getAuthStatus();
     return { signedIn: !!s.isAuthenticated };
+  }
+
+  /**
+   * Spec 012 FR-156: is the sign-in really valid? `getAuthStatus()` only looks on this computer (it also finds `gh` or keyring
+   * credentials), so a "yes" is then confirmed with a server call that needs a valid token and spends nothing:
+   * `account.getQuota` (@experimental; not cached by the SDK), or, when the runtime lacks it, `models.list` straight through the
+   * RPC (the SDK's `listModels()` caches its first answer for the client's life, so it could not notice an expired sign-in).
+   * An error that reads like a sign-in failure means signed out; anything else (network, timeout) is unknown.
+   */
+  async verifySignIn(): Promise<SignInCheck> {
+    const client = await this.getClient();
+    let local: { isAuthenticated?: boolean } | undefined;
+    try {
+      local = await client.getAuthStatus();
+    } catch (e) {
+      return { status: signInFromError(e) };
+    }
+    if (!local?.isAuthenticated) return { status: 'signed-out', detail: 'No Copilot sign-in on this computer.' };
+    const rpc = (client as unknown as { rpc?: { account?: { getQuota?: (p: object) => Promise<unknown> }; models?: { list?: (p: object) => Promise<unknown> } } }).rpc;
+    const calls: Array<() => Promise<unknown>> = [];
+    if (typeof rpc?.account?.getQuota === 'function') calls.push(() => rpc.account!.getQuota!({}));
+    if (typeof rpc?.models?.list === 'function') calls.push(() => rpc.models!.list!({}));
+    else calls.push(() => client.listModels());
+    for (const call of calls) {
+      try {
+        await call();
+        return { status: 'signed-in', detail: 'Signed in (checked with GitHub).' };
+      } catch (e) {
+        if (isAuthError(e)) return { status: 'signed-out', detail: 'GitHub did not accept the Copilot sign-in.' };
+        // any other error (the runtime lacks the call, a network problem): try the next call, then say unknown
+      }
+    }
+    return { status: 'unknown' };
   }
 
   /** Models visible to the logged-in user (no inference, no credits). */
@@ -337,7 +465,7 @@ export class CopilotAdapter implements AgentAdapter {
         : await client.createSession({ ...created(), sessionId: options.sessionId } as unknown as SessionConfig);
     } else session = await client.createSession(created() as unknown as SessionConfig);
     sid = session.sessionId;
-    const unsubscribe = session.on((ev) => {
+    const onSessionEvent = (ev: SessionEvent): void => {
       // Remember an open limit request so Stop / End can answer it (the runtime waits for a consumer once interest is registered).
       const live = this.sessions.get(sid);
       if (live && ev.type === 'session_limits_exhausted.requested') live.limitRequestId = ev.data.requestId;
@@ -345,8 +473,11 @@ export class CopilotAdapter implements AgentAdapter {
       if (live && ev.type === 'session.title_changed' && !ev.agentId) live.titled = true;
       this.map(sid, ev);
       if (live && ev.type === 'session.idle') this.askTitle(sid);
-    });
-    this.sessions.set(sid, { session, unsubscribe, cwd, folders: [cwd, ...folders], broker });
+    };
+    const unsubscribe = session.on(onSessionEvent);
+    // FR-158: a reconnect resumes with the same handlers but no model fields, so the session keeps the model the runtime stored
+    // (it may have been switched since this start).
+    this.sessions.set(sid, { session, unsubscribe, cwd, folders: [cwd, ...folders], broker, resumeConfig: () => ({ ...config }), onSessionEvent });
     // spec 043 FR-002: a resumed session keeps its selected agent (stored by the runtime): show it
     if (resumedExisting)
       void Promise.resolve()
@@ -364,6 +495,7 @@ export class CopilotAdapter implements AgentAdapter {
   }
 
   async send(sessionId: string, message: AgentMessage): Promise<void> {
+    await this.refreshing?.catch(() => undefined); // FR-158: send on the reconnected session
     const live = this.mustGet(sessionId);
     // Files the user attached are theirs to share: the runtime may read them even outside the folders (spec 003 FR-023).
     if (message.attachments?.length) live.broker.allowReadPaths(message.attachments.map((a) => a.path));
@@ -448,6 +580,7 @@ export class CopilotAdapter implements AgentAdapter {
 
   /** End the session: frees the runtime session. Its history stays on disk and sending again resumes it. */
   async stop(sessionId: string): Promise<void> {
+    await this.refreshing?.catch(() => undefined);
     const live = this.sessions.get(sessionId);
     if (!live) return;
     await this.cancelLimit(live);
@@ -647,7 +780,13 @@ export class CopilotAdapter implements AgentAdapter {
         await remote.disable!();
         return { ok: true, on: false };
       }
-      const r = ((await remote.enable!({ mode: 'on' })) ?? {}) as { url?: unknown; remoteSteerable?: unknown };
+      const r = ((await remote.enable!({ mode: 'on' })) ?? {}) as { url?: unknown; remoteSteerable?: unknown; started?: unknown };
+      // spec 054 T020 (real, 2026-10-20): in a plain folder and in a `git init` folder with no remote the runtime answers
+      // `{ started: false, remoteSteerable: false }` with no error and no URL; that is not "on"
+      if (r.started === false) {
+        await remote.disable!().catch(() => undefined);
+        return { ok: false, error: REMOTE_NOT_STARTED };
+      }
       const out: RemoteState = { ok: true, on: true, steerable: r.remoteSteerable === true };
       if (allowedRemoteUrl(r.url)) out.url = r.url;
       const vis = rpc?.visibility as { get?: () => Promise<unknown> } | undefined;
@@ -679,6 +818,7 @@ export class CopilotAdapter implements AgentAdapter {
     const live = this.mustGet(sessionId);
     if (credits !== null && !(credits > 0 && Number.isFinite(credits))) throw new Error('Invalid credit cap.');
     await live.session.rpc.options.update({ sessionLimits: credits === null ? null : { maxAiCredits: credits } });
+    live.cap = credits;
   }
 
   /** Answer the runtime's "limit reached" question (add / set / unset / cancel). */
@@ -708,6 +848,7 @@ export class CopilotAdapter implements AgentAdapter {
     const live = this.mustGet(sessionId);
     if (enabled) await live.session.rpc.mcp.enable({ serverName: name });
     else await live.session.rpc.mcp.disable({ serverName: name });
+    (live.mcpToggles ??= new Map()).set(name, enabled);
   }
 
   resolvePermission(sessionId: string, requestId: string, approve: boolean, remember = false, broad = false): void {
@@ -720,6 +861,7 @@ export class CopilotAdapter implements AgentAdapter {
 
   /** Stop all sessions and the shared runtime. */
   async dispose(): Promise<void> {
+    await this.refreshing?.catch(() => undefined);
     for (const id of [...this.sessions.keys()]) await this.stop(id);
     await this.client?.stop();
     this.client = undefined;
@@ -738,7 +880,7 @@ export class CopilotAdapter implements AgentAdapter {
   }
 
   protected emit(sessionId: string, body: EventBody): void {
-    const event = { ...body, sessionId, timestamp: Date.now() } as AgentEvent;
+    const event = { ...markAuthError(body), sessionId, timestamp: Date.now() } as AgentEvent; // FR-157: a sign-in failure is marked
     for (const l of this.listeners) l(event);
   }
 

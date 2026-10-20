@@ -159,3 +159,27 @@
 - [x] T095 Inbox session button shrinks with an ellipsis (Deny always visible); Thinking full width with no inner scroll; Failing in the palette, strip and list dot; folder note only next to plain words; Cost "This session / All time" before the tabs with a "since" subtitle; Agent apps "for …" line; wider Agent app column [FR-092]
 - [x] T096 Mode menu lines, "What Durbar does not do" (Settings and README), AI theme cost line per selected app, Simple limit and memory chips; Remove from office confirmation checked [FR-093]
 - [x] T097 Drivers grepped for every changed string; `shots-052-ux.js` memory chip check; README Tools line; CHANGELOG [FR-094]
+## FR-085 fix: Mac window from an open chat (2026-10-20)
+- [x] T120 Mac: the chat's agent strip is the drag area with the traffic-light room when the top bar is hidden, and so is a screen's header (Settings, Tools, folder) opened over a chat; `test-macos` checks both [FR-085 fix, 2026-10-20]
+## Round 10: chrome density and type (2026-10-20)
+- [x] T098 Chat header on one row (32px avatar, T1 name, chips and `.btn.sm` at 28px, actions pinned right), task and usage on one line, **Previous (N)** in the actions instead of the bar, 48px strip, shorter composer hint, 13px bubbles [FR-095]
+- [x] T099 Compact inbox rows (32px avatar, 8px gaps, `.btn.sm`, **Open** on the heading line) [FR-096]
+- [x] T100 Settings and Tools: header on the 880px column, tighter sections, fluid agent app grid, "Simulated version." in the badge title, shorter blurbs [FR-097]
+- [x] T101 Type scale (`--t1..t5`), spacing scale, folded chrome sizes, body 13px with the office, list and top bar pinned at 14px, dialog padding, tokens for radii and colours; `docs/design-rules.md` [FR-098]
+- [x] T102 Settings > Detail level > Spacing (Comfortable / Compact, `html[data-density]`, `localStorage`), chrome-only overrides; copy (folders, demo, Open); drivers; README and CHANGELOG [FR-099]
+
+## Round 10: office and tables (2026-10-20)
+
+- [x] T103 Flat desk and helper cards (surface, 1px `--line-hair`, no shadow; Clean shadow removed); 3px inside edge for Waiting, Error and Failing (`is-failing`); 1.5px selection ring [FR-100]
+- [x] T104 Calm statuses as a dot and a word on cards and list rows (transparent pill, same size); Waiting, Error, Failing and Limit reached keep the fill; driver check in `shots-052-ux.js` [FR-101]
+- [x] T105 Card tooltip names the role (hidden next to the name in mini and micro); usage line checked (cost only in Simple, tabular and right-aligned in Expert) [FR-102]
+- [x] T106 Top-bar counters as one segmented strip (inset frame, dividers in the gap, transparent 1px borders, same widths and height); selected state; theme frames in `themes.css` [FR-103]
+- [x] T107 List hairlines, header and right-aligned numbers; Tools groups without frames, `7px 8px` cells, plain-text "Used by", 4px bars; CHANGELOG [FR-104]
+
+## Round 11: one-row top bar and thinner walls (2026-10-20)
+
+- [x] T108 Top bar on one 48px row: + New menu (Add folder…, Add VS Code workspace…, ids kept), Defaults chip with a popover holding the selects (ids kept), folder filter joined with Manage folders, counters as dot and number below 1800px, Needs you icon and number below 1600px; themes recolour only; texts and palette; `docs/design-rules.md`, README, CHANGELOG [FR-105]
+- [x] T109 Room, place and helper connector lines 1px in Clean Office and every theme (Retro's ring follows) [FR-106]
+- [x] T110 Drivers: `shots-017.js` opens the Defaults popover; `check-office-overlap.js` checks the one-row top bar; the others grepped [FR-107]
+- [x] T111 Full simulator run before merge: geometry, office, every driver that touches the top bar, screenshot tour by eye; Manage folders popover anchored to its button; `shots-017` history check follows round 10's Previous button [FR-107]
+

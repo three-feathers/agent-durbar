@@ -47,6 +47,10 @@ export class FakeSession {
     history: { compact: async (a: unknown) => this.rec('compact', this.compactAnswer, a) },
     name: { get: async () => this.rec('name.get', { name: this.nameAnswer }) },
     metadata: { isProcessing: async () => this.rec('isProcessing', { processing: this.processing }) },
+    mcp: {
+      enable: async (a: unknown) => this.rec('mcp.enable', undefined, a),
+      disable: async (a: unknown) => this.rec('mcp.disable', undefined, a),
+    },
     // spec 054: remote control (@experimental). `remoteFail` / `visibilityFail` make the call reject with that message.
     remote: {
       enable: async (a: unknown) => { this.calls.push({ name: 'remote.enable', args: [a] }); if (this.remoteFail) throw new Error(this.remoteFail); return this.remoteAnswer; },
@@ -93,6 +97,7 @@ export class FakeClient {
     return this.last;
   }
   async resumeSession(id: string, config: Record<string, unknown>): Promise<FakeSession> {
+    if (this.resumeFail.has(id)) throw new Error(`cannot resume ${id}`);
     this.resumed.push({ id, config });
     this.last = this.track(new FakeSession(id, config));
     return this.last;
@@ -102,13 +107,56 @@ export class FakeClient {
     this.deleted.push(id);
     if (!this.onDisk.delete(id)) throw new Error(`session ${id} not found`);
   }
+  /** Spec 012 FR-158: `stop()` was called (graceful); `stopFail` makes it reject. */
+  stopped = 0;
+  stopFail = '';
+  async stop(): Promise<Error[]> { this.stopped++; if (this.stopFail) throw new Error(this.stopFail); return []; }
+  /** `resumeSession` rejects for these ids (FR-158 error path). */
+  resumeFail = new Set<string>();
   async getSessionMetadata(id: string): Promise<unknown> { return this.onDisk.has(id) ? { sessionId: id } : undefined; }
-  async listModels(): Promise<unknown[]> { return []; }
+  async listModels(): Promise<unknown[]> { this.authCalls.push('listModels'); if (this.listModelsFail) throw new Error(this.listModelsFail); return []; }
+  /** Spec 012 FR-156: what `getAuthStatus()` says (local), and the server calls `verifySignIn` makes, in order. */
+  authenticated = true;
+  authStatusFail = '';
+  authCalls: string[] = [];
+  /** `rpc.account.getQuota` / `rpc.models.list` / `listModels` reject with this message; `noQuota` / `noRpcModels` leave the method out. */
+  quotaFail = '';
+  modelsFail = '';
+  listModelsFail = '';
+  noQuota = false;
+  noRpcModels = false;
+  async getAuthStatus(): Promise<unknown> {
+    this.authCalls.push('getAuthStatus');
+    if (this.authStatusFail) throw new Error(this.authStatusFail);
+    return { isAuthenticated: this.authenticated, authType: 'user', login: 'someone', statusMessage: 'ok' };
+  }
+  get rpc(): Record<string, unknown> {
+    return {
+      ...(this.noQuota ? {} : { account: { getQuota: async (p: unknown) => { this.authCalls.push('account.getQuota'); void p; if (this.quotaFail) throw new Error(this.quotaFail); return { quotaSnapshots: {} }; } } }),
+      ...(this.noRpcModels ? {} : { models: { list: async () => { this.authCalls.push('models.list'); if (this.modelsFail) throw new Error(this.modelsFail); return { models: [] }; } } }),
+    };
+  }
 }
 
 export class FakeCopilot extends CopilotAdapter {
   constructor(public fake: FakeClient, oneShotTimeoutMs?: number) { super(); if (oneShotTimeoutMs !== undefined) this.oneShotTimeoutMs = oneShotTimeoutMs; }
   protected async getClient(): Promise<never> { return this.fake as never; }
+}
+
+/**
+ * Spec 012 FR-158: a `CopilotAdapter` whose real `getClient()` caching runs, with a new `FakeClient` from `createClient()` each
+ * time (as the SDK starts a new runtime). `clients` lists them in order; `prepare` sets up each new one.
+ */
+export class RestartingFakeCopilot extends CopilotAdapter {
+  clients: FakeClient[] = [];
+  constructor(public prepare: (c: FakeClient, n: number) => void = () => undefined) { super(); }
+  protected async createClient(): Promise<never> {
+    const c = new FakeClient();
+    this.prepare(c, this.clients.length);
+    this.clients.push(c);
+    return c as never;
+  }
+  currentClient(): Promise<FakeClient> { return this.getClient() as unknown as Promise<FakeClient>; }
 }
 
 /** Former name, kept so existing tests keep working. */

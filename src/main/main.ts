@@ -33,6 +33,7 @@ import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '..
 import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
 import { AgentStateTracker, applySetPaused } from './mcp/agentstate';
+import { maskMcpStatuses } from './mcpmask';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { cliServers, copilotDir } from './mcpfiles';
 import { UsageStore } from './usagestore';
@@ -48,6 +49,8 @@ import { agentLabel } from '../shared/toolusage';
 import { devEnv, devWarning } from './devhooks';
 import { UserThemeStore } from './themes';
 import { HarnessSetup, confirmText, posixTrusted } from './harnesssetup';
+import { markSignedOut, withSignIn } from './authcheck';
+import type { SignInAnswer } from './authcheck';
 import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind } from '../shared/harnesssetup';
 import { MAX_DESCRIPTION, MAX_PASSES, THEME_IDEAS, TOP_BAR_ISSUE, buildFixPrompt, buildRetryPrompt, buildThemePrompt, isBlocking, keepArt, parseGeneratedTheme } from '../shared/themegen';
 import { SettingsStore } from './settings';
@@ -116,7 +119,8 @@ const toRenderer = (channel: string, payload: unknown): void => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 };
 
-router.onEvent((e) => toRenderer('agent:event', e));
+/** An MCP status event carries server error text: masked here, once, before the window sees it (spec 019 FR-021). */
+router.onEvent((e) => toRenderer('agent:event', e.type === 'mcp' ? { ...e, servers: maskMcpStatuses(e.servers, mcp.secretValuesFor(e.sessionId)) } : e));
 /** Open MCP elicitations (spec 012 FR-151): main checks each answer against the fields it was asked with. */
 const elicitTracker = createElicitTracker();
 router.onEvent((e) => elicitTracker.onEvent(e));
@@ -735,6 +739,14 @@ const harnessSetup = new HarnessSetup({
   },
   send: (channel: string, p: unknown) => toRenderer(channel, p),
   redetect: async () => { await adaptersList(true); },
+  // spec 012 FR-158: only an adapter already created is refreshed (none is created here); Copilot restarts its shared client
+  afterSignIn: async (kind: string) => {
+    const ad = router.created().find((x) => x.id === kind);
+    if (!ad?.refreshAuth) return;
+    // spec 012 FR-158 / 054 FR-011: a reconnected session is not remote any more; say so instead of keeping a stale Remote chip
+    for (const id of remoteOps.ids()) if (router.adapterIdOf(id) === kind) { remoteOps.forget(id); toRenderer('agents:remoteOff', id); }
+    await ad.refreshAuth();
+  },
   realpath: (p: string) => fs.realpathSync(p),
   trustedPath: (p: string) => process.platform === 'win32' || posixTrusted(p, (q) => fs.statSync(q).mode),
 } as ConstructorParameters<typeof HarnessSetup>[0]);
@@ -1041,10 +1053,31 @@ ipcHandle('models:list', async (_e, kind: unknown): Promise<{ ok: boolean; error
 
 /** Which adapters exist and whether each can run (spec 012 FR-033, FR-034). Cached; `refresh` probes again. Runs no session and spends no credits. */
 let adaptersInfo: Promise<AdapterInfo[]> | undefined;
+/** The adapter's own sign-in question, when it has one (spec 012 FR-156): `verifySignIn` (a free server call where the app has one), else `authStatus`. */
+const signInCheck = (id: string): (() => Promise<SignInAnswer>) | undefined => {
+  try {
+    if (!registry.has(id)) return undefined;
+    const ad = router.instance(id);
+    if (typeof ad.verifySignIn === 'function') return () => (ad.verifySignIn as () => Promise<SignInAnswer>)();
+    return typeof ad.authStatus === 'function' ? () => (ad.authStatus as () => Promise<SignInAnswer>)() : undefined;
+  } catch {
+    return undefined;
+  }
+};
 const adaptersList = (refresh: boolean): Promise<AdapterInfo[]> => {
-  if (!adaptersInfo || refresh) adaptersInfo = detectAll(registry, (d) => detectorFor(d.id)?.(d) ?? Promise.resolve({ state: 'unknown' as const }));
+  // spec 012 FR-156: after the probes, each agent app that can tell is asked whether its sign-in works; cached until Check again
+  if (!adaptersInfo || refresh) adaptersInfo = detectAll(registry, (d) => detectorFor(d.id)?.(d) ?? Promise.resolve({ state: 'unknown' as const })).then((infos) => withSignIn(infos, signInCheck));
   return adaptersInfo;
 };
+/** Spec 012 FR-157: a session refused because of the sign-in marks its agent app `not-signed-in` in the cached list and tells the window. */
+router.onEvent((e) => {
+  if (e.type !== 'status' || e.status !== 'error' || e.errorKind !== 'auth' || e.agentId) return;
+  const id = agents.get(e.sessionId)?.adapterId;
+  if (!id || !adaptersInfo) return;
+  const before = adaptersInfo;
+  adaptersInfo = before.then((infos) => markSignedOut(infos, id)).catch(() => before);
+  void adaptersInfo.then((infos) => toRenderer('adapters:changed', infos)).catch(() => undefined);
+});
 ipcHandle('adapters:list', (_e, refresh: unknown): Promise<AdapterInfo[]> => adaptersList(refresh === true));
 /** Ids whose cached state is `ready`; a failed probe counts as none (spec 012 FR-058). */
 const readyAdapterIds = async (): Promise<ReadonlySet<string>> => {

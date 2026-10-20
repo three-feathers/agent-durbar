@@ -394,6 +394,8 @@ export interface DurbarApi {
   listModels?(kind?: string): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }>;
   /** Adapters and whether each can run (spec 012 FR-033). `refresh` probes again instead of using the cached answer. */
   listAdapters?(refresh?: boolean): Promise<AdapterInfo[]>;
+  /** Spec 012 FR-157: main changed the cached list by itself (a session was refused because of the sign-in). */
+  onAdaptersChanged?(cb: (list: AdapterInfo[]) => void): () => void;
   /** End the session (frees it; sending again resumes it). `stop` only interrupts the current turn. */
   end?(id: string): Promise<void>;
   /** Open an http(s) link in the system browser (anything else is refused in the main process). */
@@ -477,6 +479,8 @@ export interface DurbarApi {
   /** `pwshMissing` (spec 052 FR-073): Windows only, PowerShell 7 was not found; the Copilot card shows a hint. */
   copilotAuth?(): Promise<{ known: boolean; signedIn?: boolean; pwshMissing?: boolean }>;
   onHarnessProgress?(cb: (p: { kind: string; op: string; lines: string[]; elapsedMs: number; url?: string; code?: string; needsPaste?: boolean }) => void): () => void;
+  /** spec 012 FR-158: remote control ended because the agent app reconnected after a new sign-in. */
+  onRemoteOff?(cb: (agentId: string) => void): () => void;
   onHarnessDone?(cb: (p: { kind: string; op: string; ok: boolean; exitCode?: number | null; reason?: string; lines: string[] }) => void): () => void;
   exportTheme?(id: string): Promise<{ ok: boolean; to?: string; error?: string; cancelled?: boolean }>;
   setCap?(id: string, credits: number | null): Promise<{ ok: boolean; error?: string; maxAiCredits?: number }>;

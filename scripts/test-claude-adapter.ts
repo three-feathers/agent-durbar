@@ -628,6 +628,38 @@ async function main(): Promise<void> {
     await ad.stop(sid);
   }
 
+  // ---- spec 012 FR-157: the owner's real error ends the turn with errorKind 'auth', from the result and from stderr at exit ----
+  {
+    const REAL = 'Failed to authenticate. API Error: 401 OAuth access token is invalid.';
+    const authTurn = (c: FakeClaudeChild): void => {
+      c.send({ type: 'system', subtype: 'init', session_id: 'x', cwd: WS, model: 'claude-haiku-5-5', permissionMode: 'default', tools: [], mcp_servers: [] });
+      c.send({ type: 'assistant', error: 'authentication_failed', message: { id: 'm1', model: '<synthetic>', role: 'assistant', content: [{ type: 'text', text: REAL }] } });
+      c.send({ type: 'result', subtype: 'success', is_error: true, result: REAL });
+    };
+    const { ad, events } = make({ turn: authTurn });
+    const sid = await ad.start({ workspace: WS, quiet: true });
+    await ad.send(sid, { text: 'hi' });
+    const e = await until('auth error', () => events.find((x) => x.sessionId === sid && x.type === 'status' && x.status === 'error')) as { errorKind?: string; intent?: string };
+    assert.strictEqual(e.errorKind, 'auth');
+    assert.strictEqual(e.intent, REAL);
+    await ad.stop(sid);
+    // stderr at exit: the sentence is shown, never the stderr text itself
+    const m2 = make({ turn: (c) => { c.err(`${REAL}\n`); c.exit(1, null); } });
+    const sid2 = await m2.ad.start({ workspace: WS, quiet: true });
+    await m2.ad.send(sid2, { text: 'hi' });
+    const e2 = await until('auth exit', () => m2.events.find((x) => x.sessionId === sid2 && x.type === 'status' && x.status === 'error')) as { errorKind?: string; intent?: string };
+    assert.strictEqual(e2.errorKind, 'auth');
+    assert.ok(!e2.intent!.includes('OAuth'), 'stderr is not shown');
+    await m2.ad.stop(sid2);
+    // a low credit balance is not a sign-in problem
+    const m3 = make({ turn: (c) => { c.send({ type: 'result', subtype: 'success', is_error: true, result: 'Credit balance is too low' }); } });
+    const sid3 = await m3.ad.start({ workspace: WS, quiet: true });
+    await m3.ad.send(sid3, { text: 'hi' });
+    const e3 = await until('credit error', () => m3.events.find((x) => x.sessionId === sid3 && x.type === 'status' && x.status === 'error')) as { errorKind?: string };
+    assert.strictEqual(e3.errorKind, undefined);
+    await m3.ad.stop(sid3);
+  }
+
   // ---- FR-150: a dollar cap on Claude's estimate: the CLI budget, the limit notice, the held message ----
   {
     assert.strictEqual(budgetText(0.5), '0.5');
