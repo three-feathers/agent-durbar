@@ -9,7 +9,7 @@ import { CMD_UNSAFE, candidates } from '../adapters/detect';
 import type { DetectEnv } from '../adapters/detect';
 import { windowsCmd } from '../shared/wincmd';
 import { redact } from '../shared/redact';
-import { SIGN_IN, installPlans, lastLines, managersFor, parseSignIn, updatePlans, validPaste, OFFICIAL_PAGES, SETUP_NAMES } from '../shared/harnesssetup';
+import { SIGN_IN, installPlans, lastLines, managersFor, parseSignIn, routeOwning, updatePlans, validPaste, OFFICIAL_PAGES, SETUP_NAMES } from '../shared/harnesssetup';
 import type { OfficialScript, PackageManager, SetupKind, SetupPlan, SignInView } from '../shared/harnesssetup';
 import * as fs from 'fs';
 import { downloadScript } from './officialinstall';
@@ -148,6 +148,15 @@ export class HarnessSetup {
       const home = env.homedir.endsWith('/') ? env.homedir : env.homedir + '/';
       return at && at.startsWith(home) ? p : { ...p, note: [p.note, 'Node.js is installed for all users here, so this may need administrator rights.'].filter(Boolean).join(' ') };
     });
+    if (op === 'update' && !assumeFound) {
+      // review on #393: update with the route that installed the copy Durbar finds, so no second copy is left behind
+      const at = this.find(kind);
+      let real: string | undefined;
+      try { real = at ? (this.deps.realpath ?? ((x: string) => x))(at) : undefined; } catch { real = undefined; }
+      const owner = real ? routeOwning(real) : undefined;
+      const i = owner ? plans.findIndex((p) => p.manager === owner) : -1;
+      if (i > 0) plans.unshift(...plans.splice(i, 1));
+    }
     return { plans, page: OFFICIAL_PAGES[kind], name: SETUP_NAMES[kind] };
   }
 
@@ -214,7 +223,9 @@ export class HarnessSetup {
 
   /** Starts a prepared operation. Returns at once; progress and the end come as events. */
   start(job: PreparedRun): { ok: true } | { ok: false; error: string } {
-    if (this.busy) return { ok: false, error: 'Another setup step is still running.' };
+    // review on #393: a refused start must not leave a downloaded installer behind (two quick runs can both download)
+    const dropDownload = (): void => { if (job.cleanupDir) try { fs.rmSync(job.cleanupDir, { recursive: true, force: true }); } catch { /* left in the OS temp folder */ } };
+    if (this.busy) { dropDownload(); return { ok: false, error: 'Another setup step is still running.' }; }
     const { kind, op, paste } = job;
     const env = this.deps.detectEnv;
     let child: ChildLike;
@@ -227,7 +238,7 @@ export class HarnessSetup {
         windowsHide: true,
       });
     } catch (e) {
-      if (job.cleanupDir) fs.rmSync(job.cleanupDir, { recursive: true, force: true });
+      dropDownload();
       return { ok: false, error: 'Could not start it: ' + (e instanceof Error ? e.message : String(e)) };
     }
     const now = this.deps.now ?? Date.now;
@@ -333,7 +344,7 @@ export function confirmText(job: PreparedRun): { message: string; detail: string
     const hosts = job.script.hosts.map((h) => h.host).join(', ');
     return {
       message: `${verb} ${name} with the official installer?`,
-      detail: `Durbar will download the vendor's installer from\n${job.script.url}\n(only from ${hosts}) and run it on your computer, as you:\n\n${job.file} ${[...job.args, '<installer>'].join(' ')}\n\nIt installs into your home folder and needs no administrator rights. Only continue if you started this in Durbar.`,
+      detail: `Durbar will download the vendor's installer from\n${job.script.url}\n(only from ${hosts}) and run it on your computer, as you:\n\n${job.file} ${[...job.args, '<installer>'].join(' ')}\n\nIt installs into your home folder and needs no administrator rights. The vendor's script may also add its folder to your shell's PATH (for example in ~/.bashrc or ~/.zprofile). Only continue if you started this in Durbar.`,
       button: job.op === 'install' ? 'Install' : 'Update',
     };
   }

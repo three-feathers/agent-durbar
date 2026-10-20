@@ -205,3 +205,17 @@ export function lastLines(raw: string, n = 6): string[] {
 }
 
 export const isSetupKind = (k: unknown): k is SetupKind => k === 'claude' || k === 'codex' || k === 'copilot';
+
+/**
+ * Spec 060 FR-001 (review on #393): which install route owns an installed binary, from its real path, so Update uses that route
+ * and never leaves a second copy (the official script would install into ~/.local/bin while detection still finds the old one).
+ * Pure; `undefined` when the path says nothing (then the usual order applies).
+ */
+export function routeOwning(realPath: string): RouteManager | undefined {
+  const p = realPath.replace(/\\/g, '/');
+  if (/\/node_modules\//i.test(p) || /\/npm\/[^/]+\.cmd$/i.test(p)) return 'npm';
+  if (/\/(Cellar|Caskroom)\//.test(p) || p.startsWith('/opt/homebrew/') || /\/\.?linuxbrew\//.test(p)) return 'brew';
+  if (/\/WinGet\/(Packages|Links)\//i.test(p)) return 'winget';
+  if (/\/\.local\/(bin|share)\//.test(p) || /\/\.claude\/local\//.test(p) || /\/Programs\/OpenAI\/Codex\//i.test(p)) return 'official';
+  return undefined;
+}

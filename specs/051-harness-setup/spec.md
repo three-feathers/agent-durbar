@@ -133,3 +133,11 @@ Each sign-in was started **without a terminal** (stdin closed, output to a file)
 - **2026-10-20 (spec 052 FR-056):** the cards add a muted "· for ChatGPT / Claude / GitHub" subtitle; the install dialog leads each way with "Durbar installs <App> for you with Homebrew (recommended)" and moves the exact commands into "Show the exact command" (closed in Simple, open in Expert). The native main-side confirmation (FR-004b) still shows the real program and arguments before anything runs. Not run in the simulator in this change (`read:`).
 - **2026-10-20 (spec 052 FR-045):** the cards say which plan each harness uses; the Claude and Codex sign-in and install hints point to Settings > Harnesses (the command stays in brackets); an install that worked goes straight to the sign-in when the harness needs one; the sign-in dialog names the account, adds a step 3 and no longer shows seconds; install choices lead with "Using Homebrew (recommended)" / "Using npm" above the command.
 - **2026-10-20 (security review, FR-004b/FR-004c):** a round-4 security reviewer found that consent lived only in the page. Installs and updates now need a native main-side confirmation with the real path; harness calls check the sender frame; world-writable binaries are refused on macOS/Linux; winget names its source; output lines hide the link, the code and OAuth values; progress is throttled. `test:` `scripts/test-harnesssetup.ts`. Not checked on Windows or macOS (`read:`); the native dialog was checked in the simulator only as far as the page goes (the simulator has its own canned runner).
+
+### 2026-10-21: D1 superseded by spec 060 FR-001 (official installers)
+
+- **D1 delta.** D1 said a package manager only, never a downloaded script, and otherwise the vendor's page. Spec 060 FR-001 (owner Q1, least privilege first) supersedes it:
+  - the vendor's official installer is downloaded **after** the native confirmation, from that vendor's fixed hosts only (checked on every redirect);
+  - it is saved into a private temp folder, checked to look like a script (not a web page), and **run as a file, never piped**;
+  - package managers come after it, or first when they own the installed copy (Update).
+  - Details and tests: spec 060 `## Changes`.

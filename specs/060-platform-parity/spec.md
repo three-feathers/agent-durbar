@@ -125,3 +125,26 @@ Rerun after those fixes (run 39485719890, `d600c68`): `real:` **Codex official o
 - **Codex** `install.ps1`: access denied on the admin's `AppData\Local` (CI only: the test user inherited `LOCALAPPDATA`). `install-check.ts` now sets the user's own `APPDATA` and `LOCALAPPDATA`.
 
 `real:` 2026-10-20, spec 062's first e2e run (Windows runner): after OpenAI's official `install.ps1` succeeded, **detection said Codex was not installed**. The script installs to `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe`, but detection looked in `%LOCALAPPDATA%\Programs\codex`. Detection now also looks in OpenAI's folder (unit test).
+
+### 2026-10-21: review fixes (Paco's agent on #393)
+
+- **Downloaded body check** `[IMPLEMENTED]` (`looksLikeScript`):
+  - `text/html` is refused; a `.sh` must start with `#!`; a `.ps1` must not start with `<` (after a BOM);
+  - anything else stops before running, with "it looks like a web page; nothing was run".
+  - `test:` fake responses for a challenge page, HTML content type, and a BOM.
+- **Total download time limit** `[IMPLEMENTED]`:
+  - `makeGet` adds an overall timer to the idle one, so a dripping server cannot keep it open;
+  - `test:` the real stream code against a local HTTP server: a normal body with its content type, a reported (not followed) redirect, the streaming size cap and the total limit;
+  - the local server found that a fully received oversized body could still resolve after `destroy()`. The promise now fails first.
+- **Update uses the owning route** `[IMPLEMENTED]`:
+  - `routeOwning(realPath)` (npm, Homebrew, winget, official) puts that route first for Update, so no second copy is left in `~/.local/bin`;
+  - install keeps least privilege first.
+  - `test:` the classifier, and a Homebrew-installed `claude` (`update` → brew first, `install` → official first).
+- **Small fixes** `[IMPLEMENTED]`:
+  - a start refused as busy deletes its downloaded folder (two runs prepared before either started);
+  - the spawn-failure cleanup is guarded;
+  - the confirmation says the vendor's script may add its folder to the shell's PATH;
+  - the window's "no route" text names the vendor installer.
+- **Install check wording.** The "Install check" workflow is a **report, not a gate**: every step is `continue-on-error`. Its *Found at* column is what detection finds after that route ran, which can be an earlier route's copy; *Result* uses the route's own exit code.
+- Codex official on Windows was fixed by `setupEnv` (Git's GNU tar ahead of `System32`; real rerun passed), not by a BOM.
+- `[KNOWN GAP]`: the vendor's script itself is not pinned (trust on first use over HTTPS, from the vendor's hosts only); the scripts verify the binaries they download.

@@ -4,10 +4,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { EventEmitter } from 'events';
-import { MAX_REDIRECTS, MAX_SCRIPT_BYTES, allowedScriptUrl, downloadScript } from '../src/main/officialinstall';
+import { MAX_REDIRECTS, MAX_SCRIPT_BYTES, allowedScriptUrl, downloadScript, looksLikeScript, makeGet } from '../src/main/officialinstall';
+import * as http from 'http';
 import type { HttpGet } from '../src/main/officialinstall';
 import { HarnessSetup, confirmText, setupEnv } from '../src/main/harnesssetup';
-import { installPlans } from '../src/shared/harnesssetup';
+import { installPlans, routeOwning } from '../src/shared/harnesssetup';
 import type { OfficialScript, PackageManager } from '../src/shared/harnesssetup';
 
 const full = new Set<PackageManager>(['bash', 'powershell', 'npm', 'brew', 'winget']);
@@ -56,6 +57,40 @@ async function main(): Promise<void> {
     await assert.rejects(downloadScript(claude, '.sh', { get: fake({ 'https://claude.ai/install.sh': { status: 200, body: Buffer.alloc(MAX_SCRIPT_BYTES + 1) } }).get, tmpdir: tmp }), /empty or too large/);
   }
 
+  // review on #393: a web page is never run. HTML content type, a .sh without #!, a .ps1 that starts with <
+  assert.ok(looksLikeScript(Buffer.from('#!/bin/bash\necho hi'), '.sh'));
+  assert.ok(!looksLikeScript(Buffer.from('<!DOCTYPE html><title>Just a moment...</title>'), '.sh'), 'a challenge page is not a script');
+  assert.ok(!looksLikeScript(Buffer.from('#!/bin/bash'), '.sh', 'text/html; charset=utf-8'), 'text/html is refused even with #!');
+  assert.ok(looksLikeScript(Buffer.from('\uFEFF  param()\nWrite-Host hi'), '.ps1'), 'a BOM and spaces before PowerShell are fine');
+  assert.ok(!looksLikeScript(Buffer.from('  <html>'), '.ps1'));
+  assert.ok(!looksLikeScript(Buffer.alloc(0), '.ps1'));
+  {
+    const f = fake({ 'https://claude.ai/install.sh': { status: 200, body: Buffer.from('<html><body>Verify you are human</body></html>') } });
+    await assert.rejects(downloadScript(claude, '.sh', { get: f.get, tmpdir: tmp }), /not the vendor's install script/);
+  }
+  // the real stream code against a local server (review on #393: the size cap and the total timeout must be proven)
+  {
+    const server = http.createServer((req, res) => {
+      if (req.url === '/ok') { res.writeHead(200, { 'Content-Type': 'text/x-sh' }); res.end('#!/bin/sh\necho ok\n'); return; }
+      if (req.url === '/big') { res.writeHead(200); res.write(Buffer.alloc(600)); res.write(Buffer.alloc(600)); res.end(); return; }
+      if (req.url === '/drip') { res.writeHead(200); const t = setInterval(() => res.write('x'), 40); req.on('close', () => clearInterval(t)); return; }
+      if (req.url === '/redir') { res.writeHead(302, { Location: '/ok' }); res.end(); return; }
+      res.writeHead(404); res.end();
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+    const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    const get = makeGet(http.get as never);
+    const okr = await get(base + '/ok', { timeoutMs: 2000, maxBytes: 1000 });
+    assert.deepStrictEqual([okr.status, okr.contentType, okr.body.toString()], [200, 'text/x-sh', '#!/bin/sh\necho ok\n']);
+    const rd = await get(base + '/redir', { timeoutMs: 2000, maxBytes: 1000 });
+    assert.deepStrictEqual([rd.status, rd.location], [302, '/ok'], 'redirects are reported, not followed');
+    await assert.rejects(get(base + '/big', { timeoutMs: 2000, maxBytes: 1000 }), /larger than expected/, 'the size cap works while streaming');
+    const t0 = Date.now();
+    await assert.rejects(get(base + '/drip', { timeoutMs: 300, maxBytes: 100000 }), /took too long/, 'a dripping server hits the TOTAL time limit');
+    assert.ok(Date.now() - t0 < 2000, 'and promptly (the idle timeout alone would never fire)');
+    server.close();
+  }
+
   // the runner: an official plan runs bash with the downloaded file as the last argument, and the folder goes when it ends
   {
     const calls: Array<{ file: string; args: readonly string[] }> = [];
@@ -81,8 +116,16 @@ async function main(): Promise<void> {
     if (!ready.ok) return;
     const scriptFile = ready.job.spawnArgs[ready.job.spawnArgs.length - 1];
     assert.ok(fs.existsSync(scriptFile) && ready.job.cleanupDir && scriptFile.startsWith(ready.job.cleanupDir));
+    const p2 = hs.prepare('claude', 'install', 0);
+    const r2 = p2.ok ? await hs.withScript(p2.job) : undefined;
+    assert.ok(r2 && r2.ok && r2.job.cleanupDir && fs.existsSync(r2.job.cleanupDir), 'two runs downloaded before either started');
     assert.ok(hs.start(ready.job).ok);
     assert.deepStrictEqual(calls[0], { file: '/usr/bin/bash', args: [scriptFile] }, 'bash <file>, argv only');
+    // review on #393: a second download, prepared before the first started, is refused at start AND its folder is removed
+    if (r2 && r2.ok) {
+      assert.match(String((hs.start(r2.job) as { error?: string }).error), /still running/);
+      assert.ok(!fs.existsSync(r2.job.cleanupDir!), 'the refused download is deleted');
+    }
     child.emit('close', 0);
     await new Promise((r) => setImmediate(r));
     await new Promise((r) => setImmediate(r));
@@ -119,6 +162,21 @@ async function main(): Promise<void> {
     const brewOf = (hs: HarnessSetup) => hs.plans('claude', 'install').plans.find((p) => p.manager === 'brew');
     assert.match(String(brewOf(mk(true))?.note), /belongs to another account/);
     assert.doesNotMatch(String(brewOf(mk(false))?.note), /another account/);
+  }
+  // review on #393: Update uses the route that owns the installed copy
+  assert.strictEqual(routeOwning('/opt/homebrew/Caskroom/claude-code/2.1.305/claude'), 'brew');
+  assert.strictEqual(routeOwning('/home/linuxbrew/.linuxbrew/Cellar/codex/0.163.0/bin/codex'), 'brew');
+  assert.strictEqual(routeOwning('/usr/local/lib/node_modules/@openai/codex/bin/codex.js'), 'npm');
+  assert.strictEqual(routeOwning('C:\\Users\\u\\AppData\\Roaming\\npm\\copilot.cmd'), 'npm');
+  assert.strictEqual(routeOwning('/home/u/.local/share/claude/versions/2.1.305'), 'official');
+  assert.strictEqual(routeOwning('C:\\Users\\u\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe'), 'official');
+  assert.strictEqual(routeOwning('C:\\Users\\u\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Anthropic.ClaudeCode\\claude.exe'), 'winget');
+  assert.strictEqual(routeOwning('/usr/bin/claude'), undefined);
+  {
+    const files = new Set(['/opt/homebrew/bin/brew', '/bin/bash', '/opt/homebrew/bin/claude']);
+    const hs = new HarnessSetup({ detectEnv: { platform: 'darwin', env: { PATH: '/opt/homebrew/bin:/usr/bin:/bin' }, homedir: '/Users/u', isFile: (p: string) => files.has(p) }, spawn: () => { throw new Error('no'); }, killTree: () => undefined, send: () => undefined, redetect: async () => undefined, ownedByOther: () => false, realpath: (p: string) => (p === '/opt/homebrew/bin/claude' ? '/opt/homebrew/Caskroom/claude-code/2.1.305/claude' : p) } as never);
+    assert.strictEqual(hs.plans('claude', 'install').plans[0].manager, 'official', 'install: least privilege first');
+    assert.strictEqual(hs.plans('claude', 'update').plans[0].manager, 'brew', 'update: the route that owns the copy comes first');
   }
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log('officialinstall: allow-list, redirects, size, private files, runner (bash/powershell argv, cleanup, never root) OK');

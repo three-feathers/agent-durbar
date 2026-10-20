@@ -110,7 +110,7 @@
   async function install(kind, op, name) {
     const p = await B.harnessPlans(kind, op);
     if (!p || !p.plans || !p.plans.length) {
-      modal((op === 'update' ? 'Update ' : 'Install ') + (p && p.name || name), `<p class="scr-note">No package manager that Durbar can use was found on this computer (winget, Homebrew or npm). Install ${esc(p && p.name || name)} from its official page, then come back and choose <b>Check again</b>.</p>`,
+      modal((op === 'update' ? 'Update ' : 'Install ') + (p && p.name || name), `<p class="scr-note">No install route that Durbar can use was found on this computer (the vendor's installer needs bash or Windows PowerShell; otherwise winget, Homebrew or npm). Install ${esc(p && p.name || name)} from its official page, then come back and choose <b>Check again</b>.</p>`,
         [{ label: 'Close', cancel: true, onClick: (c) => c() }, { label: 'Open the official page', cls: 'primary', onClick: (c) => { B.harnessOpenPage(kind); c(); } }]);
       return;
     }
