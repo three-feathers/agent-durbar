@@ -1,7 +1,7 @@
 /**
  * Binary lookup and version probe for the Claude and Codex CLIs (spec 012 FR-035..FR-041).
  * Pure apart from the injected `isFile` and `exec`; `nodeExec` is the only code that touches `child_process`.
- * Mirrors `src/main/vscode.ts` (LaunchEnv, PATH search, CMD_UNSAFE, planCmd) without importing it: adapters must not import `src/main`.
+ * Mirrors `src/main/vscode.ts` (LaunchEnv, PATH search, planCmd) without importing it: adapters must not import `src/main`. `CMD_UNSAFE` and `windowsCmd` are shared (`src/shared/wincmd.ts`).
  * Nothing here logs or returns an environment value or stderr.
  */
 
@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { AdapterDescriptor, DetectResult } from './capabilities';
-import { windowsCmd } from '../shared/wincmd';
+import { CMD_UNSAFE, windowsCmd } from '../shared/wincmd';
 
 export interface DetectEnv {
   platform: NodeJS.Platform;
@@ -58,7 +58,6 @@ const READY_HINT = 'Sign-in is checked when the agent starts.';
 const COPILOT_HINT = 'Uses the Copilot login on this computer when the agent starts.';
 
 /** Characters that cmd.exe would interpret, or that could break out of a quoted argument (same check as `src/main/vscode.ts`). */
-export const CMD_UNSAFE = /[\r\n\0"&|<>^%!`(),;=]/;
 
 function pathFor(platform: NodeJS.Platform): path.PlatformPath {
   return platform === 'win32' ? path.win32 : path.posix;

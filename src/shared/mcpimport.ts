@@ -6,6 +6,7 @@
  */
 import type { McpServerInput, McpTransport } from './mcp';
 import { ENV_KEY_RE, HEADER_KEY_RE, NAME_RE, validateInput } from './mcp';
+import { isObj } from './guards';
 
 export interface ImportCandidate {
   name: string;
@@ -31,7 +32,6 @@ export interface ParsedMcpFile {
   skipped: number;
 }
 
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
 function sanitizeName(raw: string): string {
   const s = raw.replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^[^A-Za-z0-9]+/, '').slice(0, 48).replace(/[-_.]+$/, '');
