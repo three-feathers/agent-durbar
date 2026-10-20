@@ -239,7 +239,10 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('backBtn').click()`); await ctx.sleep(600);
     // FR-043: ? opens the shortcut sheet; Esc closes it
     await js(`document.activeElement&&document.activeElement.blur()`);
-    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: '/', modifiers: ['shift'] }); ctx.win.webContents.sendInputEvent({ type: 'char', keyCode: '?', modifiers: ['shift'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: '/', modifiers: ['shift'] }); await ctx.sleep(500);
+    // a synthetic Shift+/ keyDown arrives as key '/' on macOS (a real keyboard gives '?'), so there the page gets the '?' keydown itself
+    if (process.platform === 'darwin') await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'?',shiftKey:true,bubbles:true,cancelable:true}))`);
+    else { ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: '/', modifiers: ['shift'] }); ctx.win.webContents.sendInputEvent({ type: 'char', keyCode: '?', modifiers: ['shift'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: '/', modifiers: ['shift'] }); }
+    await ctx.waitFor(`!!document.getElementById('kbdDlg')`, 5000).catch(() => undefined);
     assert.ok(await js(`!!document.getElementById('kbdDlg')&&/Ctrl.*K/.test(document.getElementById('kbdDlg').innerText)`), '? opens the shortcut sheet');
     await shot(`052-shortcuts-${w}x${h}.png`);
     key('Escape'); await ctx.sleep(300);

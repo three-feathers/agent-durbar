@@ -66,7 +66,15 @@ async function driver(ctx) {
     // the pointer of the virtual display rests mid-window: a hover style (retro nudges a card by 1px) is not layout
     ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 0, y: 0 });
     await ctx.sleep(300);
-    const base = await ctx.js(`(${measure.toString()})()`);
+    // a settled layout: measure until two snapshots 300 ms apart agree (a slow runner, macOS in CI, once caught the reference
+    // mid-change: every theme then "differed" from it the same way)
+    let base = await ctx.js(`(${measure.toString()})()`);
+    for (let i = 0; i < 10; i++) {
+      await ctx.sleep(300);
+      const again = await ctx.js(`(${measure.toString()})()`);
+      if (JSON.stringify(again) === JSON.stringify(base)) break;
+      base = again;
+    }
     // the theme's real fonts: the office check's own overlap, clipping, header and font-size rules on this layout
     const real = [await ctx.js(`(${pageCheck.toString()})(false, 5)`)];
     const more = await ctx.js(`(()=>{const m=document.querySelector('#stage .more[aria-expanded="false"]');if(!m)return false;m.click();return true})()`);
