@@ -104,42 +104,64 @@ export function parseFlag(a: string): { name: string; sep?: string; rest?: strin
 }
 
 const URL_SHAPE = /^[a-z][a-z0-9+.-]{1,20}:\/\//i;
-const KV = /^(\s*)([A-Za-z_][A-Za-z0-9_.-]{0,127})(\s*=)([\s\S]*)$/;
+/** `NAME=value`, also the PowerShell `$env:NAME=value` form (no spaces around `=` needed; `$env:NAME = 'v'` is the same rule). */
+const KV = /^(\s*)((?:\$env:)?[A-Za-z_][A-Za-z0-9_.-]{0,127})(\s*=)([\s\S]*)$/i;
+const ENV_PREFIX = /^\$env:/i;
 /** The next arg after a secret flag stays a flag (not its value) only when it has the shape of a long flag: `--name`, `--name=..`. */
 const LONG_FLAG = /^--[A-Za-z][A-Za-z0-9_.-]*(?:[=:\s]|$)/;
 /** `Bearer x` / `Basic x` as a whole arg: the word and exactly one token (so `Basic setup of the server` stays). */
 const BEARER = /^(bearer|basic)(\s+)\S+\s*$/i;
-const HDR = /^([A-Za-z0-9][A-Za-z0-9_-]{0,127}):\s*([\s\S]*)$/;
-const MAX_DEPTH = 4;
+const HDR = /^([A-Za-z0-9][A-Za-z0-9_-]{0,127})\s{0,8}:\s*([\s\S]*)$/;
+/** `Name:` alone: its value is the next arg (R5). */
+const HDR_NAME_ONLY = /^([A-Za-z0-9][A-Za-z0-9_-]{0,127})\s{0,8}:\s{0,8}$/;
+/** Pieces of a text: `;`, and a `,` only when a `name=` follows (bounded look-ahead), so a password with a comma stays whole (R6). */
+const PAIR_SPLIT = /(;|,(?=\s{0,8}[A-Za-z_][A-Za-z0-9_.-]{0,127}\s{0,8}=))/;
+/** Levels of nesting (shell split, `NAME=value`, quoted word: 1 each). Past it a value that would need another pass is masked whole (fail-safe), never shown. */
+const MAX_DEPTH = 8;
 
-function maskJsonValue(v: unknown, force: boolean, depth: number, env?: Env): unknown {
+function maskJsonValue(v: unknown, force: boolean, depth: number, env: Env | undefined, d: number): unknown {
   if (depth > 32) return MASK;
   if (Array.isArray(v)) {
     // an array of strings is an args list (`["--token","x"]`)
-    if (v.length > 0 && v.every((x) => typeof x === 'string')) return force ? v.map(() => MASK) : maskSecretArgs(v as string[], env);
-    return v.map((x) => maskJsonValue(x, force, depth + 1, env));
+    if (v.length > 0 && v.every((x) => typeof x === 'string')) return force ? v.map(() => MASK) : maskArgs(v as string[], snapshot(env), d);
+    return v.map((x) => maskJsonValue(x, force, depth + 1, env, d));
   }
   if (v !== null && typeof v === 'object') {
     const out: Record<string, unknown> = {};
-    for (const [k, x] of Object.entries(v as Record<string, unknown>)) out[k] = maskJsonValue(x, force || secretFlag(k), depth + 1, env);
+    const o = v as Record<string, unknown>;
+    // R7: `{"name":"token","value":"x"}` / `{"key":"Authorization","value":"x"}`: the test is on the raw name string.
+    const nameKey = Object.keys(o).find((k) => k.toLowerCase() === 'name' && typeof o[k] === 'string') ?? Object.keys(o).find((k) => k.toLowerCase() === 'key' && typeof o[k] === 'string');
+    const pn = nameKey === undefined ? undefined : (o[nameKey] as string);
+    const pairSecret = pn !== undefined && secretFlag(pn);
+    for (const [k, x] of Object.entries(o)) out[k] = maskJsonValue(x, force || secretFlag(k) || (pairSecret && /^value$/i.test(k)), depth + 1, env, d);
     return out;
   }
-  if (typeof v === 'string') return force ? MASK : maskText(v, MAX_DEPTH, env);
+  if (typeof v === 'string') return force ? MASK : maskText(v, d, env);
   if (typeof v === 'number') return force ? MASK : v;
   return v;
 }
 
 /** Valid JSON: every string or number under a secret-looking key, at any depth, is masked; written back compactly. */
-function maskJson(v: string, env?: Env, force = false): string | undefined {
+function maskJson(v: string, env: Env | undefined, force: boolean, d: number): string | undefined {
   let parsed: unknown;
   try { parsed = JSON.parse(v); } catch { return undefined; }
   if (parsed === null || typeof parsed !== 'object') return undefined;
-  return JSON.stringify(maskJsonValue(parsed, force, 0, env));
+  return JSON.stringify(maskJsonValue(parsed, force, 0, env, d));
+}
+
+/** `\"name\":\"value\"` pairs with escaped quotes (any escape depth; JSON inside a shell string that R1 cannot parse). The value may contain spaces. */
+function maskEscapedPairs(v: string, force = false): string {
+  if (!v.includes('\\"')) return v;
+  return v.replace(/(\\{1,16}")([^"\\]{1,100})(\\{1,16}")(\s{0,8}:\s{0,8})(?:(\\{1,16}")[^"\\]{0,2000}(\\{1,16}")|[^\s,}\]"\\]{1,2000})/g, (m, q1: string, name: string, q2: string, colon: string, vq1?: string, vq2?: string) => {
+    if (!force && !secretFlag(name)) return m;
+    return `${q1}${name}${q2}${colon}${vq1 ? `${vq1}${MASK}${vq2}` : MASK}`;
+  });
 }
 
 /** Text that is not valid JSON: `"name": "value"` pairs with a secret-looking name, by pattern. */
 function maskJsonPairs(v: string, force = false): string {
-  return v.replace(/"([^"\\]{1,100})"(\s{0,8}:\s{0,8})("(?:[^"\\]|\\.){0,2000}"?|[^\s,}\]"]{1,2000})/g, (m, name: string, colon: string, val: string) => {
+  // the same pairs with escaped quotes (`{\"token\":\"x\"}`, JSON inside a shell string that R1 could not parse)
+  return maskEscapedPairs(v, force).replace(/"([^"\\]{1,100})"(\s{0,8}:\s{0,8})("(?:[^"\\]|\\.){0,2000}"?|[^\s,}\]"]{1,2000})/g, (m, name: string, colon: string, val: string) => {
     if (!force && !secretFlag(name)) return m;
     return `"${name}"${colon}${val.startsWith('"') ? `"${MASK}"` : MASK}`;
   });
@@ -148,65 +170,179 @@ function maskJsonPairs(v: string, force = false): string {
 /** One `NAME=value` or `Name: value` piece: masked when the name looks secret; otherwise its value is masked recursively (a URL, JSON). */
 function maskKv(part: string, depth: number, env?: Env): string {
   const kv = KV.exec(part);
-  if (kv) return secretFlag(kv[2]) ? `${kv[1]}${kv[2]}=${MASK}` : depth > 0 ? `${kv[1]}${kv[2]}${kv[3]}${maskText(kv[4], depth - 1, env)}` : part;
+  if (kv) return secretFlag(kv[2].replace(ENV_PREFIX, '')) ? `${kv[1]}${kv[2]}=${MASK}` : depth > 0 ? `${kv[1]}${kv[2]}${kv[3]}${maskText(kv[4], depth - 1, env)}` : kv[4].trim() === '' ? part : `${kv[1]}${kv[2]}=${MASK}`; // budget spent: fail-safe
   const h = HDR.exec(part);
   if (h && !URL_SHAPE.test(part)) return secretFlag(h[1]) ? `${h[1]}: ${MASK}` : part;
   const b = BEARER.exec(part);
   return b ? `${b[1]}${b[2]}${MASK}` : part;
 }
 
-/** A free-standing value or arg: JSON, URL, connection string (`;`-separated pairs), `NAME=value`, `Name: value`. The caller finishes with `redact()`. */
+/**
+ * Words of a shell string (R1): split on whitespace outside quotes. A `"` or `'` opens a span that ends at the next same quote and stays
+ * inside the word with its quotes; an unmatched quote is a literal. No escapes, `$(...)` or heredocs (`[KNOWN GAP]`). `seps` has one more
+ * entry than `words` (the whitespace before the first word, between words, after the last), so `seps[0] + words[0] + seps[1] ...` is the
+ * input. Linear: a matched span is skipped and, once a quote type has no match, there is none after it (one failed search per type).
+ */
+export function shellWords(s: string): { words: string[]; seps: string[] } {
+  const words: string[] = [];
+  const seps: string[] = [];
+  const n = s.length;
+  const WS = /\s/;
+  let noDq = false;
+  let noSq = false;
+  let i = 0;
+  while (i < n && WS.test(s[i])) i++;
+  seps.push(s.slice(0, i));
+  while (i < n) {
+    let j = i;
+    while (j < n && !WS.test(s[j])) {
+      const c = s[j];
+      if ((c === '"' && !noDq) || (c === "'" && !noSq)) {
+        const k = s.indexOf(c, j + 1);
+        if (k >= 0) { j = k + 1; continue; }
+        if (c === '"') noDq = true; else noSq = true;
+      }
+      j++;
+    }
+    words.push(s.slice(i, j));
+    let k = j;
+    while (k < n && WS.test(s[k])) k++;
+    seps.push(s.slice(j, k));
+    i = k;
+  }
+  return { words, seps };
+}
+
+/** Words split on whitespace only (quotes ignored); same shape as `shellWords`. Used when R1 leaves a text with spaces in one word. */
+function plainWords(s: string): { words: string[]; seps: string[] } {
+  const words: string[] = [];
+  const seps: string[] = [/^\s*/.exec(s)![0]];
+  const re = /(\S+)(\s*)/g;
+  re.lastIndex = seps[0].length;
+  for (let m = re.exec(s); m; m = re.exec(s)) { words.push(m[1]); seps.push(m[2]); }
+  return { words, seps };
+}
+
+/** R3: a text with whitespace is masked word by word as an args list; the separators, and the trailing run of `[;&|]+` of a word, are kept. A secret that ends in those characters shows only them. */
+function maskShellString(v0: string, depth: number, env?: Env, plain = false): string {
+  const v = maskEscapedPairs(v0); // before the split: an escaped value may hold spaces
+  let { words, seps } = plain ? plainWords(v) : shellWords(v);
+  if (words.length === 1 && unquote(words[0])[1] !== '') return seps[0] + maskArgs(words, snapshot(env), depth)[0] + seps[1]; // one whole-quoted word (`A="x --token y"`, `--cmd='...'`): its inside
+  if (words.length < 2) {
+    // R1 could not split it (escaped quotes such as `\"`): the plain whitespace split, quotes ignored, so text with spaces is never shown unmasked
+    if (!/\s/.test(v.trim()) || KV.test(v)) return v; // (a `NAME=value` word had its value masked by `maskKv` already)
+    ({ words, seps } = plainWords(v));
+  }
+  const cores: string[] = [];
+  const idx: number[] = [];
+  const leads: string[] = [];
+  const tails: string[] = [];
+  const outWords: string[] = [];
+  words.forEach((w, i) => {
+    const m = /[;&|]+$/.exec(w);
+    const body = m ? w.slice(0, m.index) : w;
+    const tail = m ? m[0] : '';
+    // a stray quote or backslash in front of an unquoted word (`\"--token`, an unmatched `"`) is set aside, so the flag behind it is seen
+    const lead = unquote(body)[1] === '' ? (/^[\\"'`]+/.exec(body) ?? (/^[-/]/.test(body) ? null : /^[^\s"'\\]*[\\"'`]+(?=[-/])/.exec(body)))?.[0] ?? '' : '';
+    const core = body.slice(lead.length);
+    leads[i] = lead;
+    tails[i] = tail;
+    outWords[i] = lead + tail;
+    if (core !== '') { cores.push(core); idx.push(i); }
+  });
+  const masked = maskArgs(cores, snapshot(env), depth);
+  idx.forEach((wi, k) => { outWords[wi] = leads[wi] + masked[k] + tails[wi]; });
+  let out = seps[0];
+  for (let i = 0; i < outWords.length; i++) out += outWords[i] + seps[i + 1];
+  return out;
+}
+
+/** A free-standing value or arg: JSON, URL, connection string (`;`/`,`-separated pairs), `NAME=value`, `Name: value`, a shell string. The caller finishes with `redact()`. */
 function maskText(v: string, depth: number, env?: Env): string {
-  if (v.startsWith('{') || v.startsWith('[')) return maskJson(v, env) ?? maskJsonPairs(v);
+  if (v.startsWith('{') || v.startsWith('[')) {
+    const e = v.trimEnd();
+    const j = e.endsWith('}') || e.endsWith(']') ? maskJson(v, env, false, depth) : undefined; // parse only what can be JSON
+    if (j !== undefined) return j;
+    const p = maskJsonPairs(v); // not valid JSON: the pairs by pattern, then what is left of it split on whitespace only (quotes cannot be trusted in broken JSON), once
+    return depth > 0 ? (/\s/.test(p.trim()) ? maskShellString(p, depth - 1, env, true) : p) : /\s|["']/.test(p.trim()) ? MASK : p;
+  }
+  if (v.startsWith('-') || v.startsWith('/')) { // a flag-shaped value (`A=--token=x`, `{"a":"--api-key=x"}`) uses one level of the budget
+    const f = parseFlag(v);
+    if (f) {
+      if (depth > 0) return maskArgs([v], snapshot(env), depth - 1)[0];
+      if (f.rest) return MASK; // budget spent
+    }
+  }
   const t = v.includes('://') ? maskSecretUrl(v, env) : v; // a URL anywhere in the text, not only at its start
   if (URL_SHAPE.test(t)) return t;
-  if (t.includes(';')) return t.split(';').map((p) => maskKv(p, depth, env)).join(';');
-  return maskKv(t, depth, env);
+  const h = HDR.exec(t); // R4: the header shape first, before the `;` / `,` split
+  if (h && h[2] !== '' && secretFlag(h[1])) return `${h[1]}: ${MASK}`;
+  const r = PAIR_SPLIT.test(t) ? t.split(PAIR_SPLIT).map((p, i) => (i % 2 ? p : maskKv(p, depth, env))).join('') : maskKv(t, depth, env);
+  if (depth > 0) return /\s/.test(r.trim()) ? maskShellString(r, depth - 1, env) : r; // R3
+  return /\s|["']/.test(r.trim()) ? MASK : r; // budget spent and another pass would be needed: masked whole, never shown
 }
 
 /** `Name: value` after a header flag: the value is masked whatever the name (FR-012: no header values). */
-function maskHeaderValue(v: string, env?: Env): string {
-  if (v.startsWith('{') || v.startsWith('[')) return redact(maskJson(v, env, true) ?? maskJsonPairs(v, true), env); // JSON headers: every value, whatever the key
+function maskHeaderValue(v: string, env: Env | undefined, d: number): string {
+  if (v.startsWith('{') || v.startsWith('[')) return redact(maskJson(v, env, true, d) ?? maskJsonPairs(v, true), env); // JSON headers: every value, whatever the key
   const h = HDR.exec(v);
   if (h && !URL_SHAPE.test(v)) return `${h[1]}: ${MASK}`;
   const kv = KV.exec(v);
   if (kv && !v.includes('://')) return `${kv[1]}${kv[2]}=${MASK}`; // `Name=value` form
-  return redact(maskText(v, MAX_DEPTH, env), env);
+  return redact(maskText(v, d, env), env);
+}
+
+/** R2: an arg that starts and ends with the same quote: its inside and the quote. */
+function unquote(a: string): [string, string] {
+  const q = a[0];
+  return a.length >= 2 && (q === '"' || q === "'") && a[a.length - 1] === q ? [a.slice(1, -1), q] : [a, ''];
 }
 
 /**
  * Command-line arguments for display (spec 041 FR-053): the value of a secret-looking flag (next arg, or the rest of the same arg after
- * the first `=`, `:` or space), header values after a header flag, `NAME=value` and `Name: value` pieces, JSON, connection strings and
- * URL-shaped values are masked, and everything goes through `redact()`. Never throws; returns a new array of the same length.
+ * the first `=`, `:` or space), header values after a header flag, `NAME=value` and `Name: value` pieces, JSON, connection strings,
+ * URL-shaped values and shell strings (an arg with spaces is masked word by word, to `MAX_DEPTH` levels) are masked, a whole-quoted arg on
+ * its inside, and everything goes through `redact()`. Never throws; returns a new array of the same length.
  */
 export function maskSecretArgs(args: readonly string[], envIn?: Env): string[] {
-  const env = snapshot(envIn);
+  return maskArgs(args, snapshot(envIn), MAX_DEPTH, true);
+}
+
+function maskArgs(args: readonly string[], env: Env, d: number, top = false): string[] {
+  const rd = (x: string): string => (top ? redact(x, env) : x); // a nested call is redacted by the outer one, over the whole arg
   const out: string[] = [];
   let pending: 'secret' | 'header' | undefined;
   for (const raw of Array.isArray(args) ? args : []) {
     try {
-      const a = typeof raw === 'string' ? raw : String(raw ?? '');
+      const a0 = typeof raw === 'string' ? raw : String(raw ?? '');
+      const [a, q] = unquote(a0);
+      const W = (x: string): string => (q && x !== MASK ? q + x + q : x);
       const f = a.startsWith('-') || a.startsWith('/') ? parseFlag(a) : undefined;
       if (pending && !LONG_FLAG.test(a) && (pending === 'secret' || !a.startsWith('-'))) {
-        out.push(pending === 'secret' ? MASK : maskHeaderValue(a, env));
+        if (pending === 'header' && HDR_NAME_ONLY.test(a)) { out.push(W(a)); pending = 'secret'; continue; } // R5: `Name:` then its value as the next arg
+        out.push(pending === 'secret' ? MASK : W(maskHeaderValue(a, env, d)));
         pending = undefined;
         continue;
       }
       pending = undefined;
+      if (!f) {
+        const hn = HDR_NAME_ONLY.exec(a);
+        if (hn && secretFlag(hn[1])) { out.push(W(a)); pending = 'secret'; continue; } // R5
+      }
       if (f) {
         const secret = secretFlag(f.name);
         if (f.rest === undefined) {
           pending = secret ? 'secret' : HEADER_FLAGS.has(f.name.toLowerCase()) ? 'header' : undefined;
-          out.push(redact(a, env));
+          out.push(W(rd(a)));
         } else if (secret) {
           out.push(`${f.name}${f.sep}${MASK}`);
           if (f.rest === '') pending = 'secret'; // `--token=` and then the value as its own arg
         }
-        else if (HEADER_FLAGS.has(f.name.toLowerCase())) out.push(`${f.name}${f.sep}${maskHeaderValue(f.rest, env)}`);
-        else out.push(`${f.name}${f.sep}${redact(maskText(f.rest, MAX_DEPTH, env), env)}`);
+        else if (HEADER_FLAGS.has(f.name.toLowerCase())) out.push(W(`${f.name}${f.sep}${maskHeaderValue(f.rest, env, d)}`));
+        else out.push(W(`${f.name}${f.sep}${rd(maskText(f.rest, d, env))}`));
         continue;
       }
-      out.push(redact(maskText(a, MAX_DEPTH, env), env));
+      out.push(W(rd(maskText(a, d, env))));
     } catch {
       out.push(MASK);
     }
@@ -215,24 +351,29 @@ export function maskSecretArgs(args: readonly string[], envIn?: Env): string[] {
 }
 
 /**
- * Splits a command string into tokens for display. A drive or UNC path (`C:\Program Files\nodejs\node.exe`) is one token: it ends at
- * the first whitespace-separated chunk that has no `\` or `/` (or has `=`, or starts with `-`, `/`, `\` or a drive); the rest is split on whitespace. Shell quoting is not parsed (`[KNOWN GAP]`).
+ * Splits a command string into words for display (`shellWords`, R1): whitespace outside `"..."` and `'...'` separates words, and a quoted span
+ * stays in its word with its quotes. Not parsed (`[KNOWN GAP]`): backslash, backtick and `^` escapes, `$(...)`, heredocs. A drive or UNC
+ * path (`C:\Program Files\nodejs\node.exe`) is one token: it ends at the first whitespace-separated chunk that has no `\` or `/` (or has `=`,
+ * or starts with `-`, `/`, `\` or a drive); the rest is split as above.
  */
 export function splitCommand(command: unknown): string[] {
   const s = (typeof command === 'string' ? command : '').trim();
   if (!s) return [];
-  const chunks = s.split(/\s+/);
+  const chunks = shellWords(s).words;
   if (!/^(?:[A-Za-z]:[\\/]|\\\\)/.test(s)) return chunks;
   // Drive or UNC path: one token up to the first space, and each following chunk joins it only when it still looks like the rest of
   // the path (it contains a `\` or `/`, and does not start with `-`, `/`, `\` or a drive). `serve`, `s.js` and `token=x` end the path.
   let end = 1;
   while (end < chunks.length && /[\\/]/.test(chunks[end]) && !chunks[end].includes('=') && !/^(?:[-/\\]|[A-Za-z]:[\\/])/.test(chunks[end])) end++;
-  return [s.split(/\s+/).slice(0, end).join(' '), ...chunks.slice(end)];
+  return [chunks.slice(0, end).join(' '), ...chunks.slice(end)];
 }
 
-/** A command for display: split like `splitCommand`, masked like `maskSecretArgs`, joined with one space. Never throws. */
-export function maskSecretCommand(command: unknown, env?: Env): string {
-  try { return maskSecretArgs(splitCommand(command), env).join(' '); } catch { return '[redaction failed]'; }
+/** A command for display: `redact()` on the raw text first (R8: `Authorization: Bearer x` and `Bearer x` side by side), split like `splitCommand`, masked like `maskSecretArgs`, joined with one space. Never throws. */
+export function maskSecretCommand(command: unknown, envIn?: Env): string {
+  try {
+    const env = snapshot(envIn);
+    return maskArgs(splitCommand(redact(typeof command === 'string' ? command : '', env)), env, MAX_DEPTH, true).join(' ');
+  } catch { return '[redaction failed]'; }
 }
 
 /**

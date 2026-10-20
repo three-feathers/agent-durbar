@@ -12,7 +12,7 @@ import type { AppSettings } from '../../shared/credits';
 import { GROUND } from '../../shared/floors';
 import type { FloorsDoc } from '../../shared/floors';
 import type { McpServerView } from '../../shared/mcp';
-import { cut, maskSecretArgs, maskSecretUrl, parseFlag, redact, splitCommand } from '../../shared/redact';
+import { cut, maskSecretArgs, maskSecretUrl, parseFlag, redact, shellWords, splitCommand } from '../../shared/redact';
 import { officeTotals } from '../../shared/usagedoc';
 import type { UsageNumbers, UsageTotalsDoc } from '../../shared/usagedoc';
 import type { SavedFolder } from '../folders';
@@ -84,7 +84,8 @@ const ABS_HOME = /^~[^/\\]*[/\\]/; // `~/x` and `~other/x`
  * (POSIX with two segments or more, drive, UNC, `~/`) that is not the saved folder itself or below it becomes `…/<base name>`, also
  * as a flag value (`--config=/x/y`, `--config /x/y`) or a `NAME=value` value. "Inside" uses `path.win32` or `path.posix` by `platform`,
  * case-insensitive on Windows and macOS, exact on Linux; a `.code-workspace` counts as its directory. Paths inside a longer arg
- * (`type=bind,src=/x/y`), `$HOME` and `%USERPROFILE%` forms and relative paths are not reduced (`[KNOWN GAP]`).
+ * (`type=bind,src=/x/y`), `$HOME` and `%USERPROFILE%` forms and relative paths are not reduced (`[KNOWN GAP]`). A whole-quoted arg or flag value is reduced on
+ * its inside (R9). An arg with whitespace that does not start with a path is reduced word by word (R10); one that starts with a path keeps the whole-arg rule.
  */
 export function makePathReducer(savedFolders: readonly string[], platform: NodeJS.Platform): (arg: string) => string {
   const mod = platform === 'win32' ? path.win32 : path.posix;
@@ -119,10 +120,21 @@ export function makePathReducer(savedFolders: readonly string[], platform: NodeJ
     const kv = /^([A-Za-z_][A-Za-z0-9_.-]{0,127})=([\s\S]*)$/.exec(v);
     return kv && isAbs(kv[2]) ? `${kv[1]}=${reduceAbs(kv[2])}` : v;
   };
-  return (arg) => {
+  // R9: a whole-quoted value is reduced on its inside and the quotes are put back.
+  const quoted = (a: string, fn: (x: string) => string): string => { const q = a[0]; return a.length >= 2 && (q === '"' || q === "'") && a[a.length - 1] === q ? q + fn(a.slice(1, -1)) + q : fn(a); };
+  const one = (arg: string): string => {
     const f = arg.startsWith('-') || arg.startsWith('/') ? parseFlag(arg) : undefined;
-    return f && f.rest !== undefined ? `${f.name}${f.sep}${reduceValue(f.rest)}` : f ? arg : reduceValue(arg);
+    return f && f.rest !== undefined ? `${f.name}${f.sep}${quoted(f.rest, reduceValue)}` : f ? arg : reduceValue(arg);
   };
+  // R10: an arg with whitespace that does not start with an absolute path is reduced word by word (separators kept).
+  const words = (arg: string): string => {
+    if (!/\s/.test(arg.trim()) || isAbs(arg)) return one(arg);
+    const { words: w, seps } = shellWords(arg);
+    let out = seps[0];
+    for (let i = 0; i < w.length; i++) out += quoted(w[i], one) + seps[i + 1];
+    return out;
+  };
+  return (arg) => quoted(arg, words);
 }
 
 /** Replace a folder's stored secret values (longest first); values under 4 characters are skipped, since they would mangle every string. */
@@ -137,7 +149,7 @@ function maskers(deps: ReadToolsDeps, folderKey?: string) {
   const values = folderKey === undefined ? [] : deps.extraSecretValues(folderKey);
   const reduce = makePathReducer(deps.folders().map((f) => f.workspace), deps.platform);
   return {
-    command: (c: string | undefined): string | undefined => (c === undefined ? undefined : maskSecretArgs(splitCommand(replaceValues(c, values))).map(reduce).join(' ')),
+    command: (c: string | undefined): string | undefined => (c === undefined ? undefined : maskSecretArgs(splitCommand(redact(replaceValues(c, values)))).map(reduce).join(' ')),
     args: (a: readonly string[] | undefined): string[] | undefined => (a === undefined ? undefined : maskSecretArgs(a.map((x) => replaceValues(String(x ?? ''), values))).map(reduce)),
     url: (u: string | undefined): string | undefined => (u === undefined ? undefined : reduce(maskSecretUrl(replaceValues(u, values)))),
   };

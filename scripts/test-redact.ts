@@ -363,6 +363,177 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.ok(ms < 20000, `masking 200k-char adversarial inputs took ${ms} ms`);
 }
 
+// 14c. T064 masking follow-ups (spec 041 `## Changes` 2026-10-20, R1-R8). SEC is built at run time; no output may contain it.
+{
+  const SEC = 'sEc' + 'ReT-' + 'q7w8e9r0t1y2u3i4';
+  const R = '[redacted]';
+  const noSec = (x: unknown, what: string): void => assert.ok(!JSON.stringify(x).includes(SEC), `${what}: no secret in ${JSON.stringify(x)}`);
+  const masked = (args: string[], want: string[], what: string): void => { const got = maskSecretArgs(args); assert.deepStrictEqual(got, want, what); noSec(got, what); };
+  const cmd = (c: string, want: string, what: string): void => { const got = maskSecretCommand(c); assert.strictEqual(got, want, what); noSec(got, what); };
+  // (a) shell strings (R3)
+  masked(['-c', 'npx srv --token ' + SEC], ['-c', 'npx srv --token ' + R], 'a: sh -c');
+  masked(['/c', 'npx srv --api-key=' + SEC], ['/c', 'npx srv --api-key=' + R], 'a: cmd /c');
+  masked(['-Command', 'srv -Token ' + SEC], ['-Command', 'srv -Token ' + R], 'a: powershell');
+  masked(['npx srv --token ' + SEC], ['npx srv --token ' + R], 'a: no flag before it');
+  masked(['-c', 'a  --token\t' + SEC], ['-c', 'a  --token\t' + R], 'a: separators kept');
+  // (b) assignments in shell strings
+  masked(['export TOKEN=' + SEC + '; npx srv'], ['export TOKEN=' + R + '; npx srv'], 'b: export');
+  noSec(maskSecretArgs(['set API_KEY=' + SEC + '&& npx srv']), 'b: set');
+  assert.strictEqual(maskSecretArgs(['set API_KEY=' + SEC + '&& npx srv'])[0], 'set API_KEY=' + R + '&& npx srv', 'b: set keeps &&');
+  noSec(maskSecretArgs(['set "API_KEY=' + SEC + '" && srv']), 'b: set quoted');
+  noSec(maskSecretArgs(['export TOKEN="' + SEC + ' x"; npx srv']), 'b: export quoted with a space');
+  masked(["$env:API_KEY='" + SEC + "'; srv"], ['$env:API_KEY=' + R + '; srv'], 'b: $env:');
+  // (c) nesting and depth
+  masked(['-c', 'curl -H "X-Api-Key: ' + SEC + '" https://h.test'], ['-c', 'curl -H "X-Api-Key: ' + R + '" https://h.test'], 'c: quoted header in a shell string');
+  noSec(maskSecretArgs(['-c', "srv --cfg '{\"token\":\"" + SEC + "\"}'"]), 'c: json in a shell string');
+  noSec(maskSecretArgs(['npx srv https://' + SEC + '@h.test/x']), 'c: url in a shell string');
+  {
+    let nest = 'srv --token ' + SEC;
+    for (let i = 0; i < 6; i++) nest = i % 2 ? 'sh -c ' + JSON.stringify(nest) : JSON.stringify({ cmd: nest });
+    assert.doesNotThrow(() => maskSecretArgs(['-c', nest]), 'c: 6 levels never throw');
+  }
+  // (d) no new over-masking of prose
+  assert.deepStrictEqual(maskSecretArgs(['--desc', 'Basic setup of the server']), ['--desc', 'Basic setup of the server'], 'd: Basic');
+  assert.deepStrictEqual(maskSecretArgs(['--msg', 'bearer of news']), ['--msg', 'bearer of news'], 'd: bearer');
+  assert.deepStrictEqual(maskSecretArgs(['token of thanks']), ['token of thanks'], 'd: token');
+  assert.deepStrictEqual(maskSecretArgs(['Accept: a; q=0.9']), ['Accept: a; q=0.9'], 'd: Accept');
+  masked(['--conn', 'Server=x; Password = ' + SEC + ' ;Database=d'], ['--conn', 'Server=x; Password=' + R + ';Database=d'], 'd: conn string as in 14b');
+  // (e) `Name: value` before `;` (R4)
+  masked(['Cookie: a=1; sid=' + SEC], ['Cookie: ' + R], 'e: Cookie');
+  masked(['Set-Cookie: sid=' + SEC + '; Path=/'], ['Set-Cookie: ' + R], 'e: Set-Cookie');
+  masked(['X-Info: a; password=' + SEC], ['X-Info: a; password=' + R], 'e: harmless name keeps the split');
+  // (f) `Name:` then its value (R5)
+  masked(['Cookie:', SEC], ['Cookie:', R], 'f: Cookie:');
+  masked(['-H', 'X-Api-Key:', SEC], ['-H', 'X-Api-Key:', R], 'f: -H Name:');
+  assert.deepStrictEqual(maskSecretArgs(['Accept:', 'json']), ['Accept:', 'json'], 'f: Accept:');
+  {
+    const once = maskSecretArgs(['-c', 'x Cookie: a=1'])[1];
+    assert.strictEqual(once.split(R).length - 1, 1, `f: R once in ${once}`);
+  }
+  // (g) space before the colon (R4)
+  masked(['Password : ' + SEC], ['Password: ' + R], 'g: Password :');
+  noSec(maskSecretArgs(['-H', 'X-Api-Key : ' + SEC]), 'g: -H X-Api-Key :');
+  assert.deepStrictEqual(maskSecretArgs(['Note : hello']), ['Note : hello'], 'g: Note :');
+  // (h) quoted command (R1, R8)
+  cmd('srv -H "Authorization: Bearer ' + SEC + '"', 'srv -H "Authorization: ' + R + '"', 'h: Authorization double quotes');
+  cmd('srv -H "X-Api-Key: ' + SEC + '"', 'srv -H "X-Api-Key: ' + R + '"', 'h: X-Api-Key');
+  noSec(maskSecretCommand("srv -H 'Authorization: Bearer " + SEC + "'"), 'h: single quotes');
+  noSec(maskSecretCommand('srv --auth Bearer ' + SEC), 'h: --auth Bearer');
+  cmd('srv --token "' + SEC + ' more"', 'srv --token ' + R, 'h: quoted value with a space');
+  assert.deepStrictEqual(splitCommand('srv -H "A: b c"'), ['srv', '-H', '"A: b c"'], 'h: quoted header is one word');
+  assert.deepStrictEqual(splitCommand('"C:\\Program Files\\srv\\srv.exe" --api-key x'), ['"C:\\Program Files\\srv\\srv.exe"', '--api-key', 'x'], 'h: quoted path is one word');
+  cmd("npx srv --token '" + SEC, 'npx srv --token ' + R, 'h: unmatched quote is a literal');
+  assert.deepStrictEqual(splitCommand('\\\\srv\\share\\my tools\\a.exe -v'), ['\\\\srv\\share\\my tools\\a.exe', '-v'], 'h: UNC as in 14b');
+  assert.deepStrictEqual(splitCommand('C:\\a\\b.exe C:\\data\\f.txt'), ['C:\\a\\b.exe', 'C:\\data\\f.txt'], 'h: drive as in 14b');
+  // (i) whole-quoted args (R2)
+  masked(['"Server=x;Password=' + SEC + '"'], ['"Server=x;Password=' + R + '"'], 'i: whole-quoted connection string');
+  masked(['--token="' + SEC + ' more"'], ['--token=' + R], 'i: flag value');
+  // (j) comma pairs (R6)
+  masked(['user=me,password=' + SEC], ['user=me,password=' + R], 'j: comma pair');
+  masked(['--opts', 'user=me,password=' + SEC], ['--opts', 'user=me,password=' + R], 'j: --opts');
+  masked(['--opts=user=me,password=' + SEC], ['--opts=user=me,password=' + R], 'j: --opts=');
+  assert.deepStrictEqual(maskSecretArgs(['password=abc,def']), ['password=' + R], 'j: comma in the value');
+  masked(['Server=h,1433;Password=' + SEC], ['Server=h,1433;Password=' + R], 'j: Server=h,1433');
+  assert.deepStrictEqual(maskSecretArgs(['--tags=a,b,c']), ['--tags=a,b,c'], 'j: tags');
+  // (k) JSON name/value (R7)
+  masked(['[{"name":"token","value":"' + SEC + '"}]'], ['[{"name":"token","value":"' + R + '"}]'], 'k: name/value');
+  noSec(maskSecretArgs(['[{"name":"API_KEY","value":"' + SEC + '"}]']), 'k: API_KEY');
+  noSec(maskSecretArgs(['{"key":"Authorization","value":"' + SEC + '"}']), 'k: key/value');
+  assert.deepStrictEqual(maskSecretArgs(['[{"name":"port","value":"8080"}]']), ['[{"name":"port","value":"8080"}]'], 'k: port');
+  // review fixes: `$env:` names that only match once the prefix is stripped, `Name:` with trailing space, JSON member case
+  noSec(maskSecretArgs(["$env:PAT='" + SEC + "'"]), 'b: $env:PAT');
+  assert.deepStrictEqual(maskSecretArgs(["$env:PAT='" + SEC + "'"]), ['$env:PAT=' + R], 'b: $env:PAT exact');
+  assert.deepStrictEqual(maskSecretArgs(["$env:SIG='" + SEC + "'"]), ['$env:SIG=' + R], 'b: $env:SIG exact');
+  masked(['Cookie:  ', SEC], ['Cookie:  ', R], 'f: Cookie: with trailing spaces');
+  masked(['[{"Name":"token","Value":"' + SEC + '"}]'], ['[{"Name":"token","Value":"' + R + '"}]'], 'k: member names in any case');
+  masked(['{"KEY":"Authorization","value":"' + SEC + '"}'], ['{"KEY":"' + R + '","value":"' + R + '"}'], 'k: KEY in capitals');
+  // MAX_DEPTH (8) bounds shell, KV and quoted-word levels; past it a value that needs another pass is masked whole (fail-safe), never shown
+  {
+    const pre = (core: string, k: number): string => { let x = core; for (let i = 1; i <= k; i++) x = 'A' + i + '=' + x; return x; };
+    const head = (k: number): string => { let x = ''; for (let i = 1; i <= k; i++) x = 'A' + i + '=' + x; return x; }; // `Ak=...A1=`
+    const kv = (core: string, k: number): string => pre(core, k);
+    // a KV chain: masked normally to 7 levels, the whole value past that
+    assert.strictEqual(maskSecretArgs([kv('--token ' + SEC, 7)])[0], head(7) + '--token ' + R, 'depth: KV chain of 7 is masked normally');
+    assert.strictEqual(maskSecretArgs([kv('--token ' + SEC, 8)])[0], head(8) + R, 'depth: KV chain of 8 is masked whole (fail-safe)');
+    // a quoted shell string behind k KV levels
+    const one = '"srv --token ' + SEC + '"';
+    const two = `"sh -c 'srv --token ${SEC}'"`;
+    assert.strictEqual(maskSecretArgs([pre(one, 5)])[0], head(5) + '"srv --token ' + R + '"', 'depth: quoted shell string behind 5 KV levels');
+    assert.strictEqual(maskSecretArgs([pre(one, 7)])[0], head(7) + R, 'depth: quoted shell string behind 7 KV levels is masked whole');
+    assert.strictEqual(maskSecretArgs([pre(two, 2)])[0], head(2) + `"sh -c 'srv --token ${R}'"`, 'depth: two shell levels behind 2 KV levels');
+    assert.strictEqual(maskSecretArgs([pre(two, 6)])[0], head(6) + '"sh -c ' + R + '"', 'depth: two shell levels behind 6 KV levels: the inner string is masked whole');
+    assert.strictEqual(maskSecretArgs([pre(two, 7)])[0], head(7) + R, 'depth: two shell levels behind 7 KV levels is masked whole');
+    // JSON values carry the budget: past it the whole value is masked, never shown
+    for (const js of ['{"c":"srv --token ' + SEC + '"}', '["srv --token ' + SEC + '"]']) {
+      for (let k = 0; k <= 11; k++) noSec(maskSecretArgs([pre(js, k)]), `depth: JSON ${js.slice(0, 3)} behind ${k} KV levels`);
+      assert.strictEqual(maskSecretArgs([pre(js, 9)])[0], head(9) + R, `depth: JSON ${js.slice(0, 3)} behind 9 KV levels is masked whole`);
+    }
+    // budget-0 fail-safe, quote branch: a quoted word with no space at exactly the bound
+    assert.strictEqual(maskSecretArgs([pre('"abc"', 7)])[0], head(7) + '"abc"', 'depth: a quoted word one level inside the bound is shown');
+    assert.strictEqual(maskSecretArgs([pre('"abc"', 8)])[0], head(8) + R, 'depth: a quoted word at the bound is masked whole');
+    assert.strictEqual(maskSecretArgs([pre("'abc'", 8)])[0], head(8) + R, "depth: a single-quoted word at the bound is masked whole");
+    // budget-0 fail-safe, flag branch: a flag-shaped value with no space at the bound
+    assert.strictEqual(maskSecretArgs([pre('--token=' + SEC, 7)])[0], head(7) + '--token=' + R, 'depth: a flag-shaped value inside the bound is masked on its own');
+    assert.strictEqual(maskSecretArgs([pre('--token=' + SEC, 8)])[0], head(8) + R, 'depth: a flag-shaped value at the bound is masked whole');
+    // B1: shell, KV, quoted word, shell, quoted word
+    assert.deepStrictEqual(maskSecretArgs(['-c', 'export X="bash -lc \'npx srv --api-key ' + SEC + '\'"; srv']), ['-c', 'export X="bash -lc \'npx srv --api-key ' + R + '\'"; srv'], 'B1: five levels, readable output');
+    // nested far past the bound: no SEC, and the innermost is [redacted]
+    for (let k = 9; k <= 14; k++) {
+      const o = maskSecretArgs([pre(two, k)])[0];
+      noSec(o, `depth: ${k} levels`);
+      assert.ok(o.endsWith('=' + R), `depth: ${k} levels ends masked: ${o}`);
+    }
+    let sh = 'srv --token ' + SEC;
+    for (let i = 0; i < 12; i++) sh = (i % 2 ? 'sh -c "' : "sh -c '") + sh + (i % 2 ? '"' : "'");
+    noSec(maskSecretArgs(['-c', sh]), 'depth: 12 shell levels');
+    noSec(maskSecretCommand(sh), 'depth: 12 shell levels in a command');
+    masked(['--cmd="srv --token ' + SEC + '"'], ['--cmd="srv --token ' + R + '"'], 'R2/R3: a whole-quoted shell string as a flag value');
+  }
+  // L1: text with spaces that R1 cannot split (escaped quotes, a quote glued to a word) is never shown unmasked
+  noSec(maskSecretArgs(['-c', 'srv --cfg "{\\"token\\":\\"' + SEC + '\\"}"']), 'L1: escaped JSON in a shell string');
+  assert.strictEqual(maskSecretArgs(['-c', 'srv --cfg "{\\"token\\":\\"' + SEC + '\\"}"'])[1], 'srv --cfg "{\\"token\\":\\"' + R + '\\"}"', 'L1: exact');
+  noSec(maskSecretCommand('sh -c "npx srv --token \\"' + SEC + ' x\\""'), 'L1: escaped quotes in a command');
+  assert.strictEqual(maskSecretArgs(['-c', 'srv \\"--token ' + SEC + '\\"'])[1], 'srv \\"--token ' + R, 'L1: backslash-quote before a flag');
+  noSec(maskSecretArgs(['srv \\"--api-key=' + SEC + '\\"']), 'L1: backslash-quote before a --flag=value');
+  assert.strictEqual(maskSecretArgs(['-c', 'srv x"--token ' + SEC + '"'])[1], 'srv x"--token ' + R, 'L1: a quote glued to a word');
+  {
+    let y = 'srv --token ' + SEC;
+    for (let i = 0; i < 2; i++) y = JSON.stringify({ cmd: 'sh -c ' + JSON.stringify({ c: y }) });
+    noSec(maskSecretArgs([y]), 'L1: JSON, sh -c, JSON, sh -c');
+  }
+  // L2: a flag-shaped value (starts with - or /) is masked at any depth; ordinary ones stay
+  masked(['A=--token=' + SEC], ['A=--token=' + R], 'L2: NAME=--token=x');
+  masked(['{"a":"--api-key=' + SEC + '"}'], ['{"a":"--api-key=' + R + '"}'], 'L2: JSON value that is a flag');
+  masked(['--opts', '--password=' + SEC], ['--opts', '--password=' + R], 'L2: --opts --password=x');
+  assert.deepStrictEqual(maskSecretArgs(['A=--verbose', '{"a":"/usr/bin/x"}']), ['A=--verbose', '{"a":"/usr/bin/x"}'], 'L2: ordinary flag-shaped values unchanged');
+  // C2: an escaped value with spaces is masked before the shell split cuts it apart
+  assert.strictEqual(maskSecretArgs(['-c', 'srv --cfg "{\\"token\\":\\"' + SEC + ' x\\"}"'])[1], 'srv --cfg "{\\"token\\":\\"' + R + '\\"}"', 'C2: escaped JSON value with a space');
+  noSec(maskSecretArgs(['{\\"a\\":\\"b c\\",\\"password\\":\\"a ' + SEC + '\\"}']), 'C2: escaped password with a space');
+  // backtick set aside like a quote
+  assert.strictEqual(maskSecretArgs(['-c', 'srv `--token ' + SEC + '`'])[1], 'srv `--token ' + R, 'backtick before a flag');
+  // the plain-whitespace fallback on its own: one glued word with spaces, no whole-quoted word, no leading quote
+  assert.strictEqual(maskSecretArgs(['-c', 'srv a"b --token ' + SEC + '"c'])[1], 'srv a"b --token ' + R, 'fallback: plain split of a glued word');
+  // (m of 14b still) env prefix keeps other names
+  assert.deepStrictEqual(maskSecretArgs(["$env:PORT='8080'; srv"]), ["$env:PORT='8080'; srv"], 'b: $env:PORT unchanged');
+
+  // (n) timing: each shape linear in practice; doubling check on the shape the analyst suspected.
+  const shapes: Array<[string, string]> = [['-c ', '-c '], ['"', '"'], ['"a ', '"a '], ["a 'b", "a 'b"], [', a=', ', a='], ['Cookie: ', 'Cookie: '], ['{"a":"x y ', '{"a":"x y '], ["'\"", "'\""], ['x ', 'x ']];
+  const run = (x: string): void => { maskSecretArgs([x]); maskSecretArgs(['-c', x]); maskSecretCommand(x); };
+  const tt = Date.now();
+  for (const [, unit] of shapes) run(unit.repeat(Math.ceil(200_000 / unit.length)).slice(0, 200_000));
+  const total = Date.now() - tt;
+  console.log(`redact: 14c masking 200k-char adversarial inputs in ${total} ms`);
+  assert.ok(total < 20000, `14c: masking 200k-char adversarial inputs took ${total} ms`);
+  // doubling: 100k vs 200k, best of 3 each (a busy server only slows both); ratio far below 4
+  for (const unit of ['{"a":"x y ', 'x ', '"a ']) {
+    const best = (n: number): number => { const s = unit.repeat(Math.ceil(n / unit.length)); let m = Infinity; for (let i = 0; i < 3; i++) { const t = process.hrtime.bigint(); run(s); m = Math.min(m, Number(process.hrtime.bigint() - t) / 1e6); } return m; };
+    const t1 = best(100_000);
+    const t2 = best(200_000);
+    console.log(`redact: 14c doubling ${JSON.stringify(unit)} 100k=${Math.round(t1)} ms 200k=${Math.round(t2)} ms`);
+    assert.ok(t2 < 8000 && t2 < Math.max(t1, 50) * 3.5, `14c: ${JSON.stringify(unit)} grew too fast: ${t1} -> ${t2} ms`);
+  }
+}
+
 // 15. T054: `cut` stops at a token boundary and never leaves half a surrogate pair
 {
   const words = Array.from({ length: 900 }, () => 'abcdef').join(' '); // 6-letter words, period 7: 4096 % 7 != 0, so a character cut lands mid-word

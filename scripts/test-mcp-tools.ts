@@ -234,6 +234,17 @@ async function main(): Promise<void> {
       cmdTok: 'CMDTOK-' + 'n1m2q3w4e5r6t7y8',
       pathDir: '/home/me/.config',
       extraPart: 'EXTRAPART-' + 'u1i2o3p4a5s6d7f8',
+      // T064 (#336): shapes of the follow-ups entry
+      shellTok: 'SHELLTOK-' + 'a1s2d3f4g5h6j7k8',
+      exportTok: 'EXPORTTOK-' + 'q1w2e3r4t5y6u7i8',
+      hdrAfter: 'HDRAFTER-' + 'z1x2c3v4b5n6m7a8',
+      cookieSemi: 'COOKIESEMI-' + 'l1k2j3h4g5f6d7s8',
+      spaceColon: 'SPACECOLON-' + 'p9o8i7u6y5t4r3e2',
+      quotedHdr: 'QUOTEDHDR-' + 'm1n2b3v4c5x6z7l8',
+      commaPw: 'COMMAPW-' + 'w9e8r7t6y5u4i3o2',
+      nameValue: 'NAMEVALUE-' + 'g1h2j3k4l5z6x7c8',
+      wholeQuoted: 'WHOLEQUOTED-' + 'r1t2y3u4i5o6p7a8',
+      shellUrl: 'SHELLURL-' + 'd9f8g7h6j5k4l3z2',
     };
     const folder = (i: number, over: Partial<SavedFolder> = {}): SavedFolder => ({ workspace: path.join(os.tmpdir(), `durbar-t016-f${i}`), permMode: i % 3 === 0 ? 'ask' : 'read-only', hidden: false, ...over });
     const agentOf = (f: SavedFolder, i: number, over: Partial<AgentInfo> = {}): AgentInfo => ({
@@ -403,6 +414,28 @@ async function main(): Promise<void> {
       assert.ok(all.includes(path.join(os.tmpdir(), 'durbar-t016-f0').replace(/\\/g, '\\\\')), 'a saved folder path is whole');
     }
 
+    // 12f (T064). The follow-up shapes planted in a second extra, a CLI entry and a quoted `command`, in all seven tools
+    {
+      const S = SECRETS;
+      const planted2: McpServerView = {
+        name: 'planted2', transport: 'stdio', enabled: true, trusted: true, needsSecrets: false,
+        command: `srv -H "X-Api-Key: ${S.quotedHdr}" --token "${S.quotedHdr}x more"`,
+        args: ['-c', `npx srv --token ${S.shellTok} --config ${S.pathDir}/x.json`, `export TOKEN=${S.exportTok}; npx srv`, `Cookie: a=1; sid=${S.cookieSemi}`, `Password : ${S.spaceColon}`,
+          `user=me,password=${S.commaPw}`, `[{"name":"token","value":"${S.nameValue}"}]`, `"Server=x;Password=${S.wholeQuoted}"`, 'X-Api-Key:', S.hdrAfter, 'Cookie:', S.hdrAfter + 'b',
+          `npx srv https://${S.shellUrl}@h.test/x`],
+        env: [], headers: [],
+      } as any;
+      const cliEntry = { name: 'cli2', origin: 'copilot-config', transport: 'stdio', command: 'sh', args: ['-c', `npx srv --api-key=${S.shellTok} --config ${S.pathDir}/c.json`], enabled: true };
+      const { call } = mk(15, 40, {
+        mcpExtras: (k: string) => (k === path.join(os.tmpdir(), 'durbar-t016-f0') ? [planted2] : []),
+        mcpCli: () => ({ cli: [cliEntry as any], file: { label: 'x', found: true, skipped: 0 }, secretsPersist: false }),
+      });
+      const all = (await Promise.all(READ_TOOLS.map((t) => call(t.name, t.name === 'durbar_request_status' ? { requestId: 'x' } : {})))).map((r) => r.raw).join('\n');
+      for (const k of ['shellTok', 'exportTok', 'hdrAfter', 'cookieSemi', 'spaceColon', 'quotedHdr', 'commaPw', 'nameValue', 'wholeQuoted', 'shellUrl'] as const) assert.ok(!all.includes(S[k]), `12f: T064 ${k} never appears in any result`);
+      assert.ok(!all.includes('.config'), '12f: no .config directory in the T064 shapes');
+      assert.ok(all.includes('…/x.json') && all.includes('…/c.json'), '12f: the shell-string paths are reduced');
+    }
+
     // 12f1. T053: the `url` field goes through the path reducer too (a file URL outside the saved folders)
     {
       const fileExtra = { name: 'f', transport: 'http', enabled: true, trusted: true, needsSecrets: false, url: 'file:///home/me/.aws/c', env: [], headers: [] } as any;
@@ -433,12 +466,45 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(run('linux', ['/Home/me/proj/x.js']), ['…/x.js'], 'linux: exact case');
       assert.deepStrictEqual(run('darwin', ['/Home/me/proj/x.js']), ['/Home/me/proj/x.js'], 'darwin: case-insensitive');
       assert.deepStrictEqual(['/home/me/ws/a.js', '/home/me/other/a.js'].map(makePathReducer(['/home/me/ws/x.code-workspace'], 'linux')), ['/home/me/ws/a.js', '…/a.js'], 'a .code-workspace counts as its directory');
+      // T064 (l): quoted paths (R9)
+      for (const pf of ['linux', 'darwin', 'win32'] as const) {
+        assert.deepStrictEqual(run(pf, ['"/home/me/.config/x.json"', "'/home/me/.config/x.json'", '--config="/etc/srv/x.json"', '"/home/me/proj/a.js"']), ['"…/x.json"', "'…/x.json'", '--config="…/x.json"', '"/home/me/proj/a.js"'], `${pf}: quoted paths`);
+        assert.deepStrictEqual(run(pf, ['"C:\\Users\\me\\srv.exe"']), ['"…/srv.exe"'], `${pf}: quoted drive path`);
+      }
+      assert.deepStrictEqual(run('win32', ['"c:\\work\\proj\\x.js"']), ['"c:\\work\\proj\\x.js"'], 'win32: a quoted saved-folder path is unchanged');
+      // T064 (m): paths in shell strings (R10)
+      for (const pf of ['linux', 'darwin', 'win32'] as const) {
+        assert.deepStrictEqual(run(pf, ['npx srv --config /home/me/.config/x.json']), ['npx srv --config …/x.json'], `${pf}: path in a shell string`);
+        assert.deepStrictEqual(run(pf, ['npx srv --config /home/me/proj/x.json']), ['npx srv --config /home/me/proj/x.json'], `${pf}: inside path in a shell string`);
+        assert.deepStrictEqual(run(pf, ['C:\\Program Files\\nodejs\\node.exe', '/Users/me/Library/Application Support/x/s.js']), ['…/node.exe', '…/s.js'], `${pf}: an arg that starts with a path keeps the whole-arg rule`);
+        assert.deepStrictEqual(run(pf, ['type=bind,src=/x/y']), ['type=bind,src=/x/y'], `${pf}: comma pairs stay (documented gap)`);
+      }
       const t0 = Date.now();
       const big = makePathReducer(saved, 'linux');
-      for (const x of ['/a/'.repeat(70000), '--x='.repeat(40000), 'A=/'.repeat(70000)]) big(x);
+      for (const x of ['/a/'.repeat(70000), '--x='.repeat(40000), 'A=/'.repeat(70000), '"a '.repeat(66000), 'x /a/b '.repeat(28000)]) big(x);
       const ms = Date.now() - t0;
       console.log(`mcp read tools: path reducer on 200k-character inputs in ${ms} ms`);
       assert.ok(ms < 10000, `path reducer on 200k-character inputs took ${ms} ms`);
+    }
+
+    // 12f3. T064 (n): `durbar_mcp_state` with a shell-string CLI entry and a quoted `command`
+    {
+      const S = SECRETS;
+      const cli = [
+        { name: 'sh', origin: 'copilot-config', transport: 'stdio', command: 'sh', args: ['-c', 'npx srv --token ' + S.shellTok + ' --config /home/me/.config/x.json'], enabled: true },
+        { name: 'q', origin: 'copilot-config', transport: 'stdio', command: 'srv -H "X-Api-Key: ' + S.quotedHdr + '"', enabled: true },
+      ];
+      const { call } = mk(2, 2, { mcpCli: () => ({ cli: cli as any, file: { label: 'x', found: true, skipped: 0 }, secretsPersist: false }) });
+      const r = await call('durbar_mcp_state');
+      assert.ok(!r.raw.includes(S.shellTok) && !r.raw.includes(S.quotedHdr), '12f3: no secret in the result');
+      assert.ok(!r.raw.includes('.config'), '12f3: no .config in the result');
+      assert.deepStrictEqual(r.data.copilotCli.servers[0].args, ['-c', 'npx srv --token [redacted] --config …/x.json']);
+      assert.strictEqual(r.data.copilotCli.servers[1].command, 'srv -H "X-Api-Key: [redacted]"');
+      // R8: `--auth Bearer <token>` is only masked when `redact()` runs on the raw command before it is split
+      const bearer = 'BEARERTOK-' + 'k1l2m3n4o5p6q7r8';
+      const r2 = await mk(2, 2, { mcpCli: () => ({ cli: [{ name: 'b', origin: 'copilot-config', transport: 'stdio', command: 'srv --auth Bearer ' + bearer, enabled: true }] as any, file: { label: 'x', found: true, skipped: 0 }, secretsPersist: false }) }).call('durbar_mcp_state');
+      assert.ok(!r2.raw.includes(bearer), '12f3: --auth Bearer <token> in a command is masked (R8)');
+      assert.strictEqual(r2.data.copilotCli.servers[0].command, 'srv --auth [redacted]');
     }
 
     // 12g. usage: baseline plus this run for the same events
