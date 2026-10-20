@@ -1,6 +1,6 @@
 # Spec 061: A folder's own agent setup is used, and shown
 
-**Status:** draft. Owner decisions recorded (issue #289, 2026-10-20). **Needs a constitution amendment first** (principle III, see *Constitution*), then plan and tasks.
+**Status:** draft. Owner decisions recorded (issue #289, 2026-10-20). Constitution **Amendment 1** (principle III, v1.1.0), asked for by the owner in the session on 2026-10-20, is made in this PR; next: research R1-R3, then plan and tasks.
 **Issue:** #289 (was spec 012 T083, `[KNOWN GAP]`). **Builds on:** 012 (Claude and Codex adapters), 019 (MCP), 043 (custom agents), 041/019 (secret masking), 003 (permission modes).
 
 ## Owner decisions (issue #289, 2026-10-20)
@@ -54,7 +54,7 @@ What Durbar already uses from a folder: `CLAUDE.md` and `AGENTS.md` (instruction
 
 ## Constitution
 
-Principle III (non-negotiable) says the default mode is Read-only and that everything which can change state is denied unless the user allows it. Folder hooks and allow rules, **on by default** (Q1-Q3), act **outside** Durbar's mode. So this spec **requires an amendment of principle III by the maintainer** (`.specify/memory/constitution.md` is owned by the maintainer, CODEOWNERS). Proposed text, for the owner to approve or change:
+**Done: Amendment 1, constitution v1.1.0 (owner, 2026-10-20: "amend the constitution as proposed in spec 061").** Principle III (non-negotiable) says the default mode is Read-only and that everything which can change state is denied unless the user allows it. Folder hooks and allow rules, **on by default** (Q1-Q3), act **outside** Durbar's mode. So this spec **requires an amendment of principle III by the maintainer** (`.specify/memory/constitution.md` is owned by the maintainer, CODEOWNERS). Proposed text, for the owner to approve or change:
 
 > A folder's own agent setup (its MCP servers, hooks and permission rules) applies after the user has seen it listed when the folder was added, and stays on unless the user turns it off. The UI says plainly that hooks and allow rules act without asking, even in Read-only. Durbar's own mode governs everything else.
 
