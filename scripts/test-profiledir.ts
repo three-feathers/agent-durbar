@@ -2,6 +2,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as ts from 'typescript';
 import { profileDir } from '../src/main/profiledir';
 import { MENU_APP_NAME } from '../src/main/appmenu';
 import { aboutPanelOptions } from '../src/shared/about';
@@ -36,7 +37,18 @@ assert.strictEqual(pkg.name, 'agent-durbar');
 assert.strictEqual(pkg.productName, undefined, 'a top-level productName would move the profile folder');
 
 // main.ts order (D2): the folder is set before anything reads it and before whenReady; no setName at all
-const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8');
+/** Source text without comments (TypeScript scanner), so a decoy comment cannot satisfy or break the checks below. */
+function stripComments(src: string): string {
+  const sc = ts.createScanner(ts.ScriptTarget.Latest, false, ts.LanguageVariant.Standard, src);
+  let out = '';
+  for (let t = sc.scan(); t !== ts.SyntaxKind.EndOfFileToken; t = sc.scan()) {
+    if (t === ts.SyntaxKind.SingleLineCommentTrivia || t === ts.SyntaxKind.MultiLineCommentTrivia) out += ' ';
+    else out += sc.getTokenText();
+  }
+  return out;
+}
+assert.ok(!stripComments('a // app.setName(x)\n/* app.setName(y) */ b').includes('setName') && /a\s+b/.test(stripComments('a // x\n/* y */ b')), 'comments are removed, code kept');
+const main = stripComments(fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8'));
 const setPath = main.indexOf("app.setPath('userData', profileDir(");
 const firstGet = main.indexOf("getPath('userData')");
 const ready = main.indexOf('app.whenReady()');
