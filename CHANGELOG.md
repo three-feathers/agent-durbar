@@ -4,7 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.9 tag)
 
-- **Mac: the title bar on every screen (spec 052 FR-105, #345).** A notice strip over an open chat is now the drag row with room for the traffic lights; dialogs, the palette, popovers and menus can be clicked (they no longer sit over a drag area); the chat strip keeps a grab area on its right and its scroller works; Settings or Tools over a chat keep their centred header. Mac-only CSS, new `npm run check:mac-titlebar` (simulator geometry, not run on a real Mac).
+- **Mac: the title bar on every screen (spec 052 FR-105, #345).** A notice strip over an open chat is now the drag row with room for the traffic lights; dialogs, the palette, popovers and menus can be clicked (they no longer sit over a drag area); the chat strip keeps a grab area on its right and its scroller is meant to work (not checked on a real Mac); the top bar reserves the traffic-light room on its first row only; Settings or Tools over a chat keep their centred header. Mac-only CSS, new `npm run check:mac-titlebar` (simulator geometry, not run on a real Mac).
 
 ## v0.1.0-alpha.9 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.9), 2026-10-20)
 
