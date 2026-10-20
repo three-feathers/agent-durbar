@@ -160,4 +160,4 @@
 - [x] T096 Mode menu lines, "What Durbar does not do" (Settings and README), AI theme cost line per selected app, Simple limit and memory chips; Remove from office confirmation checked [FR-093]
 - [x] T097 Drivers grepped for every changed string; `shots-052-ux.js` memory chip check; README Tools line; CHANGELOG [FR-094]
 ## FR-085 fix: Mac window from an open chat (2026-10-20)
-- [x] T120 Mac: the chat's agent strip is the drag area with the traffic-light room when the top bar is hidden; `test-macos` checks it [FR-085 fix, 2026-10-20]
+- [x] T120 Mac: the chat's agent strip is the drag area with the traffic-light room when the top bar is hidden, and so is a screen's header (Settings, Tools, folder) opened over a chat; `test-macos` checks both [FR-085 fix, 2026-10-20]
