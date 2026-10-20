@@ -8,6 +8,8 @@ export type RemoteVisibility = 'repo' | 'unshared';
 
 export interface RemoteState {
   ok: boolean;
+  /** The user said no in the main process's confirmation (spec 054 FR-011): not an error to show. */
+  cancelled?: boolean;
   /** Remote control is on after the call (absent when the call failed). */
   on?: boolean;
   /** Link to the session on GitHub; only ever an allowed URL (`allowedRemoteUrl`). */

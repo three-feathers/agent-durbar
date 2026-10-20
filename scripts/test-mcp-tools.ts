@@ -6,7 +6,7 @@ import { FakeMcpClient, loopback } from './fakes/mcp-client';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { SIM_NOTE, createReadToolHandlers } from '../src/main/mcp/readtools';
+import { SIM_NOTE, createReadToolHandlers, makePathReducer } from '../src/main/mcp/readtools';
 import type { ReadToolsDeps } from '../src/main/mcp/readtools';
 import { AgentStateTracker } from '../src/main/mcp/agentstate';
 import { UsageTotalsStore } from '../src/main/usagetotalsstore';
@@ -221,6 +221,19 @@ async function main(): Promise<void> {
       urlQuery: 'URLQUERY-k3j4h5g6f7d8s9a0',
       prompt: 'PROMPT-TEXT-SHOULD-NEVER-APPEAR',
       outside: '/outside/saved/folders/secret-dir',
+      oneArg: 'ONEARG-' + 'b1n2m3v4c5x6z7a8',
+      colon: 'COLON-' + 'l9k8j7h6g5f4d3s2',
+      slash: 'SLASH-' + 'p1o2i3u4y5t6r7e8',
+      cookie: 'COOKIE-' + 'w1q2a3s4z5x6c7d8',
+      json: 'JSON-' + 'e4r5t6y7u8i9o0p1',
+      conn: 'CONN-' + 'f1g2h3j4k5l6z7x8',
+      userinfo: 'USERINFO-' + 'c9v8b7n6m5a4s3d2',
+      telegram: 'TELEGRAM-' + 'q9w8e7r6t5y4u3i2',
+      slack: 'SLACK-' + 'o1p2a3s4d5f6g7h8',
+      amz: 'AMZ-' + 'j9k8l7z6x5c4v3b2',
+      cmdTok: 'CMDTOK-' + 'n1m2q3w4e5r6t7y8',
+      pathDir: '/home/me/.config',
+      extraPart: 'EXTRAPART-' + 'u1i2o3p4a5s6d7f8',
     };
     const folder = (i: number, over: Partial<SavedFolder> = {}): SavedFolder => ({ workspace: path.join(os.tmpdir(), `durbar-t016-f${i}`), permMode: i % 3 === 0 ? 'ask' : 'read-only', hidden: false, ...over });
     const agentOf = (f: SavedFolder, i: number, over: Partial<AgentInfo> = {}): AgentInfo => ({
@@ -236,6 +249,18 @@ async function main(): Promise<void> {
       headers: [{ key: 'Authorization', set: true, value: SECRETS.headerValue } as any],
       secretValue: SECRETS.extraValue,
     } as any;
+    // T053: every shape of the masking-leaks entry planted in one extra and one CLI entry
+    const planted: McpServerView = {
+      name: 'planted', transport: 'stdio', enabled: true, trusted: true, needsSecrets: false,
+      command: `npx srv --token ${SECRETS.cmdTok} ${SECRETS.pathDir}/bin/srv`,
+      args: [`--token ${SECRETS.oneArg}`, `--password:${SECRETS.colon}`, '/token', SECRETS.slash, `--header=Cookie: sid=${SECRETS.cookie}`, '--config', `${SECRETS.pathDir}/x.json`,
+        `{"apiKey":"${SECRETS.json}","port":1}`, `CONN=Server=x;Password=${SECRETS.conn};Database=d`, '--url', `https://${SECRETS.userinfo}@h.test/`,
+        `--endpoint=https://api.telegram.org/bot12345:${SECRETS.telegram}/sendMessage`, `--hook=https://hooks.slack.com/services/T0/B0/${SECRETS.slack}`,
+        `--link=https://h.test/f?X-Amz-Signature=${SECRETS.amz}`, 'prefix-' + SECRETS.extraPart],
+      url: `https://${SECRETS.userinfo}@h.test/mcp?X-Amz-Signature=${SECRETS.amz}`,
+      env: [], headers: [],
+      secretValue: SECRETS.extraPart,
+    } as any;
     const mk = (n: number, nf: number, over: Partial<ReadToolsDeps> = {}) => {
       const folders = Array.from({ length: nf }, (_, i) => folder(i, i === 1 ? { hidden: true, closed: true, label: 'Nice room', floor: 'f-aaaaaaaa', maxAiCredits: 120 } : {}));
       const agents = Array.from({ length: n }, (_, i) => agentOf(folders[i % nf], i, i === 0 ? { lazy: true } : i === 1 ? { floor: 'f-aaaaaaaa', maxAiCredits: 120, permMode: 'allow' } : {}));
@@ -249,9 +274,11 @@ async function main(): Promise<void> {
         floors: () => ({ floors: [{ id: 'ground', name: 'Ground floor', on: true }, { id: 'f-aaaaaaaa', name: 'Attic', on: false }], lastFloor: 'f-aaaaaaaa' }),
         usage,
         settings: () => ({ defaultMaxAiCredits: 300, seriousMode: true, placeMap: { gh: 'web' }, customPlaces: [{ id: 'c-abc123', name: 'Lab', icon: 'flask' }], theme: 'secret-theme' }),
-        mcpCli: () => ({ cli: [{ name: 'cli1', origin: 'copilot-config', transport: 'stdio', command: 'node', args: ['s.js', '--password', SECRETS.argToken], enabled: false }, { name: 'github-mcp-server', origin: 'builtin', enabled: true }], file: { label: '~/.copilot/mcp-config.json', found: true, skipped: 1, error: SECRETS.outside }, secretsPersist: false }),
-        mcpExtras: (k) => (k === folders[0].workspace ? [extra] : []),
+        mcpCli: () => ({ cli: [{ name: 'cli1', origin: 'copilot-config', transport: 'stdio', args: ['s.js', '--password', SECRETS.argToken, `--token ${SECRETS.oneArg}`], command: `node --api-key=${SECRETS.cmdTok} ${SECRETS.pathDir}/s.js`, enabled: false }, { name: 'github-mcp-server', origin: 'builtin', enabled: true }], file: { label: '~/.copilot/mcp-config.json', found: true, skipped: 1, error: SECRETS.outside }, secretsPersist: false }),
+        mcpExtras: (k) => (k === folders[0].workspace ? [extra, planted] : []),
         windowSim: () => false,
+        platform: 'linux',
+        extraSecretValues: (k) => (k === folders[0].workspace ? [SECRETS.extraValue, SECRETS.extraPart] : []),
         ...over,
       };
       const reg = createToolRegistry({ handlers: createReadToolHandlers(deps) });
@@ -349,7 +376,8 @@ async function main(): Promise<void> {
       const { call } = mk(2, 2);
       const m = (await call('durbar_mcp_state')).data;
       assert.deepStrictEqual(m.copilotCli.servers.map((s: any) => [s.name, s.enabled]), [['cli1', false], ['github-mcp-server', true]]);
-      assert.deepStrictEqual(m.copilotCli.servers[0].args, ['s.js', '--password', '[redacted]']);
+      assert.deepStrictEqual(m.copilotCli.servers[0].args, ['s.js', '--password', '[redacted]', '--token [redacted]']);
+      assert.strictEqual(m.copilotCli.servers[0].command, 'node --api-key=[redacted] …/s.js');
       assert.strictEqual(m.copilotCli.file.found, true);
       assert.strictEqual(m.copilotCli.secretsPersist, false);
       assert.strictEqual(m.extras.length, 1);
@@ -370,6 +398,47 @@ async function main(): Promise<void> {
       for (const [k, v] of Object.entries(SECRETS)) assert.ok(!all.includes(v), `planted ${k} never appears in any result`);
       assert.ok(!all.includes('secret-theme'), 'theme is not part of the settings answer');
       assert.ok(all.includes('GH_TOKEN'), 'the key name itself is shown');
+      assert.ok(!all.includes('/home/me/.config') && !all.includes('.config'), 'no directory outside the saved folders');
+      assert.ok(all.includes('…/srv') && all.includes('…/x.json') && all.includes('…/s.js'), 'outside paths come back as …/ plus the base name');
+      assert.ok(all.includes(path.join(os.tmpdir(), 'durbar-t016-f0').replace(/\\/g, '\\\\')), 'a saved folder path is whole');
+    }
+
+    // 12f1. T053: the `url` field goes through the path reducer too (a file URL outside the saved folders)
+    {
+      const fileExtra = { name: 'f', transport: 'http', enabled: true, trusted: true, needsSecrets: false, url: 'file:///home/me/.aws/c', env: [], headers: [] } as any;
+      const { call } = mk(2, 2, { mcpExtras: (k: string) => (k === path.join(os.tmpdir(), 'durbar-t016-f0') ? [fileExtra] : []) });
+      const m = (await call('durbar_mcp_state')).data;
+      assert.strictEqual(m.extras[0].servers[0].url, 'file://…/c');
+      assert.ok(!m.extras[0].servers[0].url.includes('.aws'));
+    }
+
+    // 12f2. T053 (h): the path reducer for all three platforms from any OS
+    {
+      const saved = ['/home/me/proj', 'C:\\Work\\Proj'];
+      const run = (platform: NodeJS.Platform, args: string[]) => args.map(makePathReducer(saved, platform));
+      for (const pf of ['linux', 'darwin', 'win32'] as const) {
+        assert.deepStrictEqual(run(pf, ['/home/me/.local/bin/srv']), ['…/srv'], `${pf}: command`);
+        assert.deepStrictEqual(run(pf, ['--config', '/home/me/.config/x.json']), ['--config', '…/x.json'], `${pf}: flag and next`);
+        assert.deepStrictEqual(run(pf, ['--config=/etc/srv/x.json', 'CFG=/opt/a/b.json', '--config /etc/a/c.json']), ['--config=…/x.json', 'CFG=…/b.json', '--config …/c.json'], `${pf}: flag=, NAME=, flag value`);
+        assert.deepStrictEqual(run(pf, ['/home/me/proj/tools/run.js', '/home/me/proj', '~/bin/srv']), ['/home/me/proj/tools/run.js', '/home/me/proj', '…/srv'], `${pf}: inside, the folder itself, home`);
+        assert.deepStrictEqual(run(pf, ['C:\\Users\\me\\AppData\\srv.exe', '\\\\server\\share\\srv.exe']), ['…/srv.exe', '…/srv.exe'], `${pf}: drive and UNC`);
+        assert.deepStrictEqual(run(pf, ['/home/me/projX/a.js', '/home/me/proj/../x/a.js']), ['…/a.js', '…/a.js'], `${pf}: prefix without being inside, and ..`);
+        assert.deepStrictEqual(run(pf, ['/a', '/token', 'type=bind,src=/x/y', 'rel/path.js', '$HOME/x/y']), ['/a', '/token', 'type=bind,src=/x/y', 'rel/path.js', '$HOME/x/y'], `${pf}: not reduced`);
+      }
+      for (const pf of ['linux', 'darwin', 'win32'] as const) {
+        assert.deepStrictEqual(run(pf, ['//etc/x', '~other/.ssh/id', 'file:///home/me/.aws/c', 'file:///home/me/proj/ok.js']), ['…/x', '…/id', 'file://…/c', 'file:///home/me/proj/ok.js'], `${pf}: //, ~user, file URL`);
+        assert.deepStrictEqual(run(pf, ['C:\\a\\b.exe serve token=x']), ['…/b.exe'], `${pf}: the base name never carries args`);
+      }
+      assert.deepStrictEqual(run('win32', ['c:\\work\\proj\\x.js', 'C:/Work/Proj/sub']), ['c:\\work\\proj\\x.js', 'C:/Work/Proj/sub'], 'win32: case-insensitive, slashes either way');
+      assert.deepStrictEqual(run('linux', ['/Home/me/proj/x.js']), ['…/x.js'], 'linux: exact case');
+      assert.deepStrictEqual(run('darwin', ['/Home/me/proj/x.js']), ['/Home/me/proj/x.js'], 'darwin: case-insensitive');
+      assert.deepStrictEqual(['/home/me/ws/a.js', '/home/me/other/a.js'].map(makePathReducer(['/home/me/ws/x.code-workspace'], 'linux')), ['/home/me/ws/a.js', '…/a.js'], 'a .code-workspace counts as its directory');
+      const t0 = Date.now();
+      const big = makePathReducer(saved, 'linux');
+      for (const x of ['/a/'.repeat(70000), '--x='.repeat(40000), 'A=/'.repeat(70000)]) big(x);
+      const ms = Date.now() - t0;
+      console.log(`mcp read tools: path reducer on 200k-character inputs in ${ms} ms`);
+      assert.ok(ms < 10000, `path reducer on 200k-character inputs took ${ms} ms`);
     }
 
     // 12g. usage: baseline plus this run for the same events

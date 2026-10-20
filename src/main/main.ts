@@ -22,6 +22,7 @@ import { GROUND } from '../shared/floors';
 import type { FloorOp } from '../shared/floors';
 import { openInVSCode } from './vscode';
 import { isHttpUrl } from '../shared/url';
+import { checkElicitAnswer, createElicitTracker, elicitHttpsUrl } from '../shared/elicit';
 import { createRemoteOps } from './remoteops';
 import { DEFAULT_ADAPTER, FolderStore, PROFILE_ID, restoreMode } from './folders';
 import { navigationAllowed, permissionAllowed, senderAllowed } from './hardening';
@@ -105,6 +106,9 @@ const toRenderer = (channel: string, payload: unknown): void => {
 };
 
 router.onEvent((e) => toRenderer('agent:event', e));
+/** Open MCP elicitations (spec 012 FR-151): main checks each answer against the fields it was asked with. */
+const elicitTracker = createElicitTracker();
+router.onEvent((e) => elicitTracker.onEvent(e));
 /** The office's state word and sub-label per agent, kept from the same events (spec 041 T014); read tools use it. "Paused" comes from the window (agents:setPaused). */
 const agentState = new AgentStateTracker();
 router.onEvent((e) => {
@@ -543,8 +547,8 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
   changed: (doc) => toRenderer('schedules:changed', doc),
 });
 ipcMain.handle('schedules:list', () => scheduler?.doc ?? { pausedAll: false, schedules: [] });
-ipcMain.handle('schedules:save', (_e, input: unknown) => (scheduler ? scheduler.save(input, (f) => !!folderStore?.get(f)) : { ok: false, error: 'Schedules are not available.' }));
-ipcMain.handle('schedules:remove', (_e, id: unknown) => ({ ok: typeof id === 'string' && !!scheduler?.remove(id) }));
+ipcMain.handle('schedules:save', (e, input: unknown) => (!fromApp(e) ? { ok: false, error: 'invalid request' } : scheduler ? scheduler.save(input, (f) => !!folderStore?.get(f)) : { ok: false, error: 'Schedules are not available.' }));
+ipcMain.handle('schedules:remove', (e, id: unknown) => ({ ok: fromApp(e) && typeof id === 'string' && !!scheduler?.remove(id) }));
 ipcMain.handle('schedules:setPausedAll', (_e, on: unknown) => {
   scheduler?.setPausedAll(on === true);
   return { ok: !!scheduler, pausedAll: scheduler?.doc.pausedAll ?? false };
@@ -556,7 +560,9 @@ const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, 
 ipcMain.handle('agents:stop', (_e, id: string) => stopTurnOp(opsDeps, id));
 
 ipcMain.handle('agents:end', async (_e, id: string) => {
-  if (agents.has(id)) await router.forAgent(id)?.stop(id);
+  if (!agents.has(id)) return;
+  await remoteOps.release(id); // spec 054 FR-011: off on GitHub too before the session ends
+  await router.forAgent(id)?.stop(id);
 });
 
 ipcMain.handle('agents:newSession', async (_e, id: unknown, opts: unknown) => {
@@ -812,6 +818,27 @@ ipcMain.handle('agents:answerQuestion', (_e, id: unknown, requestId: unknown, an
   return { ok: true };
 });
 
+// spec 012 FR-151: the answer to an MCP elicitation, checked here against the open request (types, choices, lengths, required).
+// The values are never logged: they can be secrets.
+ipcMain.handle('agents:answerElicitation', (_e, id: unknown, requestId: unknown, action: unknown, values: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  const ad = a ? router.forAgent(a.id) : undefined;
+  const req = a && typeof requestId === 'string' && requestId.length <= 300 ? elicitTracker.get(a.id, requestId) : undefined;
+  if (!a || !ad?.answerElicitation || !req) return { ok: false, error: 'That request is no longer open.' };
+  const r = checkElicitAnswer(req, action, values);
+  if (!r.ok) return { ok: false, error: r.error, ...(r.field ? { field: r.field } : {}) };
+  ad.answerElicitation(a.id, requestId as string, r.answer);
+  return { ok: true };
+});
+// spec 012 FR-151: open the request's own https address (never one sent by the window), only after the user clicked
+ipcMain.handle('agents:openElicitationUrl', async (_e, id: unknown, requestId: unknown) => {
+  const req = typeof id === 'string' && typeof requestId === 'string' && requestId.length <= 300 ? elicitTracker.get(id, requestId) : undefined;
+  const u = req?.url ? elicitHttpsUrl(req.url) : undefined;
+  if (!u) return { ok: false, error: 'That request has no https page to open.' };
+  await shell.openExternal(u.url);
+  return { ok: true };
+});
+
 // ---- custom agent per session (spec 043 FR-003): list, select; a repository agent needs a confirmation for its exact file ----
 ipcMain.handle('agents:listProfiles', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
@@ -934,12 +961,28 @@ const remoteOps = createRemoteOps({
   known: (id) => agents.has(id),
   adapterOf: (id) => router.forAgent(id),
   open: (url) => shell.openExternal(url),
+  modeOf: (id) => agents.get(id)?.permMode,
+  // FR-011: a native confirmation the page cannot answer (Cancel is the default), like harness setup's (spec 051 FR-004b)
+  confirm: async (id) => {
+    const a = agents.get(id);
+    const opts = {
+      type: 'warning' as const, buttons: ['Cancel', 'Turn on remote control'], defaultId: 0, cancelId: 0, noLink: true, title: 'Agent Durbar',
+      message: `Control ${a?.label || a?.name || 'this session'} from GitHub?`,
+      detail: 'Its messages are sent to GitHub, so it can be followed and steered from github.com and GitHub Mobile. Anyone who can see the session on GitHub can steer it.\n\nOnly continue if you started this in Durbar.',
+    };
+    const r = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
+    return r.response === 1;
+  },
+  record: (id, on) => {
+    const a = agents.get(id);
+    if (a) logActivity(a, on ? 'remote-on' : 'remote-off', on ? 'Remote control from GitHub turned on' : 'Remote control from GitHub turned off');
+  },
 });
 router.onEvent((e) => {
   if (e.type === 'status' && e.status === 'stopped' && !e.agentId) remoteOps.forget(e.sessionId);
 });
-ipcMain.handle('agents:setRemote', (_e, id: unknown, on: unknown) => remoteOps.setRemote(id, on));
-ipcMain.handle('agents:openRemote', (_e, id: unknown) => remoteOps.openRemote(id));
+ipcMain.handle('agents:setRemote', (e, id: unknown, on: unknown) => (fromApp(e) ? remoteOps.setRemote(id, on) : { ok: false, error: 'invalid request' }));
+ipcMain.handle('agents:openRemote', (e, id: unknown) => (fromApp(e) ? remoteOps.openRemote(id) : { ok: false }));
 
 ipcMain.handle('agents:compact', async (_e, id: unknown, focus: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
@@ -1027,7 +1070,12 @@ ipcMain.handle('folders:setClosed', (_e, id: unknown, closed: unknown) => {
   return { ok: true };
 });
 
-ipcMain.handle('agents:setMode', (_e, id: unknown, mode: unknown, opts: unknown) => setModeOp(opsDeps, id, mode, opts));
+ipcMain.handle('agents:setMode', (e, id: unknown, mode: unknown, opts: unknown) => {
+  if (!fromApp(e)) return { ok: false, error: 'invalid request' };
+  // spec 054 FR-011: Allow all and remote control never together (anyone steering on GitHub could run commands unasked)
+  if (mode === 'allow' && typeof id === 'string' && remoteOps.has(id)) return { ok: false, error: 'Stop remote control first: Allow all and remote control from GitHub are never on together.' };
+  return setModeOp(opsDeps, id, mode, opts);
+});
 
 ipcMain.handle('folders:remove', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
@@ -1063,6 +1111,7 @@ ipcMain.handle('agents:remove', async (_e, id: unknown) => {
   const key = wsKey(a);
   if ([...agents.values()].filter((x) => wsKey(x) === key).length < 2) return { ok: false, error: 'This is the only session in the folder. Remove the folder from Folders instead.' };
   try {
+    await remoteOps.release(a.id); // spec 054 FR-011
     await router.forAgent(a.id)?.stop(a.id); // the history stays on disk and is listed under Previous sessions
   } catch {
     /* already gone */
@@ -1259,6 +1308,14 @@ app.whenReady().then(() => {
   });
 });
 
+// spec 054 FR-011: remote control is turned off on GitHub before the app quits (best effort, at most 3 s)
+let remoteReleased = false;
+app.on('before-quit', (ev) => {
+  if (remoteReleased || remoteOps.ids().length === 0) return;
+  ev.preventDefault();
+  remoteReleased = true;
+  void Promise.race([Promise.all(remoteOps.ids().map((id) => remoteOps.release(id))), new Promise((r) => setTimeout(r, 3000))]).finally(() => app.quit());
+});
 app.on('will-quit', () => {
   usageStore?.flush();
   usageTotalsStore?.flush();
