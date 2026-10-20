@@ -1,3 +1,4 @@
+import { copilotHooksJson } from '../shared/foldersetup';
 import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import { randomUUID } from 'crypto';
 import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
@@ -73,6 +74,8 @@ interface Live {
   /** Spec 012 FR-158: what a reconnect after a sign-in needs to resume this session on a new client with the same handlers and broker. */
   resumeConfig?: () => Record<string, unknown>;
   onSessionEvent?: (ev: SessionEvent) => void;
+  /** Spec 061 FR-004: the private folder with the accepted folder hooks (removed when the session ends). */
+  hookDir?: string;
   /** Changes made while the session ran, put back after a reconnect (FR-158): the credit cap, and MCP servers switched on or off. */
   cap?: number | null;
   mcpToggles?: Map<string, boolean>;
@@ -441,6 +444,15 @@ export class CopilotAdapter implements AgentAdapter {
       return runElicitation((b) => this.emit(sid, b), live.elicitations, randomUUID(), { message: ctx.message, schema: ctx.requestedSchema, mode: ctx.mode, url: ctx.url, source: ctx.elicitationSource }, (m) => this.debug?.(m));
     };
 
+    // spec 061 FR-004 (research R3): the folder's ACCEPTED hooks only, in a private folder Durbar writes, through the SDK's explicit
+    // `hookDirectories`; the repository's own hook files stay off (`enableFileHooks: false`, FR-017). Removed when the session ends.
+    const hooksJson = copilotHooksJson(options.folderSetup);
+    let hookDir: string | undefined;
+    if (hooksJson) {
+      hookDir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folder-hooks-'));
+      fs.chmodSync(hookDir, 0o700);
+      fs.writeFileSync(path.join(hookDir, 'durbar-folder.json'), hooksJson, { mode: 0o600 });
+    }
     const config = {
       workingDirectory: cwd,
       // spec 006 FR-019: a workspace's other folders (the SDK asks for them again on resume, which this config does)
@@ -458,6 +470,10 @@ export class CopilotAdapter implements AgentAdapter {
       onElicitationRequest,
       // spec 043 FR-002: custom agents from explicit folders only (no config discovery, so no repository skills)
       agentDirectories: agentDirsFor([cwd, ...folders]),
+      // spec 061 FR-017 (real 2026-10-20): without this the runtime runs a repository's own hooks (`.github/hooks/*.json`,
+      // `.github/copilot/settings.json`) unasked, even in Read-only. Accepted ones come through `hookDirectories` instead.
+      enableFileHooks: false,
+      ...(hookDir ? { hookDirectories: [hookDir] } : {}),
     };
     this.debug?.(`mcp: servers=[${Object.keys(options.mcpServers ?? {}).join(',')}] disabled=[${(options.disabledMcpServers ?? []).join(',')}]`);
     let session: CopilotSession;
@@ -491,7 +507,7 @@ export class CopilotAdapter implements AgentAdapter {
     const unsubscribe = session.on(onSessionEvent);
     // FR-158: a reconnect resumes with the same handlers but no model fields, so the session keeps the model the runtime stored
     // (it may have been switched since this start).
-    this.sessions.set(sid, { session, unsubscribe, cwd, folders: [cwd, ...folders], broker, resumeConfig: () => ({ ...config }), onSessionEvent });
+    this.sessions.set(sid, { session, unsubscribe, cwd, folders: [cwd, ...folders], broker, resumeConfig: () => ({ ...config }), onSessionEvent, ...(hookDir ? { hookDir } : {}) });
     // spec 043 FR-002: a resumed session keeps its selected agent (stored by the runtime): show it
     if (resumedExisting)
       void Promise.resolve()
@@ -607,6 +623,7 @@ export class CopilotAdapter implements AgentAdapter {
     }
     live.unsubscribe();
     await live.session.disconnect();
+    if (live.hookDir) fs.rmSync(live.hookDir, { recursive: true, force: true }); // spec 061: the accepted folder hooks' private copy
     this.sessions.delete(sessionId);
     this.mappers.delete(sessionId);
     this.emit(sessionId, { type: 'status', status: 'stopped' });

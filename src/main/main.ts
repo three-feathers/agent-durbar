@@ -1,3 +1,8 @@
+import { FolderSetupStore } from './foldersetupstore';
+import { acceptedFor, hasFolderRules, scanFolderSetup } from './foldersetup';
+import { registerFolderSetupIpc } from './foldersetupipc';
+import type { FolderSetupStart } from '../shared/foldersetup';
+import type { McpServerSpec } from '../shared/mcp';
 import { app, BrowserWindow, dialog, Menu, screen, shell } from 'electron';
 import { ipcHandle, ipcOn } from './ipcguard';
 import { randomUUID } from 'crypto';
@@ -77,6 +82,7 @@ const DEFAULT_MODEL = 'auto';
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 type Effort = (typeof EFFORTS)[number];
 const asEffort = (v: unknown): Effort | undefined => (EFFORTS as readonly string[]).includes(v as string) ? (v as Effort) : undefined;
+let folderSetupStore: FolderSetupStore | undefined; // spec 061
 let folderStore: FolderStore | undefined;
 /** Global settings (default credit cap, spec 011), created when the app is ready. */
 let settingsStore: SettingsStore | undefined;
@@ -245,14 +251,30 @@ const infoFor = (workspace: string, permMode: PermMode, id: string, model: strin
     modelControl: modelControlFor(ad, { unverified: !ad.capabilities.modelSwitch?.verified, contextTier: ad.capabilities.modelSwitch?.contextTier }),
     profiles: typeof ad.listAgentProfiles === 'function' && typeof ad.selectAgentProfile === 'function' ? true : undefined, // spec 043
     adapterId: ad.id,
+    // spec 061 FR-012: the mode chip says "+ folder rules" when this folder's accepted hooks or allow rules apply to this app
+    ...(folderSetupStart(ws.workspaceFile ?? ws.cwd, ws.folders, ad.id).rules ? { folderRules: true } : {}),
     ...extra,
   };
 };
 
-const startOptionsFor = (a: AgentInfo) => ({
-  ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort)),
-  ...mcp.optionsFor(a.id),
-});
+/**
+ * Spec 061 FR-004: what this folder's ACCEPTED setup gives a session of app `appId` (pending and declined items never apply).
+ * `rules` is set only when hooks or allow/ask rules apply (it also drives the "+ folder rules" chip, FR-012).
+ */
+function folderSetupStart(key: string, dirs: readonly string[], appId: string, taken: ReadonlySet<string> = new Set()): { folderSetup?: FolderSetupStart; mcpServers: Record<string, McpServerSpec>; rules?: true } {
+  if (!folderSetupStore || (appId !== 'claude' && appId !== 'codex' && appId !== 'copilot')) return { mcpServers: {} };
+  const accepted = new Set(folderSetupStore.get(key).accepted);
+  if (!accepted.size) return { mcpServers: {} };
+  const ap = acceptedFor(scanFolderSetup(dirs.length ? dirs : [key]), accepted, appId, taken);
+  const any = ap.hooks.length || ap.rules.allow.length || ap.rules.deny.length || ap.rules.ask.length;
+  return { mcpServers: ap.mcpServers, ...(any ? { folderSetup: { hooks: ap.hooks, rules: ap.rules } } : {}), ...(hasFolderRules(ap) ? { rules: true as const } : {}) };
+}
+
+const startOptionsFor = (a: AgentInfo) => {
+  const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort)), ...mcp.optionsFor(a.id) };
+  const fs61 = folderSetupStart(wsKey(a), a.folders ?? [a.cwd], router.adapterIdOf(a.id) ?? a.adapterId ?? registry.defaultId, new Set(Object.keys(base.mcpServers)));
+  return { ...base, mcpServers: { ...base.mcpServers, ...fs61.mcpServers }, ...(fs61.folderSetup ? { folderSetup: fs61.folderSetup } : {}) };
+};
 
 async function addWorkspace(
   workspace: string,
@@ -674,6 +696,36 @@ const pickFolder = async (title: string, create = false): Promise<string | null>
   const r = await dialog.showOpenDialog({ title, properties: create ? ['openDirectory', 'createDirectory'] : ['openDirectory'] });
   return r.canceled || !r.filePaths.length ? null : r.filePaths[0];
 };
+/* Spec 061: a folder's own agent setup (scan, decide, explain), window-only (FR-013). */
+registerFolderSetupIpc({
+  store: () => folderSetupStore,
+  dirsOf: (key) => {
+    const a = [...agents.values()].find((x) => wsKey(x) === key);
+    return a ? (a.folders?.length ? a.folders : [a.cwd]) : undefined;
+  },
+  explainer: () => {
+    // FR-015: the first installed app that answers one prompt with no tools; Copilot first (its `auto` is the cheapest)
+    for (const id of ['copilot', 'claude', 'codex']) {
+      if (!registry.has(id)) continue;
+      const ad = router.instance(id);
+      if (typeof ad.generateText !== 'function') continue;
+      const opts = id === 'copilot' ? { disabledMcpServers: cliServers(copilotDir(dev), new Set()).servers.map((x) => x.name) } : {};
+      return { name: registry.get(id)?.displayName ?? id, generate: async (prompt: string) => (await ad.generateText!(prompt, opts)).text };
+    }
+    return undefined;
+  },
+  afterDecide: (key) => {
+    const out: Record<string, boolean> = {};
+    for (const a of agents.values()) {
+      if (wsKey(a) !== key) continue;
+      const on = !!folderSetupStart(key, a.folders ?? [a.cwd], router.adapterIdOf(a.id) ?? a.adapterId ?? registry.defaultId).rules;
+      a.folderRules = on || undefined;
+      out[a.id] = on;
+    }
+    return out;
+  },
+});
+
 /* Spec 040 FR-014..FR-021: the AI theme maker. One prompt to a harness that has `generateText` (no tools, no session kept); the
    reply keeps only the safe subset and must pass the contrast rules and `checkUserManifest`. The description is never logged. */
 ipcHandle('theme:generate', async (_e, description: unknown, adapterId: unknown) => {
@@ -1429,6 +1481,7 @@ app.whenReady().then(() => {
   /* Dev/test theme seed (spec 036 FR-005): DURBAR_THEME=<id> makes the office open on that theme for the per-theme checks; invalid ids fall back in the renderer. */
   if (dev.DURBAR_THEME) runTheme = parseThemeId(dev.DURBAR_THEME);
   mcpStore = new McpStore(path.join(app.getPath('userData'), 'durbar-mcp.json'), safeStorageCodec);
+  folderSetupStore = new FolderSetupStore(path.join(app.getPath('userData'), 'folder-setup.json')); // spec 061: digests and paths only
   mcpStore.load();
   usageStore = new UsageStore(path.join(app.getPath('userData'), 'durbar-tool-usage.json'));
   usageStore.load();

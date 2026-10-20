@@ -54,3 +54,8 @@ Each entry has the date it was learned, what happened, and how to apply it, with
   - **Caps:** `maxAiCredits` is checked when a session is created or resumed, not before each turn. A running session went past its cap without any `limit` event, so Durbar has to enforce it.
   - An invalid `compactionDecision` is ignored silently, so the runtime does not reveal the allowed values.
 - **Codex `CODEX_HOME`**: an empty or missing folder reads as "not signed in". When a sign-in check says "could not confirm", first check that the folder you pointed at exists.
+- **Folder config per agent app** (2026-10-20/21, `real:`, spec 061 R1-R3):
+  - **Claude Code:** with `--setting-sources project,local` it runs the folder's hooks but ignores its allow rules in an untrusted folder. A composed `--settings <json>` with `--setting-sources ""` applies exactly what it holds, with no trust prompt.
+  - **Codex:** reads `.codex/config.toml` only for projects trusted in `~/.codex/config.toml` (a `-c` override is ignored), and did not run `.codex/hooks.json` from `codex exec`.
+  - **Copilot SDK:** runs repository hooks (`.github/hooks/`, `.github/copilot/settings.json`) **by default**, so set `enableFileHooks: false`; it does not read `.mcp.json`.
+- **Probing `claude` in a scratch folder** (2026-10-20): never put the folder under `~/.claude` (for example the job tmp dir). Claude Code refuses writes there whatever the allow rules say, which looks like a rule bug. Use a folder elsewhere, and restore any user config you touch byte for byte (back it up and compare a hash).
