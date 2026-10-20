@@ -39,6 +39,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
+import { sessionIdOk } from '../shared/sessionid';
 import { allowedRemoteUrl, cleanRemoteError, isRemoteVisibility } from '../shared/remote';
 import type { RemoteState } from '../shared/remote';
 
@@ -129,6 +130,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
   remote: true, // spec 054 FR-002: rpc.remote.enable/disable (@experimental; real 2026-10-20: `started: false` outside a GitHub repository, never seen started)
   renameSession: 'any', // spec 059 FR-007: rpc.name.set (@experimental), also on a stored session through a prompt-free resume (read: SDK types only, not run on a real account)
+  deleteSession: true, // spec 006 FR-028: CopilotClient.deleteSession (read: SDK 1.0.22 client.d.ts; never run on a real session)
   oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (real 2026-10-20: no tool ran, nothing left on disk)
 });
 
@@ -388,6 +390,16 @@ export class CopilotAdapter implements AgentAdapter {
     const client = await this.getClient();
     const metas = await client.listSessions();
     return previousSessionsFor(metas, cwd, new Set([...excludeIds, ...this.sessions.keys()]), process.platform, fs.realpathSync);
+  }
+
+  /**
+   * Spec 006 FR-028: permanently removes one earlier session through the SDK (`session.delete`), never by touching files. Refuses a
+   * malformed id and a session that is open in this adapter; an error from the runtime (for example "not found") is passed on.
+   */
+  async deleteSession(sessionId: string): Promise<void> {
+    if (!sessionIdOk(this.id, sessionId)) throw new Error('That is not a session id.');
+    if (this.sessions.has(sessionId)) throw new Error('That session is open. End it first.');
+    await (await this.getClient()).deleteSession(sessionId);
   }
 
   /** Persisted messages and tool calls of a live (e.g. just resumed) session, capped, for replay in the chat panel. */

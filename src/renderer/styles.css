@@ -718,7 +718,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .prev{flex:none;border-bottom:1px solid var(--line);background:var(--soft);padding:4px max(16px,calc((100% - 1240px)/2)) 0}
 .prev[hidden]{display:none}
 #prevBtn[aria-expanded="true"]{background:var(--surface-2);border-color:var(--line-ctl)}
-.prev-body{max-height:min(30vh,250px);overflow-y:auto;padding:0 0 8px}
+.prev-body{max-height:min(30vh,250px);overflow-y:auto;padding:0 18px 8px 0;scrollbar-gutter:stable} /* spec 006 FR-027: an overlay scrollbar (macOS) must never sit over the ⋯ buttons or take their clicks: 14px clear on the right */
 .prev-q{display:block;box-sizing:border-box;width:100%;height:28px;margin:4px 0;padding:0 8px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--panel,#fff);color:var(--ink);font:inherit;font-size:var(--t4-size)}
 .prev-n{font-weight:500;color:var(--muted);font-size:var(--t4-size);margin-left:4px}
 .prev-h{font-size:var(--t4-size);font-weight:650;color:var(--ink);margin:8px 0 4px}
@@ -729,6 +729,15 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .prev-tx b{font-size:var(--t4-size);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .prev-tx small{font-size:var(--t5-size);color:var(--muted)}
 .prev-row .btn{height:28px;padding:0 10px;font-size:var(--t4-size)}
+.prev-row .btn.prev-more{width:28px;min-width:28px;padding:0;flex:none;line-height:1;letter-spacing:1px;justify-content:center} /* spec 006 FR-027: one 28px control after Resume/View; neither ever wraps or leaves the row */
+.prev-row .btn:not(.prev-more){flex:none;white-space:nowrap}
+.prev-tx b{display:flex;align-items:center;gap:5px;min-width:0}
+.prev-tx b .prev-t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prev-pin{display:inline-flex;flex:none;color:var(--amber-ink,#8a5a00)}
+.prev-hidtag{flex:none}
+.prev-row.is-hidden .prev-t,.prev-row.is-hidden small{color:var(--muted)}
+.prev-showhid{margin:8px 0 2px}
+.mode-menu button[aria-disabled="true"]{cursor:not-allowed}.mode-menu button[aria-disabled="true"] b{color:var(--muted)}
 .prev-empty,.prev-fine{margin:4px 0;font-size:var(--t4-size);color:var(--muted)}
 .prev-fine{font-size:11px}
 

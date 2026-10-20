@@ -178,3 +178,4 @@ All of these are blocked until the owner answers Q1 and Q2 in writing (which acc
 ## Changes 2026-10-20 (Copilot's shared runtime picks up a new sign-in)
 
 - [x] T125 (fakes) Optional `refreshAuth()` in the adapter interface; Copilot stops and recreates its shared client and resumes the live sessions on it ("Reconnecting Copilot…"); main calls it after a sign-in that ended well, before detection and `harness:done` (`afterSignIn`); `RestartingFakeCopilot` and tests in `test:authcheck` [FR-158]
+- [x] T126 (2026-10-20) Chat sessions start with `CLAUDE_CODE_ENTRYPOINT=agent-durbar` so `claude --resume` lists them; probe, handoff and one-shot runs unchanged; unit test; real check recorded [FR-159]

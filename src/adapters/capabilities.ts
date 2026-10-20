@@ -44,6 +44,8 @@ export interface AdapterCapabilities {
    * `'next-turn'`: the call remembers the name and the adapter applies it the next time it starts that session's CLI.
    */
   readonly renameSession?: 'any' | 'next-turn';
+  /** `deleteSession()` exists: one earlier session can be removed through the vendor's own API, never by deleting files (spec 006 FR-028); missing = false. */
+  readonly deleteSession?: boolean;
 }
 
 /** Where an adapter stands on this machine (spec 012 FR-030). `unknown` also covers a detect that failed. */

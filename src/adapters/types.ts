@@ -482,6 +482,11 @@ export interface AgentAdapter {
   history?(sessionId: string): Promise<HistoryResult>;
   /** Change the permission mode of a live session; returns how many requests stay pending. Optional (`capabilities.permModeSwitch` is not `none`). */
   setPermMode?(sessionId: string, mode: PermissionMode, opts?: { clearGrants?: boolean; approvePending?: boolean }): { pending: number };
+  /**
+   * Spec 006 FR-028: permanently remove one earlier session through the vendor's own API (never by touching files). Refuses a session
+   * that is live in this adapter. Optional (`capabilities.deleteSession`).
+   */
+  deleteSession?(sessionId: string): Promise<void>;
   /** The vendor's own id to resume this session later, when it differs from Durbar's session id (spec 006 FR-020; Codex's thread id). */
   resumeIdOf?(sessionId: string): string | undefined;
   /** Subscribe to normalized events from all sessions of this adapter. */

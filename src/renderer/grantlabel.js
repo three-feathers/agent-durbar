@@ -17,5 +17,8 @@
     if(!rest||rest===tool.slice(server.length))return s; /* no separator after the prefix: "serverless" is not "server" + "less" */
     return s.slice(0,i)+SEP+rest;
   }
-  return {shortGrantLabel};
+  /* Which agent's Revoke all is still under way for the agent being drawn: its own id, or '' (another agent's, or none).
+     The caller stores the result, so a Revoke all of agent A is dropped as soon as agent B is drawn and can never move B's focus. */
+  function grantsBusyFor(busyId, agentId){return busyId&&busyId===agentId?busyId:'';}
+  return {shortGrantLabel,grantsBusyFor};
 })());

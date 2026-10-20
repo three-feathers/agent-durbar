@@ -156,11 +156,11 @@ module.exports = async (ctx) => {
       d = await dlg();
       assert.ok(d && d.value === 'Rename the filings handler and update its tests'.slice(0, 60), `${tag}: the row dialog starts from the row title: ${JSON.stringify(d)}`);
       await type(EVIL); await key('Enter'); await ctx.sleep(500);
-      const row = await js(`(()=>{const r=[...document.querySelectorAll('.prev-row b')].find(b=>b.textContent===${JSON.stringify(EVIL)});return r?r.getAttribute('title'):null})()`);
+      const row = await js(`(()=>{const r=[...document.querySelectorAll('.prev-row .prev-t')].find(b=>b.textContent===${JSON.stringify(EVIL)});return r?r.parentElement.getAttribute('title'):null})()`);
       assert.strictEqual(row, EVIL, `${tag}: the Previous row shows the name as text`);
       assert.strictEqual(await js(`document.querySelectorAll('img[src="x"]').length`), 0);
       await js(`(()=>{const q=document.getElementById('prevQ');if(q){q.value='onerror';q.dispatchEvent(new Event('input',{bubbles:true}));}})()`); await ctx.sleep(300);
-      assert.ok(await js(`[...document.querySelectorAll('.prev-row b')].some(b=>b.textContent===${JSON.stringify(EVIL)})`), `${tag}: the search finds the row by its name`);
+      assert.ok(await js(`[...document.querySelectorAll('.prev-row .prev-t')].some(b=>b.textContent===${JSON.stringify(EVIL)})`), `${tag}: the search finds the row by its name`);
       await js(`(()=>{const q=document.getElementById('prevQ');if(q){q.value='';q.dispatchEvent(new Event('input',{bubbles:true}));}})()`);
       await closePanel();
       console.log(`[rename] ${tag} ok`);

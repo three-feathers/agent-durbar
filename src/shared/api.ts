@@ -246,6 +246,9 @@ export interface VsChatListResult {
   ok: boolean;
   error?: string;
   sessions: VsChatSummary[];
+  /** Keys pinned / hidden in this folder (spec 006 FR-026), filtered to the chats in `sessions`. */
+  pinned?: string[];
+  hidden?: string[];
   /** Matching VS Code workspace folders found on disk (0: VS Code never opened this folder, or is not installed). */
   storesFound: number;
   unreadable: number;
@@ -563,7 +566,11 @@ export interface DurbarApi {
   revokeGrant(id: string, key: string): Promise<void>;
   openInVSCode(id: string): Promise<{ ok: boolean; error?: string; edition?: string }>;
   /** Earlier Copilot CLI/SDK sessions in this agent's folder (newest first). Optional: not in the simulator. */
-  listPrevious?(id: string): Promise<{ ok: boolean; error?: string; sessions: PreviousSession[]; names?: Record<string, string> }>;
+  listPrevious?(id: string): Promise<{ ok: boolean; error?: string; sessions: PreviousSession[]; pinned?: string[]; hidden?: string[]; names?: Record<string, string> }>;
+  /** Pin, unpin, hide or unhide one row (spec 006 FR-026). `src` is the agent's adapter id or `vscode`; ids only, never a path. */
+  markPrevious?(id: string, src: string, sessionId: string, mark: 'pin' | 'unpin' | 'hide' | 'unhide'): Promise<{ ok: boolean; error?: string }>;
+  /** Delete one earlier session through the agent app's own API (spec 006 FR-029). `code: 'in-office'` = it still has a card. */
+  deletePrevious?(id: string, sessionId: string): Promise<{ ok: boolean; error?: string; code?: 'in-office'; agentId?: string }>;
   /** Spec 059 FR-013: give a session the user's name. `sessionId` null = this agent's own session; an id = another open or previous session of the same folder. An empty name resets. */
   renameSession?(id: string, sessionId: string | null, name: string): Promise<RenameResult>;
   /** Spec 059 FR-013: a session's user name changed (here or in another window); `alias` undefined = reset. */

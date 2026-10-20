@@ -337,6 +337,9 @@ export interface TransportInput {
 export type TransportFactory = (o: TransportInput) => ClaudeTransport | Promise<ClaudeTransport>;
 
 /** The CLI transport (FR-111). */
+/** Spec 012 FR-159: the entrypoint Claude records for the chat sessions Durbar starts (not an SDK value, so `claude --resume` lists them). */
+export const CLAUDE_ENTRYPOINT = 'agent-durbar';
+
 export const cliTransportFactory: TransportFactory = (o) => createCliTransport({ file: o.file, args: claudeArgs(o.launch), cwd: o.cwd, env: o.env, handlers: o.handlers });
 
 export interface ClaudeAdapterDeps {
@@ -766,7 +769,10 @@ export class ClaudeAdapter implements AgentAdapter {
     const make = this.deps.makeTransport ?? cliTransportFactory;
     s.initSeen = false;
     s.mapper.reset();
-    const t = await make({ file, launch, cwd: s.cwd, env: (this.deps.env ?? (() => process.env))(), handlers });
+    // spec 012 FR-159 (real, 2.1.304): a `-p` session is recorded as entrypoint `sdk-cli`, which `claude --resume`'s picker leaves out;
+    // an entrypoint of our own keeps the user's own CLI able to list and open the sessions Durbar starts
+    const env = { ...(this.deps.env ?? (() => process.env))(), CLAUDE_CODE_ENTRYPOINT: CLAUDE_ENTRYPOINT };
+    const t = await make({ file, launch, cwd: s.cwd, env, handlers });
     s.transport = t;
     s.launchedMode = launch.mode;
     s.launchedName = t.kind === 'cli' ? launch.name : undefined; // the SDK transport ignores `name`: it stays pending
