@@ -1409,7 +1409,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           // After the renderer has registered the infos, replay each agent's script.
           setTimeout(() => {
             sims.forEach(play);
-            if (!opts.freeze) timer = window.setInterval(tick, 2600);
+            // simspeed=N (perf checks, spec 052): background activity N times faster
+            const speed = Math.max(1, Math.min(50, Number(typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simspeed') : null) || 1));
+            if (!opts.freeze) timer = window.setInterval(tick, Math.round(2600 / speed));
           }, 0);
         }
         /* simresume=1 (spec 006 FR-021): Priya's folder came back after a restart as its last session, not started yet */
