@@ -17,6 +17,8 @@ import { createCodexRpc, realSpawn } from './codexRpc';
 import type { CodexRpc, RequestOutcome, SpawnFn } from './codexRpc';
 import { codexHistory, codexModelOptions, codexPreviousSessions } from './codexHistory';
 import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
+import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
+import type { ElicitAnswer } from '../shared/elicit';
 import { codexMcpConfig, codexMcpServers, codexMcpState } from './codexMcp';
 import type { McpServerStatus } from './types';
 import type { HistoryResult, PreviousSession } from './history';
@@ -52,6 +54,7 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpStatus: true, // FR-147: mcpServerStatus/list and startup notifications
   mcpToggle: true, // FR-147: from the next message (fresh child, same thread)
   handoff: true, // spec 030 FR-034: an ephemeral fork, the thread is not changed
+  oneShot: true, // spec 040 FR-015: an ephemeral read-only thread in an empty temp folder
 });
 
 /** Where the `codex` binary is and which version it reports. */
@@ -147,7 +150,7 @@ export function codexResumeCheck(res: unknown, o: { cwd: string; limited: boolea
   if (kind !== undefined && /danger|full|workspace.?write/i.test(kind)) throw new Error(`Codex resumed the session with a wider sandbox (${kind.slice(0, 40)}) than this mode allows, so it is not resumed.`);
 }
 
-/** FR-148: does an MCP elicitation ask for form fields (as opposed to a plain yes/no)? Unknown shapes count as fields (declined). */
+/** FR-148/FR-151: does an MCP elicitation ask for form fields or a URL flow (the question card), as opposed to a plain yes/no (the approval)? */
 export function codexElicitationHasFields(params: unknown): boolean {
   const schema = isObj(params) && isObj(params.requestedSchema) ? params.requestedSchema : undefined;
   if (!schema) return isObj(params) && params.mode === 'url'; // a URL flow cannot be answered here
@@ -202,6 +205,8 @@ interface Live {
   mcpRead?: boolean;
   /** FR-146: questions waiting for the user, by request id. */
   questions: Map<string, (answers: Record<string, string> | null) => void>;
+  /** FR-151: MCP elicitations (forms, URL flows) waiting for the user, by request id. */
+  elicitations: Map<string, ElicitWaiter>;
   /** Shell tool calls started and not yet ended (FR-139). */
   runningCommands: Set<string>;
   /** Drops mapper events (while starting with `quiet`, and once the session is stopping or dead). */
@@ -303,16 +308,44 @@ export class CodexAdapter implements AgentAdapter {
    * FR-141/FR-142: a short-lived app-server for reads that need no session (previous sessions, a thread's history, the model
    * list): no thread, no turn, no prompt. Started in the temp folder with the same environment rules (D5); always closed.
    */
-  private async probe<T>(fn: (rpc: CodexRpc) => Promise<T>): Promise<T> {
+  private async probe<T>(fn: (rpc: CodexRpc) => Promise<T>, onNotification: (method: string, params: unknown) => void = () => undefined): Promise<T> {
     const loc = await this.locate();
     if (!loc?.path || isShim(loc.path)) throw new Error('Codex was not found on this computer.');
-    const child = this.spawnChild(loc.path, os.tmpdir(), { onNotification: () => undefined, onRequest: async () => ({ error: { code: -32601, message: 'not handled in a probe' } }), onExit: () => undefined });
+    const child = this.spawnChild(loc.path, os.tmpdir(), { onNotification, onRequest: async () => ({ error: { code: -32601, message: 'not handled in a probe' } }), onExit: () => undefined });
     try {
       await child.rpc.request('initialize', { clientInfo: { name: 'agent_durbar', title: 'Agent Durbar', version: this.appVersion }, capabilities: CODEX_INITIALIZE_CAPABILITIES });
       await child.rpc.notify('initialized');
       return await fn(child.rpc);
     } finally {
       await this.closeChild(child);
+    }
+  }
+
+  /** Spec 040 FR-015: one prompt on an ephemeral, read-only thread in an empty temp folder, in a child of its own; nothing is kept. */
+  async generateText(prompt: string): Promise<{ text: string }> {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-gen-'));
+    let text = '';
+    let finish: (t: string) => void = () => undefined;
+    const done = new Promise<string>((r) => (finish = r));
+    const onNote = (method: string, params: unknown): void => {
+      const item = isObj(params) && isObj(params.item) ? params.item : undefined;
+      if (method === 'item/completed' && item && item.type === 'agentMessage' && typeof item.text === 'string') text = item.text;
+      else if (method === 'turn/completed') finish(text);
+    };
+    try {
+      return await this.probe(async (rpc) => {
+        const res = await rpc.request('thread/start', { cwd: dir, ephemeral: true, approvalPolicy: 'never', sandbox: 'read-only' });
+        const threadId = isObj(res) && isObj(res.thread) && typeof res.thread.id === 'string' ? res.thread.id : undefined;
+        if (!threadId) throw new Error('Codex did not start a thread.');
+        await rpc.request('turn/start', { threadId, input: [{ type: 'text', text: prompt }], approvalPolicy: 'never' });
+        let timer: NodeJS.Timeout | undefined;
+        const t = await Promise.race([done, new Promise<string>((r) => (timer = setTimeout(() => r(text), 180_000)))]);
+        clearTimeout(timer);
+        if (!t) throw new Error('Codex gave no answer.');
+        return { text: t };
+      }, onNote);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   }
 
@@ -441,6 +474,7 @@ export class CodexAdapter implements AgentAdapter {
       doneTurns: [],
       runningCommands: new Set<string>(),
       questions: new Map(),
+      elicitations: new Map(),
       mcp: new Map(),
       turnStarting: false,
       pendingInterrupt: false,
@@ -624,6 +658,7 @@ export class CodexAdapter implements AgentAdapter {
     try {
       live.broker.denyPending();
       for (const answer of [...live.questions.values()]) answer(null); // FR-146: an open question is skipped
+      cancelElicitations(live.elicitations); // FR-151
       const turnId = live.turnId;
       if (!turnId) {
         // A turn is starting but its id is not known yet: remember the request and send it the moment the id arrives.
@@ -694,6 +729,7 @@ export class CodexAdapter implements AgentAdapter {
     live.muted = true;
     live.broker.stop();
     for (const answer of [...live.questions.values()]) answer(null); // FR-146
+    cancelElicitations(live.elicitations); // FR-151
     // Let the denied requests' answers (wire `cancel`) go out before the interrupt and the close.
     await new Promise<void>((r) => setImmediate(r));
     if (!live.rpc.exited) {
@@ -806,10 +842,12 @@ export class CodexAdapter implements AgentAdapter {
           case 'resolved':
             this.emit(sid, { type: 'permission', permission: e.permission });
             if (e.permission.via !== 'stopped') {
-              const word = e.permission.state === 'approved' ? (e.permission.via === 'session' ? 'Allowed for this session' : 'Approved') : 'Denied';
+              const word = e.permission.state === 'approved' ? (e.permission.via === 'session' ? 'Allowed for this session' : 'Allowed') : 'Denied';
               this.emit(sid, { type: 'status', status: 'working', intent: `${word}: ${e.permission.summary}` });
             }
             return;
+          case 'auto': // Allow all approved it: a permission event for the activity log; the window shows no card (spec 052 FR-071)
+            return this.emit(sid, { type: 'permission', permission: e.permission });
           case 'grants':
             return this.emit(sid, { type: 'grants', grants: e.grants });
         }
@@ -820,10 +858,16 @@ export class CodexAdapter implements AgentAdapter {
   /** A server request (approval or question). Read-only is double-locked: the broker denies and `codexReply` declines. Never `acceptForSession`. */
   private async onServerRequest(live: Live, method: string, params: unknown): Promise<RequestOutcome> {
     if (method === 'item/tool/requestUserInput' || method === 'tool/requestUserInput') return this.askUser(live, params);
-    // FR-148 (real, Codex 0.163): an MCP elicitation answers with {action, content}, not {decision}. One with form fields Durbar
-    // cannot fill is declined; a plain confirmation (no fields, e.g. "allow this tool call?") goes through the approval below.
+    // FR-148 (real, Codex 0.163): an MCP elicitation answers with {action, content}, not {decision}. A plain confirmation (no
+    // fields, e.g. "allow this tool call?") goes through the approval below. FR-151: one with form fields, or a URL flow, goes to
+    // the question card (an unsupported required field or a non-https URL is declined there, with the reason shown).
     const elicit = method === 'mcpServer/elicitation/request';
-    if (elicit && codexElicitationHasFields(params)) return { result: { action: 'decline' } };
+    if (elicit && codexElicitationHasFields(params)) {
+      if (live.stopping) return { result: { action: 'cancel' } };
+      const p = isObj(params) ? params : {};
+      const a = await runElicitation((b) => this.emit(live.sid, b), live.elicitations, `codex-e-${++live.anon}`, { message: p.message, schema: p.requestedSchema, mode: p.mode, url: p.url, source: p.serverName }, (m) => this.debug?.(`codex: ${m}`));
+      return { result: { ...a } };
+    }
     const perm = codexPermission(method, params);
     const itemId = isObj(params) && typeof params.itemId === 'string' && params.itemId ? params.itemId : undefined;
     const toolCallId = itemId ?? `${method}#${++live.anon}`;
@@ -913,6 +957,11 @@ export class CodexAdapter implements AgentAdapter {
 
   answerQuestion(sessionId: string, requestId: string, answers: Record<string, string> | null): void {
     this.sessions.get(sessionId)?.questions.get(requestId)?.(answers);
+  }
+
+  /** FR-151: the user's answer to an MCP elicitation (main checked it against the fields). */
+  answerElicitation(sessionId: string, requestId: string, answer: ElicitAnswer): void {
+    answerElicitation(this.sessions.get(sessionId)?.elicitations, requestId, answer);
   }
 
   /** The child exited. Not caused by `stop`: the session is over and says so (FR-097). */

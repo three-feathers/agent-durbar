@@ -24,7 +24,8 @@
       if(check){d.querySelector('.chk span').textContent=check.label;d.querySelector('#mdChk').checked=!!check.checked;}
       const row=d.querySelector('.dbtn');
       const items=()=>[...d.querySelectorAll(FOCUSABLE)];
-      const first=()=>(row.querySelector('.primary')||row.lastElementChild);
+      /* spec 052 FR-036: when the confirming choice is destructive (danger/warn), focus starts on Cancel, so Enter never confirms it unread */
+      const first=()=>{const p=row.querySelector('.primary');if(p&&/\b(danger|warn)\b/.test(p.className)){const c=row.querySelector('[data-cancel]');if(c)return c;}return p||row.lastElementChild;};
       let closed=false;
       const done=v=>{
         if(closed)return;closed=true;
@@ -47,7 +48,7 @@
       };
       /* focus must not leave the dialog (a stray focus() on the control behind it, a click on the backdrop) */
       const onFocusIn=e=>{if(!d.contains(e.target)){const f=first();if(f)f.focus();}};
-      buttons.forEach(b=>{const el=doc.createElement('button');el.type='button';el.className='btn'+(b.cls?' '+b.cls:'');el.textContent=b.label;el.onclick=()=>done(b.value===null?null:Object.assign({value:b.value,checked:check?d.querySelector('#mdChk').checked:false},input?{text:textOf()}:{}));row.appendChild(el);});
+      buttons.forEach(b=>{const el=doc.createElement('button');el.type='button';el.className='btn'+(b.cls?' '+b.cls:'');el.textContent=b.label;if(b.value===null)el.dataset.cancel='1';el.onclick=()=>done(b.value===null?null:Object.assign({value:b.value,checked:check?d.querySelector('#mdChk').checked:false},input?{text:textOf()}:{}));row.appendChild(el);});
       d.addEventListener('click',e=>{if(e.target===d)done(null);});
       doc.addEventListener('keydown',onKey,true);doc.addEventListener('focusin',onFocusIn,true);
       doc.body.appendChild(d);

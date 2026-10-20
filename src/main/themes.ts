@@ -131,6 +131,26 @@ export class UserThemeStore {
     return { ok: true, id: v.id, name: v.name };
   }
 
+  /** Spec 040 FR-014: store a generated (already checked) manifest as `<root>/<id>/manifest.json`, through a dot folder and a rename. */
+  saveManifest(manifest: Record<string, unknown>, isBuiltIn: (id: string) => boolean): { ok: boolean; id?: string; name?: string; error?: string } {
+    const text = JSON.stringify(manifest, null, 2);
+    const v = checkUserManifest(text);
+    if (!v.ok || !v.id) return { ok: false, error: v.error || 'invalid theme' };
+    if (isBuiltIn(v.id)) return { ok: false, error: '"' + v.id + '" is a built-in theme id' };
+    const dest = this.dir(v.id);
+    if (fs.existsSync(dest)) return { ok: false, error: 'a theme "' + v.id + '" already exists' };
+    const tmp = this.dir('.' + v.id + '.tmp-' + process.pid);
+    try {
+      fs.mkdirSync(tmp, { recursive: true });
+      fs.writeFileSync(path.join(tmp, 'manifest.json'), text);
+      fs.renameSync(tmp, dest);
+    } catch (e) {
+      fs.rmSync(tmp, { recursive: true, force: true });
+      return { ok: false, error: 'could not save the theme: ' + (e instanceof Error ? e.message : String(e)) };
+    }
+    return { ok: true, id: v.id, name: v.name || v.id };
+  }
+
   /** Copy an installed pack's folder to a picked directory. */
   exportFolder(id: string, to: string): { ok: boolean; to?: string; error?: string } {
     const e = this.list().find((x) => x.id === id && x.ok);

@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { FolderStore, adapterOf, parseAdapterId, parseDefaultAgent, parseLabel, parseLastSession, parseSavedFloors, parseSavedFolders, restoreMode } from '../src/main/folders';
+import { FolderStore, adapterOf, parseAdapterId, parseDefaultAgent, parseLabel, parseLastSession, parseOpenSessions, parseSavedFloors, parseSavedFolders, restoreMode, sessionsToRestore, MAX_OPEN_SESSIONS } from '../src/main/folders';
 import { GROUND, GROUND_NAME } from '../src/shared/floors';
 
 const abs = (p: string): string => path.resolve('/', p);
@@ -422,6 +422,52 @@ assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: 
     assert.strictEqual(st.setLastSession(abs('s1'), 'bad id', undefined), false, 'a bad id is refused');
   } finally {
     fs.rmSync(d5, { recursive: true, force: true });
+  }
+}
+// spec 052 FR-088: every open session of a folder (at most 6) comes back; files with only lastSession still work
+{
+  assert.strictEqual(MAX_OPEN_SESSIONS, 6);
+  assert.strictEqual(parseOpenSessions('x'), undefined);
+  assert.strictEqual(parseOpenSessions([]), undefined);
+  assert.deepStrictEqual(parseOpenSessions([{ id: 'a' }, { id: 'a' }, { id: '../x' }, 5, { id: 'b', adapterId: 'claude' }]), [{ id: 'a' }, { id: 'b', adapterId: 'claude' }], 'bad and duplicate entries dropped');
+  assert.deepStrictEqual(parseOpenSessions(Array.from({ length: 9 }, (_, i) => ({ id: 's' + i })))?.map((x) => x.id), ['s3', 's4', 's5', 's6', 's7', 's8'], 'the newest 6 kept');
+  assert.deepStrictEqual(sessionsToRestore({}), [], 'nothing saved: the folder starts fresh');
+  assert.deepStrictEqual(sessionsToRestore({ lastSession: { id: 'L' } }), [{ id: 'L' }], 'an older file with only lastSession');
+  assert.deepStrictEqual(sessionsToRestore({ lastSession: { id: 'b' }, openSessions: [{ id: 'a' }, { id: 'b' }, { id: 'c', adapterId: 'codex' }] }), [{ id: 'b' }, { id: 'a' }, { id: 'c', adapterId: 'codex' }], 'the last session first, then the others in order');
+  // an older file reads back unchanged
+  const old = parseSavedFolders(JSON.stringify({ folders: [{ workspace: abs('o'), lastSession: { id: 'L1' } }] }));
+  assert.ok(!('openSessions' in old[0]));
+  assert.deepStrictEqual(sessionsToRestore(old[0]), [{ id: 'L1' }]);
+  const d6 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folders6-'));
+  try {
+    const f6 = path.join(d6, 'f.json');
+    const st = new FolderStore(f6);
+    st.upsert({ workspace: abs('m'), permMode: 'ask' });
+    assert.strictEqual(st.addOpenSession(abs('nope'), 'x', undefined), false, 'only saved folders');
+    assert.strictEqual(st.addOpenSession(abs('m'), 'bad id', undefined), false, 'a bad id is refused');
+    for (const id of ['s1', 's2', 's3']) assert.ok(st.addOpenSession(abs('m'), id, id === 's2' ? 'claude' : undefined));
+    st.setLastSession(abs('m'), 's2', 'claude');
+    const mtime = fs.statSync(f6).mtimeMs;
+    st.addOpenSession(abs('m'), 's1', undefined); // already there: no write
+    assert.strictEqual(fs.statSync(f6).mtimeMs, mtime);
+    let back = new FolderStore(f6).load()[0];
+    assert.deepStrictEqual(back.openSessions, [{ id: 's1' }, { id: 's2', adapterId: 'claude' }, { id: 's3' }], 'survives a restart');
+    assert.deepStrictEqual(sessionsToRestore(back).map((x) => x.id), ['s2', 's1', 's3']);
+    // past 6, the oldest that is not the last session is dropped
+    for (const id of ['s4', 's5', 's6', 's7', 's8']) st.addOpenSession(abs('m'), id, undefined);
+    back = new FolderStore(f6).load()[0];
+    assert.deepStrictEqual(back.openSessions?.map((x) => x.id), ['s2', 's4', 's5', 's6', 's7', 's8'], 'capped at 6, the last session kept');
+    st.removeOpenSession(abs('m'), 's5');
+    st.removeOpenSession(abs('m'), 'zz'); // unknown: nothing changes
+    back = new FolderStore(f6).load()[0];
+    assert.deepStrictEqual(back.openSessions?.map((x) => x.id), ['s2', 's4', 's6', 's7', 's8'], 'a removed session is not restored');
+    st.removeOpenSession(abs('m'), 's2');
+    back = new FolderStore(f6).load()[0];
+    assert.ok(!('lastSession' in back), 'removing the last session forgets it too');
+    for (const id of ['s4', 's6', 's7', 's8']) st.removeOpenSession(abs('m'), id);
+    assert.ok(!('openSessions' in new FolderStore(f6).load()[0]), 'an empty list is not written');
+  } finally {
+    fs.rmSync(d6, { recursive: true, force: true });
   }
 }
 console.log('folders tests passed');

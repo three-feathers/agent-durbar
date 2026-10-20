@@ -20,6 +20,7 @@
  * A one-off call is sent with the simulator-only hook window.__durbarSimEmit (spec 010 dev/test infrastructure).
  */
 const path = require('path');
+const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
 const assert = require('assert');
 const OUT = process.env.SHOTS_024 || '/tmp';
 const SIZES = [[1440, 900], [1280, 800]];
@@ -85,7 +86,7 @@ module.exports = async (ctx) => {
   ctx.win.setContentSize(w, h); await ctx.sleep(800);
   const who = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk:not(.is-away)')].find(d=>/is-(idle|done)/.test(d.className));return d&&d.dataset.id})()`);
   assert.ok(who, 'an idle agent at its desk to send for a walk');
-  const call = (n, phase) => js(`window.__durbarSimEmit({type:'toolCall',sessionId:${JSON.stringify(who)},timestamp:Date.now(),callId:'shots-024-${n}',tool:'github-search_issues',phase:'${phase}',mcpServer:'github',mcpTool:'search_issues'})`);
+  const call = (n, phase) => js(`window.__durbarSimEmit({type:'toolCall',sessionId:${jsLiteral(who)},timestamp:Date.now(),callId:'shots-024-${n}',tool:'github-search_issues',phase:'${phase}',mcpServer:'github',mcpTool:'search_issues'})`);
   await call(1, 'start');
   await ctx.waitFor(`!!document.querySelector('.walker.walking')`, 3000); await ctx.sleep(380);
   const walking = await js(`document.querySelectorAll('.walker.walking').length`);
@@ -94,7 +95,7 @@ module.exports = async (ctx) => {
   await ctx.waitFor(`!document.querySelector('.walker.walking')`, 4000);
   assert.strictEqual(await placeOf(who), expect.github, 'github goes to its place');
   await call(1, 'complete');
-  await ctx.waitFor(`!document.querySelector('#stage [data-id=${JSON.stringify(who)}].is-away')`, 6000);
+  await ctx.waitFor(`!document.querySelector('#stage [data-id=${jsLiteral(who)}].is-away')`, 6000);
   assert.strictEqual(await placeOf(who), null, 'back at the desk after the call, the 2 s stay and the walk back');
 
   // SC-003: Settings sends github to Terminal; the next github call of that agent goes there
@@ -117,16 +118,16 @@ module.exports = async (ctx) => {
   await shot('settings-places', w, h);
   await js(`document.getElementById('scrClose').click()`); await ctx.sleep(400);
   await call(2, 'start');
-  await ctx.waitFor(`!!document.querySelector('#stage [data-id=${JSON.stringify(who)}].is-away')`, 3000);
+  await ctx.waitFor(`!!document.querySelector('#stage [data-id=${jsLiteral(who)}].is-away')`, 3000);
   assert.strictEqual(await placeOf(who), expect.terminal, 'the mapping decides the place of the next call');
   await call(2, 'complete');
-  await ctx.waitFor(`!document.querySelector('#stage [data-id=${JSON.stringify(who)}].is-away')`, 6000);
+  await ctx.waitFor(`!document.querySelector('#stage [data-id=${jsLiteral(who)}].is-away')`, 6000);
 
   // FR-014: the place set on the github row also applies to a call that comes in as github-mcp-server
-  await js(`window.__durbarSimEmit({type:'toolCall',sessionId:${JSON.stringify(who)},timestamp:Date.now(),callId:'shots-024-3',tool:'github-mcp-server-search_issues',phase:'start',mcpServer:'github-mcp-server',mcpTool:'search_issues'})`);
-  await ctx.waitFor(`!!document.querySelector('#stage [data-id=${JSON.stringify(who)}].is-away')`, 3000);
+  await js(`window.__durbarSimEmit({type:'toolCall',sessionId:${jsLiteral(who)},timestamp:Date.now(),callId:'shots-024-3',tool:'github-mcp-server-search_issues',phase:'start',mcpServer:'github-mcp-server',mcpTool:'search_issues'})`);
+  await ctx.waitFor(`!!document.querySelector('#stage [data-id=${jsLiteral(who)}].is-away')`, 3000);
   assert.strictEqual(await placeOf(who), 'Terminal', 'a place set on the github row applies to a github-mcp-server call');
-  await js(`window.__durbarSimEmit({type:'toolCall',sessionId:${JSON.stringify(who)},timestamp:Date.now(),callId:'shots-024-3',tool:'github-mcp-server-search_issues',phase:'complete',mcpServer:'github-mcp-server',mcpTool:'search_issues'})`);
+  await js(`window.__durbarSimEmit({type:'toolCall',sessionId:${jsLiteral(who)},timestamp:Date.now(),callId:'shots-024-3',tool:'github-mcp-server-search_issues',phase:'complete',mcpServer:'github-mcp-server',mcpTool:'search_issues'})`);
 
   // Demo mode hides the lobby and every figure
   await js(`document.getElementById('demoToggle').click()`); await ctx.sleep(800);

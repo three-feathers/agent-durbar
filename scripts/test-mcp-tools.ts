@@ -337,7 +337,7 @@ async function main(): Promise<void> {
       assert.strictEqual(a[0].state, 'Idle');
       assert.strictEqual(a[0].subLabel, 'Not started', 'a lazy agent is Not started');
       assert.strictEqual(a[0].lazy, true);
-      assert.strictEqual(a[2].subLabel, 'Ready');
+      assert.strictEqual(a[2].subLabel, null);
       assert.strictEqual(a[2].lazy, false);
       assert.strictEqual(a[1].mode, 'Allow all');
       assert.strictEqual(a[1].cap, 120);
@@ -354,7 +354,7 @@ async function main(): Promise<void> {
       tracker.noteSend('ag-1');
       tracker.setPaused('ag-0', true);
       const a = (await call('durbar_list_agents')).data.agents;
-      assert.deepStrictEqual([a[2].state, a[2].subLabel], ['Waiting for you', 'Limit reached']);
+      assert.deepStrictEqual([a[2].state, a[2].subLabel], ['Waiting', 'Limit reached']);
       assert.deepStrictEqual([a[1].state, a[1].subLabel], ['Thinking', null]);
       assert.deepStrictEqual([a[0].state, a[0].subLabel], ['Paused', null]);
     }

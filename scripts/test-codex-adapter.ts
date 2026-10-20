@@ -94,7 +94,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(CODEX_CAPABILITIES)), {
       interrupt: true, resume: true, images: true, models: true, effort: true,
       permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'next-message',
-      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true,
+      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, oneShot: true,
     });
     assert.ok(Object.isFrozen(CODEX_CAPABILITIES) && Object.isFrozen(CODEX_CAPABILITIES.permissionModes) && Object.isFrozen(CODEX_CAPABILITIES.usage), 'capabilities are deeply frozen');
     const { ad } = make();
@@ -623,6 +623,31 @@ async function main(): Promise<void> {
       assert.deepStrictEqual((await settles('stop', p3)).result, { answers: {} });
       await ad.dispose();
     }
+    // FR-151: an MCP elicitation with form fields goes to the question card; the answer is {action, content}; Stop cancels
+    {
+      const { server, ad, events } = make({ server: { holdTurn: true } });
+      const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', quiet: true });
+      await ad.send(sid, { text: 'go' });
+      await server.flush();
+      const child = server.childOfThread(sid)!;
+      const form = { threadId: sid, serverName: 'deploy', mode: 'form', message: 'Where?', requestedSchema: { type: 'object', properties: { env: { type: 'string', enum: ['staging', 'production'] }, ticket: { type: 'integer' } }, required: ['env'] } };
+      const p = req(server, 'mcpServer/elicitation/request', form, child);
+      await until('form asked', () => events.some((e) => e.type === 'question' && e.phase === 'asked'));
+      const asked = events.find((e) => e.type === 'question' && e.phase === 'asked') as { requestId: string; elicitation?: { source?: string; fields?: Array<{ name: string }> } };
+      assert.deepStrictEqual(asked.elicitation?.fields?.map((f) => f.name), ['env', 'ticket']);
+      assert.strictEqual(asked.elicitation?.source, 'deploy');
+      ad.answerElicitation!(sid, asked.requestId, { action: 'accept', content: { env: 'staging', ticket: 4 } });
+      assert.deepStrictEqual((await settles('the form answer', p)).result, { action: 'accept', content: { env: 'staging', ticket: 4 } });
+      // a required field Durbar cannot show: declined at once
+      const p2 = req(server, 'mcpServer/elicitation/request', { ...form, requestedSchema: { properties: { tags: { type: 'array' } }, required: ['tags'] } }, child);
+      assert.deepStrictEqual((await settles('declined', p2)).result, { action: 'decline' });
+      // a URL flow, then Stop: cancel
+      const p3 = req(server, 'mcpServer/elicitation/request', { threadId: sid, serverName: 'deploy', mode: 'url', message: 'Sign in', url: 'https://auth.example.com/x' }, child);
+      await until('url asked', () => events.filter((e) => e.type === 'question' && e.phase === 'asked').length === 2);
+      await ad.stop(sid);
+      assert.deepStrictEqual((await settles('stop', p3)).result, { action: 'cancel' });
+      await ad.dispose();
+    }
     // FR-139: a shell command that already started keeps running after turn/interrupt (real, Codex 0.163); Aborted says so
     {
       const started = { method: 'item/started', params: { threadId: 'thr_main', item: { id: 'cmd_9', type: 'commandExecution', command: 'sleep 20', cwd: ws, status: 'inProgress' } } };
@@ -1004,6 +1029,22 @@ async function main(): Promise<void> {
     const leaked = events.slice(before).filter((e) => e.type === 'output' || e.type === 'toolCall' || e.type === 'status');
     assert.deepStrictEqual(leaked.map(strip), [], 'nothing from the fork reaches the chat');
     await ad.stop(sid);
+  }
+
+  // ---- spec 040 FR-015: generateText on an ephemeral read-only thread in a child of its own; nothing reaches any session
+  {
+    const { server, ad, events } = make({ server: { turnScript: [
+      { method: 'turn/started', params: { threadId: 'thr_main', turn: { id: 'turn_x', status: 'inProgress' } } },
+      { method: 'item/completed', params: { threadId: 'thr_main', item: { type: 'agentMessage', id: 'm1', text: '{"name":"Sea"}' } } },
+    ] } });
+    const r = await settles('one-shot', ad.generateText!('make a theme'));
+    assert.deepStrictEqual(r, { text: '{"name":"Sea"}' });
+    const start = server.wire.find((w) => w.method === 'thread/start')!.params as Record<string, unknown>;
+    assert.strictEqual(start.ephemeral, true);
+    assert.strictEqual(start.sandbox, 'read-only');
+    assert.strictEqual(start.approvalPolicy, 'never');
+    assert.ok(typeof start.cwd === 'string' && !fs.existsSync(start.cwd as string), 'the temp folder is removed after');
+    assert.strictEqual(events.length, 0, 'no session events');
   }
 
   for (const d of tmp) fs.rmSync(d, { recursive: true, force: true });

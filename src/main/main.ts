@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, Menu, screen, shell } from 'electron';
+import { ipcHandle, ipcOn } from './ipcguard';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -6,7 +7,8 @@ import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
 import { offeredDescriptors } from '../adapters/experimental';
 import { createRegistry, detectAll } from '../adapters/registry';
-import { detectorFor } from '../adapters/detect';
+import { detectorFor, nodeDetectEnv } from '../adapters/detect';
+import { execFile, spawn } from 'child_process';
 import { adapterForAdd, createRouter, historyOf, modelOptionsOf, previousSessionsOf } from '../adapters/router';
 import { errText, restorable, setCapOp, setModeOp, stopTurnOp, validMode } from './agentops';
 import type { OpsDeps } from './agentops';
@@ -21,26 +23,39 @@ import { GROUND } from '../shared/floors';
 import type { FloorOp } from '../shared/floors';
 import { openInVSCode } from './vscode';
 import { isHttpUrl } from '../shared/url';
-import { DEFAULT_ADAPTER, FolderStore, PROFILE_ID, restoreMode } from './folders';
-import { navigationAllowed, permissionAllowed } from './hardening';
+import { checkElicitAnswer, createElicitTracker, elicitHttpsUrl } from '../shared/elicit';
+import { createRemoteOps } from './remoteops';
+import { DEFAULT_ADAPTER, FolderStore, PROFILE_ID, restoreMode, sessionsToRestore } from './folders';
+import { AppStateStore, buildSinceAway, placeWindow, quitMessage } from './daily';
+import type { SinceAway } from './daily';
+import { navigationAllowed, permissionAllowed, senderAllowed } from './hardening';
 import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '../adapters/vscodeChat';
 import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
 import { AgentStateTracker, applySetPaused } from './mcp/agentstate';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
+import { cliServers, copilotDir } from './mcpfiles';
 import { UsageStore } from './usagestore';
 import { AgentTrustStore, hashAgentFile } from './agenttrust';
 import { Scheduler, loadSchedules, saveSchedules } from './schedules';
 import type { SchedulerDeps } from './schedules';
 import { UsageTotalsStore } from './usagetotalsstore';
+import { ActivityStore } from './activitystore';
+import { activityCsv, activityJson, decisionOf } from '../shared/activity';
+import type { ActivityDecision } from '../shared/activity';
 import { folderKeyOf, folderNameOf } from '../shared/usagedoc';
 import { agentLabel } from '../shared/toolusage';
 import { devEnv, devWarning } from './devhooks';
 import { UserThemeStore } from './themes';
+import { HarnessSetup, confirmText, posixTrusted } from './harnesssetup';
+import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind } from '../shared/harnesssetup';
+import { MAX_DESCRIPTION, MAX_PASSES, THEME_IDEAS, TOP_BAR_ISSUE, buildFixPrompt, buildRetryPrompt, buildThemePrompt, isBlocking, keepArt, parseGeneratedTheme } from '../shared/themegen';
 import { SettingsStore } from './settings';
+import { parseBadgeCount, shouldBounce, shouldFlash } from './badge';
+import { appMenuTemplate, disposeOnQuit, hideOnClose, windowChrome } from './appmenu';
 import { parseAmount, parseCapIn, parseThemeId, startCap } from '../shared/credits';
 import { broadFolderKind } from '../shared/broadfolder';
-import { aboutPanelOptions, aboutView } from '../shared/about';
+import { REPO_URL, aboutPanelOptions, aboutView } from '../shared/about';
 import { modelControlFor, parseFocus, parseSwitchRequest } from '../shared/modelswitch';
 import type { ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import { createDebugSink } from '../shared/redact';
@@ -67,6 +82,12 @@ let usageStore: UsageStore | undefined;
 /** Credit totals per folder kept across restarts (spec 011 FR-025, issue #21). */
 let usageTotalsStore: UsageTotalsStore | undefined;
 let agentTrust: AgentTrustStore | undefined;
+/** Local activity log (spec 052 FR-071): permission answers, automatic approvals, mode and limit changes. Created when the app is ready. */
+let activityStore: ActivityStore | undefined;
+/** Spec 052 round 8: the window's place and size and the last quit time (not settings). Created when the app is ready. */
+let appState: AppStateStore | undefined;
+/** Spec 052 FR-089: what happened while the app was closed, built once at start; null after the card is dismissed. */
+let sinceAway: SinceAway | null = null;
 /** The folder (or .code-workspace file) an agent belongs to; the key of the saved folder list. */
 const wsKey = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 
@@ -88,12 +109,17 @@ const sizeOf = (p: string): number | undefined => {
   }
 };
 let win: BrowserWindow | undefined;
+/** Set in before-quit: from then on a close really closes (macOS hides the window otherwise, spec 052 FR-085). */
+let quitting = false;
 
 const toRenderer = (channel: string, payload: unknown): void => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 };
 
 router.onEvent((e) => toRenderer('agent:event', e));
+/** Open MCP elicitations (spec 012 FR-151): main checks each answer against the fields it was asked with. */
+const elicitTracker = createElicitTracker();
+router.onEvent((e) => elicitTracker.onEvent(e));
 /** The office's state word and sub-label per agent, kept from the same events (spec 041 T014); read tools use it. "Paused" comes from the window (agents:setPaused). */
 const agentState = new AgentStateTracker();
 router.onEvent((e) => {
@@ -106,6 +132,9 @@ router.onEvent((e) => {
 const lastStatus = new Map<string, string>();
 router.onEvent((e) => {
   if (e.type === 'status' && !e.agentId) lastStatus.set(e.sessionId, e.status);
+  // spec 044 FR-015: usage between a scheduled send and the end of that turn counts toward the schedule's own limit
+  if (e.type === 'usage') scheduler?.noteUsage(e.sessionId, e);
+  else if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) scheduler?.turnEnded(e.sessionId);
 });
 /** Key an agent's all-time counts are kept under: "<agent name> · <folder name>" (base name only, spec 020). */
 const usageLabel = (a: AgentInfo): string => agentLabel(a.name, a.workspaceFile ? path.basename(a.workspaceFile).replace(/\.code-workspace$/i, '') : a.cwd);
@@ -127,6 +156,18 @@ router.onEvent((e) => {
   if (e.type !== 'usage') return;
   const a = agents.get(e.sessionId);
   if (a) usageTotalsStore?.record(folderKeyOf(a), folderNameOf(a), e);
+});
+/** One activity row for agent `a` (spec 052 FR-071): names, the folder's base name, the adapter's display name and a short summary. */
+const logActivity = (a: AgentInfo, decision: ActivityDecision, action: string, mode: string = a.permMode): void => {
+  activityStore?.record({ agent: a.label || a.name, folder: folderNameOf(a), app: registry.get(a.adapterId)?.displayName ?? a.adapterId, mode, action, decision });
+};
+// The answer to a permission request, or an automatic approval (Allow all, a session permission), arrives as a `permission` event;
+// it is logged here, in main, so the window cannot add or change rows. Pending requests, plain reads and stopped sessions are not logged.
+router.onEvent((e) => {
+  if (e.type !== 'permission') return;
+  const a = agents.get(e.sessionId);
+  const decision = decisionOf(e.permission);
+  if (a && decision) logActivity(a, decision, e.permission.summary);
 });
 /** What the window needs to show the totals: the saved figures from before this run (it adds this run's own on top). */
 const usageTotalsView = (): unknown => {
@@ -175,7 +216,7 @@ if (dev.DURBAR_LOG) {
   router.setDebug((m) => write({ t: Date.now(), debug: m }));
 }
 
-ipcMain.handle('app:openExternal', async (_e, url: unknown) => {
+ipcHandle('app:openExternal', async (_e, url: unknown) => {
   if (!isHttpUrl(url)) return { ok: false };
   await shell.openExternal(url);
   return { ok: true };
@@ -296,23 +337,31 @@ function restoreFolders(): void {
     try {
       if (!fs.existsSync(f.workspace)) continue; // e.g. an unplugged drive: stays saved, just not shown
       const rm = restoreMode(f.permMode); // exactly as saved, Allow all included, flagged so the UI shows "restored" (spec 003 FR-025/026)
-      // FR-021: the folder's last session comes back under its own id (resumed when first needed); a harness this build lacks starts fresh
-      const ls = f.lastSession && registry.has(f.lastSession.adapterId ?? DEFAULT_ADAPTER) && !agents.has(f.lastSession.id) ? f.lastSession : undefined;
-      const kind = ls ? (ls.adapterId ?? DEFAULT_ADAPTER) : adapterId;
-      const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, maxAiCredits: router.instance(kind).capabilities?.capUnit === 'usd' ? undefined : f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
-      if (ls) info.resumeLast = true;
-      if (f.label) info.label = f.label;
-      if (f.defaultAgent) info.defaultAgent = f.defaultAgent;
-      router.bind(info.id, kind);
-      agents.set(info.id, info);
+      // FR-021: the folder's last session comes back under its own id (resumed when first needed); a harness this build lacks starts fresh.
+      // Spec 052 FR-088: so does every other session that was open in the folder (at most 6), each resumed lazily the same way.
+      const sessions = sessionsToRestore(f).filter((s) => registry.has(s.adapterId ?? DEFAULT_ADAPTER) && !agents.has(s.id));
+      for (const ls of sessions.length ? sessions : [undefined]) {
+        const kind = ls ? (ls.adapterId ?? DEFAULT_ADAPTER) : adapterId;
+        const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, maxAiCredits: router.instance(kind).capabilities?.capUnit === 'usd' ? undefined : f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
+        if (ls) info.resumeLast = true;
+        if (f.label) info.label = f.label;
+        if (f.defaultAgent) info.defaultAgent = f.defaultAgent;
+        router.bind(info.id, kind);
+        agents.set(info.id, info);
+      }
     } catch {
       /* folder gone or not a folder any more */
     }
   }
 }
 
-ipcMain.handle('app:version', () => app.getVersion());
-ipcMain.handle('agents:list', () => [...agents.values()]);
+ipcHandle('app:version', () => app.getVersion());
+ipcHandle('app:sinceAway', (e) => (fromApp(e) ? sinceAway : null));
+ipcHandle('app:dismissSinceAway', (e) => {
+  if (fromApp(e)) sinceAway = null;
+  return { ok: true };
+});
+ipcHandle('agents:list', () => [...agents.values()]);
 
 const sessionOpts = (o: unknown): SessionOptions & { persist: boolean } => {
   const x = (o && typeof o === 'object' ? o : {}) as Record<string, unknown>;
@@ -320,12 +369,12 @@ const sessionOpts = (o: unknown): SessionOptions & { persist: boolean } => {
   return { model: typeof x.model === 'string' ? x.model.slice(0, 100) : undefined, effort: asEffort(x.effort), maxAiCredits: cap, floor: typeof x.floor === 'string' ? x.floor.slice(0, 20) : undefined, adapterId: typeof x.adapterId === 'string' ? x.adapterId.slice(0, 40) : undefined, persist: true };
 };
 
-ipcMain.handle('agents:addFolder', async (_e, mode: unknown, opts: unknown) => {
+ipcHandle('agents:addFolder', async (_e, mode: unknown, opts: unknown) => {
   const r = await dialog.showOpenDialog({ title: 'Add folder', properties: ['openDirectory', 'multiSelections'] });
   return r.canceled ? { ok: true, agents: [] } : addMany(r.filePaths, validMode(mode), sessionOpts(opts));
 });
 
-ipcMain.handle('agents:addWorkspaceFile', async (_e, mode: unknown, opts: unknown) => {
+ipcHandle('agents:addWorkspaceFile', async (_e, mode: unknown, opts: unknown) => {
   const r = await dialog.showOpenDialog({
     title: 'Add .code-workspace file',
     properties: ['openFile'],
@@ -340,7 +389,7 @@ const vsUserDirs = (): UserDir[] =>
   dev.DURBAR_VSCODE_USER_DIR ? [{ product: 'Test', dir: dev.DURBAR_VSCODE_USER_DIR }] : vscodeUserDirs();
 const vsChatRefs = new Map<string, Map<string, ChatFileRef>>();
 
-ipcMain.handle('sessions:listPrevious', async (_e, id: unknown) => {
+ipcHandle('sessions:listPrevious', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad) return { ok: false, error: 'unknown agent', sessions: [] };
@@ -351,7 +400,7 @@ ipcMain.handle('sessions:listPrevious', async (_e, id: unknown) => {
   }
 });
 
-ipcMain.handle('sessions:resume', async (_e, id: unknown, sessionId: unknown, replace: unknown): Promise<ResumeResult> => {
+ipcHandle('sessions:resume', async (_e, id: unknown, sessionId: unknown, replace: unknown): Promise<ResumeResult> => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad) return { ok: false, error: 'unknown agent' };
@@ -369,12 +418,15 @@ ipcMain.handle('sessions:resume', async (_e, id: unknown, sessionId: unknown, re
       history = { items: [], total: 0, truncated: false };
     }
     let removedId: string | undefined;
+    folderStore?.addOpenSession(wsKey(info), resumeIdFor(info.id), router.adapterIdOf(info.id)); // spec 052 FR-088: a resumed session is open in the folder and comes back after a restart
     if (replace === true) {
       removedId = id as string;
+      forgetOpenSession(wsKey(a), removedId);
       await ad.stop(removedId);
       router.unbind(removedId);
       agents.delete(removedId);
       agentState.remove(removedId);
+      scheduler?.sessionsChanged(); // spec 044 FR-014: a schedule for the replaced session pauses
     }
     if (prev.title && prev.title !== 'Untitled session') info.title = prev.title; // the list's title (name, else summary) until the runtime sends its own
     return { ok: true, agent: info, removedId, title: prev.title, history };
@@ -383,7 +435,7 @@ ipcMain.handle('sessions:resume', async (_e, id: unknown, sessionId: unknown, re
   }
 });
 
-ipcMain.handle('vschat:list', async (_e, id: unknown): Promise<VsChatListResult> => {
+ipcHandle('vschat:list', async (_e, id: unknown): Promise<VsChatListResult> => {
   const empty = { sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0, formatNote: VSCODE_CHAT_FORMAT_NOTE };
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false, error: 'unknown agent', ...empty };
@@ -396,13 +448,13 @@ ipcMain.handle('vschat:list', async (_e, id: unknown): Promise<VsChatListResult>
   }
 });
 
-ipcMain.handle('vschat:read', async (_e, id: unknown, key: unknown) => {
+ipcHandle('vschat:read', async (_e, id: unknown, key: unknown) => {
   const ref = typeof id === 'string' && typeof key === 'string' ? vsChatRefs.get(id)?.get(key) : undefined;
   if (!ref) return { ok: false, error: 'That chat is not in the list any more. Reopen the list and try again.' };
   return readChat(ref);
 });
 
-ipcMain.handle('agents:pickAttachments', async (_e, want: unknown): Promise<PickedFile[]> => {
+ipcHandle('agents:pickAttachments', async (_e, want: unknown): Promise<PickedFile[]> => {
   const images = want === 'image'; // spec 004 FR-013: the image button opens the picker with an image filter
   // Dev/test hook: DURBAR_PICK="/a.txt:/b.png" answers the picker without a native dialog.
   const preset = (dev.DURBAR_PICK ?? '').split(path.delimiter).filter((p) => p && fs.existsSync(p));
@@ -426,7 +478,7 @@ ipcMain.handle('agents:pickAttachments', async (_e, want: unknown): Promise<Pick
   return out;
 });
 
-ipcMain.handle('agents:stageAttachment', (_e, name: unknown, mime: unknown, data: unknown) => {
+ipcHandle('agents:stageAttachment', (_e, name: unknown, mime: unknown, data: unknown) => {
   const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : undefined;
   if (!bytes) return { ok: false, error: 'No file data.' };
   try {
@@ -439,7 +491,7 @@ ipcMain.handle('agents:stageAttachment', (_e, name: unknown, mime: unknown, data
   }
 });
 
-ipcMain.handle('agents:send', async (_e, id: string, text: string, attachments: PickedFile[]) => {
+ipcHandle('agents:send', async (_e, id: string, text: string, attachments: PickedFile[]) => {
   const ad = agents.has(id) ? router.forAgent(id) : undefined;
   if (!ad) return { ok: false, error: 'unknown agent' };
   agentState.ensure(id, agents.get(id)?.lazy);
@@ -474,11 +526,26 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
 // ---- scheduled prompts (spec 044): per folder, while the app runs; the run goes through the user's own send path ----
 let scheduler: Scheduler | undefined;
 const folderAgent = (folder: string): AgentInfo | undefined => [...agents.values()].find((x) => wsKey(x) === folder);
+/** The session a schedule runs in: its target (FR-014), only while that session is in this folder, else the folder's agent. */
+const scheduleAgent = (s: { folder: string; target?: { session: string } }): AgentInfo | undefined => {
+  if (!s.target) return folderAgent(s.folder);
+  const a = agents.get(s.target.session);
+  return a && wsKey(a) === s.folder ? a : undefined;
+};
+const busyStatus = (id: string): boolean => ['working', 'needs-permission'].includes(lastStatus.get(id) ?? '');
 const scheduleDeps = (file: string): SchedulerDeps => ({
   now: () => Date.now(),
-  isBusy: (folder) => [...agents.values()].some((x) => wsKey(x) === folder && ['working', 'needs-permission'].includes(lastStatus.get(x.id) ?? '')),
+  isBusy: (folder, session) => (session ? busyStatus(session) : [...agents.values()].some((x) => wsKey(x) === folder && busyStatus(x.id))),
+  hasSession: (session) => agents.has(session),
+  capUnitOf: (s) => {
+    const a = scheduleAgent(s);
+    const caps = a ? router.forAgent(a.id)?.capabilities : undefined;
+    if (!caps) return undefined;
+    const unit = caps.capUnit === 'usd' ? 'usd' : 'aiu';
+    return (unit === 'usd' ? caps.usage.costUsd : caps.usage.nanoAiu) ? unit : undefined; // FR-015: a limit needs the spend in that unit
+  },
   send: async (folder, prompt, s) => {
-    const a = folderAgent(folder);
+    const a = scheduleAgent(s);
     const ad = a ? router.forAgent(a.id) : undefined;
     if (!a || !ad) return false;
     agentState.ensure(a.id, a.lazy);
@@ -486,38 +553,42 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
     try {
       await ensureLive(a);
       toRenderer('agent:event', { type: 'user', sessionId: a.id, timestamp: Date.now(), text: prompt });
-      toRenderer('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at });
+      toRenderer('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at, rule: s.rule });
       await ad.send(a.id, { text: prompt });
       noteLastSession(a);
     } catch (err) {
       agentState.noteSendFailed(a.id);
       throw err;
     }
-    return true;
+    return a.id;
   },
   setTimer: (ms, fn) => setTimeout(fn, ms),
   clearTimer: (t) => clearTimeout(t as NodeJS.Timeout),
   save: (doc) => saveSchedules(file, doc),
   changed: (doc) => toRenderer('schedules:changed', doc),
 });
-ipcMain.handle('schedules:list', () => scheduler?.doc ?? { pausedAll: false, schedules: [] });
-ipcMain.handle('schedules:save', (_e, input: unknown) => (scheduler ? scheduler.save(input, (f) => !!folderStore?.get(f)) : { ok: false, error: 'Schedules are not available.' }));
-ipcMain.handle('schedules:remove', (_e, id: unknown) => ({ ok: typeof id === 'string' && !!scheduler?.remove(id) }));
-ipcMain.handle('schedules:setPausedAll', (_e, on: unknown) => {
+ipcHandle('schedules:list', () => scheduler?.doc ?? { pausedAll: false, schedules: [] });
+ipcHandle('schedules:save', (e, input: unknown) => (!fromApp(e) ? { ok: false, error: 'invalid request' } : scheduler ? scheduler.save(input, (f) => !!folderStore?.get(f)) : { ok: false, error: 'Schedules are not available.' }));
+ipcHandle('schedules:remove', (e, id: unknown) => ({ ok: fromApp(e) && typeof id === 'string' && !!scheduler?.remove(id) }));
+// spec 052 FR-089: "Run missed now" from the Since you were away card: one run through the same send path as a scheduled one
+ipcHandle('schedules:runNow', async (e, id: unknown) => (!fromApp(e) || typeof id !== 'string' || id.length > 100 ? { ok: false, error: 'invalid request' } : scheduler ? scheduler.runNow(id) : { ok: false, error: 'Schedules are not available.' }));
+ipcHandle('schedules:setPausedAll', (_e, on: unknown) => {
   scheduler?.setPausedAll(on === true);
   return { ok: !!scheduler, pausedAll: scheduler?.doc.pausedAll ?? false };
 });
 
 // The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
-const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey };
+const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, log: (a, decision, action) => logActivity(a, decision, action) };
 // Stop only interrupts the running turn (the agent returns to Ready); End session frees the runtime session.
-ipcMain.handle('agents:stop', (_e, id: string) => stopTurnOp(opsDeps, id));
+ipcHandle('agents:stop', (_e, id: string) => stopTurnOp(opsDeps, id));
 
-ipcMain.handle('agents:end', async (_e, id: string) => {
-  if (agents.has(id)) await router.forAgent(id)?.stop(id);
+ipcHandle('agents:end', async (_e, id: string) => {
+  if (!agents.has(id)) return;
+  await remoteOps.release(id); // spec 054 FR-011: off on GitHub too before the session ends
+  await router.forAgent(id)?.stop(id);
 });
 
-ipcMain.handle('agents:newSession', async (_e, id: unknown, opts: unknown) => {
+ipcHandle('agents:newSession', async (_e, id: unknown, opts: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false, error: 'unknown agent' };
   const o = (opts && typeof opts === 'object' ? opts : {}) as Record<string, unknown>;
@@ -534,61 +605,235 @@ ipcMain.handle('agents:newSession', async (_e, id: unknown, opts: unknown) => {
 });
 
 // ---- AI-credit caps (spec 011): numbers only, validated here ----
-ipcMain.handle('usage:allTime', () => ({
+ipcHandle('usage:allTime', () => ({
   doc: usageStore?.view(),
   labels: Object.fromEntries([...agents.values()].map((a) => [a.id, usageLabel(a)])),
   error: usageStore?.lastError,
 }));
-ipcMain.handle('usage:totals', () => usageTotalsView());
-ipcMain.handle('usage:resetTotals', () => {
+ipcHandle('usage:totals', () => usageTotalsView());
+ipcHandle('usage:resetTotals', () => {
   usageTotalsStore?.reset();
   return usageTotalsView();
 });
-ipcMain.handle('usage:reset', () => {
+ipcHandle('usage:reset', () => {
   usageStore?.reset();
   return { ok: true, doc: usageStore?.view() };
 });
-ipcMain.handle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits, placeMap: settingsStore?.placeMap ?? {}, customPlaces: settingsStore?.customPlaces ?? [], seriousMode: settingsStore?.seriousMode ?? false, theme: runTheme ?? settingsStore?.theme ?? 'clean-office', about: aboutView(app.getVersion()) }));
-ipcMain.handle('settings:setSeriousMode', (_e, on: unknown) => ({ ok: true, seriousMode: settingsStore?.setSeriousMode(on) ?? false }));
+ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits, placeMap: settingsStore?.placeMap ?? {}, customPlaces: settingsStore?.customPlaces ?? [], seriousMode: settingsStore?.seriousMode ?? false, notifyNeedsMe: settingsStore?.notifyNeedsMe ?? true, theme: runTheme ?? settingsStore?.theme ?? 'clean-office', about: aboutView(app.getVersion()) }));
+ipcHandle('settings:setSeriousMode', (_e, on: unknown) => ({ ok: true, seriousMode: settingsStore?.setSeriousMode(on) ?? false }));
+/* spec 052 FR-059: OS notifications when an agent needs you and the window is in the background (on unless turned off) */
+ipcHandle('settings:setNotifyNeedsMe', (_e, on: unknown) => ({ ok: true, notifyNeedsMe: settingsStore?.setNotifyNeedsMe(on) ?? true }));
+/* spec 052 FR-059: the "needs you" count on the app icon (macOS, Linux where the desktop supports it), a taskbar flash on Windows */
+let badgeCount = 0;
+ipcHandle('app:setBadge', (_e, count: unknown) => {
+  const n = parseBadgeCount(count);
+  if (n === null) return { ok: false };
+  const w = win && !win.isDestroyed() ? win : undefined;
+  if (w && shouldFlash(badgeCount, n, w.isFocused())) w.flashFrame(true);
+  if (w && shouldBounce(badgeCount, n, w.isFocused())) app.dock?.bounce('informational'); // spec 052 FR-085: one bounce, not until focused
+  if (w && n === 0) w.flashFrame(false);
+  badgeCount = n;
+  if (process.platform !== 'win32') {
+    try {
+      app.setBadgeCount(n);
+    } catch {
+      /* not supported by this desktop: the window title still shows the count */
+    }
+  }
+  return { ok: true };
+});
+/* spec 052 FR-059: a click on a notification brings the window to the front */
+ipcHandle('app:focusWindow', () => {
+  const w = win && !win.isDestroyed() ? win : undefined;
+  if (!w) return { ok: false };
+  if (w.isMinimized()) w.restore();
+  w.show();
+  w.focus();
+  return { ok: true };
+});
 /* DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it and is saved as usual. */
 let runTheme: string | undefined;
-ipcMain.handle('settings:setTheme', (_e, id: unknown) => {
+ipcHandle('settings:setTheme', (_e, id: unknown) => {
   runTheme = undefined;
   return settingsStore ? settingsStore.setTheme(id) : { ok: false };
 });
 /* User themes (spec 040): `userData/themes/<id>/manifest.json`, import/export by folder pick. Dev hook DURBAR_PICK answers the dialog in checks. */
 const userThemes = new UserThemeStore(path.join(app.getPath('userData'), 'themes'));
 const BUILT_IN_THEME_IDS = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese'];
-const pickFolder = async (title: string): Promise<string | null> => {
+const pickFolder = async (title: string, create = false): Promise<string | null> => {
   if (dev.DURBAR_PICK) { const first = dev.DURBAR_PICK.split(path.delimiter)[0]; return first || null; } // path.delimiter keeps C:\ paths whole (spec 040 FR-008)
-  const r = await dialog.showOpenDialog({ title, properties: ['openDirectory'] });
+  // spec 040 FR-019: an export target may be a new folder (macOS shows "New Folder" only with createDirectory)
+  const r = await dialog.showOpenDialog({ title, properties: create ? ['openDirectory', 'createDirectory'] : ['openDirectory'] });
   return r.canceled || !r.filePaths.length ? null : r.filePaths[0];
 };
-ipcMain.handle('theme:listUser', () => userThemes.list().map((t) => ({ id: t.id, name: t.name, ok: t.ok, error: t.error })));
-ipcMain.handle('theme:getUser', (_e, id: unknown) => (typeof id === 'string' ? userThemes.get(id) : null));
-ipcMain.handle('theme:import', async () => {
+/* Spec 040 FR-014..FR-021: the AI theme maker. One prompt to a harness that has `generateText` (no tools, no session kept); the
+   reply keeps only the safe subset and must pass the contrast rules and `checkUserManifest`. The description is never logged. */
+ipcHandle('theme:generate', async (_e, description: unknown, adapterId: unknown) => {
+  const d = typeof description === 'string' ? description.trim().slice(0, MAX_DESCRIPTION) : '';
+  if (d.length < 3) return { ok: false, error: 'Describe the look in a few words.' };
+  const kind = typeof adapterId === 'string' && registry.has(adapterId) ? adapterId : undefined;
+  const ad = kind ? router.instance(kind) : undefined;
+  if (!ad || typeof ad.generateText !== 'function') return { ok: false, error: 'That agent app cannot make a theme. Pick Claude Code, Codex or Copilot.' };
+  // the renderer's own theme module: Clean Office's tokens and the art sanitizer, so the result is exactly what the app draws
+  const T = require(path.join(__dirname, '..', 'renderer', 'theme.js')) as { _tokens(): Record<string, string>; _sanitizeSlot(s: string): string | null };
+  // main never sets a theme on this module, so `_tokens()` is Clean Office's full set
+  const ctx = { clean: T._tokens(), sanitizeArt: (s: string) => T._sanitizeSlot(s), taken: (id: string) => BUILT_IN_THEME_IDS.includes(id) || userThemes.list().some((t) => t.id === id) };
+  let cost = 0;
+  let nano = 0;
+  // Copilot loads the servers of ~/.copilot/mcp-config.json and its built-in one by itself: all of them are switched off by name (FR-015)
+  const genOpts = kind === 'copilot' ? { disabledMcpServers: cliServers(copilotDir(dev), new Set()).servers.map((s) => s.name) } : {};
+  const ask = async (prompt: string): Promise<string> => {
+    const r = await ad.generateText!(prompt, genOpts);
+    if (r.costUsd) cost += r.costUsd;
+    if (r.nanoAiu) nano += r.nanoAiu;
+    return r.text;
+  };
+  try {
+    // spec 040 FR-020: up to three passes; Durbar checks, the model fixes what failed
+    let g = parseGeneratedTheme(await ask(buildThemePrompt(d, ctx.clean)), d, ctx);
+    let passes = 1;
+    // a reply that could not be used at all gets the request again (it counts as a pass)
+    while (!g.ok && passes < MAX_PASSES) {
+      g = parseGeneratedTheme(await ask(buildRetryPrompt(d, ctx.clean, g.error)), d, ctx);
+      passes++;
+    }
+    while (g.ok && g.issues.length && passes < MAX_PASSES) {
+      const next = parseGeneratedTheme(await ask(buildFixPrompt(g.raw, g.issues)), d, ctx);
+      passes++;
+      if (next.ok && next.issues.length <= g.issues.length) g = keepArt(next, g); // keep the better one, with the earlier art; a broken fix keeps the last good theme
+    }
+    const costPart = { ...(cost ? { costUsd: cost } : {}), ...(nano ? { nanoAiu: nano } : {}) };
+    if (!g.ok) return { ok: false, error: g.error, ...costPart };
+    // a top bar that is still unreadable after the passes: the Clean style, whose top bar follows --surface and --ink (FR-020)
+    if (g.issues.some((i) => i.startsWith(TOP_BAR_ISSUE))) {
+      g = { ...g, manifest: { ...g.manifest, ui: 'clean' }, issues: g.issues.filter((i) => !i.startsWith(TOP_BAR_ISSUE)), warnings: [...g.warnings, 'the UI style was changed to clean so the top bar stays readable'] };
+    }
+    const blocking = g.issues.filter(isBlocking);
+    if (blocking.length) return { ok: false, error: `Text would still be hard to read after ${passes} passes: ${blocking[0]}. Try again or change the description.`, ...costPart };
+    return { ok: true, manifest: g.manifest, warnings: [...g.warnings, ...g.issues], passes, ...costPart };
+  } catch (err) {
+    return { ok: false, error: errText(err), ...(cost ? { costUsd: cost } : {}), ...(nano ? { nanoAiu: nano } : {}) };
+  }
+});
+ipcHandle('theme:ideas', () => THEME_IDEAS.slice());
+/* Spec 051: harness setup inside the app. One fixed install, update or sign-in at a time (argv, no shell); progress and the end go to
+   the window; detection runs again when it ends. Nothing of the output is logged. */
+const sysExe = (name: string): string => path.win32.join(process.env.SystemRoot && path.win32.isAbsolute(process.env.SystemRoot) ? process.env.SystemRoot : 'C:\\Windows', 'System32', name);
+const harnessSetup = new HarnessSetup({
+  detectEnv: nodeDetectEnv(),
+  spawn: (file, args, opts) => spawn(file, args as string[], opts),
+  killTree: (c) => {
+    const pid = c.pid;
+    if (!pid) return;
+    if (process.platform === 'win32') execFile(sysExe('taskkill.exe'), ['/pid', String(pid), '/t', '/f'], () => undefined);
+    else {
+      try { process.kill(-pid, 'SIGTERM'); } catch { /* gone */ }
+      // no SIGKILL once it has exited: its group id could already belong to something else
+      const cp = c as unknown as { exitCode: number | null; signalCode: string | null };
+      setTimeout(() => { if (cp.exitCode !== null || cp.signalCode !== null) return; try { process.kill(-pid, 'SIGKILL'); } catch { /* gone */ } }, 3000).unref();
+    }
+  },
+  send: (channel: string, p: unknown) => toRenderer(channel, p),
+  redetect: async () => { await adaptersList(true); },
+  realpath: (p: string) => fs.realpathSync(p),
+  trustedPath: (p: string) => process.platform === 'win32' || posixTrusted(p, (q) => fs.statSync(q).mode),
+} as ConstructorParameters<typeof HarnessSetup>[0]);
+/** FR-004b: harness setup answers only the app's own page in the main frame. */
+const fromApp = (e: Electron.IpcMainInvokeEvent): boolean => senderAllowed(e.senderFrame ? { url: e.senderFrame.url, isMain: e.senderFrame === e.sender.mainFrame } : null, path.join(__dirname, '..', 'renderer', 'index.html'));
+ipcHandle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? harnessSetup.plans(kind, op) : { plans: [], page: '', name: '' }));
+ipcHandle('harness:run', async (e, kind: unknown, op: unknown, planIndex: unknown) => {
+  if (!fromApp(e) || !isSetupKind(kind) || (op !== 'install' && op !== 'update' && op !== 'signin')) return { ok: false, error: 'invalid request' };
+  const p = harnessSetup.prepare(kind, op, typeof planIndex === 'number' && Number.isInteger(planIndex) && planIndex >= 0 && planIndex < 8 ? planIndex : 0);
+  if (!p.ok) return p;
+  // FR-004b: an install or update changes the computer, so the main process asks itself, in a native dialog the page cannot
+  // answer, showing the real path and arguments. Sign-in runs the harness's own fixed login and changes nothing else.
+  if (op !== 'signin') {
+    const t = confirmText(p.job);
+    const opts = { type: 'question' as const, buttons: ['Cancel', t.button], defaultId: 0, cancelId: 0, noLink: true, title: 'Agent Durbar', message: t.message, detail: t.detail };
+    const r = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
+    if (r.response !== 1) return { ok: false, cancelled: true, error: 'Cancelled.' };
+  }
+  return harnessSetup.start(p.job);
+});
+ipcHandle('harness:paste', (e, text: unknown) => (fromApp(e) ? harnessSetup.paste(text) : { ok: false, error: 'invalid request' }));
+ipcHandle('harness:cancel', (e) => fromApp(e) && harnessSetup.cancel());
+ipcHandle('harness:openPage', async (e, kind: unknown) => {
+  if (!fromApp(e) || !isSetupKind(kind)) return { ok: false };
+  await shell.openExternal(OFFICIAL_PAGES[kind]);
+  return { ok: true };
+});
+ipcHandle('harness:openSignIn', async (e, kind: unknown, url: unknown) => {
+  // FR-005: only a link on that harness's own sign-in hosts is ever opened, and the parsed, normalised form of it
+  if (!fromApp(e) || !isSetupKind(kind) || typeof url !== 'string' || !allowedSignInUrl(kind, url)) return { ok: false };
+  await shell.openExternal(new URL(url).href);
+  return { ok: true };
+});
+ipcHandle('harness:copilotAuth', async (e) => {
+  if (!fromApp(e)) return { known: false };
+  const pw = harnessSetup.pwshMissing() ? { pwshMissing: true } : {}; // spec 052 FR-073: Windows only, a file check, no process
+  try {
+    const ad = registry.has('copilot') ? router.instance('copilot') : undefined;
+    if (!ad || typeof ad.authStatus !== 'function') return { known: false, ...pw };
+    return { known: true, ...(await ad.authStatus()), ...pw };
+  } catch {
+    return { known: false, ...pw };
+  }
+});
+ipcHandle('theme:saveGenerated', (_e, manifest: unknown) => {
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return { ok: false, error: 'invalid theme' };
+  return userThemes.saveManifest(manifest as Record<string, unknown>, (id) => BUILT_IN_THEME_IDS.includes(id));
+});
+ipcHandle('theme:listUser', () => userThemes.list().map((t) => ({ id: t.id, name: t.name, ok: t.ok, error: t.error })));
+ipcHandle('theme:getUser', (_e, id: unknown) => (typeof id === 'string' ? userThemes.get(id) : null));
+ipcHandle('theme:import', async () => {
   const dir = await pickFolder('Import a theme folder (with manifest.json)');
   if (!dir) return { ok: false, cancelled: true };
   return userThemes.importFolder(dir, (id) => BUILT_IN_THEME_IDS.includes(id));
 });
-ipcMain.handle('theme:export', async (_e, id: unknown) => {
+ipcHandle('theme:export', async (_e, id: unknown) => {
   if (typeof id !== 'string' || BUILT_IN_THEME_IDS.includes(id)) return { ok: false, error: 'Only your own imported themes can be exported.' };
-  const dir = await pickFolder('Export the theme folder to…');
+  const dir = await pickFolder('Export the theme folder to…', true);
   if (!dir) return { ok: false, cancelled: true };
   return userThemes.exportFolder(id, dir);
 });
-ipcMain.handle('settings:setPlace', (_e, server: unknown, place: unknown) => settingsStore?.setPlace(server, place) ?? { ok: false });
-ipcMain.handle('settings:addPlace', (_e, name: unknown, icon: unknown) => settingsStore?.addPlace(name, icon) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
-ipcMain.handle('settings:updatePlace', (_e, id: unknown, patch: unknown) => settingsStore?.updatePlace(id, patch) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
-ipcMain.handle('settings:removePlace', (_e, id: unknown) => settingsStore?.removePlace(id) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
-ipcMain.handle('settings:setDefaultCap', (_e, credits: unknown) => ({ ok: true, defaultMaxAiCredits: settingsStore?.setDefaultMaxAiCredits(credits) }));
+ipcHandle('settings:setPlace', (_e, server: unknown, place: unknown) => settingsStore?.setPlace(server, place) ?? { ok: false });
+ipcHandle('settings:addPlace', (_e, name: unknown, icon: unknown) => settingsStore?.addPlace(name, icon) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
+ipcHandle('settings:updatePlace', (_e, id: unknown, patch: unknown) => settingsStore?.updatePlace(id, patch) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
+ipcHandle('settings:removePlace', (_e, id: unknown) => settingsStore?.removePlace(id) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
+ipcHandle('settings:setDefaultCap', (_e, credits: unknown) => ({ ok: true, defaultMaxAiCredits: settingsStore?.setDefaultMaxAiCredits(credits) }));
 
-ipcMain.handle('agents:setCap', async (_e, id: unknown, credits: unknown) => {
+// Activity log (spec 052 FR-071): read, export through the save dialog, clear (the window asks first).
+ipcHandle('activity:list', (e, opts: unknown) => {
+  if (!fromApp(e)) return { ok: false, rows: [] };
+  const limit = opts && typeof opts === 'object' ? (opts as { limit?: unknown }).limit : undefined;
+  return { ok: true, rows: activityStore?.list(limit) ?? [] };
+});
+ipcHandle('activity:export', async (e, format: unknown) => {
+  if (!fromApp(e) || (format !== 'csv' && format !== 'json')) return { ok: false, error: 'invalid request' };
+  const day = new Date().toISOString().slice(0, 10);
+  const opts: Electron.SaveDialogOptions = { title: 'Export activity', defaultPath: `durbar-activity-${day}.${format}`, filters: [format === 'csv' ? { name: 'CSV', extensions: ['csv'] } : { name: 'JSON', extensions: ['json'] }] };
+  const r = win && !win.isDestroyed() ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
+  if (r.canceled || !r.filePath) return { ok: false, cancelled: true };
+  const rows = activityStore?.all() ?? [];
+  try {
+    fs.writeFileSync(r.filePath, format === 'csv' ? activityCsv(rows) : activityJson(rows), { encoding: 'utf8', mode: 0o600 });
+    return { ok: true, count: rows.length, to: path.basename(r.filePath) };
+  } catch (err) {
+    return { ok: false, error: errText(err).slice(0, 160) };
+  }
+});
+ipcHandle('activity:clear', (e) => {
+  if (!fromApp(e)) return { ok: false };
+  activityStore?.clear();
+  return { ok: true };
+});
+
+ipcHandle('agents:setCap', async (_e, id: unknown, credits: unknown) => {
   return setCapOp(opsDeps, id, credits);
 });
 
 // spec 012 FR-128: the user's answer to an agent's question; strings only, capped; null = skipped
-ipcMain.handle('agents:answerQuestion', (_e, id: unknown, requestId: unknown, answers: unknown) => {
+ipcHandle('agents:answerQuestion', (_e, id: unknown, requestId: unknown, answers: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad?.answerQuestion || typeof requestId !== 'string' || requestId.length > 200) return { ok: false, error: 'unknown agent or question' };
@@ -601,11 +846,32 @@ ipcMain.handle('agents:answerQuestion', (_e, id: unknown, requestId: unknown, an
   return { ok: true };
 });
 
-// ---- custom agent per session (spec 043 FR-003): list, select; a repository agent needs a confirmation for its exact file ----
-ipcMain.handle('agents:listProfiles', async (_e, id: unknown) => {
+// spec 012 FR-151: the answer to an MCP elicitation, checked here against the open request (types, choices, lengths, required).
+// The values are never logged: they can be secrets.
+ipcHandle('agents:answerElicitation', (_e, id: unknown, requestId: unknown, action: unknown, values: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
-  if (!a || !ad?.listAgentProfiles) return { ok: false, error: 'This agent cannot use custom agents.', profiles: [] };
+  const req = a && typeof requestId === 'string' && requestId.length <= 300 ? elicitTracker.get(a.id, requestId) : undefined;
+  if (!a || !ad?.answerElicitation || !req) return { ok: false, error: 'That request is no longer open.' };
+  const r = checkElicitAnswer(req, action, values);
+  if (!r.ok) return { ok: false, error: r.error, ...(r.field ? { field: r.field } : {}) };
+  ad.answerElicitation(a.id, requestId as string, r.answer);
+  return { ok: true };
+});
+// spec 012 FR-151: open the request's own https address (never one sent by the window), only after the user clicked
+ipcHandle('agents:openElicitationUrl', async (_e, id: unknown, requestId: unknown) => {
+  const req = typeof id === 'string' && typeof requestId === 'string' && requestId.length <= 300 ? elicitTracker.get(id, requestId) : undefined;
+  const u = req?.url ? elicitHttpsUrl(req.url) : undefined;
+  if (!u) return { ok: false, error: 'That request has no https page to open.' };
+  await shell.openExternal(u.url);
+  return { ok: true };
+});
+
+// ---- custom agent per session (spec 043 FR-003): list, select; a repository agent needs a confirmation for its exact file ----
+ipcHandle('agents:listProfiles', async (_e, id: unknown) => {
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  const ad = a ? router.forAgent(a.id) : undefined;
+  if (!a || !ad?.listAgentProfiles) return { ok: false, error: 'This agent app has no profiles.', profiles: [] };
   try {
     await ensureLive(a); // a restored or ended agent starts its session (no prompt, no credits)
     const profiles = (await ad.listAgentProfiles(a.id)).map((p) => ({ ...p, trusted: p.source !== 'repo' || (!!p.path && agentTrust?.isTrusted(wsKey(a), p.id, hashAgentFile(p.path))) }));
@@ -614,10 +880,10 @@ ipcMain.handle('agents:listProfiles', async (_e, id: unknown) => {
     return { ok: false, error: errText(err), profiles: [] };
   }
 });
-ipcMain.handle('agents:selectProfile', async (_e, id: unknown, profileId: unknown, confirm: unknown) => {
+ipcHandle('agents:selectProfile', async (_e, id: unknown, profileId: unknown, confirm: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
-  if (!a || !ad?.selectAgentProfile) return { ok: false, error: 'This agent cannot use custom agents.' };
+  if (!a || !ad?.selectAgentProfile) return { ok: false, error: 'This agent app has no profiles.' };
   if (profileId !== null && (typeof profileId !== 'string' || !PROFILE_ID.test(profileId))) return { ok: false, error: 'Unknown agent.' };
   try {
     await ensureLive(a);
@@ -640,7 +906,7 @@ ipcMain.handle('agents:selectProfile', async (_e, id: unknown, profileId: unknow
   }
 });
 
-ipcMain.handle('agents:resolveLimit', async (_e, id: unknown, requestId: unknown, choice: unknown) => {
+ipcHandle('agents:resolveLimit', async (_e, id: unknown, requestId: unknown, choice: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad || typeof requestId !== 'string' || !ad.isLive(a.id)) return { ok: false, error: 'unknown agent' };
@@ -665,7 +931,7 @@ const modelsForValidation = async (): Promise<ModelChoice[]> => {
 };
 const NO_SWITCH = 'This agent cannot change its model in place. Start a new session with the model you want.';
 
-ipcMain.handle('agents:setModel', async (_e, id: unknown, raw: unknown) => {
+ipcHandle('agents:setModel', async (_e, id: unknown, raw: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad) return { ok: false, error: 'unknown agent' };
@@ -690,7 +956,7 @@ ipcMain.handle('agents:setModel', async (_e, id: unknown, raw: unknown) => {
   }
 });
 
-ipcMain.handle('agents:cancelQueuedModel', async (_e, id: unknown, queueId: unknown) => {
+ipcHandle('agents:cancelQueuedModel', async (_e, id: unknown, queueId: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad || typeof queueId !== 'string' || !queueId || queueId.length > 200) return { ok: false, error: 'unknown agent' };
@@ -704,11 +970,11 @@ ipcMain.handle('agents:cancelQueuedModel', async (_e, id: unknown, queueId: unkn
 });
 
 // Spec 030 FR-034: a hand-off summary of a live session (user content: never logged; shown for editing in the window).
-ipcMain.handle('agents:handoff', async (_e, id: unknown) => {
+ipcHandle('agents:handoff', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad) return { ok: false, error: 'unknown agent' };
-  if (typeof ad.handoffSummary !== 'function') return { ok: false, error: 'This agent kind cannot make a summary.' };
+  if (typeof ad.handoffSummary !== 'function') return { ok: false, error: 'This agent app cannot make a summary.' };
   if (!ad.isLive(a.id)) return { ok: false, error: 'This session has not started yet, so there is nothing to summarize.' };
   try {
     const r = await ad.handoffSummary(a.id);
@@ -718,7 +984,35 @@ ipcMain.handle('agents:handoff', async (_e, id: unknown) => {
   }
 });
 
-ipcMain.handle('agents:compact', async (_e, id: unknown, focus: unknown) => {
+// Spec 054 FR-003..FR-005: remote control of a live session (Copilot: github.com and GitHub Mobile). Validated in remoteops.ts; nothing is logged.
+const remoteOps = createRemoteOps({
+  known: (id) => agents.has(id),
+  adapterOf: (id) => router.forAgent(id),
+  open: (url) => shell.openExternal(url),
+  modeOf: (id) => agents.get(id)?.permMode,
+  // FR-011: a native confirmation the page cannot answer (Cancel is the default), like harness setup's (spec 051 FR-004b)
+  confirm: async (id) => {
+    const a = agents.get(id);
+    const opts = {
+      type: 'warning' as const, buttons: ['Cancel', 'Turn on remote control'], defaultId: 0, cancelId: 0, noLink: true, title: 'Agent Durbar',
+      message: `Control ${a?.label || a?.name || 'this session'} from GitHub?`,
+      detail: 'Its messages are sent to GitHub, so it can be followed and steered from github.com and GitHub Mobile. Anyone who can see the session on GitHub can steer it.\n\nOnly continue if you started this in Durbar.',
+    };
+    const r = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
+    return r.response === 1;
+  },
+  record: (id, on) => {
+    const a = agents.get(id);
+    if (a) logActivity(a, on ? 'remote-on' : 'remote-off', on ? 'Remote control from GitHub turned on' : 'Remote control from GitHub turned off');
+  },
+});
+router.onEvent((e) => {
+  if (e.type === 'status' && e.status === 'stopped' && !e.agentId) remoteOps.forget(e.sessionId);
+});
+ipcHandle('agents:setRemote', (e, id: unknown, on: unknown) => (fromApp(e) ? remoteOps.setRemote(id, on) : { ok: false, error: 'invalid request' }));
+ipcHandle('agents:openRemote', (e, id: unknown) => (fromApp(e) ? remoteOps.openRemote(id) : { ok: false }));
+
+ipcHandle('agents:compact', async (_e, id: unknown, focus: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad) return { ok: false, error: 'unknown agent' };
@@ -731,10 +1025,10 @@ ipcMain.handle('agents:compact', async (_e, id: unknown, focus: unknown) => {
   }
 });
 
-ipcMain.handle('models:list', async (_e, kind: unknown): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }> => {
+ipcHandle('models:list', async (_e, kind: unknown): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }> => {
   // spec 012 FR-120: one list per agent kind; no kind = the default kind (as before); an unknown kind is refused
   const id = kind === undefined || kind === null || kind === '' ? registry.defaultId : typeof kind === 'string' && registry.has(kind) ? kind : undefined;
-  if (!id) return { ok: false, error: 'unknown agent kind', models: [] };
+  if (!id) return { ok: false, error: 'unknown agent app', models: [] };
   try {
     const models = (await modelOptionsOf(router.instance(id))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
     if (id !== registry.defaultId) return { ok: true, models };
@@ -751,7 +1045,7 @@ const adaptersList = (refresh: boolean): Promise<AdapterInfo[]> => {
   if (!adaptersInfo || refresh) adaptersInfo = detectAll(registry, (d) => detectorFor(d.id)?.(d) ?? Promise.resolve({ state: 'unknown' as const }));
   return adaptersInfo;
 };
-ipcMain.handle('adapters:list', (_e, refresh: unknown): Promise<AdapterInfo[]> => adaptersList(refresh === true));
+ipcHandle('adapters:list', (_e, refresh: unknown): Promise<AdapterInfo[]> => adaptersList(refresh === true));
 /** Ids whose cached state is `ready`; a failed probe counts as none (spec 012 FR-058). */
 const readyAdapterIds = async (): Promise<ReadonlySet<string>> => {
   try {
@@ -761,7 +1055,7 @@ const readyAdapterIds = async (): Promise<ReadonlySet<string>> => {
   }
 };
 
-ipcMain.handle('folders:setHidden', (_e, id: unknown, hidden: unknown) => {
+ipcHandle('folders:setHidden', (_e, id: unknown, hidden: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false };
   const key = wsKey(a);
@@ -782,20 +1076,20 @@ const floorsResult = (r: FloorOp | undefined): FloorsResult => {
   if (folderStore) for (const a of agents.values()) a.floor = folderStore.floorOfFolder(wsKey(a));
   return r && r.ok ? { ok: true, state: floorsState() } : { ok: false, error: r && !r.ok ? r.error : 'Floors are not available.', state: floorsState() };
 };
-ipcMain.handle('floors:state', () => floorsState());
-ipcMain.handle('floors:create', (_e, name: unknown) => floorsResult(folderStore?.createFloor(name)));
-ipcMain.handle('floors:rename', (_e, id: unknown, name: unknown) => floorsResult(folderStore?.renameFloor(id, name)));
-ipcMain.handle('floors:reorder', (_e, ids: unknown) => floorsResult(folderStore?.reorderFloors(ids)));
-ipcMain.handle('floors:delete', (_e, id: unknown) => floorsResult(folderStore?.deleteFloor(id)));
-ipcMain.handle('floors:setOn', (_e, id: unknown, on: unknown) => floorsResult(folderStore?.setFloorOn(id, on === true)));
-ipcMain.handle('floors:only', (_e, id: unknown) => floorsResult(folderStore?.onlyFloor(id)));
-ipcMain.handle('floors:moveFolder', (_e, agentId: unknown, floorId: unknown): FloorsResult => {
+ipcHandle('floors:state', () => floorsState());
+ipcHandle('floors:create', (_e, name: unknown) => floorsResult(folderStore?.createFloor(name)));
+ipcHandle('floors:rename', (_e, id: unknown, name: unknown) => floorsResult(folderStore?.renameFloor(id, name)));
+ipcHandle('floors:reorder', (_e, ids: unknown) => floorsResult(folderStore?.reorderFloors(ids)));
+ipcHandle('floors:delete', (_e, id: unknown) => floorsResult(folderStore?.deleteFloor(id)));
+ipcHandle('floors:setOn', (_e, id: unknown, on: unknown) => floorsResult(folderStore?.setFloorOn(id, on === true)));
+ipcHandle('floors:only', (_e, id: unknown) => floorsResult(folderStore?.onlyFloor(id)));
+ipcHandle('floors:moveFolder', (_e, agentId: unknown, floorId: unknown): FloorsResult => {
   const a = typeof agentId === 'string' ? agents.get(agentId) : undefined;
   if (!a || !folderStore || !folderStore.moveFolder(wsKey(a), floorId)) return { ok: false, error: 'Unknown folder or floor.', state: floorsState() };
   return floorsResult({ ok: true, doc: folderStore.floors() });
 });
 
-ipcMain.handle('folders:setClosed', (_e, id: unknown, closed: unknown) => {
+ipcHandle('folders:setClosed', (_e, id: unknown, closed: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false };
   const key = wsKey(a);
@@ -804,9 +1098,14 @@ ipcMain.handle('folders:setClosed', (_e, id: unknown, closed: unknown) => {
   return { ok: true };
 });
 
-ipcMain.handle('agents:setMode', (_e, id: unknown, mode: unknown, opts: unknown) => setModeOp(opsDeps, id, mode, opts));
+ipcHandle('agents:setMode', (e, id: unknown, mode: unknown, opts: unknown) => {
+  if (!fromApp(e)) return { ok: false, error: 'invalid request' };
+  // spec 054 FR-011: Allow all and remote control never together (anyone steering on GitHub could run commands unasked)
+  if (mode === 'allow' && typeof id === 'string' && remoteOps.has(id)) return { ok: false, error: 'Stop remote control first: Allow all and remote control from GitHub are never on together.' };
+  return setModeOp(opsDeps, id, mode, opts);
+});
 
-ipcMain.handle('folders:remove', async (_e, id: unknown) => {
+ipcHandle('folders:remove', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false, removedIds: [] as string[] };
   const key = wsKey(a);
@@ -823,22 +1122,25 @@ ipcMain.handle('folders:remove', async (_e, id: unknown) => {
     agentState.remove(rid);
     vsChatRefs.delete(rid);
   }
+  scheduler?.sessionsChanged();
   folderStore?.remove(key);
   return { ok: true, removedIds };
 });
 
 // One-way from the window: the pause button (spec 041 T014). Unknown ids and non-boolean values are ignored.
-ipcMain.on('agents:setPaused', (_e, id: unknown, paused: unknown) => {
+ipcOn('agents:setPaused', (_e, id: unknown, paused: unknown) => {
   applySetPaused(agentState, (k) => agents.get(k), id, paused);
 });
 
 // One main session out of the office (spec 006 FR-017). The last main session of a folder stays (Folders > Remove is for that).
-ipcMain.handle('agents:remove', async (_e, id: unknown) => {
+ipcHandle('agents:remove', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a) return { ok: false, error: 'unknown session' };
   const key = wsKey(a);
   if ([...agents.values()].filter((x) => wsKey(x) === key).length < 2) return { ok: false, error: 'This is the only session in the folder. Remove the folder from Folders instead.' };
+  forgetOpenSession(key, a.id); // FR-020 and spec 052 FR-088: a removed session does not come back after a restart
   try {
+    await remoteOps.release(a.id); // spec 054 FR-011
     await router.forAgent(a.id)?.stop(a.id); // the history stays on disk and is listed under Previous sessions
   } catch {
     /* already gone */
@@ -847,11 +1149,11 @@ ipcMain.handle('agents:remove', async (_e, id: unknown) => {
   agents.delete(a.id);
   agentState.remove(a.id);
   vsChatRefs.delete(a.id);
-  folderStore?.clearLastSession(key, a.id); // FR-020: a removed session does not come back after a restart
+  scheduler?.sessionsChanged(); // spec 044 FR-014: a schedule for this session pauses and says so
   return { ok: true };
 });
 
-ipcMain.handle('folders:rename', (_e, id: unknown, label: unknown) => {
+ipcHandle('folders:rename', (_e, id: unknown, label: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a || !folderStore) return { ok: false };
   const r = folderStore.setLabel(wsKey(a), label);
@@ -860,7 +1162,7 @@ ipcMain.handle('folders:rename', (_e, id: unknown, label: unknown) => {
   return { ok: true, label: r.label };
 });
 
-ipcMain.handle('folders:setDefaultAgent', (_e, id: unknown, profileId: unknown) => {
+ipcHandle('folders:setDefaultAgent', (_e, id: unknown, profileId: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   if (!a || !folderStore) return { ok: false };
   const r = folderStore.setDefaultAgent(wsKey(a), profileId);
@@ -871,11 +1173,22 @@ ipcMain.handle('folders:setDefaultAgent', (_e, id: unknown, profileId: unknown) 
 
 /** Spec 006 FR-020: the session a folder continues after a restart is the one that last got a message. */
 function noteLastSession(a: AgentInfo | undefined): void {
-  if (a) folderStore?.setLastSession(wsKey(a), router.forAgent(a.id)?.resumeIdOf?.(a.id) ?? a.id, router.adapterIdOf(a.id)); // Codex: its thread id
+  if (!a) return;
+  const rid = resumeIdFor(a.id); // Codex: its thread id
+  folderStore?.setLastSession(wsKey(a), rid, router.adapterIdOf(a.id));
+  folderStore?.addOpenSession(wsKey(a), rid, router.adapterIdOf(a.id)); // spec 052 FR-088: every open session comes back, not only the last
+}
+/** The id a session is resumed under after a restart (Codex: its thread id; others: the agent id). */
+const resumeIdFor = (id: string): string => router.forAgent(id)?.resumeIdOf?.(id) ?? id;
+/** Spec 052 FR-088: a session that leaves its folder (removed, or replaced by a resumed one) is not restored any more. Call before the session is unbound. */
+function forgetOpenSession(key: string, id: string): void {
+  const rid = resumeIdFor(id);
+  folderStore?.removeOpenSession(key, id);
+  if (rid !== id) folderStore?.removeOpenSession(key, rid);
 }
 
 /** Spec 006 FR-021: the chat of a restored agent was opened; start it now (a resume sends no prompt) and hand back what came back. */
-ipcMain.handle('agents:wake', async (_e, id: unknown) => {
+ipcHandle('agents:wake', async (_e, id: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;
   if (!a || !ad) return { ok: false, error: 'unknown agent' };
@@ -897,27 +1210,71 @@ ipcMain.handle('agents:wake', async (_e, id: unknown) => {
   return { ok: true, resumed: true, history, title: c.title };
 });
 
-ipcMain.handle('agents:resolvePermission', (_e, id: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean) => {
+ipcHandle('agents:resolvePermission', (_e, id: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean) => {
   if (agents.has(id)) router.forAgent(id)?.resolvePermission?.(id, String(requestId), approve === true, approve === true && remember === true, approve === true && remember === true && broad === true);
 });
 
-ipcMain.handle('agents:revokeGrant', (_e, id: string, key: string) => {
+ipcHandle('agents:revokeGrant', (_e, id: string, key: string) => {
   if (agents.has(id)) router.forAgent(id)?.revokeGrant?.(id, String(key));
 });
 
-ipcMain.handle('agents:openInVSCode', (_e, id: string) => {
+ipcHandle('agents:openInVSCode', (_e, id: string) => {
   const a = agents.get(id);
   // Only paths of agents we started: the workspace file if there is one, else the folder.
   return a ? openInVSCode(a.workspaceFile ?? a.cwd) : { ok: false, error: 'unknown agent' };
 });
 
+/** Spec 052 FR-087: where the window opens: the saved place and size on a display it still fits, else 1440x900. Dev screenshot runs keep the default. */
+function initialPlacement(): ReturnType<typeof placeWindow> {
+  const saved = dev.DURBAR_SHOT || dev.DURBAR_DRIVER ? undefined : appState?.window;
+  return placeWindow(saved, saved ? screen.getDisplayMatching(saved).workArea : undefined);
+}
+
+/** FR-087: remember the window's normal (not maximized) place and size and whether it was maximized. */
+function saveWindowState(w: BrowserWindow): void {
+  if (dev.DURBAR_SHOT || dev.DURBAR_DRIVER || w.isDestroyed() || w.isMinimized() || w.isFullScreen()) return;
+  appState?.setWindow({ ...w.getNormalBounds(), maximized: w.isMaximized() });
+}
+
+/** Spec 052 FR-090: main agents in the middle of a turn (working, thinking, or waiting for an answer inside the turn). */
+function workingCount(): number {
+  let n = 0;
+  for (const id of agents.keys()) {
+    const st = agentState.get(id)?.state;
+    if (busyStatus(id) || st === 'working' || st === 'thinking') n++;
+  }
+  return n;
+}
+/** FR-090: true once the user chose Quit (or nothing was working), so later close and quit events do not ask again. */
+let quitConfirmed = false;
+let quitAsking = false;
+/** Asks once whether to quit while agents work; resolves true for Quit. Cancel is the default and the Escape answer. */
+async function confirmQuit(): Promise<boolean> {
+  const n = workingCount();
+  if (n === 0 || dev.DURBAR_SHOT || dev.DURBAR_DRIVER) return true;
+  if (quitAsking) return false;
+  quitAsking = true;
+  try {
+    const q = quitMessage(n);
+    const opts = { type: 'warning' as const, buttons: ['Quit', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true, title: 'Agent Durbar', message: q.message, detail: q.detail };
+    const r = win && !win.isDestroyed() ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
+    return r.response === 0;
+  } finally {
+    quitAsking = false;
+  }
+}
+
 function createWindow(): void {
+  quitConfirmed = false; // macOS: a window opened again after the last one closed asks again when its agents work
+  const place = initialPlacement();
   win = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    useContentSize: true,
+    ...place.bounds,
+    useContentSize: !place.restored, // the default is the office's content size; a restored window gets back its outer bounds
+    minWidth: 640,
+    minHeight: 480,
     title: 'Agent Durbar',
     backgroundColor: '#f6f1e7',
+    ...windowChrome(process.platform), // spec 052 FR-085: macOS hides the title bar; the top bar is the drag area (styles.css)
     // spec 008 FR-025: Windows and macOS take the icon from the .exe/.icns; Linux needs it on the window
     ...(process.platform === 'linux' ? { icon: path.join(__dirname, '..', 'icon.png') } : {}),
     webPreferences: {
@@ -936,7 +1293,7 @@ function createWindow(): void {
   };
   win.webContents.on('will-navigate', guardNav);
   win.webContents.on('will-redirect', guardNav);
-  // spec 045 FR-005: Electron grants web permissions by default; this page needs only clipboard writes (Copy buttons)
+  // spec 045 FR-005: Electron grants web permissions by default; this page needs only clipboard writes (Copy buttons) and notifications (spec 052 FR-059)
   win.webContents.session.setPermissionRequestHandler((_wc, permission, done) => done(permissionAllowed(permission)));
   win.webContents.session.setPermissionCheckHandler((_wc, permission) => permissionAllowed(permission));
   // DURBAR_SIM=N: simulated live agents (fake events, no sessions, no AI credits). See src/renderer/sim.ts.
@@ -951,6 +1308,36 @@ function createWindow(): void {
     if (dev.DURBAR_SIM_TITLES === '1') query.simtitles = '1'; // spec 001/002 deltas 2026-10-18: main agents with session titles
     if (/^[0-3]$/.test(dev.DURBAR_SIM_PLACES ?? '')) query.simplaces = dev.DURBAR_SIM_PLACES as string; // spec 024 FR-026: custom places seeded in the simulator
     if (dev.DURBAR_SIM_FLOORS_OFF) query.floorsoff = dev.DURBAR_SIM_FLOORS_OFF.slice(0, 200);
+  }
+  win.on('focus', () => win?.flashFrame(false)); // spec 052 FR-059: the taskbar flash stops when you come back
+  {
+    // spec 052 FR-085 / FR-087 / FR-090: on macOS closing the window hides it (the agents keep running; ⌘Q quits);
+    // elsewhere it asks first while agents work (closing ends their sessions); either way the window's place is remembered
+    const w = win;
+    w.on('close', (ev) => {
+      if (hideOnClose(process.platform, quitting)) {
+        ev.preventDefault();
+        saveWindowState(w);
+        if (w.isFullScreen()) {
+          w.once('leave-full-screen', () => w.hide()); // hiding a full-screen window would leave an empty Space
+          w.setFullScreen(false);
+        } else w.hide();
+        return;
+      }
+      if (!quitConfirmed && workingCount() > 0 && !dev.DURBAR_SHOT && !dev.DURBAR_DRIVER) {
+        ev.preventDefault();
+        void confirmQuit().then((ok) => {
+          if (!ok) return;
+          quitConfirmed = true;
+          w.close();
+        });
+        return;
+      }
+      saveWindowState(w);
+    });
+    // the top bar drops the room it keeps for the traffic lights while the window is full screen (macOS only, see styles.css)
+    w.on('enter-full-screen', () => toRenderer('window:fullScreen', true));
+    w.on('leave-full-screen', () => toRenderer('window:fullScreen', false));
   }
   win.webContents.on('did-finish-load', () => agentState.clearPaused()); // a fresh page starts with nobody paused (Paused is window-only, spec 041 T014)
   void win.loadFile(INDEX_HTML, { query });
@@ -977,6 +1364,17 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   app.setAboutPanelOptions(aboutPanelOptions(app.getVersion())); // owner and contributors: src/shared/about.ts (spec 008 FR-018)
+  // spec 052 FR-083: a Mac menu from roles (Settings… ⌘,); no menu on Windows and Linux (no Reload or DevTools for users)
+  const menu = appMenuTemplate(process.platform, {
+    openSettings: () => {
+      const w = win && !win.isDestroyed() ? win : undefined;
+      if (!w) return;
+      w.show();
+      toRenderer('menu:settings', null);
+    },
+    openRepo: () => void shell.openExternal(REPO_URL),
+  });
+  Menu.setApplicationMenu(menu ? Menu.buildFromTemplate(menu) : null);
   folderStore = new FolderStore(path.join(app.getPath('userData'), 'durbar-folders.json'));
   settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'durbar-settings.json'));
   settingsStore.load();
@@ -987,6 +1385,13 @@ app.whenReady().then(() => {
   usageStore = new UsageStore(path.join(app.getPath('userData'), 'durbar-tool-usage.json'));
   usageStore.load();
   usageTotalsStore = new UsageTotalsStore(path.join(app.getPath('userData'), 'durbar-usage-totals.json'));
+  appState = new AppStateStore(path.join(app.getPath('userData'), 'durbar-app-state.json'));
+  appState.load();
+  const startedAt = Date.now();
+  const quitAt = appState.quitAt;
+  appState.setQuitAt(undefined); // spec 052 FR-089: a crash leaves no quit time, so it never shows a wrong "away" time
+  activityStore = new ActivityStore(path.join(app.getPath('userData'), 'activity.json'));
+  activityStore.load();
   sweepStaleStageDirs(os.tmpdir()); // spec 004 FR-010: staging folders a crash left behind
   agentTrust = new AgentTrustStore(path.join(app.getPath('userData'), 'durbar-agent-trust.json'));
   agentTrust.load();
@@ -996,6 +1401,8 @@ app.whenReady().then(() => {
     const file = path.join(app.getPath('userData'), 'durbar-schedules.json');
     scheduler = new Scheduler(loadSchedules(file, Date.now()), scheduleDeps(file));
     scheduler.start(); // missed once-runs are marked, intervals continue from now (spec 044 FR-002)
+    // spec 052 FR-089: the Since you were away card, from the saved quit time and the runs the scheduler just marked missed
+    sinceAway = buildSinceAway(quitAt, startedAt, scheduler.doc.schedules, (f) => folderStore?.get(f)?.label ?? folderNameOf(/\.code-workspace$/i.test(f) ? { workspaceFile: f, cwd: f } : { cwd: f })) ?? null;
   }
   createWindow();
   // Dev/headless convenience: DURBAR_OPEN="/path/a:/path/b" starts agents (read-only) on launch.
@@ -1026,14 +1433,56 @@ app.whenReady().then(() => {
       void driver(ctx).catch((err) => console.error('DRIVER FAILED', err)).finally(() => void router.disposeAll().finally(() => app.exit(0)));
     });
   }
+  // macOS: a click on the Dock icon brings back the hidden window (FR-085), or opens a new one
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (win && !win.isDestroyed()) win.show();
+    else createWindow();
   });
 });
 
+// One before-quit handler, in order (a second handler would run even after the first one called preventDefault):
+// 1. spec 052 FR-090: agents still working? Ask Quit / Cancel once (the window's close handler shares the answer).
+// 2. spec 052 FR-087 / FR-089: remember the window and the quit time.
+// 3. spec 054 FR-011: remote control is turned off on GitHub before the app quits (best effort, at most 3 s);
+// 4. spec 052 FR-085: on macOS the window only hides and window-all-closed does not fire on ⌘Q, so the agents are ended here (at most 3 s).
+let remoteReleased = false;
+let quitNoted = false;
+let disposedOnQuit = false;
+app.on('before-quit', (ev) => {
+  if (!quitConfirmed) {
+    if (workingCount() > 0 && !dev.DURBAR_SHOT && !dev.DURBAR_DRIVER) {
+      ev.preventDefault();
+      void confirmQuit().then((ok) => {
+        if (!ok) return;
+        quitConfirmed = true;
+        app.quit();
+      });
+      return;
+    }
+    quitConfirmed = true;
+  }
+  quitting = true; // only once the quit is confirmed: after a Cancel, closing the window on macOS still only hides it
+  if (!quitNoted) {
+    quitNoted = true;
+    if (win && !win.isDestroyed()) saveWindowState(win);
+    appState?.setQuitAt(Date.now());
+  }
+  const release = !remoteReleased && remoteOps.ids().length > 0;
+  const dispose = !disposedOnQuit && disposeOnQuit(process.platform);
+  if (!release && !dispose) return;
+  ev.preventDefault();
+  remoteReleased = true;
+  disposedOnQuit = true;
+  const capped = (p: Promise<unknown>): Promise<unknown> => Promise.race([p, new Promise((r) => setTimeout(r, 3000))]);
+  void (release ? capped(Promise.all(remoteOps.ids().map((id) => remoteOps.release(id)))) : Promise.resolve())
+    .then(() => (dispose ? capped(router.disposeAll()) : undefined))
+    .catch(() => undefined)
+    .finally(() => app.quit());
+});
 app.on('will-quit', () => {
   usageStore?.flush();
   usageTotalsStore?.flush();
+  activityStore?.flush();
   if (stageDir) fs.rmSync(stageDir, { recursive: true, force: true });
 });
 

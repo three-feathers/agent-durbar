@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-18
 
-**Status**: Planned 2026-10-18: clarified (owner accepted all Q1-Q12 defaults, see *Clarifications*), [plan](plan.md) and [tasks](tasks.md) drafted, analyze fixes done (`## Changes`, 2026-10-18, analyze fixes). In progress since 2026-10-19: building blocks T010-T016 are in (no server listens yet); T053 masking fixes come before T017. Nothing here is verified on a real MCP client: requirements are targets unless tagged `test:` or `sim:`.
+**Status**: Planned 2026-10-18: clarified (owner accepted all Q1-Q12 defaults, see *Clarifications*), [plan](plan.md) and [tasks](tasks.md) drafted, analyze fixes done (`## Changes`, 2026-10-18, analyze fixes). In progress since 2026-10-19: building blocks T010-T016 are in (no server listens yet); T053 masking fixes (#300) and the T054 per-string result cap come before T017. Nothing here is verified on a real MCP client: requirements are targets unless tagged `test:` or `sim:`.
 
 **Input**: Owner (Ruben, rubenlupi), 2026-10-18: "That the user can also use an MCP against this application to configure it, etc." Durbar exposes its own MCP server, so the user's own MCP client (Claude Code, Copilot CLI, Claude Desktop, VS Code) can, in plain language, read the office (folders, floors, agents and their state, usage totals and caps) and ask for configuration changes (add or remove a folder, permission mode, per-folder MCP extras, credit caps). Every change is confirmed by the user in Durbar's own window.
 

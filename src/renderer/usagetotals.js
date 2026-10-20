@@ -55,8 +55,8 @@
   const none=t=>!t||!t.calls;
   const allUnreported=t=>!none(t)&&t.unreported>=t.calls;
   const aiu=(t,d)=>(t.nano/1e9).toFixed(d)+' AIU';
-  /* '1.23 AIU' | 'credits not reported' (every call lacked credits, never 0.00) | '' (no calls yet) */
-  const fmtTotal=(t,digits=2)=>none(t)?'':allUnreported(t)?'credits not reported':aiu(t,digits);
+  /* '1.23 AIU' | 'cost not reported' (every call lacked credits, never 0.00) | '' (no calls yet) */
+  const fmtTotal=(t,digits=2)=>none(t)?'':allUnreported(t)?'cost not reported':aiu(t,digits);
   /* Short form for the closed door plate: '0.42 AIU' | 'n/r' | '' */
   const fmtShort=t=>none(t)?'':allUnreported(t)?'n/r':aiu(t,2);
   const fmtTokens=n=>n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(n>=1e4?0:1)+'k':String(Math.round(n));
@@ -67,14 +67,14 @@
   function tooltip(t,opts){
     if(none(t))return '';
     const o=opts||{}, office=o.scope!=='folder';
-    const lines=[(office?'Office total: ':'Folder total: ')+(allUnreported(t)?'credits not reported':aiu(t,3)),
+    const lines=[(office?'Office total: ':'Folder total: ')+(allUnreported(t)?'cost not reported':aiu(t,3)),
       plural(t.calls,'call')+' · '+fmtTokens(t.inTokens)+' in / '+fmtTokens(t.outTokens)+' out tokens'];
     if(t.unreported&&!allUnreported(t))lines.push(plural(t.unreported,'call')+' did not report credits');
     const since=typeof o.since==='string'&&/^\d{4}-\d{2}-\d{2}/.test(o.since)?o.since.slice(0,10):'';
     lines.push(since?'Saved since '+since+' (reset in Settings); ended sessions are included.':'Since Agent Durbar opened; ended sessions are included.');
-    if(since&&o.run&&!none(o.run))lines.push('Since the app opened (or the last reset): '+(allUnreported(o.run)?'credits not reported':aiu(o.run,3))+' in '+plural(o.run.calls,'call')+'.');
+    if(since&&o.run&&!none(o.run))lines.push('Since the app opened (or the last reset): '+(allUnreported(o.run)?'cost not reported':aiu(o.run,3))+' in '+plural(o.run.calls,'call')+'.');
     if(office&&o.removed)lines.push('Includes folders no longer shown.');
-    if(office&&o.offFloors&&!none(o.offFloors))lines.push('Includes '+(allUnreported(o.offFloors)?plural(o.offFloors.calls,'call')+' with credits not reported':aiu(o.offFloors,3))+' from floors that are off (their agents keep running).');
+    if(office&&o.offFloors&&!none(o.offFloors))lines.push('Includes '+(allUnreported(o.offFloors)?plural(o.offFloors.calls,'call')+' with cost not reported':aiu(o.offFloors,3))+' from floors that are off (their agents keep running).');
     lines.push('As reported by the Copilot runtime (1 AIU = 1 AI credit, not verified against billing).');
     return lines.join('\n');
   }

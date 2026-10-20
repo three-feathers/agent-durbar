@@ -1,13 +1,13 @@
 /**
  * User theme packs (spec 040): validation used in main and in unit tests.
  * The renderer runs its own JS validator (theme.js); both enforce the same contract:
- * data-only manifest, id kebab-case ≤64 chars, manifest ≤64 KB, ≤40 tokens, ≤24 art slots, ≤24 words.
+ * data-only manifest, id kebab-case ≤64 chars, manifest ≤64 KB, ≤160 tokens, ≤24 art slots, ≤24 words.
  */
 import { parseThemeId } from './credits';
 
 export const USER_THEME_LIMITS = {
   manifestBytes: 64 * 1024,
-  maxTokens: 40,
+  maxTokens: 160, // every Clean Office token (135) fits: a full dark look needs them (spec 040 FR-020; was 40)
   maxArt: 24,
   maxWords: 24,
   maxFiles: 8,
@@ -61,7 +61,7 @@ export function checkUserManifest(text: string): UserThemeCheck {
   if (!id) return { ok: false, error: 'a theme needs an id like "my-office" (lowercase letters, digits, - and _)' };
   const name = typeof m.name === 'string' && m.name.trim() ? m.name.trim().slice(0, 60) : id;
   const count = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.keys(v as object).length : 0);
-  if (count(m.tokens) > USER_THEME_LIMITS.maxTokens) return { ok: false, error: 'too many tokens (max 40)' };
+  if (count(m.tokens) > USER_THEME_LIMITS.maxTokens) return { ok: false, error: 'too many tokens (max ' + USER_THEME_LIMITS.maxTokens + ')' };
   if (count(m.art) > USER_THEME_LIMITS.maxArt) return { ok: false, error: 'too many art slots (max 24)' };
   if (count(m.words) > USER_THEME_LIMITS.maxWords) return { ok: false, error: 'too many words (max 24)' };
   if (m.ui !== undefined && !(typeof m.ui === 'string' && UI_STYLES.includes(m.ui))) return { ok: false, error: 'ui must be one of: ' + UI_STYLES.join(', ') };

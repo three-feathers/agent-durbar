@@ -36,6 +36,8 @@ export interface SavedFolder {
   defaultAgent?: string;
   /** The folder's last used session (spec 006 FR-020): continued after a restart. An id and its harness, never content. */
   lastSession?: { id: string; adapterId?: string };
+  /** Spec 052 FR-088: every session open in this folder that got a message (oldest first, at most 6), restored after a restart. Ids and harness only. Absent in files written before; then `lastSession` alone is restored. */
+  openSessions?: Array<{ id: string; adapterId?: string }>;
 }
 
 export const DEFAULT_ADAPTER = 'copilot';
@@ -90,6 +92,28 @@ export function parseLastSession(v: unknown): SavedFolder['lastSession'] {
   return adapterId ? { id: o.id, adapterId } : { id: o.id };
 }
 
+/** Spec 052 FR-088: how many open sessions per folder come back after a restart. */
+export const MAX_OPEN_SESSIONS = 6;
+
+/** A saved open-session list: well-formed entries only, duplicates dropped, the newest 6 kept; empty or malformed is `undefined`. */
+export function parseOpenSessions(v: unknown): SavedFolder['openSessions'] {
+  if (!Array.isArray(v)) return undefined;
+  const out: NonNullable<SavedFolder['openSessions']> = [];
+  for (const e of v.slice(-100)) {
+    const s = parseLastSession(e);
+    if (s && !out.some((x) => x.id === s.id)) out.push(s);
+  }
+  const kept = out.slice(-MAX_OPEN_SESSIONS);
+  return kept.length ? kept : undefined;
+}
+
+/** The sessions a saved folder brings back (FR-088): its last session first, then the other open ones in the order they were opened. Older files have only `lastSession`. */
+export function sessionsToRestore(f: Pick<SavedFolder, 'lastSession' | 'openSessions'>): Array<{ id: string; adapterId?: string }> {
+  const out = f.lastSession ? [{ ...f.lastSession }] : [];
+  for (const s of f.openSessions ?? []) if (!out.some((x) => x.id === s.id)) out.push({ ...s });
+  return out.slice(0, MAX_OPEN_SESSIONS);
+}
+
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const MAX_FOLDERS = 200;
 
@@ -123,6 +147,7 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       ...(parseLabel(o.label) ? { label: parseLabel(o.label) } : {}), // only when set, so older files read back unchanged
       ...(parseDefaultAgent(o.defaultAgent) ? { defaultAgent: parseDefaultAgent(o.defaultAgent) } : {}),
       ...(parseLastSession(o.lastSession) ? { lastSession: parseLastSession(o.lastSession) } : {}),
+      ...(parseOpenSessions(o.openSessions) ? { openSessions: parseOpenSessions(o.openSessions) } : {}),
     });
     if (out.length >= MAX_FOLDERS) break;
   }
@@ -308,6 +333,38 @@ export class FolderStore {
     const cur = this.get(workspace);
     if (!cur || cur.lastSession?.id !== id) return;
     cur.lastSession = undefined;
+    this.save();
+  }
+
+  /** Spec 052 FR-088: the session is open in this folder (it got a message, or was resumed). Written only when new; past 6 the oldest one other than the last session is dropped. */
+  addOpenSession(workspace: string, id: string, adapterId: string | undefined): boolean {
+    const cur = this.get(workspace);
+    const next = parseLastSession({ id, adapterId });
+    if (!cur || !next) return false;
+    const list = cur.openSessions ?? [];
+    const at = list.findIndex((x) => x.id === next.id);
+    if (at >= 0 && list[at].adapterId === next.adapterId) return true;
+    const out = list.filter((x) => x.id !== next.id);
+    out.push(next);
+    while (out.length > MAX_OPEN_SESSIONS) {
+      const drop = out.findIndex((x) => x.id !== cur.lastSession?.id);
+      out.splice(drop < 0 ? 0 : drop, 1);
+    }
+    cur.openSessions = out;
+    this.save();
+    return true;
+  }
+
+  /** FR-088: the session left the folder (Remove from office, replaced by a resumed one); it is not restored any more. Also forgets it as the last session. */
+  removeOpenSession(workspace: string, id: string): void {
+    const cur = this.get(workspace);
+    if (!cur) return;
+    const list = cur.openSessions ?? [];
+    const out = list.filter((x) => x.id !== id);
+    const wasLast = cur.lastSession?.id === id;
+    if (out.length === list.length && !wasLast) return;
+    cur.openSessions = out.length ? out : undefined;
+    if (wasLast) cur.lastSession = undefined;
     this.save();
   }
 

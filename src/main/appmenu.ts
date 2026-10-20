@@ -1,0 +1,62 @@
+/**
+ * The application menu and Mac window conventions (spec 052 FR-083, FR-085). Pure: no Electron import (types only), so it is
+ * unit-tested on any OS; main.ts passes the platform and the two actions.
+ *
+ * - macOS: a menu built from Electron's roles (app menu with About, Settings… ⌘, Hide and Quit; Edit; View with full screen and
+ *   zoom only, no Reload and no DevTools; Window; Help with a link to the project).
+ * - Windows and Linux: no menu at all (null), so the default menu with Reload and Toggle Developer Tools is gone. Copy, cut and
+ *   paste in text fields are Chromium's own keys and keep working.
+ */
+import type { MenuItemConstructorOptions } from 'electron';
+
+export interface MenuActions {
+  openSettings(): void;
+  openRepo(): void;
+}
+
+export const SETTINGS_ACCELERATOR = 'CommandOrControl+,';
+export const HELP_LINK_LABEL = 'Agent Durbar on GitHub';
+
+export function appMenuTemplate(platform: NodeJS.Platform, actions: MenuActions): MenuItemConstructorOptions[] | null {
+  if (platform !== 'darwin') return null;
+  return [
+    {
+      role: 'appMenu',
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { label: 'Settings…', accelerator: SETTINGS_ACCELERATOR, click: () => actions.openSettings() },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    { role: 'editMenu' },
+    {
+      label: 'View',
+      submenu: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }],
+    },
+    { role: 'windowMenu' },
+    { role: 'help', submenu: [{ label: HELP_LINK_LABEL, click: () => actions.openRepo() }] },
+  ];
+}
+
+/** macOS: closing the window hides it and the agents keep running, unless the app is quitting (⌘Q, Dock > Quit). */
+export function hideOnClose(platform: NodeJS.Platform, quitting: boolean): boolean {
+  return platform === 'darwin' && !quitting;
+}
+
+/** macOS: window-all-closed does not fire on ⌘Q, so the agents are ended in before-quit instead. */
+export function disposeOnQuit(platform: NodeJS.Platform): boolean {
+  return platform === 'darwin';
+}
+
+/** The window options that differ per platform: the Mac title bar is hidden and the traffic lights sit inset in the top bar. */
+export function windowChrome(platform: NodeJS.Platform): { titleBarStyle?: 'hiddenInset' } {
+  return platform === 'darwin' ? { titleBarStyle: 'hiddenInset' } : {};
+}

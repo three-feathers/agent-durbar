@@ -35,6 +35,10 @@ export interface AdapterCapabilities {
   readonly mcpToggle: boolean;
   /** `handoffSummary()` exists (spec 030 FR-034); missing = false. */
   readonly handoff?: boolean;
+  /** `generateText()` exists: one prompt, no tools, no session kept (spec 040 FR-015); missing = false. */
+  readonly oneShot?: boolean;
+  /** `setRemote()` exists: the session can be followed and steered from the vendor's web or mobile app (spec 054 FR-001); missing = false. */
+  readonly remote?: boolean;
 }
 
 /** Where an adapter stands on this machine (spec 012 FR-030). `unknown` also covers a detect that failed. */

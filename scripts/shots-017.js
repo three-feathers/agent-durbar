@@ -77,9 +77,9 @@ module.exports = async (ctx) => {
     assert.match(k.opts[1].t, /^Claude Code$/, 'a ready harness has no state words');
     assert.match(k.opts[2].t, /Codex.*too old/, 'Codex says too old');
     assert.strictEqual(k.value, 'copilot', 'the default is the registry default');
-    assert.ok(k.label && /agent kind/i.test(k.label), `${w}: the select has a label (${k.label})`);
+    assert.ok(k.label && /agent app/i.test(k.label), `${w}: the select has a label (${k.label})`);
     assert.ok(k.before && k.helpBefore, `${w}: the kind control comes before Permissions`);
-    assert.strictEqual(k.helpLabel, 'About agent kinds');
+    assert.strictEqual(k.helpLabel, 'About agent apps');
     assert.strictEqual(await js(vis('modelSel')), true, 'Copilot keeps the model select');
 
     // the toolbar does not wrap: all controls of the live bar on one row, and the header is as tall as with one adapter
@@ -91,13 +91,13 @@ module.exports = async (ctx) => {
     assert.ok(f1.min >= 10.5, `${w}: toolbar text >= 10.5px (${JSON.stringify(f1)})`);
     await shot('012-picker', w, h);
 
-    // About agent kinds: keyboard open, focus kept inside, state and hint as text, Check again, Esc returns focus
+    // About agent apps: keyboard open, focus kept inside, state and hint as text, Check again, Esc returns focus
     await js(`document.getElementById('kindHelp').focus()`);
     await key('Return');
     assert.ok(await ctx.waitFor(`document.getElementById('modeDlg')`, 3000), 'the dialog opens with Enter');
     assert.ok(await inDialog(), 'focus moved into the dialog');
     const txt = await js(`document.getElementById('modeDlg').innerText.replace(/\\s+/g,' ')`);
-    for (const need of ['About agent kinds', 'Copilot: ready', 'Claude Code: ready', 'Codex: too old', 'version 0.9.0', 'Update Codex', 'Check again']) assert.ok(txt.includes(need), `dialog text has "${need}": ${txt}`);
+    for (const need of ['About agent apps', 'Copilot: ready', 'Claude Code: ready', 'Codex: too old', 'version 0.9.0', 'Update Codex', 'Check again']) assert.ok(txt.includes(need), `dialog text has "${need}": ${txt}`);
     for (let i = 0; i < 6; i++) { await key('Tab'); assert.ok(await inDialog(), `focus stays inside after Tab ${i + 1}`); }
     await key('Tab', ['shift']); assert.ok(await inDialog(), 'focus stays inside after Shift+Tab');
     const f2 = await minFont('#modeDlg');
@@ -120,7 +120,7 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('addFolder').click()`);
     await ctx.sleep(400);
     const t = await js(`[...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' | ')`);
-    assert.match(t, /not ready/, `${w}: starting a not-ready kind is blocked: ${t}`);
+    assert.match(t, /not ready|isn't ready/, `${w}: starting a not-ready kind is blocked: ${t}`);
     assert.doesNotMatch(t, /Could not add/, 'the UI blocked it, the bridge was not asked');
     assert.strictEqual(await js(`document.querySelectorAll('#stage .desk[data-id]').length`), before, 'no folder was added');
     await js(`(()=>{const s=document.getElementById('kindSel');s.value='copilot';s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
@@ -135,7 +135,7 @@ module.exports = async (ctx) => {
     assert.ok(sd, `${w}: the new-session dialog has a kind select`);
     assert.deepStrictEqual(sd.opts.map((o) => [o[0], o[1]]), [['copilot', false], ['claude', false], ['codex', true]]);
     assert.match(sd.opts[2][2], /too old/);
-    assert.strictEqual(await js(`document.getElementById('sdKind').closest('label').firstChild.textContent.trim()`), 'Harness', 'FR-136: the dialog calls it Harness');
+    assert.strictEqual(await js(`document.getElementById('sdKind').closest('label').firstChild.textContent.trim()`), 'Agent app', 'FR-136: the dialog calls it Agent app (spec 052 FR-051)');
     assert.strictEqual(sd.value, 'copilot', 'the dialog defaults to the current agent kind');
     assert.ok(sd.model && sd.cap, 'Copilot: model and cap fields shown');
     const f3 = await minFont('#sessDlg');
@@ -149,7 +149,7 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('sdGo').click()`);
     await ctx.sleep(400);
     assert.ok(await js(`!!document.getElementById('sessDlg')`), 'a not-ready kind keeps the dialog open');
-    assert.match(await js(`[...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' | ')`), /not ready/);
+    assert.match(await js(`[...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' | ')`), /not ready|isn't ready/);
     assert.strictEqual(await js(`document.querySelectorAll('#stage .desk[data-id]').length`), n0, 'no session was started');
     if (w === SIZES[0][0]) await shot('012-session', w, h);
     await js(`(()=>{const s=document.getElementById('sdKind');s.value='copilot';s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
