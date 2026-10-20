@@ -2,7 +2,7 @@
 
 **Feature Branch**: `055-release-alpha9`
 **Created**: 2026-10-20
-**Status**: Prepared; **publishing waits for the owner's go-ahead in his session** (AGENTS.md "Needs approval": the written approval covered alpha.8 only).
+**Status**: Built and **published as a pre-release on 2026-10-20** (<https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.9>; release PR #343; tag on `df06619`). The owner gave the go-ahead in his session: "merge ruben and paco's pr's and then cut pre release".
 **Input**: Vikram asked on Telegram (2026-10-20, 00:33 UTC) for another pre-release at 8am. A channel message is not taken as approval to publish, so everything up to the tag is prepared and the publish step waits for a go-ahead in the Claude session.
 
 ## Requirements
@@ -36,4 +36,13 @@
 
 ## Release record
 
-(filled in when published)
+- **Before the tag:** Ruben's #339 (spec 041 T054) and Paco's #342 (macOS strip drag, from a real-Mac test) were merged at the owner's request. Their CHANGELOG lines were moved into the alpha.9 section.
+- **Where the tag went:** `df06619` (the merge of #342). On that commit CI, the push checks and the project site passed; the owner confirmed `main` was green. The packaged-app check did not run for that commit; `release.yml` builds and checks the packages itself. At tagging there were 0 open code-scanning alerts and 0 open Dependabot alerts.
+- **Build:** `release.yml` run 39370523135. The macOS, Windows, Linux and draft jobs succeeded.
+- **Draft checked:**
+  - draft and pre-release flags;
+  - eight files: arm64 and x64 dmg and zip, the Windows installer and portable exe, the Linux AppImage, and `SHA256SUMS.txt`;
+  - the portable exe and the AppImage were downloaded and match `SHA256SUMS.txt`;
+  - the AppImage extracts, has `app.asar`, and its `package.json` says `0.1.0-alpha.9`.
+- **Published:** the notes carry the honest limits, and the release went out as a pre-release on 2026-10-20 at 04:42 UTC. The link was posted in the team's Telegram group.
+- `[KNOWN GAP]` Nobody has run the published files on Windows. On macOS only the earlier window-drag test was done (by Paco, before the fix).
