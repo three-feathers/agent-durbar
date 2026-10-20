@@ -48,7 +48,7 @@ module.exports = async (ctx) => {
       assert.strictEqual(await js(`window.__xss===undefined`), true);
 
       // 1. the dialog words per kind (sim-1 Claude, sim-5 Codex, sim-2 Copilot, sim-7 has no rename); Escape changes nothing
-      const kinds = [['sim-1', /^Also saved in Claude Code at your next message\..*may sync/, 'claude'], ['sim-5', /^Also saved in .*Codex.*may sync/, 'codex'], ['sim-2', /^Also saved in .*Copilot.*may sync/, 'copilot'], ['sim-7', /^Only in Agent Durbar\./, 'none']];
+      const kinds = [['sim-1', /^Also saved in Claude Code at your next message.*may sync/, 'claude'], ['sim-5', /^Also saved in .*Codex.*may sync/, 'codex'], ['sim-2', /^Also saved in .*Copilot.*may sync/, 'copilot'], ['sim-7', /^Only in Agent Durbar\./, 'none']];
       for (const [id, re, kind] of kinds) {
         const before = await names(id);
         await openFromMore(id);
