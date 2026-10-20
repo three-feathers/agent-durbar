@@ -43,7 +43,8 @@
       const label = { install: 'Install…', update: 'Update…', signin: 'Sign in…' }[act];
       /* spec 052 FR-097: "Simulated version." is the badge's tooltip, not a line of its own */
       const simV = st === 'ready' && k.version === 'sim';
-      const hint = st === 'ready' ? (simV ? '' : k.version ? 'Version ' + k.version + '.' : 'Ready to use.') : st === 'not-signed-in' ? 'Installed; sign in once to use it.' : st === 'too-old' ? (k.hint || 'This version is too old for Durbar.') : st === 'not-installed' ? 'Not on this computer yet.' : 'Durbar could not tell; try Check again.';
+      /* spec 012 FR-156: a ready card also says how far the sign-in was checked (the hint withSignIn set) */
+      const hint = st === 'ready' ? [simV ? '' : k.version ? 'Version ' + k.version + '.' : 'Ready to use.', k.hint && /^Signed in/.test(k.hint) ? k.hint : ''].filter(Boolean).join(' ') : st === 'not-signed-in' ? 'Installed; sign in once to use it.' : st === 'too-old' ? (k.hint || 'This version is too old for Durbar.') : st === 'not-installed' ? 'Not on this computer yet.' : 'Durbar could not tell; try Check again.';
       return `<li class="hs-card" data-kind="${esc(k.id)}"><div class="hs-top"><span class="hs-name"><b>${esc(k.displayName || k.id)}</b>${FOR[k.id] ? `<span class="hs-for">${esc(FOR[k.id])}</span>` : ''}</span><span class="hs-st hs-${cls}"${simV ? ' title="Simulated version."' : ''}>${esc(word)}</span></div>
         ${PLAN[k.id] ? `<p class="scr-note small hs-plan-uses">${esc(PLAN[k.id])}</p>` : ''}${hint ? `<p class="scr-note small">${esc(hint)}</p>` : ''}${k.id === 'copilot' && copilot && copilot.pwshMissing ? `<p class="scr-note small hs-pwsh">${esc(PWSH_HINT)}</p>` : ''}
         <div class="hs-act">${act ? `<button class="btn primary" type="button" data-hs="${act}" data-kind="${esc(k.id)}">${esc(label)}</button>` : ''}<button class="btn sm" type="button" data-hs="check" data-kind="${esc(k.id)}">Check again</button></div></li>`;
@@ -155,9 +156,10 @@
       /* FR-006: Copilot signs in through its CLI; offer to install it first */
       modal('Sign in to GitHub Copilot', '<p class="scr-note">Copilot signs in through the official GitHub Copilot CLI, which is not on this computer yet. Install it first; Durbar uses it only to sign in.</p>',
         [{ label: 'Cancel', cancel: true, onClick: (c) => c() }, { label: 'Install the Copilot CLI…', cls: 'primary', onClick: (c) => { c(); install('copilot', 'install', 'the GitHub Copilot CLI').then(() => onChange()); } }]);
-      return;
+      return done;
     }
     result(done, name, kind);
+    return done;
   }
 
   function result(p, name, kind) {
@@ -184,5 +186,10 @@
     available: () => !!(B && B.harnessRun),
     sectionHTML,
     onClick,
+    /* spec 012 FR-157: the same sign-in flow from the chat's sign-in card; resolves with {ok} when it ends (cancelled = not ok) */
+    signIn(kind, name) {
+      if (!B || !B.harnessRun || !SETUP_KINDS.includes(kind)) return Promise.resolve({ ok: false });
+      return signin(kind, name || kind).then((d) => ({ ok: !!(d && d.ok) }), () => ({ ok: false }));
+    },
   };
 })();

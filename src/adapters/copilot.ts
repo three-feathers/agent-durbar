@@ -1,3 +1,4 @@
+import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import { randomUUID } from 'crypto';
 import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
 import { parseQuestions } from './questions';
@@ -17,6 +18,7 @@ import type {
   PermissionMode,
   GenerateTextOptions,
   GenerateTextResult,
+  SignInCheck,
   StartOptions,
   Unsubscribe,
 } from './types';
@@ -198,6 +200,39 @@ export class CopilotAdapter implements AgentAdapter {
   async authStatus(): Promise<{ signedIn: boolean }> {
     const s = await (await this.getClient()).getAuthStatus();
     return { signedIn: !!s.isAuthenticated };
+  }
+
+  /**
+   * Spec 012 FR-156: is the sign-in really valid? `getAuthStatus()` only looks on this computer (it also finds `gh` or keyring
+   * credentials), so a "yes" is then confirmed with a server call that needs a valid token and spends nothing:
+   * `account.getQuota` (@experimental; not cached by the SDK), or, when the runtime lacks it, `models.list` straight through the
+   * RPC (the SDK's `listModels()` caches its first answer for the client's life, so it could not notice an expired sign-in).
+   * An error that reads like a sign-in failure means signed out; anything else (network, timeout) is unknown.
+   */
+  async verifySignIn(): Promise<SignInCheck> {
+    const client = await this.getClient();
+    let local: { isAuthenticated?: boolean } | undefined;
+    try {
+      local = await client.getAuthStatus();
+    } catch (e) {
+      return { status: signInFromError(e) };
+    }
+    if (!local?.isAuthenticated) return { status: 'signed-out', detail: 'No Copilot sign-in on this computer.' };
+    const rpc = (client as unknown as { rpc?: { account?: { getQuota?: (p: object) => Promise<unknown> }; models?: { list?: (p: object) => Promise<unknown> } } }).rpc;
+    const calls: Array<() => Promise<unknown>> = [];
+    if (typeof rpc?.account?.getQuota === 'function') calls.push(() => rpc.account!.getQuota!({}));
+    if (typeof rpc?.models?.list === 'function') calls.push(() => rpc.models!.list!({}));
+    else calls.push(() => client.listModels());
+    for (const call of calls) {
+      try {
+        await call();
+        return { status: 'signed-in', detail: 'Signed in (checked with GitHub).' };
+      } catch (e) {
+        if (isAuthError(e)) return { status: 'signed-out', detail: 'GitHub did not accept the Copilot sign-in.' };
+        // any other error (the runtime lacks the call, a network problem): try the next call, then say unknown
+      }
+    }
+    return { status: 'unknown' };
   }
 
   /** Models visible to the logged-in user (no inference, no credits). */
@@ -738,7 +773,7 @@ export class CopilotAdapter implements AgentAdapter {
   }
 
   protected emit(sessionId: string, body: EventBody): void {
-    const event = { ...body, sessionId, timestamp: Date.now() } as AgentEvent;
+    const event = { ...markAuthError(body), sessionId, timestamp: Date.now() } as AgentEvent; // FR-157: a sign-in failure is marked
     for (const l of this.listeners) l(event);
   }
 
