@@ -4,7 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.9 tag)
 
-- **Remote control for Claude Code sessions** (spec 054 FR-060..FR-064): **More > Control from Claude (web and mobile)** turns on Claude Code's Remote Control for one session, with a claude.ai link; it is turned back on after a relaunch. Copilot's "not started" message now says it may need a paid plan.
+- **Remote control for Claude Code sessions** (spec 054 FR-060..FR-064): **More > Control from Claude (web and mobile)** turns on Claude Code's Remote Control for one session, with a claude.ai link; it is turned back on after a relaunch. Copilot remote control needs a paid plan: it started on Copilot Pro (real check), and the "not started" message says so.
 - Agents read every review and comment before a merge: new rule in `AGENTS.md`, and `scripts/pr-gate.sh <N>` (verdict only) checks requested changes, open threads, unanswered comments, checks, CodeQL and alerts (spec 021).
 - **Switch the model inside Claude Code and Codex sessions** (spec 030 FR-038..FR-041). The model menu in a Claude or Codex chat now changes the model and effort from the next message and keeps the conversation (Claude relaunches with `--resume`, Codex sends them with the next turn). Checked on real accounts: Haiku to Sonnet in one Claude session, `gpt-5.6-luna` to `gpt-6.1-sol` in one Codex thread.
 - Claude Code sessions started in Durbar now appear in the Claude CLI's `claude --resume` list, by name if they have one (they were hidden because the CLI leaves out sessions it marks as SDK runs; spec 012 FR-159). Sessions started in the CLI were already in Durbar's Previous sessions.

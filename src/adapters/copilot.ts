@@ -136,7 +136,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
 });
 
 /** Spec 054 FR-063 (real, 2026-10-20): not started in a plain folder, a `git init` folder and a private GitHub repository alike, on Copilot Free. */
-export const REMOTE_NOT_STARTED = 'Copilot did not start remote control and gave no reason. On a Copilot Free account it never started in our checks, in any folder; it may need a paid plan.';
+export const REMOTE_NOT_STARTED = 'Copilot did not start remote control and gave no reason. It needs a paid Copilot plan: on Copilot Free it never started in our checks, on Copilot Pro it did.';
 
 /** Spec 040 FR-015: how long one `generateText` may take before it is aborted (the same 3 minutes as Claude and Codex). */
 export const ONE_SHOT_TIMEOUT_MS = 180_000;

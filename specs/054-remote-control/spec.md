@@ -2,7 +2,7 @@
 
 **Feature Branch**: `054-remote-control`
 **Created**: 2026-10-20
-**Status**: Phase 1 built (Copilot remote steering per session: simulator and unit tests; real free-plan check 2026-10-20: Copilot answered "not started", also in a private GitHub repository, `[KNOWN GAP]` on a paid plan). **Phase 2 built** (FR-060..FR-064, Claude Code Remote Control per session: unit tests and simulator driver; the `remote_control` request was checked on a real account over `claude -p`; through Durbar's window `[KNOWN GAP]`). Codex: explain only (FR-064). Claude channels wizard: planned.
+**Status**: Phase 1 built (Copilot remote steering per session: simulator and unit tests; real checks 2026-10-20: never started on Copilot Free, started in any folder on Copilot Pro). **Phase 2 built** (FR-060..FR-064, Claude Code Remote Control per session: unit tests and simulator driver; the `remote_control` request was checked on a real account over `claude -p`; through Durbar's window `[KNOWN GAP]`). Codex: explain only (FR-064). Claude channels wizard: planned.
 **Input**: Issue #298. Owner (Telegram, 2026-10-19; Ruben raised it the day before): "support remote controls and channels". The issue's first open question ("which first: the Copilot `--remote` link or the Claude channels wizard?") is answered by doing the Copilot link first: it is generally available, needs no plugin or extra runtime, and the SDK Durbar already uses exposes it per session.
 
 ## Summary
@@ -150,3 +150,12 @@ Owner answers on #298: Q1 test Copilot remote in a private repository; **Q2 "thi
 - **FR-063** Copilot's "not started" message no longer blames the folder: "Copilot did not start remote control and gave no reason. On a Copilot Free account it never started in our checks, in any folder; it may need a paid plan."
 - **FR-064** Codex (Q3): the README says Codex's own mobile access works through ChatGPT and cannot attach to a session Durbar runs, so Durbar offers none.
 
+
+### 2026-10-20: Copilot remote control on Copilot Pro
+
+- `real:` 2026-10-20, Copilot **Pro**, `scripts/remote-copilot-real.ts`, 2 tiny `auto` prompts, **0.13 AIU**. Remote control **started** both in a plain folder and in a `git init` folder with no remote:
+  - `remote.enable` answered `started: true`, `remoteSteerable: true`, with a github.com link;
+  - `setRemote(true)` gave `{ ok, on, steerable, url, visibility: 'unshared' }`, with one `session.remote_steerable_changed` event;
+  - `setRemote(false)` turned it off.
+
+  Together with the Copilot Free runs (never started, also in a private GitHub repository), this settles it: Copilot remote control **needs a paid plan**. FR-063's message now says so. What GitHub's web page and GitHub Mobile show for such a session was not opened (`[KNOWN GAP]`).
