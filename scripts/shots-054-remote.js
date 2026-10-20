@@ -6,7 +6,7 @@
  *   OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
  *     DURBAR_DRIVER=$PWD/scripts/shots-054-remote.js xvfb-run -a npx electron . --no-sandbox
  *
- * Checks: a Copilot agent's chat More menu has "Control from GitHub (web and mobile)…"; the dialog says what is sent and has Cancel
+ * Checks: a Copilot agent's chat More menu has "Control from GitHub (web and mobile)"; the dialog says what is sent and has Cancel
  * focused first; Turn on shows the link dialog (link, GitHub Mobile note, Copy link, Open on GitHub); the Remote chip shows in the chat
  * header and " · Remote" on the desk card; the item then reads "Stop remote control" and turns it off. Prints "[054] PASS".
  */
@@ -33,7 +33,7 @@ module.exports = async (ctx) => {
     assert.ok(await js(`document.getElementById('remoteChip')&&document.getElementById('remoteChip').hidden`), 'the Remote chip is hidden while off');
     await js(`document.getElementById('moreBtn').click()`); await ctx.sleep(400);
     const item = await js(`(document.getElementById('remoteBtn')||{}).textContent||''`);
-    assert.ok(/^Control from GitHub \(web and mobile\)…/.test(item), 'the More menu offers remote control: ' + item);
+    assert.ok(/^Control from GitHub \(web and mobile\)/.test(item), 'the More menu offers remote control: ' + item);
     await shot(`054-remote-menu-${w}x${h}.png`);
     await js(`document.getElementById('remoteBtn').click()`); await ctx.sleep(500);
     const ask = await js(`({t:(document.getElementById('mdT')||{}).textContent,b:(document.getElementById('mdB')||{}).textContent,focus:document.activeElement&&document.activeElement.textContent,btns:[...document.querySelectorAll('#modeDlg .dbtn .btn')].map(x=>x.textContent)})`);

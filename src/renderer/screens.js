@@ -46,13 +46,15 @@
       d.querySelector('#scrDlgT').textContent=title;
       const row=d.querySelector('.dbtn');
       const done=v=>{d.remove();resolve(v);};
-      buttons.forEach(b=>{const el=document.createElement('button');el.type='button';el.className='btn'+(b.cls?' '+b.cls:'');el.textContent=b.label;
+      buttons.forEach(b=>{const el=document.createElement('button');el.type='button';el.className='btn'+(b.cls?' '+b.cls:'');el.textContent=b.label;if(b.value===null)el.dataset.cancel='1';
         el.onclick=async()=>{if(b.value!==null&&validate){el.disabled=true;let err;try{err=await validate(d);}finally{el.disabled=false;}if(err){if(typeof err==='string'){const e=d.querySelector('#scrDlgErr');e.textContent=err;e.hidden=false;}return;}}done(b.value===null?null:{value:b.value,root:d});};row.appendChild(el);});
       d.addEventListener('click',e=>{if(e.target===d)done(null);});
       d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();done(null);}});
       document.body.appendChild(d);
       if(onOpen)onOpen(d);
-      const first=d.querySelector('input,select,textarea')||row.querySelector('.primary')||row.lastElementChild;
+      /* spec 052 FR-076: a red or amber confirmation starts on Cancel, as in dialog.js (FR-036), so Enter never confirms it unread */
+      const pr=row.querySelector('.primary'), risky=pr&&/\b(danger|warn)\b/.test(pr.className)&&row.querySelector('[data-cancel]');
+      const first=d.querySelector('input,select,textarea')||(risky?row.querySelector('[data-cancel]'):pr)||row.lastElementChild;
       if(first)first.focus();
       d._close=()=>done(null);
     });
@@ -198,7 +200,7 @@
       msg.textContent=res&&res.defaultMaxAiCredits?'Saved: new sessions start with a cap of '+res.defaultMaxAiCredits+' AIU.':'Saved: new sessions start without a cap.';
     };
     if($('usageTotalsReset'))$('usageTotalsReset').onclick=async()=>{
-      const ok=await dialog({title:'Reset usage totals?',html:'<p class="dsub">This sets the saved office and folder totals to zero and starts counting from now. Tool counts in Tools &gt; All time are not changed, and neither are your agents or their history.</p>',buttons:[{label:'Cancel',value:null},{label:'Reset',value:'ok',cls:'primary warn'}]});
+      const ok=await dialog({title:'Reset usage totals?',html:'<p class="dsub">This sets the saved office and folder totals to zero and starts counting from now. Tool counts in Tools &gt; All time are not changed, and neither are your agents or their history.</p>',buttons:[{label:'Cancel',value:null},{label:'Reset',value:'ok',cls:'primary danger'}]});
       if(!ok)return;
       let v=null; try{v=await X.bridge.usageResetTotals();}catch(e){v=null;}
       if(v&&v.ok){X.onUsageReset(v);X.toast('Usage totals were reset.',2600);paintSettings();}
@@ -255,7 +257,8 @@
     const pick=()=>{const p=ideas.slice(),o=[];while(o.length<4&&p.length)o.push(p.splice(Math.floor(Math.random()*p.length),1)[0]);return o;};
     const ideaHtml=()=>ideas.length?`<div class="ai-ideas" id="aiIdeas"><span class="scr-note small">Ideas:</span>${pick().map((i)=>`<button class="btn ai-idea" type="button" data-idea="${esc(i)}">${esc(i)}</button>`).join('')}<button class="btn ai-more" type="button" id="aiMore" title="Show other ideas">More ideas</button></div>`:'';
     for(;;){
-      const r=await dialog({title:'Make a theme with AI',html:`<p class="dsub">Describe a look in a few words, for example <i>a night-shift newsroom</i> or <i>a ship's bridge at dawn</i>. The agent app you pick designs a light or dark theme in one request, with no tools and nothing kept, at a small cost on your own plan. Durbar keeps only safe values and checks that text stays readable, and you can try the theme before you save it.</p>
+      const r=await dialog({title:'Make a theme with AI',html:`<p class="dsub">Describe a look in a few words, for example “a night-shift newsroom” or “a ship's bridge at dawn”.</p>
+        <ul class="dlist ai-pts" title="The agent app you pick designs a light or dark theme in one request, with no tools and nothing kept, at a small cost on your own plan. Durbar keeps only safe values and checks that text stays readable, and you can try the theme before you save it."><li>One request, small cost</li><li>No tools, nothing kept</li><li>Preview before saving</li></ul>
         <label>Look<textarea id="aiDesc" rows="3" maxlength="300" placeholder="A calm library at night">${esc(desc)}</textarea></label>
         ${ideaHtml()}
         <label>Made by<select id="aiKind">${kinds.map((k)=>`<option value="${esc(k.id)}"${k.id===kind?' selected':''}>${esc(k.displayName||k.id)}</option>`).join('')}</select></label>
@@ -394,7 +397,7 @@
     const b=n=>'<b>'+esc(n)+'</b>', shown=srv.slice(0,4).map(b), more=srv.length-shown.length;
     const list=more>0?shown.join(', ')+' and '+more+' more':shown.length>1?shown.slice(0,-1).join(', ')+' and '+shown[shown.length-1]:shown[0];
     const body=srv.length?`${list} ${srv.length>1?'go':'goes'} back to ${srv.length>1?'their':'its'} default place.`:'No server is sent there.';
-    const r=await dialog({title:'Delete "'+X.placeLabel(p.id)+'"?',html:`<p class="dsub">${body} Agents that are there now walk back to their desks.</p>`,buttons:[{label:'Cancel',value:null},{label:'Delete',value:'ok',cls:'primary warn'}]});
+    const r=await dialog({title:'Delete "'+X.placeLabel(p.id)+'"?',html:`<p class="dsub">${body} Agents that are there now walk back to their desks.</p>`,buttons:[{label:'Cancel',value:null},{label:'Delete',value:'ok',cls:'primary danger'}]});
     if(!r){if(opener&&opener.focus&&document.contains(opener))opener.focus();return;}
     const label=X.placeLabel(p.id); /* before setCustomPlaces: afterwards the place is gone and the label is empty */
     let res=null; try{res=await X.bridge.removePlace(id);}catch(err){res=null;}
@@ -487,7 +490,7 @@
       const n=li.dataset.legacy;
       if(act.act==='move'){const res=await X.bridge.mcpMoveLegacy(n,st.key);X.toast(res&&res.ok?esc(n)+' moved here (off). Review it and switch it on.':'Could not move: '+esc((res&&res.error)||'unknown error'),4200);paintFolder();}
       else if(act.act==='rmlegacy'){
-        const r=await dialog({title:'Remove old server "'+n+'"?',html:'<p class="dsub">It is deleted from Agent Durbar with its stored secret values. It was not being used.</p>',buttons:[{label:'Cancel',value:null},{label:'Remove',value:'ok',cls:'primary warn'}]});
+        const r=await dialog({title:'Remove old server "'+n+'"?',html:'<p class="dsub">It is deleted from Agent Durbar with its stored secret values. It was not being used.</p>',buttons:[{label:'Cancel',value:null},{label:'Remove',value:'ok',cls:'primary danger'}]});
         if(r){await X.bridge.mcpRemoveLegacy(n);paintFolder();}
       }
       return;
@@ -496,7 +499,7 @@
     if(act.act==='toggle'){const turnOn=!(v.enabled&&v.trusted);await toggleServer(v,turnOn,st);}
     else if(act.act==='edit')editServer(v,st);
     else if(act.act==='remove'){
-      const r=await dialog({title:'Remove "'+name+'"?',html:'<p class="dsub">The server and its stored secret values are deleted from this folder in Agent Durbar. Running sessions keep it until they end.</p>',buttons:[{label:'Cancel',value:null},{label:'Remove',value:'ok',cls:'primary warn'}]});
+      const r=await dialog({title:'Remove "'+name+'"?',html:'<p class="dsub">The server and its stored secret values are deleted from this folder in Agent Durbar. Running sessions keep it until they end.</p>',buttons:[{label:'Cancel',value:null},{label:'Remove',value:'ok',cls:'primary danger'}]});
       if(r){await X.bridge.mcpRemove(st.key,name);X.toast('Removed '+esc(name)+'.',2600);paintFolder();}
     }
   }
@@ -629,7 +632,7 @@
           <div class="srv-act">${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name,'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed?' disabled':''))}</div></li>`;}).join('');
       return `<p class="dsub">${s.live?(fixed?'This agent is running.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Your Copilot CLI servers are global (see <b>Settings</b>); extras belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul><p class="dsub small">Applies to this agent until the app is closed.</p>`;
     };
-    const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings…',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
+    const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
       onOpen:d=>{d.addEventListener('click',async e=>{const b=e.target.closest('button.swt');if(!b||b.disabled)return;const on=b.getAttribute('aria-checked')!=='true';
         const r=await X.bridge.setAgentMcp(a.id,b.dataset.n,on);
         if(r&&r.error)X.toast(esc(r.error),5200);
@@ -676,12 +679,12 @@
       scopeSel=`<label class="select-wrap"><span class="sr-only">Show</span><select id="toolScope"><option value="">All agents</option>${agents.map(a=>`<option value="${esc(a.id)}"${a.id===scope?' selected':''}>${esc(a.name)}</option>`).join('')}</select></label>`;
     }
     const per=`<div class="seg" role="tablist" aria-label="Period"><button role="tab" id="perSession" aria-selected="${!all}" type="button">This session</button><button role="tab" id="perAll" aria-selected="${all}" type="button">All time</button></div>`;
-    const tabs=`<div class="seg" role="tablist" aria-label="Tools view"><button role="tab" id="tabTools" aria-selected="${tab==='tools'}" type="button">Tool usage</button><button role="tab" id="tabAgents" aria-selected="${tab==='agents'}" type="button">Models &amp; context</button><button role="tab" id="tabCost" aria-selected="${tab==='cost'}" type="button">Cost</button>${hasActivity?`<button role="tab" id="tabActivity" aria-selected="${tab==='activity'}" type="button">Activity</button>`:''}</div>`;
+    const tabs=`<div class="seg" role="tablist" aria-label="Tools view"><button role="tab" id="tabTools" aria-selected="${tab==='tools'}" type="button">Tool usage</button><button role="tab" id="tabAgents" aria-selected="${tab==='agents'}" type="button">Models and context</button><button role="tab" id="tabCost" aria-selected="${tab==='cost'}" type="button">Cost</button>${hasActivity?`<button role="tab" id="tabActivity" aria-selected="${tab==='activity'}" type="button">Activity</button>`:''}</div>`;
     const cost=tab==='cost'?costView():null;
     const act=tab==='activity'?await activityView():null;
     const body=act?act.html:cost?cost.html:tab==='tools'?await toolsTab(scope,tot,groups,all):agentsTab(scope,agents);
     if(!cur||cur.kind!=='tools')return;
-    const actBtns=act?`<button class="btn" type="button" id="actCsv"${act.n?'':' disabled'}>Export CSV</button><button class="btn" type="button" id="actJson"${act.n?'':' disabled'}>Export JSON</button><button class="btn" type="button" id="actClear"${act.n?'':' disabled'}>Clear…</button>`:'';
+    const actBtns=act?`<button class="btn" type="button" id="actCsv"${act.n?'':' disabled'}>Export CSV</button><button class="btn" type="button" id="actJson"${act.n?'':' disabled'}>Export JSON</button><button class="btn danger" type="button" id="actClear"${act.n?'':' disabled'}>Clear activity</button>`:'';
     const head=act?`${tabs}<span class="grow"></span>${actBtns}`:cost?`${tabs}${cost.seg}<span class="grow"></span><button class="btn" type="button" id="costCsv"${cost.built.rows.length&&!cost.none?'':' disabled'}>Copy as CSV</button>`:`${per}${scopeSel}${tabs}<span class="grow"></span>`;
     r.innerHTML=`<div class="scr-head"><h2>Tools</h2>${head}<button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>
       <div class="scr-body">${body}</div>`;
@@ -703,7 +706,7 @@
       const l=e.target.closest('[data-open]');if(l){close();X.openAgent(l.dataset.open);return;}
       if(e.target.closest('#cfgSettings')){open('settings',{section:'mcp'});return;}
       if(e.target.closest('#usageReset')){
-        const ok=await dialog({title:'Reset all-time counts?',html:'<p class="dsub">This clears the counts kept across restarts and starts again from today. It does not touch your agents or their history.</p>',buttons:[{label:'Cancel',value:null},{label:'Reset',value:'ok',cls:'primary warn'}]});
+        const ok=await dialog({title:'Reset all-time counts?',html:'<p class="dsub">This clears the counts kept across restarts and starts again from today. It does not touch your agents or their history.</p>',buttons:[{label:'Cancel',value:null},{label:'Reset',value:'ok',cls:'primary danger'}]});
         if(ok&&X.bridge.usageReset){await X.bridge.usageReset();X.toast('All-time counts were reset.',2600);cur.scope=null;paintTools();}
       }
     };
@@ -725,7 +728,7 @@
   }
   async function clearActivity(){
     if(!X.bridge.activityClear)return;
-    const ok=await dialog({title:'Clear the activity log?',html:'<p class="dsub">This deletes every row kept on this computer. Export it first if you need it. It does not touch your agents, their permissions or their history.</p>',buttons:[{label:'Cancel',value:null},{label:'Clear',value:'ok',cls:'primary warn'}]});
+    const ok=await dialog({title:'Clear the activity log?',html:'<p class="dsub">This deletes every row kept on this computer. Export it first if you need it. It does not touch your agents, their permissions or their history.</p>',buttons:[{label:'Cancel',value:null},{label:'Clear',value:'ok',cls:'primary danger'}]});
     if(!ok)return;
     await X.bridge.activityClear().catch(()=>null);
     X.toast('The activity log was cleared.',2600);
