@@ -1,6 +1,7 @@
 # Tasks: MCP servers in a session (spec 058, issue #349)
 
-**Input**: [spec.md](spec.md), [plan.md](plan.md), [research.md](research.md), [data-model.md](data-model.md)
+**Input**: [spec.md](spec.md), [plan.md](plan.md), [research.md](research.md), [data-model.md](data-model.md). Delta 2026-10-20 (issue
+#364, MCP OAuth sign-in): Phase 8.
 **Clarified**: the owner answered Q1-Q11 on 2026-10-20, option A for each (spec.md *Clarifications*). A task that rests on an answer
 names it.
 **Format**: `[ID] [P?] [Story] Description [FR]`. `[P]` = can run in parallel (different files, no dependency). Each task is one
@@ -112,14 +113,83 @@ research.md and change `read:` to `real:` where confirmed. Do not open or paste 
   account yet"; CHANGELOG *Unreleased* line; specs index row; spec 019 `## Changes` note updated from "specified" to "built"
 - [ ] T071 `/speckit-converge`: spec, plan and tasks match what was built; tick tasks
 
+## Phase 8: MCP OAuth sign-in (delta 2026-10-20, issue #364)
+
+Spec *Changes* > 2026-10-20 (FR-060..FR-074). Phase 8a needs no owner answer; Phase 8b waits for T090; Phase 8c needs the owner's go-ahead
+at the time of the run. Builds on T010 (`errorClass`), T011 (words), T020 (`agents:mcp` fields) and T026 (dialog rows).
+
+### Phase 8a: clarify, signals, classifier, masking (only T090 needs the owner; T091-T097 do not wait for it)
+
+- [ ] T090 Owner answers Q12-Q19 (spec *Changes*, open questions); record them under spec.md `## Clarifications` and adjust T098-T104
+- [ ] T091 [P] `src/adapters/mcpauth.ts` `isMcpAuthChallenge(text)`; `scripts/test-mcpauth.ts` (`test:mcpauth` in `test:serial`): the
+  issue's exact text, the runtime phrases of research 7.2, negatives (model text, a usage limit, the app's own 401) [FR-061]
+- [ ] T092 [P] `isAuthError` returns false when `isMcpAuthChallenge` matches; cases in `scripts/test-autherrors.ts` (the issue's text as
+  an `error` status gets no `errorKind: 'auth'`) [FR-062, SC-010]
+- [ ] T093 [P] Types: `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `cancelMcpSignIn?`, `ToolCallEvent.mcpAuth`; event guard (only
+  on a failed `toolCall` with `mcpServer`); contract C2 lines; `fake.ts` members behind the flags [FR-063, FR-064, FR-068]
+- [ ] T094 [P] Copilot mapper: a failed MCP tool with challenge text -> `mcpAuth: true` and that server `needs-auth` + `errorClass:
+  'auth'` (emit `mcp`); the next status replaces it; `remediation` ignored; mapper test with the issue's text [FR-060, FR-063, SC-010]
+- [ ] T095 [P] Codex: `failureReason: reauthenticationRequired` -> `needs-auth` + `errorClass: 'auth'` (extends T023); a failed MCP tool
+  with challenge text -> `mcpAuth` and a list refresh; `test-codex-adapter` [FR-060]
+- [ ] T096 [P] Claude: a failed `mcp__<server>__<tool>` result with challenge text -> `mcpAuth` and one `mcp_status`; mapper and fake
+  CLI tests [FR-060]
+- [ ] T097 Main masks failed MCP tool cards (`maskMcpText`, the session's secret values, no 300 cut) in the renderer hook
+  (`src/main/main.ts:123`); test in `scripts/test-mcp-errormask.ts` (a header value, a `ghp_` token, a URL with a key) [FR-067, SC-011]
+
+### Phase 8b: Sign in, steps and shortcut (after T090)
+
+- [ ] T098 [P] Copilot `startMcpSignIn`: `rpc.mcp.oauth.login({serverName, clientName, callbackSuccessMessage})` when it is a function,
+  else manual; no URL -> connected; `mcpOAuthTokenStorage` per Q12; fake SDK: recorder, no-method mode, no-URL mode, asserts no
+  `handlePendingRequest` and no `onMcpAuthRequest` [FR-064, FR-070, SC-012]
+- [ ] T099 [P] Claude `startMcpSignIn`: `mcp_authenticate {serverName}` without `redirectUri`; `requiresUserAction: false` -> connected;
+  "not supported in this context" -> manual; `mcp_status` every 3 s while open; not launched -> "Send a message first" (Q15); fake CLI
+  test [FR-064, SC-012]
+- [ ] T100 [P] Codex `startMcpSignIn`: `mcpServer/oauth/login {name, threadId}`; completion by `loginId` (else name + thread); success ->
+  next message on a fresh child (Q18); unknown method -> manual; `cancelMcpSignIn` -> `account/login/cancel`; fake app-server test
+  [FR-064, SC-012]
+- [ ] T101 Main: `src/main/mcpsignin.ts` (pure store, injected clock and opener) and `agents:mcpSignIn` / `agents:mcpOpenSignIn` /
+  `agents:mcpCancelSignIn`; `elicitHttpsUrl` check (Q16); host-only replies; drops on connected, Cancel, 10 minutes, End, Restart
+  session; `canSignIn`, `signIn`, `signInSteps` in `agents:mcp`; preload and `DurbarApi`; tests: host only, `http:` and user:password
+  refused, expiry, Cancel, End, no address in the `DURBAR_LOG` sink or activity log [FR-065, SC-011]
+- [ ] T102 Dialog: needs-auth row (hint, Sign in, Switch off for this session, terminal steps with Copy), two-step open (Q13), waiting and
+  time-limit states, toasts, live region; Switch off calls the existing `setMcp` [FR-066, FR-068, FR-069]
+- [ ] T103 Tool card line for `mcpAuth`: "<server> needs you to sign in", **Sign in…** opens the dialog at that row (Q14), **Switch off
+  for this session** [FR-063, FR-066]
+- [ ] T104 Simulator `simmcpauth=1` / `simmcpauth=manual`; screenshots at 1440x900 and 1280x800 (`docs/screenshots/058-mcp-signin-*.png`)
+  [FR-071, FR-073]
+
+### Phase 8c: real checks (needs-owner-approval; 0 AI credits, no prompt; a remote MCP server with OAuth; a browser sign-in on the owner's machine)
+
+Record results in research.md section 7 and change `read:` to `real:`. Do not open, copy or paste any token, keychain entry or log file.
+
+- [ ] T105 [needs-owner-approval] Copilot: a server shows needs-auth (or the issue's tool error with a cached catalog); Sign in returns an
+  `authorizationUrl` on the pinned runtime; after the browser step the row goes Running; with Q12 B, a later session and the CLI's
+  `/mcp auth` share the sign-in [FR-074]
+- [ ] T106 [needs-owner-approval] Claude Code: does the stream-json CLI answer `mcp_authenticate` (docs say no, strings say yes); the row
+  goes Running after the browser step; does `claude mcp login <name>` help Durbar's `--mcp-config` copy [FR-074]
+- [ ] T107 [needs-owner-approval] Codex: does the installed Codex have `mcpServer/oauth/login`; does it accept Durbar's thread override
+  server; completion and the next message using the grant; does `codex mcp login <name>` help [FR-074]
+
+### Phase 8d: docs and close
+
+- [ ] T108 README MCP section (Needs sign-in, Sign in, terminal steps, Switch off for this session, "not checked on a real account yet");
+  CHANGELOG *Unreleased* line; specs index row; spec 019 `[KNOWN GAP]` line from "specified" to "built" [FR-074]
+- [ ] T109 `/speckit-converge` for the delta: spec, plan and tasks match what was built; tick tasks
+
 ## Out of scope (owner decisions 2026-10-20)
 
 - No in-app log viewer (Q5); T080 removed. A viewer would need a new spec and the owner's approval.
 - No new-session variant of Restart session (Q4), no *Restart session* in the More or card menus (Q10), no Codex "Reload servers" (Q8),
   no early Claude CLI launch after Restart session (Q11), no use of Copilot `stopServer` (Q2).
+- Delta 2026-10-20 (issue #364, constitution III, not a question): no call that hands a token, code or callback URL through Durbar (Copilot
+  `onMcpAuthRequest`, `oauth.handlePendingRequest`, `oauth.respond`, `oauth.complete`; Claude `mcp_oauth_callback_url`), no client id or
+  secret asked from the user, no `redirectUri` of Durbar's own. "Sign in with another account" waits for Q19.
 
 ## Dependencies
 
 - T001 (done) before everything. Phase 1 before Phases 2-5. T020 before T021, T026, T032, T041, T052. T040 before T041 before T044. T054 before T052.
 - Phases 3, 4 and 5 are independent of each other after Phase 2. Phase 6 after the phase it checks. Phase 7 last.
+- Phase 8: T091 and T092 depend on nothing. T010 before T093-T096; T091 before T092, T094-T096; T093 before T094-T101; T020 before
+  T101; T011 and T026 before T102; T090 before T098-T104; T101 before T102-T103; Phase 8c after the task it checks; T108-T109 last.
+  T095 extends T023 (same file; do them in order).
 - MVP = Phases 1-2 (words, masked errors, live refresh): it answers the owner's "not clear how to start them" on its own.
