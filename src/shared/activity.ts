@@ -11,7 +11,7 @@ export const ACTIVITY_MAX_ROWS = 5000;
 export const ACTIVITY_ACTION_MAX = 160;
 const NAME_MAX = 80;
 
-export const ACTIVITY_DECISIONS = ['allowed-once', 'allowed-session', 'denied', 'auto-allow-all', 'auto-session-grant', 'mode-change', 'limit-change'] as const;
+export const ACTIVITY_DECISIONS = ['allowed-once', 'allowed-session', 'denied', 'auto-allow-all', 'auto-session-grant', 'mode-change', 'limit-change', 'remote-on', 'remote-off'] as const;
 export type ActivityDecision = (typeof ACTIVITY_DECISIONS)[number];
 
 export interface ActivityRow {
@@ -75,12 +75,12 @@ export function appendCapped(rows: ActivityRow[], row: ActivityRow, max: number 
 }
 
 /**
- * One CSV cell: a value that starts with `= + - @` (or tab / carriage return) gets a leading `'` so a spreadsheet does not run it
+ * One CSV cell: a value that starts with `= + - @ | %` (or tab / carriage return) gets a leading `'` so a spreadsheet does not run it
  * as a formula; then the value is quoted when it holds a comma, quote or line break, with quotes doubled.
  */
 export function csvCell(v: unknown): string {
   let s = typeof v === 'string' ? v : v == null ? '' : String(v);
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  if (/^[=+\-@|%\t\r]/.test(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 

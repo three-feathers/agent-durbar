@@ -1369,7 +1369,9 @@ function attentionItems(list,withText){
     const card=a.live||chats[a.id]?pendingCardOf(a):null; /* never build a demo chat just to look */
     if(card&&!cardKey.has(card))cardKey.set(card,++cardSeq);
     const kind=card?(card.classList.contains('question')?'q':card.classList.contains('limit')?'l':'p'):(vis(a)==='error'?'e':a.limit?'l':'w');
-    const text=!withText?'':card?requestText(card):kind==='e'?'Hit an error and needs a look.':kind==='l'?'Reached its spending limit.':'Waiting for you.';
+    /* the OS notification never carries the request itself (a command can hold a token, and it would sit on the lock screen and in the
+       notification history): only what kind of answer is needed (security review, 2026-10-20) */
+    const text=!withText?'':kind==='q'?'Has a question for you.':kind==='p'?'Asks for your OK.':kind==='e'?'Hit an error and needs a look.':kind==='l'?'Reached its spending limit.':'Waiting for you.';
     return {key:a.id+'|'+kind+'|'+(card?cardKey.get(card):''),id:a.id,name:a.name,text};
   });
 }
@@ -3107,6 +3109,8 @@ function updateRemoteUi(a){
 const remoteBack=()=>$('moreBtn')||$('panelTitle');
 let remoteBusy=false;
 async function remoteOn(a){
+  /* spec 054 FR-011: never together with Allow all (main refuses too); say why before asking anything */
+  if(a&&a.info&&a.info.permMode==='allow'){toast('Remote control is off in Allow all: anyone steering this session on GitHub could make it run commands without asking you. Switch '+esc(a.name)+' to Ask first, then turn it on.',7000).classList.add('err');return;}
   if(!canRemote(a)||remoteBusy||a.remote)return;
   const r=await askDialog({title:'Control this session from GitHub?',
     body:'Durbar turns on remote control for this session. Its messages are sent to GitHub, so you can follow and steer it from github.com and GitHub Mobile. Anyone who can see this session on GitHub can steer it.',
@@ -3115,6 +3119,7 @@ async function remoteOn(a){
   if(!r||r.value!=='on')return;
   remoteBusy=true; let res;
   try{res=await bridge.setRemote(a.id,true);}catch(e){res={ok:false,error:String(e&&e.message||e)};}finally{remoteBusy=false;}
+  if(res&&res.cancelled)return; /* spec 054 FR-011: the user said no in the main process's own confirmation */
   if(!res||!res.ok){toast('Could not turn on remote control: '+esc(res&&res.error||'unknown error'),6000).classList.add('err');return;}
   a.remote={url:typeof res.url==='string'?res.url:'',steerable:res.steerable!==false,visibility:res.visibility||''};
   updateRemoteUi(a);

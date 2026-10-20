@@ -30,3 +30,4 @@
 
 - [ ] T040 Check whether Codex in the ChatGPT mobile app sees a session run by `codex app-server`, and whether the app-server has a method or flag for it (costs about 1 prompt) [FR-030]
 - [ ] T041 If yes: plan Codex `setRemote` on the same capability (FR-031)
+- [x] T011 FR-011 security review: native consent in main, refused in Allow all (and Allow all refused while on), off on GitHub before End/Remove/quit, activity log rows, fromApp on remote/mode/schedule handlers; notification body without the command
