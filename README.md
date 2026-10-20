@@ -236,7 +236,7 @@ npm run pack:dir          # unpacked app for this OS in release/ (also dist, dis
 ## Known limits
 
 - **Only Linux has been run by hand.** macOS and Windows packages are built, and a packaged-app check runs on all three in CI, but nobody has used them on real machines yet.
-- **Where your data lives:** the installed app keeps its settings, folders and saved MCP servers in `agent-durbar` under the OS app-data folder (`%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `~/.config` on Linux). `npm start` and the simulator use their own `agent-durbar-dev` folder next to it, so developing never touches the installed app's data. To keep data from an older dev run, start once with `DURBAR_USER_DATA=<old folder>` or copy the folder by hand. `[KNOWN GAP]` On macOS, saved MCP secrets are encrypted with a key tied to the app name, so you may have to enter them again once; not checked on a real Mac.
+- **Where your data lives:** the installed app keeps its settings, folders and saved MCP servers in `agent-durbar` under the OS app-data folder (`%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `~/.config` on Linux). `npm start` and the simulator use their own `agent-durbar-dev` folder next to it, so developing never touches the installed app's data. To keep data from an older dev run, start once with `DURBAR_USER_DATA=<old folder>` or copy the folder by hand.
 - **Unsigned builds:** expect the OS warnings above.
 - **VS Code's own chats are read-only.** VS Code keeps them in an undocumented store that cannot be continued from outside; Durbar shows a copy. Copilot CLI/SDK sessions *can* be resumed.
 - **Caps are soft:** one model response can overshoot them, and the figures are what each harness reports.

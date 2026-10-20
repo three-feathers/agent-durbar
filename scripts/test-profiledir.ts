@@ -3,6 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { APP_NAME, profileDir } from '../src/main/profiledir';
+import { MENU_APP_NAME } from '../src/main/appmenu';
 import { aboutPanelOptions } from '../src/shared/about';
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -31,16 +32,17 @@ const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
 assert.strictEqual(APP_NAME, 'Agent Durbar');
 assert.strictEqual(APP_NAME, pkg.build.productName);
 assert.strictEqual(APP_NAME, aboutPanelOptions('x').applicationName);
+assert.strictEqual(MENU_APP_NAME, pkg.build.productName);
 assert.strictEqual(pkg.name, 'agent-durbar');
 assert.strictEqual(pkg.productName, undefined, 'a top-level productName would move the profile folder');
 
-// main.ts order (D2): the folder is set before anything reads it and before whenReady; setName is the first statement in whenReady
+// main.ts order (D2): the folder is set before anything reads it and before whenReady; no setName at all
 const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8');
 const setPath = main.indexOf("app.setPath('userData', profileDir(");
 const firstGet = main.indexOf("getPath('userData')");
 const ready = main.indexOf('app.whenReady()');
 assert.ok(setPath > 0 && setPath < firstGet && firstGet < ready, 'setPath(userData, profileDir) before the first getPath(userData) and whenReady');
 assert.ok(!/app\.setPath\('userData', dev\.DURBAR_USER_DATA\)/.test(main), 'the old bare DURBAR_USER_DATA line is gone');
-const body = main.slice(main.indexOf('{', ready) + 1).trimStart();
-assert.ok(body.startsWith('app.setName(APP_NAME);'), 'app.setName(APP_NAME) is the first statement in whenReady');
+// no setName: the identity (app.getName() = agent-durbar) keeps the Keychain item "agent-durbar Safe Storage", libsecret and WM_CLASS (D2)
+assert.ok(!/app\.setName\(/.test(main), 'main.ts must not call app.setName');
 console.log('profiledir ok');
