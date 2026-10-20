@@ -17,6 +17,7 @@
 const assert = require('assert');
 const path = require('path');
 const OUT = process.env.OUT || '/tmp';
+const { jsLiteral } = require('./check-office-overlap.js');
 const INDEX = path.join(process.cwd(), 'dist', 'renderer', 'index.html');
 
 module.exports = async (ctx) => {
@@ -24,8 +25,8 @@ module.exports = async (ctx) => {
   const shot = async (name) => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(400); await ctx.shot(path.join(OUT, name)); console.log('[012-signin] saved', name); };
   const card = () => js(`(()=>{const c=[...document.querySelectorAll('#chat .note.signin')].pop();if(!c)return null;const d=c.querySelector('details');return {title:(c.querySelector('.signin-title')||{}).textContent,text:c.textContent,btns:[...c.querySelectorAll('button')].map(b=>b.textContent.trim()),details:d?{open:d.open,text:d.textContent}:null};})()`);
   const waitCard = async (want) => { for (let i = 0; i < 40; i++) { const c = await card(); if (c && (!want || want(c))) return c; await ctx.sleep(200); } return card(); };
-  const clickCard = (label) => js(`(()=>{const c=[...document.querySelectorAll('#chat .note.signin')].pop();const b=c&&[...c.querySelectorAll('button')].find(x=>x.textContent.trim()===${JSON.stringify(label)});if(b)b.click();return !!b;})()`);
-  const type = (t) => js(`(()=>{const i=document.getElementById('msgInput');i.value=${JSON.stringify(t)};i.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})()`);
+  const clickCard = (label) => js(`(()=>{const c=[...document.querySelectorAll('#chat .note.signin')].pop();const b=c&&[...c.querySelectorAll('button')].find(x=>x.textContent.trim()===${jsLiteral(label)});if(b)b.click();return !!b;})()`);
+  const type = (t) => js(`(()=>{const i=document.getElementById('msgInput');i.value=${jsLiteral(t)};i.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})()`);
   const userMsgs = () => js(`[...document.querySelectorAll('#chat .msg.user .bubble')].map(b=>b.textContent)`);
   /* the simulated sign-in: the dialog opens with the link and code; the paste box finishes it at once (no 60 s wait) */
   const finishSignIn = async () => {
