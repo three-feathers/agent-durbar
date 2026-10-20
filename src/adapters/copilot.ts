@@ -130,12 +130,13 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
   modelSwitch: Object.freeze({ verified: true, contextTier: true }), // spec 030 Phase 3 (real 2026-10-20, Copilot Pro): switch, effort, long tier, confirmation and compact-and-switch (T041, T044, T045)
   remote: true, // spec 054 FR-002: rpc.remote.enable/disable (@experimental; real 2026-10-20: `started: false` outside a GitHub repository, never seen started)
+  remoteService: Object.freeze({ name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }), // spec 054 FR-060
   deleteSession: true, // spec 006 FR-028: CopilotClient.deleteSession (read: SDK 1.0.22 client.d.ts; never run on a real session)
   oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (real 2026-10-20: no tool ran, nothing left on disk)
 });
 
-/** Spec 054 T020: what the user sees when the runtime answers `started: false` (seen in folders that are not a GitHub repository). */
-export const REMOTE_NOT_STARTED = 'Copilot did not start remote control for this session and gave no reason. It may need a folder that is a GitHub repository.';
+/** Spec 054 FR-063 (real, 2026-10-20): not started in a plain folder, a `git init` folder and a private GitHub repository alike, on Copilot Free. */
+export const REMOTE_NOT_STARTED = 'Copilot did not start remote control and gave no reason. It needs a paid Copilot plan: on Copilot Free it never started in our checks, on Copilot Pro it did.';
 
 /** Spec 040 FR-015: how long one `generateText` may take before it is aborted (the same 3 minutes as Claude and Codex). */
 export const ONE_SHOT_TIMEOUT_MS = 180_000;
