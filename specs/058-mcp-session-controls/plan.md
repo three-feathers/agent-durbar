@@ -113,7 +113,8 @@ Phase 6 removes the labels once checked. No log viewer (Q5).
 ## Delta: MCP OAuth sign-in (issue #364, 2026-10-20)
 
 **Spec**: [spec.md](spec.md) *Changes* > 2026-10-20 (FR-060..FR-074, SC-010..SC-012). **Research**: [research.md](research.md) section 7.
-**Open**: owner questions Q12-Q19 (T090). Tasks that rest on an answer name it; nothing past Phase 8a is built before T090.
+**Clarified**: the owner answered Q12-Q19 on 2026-10-20 (Q12 B persistent, Q13-Q19 A; spec.md *Clarifications*, T090 done). Tasks
+that rest on an answer name it.
 
 ### Summary
 
@@ -124,7 +125,7 @@ cannot run; offer *Switch off for this session* next to each signal; mask failed
 
 ### Constitution Check (delta)
 
-- **I**: spec delta, research, plan and tasks first; Q12-Q19 asked, not guessed.
+- **I**: spec delta, research, plan and tasks first; Q12-Q19 asked and answered by the owner, not guessed.
 - **II**: vendor calls (`oauth.login`, `mcp_authenticate`, `mcpServer/oauth/login`) and vendor phrases (`mcpauth.ts`) stay in
   `src/adapters/`; the window gets `needs-auth`, `mcpAuth: true`, `canSignIn`, a host and plain steps text.
 - **III**: sign-in belongs to the vendor runtime: Durbar never calls a token-carrying method or registers `onMcpAuthRequest`; the address
@@ -153,7 +154,7 @@ cannot run; offer *Switch off for this session* next to each signal; mask failed
 4. **Adapters' `startMcpSignIn`**:
    - Copilot: `const fn = session.rpc.mcp.oauth?.login`; not a function -> `McpSignInManual`; call with `{ serverName, clientName:
      'Agent Durbar', callbackSuccessMessage: 'Signed in. You can go back to Agent Durbar.' }`; `authorizationUrl` -> `{kind:'browser'}`,
-     else `{kind:'connected'}`. Session config adds `mcpOAuthTokenStorage: 'persistent'` only if Q12 is B. Fake SDK: `oauth.login`
+     else `{kind:'connected'}`. Session config (create and resume) adds `mcpOAuthTokenStorage: 'persistent'` (Q12 B). Fake SDK: `oauth.login`
      recorder, a mode without it, a mode that returns no URL; asserts `handlePendingRequest` is never called and no `onMcpAuthRequest`.
    - Claude: `transport.request({ subtype: 'mcp_authenticate', serverName }, 30_000)`; reply `authUrl` + `requiresUserAction` ->
      browser; `requiresUserAction: false` -> connected; an error containing "not supported in this context" -> manual. Poll `mcp_status`
@@ -181,5 +182,5 @@ cannot run; offer *Switch off for this session* next to each signal; mask failed
 
 ### Order
 
-Phase 8a (no answers needed): T091-T097. Phase 8b (after T090): T098-T104. Phase 8c (owner go-ahead): T105-T107. Then T108-T109.
+Phase 8a (no answers needed): T091-T097. Phase 8b (T090 done): T098-T104. Phase 8c (owner go-ahead): T105-T107. Then T108-T109.
 Depends on 058 Phase 1-2 for `errorClass`, the word table and the new dialog rows (T010, T011, T020, T026).

@@ -3,8 +3,8 @@
 **Feature Branch**: `058-mcp-session-controls`
 **Created**: 2026-10-20
 **Status**: Specified and clarified (spec, research, plan and tasks; **no code**). The owner answered Q1-Q11 on 2026-10-20 (all option A,
-see *Clarifications*). Delta 2026-10-20 (issue #364, MCP OAuth sign-in, FR-060..FR-074): specified, **open questions Q12-Q19 for the
-owner**, no code (see *Changes*).
+see *Clarifications*). Delta 2026-10-20 (issue #364, MCP OAuth sign-in, FR-060..FR-074): specified and clarified (the owner answered
+Q12-Q19 on 2026-10-20, all the recommended option), no code (see *Changes*).
 **Input**: Issue #349. Owner (Paco, 2026-10-20): "in a session, when I open MCP I can enable and disable servers, but I miss VS Code's
 start/stop/show logs; it is not clear how to start them."
 
@@ -46,6 +46,18 @@ Answered by the owner (Paco, about 08:45 CEST, through the coordinator). He chos
 - Q9 Real checks → A: one no-prompt real check per agent app (0 AI credits), only with the owner's go-ahead at that time.
 - Q10 Where Restart session lives → A: only in the MCP dialog.
 - Q11 Claude after Restart session → A: Claude's servers start with the next message, and the dialog says so; the CLI is not launched early.
+
+Delta for issue #364 (MCP OAuth sign-in), answered by the owner (Paco, about 10:05 CEST, through the coordinator). He chose the
+recommended option for all eight.
+
+- Q12 Copilot token storage → B: `persistent`; the runtime keeps the MCP sign-in in the OS keychain, Durbar never touches it.
+- Q13 Opening the browser → A: two steps, "Sign-in page on <host>", then **Open sign-in page**.
+- Q14 Where Sign in lives → A: in the MCP dialog row; the tool card's **Sign in…** opens the dialog at that row.
+- Q15 Claude CLI not launched yet → A: "Send a message first", plus the terminal steps; the CLI is not launched for a sign-in.
+- Q16 Non-https authorization pages → A: refused, and the terminal steps are shown.
+- Q17 Repeated failures → A: only **Switch off for this session** is offered; nothing is switched off by itself.
+- Q18 Codex after a sign-in → A: "Signed in: applies with your next message" (fresh child, same thread).
+- Q19 "Sign in with another account" → A: not offered for now.
 
 ## User Scenarios & Testing
 
@@ -365,7 +377,8 @@ All answered by the owner: option A for each (see *Clarifications*). The options
 
 ### 2026-10-20: MCP OAuth sign-in (issue #364)
 
-**Status**: specified, **no code**. Open questions Q12-Q19 below wait for the owner. Research: [research.md](research.md) section 7
+**Status**: specified and clarified, **no code**. The owner answered Q12-Q19 on 2026-10-20 (Q12 B, the rest A: all the recommended
+option; see *Clarifications*). Research: [research.md](research.md) section 7
 (read only; no real session, no credits, no user config or token file opened). Plan: [plan.md](plan.md) *Delta: MCP OAuth sign-in*.
 Tasks: [tasks.md](tasks.md) Phase 8 (T090-T109).
 
@@ -380,7 +393,7 @@ contains `401`, which the spec 012 FR-157 classifier (`src/adapters/autherrors.t
 | | Copilot (SDK 1.0.22, runtime 1.0.98) | Claude Code (CLI 2.1.304) | Codex (app-server, `main` 0144894) |
 | --- | --- | --- | --- |
 | Start the runtime's own sign-in | `session.rpc.mcp.oauth.login({serverName})` returns `authorizationUrl`; the runtime runs discovery, PKCE, its loopback callback, token exchange, storage and reconnect | control request `mcp_authenticate {serverName}` returns `authUrl`, `requiresUserAction`; the CLI runs its localhost callback and reconnects (program strings; the docs say `-p`/SDK runs cannot sign in) | `mcpServer/oauth/login {name, threadId}` returns `authorizationUrl`, `loginId`; `mcpServer/oauthLogin/completed` follows; "start a fresh session after success" |
-| Who keeps the token | the runtime (`mcpOAuthTokenStorage`: `in-memory` by default, or `persistent` = OS keychain, Q12) | the CLI ("stored securely", per endpoint) | Codex (`mcp_oauth_credentials_store = "auto"`: keyring, else `CODEX_HOME/.credentials.json`) |
+| Who keeps the token | the runtime (`mcpOAuthTokenStorage`: `in-memory` by default, or `persistent` = OS keychain; Durbar sets `persistent`, Q12) | the CLI ("stored securely", per endpoint) | Codex (`mcp_oauth_credentials_store = "auto"`: keyring, else `CODEX_HOME/.credentials.json`) |
 | From a terminal | `copilot`, then `/mcp auth <name>` | `claude mcp login <name>` (or `/mcp` > Authenticate) | `codex mcp login <name>` |
 | Needs-auth signal | status `needs-auth`; the tool error text of the issue | status `needs-auth` | `runtimeStatus: authenticationRequired`, `authStatus: notLoggedIn`, `failureReason: reauthenticationRequired` |
 
@@ -453,7 +466,8 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   `mcpSignInSteps` (Durbar never runs it):
   - Copilot: "In a terminal, run `copilot`, type `/mcp auth <name>` and finish in your browser. Then use *Restart session with these
     servers*." Only for servers in the Copilot CLI list; for a folder extra: "This server is only known to Agent Durbar; use Sign in
-    here." Whether a Durbar session then sees that sign-in depends on Q12 (`[KNOWN GAP]`).
+    here." With `persistent` storage (Q12 B) the runtime keeps MCP sign-ins in the OS keychain; whether that is the same entry the CLI's
+    `/mcp auth` writes, so a CLI sign-in is seen by a Durbar session, is unverified (`[KNOWN GAP]`, T105).
   - Claude Code: "In a terminal, run `claude mcp login <name>`, then use *Restart session with these servers*." Only for a server that is
     also in Claude Code's own MCP settings; whether Durbar's `--mcp-config` copy reuses that sign-in is unverified (`[KNOWN GAP]`).
   - Codex: "In a terminal, run `codex mcp login <name>`, then use *Restart session with these servers*." Only for a server in Codex's
@@ -466,9 +480,11 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   - `connected`: "Running" and a toast "Signed in to <name>". Codex: "Signed in: applies with your next message". The time limit: back to
     "Needs sign-in" with "Sign-in was not finished".
   - The tool card's **Sign in…** opens this dialog at that row (Q14). Text at least 10.5px; fits 1280x800 (FR-030).
-- **FR-070** **Copilot token storage** follows Q12: A) Durbar does not set `mcpOAuthTokenStorage` (the SDK's documented default
-  `in-memory`: the runtime keeps the token only for that session); B) Durbar sets `persistent` (the runtime keeps it in the OS keychain,
-  shared across sessions, possibly with the Copilot CLI). Durbar never reads that store either way.
+- **FR-070** **Copilot token storage** (Q12 B): the Copilot session config (create and resume) sets `mcpOAuthTokenStorage: 'persistent'`,
+  so the runtime keeps an MCP sign-in in the OS keychain, shared across sessions (`read:` `types.d.ts:2386-2393`). This is the vendor
+  runtime's own store, not Durbar storage: Durbar never reads, lists, copies or clears it, and never logs the setting's effect. The
+  one-shot session (spec 040 `oneShotConfig`, no MCP) is unchanged. Whether the entry is shared with the Copilot CLI is unverified
+  (FR-074, T105).
 - **FR-071** **Simulator** (constitution IV): page address `simmcpauth=1` gives each sim kind one server in needs-auth and a Copilot tool
   card with the issue's exact text; **Sign in** -> host `auth.example.com` -> **Open sign-in page** shows a toast and opens nothing ->
   "Running" after 2 s (Codex: "applies with your next message"). `simmcpauth=manual` shows the FR-068 steps instead.
@@ -499,13 +515,17 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
 - Two sign-ins for the same server: the second press is refused while one is open; another server's sign-in may run.
 - The session ends or restarts while the browser is open: the held address is dropped; the runtime's listener goes with the session
   (Claude, Codex child) or ends on its own (Copilot, `[KNOWN GAP]`).
-- Copilot FR-158 restarts the shared runtime after an app sign-in: with Q12 A every in-memory MCP sign-in of every Copilot session is lost.
-- The same server name in two Copilot agents: each session signs in for itself with Q12 A; with Q12 B one sign-in may serve both.
+- Copilot FR-158 restarts the shared runtime after an app sign-in: with `persistent` storage (Q12 B) the MCP sign-ins are expected to
+  survive in the keychain (unverified, T105).
+- The same server in two Copilot agents: with `persistent` storage one sign-in is expected to serve both (unverified, T105).
 - A server that needs a pre-registered OAuth client (no dynamic registration): the runtime's error is shown masked, with the FR-068 steps;
   Durbar never asks for a client id or secret.
 - The authorization server is `http:`: refused (Q16).
 
-#### Open questions for the owner (delta)
+#### Open questions for the owner (delta, resolved 2026-10-20)
+
+All answered by the owner: Q12 B, Q13-Q19 A, the recommended option each time (see *Clarifications*). The options are kept
+below as the record of what was offered.
 
 - **Q12 Copilot token storage.** A) Keep the SDK default (`in-memory`): sign in again for each Durbar session; nothing is kept after it
   ends. B) `persistent` (recommended): the runtime keeps the sign-in in the OS keychain like the Copilot CLI and VS Code do, so one sign-in

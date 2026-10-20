@@ -115,12 +115,13 @@ research.md and change `read:` to `real:` where confirmed. Do not open or paste 
 
 ## Phase 8: MCP OAuth sign-in (delta 2026-10-20, issue #364)
 
-Spec *Changes* > 2026-10-20 (FR-060..FR-074). Phase 8a needs no owner answer; Phase 8b waits for T090; Phase 8c needs the owner's go-ahead
+Spec *Changes* > 2026-10-20 (FR-060..FR-074). Phase 8a needs no owner answer; Phase 8b needed T090 (done 2026-10-20); Phase 8c needs the owner's go-ahead
 at the time of the run. Builds on T010 (`errorClass`), T011 (words), T020 (`agents:mcp` fields) and T026 (dialog rows).
 
 ### Phase 8a: clarify, signals, classifier, masking (only T090 needs the owner; T091-T097 do not wait for it)
 
-- [ ] T090 Owner answers Q12-Q19 (spec *Changes*, open questions); record them under spec.md `## Clarifications` and adjust T098-T104
+- [x] T090 Owner answers Q12-Q19 (spec *Changes*, open questions); record them under spec.md `## Clarifications` and adjust T098-T104
+  (2026-10-20: Q12 B, Q13-Q19 A)
 - [ ] T091 [P] `src/adapters/mcpauth.ts` `isMcpAuthChallenge(text)`; `scripts/test-mcpauth.ts` (`test:mcpauth` in `test:serial`): the
   issue's exact text, the runtime phrases of research 7.2, negatives (model text, a usage limit, the app's own 401) [FR-061]
 - [ ] T092 [P] `isAuthError` returns false when `isMcpAuthChallenge` matches; cases in `scripts/test-autherrors.ts` (the issue's text as
@@ -139,7 +140,7 @@ at the time of the run. Builds on T010 (`errorClass`), T011 (words), T020 (`agen
 ### Phase 8b: Sign in, steps and shortcut (after T090)
 
 - [ ] T098 [P] Copilot `startMcpSignIn`: `rpc.mcp.oauth.login({serverName, clientName, callbackSuccessMessage})` when it is a function,
-  else manual; no URL -> connected; `mcpOAuthTokenStorage` per Q12; fake SDK: recorder, no-method mode, no-URL mode, asserts no
+  else manual; no URL -> connected; `mcpOAuthTokenStorage: 'persistent'` on create and resume (Q12 B); fake SDK: recorder, no-method mode, no-URL mode, asserts no
   `handlePendingRequest` and no `onMcpAuthRequest` [FR-064, FR-070, SC-012]
 - [ ] T099 [P] Claude `startMcpSignIn`: `mcp_authenticate {serverName}` without `redirectUri`; `requiresUserAction: false` -> connected;
   "not supported in this context" -> manual; `mcp_status` every 3 s while open; not launched -> "Send a message first" (Q15); fake CLI
@@ -163,7 +164,7 @@ at the time of the run. Builds on T010 (`errorClass`), T011 (words), T020 (`agen
 Record results in research.md section 7 and change `read:` to `real:`. Do not open, copy or paste any token, keychain entry or log file.
 
 - [ ] T105 [needs-owner-approval] Copilot: a server shows needs-auth (or the issue's tool error with a cached catalog); Sign in returns an
-  `authorizationUrl` on the pinned runtime; after the browser step the row goes Running; with Q12 B, a later session and the CLI's
+  `authorizationUrl` on the pinned runtime; after the browser step the row goes Running; with `persistent` storage (Q12 B), a later session and the CLI's
   `/mcp auth` share the sign-in [FR-074]
 - [ ] T106 [needs-owner-approval] Claude Code: does the stream-json CLI answer `mcp_authenticate` (docs say no, strings say yes); the row
   goes Running after the browser step; does `claude mcp login <name>` help Durbar's `--mcp-config` copy [FR-074]
@@ -183,7 +184,9 @@ Record results in research.md section 7 and change `read:` to `real:`. Do not op
   no early Claude CLI launch after Restart session (Q11), no use of Copilot `stopServer` (Q2).
 - Delta 2026-10-20 (issue #364, constitution III, not a question): no call that hands a token, code or callback URL through Durbar (Copilot
   `onMcpAuthRequest`, `oauth.handlePendingRequest`, `oauth.respond`, `oauth.complete`; Claude `mcp_oauth_callback_url`), no client id or
-  secret asked from the user, no `redirectUri` of Durbar's own. "Sign in with another account" waits for Q19.
+  secret asked from the user, no `redirectUri` of Durbar's own. No "Sign in with another account" (Q19 A): no `forceReauth`, no `mcp_clear_auth`.
+- No automatic switch-off after repeated failures (Q17 A); no early Claude CLI launch for a sign-in (Q15 A); no `http:` authorization
+  pages (Q16 A); no automatic Restart session after a Codex sign-in (Q18 A).
 
 ## Dependencies
 

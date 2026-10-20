@@ -198,7 +198,7 @@ was opened.** Sources (program files and public docs only):
 | `oauth.handlePendingRequest`, `oauth.respond`, event `mcp.oauth_required`, `onMcpAuthRequest` | The **host** acquires a token and hands it to the runtime (`McpAuthToken.accessToken`). The SDK registers interest in `mcp.oauth_required` only when `onMcpAuthRequest` is set. | **Never** (Durbar would handle a token; constitution III). | `read:` `rpc.d.ts:33766-33772, 33818-33824`; `types.d.ts:1738-1779, 2283-2288`; `client.js:1401-1405`; `session.js:835-846` |
 | `oauth.complete` (host-managed `redirectUri`) | The host receives the callback URL (with the code) and passes it on. | **Never** (the code would pass through Durbar). | `read:` `rpc.d.ts:33795-33801, 15793-15803` |
 | `oauth.probe` | "Passively probes ... whether OAuth is required ... Does not start OAuth ... or mutate MCP connection state." | Not now (a network call per dialog open); a later option to confirm a derived needs-auth. | `read:` `rpc.d.ts:33802-33808, 3379-3411` |
-| `mcpOAuthTokenStorage` (session config) | `"persistent"` = "tokens are stored in the OS keychain (shared across sessions)"; `"in-memory"` = "discarded when the session ends"; `@default "in-memory"`. Durbar does not set it. | Q12 (FR-070). | `read:` `types.d.ts:2386-2393`; `client.js:1341, 1625` |
+| `mcpOAuthTokenStorage` (session config) | `"persistent"` = "tokens are stored in the OS keychain (shared across sessions)"; `"in-memory"` = "discarded when the session ends"; `@default "in-memory"`. Durbar does not set it. | `persistent` (Q12 B, FR-070). | `read:` `types.d.ts:2386-2393`; `client.js:1341, 1625` |
 | Status `needs-auth`, `errorClassification` | `McpServerStatus` includes `needs-auth`; `errorClassification` values are not listed ("Additional string values may be introduced"). | FR-060 (status); the auth value of `errorClassification` stays unknown. | `read:` `session-events.d.ts:1550-1565, 13301-13319` |
 | Tool error shape | `ToolExecutionCompleteError {code?, message, remediation?}`; `RemediationAction` values are about the Copilot account and sandbox (`sign_in` = "Authenticate again with the Copilot backend"), not MCP. | FR-061 reads `message`; `remediation: sign_in` must **not** be read as an MCP sign-in. | `read:` `session-events.d.ts:7564-7574, 64-76` |
 | Runtime texts | `MCP tool catalog changed before tool "`, `Failed to verify cached MCP tools: `, `MCP OAuth challenge required (HTTP `, `MCP server "<name>" requires authentication. Run \`/mcp auth <name>\` to authenticate.`, `Re-authentication required for MCP server "<name>". Run /mcp auth <name>`. | FR-061 phrases. | `real:` issue #364 (first text); `read:` `runtime.node` strings (all) |
@@ -240,9 +240,9 @@ was opened.** Sources (program files and public docs only):
 | Cancel | none for a manual login | none documented | `account/login/cancel` |
 | Needs-auth signals | status, tool error text | status | status, `authStatus`, `failureReason` |
 | Manual fallback | `copilot` then `/mcp auth <name>` | `claude mcp login <name>` | `codex mcp login <name>` |
-| Token kept by | runtime (in-memory or keychain, Q12) | CLI (per endpoint) | Codex (keyring or file) |
+| Token kept by | runtime (keychain: Durbar sets `persistent`, Q12 B) | CLI (per endpoint) | Codex (keyring or file) |
 
-### 7.6 Decisions proposed (owner to confirm, spec Q12-Q19)
+### 7.6 Decisions (confirmed by the owner on 2026-10-20: Q12 B, Q13-Q19 A, spec.md *Clarifications*)
 
 1. Start each runtime's own flow on an explicit click; main holds the address, the window gets the host; https only; never a
    token-carrying call (`handlePendingRequest`, `onMcpAuthRequest`, `oauth.complete`, `mcp_oauth_callback_url`).
@@ -250,3 +250,6 @@ was opened.** Sources (program files and public docs only):
 3. Offer **Switch off for this session** next to every needs-auth signal; mask the failed tool card.
 4. Real checks need a remote MCP server with OAuth and a browser sign-in on the owner's machine; they send no prompt (0 AI credits) but
    use real accounts, so they wait for the owner (T105-T107).
+5. Owner answers (2026-10-20): Copilot sessions set `mcpOAuthTokenStorage: 'persistent'` (Q12 B); two-step open (Q13); Sign in in the
+   dialog row, the card opens the dialog there (Q14); Claude not launched: "Send a message first" + steps (Q15); https only (Q16);
+   switch-off offered, never automatic (Q17); Codex "applies with your next message" (Q18); no "another account" (Q19).

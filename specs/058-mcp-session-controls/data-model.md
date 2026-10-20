@@ -117,4 +117,4 @@ the renderer per row).
 
 - `signIns: Map<agentId, Map<serverName, { url: string; host: string; until: number }>>` (`src/main/mcpsignin.ts`): at most one per
   server, 10 minutes, cleared on `connected`, Cancel, time limit, End, Restart session, quit. Never logged, never serialized.
-- Copilot only, Q12 B: the session config adds `mcpOAuthTokenStorage: 'persistent'` (a runtime setting, not Durbar storage).
+- Copilot only (Q12 B, owner 2026-10-20): the session config adds `mcpOAuthTokenStorage: 'persistent'` (a runtime setting, not Durbar storage).

@@ -45,7 +45,7 @@
 - **FR-021** An MCP server's error text is masked in main before it reaches the window, on every path (the `agents:mcp` answer and the live `mcp` status events): the session's stored secret values and the environment's secrets first, then secret shapes and URLs (`maskSecretUrl`), then cut to 300 characters (after masking, so a secret straddling the cut leaves no prefix). Added by the 2026-10-20 delta (issue #360). [IMPLEMENTED] test: `scripts/test-mcp-errormask.ts`; not seen on a real server error.
 
 ## Out of scope / known gaps
-- `[KNOWN GAP]` No MCP OAuth flow (servers that need auth show "needs auth"). *2026-10-20:* specified in [058](../058-mcp-session-controls/spec.md) (delta "MCP OAuth sign-in", issue #364, FR-060..FR-074): start the agent app's own sign-in from the MCP dialog, terminal steps otherwise, a 401 maps to needs-auth; not built yet, open questions Q12-Q19.
+- `[KNOWN GAP]` No MCP OAuth flow (servers that need auth show "needs auth"). *2026-10-20:* specified in [058](../058-mcp-session-controls/spec.md) (delta "MCP OAuth sign-in", issue #364, FR-060..FR-074): start the agent app's own sign-in from the MCP dialog, terminal steps otherwise, a 401 maps to needs-auth; not built yet; the owner answered Q12-Q19 on 2026-10-20 (Copilot keeps MCP sign-ins in the OS keychain, two-step open, https only).
 - `[KNOWN GAP]` `excludedTools`/`availableTools` per MCP tool is not exposed (per-server on/off only); the runtime supports it (research: types only).
 - `[KNOWN GAP]` HTTP/SSE servers: configuration and passing are implemented from the SDK types but not tested against a real remote server.
 - `[KNOWN GAP]` Counts are not persisted across app restarts and do not include history of resumed sessions.
