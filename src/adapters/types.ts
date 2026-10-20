@@ -15,6 +15,18 @@ export type { ElicitAction, ElicitAnswer, ElicitRequest, McpServerSpec, CompactR
 
 export type AgentStatus = 'idle' | 'working' | 'needs-permission' | 'error' | 'stopped';
 
+/** Spec 040 FR-015: options of `generateText`. */
+export interface GenerateTextOptions {
+  disabledMcpServers?: string[];
+}
+
+/** Spec 040 FR-015: what `generateText` returns. */
+export interface GenerateTextResult {
+  text: string;
+  costUsd?: number;
+  nanoAiu?: number;
+}
+
 export interface StartOptions {
   /** Folder or .code-workspace file; one session per workspace. */
   workspace: string;
@@ -420,8 +432,12 @@ export interface AgentAdapter {
   compact?(sessionId: string, focus?: string): Promise<CompactResult>;
   /** A markdown hand-off summary of the conversation, made without changing it (spec 030 FR-034). Optional (`capabilities.handoff`). */
   handoffSummary?(sessionId: string): Promise<HandoffResult>;
-  /** One prompt answered with no tools, no MCP and no session kept, in an empty temp folder (spec 040 FR-015). Optional (`capabilities.oneShot`). */
-  generateText?(prompt: string): Promise<{ text: string; costUsd?: number }>;
+  /**
+   * One prompt answered with no tools, no MCP and no session kept, in an empty temp folder (spec 040 FR-015). Optional (`capabilities.oneShot`).
+   * `opts.disabledMcpServers`: names of servers the harness would load on its own, to keep switched off (Copilot); others ignore it.
+   * The reply carries the spend the harness reports: a dollar estimate (`costUsd`) or AI credits (`nanoAiu`, 1e9 = 1 credit).
+   */
+  generateText?(prompt: string, opts?: GenerateTextOptions): Promise<GenerateTextResult>;
   /** Spec 054 FR-001: turn remote control (follow and steer from the vendor's web or mobile app) on or off for a live session. Optional (`capabilities.remote`). Never on by default. */
   setRemote?(sessionId: string, on: boolean): Promise<RemoteState>;
   /** Spec 051 FR-007: whether this harness is signed in, checked without a prompt (no credits). Only the yes/no leaves the adapter. */

@@ -20,6 +20,10 @@ export class FakeSession {
   removed = true;
   /** Events `send` replays through the handler, in order (a recorded fixture). */
   turnScript: ScriptEvent[] = [];
+  /** `send` rejects with this message (spec 040 FR-015 error path). */
+  sendFail = '';
+  /** `send` never settles (spec 040 FR-015 timeout path). */
+  sendHangs = false;
   constructor(public sessionId: string, public config: Record<string, unknown>) {}
   private rec<T>(name: string, v: T, ...args: unknown[]): T { this.calls.push({ name, args }); return v; }
   on(h: (ev: unknown) => void): () => void { this.handler = h; return () => { this.handler = undefined; }; }
@@ -27,6 +31,8 @@ export class FakeSession {
   /** Records the prompt, fires every event of `turnScript` through the session handler, then resolves (what the real runtime does while a turn runs). */
   async send(opts: unknown): Promise<string> {
     this.calls.push({ name: 'send', args: [opts] });
+    if (this.sendFail) throw new Error(this.sendFail);
+    if (this.sendHangs) return new Promise<string>(() => undefined);
     for (const e of this.turnScript) this.handler?.(e);
     return 'msg-' + this.calls.length;
   }
@@ -67,9 +73,16 @@ export class FakeClient {
   sessions = new Map<string, FakeSession>();
   last!: FakeSession;
   n = 0;
+  /** Ids passed to `deleteSession`, in order (spec 040 FR-015). */
+  deleted: string[] = [];
+  /** Handed to every session this client creates (spec 040 FR-015 error and timeout paths). */
+  sendFail = '';
+  sendHangs = false;
   private track(s: FakeSession): FakeSession {
     s.turnScript = this.turnScript;
     s.nameAnswer = this.nameAnswer;
+    s.sendFail = this.sendFail;
+    s.sendHangs = this.sendHangs;
     this.sessions.set(s.sessionId, s);
     return s;
   }
@@ -84,12 +97,17 @@ export class FakeClient {
     this.last = this.track(new FakeSession(id, config));
     return this.last;
   }
+  /** Like the SDK: throws when the session is not on disk. */
+  async deleteSession(id: string): Promise<void> {
+    this.deleted.push(id);
+    if (!this.onDisk.delete(id)) throw new Error(`session ${id} not found`);
+  }
   async getSessionMetadata(id: string): Promise<unknown> { return this.onDisk.has(id) ? { sessionId: id } : undefined; }
   async listModels(): Promise<unknown[]> { return []; }
 }
 
 export class FakeCopilot extends CopilotAdapter {
-  constructor(public fake: FakeClient) { super(); }
+  constructor(public fake: FakeClient, oneShotTimeoutMs?: number) { super(); if (oneShotTimeoutMs !== undefined) this.oneShotTimeoutMs = oneShotTimeoutMs; }
   protected async getClient(): Promise<never> { return this.fake as never; }
 }
 
