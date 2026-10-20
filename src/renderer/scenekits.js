@@ -31,7 +31,7 @@
     if (st === 'waiting') s += `<rect x="121" y="41" width="30" height="3.6" rx="1.8" fill="${T('--wait-dot')}" opacity=".5"/><rect x="123" y="49" width="42" height="19" rx="5" fill="${T('--wait-card')}" stroke="${T('--wait-note-stroke')}" stroke-width="1.2"/><circle cx="131" cy="58.5" r="3" fill="${T('--wait-dot')}"/><rect x="138" y="54" width="20" height="3" rx="1.5" fill="${T('--wait-note-line')}"/><rect x="138" y="60" width="14" height="3" rx="1.5" fill="${T('--wait-note-line-2')}"/>`;
     if (st === 'idle') s += `<circle cx="144" cy="54.5" r="7" fill="none" stroke="${T('--idle-clock')}" stroke-width="1.6"/><path d="M144 50.5v4l2.6 1.6" fill="none" stroke="${T('--idle-clock')}" stroke-width="1.6" stroke-linecap="round"/>`;
     if (st === 'error') s += `<circle cx="144" cy="52" r="9" fill="none" stroke="${T('--halo-error')}" stroke-width="2"/><path d="M144 47.5v5.5M144 56.6v.1" stroke="${T('--halo-error')}" stroke-width="2.2" stroke-linecap="round"/><rect x="127" y="65" width="34" height="3" rx="1.5" fill="${T('--err-mark')}"/>`;
-    if (st === 'done') s += `<circle cx="144" cy="54.5" r="10" fill="${T('--done-bg')}"/><path d="M139 54.5l3.6 3.6 6.6-7" fill="none" stroke="${T('--done-mark')}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`;
+    if (st === 'done') s += `<circle cx="144" cy="54.5" r="10" fill="${T('--done-bg')}"/><path class="done-tick" d="M139 54.5l3.6 3.6 6.6-7" fill="none" stroke="${T('--done-mark')}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`;
     return s;
   }
   const screenBg = (o) => ({ working: '--screen-working', thinking: '--screen-thinking', waiting: '--screen-waiting', idle: '--screen-idle', error: '--screen-error', done: '--screen-done' })[o.st];
