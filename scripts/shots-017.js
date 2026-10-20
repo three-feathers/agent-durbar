@@ -21,12 +21,14 @@
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
+const { waits } = require('./driver-helpers');
 const assert = require('assert');
 const OUT = process.env.SHOTS_012 || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-012-'));
 const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 const SIZES = [[1440, 900], [1280, 800]];
 
 module.exports = async (ctx) => {
+  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
   const js = (code) => ctx.js(code);
   const wc = () => ctx.win.webContents;
   const key = async (keyCode, modifiers) => {
@@ -35,17 +37,17 @@ module.exports = async (ctx) => {
     wc().sendInputEvent({ type: 'keyUp', keyCode, modifiers });
     await ctx.sleep(120);
   };
-  const shot = async (name, w, h) => { await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`); await ctx.sleep(300); await ctx.shot(path.join(OUT, `${name}-${w}x${h}.png`)); console.log('[017] saved', name, w, h); };
+  const shot = async (name, w, h) => { await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`); await ctx.sleep(150); await ctx.shot(path.join(OUT, `${name}-${w}x${h}.png`)); console.log('[017] saved', name, w, h); };
   const load = async (w, h, extra) => {
     ctx.win.setContentSize(w, h);
     await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', ...(extra || {}) } });
     await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
-    await ctx.sleep(1200);
+    await settle();
     wc().focus();
   };
   const vis = (id) => `(()=>{const e=document.getElementById('${id}');return !!e&&!e.hidden&&e.getClientRects().length>0})()`;
   /* spec 052 FR-105 (round 11): the defaults selects (ids kept) live in the popover of the top bar's Defaults chip; open it first */
-  const openDefaults = async () => { await js(`(()=>{const p=document.getElementById('defaultsPop');if(p.hidden)document.getElementById('defaultsBtn').click();return !p.hidden})()`); await ctx.sleep(150); };
+  const openDefaults = async () => { await js(`(()=>{const p=document.getElementById('defaultsPop');if(p.hidden)document.getElementById('defaultsBtn').click();return !p.hidden})()`); await until(`!document.getElementById('defaultsPop').hidden`); };
   const headerH = () => js(`Math.round(document.querySelector('.controls').getBoundingClientRect().height)`);
   /* the smallest computed font size among visible elements with their own text, inside `root` */
   const minFont = (root) => js(`(()=>{let min=99,who='';document.querySelectorAll('${root}, ${root} *').forEach(e=>{if(!e.getClientRects().length)return;const own=[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim());if(!own&&!/^(INPUT|SELECT|BUTTON)$/.test(e.tagName))return;const f=parseFloat(getComputedStyle(e).fontSize);if(f<min){min=f;who=e.tagName+'#'+e.id+'.'+e.className}});return {min,who}})()`);
@@ -104,6 +106,7 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('kindHelp').focus()`);
     await key('Return');
     assert.ok(await ctx.waitFor(`document.getElementById('modeDlg')`, 3000), 'the dialog opens with Enter');
+    await until(`(()=>{const d=document.getElementById('modeDlg');return !!d&&d.contains(document.activeElement)})()`);
     assert.ok(await inDialog(), 'focus moved into the dialog');
     const txt = await js(`document.getElementById('modeDlg').innerText.replace(/\\s+/g,' ')`);
     for (const need of ['About agent apps', 'Copilot: ready', 'Claude Code: ready', 'Codex: too old', 'version 0.9.0', 'Update Codex', 'Check again']) assert.ok(txt.includes(need), `dialog text has "${need}": ${txt}`);
@@ -114,10 +117,10 @@ module.exports = async (ctx) => {
     if (w === SIZES[0][0]) await shot('012-about', w, h);
     // Check again keeps the dialog open (it asks the list again)
     await js(`[...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent==='Check again').click()`);
-    await ctx.sleep(400);
+    await until(`(()=>{const d=document.getElementById('modeDlg');return !!d&&d.contains(document.activeElement)})()`);
     assert.ok(await js(`!!document.getElementById('modeDlg')`), 'Check again shows the dialog again');
     assert.ok(await inDialog(), 'focus is back inside after Check again');
-    await key('Escape');
+    await key('Escape'); await until(`!document.getElementById('modeDlg')&&(document.activeElement||{}).id==='kindHelp'`);
     assert.strictEqual(await js(`!document.getElementById('modeDlg')`), true, 'Esc closes the dialog');
     assert.strictEqual(await js(`document.activeElement&&document.activeElement.id`), 'kindHelp', 'focus returns to the "?" button');
 
@@ -127,7 +130,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(vis('modelSel')), false, 'a kind other than the default hides the model select');
     assert.strictEqual(await js(vis('effortSel')), false, 'and the effort select');
     await js(`document.getElementById('addFolder').click()`);
-    await ctx.sleep(400);
+    await until(`/not ready|isn't ready/.test([...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' | '))`);
     const t = await js(`[...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' | ')`);
     assert.match(t, /not ready|isn't ready/, `${w}: starting a not-ready kind is blocked: ${t}`);
     assert.doesNotMatch(t, /Could not add/, 'the UI blocked it, the bridge was not asked');
@@ -139,7 +142,7 @@ module.exports = async (ctx) => {
     await load(w, h, { simkinds: '1', open: 'sim-1' });
     await ctx.waitFor(`document.getElementById('newSessBtn')`, 5000);
     await js(`document.getElementById('newSessBtn').click()`);
-    await ctx.sleep(300);
+    await until(`!!document.getElementById('sdKind')`);
     const sd = await js(`(()=>{const s=document.getElementById('sdKind');return s?{opts:[...s.options].map(o=>[o.value,o.disabled,o.textContent.trim()]),value:s.value,model:!document.getElementById('sdModelL').hidden,cap:!document.getElementById('sdCapL').hidden}:null})()`);
     assert.ok(sd, `${w}: the new-session dialog has a kind select`);
     assert.deepStrictEqual(sd.opts.map((o) => [o[0], o[1]]), [['copilot', false], ['claude', false], ['codex', true]]);
@@ -156,7 +159,7 @@ module.exports = async (ctx) => {
     await js(`(()=>{const s=document.getElementById('sdKind');s.options[2].disabled=false;s.value='codex';s.options[2].disabled=true;s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
     const n0 = await js(`document.querySelectorAll('#stage .desk[data-id]').length`);
     await js(`document.getElementById('sdGo').click()`);
-    await ctx.sleep(400);
+    await until(`/not ready|isn't ready/.test([...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' | '))`);
     assert.ok(await js(`!!document.getElementById('sessDlg')`), 'a not-ready kind keeps the dialog open');
     assert.match(await js(`[...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' | ')`), /not ready|isn't ready/);
     assert.strictEqual(await js(`document.querySelectorAll('#stage .desk[data-id]').length`), n0, 'no session was started');
@@ -173,13 +176,13 @@ module.exports = async (ctx) => {
     assert.ok(await js(`(()=>{const e=document.getElementById('capChip');return !!e&&e.getClientRects().length>0})()`), `${w}: Copilot keeps the cap chip`);
     assert.ok(await js(`!!document.getElementById('modeChip')`), `${w}: Copilot keeps the mode chip`);
     await js(`document.getElementById('modeChip').click()`);
-    await ctx.sleep(200);
+    await until(`document.querySelectorAll('#modeMenu [role="menuitemradio"]').length>0`);
     assert.strictEqual(await js(`document.querySelectorAll('#modeMenu [role="menuitemradio"]').length`), 3, `${w}: the mode menu lists 3 modes`);
-    await key('Escape');
+    await key('Escape'); await until(`!document.getElementById('modeMenu')`);
     // spec 052 FR-095 (round 10): the history sits behind "Previous (N)" in the chat header; its title counts the Copilot sessions
     assert.ok(await ctx.waitFor(`(()=>{const e=document.getElementById('prevBtn');return !!e&&!e.hidden&&/[1-9]\\d* Copilot/.test(e.title)})()`, 3000), `${w}: Copilot keeps its history (earlier Copilot sessions listed)`);
     await js(`document.getElementById('newSessBtn').click()`);
-    await ctx.sleep(300);
+    await until(`!!document.getElementById('sessDlg')&&!!document.getElementById('sdModelL')`);
     assert.strictEqual(await js(`!!document.getElementById('sdKind')`), false, 'one adapter: no kind select in the dialog');
     assert.ok(await js(`!document.getElementById('sdModelL').hidden`), 'one adapter: model field as before');
     console.log('[017]', w, 'ok');
