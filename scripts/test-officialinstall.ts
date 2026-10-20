@@ -102,10 +102,12 @@ async function main(): Promise<void> {
   }
   // Windows: an official installer runs with the system folders first on PATH (Git's GNU tar breaks OpenAI's script), same PATH key
   {
-    const base = { Path: 'C:\\Program Files\\Git\\usr\\bin;C:\\Windows\\system32;C:\\npm\\prefix', SystemRoot: 'C:\\Windows' };
+    const base = { Path: 'C:\\Program Files\\Git\\usr\\bin;C:\\Windows\\system32;C:\\npm\\prefix', SystemRoot: 'C:\\Windows', PSModulePath: 'C:\\Program Files\\PowerShell\\7\\Modules' };
     const e = setupEnv(base, 'win32', true);
     assert.strictEqual(e.Path, 'C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\WindowsPowerShell\\v1.0;C:\\Program Files\\Git\\usr\\bin;C:\\npm\\prefix');
     assert.ok(!('PATH' in e), 'no second PATH spelling');
+    assert.ok(!('PSModulePath' in e), 'Windows PowerShell 5.1 builds its own module path');
+    assert.strictEqual(setupEnv(base, 'win32', false).PSModulePath, base.PSModulePath, 'kept for package managers');
     assert.strictEqual(e.NO_COLOR, '1');
     assert.strictEqual(setupEnv(base, 'win32', false).Path, base.Path, 'package managers keep PATH as it is');
     assert.strictEqual(setupEnv({ PATH: '/usr/bin' }, 'linux', true).PATH, '/usr/bin', 'not on macOS/Linux');

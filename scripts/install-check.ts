@@ -40,6 +40,8 @@ async function main(): Promise<void> {
       fs.mkdirSync(tmp, { recursive: true });
       process.env.TEMP = process.env.TMP = tmp;
       process.env.USERPROFILE = own;
+      process.env.APPDATA = path.join(own, 'AppData', 'Roaming');
+      process.env.LOCALAPPDATA = path.join(own, 'AppData', 'Local');
     }
   }
   const env = nodeDetectEnv();

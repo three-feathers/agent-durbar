@@ -66,11 +66,14 @@ export interface SetupDeps {
  * Spec 060 FR-001 (real, install check 2026-10-20): the environment of a setup run. On Windows an official installer runs with the
  * system folders first on PATH, as Windows itself orders them: OpenAI's script calls `tar` with `C:\...` paths, and Git's GNU tar
  * (Git\usr\bin, early on PATH on some machines and on GitHub's runners) reads `C:` as a remote host and fails. Windows' own tar.exe
- * does not. The PATH key keeps its spelling (Windows environment names ignore case; two spellings would be ambiguous).
+ * does not. `PSModulePath` is dropped (see below). The PATH key keeps its spelling (Windows environment names ignore case; two spellings would be ambiguous).
  */
 export function setupEnv(base: NodeJS.ProcessEnv, platform: NodeJS.Platform, official: boolean): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...base, NO_COLOR: '1', FORCE_COLOR: '0', npm_config_fund: 'false', npm_config_audit: 'false' };
   if (platform !== 'win32' || !official) return env;
+  // Windows PowerShell 5.1 started from PowerShell 7 inherits 7's PSModulePath and then cannot load its own modules (real, install
+  // check 2026-10-20: Claude's install.ps1 failed on `Get-FileHash` not found); without it, 5.1 builds its default module path
+  for (const k of Object.keys(env)) if (k.toLowerCase() === 'psmodulepath') delete env[k];
   const root = base.SystemRoot ?? base.SYSTEMROOT;
   if (!root || !path.win32.isAbsolute(root)) return env;
   const key = Object.keys(env).find((k) => k.toLowerCase() === 'path') ?? 'Path';

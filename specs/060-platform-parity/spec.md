@@ -118,3 +118,8 @@ Findings, fixed in the same PR:
 - **Windows standard-user TEMP** (CI only): the user started from the admin account inherited its TEMP. `install-check.ts` now uses the user's own profile folder.
 - Harmless: Copilot's `install.sh` offers to edit the shell profile and reads `/dev/tty`. With no terminal it prints `/dev/tty: Device not configured`, answers no, and completes. Durbar finds the binary in `~/.local/bin` anyway.
 - In the check's table, *Found at* is what detection finds after that route ran, which can be an earlier route's binary. *Result* uses the route's own exit code.
+
+Rerun after those fixes (run 39485719890, `d600c68`): `real:` **Codex official on Windows now installs as admin** (0.163.0), so the PATH fix works. macOS and Linux: same as before. Windows standard user: npm ok for all three; official failed for two more reasons, both fixed:
+
+- **Claude** `install.ps1`: `Get-FileHash` not found. Windows PowerShell 5.1 started from PowerShell 7 inherits 7's `PSModulePath` and cannot load its own modules. This also happens on a user's machine when Durbar is started from a PowerShell 7 terminal. An official installer now runs without `PSModulePath`, so 5.1 builds its default (`setupEnv`, unit test).
+- **Codex** `install.ps1`: access denied on the admin's `AppData\Local` (CI only: the test user inherited `LOCALAPPDATA`). `install-check.ts` now sets the user's own `APPDATA` and `LOCALAPPDATA`.
