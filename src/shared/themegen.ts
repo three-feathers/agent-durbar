@@ -236,7 +236,9 @@ export function parseGeneratedTheme(reply: string, description: string, ctx: Gen
   const tokens: Record<string, string> = {};
   const rt = r.tokens && typeof r.tokens === 'object' && !Array.isArray(r.tokens) ? (r.tokens as Record<string, unknown>) : {};
   let dropped = 0;
-  for (const [k, v] of Object.entries(rt)) {
+  for (const [k0, v] of Object.entries(rt)) {
+    // spec 040 FR-015 (real, 2026-10-20): Copilot's `auto` wrote every token name without the leading `--` (`bg`, not `--bg`)
+    const k = !k0.startsWith('--') && Object.prototype.hasOwnProperty.call(ctx.clean, '--' + k0) ? '--' + k0 : k0;
     if (!Object.prototype.hasOwnProperty.call(ctx.clean, k)) { dropped++; continue; }
     const hx = typeof v === 'string' ? toHex(v.trim()) : undefined;
     if (hx) tokens[k] = hx;

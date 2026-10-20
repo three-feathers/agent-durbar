@@ -87,3 +87,7 @@ Real app driven by script (`DURBAR_DRIVER`), one real Copilot session in a throw
 - **C8-C10: not run** (only `auto` on this account; the minimum cap is 30 AIU; no VS Code and no macOS/Windows on this box). They stay open in 007, 011, 009 and 008.
 - Also seen: the session title Copilot set from the first prompt ("Count from 1 to 300, one number per line, nothing else.") replaced the folder name on the card, as spec 002's title delta says.
 
+### 2026-10-20: C8 and C9 still open (issue #288)
+
+- `real:` 2026-10-20, 0 prompts: The Copilot login on the test machine is still a **free plan** on 2026-10-20: `listModels()` returned **no models at all** (it listed `auto` on 2026-10-17; the runtime now signs in through `gh`, `authType: gh-cli`), and the quota shows `premium_interactions` entitlement 0. `auto` sessions still run. So **C8** (several models and effort) cannot run.
+- **C9** (a real cap of at least 30 AIU being reached) was estimated and skipped: on this plan a tiny `auto` prompt costs 0.07-0.26 AIU (measured the same day), so reaching 30 AIU needs more than 100 prompts, or a few long ones that would use most of the free plan's monthly chat quota. The runtime refuses a cap under 30 ("Minimum session limit is 30 AI credits", seen again on 2026-10-20). Both wait for the paid plan.

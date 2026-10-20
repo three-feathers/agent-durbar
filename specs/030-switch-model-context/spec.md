@@ -291,3 +291,9 @@ Q4 said the long-context tier could be checked on Claude while the paid Copilot 
 - **Result:** on Claude the context chip shows the real window from `modelUsage.contextWindow`, whatever alias was chosen. A separate "long tier" control is not needed for Claude: it would cost more and give nothing for Sonnet 5.5.
 - The Copilot long-context tier (T044, #103) still waits for the paid plan.
 
+### 2026-10-20: Phase 3 still blocked on Copilot (T041, T044, T045)
+
+- `real:` 2026-10-20, 0 prompts, no credits (model list and quota only, through `scripts/capture-models.ts`-style calls): The Copilot login on the test machine is still a **free plan** on 2026-10-20: `listModels()` returned **no models at all** (it listed `auto` on 2026-10-17; the runtime now signs in through `gh`, `authType: gh-cli`), and the quota shows `premium_interactions` entitlement 0. `auto` sessions still run.
+- T041 (two cheapest models), T044 (long tier) and T045 (`confirmation_required`) cannot run: there is no second model, and no model that advertises a long tier. Claude Code and Codex have no `setModel` in their adapters, so Q8's "the same checks on Claude and Codex" does not apply to the switch itself (Claude's long window was checked on 2026-10-19, above).
+- T045 estimate for when a paid plan exists: the context must be bigger than the smaller model's window, for example about 130k input tokens for a 128k model, so about 1.3 credits per filled prompt at `gpt-6-luna`'s price, and a few prompts in all; within Q8's budget, but it needs two listed models.
+- `[KNOWN GAP]` unchanged: a switch between two real models, the long tier's window and price, `confirmation_required` and the `compactionDecision` values. The UI keeps "Not verified on a real account yet".
