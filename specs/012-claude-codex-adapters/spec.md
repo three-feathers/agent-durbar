@@ -884,3 +884,10 @@ The owner handed the Codex track to this agent ("ruben does not have chatgpt acc
 - `.github/workflows/packaged-check.yml` runs it after an unsigned `pack:dir` on `macos-latest`, `windows-latest` and `ubuntu-latest`. Triggers: `main` when adapters, the main process or packaging change; on demand; a PR that changes the check. It is not a required check.
 - `test:` (CI, run 39244094105) the same result on all three OSes: `{"packaged":true,"esmBuiltin":true,"esmFromAsar":true,"loadSdk":"undefined","registered":["claude","codex"],"transport":"cli"}`. On macOS the resources folder is `Resources`.
 - `[KNOWN GAP]` Interactive use of the packaged app on real macOS and Windows machines is not covered (T070, #9, #10).
+  - `real:` 2026-10-20, this Linux machine, the app on the real bridge (no message sent, nothing billed):
+    - normal profile: Copilot "Signed in (checked with GitHub)", Codex "Signed in (checked with OpenAI)", Claude Code "Signed in on this computer; confirmed at the first message";
+    - an empty `CODEX_HOME` makes Codex `not-signed-in`, and an empty `CLAUDE_CONFIG_DIR` makes Claude Code `not-signed-in`;
+    - a `CODEX_HOME` that does not exist stays `ready` with "could not confirm" (a configuration error, not a sign-in answer);
+    - Copilot with empty `COPILOT_HOME`/`GH_CONFIG_DIR` and no token variables still verifies, because its login is in the system keyring. The signed-out Copilot path was not reproduced on a real account (`[KNOWN GAP]`).
+    - The owner's real Claude Code error ("Failed to authenticate. API Error: 401 OAuth access token is invalid.") is a unit-test case for the chat sign-in card.
+
