@@ -39,7 +39,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 
 **The office**
 - Every agent is a person at a desk in its folder's room. You see at a glance who is idle, working, thinking, waiting for you or in trouble. A working agent whose last tool calls failed in a row says **Failing**, a card in an Allow all folder says **Allow all**, and hovering a card tells when it last did something.
-- 10-15 agents stay readable on one 1440x900 or 1280x800 screen, and the desks get denser on their own.
+- 10-15 agents stay readable on one 1440x900 or 1280x800 screen, and the desks get denser on their own. Checked with 15 real Copilot sessions at once (Linux, 2026-10-21): no overlap or clipping at either size.
 - Sub-agents (helpers) sit next to the agent that started them.
 - Agents show how they are doing: heavy, monster, ambulance, room sirens. Main agents walk to a **place** in a shared lobby for the tool they use.
 - **Floors** group rooms and can be switched off. A **List** view is there when you want rows instead of desks: agent app, last activity and cost columns, sortable, with J/K to move.
@@ -158,6 +158,7 @@ Codex also ships its own `bwrap` inside its npm package (`…/@openai/codex-linu
 Agents run **locally, on your machine, as you**, in the folders you add. Every agent has a permission mode. The names are the same for every harness, and Durbar maps them to each tool's own controls.
 
 - **Read-only** (the default): reads inside the session's folders only; everything else is denied. On Copilot, an MCP tool that its server marks read-only still runs without asking (the runtime does not ask Durbar); any other MCP tool is denied (both checked on 2026-10-20). Claude Code and Codex were not checked for this.
+  On Codex, Read-only and Ask first rely on Codex's own sandbox: checked on Linux (reads limited to the session's folders, writes blocked; 2026-10-21). On macOS and Windows that sandbox depends on the system; if it cannot start, the session does not start and Durbar says why.
 - **Ask first**: writes, shell commands, URLs and tools wait for *Allow once*, *Allow “…” for this session* or *Deny* (the same words in Simple and Expert).
 - **Allow all**: no prompts. Use it only in folders you trust; it asks once to confirm.
 
