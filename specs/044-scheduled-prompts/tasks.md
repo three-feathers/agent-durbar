@@ -10,7 +10,7 @@
 
 ## Phase 2 (issue #291)
 
-- [ ] T010 Schedule per session; calendar rules; per-schedule credit cap; the AI's own schedules shown read-only (split into T030..T037 below)
+- [x] T010 Schedule per session; calendar rules; per-schedule credit cap; the AI's own schedules shown read-only (split into T030..T037 below)
 
 ## 2026-10-19: starter kit (issue #128)
 
@@ -21,11 +21,11 @@
 
 ## 2026-10-20: Phase 2 (issue #291)
 
-- [ ] T030 `src/shared/schedrules.ts`: `parseRule`, `nextRuleRun` (local wall clock), unit tests with `TZ=Europe/Zurich` (DST both ways, weekdays, weekly, passed times) [FR-012]
-- [ ] T031 Scheduler: rules, migration of `every: 1440 + at`, validation of the new fields [FR-012, FR-013, FR-017]
-- [ ] T032 Per-session target: send and busy check per session, pause when the session is gone, refuse Resume, main wiring [FR-014]
-- [ ] T033 Per-schedule cap: attribution from usage events until the turn ends, skip and pause at the cap, reset on Resume [FR-015]
-- [ ] T034 `agentSchedule` event: types, event guard, Copilot mapper, mapper test [FR-016]
-- [ ] T035 Renderer: calendar choice, Send to, Limit, row states, the agent's own schedules (read-only) [FR-012, FR-014..FR-016]
-- [ ] T036 Simulator: rules, targets, caps and pause states [FR-018]
-- [ ] T037 Docs: README, CHANGELOG, specs index; drivers updated for the new form [all]
+- [x] T030 `src/shared/schedrules.ts`: `parseRule`, `nextRuleRun` (local wall clock), unit tests with `TZ=Europe/Zurich` (DST both ways, weekdays, weekly, passed times) [FR-012]
+- [x] T031 Scheduler: rules, migration of `every: 1440 + at`, validation of the new fields [FR-012, FR-013, FR-017]
+- [x] T032 Per-session target: send and busy check per session, pause when the session is gone, refuse Resume, main wiring [FR-014]
+- [x] T033 Per-schedule cap: attribution from usage events until the turn ends, skip and pause at the cap, reset on Resume [FR-015]
+- [x] T034 `agentSchedule` event: types, event guard, Copilot mapper, mapper test [FR-016]
+- [x] T035 Renderer: calendar choice, Send to, Limit, row states, the agent's own schedules (read-only) [FR-012, FR-014..FR-016]
+- [x] T036 Simulator: rules, targets, caps and pause states [FR-018]
+- [x] T037 Docs: README, CHANGELOG, specs index; drivers updated for the new form [all]

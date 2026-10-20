@@ -294,8 +294,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       (a.tools[key] ??= { calls: 0, failed: 0 })[f]++;
       if (server) (simDoc.servers[server] ??= { calls: 0, failed: 0 })[f]++;
     };
+    let simSchedHook: ((e: AgentEvent) => void) | undefined; // spec 044 FR-018: usage of a scheduled run counts toward its limit
     const emit = (e: AgentEvent): void => {
       listeners.forEach((l) => l(e));
+      simSchedHook?.(e);
       if (e.type === 'status' && e.status === 'idle') {
         const q = sims.find((x) => x.info.id === e.sessionId);
         if (q?.pendingModel) window.setTimeout(() => void applyPending(q), 0); // the turn ended: the queued switch applies
@@ -328,25 +330,55 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       }, 300);
     }
     const simTrusted = new Set<string>(); // spec 043: repository agents confirmed in this run
-    const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number }) => void)[],
-      changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); } };
+    const simSched = { list: [] as ScheduleInfo[], pausedAll: false, n: 0, subs: [] as ((d: SchedulesInfo) => void)[], ran: [] as ((r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void)[],
+      changed() { const doc = { pausedAll: this.pausedAll, schedules: this.list.map((x) => ({ ...x })) }; this.subs.forEach((f) => f(doc)); },
+      attrib: new Map<string, string>() };
+    /* spec 044 FR-012: the rule copy in schedtemplates.js (main uses src/shared/schedrules.ts; test:schedules keeps them equal) */
+    type SimRules = { parseRule(v: unknown): ScheduleInfo['rule']; nextRuleRun(r: NonNullable<ScheduleInfo['rule']>, after: number): number | undefined };
+    const simRules = (): SimRules | undefined => (window as unknown as { DurbarSchedTemplates?: SimRules }).DurbarSchedTemplates;
+    const simNext = (sc: ScheduleInfo, now: number): number =>
+      sc.rule ? simRules()?.nextRuleRun(sc.rule, now) ?? now + 1440 * 60000
+        : sc.at !== undefined ? sc.at + (Math.floor((now - sc.at) / ((sc.every as number) * 60000)) + 1) * (sc.every as number) * 60000 : now + (sc.every as number) * 60000; // FR-007: anchored runs keep their time of day
+    const simUnit = (s: SimAgent | undefined): 'aiu' | 'usd' | undefined => {
+      if (!s) return undefined;
+      const kc = caps(s.info.adapterId ?? 'copilot');
+      const u = kc.capUnit === 'usd' ? 'usd' : 'aiu';
+      return (u === 'usd' ? kc.usage.costUsd : kc.usage.nanoAiu) ? u : undefined;
+    };
+    const simAgentOf = (sc: { folder: string; target?: { session: string } }): SimAgent | undefined =>
+      sc.target ? sims.find((x) => x.info.id === sc.target?.session) : sims.find((x) => (x.info.workspaceFile ?? x.info.cwd) === sc.folder);
+    simSchedHook = (e) => {
+      // FR-015: from a scheduled send until that session's turn ends, its usage counts toward the schedule
+      if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) { simSched.attrib.delete(e.sessionId); return; }
+      if (e.type !== 'usage') return;
+      const sc = simSched.list.find((x) => x.id === simSched.attrib.get(e.sessionId));
+      if (!sc?.cap) return;
+      const amt = sc.cap.unit === 'usd' ? e.costUsd : e.nanoAiu !== undefined ? e.nanoAiu / 1e9 : undefined;
+      if (amt === undefined) sc.spentUnknown = true;
+      else sc.spent = (sc.spent ?? 0) + amt;
+      simSched.changed();
+    };
     window.setInterval(() => {
       const now = Date.now();
       let any = false;
       for (const sc of simSched.list) {
-        const due = sc.done || sc.paused ? undefined : sc.every !== undefined ? sc.next : sc.at;
+        if (sc.target && !sc.done && !sc.paused && !sims.some((x) => x.info.id === sc.target?.session)) { sc.paused = true; sc.pausedReason = 'session-ended'; any = true; continue; } // FR-014
+        const recurring = sc.every !== undefined || !!sc.rule;
+        const due = sc.done || sc.paused ? undefined : recurring ? sc.next : sc.at;
         if (due === undefined || due > now) continue;
         any = true;
-        const s = sims.find((x) => (x.info.workspaceFile ?? x.info.cwd) === sc.folder);
+        const s = simAgentOf(sc);
         const busy = !!s && (s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.perm);
-        const outcome = simSched.pausedAll ? 'skipped-paused' : !s ? 'failed' : busy ? 'skipped-busy' : 'sent';
+        const outcome = simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : busy ? 'skipped-busy' : 'sent';
         if (outcome === 'sent' && s) {
           emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: sc.prompt } as AgentEvent);
-          simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at }));
+          simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
+          simSched.attrib.set(s.info.id, sc.id);
           void api.send(s.info.id, sc.prompt, []);
         }
         sc.last = { at: now, outcome };
-        if (sc.every !== undefined) sc.next = sc.at !== undefined ? sc.at + (Math.floor((now - sc.at) / (sc.every * 60000)) + 1) * sc.every * 60000 : now + sc.every * 60000; // spec 044 FR-007: anchored runs keep their time of day
+        if (outcome === 'skipped-cap') { sc.paused = true; sc.pausedReason = 'cap'; } // FR-015
+        else if (recurring) sc.next = simNext(sc, now);
         else sc.done = true;
       }
       if (any) simSched.changed();
@@ -900,9 +932,26 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       saveSchedule: async (input) => {
         const now = Date.now();
         const every = input.every !== undefined ? Math.round(Number(input.every)) : undefined;
-        if (!input.folder || !String(input.prompt ?? '').trim() || (every === undefined && !(Number(input.at) > now)) || (every !== undefined && !(every >= 5 && every <= 1440))) return { ok: false as const, error: 'A schedule needs a prompt and either a future time or 5 to 1440 minutes.' };
+        const rule = input.rule !== undefined ? simRules()?.parseRule(input.rule) : undefined;
+        if (input.rule !== undefined && !rule) return { ok: false as const, error: 'That calendar rule is not valid.' };
         const old = simSched.list.find((x) => x.id === input.id);
-        const sc: ScheduleInfo = { id: old?.id ?? 'sched-' + ++simSched.n, folder: input.folder, prompt: String(input.prompt).trim().slice(0, 2000), ...(every !== undefined ? { every, ...(Number(input.at) > 0 ? { at: Number(input.at) } : {}), next: old?.next ?? (Number(input.at) > now ? Number(input.at) : now + every * 60000) } : { at: Number(input.at) }), ...(input.paused ? { paused: true } : {}), ...(old?.last ? { last: old.last } : {}) };
+        if (!input.folder || !String(input.prompt ?? '').trim() || (!rule && every === undefined && !(Number(input.at) > now) && !(old && input.paused)) || (!rule && every !== undefined && !(every >= 5 && every <= 1440))) return { ok: false as const, error: 'A schedule needs a prompt and either a future time, 5 to 1440 minutes or a calendar rule.' };
+        const target = input.target && typeof input.target === 'object' ? input.target : undefined;
+        if (target && !input.paused && !sims.some((x) => x.info.id === target.session)) return { ok: false as const, error: "That session has ended. Send it to the folder's agent instead." };
+        let cap = input.cap && typeof input.cap === 'object' ? input.cap : undefined;
+        if (cap) {
+          const u = simUnit(simAgentOf({ folder: input.folder, target }));
+          if (!u) return { ok: false as const, error: 'This agent app does not report what a run costs, so a limit cannot be kept.' };
+          const amount = Math.round(Number(cap.amount) * 100) / 100;
+          if (!(amount >= 0.01 && amount <= (u === 'usd' ? 10_000 : 1_000_000))) return { ok: false as const, error: 'That limit is out of range.' };
+          cap = { amount, unit: u };
+        }
+        const when: Partial<ScheduleInfo> = rule ? { rule, next: old?.rule && old.paused && input.paused ? old.next : simRules()?.nextRuleRun(rule, now) } : every !== undefined ? { every, ...(Number(input.at) > 0 ? { at: Number(input.at) } : {}), next: old?.next ?? (Number(input.at) > now ? Number(input.at) : now + every * 60000) } : { at: Number(input.at) };
+        const resumedCap = !!old && old.pausedReason === 'cap' && !input.paused; // FR-015: Resume after the limit counts from zero
+        const sc: ScheduleInfo = { id: old?.id ?? 'sched-' + ++simSched.n, folder: input.folder, prompt: String(input.prompt).trim().slice(0, 2000), ...when, ...(input.paused ? { paused: true } : {}), ...(input.paused && old?.paused && old.pausedReason ? { pausedReason: old.pausedReason } : {}), ...(old?.last ? { last: old.last } : {}),
+          ...(target ? { target: { session: String(target.session), agent: String(target.agent), ...(target.name ? { name: String(target.name).slice(0, 80) } : {}) } } : {}),
+          ...(cap ? { cap, ...(!resumedCap && old?.spent ? { spent: old.spent } : {}), ...(!resumedCap && old?.spentUnknown ? { spentUnknown: true } : {}) } : {}) };
+        if (sc.next === undefined && (sc.rule || sc.every !== undefined)) return { ok: false as const, error: 'That calendar rule never runs.' };
         simSched.list = old ? simSched.list.map((x) => (x.id === sc.id ? sc : x)) : [...simSched.list, sc];
         simSched.changed();
         return { ok: true as const, schedule: sc };

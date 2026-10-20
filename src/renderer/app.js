@@ -1069,7 +1069,7 @@ function openPanel(id,focus){
   $('vscodeBtn').onclick=e=>a.live?openLive(a,e.currentTarget):toast('Would run <code>code '+esc(room.path)+'</code>',3800);
   if(a.live)$('pauseBtn').hidden=true;
   if($('newSessBtn'))$('newSessBtn').onclick=()=>newSession(a);
-  if($('schedHdrBtn'))$('schedHdrBtn').onclick=()=>openSchedules(room);
+  if($('schedHdrBtn'))$('schedHdrBtn').onclick=()=>openSchedules(room,a);
   if($('toolsHdrBtn'))$('toolsHdrBtn').onclick=()=>window.DurbarScreens.openTools(liveRoot(a).id);
   if($('mcpBtn'))$('mcpBtn').onclick=()=>window.DurbarScreens.agentMcp(liveRoot(a),{toggle:feat(liveRoot(a),'mcpToggle')});
   if($('endBtn'))$('endBtn').onclick=e=>endLive(a,e.currentTarget).catch(failToast('end'));
@@ -2189,6 +2189,7 @@ function onLiveEvent(e){
     else if(e.type==='status'){if(VISITS.onStatus(a.id,e.status))scheduleRender();}
   }
   if(e.type==='title'){if(!e.agentId)applyTitle(a,e.title);return;}
+  if(e.type==='agentSchedule'){if(!e.agentId)onAgentSchedule(a,e);return;}
   if(e.type==='subagent')return onSubagent(a,e);
   if(e.agentId&&e.type!=='permission'&&e.type!=='grants'&&e.type!=='limit')return onSubEvent(a,e);
   const chat=liveChat(a), main=true;
@@ -2902,31 +2903,78 @@ let SCHED={pausedAll:false,schedules:[]};
 const folderKeyOf=r=>{const ag=agents.find(x=>!x.parent&&x.room===r.id);const i=ag&&ag.info;return i?(i.workspaceFile||i.cwd):r.path;};
 const schedulesOf=r=>SCHED.schedules.filter(s=>s.folder===folderKeyOf(r));
 const clock=ms=>{const d=new Date(ms),n=new Date(),t=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});return d.toDateString()===n.toDateString()?t:d.toLocaleDateString([],{month:'short',day:'numeric'})+' '+t;};
-const nextRunOf=ss=>{const t=ss.filter(s=>!s.paused&&!s.done).map(s=>s.every!==undefined?s.next:s.at).filter(Boolean).sort((a,b)=>a-b)[0];return t&&!SCHED.pausedAll?clock(t):'';};
-const OUTCOME_WORD={sent:'sent','skipped-busy':'skipped: the agent was busy','skipped-paused':'skipped: paused',missed:'missed: the app was closed',failed:'could not send'};
+const recurringS=s=>s.every!==undefined||!!s.rule;
+const nextRunOf=ss=>{const t=ss.filter(s=>!s.paused&&!s.done).map(s=>recurringS(s)?s.next:s.at).filter(Boolean).sort((a,b)=>a-b)[0];return t&&!SCHED.pausedAll?clock(t):'';};
+const OUTCOME_WORD={sent:'sent','skipped-busy':'skipped: the agent was busy','skipped-paused':'skipped: paused','skipped-cap':'not sent: reached its limit','skipped-ended':'not sent: the session has ended',missed:'missed: the app was closed',failed:'could not send'};
+const DAY3=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+/* spec 044 FR-012: "every day at 08:30", "weekdays at 09:00", "weekly on Mon, Thu at 17:00" (Monday first) */
+const ruleText=r=>r.kind==='weekdays'?'weekdays at '+r.time:r.kind==='weekly'?'weekly on '+[...(r.days||[])].sort((a,b)=>((a+6)%7)-((b+6)%7)).map(d=>DAY3[d]).join(', ')+' at '+r.time:'every day at '+r.time;
+/* FR-015: the unit a limit is kept in for this agent (its app's cap unit), or '' when the app reports no spending in a unit */
+const schedCapUnit=a=>{const c=a&&a.info?capsFor(a):null;if(!c||!c.usage)return '';const u=c.capUnit==='usd'?'usd':'aiu';return (u==='usd'?c.usage.costUsd:c.usage.nanoAiu)?u:'';};
+const capAmt=(n,u)=>u==='usd'?'$'+(Number(n)||0).toFixed(2):(Math.round((Number(n)||0)*100)/100)+' AIU';
+/* one schedule's line under its prompt: when, target, state, spend, next and last run (escaped by the caller) */
+function schedLine(s){
+  const st=s.done?' · done':s.paused?(s.pausedReason==='session-ended'?' · Paused: the session has ended':s.pausedReason==='cap'?' · Paused: reached its limit':' · paused'):(recurringS(s)&&s.next&&!SCHED.pausedAll?' · next '+clock(s.next):'');
+  return whenOf(s)+(s.target?' · → '+(s.target.name||'one session'):'')+st
+    +(s.cap?' · spent '+capAmt(s.spent||0,s.cap.unit)+' of '+capAmt(s.cap.amount,s.cap.unit)+(s.spentUnknown?' (the spend was not fully reported)':''):'')
+    +(s.last?' · last '+clock(s.last.at)+': '+(OUTCOME_WORD[s.last.outcome]||s.last.outcome):'');
+}
+/* the row's buttons; `k` is the data attribute (sc in the dialog, ss in Settings). An ended session cannot be resumed, only moved to the folder's agent (FR-014). */
+const schedBtns=(s,k)=>(s.done?'':s.paused&&s.pausedReason==='session-ended'?`<button class="btn" type="button" data-${k}="retarget" data-id="${esc(s.id)}" title="Send it to this folder's agent from now on, and resume it">Use the folder's agent</button>`
+  :`<button class="btn" type="button" data-${k}="pause" data-id="${esc(s.id)}"${s.pausedReason==='cap'?' title="Resume starts counting its spending again from zero"':''}>${s.paused?'Resume':'Pause'}</button>`)
+  +`<button class="btn danger" type="button" data-${k}="del" data-id="${esc(s.id)}">Delete</button>`;
+const schedRow=(s,k)=>`<div class="sc-row${s.paused||s.done?' off':''}"><div class="sc-t"><b title="${esc(s.prompt)}">${esc(s.prompt.length>90?s.prompt.slice(0,89)+'…':s.prompt)}</b><small>${esc(schedLine(s))}</small></div>${schedBtns(s,k)}</div>`;
+/* pause/resume/retarget/delete from a row (dialog or Settings) */
+async function schedAct(act,s){
+  if(act==='del')await bridge.removeSchedule(s.id);
+  else{const r=await bridge.saveSchedule(act==='retarget'?Object.assign({},s,{target:null,paused:false}):Object.assign({},s,{paused:!s.paused}));if(r&&!r.ok)toast(esc(r.error||'Could not change the schedule.'),5000);}
+  await refreshSchedules();
+}
+/* spec 044 FR-016: prompts scheduled inside the agent app's own session (Copilot /every, /after, manage_schedule), read-only */
+function onAgentSchedule(a,e){
+  const m=a.agentScheds||(a.agentScheds=new Map());const id=String(e.scheduleId);
+  if(e.phase==='created')m.set(id,{prompt:e.prompt||'',everyMs:e.everyMs,cron:e.cron,tz:e.tz,at:e.at,recurring:e.recurring,selfPaced:e.selfPaced,origin:e.origin});
+  else if(e.phase==='cancelled')m.delete(id);
+  else if(e.phase==='rearmed'&&m.has(id))m.get(id).nextAt=e.nextAt;
+  renderSchedDlg();
+}
+const ownWhen=x=>x.selfPaced?'when the agent decides'+(x.nextAt?', next '+clock(x.nextAt):''):x.cron?'cron '+x.cron+(x.tz?' ('+x.tz+')':''):x.everyMs?'every '+Math.max(1,Math.round(x.everyMs/60000))+' min':x.at?'once at '+clock(x.at):'scheduled';
 const hm=ms=>{const d=new Date(ms);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
-const whenOf=s=>s.every!==undefined&&s.at!==undefined?(s.every===1440?'every day at '+hm(s.at):'every '+(s.every%60===0?(s.every/60)+' h':s.every+' min')+' from '+hm(s.at)) /* spec 044 FR-007 */
+const whenOf=s=>s.rule?ruleText(s.rule):s.every!==undefined&&s.at!==undefined?(s.every===1440?'every day at '+hm(s.at):'every '+(s.every%60===0?(s.every/60)+' h':s.every+' min')+' from '+hm(s.at)) /* spec 044 FR-007 */
   :s.every!==undefined?(s.every%60===0?'every '+(s.every/60)+' h':'every '+s.every+' min'):'once at '+clock(s.at);
 function renderSchedDlg(){
   const d=$('schedDlg'); if(!d)return; const r=ROOMS.find(x=>x.id===d.dataset.room); if(!r){closeSchedDlg();return;}
   const ss=schedulesOf(r), list=$('sdList');
-  list.innerHTML=ss.length?ss.map(s=>`<div class="sc-row${s.paused||s.done?' off':''}"><div class="sc-t"><b title="${esc(s.prompt)}">${esc(s.prompt.length>90?s.prompt.slice(0,89)+'…':s.prompt)}</b><small>${esc(whenOf(s))}${s.done?' · done':s.paused?' · paused':(s.every!==undefined&&s.next&&!SCHED.pausedAll?' · next '+esc(clock(s.next)):'')}${s.last?' · last '+esc(clock(s.last.at))+': '+esc(OUTCOME_WORD[s.last.outcome]||s.last.outcome):''}</small></div>${s.done?'':`<button class="btn" type="button" data-sc="pause" data-id="${esc(s.id)}">${s.paused?'Resume':'Pause'}</button>`}<button class="btn danger" type="button" data-sc="del" data-id="${esc(s.id)}">Delete</button></div>`).join(''):'<p class="sc-empty">No schedules for this folder yet.</p>';
+  list.innerHTML=ss.length?ss.map(s=>schedRow(s,'sc')).join(''):'<p class="sc-empty">No schedules for this folder yet.</p>';
   $('sdPausedNote').hidden=!SCHED.pausedAll;
+  /* FR-016: the agent app's own schedules of this folder's live sessions, read-only */
+  const own=agents.filter(x=>x.live&&!x.parent&&x.room===r.id&&x.agentScheds&&x.agentScheds.size).flatMap(x=>[...x.agentScheds.values()].map(v=>({x,v})));
+  const ow=$('sdOwn');if(ow){ow.hidden=!own.length;ow.innerHTML=own.length?'<h4>Scheduled in the agent app (read-only)</h4><p class="sc-tpl-note">Made with the app\'s own commands or by the agent. Agent Durbar shows them but cannot change them; ask the agent, or use the app\'s own schedule manager.</p>'
+    +own.map(({x,v})=>`<div class="sc-row off"><div class="sc-t"><b title="${esc(v.prompt)}">${esc(v.prompt||'(no prompt text)')}</b><small>${esc(ownWhen(v)+' · '+(x.title||x.name)+(v.origin==='model'?' · made by the agent':v.origin==='user'?' · made by you':''))}</small></div></div>`).join(''):'';}
 }
 function closeSchedDlg(){const d=$('schedDlg');if(d)d.remove();}
-function openSchedules(r){
+/* `from`: the chat it was opened from (FR-014: then it can send to that session instead of the folder's agent) */
+function openSchedules(r,from){
   closeSchedDlg();toggleFolders(false);
+  const ag=from&&from.live&&!from.parent&&from.info&&from.room===r.id?from:null;
+  const folderAg=agents.find(x=>!x.parent&&x.room===r.id&&x.live)||null;
   const d=document.createElement('div');d.id='schedDlg';d.className='dlg-ov';d.dataset.room=r.id;
+  const today=new Date().getDay();
+  const unitWord=u=>u==='usd'?'dollars (estimate)':u==='aiu'?'AI credits':'';
   const soon=new Date(Date.now()+60*60000);soon.setSeconds(0,0);const pad=n=>String(n).padStart(2,'0');
   const local=`${soon.getFullYear()}-${pad(soon.getMonth()+1)}-${pad(soon.getDate())}T${pad(soon.getHours())}:${pad(soon.getMinutes())}`;
   d.innerHTML=`<div class="dlg sched-dlg" role="dialog" aria-modal="true" aria-labelledby="sdhT"><h3 id="sdhT">Schedules for ${esc(r.name)}</h3>
    <p class="dsub">A prompt sent to this folder's agent at a time or an interval, <b>only while Agent Durbar is open</b>. A run is skipped when the agent is busy or waiting for you; missed runs are not caught up. The agent's own permission mode and spending limit apply.</p>
    <p class="sc-paused" id="sdPausedNote" hidden>All schedules are paused (Folders panel).</p>
    <div class="sc-list" id="sdList"></div>
+   <div class="sc-own" id="sdOwn" hidden></div>
    <div class="sc-form">${window.DurbarSchedTemplates?`<label>Start from a template<select id="scTpl"><option value="">Blank prompt</option>${DurbarSchedTemplates.TEMPLATES.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')}</select></label><p class="sc-tpl-note" id="scTplNote" hidden></p>`:''}<label>Prompt<textarea id="scPrompt" rows="3" maxlength="2000" placeholder="For example: Summarise the open pull requests in three bullet points."></textarea></label>
     <div class="sc-when"><label class="chk"><input type="radio" name="scKind" value="every" checked> Every <input type="number" id="scEvery" min="5" max="1440" step="5" value="60" aria-label="Minutes between runs"> minutes</label>
-    <label class="chk"><input type="radio" name="scKind" value="daily"> Every day at <input type="time" id="scDaily" value="08:30" aria-label="Time of day"></label>
-    <label class="chk"><input type="radio" name="scKind" value="once"> Once at <input type="datetime-local" id="scAt" value="${local}" aria-label="Date and time"></label></div></div>
+    <label class="chk"><input type="radio" name="scKind" value="daily"> <select id="scCal" aria-label="Which days"><option value="daily">Every day</option><option value="weekdays">Weekdays (Mon–Fri)</option><option value="weekly">Weekly on</option></select> at <input type="time" id="scDaily" value="08:30" aria-label="Time of day"></label>
+    <label class="chk"><input type="radio" name="scKind" value="once"> Once at <input type="datetime-local" id="scAt" value="${local}" aria-label="Date and time"></label></div>
+    <div class="sc-days" id="scDays" role="group" aria-label="Days of the week" hidden>${[1,2,3,4,5,6,0].map(n=>`<label class="chk"><input type="checkbox" value="${n}"${n===today?' checked':''}> ${DAY3[n]}</label>`).join('')}</div>
+    <div class="sc-opts">${ag?`<label>Send to <select id="scTarget"><option value="">This folder's agent</option><option value="${esc(ag.id)}">This session (${esc(ag.title||ag.name)})</option></select></label>`:''}
+     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}>Limit <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div></div>
    <div class="dbtn"><button class="btn" id="scClose" type="button">Close</button><button class="btn primary" id="scAdd" type="button">Add schedule</button></div></div>`;
   document.body.appendChild(d);
   renderSchedDlg();
@@ -2938,24 +2986,39 @@ function openSchedules(r){
       const prompt=$('scPrompt').value.trim();if(!prompt){$('scPrompt').focus();toast('Write the prompt first.',3000);return;}
       const kind=d.querySelector('input[name="scKind"]:checked').value,once=kind==='once';
       const input={folder:folderKeyOf(r),prompt};
-      if(kind==='daily'){const t=DurbarSchedTemplates.nextDaily($('scDaily').value,Date.now());if(!t){toast('Choose a time of day.',3500);return;}input.every=1440;input.at=t;} /* spec 044 FR-007 */
+      if(kind==='daily'){ /* spec 044 FR-012: a calendar rule; main computes the next run from the local wall clock */
+        const time=$('scDaily').value;if(!/^\d\d:\d\d$/.test(time)){toast('Choose a time of day.',3500);return;}
+        const cal=$('scCal').value,rule={kind:cal,time};
+        if(cal==='weekly'){rule.days=[...d.querySelectorAll('#scDays input:checked')].map(x=>Number(x.value));if(!rule.days.length){toast('Choose at least one day.',3500);return;}}
+        input.rule=rule;
+      }
       else if(once){const t=new Date($('scAt').value).getTime();if(!(t>Date.now())){toast('Choose a time in the future.',3500);return;}input.at=t;}
       else{const m=Math.round(Number($('scEvery').value));if(!(m>=5&&m<=1440)){toast('Choose 5 to 1440 minutes.',3500);return;}input.every=m;}
+      const tsel=$('scTarget'),tag=tsel&&tsel.value?ag:null; /* FR-014 */
+      if(tag&&tag.info)input.target={session:tag.id,agent:tag.info.adapterId||'copilot',name:String(tag.title||tag.name||'').slice(0,80)};
+      const capV=$('scCap')&&!$('scCapL').hidden?String($('scCap').value).trim():''; /* FR-015 */
+      if(capV){const n=Number(capV),u=schedCapUnit(tag||folderAg);if(!(n>0)||!u){toast('A limit must be a positive amount.',3500);return;}input.cap={amount:n,unit:u};}
       const res=await bridge.saveSchedule(input);
       if(!res.ok){toast(esc(res.error||'Could not add the schedule.'),5000);return;}
-      $('scPrompt').value='';await refreshSchedules();toast('Schedule added: '+esc(whenOf(res.schedule))+'.',3000);return;
+      $('scPrompt').value='';if($('scCap'))$('scCap').value='';await refreshSchedules();toast('Schedule added: '+esc(whenOf(res.schedule))+'.',3000);return;
     }
-    const s=SCHED.schedules.find(x=>x.id===b.dataset.id);if(!s)return;
-    if(b.dataset.sc==='del'){await bridge.removeSchedule(s.id);await refreshSchedules();}
-    else if(b.dataset.sc==='pause'){await bridge.saveSchedule(Object.assign({},s,{paused:!s.paused}));await refreshSchedules();}
+    const s=SCHED.schedules.find(x=>x.id===b.dataset.id);if(!s||!b.dataset.sc)return;
+    await schedAct(b.dataset.sc,s);
   });
+  /* the calendar choice: weekly shows the days; touching any of it picks "On a calendar" */
+  const calKind=()=>{d.querySelector('input[name="scKind"][value="daily"]').checked=true;};
+  const showDays=()=>{$('scDays').hidden=$('scCal').value!=='weekly';};
+  $('scCal').addEventListener('change',()=>{calKind();showDays();});
+  $('scDaily').addEventListener('input',calKind);
+  $('scDays').addEventListener('change',calKind);
+  if($('scTarget'))$('scTarget').addEventListener('change',()=>{const t=$('scTarget').value?ag:folderAg,u=schedCapUnit(t);$('scCapL').hidden=!u;$('scCapU').textContent=unitWord(u);});
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeSchedDlg();}});
   /* spec 044 FR-006: a template fills the form (prompt and when); nothing is saved until Add schedule */
   const tpl=$('scTpl');if(tpl)tpl.addEventListener('change',()=>{
     const t=DurbarSchedTemplates.byId(tpl.value),note=$('scTplNote');
     if(!t){note.hidden=true;return;}
     $('scPrompt').value=t.prompt;
-    if(t.daily){d.querySelector('input[name="scKind"][value="daily"]').checked=true;$('scDaily').value=t.daily;}
+    if(t.daily){d.querySelector('input[name="scKind"][value="daily"]').checked=true;$('scCal').value='daily';showDays();$('scDaily').value=t.daily;}
     else if(t.every){d.querySelector('input[name="scKind"][value="every"]').checked=true;$('scEvery').value=String(t.every);}
     note.textContent=t.needs+(t.decides?' At the end it asks you what to do next: the agent shows as Waiting for you, with a question card in its chat.':'')+' You can edit the prompt and the time before adding it.';note.hidden=false;
   });
@@ -2974,7 +3037,7 @@ function renderSchedSettings(){
   const without=rooms.filter(r=>!schedulesOf(r).length);
   host.innerHTML=`<label class="fp-pause"><input type="checkbox" id="schedPauseAllSet"${SCHED.pausedAll?' checked':''}> Pause all schedules</label>`
     +(groups.length?groups.map(({r,ss})=>`<div class="ss-group"><div class="ss-head"><b>${esc(r.name)}</b><small>${esc(r.path)}</small><button class="btn" type="button" data-ss="open" data-room="${esc(r.id)}">Open…</button></div>`
-      +ss.map(s=>`<div class="sc-row${s.paused||s.done?' off':''}"><div class="sc-t"><b title="${esc(s.prompt)}">${esc(s.prompt.length>90?s.prompt.slice(0,89)+'…':s.prompt)}</b><small>${esc(whenOf(s))}${s.done?' · done':s.paused?' · paused':(s.every!==undefined&&s.next&&!SCHED.pausedAll?' · next '+esc(clock(s.next)):'')}${s.last?' · last '+esc(clock(s.last.at))+': '+esc(OUTCOME_WORD[s.last.outcome]||s.last.outcome):''}</small></div>${s.done?'':`<button class="btn" type="button" data-ss="pause" data-id="${esc(s.id)}">${s.paused?'Resume':'Pause'}</button>`}<button class="btn danger" type="button" data-ss="del" data-id="${esc(s.id)}">Delete</button></div>`).join('')+'</div>').join('')
+      +ss.map(s=>schedRow(s,'ss')).join('')+'</div>').join('')
       :'<p class="scr-note small">No schedules yet.</p>')
     +(without.length?`<div class="scr-tools"><label class="ss-add">Add a schedule to<select id="ssRoom">${without.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label><button class="btn" type="button" data-ss="add">Add…</button></div>`:'');
 }
@@ -2984,11 +3047,10 @@ document.addEventListener('click',async e=>{
   if(act==='open'){const r=ROOMS.find(x=>x.id===b.dataset.room);if(r)openSchedules(r);return;}
   if(act==='add'){const r=ROOMS.find(x=>x.id===$('ssRoom').value);if(r)openSchedules(r);return;}
   const s=SCHED.schedules.find(x=>x.id===b.dataset.id);if(!s)return;
-  if(act==='del'){await bridge.removeSchedule(s.id);await refreshSchedules();}
-  else if(act==='pause'){await bridge.saveSchedule(Object.assign({},s,{paused:!s.paused}));await refreshSchedules();}
+  await schedAct(act,s);
 });
 document.addEventListener('change',async e=>{if(e.target&&e.target.id==='schedPauseAllSet'){const r=await bridge.setSchedulesPaused(e.target.checked);SCHED.pausedAll=r.pausedAll;schedChanged();}});
-if(bridge&&bridge.onScheduleRan){bridge.onScheduleRan(r=>{const a=liveById(r.agentId);if(!a)return;addNote(liveChat(a),'Scheduled prompt ('+esc(r.every!==undefined?whenOf({every:r.every}):'once')+').');});}
+if(bridge&&bridge.onScheduleRan){bridge.onScheduleRan(r=>{const a=liveById(r.agentId);if(!a)return;addNote(liveChat(a),'Scheduled prompt ('+esc(r.rule?ruleText(r.rule):r.every!==undefined?whenOf({every:r.every}):'once')+').');});}
 function renderFolders(){
   const pop=$('foldersPop'); if(pop.hidden)return;
   if(!ROOMS.length){pop.innerHTML='<p class="fp-empty">No folders yet. Use + Folder, or + Workspace for a VS Code .code-workspace file. Folders you add are remembered next time.</p>';return;}
