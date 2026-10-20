@@ -6,9 +6,6 @@
 import * as path from 'path';
 import { devEnv } from './devhooks';
 
-/** The run-time name on every platform; equals `build.productName` and the About panel's application name. */
-export const APP_NAME = 'Agent Durbar';
-
 export interface ProfileDirInput {
   packaged: boolean;
   platform: NodeJS.Platform | string;

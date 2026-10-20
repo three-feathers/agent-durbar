@@ -15,7 +15,7 @@ export interface MenuActions {
 }
 
 export const SETTINGS_ACCELERATOR = 'CommandOrControl+,';
-/** Display name in the Mac app menu (spec 008 FR-033). Equals `build.productName` (test:profiledir). The run-time identity `app.getName()` stays `agent-durbar` on purpose (Keychain item, libsecret). */
+/** Display name in the Mac app menu (spec 008 FR-033). Display only; never pass to app.setName (Keychain, libsecret). Equals `build.productName` (test:profiledir); the run-time identity `app.getName()` stays `agent-durbar` on purpose. */
 export const MENU_APP_NAME = 'Agent Durbar';
 export const HELP_LINK_LABEL = 'Agent Durbar on GitHub';
 

@@ -2,7 +2,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { APP_NAME, profileDir } from '../src/main/profiledir';
+import { profileDir } from '../src/main/profiledir';
 import { MENU_APP_NAME } from '../src/main/appmenu';
 import { aboutPanelOptions } from '../src/shared/about';
 
@@ -29,10 +29,9 @@ assert.ok(!profileDir({ platform: 'win32', appData: 'C:\\A', packaged: false, en
 
 // one name everywhere
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
-assert.strictEqual(APP_NAME, 'Agent Durbar');
-assert.strictEqual(APP_NAME, pkg.build.productName);
-assert.strictEqual(APP_NAME, aboutPanelOptions('x').applicationName);
+assert.strictEqual(MENU_APP_NAME, 'Agent Durbar');
 assert.strictEqual(MENU_APP_NAME, pkg.build.productName);
+assert.strictEqual(MENU_APP_NAME, aboutPanelOptions('x').applicationName);
 assert.strictEqual(pkg.name, 'agent-durbar');
 assert.strictEqual(pkg.productName, undefined, 'a top-level productName would move the profile folder');
 
