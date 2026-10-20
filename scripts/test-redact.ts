@@ -518,6 +518,11 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   noSec(maskSecretCommand('bash -c "OPTS=\\"--token ' + SEC + '\\" srv"'), 'Paco 2b: command');
   noSec(maskSecretArgs(['X="X=\\"--token ' + SEC + '\\""']), 'Paco 2c: X="X=\\"--token SEC\\""');
   noSec(maskSecretArgs(['OPTS=\\"--token=' + SEC + '\\"']), 'Paco 2d: --token=SEC behind a stray quote');
+  // a flag WITH a value behind a stray quote does not mark the next word (pins the `f2.rest === undefined` guard)
+  assert.deepStrictEqual(maskSecretArgs(['OPTS=\\"--token=' + SEC + '\\"', 'next']), ['OPTS=\\"--token=' + R, 'next'], 'guard: the next arg stays visible');
+  assert.strictEqual(maskSecretCommand('OPTS=\\"--token=' + SEC + '\\" next'), 'OPTS=\\"--token=' + R + ' next', 'guard: the next word of a command stays visible');
+  // display limit, on purpose: after a secret flag the whole next word is masked, so `SEC\\" srv"` (which may itself hold a `\\"`) loses its tail
+  assert.strictEqual(maskSecretCommand('bash -c "OPTS=\\"--token ' + SEC + '\\" srv"'), 'bash -c "OPTS=\\"--token ' + R, 'display: the tail of the secret word is dropped, never shown');
   // (m of 14b still) env prefix keeps other names
   assert.deepStrictEqual(maskSecretArgs(["$env:PORT='8080'; srv"]), ["$env:PORT='8080'; srv"], 'b: $env:PORT unchanged');
 
