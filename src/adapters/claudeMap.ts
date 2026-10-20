@@ -9,6 +9,7 @@
 import { isAuthError } from './autherrors';
 import type { EventBody } from './map';
 import type { McpServerStatus } from './types';
+import { nonEmptyStr as str } from '../shared/guards';
 
 /** Fields of the SDK messages this mapper reads (structural subset; shapes from the SDK docs, unverified on a real account). */
 export interface ClaudeContentBlock {
@@ -51,7 +52,6 @@ export const TOOL_OUTPUT_CAP = 4000;
 /** How many assistant message ids are remembered for the usage dedupe (FR-082). */
 export const USAGE_IDS_CAP = 512;
 
-const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 /** The CLI turns characters outside [A-Za-z0-9_-] in a server name into `_` when it builds `mcp__<server>__<tool>`. */
 const normalizeServer = (name: string): string => name.replace(/[^A-Za-z0-9_-]/g, '_');

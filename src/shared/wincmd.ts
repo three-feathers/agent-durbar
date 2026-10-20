@@ -5,6 +5,12 @@
  */
 import * as path from 'path';
 
+/**
+ * Characters that make a path or argument unsafe on a `cmd.exe` command line (quotes, separators, redirection, expansion,
+ * line breaks). A `.cmd` shim or a target containing one is never run through `cmd` (spec 045 FR-003, spec 012 FR-041).
+ */
+export const CMD_UNSAFE = /[\r\n\0"&|<>^%!`(),;=]/;
+
 export function windowsCmd(env: Readonly<Record<string, string | undefined>>): string {
   const w = path.win32;
   const root = env.SystemRoot ?? env.SYSTEMROOT ?? env.windir ?? env.WINDIR;
