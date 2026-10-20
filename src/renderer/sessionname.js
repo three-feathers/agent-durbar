@@ -17,8 +17,8 @@
     return n?n+' · '+String(folderLabel||''):'';
   }
   /* A name cut for a small place (the Schedules hint and the schedule list): the one shared cutter (cuttext.js, spec 044 FR-021): code points, at most `max` including the "…", on a word boundary when one is near the end. */
-  const CUT=typeof module==='object'&&module.exports?require('./cuttext.js'):self.DurbarCutText;
-  function shortName(name,max){return CUT.cutText(name,max||40,{wordBoundary:true});}
+  const CUT=()=>typeof module==='object'&&module.exports?require('./cuttext.js'):self.DurbarCutText; /* resolved at call time: cuttext.js loads after this file in the page */
+  function shortName(name,max){return CUT().cutText(name,max||40,{wordBoundary:true});}
   /* The pre-check of the dialog: '' = fine (empty means reset). Main checks again with the shared rule. */
   const HIDDEN=/[\u00ad\u034f\u115f\u180e\u200b\u2028\u2029\u202a-\u202e\u2060-\u2064\u2066-\u2069\u3164\ufeff\ufff9-\ufffb]/;
   const CONTROL=/[\u0000-\u001f\u007f-\u009f]/;
