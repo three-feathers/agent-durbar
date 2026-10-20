@@ -136,6 +136,11 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
 });
 
 /** Spec 054 FR-063 (real, 2026-10-20): not started in a plain folder, a `git init` folder and a private GitHub repository alike, on Copilot Free. */
+/** Spec 012 FR-156 delta: the GitHub account is signed in but has no Copilot access (Copilot not enabled for it). */
+export const NO_COPILOT_ACCESS = /not authorized to use this Copilot feature/i;
+export const NO_COPILOT_ACCESS_DETAIL = 'Signed in to GitHub, but this account has no Copilot access yet: turn on Copilot for it (Copilot Free is enough) at github.com/settings/copilot, then choose Check again.';
+const errorText = (e: unknown): string => (e instanceof Error ? e.message : String(e ?? ''));
+
 export const REMOTE_NOT_STARTED = 'Copilot did not start remote control and gave no reason. It needs a paid Copilot plan: on Copilot Free it never started in our checks, on Copilot Pro it did.';
 
 /** Spec 040 FR-015: how long one `generateText` may take before it is aborted (the same 3 minutes as Claude and Codex). */
@@ -320,11 +325,20 @@ export class CopilotAdapter implements AgentAdapter {
     if (typeof rpc?.account?.getQuota === 'function') calls.push(() => rpc.account!.getQuota!({}));
     if (typeof rpc?.models?.list === 'function') calls.push(() => rpc.models!.list!({}));
     else calls.push(() => client.listModels());
+    // spec 012 FR-156 delta (real, CI account 2026-10-20): a GitHub sign-in without Copilot enabled passes the quota call, but
+    // every model call answers 403 "not authorized to use this Copilot feature"; the model list (free) tells the two apart
+    const listing = (): Promise<unknown> => (typeof rpc?.models?.list === 'function' ? rpc.models.list({}) : client.listModels());
     for (const call of calls) {
       try {
         await call();
+        try {
+          if (calls.length > 1) await listing();
+        } catch (e) {
+          if (NO_COPILOT_ACCESS.test(errorText(e))) return { status: 'unknown', detail: NO_COPILOT_ACCESS_DETAIL };
+        }
         return { status: 'signed-in', detail: 'Signed in (checked with GitHub).' };
       } catch (e) {
+        if (NO_COPILOT_ACCESS.test(errorText(e))) return { status: 'unknown', detail: NO_COPILOT_ACCESS_DETAIL };
         if (isAuthError(e)) return { status: 'signed-out', detail: 'GitHub did not accept the Copilot sign-in.' };
         // any other error (the runtime lacks the call, a network problem): try the next call, then say unknown
       }

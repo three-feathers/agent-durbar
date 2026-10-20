@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.9 tag)
 
+- A GitHub account without Copilot access no longer shows as "Signed in (checked with GitHub)": the card now says the account has no Copilot access yet and how to turn it on (spec 012 FR-156).
 - **Copilot model switching checked on a paid account** (spec 030 T041, T044, T045): switching between two real models, effort, the long-context tier and *Compact and switch* work. The model menu now shows the window the runtime really allows (for example GPT-6 Luna 272k, not 1M), Copilot prices count as credits (so the switch dialog can estimate the cost), and "not verified on a real account" is gone for Copilot. Also found: Copilot's runtime does not stop at the session credit limit (spec 011).
 - **Remote control for Claude Code sessions** (spec 054 FR-060..FR-064): **More > Control from Claude (web and mobile)** turns on Claude Code's Remote Control for one session, with a claude.ai link; it is turned back on after a relaunch. Copilot remote control needs a paid plan: it started on Copilot Pro (real check), and the "not started" message says so.
 - Agents read every review and comment before a merge: new rule in `AGENTS.md`, and `scripts/pr-gate.sh <N>` (verdict only) checks requested changes, open threads, unanswered comments, checks, CodeQL and alerts (spec 021).
