@@ -1,0 +1,198 @@
+# Tasks: MCP servers in a session (spec 058, issue #349)
+
+**Input**: [spec.md](spec.md), [plan.md](plan.md), [research.md](research.md), [data-model.md](data-model.md). Delta 2026-10-20 (issue
+#364, MCP OAuth sign-in): Phase 8.
+**Clarified**: the owner answered Q1-Q11 on 2026-10-20, option A for each (spec.md *Clarifications*). A task that rests on an answer
+names it.
+**Format**: `[ID] [P?] [Story] Description [FR]`. `[P]` = can run in parallel (different files, no dependency). Each task is one
+small PR-sized step with its own test. No task spends AI credits except Phase 6, which needs the owner's go-ahead.
+
+## Phase 0: Clarify (owner)
+
+- [x] T001 Owner answers Q1-Q11 in spec.md; record the answers under spec.md `## Clarifications` and adjust the tasks below (2026-10-20,
+  all A)
+
+## Phase 1: Foundation (blocking)
+
+- [ ] T010 [P] Capability fields `mcpStart`, `mcpToggleApplies`, `mcpRestart`, `mcpLogs` and optional members `restartMcpServer`,
+  `mcpLogFolder` in `src/adapters/capabilities.ts` / `types.ts`; `McpServerStatus.errorClass` / `needsRestart`; contract C2 lines in
+  `scripts/test-adapter-contract.ts`; `fake.ts` members behind its capability switches [FR-010, FR-011, FR-012, FR-013]
+- [ ] T011 [P] `src/renderer/mcpwords.js` (UMD): state words and icons, start line, toggle timing, hints; `scripts/test-mcpwords.ts`
+  (`test:mcpwords` in `test:serial`) covering every state, unknown tokens and every hint rule, including the sign-in hint that names
+  the agent app's own sign-in without running it [FR-001, FR-002, FR-006, FR-052]
+- [ ] T012 [P] `maskMcpError(text, secretValues)` in `src/shared/redact.ts` (redact with the given values and the env, then URL
+  credentials, cut to 300); cases in the redact tests: an extra's header value, an env value, `ghp_` token, `https://user:pass@host`
+  [FR-005]
+
+## Phase 2: User Story 1 + 2, words and errors (P1, MVP)
+
+- [ ] T020 [US1] `agents:mcp` reply adds `app`, `start`, `toggleApplies`, `canRestartSession` (false until T040), per-server
+  `errorClass`, `needsRestart`, `canRestart` (false until T030/T031), `logFolder` (false until T050); `AgentMcpEntry` in
+  `src/shared/api.ts`; test in new `scripts/test-mcp-session.ts` (`test:mcpsession`) [FR-020]
+- [ ] T021 [US2] `agents:mcp` masks `error` with `maskMcpError` and the secret values of the extras passed to that agent's session
+  (`McpStore.forSession`); test that no secret reaches the reply [FR-005, SC-002]
+- [ ] T022 [P] [US2] Copilot mapper: `errorClassification` (known values only) -> `errorClass`, `session.mcp_server_needs_reconnect` ->
+  `needsRestart`; mapper test [FR-011]
+- [ ] T023 [P] [US2] Codex: `failureReason: reauthenticationRequired` and `authStatus: notLoggedIn` -> `errorClass: 'auth'`; test in
+  `test-codex-adapter` [FR-011]
+- [ ] T024 [P] [US2] Claude mapper: `init.mcp_server_errors` -> `failed` rows with their text; mapper test [FR-011]
+- [ ] T025 [P] [US1] Capability values in the three adapters: Copilot `session`/`live`, Claude `next-message`/`live`, Codex
+  `session`/`next-message` (restart and logs stay false here); contract test [FR-010]
+- [ ] T026 [US1] Dialog rows: word + icon, hint, *Details* with *Copy*, start line and toggle timing, the two scopes sentence; the
+  "applies right away" text only for `live`; `index.html` loads `mcpwords.js` [FR-001, FR-002, FR-003, FR-007, FR-030, FR-033]
+- [ ] T027 [US1] Live refresh: when an `mcp` event for the open agent arrives (`app.js`, where `a.mcp` is set), re-render the list and
+  keep focus by server name [FR-004]
+- [ ] T028 [US1] Simulator: real capability values per kind (Claude and Codex `mcpToggle: true`), servers in every state, a failed one
+  with a canned error and hint [FR-040]
+- [ ] T029 [US1] Screenshot driver `scripts/shots-058-mcp.js` (Copilot, Claude, Codex dialogs; prints `[058] PASS`); run at 1440x900
+  and 1280x800; commit `docs/screenshots/058-mcp-*.png` [FR-042]
+
+## Phase 3: User Story 3, per-server Restart (P2)
+
+- [ ] T030 [P] [US3] Copilot `restartMcpServer`: `rpc.mcp.restartServer({serverName})` when present, else `disable` then `enable`
+  (Q3); never `stopServer` (Q2) or `reload`; not live rejects; fake SDK gains `restartServer` and a mode without it; adapter test
+  [FR-012, SC-003]
+- [ ] T031 [P] [US3] Claude `restartMcpServer`: control request `mcp_reconnect {serverName}` then `mcp_status` and an `mcp` event; a
+  server off at launch rejects with "Switch it on first; it starts with your next message"; not live rejects; fake CLI test [FR-012,
+  SC-003]
+- [ ] T032 [US3] `agents:mcpRestart(id, name)` in main: validation, one restart per server at a time, masked error, activity-log row;
+  preload and `DurbarApi`; `canRestart` in `agents:mcp`; test in `test-mcp-session` [FR-020, FR-021]
+- [ ] T033 [US3] Dialog: *Restart* per row (only `canRestart`, live, switch on), "Restarting…" disabled state, toast with the result;
+  Codex footer line [FR-030, FR-031, FR-032]
+- [ ] T034 [US3] Simulator: canned Restart (Starting -> Running) for Copilot and Claude sim kinds; refresh screenshots [FR-040, FR-042]
+
+## Phase 4: User Story 4, Restart session with these servers (P2)
+
+- [ ] T040 [US4] Extract `endSession(a)` in main (remote off, `adapter.stop`) and use it in `agents:end`; no behaviour change; existing
+  tests pass [FR-022]
+- [ ] T041 [US4] `agents:mcpRestartSession(id, confirmed)`: validation, `resume` capability, busy check from main's `agentState`
+  (`needsConfirm`), `endSession` then `ensureLive` with the same id and current options, no prompt; preload and `DurbarApi`;
+  `canRestartSession`; test with a fake adapter: order, same id, new `mcpServers`/`disabledMcpServers`, refusal while busy, failed resume
+  leaves the agent ended (Q4) [FR-022, SC-004]
+- [ ] T042 [US4] Dialog footer button and the confirmation text (Cancel focused) when working/thinking/waiting, grants or remote on;
+  after the restart the dialog refreshes; Claude line "servers start with your next message" (Q11) [FR-023, FR-030]
+- [ ] T043 [US4] Simulator: canned Restart session; screenshots of the confirmation [FR-040, FR-042]
+- [ ] T044 [US4] Sign-in on Restart session (review note 2): a resume that fails for sign-in returns `errorKind: 'auth'`, marks the app
+  signed out and the renderer shows spec 012 FR-157's sign-in card in the chat instead of a toast; `simauth=expired` makes the simulator
+  fail the restart that way; test in `test-mcp-session` (auth error vs other error) [FR-027, FR-040, FR-041]
+
+## Phase 5: User Story 5, Open log folder (P3)
+
+- [ ] T050 [P] [US5] `src/adapters/mcplogdirs.ts` (pure, injected env and platform): Copilot, Claude per server (Q6), Codex (Q7);
+  `scripts/test-mcplogdirs.ts` for Linux, macOS and Windows with `COPILOT_HOME`, `CODEX_HOME`, `XDG_CACHE_HOME`, `LOCALAPPDATA`, long
+  names -> undefined [FR-013]
+- [ ] T051 [US5] `mcpLogFolder` on the three adapters (returns `{root, folder}`) and the `mcpLogs` capability values; contract C2 lines
+  [FR-010, FR-013]
+- [ ] T054 [P] [US5] `insideRoot(realRoot, realFolder, pathImpl)` (pure) and the realpath step in main (review note 1); tests: symlink out
+  of the root (real temp folders on POSIX), `..` in a server name, other Windows drive (`path.win32`), missing root, the normal case
+  [FR-026, FR-041]
+- [ ] T052 [US5] `agents:mcpRevealLogs(id, name?)`: folder from the adapter, the FR-026 check (T054), `fs.stat` directory check,
+  `shell.showItemInFolder`; never
+  lists or reads files; `logFolder` flags in `agents:mcp`; test with an injected `shell` and fs [FR-020, FR-024, FR-025]
+- [ ] T053 [US5] Dialog: *Open log folder* in the footer (session folders) and in a row's *Details* (per-server folders), worded as "the
+  agent app's log folder" with no promise of server output, Claude's link labelled "not documented by Anthropic" (Q6); simulator toast [FR-030, FR-040, FR-051]
+
+## Phase 6: Real checks (needs-owner-approval at the time of the run, Q9; 0 AI credits, no prompt)
+
+Each: a throw-away folder, a throw-away local stdio echo server as a folder extra, Ask first mode, **no prompt sent**. Record results in
+research.md and change `read:` to `real:` where confirmed. Do not open or paste log files.
+
+- [ ] T060 [needs-owner-approval] Copilot: session starts with the server Running; *Restart* (does `restartServer` exist on the pinned
+  runtime, does the row go Starting -> Running); a server with a wrong command shows Failed with its text and `errorClassification`
+  value; *Restart session* keeps the id and history; does `~/.copilot/logs` exist [FR-050]
+- [ ] T061 [needs-owner-approval] Claude Code: the CLI is launched only with a message, so: start, then Restart session (expect "Not
+  started yet" until the next message, Q11); with an already launched CLI from an earlier spec 012 check, `mcp_reconnect` on a failed
+  server; does `mcp-logs-<server>` exist [FR-050]
+- [ ] T062 [needs-owner-approval] Codex: list states and `failureReason` for a wrong command; *Restart session* keeps the thread; does
+  `~/.codex/log` exist and is anything from the app-server in it (folder listing only by the owner, not by Durbar) [FR-050]
+- [ ] T063 Converge: README, spec status and `[KNOWN GAP]` tags after T060-T062
+
+## Phase 7: Docs and close
+
+- [ ] T070 README MCP section: the dialog's words, Restart (Copilot, Claude), Restart session, Open log folder, "not checked on a real
+  account yet"; CHANGELOG *Unreleased* line; specs index row; spec 019 `## Changes` note updated from "specified" to "built"
+- [ ] T071 `/speckit-converge`: spec, plan and tasks match what was built; tick tasks
+
+## Phase 8: MCP OAuth sign-in (delta 2026-10-20, issue #364)
+
+Spec *Changes* > 2026-10-20 (FR-060..FR-074). Phase 8a needs no owner answer; Phase 8b needed T090 (done 2026-10-20); Phase 8c needs the owner's go-ahead
+at the time of the run. Builds on T010 (`errorClass`), T011 (words), T020 (`agents:mcp` fields) and T026 (dialog rows).
+
+### Phase 8a: clarify, signals, classifier, masking (only T090 needs the owner; T091-T097 do not wait for it)
+
+- [x] T090 Owner answers Q12-Q19 (spec *Changes*, open questions); record them under spec.md `## Clarifications` and adjust T098-T104
+  (2026-10-20: Q12 B, Q13-Q19 A)
+- [ ] T091 [P] `src/adapters/mcpauth.ts` `isMcpAuthChallenge(text)`; `scripts/test-mcpauth.ts` (`test:mcpauth` in `test:serial`): the
+  issue's exact text, the runtime phrases of research 7.2, negatives (model text, a usage limit, the app's own 401) [FR-061]
+- [ ] T092 [P] `isAuthError` returns false when `isMcpAuthChallenge` matches; cases in `scripts/test-autherrors.ts` (the issue's text as
+  an `error` status gets no `errorKind: 'auth'`) [FR-062, SC-010]
+- [ ] T093 [P] Types: `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `cancelMcpSignIn?`, `ToolCallEvent.mcpAuth`; event guard (only
+  on a failed `toolCall` with `mcpServer`); contract C2 lines; `fake.ts` members behind the flags [FR-063, FR-064, FR-068]
+- [ ] T094 [P] Copilot mapper: a failed MCP tool with challenge text -> `mcpAuth: true` and that server `needs-auth` + `errorClass:
+  'auth'` (emit `mcp`); the next status replaces it; `remediation` ignored; mapper test with the issue's text [FR-060, FR-063, SC-010]
+- [ ] T095 [P] Codex: `failureReason: reauthenticationRequired` -> `needs-auth` + `errorClass: 'auth'` (extends T023); a failed MCP tool
+  with challenge text -> `mcpAuth` and a list refresh; `test-codex-adapter` [FR-060]
+- [ ] T096 [P] Claude: a failed `mcp__<server>__<tool>` result with challenge text -> `mcpAuth` and one `mcp_status`; mapper and fake
+  CLI tests [FR-060]
+- [ ] T097 Main masks failed MCP tool cards (`maskMcpText`, the session's secret values, no 300 cut) in the renderer hook
+  (`src/main/main.ts:123`); test in `scripts/test-mcp-errormask.ts` (a header value, a `ghp_` token, a URL with a key) [FR-067, SC-011]
+
+### Phase 8b: Sign in, steps and shortcut (after T090)
+
+- [ ] T098 [P] Copilot `startMcpSignIn`: `rpc.mcp.oauth.login({serverName, clientName, callbackSuccessMessage})` when it is a function,
+  else manual; no URL -> connected; `mcpOAuthTokenStorage: 'persistent'` on create and resume (Q12 B); fake SDK: recorder, no-method mode, no-URL mode, asserts no
+  `handlePendingRequest` and no `onMcpAuthRequest` [FR-064, FR-070, SC-012]
+- [ ] T099 [P] Claude `startMcpSignIn`: `mcp_authenticate {serverName}` without `redirectUri`; `requiresUserAction: false` -> connected;
+  "not supported in this context" -> manual; `mcp_status` every 3 s while open; not launched -> "Send a message first" (Q15); fake CLI
+  test [FR-064, SC-012]
+- [ ] T100 [P] Codex `startMcpSignIn`: `mcpServer/oauth/login {name, threadId}`; completion by `loginId` (else name + thread); success ->
+  next message on a fresh child (Q18); unknown method -> manual; `cancelMcpSignIn` -> `account/login/cancel`; fake app-server test
+  [FR-064, SC-012]
+- [ ] T101 Main: `src/main/mcpsignin.ts` (pure store, injected clock and opener) and `agents:mcpSignIn` / `agents:mcpOpenSignIn` /
+  `agents:mcpCancelSignIn`; `elicitHttpsUrl` check (Q16); host-only replies; drops on connected, Cancel, 10 minutes, End, Restart
+  session; `canSignIn`, `signIn`, `signInSteps` in `agents:mcp`; preload and `DurbarApi`; tests: host only, `http:` and user:password
+  refused, expiry, Cancel, End, no address in the `DURBAR_LOG` sink or activity log [FR-065, SC-011]
+- [ ] T102 Dialog: needs-auth row (hint, Sign in, Switch off for this session, terminal steps with Copy), two-step open (Q13), waiting and
+  time-limit states, toasts, live region; Switch off calls the existing `setMcp` [FR-066, FR-068, FR-069]
+- [ ] T103 Tool card line for `mcpAuth`: "<server> needs you to sign in", **Sign in…** opens the dialog at that row (Q14), **Switch off
+  for this session** [FR-063, FR-066]
+- [ ] T104 Simulator `simmcpauth=1` / `simmcpauth=manual`; screenshots at 1440x900 and 1280x800 (`docs/screenshots/058-mcp-signin-*.png`)
+  [FR-071, FR-073]
+
+### Phase 8c: real checks (needs-owner-approval; 0 AI credits, no prompt; a remote MCP server with OAuth; a browser sign-in on the owner's machine)
+
+Record results in research.md section 7 and change `read:` to `real:`. Do not open, copy or paste any token, keychain entry or log file.
+
+- [ ] T105 [needs-owner-approval] Copilot: a server shows needs-auth (or the issue's tool error with a cached catalog); Sign in returns an
+  `authorizationUrl` on the pinned runtime; after the browser step the row goes Running; with `persistent` storage (Q12 B), a later session and the CLI's
+  `/mcp auth` share the sign-in [FR-074]
+- [ ] T106 [needs-owner-approval] Claude Code: does the stream-json CLI answer `mcp_authenticate` (docs say no, strings say yes); the row
+  goes Running after the browser step; does `claude mcp login <name>` help Durbar's `--mcp-config` copy [FR-074]
+- [ ] T107 [needs-owner-approval] Codex: does the installed Codex have `mcpServer/oauth/login`; does it accept Durbar's thread override
+  server; completion and the next message using the grant; does `codex mcp login <name>` help [FR-074]
+
+### Phase 8d: docs and close
+
+- [ ] T108 README MCP section (Needs sign-in, Sign in, terminal steps, Switch off for this session, "not checked on a real account yet");
+  CHANGELOG *Unreleased* line; specs index row; spec 019 `[KNOWN GAP]` line from "specified" to "built" [FR-074]
+- [ ] T109 `/speckit-converge` for the delta: spec, plan and tasks match what was built; tick tasks
+
+## Out of scope (owner decisions 2026-10-20)
+
+- No in-app log viewer (Q5); T080 removed. A viewer would need a new spec and the owner's approval.
+- No new-session variant of Restart session (Q4), no *Restart session* in the More or card menus (Q10), no Codex "Reload servers" (Q8),
+  no early Claude CLI launch after Restart session (Q11), no use of Copilot `stopServer` (Q2).
+- Delta 2026-10-20 (issue #364, constitution III, not a question): no call that hands a token, code or callback URL through Durbar (Copilot
+  `onMcpAuthRequest`, `oauth.handlePendingRequest`, `oauth.respond`, `oauth.complete`; Claude `mcp_oauth_callback_url`), no client id or
+  secret asked from the user, no `redirectUri` of Durbar's own. No "Sign in with another account" (Q19 A): no `forceReauth`, no `mcp_clear_auth`.
+- No automatic switch-off after repeated failures (Q17 A); no early Claude CLI launch for a sign-in (Q15 A); no `http:` authorization
+  pages (Q16 A); no automatic Restart session after a Codex sign-in (Q18 A).
+
+## Dependencies
+
+- T001 (done) before everything. Phase 1 before Phases 2-5. T020 before T021, T026, T032, T041, T052. T040 before T041 before T044. T054 before T052.
+- Phases 3, 4 and 5 are independent of each other after Phase 2. Phase 6 after the phase it checks. Phase 7 last.
+- Phase 8: T091 and T092 depend on nothing. T010 before T093-T096; T091 before T092, T094-T096; T093 before T094-T101; T020 before
+  T101; T011 and T026 before T102; T090 before T098-T104; T101 before T102-T103; Phase 8c after the task it checks; T108-T109 last.
+  T095 extends T023 (same file; do them in order).
+- MVP = Phases 1-2 (words, masked errors, live refresh): it answers the owner's "not clear how to start them" on its own.

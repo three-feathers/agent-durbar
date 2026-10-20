@@ -10,6 +10,7 @@ import type { McpServerSpec } from '../shared/mcp';
 import type { DevEnv } from './devhooks';
 import { BUILTIN_SERVERS, cliServers, copilotDir } from './mcpfiles';
 import { applyFolderImport, MAX_IMPORT_FOLDERS, previewFolderImport } from './mcpimport';
+import { maskMcpError, mcpSecretValues } from './mcpmask';
 import { McpStore } from './mcpstore';
 import type { SecretCodec } from './mcpstore';
 
@@ -39,13 +40,23 @@ export const safeStorageCodec: SecretCodec = {
 const keyOf = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 const nameOfKey = (key: string): string => path.basename(key).replace(/\.code-workspace$/i, '') || key;
 
-export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string, AgentInfo>; router: Pick<AdapterRouter, 'onEvent' | 'forAgent'>; dev: DevEnv }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[] } } {
+export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string, AgentInfo>; router: Pick<AdapterRouter, 'onEvent' | 'forAgent'>; dev: DevEnv }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[] }; secretValuesFor(agentId: string): string[] } {
   const { agents, router, dev } = deps;
   const store = deps.store;
   /** Per agent id, this run only: servers the user switched off for that agent. */
   const off = new Map<string, Set<string>>();
   /** Latest MCP state the runtime reported per session. */
   const live = new Map<string, McpServerStatus[]>();
+  /** The secret values handed to one session (its folder's extras), used to mask server errors. */
+  const secretValuesFor = (agentId: string): string[] => {
+    const a = agents.get(agentId);
+    if (!a) return [];
+    try {
+      return mcpSecretValues(store().forSession(keyOf(a), off.get(agentId) ?? [], cliNames()).mcpServers);
+    } catch {
+      return []; // store not ready or unreadable: the shape-based masking still runs, and the event is not lost
+    }
+  };
   router.onEvent((e) => {
     if (e.type === 'mcp') live.set(e.sessionId, e.servers);
     else if (e.type === 'status' && e.status === 'stopped') live.delete(e.sessionId);
@@ -124,6 +135,7 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
     const a = typeof id === 'string' ? agents.get(id) : undefined;
     if (!a) return { ok: false, servers: [], live: false };
     const s = store();
+    const secrets = secretValuesFor(a.id);
     const mine = off.get(a.id) ?? new Set<string>();
     const status = new Map((live.get(a.id) ?? []).map((x) => [x.name, x]));
     const entries: AgentMcpEntry[] = [];
@@ -132,7 +144,7 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
       if (seen.has(name)) return;
       seen.add(name);
       const st = status.get(name);
-      entries.push({ name, origin, status: st?.status, error: st?.error, defaultOn, off: mine.has(name) });
+      entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), defaultOn, off: mine.has(name) });
     };
     const dis = new Set(s.ambientDisabled());
     const c = cli().servers;
@@ -145,6 +157,7 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
   ipcHandle('agents:setMcp', (_e, id: unknown, name: unknown, enabled: unknown) => setMcpOp({ agents, router, wsKey: keyOf }, off, id, name, enabled));
 
   return {
+    secretValuesFor,
     optionsFor(agentId: string) {
       const a = agents.get(agentId);
       if (!a) return { mcpServers: {}, disabledMcpServers: [...(off.get(agentId) ?? [])] };

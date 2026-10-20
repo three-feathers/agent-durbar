@@ -50,6 +50,10 @@ The renderer only: `src/renderer/app.js`, `screens.js`, `index.html`, `styles.cs
 - Renderer: `keys.js` (pure, `window.DurbarKeys`) for the modifier checks and the key labels; `app.js` uses it for the key handler, the shortcut sheet, the palette, titles and `aria-keyshortcuts`. Mac-only CSS sits under `html[data-platform="darwin"]`, set only from the preload's `platform`, so Linux geometry checks are unaffected.
 - Testing: `scripts/test-macos.ts` (registered as `test:macos`).
 
+## New session in the chat header (2026-10-20, FR-139)
+- `app.js` `showPanel` header: a `#newSessHdrBtn` `.btn.sm` after `#prevBtn` in `.actions`, wired to `newSession(a)` beside the `#newSessBtn` handler. `styles.css`: only a rule for the button (28px control height from `.ph`); the darwin title-bar block (#358) is not touched.
+- Third visible action is an owner exception to round 10's two; the More item stays so no route is lost.
+
 ## FR-138 (2026-10-20): macOS title bar on every screen
 
 - Renderer CSS only, all under `html[data-platform="darwin"]` (`styles.css`, next to the FR-085 block; `screens.css` is not touched). Notice strips precede `.workspace` and `#screen` in the DOM, so the "a strip is visible above" cases use the sibling combinator (`.notice-strip:not([hidden]) ~ .workspace .strip`, `~ #screen .scr-head`), not `:has()`.
