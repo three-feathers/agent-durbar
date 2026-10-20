@@ -42,3 +42,10 @@ The renderer only: `src/renderer/app.js`, `screens.js`, `index.html`, `styles.cs
 - Rows are recorded in `main.ts` from `router.onEvent` (`permission` events) and through an optional `log` hook in `OpsDeps` (`setModeOp`, `setCapOp`), so the window cannot write rows. The permission broker emits a new `auto` event in Allow all, forwarded by each adapter as `permission` with `via: 'policy'`; the renderer ignores those.
 - Renderer: `activitytable.js` (pure HTML builder, `window.DurbarActivity`) and an Activity tab in `screens.js`; the simulator keeps its own in-memory rows.
 - Testing: `scripts/test-activity.ts` (registered as `test:activity`).
+
+## Round 8 (2026-10-20): macOS conventions
+
+- Main: `src/main/appmenu.ts` (pure, Electron types only): `appMenuTemplate(platform, actions)` (role-based Mac menu, `null` elsewhere), `hideOnClose`, `disposeOnQuit`, `windowChrome`; `shouldBounce` in `badge.ts`. `main.ts` wires them: `Menu.setApplicationMenu` after `whenReady`, the window's `close` / full-screen events, `activate`, and one `before-quit` handler that releases remote control and then (macOS) ends the agents, each capped at 3 s.
+- No new invoke handler: the menu and full-screen signals are main-to-page events (`menu:settings`, `window:fullScreen`); the preload adds `onMenuSettings`, `onFullScreen` and `platform`.
+- Renderer: `keys.js` (pure, `window.DurbarKeys`) for the modifier checks and the key labels; `app.js` uses it for the key handler, the shortcut sheet, the palette, titles and `aria-keyshortcuts`. Mac-only CSS sits under `html[data-platform="darwin"]`, set only from the preload's `platform`, so Linux geometry checks are unaffected.
+- Testing: `scripts/test-macos.ts` (registered as `test:macos`).

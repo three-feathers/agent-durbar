@@ -52,8 +52,8 @@ module.exports = async (ctx) => {
     // #308: the defaults are one group; doors and the demo live under ⋯
     assert.ok(await js(`!!document.querySelector('.defaults-grp #permMode')&&!!document.querySelector('.defaults-grp #modelSel')`), 'defaults grouped');
     await js(`document.getElementById('topMoreBtn').focus()`); key('Down'); await ctx.sleep(300);
-    const tm = await js(`({open:!document.getElementById('topMoreMenu').hidden,ids:['closeAll','openAll','demoToggle'].map(i=>!!document.querySelector('#topMoreMenu #'+i))})`);
-    assert.ok(tm.open && tm.ids.every(Boolean), 'the ⋯ menu holds the doors and the demo: ' + JSON.stringify(tm));
+    const tm = await js(`({open:!document.getElementById('topMoreMenu').hidden,ids:['closeAll','openAll','demoToggle','endAllBtn'].map(i=>!!document.querySelector('#topMoreMenu #'+i))})`);
+    assert.ok(tm.open && tm.ids.every(Boolean), 'the ⋯ menu holds the doors, the demo and End all sessions (FR-090): ' + JSON.stringify(tm));
     await shot(`052-topbar-more-${w}x${h}.png`);
     key('Escape'); await ctx.sleep(250);
     assert.ok(await js(`document.getElementById('topMoreMenu').hidden&&document.activeElement.id==='topMoreBtn'`), '⋯ closes on Esc');
@@ -213,6 +213,15 @@ module.exports = async (ctx) => {
     key('Return'); await ctx.sleep(1200);
     assert.ok(await js(`!document.getElementById('palDlg')`), 'Enter closes the palette');
     assert.strictEqual(await js(`(document.getElementById('panelTitle')||{}).textContent||''`), 'Lena', 'Enter opens Lena\'s chat');
+    await js(`document.getElementById('backBtn').click()`); await ctx.sleep(600);
+    // FR-091 (round 8): with an empty search the palette starts with Recent (Lena, just opened); Ctrl+` goes back to her chat
+    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'K', modifiers: ['control'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'K', modifiers: ['control'] }); await ctx.sleep(500);
+    const rec = await js(`({g:(document.querySelector('#palList .pal-g')||{}).textContent,first:(document.querySelector('#palList [role="option"] .pal-l')||{}).textContent,end:[...document.querySelectorAll('#palList .pal-l')].some(x=>x.textContent==='End all sessions')})`);
+    assert.ok(rec.g === 'Recent' && rec.first === 'Lena', 'the palette lists recent chats first: ' + JSON.stringify(rec));
+    key('Escape'); await ctx.sleep(300);
+    await js(`document.activeElement&&document.activeElement.blur()`);
+    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: '`', modifiers: ['control'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: '`', modifiers: ['control'] }); await ctx.sleep(900);
+    assert.strictEqual(await js(`(document.getElementById('panelTitle')||{}).textContent||''`), 'Lena', 'Ctrl+` opens the previous chat');
     await js(`document.getElementById('backBtn').click()`); await ctx.sleep(600);
     // FR-043: ? opens the shortcut sheet; Esc closes it
     await js(`document.activeElement&&document.activeElement.blur()`);

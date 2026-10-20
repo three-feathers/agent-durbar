@@ -142,3 +142,16 @@
 - [x] T083 Simple approval cards, answer bar, inbox and notification in plain words ("<Name> wants to change companies.ts", "in tools", "wants to run a command" with a collapsed "Show the command", "See what changes"); waiting status lines without the command [FR-080]
 - [x] T084 Simple hides developer details: memory chip and "Tidy up memory", money-only usage line and list cost, tool rows in plain words, "Running a command" place word, Control from GitHub hidden, Tools "Activity summary" without Models and context or Tokens [FR-081]
 - [x] T085 Welcome card asks "Do you write code?" with two buttons that set and remember the detail level; welcome driver checks it [FR-082]
+
+## Round 8: daily use (2026-10-20)
+
+- [x] T090 Window place, size and maximized state saved in `durbar-app-state.json` and restored on a visible display (else 1440x900); the view, folder filter and open chat restored from `localStorage` [FR-087]
+- [x] T091 Every open session per folder (at most 6) saved and restored lazily; files with only `lastSession` still work; folder store tests [FR-088]
+- [x] T092 Quit time saved; "Since you were away" strip with missed schedule runs and **Run missed now** (`schedules:runNow`); tests for the summary and `runNow` [FR-089]
+- [x] T093 Quit prompt while agents work (one chained `before-quit`, the window's close shares it); **End all sessions** in ⋯ and the palette [FR-090]
+- [x] T094 Palette "Recent" group (5 chats) and Ctrl+` back to the previous chat; shortcut sheet; driver `shots-052-ux.js` [FR-091]
+## Round 8: macOS conventions (2026-10-20)
+- [x] T086 Mac app menu from roles (Settings… ⌘, sends `menu:settings`; View with zoom and full screen only; Help links the repo); no menu on Windows and Linux; preload `onMenuSettings`, simulator no-op; `appmenu.ts` + `test-macos` [FR-083]
+- [x] T087 ⌘ on a Mac: `keys.js` (`modDown`, `chatKeyDown`, labels, aria); shortcut sheet, palette, titles and `aria-keyshortcuts` per platform; footnote removed; ⌥⌘A/S/D/N in a chat, dead keys ignored [FR-084]
+- [x] T088 Mac window: close hides (agents keep running), `quitting` in `before-quit`, agents ended on ⌘Q after the remote release, `activate` shows; `hiddenInset` title bar with darwin-only drag CSS and full-screen events; `color-scheme` per theme; Dock bounce [FR-085]
+- [x] T089 README "On a Mac" note (not verified on a real Mac), CHANGELOG line [FR-086]

@@ -54,7 +54,10 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 
 **Sessions and folders**
 - One session per folder or `.code-workspace` file, or several per folder (**+ New session**).
-- After a restart, each folder **continues its last session**.
+- After a restart, each folder **continues its open sessions** (up to 6 per folder, each resumed when you open its chat or send it a message), and Durbar **remembers where you were**: the window's place and size (back on a screen it fits, else 1440x900), Office or List, the folder filter and the open chat.
+- After more than 30 minutes closed, a **Since you were away** strip says how long it was and which scheduled prompts did not run, with **Run missed now** for each.
+- **End of day:** quitting while agents are still working asks first ("2 agents are still working. Quit anyway?", Cancel is the default). **End all sessions** (top bar **⋯** and Ctrl+K) ends every running session after a confirmation; the chats stay.
+- **Ctrl+K** lists your 5 most recent chats first, and **Ctrl+`** jumps back to the previous chat.
 - *Previous sessions* lists a folder's earlier sessions to **Resume**, and VS Code's Copilot Chat history as a read-only copy (it opens at the latest message, and **Continue in VS Code** opens the folder there; [screenshot](docs/screenshots/009-vschat-latest-1440x900.png)). With two or more entries, a **search box** filters them by title (case and accents ignored).
 - **New session with a summary:** start fresh from a hand-off summary of the current conversation, which you edit before it is sent.
 - **Scheduled prompts** per folder or for one session, while the app is open: once, every N minutes, or on a calendar (every day, weekdays, or weekly on chosen days, at a local time that stays put across daylight-saving changes). A schedule can have its own **limit** in AI credits or dollars (the agent app's unit): when its runs have spent that much, it pauses and says so. A schedule for a session that has ended pauses too, and is never sent elsewhere unless you choose the folder's agent. Prompts that Copilot itself schedules in a session (`/every`, `/after`) are listed read-only. Open them from a room's **⋯** menu, the **clock** in its header (shown once it has schedules), the **Schedules** button in its chat, or **Settings > Schedules** for all folders. A **starter kit** has templates:
@@ -136,6 +139,12 @@ Codex also ships its own `bwrap` inside its npm package (`…/@openai/codex-linu
   - On "Windows protected your PC", click **More info**, then **Run anyway**.
   - Copilot runs shell commands with PowerShell 7 (from GitHub's docs, not checked by us). If the Copilot card says so, install it with `winget install --id Microsoft.PowerShell -e`.
 - **Linux:** run `chmod +x Agent-Durbar-*.AppImage && ./Agent-Durbar-*.AppImage`. Add `--no-sandbox` on systems without unprivileged user namespaces.
+
+**On a Mac** (spec 052 FR-083..FR-086; built and unit-tested, **not yet tried on a real Mac**):
+- Shortcuts use ⌘ and are shown that way: ⌘K command palette, ⇧⌘A the Needs you inbox, ⇧⌘N the next agent. In a chat that waits for you, ⌥⌘A / ⌥⌘S / ⌥⌘D answer and ⌥⌘N goes to the next agent (Option alone types accents on a Mac). macOS itself uses ⌥⌘D to show or hide the Dock, so Deny may not reach Durbar with the keys; click it instead.
+- **Agent Durbar > Settings…** (⌘,) opens Settings; the menu also has Edit, View (zoom, full screen), Window and Help.
+- Closing the window hides it and **your agents keep running**; click the Dock icon to bring it back. Quit with ⌘Q.
+- On Windows and Linux the window has no menu bar (no Reload or developer tools); copy and paste in text fields work as usual.
 
 > **Trying it on Windows?** Nobody on the team has run Durbar on a real Windows machine yet. If something does not work (the download, the installer, Settings > Agent apps, a harness that is not found), please [open an issue](https://github.com/three-feathers/agent-durbar/issues) with your Windows version and what you saw.
 

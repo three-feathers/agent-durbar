@@ -320,6 +320,37 @@ async function phase2(): Promise<void> {
     const back = parseSchedules(JSON.stringify(d.sch.doc), d.now);
     assert.ok(Math.abs((back.schedules[0].spent ?? 0) - 0.06) < 1e-9 && back.schedules[0].pausedReason === 'cap');
   }
+
+  // spec 052 FR-089: Run missed now sends once through the same path; the plan is unchanged; refusals send nothing
+  {
+    const t0 = 1_000_000_000_000;
+    const h = harness({ pausedAll: false, schedules: [
+      { id: 'once-1', folder: '/w', prompt: 'standup', at: t0 - 3 * 60 * MIN },
+      { id: 'every-1', folder: '/w', prompt: 'digest', every: 60, next: t0 - 2 * 60 * MIN },
+      { id: 'tgt-1', folder: '/w', prompt: 'gone', every: 60, next: t0 + 60 * MIN, target: { session: 'old', agent: 'Old' } },
+    ] }, t0);
+    h.sessions.add('old');
+    h.sch.start();
+    assert.deepStrictEqual(h.sch.doc.schedules.slice(0, 2).map((s) => s.last?.outcome), ['missed', 'missed']);
+    const nextBefore = h.sch.doc.schedules[1].next;
+    assert.deepStrictEqual(await h.sch.runNow('once-1'), { ok: true });
+    assert.deepStrictEqual(h.sent, ['/w:standup']);
+    assert.strictEqual(h.sch.doc.schedules[0].done, true, 'a one-time schedule stays done');
+    assert.strictEqual(h.sch.doc.schedules[0].last?.outcome, 'sent');
+    assert.deepStrictEqual(await h.sch.runNow('every-1'), { ok: true });
+    assert.strictEqual(h.sch.doc.schedules[1].next, nextBefore, 'the next planned run is unchanged');
+    assert.deepStrictEqual(await h.sch.runNow('nope'), { ok: false, error: 'That schedule is gone.' });
+    assert.strictEqual((await h.sch.runNow(5)).ok, false, 'a non-string id is refused');
+    h.busy.add('/w');
+    assert.deepStrictEqual(await h.sch.runNow('every-1'), { ok: false, error: 'The agent is busy. Try again when it is free.' });
+    h.busy.delete('/w');
+    h.sch.setPausedAll(true);
+    assert.strictEqual((await h.sch.runNow('every-1')).ok, false, 'Pause all is respected');
+    h.sch.setPausedAll(false);
+    h.sessions.delete('old');
+    assert.deepStrictEqual(await h.sch.runNow('tgt-1'), { ok: false, error: 'That session has ended.' });
+    assert.strictEqual(h.sent.length, 2, 'refusals send nothing');
+  }
 }
 
 if (require.main === module) main().catch((e) => { console.error(e); process.exit(1); });

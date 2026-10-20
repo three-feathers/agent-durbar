@@ -172,3 +172,10 @@ For a folder that has not been used yet in this run, a "Previous sessions" panel
 
 - `test:` `scripts/fixtures/events/real-getevents-restart.json` holds the 18 events of the throwaway Copilot session from the FR-021 real check. They were read by resuming that session, without a prompt. Redaction: ids are placeholders, the API call id and `transformedContent` are dropped, the system prompt is omitted, and the folder is `/work/demo`. `test:history` replays it to exactly its two turns (prompt, "OK", prompt, "marmalade"); session events, the system prompt and usage are not shown.
 
+### 2026-10-20: every open session comes back (spec 052 FR-088)
+
+*Missing:* after a restart, each folder brought back only its last session (FR-020/FR-021); a folder with three sessions open came back with one.
+
+*Corrected:*
+- **FR-020** (extended) `[IMPLEMENTED]` (`test:` `scripts/test-folders.ts`; `read:` `restoreFolders` in `src/main/main.ts`) A saved folder also keeps `openSessions`: the sessions open in it that got a message or were resumed, at most 6, oldest first. Remove from office and a session replaced by a resumed one take it out; End session keeps it (the card stays). `lastSession` is kept as before, so older builds still read the file.
+- **FR-021** (extended) `[IMPLEMENTED]` On start each of them comes back lazily under its own id, exactly as the last session did, the last session first. A file with only `lastSession` restores that one; nothing saved, one fresh agent. Not run in Electron or on a real session.
