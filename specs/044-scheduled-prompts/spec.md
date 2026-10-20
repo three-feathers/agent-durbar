@@ -2,7 +2,7 @@
 
 **Feature Branch**: `044-scheduled-prompts`
 **Created**: 2026-10-19
-**Status**: Phase 1 built (unit tests with a fake clock, simulator, one real check 2026-10-19)
+**Status**: Phase 1 built (unit tests with a fake clock, simulator, one real check 2026-10-19); Phase 2 built 2026-10-20 (unit tests and the simulator; no real check yet), see *Changes*
 **Input**: Issue #125 (owner's idea, 2026-10-17, with research notes on SDK 1.0.22 / runtime 1.0.98): schedule a prompt on a session, once or at an interval, only while the app is open; no OS scheduler, nothing changed on the user's system.
 
 ## Decisions taken from the issue (Phase 1)
@@ -50,7 +50,7 @@ In **Folders**, each folder has **Schedules**. The dialog lists the folder's sch
 
 ## Assumptions and dependencies
 
-- Phase 2 (not here): a schedule per session, calendar rules, a per-schedule credit cap, the AI's own schedules (shown read-only).
+- Phase 2 (issue #291, built 2026-10-20, see *Changes*): a schedule per session, calendar rules, a per-schedule credit or cost cap, the agent's own schedules (shown read-only).
 
 ## Changes
 
@@ -77,7 +77,7 @@ In **Folders**, each folder has **Schedules**. The dialog lists the folder's sch
   - An interval with `at` is **anchored**: after a run, a busy skip, a missed run or *Pause all*, the next run is the next `at + k × every`, so the time of day stays.
   - Plain intervals keep counting from now, as before.
   - The list shows "every day at 08:30".
-  - `[KNOWN GAP]` A daily interval is 24 h of clock time, so across a daylight-saving change it shifts by an hour until it is edited.
+  - ~~`[KNOWN GAP]` A daily interval is 24 h of clock time, so across a daylight-saving change it shifts by an hour until it is edited.~~ Fixed 2026-10-20: *every day at* is a calendar rule now (FR-012, FR-013).
 - **FR-008** **Decision at the end.** The briefing and planning templates end by asking the user **with the agent's own question tool**: Copilot `ask_user`, Claude `AskUserQuestion`, or Codex `request_user_input` where it is on.
   - The question offers the suggested next steps as choices (several allowed, plus "none"). The agent then does only what was chosen, one step at a time, still within its permission mode, which asks before anything that writes or sends.
   - In Durbar this is the existing question card, and the agent shows as **Waiting for you** in the office, so a decision prepared at 08:30 is waiting when the user arrives.
@@ -118,3 +118,48 @@ In **Folders**, each folder has **Schedules**. The dialog lists the folder's sch
 - Screenshots: `docs/screenshots/044-room-chip-*.png`, `044-settings-*.png`.
 - `scripts/shots-006-remove.js` now expects *Schedules…* in the folder menu.
 
+
+### 2026-10-20: Phase 2: calendar rules, per-session schedules, a per-schedule cap, the agent's own schedules (issue #291)
+
+*Decisions:* a schedule whose session has ended **pauses** and says so; it is never sent to another session without the user choosing it (the safe choice, Principle II). A per-schedule cap counts what that schedule's own runs spent; it is checked before a run, never during one (the session's own cap still applies during a turn).
+
+- **FR-012** **Calendar rules.** Next to *Every N minutes* and *Once at*, **On a calendar**: *every day*, *weekdays (Mon-Fri)* or *weekly on* one or more days, **at HH:MM** local time. Stored as `rule` {`kind`: `daily` | `weekdays` | `weekly`, `time` "HH:MM", `days` 0-6 (0 = Sunday), weekly only, at least one}.
+  - The next run comes from a pure function, `nextRuleRun(rule, after)` in `src/shared/schedrules.ts`. It builds the next `Date` from the local calendar day and the wall-clock time (Y/M/D h:m), never by adding 24 h, so a run keeps its time of day across a daylight-saving change. This fixes the FR-007 `[KNOWN GAP]` for *every day at*.
+  - Daylight saving: in spring a time inside the skipped hour (for example 02:30 in Europe/Zurich) runs once that day at the shifted time (03:30). In autumn a time inside the repeated hour runs once, at its first occurrence.
+  - Busy, missed and *Pause all* behave as for intervals: the run is skipped and the next run is the rule's next time. Missed runs are not caught up.
+  - The list says "every day at 08:30", "weekdays at 09:00" or "weekly on Mon, Thu at 17:00".
+- **FR-013** **Migration.** Existing saved schedules keep working.
+  - An old *every day at* (`every: 1440` with `at`) is read as a `daily` rule at the local time of `at`. Its daylight-saving drift goes away without an edit.
+  - Other anchored intervals and plain intervals are unchanged.
+  - New fields are optional. A missing field means: the folder's agent, no cap, nothing spent. A bad value in a new field is dropped; a bad rule drops that schedule, as for a bad interval.
+- **FR-014** **A schedule for one session.** A schedule can target one session (`target` {`session` id, `agent` app id, `name` shown}) instead of the folder's agent.
+  - It runs only in that session, and the busy check looks at that session only.
+  - When the session is gone (removed, replaced, or not restored after a restart), the schedule **pauses** with `pausedReason: session-ended`. This is checked when the app starts, when a session is removed and when a run is due; a run found due then is recorded as `skipped-ended`.
+  - The list shows "Paused: the session has ended", with **Use the folder's agent** (it drops the target and resumes). *Resume* alone is refused while the session is gone.
+  - The Schedules dialog opened from a chat (its header button) has **Send to**: *This folder's agent* or *This session (<name>)*. Opened from elsewhere it sends to the folder's agent, as before. The list shows "→ <name>" for a targeted schedule.
+- **FR-015** **A limit per schedule.** **Limit** is optional, in the unit of the agent app's cap: AI credits (Copilot) or dollars (Claude's estimate, spec 012 FR-150). The unit is taken from the target's agent app when the schedule is saved. Stored as `cap` {`amount`, `unit`: `aiu` | `usd`}, with `spent` and `spentUnknown`.
+  - *Attribution:* from a scheduled send until that session's turn ends (its next `idle`, `error` or `stopped` status), every `usage` event of the session counts toward the schedule. That includes its helpers, which report through their agent. The amount is `nanoAiu / 1e9` for AIU, or `costUsd` for dollars.
+  - When a run is due and `spent` ≥ the cap, nothing is sent. The run is recorded as `skipped-cap` and the schedule pauses with `pausedReason: cap`: "Paused: reached its limit". **Resume** starts counting again from zero.
+  - The list shows "spent 1.20 of 5 AIU", or "$0.04 of $1.00".
+  - *Limits, said honestly:*
+    - a message the user sends during a scheduled turn counts too (it over-counts, the safe side);
+    - a run that starts under the cap can end over it (the cap stops the next run, not the current one);
+    - a usage event without a figure in the cap's unit (a runtime that reports no credits) sets `spentUnknown`, and the list says "the spend was not fully reported";
+    - the spend is kept with the schedule, so it survives restarts; a turn in progress when the app quits is no longer attributed after the restart.
+- **FR-016** **The agent's own schedules, read-only.**
+  - The Copilot SDK reports prompts scheduled inside a session (`session.schedule_created`, `session.schedule_cancelled`, `session.schedule_rearmed`; made with `/every` or `/after`, or by the agent through its `manage_schedule` tool). The Copilot adapter maps them to a normalized `agentSchedule` event: phase, id, prompt, interval, cron expression and time zone, one-off time, next run, and who made it.
+  - The Schedules dialog lists a folder's live sessions' own schedules under **Scheduled in the agent app (read-only)**, with a note that Durbar cannot change them.
+  - Only schedules reported while Durbar runs are shown. They are not read from a session's history, and they are kept in the window only.
+  - `[KNOWN GAP]` Not available from Claude Code or Codex: neither adapter reports such schedules. Not seen on a real Copilot session: the runtime exposes `manage_schedule` only to some accounts ("typically gated to staff users"), and `/every` was not tried through Durbar.
+- **FR-017** **Validation.** Everything from the renderer is untrusted and is validated in main: the rule (kind, time, days), the target (the session must exist when saved, ids are limited to `[A-Za-z0-9._:-]` and at most 128 characters, the name is one line of at most 80 characters), and the cap (AIU 0.01 to 1,000,000, dollars 0.01 to 10,000, in the target's unit). `spent`, `spentUnknown` and `pausedReason` are never taken from the renderer; main keeps its own.
+- **FR-018** **Simulator.** The simulator has the same rules, targets, caps and pause states. Its simulated usage counts toward a schedule's cap, so the dialog can be checked without credits.
+- `[IMPLEMENTED]` FR-012..FR-018.
+- `test:` `npm run test:schedrules` runs under `TZ=Europe/Zurich`. It covers *every day at* across both 2026 changes (23 h and 25 h days, still 08:30), 02:30 in the skipped hour (runs at 03:30 once) and in the repeated hour (runs once), times already passed today, exactly now, and the year end. It also covers *weekdays* over the weekend, *weekly* on Monday and Thursday and on one day, `parseRule`, and the renderer's copy agreeing with main's on more than 500 cases. Finally, the scheduler over the fall-back weekend: a daily rule and a weekdays rule, a busy skip, and a missed start.
+- `test:` `npm run test:schedules` (Phase 2 part):
+  - migration of an old *every day at*, and Phase 1 files loading;
+  - validation of rules, targets (ids, a one-line name) and caps (ranges, units, the agent app's unit wins), with `spent` and `pausedReason` never taken from the renderer;
+  - per-session busy; pause when the session ends (at once, at a due run, at start); Resume refused, and *Use the folder's agent*;
+  - the limit: usage counted only between a scheduled send and the turn's end and only for that session, in AIU and in dollars; the skip and pause at the limit; an edit keeping the spend; Resume counting from zero; `spentUnknown`; the spend saved and read back.
+- `test:` `npm run test:events`: the Copilot `session.schedule_*` events map to `agentSchedule` (a helper's schedule and one without an id are dropped, text cleaned, bad values dropped), and pass the event guard.
+- `sim:` the simulator has rules, targets, limits (its simulated usage counts) and both pause states. `scripts/shots-044-templates.js` and `scripts/shots-044-everywhere.js` now also check the calendar choice (weekly shows the days) and the *Send to* choice in a dialog opened from a chat. `[KNOWN GAP]` These drivers were updated but not run in this change, and no new screenshots were taken. The read-only list of the agent's own schedules has no simulator source.
+- `[KNOWN GAP]` No real check of Phase 2: no real session ran a rule, a per-session schedule or a limit. The Copilot schedule events are mapped from the SDK's types, never seen live.

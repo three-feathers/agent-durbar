@@ -105,7 +105,7 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 | --- | --- | --- |
 | [042](042-release-alpha5/spec.md) | Release v0.1.0-alpha.5 as a pre-release (version bump, changelog, download notes) | built; **published as a pre-release** (2026-10-18) |
 | [043](043-custom-agents/spec.md) | Custom agent per session (issue #127) | Phase 1 built: Agent chip and menu, repository-agent confirmation, Copilot `rpc.agent.*` (simulator, unit tests, real check 2026-10-19); Phase 2: the agent in the New session dialog built (FR-007); Claude agents built (FR-008); per-folder default built (FR-009); Codex not started |
-| [044](044-scheduled-prompts/spec.md) | Scheduled prompts while the app is open (issue #125) | Phase 1 built: per-folder schedules, once or every N minutes, busy and missed runs skipped, pause all (unit tests, simulator, real check 2026-10-19) |
+| [044](044-scheduled-prompts/spec.md) | Scheduled prompts while the app is open (issue #125) | Phase 1 built: per-folder schedules, once or every N minutes, busy and missed runs skipped, pause all (unit tests, simulator, real check 2026-10-19). Phase 2 built 2026-10-20 (#291): calendar rules without DST drift, per-session schedules (pause when the session ends), a per-schedule limit, Copilot's own schedules read-only (unit tests, simulator; no real check; not available from Claude Code or Codex) |
 
 ## Feature 031: release v0.1.0-alpha.4
 

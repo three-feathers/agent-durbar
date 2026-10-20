@@ -6,7 +6,8 @@
  *     DURBAR_DRIVER=$PWD/scripts/shots-044-templates.js xvfb-run -a npx electron . --no-sandbox
  *
  * At both sizes: "Start from a template" fills the prompt and "Every day at 08:30"; the note says what the template needs and
- * that it ends with a question; Add schedule lists it as "every day at 08:30". Writes 044-templates-<w>x<h>.png.
+ * that it ends with a question; Add schedule lists it as "every day at 08:30". Phase 2: the calendar choice is "Every day" and
+ * "Weekly on" shows the day checkboxes. Writes 044-templates-<w>x<h>.png.
  */
 const assert = require('assert');
 const path = require('path');
@@ -32,6 +33,11 @@ module.exports = async (ctx) => {
     assert.strictEqual(st.t, '08:30');
     assert.match(st.note, /Waiting for you/);
     assert.ok(st.fits, 'the dialog fits the window');
+    // Phase 2 FR-012: "On a calendar" is every day for the template; weekly shows the day checkboxes, then back to every day
+    const cal = await js(`(()=>{const c=document.getElementById('scCal'),days=document.getElementById('scDays');const a=[c.value,days.hidden];c.value='weekly';c.dispatchEvent(new Event('change'));const b=[days.hidden,days.querySelectorAll('input:checked').length];c.value='daily';c.dispatchEvent(new Event('change'));return {a,b,back:days.hidden}})()`);
+    assert.deepStrictEqual(cal.a, ['daily', true], 'every day, no day checkboxes');
+    assert.deepStrictEqual(cal.b, [false, 1], 'weekly: the days show, today is ticked');
+    assert.strictEqual(cal.back, true);
     await ctx.shot(path.join(OUT, `044-templates-${w}x${h}.png`));
     await js(`document.getElementById('scAdd').click()`); await ctx.sleep(500);
     const row = await js(`(document.querySelector('#sdList .sc-row small')||{}).textContent||''`);
