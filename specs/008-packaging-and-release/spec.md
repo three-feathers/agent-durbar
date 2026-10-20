@@ -186,3 +186,14 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
 *Found:* on PR #302, macOS CI failed `test:runtime` with "adversarial urlLong: child hung twice (ETIMEDOUT)". `redact()` itself takes about 38 ms on that input. What hung was the child process fed 1 MB on stdin, twice for 30 s, on a 3-core runner that runs 3 suites at once.
 
 - **FR-032** `scripts/test-redact.ts` section 9 runs each adversarial case in a **worker thread**: no process start, no stdin pipe. The worker times `redact()` and writes the result to shared memory, and the test waits with `Atomics.wait` (still synchronous), keeping the 30 s hang guard and one retry. The 1 s limit, the real ReDoS check, is unchanged. `test:` the whole file runs in 1.2 s locally. Stand-in modules confirm the guard: a 1.5 s function is measured at 1,499 ms and fails the limit; an endless loop times out; a throw is reported.
+
+### 2026-10-21: the installed app on macOS, Windows and Linux (T021), and a stale gap closed (T025)
+
+- **FR-015** `[IMPLEMENTED]`. The stale `[KNOWN GAP]` is closed: `.github/workflows/packaged-check.yml` (spec 012 T044) packages the app on macOS, Windows and Linux runners and runs the packaged main process (`scripts/pack-esm-ci.js`). `real:` it passed on all three, for example run 39497504364 (2026-10-20). So macOS and Windows packaging is no longer first exercised by the tag workflow.
+- **FR-010 delta** `[IMPLEMENTED]`, `.github/workflows/installed-app.yml` + `scripts/installed-app-ci.js` + `scripts/installed-app-check.js`. On each OS it builds the real release package (`dist:win`, `dist:mac:arm64`, `dist:linux`; unsigned, nothing published) and installs it the way a user does:
+  - **Windows:** the NSIS installer `/S`, per user. The installed exe and the Start menu entry are recorded, then the uninstaller runs `/S`.
+  - **macOS:** the `.dmg` is mounted, `Agent Durbar.app` is copied to `~/Applications`, and the `Info.plist` names are recorded.
+  - **Linux:** the AppImage, with its `.desktop` `Name=` and `StartupWMClass`.
+
+  Then it starts the **installed** app on the simulator (`DURBAR_DEV=1`, no account, no credits). It checks that the office renders the 15 agents and records the app's name and window title, with a screenshot artifact. It runs on demand, on `main` when packaging changes, and on a PR that changes the check. `real:` see the PR's first run.
+- Not covered, still `[KNOWN GAP]`: a person's own Mac or PC (Gatekeeper and SmartScreen on a downloaded, unsigned build: the runner's copy is not quarantined), and code signing (spec 014, needs a purchase).
