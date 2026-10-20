@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, handoffArgs, oneShotArgs, parseHandoffOutput, claudeMdPrompt, claudeModelFlag, claudeModelOptions, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
+import { CLAUDE_ENTRYPOINT, ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, handoffArgs, oneShotArgs, parseHandoffOutput, claudeMdPrompt, claudeModelFlag, claudeModelOptions, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import type { AgentEvent } from '../src/adapters/types';
 import { FakeClaudeChild, fakeSpawn } from './fakes/claude-cli';
@@ -805,6 +805,30 @@ async function main(): Promise<void> {
     assert.match(err.intent, /not installed/);
   }
 
+  // FR-159: chat sessions carry Durbar's own entrypoint (listed by `claude --resume`); the user's other variables are kept
+  {
+    const envs: NodeJS.ProcessEnv[] = [];
+    const sp = fakeSpawn();
+    sp.next = scripted(okTurn);
+    const ad = new ClaudeAdapter({
+      claudePath: async () => '/usr/local/bin/claude',
+      makeTransport: (x) => { envs.push(x.env); return createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }); },
+      sessionExists: () => false,
+      claudeMd: () => undefined,
+      readImage: () => Buffer.from('img'),
+      env: () => ({ PATH: '/usr/bin', CLAUDE_CODE_ENTRYPOINT: 'cli', KEEP_ME: '1' }),
+    });
+    const sid = await ad.start({ workspace: WS, permissionMode: 'ask' });
+    await ad.send(sid, { text: 'hello' });
+    await until('transport env', () => envs[0]);
+    assert.strictEqual(envs[0].CLAUDE_CODE_ENTRYPOINT, CLAUDE_ENTRYPOINT, 'chat sessions use our entrypoint (cli would become sdk-cli in print mode)');
+    assert.strictEqual(CLAUDE_ENTRYPOINT, 'agent-durbar');
+    assert.ok(!/^sdk-/.test(CLAUDE_ENTRYPOINT), 'not an SDK entrypoint (the picker hides those)');
+    assert.strictEqual(envs[0].KEEP_ME, '1');
+    assert.strictEqual(envs[0].PATH, '/usr/bin');
+    await ad.stop(sid);
+    await ad.dispose();
+  }
   fs.rmSync(WS, { recursive: true, force: true });
   console.log('claude adapter tests passed');
 }
