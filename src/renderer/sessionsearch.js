@@ -4,7 +4,7 @@
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
   /* lower case, accents removed: "Explicación" and "EXPLICACION" are the same */
-  const fold=s=>String(s==null?'':s).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+  const fold=s=>String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
   /* the words of a query, folded; empty when the query is blank */
   const terms=q=>fold(q).split(/\s+/).filter(Boolean);
   /* sessions whose title holds every word of the query (any order); the input order (newest first) is kept; a blank query keeps all */
