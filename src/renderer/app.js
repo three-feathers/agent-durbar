@@ -2579,11 +2579,13 @@ function settlePerm(a,p){
 function setGrants(a,list){a.grants=list;if(ui.selected&&liveRoot(byId(ui.selected)||a)===a)renderGrants();}
 /* spec 052 FR-141: 1-2 grants are single chips; 3 or more are one "Allowed (N)" chip that opens a list (a row per grant, Revoke all).
    The label drops a tool-name prefix that repeats the server name; the title and the accessible name keep the full label. */
+let grantsAllBusy=false; /* Revoke all is under way: the revokes arrive one by one and the focus may be lost in between */
 let grantsOpen=false, grantsFocus=null; /* grantsFocus: where the focus goes after the next draw (a revoke button index, or 'chip') */
 function grantChipX(g){return `<button type="button" data-revoke="${esc(g.key)}" aria-label="Revoke permission: ${esc(g.label)}">${ICON('x')}</button>`;}
 function renderGrants(){
   const box=$('grants'),a0=byId(ui.selected);if(!box||!a0)return;const a=liveRoot(a0),gs=a.grants||[];
   const short=g=>window.DurbarGrantLabel.shortGrantLabel(g.label);
+  const hadFocus=box.contains(document.activeElement)||grantsFocus!==null||grantsAllBusy; /* the user is working in the grants: do not let the focus fall to <body> when they all go */
   if(gs.length<=2){
     grantsOpen=false;
     box.innerHTML=gs.map(g=>`<span class="gchip" title="Allowed for this session: ${esc(g.label)}. Revoke to be asked again."><span>Allowed: ${esc(short(g))}</span>${grantChipX(g)}</span>`).join('');
@@ -2598,6 +2600,9 @@ function renderGrants(){
     const t=f==='chip'?$('grantsBtn'):btns[Math.min(f,btns.length-1)];
     if(t)t.focus();
   }
+  if(!gs.length&&hadFocus&&!box.contains(document.activeElement)){ /* none left: the chips are gone; the composer is the same neighbour as after answering a card */
+    grantsFocus=null;grantsAllBusy=false;const m=$('msgInput');if(m)m.focus();announce('All permissions revoked.');
+  }
 }
 function closeGrants(toChip){
   if(!grantsOpen)return;grantsOpen=false;
@@ -2611,7 +2616,7 @@ async function revokeAllGrants(){
       buttons:[{label:'Cancel',value:null},{label:'Revoke all',value:'ok',cls:'primary danger'}]});
     if(!ok)return;
   }
-  grantsOpen=false;grantsFocus='chip';
+  grantsOpen=false;grantsFocus='chip';grantsAllBusy=true;
   for(const g of gs)bridge.revokeGrant(r.id,g.key);
 }
 /* ---------------- tool usage, models and context window (spec 019) ---------------- */

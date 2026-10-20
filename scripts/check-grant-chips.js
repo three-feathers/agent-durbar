@@ -106,6 +106,7 @@ module.exports = async (ctx) => {
         assert.strictEqual(await js(`document.querySelectorAll('#grants .gchip').length`), 1, `${tag}: one grant is one chip`);
         await js(`document.querySelector('#grants [data-revoke]').click()`); await ctx.sleep(250);
         assert.ok(await js(`document.getElementById('grants').hidden`), `${tag}: no grants, no row`);
+        assert.strictEqual(await js(`document.activeElement.id`), 'msgInput', `${tag}: after the last single chip is revoked the focus is on the composer, not <body>`);
       } else {
         // 8. Revoke all asks first: Cancel keeps them, the confirmation revokes them
         await js(`document.getElementById('grantsBtn').click()`); await ctx.sleep(200);
@@ -118,6 +119,9 @@ module.exports = async (ctx) => {
         await js(`document.getElementById('grantsAll').click()`); await ctx.sleep(400);
         await js(`[...document.querySelectorAll('.dlg-ov button')].find(x=>x.textContent.trim()==='Revoke all').click()`); await ctx.sleep(500);
         assert.ok(await js(`document.getElementById('grants').hidden`), `${tag}: Revoke all removes every grant`);
+        await ctx.sleep(300);
+        assert.strictEqual(await js(`document.activeElement.id`), 'msgInput', `${tag}: after Revoke all the focus is on the composer, not <body>`);
+        assert.strictEqual(await js(`document.getElementById('srAnnounce').textContent`), 'All permissions revoked.', `${tag}: it is announced`);
       }
       console.log('[grant-chips]', w, level, 'ok');
     }
