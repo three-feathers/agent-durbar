@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { FolderStore, adapterOf, parseAdapterId, parseDefaultAgent, parseLabel, parseLastSession, parseOpenSessions, parseSavedFloors, parseSavedFolders, restoreMode, sessionsToRestore, MAX_OPEN_SESSIONS } from '../src/main/folders';
+import { FolderStore, adapterOf, parseAdapterId, parseDefaultAgent, parseLabel, parseLastSession, parseOpenSessions, parsePrevMarks, MAX_PREV_MARKS, parseSavedFloors, parseSavedFolders, restoreMode, sessionsToRestore, MAX_OPEN_SESSIONS } from '../src/main/folders';
 import { GROUND, GROUND_NAME } from '../src/shared/floors';
 
 const abs = (p: string): string => path.resolve('/', p);
@@ -468,6 +468,69 @@ assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: 
     assert.ok(!('openSessions' in new FolderStore(f6).load()[0]), 'an empty list is not written');
   } finally {
     fs.rmSync(d6, { recursive: true, force: true });
+  }
+}
+// Spec 006 FR-026: pins and hides of Previous sessions (ids only, strict id shape, cap 200, exclusive, no migration)
+{
+  const OK = 'a1b2c3d4-0000-4000-8000-000000000001';
+  assert.strictEqual(parsePrevMarks('x'), undefined);
+  assert.strictEqual(parsePrevMarks([]), undefined);
+  assert.deepStrictEqual(
+    parsePrevMarks([{ src: 'copilot', id: OK }, { src: 'copilot', id: OK }, { src: 'vscode', id: 'abc123/def-456' }, { src: 'codex', id: 'x' }, null, 5, { src: 'copilot' }, { id: OK }]),
+    [{ src: 'copilot', id: OK }, { src: 'vscode', id: 'abc123/def-456' }, { src: 'codex', id: 'x' }],
+    'bad shapes dropped, duplicates collapsed',
+  );
+  // the id allow-list: traversal, drive letters, absolute paths, empty, overlong, control characters, extra fields
+  for (const bad of ['../x', '..\\x', 'a/../b', '..', '.hidden', 'C:\\x', 'C:/x', '/etc/passwd', '\\\\host\\share', '', 'a'.repeat(101), 'a\u0000b', 'a\nb', 'a b', 'a/b', 'a.b', 'a:b', '-x', '\u0007'])
+    assert.strictEqual(parsePrevMarks([{ src: 'copilot', id: bad }]), undefined, `refused for an agent session: ${JSON.stringify(bad)}`);
+  for (const bad of ['abc', 'a/b/c', '../x/y', 'a/..', '../..', '/a/b', 'a\\b/c', 'a/b\u0000', 'C:/a/b', 'a//b'])
+    assert.strictEqual(parsePrevMarks([{ src: 'vscode', id: bad }]), undefined, `refused for a VS Code key: ${JSON.stringify(bad)}`);
+  assert.strictEqual(parsePrevMarks([{ src: 'Copilot', id: OK }, { src: '../x', id: OK }, { src: '', id: OK }, { src: 'a'.repeat(40), id: OK }]), undefined, 'bad src');
+  assert.strictEqual(parsePrevMarks(Array.from({ length: 300 }, (_, i) => ({ src: 'copilot', id: 's' + i })))?.length, MAX_PREV_MARKS);
+  assert.strictEqual(parsePrevMarks(Array.from({ length: 300 }, (_, i) => ({ src: 'copilot', id: 's' + i })))?.[0].id, 's100', 'the newest 200 kept');
+
+  const d7 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folders7-'));
+  try {
+    const f7 = path.join(d7, 'f.json');
+    const st = new FolderStore(f7);
+    st.upsert({ workspace: abs('m'), permMode: 'ask' });
+    const reload = (): SavedFolderLike => new FolderStore(f7).load()[0];
+    type SavedFolderLike = ReturnType<FolderStore['list']>[number];
+    assert.ok(!('prevPinned' in reload()) && !('prevHidden' in reload()), 'no migration: nothing pinned or hidden');
+    assert.strictEqual(st.markPrevious(abs('nope'), 'copilot', OK, 'pin'), false, 'only saved folders');
+    assert.strictEqual(st.markPrevious(abs('m'), 'copilot', '../x', 'pin'), false, 'a bad id is refused');
+    assert.strictEqual(st.markPrevious(abs('m'), 'copilot', OK, 'delete'), false, 'a bad mark is refused');
+    assert.strictEqual(st.markPrevious(abs('m'), 'vscode', OK, 'pin'), false, 'a session id is not a VS Code key');
+    assert.strictEqual(fs.existsSync(f7) ? fs.readFileSync(f7, 'utf8').includes('prev') : false, false, 'refusals write nothing');
+    assert.ok(st.markPrevious(abs('m'), 'copilot', OK, 'pin'));
+    assert.ok(st.markPrevious(abs('m'), 'vscode', 'h1/c1', 'hide'));
+    assert.deepStrictEqual(reload().prevPinned, [{ src: 'copilot', id: OK }]);
+    assert.deepStrictEqual(reload().prevHidden, [{ src: 'vscode', id: 'h1/c1' }], 'survives a restart');
+    const mt = fs.statSync(f7).mtimeMs;
+    st.markPrevious(abs('m'), 'copilot', OK, 'pin'); // no change: no write
+    st.markPrevious(abs('m'), 'copilot', OK, 'unhide');
+    st.markPrevious(abs('m'), 'codex', 'zz', 'unpin');
+    assert.strictEqual(fs.statSync(f7).mtimeMs, mt, 'no rewrite when unchanged');
+    st.markPrevious(abs('m'), 'copilot', OK, 'hide'); // hiding unpins
+    assert.ok(!('prevPinned' in reload()));
+    assert.deepStrictEqual(reload().prevHidden?.map((x) => x.id), ['h1/c1', OK]);
+    st.markPrevious(abs('m'), 'copilot', OK, 'pin'); // pinning unhides
+    assert.deepStrictEqual(reload().prevPinned, [{ src: 'copilot', id: OK }]);
+    assert.deepStrictEqual(reload().prevHidden?.map((x) => x.id), ['h1/c1']);
+    for (let i = 0; i < 205; i++) st.markPrevious(abs('m'), 'copilot', 'p' + i, 'pin');
+    assert.strictEqual(reload().prevPinned?.length, MAX_PREV_MARKS, 'capped at 200');
+    assert.strictEqual(reload().prevPinned?.[0].id, 'p5', 'the oldest dropped');
+    st.dropPrevious(abs('m'), 'vscode', 'h1/c1');
+    assert.ok(!('prevHidden' in reload()), 'dropped with the session; an empty list is not written');
+    const mt2 = fs.statSync(f7).mtimeMs;
+    st.dropPrevious(abs('m'), 'copilot', 'never-there');
+    assert.strictEqual(fs.statSync(f7).mtimeMs, mt2);
+    st.remove(abs('m'));
+    assert.deepStrictEqual(new FolderStore(f7).load(), [], 'the lists go with the folder');
+    assert.ok(!fs.readFileSync(f7, 'utf8').includes('p5'));
+    if (process.platform !== 'win32') assert.strictEqual(fs.statSync(f7).mode & 0o777, 0o600);
+  } finally {
+    fs.rmSync(d7, { recursive: true, force: true });
   }
 }
 console.log('folders tests passed');

@@ -13,6 +13,7 @@
     'mode-change':'Mode changed',
     'limit-change':'Limit changed',
     'remote-on':'Remote control on','remote-off':'Remote control off',
+    'session-deleted':'Session deleted',
   };
   const MODE_WORDS={'read-only':'Read-only',ask:'Ask first',allow:'Allow all'};
   const NOTE='Kept on this computer. Actions and decisions only; never prompts, replies or file contents.';

@@ -102,6 +102,14 @@ try {
     assert.deepStrictEqual(Object.keys(json[0]), [...ACTIVITY_FIELDS]);
   }
 
+  // spec 006 FR-031: a deleted session is a row with ids and a date, never a title; CSV and JSON carry it like any row
+  {
+    const st = new ActivityStore(path.join(dir, 'd.json'), { ...noTimer, env: {} });
+    const r = st.record({ agent: 'web-shop', folder: 'web-shop', app: 'GitHub Copilot', mode: 'read-only', action: 'Session deleted · GitHub Copilot · a1b2c3d4 · last used 2026-10-18', decision: 'session-deleted' });
+    assert.ok(r && r.decision === 'session-deleted', 'the new decision is accepted');
+    assert.ok(activityCsv(st.all()).includes('session-deleted') && (JSON.parse(activityJson(st.all())) as ActivityRow[])[0].decision === 'session-deleted');
+  }
+
   // decisions from final permission answers
   {
     assert.strictEqual(decisionOf({ state: 'pending' }), undefined);
@@ -137,7 +145,7 @@ try {
     const html = T.tableHtml([{ t: '2026-10-20T10:00:00Z', agent: '<img src=x onerror=alert(1)>', folder: 'f', app: 'a', mode: 'allow', action: '"><script>', decision: 'auto-allow-all' }], esc);
     assert.ok(!html.includes('<img') && !html.includes('<script>'), 'escaped');
     assert.ok(html.includes('Automatic (Allow all)') && html.includes('Allow all'));
-    assert.deepStrictEqual(Object.values(T.DECISION_WORDS), ['Allowed once by you', 'Allowed for the session', 'Denied', 'Automatic (Allow all)', 'Automatic (session permission)', 'Mode changed', 'Limit changed', 'Remote control on', 'Remote control off']);
+    assert.deepStrictEqual(Object.values(T.DECISION_WORDS), ['Allowed once by you', 'Allowed for the session', 'Denied', 'Automatic (Allow all)', 'Automatic (session permission)', 'Mode changed', 'Limit changed', 'Remote control on', 'Remote control off', 'Session deleted']);
     fs.rmSync(dir, { recursive: true, force: true });
     console.log('activity tests passed');
   })().catch((e) => { console.error(e); process.exit(1); });

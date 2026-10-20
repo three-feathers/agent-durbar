@@ -10,6 +10,7 @@ import { parseTier } from '../shared/modelswitch';
 import type { ContextTier } from '../shared/modelswitch';
 import * as floorOps from '../shared/floors';
 import type { FloorOp, FloorsDoc } from '../shared/floors';
+import { markIdOk, markSrcOk } from '../shared/sessionid';
 
 export type SavedPermMode = 'read-only' | 'ask' | 'allow';
 
@@ -38,7 +39,16 @@ export interface SavedFolder {
   lastSession?: { id: string; adapterId?: string };
   /** Spec 052 FR-088: every session open in this folder that got a message (oldest first, at most 6), restored after a restart. Ids and harness only. Absent in files written before; then `lastSession` alone is restored. */
   openSessions?: Array<{ id: string; adapterId?: string }>;
+  /** Spec 006 FR-026: rows of Previous sessions pinned to the top / hidden from the list. Ids only (`src` = adapter id or `vscode`), at most 200 each. */
+  prevPinned?: PrevMark[];
+  prevHidden?: PrevMark[];
 }
+
+export interface PrevMark {
+  src: string;
+  id: string;
+}
+export type PrevMarkOp = 'pin' | 'unpin' | 'hide' | 'unhide';
 
 export const DEFAULT_ADAPTER = 'copilot';
 
@@ -114,6 +124,23 @@ export function sessionsToRestore(f: Pick<SavedFolder, 'lastSession' | 'openSess
   return out.slice(0, MAX_OPEN_SESSIONS);
 }
 
+/** Spec 006 FR-026: at most this many pins and this many hides per folder; the oldest are dropped. */
+export const MAX_PREV_MARKS = 200;
+
+/** A saved pin/hide list: well-formed `{src, id}` entries only (strict id allow-list), duplicates collapsed, the newest 200 kept; empty or malformed is `undefined`. */
+export function parsePrevMarks(v: unknown): PrevMark[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: PrevMark[] = [];
+  for (const e of v.slice(-1000)) {
+    if (!e || typeof e !== 'object') continue;
+    const o = e as Record<string, unknown>;
+    if (!markSrcOk(o.src) || !markIdOk(o.src, o.id)) continue;
+    if (!out.some((x) => x.src === o.src && x.id === o.id)) out.push({ src: o.src, id: o.id });
+  }
+  const kept = out.slice(-MAX_PREV_MARKS);
+  return kept.length ? kept : undefined;
+}
+
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const MAX_FOLDERS = 200;
 
@@ -148,6 +175,8 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       ...(parseDefaultAgent(o.defaultAgent) ? { defaultAgent: parseDefaultAgent(o.defaultAgent) } : {}),
       ...(parseLastSession(o.lastSession) ? { lastSession: parseLastSession(o.lastSession) } : {}),
       ...(parseOpenSessions(o.openSessions) ? { openSessions: parseOpenSessions(o.openSessions) } : {}),
+      ...(parsePrevMarks(o.prevPinned) ? { prevPinned: parsePrevMarks(o.prevPinned) } : {}),
+      ...(parsePrevMarks(o.prevHidden) ? { prevHidden: parsePrevMarks(o.prevHidden) } : {}),
     });
     if (out.length >= MAX_FOLDERS) break;
   }
@@ -365,6 +394,45 @@ export class FolderStore {
     if (out.length === list.length && !wasLast) return;
     cur.openSessions = out.length ? out : undefined;
     if (wasLast) cur.lastSession = undefined;
+    this.save();
+  }
+
+  /**
+   * Pin, unpin, hide or unhide one row of Previous sessions (FR-024..FR-026). Pin and hide exclude each other: pinning clears a
+   * hide and hiding clears a pin. A bad `src` or id, an unknown folder, or a no-op writes nothing. Returns false only for a refusal.
+   */
+  markPrevious(workspace: string, src: unknown, id: unknown, mark: unknown): boolean {
+    const cur = this.get(workspace);
+    if (!cur || !markSrcOk(src) || !markIdOk(src, id)) return false;
+    if (mark !== 'pin' && mark !== 'unpin' && mark !== 'hide' && mark !== 'unhide') return false;
+    const same = (x: PrevMark): boolean => x.src === src && x.id === id;
+    const pinned = cur.prevPinned ?? [];
+    const hidden = cur.prevHidden ?? [];
+    const wantPin = mark === 'pin';
+    const wantHide = mark === 'hide';
+    const inPin = pinned.some(same);
+    const inHide = hidden.some(same);
+    if (wantPin ? inPin && !inHide : wantHide ? inHide && !inPin : mark === 'unpin' ? !inPin : !inHide) return true;
+    const nextPin = pinned.filter((x) => !same(x));
+    const nextHide = hidden.filter((x) => !same(x));
+    if (wantPin) nextPin.push({ src, id });
+    if (wantHide) nextHide.push({ src, id });
+    cur.prevPinned = nextPin.length ? nextPin.slice(-MAX_PREV_MARKS) : undefined;
+    cur.prevHidden = nextHide.length ? nextHide.slice(-MAX_PREV_MARKS) : undefined;
+    this.save();
+    return true;
+  }
+
+  /** Forgets any pin or hide of this session (FR-029: Durbar deleted it). */
+  dropPrevious(workspace: string, src: string, id: string): void {
+    const cur = this.get(workspace);
+    if (!cur) return;
+    const keep = (x: PrevMark): boolean => !(x.src === src && x.id === id);
+    const pin = (cur.prevPinned ?? []).filter(keep);
+    const hide = (cur.prevHidden ?? []).filter(keep);
+    if (pin.length === (cur.prevPinned ?? []).length && hide.length === (cur.prevHidden ?? []).length) return;
+    cur.prevPinned = pin.length ? pin : undefined;
+    cur.prevHidden = hide.length ? hide : undefined;
     this.save();
   }
 
