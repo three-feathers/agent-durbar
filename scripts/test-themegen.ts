@@ -136,6 +136,10 @@ assert.deepStrictEqual(firstJsonObject('{bad} then {"ok":true}'), { ok: true });
   assert.ok(iss.filter(isBlocking).length >= 1);
   assert.ok(!isBlocking('--pc-error (#1) on --pb-error (#2) has contrast 1:1, needs 4.5:1'));
   assert.strictEqual(CONTRAST_PAIRS.length, 20);
+  // spec 052 FR-052: --muted on --surface needs 4.5:1 (was 3:1); #8a8f99 on white is about 3.3:1, now an issue
+  assert.ok(CONTRAST_PAIRS.some(([a, b, m]) => a === '--muted' && b === '--surface' && m === 4.5));
+  assert.ok(themeIssues({ '--surface': '#ffffff', '--muted': '#8a8f99' }, clean).some((i) => /^--muted \(#8a8f99\) on --surface/.test(i)));
+  assert.ok(!themeIssues({ '--surface': '#ffffff', '--muted': '#5f6a7c' }, clean).some((i) => /^--muted /.test(i)));
   // the top bar of retro/corporate is --ink under fixed light text: a light --ink there is an issue; clean is fine
   const darkTok = { '--bg': '#101010', '--surface': '#181818', '--ink': '#f0f0f0', '--raised': '#202020', '--card': '#202020', '--card-waiting': '#2a2410', '--card-error': '#2a1414', '--soft': '#1c1c1c', '--note': '#1c1c1c' };
   assert.ok(themeIssues(darkTok, clean, 'retro').some((i) => /^the top bar: with ui "retro" it is filled with --ink/.test(i)));

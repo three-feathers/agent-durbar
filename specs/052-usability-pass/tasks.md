@@ -89,3 +89,22 @@
 ## Round 4: one word per concept (2026-10-20)
 
 - [x] T054 One term per concept in every user-visible text (agent app, profile, Allow / Deny, folder, spending limit / cost / AI credits, End session, Remove from office, Demo, mood phrases), drivers and tests follow [FR-051]
+
+## Round 5: visual and accessibility (2026-10-20)
+
+- [x] T055 High Contrast, two-tone focus ring (retro halo), dialogs fit the window, `--line-ctl` control borders, selected not colour only, readable disabled states, `prefers-contrast: more`, dot edges, card text titles, generated `--muted` at 4.5:1 [FR-052]
+- [x] T056 Solid primary buttons in every theme, ghost Tools and Settings, calmer waiting card, Settings measure and headings, restore strip band, theme picker overline, radius tokens, Clean polish after switching back [FR-053]
+- [x] T057 Period textures on themed rooms, European and Retro room-name accents [FR-054]
+- [x] T058 Settings heading scroll stays inside `.scr-body`; empty sign-in output hidden [FR-055]
+
+## Round 5: plain words for newcomers (2026-10-20)
+
+- [x] T059 Welcome card "Connect your AI account once", agent app cards name the account, install dialog in plain sentences with the exact command under a disclosure [FR-056]
+- [x] T060 Simple: spending-limit pause and rate-limit errors in plain words, folder grant label, inbox keys line hidden, More menu skips hidden items; restore strip text and buttons for everyone [FR-057]
+- [x] T061 Spending limit dialog: plans have a fixed price, Durbar never charges [FR-058]
+
+## Round 5: signals for heavy use (2026-10-20)
+
+- [x] T062 "Needs you" outside the window: title count, one coalesced and throttled OS notification with a setting, app badge or taskbar flash, `notifications` allowed [FR-059]
+- [x] T063 Alt+A / Alt+S / Alt+D / Alt+N in a waiting chat, keys in the bar's buttons and the shortcuts sheet [FR-060]
+- [x] T064 Inbox oldest first with "waiting N min" on each row, refreshed every 30 s while open [FR-061]

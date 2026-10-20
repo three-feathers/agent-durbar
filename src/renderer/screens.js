@@ -13,6 +13,9 @@
   const root=()=>$('screen');
   const fmt=n=>S.fmtTokens(n);
   const cap=(s,n)=>{s=String(s==null?'':s);return s.length>n?s.slice(0,n-1)+'…':s;};
+  /* spec 052 FR-055: bring a heading to the top of the screen's own scroller only. scrollIntoView also scrolled the
+     outer page (overflow:hidden still scrolls), which hid the top bar and left a blank strip at the bottom. */
+  const scrollInBody=h=>{const sc=h.closest('.scr-body');if(sc)sc.scrollTop+=h.getBoundingClientRect().top-sc.getBoundingClientRect().top-12;};
 
   /* ---------------- shared: frame, dialogs ---------------- */
   function open(kind,opts){
@@ -96,6 +99,10 @@
     const moodSec=X.bridge.setSeriousMode&&X.isSerious?`<section class="scr-sec" aria-labelledby="moodH"><h3 id="moodH">Agent mood</h3>
         <p class="scr-note">Agent figures get heavier from 70% of their context window and turn into a grumpy monster above 90% (a hint to start a fresh session). Trouble gets a drawing too: an ambulance when a session errors (one at a time), a faint at the spending limit, an agent tapping the desk after 60 s waiting for you, and dizzy stars after 3 failed tool calls in a row. The text and percentages never change. Serious mode turns every drawing off.</p>
         <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Serious mode</b>${sw(!!X.isSerious(),'Serious mode: no mood drawings on the agent figures','id="seriousSw"')}</span><span class="scr-note small" id="seriousMsg" role="status"></span></div></section>`:'';
+    /* spec 052 FR-059: an OS notification when an agent needs you while Durbar is in the background (on for real sessions, off in the demo) */
+    const notifySec=X.bridge.setNotifyNeedsMe&&X.isNotify?`<section class="scr-sec" aria-labelledby="ntfH"><h3 id="ntfH">Notifications</h3>
+        <p class="scr-note">While Agent Durbar is in the background, one notification tells you when an agent asks for permission, asks a question, reaches its spending limit or hits an error. It shows only the agent's name and a short summary of the request, never file contents. The window title and the app icon show how many need you.</p>
+        <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Notify me when an agent needs me (when Durbar is in the background)</b>${sw(!!X.isNotify(),'Notify me when an agent needs me (when Durbar is in the background)','id="notifySw"')}</span><span class="scr-note small" id="notifyMsg" role="status"></span></div></section>`:'';
     let placesSec='';
     if(X.bridge.setPlace&&X.places){
       const P=X.places, map=app.placeMap||{};
@@ -135,7 +142,7 @@
     const themeSec=`<section class="scr-sec" aria-labelledby="themeH"><h3 id="themeH">Theme</h3>
         <p class="scr-note">The look of the office; the choice applies at once and is kept on this computer.</p>
         <details class="scr-more"><summary>More</summary><p class="scr-note small">Colours, small art and scene words (places, lobby, doors). Status, permission and credit wording never change, and the layout always fits 15 agents at 1280×800. A theme is a folder with a data-only manifest.json (no scripts, no CSS).</p></details>
-        <ul class="thlist" id="thList">${themes.map((t)=>{const by=t.author&&t.author!==baseAuthor?t.author:'';return `<li class="throw"><button class="thpick" type="button" data-theme="${esc(t.id)}" aria-pressed="${t.id===curTheme}" aria-label="Theme ${esc(t.name)}${t.own?', yours':''}${by?esc(', by '+by):''}"><span class="thsw" data-theme-sw="${esc(t.id)}" aria-hidden="true"><i class="thsw-wall"></i><i class="thsw-desk"></i><i class="thsw-chair"></i><i class="thsw-ag"></i></span><span class="thtx"><b>${esc(t.name)}</b>${t.own?'<span class="mtag">yours</span>':''}${by?`<small>${esc(by)}</small>`:''}</span></button></li>`;}).join('')}</ul>
+        <ul class="thlist" id="thList">${themes.map((t)=>{const by=t.author&&t.author!==baseAuthor?t.author:'';const dm=/^Durbar · (.+)$/.exec(t.name||'');return `<li class="throw"><button class="thpick" type="button" data-theme="${esc(t.id)}" aria-pressed="${t.id===curTheme}" aria-label="Theme ${esc(t.name)}${t.own?', yours':''}${by?esc(', by '+by):''}"><span class="thsw" data-theme-sw="${esc(t.id)}" aria-hidden="true"><i class="thsw-wall"></i><i class="thsw-desk"></i><i class="thsw-chair"></i><i class="thsw-ag"></i></span><span class="thtx">${dm?'<span class="thover">Durbar</span>':''}<b title="${esc(t.name)}">${esc(dm?dm[1]:t.name)}</b>${t.own?'<span class="mtag">yours</span>':''}${by?`<small>${esc(by)}</small>`:''}</span></button></li>`;}).join('')}</ul>
         ${badThemes.length?`<p class="scr-note warn" role="status">${badThemes.length} theme folder${badThemes.length>1?'s were':' was'} ignored: ${esc(badThemes.map((b)=>b.id+': '+(b.error||'invalid')).join('; '))}</p>`:''}
         <div class="scr-tools">${X.bridge.generateTheme?'<button class="btn" type="button" id="thAi">Make a theme with AI…</button>':''}<button class="btn" type="button" id="thImport">Import a theme…</button><button class="btn" type="button" id="thExport" title="Copy the active theme's folder (one of your own themes) to a folder you pick">Export the active theme…</button></div></section>`;
     const ab=app.about;
@@ -155,7 +162,7 @@
     const detailSec=X.detail?`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Detail level</h3>
         <p class="scr-note"><b>Simple</b> shows what agents do in plain words and what they cost; <b>Expert</b> adds tokens, models, context, paths and developer tools. Permissions and answering are the same in both.</p>
         <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div></section>`:'';
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${detailSec}${themeSec}${capSec}${moodSec}${schedSec}${floorsSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${detailSec}${themeSec}${capSec}${moodSec}${notifySec}${schedSec}${floorsSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         <p class="scr-note">Every agent gets the servers of your <b>Copilot CLI list</b>, the one global list.</p>
@@ -172,8 +179,8 @@
       </section></details>${aboutSec}</div>`;
     wireHead();
     /* spec 051 FR-008: entry points open Settings at Agent apps */
-    if(cur.section==='harnesses'){cur.section=null;const h=$('hsH');if(h){h.scrollIntoView({block:'start'});h.focus({preventScroll:true});}}
-    if($('advMcp')){$('advMcp').ontoggle=()=>{advOpen=$('advMcp').open;};if(cur.section==='mcp'){cur.section=null;const h=$('mcpH');if(h){h.scrollIntoView({block:'start'});h.focus({preventScroll:true});}}}
+    if(cur.section==='harnesses'){cur.section=null;const h=$('hsH');if(h){scrollInBody(h);h.focus({preventScroll:true});}}
+    if($('advMcp')){$('advMcp').ontoggle=()=>{advOpen=$('advMcp').open;};if(cur.section==='mcp'){cur.section=null;const h=$('mcpH');if(h){scrollInBody(h);h.focus({preventScroll:true});}}}
     if(X.floors&&$('floorsSet'))X.floors.render();
     if(X.sched&&$('schedSet'))X.sched.render();
     if($('capSave'))$('capSave').onclick=async()=>{
@@ -406,6 +413,13 @@
       const on=ss.getAttribute('aria-checked')!=='true';
       let res=null; try{res=await X.bridge.setSeriousMode(on);}catch(err){res=null;}
       if(res&&res.ok){X.setSerious(!!res.seriousMode);ss.classList.toggle('on',!!res.seriousMode);ss.setAttribute('aria-checked',res.seriousMode?'true':'false');const m=$('seriousMsg');if(m)m.textContent=res.seriousMode?'Serious mode is on: no mood drawings.':'Serious mode is off.';}
+      return;
+    }
+    const ns=e.target.closest('#notifySw');
+    if(ns&&X.bridge.setNotifyNeedsMe){
+      const on=ns.getAttribute('aria-checked')!=='true';
+      let res=null; try{res=await X.bridge.setNotifyNeedsMe(on);}catch(err){res=null;}
+      if(res&&res.ok){const v=!!res.notifyNeedsMe;if(X.setNotify)X.setNotify(v);ns.classList.toggle('on',v);ns.setAttribute('aria-checked',v?'true':'false');const m=$('notifyMsg');if(m)m.textContent=v?'Notifications are on.':'Notifications are off.';}
       return;
     }
     const li=e.target.closest('li.srv');if(!li||!li.dataset.amb)return;

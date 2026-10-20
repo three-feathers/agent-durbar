@@ -42,6 +42,7 @@ import { HarnessSetup, confirmText, posixTrusted } from './harnesssetup';
 import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind } from '../shared/harnesssetup';
 import { MAX_DESCRIPTION, MAX_PASSES, THEME_IDEAS, TOP_BAR_ISSUE, buildFixPrompt, buildRetryPrompt, buildThemePrompt, isBlocking, keepArt, parseGeneratedTheme } from '../shared/themegen';
 import { SettingsStore } from './settings';
+import { parseBadgeCount, shouldFlash } from './badge';
 import { parseAmount, parseCapIn, parseThemeId, startCap } from '../shared/credits';
 import { broadFolderKind } from '../shared/broadfolder';
 import { aboutPanelOptions, aboutView } from '../shared/about';
@@ -552,8 +553,37 @@ ipcMain.handle('usage:reset', () => {
   usageStore?.reset();
   return { ok: true, doc: usageStore?.view() };
 });
-ipcMain.handle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits, placeMap: settingsStore?.placeMap ?? {}, customPlaces: settingsStore?.customPlaces ?? [], seriousMode: settingsStore?.seriousMode ?? false, theme: runTheme ?? settingsStore?.theme ?? 'clean-office', about: aboutView(app.getVersion()) }));
+ipcMain.handle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits, placeMap: settingsStore?.placeMap ?? {}, customPlaces: settingsStore?.customPlaces ?? [], seriousMode: settingsStore?.seriousMode ?? false, notifyNeedsMe: settingsStore?.notifyNeedsMe ?? true, theme: runTheme ?? settingsStore?.theme ?? 'clean-office', about: aboutView(app.getVersion()) }));
 ipcMain.handle('settings:setSeriousMode', (_e, on: unknown) => ({ ok: true, seriousMode: settingsStore?.setSeriousMode(on) ?? false }));
+/* spec 052 FR-059: OS notifications when an agent needs you and the window is in the background (on unless turned off) */
+ipcMain.handle('settings:setNotifyNeedsMe', (_e, on: unknown) => ({ ok: true, notifyNeedsMe: settingsStore?.setNotifyNeedsMe(on) ?? true }));
+/* spec 052 FR-059: the "needs you" count on the app icon (macOS, Linux where the desktop supports it), a taskbar flash on Windows */
+let badgeCount = 0;
+ipcMain.handle('app:setBadge', (_e, count: unknown) => {
+  const n = parseBadgeCount(count);
+  if (n === null) return { ok: false };
+  const w = win && !win.isDestroyed() ? win : undefined;
+  if (w && shouldFlash(badgeCount, n, w.isFocused())) w.flashFrame(true);
+  if (w && n === 0) w.flashFrame(false);
+  badgeCount = n;
+  if (process.platform !== 'win32') {
+    try {
+      app.setBadgeCount(n);
+    } catch {
+      /* not supported by this desktop: the window title still shows the count */
+    }
+  }
+  return { ok: true };
+});
+/* spec 052 FR-059: a click on a notification brings the window to the front */
+ipcMain.handle('app:focusWindow', () => {
+  const w = win && !win.isDestroyed() ? win : undefined;
+  if (!w) return { ok: false };
+  if (w.isMinimized()) w.restore();
+  w.show();
+  w.focus();
+  return { ok: true };
+});
 /* DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it and is saved as usual. */
 let runTheme: string | undefined;
 ipcMain.handle('settings:setTheme', (_e, id: unknown) => {
@@ -1053,7 +1083,7 @@ function createWindow(): void {
   };
   win.webContents.on('will-navigate', guardNav);
   win.webContents.on('will-redirect', guardNav);
-  // spec 045 FR-005: Electron grants web permissions by default; this page needs only clipboard writes (Copy buttons)
+  // spec 045 FR-005: Electron grants web permissions by default; this page needs only clipboard writes (Copy buttons) and notifications (spec 052 FR-059)
   win.webContents.session.setPermissionRequestHandler((_wc, permission, done) => done(permissionAllowed(permission)));
   win.webContents.session.setPermissionCheckHandler((_wc, permission) => permissionAllowed(permission));
   // DURBAR_SIM=N: simulated live agents (fake events, no sessions, no AI credits). See src/renderer/sim.ts.
@@ -1069,6 +1099,7 @@ function createWindow(): void {
     if (/^[0-3]$/.test(dev.DURBAR_SIM_PLACES ?? '')) query.simplaces = dev.DURBAR_SIM_PLACES as string; // spec 024 FR-026: custom places seeded in the simulator
     if (dev.DURBAR_SIM_FLOORS_OFF) query.floorsoff = dev.DURBAR_SIM_FLOORS_OFF.slice(0, 200);
   }
+  win.on('focus', () => win?.flashFrame(false)); // spec 052 FR-059: the taskbar flash stops when you come back
   win.webContents.on('did-finish-load', () => agentState.clearPaused()); // a fresh page starts with nobody paused (Paused is window-only, spec 041 T014)
   void win.loadFile(INDEX_HTML, { query });
   // Dev: DURBAR_SHOT=/tmp/out.png [DURBAR_SHOT_SIZE=1280x800] [DURBAR_SHOT_CLICK=sim-1] saves a screenshot and quits.

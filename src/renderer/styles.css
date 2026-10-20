@@ -18,6 +18,10 @@
   --m-bar:3.4s ease-in-out infinite alternate; --m-glow:3.6s ease-in-out infinite alternate;
   --m-halo:3.6s ease-in-out infinite alternate; --m-wave:2.8s ease-in-out infinite; --m-cursor:1.6s ease-in-out infinite;
   --radius:16px;
+  /* spec 052 FR-053: radius scale for controls and panels (rooms and desks keep their own) */
+  --r-sm:6px; --r-md:10px; --r-lg:14px; --r-xl:18px;
+  /* spec 052 FR-052: control borders at 3:1, the second tone of the focus ring (theme.js sets both per theme) */
+  --line-ctl:#8a8272; --focus-halo:transparent;
   /* spec 052 FR-029 (#311): one control-size scale. Buttons and selects in toolbars and dialogs, chips in headers, status pills.
      Desk cards keep their own computed sizes (the office layout depends on them). */
   --h-ctl:32px; --h-chip:26px; --h-pill:22px;
@@ -27,7 +31,7 @@
 html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.4;display:flex;flex-direction:column;overflow:hidden;-webkit-font-smoothing:antialiased}
 button{font:inherit;color:inherit}
-:focus-visible{outline:3px solid var(--focus,#4f7fa8);outline-offset:2px}
+:focus-visible{outline:3px solid var(--focus,#4f7fa8);outline-offset:1px;box-shadow:0 0 0 5px var(--focus-halo,transparent)} /* spec 052 FR-052: two tones (retro: dark ring, yellow halo); a component's own box-shadow rule still wins */
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 /* ---------- top bar ---------- */
@@ -50,13 +54,13 @@ button{font:inherit;color:inherit}
 .stat.attn span.l{color:var(--amber-ink);font-weight:600}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--gray);flex:none;display:inline-block}
 .dot.working{background:var(--c-working)} .dot.thinking{background:var(--c-thinking)} .dot.waiting{background:var(--c-waiting)}
-.dot.idle{background:transparent;border:2px solid var(--c-idle)} .dot.error{background:var(--c-error)} .dot.done{background:var(--c-done)}
+.dot.idle{background:transparent;border:2px solid var(--c-idle);box-shadow:0 0 0 1px var(--pc-idle)} .dot.error{background:var(--c-error)} .dot.done{background:var(--c-done)}
 /* spec 052 FR-006: a shape as well as a colour (deuteranopia): waiting is a diamond, error a triangle, idle a ring, working and done circles */
-.dot.waiting{border-radius:1.5px;transform:rotate(45deg) scale(.86)}
+.dot.waiting{border-radius:1.5px;transform:rotate(45deg) scale(.86);box-shadow:0 0 0 1px var(--amber-ink)} /* spec 052 FR-052: a darker edge so it shows on light surfaces (size unchanged) */
 .dot.error{border-radius:0;clip-path:polygon(50% 4%,100% 96%,0 96%)}
 .controls{display:flex;align-items:center;gap:6px;flex:none;flex-wrap:wrap;row-gap:6px;max-width:100%} /* never let Office / List leave the window (PR #124) */
 .select-wrap{position:relative}
-.select-wrap select{appearance:none;height:var(--h-ctl);border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:0 28px 0 10px;font:inherit;font-size:12.5px;color:var(--ink);cursor:pointer;max-width:112px}
+.select-wrap select{appearance:none;height:var(--h-ctl);border:1px solid var(--line-ctl);background:var(--surface-2);border-radius:10px;padding:0 28px 0 10px;font:inherit;font-size:12.5px;color:var(--ink);cursor:pointer;max-width:112px}
 .select-wrap::after{content:"";position:absolute;right:11px;top:12px;width:6px;height:6px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);pointer-events:none}
 .seg{display:flex;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:2px;gap:2px}
 .seg button{height:calc(var(--h-ctl) - 6px);padding:0 10px;border:0;background:transparent;border-radius:7px;font-size:12.5px;color:var(--ink-2);cursor:pointer;white-space:nowrap}
@@ -67,7 +71,7 @@ button{font:inherit;color:inherit}
 body.has-bridge #liveBar{display:flex}
 #liveBar .tgl{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--ink-2);cursor:pointer;white-space:nowrap}
 #liveBar .btn{height:var(--h-ctl);padding:0 9px;font-size:12.5px}
-#liveBar select{height:var(--h-ctl);border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:0 6px;font:inherit;font-size:12.5px;color:var(--ink);max-width:118px}
+#liveBar select{height:var(--h-ctl);border:1px solid var(--line-ctl);background:var(--surface-2);border-radius:10px;padding:0 6px;font:inherit;font-size:12.5px;color:var(--ink);max-width:118px}
 #liveBar #permMode{max-width:180px} /* fits "Allow all (no prompts)" (spec 003 FR-028) */
 .note{font-size:12.5px;color:var(--ink-2);background:var(--pb-waiting,#fbefd6);border:1px solid #f0d9a6;border-radius:12px;padding:8px 12px;max-width:92%;align-self:flex-start;overflow-wrap:anywhere}
 .note.err{background:var(--pb-error,#f6e2df);border-color:#ebc7c2;color:var(--red-ink)}
@@ -88,7 +92,7 @@ body.has-bridge #liveBar{display:flex}
 /* chosen must read in every theme (some primary buttons look like plain ones): a ring in the text colour and a check mark (FR-130 delta) */
 .note.question .q-opt[aria-checked="true"],.note.question .q-opt[aria-pressed="true"]{box-shadow:inset 0 0 0 2px currentColor}
 .note.question .q-opt[aria-checked="true"]::before,.note.question .q-opt[aria-pressed="true"]::before{content:"\2713\00a0"}
-.note.question .q-other{height:30px;min-width:180px;flex:1 1 180px;max-width:360px;border:1px solid var(--line);border-radius:9px;padding:0 9px;font:inherit;font-size:12.5px;background:var(--surface);color:var(--ink)}
+.note.question .q-other{height:30px;min-width:180px;flex:1 1 180px;max-width:360px;border:1px solid var(--line-ctl);border-radius:9px;padding:0 9px;font:inherit;font-size:12.5px;background:var(--surface);color:var(--ink)}
 .note .btn.session{background:#e8f0f6;border-color:#c3d4e2;color:var(--drop-ink,#2a506c)}
 .note .btn.session:hover{background:#dce8f1}
 .grants{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
@@ -220,7 +224,7 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .lrow{display:grid;grid-template-columns:minmax(150px,1.1fr) minmax(110px,.8fr) minmax(120px,.9fr) minmax(200px,2.6fr) 138px;gap:14px;align-items:center;width:100%;padding:0 18px;height:44px;border:0;border-bottom:1px solid #eee8dd;background:transparent;text-align:left;cursor:pointer;font-size:13px}
 .lrow:last-child{border-bottom:0}
 button.lrow:hover{background:var(--surface-2)}
-button.lrow[aria-pressed="true"]{background:#eaf1f7}
+button.lrow[aria-pressed="true"]{background:#eaf1f7;box-shadow:inset 3px 0 0 var(--focus)} /* spec 052 FR-052: not colour only */
 /* spec 052 FR-008: "lhead", not "head": the avatars' .head nods (styles: animation nod), and the list header row nodded with them */
 .lrow.lhead{height:36px;cursor:default;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;background:var(--surface-2);font-weight:600}
 .lname{display:flex;align-items:center;gap:10px;font-weight:600;min-width:0}
@@ -258,10 +262,11 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .pusage{margin:4px 0 0;font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
 .pusage:empty{display:none}
 .actions{display:flex;gap:8px;margin-top:12px}
-.btn{height:var(--h-ctl);padding:0 14px;border-radius:10px;border:1px solid var(--line-2);background:var(--raised);cursor:pointer;font-size:13px;font-weight:550;display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+.btn{height:var(--h-ctl);padding:0 14px;border-radius:var(--r-md);border:1px solid var(--line-2);background:var(--raised);cursor:pointer;font-size:13px;font-weight:550;display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
 .btn:hover{background:var(--surface-2);border-color:#bdb3a2}
-.btn.primary{background:#e4ede6;border-color:#bcd0c1;color:#2c5640}
-.btn.primary:hover{background:#d9e6dc}
+/* spec 052 FR-053: the primary action is solid in every theme (themes.css gives each theme its own accent) */
+.btn.primary{background:var(--sage-ink);border-color:transparent;color:#fff;font-weight:600}
+.btn.primary:hover{background:color-mix(in srgb,var(--sage-ink) 86%,#000)}
 .btn.danger{color:var(--red-ink)}
 .btn.danger:hover{background:#f9ecea;border-color:#e2bcb7}
 .btn svg{width:15px;height:15px;flex:none}
@@ -606,17 +611,17 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 
 /* new session dialog, folders popover, room "+" */
 .dlg-ov{position:fixed;inset:0;background:rgba(40,35,25,.28);display:grid;place-items:center;z-index:60}
-.dlg{width:min(420px,calc(100vw - 32px));background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 20px;box-shadow:0 18px 50px rgba(40,35,25,.25);display:flex;flex-direction:column;gap:10px}
+.dlg{width:min(420px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-xl);padding:18px 20px;box-shadow:0 18px 50px rgba(40,35,25,.25);display:flex;flex-direction:column;gap:10px}
 .dlg h3{margin:0;font-size:16px}
 .dlg .dsub{margin:0;font-size:12.5px;color:var(--ink-2);overflow-wrap:anywhere}
 .dlg label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--ink-2)}
 .dlg label[hidden]{display:none}
 .dlg .sd-agent{display:flex;flex-direction:column;gap:6px}
 .dlg .sd-agent[hidden]{display:none}
-.dlg select{height:var(--h-ctl);border:1px solid var(--line-2);border-radius:10px;background:var(--raised);padding:0 8px;font:inherit;font-size:13px;color:var(--ink)}
-.dlg input[type=number]{height:var(--h-ctl);border:1px solid var(--line-2);border-radius:10px;background:var(--raised);padding:0 10px;font:inherit;font-size:13px;color:var(--ink)}
+.dlg select{height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:10px;background:var(--raised);padding:0 8px;font:inherit;font-size:13px;color:var(--ink)}
+.dlg input[type=number]{height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:10px;background:var(--raised);padding:0 10px;font:inherit;font-size:13px;color:var(--ink)}
 .ho-dlg{width:min(720px,calc(100vw - 32px))}
-.ho-dlg textarea{width:100%;box-sizing:border-box;min-height:260px;max-height:55vh;resize:vertical;border:1px solid var(--line-2);border-radius:10px;background:var(--raised);padding:10px 12px;font:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;color:var(--ink)}
+.ho-dlg textarea{width:100%;box-sizing:border-box;min-height:260px;max-height:55vh;resize:vertical;border:1px solid var(--line-ctl);border-radius:10px;background:var(--raised);padding:10px 12px;font:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;color:var(--ink)}
 .dlg .dbtn{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}
 #foldersPop{position:fixed;top:58px;right:14px;z-index:40;width:min(660px,calc(100vw - 28px));max-height:min(70vh,520px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(40,35,25,.2);padding:8px 14px 12px}
 #foldersPop[hidden]{display:none}
@@ -643,16 +648,16 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .fl-t .fl-att[hidden]{display:none}
 .fl-folder{display:flex;align-items:center;gap:6px;padding:4px 0 0 52px;font-size:12.5px}
 .fl-fn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.fl-folder select{height:26px;max-width:170px;border:1px solid var(--line);background:var(--surface-2);border-radius:8px;font:inherit;font-size:12px;color:var(--ink)}
+.fl-folder select{height:26px;max-width:170px;border:1px solid var(--line-ctl);background:var(--surface-2);border-radius:8px;font:inherit;font-size:12px;color:var(--ink)}
 .fl-new{display:flex;gap:6px;border-top:1px solid #efe9dd;padding-top:8px;margin-top:2px}
-.fl-new input{flex:1;min-width:0;height:var(--h-ctl);border:1px solid var(--line);border-radius:8px;padding:0 8px;font:inherit;font-size:12.5px;background:var(--surface-2);color:var(--ink)}
+.fl-new input{flex:1;min-width:0;height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:8px;padding:0 8px;font:inherit;font-size:12.5px;background:var(--surface-2);color:var(--ink)}
 .fl-new .btn{height:var(--h-ctl);padding:0 10px;font-size:12px}
 .fl-err{margin:6px 0 0;font-size:12px;color:#9a3b30}
 .fl-err[hidden]{display:none}
 .floor-tag{flex:0 1 auto;min-width:0;max-width:16ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10.5px;font-weight:650;line-height:16px;padding:0 6px;border-radius:999px;border:1px solid #d9d1c0;background:color-mix(in srgb,var(--raised) 60%,transparent);color:var(--ink-2)}
 .plate-tx .floor-tag{display:inline-block;vertical-align:1px;margin-left:5px;max-width:12ch}
 .fl-into{display:flex;align-items:center;gap:8px;padding:2px 0 8px;font-size:12.5px;color:var(--ink-2)}
-.fl-into select{height:var(--h-ctl);max-width:220px;border:1px solid var(--line);background:var(--surface-2);border-radius:8px;font:inherit;font-size:12.5px;color:var(--ink)}
+.fl-into select{height:var(--h-ctl);max-width:220px;border:1px solid var(--line-ctl);background:var(--surface-2);border-radius:8px;font:inherit;font-size:12.5px;color:var(--ink)}
 .fp-h{font-size:13px;font-weight:650;padding:8px 0 4px}
 .fp-h small{font-weight:500;color:var(--muted);margin-left:6px}
 .fp-empty{font-size:12.5px;color:var(--muted)}
@@ -674,18 +679,18 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .sched-dlg .sc-row .btn,.sched-set .sc-row .btn{height:var(--h-ctl);padding:0 10px;font-size:12px}
 .sched-dlg .sc-empty,.sched-dlg .sc-paused{font-size:12.5px;color:var(--muted);margin:6px 0}
 .sched-dlg .sc-paused{color:var(--amber-ink,#8a5a00)}
-.sched-dlg textarea{width:100%;box-sizing:border-box;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--surface);color:var(--ink);resize:vertical}
+.sched-dlg textarea{width:100%;box-sizing:border-box;font:inherit;font-size:13px;border:1px solid var(--line-ctl);border-radius:10px;padding:8px;background:var(--surface);color:var(--ink);resize:vertical}
 .sched-dlg .sc-when{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:8px;font-size:13px}
 .sched-dlg .sc-when input[type=number]{width:70px}
 .sched-dlg .sc-tpl-note{font-size:12px;color:var(--muted);margin:2px 0 6px;line-height:1.4}
-.sched-dlg .sc-when input{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:3px 6px;background:var(--surface);color:var(--ink)}
-.room-new{flex:none;width:24px;height:24px;border-radius:7px;border:1px solid var(--line-2);background:color-mix(in srgb,var(--raised) 70%,transparent);color:var(--ink-2);font-size:15px;line-height:1;cursor:pointer;padding:0;display:grid;place-items:center}
+.sched-dlg .sc-when input{font:inherit;font-size:13px;border:1px solid var(--line-ctl);border-radius:8px;padding:3px 6px;background:var(--surface);color:var(--ink)}
+.room-new{flex:none;width:24px;height:24px;border-radius:7px;border:1px solid var(--line-ctl);background:color-mix(in srgb,var(--raised) 70%,transparent);color:var(--ink-2);font-size:15px;line-height:1;cursor:pointer;padding:0;display:grid;place-items:center}
 .room-new:hover{background:var(--raised);color:var(--ink)}
 .room-mcp{flex:none;height:24px;border-radius:7px;border:1px solid var(--line-2);background:color-mix(in srgb,var(--raised) 70%,transparent);color:var(--ink-2);font-size:11px;font-weight:600;letter-spacing:.02em;line-height:1;cursor:pointer;padding:0 7px}
 .room-mcp:hover{background:var(--raised);color:var(--ink)}
 .room-sched{flex:none;display:inline-flex;align-items:center;gap:4px;height:24px;border-radius:7px;border:1px solid var(--line-2);background:color-mix(in srgb,var(--raised) 70%,transparent);color:var(--ink-2);font-size:11px;font-weight:600;line-height:1;cursor:pointer;padding:0 7px;white-space:nowrap}
 .room-sched:hover{background:var(--raised);color:var(--ink)}
-.room-sched.off{opacity:.65}
+.room-sched.off{opacity:1;color:var(--muted);border-style:dashed} /* spec 052 FR-052: readable, not faded */
 .sched-set .fp-pause{display:inline-flex;align-items:center;gap:8px;font-size:13px;margin:4px 0 8px}
 .sched-set .ss-group{margin:8px 0 12px}
 .sched-set .ss-head{display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
@@ -693,7 +698,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .sched-set .ss-head small{flex:1;min-width:0;font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sched-set .ss-head .btn,.sched-set .scr-tools .btn{height:var(--h-ctl);padding:0 10px;font-size:12px}
 .sched-set .ss-add{display:inline-flex;align-items:center;gap:8px;font-size:13px}
-.sched-set .ss-add select{height:30px;border:1px solid var(--line-2);border-radius:8px;background:var(--raised);padding:0 8px;font:inherit;font-size:13px;color:var(--ink)}
+.sched-set .ss-add select{height:30px;border:1px solid var(--line-ctl);border-radius:8px;background:var(--raised);padding:0 8px;font:inherit;font-size:13px;color:var(--ink)}
 #liveBar .btn{white-space:nowrap}
 #liveBar select[hidden]{display:none}
 /* spec 012 FR-120: with the agent-kind picker on a narrow window the toolbar selects are as wide as their choice, so Office / List usually stays on the row (it wraps as designed otherwise, PR #124) */
@@ -836,7 +841,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .mode-menu .mt{display:flex;flex-direction:column;flex:1;min-width:0}.mode-menu b{font-size:13px}.mode-menu small{font-size:11.5px;color:var(--muted);line-height:1.35}
 .mode-menu .ck{color:var(--sage-ink);font-weight:700;width:14px;flex:none}
 .mode-menu .mm-sep{height:1px;margin:4px 6px;background:var(--line)}
-.mode-menu [aria-disabled="true"]{opacity:.6;cursor:not-allowed}
+.mode-menu [aria-disabled="true"]{opacity:1;color:var(--muted);border-style:dashed;cursor:not-allowed}
 .mm-note{margin:4px 10px 4px;font-size:11.5px;color:var(--muted)}
 .dlg .chk{flex-direction:row;align-items:center;gap:8px;font-weight:500}
 .btn.primary.warn{background:var(--warn-bg);border-color:#e5be78;color:var(--amber-ink)}
@@ -852,7 +857,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .model-menu{width:340px;max-height:min(540px,calc(100vh - 24px));overflow:auto}
 .mode-menu .mm-h{margin:6px 10px 2px;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
 .mode-menu .mm-why{margin:4px 6px 2px;padding:8px 10px;font-size:12px;line-height:1.4;color:var(--amber-ink);background:var(--warn-bg);border:1px solid #e5be78;border-radius:10px}
-.mode-menu button[aria-disabled=true]{opacity:.6;cursor:not-allowed}
+.mode-menu button[aria-disabled=true]{opacity:1;color:var(--muted);cursor:not-allowed}
 .mode-menu .mm-seg{display:flex;flex-wrap:wrap;gap:4px;padding:2px 10px 6px}
 .mode-menu .mm-seg button{align-items:center;padding:3px 10px;border:1px solid var(--line-2);border-radius:999px;font-size:11.5px;background:var(--raised)}
 .mode-menu .mm-seg button[aria-pressed=true]{background:var(--pb-working,#e3ecf4);border-color:#9db8d0;font-weight:700;color:var(--blue-ink)}
@@ -868,7 +873,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .toast-act{white-space:nowrap;flex:none;background:transparent;color:#f7f4ee;border:1px solid color-mix(in srgb,var(--raised) 45%,transparent);border-radius:8px;padding:2px 12px;font-size:12.5px;font-weight:700;cursor:pointer}
 .toast-act:hover{background:color-mix(in srgb,var(--raised) 14%,transparent)}
 .dlg .dlist{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--ink-2)}
-.dlg .dinput input{height:var(--h-ctl);border:1px solid var(--line-2);border-radius:10px;background:var(--raised);padding:0 10px;font:inherit;font-size:13px;color:var(--ink);font-weight:400}
+.dlg .dinput input{height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:10px;background:var(--raised);padding:0 10px;font:inherit;font-size:13px;color:var(--ink);font-weight:400}
 
 /* ---- agent mood (spec 034, issue #20): small, flat, inside the scene box; nothing moves under reduced motion ---- */
 .amb-light{animation:ambblink 1.1s steps(1,end) infinite} /* colours from --amb-light/--amb-light-2 via the keyframes below */
@@ -963,7 +968,7 @@ html:not([data-ui]) .seg button{border-radius:6px}
 .inbox-row{display:grid;grid-template-columns:44px minmax(0,1fr);gap:12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--raised)}
 .inbox-row .ib-av svg{width:44px;height:44px}
 .inbox-row p{margin:0}
-.inbox-row .ib-h{font-size:13.5px}.inbox-row .ib-w{color:var(--amber-ink);font-weight:600}.inbox-row .ib-f{color:var(--muted)}
+.inbox-row .ib-h{font-size:13.5px}.inbox-row .ib-w{color:var(--amber-ink);font-weight:600}.inbox-row .ib-f{color:var(--muted)}.inbox-row .ib-wait{color:var(--muted);font-size:11.5px;font-weight:400;white-space:nowrap} /* spec 052 FR-061 */
 .inbox-row .ib-t{margin:4px 0 8px;font-size:13px;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
 .inbox-row .ib-act{display:flex;flex-wrap:wrap;gap:6px}
 .inbox-empty{color:var(--muted);font-size:13px;max-width:60ch}
@@ -988,9 +993,7 @@ body.simple #chat .think .think-body{display:none}
 body.simple #addWs,body.simple #foldersBtn,body.simple #vList{display:none!important}
 /* spec 052 R3 design polish (Clean Office only unless noted; colour, border colour, background, shadow, radius, weight and
    letter-spacing only, so every size stays and check:geometry holds) */
-/* primary action: solid sage ink (the warn variant and the restore strip keep their own look) */
-html:not([data-ui]) .btn.primary:not(.warn){background:var(--sage-ink);border-color:var(--sage-ink);color:#fff;font-weight:600}
-html:not([data-ui]) .btn.primary:not(.warn):hover{background:#355c48;border-color:#355c48}
+/* primary action: solid sage ink, now the base `.btn.primary` rule in every theme (spec 052 FR-053) */
 /* top-bar counters as one segmented surface. The ring is an inset shadow and the counters keep their 1px (transparent)
    border, so the group stays 32px high; the gap stays too (widths unchanged) and reads as nothing on a transparent counter */
 html:not([data-ui]) .stats{background:var(--surface-2);border-radius:10px;box-shadow:inset 0 0 0 1px var(--line)}
@@ -1006,13 +1009,13 @@ html:not([data-ui]) .inbox-btn.attn{background:#fbe7bf;border-color:#d9a54a}
 /* room-header controls: quiet at rest, shown when the room is hovered or holds focus (focus ring unchanged) */
 html:not([data-ui]) .room-new,html:not([data-ui]) .room-more,html:not([data-ui]) .room-mcp,html:not([data-ui]) .room-sched{border-color:transparent;background:transparent}
 html:not([data-ui]) .room:hover :is(.room-new,.room-more,.room-mcp,.room-sched),
-html:not([data-ui]) .room:focus-within :is(.room-new,.room-more,.room-mcp,.room-sched){border-color:var(--line-2);background:color-mix(in srgb,var(--raised) 70%,transparent)}
+html:not([data-ui]) .room:focus-within :is(.room-new,.room-more,.room-mcp,.room-sched){border-color:var(--line-ctl);background:color-mix(in srgb,var(--raised) 70%,transparent)}
 html:not([data-ui]) .room :is(.room-new,.room-more,.room-mcp,.room-sched):hover{background:var(--raised)}
 /* denser layouts: the room name without a plate, softer walls, no tile pattern or inner glow */
 html:not([data-ui]) .stage:not([data-d="full"]) .room-name{border-color:transparent;background:transparent;letter-spacing:-.01em}
 html:not([data-ui]) .stage:not([data-d="full"]) .room{border-color:color-mix(in srgb,var(--wall) 45%,transparent);box-shadow:none;background-image:none}
 /* waiting and error cards: a 3px status edge inside the card, on top of the FR-024 card shadow */
-html:not([data-ui]) .stage .desk.card.is-waiting{border-color:color-mix(in srgb,var(--card-waiting-line) 60%,transparent);box-shadow:inset 3px 0 0 var(--c-waiting),0 1px 2px rgb(44 55 51/.05),0 4px 12px -4px rgb(44 55 51/.10)}
+html:not([data-ui]) .stage .desk.card.is-waiting{border-color:var(--line) /* spec 052 FR-053: the inset bar and the tint carry it, no extra amber edge */;box-shadow:inset 3px 0 0 var(--c-waiting),0 1px 2px rgb(44 55 51/.05),0 4px 12px -4px rgb(44 55 51/.10)}
 html:not([data-ui]) .stage .desk.card.is-waiting:hover{box-shadow:inset 3px 0 0 var(--c-waiting),0 1px 2px rgb(44 55 51/.06),0 8px 18px -6px rgb(44 55 51/.16)}
 html:not([data-ui]) .stage .desk.card.is-error{border-color:color-mix(in srgb,var(--card-error-line) 60%,transparent);box-shadow:inset 3px 0 0 var(--c-error),0 1px 2px rgb(44 55 51/.05),0 4px 12px -4px rgb(44 55 51/.10)}
 html:not([data-ui]) .stage .desk.card.is-error:hover{box-shadow:inset 3px 0 0 var(--c-error),0 1px 2px rgb(44 55 51/.06),0 8px 18px -6px rgb(44 55 51/.16)}
@@ -1066,7 +1069,8 @@ html .notice-strip .btn.primary:hover{background:color-mix(in srgb,var(--amber-i
 .btn,.more-it{transition:background .12s,border-color .12s,transform .06s}
 .stat,.chip{transition:background .12s,border-color .12s,transform .06s}
 .btn:active:not(:disabled),.stat:active,.chip:active,.more-it:active:not(:disabled){transform:translateY(1px);box-shadow:inset 0 1px 2px rgb(0 0 0/.12)}
-.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}
+.btn:disabled,.btn[aria-disabled=true]{opacity:1;color:var(--muted);border-style:dashed;cursor:not-allowed} /* spec 052 FR-052: readable, not faded (was opacity .5) */
+.btn.primary:is(:disabled,[aria-disabled=true]){background:var(--surface-2);border-color:var(--line-ctl);color:var(--muted);font-weight:550}
 .btn[aria-busy=true],.more-it[aria-busy=true]{justify-content:center;cursor:progress;opacity:.8}
 .spin{display:inline-block;flex:none;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite;opacity:.8}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -1091,3 +1095,27 @@ html .notice-strip .btn.primary:hover{background:color-mix(in srgb,var(--amber-i
 /* FR-050: typed toasts */
 .toast.ok{border-left:4px solid var(--c-done)}
 .toast.err{border-left:4px solid var(--c-error)}
+
+/* ---- spec 052 FR-052..FR-055 (round 5, visual and accessibility) ---- */
+/* FR-052: Windows High Contrast (forced colours) keeps edges, selection and the status shapes */
+@media (forced-colors:active){
+  .pill,.stat,.chip,.btn,.room-new{border:1px solid CanvasText}
+  [aria-pressed=true],[aria-current]:not([aria-current=false]){outline:2px solid Highlight;outline-offset:-2px}
+  .inbox:focus-within,.thpick[aria-pressed=true]{outline:2px solid Highlight}
+  .dot,.pill i{forced-color-adjust:none}
+  .btn:disabled,.btn[aria-disabled=true]{color:GrayText;border-color:GrayText}
+}
+/* FR-052: more contrast on request: stronger lines, muted text as dark as secondary text. Light themes only (a generated
+   dark theme sets data-dark); !important because theme tokens are inline styles on <html> */
+@media (prefers-contrast:more){
+  html:not([data-dark]){--line:var(--line-ctl,#8a8272)!important;--line-2:color-mix(in srgb,var(--line-ctl,#8a8272) 65%,var(--ink,#2c3733))!important;--muted:var(--ink-2)!important}
+}
+/* FR-053: Tools and Settings are ghost buttons in Clean Office (same box: the group keeps its 1px border and padding, only transparent); themed top bars keep their own .seg look, which carries their contrast */
+html:not([data-ui]) #topBtns{background:transparent;border-color:transparent}
+html:not([data-ui]) #topBtns button:not([aria-pressed="true"]):hover{background:color-mix(in srgb,currentColor 10%,transparent)}
+/* FR-053: the restore strip is a calm amber band (height unchanged: 3px padding, 24px buttons) */
+.notice-strip{background:color-mix(in srgb,var(--pb-waiting) 55%,var(--surface));border-bottom:1px solid color-mix(in srgb,var(--c-waiting) 45%,var(--line))}
+/* FR-053: radius tokens on panels and controls whose radius was already close */
+.dlg select,.dlg input[type=number],.dlg .dinput input{border-radius:var(--r-md)}
+.inbox{border-radius:var(--r-lg)}
+

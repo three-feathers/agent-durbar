@@ -28,6 +28,8 @@
     '--surface-2':'#faf7f1',
     '--line':'#e7e3dc', // spec 052 FR-024: warm neutral (was #e2dbcf)
     '--line-2':'#d3cabb',
+    '--line-ctl':'#8a8272', // spec 052 FR-052: input, select and add-button borders at 3:1 on every surface
+    '--focus-halo':'transparent', // spec 052 FR-052: the second tone of the focus ring (retro sets it)
     '--ink':'#2c3733',
     '--ink-2':'#56605b',
     '--muted':'#535a55', // spec 052 FR-009: 4.5:1 on every room wall (was #6a716c)
@@ -431,6 +433,14 @@
 
   /* Apply a pack or id; unknown ids fall back to Clean Office (with a warning). Strings resolve
      synchronously when already known; a `resolveUser` hook (stage E) can fetch a user pack manifest. */
+  /* relative luminance below 0.35 for a #rgb/#rrggbb colour; anything else counts as light */
+  function isDarkColor(v){
+    const m=/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(v||'').trim());
+    if(!m)return false;
+    let h=m[1]; if(h.length===3)h=h.split('').map(c=>c+c).join('');
+    const ch=[0,2,4].map(i=>{const c=parseInt(h.slice(i,i+2),16)/255;return c<=0.03928?c/12.92:Math.pow((c+0.055)/1.055,2.4);});
+    return 0.2126*ch[0]+0.7152*ch[1]+0.0722*ch[2]<0.35;
+  }
   function setTheme(idOrManifest){
     let manifest=loadManifest(idOrManifest);
     if(!manifest){
@@ -449,7 +459,17 @@
     currentId=id;
     currentManifest=manifest;
     applyTokens(resolveTokens(manifest));
-    if(typeof document!=='undefined'&&document.documentElement)document.documentElement.dataset.ui=manifest.ui||'clean';
+    /* Clean Office itself has no data-ui (as at startup), so its `html:not([data-ui])` polish in styles.css also returns
+       after switching back from another theme (spec 052 FR-053); other themes, generated ones too, name their style */
+    if(typeof document!=='undefined'&&document.documentElement){
+      if(id===CLEAN_ID)delete document.documentElement.dataset.ui;
+      else document.documentElement.dataset.ui=manifest.ui||'clean';
+    }
+    /* spec 052 FR-052: mark a dark surface, so rules meant for light themes (prefers-contrast:more) skip it */
+    if(typeof document!=='undefined'&&document.documentElement){
+      const dark=isDarkColor(resolveTokens(manifest)['--surface']);
+      if(dark)document.documentElement.dataset.dark='';else delete document.documentElement.dataset.dark;
+    }
     /* motion presets (036 FR-006): re-applied on every switch, reduced motion wins */
     for(const k of ['bar','glow','halo','wave','cursor']){
       if(typeof document!=='undefined'&&document.documentElement)document.documentElement.style.setProperty('--m-'+k,motion(k));
@@ -522,7 +542,7 @@
       '--plant-mid':'#93ab9a','--plant-dark':'#7b9883','--plant-light':'#a4b7aa','--pot':'#a8b2ba',
       '--link':'#9aa9b4',
       '--door-bg':'#e9edf1','--door-line':'#a8b4bf','--door-leaf':'#c9d1d9','--door-leaf-line':'#9faab6','--door-knob':'#77828c','--door-panel':'#e1e7ec',
-      '--brand-mark':'#ffffff','--brand-bg':'#1f5fa8','--focus':'#1f6fc5',
+      '--brand-mark':'#ffffff','--brand-bg':'#1f5fa8','--focus':'#1f6fc5','--line-ctl':'#77838f',
       '--sel-border':'#2f74c0','--sel-ring':'#cfe0f4','--sel-ring-2':'#d6e5f5','--stat-sel-border':'#2f74c0','--stat-sel-ring':'#d6e5f5',
       '--avatar-bg':'#dfe7ee','--walker-bg':'#ffffff','--drop':'#6b93b8','--drop-bg':'rgb(229 238 246 / .93)','--drop-ink':'#23415c',
       '--badge-idle':'#aab2ba','--place-busy':'#7fa7d1',
@@ -573,7 +593,7 @@
       '--cup':'#f2ecd9','--cup-line':'#b3a37c','--steam':'#9d987e',
       '--link':'#989e8a','--star':'#e0a92c',
       '--door-bg':'#e6dfd0','--door-line':'#a3967a','--door-leaf':'#c2b096','--door-leaf-line':'#988a6c','--door-knob':'#6e6248','--door-panel':'#ddd3ba',
-      '--brand-mark':'#111122','--brand-bg':'#ffec27','--focus':'#29adff',
+      '--brand-mark':'#111122','--brand-bg':'#ffec27','--focus':'#111122','--focus-halo':'#ffec27' /* spec 052 FR-052: dark ring, yellow halo: shows on cream and on navy */,'--line-ctl':'#111122',
       '--sel-border':'#ff004d','--sel-ring':'#ffccaa','--sel-ring-2':'#ffccaa','--stat-sel-border':'#ff004d','--stat-sel-ring':'#ffccaa',
       '--avatar-bg':'#e0ead2','--walker-bg':'#fff1e8','--drop':'#6d8cc2','--drop-bg':'rgb(230 236 248 / .93)','--drop-ink':'#26456e',
       '--badge-idle':'#b8b49c','--place-busy':'#29adff',
@@ -656,7 +676,7 @@
       '--plant-mid':'#a9bf92','--plant-dark':'#8aa474','--plant-light':'#bccba6','--pot':'#b8626a',
       '--link':'#b3a68c','--star':'#d99a2c',
       '--door-bg':'#f0e4cc','--door-line':'#a98b62','--door-leaf':'#cf9a5e','--door-leaf-line':'#a87b48','--door-knob':'#8a6436','--door-panel':'#e6d4ae',
-      '--brand-mark':'#f2c75c','--brand-bg':'#8a1c2c','--focus':'#0f6e6e',
+      '--brand-mark':'#f2c75c','--brand-bg':'#8a1c2c','--focus':'#0f6e6e','--line-ctl':'#9a7228',
       '--sel-border':'#b5302f','--sel-ring':'#f3d9a8','--sel-ring-2':'#f3d9a8','--stat-sel-border':'#b5302f','--stat-sel-ring':'#f3d9a8',
       '--avatar-bg':'#eee2ca','--walker-bg':'#fffaf0','--drop':'#a87b48','--drop-bg':'rgb(244 236 220 / .93)','--drop-ink':'#5c3c18',
       '--badge-idle':'#bfb49e','--place-busy':'#d4a240',
@@ -709,7 +729,7 @@
       '--plant-mid':'#92b294','--plant-dark':'#779c7a','--plant-light':'#a6c2a8','--pot':'#8a6f4c',
       '--link':'#9aa4b0','--star':'#d2a03c',
       '--door-bg':'#ece6d8','--door-line':'#a89a78','--door-leaf':'#b8a272','--door-leaf-line':'#96845c','--door-knob':'#6e5c34','--door-panel':'#e2d8bc',
-      '--brand-mark':'#e2bf63','--brand-bg':'#1b2a4e','--focus':'#2b4c9a',
+      '--brand-mark':'#e2bf63','--brand-bg':'#1b2a4e','--focus':'#2b4c9a','--line-ctl':'#8f7642',
       '--sel-border':'#7a1f35','--sel-ring':'#ead9b0','--sel-ring-2':'#ead9b0','--stat-sel-border':'#7a1f35','--stat-sel-ring':'#ead9b0',
       '--avatar-bg':'#e2e4ec','--walker-bg':'#fffdf7','--drop':'#7d94c2','--drop-bg':'rgb(232 236 246 / .93)','--drop-ink':'#2a3a66',
       '--badge-idle':'#b6b4a4','--place-busy':'#b8995a',
@@ -761,7 +781,7 @@
       '--plant-mid':'#96b296','--plant-dark':'#7a9a7a','--plant-light':'#aabf9f','--pot':'#c23b22' /* shu vermilion */,
       '--link':'#9aa0ac','--star':'#d29838',
       '--door-bg':'#e9e3d3','--door-line':'#a39874','--door-leaf':'#c0ab7c','--door-leaf-line':'#9c8c62','--door-knob':'#6e5c36','--door-panel':'#ddd2b8',
-      '--brand-mark':'#fdfbf5','--brand-bg':'#c23b22','--focus':'#2c4a7e',
+      '--brand-mark':'#fdfbf5','--brand-bg':'#c23b22','--focus':'#2c4a7e','--line-ctl':'#857a63',
       '--sel-border':'#c23b22','--sel-ring':'#f0d5cc','--sel-ring-2':'#f0d5cc','--stat-sel-border':'#c23b22','--stat-sel-ring':'#f0d5cc',
       '--avatar-bg':'#e2e2da','--walker-bg':'#fdfbf5','--drop':'#7d90bc','--drop-bg':'rgb(233 236 246 / .93)','--drop-ink':'#2a3c64',
       '--badge-idle':'#b8b4a2','--place-busy':'#8c9db8',
