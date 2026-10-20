@@ -1,6 +1,6 @@
 # Spec 061: A folder's own agent setup is used, and shown
 
-**Status:** draft. Owner decisions recorded (issue #289, 2026-10-20). Constitution **Amendment 1** (principle III, v1.1.0) is in force (#395). Review requirements FR-010..FR-014 added (Paco, Ruben, #394). **Blocked on owner question Q5** (hooks in folders the user did not write), then research R1-R3, then plan and tasks.
+**Status:** draft. Owner decisions recorded (issue #289, 2026-10-20). Constitution **Amendment 1** (principle III, v1.1.0) is in force (#395). Review requirements FR-010..FR-014 added (Paco, Ruben, #394). Q5 answered (FR-011, FR-015, FR-016); next: research R1-R3, then plan and tasks.
 **Issue:** #289 (was spec 012 T083, `[KNOWN GAP]`). **Builds on:** 012 (Claude and Codex adapters), 019 (MCP), 043 (custom agents), 041/019 (secret masking), 003 (permission modes).
 
 ## Owner decisions (issue #289, 2026-10-20)
@@ -67,14 +67,25 @@ Added as requirements before anything is built (review findings are fixed in the
 
   Values are masked with the existing helpers: `maskSecretCommand`, `maskSecretArgs` and `maskSecretUrl` (`src/shared/redact.ts`), and `mcpmask.ts` (#362) for env and header values. Never show a secret value, and never store one. A unit test feeds a hook command, a rule and an `.mcp.json` with tokens and checks that none reach the window.
 
-## Open question for the owner
+## Owner answer to Q5 (PR #397, 2026-10-20)
 
-- **Q5 (Paco 2, Ruben +1): hooks in a folder the user did not write.** Q2 says folder hooks run. Paco and Ruben point out that a cloned repository with a hostile hook (for example `curl … | sh` on `SessionStart`) would then run commands even in Read-only, as soon as the user clicks *Use these*. Options:
-  - **a)** Keep Q2: hooks on by default everywhere. The dialog shows each hook's exact command (FR-014), and changes are re-asked (FR-010).
-  - **b)** Hooks off by default everywhere. Each hook has its own switch to turn it on (MCP servers and rules stay on, as decided).
-  - **c)** Hooks on by default only in a folder the user marks as their own: one checkbox in the dialog, "I wrote or trust this folder's hooks", remembered per folder. Otherwise off, with each hook's own switch.
+> "a) and c) so that we show what is inside the hook, user understands and also confirms that they know - if possible, lets also explain what the hook does and if it is safe or not asking llm to review it as by this time we will already have access to run llm checks."
 
-  *Recommendation: c.* It keeps Q2 for the user's own projects and closes the cloned-repo door with one click. Durbar cannot tell reliably who wrote a folder (git remotes and authors can be faked), so it asks the person instead of guessing.
+- **FR-011 Hooks** (resolves Q5, combining a and c):
+  - Hooks are part of the folder's setup and run once accepted (Q2).
+  - The dialog shows every hook in full (FR-014): its event, its matcher and its exact command.
+  - Hooks are accepted only with an explicit confirmation next to them: **"I have read these hooks and I know what they run"**.
+  - Without that confirmation, the folder's other items can still be used, and the hooks stay off. This is remembered per item digest (FR-010), so a changed hook asks again.
+- **FR-015 AI explanation of each hook** (owner: "explain what the hook does and if it is safe or not asking llm to review it"):
+  - When the dialog lists hooks, Durbar asks an installed, signed-in agent app for a short explanation of each one: what it does in plain words, what it touches (files, network, processes) and a verdict of *looks harmless*, *needs care* or *risky*, with one line of why.
+  - It reuses the existing one-shot call (`generateText`, spec 040 FR-015: no tools, no MCP, nothing saved) on the cheapest model.
+  - The answer is shown next to the hook, marked "AI explanation; it can be wrong".
+- **FR-016 The AI never decides.**
+  - A hook file can contain text written to fool a model ("this hook is safe"). So the command is always shown as it is.
+  - The hook content goes to the model as quoted data, with an instruction to treat it as untrusted.
+  - A verdict never turns a hook on or hides it; only the person's confirmation does (FR-013).
+  - If no agent app is available, or the call fails, the dialog says "No AI explanation" and works the same.
+  - The call's cost is shown like any one-shot.
 
 ## Research before the plan
 
