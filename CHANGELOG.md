@@ -2,7 +2,11 @@
 
 Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on Linux (see "Honest limits"). Each entry names the spec that describes the behavior and how it was checked.
 
-## Unreleased (on `main`, after the alpha.8 tag)
+## Unreleased (on `main`, after the alpha.9 tag)
+
+## v0.1.0-alpha.9 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.9), 2026-10-20)
+
+Unsigned and not notarized; only Linux was run by hand. **Steer a Copilot session from GitHub web and mobile** (remote control, behind a native confirmation, never in Allow all). **Scheduled prompts Phase 2**: weekdays and weekly rules, a daylight-saving fix, per-session schedules, a per-schedule limit. **MCP forms and URL requests** in the chat. **AI themes with Copilot.** **A new website** with a landing page and a docs page. And five more rounds of usability reviews by AI personas (rounds 6 to 10): truthful status and diffs, an Activity log, motion with meaning, plain words for people who don't code, house rules, macOS conventions, a remembered window and sessions, and a less bulky layout. Every IPC call now checks where it comes from.
 
 - **Round 10 of the usability pass: chrome density and type (spec 052 FR-095..FR-099).** The chat header is one row with 28px chips and buttons (about half its old height), **Previous (N)** replaces the Previous sessions bar, the agent strip is 48px and the composer hint is one short line; inbox rows are about 90 to 100px with a small **Open** on the heading line; Settings and Tools sit in an 880px column with tighter sections and a fluid agent app grid; one type scale (16/14/13/12/11) and spacing scale (4/8/12/16/24) for the chrome; an optional **Spacing: Compact** in Settings > Detail level. The office, the list and the top bar keep their sizes. Not seen in a running window yet (CSS read, `npm test`).
 - **Round 10 of the usability pass: office and tables (spec 052 FR-100..FR-104).** Flat desk cards with one hairline and no shadow, a 3px edge for Waiting, Error and Failing, and a thinner selection ring; Working, Thinking, Idle and Done are a dot and a word (only statuses that need you keep a filled pill); the card tooltip names the role; the top-bar counters are one segmented strip; the list and the Tools tables lose their frames and fills, with right-aligned tabular numbers, plain-text "Used by" and thinner bars. No size changes. Checked with `npm test`; not run in Electron.
