@@ -77,3 +77,10 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 - Every task that needs a real runtime or credits (T040..T046) is `needs-owner-approval`; T047 and T048 depend on the owner's answers; T061 and T062 need a decision first.
 - 030 does not depend on 012; if 012 T010 lands first, T011 and T014 use its `AdapterCapabilities` instead of `ModelControl`.
 - The pull request that adds these documents changes no `src/` file.
+
+## 2026-10-21: continue in another agent app (issue #409)
+
+- [ ] T080 Pure helpers: target apps and the provenance line (`modelswitch.js`), unit tests [FR-042, FR-043]
+- [ ] T081 More menu and palette entry, dialog preset, review step with provenance; hand-off prompt wording [FR-042..FR-044]
+- [ ] T082 Simulator: mixed kinds hand over; driver and screenshots at both sizes [FR-045]
+- [ ] T083 One real check: Copilot → Claude Code, Claude Code → Codex; README and CHANGELOG [FR-045]

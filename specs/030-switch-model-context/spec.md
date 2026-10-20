@@ -345,3 +345,32 @@ The owner allowed real credits on the paid Claude and Codex accounts (2026-10-20
   - a switch queued during a turn on a paid model (T042 was run on `auto` only);
   - the allowed `compactionDecision` values.
 - The **cap** finding from the same session (spec 013 C9: Copilot's session cap does not stop turns) is in spec 011.
+
+### 2026-10-21: continue a conversation in another agent app (issue #409)
+
+Owner's idea (#409): "provide ability to handover a conversation to a different agent app like what we do today to a different model or to create a new session with a summary … to freely move across them and validate or continue work with different models."
+
+What already exists, reused rather than duplicated:
+- the New session dialog's **Agent app** picker (spec 012 FR-059, FR-136);
+- **Start with a summary of this conversation** (T061, FR-034..FR-036): the source app writes a hand-off summary on a fork (`handoffSummary`), and the user edits it before anything is sent;
+- main's `agents:newSession`, which already starts any ready agent app in the same folder.
+
+Picking another app and ticking the summary already worked, but nothing pointed to it, and the summary did not say where it came from.
+
+- **FR-042** `[IMPLEMENTED]` **Entry point.** The chat's **More** menu and the command palette offer **Continue in another app…** for a live main session, when:
+  - its app can make a hand-off summary (`capabilities.handoff`);
+  - at least one *other* agent app is ready.
+
+  Otherwise the entry is hidden (never shown disabled: one app installed means no clutter). It opens the usual New session dialog as a preset:
+  - the title is "Continue in another agent app";
+  - **Agent app** is preselected to the first other ready app, and the user can pick any ready app;
+  - **Start with a summary** is ticked;
+  - the target app's model list and effort apply (its own models, spec 012 FR-120).
+- **FR-043** `[IMPLEMENTED]` **The summary says where it came from.** When the new session's app differs from the source's, the reviewed text starts with one line: "Continued from a <Source app> session (<agent name>) in this folder. Its summary:". The line is part of the editable text, so the user sees it and can change it. The hand-off prompt now asks for paths relative to the folder and no tool names, so another app can follow it.
+- **FR-044** `[IMPLEMENTED]` **Defaults and safety.**
+  - Nothing is sent to the new app before the user presses Start in the review step (unchanged from FR-036).
+  - The new session's permission mode starts at the source session's mode, as for any new session (Read-only by default; constitution III), and Allow all still asks for confirmation.
+  - The source session is untouched: it stays in the office with its history, and the user can end it.
+  - The new session gets its own name like any new session; the provenance line (FR-043) says where it came from.
+  - The summary's cost is the source app's, shown as before.
+- **FR-045** `test:` the target choice and provenance line (`scripts/test-modelswitch.ts`). `sim:` driver `scripts/shots-030-handover.js` (mixed agent apps; More > Continue in another app…, the preset dialog, the review step with the provenance line, the new session in the other app) at 1440x900 and 1280x800. `real:` see the PR (Copilot → Claude Code, Claude Code → Codex through the adapters).
