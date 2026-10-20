@@ -128,6 +128,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpStatus: true,
   mcpToggle: true,
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
+  modelSwitch: Object.freeze({ verified: false, contextTier: true }), // spec 030 Phase 3: switch, tier and compaction never run on a paid account (T041, T044, T045)
   remote: true, // spec 054 FR-002: rpc.remote.enable/disable (@experimental; real 2026-10-20: `started: false` outside a GitHub repository, never seen started)
   renameSession: 'any', // spec 059 FR-007: rpc.name.set (@experimental), also on a stored session through a prompt-free resume (read: SDK types only, not run on a real account)
   deleteSession: true, // spec 006 FR-028: CopilotClient.deleteSession (read: SDK 1.0.22 client.d.ts; never run on a real session)

@@ -24,7 +24,7 @@ import { codexMcpConfig, codexMcpServers, codexMcpState } from './codexMcp';
 import type { McpServerStatus } from './types';
 import { cleanSessionTitle } from './history';
 import type { HistoryResult, PreviousSession } from './history';
-import type { ModelOption } from '../shared/modelswitch';
+import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import { CODEX_INITIALIZE_CAPABILITIES, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexWorkspaceRoots } from './codexModes';
 import type { DurbarAnswer } from './codexModes';
 import { CODEX_BINARY, detectBinary, nodeExec } from './detect';
@@ -46,6 +46,7 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   resume: true, // FR-093 (T043b): thread/read, then thread/resume on a fresh child
   images: true,
   models: true, // FR-142: model/list, model and effort per turn
+  modelSwitch: Object.freeze({ verified: true, contextTier: false }), // spec 030 FR-038/FR-039 (real 2026-10-20): from the next message; no separate tier
   effort: true,
   permissionModes: Object.freeze(['read-only', 'ask', 'allow'] as const),
   permModeSwitch: 'next-message', // FR-144: Durbar's approvals at once, Codex's sandbox from the next message (fresh child, resume)
@@ -685,6 +686,25 @@ export class CodexAdapter implements AgentAdapter {
 
   /** Interrupt the running turn; the session stays live and grants stay (C10). With no turn running nothing is sent. */
   /** Spec 030 FR-034: a hand-off summary from an ephemeral fork (read-only, no approvals); the session's thread is not changed. */
+  /**
+   * Spec 030 FR-039: change the model (and effort) from the next turn. Codex takes both per `turn/start`, so the thread is kept;
+   * the start options change too, so a relaunch for a new mode (FR-144) keeps the choice.
+   */
+  async setModel(sessionId: string, request: ModelSwitchRequest): Promise<ModelSwitchResult> {
+    const live = this.mustGet(sessionId);
+    const raw = typeof request.model === 'string' ? request.model.trim() : '';
+    const toDefault = raw === 'auto' || raw === 'default';
+    if (!toDefault && !codexModelFlag(raw)) return { status: 'rejected', model: raw, message: `Codex does not take "${raw.slice(0, 40)}" as a model.` };
+    if (typeof request.effort === 'string' && !/^[a-z][a-z0-9_-]{0,15}$/.test(request.effort)) return { status: 'rejected', model: raw, message: 'That reasoning effort is not valid.' };
+    const previousModel = live.model;
+    const previousEffort = live.effort;
+    live.model = toDefault ? undefined : raw;
+    live.effort = request.effort === undefined ? previousEffort : request.effort === null ? undefined : request.effort;
+    live.options = { ...live.options, model: live.model, reasoningEffort: live.effort as typeof live.options.reasoningEffort }; // shape checked above; Codex validates the value
+    this.emit(sessionId, { type: 'model', cause: 'user', model: live.model ?? 'auto', ...(previousModel ? { previousModel } : {}), ...(live.effort ? { effort: live.effort } : {}), ...(previousEffort ? { previousEffort } : {}) });
+    return { status: 'applied', model: live.model ?? 'auto', message: 'Applies from the next message.' };
+  }
+
   async handoffSummary(sessionId: string): Promise<HandoffResult> {
     const live = this.sessions.get(sessionId);
     if (!live?.rpc || !live.threadId) throw new Error('Open the session first (send a message), then ask for a summary.');

@@ -46,6 +46,8 @@ export interface AdapterCapabilities {
   readonly renameSession?: 'any' | 'next-turn';
   /** `deleteSession()` exists: one earlier session can be removed through the vendor's own API, never by deleting files (spec 006 FR-028); missing = false. */
   readonly deleteSession?: boolean;
+  /** Spec 030 FR-040: how `setModel` behaves: `verified` = checked on a real account (else the UI says it is not), `contextTier` = a long-context tier can be chosen. Missing = not verified, tier offered (the Copilot default before this field). */
+  readonly modelSwitch?: Readonly<{ verified: boolean; contextTier: boolean }>;
 }
 
 /** Where an adapter stands on this machine (spec 012 FR-030). `unknown` also covers a detect that failed. */

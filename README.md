@@ -72,7 +72,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - **Open in VS Code** opens the folder (VS Code, then Insiders, then VSCodium).
 
 **Models, context and tools**
-- Pick the model and reasoning effort per session, and switch them in a running session where the harness allows it.
+- Pick the model and reasoning effort per session, and switch them in a running session: Claude Code and Codex from the next message, the conversation kept (checked on real accounts 2026-10-20); Copilot too, but not yet seen on a paid plan.
 - A context chip shows how full the window is, with **Compact**.
 - **MCP servers:**
   - your Copilot CLI list (`~/.copilot/mcp-config.json`) is used first;
