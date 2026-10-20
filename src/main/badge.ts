@@ -12,3 +12,8 @@ export function parseBadgeCount(v: unknown): number | null {
 export function shouldFlash(prev: number, next: number, focused: boolean, platform: NodeJS.Platform = process.platform): boolean {
   return platform === 'win32' && !focused && next > prev;
 }
+
+/** macOS (spec 052 FR-085): bounce the Dock icon once ("informational") when the count grows while the window is not focused. */
+export function shouldBounce(prev: number, next: number, focused: boolean, platform: NodeJS.Platform = process.platform): boolean {
+  return platform === 'darwin' && !focused && next > prev;
+}

@@ -7,6 +7,16 @@ const THEME=window.THEME; /* theme packs (specs 035-040): tokens, words, motion;
 const T_=n=>THEME.token(n);
 const wordOf=k=>THEME.word(k);
 const qs = new URLSearchParams(location.search);
+/* spec 052 FR-084: Command (⌘) on a Mac, Ctrl elsewhere; keys are shown per platform (src/renderer/keys.js) */
+const KEYS=window.DurbarKeys;
+const IS_MAC=KEYS.isMac(navigator.platform);
+const keyText=parts=>KEYS.keyText(parts,IS_MAC), keyLabels=parts=>KEYS.keyLabels(parts,IS_MAC), ariaKeys=parts=>KEYS.ariaKeys(parts,IS_MAC);
+const INBOX_KEY=keyText(['mod','shift','A']), NEXT_KEY=keyText(['mod','shift','N']), PAL_KEY=keyText(['mod','K']);
+/* spec 052 FR-085: the window's platform from the preload (the Mac title bar styles are gated on html[data-platform="darwin"]) */
+if(window.agentDurbar&&window.agentDurbar.platform==='darwin')document.documentElement.dataset.platform='darwin';
+/* the keys written in index.html are the Windows/Linux ones: rewrite them for a Mac */
+if(IS_MAC){document.querySelectorAll('[aria-keyshortcuts]').forEach(el=>el.setAttribute('aria-keyshortcuts',KEYS.ariaFor(el.getAttribute('aria-keyshortcuts'),true)));
+  document.querySelectorAll('[data-keys-text]').forEach(el=>{if(el.title)el.title=KEYS.textFor(el.title,true);for(const n of el.querySelectorAll('small'))n.textContent=KEYS.textFor(n.textContent,true);});}
 const DEMO_LIB = window.DURBAR_DEMO;
 const {L,S} = DEMO_LIB;
 const N_MAIN = Math.max(8, Math.min(15, parseInt(qs.get('n')||'12',10)));
@@ -269,6 +279,10 @@ const prio = a => {const s=vis(a);return s==='waiting'?0:s==='error'?1:2;};
 
 /* ---------------- state ---------------- */
 const ui = {view:'office', ws:'all', status:null, selected:null, expanded:{}};
+/* spec 052 FR-087 / FR-091: the last view, folder filter and open chat, and the most recently opened chats (ids only), kept in this
+   window's localStorage. Not in the simulator (its agents are made up each run) and not before the real agent list is back. */
+const UI_KEY='durbar.ui';
+let uiRestored=false, uiSaved='', RECENT=[];
 const $ = id => document.getElementById(id);
 
 const fmtTok = n => n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e4?Math.round(n/1e3)+'k':n>=1e3?(n/1e3).toFixed(1)+'k':String(n);
@@ -857,6 +871,7 @@ function renderAll(){
   syncWalkers();
   if(id&&!inPanel){const n=document.querySelector(`[${key}="${CSS.escape(id)}"]`); if(n&&ae!==n)n.focus({preventScroll:true});}
   if(ui.selected){updatePanelHeader();renderStrip();}
+  rememberUi();
 }
 
 
@@ -1106,7 +1121,8 @@ function wireMenu(btnId,menuId){
 /* the words of a request card (permission, question, limit), in full: the answer bar and the inbox show exactly this (FR-016, FR-027) */
 function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.q-form,.q-urlbox,.pstate,.pdiff,.pcmd'+(SIMPLE?'':',.pfold')).forEach(x=>x.remove()); /* spec 052 FR-080: the command never (notifications use this text) */const q=n.querySelector('.q-text');return (q?q.textContent:c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,'');}let answerObs=null;
 /* spec 052 FR-060: the key of a permission card's button, and the one click path the bar and the keys share */
-const answerKeyOf=b=>b.dataset.act==='session'?'Alt+S':/\bdanger\b/.test(b.className)?'Alt+D':/\bprimary\b/.test(b.className)?'Alt+A':'';
+const answerKeyOf=b=>b.dataset.act==='session'?'S':/\bdanger\b/.test(b.className)?'D':/\bprimary\b/.test(b.className)?'A':'';
+const chatKeyText=k=>keyText(KEYS.chatParts(k,IS_MAC)), chatKeyAria=k=>ariaKeys(KEYS.chatParts(k,IS_MAC)); /* FR-084: Alt+A elsewhere, ⌥⌘A on a Mac */
 const answerPress=(src,what)=>()=>{const word=src.textContent;src.click();announce(word+': '+what);const m=$('msgInput');if(m)m.focus();};
 function wireAnswerBar(a){
   if(answerObs){answerObs.m.disconnect();answerObs.i.disconnect();answerObs=null;}
@@ -1134,8 +1150,8 @@ function wireAnswerBar(a){
     const add=(label,cls,fn,title,keys)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;if(keys)b.setAttribute('aria-keyshortcuts',keys);b.onclick=fn;act.appendChild(b);};
     if(q)add('Answer in chat','primary',show);
     /* FR-016: a long request is answered in the chat only; the wide grant (any arguments) stays in the card */
-    /* FR-060: Alt+A / Alt+S / Alt+D press the same buttons (permission requests only) */
-    else if(!long)for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad){const k=card.classList.contains('limit')?'':answerKeyOf(src);add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,text),k?(src.title?src.title+' ':'')+'('+k+')':src.title,k);}
+    /* FR-060: Alt+A / Alt+S / Alt+D (⌥⌘A/S/D on a Mac, FR-084) press the same buttons (permission requests only) */
+    else if(!long)for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad){const k=card.classList.contains('limit')?'':answerKeyOf(src);add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,text),k?(src.title?src.title+' ':'')+'('+chatKeyText(k)+')':src.title,k?chatKeyAria(k):'');}
     add('Show in chat','ghost',show,'Scroll to the request in the chat');
     bar.hidden=false;
   }
@@ -1146,7 +1162,7 @@ function wireAnswerBar(a){
   const answerKey=kind=>{
     const c=pending(); if(!c)return false;
     if(c.classList.contains('question')||c.classList.contains('limit')||textOf(c).length>480){card=c;show();announce(c.classList.contains('question')?'Answer the question in its card.':c.classList.contains('limit')?'Choose in the spending limit card.':'A long request: read it in the chat before you answer.');return true;}
-    const src=[...c.querySelectorAll(':scope > .note-actions button')].find(b=>!b.dataset.broad&&answerKeyOf(b)==='Alt+'+kind);
+    const src=[...c.querySelectorAll(':scope > .note-actions button')].find(b=>!b.dataset.broad&&answerKeyOf(b)===kind);
     if(!src)return false;
     answerPress(src,textOf(c))();return true;
   };
@@ -1154,6 +1170,7 @@ function wireAnswerBar(a){
 }
 function openPanel(id,focus){
   const a=byId(id); if(!a)return; ui.selected=id; attached=[];
+  noteRecentChat(a); rememberUi();
   document.body.classList.add('panel-open');
   const room=roomOf(a), parent=a.parent?byId(a.parent):null;
   const p=$('panel');
@@ -1270,14 +1287,17 @@ document.addEventListener('click',e=>{
 document.addEventListener('keydown',e=>{
   /* spec 052 FR-035: Ctrl+Shift+A (attention: the inbox) and Ctrl+Shift+N (next agent) work everywhere, also in text fields and in a
      screen reader's browse mode, where single letters are taken. Not Ctrl+Shift+I: Electron's default menu opens DevTools there. */
-  /* spec 052 FR-042: Ctrl+K (Cmd+K) opens the command palette from anywhere, also from text fields */
-  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&!e.altKey&&(e.key==='k'||e.key==='K'||e.code==='KeyK')){e.preventDefault();closeKbdHelp();openPalette();return;}
-  if((e.ctrlKey||e.metaKey)&&e.shiftKey&&!e.altKey&&(e.key==='A'||e.key==='a'||e.code==='KeyA')){e.preventDefault();openInbox();return;}
-  if((e.ctrlKey||e.metaKey)&&e.shiftKey&&!e.altKey&&(e.key==='N'||e.key==='n'||e.code==='KeyN')){e.preventDefault();closeInbox();openNextNeedsMe();return;}
+  /* spec 052 FR-042: Ctrl+K (⌘K on a Mac, FR-084) opens the command palette from anywhere, also from text fields */
+  const mod=KEYS.modDown(e,IS_MAC);
+  if(mod&&!e.shiftKey&&!e.altKey&&(e.key==='k'||e.key==='K'||e.code==='KeyK')){e.preventDefault();closeKbdHelp();openPalette();return;}
+  /* spec 052 FR-091: Ctrl+` goes back to the previous chat (and again, back). Control also on a Mac: Cmd+` switches windows there. Not under a dialog. */
+  if(e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey&&e.code==='Backquote'&&!document.querySelector('[role="dialog"][aria-modal="true"]')){e.preventDefault();openPreviousChat();return;}
+  if(mod&&e.shiftKey&&!e.altKey&&(e.key==='A'||e.key==='a'||e.code==='KeyA')){e.preventDefault();openInbox();return;}
+  if(mod&&e.shiftKey&&!e.altKey&&(e.key==='N'||e.key==='n'||e.code==='KeyN')){e.preventDefault();closeInbox();openNextNeedsMe();return;}
   /* spec 052 FR-060: in an open chat, Alt+A allow once, Alt+S allow for this session, Alt+D deny (the request the answer bar shows), Alt+N the
-     next agent that needs you. By the key's position (e.code), so Option+letter on a Mac works too. Not while you type in a field with text,
-     and not under a dialog. The app has no menu of its own: Electron's default menu uses Alt+F, E, V, W and H only. */
-  if(e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.isComposing&&/^Key[ASDN]$/.test(e.code)&&ui.selected&&$('panel')&&!document.querySelector('[role="dialog"][aria-modal="true"]')){
+     next agent that needs you. By the key's position (e.code). On a Mac it is Option+Command (FR-084): Option+letter alone types accents
+     or dead keys there. Not while you type in a field with text, and not under a dialog. Windows and Linux have no app menu (FR-083). */
+  if(KEYS.chatKeyDown(e,IS_MAC)&&/^Key[ASDN]$/.test(e.code)&&ui.selected&&$('panel')&&!document.querySelector('[role="dialog"][aria-modal="true"]')){
     const t=e.target, typing=t&&t.matches&&t.matches('input,textarea,[contenteditable="true"]')&&String((t.value!=null?t.value:t.textContent)||'').length>0;
     if(!typing){const k=e.code.slice(3);
       if(k==='N'){e.preventDefault();openNextNeedsMe();return;}
@@ -1403,7 +1423,7 @@ function renderInboxBtn(){
   syncAttention(list);
   b.hidden=!agents.length; b.classList.toggle('attn',n>0);
   rollCount(b.querySelector('b'),n);
-  b.setAttribute('aria-label',n?n+(n===1?' agent needs':' agents need')+' you. Open the inbox (I or Ctrl+Shift+A).':'Nobody needs you. Open the inbox (I or Ctrl+Shift+A).');
+  b.setAttribute('aria-label',n?n+(n===1?' agent needs':' agents need')+' you. Open the inbox (I or '+INBOX_KEY+').':'Nobody needs you. Open the inbox (I or '+INBOX_KEY+').');
 }
 /* spec 052 FR-068: the count rolls (old number out, new one in, 220ms) inside a box that keeps its width; up when it grows */
 function rollCount(box,n){
@@ -1509,38 +1529,43 @@ function openNextNeedsMe(){
   const cur=list.findIndex(a=>a.id===ui.selected), nx=list[(cur+1)%list.length];
   openPanel(nx.id,true);
 }
-/* ---- spec 052 FR-042 / FR-043 (#316): command palette (Ctrl+K) and keyboard shortcut sheet (?) ---- */
+/* ---- spec 052 FR-042 / FR-043 (#316): command palette (Ctrl+K, ⌘K on a Mac) and keyboard shortcut sheet (?) ---- */
 let palBack=null, palItems=[], palActive=0;
 const palUsable=id=>{const el=$(id);return !!el&&!el.disabled&&!el.hidden&&!el.closest('[hidden]:not(#topMoreMenu)');};
 const palClick=id=>()=>{const el=$(id);if(el)el.click();};
 function palActions(){
   return [
-    {label:'Needs you',hint:'The inbox of agents that need you',kw:'inbox attention waiting approve',keys:['I'],run:openInbox},
-    {label:'Next agent that needs you',hint:'Open the next waiting chat',kw:'next waiting jump',keys:['N'],run:openNextNeedsMe},
+    {label:'Needs you',hint:'The inbox of agents that need you ('+INBOX_KEY+')',kw:'inbox attention waiting approve',keys:['I'],run:openInbox},
+    {label:'Next agent that needs you',hint:'Open the next waiting chat ('+NEXT_KEY+')',kw:'next waiting jump',keys:['N'],run:openNextNeedsMe},
     {label:'Office view',kw:'view office desks rooms',run:palClick('vOffice'),ok:()=>palUsable('vOffice')},
     {label:'List view',kw:'view list table rows',run:palClick('vList'),ok:()=>palUsable('vList')},
     {label:'Tools',kw:'tools usage mcp',run:palClick('toolsBtn'),ok:()=>palUsable('toolsBtn')},
-    {label:'Settings',kw:'settings preferences theme options',run:palClick('settingsBtn'),ok:()=>palUsable('settingsBtn')},
+    {label:'Settings',kw:'settings preferences theme options',...(IS_MAC?{keys:keyLabels(['mod',','])}:{}),run:palClick('settingsBtn'),ok:()=>palUsable('settingsBtn')},
     {label:'Add folder',kw:'add folder workspace project new',run:palClick('addFolder'),ok:()=>palUsable('addFolder')},
     {label:'Detail level: Simple',kw:'simple detail beginner view',run:()=>setDetail('simple')},
     {label:'Detail level: Expert',kw:'expert detail developer view',run:()=>setDetail('expert')},
     {label:'Close all room doors',kw:'doors close compact plates',run:palClick('closeAll'),ok:()=>palUsable('closeAll')},
     {label:'Open all room doors',kw:'doors open expand',run:palClick('openAll'),ok:()=>palUsable('openAll')},
+    {label:'Back to the previous chat',kw:'previous last recent chat toggle switch',keys:['Ctrl','`'],run:openPreviousChat,ok:()=>!!previousChat()},
     {label:'Keyboard shortcuts',kw:'keys shortcuts help hotkeys',keys:['?'],run:openKbdHelp},
+    {label:'End all sessions',hint:'Ends every running session; the chats stay',kw:'end stop all sessions quit day close',run:()=>endAllSessions(),ok:()=>!!bridge&&!!bridge.end&&endAllTargets().length>0},
     ...remotePalItems(),
   ].filter(x=>!x.ok||x.ok()).map(x=>({...x,group:'Actions'}));
 }
-function palAll(){
-  const ags=agents.filter(a=>!a.parent).map(a=>{const r=roomOf(a);return {group:'Agents',label:a.name,
+function palAll(withRecent){
+  /* spec 052 FR-091: with an empty search, the 5 most recently opened chats come first, as "Recent" (and are not repeated under Agents) */
+  const rec=withRecent?recentChats(5):[], recIds=new Set(rec.map(a=>a.id));
+  const agItem=(a,group)=>{const r=roomOf(a);return {group,label:a.name,
     hint:[r&&r.name,LABELS[vis(a)]||vis(a),a.info?kindWord(a.info.adapterId):''].filter(Boolean).join(' · '),
-    kw:[r&&r.name,LABELS[vis(a)],a.info?kindWord(a.info.adapterId):''].filter(Boolean).join(' '),run:()=>openPanel(a.id,true)};});
+    kw:[r&&r.name,LABELS[vis(a)],a.info?kindWord(a.info.adapterId):''].filter(Boolean).join(' '),run:()=>openPanel(a.id,true)};};
+  const ags=[...rec.map(a=>agItem(a,'Recent')),...agents.filter(a=>!a.parent&&!recIds.has(a.id)).map(a=>agItem(a,'Agents'))];
   const rooms=roomsInOrder().filter(roomShown).map(r=>({group:'Folders',label:r.name,hint:'Show only this folder',kw:'folder filter',
     run:()=>{if(ui.selected)closePanel();ui.ws=r.id;renderAll();}}));
   if(ui.ws!=='all')rooms.unshift({group:'Folders',label:'All folders',hint:'Show every folder',kw:'folder filter all',run:()=>{if(ui.selected)closePanel();ui.ws='all';renderAll();}});
   return [...ags,...rooms,...palActions()];
 }
 function palFilter(q){
-  q=q.trim().toLowerCase(); const all=palAll(); if(!q)return all;
+  q=q.trim().toLowerCase(); const all=palAll(!q); if(!q)return all;
   const scored=[];
   all.forEach((x,i)=>{const l=x.label.toLowerCase(),k=(x.kw||'').toLowerCase();
     const s=l.startsWith(q)?0:l.split(/[\s\-_.]+/).some(w=>w.startsWith(q))?1:l.includes(q)?2:k.includes(q)?3:-1;
@@ -1606,21 +1631,25 @@ function openKbdHelp(back){
   if($('kbdDlg'))return;
   palBack=back instanceof Element?back:(document.activeElement&&document.activeElement!==document.body?document.activeElement:null);
   const rows=[
-    [['Ctrl','K'],'Command palette: agents, folders and actions'],
-    [['I'],'Needs you inbox',['Ctrl','Shift','A']],
-    [['N'],'Next agent that needs you',['Ctrl','Shift','N']],
+    [keyLabels(['mod','K']),'Command palette: agents, folders and actions'],
+    [['I'],'Needs you inbox',keyLabels(['mod','shift','A'])],
+    [['N'],'Next agent that needs you',keyLabels(['mod','shift','N'])],
+    ...(IS_MAC?[[keyLabels(['mod',',']),'Settings']]:[]), /* FR-083: the app menu's Settings… item */
+    [['Ctrl','`'],'Back to the previous chat (on a Mac too: Control, not Cmd)'],
     [['←','→','↑','↓'],'Move between desks'],
     [['Esc'],'Back, or close'],
     [['?'],'This list'],
   ];
   const inbox=[[['J'],['K'],'Next or previous request (also ↓ ↑)'],[['A'],'Allow once'],[['S'],'Allow for this session'],[['D'],'Deny'],[['O'],'Open chat']];
   /* spec 052 FR-060: in an open chat that waits for you */
-  const inChat=[[['Alt','A'],'Allow once'],[['Alt','S'],'Allow for this session'],[['Alt','D'],'Deny'],[['Alt','N'],'Next agent that needs you']];
+  /* FR-084: ⌥⌘ on a Mac (Option alone types accents there), Alt elsewhere */
+  const ck=k=>keyLabels(KEYS.chatParts(k,IS_MAC));
+  const inChat=[[ck('A'),'Allow once'],[ck('S'),'Allow for this session'],[ck('D'),'Deny'],[ck('N'),'Next agent that needs you']];
   /* spec 052 FR-064 */
   const inList=[[['J'],['K'],'Next or previous row (also ↓ ↑)'],[['Enter'],'Open chat']];
   const row=(keys,what,alt)=>'<tr><td class="kb-k">'+kbdHTML(keys)+(alt?' <span class="kb-or">or</span> '+kbdHTML(alt):'')+'</td><td>'+esc(what)+'</td></tr>';
   const d=document.createElement('div');d.id='kbdDlg';d.className='dlg-ov';
-  d.innerHTML='<div class="dlg kbd-dlg" role="dialog" aria-modal="true" aria-labelledby="kbdT"><h3 id="kbdT">Keyboard shortcuts</h3><table class="kb-t"><tbody>'+rows.map(r=>row(r[0],r[1],r[2])).join('')+'</tbody></table><h4 class="kb-h">In the Needs you inbox</h4><table class="kb-t"><tbody>'+inbox.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In a chat that waits for you</h4><table class="kb-t"><tbody>'+inChat.map(r=>row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In the list view</h4><table class="kb-t"><tbody>'+inList.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><p class="kb-note">On a Mac, Cmd works where Ctrl is shown, and Option where Alt is shown.</p><div class="dbtn"><button class="btn" type="button" id="kbdClose">Close</button></div></div>';
+  d.innerHTML='<div class="dlg kbd-dlg" role="dialog" aria-modal="true" aria-labelledby="kbdT"><h3 id="kbdT">Keyboard shortcuts</h3><table class="kb-t"><tbody>'+rows.map(r=>row(r[0],r[1],r[2])).join('')+'</tbody></table><h4 class="kb-h">In the Needs you inbox</h4><table class="kb-t"><tbody>'+inbox.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In a chat that waits for you</h4><table class="kb-t"><tbody>'+inChat.map(r=>row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In the list view</h4><table class="kb-t"><tbody>'+inList.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><div class="dbtn"><button class="btn" type="button" id="kbdClose">Close</button></div></div>';
   document.body.appendChild(d);
   d.addEventListener('click',e=>{if(e.target===d)closeKbdHelp();});
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeKbdHelp();}else if(e.key==='Tab'){e.preventDefault();$('kbdClose').focus();}});
@@ -1629,6 +1658,84 @@ function openKbdHelp(back){
 }
 $('kbdHelpBtn').onclick=()=>openKbdHelp($('topMoreBtn'));
 /* ---- end spec 052 FR-042 / FR-043 ---- */
+/* ---- spec 052 round 8, daily use (FR-087..FR-091) ---- */
+const rememberOn=()=>!!bridge&&!qs.get('sim')&&!demoOn;
+/* FR-087: written only when something changed (renderAll runs often); the folder is kept by its path, which stays the same across restarts */
+function rememberUi(){
+  if(!uiRestored||!rememberOn())return;
+  const sel=byId(ui.selected), root=sel&&(sel.parent?byId(sel.parent):sel);
+  const room=ui.ws!=='all'?ROOMS.find(r=>r.id===ui.ws):null;
+  const v=JSON.stringify({view:ui.view,ws:room?room.path:null,chat:root&&root.live?root.id:null,recent:RECENT.slice(0,10)});
+  if(v===uiSaved)return; uiSaved=v;
+  try{localStorage.setItem(UI_KEY,v);}catch(e){}
+}
+/* after the agent list loaded: the view, then the folder filter (if that folder is still shown), then the chat (only if that agent still exists) */
+function restoreUi(){
+  if(uiRestored)return; uiRestored=true;
+  if(!rememberOn())return;
+  let o=null; try{o=JSON.parse(localStorage.getItem(UI_KEY)||'null');}catch(e){o=null;}
+  if(!o||typeof o!=='object')return;
+  RECENT=Array.isArray(o.recent)?o.recent.filter(x=>typeof x==='string'&&x.length<=200).slice(0,10):[];
+  if(o.view==='list'&&ui.view!=='list'&&qs.get('view')!=='list')setView('list');
+  const room=typeof o.ws==='string'?ROOMS.find(r=>r.path===o.ws&&roomShown(r)):null;
+  if(room){ui.ws=room.id;renderFilter();renderAll();}
+  const a=typeof o.chat==='string'?byId(o.chat):null;
+  if(a&&!a.parent&&!ui.selected&&!pendingOpen)openPanel(a.id,false);
+  uiSaved='';rememberUi();
+}
+/* FR-091: the most recently opened chats, newest first (main agents; a helper's chat counts for its main agent) */
+function noteRecentChat(a){
+  const r=a&&(a.parent?byId(a.parent):a); if(!r||!r.live)return;
+  RECENT=[r.id,...RECENT.filter(x=>x!==r.id)].slice(0,10);
+}
+const recentChats=n=>RECENT.map(byId).filter(a=>a&&!a.parent&&a.live&&roomShown(roomOf(a))).slice(0,n);
+/* the chat to go back to: the newest one that is not open now */
+function previousChat(){
+  const sel=byId(ui.selected), cur=sel&&(sel.parent?sel.parent:sel.id);
+  return recentChats(10).find(a=>a.id!==cur)||null;
+}
+function openPreviousChat(){
+  const p=previousChat();
+  if(!p){toast('No earlier chat to go back to yet.',2600);return;}
+  closeInbox();openPanel(p.id,true);
+}
+/* FR-090: End all sessions: every main session that is running (the card menu's own rule: started, not ended), through the same end path */
+const endAllTargets=()=>agents.filter(a=>!a.parent&&a.live&&DMK().cardMenuActions(a,capsFor(a)).end);
+async function endAllSessions(anchor){
+  const list=endAllTargets();
+  if(!list.length){toast('No session is running.',2600);return;}
+  const busyN=list.filter(a=>a.state==='working'||a.state==='thinking'||a.state==='waiting').length;
+  const ok=await askDialog({title:'End all sessions?',body:(list.length===1?'1 session ends':list.length+' sessions end')+' and frees '+(list.length===1?'its place':'their places')+(busyN?' ('+busyN+' still working: '+(busyN===1?'its reply stops':'their replies stop')+')':'')+'. The chats stay; send a message to pick up where you left off.',returnFocus:anchor,
+    buttons:[{label:'Cancel',value:null},{label:'End all sessions',value:'ok',cls:'primary danger'}]});
+  if(!ok)return;
+  const bad=[];
+  for(const a of list){try{await (bridge.end||bridge.stop)(a.id);}catch(err){bad.push(a.name);}}
+  const n=list.length-bad.length;
+  toast(bad.length?'Could not end '+esc(bad.join(', '))+'.':(n===1?'1 session ended.':n+' sessions ended.')+' Sending a message resumes one.',4200).classList.add(bad.length?'err':'ok');
+}
+/* FR-089: "Since you were away": how long the app was closed and the scheduled prompts that did not run, from main's stores only */
+const awayWords=ms=>{const m=Math.round(ms/60000),d=Math.floor(m/1440),h=Math.floor((m%1440)/60),mm=m%60;
+  return d?d+(d===1?' day':' days')+(h?' '+h+' h':''):h?h+' h'+(mm?' '+mm+' min':''):mm+' min';};
+async function renderAwayStrip(){
+  const el=$('awayStrip'); if(!el||!bridge||!bridge.sinceAway||demoOn)return;
+  let s=null; try{s=await bridge.sinceAway();}catch(e){s=null;}
+  if(!s||typeof s.awayMs!=='number'){el.hidden=true;el.innerHTML='';return;}
+  const missed=Array.isArray(s.missed)?s.missed:[];
+  el.innerHTML='<span class="ns-ic" aria-hidden="true">i</span><span class="ns-t"><b>Since you were away</b> ('+esc(awayWords(s.awayMs))+'): '+
+    (missed.length?(missed.length===1?'1 scheduled prompt':missed.length+' scheduled prompts')+' did not run while the app was closed.':'nothing was scheduled while the app was closed.')+
+    '</span>'+(missed.length?'<span class="aw-list">'+missed.map(m=>'<span class="aw-it" data-sched="'+esc(m.id)+'"><span class="aw-w"><b>'+esc(m.folderName)+'</b>: “'+esc(m.prompt)+'”'+(m.repeats?' <small>(runs again as planned)</small>':'')+'</span>'+(bridge.runScheduleNow?'<button class="btn" type="button" data-awrun="'+esc(m.id)+'">Run missed now</button>':'')+'</span>').join('')+'</span>':'')+
+    '<span class="ns-act"><button class="btn" type="button" data-aw="close">Dismiss</button></span>';
+  el.hidden=false;
+  el.querySelector('[data-aw="close"]').onclick=()=>{el.hidden=true;el.innerHTML='';if(bridge.dismissSinceAway)bridge.dismissSinceAway().catch(()=>{});scheduleRender();};
+  el.querySelectorAll('[data-awrun]').forEach(b=>b.onclick=async()=>{
+    const done=busy(b,'Sending…');let r;
+    try{r=await bridge.runScheduleNow(b.dataset.awrun);}catch(err){r={ok:false,error:String(err&&err.message||err)};}finally{done();}
+    if(r&&r.ok){const it=b.closest('.aw-it');b.remove();if(it)it.insertAdjacentHTML('beforeend','<span class="aw-ok">Sent</span>');toast('Sent the scheduled prompt now.',3200).classList.add('ok');}
+    else toast('Could not run it: '+esc((r&&r.error)||'unknown error'),5000).classList.add('err');
+  });
+  scheduleRender();
+}
+$('endAllBtn').onclick=()=>endAllSessions($('topMoreBtn'));
 const DESK_NAV='#stage .desk, #stage .helper, #stage .plate';
 $('wsFilter').addEventListener('change',e=>{ui.ws=e.target.value;renderAll();});
 function setView(v){ui.view=v;document.body.classList.toggle('list-mode',v==='list');
@@ -3668,6 +3775,7 @@ if(bridge){
   document.body.classList.add('has-bridge');
   $('demoToggle').onchange=e=>{demoOn=e.target.checked;applyMode();};
   wireMenu('topMoreBtn','topMoreMenu');
+  $('endAllBtn').hidden=$('endAllSep').hidden=!bridge.end; /* spec 052 FR-090 */
   $('inboxBtn').onclick=openInbox;
   $('addFolder').onclick=()=>addVia(bridge.addFolder);
   $('addWs').onclick=()=>addVia(bridge.addWorkspaceFile);
@@ -3689,12 +3797,17 @@ if(bridge){
   document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('.place-add'))window.DurbarScreens.placeDialog(null);});
   $('toolsBtn').onclick=()=>window.DurbarScreens.isOpen()?window.DurbarScreens.close():window.DurbarScreens.openTools(null);
   $('settingsBtn').onclick=()=>window.DurbarScreens.openSettings();
+  /* spec 052 FR-083: Settings… (⌘,) in the macOS app menu. The real window's preload carries it, also under the simulator. */
+  {const real=window.agentDurbar;if(real&&real.onMenuSettings)real.onMenuSettings(()=>window.DurbarScreens.openSettings());
+   /* FR-085: in full screen the top bar no longer keeps room for the traffic lights */
+   if(real&&real.onFullScreen)real.onFullScreen(on=>{if(on)document.documentElement.dataset.fullscreen='';else delete document.documentElement.dataset.fullscreen;});}
   $('modelSel').onchange=syncKindModel;
   $('kindSel').onchange=syncKindModel;
   $('kindHelp').onclick=()=>aboutKinds();
   bridge.onEvent(onLiveEvent);
   bridge.onAgentAdded(addLiveAgent);
   bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});renderRestoreStrip();
+    restoreUi();renderAwayStrip(); /* spec 052 FR-087 / FR-089 */
     /* spec 052 FR-059: what already needs you a few seconds after start is remembered, not notified */
     setTimeout(()=>{renderInboxBtn();ATT_ARMED=true;},3000);});
   loadModels();
