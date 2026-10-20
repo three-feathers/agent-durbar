@@ -458,6 +458,10 @@ export class CopilotAdapter implements AgentAdapter {
       onElicitationRequest,
       // spec 043 FR-002: custom agents from explicit folders only (no config discovery, so no repository skills)
       agentDirectories: agentDirsFor([cwd, ...folders]),
+      // spec 061 FR-017 (real 2026-10-20): without this the runtime runs a repository's own hooks (`.github/hooks/*.json`,
+      // `.github/copilot/settings.json`) at session start and on each prompt, unasked, even in Read-only. Off until the
+      // folder-setup dialog (spec 061) lets the person accept them; on create AND resume (the same config).
+      enableFileHooks: false,
     };
     this.debug?.(`mcp: servers=[${Object.keys(options.mcpServers ?? {}).join(',')}] disabled=[${(options.disabledMcpServers ?? []).join(',')}]`);
     let session: CopilotSession;
