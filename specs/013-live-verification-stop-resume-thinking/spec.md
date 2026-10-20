@@ -91,3 +91,15 @@ Real app driven by script (`DURBAR_DRIVER`), one real Copilot session in a throw
 
 - `real:` 2026-10-20, 0 prompts: The Copilot login on the test machine is still a **free plan** on 2026-10-20: `listModels()` returned **no models at all** (it listed `auto` on 2026-10-17; the runtime now signs in through `gh`, `authType: gh-cli`), and the quota shows `premium_interactions` entitlement 0. `auto` sessions still run. So **C8** (several models and effort) cannot run.
 - **C9** (a real cap of at least 30 AIU being reached) was estimated and skipped: on this plan a tiny `auto` prompt costs 0.07-0.26 AIU (measured the same day), so reaching 30 AIU needs more than 100 prompts, or a few long ones that would use most of the free plan's monthly chat quota. The runtime refuses a cap under 30 ("Minimum session limit is 30 AI credits", seen again on 2026-10-20). Both wait for the paid plan.
+
+### 2026-10-20: C8 and C9 run on Copilot Pro (issue #288)
+
+- **C8** `real:` (spec 030 `## Changes`, 0.43 AIU with T041/T044): two models in one session (`gpt-6-luna`, `mai-code-1.1-flash`), and effort low, medium and high applied through the model menu's `setModel`. The history was kept across the switches.
+- **C9** `real:` (`scripts/paid-models-real.ts cap` and `capresume`, `claude-haiku-4.5` with ~60k-token fillers, then `gpt-6-luna`). A session created with `maxAiCredits: 30`:
+  - **no limit event, and no refusal.** It passed 27.5 credits after two prompts; the third prompt started below 30 and ended at 42.6;
+  - resuming it with a cap of 30 failed: *"This session has already used 42.63 AI credits. The session limit must be above 42.63."*;
+  - resumed with a cap of 43 and later 58.6, a turn that started below the cap overshot it (to 58.3, then 74.05; near the 128k window each turn also compacted, about 15.7 credits for a "tiny" prompt);
+  - resumed with a cap of 74.3 on `gpt-6-luna`, the **second prompt started at 75.6 credits, over the cap, and still ran**. No `limit` event in any run.
+
+  So, on this runtime, the session limit is checked when a session is created or resumed, not before each turn, and it does not stop a running session. GitHub's docs say the next model call is blocked; that did not happen. **Durbar must enforce the cap itself** (spec 011 change, same day).
+- Credits: C8 0.43 AIU; C9 about 75.7 AIU (the capped session's own total). All Copilot Pro checks of the day: about **81.8 AIU, about USD 0.82**, inside spec 030's Q8 budget of USD 1.

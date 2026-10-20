@@ -18,6 +18,8 @@ interface RawTierPrices {
   outputPrice?: number;
   cacheReadPrice?: number;
   maxPromptTokens?: number;
+  /** The tier's prompt budget (real 2026-10-20: the runtime's `tokenLimit` on that tier). */
+  contextMax?: number;
 }
 export interface RawTokenPrices extends RawTierPrices {
   batchSize?: number;
@@ -26,8 +28,10 @@ export interface RawTokenPrices extends RawTierPrices {
 
 /**
  * The SDK reports "AI Credits cost per billing batch of N tokens". Credits per million tokens = price / batchSize * 1e6.
- * `unverified` is always true: no real account's numbers were ever read (T040), so the unit scale may be off by a constant factor.
- * The UI says so, compares models only by ratio (valid in any common unit) and does not check the cap with these numbers.
+ * Checked on a paid account (spec 030 T044, `real:` 2026-10-20): `gpt-6-luna` lists `inputPrice` 10 per batch of 1e6 tokens and its
+ * calls were billed at exactly 10e9 nano-AIU per 1e6 input tokens (the same for cache reads, cache writes and output), so these are AI
+ * credits per million tokens and are no longer marked `unverified`. The long-context prices were NOT charged for a small prompt on the
+ * long tier (the default prices were); the UI applies them only above the default window.
  * A missing, zero, negative or non-numeric field stays absent; with no batch size nothing is guessed.
  */
 export function pricingFromTokenPrices(tp: RawTokenPrices | undefined | null): ModelPricing | undefined {
@@ -40,7 +44,7 @@ export function pricingFromTokenPrices(tp: RawTokenPrices | undefined | null): M
   const base = tier(tp);
   if (!base) return undefined;
   const long = tp.longContext && typeof tp.longContext === 'object' ? tier(tp.longContext) : undefined;
-  return { ...base, ...(long ? { long } : {}), unverified: true };
+  return { ...base, ...(long ? { long } : {}) };
 }
 
 /** `modelPickerPriceCategory` (low | medium | high | very_high) -> the neutral price class. Anything else is absent. */
@@ -52,7 +56,7 @@ export function priceClassOf(v: unknown): PriceClass | undefined {
 export interface RawModelInfo {
   id: string;
   name?: string;
-  capabilities?: { limits?: { max_context_window_tokens?: number; max_output_tokens?: number } };
+  capabilities?: { limits?: { max_context_window_tokens?: number; max_output_tokens?: number; max_prompt_tokens?: number } };
   policy?: { state?: string };
   billing?: { multiplier?: number; tokenPrices?: RawTokenPrices };
   supportedReasoningEfforts?: string[];
@@ -66,10 +70,12 @@ export function modelOptionFrom(m: RawModelInfo): ModelOption {
   const tp = m.billing?.tokenPrices;
   const pricing = pricingFromTokenPrices(tp);
   const advertisesLong = !!(tp && typeof tp.longContext === 'object' && tp.longContext) || (Array.isArray(m.supportedContextTiers) && m.supportedContextTiers.includes('long_context'));
-  const win = m.capabilities?.limits?.max_context_window_tokens;
-  const out = m.capabilities?.limits?.max_output_tokens;
-  const longPrompt = tp?.longContext?.maxPromptTokens;
-  const longWindow = advertisesLong && pos(longPrompt) && pos(out) ? longPrompt + out : undefined;
+  // The runtime's window (`usage_info.tokenLimit`, real 2026-10-20) is the PROMPT budget, not `max_context_window_tokens`:
+  // gpt-6-luna 272k (tokenPrices.contextMax; the 1M context window is never offered), long tier 872k (longContext.contextMax),
+  // mai-code-1.1-flash 128k (contextMax / max_prompt_tokens, not its 256k window), claude-haiku-4.5 128k (max_prompt_tokens).
+  const limits = m.capabilities?.limits;
+  const win = [tp?.contextMax, tp?.maxPromptTokens, limits?.max_prompt_tokens, limits?.max_context_window_tokens].find(pos);
+  const longWindow = advertisesLong ? [tp?.longContext?.contextMax, tp?.longContext?.maxPromptTokens].find(pos) : undefined;
   const priceClass = priceClassOf(m.modelPickerPriceCategory);
   return {
     id: m.id,
