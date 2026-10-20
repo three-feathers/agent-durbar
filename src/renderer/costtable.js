@@ -41,7 +41,7 @@
     return '"'+s.replace(/"/g,'""')+'"';
   }
   const CSV_COLUMNS=['folder','money_usd_estimate','copilot_aiu','claude_usd_estimate','tokens','calls','period'];
-  /* The table as CSV text (CRLF line ends): one line per row, then the total. `period` is the label shown ("This run", "Since 2026-10-01"). */
+  /* The table as CSV text (CRLF line ends): one line per row, then the total. `period` is the label shown ("This session", "All time (since 2026-10-01)"). */
   function toCsv(built,period){
     const p=String(period==null?'':period);
     const line=r=>[r.name,r.money.toFixed(4),r.aiu.toFixed(3),r.usd.toFixed(4),String(Math.round(r.tokens)),String(Math.round(r.calls)),p].map(csvField).join(',');

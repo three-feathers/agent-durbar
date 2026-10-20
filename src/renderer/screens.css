@@ -5,6 +5,7 @@ body.screen-open .workspace{display:none}
 .scr-head{flex:none;display:flex;align-items:center;gap:12px;padding:12px 24px;border-bottom:1px solid var(--line);background:var(--surface)}
 .scr-head h2{margin:0;font-size:17px;font-weight:650;letter-spacing:-.01em}
 .scr-head .grow{flex:1}
+.scr-head .per-since{margin-left:-6px;font-size:11.5px;color:var(--muted);white-space:nowrap} /* spec 052 FR-092: the start date of "All time" in Cost */
 .scr-body{flex:1;min-height:0;overflow:auto;padding:16px 24px 28px;max-width:1100px;width:100%;margin:0 auto}
 .scr-sec{margin:0 0 16px;padding:16px 18px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-xl)}
 .scr-sec .seg{width:max-content}
@@ -223,7 +224,7 @@ body.has-bridge #topBtns{display:flex}
 .hs-code{font-size:18px;font-weight:700;letter-spacing:.08em;padding:4px 10px;border-radius:8px;background:var(--surface-2);border:1px solid var(--line)}
 .hs-plan{display:flex;gap:8px;align-items:flex-start;margin:6px 0}.hs-plan small{display:block;color:var(--muted);font-size:11.5px}
 .hs-plan b{display:block;font-weight:600}.hs-plan code{display:block}
-.hs-name{min-width:0}.hs-for{color:var(--muted);font-size:11.5px}.hs-cmds{margin:6px 0}.hs-cmds>summary{cursor:pointer;font-size:12px;color:var(--ink-2)}.hs-cmds code{overflow-wrap:anywhere} /* spec 052 FR-056 */
+.hs-name{min-width:0}.hs-name>b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hs-for{display:block;color:var(--muted);font-size:11.5px;white-space:nowrap} /* spec 052 FR-092: "for ChatGPT" on its own small line, never split */.hs-cmds{margin:6px 0}.hs-cmds>summary{cursor:pointer;font-size:12px;color:var(--ink-2)}.hs-cmds code{overflow-wrap:anywhere} /* spec 052 FR-056 */
 #hsPaste{flex:1 1 240px;height:32px;border:1px solid var(--line-ctl);border-radius:8px;padding:0 10px;font:inherit}
 /* Tools > Cost (spec 052 FR-044): one row per folder, a total row; folders with no usage in grey */
 .scr-body .ttab.cost{table-layout:auto}
