@@ -22,7 +22,7 @@ module.exports = async (ctx) => {
     const id = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith('Ada'));return d?d.dataset.id:null})()`);
     assert.ok(id, 'Ada (mcp-swiss) is on the floor');
     await js(`document.querySelector('#stage .desk[data-id="${id}"]').click()`); await ctx.sleep(900);
-    if (!(await js(`!!document.querySelector('#prev [data-pv="view"]')`))) { await js(`document.querySelector('#prev [data-pv="toggle"]').click()`); await ctx.sleep(400); }
+    if (!(await js(`!!document.querySelector('#prev [data-pv="view"]')`))) { await js(`document.getElementById('prevBtn').click()`); await ctx.sleep(400); }
     await ctx.waitFor(`!!document.querySelector('#prev [data-pv="view"]')`, 5000);
     await js(`document.querySelector('#prev [data-pv="view"]').click()`); await ctx.sleep(900);
     const r = await js(`(()=>{const c=document.getElementById('chat'),b=c.querySelector('.vsbody'),n=c.querySelector('.vsnotes'),last=b.lastElementChild.getBoundingClientRect(),cr=c.getBoundingClientRect();
