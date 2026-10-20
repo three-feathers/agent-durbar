@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { FolderStore, adapterOf, parseAdapterId, parseDefaultAgent, parseLabel, parseLastSession, parseOpenSessions, parseSavedFloors, parseSavedFolders, restoreMode, sessionsToRestore, MAX_OPEN_SESSIONS } from '../src/main/folders';
+import { FolderStore, adapterOf, parseAdapterId, parseDefaultAgent, parseLabel, parseLastSession, parseOpenSessions, parseSavedFloors, parseSavedFolders, restoreMode, sessionsToRestore, MAX_OPEN_SESSIONS, MAX_SESSION_NAMES, parseSessionNames } from '../src/main/folders';
 import { GROUND, GROUND_NAME } from '../src/shared/floors';
 
 const abs = (p: string): string => path.resolve('/', p);
@@ -469,5 +469,87 @@ assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: 
   } finally {
     fs.rmSync(d6, { recursive: true, force: true });
   }
+}
+
+// ---- spec 059 FR-005: the user's session names ----
+{
+  assert.strictEqual(parseSessionNames(undefined), undefined);
+  assert.strictEqual(parseSessionNames([]), undefined);
+  assert.deepStrictEqual(
+    parseSessionNames([
+      { src: 'claude', id: 'a1', name: ' First  name ' },
+      null,
+      'x',
+      { src: 'Bad Src', id: 'a2', name: 'x' }, // adapter id rule
+      { src: 'claude', id: 'bad id', name: 'x' }, // id rule
+      { src: 'claude', id: 'a3', name: 'x'.repeat(61) }, // name rule
+      { src: 'claude', id: 'a4', name: 'bad\u0000' },
+      { src: 'claude', id: 'a5', name: '' },
+      { src: 'codex', id: 'a1', name: 'Other app, same id', inApp: true },
+      { src: 'claude', id: 'a1', name: 'Second', pending: true }, // same (src, id): the last wins, at the end
+      { src: 'copilot', id: 'a6', name: 'Both flags', inApp: true, pending: true }, // inApp wins
+    ]),
+    [
+      { src: 'codex', id: 'a1', name: 'Other app, same id', inApp: true },
+      { src: 'claude', id: 'a1', name: 'Second', pending: true },
+      { src: 'copilot', id: 'a6', name: 'Both flags', inApp: true },
+    ],
+  );
+  const many = Array.from({ length: 250 }, (_, i) => ({ src: 'copilot', id: `s${i}`, name: `n${i}` }));
+  const kept = parseSessionNames(many) ?? [];
+  assert.strictEqual(kept.length, MAX_SESSION_NAMES);
+  assert.strictEqual(kept[0].id, 's50', 'the oldest are dropped');
+  // tolerant load: a folder with garbage names loads, and an older file has no field
+  const loaded = parseSavedFolders(JSON.stringify({ folders: [{ workspace: abs('a'), sessionNames: 5 }, { workspace: abs('b') }] }));
+  assert.ok(!('sessionNames' in loaded[0]) && !('sessionNames' in loaded[1]));
+
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-names-'));
+  try {
+    const f = path.join(d, 'folders.json');
+    const st = new FolderStore(f);
+    st.upsert({ workspace: abs('m'), permMode: 'ask' });
+    assert.strictEqual(st.setSessionName(abs('nope'), 'copilot', 's1', 'x'), false, 'only saved folders');
+    assert.strictEqual(st.setSessionName(abs('m'), 'copilot', 'bad id', 'x'), false);
+    assert.strictEqual(st.setSessionName(abs('m'), 'copilot', 's1', 'x'.repeat(61)), false);
+    assert.ok(st.setSessionName(abs('m'), 'copilot', 's1', 'Billing', { inApp: true }));
+    assert.ok(st.setSessionName(abs('m'), 'claude', 's2', 'Other', { pending: true }));
+    assert.deepStrictEqual(st.sessionNameOf(abs('m'), 'copilot', 's1'), { src: 'copilot', id: 's1', name: 'Billing', inApp: true });
+    assert.strictEqual(st.sessionNameOf(abs('m'), 'codex', 's1'), undefined, 'the adapter is part of the key');
+    const mtime = fs.statSync(f).mtimeMs;
+    await_sync();
+    assert.ok(st.setSessionName(abs('m'), 'claude', 's2', 'Other', { pending: true }));
+    assert.strictEqual(fs.statSync(f).mtimeMs, mtime, 'unchanged: no write');
+    assert.deepStrictEqual(new FolderStore(f).load()[0].sessionNames?.map((e) => e.id), ['s1', 's2'], 'survives a restart');
+    assert.ok(st.setSessionName(abs('m'), 'copilot', 's1', 'Renamed')); // moves to the end, flags reset
+    assert.deepStrictEqual(new FolderStore(f).load()[0].sessionNames, [{ src: 'claude', id: 's2', name: 'Other', pending: true }, { src: 'copilot', id: 's1', name: 'Renamed' }]);
+    // reset removes; the empty list is not written
+    st.setSessionName(abs('m'), 'copilot', 's1', undefined);
+    st.dropSessionName(abs('m'), 'claude', 's2');
+    assert.ok(!('sessionNames' in new FolderStore(f).load()[0]));
+    assert.ok(st.setSessionName(abs('m'), 'copilot', 'zz', undefined), 'removing an unknown name is fine');
+    // cap per folder
+    for (let i = 0; i < 205; i++) st.setSessionName(abs('m'), 'copilot', `s${i}`, `n${i}`);
+    const back = new FolderStore(f).load()[0].sessionNames ?? [];
+    assert.strictEqual(back.length, MAX_SESSION_NAMES);
+    assert.strictEqual(back[0].id, 's5');
+    // gone with the folder
+    st.remove(abs('m'));
+    assert.strictEqual(st.sessionNameOf(abs('m'), 'copilot', 's204'), undefined);
+    assert.ok(!fs.readFileSync(f, 'utf8').includes('s204'));
+    // a failed write puts the list back
+    st.upsert({ workspace: abs('w'), permMode: 'ask' });
+    assert.ok(st.setSessionName(abs('w'), 'copilot', 'k1', 'Keep'));
+    fs.rmSync(f);
+    fs.mkdirSync(f); // the file path is now a directory: rename onto it fails
+    assert.strictEqual(st.setSessionName(abs('w'), 'copilot', 'k2', 'Lost'), false, 'a failed write is reported');
+    assert.strictEqual(st.sessionNameOf(abs('w'), 'copilot', 'k2'), undefined, 'and not kept in memory');
+    assert.ok(st.sessionNameOf(abs('w'), 'copilot', 'k1'));
+  } finally {
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+}
+function await_sync(): void {
+  const end = Date.now() + 20;
+  while (Date.now() < end) { /* make the next write's mtime differ */ }
 }
 console.log('folders tests passed');

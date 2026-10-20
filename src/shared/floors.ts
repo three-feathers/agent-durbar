@@ -4,6 +4,8 @@
  * operation returns a new document and never changes its input.
  */
 
+import { C1_ALL_RE, CONTROL_RE, HIDDEN_ALL_RE, HIDDEN_RE } from './names';
+
 export const GROUND = 'ground';
 export const GROUND_NAME = 'Ground floor';
 export const MAX_FLOORS = 40;
@@ -24,13 +26,6 @@ export interface FloorsDoc {
 export type FloorOp = { ok: true; doc: FloorsDoc } | { ok: false; error: string; doc: FloorsDoc };
 
 const ID_RE = /^f-[a-z0-9]{8}$/;
-// eslint-disable-next-line no-control-regex
-const CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
-/** Invisible characters that can make one name look like another or spoof the layout: bidi embeddings, overrides and isolates, zero-width space, word joiner, invisible operators, line and paragraph separators, soft hyphen, combining grapheme joiner, Mongolian vowel separator, Hangul fillers, interlinear annotation marks, BOM. ZWNJ/ZWJ and LRM/RLM stay allowed: real scripts and emoji need them. Escaped on purpose: never write these characters literally in source. */
-const HIDDEN_RE = /[\u00ad\u034f\u115f\u180e\u200b\u2028\u2029\u202a-\u202e\u2060-\u2064\u2066-\u2069\u3164\ufeff\ufff9-\ufffb]/;
-const HIDDEN_ALL_RE = /[\u00ad\u034f\u115f\u180e\u200b\u2028\u2029\u202a-\u202e\u2060-\u2064\u2066-\u2069\u3164\ufeff\ufff9-\ufffb]/g; // for replace only: a global regex keeps lastIndex, never use it with test
-const C1_ALL_RE = /[\u0080-\u009f]/g;
-
 const copy = (d: FloorsDoc): FloorsDoc => ({ floors: d.floors.map((f) => ({ ...f })), lastFloor: d.lastFloor });
 const fail = (doc: FloorsDoc, error: string): FloorOp => ({ ok: false, error, doc: copy(doc) });
 const done = (doc: FloorsDoc): FloorOp => ({ ok: true, doc });
