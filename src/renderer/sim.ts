@@ -1643,6 +1643,18 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           { type: 'assistant' as const, text: 'You are welcome. This is the last reply.' },
         ] } }),
       openInVSCode: async () => ({ ok: true }),
+      // spec 063 FR-006: a fixed git status per agent (no git repository needed): branch, 0-4 changed files, one non-repository folder
+      gitStatus: async (id: string) => {
+        const n = Number(String(id).replace(/\D/g, '')) || 0;
+        if (n % 7 === 6) return { repo: false as const };
+        const pool = [
+          { path: 'src/tools/registry.ts', state: 'modified' as const, added: 42, removed: 17 },
+          { path: 'src/tools/companies.ts', state: 'added' as const, added: 118, removed: 0 },
+          { path: 'src/tools/old-lookup.ts', state: 'deleted' as const, added: 0, removed: 64 },
+          { path: 'docs/notes.md', state: 'untracked' as const },
+        ];
+        return { repo: true as const, branch: n % 3 === 1 ? 'feature/login' : 'main', ...(n % 4 === 1 ? { ahead: 2 } : {}), files: pool.slice(0, n % 5), more: 0 };
+      },
       onEvent: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },
       onAgentAdded: (cb) => { addedListeners.add(cb); return () => addedListeners.delete(cb); },
       onMenuSettings: () => () => undefined, /* spec 052 FR-083: no app menu in the simulator */

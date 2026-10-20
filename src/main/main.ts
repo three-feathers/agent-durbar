@@ -7,6 +7,8 @@ import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
 import { offeredDescriptors } from '../adapters/experimental';
 import { createRegistry, detectAll } from '../adapters/registry';
+import { folderGitStatus } from './gitstatus';
+import type { GitStatus } from './gitstatus';
 import { detectorFor, nodeDetectEnv } from '../adapters/detect';
 import { execFile, spawn } from 'child_process';
 import { adapterForAdd, createRouter, historyOf, modelOptionsOf, previousSessionsOf } from '../adapters/router';
@@ -64,6 +66,10 @@ import { REPO_URL, aboutPanelOptions, aboutView } from '../shared/about';
 import { modelControlFor, parseFocus, parseSwitchRequest } from '../shared/modelswitch';
 import type { ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import { createDebugSink } from '../shared/redact';
+import { debugSwitchesToRemove } from './debugguard';
+
+// Spec 008 FR-038: no DevTools endpoint in a packaged build. No fuse covers these switches; removing them before ready is shown to work on the packed Linux app (npm run check:fuses-launch).
+for (const sw of debugSwitchesToRemove(app.isPackaged)) app.commandLine.removeSwitch(sw);
 
 // Developer/test hooks (spec 010): ignored in packaged builds unless DURBAR_DEV=1. Read hooks only from `dev`.
 const dev = devEnv(process.env, app.isPackaged);
@@ -1266,6 +1272,11 @@ ipcHandle('agents:revokeGrant', (_e, id: string, key: string) => {
   if (agents.has(id)) router.forAgent(id)?.revokeGrant?.(id, String(key));
 });
 
+// spec 063: the git branch and changed files of an agent's own folder (read-only; the window never passes a path)
+ipcHandle('agents:gitStatus', async (e, id: unknown): Promise<GitStatus> => {
+  const a = fromApp(e) && typeof id === 'string' ? agents.get(id) : undefined;
+  return a && a.cwd ? folderGitStatus(a.cwd) : { repo: false };
+});
 ipcHandle('agents:openInVSCode', (_e, id: string) => {
   const a = agents.get(id);
   // Only paths of agents we started: the workspace file if there is one, else the folder.
