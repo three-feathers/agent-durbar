@@ -6,11 +6,11 @@ import { FakeMcpClient, loopback } from './fakes/mcp-client';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { SIM_NOTE, createReadToolHandlers, makePathReducer } from '../src/main/mcp/readtools';
+import { MASK_BUDGET_NOTE, MASK_CHARS, MASK_MAX_ENTRIES, MASK_INPUT_MAX, SIM_NOTE, createReadToolHandlers, makePathReducer } from '../src/main/mcp/readtools';
 import type { ReadToolsDeps } from '../src/main/mcp/readtools';
 import { AgentStateTracker } from '../src/main/mcp/agentstate';
 import { UsageTotalsStore } from '../src/main/usagetotalsstore';
-import type { AgentInfo } from '../src/shared/api';
+import type { AgentInfo, McpAmbientView } from '../src/shared/api';
 import type { McpServerView } from '../src/shared/mcp';
 import type { SavedFolder } from '../src/main/folders';
 import { officeTotals } from '../src/shared/usagedoc';
@@ -612,6 +612,247 @@ async function main(): Promise<void> {
       const sc = 'node ' + 'y '.repeat(2040) + ' opt=' + stored + ' end';
       const m = (await mk(1, 1, { mcpExtras: () => [ex('s', { command: sc })], extraSecretValues: () => [stored], folders: () => [{ workspace: f0, permMode: 'read-only', hidden: false } as SavedFolder] }).call('durbar_mcp_state')).data.extras[0].servers[0].command as string;
       for (const piece of ['Qz8#', 'Lm4!', 'Rt7$', 'Wx9']) assert.ok(!m.includes(piece), `stored value piece ${piece} is gone`);
+    }
+
+    // 12l. T065: bounded masking cost (MASK_INPUT_MAX per string, MASK_BUDGET per call, one top-level note)
+    {
+      const sec = 'SEC' + 'COST-' + 'p3n8d5r1t9y2';
+      const cli = (entries: Array<Partial<McpAmbientView>>) => { const built = entries.map((e, i) => ({ name: `s${i}`, origin: 'copilot-config', transport: 'stdio', enabled: true, ...e }) as McpAmbientView); return mk(1, 1, { mcpExtras: () => [], mcpCli: () => ({ cli: built, file: { label: '~/.copilot/mcp-config.json', found: true, skipped: 0 }, secretsPersist: false }) }); };
+      const state = async (entries: Array<Partial<McpAmbientView>>) => {
+        // the handler is called directly: a result of megabytes is refused by the session, which is not what is timed here
+        const h = createReadToolHandlers(cli(entries).deps);
+        const t0 = process.hrtime.bigint();
+        const res = await h.durbar_mcp_state({});
+        const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+        const raw = (res.content[0] as { text: string }).text;
+        return { raw, data: JSON.parse(raw), ms };
+      };
+      assert.ok(MASK_INPUT_MAX > 4096 && MASK_INPUT_MAX <= 16384, `MASK_INPUT_MAX ${MASK_INPUT_MAX} is above the display cap and at most 16384`);
+      const R = '[redacted]';
+      // the handler is called directly where the answer can be bigger than the session's frame
+      const direct = async (deps: ReadToolsDeps) => { const res = await createReadToolHandlers(deps).durbar_mcp_state({}); const raw = (res.content[0] as { text: string }).text; return { raw, data: JSON.parse(raw) }; };
+
+      // (a) one string over MASK_INPUT_MAX is hidden whole; one exactly at the limit goes through the rules
+      {
+        const over = '--password=' + sec + 'x'.repeat(MASK_INPUT_MAX); // longer than the limit
+        const atLimit = ('--password=' + sec).padEnd(MASK_INPUT_MAX, 'y');
+        assert.ok(over.length > MASK_INPUT_MAX, '12l(a): the long test string is over the limit');
+        assert.strictEqual(atLimit.length, MASK_INPUT_MAX, '12l(a): the other test string is exactly at the limit');
+        const r = await state([{ command: 'node ' + over, args: [over, atLimit], url: 'https://h.test/?k=' + over }]);
+        const sv = r.data.copilotCli.servers[0];
+        assert.strictEqual(sv.command, R, '12l(a): a command over the limit is [redacted]');
+        assert.strictEqual(sv.args[0], R, '12l(a): an arg over the limit is [redacted]');
+        assert.strictEqual(sv.url, R, '12l(a): a url over the limit is [redacted]');
+        assert.ok(sv.args[1].startsWith('--password=[redacted]') && sv.args[1] !== R, `12l(a): an arg exactly at the limit is masked by the rules: ${sv.args[1].slice(0, 40)}`);
+        assert.ok(!r.raw.includes(sec), '12l(a): no planted secret');
+        assert.ok(!('masking' in r.data), '12l(a): a string over the limit alone does not spend the budget note');
+      }
+
+      // (b) the budget: first args by the rules, every later command, arg and url [redacted], one note
+      {
+        const piece = 2000;
+        const n = Math.ceil(MASK_CHARS / piece) + 6; // the characters run out first
+        const args = Array.from({ length: n }, (_, i) => `plain-${i}-` + 'x'.repeat(piece - 10));
+        const r = await state([{ command: 'node', args, url: 'https://h.test/?t=' + sec }, { command: 'node ' + '--token ' + sec, args: ['--token', sec], url: 'https://h.test/?t=' + sec }]);
+        assert.strictEqual(r.data.copilotCli.servers.length, 1, '12l(b): the entry after the spent budget is left out');
+        const [a] = r.data.copilotCli.servers;
+        assert.strictEqual(a.args[0], args[0], '12l(b): the first arg is masked by the rules (unchanged)');
+        assert.strictEqual(a.args[a.args.length - 1], R, '12l(b): the last arg is [redacted]');
+        const firstHidden = a.args.findIndex((x: string) => x === R);
+        assert.ok(firstHidden >= Math.floor(MASK_CHARS / piece) && firstHidden <= Math.ceil(MASK_CHARS / piece) + 1, `12l(b): hidden from arg ${firstHidden}`);
+        assert.strictEqual(a.args.length, firstHidden + 1, '12l(b): the hidden tail is one [redacted] element');
+        assert.strictEqual(a.command, 'node', '12l(b): the command before the args was masked by the rules');
+        assert.strictEqual(a.url, R, '12l(b): a url after the spent budget is [redacted]');
+        assert.strictEqual(r.data.masking, MASK_BUDGET_NOTE, '12l(b): one top-level note');
+        assert.ok(!r.raw.includes(sec), '12l(b): no planted secret');
+        // under the budget: no note, and the same bytes the rules give
+        const small = await state([{ command: 'node --api-key=' + sec, args: ['a', '--token', sec], url: 'https://h.test/?t=1' }]);
+        assert.ok(!('masking' in small.data) && !small.raw.includes('budget'), '12l(b): under the budget there is no note');
+        assert.strictEqual(small.data.copilotCli.servers[0].args[0], 'a');
+        assert.deepStrictEqual(small.data.copilotCli.servers[0].args.slice(1), ['--token', R]);
+      }
+
+      // (c) cost: a 1 MB CLI file built at run time, three shapes, each answered quickly and with no secret
+      {
+        const MB = 1_000_000;
+        const units = ['-c ', '"a ', ', a=', '{"a":"x y ', "a 'b", 'Cookie: ', 'x '];
+        const rep = (u: string, n: number): string => u.repeat(Math.ceil(n / u.length)).slice(0, n);
+        const cases: Array<[string, Array<Partial<McpAmbientView>>]> = [
+          ['(i) one 1 MB arg', [{ command: 'node', args: ['--token ' + sec + ' ' + rep('"a ', MB)] }]],
+          ['(ii) 250 args of 4000', [{ command: 'node', args: Array.from({ length: 250 }, (_, i) => (i === 0 ? `--password=${sec} ` : `--token ${sec} `) + 'y'.repeat(3950)) }]],
+        ];
+        for (const u of units) cases.push([`(iii) 14b/14c shape ${JSON.stringify(u)}: 120 args just under the string limit and one 1 MB command`, [{ command: 'node ' + sec + ' ' + rep(u, MB), args: [`--token ${sec}`, ...Array.from({ length: 120 }, () => rep(u, MASK_INPUT_MAX - 40))] }]]);
+        cases.push(['(iv) 1 MB of single-character args (500k args)', [{ command: 'node', args: Array.from({ length: 500_000 }, () => 'a') }]]);
+        cases.push(['(v) 250k args "a" in one CLI entry', [{ command: 'node', args: Array.from({ length: 250_000 }, () => 'a') }]]);
+        cases.push(['(vi) 25k CLI entries with command "n"', Array.from({ length: 25_000 }, () => ({ command: 'n' }))]);
+        for (const [label, entries] of cases) {
+          const r = await state(entries);
+          console.log(`mcp read tools: 12l ${label}: ${r.ms.toFixed(1)} ms`);
+          assert.ok(r.ms < 2000, `12l(c): ${label} took ${r.ms.toFixed(1)} ms`);
+          assert.ok(!r.raw.includes(sec), `12l(c): ${label}: no planted secret`);
+          if (label.startsWith('(vi)')) assert.ok(r.data.copilotCli.servers.length <= 400, `12l(c): (vi) lists ${r.data.copilotCli.servers.length} of 25000 entries; a command costs about 0.4 ms, so about 260 is the aim`);
+        }
+      }
+
+      // (c, extras) 50 folders x 100 servers x 64 tiny args (the largest the file and folder limits allow in spirit)
+      {
+        const sv = (n: number): McpServerView => ({ name: `s${n}`, transport: 'stdio', enabled: true, trusted: true, needsSecrets: false, command: 'n', args: Array.from({ length: 64 }, () => 'a') } as any);
+        const servers = Array.from({ length: 100 }, (_, n) => sv(n));
+        const h = createReadToolHandlers(mk(1, 50, { mcpExtras: () => servers }).deps);
+        const t0 = process.hrtime.bigint();
+        const res = await h.durbar_mcp_state({});
+        const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+        const r = { data: JSON.parse((res.content[0] as { text: string }).text) };
+        console.log(`mcp read tools: 12l (vii) extras 50 folders x 100 servers x 64 tiny args: ${ms.toFixed(1)} ms`);
+        assert.ok(ms < 2000, `12l(c): extras took ${ms.toFixed(1)} ms`);
+        assert.strictEqual(r.data.masking, MASK_BUDGET_NOTE, '12l(c): the budget note is there');
+      }
+
+      // (d) 200 typical servers (command, 4 args of about 40 characters, env keys) over the CLI and the extras come back whole, with no note
+      {
+        const arg = (n: number, j: number): string => `--option-${j}=/some/value/for/server/number-${n}`.padEnd(40, 'v');
+        const typical = (n: number) => ({ name: `srv${n}`, command: `/usr/local/bin/mcp-server-${n}`, args: [0, 1, 2, 3].map((j) => arg(n, j)) });
+        const cliList = Array.from({ length: 100 }, (_, n) => typical(n));
+        const extraList = (k: number): McpServerView[] => Array.from({ length: 10 }, (_, n) => ({ ...typical(1000 + k * 10 + n), transport: 'stdio', enabled: true, trusted: true, needsSecrets: false, env: [{ key: 'API_KEY', set: true }, { key: 'REGION', set: true }], headers: [] }) as any);
+        const mkFolders: string[] = [];
+        const h = createReadToolHandlers(mk(1, 10, { folders: () => { if (!mkFolders.length) for (let i = 0; i < 10; i++) mkFolders.push(`/work/folder-${i}`); return mkFolders.map((w) => ({ workspace: w, permMode: 'read-only', hidden: false }) as SavedFolder); }, mcpExtras: (k) => extraList(Math.max(0, mkFolders.indexOf(k))), mcpCli: () => ({ cli: cliList.map((e) => ({ ...e, origin: 'copilot-config', transport: 'stdio', enabled: true }) as McpAmbientView), file: { label: 'f', found: true, skipped: 0 }, secretsPersist: false }) }).deps);
+        const t0 = process.hrtime.bigint();
+        const res = await h.durbar_mcp_state({}); // called directly: the answer is far bigger than the session's frame limit
+        const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+        const r = { raw: (res.content[0] as { text: string }).text, data: JSON.parse((res.content[0] as { text: string }).text) };
+        const nExtra = (r.data.extras as Array<{ servers: unknown[] }>).reduce((n, e) => n + e.servers.length, 0);
+        console.log(`mcp read tools: 12l (viii) 200 typical servers: ${ms.toFixed(1)} ms, ${r.raw.length} bytes`);
+        assert.ok(ms < 2000, `12l(d): 200 typical servers took ${ms.toFixed(1)} ms`);
+        assert.ok(!('masking' in r.data), '12l(d): 200 typical servers fit with no note');
+        assert.strictEqual(r.data.copilotCli.servers.length + nExtra, 200, '12l(d): every server is listed');
+        assert.ok(!r.raw.includes(R), '12l(d): nothing is hidden');
+      }
+
+      // (c, keys) 10 folders x 100 servers x 128 env key names: key names are charged too (without it this took about 7.5 s)
+      {
+        const keys = Array.from({ length: 128 }, (_, i) => ({ key: `ENV_KEY_NUMBER_${i}`, set: true }));
+        const servers = Array.from({ length: 100 }, (_, n) => ({ name: `s${n}`, transport: 'stdio', enabled: true, trusted: true, needsSecrets: false, command: 'n', env: keys, headers: [] }) as any as McpServerView);
+        const h = createReadToolHandlers(mk(1, 10, { mcpExtras: () => servers }).deps);
+        const t0 = process.hrtime.bigint();
+        const res = await h.durbar_mcp_state({});
+        const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+        const data = JSON.parse((res.content[0] as { text: string }).text);
+        const shown = (data.extras as Array<{ servers: Array<{ envKeys: unknown[] }> }>).reduce((n, e) => n + e.servers.reduce((m, v) => m + v.envKeys.length, 0), 0);
+        console.log(`mcp read tools: 12l (ix) 10 folders x 100 servers x 128 env key names: ${ms.toFixed(1)} ms, ${shown} key names shown`);
+        assert.ok(ms < 2000, `12l(c): key names took ${ms.toFixed(1)} ms`);
+        // each key costs MASK_PER_KEY (100) of the 90 000 units, minus what the servers themselves cost: about 880 are shown
+        assert.ok(shown >= 800 && shown <= 900, `12l(c): key names are charged to the budget (${shown} shown of 128000, expected 800-900)`);
+        assert.strictEqual(data.masking, MASK_BUDGET_NOTE, '12l(c): the note is there when key names were left out');
+      }
+
+      // (b, units) many small args fit under MASK_CHARS but not under the unit budget (the fixed cost per arg)
+      {
+        const n = 20_000; // 20 000 characters, under MASK_CHARS
+        assert.ok(n < MASK_CHARS, '12l(b): the characters alone would admit every arg');
+        const r = await state([{ command: 'node', args: Array.from({ length: n }, () => 'a') }]);
+        const a = r.data.copilotCli.servers[0].args as string[];
+        assert.strictEqual(a[a.length - 1], R, '12l(b): the units run out before the characters (a fixed cost per arg)');
+        assert.ok(a.length < n, `12l(b): ${a.length} of ${n} args listed`);
+        assert.strictEqual(r.data.masking, MASK_BUDGET_NOTE, '12l(b): the note is there');
+      }
+
+      // (b, note) the budget is spent exactly by the last server that has anything: folders with no extras after it give no note
+      {
+        const big = (): McpServerView => ({ name: 'big', transport: 'stdio', enabled: true, trusted: true, needsSecrets: false, command: 'c'.repeat(12000), args: ['x'.repeat(12000)] } as any);
+        const small = await mk(1, 14, { mcpCli: () => ({ cli: [], file: { label: 'f', found: true, skipped: 0 }, secretsPersist: false }), mcpExtras: (k) => (k.endsWith('-f0') || k.endsWith('-f1') ? [big()] : []) }).call('durbar_mcp_state');
+        assert.ok(!('masking' in small.data), '12l(b): a spent budget with nothing left to hide gives no note');
+      }
+
+      // (b, keys) the budget runs out inside ONE key list: the note is the only sign that names were dropped
+      {
+        const keys = Array.from({ length: 2000 }, (_, i) => ({ key: `K_${i}`, set: true }));
+        const srv = { name: 's', transport: 'stdio', enabled: true, trusted: true, needsSecrets: false, env: keys, headers: [] } as any as McpServerView;
+        const r = await direct(mk(1, 1, { mcpExtras: () => [srv], mcpCli: () => ({ cli: [], file: { label: 'f', found: true, skipped: 0 }, secretsPersist: false }) }).deps);
+        const shown = r.data.extras[0].servers[0].envKeys.length as number;
+        assert.ok(shown > 800 && shown < 1000, `12l(b): ${shown} of 2000 key names listed`);
+        assert.strictEqual(r.data.masking, MASK_BUDGET_NOTE, '12l(b): the note is there when the key list was cut');
+      }
+
+      // (b, keys, characters) long key names: the characters of key names count against MASK_CHARS too
+      {
+        const keys = Array.from({ length: 200 }, (_, i) => ({ key: `K${i}_`.padEnd(1000, 'k'), set: true }));
+        const srv = { name: 's', transport: 'stdio', enabled: true, trusted: true, needsSecrets: false, env: keys, headers: [] } as any as McpServerView;
+        const r = await direct(mk(1, 1, { mcpExtras: () => [srv], mcpCli: () => ({ cli: [], file: { label: 'f', found: true, skipped: 0 }, secretsPersist: false }) }).deps);
+        const shown = r.data.extras[0].servers[0].envKeys.length as number;
+        assert.ok(shown >= 45 && shown <= 50, `12l(b): ${shown} long key names listed (48 000 characters)`);
+        assert.strictEqual(r.data.masking, MASK_BUDGET_NOTE, '12l(b): the note is there');
+      }
+
+      // (b, folder) the budget is spent exactly by the last value (4 x 12 000 characters, nothing hidden); a later folder with extras is left out whole: the note is the only sign
+      {
+        const big = (): McpServerView => ({ name: 'big', transport: 'stdio', enabled: true, trusted: true, needsSecrets: false, command: 'c'.repeat(12000), args: ['x'.repeat(12000), 'y'.repeat(12000), 'z'.repeat(12000)] } as any);
+        const tiny = (): McpServerView => ({ name: 'tiny', transport: 'stdio', enabled: true, trusted: true, needsSecrets: false, command: 'n' } as any);
+        const r = await direct(mk(1, 3, { mcpCli: () => ({ cli: [], file: { label: 'f', found: true, skipped: 0 }, secretsPersist: false }), mcpExtras: (k) => (k.endsWith('-f0') ? [big()] : [tiny()]) }).deps);
+        assert.strictEqual(r.data.extras.length, 1, '12l(b): the later folders with extras are left out');
+        assert.ok(r.data.extras[0].servers[0].args.every((x: string) => x !== R), '12l(b): nothing was hidden inside the first folder');
+        assert.strictEqual(r.data.masking, MASK_BUDGET_NOTE, '12l(b): the note is the only sign');
+      }
+
+      // (b, cli) the same for the CLI list: the second entry is dropped, no value was hidden before it
+      {
+        const big: Partial<McpAmbientView> = { command: 'c'.repeat(12000), args: ['x'.repeat(12000), 'y'.repeat(12000), 'z'.repeat(12000)] };
+        const r = await state([big, { command: 'n' }]);
+        assert.strictEqual(r.data.copilotCli.servers.length, 1, '12l(b): the second CLI entry is dropped');
+        assert.ok(r.data.copilotCli.servers[0].args.every((x: string) => x !== R), '12l(b): nothing was hidden before it');
+        assert.strictEqual(r.data.masking, MASK_BUDGET_NOTE, '12l(b): the note is the only sign');
+      }
+
+      // (e) output size: 200 folders x 100 servers with no command at all stay under about 256 kB
+      {
+        const bare = Array.from({ length: 100 }, (_, n) => ({ name: `s${n}`, transport: 'stdio', enabled: true, trusted: true, needsSecrets: false }) as any as McpServerView);
+        const folders = Array.from({ length: 200 }, (_, i) => ({ workspace: `/work/f${i}`, permMode: 'read-only', hidden: false }) as SavedFolder);
+        const h = createReadToolHandlers(mk(1, 1, { folders: () => folders, mcpExtras: () => bare }).deps);
+        const res = await h.durbar_mcp_state({});
+        const raw = (res.content[0] as { text: string }).text;
+        const listed = (JSON.parse(raw).extras as Array<{ servers: unknown[] }>).reduce((n, e) => n + e.servers.length, 0);
+        console.log(`mcp read tools: 12l (x) 200 folders x 100 bare servers: ${raw.length} bytes, ${listed} listed`);
+        assert.ok(raw.length < 262144, `12l(e): the reply is ${raw.length} bytes`);
+        assert.ok(listed <= MASK_MAX_ENTRIES, `12l(e): ${listed} entries listed`);
+        assert.strictEqual(JSON.parse(raw).masking, MASK_BUDGET_NOTE, '12l(e): the note is there');
+      }
+
+
+      // (f) exactly MASK_MAX_ENTRIES entries are all shown in full with no note; one more is left out and the note says so
+      {
+        const entries = (n: number) => Array.from({ length: n }, (_, i) => ({ command: `cmd${i}`, args: ['--flag', `v${i}`] }));
+        const t = (n: number) => entries(n);
+        const full = await direct(cli(t(MASK_MAX_ENTRIES)).deps);
+        const fl = full.data.copilotCli.servers as Array<{ command?: string; args?: string[] }>;
+        assert.strictEqual(fl.length, MASK_MAX_ENTRIES, '12l(f): exactly the cap: all listed');
+        assert.strictEqual(fl[MASK_MAX_ENTRIES - 1].command, `cmd${MASK_MAX_ENTRIES - 1}`, '12l(f): the last allowed entry is shown in full');
+        assert.deepStrictEqual(fl[MASK_MAX_ENTRIES - 1].args, ['--flag', `v${MASK_MAX_ENTRIES - 1}`], '12l(f): its args too');
+        assert.ok(!('masking' in full.data), '12l(f): exactly the cap gives no note');
+        const over = await direct(cli(t(MASK_MAX_ENTRIES + 1)).deps);
+        const ol = over.data.copilotCli.servers as Array<{ command?: string }>;
+        assert.strictEqual(ol.length, MASK_MAX_ENTRIES, '12l(f): one over the cap: the cap is listed');
+        assert.strictEqual(ol[MASK_MAX_ENTRIES - 1].command, `cmd${MASK_MAX_ENTRIES - 1}`, '12l(f): the last listed entry is in full');
+        assert.strictEqual(over.data.masking, MASK_BUDGET_NOTE, '12l(f): one over the cap: the note');
+      }
+
+      // (g) strings over S cost no characters: four of them first, and the values after them are still masked by the rules, with no note
+      {
+        const long = 'L'.repeat(MASK_INPUT_MAX + 1);
+        const r = await state([{ command: 'node', args: [long, long, long, long, long, '--token', sec, 'plain-after'], url: 'https://h.test/ok' }]);
+        const sv = r.data.copilotCli.servers[0];
+        assert.deepStrictEqual(sv.args, [R, R, R, R, R, '--token', R, 'plain-after'], '12l(g): values after long strings are masked by the rules (the secret by its flag)');
+        assert.strictEqual(sv.url, 'https://h.test/ok', '12l(g): the url after them is shown');
+        assert.ok(!('masking' in r.data), '12l(g): no note');
+      }
+
+      // (b, shared) one budget for the CLI entries and every folder's extras: the last folders are left out, a fresh budget per folder would list all
+      {
+        const big = (k: string): McpServerView => ({ name: 'big', transport: 'stdio', enabled: true, trusted: true, needsSecrets: false, command: 'c'.repeat(12000), args: [k] } as any);
+        const r = await mk(1, 14, { mcpExtras: (k) => [big(k)] }).call('durbar_mcp_state');
+        const ex = r.data.extras as Array<{ servers: Array<{ command: string; args: string[] }> }>;
+        assert.ok(ex.length >= 3 && ex.length < 14, `12l(b): later folders are left out by the shared budget (a fresh budget per folder would list all 14): ${ex.length}`);
+        assert.ok(ex.every((e) => e.servers[0].command !== R) && ex.slice(0, 2).every((e) => e.servers[0].args[0] !== R), '12l(b): the first folders are masked by the rules, not hidden');
+        assert.strictEqual(r.data.masking, MASK_BUDGET_NOTE, '12l(b): the note is there');
+      }
     }
 
     // 12j. a handler is wired for every read tool (a missing one fails at build time, not at the first call)
