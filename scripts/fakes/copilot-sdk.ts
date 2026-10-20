@@ -41,7 +41,19 @@ export class FakeSession {
     history: { compact: async (a: unknown) => this.rec('compact', this.compactAnswer, a) },
     name: { get: async () => this.rec('name.get', { name: this.nameAnswer }) },
     metadata: { isProcessing: async () => this.rec('isProcessing', { processing: this.processing }) },
+    // spec 054: remote control (@experimental). `remoteFail` / `visibilityFail` make the call reject with that message.
+    remote: {
+      enable: async (a: unknown) => { this.calls.push({ name: 'remote.enable', args: [a] }); if (this.remoteFail) throw new Error(this.remoteFail); return this.remoteAnswer; },
+      disable: async () => { this.calls.push({ name: 'remote.disable', args: [] }); if (this.remoteFail) throw new Error(this.remoteFail); },
+    } as Record<string, unknown> | undefined,
+    visibility: {
+      get: async () => { this.calls.push({ name: 'visibility.get', args: [] }); if (this.visibilityFail) throw new Error(this.visibilityFail); return this.visibilityAnswer; },
+    } as Record<string, unknown> | undefined,
   };
+  remoteAnswer: unknown = { url: 'https://github.com/o/r/tasks/1', remoteSteerable: true };
+  remoteFail = '';
+  visibilityAnswer: unknown = { synced: true, status: 'unshared', shareUrl: 'https://github.com/o/r/tasks/1' };
+  visibilityFail = '';
 }
 
 export class FakeClient {

@@ -9,6 +9,7 @@ import type { CompactResult, ContextTier, ModelOption, ModelSwitchRequest, Model
 import type { AdapterCapabilities, PermissionMode } from './capabilities';
 import type { HandoffResult } from './handoff';
 import type { HistoryResult, PreviousSession } from './history';
+import type { RemoteState } from '../shared/remote';
 export type { McpServerSpec, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult, AdapterCapabilities, PermissionMode };
 
 export type AgentStatus = 'idle' | 'working' | 'needs-permission' | 'error' | 'stopped';
@@ -408,6 +409,8 @@ export interface AgentAdapter {
   handoffSummary?(sessionId: string): Promise<HandoffResult>;
   /** One prompt answered with no tools, no MCP and no session kept, in an empty temp folder (spec 040 FR-015). Optional (`capabilities.oneShot`). */
   generateText?(prompt: string): Promise<{ text: string; costUsd?: number }>;
+  /** Spec 054 FR-001: turn remote control (follow and steer from the vendor's web or mobile app) on or off for a live session. Optional (`capabilities.remote`). Never on by default. */
+  setRemote?(sessionId: string, on: boolean): Promise<RemoteState>;
   /** Spec 051 FR-007: whether this harness is signed in, checked without a prompt (no credits). Only the yes/no leaves the adapter. */
   authStatus?(): Promise<{ signedIn: boolean }>;
   /** True while the session is open in this adapter. */

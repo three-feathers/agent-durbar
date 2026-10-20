@@ -9,6 +9,8 @@ import type { McpServerInput, McpServerView, McpTransport, McpTrustInfo } from '
 export type { McpServerInput, McpServerView, McpTransport, McpTrustInfo };
 
 import type { AdapterInfo } from './adapters';
+import type { RemoteState } from './remote';
+export type { RemoteState };
 export type { AdapterInfo };
 
 export type { HistoryItem, PreviousSession, VsChatSummary, VsChatTranscript };
@@ -399,6 +401,10 @@ export interface DurbarApi {
   compact?(id: string, focus?: string): Promise<{ ok: boolean; error?: string; result?: CompactResult }>;
   /** A hand-off summary of the session, for a new session's first message (spec 030 FR-034); never sent by itself. */
   handoff?(id: string): Promise<{ ok: boolean; error?: string; summary?: string; costUsd?: number }>;
+  /** Turn remote control (follow and steer from the agent app's web or mobile app) on or off for live agent `id` (spec 054 FR-004). */
+  setRemote?(id: string, on: boolean): Promise<RemoteState>;
+  /** Open agent `id`'s remote link (stored in main, https://github.com only) in the system browser (spec 054 FR-005). */
+  openRemote?(id: string): Promise<{ ok: boolean }>;
   /** Close or open the door of the room (folder) of agent `id`; remembered. */
   setRoomClosed?(id: string, closed: boolean): Promise<{ ok: boolean }>;
   /** Hide or show the folder of agent `id`; the choice is remembered. */

@@ -859,6 +859,9 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 /* ---- switch model and context, compact (spec 030) ---- */
 .mchip-btn{cursor:pointer;font-family:inherit;gap:5px}
 .mchip-btn:hover{background:#e3e9f0}
+/* spec 054 FR-007: the Remote chip says the session can be steered from GitHub, so it shows in Simple too */
+body.simple #remoteChip:not([hidden]){display:inline-flex!important}
+#remoteChip[hidden]{display:none!important}
 .mchip-btn[aria-disabled=true]{opacity:.6;cursor:not-allowed}
 .mchip .chev{flex:none;opacity:.75}
 .mchip-btn span{max-width:240px;overflow:hidden;text-overflow:ellipsis}
