@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.8 tag)
 
+- **Scheduled prompts, Phase 2 (spec 044 FR-012..FR-018, #291).** Calendar rules (**weekdays at**, **weekly on** chosen days), and *every day at* no longer drifts an hour across daylight saving. A schedule can target **one session** (it pauses when that session ends) and have its own **limit** in AI credits or dollars (it pauses at the limit). Copilot's own session schedules are shown read-only. Unit tests and the simulator; no real check yet.
 - **Control a Copilot session from GitHub (spec 054 Phase 1, #298).** More > *Control from GitHub (web and mobile)…* turns on Copilot's remote control for one session after a dialog that says what is sent to GitHub, then shows the link (Copy link, Open on GitHub) and a *Remote* chip; *Stop remote control* turns it off. Never on by default; only `https://github.com` links are opened. Simulator and unit tests only: not run on a real account yet. Claude channels and Codex mobile are specified as planned research.
 
 ## v0.1.0-alpha.8 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.8), 2026-10-20)

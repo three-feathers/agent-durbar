@@ -684,6 +684,15 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .sched-dlg .sc-when input[type=number]{width:70px}
 .sched-dlg .sc-tpl-note{font-size:12px;color:var(--muted);margin:2px 0 6px;line-height:1.4}
 .sched-dlg .sc-when input{font:inherit;font-size:13px;border:1px solid var(--line-ctl);border-radius:8px;padding:3px 6px;background:var(--surface);color:var(--ink)}
+/* spec 044 Phase 2: calendar days, Send to and Limit on one line, the agent app's own schedules (read-only) */
+.sched-dlg .sc-when select,.sched-dlg .sc-opts select,.sched-dlg .sc-opts input{font:inherit;font-size:13px;border:1px solid var(--line-ctl);border-radius:8px;padding:3px 6px;background:var(--surface);color:var(--ink)}
+.sched-dlg .sc-days{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:6px;font-size:12.5px}
+.sched-dlg .sc-opts{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;margin-top:8px;font-size:13px}
+.sched-dlg .sc-opts label{display:inline-flex;flex-direction:row;align-items:center;gap:6px;font-weight:500}
+.sched-dlg .sc-opts label[hidden],.sched-dlg .sc-days[hidden],.sched-dlg .sc-own[hidden]{display:none}
+.sched-dlg .sc-opts input[type=number]{width:90px}
+.sched-dlg .sc-own{margin:0 0 10px;max-height:120px;overflow-y:auto}
+.sched-dlg .sc-own h4{margin:4px 0 2px;font-size:12.5px;font-weight:600}
 .room-new{flex:none;width:24px;height:24px;border-radius:7px;border:1px solid var(--line-ctl);background:color-mix(in srgb,var(--raised) 70%,transparent);color:var(--ink-2);font-size:15px;line-height:1;cursor:pointer;padding:0;display:grid;place-items:center}
 .room-new:hover{background:var(--raised);color:var(--ink)}
 .room-mcp{flex:none;height:24px;border-radius:7px;border:1px solid var(--line-2);background:color-mix(in srgb,var(--raised) 70%,transparent);color:var(--ink-2);font-size:11px;font-weight:600;letter-spacing:.02em;line-height:1;cursor:pointer;padding:0 7px}

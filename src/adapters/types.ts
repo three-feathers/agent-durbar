@@ -316,7 +316,34 @@ export interface AgentProfileEvent extends BaseEvent {
   profile: AgentProfile | null;
 }
 
+/**
+ * A prompt scheduled inside the agent app's own session (spec 044 FR-016), e.g. Copilot `/every`, `/after` or its
+ * `manage_schedule` tool. Display only: Agent Durbar shows it read-only and never changes it. Text already cleaned and capped.
+ */
+export interface AgentScheduleEvent extends BaseEvent {
+  type: 'agentSchedule';
+  phase: 'created' | 'cancelled' | 'rearmed';
+  scheduleId: string;
+  /** `created`: the prompt (or the app's short label for it), one line, at most 300 characters. */
+  prompt?: string;
+  /** Relative interval between runs (ms). */
+  everyMs?: number;
+  /** Five-field cron expression and its IANA time zone. */
+  cron?: string;
+  tz?: string;
+  /** One-off run time (epoch ms). */
+  at?: number;
+  /** `rearmed`: the next run the agent chose (epoch ms). */
+  nextAt?: number;
+  recurring?: boolean;
+  /** No fixed cadence: the agent arms each next run itself. */
+  selfPaced?: boolean;
+  /** Who made it: the user (a command) or the agent (its tool). */
+  origin?: 'user' | 'model';
+}
+
 export type AgentEvent =
+  | AgentScheduleEvent
   | UserEvent
   | QuestionEvent
   | AgentProfileEvent
