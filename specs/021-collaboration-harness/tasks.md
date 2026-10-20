@@ -14,3 +14,4 @@
 - [x] T012 (done 2026-10-16, ruleset id 25258904 `main protection`; admin bypass in `pull_request` mode, strict up-to-date policy off) After merge and one CI run on `main`: create the `main` ruleset via `gh api` (require PR, 1 approval, `Spec Kit gate` and CI checks, CODEOWNERS review, block force-push/deletion, admin bypass); record the result here [FR-007]
 - [ ] T013 Review the gate strictness after two weeks of use
 - [x] T015 (2026-10-20) Team rules into `AGENTS.md` (review findings fixed in the PR, existing-capability check, re-approval by patch id, admin merge, OKs in chat, working hours, branch cleanup, spec numbers, share what you learn) and the mirrors (`CLAUDE.md`, `.github/copilot-instructions.md`, PR template, `docs/collaboration.md`); new `docs/agent-notes.md` seeded from the agents' memory [FR-030..FR-034]
+- [x] T016 (2026-10-20) Rule *read every review and comment before a merge* in AGENTS.md and its mirrors; `scripts/pr-gate.sh` [FR-035]
