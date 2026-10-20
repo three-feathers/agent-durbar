@@ -5,6 +5,7 @@
   if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarAttention=api;
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
+  const CUT=typeof module==='object'&&module.exports?require('./cuttext.js'):self.DurbarCutText;
   const APP='Agent Durbar';
   const COALESCE_MS=2000;   /* items that arrive within this long share one notification */
   const THROTTLE_MS=10000;  /* at most one notification this often */
@@ -15,8 +16,7 @@
 
   /* one line, at most `max` characters (an ellipsis when cut) */
   function clip(text,max){
-    const m=max>0?max:BODY_MAX, s=String(text==null?'':text).replace(/\s+/g,' ').trim();
-    return s.length>m?s.slice(0,m-1).trimEnd()+'…':s;
+    return CUT.cutText(text,max>0?max:BODY_MAX); /* shared helper (cuttext.js) */
   }
 
   /* "waiting 4 min"; minutes only (the inbox repaints every 30 s at most) */

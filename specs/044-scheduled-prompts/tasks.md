@@ -37,3 +37,4 @@
 ## 2026-10-20: Send to row and session names (issue #371)
 
 - [x] T041 Schedules dialog: the Send to and Limit labels never wrap or sit under their control; the "This session" option is capped at 40 characters with the full name in its title; simulator check `check:sched-sendto`, CHANGELOG [FR-020, FR-021]
+- [x] T042 One shared text cutter `cuttext.js` (code points, whitespace, optional word boundary) used by `clipName`, `SHORT`, the grant and schedule-row texts and `attention.clip`, with `test:cuttext` [FR-021]
