@@ -29,3 +29,7 @@
 - [x] T035 Renderer: calendar choice, Send to, Limit, row states, the agent's own schedules (read-only) [FR-012, FR-014..FR-016]
 - [x] T036 Simulator: rules, targets, caps and pause states [FR-018]
 - [x] T037 Docs: README, CHANGELOG, specs index; drivers updated for the new form [all]
+
+## 2026-10-20: Read-only wording after the real MCP check
+
+- [x] T040 *Start my day* and the Read-only mode help say an MCP tool runs in Read-only only when its server marks it read-only [FR-019a]
