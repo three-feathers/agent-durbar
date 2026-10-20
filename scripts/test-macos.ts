@@ -108,10 +108,15 @@ for (const line of css.split('\n').filter((l) => /app-region|padding-left:(max\(
 const D = 'html[data-platform="darwin"]';
 const rules = [
   `${D} :is(.topbar,.strip,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head){-webkit-app-region:drag}`,
-  `${D}:not([data-fullscreen]) :is(.topbar,.strip){padding-left:78px}`,
+  `${D}:not([data-fullscreen]) .strip{padding-left:78px}`,
+  `${D}:not([data-fullscreen]) .topbar::before{content:"";flex:none;order:-1;width:58px;margin-right:-14px}`, // room on the first row only
+  `@media (max-width:1320px){${D}:not([data-fullscreen]) .topbar::before{width:64px;margin-right:-10px}}`,
+  `${D} body.panel-open :is(#restoreStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip:not([hidden])){min-height:40px}`, // the first strip clears the 78x40 box
   `${D}:not([data-fullscreen]) body.panel-open .notice-strip{padding-left:78px}`,
   `${D}:not([data-fullscreen]) body.panel-open.screen-open .scr-head{padding-left:max(78px,calc((100% - 880px)/2 + 24px))}`, // FR-097 alignment kept
-  `${D} :is(.topbar,.strip,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu,.strip-list){-webkit-app-region:no-drag}`,
+  `${D} :is(.topbar,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu){-webkit-app-region:no-drag}`,
+  `${D} .strip>:is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.strip-list){-webkit-app-region:no-drag}`,
+  `${D} .strip-list *{-webkit-app-region:initial}`,
   `${D} body.panel-open .notice-strip:not([hidden]) ~ .notice-strip{padding-left:20px}`,
   `${D} .notice-strip:not([hidden]) ~ .workspace .strip{padding-left:12px}`,
   `${D} .notice-strip:not([hidden]) ~ #screen .scr-head{padding-left:max(24px,calc((100% - 880px)/2 + 24px))}`,
@@ -119,7 +124,7 @@ const rules = [
   `${D} :is(.dlg-ov,#foldersPop,#floorsPop,.mode-menu,.more-menu){-webkit-app-region:no-drag}`,
 ];
 for (const rule of rules) assert.ok(css.includes(rule), `Mac title bar rule (FR-085, FR-105): ${rule.slice(0, 90)}`);
-assert.ok(!css.includes('scr-head){padding-left:78px}'), 'the screen header keeps its centred padding (no flat 78px)');
+assert.ok(!css.includes('scr-head){padding-left:78px}') && !/\.topbar[^{]*\{padding-left:78px/.test(css), 'no flat 78px on the screen header or the whole top bar');
 // the selectors the rules name exist in the page
 const screensCss = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.css'), 'utf8');
 for (const sel of ['.mode-menu{', '.more-menu{', '#floorsPop{', '#foldersPop{', '.notice-strip{', '.strip-list{', '.dlg-ov{']) assert.ok(css.includes(sel), `selector exists in styles.css: ${sel}`);

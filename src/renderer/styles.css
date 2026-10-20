@@ -1307,15 +1307,23 @@ details.pcmd>pre{margin:4px 0 0;padding:6px 8px;border-radius:6px;background:var
    screen. Everything you can click in it stays clickable. An open chat hides the top bar, so its agent strip takes the same rules; a
    screen (Settings, Tools, a folder) opened over a chat also hides the strip, so then its header does. */
 html[data-platform="darwin"] :is(.topbar,.strip,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head){-webkit-app-region:drag}
-html[data-platform="darwin"]:not([data-fullscreen]) :is(.topbar,.strip){padding-left:78px}
+html[data-platform="darwin"]:not([data-fullscreen]) .strip{padding-left:78px}
 html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open .notice-strip{padding-left:78px}
 html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open.screen-open .scr-head{padding-left:max(78px,calc((100% - 880px)/2 + 24px))} /* FR-105: keeps the FR-097 alignment */
-html[data-platform="darwin"] :is(.topbar,.strip,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu,.strip-list){-webkit-app-region:no-drag}
+html[data-platform="darwin"] :is(.topbar,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu){-webkit-app-region:no-drag}
+html[data-platform="darwin"] .strip>:is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.strip-list){-webkit-app-region:no-drag}
+html[data-platform="darwin"] .strip-list *{-webkit-app-region:initial} /* FR-105: the agents inherit the scroller's no-drag; reset, so the ones past its edge (they overflow, unclipped) keep no region of their own; only the scroller's box is no-drag, so they cannot cover the grab area */
 /* spec 052 FR-105: with a chat open a visible notice strip is the first row (the drag row with the room); the row below drops the room. A
    second visible strip drops it too. The chat strip keeps a fixed grab area at its right end; its scroller (.strip-list) is no-drag. An
    overlay, a popover or a menu is no-drag itself, because Electron ignores z-order for drag regions (a backdrop over a drag area is not clickable). */
 html[data-platform="darwin"] body.panel-open .notice-strip:not([hidden]) ~ .notice-strip{padding-left:20px}
 html[data-platform="darwin"] .notice-strip:not([hidden]) ~ .workspace .strip{padding-left:12px}
+/* FR-105: the traffic-light room is reserved on the top bar's first row only (a wrapped second row starts at the normal padding): an empty first
+   flex item that is 78px minus the padding wide and takes back the gap after it. A notice strip that is the first row is at least 40px tall, so the
+   Office button below it never reaches into the 78x40 box. */
+html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{content:"";flex:none;order:-1;width:58px;margin-right:-14px}
+@media (max-width:1320px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{width:64px;margin-right:-10px}}
+html[data-platform="darwin"] body.panel-open :is(#restoreStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip:not([hidden])){min-height:40px}
 html[data-platform="darwin"] .notice-strip:not([hidden]) ~ #screen .scr-head{padding-left:max(24px,calc((100% - 880px)/2 + 24px))}
 html[data-platform="darwin"] .strip{padding-right:56px}
 html[data-platform="darwin"] :is(.dlg-ov,#foldersPop,#floorsPop,.mode-menu,.more-menu){-webkit-app-region:no-drag}
