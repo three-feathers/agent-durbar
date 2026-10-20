@@ -69,6 +69,8 @@ Several people, each with their own agent (Claude Code, Copilot, others), work h
 
   Leave a comment saying it was merged for that reason.
 
+  **Read every review and comment before a merge** (owner, 2026-10-20). CI and the bot are not the only reviewers. Before you merge any PR (yours or another team's), read **all** of it: the reviews (approve, comment, request changes), every review thread and line comment, and every plain PR comment, including those that arrived after your last look. A required change written as a plain comment ("one required change: …") counts exactly like *request changes*. Fix it or answer it on the PR, and do not merge while a request, an unresolved thread or an unanswered comment from someone else is open. `scripts/pr-gate.sh <N>` checks this, the checks, CodeQL and the open alerts, and prints the comments that still need an answer. It never merges; run it right before every merge.
+
   **Before any merge, check the linked issue** (owner, 2026-10-19). Read the issue the PR works on (`Closes #N`, or the issue named in the spec or tasks), check every point it asks for against what the PR did, and handle both:
   - Everything is covered: let `Closes #N` close it.
   - Part is still open: finish it in the PR when it is small and solvable. Only when the rest is large, needs an owner decision or needs a real-account or real-platform check: change `Closes` to `Refs` (or reopen the issue after the merge), say on the issue what is done and what is left, and keep it open, or open a follow-up issue for the rest and link it.
