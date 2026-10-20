@@ -51,3 +51,31 @@
 - **Q4** Windows: support Codex inside WSL later, or explain only? *Recommended:* explain only for now.
 - **Q5** Real install checks: on GitHub runners (clean macOS, Windows and Linux; no account needed for install and detection) in a manual workflow? *Recommended:* yes; sign-in stays on real machines.
 - **Q6** Order of work. *Recommended:* FR-002 (simulator truth) and FR-006 (libfuse2 docs) first (small); then FR-001 and FR-003 (the real gap); then FR-004, FR-007 and FR-008.
+
+## Changes
+
+### 2026-10-20: T030 built (FR-003, owner Q2: yes)
+
+- **FR-003** `[IMPLEMENTED]`:
+  - **Search order** in `candidates()` (`src/adapters/detect.ts`):
+    1. the configured path;
+    2. `PATH`;
+    3. the **login shell's `PATH`** (macOS and Linux);
+    4. the fixed folders as before;
+    5. then the version managers: nvm (`$NVM_DIR` or `~/.nvm/versions/node/*/bin`, newest version first), fnm (`$FNM_DIR`, `~/.fnm`, `~/.local/share/fnm` and, on macOS, `~/Library/Application Support/fnm`; the `aliases/default` link first, then `node-versions/*/installation/bin`), Volta, asdf and mise shims, and Linuxbrew on Linux. On Windows: `%LOCALAPPDATA%\Volta\bin`, `NVM_SYMLINK`, and nvm-windows' version folders (`NVM_HOME` or `%APPDATA%\nvm`).
+
+    Entries are deduplicated (case-insensitively on Windows). Version folders are read through `DetectEnv.listDir` (folder names only, at most 200 read and 20 used).
+  - **Login shell** (`src/main/loginpath.ts`), read once per app run before the first detection, never under the simulator:
+    - the shell is `$SHELL` only when it is an absolute, existing bash, zsh, fish, sh, dash or ksh, otherwise `/bin/sh`;
+    - the command is a constant `printf` between markers;
+    - argv only, stdin closed, its own process group, killed after 3 s;
+    - at most 64 KB read, 8 KB of `PATH`, 64 absolute folders;
+    - any failure gives an empty list.
+
+    Main hands the list to detection with `setLoginPath`; adapters never spawn a shell.
+  - **Where it was found:** `DetectResult.where` / `AdapterInfo.where` is the `displayPath` of the found binary: `~/…` under the home folder, otherwise only the file name, never the user name. The Agent apps card shows "Found at …" for an installed app (`shots-051-setup` asserts it; screenshots `051-harnesses-*`).
+- `test:` `scripts/test-detect.ts`: the folders per OS, newest-first order, dedupe, an unreadable folder, relative entries, the shell choice and fallbacks, the parser (markers, junk, caps) and the runner with a fake spawn (output, timeout, error, nothing on Windows).
+- `[KNOWN GAP]`:
+  - not run on a real macOS GUI launch (Finder or Dock), where the login-shell `PATH` matters most;
+  - the Windows nvm-windows and Volta folders are unit-tested only;
+  - a login profile that waits for input simply times out after 3 s, and detection then uses the fixed folders.
