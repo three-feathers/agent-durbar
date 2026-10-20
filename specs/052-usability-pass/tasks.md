@@ -129,3 +129,16 @@
 - [x] T076 Copilot sign-in line about VS Code; PowerShell 7 hint on the Windows Copilot card (`pwshMissing`); `test-harnesssetup` [FR-073]
 - [x] T077 "Switch this agent to Ask first" under a Read-only denial, once per agent until the mode changes [FR-074]
 - [x] T078 Copilot plan note in Tools > Cost and the spending-limit dialog (one constant), "Raise limit" for Copilot, README Windows install notes [FR-075]
+
+## Round 7: consistency and readability (2026-10-20)
+
+- [x] T079 House rules: control heights, one Copy size, chip radii, `.btn.primary.danger` for deleting and ending, dialog fields and links, the "…" rule, one word per status (renderer and MCP agent state), spacing, inbox answer order, shared chevron, hover/disabled/focus states; drivers `shots-006-remove.js`, `shots-006-continue.js`, `shots-044-everywhere.js`, `shots-044-templates.js`, `shots-054-remote.js`, `shots-m10.js` [FR-076]
+- [x] T080 Reading load: Thinking block, one-line mode menu, install options lead with the manager, AI theme intro bullets, labelled header chips, sentence-case list headers, inbox key hints [FR-077]
+- [x] T081 `docs/design-rules.md` with the ten house rules and how to check; linked from `CONTRIBUTING.md` [FR-078]
+- [x] T082 "and", not "&" in labels ("Models and context") [FR-079]
+
+## Round 7: plain words for people who don't code (2026-10-20)
+
+- [x] T083 Simple approval cards, answer bar, inbox and notification in plain words ("<Name> wants to change companies.ts", "in tools", "wants to run a command" with a collapsed "Show the command", "See what changes"); waiting status lines without the command [FR-080]
+- [x] T084 Simple hides developer details: memory chip and "Tidy up memory", money-only usage line and list cost, tool rows in plain words, "Running a command" place word, Control from GitHub hidden, Tools "Activity summary" without Models and context or Tokens [FR-081]
+- [x] T085 Welcome card asks "Do you write code?" with two buttons that set and remember the detail level; welcome driver checks it [FR-082]

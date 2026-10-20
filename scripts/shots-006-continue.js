@@ -30,7 +30,7 @@ module.exports = async (ctx) => {
     assert.ok(/0007_clause_type\.sql/.test(chat), 'the earlier reply is shown');
     assert.ok(/Continued after restart: Add the clause-type column migration\. New messages continue this session\./.test(chat), 'the note names the session');
     const status = await ctx.js(`document.querySelector('#panelHead [data-f="status"]').innerText`);
-    assert.ok(/Ready/.test(status), `the agent is ready (${status})`);
+    assert.ok(/Idle/.test(status), `the agent is idle (${status})`);
     await ctx.js(`(()=>{const s=document.createElement('style');s.textContent='#toasts{display:none!important}';document.head.appendChild(s);})()`);
     await ctx.sleep(300);
     await ctx.shot(path.join(OUT, `continue-last-${w}x${h}.png`));
