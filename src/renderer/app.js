@@ -1572,6 +1572,7 @@ function palActions(){
     {label:'Expand all folders',kw:'doors open expand rooms',run:palClick('openAll'),ok:()=>palUsable('openAll')},
     {label:'Back to the previous chat',kw:'previous last recent chat toggle switch',keys:['Ctrl','`'],run:openPreviousChat,ok:()=>!!previousChat()},
     {label:'Keyboard shortcuts',kw:'keys shortcuts help hotkeys',keys:['?'],run:openKbdHelp},
+    {label:'Send to several sessions…',hint:'One message to the running sessions you pick',kw:'send several many all broadcast message group sessions',run:()=>sendToSeveral(),ok:()=>!!bridge&&!!bridge.send&&sendTargets().filter(x=>!x.why).length>=2}, /* spec 064 FR-001 */
     {label:'End all sessions',hint:'Ends every running session; the chats stay',kw:'end stop all sessions quit day close',run:()=>endAllSessions(),ok:()=>!!bridge&&!!bridge.end&&endAllTargets().length>0},
     ...remotePalItems(),
   ].filter(x=>!x.ok||x.ok()).map(x=>({...x,group:'Actions'}));
@@ -1725,6 +1726,31 @@ function openPreviousChat(){
 }
 /* FR-090: End all sessions: every main session that is running (the card menu's own rule: started, not ended), through the same end path */
 const endAllTargets=()=>agents.filter(a=>!a.parent&&a.live&&DMK().cardMenuActions(a,capsFor(a)).end);
+/* ---------------- spec 064: one message to several running sessions ---------------- */
+const SEND_BUSY={working:'busy',thinking:'busy',waiting:'waits for you'};
+function sendTargets(){
+  return agents.filter(a=>!a.parent&&a.live&&a.info).map(a=>{
+    const why=a.limit?'at its spending limit':SIGNIN&&SIGNIN.needsSignIn(KINDS,kindOf(a))?'needs a sign-in':SEND_BUSY[a.state]||'';
+    return {a,why};
+  });
+}
+async function sendToSeveral(anchor){
+  const list=sendTargets();
+  if(list.filter(x=>!x.why).length<1){toast('No running session is free to take a message right now.',3200);return;}
+  const r=await askDialog({title:'Send to several sessions',
+    body:'Each session you tick gets this message as if you typed it in its chat, with its own agent app, mode and spending limit.',
+    input:{label:'Message',multiline:true,max:4000,focus:true,placeholder:'For example: pull the latest main and run the tests again'},
+    picks:list.map(({a,why})=>({label:a.name+' \u00b7 '+(folderOfAgentName(a)||'')+' \u00b7 '+kindWord(kindOf(a))+' \u00b7 '+(MODE_NAME[a.info.permMode]||'Read-only'),note:why,value:a.id,disabled:!!why})),
+    need:{text:true,picks:1,label:n=>n?'Send to '+n+' session'+(n===1?'':'s'):'Send'},
+    buttons:[{label:'Cancel',value:null},{label:'Send',value:'send',cls:'primary'}],returnFocus:anchor});
+  if(!r||r.value!=='send')return;
+  const text=String(r.text||'').trim().slice(0,4000);if(!text||!r.picked||!r.picked.length)return;
+  const bad=[];let n=0;
+  for(const id of r.picked){const a=byId(id);if(!a||!a.live){bad.push(a?a.name:id);continue;}
+    try{await sendLive(text,id,{fromComposer:false});n++;}catch(err){bad.push(a.name);}}
+  toast(bad.length?'Sent to '+n+'; could not send to '+esc(bad.join(', '))+'.':'Sent to '+n+' session'+(n===1?'':'s')+'.',3600).classList.add(bad.length?'err':'ok');
+}
+const folderOfAgentName=a=>{const r=roomOf(a);const p=r&&r.path?String(r.path).replace(/[\\/]+$/,''):'';return p.split(/[\\/]/).pop()||'';};
 async function endAllSessions(anchor){
   const list=endAllTargets();
   if(!list.length){toast('No session is running.',2600);return;}
@@ -1760,6 +1786,7 @@ async function renderAwayStrip(){
   scheduleRender();
 }
 $('endAllBtn').onclick=()=>endAllSessions($('topMoreBtn'));
+if($('sendSeveralBtn'))$('sendSeveralBtn').onclick=()=>sendToSeveral($('topMoreBtn'));
 const DESK_NAV='#stage .desk, #stage .helper, #stage .plate';
 $('wsFilter').addEventListener('change',e=>{ui.ws=e.target.value;renderAll();});
 function setView(v){ui.view=v;document.body.classList.toggle('list-mode',v==='list');
@@ -2738,17 +2765,20 @@ function onLiveEvent(e){
     if(ui.selected===a.id||(byId(ui.selected)||{}).parent===a.id)updatePanelHeader();return;}
   }
 }
-async function sendLive(text,forId){
+async function sendLive(text,forId,opts){
   const a0=byId(forId||ui.selected); if(!a0)return; const a=liveRoot(a0);
-  text=(text||'').trim(); if(!text&&!attached.length)return;
+  /* spec 064 FR-003: a message sent from elsewhere (Send to several) leaves the open chat's composer and attachments alone */
+  const fromComposer=!(opts&&opts.fromComposer===false);
+  const atts=fromComposer?attached.slice():[];
+  text=(text||'').trim(); if(!text&&!atts.length)return;
   /* spec 012 FR-157: an app that is known to be signed out gets the sign-in card first; the typed text stays in the box */
-  if(SIGNIN&&SIGNIN.needsSignIn(KINDS,kindOf(a))){PROMPTS.set(a.id,text,attached.slice());showSignInCard(a,{before:true});return;}
-  if(PROMPTS)PROMPTS.set(a.id,text,attached.slice()); /* memory only, for Send again after a sign-in (never stored) */
+  if(SIGNIN&&SIGNIN.needsSignIn(KINDS,kindOf(a))){PROMPTS.set(a.id,text,atts);showSignInCard(a,{before:true});return;}
+  if(PROMPTS)PROMPTS.set(a.id,text,atts); /* memory only, for Send again after a sign-in (never stored) */
   a.sent=true;
-  const chat=liveChat(a), atts=attached.slice();
+  const chat=liveChat(a);
   addUserMsg(chat,text||'(attachment)',atts);
-  attached=[];renderAttached();attNotice([]);
-  const input=$('msgInput');if(input){input.value='';autoGrow();}
+  if(fromComposer){attached=[];renderAttached();attNotice([]);
+    const input=$('msgInput');if(input){input.value='';autoGrow();}}
   a.worked=true; a.intent=''; closeTurn(a); ensureTurn(a); setState(a,'thinking',null,'Thinking');
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})));
   if(!r.ok){closeTurn(a);addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);setState(a,'error',null,'Send failed: '+SHORT(r.error,100));}
@@ -4078,6 +4108,7 @@ if(bridge){
   wireMenu('newBtn','newMenu'); /* spec 052 FR-105: + New holds Add folder and Add VS Code workspace */
   wireDefaults();
   $('endAllBtn').hidden=$('endAllSep').hidden=!bridge.end; /* spec 052 FR-090 */
+  if($('sendSeveralBtn'))$('sendSeveralBtn').hidden=!bridge.send; /* spec 064 FR-001 */
   $('inboxBtn').onclick=openInbox;
   $('addFolder').onclick=()=>addVia(bridge.addFolder);
   $('addWs').onclick=()=>addVia(bridge.addWorkspaceFile);

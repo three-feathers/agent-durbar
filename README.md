@@ -69,6 +69,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
   The briefing and planning ones end by **asking you what to do next** with a question card, and the agent waits for you in the office.
 - **Custom agents** per session: `.github/agents` or `~/.copilot/agents` for Copilot, `.claude/agents` for Claude.
 - **Open in VS Code** opens the folder (VS Code, then Insiders, then VSCodium).
+- **Send to several sessions…** (top bar ⋯ or Ctrl+K): one message to the running sessions you tick, each with its own agent app, mode and spending limit. Busy sessions, and sessions waiting for you, can't be ticked; the button says how many get it ([screenshot](docs/screenshots/064-send-several-1440x900.png)).
 
 **Models, context and tools**
 - Pick the model and reasoning effort per session, and switch them in a running session: Claude Code and Codex from the next message, the conversation kept (checked on real accounts 2026-10-20); Copilot too, but not yet seen on a paid plan.

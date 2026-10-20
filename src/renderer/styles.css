@@ -1004,6 +1004,14 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .mode-menu [aria-disabled="true"]{opacity:1;color:var(--muted);border-style:dashed;cursor:not-allowed}
 .mm-note{margin:4px 10px 4px;font-size:11px;color:var(--muted)}
 .dlg .chk{flex-direction:row;align-items:center;gap:8px;font-weight:500}
+/* spec 064: a pick list in the shared dialog (each line: checkbox, label, a muted reason when it cannot be picked) */
+.dlg .dinput textarea{min-height:84px;max-height:30vh;resize:vertical;border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:8px 10px;font:inherit;font-size:13px;color:var(--ink)}
+.dlg .dpicks{border:0;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:2px;max-height:38vh;overflow:auto}
+.dlg .dpick{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;text-align:left;font-weight:500;gap:8px;padding:4px 2px;font-size:12.5px;color:var(--ink);cursor:pointer;min-width:0}
+.dlg .dpick .dpick-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1 1 auto}
+.dlg .dpick small{color:var(--muted);font-size:11px;flex:none}
+.dlg .dpick.is-off{cursor:default;color:var(--muted)}
+.dlg .btn:disabled{opacity:.55;cursor:default}
 .btn.primary.warn{background:var(--warn-bg);border-color:#e5be78;color:var(--amber-ink)}
 .btn.primary.warn:hover{background:#faecc9}
 /* spec 052 FR-076: red means it deletes or ends (End session, Remove, Delete floor, Clear); amber .primary.warn only grants more power (Allow all, Turn on remote) */
