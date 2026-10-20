@@ -3352,15 +3352,18 @@ function maybeSuggestFresh(a){
 /* ---------------- new session (another agent in a folder) ---------------- */
 function closeSessDlg(){const d=document.getElementById('sessDlg');if(d)d.remove();}
 /* spec 030 FR-036: a live agent whose kind can make a hand-off summary */
-/* ---------------- spec 054: remote control from GitHub (web and mobile) ---------------- */
+/* ---------------- spec 054: remote control from the agent app's own service (web and mobile; FR-060 names it) ---------------- */
 /* Only for a live main agent whose kind reports `remote`; hidden otherwise (FR-006). State lives on the agent (`a.remote`) and in main. */
 const canRemote=a=>!!(bridge.setRemote&&a&&a.live&&!a.parent&&a.info&&feat(a,'remote'));
+/* spec 054 FR-060: the service this agent app is controlled from (GitHub for Copilot before the field existed) */
+const svc=a=>{const r=capsFor(a)&&capsFor(a).remoteService;return r&&r.name?r:{name:'GitHub',host:'github.com',mobile:'GitHub Mobile'};};
 const remoteVisText=v=>v==='repo'?'Visible to: anyone who can read the repository.':v==='unshared'?'Visible to: you and the repository\'s collaborators.':'';
-const remoteItemInner=a=>a.remote?'<span class="mt">Stop remote control<small>GitHub can no longer follow or steer it</small></span>':'<span class="mt">Control from GitHub (web and mobile)<small>Follow and steer it from your phone</small></span>';
-const remoteChipHTML=a=>`<button class="mchip mchip-btn" id="remoteChip" type="button" title="Remote control is on: this session can be followed and steered from GitHub. Click for the link."${a.remote?'':' hidden'}>Remote</button>`;
+const remoteItemInner=a=>a.remote?'<span class="mt">Stop remote control<small>'+esc(svc(a).name)+' can no longer follow or steer it</small></span>':'<span class="mt">Control from '+esc(svc(a).name)+' (web and mobile)<small>Follow and steer it from your phone</small></span>';
+const remoteChipHTML=a=>`<button class="mchip mchip-btn" id="remoteChip" type="button" title="Remote control is on: this session can be followed and steered from ${esc(svc(a).name)}. Click for the link."${a.remote?'':' hidden'}>Remote</button>`;
 function remotePalItems(){
   const a=ui.selected?byId(ui.selected):null; if(!canRemote(a))return [];
-  return [a.remote?{label:'Stop remote control',hint:a.name,kw:'remote github mobile phone steer',run:()=>remoteOff(a)}:{label:'Control from GitHub (web and mobile)',hint:a.name,kw:'remote github mobile phone steer',run:()=>remoteOn(a)}];
+  const kw='remote mobile phone steer '+svc(a).name.toLowerCase();
+  return [a.remote?{label:'Stop remote control',hint:a.name,kw,run:()=>remoteOff(a)}:{label:'Control from '+svc(a).name+' (web and mobile)',hint:a.name,kw,run:()=>remoteOn(a)}];
 }
 /* the header chip and the More item follow the state in place (the composer keeps its text); the office re-renders the card */
 function updateRemoteUi(a){
@@ -3371,11 +3374,12 @@ const remoteBack=()=>$('moreBtn')||$('panelTitle');
 let remoteBusy=false;
 async function remoteOn(a){
   /* spec 054 FR-011: never together with Allow all (main refuses too); say why before asking anything */
-  if(a&&a.info&&a.info.permMode==='allow'){toast('Remote control is off in Allow all: anyone steering this session on GitHub could make it run commands without asking you. Switch '+esc(a.name)+' to Ask first, then turn it on.',7000).classList.add('err');return;}
+  if(a&&a.info&&a.info.permMode==='allow'){toast('Remote control is off in Allow all: anyone steering this session on '+esc(svc(a).name)+' could make it run commands without asking you. Switch '+esc(a.name)+' to Ask first, then turn it on.',7000).classList.add('err');return;}
   if(!canRemote(a)||remoteBusy||a.remote)return;
-  const r=await askDialog({title:'Control this session from GitHub?',
-    body:'Durbar turns on remote control for this session. Its messages are sent to GitHub, so you can follow and steer it from github.com and GitHub Mobile. Anyone who can see this session on GitHub can steer it.',
-    lines:['Who can see it is decided by GitHub: you and the repository\'s collaborators, or everyone who can read the repository. Durbar does not change that.'],
+  const S=svc(a);
+  const r=await askDialog({title:'Control this session from '+S.name+'?',
+    body:'Durbar turns on remote control for this session. Its messages are sent to '+S.name+', so you can follow and steer it from '+S.host+' and '+S.mobile+'. Anyone who can see this session on '+S.name+' can steer it.',
+    lines:[S.host==='github.com'?'Who can see it is decided by GitHub: you and the repository\'s collaborators, or everyone who can read the repository. Durbar does not change that.':'Who can see it is decided by your '+S.name+' account. Durbar does not change that.'],
     buttons:[{label:'Cancel',value:null},{label:'Turn on',value:'on',cls:'primary warn'}],returnFocus:remoteBack});
   if(!r||r.value!=='on')return;
   remoteBusy=true; let res;
@@ -3395,16 +3399,17 @@ async function remoteOff(a){
   a.remote=null; updateRemoteUi(a);
   toast('Remote control is off for '+esc(a.name)+'.').classList.add('ok');
 }
-/* FR-006: the link as text (never HTML), Copy link and Open on GitHub (main opens its own stored, github.com-only link) */
+/* FR-006: the link as text (never HTML), Copy link and Open (main opens its own stored link, on that service's host only, FR-060) */
 async function remoteLinkDialog(a){
   const rm=a&&a.remote; if(!rm)return;
   const lines=[];
-  if(rm.url){lines.push(rm.url);lines.push('Open this link in GitHub Mobile to steer from your phone.');}
-  else lines.push('Remote control is on, but GitHub did not give a link. Find the session on github.com.');
-  if(!rm.steerable)lines.push('GitHub can show this session but cannot steer it yet.');
+  const S=svc(a);
+  if(rm.url){lines.push(rm.url);lines.push('Open this link in '+S.mobile+' to steer from your phone.');}
+  else lines.push('Remote control is on, but '+S.name+' did not give a link. Find the session on '+S.host+'.');
+  if(!rm.steerable)lines.push(S.name+' can show this session but cannot steer it yet.');
   const vt=remoteVisText(rm.visibility); if(vt)lines.push(vt);
-  const r=await askDialog({title:'Remote control is on',body:'Follow and steer '+a.name+' from github.com or GitHub Mobile. Stop it any time from More > Stop remote control.',lines,
-    buttons:[...(rm.url?[{label:'Copy link',value:'copy'},{label:'Open on GitHub',value:'open',cls:'primary'}]:[]),{label:'Done',value:null}],returnFocus:()=>$('remoteChip')||remoteBack()});
+  const r=await askDialog({title:'Remote control is on',body:'Follow and steer '+a.name+' from '+S.host+' or '+S.mobile+'. Stop it any time from More > Stop remote control.',lines,
+    buttons:[...(rm.url?[{label:'Copy link',value:'copy'},{label:'Open on '+S.name,value:'open',cls:'primary'}]:[]),{label:'Done',value:null}],returnFocus:()=>$('remoteChip')||remoteBack()});
   if(!r)return;
   if(r.value==='copy'){try{await navigator.clipboard.writeText(rm.url);toast('Link copied.').classList.add('ok');}catch(e){toast('Could not copy.').classList.add('err');}}
   else if(r.value==='open'&&bridge.openRemote){const o=await bridge.openRemote(a.id).catch(()=>({ok:false}));if(!o||!o.ok)toast('Could not open the link.').classList.add('err');}
@@ -3686,7 +3691,11 @@ document.addEventListener('click',async e=>{
 });
 document.addEventListener('change',async e=>{if(e.target&&e.target.id==='schedPauseAllSet'){const r=await bridge.setSchedulesPaused(e.target.checked);SCHED.pausedAll=r.pausedAll;schedChanged();}});
 /* spec 012 FR-158: a new sign-in reconnected the agent app, so remote control ended for this session */
-if(bridge&&bridge.onRemoteOff){bridge.onRemoteOff(id=>{const a=liveById(id);if(!a||!a.remote)return;a.remote=null;updateRemoteUi(a);addNote(liveChat(a),'Remote control ended: '+esc(a.name)+' reconnected after the new sign-in. Turn it on again from More if you still need it.');});}
+if(bridge&&bridge.onRemoteUrl)bridge.onRemoteUrl(p=>{const a=p&&liveById(p.id);if(a&&a.remote&&typeof p.url==='string')a.remote.url=p.url;});
+if(bridge&&bridge.onRemoteOff){bridge.onRemoteOff(p=>{const id=typeof p==='string'?p:p&&p.id;const a=liveById(id);if(!a||!a.remote)return;a.remote=null;updateRemoteUi(a);
+  /* spec 054 FR-062: the adapter's own reason when it has one; otherwise the sign-in reconnect (spec 012 FR-158) */
+  const why=p&&typeof p==='object'&&typeof p.reason==='string'&&p.reason?esc(p.reason.slice(0,300)):esc(a.name)+' reconnected after the new sign-in';
+  addNote(liveChat(a),'Remote control ended: '+why+'. Turn it on again from More if you still need it.');});}
 if(bridge&&bridge.onScheduleRan){bridge.onScheduleRan(r=>{const a=liveById(r.agentId);if(!a)return;addNote(liveChat(a),'Scheduled prompt ('+esc(r.rule?ruleText(r.rule):r.every!==undefined?whenOf({every:r.every}):'once')+').');});}
 function renderFolders(){
   const pop=$('foldersPop'); if(pop.hidden)return;
