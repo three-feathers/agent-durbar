@@ -1,3 +1,4 @@
+import { parseEffort } from '../shared/effort';
 import { app, BrowserWindow, dialog, Menu, screen, shell } from 'electron';
 import { ipcHandle, ipcOn } from './ipcguard';
 import { randomUUID } from 'crypto';
@@ -74,9 +75,7 @@ if (devNote) console.error(devNote);
 // Dev/test: DURBAR_USER_DATA=/tmp/x keeps the saved folder list (and Electron's other state) out of the real profile.
 if (dev.DURBAR_USER_DATA) app.setPath('userData', dev.DURBAR_USER_DATA);
 const DEFAULT_MODEL = 'auto';
-const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
-type Effort = (typeof EFFORTS)[number];
-const asEffort = (v: unknown): Effort | undefined => (EFFORTS as readonly string[]).includes(v as string) ? (v as Effort) : undefined;
+const asEffort = parseEffort; // spec 007 FR-008: the models' own effort names, `none` included
 let folderStore: FolderStore | undefined;
 /** Global settings (default credit cap, spec 011), created when the app is ready. */
 let settingsStore: SettingsStore | undefined;
