@@ -17,6 +17,8 @@ import { createCodexRpc, realSpawn } from './codexRpc';
 import type { CodexRpc, RequestOutcome, SpawnFn } from './codexRpc';
 import { codexHistory, codexModelOptions, codexPreviousSessions } from './codexHistory';
 import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
+import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
+import type { ElicitAnswer } from '../shared/elicit';
 import { codexMcpConfig, codexMcpServers, codexMcpState } from './codexMcp';
 import type { McpServerStatus } from './types';
 import type { HistoryResult, PreviousSession } from './history';
@@ -148,7 +150,7 @@ export function codexResumeCheck(res: unknown, o: { cwd: string; limited: boolea
   if (kind !== undefined && /danger|full|workspace.?write/i.test(kind)) throw new Error(`Codex resumed the session with a wider sandbox (${kind.slice(0, 40)}) than this mode allows, so it is not resumed.`);
 }
 
-/** FR-148: does an MCP elicitation ask for form fields (as opposed to a plain yes/no)? Unknown shapes count as fields (declined). */
+/** FR-148/FR-151: does an MCP elicitation ask for form fields or a URL flow (the question card), as opposed to a plain yes/no (the approval)? */
 export function codexElicitationHasFields(params: unknown): boolean {
   const schema = isObj(params) && isObj(params.requestedSchema) ? params.requestedSchema : undefined;
   if (!schema) return isObj(params) && params.mode === 'url'; // a URL flow cannot be answered here
@@ -203,6 +205,8 @@ interface Live {
   mcpRead?: boolean;
   /** FR-146: questions waiting for the user, by request id. */
   questions: Map<string, (answers: Record<string, string> | null) => void>;
+  /** FR-151: MCP elicitations (forms, URL flows) waiting for the user, by request id. */
+  elicitations: Map<string, ElicitWaiter>;
   /** Shell tool calls started and not yet ended (FR-139). */
   runningCommands: Set<string>;
   /** Drops mapper events (while starting with `quiet`, and once the session is stopping or dead). */
@@ -470,6 +474,7 @@ export class CodexAdapter implements AgentAdapter {
       doneTurns: [],
       runningCommands: new Set<string>(),
       questions: new Map(),
+      elicitations: new Map(),
       mcp: new Map(),
       turnStarting: false,
       pendingInterrupt: false,
@@ -653,6 +658,7 @@ export class CodexAdapter implements AgentAdapter {
     try {
       live.broker.denyPending();
       for (const answer of [...live.questions.values()]) answer(null); // FR-146: an open question is skipped
+      cancelElicitations(live.elicitations); // FR-151
       const turnId = live.turnId;
       if (!turnId) {
         // A turn is starting but its id is not known yet: remember the request and send it the moment the id arrives.
@@ -723,6 +729,7 @@ export class CodexAdapter implements AgentAdapter {
     live.muted = true;
     live.broker.stop();
     for (const answer of [...live.questions.values()]) answer(null); // FR-146
+    cancelElicitations(live.elicitations); // FR-151
     // Let the denied requests' answers (wire `cancel`) go out before the interrupt and the close.
     await new Promise<void>((r) => setImmediate(r));
     if (!live.rpc.exited) {
@@ -849,10 +856,16 @@ export class CodexAdapter implements AgentAdapter {
   /** A server request (approval or question). Read-only is double-locked: the broker denies and `codexReply` declines. Never `acceptForSession`. */
   private async onServerRequest(live: Live, method: string, params: unknown): Promise<RequestOutcome> {
     if (method === 'item/tool/requestUserInput' || method === 'tool/requestUserInput') return this.askUser(live, params);
-    // FR-148 (real, Codex 0.163): an MCP elicitation answers with {action, content}, not {decision}. One with form fields Durbar
-    // cannot fill is declined; a plain confirmation (no fields, e.g. "allow this tool call?") goes through the approval below.
+    // FR-148 (real, Codex 0.163): an MCP elicitation answers with {action, content}, not {decision}. A plain confirmation (no
+    // fields, e.g. "allow this tool call?") goes through the approval below. FR-151: one with form fields, or a URL flow, goes to
+    // the question card (an unsupported required field or a non-https URL is declined there, with the reason shown).
     const elicit = method === 'mcpServer/elicitation/request';
-    if (elicit && codexElicitationHasFields(params)) return { result: { action: 'decline' } };
+    if (elicit && codexElicitationHasFields(params)) {
+      if (live.stopping) return { result: { action: 'cancel' } };
+      const p = isObj(params) ? params : {};
+      const a = await runElicitation((b) => this.emit(live.sid, b), live.elicitations, `codex-e-${++live.anon}`, { message: p.message, schema: p.requestedSchema, mode: p.mode, url: p.url, source: p.serverName }, (m) => this.debug?.(`codex: ${m}`));
+      return { result: { ...a } };
+    }
     const perm = codexPermission(method, params);
     const itemId = isObj(params) && typeof params.itemId === 'string' && params.itemId ? params.itemId : undefined;
     const toolCallId = itemId ?? `${method}#${++live.anon}`;
@@ -942,6 +955,11 @@ export class CodexAdapter implements AgentAdapter {
 
   answerQuestion(sessionId: string, requestId: string, answers: Record<string, string> | null): void {
     this.sessions.get(sessionId)?.questions.get(requestId)?.(answers);
+  }
+
+  /** FR-151: the user's answer to an MCP elicitation (main checked it against the fields). */
+  answerElicitation(sessionId: string, requestId: string, answer: ElicitAnswer): void {
+    answerElicitation(this.sessions.get(sessionId)?.elicitations, requestId, answer);
   }
 
   /** The child exited. Not caused by `stop`: the session is over and says so (FR-097). */

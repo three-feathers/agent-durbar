@@ -468,6 +468,10 @@ export interface DurbarApi {
   onScheduleRan?(cb: (r: { agentId: string; scheduleId: string; every?: number; at?: number }) => void): () => void;
   /** Answer the agent's question (spec 012 FR-128): question text -> answer; null = skip. */
   answerQuestion?(id: string, requestId: string, answers: Record<string, string> | null): Promise<{ ok: boolean; error?: string }>;
+  /** Answer an MCP elicitation (spec 012 FR-151): `accept` with the form's values (checked in main), `decline` or `cancel`. `field` names a field that failed the check. */
+  answerElicitation?(id: string, requestId: string, action: 'accept' | 'decline' | 'cancel', values?: Record<string, string | number | boolean>): Promise<{ ok: boolean; error?: string; field?: string }>;
+  /** Open an elicitation's https page in the system browser (spec 012 FR-151); main opens the address it holds for that request, never one from the window. */
+  openElicitationUrl?(id: string, requestId: string): Promise<{ ok: boolean; error?: string }>;
   /** Custom agents the session can use (spec 043); `trusted` is false for a repository agent not yet confirmed for this folder and file. */
   listProfiles?(id: string): Promise<{ ok: boolean; error?: string; profiles: (ProfileInfo & { trusted: boolean })[] }>;
   /** Select a custom agent (null = default). A repository agent not yet confirmed answers `needsConfirm`; call again with `confirm` after the user agreed. */

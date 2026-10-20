@@ -36,7 +36,8 @@ import type { HistoryResult, PreviousSession } from './history';
 import { cleanAnswers, parseQuestionsWithOriginals } from './questions';
 import { agentsArg, listClaudeAgents } from './claudeAgents';
 import type { ClaudeAgentDef } from './claudeAgents';
-import type { AgentProfile, AskedQuestion } from './types';
+import type { AgentProfile, AskedQuestion, ElicitAnswer } from './types';
+import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
 
 export const CLAUDE_ID = 'claude';
 export const CLAUDE_NAME = 'Claude Code';
@@ -395,6 +396,8 @@ interface Session {
   limit?: { requestId: string; held?: AgentMessage };
   /** Questions waiting for the user (FR-128): request id -> what was asked, Claude's original texts, and the waiter. */
   questions?: Map<string, { asked: AskedQuestion[]; originals: string[]; resolve: (a: Record<string, string> | null) => void }>;
+  /** MCP elicitations waiting for the user (FR-151): request id -> waiter. */
+  elicitations?: Map<string, ElicitWaiter>;
 }
 
 export class ClaudeAdapter implements AgentAdapter {
@@ -603,6 +606,11 @@ export class ClaudeAdapter implements AgentAdapter {
     q?.resolve(answers);
   }
 
+  /** FR-151: the user's answer to an MCP elicitation (main checked it against the fields). */
+  answerElicitation(sessionId: string, requestId: string, answer: ElicitAnswer): void {
+    answerElicitation(this.sessions.get(sessionId)?.elicitations, requestId, answer);
+  }
+
   resolvePermission(sessionId: string, requestId: string, approve: boolean, remember = false, broad = false): void {
     this.sessions.get(sessionId)?.broker.resolve(requestId, approve, remember, broad);
   }
@@ -808,7 +816,15 @@ export class ClaudeAdapter implements AgentAdapter {
       const toolInput = input.tool_input && typeof input.tool_input === 'object' ? (input.tool_input as Record<string, unknown>) : undefined;
       return { response: await this.hookDecision(s, tool, toolInput, typeof input.tool_use_id === 'string' ? input.tool_use_id : undefined) };
     }
-    // elicitation, mcp_message, ... are not supported yet (T052, FR-024): refuse explicitly
+    // FR-151: an MCP server's elicitation (a form or a URL flow) goes to the question card; the answer is the MCP `{action, content?}`.
+    // The field names follow the Agent SDK's control request (read:, not yet seen from a real CLI).
+    if (req.subtype === 'elicitation') {
+      s.elicitations ??= new Map();
+      const id = typeof r.elicitation_id === 'string' && r.elicitation_id.length <= 200 ? `claude-e-${r.elicitation_id}` : `claude-e-${randomUUID()}`;
+      const a = await runElicitation((b) => this.emit(s.id, b), s.elicitations, id, { message: r.message, schema: r.requested_schema, mode: r.mode, url: r.url, source: r.mcp_server_name }, (m) => this.debug?.(`claude: ${m}`));
+      return { response: { ...a } };
+    }
+    // mcp_message, ... are not supported yet (T052, FR-024): refuse explicitly
     return { error: `Agent Durbar does not handle ${req.subtype || 'this request'} yet.` };
   }
 
@@ -869,6 +885,7 @@ export class ClaudeAdapter implements AgentAdapter {
   /** Stop, interrupt or a crash: unanswered questions are skipped (the hook answers deny). */
   private cancelQuestions(s: Session): void {
     for (const q of [...(s.questions?.values() ?? [])]) q.resolve(null);
+    cancelElicitations(s.elicitations);
   }
 
   private onExit(s: Session, info: { code: number | null; signal: string | null; stderrTail: string }): void {

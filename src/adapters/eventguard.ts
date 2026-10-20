@@ -88,6 +88,8 @@ export function eventProblems(e: unknown): string[] {
       if (!oneOf(e.phase, ['asked', 'answered', 'cancelled'])) out.push(`question.phase ${String(e.phase)}`);
       if (!str(e.requestId) || !e.requestId) out.push('question.requestId missing');
       if (e.phase === 'asked' && (!Array.isArray(e.questions) || !e.questions.length || e.questions.some((q) => !isObj(q) || !str(q.question) || !Array.isArray(q.options)))) out.push('question.questions malformed');
+      if (e.elicitation !== undefined && (!isObj(e.elicitation) || !str(e.elicitation.message) || !(Array.isArray(e.elicitation.fields) || str(e.elicitation.url)))) out.push('question.elicitation malformed');
+      if (e.elicitAction !== undefined && !oneOf(e.elicitAction, ['accept', 'decline', 'cancel'])) out.push(`question.elicitAction ${String(e.elicitAction)}`);
       break;
     case 'agentProfile':
       if (e.profile !== null && (!isObj(e.profile) || !str(e.profile.id) || !str(e.profile.name) || !oneOf(e.profile.source, ['repo', 'user', 'other']))) out.push('agentProfile.profile malformed');
