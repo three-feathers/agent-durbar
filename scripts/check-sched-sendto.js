@@ -11,6 +11,7 @@
  */
 const assert = require('assert');
 const path = require('path');
+const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
 const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 const LONG = 'Rename public tool find_company and update every call site and the docs index'; // simtitles=1 gives one main agent this title
 const CAP = 40;
@@ -26,7 +27,7 @@ module.exports = async (ctx) => {
     for (const level of ['simple', 'expert']) {
       // the detail level is a stored display preference (localStorage), read at load
       await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simtitles: '1' } });
-      await js(`localStorage.setItem('durbar.detail',${JSON.stringify(level)})`);
+      await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)})`);
       await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simtitles: '1' } });
       await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
       await ctx.sleep(900);
@@ -44,7 +45,7 @@ module.exports = async (ctx) => {
           const lh=e=>parseFloat(getComputedStyle(e).lineHeight)||parseFloat(getComputedStyle(e).fontSize)*1.3;
           const row=(lbl,ctl)=>{const L=document.querySelector(lbl),C=document.querySelector(ctl);return {label:L.textContent,lh:lh(L),lb:box(L),cb:box(C),vis:L.getClientRects().length>0}};
           const sel=document.getElementById('scTarget'), o=sel.options[1];
-          return {to:row('.sc-to .sc-lbl','#scTarget'),cap:row('#scCapL .sc-lbl','#scCap'),opt:o.textContent,title:o.title,val:o.value,id:${JSON.stringify(id)}}})()`);
+          return {to:row('.sc-to .sc-lbl','#scTarget'),cap:row('#scCapL .sc-lbl','#scCap'),opt:o.textContent,title:o.title,val:o.value,id:${jsLiteral(id)}}})()`);
         const tag = `${w}x${h} ${level} ${width || 'full'}`;
         for (const k of ['to', 'cap']) {
           const x = r[k];
