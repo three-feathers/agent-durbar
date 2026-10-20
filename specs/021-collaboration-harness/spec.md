@@ -127,3 +127,14 @@ gh-aw work queue; merge queue (not available for personal-account repos; not eva
   - `Closes #N` only when all is done;
   - otherwise use `Refs #N`, write on the issue what is left (or link a follow-up issue), and keep it open.
 
+### 2026-10-20: review findings are fixed in the PR, capabilities are not duplicated, knowledge is shared (owner)
+
+The owner set these rules in the team chat on 2026-10-20 and asked for them, and every earlier agreed rule, to be written into `AGENTS.md` so that every agent follows them, and for agents' private learnings to be committed to the repo.
+
+- **FR-030** A solvable review finding is a requirement for merge, fixed in the same PR; no "non-blocking" notes and no follow-up issues for small, solvable things. Follow-up issues only for large work, owner decisions or checks that need a real account or platform. Applied retroactively to old notes.
+- **FR-031** Every review (and every new spec) checks for an existing capability doing the same job and asks for reuse.
+- **FR-032** Re-approval after a push compares the PR's own code by `git patch-id`; admin merge is allowed when a formality is the last blocker and everything else is clean.
+- **FR-033** A clear OK from an owner in the team chat (or relayed by their bot) counts for pre-releases and repository actions, not for money, invitations, settings or chat access. Agents respect each person's stated working hours (`docs/collaboration.md`, *Team norms*).
+- **FR-034** `docs/agent-notes.md` holds what agents learned (dated, with evidence, no secrets or personal data); agents read it before starting and add to it in the PR where they learn something. `CLAUDE.md`, the Copilot pointer, the PR template and `docs/collaboration.md` say the same.
+- Also written down: check spec numbers against remote branches and open PRs, and delete the branch and worktree after a merge (both agreed on 2026-10-18/19, kept only in one agent's memory until now).
+

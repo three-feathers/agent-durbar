@@ -49,3 +49,7 @@
 - [x] T042 Renderer delete flow: Delete… only for agent sessions, disabled with the reason when the adapter has no delete; red confirmation with Cancel focused and the FR-030 wording per app; busy state; success and error toasts; refusal dialog "This session is still in the office" with Go to session and Remove from office (left out, with the start-a-new-session line, for a folder's only session); assert no desk card, office List-view row, card menu or chat header offers Delete (Q1); simulator `deleteSession` and the refusal hook [FR-030]
 - [x] T043 `scripts/shots-006-prevmarks.js` at 1440x900 and 1280x800 (menu open, pinned rows, Show hidden on, delete confirmation, refusal, disabled Delete…), row-fit assertions; `npm run check:office`; screenshots `docs/screenshots/006-prev-*.png` [FR-027, FR-030]
 - [x] T044 Docs and converge: README (Previous sessions, Safety model: Delete only through the app's own API, never VS Code chats, not for Claude Code), CHANGELOG, `specs/README.md` row, `[IMPLEMENTED]` tags [all]
+
+## 2026-10-20: retro review sweep
+
+- [x] T047 Accent fold in `sessionsearch.js` written as `\u0300-\u036f` escapes (FR-023; review note on PR #273)

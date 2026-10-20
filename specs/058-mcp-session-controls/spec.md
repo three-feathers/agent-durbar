@@ -3,7 +3,7 @@
 **Feature Branch**: `058-mcp-session-controls`
 **Created**: 2026-10-20
 **Status**: Specified and clarified (spec, research, plan and tasks; **no code**). The owner answered Q1-Q11 on 2026-10-20 (all option A,
-see *Clarifications*). Delta 2026-10-20 (issue #364, MCP OAuth sign-in, FR-060..FR-074): specified and clarified (the owner answered
+see *Clarifications*). Delta 2026-10-20 (issue #364, MCP OAuth sign-in, FR-060..FR-076): specified and clarified (the owner answered
 Q12-Q19 on 2026-10-20, all the recommended option), no code (see *Changes*).
 **Input**: Issue #349. Owner (Paco, 2026-10-20): "in a session, when I open MCP I can enable and disable servers, but I miss VS Code's
 start/stop/show logs; it is not clear how to start them."
@@ -496,6 +496,18 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   manual); main (the window gets the host only, `http:` and user:password refused, the 10-minute limit, Cancel, End drops the address,
   no address in the `DURBAR_LOG` sink, the switch-off shortcut calls `setMcp`); masking of a failed MCP tool card.
 - **FR-073** **Screenshots** at 1440x900 and 1280x800 (simulator): the needs-auth row, the two-step sign-in, the tool card line.
+- **FR-075** **Where the sign-in page comes from** (review of PR #370, made a requirement by the owner's rule of 2026-10-20). The
+  sign-in address comes from the server itself, and a per-folder extra can come from a repository the user did not write. The two-step
+  confirm (FR-069) therefore shows the server's **origin tag** next to the host ("Sign-in page on **<host>** · from *this folder's
+  extras*" or "· from *your MCP servers*", the same tag words as the row, FR-030). When the host's registrable domain differs from the
+  server URL's (remote servers only; compared on the last two labels, or three for a known two-part suffix such as `co.uk`), one plain
+  line is added: "This sign-in page is on a different site than the server (<server host>)." Nothing is blocked; the user decides.
+  Test (FR-072): same domain shows no line; a folder extra on `mcp.example.com` with a sign-in page on `login.example.net` shows the
+  tag and the line; a stdio server shows the tag and no line.
+- **FR-076** **A saved sign-in outlives the session** (review of PR #370). With `persistent` storage (FR-070), a sign-in made for a
+  per-folder extra stays in the OS keychain after the session ends. The per-folder extras trust confirmation (spec 019) gets one
+  more sentence: "If one of these servers asks you to sign in, <App> may keep that sign-in in your system keychain after the session
+  ends." The FR-069 waiting text says the same for Copilot ("Copilot keeps this sign-in in your system keychain").
 - **FR-074** `[KNOWN GAP]` Until the real checks (tasks T105-T107, needs-owner-approval, 0 AI credits, no prompt) run, everything above is
   `read:`: the three login calls, the Claude stream-json handler (the docs say `-p` and SDK runs cannot sign in; the 2.1.304 program
   strings handle `mcp_authenticate` there), whether Codex 0.163 has `mcpServer/oauth/login`, how long each runtime's callback listener

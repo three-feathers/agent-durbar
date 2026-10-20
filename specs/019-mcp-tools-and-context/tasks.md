@@ -12,3 +12,4 @@
 - [x] T011 Screenshots m8-*.png (1440x900, 1280x800), office overlap check
 - [x] T012 README milestone 8, specs index, converge (spec/plan/tasks match the code)
 - [x] T013 Mask MCP server error text in main before it reaches the window (FR-021, issue #360): pure `maskMcpError`, used by `agents:mcp` and the live `mcp` events; unit test `test-mcp-errormask`
+- [x] T014 One masked copy of each `mcp` event for the window and the `DURBAR_LOG` sink (FR-022): pure `maskMcpEvent`, unit test in `test-mcp-errormask`
