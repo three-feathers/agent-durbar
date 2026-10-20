@@ -39,6 +39,8 @@ export interface AdapterCapabilities {
   readonly oneShot?: boolean;
   /** `setRemote()` exists: the session can be followed and steered from the vendor's web or mobile app (spec 054 FR-001); missing = false. */
   readonly remote?: boolean;
+  /** `deleteSession()` exists: one earlier session can be removed through the vendor's own API, never by deleting files (spec 006 FR-028); missing = false. */
+  readonly deleteSession?: boolean;
 }
 
 /** Where an adapter stands on this machine (spec 012 FR-030). `unknown` also covers a detect that failed. */

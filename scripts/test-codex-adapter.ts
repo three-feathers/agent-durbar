@@ -95,7 +95,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(CODEX_CAPABILITIES)), {
       interrupt: true, resume: true, images: true, models: true, effort: true,
       permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'next-message',
-      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, oneShot: true,
+      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, oneShot: true, deleteSession: true,
     });
     assert.ok(Object.isFrozen(CODEX_CAPABILITIES) && Object.isFrozen(CODEX_CAPABILITIES.permissionModes) && Object.isFrozen(CODEX_CAPABILITIES.usage), 'capabilities are deeply frozen');
     const { ad } = make();
@@ -308,6 +308,23 @@ async function main(): Promise<void> {
       await assert.rejects(() => ad.start({ workspace: other, permissionMode: 'read-only', resumeSessionId: sid, quiet: true }), /another folder/);
       assert.strictEqual(server.requests('thread/resume').length, resumes, 'no thread/resume was sent');
       assert.strictEqual(server.threads.get(sid), fs.realpathSync.native(ws), 'the stored folder is unchanged (native realpath, as the adapter uses: long names on Windows)');
+      await ad.dispose();
+    }
+    // Spec 006 FR-028: thread/delete on a probe; a live thread (by Durbar id or thread id) and a bad id are refused before any request
+    {
+      const { server, ad } = make();
+      assert.strictEqual(ad.capabilities.deleteSession, true);
+      const sid = await ad.start({ workspace: ws, permissionMode: 'read-only', quiet: true });
+      const thread = ad.resumeIdOf!(sid) as string;
+      await assert.rejects(() => ad.deleteSession!(sid), /open/);
+      await assert.rejects(() => ad.deleteSession!(thread), /open/, 'the thread id of a live session is refused too');
+      for (const bad of ['../x', '..\\x', 'C:\\x', '/abs', '', 'a'.repeat(101), 'a\u0000b']) await assert.rejects(() => ad.deleteSession!(bad), /not a session id/, JSON.stringify(bad));
+      assert.strictEqual(server.requests('thread/delete').length, 0, 'nothing was sent for a live or malformed id');
+      await ad.stop(sid);
+      await ad.deleteSession!(thread);
+      assert.deepStrictEqual(server.requests('thread/delete').map((r) => r.params), [{ threadId: thread }], 'one thread/delete with the thread id');
+      assert.ok(!(await ad.listPreviousSessions!(ws)).some((p) => p.id === thread), 'gone from the list');
+      await assert.rejects(() => ad.deleteSession!(thread), /no rollout/, 'an error from Codex is passed on');
       await ad.dispose();
     }
     // FR-141 / FR-142: previous sessions, history and models through a short-lived probe child; model and effort on each turn

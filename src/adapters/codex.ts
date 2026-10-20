@@ -32,6 +32,7 @@ import { PermissionBroker, startModeOf } from './permissions';
 import type { BrokerEvent } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
 import { redact } from '../shared/redact';
+import { sessionIdOk } from '../shared/sessionid';
 import { HANDOFF_PROMPT, cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
 
@@ -55,6 +56,7 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpStatus: true, // FR-147: mcpServerStatus/list and startup notifications
   mcpToggle: true, // FR-147: from the next message (fresh child, same thread)
   handoff: true, // spec 030 FR-034: an ephemeral fork, the thread is not changed
+  deleteSession: true, // spec 006 FR-028: thread/delete (hard delete; read: upstream app-server protocol, Codex 0.163; never run on a real thread)
   oneShot: true, // spec 040 FR-015: an ephemeral read-only thread in an empty temp folder
 });
 
@@ -354,6 +356,17 @@ export class CodexAdapter implements AgentAdapter {
   async listPreviousSessions(cwd: string, excludeIds: ReadonlySet<string> = new Set()): Promise<PreviousSession[]> {
     const res = await this.probe((rpc) => rpc.request('thread/list', { cwd, limit: 100 }));
     return codexPreviousSessions(isObj(res) ? res.data : undefined, cwd, new Set([...excludeIds, ...this.sessions.keys()]), process.platform, this.realpath);
+  }
+
+  /**
+   * Spec 006 FR-028: `thread/delete` on a short-lived app-server, as `listPreviousSessions` does: the thread is removed through Codex's
+   * own API (helper threads, goals and logs with it), never by touching files. Refuses a malformed id and a thread that is open in this
+   * adapter, by Durbar id or by thread id. An error from Codex is passed on.
+   */
+  async deleteSession(sessionId: string): Promise<void> {
+    if (!sessionIdOk('codex', sessionId)) throw new Error('That is not a session id.');
+    for (const [sid, live] of this.sessions) if (sid === sessionId || live.threadId === sessionId) throw new Error('That session is open. End it first.');
+    await this.probe((rpc) => rpc.request('thread/delete', { threadId: sessionId }));
   }
 
   /** FR-141: a session's prompts, answers, commands and file changes, for the chat replay after a resume. */
