@@ -37,3 +37,21 @@ office overlap check (`npm run check:office`) is unaffected but run it anyway.
 See tasks Phase 6. Each uses a throw-away local stdio echo server in a throw-away folder, sends **no prompt**, and records the result in
 `research.md`. Do not open or paste the agent app's log files; only note whether the folder exists and whether *Open log folder*
 showed it.
+
+## Delta: MCP OAuth sign-in (issue #364), once built
+
+Simulator, no credits, nothing opened:
+
+1. `DURBAR_SIM=15 npm start`, page address `simmcpauth=1`. A Copilot chat shows a failed MCP tool card with the issue's text and the line
+   "<server> needs you to sign in" with **Sign in…** and **Switch off for this session**. No "Copilot needs you to sign in again" card.
+2. **Sign in…** opens *MCP servers* at that row: "Needs sign-in", the hint, **Sign in**, **Switch off for this session**, and *How to
+   sign in from a terminal* in *Details* with **Copy**.
+3. **Sign in** -> "Sign-in page on **auth.example.com**" -> **Open sign-in page** shows a toast and opens nothing -> after 2 s "Running"
+   and "Signed in to <name>". On the Codex sim agent: "Signed in: applies with your next message".
+4. `simmcpauth=manual`: **Sign in** is replaced by the terminal steps for that agent app (`/mcp auth <name>`, `claude mcp login <name>`,
+   `codex mcp login <name>`).
+5. **Switch off for this session** on the row or the card: toast, and the row reads "Off for this session" (Codex: "Off from your next
+   message").
+
+Unit tests: `test:mcpauth`, the new cases in `test:autherrors`, `test-mcp-errormask`, the adapter fakes and `test:mcpsession`.
+Real checks: tasks T105-T107 only, with the owner's go-ahead (0 AI credits, no prompt, a real remote MCP server with OAuth).

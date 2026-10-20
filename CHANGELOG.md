@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.9 tag)
 
+- The options of an agent's question card wrap instead of ending in "…", and each one's tooltip shows its label plus the description; new `npm run check:question-options` and a `simquestion=long` simulator fixture (spec 052 FR-140, issue #365; simulator only, to try on a real Mac).
 - An MCP server's error text is masked in main (session secret values, tokens, URL keys and `user:pass@`, `--token value`) before it reaches the window, in the MCP list and in the live status events, then cut to 300 characters (spec 019 FR-021, issue #360; unit tests, not seen on a real server error).
 - **+ New in the chat header (spec 052 FR-139, issue #363).** A **+ New** button sits next to Previous in a chat (named "New session in <folder>"), so a new session no longer hides under More. It is a third visible header action by owner decision; **+ New session** stays in More and in every other path. Simulator only: `check:office` checks it at 1440x900 and 1280x800, Simple and Expert; not tried on a Mac.
 - Read-only wording matches what was seen: *Start my day* and the Read-only help now say an MCP tool runs in Read-only only if its server marks it read-only; otherwise choose Ask first (spec 044).

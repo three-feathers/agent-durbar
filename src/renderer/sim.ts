@@ -35,7 +35,7 @@ interface SimOptions {
   /** Issue #126: some main agents receive a session title, as the runtime sends after the first prompt (page address `simtitles=1`). */
   titles?: boolean;
   /** Spec 012 FR-130: the first Claude agent (or the first agent) asks a question (page address `simquestion=1`). */
-  question?: boolean;
+  question?: boolean | 'long'; /* 'long' (spec 052 FR-140): a long question text and long option labels */
   /** Spec 012 FR-151: an MCP server asks one agent for input: a small form (`simelicit=1`) or an https page to open (`simelicit=url`). */
   elicit?: string;
   /** Spec 033: names of floors that start switched off. */
@@ -329,7 +329,13 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!s) return;
         simQ = { s, requestId: 'q-' + s.info.id };
         s.state = 'waiting';
-        emit({ type: 'question', sessionId: s.info.id, timestamp: now(), phase: 'asked', requestId: simQ.requestId, questions: [
+        emit({ type: 'question', sessionId: s.info.id, timestamp: now(), phase: 'asked', requestId: simQ.requestId, questions: opts.question === 'long' ? [
+          { question: 'Before I change the settings screen and the office view together, which of these long-running approaches should I take for the whole refactor, knowing that the second one touches every theme and the third one needs a migration of the saved preferences on every machine?', header: 'Refactor plan', multiSelect: false, options: [
+            { label: 'Change the settings screen first, keep the old office layout until every theme has been checked on all three platforms, then do the chat, then the inbox, then the activity log, and only after that the screens that nobody opens', description: 'Safest, slowest' },
+            { label: 'Change everything at once, including the saved preferences and the themes, and fix what breaks afterwards' },
+            { label: 'Short' } ] },
+          { question: 'Which of the supercalifragilisticexpialidocious_configuration_option_names_that_are_unbroken_strings should stay?', header: 'Options', multiSelect: true, options: [{ label: 'an_option_label_without_any_space_that_is_much_longer_than_the_card_is_wide_in_any_window_size_and_keeps_going_with_more_words_joined_by_underscores_so_it_cannot_break_at_a_space_at_all' }, { label: 'Keep all of them' }] },
+        ] : [
           { question: 'Which colour should the focus ring use?', header: 'Focus ring', multiSelect: false, options: [{ label: 'Sage', description: 'The calm green of the office walls' }, { label: 'Blue', description: 'Matches the links' }] },
           { question: 'Which screens should get it first?', header: 'Screens', multiSelect: true, options: [{ label: 'Office' }, { label: 'Chat' }, { label: 'Settings' }] },
         ] });
