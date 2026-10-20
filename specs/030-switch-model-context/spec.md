@@ -2,7 +2,7 @@
 
 **Feature Branch**: `030-switch-model-context` (spec, research, plan and tasks only; code comes in later `030-<slug>` branches per task)
 **Created**: 2026-10-17
-**Status**: Planned. Researched on the SDK types and docs only: **nothing was run on a real account and no credits were spent** ([research.md](research.md)). Phase 1 (simulator only) can start; anything that needs a real session is `needs-owner-approval` and blocked.
+**Status**: Phases 1-4 built. Phase 3 (real Copilot checks) run on a free plan on 2026-10-17 and on **Copilot Pro on 2026-10-20** (T041, T044, T045: switch between real models, effort, long tier, `confirmation_required`, compact and switch; see `## Changes`). Open: the long-tier price above the default window and the `compactionDecision` values (`[KNOWN GAP]`).
 **Input**: Vikram: "Let's support changing model and context window within sessions."
 **Builds on**: [007](../007-models-and-effort/spec.md) (model and effort pickers; FR-007 says a running session's model cannot be changed), [011](../011-credit-caps-and-usage-display/spec.md) (credit caps and usage), [012](../012-claude-codex-adapters/spec.md) (adapters must stay neutral), [018](../018-permission-mode-switch/spec.md) (the pattern for switching something live from the chat header and the card), [019](../019-mcp-tools-and-context/spec.md) (context chip, models list).
 
@@ -313,3 +313,35 @@ The owner allowed real credits on the paid Claude and Codex accounts (2026-10-20
 - sim: a Claude agent (`simkinds=mixed`) has the model menu with no tier toggle and no "not verified" note; screenshots `030-claude-model-1440x900.png`, `030-claude-model-1280x800.png`. `shots-model` (Copilot) passes at both sizes; its expectation was updated for the "spending limit" wording (it had failed on `main` since round 6).
 - `[KNOWN GAP]` unchanged for Copilot: T041, T044, T045 need a paid Copilot seat; the Copilot switch stays flagged "not verified" (capability `modelSwitch.verified: false`).
 
+
+### 2026-10-20: Phase 3 run on Copilot Pro (T041, T044, T045)
+
+`real:` 2026-10-20 after the owner activated Copilot Pro. The real `CopilotAdapter` ran through `scripts/paid-models-real.ts`, with read-only sessions in empty throw-away folders. Models listed: `auto`, `claude-haiku-4.5`, `gpt-6-luna`, `gpt-5.6-luna`, `mai-code-1.1-flash`. Credits are the runtime's own `assistant.usage` / `usage_checkpoint` figures.
+
+- **T041 switch between two real models** (3 tiny prompts plus one for T044, **0.43 AIU** for all four). `gpt-6-luna` (effort low) → `mai-code-1.1-flash` (effort medium) through `setModel`:
+  - `applied`, with one `session.model_change` (`previousModel`, `newModel`, both efforts, `contextTier: null`, `source: "sdk"`);
+  - **history kept**: the new model answered the code word given to the old one;
+  - `metadata.contextInfo` is **null right after a switch** until the next call, so the window shown must come from the model list until then;
+  - after the call, `usage_info.tokenLimit` is the new model's window (272000 → 128000).
+- **013 C8 effort**: `setModel` back to `gpt-6-luna` with effort high: `applied`, `getCurrent()` reports `reasoningEffort: high`.
+- **T044 long tier** (1 prompt):
+  - `setModel(gpt-6-luna, contextTier long)` → `applied`, "(872K context)", `getCurrent()` `contextTier: long_context`, `usage_info.tokenLimit` 872000 (272000 on the default tier);
+  - **price step**: a small prompt on the long tier was billed at the **default** prices (input 10, cache read 1, cache write 12.5, output 50 credits per million tokens), not the listed long prices (20/2/25/75). The long prices apply above the default window; the UI's estimate now does the same;
+  - back to the default tier: `applied`.
+- **T045 `confirmation_required`** (one ~200k-token filler prompt in `gpt-6-luna`, **2.49 AIU**):
+  - `setModel(mai-code-1.1-flash)` → `needs-confirmation` with `currentTokens` 199992 and `targetLimit` 128000; the model is unchanged;
+  - raw `switchTo` gives `status: "confirmation_required"` and `confirmation { targetModelDisplayName, currentTokens, targetLimit }`;
+  - an **invalid `compactionDecision`** is silently treated like none (same answer), so the runtime does not reveal the allowed values. Durbar still never sends one;
+  - decline → `rejected`, nothing changed.
+- **T045 Compact and switch** (same fill, **3.1 AIU** in all): `setModel(..., confirm accept)` compacted first and then switched (`applied`):
+  - `compaction_start` / `compaction_complete` with trigger `model_switch`, 185964 → 10298 tokens, **0.23 AIU** for the compaction;
+  - the new model still answered the code word from the filler.
+- **Findings fixed in this change:**
+  - The runtime's window is the **prompt budget**, not `max_context_window_tokens`: `gpt-6-luna` 272k (1M listed), long 872k; `mai-code-1.1-flash` 128k (256k listed); `claude-haiku-4.5` 128k (144k listed). `modelOptionFrom` now takes `tokenPrices.contextMax`, then `maxPromptTokens`, then `max_prompt_tokens`, then the context window; the long window is `longContext.contextMax`.
+  - Copilot prices are AI credits per million tokens (bills matched exactly), so they are no longer marked `unverified`. The switch dialog can now show a credit estimate.
+  - `CopilotAdapter` reports `modelSwitch.verified: true`: the menus stop saying "not verified on a real account".
+- `[KNOWN GAP]`:
+  - the long-tier prices above 272k were not billed in this run;
+  - a switch queued during a turn on a paid model (T042 was run on `auto` only);
+  - the allowed `compactionDecision` values.
+- The **cap** finding from the same session (spec 013 C9: Copilot's session cap does not stop turns) is in spec 011.

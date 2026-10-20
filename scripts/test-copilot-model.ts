@@ -33,15 +33,15 @@ async function setup(startOpts: Record<string, unknown> = {}): Promise<{ ad: Tes
 }
 
 async function main(): Promise<void> {
-  // ---- T033: pricing mapping is tolerant, scaled per million tokens and always marked unverified
+  // ---- T033: pricing mapping is tolerant and scaled per million tokens (the unit checked on a paid account, T044 2026-10-20)
   assert.strictEqual(pricingFromTokenPrices(undefined), undefined);
   assert.strictEqual(pricingFromTokenPrices({}), undefined);
   assert.strictEqual(pricingFromTokenPrices({ inputPrice: 3, outputPrice: 15 }), undefined, 'no batch size: nothing is guessed');
   assert.strictEqual(pricingFromTokenPrices({ batchSize: 0, inputPrice: 3 }), undefined);
   assert.strictEqual(pricingFromTokenPrices({ batchSize: 1000, inputPrice: 'x' as unknown as number }), undefined);
-  assert.deepStrictEqual(pricingFromTokenPrices({ batchSize: 1000, inputPrice: 3, outputPrice: 15, cacheReadPrice: 0.3 }), { inputPerMTok: 3000, outputPerMTok: 15000, cachedPerMTok: 300, unverified: true });
+  assert.deepStrictEqual(pricingFromTokenPrices({ batchSize: 1000, inputPrice: 3, outputPrice: 15, cacheReadPrice: 0.3 }), { inputPerMTok: 3000, outputPerMTok: 15000, cachedPerMTok: 300 });
   const onlyIn = pricingFromTokenPrices({ batchSize: 1e6, inputPrice: 2 });
-  assert.deepStrictEqual(onlyIn, { inputPerMTok: 2, outputPerMTok: undefined, cachedPerMTok: undefined, unverified: true }, 'missing output stays absent, never 0');
+  assert.deepStrictEqual(onlyIn, { inputPerMTok: 2, outputPerMTok: undefined, cachedPerMTok: undefined }, 'missing output stays absent, never 0');
   const withLong = pricingFromTokenPrices({ batchSize: 1e6, inputPrice: 2, outputPrice: 8, longContext: { inputPrice: 4, outputPrice: 12 } });
   assert.strictEqual(withLong?.long?.inputPerMTok, 4);
   assert.strictEqual(priceClassOf('very_high'), 'very-high');
@@ -55,12 +55,19 @@ async function main(): Promise<void> {
   const rich = modelOptionFrom({ ...base, billing: { multiplier: 1, tokenPrices: { batchSize: 1e6, inputPrice: 2, outputPrice: 8, longContext: { inputPrice: 4, outputPrice: 12, maxPromptTokens: 900000 } } }, modelPickerPriceCategory: 'high', supportedReasoningEfforts: ['low', 'high'], policy: { state: 'disabled' } });
   assert.strictEqual(rich.priceClass, 'high');
   assert.deepStrictEqual(rich.contextTiers, ['default', 'long']);
-  assert.strictEqual(rich.longWindow, 908000, 'long window = long prompt budget + max output (semantics unverified)');
-  assert.strictEqual(rich.pricing?.unverified, true);
+  assert.strictEqual(rich.longWindow, 900000, 'long window = the long tier\'s prompt budget (the runtime\'s tokenLimit, real 2026-10-20)');
+  assert.ok(!('unverified' in (rich.pricing ?? {})), 'prices are credits per million tokens (checked on a paid account)');
+  // real shapes (listModels on Copilot Pro, 2026-10-20): the window is the prompt budget the runtime enforces
+  const luna = modelOptionFrom({ id: 'gpt-6-luna', capabilities: { limits: { max_context_window_tokens: 1000000, max_output_tokens: 128000, max_prompt_tokens: 872000 } }, billing: { tokenPrices: { batchSize: 1e6, inputPrice: 10, outputPrice: 50, contextMax: 272000, maxPromptTokens: 272000, longContext: { inputPrice: 20, outputPrice: 75, contextMax: 872000, maxPromptTokens: 872000 } } } });
+  assert.deepStrictEqual([luna.contextWindow, luna.longWindow], [272000, 872000], 'gpt-6-luna: 272k, long 872k (runtime tokenLimit)');
+  const mai = modelOptionFrom({ id: 'mai-code-1.1-flash', capabilities: { limits: { max_context_window_tokens: 256000, max_prompt_tokens: 128000 } }, billing: { tokenPrices: { batchSize: 1e6, inputPrice: 20, outputPrice: 120, contextMax: 128000 } } });
+  assert.strictEqual(mai.contextWindow, 128000, 'mai-code-1.1-flash: 128k, not its 256k window');
+  const haiku = modelOptionFrom({ id: 'claude-haiku-4.5', capabilities: { limits: { max_context_window_tokens: 144000, max_prompt_tokens: 128000 } }, billing: { tokenPrices: { batchSize: 1e6, inputPrice: 100, outputPrice: 500 } } });
+  assert.strictEqual(haiku.contextWindow, 128000, 'claude-haiku-4.5: 128k');
   assert.strictEqual(rich.disabled, true);
   const noOut = modelOptionFrom({ id: 'm2', billing: { tokenPrices: { batchSize: 1, inputPrice: 1, longContext: { inputPrice: 2, maxPromptTokens: 5 } } } });
   assert.deepStrictEqual(noOut.contextTiers, ['default', 'long']);
-  assert.strictEqual(noOut.longWindow, undefined, 'no output limit: the long window is not guessed');
+  assert.strictEqual(noOut.longWindow, 5, 'the long window is the long prompt budget, no output limit needed');
   assert.strictEqual(noOut.name, 'm2');
   assert.strictEqual(modelOptionFrom({ id: 'm3', capabilities: { limits: { max_context_window_tokens: 0 } } }).contextWindow, undefined, 'a window of 0 (auto) is unknown');
   assert.deepStrictEqual(modelOptionFrom({ id: 'm4', supportedContextTiers: ['default', 'long_context'] }).contextTiers, ['default', 'long']);
