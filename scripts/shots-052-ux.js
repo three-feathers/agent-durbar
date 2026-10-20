@@ -92,7 +92,7 @@ module.exports = async (ctx) => {
     assert.ok(await js(`!document.getElementById('inboxDlg')`), 'Esc closes the inbox');
     // FR-035: Ctrl+Shift+A opens the inbox even from a text field
     await js(`(()=>{const i=document.createElement('input');i.id='tmpIn';document.body.appendChild(i);i.focus();})()`);
-    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'A', modifiers: ['control', 'shift'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'A', modifiers: ['control', 'shift'] }); await ctx.sleep(700);
+    const mod = process.platform === 'darwin' ? 'meta' : 'control'; /* FR-084: Cmd on a Mac, Ctrl elsewhere */ ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'A', modifiers: [mod, 'shift'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'A', modifiers: [mod, 'shift'] }); await ctx.sleep(700);
     assert.ok(await js(`!!document.getElementById('inboxDlg')`), 'Ctrl+Shift+A opens the inbox from a text field');
     key('Escape'); await ctx.sleep(300); await js(`document.getElementById('tmpIn').remove()`);
 

@@ -1312,6 +1312,8 @@ function createWindow(): void {
     title: 'Agent Durbar',
     backgroundColor: '#f6f1e7',
     ...windowChrome(process.platform), // spec 052 FR-085: macOS hides the title bar; the top bar is the drag area (styles.css)
+    // spec 008 FR-093: test runs ask for exact sizes (1440x900, 1280x800); macOS otherwise clamps a window to its screen (CI: 677 px tall)
+    ...(dev.DURBAR_DRIVER || dev.DURBAR_SHOT ? { enableLargerThanScreen: true } : {}),
     // spec 008 FR-025: Windows and macOS take the icon from the .exe/.icns; Linux needs it on the window
     ...(process.platform === 'linux' ? { icon: path.join(__dirname, '..', 'icon.png') } : {}),
     webPreferences: {

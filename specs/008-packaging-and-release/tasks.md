@@ -37,5 +37,5 @@
 - [x] T090 A failing driver exits 1 (dev hooks only) [FR-090]
 - [x] T091 `scripts/ui-suite.js`: cross-platform driver runner (no shell, xvfb only on Linux without a display), list of drivers with their settings, `--only`, `--list`; `npm run check:ui` [FR-091]
 - [x] T092 `.github/workflows/ui-platforms.yml` on ubuntu, macOS and Windows: geometry, office, Mac title bar, ui-suite, screenshots as artifacts [FR-092]
-- [ ] T093 First runs on all three OSes; every failure fixed at the cause or recorded; docs (README Development, CONTRIBUTING, CHANGELOG, agent notes) [FR-090..FR-092]
+- [ ] T093 (first run: Windows and Linux all green; macOS: window clamped to the screen, FR-093, and the driver pressed Ctrl not Cmd; both fixed) First runs on all three OSes; every failure fixed at the cause or recorded; docs (README Development, CONTRIBUTING, CHANGELOG, agent notes) [FR-090..FR-092]
 
