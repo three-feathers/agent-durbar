@@ -737,6 +737,14 @@ const harnessSetup = new HarnessSetup({
   },
   send: (channel: string, p: unknown) => toRenderer(channel, p),
   redetect: async () => { await adaptersList(true); },
+  // spec 012 FR-158: only an adapter already created is refreshed (none is created here); Copilot restarts its shared client
+  afterSignIn: async (kind: string) => {
+    const ad = router.created().find((x) => x.id === kind);
+    if (!ad?.refreshAuth) return;
+    // spec 012 FR-158 / 054 FR-011: a reconnected session is not remote any more; say so instead of keeping a stale Remote chip
+    for (const id of remoteOps.ids()) if (router.adapterIdOf(id) === kind) { remoteOps.forget(id); toRenderer('agents:remoteOff', id); }
+    await ad.refreshAuth();
+  },
   realpath: (p: string) => fs.realpathSync(p),
   trustedPath: (p: string) => process.platform === 'win32' || posixTrusted(p, (q) => fs.statSync(q).mode),
 } as ConstructorParameters<typeof HarnessSetup>[0]);

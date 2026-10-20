@@ -479,6 +479,8 @@ export interface DurbarApi {
   /** `pwshMissing` (spec 052 FR-073): Windows only, PowerShell 7 was not found; the Copilot card shows a hint. */
   copilotAuth?(): Promise<{ known: boolean; signedIn?: boolean; pwshMissing?: boolean }>;
   onHarnessProgress?(cb: (p: { kind: string; op: string; lines: string[]; elapsedMs: number; url?: string; code?: string; needsPaste?: boolean }) => void): () => void;
+  /** spec 012 FR-158: remote control ended because the agent app reconnected after a new sign-in. */
+  onRemoteOff?(cb: (agentId: string) => void): () => void;
   onHarnessDone?(cb: (p: { kind: string; op: string; ok: boolean; exitCode?: number | null; reason?: string; lines: string[] }) => void): () => void;
   exportTheme?(id: string): Promise<{ ok: boolean; to?: string; error?: string; cancelled?: boolean }>;
   setCap?(id: string, credits: number | null): Promise<{ ok: boolean; error?: string; maxAiCredits?: number }>;
