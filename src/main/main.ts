@@ -31,6 +31,7 @@ import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
 import { AgentStateTracker, applySetPaused } from './mcp/agentstate';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
+import { cliServers, copilotDir } from './mcpfiles';
 import { UsageStore } from './usagestore';
 import { AgentTrustStore, hashAgentFile } from './agenttrust';
 import { Scheduler, loadSchedules, saveSchedules } from './schedules';
@@ -649,15 +650,19 @@ ipcMain.handle('theme:generate', async (_e, description: unknown, adapterId: unk
   if (d.length < 3) return { ok: false, error: 'Describe the look in a few words.' };
   const kind = typeof adapterId === 'string' && registry.has(adapterId) ? adapterId : undefined;
   const ad = kind ? router.instance(kind) : undefined;
-  if (!ad || typeof ad.generateText !== 'function') return { ok: false, error: 'That agent app cannot make a theme. Pick Claude Code or Codex.' };
+  if (!ad || typeof ad.generateText !== 'function') return { ok: false, error: 'That agent app cannot make a theme. Pick Claude Code, Codex or Copilot.' };
   // the renderer's own theme module: Clean Office's tokens and the art sanitizer, so the result is exactly what the app draws
   const T = require(path.join(__dirname, '..', 'renderer', 'theme.js')) as { _tokens(): Record<string, string>; _sanitizeSlot(s: string): string | null };
   // main never sets a theme on this module, so `_tokens()` is Clean Office's full set
   const ctx = { clean: T._tokens(), sanitizeArt: (s: string) => T._sanitizeSlot(s), taken: (id: string) => BUILT_IN_THEME_IDS.includes(id) || userThemes.list().some((t) => t.id === id) };
   let cost = 0;
+  let nano = 0;
+  // Copilot loads the servers of ~/.copilot/mcp-config.json and its built-in one by itself: all of them are switched off by name (FR-015)
+  const genOpts = kind === 'copilot' ? { disabledMcpServers: cliServers(copilotDir(dev), new Set()).servers.map((s) => s.name) } : {};
   const ask = async (prompt: string): Promise<string> => {
-    const r = await ad.generateText!(prompt);
+    const r = await ad.generateText!(prompt, genOpts);
     if (r.costUsd) cost += r.costUsd;
+    if (r.nanoAiu) nano += r.nanoAiu;
     return r.text;
   };
   try {
@@ -674,7 +679,7 @@ ipcMain.handle('theme:generate', async (_e, description: unknown, adapterId: unk
       passes++;
       if (next.ok && next.issues.length <= g.issues.length) g = keepArt(next, g); // keep the better one, with the earlier art; a broken fix keeps the last good theme
     }
-    const costPart = cost ? { costUsd: cost } : {};
+    const costPart = { ...(cost ? { costUsd: cost } : {}), ...(nano ? { nanoAiu: nano } : {}) };
     if (!g.ok) return { ok: false, error: g.error, ...costPart };
     // a top bar that is still unreadable after the passes: the Clean style, whose top bar follows --surface and --ink (FR-020)
     if (g.issues.some((i) => i.startsWith(TOP_BAR_ISSUE))) {
@@ -684,7 +689,7 @@ ipcMain.handle('theme:generate', async (_e, description: unknown, adapterId: unk
     if (blocking.length) return { ok: false, error: `Text would still be hard to read after ${passes} passes: ${blocking[0]}. Try again or change the description.`, ...costPart };
     return { ok: true, manifest: g.manifest, warnings: [...g.warnings, ...g.issues], passes, ...costPart };
   } catch (err) {
-    return { ok: false, error: errText(err), ...(cost ? { costUsd: cost } : {}) };
+    return { ok: false, error: errText(err), ...(cost ? { costUsd: cost } : {}), ...(nano ? { nanoAiu: nano } : {}) };
   }
 });
 ipcMain.handle('theme:ideas', () => THEME_IDEAS.slice());
