@@ -45,7 +45,10 @@ export class FakeSession {
     model: { switchTo: async (a: unknown) => this.rec('switchTo', this.switchAnswer, a) },
     queue: { removeAt: async (a: unknown) => this.rec('removeAt', { removed: this.removed }, a) },
     history: { compact: async (a: unknown) => this.rec('compact', this.compactAnswer, a) },
-    name: { get: async () => this.rec('name.get', { name: this.nameAnswer }) },
+    name: {
+      get: async () => this.rec('name.get', { name: this.nameAnswer }),
+      set: async (a: unknown) => { this.calls.push({ name: 'name.set', args: [a] }); if (this.nameSetFail) throw new Error(this.nameSetFail); },
+    },
     metadata: { isProcessing: async () => this.rec('isProcessing', { processing: this.processing }) },
     mcp: {
       enable: async (a: unknown) => this.rec('mcp.enable', undefined, a),
@@ -62,6 +65,8 @@ export class FakeSession {
   };
   remoteAnswer: unknown = { url: 'https://github.com/o/r/tasks/1', remoteSteerable: true };
   remoteFail = '';
+  /** `rpc.name.set` rejects with this message (spec 059). */
+  nameSetFail = '';
   visibilityAnswer: unknown = { synced: true, status: 'unshared', shareUrl: 'https://github.com/o/r/tasks/1' };
   visibilityFail = '';
 }
@@ -82,11 +87,14 @@ export class FakeClient {
   /** Handed to every session this client creates (spec 040 FR-015 error and timeout paths). */
   sendFail = '';
   sendHangs = false;
+  /** Handed to every session this client creates or resumes (spec 059). */
+  nameSetFail = '';
   private track(s: FakeSession): FakeSession {
     s.turnScript = this.turnScript;
     s.nameAnswer = this.nameAnswer;
     s.sendFail = this.sendFail;
     s.sendHangs = this.sendHangs;
+    s.nameSetFail = this.nameSetFail;
     this.sessions.set(s.sessionId, s);
     return s;
   }

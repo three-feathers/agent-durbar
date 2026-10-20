@@ -15,7 +15,7 @@ import type { HistoryResult, PreviousSession } from './history';
 
 export type OptionalMember =
   | 'interrupt' | 'resolvePermission' | 'revokeGrant' | 'setCap' | 'resolveLimit' | 'setMcpEnabled' | 'setModel'
-  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText';
+  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText' | 'renameSession';
 
 export type Step =
   | { output: string }
@@ -82,7 +82,13 @@ export class FakeAdapter implements AgentAdapter {
   declare history?: (sessionId: string) => Promise<HistoryResult>;
   declare handoffSummary?: (sessionId: string) => Promise<HandoffResult>;
   declare generateText?: (prompt: string) => Promise<{ text: string; costUsd?: number }>;
+  declare renameSession?: (sessionId: string, name: string) => Promise<void>;
   declare setPermMode?: (sessionId: string, mode: PermissionMode, opts?: { clearGrants?: boolean; approvePending?: boolean }) => { pending: number };
+
+  /** Spec 059: every `renameSession` call, in order. */
+  readonly renameCalls: Array<{ sessionId: string; name: string }> = [];
+  /** Spec 059: when set, the next `renameSession` calls throw this message (cleared by setting it to undefined). */
+  failRename?: string;
 
   private listeners = new Set<(event: AgentEvent) => void>();
   private sessions = new Map<string, FakeSession>();
@@ -108,6 +114,7 @@ export class FakeAdapter implements AgentAdapter {
       oneShot: !!c.oneShot && !omit.has('generateText'),
       permModeSwitch: omit.has('setPermMode') ? ('none' as const) : c.permModeSwitch,
     };
+    if (!c.renameSession || omit.has('renameSession')) delete (caps as { renameSession?: unknown }).renameSession;
     this.capabilities = caps;
     const has = (m: OptionalMember): boolean => !omit.has(m);
     if (caps.interrupt && has('interrupt')) this.interrupt = (sid) => this.doInterrupt(sid);
@@ -126,6 +133,12 @@ export class FakeAdapter implements AgentAdapter {
     }
     if (caps.mcpToggle) this.setMcpEnabled = async (sid) => void this.mustGet(sid);
     if (caps.oneShot) this.generateText = async () => ({ text: '{"name":"Fake","tokens":{"--bg":"#ffffff","--surface":"#ffffff","--ink":"#111111","--muted":"#555555"}}' });
+    if (caps.renameSession) {
+      this.renameSession = async (sid, name) => {
+        this.renameCalls.push({ sessionId: sid, name });
+        if (this.failRename !== undefined) throw new Error(this.failRename);
+      };
+    }
     if (caps.handoff) this.handoffSummary = async (sid) => (this.mustGet(sid), { summary: '## Goal\nFake hand-off summary.' });
     if (has('setModel')) this.setModel = async (sid, request) => (this.mustGet(sid), { status: 'applied', model: request.model });
     if (has('cancelQueuedModel')) this.cancelQueuedModel = async (sid) => void this.mustGet(sid);

@@ -65,6 +65,7 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggle: true, // FR-133: mcp_toggle + mcp_status
   handoff: true, // spec 030 FR-034: a forked one-shot, the session is not changed
   oneShot: true, // spec 040 FR-015: no tools, no MCP, no settings, not saved
+  renameSession: 'next-turn', // spec 059 FR-007: `--name` on the session's next CLI start (real: Vikram's agent, 2026-10-20, CLI 2.1.304)
 }) as AdapterCapabilities;
 
 /** The hook callback id Durbar registers for `PreToolUse` (any string the CLI echoes back). */
@@ -156,6 +157,8 @@ export interface ClaudeLaunch {
   addDirs?: string[];
   /** FR-150: what is left of the session's dollar cap (`--max-budget-usd`). */
   maxBudgetUsd?: number;
+  /** Spec 059 FR-007: the user's name for the session; the CLI stores it as the session title (`--name`, also with `--resume`). */
+  name?: string;
 }
 
 const CLAUDE_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
@@ -190,6 +193,12 @@ export function budgetText(usd: number): string {
 /** FR-150: a usable dollar cap or undefined (no cap). */
 const usdCap = (v: unknown): number | undefined => parseUsdCap(v);
 
+/** Spec 059 FR-007: a name that may go to `--name`: 1..200 characters, no control characters, not starting with `-` (it is one argv item, never a shell string). */
+export function claudeNameOk(name: unknown): boolean {
+  // eslint-disable-next-line no-control-regex
+  return typeof name === 'string' && name.length >= 1 && name.length <= 200 && !/[\u0000-\u001f\u007f-\u009f]/.test(name) && name === name.trim() && !name.startsWith('-');
+}
+
 /** The CLI argv (FR-111). Mode flags come from `claudeOptionsFor`, so an unknown mode gets Read-only. */
 export function claudeArgs(i: ClaudeLaunch): string[] {
   const o = claudeOptionsFor(i.mode);
@@ -207,6 +216,7 @@ export function claudeArgs(i: ClaudeLaunch): string[] {
   if (i.agent && /^[A-Za-z0-9._-]{1,64}$/.test(i.agent.name)) a.push('--agents', i.agent.json, '--agent', i.agent.name);
   for (const d of i.addDirs ?? []) a.push('--add-dir', d);
   if (i.maxBudgetUsd !== undefined && Number.isFinite(i.maxBudgetUsd)) a.push('--max-budget-usd', budgetText(i.maxBudgetUsd));
+  if (claudeNameOk(i.name)) a.push('--name', i.name as string);
   a.push(i.resume ? '--resume' : '--session-id', i.sessionId);
   return a;
 }
@@ -418,6 +428,9 @@ interface Session {
   /** MCP servers left out of the running CLI's config at launch (FR-133): turning one on needs a relaunch. */
   launchedOff?: Set<string>;
   needsRelaunch?: boolean;
+  /** Spec 059 FR-007: the user's name waiting for the next CLI start, and the one the running CLI was started with (reported as the title after its first turn). */
+  pendingName?: string;
+  launchedName?: string;
   /** spec 043 FR-008: the selected custom agent (passed on every launch). */
   agent?: ClaudeAgentDef;
   /** FR-150: the dollar cap (Claude's estimate) and what the session spent while Durbar ran it. */
@@ -437,6 +450,8 @@ export class ClaudeAdapter implements AgentAdapter {
   readonly capabilities = CLAUDE_CAPABILITIES;
   debug?: (message: string) => void;
   private sessions = new Map<string, Session>();
+  /** Spec 059 FR-007: names for sessions that are not open yet (by Claude session id); applied at their first start. */
+  private pendingNames = new Map<string, string>();
   private listeners = new Set<(event: AgentEvent) => void>();
 
   constructor(private readonly deps: ClaudeAdapterDeps) {}
@@ -532,6 +547,26 @@ export class ClaudeAdapter implements AgentAdapter {
     return readClaudeHistory(sessionId, this.sessions.get(sessionId)?.cwd, this.deps.configDir);
   }
 
+  /**
+   * Spec 059 FR-007 (Q10): the user's name for a session. Claude has no call for it on the CLI transport, but `--name` together with
+   * `--resume <id>` keeps the session id and appends a title that Claude itself writes (real, Vikram's agent, 2026-10-20). So the name
+   * is only remembered here and goes with the session's next CLI start: an open session is relaunched before its next message (as
+   * for a mode change, a resume, no extra prompt); one that is not open gets it at its first start. After the first turn that follows,
+   * the adapter reports the name as the session's `title`. Durbar never writes the session file.
+   */
+  async renameSession(sessionId: string, name: string): Promise<void> {
+    if (!claudeNameOk(name)) throw new Error('Claude Code cannot use that name.');
+    const s = this.sessions.get(sessionId);
+    if (s) {
+      s.pendingName = name;
+      s.needsRelaunch = true;
+      return;
+    }
+    if (!/^[A-Za-z0-9-]{8,80}$/.test(sessionId)) throw new Error('Unknown Claude session.');
+    if (!this.pendingNames.has(sessionId) && this.pendingNames.size >= 50) this.pendingNames.delete(this.pendingNames.keys().next().value as string);
+    this.pendingNames.set(sessionId, name);
+  }
+
   isLive(sessionId: string): boolean {
     return this.sessions.has(sessionId);
   }
@@ -547,7 +582,8 @@ export class ClaudeAdapter implements AgentAdapter {
     const roots = [...new Set([ws.cwd, ...ws.folders])];
     const broker = new PermissionBroker({ roots, mode, emit: (e) => this.onBroker(id, e) });
     const mapper = new ClaudeMapper((b) => this.onMapped(id, b), { quiet: true, onDropped: (why) => this.debug?.(`claude: dropped ${why}`) });
-    this.sessions.set(id, { id, cwd: ws.cwd, roots, options: { ...options, permissionMode: mode }, broker, mapper, resumable, capUsd: usdCap(options.maxAiCredits), spentUsd: 0 });
+    this.sessions.set(id, { id, cwd: ws.cwd, roots, options: { ...options, permissionMode: mode }, broker, mapper, resumable, capUsd: usdCap(options.maxAiCredits), spentUsd: 0, ...(this.pendingNames.has(id) ? { pendingName: this.pendingNames.get(id), needsRelaunch: false } : {}) });
+    this.pendingNames.delete(id);
     if (!options.quiet) this.emit(id, { type: 'status', status: 'idle', intent: `Ready in ${ws.cwd}` });
     return id;
   }
@@ -720,6 +756,7 @@ export class ClaudeAdapter implements AgentAdapter {
       appendSystemPrompt: (this.deps.claudeMd ?? claudeMdPrompt)(s.cwd),
       ...(s.roots.length > 1 ? { addDirs: s.roots.filter((r) => r !== s.cwd) } : {}),
       ...(s.capUsd !== undefined ? { maxBudgetUsd: s.capUsd - s.spentUsd } : {}),
+      ...(claudeNameOk(s.pendingName) ? { name: s.pendingName } : {}),
     };
     const handlers: TransportHandlers = {
       message: (m) => this.onMessage(s, m),
@@ -732,6 +769,7 @@ export class ClaudeAdapter implements AgentAdapter {
     const t = await make({ file, launch, cwd: s.cwd, env: (this.deps.env ?? (() => process.env))(), handlers });
     s.transport = t;
     s.launchedMode = launch.mode;
+    s.launchedName = t.kind === 'cli' ? launch.name : undefined; // the SDK transport ignores `name`: it stays pending
     s.launchedOff = new Set(o.disabledMcpServers ?? []);
     s.needsRelaunch = false;
     // Register the PreToolUse hook (Read-only roots check) before the first prompt.
@@ -742,7 +780,16 @@ export class ClaudeAdapter implements AgentAdapter {
 
   private onMessage(s: Session, m: ClaudeMessage): void {
     if (m.type === 'system' && m.subtype === 'init') s.initSeen = true;
-    if (m.type === 'result') s.turnOpen = false;
+    if (m.type === 'result') {
+      s.turnOpen = false;
+      // Spec 059 FR-007: the first turn after a launch with `--name` finished: the CLI stored the title, so report it
+      if (s.launchedName) {
+        const applied = s.launchedName;
+        s.launchedName = undefined;
+        if (s.pendingName === applied) s.pendingName = undefined;
+        this.emit(s.id, { type: 'title', title: applied });
+      }
+    }
     s.mapper.map(m);
     if (m.type === 'result' && this.capReached(s)) this.openLimit(s);
   }

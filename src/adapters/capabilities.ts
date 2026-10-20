@@ -39,6 +39,11 @@ export interface AdapterCapabilities {
   readonly oneShot?: boolean;
   /** `setRemote()` exists: the session can be followed and steered from the vendor's web or mobile app (spec 054 FR-001); missing = false. */
   readonly remote?: boolean;
+  /**
+   * `renameSession()` exists (spec 059 FR-007); missing = none. `'any'`: the call renames the session now, open or stored.
+   * `'next-turn'`: the call remembers the name and the adapter applies it the next time it starts that session's CLI.
+   */
+  readonly renameSession?: 'any' | 'next-turn';
 }
 
 /** Where an adapter stands on this machine (spec 012 FR-030). `unknown` also covers a detect that failed. */

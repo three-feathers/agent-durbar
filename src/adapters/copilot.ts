@@ -128,8 +128,38 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggle: true,
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
   remote: true, // spec 054 FR-002: rpc.remote.enable/disable (@experimental; real 2026-10-20: `started: false` outside a GitHub repository, never seen started)
+  renameSession: 'any', // spec 059 FR-007: rpc.name.set (@experimental), also on a stored session through a prompt-free resume (read: SDK types only, not run on a real account)
   oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (real 2026-10-20: no tool ran, nothing left on disk)
 });
+
+/** Spec 059 FR-007: Copilot's own name rule is stricter than Durbar's: no double quotes, at most 100 UTF-16 units, no control characters (SDK `types.d.ts`, `SessionConfig.name`). */
+export function copilotNameError(name: string): string | undefined {
+  if (!name || name !== name.trim()) return 'Copilot needs a name without leading or trailing spaces.';
+  if (name.length > 100) return 'Copilot names are at most 100 characters.';
+  if (name.includes('"')) return 'Copilot does not accept double quotes in a name.';
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(name)) return 'Copilot does not accept control characters in a name.';
+  return undefined;
+}
+
+/**
+ * Spec 059 FR-007: the config of the prompt-free resume that renames a stored session: every permission request is denied (none can
+ * arrive, nothing is sent), no MCP server, skill, hook or git operation is started, remote control stays off, no tool is offered.
+ */
+export function renameResumeConfig(): Record<string, unknown> {
+  return {
+    streaming: false,
+    availableTools: [],
+    mcpServers: {},
+    enableConfigDiscovery: false,
+    enableSkills: false,
+    skipCustomInstructions: true,
+    enableFileHooks: false,
+    enableHostGitOperations: false,
+    remoteSession: 'off',
+    onPermissionRequest: async (): Promise<PermissionRequestResult> => ({ kind: 'reject', feedback: 'Agent Durbar allows no tools here.' }) as PermissionRequestResult,
+  };
+}
 
 /** Spec 054 T020: what the user sees when the runtime answers `started: false` (seen in folders that are not a GitHub repository). */
 export const REMOTE_NOT_STARTED = 'Copilot did not start remote control for this session and gave no reason. It may need a folder that is a GitHub repository.';
@@ -760,6 +790,31 @@ export class CopilotAdapter implements AgentAdapter {
         await client.deleteSession(id).catch(() => undefined); // nothing kept (a session with no turn may not be on disk yet)
       }
       fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * Spec 059 FR-007 (Q2 B): store the user's name in Copilot (`rpc.name.set`, @experimental), the field the CLI's `/rename` writes. A live
+   * session is renamed directly. A session that is not live is resumed WITHOUT a prompt (`resumeSession` only, no `send`: no model
+   * call, 0 credits expected), renamed, and released again (`disconnect`, in a `finally`); it stays on disk. Any error is thrown so
+   * the caller keeps a Durbar-only name. The name is never logged.
+   */
+  async renameSession(sessionId: string, name: string): Promise<void> {
+    const bad = copilotNameError(name);
+    if (bad) throw new Error(bad);
+    await this.refreshing?.catch(() => undefined);
+    const live = this.sessions.get(sessionId);
+    if (live) {
+      await live.session.rpc.name.set({ name });
+      live.titled = true; // the name is the user's: a later auto title must not replace it on screen
+      return;
+    }
+    const client = await this.getClient();
+    const session = await client.resumeSession(sessionId, renameResumeConfig() as unknown as ResumeSessionConfig);
+    try {
+      await session.rpc.name.set({ name });
+    } finally {
+      await session.disconnect().catch(() => undefined);
     }
   }
 
