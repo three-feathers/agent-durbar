@@ -187,3 +187,11 @@
 
 ## New session in the chat header (2026-10-20, issue #363)
 - [x] T127 `+ New` button next to Previous in the chat header (title and aria-label "New session in <folder>", same flow and conditions as the More item plus `!demoOn`, main agents only); icon-only if it does not fit; More item kept; `check-office-overlap.js` asserts it and the one-row header at both sizes; mutation; screenshots; README, CHANGELOG [FR-139]
+## FR-138: macOS title bar on every screen (2026-10-20, #345)
+- [x] T121 Spec delta FR-138 (this entry), tasks and plan note [FR-138]
+- [x] T122 Darwin-only CSS: notice strip is the drag row with a chat open and the strip below drops the 78px; overlays, popovers and menus `no-drag`; chat strip grab area and no-drag `.strip-list`; `.scr-head` `max(78px, ...)` [FR-138]
+- [x] T123 `test-macos` static checks for the new rules and selectors [FR-138]
+- [x] T124 `scripts/check-mac-titlebar.js` and `npm run check:mac-titlebar` (geometry of every state at both sizes, non-zero on failure and on a driver exception) [FR-138]
+- [x] T125 Mutation: remove the `.dlg-ov` no-drag rule and see the check fail; screenshots in the scratchpad [FR-138]
+- [x] T126 Docs: CHANGELOG, README "On a Mac" limits, `specs/README.md` row, spec status tags; CI step proposed as a follow-up [FR-138]
+- [x] T129 Grant chips grouped into "Allowed (N)" with a popover, shorter labels, header chips flow; `simgrants=many`; `test-grant-label`; `scripts/check-grant-chips.js` (`npm run check:grant-chips`); mutation run; screenshots [FR-141, issue #367]

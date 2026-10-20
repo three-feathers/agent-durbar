@@ -35,6 +35,8 @@ interface SimOptions {
   /** Issue #126: some main agents receive a session title, as the runtime sends after the first prompt (page address `simtitles=1`). */
   titles?: boolean;
   /** Spec 012 FR-130: the first Claude agent (or the first agent) asks a question (page address `simquestion=1`). */
+  /** Spec 052 FR-141 (issue #367): the first agent has eight session grants with long names (page address `simgrants=many`). */
+  grants?: 'many';
   question?: boolean | 'long'; /* 'long' (spec 052 FR-140): a long question text and long option labels */
   /** Spec 012 FR-151: an MCP server asks one agent for input: a small form (`simelicit=1`) or an https page to open (`simelicit=url`). */
   elicit?: string;
@@ -320,6 +322,16 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       window.setTimeout(() => {
         sims.filter((s, i) => i % 3 === 0).slice(0, SIM_TITLES.length).forEach((s, i) => emit({ type: 'title', sessionId: sid(s), timestamp: now(), title: SIM_TITLES[i] }));
       }, 200);
+    }
+    /* simgrants=many (spec 052 FR-141): the first agent has eight grants, some with a tool name that repeats the server name */
+    if (opts.grants === 'many') {
+      window.setTimeout(() => {
+        const s = sims[0];
+        if (!s) return;
+        const L = ['server-x › server-x-GetItem', 'server-x › server-x-ListItemsInTheWholeCatalogueIncludingArchivedOnes', 'billing-service › billing-service_create_invoice_draft', 'billing-service › refund', 'calendar › calendar.CreateEvent', 'run: git status --short --branch', 'write src/renderer/a-very-long-file-name-that-keeps-going.ts', 'docs-search › docs-search-Query'];
+        L.forEach((label, i) => s.grants.set('sim-grant-' + i, label));
+        grantsEvent(s);
+      }, 300);
     }
     /* simquestion=1 (spec 012 FR-130): one agent asks a question, as Claude's AskUserQuestion does */
     let simQ: { s: SimAgent; requestId: string } | undefined;
