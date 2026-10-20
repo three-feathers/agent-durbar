@@ -477,7 +477,7 @@ async function driver(ctx) {
     await load('sim=15&simfreeze=1', w, h);
     await ctx.js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith('Ada'));if(d)d.click();return true})()`);
     await ctx.sleep(900);
-    await ctx.js(`(()=>{if(!document.querySelector('#prev [data-pv="view"]')){const t=document.querySelector('#prev [data-pv="toggle"]');if(t)t.click();}return true})()`);
+    await ctx.js(`(()=>{if(!document.querySelector('#prev [data-pv="view"]')){const t=document.getElementById('prevBtn');if(t)t.click();}return true})()`);
     await ctx.sleep(500);
     await ctx.js(`(()=>{const v=document.querySelector('#prev [data-pv="view"]');if(v)v.click();return true})()`);
     await ctx.sleep(1000);
