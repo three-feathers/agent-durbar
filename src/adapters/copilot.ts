@@ -13,6 +13,8 @@ import type {
   ModelSwitchResult,
   PermissionInfo,
   PermissionMode,
+  GenerateTextOptions,
+  GenerateTextResult,
   StartOptions,
   Unsubscribe,
 } from './types';
@@ -114,7 +116,41 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggle: true,
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
   remote: true, // spec 054 FR-002: rpc.remote.enable/disable (@experimental; not run on a real account)
+  oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (fake SDK only; not run on a real account)
 });
+
+/** Spec 040 FR-015: how long one `generateText` may take before it is aborted (the same 3 minutes as Claude and Codex). */
+export const ONE_SHOT_TIMEOUT_MS = 180_000;
+
+/**
+ * Spec 040 FR-015: the config of the throw-away session behind `generateText`. Nothing can act and nothing is kept:
+ * no tool from any source (`availableTools: []`, and `excludedTools` as a second lock), the MCP servers the runtime would load on its own
+ * switched off by name, no skills, custom agents, discovered config, instructions, hooks, git context, memory, session store or
+ * infinite-session workspace, an empty temp folder as the working directory, and the cheapest `auto` routing (as a new `auto` session).
+ */
+export function oneShotConfig(dir: string, disabledMcpServers: readonly string[] = []): Record<string, unknown> {
+  return {
+    workingDirectory: dir,
+    ...modelConfig({ model: 'auto', autoTier: 'efficiency' }, false),
+    streaming: false,
+    availableTools: [],
+    excludedTools: ['builtin:*', 'mcp:*', 'custom:*'],
+    mcpServers: {},
+    ...(disabledMcpServers.length ? { disabledMcpServers: [...disabledMcpServers] } : {}),
+    enableConfigDiscovery: false,
+    enableSkills: false,
+    customAgents: [],
+    skipCustomInstructions: true,
+    enableOnDemandInstructionDiscovery: false,
+    enableFileHooks: false,
+    enableHostGitOperations: false,
+    enableSessionStore: false,
+    memory: { enabled: false },
+    infiniteSessions: { enabled: false },
+    embeddingCacheStorage: 'in-memory',
+    remoteSession: 'off',
+  };
+}
 
 /**
  * Copilot adapter on the official `@github/copilot-sdk` (1.0.x, CLI runtime 1.0.98).
@@ -131,6 +167,8 @@ export class CopilotAdapter implements AgentAdapter {
   private sessions = new Map<string, Live>();
   /** Optional debug sink (DURBAR_LOG): what was actually handed to the SDK. */
   debug?: (message: string) => void;
+  /** Spec 040 FR-015: the `generateText` time limit; protected so a test can shorten it. */
+  protected oneShotTimeoutMs = ONE_SHOT_TIMEOUT_MS;
   /** One mapper per session (it remembers tool names, reasoning ids and sub-agent ids of that session). */
   private mappers = new Map<string, EventMapper>();
 
@@ -513,6 +551,62 @@ export class CopilotAdapter implements AgentAdapter {
     const live = this.mustGet(sessionId);
     const r = (await live.session.rpc.history.summarizeForHandoff()) as { summary?: unknown } | undefined;
     return { summary: cleanSummary(r?.summary) };
+  }
+
+  /**
+   * Spec 040 FR-015: one prompt (the AI theme maker) on a throw-away session of the shared runtime (no second process): see `oneShotConfig`.
+   * Every permission request is denied; after `ONE_SHOT_TIMEOUT_MS` the turn is aborted. The session is disconnected and deleted from disk in
+   * a `finally`, also on an error or a timeout, and its temp folder removed. Returns the last top-level assistant message and the AI credits
+   * the runtime reported for the session (`assistant.usage`), if any. The prompt and the reply are never logged.
+   */
+  async generateText(prompt: string, opts: GenerateTextOptions = {}): Promise<GenerateTextResult> {
+    const client = await this.getClient();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-gen-'));
+    let session: CopilotSession | undefined;
+    let unsubscribe: () => void = () => undefined;
+    let timer: NodeJS.Timeout | undefined;
+    let timedOut = false;
+    try {
+      let text = '';
+      let nano = 0;
+      let finish: (err?: Error) => void = () => undefined;
+      const done = new Promise<void>((resolve, reject) => (finish = (err) => (err ? reject(err) : resolve())));
+      done.catch(() => undefined); // an error before `send` returns is still raised below, never unhandled
+      const config = {
+        ...oneShotConfig(dir, opts.disabledMcpServers ?? []),
+        onPermissionRequest: async (): Promise<PermissionRequestResult> => ({ kind: 'reject', feedback: 'Agent Durbar allows no tools here.' }) as PermissionRequestResult,
+      };
+      session = await client.createSession(config as unknown as SessionConfig);
+      unsubscribe = session.on((ev: SessionEvent) => {
+        const e = ev as unknown as { type: string; agentId?: string | null; data?: Record<string, unknown> };
+        const d = e.data ?? {};
+        if (e.type === 'assistant.message' && !e.agentId && !d.parentToolCallId && typeof d.content === 'string' && d.content.trim()) text = d.content;
+        else if (e.type === 'assistant.usage') {
+          const n = Number((d.copilotUsage as { totalNanoAiu?: unknown } | undefined)?.totalNanoAiu);
+          if (Number.isFinite(n) && n > 0) nano += n;
+        } else if (e.type === 'session.idle' && !e.agentId) finish();
+        else if (e.type === 'session.error' && !e.agentId) finish(new Error(`Copilot could not answer${typeof d.errorType === 'string' ? ` (${d.errorType.slice(0, 60)})` : ''}.`));
+      });
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          reject(new Error('Copilot gave no answer in time.'));
+        }, this.oneShotTimeoutMs);
+      });
+      await Promise.race([session.send({ prompt }).then(() => done), timeout]);
+      if (!text) throw new Error('Copilot gave no answer.');
+      return { text, ...(nano > 0 ? { nanoAiu: nano } : {}) };
+    } finally {
+      clearTimeout(timer);
+      unsubscribe();
+      if (session) {
+        const id = session.sessionId;
+        if (timedOut) await session.abort().catch(() => undefined);
+        await session.disconnect().catch(() => undefined);
+        await client.deleteSession(id).catch(() => undefined); // nothing kept (a session with no turn may not be on disk yet)
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   }
 
   /**

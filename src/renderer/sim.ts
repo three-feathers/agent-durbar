@@ -117,7 +117,7 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
 /* Spec 012 T018 (FR-065, FR-066): the simulated kinds of `simkinds=mixed`. They are a simulation, not a statement about the real CLIs.
    Index in the 15-agent roster -> kind; every other agent is Copilot. Mcp-swiss holds two kinds (Ada, Mira); the basic agent is Priya (idle, never the first). */
 const SIM_KIND_BY_AGENT: Record<number, string> = { 0: 'claude', 3: 'claude', 4: 'codex', 5: 'claude', 6: 'basic', 7: 'codex', 8: 'claude', 9: 'codex', 11: 'claude' };
-const SIM_COPILOT_CAPS = { interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, remote: true } as AdapterInfo['capabilities'];
+const SIM_COPILOT_CAPS = { interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, remote: true, oneShot: true } as AdapterInfo['capabilities'];
 const SIM_MIXED_KINDS: AdapterInfo[] = [
   { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, remote: false, mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true } },
   { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: false, remote: false } },
@@ -1085,10 +1085,12 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       // spec 040 FR-014: the AI theme maker in the simulator: a canned, valid theme after a short wait (no harness, no credits)
       generateTheme: async (description, adapterId) => {
         if (!String(description ?? '').trim()) return { ok: false, error: 'Describe the look in a few words.' };
-        if (adapterId === 'copilot') return { ok: false, error: 'That agent app cannot make a theme. Pick Claude Code or Codex.' };
+        if (!caps(String(adapterId ?? 'copilot')).oneShot) return { ok: false, error: 'That agent app cannot make a theme. Pick Claude Code, Codex or Copilot.' };
         await new Promise((r) => window.setTimeout(r, 700));
         const n = ++simThemeN;
-        return { ok: true, costUsd: 0.004, warnings: [], manifest: { id: 'ai-night-shift-newsroom' + (n > 1 ? '-' + n : ''), name: 'Night-shift newsroom', author: 'AI theme maker', version: '1.0', description: String(description).slice(0, 300), extends: 'clean-office', ui: 'corporate', scene: 'corporate',
+        // spec 040 FR-015: Claude reports a dollar estimate, Copilot AI credits, Codex nothing
+        const spend = adapterId === 'claude' ? { costUsd: 0.004 } : adapterId === 'copilot' ? { nanoAiu: 20_000_000 } : {};
+        return { ok: true, ...spend, warnings: [], manifest: { id: 'ai-night-shift-newsroom' + (n > 1 ? '-' + n : ''), name: 'Night-shift newsroom', author: 'AI theme maker', version: '1.0', description: String(description).slice(0, 300), extends: 'clean-office', ui: 'corporate', scene: 'corporate',
           tokens: { '--bg': '#eceff3', '--surface': '#fbfcfd', '--surface-2': '#f2f4f7', '--line': '#d5dae2', '--line-2': '#b9c1cd', '--ink': '#1b2230', '--ink-2': '#3a4456', '--muted': '#5f6a7c', '--room-path': '#56617a', '--sage': '#3f7d6c', '--blue': '#3d5e9e', '--amber': '#c4862b', '--brand-bg': '#1b2230', '--brand-mark': '#f2c063', '--focus': '#c4862b', '--sel-border': '#c4862b', '--desk': '#c9d1de', '--desk-front': '#b7c1d0', '--chair': '#2b3344', '--monitor-frame': '#1b2230', '--tint-sage': '#f1f5f4', '--tint-blue': '#f0f3f9', '--tint-sand': '#f8f5ee', '--tint-clay': '#f8f2f1' },
           words: { 'place-library': 'Archive', 'place-software': 'Wire desk', 'place-terminal': 'Print room', 'place-web': 'Newswire', 'place-other': 'Copy desk', 'lobby-label': 'The newsroom floor' } } };
       },

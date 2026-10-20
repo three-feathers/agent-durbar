@@ -31,7 +31,7 @@ module.exports = async (ctx) => {
     // make a theme
     await js(`document.getElementById('thAi').click()`); await ctx.sleep(300);
     assert.ok(await js(`!!document.getElementById('aiDesc')&&document.getElementById('aiKind').options.length>=1`), 'description and harness');
-    assert.ok(!(await js(`[...document.getElementById('aiKind').options].some(o=>o.value==='copilot')`)), 'Copilot is not offered (no oneShot)');
+    assert.ok(await js(`[...document.getElementById('aiKind').options].some(o=>o.value==='copilot')`), 'Copilot is offered (oneShot, spec 040 T026)');
     // FR-021: four example looks; a click fills the description; More ideas shows others
     assert.strictEqual(await js(`document.querySelectorAll('#aiIdeas .ai-idea').length`), 4);
     await js(`document.querySelector('#aiIdeas .ai-idea').click()`);
