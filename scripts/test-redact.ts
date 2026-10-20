@@ -1,7 +1,7 @@
 /** Unit test for secret redaction and the debug sink (spec 012 T051): `npm run test:runtime`. */
 import * as assert from 'assert';
 import { Worker } from 'worker_threads';
-import { REDACT_MAX_CHARS, createDebugSink, cut, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, splitCommand } from '../src/shared/redact';
+import { REDACT_MAX_CHARS, createDebugSink, cut, maskSchemeSecrets, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, splitCommand } from '../src/shared/redact';
 
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const env = {
@@ -559,6 +559,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     masked(['-c', 'curl --auth=Bearer ' + SEC], ['-c', 'curl --auth=Bearer ' + R], 'rev2: shell string --auth=Bearer');
     masked(['-H', 'X-Custom: Token', SEC], ['-H', 'X-Custom: [redacted]', R], 'rev3: any name after -H');
     masked(['--header', 'X-Custom: Basic', SEC], ['--header', 'X-Custom: [redacted]', R], 'rev3: any name after --header');
+    masked(['--header=X-Custom: Token', SEC], ['--header=X-Custom: [redacted]', R], 'rev2: a harmless name in the --header= form');
     masked(['--auth', 'Bearer ', SEC], ['--auth', 'Bearer ', R], 'rev4: trailing space');
     masked(['Bearer ', SEC], ['Bearer ', R], 'rev4: bare, trailing space');
     for (const same of [['X-Custom: Token', 'list'], ['Accept: Token', 'list']]) assert.deepStrictEqual(maskSecretArgs(same), same, 'rev6: a harmless name without a header flag stays (pins schemeHeader secretFlag): ' + JSON.stringify(same));
@@ -567,6 +568,64 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     noSec(maskSecretArgs(['-c', 'srv ' + escA('key', 'Authorization', 'value')]), 'rev5: array value, key');
     assert.strictEqual(maskSecretArgs(['-c', 'srv {\\"name\\":\\"port\\",\\"value\\":[\\"8080\\"]}'])[1], 'srv {\\"name\\":\\"port\\",\\"value\\":[\\"8080\\"]}', 'rev5: array value of a harmless name stays');
     for (const [k, vk] of [['NAME', 'VALUE'], ['Key', 'Value'], ['KEY', 'value']]) noSec(maskSecretArgs(['-c', 'srv {\\"' + k + '\\":\\"token\\",\\"' + vk + '\\":\\"' + SEC + '\\"}']), 'rev6: case variant ' + k);
+    // round 3: `--header=Name: <scheme>` in a command, three forms, every scheme word
+    for (const w of ['Bearer', 'Basic', 'Token', 'Digest', 'Negotiate', 'ApiKey', 'apikey', 'DIGEST']) {
+      noSec(maskSecretCommand('curl --header=Authorization:' + w + ' ' + SEC), 'rev7: command, no space, ' + w);
+      noSec(maskSecretCommand('curl --header=Authorization: ' + w + ' ' + SEC), 'rev7: command, space, ' + w);
+      noSec(maskSecretCommand('curl "--header=Authorization: ' + w + '" ' + SEC), 'rev7: command, quoted flag, ' + w);
+      noSec(maskSecretCommand("curl '--header=Proxy-Authorization: " + w + "' " + SEC), 'rev7: command, single-quoted flag, ' + w);
+      assert.strictEqual(maskSchemeSecrets('curl --header=X-Info: ' + w + ' list'), 'curl --header=X-Info: ' + w + ' list', 'rev7: a harmless name is left to the args rules');
+    }
+    // round 5: `NAME=Name:` (a secret-looking name) shows one `[redacted]`, not one per depth level
+    const once = (x: string, what: string): void => { assert.strictEqual(x.split(R).length - 1, 1, `${what}: exactly one [redacted] in ${x}`); assert.ok(!x.includes(' y') && !x.includes('Y '), what); };
+    assert.strictEqual(maskSecretCommand('x=Auth: y'), 'x=Auth: ' + R, 'rev8: command x=Auth: y');
+    assert.strictEqual(maskSecretCommand('echo A=Token: x'), 'echo A=Token: ' + R, 'rev8: command echo A=Token: x');
+    assert.deepStrictEqual(maskSecretArgs(['x=Auth: y']), ['x=Auth: ' + R], 'rev8: args x=Auth: y');
+    assert.deepStrictEqual(maskSecretArgs(['x=Auth:', 'y']), ['x=Auth:', R], 'rev8: args x=Auth: then y as its own arg');
+    assert.deepStrictEqual(maskSecretArgs(['-c', 'echo A=Token: x']), ['-c', 'echo A=Token: ' + R], 'rev8: shell string');
+    for (const x of [maskSecretCommand('x=Auth: y'), maskSecretCommand('echo A=Token: x'), maskSecretArgs(['x=Auth: y'])[0]]) once(x, 'rev8');
+    assert.deepStrictEqual(maskSecretArgs(['x=Info:', 'y']), ['x=Info:', 'y'], 'rev8: a harmless name keeps the next arg');
+    // round 6: TOKEN=Auth: SEC (a secret-looking NAME), and a quoted header value with spaces in a command
+    assert.strictEqual(maskSecretCommand('TOKEN=Auth: ' + SEC), 'TOKEN=' + R + ' ' + R, 'rev9a: command TOKEN=Auth: SEC');
+    masked(['TOKEN=Auth:', SEC], ['TOKEN=' + R, R], 'rev9a: args TOKEN=Auth: then SEC');
+    masked(['-c', 'echo TOKEN=Auth: ' + SEC], ['-c', 'echo TOKEN=' + R + ' ' + R], 'rev9a: shell string');
+    for (const q of ["'", '"']) {
+      cmd('srv Authorization: ' + q + 'a b' + SEC + q, 'srv Authorization: ' + R, 'rev9b: command, ' + q);
+      cmd('srv Authorization: ' + q + 'a b' + SEC + q + ' next', 'srv Authorization: ' + R + ' next', 'rev9b: command, ' + q + ', word after it kept');
+      cmd('srv X-Api-Key: ' + q + 'a ' + SEC + q + ' next', 'srv X-Api-Key: ' + R + ' next', 'rev9b: another secret name, ' + q);
+      cmd('srv Accept: ' + q + 'a b' + q + ' next', 'srv Accept: ' + q + 'a b' + q + ' next', 'rev9b: a harmless name keeps its quoted value, ' + q);
+      noSec(maskSecretCommand('curl --header=Authorization: ' + q + 'a ' + SEC + q), 'rev9b: --header= form, ' + q);
+    }
+    // round 7: an unclosed quote hides the rest; a scheme word then a quoted run; quoted scheme words (B6)
+    for (const n of ['Authorization', 'Proxy-Authorization', 'X-Api-Key', 'Cookie', 'Auth', 'token']) for (const q of ['"', "'"]) {
+      noSec(maskSecretCommand('srv ' + n + ': ' + q + 'a ' + SEC), 'rev10: unclosed ' + q + ' after ' + n);
+      noSec(maskSecretCommand('srv ' + n + ': ' + q + 'a ' + SEC + ' and more'), 'rev10: unclosed ' + q + ' with a tail after ' + n);
+    }
+    for (const n of ['Authorization', 'Proxy-Authorization']) for (const w of ['Basic', 'Bearer', 'Digest']) for (const q of ['"', "'"]) {
+      noSec(maskSecretCommand('srv ' + n + ': ' + w + ' ' + q + SEC + ' x' + q), 'rev11: scheme then quoted run, ' + n + ' ' + w + ' ' + q);
+      noSec(maskSecretCommand('srv ' + n + ': ' + w + ' ' + q + SEC + ' x'), 'rev11: scheme then unclosed run, ' + n + ' ' + w + ' ' + q);
+    }
+    assert.strictEqual(maskSchemeSecrets('srv Authorization: Basic "a b" --y'), 'srv Authorization: Basic ' + R + ' --y', 'rev11: the scheme word stays visible, the quoted run is masked, the next flag stays');
+    assert.strictEqual(maskSchemeSecrets('srv Authorization: "a ' + SEC), 'srv Authorization: ' + R, 'rev10: an unclosed quote masks to the end');
+    noSec(maskSecretCommand('srv Authorization: "Bearer" ' + SEC), 'rev12: B6 double-quoted scheme word');
+    noSec(maskSecretCommand('curl -H Authorization:"Digest" ' + SEC), 'rev12: B6 glued, quoted Digest');
+    noSec(maskSecretCommand("curl --header=Authorization: 'Token' " + SEC), 'rev12: B6 --header=, single-quoted Token');
+    assert.strictEqual(maskSchemeSecrets('srv Authorization: "Bearer" ' + SEC), 'srv Authorization: "Bearer" ' + R, 'rev12: B6 the quoted scheme word stays, the secret after it is masked (pre-pass only)');
+    assert.strictEqual(maskSchemeSecrets('srv Accept: "a ' + SEC), 'srv Accept: "a ' + SEC, 'rev10: a harmless name with an unclosed quote is left alone');
+    // round 8: the same shapes in a shell-string ARG (the pre-pass runs on the raw text of the R3 path)
+    for (const n of ['Authorization', 'Proxy-Authorization', 'X-Api-Key', 'Cookie', 'Auth', 'token']) for (const q of ['"', "'"]) {
+      noSec(maskSecretArgs(['-c', 'curl ' + n + ': ' + q + 'a ' + SEC]), 'rev13: args, unclosed ' + q + ' after ' + n);
+      noSec(maskSecretArgs(['-c', 'curl ' + n + ': ' + q + 'a ' + SEC + q + ' next']), 'rev13: args, closed ' + q + ' after ' + n);
+      noSec(maskSecretArgs(['curl ' + n + ': ' + q + 'a ' + SEC]), 'rev13: args, no flag, unclosed ' + q + ' after ' + n);
+    }
+    for (const n of ['Authorization', 'Proxy-Authorization']) for (const w of ['Basic', 'Bearer', 'Digest']) for (const q of ['"', "'"]) {
+      noSec(maskSecretArgs(['-c', 'curl ' + n + ': ' + w + ' ' + q + SEC + ' x' + q + ' --y']), 'rev13: args, scheme then quoted run, ' + n + ' ' + w + ' ' + q);
+      noSec(maskSecretArgs(['-c', 'curl ' + n + ': ' + w + ' ' + q + SEC + ' x']), 'rev13: args, scheme then unclosed run, ' + n + ' ' + w + ' ' + q);
+    }
+    assert.deepStrictEqual(maskSecretArgs(['-c', 'curl Authorization: "a ' + SEC]), ['-c', 'curl Authorization: ' + R], 'rev13: exact output, unclosed');
+    assert.deepStrictEqual(maskSecretArgs(['-c', 'curl Authorization: "a b" n']), ['-c', 'curl Authorization: ' + R + ' n'], 'rev13: exact output, closed, single [redacted]');
+    assert.deepStrictEqual(maskSecretArgs(['-c', 'curl Accept: "a b" n']), ['-c', 'curl Accept: "a b" n'], 'rev13: a harmless name stays');
+    noSec(maskSecretArgs(['-c', 'sh -c \'curl Authorization: "a ' + SEC + '\'']), 'rev13: nested shell string');
     // R7 on escaped objects
     const esc = (k: string, n: string, val: string, rest = ''): string => '{\\"' + k + '\\":\\"' + n + '\\",\\"value\\":\\"' + val + '\\"' + rest + '}';
     masked(['-c', 'srv --cfg "' + esc('name', 'Authorization', SEC) + '"'], ['-c', 'srv --cfg "' + esc('name', 'Authorization', R) + '"'], 'R7 esc: name');
@@ -580,7 +639,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     }
     assert.deepStrictEqual(maskSecretArgs(['--desc', 'Basic setup']), ['--desc', 'Basic [redacted]'], 'R11: `Basic setup` (scheme word plus one word) was already masked by the BEARER rule before T066, unchanged');
     // cost: a long run of `Bearer ` words and many escaped R7 objects (same interleaved ratio as the block below)
-    const rshapes: Array<[string, string]> = [['Bearer ', 'Bearer '], ['--auth Bearer ', '--auth Bearer '], ['obj', '{\\"name\\":\\"token\\",\\"value\\":\\"x y\\"} '], ['arr', '{\\"name\\":\\"token\\",\\"value\\":[\\"x\\"]} '], ['hdr', 'Authorization: Bearer '], ['qhdr', '-H "Authorization: Bearer" '], ['eq', '--auth=Bearer ']];
+    const rshapes: Array<[string, string]> = [['Bearer ', 'Bearer '], ['--auth Bearer ', '--auth Bearer '], ['obj', '{\\"name\\":\\"token\\",\\"value\\":\\"x y\\"} '], ['arr', '{\\"name\\":\\"token\\",\\"value\\":[\\"x\\"]} '], ['hdr', 'Authorization: Bearer '], ['qhdr', '-H "Authorization: Bearer" '], ['eq', '--auth=Bearer '], ['sq', "Authorization: 'a "], ['dq', 'Authorization: "a '], ['mixed', `Authorization: "a Authorization: 'a `], ['tok', 'TOKEN=Auth: '], ['unclosed', 'x Authorization: "a '], ['unclosed1', "Cookie: 'a "], ['schemeq', 'Authorization: Basic "a '], ['argsq', 'curl Authorization: "a ']];
     for (const [, unit] of rshapes) {
       const mk = (n: number): string => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
       const time = (x: string): number => { const t = process.hrtime.bigint(); maskSecretArgs([x]); maskSecretArgs(['-c', x]); maskSecretCommand(x); return Number(process.hrtime.bigint() - t) / 1e6; };

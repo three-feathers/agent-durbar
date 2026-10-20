@@ -120,12 +120,37 @@ function schemeHeader(a: string, anyName = false): boolean {
 }
 /**
  * R11(b) on the raw text of a `command`, before `redact()` (R8) can mask the scheme word and hide the shape: in `Name: <scheme>` (also
- * quoted) with a secret-looking name, the word after it is the secret. Bounded pieces, starting at a whitespace or the start: linear.
+ * quoted) with a secret-looking name, the word after it is the secret. Bounded pieces, starting at the start, a whitespace or a `=`: linear.
  */
-function maskSchemeSecrets(c: string): string {
+export function maskSchemeSecrets(c: string): string {
   if (!/:/.test(c)) return c;
-  return c.replace(/(^|\s)(["']?)([A-Za-z0-9][A-Za-z0-9_-]{0,127})(\s{0,8}:\s{0,8})(bearer|basic|token|digest|negotiate|apikey)(\2)(\s{1,8})(?!-)[^\s"']{1,4096}/gi,
-    (m, lead: string, q1: string, name: string, colon: string, word: string, q2: string, sp: string) => (secretFlag(name) ? `${lead}${q1}${name}${colon}${word}${q2}${sp}${MASK}` : m));
+  // `Name:` (the name starts at the text start, a whitespace or a `=`: `--header=Authorization:Digest SEC`; a quote may come before it)
+  const head = /(^|[\s=])(["']?)([A-Za-z0-9][A-Za-z0-9_-]{0,127})(\s{0,8}:\s{0,8})/g;
+  const scheme = /["']?(?:bearer|basic|token|digest|negotiate|apikey)["']?\s{1,8}/iy; // the scheme word, quoted or not, and the space after it
+  const bare = /(?!-)[^\s"']{1,4096}/y;
+  // a quoted run from `at` (a quote character): up to the closing quote within 4096, else to the end of the text (fail-safe: an unclosed quote hides the rest)
+  const runEnd = (at: number): number => { const k = c.indexOf(c[at], at + 1); return k < 0 || k - at > 4097 ? c.length : k + 1; };
+  let out = '';
+  let from = 0;
+  let m: RegExpExecArray | null;
+  while ((m = head.exec(c)) !== null) {
+    const e = m.index + m[0].length;
+    if (!secretFlag(m[3])) { head.lastIndex = Math.max(e, head.lastIndex); continue; }
+    let keepTo = e; // text kept as it is, up to here
+    let maskTo = -1; // then `[redacted]` replaces up to here
+    scheme.lastIndex = e;
+    const sm = scheme.exec(c);
+    if (sm) { // R11 (b): the scheme word stays, the secret after it is a bare word or a quoted run (`Authorization: Basic "SEC x"`)
+      const r = e + sm[0].length;
+      if (c[r] === '"' || c[r] === "'") { keepTo = r; maskTo = runEnd(r); } else { bare.lastIndex = r; const bm = bare.exec(c); if (bm) { keepTo = r; maskTo = r + bm[0].length; } }
+    }
+    if (maskTo < 0 && (c[e] === '"' || c[e] === "'")) { keepTo = e; maskTo = runEnd(e); } // a quoted value after the name is masked whole (redact() would stop at the first space: `Authorization: 'a SEC'`)
+    if (maskTo < 0) continue;
+    out += c.slice(from, keepTo) + MASK;
+    from = maskTo;
+    head.lastIndex = maskTo;
+  }
+  return from === 0 ? c : out + c.slice(from);
 }
 const HDR = /^([A-Za-z0-9][A-Za-z0-9_-]{0,127})\s{0,8}:\s*([\s\S]*)$/;
 /** `Name:` alone: its value is the next arg (R5). */
@@ -199,6 +224,8 @@ function maskKv(part: string, depth: number, env?: Env): string {
   const kv = KV.exec(part);
   if (kv) {
     if (secretFlag(kv[2].replace(ENV_PREFIX, ''))) return `${kv[1]}${kv[2]}=${MASK}`;
+    const hv = HDR_NAME_ONLY.exec(kv[4].trim());
+    if (hv && secretFlag(hv[1])) return part; // `NAME=Name:` (R5): the value of `Name:` is the next word, masked by maskArgs; masking `Name:` here repeated `[redacted]` at each depth level
     // `OPTS=\"--token x\"`: a stray quote in front of a flag-shaped value is set aside so the flag is seen
     const lead = depth > 0 ? /^[\\"'`]+/.exec(kv[4])?.[0] ?? '' : '';
     if (lead && /^[-/]/.test(kv[4].slice(lead.length))) return `${kv[1]}${kv[2]}${kv[3]}${lead}${maskText(kv[4].slice(lead.length), depth - 1, env)}`;
@@ -258,7 +285,7 @@ function plainWords(s: string): { words: string[]; seps: string[] } {
 
 /** R3: a text with whitespace is masked word by word as an args list; the separators, and the trailing run of `[;&|]+` of a word, are kept. A secret that ends in those characters shows only them. */
 function maskShellString(v0: string, depth: number, env?: Env, plain = false): string {
-  const v = maskEscapedPairs(v0); // before the split: an escaped value may hold spaces
+  const v = maskEscapedPairs(maskSchemeSecrets(v0)); // the scheme pre-pass first (R11 b, as for a command), then before the split: an escaped value may hold spaces
   let { words, seps } = plain ? plainWords(v) : shellWords(v);
   if (words.length === 1 && unquote(words[0])[1] !== '') return seps[0] + maskArgs(words, snapshot(env), depth)[0] + seps[1]; // one whole-quoted word (`A="x --token y"`, `--cmd='...'`): its inside
   if (words.length < 2) {
@@ -354,8 +381,8 @@ function maskArgs(args: readonly string[], env: Env, d: number, top = false): st
       const f = a.startsWith('-') || a.startsWith('/') ? parseFlag(a) : undefined;
       if (pending && !LONG_FLAG.test(a) && (pending === 'secret' || !a.startsWith('-'))) {
         if (pending === 'header' && HDR_NAME_ONLY.test(a)) { out.push(W(a)); pending = 'secret'; continue; } // R5: `Name:` then its value as the next arg
-        if (SCHEME.test(a.trim()) || (pending === 'header' && schemeHeader(a))) { out.push(W(a)); pending = 'secret'; continue; }
-        if (pending === 'header' && schemeHeader(a, true)) { out.push(W(maskHeaderValue(a, env, d))); pending = 'secret'; continue; } // R11 after a header flag: any name (FR-012: header values are masked whatever the name) // R11 a/b: the scheme word stays, the next arg is the secret
+        if (SCHEME.test(a.trim()) || (pending === 'header' && schemeHeader(a))) { out.push(W(a)); pending = 'secret'; continue; } // R11 a/b: the scheme word stays, the next arg is the secret
+        if (pending === 'header' && schemeHeader(a, true)) { out.push(W(maskHeaderValue(a, env, d))); pending = 'secret'; continue; } // R11 after a header flag: any name (FR-012: header values are masked whatever the name)
         out.push(pending === 'secret' ? MASK : W(maskHeaderValue(a, env, d)));
         pending = undefined;
         continue;
@@ -389,6 +416,8 @@ function maskArgs(args: readonly string[], env: Env, d: number, top = false): st
         const inner = kvm ? kvm[4].replace(/^[\\"'`]+/, '') : '';
         const f2 = inner.startsWith('-') || inner.startsWith('/') ? parseFlag(inner) : undefined;
         if (f2 && f2.rest === undefined && secretFlag(f2.name) && !secretFlag(kvm![2].replace(ENV_PREFIX, ''))) pending = 'secret';
+        const hv = kvm ? HDR_NAME_ONLY.exec(inner.trim()) : null;
+        if (hv && secretFlag(hv[1])) pending = 'secret'; // `NAME=Name:` then its value as the next arg (R5)
       }
       out.push(W(rd(maskText(a, d, env))));
     } catch {

@@ -433,14 +433,55 @@ async function main(): Promise<void> {
       // T066 (R11, R7 on escaped pairs): a scheme word then the secret, and an escaped name/value object in a shell string
       planted2.args!.push('--auth', 'Bearer', S.schemeFlag, '-H', 'Authorization: Bearer', S.schemeHdr, 'Bearer', S.schemeBare, `curl --auth Basic ${S.schemeShell}`,
         `sh -c "{\\"name\\":\\"token\\",\\"value\\":\\"${S.escObj}\\"}"`);
+      // T066 review: `curl -H "Authorization: <scheme>" SEC` in an extras `command` and in a CLI entry `command`, every scheme word, both quotes
+      const schemeSecs: string[] = [];
+      const schemeCmd = (q: string, tag: string): string => ['Bearer', 'Basic', 'Token', 'Digest', 'Negotiate', 'ApiKey'].map((w) => { const sec = `SCH${tag}-${w}-` + 'k3j2h1g0f9d8'; schemeSecs.push(sec); return `curl -H ${q}Authorization: ${w}${q} ${sec}`; }).join(' ; ');
+      // round 3: `--header=Name: <scheme>` (no space, space, quoted flag), every scheme word
+      const hdrFlagCmd = (form: 'nospace' | 'space' | 'quoted', tag: string): string => ['Bearer', 'Basic', 'Token', 'Digest', 'Negotiate', 'ApiKey'].map((w) => {
+        const sec = `SCH${tag}-${w}-` + 'm7n6b5v4c3x2';
+        schemeSecs.push(sec);
+        return form === 'nospace' ? `curl --header=Authorization:${w} ${sec}` : form === 'space' ? `curl --header=Authorization: ${w} ${sec}` : `curl "--header=Authorization: ${w}" ${sec}`;
+      }).join(' ; ');
+      // round 6: a quoted header value with spaces (`Authorization: 'a SEC'`), single and double quotes, in extras and CLI `command`
+      const quotedSecs: string[] = [];
+      const quotedCmd = (tag: string): string => ["'", '"'].map((q) => { const sec = `QH${tag}${q === '"' ? 'D' : 'S'}-` + 'u8i7o6p5a4s3'; quotedSecs.push(sec); return `srv Authorization: ${q}a b${sec}${q} --x`; }).join(' ; ');
+      const plantedQ = { ...planted2, name: 'plantedq', command: quotedCmd('E'), args: [], env: [], headers: [] } as any;
+      const cliQ = { name: 'cliq', origin: 'copilot-config', transport: 'stdio', command: quotedCmd('C'), args: [], enabled: true };
+      // round 7: unclosed quote, a scheme word then a quoted run, quoted scheme words, in extras and CLI `command` (each under the 1024-character extras cap)
+      const r7Secs: string[] = [];
+      const r7Cmd = (tag: string): string[] => {
+        const sec = (k: string): string => { const v = `R7${tag}${k}-` + 'e5r4t3y2u1i0'; r7Secs.push(v); return v; };
+        return [`srv Authorization: "a ${sec('a')}`, `srv X-Api-Key: 'a ${sec('b')}`, `srv Proxy-Authorization: Basic "${sec('c')} x" --y`, `srv Authorization: Bearer '${sec('d')} x'`,
+          `srv Authorization: "Bearer" ${sec('e')}`, `curl -H Authorization:"Digest" ${sec('f')}`, `curl --header=Authorization: 'Token' ${sec('g')}`, `srv Authorization: Basic "${sec('h')} x`];
+      };
+      const plantedR7 = r7Cmd('E').map((command, i) => ({ ...planted2, name: 'plantedr7-' + i, command, args: [], env: [], headers: [] } as any));
+      const cliR7 = r7Cmd('C').map((command, i) => ({ name: 'clir7-' + i, origin: 'copilot-config', transport: 'stdio', command, args: [], enabled: true }));
+      // round 8: the same eight shapes as a shell-string ARG (`['-c', command]`), in extras and CLI args
+      const plantedR7A = r7Cmd('A').map((c2, i) => ({ ...planted2, name: 'plantedr7a-' + i, command: 'srv', args: ['-c', c2], env: [], headers: [] } as any));
+      const cliR7A = r7Cmd('B').map((c2, i) => ({ name: 'clir7a-' + i, origin: 'copilot-config', transport: 'stdio', command: 'sh', args: ['-c', c2], enabled: true }));
+      const forms = ['nospace', 'space', 'quoted'] as const;
+      const plantedF = forms.map((f) => ({ ...planted2, name: 'plantedf-' + f, command: hdrFlagCmd(f, 'F' + f[0].toUpperCase()), args: [], env: [], headers: [] } as any));
+      const cliF = forms.map((f) => ({ name: 'clif-' + f, origin: 'copilot-config', transport: 'stdio', command: hdrFlagCmd(f, 'G' + f[0].toUpperCase()), args: [], enabled: true }));
+      const planted3 = { ...planted2, name: 'planted3', command: schemeCmd('"', 'XD'), args: [], env: [], headers: [] } as any;
+      const planted4 = { ...planted2, name: 'planted4', command: schemeCmd("'", 'XS'), args: [], env: [], headers: [] } as any;
+      const cliSchemes = [
+        { name: 'cli3', origin: 'copilot-config', transport: 'stdio', command: schemeCmd('"', 'CD'), args: [], enabled: true },
+        { name: 'cli4', origin: 'copilot-config', transport: 'stdio', command: schemeCmd("'", 'CS'), args: [], enabled: true },
+      ];
       const cliEntry = { name: 'cli2', origin: 'copilot-config', transport: 'stdio', command: 'sh', args: ['-c', `npx srv --api-key=${S.shellTok} --config ${S.pathDir}/c.json`], enabled: true };
       const { call } = mk(15, 40, {
-        mcpExtras: (k: string) => (k === path.join(os.tmpdir(), 'durbar-t016-f0') ? [planted2] : []),
-        mcpCli: () => ({ cli: [cliEntry as any], file: { label: 'x', found: true, skipped: 0 }, secretsPersist: false }),
+        mcpExtras: (k: string) => (k === path.join(os.tmpdir(), 'durbar-t016-f0') ? [planted2, planted3, planted4, ...plantedF, plantedQ, ...plantedR7, ...plantedR7A] : []),
+        mcpCli: () => ({ cli: [cliEntry as any, ...(cliSchemes as any[]), ...cliF, cliQ as any, ...(cliR7 as any[]), ...(cliR7A as any[])], file: { label: 'x', found: true, skipped: 0 }, secretsPersist: false }),
       });
       const all = (await Promise.all(READ_TOOLS.map((t) => call(t.name, t.name === 'durbar_request_status' ? { requestId: 'x' } : {})))).map((r) => r.raw).join('\n');
       for (const k of ['shellTok', 'exportTok', 'hdrAfter', 'cookieSemi', 'spaceColon', 'quotedHdr', 'commaPw', 'nameValue', 'wholeQuoted', 'shellUrl'] as const) assert.ok(!all.includes(S[k]), `12f: T064 ${k} never appears in any result`);
       for (const k of ['schemeFlag', 'schemeHdr', 'schemeBare', 'schemeShell', 'escObj'] as const) assert.ok(!all.includes(S[k]), `12f: T066 ${k} never appears in any result`);
+      assert.strictEqual(r7Secs.length, 32, '12f: 32 planted round-7 secrets');
+      for (const sec of r7Secs) assert.ok(!all.includes(sec), `12f: round-7 secret ${sec.slice(0, 6)} never appears in any result`);
+      assert.strictEqual(quotedSecs.length, 4, '12f: 4 planted quoted-header secrets');
+      for (const sec of quotedSecs) assert.ok(!all.includes(sec), `12f: quoted header value ${sec.slice(0, 5)} never appears in any result`);
+      assert.strictEqual(schemeSecs.length, 24 + 36, '12f: 60 planted scheme secrets');
+      for (const sec of schemeSecs) assert.ok(!all.includes(sec), `12f: T066 command scheme secret ${sec.slice(0, 12)} never appears in any result`);
       assert.ok(!all.includes('.config'), '12f: no .config directory in the T064 shapes');
       assert.ok(all.includes('…/x.json') && all.includes('…/c.json'), '12f: the shell-string paths are reduced');
     }
@@ -670,6 +711,20 @@ async function main(): Promise<void> {
         assert.ok(!('masking' in small.data) && !small.raw.includes('budget'), '12l(b): under the budget there is no note');
         assert.strictEqual(small.data.copilotCli.servers[0].args[0], 'a');
         assert.deepStrictEqual(small.data.copilotCli.servers[0].args.slice(1), ['--token', R]);
+      }
+
+      // (c0) order: a command over the limit is hidden BEFORE the scheme pre-pass (`maskSchemeSecrets`) looks at it. A 1 MB command of
+      // `Authorization: Bearer x ` costs about 1-20 ms when it is only measured, and about 90-150 ms when the pre-pass scans it; the best of
+      // three runs against a 30 ms limit (150 times the normal cost, a third of the pre-pass cost), plus the answer itself (one `[redacted]`, small), pin the order.
+      {
+        const hostile = ('Authorization: Bearer ' + sec + ' ').repeat(Math.ceil(1_000_000 / 40)).slice(0, 1_000_000);
+        let best = Infinity;
+        let last: any;
+        for (let i = 0; i < 3; i++) { last = await state([{ command: hostile, args: ['a'] }]); best = Math.min(best, last.ms); }
+        console.log(`mcp read tools: 12l (c0) 1 MB hostile command, best of 3: ${best.toFixed(1)} ms`);
+        assert.strictEqual(last.data.copilotCli.servers[0].command, R, '12l(c0): the 1 MB command is [redacted]');
+        assert.ok(last.raw.length < 5000 && !last.raw.includes(sec), '12l(c0): small answer, no secret');
+        assert.ok(best < 30, `12l(c0): the over-limit command cost ${best.toFixed(1)} ms (is the scheme pre-pass before the length check?)`);
       }
 
       // (c) cost: a 1 MB CLI file built at run time, three shapes, each answered quickly and with no secret
