@@ -77,6 +77,10 @@ In **Previous sessions**, "VS Code chat history" lists chats VS Code saved for t
 
 ## Changes
 
+### 2026-10-20: FR-018's open point is specified in spec 056 (planned, not built)
+
+Cross-reference only; nothing here changes yet. The owner chose option A for "resume it in Durbar" (issue #344): [spec 056](../056-continue-vscode-chat/spec.md) adds **Continue in Durbar…** to this view, which starts a **new** Durbar session in the same folder whose first message is a reviewed, redacted copy of the chat. This view stays read-only and nothing is written to VS Code storage. When 056 is built it changes the banner wording of US2 ("It cannot be continued here.") and reads the edge case "Content is never logged, uploaded or executed" as: the file is never uploaded; only text the user reviewed and confirmed is sent as their own message (056 FR-013a, open question Q9).
+
 ### 2026-10-19: VS Code chat view opens at the latest message; two new kinds; Continue in VS Code (issue #253, task T026)
 
 *Found (owner, on alpha.6):* (1) **View** on a long VS Code chat (346 messages, "Only the last 300 … are shown") opened away from the end, so the latest messages needed a manual scroll. (2) Two response kinds were skipped with the "not recognised" note: `mcpServersStarting` and `questionCarousel` (VS Code 1.109+). (3) A VS Code chat cannot be continued here (US2, by design), and there was no short way to go and continue it in VS Code.
