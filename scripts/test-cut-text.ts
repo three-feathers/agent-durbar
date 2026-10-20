@@ -52,7 +52,6 @@ assert.ok(!/‍…$/.test(f) && len(f) <= 5, 'no dangling joiner: ' + JSON.strin
 // the three callers use it (static check), and none keeps its own slice-and-ellipsis
 const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8'), att = fs.readFileSync(path.join(R, 'attention.js'), 'utf8');
 assert.match(app, /const clipName=s=>DurbarCutText\.cutText\(/);
-assert.match(app, /const shortName=t=>DurbarCutText\.cutText\(/);
 assert.match(att, /CUT\.cutText\(/);
 for (const [n, src] of [['app.js', app], ['attention.js', att]] as const) assert.ok(!/\.slice\([^)]*\)\s*\+\s*'…'/.test(src), n + ' has its own slice-and-ellipsis');
 assert.match(fs.readFileSync(path.join(R, 'index.html'), 'utf8'), /<script src="cuttext\.js"><\/script>[\s\S]*<script src="app\.js">/);

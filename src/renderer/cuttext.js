@@ -1,7 +1,8 @@
 /* One way to shorten a line of text for display (spec 044 FR-021): collapses whitespace, counts code points (so an emoji or a
    surrogate pair is never split, and a combining mark stays with its letter), and ends a cut text with "…" within `max`.
    Pure: no DOM. In the page: window.DurbarCutText; in Node (tests, attention.js): module.exports.
-   Used by clipName (file names), attention.clip (notification text) and the Schedules "This session" option (shortName).
+   Used by clipName (file names), attention.clip (notification text) and the grant and schedule-row texts. The word-boundary and
+   punctuation options are for names (not used by the others, which keep a plain cut).
    Options: { wordBoundary: cut at the last space of the second half when there is one; trimPunct: also drop trailing . , ; : ! ? - } */
 (function(root, api){
   if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarCutText=api;
