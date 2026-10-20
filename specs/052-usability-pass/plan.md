@@ -49,3 +49,13 @@ The renderer only: `src/renderer/app.js`, `screens.js`, `index.html`, `styles.cs
 - No new invoke handler: the menu and full-screen signals are main-to-page events (`menu:settings`, `window:fullScreen`); the preload adds `onMenuSettings`, `onFullScreen` and `platform`.
 - Renderer: `keys.js` (pure, `window.DurbarKeys`) for the modifier checks and the key labels; `app.js` uses it for the key handler, the shortcut sheet, the palette, titles and `aria-keyshortcuts`. Mac-only CSS sits under `html[data-platform="darwin"]`, set only from the preload's `platform`, so Linux geometry checks are unaffected.
 - Testing: `scripts/test-macos.ts` (registered as `test:macos`).
+
+## New session in the chat header (2026-10-20, FR-139)
+- `app.js` `showPanel` header: a `#newSessHdrBtn` `.btn.sm` after `#prevBtn` in `.actions`, wired to `newSession(a)` beside the `#newSessBtn` handler. `styles.css`: only a rule for the button (28px control height from `.ph`); the darwin title-bar block (#358) is not touched.
+- Third visible action is an owner exception to round 10's two; the More item stays so no route is lost.
+
+## FR-138 (2026-10-20): macOS title bar on every screen
+
+- Renderer CSS only, all under `html[data-platform="darwin"]` (`styles.css`, next to the FR-085 block; `screens.css` is not touched). Notice strips precede `.workspace` and `#screen` in the DOM, so the "a strip is visible above" cases use the sibling combinator (`.notice-strip:not([hidden]) ~ .workspace .strip`, `~ #screen .scr-head`), not `:has()`.
+- Electron builds the drag area from the `app-region` of every element and ignores z-order, so an overlay is made `no-drag` itself (a fixed `inset:0` backdrop covers the whole window).
+- Testing: `test-macos` reads the CSS; `scripts/check-mac-titlebar.js` is an Electron driver (simulator, `data-platform` forced) that computes drag minus no-drag like Electron. Run one Electron at a time (`xvfb-run` on Linux).

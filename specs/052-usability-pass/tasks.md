@@ -183,3 +183,14 @@
 - [x] T110 Drivers: `shots-017.js` opens the Defaults popover; `check-office-overlap.js` checks the one-row top bar; the others grepped [FR-107]
 - [x] T111 Full simulator run before merge: geometry, office, every driver that touches the top bar, screenshot tour by eye; Manage folders popover anchored to its button; `shots-017` history check follows round 10's Previous button [FR-107]
 
+- [x] T128 Question options wrap and their title holds the label (+ description); `simquestion=long`; `scripts/check-question-options.js` (`npm run check:question-options`) at 1440x900 and 1280x800, Expert and Simple, card and inbox; mutation run; screenshots [FR-140, issue #365]
+
+## New session in the chat header (2026-10-20, issue #363)
+- [x] T127 `+ New` button next to Previous in the chat header (title and aria-label "New session in <folder>", same flow and conditions as the More item plus `!demoOn`, main agents only); icon-only if it does not fit; More item kept; `check-office-overlap.js` asserts it and the one-row header at both sizes; mutation; screenshots; README, CHANGELOG [FR-139]
+## FR-138: macOS title bar on every screen (2026-10-20, #345)
+- [x] T121 Spec delta FR-138 (this entry), tasks and plan note [FR-138]
+- [x] T122 Darwin-only CSS: notice strip is the drag row with a chat open and the strip below drops the 78px; overlays, popovers and menus `no-drag`; chat strip grab area and no-drag `.strip-list`; `.scr-head` `max(78px, ...)` [FR-138]
+- [x] T123 `test-macos` static checks for the new rules and selectors [FR-138]
+- [x] T124 `scripts/check-mac-titlebar.js` and `npm run check:mac-titlebar` (geometry of every state at both sizes, non-zero on failure and on a driver exception) [FR-138]
+- [x] T125 Mutation: remove the `.dlg-ov` no-drag rule and see the check fail; screenshots in the scratchpad [FR-138]
+- [x] T126 Docs: CHANGELOG, README "On a Mac" limits, `specs/README.md` row, spec status tags; CI step proposed as a follow-up [FR-138]
