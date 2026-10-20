@@ -117,7 +117,7 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 
 | # | Feature | Status |
 | --- | --- | --- |
-| [030](030-switch-model-context/spec.md) | Switch model, effort and context tier of a live session (chat header and office card menu), see window and % full, compact, start-fresh hint, per-folder default; simulator first, adapter-neutral | **Phases 1-4 built**; Phase 3 run on Copilot Pro 2026-10-20 (switch between real models, effort, long tier, `confirmation_required`, compact and switch; Copilot `modelSwitch.verified`); open: long-tier price above the default window, `compactionDecision` values |
+| [030](030-switch-model-context/spec.md) | Switch model, effort and context tier of a live session (chat header and office card menu), see window and % full, compact, start-fresh hint, per-folder default; simulator first, adapter-neutral | **Phases 1-4 built**; Phase 3 run on Copilot Pro 2026-10-20 (switch between real models, effort, long tier, `confirmation_required`, compact and switch; Copilot `modelSwitch.verified`); open: long-tier price above the default window, `compactionDecision` values; 2026-10-21: continue a conversation in another agent app (#409, FR-042..FR-045, real Copilot → Claude → Codex) |
 
 ## Feature 035-040: themes (data-only packs)
 

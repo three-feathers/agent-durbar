@@ -65,6 +65,10 @@ import { modelControlFor, parseFocus, parseSwitchRequest } from '../shared/model
 import type { ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import { createDebugSink } from '../shared/redact';
 import { profileDir } from './profiledir';
+import { debugSwitchesToRemove } from './debugguard';
+
+// Spec 008 FR-038: no DevTools endpoint in a packaged build. No fuse covers these switches; removing them before ready is shown to work on the packed Linux app (npm run check:fuses-launch).
+for (const sw of debugSwitchesToRemove(app.isPackaged)) app.commandLine.removeSwitch(sw);
 
 // Developer/test hooks (spec 010): ignored in packaged builds unless DURBAR_DEV=1. Read hooks only from `dev`.
 const dev = devEnv(process.env, app.isPackaged);
