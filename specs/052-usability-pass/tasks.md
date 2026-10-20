@@ -194,3 +194,4 @@
 - [x] T124 `scripts/check-mac-titlebar.js` and `npm run check:mac-titlebar` (geometry of every state at both sizes, non-zero on failure and on a driver exception) [FR-138]
 - [x] T125 Mutation: remove the `.dlg-ov` no-drag rule and see the check fail; screenshots in the scratchpad [FR-138]
 - [x] T126 Docs: CHANGELOG, README "On a Mac" limits, `specs/README.md` row, spec status tags; CI step proposed as a follow-up [FR-138]
+- [ ] T129 Grant chips grouped into "Allowed (N)" with a popover, shorter labels, header chips flow; `simgrants=many`; `test-grant-label`; `scripts/check-grant-chips.js` (`npm run check:grant-chips`); mutation run; screenshots [FR-141, issue #367]

@@ -59,3 +59,10 @@ The renderer only: `src/renderer/app.js`, `screens.js`, `index.html`, `styles.cs
 - Renderer CSS only, all under `html[data-platform="darwin"]` (`styles.css`, next to the FR-085 block; `screens.css` is not touched). Notice strips precede `.workspace` and `#screen` in the DOM, so the "a strip is visible above" cases use the sibling combinator (`.notice-strip:not([hidden]) ~ .workspace .strip`, `~ #screen .scr-head`), not `:has()`.
 - Electron builds the drag area from the `app-region` of every element and ignores z-order, so an overlay is made `no-drag` itself (a fixed `inset:0` backdrop covers the whole window).
 - Testing: `test-macos` reads the CSS; `scripts/check-mac-titlebar.js` is an Electron driver (simulator, `data-platform` forced) that computes drag minus no-drag like Electron. Run one Electron at a time (`xvfb-run` on Linux).
+
+## FR-141 (2026-10-20): grant chips grouped, header chips flow
+
+- `renderGrants()` in `app.js` renders single chips for 1-2 grants and one `Allowed (N)` button plus a popover (a `.more-menu`-like panel inside `#grants`, positioned under the chip) for 3 or more. The label shortener is a pure function (`src/renderer/grant-label.js`, loaded like the other renderer helpers) so `scripts/test-grant-label.ts` can test it.
+- Header chips: the cause is measured first (probe in the simulator at narrow widths); see the evidence in the spec. Renderer CSS only, no change to the darwin rules or the + New button.
+- Testing: `scripts/check-grant-chips.js` is an Electron driver (simulator `simgrants=many`), run under `xvfb-run` like `check:question-options`.
+
