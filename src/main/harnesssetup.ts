@@ -58,7 +58,32 @@ export interface SetupDeps {
   /** Spec 060 FR-001: the download of an official installer (tests hand in a fake). */
   httpGet?: HttpGet;
   tmpdir?: string;
+  /** Spec 060 FR-001: true when the found Homebrew belongs to another account (it then fails from this one). Default: the file's owner. */
+  ownedByOther?: (p: string) => boolean;
 }
+
+/**
+ * Spec 060 FR-001 (real, install check 2026-10-20): the environment of a setup run. On Windows an official installer runs with the
+ * system folders first on PATH, as Windows itself orders them: OpenAI's script calls `tar` with `C:\...` paths, and Git's GNU tar
+ * (Git\usr\bin, early on PATH on some machines and on GitHub's runners) reads `C:` as a remote host and fails. Windows' own tar.exe
+ * does not. The PATH key keeps its spelling (Windows environment names ignore case; two spellings would be ambiguous).
+ */
+export function setupEnv(base: NodeJS.ProcessEnv, platform: NodeJS.Platform, official: boolean): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...base, NO_COLOR: '1', FORCE_COLOR: '0', npm_config_fund: 'false', npm_config_audit: 'false' };
+  if (platform !== 'win32' || !official) return env;
+  const root = base.SystemRoot ?? base.SYSTEMROOT;
+  if (!root || !path.win32.isAbsolute(root)) return env;
+  const key = Object.keys(env).find((k) => k.toLowerCase() === 'path') ?? 'Path';
+  const first = [path.win32.join(root, 'System32'), root, path.win32.join(root, 'System32', 'WindowsPowerShell', 'v1.0')];
+  const rest = (env[key] ?? '').split(';').filter((d) => d && !first.some((f) => f.toLowerCase() === d.replace(/\\+$/, '').toLowerCase()));
+  env[key] = [...first, ...rest].join(';');
+  return env;
+}
+
+const defaultOwnedByOther = (p: string): boolean => {
+  if (typeof process.getuid !== 'function') return false;
+  try { return fs.statSync(p).uid !== process.getuid(); } catch { return false; }
+};
 
 const MAX_OUT = 64 * 1024;
 
@@ -106,6 +131,14 @@ export class HarnessSetup {
     const found = new Set<PackageManager>(assumeFound ?? managersFor(this.deps.detectEnv.platform).filter((m) => this.find(m)));
     const env = this.deps.detectEnv;
     const plans = (op === 'install' ? installPlans : updatePlans)(kind, env.platform, found).map((p) => {
+      if (p.manager === 'brew' && !assumeFound && env.platform !== 'win32') {
+        // spec 060 FR-001 (real, install check 2026-10-20): Homebrew installed by another account fails from this one (exit 1)
+        const at = this.find('brew');
+        let real: string | undefined;
+        try { real = at ? (this.deps.realpath ?? ((x: string) => x))(at) : undefined; } catch { real = undefined; }
+        if (real && (this.deps.ownedByOther ?? defaultOwnedByOther)(real)) return { ...p, note: 'Homebrew on this computer belongs to another account, so it will not work from yours. Use another way, or ask that account.' };
+        return p;
+      }
       if (p.manager !== 'npm' || env.platform === 'win32' || assumeFound) return p;
       // spec 060 FR-001: npm needs no admin rights only when it lives in the home folder (nvm, fnm, volta, a user prefix)
       const at = this.find('npm');
@@ -184,7 +217,7 @@ export class HarnessSetup {
     let child: ChildLike;
     try {
       child = this.deps.spawn(job.spawnFile, job.spawnArgs, {
-        env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0', npm_config_fund: 'false', npm_config_audit: 'false' },
+        env: setupEnv(process.env, env.platform, !!job.script),
         stdio: [paste ? 'pipe' : 'ignore', 'pipe', 'pipe'],
         windowsVerbatimArguments: job.verbatim,
         detached: env.platform !== 'win32',

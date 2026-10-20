@@ -6,7 +6,7 @@ import * as path from 'path';
 import { EventEmitter } from 'events';
 import { MAX_REDIRECTS, MAX_SCRIPT_BYTES, allowedScriptUrl, downloadScript } from '../src/main/officialinstall';
 import type { HttpGet } from '../src/main/officialinstall';
-import { HarnessSetup, confirmText } from '../src/main/harnesssetup';
+import { HarnessSetup, confirmText, setupEnv } from '../src/main/harnesssetup';
 import { installPlans } from '../src/shared/harnesssetup';
 import type { OfficialScript, PackageManager } from '../src/shared/harnesssetup';
 
@@ -99,6 +99,24 @@ async function main(): Promise<void> {
     assert.strictEqual(hs.find('powershell'), 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
     const p = hs.prepare('claude', 'install', 0);
     assert.ok(p.ok && p.job.args.join(' ') === '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File', JSON.stringify(p));
+  }
+  // Windows: an official installer runs with the system folders first on PATH (Git's GNU tar breaks OpenAI's script), same PATH key
+  {
+    const base = { Path: 'C:\\Program Files\\Git\\usr\\bin;C:\\Windows\\system32;C:\\npm\\prefix', SystemRoot: 'C:\\Windows' };
+    const e = setupEnv(base, 'win32', true);
+    assert.strictEqual(e.Path, 'C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\WindowsPowerShell\\v1.0;C:\\Program Files\\Git\\usr\\bin;C:\\npm\\prefix');
+    assert.ok(!('PATH' in e), 'no second PATH spelling');
+    assert.strictEqual(e.NO_COLOR, '1');
+    assert.strictEqual(setupEnv(base, 'win32', false).Path, base.Path, 'package managers keep PATH as it is');
+    assert.strictEqual(setupEnv({ PATH: '/usr/bin' }, 'linux', true).PATH, '/usr/bin', 'not on macOS/Linux');
+    assert.strictEqual(setupEnv({ Path: 'x', SystemRoot: 'Windows' }, 'win32', true).Path, 'x', 'a relative SystemRoot is ignored');
+  }
+  // Homebrew that belongs to another account: the plan says so instead of "may ask for administrator rights"
+  {
+    const mk = (other: boolean) => new HarnessSetup({ detectEnv: { platform: 'darwin', env: { PATH: '/opt/homebrew/bin:/usr/bin:/bin' }, homedir: '/Users/u', isFile: (p: string) => ['/opt/homebrew/bin/brew', '/bin/bash'].includes(p) }, spawn: () => { throw new Error('no'); }, killTree: () => undefined, send: () => undefined, redetect: async () => undefined, ownedByOther: () => other } as never);
+    const brewOf = (hs: HarnessSetup) => hs.plans('claude', 'install').plans.find((p) => p.manager === 'brew');
+    assert.match(String(brewOf(mk(true))?.note), /belongs to another account/);
+    assert.doesNotMatch(String(brewOf(mk(false))?.note), /another account/);
   }
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log('officialinstall: allow-list, redirects, size, private files, runner (bash/powershell argv, cleanup, never root) OK');

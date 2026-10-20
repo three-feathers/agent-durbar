@@ -97,3 +97,24 @@
 - `scripts/install-check.ts`: on the machine it runs on, installs each agent app through **every** route Durbar offers there, with the app's own `HarnessSetup` (plans → official download → argv run), then checks that detection finds it and `--version` runs; prints a Markdown table and writes JSON. Never meant for a person's own machine.
 - Workflow **Install check** (`.github/workflows/install-check.yml`): ubuntu, macOS and Windows runners; first as a new **standard user** without admin rights (Linux `useradd`, macOS `sysadminctl`, Windows `New-LocalUser` with `Start-Process -Credential`), then as the runner's admin user; both tables in the job summary, JSON as an artifact (30 days). Manual, or on a PR that changes the install code. No account, no sign-in, no AI.
 
+
+### 2026-10-20: T060 first results (real, GitHub runners, run on #393)
+
+`real:` every route Durbar offers, installed for real through `HarnessSetup`. A standard user has no admin rights; the admin user is the runner's own account.
+
+| Route | macOS standard / admin | Linux standard / admin | Windows standard / admin |
+|---|---|---|---|
+| **official**, Claude | ok / ok (2.1.304) | ok / ok | CI temp folder error (fixed in the check) / ok |
+| **official**, Copilot | ok / ok (1.0.101) | ok / ok | not offered (npm first, as designed) |
+| **official**, Codex | ok / ok (0.163.0) | ok / ok | CI temp folder error / **fail** → fixed, see below |
+| npm (all three) | **fail** (exit 243, global Node.js) / ok | ok (runner's Node.js is writable) / ok | ok / ok (`C:\npm\prefix`) |
+| Homebrew (all three) | **fail** (exit 1, Homebrew belongs to the admin) / ok | **fail** (exit 1) / ok | not offered |
+
+Findings, fixed in the same PR:
+
+- **Codex official on Windows failed even as admin.** OpenAI's `install.ps1` runs `tar -xzf C:\...`. On the runner, Git's GNU tar (`Git\usr\bin`) comes first on PATH and reads `C:` as a remote host, so the package was "missing". Durbar now runs an official installer on Windows with `%SystemRoot%\System32` first on PATH, as Windows orders it, so Windows' own `tar.exe` is used (`setupEnv`, unit test). This can happen on a user's machine too, wherever Git's `usr\bin` is on PATH.
+- **Homebrew from a standard user** fails outright. The old note, "may ask for administrator rights", was wrong. When the found `brew` belongs to another account, the route now says "Homebrew on this computer belongs to another account, so it will not work from yours" (unit test).
+- **npm from a standard user** on macOS failed, as the existing note says ("Node.js is installed for all users here, so this may need administrator rights"). The official route comes first, so nothing changes.
+- **Windows standard-user TEMP** (CI only): the user started from the admin account inherited its TEMP. `install-check.ts` now uses the user's own profile folder.
+- Harmless: Copilot's `install.sh` offers to edit the shell profile and reads `/dev/tty`. With no terminal it prints `/dev/tty: Device not configured`, answers no, and completes. Durbar finds the binary in `~/.local/bin` anyway.
+- In the check's table, *Found at* is what detection finds after that route ran, which can be an earlier route's binary. *Result* uses the route's own exit code.

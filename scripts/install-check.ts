@@ -9,6 +9,8 @@
  * Prints a Markdown table (for the job summary) and writes the same rows as JSON.
  */
 import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { HarnessSetup } from '../src/main/harnesssetup';
 import type { SetupDone } from '../src/main/harnesssetup';
 import { detectBinary, nodeDetectEnv, nodeExec } from '../src/adapters/detect';
@@ -30,6 +32,16 @@ async function main(): Promise<void> {
   if (!who || !outFile) throw new Error('usage: install-check.js <label> <out.json> [--only claude,codex]');
   const i = process.argv.indexOf('--only');
   const only = i > 0 ? new Set(process.argv[i + 1].split(',')) : undefined;
+  if (process.platform === 'win32') {
+    // the standard user is started from the admin account and inherits its TEMP; a real user has their own (CI only)
+    const own = os.userInfo().homedir;
+    const tmp = path.join(own, 'AppData', 'Local', 'Temp');
+    if (!(process.env.TEMP ?? '').toLowerCase().startsWith(own.toLowerCase())) {
+      fs.mkdirSync(tmp, { recursive: true });
+      process.env.TEMP = process.env.TMP = tmp;
+      process.env.USERPROFILE = own;
+    }
+  }
   const env = nodeDetectEnv();
   let done: ((d: SetupDone) => void) | undefined;
   const hs = new HarnessSetup({

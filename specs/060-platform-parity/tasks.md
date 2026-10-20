@@ -7,5 +7,5 @@
 - [ ] T030 Detection folders (version managers, Linuxbrew), optional login-shell PATH; Settings shows where found; tests [FR-003]
 - [ ] T040 Windows prerequisites (PowerShell 6+, Git for Windows) and WSL text [FR-004, FR-005]
 - [ ] T050 Folder identity on case-insensitive systems, with migration [FR-007]
-- [ ] T060 Per-OS tests and a manual real-install workflow [FR-008]
+- [ ] T060 Per-OS tests and a manual real-install workflow [FR-008] (first real run 2026-10-20: see spec *Changes*; rerun after the fixes)
 - [ ] T061 Linux `.deb` and arm64 builds, if Q3 says yes [FR-006]
