@@ -62,6 +62,7 @@ import { REPO_URL, aboutPanelOptions, aboutView } from '../shared/about';
 import { modelControlFor, parseFocus, parseSwitchRequest } from '../shared/modelswitch';
 import type { ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import { createDebugSink } from '../shared/redact';
+import { APP_NAME, profileDir } from './profiledir';
 
 // Developer/test hooks (spec 010): ignored in packaged builds unless DURBAR_DEV=1. Read hooks only from `dev`.
 const dev = devEnv(process.env, app.isPackaged);
@@ -69,8 +70,10 @@ const devNote = devWarning(process.env, app.isPackaged);
 if (devNote) console.error(devNote);
 
 // Cheapest routing on the logged-in account's only model ("auto"); see docs/milestone-1.md.
-// Dev/test: DURBAR_USER_DATA=/tmp/x keeps the saved folder list (and Electron's other state) out of the real profile.
-if (dev.DURBAR_USER_DATA) app.setPath('userData', dev.DURBAR_USER_DATA);
+// Profile folder chosen in code (spec 008 FR-034): packaged `<appData>/agent-durbar`, dev `<appData>/agent-durbar-dev`.
+// Dev/test: DURBAR_USER_DATA=/tmp/x wins and keeps the saved folder list (and Electron's other state) out of the real profile.
+// Must stay before anything reads the userData folder and before `whenReady`.
+app.setPath('userData', profileDir({ packaged: app.isPackaged, platform: process.platform, appData: app.getPath('appData'), env: process.env }));
 const DEFAULT_MODEL = 'auto';
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 type Effort = (typeof EFFORTS)[number];
@@ -1396,6 +1399,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  app.setName(APP_NAME); // spec 008 FR-033: first, before the menu, stores, windows and notifications (the folder is set above)
   app.setAboutPanelOptions(aboutPanelOptions(app.getVersion())); // owner and contributors: src/shared/about.ts (spec 008 FR-018)
   // spec 052 FR-083: a Mac menu from roles (Settings… ⌘,); no menu on Windows and Linux (no Reload or DevTools for users)
   const menu = appMenuTemplate(process.platform, {

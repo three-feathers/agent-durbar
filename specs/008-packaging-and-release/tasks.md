@@ -31,7 +31,7 @@
 - [x] T034 (2026-10-19) Linux window icon and desktopName/syncDesktopName (#247) [FR-025, FR-026]
 - [x] T035 (2026-10-19) Theme geometry check per PR, the full theme matrix in CI on demand (FR-031, replacing FR-027); a local parallel runner with CPU, memory and priority limits and per-run result files (FR-028); `npm test` leaves a core and runs niced (FR-029); reduced motion outside the plain office check (FR-030)
 - [x] T036 (2026-10-19, #303) Redact ReDoS test in worker threads instead of child processes (FR-032)
-- [ ] T037 (2026-10-20, #353, D1-D3 decided) App name "Agent Durbar" and a chosen profile folder [FR-033, FR-034, FR-035, FR-036]. Done when:
+- [x] T037 (2026-10-20, #353, D1-D3 decided) App name "Agent Durbar" and a chosen profile folder [FR-033, FR-034, FR-035, FR-036]. Done when:
   1. a pure module (no Electron import, for example `src/main/profiledir.ts`) exports `APP_NAME = 'Agent Durbar'` and `profileDir({ packaged, platform, appData, env })`;
   2. a new `scripts/test-profiledir.ts`, in its own `test:profiledir` script and in the `test:serial` list (not in `test:runtime`), asserts on `win32`, `darwin` and `linux` sample `appData` paths: packaged = `<appData>/agent-durbar`; not packaged = `<appData>/agent-durbar-dev`; `DURBAR_USER_DATA` wins in dev and in a packaged build with `DURBAR_DEV=1`, and is ignored in a packaged build without it (through `devEnv`); Windows paths use backslashes; the dev folder is never equal to the installed one;
   3. the same test (or `test-about`) asserts `APP_NAME === pkg.build.productName === aboutPanelOptions('x').applicationName`, that `pkg.name` is still `agent-durbar` and that there is no top-level `productName`;
