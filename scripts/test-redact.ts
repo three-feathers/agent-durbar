@@ -526,6 +526,74 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // (m of 14b still) env prefix keeps other names
   assert.deepStrictEqual(maskSecretArgs(["$env:PORT='8080'; srv"]), ["$env:PORT='8080'; srv"], 'b: $env:PORT unchanged');
 
+  // T066 / R11: a scheme word, then the secret as the next arg; R7 on escaped objects
+  {
+    const AUTH = 'Authorization: Bearer';
+    masked(['--auth', 'Bearer', SEC], ['--auth', 'Bearer', R], 'R11 a: --auth Bearer SEC');
+    masked(['--token', 'token', SEC], ['--token', 'token', R], 'R11 a: --token token SEC');
+    masked(['-H', 'Bearer', SEC], ['-H', 'Bearer', R], 'R11 a: -H Bearer SEC');
+    masked(['--auth', 'basic', SEC], ['--auth', 'basic', R], 'R11 a: case-insensitive');
+    masked(['--auth', 'ApiKey', SEC], ['--auth', 'ApiKey', R], 'R11 a: ApiKey');
+    masked(['-H', AUTH, SEC], ['-H', AUTH, R], 'R11 b: -H Authorization: Bearer SEC');
+    masked(['Authorization: Basic', SEC], ['Authorization: Basic', R], 'R11 b: Authorization: Basic SEC');
+    masked(['Proxy-Authorization: Digest', SEC], ['Proxy-Authorization: Digest', R], 'R11 b: Proxy-Authorization');
+    masked(['Bearer', SEC], ['Bearer', R], 'R11 c: bare Bearer');
+    masked(['Basic', SEC], ['Basic', R], 'R11 c: bare Basic');
+    masked(['-c', 'curl --auth Bearer ' + SEC], ['-c', 'curl --auth Bearer ' + R], 'R11 d: shell string');
+    noSec(maskSecretArgs(['-c', 'curl -H "Authorization: Bearer" ' + SEC]), 'R11 d: quoted header word in a shell string (redact() hides the scheme too, fine)');
+    noSec(maskSecretCommand('curl --auth Bearer ' + SEC), 'R11 d: command (R8: redact() masks `Bearer SEC` first)');
+    assert.ok(maskSecretArgs(['--auth', 'Bearer', SEC])[1] === 'Bearer', 'R11 g: the scheme word stays visible');
+    masked(['-c', 'curl Bearer ' + SEC], ['-c', 'curl Bearer ' + R], 'R11 c: bare Bearer word in a shell string');
+    assert.deepStrictEqual(maskSecretArgs(['-c', 'curl Bearer']), ['-c', 'curl Bearer'], 'R11 c: Bearer as the last word of a shell string shows nothing extra');
+    assert.deepStrictEqual(maskSecretArgs(['-c', 'curl Basic setup']), ['-c', 'curl Basic setup'], 'R11 c: Basic stays top-level only');
+    // review fixes: command with a quoted header, --flag=Scheme, any header name after -H, trailing space, array values, case variants
+    for (const w of ['Bearer', 'Basic', 'Token', 'Digest', 'Negotiate', 'ApiKey']) {
+      noSec(maskSecretCommand('curl -H "Authorization: ' + w + '" ' + SEC), 'rev1: command, quoted header, ' + w);
+      noSec(maskSecretCommand("curl -H 'Proxy-Authorization: " + w + "' " + SEC), 'rev1: command, single-quoted header, ' + w);
+    }
+    noSec(maskSecretCommand('curl Authorization: Bearer ' + SEC + ' https://h.test'), 'rev1: command, unquoted header');
+    assert.strictEqual(maskSecretCommand('curl "Accept: Token" list'), 'curl "Accept: Token" list', 'rev1: a harmless name without a header flag keeps the next word');
+    assert.strictEqual(maskSecretCommand('curl -H "Authorization: Bearer" --verbose'), 'curl -H "Authorization: [redacted]" --verbose', 'rev1: a flag after the scheme word stays');
+    masked(['--auth=Bearer', SEC], ['--auth=Bearer', R], 'rev2: --auth=Bearer SEC');
+    masked(['--header=Authorization: Bearer', SEC], ['--header=Authorization: [redacted]', R], 'rev2: --header=Authorization: Bearer SEC');
+    masked(['-c', 'curl --auth=Bearer ' + SEC], ['-c', 'curl --auth=Bearer ' + R], 'rev2: shell string --auth=Bearer');
+    masked(['-H', 'X-Custom: Token', SEC], ['-H', 'X-Custom: [redacted]', R], 'rev3: any name after -H');
+    masked(['--header', 'X-Custom: Basic', SEC], ['--header', 'X-Custom: [redacted]', R], 'rev3: any name after --header');
+    masked(['--auth', 'Bearer ', SEC], ['--auth', 'Bearer ', R], 'rev4: trailing space');
+    masked(['Bearer ', SEC], ['Bearer ', R], 'rev4: bare, trailing space');
+    for (const same of [['X-Custom: Token', 'list'], ['Accept: Token', 'list']]) assert.deepStrictEqual(maskSecretArgs(same), same, 'rev6: a harmless name without a header flag stays (pins schemeHeader secretFlag): ' + JSON.stringify(same));
+    const escA = (k: string, n: string, vk: string): string => '{\\"' + k + '\\":\\"' + n + '\\",\\"' + vk + '\\":[\\"' + SEC + '\\"]}';
+    noSec(maskSecretArgs(['-c', 'srv ' + escA('name', 'token', 'value')]), 'rev5: array value');
+    noSec(maskSecretArgs(['-c', 'srv ' + escA('key', 'Authorization', 'value')]), 'rev5: array value, key');
+    assert.strictEqual(maskSecretArgs(['-c', 'srv {\\"name\\":\\"port\\",\\"value\\":[\\"8080\\"]}'])[1], 'srv {\\"name\\":\\"port\\",\\"value\\":[\\"8080\\"]}', 'rev5: array value of a harmless name stays');
+    for (const [k, vk] of [['NAME', 'VALUE'], ['Key', 'Value'], ['KEY', 'value']]) noSec(maskSecretArgs(['-c', 'srv {\\"' + k + '\\":\\"token\\",\\"' + vk + '\\":\\"' + SEC + '\\"}']), 'rev6: case variant ' + k);
+    // R7 on escaped objects
+    const esc = (k: string, n: string, val: string, rest = ''): string => '{\\"' + k + '\\":\\"' + n + '\\",\\"value\\":\\"' + val + '\\"' + rest + '}';
+    masked(['-c', 'srv --cfg "' + esc('name', 'Authorization', SEC) + '"'], ['-c', 'srv --cfg "' + esc('name', 'Authorization', R) + '"'], 'R7 esc: name');
+    masked(['-c', 'srv --cfg "' + esc('key', 'Authorization', SEC) + '"'], ['-c', 'srv --cfg "' + esc('key', R, R) + '"'], 'R7 esc: key (the name itself is masked too, as for the pair rule)');
+    masked(['-c', 'srv ' + esc('name', 'token', SEC)], ['-c', 'srv ' + esc('name', 'token', R)], 'R7 esc: token name, unquoted');
+    masked(['-c', 'srv ' + esc('name', 'API_KEY', SEC, ',\\"other\\":\\"1\\"')], ['-c', 'srv ' + esc('name', 'API_KEY', R, ',\\"other\\":\\"1\\"')], 'R7 esc: other members kept');
+    masked(['-c', 'srv ' + '{\\"name\\":\\"password\\",\\"value\\":' + SEC + '}'], ['-c', 'srv ' + '{\\"name\\":\\"password\\",\\"value\\":' + R + '}'], 'R7 esc: bare value');
+    // false positives stay as they are
+    for (const same of [['npx', 'srv', 'token', 'list'], ['--desc', 'Basic setup of the server'], ['{\\"name\\":\\"port\\",\\"value\\":\\"8080\\"}'], ['-c', 'srv {\\"name\\":\\"port\\",\\"value\\":\\"8080\\"}'], ['Accept: a; q=0.9'], ['Bearer', '--verbose'], ['Authorization: Bearer', '--verbose']]) {
+      assert.deepStrictEqual(maskSecretArgs(same), same, 'R11 no false positive: ' + JSON.stringify(same));
+    }
+    assert.deepStrictEqual(maskSecretArgs(['--desc', 'Basic setup']), ['--desc', 'Basic [redacted]'], 'R11: `Basic setup` (scheme word plus one word) was already masked by the BEARER rule before T066, unchanged');
+    // cost: a long run of `Bearer ` words and many escaped R7 objects (same interleaved ratio as the block below)
+    const rshapes: Array<[string, string]> = [['Bearer ', 'Bearer '], ['--auth Bearer ', '--auth Bearer '], ['obj', '{\\"name\\":\\"token\\",\\"value\\":\\"x y\\"} '], ['arr', '{\\"name\\":\\"token\\",\\"value\\":[\\"x\\"]} '], ['hdr', 'Authorization: Bearer '], ['qhdr', '-H "Authorization: Bearer" '], ['eq', '--auth=Bearer ']];
+    for (const [, unit] of rshapes) {
+      const mk = (n: number): string => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
+      const time = (x: string): number => { const t = process.hrtime.bigint(); maskSecretArgs([x]); maskSecretArgs(['-c', x]); maskSecretCommand(x); return Number(process.hrtime.bigint() - t) / 1e6; };
+      let tSmall = Infinity;
+      let tBig = Infinity;
+      for (let i = 0; i < 5; i++) { tSmall = Math.min(tSmall, time(mk(50_000))); tBig = Math.min(tBig, time(mk(400_000))); }
+      const t200 = time(mk(200_000));
+      const ratio = tBig / Math.max(tSmall, 20);
+      console.log(`redact: 14c R11/R7 ${JSON.stringify(unit)} 50k=${Math.round(tSmall)} ms 400k=${Math.round(tBig)} ms ratio ${ratio.toFixed(1)} 200k=${Math.round(t200)} ms`);
+      assert.ok(t200 < 5000 && tBig < 8000 && ratio < 24, `14c: R11/R7 ${JSON.stringify(unit)} grew too fast: ${tSmall} -> ${tBig} ms (ratio ${ratio.toFixed(1)}), 200k ${t200} ms`);
+    }
+  }
+
   // (n) timing: each shape linear in practice; doubling check on the shape the analyst suspected.
   const shapes: Array<[string, string]> = [['-c ', '-c '], ['"', '"'], ['"a ', '"a '], ["a 'b", "a 'b"], [', a=', ', a='], ['Cookie: ', 'Cookie: '], ['{"a":"x y ', '{"a":"x y '], ["'\"", "'\""], ['x ', 'x ']];
   const run = (x: string): void => { maskSecretArgs([x]); maskSecretArgs(['-c', x]); maskSecretCommand(x); };

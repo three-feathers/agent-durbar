@@ -111,6 +111,22 @@ const ENV_PREFIX = /^\$env:/i;
 const LONG_FLAG = /^--[A-Za-z][A-Za-z0-9_.-]*(?:[=:\s]|$)/;
 /** `Bearer x` / `Basic x` as a whole arg: the word and exactly one token (so `Basic setup of the server` stays). */
 const BEARER = /^(bearer|basic)(\s+)\S+\s*$/i;
+/** R11: auth scheme words; the secret is the next arg. */
+const SCHEME = /^(?:bearer|basic|token|digest|negotiate|apikey)$/i;
+/** `Name: <scheme word>` with nothing after it and a secret-looking name (`Authorization: Bearer`): the secret is the next arg (R11 b). */
+function schemeHeader(a: string, anyName = false): boolean {
+  const h = HDR.exec(a);
+  return !!h && !URL_SHAPE.test(a) && SCHEME.test(h[2].trim()) && (anyName || secretFlag(h[1]));
+}
+/**
+ * R11(b) on the raw text of a `command`, before `redact()` (R8) can mask the scheme word and hide the shape: in `Name: <scheme>` (also
+ * quoted) with a secret-looking name, the word after it is the secret. Bounded pieces, starting at a whitespace or the start: linear.
+ */
+function maskSchemeSecrets(c: string): string {
+  if (!/:/.test(c)) return c;
+  return c.replace(/(^|\s)(["']?)([A-Za-z0-9][A-Za-z0-9_-]{0,127})(\s{0,8}:\s{0,8})(bearer|basic|token|digest|negotiate|apikey)(\2)(\s{1,8})(?!-)[^\s"']{1,4096}/gi,
+    (m, lead: string, q1: string, name: string, colon: string, word: string, q2: string, sp: string) => (secretFlag(name) ? `${lead}${q1}${name}${colon}${word}${q2}${sp}${MASK}` : m));
+}
 const HDR = /^([A-Za-z0-9][A-Za-z0-9_-]{0,127})\s{0,8}:\s*([\s\S]*)$/;
 /** `Name:` alone: its value is the next arg (R5). */
 const HDR_NAME_ONLY = /^([A-Za-z0-9][A-Za-z0-9_-]{0,127})\s{0,8}:\s{0,8}$/;
@@ -149,9 +165,20 @@ function maskJson(v: string, env: Env | undefined, force: boolean, d: number): s
   return JSON.stringify(maskJsonValue(parsed, force, 0, env, d));
 }
 
+/** R7 on escaped objects: `{\"name\":\"token\",\"value\":\"x\"}` (or `\"key\"`): a secret-looking name masks the `\"value\"` of the same object. One level (no braces inside), bounded. */
+function maskEscapedObjects(v: string): string {
+  if (!v.includes('{')) return v;
+  return v.replace(/\{([^{}]{0,4100})\}/g, (m, body: string) => {
+    const n = /\\{1,16}"(?:name|key)\\{1,16}"\s{0,8}:\s{0,8}\\{1,16}"([^"\\]{0,100})\\{1,16}"/i.exec(body);
+    if (!n || !secretFlag(n[1])) return m;
+    return '{' + body.replace(/(\\{1,16}"value\\{1,16}"\s{0,8}:\s{0,8})(?:(\\{1,16}")[^"\\]{0,2000}(\\{1,16}")|\[[^\[\]]{0,2000}\]|[^\s,}\[\]"\\][^\s,}\]"\\]{0,1999})/i, (_x, pre: string, q1?: string, q2?: string) => `${pre}${q1 ? `${q1}${MASK}${q2}` : MASK}`) + '}';
+  });
+}
+
 /** `\"name\":\"value\"` pairs with escaped quotes (any escape depth; JSON inside a shell string that R1 cannot parse). The value may contain spaces. */
 function maskEscapedPairs(v: string, force = false): string {
   if (!v.includes('\\"')) return v;
+  if (!force) v = maskEscapedObjects(v); // R7 first: the test is on the raw name string, before the pair rule below masks it
   return v.replace(/(\\{1,16}")([^"\\]{1,100})(\\{1,16}")(\s{0,8}:\s{0,8})(?:(\\{1,16}")[^"\\]{0,2000}(\\{1,16}")|[^\s,}\]"\\]{1,2000})/g, (m, q1: string, name: string, q2: string, colon: string, vq1?: string, vq2?: string) => {
     if (!force && !secretFlag(name)) return m;
     return `${q1}${name}${q2}${colon}${vq1 ? `${vq1}${MASK}${vq2}` : MASK}`;
@@ -327,11 +354,14 @@ function maskArgs(args: readonly string[], env: Env, d: number, top = false): st
       const f = a.startsWith('-') || a.startsWith('/') ? parseFlag(a) : undefined;
       if (pending && !LONG_FLAG.test(a) && (pending === 'secret' || !a.startsWith('-'))) {
         if (pending === 'header' && HDR_NAME_ONLY.test(a)) { out.push(W(a)); pending = 'secret'; continue; } // R5: `Name:` then its value as the next arg
+        if (SCHEME.test(a.trim()) || (pending === 'header' && schemeHeader(a))) { out.push(W(a)); pending = 'secret'; continue; }
+        if (pending === 'header' && schemeHeader(a, true)) { out.push(W(maskHeaderValue(a, env, d))); pending = 'secret'; continue; } // R11 after a header flag: any name (FR-012: header values are masked whatever the name) // R11 a/b: the scheme word stays, the next arg is the secret
         out.push(pending === 'secret' ? MASK : W(maskHeaderValue(a, env, d)));
         pending = undefined;
         continue;
       }
       pending = undefined;
+      if (!f && ((top ? /^(?:bearer|basic)$/i : /^Bearer$/).test(a.trim()) || schemeHeader(a))) { out.push(W(a)); pending = 'secret'; continue; } // R11 c (`Basic` and a lowercase `bearer` only at top level: in prose, `Basic setup` must stay) and b
       if (!f) {
         const hn = HDR_NAME_ONLY.exec(a);
         if (hn && secretFlag(hn[1])) { out.push(W(a)); pending = 'secret'; continue; } // R5
@@ -342,10 +372,14 @@ function maskArgs(args: readonly string[], env: Env, d: number, top = false): st
           pending = secret ? 'secret' : HEADER_FLAGS.has(f.name.toLowerCase()) ? 'header' : undefined;
           out.push(W(rd(a)));
         } else if (secret) {
+          if (SCHEME.test(f.rest.trim())) { out.push(W(a)); pending = 'secret'; continue; } // R11 a: `--auth=Bearer` and then the secret as its own arg
           out.push(`${f.name}${f.sep}${MASK}`);
           if (f.rest === '') pending = 'secret'; // `--token=` and then the value as its own arg
         }
-        else if (HEADER_FLAGS.has(f.name.toLowerCase())) out.push(W(`${f.name}${f.sep}${maskHeaderValue(f.rest, env, d)}`));
+        else if (HEADER_FLAGS.has(f.name.toLowerCase())) {
+          out.push(W(`${f.name}${f.sep}${maskHeaderValue(f.rest, env, d)}`));
+          if (schemeHeader(f.rest, true)) pending = 'secret'; // R11 b: `--header=Authorization: Bearer` and then the secret
+        }
         else out.push(W(`${f.name}${f.sep}${rd(maskText(f.rest, d, env))}`));
         continue;
       }
@@ -386,7 +420,7 @@ export function splitCommand(command: unknown): string[] {
 export function maskSecretCommand(command: unknown, envIn?: Env): string {
   try {
     const env = snapshot(envIn);
-    return maskArgs(splitCommand(redact(typeof command === 'string' ? command : '', env)), env, MAX_DEPTH, true).join(' ');
+    return maskArgs(splitCommand(redact(maskSchemeSecrets(typeof command === 'string' ? command : ''), env)), env, MAX_DEPTH, true).join(' ');
   } catch { return '[redaction failed]'; }
 }
 

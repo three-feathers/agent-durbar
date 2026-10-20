@@ -245,6 +245,11 @@ async function main(): Promise<void> {
       nameValue: 'NAMEVALUE-' + 'g1h2j3k4l5z6x7c8',
       wholeQuoted: 'WHOLEQUOTED-' + 'r1t2y3u4i5o6p7a8',
       shellUrl: 'SHELLURL-' + 'd9f8g7h6j5k4l3z2',
+      schemeFlag: 'SCHEMEFLAG-' + 'a1b2c3d4e5f6g7h8',
+      schemeHdr: 'SCHEMEHDR-' + 'i9j8k7l6m5n4o3p2',
+      schemeBare: 'SCHEMEBARE-' + 'q1r2s3t4u5v6w7x8',
+      schemeShell: 'SCHEMESH-' + 'y9z8a7b6c5d4e3f2',
+      escObj: 'ESCOBJ-' + 'g1h2i3j4k5l6m7n8',
     };
     const folder = (i: number, over: Partial<SavedFolder> = {}): SavedFolder => ({ workspace: path.join(os.tmpdir(), `durbar-t016-f${i}`), permMode: i % 3 === 0 ? 'ask' : 'read-only', hidden: false, ...over });
     const agentOf = (f: SavedFolder, i: number, over: Partial<AgentInfo> = {}): AgentInfo => ({
@@ -425,6 +430,9 @@ async function main(): Promise<void> {
           `npx srv https://${S.shellUrl}@h.test/x`],
         env: [], headers: [],
       } as any;
+      // T066 (R11, R7 on escaped pairs): a scheme word then the secret, and an escaped name/value object in a shell string
+      planted2.args!.push('--auth', 'Bearer', S.schemeFlag, '-H', 'Authorization: Bearer', S.schemeHdr, 'Bearer', S.schemeBare, `curl --auth Basic ${S.schemeShell}`,
+        `sh -c "{\\"name\\":\\"token\\",\\"value\\":\\"${S.escObj}\\"}"`);
       const cliEntry = { name: 'cli2', origin: 'copilot-config', transport: 'stdio', command: 'sh', args: ['-c', `npx srv --api-key=${S.shellTok} --config ${S.pathDir}/c.json`], enabled: true };
       const { call } = mk(15, 40, {
         mcpExtras: (k: string) => (k === path.join(os.tmpdir(), 'durbar-t016-f0') ? [planted2] : []),
@@ -432,6 +440,7 @@ async function main(): Promise<void> {
       });
       const all = (await Promise.all(READ_TOOLS.map((t) => call(t.name, t.name === 'durbar_request_status' ? { requestId: 'x' } : {})))).map((r) => r.raw).join('\n');
       for (const k of ['shellTok', 'exportTok', 'hdrAfter', 'cookieSemi', 'spaceColon', 'quotedHdr', 'commaPw', 'nameValue', 'wholeQuoted', 'shellUrl'] as const) assert.ok(!all.includes(S[k]), `12f: T064 ${k} never appears in any result`);
+      for (const k of ['schemeFlag', 'schemeHdr', 'schemeBare', 'schemeShell', 'escObj'] as const) assert.ok(!all.includes(S[k]), `12f: T066 ${k} never appears in any result`);
       assert.ok(!all.includes('.config'), '12f: no .config directory in the T064 shapes');
       assert.ok(all.includes('…/x.json') && all.includes('…/c.json'), '12f: the shell-string paths are reduced');
     }
