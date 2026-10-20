@@ -151,11 +151,11 @@ html[data-ui="court-japanese"] .lobby .place .pic{color:var(--brand-bg)}
    --brand-mark text (corporate 6.4:1, retro 15:1, Indian 5.7:1, European 8:1, Japanese 5.2:1; a generated theme with a
    themed style is only checked at 3:1 for this pair in themegen.ts). The rule above gives every themed .btn a surface background; these outrank it.
    Disabled and warn buttons keep their own look. ---------- */
-html[data-ui]:not([data-ui="clean"]) .btn.primary:not(.warn,:disabled,[aria-disabled=true]){background:var(--brand-bg);border-color:transparent;color:var(--brand-mark)}
-html[data-ui]:not([data-ui="clean"]) .btn.primary:not(.warn,:disabled,[aria-disabled=true]):hover{background:color-mix(in srgb,var(--brand-bg) 86%,#000)}
-html[data-ui="corporate"] .btn.primary:not(.warn,:disabled,[aria-disabled=true]){border-color:color-mix(in srgb,var(--brand-bg) 80%,#000);box-shadow:inset 1px 1px 0 color-mix(in srgb,#fff 35%,transparent),inset -1px -1px 0 rgba(0,0,0,.35)}
-html[data-ui="retro"] .btn.primary:not(.warn,:disabled,[aria-disabled=true]){border-color:var(--line)}
-html[data-ui="retro"] .btn.primary:not(.warn,:disabled,[aria-disabled=true]):hover{background:color-mix(in srgb,var(--brand-bg) 88%,#000)}
+html[data-ui]:not([data-ui="clean"]) .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=true]){background:var(--brand-bg);border-color:transparent;color:var(--brand-mark)}
+html[data-ui]:not([data-ui="clean"]) .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=true]):hover{background:color-mix(in srgb,var(--brand-bg) 86%,#000)}
+html[data-ui="corporate"] .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=true]){border-color:color-mix(in srgb,var(--brand-bg) 80%,#000);box-shadow:inset 1px 1px 0 color-mix(in srgb,#fff 35%,transparent),inset -1px -1px 0 rgba(0,0,0,.35)}
+html[data-ui="retro"] .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=true]){border-color:var(--line)}
+html[data-ui="retro"] .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=true]):hover{background:color-mix(in srgb,var(--brand-bg) 88%,#000)}
 
 /* ---------- spec 052 FR-054: a period texture on the rooms, art only (2-4%), and a room-name accent per era.
    Gradients and inline SVG only; the room's colour and every size stay; text sits on its own surface above it. ---------- */

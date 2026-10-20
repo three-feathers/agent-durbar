@@ -6,17 +6,17 @@
  * table row per rule and checks that the renderer source still contains each copied fragment. Where each rule comes from
  * (line numbers of the renderer at the time of writing; the test pins the text, not the numbers):
  *   words           app.js:204  LABELS; app.js:206-207  vis() and label() (Paused hides the state and the sub-label)
- *   new agent       app.js:1169 (Idle; sub-label Not started when lazy, else Ready)
+ *   new agent       app.js:1169 (Idle; sub-label Not started when lazy, else none)
  *   status working  app.js:1651   only when not already Working or Thinking; the sub-label is cleared
- *   needs-permission app.js:1653       Waiting for you
- *   idle (Aborted)  app.js:1656-1661   Idle, Ready; worked flag cleared
- *   idle            app.js:1662-1663   Done when the turn did work, else Idle, Ready
+ *   needs-permission app.js:1653       Waiting
+ *   idle (Aborted)  app.js:1656-1661   Idle; worked flag cleared
+ *   idle            app.js:1662-1663   Done when the turn did work, else Idle
  *   error / stopped app.js:1667, 1673   Error / Idle, Ended
- *   limit           app.js:1679 (exhausted: Waiting for you, Limit reached), 1550-1551 (resolved: cancel = Idle, Ready; else Working)
- *   question        app.js:1683 (asked: Waiting for you, Waiting for your answer), 1542 (answered or cancelled: Working, only if waiting)
+ *   limit           app.js:1679 (exhausted: Waiting, Limit reached), 1550-1551 (resolved: cancel = Idle; else Working)
+ *   question        app.js:1683 (asked: Waiting), 1542 (answered or cancelled: Working, only if waiting)
  *   thinking        app.js:1688  Thinking
  *   output          app.js:1689  Working
- *   toolCall start  app.js:1693  Thinking becomes Working, ANY OTHER state is kept (Waiting for you stays Waiting for you); sub-label cleared
+ *   toolCall start  app.js:1693  Thinking becomes Working, ANY OTHER state is kept (Waiting stays Waiting); sub-label cleared
  *   user send       app.js:1708 (noteSend: Thinking from any state, work started); a failed send app.js:1710 (noteSendFailed: Error)
  * Events with an `agentId` (helpers) never change the main agent (app.js:1644 hands them to the sub-agent card); the demo-only
  * renderer paths are not adapter events.
@@ -24,15 +24,15 @@
 import type { AgentEvent } from '../../adapters/types';
 
 export type OfficeState = 'working' | 'thinking' | 'waiting' | 'idle' | 'error' | 'done';
-export type OfficeWord = 'Working' | 'Thinking' | 'Waiting for you' | 'Idle' | 'Error' | 'Done' | 'Paused';
+export type OfficeWord = 'Working' | 'Thinking' | 'Waiting' | 'Idle' | 'Error' | 'Done' | 'Paused';
 
 /** app.js:204 */
-const LABELS: Record<OfficeState, OfficeWord> = { working: 'Working', thinking: 'Thinking', waiting: 'Waiting for you', idle: 'Idle', error: 'Error', done: 'Done' };
+const LABELS: Record<OfficeState, OfficeWord> = { working: 'Working', thinking: 'Thinking', waiting: 'Waiting', idle: 'Idle', error: 'Error', done: 'Done' };
 
 export interface AgentStateView {
   /** The word the office shows ("Paused" when the window paused the agent). */
   word: OfficeWord;
-  /** The sub-label the office shows next to it (Ready, Not started, Ended, Limit reached, Done, ...), or null; null while paused. */
+  /** The sub-label the office shows next to it (Not started, Ended, Limit reached, Done, ...), or null; null while paused. */
   subLabel: string | null;
   /** The state behind the word (app.js:206 `vis`: a paused agent reads as idle). */
   state: OfficeState;
@@ -46,7 +46,7 @@ export class AgentStateTracker {
 
   /** Start tracking an agent (a new or restored one: Idle; Not started when it is a saved folder with no session yet). Keeps an existing entry. */
   ensure(id: string, lazy = false): void {
-    if (!this.agents.has(id)) this.agents.set(id, { state: 'idle', label: lazy ? 'Not started' : 'Ready', paused: false, worked: false, limit: false, question: false });
+    if (!this.agents.has(id)) this.agents.set(id, { state: 'idle', label: lazy ? 'Not started' : null, paused: false, worked: false, limit: false, question: false });
   }
 
   remove(id: string): void {
@@ -114,11 +114,11 @@ export class AgentStateTracker {
           a.question = false;
           a.questionId = undefined;
           a.worked = false;
-          set('idle', 'Ready');
+          set('idle', null);
         } else if (e.status === 'idle') {
           const was = a.worked;
           a.worked = false;
-          if (was) set('done', 'Done'); else set('idle', 'Ready');
+          if (was) set('done', 'Done'); else set('idle', null);
         } else if (e.status === 'error') {
           set('error', null);
         } else if (e.status === 'stopped') {
@@ -137,7 +137,7 @@ export class AgentStateTracker {
         } else if (e.phase === 'resolved' && a.limit && a.limitId === e.requestId) {
           a.limit = false;
           a.limitId = undefined;
-          if ((e.action || 'add') === 'cancel') { a.worked = false; set('idle', 'Ready'); } else set('working', null);
+          if ((e.action || 'add') === 'cancel') { a.worked = false; set('idle', null); } else set('working', null);
         }
         return;
       case 'question':
@@ -145,7 +145,7 @@ export class AgentStateTracker {
           if (a.question && a.questionId === e.requestId) return;
           a.question = true;
           a.questionId = e.requestId;
-          set('waiting', 'Waiting for your answer');
+          set('waiting', null);
         } else if (a.question && a.questionId === e.requestId) {
           a.question = false;
           a.questionId = undefined;

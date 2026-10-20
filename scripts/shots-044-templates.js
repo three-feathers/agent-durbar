@@ -31,7 +31,7 @@ module.exports = async (ctx) => {
     assert.match(st.p, /^Start my day/);
     assert.strictEqual(st.kind, 'daily');
     assert.strictEqual(st.t, '08:30');
-    assert.match(st.note, /Waiting for you/);
+    assert.match(st.note, /shows as Waiting,/);
     assert.ok(st.fits, 'the dialog fits the window');
     // Phase 2 FR-012: "On a calendar" is every day for the template; weekly shows the day checkboxes, then back to every day
     const cal = await js(`(()=>{const c=document.getElementById('scCal'),days=document.getElementById('scDays');const a=[c.value,days.hidden];c.value='weekly';c.dispatchEvent(new Event('change'));const b=[days.hidden,days.querySelectorAll('input:checked').length];c.value='daily';c.dispatchEvent(new Event('change'));return {a,b,back:days.hidden}})()`);
