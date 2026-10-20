@@ -370,7 +370,20 @@ export interface AgentScheduleEvent extends BaseEvent {
   origin?: 'user' | 'model';
 }
 
+/**
+ * Spec 054 FR-062: remote control changed without the user asking: it ended (a relaunch could not turn it back on), or it is still on
+ * with a new link after a relaunch (`on: true` with `url`; main checks the host again before the window sees it).
+ */
+export interface RemoteEvent extends BaseEvent {
+  type: 'remote';
+  on: boolean;
+  /** One plain line for the window. */
+  reason?: string;
+  url?: string;
+}
+
 export type AgentEvent =
+  | RemoteEvent
   | AgentScheduleEvent
   | UserEvent
   | QuestionEvent

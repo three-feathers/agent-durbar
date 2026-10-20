@@ -1,6 +1,6 @@
 # Spec 061: A folder's own agent setup is used, and shown
 
-**Status:** draft. Owner decisions recorded (issue #289, 2026-10-20). Constitution **Amendment 1** (principle III, v1.1.0), asked for by the owner in the session on 2026-10-20, is made in this PR; next: research R1-R3, then plan and tasks.
+**Status:** draft. Owner decisions recorded (issue #289, 2026-10-20). Constitution **Amendment 1** (principle III, v1.1.0) is in force (#395). Review requirements FR-010..FR-014 added (Paco, Ruben, #394). Q5 answered (FR-011, FR-015, FR-016); next: research R1-R3, then plan and tasks.
 **Issue:** #289 (was spec 012 T083, `[KNOWN GAP]`). **Builds on:** 012 (Claude and Codex adapters), 019 (MCP), 043 (custom agents), 041/019 (secret masking), 003 (permission modes).
 
 ## Owner decisions (issue #289, 2026-10-20)
@@ -45,6 +45,47 @@ What Durbar already uses from a folder: `CLAUDE.md` and `AGENTS.md` (instruction
   - Copilot: the folder is passed as trusted to the runtime (R3), so it reads the folder's settings, hooks and MCP servers; opt-outs through the session config.
 - **FR-005 Permission modes stay visible.** Durbar's mode (Read-only, Ask first, Allow all) still decides everything the folder's own rules do not. In the chat header and the folder's room, a small **"folder rules"** chip shows when a folder's hooks or allow rules are on, and opens the same list. The activity log records a hook run when the runtime reports one.
 - **FR-006 Honest limits.** Each agent app's support is recorded as `real:` per item kind after R1-R3; anything a runtime does not support is shown as "not supported by <app>" in the dialog, never silently dropped.
+
+## Review requirements (Paco and Ruben on #394, 2026-10-20)
+
+Added as requirements before anything is built (review findings are fixed in the work, not left as notes).
+
+- **FR-010 Consent per item, re-asked on change** (Paco 1). Each item has its own digest: a hook's event and command, a rule's text, a server's command, URL and env names. After a `git pull` or any edit, an item that is new or changed is **off until the person accepts it again**. The dialog marks it as *new* or *changed*. Unchanged items keep their choice. Removed items are dropped. This is the same rule as folder MCP imports (`mcp:importApply` with a digest, spec 019) and custom agents (`agenttrust.ts`, spec 043). **Reuse those**; do not write a third digest store.
+- **FR-011 Hooks in folders the user did not write** (Paco 2). **Open, owner question Q5 below.** Until it is answered, the plan must not pick a default for hooks.
+- **FR-012 Read-only still means something** (Paco 3). Whenever a folder's hooks or allow rules are on, the session's mode chip reads **"Read-only + folder rules"** (or "Ask first + folder rules"), not just the mode. The chat shows a line when a folder hook ran or a folder allow rule let a tool through without asking, when the runtime reports it. Where the runtime does not report it, the spec records `[KNOWN GAP]` and the chip still shows.
+- **FR-013 Only a person in Durbar's window accepts the list** (Paco 4). Accepting or changing the folder setup is an IPC that only Durbar's own window can call (`fromApp`). It is never reachable from:
+  - the Durbar MCP server's change tools (spec 041);
+  - remote control (spec 054);
+  - schedules (spec 044);
+  - any agent-driven path.
+
+  A unit test pins this the way `test-prevsessions` pins `sessions:delete` (#379): one registration, through `ipcHandle`, and no other caller.
+- **FR-014 Show what each item does, secrets masked** (Ruben, Paco 5). The dialog lists each item in full, never only a count:
+  - **hooks:** the event (`PreToolUse`, `SessionStart`…), the matcher, and the exact command;
+  - **allow, deny and ask rules:** the tool and pattern as written (`Bash(npm test:*)` is not `Bash(*)`). A wildcard rule such as `Bash(*)` or a bare tool name is marked *broad*;
+  - **MCP servers:** command and args, or URL, and the names of env and header keys.
+
+  Values are masked with the existing helpers: `maskSecretCommand`, `maskSecretArgs` and `maskSecretUrl` (`src/shared/redact.ts`), and `mcpmask.ts` (#362) for env and header values. Never show a secret value, and never store one. A unit test feeds a hook command, a rule and an `.mcp.json` with tokens and checks that none reach the window.
+
+## Owner answer to Q5 (PR #397, 2026-10-20)
+
+> "a) and c) so that we show what is inside the hook, user understands and also confirms that they know - if possible, lets also explain what the hook does and if it is safe or not asking llm to review it as by this time we will already have access to run llm checks."
+
+- **FR-011 Hooks** (resolves Q5, combining a and c):
+  - Hooks are part of the folder's setup and run once accepted (Q2).
+  - The dialog shows every hook in full (FR-014): its event, its matcher and its exact command.
+  - Hooks are accepted only with an explicit confirmation next to them: **"I have read these hooks and I know what they run"**.
+  - Without that confirmation, the folder's other items can still be used, and the hooks stay off. This is remembered per item digest (FR-010), so a changed hook asks again.
+- **FR-015 AI explanation of each hook** (owner: "explain what the hook does and if it is safe or not asking llm to review it"):
+  - When the dialog lists hooks, Durbar asks an installed, signed-in agent app for a short explanation of each one: what it does in plain words, what it touches (files, network, processes) and a verdict of *looks harmless*, *needs care* or *risky*, with one line of why.
+  - It reuses the existing one-shot call (`generateText`, spec 040 FR-015: no tools, no MCP, nothing saved) on the cheapest model.
+  - The answer is shown next to the hook, marked "AI explanation; it can be wrong".
+- **FR-016 The AI never decides.**
+  - A hook file can contain text written to fool a model ("this hook is safe"). So the command is always shown as it is.
+  - The hook content goes to the model as quoted data, with an instruction to treat it as untrusted.
+  - A verdict never turns a hook on or hides it; only the person's confirmation does (FR-013).
+  - If no agent app is available, or the call fails, the dialog says "No AI explanation" and works the same.
+  - The call's cost is shown like any one-shot.
 
 ## Research before the plan
 

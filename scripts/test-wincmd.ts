@@ -5,7 +5,8 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { windowsCmd } from '../src/shared/wincmd';
+import { CMD_UNSAFE, windowsCmd } from '../src/shared/wincmd';
+import { isObj, nonEmptyStr } from '../src/shared/guards';
 import { randomPlaceId } from '../src/main/settings';
 import { navigationAllowed, permissionAllowed } from '../src/main/hardening';
 
@@ -74,5 +75,12 @@ for (const p of ['media', 'geolocation', 'clipboard-read', 'openExternal', 'full
   assert.deepStrictEqual(direct, [], 'IPC registered on ipcMain directly, without the sender check: ' + direct.join(', '));
   assert.ok(/ipcHandle\(/.test(fs.readFileSync(path.join(mainDir, 'main.ts'), 'utf8')), 'main.ts uses ipcHandle');
 }
+
+// tech-debt pass 2026-10-21: one CMD_UNSAFE for detection, harness setup and VS Code (was two copies): every unsafe character refused
+for (const c of ['\r', '\n', '\0', '"', '&', '|', '<', '>', '^', '%', '!', '`', '(', ')', ',', ';', '=']) assert.ok(CMD_UNSAFE.test(`C:\\x${c}y`), `unsafe: ${JSON.stringify(c)}`);
+assert.ok(!CMD_UNSAFE.test('C:\\Users\\u\\AppData\\Roaming\\npm\\codex.cmd'), 'an ordinary path is safe');
+// the shared guards behave like the 14 copies they replace
+assert.deepStrictEqual([isObj({}), isObj(null), isObj([]), isObj('x'), isObj(Object.create(null))], [true, false, false, false, true]);
+assert.deepStrictEqual([nonEmptyStr('a'), nonEmptyStr(''), nonEmptyStr(1), nonEmptyStr(undefined)], ['a', undefined, undefined, undefined]);
 
 console.log('security sweep tests passed');

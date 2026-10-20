@@ -21,8 +21,8 @@ export interface RemoteState {
   error?: string;
 }
 
-/** FR-005: the only links remote control may show or open: https on github.com itself, no user info, no port, at most 2048 characters. */
-export function allowedRemoteUrl(url: unknown): url is string {
+/** FR-005, FR-060: the only links remote control may show or open: https on the service's own host (default github.com), no user info, no port, at most 2048 characters. */
+export function allowedRemoteUrl(url: unknown, host = 'github.com'): url is string {
   if (typeof url !== 'string' || !url || url.length > 2048) return false;
   let u: URL;
   try {
@@ -30,7 +30,7 @@ export function allowedRemoteUrl(url: unknown): url is string {
   } catch {
     return false;
   }
-  return u.protocol === 'https:' && !u.username && !u.password && !u.port && u.hostname.toLowerCase() === 'github.com';
+  return u.protocol === 'https:' && !u.username && !u.password && !u.port && u.hostname.toLowerCase() === host.toLowerCase();
 }
 
 /** FR-002: an error as one plain line of at most 300 characters (control characters removed). */

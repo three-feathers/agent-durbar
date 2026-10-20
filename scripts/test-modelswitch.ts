@@ -66,7 +66,9 @@ assert.strictEqual(D.relativePrice({ id: 'a', multiplier: 1 }, { id: 'b', multip
 
 // estimate
 assert.strictEqual(D.estimateInputCredits(200000, deep), 50);
-assert.strictEqual(D.estimateInputCredits(200000, deep, 'long'), 100);
+// spec 030 T044 (real 2026-10-20): on the long tier, a context that still fits the default window is billed at the default price
+assert.strictEqual(D.estimateInputCredits(200000, deep, 'long'), 50);
+assert.strictEqual(D.estimateInputCredits(300000, deep, 'long'), 150);
 assert.strictEqual(D.estimateInputCredits(200000, mystery), undefined);
 assert.strictEqual(D.estimateInputCredits(-1, deep), undefined);
 

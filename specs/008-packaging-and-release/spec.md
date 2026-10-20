@@ -71,12 +71,12 @@ Typecheck, build and `npm test` run on Ubuntu, macOS and Windows; a Linux job al
 - **FR-007** `[IMPLEMENTED]` real: Release (`release.yml`): on tag `v*`; checks tag == `package.json` version; typecheck + tests per OS; unsigned package; upload artifacts (14 days); `draft-release` job with `contents: write` creates/updates a **draft**, `--prerelease` when the tag has a `-`, attaches artifacts + `SHA256SUMS.txt`.
 - **FR-008** `[IMPLEMENTED]` read: No auto-update; README says so and documents the macOS Gatekeeper, Windows SmartScreen and Linux AppImage first-run steps.
 - **FR-009** `[KNOWN GAP]` **Not code-signed or notarized** (macOS Developer ID + notarization, Windows Authenticode). Needs paid certificates: feature 014, **needs approval**.
-- **FR-010** `[KNOWN GAP]` Installed builds were never run on macOS or Windows by a person; CI only proves they build and that unit tests pass there. The Linux packaged app was built here; no recorded launch of the packaged binary talking to Copilot. (Feature 013/014.)
+- **FR-010** `[KNOWN GAP]` (narrowed 2026-10-21, see Changes) Installed builds were never run on macOS or Windows by a person; CI only proves they build and that unit tests pass there. The Linux packaged app was built here; no recorded launch of the packaged binary talking to Copilot. (Feature 013/014.)
 - **FR-011** `[KNOWN GAP]` Only x64 for Windows and Linux; no arm64 builds, no `.deb`/`.rpm`, no Flatpak/Snap/winget/Homebrew. `read:`
 - **FR-012** `[KNOWN GAP]` No provenance: no build attestation, and checksums are uploaded by the same workflow that builds the files. `read:`
 - **FR-013** `[IMPLEMENTED]` (2026-10-19) `package.json` has `engines.node` `^20.19.0 || >=22.12.0`, matching CONTRIBUTING; CI builds with Node 22 (20.19 is not run in CI). Was: no `engines` field. (Task T022.)
 - **FR-014** `[KNOWN GAP]` `.github/workflows/spec-kit.yml` ("Spec Kit gate") fails PRs that change `src/` without `specs/` or a `Spec-Exempt` reason; it checks presence only, not that each spec has plan/tasks, and it is not a required status check unless the maintainer sets it in branch protection.
-- **FR-015** `[KNOWN GAP]` `package-smoke` runs `pack:dir` for Linux only; macOS/Windows packaging is first exercised by the tag workflow. `read:`
+- **FR-015** ~~`[KNOWN GAP]`~~ closed 2026-10-21 (see Changes): `package-smoke` runs `pack:dir` for Linux only; macOS/Windows packaging is first exercised by the tag workflow. `read:`
 - **FR-016** `[KNOWN GAP]` Dependency updates are manual (no Dependabot). `read:`
 
 ### Key Entities
@@ -205,3 +205,15 @@ Decided by the coordinator under Ruben's delegation (D1-D4):
 - **FR-039 Checked on every package build** (D3). `scripts/check-fuses.js` reads the fuse wire of the packed binary (`@electron/fuses`, already a dependency of electron-builder) and fails unless every FR-037 value is as listed. `npm run pack:dir` runs it after electron-builder, so CI's *Package smoke* job checks Linux on every code PR without a workflow change. A launch probe (`npm run check:fuses-launch`, under `xvfb-run` on Linux) starts the packed app in 7 cases (`--inspect=<free port>` and `--inspect-brk=<free port>` with a connect attempt; `--remote-debugging-port` with two dashes, one dash and upper case; `--remote-debugging-pipe`; `ELECTRON_RUN_AS_NODE=1` with `NODE_OPTIONS=--inspect`), and checks that no inspector or DevTools endpoint answers and that the window still opens. The upper-case case proves nothing on Linux (Chromium switch names are case-sensitive there) and is kept for Windows (so `onlyLoadAppFromAsar` did not break loading). It is run by hand, not in CI, so the `main.ts` wiring is also pinned by a static check in the unit test, and `check-fuses.js` has a self-test in `npm test` (it must fail on the unflipped `node_modules` Electron).
 - *Layout check:* `npm run check:office` failed intermittently here, a different case each run, with "a walking figure is not on a slot". The same flake shows on clean `main` (2ce02ad: 353/356), so it is not caused by this change; this branch passed 356/356 in the review run.
 - **D4 Platforms.** Linux is checked here (real: packed and probed on this machine). macOS and Windows: the same config applies, CI builds no packages there, and the hand check belongs to #9 (`[KNOWN GAP]` until then).
+
+### 2026-10-21: known gaps revalidated
+
+- **FR-015** closed. `.github/workflows/packaged-check.yml` packages the app (`--dir`) on ubuntu, macOS and Windows runners and runs the ESM check inside each packaged main process. It runs on `main` (green, latest run 39497504364).
+- **FR-010** narrowed. What CI now runs on macOS and Windows runners:
+  - the packaged check above;
+  - the UI checks (#389, in review): theme geometry, the 15-agent office layout at both sizes and the Mac title bar pass on macOS; on Windows all 18 simulator drivers pass too (run 39492231461);
+  - real installs of the three agent apps as a standard user and as admin (#393);
+  - the real-account e2e, 9/9 (#402, run 39496442403).
+
+  **Still open:** a person installing and using the packaged app on their own Mac or Windows PC (issues #9, #10).
+- Still open, unchanged: FR-009 signing (needs a purchase), FR-011 (arm64, `.deb`), FR-012 (no build attestation), FR-014 (the Spec Kit gate checks presence only), FR-016 (no `.github/dependabot.yml`). The About panel and installer metadata on macOS and Windows are tracked in #384.
