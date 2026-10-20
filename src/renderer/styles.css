@@ -149,7 +149,7 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .badge{width:16px;height:16px;border-radius:50%;display:grid;place-items:center;background:var(--bd,var(--gray));box-shadow:0 0 0 3px rgba(255,253,249,.9)}
 .badge.working{--bd:var(--c-working)} .badge.thinking{--bd:var(--c-thinking)} .badge.waiting{--bd:var(--c-waiting)}
 .badge.idle{--bd:var(--badge-idle)} .badge.error{--bd:var(--c-error)} .badge.done{--bd:var(--c-done)}
-.badge.waiting::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid var(--c-waiting);opacity:0;animation:ping 2.8s ease-out infinite}
+.badge.waiting::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid var(--c-waiting);opacity:0;animation:ping 2.8s ease-out 3} /* spec 052 FR-067: three pings when an agent starts waiting, then rest (restarts when it waits again) */
 .badge svg{width:10px;height:10px;display:block}
 .desk .info{padding:2px 8px 0}
 .who{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
@@ -362,6 +362,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important} /* spec 052 FR-070 (app.js also skips the transition) */
 }
 
 /* =====================================================================
@@ -876,8 +877,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .dlg .dinput input{height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:10px;background:var(--raised);padding:0 10px;font:inherit;font-size:13px;color:var(--ink);font-weight:400}
 
 /* ---- agent mood (spec 034, issue #20): small, flat, inside the scene box; nothing moves under reduced motion ---- */
-.amb-light{animation:ambblink 1.1s steps(1,end) infinite} /* colours from --amb-light/--amb-light-2 via the keyframes below */
-@keyframes ambblink{0%{fill:var(--amb-light,#d9534f)}50%{fill:var(--amb-light-2,#5b8fd1)}}
+.amb-light{animation:ambblink 1.6s ease-in-out 6} /* spec 052 FR-069: the red light breathes slowly for about 10 s, then stays on (was a red/blue strobe) */
+@keyframes ambblink{0%,100%{opacity:1}50%{opacity:.45}}
 .dizzy{transform-box:fill-box;transform-origin:center;animation:dizzyspin 2.4s linear infinite}
 @keyframes dizzyspin{to{transform:rotate(360deg)}}
 .tap{animation:tapdesk .5s ease-in-out infinite}
@@ -893,8 +894,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .stage .room[data-alert] .room-path,.stage .room[data-alert] .room-aiu{color:#465049} /* darker floor, darker header text: 4.5:1 or more on the real pixels (checked by shots-034.js) */
 .siren{display:inline-flex;flex:none;width:18px;height:18px;align-self:center}
 .siren svg{width:100%;height:100%;display:block}
-.siren-light{fill:var(--amb-light,#d9534f);animation:sirenblink 1s steps(1,end) infinite}
-@keyframes sirenblink{0%{fill:var(--amb-light,#d9534f)}50%{fill:var(--amb-light-2,#5b8fd1)}}
+.siren-light{fill:var(--amb-light,#d9534f);animation:sirenblink 1.6s ease-in-out 6} /* spec 052 FR-069: same slow breathe, still red and visible */
+@keyframes sirenblink{0%,100%{opacity:1}50%{opacity:.45}}
 @media (prefers-reduced-motion:reduce){.siren-light{animation:none}}
 /* on a door plate the siren sits on the corner of the door icon, so the plate keeps its size */
 .plate{position:relative}
@@ -1078,12 +1079,16 @@ html .notice-strip .btn.primary:hover{background:color-mix(in srgb,var(--amber-i
 .inbox-row.settled .ib-done{margin:0;font-size:13px;font-weight:650;color:var(--ink-2);min-height:var(--h-ctl);display:flex;align-items:center}
 .inbox-row.settled .ib-done.yes{color:var(--pc-done)}
 .inbox-row.settled .ib-done.no{color:var(--red-ink)}
-.inbox-row.gone{overflow:hidden;opacity:0;height:0!important;padding-top:0;padding-bottom:0;border-width:0;transition:opacity .2s,height .2s,padding .2s,border-width .2s}
+.inbox-row.gone{opacity:0;transform:scale(.98);transition:opacity .18s ease-out,transform .18s ease-out} /* spec 052 FR-068: fade and shrink in place (no height change); the rows below slide up with a FLIP in app.js */
 .inbox-empty{display:flex;align-items:flex-start;gap:10px}
 .inbox-empty b{display:block;color:var(--ink);font-size:13.5px;font-weight:650}
 .inbox-empty small{display:block;margin-top:2px;font-size:12px}
 .ib-ok{flex:none;position:relative;width:22px;height:22px;border-radius:50%;background:var(--pb-done);border:1px solid #bcd6c6}
 .ib-ok::after{content:"";position:absolute;left:7px;top:3.5px;width:5px;height:10px;border:solid var(--pc-done);border-width:0 2px 2px 0;transform:rotate(45deg)}
+.ib-ok{animation:ibpop .26s cubic-bezier(.3,1.4,.5,1) both} /* spec 052 FR-068: All clear pops in, its tick follows */
+.ib-ok::after{animation:ibtick .2s ease-out .16s both}
+@keyframes ibpop{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
+@keyframes ibtick{from{opacity:0;transform:rotate(45deg) scale(.3)}to{opacity:1;transform:rotate(45deg)}}
 /* FR-049: dialogs ease in (the global reduced-motion rule turns this off) */
 .dlg{animation:dlgin .16s cubic-bezier(.2,.8,.2,1)}
 .dlg-ov{animation:dlgov .12s ease-out}
@@ -1118,4 +1123,36 @@ html:not([data-ui]) #topBtns button:not([aria-pressed="true"]):hover{background:
 /* FR-053: radius tokens on panels and controls whose radius was already close */
 .dlg select,.dlg input[type=number],.dlg .dinput input{border-radius:var(--r-md)}
 .inbox{border-radius:var(--r-lg)}
+
+/* ---- spec 052 FR-067..FR-070 (round 6, motion with meaning): transform and opacity only, nothing changes size; the global
+   reduced-motion rule above stops every CSS animation here, and app.js skips its Web Animations under reduced motion ---- */
+/* FR-067: the old desk scene fades out on top of the new one (app.js morphNode), then goes */
+.scene-out{position:absolute;pointer-events:none;margin:0;z-index:1}
+.scene-out>svg{display:block;width:100%;height:100%;overflow:visible}
+/* FR-067: the done tick on the monitor draws in once, when the agent has just finished (the path is about 14.7 long) */
+.done-tick.draw{stroke-dasharray:16;animation:tickdraw .32s cubic-bezier(.2,.8,.2,1) both}
+@keyframes tickdraw{from{stroke-dashoffset:16}to{stroke-dashoffset:0}}
+/* FR-068: the Needs you count rolls in a fixed box (tabular digits, at least one digit wide: the width never changes between digits) */
+.inbox-btn b{flex:none;display:inline-block;position:relative;overflow:hidden;min-width:1ch;text-align:center;font-variant-numeric:tabular-nums}
+.inbox-btn b>span{display:block}
+.inbox-btn b>.roll-out{position:absolute;left:0;right:0;top:0}
+.roll-in.up{animation:rollinup .22s ease-out both}.roll-out.up{animation:rolloutup .22s ease-out both}
+.roll-in.down{animation:rollindown .22s ease-out both}.roll-out.down{animation:rolloutdown .22s ease-out both}
+@keyframes rollinup{from{opacity:0;transform:translateY(100%)}to{opacity:1;transform:none}}
+@keyframes rolloutup{from{opacity:1;transform:none}to{opacity:0;transform:translateY(-100%)}}
+@keyframes rollindown{from{opacity:0;transform:translateY(-100%)}to{opacity:1;transform:none}}
+@keyframes rolloutdown{from{opacity:1;transform:none}to{opacity:0;transform:translateY(100%)}}
+/* FR-070: the theme change cross-fades (document.startViewTransition in app.js) */
+::view-transition-old(root),::view-transition-new(root){animation-duration:240ms}
+/* FR-070: an empty office shows an empty desk above its sentence */
+.empty-desk{display:block;margin:0 auto 12px;width:120px;height:72px;color:var(--muted)}
+/* FR-070: on first run "+ Folder" rings once (a pseudo-element: opacity and scale, the button keeps its box) */
+#addFolder.ring-once{position:relative}
+#addFolder.ring-once::after{content:"";position:absolute;inset:-3px;border-radius:inherit;border:2px solid var(--sel-border,#7fa0bd);opacity:0;pointer-events:none;animation:ringonce 1.4s ease-out 1 both}
+@keyframes ringonce{0%{opacity:.8;transform:scale(.96)}100%{opacity:0;transform:scale(1.22)}}
+/* FR-069: Serious mode stops every looping animation (idle bob and nod, typing hands, steam, bars, halos, waving, thinking dots,
+   carets, walking bob, mood signs). One-shot signals (the done tick, the waiting pings, the pops) stay. The busy spinner stays: it is a progress sign. */
+html[data-serious] :is(.bar,.glow,.hand-l,.hand-r,.head,.bubble-g,.td,.steam,.halo,.wave,.cursor,.tap,.dizzy,.amb-light,.siren-light,.live i,.typing i,.walker.walking .wk),
+html[data-serious] :is(.caret,.bubble.caret.md>*:last-child)::after,
+html[data-serious] .subblk.running .sub-st::before{animation:none!important}
 

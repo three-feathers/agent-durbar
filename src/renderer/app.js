@@ -75,6 +75,8 @@ function aiuChip(){
 const MOODS=window.DurbarMood;
 const MOOD=MOODS.createMoodTracker();
 let SERIOUS=false; /* Serious mode (Settings): no mood drawings at all */
+/* spec 052 FR-069: Serious mode also stops every looping animation (styles.css, html[data-serious]) */
+function markSerious(){document.documentElement.toggleAttribute('data-serious',SERIOUS);}
 /* spec 052 FR-031 (#306): detail level. Simple hides the developer details (tokens, model and context chips, paths, MCP, VS Code, resume
    command) and says what agents do in plain verbs; Expert is everything. A display preference of this window (localStorage). */
 let SIMPLE=(()=>{try{return localStorage.getItem('durbar.detail')==='simple';}catch(e){return false;}})();
@@ -111,10 +113,17 @@ function roomAlert(r){
 }
 const ALERT_WORDS='Alert: an agent needs help';
 /* Theme (specs 035-040): apply an id or manifest, clear the scene cache, re-render, persist. */
-async function applyTheme(idOrManifest){
-  const applied=THEME.setTheme(idOrManifest);
-  SC_CACHE.clear();
-  renderAll();
+/* spec 052 FR-070: a theme change cross-fades (a view transition of the whole window, 240ms in CSS). None under reduced motion, at
+   boot, or without the API. Chromium runs the callback on the next frame, not at once, so callers wait for it; drivers that call
+   THEME.setTheme() themselves are not affected. A transition that is skipped still runs the callback. */
+function swapView(fn,instant){
+  if(instant||reducedMotion()||typeof document.startViewTransition!=='function'){fn();return Promise.resolve();}
+  try{const vt=document.startViewTransition(fn);return vt.updateCallbackDone.catch(()=>{});}catch(e){fn();return Promise.resolve();}
+}
+async function applyTheme(idOrManifest,instant){
+  let applied=null;
+  await swapView(()=>{applied=THEME.setTheme(idOrManifest);SC_CACHE.clear();renderAll();},instant===true);
+  if(applied==null){applied=THEME.setTheme(idOrManifest);SC_CACHE.clear();renderAll();} /* the callback did not run (should not happen) */
   if(bridge&&bridge.setTheme){
     const r=await bridge.setTheme(typeof idOrManifest==='string'?idOrManifest:applied).catch(()=>null);
     if(r&&!r.ok)toast('The theme could not be saved.',4000);
@@ -313,7 +322,7 @@ function charArt(){
 function scene(a,mini,c){
   const st=vis(a), mood=moodFor(a), k=mood.body==='monster'?Object.assign({},a.look,{skin:T_('--monster-skin')}):a.look, shirt=k.shirt, arm=shade(shirt,-.14), skinD=shade(k.skin,-.08);
   const kit=THEME.sceneKit(); /* another theme's people and desks (spec 035 FR-013); the office kit is the code below */
-  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.draw(kit,a,{st,mood,k,mini,c,T:T_,shade,reduced:REDUCED});if(v)return v;}
+  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.draw(kit,a,{st,mood,k,mini,c,T:T_,shade,reduced:REDUCED||SERIOUS});if(v)return c?v:stillSig(v);}
   let s=`<svg class="scene${c?' sc-c':''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses?1:0}|${c?'c':mini?'m':'f'}|${mood.body}${mood.trouble||''}" viewBox="${c?'16 5 176 116':mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
   s+=`<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="${T_('--scene-shadow')}" opacity=".06"/>`;
   /* compact scenes: flat halo rects + CSS-only animation (no blur filter, no SMIL) so 15 of them stay cheap */
@@ -355,7 +364,7 @@ function scene(a,mini,c){
   if(st==='waiting') s+=`<rect x="121" y="41" width="30" height="3.6" rx="1.8" fill="${T_('--wait-dot')}" opacity=".5"/><rect x="123" y="49" width="42" height="19" rx="5" fill="${T_('--wait-card')}" stroke="${T_('--wait-note-stroke')}" stroke-width="1.2"/><circle cx="131" cy="58.5" r="3" fill="${T_('--wait-dot')}"/><rect x="138" y="54" width="20" height="3" rx="1.5" fill="${T_('--wait-note-line')}"/><rect x="138" y="60" width="14" height="3" rx="1.5" fill="${T_('--wait-note-line-2')}"/>`;
   if(st==='idle') s+=`<circle cx="144" cy="54.5" r="7" fill="none" stroke="${T_('--idle-clock')}" stroke-width="1.6"/><path d="M144 50.5v4l2.6 1.6" fill="none" stroke="${T_('--idle-clock')}" stroke-width="1.6" stroke-linecap="round"/>`;
   if(st==='error') s+=`<circle cx="144" cy="52" r="9" fill="none" stroke="${T_('--halo-error')}" stroke-width="2"/><path d="M144 47.5v5.5M144 56.6v.1" stroke="${T_('--halo-error')}" stroke-width="2.2" stroke-linecap="round"/><rect x="127" y="65" width="34" height="3" rx="1.5" fill="${T_('--err-mark')}"/>`;
-  if(st==='done') s+=`<circle cx="144" cy="54.5" r="10" fill="${T_('--done-bg')}"/><path d="M139 54.5l3.6 3.6 6.6-7" fill="none" stroke="${T_('--done-mark')}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`;
+  if(st==='done') s+=`<circle cx="144" cy="54.5" r="10" fill="${T_('--done-bg')}"/><path class="done-tick" d="M139 54.5l3.6 3.6 6.6-7" fill="none" stroke="${T_('--done-mark')}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`;
   s+=`<rect x="59" y="82.2" width="36" height="3.8" rx="1.9" fill="${T_('--laptop')}"/>`;
   if(st==='idle') s+=`<rect x="98" y="76" width="10" height="10" rx="2.5" fill="${T_('--cup')}" stroke="${T_('--cup-line')}" stroke-width="1"/><path d="M108 78.5q4 0 4 3t-4 3" fill="none" stroke="${T_('--cup-line')}" stroke-width="1.4"/><path class="steam" d="M101 73q-2-3 0-5" fill="none" stroke="${T_('--steam')}" stroke-width="1.2" stroke-linecap="round"/><path class="steam" d="M105 73q-2-3 0-5" fill="none" stroke="${T_('--steam')}" stroke-width="1.2" stroke-linecap="round"/>`;
   const hand=(x,y)=>`<circle cx="${x}" cy="${y}" r="3.6" fill="${k.skin}"/>`;
@@ -364,7 +373,7 @@ function scene(a,mini,c){
   s+='<g class="pp">';
   s+=`<g class="${typing?'hand-l':''}">${armL(61,71,68,81)}${hand(68.5,81.4)}</g>`;
   if(st==='waiting'&&mood.trouble!=='impatient'&&mood.trouble!=='faint'){ /* impatient taps the desk, a fainted agent does not wave */
-    const wave = REDUCED||c?'':`<animateTransform attributeName="transform" type="rotate" values="-4 87 71;6 87 71;-4 87 71" dur="2.8s" repeatCount="indefinite"/>`;
+    const wave = REDUCED||SERIOUS||c?'':`<animateTransform attributeName="transform" type="rotate" values="-4 87 71;6 87 71;-4 87 71" dur="2.8s" repeatCount="indefinite"/>`;
     s+=`<g${c?' class="wave"':''}>${wave}${armL(87,71,97,46)}${hand(97.5,42.5)}</g>`;
   } else if(st==='idle'||mood.trouble==='faint'){
     s+=`<g>${armL(87,71,96,80)}${hand(97,80.5)}</g>`;
@@ -376,8 +385,10 @@ function scene(a,mini,c){
   if(mood.trouble==='ambulance') s+=`<g class="amb"><rect x="18" y="93" width="36" height="17" rx="4" fill="${T_('--amb-body')}" stroke="${T_('--amb-line')}" stroke-width="1"/><rect x="40" y="96" width="11" height="7" rx="1.5" fill="${T_('--amb-window')}"/><rect x="18" y="103" width="36" height="3" fill="${T_('--amb-stripe')}"/><path d="M28 96.5v5M25.5 99h5" stroke="${T_('--amb-stripe')}" stroke-width="2" stroke-linecap="round"/><rect class="amb-light" x="30" y="89.5" width="9" height="4" rx="2" fill="${T_('--amb-light')}"/><circle cx="26" cy="111" r="3.6" fill="${T_('--amb-wheel')}"/><circle cx="46" cy="111" r="3.6" fill="${T_('--amb-wheel')}"/></g>`;
   if(st==='thinking') s+=`<g class="bubble-g"><circle cx="58.5" cy="31" r="2" fill="${T_('--bubble')}" stroke="${T_('--bubble-line')}" stroke-width="1"/><circle cx="52" cy="25" r="3" fill="${T_('--bubble')}" stroke="${T_('--bubble-line')}" stroke-width="1"/><rect x="18" y="4" width="42" height="19" rx="9.5" fill="${T_('--bubble')}" stroke="${T_('--bubble-line')}" stroke-width="1.2"/><g fill="${T_('--think-dot')}"><circle class="td" cx="30" cy="13.5" r="2.2"/><circle class="td" cx="39" cy="13.5" r="2.2"/><circle class="td" cx="48" cy="13.5" r="2.2"/></g></g>`;
   s+='</svg>';
-  return s;
+  return c?s:stillSig(s);
 }
+/* spec 052 FR-069: Serious mode draws full scenes without the SMIL wave; a mark in the signature redraws them when it is switched */
+function stillSig(svg){return SERIOUS?svg.replace(' data-sig="',' data-sig="still|'):svg;}
 function avatar(a){
   const k=a.look;
   const kit=THEME.sceneKit();
@@ -610,12 +621,39 @@ function syncAttrs(o,n){
 function morphNode(o,n){
   if(o.nodeType!==1){if(o.nodeValue!==n.nodeValue)o.nodeValue=n.nodeValue;return o;}
   /* scenes carry a signature of everything they draw: same signature = leave the SVG (and its animations) alone */
-  if(n.dataset&&n.dataset.sig!==undefined){if(o.dataset.sig===n.dataset.sig)return o;o.replaceWith(n);return n;}
-  syncAttrs(o,n); morphChildren(o,n); return o;
+  if(n.dataset&&n.dataset.sig!==undefined){if(o.dataset.sig===n.dataset.sig)return o;sceneSwap(o,n);return n;}
+  const toDone=o.classList.contains('pill')&&!o.classList.contains('st-done')&&n.classList.contains('st-done');
+  syncAttrs(o,n); morphChildren(o,n); if(toDone)pulseDone(o); return o;
+}
+/* ---- spec 052 FR-067: state changes you can see. Transform and opacity only, never under reduced motion (the Web Animations
+   below are not covered by the CSS rule, so each one checks reducedMotion() itself) ---- */
+function motion(el,frames,opts){if(!el||!el.animate||reducedMotion())return null;try{return el.animate(frames,opts);}catch(e){return null;}}
+/* the green pill gives one small pulse when an agent has just finished */
+function pulseDone(el){motion(el,[{transform:'scale(1)'},{transform:'scale(1.06)'},{transform:'scale(1)'}],{duration:400,easing:'ease-in-out'});}
+/* a desk scene that changes (new status, mood, look) cross-fades: the old drawing sits on top in an absolutely positioned layer
+   of its own size and fades out in 180ms while the new one is already in place, so the desk never changes size. The layer is
+   the parent's last child (morphChildren leaves it alone, so the other children are not moved), and the old scene loses its
+   .scene class, so nothing else counts it. First renders (innerHTML) never come here. */
+function sceneSwap(o,n){
+  const was=(o.dataset.sig||'').replace(/^still\|/,''), now=(n.dataset.sig||'').replace(/^still\|/,'');
+  const r=!reducedMotion()&&o.isConnected?o.getBoundingClientRect():null, p=o.parentNode;
+  o.replaceWith(n);
+  if(now.startsWith('done|')&&!was.startsWith('done|')){const t=n.querySelector('.done-tick');if(t&&!reducedMotion())t.classList.add('draw');}
+  if(!r||!r.width||!r.height||!p||p.nodeType!==1)return;
+  const w=document.createElement('div');w.className='scene-out';w.setAttribute('aria-hidden','true');
+  o.removeAttribute('data-sig');o.setAttribute('class',String(o.getAttribute('class')||'').replace(/\bscene\b/,'scene-old'));
+  w.appendChild(o);p.appendChild(w);
+  const op=w.offsetParent||document.body, pr=op.getBoundingClientRect();
+  w.style.left=(r.left-pr.left-op.clientLeft+op.scrollLeft)+'px';w.style.top=(r.top-pr.top-op.clientTop+op.scrollTop)+'px';
+  w.style.width=r.width+'px';w.style.height=r.height+'px';
+  const a=motion(w,[{opacity:1},{opacity:0}],{duration:180,easing:'ease-out',fill:'forwards'});
+  if(a)a.onfinish=()=>w.remove();
+  setTimeout(()=>{if(w.isConnected)w.remove();},a?400:0);
 }
 function morphChildren(op,np){
   const old=[...op.childNodes], byKey=new Map(), plain=[];
-  old.forEach(k=>{const key=keyOf(k);if(key!=null)byKey.set(key,k);else plain.push(k);});
+  old.forEach(k=>{if(k.nodeType===1&&k.classList.contains('scene-out'))return; /* a fading old scene (FR-067): left alone, it removes itself */
+    const key=keyOf(k);if(key!=null)byKey.set(key,k);else plain.push(k);});
   let pi=0, ref=op.firstChild; const used=new Set();
   for(const nk of [...np.childNodes]){
     const key=keyOf(nk); let m=null;
@@ -624,7 +662,7 @@ function morphChildren(op,np){
     if(m){const r=morphNode(m,nk);used.add(r);if(r===m){if(m===ref)ref=m.nextSibling;else op.insertBefore(m,ref);}else if(m===ref)ref=r.nextSibling;}
     else{op.insertBefore(nk,ref);used.add(nk);}
   }
-  old.forEach(k=>{if(!used.has(k)&&k.parentNode===op)op.removeChild(k);});
+  old.forEach(k=>{if(!used.has(k)&&k.parentNode===op&&!(k.nodeType===1&&k.classList.contains('scene-out')))op.removeChild(k);});
 }
 function morphHTML(el,html){const t=document.createElement('template');t.innerHTML=html;morphChildren(el,t.content);}
 
@@ -695,6 +733,15 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-wl]');if(!
   if(b.dataset.wl==='add')$('addFolder').click();
   else if(b.dataset.wl==='setup')window.DurbarScreens.openSettings('harnesses'); /* spec 051 FR-008 */
   else{const t=$('demoToggle');t.checked=true;t.dispatchEvent(new Event('change'));}});
+/* spec 052 FR-070: an empty office shows an empty desk (theme colours through currentColor) above its sentence */
+const EMPTY_DESK='<svg class="empty-desk" viewBox="0 0 120 72" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+  +'<rect x="24" y="22" width="30" height="30" rx="9" fill="currentColor" stroke="none" opacity=".14"/>'
+  +'<rect x="70" y="14" width="38" height="27" rx="3.5"/><rect x="74" y="18" width="30" height="19" rx="2" fill="currentColor" stroke="none" opacity=".1"/>'
+  +'<path d="M89 41v7M81 49h16"/><path d="M8 52h104" stroke-width="3.5"/><rect x="13" y="54" width="94" height="14" rx="3" fill="currentColor" stroke="none" opacity=".1"/></svg>';
+/* spec 052 FR-070: when the first-run card shows, "+ Folder" in the top bar rings once (CSS pseudo-element, opacity and scale).
+   It waits 600ms and checks the card is still there, so a start that loads agents a moment later does not ring. */
+function ringFolder(){if(reducedMotion())return;setTimeout(()=>{const b=$('addFolder'),st=$('stage');if(!b||!st||!st.querySelector('.welcome')||!b.getClientRects().length)return;
+  b.classList.remove('ring-once');void b.offsetWidth;b.classList.add('ring-once');setTimeout(()=>b.classList.remove('ring-once'),1600);},600);}
 function renderOffice(){
   if(ui.view!=='office')return;
   const floor=$('floor'), stage=$('stage'), cs=getComputedStyle(floor);
@@ -704,8 +751,8 @@ function renderOffice(){
   const model=officeModel();
   if(!model.length){
     stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey='';
-    if(!agents.length&&!demoOn){stage.innerHTML=WELCOME_HTML;floor.classList.remove('scrolls');return;} /* spec 001 FR-026: first run */
-    stage.innerHTML='<div class="empty">'+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" above (or "+ Workspace" for a VS Code .code-workspace file).':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open "Folders" above to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?'All floors are off. Open "Floors" above to switch one on.':agents.length&&ROOMS.every(r=>!roomShown(r))?'Nothing to show: every folder is hidden or on a floor that is off. Open "Floors" or "Folders" above.':'No agents match these filters.'))+'</div>';
+    if(!agents.length&&!demoOn){if(!stage.querySelector('.welcome'))ringFolder();stage.innerHTML=WELCOME_HTML;floor.classList.remove('scrolls');return;} /* spec 001 FR-026: first run */
+    stage.innerHTML='<div class="empty">'+EMPTY_DESK+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" above (or "+ Workspace" for a VS Code .code-workspace file).':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open "Folders" above to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?'All floors are off. Open "Floors" above to switch one on.':agents.length&&ROOMS.every(r=>!roomShown(r))?'Nothing to show: every folder is hidden or on a floor that is off. Open "Floors" or "Folders" above.':'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
   }
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
@@ -949,7 +996,7 @@ function setSend(){const b=$('sendBtn'),t=$('msgInput');if(!b||!t)return;const a
 function updatePanelHeader(){
   const a=byId(ui.selected); if(!a)return; const st=vis(a);
   const ph=$('panelHead'); if(!ph)return;
-  const sp=ph.querySelector('[data-f=status]'); sp.className='pill st-'+st; sp.innerHTML='<i></i>'+label(a);
+  const sp=ph.querySelector('[data-f=status]'); const toDone=st==='done'&&sp.classList.contains('pill')&&!sp.classList.contains('st-done'); sp.className='pill st-'+st; sp.innerHTML='<i></i>'+label(a); if(toDone)pulseDone(sp);
   const t=ph.querySelector('[data-f=task]'); t.textContent=taskText(a); t.title=taskText(a);
   const ug=ph.querySelector('[data-f=usage]'); ug.textContent=usageLong(a); ug.title=ug.textContent.endsWith(' est.')?USD_TIP:'';
   updateCapChip(a);
@@ -1273,8 +1320,18 @@ function renderInboxBtn(){
   const list=needsMeOrder(), n=list.length;
   syncAttention(list);
   b.hidden=!agents.length; b.classList.toggle('attn',n>0);
-  b.querySelector('b').textContent=String(n);
+  rollCount(b.querySelector('b'),n);
   b.setAttribute('aria-label',n?n+(n===1?' agent needs':' agents need')+' you. Open the inbox (I or Ctrl+Shift+A).':'Nobody needs you. Open the inbox (I or Ctrl+Shift+A).');
+}
+/* spec 052 FR-068: the count rolls (old number out, new one in, 220ms) inside a box that keeps its width; up when it grows */
+function rollCount(box,n){
+  if(!box)return; const txt=String(n), prev=box.dataset.n;
+  if(prev===txt)return; box.dataset.n=txt; clearTimeout(box._roll);
+  if(prev==null||reducedMotion()||!box.getClientRects().length){box.textContent=txt;return;}
+  const dir=Number(txt)>Number(prev)?'up':'down', inn=document.createElement('span'), out=document.createElement('span');
+  inn.className='roll-in '+dir;inn.textContent=txt;out.className='roll-out '+dir;out.textContent=prev;out.setAttribute('aria-hidden','true');
+  box.replaceChildren(inn,out);
+  box._roll=setTimeout(()=>{if(box.dataset.n===txt)box.textContent=txt;},260);
 }
 function pendingCardOf(a){const c=getChat(a);const all=[...c.el.querySelectorAll('.note.perm:not(.settled)')].filter(n=>n.querySelector(':scope > .note-actions button'));return all[0]||null;}
 /* spec 052 FR-048: focus goes back to where it was when the inbox opened (still in the page and shown), else to the inbox button */
@@ -1316,6 +1373,15 @@ function inboxKey(e){
   if(k==='a')act('approve');else if(k==='d')act('deny');else if(k==='s')act('session');
   else if(k==='o'||(e.key==='Enter'&&document.activeElement.classList.contains('ib-h'))){e.preventDefault();row.querySelector('[data-k="open"]').click();}
 }
+/* spec 052 FR-068: after an answered row has faded (180ms), the list repaints and the rows that moved slide up into place
+   (FLIP: measure each row by agent before and after, start it at the old offset, animate the offset to 0 in 200ms) */
+function flipInbox(paint){
+  const body=$('inboxBody'); if(!body||reducedMotion())return paint();
+  const before=new Map([...body.querySelectorAll('.inbox-row[data-id]:not(.gone)')].map(r=>[r.dataset.id,r.getBoundingClientRect().top]));
+  paint();
+  body.querySelectorAll('.inbox-row[data-id]').forEach(r=>{const t=before.get(r.dataset.id);if(t==null)return;const dy=t-r.getBoundingClientRect().top;
+    if(Math.abs(dy)>=1)motion(r,[{transform:`translateY(${dy}px)`},{transform:'none'}],{duration:200,easing:'ease-out'});});
+}
 function paintInbox(focusIndex){
   const body=$('inboxBody'); if(!body)return;
   const list=needsMeOrder();
@@ -1342,7 +1408,7 @@ function paintInbox(focusIndex){
           if(!row.isConnected){done();paintInbox(i);return;}
           row.classList.add('settled');act.innerHTML='';const p=document.createElement('p');p.className='ib-done '+(k==='deny'?'no':k==='other'?'':'yes');p.textContent=k==='deny'?'Denied':k==='other'?word:'✓ '+word;act.appendChild(p);
           setTimeout(()=>{if(!row.isConnected)return paintInbox(i);if(reducedMotion())return paintInbox(i);
-            row.style.height=row.offsetHeight+'px';void row.offsetHeight;row.classList.add('gone');setTimeout(()=>paintInbox(i),210);},600);},250);},src.title);
+            row.classList.add('gone');setTimeout(()=>flipInbox(()=>paintInbox(i)),180);},600);},250);},src.title);
     }
     add(q?'Answer in chat':'Open chat',q?'primary':'','open',()=>{closeInbox();openPanel(a.id,true);});
     body.appendChild(row);
@@ -3248,10 +3314,10 @@ if(bridge){
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
   document.body.classList.toggle('simple',SIMPLE);
-  window.DurbarScreens.init({refreshKinds:()=>loadKinds(true),detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},setSerious:on=>{SERIOUS=!!on;scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  window.DurbarScreens.init({refreshKinds:()=>loadKinds(true),detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
-    previewTheme:(m)=>{THEME.setTheme(m);SC_CACHE.clear();renderAll();}, /* spec 040 FR-014: Try it / Discard, nothing saved */
+    previewTheme:(m)=>{swapView(()=>{THEME.setTheme(m);SC_CACHE.clear();renderAll();});}, /* spec 040 FR-014: Try it / Discard, nothing saved */
     agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
     staticLimit:a=>{const m=modelsFor(a.info&&a.info.adapterId).find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
     folderOf:x=>{const ag=LIVE.agents.find(y=>y.id===(x&&x.id||x));return ag?folderOfRoom(ag.room):null;},
@@ -3273,7 +3339,7 @@ if(bridge){
   THEME.setTheme.resolveUser=bridge.getUserTheme?(id)=>bridge.getUserTheme(id):null;
   const themeBoot=(v)=>{
     const tid=(v&&v.theme)||'clean-office';
-    const apply=()=>{if(THEME.current().id!==tid)applyTheme(tid);else scheduleRender();};
+    const apply=()=>{if(THEME.current().id!==tid)applyTheme(tid,true);else scheduleRender();};
     if(bridge.listUserThemes){bridge.listUserThemes().then(list=>{
       const good={};(list||[]).filter(t=>t.ok&&t.manifest!==false).forEach(t=>{});
       return bridge.getUserTheme?Promise.all((list||[]).filter(t=>t.ok).map(t=>bridge.getUserTheme(t.id).then(m=>[t.id,m])))
@@ -3281,7 +3347,7 @@ if(bridge){
       :apply();
     }).catch(()=>apply());}else apply();
   };
-  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);NOTIFY=!!(v&&v.notifyNeedsMe!==false);themeBoot(v);}).catch(()=>{});
+  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();NOTIFY=!!(v&&v.notifyNeedsMe!==false);themeBoot(v);}).catch(()=>{});
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);
   agents=LIVE.agents; ROOMS=LIVE.rooms;
   setBadge();
