@@ -1,6 +1,6 @@
 # Spec 061: A folder's own agent setup is used, and shown
 
-**Status:** draft. Owner decisions recorded (issue #289, 2026-10-20). Constitution **Amendment 1** (principle III, v1.1.0) is in force (#395). Review requirements FR-010..FR-014 added (Paco, Ruben, #394). Q5 answered (FR-011, FR-015, FR-016); next: research R1-R3, then plan and tasks.
+**Status:** draft. Owner decisions recorded (issue #289, 2026-10-20). Constitution **Amendment 1** (principle III, v1.1.0) is in force (#395). Review requirements FR-010..FR-014 added (Paco, Ruben, #394). Q5 answered; research R1-R3 done; Phase 1 built (see `## Changes`).
 **Issue:** #289 (was spec 012 T083, `[KNOWN GAP]`). **Builds on:** 012 (Claude and Codex adapters), 019 (MCP), 043 (custom agents), 041/019 (secret masking), 003 (permission modes).
 
 ## Owner decisions (issue #289, 2026-10-20)
@@ -92,6 +92,26 @@ Added as requirements before anything is built (review findings are fixed in the
 - **R1 Claude:** with `--setting-sources project,local`, do hooks and `permissions` from `.claude/settings*.json` apply in `-p` stream-json mode, and how do "allow" rules interact with Durbar's `--permission-prompt-tool stdio`? How can one hook or rule be turned off without editing the user's files (a generated `--settings` JSON)? One tiny real session.
 - **R2 Codex:** does a `-c projects."<path>".trust_level="trusted"` override make Codex load `.codex/config.toml` and `.codex/hooks.json` under the app-server? Does it read the folder's `.mcp.json`?
 - **R3 Copilot:** does the SDK runtime read a folder's `.github/copilot/settings.json`, `hooks.json` and `.mcp.json`, and how is a folder made trusted (the `trustedFolders` setting)?
+
+## Research results (R1-R3, `real:` 2026-10-20, about $0.01 and 0.3 AIU in all)
+
+- **R1 Claude Code 2.1.305** (`claude -p`, Haiku, scratch folder outside `~/.claude`; writes under `~/.claude` are always refused by Claude itself, whatever the rules):
+  - `--setting-sources project,local` runs the folder's hooks, **but ignores its allow rules**: "this workspace has not been trusted" (trust lives in `~/.claude.json`). Deny rules apply.
+  - `--setting-sources ""` plus a **composed `--settings <json>`** applies exactly what is in that JSON, with no trust prompt: the included hooks run and a left-out hook does not; an allow rule (`Bash(touch allowed-file)`) let the command run where it was refused without it; deny rules apply.
+  - So Durbar composes the settings from the accepted items. It never writes `~/.claude.json` and never loads the folder's files directly.
+- **R2 Codex 0.163.0** (`codex exec`, scratch folder):
+  - A folder's `.codex/config.toml` is read only when the folder is trusted in `~/.codex/config.toml`; `-c projects."<path>".trust_level="trusted"` is **ignored**. When trusted, its settings applied and its `mcp_servers` started.
+  - `.codex/hooks.json` **did not run**, even trusted and with `features.hooks=true`: hooks seem to need Codex's own hook review, which cannot be done without a terminal.
+  - So Durbar passes the accepted MCP servers as the session's own (as it does for its extras), never writes `~/.codex/config.toml`, and shows Codex hooks as **not supported by Codex** (FR-006).
+- **R3 Copilot (SDK runtime, Copilot Pro):**
+  - the runtime **ran the folder's hooks unasked** (`.github/hooks/*.json`, and `hooks` in `.github/copilot/settings.json`), so Durbar now sets `enableFileHooks: false` (FR-017);
+  - the folder's `.mcp.json` was **not** loaded;
+  - accepted hooks go through the SDK's explicit `hookDirectories` (a folder Durbar writes with only those hooks), and accepted MCP servers as the session's own.
+
+**FR-004 (updated by the research):**
+- Claude: composed `--settings` with the accepted hooks and permission rules, `--setting-sources ""` unchanged, and the accepted `.mcp.json` servers added to the session's MCP servers.
+- Codex: the accepted MCP servers from `.mcp.json` and `.codex/config.toml` as the session's own; hooks not supported.
+- Copilot: the accepted hooks through `hookDirectories`, and the accepted MCP servers as the session's own.
 
 ## Constitution
 
