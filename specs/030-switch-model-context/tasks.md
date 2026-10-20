@@ -80,7 +80,7 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 
 ## 2026-10-21: continue in another agent app (issue #409)
 
-- [ ] T080 Pure helpers: target apps and the provenance line (`modelswitch.js`), unit tests [FR-042, FR-043]
-- [ ] T081 More menu and palette entry, dialog preset, review step with provenance; hand-off prompt wording [FR-042..FR-044]
-- [ ] T082 Simulator: mixed kinds hand over; driver and screenshots at both sizes [FR-045]
-- [ ] T083 One real check: Copilot → Claude Code, Claude Code → Codex; README and CHANGELOG [FR-045]
+- [x] T080 Pure helpers: target apps and the provenance line (`modelswitch.js`), unit tests [FR-042, FR-043]
+- [x] T081 More menu and palette entry, dialog preset, review step with provenance; hand-off prompt wording [FR-042..FR-044]
+- [x] T082 Simulator: mixed kinds hand over; driver and screenshots at both sizes [FR-045]
+- [x] T083 One real check: Copilot → Claude Code, Claude Code → Codex; README and CHANGELOG [FR-045]
