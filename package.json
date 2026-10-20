@@ -111,6 +111,7 @@
     "check:mac-titlebar": "npm run build && node scripts/check-mac-titlebar.js",
     "check:office:fast": "npm run build && node scripts/check-parallel.js",
     "check:geometry": "npm run build && node scripts/check-theme-geometry.js",
+    "check:perf": "npm run build && node scripts/check-perf.js",
     "test:userthemes": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-userthemes.js",
     "test:scenekits": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-scenekits.js"
   },
