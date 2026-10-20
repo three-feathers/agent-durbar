@@ -11,6 +11,7 @@
  */
 import { spawn as nodeSpawn } from 'child_process';
 import { StringDecoder } from 'string_decoder';
+import { isObj } from '../shared/guards';
 
 export const MAX_LINE_BYTES = 8 * 1024 * 1024;
 export const DEFAULT_TIMEOUT_MS = 30_000;
@@ -106,7 +107,6 @@ interface Pending {
   method: string;
 }
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 export function createCodexRpc(o: CodexRpcOptions): CodexRpc {
   const debug = o.debug ?? (() => undefined);
