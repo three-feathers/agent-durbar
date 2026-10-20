@@ -39,6 +39,8 @@ export interface SetupDeps {
   send(channel: 'harness:done', p: SetupDone): void;
   /** Re-runs detection after an operation ends (the cards update from it). */
   redetect(): Promise<void>;
+  /** Spec 012 FR-158: after a sign-in that ended well, before detection and `harness:done`: the adapter picks up the new sign-in. */
+  afterSignIn?(kind: SetupKind): Promise<void>;
   now?: () => number;
   /** The real path of a found binary (symlinks resolved), so what is confirmed and spawned is the file itself. */
   realpath?: (p: string) => string;
@@ -204,8 +206,11 @@ export class HarnessSetup {
     r.ended = true;
     if (r.timer) clearTimeout(r.timer);
     if (r.pending) { clearTimeout(r.pending); r.pending = undefined; }
-    try { await this.deps.redetect(); } catch { /* the cards keep their last state */ }
     const ok = !r.reason && code === 0;
+    if (ok && r.op === 'signin' && this.deps.afterSignIn) {
+      try { await this.deps.afterSignIn(r.kind); } catch { /* the sessions say so on their cards; detection still runs */ }
+    }
+    try { await this.deps.redetect(); } catch { /* the cards keep their last state */ }
     this.deps.send('harness:done', { kind: r.kind, op: r.op, ok, exitCode: code, ...(r.reason ? { reason: r.reason } : {}), lines: this.safeLines(r.out, r.op === 'signin' ? parseSignIn(r.kind, r.out) : undefined) });
     if (this.running === r) this.running = undefined;
   }
