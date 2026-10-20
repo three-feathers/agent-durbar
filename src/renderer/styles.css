@@ -1256,3 +1256,13 @@ details.pcmd>pre{margin:4px 0 0;padding:6px 8px;border-radius:6px;background:var
 .wl-level p{margin:0 0 8px}
 .wl-lv-btns{display:flex;flex-wrap:wrap;gap:8px}
 .wl-level .btn[aria-pressed="true"]{border-color:var(--focus);box-shadow:inset 0 0 0 1px var(--focus)}
+
+/* spec 052 FR-085: native controls and scrollbars follow the theme: light by default, dark for a dark theme (theme.js sets data-dark) */
+:root{color-scheme:light}
+:root[data-dark]{color-scheme:dark}
+/* spec 052 FR-085: macOS only (html[data-platform="darwin"] comes from the preload; never set on Windows or Linux). The title bar is
+   hidden ("hiddenInset"): the top bar is the window's drag area and keeps room on the left for the traffic lights, except in full
+   screen. Everything you can click in it stays clickable. */
+html[data-platform="darwin"] .topbar{-webkit-app-region:drag}
+html[data-platform="darwin"]:not([data-fullscreen]) .topbar{padding-left:78px}
+html[data-platform="darwin"] .topbar :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu){-webkit-app-region:no-drag}

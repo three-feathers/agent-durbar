@@ -18,7 +18,7 @@
     <div><h1>Agent Durbar</h1><span class="proto" id="protoBadge">Demo: sample data</span></div>
   </div>
   <!-- spec 052 FR-027 (#305): the Needs you inbox -->
-  <button class="btn inbox-btn" id="inboxBtn" type="button" title="Needs you: every request in one queue (I or Ctrl+Shift+A). N or Ctrl+Shift+N opens the next agent." aria-keyshortcuts="Control+Shift+A I" hidden><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M2 9.5l1.6-5.2A1.4 1.4 0 0 1 5 3.3h6a1.4 1.4 0 0 1 1.4 1l1.6 5.2v2.8a1.4 1.4 0 0 1-1.4 1.4H3.4A1.4 1.4 0 0 1 2 12.3z"/><path d="M2 9.5h3.2l.9 1.6h3.8l.9-1.6H14"/></svg>Needs you <b>0</b></button>
+  <button class="btn inbox-btn" id="inboxBtn" type="button" data-keys-text title="Needs you: every request in one queue (I or Ctrl+Shift+A). N or Ctrl+Shift+N opens the next agent." aria-keyshortcuts="Control+Shift+A I" hidden><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M2 9.5l1.6-5.2A1.4 1.4 0 0 1 5 3.3h6a1.4 1.4 0 0 1 1.4 1l1.6 5.2v2.8a1.4 1.4 0 0 1-1.4 1.4H3.4A1.4 1.4 0 0 1 2 12.3z"/><path d="M2 9.5h3.2l.9 1.6h3.8l.9-1.6H14"/></svg>Needs you <b>0</b></button>
   <div class="stats" id="stats" role="group" aria-label="Agent status counts. Select one to filter. Press N for the next agent that needs you." title="Select a count to filter. Press N for the next agent that needs you."></div>
   <div class="controls">
     <div id="liveBar">
@@ -58,7 +58,7 @@
           <button class="more-it" role="menuitem" tabindex="-1" id="openAll" type="button" title="Open the door of every room"><span class="mt">Open all room doors<small>Every room shows its desks</small></span></button>
           <div class="more-sep" role="separator"></div>
         </div>
-        <button class="more-it" role="menuitem" tabindex="-1" id="kbdHelpBtn" type="button" title="Every keyboard shortcut (?)"><span class="mt">Keyboard shortcuts<small>Ctrl+K palette, I inbox, N next (?)</small></span></button>
+        <button class="more-it" role="menuitem" tabindex="-1" id="kbdHelpBtn" type="button" data-keys-text title="Every keyboard shortcut (?)"><span class="mt">Keyboard shortcuts<small>Ctrl+K palette, I inbox, N next (?)</small></span></button>
         <div class="more-sep" role="separator"></div>
         <!-- spec 052 FR-090: end of day; asks first (red confirmation) -->
         <button class="more-it danger" role="menuitem" tabindex="-1" id="endAllBtn" type="button" title="End every running session and free them. The chats stay; sending a message resumes one." hidden><span class="mt">End all sessions<small>The chats stay; a message resumes one</small></span></button>
@@ -101,6 +101,7 @@
 <script src="place-icons.js"></script>
 <script src="mood.js"></script>
 <script src="attention.js"></script>
+<script src="keys.js"></script>
 <script src="activity.js"></script>
 <script src="toolstats.js"></script>
 <script src="theme.js"></script>

@@ -7,6 +7,16 @@ const THEME=window.THEME; /* theme packs (specs 035-040): tokens, words, motion;
 const T_=n=>THEME.token(n);
 const wordOf=k=>THEME.word(k);
 const qs = new URLSearchParams(location.search);
+/* spec 052 FR-084: Command (⌘) on a Mac, Ctrl elsewhere; keys are shown per platform (src/renderer/keys.js) */
+const KEYS=window.DurbarKeys;
+const IS_MAC=KEYS.isMac(navigator.platform);
+const keyText=parts=>KEYS.keyText(parts,IS_MAC), keyLabels=parts=>KEYS.keyLabels(parts,IS_MAC), ariaKeys=parts=>KEYS.ariaKeys(parts,IS_MAC);
+const INBOX_KEY=keyText(['mod','shift','A']), NEXT_KEY=keyText(['mod','shift','N']), PAL_KEY=keyText(['mod','K']);
+/* spec 052 FR-085: the window's platform from the preload (the Mac title bar styles are gated on html[data-platform="darwin"]) */
+if(window.agentDurbar&&window.agentDurbar.platform==='darwin')document.documentElement.dataset.platform='darwin';
+/* the keys written in index.html are the Windows/Linux ones: rewrite them for a Mac */
+if(IS_MAC){document.querySelectorAll('[aria-keyshortcuts]').forEach(el=>el.setAttribute('aria-keyshortcuts',KEYS.ariaFor(el.getAttribute('aria-keyshortcuts'),true)));
+  document.querySelectorAll('[data-keys-text]').forEach(el=>{if(el.title)el.title=KEYS.textFor(el.title,true);for(const n of el.querySelectorAll('small'))n.textContent=KEYS.textFor(n.textContent,true);});}
 const DEMO_LIB = window.DURBAR_DEMO;
 const {L,S} = DEMO_LIB;
 const N_MAIN = Math.max(8, Math.min(15, parseInt(qs.get('n')||'12',10)));
@@ -1111,7 +1121,8 @@ function wireMenu(btnId,menuId){
 /* the words of a request card (permission, question, limit), in full: the answer bar and the inbox show exactly this (FR-016, FR-027) */
 function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.q-form,.q-urlbox,.pstate,.pdiff,.pcmd'+(SIMPLE?'':',.pfold')).forEach(x=>x.remove()); /* spec 052 FR-080: the command never (notifications use this text) */const q=n.querySelector('.q-text');return (q?q.textContent:c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,'');}let answerObs=null;
 /* spec 052 FR-060: the key of a permission card's button, and the one click path the bar and the keys share */
-const answerKeyOf=b=>b.dataset.act==='session'?'Alt+S':/\bdanger\b/.test(b.className)?'Alt+D':/\bprimary\b/.test(b.className)?'Alt+A':'';
+const answerKeyOf=b=>b.dataset.act==='session'?'S':/\bdanger\b/.test(b.className)?'D':/\bprimary\b/.test(b.className)?'A':'';
+const chatKeyText=k=>keyText(KEYS.chatParts(k,IS_MAC)), chatKeyAria=k=>ariaKeys(KEYS.chatParts(k,IS_MAC)); /* FR-084: Alt+A elsewhere, ⌥⌘A on a Mac */
 const answerPress=(src,what)=>()=>{const word=src.textContent;src.click();announce(word+': '+what);const m=$('msgInput');if(m)m.focus();};
 function wireAnswerBar(a){
   if(answerObs){answerObs.m.disconnect();answerObs.i.disconnect();answerObs=null;}
@@ -1139,8 +1150,8 @@ function wireAnswerBar(a){
     const add=(label,cls,fn,title,keys)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;if(keys)b.setAttribute('aria-keyshortcuts',keys);b.onclick=fn;act.appendChild(b);};
     if(q)add('Answer in chat','primary',show);
     /* FR-016: a long request is answered in the chat only; the wide grant (any arguments) stays in the card */
-    /* FR-060: Alt+A / Alt+S / Alt+D press the same buttons (permission requests only) */
-    else if(!long)for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad){const k=card.classList.contains('limit')?'':answerKeyOf(src);add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,text),k?(src.title?src.title+' ':'')+'('+k+')':src.title,k);}
+    /* FR-060: Alt+A / Alt+S / Alt+D (⌥⌘A/S/D on a Mac, FR-084) press the same buttons (permission requests only) */
+    else if(!long)for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad){const k=card.classList.contains('limit')?'':answerKeyOf(src);add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,text),k?(src.title?src.title+' ':'')+'('+chatKeyText(k)+')':src.title,k?chatKeyAria(k):'');}
     add('Show in chat','ghost',show,'Scroll to the request in the chat');
     bar.hidden=false;
   }
@@ -1151,7 +1162,7 @@ function wireAnswerBar(a){
   const answerKey=kind=>{
     const c=pending(); if(!c)return false;
     if(c.classList.contains('question')||c.classList.contains('limit')||textOf(c).length>480){card=c;show();announce(c.classList.contains('question')?'Answer the question in its card.':c.classList.contains('limit')?'Choose in the spending limit card.':'A long request: read it in the chat before you answer.');return true;}
-    const src=[...c.querySelectorAll(':scope > .note-actions button')].find(b=>!b.dataset.broad&&answerKeyOf(b)==='Alt+'+kind);
+    const src=[...c.querySelectorAll(':scope > .note-actions button')].find(b=>!b.dataset.broad&&answerKeyOf(b)===kind);
     if(!src)return false;
     answerPress(src,textOf(c))();return true;
   };
@@ -1276,16 +1287,17 @@ document.addEventListener('click',e=>{
 document.addEventListener('keydown',e=>{
   /* spec 052 FR-035: Ctrl+Shift+A (attention: the inbox) and Ctrl+Shift+N (next agent) work everywhere, also in text fields and in a
      screen reader's browse mode, where single letters are taken. Not Ctrl+Shift+I: Electron's default menu opens DevTools there. */
-  /* spec 052 FR-042: Ctrl+K (Cmd+K) opens the command palette from anywhere, also from text fields */
-  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&!e.altKey&&(e.key==='k'||e.key==='K'||e.code==='KeyK')){e.preventDefault();closeKbdHelp();openPalette();return;}
-  if((e.ctrlKey||e.metaKey)&&e.shiftKey&&!e.altKey&&(e.key==='A'||e.key==='a'||e.code==='KeyA')){e.preventDefault();openInbox();return;}
+  /* spec 052 FR-042: Ctrl+K (⌘K on a Mac, FR-084) opens the command palette from anywhere, also from text fields */
+  const mod=KEYS.modDown(e,IS_MAC);
+  if(mod&&!e.shiftKey&&!e.altKey&&(e.key==='k'||e.key==='K'||e.code==='KeyK')){e.preventDefault();closeKbdHelp();openPalette();return;}
   /* spec 052 FR-091: Ctrl+` goes back to the previous chat (and again, back). Control also on a Mac: Cmd+` switches windows there. Not under a dialog. */
   if(e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey&&e.code==='Backquote'&&!document.querySelector('[role="dialog"][aria-modal="true"]')){e.preventDefault();openPreviousChat();return;}
-  if((e.ctrlKey||e.metaKey)&&e.shiftKey&&!e.altKey&&(e.key==='N'||e.key==='n'||e.code==='KeyN')){e.preventDefault();closeInbox();openNextNeedsMe();return;}
+  if(mod&&e.shiftKey&&!e.altKey&&(e.key==='A'||e.key==='a'||e.code==='KeyA')){e.preventDefault();openInbox();return;}
+  if(mod&&e.shiftKey&&!e.altKey&&(e.key==='N'||e.key==='n'||e.code==='KeyN')){e.preventDefault();closeInbox();openNextNeedsMe();return;}
   /* spec 052 FR-060: in an open chat, Alt+A allow once, Alt+S allow for this session, Alt+D deny (the request the answer bar shows), Alt+N the
-     next agent that needs you. By the key's position (e.code), so Option+letter on a Mac works too. Not while you type in a field with text,
-     and not under a dialog. The app has no menu of its own: Electron's default menu uses Alt+F, E, V, W and H only. */
-  if(e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.isComposing&&/^Key[ASDN]$/.test(e.code)&&ui.selected&&$('panel')&&!document.querySelector('[role="dialog"][aria-modal="true"]')){
+     next agent that needs you. By the key's position (e.code). On a Mac it is Option+Command (FR-084): Option+letter alone types accents
+     or dead keys there. Not while you type in a field with text, and not under a dialog. Windows and Linux have no app menu (FR-083). */
+  if(KEYS.chatKeyDown(e,IS_MAC)&&/^Key[ASDN]$/.test(e.code)&&ui.selected&&$('panel')&&!document.querySelector('[role="dialog"][aria-modal="true"]')){
     const t=e.target, typing=t&&t.matches&&t.matches('input,textarea,[contenteditable="true"]')&&String((t.value!=null?t.value:t.textContent)||'').length>0;
     if(!typing){const k=e.code.slice(3);
       if(k==='N'){e.preventDefault();openNextNeedsMe();return;}
@@ -1411,7 +1423,7 @@ function renderInboxBtn(){
   syncAttention(list);
   b.hidden=!agents.length; b.classList.toggle('attn',n>0);
   rollCount(b.querySelector('b'),n);
-  b.setAttribute('aria-label',n?n+(n===1?' agent needs':' agents need')+' you. Open the inbox (I or Ctrl+Shift+A).':'Nobody needs you. Open the inbox (I or Ctrl+Shift+A).');
+  b.setAttribute('aria-label',n?n+(n===1?' agent needs':' agents need')+' you. Open the inbox (I or '+INBOX_KEY+').':'Nobody needs you. Open the inbox (I or '+INBOX_KEY+').');
 }
 /* spec 052 FR-068: the count rolls (old number out, new one in, 220ms) inside a box that keeps its width; up when it grows */
 function rollCount(box,n){
@@ -1517,18 +1529,18 @@ function openNextNeedsMe(){
   const cur=list.findIndex(a=>a.id===ui.selected), nx=list[(cur+1)%list.length];
   openPanel(nx.id,true);
 }
-/* ---- spec 052 FR-042 / FR-043 (#316): command palette (Ctrl+K) and keyboard shortcut sheet (?) ---- */
+/* ---- spec 052 FR-042 / FR-043 (#316): command palette (Ctrl+K, ⌘K on a Mac) and keyboard shortcut sheet (?) ---- */
 let palBack=null, palItems=[], palActive=0;
 const palUsable=id=>{const el=$(id);return !!el&&!el.disabled&&!el.hidden&&!el.closest('[hidden]:not(#topMoreMenu)');};
 const palClick=id=>()=>{const el=$(id);if(el)el.click();};
 function palActions(){
   return [
-    {label:'Needs you',hint:'The inbox of agents that need you',kw:'inbox attention waiting approve',keys:['I'],run:openInbox},
-    {label:'Next agent that needs you',hint:'Open the next waiting chat',kw:'next waiting jump',keys:['N'],run:openNextNeedsMe},
+    {label:'Needs you',hint:'The inbox of agents that need you ('+INBOX_KEY+')',kw:'inbox attention waiting approve',keys:['I'],run:openInbox},
+    {label:'Next agent that needs you',hint:'Open the next waiting chat ('+NEXT_KEY+')',kw:'next waiting jump',keys:['N'],run:openNextNeedsMe},
     {label:'Office view',kw:'view office desks rooms',run:palClick('vOffice'),ok:()=>palUsable('vOffice')},
     {label:'List view',kw:'view list table rows',run:palClick('vList'),ok:()=>palUsable('vList')},
     {label:'Tools',kw:'tools usage mcp',run:palClick('toolsBtn'),ok:()=>palUsable('toolsBtn')},
-    {label:'Settings',kw:'settings preferences theme options',run:palClick('settingsBtn'),ok:()=>palUsable('settingsBtn')},
+    {label:'Settings',kw:'settings preferences theme options',...(IS_MAC?{keys:keyLabels(['mod',','])}:{}),run:palClick('settingsBtn'),ok:()=>palUsable('settingsBtn')},
     {label:'Add folder',kw:'add folder workspace project new',run:palClick('addFolder'),ok:()=>palUsable('addFolder')},
     {label:'Detail level: Simple',kw:'simple detail beginner view',run:()=>setDetail('simple')},
     {label:'Detail level: Expert',kw:'expert detail developer view',run:()=>setDetail('expert')},
@@ -1619,9 +1631,10 @@ function openKbdHelp(back){
   if($('kbdDlg'))return;
   palBack=back instanceof Element?back:(document.activeElement&&document.activeElement!==document.body?document.activeElement:null);
   const rows=[
-    [['Ctrl','K'],'Command palette: agents, folders and actions'],
-    [['I'],'Needs you inbox',['Ctrl','Shift','A']],
-    [['N'],'Next agent that needs you',['Ctrl','Shift','N']],
+    [keyLabels(['mod','K']),'Command palette: agents, folders and actions'],
+    [['I'],'Needs you inbox',keyLabels(['mod','shift','A'])],
+    [['N'],'Next agent that needs you',keyLabels(['mod','shift','N'])],
+    ...(IS_MAC?[[keyLabels(['mod',',']),'Settings']]:[]), /* FR-083: the app menu's Settings… item */
     [['Ctrl','`'],'Back to the previous chat (on a Mac too: Control, not Cmd)'],
     [['←','→','↑','↓'],'Move between desks'],
     [['Esc'],'Back, or close'],
@@ -1629,12 +1642,14 @@ function openKbdHelp(back){
   ];
   const inbox=[[['J'],['K'],'Next or previous request (also ↓ ↑)'],[['A'],'Allow once'],[['S'],'Allow for this session'],[['D'],'Deny'],[['O'],'Open chat']];
   /* spec 052 FR-060: in an open chat that waits for you */
-  const inChat=[[['Alt','A'],'Allow once'],[['Alt','S'],'Allow for this session'],[['Alt','D'],'Deny'],[['Alt','N'],'Next agent that needs you']];
+  /* FR-084: ⌥⌘ on a Mac (Option alone types accents there), Alt elsewhere */
+  const ck=k=>keyLabels(KEYS.chatParts(k,IS_MAC));
+  const inChat=[[ck('A'),'Allow once'],[ck('S'),'Allow for this session'],[ck('D'),'Deny'],[ck('N'),'Next agent that needs you']];
   /* spec 052 FR-064 */
   const inList=[[['J'],['K'],'Next or previous row (also ↓ ↑)'],[['Enter'],'Open chat']];
   const row=(keys,what,alt)=>'<tr><td class="kb-k">'+kbdHTML(keys)+(alt?' <span class="kb-or">or</span> '+kbdHTML(alt):'')+'</td><td>'+esc(what)+'</td></tr>';
   const d=document.createElement('div');d.id='kbdDlg';d.className='dlg-ov';
-  d.innerHTML='<div class="dlg kbd-dlg" role="dialog" aria-modal="true" aria-labelledby="kbdT"><h3 id="kbdT">Keyboard shortcuts</h3><table class="kb-t"><tbody>'+rows.map(r=>row(r[0],r[1],r[2])).join('')+'</tbody></table><h4 class="kb-h">In the Needs you inbox</h4><table class="kb-t"><tbody>'+inbox.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In a chat that waits for you</h4><table class="kb-t"><tbody>'+inChat.map(r=>row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In the list view</h4><table class="kb-t"><tbody>'+inList.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><p class="kb-note">On a Mac, Cmd works where Ctrl is shown, and Option where Alt is shown.</p><div class="dbtn"><button class="btn" type="button" id="kbdClose">Close</button></div></div>';
+  d.innerHTML='<div class="dlg kbd-dlg" role="dialog" aria-modal="true" aria-labelledby="kbdT"><h3 id="kbdT">Keyboard shortcuts</h3><table class="kb-t"><tbody>'+rows.map(r=>row(r[0],r[1],r[2])).join('')+'</tbody></table><h4 class="kb-h">In the Needs you inbox</h4><table class="kb-t"><tbody>'+inbox.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In a chat that waits for you</h4><table class="kb-t"><tbody>'+inChat.map(r=>row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In the list view</h4><table class="kb-t"><tbody>'+inList.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><div class="dbtn"><button class="btn" type="button" id="kbdClose">Close</button></div></div>';
   document.body.appendChild(d);
   d.addEventListener('click',e=>{if(e.target===d)closeKbdHelp();});
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeKbdHelp();}else if(e.key==='Tab'){e.preventDefault();$('kbdClose').focus();}});
@@ -3782,6 +3797,10 @@ if(bridge){
   document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('.place-add'))window.DurbarScreens.placeDialog(null);});
   $('toolsBtn').onclick=()=>window.DurbarScreens.isOpen()?window.DurbarScreens.close():window.DurbarScreens.openTools(null);
   $('settingsBtn').onclick=()=>window.DurbarScreens.openSettings();
+  /* spec 052 FR-083: Settings… (⌘,) in the macOS app menu. The real window's preload carries it, also under the simulator. */
+  {const real=window.agentDurbar;if(real&&real.onMenuSettings)real.onMenuSettings(()=>window.DurbarScreens.openSettings());
+   /* FR-085: in full screen the top bar no longer keeps room for the traffic lights */
+   if(real&&real.onFullScreen)real.onFullScreen(on=>{if(on)document.documentElement.dataset.fullscreen='';else delete document.documentElement.dataset.fullscreen;});}
   $('modelSel').onchange=syncKindModel;
   $('kindSel').onchange=syncKindModel;
   $('kindHelp').onclick=()=>aboutKinds();
