@@ -132,9 +132,13 @@ function harnessNames(readme) {
 /* README Install: the first-run step for each OS (`- **macOS:** …`). */
 function installSteps(readme) {
   const steps = {};
+  let open = null; // an OS line with its steps as nested bullets below it ("- **Windows:**" then "  - …")
   for (const l of section(readme, 'Install').split('\n')) {
-    const m = /^- \*\*(macOS|Windows|Linux):\*\*\s*(.+)$/.exec(l);
-    if (m) steps[m[1]] = m[2].trim().replace(/^[a-z]/, (c) => c.toUpperCase());
+    const m = /^- \*\*(macOS|Windows|Linux):\*\*\s*(.*)$/.exec(l);
+    if (m) { open = m[2].trim() ? null : m[1]; if (m[2].trim()) steps[m[1]] = m[2].trim().replace(/^[a-z]/, (c) => c.toUpperCase()); continue; }
+    const sub = /^\s{2,}- (.+)$/.exec(l);
+    if (open && sub) { steps[open] = ((steps[open] ? steps[open] + ' ' : '') + sub[1].trim()).replace(/^[a-z]/, (c) => c.toUpperCase()); continue; }
+    if (!/^\s/.test(l)) open = null;
   }
   return steps;
 }
