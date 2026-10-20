@@ -46,6 +46,9 @@ module.exports = async (ctx) => {
     await click('#backBtn'); await ctx.sleep(300);
     // Settings: default cap
     await click('#settingsBtn'); await ctx.sleep(600);
+    // the Spending limit section is the point of the picture (Settings now opens on Agent apps): scroll it into view and prove it is inside the window
+    await ctx.js(`document.getElementById('capDef').scrollIntoView({block:'center',behavior:'instant'})`); await ctx.sleep(400);
+    assert.strictEqual(await ctx.js(`(()=>{const r=document.getElementById('capDef').getBoundingClientRect();return r.top>=0&&r.bottom<=window.innerHeight})()`), true, 'the default limit field is inside the window for the picture');
     await shot('settings-cap', w, h);
     await click('#scrClose'); await ctx.sleep(300);
     // reload the page state for the next size: Omar is resolved already, so only the first size asserts the limit state

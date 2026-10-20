@@ -92,6 +92,8 @@ package.json                       test:floors in npm test
 - **Add into floor** (R7): select shown only when more than one floor exists; value sent as `opts.floor`.
 - **Demo mode**: no floor state → every room shown, no labels, button hidden.
 
+- **Empty state with floors off (change 2026-10-19, issue #133, FR-013)**: the text depends on `FLOORS.floors.length` (the same test as `renderFloorsBtn`, `src/renderer/app.js`), so it never names the top-bar button when the button is hidden. The mixed "hidden or off" branch is only reachable with two or more floors (with one floor, a room is shown unless hidden), but it uses the same rule so a later change cannot break it. No new module: checked on the simulator by `check:office` and `shots-033.js` (the text is built inline in `app.js`, a plain script with no unit-test hook).
+
 ## Risks
 
 - Layout regressions from the label in narrow room headers at `mini`/`micro`: the label truncates first (min width 0, ellipsis, tooltip); covered by `check:office`.
