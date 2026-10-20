@@ -115,6 +115,10 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
 
 Codex also ships its own `bwrap` inside its npm package (`…/@openai/codex-linux-x64/vendor/…/codex-resources/bwrap`). Add a second profile with that path if `codex` still reports a sandbox error.
 
+**Codex's sandbox on macOS and Windows.** Read-only and Ask first always need Codex's own sandbox. If it cannot start, the session does not start and nothing runs; Durbar says why:
+- **Windows:** Codex's *elevated sandbox* must be set up once, and the native `codex.exe` used, not a `.cmd` shim.
+- **macOS:** on GitHub's macOS runners, macOS refused Codex's `sandbox-exec` (2026-10-20). Whether an ordinary Mac ever does this is not known yet. Durbar shows a plain message instead of the raw error.
+
 ## Install
 
 **Requirements**

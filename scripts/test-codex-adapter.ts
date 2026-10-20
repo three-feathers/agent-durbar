@@ -8,7 +8,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CODEX_CAPABILITIES, CODEX_DESCRIPTOR, CodexAdapter, codexChildEnv, linuxSandboxHint } from '../src/adapters/codex';
+import { CODEX_CAPABILITIES, CODEX_DESCRIPTOR, CodexAdapter, codexChildEnv, linuxSandboxHint, macSandboxHint } from '../src/adapters/codex';
 import { CodexMapper } from '../src/adapters/codexMap';
 import { CODEX_INITIALIZE_CAPABILITIES, codexProfileArgs, codexWorkspaceRoots } from '../src/adapters/codexModes';
 import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
@@ -598,6 +598,9 @@ async function main(): Promise<void> {
       await ad.dispose();
     }
     // FR-140: the Linux sandbox error (real text, Ubuntu with unprivileged user namespaces blocked) gets a plain hint; other errors none
+    // FR-140 delta: the macOS sandbox error (real text, GitHub macOS runner) gets its own plain hint; the Linux one does not apply
+    assert.ok(macSandboxHint("error creating thread: failed to load AGENTS.md instructions for environment `local`: fs sandbox helper failed with status exit status: 71: sandbox-exec: execvp() of '/Users/x/.local/bin/codex' failed: Operation not permitted").includes('could not start its macOS sandbox'));
+    assert.strictEqual(macSandboxHint('bwrap: loopback: Failed RTM_NEWADDR'), '');
     assert.ok(linuxSandboxHint('error creating thread: failed to load AGENTS.md instructions for environment `local`: fs sandbox helper failed with status exit status: 1: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted').includes('blocks unprivileged user namespaces'));
     assert.strictEqual(linuxSandboxHint('permissions profile not supported'), '');
     // FR-147: Durbar's MCP servers go to Codex as config.mcp_servers; the list and startup states become `mcp` events; a switch applies next message

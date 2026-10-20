@@ -172,6 +172,16 @@ export function linuxSandboxHint(reason: string): string {
     : '';
 }
 
+/**
+ * FR-140 delta (real, GitHub's macOS runners 2026-10-20): Codex's macOS sandbox (`sandbox-exec`) was refused, so Read-only and Ask
+ * first fail at start (closed, as they must). The cause on an ordinary Mac is not known yet; say what happened and what to do.
+ */
+export function macSandboxHint(reason: string): string {
+  return /sandbox-exec/i.test(reason)
+    ? ' Codex could not start its macOS sandbox (macOS refused sandbox-exec). Read-only and Ask first need that sandbox, so nothing ran. This can happen when Agent Durbar itself runs restricted (a managed Mac or a CI machine); start Durbar normally and try again, or use Allow all only in a folder you trust.'
+    : '';
+}
+
 /** FR-142: only a Codex model id is sent; `auto`/`default` and Copilot or Claude ids saved for the folder are left to Codex. */
 export function codexModelFlag(model: string | undefined): boolean {
   return !!model && /^(gpt|o\d|codex)[A-Za-z0-9._:/-]{0,76}$/i.test(model);
@@ -597,7 +607,7 @@ export class CodexAdapter implements AgentAdapter {
           : await child.rpc.request('thread/start', threadParams);
       } catch (e) {
         // Never retried with a weaker setting (FR-087).
-        throw new Error(`Codex refused the session settings: ${reasonOf(e)}${linuxSandboxHint(reasonOf(e))}`);
+        throw new Error(`Codex refused the session settings: ${reasonOf(e)}${linuxSandboxHint(reasonOf(e))}${macSandboxHint(reasonOf(e))}`);
       }
       if (resumeId !== undefined) codexResumeCheck(started, { cwd: (limited ? realCwd : cwd) as string, limited, realpath: this.realpath });
       const thread = isObj(started) && isObj(started.thread) ? started.thread : undefined;
