@@ -1,41 +1,130 @@
 {
   "hero": {
     "eyebrow": "Free · open source · early alpha",
-    "title": "See all your AI agents at once",
-    "tagline": "A desktop office where GitHub Copilot, Claude Code and Codex agents work side by side, and ask you before they act.",
+    "title": "Run all your AI coding agents. Answer only the ones that need you.",
+    "tagline": "A free desktop app that puts your GitHub Copilot, Claude Code and Codex sessions in one office, with an inbox for every agent waiting on your OK.",
     "image": "052-office-1440x900.png",
-    "alt": "The Agent Durbar office: simulated agents at desks in their folders' rooms, with a status bar showing who is working and who waits for you"
+    "alt": "Agent Durbar with simulated data: folders as rooms, agents at desks, a 'Needs you 5' button and one agent waiting for permission to rename a tool",
+    "caption": "Simulator demo data: names, costs and tasks are invented."
   },
-  "status": "Alpha · unsigned · run by hand on Linux only. Builds for macOS and Windows are checked in CI.",
+  "status": "Alpha · unsigned · run by hand on Linux only; the macOS and Windows builds are made in CI but not tried by hand yet.",
   "cards": [
-    { "title": "Know who needs you", "text": "One inbox for every agent waiting on you, oldest first, with how long each has waited. Answer with a click or a key.", "icon": "inbox", "readmeAnchor": "what-you-can-do" },
-    { "title": "Stay in control", "text": "Every agent starts Read-only. Switch to Ask first or Allow all only when you choose, per agent, any time.", "icon": "shield", "readmeAnchor": "safety-model" },
-    { "title": "See the cost", "text": "Cost estimates per folder and spending limits per session. Usage bills against your own plans: Durbar never charges you.", "icon": "coins", "readmeAnchor": "costs-and-caps" },
-    { "title": "Any folder, not only code", "text": "A room is a folder an agent works in: code, documents, research or notes.", "icon": "folder", "readmeAnchor": "what-you-can-do" }
+    {
+      "title": "Never miss a waiting agent",
+      "text": "One inbox for every agent waiting on you, oldest first, with how long each has waited. Answer with a click or a key.",
+      "icon": "inbox",
+      "readmeAnchor": "what-you-can-do"
+    },
+    {
+      "title": "Read-only until you say so",
+      "text": "Every agent starts Read-only. Switch to Ask first or Allow all only when you choose, per agent, any time.",
+      "icon": "shield",
+      "readmeAnchor": "safety-model"
+    },
+    {
+      "title": "Cap the spend per session",
+      "text": "Cost estimates per folder and spending limits per session. Usage bills against your own plans: Durbar never charges you.",
+      "icon": "coins",
+      "readmeAnchor": "costs-and-caps"
+    },
+    {
+      "title": "Any folder: code, docs, notes",
+      "text": "A room is a folder an agent works in: code, documents, research or notes.",
+      "icon": "folder",
+      "readmeAnchor": "what-you-can-do"
+    }
   ],
   "howItWorks": [
-    { "title": "Install and connect", "text": "Connect the AI account you already have. Settings > Agent apps can install the agent app and sign you in with the vendor's own page.", "screenshot": "051-harnesses-1440x900.png", "alt": "Settings > Agent apps with Copilot, Claude Code and Codex and one next step each" },
-    { "title": "Add a folder", "text": "Each folder becomes a room in the office, with one or more agents at its desks." },
-    { "title": "Chat, approve, watch", "text": "Open an agent to chat. Approve what it asks, and keep an eye on every other agent in the strip and the office." }
+    {
+      "title": "Install and connect",
+      "text": "Connect the AI account you already have. Settings > Agent apps can install the agent app and sign you in with the vendor's own page.",
+      "screenshot": "051-harnesses-1440x900.png",
+      "alt": "Settings > Agent apps with Copilot, Claude Code and Codex and one next step each"
+    },
+    {
+      "title": "Add a folder",
+      "text": "Each folder becomes a room in the office, with one or more agents at its desks."
+    },
+    {
+      "title": "Chat, approve, watch",
+      "text": "Open an agent to chat. Approve what it asks, and keep an eye on every other agent in the strip and the office."
+    }
   ],
   "themes": [
-    { "name": "Clean Office", "screenshot": "site-theme-clean-1440x900.png", "swatch": "#3f6a54" },
-    { "name": "Corporate", "screenshot": "site-theme-corporate-1440x900.png", "swatch": "#2c5468" },
-    { "name": "Retro Pixel", "screenshot": "site-theme-retro-1440x900.png", "swatch": "#1d2b53" },
-    { "name": "Durbar · Indian Court", "screenshot": "site-theme-durbar-indian-1440x900.png", "swatch": "#d9962b" },
-    { "name": "Durbar · European Court", "screenshot": "site-theme-durbar-european-1440x900.png", "swatch": "#2c4a78" },
-    { "name": "Durbar · Japanese Court", "screenshot": "site-theme-durbar-japanese-1440x900.png", "swatch": "#c24a42" }
+    {
+      "name": "Clean Office",
+      "screenshot": "site-theme-clean-1440x900.png",
+      "swatch": "#3f6a54"
+    },
+    {
+      "name": "Corporate",
+      "screenshot": "site-theme-corporate-1440x900.png",
+      "swatch": "#2c5468"
+    },
+    {
+      "name": "Retro Pixel",
+      "screenshot": "site-theme-retro-1440x900.png",
+      "swatch": "#1d2b53"
+    },
+    {
+      "name": "Durbar · Indian Court",
+      "screenshot": "site-theme-durbar-indian-1440x900.png",
+      "swatch": "#d9962b"
+    },
+    {
+      "name": "Durbar · European Court",
+      "screenshot": "site-theme-durbar-european-1440x900.png",
+      "swatch": "#2c4a78"
+    },
+    {
+      "name": "Durbar · Japanese Court",
+      "screenshot": "site-theme-durbar-japanese-1440x900.png",
+      "swatch": "#c24a42"
+    }
   ],
-  "aiTheme": { "text": "…or describe your own and let AI make it.", "screenshot": "040-aitheme-pirate-1440x900.png", "alt": "The office in a dark pirate theme made with AI from \"a pirate ship at night\"" },
+  "aiTheme": {
+    "text": "…or describe your own and let AI make it.",
+    "screenshot": "040-aitheme-pirate-1440x900.png",
+    "alt": "The office in a dark pirate theme made with AI from \"a pirate ship at night\""
+  },
   "harnesses": [
-    { "name": "GitHub Copilot", "verified": "Checked on a real account since the first milestone, with the Copilot runtime from the official SDK and your own login.", "notYet": "Not seen yet: switching between two real models, the long-context tier and a real credit cap being reached." },
-    { "name": "Claude Code", "verified": "Checked on a real account: every mode, stop, resume, models, questions, MCP, sub-agents, the cost limit and summaries.", "notYet": "Not verified yet on real macOS or Windows machines." },
-    { "name": "OpenAI Codex", "verified": "Checked on a real account on Linux: every mode, resume, models, history, questions, MCP tools, sub-agents and summaries.", "notYet": "Not verified yet on macOS or Windows; on Ubuntu 24.04+ Read-only and Ask first need an AppArmor profile." }
+    {
+      "name": "GitHub Copilot",
+      "verified": "Checked on a real account since the first milestone, with the Copilot runtime from the official SDK and your own login.",
+      "notYet": "Not seen yet: switching between two real models, the long-context tier and a real credit cap being reached."
+    },
+    {
+      "name": "Claude Code",
+      "verified": "Checked on a real account: every mode, stop, resume, models, questions, MCP, sub-agents, the cost limit and summaries.",
+      "notYet": "Not verified yet on real macOS or Windows machines."
+    },
+    {
+      "name": "OpenAI Codex",
+      "verified": "Checked on a real account on Linux: every mode, resume, models, history, questions, MCP tools, sub-agents and summaries.",
+      "notYet": "Not verified yet on macOS or Windows; on Ubuntu 24.04+ Read-only and Ask first need an AppArmor profile."
+    }
   ],
   "safety": [
-    { "title": "Read-only by default", "text": "A new agent reads inside its folders only. Ask first makes it wait for your OK; Allow all asks once to confirm." },
-    { "title": "No tokens stored, no telemetry", "text": "Each agent app reads its own sign-in. Durbar has no accounts, no servers and no telemetry, and never logs your prompts." },
-    { "title": "You set the spending limit", "text": "Give a session a spending limit in credits or dollars. When it is reached, the chat asks you what to do." }
+    {
+      "title": "Read-only by default",
+      "text": "A new agent reads inside its folders only. Ask first makes it wait for your OK; Allow all asks once to confirm."
+    },
+    {
+      "title": "No tokens stored, no telemetry",
+      "text": "Each agent app reads its own sign-in. Durbar has no accounts, no servers of its own and no telemetry."
+    },
+    {
+      "title": "You set the spending limit",
+      "text": "Give a session a spending limit in credits or dollars. When it is reached, the chat asks you what to do."
+    }
   ],
-  "featuresExclude": ["008", "013", "021", "025", "045", "050"]
+  "featuresExclude": [
+    "008",
+    "013",
+    "021",
+    "025",
+    "045",
+    "050"
+  ],
+  "proof": "Built in the open and spec-driven: every feature has a public spec that says what was checked and what is a known gap."
 }

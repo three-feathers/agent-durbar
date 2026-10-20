@@ -23,6 +23,7 @@ const ROOT = path.join(__dirname, '..');
 const OUT = process.env.SITE_OUT ? path.resolve(process.env.SITE_OUT) : path.join(ROOT, '_site');
 const REPO = 'three-feathers/agent-durbar';
 const GH = `https://github.com/${REPO}`;
+const SITE_URL = 'https://three-feathers.github.io/agent-durbar/';
 const SHOTS = 'docs/screenshots';
 // line endings normalised: a Windows checkout has CRLF, and the parsers match whole lines
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n?/g, '\n');
@@ -318,6 +319,9 @@ section.sec{margin:var(--s7) auto 0}.sec.flush{margin-top:0}section.sec>.head{ma
 .steps h3{margin:4px 0 var(--s1);font-size:18px}.steps p{margin:0;color:var(--ink-2)}
 .shot{border-radius:12px;border:1px solid var(--line);box-shadow:0 18px 40px -20px #2b1d0f40;display:block}
 h1,h2,h3{text-wrap:balance}
+.hero .caption{margin:var(--s2) 0 0;font-size:13px;color:var(--muted);text-align:center}
+.proof{margin-top:var(--s3);color:var(--ink-2);max-width:68ch}
+@media (max-width:640px){.hero .os{display:none}}
 .os span{white-space:nowrap}
 .themes{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:var(--s3);margin:0;padding:0;list-style:none}
 .themes figure{margin:0}.themes .tz{aspect-ratio:16/10;overflow:hidden;border-radius:12px;border:1px solid var(--line);background:var(--surface)}.themes .tz img{display:block;width:230%;max-width:none;height:auto;border:0;border-radius:0}
@@ -357,12 +361,17 @@ blockquote{margin:0 0 var(--s3);padding:var(--s2) var(--s3);border-left:4px soli
 @media (max-width:860px){.docs{grid-template-columns:1fr;gap:var(--s3);padding-top:var(--s4)}.toc{position:static;max-height:none;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:var(--s3)}}
 `;
 
-function page({ title, description, css, nav, body }) {
+function page({ title, description, css, nav, body, og }) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}">
-<meta name="color-scheme" content="light dark">
+<meta name="color-scheme" content="light dark">${og ? `
+<meta property="og:type" content="website"><meta property="og:url" content="${esc(og.url)}"><meta property="og:title" content="${esc(og.title)}">
+<meta property="og:description" content="${esc(og.description)}"><meta property="og:image" content="${esc(og.image)}">
+<meta property="og:image:width" content="1440"><meta property="og:image:height" content="900"><meta property="og:image:alt" content="${esc(og.imageAlt)}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#f7f4ee" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#141210" media="(prefers-color-scheme: dark)">` : ''}
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <style>${CSS_BASE}${css}</style></head>
@@ -402,10 +411,10 @@ function landingHtml({ landing, readme, rel, changes }) {
 <p class="eyebrow">${esc(h.eyebrow || '')}</p>
 <h1>${esc(h.title)}</h1>
 <p class="lead">${esc(h.tagline)}</p>
-<div class="cta"><a class="btn primary" href="${esc(relUrl)}">Download alpha</a><a class="btn secondary" href="docs.html">Read the docs</a></div>
+<div class="cta"><a class="btn primary" href="${esc(relUrl)}">Download alpha</a><a class="btn secondary" href="${GH}">View on GitHub</a></div>
 <p class="os">${osLinks}</p>
 <p class="status" id="status">${esc(landing.status)}</p>
-<div class="frame"><div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>${img(h.image, h.alt || h.title, { lazy: false })}</div>
+<div class="frame"><div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>${img(h.image, h.alt || h.title, { lazy: false })}</div>${h.caption ? `<p class="caption">${esc(h.caption)}</p>` : ''}
 </div></div>
 
 <div class="wrap">
@@ -429,6 +438,7 @@ ${landing.aiTheme ? `<p class="ai">${img(landing.aiTheme.screenshot, landing.aiT
 <section class="sec" id="apps"><div class="head"><p class="eyebrow">Agent apps</p><h2>Works with the agents you already use</h2><p>Durbar drives the agent apps you installed and signed in to yourself. What we checked, and what we have not yet:</p></div>
 <div class="apps">${landing.harnesses.map((x) => `<article class="app"><h3>${esc(x.name)}</h3><p class="ok">${esc(x.verified)}</p><p class="no">${esc(x.notYet)}</p></article>`).join('')}</div>
 <p class="small"><a href="docs.html#harnesses">Details for each agent app</a></p>
+${landing.proof ? `<p class="proof">${esc(landing.proof)} <a href="${GH}/blob/main/specs/README.md">The specs</a> · <a href="https://github.com/orgs/three-feathers/projects/1">The board</a></p>` : ''}
 </section>
 
 <section class="sec" id="safety"><div class="head"><p class="eyebrow">Safety and cost</p><h2>Agents ask before they act</h2></div>
@@ -458,7 +468,8 @@ ${news ? `<section class="sec" id="new"><div class="head"><p class="eyebrow">Wha
 </main>`;
   return page({
     title: 'Agent Durbar: see all your AI agents at once',
-    description: `${h.title}. ${h.tagline}`,
+    description: h.tagline,
+    og: { url: SITE_URL, title: 'Agent Durbar: every AI coding agent in one office', description: 'See which Copilot, Claude Code and Codex agents need you. Read-only by default. Free, MIT, early alpha.', image: SITE_URL + 'screenshots/' + h.image, imageAlt: h.alt || h.title },
     css: CSS_LANDING,
     nav,
     body,

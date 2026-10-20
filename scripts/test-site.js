@@ -61,10 +61,11 @@ for (const name of ['index.html', 'docs.html']) {
 
 // the landing page: curated, short, honest, no internal numbers
 const index = fs.readFileSync(path.join(out, 'index.html'), 'utf8');
-assert.match(index, /<h1>See all your AI agents at once<\/h1>/, 'hero title');
+assert.match(index, /<h1>Run all your AI coding agents\. Answer only the ones that need you\.<\/h1>/, 'hero title');
 assert.match(index, /Free · open source · early alpha/, 'hero eyebrow');
 assert.match(index, />Download alpha</, 'download button');
-assert.match(index, /href="docs\.html">Read the docs</, 'docs button');
+assert.match(index, /class="btn secondary" href="https:\/\/github\.com\/three-feathers\/agent-durbar">View on GitHub</, 'GitHub button'); assert.match(index, /href="docs\.html"/, 'docs link');
+assert.match(index, /property="og:image" content="https:\/\/three-feathers\.github\.io\/agent-durbar\/screenshots\//, 'og:image is absolute'); assert.match(index, /Simulator demo data/, 'the hero says the data is invented');
 assert.match(index, /Alpha · unsigned · run by hand on Linux only/, 'status line in the hero');
 assert.ok(index.indexOf('id="status"') < index.indexOf('id="features"'), 'the status line comes before the features');
 assert.match(index, /src="screenshots\/052-office-1440x900\.png"/, 'current hero screenshot');
