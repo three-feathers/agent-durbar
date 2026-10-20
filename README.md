@@ -90,7 +90,7 @@ Durbar offers each agent app (harness) that is **installed and signed in on your
 
 | Harness | What Durbar runs | Checked on a real account |
 | --- | --- | --- |
-| **GitHub Copilot** | The Copilot runtime bundled with the official `@github/copilot-sdk`, with your `copilot login`. | Yes, since milestone 1. Not seen yet: switching between two real models, the long-context tier, `confirmation_required`, and a real credit cap being reached. The Copilot login on the test machine is still a free plan, and on 2026-10-20 it listed no models at all. |
+| **GitHub Copilot** | The Copilot runtime bundled with the official `@github/copilot-sdk`, with your `copilot login`. | Yes, since milestone 1. Checked on Copilot Pro (2026-10-20): switching between two real models with the conversation kept, reasoning effort, the long-context tier (272k → 872k), the confirmation when the new model's window is too small, and *Compact and switch*. The credit limit did **not** stop a running session (see [Costs and caps](#costs-and-caps)). |
 | **Claude Code** | Your installed `claude` over its stream protocol. Durbar loads none of Claude's settings files: a folder's own `.claude` hooks and `.mcp.json` do not run (checked 2026-10-20). Sessions are shared with the CLI both ways: Durbar lists the folder's earlier `claude` sessions, and sessions started in Durbar appear in `claude --resume` (checked on Claude Code 2.1.304; it relies on an undocumented setting, see spec 012 FR-159). | Yes (Claude Code 2.1.302-2.1.303): every mode, interrupt, stop, resume, the live mode switch, models, previous sessions, questions, MCP switches, sub-agents, custom agents, the context window, the cost cap, summaries, and the full app across a restart. |
 | **OpenAI Codex** | Your installed `codex app-server`, with a ChatGPT sign-in or an API key. | Yes (Codex 0.163, Linux): every mode, interrupt, End session, resume, a mode switch, models, history, questions, MCP tools, sub-agents, summaries, and the full app across a restart. |
 
@@ -187,7 +187,7 @@ Codex in Read-only and Ask first gets an OS-enforced permission profile limited 
   - a global default is in Settings;
   - it is saved per folder.
 
-  It is a soft limit: when it is reached (*Spending limit reached*), the chat offers *Raise limit / Remove limit / Stop here*. Copilot plans, the free one too, have a fixed price: Durbar shows usage, it does not charge you. The office and each room show usage totals, kept across restarts, with a reset in Settings.
+  It is a soft limit: when it is reached (*Spending limit reached*), the chat offers *Raise limit / Remove limit / Stop here*. **Known gap (real check, 2026-10-20, Copilot Pro):** Copilot's runtime did not stop at the limit. A 30-credit session reached 42.6 credits, and a turn that started over its limit still ran; the runtime only checks the limit when a session is resumed. Until Durbar enforces the limit itself ([spec 011](specs/011-credit-caps-and-usage-display/spec.md)), treat it as a display, not a stop. Copilot plans, the free one too, have a fixed price: Durbar shows usage, it does not charge you. The office and each room show usage totals, kept across restarts, with a reset in Settings.
 - **Claude Code** reports a dollar *estimate*, shown as `≈ $… est.` and never mixed with AIU. A session can have a **spending limit in dollars** (at least $0.01):
   - Durbar passes what is left to Claude's own `--max-budget-usd`;
   - when the limit is reached, the chat offers *Raise limit / Remove limit / Stop here*;
@@ -241,7 +241,7 @@ npm run pack:dir          # unpacked app for this OS in release/ (also dist, dis
 - **Only Linux has been run by hand.** macOS and Windows packages are built, and a packaged-app check runs on all three in CI, but nobody has used them on real machines yet.
 - **Unsigned builds:** expect the OS warnings above.
 - **VS Code's own chats are read-only.** VS Code keeps them in an undocumented store that cannot be continued from outside; Durbar shows a copy. Copilot CLI/SDK sessions *can* be resumed.
-- **Caps are soft:** one model response can overshoot them, and the figures are what each harness reports.
+- **Caps are soft:** one model response can overshoot them, and the figures are what each harness reports. Copilot's runtime did not stop at its limit at all in a real check (2026-10-20); see [Costs and caps](#costs-and-caps).
 - **Floors that are off are quiet:** their agents keep running and can spend credits or wait for an approval.
 - **Schedules run only while the app is open**, and a schedule's limit counts usage from its send until that turn ends (a message you send during that turn counts too). The agent app's own schedules are only shown for Copilot and only when reported while Durbar runs; none of this has been tried on a real session yet.
 - **Imported MCP config:** importing from `.vscode/mcp.json` is a one-time copy per folder.
@@ -254,7 +254,7 @@ npm run pack:dir          # unpacked app for this OS in release/ (also dist, dis
   - Copilot, Claude Code and Codex side by side, with session resume and continuation;
   - model and context switching, and new session with a summary.
 - **Next:**
-  - real-account checks of Copilot model switching and the long-context tier (with a paid plan);
+  - Durbar enforcing the Copilot credit limit itself (the runtime does not stop at it);
   - macOS and Windows on real machines;
   - the Durbar MCP server, to read the office from your own MCP client ([spec 041](specs/041-durbar-mcp/spec.md), in progress).
 - **Ideas being specified:** a global assistant chat across sessions, multiple profiles (personal/work accounts), and a morning briefing. See the [issues](https://github.com/three-feathers/agent-durbar/issues).

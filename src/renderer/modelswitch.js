@@ -61,7 +61,9 @@
   const unverifiedPrice=m=>!!(m&&m.pricing&&m.pricing.unverified);
   function estimateInputCredits(tokens,model,tier){
     if(unverifiedPrice(model))return undefined; /* the unit of the runtime's prices was never checked: no credit figure is shown or compared with the cap */
-    const p=priceOf(model,tier);
+    /* spec 030 T044 (real 2026-10-20): on the long tier, a context that fits the default window is billed at the default price */
+    const def=model&&pos(model.contextWindow)?model.contextWindow:0;
+    const p=priceOf(model,tier==='long'&&def&&nn(tokens)&&tokens<=def?'default':tier);
     if(!p||p.input===undefined||!nn(tokens))return undefined;
     return tokens/1e6*p.input;
   }
