@@ -68,12 +68,12 @@ A developer adds another agent runtime by implementing `AgentAdapter` and emitti
 - **FR-009** `[IMPLEMENTED]` read: `listModelOptions()` lists models (no inference) with multiplier, supported efforts and a disabled flag (feature 007). `listPreviousSessions`/`history` support feature 006.
 - **FR-010** `[IMPLEMENTED]` read: **Superseded by 015.** Events with an `agentId` are routed to that sub-agent's own event log (nested block under the parent's task call and the read-only helper transcript); they no longer appear in the parent's chip list or text.
 - **FR-011** `[PARTLY CLOSED by 015: mapper unit-tested with recorded fixtures]` There is **no automated test of the event mapping** (`map()` is private and tied to SDK types). A regression in a mapping would only show with a live session. `npm run smoke` exercises it but spends credits and is not in CI. (Task T020.)
-- **FR-012** `[KNOWN GAP]` Only one adapter exists; the interface has never been implemented twice, so its fitness for Claude/Codex is unproven (feature 012).
+- **FR-012** ~~`[KNOWN GAP]`~~ closed 2026-10-21 (see Changes): Only one adapter exists; the interface has never been implemented twice, so its fitness for Claude/Codex is unproven (feature 012).
 - **FR-013** `[IMPLEMENTED]` Closed by 015: a helper's prompt, thinking/intent, tool calls, result and stats are attributed to it (fixtures in `scripts/fixtures/events/`, `npm run test:events`).
 - **FR-014** `[KNOWN GAP]` SDK events not mapped: `tool.shell_output`, user-input requests, plan-mode requests, `assistant.usage_checkpoint`/limits, session-created/updated lifecycle events. Agents that block on those would look idle/working without a prompt for the user. `read:`
 - **FR-015** `[IMPLEMENTED]` (checked 2026-10-19) `package.json` declares `@github/copilot-sdk` as exactly `1.0.22` (no range), as constitution II asks. Was a known gap when it said `^1.0.22`. (Task T022.)
 - **FR-016** `[IMPLEMENTED]` (2026-10-19, T024) `reasoningSeen` and `toolNames` are cleared when the session goes idle, so a stopped turn leaves nothing behind. `test:` `test:events`.
-- **FR-017** `[KNOWN GAP]` Credits (`maxAiCredits` in `StartOptions`) exists in the interface but is not wired to anything (feature 011).
+- **FR-017** ~~`[KNOWN GAP]`~~ closed 2026-10-21 (see Changes): Credits (`maxAiCredits` in `StartOptions`) exists in the interface but is not wired to anything (feature 011).
 
 ### Key Entities
 
@@ -103,3 +103,8 @@ A developer adds another agent runtime by implementing `AgentAdapter` and emitti
 
 - **2026-10-19, questions from Copilot (`ask_user`; uses the question card of spec 012 FR-128..FR-130, issue #60):** *Missing:* the adapter gave the SDK no `onUserInputRequest`, so Copilot sessions were created without the `ask_user` tool and Copilot could never ask the user to choose. *Corrected:* **FR-058** `[IMPLEMENTED]` `CopilotAdapter` passes `onUserInputRequest` (the SDK's legacy `ask_user` form: one question, optional `choices`, `allowFreeform`). It emits the normalized `question` event (one question, its choices as options, at most 6) with status "Waiting for your answer", and waits for `answerQuestion`. The answer goes back as `{ answer, wasFreeform }` (`wasFreeform` when the text is not one of the choices); a skip answers "(The user skipped the question. Decide yourself.)" as free text; Stop, End and an error cancel it the same way. Allowed in every permission mode (a question is not an action). Tests on a fake session (`test:copilotmodel`: choice, free text, skip, Stop). `real:` 2026-10-19, one Read-only prompt on `auto`: Copilot called `ask_user` ("Which colour do you prefer?", choices Red and Blue), the answer "Blue" went back, and it replied "You chose Blue." (0.1774 AIU). Not checked: the `elicitation` form of `ask_user` (`askUserVariant`), which stays off.
 
+### 2026-10-21: known gaps revalidated
+
+- **FR-012** closed. The interface now has three production adapters (Copilot, Claude Code, Codex; spec 012), run against real accounts on Linux, macOS and Windows in the spec 062 e2e run 39496442403 (9/9).
+- **FR-017** closed. `maxAiCredits` maps to `sessionLimits` (spec 011 FR-009), and Durbar itself enforces it (spec 011 FR-070..FR-074, in review in #400).
+- **FR-014** narrowed. User-input requests reach the app through the SDK callback (`onUserInputRequest`, spec 002 FR-058), and `session_limits_exhausted.*` and `session_limits_changed` are mapped. Still not mapped as events: `tool.shell_output`, plan-mode requests and the session lifecycle events. `session.usage_checkpoint` is read by the adapter for the cap (#400), not mapped.
