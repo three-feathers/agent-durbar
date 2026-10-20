@@ -36,7 +36,7 @@
 
 ## Changes 2026-10-20 (issue #368): Pin, Hide and Delete in Previous sessions
 
-- [ ] T032 `prevPinned`/`prevHidden` in `SavedFolder`: parse (shape, cap 200, duplicates), save, `markPrevious` (pin and hide exclusive, no rewrite when unchanged), `dropPrevious`, gone with the folder; `test:folders` [FR-026]
+- [x] T032 `prevPinned`/`prevHidden` in `SavedFolder`: parse (shape, cap 200, duplicates), save, `markPrevious` (pin and hide exclusive, no rewrite when unchanged), `dropPrevious`, gone with the folder; `test:folders` [FR-026]
 - [ ] T033 Pure `arrangeSessions` in `src/renderer/sessionsearch.js` (pinned first newest first, hidden out unless shown, search over what is shown, counts) with cases in `scripts/test-sessionsearch.ts` [FR-024, FR-025, FR-023]
 - [ ] T034 `sessions:mark` IPC, preload and `api.ts` types; `pinned`/`hidden` in the `sessions:listPrevious` and `vschat:list` results (filtered to present ids); simulator marks in memory [FR-026]
 - [ ] T035 Exclude resume ids of office agents from `sessions:listPrevious` and the resume re-check; unit test with a fake router [FR-032]
