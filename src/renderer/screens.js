@@ -162,7 +162,14 @@
     const detailSec=X.detail?`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Detail level</h3>
         <p class="scr-note"><b>Simple</b> shows what agents do in plain words and what they cost; <b>Expert</b> adds tokens, models, context, paths and developer tools. Permissions and answering are the same in both.</p>
         <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div></section>`:'';
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${detailSec}${themeSec}${capSec}${moodSec}${notifySec}${schedSec}${floorsSec}${placesSec}
+    /* spec 052 FR-066: what Durbar does not do, in plain words (checked against the README's Safety model and Costs and caps) */
+    const notSec=`<section class="scr-sec" aria-labelledby="notH"><h3 id="notH">What Durbar does not do</h3><ul class="scr-not">
+        <li>It does not sandbox Claude Code or Copilot; only Codex has OS-level enforcement (in Read-only and Ask first).</li>
+        <li>It does not stop a reply halfway: spending limits are checked between replies.</li>
+        <li>It does not see your bill; costs are estimates.</li>
+        <li>It sends nothing to any server of its own.</li>
+        <li>Floors that are off and hidden folders keep running and spending.</li></ul></section>`;
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${detailSec}${notSec}${themeSec}${capSec}${moodSec}${notifySec}${schedSec}${floorsSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         <p class="scr-note">Every agent gets the servers of your <b>Copilot CLI list</b>, the one global list.</p>
@@ -650,7 +657,8 @@
     const r=root();
     const all=period==='all';
     const agents=X.agents();
-    let tab=cur.tab||'tools'; if(all&&tab==='agents')tab='tools';
+    const hasActivity=!!X.bridge.activityList;
+    let tab=cur.tab||'tools'; if(all&&tab==='agents')tab='tools'; if(tab==='activity'&&!hasActivity)tab='tools';
     let scope=cur.scope||null; /* session: an agent id; all time: an agent label */
     let tot,groups,scopeSel;
     if(all){
@@ -668,11 +676,13 @@
       scopeSel=`<label class="select-wrap"><span class="sr-only">Show</span><select id="toolScope"><option value="">All agents</option>${agents.map(a=>`<option value="${esc(a.id)}"${a.id===scope?' selected':''}>${esc(a.name)}</option>`).join('')}</select></label>`;
     }
     const per=`<div class="seg" role="tablist" aria-label="Period"><button role="tab" id="perSession" aria-selected="${!all}" type="button">This session</button><button role="tab" id="perAll" aria-selected="${all}" type="button">All time</button></div>`;
-    const tabs=`<div class="seg" role="tablist" aria-label="Tools view"><button role="tab" id="tabTools" aria-selected="${tab==='tools'}" type="button">Tool usage</button><button role="tab" id="tabAgents" aria-selected="${tab==='agents'}" type="button">Models &amp; context</button><button role="tab" id="tabCost" aria-selected="${tab==='cost'}" type="button">Cost</button></div>`;
+    const tabs=`<div class="seg" role="tablist" aria-label="Tools view"><button role="tab" id="tabTools" aria-selected="${tab==='tools'}" type="button">Tool usage</button><button role="tab" id="tabAgents" aria-selected="${tab==='agents'}" type="button">Models &amp; context</button><button role="tab" id="tabCost" aria-selected="${tab==='cost'}" type="button">Cost</button>${hasActivity?`<button role="tab" id="tabActivity" aria-selected="${tab==='activity'}" type="button">Activity</button>`:''}</div>`;
     const cost=tab==='cost'?costView():null;
-    const body=cost?cost.html:tab==='tools'?await toolsTab(scope,tot,groups,all):agentsTab(scope,agents);
+    const act=tab==='activity'?await activityView():null;
+    const body=act?act.html:cost?cost.html:tab==='tools'?await toolsTab(scope,tot,groups,all):agentsTab(scope,agents);
     if(!cur||cur.kind!=='tools')return;
-    const head=cost?`${tabs}${cost.seg}<span class="grow"></span><button class="btn" type="button" id="costCsv"${cost.built.rows.length&&!cost.none?'':' disabled'}>Copy as CSV</button>`:`${per}${scopeSel}${tabs}<span class="grow"></span>`;
+    const actBtns=act?`<button class="btn" type="button" id="actCsv"${act.n?'':' disabled'}>Export CSV</button><button class="btn" type="button" id="actJson"${act.n?'':' disabled'}>Export JSON</button><button class="btn" type="button" id="actClear"${act.n?'':' disabled'}>Clear…</button>`:'';
+    const head=act?`${tabs}<span class="grow"></span>${actBtns}`:cost?`${tabs}${cost.seg}<span class="grow"></span><button class="btn" type="button" id="costCsv"${cost.built.rows.length&&!cost.none?'':' disabled'}>Copy as CSV</button>`:`${per}${scopeSel}${tabs}<span class="grow"></span>`;
     r.innerHTML=`<div class="scr-head"><h2>Tools</h2>${head}<button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>
       <div class="scr-body">${body}</div>`;
     wireHead();
@@ -685,6 +695,10 @@
     if($('costRun'))$('costRun').onclick=()=>{costPer='run';paintTools();};
     if($('costSince'))$('costSince').onclick=()=>{costPer='since';paintTools();};
     if(cost&&$('costCsv'))$('costCsv').onclick=()=>copyCostCsv(cost);
+    if($('tabActivity'))$('tabActivity').onclick=()=>{cur.tab='activity';paintTools();};
+    if($('actCsv'))$('actCsv').onclick=()=>exportActivity('csv');
+    if($('actJson'))$('actJson').onclick=()=>exportActivity('json');
+    if($('actClear'))$('actClear').onclick=()=>clearActivity();
     r.onclick=async e=>{
       const l=e.target.closest('[data-open]');if(l){close();X.openAgent(l.dataset.open);return;}
       if(e.target.closest('#cfgSettings')){open('settings',{section:'mcp'});return;}
@@ -694,6 +708,28 @@
       }
     };
     if(focus){const h=r.querySelector('h2');if(h){h.tabIndex=-1;h.focus({preventScroll:true});}}
+  }
+  /* ---------------- Tools > Activity (spec 052 FR-071): rows come from main only; the window reads, exports and clears ---------------- */
+  async function activityView(){
+    const A=window.DurbarActivity;
+    let rows=[];
+    try{const r=await X.bridge.activityList({limit:500});rows=r&&Array.isArray(r.rows)?r.rows:[];}catch(e){rows=[];}
+    return {n:rows.length,html:`<p class="scr-note">${esc(A.NOTE)}</p>${A.tableHtml(rows,esc)}${rows.length>=500?'<p class="scr-note small">The newest 500 rows are shown; an export holds the whole log (at most 5000 rows).</p>':''}`};
+  }
+  async function exportActivity(format){
+    if(!X.bridge.activityExport)return;
+    const r=await X.bridge.activityExport(format).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+    if(r&&r.cancelled)return;
+    if(r&&r.ok)X.toast('Saved '+(r.count||0)+' row'+(r.count===1?'':'s')+(r.to?' to '+esc(r.to):'')+'.',2800).classList.add('ok');
+    else X.toast('Could not save the activity log: '+esc((r&&r.error)||'unknown error'),4200).classList.add('err');
+  }
+  async function clearActivity(){
+    if(!X.bridge.activityClear)return;
+    const ok=await dialog({title:'Clear the activity log?',html:'<p class="dsub">This deletes every row kept on this computer. Export it first if you need it. It does not touch your agents, their permissions or their history.</p>',buttons:[{label:'Cancel',value:null},{label:'Clear',value:'ok',cls:'primary warn'}]});
+    if(!ok)return;
+    await X.bridge.activityClear().catch(()=>null);
+    X.toast('The activity log was cleared.',2600);
+    if(cur&&cur.kind==='tools'&&cur.tab==='activity')paintTools();
   }
   /* ---------------- Tools > Cost (spec 052 FR-044, #315) ---------------- */
   const sinceDay=s=>typeof s==='string'&&/^\d{4}-\d{2}-\d{2}/.test(s)?s.slice(0,10):'';
@@ -707,7 +743,9 @@
     const seg=`<div class="seg" role="tablist" aria-label="Cost period"><button role="tab" id="costRun" aria-selected="${costPer!=='since'}" type="button" title="Since Agent Durbar opened (or the last reset)">This run</button>${day?`<button role="tab" id="costSince" aria-selected="${costPer==='since'}" type="button" title="The saved totals since the last reset in Settings, plus this run">Since ${esc(day)}</button>`:''}</div>`;
     if(!built.rows.length)return {seg,built,label,html:'<p class="scr-empty">No folders yet.<br><small>Add a folder and start a session; the cost of each folder shows here.</small></p>'};
     /* spec 052 FR-050: no usage at all yet: a plain sentence instead of a table of dashes */
-    if(built.rows.every(r=>r.empty))return {seg,built,label,none:true,html:'<p class="scr-empty">No costs yet. Numbers appear after an agent\'s first reply.</p>'};
+    /* spec 052 FR-075: a Copilot agent in the office: say the plan has a fixed price (the same words as the spending-limit dialog) */
+    const plan=X.agents().some(a=>(a.adapterId||'copilot')==='copilot')?`<p class="scr-note small cost-plan">${esc(C.COPILOT_PLAN_NOTE)}</p>`:'';
+    if(built.rows.every(r=>r.empty))return {seg,built,label,none:true,html:'<p class="scr-empty">No costs yet. Numbers appear after an agent\'s first reply.</p>'+plan};
     const n=v=>`<td class="num">${esc(v)}</td>`;
     const moneyCell=r=>C.notReported(r)?'<td class="num unk">not reported</td>':r.empty?'<td class="num">–</td>':n((/^</.test(C.money(r.money))?'':'≈ ')+C.money(r.money)); /* "<$0.01" needs no "≈" (as on the cards) */
     const row=r=>{
@@ -716,7 +754,7 @@
     const head=`<thead><tr><th scope="col">Folder</th><th scope="col" class="num">Est. cost</th><th scope="col" class="num">Copilot AIU</th><th scope="col" class="num">Claude $ est.<br><small>this run</small></th><th scope="col" class="num">Tokens<br><small>this run</small></th><th scope="col" class="num">Calls</th><th scope="col">Note</th></tr></thead>`;
     const sum=`<p class="scr-sum">Cost by folder, <b>${esc(label==='This run'?'this run':label.toLowerCase())}</b>. Estimated cost: Copilot AI credits at $0.01 each, plus Claude Code's own estimate. Not a bill.</p>`;
     const notes=`<p class="scr-note small">Copilot AIU and calls: ${costPer==='since'?'the totals saved since '+esc(day)+' (reset in Settings) plus this run':'since Agent Durbar opened (or the last reset)'}; ended sessions are included. Claude $ and tokens: the sessions open now, this run only. Codex reports tokens but no cost. A budget per folder is not available yet.</p>`;
-    return {seg,built,label,html:sum+`<table class="ttab cost">${head}<tbody>${built.rows.map(row).join('')}</tbody><tfoot>${row(Object.assign({empty:false,other:false,path:''},built.total,{tokensOnly:false}))}</tfoot></table>`+notes};
+    return {seg,built,label,html:sum+`<table class="ttab cost">${head}<tbody>${built.rows.map(row).join('')}</tbody><tfoot>${row(Object.assign({empty:false,other:false,path:''},built.total,{tokensOnly:false}))}</tfoot></table>`+notes+plan};
   }
   async function copyCostCsv(cost){
     const text=window.DurbarCost.toCsv(cost.built,cost.label), k=cost.built.rows.length;

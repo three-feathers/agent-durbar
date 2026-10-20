@@ -74,7 +74,10 @@ function aiuChip(){
 /* ---- how an agent is doing (spec 034, issue #20): the body follows the context window, trouble gets a drawing ---- */
 const MOODS=window.DurbarMood;
 const MOOD=MOODS.createMoodTracker();
+const ACT=window.DurbarActivity;
 let SERIOUS=false; /* Serious mode (Settings): no mood drawings at all */
+/* spec 052 FR-069: Serious mode also stops every looping animation (styles.css, html[data-serious]) */
+function markSerious(){document.documentElement.toggleAttribute('data-serious',SERIOUS);}
 /* spec 052 FR-031 (#306): detail level. Simple hides the developer details (tokens, model and context chips, paths, MCP, VS Code, resume
    command) and says what agents do in plain verbs; Expert is everything. A display preference of this window (localStorage). */
 let SIMPLE=(()=>{try{return localStorage.getItem('durbar.detail')==='simple';}catch(e){return false;}})();
@@ -92,15 +95,16 @@ function moodFor(a){
 }
 /* spec 052 FR-021: a problem that is not a status (stuck on failing tools, memory nearly full) also shows on the card's pill, in any mood
    setting: it is information, not decoration. '' when there is none. */
-function cardWarn(a){
+function cardWarn(a,pill){
   if(!a||a.parent||!a.live)return '';
   const c=STATS.agent(a.id).ctx, pct=c&&c.limit>0?window.DurbarStats.ctxLevel(c.tokens,c.limit).pct:null, fs=MOOD.failStreak(a.id);
   const out=[];
   if(MOODS.bodyOf(pct)==='monster')out.push('Context almost full ('+pct+'%)');
-  if(MOODS.troubleOf({state:vis(a),ambulance:false,limit:false,waitingMs:0,failStreak:fs})==='dizzy')out.push(fs+' tool calls failed in a row');
+  if(!(pill&&isFailing(a))&&MOODS.troubleOf({state:vis(a),ambulance:false,limit:false,waitingMs:0,failStreak:fs})==='dizzy')out.push(fs+' tool calls failed in a row');
   return out.join('; ');
 }
-const pillWarn=a=>{const w=cardWarn(a);return w?`<span class="pwarn" title="${esc(w)}" aria-hidden="true">⚠</span>`:'';};
+/* spec 052 FR-062: a pill that says "Failing" already tells the streak, so its ⚠ is left for the other warnings */
+const pillWarn=a=>{const w=cardWarn(a,true);return w?`<span class="pwarn" title="${esc(w)}" aria-hidden="true">⚠</span>`:'';};
 const moodWords=a=>{const w=moodFor(a).words;return w?' — '+esc(w):'';};
 const pickAmbulanceId=()=>MOODS.pickAmbulance(agents.filter(x=>x.live&&!x.parent&&roomShown(roomOf(x))).map(x=>({id:x.id,state:vis(x),errorAt:MOOD.errorAt(x.id)})));
 /* a room takes the tone of its worst main agent; the siren is on while it has the ambulance or a fainted agent (spec 034 delta, issue #135) */
@@ -111,10 +115,17 @@ function roomAlert(r){
 }
 const ALERT_WORDS='Alert: an agent needs help';
 /* Theme (specs 035-040): apply an id or manifest, clear the scene cache, re-render, persist. */
-async function applyTheme(idOrManifest){
-  const applied=THEME.setTheme(idOrManifest);
-  SC_CACHE.clear();
-  renderAll();
+/* spec 052 FR-070: a theme change cross-fades (a view transition of the whole window, 240ms in CSS). None under reduced motion, at
+   boot, or without the API. Chromium runs the callback on the next frame, not at once, so callers wait for it; drivers that call
+   THEME.setTheme() themselves are not affected. A transition that is skipped still runs the callback. */
+function swapView(fn,instant){
+  if(instant||reducedMotion()||typeof document.startViewTransition!=='function'){fn();return Promise.resolve();}
+  try{const vt=document.startViewTransition(fn);return vt.updateCallbackDone.catch(()=>{});}catch(e){fn();return Promise.resolve();}
+}
+async function applyTheme(idOrManifest,instant){
+  let applied=null;
+  await swapView(()=>{applied=THEME.setTheme(idOrManifest);SC_CACHE.clear();renderAll();},instant===true);
+  if(applied==null){applied=THEME.setTheme(idOrManifest);SC_CACHE.clear();renderAll();} /* the callback did not run (should not happen) */
   if(bridge&&bridge.setTheme){
     const r=await bridge.setTheme(typeof idOrManifest==='string'?idOrManifest:applied).catch(()=>null);
     if(r&&!r.ok)toast('The theme could not be saved.',4000);
@@ -126,6 +137,9 @@ const SIREN=()=>'<span class="siren" aria-hidden="true"><svg viewBox="0 0 14 14"
 /* "impatient" starts after 60 s without any event, so look every few seconds and redraw only when somebody's mood changed */
 let moodSig='';
 setInterval(()=>{if(SERIOUS||demoOn)return;const sig=agents.map(x=>x.live&&!x.parent?moodFor(x).trouble+'/'+moodFor(x).body:'').join('|');if(sig!==moodSig){moodSig=sig;scheduleRender();}},5000);
+/* spec 052 FR-062: "Last activity" labels follow the clock through the normal render, every 30 s and only when a label changed */
+let agoSig='';
+setInterval(()=>{if(demoOn)return;const sig=agents.map(x=>x.lastEventAt?ACT.agoShort(Date.now()-x.lastEventAt):'').join('|');if(sig!==agoSig){agoSig=sig;scheduleRender();}},30000);
 /* ---- places in the office (spec 024): a shared lobby; main agents walk to the place of the tool they are using ---- */
 const VISITS=window.DurbarPlaces.createVisits();
 const SEEN_SERVERS=new Set(); /* MCP server names seen in tool events this run (per-folder extras included): the Places settings list them */
@@ -241,6 +255,15 @@ const LABELS={working:'Working',thinking:'Thinking',waiting:'Waiting for you',id
 const LABELS_SHORT={waiting:'Waiting'};
 const vis = a => a.paused ? 'idle' : a.state;
 const label = (a,short) => a.paused ? 'Paused' : (a.label || (short&&LABELS_SHORT[a.state]) || LABELS[a.state]);
+/* spec 052 FR-062: Working (or Thinking) while its recent tool calls failed in a row (the mood's "dizzy" streak) reads "Failing", in the waiting
+   colours (.st-failing); the card keeps its is-working look and its place in the status filters. Main agents only (the tracker's scope). */
+const isFailing = a => !!a&&!a.parent&&!!a.live&&!a.paused&&(a.state==='working'||a.state==='thinking')&&MOOD.failStreak(a.id)>=MOODS.DIZZY_STREAK;
+const pillSt = a => isFailing(a)?'failing':vis(a);
+const stWord = (a,short) => isFailing(a)?'Failing':label(a,short);
+const pillTip = a => isFailing(a)?` title="${MOOD.failStreak(a.id)} tool calls failed in a row"`:'';
+/* spec 052 FR-062: last activity, from the last event of the agent or its helpers (a.lastEventAt, the time it arrived); repainted by the 30 s tick */
+const sinceLast = a => {const r=a&&a.parent?byId(a.parent)||a:a;return r&&r.lastEventAt?Math.max(0,Date.now()-r.lastEventAt):null;};
+const lastTip = a => {const t=ACT.agoLong(sinceLast(a));return t?' · Last activity '+t:'';};
 /* waiting-for-you first, then errors, everything else keeps its stable order (calm: no constant reshuffling) */
 const prio = a => {const s=vis(a);return s==='waiting'?0:s==='error'?1:2;};
 
@@ -313,7 +336,7 @@ function charArt(){
 function scene(a,mini,c){
   const st=vis(a), mood=moodFor(a), k=mood.body==='monster'?Object.assign({},a.look,{skin:T_('--monster-skin')}):a.look, shirt=k.shirt, arm=shade(shirt,-.14), skinD=shade(k.skin,-.08);
   const kit=THEME.sceneKit(); /* another theme's people and desks (spec 035 FR-013); the office kit is the code below */
-  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.draw(kit,a,{st,mood,k,mini,c,T:T_,shade,reduced:REDUCED});if(v)return v;}
+  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.draw(kit,a,{st,mood,k,mini,c,T:T_,shade,reduced:REDUCED||SERIOUS});if(v)return c?v:stillSig(v);}
   let s=`<svg class="scene${c?' sc-c':''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses?1:0}|${c?'c':mini?'m':'f'}|${mood.body}${mood.trouble||''}" viewBox="${c?'16 5 176 116':mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
   s+=`<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="${T_('--scene-shadow')}" opacity=".06"/>`;
   /* compact scenes: flat halo rects + CSS-only animation (no blur filter, no SMIL) so 15 of them stay cheap */
@@ -355,7 +378,7 @@ function scene(a,mini,c){
   if(st==='waiting') s+=`<rect x="121" y="41" width="30" height="3.6" rx="1.8" fill="${T_('--wait-dot')}" opacity=".5"/><rect x="123" y="49" width="42" height="19" rx="5" fill="${T_('--wait-card')}" stroke="${T_('--wait-note-stroke')}" stroke-width="1.2"/><circle cx="131" cy="58.5" r="3" fill="${T_('--wait-dot')}"/><rect x="138" y="54" width="20" height="3" rx="1.5" fill="${T_('--wait-note-line')}"/><rect x="138" y="60" width="14" height="3" rx="1.5" fill="${T_('--wait-note-line-2')}"/>`;
   if(st==='idle') s+=`<circle cx="144" cy="54.5" r="7" fill="none" stroke="${T_('--idle-clock')}" stroke-width="1.6"/><path d="M144 50.5v4l2.6 1.6" fill="none" stroke="${T_('--idle-clock')}" stroke-width="1.6" stroke-linecap="round"/>`;
   if(st==='error') s+=`<circle cx="144" cy="52" r="9" fill="none" stroke="${T_('--halo-error')}" stroke-width="2"/><path d="M144 47.5v5.5M144 56.6v.1" stroke="${T_('--halo-error')}" stroke-width="2.2" stroke-linecap="round"/><rect x="127" y="65" width="34" height="3" rx="1.5" fill="${T_('--err-mark')}"/>`;
-  if(st==='done') s+=`<circle cx="144" cy="54.5" r="10" fill="${T_('--done-bg')}"/><path d="M139 54.5l3.6 3.6 6.6-7" fill="none" stroke="${T_('--done-mark')}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`;
+  if(st==='done') s+=`<circle cx="144" cy="54.5" r="10" fill="${T_('--done-bg')}"/><path class="done-tick" d="M139 54.5l3.6 3.6 6.6-7" fill="none" stroke="${T_('--done-mark')}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`;
   s+=`<rect x="59" y="82.2" width="36" height="3.8" rx="1.9" fill="${T_('--laptop')}"/>`;
   if(st==='idle') s+=`<rect x="98" y="76" width="10" height="10" rx="2.5" fill="${T_('--cup')}" stroke="${T_('--cup-line')}" stroke-width="1"/><path d="M108 78.5q4 0 4 3t-4 3" fill="none" stroke="${T_('--cup-line')}" stroke-width="1.4"/><path class="steam" d="M101 73q-2-3 0-5" fill="none" stroke="${T_('--steam')}" stroke-width="1.2" stroke-linecap="round"/><path class="steam" d="M105 73q-2-3 0-5" fill="none" stroke="${T_('--steam')}" stroke-width="1.2" stroke-linecap="round"/>`;
   const hand=(x,y)=>`<circle cx="${x}" cy="${y}" r="3.6" fill="${k.skin}"/>`;
@@ -364,7 +387,7 @@ function scene(a,mini,c){
   s+='<g class="pp">';
   s+=`<g class="${typing?'hand-l':''}">${armL(61,71,68,81)}${hand(68.5,81.4)}</g>`;
   if(st==='waiting'&&mood.trouble!=='impatient'&&mood.trouble!=='faint'){ /* impatient taps the desk, a fainted agent does not wave */
-    const wave = REDUCED||c?'':`<animateTransform attributeName="transform" type="rotate" values="-4 87 71;6 87 71;-4 87 71" dur="2.8s" repeatCount="indefinite"/>`;
+    const wave = REDUCED||SERIOUS||c?'':`<animateTransform attributeName="transform" type="rotate" values="-4 87 71;6 87 71;-4 87 71" dur="2.8s" repeatCount="indefinite"/>`;
     s+=`<g${c?' class="wave"':''}>${wave}${armL(87,71,97,46)}${hand(97.5,42.5)}</g>`;
   } else if(st==='idle'||mood.trouble==='faint'){
     s+=`<g>${armL(87,71,96,80)}${hand(97,80.5)}</g>`;
@@ -376,8 +399,10 @@ function scene(a,mini,c){
   if(mood.trouble==='ambulance') s+=`<g class="amb"><rect x="18" y="93" width="36" height="17" rx="4" fill="${T_('--amb-body')}" stroke="${T_('--amb-line')}" stroke-width="1"/><rect x="40" y="96" width="11" height="7" rx="1.5" fill="${T_('--amb-window')}"/><rect x="18" y="103" width="36" height="3" fill="${T_('--amb-stripe')}"/><path d="M28 96.5v5M25.5 99h5" stroke="${T_('--amb-stripe')}" stroke-width="2" stroke-linecap="round"/><rect class="amb-light" x="30" y="89.5" width="9" height="4" rx="2" fill="${T_('--amb-light')}"/><circle cx="26" cy="111" r="3.6" fill="${T_('--amb-wheel')}"/><circle cx="46" cy="111" r="3.6" fill="${T_('--amb-wheel')}"/></g>`;
   if(st==='thinking') s+=`<g class="bubble-g"><circle cx="58.5" cy="31" r="2" fill="${T_('--bubble')}" stroke="${T_('--bubble-line')}" stroke-width="1"/><circle cx="52" cy="25" r="3" fill="${T_('--bubble')}" stroke="${T_('--bubble-line')}" stroke-width="1"/><rect x="18" y="4" width="42" height="19" rx="9.5" fill="${T_('--bubble')}" stroke="${T_('--bubble-line')}" stroke-width="1.2"/><g fill="${T_('--think-dot')}"><circle class="td" cx="30" cy="13.5" r="2.2"/><circle class="td" cx="39" cy="13.5" r="2.2"/><circle class="td" cx="48" cy="13.5" r="2.2"/></g></g>`;
   s+='</svg>';
-  return s;
+  return c?s:stillSig(s);
 }
+/* spec 052 FR-069: Serious mode draws full scenes without the SMIL wave; a mark in the signature redraws them when it is switched */
+function stillSig(svg){return SERIOUS?svg.replace(' data-sig="',' data-sig="still|'):svg;}
 function avatar(a){
   const k=a.look;
   const kit=THEME.sceneKit();
@@ -467,11 +492,10 @@ function helperTileHTML(h){
 const visitPlace=a=>{const v=a.parent?null:VISITS.at(a.id);return v?v.place:(RETURNING.has(a.id)?null:null);};
 function cardHTML(a,d,nSubs){
   const st=vis(a), use=usageShort(a);
-  return `<button class="desk card is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${use?' · '+use:''}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
+  return `<button class="desk card is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${sceneC(a)}</span>
-    <span class="ci"><span class="l1"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span><span class="stl st-${st}">${label(a,true)}</span></span>
-    <span class="intent" title="${esc(taskOf(a))}">${esc(taskOf(a))}</span>
-    <span class="l3"><span class="pill st-${st}"><i></i>${label(a,true)}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${esc(use.split(' · ')[1])}</span>`:`${esc(use.split(' · ')[0]||'')}<span class="aiu">${use.includes(' · ')?' · '+esc(use.split(' · ')[1]):''}</span>`}</span></span></span></button>`;
+    <span class="ci"><span class="l1"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span><span class="stl st-${pillSt(a)}">${esc(stWord(a,true))}</span></span>    <span class="intent" title="${esc(taskOf(a))}">${esc(taskOf(a))}</span>
+    <span class="l3"><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a,true))}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${esc(use.split(' · ')[1])}</span>`:`${esc(use.split(' · ')[0]||'')}<span class="aiu">${use.includes(' · ')?' · '+esc(use.split(' · ')[1]):''}</span>`}</span></span></span></button>`;
 }
 function linksSVG(d,rows,extraMore){
   const D=DENS[d]; const n=rows+(extraMore?1:0);
@@ -495,11 +519,10 @@ function unitHTML(a,d){
   }
   let desk;
   if(d==='full'){
-    desk=`<button class="desk is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${label(a)}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
+    desk=`<button class="desk is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}"${lastTip(a)?` title="${esc(lastTip(a).slice(3))}"`:''} aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
       ${scene(a,false)}<span class="badge ${st}">${badgeSVG(st)}</span>
       <div class="info"><div class="who"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span></div>
-      <p class="task" title="${esc(taskOf(a))}">${esc(taskOf(a))}</p><span class="pill st-${st}"><i></i>${label(a)}${pillWarn(a)}</span></div></button>`;
-  } else desk=cardHTML(a,d,nSubs);
+      <p class="task" title="${esc(taskOf(a))}">${esc(taskOf(a))}</p><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}${pillWarn(a)}</span></div></button>`;  } else desk=cardHTML(a,d,nSubs);
   return `<div class="unit${nSubs?' has-h':''}" data-key="unit:${esc(a.id)}">${desk}${helpers}</div>`;
 }
 const unitWidth=(a,d)=>{const D=DENS[d];return D.cw+(helpersOf(a).length?(d==='full'?D.hw+14+8:D.hw+18):0);};
@@ -610,12 +633,39 @@ function syncAttrs(o,n){
 function morphNode(o,n){
   if(o.nodeType!==1){if(o.nodeValue!==n.nodeValue)o.nodeValue=n.nodeValue;return o;}
   /* scenes carry a signature of everything they draw: same signature = leave the SVG (and its animations) alone */
-  if(n.dataset&&n.dataset.sig!==undefined){if(o.dataset.sig===n.dataset.sig)return o;o.replaceWith(n);return n;}
-  syncAttrs(o,n); morphChildren(o,n); return o;
+  if(n.dataset&&n.dataset.sig!==undefined){if(o.dataset.sig===n.dataset.sig)return o;sceneSwap(o,n);return n;}
+  const toDone=o.classList.contains('pill')&&!o.classList.contains('st-done')&&n.classList.contains('st-done');
+  syncAttrs(o,n); morphChildren(o,n); if(toDone)pulseDone(o); return o;
+}
+/* ---- spec 052 FR-067: state changes you can see. Transform and opacity only, never under reduced motion (the Web Animations
+   below are not covered by the CSS rule, so each one checks reducedMotion() itself) ---- */
+function motion(el,frames,opts){if(!el||!el.animate||reducedMotion())return null;try{return el.animate(frames,opts);}catch(e){return null;}}
+/* the green pill gives one small pulse when an agent has just finished */
+function pulseDone(el){motion(el,[{transform:'scale(1)'},{transform:'scale(1.06)'},{transform:'scale(1)'}],{duration:400,easing:'ease-in-out'});}
+/* a desk scene that changes (new status, mood, look) cross-fades: the old drawing sits on top in an absolutely positioned layer
+   of its own size and fades out in 180ms while the new one is already in place, so the desk never changes size. The layer is
+   the parent's last child (morphChildren leaves it alone, so the other children are not moved), and the old scene loses its
+   .scene class, so nothing else counts it. First renders (innerHTML) never come here. */
+function sceneSwap(o,n){
+  const was=(o.dataset.sig||'').replace(/^still\|/,''), now=(n.dataset.sig||'').replace(/^still\|/,'');
+  const r=!reducedMotion()&&o.isConnected?o.getBoundingClientRect():null, p=o.parentNode;
+  o.replaceWith(n);
+  if(now.startsWith('done|')&&!was.startsWith('done|')){const t=n.querySelector('.done-tick');if(t&&!reducedMotion())t.classList.add('draw');}
+  if(!r||!r.width||!r.height||!p||p.nodeType!==1)return;
+  const w=document.createElement('div');w.className='scene-out';w.setAttribute('aria-hidden','true');
+  o.removeAttribute('data-sig');o.setAttribute('class',String(o.getAttribute('class')||'').replace(/\bscene\b/,'scene-old'));
+  w.appendChild(o);p.appendChild(w);
+  const op=w.offsetParent||document.body, pr=op.getBoundingClientRect();
+  w.style.left=(r.left-pr.left-op.clientLeft+op.scrollLeft)+'px';w.style.top=(r.top-pr.top-op.clientTop+op.scrollTop)+'px';
+  w.style.width=r.width+'px';w.style.height=r.height+'px';
+  const a=motion(w,[{opacity:1},{opacity:0}],{duration:180,easing:'ease-out',fill:'forwards'});
+  if(a)a.onfinish=()=>w.remove();
+  setTimeout(()=>{if(w.isConnected)w.remove();},a?400:0);
 }
 function morphChildren(op,np){
   const old=[...op.childNodes], byKey=new Map(), plain=[];
-  old.forEach(k=>{const key=keyOf(k);if(key!=null)byKey.set(key,k);else plain.push(k);});
+  old.forEach(k=>{if(k.nodeType===1&&k.classList.contains('scene-out'))return; /* a fading old scene (FR-067): left alone, it removes itself */
+    const key=keyOf(k);if(key!=null)byKey.set(key,k);else plain.push(k);});
   let pi=0, ref=op.firstChild; const used=new Set();
   for(const nk of [...np.childNodes]){
     const key=keyOf(nk); let m=null;
@@ -624,7 +674,7 @@ function morphChildren(op,np){
     if(m){const r=morphNode(m,nk);used.add(r);if(r===m){if(m===ref)ref=m.nextSibling;else op.insertBefore(m,ref);}else if(m===ref)ref=r.nextSibling;}
     else{op.insertBefore(nk,ref);used.add(nk);}
   }
-  old.forEach(k=>{if(!used.has(k)&&k.parentNode===op)op.removeChild(k);});
+  old.forEach(k=>{if(!used.has(k)&&k.parentNode===op&&!(k.nodeType===1&&k.classList.contains('scene-out')))op.removeChild(k);});
 }
 function morphHTML(el,html){const t=document.createElement('template');t.innerHTML=html;morphChildren(el,t.content);}
 
@@ -695,6 +745,15 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-wl]');if(!
   if(b.dataset.wl==='add')$('addFolder').click();
   else if(b.dataset.wl==='setup')window.DurbarScreens.openSettings('harnesses'); /* spec 051 FR-008 */
   else{const t=$('demoToggle');t.checked=true;t.dispatchEvent(new Event('change'));}});
+/* spec 052 FR-070: an empty office shows an empty desk (theme colours through currentColor) above its sentence */
+const EMPTY_DESK='<svg class="empty-desk" viewBox="0 0 120 72" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+  +'<rect x="24" y="22" width="30" height="30" rx="9" fill="currentColor" stroke="none" opacity=".14"/>'
+  +'<rect x="70" y="14" width="38" height="27" rx="3.5"/><rect x="74" y="18" width="30" height="19" rx="2" fill="currentColor" stroke="none" opacity=".1"/>'
+  +'<path d="M89 41v7M81 49h16"/><path d="M8 52h104" stroke-width="3.5"/><rect x="13" y="54" width="94" height="14" rx="3" fill="currentColor" stroke="none" opacity=".1"/></svg>';
+/* spec 052 FR-070: when the first-run card shows, "+ Folder" in the top bar rings once (CSS pseudo-element, opacity and scale).
+   It waits 600ms and checks the card is still there, so a start that loads agents a moment later does not ring. */
+function ringFolder(){if(reducedMotion())return;setTimeout(()=>{const b=$('addFolder'),st=$('stage');if(!b||!st||!st.querySelector('.welcome')||!b.getClientRects().length)return;
+  b.classList.remove('ring-once');void b.offsetWidth;b.classList.add('ring-once');setTimeout(()=>b.classList.remove('ring-once'),1600);},600);}
 function renderOffice(){
   if(ui.view!=='office')return;
   const floor=$('floor'), stage=$('stage'), cs=getComputedStyle(floor);
@@ -704,8 +763,8 @@ function renderOffice(){
   const model=officeModel();
   if(!model.length){
     stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey='';
-    if(!agents.length&&!demoOn){stage.innerHTML=WELCOME_HTML;floor.classList.remove('scrolls');return;} /* spec 001 FR-026: first run */
-    stage.innerHTML='<div class="empty">'+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" above (or "+ Workspace" for a VS Code .code-workspace file).':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open "Folders" above to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?'All floors are off. Open "Floors" above to switch one on.':agents.length&&ROOMS.every(r=>!roomShown(r))?'Nothing to show: every folder is hidden or on a floor that is off. Open "Floors" or "Folders" above.':'No agents match these filters.'))+'</div>';
+    if(!agents.length&&!demoOn){if(!stage.querySelector('.welcome'))ringFolder();stage.innerHTML=WELCOME_HTML;floor.classList.remove('scrolls');return;} /* spec 001 FR-026: first run */
+    stage.innerHTML='<div class="empty">'+EMPTY_DESK+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" above (or "+ Workspace" for a VS Code .code-workspace file).':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open "Folders" above to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?'All floors are off. Open "Floors" above to switch one on.':agents.length&&ROOMS.every(r=>!roomShown(r))?'Nothing to show: every folder is hidden or on a floor that is off. Open "Floors" or "Folders" above.':'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
   }
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
@@ -723,24 +782,39 @@ function renderOffice(){
 }
 
 /* ---------------- list view ---------------- */
+/* spec 052 FR-064: sortable columns (click a header: ascending, then descending; in memory only), 34px rows. Unsorted it keeps the
+   office order with waiting and errors first. A helper stays under its main agent; main agents sort by the column. */
+const LCOLS=[['name','Agent'],['app','Agent app'],['role','Role'],['folder','Folder'],['task','Current task'],['ago','Active'],['cost','Cost'],['status','Status']];
+const ST_ORDER={waiting:0,error:1,failing:2,working:3,thinking:4,idle:5,done:6};
+let LSORT=null;
+const appOf=a=>{const r=a&&a.parent?byId(a.parent):a;return r&&r.live&&r.info?kindWord(r.info.adapterId):'';};
+/* the card's money words without the tokens: AIU as ≈ $, Claude's $ estimate; a kind with no price shows its tokens */
+const costVal=a=>{const u=a.usage;if(!u||!u.calls)return null;const k=usageCaps(a);return k.nanoAiu?u.nano/1e9*AIU_USD:k.costUsd?(u.usd||0):null;};
+const costText=a=>{const u=a.usage;if(!u||!u.calls)return '';const k=usageCaps(a);return k.nanoAiu?approx(u.nano/1e9*AIU_USD):k.costUsd?fmtUsd(u.usd||0):fmtTok(u.inT+u.outT)+' tok';};
+const LVAL={name:a=>a.name,app:appOf,role:a=>a.role,folder:a=>roomOf(a).name,task:a=>taskText(a),ago:sinceLast,cost:costVal,status:a=>ST_ORDER[pillSt(a)]};
 function renderList(){
-  const rows=[];
+  const groups=[];
   roomsInOrder().forEach(r=>{ if(!roomShown(r)||(ui.ws!=='all'&&ui.ws!==r.id))return;
     agents.filter(a=>!a.parent&&a.room===r.id).slice().sort((x,y)=>Math.min(prio(x),...helpersOf(x).map(prio))-Math.min(prio(y),...helpersOf(y).map(prio))).forEach(a=>{
-      const subs=helpersOf(a);
-      if(matchStatus(a)){rows.push([a,false]);subs.forEach(h=>rows.push([h,true]));}
+      if(matchStatus(a))groups.push(a);
     });});
+  const sorted=LSORT?ACT.sortBy(groups,LVAL[LSORT.key],LSORT.dir):groups;
+  const rows=[];sorted.forEach(a=>{rows.push([a,false]);(LSORT?ACT.sortBy(helpersOf(a),LVAL[LSORT.key],LSORT.dir):helpersOf(a)).forEach(h=>rows.push([h,true]));});
   /* spec 034 FR-014: no figures here, so the mood words (cards: drawing + label) are written at the start of the task cell */
-  const row=([a,sub])=>{const st=vis(a),mw=moodFor(a).words;return `<button class="lrow" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}, ${esc(roomOf(a).name)}, ${label(a)}: ${esc(taskText(a))}${moodWords(a)}">
-    <span class="lname"><span class="dot ${st}"></span><span class="${sub?'sub':''}">${esc(a.name)}</span></span><span class="lcell">${esc(a.role)}</span><span class="lcell mono">${esc(roomOf(a).name)}</span><span class="lcell"${mw?` title="${esc(mw)}"`:''}>${mw?`<span class="lmood">${esc(mw)}</span> · `:''}${esc(taskText(a))}</span><span><span class="pill st-${st}"><i></i>${label(a)}</span></span></button>`};
-  $('list').innerHTML=`<div class="list-wrap" role="group" aria-label="Agents"><div class="lrow lhead" aria-hidden="true"><span>Agent</span><span>Role</span><span>Folder</span><span>Current task</span><span>Status</span></div>${rows.map(row).join('')||'<div class="empty">No agents match these filters.</div>'}</div>`;
+  const row=([a,sub])=>{const st=vis(a),mw=moodFor(a).words,ago=ACT.agoShort(sinceLast(a)),agoL=ACT.agoLong(sinceLast(a)),cost=costText(a),app=appOf(a);return `<button class="lrow" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}, ${esc(a.role)}${app?', '+esc(app):''}, ${esc(roomOf(a).name)}, ${esc(stWord(a))}: ${esc(taskText(a))}${moodWords(a)}${agoL?'. Last activity '+agoL:''}${cost?'. Cost '+esc(cost):''}">
+    <span class="lname"><span class="dot ${st}"></span><span class="${sub?'sub':''}">${esc(a.name)}</span>${modeIcon(a,true)}</span><span class="lcell">${esc(app)}</span><span class="lcell">${esc(a.role)}</span><span class="lcell mono lfold">${esc(roomOf(a).name)}</span><span class="lcell"${mw?` title="${esc(mw)}"`:''}>${mw?`<span class="lmood">${esc(mw)}</span> · `:''}${esc(taskText(a))}</span><span class="lcell num"${agoL?` title="Last activity ${esc(agoL)}"`:''}>${esc(ago)}</span><span class="lcell num"${cost&&cost.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${esc(cost)}</span><span><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}</span></span></button>`};
+  const head=LCOLS.map(([k,t])=>{const on=LSORT&&LSORT.key===k,dir=on?(LSORT.dir==='asc'?'ascending':'descending'):'none';
+    return `<span role="columnheader" aria-sort="${dir}"${k==='folder'?' class="lfold"':''}><button type="button" class="lsort" data-lsort="${k}" title="Sort by ${esc(t.toLowerCase())}">${esc(t)}<span class="sarr" aria-hidden="true">${on?(LSORT.dir==='asc'?'▲':'▼'):'↕'}</span></button></span>`;}).join('');
+  $('list').innerHTML=`<div class="list-wrap" role="group" aria-label="Agents"><div class="lrow lhead" role="row">${head}</div>${rows.map(row).join('')||'<div class="empty">No agents match these filters.</div>'}</div>`;
 }
+document.addEventListener('click',e=>{const b=e.target.closest('#list [data-lsort]');if(!b)return;
+  LSORT=ACT.nextSort(LSORT,b.dataset.lsort);renderList();const n=document.querySelector(`#list [data-lsort="${CSS.escape(b.dataset.lsort)}"]`);if(n)n.focus();});
 
 function renderAll(){
   AMB_ID=pickAmbulanceId();
   prepareWalkers();
-  const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.door), inPanel=ae&&ae.closest&&ae.closest('#panel');
-  const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':ae.dataset.door?'data-door':'');
+  const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.door||ae.dataset.lsort), inPanel=ae&&ae.closest&&ae.closest('#panel');
+  const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':ae.dataset.door?'data-door':ae.dataset.lsort?'data-lsort':''); /* spec 052 FR-064: a sort header keeps focus too */
   renderStats();
   updateFloorAttention();
   if(ui.view==='office')renderOffice(); else renderList();
@@ -781,17 +855,27 @@ async function typeInto(el,text,speed,chat){
 }
 /* Tool chip: one compact line that truncates; click expands it to show the full command and output. */
 const CHIPS_SHOWN=6;
-function makeChip({tool,kind,label,res,state,output}){
+/* spec 052 FR-063: open, it shows the whole command or argument (`full`, monospace, wrapped) with Copy, how long the call took (`ms`, from the
+   events' times) and up to OUT_SHOWN characters of output in a scrollable block, with "Show all" for the rest. The closed line stays one line. */
+const OUT_SHOWN=20000, OUT_KEEP=1000000;
+const fmtDur=ms=>ms<1000?Math.round(ms)+' ms':ms<60000?(ms/1000).toFixed(1)+' s':Math.floor(ms/60000)+' min '+Math.round(ms%60000/1000)+' s';
+function makeChip({tool,kind,label,res,state,output,full,ms}){
   const k=kind||toolKind(tool), name=TOOLNAME[tool]||tool||'tool';
   const el=document.createElement('div');
   el.className='chip'+(state==='failed'||state==='fail'?' fail':state==='run'?' run':'');
   el.setAttribute('role','button');el.tabIndex=0;el.setAttribute('aria-expanded','false');
   el.title=name+': '+label+(res?' ('+res+')':'');
-  const detail=output&&output!==res?output:'';
+  const out=output==null?'':String(output).slice(0,OUT_KEEP), detail=out&&out!==res?out:'', cmd=full&&String(full).trim()?String(full):'';
+  const dur=typeof ms==='number'&&Number.isFinite(ms)&&ms>0?fmtDur(ms):'';
   if(detail)el.classList.add('has-detail');
-  el.innerHTML=`${ICON(k)||ICON('tool')}<b>${esc(name)}</b><code>${esc(label)}</code>${res?`<span class="res">${el.className.includes('fail')?'Failed: ':''}${esc(res)}</span>`:''}<span class="detail">${esc(detail)}</span>`;
+  if(cmd)el.classList.add('has-cmd');
+  const more=detail.length>OUT_SHOWN;
+  el.innerHTML=`${ICON(k)||ICON('tool')}<b>${esc(name)}</b><code>${esc(label)}</code>${res?`<span class="res">${el.className.includes('fail')?'Failed: ':''}${esc(res)}</span>`:''}${cmd||dur||detail?`<span class="xbody">${cmd?`<span class="cmdbox"><pre class="cmd">${esc(cmd)}</pre><button type="button" class="cp-btn cp-cmd" aria-label="Copy the command" title="Copy the command">Copy</button></span>`:''}${dur||(state==='failed'&&res)?`<span class="xmeta">${state==='failed'?'Failed':'Done'}${dur?' · took '+esc(dur):''}</span>`:''}${detail?`<pre class="detail">${esc(more?detail.slice(0,OUT_SHOWN):detail)}</pre>${more?`<button type="button" class="xall">Show all (${detail.length.toLocaleString('en-US')} characters)</button>`:''}`:''}</span>`:''}`;
+  if(more)el._out=detail;
   return el;
 }
+/* the open chip's own buttons and text: Copy the command, Show all output; a click inside the open body never folds the chip (text can be selected) */
+document.addEventListener('click',e=>{const x=e.target.closest('#chat .chip .xall');if(!x)return;const c=x.closest('.chip'),p=c&&c.querySelector('.detail');if(p&&c._out){p.textContent=c._out;x.remove();}});
 function refreshChips(box){
   const chips=[...box.children].filter(c=>c.classList.contains('chip'));
   let more=box.querySelector('.chips-more');
@@ -949,7 +1033,8 @@ function setSend(){const b=$('sendBtn'),t=$('msgInput');if(!b||!t)return;const a
 function updatePanelHeader(){
   const a=byId(ui.selected); if(!a)return; const st=vis(a);
   const ph=$('panelHead'); if(!ph)return;
-  const sp=ph.querySelector('[data-f=status]'); sp.className='pill st-'+st; sp.innerHTML='<i></i>'+label(a);
+  const sp=ph.querySelector('[data-f=status]'); const pst=pillSt(a); const toDone=pst==='done'&&sp.classList.contains('pill')&&!sp.classList.contains('st-done'); sp.className='pill st-'+pst; sp.innerHTML='<i></i>'+esc(stWord(a)); sp.title=isFailing(a)?MOOD.failStreak(a.id)+' tool calls failed in a row':''; if(toDone)pulseDone(sp); /* spec 052 FR-062, FR-067 */
+  const ag=ph.querySelector('[data-f=ago]'); if(ag){const t=ACT.agoShort(sinceLast(a));ag.textContent=!t?'':t==='just now'?'active just now':'active '+t+' ago';ag.title=t?'Last activity '+ACT.agoLong(sinceLast(a)):'';}
   const t=ph.querySelector('[data-f=task]'); t.textContent=taskText(a); t.title=taskText(a);
   const ug=ph.querySelector('[data-f=usage]'); ug.textContent=usageLong(a); ug.title=ug.textContent.endsWith(' est.')?USD_TIP:'';
   updateCapChip(a);
@@ -984,7 +1069,7 @@ function wireMenu(btnId,menuId){
    of view, a bar above the composer shows it with the same choices; its buttons press the card's own buttons, so there is one code
    path. A question is answered in its card (options and text): the bar takes you there. */
 /* the words of a request card (permission, question, limit), in full: the answer bar and the inbox show exactly this (FR-016, FR-027) */
-function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.pstate').forEach(x=>x.remove());const q=n.querySelector('.q-text');return (q?q.textContent:c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,'');}
+function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.pstate,.pdiff').forEach(x=>x.remove());const q=n.querySelector('.q-text');return (q?q.textContent:c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,'');}
 let answerObs=null;
 /* spec 052 FR-060: the key of a permission card's button, and the one click path the bar and the keys share */
 const answerKeyOf=b=>b.dataset.act==='session'?'Alt+S':/\bdanger\b/.test(b.className)?'Alt+D':/\bprimary\b/.test(b.className)?'Alt+A':'';
@@ -1043,8 +1128,7 @@ function openPanel(id,focus){
   p.innerHTML=`<div class="panel-in">
    <div class="strip" role="navigation" aria-label="Agents"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><div class="strip-list" id="stripList"></div></div>
    <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</h2><div class="sub">${esc(a.role)}${parent?' · helper of '+esc(parent.name):''}</div></div>
-      <div class="ph-meta"><span data-f="status"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?(a.live&&a.info&&!a.parent&&bridge.setModel&&feat(a,'models')?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`):''}${a.live&&a.info&&!a.parent&&a.info.profiles&&bridge.listProfiles?agentChipHTML(a):''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>
-      <div class="actions"><!-- spec 052 FR-003: two actions in view, the rest under More (ids kept; End and Remove last) --><button class="btn primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
+      <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?(a.live&&a.info&&!a.parent&&bridge.setModel&&feat(a,'models')?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">${esc(mdlName.text)}</span>`):''}${a.live&&a.info&&!a.parent&&a.info.profiles&&bridge.listProfiles?agentChipHTML(a):''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>      <div class="actions"><!-- spec 052 FR-003: two actions in view, the rest under More (ids kept; End and Remove last) --><button class="btn primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
         <button class="btn" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
         ${a.live&&!feat(liveRoot(a),'stop')?'':`<button class="btn danger" id="stopBtn" type="button" title="${a.live?'Stop: interrupts this reply. The chat stays open and ready; nothing is removed.':'Stop'}"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>Stop</button>`}
         <button class="btn" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools and usage</button>`:''}${a.live&&!a.parent&&bridge.agentMcp&&feat(liveRoot(a),'mcp')?`<button class="more-it" role="menuitem" tabindex="-1" id="mcpBtn" type="button" title="MCP servers for this agent (set globally in Settings)">MCP servers</button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}</button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>`:''}${canRemote(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>Send a message to pick up where you left off</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The other sessions in ${esc(room.name)} stay."><span class="mt">Remove from office…<small>Ends the session; its history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Take ${esc(room.name)} out of Agent Durbar: its session ends and the folder is no longer remembered. Nothing on disk is deleted."><span class="mt">Remove folder…<small>Forgets the folder; nothing on disk is deleted</small></span></button>`:'')}</div></div></div>
@@ -1138,7 +1222,7 @@ document.addEventListener('click',e=>{
   const st=e.target.closest('.stat[data-k]'); if(st){const k=st.dataset.k;ui.status=ui.status===k?null:k;renderAll();const n=document.querySelector(`.stat[data-k="${k}"]`);if(n)n.focus();return;}
   const mo=e.target.closest('[data-more]'); if(mo){const id=mo.dataset.more;ui.expanded[id]=!ui.expanded[id];renderAll();return;}
   const cm=e.target.closest('.chips-more'); if(cm){const box=cm.parentNode;box.dataset.exp=box.dataset.exp==='1'?'0':'1';refreshChips(box);return;}
-  const chip=e.target.closest('#chat .chip:not(.att-chip)'); if(chip){const o=chip.classList.toggle('open');chip.setAttribute('aria-expanded',String(o));return;}
+  const chip=e.target.closest('#chat .chip:not(.att-chip)'); if(chip){if(e.target.closest('.xbody'))return;const o=chip.classList.toggle('open');chip.setAttribute('aria-expanded',String(o));return;} /* spec 052 FR-063: the open body (Copy, Show all, selecting text) keeps it open */
   const sw=e.target.closest('[data-sw]'); if(sw){openPanel(sw.dataset.sw,e.detail===0);return;}
   if(e.target.closest('[data-costview]')){window.DurbarScreens.openTools(null,'cost');return;}
   const mr=e.target.closest('[data-mcproom]'); if(mr){const f=folderOfRoom(mr.dataset.mcproom);if(f)window.DurbarScreens.folderMcp(f.key,f.name);return;}
@@ -1176,6 +1260,13 @@ document.addEventListener('keydown',e=>{
     if(ui.selected){closePanel();return;}
   }
   if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('#chat .chip:not(.att-chip)')){e.preventDefault();e.target.click();}
+  /* spec 052 FR-064: in the list, J/K (and ↓/↑) move between rows; Enter opens the chat (the row is a button). The inbox has its own J/K. */
+  if(!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.isComposing&&e.target.matches&&e.target.matches('#list button.lrow, #list .lsort')&&/^(j|k|J|K|ArrowDown|ArrowUp)$/.test(e.key)){
+    const rows=[...document.querySelectorAll('#list button.lrow')], i=rows.indexOf(e.target), down=/^(j|J|ArrowDown)$/.test(e.key);
+    const n=i<0?(down?rows[0]:null):rows[Math.max(0,Math.min(rows.length-1,i+(down?1:-1)))];
+    if(n){e.preventDefault();n.focus();n.scrollIntoView({block:'nearest'});}
+    return;
+  }
   /* spec 052 FR-014: N opens the next agent that needs you (waiting, error or at its limit), outside text fields and dialogs */
   if((e.key==='i'||e.key==='I')&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]'))&&!document.querySelector('[role="dialog"][aria-modal="true"]')){e.preventDefault();openInbox();return;}
   /* spec 052 FR-043: ? opens the keyboard shortcut sheet, outside text fields and dialogs */
@@ -1275,8 +1366,18 @@ function renderInboxBtn(){
   const list=needsMeOrder(), n=list.length;
   syncAttention(list);
   b.hidden=!agents.length; b.classList.toggle('attn',n>0);
-  b.querySelector('b').textContent=String(n);
+  rollCount(b.querySelector('b'),n);
   b.setAttribute('aria-label',n?n+(n===1?' agent needs':' agents need')+' you. Open the inbox (I or Ctrl+Shift+A).':'Nobody needs you. Open the inbox (I or Ctrl+Shift+A).');
+}
+/* spec 052 FR-068: the count rolls (old number out, new one in, 220ms) inside a box that keeps its width; up when it grows */
+function rollCount(box,n){
+  if(!box)return; const txt=String(n), prev=box.dataset.n;
+  if(prev===txt)return; box.dataset.n=txt; clearTimeout(box._roll);
+  if(prev==null||reducedMotion()||!box.getClientRects().length){box.textContent=txt;return;}
+  const dir=Number(txt)>Number(prev)?'up':'down', inn=document.createElement('span'), out=document.createElement('span');
+  inn.className='roll-in '+dir;inn.textContent=txt;out.className='roll-out '+dir;out.textContent=prev;out.setAttribute('aria-hidden','true');
+  box.replaceChildren(inn,out);
+  box._roll=setTimeout(()=>{if(box.dataset.n===txt)box.textContent=txt;},260);
 }
 function pendingCardOf(a){const c=getChat(a);const all=[...c.el.querySelectorAll('.note.perm:not(.settled)')].filter(n=>n.querySelector(':scope > .note-actions button'));return all[0]||null;}
 /* spec 052 FR-048: focus goes back to where it was when the inbox opened (still in the page and shown), else to the inbox button */
@@ -1306,7 +1407,7 @@ function openInbox(focusId){
 function inboxKey(e){
   const d=$('inboxDlg'); if(!d)return;
   if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeInbox();return;}
-  if(e.key==='Tab'){const f=[...d.querySelectorAll('button,[tabindex="-1"].ib-h,input')].filter(x=>x.getClientRects().length);if(!f.length)return;const i=f.indexOf(document.activeElement);if(e.shiftKey&&(i<=0)){e.preventDefault();f[f.length-1].focus();}else if(!e.shiftKey&&i===f.length-1){e.preventDefault();f[0].focus();}return;}
+  if(e.key==='Tab'){const f=[...d.querySelectorAll('button,summary,[tabindex="-1"].ib-h,input')].filter(x=>x.getClientRects().length);if(!f.length)return;const i=f.indexOf(document.activeElement);if(e.shiftKey&&(i<=0)){e.preventDefault();f[f.length-1].focus();}else if(!e.shiftKey&&i===f.length-1){e.preventDefault();f[0].focus();}return;}
   if(e.altKey||e.ctrlKey||e.metaKey)return;
   const rows=[...d.querySelectorAll('.inbox-row')], row=document.activeElement&&document.activeElement.closest('.inbox-row'), ri=rows.indexOf(row);
   const go=i=>{const r=rows[Math.max(0,Math.min(rows.length-1,i))];if(r)r.querySelector('.ib-h').focus();};
@@ -1317,6 +1418,15 @@ function inboxKey(e){
   const act=x=>{const b=row.querySelector(`[data-k="${x}"]`);if(b){e.preventDefault();b.click();}};
   if(k==='a')act('approve');else if(k==='d')act('deny');else if(k==='s')act('session');
   else if(k==='o'||(e.key==='Enter'&&document.activeElement.classList.contains('ib-h'))){e.preventDefault();row.querySelector('[data-k="open"]').click();}
+}
+/* spec 052 FR-068: after an answered row has faded (180ms), the list repaints and the rows that moved slide up into place
+   (FLIP: measure each row by agent before and after, start it at the old offset, animate the offset to 0 in 200ms) */
+function flipInbox(paint){
+  const body=$('inboxBody'); if(!body||reducedMotion())return paint();
+  const before=new Map([...body.querySelectorAll('.inbox-row[data-id]:not(.gone)')].map(r=>[r.dataset.id,r.getBoundingClientRect().top]));
+  paint();
+  body.querySelectorAll('.inbox-row[data-id]').forEach(r=>{const t=before.get(r.dataset.id);if(t==null)return;const dy=t-r.getBoundingClientRect().top;
+    if(Math.abs(dy)>=1)motion(r,[{transform:`translateY(${dy}px)`},{transform:'none'}],{duration:200,easing:'ease-out'});});
 }
 function paintInbox(focusIndex){
   const body=$('inboxBody'); if(!body)return;
@@ -1331,6 +1441,7 @@ function paintInbox(focusIndex){
     {const t=NEED_SINCE.get(a.id);row.querySelector('.ib-wait').textContent=t!=null?'· '+ATT.waitLabel(Date.now()-t):'';} /* FR-061 */
     const text=card?requestText(card):(taskOf(a)||'');row.querySelector('.ib-t').textContent=text;
     const act=row.querySelector('.ib-act');
+    {const dd=card&&card.querySelector(':scope > details.pdiff');if(dd){const c=dd.cloneNode(true);c.open=false;act.before(c);}} /* spec 052 FR-063: the card's "Show the change", collapsed */
     const add=(label,cls,k,fn,title)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;b.dataset.k=k;b.setAttribute('aria-describedby','ibh'+i+' ibt'+i);if(title)b.title=title;b.onclick=fn;act.appendChild(b);};
     if(card&&!q)for(const src of card.querySelectorAll(':scope > .note-actions button')){
       if(src.dataset.broad)continue;
@@ -1344,7 +1455,7 @@ function paintInbox(focusIndex){
           if(!row.isConnected){done();paintInbox(i);return;}
           row.classList.add('settled');act.innerHTML='';const p=document.createElement('p');p.className='ib-done '+(k==='deny'?'no':k==='other'?'':'yes');p.textContent=k==='deny'?'Denied':k==='other'?word:'✓ '+word;act.appendChild(p);
           setTimeout(()=>{if(!row.isConnected)return paintInbox(i);if(reducedMotion())return paintInbox(i);
-            row.style.height=row.offsetHeight+'px';void row.offsetHeight;row.classList.add('gone');setTimeout(()=>paintInbox(i),210);},600);},250);},src.title);
+            row.classList.add('gone');setTimeout(()=>flipInbox(()=>paintInbox(i)),180);},600);},250);},src.title);
     }
     add(q?'Answer in chat':'Open chat',q?'primary':'','open',()=>{closeInbox();openPanel(a.id,true);});
     body.appendChild(row);
@@ -1464,9 +1575,11 @@ function openKbdHelp(back){
   const inbox=[[['J'],['K'],'Next or previous request (also ↓ ↑)'],[['A'],'Allow once'],[['S'],'Allow for this session'],[['D'],'Deny'],[['O'],'Open chat']];
   /* spec 052 FR-060: in an open chat that waits for you */
   const inChat=[[['Alt','A'],'Allow once'],[['Alt','S'],'Allow for this session'],[['Alt','D'],'Deny'],[['Alt','N'],'Next agent that needs you']];
+  /* spec 052 FR-064 */
+  const inList=[[['J'],['K'],'Next or previous row (also ↓ ↑)'],[['Enter'],'Open chat']];
   const row=(keys,what,alt)=>'<tr><td class="kb-k">'+kbdHTML(keys)+(alt?' <span class="kb-or">or</span> '+kbdHTML(alt):'')+'</td><td>'+esc(what)+'</td></tr>';
   const d=document.createElement('div');d.id='kbdDlg';d.className='dlg-ov';
-  d.innerHTML='<div class="dlg kbd-dlg" role="dialog" aria-modal="true" aria-labelledby="kbdT"><h3 id="kbdT">Keyboard shortcuts</h3><table class="kb-t"><tbody>'+rows.map(r=>row(r[0],r[1],r[2])).join('')+'</tbody></table><h4 class="kb-h">In the Needs you inbox</h4><table class="kb-t"><tbody>'+inbox.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In a chat that waits for you</h4><table class="kb-t"><tbody>'+inChat.map(r=>row(r[0],r[1])).join('')+'</tbody></table><p class="kb-note">On a Mac, Cmd works where Ctrl is shown, and Option where Alt is shown.</p><div class="dbtn"><button class="btn" type="button" id="kbdClose">Close</button></div></div>';
+  d.innerHTML='<div class="dlg kbd-dlg" role="dialog" aria-modal="true" aria-labelledby="kbdT"><h3 id="kbdT">Keyboard shortcuts</h3><table class="kb-t"><tbody>'+rows.map(r=>row(r[0],r[1],r[2])).join('')+'</tbody></table><h4 class="kb-h">In the Needs you inbox</h4><table class="kb-t"><tbody>'+inbox.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In a chat that waits for you</h4><table class="kb-t"><tbody>'+inChat.map(r=>row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In the list view</h4><table class="kb-t"><tbody>'+inList.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><p class="kb-note">On a Mac, Cmd works where Ctrl is shown, and Option where Alt is shown.</p><div class="dbtn"><button class="btn" type="button" id="kbdClose">Close</button></div></div>';
   document.body.appendChild(d);
   d.addEventListener('click',e=>{if(e.target===d)closeKbdHelp();});
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeKbdHelp();}else if(e.key==='Tab'){e.preventDefault();$('kbdClose').focus();}});
@@ -1543,7 +1656,10 @@ const kindTag=a=>{const r=a&&a.parent?byId(a.parent):a;if(!r||!r.live||!r.info)r
 const remoteTag=a=>a&&!a.parent&&a.remote?' · Remote':'';
 const remoteWords=a=>a&&!a.parent&&a.remote?', remote control on':'';
 const modeWords=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?', '+MODE_NAME[a.info.permMode]+(a.info.permMode==='allow'&&a.info.permRestored?' (restored)':''):'';
-const modeIcon=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}${a.info.permMode==='allow'&&a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_HELP[a.info.permMode])} (right-click for options)" aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`:'';
+/* spec 052 FR-065: Allow all is a small red "Allow all" text badge in the icon's slot (the words, not only a padlock); the other modes keep the icon */
+/* spec 052 FR-065: the list row says "Allow all" in a red badge (text=true); a desk card keeps the red icon, because a text badge
+   there hides the agent's name at 1280x800 (office check) */
+const modeIcon=(a,text)=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?(a.info.permMode==='allow'&&text?`<span class="modebadge" title="${esc(MODE_NAME.allow)}${a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_HELP.allow)} (right-click for options)" aria-hidden="true">Allow all</span>`:`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}${a.info.permMode==='allow'&&a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_HELP[a.info.permMode])} (right-click for options)" aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`):'';
 /* Floors state from the bridge (spec 033): rooms take their floor from it, then everything that depends on visibility re-renders. */
 function applyFloors(state){
   if(!state||!Array.isArray(state.floors)||!state.floors.length)return;
@@ -1711,7 +1827,7 @@ function addCopyButtons(el){
 document.addEventListener('click',async e=>{
   const b=e.target.closest('.cp-btn');if(!b)return;
   e.stopPropagation();
-  const text=b.classList.contains('cp-code')?((b.parentElement.querySelector('code')||b.parentElement).textContent||'').replace(/(Copy|Copied ✓)$/,''):(b.closest('.bubble')||{})._raw||'';
+  const text=b.classList.contains('cp-cmd')?((b.parentElement.querySelector('pre.cmd')||{}).textContent||''):b.classList.contains('cp-code')?((b.parentElement.querySelector('code')||b.parentElement).textContent||'').replace(/(Copy|Copied ✓)$/,''):(b.closest('.bubble')||{})._raw||''; /* spec 052 FR-063: cp-cmd copies a tool call's command */
   try{await navigator.clipboard.writeText(text);copiedLabel(b);}
   catch{toast('Could not copy to the clipboard.',3000).classList.add('err');}
 });
@@ -1773,9 +1889,11 @@ function tIntent(T,txt){
 }
 function tTool(T,e){
   const box=tChips(T);
-  if(e.phase==='start'){const label=toolLabel(e.args);const el=makeChip({tool:e.tool,label,res:'running',state:'run'});addChip(box,el);T.chipEls[e.callId]={el,tool:e.tool,label,box};}
-  else{const c=T.chipEls[e.callId];if(c){const full=String(e.output||'');
-    const el=makeChip({tool:c.tool||e.tool,label:c.label,res:SHORT(full||(e.phase==='complete'?'ok':'failed'),60),output:full.slice(0,2000),state:e.phase==='failed'?'failed':'ok'});
+  if(e.phase==='start'){const label=toolLabel(e.args),cmd=toolFull(e.args);const el=makeChip({tool:e.tool,label,full:cmd,res:'running',state:'run'});addChip(box,el);T.chipEls[e.callId]={el,tool:e.tool,label,cmd,t0:e.timestamp,box};}
+  else if(e.phase!=='update'||e.output!=null){const c=T.chipEls[e.callId];if(c){const full=String(e.output||''),done=e.phase!=='update';
+    const ms=done&&typeof c.t0==='number'&&typeof e.timestamp==='number'?e.timestamp-c.t0:null; /* spec 052 FR-063: duration from the start and end events' times */
+    const el=makeChip({tool:c.tool||e.tool,label:c.label,full:c.cmd,ms,res:done?SHORT(full||(e.phase==='complete'?'ok':'failed'),60):'running',output:full,state:!done?'run':e.phase==='failed'?'failed':'ok'});
+    if(c.el.classList.contains('open')){el.classList.add('open');el.setAttribute('aria-expanded','true');}
     c.el.replaceWith(el);c.el=el;refreshChips(c.box);}}
   tScroll(T);
 }
@@ -1970,11 +2088,10 @@ function setState(a,state,label,task){
 }
 const plainMd=t=>String(t==null?'':t).replace(/```[\s\S]*?```/g,' code ').replace(/!?\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/^[#>\-*\s]+/gm,'').replace(/[*_`~]/g,'').replace(/\s+/g,' ').trim();
 const SHORT=(v,n)=>{v=String(v==null?'':v).replace(/\s+/g,' ');return v.length>n?v.slice(0,n-1)+'…':v;};
-function toolLabel(args){
-  if(!args||typeof args!=='object')return '';
-  const v=args.path||args.pattern||args.command||args.url||args.query||args.file_path||Object.values(args).find(x=>typeof x==='string')||'';
-  return String(v).replace(/\s+/g,' ').slice(0,400);
-}
+const toolArg=args=>!args||typeof args!=='object'?'':String(args.path||args.pattern||args.command||args.url||args.query||args.file_path||Object.values(args).find(x=>typeof x==='string')||'');
+function toolLabel(args){return toolArg(args).replace(/\s+/g,' ').slice(0,400);}
+/* spec 052 FR-063: the whole argument as written (line breaks kept), for the open chip; at most 20000 characters */
+const toolFull=args=>toolArg(args).slice(0,OUT_SHOWN);
 /* ---------------- AI-credit cap: chip, dialog, limit reached (spec 011) ---------------- */
 let APP_SETTINGS={};
 function capChipHTML(a){
@@ -2003,7 +2120,7 @@ function openCapDialog(a){
    ${usd?`<p class="dsub">The most this session may cost, in dollars of Claude's own estimate (not a bill; with a Claude subscription nothing is billed per token). When it is reached the agent stops and asks you. It is a <b>soft</b> limit: one turn can go a little past it. It counts what the session used while Agent Durbar ran it, and it is not saved with the folder. The minimum is $${MIN_USD_CAP}.</p>`
    :`<p class="dsub">The most AI credits this session may use (1 credit = USD 0.01; shown as AIU, the unit the Copilot runtime reports). When it is reached the agent stops and asks you. It is a <b>soft</b> limit: it is checked after each model response, so one response can go past it. The minimum is ${MIN_CAP}.</p>`}
    <label>${usd?'Limit ($, estimate)':'Limit (AI credits)'}<input id="cdVal" type="number" min="${min}" step="${usd?'0.01':'1'}" placeholder="No limit" value="${cur||''}"></label>
-   <p class="dsub small cd-plan">Copilot, Claude and ChatGPT plans have a fixed monthly price; this limit only stops the agent. Durbar never charges you.</p><!-- spec 052 FR-058 -->
+   <p class="dsub small cd-plan">${esc(window.DurbarCost.PLAN_NOTE)}</p><!-- spec 052 FR-058 -->${(a.info&&a.info.adapterId||'copilot')==='copilot'?`<p class="dsub small cd-plan cd-copilot">${esc(window.DurbarCost.COPILOT_PLAN_NOTE)}</p>`:''}<!-- spec 052 FR-075 -->
    <p class="derr" id="cdErr" role="alert" hidden></p>
    <div class="dbtn"><button class="btn" id="cdCancel" type="button">Cancel</button><button class="btn" id="cdNone" type="button">Remove limit</button><button class="btn primary" id="cdSave" type="button">Save</button></div></div>`;
   document.body.appendChild(d);
@@ -2020,7 +2137,7 @@ function openCapDialog(a){
   $('cdVal').focus();
 }
 document.addEventListener('click',e=>{const c=e.target.closest('#capChip');if(!c)return;const a=byId(ui.selected);if(a)openCapDialog(liveRoot(a));});
-/* The runtime reached the cap and waits for the user: inline notice with Add credits (Raise limit) / Remove limit / Stop here. */
+/* The runtime reached the cap and waits for the user: inline notice with Raise limit / Remove limit / Stop here (spec 052 FR-075: "Raise limit" for both units: it raises Durbar's limit, it buys nothing). */
 function showLimit(a,e){
   const t=ensureTurn(a);
   const usd=isUsdCap(a),max=e.maxAiCredits||capOf(a),used=e.usedAiCredits!=null?e.usedAiCredits:capUsed(a);
@@ -2036,7 +2153,7 @@ function showLimit(a,e){
     settleLimit(a,choice.kind);
   };
   row.appendChild(amt);
-  mk(usd?'Raise limit':'Add credits','primary',usd?'Let the agent use this many more dollars (counted from what it used or the limit, whichever is higher) and continue':'Raise the limit by this many AI credits and let the agent continue',()=>{const v=parseFloat(amt.value);if(!(v>0)){amt.focus();return;}answer({kind:'add',credits:Math.round(v*100)/100});});
+  mk('Raise limit','primary',usd?'Let the agent use this many more dollars (counted from what it used or the limit, whichever is higher) and continue':'Raise the limit by this many AI credits and let the agent continue',()=>{const v=parseFloat(amt.value);if(!(v>0)){amt.focus();return;}answer({kind:'add',credits:Math.round(v*100)/100});});
   mk('Remove limit','session','Remove the limit and let the agent continue',()=>answer({kind:'unset'}));
   mk('Stop here','danger','Cancel the blocked request. The agent is ready for your next message (the limit stays).',()=>answer({kind:'cancel'}));
   n.appendChild(row);
@@ -2103,14 +2220,27 @@ function settleLimit(a,action){
 const simpleScopeLabel=(a,label)=>{const m=/^write in (.+?)\/*$/.exec(String(label||''));if(!m)return '';const seg=m[1].split(/[\\/]/).filter(Boolean).pop();if(!seg)return '';
   return 'Let '+a.name+' change files in “'+(seg.length>28?seg.slice(0,27)+'…':seg)+'” until the session ends';};
 const relabelScopes=()=>document.querySelectorAll('[data-lbl-simple]').forEach(b=>{b.textContent=SIMPLE?b.dataset.lblSimple:b.dataset.lblExpert;});
+/* spec 052 FR-063: "Show the change", collapsed: the request's diff as + / - lines in monospace (text only, escaped by textContent) */
+function diffBlock(diff){
+  const {lines,more}=ACT.diffLines(diff), d=document.createElement('details');d.className='pdiff';
+  const add=lines.filter(l=>l.t==='add').length, del=lines.filter(l=>l.t==='del').length;
+  const sm=document.createElement('summary');sm.textContent='Show the change'+(add||del?' (+'+add+' −'+del+')':'');d.appendChild(sm);
+  const pre=document.createElement('pre');pre.setAttribute('aria-label','The change, as removed and added lines');
+  lines.forEach(l=>{const s=document.createElement('span');s.className='dl '+l.t;s.textContent=l.s||' ';pre.appendChild(s);});
+  if(more){const m=document.createElement('span');m.className='dmore';m.textContent='… '+more+' more line'+(more===1?'':'s')+' not shown';pre.appendChild(m);}
+  d.appendChild(pre);return d;
+}
 /* ---------- permissions: inline note in the tool timeline, Allow once / Allow for this session / Deny, revocable chips ---------- */
 function showPerm(a,p){
   const t=ensureTurn(a);
   const n=document.createElement('div');n.className='note perm';n.setAttribute('role','group');n.setAttribute('aria-label','Permission request');
   n.innerHTML='<b>Needs your OK:</b> <span class="psum"></span><span class="pstate"></span>';
   n.querySelector('.psum').textContent=p.summary;
+  if(p.state==='pending'&&typeof p.diff==='string'&&p.diff)n.appendChild(diffBlock(p.diff)); /* spec 052 FR-063 */
   const st=n.querySelector('.pstate');
-  if(p.state==='denied')st.innerHTML=' <i>(denied: this agent is in Read-only. Switch it to Ask first to be asked instead)</i>';
+  if(p.state==='denied'){st.innerHTML=' <i>(denied: this agent is in Read-only. Switch it to Ask first to be asked instead)</i>';
+    roAskHint(a,n);
+  }
   else if(p.state==='pending'){
     const row=document.createElement('div');row.className='note-actions';
     const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);};
@@ -2127,6 +2257,17 @@ function showPerm(a,p){
   if(p.state==='pending')announce(a.name+' needs your OK: '+p.summary);
   renderInboxBtn();
 }
+/* spec 052 FR-074: under a request denied by Read-only, one inline "Switch this agent to Ask first", once per agent until its mode
+   changes. It goes through the usual mode-change path (changeMode), with its dialogs. */
+function roAskHint(a,n){
+  if(!a.info||a.info.permMode!=='read-only'||a.roHintShown||!bridge.setPermMode||!feat(a,'modes'))return;
+  a.roHintShown=true;
+  const row=document.createElement('div');row.className='note-actions';
+  const b=document.createElement('button');b.type='button';b.className='btn';b.dataset.act='ro-ask';b.textContent='Switch this agent to Ask first';
+  b.title='Ask first: each edit, command or web request waits for your OK.';
+  b.onclick=async()=>{b.disabled=true;await changeMode(a,'ask',b);if(a.info.permMode==='ask')row.remove();else b.disabled=false;};
+  row.appendChild(b);n.appendChild(row);
+}
 function settlePerm(a,p){
   let e=a.pend.get(p.requestId);
   if(!e&&a.settled.has(p.requestId))return; /* already shown (the click settles locally, the adapter event follows) */
@@ -2141,6 +2282,7 @@ function settlePerm(a,p){
   const why=p.via==='stopped'?' (session stopped)':p.via==='session'?' (allowed for this session)':p.remembered?' (and remembered for this session)':'';
   e.st.textContent=' → '+(word==='approved'?'allowed':'denied')+why;
   e.n.classList.add('settled',word);
+  if(word==='denied'&&!p.via)roAskHint(a,e.n); /* denied by the mode (no one answered it): Read-only */
   scrollChat(liveChat(a));
 }
 function setGrants(a,list){a.grants=list;if(ui.selected&&liveRoot(byId(ui.selected)||a)===a)renderGrants();}
@@ -2183,6 +2325,8 @@ function applyTitle(a,title){
 }
 function onLiveEvent(e){
   const a=liveById(e.sessionId); if(!a)return;
+  if(e.type==='permission'&&e.permission&&e.permission.via==='policy')return; /* spec 052 FR-071: an Allow all approval is for the activity log in main, no card */
+  a.lastEventAt=Date.now(); /* spec 052 FR-062: last activity (when it arrived here; a helper's event counts for its main agent) */
   feedStats(a,e);
   if(!e.agentId){ /* spec 034: only main-agent events change the mood */
     if(e.type==='toolCall')MOOD.onTool(a.id,e);
@@ -2299,7 +2443,7 @@ function renderStrip(){
 
 /* ---------------- permission mode: change it at any time (spec 018) ---------------- */
 function modeChipHTML(a){const m=a.info.permMode, rs=m==='allow'&&a.info.permRestored;
-  if(!feat(a,'modes'))return `<span class="modechip" title="Set when the session starts">${esc(MODE_NAME[m])}</span>`;
+  if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts">${esc(MODE_NAME[m])}</span>`; /* spec 052 FR-065 */
   return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}. ${esc(MODE_HELP[m])}${rs?' Restored from your last run.':''} Click to change; it applies from the next request."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m])}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>`;}
 function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');}}
 function openModeMenu(a0,x,y,anchor){
@@ -2367,7 +2511,7 @@ async function changeModeInner(a,mode,anchor){
   }
   const res=await bridge.setPermMode(a.id,mode,opts).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(!res||!res.ok){toast('Could not change the mode: '+esc((res&&res.error)||'unknown error'),5000);return;}
-  a.info.permMode=mode; a.info.permRestored=undefined; a.role=roleFor(a.info);
+  a.info.permMode=mode; a.info.permRestored=undefined; a.role=roleFor(a.info); a.roHintShown=false;
   if(opts.clearGrants)setGrants(a,[]);
   renderRestoreStrip();
   toast(esc(a.name)+': <b>'+esc(MODE_NAME[mode])+(capsFor(a).permModeSwitch==='next-message'?'</b>. Applies from the next message.':'</b> from the next request.')+(mode==='allow'?' Everything runs without asking.':''),4200);
@@ -3253,7 +3397,7 @@ function replayHistory(a,h,title,lead){
   for(const it of ((h&&h.items)||[])){
     if(it.type==='user'){m=null;addUserMsg(chat,it.text,(it.attachments||[]).map(x=>({name:x.name,img:x.kind==='image'})),it.ts);}
     else if(it.type==='output'){const b=document.createElement('div');b.className='bubble';agentMsg().appendChild(b);mdSet(b,it.text,true);}
-    else{const full=it.output||'';addChip(chipBox(),makeChip({tool:it.tool,label:it.label,res:SHORT(full||(it.failed?'failed':'ok'),60),output:full.slice(0,2000),state:it.failed?'failed':'ok'}));}
+    else{const full=it.output||'';addChip(chipBox(),makeChip({tool:it.tool,label:it.label,res:SHORT(full||(it.failed?'failed':'ok'),60),output:full,state:it.failed?'failed':'ok'}));}
   }
   addNote(chat,(lead||'Resumed')+': '+esc((title||'earlier session').replace(/[.!?…]+$/,''))+'. New messages continue this session.');
 }
@@ -3371,11 +3515,11 @@ if(bridge){
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
   document.body.classList.toggle('simple',SIMPLE);
-  window.DurbarScreens.init({refreshKinds:()=>loadKinds(true),detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},setSerious:on=>{SERIOUS=!!on;scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  window.DurbarScreens.init({refreshKinds:()=>loadKinds(true),detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
-    previewTheme:(m)=>{THEME.setTheme(m);SC_CACHE.clear();renderAll();}, /* spec 040 FR-014: Try it / Discard, nothing saved */
-    agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
+    previewTheme:(m)=>{swapView(()=>{THEME.setTheme(m);SC_CACHE.clear();renderAll();});}, /* spec 040 FR-014: Try it / Discard, nothing saved */
+    agents:()=>LIVE.agents.filter(x=>x.live&&!x.parent).map(x=>({id:x.id,name:x.name,model:x.info&&x.info.model,adapterId:x.info&&x.info.adapterId,room:(ROOMS.find(r=>r.id===x.room)||{}).name||''})),
     staticLimit:a=>{const m=modelsFor(a.info&&a.info.adapterId).find(x=>x.id===((a.info&&a.info.model)||a.model||'auto'));return (m&&m.contextWindow)||0;},
     folderOf:x=>{const ag=LIVE.agents.find(y=>y.id===(x&&x.id||x));return ag?folderOfRoom(ag.room):null;},
     openAgent:id=>openPanel(id,false)});
@@ -3396,7 +3540,7 @@ if(bridge){
   THEME.setTheme.resolveUser=bridge.getUserTheme?(id)=>bridge.getUserTheme(id):null;
   const themeBoot=(v)=>{
     const tid=(v&&v.theme)||'clean-office';
-    const apply=()=>{if(THEME.current().id!==tid)applyTheme(tid);else scheduleRender();};
+    const apply=()=>{if(THEME.current().id!==tid)applyTheme(tid,true);else scheduleRender();};
     if(bridge.listUserThemes){bridge.listUserThemes().then(list=>{
       const good={};(list||[]).filter(t=>t.ok&&t.manifest!==false).forEach(t=>{});
       return bridge.getUserTheme?Promise.all((list||[]).filter(t=>t.ok).map(t=>bridge.getUserTheme(t.id).then(m=>[t.id,m])))
@@ -3404,7 +3548,7 @@ if(bridge){
       :apply();
     }).catch(()=>apply());}else apply();
   };
-  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);NOTIFY=!!(v&&v.notifyNeedsMe!==false);themeBoot(v);}).catch(()=>{});
+  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();NOTIFY=!!(v&&v.notifyNeedsMe!==false);themeBoot(v);}).catch(()=>{});
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);
   agents=LIVE.agents; ROOMS=LIVE.rooms;
   setBadge();

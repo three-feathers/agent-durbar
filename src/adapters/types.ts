@@ -91,10 +91,16 @@ export interface PermissionInfo {
   /** Shell only: the wider "any arguments of <command>" scope the user may pick instead (never the default). */
   broadScopeKey?: string;
   broadScopeLabel?: string;
-  /** Who decided: the user, an earlier "Approve for this session" grant, or the session being stopped. */
-  via?: 'user' | 'session' | 'stopped';
+  /** Who decided: the user, an earlier "Approve for this session" grant, the session being stopped, or Allow all (`policy`: no card is shown, spec 052 FR-071). */
+  via?: 'user' | 'session' | 'stopped' | 'policy';
   /** True when the user approved this one *and* remembered the scope for the session. */
   remembered?: boolean;
+  /**
+   * Spec 052 FR-063: what an edit would change, as unified-diff text ("--- a/x", "+++ b/x", "@@", "+", "-" lines), at most 20000
+   * characters. Optional: only pending requests that carry the edit's text have it (Claude Code Edit, MultiEdit and Write; the
+   * simulator). Copilot and Codex leave it out. Display text only: never run or applied.
+   */
+  diff?: string;
 }
 
 /** A remembered "Approve for this session" permission; can be revoked. */
