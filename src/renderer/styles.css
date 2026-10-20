@@ -142,6 +142,21 @@ body.has-bridge #liveBar{display:flex}
 .gchip button{flex:none;width:18px;height:18px;border:0;background:transparent;border-radius:50%;cursor:pointer;display:grid;place-items:center;color:inherit;padding:0}
 .gchip button:hover{background:rgba(0,0,0,.09)}
 .gchip button svg{width:9px;height:9px}
+/* spec 052 FR-141: three or more grants are one "Allowed (N)" chip that opens a list */
+.grants{position:relative}
+.gchip.gchip-btn{padding:0 9px;gap:5px;cursor:pointer;font-family:inherit;height:22px;width:auto;border-radius:999px}
+.gchip.gchip-btn:hover{filter:brightness(.97)}
+.gchip.gchip-btn svg{width:10px;height:10px;opacity:.8}
+.grants-pop{position:absolute;left:0;top:calc(100% + 4px);z-index:70;width:min(420px,100%);max-height:min(320px,50vh);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:4px;box-shadow:0 14px 40px rgba(40,35,25,.22);display:flex;flex-direction:column;gap:2px}
+.grants-pop[hidden]{display:none}
+.gp-list{list-style:none;margin:0;padding:0}
+.gp-row{display:flex;align-items:center;gap:8px;min-height:28px;padding:2px 4px 2px 10px;border-radius:var(--r-md);font-size:var(--t4-size);color:var(--ink)}
+.gp-row:hover{background:var(--surface-2)}
+.gp-t{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gp-row button{flex:none;width:24px;height:24px;border:0;background:transparent;border-radius:50%;cursor:pointer;display:grid;place-items:center;color:var(--ink-2);padding:0}
+.gp-row button:hover{background:var(--surface-2);color:var(--ink)}
+.gp-row button svg{width:10px;height:10px}
+.gp-all{align-self:flex-end;margin:2px 4px 2px 0}
 .btn[hidden]{display:none}
 
 /* ---------- workspace ---------- */
@@ -459,6 +474,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+  .strip-list{animation:sl-fade linear both!important;animation-timeline:scroll(self inline)!important} /* scroll-linked, not motion */
   ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important} /* spec 052 FR-070 (app.js also skips the transition) */
 }
 
@@ -636,6 +652,11 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .strip{flex:none;display:flex;align-items:center;gap:8px;height:48px;padding:0 12px;background:var(--surface-2);border-bottom:1px solid var(--line)}
 .strip .back{flex:none;height:var(--h-ctl);padding:0 12px 0 8px}
 .strip-list{flex:1;min-width:0;display:flex;gap:8px;align-items:center;overflow-x:auto;overflow-y:hidden;height:100%;padding:0 2px;scrollbar-width:thin}
+/* spec 052 FR-138: the agent strip fades at the edge that is cut off while it can scroll (a scroll-driven mask: no geometry, nothing when everything fits) */
+@property --sl-l{syntax:"<length>";inherits:false;initial-value:0px}
+@property --sl-r{syntax:"<length>";inherits:false;initial-value:0px}
+@keyframes sl-fade{0%{--sl-l:0px;--sl-r:28px}4%{--sl-l:28px;--sl-r:28px}96%{--sl-l:28px;--sl-r:28px}100%{--sl-l:28px;--sl-r:0px}}
+.strip-list{animation:sl-fade linear both;animation-timeline:scroll(self inline);-webkit-mask-image:linear-gradient(to right,transparent 0,#000 var(--sl-l),#000 calc(100% - var(--sl-r)),transparent 100%);mask-image:linear-gradient(to right,transparent 0,#000 var(--sl-l),#000 calc(100% - var(--sl-r)),transparent 100%)}
 .sitem{flex:none;width:196px;height:40px;display:flex;align-items:center;gap:8px;padding:2px 8px 2px 4px;border-radius:var(--r-md);border:1px solid var(--line);background:var(--raised);cursor:pointer;text-align:left;min-width:0}
 .sitem:hover{border-color:var(--line-2);background:var(--surface)}
 .sitem.sel{border-color:var(--sel-border,#7fa0bd);box-shadow:0 0 0 2px var(--sel-ring-2,#dde8f1);background:#f4f8fb}
@@ -654,12 +675,15 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 /* spec 052 FR-095 (round 10): the chat header on one row: avatar, name, status, "active …", the chips; the actions pinned right.
    Chips that do not fit wrap to a second row inside their own group, under the first chips; the actions never move down. */
 .ph{--h-chip:28px} /* one control height in the header: chips and .btn.sm buttons are both 28px */
-.ph-top{flex-wrap:nowrap;gap:8px 12px;align-items:flex-start}
+.ph-top{flex-wrap:wrap;gap:8px 12px;align-items:flex-start}
 .ph-id{min-width:0;flex:0 0 auto;max-width:40%;min-height:28px;display:flex;align-items:center;gap:8px} /* name, then the role in T5 on the same line */
 .ph-id h2{flex:0 0 auto;min-width:3.5em;max-width:100%} /* round 10 check: the name never shrinks before the chips do */
 .ph-id .sub{flex:0 1 auto;min-width:0}
-.ph-meta{margin-top:0;flex:1 1 auto;row-gap:4px;min-height:28px}
-.ph .actions{margin:0 0 0 auto;flex:none;flex-wrap:nowrap;justify-content:flex-end}
+.ph-meta{margin-top:0;flex:1 1 760px;row-gap:4px;min-height:28px}
+/* spec 052 FR-141: the chips stay beside the name when 760px are left for them; otherwise they take a full row under the name and the
+   actions (before, they were squeezed into the leftover width, one chip per row: 5 to 8 rows). The actions never move down. */
+.ph .actions{margin:0 0 0 auto;flex:none;flex-wrap:nowrap;justify-content:flex-end;order:2}
+.ph-meta{order:3}
 /* the task line and the usage line share one line under the header row */
 .ph-line{display:flex;align-items:baseline;gap:12px;min-width:0;margin-top:4px}
 .ph-line .ptask{flex:1 1 auto;min-width:0;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1347,6 +1371,26 @@ details.pcmd>pre{margin:4px 0 0;padding:6px 8px;border-radius:6px;background:var
    hidden ("hiddenInset"): the top bar is the window's drag area and keeps room on the left for the traffic lights, except in full
    screen. Everything you can click in it stays clickable. An open chat hides the top bar, so its agent strip takes the same rules; a
    screen (Settings, Tools, a folder) opened over a chat also hides the strip, so then its header does. */
-html[data-platform="darwin"] :is(.topbar,.strip,body.panel-open.screen-open .scr-head){-webkit-app-region:drag}
-html[data-platform="darwin"]:not([data-fullscreen]) :is(.topbar,.strip,body.panel-open.screen-open .scr-head){padding-left:78px}
-html[data-platform="darwin"] :is(.topbar,.strip,body.panel-open.screen-open .scr-head) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu){-webkit-app-region:no-drag}
+html[data-platform="darwin"] :is(.topbar,.strip,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head){-webkit-app-region:drag}
+html[data-platform="darwin"]:not([data-fullscreen]) .strip{padding-left:78px}
+html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open .notice-strip{padding-left:78px}
+html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open.screen-open .scr-head{padding-left:max(78px,calc((100% - 880px)/2 + 24px))} /* FR-138: keeps the FR-097 alignment */
+html[data-platform="darwin"] :is(.topbar,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu){-webkit-app-region:no-drag}
+html[data-platform="darwin"] .strip>:is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.strip-list){-webkit-app-region:no-drag}
+html[data-platform="darwin"] .strip-list *{-webkit-app-region:initial} /* FR-138: the agents inherit the scroller's no-drag; reset, so the ones past its edge (they overflow, unclipped) keep no region of their own; only the scroller's box is no-drag, so they cannot cover the grab area */
+/* spec 052 FR-138: with a chat open a visible notice strip is the first row (the drag row with the room); the row below drops the room. A
+   second visible strip drops it too. The chat strip keeps a fixed grab area at its right end; its scroller (.strip-list) is no-drag. An
+   overlay, a popover or a menu is no-drag itself, because Electron ignores z-order for drag regions (a backdrop over a drag area is not clickable). */
+html[data-platform="darwin"] body.panel-open .notice-strip:not([hidden]) ~ .notice-strip{padding-left:20px}
+html[data-platform="darwin"] .notice-strip:not([hidden]) ~ .workspace .strip{padding-left:12px}
+/* FR-138: the traffic-light room is reserved on the top bar's first row only (a wrapped second row starts at the normal padding): an empty first
+   flex item that is 78px minus the padding wide and takes back the gap after it. A notice strip that is the first row is at least 40px tall, so the
+   Office button below it never reaches into the 78x40 box. */
+html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{content:"";flex:none;order:-1;width:58px;margin-right:-14px}
+@media (max-width:1320px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{width:64px;margin-right:-8px}}
+html[data-platform="darwin"] body.panel-open :is(#restoreStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip:not([hidden])){min-height:40px}
+html[data-platform="darwin"] .notice-strip:not([hidden]) ~ #screen .scr-head{padding-left:max(24px,calc((100% - 880px)/2 + 24px))}
+html[data-platform="darwin"] .strip{padding-right:0}
+/* FR-138: the grab area at the right end of the chat strip is a 32px handle (plus the 8px gap before it = 40px of drag) with grip dots */
+html[data-platform="darwin"] .strip::after{content:"";flex:none;align-self:stretch;width:32px;box-sizing:border-box;padding:10px 10px;background:radial-gradient(circle,color-mix(in srgb,var(--muted) 55%,transparent) 1.1px,transparent 1.6px) 0 0/6px 6px;background-clip:content-box;background-origin:content-box}
+html[data-platform="darwin"] :is(.dlg-ov,#foldersPop,#floorsPop,#defaultsPop,.mode-menu,.more-menu){-webkit-app-region:no-drag}

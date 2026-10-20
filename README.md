@@ -53,7 +53,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - **Stop** a turn or **End** a session from the chat header or from the agent's card menu ([screenshot](docs/screenshots/005-card-menu-stop-end-1440x900.png)).
 
 **Sessions and folders**
-- One session per folder or `.code-workspace` file, or several per folder (**+ New session**).
+- One session per folder or `.code-workspace` file, or several per folder (**+ New** in a chat's header, or **+ New session** under More).
 - The top bar is one row: **+ New** adds a folder or a VS Code workspace, the **Defaults** chip (for example "Copilot · Read-only · Auto") sets the agent app, permission mode and model for new sessions, and **Manage folders** sits next to the folder filter. On narrower screens the status counters show a dot and a number (the words are in their tooltips).
 - After a restart, each folder **continues its open sessions** (up to 6 per folder, each resumed when you open its chat or send it a message), and Durbar **remembers where you were**: the window's place and size (back on a screen it fits, else 1440x900), Office or List, the folder filter and the open chat.
 - After more than 30 minutes closed, a **Since you were away** strip says how long it was and which scheduled prompts did not run, with **Run missed now** for each.
@@ -147,6 +147,7 @@ Codex also ships its own `bwrap` inside its npm package (`…/@openai/codex-linu
 - Shortcuts use ⌘ and are shown that way: ⌘K command palette, ⇧⌘A the Needs you inbox, ⇧⌘N the next agent. In a chat that waits for you, ⌥⌘A / ⌥⌘S / ⌥⌘D answer and ⌥⌘N goes to the next agent (Option alone types accents on a Mac). macOS itself uses ⌥⌘D to show or hide the Dock, so Deny may not reach Durbar with the keys; click it instead.
 - **Agent Durbar > Settings…** (⌘,) opens Settings; the menu also has Edit, View (zoom, full screen), Window and Help.
 - Closing the window hides it and **your agents keep running**; click the Dock icon to bring it back. Quit with ⌘Q.
+- The title bar is hidden: you move the window by dragging the top bar (in a chat, the agent strip, a notice strip or a screen's header at the top). While a dialog or the command palette is open the window does not drag. The traffic-light room and these areas are checked in the simulator only (`npm run check:mac-titlebar`), **not on a real Mac** (real traffic-light position, double-click to zoom, full screen).
 - On Windows and Linux the window has no menu bar (no Reload or developer tools); copy and paste in text fields work as usual.
 
 > **Trying it on Windows?** Nobody on the team has run Durbar on a real Windows machine yet. If something does not work (the download, the installer, Settings > Agent apps, a harness that is not found), please [open an issue](https://github.com/three-feathers/agent-durbar/issues) with your Windows version and what you saw.
