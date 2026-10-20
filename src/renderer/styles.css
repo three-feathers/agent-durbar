@@ -142,6 +142,21 @@ body.has-bridge #liveBar{display:flex}
 .gchip button{flex:none;width:18px;height:18px;border:0;background:transparent;border-radius:50%;cursor:pointer;display:grid;place-items:center;color:inherit;padding:0}
 .gchip button:hover{background:rgba(0,0,0,.09)}
 .gchip button svg{width:9px;height:9px}
+/* spec 052 FR-141: three or more grants are one "Allowed (N)" chip that opens a list */
+.grants{position:relative}
+.gchip.gchip-btn{padding:0 9px;gap:5px;cursor:pointer;font-family:inherit;height:22px;width:auto;border-radius:999px}
+.gchip.gchip-btn:hover{filter:brightness(.97)}
+.gchip.gchip-btn svg{width:10px;height:10px;opacity:.8}
+.grants-pop{position:absolute;left:0;top:calc(100% + 4px);z-index:70;width:min(420px,100%);max-height:min(320px,50vh);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:4px;box-shadow:0 14px 40px rgba(40,35,25,.22);display:flex;flex-direction:column;gap:2px}
+.grants-pop[hidden]{display:none}
+.gp-list{list-style:none;margin:0;padding:0}
+.gp-row{display:flex;align-items:center;gap:8px;min-height:28px;padding:2px 4px 2px 10px;border-radius:var(--r-md);font-size:var(--t4-size);color:var(--ink)}
+.gp-row:hover{background:var(--surface-2)}
+.gp-t{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gp-row button{flex:none;width:24px;height:24px;border:0;background:transparent;border-radius:50%;cursor:pointer;display:grid;place-items:center;color:var(--ink-2);padding:0}
+.gp-row button:hover{background:var(--surface-2);color:var(--ink)}
+.gp-row button svg{width:10px;height:10px}
+.gp-all{align-self:flex-end;margin:2px 4px 2px 0}
 .btn[hidden]{display:none}
 
 /* ---------- workspace ---------- */
@@ -660,12 +675,15 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 /* spec 052 FR-095 (round 10): the chat header on one row: avatar, name, status, "active …", the chips; the actions pinned right.
    Chips that do not fit wrap to a second row inside their own group, under the first chips; the actions never move down. */
 .ph{--h-chip:28px} /* one control height in the header: chips and .btn.sm buttons are both 28px */
-.ph-top{flex-wrap:nowrap;gap:8px 12px;align-items:flex-start}
+.ph-top{flex-wrap:wrap;gap:8px 12px;align-items:flex-start}
 .ph-id{min-width:0;flex:0 0 auto;max-width:40%;min-height:28px;display:flex;align-items:center;gap:8px} /* name, then the role in T5 on the same line */
 .ph-id h2{flex:0 0 auto;min-width:3.5em;max-width:100%} /* round 10 check: the name never shrinks before the chips do */
 .ph-id .sub{flex:0 1 auto;min-width:0}
-.ph-meta{margin-top:0;flex:1 1 auto;row-gap:4px;min-height:28px}
-.ph .actions{margin:0 0 0 auto;flex:none;flex-wrap:nowrap;justify-content:flex-end}
+.ph-meta{margin-top:0;flex:1 1 760px;row-gap:4px;min-height:28px}
+/* spec 052 FR-141: the chips stay beside the name when 760px are left for them; otherwise they take a full row under the name and the
+   actions (before, they were squeezed into the leftover width, one chip per row: 5 to 8 rows). The actions never move down. */
+.ph .actions{margin:0 0 0 auto;flex:none;flex-wrap:nowrap;justify-content:flex-end;order:2}
+.ph-meta{order:3}
 /* the task line and the usage line share one line under the header row */
 .ph-line{display:flex;align-items:baseline;gap:12px;min-width:0;margin-top:4px}
 .ph-line .ptask{flex:1 1 auto;min-width:0;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
