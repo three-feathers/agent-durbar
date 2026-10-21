@@ -516,7 +516,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // the plain-whitespace fallback on its own: one glued word with spaces, no whole-quoted word, no leading quote
   assert.strictEqual(maskSecretArgs(['-c', 'srv a"b --token ' + SEC + '"c'])[1], 'srv a"b --token ' + R, 'fallback: plain split of a glued word');
   // Paco's review: a flag opened inside a KV value behind a stray quote marks the next word (three forms)
-  assert.strictEqual(maskSecretArgs(['-c', 'bash -c "OPTS=\\"--token ' + SEC + '\\" srv"'])[1], 'bash -c "OPTS=\\"--token ' + R, 'Paco 2a: args');
+  assert.strictEqual(maskSecretArgs(['-c', 'bash -c "OPTS=\\"--token ' + SEC + '\\" srv"'])[1], 'bash -c "OPTS=\\"--token ' + R + '"', 'Paco 2a: args (T067: the payload is unescaped one level, masked, and written back in its quotes)');
   noSec(maskSecretCommand('bash -c "OPTS=\\"--token ' + SEC + '\\" srv"'), 'Paco 2b: command');
   noSec(maskSecretArgs(['X="X=\\"--token ' + SEC + '\\""']), 'Paco 2c: X="X=\\"--token SEC\\""');
   noSec(maskSecretArgs(['OPTS=\\"--token=' + SEC + '\\"']), 'Paco 2d: --token=SEC behind a stray quote');
@@ -524,7 +524,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.deepStrictEqual(maskSecretArgs(['OPTS=\\"--token=' + SEC + '\\"', 'next']), ['OPTS=\\"--token=' + R, 'next'], 'guard: the next arg stays visible');
   assert.strictEqual(maskSecretCommand('OPTS=\\"--token=' + SEC + '\\" next'), 'OPTS=\\"--token=' + R + ' next', 'guard: the next word of a command stays visible');
   // display limit, on purpose: after a secret flag the whole next word is masked, so `SEC\\" srv"` (which may itself hold a `\\"`) loses its tail
-  assert.strictEqual(maskSecretCommand('bash -c "OPTS=\\"--token ' + SEC + '\\" srv"'), 'bash -c "OPTS=\\"--token ' + R, 'display: the tail of the secret word is dropped, never shown');
+  assert.strictEqual(maskSecretCommand('bash -c "OPTS=\\"--token ' + SEC + '\\" srv"'), 'bash -c "OPTS=\\"--token ' + R + '"', 'display: the tail of the secret word is dropped, never shown (T067: the payload keeps its closing quote)');
   // (m of 14b still) env prefix keeps other names
   assert.deepStrictEqual(maskSecretArgs(["$env:PORT='8080'; srv"]), ["$env:PORT='8080'; srv"], 'b: $env:PORT unchanged');
 
@@ -739,6 +739,93 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // [KNOWN GAP] (spec 041 T064 follow-ups): a bare `token` word is not a flag, so the value after it is NOT masked. This row pins the gap;
   // when it is closed, flip it on purpose (and update the spec).
   assert.deepStrictEqual(maskSecretArgs(['token', SEC]), ['token', SEC], '14c [KNOWN GAP]: a bare `token` before a secret shows the secret');
+}
+
+// 14d. T067 (#447): secrets inside escaped quotes. The payload of `sh|bash -c`, `cmd /c` and `powershell|pwsh -Command` is unescaped one
+// level with that shell's own rules, then masked; a leading quote that closes nowhere is set aside (fail closed). T is the issue's placeholder.
+{
+  const T = 'TOKEN' + '123';
+  const R = '[redacted]';
+  const noT = (x: unknown, what: string): void => assert.ok(!JSON.stringify(x).includes(T), `${what}: no secret in ${JSON.stringify(x)}`);
+  const masked = (args: string[], want: string[], what: string): void => { const got = maskSecretArgs(args); assert.deepStrictEqual(got, want, what); noT(got, what); };
+  const cmd = (c: string, want: string, what: string): void => { const got = maskSecretCommand(c); assert.strictEqual(got, want, what); noT(got, what); };
+  const BT = '`';
+  // (a) the ten leaking rows of the issue (fuzz on PR #369 at 0e0737e), each now masked
+  masked(['srv', '-H', '"X-Api-Key:', T + '"'], ['srv', '-H', '"X-Api-Key:', R], 'issue row 1: naive split, leading unmatched quote');
+  cmd(`sh -c "srv -H \\"X-Api-Key: ${T}\\""`, `sh -c "srv -H \\"X-Api-Key: ${R}\\""`, 'issue row 2: sh -c, \\"');
+  cmd(`powershell -Command "srv -H ${BT}"X-Api-Key: ${T}${BT}""`, `powershell -Command "srv -H ${BT}"X-Api-Key: ${R}${BT}""`, 'issue row 3: PowerShell backtick quotes');
+  cmd(`powershell -Command "srv {${BT}"api_key${BT}":${BT}"${T}${BT}"}"`, `powershell -Command "srv {${BT}"api_key${BT}":${BT}"${R}${BT}"}"`, 'issue row 4: JSON pair, backtick quotes (was masked only partly)');
+  cmd(`powershell -Command "srv {${BT}"name${BT}":${BT}"api_key${BT}",${BT}"value${BT}":${BT}"${T}${BT}"}"`, `powershell -Command "srv {${BT}"name${BT}":${BT}"api_key${BT}",${BT}"value${BT}":${BT}"${R}${BT}"}"`, 'issue row 5: R7 name/value, backtick quotes');
+  cmd(`powershell -Command "srv {\\${BT}"token\\${BT}":\\${BT}"${T}\\${BT}"}"`, `powershell -Command "srv {\\${BT}"token\\${BT}":\\${BT}"${R}\\${BT}"}"`, 'issue row 6: \\ and backtick quote mixed');
+  cmd(`sh -c "srv --env=\\"API_TOKEN=${T}\\""`, `sh -c "srv --env=\\"API_TOKEN=${R}\\""`, 'issue row 7: sh -c, --env=\\"NAME=x\\"');
+  cmd(`powershell -Command "srv --env=${BT}"API_TOKEN=${T}${BT}""`, `powershell -Command "srv --env=${BT}"API_TOKEN=${R}${BT}""`, 'issue row 8: PowerShell --env');
+  cmd(`sh -c "srv --opt=\\"token=${T}\\""`, `sh -c "srv --opt=\\"token=${R}\\""`, 'issue row 9: sh -c, --opt=\\"token=x\\"');
+  cmd(`powershell -Command "srv --opt=${BT}"token=${T}${BT}""`, `powershell -Command "srv --opt=${BT}"token=${R}${BT}""`, 'issue row 10: PowerShell --opt');
+  // (b) the issue's controls (no escapes) stay masked as before
+  cmd(`sh -c 'srv -H "X-Api-Key: ${T}"'`, `sh -c 'srv -H "X-Api-Key: ${R}"'`, 'control: single-quoted payload');
+  cmd(`sh -c 'srv --env="API_TOKEN=${T}"'`, `sh -c 'srv --env="API_TOKEN=${R}"'`, 'control: --env in single quotes');
+  cmd(`powershell -Command 'srv {"name":"api_key","value":"${T}"}'`, `powershell -Command 'srv {"name":"api_key","value":"${R}"}'`, 'control: PowerShell single quotes');
+  masked(['srv', '-H', 'X-Api-Key:', T], ['srv', '-H', 'X-Api-Key:', R], 'control: args without the stray quote');
+  // (c) the other escape forms of each shell
+  cmd(`cmd /c "srv -H \\"X-Api-Key: ${T}\\""`, `cmd /c "srv -H \\"X-Api-Key: ${R}\\""`, 'cmd /c with \\"');
+  cmd(`cmd /c srv -H ^"X-Api-Key: ${T}^"`, `cmd /c srv -H ^"X-Api-Key: ${R}^"`, 'cmd /c with ^"');
+  cmd(`cmd.exe /C "srv --opt=\\"token=${T}\\""`, `cmd.exe /C "srv --opt=\\"token=${R}\\""`, 'cmd.exe /C');
+  cmd(`powershell -c "srv --token ""${T}"""`, `powershell -c "srv --token ${R}"`, 'PowerShell doubled quotes ""');
+  cmd(`powershell -Command 'srv --opt=''token=${T}'''`, `powershell -Command 'srv --opt=''token=${R}'''`, "PowerShell '' inside '...'");
+  cmd(`pwsh -NoProfile -ExecutionPolicy Bypass -Command "srv --api-key ${BT}"${T}${BT}""`, `pwsh -NoProfile -ExecutionPolicy Bypass -Command "srv --api-key ${R}"`, 'pwsh with flags and a flag value before -Command');
+  cmd(`/bin/bash -o pipefail -c "srv -H \\"Authorization: Bearer ${T}\\""`, `/bin/bash -o pipefail -c "srv -H \\"Authorization: ${R}\\""`, 'bash path, -o value, then -c');
+  cmd(`bash -lc "srv --token \\"${T} x\\""`, `bash -lc "srv --token ${R}"`, 'bash -lc, an escaped value with a space');
+  cmd(`sh -c 'it'\\''s --token ${T}'`, `sh -c 'it'\\''s --token ${R}'`, "sh '\\'' in single quotes");
+  cmd(`TOKEN=${T} sh -c "srv \\"x\\""`, `TOKEN=${R} sh -c "srv \\"x\\""`, 'text before the wrapper is masked by the usual rules');
+  cmd(`sh -c "srv \\"x\\"" --token ${T}`, `sh -c "srv \\"x\\"" --token ${R}`, 'text after a sh payload word is masked by the usual rules');
+  cmd(`sh -c "a \\"b\\"" && bash -c "srv --opt=\\"token=${T}\\""`, `sh -c "a \\"b\\"" && bash -c "srv --opt=\\"token=${R}\\""`, 'two wrappers in one command');
+  cmd(`cmd /c "C:\\Program Files\\srv\\srv.exe" --token ${T}`, `cmd /c "C:\\Program Files\\srv\\srv.exe" --token ${R}`, 'cmd /c with a quoted path and no escape: the usual rules');
+  noT(maskSecretCommand(`cmd /c "C:\\Program Files\\x.exe" --opt=\\"token=${T}\\"`), 'cmd /c: quoted path, then an escaped value');
+  // (d) nesting: two decodes are shown readable, a third level is masked whole
+  cmd(`bash -c "sh -c \\"srv \\\\\\"--token ${T}\\\\\\"\\""`, `bash -c "sh -c \\"srv --token ${R}\\""`, 'two levels of escapes');
+  cmd(`bash -c "sh -c \\"bash -c \\\\\\"srv \\\\\\\\\\\\\\"--token ${T}\\\\\\\\\\\\\\"\\\\\\"\\""`, `bash -c "sh -c \\"${R}\\""`, 'three levels: the script past two decodes is masked whole');
+  masked(['bash', '-c', `sh -c "srv \\"--token ${T}\\""`], ['bash', '-c', `sh -c "srv --token ${R}"`], 'args: a wrapper inside the script arg');
+  // (e) a quote that does not close: masked to the end of the payload
+  cmd(`sh -c "srv \\"--token ${T}`, `sh -c ${R}`, 'sh payload with no closing quote');
+  cmd(`powershell -Command "srv ${BT}"--token ${T}`, `powershell -Command ${R}`, 'PowerShell payload with no closing quote');
+  // (f) args form: the script arg after the shell and its flag keeps that shell's escapes (cmd and PowerShell join every later arg)
+  masked(['sh', '-c', `srv --opt=\\"token=${T}\\"`], ['sh', '-c', `srv --opt=\\"token=${R}\\"`], 'args: sh script with \\"');
+  masked(['sh', '-c', `srv {\\\\"token\\\\":\\\\"${T}\\\\"}`], ['sh', '-c', `srv {\\\\"token\\\\":\\\\"${R}\\\\"}`], 'args: sh script with escaped JSON');
+  masked(['powershell', '-Command', `srv --opt=${BT}"token=${T}${BT}"`], ['powershell', '-Command', `srv --opt="token=${R}"`], 'args: PowerShell script with backtick quotes (shown unescaped once masked)');
+  masked(['powershell', '-Command', `'srv --opt=''token=${T}'''`], ['powershell', '-Command', `srv --opt='token=${R}'`], "args: PowerShell '' in a single-quoted script");
+  masked(['powershell', '-Command', 'srv', `--header=${BT}"X-Api-Key:`, `${T}${BT}"`], ['powershell', '-Command', 'srv', '--header="X-Api-Key: ' + R, R], 'args: PowerShell, the script split over args');
+  masked(['cmd.exe', '/d', '/c', 'srv', '--header=^"X-Api-Key:', `${T}^"`], ['cmd.exe', '/d', '/c', 'srv', '--header="X-Api-Key: ' + R, R], 'args: cmd, the script split over args');
+  masked(['cmd', '/c', `srv -H ^"X-Api-Key: ${T}^"`], ['cmd', '/c', `srv -H "X-Api-Key: ${R}"`], 'args: cmd script with ^"');
+  // (g) the leading unmatched quote (#369 review): the flag, header name or NAME= behind it is seen; the rest of the argument is masked
+  masked(['srv', `"--token=${T}`], ['srv', `"--token=${R}`], 'unmatched quote: "--token=x');
+  masked(['srv', "'--api-key", T], ['srv', "'--api-key", R], "unmatched quote: '--api-key then the value");
+  masked(['srv', `"X-Api-Key: ${T}`], ['srv', `"X-Api-Key: ${R}`], 'unmatched quote: "Name: value');
+  cmd(`srv "--token ${T}`, `srv "--token ${R}`, 'command: an unclosed quote runs to the end (was a [KNOWN GAP])');
+  cmd(`srv "--token ${T} more`, `srv "--token ${R}`, 'command: an unclosed quote is one argument to the end, masked whole after the flag');
+  cmd(`srv --opt="token=${T}`, `srv --opt="token=${R}`, 'command: a flag value with an unclosed quote');
+  // (h) no over-masking: harmless commands and args come back unchanged, byte for byte
+  for (const same of [`sh -c "echo hello"`, `sh -c "echo \\"hello world\\""`, `bash -lc 'npm run build && npm test'`, `powershell -Command "Write-Host ${BT}"hi there${BT}""`,
+    `pwsh -c "Get-ChildItem ""C:\\Program Files"""`, `powershell -Command 'Write-Host ''hi'''`, `cmd /c "echo \\"hi\\""`, `cmd /c echo ^"hi^"`, `cmd /c "echo ^"hi^" & dir"`, `cmd /c dir C:\\Users\\me`,
+    `sh -c "cd \\"$HOME\\" && ls"`, `sh -c "printf \\"%s\\\\n\\" a"`, `node -e "console.log(\\"hi\\")"`, `bash -c "sh -c \\"echo \\\\\\"x y\\\\\\"\\""`]) {
+    assert.strictEqual(maskSecretCommand(same), same, 'no over-masking: ' + same);
+  }
+  for (const same of [['sh', '-c', 'echo "a \\"b\\""'], ['powershell', '-Command', `Write-Host ${BT}"hi${BT}"`], ['cmd', '/c', 'echo', '^"hi^"'], ['srv', '"hello', 'world"'], ['srv', "it's"]]) {
+    assert.deepStrictEqual(maskSecretArgs(same), same, 'no over-masking: ' + JSON.stringify(same));
+  }
+  // (i) cost: wrapper shapes stay linear (50k vs 400k, 3 interleaved pairs, min of each; linear is about 8, quadratic about 64)
+  const run = (x: string): void => { _uncappedForTest.maskSecretArgs(['sh', '-c', x]); _uncappedForTest.maskSecretArgs(['powershell', '-Command', x]); _uncappedForTest.maskSecretCommand(x); };
+  for (const unit of ['sh -c "x \\"y\\"" ', `powershell -Command "a ${BT}" `, 'cmd /c a ^" ', 'bash -c "sh -c \\"a ', "pwsh -c 'a '' ", '"--token ']) {
+    const mk = (n: number): string => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
+    const time = (x: string): number => { const t = process.hrtime.bigint(); run(x); return Number(process.hrtime.bigint() - t) / 1e6; };
+    let tSmall = Infinity;
+    let tBig = Infinity;
+    for (let i = 0; i < 3; i++) { tSmall = Math.min(tSmall, time(mk(50_000))); tBig = Math.min(tBig, time(mk(400_000))); }
+    const ratio = tBig / Math.max(tSmall, 20);
+    console.log(`redact: 14d linearity ${JSON.stringify(unit)} 50k=${Math.round(tSmall)} ms 400k=${Math.round(tBig)} ms ratio ${ratio.toFixed(1)}`);
+    assert.ok(tBig < 8000 && ratio < 24, `14d: ${JSON.stringify(unit)} grew too fast: ${tSmall} -> ${tBig} ms (ratio ${ratio.toFixed(1)})`);
+  }
+  // the public helpers still hide a string over MASK_INPUT_MAX whole, before the wrapper decode
+  assert.strictEqual(maskSecretCommand('sh -c "' + 'a \\"'.repeat(MASK_INPUT_MAX) + '"'), R, '14d: over MASK_INPUT_MAX, hidden whole');
 }
 
 // 15. T054: `cut` stops at a token boundary and never leaves half a surrogate pair

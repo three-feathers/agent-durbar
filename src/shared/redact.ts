@@ -242,7 +242,8 @@ function maskKv(part: string, depth: number, env?: Env): string {
 
 /**
  * Words of a shell string (R1): split on whitespace outside quotes. A `"` or `'` opens a span that ends at the next same quote and stays
- * inside the word with its quotes; an unmatched quote is a literal. No escapes, `$(...)` or heredocs (`[KNOWN GAP]`). `seps` has one more
+ * inside the word with its quotes; an unmatched quote is a literal. No escapes, `$(...)` or heredocs (`[KNOWN GAP]`; the payload of a shell
+ * wrapper is unescaped by `maskScriptText` before this, T067). `seps` has one more
  * entry than `words` (the whitespace before the first word, between words, after the last), so `seps[0] + words[0] + seps[1] ...` is the
  * input. Linear: a matched span is skipped and, once a quote type has no match, there is none after it (one failed search per type).
  */
@@ -321,8 +322,253 @@ function maskShellString(v0: string, depth: number, env?: Env, plain = false): s
   return out;
 }
 
+/*
+ * T067 (#447): shell wrappers whose payload holds escaped quotes. R1 knows no escapes, so `sh -c "srv -H \"X-Api-Key: x\""` or
+ * `powershell -Command "srv `"x`""` used to be cut at the escaped quote and the secret showed. The payload after `sh|bash|... -c`,
+ * `cmd /c` (or `/k`) and `powershell|pwsh -Command` is unescaped one level with that shell's own rules, masked by the usual rules and,
+ * when anything changed, written back with the same quoting. At most `WRAP_MAX` decodes nest; a payload past that, or one whose quotes
+ * do not close, is masked to its end (fail closed). Every pass is a single scan, so the cost stays linear.
+ */
+type ShellKind = 'sh' | 'cmd' | 'ps';
+/** Text that may hold an escape of one of the three shells (`''` is PowerShell's quote inside `'...'`); without one the plain rules already see every quote (R1). */
+const SCRIPT_GATE = /[\\`^]|""|''/;
+const WRAP_MAX = 2;
+let wrapActive = 0;
+const SH_EXE = /^(?:sh|bash|zsh|dash|ksh|mksh|ash|fish)$/;
+
+function shellKind(word: string): ShellKind | undefined {
+  const w = unquote(word)[0];
+  const base = w.slice(Math.max(w.lastIndexOf('/'), w.lastIndexOf('\\')) + 1).toLowerCase().replace(/\.exe$/, '');
+  if (SH_EXE.test(base)) return 'sh';
+  if (base === 'cmd') return 'cmd';
+  if (base === 'powershell' || base === 'pwsh') return 'ps';
+  return undefined;
+}
+function isCommandFlag(kind: ShellKind, w: string): boolean {
+  if (kind === 'sh') return /^-[A-Za-z]*c[A-Za-z]*$/.test(w); // -c, -lc, -ec
+  if (kind === 'cmd') return /^\/[ck]$/i.test(w);
+  return /^-(?:c|co|com|comm|comma|comman|command)$/i.test(w); // PowerShell accepts any prefix of -Command
+}
+/** Flags of each shell that take the next word as their value (`sh -o pipefail -c`, `powershell -ExecutionPolicy Bypass -Command`). */
+const VALUE_FLAG: Record<ShellKind, RegExp> = {
+  sh: /^(?:[-+]o|--rcfile|--init-file)$/,
+  cmd: /^$/,
+  ps: /^-(?:executionpolicy|ep|ex|windowstyle|w|workingdirectory|wd|configurationname|settingsfile|inputformat|if|outputformat|of|version|v)$/i,
+};
+
+/** Where each wrapper's payload starts: a shell word, up to 8 flag words, then its command flag. One R1 pass over the text. */
+function findWrappers(s: string): Array<{ kind: ShellKind; start: number }> {
+  const { words, seps } = shellWords(s);
+  const pos: number[] = [];
+  let p = seps[0].length;
+  for (let i = 0; i < words.length; i++) { pos.push(p); p += words[i].length + seps[i + 1].length; }
+  const found: Array<{ kind: ShellKind; start: number }> = [];
+  for (let i = 0; i < words.length; i++) {
+    const kind = shellKind(words[i]);
+    if (!kind) continue;
+    for (let j = i + 1; j < words.length && j <= i + 9; j++) {
+      const w = words[j];
+      if (isCommandFlag(kind, w)) { if (j + 1 < words.length) found.push({ kind, start: pos[j + 1] }); break; }
+      if (!/^[-+/]/.test(w)) break;
+      if (VALUE_FLAG[kind].test(w)) j++;
+    }
+  }
+  return found;
+}
+
+type Decoded = { value: string; end: number; quote: string };
+/** POSIX: one word from `i` (`\x` outside quotes, `'...'` literal, `"..."` with `\"`, `\\`, `\$`, `` \` ``). Undefined when a quote does not close. */
+function decodeSh(s: string, i: number): Decoded | undefined {
+  const n = s.length;
+  const out: string[] = [];
+  let j = i;
+  while (j < n) {
+    const c = s[j];
+    if (/\s/.test(c) || c === ';' || c === '&' || c === '|') break;
+    if (c === '\\') { if (j + 1 < n) { if (s[j + 1] !== '\n') out.push(s[j + 1]); j += 2; } else { out.push(c); j++; } continue; }
+    if (c === "'") { const k = s.indexOf("'", j + 1); if (k < 0) return undefined; out.push(s.slice(j + 1, k)); j = k + 1; continue; }
+    if (c === '"') {
+      j++;
+      let closed = false;
+      while (j < n) {
+        const e = s[j];
+        if (e === '\\' && j + 1 < n && '"\\$`\n'.includes(s[j + 1])) { if (s[j + 1] !== '\n') out.push(s[j + 1]); j += 2; continue; }
+        if (e === '"') { closed = true; j++; break; }
+        out.push(e);
+        j++;
+      }
+      if (!closed) return undefined;
+      continue;
+    }
+    out.push(c);
+    j++;
+  }
+  return { value: out.join(''), end: j, quote: s[i] === '"' || s[i] === "'" ? s[i] : '' };
+}
+/**
+ * PowerShell: a word of glued parts from `i` when it starts with a quote (`"..."` with `` `x ``, `""` and the `\"` of the Windows command
+ * line; `'...'` with `''`; unquoted parts with `` `x `` and `\"`), up to whitespace; otherwise the unquoted rest of the line. Undefined
+ * when a quote does not close.
+ */
+function decodePs(s: string, i: number): Decoded | undefined {
+  const n = s.length;
+  const out: string[] = [];
+  const quote = s[i] === '"' || s[i] === "'" ? s[i] : '';
+  let j = i;
+  while (j < n) {
+    const c = s[j];
+    if (quote && /\s/.test(c)) break;
+    if (c === '"' || c === "'") {
+      j++;
+      let closed = false;
+      while (j < n) {
+        const e = s[j];
+        if (c === '"' && (e === '`' || (e === '\\' && s[j + 1] === '"')) && j + 1 < n) { out.push(s[j + 1]); j += 2; continue; }
+        if (e === c) {
+          if (s[j + 1] === c) { out.push(c); j += 2; continue; }
+          closed = true;
+          j++;
+          break;
+        }
+        out.push(e);
+        j++;
+      }
+      if (!closed) return undefined;
+      continue;
+    }
+    if ((c === '`' || (c === '\\' && s[j + 1] === '"')) && j + 1 < n) { out.push(s[j + 1]); j += 2; continue; }
+    out.push(c);
+    j++;
+  }
+  return { value: out.join(''), end: j, quote };
+}
+/** cmd: the rest of the line; one outer pair of quotes is removed, then `^x` and the `\"` of the program's command line. */
+function decodeCmd(s: string, i: number): Decoded {
+  const rest = s.slice(i);
+  const quoted = rest.length >= 2 && rest[0] === '"' && rest[rest.length - 1] === '"';
+  const inner = quoted ? rest.slice(1, -1) : rest;
+  return { value: inner.replace(/\^([\s\S])|\\"/g, (_m, x?: string) => x ?? '"'), end: s.length, quote: quoted ? '"' : '' };
+}
+/** The masked payload written back in the quoting it came in (display only; `$` and `` ` `` stay as they are in sh). */
+function encodePayload(kind: ShellKind, v: string, d: Decoded, raw: string): string {
+  if (kind === 'sh') {
+    if (d.quote === "'") return "'" + v.replace(/'/g, "'\\''") + "'";
+    if (d.quote === '"') return '"' + v.replace(/\\(?=["\\$`]|$)/g, '\\\\').replace(/"/g, '\\"') + '"';
+    return v.replace(/[\s"'\;&|<>()]/g, '\\$&');
+  }
+  if (kind === 'ps') {
+    if (d.quote === "'") return "'" + v.replace(/'/g, "''") + "'";
+    return d.quote + v.replace(/[`"]/g, '`$&') + d.quote;
+  }
+  const body = v.replace(/"/g, raw.includes('\\"') ? '\\"' : '^"');
+  return d.quote ? `"${body}"` : body;
+}
+const HAS_ESC: Record<ShellKind, RegExp> = { sh: /\\/, cmd: /\^|\\"/, ps: /`|""|\\"|''/ };
+
+/** A segment between wrappers, masked by `plain` with its outer whitespace kept. */
+function maskSegment(seg: string, plain: (x: string) => string): string {
+  let a = 0;
+  let b = seg.length;
+  while (a < b && /\s/.test(seg[a])) a++;
+  while (b > a && /\s/.test(seg[b - 1])) b--;
+  return a === b ? seg : seg.slice(0, a) + plain(seg.slice(a, b)) + seg.slice(b);
+}
+
+/**
+ * The text with each shell wrapper's payload unescaped one level, masked and written back; undefined when no wrapper's payload holds an
+ * escape (the caller then uses its usual rules, unchanged). `plain` masks the text around the payloads.
+ */
+function maskScriptText(s0: string, d: number, env: Env | undefined, plain: (x: string) => string): string | undefined {
+  if (!SCRIPT_GATE.test(s0)) return undefined;
+  // the escaped-pair rule, made for raw escaped text, runs first on the text as it is (`{\\"token\\":\\"x\\"}` inside `sh -c "..."`
+  // decodes to `{\token\:\x\}`, where no rule sees a pair any more); it keeps the escape runs, so the decode below still works.
+  // Not `redact()` or the scheme rule here: their value class takes a backslash (`Bearer x\"` would lose its `\` and break the quoting)
+  const s = maskEscapedPairs(s0);
+  const ws = findWrappers(s);
+  if (!ws.length) return undefined;
+  // only when some payload may hold an escape: a cmd or PowerShell payload runs to the end of the text, so the first one decides; a sh
+  // payload is one word (each scanned once, words do not overlap)
+  let esc = false;
+  for (const w of ws) {
+    if (w.kind !== 'sh') { esc = HAS_ESC[w.kind].test(s.slice(w.start)); break; }
+    const dec = decodeSh(s, w.start);
+    if (!dec || HAS_ESC.sh.test(s.slice(w.start, dec.end))) { esc = true; break; }
+  }
+  if (!esc) return undefined;
+  let out = '';
+  let cur = 0;
+  for (const w of ws) {
+    if (w.start < cur) continue; // inside a payload already handled
+    out += maskSegment(s.slice(cur, w.start), plain);
+    if (wrapActive >= WRAP_MAX) return out + MASK; // deeper than WRAP_MAX decodes: the payload is masked whole, to the end
+    const dec = w.kind === 'sh' ? decodeSh(s, w.start) : w.kind === 'ps' ? decodePs(s, w.start) : decodeCmd(s, w.start);
+    if (!dec) return out + MASK; // a quote that does not close: masked to the end of the payload (fail closed)
+    const raw = s.slice(w.start, dec.end);
+    let inner: string;
+    wrapActive++;
+    try { inner = maskShellScript(w.kind, dec.value, Math.max(d - 1, 0), env); } finally { wrapActive--; }
+    out += inner === dec.value ? raw : encodePayload(w.kind, inner, dec, raw);
+    cur = dec.end;
+  }
+  return out + maskSegment(s.slice(cur), plain);
+}
+
+/** Escapes inside a script a shell runs (no outer quotes): sh `\x`, PowerShell `` `x ``, cmd `^x` and the program's `\"`. */
+const SCRIPT_ESC: Record<ShellKind, RegExp> = { sh: /\\/, ps: /`/, cmd: /\^|\\"/ };
+
+/**
+ * A script that a shell of `kind` runs (the decoded payload of a wrapper, or the arg after `sh -c` / `cmd /c` / `powershell -Command`
+ * in an args list). Without an escape of that shell it is masked by the usual rules; with one it is unescaped one level first (sh word
+ * by word, each changed word written back in its own quoting; PowerShell and cmd as a whole, shown unescaped when anything changed).
+ * Past `WRAP_MAX` decodes it is masked whole.
+ */
+function maskShellScript(kind: ShellKind, script: string, d: number, env: Env | undefined): string {
+  if (!SCRIPT_ESC[kind].test(script)) return redact(maskText(script, d, env), env);
+  if (wrapActive >= WRAP_MAX) return MASK;
+  wrapActive++;
+  try {
+    if (kind === 'sh') return maskShWords(maskEscapedPairs(script), d, env); // escaped pairs first, on the raw text (see maskScriptText)
+    const dec = kind === 'ps' ? script.replace(/`([\s\S])/g, '$1') : script.replace(/\^([\s\S])|\\"/g, (_m, x?: string) => x ?? '"');
+    const inner = redact(maskText(dec, Math.max(d - 1, 0), env), env);
+    return inner === dec ? script : inner;
+  } finally { wrapActive--; }
+}
+
+/** A sh script word by word (`decodeSh`), masked as an args list; a word the rules changed is written back in its own quoting. A quote that does not close masks the rest. */
+function maskShWords(s: string, d: number, env: Env | undefined): string {
+  const spans: Array<{ start: number; dec: Decoded }> = [];
+  const n = s.length;
+  let i = 0;
+  let failAt = -1;
+  while (i < n) {
+    const c = s[i];
+    if (/\s/.test(c)) { i++; continue; }
+    if (';&|'.includes(c)) { let j = i; while (j < n && ';&|'.includes(s[j])) j++; spans.push({ start: i, dec: { value: s.slice(i, j), end: j, quote: '' } }); i = j; continue; }
+    const dec = decodeSh(s, i);
+    if (!dec) { failAt = i; break; }
+    if (dec.end <= i) { i++; continue; }
+    spans.push({ start: i, dec });
+    i = dec.end;
+  }
+  const masked = maskArgs(spans.map((x) => x.dec.value), snapshot(env), Math.max(d - 1, 0));
+  let out = '';
+  let cur = 0;
+  spans.forEach((x, k) => {
+    const m = redact(masked[k], env);
+    out += s.slice(cur, x.start) + (m === x.dec.value ? s.slice(x.start, x.dec.end) : encodePayload('sh', m, x.dec, ''));
+    cur = x.dec.end;
+  });
+  return failAt < 0 ? out + s.slice(cur) : out + s.slice(cur, failAt) + MASK;
+}
+
 /** A free-standing value or arg: JSON, URL, connection string (`;`/`,`-separated pairs), `NAME=value`, `Name: value`, a shell string. The caller finishes with `redact()`. */
-function maskText(v: string, depth: number, env?: Env): string {
+function maskText(v: string, depth: number, env?: Env, noScript = false): string {
+  if (!noScript && SCRIPT_GATE.test(v) && /\s/.test(v)) { // T067 (#447): a shell wrapper whose payload has escaped quotes, decoded one level first
+    const sc = maskScriptText(v, depth, env, (seg) => maskText(seg, depth, env, true));
+    if (sc !== undefined) return sc;
+  }
+  // T067: a leading quote that closes nowhere in the value (`--opt="token=x`) is set aside, so the rules see what is behind it (fail closed)
+  if ((v[0] === '"' || v[0] === "'") && v.indexOf(v[0], 1) < 0) return v[0] + maskText(v.slice(1), depth, env, noScript);
   if (v.startsWith('{') || v.startsWith('[')) {
     const e = v.trimEnd();
     const j = e.endsWith('}') || e.endsWith(']') ? maskJson(v, env, false, depth) : undefined; // parse only what can be JSON
@@ -379,41 +625,73 @@ function maskArgs(args: readonly string[], env: Env, d: number, top = false): st
   const rd = (x: string): string => (top ? redact(x, env) : x); // a nested call is redacted by the outer one, over the whole arg
   const out: string[] = [];
   let pending: 'secret' | 'header' | undefined;
+  // T067: `sh -c <script>`, `cmd /c <script>`, `powershell -Command <script>` as separate args. A sh script is the one arg after `-c`;
+  // cmd and PowerShell join every arg after their flag into the script, so each of those args keeps that shell's escapes: it is
+  // unescaped one level and then goes through the rules below with the others (a `-H` before it still counts); shown as it was when
+  // the rules change nothing.
+  let wrapKind: ShellKind | undefined; // a shell word seen, its command flag not yet
+  let wrapSeen = 0;
+  let wrapValue = false; // the arg is the value of a flag of that shell (`-ExecutionPolicy Bypass`)
+  let scriptKind: ShellKind | undefined; // sh: the next arg is the script
+  let joinKind: ShellKind | undefined; // cmd, PowerShell: every later arg is part of the script
+  let fix: { i: number; dec: string; raw: string } | undefined;
+  const unfix = (): void => { if (fix && out[fix.i] === fix.dec) out[fix.i] = fix.raw; fix = undefined; };
   for (const raw of Array.isArray(args) ? args : []) {
+    unfix();
     try {
-      const a0 = typeof raw === 'string' ? raw : String(raw ?? '');
+      let a0 = typeof raw === 'string' ? raw : String(raw ?? '');
+      const sk = scriptKind;
+      scriptKind = undefined;
+      if (wrapKind) {
+        if (wrapValue) { wrapValue = false; }
+        else if (isCommandFlag(wrapKind, a0)) { if (wrapKind === 'sh') scriptKind = 'sh'; else joinKind = wrapKind; wrapKind = undefined; }
+        else if (/^[-+/]/.test(a0) && ++wrapSeen <= 9) { wrapValue = VALUE_FLAG[wrapKind].test(a0); }
+        else wrapKind = undefined;
+      } else if (!joinKind && (wrapKind = shellKind(a0))) { wrapSeen = 0; wrapValue = false; }
+      if (sk && !pending && SCRIPT_ESC.sh.test(a0)) { out.push(rd(maskShellScript('sh', a0, d, env))); continue; }
+      if (joinKind && (joinKind === 'ps' ? /`|''|""/ : SCRIPT_ESC.cmd).test(a0)) {
+        const pd = joinKind === 'ps' ? decodePs(a0, 0) : undefined; // PowerShell: a quoted word (`'a ''b'''`) or the arg with `` `x `` removed
+        const dec = joinKind === 'ps' ? (pd && pd.end === a0.length ? pd.value : a0.replace(/`([\s\S])/g, '$1')) : a0.replace(/\^([\s\S])|\\"/g, (_m, x?: string) => x ?? '"');
+        fix = { i: out.length, dec, raw: a0 };
+        a0 = dec;
+      }
+      // T067 (#447): a leading quote with no closing quote in the arg (`"--token=x`, `"X-Api-Key:` from a naive split) is set aside, so the
+      // flag, `Name:` or `NAME=` behind it is seen and the rest of the arg is masked by the rules (fail closed); it is put back in front
+      const lead = (a0[0] === '"' || a0[0] === "'") && a0.indexOf(a0[0], 1) < 0 ? a0[0] : '';
+      if (lead) a0 = a0.slice(1);
+      const push = (x: string): void => { out.push(lead && x !== MASK ? lead + x : x); };
       const [a, q] = unquote(a0);
       const W = (x: string): string => (q && x !== MASK ? q + x + q : x);
       const f = a.startsWith('-') || a.startsWith('/') ? parseFlag(a) : undefined;
       if (pending && !LONG_FLAG.test(a) && (pending === 'secret' || !a.startsWith('-'))) {
-        if (pending === 'header' && HDR_NAME_ONLY.test(a)) { out.push(W(a)); pending = 'secret'; continue; } // R5: `Name:` then its value as the next arg
-        if (SCHEME.test(a.trim()) || (pending === 'header' && schemeHeader(a))) { out.push(W(a)); pending = 'secret'; continue; } // R11 a/b: the scheme word stays, the next arg is the secret
-        if (pending === 'header' && schemeHeader(a, true)) { out.push(W(maskHeaderValue(a, env, d))); pending = 'secret'; continue; } // R11 after a header flag: any name (FR-012: header values are masked whatever the name)
-        out.push(pending === 'secret' ? MASK : W(maskHeaderValue(a, env, d)));
+        if (pending === 'header' && HDR_NAME_ONLY.test(a)) { push(W(a)); pending = 'secret'; continue; } // R5: `Name:` then its value as the next arg
+        if (SCHEME.test(a.trim()) || (pending === 'header' && schemeHeader(a))) { push(W(a)); pending = 'secret'; continue; } // R11 a/b: the scheme word stays, the next arg is the secret
+        if (pending === 'header' && schemeHeader(a, true)) { push(W(maskHeaderValue(a, env, d))); pending = 'secret'; continue; } // R11 after a header flag: any name (FR-012: header values are masked whatever the name)
+        push(pending === 'secret' ? MASK : W(maskHeaderValue(a, env, d)));
         pending = undefined;
         continue;
       }
       pending = undefined;
-      if (!f && ((top ? /^(?:bearer|basic)$/i : /^Bearer$/).test(a.trim()) || schemeHeader(a))) { out.push(W(a)); pending = 'secret'; continue; } // R11 c (`Basic` and a lowercase `bearer` only at top level: in prose, `Basic setup` must stay) and b
+      if (!f && ((top ? /^(?:bearer|basic)$/i : /^Bearer$/).test(a.trim()) || schemeHeader(a))) { push(W(a)); pending = 'secret'; continue; } // R11 c (`Basic` and a lowercase `bearer` only at top level: in prose, `Basic setup` must stay) and b
       if (!f) {
         const hn = HDR_NAME_ONLY.exec(a);
-        if (hn && secretFlag(hn[1])) { out.push(W(a)); pending = 'secret'; continue; } // R5
+        if (hn && secretFlag(hn[1])) { push(W(a)); pending = 'secret'; continue; } // R5
       }
       if (f) {
         const secret = secretFlag(f.name);
         if (f.rest === undefined) {
           pending = secret ? 'secret' : HEADER_FLAGS.has(f.name.toLowerCase()) ? 'header' : undefined;
-          out.push(W(rd(a)));
+          push(W(rd(a)));
         } else if (secret) {
-          if (SCHEME.test(f.rest.trim())) { out.push(W(a)); pending = 'secret'; continue; } // R11 a: `--auth=Bearer` and then the secret as its own arg
-          out.push(`${f.name}${f.sep}${MASK}`);
+          if (SCHEME.test(f.rest.trim())) { push(W(a)); pending = 'secret'; continue; } // R11 a: `--auth=Bearer` and then the secret as its own arg
+          push(`${f.name}${f.sep}${MASK}`);
           if (f.rest === '') pending = 'secret'; // `--token=` and then the value as its own arg
         }
         else if (HEADER_FLAGS.has(f.name.toLowerCase())) {
-          out.push(W(`${f.name}${f.sep}${maskHeaderValue(f.rest, env, d)}`));
-          if (schemeHeader(f.rest, true)) pending = 'secret'; // R11 b: `--header=Authorization: Bearer` and then the secret
+          push(W(`${f.name}${f.sep}${maskHeaderValue(f.rest, env, d)}`));
+          if (schemeHeader(f.rest, true) || HDR_NAME_ONLY.test(f.rest.replace(/^["']/, ''))) pending = 'secret'; // R11 b: `--header=Authorization: Bearer`, and R5 (T067): `--header="X-Api-Key:`, then the secret
         }
-        else { const [rv, rq] = unquote(f.rest); out.push(W(`${f.name}${f.sep}${rq}${rd(maskText(rv, d, env))}${rq}`)); } // a whole-quoted value (`--env="API_TOKEN=x"`) is masked on its inside, like a top-level arg (R2); same depth as that path
+        else { const [rv, rq] = unquote(f.rest); push(W(`${f.name}${f.sep}${rq}${rd(maskText(rv, d, env))}${rq}`)); } // a whole-quoted value (`--env="API_TOKEN=x"`) is masked on its inside, like a top-level arg (R2); same depth as that path
         continue;
       }
       {
@@ -425,17 +703,19 @@ function maskArgs(args: readonly string[], env: Env, d: number, top = false): st
         const hv = kvm ? HDR_NAME_ONLY.exec(inner.trim()) : null;
         if (hv && secretFlag(hv[1])) pending = 'secret'; // `NAME=Name:` then its value as the next arg (R5)
       }
-      out.push(W(rd(maskText(a, d, env))));
+      push(W(rd(maskText(a, d, env))));
     } catch {
       out.push(MASK);
     }
   }
+  unfix();
   return out;
 }
 
 /**
  * Splits a command string into words for display (`shellWords`, R1): whitespace outside `"..."` and `'...'` separates words, and a quoted span
- * stays in its word with its quotes. Not parsed (`[KNOWN GAP]`): backslash, backtick and `^` escapes, `$(...)`, heredocs. A drive or UNC
+ * stays in its word with its quotes. Not parsed here (`[KNOWN GAP]`): backslash, backtick and `^` escapes (`maskSecretCommand` unescapes a
+ * shell wrapper's payload first, T067), `$(...)`, heredocs. A drive or UNC
  * path (`C:\Program Files\nodejs\node.exe`) is one token: it ends at the first whitespace-separated chunk that has no `\` or `/` (or has `=`,
  * or starts with `-`, `/`, `\` or a drive); the rest is split as above.
  */
@@ -451,15 +731,42 @@ export function splitCommand(command: unknown): string[] {
   return [chunks.slice(0, end).join(' '), ...chunks.slice(end)];
 }
 
-/** A command for display: `redact()` on the raw text first (R8: `Authorization: Bearer x` and `Bearer x` side by side), split like `splitCommand`, masked like `maskSecretArgs`, joined with one space. Never throws. */
-export function maskSecretCommand(command: unknown, envIn?: Env): string {
-  return maskCommandImpl(command, envIn, true);
+/**
+ * Words of a command where the first word that opens a quote closing nowhere later starts one last word that runs to the end (T067: an
+ * unclosed quote makes the rest one argument, so it is masked as one; R1 alone kept it a literal and `srv "--token x more` showed `more`).
+ */
+function joinUnclosed(w: string[]): string[] {
+  let laterDq = false;
+  let laterSq = false;
+  let at = -1;
+  for (let i = w.length - 1; i >= 0; i--) {
+    const x = w[i];
+    if ((x[0] === '"' && !laterDq && x.indexOf('"', 1) < 0) || (x[0] === "'" && !laterSq && x.indexOf("'", 1) < 0)) at = i;
+    if (x.includes('"')) laterDq = true;
+    if (x.includes("'")) laterSq = true;
+  }
+  return at < 0 ? w : [...w.slice(0, at), w.slice(at).join(' ')];
 }
-function maskCommandImpl(command: unknown, envIn: Env | undefined, cap: boolean): string {
+
+/**
+ * A command for display: `redact()` on the raw text first (R8: `Authorization: Bearer x` and `Bearer x` side by side), split like
+ * `splitCommand`, masked like `maskSecretArgs`, joined with one space. T067: the payload of a shell wrapper (`sh -c`, `cmd /c`,
+ * `powershell -Command`) with escaped quotes is unescaped one level and masked before the split. `mapWord` (the read tools' path reducer)
+ * runs on each masked word outside such a payload. Never throws.
+ */
+export function maskSecretCommand(command: unknown, envIn?: Env, mapWord?: (word: string) => string): string {
+  return maskCommandImpl(command, envIn, true, mapWord);
+}
+function maskCommandImpl(command: unknown, envIn: Env | undefined, cap: boolean, mapWord?: (word: string) => string): string {
   try {
     if (cap && typeof command === 'string' && command.length > MASK_INPUT_MAX) return MASK;
     const env = snapshot(envIn);
-    return maskArgs(splitCommand(redact(maskSchemeSecrets(typeof command === 'string' ? command : ''), env)), env, MAX_DEPTH, true).join(' ');
+    const plain = (c: string): string => {
+      const out = maskArgs(joinUnclosed(splitCommand(redact(maskSchemeSecrets(c), env))), env, MAX_DEPTH, true);
+      return (mapWord ? out.map((x) => mapWord(x)) : out).join(' ');
+    };
+    const c = typeof command === 'string' ? command : '';
+    return maskScriptText(c, MAX_DEPTH, env, plain) ?? plain(c);
   } catch { return '[redaction failed]'; }
 }
 
