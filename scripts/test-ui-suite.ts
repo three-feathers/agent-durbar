@@ -26,7 +26,8 @@ for (const step of ['check-theme-geometry.js', 'check-office-overlap.js', 'check
 assert.ok(/part: \[layout-1, layout-2, drivers\]/.test(wf), 'three parts per OS');
 assert.ok(/OFFICE_SHARDS: '2'/.test(wf) && /OFFICE_SHARD: \$\{\{ matrix\.part == 'layout-2' && '1' \|\| '0' \}\}/.test(wf), 'the two layout parts are the two office halves');
 const excl = (/exclude: (.*)/.exec(wf) || [])[1] || '';
-assert.ok(excl.includes(`github.event_name == 'pull_request' || github.event_name == 'push'`) && excl.includes('"os":"ubuntu-latest","part":"layout-2"') && (excl.match(/"os"/g) || []).length === 1, 'only Linux layout 2/2, only on PR and push, is left out');
+assert.ok(excl.includes(`github.event_name == 'pull_request' || github.event_name == 'push'`) && excl.includes('"os":"ubuntu-latest","part":"layout-1"') && excl.includes('"os":"ubuntu-latest","part":"layout-2"') && (excl.match(/"os":"ubuntu-latest"/g) || []).length === 2 && (excl.match(/"os"/g) || []).length === 2, 'only the Linux layout parts, only on PR and push, are left out');
+assert.ok(wf.includes(`(runner.os != 'Linux' && matrix.part == 'layout-1') || (runner.os == 'Linux' && matrix.part == 'drivers')`), 'theme geometry runs on every OS (in the drivers job on Linux)');
 const ci = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
 const shardJobs = (ci.match(/- \{ shard: \d+, index: \d+ \}/g) || []).length;
 assert.ok(shardJobs >= 2 && new RegExp(`OFFICE_SHARDS: ${shardJobs}\\r?\\n`).test(ci) && ci.includes(`shard }}/${shardJobs}`), 'ci.yml: one office shard job per shard (FR-099)');

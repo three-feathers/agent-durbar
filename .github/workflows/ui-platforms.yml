@@ -45,7 +45,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         part: [layout-1, layout-2, drivers]
-        exclude: ${{ fromJSON((github.event_name == 'pull_request' || github.event_name == 'push') && '[{"os":"ubuntu-latest","part":"layout-2"}]' || '[]') }}
+        # Linux, PR and push: the office layout runs in ci.yml, so only the drivers job is left (theme geometry runs there, first)
+        exclude: ${{ fromJSON((github.event_name == 'pull_request' || github.event_name == 'push') && '[{"os":"ubuntu-latest","part":"layout-1"},{"os":"ubuntu-latest","part":"layout-2"}]' || '[]') }}
     env:
       UI_SUITE_OUT: ${{ github.workspace }}/ui-shots
       # fast checks: drivers in parallel (measured 2026-10-20 on Linux: 18/18 in 222 s at 3, against about 560 s one by one); the macOS runner is smaller
@@ -66,8 +67,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y xvfb
       - run: npm ci
       - run: npm run build
+      # On Linux theme geometry runs in the drivers job, before the drivers: the first Electron on a fresh Linux runner failed its first
+      # frame capture (shots-001-welcome, UnknownVizError, PR #507 three times, also when started alone); after geometry it passes, as before
       - name: Theme geometry
-        if: matrix.part == 'layout-1'
+        if: (runner.os != 'Linux' && matrix.part == 'layout-1') || (runner.os == 'Linux' && matrix.part == 'drivers')
         run: node scripts/check-theme-geometry.js
       - name: Office layout (15 agents, 1440x900 and 1280x800), half ${{ matrix.part == 'layout-2' && '2' || '1' }} of 2
         if: (matrix.part == 'layout-1' || matrix.part == 'layout-2') && env.OFFICE_HERE == '1' && (success() || failure())
@@ -76,7 +79,7 @@ jobs:
         if: runner.os == 'macOS' && matrix.part == 'layout-2' && (success() || failure())
         run: node scripts/check-mac-titlebar.js
       - name: Simulator drivers (scripts/ui-suite.js)
-        if: matrix.part == 'drivers'
+        if: matrix.part == 'drivers' && (success() || failure())
         run: node scripts/ui-suite.js
       - name: Screenshots
         if: always()

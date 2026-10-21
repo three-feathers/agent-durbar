@@ -96,8 +96,8 @@ async function main() {
   const failed = [];
   const started = Date.now();
   let next = 0;
-  const worker = async (max = Infinity) => {
-    for (let n = 0; n < max && next < todo.length; n++) {
+  const worker = async () => {
+    while (next < todo.length) {
       const d = todo[next++];
       const r = await runOne(d, outDir);
       console.log(`  ${r.ok ? 'ok  ' : 'FAIL'} ${(d.label || d.name).padEnd(26)} ${String(r.secs).padStart(4)} s${r.ok ? '' : '  ' + r.why.trim().slice(0, 300)}`);
@@ -107,10 +107,7 @@ async function main() {
       }
     }
   };
-  // spec 008 FR-100: the first driver starts alone, then the rest in parallel. On a fresh CI runner (the drivers have their own job
-  // now) three Electrons starting at once lost the first frame capture (UnknownVizError, Linux, PR #507, twice in a row).
-  if (jobs > 1) await worker(1);
-  await Promise.all(Array.from({ length: jobs }, () => worker()));
+  await Promise.all(Array.from({ length: jobs }, worker));
   // a slow runner (macOS in CI) can lose a race against a fixed delay: one more run alone, reported as FLAKY so it stays visible
   const flaky = [];
   if (process.env.UI_SUITE_RETRY === '1' && failed.length) {
