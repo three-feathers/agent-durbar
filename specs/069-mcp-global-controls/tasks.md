@@ -15,9 +15,9 @@
 
 ## Part 2: harmonize (PR 2)
 
-- [ ] T020 `mcp:globalDiff` and copy preview reusing the part 1 pipeline [FR-020, FR-021]
-- [ ] T021 Settings *Harmonize (N)* section; hidden with one app [FR-021, FR-022]
-- [ ] T022 Tests, simulator, screenshots, docs
+- [x] T020 `mcp:globalDiff` and copy preview reusing the part 1 pipeline [FR-020, FR-021]
+- [x] T021 Settings *Harmonize (N)* section; hidden with one app [FR-021, FR-022]
+- [x] T022 Tests, simulator, screenshots, docs
 
 ## Part 3: controls and tools (PR 3, after #473)
 

@@ -7,7 +7,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { addToText, claudeOffKey, codexBlock, globalFiles, headerVar, jsonEntry, MASK, offOf, previewText, readGlobal, removeFromText, sourcesFor, textHash, tomlStr } from '../src/main/mcpglobal';
+import { addToText, claudeOffKey, codexBlock, differences, neededVars, neutralFrom, globalFiles, headerVar, jsonEntry, MASK, offOf, previewText, readGlobal, removeFromText, sourcesFor, textHash, tomlStr } from '../src/main/mcpglobal';
 import { backupAndWrite, GlobalLists, KEEP_BACKUPS, pruneBackups, readFileSafe, TOKEN_MS } from '../src/main/mcpglobalio';
 import { McpStore } from '../src/main/mcpstore';
 import type { McpServerInput } from '../src/shared/mcp';
@@ -373,6 +373,96 @@ ok('GlobalLists: Claude list for sessions (values in main), minus off names', ()
   const s = lists.sessionServers('claude', new Set());
   assert.deepStrictEqual(s, { existing: { type: 'stdio', command: 'node', args: ['s.js'], env: { K: 'v-secret' }, tools: ['*'] } });
   assert.deepStrictEqual(lists.sessionServers('claude', new Set(['existing'])), {});
+});
+
+// ---------------------------------------------------------------- harmonize (part 2, FR-020..FR-022)
+ok('neutral form: JSON refs and values, Codex env_vars / env table / inline env / bearer / env_http_headers', () => {
+  const j = neutralFrom('claude', 'x', { type: 'http', url: 'https://u', headers: { Authorization: 'Bearer ${TOK}', 'X-K': '${XK}', 'X-P': 'plain-v' } });
+  assert.ok(j.ok);
+  assert.deepStrictEqual(j.input.headers, [{ key: 'Authorization', value: 'Bearer ${TOK}' }, { key: 'X-K', ref: 'XK' }, { key: 'X-P', value: 'plain-v' }]);
+  const c = readGlobal('codex', codexFixture) as { ok: true; values: Map<string, Record<string, unknown>> };
+  const alpha = neutralFrom('codex', 'alpha', c.values.get('alpha') ?? {});
+  assert.ok(alpha.ok);
+  assert.deepStrictEqual(alpha.input.env, [{ key: 'ALPHA_KEY', value: 'alpha-secret' }]);
+  const beta = neutralFrom('codex', 'beta', c.values.get('beta') ?? {});
+  assert.ok(beta.ok);
+  assert.deepStrictEqual(beta.input.headers, [{ key: 'X-Org', ref: 'BETA_ORG' }, { key: 'Authorization', value: 'Bearer ${BETA_TOKEN}' }]);
+  const inline = readGlobal('codex', '[mcp_servers.i]\ncommand = "c"\nenv = { "A" = "va", B = \'vb\' }\nenv_vars = ["C"]\n') as { ok: true; values: Map<string, Record<string, unknown>> };
+  const ii = neutralFrom('codex', 'i', inline.values.get('i') ?? {});
+  assert.ok(ii.ok);
+  assert.deepStrictEqual(ii.input.env, [{ key: 'A', value: 'va' }, { key: 'B', value: 'vb' }, { key: 'C', ref: 'C' }]);
+  assert.ok(!neutralFrom('codex', 'w', { command: 'c', cwd: '/x' }).ok, 'a working directory is not copied');
+  assert.ok(!neutralFrom('claude', 'w', { type: 'ws', url: 'ws://x' }).ok);
+});
+ok('copies keep references as references in every format', () => {
+  const c = readGlobal('codex', codexFixture) as { ok: true; values: Map<string, Record<string, unknown>> };
+  const beta = neutralFrom('codex', 'beta', c.values.get('beta') ?? {});
+  assert.ok(beta.ok);
+  const cl = jsonEntry('claude', beta.input, 'plain');
+  assert.deepStrictEqual(cl.headers, { 'X-Org': '${BETA_ORG}', Authorization: 'Bearer ${BETA_TOKEN}' });
+  assert.deepStrictEqual(neededVars(beta.input, 'plain'), ['BETA_ORG', 'BETA_TOKEN']);
+  // and back to Codex: the same keys
+  const back = codexBlock({ ...beta.input, name: 'beta2' }, 'plain');
+  assert.ok(back.includes('bearer_token_env_var = "BETA_TOKEN"') && back.includes('env_http_headers = { "X-Org" = "BETA_ORG" }'), back.join('\n'));
+  assert.ok(previewText('claude', beta.input, 'plain').includes('Bearer ${BETA_TOKEN}'), 'a reference is shown, not masked');
+  const alpha = neutralFrom('codex', 'alpha', c.values.get('alpha') ?? {});
+  assert.ok(alpha.ok && !previewText('copilot', alpha.input, 'plain').includes('alpha-secret'), 'a plain value is masked in the review');
+  const odd = addToText('codex', undefined, { name: 'o', transport: 'stdio', command: 'c', env: [{ key: 'A', ref: 'B' }] }, 'plain');
+  assert.ok(!odd.ok && /own name/.test(odd.error));
+  const exp = addToText('codex', undefined, { name: 'o', transport: 'stdio', command: 'c', env: [{ key: 'A', value: 'pre-${B}' }] }, 'plain');
+  assert.ok(!exp.ok && /expand/.test(exp.error));
+});
+ok('differences name fields, never values', () => {
+  const a = { name: 'n', transport: 'stdio' as const, command: 'c', args: ['1'], env: [{ key: 'K', value: 'one-secret' }] };
+  assert.deepStrictEqual(differences(a, a), []);
+  assert.deepStrictEqual(differences(a, { ...a, args: ['2'] }), ['arguments']);
+  assert.deepStrictEqual(differences(a, { ...a, env: [{ key: 'K', value: 'two-secret' }] }), ['values']);
+  assert.deepStrictEqual(differences(a, { ...a, env: [{ key: 'K', ref: 'K' }] }), ['values']);
+  assert.deepStrictEqual(differences(a, { ...a, command: 'd', env: [] }), ['command', 'environment variables']);
+});
+ok('GlobalLists.diff: missing and different servers, no values; copy preview and apply', () => {
+  const { home, lists } = fixtureHome();
+  const d = lists.diff();
+  assert.deepStrictEqual(d.apps, ['copilot', 'claude', 'codex']);
+  assert.deepStrictEqual(d.items.map((i) => [i.name, i.in.join(), i.missing.join(), i.differs.join()]), [
+    ['gh', 'copilot', 'claude,codex', ''],
+    ['existing', 'claude', 'copilot,codex', ''],
+    ['alpha', 'codex', 'copilot,claude', ''],
+    ['beta', 'codex', 'copilot,claude', ''],
+  ]);
+  noSecret(d, 'diff');
+  const pv = lists.copyPreview('alpha', 'codex', ['copilot', 'claude', 'codex']);
+  assert.ok(pv.ok && pv.items.length === 2, 'the source app is not a target');
+  noSecret(pv, 'copy preview');
+  const res = lists.apply(pv.token);
+  assert.ok(res.ok && res.items.every((i) => i.ok));
+  const cl = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
+  assert.deepStrictEqual(cl.mcpServers.alpha, { type: 'stdio', command: 'alpha-mcp', args: ['--port', '4000'], env: { ALPHA_KEY: 'alpha-secret' } }, 'the value is copied as it was (plain in Codex)');
+  const after = lists.diff();
+  assert.ok(!after.items.some((i) => i.name === 'alpha'), 'alpha is now in step');
+  // a differing definition: a review with a conflict, replaced only with the tick
+  const f = path.join(home, '.claude.json');
+  cl.mcpServers.alpha.args = ['--port', '5000'];
+  fs.writeFileSync(f, JSON.stringify(cl));
+  const d2 = lists.diff();
+  assert.deepStrictEqual(d2.items.find((i) => i.name === 'alpha')?.differs, ['arguments']);
+  const pv2 = lists.copyPreview('alpha', 'codex', ['claude']);
+  assert.ok(pv2.items[0].conflict);
+  assert.ok(!lists.apply(pv2.token).ok, 'not replaced without the tick');
+  assert.ok(!lists.copyPreview('nope', 'codex', ['claude']).ok);
+  assert.ok(!lists.copyPreview('alpha', 'evil', ['claude']).ok);
+});
+ok('GlobalLists.diff: fewer than two readable lists gives nothing', () => {
+  const home = tmp();
+  fs.writeFileSync(path.join(home, '.claude.json'), claudeFixture);
+  const lists = new GlobalLists(() => globalFiles({}, home));
+  // a missing file reads as an empty list: Copilot and Codex count as readable
+  assert.ok(lists.diff().items.length > 0);
+  fs.mkdirSync(path.join(home, '.codex'));
+  fs.writeFileSync(path.join(home, '.codex', 'config.toml'), 'mcp_servers = { a = { command = "x" } }\n');
+  fs.mkdirSync(path.join(home, '.copilot'));
+  fs.writeFileSync(path.join(home, '.copilot', 'mcp-config.json'), '{ broken');
+  assert.deepStrictEqual(lists.diff(), { ok: true, apps: ['claude'], items: [] });
 });
 
 console.log(`test-mcp-global: ${n} checks passed`);

@@ -51,8 +51,6 @@ export const textHash = (text: string | undefined): string => createHash('sha256
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const strs = (v: unknown, max = 64): string[] | undefined => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').slice(0, max) : undefined);
 const keysOf = (v: unknown): string[] => (isObj(v) ? Object.keys(v).slice(0, 64) : []);
-/** A `${NAME}` reference (the whole value). */
-const REF_RE = /^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/;
 
 export type ReadResult = { ok: true; servers: GlobalEntryView[]; values: Map<string, Record<string, unknown>> } | { ok: false; error: string };
 
@@ -213,13 +211,17 @@ const tomlArray = (v: string): string[] => {
   const m = /^\[(.*)\]$/.exec(v.trim());
   return m ? (m[1].match(/"(?:[^"\\]|\\.)*"|'[^']*'/g) ?? []).map((x) => unq(x) ?? '').slice(0, 64) : [];
 };
-const tomlInlineKeys = (v: string): string[] => {
+/** An inline table of string values, `{ "K" = "v", L = 'w' }` (other value kinds are left out). */
+const tomlInline2 = (v: string): Record<string, string> => {
   const m = /^\{(.*)\}$/.exec(v.trim());
-  if (!m) return [];
-  return (m[1].match(/(?:^|,)\s*("(?:[^"\\]|\\.)*"|'[^']*'|[A-Za-z0-9_-]+)\s*=/g) ?? []).map((k) => {
-    const key = k.replace(/^,?\s*/, '').replace(/\s*=$/, '');
-    return unq(key) ?? key;
-  });
+  const out: Record<string, string> = {};
+  if (!m) return out;
+  for (const p of m[1].matchAll(/(?:^|,)\s*("(?:[^"\\]|\\.)*"|'[^']*'|[A-Za-z0-9_-]+)\s*=\s*("(?:[^"\\]|\\.)*"|'[^']*')/g)) {
+    const key = unq(p[1]) ?? p[1];
+    const val = unq(p[2]);
+    if (val !== undefined && Object.keys(out).length < 64) out[key] = val;
+  }
+  return out;
 };
 
 /** Lines that define `mcp_servers` some other way than `[mcp_servers.<name>]` tables (FR-003 refuses to edit those files). */
@@ -272,7 +274,7 @@ function readCodex(text: string | undefined): ReadResult {
     else if (sub) continue;
     else if (k === 'command' || k === 'url' || k === 'bearer_token_env_var' || k === 'cwd') cur[k] = unq(v);
     else if (k === 'args' || k === 'env_vars' || k === 'enabled_tools') cur[k] = tomlArray(v);
-    else if (k === 'env' || k === 'http_headers' || k === 'env_http_headers') cur[k] = Object.fromEntries(tomlInlineKeys(v).map((x) => [x, '']));
+    else if (k === 'env' || k === 'http_headers' || k === 'env_http_headers') cur[k] = tomlInline2(v);
   }
   for (const [name, r] of recs) {
     const envKeys = [...keysOf(r.env), ...(strs(r.env_vars) ?? [])];
@@ -293,29 +295,58 @@ function readCodex(text: string | undefined): ReadResult {
 
 // ---------------------------------------------------------------- entries
 
+/**
+ * A server to write: the add form's input, or (harmonize, FR-021) an entry converted from another app's file. An item with `ref` is
+ * written as a reference to that environment variable whatever the mode; a value such as `Bearer ${X}` holds a reference, not a secret.
+ */
+export interface GlobalItem {
+  key: string;
+  value?: string;
+  ref?: string;
+}
+export type GlobalInput = Omit<McpServerInput, 'env' | 'headers'> & { env?: GlobalItem[]; headers?: GlobalItem[] };
+
+const VAR = '[A-Za-z_][A-Za-z0-9_]*';
+const REF_ONLY = new RegExp(`^\\$\\{(${VAR})\\}$`);
+const BEARER_REF = new RegExp(`^Bearer \\$\\{(${VAR})\\}$`);
+/** A value that only names variables (`${X}`, `Bearer ${X}`): shown as it is, never masked. */
+const refValue = (v: string | undefined): boolean => !!v && (REF_ONLY.test(v) || BEARER_REF.test(v));
+
 /** The environment variable that holds a header's value in reference mode: `X-Api-Key` -> `X_API_KEY`. */
 export const headerVar = (key: string): string => key.toUpperCase().replace(/[^A-Z0-9_]/g, '_').replace(/^([0-9])/, '_$1');
 
 /** The variables the user must set in reference mode (shown in the confirmation). */
-export function neededVars(input: McpServerInput): string[] {
-  return [...(input.env ?? []).map((e) => e.key), ...(input.headers ?? []).map((h) => headerVar(h.key))];
+export function neededVars(input: GlobalInput, mode: GlobalSecretMode = 'ref'): string[] {
+  const out: string[] = [];
+  const add = (v: string | undefined): void => {
+    if (v && !out.includes(v)) out.push(v);
+  };
+  for (const e of input.env ?? []) add(e.ref ?? (mode === 'ref' ? e.key : (REF_ONLY.exec(e.value ?? '') ?? [])[1]));
+  for (const h of input.headers ?? []) add(h.ref ?? (mode === 'ref' ? headerVar(h.key) : (REF_ONLY.exec(h.value ?? '') ?? BEARER_REF.exec(h.value ?? '') ?? [])[1]));
+  return out;
 }
 
 export type EntryCheck = { ok: true } | { ok: false; error: string };
 
 /** What one app cannot take from a validated input (FR-003). */
-export function checkFor(app: GlobalApp, input: McpServerInput): EntryCheck {
+export function checkFor(app: GlobalApp, input: GlobalInput): EntryCheck {
   if (input.workingDirectory) return { ok: false, error: 'A working directory belongs to one folder: add this server to the folder instead.' };
   if (app === 'codex' && !/^[A-Za-z0-9_-]{1,48}$/.test(input.name)) return { ok: false, error: 'Codex needs a name of letters, digits, "_" or "-" (no dots).' };
   if (app === 'codex' && input.transport === 'sse') return { ok: false, error: 'Codex takes http servers only, not sse.' };
+  if (app === 'codex') {
+    const odd = (input.env ?? []).find((e) => e.ref !== undefined && e.ref !== e.key);
+    if (odd) return { ok: false, error: `Codex passes a variable only under its own name (${odd.key} would read ${odd.ref}).` };
+    if ([...(input.env ?? []), ...(input.headers ?? [])].some((e) => e.ref === undefined && e.value?.includes('${') && !(BEARER_REF.test(e.value) && (input.headers ?? []).includes(e) && /^authorization$/i.test(e.key))))
+      return { ok: false, error: 'Codex does not expand ${...} inside a value.' };
+  }
   return { ok: true };
 }
 
-const kv = (list: { key: string; value?: string }[] | undefined, mode: GlobalSecretMode, masked: boolean, varOf: (k: string) => string): Record<string, string> =>
-  Object.fromEntries((list ?? []).map((e) => [e.key, mode === 'ref' ? '${' + varOf(e.key) + '}' : masked ? MASK : (e.value ?? '')]));
+const kv = (list: GlobalItem[] | undefined, mode: GlobalSecretMode, masked: boolean, varOf: (k: string) => string): Record<string, string> =>
+  Object.fromEntries((list ?? []).map((e) => [e.key, e.ref !== undefined ? '${' + e.ref + '}' : mode === 'ref' ? '${' + varOf(e.key) + '}' : masked && !refValue(e.value) ? MASK : (e.value ?? '')]));
 
 /** FR-003: the JSON entry for Copilot or Claude Code. `masked` replaces plain values with the mask (previews). */
-export function jsonEntry(app: 'copilot' | 'claude', input: McpServerInput, mode: GlobalSecretMode, masked = false): Record<string, unknown> {
+export function jsonEntry(app: 'copilot' | 'claude', input: GlobalInput, mode: GlobalSecretMode, masked = false): Record<string, unknown> {
   const tools = input.tools?.length ? input.tools : ['*'];
   if (input.transport === 'stdio') {
     const env = kv(input.env, mode, masked, (k) => k);
@@ -339,29 +370,37 @@ const tomlArr = (a: string[]): string => '[' + a.map(tomlStr).join(', ') + ']';
 const tomlInline = (o: Record<string, string>): string => '{ ' + Object.entries(o).map(([k, v]) => `${tomlStr(k)} = ${tomlStr(v)}`).join(', ') + ' }';
 
 /** FR-003: the Codex table lines (no trailing newline). */
-export function codexBlock(input: McpServerInput, mode: GlobalSecretMode, masked = false): string[] {
+export function codexBlock(input: GlobalInput, mode: GlobalSecretMode, masked = false): string[] {
   const out = [`[mcp_servers.${tomlKey(input.name)}]`];
-  const val = (v: string | undefined): string => (masked ? MASK : (v ?? ''));
+  const val = (v: string | undefined): string => (masked && !refValue(v) ? MASK : (v ?? ''));
+  const isRef = (e: GlobalItem): boolean => e.ref !== undefined || mode === 'ref';
+  const envRefs = (input.env ?? []).filter(isRef);
+  const envPlain = (input.env ?? []).filter((e) => !isRef(e));
   if (input.transport === 'stdio') {
     out.push(`command = ${tomlStr(input.command ?? '')}`);
     if (input.args?.length) out.push(`args = ${tomlArr(input.args)}`);
-    if (input.env?.length && mode === 'ref') out.push(`env_vars = ${tomlArr(input.env.map((e) => e.key))}`);
+    if (envRefs.length) out.push(`env_vars = ${tomlArr(envRefs.map((e) => e.ref ?? e.key))}`);
   } else {
     out.push(`url = ${tomlStr(input.url ?? '')}`);
-    if (input.headers?.length)
-      out.push(mode === 'ref' ? `env_http_headers = ${tomlInline(Object.fromEntries(input.headers.map((h) => [h.key, headerVar(h.key)])))}` : `http_headers = ${tomlInline(Object.fromEntries(input.headers.map((h) => [h.key, val(h.value)])))}`);
+    const hs = input.headers ?? [];
+    const bearer = hs.find((h) => !isRef(h) && /^authorization$/i.test(h.key) && BEARER_REF.test(h.value ?? ''));
+    const refs = hs.filter(isRef);
+    const plain = hs.filter((h) => !isRef(h) && h !== bearer);
+    if (bearer) out.push(`bearer_token_env_var = ${tomlStr((BEARER_REF.exec(bearer.value ?? '') ?? [])[1] ?? '')}`);
+    if (refs.length) out.push(`env_http_headers = ${tomlInline(Object.fromEntries(refs.map((h) => [h.key, h.ref ?? headerVar(h.key)])))}`);
+    if (plain.length) out.push(`http_headers = ${tomlInline(Object.fromEntries(plain.map((h) => [h.key, val(h.value)])))}`);
   }
   const tools = (input.tools ?? []).filter((t) => t !== '*');
   if (tools.length) out.push(`enabled_tools = ${tomlArr(tools)}`);
-  if (input.transport === 'stdio' && input.env?.length && mode === 'plain') {
+  if (input.transport === 'stdio' && envPlain.length) {
     out.push('', `[mcp_servers.${tomlKey(input.name)}.env]`);
-    for (const e of input.env) out.push(`${tomlKey(e.key)} = ${tomlStr(val(e.value))}`);
+    for (const e of envPlain) out.push(`${tomlKey(e.key)} = ${tomlStr(val(e.value))}`);
   }
   return out;
 }
 
 /** The entry as the confirmation shows it (values masked). */
-export function previewText(app: GlobalApp, input: McpServerInput, mode: GlobalSecretMode): string {
+export function previewText(app: GlobalApp, input: GlobalInput, mode: GlobalSecretMode): string {
   if (app === 'codex') return codexBlock(input, mode, true).join('\n');
   return jsonBlock(input.name, jsonEntry(app, input, mode, true));
 }
@@ -385,7 +424,7 @@ function jsonWrite(doc: Record<string, unknown>, text: string | undefined): stri
 }
 
 /** FR-003: add (or with `replace`, replace) one server in an app's file text. `text` undefined = the file does not exist yet. */
-export function addToText(app: GlobalApp, text: string | undefined, input: McpServerInput, mode: GlobalSecretMode, replace = false): EditResult {
+export function addToText(app: GlobalApp, text: string | undefined, input: GlobalInput, mode: GlobalSecretMode, replace = false): EditResult {
   const chk = checkFor(app, input);
   if (!chk.ok) return chk;
   if (!NAME_RE.test(input.name)) return { ok: false, error: 'Not a valid server name.' };
@@ -432,7 +471,7 @@ function codexRanges(lines: TomlLine[], name: string): [number, number][] {
   return out;
 }
 
-function codexAdd(text: string | undefined, input: McpServerInput, mode: GlobalSecretMode, replace: boolean): EditResult {
+function codexAdd(text: string | undefined, input: GlobalInput, mode: GlobalSecretMode, replace: boolean): EditResult {
   let base = text ?? '';
   if (base) {
     const r = readCodex(base);
@@ -492,4 +531,59 @@ export function offOf(app: GlobalApp, list: readonly string[]): string[] {
   if (app === 'copilot') return list.filter((n) => !n.startsWith('claude:'));
   if (app === 'claude') return list.filter((n) => n.startsWith('claude:')).map((n) => n.slice(7));
   return [];
+}
+
+// ---------------------------------------------------------------- harmonize (part 2, FR-020, FR-021)
+
+const isStrMap = (v: unknown): Record<string, string> =>
+  isObj(v) ? (Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === 'string')) as Record<string, string>) : {};
+const toItems = (m: Record<string, string>): GlobalItem[] =>
+  Object.entries(m).map(([key, value]) => {
+    const r = REF_ONLY.exec(value);
+    return r ? { key, ref: r[1] } : { key, value };
+  });
+
+/**
+ * FR-021: one app's entry (as `readGlobal` keeps it, values included; main only) in the neutral form the writers take, or why it cannot
+ * be copied. References stay references (`${X}`, Codex `env_vars`, `env_http_headers`, `bearer_token_env_var` -> `Bearer ${X}`).
+ */
+export function neutralFrom(app: GlobalApp, name: string, raw: Record<string, unknown>): { ok: true; input: GlobalInput } | { ok: false; error: string } {
+  const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+  const tools = strs(app === 'codex' ? raw.enabled_tools : raw.tools);
+  const base = { name, ...(tools && tools.length && !(tools.length === 1 && tools[0] === '*') ? { tools } : {}) };
+  if (app === 'codex') {
+    if (str(raw.cwd)) return { ok: false, error: 'It has a working directory, which belongs to one folder.' };
+    if (str(raw.command)) {
+      const env = [...toItems(isStrMap(raw.env)), ...(strs(raw.env_vars) ?? []).map((k) => ({ key: k, ref: k }))];
+      return { ok: true, input: { ...base, transport: 'stdio', command: str(raw.command), args: strs(raw.args) ?? [], env, headers: [] } };
+    }
+    if (str(raw.url)) {
+      const headers: GlobalItem[] = [
+        ...toItems(isStrMap(raw.http_headers)),
+        ...Object.entries(isStrMap(raw.env_http_headers)).map(([key, ref]) => ({ key, ref })),
+        ...(str(raw.bearer_token_env_var) ? [{ key: 'Authorization', value: 'Bearer ${' + str(raw.bearer_token_env_var) + '}' }] : []),
+      ];
+      return { ok: true, input: { ...base, transport: 'http', url: str(raw.url), env: [], headers } };
+    }
+    return { ok: false, error: 'Agent Durbar cannot copy this kind of server.' };
+  }
+  const v = jsonView(name, raw);
+  if (v.transport === 'stdio') return { ok: true, input: { ...base, transport: 'stdio', command: str(raw.command), args: strs(raw.args) ?? [], env: toItems(isStrMap(raw.env)), headers: [] } };
+  if (v.transport === 'http' || v.transport === 'sse') return { ok: true, input: { ...base, transport: v.transport, url: str(raw.url), env: [], headers: toItems(isStrMap(raw.headers)) } };
+  return { ok: false, error: 'Agent Durbar cannot copy this kind of server.' };
+}
+
+/** FR-020: what differs between two neutral entries (names of fields only; values are compared, never returned). */
+export function differences(a: GlobalInput, b: GlobalInput): string[] {
+  const out: string[] = [];
+  const keys = (l?: GlobalItem[]): string => (l ?? []).map((e) => e.key).sort().join('\n');
+  const vals = (l?: GlobalItem[]): string => JSON.stringify((l ?? []).map((e) => [e.key, e.ref ?? null, e.value ?? null]).sort());
+  if (a.transport !== b.transport) out.push('type');
+  if ((a.command ?? '') !== (b.command ?? '')) out.push('command');
+  if (JSON.stringify(a.args ?? []) !== JSON.stringify(b.args ?? [])) out.push('arguments');
+  if ((a.url ?? '') !== (b.url ?? '')) out.push('URL');
+  if (keys(a.env) !== keys(b.env)) out.push('environment variables');
+  if (keys(a.headers) !== keys(b.headers)) out.push('headers');
+  if (keys(a.env) === keys(b.env) && keys(a.headers) === keys(b.headers) && (vals(a.env) !== vals(b.env) || vals(a.headers) !== vals(b.headers))) out.push('values');
+  return out;
 }

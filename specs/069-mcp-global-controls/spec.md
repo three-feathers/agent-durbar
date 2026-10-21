@@ -4,8 +4,8 @@
 **Created**: 2026-10-21
 **Status**: Part 1 **built** 2026-10-21 (add to and remove from the agent apps' own lists with a per-file review and backups, source
 chips, Claude Code's user list in Durbar's Claude sessions): unit tests (`test:mcpglobal`) and a simulator driver (`shots-069-mcp-global`),
-no real agent app has read a written file yet (T060). Parts 2 (harmonize) and 3 (tools list and per-row controls) are specified, not
-built (see *Delivery*). Owner questions Q1-Q6 open; their defaults are what is built.
+no real agent app has read a written file yet (T060). Part 2 (harmonize) **built** 2026-10-21 the same way (`test:mcpglobal`,
+`shots-069-harmonize`). Part 3 (tools list and per-row controls) is specified, not built (see *Delivery*). Owner questions Q1-Q6 open; their defaults are what is built.
 **Input**: Owner (Vikram, Telegram 2026-10-21 21:03 UTC): "For the MCP server addition UI, give an option to also add to the list of
 global MCP servers, and those controls to start/stop/restart/auth... we should have those options for all servers. Also show the list of
 tools per MCP server when you expand it." Owner decision (Vikram, Telegram 2026-10-21 21:06 UTC): "global" is written to the agent apps'
@@ -179,12 +179,16 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
 
 ### Harmonize (part 2)
 
-- **FR-020** `mcp:globalDiff()` returns per name: in which apps it is, and, where present in two or more, the differences (transport,
+- **FR-020** `[IMPLEMENTED]` `mcp:globalDiff()` returns per name: in which apps it is, and, where present in two or more, the differences (transport,
   command, arguments, URL, env and header *names*); values are compared in main only and reported as "values differ" without them.
-- **FR-021** Settings shows **Harmonize (N)** when N > 0 and more than one app has a readable file. Each row: *Copy to <missing apps>*
+- **FR-021** `[IMPLEMENTED]` Settings shows **Harmonize (N)** when N > 0 and more than one app has a readable file. Each row: *Copy to <missing apps>*
   ticks; a different definition offers *Use the <app> version in <other apps>* (Q5: never ticked by default). Applying uses FR-005's
   preview and confirmation; the copied entry keeps the source's references or values as they are (no value reaches the window).
-- **FR-022** With a single app, Harmonize is not shown.
+- **FR-022** `[IMPLEMENTED]` With a single app, Harmonize is not shown.
+- **FR-023** `[IMPLEMENTED]` (found while building) A copy converts between formats and keeps references: JSON `${X}` <-> Codex
+  `env_vars` (same name only; another name is refused for Codex) and `env_http_headers`; JSON `Authorization: Bearer ${X}` <-> Codex
+  `bearer_token_env_var`. A value with `${...}` inside other text is refused for Codex (it does not expand it). A server with a working
+  directory, or of a kind Durbar does not write (WebSocket, plugin), is listed but not copyable. A missing file counts as an empty list.
 
 ### Session controls and tools (part 3; depends on spec 058 #473)
 

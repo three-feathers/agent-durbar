@@ -65,11 +65,13 @@
   let mcp=null; /* last McpState */
   let advOpen=false; /* Settings > Advanced (MCP) open; kept across repaints, reset when Settings opens (FR-030) */
   let glob=null; /* spec 069: the agent apps' own lists (names only), read with Settings */
+  let hm=null; /* spec 069 FR-020: servers missing or different between those lists */
   async function loadMcp(){
     if(!X.bridge.mcpState){mcp=null;return;}
     try{mcp=await X.bridge.mcpState();}catch(e){mcp=null;}
-    glob=null;
+    glob=null;hm=null;
     if(X.bridge.mcpGlobalState){try{glob=await X.bridge.mcpGlobalState();}catch(e){glob=null;}}
+    if(X.bridge.mcpGlobalDiff){try{hm=await X.bridge.mcpGlobalDiff();}catch(e){hm=null;}}
   }
   async function paintSettings(focus){
     const first=!mcp;
@@ -379,7 +381,30 @@
     return `<h4 class="scr-sub">From Claude Code and Codex <small>their own lists</small></h4>
         <div class="scr-tools"><button class="btn" type="button" id="globAdd" title="Write a server into the lists of the agent apps you choose, after you review each file">+ Add server for all folders…</button></div>
         ${rows?`<ul class="srvs" id="globList">${rows}</ul>`:'<p class="scr-note small">No other servers in Claude Code\'s or Codex\'s lists.</p>'}
+        ${harmonizeSection()}
         <details class="scr-more"><summary>Files read</summary><ul class="scr-note small gfiles">${files}</ul><p class="scr-note small">Read again every time this screen opens. Agent Durbar writes these files only after you confirm, with a backup next to each. The Claude Code switch decides whether Agent Durbar passes that server to its own Claude Code sessions; Codex starts the servers of its list itself.</p></details>`;
+  }
+  /* spec 069 FR-021/FR-022: servers to bring in step, shown when two or more lists can be read and something differs */
+  function harmonizeSection(){
+    if(!hm||!hm.ok||hm.apps.length<2||!hm.items.length)return '';
+    const chip=(a,cls)=>`<span class="mtag${cls?' '+cls:''}">${esc(APPN[a])}</span>`;
+    const rows=hm.items.map(i=>`<li class="srv hm" data-h="${esc(i.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(i.name)}</b><span class="hmlbl">in</span>${i.in.map(a=>chip(a,'src')).join('')}${i.missing.length?`<span class="hmlbl">missing in</span>${i.missing.map(a=>chip(a,'warn')).join('')}`:''}</div>
+        ${i.differs.length?`<span class="imp-note">Different between the lists: ${esc(i.differs.join(', '))}</span>`:''}${i.error?`<span class="imp-note">${esc(i.error)}</span>`:''}</div>
+        <div class="srv-act">${i.from.length?`<button class="btn sm" type="button" data-act="hcopy" data-g="${esc(i.name)}" aria-label="Copy ${esc(i.name)} to other agent apps">Copy…</button>`:''}</div></li>`).join('');
+    return `<h4 class="scr-sub" id="hmH">Harmonize <small>${hm.items.length} server${hm.items.length===1?'':'s'} not the same in all your agent apps</small></h4>
+        <p class="scr-note small">Copy a server to the agent apps that miss it, or replace a different one. You review each file first; values are copied as they are, and references stay references.</p>
+        <ul class="srvs" id="hmList">${rows}</ul>`;
+  }
+  async function copyGlobal(name){
+    const it=hm&&hm.items.find(x=>x.name===name);if(!it||!it.from.length||!X.bridge.mcpGlobalCopyPreview)return;
+    const pick=d=>{const f=d.querySelector('#hmFrom').value;d.querySelectorAll('[name=gApp]').forEach(x=>{const own=x.value===f;x.disabled=own;if(own)x.checked=false;});};
+    const r=await dialog({title:'Copy "'+name+'"',html:`<label class="hmfrom">From the list of <select id="hmFrom">${it.from.map(a=>`<option value="${a}">${esc(APPN[a])}</option>`).join('')}</select></label>
+      <p class="dsub">To:</p><div class="gapps" role="group" aria-label="Copy to">${hm.apps.map(a=>`<label><input type="checkbox" name="gApp" value="${a}"${it.missing.includes(a)?' checked':''}> ${esc(APPN[a])}${it.in.includes(a)?' <small>(has a different one: replace it in the review)</small>':''}</label>`).join('')}</div>`,
+      buttons:[{label:'Cancel',value:null},{label:'Review…',value:'ok',cls:'primary'}],
+      onOpen:d=>{pick(d);d.querySelector('#hmFrom').onchange=()=>pick(d);},
+      validate:d=>pickedApps(d).length?'':'Pick at least one agent app to copy to.'});
+    if(!r)return;
+    await reviewGlobal('add',await X.bridge.mcpGlobalCopyPreview(name,r.root.querySelector('#hmFrom').value,pickedApps(r.root)),'copy');
   }
   /* which agent apps to offer (spec 069 FR-007): installed ones ticked; one installed: a single choice */
   async function appChoices(){
@@ -405,8 +430,9 @@
     const intro=kind==='add'?`<p class="dsub"><b>This changes your agent apps' own settings</b> for every folder: they will run this server with your user rights, also outside Agent Durbar. Each file is backed up next to it first; nothing else in it changes.</p>`
       :`<p class="dsub">This removes <b>${esc(what)}</b> from these files, for every folder, also outside Agent Durbar. Each file is backed up next to it first.</p>`;
     const vars=pv.vars&&pv.vars.length?`<p class="dsub" role="note">The files name environment variables instead of holding the values. Set <b>${pv.vars.map(esc).join(', ')}</b> in your environment before the agent apps start.</p>`:'';
+    const copy=what==='copy'?'<p class="dsub" role="note">Values are copied as they are in the source list: references stay references, and a value written there in plain text is written in plain text here too (masked below).</p>':'';
     const plain=kind==='add'&&what==='plain'?'<p class="scr-warn" role="note"><b>The values are written in plain text.</b> Each agent app keeps them in its own config file; any program running as you can read them.</p>':'';
-    const r=await dialog({title:kind==='add'?'Review: add to your agent apps':'Review: remove from your agent apps',wide:true,cls:'gpvd',html:intro+vars+plain+`<ul class="gpvl">${items}</ul>`,
+    const r=await dialog({title:kind==='add'?'Review: add to your agent apps':'Review: remove from your agent apps',wide:true,cls:'gpvd',html:intro+vars+copy+plain+`<ul class="gpvl">${items}</ul>`,
       buttons:writable.length?[{label:'Cancel',value:null},{label:kind==='add'?'Write to '+(writable.length===1?'1 file':writable.length+' files'):'Remove from '+(writable.length===1?'1 file':writable.length+' files'),value:'ok',cls:'primary warn'}]:[{label:'Close',value:null,cls:'primary'}]});
     if(!r)return false;
     const rep=[...r.root.querySelectorAll('[data-rep]:checked')].map(x=>x.dataset.rep);
@@ -531,6 +557,7 @@
     if(e.target.closest('#globAdd')){editServer(null,null,{global:true});return;}
     const ga=e.target.closest('[data-act=grm],[data-act=gcl]');
     if(ga&&ga.dataset.act==='grm'){removeGlobal(ga.dataset.g);return;}
+    const hc=e.target.closest('[data-act=hcopy]');if(hc){copyGlobal(hc.dataset.g);return;}
     if(ga&&ga.dataset.act==='gcl'&&X.bridge.mcpGlobalSetOff){const on=ga.getAttribute('aria-checked')!=='true';await X.bridge.mcpGlobalSetOff('claude',ga.dataset.g,!on);X.toast(esc(ga.dataset.g)+(on?' will start in new Claude Code sessions.':' will not start in new Claude Code sessions.'),3200);paintSettings();return;}
     const li=e.target.closest('li.srv');if(!li||!li.dataset.amb)return;
     const act=(e.target.closest('[data-act]')||{}).dataset;

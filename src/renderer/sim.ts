@@ -802,6 +802,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       claude: [
         { name: 'github', transport: 'stdio', command: 'npx', args: ['-y', '@example/github-mcp'], envKeys: [], headerKeys: [] },
         { name: 'sentry', transport: 'http', url: 'https://mcp.sentry.example/mcp', envKeys: [], headerKeys: ['Authorization'], refs: true },
+        { name: 'my-notes', transport: 'stdio', command: 'node', args: ['/home/vikram/tools/notes-mcp-v1.js'], envKeys: [], headerKeys: [] },
       ],
       codex: [{ name: 'context7', transport: 'stdio', command: 'npx', args: ['-y', '@upstash/context7-mcp'], envKeys: [], headerKeys: [] }],
     };
@@ -874,6 +875,39 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           return { app, file: G_FILE[app], ok: true, backup: G_FILE[app].split('/').pop() + '.durbar-20261021T210600Z.bak' };
         });
         return { ok: items.some((x) => x.ok), items };
+      },
+      mcpGlobalDiff: async () => {
+        const names: string[] = [];
+        for (const a of G_APPS) for (const v of gLists[a]) if (!names.includes(v.name)) names.push(v.name);
+        const key = (v: GView) => JSON.stringify([v.transport, v.command ?? '', v.args ?? [], v.url ?? '', [...v.envKeys].sort(), [...v.headerKeys].sort()]);
+        const items = names.map((name) => {
+          const inApps = G_APPS.filter((a) => gLists[a].some((x) => x.name === name));
+          const vs = inApps.map((a) => gLists[a].find((x) => x.name === name) as GView);
+          const differs: string[] = [];
+          if (vs.some((v) => key(v) !== key(vs[0]))) {
+            if (vs.some((v) => (v.command ?? '') !== (vs[0].command ?? ''))) differs.push('command');
+            if (vs.some((v) => JSON.stringify(v.args ?? []) !== JSON.stringify(vs[0].args ?? []))) differs.push('arguments');
+            if (vs.some((v) => (v.url ?? '') !== (vs[0].url ?? ''))) differs.push('URL');
+            if (!differs.length) differs.push('environment variables');
+          }
+          return { name, in: inApps, missing: G_APPS.filter((a) => !inApps.includes(a)), differs, from: inApps };
+        }).filter((i) => i.missing.length || i.differs.length);
+        return { ok: true, apps: [...G_APPS], items };
+      },
+      mcpGlobalCopyPreview: async (name, from, to) => {
+        const v = gLists[from]?.find((x) => x.name === name);
+        if (!v) return { ok: false, error: `"${name}" is not in ${G_LABEL[from]}'s list any more.`, items: [] };
+        const list = gApps(to).filter((a) => a !== from);
+        if (!list.length) return { ok: false, error: 'Pick at least one agent app to copy to.', items: [] };
+        const i: McpServerInput = { name, transport: v.transport === 'other' ? 'stdio' : v.transport, command: v.command, args: v.args, url: v.url, env: v.envKeys.map((key) => ({ key })), headers: v.headerKeys.map((key) => ({ key })) };
+        const token = 'sim-' + ++gSeq;
+        gPending.set(token, { kind: 'add', apps: list, view: { ...v }, name });
+        const mode = v.refs ? 'ref' : 'plain';
+        const vars = v.refs ? [...v.envKeys, ...v.headerKeys.map((h) => h.toUpperCase().replace(/[^A-Z0-9_]/g, '_'))] : [];
+        return { ok: true, token, ...(vars.length ? { vars } : {}), items: list.map((app) => {
+          const cur = gLists[app].find((x) => x.name === name);
+          return { app, label: G_LABEL[app], file: G_FILE[app], exists: true, entry: gEntry(app, i, mode), ...(cur ? { conflict: true, current: { ...cur } } : {}) };
+        }) };
       },
       mcpGlobalSetOff: async (app, name, off) => {
         if (app !== 'claude') return { ok: false };
