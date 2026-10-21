@@ -269,8 +269,8 @@ body.has-bridge #topBtns{display:flex}
 .dlg.fs .fs-hidden{display:block;font-size:11px;color:var(--amber-ink);font-weight:600}
 .dlg.fs .fs-cmd{max-height:12em}
 .dlg.fs .fs-more{display:block;font-size:11px;color:var(--ink-2);font-style:italic}
-.dlg.fs .mtag.fs-allow{background:#eaf4ee;border-color:#c5dccd;color:var(--green-ink,#2f6b47)}
-.dlg.fs .mtag.fs-deny{background:#fbe7e4;border-color:#efc2bb;color:#9a2f22}
+.dlg.fs .mtag.fs-allow{background:color-mix(in srgb,var(--sage) 14%,var(--surface));border-color:var(--line-2);color:var(--ink)}
+.dlg.fs .mtag.fs-deny{background:color-mix(in srgb,var(--red) 14%,var(--surface));border-color:var(--line-2);color:var(--ink)}
 .dlg.fs .mtag.warn,.dlg.fs .mtag.new{background:var(--warn-bg);border-color:#e5be78;color:var(--amber-ink)}
 .dlg.fs .fs-ai{margin:0 0 8px 34px;font-size:12px;line-height:1.45}
 .dlg.fs .fs-ai:empty{display:none}
