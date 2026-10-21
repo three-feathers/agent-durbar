@@ -326,6 +326,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .ph-meta{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;min-width:0}
 .folder{display:inline-flex;align-items:center;gap:4px;height:var(--h-chip);font-size:var(--t4-size);color:var(--ink-2);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:0 8px} /* spec 052 FR-076: a path chip, not a pill */
 .folder{max-width:100%;min-width:0}
+.folder .fst{color:var(--muted);white-space:nowrap;flex:none} /* spec 063: branch and changed files */
+.folder[role=button]{cursor:pointer}.folder[role=button]:hover{border-color:var(--line-2)}.folder[role=button]:focus-visible{outline:2px solid var(--focus,#2f6fde);outline-offset:1px}
 .folder-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .close{position:absolute;right:12px;top:12px;width:var(--h-ctl);height:var(--h-ctl);border-radius:var(--r-md);border:1px solid transparent;background:transparent;cursor:pointer;display:grid;place-items:center;color:var(--ink-2)}
 .close:hover{background:var(--surface-2);border-color:var(--line)}
@@ -1004,6 +1006,14 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .mode-menu [aria-disabled="true"]{opacity:1;color:var(--muted);border-style:dashed;cursor:not-allowed}
 .mm-note{margin:4px 10px 4px;font-size:11px;color:var(--muted)}
 .dlg .chk{flex-direction:row;align-items:center;gap:8px;font-weight:500}
+/* spec 064: a pick list in the shared dialog (each line: checkbox, label, a muted reason when it cannot be picked) */
+.dlg .dinput textarea{min-height:84px;max-height:30vh;resize:vertical;border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:8px 10px;font:inherit;font-size:13px;color:var(--ink)}
+.dlg .dpicks{border:0;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:2px;max-height:38vh;overflow:auto}
+.dlg .dpick{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;text-align:left;font-weight:500;gap:8px;padding:4px 2px;font-size:12.5px;color:var(--ink);cursor:pointer;min-width:0}
+.dlg .dpick .dpick-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1 1 auto}
+.dlg .dpick small{color:var(--muted);font-size:11px;flex:none}
+.dlg .dpick.is-off{cursor:default;color:var(--muted)}
+.dlg .btn:disabled{opacity:.55;cursor:default}
 .btn.primary.warn{background:var(--warn-bg);border-color:#e5be78;color:var(--amber-ink)}
 .btn.primary.warn:hover{background:#faecc9}
 /* spec 052 FR-076: red means it deletes or ends (End session, Remove, Delete floor, Clear); amber .primary.warn only grants more power (Allow all, Turn on remote) */
