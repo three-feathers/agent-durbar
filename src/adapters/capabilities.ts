@@ -39,6 +39,8 @@ export interface AdapterCapabilities {
   readonly oneShot?: boolean;
   /** `setRemote()` exists: the session can be followed and steered from the vendor's web or mobile app (spec 054 FR-001); missing = false. */
   readonly remote?: boolean;
+  /** Spec 066: plan first: the app's own plan mode (nothing runs while planning), answered with `resolvePlan`; missing = false. */
+  readonly planMode?: boolean;
   /** `deleteSession()` exists: one earlier session can be removed through the vendor's own API, never by deleting files (spec 006 FR-028); missing = false. */
   readonly deleteSession?: boolean;
   /** Spec 054 FR-060: the service a session is controlled from when `remote` is on: its name, the only host its links may use, and its phone app. */
