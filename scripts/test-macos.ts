@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { MenuItemConstructorOptions } from 'electron';
-import { HELP_LINK_LABEL, SETTINGS_ACCELERATOR, appMenuTemplate, disposeOnQuit, hideOnClose, windowChrome } from '../src/main/appmenu';
+import { HELP_LINK_LABEL, MENU_APP_NAME, SETTINGS_ACCELERATOR, appMenuTemplate, disposeOnQuit, hideOnClose, windowChrome } from '../src/main/appmenu';
 import { shouldBounce, shouldFlash } from '../src/main/badge';
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -72,6 +72,13 @@ const help = all.find((m) => m.label === HELP_LINK_LABEL) as MenuItemConstructor
 (help.click as () => void)();
 assert.deepStrictEqual([settings, repo], [1, 1], 'the menu items call their actions');
 assert.ok(roles.includes('quit') && roles.includes('about'), 'About and Quit in the app menu');
+{
+  const appItems = ((mac[0].submenu ?? []) as MenuItemConstructorOptions[]);
+  const labelOf = (role: string) => appItems.find((m) => m.role === role)?.label;
+  assert.strictEqual(labelOf('about'), 'About Agent Durbar');
+  assert.strictEqual(labelOf('hide'), 'Hide Agent Durbar');
+  assert.strictEqual(labelOf('quit'), 'Quit Agent Durbar');
+}
 
 // ---- FR-085: window ----
 assert.ok(hideOnClose('darwin', false) && !hideOnClose('darwin', true), 'Mac: close hides unless quitting');

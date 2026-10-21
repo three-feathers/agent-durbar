@@ -15,6 +15,8 @@ export interface MenuActions {
 }
 
 export const SETTINGS_ACCELERATOR = 'CommandOrControl+,';
+/** Display name in the Mac app menu (spec 008 FR-033). Display only; never pass to app.setName (Keychain, libsecret). Equals `build.productName` (test:profiledir); the run-time identity `app.getName()` stays `agent-durbar` on purpose. */
+export const MENU_APP_NAME = 'Agent Durbar';
 export const HELP_LINK_LABEL = 'Agent Durbar on GitHub';
 
 export function appMenuTemplate(platform: NodeJS.Platform, actions: MenuActions): MenuItemConstructorOptions[] | null {
@@ -23,17 +25,17 @@ export function appMenuTemplate(platform: NodeJS.Platform, actions: MenuActions)
     {
       role: 'appMenu',
       submenu: [
-        { role: 'about' },
+        { role: 'about', label: `About ${MENU_APP_NAME}` },
         { type: 'separator' },
         { label: 'Settings…', accelerator: SETTINGS_ACCELERATOR, click: () => actions.openSettings() },
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
-        { role: 'hide' },
+        { role: 'hide', label: `Hide ${MENU_APP_NAME}` },
         { role: 'hideOthers' },
         { role: 'unhide' },
         { type: 'separator' },
-        { role: 'quit' },
+        { role: 'quit', label: `Quit ${MENU_APP_NAME}` },
       ],
     },
     { role: 'editMenu' },
