@@ -591,6 +591,56 @@ async function main(): Promise<void> {
     await ad.stop(sid);
   }
 
+  // ---- MCP sign-in challenge (spec 058 T096): a failed MCP tool result with the challenge -> mcpAuth and one mcp_status at a time ----
+  {
+    const sp = fakeSpawn();
+    let statusCalls = 0;
+    let hold: (() => void) | undefined;
+    const servers = [{ name: 'notes', status: 'needs-auth' }];
+    sp.next = (c) => {
+      c.onWrite = (o) => {
+        if (o.type === 'control_request') {
+          const r = o.request as { subtype: string };
+          if (r.subtype !== 'mcp_status') return void setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response: {} } }), 0);
+          statusCalls++;
+          const answer = (): void => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response: { mcpServers: servers } } });
+          if (statusCalls === 1) hold = answer; // the first stays in flight until released
+          else setTimeout(answer, 0);
+          return;
+        }
+        if (o.type !== 'user') return;
+        const fail = (id: string, name: string, text: string): void => {
+          c.send({ type: 'assistant', message: { id: `m-${id}`, content: [{ type: 'tool_use', id, name, input: {} }] } });
+          c.send({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: text, is_error: true }] } });
+        };
+        setTimeout(() => {
+          c.send({ type: 'system', subtype: 'init', session_id: 'x', cwd: WS, tools: [], mcp_servers: servers });
+          fail('a1', 'mcp__notes__q', 'MCP OAuth challenge required (HTTP 401)');
+          fail('a2', 'mcp__notes__q', 'MCP OAuth challenge required (HTTP 401)');
+          fail('a3', 'mcp__notes__q', 'plain failure'); // no challenge: no request
+          fail('a4', 'Bash', 'MCP OAuth challenge required (HTTP 401)'); // not an MCP tool
+          c.send({ type: 'result', subtype: 'success', is_error: false });
+        }, 0);
+      };
+    };
+    const ad = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const ev: AgentEvent[] = [];
+    ad.onEvent((e) => ev.push(e));
+    const sid = await ad.start({ workspace: WS, quiet: true });
+    await ad.send(sid, { text: 'go' });
+    await until('all four results', () => (ev.filter((e) => e.type === 'toolCall' && (e as { phase?: string }).phase === 'failed').length === 4 ? true : undefined));
+    await until('one request', () => (statusCalls === 1 ? true : undefined));
+    const auth = ev.filter((e) => e.type === 'toolCall' && (e as { mcpAuth?: boolean }).mcpAuth === true) as { callId: string; mcpServer?: string }[];
+    assert.deepStrictEqual(auth.map((e) => [e.callId, e.mcpServer]), [['a1', 'notes'], ['a2', 'notes']], 'mcpAuth only on the failed MCP calls with the challenge');
+    assert.strictEqual(statusCalls, 1, 'two failures while one request is in flight: one mcp_status');
+    const before = ev.filter((e) => e.type === 'mcp').length;
+    hold!();
+    await until('list', () => (ev.filter((e) => e.type === 'mcp').length > before ? true : undefined));
+    const last = [...ev].reverse().find((e) => e.type === 'mcp') as { servers: { name: string; status: string; errorClass?: string }[] };
+    assert.deepStrictEqual([last.servers[0].status, last.servers[0].errorClass], ['needs-auth', 'auth'], 'the refreshed list');
+    await ad.stop(sid);
+  }
+
   // ---- custom agents (spec 043 FR-008): chosen before the first message, passed on the first launch; a started session refuses ----
   {
     const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cagent-cfg-'));
