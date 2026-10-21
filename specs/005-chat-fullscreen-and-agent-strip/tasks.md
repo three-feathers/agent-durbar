@@ -20,3 +20,17 @@
 - [x] T024 Copy message / copy code buttons. [FR-015]
 - [x] T025 Automated overflow test for the chat view (same harness as feature 001 T020). [SC-001] (2026-10-19: the chat checks in `check:office`, #221)
 - [x] T026 Card menu Stop and End session for live main agents (interrupt / end, confirm End when busy, disabled Stop when the kind cannot interrupt), simulator and `check:office` at both sizes, docs (issue #251) [FR-017]
+
+## Delta 2026-10-21: readable JSON tool results and saved outputs (issue #361)
+
+One PR per line where possible; each with `npm run typecheck && npm run build && npm test`.
+
+- [ ] T037 Decoder `src/renderer/tooljson.js` (UMD) and `scripts/test-tool-json.ts` (`npm run test:tooljson`, added to `test:serial`): whole JSON, nested strings 1-3 levels and a 4th left as text, scalars in strings kept, cut and invalid JSON fall back, limits (1,000,000 in, 50,000 values, output cut) give "Too large to format", 200-level nesting, linear time from 20k to 200k characters including one long string, masking after decoding (a planted token in escaped and double-escaped JSON), no `redact` gives text, `sizeWords` [FR-027, FR-028, FR-029, FR-030]
+- [ ] T038 `src/adapters/savedoutput.ts` and `scripts/test-saved-output.ts` (`npm run test:savedoutput`, added to `test:serial`): both Copilot forms, the telemetry flag alone, Claude's two `<persisted-output>` forms, sizes "33.8 KB"/"49.4KB"/"1.2 MB"/missing, POSIX, macOS and Windows paths, a look-alike text without the runtime's file name, path never in the result's public part [FR-031]
+- [ ] T039 `ToolCallEvent.savedOutput` in `src/adapters/types.ts`, the event guard, the Copilot mapper (`map.ts`) and Claude mapper (`claudeMap.ts`, before `cap()`); fixture tests in `test:events` and `test:claudeadapter` [FR-031]
+- [ ] T040 Chip: formatted block, Show raw/Show formatted, Copy, decoded-count line, closed-chip "JSON · size", saved line and preview, Simple without raw; `styles.css` [FR-027, FR-029, FR-032]
+- [ ] T041 Simulator: one nested-JSON MCP result (with a fake token) and one saved output, made-up data; `test:simevents` stays green [FR-034]
+- [ ] T042 Driver `scripts/shots-005-tooljson.js` on `scripts/driver-helpers.js`, in `scripts/ui-suite.js`; screenshots at 1440x900 and 1280x800, Expert and Simple [FR-034]
+- [ ] T043 Permission hint: `PermissionInfo.savedOutput`, set by the Copilot adapter from the mapper's remembered file names; the card, inbox row and refusal note line; unit test in `test:permissions`, driver case in T042 [FR-033]
+- [ ] T044 Docs: README feature line and known limit (real wording unverified), CHANGELOG *Unreleased*, `specs/README.md` row 005, FR tags to `[IMPLEMENTED]` [FR-034]
+- [ ] T045 Real check, **only with the owner's approval and a stated cost**: one Copilot and one Claude Code tool call with a large output, to confirm the event text or telemetry and the permission flow; record `real:` [FR-031, FR-033]
