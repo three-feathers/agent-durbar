@@ -65,7 +65,7 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggle: true, // FR-147: from the next message (fresh child, same thread)
   mcpStart: 'session', // spec 058 FR-010
   mcpToggleApplies: 'next-message', // FR-147
-  mcpToolFilter: true, // spec 069 FR-062: config.mcp_servers.<name>.disabled_tools (read: CLI strings; not run on a real account)
+  mcpToolFilter: true, // spec 069 FR-062: config.mcp_servers.<name>.disabled_tools (real: codex-cli 0.163.0 hides the tool, T060)
   mcpTools: true, // spec 069 FR-031: mcpServerStatus/list with serverName, the tools map (read: generated app-server schema, codex-cli 0.163.0; not run on a real account)
   mcpRestart: false, // spec 058 FR-012 (Q8): no per-server restart; Restart session with these servers instead
   handoff: true, // spec 030 FR-034: an ephemeral fork, the thread is not changed

@@ -229,7 +229,10 @@ VS Code UI supports, as some people may want to give access to read email but no
     `read:` CLI docs and `claudeMap.ts`), added to the mode's own list;
   - Codex: `config.mcp_servers.<server>.disabled_tools = [...]` on thread start/resume (`read:` codex-cli 0.163.0 strings: the
     `codex mcp get` printout lists `disabled_tools`), merged with Durbar's own entry or as an override of the user's server (as
-    `enabled = false` already is, spec 012 FR-147).
+    `enabled = false` already is, spec 012 FR-147). `real:` 2026-10-22, codex-cli 0.163.0, spec 069 T060 scratch home, 0 credits:
+    with `-c 'mcp_servers.durbar-demo.disabled_tools=["echo"]'`, `codex app-server` `mcpServerStatus/list` listed only `secret_env`
+    of the demo server's two tools (`echo` hidden), `codex mcp get` shows `disabled_tools: echo`, and a string instead of an array is
+    refused at load. The same key in thread/start `config` (what Durbar sends) was not run.
   A change applies to **new sessions and after Restart session with these servers**; the expanded list says so. No app is known to switch
   one tool live, so none is claimed.
 - **FR-063** `[IMPLEMENTED]` **Defence in depth**: each adapter's permission broker refuses an MCP request for a turned-off tool (server and tool name, or

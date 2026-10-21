@@ -28,8 +28,8 @@ export function codexMcpConfig(servers: Readonly<Record<string, McpServerSpec>> 
     }
   }
   for (const name of disabled) if (NAME.test(name)) out[name] = { ...(out[name] ?? {}), enabled: false };
-  // spec 069 FR-062: single tools turned off in Durbar, for Durbar's own servers and as an override of the user's (read: codex-cli 0.163.0
-  // strings: `disabled_tools` in the `codex mcp get` printout; not run on a real account)
+  // spec 069 FR-062: single tools turned off in Durbar, for Durbar's own servers and as an override of the user's (real: codex-cli 0.163.0,
+  // 2026-10-22: a `-c` override of `disabled_tools` hides the tool in `mcpServerStatus/list`; this thread/start path not run)
   for (const [name, tools] of Object.entries(toolsOff)) {
     const list = (tools ?? []).filter((t) => typeof t === 'string' && t).slice(0, 500);
     if (NAME.test(name) && list.length) out[name] = { ...(out[name] ?? {}), disabled_tools: list };
