@@ -8,7 +8,7 @@
    - Codex: `.codex/config.toml` (`[mcp_servers.<name>]`: command, args, url, env names), `.codex/hooks.json` (listed, marked unsupported);
    - Copilot: `.github/hooks/*.json` and `hooks` in `.github/copilot/settings.json`; `.mcp.json` is shared.
 
-   One digest per item: sha256 of app, kind and its canonical content. Every shown string goes through `maskSecretCommand`/`maskSecretArgs`/`maskSecretUrl`; env and header values are never shown or kept (names only).
+   One digest per item: sha256 of app, kind and its canonical content. Every shown string goes through `shownCommand` (real token shapes only; review #424); env and header values are never shown or kept (names only), and an MCP server that hands them to a shell or an inline-code interpreter starts unticked.
 5. **Decisions store** `src/main/foldersetupstore.ts` (`folder-setup.json` in userData): per folder key, accepted and declined digests. Paths and digests only, no file content (constitution III).
 6. **Apply** (main builds `StartOptions.folderSetup` for the adapter's app; adapters map it):
    - `hooks: {event, matcher?, command}[]` and `rules: {allow, deny, ask}` (Claude) become Claude's composed `--settings`;
