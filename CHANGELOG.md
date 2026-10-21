@@ -2,7 +2,9 @@
 
 Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on Linux (see "Honest limits"). Each entry names the spec that describes the behavior and how it was checked.
 
-## Unreleased (on `main`, after the alpha.9 tag)
+## Unreleased (on `main`, after the alpha.10 tag)
+
+## v0.1.0-alpha.10 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.10), 2026-10-21)
 
 - Agent apps installed with nvm, fnm, Volta, asdf, mise or Linuxbrew are now found, also when Durbar is opened from Finder or a desktop menu (the login shell's `PATH` is read once); Settings > Agent apps says where each was found (spec 060 FR-003).
 - `npm run check:office` no longer fails at random with "a walking figure is not on a slot": it waits (up to 3 s) for a figure that is still walking and fails only if it never arrives (spec 024, #406).
