@@ -526,7 +526,50 @@ const DENS={
   micro:{cw:190,gap:5,rp:8}
 };
 /* Layout candidates, richest first: [density, helpers shown before "+N more"]. The first one that fits wins. */
-const CANDIDATES=[['full',3],['full',2],['roomy',3],['card',3],['card',1],['mini',3],['mini',1],['micro',3],['micro',1]];
+/* spec 001 FR-029: `full` with a live-activity side panel next to each main desk comes first; it wins only when it fits (and the setting is on) */
+const CANDIDATES=[['full',3,'side'],['full',2,'side'],['full',3],['full',2],['roomy',3],['card',3],['card',1],['mini',3],['mini',1],['micro',3],['micro',1]];
+/* ---- spec 001 FR-028..FR-032: live activity on the desks. The readout comes from the main agent's own normalized events (liveact.js),
+   masked through src/shared/redact.ts (window.DurbarRedact; without it the feature stays off: fail closed). With room to spare, a fixed
+   side panel next to each main desk (a layout candidate, so it is used only when it fits); else the desk's text line under the name.
+   Painted by textContent at most 4 times a second, never by a re-layout. ---- */
+let LIVE_SIDE=false; const SIDE_W=196, SIDE_GAP=8;
+let LIVE_PREF=(()=>{try{return localStorage.getItem('durbar.liveActivity')!=='off';}catch(e){return true;}})();
+const LIVEACT=(()=>{const L=window.DurbarLiveAct,R=window.DurbarRedact;if(!L||!R||typeof R.redact!=='function')return null;
+  return L.create({mask:{redact:t=>R.redact(t),cmd:t=>R.maskSecretCommand(t),url:t=>R.maskSecretUrl(t)}});})();
+const liveOn=()=>!!LIVEACT&&LIVE_PREF;
+function setLiveOn(on){LIVE_PREF=!!on;try{localStorage.setItem('durbar.liveActivity',LIVE_PREF?'on':'off');}catch(e){}scheduleRender();}
+/* the readout to show now, or null: a live main agent that is Working or Thinking (Waiting, Error, Done and Idle keep their own text) */
+const liveShown=a=>liveOn()&&a&&!a.parent&&a.live&&!a.paused&&(a.state==='working'||a.state==='thinking')?LIVEACT.of(a.id):null;
+const deskLine=a=>{const r=LIVE_SIDE?null:liveShown(a);return r?r.text:taskOf(a);};
+const liveAttrs=a=>{if(a.parent)return '';const r=LIVE_SIDE?null:liveShown(a);return ` data-live="${esc(a.id)}"${r?` data-lk="${r.kind}"`:''}`;};
+function sideHTML(a){
+  const r=liveShown(a);
+  return `<div class="liveside${r?'':' is-empty'}" data-key="side:${esc(a.id)}" data-side="${esc(a.id)}"${r?` data-lk="${r.kind}"`:''} aria-hidden="true"><span class="ls-k">${r?esc(window.DurbarLiveAct.KIND_WORD[r.kind]||''):''}</span><span class="ls-t">${r?esc(r.lines):''}</span></div>`;
+}
+function paintLive(a){
+  const st=$('stage'); if(!st)return;
+  const id=CSS.escape(a.id), r=liveShown(a);
+  st.querySelectorAll(`[data-live="${id}"]`).forEach(el=>{const t=deskLine(a);if(el.textContent!==t)el.textContent=t;const k=LIVE_SIDE||!r?'':r.kind;if((el.dataset.lk||'')!==k){if(k)el.dataset.lk=k;else delete el.dataset.lk;}});
+  const sp=st.querySelector(`[data-side="${id}"]`);
+  if(sp){const k=r?r.kind:'',w=r?window.DurbarLiveAct.KIND_WORD[k]||'':'',t=r?r.lines:'';
+    sp.classList.toggle('is-empty',!r);if((sp.dataset.lk||'')!==k){if(k)sp.dataset.lk=k;else delete sp.dataset.lk;}
+    const kw=sp.querySelector('.ls-k'),tx=sp.querySelector('.ls-t');if(kw&&kw.textContent!==w)kw.textContent=w;if(tx&&tx.textContent!==t){tx.textContent=t;fitSide(tx);}}
+}
+/* text taller than the panel keeps its newest lines in view (bottom-anchored, the top fades): measured, so any font works */
+function fitSide(tx){tx.classList.remove('over');if(tx.scrollHeight>tx.clientHeight+1)tx.classList.add('over');}
+const liveTimers=new Map();
+function livePaintSoon(a){
+  if(liveTimers.has(a.id))return; /* a trailing paint is already due: it reads the newest text */
+  const now=performance.now();
+  if(LIVEACT.due(a.id,now)){paintLive(a);return;}
+  liveTimers.set(a.id,setTimeout(()=>{liveTimers.delete(a.id);LIVEACT.mark(a.id,performance.now());paintLive(a);},LIVEACT.wait(a.id,now)));
+}
+function liveFeed(a,e){
+  if(!liveOn()||a.parent||e.agentId)return;
+  let x;
+  if(e.type==='toolCall'&&e.phase==='start'){const k=toolKind(e.tool),l=toolLabel(e.args);x={kind:k,label:l,simple:SIMPLE?plainChip(k,e.tool,l,true):'',skip:isTaskTool(e.tool)};}
+  if(LIVEACT.onEvent(a.id,e,x))livePaintSoon(a);
+}
 let HCAP=1; /* helpers shown on a compact strip before "+N more" (a layout parameter, chosen with the density) */
 let HBOOST=new Map(); /* agent id -> helpers shown, for agents that get more than HCAP because the floor has room left over (see chooseLayout) */
 const helperCap=(d,a)=>(a&&HBOOST.get(a.id))||HCAP;
@@ -559,7 +602,7 @@ function cardHTML(a,d,nSubs){
   const st=vis(a), use=usageShort(a);
   return `<button class="desk card is-${st}${isFailing(a)?' is-failing':''}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${esc((a.profile?a.profile.name+' · '+a.role:a.role)+kindTag(a)+remoteTag(a))} · ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${sceneC(a)}</span>
-    <span class="ci"><span class="l1"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span><span class="stl st-${pillSt(a)}">${esc(stWord(a,true))}</span></span>    <span class="intent" title="${esc(taskOf(a))}">${esc(taskOf(a))}</span>
+    <span class="ci"><span class="l1"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span><span class="stl st-${pillSt(a)}">${esc(stWord(a,true))}</span></span>    <span class="intent"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</span>
     <span class="l3"><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a,true))}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${useCost(use.split(' · ')[1])}</span>`:`<span class="tok">${esc(use.split(' · ')[0]||'')}</span>${use.includes(' · ')?`<span class="aiu"><span class="sep">&nbsp;· </span>${useCost(use.split(' · ')[1])}</span>`:''}`}</span></span></span></button>`;
 }
 function linksSVG(d,rows,extraMore){
@@ -587,10 +630,11 @@ function unitHTML(a,d){
     desk=`<button class="desk is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}"${lastTip(a)?` title="${esc(lastTip(a).slice(3))}"`:''} aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
       ${scene(a,false)}<span class="badge ${st}">${badgeSVG(st)}</span>
       <div class="info"><div class="who"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span></div>
-      <p class="task" title="${esc(taskOf(a))}">${esc(taskOf(a))}</p><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}${pillWarn(a)}</span></div></button>`;  } else desk=cardHTML(a,d,nSubs);
+      <p class="task"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</p><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}${pillWarn(a)}</span></div></button>`;    if(LIVE_SIDE)desk+=sideHTML(a);
+  } else desk=cardHTML(a,d,nSubs);
   return `<div class="unit${nSubs?' has-h':''}" data-key="unit:${esc(a.id)}">${desk}${helpers}</div>`;
 }
-const unitWidth=(a,d)=>{const D=DENS[d];return D.cw+(helpersOf(a).length?(d==='full'?D.hw+14+8:D.hw+18):0);};
+const unitWidth=(a,d)=>{const D=DENS[d];return D.cw+(d==='full'&&LIVE_SIDE?SIDE_W+SIDE_GAP+(helpersOf(a).length?2:0):0)+(helpersOf(a).length?(d==='full'?D.hw+14+8:D.hw+18):0);};
 function officeModel(ignoreStatus){
   const rooms=[];
   roomsInOrder().forEach(r=>{
@@ -772,12 +816,13 @@ function chooseLayout(sizing,aw,ah){
   const fits=()=>probe.scrollHeight<=ah+1&&probe.scrollWidth<=aw+1;
   const cands=FORCE_DENSITY?CANDIDATES.filter(c=>c[0]===FORCE_DENSITY):CANDIDATES;
   let res=null, lastAny=null;
-  for(const [d,hcap] of cands){
-    HCAP=hcap; HBOOST=new Map(); probe.dataset.d=d; probe.style.height='auto';
+  for(const [d,hcap,side] of cands){
+    if(side&&!liveOn())continue;
+    HCAP=hcap; HBOOST=new Map(); LIVE_SIDE=!!side; probe.dataset.d=d; probe.style.height='auto';
     if(d==='full'){
       probe.innerHTML=stageHTML(sizing,d,aw);
-      if(fits()){res={d,hcap,cap:0,fit:true,boost:[]};break;}
-      lastAny={d,hcap,cap:0,fit:false,boost:[]};continue;
+      if(fits()){res={d,hcap,cap:0,fit:true,boost:[],side:!!side};break;}
+      lastAny={d,hcap,cap:0,fit:false,boost:[],side:!!side};continue;
     }
     const D=DENS[d], over=2*D.rp+4;
     const maxCap=Math.max(1,Math.min(Math.max(...openOnly.map(m=>m.mains.length)),Math.floor((aw-over+D.gap)/(D.cw+D.gap))));
@@ -801,14 +846,14 @@ function chooseLayout(sizing,aw,ah){
   if(res&&res.fit){
     const up={1:3,2:3,3:6}[res.hcap]||res.hcap;
     const many=openOnly.flatMap(m=>m.mains).filter(a=>helpersOf(a).length>res.hcap+1).sort((x,y)=>Math.min(prio(x),...helpersOf(x).map(prio))-Math.min(prio(y),...helpersOf(y).map(prio))||helpersOf(y).length-helpersOf(x).length);
-    HCAP=res.hcap; probe.dataset.d=res.d;
+    HCAP=res.hcap; LIVE_SIDE=!!res.side; probe.dataset.d=res.d;
     for(const a of many){
       HBOOST.set(a.id,up); probe.style.height='auto';
       probe.innerHTML=stageHTML(sizing,res.d,aw,res.cap);
       if(fits())res.boost.push([a.id,up]); else HBOOST.delete(a.id);
     }
   }
-  probe.innerHTML='';
+  probe.innerHTML=''; LIVE_SIDE=false;
   return res||lastAny;
 }
 let layoutKey='', layout=null;
@@ -859,16 +904,17 @@ function renderOffice(){
   }
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
   const sizing=ui.status?officeModel(true):model;
-  const key=JSON.stringify([aw,ah,FORCE_DENSITY,lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]])])]);
+  const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]])])]);
   if(key!==layoutKey||!layout){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
-  HCAP=layout.hcap; HBOOST=new Map(layout.boost);
+  HCAP=layout.hcap; HBOOST=new Map(layout.boost); LIVE_SIDE=!!layout.side;
   const parts=stageParts(model,layout.d,aw,layout.cap);
   const fresh=stage.dataset.d!==layout.d||!!stage.querySelector('.empty');
   stage.style.width=aw+'px'; stage.style.height='auto'; stage.dataset.d=layout.d;
   if(fresh)stage.innerHTML=parts.join(''); else if(!morphParts(stage,parts))morphHTML(stage,parts.join(''));
   stagePrev=parts;
-  stage.dataset.fit=layout.fit?'ok':'scroll'; stage.dataset.h=String(layout.hcap);
+  stage.dataset.fit=layout.fit?'ok':'scroll'; stage.dataset.h=String(layout.hcap); stage.dataset.side=layout.side?'1':'0';
   fitUsage(stage);
+  if(layout.side)stage.querySelectorAll('.liveside .ls-t').forEach(fitSide);
   floor.classList.toggle('scrolls',!layout.fit);
   if(doorAnim){const el=stage.querySelector(`[data-door="${CSS.escape(doorAnim)}"]`),box=el&&(el.closest('.room')||el);if(box&&!REDUCED){box.classList.add('enter');setTimeout(()=>box.classList.remove('enter'),420);}doorAnim=null;}
 }
@@ -2893,6 +2939,7 @@ function onLiveEvent(e){
   if(e.type==='permission'&&e.permission&&e.permission.via==='policy')return; /* spec 052 FR-071: an Allow all approval is for the activity log in main, no card */
   a.lastEventAt=Date.now(); /* spec 052 FR-062: last activity (when it arrived here; a helper's event counts for its main agent) */
   feedStats(a,e);
+  liveFeed(a,e); /* spec 001 FR-028 */
   if(!e.agentId){ /* spec 034: only main-agent events change the mood */
     if(e.type==='toolCall')MOOD.onTool(a.id,e);
     else if(e.type==='status'){MOOD.onStatus(a.id,e.status);if(e.permission)MOOD.onPermission(a.id,e.permission,e.timestamp);} /* a pending request arrives inside a needs-permission status */
@@ -2987,6 +3034,7 @@ async function sendLive(text,forId,opts){
   addUserMsg(chat,text||'(attachment)',atts);
   if(fromComposer){attached=[];renderAttached();attNotice([]);
     const input=$('msgInput');if(input){input.value='';autoGrow();}}
+  if(LIVEACT)LIVEACT.clear(a.id); /* spec 001 FR-028: a new message starts a fresh readout */
   a.worked=true; a.intent=''; closeTurn(a); ensureTurn(a); setState(a,'thinking',null,'Thinking');
   const planFirst=!!a.planNext&&!!(capsFor(a)&&capsFor(a).planMode); /* spec 066: one message only */
   if(a.planNext){a.planNext=false;renderAttached();}
@@ -4069,6 +4117,7 @@ async function removeSessionUi(a){
 }
 function removeLiveAgent(id){
   STATS.forget(id); MOOD.forget(id);
+  if(LIVEACT){LIVEACT.drop(id);clearTimeout(liveTimers.get(id));liveTimers.delete(id);} /* spec 001 FR-028 */
   VISITS.leave(id); dropWalker(id);
   for(let i=agents.length-1;i>=0;i--)if(agents[i].id===id||agents[i].parent===id){delete chats[agents[i].id];delete prev[agents[i].id];agents.splice(i,1);}
   if(ui.selected&&!byId(ui.selected))closePanel();
@@ -4409,7 +4458,7 @@ if(bridge){
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
   document.body.classList.toggle('simple',SIMPLE);
-  window.DurbarScreens.init({refreshKinds:()=>loadKinds(true),detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  window.DurbarScreens.init({refreshKinds:()=>loadKinds(true),detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,toast,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     previewTheme:(m)=>{swapView(()=>{THEME.setTheme(m);SC_CACHE.clear();renderAll();});}, /* spec 040 FR-014: Try it / Discard, nothing saved */

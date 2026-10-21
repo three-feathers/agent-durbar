@@ -73,3 +73,11 @@ specs/001-office-view-and-densities/
 | Chat open densities (README: `card` at 1440x900, `mini` at 1280x800) | README only | not re-run |
 | Keyed updates keep animations | README measurement | not re-run |
 | macOS and Windows rendering | none | untested |
+
+## Delta 2026-10-21: live activity on the desks (FR-028..FR-032)
+
+- **Reuse.** Events: the normalized `thinking`, `output` and `toolCall` events already reaching `onLiveEvent` in `src/renderer/app.js` (no adapter or `src/shared` type change). Desk text: the existing `.task` (`full`) and `.intent` (cards) line from `taskOf(a)`. Tool words: `toolKind`, `toolLabel` and, in Simple, `plainChip` (spec 052 FR-081). Cutting: `DurbarCutText.cutText`. Masking: `src/shared/redact.ts` (`redact`, `maskSecretCommand`, `maskSecretUrl`), loaded in the page as the compiled `dist/shared/redact.js` behind a two-line `exports` shim (`src/renderer/exports-shim.js`), because the module has no imports. Setting: the Spacing pattern (`localStorage`, Settings > General).
+- **New pure module** `src/renderer/liveact.js` (UMD like `cuttext.js`): `create()` keeps per agent `{kind, text, lines}` from events; `phrase()` builds tool phrases; `lastSentences()` picks the newest whole sentences; masking is injected (`{redact, cmd, url}`), so `scripts/test-liveact.ts` runs it in Node with the real `redact.ts`. A per-agent throttle (`due(id, now)`) allows one paint per 250 ms; a trailing timer paints the last text.
+- **Layout.** `CANDIDATES` gains `['full',3,'side']` and `['full',2,'side']` before the plain `full` ones; `LIVE_SIDE` is set while a candidate is probed, `unitHTML` adds a fixed `.liveside` box after the desk (before helpers) and `unitWidth` counts it, so the existing fit check (`chooseLayout`) decides. The layout key includes the setting.
+- **Paint.** The stage HTML renders the readout from the model; between renders `paintLive(a)` sets `textContent` of `[data-live="<id>"]` nodes only (no `scheduleRender`, no layout change).
+- **Risks.** Thinking text can be long and fast: the model keeps only the last 1200 characters of a block. A secret in reasoning text is masked by `redact` patterns only (env values are unknown in the page): `[KNOWN GAP]` same as the chat, which shows that text unmasked today.
