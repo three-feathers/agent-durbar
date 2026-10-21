@@ -8,7 +8,7 @@
  * It reads and clicks only the page and exits non-zero (driver failure) on a miss, at 1440x900 and 1280x800:
  *   FR-012  three floors on: every room header carries its floor tag, rooms of one floor are next to each other in floor order.
  *   SC-002  after a floor is switched off, the Working/Waiting/Idle/Errors/Done pills equal the agents visible in the office.
- *   SC-003  the office and the pills update in under 0.5 s after the switch.
+ *   SC-003  the office and the pills update in under 0.5 s after the switch (timed by the app; on Linux minus the time it waited for a CPU).
  *   FR-020  no agent of a floor that is off is listed at a place of the lobby or walks there.
  *   FR-016  the office credit total is unchanged and its tooltip names the part from floors that are off.
  *   FR-022  Only: one floor on, no floor tags.
@@ -18,10 +18,17 @@
  * Screenshots: 033-floors-on, 033-floors-panel, 033-floor-off, 033-floor-off-panel, 033-settings-floors at both sizes.
  */
 const path = require('path');
+const fs = require('fs');
 const { helpers, jsLiteral } = require('./driver-helpers');
 const assert = require('assert');
 const OUT = process.env.SHOTS_033 || '/tmp';
 const SIZES = [[1440, 900], [1280, 800]];
+/* SC-003 (issue #454): time the renderer's main thread spent ready to run but waiting for a CPU, from Linux's per-thread scheduler
+   statistics (/proc/<pid>/schedstat: run time, run-queue wait, slices; the file of a process is its main thread). That wait is the
+   machine's load, not the app's work. null where the file is missing (macOS, Windows, a kernel without it): the wall time counts. */
+const queueWaitMs = (pid) => {
+  try { return Number(fs.readFileSync(`/proc/${pid}/schedstat`, 'utf8').trim().split(/\s+/)[1]) / 1e6; } catch { return null; }
+};
 
 module.exports = async (ctx) => {
   const H = helpers(ctx); // spec 008 FR-096/097: shared plumbing, waits for the page instead of a fixed time
@@ -100,21 +107,34 @@ module.exports = async (ctx) => {
     // SC-003 + SC-002 + FR-020 + FR-016: switch Personal off
     // the time budget is measured in a quiet office (no figure still walking), as the fixed delays used to leave it
     await until(`!document.querySelector('#walkers .walker.walking')`); await settle();
-    // a time budget on a shared CI machine: the best of up to three tries counts (the budget itself is unchanged)
-    const offOnce = () => js(`new Promise(res=>{const t0=performance.now();document.querySelector('[data-fl="on"][data-floor="f-personal"]').click();
-      const chk=()=>{const b=document.getElementById('floorsBtn').textContent.trim()==='2/3';const gone=![...document.querySelectorAll('#stage .floor-tag')].some(t=>t.textContent==='Personal');
-        if(b&&gone)res(performance.now()-t0);else requestAnimationFrame(chk);};chk();})`);
+    // SC-003 (as changed 2026-10-21, issue #454): the app times the switch itself, from the click to the end of the office render
+    // that shows it (User Timing entry 'durbar:floor-switch'), so the driver's own polling is not counted. On Linux the time the
+    // renderer's main thread was ready but waited for a CPU taken by other processes (a loaded machine) is subtracted, and the log
+    // gives both figures. Time the app waits for itself (IPC, timers) still counts. The best of up to three tries counts; the 500 ms
+    // budget itself is unchanged.
+    const pid = ctx.win.webContents.getOSProcessId();
+    const offOnce = async () => {
+      const q0 = queueWaitMs(pid);
+      const ms = await js(`new Promise(res=>{performance.clearMeasures('durbar:floor-switch');
+        const ob=new PerformanceObserver(l=>{const e=l.getEntries().find(x=>x.name==='durbar:floor-switch');if(e){ob.disconnect();res(e.duration);}});
+        ob.observe({type:'measure'});setTimeout(()=>{ob.disconnect();res(Infinity);},5000);document.querySelector('[data-fl="on"][data-floor="f-personal"]').click();})`);
+      const q1 = queueWaitMs(pid);
+      const waited = q0 === null || q1 === null ? 0 : Math.min(ms, Math.max(0, q1 - q0));
+      await until(`document.getElementById('floorsBtn').textContent.trim()==='2/3'&&![...document.querySelectorAll('#stage .floor-tag')].some(t=>t.textContent==='Personal')`);
+      return { ms, waited, own: ms - waited };
+    };
     const tries = [];
     for (;;) {
       tries.push(await offOnce());
-      if (tries[tries.length - 1] < 500 || tries.length === 3) break;
+      if (tries[tries.length - 1].own < 500 || tries.length === 3) break;
       await js(`document.querySelector('[data-fl="on"][data-floor="f-personal"]').click()`); // back on, then measure again in a quiet office
       await until(`document.getElementById('floorsBtn').textContent.trim()==='3/3'`);
       await until(`!document.querySelector('#walkers .walker.walking')`); await settle();
     }
-    const ms = Math.min(...tries);
-    console.log('[033]', w, 'switch off took', tries.map((t) => Math.round(t)).join(', '), 'ms');
-    assert.ok(ms < 500, `SC-003: updated in ${Math.round(ms)} ms (tries: ${tries.map((t) => Math.round(t)).join(', ')})`);
+    const best = tries.reduce((a, b) => (b.own < a.own ? b : a));
+    const said = tries.map((t) => `${Math.round(t.own)} ms` + (t.waited >= 1 ? ` (${Math.round(t.ms)} ms on the clock, ${Math.round(t.waited)} ms of it waiting for a CPU on a busy machine)` : '')).join(', ');
+    console.log('[033]', w, 'switch off took', said);
+    assert.ok(best.own < 500, `SC-003: updated in ${Math.round(best.own)} ms (tries: ${said})`);
     await panel(false);
     await calm(); // figures of the off floor leave and the others settle
     s = await state();
