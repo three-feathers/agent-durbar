@@ -4,6 +4,7 @@
  * Every adapter translates its native protocol into the normalized events below.
  */
 
+import type { FolderSetupStart } from '../shared/foldersetup';
 import type { ElicitAction, ElicitAnswer, ElicitRequest } from '../shared/elicit';
 import type { McpServerSpec } from '../shared/mcp';
 import type { CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
@@ -59,6 +60,8 @@ export interface StartOptions {
   ask?: boolean;
   /** Do not emit the "Ready" status when the session is up (used when starting it for a message that is about to be sent). */
   quiet?: boolean;
+  /** Spec 061 FR-004: the folder's own hooks and permission rules the person accepted, for this agent app. Never logged. */
+  folderSetup?: FolderSetupStart;
   /** MCP servers (global Settings, spec 019) handed to this session, by name. Never logged: env/headers may hold secrets. */
   mcpServers?: Record<string, McpServerSpec>;
   /** Exact MCP server names that must not start in this session (also switches off servers the runtime loads by itself). */
