@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.10 tag)
 
+- One shared `PATH` reader (`src/shared/pathdirs.ts`) for agent detection and "Open in VS Code": the VS Code launcher now finds a quoted Windows `PATH` entry, and repeated `PATH` folders are tried once (spec 060 FR-094, #412).
 - **UI checks on macOS, Windows and Linux in CI** (spec 008 FR-090..FR-092). A new workflow runs theme geometry, the 15-agent office layout, the Mac title bar and every asserting simulator driver (`npm run check:ui`, new) on all three runners and keeps their screenshots; before, these ran on Linux only. A failing driver now exits 1.
 ## v0.1.0-alpha.10 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.10), 2026-10-21)
 

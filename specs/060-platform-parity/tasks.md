@@ -9,4 +9,4 @@
 - [ ] T050 Folder identity on case-insensitive systems, with migration [FR-007]
 - [ ] T060 Per-OS tests and a manual real-install workflow [FR-008]
 - [ ] T061 Linux `.deb` and arm64 builds, if Q3 says yes [FR-006]
-- [ ] T062 (2026-10-21, #412) One PATH-directory helper `pathDirs` in `src/shared/` used by `src/adapters/detect.ts` `candidates()` and `src/main/vscode.ts` `pathCandidates()` (FR-094). Done: the unit test for `pathDirs`; `test-detect` and `test-vscode` keep every row and gain the quoted VS Code row and the duplicate row; `npm run typecheck && npm run build && npm test`; CHANGELOG line.
+- [x] T062 (2026-10-21, #412) One PATH-directory helper `pathDirs` in `src/shared/` used by `src/adapters/detect.ts` `candidates()` and `src/main/vscode.ts` `pathCandidates()` (FR-094). Done: the unit test for `pathDirs`; `test-detect` and `test-vscode` keep every row and gain the quoted VS Code row and the duplicate row; `npm run typecheck && npm run build && npm test`; CHANGELOG line.
