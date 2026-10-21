@@ -1,0 +1,74 @@
+name: Installed app
+
+# spec 008 T021: build the release package on macOS, Windows and Linux, install it the way a user does (NSIS /S per user, the
+# .dmg copied to ~/Applications, the AppImage), start the INSTALLED app on the simulator (no account, no credits) and record
+# the names a user sees (Start menu, Info.plist, .desktop). Unsigned builds, nothing published. Screenshots as artifacts.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'build/**'
+      - 'scripts/after-pack.js'
+      - 'scripts/prepare-runtime.js'
+      - 'scripts/installed-app-*.js'
+      - '.github/workflows/installed-app.yml'
+  pull_request:
+    paths:
+      - 'scripts/installed-app-*.js'
+      - '.github/workflows/installed-app.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installed-app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installed:
+    name: Installed app (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            dist: dist:linux
+          - os: macos-latest
+            dist: dist:mac:arm64
+          - os: windows-latest
+            dist: dist:win
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb libfuse2t64 || sudo apt-get install -y xvfb libfuse2
+      - run: npm ci
+      - name: Build the release package (unsigned, not published)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run ${{ matrix.dist }}
+      - name: Install it and start the installed app
+        shell: bash
+        run: node scripts/installed-app-ci.js "$RUNNER_TEMP/installed.json" "$RUNNER_TEMP/installed-${{ matrix.os }}.png" | tee "$RUNNER_TEMP/installed.md"
+      - name: Summary
+        if: always()
+        shell: bash
+        run: '[ -f "$RUNNER_TEMP/installed.md" ] && sed -n "/^### Installed app/,\$p" "$RUNNER_TEMP/installed.md" >> "$GITHUB_STEP_SUMMARY" || true'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: installed-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/installed.json
+            ${{ runner.temp }}/installed.md
+            ${{ runner.temp }}/installed-*.png
+          retention-days: 30
+          if-no-files-found: ignore

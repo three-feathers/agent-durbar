@@ -1,3 +1,4 @@
+import { parseEffort } from '../shared/effort';
 import { app, BrowserWindow, dialog, Menu, screen, shell } from 'electron';
 import { ipcHandle, ipcOn } from './ipcguard';
 import { randomUUID } from 'crypto';
@@ -9,7 +10,8 @@ import { offeredDescriptors } from '../adapters/experimental';
 import { createRegistry, detectAll } from '../adapters/registry';
 import { folderGitStatus } from './gitstatus';
 import type { GitStatus } from './gitstatus';
-import { detectorFor, nodeDetectEnv } from '../adapters/detect';
+import { detectorFor, nodeDetectEnv, setLoginPath } from '../adapters/detect';
+import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { execFile, spawn } from 'child_process';
 import { adapterForAdd, createRouter, historyOf, modelOptionsOf, previousSessionsOf } from '../adapters/router';
 import { errText, restorable, setCapOp, setModeOp, stopTurnOp, validMode } from './agentops';
@@ -83,9 +85,7 @@ if (devNote) console.error(devNote);
 // Must stay before anything reads the userData folder and before `whenReady`.
 app.setPath('userData', profileDir({ packaged: app.isPackaged, platform: process.platform, appData: app.getPath('appData'), env: process.env }));
 const DEFAULT_MODEL = 'auto';
-const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
-type Effort = (typeof EFFORTS)[number];
-const asEffort = (v: unknown): Effort | undefined => (EFFORTS as readonly string[]).includes(v as string) ? (v as Effort) : undefined;
+const asEffort = parseEffort; // spec 007 FR-008: the models' own effort names, `none` included
 let folderStore: FolderStore | undefined;
 /** Global settings (default credit cap, spec 011), created when the app is ready. */
 let settingsStore: SettingsStore | undefined;
@@ -1088,9 +1088,19 @@ const signInCheck = (id: string): (() => Promise<SignInAnswer>) | undefined => {
     return undefined;
   }
 };
+/* spec 060 FR-003: the login shell's PATH, read once (at most 3 s) before the first detection; not under the simulator */
+let loginPathRead: Promise<void> | undefined;
+const loginPathReady = (): Promise<void> => {
+  if (!loginPathRead) loginPathRead = dev.DURBAR_SIM ? Promise.resolve() : readLoginShellPath(nodeLoginPathDeps()).then((dirs) => {
+    setLoginPath(dirs);
+    // what is found must also run: agent apps, their probes and MCP servers start with this PATH (an nvm `claude` needs its `node`)
+    if (dirs.length) process.env.PATH = mergeLoginPath(process.env.PATH, dirs);
+  }, () => undefined);
+  return loginPathRead;
+};
 const adaptersList = (refresh: boolean): Promise<AdapterInfo[]> => {
   // spec 012 FR-156: after the probes, each agent app that can tell is asked whether its sign-in works; cached until Check again
-  if (!adaptersInfo || refresh) adaptersInfo = detectAll(registry, (d) => detectorFor(d.id)?.(d) ?? Promise.resolve({ state: 'unknown' as const })).then((infos) => withSignIn(infos, signInCheck));
+  if (!adaptersInfo || refresh) adaptersInfo = loginPathReady().then(() => detectAll(registry, (d) => detectorFor(d.id)?.(d) ?? Promise.resolve({ state: 'unknown' as const }))).then((infos) => withSignIn(infos, signInCheck));
   return adaptersInfo;
 };
 /** Spec 012 FR-157: a session refused because of the sign-in marks its agent app `not-signed-in` in the cached list and tells the window. */
