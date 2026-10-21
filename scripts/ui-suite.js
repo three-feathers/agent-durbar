@@ -45,6 +45,7 @@ const DRIVERS = [
   { name: 'check-sched-sendto' },
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
+  { name: 'check-composer-toolbar' }, // spec 005 FR-037..FR-043: chat settings under the message box, one Send / Stop slot
 ];
 
 /** The screenshot variables the drivers read; all point at one folder. */
