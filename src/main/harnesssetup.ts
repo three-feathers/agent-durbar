@@ -109,11 +109,8 @@ export class HarnessSetup {
       const exe = root && path.win32.isAbsolute(root) ? path.win32.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : undefined;
       return exe && env.isFile(exe) ? exe : undefined;
     }
-    const extra = env.platform === 'linux' ? ['/home/linuxbrew/.linuxbrew/bin', path.posix.join(env.homedir, '.linuxbrew/bin')] : [];
-    const list = candidates({ name, versionArgs: [], installHint: '' }, env);
-    const p = env.platform === 'win32' ? path.win32 : path.posix;
-    for (const d of extra) list.push(p.join(d, name));
-    return list.find((c) => env.isFile(c));
+    // candidates() covers the version-manager and Linuxbrew folders too (spec 060 FR-003)
+    return candidates({ name, versionArgs: [], installHint: '' }, env).find((c) => env.isFile(c));
   }
 
   /**
