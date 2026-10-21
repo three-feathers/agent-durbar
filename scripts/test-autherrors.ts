@@ -22,6 +22,10 @@ const REAL_CLAUDE = 'Failed to authenticate. API Error: 401 OAuth access token i
   assert.strictEqual(isAuthError('Failed to authenticate. API Error: 401'), true, 'a real app 401 still is');
   // a mixed text (multi-line stderr): the app's own sign-in error next to an MCP challenge stays an auth error
   assert.strictEqual(isAuthError('Failed to authenticate. API Error: 401 OAuth access token is invalid. Please run /login. (while loading MCP server "x": MCP OAuth challenge required (HTTP 401))'), true, 'mixed text is still an app sign-in error');
+  const APP401 = 'Failed to authenticate. API Error: 401 OAuth access token is invalid. Please run /login.';
+  assert.strictEqual(isAuthError(APP401 + ' notes requires authentication. Open this session and run /mcp to authenticate.'), true, 'an app 401 BEFORE the Claude phrase on one line stays an auth error (the name is one token)');
+  assert.strictEqual(isAuthError(APP401 + ' MCP server "notes" needs authentication'), true, 'an app 401 before the quoted Claude phrase stays an auth error');
+  assert.strictEqual(isAuthError('notes requires authentication. Open this session and run /mcp to authenticate.'), false, 'a one-word server name is the MCP challenge');
   assert.strictEqual(isAuthError('MCP server "x" requires authentication. Run `/mcp auth x` to authenticate.'), false, 'pure runtime phrase');
   assert.strictEqual(isAuthError('Re-authentication required for MCP server "x". Run /mcp auth x'), false, 'pure re-auth phrase');
   assert.strictEqual(isAuthError('MCP server "x" needs authentication'), false, 'Claude Code wording (read: 2.1.304) is an MCP challenge');

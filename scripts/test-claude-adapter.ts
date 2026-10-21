@@ -641,6 +641,53 @@ async function main(): Promise<void> {
     await ad.stop(sid);
   }
 
+  // ---- FR-060: the sign-in mark ends with the CLI's own fresh list (init) and with a toggle of that server ----
+  {
+    const sp = fakeSpawn();
+    const servers = [{ name: 'notes', status: 'connected' }, { name: 'other', status: 'connected' }];
+    sp.next = (c) => {
+      c.onWrite = (o) => {
+        if (o.type === 'control_request') {
+          const r = o.request as { subtype: string };
+          const body = r.subtype === 'mcp_status' ? { mcpServers: servers } : {};
+          return void setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response: body } }), 0);
+        }
+        if (o.type !== 'user') return;
+        const text = JSON.stringify(o);
+        const fail = (id: string, name: string): void => {
+          c.send({ type: 'assistant', message: { id: `m-${id}`, content: [{ type: 'tool_use', id, name, input: {} }] } });
+          c.send({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'MCP OAuth challenge required (HTTP 401)', is_error: true }] } });
+        };
+        setTimeout(() => {
+          if (text.includes('first')) { c.send({ type: 'system', subtype: 'init', session_id: 'x', cwd: WS, tools: [], mcp_servers: servers }); fail('b1', 'mcp__notes__q'); }
+          else if (text.includes('fresh')) { c.send({ type: 'system', subtype: 'init', session_id: 'x', cwd: WS, tools: [], mcp_servers: servers }); fail('b2', 'mcp__other__q'); }
+          else fail('b3', 'mcp__notes__q');
+          c.send({ type: 'result', subtype: 'success', is_error: false });
+        }, 0);
+      };
+    };
+    const ad = new ClaudeAdapter({ claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const ev: AgentEvent[] = [];
+    ad.onEvent((e) => ev.push(e));
+    type Row = { name: string; status: string };
+    const lastList = (): Row[] => ([...ev].reverse().find((e) => e.type === 'mcp') as unknown as { servers: Row[] }).servers;
+    const st = (n: string): string | undefined => lastList().find((x) => x.name === n)?.status;
+    const waitList = async (what: string, name: string, status: string): Promise<void> => void (await until(what, () => (ev.some((e) => e.type === 'mcp') && st(name) === status ? true : undefined)));
+    const sid = await ad.start({ workspace: WS, quiet: true });
+    await ad.send(sid, { text: 'first' });
+    await waitList('notes marked', 'notes', 'needs-auth');
+    // a fresh init (connected) clears the mark: a later list for another server's challenge shows notes connected
+    await ad.send(sid, { text: 'fresh' });
+    await waitList('other marked, notes cleared', 'other', 'needs-auth');
+    assert.strictEqual(st('notes'), 'connected', 'init cleared the mark of notes');
+    // a toggle of that server also ends it
+    await ad.send(sid, { text: 'again' });
+    await until('marked again', () => (st('notes') === 'needs-auth' ? true : undefined));
+    await ad.setMcpEnabled(sid, 'notes', false);
+    assert.strictEqual(st('notes'), 'connected', 'a toggle ends the mark: the next list is the CLI\'s');
+    await ad.stop(sid);
+  }
+
   // ---- custom agents (spec 043 FR-008): chosen before the first message, passed on the first launch; a started session refuses ----
   {
     const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cagent-cfg-'));
