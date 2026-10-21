@@ -4,7 +4,8 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.10 tag)
 
-- **Packaged display names (spec 008 FR-040..FR-045, T039, issue #384).** A packaged Windows build sets its AppUserModelId (`build.appId`), so toasts and the taskbar match the Start menu shortcut; the Mac app menu has an explicit `Agent Durbar` title; the Linux AppImage launcher entry no longer forces `--no-sandbox` (`AppRun` still adds it when needed). `scripts/check-names.js` runs after the fuse check on every package build, and the installed-app CI asserts the names a user sees. Checked on Linux (unit tests, `dist:linux`, the installed AppImage on the simulator); Windows and macOS names are asserted only in CI, not seen on a real PC or Mac.
+- **Packaged display names (spec 008 FR-040..FR-045, T039, issue #384).** A packaged Windows build sets its AppUserModelId (`build.appId`), so toasts and the taskbar match the Start menu shortcut; the Mac app menu item carries an `Agent Durbar` label (macOS takes the menu-bar title from the bundle name, `CFBundleName` = `Agent Durbar`, now checked on every Mac build); the Linux AppImage launcher entry no longer forces `--no-sandbox` (`AppRun` still adds it when needed). `scripts/check-names.js` runs after the fuse check on every package build, and the installed-app CI asserts the names a user sees. Checked on Linux (unit tests, `dist:linux`, the installed AppImage on the simulator); Windows and macOS names are asserted in CI (Installed app run 39561893292, all three OSes), not seen on a real PC or Mac.
+
 ## v0.1.0-alpha.10 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.10), 2026-10-21)
 
 - Agent apps installed with nvm, fnm, Volta, asdf, mise or Linuxbrew are now found, also when Durbar is opened from Finder or a desktop menu (the login shell's `PATH` is read once); Settings > Agent apps says where each was found (spec 060 FR-003).

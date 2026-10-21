@@ -85,7 +85,8 @@ function launch(exe, extraArgs = []) {
   const udDir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-inst-ud-'));
   const res = path.join(resDir, 'result.json');
   const env = { ...process.env, DURBAR_DEV: '1', DURBAR_SIM: '15', DURBAR_SIM_FREEZE: '1', DURBAR_DRIVER: path.join(__dirname, 'installed-app-check.js'), DURBAR_USER_DATA: udDir, INSTALLED_OUT: res, INSTALLED_SHOT: shotFile };
-  const args = [...extraArgs, ...(process.platform === 'linux' ? ['--no-sandbox'] : [])];
+  // The AppImage is started without --no-sandbox so its AppRun probe (`unshare -Ur true`) decides, as for a user (spec 008 FR-041); `app.noSandbox` records what it did.
+  const args = [...extraArgs];
   const [file, argv] = process.platform === 'linux' && !process.env.DISPLAY ? ['xvfb-run', ['-a', exe, ...args]] : [exe, args];
   const r = run(file, argv, { env, timeout: 180000 });
   try {
@@ -169,7 +170,10 @@ if (process.platform === 'win32') {
   check(desk, 'no .desktop file in the AppImage');
   check(desk === `${desktopId}.desktop`, `.desktop file is "${desk}", expected "${desktopId}.desktop"`);
   for (const [k, v] of Object.entries({ desktopName: productName, desktopWmClass: desktopId, desktopIcon: desktopId, desktopExec: 'AppRun %U' })) check(facts[k] === v, `.desktop ${k.replace('desktop', '')} is "${facts[k]}", expected "${v}"`);
+  // AppRun adds --no-sandbox only when `unshare -Ur true` fails; run the same probe here and compare with what the app saw in its argv.
+  facts.usernsAvailable = run('unshare', ['-Ur', 'true']).status === 0;
   facts.result = launch(p, ['--appimage-extract-and-run']);
+  check(facts.result.noSandbox === !facts.usernsAvailable, `AppRun ${facts.result.noSandbox ? 'added' : 'did not add'} --no-sandbox but unprivileged user namespaces are ${facts.usernsAvailable ? 'available' : 'not available'}`);
 }
 
 facts.nameFailures = failures;
