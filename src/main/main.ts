@@ -71,6 +71,7 @@ import { REPO_URL, aboutPanelOptions, aboutView } from '../shared/about';
 import { modelControlFor, parseFocus, parseSwitchRequest } from '../shared/modelswitch';
 import type { ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import { createDebugSink } from '../shared/redact';
+import { profileDir } from './profiledir';
 import { debugSwitchesToRemove } from './debugguard';
 
 // Spec 008 FR-038: no DevTools endpoint in a packaged build. No fuse covers these switches; removing them before ready is shown to work on the packed Linux app (npm run check:fuses-launch).
@@ -82,8 +83,10 @@ const devNote = devWarning(process.env, app.isPackaged);
 if (devNote) console.error(devNote);
 
 // Cheapest routing on the logged-in account's only model ("auto"); see docs/milestone-1.md.
-// Dev/test: DURBAR_USER_DATA=/tmp/x keeps the saved folder list (and Electron's other state) out of the real profile.
-if (dev.DURBAR_USER_DATA) app.setPath('userData', dev.DURBAR_USER_DATA);
+// Profile folder chosen in code (spec 008 FR-034): packaged `<appData>/agent-durbar`, dev `<appData>/agent-durbar-dev`.
+// Dev/test: DURBAR_USER_DATA=/tmp/x wins and keeps the saved folder list (and Electron's other state) out of the real profile.
+// Must stay before anything reads the userData folder and before `whenReady`.
+app.setPath('userData', profileDir({ packaged: app.isPackaged, platform: process.platform, appData: app.getPath('appData'), env: process.env }));
 const DEFAULT_MODEL = 'auto';
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 type Effort = (typeof EFFORTS)[number];
