@@ -250,3 +250,20 @@ Decided by the coordinator under Ruben's delegation (D1-D4):
 - `real:` Paco's checks on a real Mac (macOS 26.7.1, M1 Pro; PR #377, dev run as `npm start`). On 08e90e8 (with `setName`): the dev folder and the menu. On 11a0fb7 (labels only, this version): the menu items read About / Hide / Quit Agent Durbar (the first menu's title still says `agent-durbar` in a dev run, from the app name; a packaged build's bundle name from `productName` was not checked by eye); `userData` is `~/Library/Application Support/agent-durbar-dev` and `lsof` shows 0 files under `agent-durbar`; the Keychain has `agent-durbar Safe Storage` before and after, and `Agent Durbar Safe Storage` never appears, even after one `safeStorage` encrypt/decrypt round trip. `[KNOWN GAP]` A packaged build on a Mac (folder `agent-durbar`, bundle name) was not run. Not run on Windows: the folder chosen there and the DPAPI `Local State` claim are `read:` only.
 - Keychain: the saved MCP secrets are unaffected, because the app name (the safeStorage identity) does not change (D2); `real:` on a Mac, see above. `[KNOWN GAP]` Linux keyring (libsecret/kwallet): unchanged by the same reason, not run here (no desktop keyring on this server).
 - `[KNOWN GAP]` The *Measured* probe was a plain Electron app in dev mode, not a packaged Durbar build; that a packaged build reads `name` from `app.asar/package.json` the same way is `read:`.
+
+### 2026-10-21: the installed app on macOS, Windows and Linux (T021), and a stale gap closed (T025)
+
+- **FR-015** `[IMPLEMENTED]`. The stale `[KNOWN GAP]` is closed: `.github/workflows/packaged-check.yml` (spec 012 T044) packages the app on macOS, Windows and Linux runners and runs the packaged main process (`scripts/pack-esm-ci.js`). `real:` it passed on all three, for example run 39497504364 (2026-10-20). So macOS and Windows packaging is no longer first exercised by the tag workflow.
+- **FR-010 delta** `[IMPLEMENTED]`, `.github/workflows/installed-app.yml` + `scripts/installed-app-ci.js` + `scripts/installed-app-check.js`. On each OS it builds the real release package (`dist:win`, `dist:mac:arm64`, `dist:linux`; unsigned, nothing published) and installs it the way a user does:
+  - **Windows:** the NSIS installer `/S`, per user. The installed exe and the Start menu entry are recorded, then the uninstaller runs `/S`.
+  - **macOS:** the `.dmg` is mounted, `Agent Durbar.app` is copied to `~/Applications`, and the `Info.plist` names are recorded.
+  - **Linux:** the AppImage, with its `.desktop` `Name=` and `StartupWMClass`.
+
+  Then it starts the **installed** app on the simulator (`DURBAR_DEV=1`, no account, no credits). It checks that the office renders the 15 agents and records the app's name and window title, with a screenshot artifact. It runs on demand, on `main` when packaging changes, and on a PR that changes the check. `real:` see the PR's first run.
+
+  `real:` run 39498528735 (2026-10-21), **passed on all three**:
+  - **Windows:** `Agent-Durbar-Setup-0.1.0-alpha.9.exe /S` installed to `%LOCALAPPDATA%\Programs\Agent Durbar`, with the Start menu entry `Agent Durbar.lnk`; the uninstaller `/S` exited 0.
+  - **macOS (arm64):** the `.dmg` installed to `~/Applications`, with `CFBundleName` and `CFBundleDisplayName` both `Agent Durbar` and `CFBundleIdentifier` `io.github.three-feathers.agentdurbar`.
+  - **Linux:** the AppImage, with `.desktop` `Name=Agent Durbar` and `StartupWMClass=agent-durbar`.
+  - On each OS the installed app rendered the office with 15 agents, window title "(5) Agent Durbar". Its run-time name is `agent-durbar` on purpose (D2).
+- Not covered, still `[KNOWN GAP]`: a person's own Mac or PC (Gatekeeper and SmartScreen on a downloaded, unsigned build: the runner's copy is not quarantined), and code signing (spec 014, needs a purchase).
