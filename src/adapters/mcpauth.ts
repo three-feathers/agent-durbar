@@ -27,8 +27,8 @@ export function isMcpAuthChallenge(text: unknown): boolean {
 /** The clauses `isMcpAuthChallenge` matches, with what they carry (HTTP code, "Run /mcp auth ..." advice). Global copies for removal. */
 const CLAUSES = [
   /MCP OAuth challenge required(?:\s{0,3}\(HTTP \d{3}\))?/gi,
-  /MCP server "[^"\n]{1,200}" requires authentication\.\s{0,5}Run `?\/mcp auth[^\n]{0,200}/gi,
-  /Re-authentication required for MCP server "[^"\n]{1,200}"\.?(?:\s{0,5}Run `?\/mcp auth[^\n]{0,200})?/gi,
+  /MCP server "[^"\n]{1,200}" requires authentication\.\s{0,5}Run `?\/mcp auth\s{1,3}[^\s`]{1,200}`?(?:\s{1,3}to authenticate\.?)?/gi,
+  /Re-authentication required for MCP server "[^"\n]{1,200}"\.?(?:\s{0,5}Run `?\/mcp auth\s{1,3}[^\s`]{1,200}`?)?/gi,
 ];
 
 /** `text` (first 4000 characters) without the MCP challenge clauses; other text is kept, so an app sign-in error beside them still reads as one. */

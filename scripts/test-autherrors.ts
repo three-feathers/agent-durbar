@@ -24,6 +24,8 @@ const REAL_CLAUDE = 'Failed to authenticate. API Error: 401 OAuth access token i
   assert.strictEqual(isAuthError('Failed to authenticate. API Error: 401 OAuth access token is invalid. Please run /login. (while loading MCP server "x": MCP OAuth challenge required (HTTP 401))'), true, 'mixed text is still an app sign-in error');
   assert.strictEqual(isAuthError('MCP server "x" requires authentication. Run `/mcp auth x` to authenticate.'), false, 'pure runtime phrase');
   assert.strictEqual(isAuthError('Re-authentication required for MCP server "x". Run /mcp auth x'), false, 'pure re-auth phrase');
+  assert.strictEqual(isAuthError('MCP server "x" requires authentication. Run /mcp auth x to authenticate. Error: 401 Unauthorized, please run copilot login'), true, 'an app 401 after the MCP advice on one line stays an auth error');
+  assert.strictEqual(isAuthError('Re-authentication required for MCP server "x". Run /mcp auth x; also Failed to authenticate. API Error: 401 OAuth access token is invalid'), true, 'an app 401 after the re-auth advice on one line stays an auth error');
   assert.strictEqual(isAuthError('Re-authentication required for MCP server access. Please run copilot login'), true, 'app text that merely starts alike is not swallowed');
 }
 

@@ -19,20 +19,21 @@ function maskFlagValues(s: string): string {
     .replace(/(^|\s)(-{0,2}[A-Za-z][\w.-]{0,60})=(?!\[redacted\])(\S+)/g, (m, lead: string, name: string) => (secretFlag(name) ? `${lead}${name}=[redacted]` : m));
 }
 
-/** Spec 058 FR-067: a failed MCP tool card's output is cut here, before the pattern masks (1 MB of `?a=&` took ~0.7 s); the card shows 20 000 characters. */
+/** Spec 058 FR-067: a failed MCP tool card's output is cut here, after the secret masks and before the slow URL mask (1 MB of `?a=&` took ~0.4 s there); the card shows 20 000 characters. */
 export const MCP_CARD_MAX_CHARS = 50_000;
 
 /**
- * Session secret values, then env secrets and secret shapes, then URL parts. No cut unless `max` is given (spec 058 FR-067): then the
- * session values go out of the whole text first, the cut follows (at a token boundary, so no token loses only its head), and the
- * pattern masks run on the shorter text.
+ * Session secret values, then env secrets and secret shapes, both on the whole text; then URL parts and flag values. No cut unless `max`
+ * is given (spec 058 FR-067): then the cut comes after the secret masks (so a secret straddling it leaves no head) and the URL and flag
+ * masks run on the shorter text.
  */
 export function maskMcpText(text: unknown, values: readonly string[] = [], max?: number): string | undefined {
   if (text === undefined || text === null) return undefined;
   let s = typeof text === 'string' ? text : String(text);
   for (const v of values) if (v.length >= 4 && s.includes(v)) s = s.split(v).join('[redacted]');
+  s = redact(s); // env values and token shapes on the whole text: linear, about 7 ms per MB
   if (max !== undefined) s = cut(s, max);
-  return maskFlagValues(maskSecretUrl(redact(s)));
+  return maskFlagValues(maskSecretUrl(s)); // the slow URL pass runs on the shorter text
 }
 
 /** `maskMcpText`, then the cut to 300 characters last, so a secret straddling it leaves no prefix. */
@@ -54,4 +55,9 @@ export function maskMcpEvent<E extends AgentEvent>(e: E, values: readonly string
   if (e.type === 'mcp') return { ...e, servers: maskMcpStatuses(e.servers, values) };
   if (e.type === 'toolCall' && (e.phase === 'failed' || e.phase === 'update') && e.mcpServer && e.output !== undefined) return { ...e, output: maskMcpText(e.output, values, MCP_CARD_MAX_CHARS) };
   return e;
+}
+
+/** Spec 058 FR-067: replayed history (resumed session) with every failed tool's output masked like a live MCP card; other items are the same objects. */
+export function maskMcpHistory<H extends { items: { type: string; failed?: boolean; output?: string }[] }>(h: H, values: readonly string[] = []): H {
+  return { ...h, items: h.items.map((it) => (it.type === 'tool' && it.failed && it.output !== undefined ? { ...it, output: maskMcpText(it.output, values, MCP_CARD_MAX_CHARS) } : it)) };
 }

@@ -1,6 +1,6 @@
 /** Unit test: MCP server error text is masked before it reaches the window (spec 019 FR-021). */
 import * as assert from 'assert';
-import { MCP_CARD_MAX_CHARS, maskMcpError, maskMcpEvent, maskMcpText, maskMcpStatuses, mcpSecretValues, MCP_ERROR_MAX_CHARS } from '../src/main/mcpmask';
+import { MCP_CARD_MAX_CHARS, maskMcpHistory, maskMcpError, maskMcpEvent, maskMcpText, maskMcpStatuses, mcpSecretValues, MCP_ERROR_MAX_CHARS } from '../src/main/mcpmask';
 import type { AgentEvent } from '../src/adapters/types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -93,6 +93,35 @@ assert.strictEqual(maskMcpError(undefined), undefined);
     assert.ok(big.output.length <= MCP_CARD_MAX_CHARS + 20, 'cut to the card limit');
     const sec = maskMcpEvent(card({ output: 'w '.repeat(30_000) + 'k=' + HDR + ' ' + GH }), [HDR]) as unknown as { output: string };
     assert.ok(!sec.output.includes(HDR) && !sec.output.includes('ghp_'), 'a secret past the cut leaves nothing');
+  }
+  // an env value with non-token characters that straddles the cut leaves no head (redact runs on the whole text, then the cut)
+  {
+    const PW = 'hunter2!Secret#Part2,End';
+    process.env.DURBAR_PROBE_PASSWORD = PW;
+    try {
+      const txt = 'w '.repeat((MCP_CARD_MAX_CHARS - 15) / 2) + PW + ' tail ' + 'z '.repeat(100);
+      const o = maskMcpText(txt, [], MCP_CARD_MAX_CHARS) as string;
+      for (let n = 4; n <= PW.length; n++) assert.ok(!o.includes(PW.slice(0, n)), `no ${n}-character prefix of the straddling secret remains`);
+      const o2 = maskMcpText(txt, [PW], MCP_CARD_MAX_CHARS) as string;
+      assert.ok(!o2.includes('hunter2'), 'a session value straddling the cut leaves no head either');
+    } finally {
+      delete process.env.DURBAR_PROBE_PASSWORD;
+    }
+  }
+  // replayed history: failed tool output is masked, the rest is the same object
+  {
+    const ok = { type: 'tool' as const, callId: 'a', tool: 't', label: 'l', output: HDR, failed: false };
+    const bad = { type: 'tool' as const, callId: 'b', tool: 't', label: 'l', output: `401 ${HDR} ${GH}`, failed: true };
+    const txt = { type: 'output' as const, text: HDR };
+    const h = maskMcpHistory({ items: [ok, bad, txt], total: 3, truncated: false }, [HDR]);
+    assert.strictEqual(h.items[0], ok); assert.strictEqual(h.items[2], txt);
+    assert.ok(!(h.items[1] as { output: string }).output.includes(HDR) && !(h.items[1] as { output: string }).output.includes('ghp_'), 'failed history output masked');
+    assert.ok(h.total === 3 && h.truncated === false);
+  }
+  // wiring: both resume replies send masked history
+  for (const f of ['agents.ts', 'previous.ts']) {
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', f), 'utf8');
+    assert.ok(/history = maskHistory\(.*historyOf\(/.test(src), `${f}: history goes through maskHistory`);
   }
   // wiring: main fetches the session's values for a failed MCP tool card
   const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
