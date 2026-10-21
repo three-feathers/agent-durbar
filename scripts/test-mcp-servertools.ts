@@ -163,6 +163,13 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(st.toolsOffFor('/f'), { notes: ['archive'] });
     assert.deepStrictEqual(st.toolsOffFor('/other'), {}, 'another folder is not touched');
     assert.ok(!st.setToolsOff('/f', '__proto__', ['a']).ok && !st.setToolsOff('/f', '', ['a']).ok);
+    // FR-063 (change 2026-10-22): a name the apps' filters cannot carry is refused (Claude Code in Allow all never asks the broker)
+    for (const odd of ['send email', 'a,b', 'list:issues', 'ünï']) {
+      const r = st.setToolsOff('/f', 'notes', ['archive', odd]);
+      assert.ok(!r.ok && /cannot be turned off/.test(r.error ?? ''), `refused: ${odd}`);
+    }
+    assert.deepStrictEqual(st.toolsOffFor('/f'), { notes: ['archive'] }, 'a refused change leaves the list as it was');
+    assert.deepStrictEqual(claudeDisallowedMcp({ notes: ['archive', 'send email'] }), ['mcp__notes__archive']);
     const again = new McpStore(file);
     again.load();
     assert.deepStrictEqual(again.toolsOffFor('/f'), { notes: ['archive'] }, 'kept across restarts');

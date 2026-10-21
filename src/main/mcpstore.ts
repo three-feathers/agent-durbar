@@ -16,7 +16,7 @@
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { MAX_SERVERS, NAME_RE, trustHash, validateInput } from '../shared/mcp';
+import { MAX_SERVERS, MCP_TOOL_OFF_RE, NAME_RE, trustHash, validateInput } from '../shared/mcp';
 import type { McpSecretKey, McpServerInput, McpServerSpec, McpServerView, McpTransport, McpTrustInfo } from '../shared/mcp';
 
 export interface SecretCodec {
@@ -463,7 +463,7 @@ export class McpStore {
 
   private static toolList(v: unknown): string[] {
     if (!Array.isArray(v)) return [];
-    return [...new Set(v.filter((t): t is string => typeof t === 'string' && t.length > 0 && t.length <= 128 && !t.includes('\0')))].slice(0, MAX_TOOLS_OFF);
+    return [...new Set(v.filter((t): t is string => typeof t === 'string' && MCP_TOOL_OFF_RE.test(t)))].slice(0, MAX_TOOLS_OFF);
   }
 
   /** Spec 069 FR-061: the tools turned off in this folder, by server (a copy). */
@@ -475,6 +475,9 @@ export class McpStore {
   /** Spec 069 FR-061: replace the list of turned-off tools of one server in one folder (empty = all on). */
   setToolsOff(key: string, server: string, tools: unknown): { ok: boolean; error?: string } {
     if (!this.validKey(key) || typeof server !== 'string' || !server || server.length > 64 || server === '__proto__') return { ok: false, error: 'Unknown server.' };
+    // FR-063 (change 2026-10-22): a name the agent apps' filters cannot carry is refused, not stored as "off" while it stays usable.
+    const odd = Array.isArray(tools) ? tools.find((t) => typeof t === 'string' && t.length > 0 && t.length <= 128 && !MCP_TOOL_OFF_RE.test(t)) : undefined;
+    if (odd !== undefined) return { ok: false, error: `"${String(odd).slice(0, 64)}" cannot be turned off: Agent Durbar can only turn off tools named with letters, digits, "_", "." or "-".` };
     const list = McpStore.toolList(tools);
     const m = { ...(this.toolsOff.get(key) ?? {}) };
     if (list.length) m[server] = list;

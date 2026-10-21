@@ -824,11 +824,14 @@
       const more=r.total>r.tools.length?` (first ${r.tools.length} shown)`:'';
       /* spec 069 FR-060/FR-064: a checkbox per tool and a tri-state for the server; disabled with the reason when the app cannot filter */
       const x=(st.servers||[]).find(y=>y.name===n)||{}, off=new Set(x.toolsOff||[]), can=!!(st.toolFilter&&X.bridge.setAgentMcpToolsOff);
-      const nOff=r.tools.filter(t=>off.has(t.name)).length, all=nOff===0?'true':nOff===r.tools.length?'false':'mixed';
+      const okName=t=>/^[A-Za-z0-9_.-]{1,128}$/.test(t.name), nOff=r.tools.filter(t=>off.has(t.name)&&okName(t)).length, all=nOff===0?'true':nOff===r.tools.filter(okName).length?'false':'mixed';
       const dis=can?'':' disabled title="This app can\'t turn off single tools"';
+      /* FR-063 (change 2026-10-22): a tool name the agent apps' filters cannot carry (copy of MCP_TOOL_OFF_RE in src/shared/mcp.ts) cannot be turned off */
+      const odd=t=>!okName(t), oddDis=' disabled title="Agent Durbar can only turn off tools named with letters, digits, _ . or -"';
+      const nOdd=r.tools.filter(odd).length;
       const head=`<div class="mcp-thead"><button class="mcp-all" type="button" role="checkbox" aria-checked="${all}" data-tall="${esc(n)}"${dis} aria-label="${esc('All tools of '+n)}"><span class="mcp-box" aria-hidden="true">${all==='true'?'✓':all==='mixed'?'–':''}</span>${r.total} tool${r.total===1?'':'s'}${more}${nOff?`, ${nOff} off`:''}</button>
-        <span class="mcp-tnote">${can?'Turning tools on or off applies to new sessions and after Restart session with these servers.':'This app can\'t turn off single tools.'}</span></div>`;
-      return `<div class="mcp-tools" id="${id}">${head}<ul class="mcp-tlist">${r.tools.map(t=>`<li><label><input type="checkbox" data-tool="${esc(t.name)}" data-tsrv="${esc(n)}"${off.has(t.name)?'':' checked'}${dis} aria-label="${esc(t.name+' of '+n)}"><code>${esc(t.name)}</code></label>${t.description?`<span>${esc(t.description)}</span>`:''}</li>`).join('')}</ul></div>`;
+        <span class="mcp-tnote">${can?'Turning tools on or off applies to new sessions and after Restart session with these servers.':'This app can\'t turn off single tools.'}${can&&nOdd?` ${nOdd} tool${nOdd===1?'':'s'} with other characters in the name cannot be turned off.`:''}</span></div>`;
+      return `<div class="mcp-tools" id="${id}">${head}<ul class="mcp-tlist">${r.tools.map(t=>`<li><label><input type="checkbox" data-tool="${esc(t.name)}" data-tsrv="${esc(n)}"${off.has(t.name)&&!odd(t)?'':' checked'}${dis||(odd(t)?oddDis:'')} aria-label="${esc(t.name+' of '+n)}"><code>${esc(t.name)}</code></label>${t.description?`<span>${esc(t.description)}</span>`:''}</li>`).join('')}</ul></div>`;
     }
     const toggleTools=async n=>{
       if(expanded.has(n)){expanded.delete(n);await repaint();return;}
@@ -901,7 +904,7 @@
     const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
       onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;d.addEventListener('click',async e=>{
         const tg=e.target.closest('button[data-tools]');if(tg){void toggleTools(tg.dataset.tools);return;}
-        const ta=e.target.closest('button[data-tall]');if(ta&&!ta.disabled){const n=ta.dataset.tall,r=toolsOf.get(n);if(r&&r.ok){void saveOff(n,ta.getAttribute('aria-checked')==='true'?r.tools.map(t=>t.name):[]);}return;}
+        const ta=e.target.closest('button[data-tall]');if(ta&&!ta.disabled){const n=ta.dataset.tall,r=toolsOf.get(n);if(r&&r.ok){void saveOff(n,ta.getAttribute('aria-checked')==='true'?r.tools.map(t=>t.name).filter(t=>/^[A-Za-z0-9_.-]{1,128}$/.test(t)):[]);}return;}
         const tc=e.target.closest('input[data-tool]');if(tc&&!tc.disabled){const n=tc.dataset.tsrv,x=(st.servers||[]).find(y=>y.name===n)||{},off=new Set(x.toolsOff||[]);if(tc.checked)off.delete(tc.dataset.tool);else off.add(tc.dataset.tool);void saveOff(n,[...off]);return;}
         const mr=e.target.closest('button[data-mrm]');if(mr){const n=mr.dataset.mrm;d._close();void removeOne(n);return;}
         const rb=e.target.closest('button[data-restart]');if(rb&&!rb.disabled){void restartOne(rb.dataset.restart);return;}

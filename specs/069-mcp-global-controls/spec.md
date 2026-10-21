@@ -237,7 +237,11 @@ VS Code UI supports, as some people may want to give access to read email but no
   `agents:setMcpToolsOff(id, server, off[])` maps the agent to its folder in main (the window never sends a folder key).
 - **FR-062** `[IMPLEMENTED]` **Enforced by the agent app**, passed with every start and resume as `StartOptions.disabledMcpTools` (`{server: tools[]}`):
   - Copilot: session config `excludedTools: ["mcp:<server>-<tool>", ...]` (`read:` SDK 1.0.22 `types.d.ts` `excludedTools` "always
-    takes precedence", `toolSet.d.ts` `addMcp("github-list_issues")`: the runtime's wire name `<server>-<tool>`);
+    takes precedence" and takes the source-qualified patterns `mcp:<name>`; `toolSet.d.ts` `addMcp(toolName)` takes "the runtime's
+    canonical wire name for the MCP tool (e.g. `github-list_issues`)" and `toolSet.js` builds the filter string as `` `mcp:${toolName}` ``,
+    so `mcp:github-list_issues` is the SDK's own form; checked 2026-10-22, review on #503). `[KNOWN GAP]` not run on a real account:
+    that every server's wire name is exactly `<server>-<tool>` (for example a server name with a dot) is not verified; the broker
+    (FR-063) is the second guard for calls that ask;
   - Claude Code: `--disallowedTools mcp__<server>__<tool>` (server name with characters outside `[A-Za-z0-9_-]` as `_`, as the CLI builds it;
     `read:` CLI docs and `claudeMap.ts`), added to the mode's own list;
   - Codex: `config.mcp_servers.<server>.disabled_tools = [...]` on thread start/resume (`read:` codex-cli 0.163.0 strings: the
@@ -245,13 +249,24 @@ VS Code UI supports, as some people may want to give access to read email but no
     `enabled = false` already is, spec 012 FR-147). `real:` 2026-10-22, codex-cli 0.163.0, spec 069 T060 scratch home, 0 credits:
     with `-c 'mcp_servers.durbar-demo.disabled_tools=["echo"]'`, `codex app-server` `mcpServerStatus/list` listed only `secret_env`
     of the demo server's two tools (`echo` hidden), `codex mcp get` shows `disabled_tools: echo`, and a string instead of an array is
-    refused at load. The same key in thread/start `config` (what Durbar sends) was not run.
+    refused at load. The same key in thread/start `config` (what Durbar sends) was not run. `[KNOWN GAP]` (review on #503): for a
+    server from the user's own `config.toml`, Durbar sends only `{disabled_tools}` for it and relies on Codex merging that into the
+    user's entry (as the `-c` dotted override above did) rather than replacing the entry; no Codex schema or docs are in the repo to
+    confirm this for thread `config`, so Codex enforcement of single tools on a user's server is unverified (the broker refuses the
+    calls that ask; Codex in Allow all does not ask).
   A change applies to **new sessions and after Restart session with these servers**; the expanded list says so. No app is known to switch
   one tool live, so none is claimed.
 - **FR-063** `[IMPLEMENTED]` **Defence in depth**: each adapter's permission broker refuses an MCP request for a turned-off tool (server and tool name, or
   Claude's `mcp__<server>__<tool>`), in every mode, with "This tool is turned off in Agent Durbar (<server> › <tool>). Do not retry it." and
   a denied card in the chat. (Calls an app approves on its own, such as Claude Code or Codex in Allow all, never reach the broker; there
-  the app's own filter above is the guard.)
+  the app's own filter above is the guard.) Change 2026-10-22 (review on #503): only tools named with `[A-Za-z0-9_.-]` (1-128
+  characters, `MCP_TOOL_OFF_RE`) can be turned off, because Claude Code's `--disallowedTools` cannot carry other names and, in Allow
+  all, nothing else would block them; for other names the checkbox is disabled with "Agent Durbar can only turn off tools named with
+  letters, digits, _ . or -", the server's *all off* skips them and the list says how many cannot be turned off, and main refuses
+  such a name (`agents:setMcpToolsOff`) and drops it from the stored file. The broker's wire-name key `<server>-<tool>` can match two
+  pairs (server `a-b` tool `c`, server `a` tool `b-c`): that is Copilot's own name, which carries no separator either, so the broker
+  can only over-block (refuse the other tool too), never let a turned-off tool through; a request with a server name is matched on
+  `<server>/<tool>` first.
 - **FR-064** `[IMPLEMENTED]` An app whose adapter does not offer per-tool filtering (capability `mcpToolFilter` missing) shows the checkboxes disabled with
   the tooltip "This app can't turn off single tools". All three adapters set it.
 - **FR-065** `[KNOWN GAP]` A global server's per-tool list is not written into the agent apps' own files (only Codex's format has a
@@ -325,6 +340,11 @@ VS Code UI supports, as some people may want to give access to read email but no
   string, a comment or a blank line; otherwise the read, add and remove are refused with "This config.toml does not parse (line N)".
   Lines longer than 16 KiB stay unread, as before. `real:` the five refused and five accepted fixtures of `test:mcpglobal` give the same
   verdict in codex-cli 0.163.0. (FR-003, T061)
+
+- **2026-10-22 (review on #503):** Copilot's `excludedTools` form `mcp:<server>-<tool>` checked against the SDK's own `ToolSet.addMcp`
+  (`read:`, FR-062; wire names of every server still `[KNOWN GAP]`); Codex merging `{disabled_tools}` into a user's own server marked
+  `[KNOWN GAP]` (FR-062); tool names outside `[A-Za-z0-9_.-]` can no longer be turned off (they were not blocked at all in Claude Code's
+  Allow all; FR-063, `test:mcpservertools`); the `<server>-<tool>` key collision documented (over-blocks only). (T064)
 
 ## Relationship to other specs
 

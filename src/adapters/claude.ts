@@ -36,6 +36,7 @@ import { PLAN_REJECTED, cleanPlanText, reviseText } from './plan';
 export const CLAUDE_LOCAL_SIGN_IN = 'Signed in on this computer; confirmed at the first message.';
 import { parseUsdCap } from '../shared/credits';
 import { simpleDiff, clipDiff } from '../shared/diff';
+import { MCP_TOOL_OFF_RE } from '../shared/mcp';
 import { HANDOFF_PROMPT, cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
 import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
@@ -241,10 +242,10 @@ export function claudeNameOk(name: unknown): boolean {
 }
 
 /** The CLI argv (FR-111). Mode flags come from `claudeOptionsFor`, so an unknown mode gets Read-only. */
-/** Spec 069 FR-062: Claude Code's names of the tools turned off in Durbar (names with a comma or space are left to the broker, FR-063). */
+/** Spec 069 FR-062: Claude Code's names of the tools turned off in Durbar (other names cannot be turned off at all: FR-063, `MCP_TOOL_OFF_RE`). */
 export function claudeDisallowedMcp(off: Readonly<Record<string, readonly string[]>> | undefined): string[] {
   const out: string[] = [];
-  for (const [server, tools] of Object.entries(off ?? {})) for (const t of tools ?? []) if (typeof t === 'string' && /^[A-Za-z0-9_.-]{1,128}$/.test(t)) out.push(`mcp__${claudeServerPart(server)}__${t}`);
+  for (const [server, tools] of Object.entries(off ?? {})) for (const t of tools ?? []) if (typeof t === 'string' && MCP_TOOL_OFF_RE.test(t)) out.push(`mcp__${claudeServerPart(server)}__${t}`);
   return out.slice(0, 5000);
 }
 
