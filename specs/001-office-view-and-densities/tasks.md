@@ -43,3 +43,11 @@
 
 - [x] T032 Welcome card for an empty office; screenshots [FR-026]
 - [x] T033 (2026-10-19) Positioning: many harnesses, anyone with agents (welcome card, About agent kinds, README, package.json, repo description) [FR-027]
+
+## Changes 2026-10-21 (live activity on the desks)
+
+- [ ] T034 `src/renderer/liveact.js`: readout rules (latest sentence of thinking or reply, tool verb phrase, Simple words), masking through `dist/shared/redact.js`, per-agent throttle (<= 4/s); `scripts/test-liveact.ts` + `npm run test:liveact` [FR-028, FR-030, FR-031]
+- [ ] T035 `app.js`: feed the readout from `onLiveEvent` (main agents only), clear it at turn end; show it in the `full` `.task` / card `.intent` line while busy; repaint by `textContent` at most 4/s [FR-028, FR-029, FR-030]
+- [ ] T036 Layout search: `full` candidates with a side panel first (fixed width, reserved per main desk), only when it fits; layout key follows the setting; `styles.css` with theme tokens [FR-029, FR-030]
+- [ ] T037 Settings > General: *Live activity on desks* switch (default on, `localStorage`) [FR-032]
+- [ ] T038 `scripts/shots-001-live-activity.js`: simulator driver and screenshots at 1440x900 and 1280x800, dense (15) and sparse (3); `check:office`, `check:geometry`; README, CHANGELOG, specs index [FR-029]
