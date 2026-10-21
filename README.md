@@ -49,7 +49,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - Click an agent to open a full-screen chat. All the other agents stay in a slim strip.
 - You see its thinking, tool calls and replies as they stream in, with Markdown and copy buttons. An open tool call shows the whole command (with Copy), how long it took and its output; a Claude Code edit request has a **Show the change** diff.
 - Attach files and images by picking, dropping or pasting.
-- Questions an agent asks you appear as a card with its choices, an "Other" answer and Skip.
+- Questions an agent asks you appear as a card with its choices, an "Other" answer and Skip. The whole question, every choice and its description are shown in full; Enter in the "Other" box sends your answer (Shift+Enter adds a line).
 - **Needs you:** one inbox of every agent waiting for you, oldest first with how long each has waited. While Durbar is in the background the window title ("(3) Agent Durbar"), the app icon and one notification tell you (Settings > Notifications turns it off; it shows only the agent's name and a short summary). In a waiting chat, **Alt+A** allows once, **Alt+S** allows for the session, **Alt+D** denies and **Alt+N** goes to the next agent; **?** lists every shortcut.
 - **Stop** a turn or **End** a session from the chat header or from the agent's card menu ([screenshot](docs/screenshots/005-card-menu-stop-end-1440x900.png)).
 
@@ -235,7 +235,7 @@ npm run typecheck && npm run build && npm test   # unit suites in parallel (~20 
 npm start                 # the app, with the harnesses you have installed and signed in
 DURBAR_SIM=15 npm start   # 15 simulated agents: no sessions, no AI credits
 npm run check:office      # layout check at 1440x900 and 1280x800 (Electron; xvfb on Linux), simulator only
-npm run check:question-options  # question card options wrap and are never cut off (simulator, xvfb on Linux)
+npm run check:question-options  # question card text, options and descriptions in full; Enter sends a custom answer (simulator, xvfb on Linux)
 npm run check:sched-sendto      # Schedules dialog: Send to / Limit labels on one line, every option fits, session name on a hint line (simulator, xvfb on Linux)
 npm run check:geometry    # every theme lays out exactly like Clean Office (about a minute)
 npm run check:ui          # every simulator driver that asserts, one after another, on any OS (UI_SUITE_XVFB=1 keeps windows off a Linux desktop)

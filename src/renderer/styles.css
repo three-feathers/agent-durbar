@@ -118,7 +118,12 @@ body.has-bridge #liveBar{display:flex}
 /* chosen must read in every theme (some primary buttons look like plain ones): a ring in the text colour and a check mark (FR-130 delta) */
 .note.question .q-opt[aria-checked="true"],.note.question .q-opt[aria-pressed="true"]{box-shadow:inset 0 0 0 2px currentColor}
 .note.question .q-opt[aria-checked="true"]::before,.note.question .q-opt[aria-pressed="true"]::before{content:"\2713\00a0"}
-.note.question .q-other{height:30px;min-width:180px;flex:1 1 180px;max-width:360px;border:1px solid var(--line-ctl);border-radius:9px;padding:0 9px;font:inherit;font-size:12px;background:var(--surface);color:var(--ink)}
+/* spec 052 FR-160: the description under the label, in full; FR-161: the custom box grows with its text on its own row, and reads as chosen once typed in */
+.note.question .q-opt{display:inline-block;vertical-align:top} /* not the .btn flex row: the description goes under the label */
+.note.question .q-opt .q-lbl{display:inline}
+.note.question .q-opt .q-desc{display:block;margin-top:2px;font-size:11px;font-weight:400;line-height:1.35;opacity:.85}
+.note.question .q-other{display:block;box-sizing:border-box;min-height:30px;height:30px;width:100%;flex:1 1 100%;max-width:100%;resize:none;overflow-y:auto;border:1px solid var(--line-ctl);border-radius:9px;padding:6px 9px;font:inherit;font-size:12px;line-height:1.35;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--surface);color:var(--ink)}
+.note.question .q-other.chosen{box-shadow:inset 0 0 0 2px currentColor}
 /* MCP elicitation (spec 012 FR-151): a small form, or an https page to open; labels tied to inputs, text 11.5px and up */
 .note.question .q-form{display:grid;gap:9px;margin-top:8px}
 .note.question .q-field{display:grid;gap:3px;max-width:420px}

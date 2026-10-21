@@ -1207,7 +1207,7 @@ function wireAnswerBar(a){
     bar.innerHTML='<span class="ab-q"><b></b> <span></span></span><span class="ab-act"></span>';
     const n=waiting().length, text=textOf(card), long=text.length>480;
     bar.querySelector('b').textContent=(n>1?'1 of '+n+' · ':'')+a.name+(q?' asks:':card.classList.contains('limit')?' stopped:':' needs your OK:');
-    bar.querySelector('.ab-q span').textContent=long?'a long request; read it in the chat before you answer.':text;
+    bar.querySelector('.ab-q span').textContent=long?'a long request; read it in the chat before you answer.':text;if(long)bar.querySelector('.ab-q span').title=text; /* spec 052 FR-160: the full text stays reachable */
     const act=bar.querySelector('.ab-act');
     const add=(label,cls,fn,title,keys)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;if(keys)b.setAttribute('aria-keyshortcuts',keys);b.onclick=fn;act.appendChild(b);};
     if(q)add('Answer in chat','primary',show);
@@ -2504,13 +2504,21 @@ function showQuestion(a,e){
     qt.appendChild(document.createTextNode(q.question));box.appendChild(qt);
     const opts=document.createElement('div');opts.className='q-opts';opts.setAttribute('role',q.multiSelect?'group':'radiogroup');opts.setAttribute('aria-label',q.question);
     (q.options||[]).forEach(o=>{const b=document.createElement('button');b.type='button';b.className='btn q-opt';b.setAttribute(q.multiSelect?'aria-pressed':'aria-checked','false');if(!q.multiSelect)b.setAttribute('role','radio');
-      b.textContent=o.label;b.title=o.description?o.label+' — '+o.description:o.label; /* FR-140: the title always has the label */
+      const lb=document.createElement('span');lb.className='q-lbl';lb.textContent=o.label;b.appendChild(lb);b.title=o.description?o.label+' — '+o.description:o.label; /* FR-140: the title always has the label */
+      if(o.description){const d=document.createElement('span');d.className='q-desc';d.textContent=o.description;b.appendChild(d);} /* spec 052 FR-160: the description is on screen, not only in the tooltip */
       b.onclick=()=>{const s=picks[i];if(q.multiSelect){s.has(o.label)?s.delete(o.label):s.add(o.label);b.setAttribute('aria-pressed',String(s.has(o.label)));b.classList.toggle('primary',s.has(o.label));}
-        else{s.clear();s.add(o.label);opts.querySelectorAll('.q-opt').forEach(x=>{x.setAttribute('aria-checked',String(x===b));x.classList.toggle('primary',x===b);});others[i].value='';}};
+        else{s.clear();s.add(o.label);opts.querySelectorAll('.q-opt').forEach(x=>{x.setAttribute('aria-checked',String(x===b));x.classList.toggle('primary',x===b);});others[i].value='';others[i].classList.remove('chosen');others[i].style.height='';}};
       opts.appendChild(b);});
-    const other=document.createElement('input');other.type='text';other.maxLength=500;other.className='q-other';other.placeholder='Other answer';other.setAttribute('aria-label','Other answer: '+q.question);
-    other.oninput=()=>{if(other.value.trim()&&!q.multiSelect){picks[i].clear();opts.querySelectorAll('.q-opt').forEach(x=>{x.setAttribute('aria-checked','false');x.classList.remove('primary');});}};
-    others.push(other);opts.appendChild(other);box.appendChild(opts);n.appendChild(box);
+    /* spec 052 FR-160/FR-161: a box that grows with its text; typing chooses it; Enter sends the card (Answer's own handler), Shift+Enter adds a line */
+    const other=document.createElement('textarea');other.rows=1;other.maxLength=500;other.className='q-other';other.placeholder='Other answer (Enter to send)';other.setAttribute('aria-label','Other answer: '+q.question);
+    const hint=document.createElement('span');hint.className='sr-only';hint.id='qh'+(++qFormSeq);hint.textContent='Enter sends this answer. Shift+Enter adds a line.';
+    other.setAttribute('aria-describedby',hint.id);other.setAttribute('aria-keyshortcuts','Enter');
+    const grow=()=>{other.style.height='auto';other.style.height=other.scrollHeight+2+'px';};
+    other.oninput=()=>{const has=!!other.value.trim();other.classList.toggle('chosen',has);
+      if(has&&!q.multiSelect){picks[i].clear();opts.querySelectorAll('.q-opt').forEach(x=>{x.setAttribute('aria-checked','false');x.classList.remove('primary');});}grow();};
+    other.addEventListener('keydown',ev=>{if(ev.key!=='Enter'||ev.shiftKey||ev.isComposing||ev.altKey||ev.ctrlKey||ev.metaKey)return;ev.preventDefault();
+      if(!other.value.trim()){announce('Type an answer first, or choose an option and press Answer.');return;}ok.click();});
+    others.push(other);opts.appendChild(other);opts.appendChild(hint);box.appendChild(opts);n.appendChild(box);
   });
   const row=document.createElement('div');row.className='note-actions';
   const send=async answers=>{
@@ -2558,7 +2566,7 @@ function showElicitation(a,e){
   const st=document.createElement('span');st.className='pstate';n.appendChild(st);
   const qt=document.createElement('p');qt.className='q-text';qt.id=uid+'-msg';
   if(R.source){const h=document.createElement('span');h.className='tag';h.textContent=SHORT(R.source,40);qt.appendChild(h);qt.appendChild(document.createTextNode(' '));}
-  qt.appendChild(document.createTextNode(SHORT(R.message||'',500)));n.appendChild(qt);n.setAttribute('aria-describedby',qt.id);
+  qt.appendChild(document.createTextNode(SHORT(R.message||'',2000)));n.appendChild(qt);n.setAttribute('aria-describedby',qt.id);
   const row=document.createElement('div');row.className='note-actions';
   const btn=(label,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;b.onclick=fn;return b;};
   const inputs=[];
