@@ -22,6 +22,22 @@ function permissionProblems(p: unknown, where: string): string[] {
   return out;
 }
 
+/** Spec 005 FR-018: the optional `edit` of a toolCall. */
+function editProblems(x: unknown): string[] {
+  if (!isObj(x) || !Array.isArray(x.files) || !x.files.length) return ['toolCall.edit has no files'];
+  const out: string[] = [];
+  x.files.forEach((f, i) => {
+    if (!isObj(f) || !str(f.path) || !f.path) out.push(`toolCall.edit.files[${i}].path missing`);
+    else {
+      if (!oneOf(f.kind, ['edit', 'create', 'write', 'delete', 'move'])) out.push(`toolCall.edit.files[${i}].kind ${String(f.kind)}`);
+      if (!optStr(f.diff) || !optNum(f.added) || !optNum(f.removed) || !optStr(f.movedTo)) out.push(`toolCall.edit.files[${i}] malformed`);
+    }
+  });
+  if (x.partial !== undefined && typeof x.partial !== 'boolean') out.push('toolCall.edit.partial is not a boolean');
+  if (!optNum(x.more)) out.push('toolCall.edit.more is not a number');
+  return out;
+}
+
 export function eventProblems(e: unknown): string[] {
   if (!isObj(e)) return ['not an object'];
   const t = e.type;
@@ -54,6 +70,7 @@ export function eventProblems(e: unknown): string[] {
       if (!str(e.tool)) out.push('toolCall.tool missing');
       if (!oneOf(e.phase, ['start', 'update', 'complete', 'failed'])) out.push(`toolCall.phase ${String(e.phase)}`);
       if (!optStr(e.output)) out.push('toolCall.output is not a string');
+      if (e.edit !== undefined) out.push(...editProblems(e.edit));
       if (e.mcpAuth !== undefined && (e.mcpAuth !== true || e.phase !== 'failed' || !str(e.mcpServer) || !e.mcpServer)) out.push(`toolCall.mcpAuth on phase ${String(e.phase)} without a failed MCP call`);
       break;
     case 'subagent':

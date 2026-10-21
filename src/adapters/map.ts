@@ -10,6 +10,7 @@ import { isMcpAuthChallenge } from './mcpauth';
 import type { AgentEvent, CompactionEvent, ContextTier, McpServerStatus } from './types';
 import { cleanSessionTitle } from './history';
 import { nonEmptyStr as str } from '../shared/guards';
+import { EditStreams, editOf } from './edits';
 
 export type EventBody = AgentEvent extends infer E ? (E extends AgentEvent ? Omit<E, 'sessionId' | 'timestamp'> : never) : never;
 
@@ -31,6 +32,8 @@ export class EventMapper {
   private toolNames = new Map<string, { tool: string; mcpServer?: string; mcpTool?: string }>();
   /** MCP servers of the session by name (the runtime reports a list once and then single changes). */
   private mcp = new Map<string, McpServerStatus>();
+  /** Spec 005 FR-019: streamed arguments of file-changing tool calls (`assistant.tool_call_delta`). */
+  private edits = new EditStreams();
   /** Reasoning block ids that already streamed as deltas (so the complete block is not shown twice). */
   private reasoningSeen = new Set<string>();
   /** SDK sub-agent instance id -> spawning `task` tool call id. */
@@ -47,6 +50,7 @@ export class EventMapper {
 
   reset(): void {
     this.toolNames.clear();
+    this.edits.clear();
     this.mcp.clear();
     this.reasoningSeen.clear();
     this.instances.clear();
@@ -107,12 +111,28 @@ export class EventMapper {
           costMultiplier: d.cost,
           creditsStatus: d.aiCreditsStatus,
         });
+      case 'assistant.tool_call_delta': {
+        // Spec 005 FR-019: the model is still writing the call's arguments (ephemeral; the tool name comes "when known")
+        const id = str(d.toolCallId);
+        if (!id || typeof d.inputDelta !== 'string') return;
+        for (const step of this.edits.delta(id, d.inputDelta, str(d.toolName))) {
+          if (step.phase === 'start') {
+            const meta = { tool: this.edits.toolOf(id) ?? str(d.toolName) ?? 'edit' };
+            this.toolNames.set(id, meta);
+            this.emit({ type: 'toolCall', callId: id, ...meta, phase: 'start', args: step.args, agentId });
+          } else this.emit({ type: 'toolCall', callId: id, ...(this.toolNames.get(id) ?? { tool: '' }), phase: 'update', edit: step.edit, agentId });
+        }
+        return;
+      }
       case 'tool.execution_start': {
         // MCP tools: the runtime names the tool `<server>-<tool>` and adds the server and tool name as separate fields.
         const mcpServer = str(d.mcpConfigServerName) ?? str(d.mcpServerName);
         const meta = { tool: d.toolName, ...(mcpServer ? { mcpServer, mcpTool: str(d.mcpToolName) ?? d.toolName } : {}) };
         this.toolNames.set(d.toolCallId, meta);
-        return this.emit({ type: 'toolCall', callId: d.toolCallId, ...meta, phase: 'start', args: d.arguments, agentId });
+        const edit = mcpServer ? undefined : editOf(String(d.toolName ?? ''), d.arguments);
+        // FR-019: a call that started from its streamed arguments gets the whole arguments as an update (no second row)
+        const early = typeof d.toolCallId === 'string' && this.edits.takeStarted(d.toolCallId);
+        return this.emit({ type: 'toolCall', callId: d.toolCallId, ...meta, phase: early ? 'update' : 'start', args: d.arguments, ...(edit ? { edit } : {}), agentId });
       }
       case 'tool.execution_partial_result':
         return this.emit({ type: 'toolCall', callId: d.toolCallId, ...(this.toolNames.get(d.toolCallId) ?? { tool: '' }), phase: 'update', output: d.partialOutput, agentId });
@@ -286,6 +306,7 @@ export class EventMapper {
         // spec 002 FR-016 (T024): what a turn left behind (a tool that never completed, reasoning never closed, e.g. after Stop) is dropped
         this.toolNames.clear();
         this.reasoningSeen.clear();
+        this.edits.clear();
         return this.emit({ type: 'status', status: 'idle', intent: d.aborted ? 'Aborted' : undefined });
       case 'session.error':
         // spec 012 FR-157: the runtime's own category decides when it has one; otherwise the message is read (markAuthError)

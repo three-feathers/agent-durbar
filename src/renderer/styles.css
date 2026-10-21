@@ -420,6 +420,22 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .pdiff .dl.hunk{color:var(--blue-ink)}
 .pdiff .dl.file{color:var(--muted);font-weight:600}
 .pdiff .dmore{display:block;padding:2px 8px 0;color:var(--muted);font-family:inherit}
+/* spec 005 FR-020/FR-021: a file edit in the chat, an edit row and its diff (the permission card's .pdiff colours) */
+.chip.editchip .ed-head{display:inline-flex;align-items:baseline;gap:6px;min-width:0;overflow:hidden;flex:0 1 auto}
+.chip.editchip .ed-verb{color:var(--ink-2);flex:none}
+.chip.editchip .ed-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;min-width:0}
+.chip.editchip .ed-dir{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 2 auto;min-width:0}
+.ed-count{display:inline-flex;gap:5px;flex:none;font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.ed-count i{font-style:normal}
+.ed-count .add{color:var(--pc-done)}
+.ed-count .del{color:var(--red-ink)}
+.chips>.ediff{flex:1 1 100%;min-width:0;margin:0 0 2px}
+.chips>.ediff[hidden]{display:none}
+.ediff>summary{font-size:11px;color:var(--muted)}
+.ediff>pre{max-height:min(320px,40vh)}
+.ediff .dl.file{display:flex;align-items:baseline;gap:8px;padding-top:2px;color:var(--ink-2)}
+.ediff .xall{display:block;margin:4px 8px 0;height:28px;padding:0 10px;font:600 11px/1 system-ui,sans-serif;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);cursor:pointer}
+.ediff.partial>pre{border-style:dashed}
 /* spec 052 FR-062: "active 2m ago" next to the chat header's status */
 .ph-ago{font-size:var(--t5-size);color:var(--muted);white-space:nowrap}
 .ph-ago:empty{display:none}

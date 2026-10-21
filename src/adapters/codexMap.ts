@@ -11,7 +11,9 @@
  * Notifications of a thread that is neither the main one nor a known child are ignored. Whether a real app-server routes
  * child-thread events on the parent's connection is unverified, so the adapter keeps `helpers: false` until it is recorded.
  */
+import { codexEdit } from './edits';
 import type { EventBody } from './map';
+import type { EditInfo } from './types';
 import { isObj, nonEmptyStr as str } from '../shared/guards';
 import { isMcpAuthChallenge } from './mcpauth';
 
@@ -31,6 +33,8 @@ export const CODEX_TEXT_CAP = 20000;
 export const CODEX_INTENT_CAP = 300;
 /** Most child threads remembered (oldest forgotten first). */
 export const CODEX_CHILD_LIMIT = 256;
+/** Open fileChange items started from a streamed patch, kept at most (oldest dropped first). */
+const CODEX_TOOLS_LIMIT = 256;
 
 /** Own property only (never from the prototype chain). */
 const own = (o: unknown, k: string): unknown => (isObj(o) && Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined);
@@ -61,6 +65,8 @@ export class CodexMapper {
   private messages = new Map<string, string>();
   /** Item ids of reasoning that already streamed as deltas. */
   private reasoningSeen = new Set<string>();
+  /** Spec 005 FR-019: fileChange items that already started from `item/fileChange/patchUpdated`. */
+  private patching = new Set<string>();
   private cwd: string | undefined;
 
   constructor(private readonly emit: (body: EventBody) => void) {}
@@ -87,6 +93,7 @@ export class CodexMapper {
     this.tools.clear();
     this.messages.clear();
     this.reasoningSeen.clear();
+    this.patching.clear();
   }
 
   private addChild(thread: string, item: string): void {
@@ -172,6 +179,20 @@ export class CodexMapper {
         return this.item(own(params, 'item'), 'started', agentId);
       case 'item/completed':
         return this.item(own(params, 'item'), 'completed', agentId);
+      case 'item/fileChange/patchUpdated': {
+        // Spec 005 FR-019: the patch as the model writes it (generated types, codex-cli 0.163.0); the row starts at the first one
+        const id = ownStr(params, 'itemId');
+        const edit = codexEdit(own(params, 'changes'), true);
+        if (!id || !edit) return;
+        if (!this.tools.has(id)) {
+          if (this.tools.size >= CODEX_TOOLS_LIMIT) this.tools.delete(this.tools.keys().next().value as string);
+          this.tools.set(id, { tool: 'apply_patch' });
+          if (this.patching.size >= CODEX_TOOLS_LIMIT) this.patching.delete(this.patching.values().next().value as string);
+          this.patching.add(id);
+          this.emit({ type: 'toolCall', callId: id, tool: 'apply_patch', phase: 'start', args: { files: edit.files.map((f) => f.path) }, agentId });
+        }
+        return this.emit({ type: 'toolCall', callId: id, tool: 'apply_patch', phase: 'update', edit, agentId });
+      }
       case 'thread/tokenUsage/updated':
         return this.usage(own(params, 'tokenUsage'), agentId);
       default:
@@ -185,6 +206,7 @@ export class CodexMapper {
       this.messages.clear();
       this.reasoningSeen.clear();
       this.tools.clear();
+      this.patching.clear();
     }
     const turn = own(params, 'turn');
     const status = ownStr(turn, 'status');
@@ -219,10 +241,15 @@ export class CodexMapper {
     const status = ownStr(item, 'status');
     const exit = own(item, 'exitCode');
     const failed = status === 'failed' || status === 'declined' || (type === 'commandExecution' && done && typeof exit === 'number' && exit !== 0);
-    const call = (meta: { tool: string; mcpServer?: string; mcpTool?: string }, args?: unknown, output?: string, mcpAuth?: true): void => {
+    const call = (meta: { tool: string; mcpServer?: string; mcpTool?: string }, args?: unknown, output?: string, edit?: EditInfo, mcpAuth?: true): void => {
+      // FR-019: a fileChange that already started from its streamed patch gets its start as an update (no second row)
+      const early = this.patching.has(id);
       if (!done) this.tools.set(id, meta);
-      else this.tools.delete(id);
-      this.emit({ type: 'toolCall', callId: id, ...meta, phase: done ? (failed ? 'failed' : 'complete') : 'start', ...(done ? {} : { args }), ...(done && output ? { output: cap(output) } : {}), ...(done && failed && mcpAuth && meta.mcpServer ? { mcpAuth } : {}), agentId });
+      else {
+        this.tools.delete(id);
+        this.patching.delete(id);
+      }
+      this.emit({ type: 'toolCall', callId: id, ...meta, phase: done ? (failed ? 'failed' : 'complete') : early ? 'update' : 'start', ...(done ? {} : { args }), ...(done && output ? { output: cap(output) } : {}), ...(done && failed && mcpAuth && meta.mcpServer ? { mcpAuth } : {}), ...(edit ? { edit } : {}), agentId });
     };
 
     switch (type) {
@@ -249,7 +276,7 @@ export class CodexMapper {
         const changes = own(item, 'changes');
         const files = (Array.isArray(changes) ? changes : []).map((c) => ownStr(c, 'path')).filter((p): p is string => !!p);
         const output = status === 'declined' ? 'declined' : files.length ? `${files.length} file${files.length === 1 ? '' : 's'} changed` : undefined;
-        return call({ tool: 'apply_patch' }, { files }, output);
+        return call({ tool: 'apply_patch' }, { files }, output, codexEdit(changes));
       }
       case 'mcpToolCall': {
         const server = ownStr(item, 'server');
@@ -260,7 +287,7 @@ export class CodexMapper {
         const text = Array.isArray(content) ? content.map((c) => ownStr(c, 'text')).filter(Boolean).join('\n') : undefined;
         const output = failed ? (ownStr(own(item, 'error'), 'message') ?? 'failed') : text;
         // Spec 058 FR-060: a failed MCP call whose error is the server's OAuth challenge says "sign in" (the adapter refreshes the list)
-        return call(meta, own(item, 'arguments'), output, failed && isMcpAuthChallenge(output) ? true : undefined);
+        return call(meta, own(item, 'arguments'), output, undefined, failed && isMcpAuthChallenge(output) ? true : undefined);
       }
       case 'dynamicToolCall':
         return call({ tool: ownStr(item, 'tool') ?? type }, own(item, 'arguments'));

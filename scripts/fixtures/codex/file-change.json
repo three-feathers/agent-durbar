@@ -9,9 +9,9 @@
   ],
   "expected": [
     {"type":"status","status":"idle","intent":"Ready in /work/app"},
-    {"type":"toolCall","callId":"fc_1","tool":"apply_patch","phase":"start","args":{"files":["src/a.ts","src/b.ts"]}},
-    {"type":"toolCall","callId":"fc_1","tool":"apply_patch","phase":"complete","output":"2 files changed"},
-    {"type":"toolCall","callId":"fc_2","tool":"apply_patch","phase":"start","args":{"files":["src/c.ts"]}},
-    {"type":"toolCall","callId":"fc_2","tool":"apply_patch","phase":"failed","output":"declined"}
+    {"type":"toolCall","callId":"fc_1","tool":"apply_patch","phase":"start","args":{"files":["src/a.ts","src/b.ts"]},"edit":{"files":[{"path":"src/a.ts","kind":"edit","diff":"@@ -1 +1 @@","added":0,"removed":0},{"path":"src/b.ts","kind":"create","diff":"+x","added":1,"removed":0}]}},
+    {"type":"toolCall","callId":"fc_1","tool":"apply_patch","phase":"complete","output":"2 files changed","edit":{"files":[{"path":"src/a.ts","kind":"edit","diff":"@@ -1 +1 @@","added":0,"removed":0},{"path":"src/b.ts","kind":"create","diff":"+x","added":1,"removed":0}]}},
+    {"type":"toolCall","callId":"fc_2","tool":"apply_patch","phase":"start","args":{"files":["src/c.ts"]},"edit":{"files":[{"path":"src/c.ts","kind":"delete"}]}},
+    {"type":"toolCall","callId":"fc_2","tool":"apply_patch","phase":"failed","output":"declined","edit":{"files":[{"path":"src/c.ts","kind":"delete"}]}}
   ]
 }

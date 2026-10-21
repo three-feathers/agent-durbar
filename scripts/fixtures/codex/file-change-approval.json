@@ -10,6 +10,7 @@
   "completed": {"method":"item/completed","params":{"threadId":"thr_main","turnId":"turn_1","completedAtMs":1760000000500,"item":{"type":"fileChange","id":"call_fc_1","status":"completed","changes":[]}}},
   "expected": [
     {"type":"status","status":"idle","intent":"Ready in /work/app"},
-    {"type":"toolCall","callId":"call_fc_1","tool":"apply_patch","phase":"start","args":{"files":["/work/app/src/config.ts"]}}
+    {"type":"toolCall","callId":"call_fc_1","tool":"apply_patch","phase":"start","args":{"files":["/work/app/src/config.ts"]},"edit":{"files":[{"path":"/work/app/src/config.ts","kind":"edit","diff":"@@ -1,3 +1,3 @@\n export const config = {\n-  retries: 1,\n+  retries: 3,\n };","added":1,"removed":1}]}},
+    {"type":"toolCall","callId":"call_fc_1","tool":"apply_patch","phase":"update","edit":{"files":[{"path":"/work/app/src/config.ts","kind":"edit","diff":"@@ -1,3 +1,3 @@\n export const config = {\n-  retries: 1,\n+  retries: 3,\n };","added":1,"removed":1},{"path":"/work/app/NOTES.md","kind":"create","diff":"@@ -0,0 +1,2 @@\n+# Notes\n+Retries are 3 now.","added":2,"removed":0}],"partial":true}}
   ]
 }
