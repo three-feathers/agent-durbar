@@ -4,10 +4,10 @@
 **Created**: 2026-10-21
 **Status**: Part 1 **built** 2026-10-21 (add to and remove from the agent apps' own lists with a per-file review and backups, source
 chips, Claude Code's user list in Durbar's Claude sessions): unit tests (`test:mcpglobal`) and a simulator driver (`shots-069-mcp-global`),
-no real agent app has read a written file yet (T060). Part 2 (harmonize) **built** 2026-10-21 the same way (`test:mcpglobal`,
+and the real check T060 (2026-10-22, scratch home, 0 credits: Copilot CLI, Claude Code and Codex list the written entries; see *Changes*). Part 2 (harmonize) **built** 2026-10-21 the same way (`test:mcpglobal`,
 `shots-069-harmonize`). Part 3 (tools list and per-row controls) **built** 2026-10-21 on top of
 spec 058's Restart (#473): unit tests on the fake SDK, fake CLI and fake app-server (`test:mcpservertools`, `test-claude-adapter`,
-`test-codex-adapter`) and `shots-069-mcp-tools`; not run on a real account. Sign in stays with spec 058 (#364). Owner questions Q1-Q6 open; their defaults are what is built.
+`test-codex-adapter`) and `shots-069-mcp-tools`; not run on a real account. Sign in stays with spec 058 (#364). Owner questions Q1-Q6 answered 2026-10-22: the built defaults are kept.
 **Input**: Owner (Vikram, Telegram 2026-10-21 21:03 UTC): "For the MCP server addition UI, give an option to also add to the list of
 global MCP servers, and those controls to start/stop/restart/auth... we should have those options for all servers. Also show the list of
 tools per MCP server when you expand it." Owner decision (Vikram, Telegram 2026-10-21 21:06 UTC): "global" is written to the agent apps'
@@ -45,7 +45,18 @@ This feature:
 - **2026-10-21 21:06 UTC (Vikram, Telegram):** "global" MUST be written to the agent apps' own config files. "If there is more than one
   agent app, propose in the UI to harmonize and merge all; else ask the user to select the agent app."
 
-### Open questions for the owner (each has a default that is built until answered)
+- **2026-10-22 01:00 Zurich / 2026-10-21 23:00 UTC (Vikram, Telegram):** "Yes for all and feel free to perform real checks", answering
+  Q1-Q6 below: every default (A) is kept and is now a decision, and the real check T060 is approved.
+  - **Q1** A: Durbar reads Claude Code's user list read-only, with a switch per server, and passes the switched-on servers to its Claude
+    sessions with `--mcp-config` (still strict).
+  - **Q2** A: environment-variable and header *references* by default; writing values into the files is a per-server second choice with
+    a warning.
+  - **Q3** A: backups next to each file (`<file>.durbar-<UTC stamp>.bak`, same folder and permissions), the last 3 per file kept.
+  - **Q4** A: Durbar edits `~/.claude.json` directly (every other key kept), not `claude mcp add-json`.
+  - **Q5** A: a same-name entry with a different definition is replaced only when *Replace in <app>* is ticked for that app.
+  - **Q6** A: `${NAME}` references for Copilot, marked "not verified for Copilot" until T060 shows otherwise.
+
+### Questions answered by the owner (2026-10-22; the default A of each was chosen, see above)
 
 - **Q1 Claude Code's user list in Durbar's own Claude sessions.** Durbar starts Claude Code with `--strict-mcp-config` and no setting
   sources (spec 012 Q8), so a server written to Claude Code's user list reaches `claude` in a terminal but **not** Durbar's own Claude
@@ -141,7 +152,9 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
   - Codex TOML: a minimal edit. Add appends a block `[mcp_servers.<name>]` (and `[mcp_servers.<name>.env]` for plain env values) at the end,
     after one blank line and a comment `# added by Agent Durbar`; remove deletes the lines from that table's header up to the next table
     header that is not one of its sub-tables. Every other line, comment and blank line stays byte for byte. Refused: `mcp_servers` as an
-    inline table or dotted key, a quoted or odd name, the name already present (add), or the table missing (remove).
+    inline table or dotted key, a quoted or odd name, the name already present (add), the table missing (remove), or (change 2026-10-22)
+    a file that does not parse: a line that is not a table header, a `key = value`, the rest of a multi-line array, inline table or
+    string, a comment or a blank line is refused with its line number (a shape check, not a full TOML parser).
   - Entry shapes: Copilot `{type: "local"|"http"|"sse", command, args, env, url, headers, tools: ["*"]}`; Claude Code `{type: "stdio"|"http"|"sse",
     command, args, env, url, headers}`; Codex `command`, `args`, `cwd`, `env` / `env_vars`, `url`, `http_headers` / `env_http_headers` /
     `bearer_token_env_var`.
@@ -263,10 +276,30 @@ VS Code UI supports, as some people may want to give access to read email but no
 
 ### Honest limits
 
-- **FR-050** `[KNOWN GAP]` Not run against the real Copilot CLI, Claude Code or Codex reading the written files until T060 (no prompt, 0
-  credits, needs the owner's go-ahead because it edits real user files in a scratch home).
-- **FR-051** `[KNOWN GAP]` Copilot `${NAME}` expansion (Q6) and Claude Code `${NAME}` in the user list (documented for `.mcp.json`) are
-  unverified.
+- **FR-050** `[IMPLEMENTED]` Checked against the real Copilot CLI, Claude Code and Codex reading the written files (T060), 0 credits, no
+  prompt, in a scratch home (`HOME`, `USERPROFILE`, `XDG_*` in a temporary folder; no real user file read or written):
+  `real:` 2026-10-22, GitHub Copilot CLI 1.0.101, Claude Code 2.1.304, codex-cli 0.163.0, the main-process write path
+  (`GlobalLists.preview`/`apply`/`removePreview`) driven by a script on the part 4 branch.
+  - Copilot CLI: `copilot mcp list` lists the stdio (`local`) and two http entries under *User servers*; `copilot mcp get <name> --json`
+    shows them as written, `enabled: true`.
+  - Claude Code: `claude mcp list` / `claude mcp get` (user scope) list all three; the stdio demo server is *Connected*; a missing
+    referenced variable shows as a warning ("Missing environment variables: X_API_KEY"), not an error.
+  - Codex: `codex mcp list` / `codex mcp list --json` / `codex mcp get` show `env_vars = ["DEMO_KEY"]`, `env_http_headers` and
+    `bearer_token_env_var` as written.
+  - Every other key of the JSON files (unknown top-level keys, `projects`, an unknown key inside another server) and every other byte of
+    the Codex file (comments, odd spacing, other tables) are kept: add then remove of all three gave the same Codex bytes and the same
+    JSON content. Backups next to each file, mode 600, pruned to the newest 3 after six writes; the write is a rename (new inode, no
+    `.durbar-tmp` left), the file mode is kept (664 stayed 664), new files are created 600. A file changed after the review is refused.
+    Missing files are created (`~/.claude.json` as `{"mcpServers": ...}` only) and all three CLIs list the entry.
+  - Remove: each CLI no longer lists the server.
+  - Found and fixed: a Codex file that does not parse (an unclosed `[table` header) was appended to instead of refused; see *Changes*.
+  - Claude Code rewrites `~/.claude.json` with its own keys (`firstStartTime`, `userID`, migrations) when it runs: the review's hash
+    check (FR-006) is what keeps such a concurrent write from being lost.
+- **FR-051** Claude Code `${NAME}` in the user list `[IMPLEMENTED]` (`real:` 2026-10-22, Claude Code 2.1.304: the stdio demo server
+  started by `claude mcp get` received the variable's value, not the literal `${DEMO_KEY}`). Codex `env_vars` `[IMPLEMENTED]` (`real:`
+  the same check through `codex app-server` `mcpServerStatus/list`). Copilot `${NAME}` expansion (Q6) stays `[KNOWN GAP]`: the Copilot
+  CLI stores and shows the literal `${NAME}` (`copilot mcp get --json --show-secrets`) and starts MCP servers only inside a signed-in
+  session, which this check did not run; the review keeps saying "not verified for Copilot".
 
 ## Success criteria
 
@@ -282,6 +315,16 @@ VS Code UI supports, as some people may want to give access to read email but no
 2. PR 2: FR-020..FR-022.
 3. PR 3, after #473: FR-030..FR-033. Sign in stays with spec 058 (Paco, #364).
 4. PR 4 (stacked on PR 3): FR-060..FR-064.
+
+## Changes
+
+- **2026-10-22 (T060, real check):** a Codex `config.toml` that does not parse must be refused like a JSON file that does not parse
+  (acceptance 2 of story 1). The line reader skipped lines it did not understand, so a file with an unclosed table header
+  (`[mcp_servers.x`), which `codex mcp list` refuses to load ("unclosed table, expected `]`"), got a new table appended. Now every
+  line must be a table header, a `key = value` (dotted and quoted keys allowed), the rest of a multi-line array, inline table or
+  string, a comment or a blank line; otherwise the read, add and remove are refused with "This config.toml does not parse (line N)".
+  Lines longer than 16 KiB stay unread, as before. `real:` the five refused and five accepted fixtures of `test:mcpglobal` give the same
+  verdict in codex-cli 0.163.0. (FR-003, T061)
 
 ## Relationship to other specs
 

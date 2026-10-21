@@ -36,4 +36,5 @@
 
 ## Real check (needs the owner's go-ahead)
 
-- [ ] T060 In a scratch home: add a server globally to the three apps, then `copilot`, `claude mcp list`, `codex mcp list` read it (no prompt, 0 credits); check Copilot `${NAME}` (Q6) [FR-050, FR-051]
+- [x] T060 In a scratch home: add a server globally to the three apps, then `copilot`, `claude mcp list`, `codex mcp list` read it (no prompt, 0 credits); check Copilot `${NAME}` (Q6) [FR-050, FR-051]. `real:` 2026-10-22, Copilot CLI 1.0.101, Claude Code 2.1.304, codex-cli 0.163.0: all three list the written stdio and http entries and no longer list them after Remove; backups (last 3), rename write, refusal of a changed file, unknown keys and Codex bytes kept; Claude Code and Codex pass the referenced variable's value; Copilot `${NAME}` expansion not observable without a signed-in session (FR-051 stays a gap for Copilot). Found T061.
+- [x] T061 Codex `config.toml` that does not parse is refused with its line number (change 2026-10-22; found by T060) [FR-003]; tests in `test:mcpglobal`, verdicts matched against codex-cli 0.163.0
