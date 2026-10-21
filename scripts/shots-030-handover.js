@@ -14,19 +14,18 @@
 const assert = require('assert');
 const path = require('path');
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
+const { helpers } = require('./driver-helpers');
 
 module.exports = async (ctx) => {
-  const js = (c) => ctx.js(c);
-  const shot = async (name, w, h) => { await ctx.sleep(150); await ctx.shot(path.join(OUT, `030-handover-${name}-${w}x${h}.png`)); };
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { js } = H;
+  const shot = (name, w, h) => H.shot(path.join(OUT, `030-handover-${name}-${w}x${h}.png`));
   const openMore = async () => {
     await js(`document.getElementById('moreBtn').click()`);
     await ctx.waitFor(`!!document.getElementById('moreMenu')&&!document.getElementById('moreMenu').hidden`, 5000);
   };
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simkinds: 'mixed' } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
+    await H.load({ w, h, query: { simkinds: 'mixed' } });
     // sim-2 is a Copilot agent in the mixed office; Claude Code, Codex and a basic app are ready too
     await js(`document.querySelector('#stage .desk[data-id="sim-2"]').click()`);
     await ctx.waitFor(`!!document.getElementById('moreBtn')`, 8000);
@@ -61,9 +60,7 @@ module.exports = async (ctx) => {
     await ctx.sleep(300);
   }
   // one ready app only: nothing to continue in, so the entry is not there
-  ctx.win.setContentSize(1440, 900);
-  await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1' } });
-  await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
+  await H.load({ w: 1440, h: 900 });
   await js(`document.querySelector('#stage .desk[data-id="sim-2"]').click()`);
   await ctx.waitFor(`!!document.getElementById('moreBtn')`, 8000);
   await openMore();

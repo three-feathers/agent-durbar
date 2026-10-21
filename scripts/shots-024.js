@@ -20,14 +20,15 @@
  * A one-off call is sent with the simulator-only hook window.__durbarSimEmit (spec 010 dev/test infrastructure).
  */
 const path = require('path');
-const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
+const { helpers, jsLiteral } = require('./driver-helpers');
 const assert = require('assert');
 const OUT = process.env.SHOTS_024 || '/tmp';
 const SIZES = [[1440, 900], [1280, 800]];
 
 module.exports = async (ctx) => {
-  const js = (code) => ctx.js(code);
-  const shot = async (name, w, h) => { await ctx.sleep(300); await ctx.shot(path.join(OUT, `024-${name}-${w}x${h}.png`)); console.log('[024] saved', name, w, h); };
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { js } = H;
+  const shot = (name, w, h) => H.shot(path.join(OUT, `024-${name}-${w}x${h}.png`), { delay: 300, tag: '024', what: `${name} ${w} ${h}` });
   const settle = async () => { await ctx.waitFor(`!!document.querySelector('.place.busy')`, 6000); await ctx.waitFor(`!document.querySelector('.walker.walking')`, 6000); await ctx.sleep(200); };
   /* every figure must stand on a lit slot of the lobby */
   const onSlots = () => js(`(()=>{const sl=[...document.querySelectorAll('.lobby .slot.on')].map(e=>e.getBoundingClientRect());const bad=[];document.querySelectorAll('#walkers .walker').forEach(w=>{const b=w.getBoundingClientRect(),cx=b.left+b.width/2,cy=b.top+b.height/2;if(!sl.some(s=>Math.abs(s.left+s.width/2-cx)<4&&Math.abs(s.top+s.height/2-cy)<4))bad.push([Math.round(cx),Math.round(cy)]);});return {walkers:document.querySelectorAll('#walkers .walker').length,bad}})()`);
@@ -86,7 +87,7 @@ module.exports = async (ctx) => {
   ctx.win.setContentSize(w, h); await ctx.sleep(800);
   const who = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk:not(.is-away)')].find(d=>/is-(idle|done)/.test(d.className));return d&&d.dataset.id})()`);
   assert.ok(who, 'an idle agent at its desk to send for a walk');
-  const call = (n, phase) => js(`window.__durbarSimEmit({type:'toolCall',sessionId:${jsLiteral(who)},timestamp:Date.now(),callId:'shots-024-${n}',tool:'github-search_issues',phase:'${phase}',mcpServer:'github',mcpTool:'search_issues'})`);
+  const call = (n, phase) => js(`window.__durbarSimEmit({type:'toolCall',sessionId:${jsLiteral(who)},timestamp:Date.now(),callId:${jsLiteral(`shots-024-${n}`)},tool:'github-search_issues',phase:${jsLiteral(phase)},mcpServer:'github',mcpTool:'search_issues'})`);
   await call(1, 'start');
   await ctx.waitFor(`!!document.querySelector('.walker.walking')`, 3000); await ctx.sleep(380);
   const walking = await js(`document.querySelectorAll('.walker.walking').length`);

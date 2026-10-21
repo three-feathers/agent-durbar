@@ -12,16 +12,18 @@
  */
 const assert = require('assert');
 const path = require('path');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
 
 module.exports = async (ctx) => {
-  const js = ctx.js;
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { js } = H;
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     ctx.win.setContentSize(w, h);
     await ctx.sleep(2500);
     const id = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith('Ada'));return d?d.dataset.id:null})()`);
     assert.ok(id, 'Ada (mcp-swiss) is on the floor');
-    await js(`document.querySelector('#stage .desk[data-id="${id}"]').click()`); await ctx.sleep(900);
+    await js(`document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)}).click()`); await ctx.sleep(900);
     if (!(await js(`!!document.querySelector('#prev [data-pv="view"]')`))) { await js(`document.getElementById('prevBtn').click()`); await ctx.sleep(400); }
     await ctx.waitFor(`!!document.querySelector('#prev [data-pv="view"]')`, 5000);
     await js(`document.querySelector('#prev [data-pv="view"]').click()`); await ctx.sleep(900);
@@ -35,8 +37,7 @@ module.exports = async (ctx) => {
     assert.ok(r.cont && r.banner, 'Continue in VS Code is there and the banner still says it cannot be continued here');
     await js(`document.getElementById('vsCont').click()`); await ctx.sleep(400);
     assert.match(await js(`document.getElementById('toasts').innerText`), /Opening in VS Code/);
-    await js(`(()=>{const s=document.createElement('style');s.textContent='#toasts{display:none!important}';document.head.appendChild(s);})()`); await ctx.sleep(300);
-    await ctx.shot(path.join(OUT, `009-vschat-latest-${w}x${h}.png`));
+    await H.shot(path.join(OUT, `009-vschat-latest-${w}x${h}.png`), { prep: 'calm', delay: 300 });
     await js(`document.getElementById('vsBack').click()`); await ctx.sleep(300);
     await js(`document.getElementById('panelClose')&&document.getElementById('panelClose').click()`); await ctx.sleep(300);
   }

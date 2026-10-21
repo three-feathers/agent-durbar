@@ -9,19 +9,13 @@
  * focus is back on the chip afterwards. A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
 const assert = require('assert');
-const { waits } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 
 module.exports = async (ctx) => {
-  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
-  const key = async (keyCode, shift) => {
-    const modifiers = shift ? ['shift'] : [];
-    const wc = ctx.win.webContents;
-    wc.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
-    if (keyCode === 'Return') wc.sendInputEvent({ type: 'char', keyCode: '\r', modifiers }); // Enter activates a button on the char event
-    wc.sendInputEvent({ type: 'keyUp', keyCode, modifiers });
-    await ctx.sleep(50); // the key's own handler runs in the next tasks; what it changes is waited for by the caller
-  };
-  const ev = (code) => ctx.js(code);
+  const H = helpers(ctx); // spec 008 FR-096/097: shared plumbing, waits for the page instead of a fixed time
+  const { until, settle } = H;
+  const key = (keyCode, shift) => H.key(keyCode, shift ? ['shift'] : []);
+  const ev = H.js;
   const inDlg = () => ev(`(()=>{const d=document.getElementById('modeDlg');return !!d&&d.contains(document.activeElement)})()`);
   const dlgOpen = () => ev(`!!document.getElementById('modeDlg')`);
   const onChip = () => ev(`document.activeElement&&document.activeElement.id==='modeChip'`);
@@ -42,7 +36,7 @@ module.exports = async (ctx) => {
   await until(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000); await settle();
   const id = await ev(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith('Ada'));return d?d.dataset.id:null})()`);
   assert.ok(id, 'Ada is on the floor');
-  await ev(`document.querySelector('#stage [data-id="${id}"]').click()`); await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('modeChip')`); await settle();
+  await ev(`document.querySelector(${jsLiteral(`#stage [data-id="${id}"]`)}).click()`); await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('modeChip')`); await settle();
   await ev(`(()=>{const t=document.querySelector('.prev-toggle[aria-expanded="true"]');if(t)t.click();})()`); await until(`!document.querySelector('.prev-toggle[aria-expanded="true"]')`);
   const before = await mode(); assert.match(before, /Read-only/, 'Ada starts read-only');
 
