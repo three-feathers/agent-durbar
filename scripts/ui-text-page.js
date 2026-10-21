@@ -188,6 +188,7 @@
   function chatRules(root, add) {
     for (const b of root.querySelectorAll('.cp-btn,.md .copy')) {
       if (!vis(b)) continue;
+      b.scrollIntoView({ block: 'center' }); // the text around it has to be on screen to be measured (this moves the chat's scroll, nothing else)
       const msg = b.closest('#chat,.chat-inner') || b.closest('.msg,.sub-prompt,.sub-res,.think,.codebox') || b.parentElement; // the whole chat: the button also sticks out of its bubble
       const br = b.getBoundingClientRect();
       const tw = document.createTreeWalker(msg, NodeFilter.SHOW_TEXT);

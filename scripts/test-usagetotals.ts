@@ -117,7 +117,7 @@ for (const v of [undefined, null, 5, 'x', [], {}, { office: 'x', folders: 'y' },
 const half = U.createLedger(); half.setBaseline({ since: 5, office: nums(2, 1), folders: [] }); assert.strictEqual(half.since(), '', 'a since that is not text is ignored');
 // the tooltip: saved since, and this run alone
 const t2 = U.tooltip(nums(122, 42.2), { scope: 'office', since: '2026-10-01T09:00:00.000Z', run: nums(2, 0.5), removed: true });
-assert.ok(/Saved since 2026-10-01; ended sessions included\./.test(t2), t2);
+assert.ok(/Saved since 2026-10-01 \(reset in Settings\); ended sessions included\./.test(t2), t2);
 assert.ok(/This run: 0\.500 AIU in 2 calls\./.test(t2), t2);
 assert.ok(/Includes folders no longer shown\./.test(t2));
 assert.ok(!/This run/.test(U.tooltip(nums(122, 42.2), { scope: 'office', since: '2026-10-01', run: nums(0, 0) })), 'no run line before this run recorded anything');

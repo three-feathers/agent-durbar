@@ -74,7 +74,7 @@
     const L=[[0,(office?'Office total: ':'Folder total: ')+(allUnreported(t)?'cost not reported':aiu(t,3))],
       [0,plural(t.calls,'call')+' · '+fmtTokens(t.inTokens)+' in / '+fmtTokens(t.outTokens)+' out']];
     if(t.unreported&&!allUnreported(t))L.push([1,plural(t.unreported,'call')+' without credits']);
-    L.push([0,since?'Saved since '+since+'; ended sessions included.':'Since Agent Durbar opened; ended sessions included.']);
+    L.push([0,since?'Saved since '+since+' (reset in Settings); ended sessions included.':'Since Agent Durbar opened; ended sessions included.']);
     if(since&&o.run&&!none(o.run))L.push([4,'This run: '+(allUnreported(o.run)?'cost not reported':aiu(o.run,3))+' in '+plural(o.run.calls,'call')+'.']);
     if(office&&o.removed)L.push([5,'Includes folders no longer shown.']);
     if(office&&o.offFloors&&!none(o.offFloors))L.push([2,'Includes '+(allUnreported(o.offFloors)?plural(o.offFloors.calls,'call')+' with cost not reported':aiu(o.offFloors,3))+' from floors that are off.']);

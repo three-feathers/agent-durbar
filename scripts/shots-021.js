@@ -39,7 +39,7 @@ module.exports = async (ctx) => {
     console.log('[021]', w, JSON.stringify({ chip: r.chip, rooms: r.rooms }));
     assert.ok(/^≈ \$[\d.]+$/.test(r.chip), 'the chip shows money (spec 052 FR-028): ' + r.chip);
     assert.ok(officeAiu(r) >= 41.7, 'the chip includes what the previous run saved: ' + r.chip + ' / ' + officeAiu(r) + ' AIU');
-    assert.ok(/Saved since 2026-10-01;/.test(r.tip), 'the tooltip says since when');
+    assert.ok(/Saved since 2026-10-01 \(reset in Settings\)/.test(r.tip), 'the tooltip says since when');
     assert.ok(/This run: [\d.]+ AIU in \d+ calls?\./.test(r.tip), 'the tooltip gives this run alone');
     assert.ok(/Includes folders no longer shown\./.test(r.tip), 'a saved folder that is not listed is announced');
     assert.ok(atLeast(r.rooms['mcp-swiss'], 12.4), 'mcp-swiss shows at least its saved total: ' + r.rooms['mcp-swiss']);
