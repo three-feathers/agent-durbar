@@ -70,9 +70,14 @@ import type { ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitc
 import { createDebugSink } from '../shared/redact';
 import { profileDir } from './profiledir';
 import { debugSwitchesToRemove } from './debugguard';
+import { aumidToSet } from './aumid';
 
 // Spec 008 FR-038: no DevTools endpoint in a packaged build. No fuse covers these switches; removing them before ready is shown to work on the packed Linux app (npm run check:fuses-launch).
 for (const sw of debugSwitchesToRemove(app.isPackaged)) app.commandLine.removeSwitch(sw);
+
+// Spec 008 FR-043: packaged Windows only, before ready and any window, so toasts and the taskbar button use the Start menu shortcut's AUMID (build.appId).
+const aumid = aumidToSet(process.platform, app.isPackaged);
+if (aumid) app.setAppUserModelId(aumid);
 
 // Developer/test hooks (spec 010): ignored in packaged builds unless DURBAR_DEV=1. Read hooks only from `dev`.
 const dev = devEnv(process.env, app.isPackaged);

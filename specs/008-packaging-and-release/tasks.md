@@ -40,6 +40,8 @@
   6. a mutation check: changing the dev folder to `agent-durbar` or adding an `app.setName(` call makes the new test fail;
   7. README, CONTRIBUTING, spec 010 FR-004 cross-reference and a CHANGELOG line (Unreleased) as in FR-036; this spec's FR-033..FR-036 tagged `[IMPLEMENTED]`/`test:`/`sim:` and the `[KNOWN GAP]`s kept;
   8. `npm run typecheck && npm run build && npm test` pass.
+
+  Built 2026-10-21 on Linux (`test:checknames`, `test:macos`, `pack:dir`, `dist:linux` with `Exec=AppRun %U`, `installed-app-ci.js` on the packed AppImage with the simulator). Criterion 5 done: `real:` CI *Installed app* run 39561893292 (Windows: Start menu and desktop `.lnk`, DisplayName, shortcut AUMID; macOS: `CFBundle*`; Linux: `.desktop`; check-names on the Windows exe and the macOS `Info.plist`). Still open: criterion 6 (*Packaged check* on `main`, run id to note after the merge).
 - [x] T038 (2026-10-20, #355) Electron fuses and no remote debugging in packaged builds (FR-037..FR-039). Files: `package.json` (`build.electronFuses`, `pack:dir` runs `scripts/check-fuses.js`, new `check:fuses-launch`), `scripts/check-fuses.js`, `scripts/check-fuses-launch.js`, `src/main/main.ts` (the FR-038 guard, packaged only), a unit test for the guard's decision function, README *Install from releases* / known limits, CHANGELOG. Rows: (a) the fuse wire of the Linux unpacked build matches FR-037; (b) changing one value in the config makes `check-fuses.js` fail; (c) launch probe on the packed Linux app: `--inspect=0` opens no inspector, `--remote-debugging-port` gives no `/json/version`, `ELECTRON_RUN_AS_NODE=1` starts the app (not Node), and the window opens; (d) the guard does nothing in dev runs (unit test, and `npm run check:office` still passes); (e) `npm run typecheck && npm run build && npm test` pass.
 
 ## 2026-10-20: UI checks on three OSes in Actions
@@ -49,3 +51,26 @@
 - [x] T092 `.github/workflows/ui-platforms.yml` on ubuntu, macOS and Windows: geometry, office, Mac title bar, ui-suite, screenshots as artifacts [FR-092]
 - [ ] T093 (first run: Windows and Linux all green; macOS: window clamped to the screen, FR-093, and the driver pressed Ctrl not Cmd; both fixed) First runs on all three OSes; every failure fixed at the cause or recorded; docs (README Development, CONTRIBUTING, CHANGELOG, agent notes) [FR-090..FR-092]
 
+- [x] T039 (2026-10-21, #384) Packaged display names on Windows, Linux and macOS [FR-040..FR-045]. Files:
+  - `src/main/main.ts` (FR-043, packaged win32 only);
+  - `src/main/appmenu.ts` (FR-044 label);
+  - `scripts/check-names.js` (new) and its self-test `scripts/test-checknames.ts`;
+  - `package.json`: `pack:dir` and `dist:*` run `check-names.js`, `test:serial` adds `test:checknames`, and `build.appImage.executableArgs: []` (FR-041);
+  - `scripts/installed-app-ci.js` (Windows, macOS and Linux asserts);
+  - `scripts/test-macos.ts`;
+  - README (*Install from releases*, known limits), CHANGELOG, this spec and `specs/README.md`.
+
+  Done when:
+  1. `npm run pack:dir` on Linux runs `check-names.js` and it passes. A copy of the config with `productName` changed, a top-level `productName` added, or `desktopName` changed makes it fail (self-test in `npm test`).
+  2. `npm run dist:linux` passes `check-names.js`, with the AppImage's `.desktop` `Name=Agent Durbar`, `StartupWMClass=agent-durbar`, `Icon=agent-durbar` and `Exec=AppRun %U`.
+  3. A static check in a unit test:
+     - `main.ts` calls `app.setAppUserModelId` with a value equal to `build.appId`, only when `process.platform === 'win32'` and the app is packaged (or as D1 decides), and before `app.whenReady`;
+     - there is still no `app.setName(` call.
+  4. `scripts/test-macos.ts` checks that the `appMenu` item has `label` = `MENU_APP_NAME` = `build.productName`.
+  5. `installed-app.yml` (started by the PR's change to `scripts/installed-app-ci.js`) passes on all three OSes, and asserts:
+     - Windows: Start menu and desktop `Agent Durbar.lnk`, DisplayName `Agent Durbar <version>`, shortcut AUMID = `appId`;
+     - macOS: the `CFBundle*` names;
+     - Linux: the `.desktop` names.
+  6. *Packaged check* on `main` runs `check-names.js` on macOS and Windows (`--dir`) and passes. This is checked after the merge and noted here with the run id.
+  7. The spec records `[KNOWN GAP]` for: taskbar and toasts on a real PC (#9), the Mac menu-bar title by eye, and the Linux launcher name on a desktop.
+  8. `npm run typecheck && npm run build && npm test` pass.
