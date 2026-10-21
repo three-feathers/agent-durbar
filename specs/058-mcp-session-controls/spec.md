@@ -491,9 +491,11 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   `[IMPLEMENTED]` 2026-10-21 (the FR-070 part of T098, see *Changes* 2026-10-21): in the shared `config` of `start()` in
   `src/adapters/copilot.ts`, so create, both resume paths and the FR-158 reconnect re-resume carry it; not in `oneShotConfig` or
   `renameResumeConfig`. `test:` `scripts/test-copilot-model.ts` (create, resume by id, `resumeSessionId`), `scripts/test-authcheck.ts`
-  (reconnect), `scripts/test-copilot-oneshot.ts` (one-shot without it). `[KNOWN GAP]` not run on a real account: that the runtime
-  really writes the keychain entry, how many macOS Keychain prompts it adds, Linux without a desktop keyring, and sharing with the
-  CLI (T105).
+  (reconnect), `scripts/test-copilot-oneshot.ts` (one-shot without it). `real:` 2026-10-21 (T116, run 39680461023, CI account,
+  runtime 1.0.22, demo OAuth server on loopback): a sign-in in one session served a later session in a new runtime process on
+  `windows-latest` (Credential Manager targets `<hex>.copilot-mcp-oauth`) and `ubuntu-latest` (no desktop keyring: files under
+  `~/.copilot/mcp-oauth-config/`, research.md 7.7). `[KNOWN GAP]` how many macOS Keychain prompts it adds, a Linux desktop with a
+  keyring, a third-party https server, and sharing with the CLI (T105).
 - **FR-071** **Simulator** (constitution IV): page address `simmcpauth=1` gives each sim kind one server in needs-auth and a Copilot tool
   card with the issue's exact text; **Sign in** -> host `auth.example.com` -> **Open sign-in page** shows a toast and opens nothing ->
   "Running" after 2 s (Codex: "applies with your next message"). `simmcpauth=manual` shows the FR-068 steps instead.
@@ -607,5 +609,7 @@ MCP server that needs a real OAuth sign-in. Nobody on the team has a Windows mac
 **Limits**: a loopback `http` demo server, not a third-party https one; the browser step is an HTTP client, not a browser; the
 Copilot CLI's `/mcp auth` sharing (rest of T105) and the Durbar UI flow (T098-T102) are not part of this check.
 
-Results: see research.md section 7.7.
+Results: see research.md section 7.7. `real:` 2026-10-21, run 39680461023 (runtime 1.0.22, 0 prompts): PASS on `windows-latest`
+and `ubuntu-latest`; session B in a new runtime process connected with no new sign-in. Windows keeps it in Credential Manager
+(`<hex>.copilot-mcp-oauth`); the Linux runner, with no desktop keyring, kept it in files under `~/.copilot/mcp-oauth-config/`.
 

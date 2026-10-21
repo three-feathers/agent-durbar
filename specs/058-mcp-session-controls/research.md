@@ -261,4 +261,21 @@ Workflow *MCP OAuth real check* (`.github/workflows/mcp-oauth-real.yml`, manual)
 
 | Runner | Runtime | A: first state | A: `oauth.login` | A: after the browser step | A2 (same runtime) | B (new runtime) | Keychain / files | Run |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `windows-latest` (win32 10.0.26100 x64, Node 22.23.3) | 1.0.22 (SDK 1.0.22) | `needs-auth` (1 s) | authorization URL on the demo's `/authorize` | `connected` (1 s); demo: +1 registration, +1 `/authorize`, +1 code grant; tool `demo_echo` | `connected`, +0 `/authorize`, +0 grants | **`connected`, +0 `/authorize`, +0 grants (PASS)**; tool `demo_echo` | Credential Manager 1 -> 3 targets: two `LegacyGeneric:target=<64 hex>.copilot-mcp-oauth`; file `~/.copilot/mcp-oauth-config/<hex>.json` | [39680461023](https://github.com/three-feathers/agent-durbar/actions/runs/39680461023) |
+| `ubuntu-latest` (linux 7.0.0-1017-azure x64, Node 22.23.3) | 1.0.22 (SDK 1.0.22) | `needs-auth` (1 s) | authorization URL on the demo's `/authorize` | `connected` (1 s); demo: +1 registration, +1 `/authorize`, +1 code grant; tool `demo_echo` | `connected`, +0 `/authorize`, +0 grants | **`connected`, +0 `/authorize`, +0 grants (PASS)**; tool `demo_echo` | no keychain entry; files `~/.copilot/mcp-oauth-config/<hex>.json` and two `<hex>.tokens.json` | [39680461023](https://github.com/three-feathers/agent-durbar/actions/runs/39680461023) |
+
+- `real:` 2026-10-21, run 39680461023 (commit f9458b31, Copilot runtime and SDK 1.0.22, 0 prompts): **FR-070 PASS on Windows and
+  Linux.** Session A signed in once (`oauth.login` with `serverName`, `clientName`, `callbackSuccessMessage` only; one registration,
+  one `/authorize`, one code grant); A2 in the same runtime and B in a NEW runtime process connected with no new `/authorize`, no new
+  grant and no refresh. Each new session first sent one request without a token (one 401 each), then used the kept token.
+- `real:` Windows: `persistent` storage writes Windows Credential Manager generic credentials named
+  `<64 hex>.copilot-mcp-oauth` (two new targets for one demo server) plus a client file `~/.copilot/mcp-oauth-config/<hex>.json`
+  (names only; no value was read).
+- `real:` Linux runner with no desktop keyring (GitHub `ubuntu-latest`): no keyring entry; the runtime fell back to files
+  `~/.copilot/mcp-oauth-config/<hex>.json` and `<hex>.tokens.json` (names only; contents not read, so "tokens" is inferred from the
+  name). On such a Linux machine the kept MCP sign-in is a file in the user's home folder, not a keyring entry.
+- `real:` `session.rpc.mcp.oauth.probe` on the connected server returned `failed: MCP server probe returned HTTP 404 Not Found`
+  against the demo server on both runners (the demo serves only the endpoints listed in its header); the probe is not used by FR-070.
+- Run 39680132357 (the first dispatch, commit db47a560) failed before any session: the script read
+  `require.resolve('@github/copilot-sdk/package.json')`, which the SDK's `exports` map refuses; fixed in f9458b31.
 

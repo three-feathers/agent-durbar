@@ -94,3 +94,8 @@ Each entry has the date it was learned, what happened, and how to apply it, with
   - To try the workflow before it is on `main`, add a temporary `push` branch trigger and remove it before the PR (`test:platforms` checks that the trigger is `main` only).
   - Never print a CLI's own sign-in line: Codex's shows a masked key tail.
   - Copilot Free lists no models but runs `auto`.
+
+- **Copilot SDK MCP sign-in storage and version lookup** (2026-10-21, `real:` run 39680461023, spec 058 T116).
+  - `require.resolve('@github/copilot-sdk/package.json')` throws ("not defined by exports"). Read the version from the folder next to the resolved entry, as `scripts/prepare-runtime.js` and `scripts/mcp-oauth-real.ts` do.
+  - With `mcpOAuthTokenStorage: 'persistent'`, Windows gets Credential Manager targets `<hex>.copilot-mcp-oauth`; a Linux machine with no desktop keyring (CI runners) gets files under `~/.copilot/mcp-oauth-config/`, not an error. Do not claim "keychain" for headless Linux.
+  - A workflow that only exists on a branch cannot be dispatched: its file must be on `main` first (#483), then `gh workflow run <file> --ref <branch>` runs the branch's version.
