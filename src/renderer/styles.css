@@ -178,7 +178,7 @@ body.has-bridge #liveBar{display:flex}
 button.room-aiu{padding:0;border:0;background:transparent;font:inherit;font-size:11.5px;font-variant-numeric:tabular-nums;color:var(--ink-2);cursor:pointer} /* spec 052 FR-044: opens Tools > Cost; same size as the old span */
 button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .room-aiu+.room-dots{margin-left:0}
-.stage .room-head:has(.room-aiu) .room-path{flex-shrink:1000} /* the path, not the room name, gives way to the total */
+.stage .room-head .room-path{flex-shrink:1000} /* the path, not the room name, gives way (spec 052 2026-10-21: always, not only next to a total) */
 .stage .room-head:has(.room-aiu) .room-name{flex-shrink:0}
 .rd{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--ink-2)}
 .rd.attn{color:var(--amber-ink);font-weight:650}
@@ -290,7 +290,7 @@ button.lrow[aria-pressed="true"]{background:#eaf1f7;box-shadow:inset 3px 0 0 var
 .lhead>span{min-width:0}
 .lsort{all:unset;box-sizing:border-box;display:inline-flex;align-items:center;gap:4px;max-width:100%;cursor:pointer;font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit;white-space:nowrap;overflow:hidden;border-radius:4px;padding:2px 2px}
 .lsort:hover{color:var(--ink)}
-.lsort .sarr{font-size:10.5px;opacity:.55}
+.lsort .sarr{font-size:10.5px;opacity:.8} /* spec 052 (2026-10-21, round 3): 4.5:1 or more, was 1.9:1 */
 .lhead>[aria-sort="ascending"] .lsort,.lhead>[aria-sort="descending"] .lsort{color:var(--ink)}
 .lhead>[aria-sort="ascending"] .sarr,.lhead>[aria-sort="descending"] .sarr{opacity:1}
 .lrow .pill{height:22px}
@@ -354,7 +354,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 /* copy buttons (spec 005 FR-015): quiet until the reply or block is hovered or the button has keyboard focus; spec 052 FR-010: dimmed but visible at rest, so keyboard and touch users know they are there */
 .msg.agent .bubble.md,.think-body.md,.sub-prompt .pt.md{position:relative} /* spec 052: a copy button anchors to its own block (it sat in the panel corner while it was invisible) */
 .md pre{position:relative}
-.cp-btn{position:absolute;top:4px;right:4px;height:22px;padding:0 8px;font:inherit;font-size:11px;font-weight:600;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);cursor:pointer;opacity:.7;transition:opacity .12s}
+.cp-btn{position:absolute;top:4px;right:4px;height:24px;padding:0 8px;font:inherit;font-size:11px;font-weight:600;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);cursor:pointer;opacity:1;transition:opacity .12s} /* spec 052 (2026-10-21, round 3): readable at rest (was 2.4:1 at .7) */
 .cp-msg{top:auto;bottom:-11px;right:10px}
 .msg.agent .bubble:hover>.cp-msg,.md pre:hover>.cp-code,.cp-btn:focus-visible{opacity:1}
 @media (hover:none){.cp-btn{opacity:1}}
@@ -447,6 +447,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 /* toast */
 /* spec 052 FR-004: bottom left, clear of the centred composer; a toast takes the pointer so it can be hovered (timer pauses) and closed */
 #toasts{position:fixed;left:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;align-items:flex-start;z-index:50;pointer-events:none}
+/* spec 052 (2026-10-21, round 1): while a theme is being tried, toasts sit above its bar instead of on top of it (1280x800 overlap) */
+body:has(#aiTryBar) #toasts{bottom:100px}
 .toast{pointer-events:auto;background:#2f3a36;color:#f7f4ee;padding:10px 16px;border-radius:12px;font-size:13px;line-height:1.45;box-shadow:0 8px 24px rgba(40,35,25,.18);animation:pop .25s ease-out;max-width:420px}
 .toast.warn{border-left:4px solid #e5be78}
 .toast code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:color-mix(in srgb,var(--raised) 14%,transparent);padding:1px 6px;border-radius:6px}
@@ -528,7 +530,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 @container room (max-width:460px){.stage .room .room-head .room-path{display:none}} /* the path (also in the name's tooltip) goes before the name is cut */
 @container (max-width:250px){.rd.calm{display:none}}
 .stage:not([data-d="full"]) .room-name{flex:0 .05 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.stage:not([data-d="full"]) .room-path{font-size:11px;flex-shrink:4}
+.stage:not([data-d="full"]) .room-path{font-size:11px;flex-shrink:1000} /* spec 052 (2026-10-21): the path gives way completely before the room name is cut */
 .stage:not([data-d="full"]) .room-dots{gap:6px;min-width:0}
 .stage:not([data-d="full"]) .room-dots{padding-right:0}
 .stage:not([data-d="full"]) .room-plant{display:none}
@@ -555,7 +557,6 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .sc>svg{width:100%;height:auto;display:block;overflow:visible}
 .is-idle .sc>svg{opacity:.68}
 .ci{min-width:0;display:flex;flex-direction:column;gap:2px;container-type:inline-size}
-@container (max-width:150px){.use .aiu{display:none}}
 .l1{display:flex;align-items:baseline;gap:6px;min-width:0}
 .l1 .name{font-size:13.5px;line-height:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0}
 .l1 .role{font-size:11px;line-height:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 0;min-width:0}
@@ -566,6 +567,18 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .l3 .pill{height:20px;font-size:11px;padding:0 8px 0 7px;flex:none}
 .l3 .use{margin-left:auto;text-align:right;flex:0 1 auto}
 .use{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;font-variant-numeric:tabular-nums}
+/* spec 052 (2026-10-21, office fit; real 15-session office at 1280x800): tokens give way first, the cost keeps its width; a narrow card drops " est." */
+.use{display:inline-flex;justify-content:flex-end}
+.use .tok{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.use .aiu{flex:none}
+.use .short{display:none}
+/* the steps fitUsage() adds (app.js) */
+.use.no-tok .tok,.use.no-tok .aiu>.sep{display:none}
+.use.no-unit .est{display:none}
+.use.short .full{display:none}.use.short .short{display:inline}
+.use.no-cost .aiu{display:none}
+.stage .room-head.no-path .room-path{display:none}
+
 .stage[data-d="mini"] .desk.card{padding:4px 8px 4px 4px;column-gap:7px}
 .stage[data-d="mini"] .l1 .role,.stage[data-d="micro"] .l1 .role{display:none}
 .stage[data-d="mini"] .l1{align-items:center}
@@ -721,6 +734,9 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .prev[hidden]{display:none}
 #prevBtn[aria-expanded="true"]{background:var(--surface-2);border-color:var(--line-ctl)}
 .prev-body{max-height:min(30vh,250px);overflow-y:auto;padding:0 18px 8px 0;scrollbar-gutter:stable} /* spec 006 FR-027: an overlay scrollbar (macOS) must never sit over the ⋯ buttons or take their clicks: 14px clear on the right */
+/* spec 052 (2026-10-21, round 1): the panel ends with a clear edge, and the list fades out while more rows are below */
+.prev{box-shadow:0 6px 10px -8px rgba(40,30,10,.28)}
+.prev-body.more-below{-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent)}
 .prev-q{display:block;box-sizing:border-box;width:100%;height:28px;margin:4px 0;padding:0 8px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--panel,#fff);color:var(--ink);font:inherit;font-size:var(--t4-size)}
 .prev-n{font-weight:500;color:var(--muted);font-size:var(--t4-size);margin-left:4px}
 .prev-h{font-size:var(--t4-size);font-weight:650;color:var(--ink);margin:8px 0 4px}
@@ -1129,6 +1145,7 @@ html:not([data-ui]) .seg button{border-radius:6px}
 #newMenu{left:0;right:auto;min-width:250px}
 #defaultsBtn{display:inline-flex;align-items:center;gap:6px;max-width:240px}
 #defaultsBtn .dv{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#defaultsBtn.is-allow{color:var(--red-ink);border-color:color-mix(in srgb,var(--red) 45%,var(--line));background:color-mix(in srgb,var(--red) 9%,var(--surface))} /* spec 052 (2026-10-21, round 5): new sessions start in Allow all */
 #defaultsBtn::after{content:"";flex:none;width:5px;height:5px;margin:-3px 1px 0 2px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);opacity:.7}
 #defaultsPop{position:fixed;top:52px;left:14px;z-index:55;width:max-content;max-width:calc(100vw - 28px);background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:var(--r-lg);padding:10px 12px 12px;box-shadow:0 14px 40px rgba(40,35,25,.22);font-size:13px}
 #defaultsPop[hidden]{display:none}
@@ -1263,6 +1280,9 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
 .pal-foot kbd+kbd{margin-left:-2px}
 .pal-dlg kbd,.kbd-dlg kbd{display:inline-block;min-width:20px;padding:1px 6px;border:1px solid var(--line-2);border-bottom-width:2px;border-radius:5px;background:var(--surface-2);font-family:inherit;font-size:11px;font-weight:600;line-height:1.5;color:var(--ink-2);text-align:center}
 .dlg.kbd-dlg{width:min(460px,calc(100vw - 32px))}
+/* spec 052 (2026-10-21, round 1): two columns where there is room, so the whole sheet fits a 1280x800 window without scrolling */
+.kb-cols{display:block}
+@media (min-width:900px){.dlg.kbd-dlg{width:min(860px,calc(100vw - 32px))}.kb-cols{display:grid;grid-template-columns:1fr 1fr;gap:0 28px;align-items:start}.kb-col>.kb-h:first-child{margin-top:0}}
 .kb-t{width:100%;border-collapse:collapse;font-size:13px;color:var(--ink)}
 .kb-t td{padding:5px 0;border-bottom:1px solid var(--line);vertical-align:middle}
 .kb-t tr:last-child td{border-bottom:0}
@@ -1419,3 +1439,10 @@ html[data-platform="darwin"] .strip{padding-right:0}
 /* FR-138: the grab area at the right end of the chat strip is a 32px handle (plus the 8px gap before it = 40px of drag) with grip dots */
 html[data-platform="darwin"] .strip::after{content:"";flex:none;align-self:stretch;width:32px;box-sizing:border-box;padding:10px 10px;background:radial-gradient(circle,color-mix(in srgb,var(--muted) 55%,transparent) 1.1px,transparent 1.6px) 0 0/6px 6px;background-clip:content-box;background-origin:content-box}
 html[data-platform="darwin"] :is(.dlg-ov,#foldersPop,#floorsPop,#defaultsPop,.mode-menu,.more-menu){-webkit-app-region:no-drag}
+
+/* spec 052 (2026-10-21, round 3, accessibility): small controls get a 24px hit area (WCAG 2.2 target size) without changing the layout */
+button.room-aiu,.lsort,.linkbtn{position:relative}
+button.room-aiu::after,.lsort::after,.linkbtn::after{content:"";position:absolute;left:-2px;right:-2px;top:50%;height:24px;transform:translateY(-50%)}
+/* spec 052 (2026-10-21, round 6, design): no lone word on the last line of a paragraph, balanced headings */
+p,.dsub,.scr-note,.note,li{text-wrap:pretty}
+h2,h3,h4{text-wrap:balance}
