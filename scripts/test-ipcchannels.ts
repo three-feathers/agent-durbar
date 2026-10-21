@@ -58,10 +58,10 @@ for (const f of ipcFiles) {
 assert.ok(/\bregisterMcpIpc\(/.test(mainSrc), 'main.ts calls registerMcpIpc');
 for (const [c, list] of regs) for (const r of list) assert.ok(r.file.startsWith('src/main/ipc/') || r.file === 'src/main/mcpipc.ts', `"${c}" is registered in ${r.file}, outside src/main/ipc and mcpipc.ts`);
 
-// 3. the owner-only checks. Taken from main.ts before the move (spec 045 FR-005 of 065, FR-004b of 051, FR-011 of 054, 052 FR-071 and FR-089, 063).
+// 3. the owner-only checks. Taken from main.ts before the move (spec 066 FR-007 resolvePlan and plan-first send, 045 FR-005 of 065, FR-004b of 051, FR-011 of 054, 052 FR-071 and FR-089, 063).
 const FROM_APP = [
   'activity:clear', 'activity:export', 'activity:list',
-  'agents:checkpointPreview', 'agents:checkpointUndo', 'agents:gitStatus', 'agents:openRemote', 'agents:setMode', 'agents:setRemote',
+  'agents:checkpointPreview', 'agents:checkpointUndo', 'agents:gitStatus', 'agents:openRemote', 'agents:resolvePlan', 'agents:send', 'agents:setMode', 'agents:setRemote',
   'app:dismissSinceAway', 'app:sinceAway',
   'harness:cancel', 'harness:copilotAuth', 'harness:openPage', 'harness:openSignIn', 'harness:paste', 'harness:plans', 'harness:run',
   'schedules:remove', 'schedules:runNow', 'schedules:save',

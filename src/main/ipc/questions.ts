@@ -1,8 +1,9 @@
-/** IPC for an agent's questions: a plain question, an MCP elicitation and its https page (spec 012 FR-128, FR-151; moved out of main.ts as it was, spec 045 FR-060). */
+/** IPC for an agent's questions: a plain question, an MCP elicitation and its https page (spec 012 FR-128, FR-151, spec 066 FR-007 plan answer; moved out of main.ts as it was, spec 045 FR-060). */
 import { shell } from 'electron';
-import { ipcHandle } from '../ipcguard';
+import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
 import type { AdapterRouter } from '../../adapters/router';
 import type { AgentInfo } from '../../shared/api';
+import { errText } from '../agentops';
 import { checkElicitAnswer, elicitHttpsUrl } from '../../shared/elicit';
 import type { createElicitTracker } from '../../shared/elicit';
 
@@ -48,5 +49,22 @@ export function register(deps: QuestionsIpcDeps): void {
     if (!u) return { ok: false, error: 'That request has no https page to open.' };
     await shell.openExternal(u.url);
     return { ok: true };
+  });
+  // spec 066 FR-007: a proposed plan is answered only from Durbar's own window (never MCP, remote control or schedules)
+  ipcHandle('agents:resolvePlan', async (e, id: unknown, requestId: unknown, answer: unknown) => {
+    if (!fromApp(e)) return { ok: false, error: 'invalid request' };
+    const a = typeof id === 'string' ? agents.get(id) : undefined;
+    const ad = a ? router.forAgent(a.id) : undefined;
+    if (!a || !ad || !ad.resolvePlan || typeof requestId !== 'string' || !requestId || requestId.length > 200) return { ok: false, error: 'unknown plan' };
+    const x = (answer && typeof answer === 'object' ? answer : {}) as { kind?: unknown; feedback?: unknown };
+    const fb = typeof x.feedback === 'string' ? x.feedback.replace(/\u0000/g, '').trim().slice(0, 4000) : '';
+    const parsed = x.kind === 'approve' ? { kind: 'approve' as const } : x.kind === 'reject' ? { kind: 'reject' as const } : x.kind === 'revise' && fb ? { kind: 'revise' as const, feedback: fb } : undefined;
+    if (!parsed) return { ok: false, error: 'Invalid answer.' };
+    try {
+      await ad.resolvePlan(a.id, requestId, parsed);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: errText(err) };
+    }
   });
 }

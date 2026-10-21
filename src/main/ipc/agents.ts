@@ -64,12 +64,15 @@ export function register(deps: AgentsIpcDeps): void {
     });
     return r.canceled ? { ok: true, agents: [] } : addMany(r.filePaths, validMode(mode), sessionOpts(opts));
   });
-  ipcHandle('agents:send', async (_e, id: string, text: string, attachments: PickedFile[]) => {
+  ipcHandle('agents:send', async (e, id: string, text: string, attachments: PickedFile[], opts?: unknown) => {
     const ad = agents.has(id) ? router.forAgent(id) : undefined;
     if (!ad) return { ok: false, error: 'unknown agent' };
+    // spec 066 FR-001/FR-007: plan first only from Durbar's own window and only for an agent app that has a plan mode
+    const plan = !!opts && typeof opts === 'object' && (opts as { plan?: unknown }).plan === true;
+    if (plan && (!fromApp(e) || !ad.capabilities.planMode)) return { ok: false, error: 'This agent app cannot plan first.' };
     agentState.ensure(id, agents.get(id)?.lazy);
     agentState.noteSend(id); // the window shows Thinking from the moment the user sends (app.js sendLive)
-    const r = await sendOp(id, text, attachments, ad);
+    const r = await sendOp(id, text, attachments, ad, plan);
     if (!r.ok) agentState.noteSendFailed(id); // and Error when the send fails (app.js sendLive)
     return r;
   });

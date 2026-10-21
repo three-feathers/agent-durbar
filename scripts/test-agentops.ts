@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { FakeAdapter } from '../src/adapters/fake';
 import type { OptionalMember } from '../src/adapters/fake';
-import { restorable, setCapOp, setMcpOp, setModeOp, stopTurnOp } from '../src/main/agentops';
+import { restorable, resumeModeOp, setCapOp, setMcpOp, setModeOp, stopTurnOp } from '../src/main/agentops';
 import type { OpsDeps } from '../src/main/agentops';
 import type { SavedFolder } from '../src/main/folders';
 import type { AgentInfo, PermMode } from '../src/shared/api';
@@ -24,7 +24,7 @@ function setup() {
     return a;
   };
   const calls: string[] = [];
-  const store = { setPermMode: (k: string, m: unknown) => (calls.push(`mode:${k}:${String(m)}`), true), setMaxAiCredits: (k: string, c: unknown) => (calls.push(`cap:${k}:${String(c)}`), true) };
+  const store = { setPermMode: (k: string, m: unknown) => (calls.push(`mode:${k}:${String(m)}`), true), setMaxAiCredits: (k: string, c: unknown) => (calls.push(`cap:${k}:${String(c)}`), true), setSessionMode: (k: string, id: string, m: unknown) => (calls.push(`smode:${k}:${id}:${String(m)}`), true) };
   const deps = (withStore = true): OpsDeps => ({ agents, router: { forAgent: (id) => by.get(id) }, store: withStore ? store : undefined, wsKey: (a) => a.cwd });
   return { full, bare, agents, mk, calls, deps };
 }
@@ -47,15 +47,17 @@ async function main(): Promise<void> {
     const r2 = setModeOp(deps(), 'b', 'allow', {});
     assert.deepStrictEqual(r2, { ok: true, mode: 'allow', pending: 0 }, 'a: a bare adapter that is not live saves the mode');
     assert.strictEqual(b.permMode, 'allow', 'a: not live: permMode is saved');
-    assert.deepStrictEqual(calls, [`mode:${b.cwd}:allow`], 'a: not live: the store is called once with the workspace key');
+    assert.deepStrictEqual(calls, [`mode:${b.cwd}:allow`, `smode:${b.cwd}:b:allow`], 'a: not live: the folder mode and this session\'s own mode are saved (spec 003, 2026-10-21)');
     // a full fake applies it and counts pending
     await full.start({ workspace: WS, sessionId: 'f', permissionMode: 'ask', quiet: true });
     const p1 = full.request('f', { kind: 'write', toolCallId: 'c1', fileName: path.join(WS, 'x') });
     const p2 = full.request('f', { kind: 'shell', toolCallId: 'c2', fullCommandText: 'ls' });
     f.permRestored = true;
+    f.permFrom = 'session';
     const r3 = setModeOp(deps(false), 'f', 'garbage', {}); // invalid -> read-only: denies both
     assert.deepStrictEqual(r3, { ok: true, mode: 'read-only', pending: 0 }, 'a: an invalid mode becomes read-only, and denies what is pending');
     assert.strictEqual(f.permRestored, undefined, 'a: permRestored is cleared');
+    assert.strictEqual(f.permFrom, undefined, 'a: permFrom is cleared (a fresh choice)');
     assert.deepStrictEqual([(await p1).kind, (await p2).kind], ['reject', 'reject'], 'a: the pending requests were denied');
     const p3 = full.request('f', { kind: 'write', toolCallId: 'c3', fileName: path.join(WS, 'x') });
     setModeOp(deps(), 'f', 'ask', {});
@@ -65,6 +67,20 @@ async function main(): Promise<void> {
     full.resolvePermission?.('f', 'c4', true);
     assert.strictEqual((await p4).kind, 'approve-once');
     assert.strictEqual((await p3).kind, 'reject');
+    // spec 003 (2026-10-21): the session's own mode is saved under its resume id when main gives one (Codex: the thread id)
+    calls.length = 0;
+    assert.ok(setModeOp({ ...deps(), sessionKey: (a) => 'thread-' + a.id }, 'b', 'ask', {}).ok);
+    assert.deepStrictEqual(calls, [`mode:${b.cwd}:ask`, `smode:${b.cwd}:thread-b:ask`], 'a: the session mode is keyed by the resume id');
+  }
+
+  // spec 003 (2026-10-21): a session resumed from Previous sessions starts in its own last mode, and a difference is logged
+  {
+    const saved = { sessionModes: [{ id: 'A', mode: 'allow' as PermMode }, { id: 'B', mode: 'ask' as PermMode }] };
+    assert.deepStrictEqual(resumeModeOp(saved, 'A', 'read-only'), { mode: 'allow', permFrom: 'session', permRestored: true, modeWas: 'read-only', logLine: 'Resumed in Allow all, the mode last chosen for this session (opened from a session in Read-only)' }, 'resume: the owner\'s case, Allow all comes back and says so');
+    assert.deepStrictEqual(resumeModeOp(saved, 'B', 'ask'), { mode: 'ask', permFrom: 'session' }, 'resume: same mode as the opener, nothing to log');
+    assert.deepStrictEqual(resumeModeOp(saved, 'B', 'allow'), { mode: 'ask', permFrom: 'session', modeWas: 'allow', logLine: 'Resumed in Ask first, the mode last chosen for this session (opened from a session in Allow all)' }, 'resume: a narrower own mode is used and logged too');
+    assert.deepStrictEqual(resumeModeOp(saved, 'Z', 'read-only'), { mode: 'read-only', permFrom: 'opener' }, 'resume: nothing remembered, the opener\'s mode');
+    assert.deepStrictEqual(resumeModeOp(undefined, 'A', 'ask'), { mode: 'ask', permFrom: 'opener' }, 'resume: no saved folder, the opener\'s mode');
   }
 
   // (b) setCapOp

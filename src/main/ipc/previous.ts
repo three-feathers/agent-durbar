@@ -9,7 +9,7 @@ import type { AdapterRegistry } from '../../adapters/registry';
 import type { AgentInfo, ResumeResult, VsChatListResult } from '../../shared/api';
 import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '../../adapters/vscodeChat';
 import type { ChatFileRef, UserDir } from '../../adapters/vscodeChat';
-import { errText } from '../agentops';
+import { errText, resumeModeOp } from '../agentops';
 import type { DevEnv } from '../devhooks';
 import type { FolderStore } from '../folders';
 import type { AgentStateTracker } from '../mcp/agentstate';
@@ -65,7 +65,13 @@ export function register(deps: PreviousIpcDeps): void {
       const prev = (await previousSessionsOf(ad, a.cwd, openIdsOf(prevDeps))).find((s) => s.id === sessionId);
       if (!prev) return { ok: false, error: 'That session is no longer available for this folder.' };
       // Resume first; only then retire the untouched agent, so a failed resume leaves everything as it was.
-      const info = await addWorkspace(a.workspaceFile ?? a.cwd, a.permMode, { resumeSessionId: sessionId, silent: true, adapterId: router.adapterIdOf(a.id) });
+      // Spec 003 (2026-10-21): the session comes back in the mode last chosen for it, not in the mode of the session the list was opened from.
+    const rm = resumeModeOp(folderStore()?.get(wsKey(a)), sessionId, a.permMode);
+    const info = await addWorkspace(a.workspaceFile ?? a.cwd, rm.mode, { resumeSessionId: sessionId, silent: true, adapterId: router.adapterIdOf(a.id) });
+    info.permFrom = rm.permFrom;
+    info.permRestored = rm.permRestored;
+    const modeWas = rm.modeWas;
+    if (rm.logLine) logActivity(info, 'mode-change', rm.logLine);
       let history: ResumeResult['history'];
       try {
         history = await historyOf(router.forAgent(info.id) ?? ad, info.id);
@@ -84,7 +90,7 @@ export function register(deps: PreviousIpcDeps): void {
         scheduler()?.sessionsChanged(); // spec 044 FR-014: a schedule for the replaced session pauses
       }
       if (prev.title && prev.title !== 'Untitled session') info.title = prev.title; // the list's title (name, else summary) until the runtime sends its own
-      return { ok: true, agent: info, removedId, title: prev.title, history };
+      return { ok: true, agent: info, removedId, title: prev.title, history, ...(modeWas ? { modeWas } : {}) };
     } catch (err) {
       return { ok: false, error: errText(err) };
     } finally {

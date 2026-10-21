@@ -37,7 +37,7 @@ interface SimOptions {
   /** Spec 012 FR-130: the first Claude agent (or the first agent) asks a question (page address `simquestion=1`). */
   /** Spec 052 FR-141 (issue #367): the first agent has eight session grants with long names (page address `simgrants=many`). */
   grants?: 'many' | 'stuck'; /* 'stuck': revokes are accepted but never remove anything (a failed revoke) */
-  question?: boolean | 'long'; /* 'long' (spec 052 FR-140): a long question text and long option labels and descriptions (FR-160) */
+  question?: boolean | 'long' | 'compact'; /* 'long' (spec 052 FR-140): a long question text and long option labels and descriptions (FR-160); 'compact' (FR-162, FR-163): a short question, then six compactions in a row while it waits */
   /** Spec 012 FR-151: an MCP server asks one agent for input: a small form (`simelicit=1`) or an https page to open (`simelicit=url`). */
   elicit?: string;
   /** Spec 033: names of floors that start switched off. */
@@ -79,6 +79,8 @@ interface SimAgent {
   /** Dollar estimate used (kinds with `capUnit: 'usd'`). */
   usd?: number;
   limitReq?: string;
+  /** Spec 066: an open plan (request id and the message it plans). */
+  planReq?: { id: string; text: string };
   /** Model and context handling (spec 030). */
   tier?: ContextTier;
   /** A switch asked for during a turn: applies when the turn ends and is dropped by Stop (both seen on a real runtime, spec 030 T042). */
@@ -122,7 +124,8 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
 /* Spec 012 T018 (FR-065, FR-066): the simulated kinds of `simkinds=mixed`. They are a simulation, not a statement about the real CLIs.
    Index in the 15-agent roster -> kind; every other agent is Copilot. Mcp-swiss holds two kinds (Ada, Mira); the basic agent is Priya (idle, never the first). */
 const SIM_KIND_BY_AGENT: Record<number, string> = { 0: 'claude', 3: 'claude', 4: 'codex', 5: 'claude', 6: 'basic', 7: 'codex', 8: 'claude', 9: 'codex', 11: 'claude' };
-const SIM_COPILOT_CAPS = { remoteService: { name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }, interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, remote: true, oneShot: true, deleteSession: true } as AdapterInfo['capabilities'];
+ const SIM_PLAN_CAPS = { planMode: true }; // spec 066: every simulated kind can plan first
+const SIM_COPILOT_CAPS = { ...SIM_PLAN_CAPS, remoteService: { name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }, interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, remote: true, oneShot: true, deleteSession: true } as AdapterInfo['capabilities'];
 const SIM_MIXED_KINDS: AdapterInfo[] = [
   { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, remote: true, remoteService: { name: 'Claude', host: 'claude.ai', mobile: 'the Claude app' }, mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true, deleteSession: false } }, // spec 006 FR-028: Claude Code has no per-session delete
   { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: false, remote: false } },
@@ -351,8 +354,16 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         ] : [
           { question: 'Which colour should the focus ring use?', header: 'Focus ring', multiSelect: false, options: [{ label: 'Sage', description: 'The calm green of the office walls' }, { label: 'Blue', description: 'Matches the links' }] },
           { question: 'Which screens should get it first?', header: 'Screens', multiSelect: true, options: [{ label: 'Office' }, { label: 'Chat' }, { label: 'Settings' }] },
-        ] });
+        ].slice(0, opts.question === 'compact' ? 1 : 2) });
         emit({ type: 'status', sessionId: s.info.id, timestamp: now(), status: 'needs-permission', intent: 'Waiting for your answer' });
+        /* spec 052 FR-163 (owner, 2026-10-21): the runtime compacts again and again while the question waits (sim: the count and numbers are made up) */
+        if (opts.question === 'compact') {
+          const lim = s.ctx?.limit ?? 128000;
+          for (let i = 0; i < 6; i++) {
+            emit({ type: 'compaction', sessionId: s.info.id, timestamp: now(), phase: 'start', trigger: 'auto', tokensBefore: Math.round(lim * 0.93), limit: lim });
+            emit({ type: 'compaction', sessionId: s.info.id, timestamp: now(), phase: 'complete', trigger: 'auto', tokensBefore: Math.round(lim * 0.93), tokensAfter: Math.round(lim * (0.2 + i * 0.01)), tokensRemoved: Math.round(lim * (0.73 - i * 0.01)), limit: lim });
+          }
+        }
       }, 300);
     }
     /* simelicit=1|url (spec 012 FR-151): an MCP server asks one agent for input, as an MCP elicitation does (a form, or a page to open) */
@@ -675,6 +686,20 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
 
     // Replies to chat messages the user types in sim mode.
     const wait = (ms: number): Promise<void> => new Promise((r) => window.setTimeout(r, ms));
+    /** Spec 066 FR-008: a simulated plan-first turn: the agent reads, then proposes a plan and waits. */
+    function simPlan(s: SimAgent, text: string, feedback?: string): void {
+      const id = s.info.id;
+      const requestId = `sim-plan-${id}-${Date.now()}`;
+      emit({ type: 'status', sessionId: id, timestamp: now(), status: 'working', intent: 'Planning' });
+      window.setTimeout(() => {
+        s.planReq = { id: requestId, text };
+        const goal = String(text).replace(/\s+/g, ' ').trim().slice(0, 80) || 'the task';
+        const plan = `**Plan for:** ${goal}\n\n1. Read \`src/auth/login.ts\` and its tests to see how sessions are created.\n2. Move token checks into a new \`src/auth/tokens.ts\` and keep the old exports.\n3. Update the three callers and run \`npm test\`.${feedback ? `\n4. As you asked: ${String(feedback).slice(0, 200)}` : ''}\n\nNothing is changed until you approve.`;
+        emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Plan ready' });
+        emit({ type: 'plan', sessionId: id, timestamp: now(), phase: 'proposed', requestId, text: plan });
+      }, 700);
+    }
+
     async function reply(s: SimAgent, text: string): Promise<void> {
       closeOpen(s);
       emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: 'Answering: ' + text.slice(0, 60) });
@@ -1058,6 +1083,17 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       setSchedulesPaused: async (on) => { simSched.pausedAll = on === true; simSched.changed(); return { ok: true, pausedAll: simSched.pausedAll }; },
       onSchedules: (cb) => { simSched.subs.push(cb); return () => undefined; },
       onScheduleRan: (cb) => { simSched.ran.push(cb); return () => undefined; },
+      resolvePlan: async (id: string, requestId: string, answer: { kind: string; feedback?: string }) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s || !s.planReq || s.planReq.id !== requestId) return { ok: false, error: 'unknown plan' };
+        const asked = s.planReq.text;
+        s.planReq = undefined;
+        emit({ type: 'plan', sessionId: id, timestamp: now(), phase: 'resolved', requestId, action: answer.kind as 'approve' | 'reject' | 'revise' });
+        if (answer.kind === 'approve') window.setTimeout(() => void reply(s, asked), 300);
+        else if (answer.kind === 'revise') simPlan(s, asked, answer.feedback);
+        else emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Plan rejected' });
+        return { ok: true };
+      },
       resolveLimit: async (id, requestId, choice) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || s.limitReq !== requestId) return { ok: false, error: 'That request is no longer open.' };
@@ -1320,6 +1356,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const simPrev = simQuery.get('simprev') ?? '';
     const prevMarks = new Map<string, { pinned: string[]; hidden: string[] }>(); // key = 'vscode' or the agent app's id; ids only
     const prevDeleted = new Set<string>();
+    const simSessionModes = new Map<string, AgentInfo['permMode']>([['prev-1', 'allow']]); // spec 003 (2026-10-21): the mode last chosen per earlier session
     const hasPrev = (x: SimAgent): boolean => x.info.cwd === '~/work/mcp-swiss' || (!!opts.solo && x.info.name === 'Ada'); // earlier sessions live in mcp-swiss (or in Ada's own folder with `simrooms=solo`)
     const prevMarksOf = (src: string, present: string[]): { pinned: string[]; hidden: string[] } => {
       const m = prevMarks.get(src);
@@ -1424,7 +1461,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         /* simresume=1 (spec 006 FR-021): Priya's folder came back after a restart as its last session, not started yet */
         if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simresume') === '1') {
           const r = sims.find((x) => x.info.name === 'Priya');
-          if (r && r.info.resumeLast === undefined) { r.info.lazy = true; r.info.resumeLast = true; }
+          if (r && r.info.resumeLast === undefined) { r.info.lazy = true; r.info.resumeLast = true; r.info.permFrom = 'session'; }
         }
         return sims.map((s) => s.info);
       },
@@ -1450,9 +1487,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const clean = String(name).split(/[\\/]/).pop() || 'attachment';
         return { ok: true, file: { path: '/tmp/agent-durbar-att-sim/' + clean, name: clean, kind: /^image\//.test(mime) ? 'image' : 'file', size: data.byteLength } };
       },
-      send: async (id, text) => {
+      send: async (id, text, _atts?: unknown, opts?: { plan?: boolean }) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
+        if (opts?.plan) {
+          // spec 066 FR-008: a short plan after a moment; nothing runs until it is answered
+          simPlan(s, text);
+          return { ok: true };
+        }
         if (s.perm) return { ok: false, error: 'Waiting for your permission decision first.' };
         if (s.limitReq) return { ok: false, error: 'The spending limit was reached. Choose Raise limit, Remove limit or Stop here first.' };
         // spec 012 FR-087: `simsendfail=sandbox` fakes Codex refusing Read-only / Ask first (the real Linux message), for the driver
@@ -1479,6 +1521,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (s.limitReq) {
           emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'resolved', requestId: s.limitReq, action: 'cancel' });
           s.limitReq = undefined;
+        }
+        if (s.planReq) {
+          emit({ type: 'plan', sessionId: id, timestamp: now(), phase: 'resolved', requestId: s.planReq.id, action: 'reject' }); // spec 066: Stop rejects an open plan
+          s.planReq = undefined;
         }
         if (s.perm) {
           const { cont: _c, file: _f, ...p } = s.perm;
@@ -1545,6 +1591,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         simLog(s, 'mode-change', `${MW[s.info.permMode] ?? s.info.permMode} to ${MW[mode] ?? mode}`, mode);
         s.info.permMode = mode;
         s.info.permRestored = undefined;
+        s.info.permFrom = undefined;
         if (o?.clearGrants && s.grants.size) { s.grants.clear(); grantsEvent(s); }
         let pending = s.perm ? 1 : 0;
         if (s.perm && ((mode === 'allow' && o?.approvePending) || mode === 'read-only')) {
@@ -1620,10 +1667,15 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const src = sims.find((x) => x.info.id === id);
         if (!src) return { ok: false, error: 'unknown agent' };
         extra++;
-        const info = { ...src.info, id: 'sim-n' + extra } as AgentInfo;
+        // spec 003 (2026-10-21): like main, the session comes back in the mode last chosen for it (prev-1 was last in Allow all), else the opener's
+        const own = simSessionModes.get(sessionId);
+        const mode = own ?? src.info.permMode;
+        const info = { ...src.info, id: 'sim-n' + extra, permMode: mode, permFrom: own ? 'session' : 'opener', permRestored: own === 'allow' ? true : undefined } as AgentInfo;
+        const modeWas = mode !== src.info.permMode ? src.info.permMode : undefined;
         sims.push({ info, room: src.room, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: src.files, grants: new Map() });
         const t = Date.now() - 2 * 3600e3;
-        return { ok: true, agent: info, title: sessionId === 'prev-1' ? 'Rename the filings handler and update its tests' : 'Why does the canton lookup return duplicates?',
+        if (modeWas) { const MW: Record<string, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' }; simLog(sims[sims.length - 1], 'mode-change', `Resumed in ${MW[mode]}, the mode last chosen for this session (opened from a session in ${MW[modeWas]})`, mode); }
+        return { ok: true, ...(modeWas ? { modeWas } : {}), agent: info, title: sessionId === 'prev-1' ? 'Rename the filings handler and update its tests' : 'Why does the canton lookup return duplicates?',
           history: { total: 4, truncated: false, items: [
             { type: 'user', text: 'Rename the filings handler to filingsSearch and update its tests.', ts: t },
             { type: 'tool', callId: 'c1', tool: 'grep', label: 'grep filingsHandler', output: '6 matches in 3 files' },
@@ -1694,6 +1746,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
       onAgentAdded: (cb) => { addedListeners.add(cb); return () => addedListeners.delete(cb); },
       onMenuSettings: () => () => undefined, /* spec 052 FR-083: no app menu in the simulator */
+      onMenuAdd: () => () => undefined, /* spec 052 FR-164 */
       onFullScreen: () => () => undefined,
     };
     void timer;

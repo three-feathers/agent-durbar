@@ -40,7 +40,7 @@ import type { AddResult, AgentInfo, PermMode, PickedFile, SessionOptions } from 
 import { GROUND } from '../shared/floors';
 import { createElicitTracker } from '../shared/elicit';
 import { CheckpointStore } from './checkpoints';
-import { DEFAULT_ADAPTER, FolderStore, restoreMode, sessionsToRestore } from './folders';
+import { DEFAULT_ADAPTER, FolderStore, modeForSession, restoreMode, sessionsToRestore } from './folders';
 import { AppStateStore, buildSinceAway, placeWindow, quitMessage } from './daily';
 import type { SinceAway } from './daily';
 import { navigationAllowed, permissionAllowed } from './hardening';
@@ -337,13 +337,16 @@ function restoreFolders(): void {
   for (const { folder: f, adapterId } of restorable(folderStore.load(), (i) => registry.has(i), console.warn)) {
     try {
       if (!fs.existsSync(f.workspace)) continue; // e.g. an unplugged drive: stays saved, just not shown
-      const rm = restoreMode(f.permMode); // exactly as saved, Allow all included, flagged so the UI shows "restored" (spec 003 FR-025/026)
       // FR-021: the folder's last session comes back under its own id (resumed when first needed); a harness this build lacks starts fresh.
       // Spec 052 FR-088: so does every other session that was open in the folder (at most 6), each resumed lazily the same way.
       const sessions = sessionsToRestore(f).filter((s) => registry.has(s.adapterId ?? DEFAULT_ADAPTER) && !agents.has(s.id));
       for (const ls of sessions.length ? sessions : [undefined]) {
         const kind = ls ? (ls.adapterId ?? DEFAULT_ADAPTER) : adapterId;
-        const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, maxAiCredits: router.instance(kind).capabilities?.capUnit === 'usd' ? undefined : f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
+        // Spec 003: exactly as saved, Allow all included, flagged so the UI shows "restored" (FR-025/026). 2026-10-21: a session's own
+        // last mode wins over the folder's (several sessions of one folder may be in different modes), and the chat says which it was.
+        const sm = modeForSession(f, [ls?.id], f.permMode);
+        const rm = restoreMode(sm.mode);
+        const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, permFrom: ls ? (sm.fromSession ? 'session' : 'folder') : undefined, maxAiCredits: router.instance(kind).capabilities?.capUnit === 'usd' ? undefined : f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
         if (ls) info.resumeLast = true;
         if (f.label) info.label = f.label;
         if (f.defaultAgent) info.defaultAgent = f.defaultAgent;
@@ -373,7 +376,7 @@ router.onEvent((e) => {
   if (s) toRenderer('agents:checkpoint', { id: e.sessionId, ...s });
 });
 
-async function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter): Promise<{ ok: boolean; error?: string }> {
+async function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter, plan = false): Promise<{ ok: boolean; error?: string }> {
   const safe = (Array.isArray(attachments) ? attachments : []).filter((a) => pickedFiles.has(a.path));
   // Caps are enforced here too, not only in the UI.
   if (safe.length > MAX_ATTACH_FILES) return { ok: false, error: `Up to ${MAX_ATTACH_FILES} attachments per message (got ${safe.length}).` };
@@ -388,6 +391,7 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
     await ad.send(id, {
       text: String(text),
       attachments: safe.map((a) => ({ path: a.path, kind: kindOfFile(a.path) })), // FR-009: checked again here, the renderer's kind is not trusted
+      ...(plan ? { plan: true } : {}),
     });
     for (const a of safe) pickedFiles.delete(a.path); // spec 004 FR-015: a sent file must be picked again to be sent again
     noteLastSession(agents.get(id));
@@ -443,7 +447,7 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
 });
 
 // The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
-const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, log: (a, decision, action) => logActivity(a, decision, action) };
+const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, sessionKey: (a) => resumeIdFor(a.id), log: (a, decision, action) => logActivity(a, decision, action) };
 
 /* DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it and is saved as usual. */
 let runTheme: string | undefined;
@@ -500,6 +504,7 @@ function noteLastSession(a: AgentInfo | undefined): void {
   const rid = resumeIdFor(a.id); // Codex: its thread id
   folderStore?.setLastSession(wsKey(a), rid, router.adapterIdOf(a.id));
   folderStore?.addOpenSession(wsKey(a), rid, router.adapterIdOf(a.id)); // spec 052 FR-088: every open session comes back, not only the last
+  folderStore?.setSessionMode(wsKey(a), rid, a.permMode); // spec 003 (2026-10-21): it comes back in its own mode
 }
 /** The id a session is resumed under after a restart (Codex: its thread id; others: the agent id). */
 const resumeIdFor = (id: string): string => router.forAgent(id)?.resumeIdOf?.(id) ?? id;
@@ -673,7 +678,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   app.setAboutPanelOptions(aboutPanelOptions(app.getVersion())); // owner and contributors: src/shared/about.ts (spec 008 FR-018)
-  // spec 052 FR-083: a Mac menu from roles (Settings… ⌘,); no menu on Windows and Linux (no Reload or DevTools for users)
+  // spec 052 FR-083, FR-164: a Mac menu from roles (Settings… ⌘,; File > Add Folder… ⌘O); no menu on Windows and Linux (no Reload or DevTools for users)
   const menu = appMenuTemplate(process.platform, {
     openSettings: () => {
       const w = win && !win.isDestroyed() ? win : undefined;
@@ -682,6 +687,13 @@ app.whenReady().then(() => {
       toRenderer('menu:settings', null);
     },
     openRepo: () => void shell.openExternal(REPO_URL),
+    // spec 052 FR-164: File > Add Folder… / Add VS Code Workspace… press the page's own buttons (one code path, agents:addFolder / addWorkspaceFile)
+    add: (kind) => {
+      const w = win && !win.isDestroyed() ? win : undefined;
+      if (!w) return;
+      w.show();
+      toRenderer('menu:add', kind);
+    },
   });
   Menu.setApplicationMenu(menu ? Menu.buildFromTemplate(menu) : null);
   folderStore = new FolderStore(path.join(app.getPath('userData'), 'durbar-folders.json'));
