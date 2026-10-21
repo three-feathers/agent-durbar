@@ -596,7 +596,7 @@ async function main(): Promise<void> {
     const sp = fakeSpawn();
     let statusCalls = 0;
     let hold: (() => void) | undefined;
-    const servers = [{ name: 'notes', status: 'needs-auth' }];
+    const servers = [{ name: 'notes', status: 'connected' }]; // the CLI still says connected: the challenge is the signal
     sp.next = (c) => {
       c.onWrite = (o) => {
         if (o.type === 'control_request') {

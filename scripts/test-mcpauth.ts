@@ -9,6 +9,8 @@ const yes = [
   'MCP server "notion" requires authentication. Run `/mcp auth notion` to authenticate.',
   'MCP server "notion" requires authentication. Run /mcp auth notion to authenticate.',
   'Re-authentication required for MCP server "notion". Run /mcp auth notion',
+  'MCP server "notion" needs authentication', // Claude Code 2.1.304 (read:)
+  'Error: MCP server "my server" needs authentication.',
   'x '.repeat(500) + ISSUE, // inside the bounded window
 ];
 for (const t of yes) assert.ok(isMcpAuthChallenge(t), `challenge: ${t.slice(-80)}`);
@@ -22,6 +24,10 @@ const no = [
   'HTTP 401 Unauthorized',
   'MCP server "notion" failed to start: ECONNREFUSED',
   'Please sign in to continue',
+  'The app needs authentication',
+  'Your server needs authentication',
+  'MCP server needs authentication',
+  'MCP server "" needs authentication',
   'Re-authentication required for MCP server access. Please run copilot login',
 ];
 for (const t of no) assert.ok(!isMcpAuthChallenge(t), `not a challenge: ${t.slice(0, 80)}`);
@@ -30,6 +36,9 @@ for (const v of [undefined, null, 5, {}, ['MCP OAuth challenge required']]) asse
 // the stripped text keeps what is not the challenge
 assert.ok(!/MCP OAuth|401/.test(stripMcpChallenge(ISSUE)), 'issue clause and its HTTP code removed');
 assert.ok(stripMcpChallenge('API Error: 401 Please run /login. MCP OAuth challenge required (HTTP 401)').includes('Please run /login'));
+
+assert.ok(!/needs authentication/.test(stripMcpChallenge('MCP server "n" needs authentication')), 'Claude clause removed');
+assert.ok(stripMcpChallenge('API Error: 401 Please run /login. MCP server "n" needs authentication').includes('Please run /login'), 'app sign-in text kept');
 
 // bounded input: a phrase past the window is not read; a 1 MB text is cheap
 assert.ok(!isMcpAuthChallenge('x'.repeat(5000) + ISSUE), 'beyond the bound is ignored');

@@ -474,6 +474,8 @@ interface Session {
   needsRelaunch?: boolean;
   /** An `mcp_status` request for an MCP sign-in challenge is in flight. */
   mcpRefreshing?: boolean;
+  /** Spec 058 FR-060: servers whose tool call showed a sign-in challenge; read as needs-auth until the CLI reports a real change for them. */
+  mcpAuthSeen?: Set<string>;
   /** Spec 059 FR-007: the user's name waiting for the next CLI start, and the one the running CLI was started with (reported as the title after its first turn). */
   pendingName?: string;
   launchedName?: string;
@@ -753,9 +755,10 @@ export class ClaudeAdapter implements AgentAdapter {
       return;
     }
     await s.transport.request({ subtype: 'mcp_toggle', serverName: name, enabled }, 15_000);
+    s.mcpAuthSeen?.delete(name); // a real change for this server
     try {
       const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
-      this.emit(s.id, { type: 'mcp', servers: claudeMcpServers(r.mcpServers) });
+      this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, claudeMcpServers(r.mcpServers)) });
     } catch {
       /* the toggle worked; the list comes with the next init */
     }
@@ -900,8 +903,18 @@ export class ClaudeAdapter implements AgentAdapter {
       this.openLimit(s);
       return;
     }
+    if (s && b.type === 'mcp') s.mcpAuthSeen?.clear(); // the CLI's own list (init) replaces the derived state
     this.emit(sid, b);
-    if (s && b.type === 'toolCall' && b.mcpAuth === true) void this.refreshMcp(s);
+    if (s && b.type === 'toolCall' && b.mcpAuth === true && b.mcpServer) {
+      (s.mcpAuthSeen ??= new Set()).add(b.mcpServer);
+      void this.refreshMcp(s);
+    }
+  }
+
+  /** FR-060: what the CLI reports, but a server it still calls `connected` after this session's challenge reads needs-auth. */
+  private withAuthSeen(s: Session, list: ReturnType<typeof claudeMcpServers>): ReturnType<typeof claudeMcpServers> {
+    if (!s.mcpAuthSeen?.size) return list;
+    return list.map((x) => (s.mcpAuthSeen!.has(x.name) && x.status === 'connected' ? { ...x, status: 'needs-auth' as const, errorClass: 'auth' as const } : x));
   }
 
   /** Spec 058 FR-060: a tool call showed an MCP sign-in challenge: ask the CLI for the server list once (not per failure while one is in flight). */
@@ -910,7 +923,7 @@ export class ClaudeAdapter implements AgentAdapter {
     s.mcpRefreshing = true;
     try {
       const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
-      this.emit(s.id, { type: 'mcp', servers: claudeMcpServers(r.mcpServers) });
+      this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, claudeMcpServers(r.mcpServers)) });
     } catch {
       /* the list comes with the next init */
     } finally {

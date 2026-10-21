@@ -73,6 +73,8 @@ for (const f of files) {
     return e[0] as { mcpAuth?: true; output?: string };
   };
   assert.strictEqual(outcome('mcp__notes__q', challenge, true).mcpAuth, true, 'failed MCP call with a challenge');
+  assert.strictEqual(outcome('mcp__notes__q', 'MCP server "notes" needs authentication', true).mcpAuth, true, "Claude Code's own wording (read: 2.1.304)");
+  assert.strictEqual('mcpAuth' in outcome('mcp__notes__q', 'The app needs authentication', true), false, 'not the MCP wording');
   assert.strictEqual(outcome('mcp__notes__q', [{ type: 'text', text: challenge }], true).mcpAuth, true, 'text blocks too');
   assert.strictEqual(outcome('mcp__notes__q', 'x'.repeat(4500) + challenge, true).mcpAuth, undefined, 'only the first 4000 characters are judged (classifier bound)');
   assert.strictEqual(outcome('mcp__notes__q', `MCP OAuth challenge required ${'y'.repeat(5000)}`, true).mcpAuth, true, 'detected although the stored output is cut');
