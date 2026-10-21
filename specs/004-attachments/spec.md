@@ -73,7 +73,7 @@ At most 5 files per message and 10 MB per file; I get a plain message saying wha
 - **FR-013** `[IMPLEMENTED]` (Closed 2026-10-19: the image button opens the picker with an image filter (PNG, JPEG, GIF, WebP, BMP).) Was: The file and image buttons open the same dialog (no image filter or type hint). `read:`
 - **FR-014** `[KNOWN GAP]` Total attachment size per message is not capped (5 x 10 MB). `read:`
 - **FR-015** `[IMPLEMENTED]` (Closed 2026-10-19: files are removed from the allow-list after a successful send (pick again to send again).) Was: The `pickedFiles` allow-list in the main process grows for the whole run (no removal after send). `read:`
-- **FR-016** `[KNOWN GAP]` Drag-and-drop and paste were exercised through the real Electron main process by the e2e driver on Linux (xvfb); macOS/Windows clipboard and drag behavior are untested. `sim:`
+- **FR-016** `[KNOWN GAP]` (wording made precise 2026-10-21: the drivers send synthetic `DragEvent`/`ClipboardEvent` objects, so even CI on macOS and Windows would not exercise the OS drag source or clipboard; a person's drag and paste on a Mac and a Windows PC would close it) Drag-and-drop and paste were exercised through the real Electron main process by the e2e driver on Linux (xvfb); macOS/Windows clipboard and drag behavior are untested. `sim:`
 
 ### Key Entities
 

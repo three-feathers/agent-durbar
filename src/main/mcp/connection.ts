@@ -14,9 +14,10 @@
  */
 import { JsonRpcResponse, LineFramer, encodeMessage } from './jsonrpc';
 import { McpSession } from './protocol';
+import { MCP_LIMITS } from '../../shared/mcpserver';
 
-// TODO(T013/T017): take these from MCP_LIMITS in src/shared/mcpserver.ts when it is on this branch.
-export const RATE_PER_SECOND = 10;
+/** Calls per second per connection (spec 041 FR-061), from the shared limits; the two close-after limits below are this module's own. */
+export const RATE_PER_SECOND: number = MCP_LIMITS.maxCallsPerSecond;
 export const CLOSE_AFTER_DROPPED = 100;
 export const CLOSE_AFTER_MS = 3000;
 

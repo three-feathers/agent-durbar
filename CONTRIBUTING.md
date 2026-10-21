@@ -12,6 +12,8 @@ npm test            # every unit suite, compiled once and run in parallel (~20 s
 DURBAR_SIM=15 npm start   # 15 simulated agents, no sessions, no AI credits
 ```
 
+`npm start` and the simulator keep their data in `agent-durbar-dev` under the OS app-data folder, not in the installed app's `agent-durbar` (spec 008 FR-034); `DURBAR_USER_DATA=<folder>` overrides both. To reuse older dev data, run once with `DURBAR_USER_DATA=<old folder>` or copy it by hand.
+
 Node 20.19+ or 22.12+ is required. `npm start` with real sessions needs a GitHub Copilot login (`copilot login`) and spends your AI credits; prefer the simulator (`DURBAR_SIM`) and the tests while developing.
 
 ## Guidelines

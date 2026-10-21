@@ -1,3 +1,4 @@
+import { isObj } from './guards';
 /**
  * "All time" tool usage (spec 020): cumulative counts that are kept on disk across restarts.
  * Pure (no Node, no Electron) so the main process, the simulator and the tests share it.
@@ -42,7 +43,6 @@ const MAX_COUNT = 1e12;
 
 export const emptyDoc = (now: Date = new Date()): UsageDoc => ({ version: 1, since: now.toISOString(), tools: {}, servers: {}, agents: {} });
 
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const name = (v: unknown): string => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, MAX_NAME) : '');
 const count = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.min(MAX_COUNT, Math.floor(v)) : 0);
 const FORBIDDEN = new Set(['__proto__', 'constructor', 'prototype']);
