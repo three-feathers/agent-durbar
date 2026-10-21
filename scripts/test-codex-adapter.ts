@@ -9,7 +9,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { offeredDescriptors } from '../src/adapters/experimental';
-import { CODEX_CAPABILITIES, CODEX_DESCRIPTOR, CodexAdapter, codexChildEnv, linuxSandboxHint } from '../src/adapters/codex';
+import { CODEX_CAPABILITIES, CODEX_DESCRIPTOR, CodexAdapter, codexChildEnv, linuxSandboxHint, macSandboxHint } from '../src/adapters/codex';
 import { CodexMapper } from '../src/adapters/codexMap';
 import { CODEX_INITIALIZE_CAPABILITIES, codexProfileArgs, codexWorkspaceRoots } from '../src/adapters/codexModes';
 import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
@@ -93,7 +93,7 @@ async function main(): Promise<void> {
   // ---- FR-089: capabilities and optional members
   {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(CODEX_CAPABILITIES)), {
-      interrupt: true, resume: true, images: true, models: true, effort: true, modelSwitch: { verified: true, contextTier: false },
+      interrupt: true, resume: true, images: true, models: true, planMode: true, effort: true, modelSwitch: { verified: true, contextTier: false },
       permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'next-message',
       usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, oneShot: true, deleteSession: true,
     });
@@ -598,6 +598,11 @@ async function main(): Promise<void> {
       await ad.dispose();
     }
     // FR-140: the Linux sandbox error (real text, Ubuntu with unprivileged user namespaces blocked) gets a plain hint; other errors none
+    // FR-140 delta: the macOS sandbox error (real text, GitHub macOS runner) gets its own plain hint; the Linux one does not apply
+    assert.ok(macSandboxHint("error creating thread: failed to load AGENTS.md instructions for environment `local`: fs sandbox helper failed with status exit status: 71: sandbox-exec: execvp() of '/Users/x/.local/bin/codex' failed: Operation not permitted").includes('could not start its macOS sandbox'));
+    assert.strictEqual(macSandboxHint('bwrap: loopback: Failed RTM_NEWADDR'), '');
+    // FR-087 (owner 2026-10-20): no refusal text suggests Allow all; the window offers "Change mode…" instead
+    for (const h of [linuxSandboxHint('bwrap: loopback: Failed RTM_NEWADDR'), macSandboxHint('sandbox-exec: execvp() failed')]) assert.ok(h && !/allow all/i.test(h), 'no Allow all hint: ' + h);
     assert.ok(linuxSandboxHint('error creating thread: failed to load AGENTS.md instructions for environment `local`: fs sandbox helper failed with status exit status: 1: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted').includes('blocks unprivileged user namespaces'));
     assert.strictEqual(linuxSandboxHint('permissions profile not supported'), '');
     // FR-147: Durbar's MCP servers go to Codex as config.mcp_servers; the list and startup states become `mcp` events; a switch applies next message
@@ -1087,6 +1092,7 @@ async function main(): Promise<void> {
     const cases: Array<[FakeCodexOptions, string]> = [
       [{}, 'signed-in'],
       [{ rateLimits: 'unauthorized' }, 'signed-out'],
+      [{ rateLimits: 'unauthorized', authMethod: 'apikey' }, 'signed-in'], // real 2026-10-20: rate limits refuse an API-key sign-in that works
       [{ rateLimits: 'network' }, 'unknown'],
       [{ rateLimits: 'missing' }, 'unknown'], // falls back to getAuthStatus: signed in on this computer, not confirmed
       [{ rateLimits: 'missing', authMethod: null }, 'signed-out'],
@@ -1100,7 +1106,7 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(methods.slice(0, 3), ['initialize', 'initialized', 'account/rateLimits/read']);
       assert.ok(!methods.some((m) => m.startsWith('thread/') || m.startsWith('turn/')), 'no thread, no turn, no prompt');
       const auth = server.requests('getAuthStatus');
-      assert.strictEqual(auth.length, opts.rateLimits === 'missing' ? 1 : 0, 'getAuthStatus only as the fallback');
+      assert.strictEqual(auth.length, opts.rateLimits === 'missing' || opts.rateLimits === 'unauthorized' ? 1 : 0, 'getAuthStatus only as the fallback');
       for (const a of auth) assert.deepStrictEqual(a.params, { includeToken: false, refreshToken: false }, 'the token is never asked for');
       await server.flush();
       assert.deepStrictEqual(server.live, [], 'the probe child is closed');

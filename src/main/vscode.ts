@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { pathDirs } from '../shared/pathdirs';
 import { CMD_UNSAFE, windowsCmd } from '../shared/wincmd';
 
 export interface LaunchPlan {
@@ -37,13 +38,9 @@ const defaultEnv = (): LaunchEnv => ({
 
 /** Packaged apps started from Finder / Start menu do not inherit the shell PATH, so PATH alone is not enough. */
 function pathCandidates(e: LaunchEnv, names: string[]): string[] {
-  const sep = e.platform === 'win32' ? ';' : ':';
   const join = e.platform === 'win32' ? path.win32.join : path.posix.join;
   const out: string[] = [];
-  for (const dir of (e.env.PATH ?? e.env.Path ?? '').split(sep)) {
-    if (!dir || !(e.platform === 'win32' ? path.win32.isAbsolute(dir) : path.posix.isAbsolute(dir))) continue;
-    for (const n of names) out.push(join(dir, n));
-  }
+  for (const dir of pathDirs(e.env, e.platform)) for (const n of names) out.push(join(dir, n));
   return out;
 }
 

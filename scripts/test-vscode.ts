@@ -69,6 +69,9 @@ assert.deepStrictEqual([p?.edition, p?.command], ['VSCodium', '/Users/a/Applicat
   // a codium.cmd on PATH with no VSCodium.exe next to it goes through the guarded cmd.exe path
   p = planVSCodeLaunch('C:\\proj', env('win32', ['C:\\tools\\bin\\codium.cmd'], { PATH: 'C:\\tools\\bin', SystemRoot: 'C:\\Windows' }, 'C:\\Users\\a'));
   assert.deepStrictEqual([p?.command, p?.edition], ['C:\\Windows\\System32\\cmd.exe', 'VSCodium']);
+  // spec 060 FR-094: a quoted PATH entry (as Windows allows) is found, the same as detection does
+  p = planVSCodeLaunch('C:\\proj', env('win32', ['C:\\Program Files\\VSCode\\bin\\code.cmd', 'C:\\Program Files\\VSCode\\Code.exe'], { PATH: '"C:\\Program Files\\VSCode\\bin";C:\\Windows' }, 'C:\\Users\\a'));
+  assert.deepStrictEqual([p?.command, p?.edition], ['C:\\Program Files\\VSCode\\Code.exe', 'VS Code'], 'quoted PATH entry found');
 }
 
 console.log('vscode launcher: all checks passed');

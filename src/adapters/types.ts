@@ -28,6 +28,9 @@ export interface GenerateTextResult {
   nanoAiu?: number;
 }
 
+/** Spec 065 FR-001: the paths a file-edit tool is about to write (absolute, or relative to the session's folder). Never rejects. */
+export type WriteGuard = (sessionId: string, paths: string[]) => Promise<void>;
+
 export interface StartOptions {
   /** Folder or .code-workspace file; one session per workspace. */
   workspace: string;
@@ -41,7 +44,8 @@ export interface StartOptions {
   /** Use this id: resume it when it exists on disk, otherwise create a new session with exactly this id. */
   sessionId?: string;
   /** Reasoning effort for models that support it (see listModels). */
-  reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  /** The model's own effort name (spec 007 FR-008: `none` too; `src/shared/effort.ts`). */
+  reasoningEffort?: string;
   /** Context-window tier of the saved choice (spec 030); omitted = the model's default tier. Passed on create and on resume. */
   contextTier?: ContextTier;
   /**
@@ -72,6 +76,8 @@ export interface Attachment {
 export interface AgentMessage {
   text: string;
   attachments?: Attachment[];
+  /** Spec 066 FR-001: plan first: the agent proposes a plan in its app's own plan mode and waits for `resolvePlan`. Needs `capabilities.planMode`. */
+  plan?: boolean;
 }
 
 interface BaseEvent {
@@ -385,7 +391,22 @@ export interface RemoteEvent extends BaseEvent {
   url?: string;
 }
 
+/** Spec 066 FR-002: a plan the agent proposes (plan first), and its end. */
+export interface PlanEvent extends BaseEvent {
+  type: 'plan';
+  phase: 'proposed' | 'resolved';
+  requestId: string;
+  /** The plan as the agent wrote it (Markdown); `proposed` only. */
+  text?: string;
+  /** `resolved` only. */
+  action?: 'approve' | 'reject' | 'revise';
+}
+
+/** Spec 066 FR-002: the user's answer to a proposed plan. */
+export type PlanAnswer = { kind: 'approve' } | { kind: 'reject' } | { kind: 'revise'; feedback: string };
+
 export type AgentEvent =
+  | PlanEvent
   | RemoteEvent
   | AgentScheduleEvent
   | UserEvent
@@ -425,6 +446,8 @@ export interface AgentAdapter {
   readonly capabilities: AdapterCapabilities;
   /** Optional debug sink (DURBAR_LOG); assigned by the main process; the sink redacts env values and key-like strings before writing, but callers should still not pass secrets. */
   debug?: (message: string) => void;
+  /** Spec 065 FR-001: called (and awaited, bounded) just before an agent's file-edit tool writes these paths; assigned by the main process. */
+  writeGuard?: WriteGuard;
   /** Start (or resume) a session for a workspace. Resolves with the session id. */
   start(options: StartOptions): Promise<string>;
   /** Send a user message (with optional files/images) to a running session. */
@@ -441,6 +464,8 @@ export interface AgentAdapter {
   setCap?(sessionId: string, credits: number | null): Promise<void>;
   /** Answer a "limit reached" request: add credits, set a new cap, remove the cap or cancel the blocked request. Optional. */
   resolveLimit?(sessionId: string, requestId: string, action: LimitAction): Promise<void>;
+  /** Spec 066 FR-002: answer a proposed plan (approve, reject, or revise with feedback). Optional (`capabilities.planMode`). */
+  resolvePlan?(sessionId: string, requestId: string, answer: PlanAnswer): Promise<void>;
   /** Answer a `question` event (spec 012 FR-128); `null` = the user skipped it. Unknown ids are ignored. */
   answerQuestion?(sessionId: string, requestId: string, answers: Record<string, string> | null): void;
   /** Answer an elicitation `question` event (spec 012 FR-151); main has checked it against the fields. Unknown ids are ignored. */

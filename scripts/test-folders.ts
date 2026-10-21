@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { FolderStore, adapterOf, parseAdapterId, parseDefaultAgent, parseLabel, parseLastSession, parseOpenSessions, parsePrevMarks, MAX_PREV_MARKS, parseSavedFloors, parseSavedFolders, restoreMode, sessionsToRestore, MAX_OPEN_SESSIONS } from '../src/main/folders';
+import { FolderStore, adapterOf, parseAdapterId, parseDefaultAgent, parseLabel, parseLastSession, parseOpenSessions, parsePrevMarks, MAX_PREV_MARKS, parseSavedFloors, parseSavedFolders, restoreMode, sessionsToRestore, MAX_OPEN_SESSIONS, parseSessionModes, modeForSession, MAX_SESSION_MODES } from '../src/main/folders';
 import { GROUND, GROUND_NAME } from '../src/shared/floors';
 
 const abs = (p: string): string => path.resolve('/', p);
@@ -19,7 +19,7 @@ const parsed = parseSavedFolders(
       { workspace: 5 },
       null,
       'x',
-      { workspace: abs('b'), permMode: 'root', effort: 'turbo', model: 7 },
+      { workspace: abs('b'), permMode: 'root', effort: 'TURBO!', model: 7 },
     ],
   }),
 );
@@ -136,8 +136,10 @@ assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: 
     assert.deepStrictEqual([back.model, back.effort, back.contextTier], ['sim-fast', 'high', undefined], 'effort kept when not given, tier back to the default');
     assert.ok(st.setModelChoice(abs('p1'), { model: 'sim-deep', effort: null }));
     assert.strictEqual(new FolderStore(f5).load()[0].effort, undefined, 'null clears the effort');
-    assert.ok(st.setModelChoice(abs('p1'), { model: 'sim-deep', effort: 'turbo' }));
-    assert.strictEqual(new FolderStore(f5).load()[0].effort, undefined, 'an unknown effort is not saved');
+    assert.ok(st.setModelChoice(abs('p1'), { model: 'sim-deep', effort: 'none' }));
+    assert.strictEqual(new FolderStore(f5).load()[0].effort, 'none', 'spec 007 FR-008: a model\'s own effort name (none) is saved');
+    assert.ok(st.setModelChoice(abs('p1'), { model: 'sim-deep', effort: 'TURBO!' }));
+    assert.strictEqual(new FolderStore(f5).load()[0].effort, 'none', 'a malformed effort is not saved (the last one stays)');
     assert.ok(!st.setModelChoice(abs('nope'), { model: 'x' }));
     assert.ok(!st.setModelChoice(abs('p1'), { model: '' }));
     assert.ok(!st.setModelChoice(abs('p1'), { model: 'x'.repeat(101) }));
@@ -531,6 +533,49 @@ assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: 
     if (process.platform !== 'win32') assert.strictEqual(fs.statSync(f7).mode & 0o777, 0o600);
   } finally {
     fs.rmSync(d7, { recursive: true, force: true });
+  }
+}
+// spec 003 (2026-10-21 delta, owner's report): each session comes back in the mode last chosen for it, not the folder's last one
+{
+  assert.strictEqual(MAX_SESSION_MODES, 50);
+  assert.strictEqual(parseSessionModes('x'), undefined);
+  assert.strictEqual(parseSessionModes([]), undefined);
+  assert.deepStrictEqual(parseSessionModes([{ id: 'a', mode: 'allow' }, { id: 'a', mode: 'ask' }, { id: '../x', mode: 'allow' }, { id: 'b', mode: 'root' }, 7, { id: 'c', mode: 'read-only' }]), [{ id: 'a', mode: 'ask' }, { id: 'c', mode: 'read-only' }], 'bad entries dropped, the later of two wins');
+  assert.strictEqual(parseSessionModes(Array.from({ length: 60 }, (_, i) => ({ id: 's' + i, mode: 'ask' })))?.length, 50, 'the newest 50 kept');
+  // the reported case: session A in Allow all, then session B of the same folder switched to Read-only (the folder's mode follows B)
+  const f = { sessionModes: [{ id: 'A', mode: 'allow' as const }, { id: 'B', mode: 'read-only' as const }] };
+  assert.deepStrictEqual(modeForSession(f, ['A'], 'read-only'), { mode: 'allow', fromSession: true }, 'A comes back in Allow all, its own mode');
+  assert.deepStrictEqual(modeForSession(f, ['B'], 'allow'), { mode: 'read-only', fromSession: true }, 'B in Read-only, its own mode');
+  assert.deepStrictEqual(modeForSession(f, ['Z'], 'ask'), { mode: 'ask', fromSession: false }, 'nothing remembered: the fallback');
+  assert.deepStrictEqual(modeForSession(undefined, [undefined], 'read-only'), { mode: 'read-only', fromSession: false }, 'no folder, no id: the fallback');
+  assert.deepStrictEqual(modeForSession({}, ['A'], 'allow'), { mode: 'allow', fromSession: false }, 'an older file without the list: the folder mode, as before');
+  // an older file reads back unchanged
+  const old = parseSavedFolders(JSON.stringify({ folders: [{ workspace: abs('o'), permMode: 'allow' }] }));
+  assert.ok(!('sessionModes' in old[0]));
+  const d8 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folders8-'));
+  try {
+    const f8 = path.join(d8, 'f.json');
+    const st = new FolderStore(f8);
+    st.upsert({ workspace: abs('m'), permMode: 'read-only' });
+    assert.strictEqual(st.setSessionMode(abs('nope'), 'A', 'allow'), false, 'only saved folders');
+    assert.strictEqual(st.setSessionMode(abs('m'), 'bad id', 'allow'), false, 'a bad id is refused');
+    assert.strictEqual(st.setSessionMode(abs('m'), 'A', 'root' as never), false, 'a bad mode is refused');
+    assert.ok(st.setSessionMode(abs('m'), 'A', 'allow'));
+    st.setPermMode(abs('m'), 'allow');
+    assert.ok(st.setSessionMode(abs('m'), 'B', 'read-only'));
+    st.setPermMode(abs('m'), 'read-only');
+    const mtime = fs.statSync(f8).mtimeMs;
+    st.setSessionMode(abs('m'), 'B', 'read-only'); // unchanged: no write
+    assert.strictEqual(fs.statSync(f8).mtimeMs, mtime);
+    const back = new FolderStore(f8).load()[0];
+    assert.strictEqual(back.permMode, 'read-only', 'the folder mode is the last one chosen anywhere in it');
+    assert.deepStrictEqual(modeForSession(back, ['A'], back.permMode), { mode: 'allow', fromSession: true }, 'after a restart A is still Allow all');
+    assert.deepStrictEqual(restoreMode(modeForSession(back, ['A'], back.permMode).mode), { mode: 'allow', restored: true }, 'and flagged restored, so the chip says so');
+    for (let i = 0; i < 55; i++) st.setSessionMode(abs('m'), 'x' + i, 'ask');
+    assert.strictEqual(new FolderStore(f8).load()[0].sessionModes?.length, 50, 'capped at 50');
+    assert.ok(!fs.readFileSync(f8, 'utf8').includes('"A"'), 'the oldest dropped');
+  } finally {
+    fs.rmSync(d8, { recursive: true, force: true });
   }
 }
 console.log('folders tests passed');

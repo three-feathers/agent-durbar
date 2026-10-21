@@ -17,16 +17,14 @@
     <div class="brand-mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="var(--brand-mark,#4f7f65)" stroke-width="1.7" stroke-linejoin="round"><rect x="2.5" y="2.5" width="6" height="7" rx="1.5"/><rect x="11.5" y="2.5" width="6" height="4" rx="1.5"/><rect x="11.5" y="9" width="6" height="8.5" rx="1.5"/><rect x="2.5" y="12.5" width="6" height="5" rx="1.5"/></svg></div>
     <div><h1>Agent Durbar</h1><span class="proto" id="protoBadge">Demo: sample data</span></div>
   </div>
-  <!-- spec 052 FR-105 (round 11): one row. Create, the defaults chip, floors, the folder filter, Tools and Settings, the view, ⋯; the counters on the right -->
+  <!-- spec 052 FR-105 (round 11), FR-164: one row. + Folder and + Workspace, the defaults chip, floors, the folder filter, Tools and Settings, the view, ⋯; the counters on the right -->
   <div class="controls">
     <div id="liveBar">
-      <!-- FR-105: "+ New" holds the two add actions (their ids are kept, so drivers and the palette still find them) -->
-      <div class="top-new">
-        <button class="btn" id="newBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="newMenu" title="Add a folder or a VS Code workspace">+ New</button>
-        <div class="more-menu" id="newMenu" role="menu" aria-label="New" hidden>
-          <button class="more-it" role="menuitem" tabindex="-1" id="addFolder" type="button" title="Add a folder"><span class="mt">Add folder…<small>A folder on this computer becomes a room</small></span></button>
-          <button class="more-it" role="menuitem" tabindex="-1" id="addWs" type="button" title="Add a VS Code workspace (.code-workspace file)"><span class="mt">Add VS Code workspace…<small>A .code-workspace file and its folders</small></span></button>
-        </div>
+      <!-- spec 052 FR-164 (owner, 2026-10-21): Add folder and Add workspace are two labelled buttons, the first actions after the app
+           name (and first in tab order); the same two are in the Mac File menu (Ctrl+O / Ctrl+Shift+O, ⌘O / ⇧⌘O). Ids kept. -->
+      <div class="top-add" role="group" aria-label="Add">
+        <button class="btn" id="addFolder" type="button" data-keys-text aria-keyshortcuts="Control+O" title="Add a folder (Ctrl+O)">+ Folder</button>
+        <button class="btn" id="addWs" type="button" data-keys-text aria-keyshortcuts="Control+Shift+O" title="Add a VS Code workspace (.code-workspace file) (Ctrl+Shift+O)">+ Workspace</button>
       </div>
       <!-- spec 052 #308, FR-105: the defaults for new sessions, one chip; its popover (#defaultsPop, after the header) holds the selects with their ids -->
       <button class="btn" id="defaultsBtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="defaultsPop" title="Defaults for new sessions. Each agent shows its own values in its chat."><span class="dv">Defaults</span></button>
@@ -117,6 +115,7 @@
 <script src="schedtemplates.js"></script>
 <script src="places.js"></script>
 <script src="cuttext.js"></script>
+<script src="checkpoints.js"></script>
 <script src="grantlabel.js"></script>
 <script src="place-icons.js"></script>
 <script src="mood.js"></script>

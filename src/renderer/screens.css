@@ -220,6 +220,7 @@ body.has-bridge #topBtns{display:flex}
 /* spec 051: Settings > Harnesses */
 .hs-list{list-style:none;margin:8px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px} /* spec 052 FR-097: a fluid grid */
 .hs-card{border:1px solid var(--line);border-radius:var(--r-lg);padding:12px;background:var(--raised);display:flex;flex-direction:column;gap:4px}
+.hs-where code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;overflow-wrap:anywhere} /* spec 060 FR-003: where the app was found; a long path wraps after a folder separator (<wbr>), inside the card */
 .hs-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .hs-st{font-size:var(--t5-size);font-weight:650;padding:2px 9px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
 .hs-ok{color:var(--green-ink,#2f6b47);background:#eaf4ee;border-color:#c5dccd}.hs-warn{color:var(--amber-ink);background:var(--warn-bg);border-color:#e5be78}.hs-off{color:var(--ink-2);background:var(--surface-2)}
