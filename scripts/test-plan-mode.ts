@@ -127,7 +127,7 @@ async function main(): Promise<void> {
 
   // ---- main (FR-007): the answer IPC is window-only and plan-first needs the capability ----
   {
-    const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
+    const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8').replace(/\r\n/g, '\n'); // Windows checkouts have CRLF
     assert.match(main, /ipcHandle\('agents:resolvePlan', async \(e, id: unknown, requestId: unknown, answer: unknown\) => \{\n  if \(!fromApp\(e\)\) return/, 'only Durbar\'s own window answers a plan');
     assert.match(main, /if \(plan && \(!fromApp\(e\) \|\| !ad\.capabilities\.planMode\)\)/, 'plan first only from the window, only with planMode');
   }
