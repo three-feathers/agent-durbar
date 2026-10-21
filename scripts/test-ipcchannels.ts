@@ -42,7 +42,8 @@ for (const c of [...called].sort()) assert.strictEqual(regs.get(c)?.length ?? 0,
 for (const [c, list] of regs) assert.strictEqual(list.length, 1, `"${c}" is registered ${list.length} times: ${where(c)}`);
 const ipcDir = path.join(mainDir, 'ipc');
 const ipcFiles = walk(ipcDir);
-assert.ok(ipcFiles.length >= 10, `the handlers are in src/main/ipc (${ipcFiles.length} files)`);
+const modules = ipcFiles.filter((f) => path.basename(f) !== 'types.ts');
+assert.ok(modules.length >= 10, `the handlers are in src/main/ipc (${modules.length} modules)`);
 for (const f of ipcFiles) assert.ok(!/\bipcMain\b/.test(read(f)), `${path.relative(ROOT, f)} must not use ipcMain: register through ipcHandle / ipcOn (ipcguard.ts)`);
 assert.ok(!/\bipc(?:Handle|On)\(/.test(read(path.join(mainDir, 'main.ts'))), 'main.ts only calls the register functions of src/main/ipc, it registers no channel itself');
 // a module that main.ts never calls registers nothing at run time: every module is imported with its `register` and called
@@ -57,6 +58,16 @@ for (const f of ipcFiles) {
 }
 assert.ok(/\bregisterMcpIpc\(/.test(mainSrc), 'main.ts calls registerMcpIpc');
 for (const [c, list] of regs) for (const r of list) assert.ok(r.file.startsWith('src/main/ipc/') || r.file === 'src/main/mcpipc.ts', `"${c}" is registered in ${r.file}, outside src/main/ipc and mcpipc.ts`);
+
+// the guard itself comes from ipcguard.ts: a module with its own always-true fromApp or no-op ipcHandle would pass every check below
+for (const f of ipcFiles) {
+  const src = read(f);
+  const rel = path.relative(ROOT, f);
+  const imp = /import \{([^}]*)\} from '\.\.\/ipcguard';/.exec(src)?.[1] ?? '';
+  if (/\bfromApp\(/.test(src)) assert.ok(/\bfromAppFrame as fromApp\b/.test(imp), `${rel}: fromApp comes from ipcguard.ts (fromAppFrame as fromApp)`);
+  for (const n of ['ipcHandle', 'ipcOn']) if (new RegExp(`\\b${n}\\(`).test(src)) assert.ok(new RegExp(`(^|[\\s,])${n}([\\s,]|$)`).test(imp), `${rel}: ${n} comes from ipcguard.ts`);
+  assert.ok(!/\b(?:const|let|var|function)\s+(?:fromApp|fromAppFrame|ipcHandle|ipcOn)\b/.test(src), `${rel}: declares its own fromApp / ipcHandle / ipcOn`);
+}
 
 // 3. the owner-only checks. Taken from main.ts before the move (spec 066 FR-007 resolvePlan and plan-first send, 045 FR-005 of 065, FR-004b of 051, FR-011 of 054, 052 FR-071 and FR-089, 063).
 const FROM_APP = [
@@ -75,4 +86,4 @@ for (const c of FROM_APP) {
 const withCheck = [...regs].filter(([, list]) => /\bfromApp\(e\)/.test(list[0].block)).map(([c]) => c).sort();
 assert.deepStrictEqual(withCheck, [...FROM_APP].sort(), 'the channels that call fromApp(e) are exactly the list (a new owner-only check goes in the list too)');
 
-console.log(`ipc channels: ${called.size} preload channels each registered once, ${regs.size} registrations in ${ipcFiles.length} modules + mcpipc, ${FROM_APP.length} fromApp checks kept`);
+console.log(`ipc channels: ${called.size} preload channels each registered once, ${regs.size} registrations in ${modules.length} modules + mcpipc, ${FROM_APP.length} fromApp checks kept`);
