@@ -33,6 +33,12 @@ export interface AdapterCapabilities {
   readonly mcpStatus: boolean;
   /** `setMcpEnabled()` exists. */
   readonly mcpToggle: boolean;
+  /** Spec 058 FR-010: when this agent app starts a session's MCP servers: with the session, or with the next message (Claude launches its CLI then). Missing = not said. */
+  readonly mcpStart?: 'session' | 'next-message';
+  /** Spec 058 FR-010: when `setMcpEnabled()` takes effect in a running session. Missing = not said. */
+  readonly mcpToggleApplies?: 'live' | 'next-message';
+  /** Spec 058 FR-012: `restartMcpServer()` exists: one server of a running session can be restarted on its own; missing = false. */
+  readonly mcpRestart?: boolean;
   /** `handoffSummary()` exists (spec 030 FR-034); missing = false. */
   readonly handoff?: boolean;
   /** `generateText()` exists: one prompt, no tools, no session kept (spec 040 FR-015); missing = false. */

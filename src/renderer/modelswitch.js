@@ -218,6 +218,7 @@
       case 'cap':return !!c.caps;
       case 'mcp':return !!c.mcpStatus;
       case 'mcpToggle':return !!c.mcpStatus&&!!c.mcpToggle;
+      case 'mcpRestart':return !!c.mcpStatus&&c.mcpRestart===true; /* spec 058 FR-012: never assumed */
       case 'history':return !!c.history;
       case 'models':return !!c.models;
       case 'effort':return !!c.effort;

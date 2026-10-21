@@ -61,6 +61,9 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   history: true, // FR-141: thread/list and thread/read
   mcpStatus: true, // FR-147: mcpServerStatus/list and startup notifications
   mcpToggle: true, // FR-147: from the next message (fresh child, same thread)
+  mcpStart: 'session', // spec 058 FR-010
+  mcpToggleApplies: 'next-message', // FR-147
+  mcpRestart: false, // spec 058 FR-012 (Q8): no per-server restart; Restart session with these servers instead
   handoff: true, // spec 030 FR-034: an ephemeral fork, the thread is not changed
   renameSession: 'any', // spec 059 FR-007: thread/name/set on the live child or a short-lived app-server (real 2026-10-20: codex resume lists the name once the thread has had a turn)
   deleteSession: true, // spec 006 FR-028: thread/delete (hard delete; read: upstream app-server protocol, Codex 0.163; never run on a real thread)

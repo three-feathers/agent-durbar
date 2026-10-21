@@ -2,7 +2,7 @@
 import { safeStorage } from 'electron';
 import { ipcHandle } from './ipcguard';
 import * as path from 'path';
-import type { AgentInfo, AgentMcpEntry, McpFolderState, McpState } from '../shared/api';
+import type { AgentInfo, AgentMcpReply, McpFolderState, McpState } from '../shared/api';
 import type { McpServerStatus } from '../adapters/types';
 import { setMcpOp } from './agentops';
 import type { AdapterRouter } from '../adapters/router';
@@ -10,7 +10,8 @@ import type { McpServerSpec } from '../shared/mcp';
 import type { DevEnv } from './devhooks';
 import { BUILTIN_SERVERS, cliServers, copilotDir } from './mcpfiles';
 import { applyFolderImport, MAX_IMPORT_FOLDERS, previewFolderImport } from './mcpimport';
-import { maskMcpError, mcpSecretValues } from './mcpmask';
+import { mcpSecretValues } from './mcpmask';
+import { agentMcpReply, mcpRestartOp } from './mcpsession';
 import { McpStore } from './mcpstore';
 import type { SecretCodec } from './mcpstore';
 
@@ -45,7 +46,7 @@ export const safeStorageCodec: SecretCodec = {
 const keyOf = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 const nameOfKey = (key: string): string => path.basename(key).replace(/\.code-workspace$/i, '') || key;
 
-export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string, AgentInfo>; router: Pick<AdapterRouter, 'onEvent' | 'forAgent'>; dev: DevEnv }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[] }; secretValuesFor(agentId: string): string[] } {
+export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string, AgentInfo>; router: Pick<AdapterRouter, 'onEvent' | 'forAgent'>; dev: DevEnv; /** Spec 052 activity log row for an MCP restart (spec 058 FR-021). */ log?(a: AgentInfo, action: string): void }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[] }; secretValuesFor(agentId: string): string[] } {
   const { agents, router, dev } = deps;
   const store = deps.store;
   /** Per agent id, this run only: servers the user switched off for that agent. */
@@ -136,29 +137,25 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
   });
   ipcHandle('mcp:removeLegacy', (_e, name: unknown) => ({ ok: typeof name === 'string' && store().removeLegacy(name) }));
 
-  ipcHandle('agents:mcp', (_e, id: unknown): { ok: boolean; servers: AgentMcpEntry[]; live: boolean } => {
+  ipcHandle('agents:mcp', (_e, id: unknown): AgentMcpReply => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;
     if (!a) return { ok: false, servers: [], live: false };
     const s = store();
-    const secrets = secretValuesFor(a.id);
-    const mine = off.get(a.id) ?? new Set<string>();
-    const status = new Map((live.get(a.id) ?? []).map((x) => [x.name, x]));
-    const entries: AgentMcpEntry[] = [];
-    const seen = new Set<string>();
-    const add = (name: string, origin: AgentMcpEntry['origin'], defaultOn: boolean): void => {
-      if (seen.has(name)) return;
-      seen.add(name);
-      const st = status.get(name);
-      entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), defaultOn, off: mine.has(name) });
-    };
-    const dis = new Set(s.ambientDisabled());
-    const c = cli().servers;
-    for (const am of c) add(am.name, 'cli', am.enabled);
-    const names = new Set(c.map((x) => x.name.toLowerCase()));
-    for (const v of s.list(keyOf(a))) if (!names.has(v.name.toLowerCase())) add(v.name, 'folder', v.enabled && v.trusted && !v.needsSecrets);
-    for (const x of live.get(a.id) ?? []) add(x.name, 'runtime', !dis.has(x.name));
-    return { ok: true, servers: entries, live: router.forAgent(a.id)?.isLive(a.id) ?? false };
+    return agentMcpReply({
+      a,
+      ad: router.forAgent(a.id),
+      live: live.get(a.id) ?? [],
+      off: off.get(a.id) ?? new Set<string>(),
+      secrets: secretValuesFor(a.id),
+      cli: cli().servers,
+      extras: s.list(keyOf(a)),
+      ambientDisabled: new Set(s.ambientDisabled()),
+    });
   });
+  /** Spec 058 FR-021: restart one server of this agent's running session; one at a time per server. */
+  const restarting = new Set<string>();
+  ipcHandle('agents:mcpRestart', (_e, id: unknown, name: unknown) =>
+    mcpRestartOp({ agents, router, live: (k) => live.get(k) ?? [], off: (k) => off.get(k) ?? new Set<string>(), secrets: secretValuesFor, log: deps.log }, restarting, id, name));
   ipcHandle('agents:setMcp', (_e, id: unknown, name: unknown, enabled: unknown) => setMcpOp({ agents, router, wsKey: keyOf }, off, id, name, enabled));
 
   return {

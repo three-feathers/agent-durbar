@@ -2,7 +2,8 @@
 
 **Feature Branch**: `058-mcp-session-controls`
 **Created**: 2026-10-20
-**Status**: Specified and clarified (spec, research, plan and tasks; **no code**). The owner answered Q1-Q11 on 2026-10-20 (all option A,
+**Status**: Specified and clarified (spec, research, plan and tasks). Built 2026-10-21 (#349): per-server Restart and Restart session
+with these servers (US3, US4; tasks T030-T034, T040-T044), simulator and fakes only. The owner answered Q1-Q11 on 2026-10-20 (all option A,
 see *Clarifications*). Delta 2026-10-20 (issue #364, MCP OAuth sign-in, FR-060..FR-076): specified and clarified (the owner answered
 Q12-Q19 on 2026-10-20, all the recommended option), no code (see *Changes*).
 **Input**: Issue #349. Owner (Paco, 2026-10-20): "in a session, when I open MCP I can enable and disable servers, but I miss VS Code's
@@ -205,7 +206,7 @@ and nothing is opened; simulator shows the button and a toast.
   only when the vendor says so: Copilot `errorClassification` values once seen, Codex `failureReason: reauthenticationRequired` ->
   `auth`, Codex `authStatus: notLoggedIn` -> `auth`) and `needsRestart?: boolean` (Copilot `session.mcp_server_needs_reconnect`).
   Claude's `init.mcp_server_errors` become `failed` rows with their text. No vendor type leaves the adapter.
-- **FR-012** `AgentAdapter.restartMcpServer?(sessionId, name): Promise<void>`, present exactly when `mcpRestart` is true (contract C2):
+- **FR-012** `[IMPLEMENTED]` (`test:` fake SDK and fake CLI; not on a real account, FR-050) `AgentAdapter.restartMcpServer?(sessionId, name): Promise<void>`, present exactly when `mcpRestart` is true (contract C2):
   - Copilot: `session.rpc.mcp.restartServer({ serverName })` when the method exists; when it does not (an older runtime), off then on
     for that server only (`disable` then `enable`) (Q3); never `stopServer` (Q2); never `reload()` (all servers);
   - Claude: control request `mcp_reconnect { serverName }`, then `mcp_status` for the new list (as FR-133 does after a toggle). A server
@@ -225,11 +226,11 @@ and nothing is opened; simulator shows the button and a toast.
 - **FR-020** `agents:mcp` adds to its reply: per server `canRestart`, `errorClass`, `needsRestart`, the masked error (FR-005), and a
   `logFolder` flag (FR-024); per agent `start` and `toggleApplies` (FR-010), `canRestartSession` (FR-022) and the agent app's display
   name. No path, no secret value.
-- **FR-021** `agents:mcpRestart(id, name)`: a known agent id, a server name of 1-64 characters that is in that agent's list; the adapter
+- **FR-021** `[IMPLEMENTED]` (`test:` test-mcp-session) `agents:mcpRestart(id, name)`: a known agent id, a server name of 1-64 characters that is in that agent's list; the adapter
   must have `restartMcpServer`; the session must be live. Returns `{ ok, error? }` with a short, masked error. One restart per server
   at a time per agent (a second call while one runs is refused). An activity-log row (spec 052) records "MCP server <name> restarted"
   with no error text.
-- **FR-022** `agents:mcpRestartSession(id, confirmed)`: Restart session with these servers.
+- **FR-022** `[IMPLEMENTED]` (`test:` test-mcp-session; `sim:` shots-058-mcp-restart) `agents:mcpRestartSession(id, confirmed)`: Restart session with these servers.
   - Allowed when the adapter has `resume` and the agent is a main agent with a session id that can be resumed.
   - When the agent is working, thinking or waiting (main's own state tracker, not the renderer's word), `confirmed` must be `true`;
     otherwise it returns `{ ok: false, needsConfirm: true }` and changes nothing. (The renderer may ask in more cases, FR-023; main
@@ -239,14 +240,14 @@ and nothing is opened; simulator shows the button and a toast.
     all apply. No prompt is sent.
   - The renderer is told the result; the chat keeps its history (nothing is reloaded unless the adapter reports a new session id).
   - If the resume fails, the agent stays ended (as after *End session*) and the error is shown; sending a message tries again.
-  - **FR-027** If the resume fails because the sign-in expired (review note 2, PR #359), the result carries `errorKind: 'auth'`
+  - **FR-027** `[IMPLEMENTED]` (`test:`, `sim:` simauth=expired) If the resume fails because the sign-in expired (review note 2, PR #359), the result carries `errorKind: 'auth'`
     (the thrown error classified with the existing `isAuthError` / the adapter's `auth` error status), and the renderer closes the MCP
     dialog and shows spec 012 FR-157's sign-in card in that chat (*Sign in*, *Open Settings > Agent apps*, raw text only in *Details*),
     not a plain toast; the app is marked signed out as FR-157 does. For Claude the CLI is not launched by the restart (Q11), so an
     expired sign-in shows with the next message through FR-157's existing path.
   - Always the same session (Q4); there is no new-session variant. For Claude the CLI is not launched by the restart: its servers start
     with the next message, and the dialog says so (Q11). The button lives only in the MCP dialog (Q10).
-- **FR-023** Confirmation text (renderer, Cancel focused): "Restart <name>'s session with the current MCP servers? The conversation is
+- **FR-023** `[IMPLEMENTED]` (`sim:`) Confirmation text (renderer, Cancel focused): "Restart <name>'s session with the current MCP servers? The conversation is
   kept and resuming spends no AI credits. <If working:> The running turn stops. <Always:> 'Approve for this session' grants are cleared.
   <If remote on:> Remote control turns off." Shown when the agent is working, thinking or waiting, or has session grants or remote
   control on.
@@ -271,9 +272,9 @@ and nothing is opened; simulator shows the button and a toast.
   documented by Anthropic", Q6),
   *Settings*, *Folder extras…*, *Done*. Text at least 10.5px; the dialog fits 1280x800 with 12 servers without page overflow (the list
   scrolls inside the dialog).
-- **FR-031** Restart feedback: the button shows "Restarting…" and is disabled until the call returns; then a toast "Restarted <name>" or
+- **FR-031** `[IMPLEMENTED]` (`sim:`) Restart feedback: the button shows "Restarting…" and is disabled until the call returns; then a toast "Restarted <name>" or
   the masked error; the row then follows the runtime's events (FR-004).
-- **FR-032** Codex rows: no Restart; the footer line says "Codex cannot restart one server; use Restart session with these servers".
+- **FR-032** `[IMPLEMENTED]` (`sim:`; the line sits next to the Restart session button) Codex rows: no Restart; the footer line says "Codex cannot restart one server; use Restart session with these servers".
   No "Reload servers" control (Q8).
 - **FR-033** Keyboard and screen readers: every new control is a focusable button with a name ("Restart <server> for <agent>"); state
   changes in the list are announced through the existing polite live region; Esc closes.

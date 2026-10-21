@@ -150,6 +150,9 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   history: true,
   mcpStatus: true,
   mcpToggle: true,
+  mcpStart: 'session', // spec 058 FR-010
+  mcpToggleApplies: 'live', // spec 019 (real: mcp.enable/disable)
+  mcpRestart: true, // spec 058 FR-012: rpc.mcp.restartServer (@experimental), else disable then enable (read: SDK 1.0.22; not checked on a real account)
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
   modelSwitch: Object.freeze({ verified: true, contextTier: true }), // spec 030 Phase 3 (real 2026-10-20, Copilot Pro): switch, effort, long tier, confirmation and compact-and-switch (T041, T044, T045)
   planMode: true, // spec 066 FR-003: mode.set plan + onExitPlanModeRequest (@experimental)
@@ -1113,6 +1116,23 @@ export class CopilotAdapter implements AgentAdapter {
     if (enabled) await live.session.rpc.mcp.enable({ serverName: name });
     else await live.session.rpc.mcp.disable({ serverName: name });
     (live.mcpToggles ??= new Map()).set(name, enabled);
+  }
+
+  /**
+   * Spec 058 FR-012: restart one MCP server of this session. `rpc.mcp.restartServer` ("stops then starts", session-scoped, read: SDK
+   * 1.0.22, @experimental) when the runtime has it; otherwise that one server off, then on (Q3). Never `stopServer` (it acts on the
+   * session's host, Q2) and never `reload` (every server). The new state follows as `session.mcp_server_status_changed`.
+   */
+  async restartMcpServer(sessionId: string, name: string): Promise<void> {
+    const live = this.sessions.get(sessionId);
+    if (!live) throw new Error('This session is not running. Send a message to start it.');
+    const mcp = live.session.rpc.mcp as unknown as { restartServer?: (p: { serverName: string }) => Promise<void>; enable(p: { serverName: string }): Promise<void>; disable(p: { serverName: string }): Promise<void> };
+    if (typeof mcp.restartServer === 'function') {
+      await mcp.restartServer({ serverName: name });
+      return;
+    }
+    await mcp.disable({ serverName: name });
+    await mcp.enable({ serverName: name });
   }
 
   resolvePermission(sessionId: string, requestId: string, approve: boolean, remember = false, broad = false): void {

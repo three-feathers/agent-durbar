@@ -10,6 +10,7 @@ import type { OpsDeps } from '../agentops';
 import { folderGitStatus } from '../gitstatus';
 import type { GitStatus } from '../gitstatus';
 import { applySetPaused } from '../mcp/agentstate';
+import { mcpRestartSessionOp } from '../mcpsession';
 import type { AgentStateTracker } from '../mcp/agentstate';
 import type { CheckpointStore } from '../checkpoints';
 import type { createRemoteOps } from '../remoteops';
@@ -38,10 +39,14 @@ export interface AgentsIpcDeps {
   ensureLive: EnsureLive;
   readyAdapterIds(): Promise<ReadonlySet<string>>;
   forgetOpenSession(key: string, id: string): void;
+  /** Spec 058: the secret values handed to an agent's session (its folder's MCP extras), masked out of errors. */
+  mcpSecrets(id: string): string[];
+  /** Spec 052 activity log row for Restart session (spec 058 FR-022). */
+  logMcp(a: AgentInfo, action: string): void;
 }
 
 export function register(deps: AgentsIpcDeps): void {
-  const { agents, router, agentState, opsDeps, remoteOps, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, vsChatRefs, continued } = deps;
+  const { agents, router, agentState, opsDeps, remoteOps, mcpSecrets, logMcp, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, vsChatRefs, continued } = deps;
   const scheduler = deps.getScheduler;
   const checkpointStore = deps.getCheckpointStore;
   ipcHandle('agents:list', () => [...agents.values()]);
@@ -79,11 +84,27 @@ export function register(deps: AgentsIpcDeps): void {
   // Stop only interrupts the running turn (the agent returns to Ready); End session frees the runtime session.
   ipcHandle('agents:stop', (_e, id: string) => stopTurnOp(opsDeps, id));
 
+  /** End session (spec 005): remote control off first (spec 054 FR-011: off on GitHub too), then the adapter frees the session. Also Restart session's first step (spec 058 FR-022). */
+  const endSession = async (id: string): Promise<void> => {
+    await remoteOps.release(id);
+    await router.forAgent(id)?.stop(id);
+  };
   ipcHandle('agents:end', async (_e, id: string) => {
     if (!agents.has(id)) return;
-    await remoteOps.release(id); // spec 054 FR-011: off on GitHub too before the session ends
-    await router.forAgent(id)?.stop(id);
+    await endSession(id);
   });
+  /** Spec 058 FR-022: Restart session with these servers: End session, then the same id through the resume path; no prompt is sent. */
+  const restartingSessions = new Set<string>();
+  ipcHandle('agents:mcpRestartSession', (_e, id: unknown, confirmed: unknown) =>
+    mcpRestartSessionOp({
+      agents,
+      router,
+      busy: (k) => agentState.isBusy(k),
+      endSession,
+      resume: (a) => ensureLive(a, { quiet: false }),
+      secrets: mcpSecrets,
+      log: logMcp,
+    }, restartingSessions, id, confirmed));
 
   ipcHandle('agents:newSession', async (_e, id: unknown, opts: unknown) => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;

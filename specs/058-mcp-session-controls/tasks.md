@@ -29,15 +29,17 @@ small PR-sized step with its own test. No task spends AI credits except Phase 6,
 - [ ] T020 [US1] `agents:mcp` reply adds `app`, `start`, `toggleApplies`, `canRestartSession` (false until T040), per-server
   `errorClass`, `needsRestart`, `canRestart` (false until T030/T031), `logFolder` (false until T050); `AgentMcpEntry` in
   `src/shared/api.ts`; test in new `scripts/test-mcp-session.ts` (`test:mcpsession`) [FR-020]
-- [ ] T021 [US2] `agents:mcp` masks `error` with `maskMcpError` and the secret values of the extras passed to that agent's session
-  (`McpStore.forSession`); test that no secret reaches the reply [FR-005, SC-002]
+- [x] T021 [US2] `agents:mcp` masks `error` with `maskMcpError` and the secret values of the extras passed to that agent's session
+  (`McpStore.forSession`); test that no secret reaches the reply [FR-005, SC-002] (done 2026-10-21, #349: the reply is built by
+  `agentMcpReply` in `src/main/mcpsession.ts`; the test is in `scripts/test-mcp-session.ts`)
 - [ ] T022 [P] [US2] Copilot mapper: `errorClassification` (known values only) -> `errorClass`, `session.mcp_server_needs_reconnect` ->
   `needsRestart`; mapper test [FR-011]
 - [ ] T023 [P] [US2] Codex: `failureReason: reauthenticationRequired` and `authStatus: notLoggedIn` -> `errorClass: 'auth'`; test in
   `test-codex-adapter` [FR-011]
 - [ ] T024 [P] [US2] Claude mapper: `init.mcp_server_errors` -> `failed` rows with their text; mapper test [FR-011]
-- [ ] T025 [P] [US1] Capability values in the three adapters: Copilot `session`/`live`, Claude `next-message`/`live`, Codex
-  `session`/`next-message` (restart and logs stay false here); contract test [FR-010]
+- [x] T025 [P] [US1] Capability values in the three adapters: Copilot `session`/`live`, Claude `next-message`/`live`, Codex
+  `session`/`next-message` (restart and logs stay false here); contract test [FR-010] (done 2026-10-21, #349, with T030/T031: `mcpRestart`
+  is true for Copilot and Claude (not on Claude's dev-only SDK transport), false for Codex; `mcpLogs` waits for T050)
 - [ ] T026 [US1] Dialog rows: word + icon, hint, *Details* with *Copy*, start line and toggle timing, the two scopes sentence; the
   "applies right away" text only for `live`; `index.html` loads `mcpwords.js` [FR-001, FR-002, FR-003, FR-007, FR-030, FR-033]
 - [ ] T027 [US1] Live refresh: when an `mcp` event for the open agent arrives (`app.js`, where `a.mcp` is set), re-render the list and
@@ -49,32 +51,51 @@ small PR-sized step with its own test. No task spends AI credits except Phase 6,
 
 ## Phase 3: User Story 3, per-server Restart (P2)
 
-- [ ] T030 [P] [US3] Copilot `restartMcpServer`: `rpc.mcp.restartServer({serverName})` when present, else `disable` then `enable`
+- [x] T030 [P] [US3] Copilot `restartMcpServer`: `rpc.mcp.restartServer({serverName})` when present, else `disable` then `enable`
   (Q3); never `stopServer` (Q2) or `reload`; not live rejects; fake SDK gains `restartServer` and a mode without it; adapter test
   [FR-012, SC-003]
-- [ ] T031 [P] [US3] Claude `restartMcpServer`: control request `mcp_reconnect {serverName}` then `mcp_status` and an `mcp` event; a
+- [x] T031 [P] [US3] Claude `restartMcpServer`: control request `mcp_reconnect {serverName}` then `mcp_status` and an `mcp` event; a
   server off at launch rejects with "Switch it on first; it starts with your next message"; not live rejects; fake CLI test [FR-012,
   SC-003]
-- [ ] T032 [US3] `agents:mcpRestart(id, name)` in main: validation, one restart per server at a time, masked error, activity-log row;
+- [x] T032 [US3] `agents:mcpRestart(id, name)` in main: validation, one restart per server at a time, masked error, activity-log row;
   preload and `DurbarApi`; `canRestart` in `agents:mcp`; test in `test-mcp-session` [FR-020, FR-021]
-- [ ] T033 [US3] Dialog: *Restart* per row (only `canRestart`, live, switch on), "Restarting…" disabled state, toast with the result;
+- [x] T033 [US3] Dialog: *Restart* per row (only `canRestart`, live, switch on), "Restarting…" disabled state, toast with the result;
   Codex footer line [FR-030, FR-031, FR-032]
-- [ ] T034 [US3] Simulator: canned Restart (Starting -> Running) for Copilot and Claude sim kinds; refresh screenshots [FR-040, FR-042]
+- [x] T034 [US3] Simulator: canned Restart (Starting -> Running) for Copilot and Claude sim kinds; refresh screenshots [FR-040, FR-042]
+  (done 2026-10-21, #349: `scripts/shots-058-mcp-restart.js` in the UI suite; `docs/screenshots/058-mcp-restart-*.png`)
 
 ## Phase 4: User Story 4, Restart session with these servers (P2)
 
-- [ ] T040 [US4] Extract `endSession(a)` in main (remote off, `adapter.stop`) and use it in `agents:end`; no behaviour change; existing
+- [x] T040 [US4] Extract `endSession(a)` in main (remote off, `adapter.stop`) and use it in `agents:end`; no behaviour change; existing
   tests pass [FR-022]
-- [ ] T041 [US4] `agents:mcpRestartSession(id, confirmed)`: validation, `resume` capability, busy check from main's `agentState`
+- [x] T041 [US4] `agents:mcpRestartSession(id, confirmed)`: validation, `resume` capability, busy check from main's `agentState`
   (`needsConfirm`), `endSession` then `ensureLive` with the same id and current options, no prompt; preload and `DurbarApi`;
   `canRestartSession`; test with a fake adapter: order, same id, new `mcpServers`/`disabledMcpServers`, refusal while busy, failed resume
   leaves the agent ended (Q4) [FR-022, SC-004]
-- [ ] T042 [US4] Dialog footer button and the confirmation text (Cancel focused) when working/thinking/waiting, grants or remote on;
+- [x] T042 [US4] Dialog footer button and the confirmation text (Cancel focused) when working/thinking/waiting, grants or remote on;
   after the restart the dialog refreshes; Claude line "servers start with your next message" (Q11) [FR-023, FR-030]
-- [ ] T043 [US4] Simulator: canned Restart session; screenshots of the confirmation [FR-040, FR-042]
-- [ ] T044 [US4] Sign-in on Restart session (review note 2): a resume that fails for sign-in returns `errorKind: 'auth'`, marks the app
+- [x] T043 [US4] Simulator: canned Restart session; screenshots of the confirmation [FR-040, FR-042]
+- [x] T044 [US4] Sign-in on Restart session (review note 2): a resume that fails for sign-in returns `errorKind: 'auth'`, marks the app
   signed out and the renderer shows spec 012 FR-157's sign-in card in the chat instead of a toast; `simauth=expired` makes the simulator
   fail the restart that way; test in `test-mcp-session` (auth error vs other error) [FR-027, FR-040, FR-041]
+
+**Note 2026-10-21 (#349, Vikram's agent; split agreed with Paco's agent on #349 and #364).** Built: T030-T034 and T040-T044, plus T021's
+reply test and T025. Of T010 only `mcpStart`, `mcpToggleApplies`, `mcpRestart` and `restartMcpServer` (C2 line in the contract test,
+fake member `restartMcpServer` with `restartCalls` / `failRestart`); `errorClass` comes with #364's T112, `needsRestart` with T022,
+`mcpLogs` / `mcpLogFolder` with T050-T051. Of T020 only `start`, `toggleApplies`, `canRestartSession` and per-server `canRestart`;
+`app` and `errorClass` come with #364's T114. Of T028 only the capability values (Claude and Codex `mcpToggle: true`, the 058 fields)
+and one failed server (sim-6 `my-notes`); the hint waits for T113. How it was built:
+- main: `src/main/mcpsession.ts` (pure: `agentMcpReply`, `mcpRestartOp`, `mcpRestartSessionOp`); `agents:mcpRestart` registered in
+  `mcpipc.ts` next to `agents:mcp`; `agents:mcpRestartSession` in `src/main/ipc/agents.ts` next to `agents:end`, which now shares
+  `endSession` (T040). Restart session resumes through `ensureLive(a, { quiet: false })`, the same path a message takes, so the start
+  options (`startOptionsFor`, with this agent's MCP set) are the current ones; the unit test checks the order, the same id, no prompt,
+  the refusals and the failure paths with a stubbed resume, not the option values themselves (those come from `main.ts`).
+- Activity log: a new decision `mcp-restart` ("MCP restart") for "MCP server <name> restarted" and "Session restarted with the current
+  MCP servers" (no error text).
+- Dialog: *Restart* sits before the switch; *Restart session with these servers* is a button under the list, not in the dialog's button
+  row, so the dialog stays open and refreshes after it (FR-030 said footer). Until T027 (live refresh, #364) the dialog re-reads the
+  list after each call and once more 1.5 s after a Restart. The FR-023 confirmation uses the shared `askDialog` (Cancel focused).
+- Not checked on a real account (FR-050): Copilot `restartServer`, Claude `mcp_reconnect`, and a resume with a changed server set.
 
 ## Phase 5: User Story 5, Open log folder (P3)
 

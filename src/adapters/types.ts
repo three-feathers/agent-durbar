@@ -473,6 +473,12 @@ export interface AgentAdapter {
   selectAgentProfile?(sessionId: string, id: string | null): Promise<AgentProfile | null>;
   /** Switch one MCP server on or off in a running session (spec 019). Optional. */
   setMcpEnabled?(sessionId: string, name: string, enabled: boolean): Promise<void>;
+  /**
+   * Spec 058 FR-012: restart one MCP server of a running session, only that one, with the configuration it already has. Optional
+   * (`capabilities.mcpRestart`). Rejects with a short, user-facing sentence when the session is not running or the server cannot be
+   * restarted now; never starts a session and never restarts the others. The new state follows as an `mcp` event.
+   */
+  restartMcpServer?(sessionId: string, name: string): Promise<void>;
   /** Change the model, effort or context tier of a live session; applies from the next message (spec 030). Optional: adapters that cannot omit it and the UI offers a new session instead. */
   setModel?(sessionId: string, request: ModelSwitchRequest): Promise<ModelSwitchResult>;
   /** Remove a switch the runtime queued while a turn was running (`queueId` from a `queued` result). Optional. */
