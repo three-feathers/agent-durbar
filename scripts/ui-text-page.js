@@ -82,7 +82,7 @@
   /* the controls of FR-169 that carried a literal light colour */
   const DARK_CONTROLS = [
     '#topBtns button[aria-pressed="true"]', '.scr-head .seg button[aria-selected="true"]', '.thpick[aria-pressed=true]',
-    '.capf input', '.plrow select', '.dlg label.pico-opt', '.ctxchip', '#capChip', '.sitem.attn.st-error',
+    '.capf input', '.plrow select', '.dlg label.pico-opt', '.ctxchip', '#capChip', '.sitem.attn.st-error', '.dlg.fs .mtag',
   ];
 
   function brokenWords(root) {
@@ -167,7 +167,7 @@
   /* FR-170: a field label is one short line */
   function labelWrap(root, add) {
     for (const lb of root.querySelectorAll('label')) {
-      if (!vis(lb) || lb.matches('.chk,.pico-opt,.dpick,.tgl')) continue;
+      if (!vis(lb) || lb.matches('.chk,.pico-opt,.dpick,.tgl') || lb.closest('.imp-row')) continue; // a pick row of a list is not a field label
       const lead = [...lb.childNodes].filter((n) => (n.nodeType === 3 && n.textContent.trim()) || (n.nodeType === 1 && n.matches('span:not(.dpick-t)') && n.textContent.trim()));
       if (!lead.length) continue;
       const tops = new Set();
@@ -217,7 +217,8 @@
 
   function check(kind, sels, o = {}) {
     const roots = [];
-    for (const s of [].concat(sels)) document.querySelectorAll(s).forEach((e) => { if (vis(e) && !roots.includes(e) && !roots.some((r) => r.contains(e))) roots.push(e); });
+    // each box once: a root that holds, or sits in, another is skipped
+    for (const s of [].concat(sels)) document.querySelectorAll(s).forEach((e) => { if (vis(e) && !roots.some((r) => r === e || r.contains(e) || e.contains(r))) roots.push(e); });
     const bad = [];
     const add = (rule, root, el, detail) => bad.push({ rule, el: path(el, root), detail });
     if (!roots.length) return [{ rule: 'no-root', el: String(sels), detail: 'the surface is not on screen' }];
@@ -288,6 +289,21 @@
         const cs = getComputedStyle(root);
         if (kind === 'popover' && root.scrollWidth > root.clientWidth + 1) add('x-scroll', root, root, `scrollWidth ${root.scrollWidth} > ${root.clientWidth}`);
       }
+      if (o.darkAll) {
+        // the dark fixture: the text of EVERY visible element on the surface, so a bright box from a rule or from an inline style=
+        // is found even when its control is not in DARK_CONTROLS. Disabled controls and faded boxes are exempt (WCAG).
+        for (const e of all) {
+          const isField = /^(INPUT|SELECT|TEXTAREA)$/.test(e.tagName);
+          if (!(ownText(e) || isField) || !shown(e)) continue;
+          if (e.disabled || e.closest('[aria-disabled="true"],.is-off,[disabled]')) continue;
+          let faded = false; for (let a = e; a && !faded; a = a.parentElement) faded = parseFloat(getComputedStyle(a).opacity) < 0.9;
+          if (faded) continue;
+          const back = backdrop(e);
+          const fg = rgba(getComputedStyle(e).color);
+          const k = contrast(over(fg, back), back);
+          if (k < 4.5) { const b = { rule: 'dark-text', el: path(e, root), detail: `${k.toFixed(2)}:1 "${snip(ownText(e) || e.value || e.tagName.toLowerCase(), 30)}"`, key: [e.parentElement, e].filter(Boolean).map((n) => desc(n).replace(/#[^.]*/, '')).join(' > ') }; bad.push(b); }
+        }
+      }
       if (o.dark) {
         for (const sel of DARK_CONTROLS) {
           const els = root.matches(sel) ? [root] : [...root.querySelectorAll(sel)];
@@ -310,7 +326,7 @@
 
   /* FR-168: a static tooltip explains a control in at most 120 characters; a data tooltip (the full text of a cut name, a card or the totals) may be
      longer, at most 300 characters and 8 lines. Whole page: chrome titles are not in a surface's root. */
-  const DATA_TIP = '.q-opt,.place,.intent,.room-aiu,.chip,.chip *,.desk,.helper,.lrow,.lrow *,.sitem,.sitem *,#stats,#stats *,.stat-aiu,.room-head *,.room-path,.prev-row *,.pal-o *,.ib-n,.ib-f,.by-chip,.mdl-sub,.dpick-t,.hs-name b,.sc-t b,.grant,.chip.att-chip,.att,.cmdbox,.pill,.ph-t,.folder,.sub-title,.lmood,.tile,.ttab td,.ttab th';
+  const DATA_TIP = '.ab-q,.ab-q *,.q-opt,.place,.intent,.room-aiu,.chip,.chip *,.desk,.helper,.lrow,.lrow *,.sitem,.sitem *,#stats,#stats *,.stat-aiu,.room-head *,.room-path,.prev-row *,.pal-o *,.ib-n,.ib-f,.by-chip,.mdl-sub,.dpick-t,.hs-name b,.sc-t b,.grant,.chip.att-chip,.att,.cmdbox,.pill,.ph-t,.folder,.sub-title,.lmood,.tile,.ttab td,.ttab th';
   function tooltips() {
     const out = [];
     document.querySelectorAll('[title]').forEach((el) => {

@@ -224,7 +224,11 @@ module.exports = async (ctx) => {
     await js(`(()=>{window.DurbarDialog(document)({title:'Remove this folder?',body:'These are listed so you can check them.',lines:['/home/someone/' + 'a'.repeat(200) + '.txt','Short line'],buttons:[{label:'Cancel',value:null},{label:'Remove',value:'ok',cls:'primary'}]});return true})()`); // not awaited: the promise settles when the dialog closes
     return until(`!!document.querySelector('#modeDlg .dlg')`, 3000);
   });
-  const PASSES = [ // surfaces that need their own page address
+  // spec 061: the folder-setup dialog opens by itself for the first folder when the page address has simfoldersetup=1
+  add('folder-setup', 'dialog', ['#scrDlg .dlg.fs'], async () => until(`!!document.querySelector('#scrDlg .dlg.fs')`, 8000));
+  S.find((x) => x.name === 'folder-setup').onlyPass = true;
+  const PASSES = [
+    { name: 'folder-setup', base: 'folder-setup', query: { simfoldersetup: '1' } }, // surfaces that need their own page address
     { name: 'chat-question-long', base: 'chat-question', query: { simquestion: 'long' } }, // T145: a 2,000-character question
     { name: 'send-several-long', base: 'send-several', query: { simnames: 'long' } }, // T148: 60-character names
     { name: 'tools-agents-long', base: 'tools-agents-tab', query: { simnames: 'long' } }, // T154: Tools > Models and context with 60-character names
@@ -253,8 +257,10 @@ module.exports = async (ctx) => {
     await settle(3000);
     await until(`[...document.querySelectorAll('.dlg,.dlg-ov,.toast')].every(e=>e.getAnimations().every(a=>a.playState!=='running'))`, 2000); // the open animation (dlgin scales the box)
     const dark = theme === 'dark' || !!s.contrast;
-    let v = await js(`window.__uitext.check(${jsLiteral(s.kind)},${jsLiteral(s.roots)},{dark:${jsLiteral(dark)}})`);
-    if (v.some((x) => x.rule === 'no-root')) { await ctx.sleep(400); v = await js(`window.__uitext.check(${jsLiteral(s.kind)},${jsLiteral(s.roots)},{dark:${jsLiteral(dark)}})`); }
+    const darkAll = theme === 'dark' && !s.contrast; // the dark fixture: every text element, not only the FR-169 controls
+    const call = () => js(`window.__uitext.check(${jsLiteral(s.kind)},${jsLiteral(s.roots)},{dark:${jsLiteral(dark)},darkAll:${jsLiteral(darkAll)}})`);
+    let v = await call();
+    if (v.some((x) => x.rule === 'no-root')) { await ctx.sleep(400); v = await call(); }
     if (s.contrast) v = v.filter((x) => x.rule === 'dark-contrast'); // every built-in theme: the FR-169 controls only
     for (const x of v) {
       found.push({ ...tag, ...x });
@@ -273,7 +279,7 @@ module.exports = async (ctx) => {
       await load();
       if (th === 'dark' && w === SIZES[SIZES.length - 1][0]) await tones('audit-dark');
       for (const s of S) {
-        if (ONLY && !ONLY.has(s.name)) continue;
+        if (s.onlyPass || (ONLY && !ONLY.has(s.name))) continue;
         try { await run(s); } catch (e) {
           found.push({ surface: s.name, theme, size: `${W}x${Hh}`, rule: 'error', el: s.name, detail: String((e && e.message) || e).slice(0, 200) });
           try { await load(); } catch (_) { /* next */ }
@@ -302,22 +308,57 @@ module.exports = async (ctx) => {
         try { await run({ ...base, contrast: true }); } catch (e) { found.push({ surface: n, theme: id, size: '1280x800', rule: 'error', el: '', detail: String((e && e.message) || e).slice(0, 200) }); }
         await reset();
       }
+      extraQuery = { simfoldersetup: '1' }; await load(); // the permission tags of the folder-setup dialog
+      try { await run({ ...S.find((x) => x.name === 'folder-setup'), contrast: true }); } catch (e) { found.push({ surface: 'folder-setup', theme: id, size: '1280x800', rule: 'error', el: '', detail: String((e && e.message) || e).slice(0, 200) }); }
+      await reset(); extraQuery = {};
     }
     themeId = '';
   }
 
-  // FR-169, source side: the simulator cannot reach every control, so the CSS is read too. A literal light background (a hex of luminance over 0.6)
-  // in styles.css or screens.css fails: use a theme token (the --tone-* set in styles.css :root). The one exception is the switch knob (.swt i):
-  // it is a white disc with no text on a track that is a token, so there is no text contrast to keep. There is no allow-list.
+  // FR-169, source side: the simulator cannot reach every control, so every stylesheet of the renderer is read too. A light colour
+  // (relative luminance over 0.6, from src/shared/themegen.ts) in a background fails: use a theme token (the --tone-* set in styles.css :root); there is no allow-list
+  // (older debt, listed); the switch knob is the one intended white. Hex, named colours, rgb()/hsl() with numbers and gradients are read;
+  // translucent colours (alpha under 0.6) and var() are not light by themselves.
   {
-    const lum = (h) => { h = h.slice(1); if (h.length === 3) h = [...h].map((c) => c + c).join(''); const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; const [r, g, b] = [0, 2, 4].map((i) => f(parseInt(h.slice(i, i + 2), 16))); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
-    for (const file of ['styles.css', 'screens.css']) {
-      for (const { sel, decls } of cssRules(file)) {
-        for (const d of decls) {
-          const x = /^\s*background(?:-color)?\s*:\s*(?:[^;]*?\s)?(#[0-9a-fA-F]{3,8})\b/.exec(d);
-          if (!x || lum(x[1].slice(0, 7)) <= 0.6) continue;
-          if (file === 'screens.css' && sel === '.swt i') continue; // the knob carries no text
-          found.push({ surface: `(${file})`, theme: 'dark', size: '-', rule: 'literal-light', el: sel.slice(0, 80), detail: `background ${x[1]}: use a theme token` });
+    const { luminance } = require('../dist/shared/themegen.js'); // one luminance helper; the check runs after the build
+    const NAMED = { white: '#ffffff', snow: '#fffafa', ivory: '#fffff0', ghostwhite: '#f8f8ff', whitesmoke: '#f5f5f5', floralwhite: '#fffaf0', linen: '#faf0e6', seashell: '#fff5ee', beige: '#f5f5dc', lightyellow: '#ffffe0', azure: '#f0ffff', mintcream: '#f5fffa', aliceblue: '#f0f8ff', lavenderblush: '#fff0f5', honeydew: '#f0fff0', cornsilk: '#fff8dc', oldlace: '#fdf5e6', lightgray: '#d3d3d3', lightgrey: '#d3d3d3', gainsboro: '#dcdcdc', lavender: '#e6e6fa', mistyrose: '#ffe4e1', papayawhip: '#ffefd5', antiquewhite: '#faebd7', bisque: '#ffe4c4', wheat: '#f5deb3', lemonchiffon: '#fffacd', lightcyan: '#e0ffff', moccasin: '#ffe4b5', silver: '#c0c0c0' };
+    const hex2 = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+    const hsl = (h, sa, l) => { sa /= 100; l /= 100; const a = sa * Math.min(l, 1 - l); const f = (n) => { const k = (n + h / 30) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); }; return '#' + [f(0), f(8), f(4)].map((v) => hex2(v * 255)).join(''); };
+    /** the light colours literally written in a background value: [{ text, hex }] */
+    const lights = (val) => {
+      const out = [];
+      const v = val.replace(/var\([^)]*\)/g, ' ');
+      for (const m of v.matchAll(/#([0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})\b/g)) {
+        let h = m[1]; if (h.length <= 4) h = [...h].map((c) => c + c).join('');
+        const alpha = h.length === 8 ? parseInt(h.slice(6), 16) / 255 : 1;
+        if (alpha >= 0.6 && luminance('#' + h.slice(0, 6)) > 0.6) out.push({ text: m[0].toLowerCase(), hex: '#' + h.slice(0, 6) });
+      }
+      for (const m of v.matchAll(/rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)/g)) {
+        const a = m[4] === undefined ? 1 : m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
+        const hx = '#' + [m[1], m[2], m[3]].map((n) => hex2(+n)).join('');
+        if (a >= 0.6 && luminance(hx) > 0.6) out.push({ text: m[0].replace(/\s+/g, ''), hex: hx });
+      }
+      for (const m of v.matchAll(/hsla?\(\s*([\d.]+)(?:deg)?[\s,]+([\d.]+)%[\s,]+([\d.]+)%(?:\s*[,/]\s*([\d.]+%?))?\s*\)/g)) {
+        const a = m[4] === undefined ? 1 : m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
+        const hx = hsl(+m[1], +m[2], +m[3]);
+        if (a >= 0.6 && luminance(hx) > 0.6) out.push({ text: m[0].replace(/\s+/g, ''), hex: hx });
+      }
+      for (const m of v.matchAll(/\b([a-z]+)\b/g)) if (NAMED[m[1]] && luminance(NAMED[m[1]]) > 0.6) out.push({ text: m[1], hex: NAMED[m[1]] });
+      return out;
+    };
+    const dir = path.join(__dirname, '..', 'src', 'renderer');
+    for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.css')).sort()) {
+      const css = fs.readFileSync(path.join(dir, file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+      const re = /([^{}@][^{}]*)\{([^{}]*)\}/g; let m;
+      while ((m = re.exec(css))) {
+        const sel = m[1].trim().replace(/\s+/g, ' ');
+        for (const d of m[2].split(/;(?![^(]*\))/)) {
+          const x = /^\s*(background(?:-color|-image)?)\s*:\s*([\s\S]*)$/.exec(d);
+          if (!x) continue;
+          for (const l of lights(x[2])) {
+            if (file === 'screens.css' && sel === '.swt i') continue; // the knob carries no text
+            found.push({ surface: `(${file})`, theme: 'dark', size: '-', rule: 'literal-light', el: sel, detail: `${x[1]}: ${l.text}: use a theme token` });
+          }
         }
       }
     }

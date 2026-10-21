@@ -358,7 +358,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .btn{height:var(--h-ctl);padding:0 14px;border-radius:var(--r-md);border:1px solid var(--line-2);background:var(--raised);cursor:pointer;font-size:13px;font-weight:550;display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
 .btn:hover{background:var(--surface-2);border-color:#bdb3a2}
 /* spec 052 FR-053: the primary action is solid in every theme (themes.css gives each theme its own accent) */
-.btn.primary{background:var(--sage-ink);border-color:transparent;color:#fff;font-weight:600}
+.btn.primary{background:var(--sage-ink);border-color:transparent;color:var(--surface);font-weight:600} /* spec 052 FR-169: the text colour is the page's own, so it reads on --sage-ink in a dark theme too */
 .btn.primary:hover{background:color-mix(in srgb,var(--sage-ink) 86%,#000)}
 .btn.danger{color:var(--red-ink)}
 .btn.danger:hover{background:var(--tone-bad-soft);border-color:var(--tone-bad-line);color:var(--tone-bad-ink)}
@@ -762,7 +762,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 /* spec 052 (2026-10-21, round 1): the panel ends with a clear edge, and the list fades out while more rows are below */
 .prev{box-shadow:0 6px 10px -8px rgba(40,30,10,.28)}
 .prev-body.more-below{-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent)}
-.prev-q{display:block;box-sizing:border-box;width:100%;height:28px;margin:4px 0;padding:0 8px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--panel,#fff);color:var(--ink);font:inherit;font-size:var(--t4-size)}
+.prev-q{display:block;box-sizing:border-box;width:100%;height:28px;margin:4px 0;padding:0 8px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--raised);color:var(--ink);font:inherit;font-size:var(--t4-size)}
 .prev-n{font-weight:500;color:var(--muted);font-size:var(--t4-size);margin-left:4px}
 .prev-h{font-size:var(--t4-size);font-weight:650;color:var(--ink);margin:8px 0 4px}
 .prev-h small{font-size:var(--t5-size);font-weight:500;color:var(--muted);margin-left:4px} /* FR-166: the browser's own "smaller" gave 10px */
@@ -1057,7 +1057,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .btn.primary.warn{background:var(--warn-bg);border-color:#e5be78;color:var(--amber-ink)}
 .btn.primary.warn:hover{background:var(--tone-warn-hover)}
 /* spec 052 FR-076: red means it deletes or ends (End session, Remove, Delete floor, Clear); amber .primary.warn only grants more power (Allow all, Turn on remote) */
-.btn.primary.danger{background:var(--red-ink);border-color:transparent;color:#fff}
+.btn.primary.danger{background:var(--red-ink);border-color:transparent;color:var(--surface)}
 .btn.primary.danger:hover{background:color-mix(in srgb,var(--red-ink) 86%,#000);border-color:transparent}
 
 /* ---- switch model and context, compact (spec 030) ---- */
@@ -1151,7 +1151,7 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 /* spec 052 FR-015: a notice strip under the top bar (it takes its own room; the office lays out below it) */
 .notice-strip{flex:none;display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;padding:1px 20px;background:var(--warn-bg);border-bottom:1px solid #e5be78;color:var(--ink);font-size:12px;line-height:1.35}
 .notice-strip[hidden]{display:none}
-.notice-strip .ns-ic{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:999px;background:var(--amber-ink);color:#fff;font-weight:800;font-size:12px;flex:none}
+.notice-strip .ns-ic{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:999px;background:var(--amber-ink);color:var(--surface);font-weight:800;font-size:12px;flex:none}
 .notice-strip .ns-t{flex:1 1 360px;min-width:0}
 .notice-strip .ns-t b{color:var(--amber-ink)}
 .notice-strip .ns-act{display:flex;gap:6px}
@@ -1277,10 +1277,10 @@ html:not([data-ui]) .more-menu,html:not([data-ui]) .mode-menu,html:not([data-ui]
 html:not([data-ui]) .dlg{box-shadow:0 0 0 1px rgb(44 55 51/.05),0 2px 6px rgb(44 55 51/.06),0 16px 36px -10px rgb(44 55 51/.24)}
 /* restore strip: an outlined mark; its primary button in amber ink in every theme */
 html:not([data-ui]) .notice-strip .ns-ic{background:transparent;color:var(--amber-ink);box-shadow:inset 0 0 0 1.5px currentColor;font-weight:700}
-.notice-strip .btn.primary,html:not([data-ui]) .notice-strip .btn.primary:not(.warn){background:var(--amber-ink);border-color:var(--amber-ink);color:#fff}
+.notice-strip .btn.primary,html:not([data-ui]) .notice-strip .btn.primary:not(.warn){background:var(--amber-ink);border-color:var(--amber-ink);color:var(--surface)}
 .notice-strip .btn.primary:hover,html:not([data-ui]) .notice-strip .btn.primary:not(.warn):hover{background:color-mix(in srgb,var(--amber-ink) 88%,#000);border-color:color-mix(in srgb,var(--amber-ink) 88%,#000)}
 /* spec 052 FR-046: themes give every .btn a surface background (themes.css, `html[data-ui]:not([data-ui="clean"]) .btn`), which outranked the rule above and left white text on a light button; the strip's main button keeps its amber in every theme */
-html .notice-strip .btn.primary{background:var(--amber-ink)!important;border-color:var(--amber-ink)!important;color:#fff!important}
+html .notice-strip .btn.primary{background:var(--amber-ink)!important;border-color:var(--amber-ink)!important;color:var(--surface)!important}
 html .notice-strip .btn.primary:hover{background:color-mix(in srgb,var(--amber-ink) 88%,#000)!important;border-color:color-mix(in srgb,var(--amber-ink) 88%,#000)!important}
 /* spec 052 FR-089: Since you were away: the same strip, calm colours (information, not a warning); one row per missed prompt */
 html .notice-strip.info{background:var(--surface);border-bottom-color:var(--line)}

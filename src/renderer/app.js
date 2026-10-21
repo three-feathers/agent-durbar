@@ -1307,7 +1307,7 @@ function wireAnswerBar(a){
     bar.querySelector('b').textContent=(n>1?'1 of '+n+' · ':'')+a.name+(q?' asks:':card.classList.contains('limit')?' stopped:':' needs your OK:');
     const qs=bar.querySelector('.ab-q span');
     if(fit){if(fit.tag){const tg=document.createElement('span');tg.className='tag';tg.textContent=fit.tag;qs.appendChild(tg);qs.appendChild(document.createTextNode(' '));}qs.appendChild(document.createTextNode(fit.q));}
-    else{qs.textContent=long?'a long request; read it in the chat before you answer.':text;if(long)qs.title=text;} /* spec 052 FR-160: the full text stays reachable */
+    else{qs.textContent=long?'a long request; read it in the chat before you answer.':text;if(long)qs.title=DurbarCutText.cutText(text,300);} /* spec 052 FR-160: the full text is in the chat; FR-168: a data tooltip is at most 300 characters */
     const act=bar.querySelector('.ab-act');
     const add=(label,cls,fn,title,keys)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;if(keys)b.setAttribute('aria-keyshortcuts',keys);b.onclick=fn;act.appendChild(b);return b;};
     if(fit){
