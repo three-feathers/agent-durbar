@@ -476,6 +476,8 @@ interface Session {
   mcpRefreshing?: boolean;
   /** Spec 058 FR-060: servers whose tool call showed a sign-in challenge; read as needs-auth until the CLI reports a real change for them. */
   mcpAuthSeen?: Set<string>;
+  /** The last server list this session emitted (before the sign-in mark), so a challenge can show at once. */
+  lastMcp?: ReturnType<typeof claudeMcpServers>;
   /** Spec 059 FR-007: the user's name waiting for the next CLI start, and the one the running CLI was started with (reported as the title after its first turn). */
   pendingName?: string;
   launchedName?: string;
@@ -758,7 +760,8 @@ export class ClaudeAdapter implements AgentAdapter {
     s.mcpAuthSeen?.delete(name); // a real change for this server
     try {
       const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
-      this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, claudeMcpServers(r.mcpServers)) });
+      s.lastMcp = claudeMcpServers(r.mcpServers);
+      this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, s.lastMcp) });
     } catch {
       /* the toggle worked; the list comes with the next init */
     }
@@ -903,10 +906,14 @@ export class ClaudeAdapter implements AgentAdapter {
       this.openLimit(s);
       return;
     }
-    if (s && b.type === 'mcp') s.mcpAuthSeen?.clear(); // the CLI's own list (init) replaces the derived state
+    if (s && b.type === 'mcp') {
+      s.mcpAuthSeen?.clear(); // the CLI's own list (init) replaces the derived state
+      s.lastMcp = b.servers as ReturnType<typeof claudeMcpServers>;
+    }
     this.emit(sid, b);
     if (s && b.type === 'toolCall' && b.mcpAuth === true && b.mcpServer) {
       (s.mcpAuthSeen ??= new Set()).add(b.mcpServer);
+      if (s.lastMcp) this.emit(sid, { type: 'mcp', servers: this.withAuthSeen(s, s.lastMcp) }); // at once, from the last known list: a slow or failed mcp_status still shows it
       void this.refreshMcp(s);
     }
   }
@@ -923,7 +930,8 @@ export class ClaudeAdapter implements AgentAdapter {
     s.mcpRefreshing = true;
     try {
       const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
-      this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, claudeMcpServers(r.mcpServers)) });
+      s.lastMcp = claudeMcpServers(r.mcpServers);
+      this.emit(s.id, { type: 'mcp', servers: this.withAuthSeen(s, s.lastMcp) });
     } catch {
       /* the list comes with the next init */
     } finally {

@@ -633,6 +633,8 @@ async function main(): Promise<void> {
     const auth = ev.filter((e) => e.type === 'toolCall' && (e as { mcpAuth?: boolean }).mcpAuth === true) as { callId: string; mcpServer?: string }[];
     assert.deepStrictEqual(auth.map((e) => [e.callId, e.mcpServer]), [['a1', 'notes'], ['a2', 'notes']], 'mcpAuth only on the failed MCP calls with the challenge');
     assert.strictEqual(statusCalls, 1, 'two failures while one request is in flight: one mcp_status');
+    const early = [...ev].reverse().find((e) => e.type === 'mcp') as { servers: { status: string; errorClass?: string }[] };
+    assert.deepStrictEqual([early.servers[0].status, early.servers[0].errorClass], ['needs-auth', 'auth'], 'shown at once from the last known list, while mcp_status is still held');
     const before = ev.filter((e) => e.type === 'mcp').length;
     hold!();
     await until('list', () => (ev.filter((e) => e.type === 'mcp').length > before ? true : undefined));
