@@ -10,19 +10,18 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { pageCheck, jsLiteral } = require('./check-office-overlap.js');
+const { pageCheck } = require('./check-office-overlap.js');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 const q = jsLiteral; /* every value spliced into page code goes through jsLiteral (CodeQL js/bad-code-sanitization) */
 const SECRET = 'S3cr3tV4lue9xQzz';
 
 module.exports = async (ctx) => {
+  const H = helpers(ctx);
   const js = (c) => ctx.js(c);
   const emit = (e) => js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${q(e)}))`);
   const load = async (n, w, h) => {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: String(n), simfreeze: '1' } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=${q(n)}`, 15000);
+    await H.load({ w, h, query: { sim: String(n) }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=${q(n)}`, settle: false });
     await ctx.sleep(300);
   };
   const think = (id, rid, delta) => emit({ type: 'thinking', sessionId: id, reasoningId: rid, delta });
