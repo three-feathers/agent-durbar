@@ -814,10 +814,28 @@ function morphHTML(el,html){const t=document.createElement('template');t.innerHT
 /* ---- layout: pick the richest density that fits the floor at scale 1 (text is never scaled down) ----
    The search renders trial layouts into the hidden #probe, never into the visible stage, and its result is cached
    until the *shape* of the office changes (agents, helper counts, filters, size). Status changes only patch the DOM. */
+/* spec 001 FR-033 (2026-10-21, measured): the search is most of a floor switch, so each trial is made cheaper without changing a
+   measured box: the drawings inside every <svg> are left out (DurbarProbe.svgHollow), and a trial that differs from the one before
+   only in style attributes (the compact search changes only each room's --w, --min and --cols) sets those in place instead of
+   parsing the stage again. --w, --min and --cols do not inherit (styles.css), so that restyles the rooms, not every desk. */
+const {svgHollow,styleSplit}=window.DurbarProbe;
+let probePrev=null; /* the last trial's HTML without its style attributes, while the probe holds it */
+function probeSet(probe,html){
+  html=svgHollow(html);
+  const {bare,vals}=styleSplit(html);
+  if(probePrev!==null&&bare===probePrev){
+    const els=probe.querySelectorAll('[style]');
+    if(els.length===vals.length&&!vals.some(v=>v.includes('&'))){ /* a value with an entity is left to the parser */
+      els.forEach((e,i)=>{if(e.getAttribute('style')!==vals[i])e.setAttribute('style',vals[i]);});
+      return;
+    }
+  }
+  probe.innerHTML=html; probePrev=bare;
+}
 function chooseLayout(sizing,aw,ah){
   const probe=$('probe'); probe.style.width=aw+'px';
   const openOnly=sizing.filter(m=>!m.r.closed);
-  if(!openOnly.length){probe.innerHTML=stageHTML(sizing,'card',aw,1);probe.dataset.d='card';const ok=probe.scrollHeight<=ah+1;probe.innerHTML='';return {d:'card',hcap:1,cap:1,fit:ok,boost:[]};}
+  if(!openOnly.length){probe.innerHTML=svgHollow(stageHTML(sizing,'card',aw,1));probe.dataset.d='card';const ok=probe.scrollHeight<=ah+1;probe.innerHTML='';probePrev=null;return {d:'card',hcap:1,cap:1,fit:ok,boost:[]};}
   const fits=()=>probe.scrollHeight<=ah+1&&probe.scrollWidth<=aw+1;
   const cands=FORCE_DENSITY?CANDIDATES.filter(c=>c[0]===FORCE_DENSITY):CANDIDATES;
   let res=null, lastAny=null;
@@ -825,7 +843,7 @@ function chooseLayout(sizing,aw,ah){
     if(side&&!liveOn())continue;
     HCAP=hcap; HBOOST=new Map(); LIVE_SIDE=!!side; probe.dataset.d=d; probe.style.height='auto';
     if(d==='full'){
-      probe.innerHTML=stageHTML(sizing,d,aw);
+      probeSet(probe,stageHTML(sizing,d,aw));
       if(fits()){res={d,hcap,cap:0,fit:true,boost:[],side:!!side};break;}
       lastAny={d,hcap,cap:0,fit:false,boost:[],side:!!side};continue;
     }
@@ -833,7 +851,7 @@ function chooseLayout(sizing,aw,ah){
     const maxCap=Math.max(1,Math.min(Math.max(...openOnly.map(m=>m.mains.length)),Math.floor((aw-over+D.gap)/(D.cw+D.gap))));
     let best=null, any=null;
     for(let c=maxCap;c>=1;c--){
-      probe.innerHTML=stageHTML(sizing,d,aw,c);
+      probeSet(probe,stageHTML(sizing,d,aw,c));
       const h=probe.scrollHeight;
       if(!any||h<any.h-8)any={c,h};
       if(fits()){
@@ -854,11 +872,11 @@ function chooseLayout(sizing,aw,ah){
     HCAP=res.hcap; LIVE_SIDE=!!res.side; probe.dataset.d=res.d;
     for(const a of many){
       HBOOST.set(a.id,up); probe.style.height='auto';
-      probe.innerHTML=stageHTML(sizing,res.d,aw,res.cap);
+      probeSet(probe,stageHTML(sizing,res.d,aw,res.cap));
       if(fits())res.boost.push([a.id,up]); else HBOOST.delete(a.id);
     }
   }
-  probe.innerHTML=''; LIVE_SIDE=false;
+  probe.innerHTML=''; probePrev=null; LIVE_SIDE=false;
   return res||lastAny;
 }
 let layoutKey='', layout=null;
