@@ -309,7 +309,7 @@ export interface LimitEvent extends BaseEvent {
  * Spec 068 FR-001: a usage limit of the agent app stopped or blocked the turn (a plan window, a quota or a rate limit), so the
  * agent goes on a coffee break. Never a vendor field: `source` is a short fixed label chosen by the adapter ("5-hour window"),
  * never the provider's message, account or plan name. `resetsAt` (epoch ms) only when the agent app said when it resets;
- * `estimated` when it said the time is a guess; `paid` when going on after the reset may lead to paid usage (the default asks first).
+ * `estimated` when it said the time is a guess; `update` for a later detail of the same break; `paid` when going on after the reset may lead to paid usage (the default asks first).
  * Durbar's own spending limit is the `limit` event, not this one.
  */
 export interface UsageLimitEvent extends BaseEvent {
@@ -319,6 +319,8 @@ export interface UsageLimitEvent extends BaseEvent {
   estimated?: boolean;
   paid?: boolean;
   source: string;
+  /** A later detail of the break this turn already reported (a reset time read afterwards); ignored when the agent is no longer on a break. */
+  update?: boolean;
 }
 
 /**

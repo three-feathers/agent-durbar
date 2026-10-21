@@ -126,6 +126,9 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   assert.strictEqual(resetMs('2026-11-01T00:00:00Z', T), Date.UTC(2026, 10, 1));
   assert.strictEqual(resetMs('soon', T), undefined);
   assert.strictEqual(resetMs(-5, T), undefined);
+  // 2026-10-22: a reset that is not in the future is stale (spec edge case "in the past": unknown), never a resume at once
+  assert.strictEqual(resetMs(T - 60_000, T), undefined, 'a minute in the past');
+  assert.strictEqual(resetMs(T, T), undefined, 'now');
 }
 {
   const l = claudeUsageLimit({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', resetsAt: T / 1000 + 7200, rateLimitType: 'five_hour' } }, T)!;
@@ -145,6 +148,11 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   out.length = 0;
   m.map({ type: 'result', subtype: 'success', is_error: true, result: 'boom' });
   assert.deepStrictEqual(out.map((e) => e.type === 'status' ? e.status : e.type), ['error'], 'the next turn errors as before');
+  // 2026-10-22: rejected, then the turn goes on and succeeds (fallback or overage; unverified that Claude does this): a plain idle
+  out.length = 0;
+  m.map({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'five_hour' } });
+  m.map({ type: 'result', subtype: 'success', is_error: false, result: 'all done' });
+  assert.deepStrictEqual(out.map((e) => e.type === 'status' ? `${e.status}:${e.intent}` : e.type), ['usageLimit', 'idle:undefined'], 'a successful result stays a plain idle');
 }
 {
   const p = { rateLimits: { primary: { usedPercent: 100, windowDurationMins: 300, resetsAt: T / 1000 + 600 }, secondary: { usedPercent: 40, windowDurationMins: 10080, resetsAt: T / 1000 + 86400 } } };
@@ -161,6 +169,14 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   const l = out[0] as EventBody & { type: 'usageLimit' };
   assert.ok(l.type === 'usageLimit' && l.scope === 'plan' && l.source === 'Codex weekly limit' && typeof l.resetsAt === 'number'); valid(l);
   assert.deepStrictEqual(out[1], { type: 'status', status: 'idle', intent: 'Usage limit reached' });
+  // 2026-10-22: a window update read long ago whose reset has passed gives no reset time (not a resume at once)
+  out.length = 0;
+  const realNow = Date.now;
+  try {
+    Date.now = () => realNow() + 2 * 3600_000;
+    m.map({ method: 'turn/completed', params: { threadId: 'th', turn: { status: 'failed', error: { message: 'You hit your usage limit', codexErrorInfo: 'UsageLimitExceeded' } } } });
+  } finally { Date.now = realNow; }
+  assert.strictEqual((out[0] as EventBody & { type: 'usageLimit' }).resetsAt, undefined, 'a stale reset is unknown');
 }
 {
   assert.deepStrictEqual(copilotUsageLimit('rate_limit', 'user_weekly_rate_limited'), { type: 'usageLimit', scope: 'rate', source: 'Copilot weekly limit' });
@@ -188,7 +204,8 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   assert.ok(bad({ scope: 'plan', source: 'x'.repeat(61) }).length);
   assert.ok(bad({ scope: 'plan', source: 'a', resetsAt: -1 }).length);
   assert.ok(bad({ scope: 'plan', source: 'a', paid: 'yes' }).length);
-  assert.deepStrictEqual(bad({ scope: 'rate', source: 'a', resetsAt: 5, estimated: true, paid: false }), []);
+  assert.ok(bad({ scope: 'plan', source: 'a', update: 1 }).length);
+  assert.deepStrictEqual(bad({ scope: 'rate', source: 'a', resetsAt: 5, estimated: true, paid: false, update: true }), []);
 }
 
 // 8. The MCP read state mirrors the window (spec 041): Waiting, Coffee break; the turn's closing idle keeps it; working or a send ends it.
@@ -200,8 +217,23 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   t.onEvent(ev({ type: 'usageLimit', scope: 'plan', source: 'x' }));
   t.onEvent(ev({ type: 'status', status: 'idle', intent: 'Usage limit reached' }));
   assert.deepStrictEqual([t.get('a')!.word, t.get('a')!.subLabel], ['Waiting', 'Coffee break']);
+  t.onEvent(ev({ type: 'status', status: 'idle' }));
+  assert.deepStrictEqual([t.get('a')!.word, t.get('a')!.subLabel], ['Waiting', 'Coffee break'], 'one trailing plain idle of the same turn keeps the break');
   t.onEvent(ev({ type: 'status', status: 'error', intent: 'x' }));
-  assert.deepStrictEqual([t.get('a')!.word, t.get('a')!.subLabel], ['Waiting', 'Coffee break'], 'a late error keeps the break');
+  assert.deepStrictEqual([t.get('a')!.word, t.get('a')!.subLabel], ['Error', null], '2026-10-22: a later real error ends the break and shows');
+  t.onEvent(ev({ type: 'status', status: 'working' }));
+  assert.strictEqual(t.get('a')!.word, 'Working');
+  // 2026-10-22: rejected, then the turn goes on and succeeds: the plain idle ends the break, Done
+  t.onEvent(ev({ type: 'usageLimit', scope: 'plan', source: 'x' }));
+  t.onEvent(ev({ type: 'output', text: 'more' }));
+  t.onEvent(ev({ type: 'status', status: 'idle' }));
+  assert.deepStrictEqual([t.get('a')!.word, t.get('a')!.subLabel, t.onBreak('a')], ['Done', 'Done', false], 'a successful turn ends the break');
+  // a late update (Copilot reset time read afterwards) of a break that already ended is ignored; during the break it joins it
+  t.onEvent(ev({ type: 'usageLimit', scope: 'quota', source: 'x', resetsAt: 5, update: true }));
+  assert.strictEqual(t.onBreak('a'), false, 'a late update starts no new break');
+  t.onEvent(ev({ type: 'usageLimit', scope: 'quota', source: 'x' }));
+  t.onEvent(ev({ type: 'usageLimit', scope: 'quota', source: 'x', resetsAt: 5, update: true }));
+  assert.strictEqual(t.onBreak('a'), true);
   t.onEvent(ev({ type: 'status', status: 'working' }));
   assert.strictEqual(t.get('a')!.word, 'Working', 'working again ends the break');
   t.onEvent(ev({ type: 'usageLimit', scope: 'plan', source: 'x' }));

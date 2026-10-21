@@ -11,3 +11,4 @@
 - [x] T009 Simulator `simbreak=N` (Tomas, Rosa; Omar's cap) [FR-017]
 - [x] T010 Driver `shots-068-coffee.js`, screenshots 1440x900 and 1280x800, `check:office` / `check:geometry` [FR-013, FR-018]
 - [x] T011 Docs: README, CHANGELOG, specs README, cross-references in 011/024/034 [all]
+- [x] T012 Review fix (2026-10-22, PR #462): only the turn's closing status keeps the break (renderer and MCP read state); `usageLimit.update` for a late reset time; past reset times are unknown; tests [FR-002, FR-004]

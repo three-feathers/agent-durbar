@@ -224,7 +224,8 @@ export class CodexMapper {
       if (kind === 'UsageLimitExceeded' && !agentId) {
         // spec 068 FR-002: the plan's usage window is used up: a coffee break (with the reset time from the last rate-limit update), not an error
         const rl = this.rateLimit;
-        this.emit({ type: 'usageLimit', scope: 'plan', ...(rl?.resetsAt ? { resetsAt: rl.resetsAt } : {}), source: `Codex ${rl?.label ?? 'usage limit'}` });
+        const at = rl?.resetsAt && rl.resetsAt > Date.now() ? rl.resetsAt : undefined; // a window update read long ago may have reset already: unknown
+        this.emit({ type: 'usageLimit', scope: 'plan', ...(at ? { resetsAt: at } : {}), source: `Codex ${rl?.label ?? 'usage limit'}` });
         return this.emit({ type: 'status', status: 'idle', intent: 'Usage limit reached' });
       }
       const text = kind === 'UsageLimitExceeded' ? 'Codex usage limit reached' : kind && message ? `${kind}: ${message}` : (kind ?? message ?? 'Turn failed');

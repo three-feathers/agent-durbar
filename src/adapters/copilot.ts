@@ -1205,7 +1205,7 @@ export class CopilotAdapter implements AgentAdapter {
       const rpc = (client as unknown as { rpc?: { account?: { getQuota?: (p: object) => Promise<unknown> } } }).rpc;
       if (typeof rpc?.account?.getQuota !== 'function') return;
       const r = copilotQuotaReset(await rpc.account.getQuota({}));
-      if (r && this.sessions.has(sid)) this.emit(sid, { ...body, resetsAt: r.resetsAt, ...(r.estimated ? { estimated: true } : {}) });
+      if (r && this.sessions.has(sid)) this.emit(sid, { ...body, resetsAt: r.resetsAt, ...(r.estimated ? { estimated: true } : {}), update: true }); // update: ignored when the break already ended (Try now, a message)
     } catch (e) {
       this.debug?.(`quota reset not read: ${e instanceof Error ? e.message : String(e)}`);
     }

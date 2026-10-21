@@ -2844,7 +2844,7 @@ function showCoffee(a,back){
 function startCoffee(a,info){
   const b=BREAKS.start(a.id,Object.assign({app:kindOf(a)},info),BREAK_RESUME); if(!b)return;
   const isNew=!a.coffee;
-  a.coffee=true;
+  a.coffee=true;if(isNew)a.coffeeShut=false;
   if(b.kind==='provider'){closeTurn(a);a.worked=false;if(isNew||a.coffeeCard)showCoffee(a,false);}
   if(VISITS.pin(a.id,window.DurbarPlaces.COFFEE,coffeeWord()))scheduleRender();
   setState(a,'waiting',coffeeWord(),coffeeTask(a));
@@ -3071,7 +3071,7 @@ function onLiveEvent(e){
   if(e.type==='title'){if(!e.agentId)applyTitle(a,e.title);return;}
   if(e.type==='agentSchedule'){if(!e.agentId)onAgentSchedule(a,e);return;}
   if(e.type==='subagent')return onSubagent(a,e);
-  if(e.type==='usageLimit'){if(!e.agentId)startCoffee(a,{kind:'provider',resetsAt:e.resetsAt,estimated:e.estimated,paid:e.paid,source:e.source});return;} /* spec 068 */
+  if(e.type==='usageLimit'){if(!e.agentId&&!(e.update&&!a.coffee))startCoffee(a,{kind:'provider',resetsAt:e.resetsAt,estimated:e.estimated,paid:e.paid,source:e.source});return;} /* spec 068 */
   if(e.agentId&&e.type!=='permission'&&e.type!=='grants'&&e.type!=='limit')return onSubEvent(a,e);
   const chat=liveChat(a), main=true;
   switch(e.type){
@@ -3081,8 +3081,12 @@ function onLiveEvent(e){
     if(e.status==='idle')refreshFolderStatus(a); /* spec 063 FR-005: a finished turn may have changed files */
     /* spec 068: the turn that hit a usage limit ends quietly (the coffee break says why); working again, Stop or the end of the session end the break */
     if(a.coffee&&!a.limit){
-      if((e.status==='idle'&&e.intent!=='Aborted')||e.status==='error'){closeTurn(a);a.worked=false;return;}
-      if(e.status==='working'||e.status==='stopped'||e.status==='idle')endCoffee(a,e.status==='working'?'the agent went on':'stopped');
+      /* only the turn's closing status keeps the break (2026-10-22): 'Usage limit reached', then at most one plain idle of the same turn */
+      if(e.status==='idle'&&e.intent==='Usage limit reached'){closeTurn(a);a.worked=false;a.coffeeShut=true;return;}
+      if(e.status==='idle'&&!e.intent&&a.coffeeShut){a.coffeeShut=false;closeTurn(a);a.worked=false;return;}
+      /* any other idle or error: the turn went on (and finished or failed) after the limit; the break ends and the status shows as usual */
+      const wentOn=e.status==='idle'&&!e.intent&&!a.coffeeShut;a.coffeeShut=false;
+      if(e.status==='working'||e.status==='stopped'||e.status==='idle'||e.status==='error'){endCoffee(a,e.status==='working'||wentOn?'the agent went on':e.status==='error'?'an error':'stopped');if(wentOn)a.worked=true;}
     }
     if(e.status==='working'){a.worked=true; const tt=ensureTurn(a); if(e.intent){a.intent=e.intent;if(!/^(Thinking|Approved|Allowed|Denied|Waiting for permission)/.test(e.intent))tIntent(tt.T,e.intent);}
       if(a.state!=='working'&&a.state!=='thinking')setState(a,'working',null,e.intent||a.task); else if(e.intent)setState(a,a.state,undefined,e.intent);}

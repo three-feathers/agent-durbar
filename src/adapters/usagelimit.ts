@@ -6,14 +6,15 @@
 const DAY = 86_400_000;
 
 /**
- * A reset time as epoch ms: a number in seconds (below 1e12) or ms, a digit string, or an ISO date. Anything else, a time more
- * than a day in the past or more than 31 days ahead (spec 068 edge cases: "absurd" means unknown) gives undefined.
+ * A reset time as epoch ms: a number in seconds (below 1e12) or ms, a digit string, or an ISO date. Anything else, a time that
+ * is not in the future or more than 31 days ahead (spec 068 edge cases: "in the past or absurd" means unknown) gives undefined:
+ * a past reset for a limit that just hit is stale, and taken as known it would resume at once (2026-10-22).
  */
 export function resetMs(v: unknown, now = Date.now()): number | undefined {
   const n = typeof v === 'number' ? v : typeof v === 'string' && /^\d{9,13}$/.test(v) ? Number(v) : typeof v === 'string' ? Date.parse(v) : NaN;
   if (!Number.isFinite(n) || n <= 0) return undefined;
   const ms = n < 1e12 ? n * 1000 : n;
-  return ms > now - DAY && ms < now + 31 * DAY ? Math.round(ms) : undefined;
+  return ms > now && ms < now + 31 * DAY ? Math.round(ms) : undefined;
 }
 
 /**

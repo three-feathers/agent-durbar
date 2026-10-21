@@ -86,6 +86,7 @@ export function eventProblems(e: unknown): string[] {
       if (!str(e.source) || !e.source || String(e.source).length > 60) out.push('usageLimit.source missing or too long');
       if (e.estimated !== undefined && typeof e.estimated !== 'boolean') out.push('usageLimit.estimated is not a boolean');
       if (e.paid !== undefined && typeof e.paid !== 'boolean') out.push('usageLimit.paid is not a boolean');
+      if (e.update !== undefined && typeof e.update !== 'boolean') out.push('usageLimit.update is not a boolean');
       break;
     case 'title':
       if (!str(e.title) || !e.title) out.push('title.title missing');
