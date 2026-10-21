@@ -870,6 +870,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .sched-dlg .sc-opts .sc-to select{flex:1;min-width:0}
 .sched-dlg .sc-hint{margin:4px 0 0;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sched-dlg .sc-hint[hidden]{display:none}
+.sched-dlg .sc-opts:focus-within + .sc-hint{white-space:normal;overflow-wrap:anywhere} /* spec 044 FR-021: while the select has focus the full name wraps, so it does not depend on the title tooltip */
 .sched-dlg .sc-opts #scCapU{white-space:nowrap}
 .sched-dlg .sc-opts label[hidden],.sched-dlg .sc-days[hidden],.sched-dlg .sc-own[hidden]{display:none}
 .sched-dlg .sc-opts input[type=number]{width:90px}
@@ -1080,6 +1081,8 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .toast-act{white-space:nowrap;flex:none;background:transparent;color:#f7f4ee;border:1px solid color-mix(in srgb,var(--raised) 45%,transparent);border-radius:8px;padding:2px 12px;font-size:12px;font-weight:700;cursor:pointer}
 .toast-act:hover{background:color-mix(in srgb,var(--raised) 14%,transparent)}
 .dlg .dlist{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--ink-2)}
+.dlg .derr{margin:0;font-size:var(--t3-size);color:var(--red-ink)}
+.dlg .derr[hidden]{display:none}
 .dlg .dinput input{height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:0 10px;font:inherit;font-size:13px;color:var(--ink);font-weight:400}
 
 /* ---- agent mood (spec 034, issue #20): small, flat, inside the scene box; nothing moves under reduced motion ---- */

@@ -25,5 +25,5 @@ export function claudeTransportFor(dev: Readonly<Record<string, string | undefin
 
 /** FR-135/FR-145: the harnesses offered next to Copilot, always registered (`dev` only picks Claude's transport); detection decides what is ready. */
 export function offeredDescriptors(dev: Readonly<Record<string, string | undefined>>): AdapterDescriptor[] {
-  return [claudeDescriptor(claudeTransportFor(dev)), CODEX_DESCRIPTOR];
+  return [claudeDescriptor(claudeTransportFor(dev), dev.DURBAR_CLAUDE_TRANSPORT === 'sdk'), CODEX_DESCRIPTOR];
 }

@@ -24,6 +24,7 @@ import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaite
 import type { ElicitAnswer } from '../shared/elicit';
 import { codexMcpConfig, codexMcpServers, codexMcpState } from './codexMcp';
 import type { McpServerStatus } from './types';
+import { cleanSessionTitle } from './history';
 import type { HistoryResult, PreviousSession } from './history';
 import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import { CODEX_INITIALIZE_CAPABILITIES, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexWorkspaceRoots } from './codexModes';
@@ -61,6 +62,7 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpStatus: true, // FR-147: mcpServerStatus/list and startup notifications
   mcpToggle: true, // FR-147: from the next message (fresh child, same thread)
   handoff: true, // spec 030 FR-034: an ephemeral fork, the thread is not changed
+  renameSession: 'any', // spec 059 FR-007: thread/name/set on the live child or a short-lived app-server (real 2026-10-20: codex resume lists the name once the thread has had a turn)
   deleteSession: true, // spec 006 FR-028: thread/delete (hard delete; read: upstream app-server protocol, Codex 0.163; never run on a real thread)
   oneShot: true, // spec 040 FR-015: an ephemeral read-only thread in an empty temp folder
 });
@@ -371,6 +373,21 @@ export class CodexAdapter implements AgentAdapter {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  }
+
+  /**
+   * Spec 059 FR-007: store the user's name for a thread (`thread/name/set { threadId, name }`, it updates the stored thread, so the thread
+   * need not be loaded). `sessionId` is the thread id (a live session is found by it). On the live child when open, else on a
+   * short-lived app-server (`probe`): no thread is started, no turn, no prompt. Codex refuses an empty name and an archived thread: thrown.
+   */
+  async renameSession(sessionId: string, name: string): Promise<void> {
+    if (!sessionIdOk('codex', sessionId)) throw new Error('That is not a session id.');
+    const text = name.trim();
+    if (!text) throw new Error('Codex needs a name.');
+    const live = [...this.sessions.values()].find((l) => l.threadId === sessionId);
+    const set = (rpc: CodexRpc): Promise<unknown> => rpc.request('thread/name/set', { threadId: sessionId, name: text });
+    if (live) await set(live.rpc);
+    else await this.probe(set);
   }
 
   /** FR-141: the folder's earlier Codex threads (newest first), without the ones open now. */
@@ -924,6 +941,12 @@ export class CodexAdapter implements AgentAdapter {
       const item = isObj(params) && isObj(params.item) ? params.item : undefined;
       if (method === 'item/completed' && item && item.type === 'agentMessage' && typeof item.text === 'string') fork.text = item.text;
       else if (method === 'turn/completed') fork.done(fork.text);
+      return;
+    }
+    // Spec 059 FR-011: the thread's name changed (our own rename, or the Codex CLI's /rename): the session's title
+    if (method === 'thread/name/updated' && isObj(params) && params.threadId === live.threadId) {
+      const title = cleanSessionTitle(params.threadName);
+      if (title && this.sessions.get(live.sid) === live) this.emit(live.sid, { type: 'title', title });
       return;
     }
     // FR-147: a server's startup state, for this thread (or all threads)
