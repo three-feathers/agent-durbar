@@ -84,7 +84,7 @@ async function main(): Promise<void> {
     }
   }
   fs.writeFileSync(outFile, JSON.stringify(rows, null, 2));
-  const esc = (v: unknown) => String(v ?? '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
+  const esc = (v: unknown) => String(v ?? '').replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, ' ');
   console.log(`\n### Install check: ${who} on ${process.platform}\n\n| App | Route | Admin note | Result | Found at | Version | Time | Detail |\n|---|---|---|---|---|---|---|---|`);
   for (const r of rows) console.log(`| ${r.app} | ${esc(r.route)} | ${esc(r.note)} | ${r.ok ? 'ok' : 'FAIL'} | ${esc(r.foundAt)} | ${esc(r.version)} | ${r.secs} s | ${esc(r.error ?? r.tail)} |`);
 }
