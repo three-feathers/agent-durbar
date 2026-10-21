@@ -17,6 +17,7 @@
  */
 const os = require('os');
 const path = require('path');
+const { jsLiteral } = require('./check-office-overlap.js');
 const assert = require('assert');
 const OUT = process.env.SHOTS_024 || os.tmpdir();
 const SIZES = [[1440, 900], [1280, 800]];
@@ -24,7 +25,7 @@ const LONG = ['Customer support desk 01', 'Customer support desk 02', 'Customer 
 
 module.exports = async (ctx) => {
   const js = (code) => ctx.js(code);
-  const q = JSON.stringify;
+  const q = jsLiteral; /* CodeQL js/bad-code-sanitization: values spliced into page code go through jsLiteral */
   const shot = async (name, w, h) => { await ctx.sleep(300); await ctx.shot(path.join(OUT, `024-custom-${name}-${w}x${h}.png`)); console.log('[024c] saved', `024-custom-${name}-${w}x${h}.png`); };
   /* ctx.waitFor returns false on a timeout: a miss must fail the driver */
   const W = async (expr, ms, what) => { assert.ok(await ctx.waitFor(expr, ms), 'timed out waiting for ' + (what || expr)); };
