@@ -10,7 +10,7 @@ import { claudeOptionsFor } from './claudeModes';
 import type { ClaudeMessage } from './claudeMap';
 import type { ClaudeTransport, TransportHandlers, UserContent } from './claudeTransport';
 import type { TransportInput } from './claude';
-import { PRE_TOOL_USE_HOOK, claudeModelFlag } from './claude';
+import { CLAUDE_EFFORTS, PRE_TOOL_USE_HOOK, claudeModelFlag } from './claude';
 
 export const SDK_PACKAGE = '@anthropic-ai/claude-agent-sdk';
 
@@ -86,7 +86,7 @@ export function sdkOptionsOf(o: TransportInput, canUseTool: unknown, hook: unkno
   if (m.disallowedTools?.length) opts.disallowedTools = m.disallowedTools;
   if (o.launch.mcpConfig) opts.mcpServers = (JSON.parse(o.launch.mcpConfig) as { mcpServers: unknown }).mcpServers;
   if (claudeModelFlag(o.launch.model)) opts.model = o.launch.model;
-  if (o.launch.effort && ['low', 'medium', 'high', 'xhigh', 'max'].includes(o.launch.effort)) opts.effort = o.launch.effort;
+  if (o.launch.effort && CLAUDE_EFFORTS.has(o.launch.effort)) opts.effort = o.launch.effort;
   if (o.launch.appendSystemPrompt) opts.systemPrompt = { type: 'preset', preset: 'claude_code', append: o.launch.appendSystemPrompt };
   if (o.launch.addDirs?.length) opts.additionalDirectories = o.launch.addDirs;
   if (o.launch.resume) opts.resume = o.launch.sessionId;

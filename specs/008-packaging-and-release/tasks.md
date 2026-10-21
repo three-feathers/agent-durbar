@@ -15,11 +15,11 @@
 ## Open
 
 - [ ] T020 Signing and notarization: see feature 014 (**needs approval, purchase**). [FR-009]
-- [ ] T021 Install and run the built packages on macOS and Windows; record results in the README. [FR-010]
+- [ ] T021 Install and run the built packages on macOS and Windows; record results in the README. [FR-010] 2026-10-21: `installed-app.yml` installs and starts them on CI runners, passed on all 3 (run 39498528735, see spec `## Changes`); a person's own machine (Gatekeeper, SmartScreen) stays open.
 - [x] T022 Add `engines` (Node >= 20.19) to `package.json` and align CONTRIBUTING/CI. [FR-013] (2026-10-19: `engines.node` is `^20.19.0 || >=22.12.0` in `package.json`, as CONTRIBUTING says; CI uses Node 22)
 - [ ] T023 Decide on arm64 Windows/Linux and other package formats (clarify demand first). [FR-011]
 - [ ] T024 Build attestations (`actions/attest-build-provenance`), pinned by SHA. [FR-012]
-- [ ] T025 Pack-smoke on macOS and Windows runners. [FR-015]
+- [x] T025 Pack-smoke on macOS and Windows runners. [FR-015] Done by spec 012 T044 (`packaged-check.yml`, 3 OSes, passing); gap closed 2026-10-21.
 - [ ] T026 Dependabot for npm and Actions (SHA-pinned). [FR-016]
 - [x] T027 CI job `office-check`: `npm run check:office` under xvfb on Ubuntu (timeout 10 min, ~70 s measured). [FR-017]
 - [x] T028 Owner/credits in one place (`src/shared/about.ts`), About panel + Settings > About, package.json author/contributors, copyright, LICENSE, README, `test:about` [FR-018]

@@ -92,3 +92,10 @@ A chip in the chat header shows the model, the effort and, in the tooltip, the c
 - **FR-010** superseded. Copilot Pro reports per-token prices (`billing.tokenPrices`) and **no multiplier** for these models; spec 030 shows prices and estimates instead.
 - **FR-008** still open, made precise. The effort list (`EFFORTS` in `main.ts` and `folders.ts`) is `low|medium|high|xhigh|max`. The real model list also offers `none` (`gpt-6-luna`, `gpt-5.6-luna`), which a saved folder choice drops.
 - **FR-009** still open: the `auto` routing tier is not selectable in the UI (no UI code reads `autoTier`).
+
+### 2026-10-21: effort names come from the models; stale gaps closed
+
+- **FR-008** `[IMPLEMENTED]`: the hard-coded effort list (`low…max`, in three places: `main.ts`, `folders.ts`, `shared/modelswitch.ts`) is replaced by one `parseEffort` (`src/shared/effort.ts`). It accepts a short lower-case word; the model's own `efforts` list (checked by `parseSwitchRequest`) and the runtime decide. `real:` 2026-10-20: `gpt-6-luna`, `gpt-5.6-luna` and the Codex models list **`none`**, which the old list dropped silently (the menu offered it, then the switch said "Invalid reasoning effort", and a saved `none` was lost on restore). Claude Code's own list stays `CLAUDE_EFFORTS`, now one copy shared by the CLI and SDK transports. `test:` `test-modelswitch.ts`, `test-folders.ts`.
+- **FR-006 / FR-007** closed by spec 030: models and effort were checked on a paid account (030 T041/T044, `real:` 2026-10-20, #399), and the model of a running agent can be changed (030 Phase 1-2, 4).
+- **FR-010** closed by spec 030: the model menu shows each model's price per million tokens and compares costs (030 FR-011, FR-012). Copilot's prices are now known to be AI credits per million tokens (#399).
+- **FR-009** (the `auto` routing tier in the UI) stays open: spec 030 T060.
