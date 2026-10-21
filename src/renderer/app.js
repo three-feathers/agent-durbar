@@ -1954,6 +1954,14 @@ function liveChat(a){
 }
 function addNote(chat,html,err){const n=document.createElement('div');n.className='note'+(err?' err':'');n.innerHTML=html;chat.el.appendChild(n);stickyScroll(chat);return n;}
 const MODE_NAME={'read-only':'Read-only','ask':'Ask first','allow':'Allow all'};
+/* spec 003 (2026-10-21): a session that came back (restart or Previous sessions) says in its chat which mode it is in and why, so a mode never changes unseen */
+function modeBackNote(a,was){
+  const i=a&&a.info; if(!i||!i.permMode||!i.permFrom||a.parent)return;
+  const m='<b>'+esc(MODE_NAME[i.permMode]||i.permMode)+'</b>';
+  const why=i.permFrom==='session'?'the mode you last chose for this session':i.permFrom==='folder'?'this folder\'s saved mode (no mode was remembered for this session)':'the same as the session you opened it from (no mode was remembered for this session)';
+  const diff=was&&was!==i.permMode?' The session you opened it from is in '+esc(MODE_NAME[was]||was)+'.':'';
+  addNote(liveChat(a),'Permissions: '+m+', '+why+'.'+diff+' Change it with the mode chip above.').classList.add('modeback');
+}
 const MODE_TEXT={'read-only':'read-only','allow':'no prompts','ask':'asks first'};
 /* spec 052 FR-077: one short line per mode in the menu; the full explanation stays in its title */
 const MODE_SHORT={'read-only':"Reads only: can't change files or run commands",'ask':'Asks before each change or command','allow':'Never asks: edits, commands, web'}; /* spec 052 FR-093: one line each, but accurate (full help in the title) */
@@ -3041,7 +3049,7 @@ function renderStrip(){
 /* ---------------- permission mode: change it at any time (spec 018) ---------------- */
 function modeChipHTML(a){const m=a.info.permMode, rs=m==='allow'&&a.info.permRestored;
   if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts">${esc(MODE_NAME[m])}</span>`; /* spec 052 FR-065 */
-  return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}. ${esc(MODE_HELP[m])}${rs?' Restored from your last run.':''} Click to change; it applies from the next request."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m])}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>`;}
+  return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}. ${esc(MODE_HELP[m])}${rs?(a.info.permFrom==='session'?' Restored: the mode you last chose for this session.':' Restored from your last run.'):''} Click to change; it applies from the next request."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m])}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>`;}
 function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');}}
 function openModeMenu(a0,x,y,anchor){
   const a=liveRoot(a0); if(!a||!a.live)return false;
@@ -3108,7 +3116,7 @@ async function changeModeInner(a,mode,anchor){
   }
   const res=await bridge.setPermMode(a.id,mode,opts).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(!res||!res.ok){toast('Could not change the mode: '+esc((res&&res.error)||'unknown error'),5000);return;}
-  a.info.permMode=mode; a.info.permRestored=undefined; a.role=roleFor(a.info); a.roHintShown=false;
+  a.info.permMode=mode; a.info.permRestored=undefined; a.info.permFrom=undefined; a.role=roleFor(a.info); a.roHintShown=false;
   if(opts.clearGrants)setGrants(a,[]);
   renderRestoreStrip();
   toast(esc(a.name)+': <b>'+esc(MODE_NAME[mode])+(capsFor(a).permModeSwitch==='next-message'?'</b>. Applies from the next message.':'</b> from the next request.')+(mode==='allow'?' Everything runs without asking.':''),4200);
@@ -4136,6 +4144,7 @@ async function wakeLast(a){
   if(a.info){a.info.resumeLast=false;a.info.lazy=false;}
   if(r.resumed){a.resumed=true;replayHistory(a,r.history,r.title,'Continued after restart');setState(a,'idle',null,'Continued: '+SHORT(r.title||'last session',90));}
   else{if(r.resumed===false)addNote(liveChat(a),'The last session is no longer available; this is a new session.');setState(a,'idle',null,'Ready. Send a message to start.');}
+  modeBackNote(a);
 }
 function replayHistory(a,h,title,lead){
   const chat=liveChat(a); let m=null;
@@ -4158,6 +4167,7 @@ async function resumePrev(a,sid,btn){
   addLiveAgent(r.agent);
   const na=liveById(r.agent.id); if(!na)return;
   na.resumed=true; na.sent=false; replayHistory(na,r.history,r.title);
+  modeBackNote(na,r.modeWas);
   setState(na,'idle',null,'Resumed: '+SHORT(r.title||'',90));
   openPanel(na.id,false);
 }
