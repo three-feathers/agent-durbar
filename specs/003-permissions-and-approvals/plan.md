@@ -92,3 +92,11 @@ specs/003-permissions-and-approvals/
 - `app.js`: `changeMode(a, mode, anchor)` passes `anchor` as `returnFocus` and no longer calls `anchor.focus()` itself (that was the bug); `refocusAnchor` re-focuses the chip (or card) after the chip is re-rendered, only when focus was lost. `index.html` loads `dialog.js`; `scripts/copy-assets.js` copies it.
 - Tests: `scripts/test-dialog.ts` (jsdom; in `npm test` as `test:dialog`); `scripts/check-dialog-focus.js` + `npm run check:dialog-focus` (Electron under xvfb, simulator, real key events via `sendInputEvent`; fails on the old code with focus on `modeChip`). The latter needs xvfb, so it is a manual check like `check:office`, not part of `npm test`.
 - Checked: `npm run typecheck`, `npm run build`, `npm test`, `npm run check:office`, `npm run check:dialog-focus` on Linux. `/speckit-analyze` and `/speckit-converge` followed by hand from `.claude/skills/` (feature dir 003): no drift beyond the FR-033 text above.
+
+## 2026-10-21 (second delta): per-session mode, visible on return (T030, FR-090..FR-093)
+
+- `src/main/folders.ts`: `SavedFolder.sessionModes` (`parseSessionModes`, cap 50), `FolderStore.setSessionMode`, pure `modeForSession(folder, ids, fallback)`.
+- `src/main/agentops.ts`: `setModeOp` also writes the session's mode (`OpsDeps.sessionKey`, main passes `resumeIdFor`); pure `resumeModeOp(saved, sessionId, openerMode)` gives mode, `permFrom`, `permRestored`, `modeWas` and the activity-log line.
+- `src/main/main.ts`: `restoreFolders` uses `modeForSession` per restored session and sets `permFrom`; `sessions:resume` uses `resumeModeOp` and returns `modeWas`; `noteLastSession` writes the session's current mode.
+- `src/shared/api.ts`: `AgentInfo.permFrom`, `ResumeResult.modeWas`. `src/renderer/app.js`: `modeBackNote` after a wake or a resume; chip tooltip. `src/renderer/sim.ts`: the same rule with a canned remembered mode (`prev-1` = Allow all).
+- Tests: `scripts/test-folders.ts`, `scripts/test-agentops.ts`; driver `scripts/shots-003-mode-back.js` (in `check:ui`).

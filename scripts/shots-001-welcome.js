@@ -10,12 +10,14 @@
  */
 const assert = require('assert');
 const path = require('path');
+const { waits } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
 
 module.exports = async (ctx) => {
+  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     ctx.win.setContentSize(w, h);
-    await ctx.sleep(3500);
+    await until(`!!document.querySelector('.welcome')&&/Do you write code\?/.test(document.querySelector('.welcome').innerText)`, 15000); await settle();
     const t = await ctx.js(`(document.querySelector('.welcome')||{}).innerText||''`);
     assert.ok(t, 'the welcome card is shown');
     for (const need of ['Your AI agents in one office', 'GitHub Copilot', 'Claude Code', 'Add a folder', 'your own plan']) assert.ok(t.includes(need), `welcome says "${need}"`);
@@ -28,10 +30,10 @@ module.exports = async (ctx) => {
     console.log('[001-welcome]', w, 'ok');
   }
   // spec 052 FR-082: the answer sets the detail level and is remembered like the Settings choice
-  await ctx.js(`document.querySelector('[data-wl-level="simple"]').click()`); await ctx.sleep(500);
+  await ctx.js(`document.querySelector('[data-wl-level="simple"]').click()`); await until(`document.body.classList.contains('simple')&&localStorage.getItem('durbar.detail')==='simple'`);
   const simple = await ctx.js(`({on:document.body.classList.contains('simple'),kept:localStorage.getItem('durbar.detail'),pressed:(document.querySelector('[data-wl-level="simple"]')||{}).getAttribute?document.querySelector('[data-wl-level="simple"]').getAttribute('aria-pressed'):null})`);
   assert.deepStrictEqual(simple, { on: true, kept: 'simple', pressed: 'true' }, 'No, keep it simple: Simple, remembered');
-  await ctx.js(`document.querySelector('[data-wl-level="expert"]').click()`); await ctx.sleep(500);
+  await ctx.js(`document.querySelector('[data-wl-level="expert"]').click()`); await until(`!document.body.classList.contains('simple')&&localStorage.getItem('durbar.detail')==='expert'`);
   assert.ok(await ctx.js(`!document.body.classList.contains('simple')&&localStorage.getItem('durbar.detail')==='expert'`), 'Yes, show me the details: Expert, remembered');
   await ctx.js(`localStorage.removeItem('durbar.detail')`); /* leave the fresh profile as it was */
   console.log('[001-welcome] PASS');

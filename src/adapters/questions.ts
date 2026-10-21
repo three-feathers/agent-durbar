@@ -9,6 +9,10 @@ import { isObj } from '../shared/guards';
 export const MAX_QUESTIONS = 4;
 export const MAX_OPTIONS = 6;
 export const MAX_ANSWER = 500;
+/** Spec 052 FR-160: the card shows all of it; these only bound the event log and the renderer, far above what agents send. */
+export const MAX_QUESTION_TEXT = 2000;
+export const MAX_OPTION_LABEL = 300;
+export const MAX_OPTION_DESCRIPTION = 1000;
 
 const line = (v: unknown, max: number): string | undefined => cleanSessionTitle(v, max);
 
@@ -25,12 +29,12 @@ export function parseQuestionsWithOriginals(input: unknown): { asked: AskedQuest
   for (const q of qs.slice(0, 50)) {
     if (out.length >= MAX_QUESTIONS) break;
     if (!isObj(q)) continue;
-    const question = line(q.question, 300);
+    const question = line(q.question, MAX_QUESTION_TEXT);
     if (!question) continue;
     const options = (Array.isArray(q.options) ? q.options : [])
       .slice(0, MAX_OPTIONS)
       .filter(isObj)
-      .map((o) => ({ label: line(o.label, 80), description: line(o.description, 200) }))
+      .map((o) => ({ label: line(o.label, MAX_OPTION_LABEL), description: line(o.description, MAX_OPTION_DESCRIPTION) }))
       .filter((o): o is { label: string; description: string | undefined } => !!o.label)
       .map((o) => (o.description ? { label: o.label, description: o.description } : { label: o.label }));
     const header = line(q.header, 40);

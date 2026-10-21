@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { MenuItemConstructorOptions } from 'electron';
-import { HELP_LINK_LABEL, MENU_APP_NAME, SETTINGS_ACCELERATOR, appMenuTemplate, disposeOnQuit, hideOnClose, windowChrome } from '../src/main/appmenu';
+import { ADD_FOLDER_ACCELERATOR, ADD_FOLDER_LABEL, ADD_WORKSPACE_ACCELERATOR, ADD_WORKSPACE_LABEL, HELP_LINK_LABEL, MENU_APP_NAME, SETTINGS_ACCELERATOR, appMenuTemplate, disposeOnQuit, hideOnClose, windowChrome } from '../src/main/appmenu';
 import { shouldBounce, shouldFlash } from '../src/main/badge';
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -53,16 +53,19 @@ assert.strictEqual(K.textFor('Ctrl+K palette', false), 'Ctrl+K palette');
 
 // ---- FR-083: the menu ----
 let settings = 0, repo = 0;
-const actions = { openSettings: () => { settings++; }, openRepo: () => { repo++; } };
+const added: string[] = [];
+const actions = { openSettings: () => { settings++; }, openRepo: () => { repo++; }, add: (k: 'folder' | 'workspace') => { added.push(k); } };
 for (const p of ['win32', 'linux'] as NodeJS.Platform[]) assert.strictEqual(appMenuTemplate(p, actions), null, `${p}: no menu (no Reload, no DevTools)`);
 const mac = appMenuTemplate('darwin', actions) as MenuItemConstructorOptions[];
 assert.ok(Array.isArray(mac));
-assert.deepStrictEqual(mac.map((m) => m.role ?? m.label), ['appMenu', 'editMenu', 'View', 'windowMenu', 'help']);
+assert.deepStrictEqual(mac.map((m) => m.role ?? m.label), ['appMenu', 'File', 'editMenu', 'View', 'windowMenu', 'help']);
+assert.strictEqual(mac[0].role, 'appMenu');
+assert.strictEqual(mac[0].label, MENU_APP_NAME, 'the app menu title is explicit (spec 008 FR-044)');
 const flat = (items: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] => items.flatMap((m) => [m, ...(Array.isArray(m.submenu) ? flat(m.submenu) : [])]);
 const all = flat(mac);
 const roles = all.map((m) => m.role).filter(Boolean) as string[];
 for (const bad of ['reload', 'forceReload', 'toggleDevTools']) assert.ok(!roles.includes(bad), `no ${bad} in the Mac menu`);
-const view = mac[2].submenu as MenuItemConstructorOptions[];
+const view = mac[3].submenu as MenuItemConstructorOptions[];
 assert.deepStrictEqual(view.filter((m) => m.role).map((m) => m.role), ['resetZoom', 'zoomIn', 'zoomOut', 'togglefullscreen'], 'View: zoom and full screen only');
 const set = all.find((m) => m.label === 'Settings…') as MenuItemConstructorOptions;
 assert.ok(set && set.accelerator === SETTINGS_ACCELERATOR && SETTINGS_ACCELERATOR === 'CommandOrControl+,', 'Settings… ⌘,');
@@ -72,6 +75,21 @@ const help = all.find((m) => m.label === HELP_LINK_LABEL) as MenuItemConstructor
 (help.click as () => void)();
 assert.deepStrictEqual([settings, repo], [1, 1], 'the menu items call their actions');
 assert.ok(roles.includes('quit') && roles.includes('about'), 'About and Quit in the app menu');
+// ---- FR-164: File > Add Folder… ⌘O, Add VS Code Workspace… ⇧⌘O, Close Window ⌘W; Quit stays in the app menu ----
+{
+  const file = mac[1].submenu as MenuItemConstructorOptions[];
+  assert.deepStrictEqual(file.map((m) => m.role ?? m.label ?? m.type), [ADD_FOLDER_LABEL, ADD_WORKSPACE_LABEL, 'separator', 'close'], 'File: the two add items, then Close Window');
+  assert.strictEqual(file[0].accelerator, 'CommandOrControl+O');
+  assert.strictEqual(file[1].accelerator, 'CommandOrControl+Shift+O');
+  assert.ok(!file.some((m) => m.role === 'quit'), 'Quit is not duplicated in File on a Mac');
+  (file[0].click as () => void)();
+  (file[1].click as () => void)();
+  assert.deepStrictEqual(added, ['folder', 'workspace'], 'the File items call the add action with their kind');
+  // no other accelerator in the menu, and no app key, takes ⌘O or ⇧⌘O
+  const accels = all.map((m) => m.accelerator).filter(Boolean);
+  assert.strictEqual(new Set(accels).size, accels.length, 'no two menu items share an accelerator');
+  assert.ok(![ADD_FOLDER_ACCELERATOR, ADD_WORKSPACE_ACCELERATOR].includes(SETTINGS_ACCELERATOR));
+}
 {
   const appItems = ((mac[0].submenu ?? []) as MenuItemConstructorOptions[]);
   const labelOf = (role: string) => appItems.find((m) => m.role === role)?.label;
@@ -104,6 +122,12 @@ const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8'
 assert.ok(!/\(e\.ctrlKey\|\|e\.metaKey\)/.test(app), 'app.js no longer takes Ctrl or Command on every platform');
 assert.ok(!app.includes('On a Mac, Cmd works where Ctrl is shown'), 'the Mac footnote is gone');
 assert.ok(app.includes("real.onMenuSettings(()=>window.DurbarScreens.openSettings())"), 'the menu opens Settings');
+// FR-164: the menu and Ctrl+O press the same top-bar buttons (one code path); main forwards only the kind
+assert.ok(app.includes("real.onMenuAdd(k=>{const b=$(k==='workspace'?'addWs':'addFolder');"), 'File > Add… presses the top-bar button');
+assert.ok(/if\(!IS_MAC&&mod&&!e\.altKey&&\(e\.key==='o'/.test(app), 'Ctrl+O / Ctrl+Shift+O in the page on Windows and Linux only (the Mac File menu owns ⌘O)');
+assert.ok(main.includes("toRenderer('menu:add', kind)"), 'main forwards File > Add… to the page');
+assert.ok(preload.includes("sub<unknown>('menu:add'") && preload.includes("k === 'folder' || k === 'workspace'"), 'preload passes only the two known kinds');
+assert.ok(sim.includes('onMenuAdd:'), 'the simulator bridge has the no-op');
 const html = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');
 assert.ok(html.indexOf('src="keys.js"') > 0 && html.indexOf('src="keys.js"') < html.indexOf('src="app.js"'), 'index.html loads keys.js before app.js');
 assert.ok(/'keys\.js'/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8')), 'copy-assets.js copies keys.js');

@@ -115,7 +115,7 @@ async function run(ctx) {
   const click = (sel) => js(`(()=>{const e=document.querySelector(${jsLiteral(sel)});if(e){e.click();return true}return false})()`);
   const must = async (sel) => { if (!(await click(sel))) throw new Error(`missing control ${sel}`); await ctx.sleep(150); };
   const reset = async () => {
-    await js(`(()=>{document.querySelectorAll('.dlg-ov').forEach(d=>d.remove());try{window.DurbarScreens.isOpen()&&window.DurbarScreens.close()}catch(e){};if(document.body.classList.contains('panel-open')){const b=document.getElementById('backBtn');if(b)b.click()};const m=document.getElementById('topMoreMenu');if(m)m.hidden=true;['foldersPop','floorsPop','defaultsPop','newMenu'].forEach(i=>{const e=document.getElementById(i);if(e)e.hidden=true});delete document.documentElement.dataset.fullscreen;const vo=document.getElementById('vOffice');if(vo&&document.body.classList.contains('list-mode'))vo.click();['restoreStrip','awayStrip'].forEach(i=>{const s=document.getElementById(i);if(s)s.hidden=true})})()`);
+    await js(`(()=>{document.querySelectorAll('.dlg-ov').forEach(d=>d.remove());try{window.DurbarScreens.isOpen()&&window.DurbarScreens.close()}catch(e){};if(document.body.classList.contains('panel-open')){const b=document.getElementById('backBtn');if(b)b.click()};const m=document.getElementById('topMoreMenu');if(m)m.hidden=true;['foldersPop','floorsPop','defaultsPop'].forEach(i=>{const e=document.getElementById(i);if(e)e.hidden=true});delete document.documentElement.dataset.fullscreen;const vo=document.getElementById('vOffice');if(vo&&document.body.classList.contains('list-mode'))vo.click();['restoreStrip','awayStrip'].forEach(i=>{const s=document.getElementById(i);if(s)s.hidden=true})})()`);
     await ctx.sleep(350);
   };
   const openChat = async () => {
@@ -157,7 +157,7 @@ async function run(ctx) {
     await must('#vList'); await rec('list', size, 'plain'); await must('#vOffice');
     await must('#foldersBtn'); await rec('folders-popover', size, 'plain'); await reset();
     await must('#defaultsBtn'); await rec('defaults-popover', size, 'plain'); await reset();
-    await must('#newBtn'); await rec('new-menu', size, 'plain'); await reset();
+    /* spec 052 FR-164: + Folder and + Workspace are plain buttons (no menu); the office state above covers them */
     await must('#settingsBtn'); await rec('settings', size, 'plain'); await reset();
     await must('#toolsBtn'); await rec('tools', size, 'plain'); await reset();
     await openChat(); await rec('chat', size, 'chat');
@@ -169,10 +169,10 @@ async function run(ctx) {
     await js(`window.DurbarScreens.openTools(null)`); await rec('chat-tools', size, 'chat');
     await js(`window.DurbarScreens.close()`); await ctx.sleep(300);
     await showRestore(); await js(`window.DurbarScreens.openSettings()`); await rec('chat-strip-settings', size, 'chat'); await js(`window.DurbarScreens.close()`); await reset(); await openChat();
-    key('K', ['control']); await rec('chat-palette', size, 'modal'); await reset(); await openChat();
+    key('K', [process.platform === 'darwin' ? 'meta' : 'control']); await rec('chat-palette', size, 'modal'); await reset(); await openChat();
     await fullScreen(); await rec('chat-fullscreen', size, 'chat'); await reset();
     await fullScreen(); await rec('office-fullscreen', size, 'plain'); await reset();
-    key('K', ['control']); await rec('palette', size, 'modal'); await reset();
+    key('K', [process.platform === 'darwin' ? 'meta' : 'control']); await rec('palette', size, 'modal'); await reset();
     await must('#topMoreBtn'); await must('#kbdHelpBtn'); await rec('kbd-sheet', size, 'modal'); await reset();
     await must('#inboxBtn'); await rec('inbox', size, 'modal'); await reset();
     await js(`(()=>{const d=document.createElement('div');d.className='dlg-ov';d.id='auditDlg';d.innerHTML='<div class="dlg wide" role="dialog" aria-modal="true"><h3>Set up Claude Code</h3><div class="dbody">'+'<p>step line</p>'.repeat(60)+'</div><div class="dbtn"><button class="btn">Cancel</button><button class="btn primary">Next</button></div></div>';document.body.appendChild(d)})()`);

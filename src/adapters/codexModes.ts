@@ -203,6 +203,8 @@ export interface CodexPermission {
   kind: 'shell' | 'write' | 'url' | 'mcp' | 'custom-tool';
   fullCommandText?: string;
   fileName?: string;
+  /** Spec 065: every path of a file change (the write guard keeps a copy of each). */
+  paths?: string[];
   url?: string;
   toolName?: string;
   serverName?: string;
@@ -240,7 +242,7 @@ export function codexPermission(method: string, params: unknown): CodexPermissio
       const paths = Array.isArray(changes) ? changes.map((c) => str(c, 'path')).filter((p): p is string => !!p) : [];
       const fileName = paths[0] ?? str(params, 'grantRoot');
       const more = paths.length > 1 ? ` (+${paths.length - 1} more)` : '';
-      return { kind: 'write', fileName, summary: `write ${fileName ?? ''}${more}`.trim() };
+      return { kind: 'write', fileName, ...(paths.length ? { paths } : {}), summary: `write ${fileName ?? ''}${more}`.trim() };
     }
     case 'item/permissions/requestApproval':
       return { kind: 'custom-tool', toolName: 'request_permissions', summary: `request_permissions ${str(params, 'reason') ?? ''}`.trim() };
