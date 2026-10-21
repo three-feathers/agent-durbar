@@ -3,17 +3,17 @@
      DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_SIM_TITLES=1 SHOTS_SIZE=1440x900 DURBAR_DRIVER=$PWD/scripts/shots-002-titles.js xvfb-run -a npx electron . --no-sandbox
    Saves docs/screenshots/002-titles-<size>.png and 002-titles-chat-<size>.png; fails when no title reached a card. */
 const path = require('path');
+const { helpers } = require('./driver-helpers');
 
 module.exports = async (ctx) => {
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const size = /^(\d+)x(\d+)$/.exec(process.env.SHOTS_SIZE || '') || [null, '1440', '900'];
   const tag = `${size[1]}x${size[2]}`;
   const out = path.join(__dirname, '..', 'docs', 'screenshots');
-  ctx.win.setContentSize(Number(size[1]), Number(size[2]));
-  await ctx.win.loadFile(path.join(__dirname, '..', 'dist', 'renderer', 'index.html'), { query: { sim: '15', simfreeze: '1', simtitles: '1' } });
-  await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
+  await H.load({ w: Number(size[1]), h: Number(size[2]), query: { simtitles: '1' }, ready: 'fit', settle: false });
   await ctx.waitFor(`[...document.querySelectorAll('#stage .desk .name')].some((n)=>n.textContent==='Fix login bug')`, 5000);
   await ctx.sleep(3000); /* the simulator's "restored" toast arrives after about 2 s: wait for it, then clear it */
-  const clearToasts = () => ctx.js(`(()=>{document.querySelectorAll('#toasts > *').forEach((t)=>t.remove());return true})()`);
+  const clearToasts = H.clearToasts;
   await clearToasts();
   await ctx.sleep(200);
   await ctx.shot(path.join(out, `002-titles-${tag}.png`));

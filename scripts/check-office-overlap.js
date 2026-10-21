@@ -43,10 +43,7 @@ const INDEX = path.join(ROOT, 'dist', 'renderer', 'index.html');
 const SIZES = [[1440, 900], [1280, 800]];
 const SIMS = [12, 15];
 const TOL = 0.5;
-/* A value as a JavaScript literal that is safe to splice into code run in the page: JSON, with the characters that could end a
-   script or a string in some contexts escaped (CodeQL js/bad-code-sanitization; the recommended escaping). */
-const UNSAFE = { '<': '\\u003C', '>': '\\u003E', '/': '\\u002F', '\u2028': '\\u2028', '\u2029': '\\u2029' };
-const jsLiteral = (v) => JSON.stringify(v).replace(/[<>/\u2028\u2029]/g, (c) => UNSAFE[c]);
+const { jsLiteral, helpers } = require('./driver-helpers'); /* jsLiteral lives there (CodeQL js/bad-code-sanitization) */
 
 /* runs inside the page; returns {problems:[...], info:{...}} */
 function pageCheck(expanded, expectPlaces) {
@@ -238,6 +235,7 @@ function subsets(list, k) {
 }
 
 async function driver(ctx) {
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const quick = process.env.OFFICE_QUICK === '1';
   const shotsDir = process.env.OFFICE_SHOTS || '';
   const prefix = process.env.OFFICE_SHOT_PREFIX || 'office';
@@ -276,9 +274,9 @@ async function driver(ctx) {
   if (wantTheme) console.log('check:office: theme ' + wantTheme + (userTheme ? ' (user theme from ' + path.basename(process.env.OFFICE_USER_THEME) + ')' : ''));
   const load = async (query, w, h) => {
     expectPlaces = 5 + Number((/(?:^|&)simplaces=([0-3])(?:&|$)/.exec(query) || [])[1] || 0);
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: Object.fromEntries(new URLSearchParams(query + themeQuery)) });
-    await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
+    const qo = Object.fromEntries(new URLSearchParams(query + themeQuery));
+    for (const k of ['sim', 'simfreeze']) if (!(k in qo)) qo[k] = undefined; /* the shared load adds sim=15 and simfreeze=1: this check says what it wants */
+    await H.load({ w, h, query: qo, ready: 'fit', settle: false });
     if (wantTheme) {
       try { await ctx.waitFor(`window.THEME&&window.THEME.current().id===${jsLiteral(wantTheme)}`, 5000); } catch (e) { /* reported below */ }
       const on = await ctx.js(`({id:window.THEME.current().id,ui:document.documentElement.dataset.ui||'clean',want:(window.THEME.current().manifest||{}).ui||'clean'})`);
@@ -549,7 +547,7 @@ async function driver(ctx) {
       const ids = await ctx.js(`[...document.querySelectorAll('#stage .desk')].map((d)=>d.dataset.id)`);
       let bad = 0;
       for (const id of ids) {
-        await ctx.js(`(async()=>{const d=document.querySelector('#stage .desk[data-id="${id}"]');if(d)d.click();await new Promise(r=>setTimeout(r,250));return true})()`);
+        await ctx.js(`(async()=>{const d=document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)});if(d)d.click();await new Promise(r=>setTimeout(r,250));return true})()`);
         const p = await ctx.js(`(${chatCheck.toString()})()`);
         total++;
         if (p.length) { failed++; bad++; if (bad <= 3) console.log(`FAIL chat ${w}x${h} ${q} agent ${id}: ${p.slice(0, 4).join('; ')}`); }
@@ -561,7 +559,7 @@ async function driver(ctx) {
         await load(q, w, h);
         let badS = 0;
         for (const id of ids) {
-          await ctx.js(`(async()=>{const d=document.querySelector('#stage .desk[data-id="${id}"]');if(d)d.click();await new Promise(r=>setTimeout(r,250));return true})()`);
+          await ctx.js(`(async()=>{const d=document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)});if(d)d.click();await new Promise(r=>setTimeout(r,250));return true})()`);
           const ps = await ctx.js(`(${chatCheck.toString()})()`);
           total++;
           if (ps.length) { failed++; badS++; if (badS <= 3) console.log(`FAIL chat ${w}x${h} ${q} agent ${id} (Simple): ${ps.slice(0, 4).join('; ')}`); }
@@ -592,7 +590,7 @@ async function driver(ctx) {
   }
 
   /* spec 005 FR-017 / T026: the card menu of a working main agent offers Stop and End session, a helper does not, and the menu fits the window */
-  const openCardMenu = (id) => ctx.js(`(async()=>{const m=document.getElementById('modeMenu');if(m)m.remove();const d=document.querySelector('#stage [data-id="${id}"]');if(!d)return null;const r=d.getBoundingClientRect();d.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.right-4,clientY:r.bottom-4}));await new Promise(r=>setTimeout(r,200));const mm=document.getElementById('modeMenu');if(!mm)return {open:false};const b=mm.getBoundingClientRect();return {open:true,stop:!!mm.querySelector('[data-op="stop"]'),end:!!mm.querySelector('[data-op="end"]'),fits:b.left>=0&&b.top>=0&&b.right<=innerWidth&&b.bottom<=innerHeight,minFont:Math.min(...[...mm.querySelectorAll('b,small,p')].map(e=>parseFloat(getComputedStyle(e).fontSize)))}})()`);
+  const openCardMenu = (id) => ctx.js(`(async()=>{const m=document.getElementById('modeMenu');if(m)m.remove();const d=document.querySelector(${jsLiteral(`#stage [data-id="${id}"]`)});if(!d)return null;const r=d.getBoundingClientRect();d.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.right-4,clientY:r.bottom-4}));await new Promise(r=>setTimeout(r,200));const mm=document.getElementById('modeMenu');if(!mm)return {open:false};const b=mm.getBoundingClientRect();return {open:true,stop:!!mm.querySelector('[data-op="stop"]'),end:!!mm.querySelector('[data-op="end"]'),fits:b.left>=0&&b.top>=0&&b.right<=innerWidth&&b.bottom<=innerHeight,minFont:Math.min(...[...mm.querySelectorAll('b,small,p')].map(e=>parseFloat(getComputedStyle(e).fontSize)))}})()`);
   for (const [w, h] of SIZES) {
     if (!mine()) continue;
     await load('sim=15&simfreeze=1', w, h);
@@ -623,7 +621,7 @@ async function driver(ctx) {
     const ids = await ctx.js(`[...document.querySelectorAll('#stage .desk')].map((d)=>d.dataset.id)`);
     let found = false;
     for (const id of ids) {
-      await ctx.js(`(async()=>{const d=document.querySelector('#stage .desk[data-id="${id}"]');if(d)d.click();await new Promise(r=>setTimeout(r,350));return true})()`);
+      await ctx.js(`(async()=>{const d=document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)});if(d)d.click();await new Promise(r=>setTimeout(r,350));return true})()`);
       // spec 052 FR-002: the list stays closed over a conversation; open it like a user would
       await ctx.js(`(async()=>{const t=document.querySelector('.prev-toggle[aria-expanded="false"]');if(t){t.click();await new Promise(r=>setTimeout(r,250));}return true})()`);
       found = await ctx.js(`!!document.getElementById('prevQ')&&!document.getElementById('prevQ').closest('[hidden]')`);
@@ -644,7 +642,7 @@ async function driver(ctx) {
       await type('explicacion');
       if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-prevsearch-${w}x${h}.png`));
       await ctx.js(`document.getElementById('prevQ').focus()`);
-      ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+      H.key('Escape', [], { pause: 0 });
       await sleep(250);
       const cleared = await ctx.js(`({v:document.getElementById('prevQ')&&document.getElementById('prevQ').value,rows:document.querySelectorAll('#prevLists .prev-row').length})`);
       if (cleared.v !== '' || cleared.rows < 3) P.push(`Escape did not clear the query: ${JSON.stringify(cleared)}`);

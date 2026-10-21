@@ -8,21 +8,20 @@
  */
 const assert = require('assert');
 const path = require('path');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 
 module.exports = async (ctx) => {
-  const js = (c) => ctx.js(c);
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { js } = H;
   const chip = () => js(`(()=>{const c=document.querySelector('#panelHead .folder');if(!c)return null;const t=c.querySelector('.fst');const r=c.getBoundingClientRect(),H=document.getElementById('panelHead').getBoundingClientRect();
     return {fst:t?t.textContent:'',role:c.getAttribute('role'),label:c.getAttribute('aria-label'),font:t?parseFloat(getComputedStyle(t).fontSize):0,inside:r.right<=H.right+0.5&&r.left>=H.left-0.5,overflowX:document.getElementById('panelHead').scrollWidth>document.getElementById('panelHead').clientWidth+1}})()`);
   const open = async (id) => {
-    await js(`document.querySelector('#stage .desk[data-id="${id}"]').click()`);
+    await js(`document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)}).click()`);
     await ctx.waitFor(`!!document.querySelector('#panelHead .folder')`, 8000);
   };
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1' } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
+    await H.load({ w, h });
     // sim-3: 3 changed files on main
     await open('sim-3');
     await ctx.waitFor(`!!document.querySelector('#panelHead .folder .fst')`, 5000);

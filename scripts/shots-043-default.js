@@ -9,8 +9,11 @@
  * Writes default-agent-1440x900.png and default-agent-1280x800.png and fails on a miss.
  */
 const assert = require('assert');
+const path = require('path');
+const { helpers } = require('./driver-helpers');
 const OUT = process.env.OUT || "/tmp";
 module.exports = async (ctx) => {
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const open = async () => {
     await ctx.js(`document.getElementById('foldersBtn').click()`); await ctx.sleep(400);
     await ctx.js(`document.querySelector('[data-fp="new"]').click()`); await ctx.sleep(900);
@@ -27,9 +30,7 @@ module.exports = async (ctx) => {
     await open();
     s = await state(); console.log('[def] second', JSON.stringify(s));
     assert.ok(s.val === 'docs-writer' && s.chk, 'the default is preselected and ticked');
-    await ctx.js(`(()=>{const s=document.createElement('style');s.textContent='#toasts{display:none!important}';document.head.appendChild(s);})()`);
-    await ctx.sleep(300);
-    await ctx.shot(`${OUT}/default-agent-${w}x${h}.png`);
+    await H.shot(path.join(OUT, `default-agent-${w}x${h}.png`), { prep: 'calm', delay: 300 });
     await ctx.js(`(()=>{const x=document.getElementById('sdAgent');x.value='reviewer';x.dispatchEvent(new Event('change'));})()`);
     s = await state(); assert.ok(!s.chk, 'another agent unticks the box');
     await ctx.js(`(()=>{const x=document.getElementById('sdAgent');x.value='docs-writer';x.dispatchEvent(new Event('change'));document.getElementById('sdAgentDef').checked=false;})()`);

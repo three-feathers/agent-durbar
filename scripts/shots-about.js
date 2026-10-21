@@ -10,18 +10,18 @@
  */
 const path = require('path');
 const assert = require('assert');
+const { helpers } = require('./driver-helpers');
 const version = require('../package.json').version;
 const OUT = process.env.ABOUT_OUT || '/tmp';
 
 module.exports = async (ctx) => {
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   ctx.win.setContentSize(1280, 800);
   await ctx.sleep(2500);
   await ctx.js(`document.getElementById('settingsBtn').click()`); await ctx.sleep(700);
   await ctx.js(`(()=>{const s=document.getElementById('screen');const sc=[s,...s.querySelectorAll('*')].find(e=>e.scrollHeight>e.clientHeight+20&&getComputedStyle(e).overflowY!=='visible');if(sc)sc.scrollTop=sc.scrollHeight;})()`); await ctx.sleep(400);
   const text = await ctx.js(`document.getElementById('screen').innerText`);
   assert.match(text, /About/); assert.match(text, /by Three Feathers/); assert.ok(text.includes('Agent Durbar ' + version), 'version ' + version + ' is shown');
-  await ctx.js(`(()=>{const s=document.createElement('style');s.textContent='#toasts{display:none!important}';document.head.appendChild(s);if(document.activeElement)document.activeElement.blur();})()`);
-  await ctx.sleep(500);
-  await ctx.shot(path.join(OUT, 'about-settings-1280x800.png'));
+  await H.shot(path.join(OUT, 'about-settings-1280x800.png'), { prep: 'calm', blur: true, delay: 500 });
   console.log('[about] saved');
 };

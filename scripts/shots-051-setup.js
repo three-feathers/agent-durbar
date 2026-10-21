@@ -11,19 +11,15 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { waits } = require('./driver-helpers');
+const { helpers } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(process.cwd(), 'dist', 'renderer', 'index.html');
 
 module.exports = async (ctx) => {
-  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
-  const js = (c) => ctx.js(c);
-  const shot = async (name) => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(150); await ctx.shot(path.join(OUT, name)); console.log('[051] saved', name); };
+  const H = helpers(ctx); // spec 008 FR-096/097: shared plumbing, waits for the page instead of a fixed time
+  const { until, settle, js } = H;
+  const shot = (name) => H.shot(path.join(OUT, name), { prep: 'mouse', tag: '051' });
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simkinds: 'solo' } });
-    await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-    await settle();
+    await H.load({ w, h, query: { simkinds: 'solo' }, ready: 'fit' });
     await js(`document.getElementById('settingsBtn').click()`); await until(`document.querySelectorAll('.hs-card').length===3&&[...document.querySelectorAll('.hs-card .hs-st')].every(s=>s.textContent&&!/Checking/i.test(s.textContent))`); await settle();
     const cards = await js(`[...document.querySelectorAll('.hs-card')].map(c=>({kind:c.dataset.kind,st:c.querySelector('.hs-st').textContent,act:[...c.querySelectorAll('[data-hs]')].map(b=>b.textContent)}))`);
     assert.deepStrictEqual(cards.map((c) => c.kind), ['copilot', 'claude', 'codex'], 'one card per harness: ' + JSON.stringify(cards));
