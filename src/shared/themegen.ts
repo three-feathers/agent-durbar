@@ -125,7 +125,10 @@ const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 /** A colour as lower-case hex: hex as is, rgb()/rgba() converted (alpha kept); anything else undefined. */
 export function toHex(v: string): string | undefined {
   if (HEX.test(v)) return v.toLowerCase();
-  const m = /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*(0|1|0?\.\d+)\s*)?\)$/i.exec(v);
+  // spec 070 FR-031 (real, 2026-10-22): the prompt shows two defaults as `transparent` and `rgb(233 241 248 / .93)`, and haiku copied that form
+  if (/^transparent$/i.test(v)) return '#00000000';
+  const m = /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*(0|1|0?\.\d+)\s*)?\)$/i.exec(v)
+    ?? /^rgba?\(\s*(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})\s*(?:\/\s*(0|1|0?\.\d+)\s*)?\)$/i.exec(v);
   if (!m) return undefined;
   const ch = [m[1], m[2], m[3]].map(Number);
   if (ch.some((x) => x > 255)) return undefined;

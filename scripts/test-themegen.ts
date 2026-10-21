@@ -180,6 +180,13 @@ assert.strictEqual(toHex('rgba(0,0,0,1)'), '#000000');
 assert.strictEqual(toHex('rgb(300,0,0)'), undefined);
 assert.strictEqual(toHex('red'), undefined);
 assert.strictEqual(toHex('#ABC'), '#abc');
+// spec 070 FR-031: the CSS forms the prompt's defaults use (real haiku reply, 2026-10-22)
+assert.strictEqual(toHex('transparent'), '#00000000');
+assert.strictEqual(toHex('rgb(251 236 240 / .93)'), '#fbecf0ed');
+assert.strictEqual(toHex('rgb(251 236 240)'), '#fbecf0');
+assert.strictEqual(toHex('rgb(251 236 240 / 1)'), '#fbecf0');
+assert.strictEqual(toHex('rgb(251, 236 240)'), undefined);
+assert.strictEqual(toHex('rgb(300 0 0 / .5)'), undefined);
 {
   const r = parseGeneratedTheme(JSON.stringify({ ...light, tokens: { ...light.tokens, '--sage': 'rgb(63, 125, 108)' } }), 'x', ctx);
   assert.ok(r.ok && (r.manifest.tokens as Record<string, string>)['--sage'] === '#3f7d6c', 'rgb() converted, not dropped');

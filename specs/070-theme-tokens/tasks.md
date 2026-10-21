@@ -17,4 +17,5 @@
 
 - [ ] T020 Move the remaining colour literals of `styles.css`, `screens.css` and `themes.css` onto tokens, file by file, lowering the ratchet [FR-041]
 - [ ] T021 (owner decision) Bundled font files in a pack (D1)
-- [ ] T011 Real check of the extended AI prompt on one model (needs the owner's go-ahead: 1-3 prompts)
+- [x] T011 Real check of the extended AI prompt on one model (owner's go-ahead 2026-10-22; Claude haiku, 1 prompt; `scripts/themegen-real.ts`; see spec Evidence)
+- [x] T012 Parser takes `transparent` and the space form `rgb(r g b / a)` the prompt's defaults show (found by T011) [FR-031]
