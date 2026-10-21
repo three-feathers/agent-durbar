@@ -191,7 +191,7 @@ const MAX_TILES=8, canAddPlace=()=>!!(bridge&&bridge.addPlace)&&window.DurbarPla
 /* who is at a place and visible under the current filters (a hidden room or a filtered-out agent has no figure) */
 const placeVisitors=pid=>VISITS.occupants(pid).filter(id=>{const a=byId(id),r=a&&!a.parent&&roomOf(a);return roomShown(r)&&(ui.ws==='all'||wsOf(a)===ui.ws)&&matchStatus(a);});
 const isAway=a=>!a.parent&&(!!VISITS.at(a.id)||RETURNING.has(a.id));
-const taskOf=a=>{const v=a.parent?null:VISITS.at(a.id);return v?(SIMPLE?(PLACE_VERB[v.place]||'Using a tool')+' · '+taskText(a):'At '+placeLabel(v.place)+': '+v.label+' · '+taskText(a)):taskText(a);};
+const taskOf=a=>{const v=a.parent?null:VISITS.at(a.id);return v?(SIMPLE?(PLACE_VERB[v.place]||'Using a tool')+' · '+taskText(a):'At '+placeLabel(v.place)+': '+visitDoing(a,v)+' · '+taskText(a)):taskText(a);};
 /* A result of addPlace/updatePlace/removePlace (or a settings read): the places and the map as they are now. Agents standing at a place that is gone
    go back to their desk at once (spec 024 FR-025); a rename or an icon change only redraws. */
 function setCustomPlaces(list,map){
@@ -200,16 +200,46 @@ function setCustomPlaces(list,map){
   if(map&&typeof map==='object')PLACE_MAP=map;
   scheduleRender();
 }
+/* spec 001 FR-036: what a visitor does at a place, in a few words: the live readout of its tool without the verb (masked, FR-031), else the
+   tool or server of the visit; in Simple the plain place words (never a command). */
+const VERB_RE=/^(Running|Reading|Editing|Searching|Opening|Using)\s+/;
+const PLACE_DOING=new Map(); /* agent id -> its newest tool call in a few masked words ("npm test", "github list_pull_requests") */
+function visitDoing(a,v){
+  if(SIMPLE)return PLACE_VERB[v.place]||'Using a tool';
+  return PLACE_DOING.get(a.id)||v.label||PLACE_VERB[v.place]||'Using a tool';
+}
+const visitorWords=(a,v)=>{const r=roomOf(a);return a.name+(r?' ('+r.name+')':'')+(v?': '+visitDoing(a,v):'');};
 function lobbyHTML(aw){
   if(!lobbyOn())return '';
   const all=window.DurbarPlaces.allPlaces(CUSTOM), add=canAddPlace();
-  const cap=window.DurbarPlaces.tileSlots(aw,all.length,add);
+  const caps=window.DurbarPlaces.tileChips(aw,all.length,add);
   return `<section class="lobby" data-key="lobby" aria-label="${esc(wordOf('lobby-label'))}">${all.map(p=>{
-    const ids=placeVisitors(p.id), sp=window.DurbarPlaces.layoutSpots(ids.length,cap), names=ids.map(id=>byId(id).name);
-    const slots=Array.from({length:cap},(_,i)=>i<sp.shown?`<span class="slot on" data-slot="${i}"></span>`:(sp.more&&i===cap-1?`<span class="slot more" data-slot="${i}">+${sp.more}</span>`:`<span class="slot" data-slot="${i}"></span>`)).join('');
-    return `<div class="place${ids.length?' busy':''}" data-key="place:${p.id}" data-place="${p.id}" tabindex="-1" role="group" title="${esc(placeLabelFull(p.id))}: ${names.length?esc(names.join(', ')):'nobody'}" aria-label="${esc(placeLabelFull(p.id))}: ${names.length?esc(names.join(', ')):'nobody'}">${placeIcon(p)}<span class="pn">${esc(placeLabel(p.id))}</span><span class="prow" aria-hidden="true"><span class="pslots">${slots}</span></span></div>`;
+    const ids=placeVisitors(p.id), {mode,slots:cap}=window.DurbarPlaces.chipsFor(caps,ids.length), sp=window.DurbarPlaces.layoutSpots(ids.length,cap), who=ids.map(id=>{const a=byId(id);return visitorWords(a,VISITS.at(id));});
+    const chips=ids.slice(0,sp.shown).map((id,i)=>{const a=byId(id),v=VISITS.at(id),w=visitorWords(a,v);
+      return `<span class="pv" data-key="pv:${esc(id)}" data-visitor="${esc(id)}" title="${esc(w)}"><span class="slot on" data-slot="${i}"></span><span class="pv-t">${mode==='named'?`<b class="pv-n">${esc(a.name)}</b><small class="pv-a">${esc(v?visitDoing(a,v):'')}</small>`:`<b class="pv-n pv-i">${esc(window.DurbarPlaces.initialsOf(a.name))}</b>`}</span></span>`;}).join('');
+    const more=sp.more?`<button class="pv pv-more" type="button" data-key="pv-more:${esc(p.id)}" data-placemore="${esc(p.id)}" aria-haspopup="menu" title="${esc(who.slice(sp.shown).join('\n'))}" aria-label="${sp.more} more at ${esc(placeLabelFull(p.id))}: ${esc(ids.slice(sp.shown).map(id=>byId(id).name).join(', '))}"><span class="slot more" data-slot="${sp.shown}">+${sp.more}</span>${mode==='named'?'<span class="pv-t"><b class="pv-n">more</b></span>':''}</button>`:'';
+    const label=`${placeLabelFull(p.id)}: ${who.length?who.join('; '):'nobody'}`;
+    return `<div class="place${ids.length?' busy':''}" data-key="place:${p.id}" data-place="${p.id}" data-chips="${mode}" tabindex="-1" role="group" title="${esc(label)}" aria-label="${esc(label)}"><span class="plh">${placeIcon(p)}<span class="pn">${esc(placeLabel(p.id))}</span>${ids.length?`<span class="pc" aria-hidden="true">${ids.length}</span>`:''}</span><span class="prow" aria-hidden="${ids.length?'false':'true'}">${ids.length?chips+more:'<span class="pv-none">nobody</span>'}</span></div>`;
   }).join('')}${add?'<button class="place-add" type="button" data-key="place-add" title="Add a place" aria-label="Add a place">+</button>':''}${lobbyArt()}</section>`;
 }
+/* spec 001 FR-036: "+N" at a place lists every visitor (the shared menu element, as the folder menu); choosing one opens its chat */
+function openPlaceMenu(pid,anchor){
+  closeModeMenu();
+  const ids=placeVisitors(pid); if(!ids.length)return;
+  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','At '+placeLabelFull(pid));
+  m.innerHTML=ids.map(id=>{const a=byId(id),v=VISITS.at(id),r=roomOf(a);return `<button type="button" role="menuitem" data-pvopen="${esc(id)}"><span class="mt"><b>${esc(a.name)}</b><small>${esc((r?r.name+' · ':'')+(v?visitDoing(a,v):''))}</small></span></button>`;}).join('');
+  document.body.appendChild(m);
+  const ab=anchor.getBoundingClientRect(),b=m.getBoundingClientRect();
+  m.style.left=Math.max(8,Math.min(ab.left,innerWidth-b.width-8))+'px';
+  m.style.top=(ab.bottom+6+b.height<=innerHeight-8?ab.bottom+6:Math.max(8,ab.top-6-b.height))+'px';
+  m.addEventListener('click',e=>{const t=e.target.closest('[data-pvopen]');if(!t)return;closeModeMenu();openPanel(t.dataset.pvopen,true);});
+  m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-pvopen]')],i=its.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'){e.preventDefault();its[(i+1)%its.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();its[(i+its.length-1)%its.length].focus();}
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&document.contains(anchor))anchor.focus();}});
+  m.querySelector('button').focus();
+}
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#stage [data-placemore]');if(!b)return;e.stopImmediatePropagation();
+  if(document.getElementById('modeMenu')){closeModeMenu();return;}openPlaceMenu(b.dataset.placemore,b);},true);
 const WALK_MS=1000, MAX_WALKS=3; /* about 1 s per walk; beyond 3 at once the others simply appear */
 const walkers=new Map(); /* agent id -> {el, back, walking, shown, timer, to} */
 const walkCount=()=>{let n=0;walkers.forEach(w=>{if(w.walking)n++;});return n;};
@@ -536,8 +566,9 @@ const CANDIDATES=[['full',3,'side'],['full',2,'side'],['full',3],['full',2],['ro
    Painted by textContent at most 4 times a second, never by a re-layout. ---- */
 let LIVE_SIDE=false; const SIDE_W=196, SIDE_GAP=8;
 let LIVE_PREF=(()=>{try{return localStorage.getItem('durbar.liveActivity')!=='off';}catch(e){return true;}})();
-const LIVEACT=(()=>{const L=window.DurbarLiveAct,R=window.DurbarRedact;if(!L||!R||typeof R.redact!=='function')return null;
-  return L.create({mask:{redact:t=>R.redact(t),cmd:t=>R.maskSecretCommand(t),url:t=>R.maskSecretUrl(t)}});})();
+const LIVE_MASK=(()=>{const R=window.DurbarRedact;if(!window.DurbarLiveAct||!R||typeof R.redact!=='function')return null;
+  return {redact:t=>R.redact(t),cmd:t=>R.maskSecretCommand(t),url:t=>R.maskSecretUrl(t)};})();
+const LIVEACT=LIVE_MASK?window.DurbarLiveAct.create({mask:LIVE_MASK}):null;
 const liveOn=()=>!!LIVEACT&&LIVE_PREF;
 function setLiveOn(on){LIVE_PREF=!!on;try{localStorage.setItem('durbar.liveActivity',LIVE_PREF?'on':'off');}catch(e){}scheduleRender();}
 /* the readout to show now, or null: a live main agent that is Working or Thinking (Waiting, Error, Done and Idle keep their own text) */
@@ -736,7 +767,7 @@ function roomSchedChip(r){
 }
 function roomHTML({r,mains,all},d,aw,cap){
   const al=roomAlert(r), alAttr=(al.tone==='calm'?'':` data-alert="${al.tone}"`)+(al.siren?' data-siren="1"':''), alLabel=al.siren?'. '+ALERT_WORDS:'';
-  const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':(k==='done'||k==='idle')?' calm':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}</span>`:''}).join('');
+  const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':(k==='done'||k==='idle')?' calm':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}<span class="rdw"> ${LABELS[k].toLowerCase()}</span></span>`:''}).join(''); /* spec 001 FR-037: "5 working" when the header has room */
   /* spec 052 FR-006: the counts in words too (screen readers, and a tooltip for colour-blind users) */
   const dotsLabel=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?n+' '+LABELS[k].toLowerCase():'';}).filter(Boolean).join(', ');
   const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="${esc(wordOf('door-close'))} ${esc(r.name)}" title="${esc(wordOf('door-title-prefix'))}: ${esc(r.name)} ${esc(wordOf('door-plate-suffix'))}">${doorSvg(true)}</button><span class="room-name" title="${esc(r.name)}${(()=>{const u=roomAiu(r);return u?' · '+esc(u.long):'';})()}">${esc(r.name)}</span>${al.siren?SIREN():''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(showPath(r.path))}</span>${(()=>{const u=roomAiu(r);return u?`<button class="room-aiu" type="button" data-costview="${esc(r.id)}" title="${esc(u.tip+'\nClick for the cost by folder.')}">${esc(u.long)}</button>`:'';})()}${dotsLabel?`<span class="room-dots" role="img" aria-label="${esc(dotsLabel)}" title="${esc(dotsLabel)}">${dots}</span>`:`<span class="room-dots" aria-hidden="true">${dots}</span>`}${bridge&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.removeFolder&&!demoOn?`<button class="room-new room-more" type="button" data-foldermenu="${esc(r.id)}" title="Folder actions: new session, schedules, rename, hide, remove" aria-label="Folder actions for ${esc(r.name)}" aria-haspopup="menu">⋯</button>`:''}${roomSchedChip(r)}${bridge&&bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT()}</div>`;
@@ -908,14 +939,17 @@ const EMPTY_DESK='<svg class="empty-desk" viewBox="0 0 120 72" aria-hidden="true
    It waits 600ms and checks the card is still there, so a start that loads agents a moment later does not ring. */
 function ringFolder(){if(reducedMotion())return;setTimeout(()=>{const b=$('addFolder'),st=$('stage');if(!b||!st||!st.querySelector('.welcome')||!b.getClientRects().length)return;
   b.classList.remove('ring-once');void b.offsetWidth;b.classList.add('ring-once');setTimeout(()=>b.classList.remove('ring-once'),1600);},600);}
+const ROOM_NAME_MIN=64; /* px: about six letters of a room name (spec 001 FR-035) */
 function renderOffice(){
   if(ui.view!=='office')return;
   const floor=$('floor'), stage=$('stage'), cs=getComputedStyle(floor);
-  const aw=floor.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
+  let aw=floor.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
   const ah=floor.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom);
   if(aw<=0||ah<=0)return;
   const model=officeModel();
+  const rail=$('rail');
   if(!model.length){
+    if(rail&&!rail.hidden){rail.hidden=true;rail.innerHTML='';layoutKey='';}
     stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey='';
     stagePrev=null;
     if(!agents.length&&!demoOn){if(!stage.querySelector('.welcome'))ringFolder();stage.innerHTML=welcomeHTML();floor.classList.remove('scrolls');return;} /* spec 001 FR-026: first run */
@@ -924,8 +958,29 @@ function renderOffice(){
   }
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
   const sizing=ui.status?officeModel(true):model;
-  const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]])])]);
-  if(key!==layoutKey||!layout){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
+  /* spec 001 FR-035: the rail is part of the layout budget. The key holds the width of floor and rail together; the search runs with the full
+     rail first and keeps it when the office fits at `mini` or richer, else with the strip. */
+  if(rail&&rail.hidden){rail.hidden=false;rail.dataset.mode=rail.dataset.mode||'rail';}
+  const wsBox=rail?floor.parentElement.closest('.workspace'):null, both=wsBox?wsBox.clientWidth:aw;
+  const key=JSON.stringify([both,ah,FORCE_DENSITY,liveOn(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]])])]);
+  const inner=()=>floor.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
+  if(key!==layoutKey||!layout){
+    if(!rail){layout=chooseLayout(sizing,aw,ah);}
+    else for(const mode of ['rail','strip']){
+      rail.dataset.mode=mode;
+      const res=chooseLayout(sizing,inner(),ah);
+      if(mode==='rail'&&(!res||!res.fit||res.d==='micro'))continue;
+      layout=Object.assign({},res,{rail:mode});break;
+    }
+    /* a layout that does not fit scrolls the floor: with a classic scroll bar (Windows, Linux) it takes width, so the search runs again
+       without it, or the floor would also scroll sideways (overlay scroll bars measure 0 and change nothing) */
+    if(rail&&layout&&!layout.fit){
+      floor.style.overflowY='scroll'; const sb=floor.offsetWidth-floor.clientWidth; floor.style.overflowY='';
+      if(sb>0)layout=Object.assign({},chooseLayout(sizing,inner()-sb,ah),{rail:layout.rail,sb});
+    }
+    layoutKey=key;
+  }
+  if(rail){rail.dataset.mode=layout.rail;aw=inner()-(layout.sb||0);renderRail();}
   HCAP=layout.hcap; HBOOST=new Map(layout.boost); LIVE_SIDE=!!layout.side;
   const parts=stageParts(model,layout.d,aw,layout.cap);
   const fresh=stage.dataset.d!==layout.d||!!stage.querySelector('.empty');
@@ -934,6 +989,13 @@ function renderOffice(){
   stagePrev=parts;
   stage.dataset.fit=layout.fit?'ok':'scroll'; stage.dataset.h=String(layout.hcap); stage.dataset.side=layout.side?'1':'0';
   fitUsage(stage);
+  /* spec 001 FR-035: the full rail must also leave every room its name: a header that cuts a name to a few letters (narrow rooms side by
+     side) folds the rail to the strip and lays out again, once per layout */
+  if(rail&&layout.rail==='rail'&&!layout.named){
+    layout.named=true;
+    const cut=[...stage.querySelectorAll('.room-head .room-name')].some(n=>n.scrollWidth>n.clientWidth+0.5&&n.clientWidth<ROOM_NAME_MIN);
+    if(cut){rail.dataset.mode='strip';const res=chooseLayout(sizing,inner(),ah);layout=Object.assign({},res,{rail:'strip',named:true});layoutKey=key;stage.dataset.d='';return renderOffice();}
+  }
   if(layout.side)stage.querySelectorAll('.liveside .ls-t').forEach(fitSide);
   floor.classList.toggle('scrolls',!layout.fit);
   if(doorAnim){const el=stage.querySelector(`[data-door="${CSS.escape(doorAnim)}"]`),box=el&&(el.closest('.room')||el);if(box&&!REDUCED){box.classList.add('enter');setTimeout(()=>box.classList.remove('enter'),420);}doorAnim=null;}
@@ -952,8 +1014,11 @@ function fitUsage(root){
   }
   /* the same for room headers: a name cut (even by a pixel, which shows an ellipsis) while its path still shows hides the path (also in the tooltip) */
   for(const hd of root.querySelectorAll('.room-head')){
-    hd.classList.remove('no-path');
+    hd.classList.remove('no-path','no-words');
     const n=hd.querySelector('.room-name'),p=hd.querySelector('.room-path');
+    /* spec 001 FR-037: the count words go first (the counts stay, the words are in the tooltip and label), then the path */
+    const tight=()=>(n&&n.scrollWidth>n.clientWidth+0.5)||hd.scrollWidth>hd.clientWidth+0.5;
+    if(hd.querySelector('.rdw')&&tight())hd.classList.add('no-words');
     if(n&&p&&p.getClientRects().length&&n.scrollWidth>n.clientWidth+0.5)hd.classList.add('no-path');
   }
 }
@@ -1649,7 +1714,80 @@ function renderInboxBtn(){
   b.hidden=!agents.length; b.classList.toggle('attn',n>0);
   rollCount(b.querySelector('b'),n);
   b.setAttribute('aria-label',n?n+(n===1?' agent needs':' agents need')+' you. Open the inbox (I or '+INBOX_KEY+').':'Nobody needs you. Open the inbox (I or '+INBOX_KEY+').');
+  if(ui.view==='office')renderRail();
 }
+/* spec 001 FR-034: the office rail. Who needs you (the inbox's list and order), what is scheduled next (spec 044's store) and a short legend.
+   Painted from renderOffice (and when the inbox changes); morphed by key so a focused row keeps focus. Text by esc(); no layout search here:
+   only the rail's mode (FR-035) changes the floor's width, and that is decided in renderOffice. */
+const RAIL_NEED_MAX=6, RAIL_SCHED_MAX=4;
+const INBOX_SVG='<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 9.5l1.6-5.2A1.4 1.4 0 0 1 5 3.3h6a1.4 1.4 0 0 1 1.4 1l1.6 5.2v2.8a1.4 1.4 0 0 1-1.4 1.4H3.4A1.4 1.4 0 0 1 2 12.3z"/><path d="M2 9.5h3.2l.9 1.6h3.8l.9-1.6H14"/></svg>';
+/* the legend is open the first time the rail is shown, closed from the next start on (a per-computer convenience; works without storage) */
+let railLegend=(()=>{try{const v=localStorage.getItem('durbar.railLegend');if(!v)localStorage.setItem('durbar.railLegend','seen');return !v;}catch(e){return true;}})();
+/* active schedules, soonest next run first: [{s, t, room}] (none in the demo, or when the app has no schedules) */
+function railSchedules(){
+  if(!bridge||!bridge.listSchedules||demoOn)return null;
+  let all;try{all=SCHED.schedules;}catch(e){return [];} /* SCHED is declared further down */
+  return all.filter(s=>!s.done&&!s.paused).map(s=>({s,t:recurringS(s)?s.next:s.at,room:ROOMS.find(r=>folderKeyOf(r)===s.folder)||null}))
+    .sort((x,y)=>(x.t||Infinity)-(y.t||Infinity));
+}
+const schedFolderName=x=>x.room?x.room.name:(String(x.s.folder||'').split(/[\\/]/).filter(Boolean).pop()||'a folder');
+function railHTML(mode,needMax=RAIL_NEED_MAX,schedMax=RAIL_SCHED_MAX,legendOk=true){
+  const need=needsMeOrder(), sch=railSchedules(), paused=(()=>{try{return SCHED.pausedAll;}catch(e){return false;}})();
+  if(mode==='strip'){
+    const nTip=need.length?need.length+(need.length===1?' agent needs':' agents need')+' you: '+need.map(a=>a.name).join(', ')+'. Open the inbox.':'Nobody needs you. Open the inbox.';
+    const sTip=sch?(sch.length?sch.length+' scheduled prompt'+(sch.length===1?'':'s')+(paused?' (all paused)':sch[0].t?', next '+clock(sch[0].t):'')+'. Open Settings > Schedules.':'Nothing scheduled. Open Settings > Schedules.'):'';
+    return `<button class="rs-btn${need.length?' attn':''}" type="button" data-key="rs-need" data-rail="inbox" title="${esc(nTip)}" aria-label="${esc(nTip)}">${INBOX_SVG}<b>${need.length}</b></button>`
+      +(sch?`<button class="rs-btn" type="button" data-key="rs-sched" data-rail="schedset" title="${esc(sTip)}" aria-label="${esc(sTip)}">${CLOCK_SVG}<b>${sch.length}</b></button>`:'');
+  }
+  const now=Date.now();
+  const needRows=need.slice(0,need.length>needMax?needMax-1:needMax).map(a=>{
+    const t=NEED_SINCE.get(a.id), wait=t!=null?ACT.agoShort(now-t):'', what=taskText(a)||stWord(a), room=roomOf(a);
+    const lbl=a.name+(room?' ('+room.name+')':'')+': '+what+(wait?'. Waiting '+wait:'')+'. Open the chat.';
+    return `<button class="rl-row" type="button" data-key="rn:${esc(a.id)}" data-railneed="${esc(a.id)}" title="${esc(lbl)}" aria-label="${esc(lbl)}"><span class="rl-av" aria-hidden="true">${avatar(a)}</span><span class="rl-t"><b class="rl-n">${esc(a.name)}<span class="dot ${pillSt(a)}"></span>${wait?`<small class="rl-w">${esc(wait)}</small>`:''}</b><span class="rl-d">${esc(what)}</span></span></button>`;
+  }).join('');
+  const needMore=need.length>needMax?`<button class="rl-more" type="button" data-key="rn-more" data-rail="inbox">+${need.length-needMax+1} more</button>`:'';
+  const needSec=`<section class="rl-sec rl-need${need.length?' attn':''}" data-key="rl-need" aria-labelledby="rlNeedH"><h2 class="rl-h" id="rlNeedH">${INBOX_SVG}<span>Needs you</span><b class="rl-c">${need.length}</b></h2>`
+    +(need.length?`<div class="rl-list">${needRows}${needMore}</div>`:'<p class="rl-empty">Nobody needs you right now.</p>')
+    +`<button class="rl-foot" type="button" data-key="rn-open" data-rail="inbox" title="The Needs you inbox (I or ${esc(INBOX_KEY)})">Open inbox</button></section>`;
+  let schSec='';
+  if(sch){
+    const rows=sch.slice(0,sch.length>schedMax?schedMax-1:schedMax).map(x=>{
+      const fold=schedFolderName(x), when=whenOf(x.s), next=x.t&&!paused?clock(x.t):'';
+      const lbl=x.s.prompt+'. '+fold+', '+when+(next?', next '+next:'')+'. Open this folder\'s schedules.';
+      return `<button class="rl-row rl-srow" type="button" data-key="rs:${esc(x.s.id)}" data-railsched="${esc(x.room?x.room.id:'')}" title="${esc(lbl)}" aria-label="${esc(lbl)}"><span class="rl-ic" aria-hidden="true">${CLOCK_SVG}</span><span class="rl-t"><b class="rl-n rl-p">${esc(DurbarCutText.cutText(x.s.prompt,80))}</b><span class="rl-d">${esc(fold+' · '+(next?'next '+next:when))}</span></span></button>`;
+    }).join('');
+    const more=sch.length>schedMax?`<button class="rl-more" type="button" data-key="rs-more" data-rail="schedset">+${sch.length-schedMax+1} more</button>`:'';
+    schSec=`<section class="rl-sec rl-sched" data-key="rl-sched" aria-labelledby="rlSchedH"><h2 class="rl-h" id="rlSchedH">${CLOCK_SVG}<span>Scheduled</span><b class="rl-c">${sch.length}</b></h2>`
+      +(paused?'<p class="rl-empty">All schedules are paused.</p>':'')
+      +(sch.length?`<div class="rl-list">${rows}${more}</div>`:(paused?'':'<p class="rl-empty">Nothing scheduled.</p>'))+'</section>';
+  }
+  const dot=(k,w,d)=>`<li><span class="dot ${k}"></span><b>${esc(w)}</b> <span>${esc(d)}</span></li>`;
+  const legend=`<details class="rl-sec rl-legend" data-key="rl-legend"${railLegend&&legendOk?' open':''}><summary class="rl-h">How to read this</summary><ul class="rl-keys">`
+    +dot('working','Working','busy on its task')+dot('waiting','Waiting','needs you')+dot('error','Error','stopped by a problem')+dot('done','Done','finished; its answer is in the chat')+dot('idle','Idle','ready for a message')
+    +`</ul><p class="rl-note">Each room is a folder. The lobby shows who is using which tool right now.</p></details>`;
+  return needSec+schSec+legend;
+}
+function renderRail(){
+  const rail=$('rail'); if(!rail||rail.hidden)return;
+  const mode=rail.dataset.mode==='strip'?'strip':'rail';
+  rail.setAttribute('aria-label',mode==='strip'?'Needs you and scheduled prompts (folded)':'Needs you, scheduled prompts and how to read the office');
+  morphHTML(rail,railHTML(mode));
+  /* the rail never scrolls when it can help it: fewer rows (the rest under "+N more"), then the legend folded for this paint */
+  if(mode==='rail'&&rail.scrollHeight>rail.clientHeight+1){
+    const steps=[[5,4,true],[4,4,true],[4,4,false],[3,3,false],[2,2,false]];
+    for(const [n,m,leg] of steps){morphHTML(rail,railHTML(mode,n,m,leg));if(rail.scrollHeight<=rail.clientHeight+1)break;}
+  }
+}
+/* the person's own open or close of the legend (a click or Enter on its summary); a repaint that folds it for room is not one */
+document.addEventListener('click',e=>{const sm=e.target.closest&&e.target.closest('#rail .rl-legend > summary');if(sm)railLegend=!sm.parentElement.open;},true);
+document.addEventListener('click',e=>{
+  const t=e.target.closest&&e.target.closest('#rail [data-railneed], #rail [data-railsched], #rail [data-rail]'); if(!t)return;
+  if(t.dataset.railneed){openPanel(t.dataset.railneed,true);return;}
+  if(t.dataset.railsched!=null){const r=ROOMS.find(x=>x.id===t.dataset.railsched);if(r)openSchedules(r);else openSchedSettings();return;}
+  if(t.dataset.rail==='inbox')openInbox(); else if(t.dataset.rail==='schedset')openSchedSettings();
+});
+/* Settings > Schedules (spec 044 FR-011): the Settings screen, scrolled to its Schedules section */
+function openSchedSettings(){window.DurbarScreens.openSettings();setTimeout(()=>{const s=$('schedSet');if(s&&s.scrollIntoView)s.scrollIntoView({block:'start'});},0);}
 /* spec 052 FR-068: the count rolls (old number out, new one in, 220ms) inside a box that keeps its width; up when it grows */
 function rollCount(box,n){
   if(!box)return; const txt=String(n), prev=box.dataset.n;
@@ -2011,7 +2149,7 @@ window.addEventListener('resize',relayout);
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', sched:qs.get('simsched')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
@@ -2981,7 +3119,10 @@ function onLiveEvent(e){
   }
   if(e.type==='toolCall'&&e.mcpServer&&SEEN_SERVERS.size<500)SEEN_SERVERS.add(String(e.mcpServer).trim().slice(0,200));
   if(!e.agentId){ /* spec 024: only main-agent events move anyone (helper events carry an agentId) */
-    if(e.type==='toolCall'){if(VISITS.onTool(a.id,e,PLACE_MAP,customIds()))scheduleRender();}
+    if(e.type==='toolCall'){
+      /* spec 001 FR-036: what the agent does at the place, masked like the live readout (FR-031); nothing without the masking (fail closed) */
+      if(e.phase==='start'&&LIVE_MASK&&window.DurbarPlaces.classify(e,PLACE_MAP,customIds())!=='desk'){const t=window.DurbarLiveAct.phrase({kind:toolKind(e.tool),tool:e.tool,label:toolLabel(e.args)},LIVE_MASK).replace(VERB_RE,'').trim();if(t)PLACE_DOING.set(a.id,t);else PLACE_DOING.delete(a.id);}
+      if(VISITS.onTool(a.id,e,PLACE_MAP,customIds()))scheduleRender();}
     else if(e.type==='status'){if(VISITS.onStatus(a.id,e.status))scheduleRender();}
   }
   if(e.type==='title'){if(!e.agentId)applyTitle(a,e.title);return;}

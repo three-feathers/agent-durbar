@@ -183,5 +183,30 @@
     return Math.max(1,Math.min(8,Math.floor((tileW-150)/25)));
   }
 
-  return {PLACES,IDS,allPlaces,placeName,isChoice,tileSlots,classify,canonicalServer,placeRows,mergePlaceNames,placeSaves,defaultServerPlace,toolLabel,createVisits,layoutSpots};
+  /* Visitor entries on one lobby tile (spec 001 FR-036): who is there, by name. Same tile width as tileSlots. A named entry (figure, name and
+     activity) takes about 92px, an initials entry 46px, 6px apart, inside 20px of padding. Returns how many of each fit (1..6 each; 0 named
+     when not even one fits). chipsFor() picks per tile: names when every visitor fits by name, or when two or more named entries fit (the last
+     becomes "+N"); else initials. */
+  const NAMED_W=92, INIT_W=46, CHIP_GAP=6, TILE_PAD=20;
+  function tileChips(aw,tiles,addButton){
+    const n=Math.max(1,Math.floor(Number(tiles)||0)), width=Number(aw)>0?Number(aw):800;
+    const inner=(width-8*(n-1)-(addButton?26+8:0))/n-TILE_PAD;
+    const fit=w=>Math.max(0,Math.min(6,Math.floor((inner+CHIP_GAP)/(w+CHIP_GAP))));
+    return {named:fit(NAMED_W),initials:Math.max(1,fit(INIT_W))};
+  }
+  /* {mode:'named'|'initials', slots} for a tile with `visitors` people, from tileChips()'s capacities */
+  function chipsFor(cap,visitors){
+    const v=Math.max(0,Math.floor(Number(visitors)||0)), c=cap||{named:0,initials:1};
+    if(c.named>=1&&(v<=c.named||c.named>=2))return {mode:'named',slots:c.named};
+    return {mode:'initials',slots:Math.max(1,c.initials)};
+  }
+  /* Two letters for a name ("Omar" -> "Om", "Ada Lovelace" -> "AL"); '' for nothing. Callers escape it. */
+  function initialsOf(name){
+    const w=String(name||'').trim().split(/\s+/).filter(Boolean);
+    if(!w.length)return '';
+    const c=s=>Array.from(s);
+    return w.length>1?(c(w[0])[0]+c(w[w.length-1])[0]).toUpperCase():c(w[0]).slice(0,2).join('');
+  }
+
+  return {PLACES,IDS,allPlaces,placeName,isChoice,tileSlots,tileChips,chipsFor,initialsOf,classify,canonicalServer,placeRows,mergePlaceNames,placeSaves,defaultServerPlace,toolLabel,createVisits,layoutSpots};
 })());

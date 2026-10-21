@@ -13,6 +13,8 @@
  *   - a unit that does not contain its own desk and helpers,
  *   - a helper strip with a background, border or a height that is not its content's (the 2026-10-16 `.strip` collision),
  *   - the floor scrolling or the page overflowing (stage data-fit must be ok), text below 10.5px,
+ *   - the rail (spec 001 FR-034/FR-035): over the floor, outside the window, scrolling, a row sticking out, text below 10.5px;
+ *   - who is at a place (spec 001 FR-036): visitor entries that overlap, stick out of their tile or entry, have no name or tooltip, a count that is not the number of visitors;
  *   - the lobby (spec 024): missing, sticking out of the floor, overlapping a room or the door plates, not holding its places (5 plus the custom ones, spec 024 FR-026), more than one row of tiles, a missing Add button below 8 tiles or one at 8, a place or slot
  *     sticking out of its tile, a walking figure that is not standing on a slot once the walks have settled, or more figures than empty chairs.
  *   - room headers (spec 001 FR-023/FR-024, also `simrooms=solo`: one agent per folder): two header parts overlapping, or one leaving its header;
@@ -94,14 +96,31 @@ function pageCheck(expanded, expectPlaces) {
     /* spec 024 FR-022: custom places make tiles narrower, never a second row; the Add button is there below 8 tiles and gone at 8 */
     const tops = new Set(places.map((pl) => Math.round(R(pl).y)));
     if (tops.size > 1) problems.push(`lobby tiles are on ${tops.size} rows, not one`);
-    if (L.h > 38) problems.push(`lobby is ${L.h.toFixed(0)}px tall, not 36`);
+    if (L.h > 60 || L.h < 56) problems.push(`lobby is ${L.h.toFixed(0)}px tall, not 58`); /* spec 001 FR-036: a header row and the visitors under it */
     const addBtns = lobby.querySelectorAll('.place-add');
     if (addBtns.length !== (places.length < 8 ? 1 : 0)) problems.push(`${addBtns.length} Add buttons with ${places.length} places`);
     addBtns.forEach((b) => { inside(b, L, 'the lobby'); if (!b.getAttribute('aria-label')) problems.push('the Add button has no accessible name'); });
     /* spec 052 FR-013: a themed place may add its plain name, "Cartridge Bay (Software library): …" */
     const fullName = (t, n) => t.startsWith(n + ':') || t.startsWith(n + ' (');
     places.forEach((pl) => { const n = pl.querySelector('.pn'); if (!n || !fullName(pl.getAttribute('aria-label'), n.textContent) || !fullName(pl.title, n.textContent)) problems.push(`place ${pl.dataset.place}: its full name is not in the tooltip and the label`); });
-    places.forEach((pl) => { inside(pl, L, 'the lobby'); pl.querySelectorAll('.pic, .pn, .prow, .slot').forEach((e) => inside(e, R(pl), 'its place ' + pl.dataset.place)); });
+    places.forEach((pl) => { inside(pl, L, 'the lobby'); pl.querySelectorAll('.pic, .pn, .pc, .prow, .slot, .pv').forEach((e) => inside(e, R(pl), 'its place ' + pl.dataset.place)); });
+    /* spec 001 FR-036: who is at a place: entries do not overlap, each shows a name (or initials) that is not cut to nothing, and its tooltip names the agent */
+    places.forEach((pl) => {
+      const pv = [...pl.querySelectorAll('.pv')].map((e) => [e, R(e)]);
+      for (let i = 0; i < pv.length; i++) for (let j = i + 1; j < pv.length; j++) { const p = pv[i][1], q = pv[j][1]; const ox = Math.min(p.r, q.r) - Math.max(p.x, q.x), oy = Math.min(p.b, q.b) - Math.max(p.y, q.y); if (ox > T && oy > T) problems.push(`place ${pl.dataset.place}: visitor entries overlap`); }
+      pv.forEach(([e]) => {
+        const n = e.querySelector('.pv-n');
+        if (e.classList.contains('pv-more')) { if (!/^\d+ more at /.test(e.getAttribute('aria-label') || '') || !(e.title || '').trim()) problems.push(`place ${pl.dataset.place}: "+N" without its names`); return; }
+        if (!n || !n.textContent.trim()) { problems.push(`place ${pl.dataset.place}: a visitor entry without a name`); return; }
+        const cut = n.scrollWidth > n.clientWidth + 0.5;
+        if (cut && (n.classList.contains('pv-i') || n.clientWidth < 18)) problems.push(`place ${pl.dataset.place}: the name "${n.textContent}" is cut to ${n.clientWidth}px`);
+        if (!(e.title || '').trim()) problems.push(`place ${pl.dataset.place}: a visitor entry without a tooltip`);
+        [...e.querySelectorAll('.pv-n, .pv-a, .slot')].forEach((t) => inside(t, R(e), `a visitor entry at ${pl.dataset.place}`));
+      });
+      const shown = pl.querySelectorAll('.pv:not(.pv-more)').length, more = pl.querySelector('.pv-more'), n = more ? shown + parseInt(more.textContent.replace(/[^0-9]/g, ''), 10) : shown;
+      const count = pl.querySelector('.pc');
+      if ((count ? parseInt(count.textContent, 10) : 0) !== n) problems.push(`place ${pl.dataset.place}: count ${count ? count.textContent : 'none'} but ${n} visitors`);
+    });
     const slots = [...lobby.querySelectorAll('.slot.on')].map(R);
     const walkers = [...document.querySelectorAll('#walkers .walker')];
     walkers.forEach((w) => {
@@ -167,7 +186,18 @@ function pageCheck(expanded, expectPlaces) {
     if (stage.dataset.fit !== 'ok' || floor.classList.contains('scrolls')) problems.push(`floor scrolls (fit=${stage.dataset.fit})`);
     if (floor.scrollHeight > floor.clientHeight + 1 || floor.scrollWidth > floor.clientWidth + 1) problems.push(`floor overflows (${floor.scrollWidth}x${floor.scrollHeight} in ${floor.clientWidth}x${floor.clientHeight})`);
   } else if (floor.scrollWidth > floor.clientWidth + 1) problems.push('floor overflows horizontally');
+  /* spec 001 FR-034/FR-035: the rail sits right of the floor, inside the window, never over the floor, and does not scroll at these sizes */
+  const rail = document.getElementById('rail');
+  if (rail && !rail.hidden && stage.querySelector('.room, .plate')) {
+    const rr = R(rail);
+    if (rr.x < fr.r - 1) problems.push(`the rail overlaps the floor (${rr.x.toFixed(0)} < ${fr.r.toFixed(0)})`);
+    if (rr.r > innerWidth + 1) problems.push('the rail sticks out of the window');
+    if (rail.scrollHeight > rail.clientHeight + 1) problems.push(`the rail scrolls (${rail.scrollHeight} in ${rail.clientHeight})`);
+    if (rail.scrollWidth > rail.clientWidth + 1) problems.push('the rail overflows sideways');
+    rail.querySelectorAll('.rl-sec, .rl-row, .rs-btn').forEach((e) => { const b = R(e); if (b.x < rr.x - 1 || b.r > rr.r + 1) problems.push(`${name(e)} sticks out of the rail`); });
+  }
   let minFont = 99;
+  if (rail && !rail.hidden) rail.querySelectorAll('*').forEach((e) => { if (!e.children.length && e.textContent.trim() && e.getClientRects().length) minFont = Math.min(minFont, parseFloat(getComputedStyle(e).fontSize)); });
   stage.querySelectorAll('*').forEach((e) => { if (!e.children.length && e.textContent.trim() && e.getClientRects().length) minFont = Math.min(minFont, parseFloat(getComputedStyle(e).fontSize)); });
   if (minFont < 10.5) problems.push(`text below 10.5px (${minFont}px)`);
   const stageH = R(stage).h;

@@ -28,6 +28,9 @@ const P = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'places.js
   allPlaces: (custom?: unknown) => { id: string; name: string; icon?: string }[];
   isChoice: (v: unknown, customIds?: unknown) => boolean;
   tileSlots: (aw: unknown, tiles: unknown, addButton: unknown) => number;
+  tileChips: (aw: unknown, tiles: unknown, addButton: unknown) => { named: number; initials: number };
+  chipsFor: (cap: { named: number; initials: number }, visitors: unknown) => { mode: 'named' | 'initials'; slots: number };
+  initialsOf: (name: unknown) => string;
   classify: (e: unknown, map?: unknown, customIds?: unknown) => string;
   canonicalServer: (s: unknown) => unknown;
   placeRows: (names: unknown, map?: unknown, customIds?: unknown) => { name: string; aliases: string[]; value: string }[];
@@ -521,6 +524,30 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
   }
   for (const aw of [1000, 1248, 1408, 1900]) for (let n = 5; n < 8; n++) assert.ok(t(aw, n + 1, false) <= t(aw, n, false), `more tiles never give more slots (${aw}, ${n})`);
   for (const aw of [1248, 1408]) for (let n = 5; n < 8; n++) assert.ok(t(aw, n, true) <= t(aw, n, false), 'the Add button never gives more slots');
+}
+
+// spec 001 FR-036: visitor entries per tile: names when everyone fits by name or two named entries fit, else initials; 0..6 / 1..6
+{
+  const c = (aw: number, tiles: number, btn: boolean) => P.tileChips(aw, tiles, btn);
+  assert.deepStrictEqual(c(1160, 5, true), { named: 2, initials: 3 }, '1440x900 with the rail');
+  assert.deepStrictEqual(c(970, 5, true), { named: 1, initials: 3 }, 'a sparse office at 1280x800 with the rail');
+  assert.deepStrictEqual(c(1160, 8, false), { named: 1, initials: 2 }, 'eight places');
+  assert.deepStrictEqual(c(99999, 5, false), { named: 6, initials: 6 }, 'at most 6');
+  for (const [aw, n, b] of [[0, 5, false], [-5, 6, true], [NaN, 5, false], [undefined, 5, false], [1248, 0, false], [100, 8, true], [1248, 'x', false]] as [unknown, unknown, unknown][]) {
+    const r = P.tileChips(aw, n, b);
+    assert.ok(Number.isInteger(r.named) && r.named >= 0 && r.named <= 6 && Number.isInteger(r.initials) && r.initials >= 1 && r.initials <= 6, 'always in range: ' + String([aw, n, b]));
+  }
+  for (const aw of [900, 1160, 1408, 1900]) for (let n = 5; n < 8; n++) {
+    const a = c(aw, n, false), z = c(aw, n + 1, false);
+    assert.ok(z.named <= a.named && z.initials <= a.initials, `more tiles never give more entries (${aw}, ${n})`);
+  }
+  const f = (named: number, initials: number, v: number) => P.chipsFor({ named, initials }, v);
+  assert.deepStrictEqual(f(1, 3, 1), { mode: 'named', slots: 1 }, 'one visitor, one named entry fits: the name');
+  assert.deepStrictEqual(f(1, 3, 2), { mode: 'initials', slots: 3 }, 'two visitors, one named entry fits: initials');
+  assert.deepStrictEqual(f(2, 4, 5), { mode: 'named', slots: 2 }, 'two named entries fit: names and +N');
+  assert.deepStrictEqual(f(0, 1, 1), { mode: 'initials', slots: 1 }, 'no named entry fits');
+  assert.deepStrictEqual(f(2, 4, 0), { mode: 'named', slots: 2 }, 'nobody there');
+  assert.deepStrictEqual(['Omar', 'Ada Lovelace', '  ', '', null, 'émile zola', 'X'].map((n) => P.initialsOf(n)), ['Om', 'AL', '', '', '', 'ÉZ', 'X']);
 }
 
 // icons: the 12 drawings match the shared icon ids

@@ -59,9 +59,9 @@
 
 ## Changes 2026-10-22 (office rail, who is at a place; owner)
 
-- [ ] T041 `places.js` `tileChips` + `test:places` cases [FR-036]
-- [ ] T042 `app.js`/`index.html`/`styles.css`: the rail (Needs you, Scheduled, legend), strip mode, `renderRail` [FR-034]
-- [ ] T043 `renderOffice`: rail then strip by the fit rule, width of `.workspace` in the layout key [FR-035]
-- [ ] T044 Lobby entries (name, activity, initials, count, "nobody", +N menu) and the 58 px lobby; `check:office` lobby rules [FR-036]
-- [ ] T045 Room header words and their fitting [FR-037]
-- [ ] T046 `sim.ts` `simsched=1`; `scripts/shots-001-rail.js` driver and screenshots (1440x900, 1280x800; 15 and sparse; light and dark); `check:office`, `check:geometry`; README office section and hero if it changes, CHANGELOG, `specs/README.md` [FR-038]
+- [x] T041 `places.js` `tileChips` + `test:places` cases [FR-036]
+- [x] T042 `app.js`/`index.html`/`styles.css`: the rail (Needs you, Scheduled, legend), strip mode, `renderRail` [FR-034]
+- [x] T043 `renderOffice`: rail then strip by the fit rule, width of `.workspace` in the layout key [FR-035]
+- [x] T044 Lobby entries (name, activity, initials, count, "nobody", +N menu) and the 58 px lobby; `check:office` lobby rules [FR-036]
+- [x] T045 Room header words and their fitting [FR-037]
+- [x] T046 `sim.ts` `simsched=1`; `scripts/shots-001-rail.js` driver and screenshots (1440x900, 1280x800; 15 and sparse; light and dark); `check:office`, `check:geometry`; README office section and hero if it changes, CHANGELOG, `specs/README.md` [FR-038]
