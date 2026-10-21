@@ -43,7 +43,7 @@ export interface AgentsIpcDeps {
 }
 
 export function register(deps: AgentsIpcDeps): void {
-  const { agents, router, agentState, opsDeps, remoteOps, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, vsChatRefs, continued , maskHistory } = deps;
+  const { agents, router, agentState, opsDeps, remoteOps, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, vsChatRefs, continued, maskHistory } = deps;
   const scheduler = deps.getScheduler;
   const checkpointStore = deps.getCheckpointStore;
   ipcHandle('agents:list', () => [...agents.values()]);
