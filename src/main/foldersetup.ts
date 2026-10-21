@@ -141,8 +141,9 @@ export function runsGivenCode(command: string, args: readonly string[]): string 
 /**
  * Re-review #424 (7537f86): env variables that make a program load or run code from their value, whatever the command (`NODE_OPTIONS=
  * --import=data:…`, `BASH_ENV`, `LD_PRELOAD`, …). A server whose env sets one is marked with the reason and starts unticked.
+ * Re-review at 97dc616: also `BASH_FUNC_*` (exported bash functions, run by any bash child) and `MAKEFLAGS` / `MFLAGS` (`--eval=…`).
  */
-const CODE_LOADING_ENV = /^(NODE_OPTIONS|NODE_PATH|NODE_REPL_EXTERNAL_MODULE|ELECTRON_RUN_AS_NODE|BASH_ENV|ENV|ZDOTDIR|PROMPT_COMMAND|SHELLOPTS|BASHOPTS|PS4|IFS|SHELL|LD_PRELOAD|LD_LIBRARY_PATH|LD_AUDIT|DYLD_\w+|PERL5OPT|PERL5LIB|PERLLIB|PERL5DB|RUBYOPT|RUBYLIB|PYTHONSTARTUP|PYTHONPATH|PYTHONHOME|PYTHONINSPECT|PYTHONUSERBASE|JAVA_TOOL_OPTIONS|_JAVA_OPTIONS|JDK_JAVA_OPTIONS|CLASSPATH|PATH|PATHEXT|COMSPEC|PSMODULEPATH|GIT_\w+|NPM_CONFIG_\w+|YARN_\w+|BUN_\w+|DENO_\w+|UV_\w+|PIP_\w+|GEM_PATH|GEM_HOME|BUNDLE_GEMFILE|LUA_INIT\w*|LUA_PATH\w*|LUA_CPATH\w*|PHPRC|PHP_INI_SCAN_DIR|TCLLIBPATH|EDITOR|VISUAL|PAGER|BROWSER)$/i;
+const CODE_LOADING_ENV = /^(NODE_OPTIONS|NODE_PATH|NODE_REPL_EXTERNAL_MODULE|ELECTRON_RUN_AS_NODE|BASH_ENV|ENV|ZDOTDIR|PROMPT_COMMAND|SHELLOPTS|BASHOPTS|PS4|IFS|SHELL|LD_PRELOAD|LD_LIBRARY_PATH|LD_AUDIT|DYLD_\w+|PERL5OPT|PERL5LIB|PERLLIB|PERL5DB|RUBYOPT|RUBYLIB|PYTHONSTARTUP|PYTHONPATH|PYTHONHOME|PYTHONINSPECT|PYTHONUSERBASE|JAVA_TOOL_OPTIONS|_JAVA_OPTIONS|JDK_JAVA_OPTIONS|CLASSPATH|PATH|PATHEXT|COMSPEC|PSMODULEPATH|GIT_\w+|NPM_CONFIG_\w+|YARN_\w+|BUN_\w+|DENO_\w+|UV_\w+|PIP_\w+|GEM_PATH|GEM_HOME|BUNDLE_GEMFILE|LUA_INIT\w*|LUA_PATH\w*|LUA_CPATH\w*|PHPRC|PHP_INI_SCAN_DIR|TCLLIBPATH|EDITOR|VISUAL|PAGER|BROWSER|BASH_FUNC_.+|MAKEFLAGS|MFLAGS)$/i;
 export function codeLoadingEnv(names: readonly string[]): string[] {
   return names.filter((n) => CODE_LOADING_ENV.test(n));
 }
@@ -150,7 +151,8 @@ export function codeLoadingEnv(names: readonly string[]): string[] {
 /**
  * Constitution III (safe by default): an env value whose NAME looks secret is not shown (`DB_PASSWORD`, `PGPASSWORD`, `API_KEY`,
  * `GITHUB_TOKEN`, ...). Reuses spec 041's `secretFlag` (token, secret, passw, key, pwd, auth, credential, cookie, session, ...) plus
- * `private` and `cert`. Hiding by name does not by itself untick the item: a code-loading name is flagged by `codeLoadingEnv` anyway.
+ * `private` and `cert`. Re-review at 97dc616 (option a): a value hidden by its name marks the item hidden (unticked) with a reason,
+ * because the program may run it and the person cannot read it.
  */
 export function secretEnvName(name: string): boolean {
   return secretFlag(name) || /private|cert/i.test(name);
@@ -175,9 +177,18 @@ function mcpItem(app: FolderSetupApp, file: string, name: string, spec: McpServe
   const tokenHidden = parts.some((p) => p.hidden);
   const shell = spec.type === 'stdio' && envNames.length ? runsGivenCode(spec.command ?? '', spec.args ?? []) : undefined;
   const loaders = codeLoadingEnv(envNames);
+  // Re-review at 97dc616 (required 2): "read them above" only for values that are shown; a value hidden by name cannot be read here.
+  const hiddenText = (names: string[]): string => (names.length === 1 ? `the value of ${names[0]} is hidden here, so it cannot be read` : `the values of ${names.slice(0, 5).join(', ')} are hidden here, so they cannot be read`);
+  const readHint = (names: string[]): string => {
+    const hid = names.filter(secretEnvName), shown = names.filter((n) => !secretEnvName(n));
+    if (!hid.length) return names.length === 1 ? 'read it above' : 'read them above';
+    return shown.length ? `read ${shown.slice(0, 5).join(', ')} above; ${hiddenText(hid)}` : hiddenText(hid);
+  };
   const why = [
-    ...(shell ? [`It starts ${shell}, which can run what it is given, and hands it env values (${envNames.slice(0, 5).join(', ')}): they can be commands, so read them above. Ticking it runs them too.`] : []),
-    ...(loaders.length ? [`Its env sets ${loaders.slice(0, 5).join(', ')}, which can make the program load and run code from that value. Read it above before ticking it.`] : []),
+    ...(shell ? [`It starts ${shell}, which can run what it is given, and hands it env values (${envNames.slice(0, 5).join(', ')}): they can be commands, so ${readHint(envNames)}. Ticking it runs them too.`] : []),
+    ...(loaders.length ? [`Its env sets ${loaders.slice(0, 5).join(', ')}, which can make the program load and run code from that value: ${readHint(loaders)} before ticking it.`] : []),
+    // Re-review at 97dc616 (required 1, option a): a value hidden by its name is a hidden payload whatever the command runs it with.
+    ...(secretEnv.length && !shell ? [secretEnv.length === 1 ? '1 env value is hidden because its name looks secret; a program could run it. Tick only if you trust it.' : `${secretEnv.length} env values are hidden because their names look secret; a program could run them. Tick only if you trust it.`] : []),
   ];
   if (why.length && tokenHidden) why.push('Part of it is hidden because it looks like a secret key.');
   const hiddenWhy = why.length ? why.join(' ') : undefined;
