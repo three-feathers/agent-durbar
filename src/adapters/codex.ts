@@ -10,7 +10,7 @@ import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, SignInCheck, StartOptions, Unsubscribe } from './types';
+import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
 import type { AdapterDescriptor } from './capabilities';
 import type { EventBody } from './map';
 import { CodexMapper } from './codexMap';
@@ -251,6 +251,8 @@ export class CodexAdapter implements AgentAdapter {
   readonly capabilities: AdapterCapabilities = CODEX_CAPABILITIES;
   /** Optional debug sink (DURBAR_LOG). Receives short lines: rpc diagnostics, and on an unexpected exit the last stderr lines after `redact()` (FR-097). Never env values or prompts. */
   debug?: (message: string) => void;
+  /** Spec 065 FR-001: assigned by the main process (router.setWriteGuard). */
+  writeGuard?: WriteGuard;
   private listeners = new Set<(event: AgentEvent) => void>();
   private sessions = new Map<string, Live>();
   /** Ids this run has used, live or not: a stopped one cannot be silently restarted as a new thread (resume is T043b). */
@@ -909,6 +911,7 @@ export class CodexAdapter implements AgentAdapter {
     return new PermissionBroker({
       roots: live.roots,
       mode: live.mode,
+      beforeWrite: (paths) => this.writeGuard?.(live.sid, paths) ?? Promise.resolve(), // spec 065 FR-001
       emit: (e: BrokerEvent) => {
         const sid = live.sid;
         switch (e.type) {
@@ -953,6 +956,7 @@ export class CodexAdapter implements AgentAdapter {
       toolCallId,
       fullCommandText: perm.fullCommandText,
       fileName: perm.fileName,
+      ...(perm.paths ? { paths: perm.paths } : {}),
       url: perm.url,
       toolName: perm.toolName,
       serverName: perm.serverName,
