@@ -27,6 +27,7 @@ Each entry has the date it was learned, what happened, and how to apply it, with
 
 ## Simulator and drivers
 
+- **`app.js` is one IIFE** (2026-10-21, spec 003 T030): `bridge`, `sim` and the helpers are not globals, so a driver's `ctx.js('bridge.x()')` reaches something else (or throws). Assert on the DOM, or move the logic into a pure function in `src/main` and unit-test it (as `resumeModeOp`).
 - **`shots-033` needs floors**: run it with `DURBAR_SIM_FLOORS=1` (and `SHOTS_033=<dir>`), or it fails with a page-script error.
 - **Previous sessions sit behind "Previous (N)"** in the chat header since spec 052 round 10; `#prev` stays hidden until opened. A driver that checks the history reads `#prevBtn`'s title or clicks it first.
 - **Top bar ids since round 11** (spec 052 FR-105): the defaults selects (`#kindSel`, `#permMode`, `#modelSel`, ...) are inside the `#defaultsPop` popover, opened by `#defaultsBtn`; *Add folder* and *Add VS Code workspace* are plain top-bar buttons again since FR-164 (2026-10-21: `#addFolder`, `#addWs`, no `#newMenu`). Open the popover before checking visibility. The brand name can be visually hidden (`.topbar.tb-tight`, set by `fitTopbar` when the row would wrap): after forcing a font or the Mac platform in a check, call `window.DurbarFit()` so the bar is refitted.
