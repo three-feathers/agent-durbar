@@ -80,7 +80,7 @@
   /* the controls of FR-169 that carried a literal light colour */
   const DARK_CONTROLS = [
     '#topBtns button[aria-pressed="true"]', '.scr-head .seg button[aria-selected="true"]', '.thpick[aria-pressed=true]',
-    '.capf input', '.plrow select', '.dlg label.pico-opt', '.ctxchip', '#capChip', '.sitem.attn.st-error',
+    '.capf input', '.plrow select', '.dlg label.pico-opt', '.ctxchip', '#capChip', '.sitem.attn.st-error', '.dlg.fs .mtag',
   ];
 
   function brokenWords(root) {
@@ -116,7 +116,8 @@
 
   function check(kind, sels, o = {}) {
     const roots = [];
-    for (const s of [].concat(sels)) document.querySelectorAll(s).forEach((e) => { if (vis(e) && !roots.includes(e) && !roots.some((r) => r.contains(e))) roots.push(e); });
+    // each box once: a root that holds, or sits in, another is skipped
+    for (const s of [].concat(sels)) document.querySelectorAll(s).forEach((e) => { if (vis(e) && !roots.some((r) => r === e || r.contains(e) || e.contains(r))) roots.push(e); });
     const bad = [];
     const add = (rule, root, el, detail) => bad.push({ rule, el: path(el, root), detail });
     if (!roots.length) return [{ rule: 'no-root', el: String(sels), detail: 'the surface is not on screen' }];
@@ -181,6 +182,21 @@
       if (kind === 'popover' || kind === 'menu') {
         const cs = getComputedStyle(root);
         if (kind === 'popover' && root.scrollWidth > root.clientWidth + 1) add('x-scroll', root, root, `scrollWidth ${root.scrollWidth} > ${root.clientWidth}`);
+      }
+      if (o.darkAll) {
+        // the dark fixture: the text of EVERY visible element on the surface, so a bright box from a rule or from an inline style=
+        // is found even when its control is not in DARK_CONTROLS. Disabled controls and faded boxes are exempt (WCAG).
+        for (const e of all) {
+          const isField = /^(INPUT|SELECT|TEXTAREA)$/.test(e.tagName);
+          if (!(ownText(e) || isField) || !shown(e)) continue;
+          if (e.disabled || e.closest('[aria-disabled="true"],.is-off,[disabled]')) continue;
+          let faded = false; for (let a = e; a && !faded; a = a.parentElement) faded = parseFloat(getComputedStyle(a).opacity) < 0.9;
+          if (faded) continue;
+          const back = backdrop(e);
+          const fg = rgba(getComputedStyle(e).color);
+          const k = contrast(over(fg, back), back);
+          if (k < 4.5) { const b = { rule: 'dark-text', el: path(e, root), detail: `${k.toFixed(2)}:1 "${snip(ownText(e) || e.value || e.tagName.toLowerCase(), 30)}"`, key: [e.parentElement, e].filter(Boolean).map((n) => desc(n).replace(/#[^.]*/, '')).join(' > ') }; bad.push(b); }
+        }
       }
       if (o.dark) {
         for (const sel of DARK_CONTROLS) {
