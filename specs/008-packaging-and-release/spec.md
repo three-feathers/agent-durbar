@@ -356,3 +356,12 @@ The owner asked for full tests on macOS and Windows (and Linux) directly in GitH
 - **D3** FR-044 label added now as a harmless hint; per Electron's docs it is not what sets the macOS title (`CFBundleName` does), so the claim rests on the asserted bundle name; the packaged title by eye stays a `[KNOWN GAP]` for Paco's Mac.
 
 *Not covered:* a person's own Windows PC (taskbar grouping, toasts, Settings > Apps, SmartScreen; #9); a Linux desktop launcher or dock; the Mac menu-bar title by eye; signed builds (spec 014).
+
+### 2026-10-21: the simulator drivers share one helper module (issue #414)
+
+Tech debt from the 2026-10-21 audit. Decided by the coordinator under Ruben's delegation.
+
+*Found:* about 30 `scripts/shots-*.js` and `scripts/check-*.js` drivers each define the same small helpers (`js`, `shot`, `key`, `clickText`, load-and-wait). #401 added `scripts/driver-helpers.js` with the waits (FR-096) and 18 drivers use it; the rest still carry their own copies, which drift (different timeouts, different escaping of values spliced into page code).
+
+- **FR-097** The helpers that drivers repeat live in `scripts/driver-helpers.js` and every driver uses them instead of its own copy. Values spliced into page code go through `jsLiteral` (CodeQL `js/bad-code-sanitization`, already the rule). No driver's assertions change: each driver checks exactly what it checked before, with the same thresholds; only the plumbing moves. Where two copies differed (a timeout, a wait), the shared helper keeps the stricter or the condition-based one (FR-096), and the difference is noted in the PR.
+- **Done when** every migrated driver passes as before: `node scripts/ui-suite.js` (all drivers) after each batch, `npm run check:office`, `npm run check:geometry`, the Mac title bar check, and `npm run typecheck && npm run build && npm test`. A driver that is not in `ui-suite` (a screenshot-only `shots-*`) is run once by hand and its screenshots compared by size and a visual look. Drivers that only run on a real account (none should be touched) are listed and left alone.
