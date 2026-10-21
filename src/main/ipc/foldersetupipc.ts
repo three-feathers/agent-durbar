@@ -2,12 +2,13 @@
  * Spec 061: the window's three calls for a folder's own setup. FR-013: they are registered only through `ipcHandle` (Durbar's own
  * window, nothing else), and nothing else calls the store's `decide`: not the Durbar MCP server, remote control, schedules or an
  * agent (`scripts/test-foldersetup.ts` pins it). The core functions are pure apart from the injected deps (unit-tested).
+ * An IPC module like the others in src/main/ipc (spec 045 FR-060): main.ts calls `register` once.
  */
-import { needsConfirm } from '../shared/foldersetup';
-import type { FolderSetupDecision, FolderSetupItem, FolderSetupView, HookExplanation } from '../shared/foldersetup';
-import { scanFolderSetup } from './foldersetup';
-import type { FolderSetupStore } from './foldersetupstore';
-import { ipcHandle } from './ipcguard';
+import { needsConfirm } from '../../shared/foldersetup';
+import type { FolderSetupDecision, FolderSetupItem, FolderSetupView, HookExplanation } from '../../shared/foldersetup';
+import { scanFolderSetup } from '../foldersetup';
+import type { FolderSetupStore } from '../foldersetupstore';
+import { ipcHandle } from '../ipcguard';
 
 export interface FolderSetupDeps {
   store: () => FolderSetupStore | undefined;
@@ -101,7 +102,7 @@ export async function explain(deps: FolderSetupDeps, keyIn: unknown, idIn: unkno
 }
 
 /** FR-013: the only registration of the three calls; `ipcHandle` refuses anything that is not Durbar's own window. */
-export function registerFolderSetupIpc(deps: FolderSetupDeps): void {
+export function register(deps: FolderSetupDeps): void {
   ipcHandle('folderSetup:scan', (_e, key: unknown) => scanView(deps, key));
   ipcHandle('folderSetup:decide', (_e, key: unknown, decision: unknown) => decide(deps, key, decision));
   ipcHandle('folderSetup:explain', (_e, key: unknown, id: unknown) => explain(deps, key, id));

@@ -6,8 +6,8 @@ import * as path from 'path';
 import * as vm from 'vm';
 import { acceptedFor, codeLoadingEnv, secretEnvName, hasFolderRules, readCodexMcpToml, rootLabels, runsGivenCode, scanFolderSetup, scanFolderSetupCached, shownCommand, shownWord, MAX_FILE_BYTES } from '../src/main/foldersetup';
 import { FolderSetupStore } from '../src/main/foldersetupstore';
-import { costText, decide, explainPrompt, parseExplanation, scanView } from '../src/main/foldersetupipc';
-import type { FolderSetupDeps } from '../src/main/foldersetupipc';
+import { costText, decide, explainPrompt, parseExplanation, scanView } from '../src/main/ipc/foldersetupipc';
+import type { FolderSetupDeps } from '../src/main/ipc/foldersetupipc';
 import { claudeSettingsJson, copilotHooksJson, isBroadRule, needsConfirm } from '../src/shared/foldersetup';
 import { claudeArgs } from '../src/adapters/claude';
 import { claudeOptionsFor, folderRuleAllows, preToolUseDecision } from '../src/adapters/claudeModes';
@@ -401,10 +401,10 @@ assert.deepStrictEqual(rootLabels(['/x/app', '/y/x/app']), ['x/app (1)', 'x/app 
 // Review #424: case-insensitive, imports of the IPC module and the store pinned, and main.ts may only register, create and read.
 const root = path.join(__dirname, '..', '..');
 const src = (f: string) => fs.readFileSync(path.join(root, f), 'utf8');
-assert.ok(/ipcHandle\('folderSetup:decide'/.test(src('src/main/foldersetupipc.ts')), 'registered through ipcHandle (the sender check)');
+assert.ok(/ipcHandle\('folderSetup:decide'/.test(src('src/main/ipc/foldersetupipc.ts')), 'registered through ipcHandle (the sender check)');
 assert.strictEqual((src('src/main/main.ts').match(/registerFolderSetupIpc\(/g) ?? []).length, 1, 'registered once');
 const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
-const OWNERS = ['src/main/foldersetupipc.ts', 'src/main/foldersetupstore.ts'];
+const OWNERS = ['src/main/ipc/foldersetupipc.ts', 'src/main/foldersetupstore.ts'];
 /** The checks, so the test can prove each one catches its bypass (the two Paco's review found). */
 function fr013Problems(rel: string, t: string): string[] {
   const out: string[] = [];
@@ -412,7 +412,7 @@ function fr013Problems(rel: string, t: string): string[] {
   if (/from\s+['"][^'"]*foldersetup(ipc|store)['"]/i.test(t) && rel !== 'src/main/main.ts') out.push(`${rel} imports the folder-setup IPC or store`);
   // re-review #424: any other quoted path to them (require(), import()), in main.ts too: main.ts has exactly its two static imports
   const paths = [...t.matchAll(/(from\s+)?['"`][^'"`\n]*foldersetup(ipc|store)['"`]/gi)];
-  const allowed = rel === 'src/main/main.ts' ? paths.filter((m) => m[1] && /^['"]\.\/foldersetup(ipc|store)['"]$/.test(m[0].slice(m[1].length))).length : 0;
+  const allowed = rel === 'src/main/main.ts' ? paths.filter((m) => m[1] && /^['"]\.\/(ipc\/foldersetupipc|foldersetupstore)['"]$/.test(m[0].slice(m[1].length))).length : 0;
   if (paths.length > allowed || (rel === 'src/main/main.ts' && allowed > 2)) out.push(`${rel} loads the folder-setup IPC or store another way`);
   if (/\.decide\s*\(/.test(t)) out.push(`${rel} calls a decide()`);
   if (/\[\s*['"`]decide['"`]\s*\]/.test(t)) out.push(`${rel} names 'decide' in quotes (bracket access)`);
@@ -434,9 +434,9 @@ assert.ok(fr013Problems('src/main/main.ts', 'folderSetupStore?.decide(key, shown
 assert.ok(fr013Problems('src/main/remoteops.ts', 'const x = folderSETUP;').length === 1, 'remote control never names it');
 // re-review #424: a require() plus bracket access, also from main.ts
 assert.ok(fr013Problems('src/main/other.ts', "const _fs = require('./foldersetupipc');\n_fs['decide'](deps, k, d);").length >= 2, 'require + _fs[\'decide\'] is caught');
-assert.ok(fr013Problems('src/main/main.ts', "import { registerFolderSetupIpc } from './foldersetupipc';\nconst _fs = require('./foldersetupipc');\n_fs['decide'](deps, k, d);").length >= 2, '... in main.ts too');
+assert.ok(fr013Problems('src/main/main.ts', "import { register as registerFolderSetupIpc } from './ipc/foldersetupipc';\nconst _fs = require('./foldersetupipc');\n_fs['decide'](deps, k, d);").length >= 2, '... in main.ts too');
 assert.ok(fr013Problems('src/main/other.ts', "const m = await import('./FolderSetupStore');").length >= 1, 'a dynamic import is caught');
-assert.deepStrictEqual(fr013Problems('src/main/main.ts', "import { FolderSetupStore } from './foldersetupstore';\nimport { registerFolderSetupIpc } from './foldersetupipc';"), [], 'main.ts keeps its two static imports');
+assert.deepStrictEqual(fr013Problems('src/main/main.ts', "import { FolderSetupStore } from './foldersetupstore';\nimport { register as registerFolderSetupIpc } from './ipc/foldersetupipc';"), [], 'main.ts keeps its two static imports');
 
 async function copilotHooks(): Promise<void> {
   // ---- R3 / FR-004 / FR-017: Copilot gets the accepted hooks in a private folder; repository hooks stay off
