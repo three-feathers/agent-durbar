@@ -26,6 +26,14 @@
 - [x] T032 Agent dialog: expand row with tools; Start/Stop, Remove, *managed by* words; Sign in placeholder wired to spec 058 when `canSignIn` exists [FR-030, FR-033]
 - [x] T033 Tests (fake SDK, fake CLI, fake app-server), simulator tools, screenshots, docs
 
+## Part 4: single tools on and off (PR 4, owner 2026-10-21 22:10 UTC)
+
+- [ ] T040 Store `toolsOff` per folder, `agents:setMcpToolsOff`, `toolsOff` on `agents:mcp`, `disabledMcpTools` in start options [FR-061]
+- [ ] T041 Adapters: Copilot `excludedTools`, Claude `--disallowedTools`, Codex `disabled_tools`; capability `mcpToolFilter` [FR-062, FR-064]
+- [ ] T042 Broker refusal of a turned-off tool in every adapter's broker [FR-063]
+- [ ] T043 Renderer: checkboxes and tri-state in the expanded list, applies-when note, disabled with tooltip without the capability [FR-060, FR-064]
+- [ ] T044 Tests (store, adapters on fakes, broker), simulator, driver and screenshots, docs
+
 ## Real check (needs the owner's go-ahead)
 
 - [ ] T060 In a scratch home: add a server globally to the three apps, then `copilot`, `claude mcp list`, `codex mcp list` read it (no prompt, 0 credits); check Copilot `${NAME}` (Q6) [FR-050, FR-051]
