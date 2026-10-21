@@ -22,9 +22,10 @@
   - [x] T012c renderer: `profileeditor.js` (Edit / Split / Preview, front matter check, throttled preview, Save and Ctrl/Cmd+S, unsaved guard, conflict, New profile), Edit in the Profile menu, Settings section; `test:profileeditor` (front matter, preview sanitisation)
   - [x] T012d simulator files and the driver `shots-043-editor.js` (modes, widths, save round trip, unsaved guard), screenshots at 1440x900 and 1280x800, light and dark; `check:ui`
   - [x] T012e docs: README, CHANGELOG, specs index
-- [x] T014 (2026-10-21, owner request) Create an Agent Success Profile with AI: describe or questionnaire, one-shot through the theme maker's path, checked reply, draft in the editor [FR-020..FR-024]
-  - [x] T014a shared prompt builder and reply check; unit tests (answers in, no paths; missing sections, broader tools, `*`, HTML refused)
-  - [x] T014b IPC `profiles:generate`, the shared one-shot helper in main, `profiles:create` with text
-  - [x] T014c editor draft, the Create with AI dialog, simulator canned generation, driver and screenshots at both sizes
-  - [x] T014d docs
+- [x] T015 (2026-10-21, owner request) Create an Agent Success Profile with AI: describe or questionnaire, one-shot through the theme maker's path, checked reply, draft in the editor [FR-021..FR-025]
+  - [x] T015a shared prompt builder and reply check; unit tests (answers in, no paths; missing sections, broader tools, `*`, HTML refused)
+  - [x] T015b IPC `profiles:generate`, the shared one-shot helper in main, `profiles:create` with text
+  - [x] T015c editor draft, the Create with AI dialog, simulator canned generation, driver and screenshots at both sizes
+  - [x] T015d docs
 - [x] T013 (2026-10-21, owner decisions on #488) Agent Success Profile and Standard agent templates, the default preselected; editor words "Agent Success Profiles" [FR-018, FR-019]
+- [x] T014 (2026-10-22, review on #488) New profile sends a folder id, main accepts it only if it is an office folder now [FR-020]; `test:profilefiles`; Copilot `*.md` vs `*.agent.md` recorded as a known gap

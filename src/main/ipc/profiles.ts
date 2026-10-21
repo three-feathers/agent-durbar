@@ -6,7 +6,7 @@ import { errText } from '../agentops';
 import type { AgentTrustStore } from '../agenttrust';
 import { hashAgentFile } from '../agenttrust';
 import { PROFILE_ID } from '../folders';
-import { PROFILE_NAME, createProfileFile, listProfileFiles, pathOfProfile, profileDirs, readProfileFile, saveProfileFile } from '../profilefiles';
+import { PROFILE_NAME, createProfileFile, listProfileFiles, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile } from '../profilefiles';
 import { openInVSCode } from '../vscode';
 import * as path from 'path';
 import { buildProfilePrompt, MAX_GEN_ANSWER, MAX_GEN_DESCRIPTION, PROFILE_QUESTIONS, validateGeneratedProfile } from '../../shared/profiletemplates';
@@ -20,7 +20,7 @@ export interface ProfilesIpcDeps {
   getAgentTrust(): AgentTrustStore | undefined;
   wsKey(a: AgentInfo): string;
   ensureLive: EnsureLive;
-  /** Spec 043 FR-022: an app's one-shot text call (the theme maker's path: no tools, no session), or undefined. */
+  /** Spec 043 FR-023: an app's one-shot text call (the theme maker's path: no tools, no session), or undefined. */
   oneShot(id: string): { name: string; generate(prompt: string): Promise<{ text: string; costUsd?: number; nanoAiu?: number }> } | undefined;
 }
 
@@ -67,10 +67,13 @@ export function register(deps: ProfilesIpcDeps): void {
   });
 
   // ---- profile files (spec 043 FR-010..FR-013): main owns every path; the window sends ids from the list (or app + place + name) ----
-  /** The office's folders, in a stable order (the New profile form's place index counts in this list). */
+  /** The office's folders; the New profile form gets each as an id (a hash of its path) and main accepts only an id of a folder still here. */
   const officeFolders = (): string[] => [...new Set([...agents.values()].flatMap((a) => (a.folders && a.folders.length ? a.folders : [a.cwd])).filter((f): f is string => typeof f === 'string' && !!f))];
   const dirs = () => profileDirs(officeFolders());
-  ipcHandle('profiles:listFiles', () => ({ ok: true, folders: officeFolders().slice(0, 50), files: listProfileFiles(dirs()) }));
+  ipcHandle('profiles:listFiles', () => {
+    const d = dirs();
+    return { ok: true, folders: profileFolders(d), files: listProfileFiles(d) };
+  });
   ipcHandle('profiles:read', (_e, id: unknown) => readProfileFile(dirs(), id));
   ipcHandle('profiles:save', (e, id: unknown, text: unknown, baseSha: unknown, overwrite: unknown) => {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' };
@@ -78,9 +81,9 @@ export function register(deps: ProfilesIpcDeps): void {
   });
   ipcHandle('profiles:create', (e, app: unknown, place: unknown, name: unknown, template: unknown, text: unknown) => {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' };
-    return createProfileFile(dirs(), app, place, name, template === undefined ? 'success' : template, text); // text: a reviewed AI draft (FR-023)
+    return createProfileFile(dirs(), app, place, name, template === undefined ? 'success' : template, text); // text: a reviewed AI draft (FR-024)
   });
-  /* spec 043 FR-020..FR-022: one prompt to an agent app's one-shot path; the reply is checked and handed back as a draft (nothing written) */
+  /* spec 043 FR-021..FR-023: one prompt to an agent app's one-shot path; the reply is checked and handed back as a draft (nothing written) */
   ipcHandle('profiles:generate', async (e, req: unknown) => {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' };
     const r = (req && typeof req === 'object' ? req : {}) as Record<string, unknown>;

@@ -1,7 +1,7 @@
 /* Profile file editor (spec 043 FR-014..FR-016): a large dialog with Edit | Split | Preview, a monospace text area, a throttled
    preview through the chat's sanitised Markdown renderer (spec 016, window.DurbarMD; no second renderer), a front matter check
    (FR-015), Save with Ctrl/Cmd+S, an Unsaved mark, a guard before closing with unsaved changes and the external-change question
-   (askDialog), and New profile (FR-013). Main owns the files: this file sends only ids from main's list, or app + place index + name.
+   (askDialog), and New profile (FR-013). Main owns the files: this file sends only ids from main's list, or app + folder id + name.
    Plain script: in the page it defines window.DurbarProfileEditor; in Node (tests) `require` gives the pure parts. */
 (function(root,factory){
   if(typeof module==='object'&&module.exports)module.exports=factory(null);
@@ -197,7 +197,7 @@
     status(st.fmErrors?'Saved. The front matter has an error, so the agent app may skip this profile.':'Saved. Changes apply to sessions started after saving.');
     changed(st.info);
   }
-  /* FR-023: the first Save of a draft creates the file (exclusive), then it is an ordinary open file */
+  /* FR-024: the first Save of a draft creates the file (exclusive), then it is an ordinary open file */
   async function saveDraft(text){
     st.saving=true;status('Saving…');
     const d=st.draft;
@@ -241,7 +241,7 @@
     const opener=(opts&&opts.returnFocus)||(doc.activeElement&&doc.activeElement!==doc.body?doc.activeElement:null);
     mount({id,info:r.info,sha:r.sha256,saved:r.text,writable:!!r.info.writable,mode:loadMode(store()),opener,fmErrors:0},r.text);
   }
-  /** FR-023: a draft that has no file yet (an AI result); Save creates the file. Opens in `opts.mode` (Split for a new draft). */
+  /** FR-024: a draft that has no file yet (an AI result); Save creates the file. Opens in `opts.mode` (Split for a new draft). */
   async function openDraft(d,opts){
     if(!X||!X.bridge.createProfileFile)return;
     if(isOpen()&&!(await close()))return;
@@ -310,11 +310,11 @@
     const DEF=(win.exports&&win.exports.DEFAULT_TEMPLATE)||'success';
     TPL.forEach(t=>{const l=doc.createElement('label');l.className='pe-tpl-opt';const r=doc.createElement('input');r.type='radio';r.name='peNTpl';r.value=t.id;r.checked=t.id===DEF;const b=doc.createElement('span');b.className='pe-tpl-t';setText(b,t.label+(t.id===DEF?' (default)':''));l.append(r,b);if(t.note){const n=doc.createElement('small');setText(n,t.note);l.appendChild(n);}ov.querySelector('#peNTpl').appendChild(l);});
     const sel=ov.querySelector('#peNPlace');
-    folders.forEach((f,i)=>{const o=doc.createElement('option');o.value=String(i);o.textContent='This folder: '+baseName(f);o.title=f;sel.appendChild(o);});
+    folders.forEach(f=>{if(!f||typeof f.id!=='string')return;const o=doc.createElement('option');o.value=f.id;o.textContent='This folder: '+baseName(f.path);o.title=f.path;sel.appendChild(o);}); /* main sends an id per folder and accepts only one still in the office */
     const u=doc.createElement('option');u.value='user';u.textContent='Your user folder (all folders)';sel.appendChild(u);
     if(opts&&opts.app&&APP_LABEL[opts.app])ov.querySelector('#peNApp').value=opts.app;
     doc.body.appendChild(ov);
-    const hint=()=>{const app=$('peNApp').value,pl=$('peNPlace').value,n=$('peNName').value.trim()||'<name>';setText($('peNHint'),'File: '+newDirHint(app,pl==='user'?'user':'folder')+'/'+newFileName(app,n)+(pl==='user'?'':' in '+baseName(folders[Number(pl)]||'')));};
+    const hint=()=>{const app=$('peNApp').value,pl=$('peNPlace').value,n=$('peNName').value.trim()||'<name>';setText($('peNHint'),'File: '+newDirHint(app,pl==='user'?'user':'folder')+'/'+newFileName(app,n)+(pl==='user'?'':' in '+baseName((folders.find(f=>f&&f.id===pl)||{}).path||'')));};
     hint();ov.addEventListener('input',hint);ov.addEventListener('change',hint);
     return new Promise(resolve=>{
       const done=v=>{ov.remove();if(opener&&opener.focus&&doc.contains(opener)&&!v)opener.focus();resolve(v);};
@@ -323,18 +323,18 @@
         if(!NAME_RE.test(name)){er.hidden=false;setText(er,'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.');$('peNName').focus();return;}
         const pl=$('peNPlace').value;
         const tp=(ov.querySelector('input[name="peNTpl"]:checked')||{}).value||DEF;
-        const r=await X.bridge.createProfileFile($('peNApp').value,pl==='user'?'user':Number(pl),name,tp).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+        const r=await X.bridge.createProfileFile($('peNApp').value,pl,name,tp).catch(e=>({ok:false,error:String(e&&e.message||e)}));
         if(!r.ok){er.hidden=false;setText(er,r.error||'Could not create the file.');return;}
         done(r.id);changed(r.info);open(r.id,{returnFocus:opener});
       };
       ov.querySelector('#peNGo').onclick=go;
-      /* spec 043 FR-020: Create with AI, only for the Agent Success Profile template */
+      /* spec 043 FR-021: Create with AI, only for the Agent Success Profile template */
       const aiB=ov.querySelector('#peNAi');
       if(aiB){const tplNow=()=>(ov.querySelector('input[name="peNTpl"]:checked')||{}).value||DEF;const sync=()=>{aiB.hidden=tplNow()!=='success';};sync();ov.addEventListener('change',sync);
         aiB.onclick=async()=>{const name=$('peNName').value.trim(),er=$('peNErr');
           if(!NAME_RE.test(name)){er.hidden=false;setText(er,'Choose a name first: letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.');$('peNName').focus();return;}
-          const pl=$('peNPlace').value, place=pl==='user'?'user':Number(pl);
-          const r=await aiCreate({app:$('peNApp').value,place,name,folder:pl==='user'?undefined:folders[Number(pl)]});
+          const pl=$('peNPlace').value; /* 'user' or a folder id from main's list (FR-020) */
+          const r=await aiCreate({app:$('peNApp').value,place:pl,name,folder:pl==='user'?undefined:(folders.find(f=>f&&f.id===pl)||{}).path});
           if(r==='done'){ov.remove();resolve('ai');}else if($('peNName'))$('peNName').focus();};}ov.querySelector('#peNCancel').onclick=()=>done(null);
       ov.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();done(null);}else if(e.key==='Enter'&&e.target.id==='peNName'){e.preventDefault();go();}
         else if(e.key==='Tab'){const it=[...ov.querySelectorAll('select,input:not([type=radio]),input[type=radio]:checked,button')];const i=it.indexOf(doc.activeElement);if(e.shiftKey&&i<=0){e.preventDefault();it[it.length-1].focus();}else if(!e.shiftKey&&i===it.length-1){e.preventDefault();it[0].focus();}}});
@@ -344,7 +344,7 @@
   }
 
   /**
-   * Spec 043 FR-020..FR-024: Create with AI. Describe it, or a questionnaire (each question optional); the cost line and the button
+   * Spec 043 FR-021..FR-025: Create with AI. Describe it, or a questionnaire (each question optional); the cost line and the button
    * name the app and the one request; the reply is checked in main and opens as an unsaved draft in Split view. Answers are kept on
    * an error. Resolves 'done' when a draft opened, else null.
    */

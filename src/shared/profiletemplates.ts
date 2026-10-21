@@ -39,13 +39,13 @@ export function profileTemplate(app: TemplateApp, name: string, kind: TemplateKi
   return `---\nname: ${name}\ndescription: What this agent is accountable for and when to use it, in one line\n${READ_TOOLS[app]}\n${MODEL[app]}---\n\n# Agent Success Profile: ${name}\n\n${sections}`;
 }
 
-/* ---------------- Create with AI (spec 043 FR-020, FR-021) ---------------- */
+/* ---------------- Create with AI (spec 043 FR-021, FR-022) ---------------- */
 
 export const MAX_GEN_DESCRIPTION = 2000;
 export const MAX_GEN_ANSWER = 600;
 export const MAX_GEN_REPLY = 64 * 1024;
 
-/** The questionnaire: one optional question per section (FR-020). */
+/** The questionnaire: one optional question per section (FR-021). */
 export const PROFILE_QUESTIONS: readonly { id: string; section: string; question: string; hint: string }[] = [
   { id: 'title', section: 'Title', question: "What is this agent's job or title?", hint: 'Release reviewer for the payments service' },
   { id: 'reportsTo', section: 'Reporting to', question: 'Who does it report to?', hint: 'Me; it checks in before any change' },
@@ -57,7 +57,7 @@ export const PROFILE_QUESTIONS: readonly { id: string; section: string; question
   { id: 'behavior', section: 'Behaviors', question: 'How should it behave and when should it escalate?', hint: 'Calm, brief; asks me when unsure' },
 ];
 
-/** Read-only tools a template starts with: the only tools allowed without the user naming them (FR-021). */
+/** Read-only tools a template starts with: the only tools allowed without the user naming them (FR-022). */
 export const DEFAULT_READ_TOOLS: Record<TemplateApp, readonly string[]> = { claude: ['Read', 'Grep', 'Glob'], copilot: ['view', 'grep', 'glob'] };
 const FM_KEYS: Record<TemplateApp, string> = {
   claude: 'name, description, tools (a comma-separated list, e.g. "tools: Read, Grep, Glob"), model ("inherit" or leave it out)',
@@ -81,7 +81,7 @@ export function userTextOf(input: GenInput): string {
   return PROFILE_QUESTIONS.map((q) => oneLine(a[q.id], MAX_GEN_ANSWER)).filter(Boolean).join('\n');
 }
 
-/** One prompt (FR-020): the target app's front matter rules, the skeleton and only what the user typed. */
+/** One prompt (FR-021): the target app's front matter rules, the skeleton and only what the user typed. */
 export function buildProfilePrompt(input: GenInput): string {
   const app = input.app;
   const appName = app === 'claude' ? 'Claude Code (a subagent file)' : 'GitHub Copilot (a custom agent file)';
@@ -116,7 +116,7 @@ export interface FrontmatterParse {
 }
 
 /**
- * The check of a generated file (FR-021). `parse` is the editor's front matter check (profileeditor.js), passed in so there is
+ * The check of a generated file (FR-022). `parse` is the editor's front matter check (profileeditor.js), passed in so there is
  * one parser. Returns the cleaned text, or the reason it is refused. Never adds a tool.
  */
 export function validateGeneratedProfile(reply: string, input: GenInput, parse: (t: string) => FrontmatterParse): { ok: true; text: string; warnings: string[] } | { ok: false; error: string } {
@@ -127,7 +127,7 @@ export function validateGeneratedProfile(reply: string, input: GenInput, parse: 
   const warnings: string[] = [];
   const before = t;
   // HTML is neutralised, not stripped: every "<" that could open a tag (or a comment, doctype or processing instruction) becomes
-  // "&lt;" in one pass, so no tag can survive or be re-formed (`<scr<script>ipt>` included); the preview shows it as text (FR-021)
+  // "&lt;" in one pass, so no tag can survive or be re-formed (`<scr<script>ipt>` included); the preview shows it as text (FR-022)
   t = t.replace(/<(?=[A-Za-z!/?])/g, '&lt;');
   if (t !== before) warnings.push('HTML in the reply is kept as plain text');
   const fm = parse(t);

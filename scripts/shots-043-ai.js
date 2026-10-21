@@ -1,5 +1,5 @@
 /*
- * Spec 043 FR-020..FR-024 (T014c): Create an Agent Success Profile with AI, in the simulator (canned generation, no AI credits).
+ * Spec 043 FR-021..FR-025 (T015c): Create an Agent Success Profile with AI, in the simulator (canned generation, no AI credits).
  * New Agent Success Profile -> Create with AI: the cost line and the button name the app and the one prompt; Questionnaire answers
  * -> a draft opens in Split view, Unsaved, "not saved yet", with all eight sections and the answers in the preview; Ctrl/Cmd+S
  * creates the file (listed in Settings). An error keeps the answers. Screenshots of the questionnaire and the result at 1440x900
@@ -56,6 +56,7 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('peSrc').focus()`);
     await H.key('S', [MOD], { char: 'never' });
     assert.ok(await until(`document.getElementById('peDirty').hidden&&!/not saved yet/.test(document.getElementById('peSub').textContent)`), 'Save created the file');
+    assert.ok(await js(`/payments service/.test(document.getElementById('peSrc').value)&&!/The role in a few words/.test(document.getElementById('peSrc').value)`), 'the saved file is the draft, not the empty template');
     await H.click('#peClose');
     assert.ok(await until(`!document.getElementById('peOv')`));
     assert.ok(await until(`[...document.querySelectorAll('#pfSec .pf-row b')].some(b=>b.textContent===${jsLiteral('pay-reviewer-' + w)})`), 'listed in Settings');

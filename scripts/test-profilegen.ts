@@ -1,5 +1,5 @@
 /**
- * Create an Agent Success Profile with AI (spec 043 FR-020/FR-021, T014a): the prompt carries the skeleton, the target app's front
+ * Create an Agent Success Profile with AI (spec 043 FR-021/FR-022, T015a): the prompt carries the skeleton, the target app's front
  * matter rules and only what the user typed; the reply check refuses missing sections, tools the user did not name, `*`, no tools
  * line, extra front matter keys and no front matter, and strips HTML. `npm run test:profilegen`. No agent app, no credits.
  */

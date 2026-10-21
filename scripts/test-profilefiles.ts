@@ -10,7 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { parseClaudeAgent } from '../src/adapters/claudeAgents';
 import { DEFAULT_TEMPLATE, PROFILE_TEMPLATES, profileTemplate, SUCCESS_SECTIONS } from '../src/shared/profiletemplates';
-import { createProfileFile, encodeLike, fileIdOf, headOf, listProfileFiles, MAX_PROFILE_BYTES, pathOfProfile, profileDirs, readProfileFile, saveProfileFile } from '../src/main/profilefiles';
+import { createProfileFile, encodeLike, fileIdOf, folderIdOf, headOf, listProfileFiles, MAX_PROFILE_BYTES, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile } from '../src/main/profilefiles';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-profilefiles-'));
 const WS = path.join(tmp, 'ws');
@@ -129,24 +129,51 @@ const revId = fileIdOf(REV);
   fs.unlinkSync(big);
 }
 
-// create: name rules, place index or user, exclusive, template, Copilot .agent.md / Claude .md, folder made inside the office folder
+const W0 = folderIdOf(WS);
+// create: name rules, place = folder id or user, exclusive, template, Copilot .agent.md / Claude .md, folder made inside the office folder
 {
   for (const bad of ['../x', 'a/b', 'a\\b', '..', '.hidden', '', 'x'.repeat(65), 'a b', 'ok\0', 42]) {
-    const r = createProfileFile(dirs(), 'claude', 0, bad);
+    const r = createProfileFile(dirs(), 'claude', W0, bad);
     assert.ok(!r.ok, `name refused: ${JSON.stringify(bad)}`);
   }
-  assert.ok(!createProfileFile(dirs(), 'codex', 0, 'x').ok, 'unknown app');
-  assert.ok(!createProfileFile(dirs(), 'claude', 1, 'x').ok, 'place out of range');
-  assert.ok(!createProfileFile(dirs(), 'claude', '0', 'x').ok, 'place must be a number or user');
-  const c = createProfileFile(dirs(), 'claude', 0, 'helper');
+  assert.ok(!createProfileFile(dirs(), 'codex', W0, 'x').ok, 'unknown app');
+  assert.ok(!createProfileFile(dirs(), 'claude', 0, 'x').ok, 'an index is not a place any more (review on #488)');
+  assert.ok(!createProfileFile(dirs(), 'claude', 'f'.repeat(32), 'x').ok, 'an unknown folder id is refused');
+  assert.ok(!createProfileFile(dirs(), 'claude', WS, 'x').ok, 'a path is not a place');
+  const c = createProfileFile(dirs(), 'claude', W0, 'helper');
   assert.ok(c.ok, JSON.stringify(c));
   const file = path.join(WS, '.claude', 'agents', 'helper.md');
   assert.ok(fs.readFileSync(file, 'utf8').startsWith('---\nname: helper\ndescription: '));
-  assert.ok(!createProfileFile(dirs(), 'claude', 0, 'helper').ok, 'exists: refused');
+  assert.ok(!createProfileFile(dirs(), 'claude', W0, 'helper').ok, 'exists: refused');
   fs.rmSync(path.join(HOME, '.copilot', 'agents'), { recursive: true, force: true });
   const u = createProfileFile(dirs(), 'copilot', 'user', 'mine');
   assert.ok(u.ok && fs.existsSync(path.join(HOME, '.copilot', 'agents', 'mine.agent.md')), 'user folder created when missing');
   if (u.ok) assert.strictEqual(readProfileFile(dirs(), u.id).ok, true, 'the new id opens');
+}
+
+// review on #488: the form's folder is an id (a hash of the path), checked against the office's folders at create time
+{
+  const A = path.join(tmp, 'fa');
+  const B = path.join(tmp, 'fb');
+  fs.mkdirSync(A);
+  fs.mkdirSync(B);
+  const open1 = profileFolders(profileDirs([A, 'relative/x', B], env)); // the list the form opened with: relative paths dropped
+  assert.deepStrictEqual(open1.map((f) => f.path), [A, B], 'only absolute folders are offered, in order');
+  assert.ok(open1.every((f) => /^[0-9a-f]{32}$/.test(f.id)) && open1[0].id !== open1[1].id, 'one id per folder');
+  const idB = open1[1].id;
+  // a session in A ends while the form is open: index 1 would now be nothing (or another folder); the id still means B
+  const nowB = createProfileFile(profileDirs([B], env), 'claude', idB, 'stays');
+  assert.ok(nowB.ok && fs.existsSync(path.join(B, '.claude', 'agents', 'stays.md')), 'the file goes to the folder that was shown');
+  assert.ok(!fs.existsSync(path.join(A, '.claude')), 'and nothing goes to another folder');
+  // a folder added in front shifts every index; the id does not move
+  const C = path.join(tmp, 'fc');
+  fs.mkdirSync(C);
+  const shifted = createProfileFile(profileDirs([C, A, B], env), 'copilot', idB, 'still');
+  assert.ok(shifted.ok && fs.existsSync(path.join(B, '.github', 'agents', 'still.agent.md')) && !fs.existsSync(path.join(C, '.github')), 'an added folder does not change where it goes');
+  // the folder left the office while the form was open: refused, nothing written
+  const gone = createProfileFile(profileDirs([A, C], env), 'claude', idB, 'nope');
+  assert.ok(!gone.ok && /not in the office/.test(gone.error), 'a folder that left the office is refused');
+  assert.ok(!fs.existsSync(path.join(A, '.claude')) && !fs.existsSync(path.join(C, '.claude')), 'and nothing is written elsewhere');
 }
 
 // read-only file: listed, opens, cannot be saved (POSIX permissions; root can write anyway, so only checked when it really is read-only)
@@ -202,11 +229,11 @@ if (process.platform !== 'win32') {
       }
     }
   }
-  const std = createProfileFile(dirs(), 'claude', 0, 'plain', 'standard');
+  const std = createProfileFile(dirs(), 'claude', W0, 'plain', 'standard');
   assert.ok(std.ok && !fs.readFileSync(path.join(WS, '.claude', 'agents', 'plain.md'), 'utf8').includes('## Behaviors'), 'Standard agent template written');
-  const def = createProfileFile(dirs(), 'claude', 0, 'asp');
+  const def = createProfileFile(dirs(), 'claude', W0, 'asp');
   assert.ok(def.ok && fs.readFileSync(path.join(WS, '.claude', 'agents', 'asp.md'), 'utf8').includes('## Key Success Criteria'), 'no template given: the Agent Success Profile');
-  assert.ok(!createProfileFile(dirs(), 'claude', 0, 'odd', 'evil').ok, 'unknown template refused');
+  assert.ok(!createProfileFile(dirs(), 'claude', W0, 'odd', 'evil').ok, 'unknown template refused');
 }
 
 // symbolic links: a file linking out is not listed; a link inside is read-only; a .claude that links out of the folder is ignored
@@ -230,11 +257,11 @@ if (canLink) {
   const WS3 = path.join(tmp, 'ws3');
   fs.mkdirSync(WS3);
   fs.symlinkSync(path.join(OUTSIDE, 'nothere'), path.join(WS3, '.github'), 'dir'); // dangling link: mkdir would follow it
-  assert.ok(!createProfileFile(profileDirs([WS3], env), 'copilot', 0, 'z').ok, 'a dangling linked .github is refused');
+  assert.ok(!createProfileFile(profileDirs([WS3], env), 'copilot', folderIdOf(WS3), 'z').ok, 'a dangling linked .github is refused');
   assert.ok(!fs.existsSync(path.join(OUTSIDE, 'nothere')), 'and nothing was made outside');
   const d2 = profileDirs([WS2], env);
   assert.ok(!listProfileFiles(d2).some((f) => f.folder === WS2), 'files behind a linked .claude are not listed');
-  assert.ok(!createProfileFile(d2, 'claude', 0, 'y').ok, 'and nothing is created through it');
+  assert.ok(!createProfileFile(d2, 'claude', folderIdOf(WS2), 'y').ok, 'and nothing is created through it');
   assert.ok(!fs.existsSync(path.join(OUTSIDE, 'agents', 'y.md')));
   // a linked home folder for the user scope is fine (dotfiles setups): the agent folder itself is the root
   console.log('symlink cases checked');

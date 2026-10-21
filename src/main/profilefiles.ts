@@ -10,11 +10,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { agentDirsFor } from '../adapters/copilot';
-import type { ProfileFileInfo } from '../shared/api';
+import type { ProfileFileInfo, ProfileFolderInfo } from '../shared/api';
 import { DEFAULT_TEMPLATE, profileTemplate } from '../shared/profiletemplates';
 import type { TemplateKind } from '../shared/profiletemplates';
 
-export type { ProfileFileInfo };
+export type { ProfileFileInfo, ProfileFolderInfo };
 
 export type ProfileApp = 'copilot' | 'claude';
 export const PROFILE_APPS: readonly ProfileApp[] = ['copilot', 'claude'];
@@ -59,6 +59,19 @@ export function profileDirs(folders: readonly string[], env: ProfileEnv = defaul
 }
 
 export const fileIdOf = (file: string): string => createHash('sha256').update(path.resolve(file)).digest('hex').slice(0, 32);
+/** An office folder's id for the New profile form (FR-013): a hash of its path, so a folder added or removed while the form is open never shifts the choice to another folder. */
+export const folderIdOf = (folder: string): string => createHash('sha256').update('folder\0' + path.resolve(folder)).digest('hex').slice(0, 32);
+/** The folders a new profile can go into: exactly the folder-scope folders of `profileDirs` (absolute, no duplicates, at most 50). */
+export function profileFolders(dirs: readonly ProfileDir[]): ProfileFolderInfo[] {
+  const seen = new Set<string>();
+  const out: ProfileFolderInfo[] = [];
+  for (const d of dirs) {
+    if (d.scope !== 'folder' || !d.folder || seen.has(d.folder)) continue;
+    seen.add(d.folder);
+    out.push({ id: folderIdOf(d.folder), path: d.folder });
+  }
+  return out;
+}
 const sha256 = (b: Buffer | string): string => createHash('sha256').update(b).digest('hex');
 const realOr = (p: string): string | undefined => {
   try {
@@ -312,7 +325,7 @@ export function templateFor(app: ProfileApp, name: string, kind: TemplateKind = 
   return profileTemplate(app, name, kind);
 }
 
-/** `place`: an index into the office folders (as `profileDirs` got them) or 'user'. */
+/** `place`: 'user', or a folder id from `profileFolders` of the same (current) dirs; an id of a folder that left the office is refused. `text`: a reviewed AI draft (FR-024). */
 export function createProfileFile(dirs: readonly ProfileDir[], app: unknown, place: unknown, name: unknown, template: unknown = DEFAULT_TEMPLATE, text?: unknown): { ok: true; id: string; info: ProfileFileInfo } | Fail {
   if (app !== 'copilot' && app !== 'claude') return { ok: false, error: 'Choose an agent app.' };
   if (template !== 'success' && template !== 'standard') return { ok: false, error: 'Choose a template.' };
@@ -320,8 +333,8 @@ export function createProfileFile(dirs: readonly ProfileDir[], app: unknown, pla
   if (typeof name !== 'string' || !PROFILE_NAME.test(name) || name.includes('..')) return { ok: false, error: 'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.' };
   const own = dirs.filter((d) => d.app === app);
   const folderDirs = own.filter((d) => d.scope === 'folder');
-  const d = place === 'user' ? own.find((x) => x.scope === 'user') : typeof place === 'number' && Number.isInteger(place) && place >= 0 ? folderDirs[place] : undefined;
-  if (!d) return { ok: false, error: 'Choose where to save it.' };
+  const d = place === 'user' ? own.find((x) => x.scope === 'user') : typeof place === 'string' && PROFILE_FILE_ID.test(place) ? folderDirs.find((x) => !!x.folder && folderIdOf(x.folder) === place) : undefined;
+  if (!d) return { ok: false, error: typeof place === 'string' && PROFILE_FILE_ID.test(place) ? 'That folder is not in the office any more: choose where to save it again.' : 'Choose where to save it.' };
   if (d.root) {
     const rootReal = realOr(d.root);
     if (!rootReal) return { ok: false, error: 'The folder is not there any more.' };
