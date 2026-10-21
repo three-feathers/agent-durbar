@@ -15,17 +15,21 @@
 
 ## Phase 1: real check (needs the owner's go-ahead: it exports a session to GitHub)
 
-- [ ] T020 On a real Copilot account, in a throw-away GitHub repository folder: one read-only session, one tiny prompt (about 1 premium request), then Control from GitHub. Record: does `enable` work without `enableRemoteSessions` (Q1); is a GitHub repository folder required (Q2); `url` vs `shareUrl` (Q3); plan and cost (Q4); does the GitHub task stay after End session (FR-003); does steering from github.com reach Durbar's chat; does `remote_steerable_changed` arrive. Then Stop remote control and End session.
+- [x] T020 On a real Copilot account, in a throw-away GitHub repository folder: one read-only session, one tiny prompt (about 1 premium request), then Control from GitHub. Record: does `enable` work without `enableRemoteSessions` (Q1); is a GitHub repository folder required (Q2); `url` vs `shareUrl` (Q3); plan and cost (Q4); does the GitHub task stay after End session (FR-003); does steering from github.com reach Durbar's chat; does `remote_steerable_changed` arrive. Then Stop remote control and End session.
   - 2026-10-20 partly run (2 prompts, 0.24 AI credits, `scripts/remote-copilot-real.ts`; the throw-away folders had no GitHub remote, so nothing was published): in a plain folder and in a `git init` folder with no remote, `remote.enable({mode:'on'})` answered `{ started: false, remoteSteerable: false }` with no error and no URL; `visibility.get` said `{ synced: false }`; no remote event arrived; `disable()` worked. Q1 partly answered (no error without `enableRemoteSessions`, but nothing started either); Q2: not a plain folder and not a local-only git folder. Fixed: `started: false` is no longer shown as on (FR-002 delta). Still open: a folder with a GitHub remote (needs a throw-away GitHub repository, which is the owner's call), Q3, FR-003, steering from github.com.
+  - 2026-10-20 on Copilot Pro: started in any folder with a github.com link (spec Changes).
+  - `real:` 2026-10-21, owner (Vikram): "I did a real remote Copilot session today, it works perfectly" (Copilot Pro; on Copilot Free remote does not start, as recorded 2026-10-20). The owner did not say whether github.com or GitHub Mobile was used, or what happened to the GitHub task after End session. Closed by that report; FR-003 and the steering event stay `[KNOWN GAP]` (spec Changes 2026-10-21).
 
-## Phase 2: Claude Code channels wizard (planned; research first, on a real account)
+## Phase 2: Claude Code channels wizard (out of scope, owner 2026-10-21; moved to idea #485)
 
-- [ ] T030 Check `claude -p --output-format stream-json --channels plugin:telegram@claude-plugins-official` with the plugin installed and a test bot: does a Telegram message reach the session as input, and does the reply go back? (costs about 2 prompts)
-- [ ] T031 Check whether Remote Control (`claude remote-control` or `/remote-control` sent as a prompt) works for a stream-json session Durbar drives (costs about 1 prompt)
-- [ ] T032 Find a non-interactive way to run the plugin's configure (`/telegram:configure`) and access (`/telegram:access`) steps without the token entering a model's context (0 prompts if a CLI route exists, else note it)
-- [ ] T033 Record how "Channels are not currently available" shows in stream-json output (0-1 prompt)
-- [ ] T034 Bun detection and the plugin install command on Linux, macOS and Windows (no prompts)
-- [ ] T035 Only after T030..T034: spec the wizard in detail (FR-020..FR-026), then plan and tasks
+Not done and not planned here: the owner moved Claude channels to idea #485 ("For Claude, no need to support Telegram"). T030 and T032-T035 are struck out, not run; T031 was answered by Phase 2.
+
+- [x] ~~T030 Check `claude -p --output-format stream-json --channels plugin:telegram@claude-plugins-official` with the plugin installed and a test bot: does a Telegram message reach the session as input, and does the reply go back? (costs about 2 prompts)~~ (moved to #485, not run)
+- [x] T031 Check whether Remote Control (`claude remote-control` or `/remote-control` sent as a prompt) works for a stream-json session Durbar drives (costs about 1 prompt) (done 2026-10-20 by Phase 2: the `remote_control` control request works over `claude -p` stream-json, `real:`; see T050-T052; not part of the move to #485)
+- [x] ~~T032 Find a non-interactive way to run the plugin's configure (`/telegram:configure`) and access (`/telegram:access`) steps without the token entering a model's context (0 prompts if a CLI route exists, else note it)~~ (moved to #485, not run)
+- [x] ~~T033 Record how "Channels are not currently available" shows in stream-json output (0-1 prompt)~~ (moved to #485, not run)
+- [x] ~~T034 Bun detection and the plugin install command on Linux, macOS and Windows (no prompts)~~ (moved to #485, not run)
+- [x] ~~T035 Only after T030..T034: spec the wizard in detail (FR-020..FR-026), then plan and tasks~~ (moved to #485, not run)
 
 ## Phase 3: Codex mobile (planned; research only)
 
