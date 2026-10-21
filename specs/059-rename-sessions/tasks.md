@@ -67,12 +67,10 @@ PR-sized step with its own test. No task spends AI credits except Phase 5, which
 
 ## Phase 5: Real checks (owner-gated, not in CI)
 
-- [ ] T050 With the owner's go-ahead (Q9 A): Copilot, rename a session already open in Durbar **and one that is not** (prompt-free resume) and
-  look at the Copilot CLI's resume list and VS Code; Claude, look at the VS Code Claude extension's list and `/resume` for a renamed session
-  (Mac); which folder the rename-resume of a Copilot session runs in; Codex, rename an existing thread and look at the Codex CLI's picker and VS Code. Record prompts and usage (expected 0)
-  and results in research.md; turn the matching `[KNOWN GAP]` lines into `real:` [FR-007]. Already `real:` (Vikram's agent, 2026-10-20, the calls
-  and the CLI lists of all three apps, see spec.md FR-007): left for the owner's Mac: VS Code lists, a run through Durbar itself, a session held open
-  by another client.
+- [x] T050a Copilot, rename a session that is **not** open (prompt-free resume), which folder that resume runs in, and the Copilot CLI's resume list (`real:` 2026-10-21 by Vikram's agent on his machine, PR head 1633d4e, SDK 1.0.22, runtime 1.0.98, CLI 1.0.100; 0 prompts, 0 credits; results on PR #420)
+- [ ] T050 With the owner's go-ahead (Q9 A), the rest: VS Code's lists (all three apps); Claude `/resume` for a renamed session (Mac); a Copilot session held open by another client; Codex, rename an existing thread and look at VS Code; and one run through the full Durbar UI (window, IPC, `renameOp`). Record prompts and usage (expected 0)
+  Results go in research.md; turn the matching `[KNOWN GAP]` lines into `real:` [FR-007]. Already `real:` (Vikram's agent, 2026-10-20, the calls
+  and the CLI lists of all three apps, see spec.md FR-007).
 
 ## Phase 6: Docs and converge
 

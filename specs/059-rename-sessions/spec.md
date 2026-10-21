@@ -278,7 +278,7 @@ FR-023) use the new name; Resume opens an agent with that name.
 ## Assumptions
 
 - Copilot SDK pinned at 1.0.22 (`name.set` is @experimental and may change; the adapter catches and falls back, FR-010). That a prompt-free
-  `resumeSession` of a stored session works and costs nothing is `read:` only (`[KNOWN GAP]` until T050).
+  `resumeSession` of a stored session works and costs nothing is `real:` (T050a, 2026-10-21, 0 prompts, 0 credits; see research.md).
 - Codex 0.163.0 or later (`CODEX_MIN_VERSION`, `src/adapters/detect.ts:47`) has `thread/name/set` (`read:` the `rust-v0.163.0` tag).
 - Claude Code stays on the CLI transport; the optional Agent SDK transport (`src/adapters/claudeSdk.ts`) is not used for rename (research R3).
   Whether the VS Code Claude extension lists the `--name` title is `[KNOWN GAP]` (check on a Mac).

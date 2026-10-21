@@ -51,7 +51,10 @@ Vikram's agent asked for it on #372; the owner changed Q2. `read:` only, nothing
 - Durbar already resumes this way when it opens a Previous session (`src/adapters/copilot.ts:455-464`) and disconnects (`:595`).
 - So the call is: `resumeSession(id, { onPermissionRequest: deny })` -> `session.rpc.name.set({ name })` -> `disconnect()`. Cost: 0 credits
   expected (no model call). Side effects to say in the README: the session's last-used time and "last client" may change.
-- `[KNOWN GAP]` until T050: that a real stored session resumes without a model call, that `name.set` is accepted on it, and that a session
+- `real:` 2026-10-21 (T050a, Vikram's agent, the real `CopilotAdapter` at PR head 1633d4e, SDK 1.0.22 / runtime 1.0.98): a stored session resumes in its
+  stored folder with no model call (0 prompts, 0 credits, no `session.resume` event: `suppressResumeEvent` works), `name.set` is accepted, the name is kept
+  across a later resume (`rpc.name.get`), and `listSessions()` (`summary`) and `copilot --resume` (CLI 1.0.100) both show it; `SessionMetadata` has no
+  `name` field, the name comes back as `summary`. `[KNOWN GAP]` until T050: that a session
   open in another Copilot client (the CLI, VS Code) is not disturbed. Any error falls back to a Durbar name with the note (FR-010).
 
 **`real:` (Vikram's agent, 2026-10-20, CLI 1.0.98):** `rpc.name.set` works on a live session and after a prompt-free `resumeSession(id)`; `copilot --resume`
