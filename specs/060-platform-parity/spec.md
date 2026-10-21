@@ -108,3 +108,78 @@
 - **FR-002** `[IMPLEMENTED]`. Under the simulator, main answers `harness:plans` with the real `installPlans()` for this OS and a per-OS set of found managers (`SIM_FOUND`: Windows winget; macOS and Linux none, a typical new machine), or `DURBAR_SIM_MANAGERS` for a driver that needs the command dialog; `sim.ts` asks main and keeps its made-up list only for a plain browser. So the Windows screenshot offers winget, never Homebrew, and a new Mac or Linux desktop shows the vendor page until FR-001 adds the official installers. test: `test-harnesssetup` (per-OS sets, no Homebrew on Windows or Linux, the assumed set does not look at the machine, the override parser). sim: `shots-051-setup` with `DURBAR_SIM_MANAGERS=winget,brew,npm` asserts the first route per OS and that no other OS's manager is offered.
 - **FR-006 (docs)** `[IMPLEMENTED]`: README Linux: FUSE 2 (`libfuse2t64` / `libfuse2`, `--appimage-extract-and-run`) and the keyring note (A9). The Copilot line says PowerShell 6 or later (GitHub's docs), not 7.
 
+### 2026-10-20: T020 design (FR-001, official installers, least privilege first)
+
+- **Routes, in order** (Q1: least admin first; a deprecated route is always last):
+
+  | Agent app | Windows | macOS | Linux |
+  |---|---|---|---|
+  | Claude Code | official `install.ps1` → winget → npm (deprecated) | official `install.sh` → Homebrew → npm (deprecated) | official `install.sh` → Homebrew → npm (deprecated) |
+  | Copilot CLI | npm (user folder, no admin) → winget | official script → npm → Homebrew | official script → npm → Homebrew |
+  | Codex | official `install.ps1` → npm | official `install.sh` → npm → Homebrew | official `install.sh` → npm |
+
+  Each route says what it needs: official is "installs into your home folder, no administrator rights"; npm on macOS and Linux is "no administrator rights" only when the found `npm` is inside the home folder (nvm, fnm, volta), otherwise "may need administrator rights (system Node)"; winget and Homebrew are "may ask for administrator rights".
+- **The official route** is offered whenever its interpreter exists (`bash` on macOS and Linux; Windows PowerShell 5.1, `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`, which every Windows 10/11 has). The confirmation names the URL, the interpreter and "no administrator rights".
+- **Download** (main process, only after the user confirms): HTTPS GET of the documented URL; at most 3 redirects, each to an allowed host for that vendor (Claude `claude.ai`, `downloads.claude.ai`; Copilot `gh.io`, `raw.githubusercontent.com` with a path under `/github/copilot-cli/`; Codex `chatgpt.com`, `releases.openai.com`), else refused; at most 1 MB; 30 s limit; written to a new private temp folder (`0700`, file `0600`). The script then runs as `bash <file>` or `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <file>` through the existing runner (argv, no shell, the same 15-minute limit, progress and cancel), and the folder is deleted when it ends. Durbar never adds `sudo`, and refuses the official route when it runs as root (uid 0). What the script downloads is checked by the script itself (SHA-256, research.md).
+- `[KNOWN GAP]` until T060: the routes run on real machines only through the CI install workflow (with and without admin, Q5).
+
+### 2026-10-20: T020 built (official installers, least privilege first)
+
+- **FR-001** `[IMPLEMENTED]` as designed above: route `official` (shared `ROUTES`, `SCRIPTS`), interpreter as a found manager (`bash`; Windows PowerShell from `%SystemRoot%` only), `src/main/officialinstall.ts` (allow-list per hop, 3 redirects, 1 MB, 30 s, private folder), `HarnessSetup.withScript` (download after the main-side confirmation, appended as the last argument, folder deleted when the run ends or fails to start), refused as root, the native confirmation names the URL, the hosts and "no administrator rights". npm on macOS/Linux says "may need administrator rights" when the found `npm` is outside the home folder. test: `test-officialinstall` (allow-list incl. look-alike hosts and the Copilot path prefix, redirect refusal before any fetch from a foreign host, redirect limit, HTTP errors, empty and oversized bodies, 0700/0600, bash argv, cleanup, root refusal, Windows PowerShell from the system folder only), `test-harnesssetup` (route order per OS with and without the interpreter, admin notes, scripts also update). sim: screenshots `060-install-official-*`. `[KNOWN GAP]` not run on a real machine yet: T060.
+
+### 2026-10-20: T060 tooling (real install check on clean runners, standard user and admin)
+
+- `scripts/install-check.ts`: on the machine it runs on, installs each agent app through **every** route Durbar offers there, with the app's own `HarnessSetup` (plans → official download → argv run), then checks that detection finds it and `--version` runs; prints a Markdown table and writes JSON. Never meant for a person's own machine.
+- Workflow **Install check** (`.github/workflows/install-check.yml`): ubuntu, macOS and Windows runners; first as a new **standard user** without admin rights (Linux `useradd`, macOS `sysadminctl`, Windows `New-LocalUser` with `Start-Process -Credential`), then as the runner's admin user; both tables in the job summary, JSON as an artifact (30 days). Manual, or on a PR that changes the install code. No account, no sign-in, no AI.
+
+
+### 2026-10-20: T060 first results (real, GitHub runners, run on #393)
+
+`real:` every route Durbar offers, installed for real through `HarnessSetup`. A standard user has no admin rights; the admin user is the runner's own account.
+
+| Route | macOS standard / admin | Linux standard / admin | Windows standard / admin |
+|---|---|---|---|
+| **official**, Claude | ok / ok (2.1.304) | ok / ok | CI temp folder error (fixed in the check) / ok |
+| **official**, Copilot | ok / ok (1.0.101) | ok / ok | not offered (npm first, as designed) |
+| **official**, Codex | ok / ok (0.163.0) | ok / ok | CI temp folder error / **fail** → fixed, see below |
+| npm (all three) | **fail** (exit 243, global Node.js) / ok | ok (runner's Node.js is writable) / ok | ok / ok (`C:\npm\prefix`) |
+| Homebrew (all three) | **fail** (exit 1, Homebrew belongs to the admin) / ok | **fail** (exit 1) / ok | not offered |
+
+Findings, fixed in the same PR:
+
+- **Codex official on Windows failed even as admin.** OpenAI's `install.ps1` runs `tar -xzf C:\...`. On the runner, Git's GNU tar (`Git\usr\bin`) comes first on PATH and reads `C:` as a remote host, so the package was "missing". Durbar now runs an official installer on Windows with `%SystemRoot%\System32` first on PATH, as Windows orders it, so Windows' own `tar.exe` is used (`setupEnv`, unit test). This can happen on a user's machine too, wherever Git's `usr\bin` is on PATH.
+- **Homebrew from a standard user** fails outright. The old note, "may ask for administrator rights", was wrong. When the found `brew` belongs to another account, the route now says "Homebrew on this computer belongs to another account, so it will not work from yours" (unit test).
+- **npm from a standard user** on macOS failed, as the existing note says ("Node.js is installed for all users here, so this may need administrator rights"). The official route comes first, so nothing changes.
+- **Windows standard-user TEMP** (CI only): the user started from the admin account inherited its TEMP. `install-check.ts` now uses the user's own profile folder.
+- Harmless: Copilot's `install.sh` offers to edit the shell profile and reads `/dev/tty`. With no terminal it prints `/dev/tty: Device not configured`, answers no, and completes. Durbar finds the binary in `~/.local/bin` anyway.
+- In the check's table, *Found at* is what detection finds after that route ran, which can be an earlier route's binary. *Result* uses the route's own exit code.
+
+Rerun after those fixes (run 39485719890, `d600c68`): `real:` **Codex official on Windows now installs as admin** (0.163.0), so the PATH fix works. macOS and Linux: same as before. Windows standard user: npm ok for all three; official failed for two more reasons, both fixed:
+
+- **Claude** `install.ps1`: `Get-FileHash` not found. Windows PowerShell 5.1 started from PowerShell 7 inherits 7's `PSModulePath` and cannot load its own modules. This also happens on a user's machine when Durbar is started from a PowerShell 7 terminal. An official installer now runs without `PSModulePath`, so 5.1 builds its default (`setupEnv`, unit test).
+- **Codex** `install.ps1`: access denied on the admin's `AppData\Local` (CI only: the test user inherited `LOCALAPPDATA`). `install-check.ts` now sets the user's own `APPDATA` and `LOCALAPPDATA`.
+
+`real:` 2026-10-20, spec 062's first e2e run (Windows runner): after OpenAI's official `install.ps1` succeeded, **detection said Codex was not installed**. The script installs to `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe`, but detection looked in `%LOCALAPPDATA%\Programs\codex`. Detection now also looks in OpenAI's folder (unit test).
+
+### 2026-10-21: review fixes (Paco's agent on #393)
+
+- **Downloaded body check** `[IMPLEMENTED]` (`looksLikeScript`):
+  - `text/html` is refused; a `.sh` must start with `#!`; a `.ps1` must not start with `<` (after a BOM);
+  - anything else stops before running, with "it looks like a web page; nothing was run".
+  - `test:` fake responses for a challenge page, HTML content type, and a BOM.
+- **Total download time limit** `[IMPLEMENTED]`:
+  - `makeGet` adds an overall timer to the idle one, so a dripping server cannot keep it open;
+  - `test:` the real stream code against a local HTTP server: a normal body with its content type, a reported (not followed) redirect, the streaming size cap and the total limit;
+  - the local server found that a fully received oversized body could still resolve after `destroy()`. The promise now fails first.
+- **Update uses the owning route** `[IMPLEMENTED]`:
+  - `routeOwning(realPath)` (npm, Homebrew, winget, official) puts that route first for Update, so no second copy is left in `~/.local/bin`;
+  - install keeps least privilege first.
+  - `test:` the classifier, and a Homebrew-installed `claude` (`update` → brew first, `install` → official first).
+- **Small fixes** `[IMPLEMENTED]`:
+  - a start refused as busy deletes its downloaded folder (two runs prepared before either started);
+  - the spawn-failure cleanup is guarded;
+  - the confirmation says the vendor's script may add its folder to the shell's PATH;
+  - the window's "no route" text names the vendor installer.
+- **Install check wording.** The "Install check" workflow is a **report, not a gate**: every step is `continue-on-error`. Its *Found at* column is what detection finds after that route ran, which can be an earlier route's copy; *Result* uses the route's own exit code.
+- Codex official on Windows was fixed by `setupEnv` (Git's GNU tar ahead of `System32`; real rerun passed), not by a BOM.
+- `[KNOWN GAP]`: the vendor's script itself is not pinned (trust on first use over HTTPS, from the vendor's hosts only); the scripts verify the binaries they download.

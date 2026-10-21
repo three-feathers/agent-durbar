@@ -158,6 +158,8 @@ export function candidates(spec: BinarySpec, env: DetectEnv, configuredPath?: st
     const local = env.env.LOCALAPPDATA;
     if (local && p.isAbsolute(local)) {
       addDir(p.join(local, 'Programs', spec.name));
+      // OpenAI's official install.ps1 (spec 060, real 2026-10-20): %LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe
+      if (spec.name === 'codex') addDir(p.join(local, 'Programs', 'OpenAI', 'Codex', 'bin'));
       addDir(p.join(local, 'Microsoft', 'WinGet', 'Links')); // winget's command shims (spec 052 FR-072): found even before PATH is re-read
     }
   } else {
