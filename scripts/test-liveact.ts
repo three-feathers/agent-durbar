@@ -171,6 +171,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   ok(copy.includes("'exports-shim.js'") && copy.includes("'liveact.js'"), 'copied to dist');
   const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
   ok(/feedStats\(a,e\);\s*liveFeed\(a,e\);/.test(app), 'onLiveEvent feeds the readout');
+  ok(/function removeLiveAgent\(id\)\{[^}]*LIVEACT\.drop\(id\)/.test(app), 'a removed agent leaves no readout or timer');
   ok(/if\(!L\|\|!R\|\|typeof R\.redact!=='function'\)return null;/.test(app), 'no masking module: the feature stays off (fail closed)');
   ok(/\[\['full',3,'side'\],\['full',2,'side'\],\['full',3\],\['full',2\]/.test(app), 'side panel candidates first');
   ok(/if\(side&&!liveOn\(\)\)continue;/.test(app), 'setting off: never the side panel');
