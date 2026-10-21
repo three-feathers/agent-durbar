@@ -147,7 +147,7 @@ New features take the next number (`/speckit.specify` picks it automatically fro
 
 | # | Feature | Status |
 | --- | --- | --- |
-| [045](045-security-sweep/spec.md) | Security and quality sweep before alpha.6: uniform place ids, one-pass unescape, Windows `cmd.exe` from SystemRoot, window navigation and web-permission hardening, alert triage | built 2026-10-19 (unit tests, Electron check on the simulator) |
+| [045](045-security-sweep/spec.md) | Security and quality sweep before alpha.6: uniform place ids, one-pass unescape, Windows `cmd.exe` from SystemRoot, window navigation and web-permission hardening, alert triage | built 2026-10-19 (unit tests, Electron check on the simulator); T021 (2026-10-21, #411): `main.ts` split into 18 IPC modules under `src/main/ipc/` (FR-060), every channel registered once and the 21 `fromApp` checks kept (`test:ipcchannels`) |
 
 ## Feature 046: release v0.1.0-alpha.6
 

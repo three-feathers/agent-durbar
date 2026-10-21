@@ -1,0 +1,52 @@
+/** IPC for an agent's questions: a plain question, an MCP elicitation and its https page (spec 012 FR-128, FR-151; moved out of main.ts as it was, spec 045 FR-060). */
+import { shell } from 'electron';
+import { ipcHandle } from '../ipcguard';
+import type { AdapterRouter } from '../../adapters/router';
+import type { AgentInfo } from '../../shared/api';
+import { checkElicitAnswer, elicitHttpsUrl } from '../../shared/elicit';
+import type { createElicitTracker } from '../../shared/elicit';
+
+export interface QuestionsIpcDeps {
+  agents: Map<string, AgentInfo>;
+  router: AdapterRouter;
+  /** Open MCP elicitations: main checks each answer against the fields it was asked with. */
+  elicitTracker: ReturnType<typeof createElicitTracker>;
+}
+
+export function register(deps: QuestionsIpcDeps): void {
+  const { agents, router, elicitTracker } = deps;
+  // spec 012 FR-128: the user's answer to an agent's question; strings only, capped; null = skipped
+  ipcHandle('agents:answerQuestion', (_e, id: unknown, requestId: unknown, answers: unknown) => {
+    const a = typeof id === 'string' ? agents.get(id) : undefined;
+    const ad = a ? router.forAgent(a.id) : undefined;
+    if (!a || !ad?.answerQuestion || typeof requestId !== 'string' || requestId.length > 200) return { ok: false, error: 'unknown agent or question' };
+    let clean: Record<string, string> | null = null;
+    if (answers && typeof answers === 'object') {
+      clean = {};
+      for (const [k, v] of Object.entries(answers as Record<string, unknown>).slice(0, 4)) if (typeof v === 'string' && k.length <= 300) clean[k] = v.slice(0, 500);
+    }
+    ad.answerQuestion(a.id, requestId, clean);
+    return { ok: true };
+  });
+
+  // spec 012 FR-151: the answer to an MCP elicitation, checked here against the open request (types, choices, lengths, required).
+  // The values are never logged: they can be secrets.
+  ipcHandle('agents:answerElicitation', (_e, id: unknown, requestId: unknown, action: unknown, values: unknown) => {
+    const a = typeof id === 'string' ? agents.get(id) : undefined;
+    const ad = a ? router.forAgent(a.id) : undefined;
+    const req = a && typeof requestId === 'string' && requestId.length <= 300 ? elicitTracker.get(a.id, requestId) : undefined;
+    if (!a || !ad?.answerElicitation || !req) return { ok: false, error: 'That request is no longer open.' };
+    const r = checkElicitAnswer(req, action, values);
+    if (!r.ok) return { ok: false, error: r.error, ...(r.field ? { field: r.field } : {}) };
+    ad.answerElicitation(a.id, requestId as string, r.answer);
+    return { ok: true };
+  });
+  // spec 012 FR-151: open the request's own https address (never one sent by the window), only after the user clicked
+  ipcHandle('agents:openElicitationUrl', async (_e, id: unknown, requestId: unknown) => {
+    const req = typeof id === 'string' && typeof requestId === 'string' && requestId.length <= 300 ? elicitTracker.get(id, requestId) : undefined;
+    const u = req?.url ? elicitHttpsUrl(req.url) : undefined;
+    if (!u) return { ok: false, error: 'That request has no https page to open.' };
+    await shell.openExternal(u.url);
+    return { ok: true };
+  });
+}
