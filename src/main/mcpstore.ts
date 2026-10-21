@@ -5,7 +5,15 @@
  *
  * Secrets (env values, header values) are encrypted with the codec before they are written. Without a codec they are NOT written
  * (key names only); they stay in memory for this run and the user is told. Views for the renderer never contain a secret value.
+ *
+ * Keychain at most once (spec 019 FR-023, 2026-10-21): on macOS every codec call can read the Keychain, and an app the Keychain
+ * item does not trust gets a prompt. So all secret values live in ONE encrypted blob (`vault`), which is NOT decrypted on load:
+ * views only need to know a value is stored. It is decrypted once, the first time a value is really needed (a session starts with
+ * an enabled, trusted server that has secrets, or the user changes a secret), and kept in memory only. Switching a server on or
+ * off, trusting it, moving it or editing its non-secret fields writes the same blob again without decrypting it.
+ * Files of older versions (one `enc` blob per value) are read the same way and rewritten as one vault on that first unlock.
  */
+import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { MAX_SERVERS, NAME_RE, trustHash, validateInput } from '../shared/mcp';
@@ -19,8 +27,12 @@ export interface SecretCodec {
 
 interface SecretEntry {
   key: string;
-  /** Plain value in memory (main process only); undefined = not available (not persisted, or could not be decrypted). */
+  /** Plain value in memory (main process only); undefined = not known (still locked in the vault, not persisted, or could not be decrypted). */
   value?: string;
+  /** Id of this value inside the encrypted vault (written to disk; not a secret). */
+  ref?: string;
+  /** Older file format: this value's own encrypted blob, decrypted on the first unlock and then moved into the vault. */
+  legacyEnc?: string;
 }
 
 interface Rec {
@@ -57,6 +69,14 @@ const MAX_FOLDERS = 200;
 const MAX_KEY = 4096;
 const MAX_EXTRA_NAMES = 500;
 const lc = (s: string): string => String(s).toLowerCase();
+/** Run `f`; on any error give `fallback` (a codec error never reaches a log or the window). */
+function safe<T>(f: () => T, fallback: T): T {
+  try {
+    return f();
+  } catch {
+    return fallback;
+  }
+}
 
 export class McpStore {
   /** Extras by folder/workspace key (the saved-folder key: .code-workspace file or folder path). */
@@ -64,6 +84,13 @@ export class McpStore {
   /** Servers of the old app-level list (milestone 8): kept, never passed to a session, movable into a folder. */
   private legacyRecs: Rec[] = [];
   private disabledAmbient = new Set<string>();
+  /** The encrypted vault as read from or last written to disk (never decrypted on load). */
+  private vaultBlob?: string;
+  /** True once the vault (and any old per-value blobs) was decrypted, or found to need nothing: never decrypted twice. */
+  private unlocked = false;
+  /** A secret value was added, changed or dropped since the vault was written: the next save encrypts a new vault. */
+  private vaultDirty = false;
+  private persistKnown?: boolean;
 
   constructor(
     private readonly file: string,
@@ -72,10 +99,59 @@ export class McpStore {
 
   /** True when secrets can be persisted (an OS-protected store is available). */
   get secretsPersist(): boolean {
-    return !!this.codec && this.codec.available();
+    return (this.persistKnown ??= !!this.codec && safe(() => this.codec?.available() === true, false));
   }
 
-  /** One stored server -> record (undefined when it does not validate). Secrets are decrypted when an OS store is available. */
+  private allRecs(): Rec[] {
+    const out = [...this.legacyRecs];
+    for (const list of this.folders.values()) out.push(...list);
+    return out;
+  }
+
+  private static pending(s: SecretEntry): boolean {
+    return s.value === undefined && (s.ref !== undefined || s.legacyEnc !== undefined);
+  }
+
+  /**
+   * Decrypt the stored secret values, at most once per run and only when one is needed. One codec call for the vault; a file of an
+   * older version has one blob per value, decrypted here once and then rewritten as one vault. A failure leaves the values unknown
+   * (the server shows "secrets missing"; nothing is logged).
+   */
+  private unlock(persistMigration = true): void {
+    if (this.unlocked) return;
+    this.unlocked = true;
+    const entries = this.allRecs().flatMap((r) => [...r.env, ...r.headers]);
+    const waiting = entries.filter((s) => McpStore.pending(s));
+    if (!waiting.length) return;
+    if (!this.secretsPersist) {
+      for (const s of waiting) s.legacyEnc = undefined;
+      return;
+    }
+    const codec = this.codec as SecretCodec;
+    let map: Record<string, unknown> = {};
+    if (this.vaultBlob !== undefined && waiting.some((s) => s.ref !== undefined)) {
+      map = safe(() => {
+        const o: unknown = JSON.parse(codec.decrypt(this.vaultBlob as string));
+        return o && typeof o === 'object' && !Array.isArray(o) ? (o as Record<string, unknown>) : {};
+      }, {});
+    }
+    let migrated = false;
+    for (const s of waiting) {
+      if (s.legacyEnc !== undefined) {
+        s.value = safe(() => codec.decrypt(s.legacyEnc as string), undefined);
+        s.legacyEnc = undefined;
+        migrated = true;
+      } else if (s.ref !== undefined && Object.prototype.hasOwnProperty.call(map, s.ref) && typeof map[s.ref] === 'string') {
+        s.value = map[s.ref] as string;
+      }
+    }
+    if (migrated && persistMigration) {
+      this.vaultDirty = true;
+      safe(() => this.save(), undefined);
+    }
+  }
+
+  /** One stored server -> record (undefined when it does not validate). Secrets stay encrypted until `unlock()` (FR-023). */
   private parseRec(e: unknown): Rec | undefined {
     const r = e && typeof e === 'object' ? (e as Record<string, unknown>) : {};
     const v = validateInput({ ...r, env: [], headers: [] });
@@ -83,18 +159,13 @@ export class McpStore {
     const secrets = (list: unknown): SecretEntry[] =>
       Array.isArray(list)
         ? list
-            .filter((s): s is { key: string; enc?: string } => !!s && typeof (s as { key?: unknown }).key === 'string')
-            .map((s) => {
-              let value: string | undefined;
-              if (typeof s.enc === 'string' && this.secretsPersist) {
-                try {
-                  value = (this.codec as SecretCodec).decrypt(s.enc);
-                } catch {
-                  value = undefined;
-                }
-              }
-              return { key: s.key, value };
-            })
+            .filter((s): s is { key: string; enc?: unknown; ref?: unknown } => !!s && typeof (s as { key?: unknown }).key === 'string')
+            // Nothing is decrypted here (FR-023): only where the value is kept.
+            .map((s) => ({
+              key: s.key,
+              ref: typeof s.ref === 'string' && s.ref.length <= 64 ? s.ref : undefined,
+              legacyEnc: typeof s.enc === 'string' && typeof s.ref !== 'string' ? s.enc : undefined,
+            }))
         : [];
     const x = v.value;
     return {
@@ -126,6 +197,9 @@ export class McpStore {
     this.folders = new Map();
     this.legacyRecs = [];
     this.disabledAmbient = new Set();
+    this.vaultBlob = undefined;
+    this.unlocked = false;
+    this.vaultDirty = false;
     let doc: unknown;
     try {
       if (fs.statSync(this.file).size > MAX_FILE) return;
@@ -134,6 +208,7 @@ export class McpStore {
       return;
     }
     const o = (doc && typeof doc === 'object' ? doc : {}) as Record<string, unknown>;
+    if (typeof o.vault === 'string') this.vaultBlob = o.vault;
     if (Array.isArray(o.disabledAmbient)) for (const n of o.disabledAmbient) if (typeof n === 'string' && n.length <= 64) this.disabledAmbient.add(n);
     // Version 1 (milestone 8) had one global `servers` list: it becomes `legacy`. Version 2 has `legacy` too.
     this.legacyRecs = this.parseList([...(Array.isArray(o.servers) ? o.servers : []), ...(Array.isArray(o.legacy) ? o.legacy : [])]);
@@ -146,8 +221,28 @@ export class McpStore {
   }
 
   private save(): void {
-    const enc = (s: SecretEntry): { key: string; enc?: string } => {
-      if (this.secretsPersist && s.value !== undefined && s.value !== '') return { key: s.key, enc: (this.codec as SecretCodec).encrypt(s.value) };
+    let vault = this.vaultBlob;
+    if (this.vaultDirty) {
+      // A value changed: the new vault needs every value, so the old one is decrypted first (once per run), then encrypted once.
+      this.unlock(false);
+      const map: Record<string, string> = {};
+      for (const r of this.allRecs())
+        for (const s of [...r.env, ...r.headers]) {
+          if (s.value === undefined || s.value === '') {
+            s.ref = undefined;
+            continue;
+          }
+          s.ref ??= randomUUID();
+          map[s.ref] = s.value;
+        }
+      vault = undefined;
+      if (Object.keys(map).length && this.secretsPersist) vault = safe(() => (this.codec as SecretCodec).encrypt(JSON.stringify(map)), undefined);
+      this.vaultBlob = vault;
+      this.vaultDirty = false;
+    }
+    const enc = (s: SecretEntry): { key: string; ref?: string; enc?: string } => {
+      if (vault !== undefined && s.ref !== undefined) return { key: s.key, ref: s.ref };
+      if (s.legacyEnc !== undefined && s.value === undefined) return { key: s.key, enc: s.legacyEnc }; // not unlocked yet: kept as it was
       return { key: s.key };
     };
     const ser = (r: Rec) => ({
@@ -165,7 +260,7 @@ export class McpStore {
     });
     const folders: Record<string, unknown[]> = {};
     for (const [k, list] of this.folders) if (list.length) folders[k] = list.map(ser);
-    const doc = { version: 2, folders, legacy: this.legacyRecs.map(ser), disabledAmbient: [...this.disabledAmbient] };
+    const doc = { version: 3, folders, legacy: this.legacyRecs.map(ser), disabledAmbient: [...this.disabledAmbient], ...(vault !== undefined ? { vault } : {}) };
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const tmp = `${this.file}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(doc, null, 1), { mode: 0o600 });
@@ -177,7 +272,7 @@ export class McpStore {
   }
 
   private view(r: Rec): McpServerView {
-    const keys = (l: SecretEntry[]): McpSecretKey[] => l.map((s) => ({ key: s.key, set: s.value !== undefined && s.value !== '' }));
+    const keys = (l: SecretEntry[]): McpSecretKey[] => l.map((s) => ({ key: s.key, set: this.isSet(s) }));
     return {
       name: r.name,
       transport: r.transport,
@@ -190,8 +285,15 @@ export class McpStore {
       tools: r.tools,
       env: keys(r.env),
       headers: keys(r.headers),
-      needsSecrets: [...r.env, ...r.headers].some((s) => s.value === undefined),
+      needsSecrets: [...r.env, ...r.headers].some((s) => !this.isSet(s)),
     };
+  }
+
+  /** A value is known, or stored encrypted and not yet unlocked (shown as set without decrypting it). */
+  private isSet(s: SecretEntry): boolean {
+    if (s.value !== undefined) return s.value !== '';
+    if (this.unlocked || !this.secretsPersist) return false;
+    return s.legacyEnc !== undefined || (s.ref !== undefined && this.vaultBlob !== undefined);
   }
 
   private validKey(key: unknown): key is string {
@@ -254,8 +356,13 @@ export class McpStore {
     const list = this.recsOf(key);
     if (!cur && list.length >= MAX_SERVERS) return { ok: false, error: `At most ${MAX_SERVERS} servers per folder.` };
     if (!cur && !this.folders.has(key) && this.folders.size >= MAX_FOLDERS) return { ok: false, error: `Extras are kept for at most ${MAX_FOLDERS} folders.` };
+    // A kept value (input without a value) keeps its place in the vault, still locked; a new value marks the vault for rewriting.
     const merge = (incoming: { key: string; value?: string }[], old: SecretEntry[]): SecretEntry[] =>
-      incoming.map((s) => ({ key: s.key, value: s.value !== undefined ? s.value : old.find((o) => lc(o.key) === lc(s.key))?.value }));
+      incoming.map((s) => {
+        if (s.value !== undefined) return { key: s.key, value: s.value };
+        const o = old.find((x) => lc(x.key) === lc(s.key));
+        return { key: s.key, value: o?.value, ref: o?.ref, legacyEnc: o?.legacyEnc };
+      });
     const next: Rec = {
       name: x.name,
       transport: x.transport,
@@ -273,6 +380,12 @@ export class McpStore {
       next.trust = undefined;
       next.enabled = false;
     }
+    if ([...(x.env ?? []), ...(x.headers ?? [])].some((s) => s.value !== undefined)) this.vaultDirty = true;
+    else if (cur) {
+      // A stored value whose key was removed or renamed must leave the vault too.
+      const kept = new Set([...next.env, ...next.headers].map((s) => s.ref ?? s.legacyEnc));
+      if ([...cur.env, ...cur.headers].some((s) => (s.ref ?? s.legacyEnc) !== undefined && !kept.has(s.ref ?? s.legacyEnc))) this.vaultDirty = true;
+    }
     const out = list.slice();
     if (cur) out[out.indexOf(cur)] = next;
     else out.push(next);
@@ -287,6 +400,7 @@ export class McpStore {
     const out = this.recsOf(key).filter((x) => x !== r);
     if (out.length) this.folders.set(key, out);
     else this.folders.delete(key);
+    if ([...r.env, ...r.headers].some((s) => s.ref !== undefined || s.value !== undefined)) this.vaultDirty = true; // its values leave the vault
     this.save();
     return true;
   }
@@ -324,6 +438,7 @@ export class McpStore {
     const r = this.legacyRecs.find((x) => lc(x.name) === lc(name));
     if (!r) return false;
     this.legacyRecs = this.legacyRecs.filter((x) => x !== r);
+    if ([...r.env, ...r.headers].some((s) => s.ref !== undefined || s.value !== undefined)) this.vaultDirty = true;
     this.save();
     return true;
   }
@@ -359,6 +474,7 @@ export class McpStore {
         skipped.push({ name: r.name, reason: 'not trusted: review and confirm it in this folder\'s MCP extras' });
         continue;
       }
+      if ([...r.env, ...r.headers].some((s) => McpStore.pending(s))) this.unlock(); // the only read at session start, once per run
       if ([...r.env, ...r.headers].some((s) => s.value === undefined)) {
         skipped.push({ name: r.name, reason: 'secret values are not available: enter them again in this folder\'s MCP extras' });
         continue;
