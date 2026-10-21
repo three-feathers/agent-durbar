@@ -46,16 +46,27 @@ assert.strictEqual(typedValue('--r-md', '30px'), null, 'radius over 24px');
 assert.strictEqual(typedValue('--t1-weight', '900'), null, 'weight out of range');
 assert.strictEqual(typedValue('--shadow-card', '0 2px 8px rgba(0,0,0,.12)'), '0 2px 8px rgba(0,0,0,.12)');
 assert.strictEqual(typedValue('--shadow-card', '0 2px 4px expression(x)'), null);
+for (const v of ['Arial\\', '\\41 rial', 'Georgia\\;x', '0 2px 4px #000\\']) for (const k of ['--font', '--shadow-card']) {
+  assert.strictEqual(typedValue(k, v), null, `a backslash is refused: ${k} ${JSON.stringify(v)}`);
+  assert.strictEqual(T._typedValue(k, v), null, `and in the renderer: ${k} ${JSON.stringify(v)}`);
+}
 
 // ---- 2. defaults ----
 const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles.css'), 'utf8');
 const rootBlock = css.slice(css.indexOf(':root{'), css.indexOf('}', css.indexOf(':root{')));
+// the :root declarations as a map (parsed, not matched with a regex built from a token name)
+const rootDecls = new Map<string, string>();
+for (const d of rootBlock.slice(rootBlock.indexOf('{') + 1).replace(/\/\*[\s\S]*?\*\//g, '').split(';')) {
+  const i = d.indexOf(':');
+  if (i > 0) rootDecls.set(d.slice(0, i).trim(), d.slice(i + 1).trim());
+}
+assert.strictEqual(rootDecls.get('--r-md'), '10px', 'the :root parser reads a declaration');
 for (const [k, spec] of Object.entries(TYPED_TOKENS)) {
   assert.notStrictEqual(typedValue(k, spec.def), null, `${k}: its default passes its own grammar (fonts on the allow-list)`);
-  const m = new RegExp(k.replace(/-/g, '\\-') + ':([^;]+);').exec(rootBlock);
-  if (k === '--ui-display') { assert.ok(!m, '--ui-display has no :root value: a UI style (themes.css) or the pack sets it, else titles inherit'); continue; }
-  assert.ok(m, `${k} has a :root default in styles.css`);
-  assert.strictEqual(m![1].replace(/\s+/g, ''), spec.def.replace(/\s+/g, ''), `${k}: the :root default equals the registry's`);
+  const v = rootDecls.get(k);
+  if (k === '--ui-display') { assert.strictEqual(v, undefined, '--ui-display has no :root value: a UI style (themes.css) or the pack sets it, else titles inherit'); continue; }
+  assert.ok(v !== undefined, `${k} has a :root default in styles.css`);
+  assert.strictEqual(v!.replace(/\s+/g, ''), spec.def.replace(/\s+/g, ''), `${k}: the :root default equals the registry's`);
 }
 
 // ---- 3. the literal ratchet ----
