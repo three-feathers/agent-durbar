@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.9 tag)
 
+- `npm run check:office` no longer fails at random with "a walking figure is not on a slot": it waits (up to 3 s) for a figure that is still walking and fails only if it never arrives (spec 024, #406).
 - **Snappier with long chats and a busy office** (spec 052 FR-142..FR-145): a 1000-message conversation renders about 20× faster (it used to slow down with every message), the office updates only the room that changed, and the context chip keeps keyboard focus. New `npm run check:perf` measures it.
 - **Folder status in the chat** (spec 063): the folder chip shows the git branch and how many files changed; a click lists the changed files with their +/− lines. Read-only.
 - A GitHub account without Copilot access no longer shows as "Signed in (checked with GitHub)": the card now says the account has no Copilot access yet and how to turn it on (spec 012 FR-156).

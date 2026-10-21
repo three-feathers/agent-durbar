@@ -211,7 +211,7 @@ function lobbyHTML(aw){
 const WALK_MS=1000, MAX_WALKS=3; /* about 1 s per walk; beyond 3 at once the others simply appear */
 const walkers=new Map(); /* agent id -> {el, back, walking, shown, timer, to} */
 const walkCount=()=>{let n=0;walkers.forEach(w=>{if(w.walking)n++;});return n;};
-function dropWalker(id){const w=walkers.get(id);if(!w)return;clearTimeout(w.timer);w.el.remove();walkers.delete(id);RETURNING.delete(id);}
+function dropWalker(id){const w=walkers.get(id);if(!w)return;clearTimeout(w.timer);if(w.off)w.off();w.el.remove();walkers.delete(id);RETURNING.delete(id);}
 /* Before the desks are drawn: an agent whose visit just ended keeps its empty chair until its figure is back. */
 function prepareWalkers(){
   if(ui.view!=='office'||!lobbyOn())return;
@@ -233,12 +233,18 @@ function syncWalkers(){
   });
   const deskPos=id=>{const d=document.querySelector(`#stage [data-id="${CSS.escape(id)}"]`);const sc=d&&(d.querySelector('.scene')||d);return sc?center(sc):null;};
   const move=(w,pos,after,instant)=>{ /* instant: a layout change moved the slot under a resting figure: put it back, no walk */
-    clearTimeout(w.timer);
+    clearTimeout(w.timer); if(w.off){w.off();w.off=null;} /* a new move cancels the old walk's listener and fallback */
     const walk=!instant&&!REDUCED&&w.shown&&(w.walking||walkCount()<MAX_WALKS);
     w.el.style.transition=walk?`transform ${WALK_MS}ms linear`:'none';
     w.el.style.transform=`translate(${pos.x}px,${pos.y}px)`;
     w.el.classList.toggle('walking',walk); w.walking=walk; w.to=pos.x+','+pos.y;
-    if(walk)w.timer=setTimeout(()=>{w.walking=false;w.el.classList.remove('walking');if(after)after();},WALK_MS+40);
+    if(walk){ /* the walk ends when the transform transition ends (not on a wall-clock guess: under load it can run late); the timer is only a fallback if the event never comes */
+      const el=w.el; let done=false;
+      const end=()=>{if(done)return;done=true;clearTimeout(w.timer);el.removeEventListener('transitionend',onEnd);w.off=null;w.walking=false;el.classList.remove('walking');if(after)after();};
+      const onEnd=e=>{if(e.target===el&&e.propertyName==='transform')end();};
+      el.addEventListener('transitionend',onEnd); w.off=()=>{done=true;el.removeEventListener('transitionend',onEnd);};
+      w.timer=setTimeout(end,WALK_MS+500);
+    }
     else if(after)after();
   };
   want.forEach((pos,id)=>{
