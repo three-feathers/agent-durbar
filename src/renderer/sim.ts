@@ -810,6 +810,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       codex: [{ name: 'context7', transport: 'stdio', command: 'npx', args: ['-y', '@upstash/context7-mcp'], envKeys: [], headerKeys: [] }],
     };
     const gOff = new Set<string>();
+    const simToolsOff: Record<string, Record<string, string[]>> = {};
     let gSeq = 0;
     const gPending = new Map<string, { kind: 'add' | 'remove'; apps: GApp[]; view?: GView; name: string }>();
     const G_APPS: GApp[] = ['copilot', 'claude', 'codex'];
@@ -1048,13 +1049,22 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const stat = (n: string) => (s.mcpOff?.has(n) ? 'disabled' : !live ? undefined : s.mcpRestarting?.has(n) ? 'pending' : failed(n) ? 'failed' : 'connected');
         const restartable = (n: string, on: boolean) => live && kc.mcpRestart === true && on && !s.mcpOff?.has(n);
         const servers = [
-          ...fakeCli.map((a) => ({ name: a.name, origin: 'cli' as const, status: stat(a.name), error: failed(a.name) ? 'spawn notes-mcp ENOENT' : undefined, defaultOn: a.enabled, off: !!s.mcpOff?.has(a.name), ...(restartable(a.name, a.enabled) ? { canRestart: true } : {}), sources: gSources(a.name, false) })),
-          ...extrasOf(s.info.cwd).map((v) => ({ name: v.name, origin: 'folder' as const, status: stat(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name), ...(restartable(v.name, v.enabled && v.trusted) ? { canRestart: true } : {}), sources: gSources(v.name, true) })),
+          ...fakeCli.map((a) => ({ name: a.name, origin: 'cli' as const, status: stat(a.name), error: failed(a.name) ? 'spawn notes-mcp ENOENT' : undefined, defaultOn: a.enabled, off: !!s.mcpOff?.has(a.name), ...(restartable(a.name, a.enabled) ? { canRestart: true } : {}), sources: gSources(a.name, false), ...(simToolsOff[s.info.cwd]?.[a.name] ? { toolsOff: [...(simToolsOff[s.info.cwd]?.[a.name] ?? [])] } : {}) })),
+          ...extrasOf(s.info.cwd).map((v) => ({ name: v.name, origin: 'folder' as const, status: stat(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name), ...(restartable(v.name, v.enabled && v.trusted) ? { canRestart: true } : {}), sources: gSources(v.name, true), ...(simToolsOff[s.info.cwd]?.[v.name] ? { toolsOff: [...(simToolsOff[s.info.cwd]?.[v.name] ?? [])] } : {}) })),
         ];
-        return { ok: true, servers, live, ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume, canListTools: true };
+        return { ok: true, servers, live, ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume, canListTools: true, toolFilter: true };
       },
       /* spec 058 FR-040: a canned Restart: Starting for a moment, then Running */
       /* spec 069 FR-031/FR-032: canned tools per server; a session that is not running, a failed server and an empty one show their states */
+      /* spec 069 FR-061: tools turned off per folder, in memory */
+      setAgentMcpToolsOff: async (id, name, off) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'Unknown agent.' };
+        const m = (simToolsOff[s.info.cwd] ??= {});
+        if (off.length) m[name] = [...new Set(off)];
+        else delete m[name];
+        return { ok: true };
+      },
       agentMcpTools: async (id, name) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'Unknown agent or server.' };

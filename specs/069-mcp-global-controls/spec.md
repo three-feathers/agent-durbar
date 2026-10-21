@@ -216,13 +216,13 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
 Owner decision (Vikram, Telegram 2026-10-21 22:10 UTC): "We should also have the ability to enable/disable individual tools, like the
 VS Code UI supports, as some people may want to give access to read email but not send email."
 
-- **FR-060** In the expanded tools list (FR-033) each tool has an on/off checkbox and the server a tri-state checkbox (all / some / none).
+- **FR-060** `[IMPLEMENTED]` In the expanded tools list (FR-033) each tool has an on/off checkbox and the server a tri-state checkbox (all / some / none).
   Nothing is turned off automatically (no "write-like" guess): only what the user unticks.
-- **FR-061** **Scope and storage**: per folder (the agent's folder key, as folder extras), for every server of that folder's agents
+- **FR-061** `[IMPLEMENTED]` **Scope and storage**: per folder (the agent's folder key, as folder extras), for every server of that folder's agents
   whatever its source; kept in Durbar's MCP store file next to the extras (`toolsOff: {<folder>: {<server>: [tool...]}}`, names only, at
   most 200 servers x 500 tools per folder). No per-session override (not cheap: it would need its own store; a follow-up if wanted).
   `agents:setMcpToolsOff(id, server, off[])` maps the agent to its folder in main (the window never sends a folder key).
-- **FR-062** **Enforced by the agent app**, passed with every start and resume as `StartOptions.disabledMcpTools` (`{server: tools[]}`):
+- **FR-062** `[IMPLEMENTED]` **Enforced by the agent app**, passed with every start and resume as `StartOptions.disabledMcpTools` (`{server: tools[]}`):
   - Copilot: session config `excludedTools: ["mcp:<server>-<tool>", ...]` (`read:` SDK 1.0.22 `types.d.ts` `excludedTools` "always
     takes precedence", `toolSet.d.ts` `addMcp("github-list_issues")`: the runtime's wire name `<server>-<tool>`);
   - Claude Code: `--disallowedTools mcp__<server>__<tool>` (server name with characters outside `[A-Za-z0-9_-]` as `_`, as the CLI builds it;
@@ -232,11 +232,11 @@ VS Code UI supports, as some people may want to give access to read email but no
     `enabled = false` already is, spec 012 FR-147).
   A change applies to **new sessions and after Restart session with these servers**; the expanded list says so. No app is known to switch
   one tool live, so none is claimed.
-- **FR-063** **Defence in depth**: each adapter's permission broker refuses an MCP request for a turned-off tool (server and tool name, or
+- **FR-063** `[IMPLEMENTED]` **Defence in depth**: each adapter's permission broker refuses an MCP request for a turned-off tool (server and tool name, or
   Claude's `mcp__<server>__<tool>`), in every mode, with "This tool is turned off in Agent Durbar (<server> › <tool>). Do not retry it." and
   a denied card in the chat. (Calls an app approves on its own, such as Claude Code or Codex in Allow all, never reach the broker; there
   the app's own filter above is the guard.)
-- **FR-064** An app whose adapter does not offer per-tool filtering (capability `mcpToolFilter` missing) shows the checkboxes disabled with
+- **FR-064** `[IMPLEMENTED]` An app whose adapter does not offer per-tool filtering (capability `mcpToolFilter` missing) shows the checkboxes disabled with
   the tooltip "This app can't turn off single tools". All three adapters set it.
 - **FR-065** `[KNOWN GAP]` A global server's per-tool list is not written into the agent apps' own files (only Codex's format has a
   `disabled_tools` key; Copilot's `tools` is an allow list that would need the full tool list; Claude Code's user file has none). The
@@ -275,11 +275,10 @@ VS Code UI supports, as some people may want to give access to read email but no
 
 ## Delivery
 
-4. PR 4 (part 4, stacked on PR 3): FR-060..FR-064.
-
 1. PR 1 (this branch): FR-001..FR-011, FR-040/041 parts, screenshots of the form and confirmation.
 2. PR 2: FR-020..FR-022.
 3. PR 3, after #473: FR-030..FR-033. Sign in stays with spec 058 (Paco, #364).
+4. PR 4 (stacked on PR 3): FR-060..FR-064.
 
 ## Relationship to other specs
 

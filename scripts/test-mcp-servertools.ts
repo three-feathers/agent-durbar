@@ -14,6 +14,12 @@ import type { AgentInfo } from '../src/shared/api';
 import { MCP_TOOL_DESC_MAX, MCP_TOOL_NAME_MAX, mcpToolsOp } from '../src/main/mcptoolsop';
 import { agentMcpReply } from '../src/main/mcpsession';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
+import { mcpToolBlockList, PermissionBroker } from '../src/adapters/permissions';
+import type { BrokerEvent } from '../src/adapters/permissions';
+import { copilotExcludedTools } from '../src/adapters/copilot';
+import { claudeArgs, claudeDisallowedMcp } from '../src/adapters/claude';
+import { codexMcpConfig } from '../src/adapters/codexMcp';
+import { McpStore } from '../src/main/mcpstore';
 
 const info = (id: string): AgentInfo => ({ id, name: 'Ana', cwd: '/w', permMode: 'ask', model: 'auto' }) as AgentInfo;
 const routerOf = (ad: AgentAdapter | undefined) => ({ forAgent: () => ad });
@@ -108,6 +114,70 @@ async function main(): Promise<void> {
     delete (s.rpc.mcp as Record<string, unknown>).listTools;
     await assert.rejects(ad.listMcpTools(sid, 'notes'), /cannot list/, 'an older SDK without the method');
     await ad.stop(sid);
+  }
+
+  // ---- part 4: single tools off (FR-060..FR-064) ----
+  {
+    const off = { 'mail srv': ['send_email'], notes: ['delete_note', 'archive'] };
+    // the app filters
+    assert.deepStrictEqual(copilotExcludedTools(off), ['mcp:mail srv-send_email', 'mcp:notes-delete_note', 'mcp:notes-archive']);
+    assert.deepStrictEqual(claudeDisallowedMcp(off), ['mcp__mail_srv__send_email', 'mcp__notes__delete_note', 'mcp__notes__archive']);
+    assert.deepStrictEqual(claudeDisallowedMcp({ s: ['bad,name', 'ok'] }), ['mcp__s__ok'], 'a name that would break the flag list is left to the broker');
+    const args = claudeArgs({ mode: 'read-only', sessionId: 'x', resume: false, disallowedMcpTools: ['mcp__notes__archive'] });
+    const deny = args[args.indexOf('--disallowedTools') + 1].split(',');
+    assert.ok(deny.includes('mcp__notes__archive') && deny.length > 1, 'added to the mode\'s own list: ' + deny.join());
+    assert.strictEqual(claudeArgs({ mode: 'allow', sessionId: 'x', resume: false, disallowedMcpTools: ['mcp__a__b'] }).filter((x) => x === '--disallowedTools').length, 1, 'one flag');
+    const cfg = codexMcpConfig({ notes: { type: 'stdio', command: 'n' } }, ['gone'], { notes: ['archive'], usersrv: ['send'] });
+    assert.deepStrictEqual(cfg?.mcp_servers, { notes: { command: 'n', disabled_tools: ['archive'] }, gone: { enabled: false }, usersrv: { disabled_tools: ['send'] } });
+    // the broker refuses a turned-off tool in every mode, and only that one
+    for (const mode of ['allow', 'ask', 'read-only'] as const) {
+      const ev: BrokerEvent[] = [];
+      const b = new PermissionBroker({ mode, emit: (e) => ev.push(e), blockedTools: () => mcpToolBlockList(off) });
+      const d = await b.request({ kind: 'mcp', serverName: 'notes', toolName: 'archive', toolCallId: 't1' });
+      assert.deepStrictEqual(d, { kind: 'reject', feedback: 'This tool is turned off in Agent Durbar (notes › archive). Do not retry it.' }, mode);
+      assert.strictEqual(ev[0]?.type, 'denied-policy', 'a denied card in the chat');
+      const c = await b.request({ kind: 'mcp', toolName: 'mcp__mail_srv__send_email', toolCallId: 't2' });
+      assert.strictEqual(c.kind, 'reject', 'Claude\'s full tool name');
+      if (mode === 'allow') assert.strictEqual((await b.request({ kind: 'mcp', serverName: 'notes', toolName: 'search', toolCallId: 't3' })).kind, 'approve-once', 'another tool still runs');
+      if (mode === 'allow') assert.strictEqual((await b.request({ kind: 'shell', fullCommandText: 'archive', toolCallId: 't4' })).kind, 'approve-once', 'not for other kinds');
+    }
+    // the Copilot session config carries excludedTools on create and resume; its broker refuses
+    const client = new FakeClient();
+    const ad = new FakeCopilot(client);
+    assert.strictEqual(ad.capabilities.mcpToolFilter, true);
+    const sid = await ad.start({ workspace: ws, quiet: true, disabledMcpTools: off });
+    assert.deepStrictEqual(client.created.pop()?.excludedTools, ['mcp:mail srv-send_email', 'mcp:notes-delete_note', 'mcp:notes-archive']);
+    await ad.stop(sid);
+    await ad.start({ workspace: ws, quiet: true, resumeSessionId: sid, disabledMcpTools: off });
+    assert.deepStrictEqual(client.resumed.pop()?.config.excludedTools, ['mcp:mail srv-send_email', 'mcp:notes-delete_note', 'mcp:notes-archive'], 'and on resume (Restart session)');
+    const plain = await ad.start({ workspace: ws, quiet: true });
+    assert.ok(!('excludedTools' in (client.created.pop() ?? {})), 'nothing when no tool is off');
+    await ad.stop(plain);
+    // the fake adapter's broker
+    const fa = new FakeAdapter();
+    assert.strictEqual(fa.capabilities.mcpToolFilter, true);
+    // store: per folder, persisted, names only, limits
+    const file = path.join(ws, 'store.json');
+    const st = new McpStore(file);
+    assert.deepStrictEqual(st.setToolsOff('/f', 'notes', ['archive', 'archive', '', 7, 'x'.repeat(129)]), { ok: true });
+    assert.deepStrictEqual(st.toolsOffFor('/f'), { notes: ['archive'] });
+    assert.deepStrictEqual(st.toolsOffFor('/other'), {}, 'another folder is not touched');
+    assert.ok(!st.setToolsOff('/f', '__proto__', ['a']).ok && !st.setToolsOff('/f', '', ['a']).ok);
+    const again = new McpStore(file);
+    again.load();
+    assert.deepStrictEqual(again.toolsOffFor('/f'), { notes: ['archive'] }, 'kept across restarts');
+    again.setToolsOff('/f', 'notes', []);
+    const third = new McpStore(file);
+    third.load();
+    assert.deepStrictEqual(third.toolsOffFor('/f'), {}, 'all on again removes the entry');
+    assert.ok(!fs.readFileSync(file, 'utf8').includes('toolsOff'), 'nothing left in the file');
+    // the dialog reply
+    const ad2 = new FakeAdapter();
+    const s2 = await ad2.start({ workspace: ws, quiet: true });
+    const rep = agentMcpReply({ a: info(s2), ad: ad2, live: [], off: new Set(), secrets: [], cli: [{ name: 'notes', enabled: true }], extras: [], ambientDisabled: new Set(), toolsOff: { notes: ['archive'] } });
+    assert.deepStrictEqual([rep.toolFilter, rep.servers[0].toolsOff], [true, ['archive']]);
+    const noFilter = agentMcpReply({ a: info(s2), ad: new FakeAdapter({ capabilities: { mcpToolFilter: false } }), live: [], off: new Set(), secrets: [], cli: [], extras: [], ambientDisabled: new Set() });
+    assert.strictEqual(noFilter.toolFilter, undefined, 'no capability: the checkboxes are disabled');
   }
 
   done = true;

@@ -39,6 +39,8 @@ export interface McpReplyInput {
   /** Spec 069 FR-011: the names of each app's user list, and the built-in servers, for the source chips. */
   global?: Partial<Record<GlobalApp, readonly string[]>>;
   builtin?: ReadonlySet<string>;
+  /** Spec 069 FR-061: tools turned off in this agent's folder, by server. */
+  toolsOff?: Readonly<Record<string, readonly string[]>>;
 }
 
 /** `agents:mcp` (spec 019 FR-009, spec 058 FR-020). No path and no secret value: names, states and masked errors only. */
@@ -65,6 +67,10 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
   const names = new Set([...cli, ...own].map((x) => x.name.toLowerCase()));
   for (const v of i.extras) if (!names.has(v.name.toLowerCase())) add(v.name, 'folder', v.enabled && v.trusted && !v.needsSecrets);
   for (const x of i.live) add(x.name, 'runtime', !i.ambientDisabled.has(x.name));
+  for (const e of entries) {
+    const t = i.toolsOff?.[e.name];
+    if (t?.length) e.toolsOff = [...t];
+  }
   if (i.global) {
     const folder = new Set(i.extras.map((v) => v.name));
     for (const e of entries) e.sources = sourcesFor(e.name, i.global, folder, i.builtin ?? new Set());
@@ -79,6 +85,7 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     // FR-022: an adapter that can resume, and a running session to restart
     canRestartSession: !!caps?.resume && isLive,
     ...(typeof ad?.listMcpTools === 'function' ? { canListTools: true } : {}),
+    ...(caps?.mcpToolFilter ? { toolFilter: true } : {}),
   };
 }
 

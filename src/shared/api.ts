@@ -500,6 +500,8 @@ export interface AgentMcpEntry {
   off: boolean;
   /** Spec 069 FR-011: every list that has this name. */
   sources?: McpSourceTag[];
+  /** Spec 069 FR-061: tools of this server turned off in this agent's folder. */
+  toolsOff?: string[];
   /** Spec 058 FR-020: Restart is offered: the agent app can restart one server, the session runs and knows this server, and it is on. */
   canRestart?: boolean;
 }
@@ -517,6 +519,8 @@ export interface AgentMcpReply {
   canRestartSession?: boolean;
   /** Spec 069 FR-031: this agent app can list a server's tools (`agents:mcpTools`). */
   canListTools?: boolean;
+  /** Spec 069 FR-064: this agent app can turn single tools off (`agents:setMcpToolsOff`); missing = the checkboxes are disabled. */
+  toolFilter?: boolean;
 }
 
 /** `agents:mcpTools` (spec 069 FR-032): one server's tools, masked and cut in main. */
@@ -733,6 +737,8 @@ export interface DurbarApi {
   agentMcpRestart?(id: string, name: string): Promise<McpRestartResult>;
   /** Spec 069 FR-032: the tools of one MCP server of this agent's running session. */
   agentMcpTools?(id: string, name: string): Promise<McpToolsResult>;
+  /** Spec 069 FR-061: the tools of one server turned off in this agent's folder (applies to new sessions and after Restart session). */
+  setAgentMcpToolsOff?(id: string, name: string, off: string[]): Promise<{ ok: boolean; error?: string }>;
   /** Spec 058 FR-022: end and resume this agent's session with the current MCP servers; `confirmed` after the window asked. */
   agentMcpRestartSession?(id: string, confirmed: boolean): Promise<McpRestartSessionResult>;
   /** Per-agent override: `enabled=false` turns the server off for this agent (now when the session runs, else at its next start). */

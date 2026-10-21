@@ -59,6 +59,27 @@ module.exports = async (ctx) => {
     const mf = await minFont();
     assert.ok(mf.min >= 10.5, `${w}: text >= 10.5px ${JSON.stringify(mf)}`);
     await shot(`069-mcp-tools-${w}x${h}.png`);
+    // ---- part 4: single tools off, tri-state, kept per folder ----
+    assert.strictEqual(await js(`document.querySelector('#agMcp li[data-n="github"] [data-tall]').getAttribute('aria-checked')`), 'true', 'all tools on at first');
+    assert.match(await toolsText('github'), /applies to new sessions and after Restart session/);
+    await js(`document.querySelector('#agMcp input[data-tool="create_issue"]').click()`);
+    assert.ok(await until(`document.querySelector('#agMcp li[data-n="github"] [data-tall]').getAttribute('aria-checked')==='mixed'`), 'some tools on: mixed');
+    assert.strictEqual(await js(`document.querySelector('#agMcp input[data-tool="create_issue"]').checked`), false);
+    assert.match(await toolsText('github'), /5 tools, 1 off/);
+    await shot(`069-mcp-tool-toggles-${w}x${h}.png`);
+    await closeDlg();
+    await js(`document.getElementById('mcpBtn').click()`);
+    assert.ok(await until(`document.querySelectorAll('#agMcp li.srv').length>0`));
+    await press('github');
+    assert.ok(await until(`!!document.querySelector('#agMcp input[data-tool="create_issue"]')`));
+    assert.strictEqual(await js(`document.querySelector('#agMcp input[data-tool="create_issue"]').checked`), false, 'kept when the dialog opens again');
+    await js(`document.querySelector('#agMcp [data-tall="github"]').click()`);
+    assert.ok(await until(`document.querySelector('#agMcp [data-tall="github"]').getAttribute('aria-checked')==='true'`), 'mixed -> all on');
+    await js(`document.querySelector('#agMcp [data-tall="github"]').click()`);
+    assert.ok(await until(`document.querySelector('#agMcp [data-tall="github"]').getAttribute('aria-checked')==='false'`), 'all on -> all off');
+    assert.strictEqual(await js(`document.querySelectorAll('#agMcp li[data-n="github"] input[data-tool]:checked').length`), 0);
+    await js(`document.querySelector('#agMcp [data-tall="github"]').click()`);
+    assert.ok(await until(`document.querySelector('#agMcp [data-tall="github"]').getAttribute('aria-checked')==='true'`), 'all on again');
     await press('github');
     assert.ok(await until(`!document.querySelector('#agMcp li[data-n="github"] .mcp-tools')`), 'a second press closes it');
     // remove: opens the per-app choice (then cancelled)

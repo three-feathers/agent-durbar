@@ -28,11 +28,11 @@
 
 ## Part 4: single tools on and off (PR 4, owner 2026-10-21 22:10 UTC)
 
-- [ ] T040 Store `toolsOff` per folder, `agents:setMcpToolsOff`, `toolsOff` on `agents:mcp`, `disabledMcpTools` in start options [FR-061]
-- [ ] T041 Adapters: Copilot `excludedTools`, Claude `--disallowedTools`, Codex `disabled_tools`; capability `mcpToolFilter` [FR-062, FR-064]
-- [ ] T042 Broker refusal of a turned-off tool in every adapter's broker [FR-063]
-- [ ] T043 Renderer: checkboxes and tri-state in the expanded list, applies-when note, disabled with tooltip without the capability [FR-060, FR-064]
-- [ ] T044 Tests (store, adapters on fakes, broker), simulator, driver and screenshots, docs
+- [x] T040 Store `toolsOff` per folder, `agents:setMcpToolsOff`, `toolsOff` on `agents:mcp`, `disabledMcpTools` in start options [FR-061]
+- [x] T041 Adapters: Copilot `excludedTools`, Claude `--disallowedTools`, Codex `disabled_tools`; capability `mcpToolFilter` [FR-062, FR-064]
+- [x] T042 Broker refusal of a turned-off tool in every adapter's broker [FR-063]
+- [x] T043 Renderer: checkboxes and tri-state in the expanded list, applies-when note, disabled with tooltip without the capability [FR-060, FR-064]
+- [x] T044 Tests (store, adapters on fakes, broker), simulator, driver and screenshots, docs
 
 ## Real check (needs the owner's go-ahead)
 

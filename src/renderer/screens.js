@@ -822,7 +822,13 @@
       if(!r.ok)return `<div class="mcp-tools" id="${id}" role="status">${esc(r.notRunning?'Start the session to see its tools.':'Could not list the tools: '+(r.error||'unknown error'))}</div>`;
       if(!r.tools.length)return `<div class="mcp-tools" id="${id}" role="status">This server lists no tools.</div>`;
       const more=r.total>r.tools.length?` (first ${r.tools.length} shown)`:'';
-      return `<div class="mcp-tools" id="${id}"><p class="mcp-tcount">${r.total} tool${r.total===1?'':'s'}${more}</p><ul class="mcp-tlist">${r.tools.map(t=>`<li><code>${esc(t.name)}</code>${t.description?`<span>${esc(t.description)}</span>`:''}</li>`).join('')}</ul></div>`;
+      /* spec 069 FR-060/FR-064: a checkbox per tool and a tri-state for the server; disabled with the reason when the app cannot filter */
+      const x=(st.servers||[]).find(y=>y.name===n)||{}, off=new Set(x.toolsOff||[]), can=!!(st.toolFilter&&X.bridge.setAgentMcpToolsOff);
+      const nOff=r.tools.filter(t=>off.has(t.name)).length, all=nOff===0?'true':nOff===r.tools.length?'false':'mixed';
+      const dis=can?'':' disabled title="This app can\'t turn off single tools"';
+      const head=`<div class="mcp-thead"><button class="mcp-all" type="button" role="checkbox" aria-checked="${all}" data-tall="${esc(n)}"${dis} aria-label="${esc('All tools of '+n)}"><span class="mcp-box" aria-hidden="true">${all==='true'?'✓':all==='mixed'?'–':''}</span>${r.total} tool${r.total===1?'':'s'}${more}${nOff?`, ${nOff} off`:''}</button>
+        <span class="mcp-tnote">${can?'Turning tools on or off applies to new sessions and after Restart session with these servers.':'This app can\'t turn off single tools.'}</span></div>`;
+      return `<div class="mcp-tools" id="${id}">${head}<ul class="mcp-tlist">${r.tools.map(t=>`<li><label><input type="checkbox" data-tool="${esc(t.name)}" data-tsrv="${esc(n)}"${off.has(t.name)?'':' checked'}${dis} aria-label="${esc(t.name+' of '+n)}"><code>${esc(t.name)}</code></label>${t.description?`<span>${esc(t.description)}</span>`:''}</li>`).join('')}</ul></div>`;
     }
     const toggleTools=async n=>{
       if(expanded.has(n)){expanded.delete(n);await repaint();return;}
@@ -831,6 +837,12 @@
       let r;try{r=await X.bridge.agentMcpTools(a.id,n);}catch(e){r={ok:false,error:String(e&&e.message||e)};}
       toolsOf.set(n,r||{ok:false,error:'no answer'});
       if(expanded.has(n))await repaint();
+    };
+    /* spec 069 FR-061: save the server's turned-off tools for this folder, then show the new state */
+    const saveOff=async(n,offList)=>{
+      let r;try{r=await X.bridge.setAgentMcpToolsOff(a.id,n,offList);}catch(e){r={ok:false,error:String(e&&e.message||e)};}
+      if(!r||!r.ok)X.toast('Not saved: '+esc((r&&r.error)||'unknown error'),5000);
+      await repaint();
     };
     const removeOne=async n=>{
       const x=(st.servers||[]).find(y=>y.name===n);if(!x)return;
@@ -849,10 +861,10 @@
     /* FR-004 / FR-033: repaint in place and keep the focus on the same control (by server name), so a keyboard user is not thrown out */
     const repaint=async()=>{st=await load();if(!dlg||!dlg.isConnected)return;
       const f=document.activeElement,inside=f&&dlg.contains(f);
-      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.tools!==undefined?['tools',f.dataset.tools]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
+      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.tools!==undefined?['tools',f.dataset.tools]:f.dataset.tool!==undefined?['tool',f.dataset.tool]:f.dataset.tall!==undefined?['tall',f.dataset.tall]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
       dlg.querySelector('.dbody').innerHTML=body(st);
       if(!key)return;
-      const btns=[...dlg.querySelectorAll('.dbody button:not([disabled])')];
+      const btns=[...dlg.querySelectorAll('.dbody button:not([disabled]),.dbody input:not([disabled])')];
       const back=btns.find(x=>key[0]==='id'?x.id===key[1]:x.dataset[key[0]]===key[1])||(key[0]==='restart'?btns.find(x=>x.dataset.n===key[1]):null);
       if(back)back.focus();};
     const restartOne=async name=>{
@@ -889,6 +901,8 @@
     const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
       onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;d.addEventListener('click',async e=>{
         const tg=e.target.closest('button[data-tools]');if(tg){void toggleTools(tg.dataset.tools);return;}
+        const ta=e.target.closest('button[data-tall]');if(ta&&!ta.disabled){const n=ta.dataset.tall,r=toolsOf.get(n);if(r&&r.ok){void saveOff(n,ta.getAttribute('aria-checked')==='true'?r.tools.map(t=>t.name):[]);}return;}
+        const tc=e.target.closest('input[data-tool]');if(tc&&!tc.disabled){const n=tc.dataset.tsrv,x=(st.servers||[]).find(y=>y.name===n)||{},off=new Set(x.toolsOff||[]);if(tc.checked)off.delete(tc.dataset.tool);else off.add(tc.dataset.tool);void saveOff(n,[...off]);return;}
         const mr=e.target.closest('button[data-mrm]');if(mr){const n=mr.dataset.mrm;d._close();void removeOne(n);return;}
         const rb=e.target.closest('button[data-restart]');if(rb&&!rb.disabled){void restartOne(rb.dataset.restart);return;}
         if(e.target.closest('#mcpRestartSess')){void restartSession();return;}
