@@ -9,15 +9,14 @@
  */
 const assert = require('assert');
 const path = require('path');
+const { helpers } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 
 module.exports = async (ctx) => {
-  const js = (c) => ctx.js(c);
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { js } = H;
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simkinds: 'mixed', simsendfail: 'sandbox' } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
+    await H.load({ w, h, query: { simkinds: 'mixed', simsendfail: 'sandbox' } });
     // a Read-only agent (sim-1 is read-only); its send is refused like Codex's sandbox refusal
     await js(`document.querySelector('#stage .desk[data-id="sim-1"]').click()`);
     await ctx.waitFor(`!!document.getElementById('msgInput')`, 8000);
@@ -29,13 +28,13 @@ module.exports = async (ctx) => {
     assert.ok(note.font >= 10.5, `${w}: legible`);
     assert.ok(!/allow all/i.test(note.text.replace('Change mode…', '')), `${w}: the text suggests no mode`);
     await ctx.sleep(150);
-    await ctx.shot(path.join(OUT, `012-mode-refusal-${w}x${h}.png`));
+    await H.shot(path.join(OUT, `012-mode-refusal-${w}x${h}.png`), { delay: 0 });
     await js(`document.querySelector('.note.err [data-act="modeRefusal"]').click()`);
     await ctx.waitFor(`!!document.getElementById('modeMenu')`, 5000);
     const items = await js(`[...document.querySelectorAll('#modeMenu [data-mode]')].map(b=>b.dataset.mode)`);
     assert.deepStrictEqual(items, ['read-only', 'ask', 'allow'], `${w}: the usual mode menu, every mode`);
     await ctx.sleep(150);
-    await ctx.shot(path.join(OUT, `012-mode-refusal-menu-${w}x${h}.png`));
+    await H.shot(path.join(OUT, `012-mode-refusal-menu-${w}x${h}.png`), { delay: 0 });
     await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
   }
   console.log('[mode-refusal] PASS');
