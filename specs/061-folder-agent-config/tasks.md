@@ -14,3 +14,5 @@
 - [x] T050 Simulator driver + screenshots at 1440x900 and 1280x800; README, CHANGELOG; one real check per app [FR-006]
 
 - [x] T050 Review on #424 (Paco's agent): required 1-6, S1-S3 and nits fixed with tests (2026-10-21) [FR-010, FR-011, FR-013, FR-014, FR-016]
+- [x] T051 Re-review on #424 at aa554f2 (Paco's agent): team notes restored, MCP token-shape masking and shell/interpreter env flag, renderer default tick pinned, long rules as problems, scroll hint, Copilot hook folder in finally, FR-013 pin for require/bracket access [FR-013, FR-014]
+- [ ] T052 [owner] S1: which allow rules count as broad (`Bash(sh:*)`, `Bash(git:*)`, `Bash(npm run:*)`, ...): waits for the owner on #424
