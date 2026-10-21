@@ -11,7 +11,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 **Website:** <https://three-feathers.github.io/agent-durbar/>
 
 > **Status: alpha.**
-> - The newest pre-release is [`v0.1.0-alpha.9`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.9). It is unsigned and not notarized.
+> - The newest pre-release is [`v0.1.0-alpha.10`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.10). It is unsigned and not notarized.
 > - What changed in each release is in the [CHANGELOG](CHANGELOG.md).
 > - **Where it has been run:** Linux by hand every day. macOS by hand on the owner's and a teammate's Macs (macOS 26, Apple Silicon), from source and the simulator, including real Copilot sessions; fixes from those runs are merged. Windows has not been run by hand on a real PC yet.
 > - **What CI checks on Linux, macOS and Windows:** every change builds and starts the packaged app (spec 012 T044). In review: the UI checks on all three ([#389](https://github.com/three-feathers/agent-durbar/pull/389)), real installs of each agent app as a standard and an admin user ([#393](https://github.com/three-feathers/agent-durbar/pull/393)), and real-account end-to-end runs, where Copilot, Claude Code and Codex each install, sign in and answer on all three OSes: 9 of 9 on 2026-10-20 ([#402](https://github.com/three-feathers/agent-durbar/pull/402)).
@@ -123,7 +123,7 @@ Codex also ships its own `bwrap` inside its npm package (`…/@openai/codex-linu
 ## Install
 
 **Requirements**
-- At least one agent app: GitHub Copilot (a free plan works), Claude Code, or OpenAI Codex. **Settings > Agent apps** can install it through a package manager (winget, Homebrew, npm), with the command shown first, and sign you in with the vendor's own page and a one-time code. Or install and sign in yourself, for example with `copilot login`.
+- At least one agent app: GitHub Copilot (a free plan works), Claude Code, or OpenAI Codex. **Settings > Agent apps** can install it through a package manager (winget, Homebrew, npm), with the command shown first, and sign you in with the vendor's own page and a one-time code. Or install and sign in yourself, for example with `copilot login`. Durbar finds an agent app on your `PATH`, on your login shell's `PATH` (macOS and Linux, read once at start, at most 3 s), in the usual install folders, and in the folders of Node.js version managers (nvm, fnm, Volta, asdf, mise; nvm-windows and Volta on Windows) and Linuxbrew. Settings shows where it was found.
   - Not tried yet: installs through winget or Homebrew, and the flows on macOS and Windows.
 - Durbar never sees, stores or sends your tokens: each harness reads its own sign-in. Durbar has no accounts, no servers and no telemetry.
 - Usage bills against **your** plans. Several agents in parallel can use credits quickly; see [Costs and caps](#costs-and-caps).
@@ -246,6 +246,7 @@ npm run check:fuses-launch  # on demand, after pack:dir: the packed Linux app op
 ## Known limits
 
 - **Windows has not been used by hand.** Linux is used every day and macOS on real Macs (from source and the simulator). A packaged-app check runs on all three in CI, and real-account end-to-end runs on all three are in review (#402), but nobody has used the Windows build on a real PC, or the packaged macOS `.dmg` day to day.
+- **Where your data lives:** the installed app keeps its settings, folders and saved MCP servers in `agent-durbar` under the OS app-data folder (`%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `~/.config` on Linux). `npm start` and the simulator use their own `agent-durbar-dev` folder next to it, so developing never touches the installed app's data. To keep data from an older dev run, start once with `DURBAR_USER_DATA=<old folder>` or copy the folder by hand.
 - **Unsigned builds:** expect the OS warnings above.
 - **No debugger in packaged builds:** release builds ignore `--inspect`, `NODE_OPTIONS` and `ELECTRON_RUN_AS_NODE` (Electron fuses; `scripts/check-fuses.js` reads them from the packed binary on every package build on Linux, macOS and Windows: `pack:dir`, the `dist*` scripts, and so the packaged-check workflow and the release build) and always drop `remote-debugging-port` and `remote-debugging-pipe`, whatever the spelling. Run from source (`npm start`) to debug. Checked on the packed Linux build, including `-remote-debugging-port` with one dash (`npm run check:fuses-launch`); the fuse check itself has been run locally on Linux only, and macOS and Windows have not been tried by hand (on Windows Chromium also accepts `/` and any case, which the guard covers by removing the switches by name). The ASAR integrity fuse has no effect on Linux.
 - **VS Code's own chats are read-only.** VS Code keeps them in an undocumented store that cannot be continued from outside; Durbar shows a copy. Copilot CLI/SDK sessions *can* be resumed.

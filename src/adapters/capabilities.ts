@@ -56,6 +56,8 @@ export interface DetectResult {
   state: AdapterState;
   version?: string;
   hint?: string;
+  /** Spec 060 FR-003: where the app was found, safe to show: `~/…` under the home folder, otherwise only the file name. */
+  where?: string;
 }
 
 /** Static description of an adapter plus a factory; creating the adapter is lazy (FR-031). */
