@@ -195,3 +195,10 @@
 - [x] T125 Mutation: remove the `.dlg-ov` no-drag rule and see the check fail; screenshots in the scratchpad [FR-138]
 - [x] T126 Docs: CHANGELOG, README "On a Mac" limits, `specs/README.md` row, spec status tags; CI step proposed as a follow-up [FR-138]
 - [x] T129 Grant chips grouped into "Allowed (N)" with a popover, shorter labels, header chips flow; `simgrants=many`; `test-grant-label`; `scripts/check-grant-chips.js` (`npm run check:grant-chips`); mutation run; screenshots [FR-141, issue #367]
+
+## FR-160: + Folder and + Workspace at the left, and a File menu (2026-10-21, owner request)
+- [x] T130 Spec delta FR-160 (amends FR-105 and FR-083) [FR-160]
+- [x] T131 Top bar: + Folder and + Workspace first after the brand (ids kept, + New menu removed), fit rules, `fitTopbar`, the defaults chip in two spans; Ctrl+O / Ctrl+Shift+O in the page on Windows and Linux; shortcut sheet and palette keys; empty-office and welcome texts [FR-160]
+- [x] T132 macOS File menu (Add Folder… ⌘O, Add VS Code Workspace… ⇧⌘O, Close Window) through `menu:add` → `onMenuAdd` → the same buttons; `test-macos` [FR-160]
+- [x] T133 `scripts/shots-052-addleft.js` in `check:ui`; `check-mac-titlebar.js` without the + New state; `check:office`, `check:geometry`, `check:mac-titlebar`; screenshots at 1440x900 and 1280x800 [FR-160]
+- [x] T134 Docs: README, CHANGELOG, `specs/README.md` row [FR-160]

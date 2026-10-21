@@ -578,6 +578,8 @@ export interface DurbarApi {
   onAgentAdded(cb: (a: AgentInfo) => void): () => void;
   /** The Settings… item of the macOS app menu (⌘,), spec 052 FR-083. */
   onMenuSettings?(cb: () => void): () => void;
+  /** File > Add Folder… / Add VS Code Workspace… of the macOS menu (⌘O, ⇧⌘O), spec 052 FR-160. */
+  onMenuAdd?(cb: (kind: 'folder' | 'workspace') => void): () => void;
   /** The window entered (true) or left (false) full screen, spec 052 FR-085. */
   onFullScreen?(cb: (on: boolean) => void): () => void;
   /** The OS the app runs on ('darwin', 'win32', 'linux'), spec 052 FR-085: the Mac title bar styles. */

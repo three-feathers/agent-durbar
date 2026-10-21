@@ -1665,6 +1665,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       onEvent: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },
       onAgentAdded: (cb) => { addedListeners.add(cb); return () => addedListeners.delete(cb); },
       onMenuSettings: () => () => undefined, /* spec 052 FR-083: no app menu in the simulator */
+      onMenuAdd: () => () => undefined, /* spec 052 FR-160 */
       onFullScreen: () => () => undefined,
     };
     void timer;

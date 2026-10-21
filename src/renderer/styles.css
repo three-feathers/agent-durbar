@@ -52,7 +52,7 @@ button{font:inherit;color:inherit}
 /* spec 052 FR-099: Compact spacing, chrome only. The top bar, the office and the list are outside these scopes. */
 html[data-density="compact"]{--sec-pad:10px 14px; --sec-gap:10px; --dlg-pad:14px 16px; --row-pad:8px}
 html[data-density="compact"] :is(#panel,#screen,.dlg,.dlg-ov,.more-menu,.mode-menu){--h-ctl:28px; --h-chip:22px; --h-pill:20px}
-html[data-density="compact"] :is(#topMoreMenu,#newMenu){--h-ctl:32px; --h-chip:26px; --h-pill:22px} /* the top bar's own menu keeps its sizes */
+html[data-density="compact"] #topMoreMenu{--h-ctl:32px; --h-chip:26px; --h-pill:22px} /* the top bar's own menu keeps its sizes */
 
 /* ---------- top bar ---------- */
 /* spec 052 FR-105 (round 11): one row of 48px (was two rows, about 92px); the freed height goes to the office */
@@ -457,23 +457,28 @@ body:has(#aiTryBar) #toasts{bottom:100px}
   .topbar{padding:4px 14px;gap:6px 8px}
   .stat{padding:0 9px 0 8px}
 }
-/* spec 052 FR-105 (round 11): the one row fits by width, measured with DejaVu Sans (the widest font, CI's). Below 1800px the
+/* spec 052 FR-105 (round 11): the one row fits by width, measured with DejaVu Sans (the widest font, CI's). Below 1920px (FR-160; 1800px before) the
    counters show the dot and the number (the words stay in each title and label); below 1600px Needs you shows its icon and
    number; below 1440px the defaults chip, the segmented buttons, the folder filter and the gaps are a little narrower, so the
    row fits at 1280 with floors and several agent apps. The chip's full text is in its title and label. */
-@media (max-width:1799px){
+@media (max-width:1919px){ /* FR-160: was 1799px (and 6px/5px padding), room for + Folder and + Workspace */
   .stats>.stat:not(.stat-aiu) span.l{display:none}
-  .stats>.stat:not(.stat-aiu){padding:0 6px 0 5px}
+  .stats>.stat:not(.stat-aiu){padding:0 4px 0 3px}
   .topbar #defaultsBtn{max-width:200px}
 }
 @media (max-width:1599px){
   .inbox-btn .ib-word{display:none}
   .inbox-btn{padding:0 10px}
 }
+/* spec 052 FR-160: room for + Folder and + Workspace (measured in DejaVu Sans, CI's font): a narrower defaults chip (its full text is in its
+   title and label). Where the row still does not fit, app.js (fitTopbar) sets .tb-tight: the brand keeps its mark and its Live/Demo pill
+   and the name moves to screen readers only (it is also the window's name) */
+.topbar.tb-tight .brand h1{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (max-width:1799px){.topbar #defaultsBtn{max-width:170px}}
+@media (max-width:1599px){.topbar #defaultsBtn{max-width:130px}.topbar #defaultsBtn .dv-r{display:none}.topbar .select-wrap select{max-width:104px}} /* the mode word only ("Read-only"); the rest is in the title, the label and the popover */
 @media (max-width:1439px){
-  .topbar #defaultsBtn{max-width:160px}
+  .topbar #liveBar .top-add .btn{padding:0 8px}
   .topbar .seg button{padding:0 7px}
-  .topbar .select-wrap select{max-width:104px}
   .topbar #liveBar{gap:6px}
 }
 @media (prefers-reduced-motion:reduce){
@@ -1140,9 +1145,8 @@ html:not([data-ui]) .seg button{border-radius:6px}
 
 /* spec 052 #308: the top bar in clusters: create, the defaults for new sessions (one quiet group), view; the rest under ⋯ */
 #liveBar{gap:8px}
-/* spec 052 FR-105 (round 11): "+ New" opens a menu with the two add actions; the defaults are one chip with a small popover */
-.top-new{position:relative}
-#newMenu{left:0;right:auto;min-width:250px}
+/* spec 052 FR-160: + Folder and + Workspace, two labelled buttons at the left end (they replace FR-105's "+ New" menu); the defaults are one chip with a small popover */
+.top-add{display:flex;align-items:center;gap:4px}
 #defaultsBtn{display:inline-flex;align-items:center;gap:6px;max-width:240px}
 #defaultsBtn .dv{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #defaultsBtn.is-allow{color:var(--red-ink);border-color:color-mix(in srgb,var(--red) 45%,var(--line));background:color-mix(in srgb,var(--red) 9%,var(--surface))} /* spec 052 (2026-10-21, round 5): new sessions start in Allow all */
@@ -1374,8 +1378,8 @@ html:not([data-ui]) #topBtns button:not([aria-pressed="true"]):hover{background:
 /* FR-070: an empty office shows an empty desk above its sentence */
 .empty-desk{display:block;margin:0 auto 12px;width:120px;height:72px;color:var(--muted)}
 /* FR-070: on first run "+ Folder" rings once (a pseudo-element: opacity and scale, the button keeps its box) */
-#newBtn.ring-once{position:relative}
-#newBtn.ring-once::after{content:"";position:absolute;inset:-3px;border-radius:inherit;border:2px solid var(--sel-border,#7fa0bd);opacity:0;pointer-events:none;animation:ringonce 1.4s ease-out 1 both}
+#addFolder.ring-once{position:relative}
+#addFolder.ring-once::after{content:"";position:absolute;inset:-3px;border-radius:inherit;border:2px solid var(--sel-border,#7fa0bd);opacity:0;pointer-events:none;animation:ringonce 1.4s ease-out 1 both}
 @keyframes ringonce{0%{opacity:.8;transform:scale(.96)}100%{opacity:0;transform:scale(1.22)}}
 /* FR-069: Serious mode stops every looping animation (idle bob and nod, typing hands, steam, bars, halos, waving, thinking dots,
    carets, walking bob, mood signs). One-shot signals (the done tick, the waiting pings, the pops) stay. The busy spinner stays: it is a progress sign. */
@@ -1433,6 +1437,10 @@ html[data-platform="darwin"] .notice-strip:not([hidden]) ~ .workspace .strip{pad
    Office button below it never reaches into the 78x40 box. */
 html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{content:"";flex:none;order:-1;width:58px;margin-right:-14px}
 @media (max-width:1320px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{width:64px;margin-right:-8px}}
+/* spec 052 FR-160: on a Mac the traffic lights take 58px more, so the counters keep their words only from 2040px and the defaults chip is
+   narrower from 1600 to 1799px (the brand name gives way by measurement, .tb-tight) */
+@media (max-width:2039px){html[data-platform="darwin"]:not([data-fullscreen]) .stats>.stat:not(.stat-aiu) span.l{display:none}}
+@media (min-width:1600px) and (max-width:1799px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar #defaultsBtn{max-width:140px}}
 html[data-platform="darwin"] body.panel-open :is(#restoreStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip:not([hidden])){min-height:40px}
 html[data-platform="darwin"] .notice-strip:not([hidden]) ~ #screen .scr-head{padding-left:max(24px,calc((100% - 880px)/2 + 24px))}
 html[data-platform="darwin"] .strip{padding-right:0}
