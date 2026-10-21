@@ -14,19 +14,15 @@
  * exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
 const path = require('path');
-const { waits } = require('./driver-helpers');
+const { helpers } = require('./driver-helpers');
 const assert = require('assert');
 const OUT = process.env.OUT || require('os').tmpdir();
-const INDEX = path.join(process.cwd(), 'dist', 'renderer', 'index.html');
 module.exports = async (ctx) => {
-  const { until, settle } = waits(ctx);
-  const js = async (c) => { try { return await ctx.js(c); } catch (e) { console.log('JS ERR for', c.slice(0, 90)); throw e; } };
-  const shot = async (name) => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(150); await ctx.shot(path.join(OUT, name)); console.log('[question-visible] saved', name); };
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { until, settle, js } = H;
+  const shot = (name) => H.shot(path.join(OUT, name), { prep: 'mouse', tag: 'question-visible' });
   const open = async (w, h) => {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simquestion: 'compact' } });
-    await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-    await settle();
+    await H.load({ w, h, query: { simquestion: 'compact' }, ready: 'fit' });
     let id = '';
     for (const end = Date.now() + 8000; !id && Date.now() < end;) { id = await js(`(()=>{for(const d of document.querySelectorAll('#stage .desk[data-id]')){d.click();const c=document.querySelector('#chat .note.question');if(c)return d.dataset.id;const b=document.getElementById('backBtn');if(b)b.click();}return ''})()`); if (!id) await ctx.sleep(100); }
     assert.ok(id, `${w}: an agent has the question in its chat`);

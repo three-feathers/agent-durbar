@@ -11,6 +11,7 @@
    A failure throws (DRIVER FAILED, exit 1); `npm run check:ui` runs it. */
 const path = require('path');
 const { Menu } = require('electron');
+const { helpers, jsLiteral } = require('./driver-helpers');
 
 const ROOT = path.join(__dirname, '..');
 const INDEX = path.join(ROOT, 'dist', 'renderer', 'index.html');
@@ -52,18 +53,17 @@ function topCheck(simple) {
 }
 
 module.exports = async (ctx) => {
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   let failed = 0, total = 0;
   const fail = (m) => { failed++; console.log('FAIL ' + m); };
   const load = async (q, w, h) => {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: q });
-    await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
+    await H.load({ w, h, query: { sim: undefined, simfreeze: undefined, ...q }, ready: 'fit', settle: false }); // this check says which of sim and simfreeze it wants
     await ctx.sleep(500);
   };
   for (const [w, h] of SIZES) {
     for (const level of ['expert', 'simple']) {
       await load({ sim: '15', simfreeze: '1' }, w, h);
-      await ctx.js(`localStorage.setItem('durbar.detail',${JSON.stringify(level)});true`);
+      await ctx.js(`localStorage.setItem('durbar.detail',${jsLiteral(level)});true`);
       for (const theme of THEMES) {
         await load({ sim: '15', simfreeze: '1', simfloors: '1', simkinds: 'mixed', theme }, w, h);
         const p = await ctx.js(`(${topCheck.toString()})(${level === 'simple'})`);

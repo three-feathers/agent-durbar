@@ -91,7 +91,8 @@ function templates(line: string): { text: string; exprs: string[] }[] {
   return out;
 }
 /* Allowed raw splices into page code: jsLiteral (or its alias q), and these typed numbers, booleans and ready-made code strings. */
-const RAW_OK = /^(w|h|n|i|width|n - 1|before|sim|expanded|expectPlaces|SECONDS|SPEED|open|!open|iconClick|left|tags|level === 'simple'|[\w.]+\.toString\(\))$/;
+// box(n) (check-question-options) and the scrollHeight choice (check-question-visible) are ready-made page expressions, not values.
+const RAW_OK = /^(w|h|n|i|width|n - 1|before|sim|expanded|expectPlaces|SECONDS|SPEED|open|!open|iconClick|left|box\(\d\)|where === 'top' \? 0 : 'c\.scrollHeight'|tags|level === 'simple'|[\w.]+\.toString\(\))$/;
 const PAGE = /\b(document|window)\.|localStorage|getComputedStyle|querySelector/;
 const drivers = fs.readdirSync(path.join(ROOT, 'scripts')).filter((x) => /^(shots|check)-.*\.js$/.test(x) && !SKIP.has(x));
 assert.ok(drivers.length >= 45, `${drivers.length} page drivers are checked`);
