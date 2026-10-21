@@ -97,7 +97,7 @@
   function phrases(o){
     const s=o||{}, out=[];
     if(s.body==='monster'&&typeof s.pct==='number')out.push('Context almost full ('+s.pct+'%)');
-    if(s.trouble==='ambulance')out.push('Error: needs a look');
+    if(s.trouble==='ambulance')out.push('Error: please check it');
     else if(s.trouble==='faint')out.push('Spending limit reached');
     else if(s.trouble==='impatient')out.push('Waiting '+fmtWait(s.waitingMs||0)+' for you');
     else if(s.trouble==='dizzy')out.push((s.failStreak||DIZZY_STREAK)+' tool calls failed in a row');
