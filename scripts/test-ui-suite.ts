@@ -29,8 +29,8 @@ const excl = (/exclude: (.*)/.exec(wf) || [])[1] || '';
 assert.ok(excl.includes(`github.event_name == 'pull_request' || github.event_name == 'push'`) && excl.includes('"os":"ubuntu-latest","part":"layout-2"') && (excl.match(/"os"/g) || []).length === 1, 'only Linux layout 2/2, only on PR and push, is left out');
 const ci = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
 const shardJobs = (ci.match(/- \{ shard: \d+, index: \d+ \}/g) || []).length;
-assert.ok(shardJobs >= 2 && new RegExp(`OFFICE_SHARDS: ${shardJobs}\\n`).test(ci) && ci.includes(`shard }}/${shardJobs}`), 'ci.yml: one office shard job per shard (FR-099)');
-assert.ok(wf.includes("OFFICE_HERE: ${{ (matrix.os != 'ubuntu-latest' || (github.event_name != 'pull_request' && github.event_name != 'push'))") && ci.includes('needs.changes.outputs.code') && /^ {2}push:\n {4}branches: \[main\]/m.test(ci), 'Linux skips the office layout here only for the events where ci.yml runs it');
+assert.ok(shardJobs >= 2 && new RegExp(`OFFICE_SHARDS: ${shardJobs}\\r?\\n`).test(ci) && ci.includes(`shard }}/${shardJobs}`), 'ci.yml: one office shard job per shard (FR-099)');
+assert.ok(wf.includes("OFFICE_HERE: ${{ (matrix.os != 'ubuntu-latest' || (github.event_name != 'pull_request' && github.event_name != 'push'))") && ci.includes('needs.changes.outputs.code') && /^ {2}push:\r?\n {4}branches: \[main\]/m.test(ci), 'Linux skips the office layout here only for the events where ci.yml runs it');
 // FR-098: every workflow with a required check also runs on merge queue entries
 for (const f of ['ci.yml', 'spec-kit.yml']) assert.ok(/^ {2}merge_group:/m.test(fs.readFileSync(path.join(ROOT, '.github', 'workflows', f), 'utf8')), `${f} runs on merge_group`);
 // ---- scripts/driver-helpers.js (spec 008 FR-097): the shared plumbing behaves as the drivers' own copies did ----
