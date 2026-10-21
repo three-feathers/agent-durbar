@@ -37,7 +37,7 @@ interface SimOptions {
   /** Spec 012 FR-130: the first Claude agent (or the first agent) asks a question (page address `simquestion=1`). */
   /** Spec 052 FR-141 (issue #367): the first agent has eight session grants with long names (page address `simgrants=many`). */
   grants?: 'many' | 'stuck'; /* 'stuck': revokes are accepted but never remove anything (a failed revoke) */
-  question?: boolean | 'long'; /* 'long' (spec 052 FR-140): a long question text and long option labels and descriptions (FR-160) */
+  question?: boolean | 'long' | 'compact'; /* 'long' (spec 052 FR-140): a long question text and long option labels and descriptions (FR-160); 'compact' (FR-162, FR-163): a short question, then six compactions in a row while it waits */
   /** Spec 012 FR-151: an MCP server asks one agent for input: a small form (`simelicit=1`) or an https page to open (`simelicit=url`). */
   elicit?: string;
   /** Spec 033: names of floors that start switched off. */
@@ -354,8 +354,16 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         ] : [
           { question: 'Which colour should the focus ring use?', header: 'Focus ring', multiSelect: false, options: [{ label: 'Sage', description: 'The calm green of the office walls' }, { label: 'Blue', description: 'Matches the links' }] },
           { question: 'Which screens should get it first?', header: 'Screens', multiSelect: true, options: [{ label: 'Office' }, { label: 'Chat' }, { label: 'Settings' }] },
-        ] });
+        ].slice(0, opts.question === 'compact' ? 1 : 2) });
         emit({ type: 'status', sessionId: s.info.id, timestamp: now(), status: 'needs-permission', intent: 'Waiting for your answer' });
+        /* spec 052 FR-163 (owner, 2026-10-21): the runtime compacts again and again while the question waits (sim: the count and numbers are made up) */
+        if (opts.question === 'compact') {
+          const lim = s.ctx?.limit ?? 128000;
+          for (let i = 0; i < 6; i++) {
+            emit({ type: 'compaction', sessionId: s.info.id, timestamp: now(), phase: 'start', trigger: 'auto', tokensBefore: Math.round(lim * 0.93), limit: lim });
+            emit({ type: 'compaction', sessionId: s.info.id, timestamp: now(), phase: 'complete', trigger: 'auto', tokensBefore: Math.round(lim * 0.93), tokensAfter: Math.round(lim * (0.2 + i * 0.01)), tokensRemoved: Math.round(lim * (0.73 - i * 0.01)), limit: lim });
+          }
+        }
       }, 300);
     }
     /* simelicit=1|url (spec 012 FR-151): an MCP server asks one agent for input, as an MCP elicitation does (a form, or a page to open) */
