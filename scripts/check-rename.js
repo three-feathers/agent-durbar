@@ -13,16 +13,16 @@
  */
 const path = require('path');
 const assert = require('assert');
-const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
+const { helpers, jsLiteral } = require('./driver-helpers'); /* shared plumbing; jsLiteral: values spliced into page code (CodeQL js/bad-code-sanitization) */
 const OUT = process.env.OUT || require('os').tmpdir();
-const INDEX = path.join(process.cwd(), 'dist', 'renderer', 'index.html');
 const Q = { sim: '15', simfreeze: '1', simkinds: 'mixed', simtitles: '1' };
 const EVIL = '<img src=x onerror=window.__xss=1> & "q"';
 const LONG = 'Sixty characters long name for the layout check, ends here..';
 
 module.exports = async (ctx) => {
-  const js = async (c) => { try { return await ctx.js(c); } catch (e) { console.log('JS ERR for', c.slice(0, 120)); throw e; } };
-  const shot = async (name) => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(300); await ctx.shot(path.join(OUT, name)); console.log('[rename] saved', name); };
+  const H = helpers(ctx); // spec 008 FR-096/097
+  const js = H.js;
+  const shot = (name) => H.shot(path.join(OUT, name), { prep: 'mouse', delay: 300, tag: 'rename', what: name });
   const key = async (k) => js(`(()=>{const t=document.activeElement||document.body;const e=new KeyboardEvent('keydown',{key:${jsLiteral(k)},bubbles:true,cancelable:true});t.dispatchEvent(e);return e.defaultPrevented})()`);
   const dlg = () => js(`(()=>{const d=document.getElementById('modeDlg');if(!d)return null;const i=d.querySelector('#mdIn'),e=d.querySelector('#mdErr');return {title:d.querySelector('h3').textContent,lines:[...d.querySelectorAll('.dlist li')].map(x=>x.textContent),value:i.value,sel:[i.selectionStart,i.selectionEnd],max:i.maxLength,err:e&&!e.hidden?e.textContent:'',focus:document.activeElement===i,btns:[...d.querySelectorAll('.btn')].map(b=>b.textContent+(b.classList.contains('primary')?'*':''))}})()`);
   const type = (v) => js(`(()=>{const i=document.getElementById('mdIn');i.value=${jsLiteral(v)};i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
@@ -36,12 +36,9 @@ module.exports = async (ctx) => {
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     for (const level of ['expert', 'simple']) {
-      ctx.win.setContentSize(w, h);
-      await ctx.win.loadFile(INDEX, { query: Q });
-      await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
+      await H.load({ w, h, query: Q, ready: 'fit', settle: false });
       await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)})`);
-      await ctx.win.loadFile(INDEX, { query: Q });
-      await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
+      await H.load({ query: Q, ready: 'fit', settle: false });
       await ctx.sleep(1800);
       const tag = `${w} ${level}`;
       ctx.win.show(); ctx.win.focus(); ctx.win.webContents.focus();
