@@ -73,3 +73,8 @@ The renderer only: `src/renderer/app.js`, `screens.js`, `index.html`, `styles.cs
 - Option button: a label span and a description span (`.q-desc`, 11px, muted). The custom box becomes a `<textarea rows=1>` that grows with its content (`scrollHeight`), full row width.
 - Testing: extend `scripts/check-question-options.js` and the `simquestion=long` fixture in `sim.ts`; adapter bounds in `scripts/test-claude-adapter.ts`.
 
+## FR-162, FR-163 (2026-10-21): a waiting question in sight, compactions folded
+
+- Existing capability reused: `wireAnswerBar()` in `app.js` (the bar above the composer, FR-001) and the question card's controls from `showQuestion()`; the bar's new controls click the card's option, set the card's Other box and click its Answer/Skip, so there is one send path. `paint()` keeps a key (request, count, words) and skips the rebuild when nothing changed.
+- `onCompaction()` keeps a run per agent (`a.compRun`: the line, the count, the last time, a log for the tooltip) and reuses the line while it is the chat's last element (or ends a started one on its line). The words come from `compactionFoldText()` in `modelswitch.js` (pure, unit-tested). `addInfoNote()` folds an identical repeat.
+- Testing: `simquestion=compact` in `sim.ts` (one short question, then six compaction start/complete pairs); `scripts/check-question-visible.js`, an Electron driver like `check:question-options`.

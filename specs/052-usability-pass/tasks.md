@@ -200,3 +200,9 @@
 - [x] T132 Enter in the custom box sends the card (Answer's handler), Shift+Enter a line, empty Enter sends nothing; typing chooses the box; screen reader hint [FR-161]
 - [x] T133 `check-question-options.js` + `simquestion=long`: long texts in full, Enter / empty Enter; run at 1440x900 and 1280x800; screenshots; CHANGELOG, `specs/README.md` [FR-160, FR-161]
 
+## Question in sight, compactions folded (2026-10-21, owner report)
+- [x] T134 Spec delta FR-162/FR-163, plan note [FR-162, FR-163]
+- [x] T135 Answer bar: short question answered in the bar (options, Other box, Skip press the card's controls), Show question, no rebuild while unchanged, zero-height card counts as out of view, recheck on resize [FR-162]
+- [x] T136 `onCompaction`: one line per run of compactions (`compactionFoldText` in `modelswitch.js`, test in `test-modelswitch`), no `isConnected` leftover; `addInfoNote` folds an identical repeat with "(×N)" [FR-163]
+- [x] T137 `simquestion=compact` + `scripts/check-question-visible.js` (`npm run check:question-visible`) at 1440x900 and 1280x800; mutation runs; screenshots; README, CHANGELOG, `specs/README.md` [FR-162, FR-163]
+
