@@ -87,8 +87,9 @@ export class HarnessSetup {
   }
 
   /** FR-002/FR-003: what the dialog offers for install or update, plus the official page. */
-  plans(kind: SetupKind, op: 'install' | 'update'): { plans: SetupPlan[]; page: string; name: string } {
-    const found = new Set<PackageManager>(managersFor(this.deps.detectEnv.platform).filter((m) => this.find(m)));
+  /** `assumeFound`: the simulator's per-OS set (spec 060 FR-002) instead of what is installed on this machine. */
+  plans(kind: SetupKind, op: 'install' | 'update', assumeFound?: readonly PackageManager[]): { plans: SetupPlan[]; page: string; name: string } {
+    const found = new Set<PackageManager>(assumeFound ?? managersFor(this.deps.detectEnv.platform).filter((m) => this.find(m)));
     const plans = (op === 'install' ? installPlans : updatePlans)(kind, this.deps.detectEnv.platform, found);
     return { plans, page: OFFICIAL_PAGES[kind], name: SETUP_NAMES[kind] };
   }
