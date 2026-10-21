@@ -174,7 +174,7 @@ As the user who set a spending limit, I see the agent on a coffee break "until y
 - FR-009 `[IMPLEMENTED]` (sim:) Try now, Stay on break; Resume, Not now once it asks; a message, Stop or the end of the session end the break.
 - FR-010 `[IMPLEMENTED]` (sim: Omar) The spec 011 flow is unchanged; the card and figure show a coffee break.
 - FR-011 `[IMPLEMENTED]` (sim: inbox) The chat card is a Needs you item, so the inbox row ("is on a coffee break") and the OS notification come from spec 052. A new card (ask at the reset, the 1-hour reminder) is a new item. `[KNOWN GAP]` the notification's title stays "<Name> needs you" (its body is the coffee sentence), and OS notifications were not seen on any OS (as in spec 052).
-- FR-012 `[IMPLEMENTED]` (sim:) Scene words `place-coffee` and `coffee-break` in `CLEAN_WORDS`, every built-in theme (Break room, Snack bar / Snack break, Chai stall / Chai break, The Tea Room / Tea break, Chashitsu / Tea break) and `GEN_WORDS`. Simple mode leaves out the limit's name on the card.
+- FR-012 `[IMPLEMENTED]` (sim:; check:geometry) The corner's name is the scene word `place-coffee` in `CLEAN_WORDS`, every built-in theme (Break room, Snack bar, Chai stall, The Tea Room, Chashitsu) and `GEN_WORDS`. *Coffee break* itself stays plain in every theme: it is a status word on the pill, and a themed pill would change its width (`check:geometry` failed on Snack/Chai/Tea break, so that part of FR-012 was dropped; spec 035 keeps status words plain). Simple mode leaves out the limit's name on the card.
 - FR-013 `[IMPLEMENTED]` (check:office; sim: 15 and sparse rosters at 1440x900 and 1280x800) No overlap or office scroll; tile text 12.5 px.
 - FR-014 `[IMPLEMENTED]` (sim:) The corner's label: "Coffee corner: Tomas (until 4:24 PM), Omar (until you raise the limit), Rosa (until the limit resets)".
 - FR-015 `[IMPLEMENTED]` (read:) Epoch ms and `Intl`; no OS scheduler or shell. Not run on Windows or macOS.
@@ -184,4 +184,4 @@ As the user who set a spending limit, I see the agent on a coffee break "until y
 
 ## Changes
 
-- **2026-10-21, built** (this branch). Decisions taken while building, within the clarified answers: the coffee corner tile is narrow (FR-003, above); a scheduled run on a break is recorded as busy (FR-008); the MCP read state (spec 041) shows *Waiting, Coffee break* for both kinds of limit.
+- **2026-10-21, built** (this branch). Decisions taken while building, within the clarified answers: *Coffee break* is not themed (FR-012, a status word); the coffee corner tile is narrow (FR-003, above); a scheduled run on a break is recorded as busy (FR-008); the MCP read state (spec 041) shows *Waiting, Coffee break* for both kinds of limit.

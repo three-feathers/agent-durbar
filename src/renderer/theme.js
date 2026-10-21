@@ -189,7 +189,6 @@
     'place-web':'Web',
     'place-other':'Other tools',
     'place-coffee':'Coffee corner',  /* spec 068: where an agent waits while its usage limit resets */
-    'coffee-break':'Coffee break',
     'lobby-label':'Lobby: the places where agents work',
     'door-close':'Close room',
     'door-open':'Open room',
@@ -556,7 +555,7 @@
       '--proto-line':'#eed9ac',
       '--ic-read':'#4c6f8a','--ic-edit':'#6d7f52','--ic-run':'#37658a','--ic-search':'#7d6a44','--ic-tool':'#6c7683',
     },
-    words:{'place-library':'Records','place-coffee':'Break room','coffee-break':'Coffee break','place-software':'Repository','place-terminal':'Server room','place-web':'Network','place-other':'Facilities','lobby-label':'Reception: the places where agents work'},
+    words:{'place-library':'Records','place-coffee':'Break room','place-software':'Repository','place-terminal':'Server room','place-web':'Network','place-other':'Facilities','lobby-label':'Reception: the places where agents work'},
     motion:{preset:'calm'},
     art:{
       /* suit collar + tie under the neck, briefcase on the desk, glass wall with a skyline, blinds,
@@ -654,7 +653,7 @@
       'place-web':'<rect x="3" y="5" width="4" height="4" fill="currentColor"/><rect x="13" y="5" width="4" height="4" fill="currentColor"/><rect x="8" y="2.5" width="4" height="4" fill="currentColor"/><path d="M7 7h3v3H7zM13 7h-3v3h3z"/>',
       'place-other':'<circle cx="10" cy="10" r="2.6"/><rect x="9" y="2.5" width="2" height="2.4" fill="currentColor"/><rect x="9" y="15.1" width="2" height="2.4" fill="currentColor"/><rect x="2.5" y="9" width="2.4" height="2" fill="currentColor"/><rect x="15.1" y="9" width="2.4" height="2" fill="currentColor"/>',
     },
-    words:{'place-library':'Arcade','place-coffee':'Snack bar','coffee-break':'Snack break','place-software':'Cartridge Bay','place-terminal':'Console','place-web':'Modem','place-other':'Gadgets','lobby-label':'Game lobby: the places where agents work'},
+    words:{'place-library':'Arcade','place-coffee':'Snack bar','place-software':'Cartridge Bay','place-terminal':'Console','place-web':'Modem','place-other':'Gadgets','lobby-label':'Game lobby: the places where agents work'},
     motion:{preset:'arcade'},
   });
 
@@ -706,7 +705,7 @@
       'place-web':'<circle cx="10" cy="10" r="6.6"/><path d="M3.4 10h13.2M10 3.4q3.6 3.2 0 13.2M10 3.4q-3.6 3.2 0 13.2"/>',
       'place-other':'<path d="M10 3l2.2 4.6L17 8.6l-3.7 3.4 1 5-4.3-2.6L5.7 17l1-5L3 8.6l4.8-1z"/>',
     },
-    words:{'place-library':'Records Kothi','place-coffee':'Chai stall','coffee-break':'Chai break','place-software':'Shastra Ghar','place-terminal':'Yantra Kaksh','place-web':'Jaal Khidki','place-other':'Chhota Kaam','lobby-label':'The durbar: the places where agents work','door-close':'Close gate','door-open':'Open gate','door-title-prefix':'Close the gate'},
+    words:{'place-library':'Records Kothi','place-coffee':'Chai stall','place-software':'Shastra Ghar','place-terminal':'Yantra Kaksh','place-web':'Jaal Khidki','place-other':'Chhota Kaam','lobby-label':'The durbar: the places where agents work','door-close':'Close gate','door-open':'Open gate','door-title-prefix':'Close the gate'},
     motion:{preset:'court'},
   });
 
@@ -758,7 +757,7 @@
       'place-web':'<circle cx="10" cy="10" r="6.4"/><path d="M3.6 10h12.8M10 3.6q3.4 3 0 12.8M10 3.6q-3.4 3 0 12.8"/>',
       'place-other':'<path d="M10 4.2l1.8 3.8 4.2.6-3 3 .7 4.2-3.7-2-3.7 2 .7-4.2-3-3 4.2-.6z"/>',
     },
-    words:{'place-library':'The Archive','place-coffee':'The Tea Room','coffee-break':'Tea break','place-software':'The Atelier','place-terminal':'The Forge','place-web':'The Messenger Hall','place-other':'The Household', /* spec 052 FR-023: court words, not Victorian industry */'lobby-label':'The court: the places where agents work'},
+    words:{'place-library':'The Archive','place-coffee':'The Tea Room','place-software':'The Atelier','place-terminal':'The Forge','place-web':'The Messenger Hall','place-other':'The Household', /* spec 052 FR-023: court words, not Victorian industry */'lobby-label':'The court: the places where agents work'},
     motion:{preset:'court'},
   });
 
@@ -811,7 +810,7 @@
       'place-web':'<circle cx="10" cy="10" r="6.2"/><path d="M4 10h12M10 3.8q3.3 3 0 12.4M10 3.8q-3.3 3 0 12.4"/>',
       'place-other':'<path d="M7 16.6V9.8L10 5.4l3 4.4v6.8"/><path d="M7 13h6"/>',
     },
-    words:{'place-library':'Bunko','place-coffee':'Chashitsu','coffee-break':'Tea break','place-software':'Kōbō','place-terminal':'Tanmatsu-shitsu','place-web':'Tsūshinjo','place-other':'Dōgu-beya', /* spec 052 FR-023: Japanese words in the Japanese court (the plain names are in the tooltips, FR-013) */'lobby-label':'The Ō-hiroma: the places where agents work','door-close':'Slide shut','door-open':'Slide open','door-title-prefix':'Slide the fusuma shut'},
+    words:{'place-library':'Bunko','place-coffee':'Chashitsu','place-software':'Kōbō','place-terminal':'Tanmatsu-shitsu','place-web':'Tsūshinjo','place-other':'Dōgu-beya', /* spec 052 FR-023: Japanese words in the Japanese court (the plain names are in the tooltips, FR-013) */'lobby-label':'The Ō-hiroma: the places where agents work','door-close':'Slide shut','door-open':'Slide open','door-title-prefix':'Slide the fusuma shut'},
     motion:{preset:'court'},
   });
 
