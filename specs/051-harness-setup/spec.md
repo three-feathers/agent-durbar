@@ -133,3 +133,22 @@ Each sign-in was started **without a terminal** (stdin closed, output to a file)
 - **2026-10-20 (spec 052 FR-056):** the cards add a muted "· for ChatGPT / Claude / GitHub" subtitle; the install dialog leads each way with "Durbar installs <App> for you with Homebrew (recommended)" and moves the exact commands into "Show the exact command" (closed in Simple, open in Expert). The native main-side confirmation (FR-004b) still shows the real program and arguments before anything runs. Not run in the simulator in this change (`read:`).
 - **2026-10-20 (spec 052 FR-045):** the cards say which plan each harness uses; the Claude and Codex sign-in and install hints point to Settings > Harnesses (the command stays in brackets); an install that worked goes straight to the sign-in when the harness needs one; the sign-in dialog names the account, adds a step 3 and no longer shows seconds; install choices lead with "Using Homebrew (recommended)" / "Using npm" above the command.
 - **2026-10-20 (security review, FR-004b/FR-004c):** a round-4 security reviewer found that consent lived only in the page. Installs and updates now need a native main-side confirmation with the real path; harness calls check the sender frame; world-writable binaries are refused on macOS/Linux; winget names its source; output lines hide the link, the code and OAuth values; progress is throttled. `test:` `scripts/test-harnesssetup.ts`. Not checked on Windows or macOS (`read:`); the native dialog was checked in the simulator only as far as the page goes (the simulator has its own canned runner).
+
+### 2026-10-21: known gaps revalidated
+
+- **"No install ran for real" and "macOS and Windows are untested"** are narrowed by CI. These runs used the app's own `HarnessSetup` code on GitHub's ubuntu, macOS and Windows runners, as a standard user and as admin (spec 060 T060, #393): every route Durbar offers there was installed for real, then detected and run with `--version`.
+  - The official installers work without admin rights on all three.
+  - npm and Homebrew fail for a standard user on macOS, as their notes say.
+  - Codex's Windows installer needed two fixes found by those runs: Windows' own `tar` first on PATH, and detection of `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin`.
+  - Install-check runs 39485719890 and 39493963859; e2e run 39496442403 installs through the first route and then signs in.
+- **Signed-out Copilot** is still not observed through the keyring path. Through a token (`COPILOT_GITHUB_TOKEN`), an account without Copilot gave a 403 on the model list in the e2e (spec 062 Changes), which Durbar reported as a failure at models, not at sign-in. `[KNOWN GAP]`: `verifySignIn` said `signed-in` for that account, because its quota call succeeded.
+- **No sign-in completed through the app** is unchanged (it would replace the real logins on this machine). The e2e signs in with tokens and API keys instead, which is not the app's browser or device-code flow.
+- **Windows ACLs are not read** is unchanged (world-writable checks are macOS and Linux only).
+
+### 2026-10-21: D1 superseded by spec 060 FR-001 (official installers)
+
+- **D1 delta.** D1 said a package manager only, never a downloaded script, and otherwise the vendor's page. Spec 060 FR-001 (owner Q1, least privilege first) supersedes it:
+  - the vendor's official installer is downloaded **after** the native confirmation, from that vendor's fixed hosts only (checked on every redirect);
+  - it is saved into a private temp folder, checked to look like a script (not a web page), and **run as a file, never piped**;
+  - package managers come after it, or first when they own the installed copy (Update).
+  - Details and tests: spec 060 `## Changes`.

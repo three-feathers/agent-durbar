@@ -11,7 +11,7 @@ export interface RemoteOpsDeps {
   known(id: string): boolean;
   /** The adapter that runs the agent. */
   adapterOf(id: string): AgentAdapter | undefined;
-  /** Opens a checked https://github.com/... link in the system browser. */
+  /** Opens a checked link on the adapter's remote service host in the system browser. */
   open(url: string): Promise<void>;
   /** The agent's permission mode now (remote control is refused in Allow all). */
   modeOf?(id: string): string | undefined;
@@ -21,9 +21,9 @@ export interface RemoteOpsDeps {
   record?(id: string, on: boolean): void;
 }
 
-export const NO_REMOTE = 'This agent app cannot be controlled from GitHub.';
+export const NO_REMOTE = 'This agent app cannot be controlled remotely.';
 export const NOT_RUNNING = 'Send a message first so the session is running, then turn on remote control.';
-export const NOT_IN_ALLOW_ALL = 'Remote control is off in Allow all: anyone who can steer this session on GitHub could make it run commands without asking you. Switch to Ask first, then turn it on.';
+export const NOT_IN_ALLOW_ALL = 'Remote control is off in Allow all: anyone who can steer this session remotely could make it run commands without asking you. Switch to Ask first, then turn it on.';
 
 export function createRemoteOps(deps: RemoteOpsDeps) {
   /** Last state per agent id while remote control is on; dropped when it is turned off, fails, or the session ends. */
@@ -46,7 +46,7 @@ export function createRemoteOps(deps: RemoteOpsDeps) {
       // only plain, checked fields cross back to the window
       const out: RemoteState = r && r.ok ? { ok: true, on: r.on === true } : { ok: false, error: cleanRemoteError(r?.error) };
       if (out.ok && out.on) {
-        if (allowedRemoteUrl(r.url)) out.url = r.url;
+        if (allowedRemoteUrl(r.url, ad.capabilities.remoteService?.host)) out.url = r.url; // FR-060: that service's host only
         if (typeof r.steerable === 'boolean') out.steerable = r.steerable;
         if (r.visibility === 'repo' || r.visibility === 'unshared') out.visibility = r.visibility;
         state.set(id, out);
@@ -59,9 +59,17 @@ export function createRemoteOps(deps: RemoteOpsDeps) {
     /** FR-005: opens the stored link of agent `id` after checking it again; anything else is refused. */
     async openRemote(id: unknown): Promise<{ ok: boolean }> {
       const s = typeof id === 'string' ? state.get(id) : undefined;
-      if (!s || !s.url || !allowedRemoteUrl(s.url)) return { ok: false };
+      const host = typeof id === 'string' ? deps.adapterOf(id)?.capabilities.remoteService?.host : undefined;
+      if (!s || !s.url || !allowedRemoteUrl(s.url, host)) return { ok: false };
       await deps.open(new URL(s.url).href);
       return { ok: true };
+    },
+    /** FR-062: the adapter reports a new link after a relaunch; kept only when it is on that service's host and remote control is on. */
+    updateUrl(id: string, url: unknown): string | undefined {
+      const s = state.get(id);
+      if (!s || !allowedRemoteUrl(url, deps.adapterOf(id)?.capabilities.remoteService?.host)) return undefined;
+      s.url = url;
+      return url;
     },
     /** FR-003: the session ended or the agent left the office. */
     forget(id: string): void {

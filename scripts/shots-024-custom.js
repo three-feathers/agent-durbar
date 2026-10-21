@@ -17,6 +17,7 @@
  */
 const os = require('os');
 const path = require('path');
+const { jsLiteral } = require('./check-office-overlap.js');
 const assert = require('assert');
 const OUT = process.env.SHOTS_024 || os.tmpdir();
 const SIZES = [[1440, 900], [1280, 800]];
@@ -24,7 +25,7 @@ const LONG = ['Customer support desk 01', 'Customer support desk 02', 'Customer 
 
 module.exports = async (ctx) => {
   const js = (code) => ctx.js(code);
-  const q = JSON.stringify;
+  const q = jsLiteral; /* CodeQL js/bad-code-sanitization: values spliced into page code go through jsLiteral */
   const shot = async (name, w, h) => { await ctx.sleep(300); await ctx.shot(path.join(OUT, `024-custom-${name}-${w}x${h}.png`)); console.log('[024c] saved', `024-custom-${name}-${w}x${h}.png`); };
   /* ctx.waitFor returns false on a timeout: a miss must fail the driver */
   const W = async (expr, ms, what) => { assert.ok(await ctx.waitFor(expr, ms), 'timed out waiting for ' + (what || expr)); };
@@ -208,7 +209,9 @@ module.exports = async (ctx) => {
   // one label path: every place name drawn (tile text, tooltip, label, Settings options and list) must come from placeLabel -> DurbarPlaces.placeName
   const MARK = ' [L]';
   const redraw = async () => { await js(`document.querySelector('.stat[data-k="waiting"]').click();document.querySelector('.stat[data-k="waiting"]').click()`); await ctx.sleep(600); };
-  await js(`(()=>{const P=window.DurbarPlaces;P.__orig=P.placeName;P.placeName=(id,c)=>P.__orig(id,c)+${q(MARK)};return 0})()`); await redraw();
+  // placeLabel takes a built-in place's name from the theme's words (spec 036: themes rename places) and a custom place's from
+  // DurbarPlaces.placeName, so both sources are marked; anything drawn without placeLabel stays unmarked and fails below
+  await js(`(()=>{const P=window.DurbarPlaces,T=window.THEME;P.__orig=P.placeName;P.placeName=(id,c)=>P.__orig(id,c)+${q(MARK)};T.__origWord=T.word;T.word=(k)=>{const w=T.__origWord(k);return /^place-/.test(k)?w+${q(MARK)}:w};return 0})()`); await redraw();
   const marked = await js(`[...document.querySelectorAll('#stage .place')].map(p=>({pn:p.querySelector('.pn').textContent,title:p.title,label:p.getAttribute('aria-label')}))`);
   assert.strictEqual(marked.length, 8);
   marked.forEach((m) => { assert.ok(m.pn.endsWith(MARK) && m.title.includes(MARK) && m.label.includes(MARK), 'the tile bypasses placeLabel: ' + JSON.stringify(m)); });
@@ -217,7 +220,7 @@ module.exports = async (ctx) => {
   assert.ok(markedS.opts.slice(1, 9).every((t) => t.endsWith(MARK)), 'Settings options bypass placeLabel: ' + JSON.stringify(markedS.opts));
   assert.ok(/^Default \(.*\[L\]\)$/.test(markedS.opts[0]), 'the Default (...) option bypasses placeLabel: ' + markedS.opts[0]);
   assert.ok(markedS.list.every((t) => t.endsWith(MARK)), 'Your places list bypasses placeLabel');
-  await js(`window.DurbarPlaces.placeName=window.DurbarPlaces.__orig;0`); await closeSettings(); await redraw();
+  await js(`window.DurbarPlaces.placeName=window.DurbarPlaces.__orig;window.THEME.word=window.THEME.__origWord;0`); await closeSettings(); await redraw();
   // (the refusal of a fourth add by the IPC, `limit`, is covered by test-credits and test-places: the page keeps its bridge private)
   await openSettings();
   assert.strictEqual(await js(`document.getElementById('plCapNote').textContent`), 'Up to 3 places of your own.');

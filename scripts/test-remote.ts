@@ -44,6 +44,11 @@ async function main(): Promise<void> {
     'https://github.com/' + 'a'.repeat(2050), // too long
   ]) assert.ok(!allowedRemoteUrl(bad), 'refused: ' + bad.slice(0, 60));
   for (const v of [undefined, null, 42, {}, ['https://github.com/x']]) assert.ok(!allowedRemoteUrl(v), 'non-strings are refused');
+  // spec 054 FR-060: each service's own host only
+  assert.ok(allowedRemoteUrl('https://claude.ai/code/session_01ABC', 'claude.ai'));
+  assert.ok(!allowedRemoteUrl('https://github.com/o/r', 'claude.ai'), 'a GitHub link is not a Claude link');
+  assert.ok(!allowedRemoteUrl('https://claude.ai.evil.example/code/x', 'claude.ai'));
+  assert.ok(!allowedRemoteUrl('https://claude.ai/code/x'), 'the default host stays github.com');
 
   assert.strictEqual(cleanRemoteError(new Error('bad\nthing\u0007 here')), 'bad thing here');
   assert.strictEqual(cleanRemoteError(undefined), 'Remote control failed.');
@@ -168,7 +173,14 @@ async function main(): Promise<void> {
     assert.ok(!ops.has('a1'));
     answer = { ok: true, on: true, url: 'https://github.com/o/r/tasks/4' };
     await ops.setRemote('a1', true);
+    // FR-062: a new link after a relaunch replaces the stored one only on the service's host, and only while it is on
+    assert.strictEqual(ops.updateUrl('a1', 'https://evil.example/y'), undefined);
+    assert.strictEqual(ops.updateUrl('a1', 'https://github.com/o/r/tasks/5'), 'https://github.com/o/r/tasks/5');
+    assert.deepStrictEqual(await ops.openRemote('a1'), { ok: true });
+    assert.strictEqual(opened[opened.length - 1], 'https://github.com/o/r/tasks/5');
+    assert.strictEqual(ops.updateUrl('a2', 'https://github.com/o/r/tasks/6'), undefined, 'not on: nothing stored');
     ops.forget('a1'); // the session ended
+    assert.strictEqual(ops.updateUrl('a1', 'https://github.com/o/r/tasks/7'), undefined, 'after the end: nothing stored');
     assert.deepStrictEqual(await ops.openRemote('a1'), { ok: false });
     answer = { ok: false, error: 'boom\nline' };
     assert.deepStrictEqual(await ops.setRemote('a1', true), { ok: false, error: 'boom line' });

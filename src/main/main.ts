@@ -1,3 +1,4 @@
+import { parseEffort } from '../shared/effort';
 import { app, BrowserWindow, dialog, Menu, screen, shell } from 'electron';
 import { ipcHandle, ipcOn } from './ipcguard';
 import { randomUUID } from 'crypto';
@@ -7,7 +8,10 @@ import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
 import { offeredDescriptors } from '../adapters/experimental';
 import { createRegistry, detectAll } from '../adapters/registry';
-import { detectorFor, nodeDetectEnv } from '../adapters/detect';
+import { folderGitStatus } from './gitstatus';
+import type { GitStatus } from './gitstatus';
+import { detectorFor, nodeDetectEnv, setLoginPath } from '../adapters/detect';
+import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { execFile, spawn } from 'child_process';
 import { adapterForAdd, createRouter, historyOf, modelOptionsOf, previousSessionsOf } from '../adapters/router';
 import { errText, restorable, setCapOp, setModeOp, stopTurnOp, validMode } from './agentops';
@@ -53,7 +57,7 @@ import { UserThemeStore } from './themes';
 import { HarnessSetup, confirmText, posixTrusted } from './harnesssetup';
 import { markSignedOut, withSignIn } from './authcheck';
 import type { SignInAnswer } from './authcheck';
-import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind } from '../shared/harnesssetup';
+import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind, simManagers } from '../shared/harnesssetup';
 import { MAX_DESCRIPTION, MAX_PASSES, THEME_IDEAS, TOP_BAR_ISSUE, buildFixPrompt, buildRetryPrompt, buildThemePrompt, isBlocking, keepArt, parseGeneratedTheme } from '../shared/themegen';
 import { SettingsStore } from './settings';
 import { parseBadgeCount, shouldBounce, shouldFlash } from './badge';
@@ -64,6 +68,11 @@ import { REPO_URL, aboutPanelOptions, aboutView } from '../shared/about';
 import { modelControlFor, parseFocus, parseSwitchRequest } from '../shared/modelswitch';
 import type { ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import { createDebugSink } from '../shared/redact';
+import { profileDir } from './profiledir';
+import { debugSwitchesToRemove } from './debugguard';
+
+// Spec 008 FR-038: no DevTools endpoint in a packaged build. No fuse covers these switches; removing them before ready is shown to work on the packed Linux app (npm run check:fuses-launch).
+for (const sw of debugSwitchesToRemove(app.isPackaged)) app.commandLine.removeSwitch(sw);
 
 // Developer/test hooks (spec 010): ignored in packaged builds unless DURBAR_DEV=1. Read hooks only from `dev`.
 const dev = devEnv(process.env, app.isPackaged);
@@ -71,12 +80,12 @@ const devNote = devWarning(process.env, app.isPackaged);
 if (devNote) console.error(devNote);
 
 // Cheapest routing on the logged-in account's only model ("auto"); see docs/milestone-1.md.
-// Dev/test: DURBAR_USER_DATA=/tmp/x keeps the saved folder list (and Electron's other state) out of the real profile.
-if (dev.DURBAR_USER_DATA) app.setPath('userData', dev.DURBAR_USER_DATA);
+// Profile folder chosen in code (spec 008 FR-034): packaged `<appData>/agent-durbar`, dev `<appData>/agent-durbar-dev`.
+// Dev/test: DURBAR_USER_DATA=/tmp/x wins and keeps the saved folder list (and Electron's other state) out of the real profile.
+// Must stay before anything reads the userData folder and before `whenReady`.
+app.setPath('userData', profileDir({ packaged: app.isPackaged, platform: process.platform, appData: app.getPath('appData'), env: process.env }));
 const DEFAULT_MODEL = 'auto';
-const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
-type Effort = (typeof EFFORTS)[number];
-const asEffort = (v: unknown): Effort | undefined => (EFFORTS as readonly string[]).includes(v as string) ? (v as Effort) : undefined;
+const asEffort = parseEffort; // spec 007 FR-008: the models' own effort names, `none` included
 let folderStore: FolderStore | undefined;
 /** Global settings (default credit cap, spec 011), created when the app is ready. */
 let settingsStore: SettingsStore | undefined;
@@ -753,10 +762,12 @@ const harnessSetup = new HarnessSetup({
   },
   realpath: (p: string) => fs.realpathSync(p),
   trustedPath: (p: string) => process.platform === 'win32' || posixTrusted(p, (q) => fs.statSync(q).mode),
+  isRoot: () => typeof process.getuid === 'function' && process.getuid() === 0, // spec 060 FR-001
 } as ConstructorParameters<typeof HarnessSetup>[0]);
 /** FR-004b: harness setup answers only the app's own page in the main frame. */
 const fromApp = (e: Electron.IpcMainInvokeEvent): boolean => senderAllowed(e.senderFrame ? { url: e.senderFrame.url, isMain: e.senderFrame === e.sender.mainFrame } : null, path.join(__dirname, '..', 'renderer', 'index.html'));
-ipcHandle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? harnessSetup.plans(kind, op) : { plans: [], page: '', name: '' }));
+// spec 060 FR-002: under the simulator the routes are the real ones for this OS, with a typical new machine's package managers
+ipcHandle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? harnessSetup.plans(kind, op, dev.DURBAR_SIM ? simManagers(process.platform, dev.DURBAR_SIM_MANAGERS) : undefined) : { plans: [], page: '', name: '' }));
 ipcHandle('harness:run', async (e, kind: unknown, op: unknown, planIndex: unknown) => {
   if (!fromApp(e) || !isSetupKind(kind) || (op !== 'install' && op !== 'update' && op !== 'signin')) return { ok: false, error: 'invalid request' };
   const p = harnessSetup.prepare(kind, op, typeof planIndex === 'number' && Number.isInteger(planIndex) && planIndex >= 0 && planIndex < 8 ? planIndex : 0);
@@ -769,7 +780,10 @@ ipcHandle('harness:run', async (e, kind: unknown, op: unknown, planIndex: unknow
     const r = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
     if (r.response !== 1) return { ok: false, cancelled: true, error: 'Cancelled.' };
   }
-  return harnessSetup.start(p.job);
+  // spec 060 FR-001: an official installer is downloaded only now, after the user confirmed, from the vendor's fixed hosts
+  const ready = await harnessSetup.withScript(p.job);
+  if (!ready.ok) return ready;
+  return harnessSetup.start(ready.job);
 });
 ipcHandle('harness:paste', (e, text: unknown) => (fromApp(e) ? harnessSetup.paste(text) : { ok: false, error: 'invalid request' }));
 ipcHandle('harness:cancel', (e) => fromApp(e) && harnessSetup.cancel());
@@ -1025,6 +1039,17 @@ const remoteOps = createRemoteOps({
 router.onEvent((e) => {
   if (e.type === 'status' && e.status === 'stopped' && !e.agentId) remoteOps.forget(e.sessionId);
 });
+// spec 054 FR-062: the adapter says remote control ended on its own (for example a relaunch could not turn it back on)
+router.onEvent((e) => {
+  if (e.type !== 'remote' || e.agentId) return;
+  if (e.on) {
+    const url = remoteOps.updateUrl(e.sessionId, e.url);
+    if (url) toRenderer('agents:remoteUrl', { id: e.sessionId, url });
+    return;
+  }
+  remoteOps.forget(e.sessionId);
+  toRenderer('agents:remoteOff', { id: e.sessionId, ...(e.reason ? { reason: e.reason } : {}) });
+});
 ipcHandle('agents:setRemote', (e, id: unknown, on: unknown) => (fromApp(e) ? remoteOps.setRemote(id, on) : { ok: false, error: 'invalid request' }));
 ipcHandle('agents:openRemote', (e, id: unknown) => (fromApp(e) ? remoteOps.openRemote(id) : { ok: false }));
 
@@ -1068,9 +1093,19 @@ const signInCheck = (id: string): (() => Promise<SignInAnswer>) | undefined => {
     return undefined;
   }
 };
+/* spec 060 FR-003: the login shell's PATH, read once (at most 3 s) before the first detection; not under the simulator */
+let loginPathRead: Promise<void> | undefined;
+const loginPathReady = (): Promise<void> => {
+  if (!loginPathRead) loginPathRead = dev.DURBAR_SIM ? Promise.resolve() : readLoginShellPath(nodeLoginPathDeps()).then((dirs) => {
+    setLoginPath(dirs);
+    // what is found must also run: agent apps, their probes and MCP servers start with this PATH (an nvm `claude` needs its `node`)
+    if (dirs.length) process.env.PATH = mergeLoginPath(process.env.PATH, dirs);
+  }, () => undefined);
+  return loginPathRead;
+};
 const adaptersList = (refresh: boolean): Promise<AdapterInfo[]> => {
   // spec 012 FR-156: after the probes, each agent app that can tell is asked whether its sign-in works; cached until Check again
-  if (!adaptersInfo || refresh) adaptersInfo = detectAll(registry, (d) => detectorFor(d.id)?.(d) ?? Promise.resolve({ state: 'unknown' as const })).then((infos) => withSignIn(infos, signInCheck));
+  if (!adaptersInfo || refresh) adaptersInfo = loginPathReady().then(() => detectAll(registry, (d) => detectorFor(d.id)?.(d) ?? Promise.resolve({ state: 'unknown' as const }))).then((infos) => withSignIn(infos, signInCheck));
   return adaptersInfo;
 };
 /** Spec 012 FR-157: a session refused because of the sign-in marks its agent app `not-signed-in` in the cached list and tells the window. */
@@ -1255,6 +1290,11 @@ ipcHandle('agents:revokeGrant', (_e, id: string, key: string) => {
   if (agents.has(id)) router.forAgent(id)?.revokeGrant?.(id, String(key));
 });
 
+// spec 063: the git branch and changed files of an agent's own folder (read-only; the window never passes a path)
+ipcHandle('agents:gitStatus', async (e, id: unknown): Promise<GitStatus> => {
+  const a = fromApp(e) && typeof id === 'string' ? agents.get(id) : undefined;
+  return a && a.cwd ? folderGitStatus(a.cwd) : { repo: false };
+});
 ipcHandle('agents:openInVSCode', (_e, id: string) => {
   const a = agents.get(id);
   // Only paths of agents we started: the workspace file if there is one, else the folder.

@@ -52,9 +52,10 @@ module.exports = async (ctx) => {
     assert.strictEqual(btn, 'Schedules (1)');
     await js(`document.getElementById('schedHdrBtn').click()`); await until(`!!document.getElementById('schedDlg')&&!!document.getElementById('scTarget')`);
     assert.ok(await js(`!!document.getElementById('schedDlg')`), 'the chat button opens the dialog');
-    // Phase 2 FR-014: opened from a chat, "Send to" offers the folder's agent (the default) or this session (since PR #388 the option is plain "This session" and the name is on a hint line)
-    const to = await js(`(()=>{const t=document.getElementById('scTarget');return t?{n:t.options.length,v:t.value,second:t.options[1].textContent}:null})()`);
-    assert.ok(to && to.n === 2 && to.v === '' && to.second === 'This session', 'Send to: ' + JSON.stringify(to));
+    // Phase 2 FR-014: opened from a chat, "Send to" offers the folder's agent (the default) or this session
+    // #388 (spec 044): the option reads "This session"; the session's name is on the hint line under it (checked in detail by check-sched-sendto)
+    const to = await js(`(()=>{const t=document.getElementById('scTarget');return t?{n:t.options.length,v:t.value,second:t.options[1].textContent,hint:t.getAttribute('aria-describedby')}:null})()`);
+    assert.ok(to && to.n === 2 && to.v === '' && to.second === 'This session' && to.hint === 'scToHint', 'Send to: ' + JSON.stringify(to));
     await js(`document.getElementById('scClose').click()`); await until(`!document.getElementById('schedDlg')`);
     await js(`document.getElementById('backBtn').click()`); await until(`!document.body.classList.contains('panel-open')`);
     // 4) Settings > Schedules

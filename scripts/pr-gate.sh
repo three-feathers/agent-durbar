@@ -5,6 +5,8 @@
 # Waits until no check is pending, still none after 90 s (later workflows register their checks after the first ones end).
 # Blocks (prints why, exits 1) on:
 #   - a check that is not pass/skipping, or CodeQL not passed;
+#   - a PR GitHub cannot merge (conflicts): GitHub then runs only CodeQL, so the other checks look absent rather than red;
+#   - a PR that changes src/ without the Spec Kit gate and the Linux build-and-test check present and passing;
 #   - an open code-scanning alert on the PR's merge ref or head ref (a bot line comment can be carried forward after its alert is fixed);
 #   - a reviewer whose latest review is CHANGES_REQUESTED;
 #   - an unresolved, non-outdated review thread;
@@ -18,6 +20,14 @@ while [ "$2" = "--wait" ]; do
   pend || break
 done
 bad=$(gh pr checks $p | awk -F'\t' '$2!="pass" && $2!="skipping"{print $1"="$2}' | tr '\n' ' ')
+# GitHub computes mergeability lazily: UNKNOWN means "ask again shortly"
+for _ in 1 2 3 4 5 6; do mergeable=$(gh pr view $p --json mergeable -q .mergeable); [ "$mergeable" = UNKNOWN ] || break; sleep 10; done
+[ "$mergeable" = MERGEABLE ] || bad="$bad mergeable=$mergeable(merge main first)"
+if gh pr view $p --json files -q '.files[].path' | grep -q '^src/'; then
+  for need in 'Spec Kit gate' 'Build and test (ubuntu-latest)'; do
+    gh pr checks $p | awk -F'\t' -v n="$need" '$1==n && $2=="pass"{f=1} END{exit !f}' || bad="$bad missing:$need"
+  done
+fi
 codeql=$(gh pr checks $p | awk -F'\t' '$1=="CodeQL"{print $2}')
 alerts=$(( $(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/merge&state=open" --jq length) + $(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/head&state=open" --jq length) ))
 changes=$(gh api repos/$R/pulls/$p/reviews --jq "[group_by(.user.login)[]|max_by(.submitted_at)|select(.state==\"CHANGES_REQUESTED\" and .user.login!=\"$ME\")|.user.login]|join(\",\")")

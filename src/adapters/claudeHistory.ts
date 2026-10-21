@@ -9,6 +9,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { DEFAULT_HISTORY_LIMITS, cleanSessionTitle, cut, sameDir, toolLabel } from './history';
 import type { HistoryItem, HistoryLimits, HistoryResult, PreviousSession } from './history';
+import { isObj } from '../shared/guards';
 
 export const HEAD_BYTES = 256 * 1024;
 export const MAX_FILE_BYTES = 50 * 1024 * 1024;
@@ -24,7 +25,6 @@ export function claudeConfigDir(env: NodeJS.ProcessEnv = process.env): string {
   return env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 }
 
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const lines = (text: string): Record<string, unknown>[] => {
   const out: Record<string, unknown>[] = [];
   for (const l of text.split('\n')) {

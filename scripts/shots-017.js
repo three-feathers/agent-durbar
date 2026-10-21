@@ -99,7 +99,7 @@ module.exports = async (ctx) => {
     assert.ok(f1.min >= 10.5, `${w}: toolbar text >= 10.5px (${JSON.stringify(f1)})`);
     const f1p = await minFont('#defaultsPop');
     assert.ok(f1p.min >= 10.5, `${w}: defaults popover text >= 10.5px (${JSON.stringify(f1p)})`);
-    assert.match(await js(`document.getElementById('defaultsBtn').textContent`), /^Copilot · /, `${w}: the Defaults chip names the agent app`);
+    assert.match(await js(`document.getElementById('defaultsBtn').textContent`), /^(Read-only|Ask first|Allow all) · Copilot( · |$)/, `${w}: the Defaults chip starts with the mode, then names the agent app`);
     await shot('012-picker', w, h);
 
     // About agent apps: keyboard open, focus kept inside, state and hint as text, Check again, Esc returns focus

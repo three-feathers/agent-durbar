@@ -47,6 +47,7 @@ export async function detectAll(reg: AdapterRegistry, detect: (d: AdapterDescrip
       let state: AdapterState = 'unknown';
       let version: string | undefined;
       let hint: string | undefined;
+      let where: string | undefined;
       try {
         const got = await detect(d);
         // Read every field inside the try: a hostile getter must only cost this adapter.
@@ -57,11 +58,13 @@ export async function detectAll(reg: AdapterRegistry, detect: (d: AdapterDescrip
           state = st;
           version = v;
           hint = h;
+          where = cleanText(got.where); // spec 060 FR-003
         }
       } catch {
         state = 'unknown';
         version = undefined;
         hint = undefined;
+        where = undefined;
       }
       const info: AdapterInfo = {
         id: d.id,
@@ -71,6 +74,7 @@ export async function detectAll(reg: AdapterRegistry, detect: (d: AdapterDescrip
       };
       if (version) info.version = version;
       if (hint) info.hint = hint;
+      if (where) info.where = where;
       return info;
     }),
   );

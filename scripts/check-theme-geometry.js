@@ -34,6 +34,7 @@ function measure() {
   const st = document.createElement('style');
   st.textContent = '#stage *, .lobby *, header *{font-family:sans-serif!important;font-weight:400!important;font-style:normal!important;letter-spacing:normal!important;text-transform:none!important;word-spacing:normal!important;font-variant:normal!important;font-feature-settings:normal!important;font-stretch:normal!important}';
   document.head.appendChild(st);
+  if (window.DurbarFit) window.DurbarFit(); /* fit the usage lines and room headers in the forced font, as the app does in its own */
   const els = [...document.querySelectorAll('#stage, #stage *, .lobby, .lobby *, header, header *')].filter((e) => !e.closest('svg') && e.getClientRects().length);
   els.forEach((e, i) => {
     const b = e.getBoundingClientRect();
@@ -42,6 +43,7 @@ function measure() {
     if (!e.children.length && e.textContent.trim()) out[key].push(parseFloat(getComputedStyle(e).fontSize));
   });
   st.remove();
+  if (window.DurbarFit) window.DurbarFit();
   return out;
 }
 

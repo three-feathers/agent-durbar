@@ -143,7 +143,7 @@ module.exports = async (ctx) => {
     // FR-064 (round 6): 34px rows, the new columns, sorting by a header (aria-sort), J/K between rows
     const lv = await js(`(()=>{const rows=[...document.querySelectorAll('#list button.lrow')];return {n:rows.length,h:Math.max(...rows.map(r=>r.getBoundingClientRect().height)),cols:[...document.querySelectorAll('.lrow.lhead .lsort')].map(b=>b.firstChild.textContent),cells:rows.length?rows[0].children.length:0,pageW:document.documentElement.scrollWidth<=innerWidth+1}})()`);
     assert.ok(lv.n >= 15 && lv.h <= 35, 'list rows are 34px: ' + JSON.stringify(lv));
-    assert.deepStrictEqual(lv.cols, ['Agent', 'Agent app', 'Role', 'Folder', 'Current task', 'Active', 'Cost', 'Status']);
+    assert.deepStrictEqual(lv.cols, ['Agent', 'Agent app', 'Role', 'Folder', 'Current task', 'Active', 'Usage', 'Status']);
     assert.strictEqual(lv.cells, 8, 'one cell per column'); assert.ok(lv.pageW, 'the list does not widen the page');
     // FR-101, FR-104 (round 10): a status that needs nothing is a dot and a word (no fill), Waiting/Error/Failing keep the fill; numbers right-aligned
     const pf = await js(`(()=>{const ps=[...document.querySelectorAll('#list button.lrow .pill')].map(p=>({c:(p.className.match(/st-(\\w+)/)||[])[1],bg:getComputedStyle(p).backgroundColor,h:p.getBoundingClientRect().height}));const num=document.querySelector('#list button.lrow .lcell.num');return {ps,align:num?getComputedStyle(num).textAlign:''}})()`);
@@ -244,8 +244,13 @@ module.exports = async (ctx) => {
     // a synthetic Shift+/ keyDown arrives as key '/' on macOS (a real keyboard gives '?'), so there the page gets the '?' keydown itself
     if (process.platform === 'darwin') await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'?',shiftKey:true,bubbles:true,cancelable:true}))`);
     else { ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: '/', modifiers: ['shift'] }); ctx.win.webContents.sendInputEvent({ type: 'char', keyCode: '?', modifiers: ['shift'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: '/', modifiers: ['shift'] }); }
-    await until(`!!document.getElementById('kbdDlg')`);
-    assert.ok(await js(`!!document.getElementById('kbdDlg')&&/Ctrl.*K/.test(document.getElementById('kbdDlg').innerText)`), '? opens the shortcut sheet');
+    await ctx.waitFor(`!!document.getElementById('kbdDlg')`, 5000).catch(() => undefined);
+    if (!(await js(`!!document.getElementById('kbdDlg')`))) {
+      // macOS CI failed here twice in a row (not a timing flake): say what blocks the '?' shortcut
+      const why = await js(`({active:(document.activeElement&&(document.activeElement.id||document.activeElement.tagName))||'none',dialogs:[...document.querySelectorAll('[role="dialog"]')].map(d=>(d.id||d.className)+(d.getAttribute('aria-modal')==='true'?' (modal)':'')),menus:[...document.querySelectorAll('[role="menu"]')].map(m=>m.id||m.className)})`);
+      assert.fail('? opens the shortcut sheet; blocked by: ' + JSON.stringify(why));
+    }
+    assert.ok(await js(`/Ctrl.*K|⌘.*K|Cmd.*K/.test(document.getElementById('kbdDlg').innerText)`), 'the shortcut sheet lists the palette shortcut');
     await shot(`052-shortcuts-${w}x${h}.png`);
     key('Escape'); await until(`!document.getElementById('kbdDlg')`);
     assert.ok(await js(`!document.getElementById('kbdDlg')`), 'Esc closes the shortcut sheet');

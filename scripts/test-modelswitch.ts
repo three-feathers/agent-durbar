@@ -2,6 +2,7 @@
 import * as assert from 'assert';
 import * as path from 'path';
 import { modelControlFor, parseFocus, parseSwitchRequest, parseTier, MAX_FOCUS, NO_MODEL_CONTROL } from '../src/shared/modelswitch';
+import { parseEffort } from '../src/shared/effort';
 
 type M = { id: string; name?: string; multiplier?: number; contextWindow?: number; longWindow?: number; contextTiers?: string[]; priceClass?: string; efforts?: string[]; pricing?: { inputPerMTok?: number; outputPerMTok?: number; cachedPerMTok?: number; unverified?: boolean; long?: { inputPerMTok?: number; outputPerMTok?: number } } };
 type Conf = { needed: boolean; direction: string; reasons: { code: string; text: string }[]; estimate?: number; headroom?: number; compaction: boolean; overCap: boolean };
@@ -25,6 +26,8 @@ const D = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'modelswit
   fallbackMode: (caps: unknown, cur: string) => string;
   kindChoices: (adapters: unknown) => Array<{ id: string; name: string; shortName: string; state: string; stateText: string; disabled: boolean; label: string; version: string; hint: string }>;
   showsKindPicker: (adapters: unknown) => boolean;
+  handoverTargets: (adapters: unknown, current?: string) => Array<{ id: string; name: string; disabled: boolean }>;
+  provenanceLine: (fromApp: unknown, agentName: unknown) => string;
   shows: (caps: unknown, feature: string, mode?: string) => boolean;
   cardMenuActions: (a: unknown, caps: unknown) => { stop: { disabled: boolean; reason: string } | null; end: { confirm: boolean } | null };
 };
@@ -66,7 +69,9 @@ assert.strictEqual(D.relativePrice({ id: 'a', multiplier: 1 }, { id: 'b', multip
 
 // estimate
 assert.strictEqual(D.estimateInputCredits(200000, deep), 50);
-assert.strictEqual(D.estimateInputCredits(200000, deep, 'long'), 100);
+// spec 030 T044 (real 2026-10-20): on the long tier, a context that still fits the default window is billed at the default price
+assert.strictEqual(D.estimateInputCredits(200000, deep, 'long'), 50);
+assert.strictEqual(D.estimateInputCredits(300000, deep, 'long'), 150);
 assert.strictEqual(D.estimateInputCredits(200000, mystery), undefined);
 assert.strictEqual(D.estimateInputCredits(-1, deep), undefined);
 
@@ -299,3 +304,34 @@ assert.strictEqual(modelControlFor({ compact() {} }).switch, 'none');
 }
 
 console.log('modelswitch tests passed');
+
+// spec 030 FR-042/FR-043 (#409): continue in another agent app
+{
+  const ad = [
+    { id: 'copilot', displayName: 'GitHub Copilot', state: 'ready' },
+    { id: 'claude', displayName: 'Claude Code', state: 'ready' },
+    { id: 'codex', displayName: 'Codex (OpenAI)', state: 'not-signed-in' },
+  ];
+  assert.deepStrictEqual(D.handoverTargets(ad, 'copilot').map((k) => k.id), ['claude'], 'only other ready apps');
+  assert.deepStrictEqual(D.handoverTargets(ad, 'claude').map((k) => k.id), ['copilot']);
+  assert.deepStrictEqual(D.handoverTargets(ad, undefined).map((k) => k.id), ['claude'], 'no kind = Copilot');
+  assert.deepStrictEqual(D.handoverTargets([ad[0]], 'copilot'), [], 'one app: nothing to offer (the entry is hidden)');
+  assert.deepStrictEqual(D.handoverTargets(null, 'copilot'), []);
+  assert.strictEqual(D.provenanceLine('GitHub Copilot', 'Ada'), 'Continued from a GitHub Copilot session (Ada) in this folder. Its summary:');
+  assert.strictEqual(D.provenanceLine('', ''), 'Continued from another agent app in this folder. Its summary:');
+  assert.ok(D.provenanceLine('x'.repeat(200), 'y\n'.repeat(80)).length < 200, 'bounded, one line');
+  assert.ok(!/\n/.test(D.provenanceLine('A\nB', 'C\nD')), 'one line');
+}
+
+// spec 007 FR-008 (real 2026-10-20: gpt-6-luna and Codex models list `none`): the models' own effort names, not a fixed list
+assert.strictEqual(parseEffort('none'), 'none');
+assert.strictEqual(parseEffort('xhigh'), 'xhigh');
+for (const bad of ['', 'NONE', 'x'.repeat(21), 'low;rm', 7, null, undefined]) assert.strictEqual(parseEffort(bad), undefined, String(bad));
+{
+  const models = [{ id: 'gpt-6-luna', efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] }, { id: 'haiku', efforts: ['low', 'high'] }];
+  const ok = parseSwitchRequest({ model: 'gpt-6-luna', effort: 'none' }, models as never);
+  assert.ok(ok.ok && ok.request.effort === 'none', 'none is accepted when the model lists it');
+  const no = parseSwitchRequest({ model: 'haiku', effort: 'none' }, models as never);
+  assert.ok(!no.ok && /does not offer/.test(no.error), 'and refused when it does not');
+}
+console.log('effort: the models\' own names (none included) OK');
