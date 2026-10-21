@@ -341,7 +341,7 @@ export async function runContract(name: string, make: () => ContractTarget, hook
 
 const ALL_OPTIONAL: OptionalMember[] = [
   'interrupt', 'resolvePermission', 'revokeGrant', 'setCap', 'resolveLimit', 'setMcpEnabled', 'setModel', 'cancelQueuedModel', 'compact',
-  'listModelOptions', 'listPreviousSessions', 'history', 'setPermMode',
+  'listModelOptions', 'listPreviousSessions', 'history', 'setPermMode', 'startMcpSignIn', 'cancelMcpSignIn',
 ];
 const SCRIPT = [
   { thinking: 'Considering' },
