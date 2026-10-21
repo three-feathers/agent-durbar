@@ -13,3 +13,4 @@
 - [x] T012 README milestone 8, specs index, converge (spec/plan/tasks match the code)
 - [x] T013 Mask MCP server error text in main before it reaches the window (FR-021, issue #360): pure `maskMcpError`, used by `agents:mcp` and the live `mcp` events; unit test `test-mcp-errormask`
 - [x] T014 One masked copy of each `mcp` event for the window and the `DURBAR_LOG` sink (FR-022): pure `maskMcpEvent`, unit test in `test-mcp-errormask`
+- [x] T015 Keychain at most once per run (FR-023, 2026-10-21 delta, owner report): one encrypted vault for all extras' secret values, nothing decrypted on load, one lazy decrypt when a server with secrets starts or a value changes, old per-value files migrated; no `isEncryptionAvailable()` on macOS; unit tests with a counting codec in `test-mcp` (sections 11-12). Real Mac not run.

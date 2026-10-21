@@ -59,7 +59,7 @@ what exists today, not what was originally intended. Each requirement carries a 
 
 | # | Feature | Status |
 | --- | --- | --- |
-| [019](019-mcp-tools-and-context/spec.md) | Global MCP servers, tool usage per agent, models and context window | milestone 8 |
+| [019](019-mcp-tools-and-context/spec.md) | Global MCP servers, tool usage per agent, models and context window | milestone 8; delta 2026-10-21: Keychain at most once per run (FR-023, T015; unit tests, no real Mac) |
 
 ## Feature 020: milestone 10
 
