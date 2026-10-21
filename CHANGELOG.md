@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.10 tag)
 
+- **Faster floor switches** (spec 001 FR-028, finding in PR #457): the office's layout search measures the same boxes with less work (desk drawings left out of the hidden trial layouts, column changes set in place), so switching a floor on or off takes about 140 ms instead of 440-530 ms on a 4-core Linux machine with 15 simulated agents. The chosen layout is the same (54 cases compared box by box). `sim:`
 - **Security:** Copilot sessions no longer run a repository's own hooks (`.github/hooks/`, `.github/copilot/settings.json`) unasked. A real check found the Copilot runtime ran them by default, even in Read-only; they stay off until the folder-setup dialog (spec 061) lets you accept them.
 - **Fewer Keychain prompts on a Mac** (spec 019 FR-023; owner's report "a ton of allow prompts when I open Durbar"). Durbar decrypted every saved MCP secret value at launch, one Keychain read each, even for servers that never start. Now all values are one encrypted blob that is read at most once per run, only when a server with secrets starts or you change a secret; opening the app or Settings reads nothing. Saved files are converted on that first read. "Always Allow" still has to be given again after each update while builds are unsigned (#4); Copilot's own Keychain items can also ask. Unit tests with a counting fake; not run on a real Mac.
 
