@@ -125,6 +125,9 @@
 ## Round 6: activity log and Windows first run (2026-10-20)
 
 - [x] T074 Activity log: `activitystore.ts` (5000 rows, redacted 160-character action, base folder names), recorded in main from permission events (broker `auto` event for Allow all) and `setModeOp`/`setCapOp`; `activity:list/export/clear`; Tools > Activity tab; simulator rows; `test-activity` [FR-071]
+- [x] T074a Fix (2026-10-21, issue #474): `activitytable.js` publishes `window.DurbarActivityTable`, `screens.js` `activityView()` reads it; spec delta [FR-071]
+- [x] T074b `scripts/test-renderer-globals.ts` (`npm run test:globals`, in `npm test`): one file per window global, every `window.Durbar*` read is assigned; mutation run on the old code [FR-071]
+- [x] T074c `scripts/check-activity-table.js` (`npm run check:activity-table`, in `check:ui`): Tools > Activity renders the simulator rows at 1440x900 and 1280x800; mutation run; screenshots; README, CHANGELOG, `specs/README.md`, agent notes [FR-071]
 - [x] T075 Windows: search `%LOCALAPPDATA%\Microsoft\WinGet\Links`; "close and reopen Durbar" dialog when an install still is not found; PATH re-read left as a known gap; `test-detect` [FR-072]
 - [x] T076 Copilot sign-in line about VS Code; PowerShell 7 hint on the Windows Copilot card (`pwshMissing`); `test-harnesssetup` [FR-073]
 - [x] T077 "Switch this agent to Ask first" under a Read-only denial, once per agent until the mode changes [FR-074]
