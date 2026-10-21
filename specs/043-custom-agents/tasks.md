@@ -16,9 +16,9 @@
 - [x] T010 (2026-10-19) Per-folder default agent [FR-009]: `defaultAgent` in the folder store (parse, set, clear on remove), IPC `folders:setDefaultAgent`, the dialog checkbox and preselect, simulator driver at both sizes, docs
 - [ ] T011 Claude and Codex mapping (spec 012); Claude half: T011a
 - [x] T011a (Claude) agent files listed by the adapter, `--agents`/`--agent` on relaunch [FR-008]
-- [ ] T012 (2026-10-21, owner request) View and edit profile files [FR-010..FR-017]
-  - [ ] T012a main: `profilefiles.ts` (list, resolve by id, read, atomic save with EOL/BOM kept and conflict check, create) and its unit test `test:profilefiles` (path escape, symlink, size, round trip in a temp folder)
-  - [ ] T012b IPC `profiles:*` in `ipc/profiles.ts`, preload and `api.ts`; `test:ipcchannels` list
-  - [ ] T012c renderer: `profileeditor.js` (Edit / Split / Preview, front matter check, throttled preview, Save and Ctrl/Cmd+S, unsaved guard, conflict, New profile), Edit in the Profile menu, Settings section; `test:profileeditor` (front matter, preview sanitisation)
-  - [ ] T012d simulator files and the driver `shots-043-editor.js` (modes, widths, save round trip, unsaved guard), screenshots at 1440x900 and 1280x800, light and dark; `check:ui`
-  - [ ] T012e docs: README, CHANGELOG, specs index
+- [x] T012 (2026-10-21, owner request) View and edit profile files [FR-010..FR-017]
+  - [x] T012a main: `profilefiles.ts` (list, resolve by id, read, atomic save with EOL/BOM kept and conflict check, create) and its unit test `test:profilefiles` (path escape, symlink, size, round trip in a temp folder)
+  - [x] T012b IPC `profiles:*` in `ipc/profiles.ts`, preload and `api.ts`; `test:ipcchannels` list
+  - [x] T012c renderer: `profileeditor.js` (Edit / Split / Preview, front matter check, throttled preview, Save and Ctrl/Cmd+S, unsaved guard, conflict, New profile), Edit in the Profile menu, Settings section; `test:profileeditor` (front matter, preview sanitisation)
+  - [x] T012d simulator files and the driver `shots-043-editor.js` (modes, widths, save round trip, unsaved guard), screenshots at 1440x900 and 1280x800, light and dark; `check:ui`
+  - [x] T012e docs: README, CHANGELOG, specs index
