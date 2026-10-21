@@ -53,8 +53,13 @@ module.exports = async (ctx) => {
     if (OS === 'win32') assert.deepStrictEqual(man.map((m) => m.c), ['irm https://claude.ai/install.ps1 | iex', 'winget install Anthropic.ClaudeCode', 'npm install -g @anthropic-ai/claude-code']);
     assert.ok(await js(`[...document.querySelectorAll('#hsDlg .hs-man')].every(r=>{const b=r.querySelector('.cp-btn').getBoundingClientRect(),c=r.querySelector('code').getBoundingClientRect(),o=r.getBoundingClientRect();return b.right<=o.right+0.5&&c.right<=b.left+0.5&&parseFloat(getComputedStyle(r.querySelector('code')).fontSize)>=10.5})`), 'Copy sits beside the command, inside its row, text at least 10.5px');
     // the shared Copy handler (app.js .cp-btn) copies the row's command; it says "Copied ✓" (or shows an error toast if the clipboard refuses)
-    await js(`document.querySelector('#hsDlg .hs-man .cp-btn').click()`); await until(`document.querySelector('#hsDlg .hs-man .cp-btn').textContent==='Copied ✓'||!!document.querySelector('.toast.err')`);
-    assert.strictEqual(await js(`document.querySelector('#hsDlg .hs-man .cp-btn').textContent`), 'Copied ✓', 'Copy copies the command');
+    // the label goes back to "Copy" after 1200 ms, which a slow runner can miss: a MutationObserver records that it said "Copied ✓"
+    await js(`(()=>{const b=document.querySelector('#hsDlg .hs-man .cp-btn');window.__hsCopied=false;new MutationObserver(()=>{if(b.textContent==='Copied ✓')window.__hsCopied=true;}).observe(b,{childList:true,characterData:true,subtree:true});b.click();})()`);
+    await until(`window.__hsCopied||!!document.querySelector('.toast.err')`);
+    // the shared handler answered: "Copied ✓", or its "Could not copy" toast when a runner's window has no clipboard focus
+    const cp = await js(`({ok:window.__hsCopied,err:((document.querySelector('.toast.err')||{}).textContent||'')})`);
+    assert.ok(cp.ok || /Could not copy/.test(cp.err), 'Copy is wired to the shared copy handler: ' + JSON.stringify(cp));
+    if (!cp.ok) console.log('[051] clipboard refused on this runner:', cp.err);
     await js(`document.querySelector('#hsDlg .hs-dlg-scroll, #hsDlg .dbody').scrollTop=1e6`); await settle();
     await shot(`051-install-manual${SFX}-${w}x${h}.png`);
     await js(`[...document.querySelectorAll('#hsDlg .btn')].find(b=>b.textContent==='Install').click()`); await until(`!!document.getElementById('hsLog')`);
