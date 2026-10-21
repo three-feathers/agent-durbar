@@ -325,10 +325,11 @@ export function templateFor(app: ProfileApp, name: string, kind: TemplateKind = 
   return profileTemplate(app, name, kind);
 }
 
-/** `place`: 'user', or a folder id from `profileFolders` of the same (current) dirs; an id of a folder that left the office is refused. */
-export function createProfileFile(dirs: readonly ProfileDir[], app: unknown, place: unknown, name: unknown, template: unknown = DEFAULT_TEMPLATE): { ok: true; id: string; info: ProfileFileInfo } | Fail {
+/** `place`: 'user', or a folder id from `profileFolders` of the same (current) dirs; an id of a folder that left the office is refused. `text`: a reviewed AI draft (FR-024). */
+export function createProfileFile(dirs: readonly ProfileDir[], app: unknown, place: unknown, name: unknown, template: unknown = DEFAULT_TEMPLATE, text?: unknown): { ok: true; id: string; info: ProfileFileInfo } | Fail {
   if (app !== 'copilot' && app !== 'claude') return { ok: false, error: 'Choose an agent app.' };
   if (template !== 'success' && template !== 'standard') return { ok: false, error: 'Choose a template.' };
+  if (text !== undefined && (typeof text !== 'string' || !text.trim() || Buffer.byteLength(text, 'utf8') > MAX_PROFILE_BYTES)) return { ok: false, error: 'The text cannot be saved (empty or too large).' };
   if (typeof name !== 'string' || !PROFILE_NAME.test(name) || name.includes('..')) return { ok: false, error: 'Use letters, digits, dots, dashes or underscores (up to 64), starting with a letter or digit.' };
   const own = dirs.filter((d) => d.app === app);
   const folderDirs = own.filter((d) => d.scope === 'folder');
@@ -362,7 +363,7 @@ export function createProfileFile(dirs: readonly ProfileDir[], app: unknown, pla
   const file = path.join(d.dir, fileName);
   if (fs.existsSync(file)) return { ok: false, error: `${fileName} exists already.` };
   try {
-    writeAtomic(file, Buffer.from(templateFor(app, name, template), 'utf8'), true);
+    writeAtomic(file, Buffer.from(typeof text === 'string' ? text : templateFor(app, name, template), 'utf8'), true);
   } catch {
     return { ok: false, error: `${fileName} could not be written (it may exist already).` };
   }

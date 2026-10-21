@@ -619,7 +619,18 @@ registerThemesIpc({ dev, registry, router });
 registerHarnessIpc({ dev, registry, router, remoteOps, toRenderer, getWin: () => win, adaptersList });
 registerActivityIpc({ getActivityStore: () => activityStore, getWin: () => win });
 registerQuestionsIpc({ agents, router, elicitTracker });
-registerProfilesIpc({ agents, router, getAgentTrust: () => agentTrust, wsKey, ensureLive });
+/**
+ * Spec 040 FR-015 (reused by spec 061 FR-015 and spec 043 FR-023): an agent app's one-shot text call: one prompt, no tools, no
+ * session kept, an empty temp folder; Copilot's own MCP servers switched off by name. Undefined when the app has none.
+ */
+function oneShotFor(id: string): { name: string; generate: (prompt: string) => ReturnType<NonNullable<AgentAdapter['generateText']>> } | undefined {
+  if (!registry.has(id)) return undefined;
+  const ad = router.instance(id);
+  if (typeof ad.generateText !== 'function') return undefined;
+  const opts = id === 'copilot' ? { disabledMcpServers: cliServers(copilotDir(dev), new Set()).servers.map((x) => x.name) } : {};
+  return { name: registry.get(id)?.displayName ?? id, generate: (prompt: string) => ad.generateText!(prompt, opts) };
+}
+registerProfilesIpc({ agents, router, getAgentTrust: () => agentTrust, wsKey, ensureLive, oneShot: (id) => oneShotFor(id) });
 registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey });
 registerAdaptersIpc({ adaptersList });
 registerFoldersIpc({ agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey });
@@ -634,11 +645,8 @@ registerFolderSetupIpc({
   explainer: () => {
     // FR-015: the first installed app that answers one prompt with no tools; Copilot first (its `auto` is the cheapest)
     for (const id of ['copilot', 'claude', 'codex']) {
-      if (!registry.has(id)) continue;
-      const ad = router.instance(id);
-      if (typeof ad.generateText !== 'function') continue;
-      const opts = id === 'copilot' ? { disabledMcpServers: cliServers(copilotDir(dev), new Set()).servers.map((x) => x.name) } : {};
-      return { name: registry.get(id)?.displayName ?? id, generate: (prompt: string) => ad.generateText!(prompt, opts) };
+      const g = oneShotFor(id);
+      if (g) return g;
     }
     return undefined;
   },
