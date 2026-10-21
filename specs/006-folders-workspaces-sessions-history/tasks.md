@@ -56,9 +56,9 @@
 
 ## Changes 2026-10-21: Previous sessions as a collapsible section (owner request)
 
-- [ ] T048 Spec delta FR-033..FR-037 with the patterns compared and the owner questions; plan section [FR-033..FR-037]
-- [ ] T049 Renderer: `#prevBtn` moves from the header actions to a slim disclosure row (`.prev-bar`, chevron, label, count, breakdown) over `#prevPanel`; FR-034 visibility; Simple wording [FR-033, FR-034]
-- [ ] T050 Saved open/closed choice (`durbar.prevOpen`), with the FR-002 auto-open only before a first choice [FR-035]
-- [ ] T051 Ctrl+Shift+H / ⇧⌘H toggle with focus moves, `aria-keyshortcuts`, palette item and keyboard sheet row [FR-036]
-- [ ] T052 Drivers: `shots-006-prevmarks.js` asserts the row (collapsed, expanded, counts, shortcut, saved choice, fit, light and dark); update `check-rename`, `shots-003-mode-back`, `shots-009-vschat`, `shots-017`, `shots-052-ux`, `check-office-overlap`; `npm run check:office` [FR-033..FR-037]
-- [ ] T053 Screenshots `docs/screenshots/006-sessions-*.png` (collapsed and expanded, 1440x900 and 1280x800, light and dark); README, CHANGELOG, `docs/agent-notes.md` (the driver note on `#prevBtn`), specs index [all]
+- [x] T048 Spec delta FR-033..FR-037 with the patterns compared and the owner questions; plan section [FR-033..FR-037]
+- [x] T049 Renderer: `#prevBtn` moves from the header actions to a slim disclosure row (`.prev-bar`, chevron, label, count, breakdown) over `#prevPanel`; FR-034 visibility; Simple wording [FR-033, FR-034]
+- [x] T050 Saved open/closed choice (`durbar.prevOpen`), with the FR-002 auto-open only before a first choice [FR-035]
+- [x] T051 Ctrl+Shift+H / ⇧⌘H toggle with focus moves, `aria-keyshortcuts`, palette item and keyboard sheet row [FR-036]
+- [x] T052 Drivers: `shots-006-prevmarks.js` asserts the row (collapsed, expanded, counts, shortcut, saved choice, fit, light and dark); update `check-rename`, `shots-003-mode-back`, `shots-009-vschat`, `shots-017`, `shots-052-ux`, `check-office-overlap`; `npm run check:office` [FR-033..FR-037]
+- [x] T053 Screenshots `docs/screenshots/006-sessions-*.png` (collapsed and expanded, 1440x900 and 1280x800, light and dark); README, CHANGELOG, `docs/agent-notes.md` (the driver note on `#prevBtn`), specs index [all]
