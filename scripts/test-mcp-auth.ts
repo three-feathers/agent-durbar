@@ -1,4 +1,4 @@
-/** Spec 041 T011: key file (fake fs) and the mutual HMAC handshake (fake timers, no sockets). */
+/** Remote-control auth, not MCP OAuth (that is `test-mcpauth.ts`). Spec 041 T011: key file (fake fs) and the mutual HMAC handshake (fake timers, no sockets). */
 import * as assert from 'assert';
 import * as crypto from 'crypto';
 import * as fsReal from 'fs';

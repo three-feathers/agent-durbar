@@ -460,10 +460,10 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   switch (a runtime-only server whose default is off).
 - **FR-067** **Masking.** The text of a failed MCP tool card is masked in main before the window gets it, with the session's own MCP secret
   values and the same steps as spec 019 FR-021 (`maskMcpError` in `src/main/mcpmask.ts`), but without the 300-character cut for the card's
-  *Details* (it keeps today's card limit). Today only `mcp` events are masked (`src/main/main.ts:123`); tool output is not. The sign-in
+  *Details* (it keeps today's card limit). Before spec 058 only `mcp` events were masked (the `outward` hook in `src/main/main.ts`); tool output was not. The sign-in
   errors (adapter rejections, Codex completion `error`) are masked the same way. No authorization address appears in any text the window
   gets.
-  `[IMPLEMENTED]` for a failed MCP `toolCall` card's `output` (`maskMcpText` in `src/main/mcpmask.ts`, applied in `outward`, T097); the sign-in errors are not built yet. `test:` `scripts/test-mcp-errormask.ts`.
+  `[IMPLEMENTED]` for the `output` of a failed or updating MCP `toolCall` (cut to 50 000 characters before the pattern masks, for speed) (`maskMcpText` in `src/main/mcpmask.ts`, applied in `outward`, T097); the sign-in errors are not built yet. `[KNOWN GAP]` not masked: a failed Copilot output whose start event was not seen (no `mcpServer`, `map.ts:118-122`), a Codex `mcpToolCall` without `server` (`codexMap.ts:256`), and a JSON key with an unknown value shape (`{"apiKey":"zzzz"}`; the shared rules, inherited from FR-021). `test:` `scripts/test-mcp-errormask.ts`.
 - **FR-068** **Manual steps when the in-app sign-in cannot run** (no capability, method missing or refused, address refused, Claude not
   launched yet). One short block with the server name filled in and **Copy** for the command, from the adapter's plain capability text
   `mcpSignInSteps` (Durbar never runs it):

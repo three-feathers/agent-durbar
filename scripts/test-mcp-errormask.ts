@@ -1,6 +1,6 @@
 /** Unit test: MCP server error text is masked before it reaches the window (spec 019 FR-021). */
 import * as assert from 'assert';
-import { maskMcpError, maskMcpEvent, maskMcpText, maskMcpStatuses, mcpSecretValues, MCP_ERROR_MAX_CHARS } from '../src/main/mcpmask';
+import { MCP_CARD_MAX_CHARS, maskMcpError, maskMcpEvent, maskMcpText, maskMcpStatuses, mcpSecretValues, MCP_ERROR_MAX_CHARS } from '../src/main/mcpmask';
 import type { AgentEvent } from '../src/adapters/types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -82,9 +82,21 @@ assert.strictEqual(maskMcpError(undefined), undefined);
   assert.strictEqual(maskMcpText('x'.repeat(1000)), 'x'.repeat(1000));
   // only a FAILED call that names an MCP server
   for (const e of [card({ phase: 'complete', output: HDR }), card({ mcpServer: undefined, output: HDR }), card({ output: undefined })]) assert.strictEqual(maskMcpEvent(e, [HDR]), e, 'other tool events pass through as the same object');
+  // a streaming update of an MCP tool is masked too
+  const upd = maskMcpEvent(card({ phase: 'update', output: `got ${GH}` }), []) as unknown as { output: string };
+  assert.ok(!upd.output.includes(GH), 'update output masked');
+  // 1 MB of URL-like text: cut to the card limit before the pattern masks, so it stays fast
+  {
+    const t0 = Date.now();
+    const big = maskMcpEvent(card({ output: '?a=&'.repeat(250_000) }), [HDR]) as unknown as { output: string };
+    assert.ok(Date.now() - t0 < 150, `1 MB output masked in ${Date.now() - t0} ms`);
+    assert.ok(big.output.length <= MCP_CARD_MAX_CHARS + 20, 'cut to the card limit');
+    const sec = maskMcpEvent(card({ output: 'w '.repeat(30_000) + 'k=' + HDR + ' ' + GH }), [HDR]) as unknown as { output: string };
+    assert.ok(!sec.output.includes(HDR) && !sec.output.includes('ghp_'), 'a secret past the cut leaves nothing');
+  }
   // wiring: main fetches the session's values for a failed MCP tool card
   const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
   const line = main.split('\n').find((l) => l.startsWith('const outward = ')) ?? '';
-  assert.ok(line.includes("'toolCall'") && line.includes('mcpServer') && line.includes('secretValuesFor'), `outward() passes the session values for failed MCP tool cards: ${line}`);
+  assert.ok(line.includes("'toolCall'") && line.includes("'update'") && line.includes('mcpServer') && line.includes('secretValuesFor'), `outward() passes the session values for failed MCP tool cards: ${line}`);
 }
 console.log('mcp error mask: planted secrets, normal text, mask-then-cut, session values, event copy OK');

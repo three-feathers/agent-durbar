@@ -1,6 +1,6 @@
-/** Unit test: the MCP OAuth challenge classifier (spec 058 FR-061). `npm run test:mcpauth`. No process, no account, no credits. */
+/** Unit test: the MCP OAuth challenge classifier and `stripMcpChallenge` (spec 058 FR-061; not the remote-control handshake of `test-mcp-auth.ts`). `npm run test:mcpauth`. No process, no account, no credits. */
 import * as assert from 'assert';
-import { isMcpAuthChallenge } from '../src/adapters/mcpauth';
+import { isMcpAuthChallenge, stripMcpChallenge } from '../src/adapters/mcpauth';
 
 const ISSUE = 'MCP tool catalog changed before tool "github-search_issues" could be invoked: Failed to verify cached MCP tools: MCP OAuth challenge required (HTTP 401)';
 const yes = [
@@ -22,9 +22,14 @@ const no = [
   'HTTP 401 Unauthorized',
   'MCP server "notion" failed to start: ECONNREFUSED',
   'Please sign in to continue',
+  'Re-authentication required for MCP server access. Please run copilot login',
 ];
 for (const t of no) assert.ok(!isMcpAuthChallenge(t), `not a challenge: ${t.slice(0, 80)}`);
 for (const v of [undefined, null, 5, {}, ['MCP OAuth challenge required']]) assert.ok(!isMcpAuthChallenge(v), 'non-string');
+
+// the stripped text keeps what is not the challenge
+assert.ok(!/MCP OAuth|401/.test(stripMcpChallenge(ISSUE)), 'issue clause and its HTTP code removed');
+assert.ok(stripMcpChallenge('API Error: 401 Please run /login. MCP OAuth challenge required (HTTP 401)').includes('Please run /login'));
 
 // bounded input: a phrase past the window is not read; a 1 MB text is cheap
 assert.ok(!isMcpAuthChallenge('x'.repeat(5000) + ISSUE), 'beyond the bound is ignored');

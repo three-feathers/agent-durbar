@@ -19,11 +19,19 @@ function maskFlagValues(s: string): string {
     .replace(/(^|\s)(-{0,2}[A-Za-z][\w.-]{0,60})=(?!\[redacted\])(\S+)/g, (m, lead: string, name: string) => (secretFlag(name) ? `${lead}${name}=[redacted]` : m));
 }
 
-/** Session secret values, then env secrets and secret shapes, then URL parts. No cut: the caller decides (spec 058 FR-067). */
-export function maskMcpText(text: unknown, values: readonly string[] = []): string | undefined {
+/** Spec 058 FR-067: a failed MCP tool card's output is cut here, before the pattern masks (1 MB of `?a=&` took ~0.7 s); the card shows 20 000 characters. */
+export const MCP_CARD_MAX_CHARS = 50_000;
+
+/**
+ * Session secret values, then env secrets and secret shapes, then URL parts. No cut unless `max` is given (spec 058 FR-067): then the
+ * session values go out of the whole text first, the cut follows (at a token boundary, so no token loses only its head), and the
+ * pattern masks run on the shorter text.
+ */
+export function maskMcpText(text: unknown, values: readonly string[] = [], max?: number): string | undefined {
   if (text === undefined || text === null) return undefined;
   let s = typeof text === 'string' ? text : String(text);
   for (const v of values) if (v.length >= 4 && s.includes(v)) s = s.split(v).join('[redacted]');
+  if (max !== undefined) s = cut(s, max);
   return maskFlagValues(maskSecretUrl(redact(s)));
 }
 
@@ -40,10 +48,10 @@ export function maskMcpStatuses(servers: readonly McpServerStatus[], values: rea
 
 /**
  * Spec 019 FR-022: the copy of an event that may leave main (window, debug sink): an `mcp` event with its errors masked; any other event
- * unchanged (same object). Spec 058 FR-067: a failed `toolCall` that names an `mcpServer` has its `output` masked too (no cut).
+ * unchanged (same object). Spec 058 FR-067: a failed or updating `toolCall` that names an `mcpServer` has its `output` masked too, cut to `MCP_CARD_MAX_CHARS`.
  */
 export function maskMcpEvent<E extends AgentEvent>(e: E, values: readonly string[] = []): E {
   if (e.type === 'mcp') return { ...e, servers: maskMcpStatuses(e.servers, values) };
-  if (e.type === 'toolCall' && e.phase === 'failed' && e.mcpServer && e.output !== undefined) return { ...e, output: maskMcpText(e.output, values) };
+  if (e.type === 'toolCall' && (e.phase === 'failed' || e.phase === 'update') && e.mcpServer && e.output !== undefined) return { ...e, output: maskMcpText(e.output, values, MCP_CARD_MAX_CHARS) };
   return e;
 }
