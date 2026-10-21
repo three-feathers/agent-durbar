@@ -10,7 +10,7 @@
  *   2. real fonts: the office check's own rules (overlap, clipping, room headers, text at least 10.5px) on the same layouts in
  *      the theme's own fonts, where a wider display font could push header parts. Motion is reduced; a few seconds per theme.
  *
- *   npm run check:geometry                     the 5 other built-in themes and scripts/fixtures/themes/check-user.json
+ *   npm run check:geometry                     the 5 other built-in themes, scripts/fixtures/themes/check-user.json and pink-studio.json
  *   GEOMETRY_THEMES=retro,corporate npm run check:geometry
  *
  * The full layout matrix in every theme stays available on demand: npm run check:themes.
@@ -25,8 +25,9 @@ const ROOT = path.join(__dirname, '..');
 const INDEX = path.join(ROOT, 'dist', 'renderer', 'index.html');
 const SIZES = [[1440, 900], [1280, 800]];
 const SIMS = [15, 12];
-const USER = path.join(ROOT, 'scripts', 'fixtures', 'themes', 'check-user.json');
-const THEMES = (process.env.GEOMETRY_THEMES || 'corporate,retro,durbar-indian,durbar-european,durbar-japanese,user').split(',').map((s) => s.trim()).filter(Boolean);
+/* user packs by name: `user` (check-user.json) and the sample AI-style pack with fonts, corners, shadows and clothes (spec 070) */
+const FIXTURES = { user: 'check-user.json', 'pink-studio': 'pink-studio.json' };
+const THEMES = (process.env.GEOMETRY_THEMES || 'corporate,retro,durbar-indian,durbar-european,durbar-japanese,user,pink-studio').split(',').map((s) => s.trim()).filter(Boolean);
 
 /* runs in the page: the box of EVERY element of the office, the lobby and the top bar (SVG art inside excluded: scene kits draw
    their own), keyed by order and class, plus the font size of each text element; the DOM must be the same in every theme */
@@ -50,15 +51,15 @@ function measure() {
 
 async function driver(ctx) {
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
-  const userTheme = JSON.parse(fs.readFileSync(USER, 'utf8'));
+  const packs = Object.fromEntries(Object.entries(FIXTURES).map(([k, f]) => [k, JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'fixtures', 'themes', f), 'utf8'))]));
   const query = (theme, sim) => {
     const q = { sim: String(sim), simfreeze: '1' };
-    if (theme === 'user') { q.theme = userTheme.id; q.usertheme = JSON.stringify(userTheme); } else q.theme = theme;
+    if (packs[theme]) { q.theme = packs[theme].id; q.usertheme = JSON.stringify(packs[theme]); } else q.theme = theme;
     return q;
   };
   const snap = async (theme, sim, w, h) => {
     await H.load({ w, h, query: query(theme, sim), ready: 'fit', settle: false });
-    const want = theme === 'user' ? userTheme.id : theme;
+    const want = packs[theme] ? packs[theme].id : theme;
     await ctx.waitFor(`window.THEME&&window.THEME.current().id===${jsLiteral(want)}`, 5000);
     const on = await ctx.js(`window.THEME.current().id`);
     if (on !== want) throw new Error(`theme ${want} was not applied (on screen: ${on})`);

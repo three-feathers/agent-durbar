@@ -30,9 +30,9 @@ body.screen-open .workspace{display:none}
 .srv-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
 .srv-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
 .srv-name{font-size:13px}
-.srv-cmd{font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink-2);overflow-wrap:anywhere;white-space:pre-wrap}
+.srv-cmd{font:11px/1.35 var(--font-mono);color:var(--ink-2);overflow-wrap:anywhere;white-space:pre-wrap}
 .srv-secrets{display:flex;flex-wrap:wrap;gap:5px}
-.sec{display:inline-flex;gap:6px;align-items:center;height:20px;padding:0 8px;border-radius:var(--r-sm);background:var(--surface-2);border:1px solid var(--line);font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#35566f}
+.sec{display:inline-flex;gap:6px;align-items:center;height:20px;padding:0 8px;border-radius:var(--r-sm);background:var(--surface-2);border:1px solid var(--line);font:11px var(--font-mono);color:#35566f}
 .sec i{font-style:normal;letter-spacing:.06em;color:var(--muted)}
 .srv-act{display:flex;align-items:center;gap:8px;flex:none}
 .mtag{display:inline-block;font-size:10.5px;font-weight:650;padding:1px 7px;border-radius:999px;background:#eef1f5;border:1px solid #d3dce6;color:#35566f}
@@ -58,7 +58,7 @@ body.screen-open .workspace{display:none}
 .mform label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--ink-2)}
 .mform label small,.kvh small{font-weight:500;color:var(--muted);font-size:11px}
 .mform input[type=text],.mform input[type=password],.mform select,.mform textarea{border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:7px 9px;font:inherit;font-size:13px;color:var(--ink);min-width:0}
-.mform textarea{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;resize:vertical}
+.mform textarea{font:12px/1.4 var(--font-mono);resize:vertical}
 .mform [hidden]{display:none}
 .mform>div{display:flex;flex-direction:column;gap:10px}
 .kv{gap:6px!important}
@@ -67,7 +67,7 @@ body.screen-open .workspace{display:none}
 .krow .k{flex:0 0 38%}
 .krow .v{flex:1}
 #envRows,#hdrRows{display:flex;flex-direction:column;gap:6px}
-.trustcmd{margin:0;padding:10px 12px;background:#2c3733;color:#f1efe6;border-radius:10px;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto}
+.trustcmd{margin:0;padding:10px 12px;background:#2c3733;color:#f1efe6;border-radius:10px;font:12px/1.45 var(--font-mono);white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto}
 .imps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow:auto}
 .imp{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface-2)}
 .imp .chk{align-items:flex-start}
@@ -90,7 +90,7 @@ body.screen-open .workspace{display:none}
 .ttab .num{text-align:right;width:64px;font-variant-numeric:tabular-nums}
 .ttab td.num,.ttab th.num{text-align:right}
 .ttab .barc{width:30%}
-.ttab code{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.ttab code{font:12px var(--font-mono)}
 .agt{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
 .bar{display:block;height:4px;border-radius:2px;background:var(--line);overflow:hidden}
 .bar i{display:block;height:100%;border-radius:2px;background:var(--blue)}
@@ -220,7 +220,7 @@ body.has-bridge #topBtns{display:flex}
 /* spec 051: Settings > Harnesses */
 .hs-list{list-style:none;margin:8px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px} /* spec 052 FR-097: a fluid grid */
 .hs-card{border:1px solid var(--line);border-radius:var(--r-lg);padding:12px;background:var(--raised);display:flex;flex-direction:column;gap:4px}
-.hs-where code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;overflow-wrap:anywhere} /* spec 060 FR-003: where the app was found; a long path wraps after a folder separator (<wbr>), inside the card */
+.hs-where code{font-family:var(--font-mono);font-size:11px;overflow-wrap:anywhere} /* spec 060 FR-003: where the app was found; a long path wraps after a folder separator (<wbr>), inside the card */
 .hs-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .hs-st{font-size:var(--t5-size);font-weight:650;padding:2px 9px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
 .hs-ok{color:var(--green-ink,#2f6b47);background:#eaf4ee;border-color:#c5dccd}.hs-warn{color:var(--amber-ink);background:var(--warn-bg);border-color:#e5be78}.hs-off{color:var(--ink-2);background:var(--surface-2)}
