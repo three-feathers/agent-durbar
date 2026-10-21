@@ -6,6 +6,7 @@
 import * as path from 'path';
 import type { PermissionMode } from './capabilities';
 import { CODEX_MIN_VERSION, compareVersions } from './detect';
+import { clipDiff, simpleDiff } from '../shared/diff';
 
 /** Protocol `AskForApproval`, the values we use. `untrusted` is retired; `granular` is not offered. */
 export type CodexApprovalPolicy = 'never' | 'on-request';
@@ -208,9 +209,72 @@ export interface CodexPermission {
   url?: string;
   toolName?: string;
   serverName?: string;
+  /** Spec 052 FR-165: what a file change would do (unified diff text), from the change's own `fileChange` item. */
+  diff?: string;
   /** One line for the needs-permission card. */
   summary: string;
 }
+
+/**
+ * Spec 052 FR-165: one change of a Codex `fileChange` item. Generated type `FileUpdateChange` (`codex app-server generate-ts`,
+ * 0.163.0): `{ path, kind: { type: 'add' } | { type: 'delete' } | { type: 'update', move_path }, diff }`.
+ */
+export interface CodexFileChange {
+  path: string;
+  kind: 'add' | 'delete' | 'update';
+  movePath?: string;
+  diff: string;
+}
+
+/** Most changes kept from one item, and longest diff text kept per change (characters). */
+const MAX_CHANGES = 100;
+const MAX_CHANGE_TEXT = 100_000;
+const oneLine = (s: string): string => s.replace(/[\r\n]+/g, ' ').slice(0, 1024);
+
+/** FR-165: the changes of a `fileChange` item (`item.changes`), checked field by field; anything malformed is left out. */
+export function codexFileChanges(changes: unknown): CodexFileChange[] {
+  if (!Array.isArray(changes)) return [];
+  const out: CodexFileChange[] = [];
+  for (const c of changes.slice(0, MAX_CHANGES)) {
+    const p = str(c, 'path');
+    if (!p) continue;
+    const k = own(c, 'kind');
+    const t = typeof k === 'string' ? k : str(k, 'type'); // the generated type is an object; a plain word is taken too
+    const kind = t === 'add' || t === 'delete' ? t : 'update';
+    const move = str(k, 'move_path') ?? str(k, 'movePath');
+    const diff = (str(c, 'diff') ?? '').slice(0, MAX_CHANGE_TEXT);
+    out.push({ path: oneLine(p), kind, ...(move && kind === 'update' ? { movePath: oneLine(move) } : {}), diff });
+  }
+  return out;
+}
+
+/**
+ * FR-165: one unified diff for the permission card. `read:` Codex's `diff` is the new file's text for an add, the old text for a
+ * delete, and a hunk (`@@ … @@`, no `---`/`+++` header) for an update; a header is added where missing. Cut at `DIFF_MAX`.
+ * Display text only: never applied.
+ */
+export function codexChangeDiff(changes: readonly CodexFileChange[]): string {
+  const parts = changes.map((c) => {
+    if (c.kind === 'add') return simpleDiff(c.path, '', c.diff, Infinity); // cut once, below, so the "more lines" count is right
+    if (c.kind === 'delete') return simpleDiff(c.path, c.diff, '', Infinity) || `--- a/${c.path}\n+++ /dev/null`;
+    const d = c.diff.replace(/\r\n?/g, '\n').replace(/\n+$/, '');
+    if (!d) return '';
+    return /^--- /.test(d) ? d : `--- a/${c.path}\n+++ b/${c.movePath ?? c.path}\n${d}`;
+  });
+  const text = parts.filter(Boolean).join('\n');
+  return text ? clipDiff(text) : '';
+}
+
+/** FR-165: the card line's note for the first change: a new file, a deletion or a move (an edit in place needs none). */
+function kindNote(c: CodexFileChange | undefined): string {
+  if (!c) return '';
+  if (c.kind === 'add') return ' (new file)';
+  if (c.kind === 'delete') return ' (delete)';
+  return c.movePath && c.movePath !== c.path ? ` (move to ${c.movePath})` : '';
+}
+
+/** FR-165: what the card says when Codex named no file in the request and no `fileChange` item is known for it. */
+export const CODEX_NO_FILE = 'Codex did not say which file';
 
 /** Own string property only: inherited or prototype keys never count. */
 function str(o: unknown, key: string): string | undefined {
@@ -227,7 +291,7 @@ function own(o: unknown, key: string): unknown {
  * Codex approval request (method and params) to a Durbar permission. Anything unknown or malformed becomes
  * `custom-tool`, which is not a read: Read-only denies it and Ask first asks.
  */
-export function codexPermission(method: string, params: unknown): CodexPermission {
+export function codexPermission(method: string, params: unknown, known?: readonly CodexFileChange[]): CodexPermission {
   switch (method) {
     case 'item/commandExecution/requestApproval': {
       const command = str(params, 'command');
@@ -238,11 +302,15 @@ export function codexPermission(method: string, params: unknown): CodexPermissio
       return { kind: 'shell', fullCommandText: command, url: netHost, summary: `run ${command ?? ''}${netHost ? ` (network: ${netHost})` : ''}`.trim() };
     }
     case 'item/fileChange/requestApproval': {
-      const changes = own(params, 'changes');
-      const paths = Array.isArray(changes) ? changes.map((c) => str(c, 'path')).filter((p): p is string => !!p) : [];
+      // FR-165 (real, Codex 0.163): the request names only `itemId` (generated type `FileChangeRequestApprovalParams`); the files
+      // and the diff are on the `fileChange` item sent before it (`known`). `changes` in the request itself is still read.
+      const changes = known?.length ? [...known] : codexFileChanges(own(params, 'changes'));
+      const paths = changes.map((c) => c.path);
       const fileName = paths[0] ?? str(params, 'grantRoot');
       const more = paths.length > 1 ? ` (+${paths.length - 1} more)` : '';
-      return { kind: 'write', fileName, ...(paths.length ? { paths } : {}), summary: `write ${fileName ?? ''}${more}`.trim() };
+      const diff = codexChangeDiff(changes);
+      const summary = fileName ? `write ${fileName}${kindNote(changes[0])}${more}` : `write (${CODEX_NO_FILE})`;
+      return { kind: 'write', fileName, ...(paths.length ? { paths } : {}), ...(diff ? { diff } : {}), summary };
     }
     case 'item/permissions/requestApproval':
       return { kind: 'custom-tool', toolName: 'request_permissions', summary: `request_permissions ${str(params, 'reason') ?? ''}`.trim() };

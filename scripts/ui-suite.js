@@ -45,6 +45,7 @@ const DRIVERS = [
   { name: 'check-sched-sendto' },
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
+  { name: 'check-codex-file-card' }, // spec 052 FR-165: a Codex write card names the files and shows the change
 ];
 
 /** The screenshot variables the drivers read; all point at one folder. */

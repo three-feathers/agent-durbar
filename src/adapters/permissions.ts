@@ -26,12 +26,18 @@ export interface PermissionLike {
   diff?: string;
   /** Spec 065: every file a write changes (Codex file changes name several); `fileName`/`path` otherwise. */
   paths?: string[];
+  /**
+   * Spec 052 FR-165: the adapter's own card line, used instead of the one built here (Codex: the change's kind, "+N more", or
+   * "Codex did not say which file"). Only the card text: the grant scope is still built from the fields above.
+   */
+  cardSummary?: string;
 }
 
 export type Decision = { kind: 'approve-once' } | { kind: 'reject'; feedback: string };
 
 /** Short human summary of a permission request (for the needs-permission card). */
 export function summarize(req: PermissionLike): string {
+  if (typeof req.cardSummary === 'string' && req.cardSummary.trim()) return req.cardSummary.replace(/[\r\n]+/g, ' ').trim().slice(0, 2000);
   switch (req.kind) {
     case 'write':
       return `write ${req.fileName ?? ''}`.trim();

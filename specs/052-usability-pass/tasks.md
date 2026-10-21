@@ -212,3 +212,11 @@
 - [x] T140 macOS File menu (Add Folder… ⌘O, Add VS Code Workspace… ⇧⌘O, Close Window) through `menu:add` → `onMenuAdd` → the same buttons; `test-macos` [FR-164]
 - [x] T141 `scripts/shots-052-addleft.js` in `check:ui`; `check-mac-titlebar.js` without the + New state; `check:office`, `check:geometry`, `check:mac-titlebar`; screenshots at 1440x900 and 1280x800 [FR-164]
 - [x] T142 Docs: README, CHANGELOG, `specs/README.md` row [FR-164]
+
+## FR-165: a Codex write request names the file and shows the change (2026-10-21, real Codex finding)
+- [x] T143 Spec delta FR-165, plan note [FR-165]
+- [x] T144 Codex adapter: keep `fileChange` items by id (started, patchUpdated; forget on completed; at most 32), fill the write card from the item (files, kind, diff with secrets masked), "Codex did not say which file" when none is known; `PermissionLike.cardSummary` [FR-165]
+- [x] T145 Renderer: multi-file diff counts (`diffLines` ends a hunk by its counts), Simple words for a request with no file [FR-165]
+- [x] T146 Tests: `test-codex-modes`, `test-codex-adapter` with the fixture `codex/file-change-approval.json` (generated types), `test-truth`; mutation runs (no item store, no masking) [FR-165]
+- [x] T147 `simcodexfile` + `scripts/check-codex-file-card.js` (`check:codex-file-card`, in `check:ui`) at 1440x900 and 1280x800, Expert and Simple; screenshots; README, CHANGELOG, `specs/README.md`, agent notes [FR-165]
+- [ ] T148 Real check on a Codex session (one small edit in Ask first): the card names the file and shows the diff [FR-165, needs the owner's budget]
