@@ -495,7 +495,10 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   runtime 1.0.22, demo OAuth server on loopback): a sign-in in one session served a later session in a new runtime process on
   `windows-latest` (Credential Manager targets `<hex>.copilot-mcp-oauth`) and `ubuntu-latest` (no desktop keyring: files under
   `~/.copilot/mcp-oauth-config/`, research.md 7.7). `[KNOWN GAP]` how many macOS Keychain prompts it adds, a Linux desktop with a
-  keyring, a third-party https server, and sharing with the CLI (T105).
+  keyring, a third-party https server, and sharing with the CLI (T105). `[KNOWN GAP]` on Linux without a keyring the kept sign-in is a
+  tokens file (`~/.copilot/mcp-oauth-config/<hex>.tokens.json`); whether it is encrypted and its file permissions are unverified (the
+  check logs the mode bits from the next dispatch on). `[KNOWN GAP]` whether a tool call with a cached tool catalog and a kept token
+  gets a 401 (needs a prompt).
 - **FR-071** **Simulator** (constitution IV): page address `simmcpauth=1` gives each sim kind one server in needs-auth and a Copilot tool
   card with the issue's exact text; **Sign in** -> host `auth.example.com` -> **Open sign-in page** shows a toast and opens nothing ->
   "Running" after 2 s (Codex: "applies with your next message"). `simmcpauth=manual` shows the FR-068 steps instead.
@@ -612,4 +615,13 @@ Copilot CLI's `/mcp auth` sharing (rest of T105) and the Durbar UI flow (T098-T1
 Results: see research.md section 7.7. `real:` 2026-10-21, run 39680461023 (runtime 1.0.22, 0 prompts): PASS on `windows-latest`
 and `ubuntu-latest`; session B in a new runtime process connected with no new sign-in. Windows keeps it in Credential Manager
 (`<hex>.copilot-mcp-oauth`); the Linux runner, with no desktop keyring, kept it in files under `~/.copilot/mcp-oauth-config/`.
+
+**Review on #478 (fjcabello, 2026-10-21; fixed 2026-10-22, no new dispatch)**: research 7.7 now says "one 401 each; the settled state
+was connected within 1 s; transient states were not recorded". The check script logs every `mcp` state per session in order
+(`statusSequence`, unit-tested in `scripts/test-demo-oauth-mcp.ts`), one log line per new file or Credential Manager target (the
+300-character line cap cut the Linux list), and on Linux and macOS each new file's permission bits (`fs.statSync`, never the
+contents); these run on the next dispatch. The demo server now binds access tokens to the `resource` (RFC 8707): `/mcp` refuses a
+token issued for another resource, and a refresh keeps its resource; the test also redeems a code with a different `redirect_uri`
+(400) and checks the server's address is `http://127.0.0.1:` (taken from the bound address). New `[KNOWN GAP]`s in FR-070: the
+Linux tokens file's encryption and permissions; the cached-catalog tool call 401.
 

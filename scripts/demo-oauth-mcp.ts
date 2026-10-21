@@ -8,7 +8,8 @@
  *   - protected-resource metadata (RFC 9728) -> `authorization_servers: [<base>]`
  *   - authorization-server metadata (RFC 8414), dynamic client registration (RFC 7591)
  *   - `/authorize`: S256 PKCE required, a registered `redirect_uri` only; auto-approves with a 302 to the redirect URI (code + state)
- *   - `/token`: `authorization_code` (verifier checked) and `refresh_token`; access tokens bound to the `resource` (RFC 8707)
+ *   - `/token`: `authorization_code` (verifier checked) and `refresh_token`; access tokens bound to the `resource` (RFC 8707): the
+ *     resource asked for at `/authorize` (or `/token`), else this server's `/mcp`; `/mcp` refuses a token issued for another resource
  *
  *   node dist-scripts/scripts/demo-oauth-mcp.js [port]      (prints the MCP URL; Ctrl+C stops it)
  *
@@ -78,11 +79,13 @@ export function startDemoOAuthMcp(opts: DemoOptions = {}): Promise<DemoServer> {
   const stats: DemoStats = { challenges: 0, registrations: 0, authorizations: 0, refused: 0, codeGrants: 0, refreshGrants: 0, authorizedRequests: 0, methods: [] };
   const clients = new Map<string, { redirectUris: string[] }>();
   const codes = new Map<string, { clientId: string; redirectUri: string; challenge: string; resource?: string; expires: number }>();
-  const access = new Map<string, { clientId: string; expires: number }>();
-  const refresh = new Map<string, { clientId: string }>();
+  const access = new Map<string, { clientId: string; resource: string; expires: number }>();
+  const refresh = new Map<string, { clientId: string; resource: string }>();
   const sessions = new Map<string, McpSession>();
   let base = '';
   const resource = (): string => `${base}/mcp`;
+  /** RFC 8707 resource indicators compared without a trailing slash. */
+  const canon = (r: string): string => r.replace(/\/+$/, '');
   const prmUrl = (): string => `${base}/.well-known/oauth-protected-resource/mcp`;
 
   const prm = (): unknown => ({ resource: resource(), authorization_servers: [base], bearer_methods_supported: ['header'], scopes_supported: ['mcp'] });
@@ -98,11 +101,11 @@ export function startDemoOAuthMcp(opts: DemoOptions = {}): Promise<DemoServer> {
     scopes_supported: ['mcp'],
   });
 
-  const issue = (clientId: string): Record<string, unknown> => {
+  const issue = (clientId: string, aud: string): Record<string, unknown> => {
     const at = token();
     const rt = token();
-    access.set(at, { clientId, expires: Date.now() + accessTtl * 1000 });
-    refresh.set(rt, { clientId });
+    access.set(at, { clientId, resource: canon(aud), expires: Date.now() + accessTtl * 1000 });
+    refresh.set(rt, { clientId, resource: canon(aud) });
     return { access_token: at, token_type: 'Bearer', expires_in: accessTtl, refresh_token: rt, scope: 'mcp' };
   };
 
@@ -118,16 +121,17 @@ export function startDemoOAuthMcp(opts: DemoOptions = {}): Promise<DemoServer> {
       if (p.client_id && p.client_id !== c.clientId) return bad('invalid_client');
       if (p.redirect_uri !== c.redirectUri) return bad('invalid_grant');
       if (!p.code_verifier || b64url(createHash('sha256').update(p.code_verifier).digest()) !== c.challenge) return bad('invalid_grant');
-      if (p.resource && c.resource && p.resource !== c.resource) return bad('invalid_target');
+      if (p.resource && c.resource && canon(p.resource) !== canon(c.resource)) return bad('invalid_target');
       stats.codeGrants++;
-      return json(res, 200, issue(c.clientId));
+      return json(res, 200, issue(c.clientId, c.resource || p.resource || resource()));
     }
     if (p.grant_type === 'refresh_token') {
       const r = refresh.get(p.refresh_token ?? '');
       if (!r || (p.client_id && p.client_id !== r.clientId)) return bad('invalid_grant');
+      if (p.resource && canon(p.resource) !== r.resource) return bad('invalid_target');
       refresh.delete(p.refresh_token); // rotation
       stats.refreshGrants++;
-      return json(res, 200, issue(r.clientId));
+      return json(res, 200, issue(r.clientId, r.resource));
     }
     return bad('unsupported_grant_type');
   };
@@ -146,7 +150,7 @@ export function startDemoOAuthMcp(opts: DemoOptions = {}): Promise<DemoServer> {
       back.searchParams.set('error', 'invalid_request');
     } else {
       const code = token();
-      codes.set(code, { clientId: q.get('client_id')!, redirectUri, challenge: q.get('code_challenge')!, resource: q.get('resource') ?? undefined, expires: Date.now() + 120_000 });
+      codes.set(code, { clientId: q.get('client_id')!, redirectUri, challenge: q.get('code_challenge')!, resource: q.get('resource') || undefined, expires: Date.now() + 120_000 });
       stats.authorizations++; // auto-approved: this is the "browser sign-in"
       back.searchParams.set('code', code);
     }
@@ -158,7 +162,8 @@ export function startDemoOAuthMcp(opts: DemoOptions = {}): Promise<DemoServer> {
     const auth = String(req.headers.authorization ?? '');
     const at = /^Bearer\s+(\S+)$/i.exec(auth)?.[1];
     const grant = at ? access.get(at) : undefined;
-    if (!grant || grant.expires < Date.now()) {
+    // RFC 8707: a token issued for another resource (audience) is not valid here
+    if (!grant || grant.expires < Date.now() || grant.resource !== canon(resource())) {
       stats.challenges++;
       const err = at ? ', error="invalid_token"' : '';
       return json(res, 401, { error: 'unauthorized' }, { 'www-authenticate': `Bearer resource_metadata="${prmUrl()}", scope="mcp"${err}` });
@@ -218,8 +223,8 @@ export function startDemoOAuthMcp(opts: DemoOptions = {}): Promise<DemoServer> {
   return new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(opts.port ?? 0, '127.0.0.1', () => {
-      const { port } = server.address() as AddressInfo;
-      base = `http://127.0.0.1:${port}`;
+      const { address, port } = server.address() as AddressInfo;
+      base = `http://${address}:${port}`; // from the bound address, so a test sees a bind other than loopback
       resolve({ url: resource(), base, stats, close: () => new Promise((r) => { server.closeAllConnections?.(); server.close(() => r()); }) });
     });
   });

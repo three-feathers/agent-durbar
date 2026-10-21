@@ -267,13 +267,18 @@ Workflow *MCP OAuth real check* (`.github/workflows/mcp-oauth-real.yml`, manual)
 - `real:` 2026-10-21, run 39680461023 (commit f9458b31, Copilot runtime and SDK 1.0.22, 0 prompts): **FR-070 PASS on Windows and
   Linux.** Session A signed in once (`oauth.login` with `serverName`, `clientName`, `callbackSuccessMessage` only; one registration,
   one `/authorize`, one code grant); A2 in the same runtime and B in a NEW runtime process connected with no new `/authorize`, no new
-  grant and no refresh. Each new session first sent one request without a token (one 401 each), then used the kept token.
+  grant and no refresh. One 401 each; the settled state was connected within 1 s; transient states were not recorded (the check
+  sampled the latest `mcp` event once a second, so a short `needs-auth` before `connected` would not show; review on #478). Since
+  2026-10-22 the script logs every `mcp` state per session in order; that runs on the next dispatch (not dispatched yet). Whether a
+  tool call with a cached tool catalog and a kept token gets a 401 (the text of #364) stays unverified: it needs a prompt.
 - `real:` Windows: `persistent` storage writes Windows Credential Manager generic credentials named
   `<64 hex>.copilot-mcp-oauth` (two new targets for one demo server) plus a client file `~/.copilot/mcp-oauth-config/<hex>.json`
   (names only; no value was read).
 - `real:` Linux runner with no desktop keyring (GitHub `ubuntu-latest`): no keyring entry; the runtime fell back to files
   `~/.copilot/mcp-oauth-config/<hex>.json` and `<hex>.tokens.json` (names only; contents not read, so "tokens" is inferred from the
-  name). On such a Linux machine the kept MCP sign-in is a file in the user's home folder, not a keyring entry.
+  name). On such a Linux machine the kept MCP sign-in is a file in the user's home folder, not a keyring entry. `[KNOWN GAP]`
+  whether that file is encrypted and what its permission bits are was not checked. Since 2026-10-22 the script logs each new file's
+  mode bits (`fs.statSync`, never the contents, one line per file); that runs on the next dispatch.
 - `real:` `session.rpc.mcp.oauth.probe` on the connected server returned `failed: MCP server probe returned HTTP 404 Not Found`
   against the demo server on both runners (the demo serves only the endpoints listed in its header); the probe is not used by FR-070.
 - Run 39680132357 (the first dispatch, commit db47a560) failed before any session: the script read

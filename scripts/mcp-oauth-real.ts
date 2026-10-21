@@ -15,7 +15,9 @@
  *   B  the runtime is shut down; a NEW adapter (new runtime process) starts a NEW session -> connected with no new `/authorize` = the
  *      sign-in was kept (FR-070). If it is not connected: `oauth.probe`, and `oauth.login` again to see whether it returns no URL.
  * Plus, names only: Windows Credential Manager targets (`cmdkey /list`) and files under ~/.copilot that look like MCP/OAuth storage,
- * before and after. Never a value, never a token, never the authorization URL (only its host and path).
+ * before and after (one log line each; on Linux and macOS with the file's permission bits from `fs.statSync`, never its contents), and
+ * every `mcp` state the adapter reported per session, in order, so a transient `needs-auth` before `connected` shows. Never a value,
+ * never a token, never the authorization URL (only its host and path).
  *
  * Until T098 lands, the login call reaches the adapter's live session object directly (test-only); the session config is Durbar's own.
  */
@@ -49,6 +51,19 @@ function rpcOf(ad: AgentAdapter, sid: string): McpRpc {
   const live = (ad as unknown as { sessions: Map<string, { session: { rpc: { mcp: McpRpc } } }> }).sessions.get(sid);
   if (!live) throw new Error('no live session');
   return live.session.rpc.mcp;
+}
+
+/** Every state the adapter's `mcp` events reported for the demo server in one session, in order, repeats folded (`needs-auth -> connected`).
+ *  The 1 s polling of `waitState` sees only the latest event; this sequence shows a transient state too (review on #478). */
+export function statusSequence(events: AgentEvent[], sid: string, name = NAME): string[] {
+  const out: string[] = [];
+  for (const e of events) {
+    if (e.type !== 'mcp' || e.sessionId !== sid) continue;
+    const s = e.servers.find((x) => x.name === name);
+    const st = s ? s.status : '(absent)';
+    if (out[out.length - 1] !== st) out.push(st);
+  }
+  return out;
 }
 
 function statusOf(events: AgentEvent[], sid: string): McpServerStatus | undefined {
@@ -86,6 +101,11 @@ function cmdkeyTargets(): Promise<string[] | undefined> {
       resolve(String(out ?? '').split(/\r?\n/).map((l) => /^\s*Target:\s*(.+)$/i.exec(l)?.[1]?.trim()).filter((x): x is string => !!x));
     });
   });
+}
+
+/** Permission bits of a file (`0600`), from `fs.statSync` only: never opens or reads the file. On Windows the bits do not describe the ACL. */
+export function modeOf(abs: string): string {
+  try { return (fs.statSync(abs).mode & 0o777).toString(8).padStart(4, '0'); } catch { return '?'; }
 }
 
 /** File names (relative) under ~/.copilot; only the names, never contents. */
@@ -148,7 +168,9 @@ interface Result {
   a2?: { state: string; demo: string };
   b?: { state: string; demo: string; probe?: string; relogin?: string };
   credman?: { before: number; after: number; added: string[] };
-  files?: { added: string[] };
+  files?: { added: Array<{ name: string; mode?: string }> };
+  /** Every `mcp` state the adapter reported per session, in order (A, A2, B). */
+  sequences?: Record<string, string>;
   verdict: string;
   lines: string[];
 }
@@ -163,6 +185,12 @@ async function main(): Promise<void> {
   const credBefore = await cmdkeyTargets();
   const filesBefore = new Set(copilotFiles());
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-mcp-oauth-'));
+  res.sequences = {};
+  const seq = (label: string, events: AgentEvent[], sid: string): void => {
+    const q = statusSequence(events, sid).join(' -> ') || '(no mcp event)';
+    res.sequences![label] = q;
+    log(`${label}: every mcp state the adapter reported, in order: ${q}`);
+  };
   let ad: AgentAdapter | undefined;
   try {
     // ---- A: first session, sign in through the runtime
@@ -202,8 +230,11 @@ async function main(): Promise<void> {
       const s = await waitState(ad, evA, sid2, settled, 60_000);
       res.a2 = { state: `${s.status} (${s.via}, ${s.secs} s)${s.error ? ': ' + clean(s.error) : ''}`, demo: delta(before, demo.stats) };
       log(`A2: ${res.a2.state}; demo: ${res.a2.demo}`);
+      await sleep(2000);
+      seq('A2', evA, sid2);
       await ad.stop(sid2).catch(() => undefined);
     }
+    seq('A', evA, sid);
     await ad.stop(sid).catch(() => undefined);
     await ad.dispose().catch(() => undefined);
     ad = undefined;
@@ -234,6 +265,8 @@ async function main(): Promise<void> {
         const t = await rpcOf(ad, sidB).listTools({ serverName: NAME }).then((x) => (x.tools ?? []).map((y) => y.name).join(', '), () => '');
         log(`B: tools: ${t}`);
       }
+      await sleep(2000);
+      seq('B', evB, sidB);
       const bConnected = after.status === 'connected';
       const noNewSignIn = demo.stats.authorizations === before.authorizations;
       res.verdict = res.a.after?.startsWith('connected') || res.a.first.startsWith('connected')
@@ -250,11 +283,15 @@ async function main(): Promise<void> {
     if (credBefore && credAfter) {
       const added = credAfter.filter((t) => !credBefore.includes(t));
       res.credman = { before: credBefore.length, after: credAfter.length, added: added.filter(interesting).map(clean) };
-      log(`Credential Manager: ${credBefore.length} -> ${credAfter.length} targets; new ones that look like Copilot/MCP: ${res.credman.added.join(' | ') || '(none)'}${added.length > res.credman.added.length ? ` (+${added.length - res.credman.added.length} other)` : ''}`);
+      log(`Credential Manager: ${credBefore.length} -> ${credAfter.length} targets; new ones that look like Copilot/MCP: ${res.credman.added.length || '(none)'}${added.length > res.credman.added.length ? ` (+${added.length - res.credman.added.length} other)` : ''}`);
+      for (const t of res.credman.added) log(`  target ${t}`);
     }
     const added = copilotFiles().filter((f) => !filesBefore.has(f) && notSession(f));
-    res.files = { added: added.slice(0, 40).map(clean) };
-    log(`~/.copilot new files (names only, session folders left out): ${res.files.added.join(', ') || '(none)'}`);
+    // one line per file: clean() caps a line at 300 characters, which cut the Linux list (review on #478). Name and mode bits only.
+    const posix = process.platform !== 'win32';
+    res.files = { added: added.slice(0, 40).map((f) => ({ name: clean(f), mode: posix ? modeOf(path.join(os.homedir(), '.copilot', ...f.split('/'))) : undefined })) };
+    log(`~/.copilot new files (names only${posix ? ' and permission bits' : ''}, session folders left out): ${res.files.added.length || '(none)'}${added.length > 40 ? ` (first 40 of ${added.length})` : ''}`);
+    for (const f of res.files.added) log(`  file ${f.name}${f.mode ? ` mode ${f.mode}` : ''}`);
     log(`verdict: ${res.verdict}`);
     try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }); } catch { /* a temp folder left behind */ }
     await demo.close();
@@ -264,4 +301,4 @@ async function main(): Promise<void> {
     if (!res.verdict.startsWith('PASS')) process.exitCode = 1;
   }
 }
-main().catch((e) => { console.error('mcp-oauth-real:', clean(e instanceof Error ? e.message : e)); process.exit(1); });
+if (require.main === module) main().catch((e) => { console.error('mcp-oauth-real:', clean(e instanceof Error ? e.message : e)); process.exit(1); });

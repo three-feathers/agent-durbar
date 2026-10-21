@@ -97,5 +97,6 @@ Each entry has the date it was learned, what happened, and how to apply it, with
 
 - **Copilot SDK MCP sign-in storage and version lookup** (2026-10-21, `real:` run 39680461023, spec 058 T116).
   - `require.resolve('@github/copilot-sdk/package.json')` throws ("not defined by exports"). Read the version from the folder next to the resolved entry, as `scripts/prepare-runtime.js` and `scripts/mcp-oauth-real.ts` do.
-  - With `mcpOAuthTokenStorage: 'persistent'`, Windows gets Credential Manager targets `<hex>.copilot-mcp-oauth`; a Linux machine with no desktop keyring (CI runners) gets files under `~/.copilot/mcp-oauth-config/`, not an error. Do not claim "keychain" for headless Linux.
+  - With `mcpOAuthTokenStorage: 'persistent'`, Windows gets Credential Manager targets `<hex>.copilot-mcp-oauth`; a Linux machine with no desktop keyring (CI runners) gets files under `~/.copilot/mcp-oauth-config/`, not an error. Do not claim "keychain" for headless Linux, and do not claim those files are encrypted or private: their permissions are unverified (review on #478).
+  - A real check that samples a state once a second sees only the settled state: log the whole sequence of events per session before claiming "no transient state" (review on #478).
   - A workflow that only exists on a branch cannot be dispatched: its file must be on `main` first (#483), then `gh workflow run <file> --ref <branch>` runs the branch's version.
