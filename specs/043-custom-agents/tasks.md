@@ -27,5 +27,6 @@
   - [x] T015b IPC `profiles:generate`, the shared one-shot helper in main, `profiles:create` with text
   - [x] T015c editor draft, the Create with AI dialog, simulator canned generation, driver and screenshots at both sizes
   - [x] T015d docs
+  - [x] T016 (real, owner's go-ahead 2026-10-22) One questionnaire generation on Claude haiku through the one-shot path, checked, opened as a draft in Split view (`scripts/profilegen-real.ts`; spec Evidence). Named programs such as `git` are not tools yet: `[KNOWN GAP]`, owner decision
 - [x] T013 (2026-10-21, owner decisions on #488) Agent Success Profile and Standard agent templates, the default preselected; editor words "Agent Success Profiles" [FR-018, FR-019]
 - [x] T014 (2026-10-22, review on #488) New profile sends a folder id, main accepts it only if it is an office folder now [FR-020]; `test:profilefiles`; Copilot `*.md` vs `*.agent.md` recorded as a known gap
