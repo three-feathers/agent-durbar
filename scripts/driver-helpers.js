@@ -8,6 +8,8 @@
  * `until` never throws: on a timeout it returns false and the driver's own assertion that follows reports what is wrong, so a wait
  * can never hide or weaken a check. Expressions run in the page.
  */
+const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
+
 const LIMIT = 8000;
 
 function waits(ctx) {
@@ -41,7 +43,7 @@ function waits(ctx) {
   };
   /** The chat of the agent named `name` is open, and it has stopped changing. */
   const chatOf = async (name) => {
-    await until(`document.body.classList.contains('panel-open')&&(document.getElementById('panelTitle')||{}).textContent===${JSON.stringify(String(name))}`);
+    await until(`document.body.classList.contains('panel-open')&&(document.getElementById('panelTitle')||{}).textContent===${jsLiteral(String(name))}`);
     await settle();
   };
   return { until, settle, office, chatOf };
