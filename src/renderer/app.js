@@ -1043,10 +1043,11 @@ const toolKind=n=>{n=String(n||'').toLowerCase();
 const chats={};
 const sleep=ms=>new Promise(r=>setTimeout(r,REDUCED?0:ms));
 
-async function typeInto(el,text,speed,chat){
+async function typeInto(el,text,speed,chat,tok){
   if(REDUCED){el.textContent=text;return;}
-  for(let i=0;i<text.length;){i+=2+Math.floor(Math.random()*3);el.textContent=text.slice(0,i);stickyScroll(chat);await sleep(speed);}
-  el.textContent=text;
+  const off=()=>tok!==undefined&&chat&&chat.turn!==tok; /* spec 005 FR-038 (2026-10-22): Stop cancels a demo turn mid-word */
+  for(let i=0;i<text.length;){if(off())return;i+=2+Math.floor(Math.random()*3);el.textContent=text.slice(0,i);stickyScroll(chat);await sleep(speed);}
+  if(!off())el.textContent=text;
 }
 /* Tool chip: one compact line that truncates; click expands it to show the full command and output. */
 const CHIPS_SHOWN=6;
@@ -1102,16 +1103,19 @@ function collapseThink(think){
   const tb=think.querySelector('.think-toggle'),body=think.querySelector('.think-body');
   if(tb){tb.setAttribute('aria-expanded','false');} if(body)body.hidden=true;
 }
+/* returns false when Stop cancelled the turn (stopDemoTurn): the caller then leaves chat.busy alone */
 async function playTurn(chat,a,turn,opts){
   opts=opts||{};
+  const tok=chat.turn=(chat.turn||0)+1, off=()=>chat.turn!==tok;
   const m=newAgentMsg(chat,a), body=m.querySelector('.think-body'), chips=m.querySelector('.chips'), think=m.querySelector('.think');
-  await typeInto(body,turn.think,16,chat);
+  const cut=()=>{think.classList.remove('streaming');m.querySelectorAll('.caret').forEach(x=>x.classList.remove('caret'));collapseThink(think);return false;};
+  await typeInto(body,turn.think,16,chat,tok); if(off())return cut();
   think.classList.remove('streaming');
-  for(const t of turn.tools){await sleep(380);const [k,l,res,rs]=t;addChip(chips,makeChip({kind:k,tool:k,label:l,res,state:rs}));stickyScroll(chat);}
+  for(const t of turn.tools){await sleep(380);if(off())return cut();const [k,l,res,rs]=t;addChip(chips,makeChip({kind:k,tool:k,label:l,res,state:rs}));stickyScroll(chat);}
   if(turn.reply){
-    await sleep(350);
+    await sleep(350); if(off())return cut();
     const b=document.createElement('div');b.className='bubble caret';m.appendChild(b);
-    await typeInto(b,turn.reply,14,chat);b.classList.remove('caret');
+    await typeInto(b,turn.reply,14,chat,tok); if(off())return cut(); b.classList.remove('caret');
     collapseThink(think);
     if(turn.quick){const q=document.createElement('div');q.className='quick';q.setAttribute('role','group');q.setAttribute('aria-label','Quick replies');
       turn.quick.forEach(txt=>{const bt=document.createElement('button');bt.textContent=txt;bt.addEventListener('click',()=>{q.remove();sendMessage(txt,a.id);});q.appendChild(bt);});m.appendChild(q);}
@@ -1119,7 +1123,10 @@ async function playTurn(chat,a,turn,opts){
     const t=document.createElement('div');t.className='typing';t.setAttribute('aria-label',a.name+' is working');t.innerHTML='<i></i><i></i><i></i>';m.appendChild(t);
   }
   stickyScroll(chat);
+  return true;
 }
+/* spec 005 FR-038 (2026-10-22): Stop in a demo chat ends the canned turn: the text stops, chat.busy clears, so Stop and the spinner go */
+function stopDemoTurn(a){const c=chats[a.id];if(!c)return;c.el.querySelectorAll('.typing').forEach(x=>x.remove());if(!c.busy)return;c.turn=(c.turn||0)+1;c.busy=false;setSend();}
 function addUserMsg(chat,text,atts,ts){
   const m=document.createElement('div');m.className='msg user';
   const now=ts?new Date(ts):new Date();const hh=(ts&&now.toDateString()!==new Date().toDateString()?now.toLocaleDateString([],{month:'short',day:'numeric'})+' ':'')+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
@@ -1143,7 +1150,7 @@ function getChat(a){
   const inProg=(a.state==='working'||a.state==='thinking');
   const reply=inProg?null:sc.reply;
   chat.busy=true;
-  playTurn(chat,a,{think:sc.think,tools:sc.tools,reply:reply,quick:inProg?null:sc.quick},{inProgress:inProg}).then(()=>{chat.busy=false;setSend();});
+  playTurn(chat,a,{think:sc.think,tools:sc.tools,reply:reply,quick:inProg?null:sc.quick},{inProgress:inProg}).then(ok=>{if(ok){chat.busy=false;setSend();}});
   return chat;
 }
 const GENERIC_THINK=[
@@ -1166,7 +1173,7 @@ async function sendMessage(text,forId){
   const turn={think:GENERIC_THINK[Math.floor(Math.random()*GENERIC_THINK.length)]+(snippet?' You said: "'+snippet+'".':''),
     tools:[['read',f,'','ok'],['search',(snippet.split(' ').slice(0,3).join(' ')||'usages'),'5 hits','ok'],['run','npm test','all passing','ok']],
     reply:'Got it. I looked at '+f+' and nothing else depends on it, so I will go ahead with that'+(files.length?', using the attached '+(files.length>1?'files':'file')+' as reference':'')+'. I will post a summary here when it is ready for you to review.'};
-  await playTurn(chat,a,turn,{inProgress:false});
+  if(!await playTurn(chat,a,turn,{inProgress:false}))return; /* stopped: the Stop handler set the state */
   if(!a.paused){a.state=(prev==='thinking'||prev==='working')?prev:'working';}
   chat.busy=false; setSend(); renderAll();
 }
@@ -1427,7 +1434,7 @@ function openPanel(id,focus){
   wireAnswerBar(a);
   if(needsMe(a)){const c=pendingCardOf(a);if(c)announce(a.name+(c.classList.contains('question')?' asks: ':' needs your OK: ')+requestText(c));}
   $('pauseBtn').onclick=()=>{a.paused=!a.paused;if(a.live&&bridge.setPaused)bridge.setPaused(a.id,a.paused);toast(esc(a.name)+(a.paused?' paused.':' resumed.'));renderAll();};
-  if($('stopBtn'))$('stopBtn').onclick=e=>{if(a.live){const b=e.currentTarget;if(b.getAttribute('aria-busy')==='true')return;b.setAttribute('aria-busy','true');return stopLive(a).catch(failToast('stop')).finally(()=>{b.removeAttribute('aria-busy');syncRunState();});}a.paused=false;a.state='idle';a.label=null;a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
+  if($('stopBtn'))$('stopBtn').onclick=e=>{if(a.live){const b=e.currentTarget;if(b.getAttribute('aria-busy')==='true')return;b.setAttribute('aria-busy','true');return stopLive(a).catch(failToast('stop')).finally(()=>{b.removeAttribute('aria-busy');syncRunState();});}stopDemoTurn(a);a.paused=false;a.state='idle';a.label=null;a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
   $('attFile').onclick=()=>{if(a.live)return pickLive();addPicked([{name:SAMPLE_FILES[fi++%SAMPLE_FILES.length],kind:'file',size:12*1024}]);};
   $('attImg').onclick=()=>{if(a.live)return pickLive('image');addPicked([{name:SAMPLE_IMGS[ii++%SAMPLE_IMGS.length],kind:'image',size:240*1024}]);};
   /* drag and drop anywhere on the panel, paste into the message box */
@@ -1539,16 +1546,19 @@ function placeMenu(m,x,y,anchor){
   return {px,py};
 }
 /* FR-037 item 4: the context chip's menu: the used / size line, Compact (spec 030) and the Tools view (what the chip opened before) */
+/* spec 005 FR-037 (2026-10-22): can the chip's popup act? Simple has no Tools item, so an agent that cannot compact gets an info-only popup */
+function ctxCanCompact(a){const r=(a&&liveRoot(a))||a;return !!(r&&ctrlOf(r).compact&&bridge&&bridge.compact);}
+function ctxHasActs(a){return !SIMPLE||ctxCanCompact(a);}
 function closeCtxMenu(){const m=document.getElementById('ctxMenu');if(m){m.remove();const c=$('ctxChip');if(c)c.setAttribute('aria-expanded','false');}}
 function openCtxMenu(a0,anchor){
   const a=liveRoot(a0); if(!a)return;
   closeCtxMenu();closeModeMenu();closeModelMenu();closeAgentMenu();
-  const c=window.DurbarScreens.ctxChip(a), cc=ctrlOf(a), canC=!!(cc.compact&&bridge.compact), busy=busyNow(a);
-  const m=document.createElement('div');m.id='ctxMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',(SIMPLE?'Memory of ':'Context window of ')+a.name);
+  const c=window.DurbarScreens.ctxChip(a), canC=ctxCanCompact(a), busy=busyNow(a), acts=ctxHasActs(a);
+  const m=document.createElement('div');m.id='ctxMenu';m.className='mode-menu';m.setAttribute('role',acts?'menu':'dialog');m.setAttribute('aria-label',(SIMPLE?'Memory of ':'Context window of ')+a.name);
   m.innerHTML=`<p class="mm-h">${SIMPLE?'Memory':'Context window'}</p><p class="mm-info">${esc(SIMPLE?(c.cls==='unk'?'Not known yet. It shows after the first message.':'The agent’s memory of this conversation is '+c.pct+'% full.'):c.title)}</p>`
     +(canC?`<button type="button" role="menuitem" id="compactBtn" class="mm-compact"${busy?' aria-disabled="true"':''}><span class="mt"><b>${SIMPLE?'Tidy up memory':'Compact'}</b><small>${esc(busy?(SIMPLE?'The agent is busy. Tidy up when it is idle.':'The agent is busy. Compact when it is idle.'):(SIMPLE?'Summarise so the agent has room. One model call.':'Summarise to free space. Costs one model call.'))}</small></span></button>`:'')
     +(SIMPLE?'':`<button type="button" role="menuitem" data-act="ctxTools"><span class="mt"><b>Models and context of all agents</b><small>The Tools view</small></span></button>`);
-  if(!m.querySelector('button')){return;}
+  if(!acts)m.tabIndex=-1; /* info only (Simple, cannot compact): the line itself, Escape closes back to the chip */
   document.body.appendChild(m);
   const r=anchor.getBoundingClientRect();placeMenu(m,r.left,r.bottom+6,anchor);
   anchor.setAttribute('aria-expanded','true');
@@ -1558,9 +1568,10 @@ function openCtxMenu(a0,anchor){
     if(b.id==='compactBtn')compactDialog(a,$('ctxChip')||anchor);
     else if(b.dataset.act==='ctxTools')window.DurbarScreens.openTools(null,'agents');});
   m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('button')],i=it.indexOf(document.activeElement);
-    if(e.key==='ArrowDown'){e.preventDefault();it[(i+1)%it.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();it[(i+it.length-1)%it.length].focus();}
+    if(!it.length&&(e.key==='ArrowDown'||e.key==='ArrowUp')){e.preventDefault();}
+    else if(e.key==='ArrowDown'){e.preventDefault();it[(i+1)%it.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();it[(i+it.length-1)%it.length].focus();}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeCtxMenu();const t=$('ctxChip')||anchor;if(t&&t.focus&&document.contains(t))t.focus();}});
-  m.querySelector('button').focus();
+  (m.querySelector('button')||m).focus();
 }
 /* FR-040: one row always. Controls that do not fit go, by rank, into the "⋯" popover (same nodes, ids and handlers); the mode never does. */
 let ctFitting=false;
@@ -3078,8 +3089,9 @@ function ctxChipHTML(a){const c=window.DurbarScreens.ctxChip(a);
   return `<span class="ctxgrp" id="ctxGrp">${ctxChipBtn(a,c)}</span>`;} /* spec 005 FR-037: Compact is in the chip's menu */
 /* spec 052 FR-081: Simple says "Memory 74% full" (same id, same click). FR-093: Simple shows it only from 70% full (class mem-low hides it) */
 function ctxChipBtn(a,c){
-  const text=SIMPLE?(c.cls==='unk'?'Memory: not known yet':'Memory '+c.pct+'% full'):c.text, title=SIMPLE?'How full the agent\'s memory of this conversation is. Click to tidy up memory.':c.title+'. Click to compact or see all agents.';
-  return `<button class="ctxchip ${c.cls}${c.cls==='unk'||!(c.pct>=70)?' mem-low':''}" id="ctxChip" type="button" aria-haspopup="menu" aria-expanded="${!!document.getElementById('ctxMenu')}" title="${esc(title)}"><span class="bar" aria-hidden="true"><i style="width:${c.pct}%"></i></span><span>${esc(text)}</span></button>`;}
+  const canC=ctxCanCompact(a), acts=ctxHasActs(a);
+  const text=SIMPLE?(c.cls==='unk'?'Memory: not known yet':'Memory '+c.pct+'% full'):c.text, title=SIMPLE?'How full the agent\'s memory of this conversation is. '+(canC?'Click to tidy up memory.':'Click for details.'):c.title+(canC?'. Click to compact or see all agents.':'. Click to see all agents.');
+  return `<button class="ctxchip ${c.cls}${c.cls==='unk'||!(c.pct>=70)?' mem-low':''}" id="ctxChip" type="button" aria-haspopup="${acts?'menu':'dialog'}" aria-expanded="${!!document.getElementById('ctxMenu')}" title="${esc(title)}"><span class="bar" aria-hidden="true"><i style="width:${c.pct}%"></i></span><span>${esc(text)}</span></button>`;}
 function updateCtxChip(a){
   const el=$('ctxGrp');if(!el||!ui.selected)return;const cur=byId(ui.selected);if(!cur||liveRoot(cur)!==a)return;
   /* spec 052 (2026-10-21): only when it changed: replacing it on every state change cost time and dropped keyboard focus */

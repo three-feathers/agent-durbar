@@ -51,3 +51,4 @@ IDs start after the readable-JSON delta's T048.
 - [x] T056 Update drivers that looked for these controls in the header (`shots-017`, `shots-018`, `shots-model`, `shots-052-ux`, `check-grant-chips`) [FR-043]
 - [x] T057 Screenshots Expert and Simple, light and dark, 1440x900 and 1280x800 (`docs/screenshots/005-composer-*.png`); README chat screenshots and text, CHANGELOG, `specs/README.md` row [FR-043]
 - [x] T058 Coordination: comment on #453 (composer placeholder) for Ruben; reviewers rubenlupi and fjcabello [FR-043]
+- [x] T059 Review fixes on PR #498: Simple memory chip without Compact opens an info-only popup (matching `aria-haspopup` and title), demo Stop cancels the canned turn; driver cases in `check-composer-toolbar` [FR-037, FR-038]

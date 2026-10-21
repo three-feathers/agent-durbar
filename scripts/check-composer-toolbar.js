@@ -14,7 +14,9 @@
  *     turn shows Send beside it, and Stop brings Send back;
  *   - nothing in the toolbar overlaps or leaves the panel, no text under 10.5px;
  *   - with the panel 480px wide: still one row, "⋯" appears, the mode stays in the row, the moved controls are in its popover;
- *   - Simple: mode, attachments and Send only (profile, model and MCP hidden);
+ *   - Simple: mode, attachments and Send only (profile, model and MCP hidden); the memory chip of an agent that cannot compact
+ *     (2026-10-22) opens an info-only popup (aria-haspopup="dialog", no "tidy up" promise), Escape back to the chip;
+ *   - demo (2026-10-22, once): Stop in a demo chat ends the canned turn: Stop and the spinner go and the reply stops growing;
  *   - a dark user theme (scripts/fixtures/themes/dark-audit.json): the same layout; screenshots.
  * A miss throws (DRIVER FAILED); the npm script exits non-zero unless "all checks passed" is printed.
  */
@@ -168,7 +170,41 @@ module.exports = async (ctx) => {
     m.P.forEach((p) => check(false, `${tag} simple: ${p}`));
     check(m.rowIds.includes('modeChip') && m.rowIds.includes('attFile') && !m.rowIds.includes('modelChip') && !m.rowIds.includes('mcpBtn') && !m.rowIds.includes('agentChip'), `${tag} simple: toolbar ${m.rowIds}`);
     await shot(`005-composer-simple-light-${tag}.png`);
+
+    /* Simple, memory chip: Noor can compact (a menu with Tidy up); Priya's app cannot compact (sim i = 6): an info-only popup, never a dead button */
+    const chipOf = () => js(`(()=>{const c=document.getElementById('ctxChip');return c?{pop:c.getAttribute('aria-haspopup'),title:c.title}:null})()`);
+    let ch = await chipOf();
+    check(ch && ch.pop === 'menu' && /tidy up/i.test(ch.title), `${tag} simple: compactable memory chip ${JSON.stringify(ch)}`);
+    const pid = await H.idOf('Priya');
+    await js(`document.querySelector(${jsLiteral(`#stage .desk[data-id="${pid}"]`)}).click()`);
+    await until(`!!document.getElementById('ctxChip')&&/Priya/.test((document.getElementById('panelHead')||{}).textContent||'')`, 4000);
+    ch = await chipOf();
+    check(ch && ch.pop === 'dialog' && !/tidy up/i.test(ch.title), `${tag} simple: memory chip without Compact ${JSON.stringify(ch)}`);
+    await js(`document.getElementById('ctxChip').classList.remove('mem-low')`); /* shown from 70% only: made visible so it can take focus back */
+    await js(`document.getElementById('ctxChip').click()`);
+    const im = await until(`!!document.getElementById('ctxMenu')`, 3000) && await js(`(()=>{const m=document.getElementById('ctxMenu');return {role:m.getAttribute('role'),info:!!m.querySelector('.mm-info'),btns:m.querySelectorAll('button').length,focus:document.activeElement===m}})()`);
+    check(im && im.role === 'dialog' && im.info && im.btns === 0 && im.focus, `${tag} simple: the memory chip without Compact opens no info popup ${JSON.stringify(im)}`);
+    await key('Escape');
+    check(await until(`!document.getElementById('ctxMenu')&&(document.activeElement||{}).id==='ctxChip'`, 3000), `${tag} simple: Escape does not close the info popup back to the chip`);
     await js(`localStorage.setItem('durbar.detail','expert')`);
+
+    /* demo Stop (once): the canned turn ends, Stop and the spinner go, the reply stops growing */
+    if (w === SIZES[0][0]) {
+      await js(`(()=>{const b=document.getElementById('backBtn');if(b)b.click();const t=document.getElementById('demoToggle');t.checked=true;t.dispatchEvent(new Event('change'));})()`);
+      await until(`!!document.querySelector('#stage .desk[data-id]')`, 3000);
+      await js(`document.querySelector('#stage .desk[data-id]').click()`);
+      await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`, 3000);
+      await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0,g=x=>document.getElementById(x);return v(g('sendBtn'))&&!v(g('stopBtn'))})()`, 15000); /* the opening canned turn */
+      await type('Please look at the README.');
+      await js(`document.getElementById('sendBtn').click()`);
+      check(await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0,g=x=>document.getElementById(x);return v(g('stopBtn'))})()`, 3000), `${tag} demo: a canned turn shows no Stop`);
+      await js(`document.getElementById('stopBtn').click()`);
+      check(await until(`(()=>{const v=e=>!!e&&e.getClientRects().length>0,g=x=>document.getElementById(x);return !v(g('stopBtn'))&&!v(g('runSpin'))&&v(g('sendBtn'))})()`, 1500), `${tag} demo: Stop does not end the canned turn`);
+      const len = () => js(`(document.querySelector('#panel .chat-inner')||{textContent:''}).textContent.length`);
+      const l0 = await len(); await ctx.sleep(900);
+      check((await len()) === l0, `${tag} demo: the reply keeps streaming after Stop`);
+      await js(`(()=>{const t=document.getElementById('demoToggle');t.checked=false;t.dispatchEvent(new Event('change'));})()`);
+    }
 
     /* a dark user theme: the same checks */
     await load(w, h, { theme: 'audit-dark', usertheme: DARK });
