@@ -47,6 +47,20 @@ for (const f of files) {
   assert.deepStrictEqual(th.map((e) => `${e.reasoningId}=${e.delta}`), ['rs_1:0=Checking ', 'rs_1:0=the tests', 'rs_1:1=Then fixing', 'rs_2:0=Never streamed']);
 }
 
+// 3b. Spec 058 FR-060: a failed MCP call with the OAuth challenge says mcpAuth; nothing else does.
+{
+  const done = (item: Record<string, unknown>): any => run([{ method: 'item/completed', params: { item: { id: 'x', type: 'mcpToolCall', server: 'gh', tool: 't', ...item } } }])[0];
+  assert.strictEqual(done({ status: 'failed', error: { message: 'MCP OAuth challenge required (HTTP 401)' } }).mcpAuth, true);
+  assert.strictEqual(done({ status: 'failed', error: { message: 'Re-authentication required for MCP server "gh". Run /mcp auth gh' } }).mcpAuth, true);
+  assert.strictEqual(done({ status: 'failed', error: { message: 'HTTP 401 Unauthorized' } }).mcpAuth, undefined, 'a plain 401 is not the challenge');
+  assert.strictEqual(done({ status: 'completed', result: { content: [{ type: 'text', text: 'MCP OAuth challenge required' }] } }).mcpAuth, undefined, 'a successful result');
+  assert.strictEqual(done({ status: 'failed', server: undefined, error: { message: 'MCP OAuth challenge required' } }).mcpAuth, undefined, 'no server named');
+  const started = run([{ method: 'item/started', params: { item: { id: 'y', type: 'mcpToolCall', server: 'gh', tool: 't', status: 'inProgress' } } }])[0];
+  assert.strictEqual(started.mcpAuth, undefined);
+  const cmd = run([{ method: 'item/completed', params: { item: { id: 'z', type: 'commandExecution', status: 'failed', aggregatedOutput: 'MCP OAuth challenge required' } } }])[0];
+  assert.strictEqual(cmd.mcpAuth, undefined, 'a shell command');
+}
+
 // 3. An MCP tool call carries its server and tool; other tool kinds do not claim an MCP origin.
 {
   const calls = run(fx('mcp-tool.json').notifications).filter((e) => e.type === 'toolCall');
