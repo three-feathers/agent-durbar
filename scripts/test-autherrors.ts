@@ -26,6 +26,8 @@ const REAL_CLAUDE = 'Failed to authenticate. API Error: 401 OAuth access token i
   assert.strictEqual(isAuthError('Re-authentication required for MCP server "x". Run /mcp auth x'), false, 'pure re-auth phrase');
   assert.strictEqual(isAuthError('MCP server "x" needs authentication'), false, 'Claude Code wording (read: 2.1.304) is an MCP challenge');
   assert.strictEqual(isAuthError('MCP server "x" needs authentication. Failed to authenticate. API Error: 401 OAuth access token is invalid'), true, 'an app 401 beside it stays an auth error');
+  assert.strictEqual(isAuthError('x requires authentication. Open this session and run /mcp to authenticate.'), false, 'Claude Code wording (read: 2.1.304) is an MCP challenge');
+  assert.strictEqual(isAuthError('x requires authentication. Open this session and run /mcp to authenticate. Failed to authenticate. API Error: 401 OAuth access token is invalid'), true, 'an app 401 beside it stays an auth error');
   assert.strictEqual(isAuthError('MCP server "x" requires authentication. Run /mcp auth x to authenticate. Error: 401 Unauthorized, please run copilot login'), true, 'an app 401 after the MCP advice on one line stays an auth error');
   assert.strictEqual(isAuthError('Re-authentication required for MCP server "x". Run /mcp auth x; also Failed to authenticate. API Error: 401 OAuth access token is invalid'), true, 'an app 401 after the re-auth advice on one line stays an auth error');
   assert.strictEqual(isAuthError('Re-authentication required for MCP server access. Please run copilot login'), true, 'app text that merely starts alike is not swallowed');

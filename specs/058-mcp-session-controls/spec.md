@@ -418,7 +418,7 @@ token**. Where the call is missing (older runtime, refused, not live), Durbar sh
   only to failed MCP tool results and MCP status errors, never to model text or a turn that ended well. Unit-tested with the issue's
   exact text.
   `[IMPLEMENTED]` Claude (T096): a failed MCP call with a challenge marks the server `needs-auth` + `errorClass: 'auth'` in the refreshed list even if the CLI says `connected`, until init or a toggle replaces it. `test:` `scripts/test-claude-adapter.ts`.
-  `[KNOWN GAP]` Claude Code's own strings (`MCP server "<name>" needs authentication` is recognised; `<name> requires authentication. Open this session and run /mcp ...` is not) are `read:` from the 2.1.304 binary, not seen in a real `tool_result`.
+  `[IMPLEMENTED]` Claude Code's own strings, both recognised: `MCP server "<name>" needs authentication` and `<name> requires authentication. Open this session and run /mcp to authenticate.` (`read:` from the 2.1.304 binary). `[KNOWN GAP]` neither was seen in a real `tool_result`.
   `[IMPLEMENTED]` the classifier `src/adapters/mcpauth.ts` (PR 1 of #364; the mappers that apply it are T094-T096; Claude's is done, T096). `test:` `scripts/test-mcpauth.ts`.
 - **FR-062** **An MCP challenge is not the agent app's sign-in.** Text that `isMcpAuthChallenge` matches never gets
   `errorKind: 'auth'` and never marks the app signed out (spec 012 FR-157): `isAuthError` returns false for it. If such text comes as a
