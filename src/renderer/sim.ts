@@ -1367,7 +1367,13 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       onAdaptersChanged: () => () => undefined, // FR-157: the window marks the app itself from the auth error; nothing else pushes here
       // Spec 051 FR-009: harness setup in the simulator: canned plans and output (a fake link and code), nothing runs
       copilotAuth: async () => ({ known: true, signedIn: true, ...(simQuery.get('simnopwsh') === '1' ? { pwshMissing: true } : {}) }), // spec 052 FR-073: page address simnopwsh=1 shows the Windows PowerShell 7 hint
-      harnessPlans: async (kind, op) => ({ name: kind === 'copilot' ? 'the GitHub Copilot CLI' : kind === 'codex' ? 'the Codex CLI' : 'Claude Code', page: 'https://example.invalid/', plans: kind === 'codex' ? [{ manager: 'npm', display: (op === 'update' ? 'npm install -g @openai/codex@latest' : 'npm install -g @openai/codex') }] : [{ manager: 'brew', display: 'brew install --cask claude-code' }, { manager: 'npm', display: 'npm install -g @anthropic-ai/claude-code', note: 'Deprecated by Anthropic: use it only if nothing else works.' }] }),
+      // spec 060 FR-002: in the app, ask main for the real routes of this OS (main assumes a typical new machine under the simulator);
+      // the made-up list below is only for the page opened in a plain browser, where there is no main process
+      harnessPlans: async (kind, op) => {
+        const real = typeof window !== 'undefined' ? (window as unknown as { agentDurbar?: DurbarApi }).agentDurbar : undefined;
+        if (real?.harnessPlans) return real.harnessPlans(kind, op);
+        return { name: kind === 'copilot' ? 'the GitHub Copilot CLI' : kind === 'codex' ? 'the Codex CLI' : 'Claude Code', page: 'https://example.invalid/', plans: kind === 'codex' ? [{ manager: 'npm', display: (op === 'update' ? 'npm install -g @openai/codex@latest' : 'npm install -g @openai/codex') }] : [{ manager: 'brew', display: 'brew install --cask claude-code' }, { manager: 'npm', display: 'npm install -g @anthropic-ai/claude-code', note: 'Deprecated by Anthropic: use it only if nothing else works.' }] };
+      },
       harnessRun: async (kind, op) => {
         const t0 = Date.now();
         const prog = (p: Record<string, unknown>) => simHarness.progress.forEach((cb) => cb({ kind, op, elapsedMs: Date.now() - t0, lines: [], ...p } as never));
@@ -1449,6 +1455,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!s) return { ok: false, error: 'unknown agent' };
         if (s.perm) return { ok: false, error: 'Waiting for your permission decision first.' };
         if (s.limitReq) return { ok: false, error: 'The spending limit was reached. Choose Raise limit, Remove limit or Stop here first.' };
+        // spec 012 FR-087: `simsendfail=sandbox` fakes Codex refusing Read-only / Ask first (the real Linux message), for the driver
+        if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsendfail') === 'sandbox' && s.info.permMode !== 'allow')
+          return { ok: false, error: "Codex refused the session settings: fs sandbox helper failed: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted Codex could not start its Linux sandbox: this system blocks unprivileged user namespaces (Ubuntu AppArmor). Read-only and Ask first need that sandbox, so nothing ran. To allow it for bubblewrap, see the README (Codex)." };
         const kind = s.info.adapterId ?? 'copilot';
         if (simExpired.has(kind) || simSignedOut.has(kind)) {
           // FR-157: the app refuses the turn because of the sign-in, as Claude Code did on a real account
