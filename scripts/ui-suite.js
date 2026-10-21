@@ -31,7 +31,7 @@ const DRIVERS = [
   { name: 'shots-034-list' },
   { name: 'shots-044-everywhere' },
   { name: 'shots-044-templates' },
-  { name: 'shots-051-setup' },
+  { name: 'shots-051-setup', env: { DURBAR_SIM_MANAGERS: 'winget,brew,npm' } }, // spec 060 FR-002: the per-OS assertion needs a known manager set
   { name: 'shots-052-ux', env: { DURBAR_SIM_KINDS: 'mixed' } },
   { name: 'shots-054-remote' },
   { name: 'shots-006-prevmarks' },

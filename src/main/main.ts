@@ -57,7 +57,7 @@ import { UserThemeStore } from './themes';
 import { HarnessSetup, confirmText, posixTrusted } from './harnesssetup';
 import { markSignedOut, withSignIn } from './authcheck';
 import type { SignInAnswer } from './authcheck';
-import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind } from '../shared/harnesssetup';
+import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind, simManagers } from '../shared/harnesssetup';
 import { MAX_DESCRIPTION, MAX_PASSES, THEME_IDEAS, TOP_BAR_ISSUE, buildFixPrompt, buildRetryPrompt, buildThemePrompt, isBlocking, keepArt, parseGeneratedTheme } from '../shared/themegen';
 import { SettingsStore } from './settings';
 import { parseBadgeCount, shouldBounce, shouldFlash } from './badge';
@@ -765,7 +765,8 @@ const harnessSetup = new HarnessSetup({
 } as ConstructorParameters<typeof HarnessSetup>[0]);
 /** FR-004b: harness setup answers only the app's own page in the main frame. */
 const fromApp = (e: Electron.IpcMainInvokeEvent): boolean => senderAllowed(e.senderFrame ? { url: e.senderFrame.url, isMain: e.senderFrame === e.sender.mainFrame } : null, path.join(__dirname, '..', 'renderer', 'index.html'));
-ipcHandle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? harnessSetup.plans(kind, op) : { plans: [], page: '', name: '' }));
+// spec 060 FR-002: under the simulator the routes are the real ones for this OS, with a typical new machine's package managers
+ipcHandle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? harnessSetup.plans(kind, op, dev.DURBAR_SIM ? simManagers(process.platform, dev.DURBAR_SIM_MANAGERS) : undefined) : { plans: [], page: '', name: '' }));
 ipcHandle('harness:run', async (e, kind: unknown, op: unknown, planIndex: unknown) => {
   if (!fromApp(e) || !isSetupKind(kind) || (op !== 'install' && op !== 'update' && op !== 'signin')) return { ok: false, error: 'invalid request' };
   const p = harnessSetup.prepare(kind, op, typeof planIndex === 'number' && Number.isInteger(planIndex) && planIndex >= 0 && planIndex < 8 ? planIndex : 0);

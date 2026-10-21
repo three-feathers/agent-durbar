@@ -1,6 +1,6 @@
 # Spec 060: Platform parity: install, find and run agent apps on macOS, Windows and Linux
 
-**Status:** draft, audit and plan; waiting for the owner's answers to Q1-Q6 before any code.
+**Status:** clarified 2026-10-20 (owner answered Q1-Q6, see *Clarifications*); being built in the order of Q6.
 **Owner request (2026-10-20):** "brew does not work on windows, also for linux, and on macos what if brew is not installed? Look at all such things which are platform specific, look at the full code and specs and research, and come up with a plan."
 **Builds on:** 008 (packaging, CI), 012 (adapters, detection), 045 (Windows `.cmd` shims), 051 (harness setup), 052 (Mac title bar, shortcuts), 040/041 (secrets).
 
@@ -86,3 +86,25 @@
   - **FR-094** A pure `pathDirs(env, platform)` in `src/shared/` returns the absolute `PATH` folders in order. On Windows it reads `PATH`, then `Path` (the first that is set), splits on `;`, strips one pair of surrounding double quotes, and drops empty and non-absolute entries; duplicates are dropped case-insensitively (the first one wins). On macOS and Linux it reads `PATH`, splits on `:`, drops empty and non-absolute entries, and drops exact duplicates. `candidates()` and `pathCandidates()` both use it; the login-shell folders (FR-003) and the fixed folders stay where they are, after `PATH`.
   - *Behaviour change, on purpose:* the VS Code launcher now finds a quoted Windows `PATH` entry, the same as detection already did; duplicates no longer produce repeated candidates (the first match is the same as before). Everything else keeps its order and result. `src/shared` keeps adapters free of `src/main` imports (constitution II): both callers import the helper from `src/shared`.
   - Tests: `pathDirs` cases in a unit test (Windows `PATH` and `Path`, quotes, empty entries, relative entries, case-insensitive duplicates; POSIX exact duplicates, empty entries); `test-detect` and `test-vscode` keep every existing row and gain a quoted-entry row for VS Code and a duplicate-entry row for detection.
+
+## Clarifications (owner, 2026-10-20)
+
+- **Q1 → least privilege first.** "Go with the least admin rights path first and then higher towards needing admin rights, as not everyone has admin rights on their machine." So FR-001's order per OS is:
+  1. the vendor's official **user-level** installer (into the home folder, no admin: Claude `install.sh`/`install.ps1`, Copilot's script into `~/.local`, Codex `install.sh`/`install.ps1`);
+  2. npm, **only when its global prefix is writable by the user** (otherwise it is listed last with "needs administrator rights");
+  3. winget and Homebrew, labelled "may ask for administrator rights".
+
+  Every route says before it runs whether it can ask for admin rights. Durbar itself never asks for elevation.
+- **Q2 → yes**: read the login shell's `PATH` once (fixed command, time limit, fall back to the fixed folders).
+- **Q3 → yes**: `.deb` and arm64 builds (Linux arm64, Windows arm64, next to the macOS arm64 that exists), each recorded as unverified until a real check.
+- **Q4 → native Windows, explain WSL.** The owner asked whether Codex needs WSL. It does not: Codex runs natively on Windows (PowerShell), and Durbar already supports that (spec 012 FR-145; the one Windows need is Codex's elevated sandbox for Read-only and Ask first, which Durbar checks). OpenAI only *recommends* WSL as more stable. FR-005 is text only: native is the path, and a Codex inside WSL is not used by Durbar.
+- **Q5 → yes**: real install and detection checks on clean GitHub runners (no account).
+- **Q6 → as listed**: simulator truth and Linux docs first, then installers and detection, then the rest.
+
+## Changes
+
+### 2026-10-20: T010 built (simulator truth, Linux docs)
+
+- **FR-002** `[IMPLEMENTED]`. Under the simulator, main answers `harness:plans` with the real `installPlans()` for this OS and a per-OS set of found managers (`SIM_FOUND`: Windows winget; macOS and Linux none, a typical new machine), or `DURBAR_SIM_MANAGERS` for a driver that needs the command dialog; `sim.ts` asks main and keeps its made-up list only for a plain browser. So the Windows screenshot offers winget, never Homebrew, and a new Mac or Linux desktop shows the vendor page until FR-001 adds the official installers. test: `test-harnesssetup` (per-OS sets, no Homebrew on Windows or Linux, the assumed set does not look at the machine, the override parser). sim: `shots-051-setup` with `DURBAR_SIM_MANAGERS=winget,brew,npm` asserts the first route per OS and that no other OS's manager is offered.
+- **FR-006 (docs)** `[IMPLEMENTED]`: README Linux: FUSE 2 (`libfuse2t64` / `libfuse2`, `--appimage-extract-and-run`) and the keyring note (A9). The Copilot line says PowerShell 6 or later (GitHub's docs), not 7.
+

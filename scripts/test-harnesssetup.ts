@@ -1,6 +1,6 @@
 /** Harness setup inside the app (spec 051): plans per OS, sign-in output parsing, link allowlist, paste rules. `npm run test:harnesssetup`. No process runs, nothing is installed. */
 import * as assert from 'assert';
-import { OFFICIAL_PAGES, SIGN_IN, allowedSignInUrl, installPlans, lastLines, managersFor, parseSignIn, stripAnsi, updatePlans, validPaste } from '../src/shared/harnesssetup';
+import { OFFICIAL_PAGES, SIGN_IN, allowedSignInUrl, installPlans, lastLines, managersFor, parseSignIn, simFoundFor, simManagers, stripAnsi, updatePlans, validPaste } from '../src/shared/harnesssetup';
 import type { PackageManager } from '../src/shared/harnesssetup';
 import { EventEmitter } from 'events';
 import { HarnessSetup, confirmText, maskOAuth, posixTrusted } from '../src/main/harnesssetup';
@@ -300,6 +300,27 @@ void (async () => {
     assert.ok(!t.setup.busy);
     t.child().emit('close', 1); await tick(); await tick();
     assert.strictEqual(t.done.length, 1, 'ends once');
+  }
+  // spec 060 FR-002: the simulator shows the real routes for a typical new machine of each OS, never Homebrew on Windows or Linux
+  {
+    assert.deepStrictEqual(simFoundFor('win32'), ['winget']);
+    assert.deepStrictEqual(simFoundFor('darwin'), [], 'a new Mac has no Homebrew and no Node');
+    assert.deepStrictEqual(simFoundFor('linux'), []);
+    const simPlans = (k: 'claude' | 'copilot' | 'codex', os: string) => installPlans(k, os, new Set(simFoundFor(os))).map((p) => p.manager);
+    assert.deepStrictEqual(simPlans('claude', 'win32'), ['winget']);
+    assert.deepStrictEqual(simPlans('copilot', 'win32'), ['winget']);
+    for (const os of ['win32', 'linux']) for (const k of ['claude', 'copilot', 'codex'] as const) assert.ok(!simPlans(k, os).includes('brew'), `no Homebrew offered on ${os} for ${k}`);
+    assert.deepStrictEqual(simPlans('claude', 'darwin'), [], 'without Homebrew or Node the Mac gets the vendor page (FR-001 adds the official installer)');
+    assert.deepStrictEqual(simManagers('darwin'), [], 'no override: a new machine');
+    assert.deepStrictEqual(simManagers('linux', 'winget, brew,npm,apt,brew'), ['winget', 'brew', 'npm'], 'override: known names, once each');
+    const looked: string[] = [];
+    const hs = new HarnessSetup({
+      detectEnv: { platform: 'linux', env: { PATH: '/usr/bin' }, homedir: '/home/u', isFile: (f: string) => { looked.push(f); return true; } },
+      spawn: () => { throw new Error('nothing runs'); }, killTree: () => undefined, send: () => undefined, redetect: async () => undefined,
+    } as never);
+    assert.deepStrictEqual(hs.plans('copilot', 'install', []).plans, [], 'a new Linux desktop: no route (FR-001 adds the official installer)');
+    assert.deepStrictEqual(looked, [], 'an assumed set does not look at this machine');
+    assert.deepStrictEqual(hs.plans('copilot', 'install').plans.map((p) => p.manager), ['brew', 'npm'], 'without it, what is found here is used');
   }
   console.log('harnesssetup: all checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });
