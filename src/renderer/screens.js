@@ -781,24 +781,78 @@
   /* spec 069 FR-011: one chip per list that has the server (sources), or the single origin of older replies */
   const srcChips=x=>Array.isArray(x.sources)&&x.sources.length?x.sources.map(t=>`<span class="mtag${t==='folder'?' extra':' src'}">${esc(SRCN[t]||t)}</span>`).join('')
     :`<span class="mtag${x.origin==='folder'?' extra':' src'}">${x.origin==='cli'?'Copilot CLI list':x.origin==='folder'?'this folder only':'runtime'}</span>`;
+  /* spec 058 FR-023: what Restart session costs, said before it runs; null when there is nothing to ask (idle, no grants, no remote control) */
+  function restartSessionAsk(a){
+    const busy=a.state==='working'||a.state==='thinking'||a.state==='waiting', grants=Array.isArray(a.grants)&&a.grants.length>0, remote=!!a.remote;
+    if(!busy&&!grants&&!remote)return null;
+    return ['The conversation is kept and resuming spends no AI credits.',busy?'The running turn stops.':'','"Approve for this session" grants are cleared.',remote?'Remote control turns off.':''].filter(Boolean);
+  }
   async function agentMcp(a,o){
     if(!X.bridge.agentMcp)return;
     const fixed=!!o&&o.toggle===false; /* this agent kind cannot switch servers while it runs (spec 012 FR-067): shown, with the reason */
+    const noServerRestart=!!o&&o.restart===false; /* spec 058 FR-032: e.g. Codex: no per-server Restart, only Restart session */
     const load=async()=>X.bridge.agentMcp(a.id);
     let st=await load();
+    const restarting=new Set(); /* server names whose Restart is under way (FR-031: the button stays disabled) */
+    let sessBusy=false;
     const body=s=>{
       const rows=s.servers.map(x=>{
         const eff=x.defaultOn&&!x.off;
         const stat=x.status?`<span class="mst ${esc(x.status)}"><i></i>${esc(x.status)}</span>`:'<span class="mst none">not started</span>';
+        const rs=x.canRestart&&X.bridge.agentMcpRestart?(restarting.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Restarting '+x.name+' for '+a.name)}">Restarting…</button>`:`<button class="btn sm" type="button" data-restart="${esc(x.name)}" aria-label="${esc('Restart '+x.name+' for '+a.name)}" title="Restart only this server in this session">Restart</button>`):'';
         return `<li class="srv sm" data-n="${esc(x.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(x.name)}</b>${srcChips(x)}${stat}${!x.defaultOn?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${x.error?`<span class="imp-note">${esc(cap(x.error,160))}</span>`:''}</div>
-          <div class="srv-act">${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name,'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed?' disabled':''))}</div></li>`;}).join('');
-      return `<p class="dsub">${s.live?(fixed?'This agent is running.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul><p class="dsub small">Applies to this agent until the app is closed.</p>`;
+          <div class="srv-act">${rs}${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name,'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed?' disabled':''))}</div></li>`;}).join('');
+      /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
+      const rsess=s.canRestartSession&&X.bridge.agentMcpRestartSession?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpRestartSess"${sessBusy?' disabled':''}>${sessBusy?'Restarting session…':'Restart session with these servers'}</button><span class="dsub small">${noServerRestart?esc(o.appName||'This agent app')+' cannot restart one server; use this instead. ':''}Ends this session and resumes it with the servers in Settings and the folder's extras. The conversation is kept.${s.start==='next-message'?' The servers start with your next message.':''}</span></div>`:'';
+      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}<p class="dsub small">Applies to this agent until the app is closed.</p>`;
+    };
+    let dlg=null;
+    /* FR-004 / FR-033: repaint in place and keep the focus on the same control (by server name), so a keyboard user is not thrown out */
+    const repaint=async()=>{st=await load();if(!dlg||!dlg.isConnected)return;
+      const f=document.activeElement,inside=f&&dlg.contains(f);
+      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
+      dlg.querySelector('.dbody').innerHTML=body(st);
+      if(!key)return;
+      const btns=[...dlg.querySelectorAll('.dbody button:not([disabled])')];
+      const back=btns.find(x=>key[0]==='id'?x.id===key[1]:x.dataset[key[0]]===key[1])||(key[0]==='restart'?btns.find(x=>x.dataset.n===key[1]):null);
+      if(back)back.focus();};
+    const restartOne=async name=>{
+      if(restarting.has(name))return;
+      restarting.add(name);
+      let call;try{call=Promise.resolve(X.bridge.agentMcpRestart(a.id,name));}catch(e){call=Promise.reject(e);}
+      call=call.catch(e=>({ok:false,error:String(e&&e.message||e)}));
+      await repaint(); /* after the call went out: the row can already show the runtime's "pending" */
+      const r=await call;
+      restarting.delete(name);
+      X.toast(r&&r.ok?'Restarted '+esc(name)+'.':'Could not restart '+esc(name)+': '+esc((r&&r.error)||'unknown error'),r&&r.ok?3200:6000);
+      await repaint();
+      if(r&&r.ok)setTimeout(()=>{if(dlg&&dlg.isConnected)void repaint();},1500); /* the runtime reports the new state shortly after */
+    };
+    const restartSession=async()=>{
+      if(sessBusy)return;
+      const ask=window.DurbarDialog&&window.DurbarDialog(document);
+      const confirm=async()=>{const lines=restartSessionAsk(a)||['The conversation is kept and resuming spends no AI credits.','The running turn stops.','"Approve for this session" grants are cleared.'];
+        if(!ask)return window.confirm('Restart '+a.name+"'s session with the current MCP servers?");
+        const v=await ask({title:'Restart '+a.name+"'s session?",body:'Restart '+a.name+"'s session with the current MCP servers?",lines,returnFocus:()=>dlg&&dlg.querySelector('#mcpRestartSess'),buttons:[{label:'Cancel',value:null},{label:'Restart session',value:'ok',cls:'primary warn'}]});
+        return !!v;};
+      let confirmed=false;
+      if(restartSessionAsk(a)){if(!await confirm())return;confirmed=true;}
+      sessBusy=true;await repaint();
+      let r;try{r=await X.bridge.agentMcpRestartSession(a.id,confirmed);}catch(e){r={ok:false,error:String(e&&e.message||e)};}
+      if(r&&!r.ok&&r.needsConfirm&&!confirmed){sessBusy=false;await repaint();if(!await confirm())return;sessBusy=true;await repaint();try{r=await X.bridge.agentMcpRestartSession(a.id,true);}catch(e){r={ok:false,error:String(e&&e.message||e)};}}
+      sessBusy=false;
+      if(r&&r.errorKind==='auth'&&X.signInAgain){if(dlg&&dlg._ov)dlg._ov._close();X.signInAgain(a,r.error||'');return;} /* FR-027: the chat's sign-in card, not a toast */
+      X.toast(r&&r.ok?esc(a.name)+': session restarted with the current MCP servers.'+(st.start==='next-message'?' Its servers start with your next message.':''):'Could not restart the session: '+esc((r&&r.error)||'unknown error')+(r&&r.ended?' The session has ended; send a message to resume it.':''),r&&r.ok?4200:7000);
+      await repaint();
     };
     const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
-      onOpen:d=>{d.addEventListener('click',async e=>{const b=e.target.closest('button.swt');if(!b||b.disabled)return;const on=b.getAttribute('aria-checked')!=='true';
+      onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;d.addEventListener('click',async e=>{
+        const rb=e.target.closest('button[data-restart]');if(rb&&!rb.disabled){void restartOne(rb.dataset.restart);return;}
+        if(e.target.closest('#mcpRestartSess')){void restartSession();return;}
+        const b=e.target.closest('button.swt');if(!b||b.disabled)return;const on=b.getAttribute('aria-checked')!=='true';
         const r=await X.bridge.setAgentMcp(a.id,b.dataset.n,on);
         if(r&&r.error)X.toast(esc(r.error),5200);
-        st=await load();d.querySelector('.dbody').innerHTML=body(st);});}});
+        await repaint();});}});
     const r=await d0;
     if(r&&r.value==='settings')open('settings');
     else if(r&&r.value==='folder'&&X.folderOf){const f=X.folderOf(a);if(f)openFolder(f.key,f.name);}

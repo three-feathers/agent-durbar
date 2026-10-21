@@ -95,7 +95,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(CODEX_CAPABILITIES)), {
       interrupt: true, resume: true, images: true, models: true, planMode: true, effort: true, modelSwitch: { verified: true, contextTier: false },
       permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'next-message',
-      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, oneShot: true, deleteSession: true, renameSession: 'any',
+      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpRestart: false, handoff: true, oneShot: true, deleteSession: true, renameSession: 'any',
     });
     assert.ok(Object.isFrozen(CODEX_CAPABILITIES) && Object.isFrozen(CODEX_CAPABILITIES.permissionModes) && Object.isFrozen(CODEX_CAPABILITIES.usage), 'capabilities are deeply frozen');
     const { ad } = make();

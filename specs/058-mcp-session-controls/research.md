@@ -68,6 +68,15 @@ creation with no prompt (`real:`). In Durbar a new agent's session is created wh
 a restored agent's session is created when its chat is opened (`agents:wake`) or with its first message (`ensureLive`,
 `src/main/main.ts:284-305, 1222-1230`).
 
+**Correction (real 2026-10-21, T060, SDK/runtime 1.0.22, Linux):** through Durbar's adapter the servers did **not** start at create or
+resume: no `session.mcp_server_status_changed` and no server process for 30 s after `createSession` (20 s after a resume); they
+started within about 60 ms of the first `send`. Spec 019's probe likely saw them early because it called `rpc.mcp.list()` ("Cache
+misses may start and wait for MCP servers"), which Durbar does not call. So Copilot's `mcpStart` is `next-message` (spec *Changes*,
+2026-10-21). Also seen: `restartServer` exists and works (`session.mcp_server_removed`, then `not_configured` -> `pending` ->
+`connected`); a missing command gives `errorClassification: "os_not_found"`; its `restartServer` rejects with -32603 and the text
+"Request session.mcp.restartServer failed with message: …"; a resume with a changed `mcpServers` applies the new set with the next
+message; `~/.copilot/logs` exists (existence only).
+
 Resume and cost: `resumeSession(id, config)` takes the same `mcpServers` / `disabledMcpServers` as create (`read:` spec 019 research
 row 1; the resumed-with-new-servers case was not exercised). Session creation and resume are RPCs with no model call: spec 019's probe
 counted only its one prompt (`real:` 0.167 AIU for 1 prompt, "everything else was session creation and RPC reads, which use no

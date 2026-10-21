@@ -38,6 +38,7 @@ const DRIVERS = [
   { name: 'shots-006-prevmarks' },
   { name: 'shots-003-mode-back' },
   { name: 'shots-012-signin-chat' },
+  { name: 'shots-058-mcp-restart' }, // spec 058: per-server Restart and Restart session with these servers
   { name: 'shots-model', label: 'shots-model 1440', env: { MODEL_W: '1440', MODEL_H: '900' } },
   { name: 'shots-model', label: 'shots-model 1280', env: { MODEL_W: '1280', MODEL_H: '800' } },
   { name: 'check-dialog-focus' },

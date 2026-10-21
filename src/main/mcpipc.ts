@@ -2,7 +2,7 @@
 import { safeStorage } from 'electron';
 import { ipcHandle } from './ipcguard';
 import * as path from 'path';
-import type { AgentInfo, AgentMcpEntry, GlobalApp, McpFolderState, McpSourceTag, McpState } from '../shared/api';
+import type { AgentInfo, AgentMcpReply, GlobalApp, McpFolderState, McpState } from '../shared/api';
 import type { McpServerStatus } from '../adapters/types';
 import { setMcpOp } from './agentops';
 import type { AdapterRouter } from '../adapters/router';
@@ -10,8 +10,9 @@ import type { McpServerSpec } from '../shared/mcp';
 import type { DevEnv } from './devhooks';
 import { BUILTIN_SERVERS, cliServers, copilotDir } from './mcpfiles';
 import { applyFolderImport, MAX_IMPORT_FOLDERS, previewFolderImport } from './mcpimport';
-import { maskMcpError, mcpSecretValues } from './mcpmask';
-import { claudeOffKey, sourcesFor } from './mcpglobal';
+import { mcpSecretValues } from './mcpmask';
+import { claudeOffKey, offOf } from './mcpglobal';
+import { agentMcpReply, mcpRestartOp } from './mcpsession';
 import { McpStore } from './mcpstore';
 import type { SecretCodec } from './mcpstore';
 
@@ -57,6 +58,8 @@ export function registerMcpIpc(deps: {
   globalNames?(): Partial<Record<GlobalApp, string[]>>;
   /** The agent app of an agent (`copilot`, `claude`, `codex`, ...). */
   appOf?(agentId: string): string | undefined;
+  /** Spec 052 activity log row for an MCP restart (spec 058 FR-021). */
+  log?(a: AgentInfo, action: string): void;
 }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[] }; secretValuesFor(agentId: string): string[] } {
   const { agents, router, dev } = deps;
   const store = deps.store;
@@ -148,38 +151,34 @@ export function registerMcpIpc(deps: {
   });
   ipcHandle('mcp:removeLegacy', (_e, name: unknown) => ({ ok: typeof name === 'string' && store().removeLegacy(name) }));
 
-  ipcHandle('agents:mcp', (_e, id: unknown): { ok: boolean; servers: AgentMcpEntry[]; live: boolean } => {
+  ipcHandle('agents:mcp', (_e, id: unknown): AgentMcpReply => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;
     if (!a) return { ok: false, servers: [], live: false };
     const s = store();
-    const secrets = secretValuesFor(a.id);
-    const mine = off.get(a.id) ?? new Set<string>();
-    const status = new Map((live.get(a.id) ?? []).map((x) => [x.name, x]));
-    const entries: AgentMcpEntry[] = [];
-    const seen = new Set<string>();
-    const add = (name: string, origin: AgentMcpEntry['origin'], defaultOn: boolean): void => {
-      if (seen.has(name)) return;
-      seen.add(name);
-      const st = status.get(name);
-      entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), defaultOn, off: mine.has(name) });
-    };
     const dis = new Set(s.ambientDisabled());
     // Spec 069 FR-009/FR-011: each agent app's own list. Copilot loads the Copilot CLI list itself; Durbar passes Claude Code's list to
     // Claude sessions; Codex reports its own list as the session runs (runtime rows).
-    const app = deps.appOf?.(a.id);
     const gn = deps.globalNames?.() ?? {};
-    const c = app === 'claude' || app === 'codex' ? [] : cli().servers;
-    for (const am of c) add(am.name, 'cli', am.enabled);
-    if (app === 'claude') for (const n of gn.claude ?? []) add(n, 'cli', !dis.has(claudeOffKey(n)));
-    const names = new Set([...c.map((x) => x.name.toLowerCase()), ...(app === 'claude' ? (gn.claude ?? []).map((n) => n.toLowerCase()) : [])]);
-    const extras = s.list(keyOf(a));
-    for (const v of extras) if (!names.has(v.name.toLowerCase())) add(v.name, 'folder', v.enabled && v.trusted && !v.needsSecrets);
-    for (const x of live.get(a.id) ?? []) add(x.name, 'runtime', !dis.has(x.name));
-    const builtin = new Set(cli().servers.filter((x) => x.origin === 'builtin').map((x) => x.name));
-    const folder = new Set(extras.map((v) => v.name));
-    for (const e of entries) e.sources = sourcesFor(e.name, gn, folder, builtin);
-    return { ok: true, servers: entries, live: router.forAgent(a.id)?.isLive(a.id) ?? false };
+    const all = cli().servers;
+    return agentMcpReply({
+      a,
+      ad: router.forAgent(a.id),
+      live: live.get(a.id) ?? [],
+      off: off.get(a.id) ?? new Set<string>(),
+      secrets: secretValuesFor(a.id),
+      cli: all,
+      extras: s.list(keyOf(a)),
+      ambientDisabled: dis,
+      app: deps.appOf?.(a.id),
+      claudeList: (gn.claude ?? []).map((n) => ({ name: n, enabled: !dis.has(claudeOffKey(n)) })),
+      global: gn,
+      builtin: new Set(all.filter((x) => x.origin === 'builtin').map((x) => x.name)),
+    });
   });
+  /** Spec 058 FR-021: restart one server of this agent's running session; one at a time per server. */
+  const restarting = new Set<string>();
+  ipcHandle('agents:mcpRestart', (_e, id: unknown, name: unknown) =>
+    mcpRestartOp({ agents, router, live: (k) => live.get(k) ?? [], off: (k) => new Set([...(off.get(k) ?? []), ...store().ambientDisabled(), ...offOf('claude', store().ambientDisabled())]), secrets: secretValuesFor, log: deps.log }, restarting, id, name));
   ipcHandle('agents:setMcp', (_e, id: unknown, name: unknown, enabled: unknown) => setMcpOp({ agents, router, wsKey: keyOf }, off, id, name, enabled));
 
   return {

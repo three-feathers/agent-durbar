@@ -15,7 +15,8 @@ import type { HistoryResult, PreviousSession } from './history';
 
 export type OptionalMember =
   | 'interrupt' | 'resolvePermission' | 'revokeGrant' | 'setCap' | 'resolveLimit' | 'setMcpEnabled' | 'setModel'
-  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText' | 'renameSession' | 'deleteSession' | 'startMcpSignIn' | 'cancelMcpSignIn';
+  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText' | 'renameSession' | 'deleteSession' | 'restartMcpServer'
+  | 'startMcpSignIn' | 'cancelMcpSignIn';
 
 export type Step =
   | { output: string }
@@ -50,6 +51,7 @@ const DEFAULT_CAPS: AdapterCapabilities = {
   history: true,
   mcpStatus: true,
   mcpToggle: true,
+  mcpRestart: true,
   handoff: true,
   oneShot: true,
 };
@@ -76,6 +78,11 @@ export class FakeAdapter implements AgentAdapter {
   declare setCap?: (sessionId: string, credits: number | null) => Promise<void>;
   declare resolveLimit?: (sessionId: string, requestId: string, action: LimitAction) => Promise<void>;
   declare setMcpEnabled?: (sessionId: string, name: string, enabled: boolean) => Promise<void>;
+  declare restartMcpServer?: (sessionId: string, name: string) => Promise<void>;
+  /** Spec 058: every `restartMcpServer` call, in order. */
+  readonly restartCalls: Array<{ sessionId: string; name: string }> = [];
+  /** Spec 058: when set, `restartMcpServer` rejects with this message. */
+  failRestart?: string;
   declare setModel?: (sessionId: string, request: ModelSwitchRequest) => Promise<ModelSwitchResult>;
   declare cancelQueuedModel?: (sessionId: string, queueId: string) => Promise<void>;
   declare compact?: (sessionId: string, focus?: string) => Promise<CompactResult>;
@@ -123,6 +130,7 @@ export class FakeAdapter implements AgentAdapter {
       history: c.history && !omit.has('listPreviousSessions') && !omit.has('history'),
       caps: c.caps && !omit.has('setCap') && !omit.has('resolveLimit'),
       mcpToggle: c.mcpToggle && !omit.has('setMcpEnabled'),
+      mcpRestart: !!c.mcpRestart && !omit.has('restartMcpServer'),
       handoff: !!c.handoff && !omit.has('handoffSummary'),
       oneShot: !!c.oneShot && !omit.has('generateText'),
       mcpSignIn: !!c.mcpSignIn && !omit.has('startMcpSignIn'),
@@ -149,6 +157,14 @@ export class FakeAdapter implements AgentAdapter {
       };
     }
     if (caps.mcpToggle) this.setMcpEnabled = async (sid) => void this.mustGet(sid);
+    if (caps.mcpRestart) {
+      this.restartMcpServer = async (sid, name) => {
+        this.restartCalls.push({ sessionId: sid, name });
+        if (!this.sessions.has(sid)) throw new Error('This session is not running. Send a message to start it.');
+        if (this.failRestart !== undefined) throw new Error(this.failRestart);
+        this.emit(sid, { type: 'mcp', servers: [{ name, status: 'connected' }] });
+      };
+    }
     if (caps.mcpSignIn) {
       if (has('startMcpSignIn')) {
         this.startMcpSignIn = async (sid, name) => {
