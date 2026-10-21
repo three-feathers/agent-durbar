@@ -29,7 +29,7 @@ export interface SetupPlan {
   args: string[];
   /** Shown before it runs (FR-004): exactly what will run. */
   display: string;
-  /** A short note shown with the plan (admin rights, deprecation). */
+  /** A short note shown with the plan (admin rights, what it needs). */
   note?: string;
 }
 
@@ -58,18 +58,19 @@ const SCRIPTS = {
 /** The interpreter arguments before the downloaded file (the file is appended by main once it exists). */
 const PS_ARGS = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File'];
 const official = (script: OfficialScript, ps: boolean): Route => ({ manager: 'official', script, install: ps ? [...PS_ARGS] : [], update: ps ? [...PS_ARGS] : [], note: NO_ADMIN });
-const DEPRECATED = 'Deprecated by Anthropic: use it only if nothing else works.';
+/** Spec 060 (read 2026-10-21, code.claude.com/docs/en/setup): npm is an advanced option, not deprecated; the native installer is "Recommended". */
+const CLAUDE_NPM = 'Needs Node.js 22 or later. Anthropic recommends its native installer.';
 
-/** FR-002 and spec 060 FR-001: routes per harness and OS, least privilege first (owner 2026-10-20); a deprecated route is last. */
+/** FR-002 and spec 060 FR-001: routes per harness and OS, least privilege first (owner 2026-10-20); Claude's npm route is last (Anthropic lists it under advanced options). */
 const ROUTES: Record<SetupKind, Partial<Record<'win32' | 'darwin' | 'linux', Route[]>>> = {
   claude: {
     win32: [
       official(SCRIPTS.claudePs1, true),
       { manager: 'winget', install: ['install', '--id', 'Anthropic.ClaudeCode', '-e', ...WINGET_AGREE], update: ['upgrade', '--id', 'Anthropic.ClaudeCode', '-e', ...WINGET_AGREE], note: MAY_ADMIN },
-      npm('@anthropic-ai/claude-code', DEPRECATED),
+      npm('@anthropic-ai/claude-code', CLAUDE_NPM),
     ],
-    darwin: [official(SCRIPTS.claudeSh, false), { manager: 'brew', install: ['install', '--cask', 'claude-code'], update: ['upgrade', '--cask', 'claude-code'], note: MAY_ADMIN }, npm('@anthropic-ai/claude-code', DEPRECATED)],
-    linux: [official(SCRIPTS.claudeSh, false), { manager: 'brew', install: ['install', '--cask', 'claude-code'], update: ['upgrade', '--cask', 'claude-code'], note: MAY_ADMIN }, npm('@anthropic-ai/claude-code', DEPRECATED)],
+    darwin: [official(SCRIPTS.claudeSh, false), { manager: 'brew', install: ['install', '--cask', 'claude-code'], update: ['upgrade', '--cask', 'claude-code'], note: MAY_ADMIN }, npm('@anthropic-ai/claude-code', CLAUDE_NPM)],
+    linux: [official(SCRIPTS.claudeSh, false), { manager: 'brew', install: ['install', '--cask', 'claude-code'], update: ['upgrade', '--cask', 'claude-code'], note: MAY_ADMIN }, npm('@anthropic-ai/claude-code', CLAUDE_NPM)],
   },
   copilot: {
     win32: [

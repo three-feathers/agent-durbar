@@ -1427,7 +1427,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       harnessPlans: async (kind, op) => {
         const real = typeof window !== 'undefined' ? (window as unknown as { agentDurbar?: DurbarApi }).agentDurbar : undefined;
         if (real?.harnessPlans) return real.harnessPlans(kind, op);
-        return { name: kind === 'copilot' ? 'the GitHub Copilot CLI' : kind === 'codex' ? 'the Codex CLI' : 'Claude Code', page: 'https://example.invalid/', plans: kind === 'codex' ? [{ manager: 'npm', display: (op === 'update' ? 'npm install -g @openai/codex@latest' : 'npm install -g @openai/codex') }] : [{ manager: 'brew', display: 'brew install --cask claude-code' }, { manager: 'npm', display: 'npm install -g @anthropic-ai/claude-code', note: 'Deprecated by Anthropic: use it only if nothing else works.' }] };
+        return { name: kind === 'copilot' ? 'the GitHub Copilot CLI' : kind === 'codex' ? 'the Codex CLI' : 'Claude Code', page: 'https://example.invalid/', plans: kind === 'codex' ? [{ manager: 'npm', display: (op === 'update' ? 'npm install -g @openai/codex@latest' : 'npm install -g @openai/codex') }] : [{ manager: 'brew', display: 'brew install --cask claude-code' }, { manager: 'npm', display: 'npm install -g @anthropic-ai/claude-code', note: 'Needs Node.js 22 or later. Anthropic recommends its native installer.' }] };
       },
       harnessRun: async (kind, op) => {
         const t0 = Date.now();

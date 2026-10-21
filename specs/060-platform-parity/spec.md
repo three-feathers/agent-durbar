@@ -8,7 +8,7 @@
 
 - **Homebrew is not part of macOS.** A fresh Mac has no `brew`, no `node` and no `npm`. Windows has no Homebrew. On Linux, Homebrew (Linuxbrew) is rare. Most Linux desktops have neither `brew` nor a recent Node.
 - **Every vendor now has an official installer that needs no package manager** (`read:` vendor docs, 2026-10-20):
-  - **Claude Code:** `install.sh` on macOS and Linux; `install.ps1` (PowerShell) and `install.cmd` on Windows. Anthropic calls the npm package deprecated. On Windows, Git for Windows is *recommended* (for the Bash tool); without it Claude uses PowerShell for shell commands.
+  - **Claude Code:** `install.sh` on macOS and Linux; `install.ps1` (PowerShell) and `install.cmd` on Windows. Anthropic calls the npm package deprecated (2026-10-20; no longer on 2026-10-21, see *Changes* 2026-10-21). On Windows, Git for Windows is *recommended* (for the Bash tool); without it Claude uses PowerShell for shell commands.
   - **GitHub Copilot CLI:** an install script for macOS and Linux (`gh.io/copilot-install`, installs to `~/.local` for a normal user), winget on Windows, Homebrew, and npm (Node 22+). On Windows it needs **PowerShell 6 or later**.
   - **OpenAI Codex:** `install.sh` on macOS and Linux and `install.ps1` on Windows (from `releases.openai.com/codex`, falling back to GitHub Releases), Homebrew, npm, and release archives per platform. OpenAI calls Windows experimental and suggests WSL.
 
@@ -114,7 +114,7 @@
 
   | Agent app | Windows | macOS | Linux |
   |---|---|---|---|
-  | Claude Code | official `install.ps1` → winget → npm (deprecated) | official `install.sh` → Homebrew → npm (deprecated) | official `install.sh` → Homebrew → npm (deprecated) |
+  | Claude Code | official `install.ps1` → winget → npm (last) | official `install.sh` → Homebrew → npm (last) | official `install.sh` → Homebrew → npm (last) |
   | Copilot CLI | npm (user folder, no admin) → winget | official script → npm → Homebrew | official script → npm → Homebrew |
   | Codex | official `install.ps1` → npm | official `install.sh` → npm → Homebrew | official `install.sh` → npm |
 
@@ -202,3 +202,5 @@ Rerun after those fixes (run 39485719890, `d600c68`): `real:` **Codex official o
 - **FR-010 winget is found** `[IMPLEMENTED]`. Detection treats a file directly in `%LOCALAPPDATA%\Microsoft\WindowsApps` as a file when `stat` fails and `lstat` succeeds (`statIsFile`; elsewhere a failing `stat` stays "not found"), and looks there for `winget` and `pwsh` (a Microsoft Store PowerShell 7) even when PATH lacks the folder. An alias runs **by its own path**: it is not passed to `realpath` (which would lead into `C:\Program Files\WindowsApps`, where users cannot start it). It still runs as before: fixed argv (`install --id GitHub.Copilot -e --source winget --accept-source-agreements --accept-package-agreements`), no shell, after the main-side confirmation. After an install, winget's `%LOCALAPPDATA%\Microsoft\WinGet\Links` was already searched (spec 052 FR-072), and Claude's `install.ps1` folder `~\.local\bin` too. `test:` `test-detect` (the folder, case, only directly inside, lstat asked only there), `test-harnesssetup` (a Windows PC with only the winget alias: Copilot gets the winget route, it runs by the alias path, `realpath` not called).
 - **FR-011 Simulated OS** `[IMPLEMENTED]`. `DURBAR_SIM_PLATFORM=win32|darwin|linux` (a dev hook, simulator only) makes Settings > Agent apps show that OS's routes and commands, so the Windows dialog can be checked and captured on any machine. `check:ui` runs `shots-051-setup` once more with `win32`.
 - `[KNOWN GAP]` Not run on a real Windows PC: the alias behaviour of `stat`/`lstat` is from the Node issue above, and no winget install ran (CI's `windows-latest` runs the unit tests and simulator drivers only). Durbar itself is not on winget (no `winget-pkgs` manifest exists; publishing one is an owner decision).
+- **Claude npm note** `[IMPLEMENTED]` (2026-10-21, accuracy). `read:` https://code.claude.com/docs/en/setup, 2026-10-21: the page lists npm under *Advanced installation options* ("You can also install Claude Code as a global npm package. The npm package requires Node.js 22 or later.") and marks the native installer "Recommended"; it no longer calls npm deprecated or discourages it (it only warns against `sudo npm install -g`). Durbar's Claude npm route therefore drops "Deprecated by Anthropic: use it only if nothing else works." and says "Needs Node.js 22 or later. Anthropic recommends its native installer."; it stays the last route. `test:` `test-harnesssetup` (no Claude route says deprecated).
+

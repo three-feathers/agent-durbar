@@ -17,7 +17,8 @@ const only = (...m: PackageManager[]) => new Set<PackageManager>(m);
     'npm install -g @anthropic-ai/claude-code',
   ]);
   assert.deepStrictEqual(installPlans('claude', 'darwin', all).map((p) => p.display), ['brew install --cask claude-code', 'npm install -g @anthropic-ai/claude-code']);
-  assert.match(installPlans('claude', 'darwin', all)[1].note ?? '', /Deprecated/);
+  assert.strictEqual(installPlans('claude', 'darwin', all)[1].note, 'Needs Node.js 22 or later. Anthropic recommends its native installer.', 'not called deprecated: Anthropic no longer does (read 2026-10-21)');
+  assert.ok(!['win32', 'darwin', 'linux'].some((os) => installPlans('claude', os, new Set<PackageManager>(['winget', 'brew', 'npm', 'bash', 'powershell'])).some((p) => /deprecat/i.test(p.note ?? ''))), 'no Claude route says deprecated');
   // spec 060 Q1: least privilege first: npm (a home-folder install) before Homebrew, and before winget on Windows
   assert.deepStrictEqual(installPlans('copilot', 'darwin', all).map((p) => p.display), ['npm install -g @github/copilot', 'brew install --cask copilot-cli']);
   assert.deepStrictEqual(installPlans('copilot', 'win32', all)[1].args, ['install', '--id', 'GitHub.Copilot', '-e', '--source', 'winget', '--accept-source-agreements', '--accept-package-agreements']);
