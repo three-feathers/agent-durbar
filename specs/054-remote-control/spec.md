@@ -2,7 +2,7 @@
 
 **Feature Branch**: `054-remote-control`
 **Created**: 2026-10-20
-**Status**: Phase 1 built (Copilot remote steering per session: simulator and unit tests; real checks 2026-10-20: never started on Copilot Free, started in any folder on Copilot Pro). **Phase 2 built** (FR-060..FR-064, Claude Code Remote Control per session: unit tests and simulator driver; the `remote_control` request was checked on a real account over `claude -p`; through Durbar's window `[KNOWN GAP]`). Codex: explain only (FR-064). Claude channels wizard: planned.
+**Status**: Phase 1 built (Copilot remote steering per session: simulator and unit tests; real checks 2026-10-20: never started on Copilot Free, started in any folder on Copilot Pro). **Phase 2 built** (FR-060..FR-064, Claude Code Remote Control per session: unit tests and simulator driver; the `remote_control` request was checked on a real account over `claude -p`; through Durbar's window `[KNOWN GAP]`). Copilot remote session used for real by the owner 2026-10-21 (Changes). Codex: explain only (FR-064). Claude channels wizard: **out of scope** (owner 2026-10-21), moved to idea issue #485.
 **Input**: Issue #298. Owner (Telegram, 2026-10-19; Ruben raised it the day before): "support remote controls and channels". The issue's first open question ("which first: the Copilot `--remote` link or the Claude channels wizard?") is answered by doing the Copilot link first: it is generally available, needs no plugin or extra runtime, and the SDK Durbar already uses exposes it per session.
 
 ## Summary
@@ -12,7 +12,7 @@ Someone running agents in Durbar on their computer wants to follow and steer a s
 | Harness | Remote route | Status in Durbar |
 |---|---|---|
 | **Copilot** | Remote control: a session exported to GitHub and steerable from github.com and GitHub Mobile. | **Phase 1, built** (sim, unit). Real run not done. |
-| **Claude Code** | Remote Control (claude.ai / Claude app) and Channels (Telegram, Discord, iMessage plugins; research preview). | **Phase 2, planned.** Unknown whether either works in `-p` / stream-json mode, which Durbar uses. |
+| **Claude Code** | Remote Control (claude.ai / Claude app) and Channels (Telegram, Discord, iMessage plugins; research preview). | Remote Control: **built** (Phase 2, FR-060..FR-064). Channels: **out of scope** (owner 2026-10-21, idea #485). |
 | **Codex** | Codex in the ChatGPT mobile app (preview). | **Phase 3, planned.** Unknown whether it covers `codex app-server`. |
 
 Phase 1 adds one item to a live Copilot chat's **More** menu and to the command palette: **Control from GitHub (web and mobile)…**. Durbar explains what it does, asks, turns remote control on for that one session, and shows the GitHub link with *Copy* and *Open on GitHub*. A small **Remote** marker shows on the desk card and in the chat header while it is on. **Stop remote control** turns it off.
@@ -80,7 +80,9 @@ Phase 1 adds one item to a live Copilot chat's **More** menu and to the command 
   - Durbar never changes visibility (`visibility.set`); the user does that on GitHub;
   - no QR code (the CLI shows one): the link is copied or opened, and the dialog suggests GitHub Mobile.
 
-### Phase 2: Claude Code channels wizard (planned, no code)
+### Phase 2: Claude Code channels wizard (out of scope since 2026-10-21, moved to idea #485; no code)
+
+Owner decision (Vikram, team chat 2026-10-21): "For Claude, no need to support Telegram"; non-native channels are rethought later and kept as a future idea (#485). FR-020..FR-026 below are kept only as the record of that idea; none of them is planned work in this spec.
 
 - **FR-020** *(planned)* **Research first.** Before any code, check on a real account (T030..T034) whether `claude -p --output-format stream-json --channels plugin:telegram@claude-plugins-official` delivers channel messages into a stream-json session, and whether Remote Control (`claude remote-control`, `/remote-control`) works for a session Durbar drives. Both are documented for interactive sessions only. If neither works in print mode, Phase 2 stops and the issue records why.
 - **FR-021** *(planned)* **Prerequisites, each confirmed by the user**: Bun found on PATH (else the official install page opens; Durbar does not pipe an install script into a shell, spec 051 D1); the official plugin installed with Claude's own plugin command, shown before it runs.
@@ -159,3 +161,9 @@ Owner answers on #298: Q1 test Copilot remote in a private repository; **Q2 "thi
   - `setRemote(false)` turned it off.
 
   Together with the Copilot Free runs (never started, also in a private GitHub repository), this settles it: Copilot remote control **needs a paid plan**. FR-063's message now says so. What GitHub's web page and GitHub Mobile show for such a session was not opened (`[KNOWN GAP]`).
+
+### 2026-10-21: owner's real Copilot remote session; channels wizard moved out (#298, #485)
+
+- `real:` 2026-10-21, owner (Vikram): "I did a real remote Copilot session today, it works perfectly" (Copilot Pro; on Copilot Free remote does not start, as recorded 2026-10-20). The owner did not say whether github.com or GitHub Mobile was used, or what happened to the GitHub task after End session. This closes T020 by the owner's use; the Pro run of 2026-10-20 already answered Q1-Q4. `[KNOWN GAP]` kept: FR-003 (whether the GitHub task stays after End session) and the `remote_steerable_changed` event while steering from github.com were not recorded separately.
+- Claude Code channels (Telegram, Discord, iMessage) and the wizard (FR-020..FR-026, T030-T035) are **out of scope**: owner decision 2026-10-21, "For Claude, no need to support Telegram — rethink non-native channels later; keep it as a future idea". Moved to idea issue #485. Claude Remote Control (Phase 2, FR-060..FR-064) stays built.
+- Codex in the ChatGPT mobile app (Phase 3, T040/T041) stays planned research in this spec, tracked by issue #490.

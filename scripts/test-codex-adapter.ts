@@ -704,6 +704,16 @@ async function main(): Promise<void> {
       await new Promise((r) => setTimeout(r, 50));
       server.notifyAll('item/completed', { threadId: sid, item: item('m10', { server: 'd', error: { message: 'MCP OAuth challenge required (HTTP 401)' } }) });
       await until('read again after it settled', () => (reads() - n1 >= 2) || undefined);
+      // switching the server off and on drops the challenge mark: a later re-read that lists it connected shows it connected
+      assert.strictEqual(lastMcp().find((s) => s.name === 'd')?.status, 'needs-auth', 'marked before the switch');
+      await ad.setMcpEnabled!(sid, 'd', false);
+      await ad.setMcpEnabled!(sid, 'd', true);
+      const n3 = reads();
+      server.notifyAll('item/completed', { threadId: sid, item: item('m11', { server: 'c', error: { message: 'MCP OAuth challenge required (HTTP 401)' } }) });
+      await until('re-read after the switch', () => (reads() > n3) || undefined);
+      await new Promise((r) => setTimeout(r, 50));
+      assert.strictEqual(lastMcp().find((s) => s.name === 'd')?.status, 'connected', 'a switch off and on drops the challenge mark');
+      assert.strictEqual(lastMcp().find((s) => s.name === 'd')?.errorClass, undefined);
       await ad.dispose();
     }
     // FR-146: Codex's request_user_input goes to the question card; the answer goes back by question id; secret questions never shown
