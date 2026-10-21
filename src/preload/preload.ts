@@ -120,6 +120,7 @@ const api: DurbarApi = {
   resolvePermission: (id, requestId, approve, remember, broad) => ipcRenderer.invoke('agents:resolvePermission', id, requestId, approve, remember, broad),
   revokeGrant: (id, key) => ipcRenderer.invoke('agents:revokeGrant', id, key),
   listPrevious: (id) => ipcRenderer.invoke('sessions:listPrevious', id),
+  renameSession: (id, sessionId, name) => ipcRenderer.invoke('sessions:rename', id, sessionId, name),
   markPrevious: (id, src, sessionId, mark) => ipcRenderer.invoke('sessions:mark', id, src, sessionId, mark),
   deletePrevious: (id, sessionId) => ipcRenderer.invoke('sessions:delete', id, sessionId),
   resumeSession: (id, sessionId, replace) => ipcRenderer.invoke('sessions:resume', id, sessionId, replace),
@@ -129,6 +130,7 @@ const api: DurbarApi = {
   gitStatus: (id) => ipcRenderer.invoke('agents:gitStatus', id),
   onEvent: (cb) => sub('agent:event', cb),
   onAgentAdded: (cb) => sub('agent:added', cb),
+  onAgentRenamed: (cb) => sub('agents:renamed', cb),
   // spec 052 FR-083, FR-085: the Mac app menu's Settings… item, full screen (the top bar's traffic-light room) and the platform
   onMenuSettings: (cb) => sub<null>('menu:settings', () => cb()),
   // spec 052 FR-164: File > Add Folder… / Add VS Code Workspace…; only the two known words pass
