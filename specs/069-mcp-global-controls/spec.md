@@ -5,7 +5,7 @@
 **Status**: Part 1 **built** 2026-10-21 (add to and remove from the agent apps' own lists with a per-file review and backups, source
 chips, Claude Code's user list in Durbar's Claude sessions): unit tests (`test:mcpglobal`) and a simulator driver (`shots-069-mcp-global`),
 no real agent app has read a written file yet (T060). Parts 2 (harmonize) and 3 (tools list and per-row controls) are specified, not
-built (see *Delivery*). Owner questions Q1-Q6 open; their defaults are what is built.
+built (see *Delivery*). Owner questions Q1-Q6 answered 2026-10-22: the built defaults are kept.
 **Input**: Owner (Vikram, Telegram 2026-10-21 21:03 UTC): "For the MCP server addition UI, give an option to also add to the list of
 global MCP servers, and those controls to start/stop/restart/auth... we should have those options for all servers. Also show the list of
 tools per MCP server when you expand it." Owner decision (Vikram, Telegram 2026-10-21 21:06 UTC): "global" is written to the agent apps'
@@ -43,7 +43,18 @@ This feature:
 - **2026-10-21 21:06 UTC (Vikram, Telegram):** "global" MUST be written to the agent apps' own config files. "If there is more than one
   agent app, propose in the UI to harmonize and merge all; else ask the user to select the agent app."
 
-### Open questions for the owner (each has a default that is built until answered)
+- **2026-10-22 01:00 Zurich / 2026-10-21 23:00 UTC (Vikram, Telegram):** "Yes for all and feel free to perform real checks", answering
+  Q1-Q6 below: every default (A) is kept and is now a decision, and the real check T060 is approved.
+  - **Q1** A: Durbar reads Claude Code's user list read-only, with a switch per server, and passes the switched-on servers to its Claude
+    sessions with `--mcp-config` (still strict).
+  - **Q2** A: environment-variable and header *references* by default; writing values into the files is a per-server second choice with
+    a warning.
+  - **Q3** A: backups next to each file (`<file>.durbar-<UTC stamp>.bak`, same folder and permissions), the last 3 per file kept.
+  - **Q4** A: Durbar edits `~/.claude.json` directly (every other key kept), not `claude mcp add-json`.
+  - **Q5** A: a same-name entry with a different definition is replaced only when *Replace in <app>* is ticked for that app.
+  - **Q6** A: `${NAME}` references for Copilot, marked "not verified for Copilot" until T060 shows otherwise.
+
+### Questions answered by the owner (2026-10-22; the default A of each was chosen, see above)
 
 - **Q1 Claude Code's user list in Durbar's own Claude sessions.** Durbar starts Claude Code with `--strict-mcp-config` and no setting
   sources (spec 012 Q8), so a server written to Claude Code's user list reaches `claude` in a terminal but **not** Durbar's own Claude
