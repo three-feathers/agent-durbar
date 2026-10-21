@@ -267,3 +267,70 @@ Decided by the coordinator under Ruben's delegation (D1-D4):
   - **Linux:** the AppImage, with `.desktop` `Name=Agent Durbar` and `StartupWMClass=agent-durbar`.
   - On each OS the installed app rendered the office with 15 agents, window title "(5) Agent Durbar". Its run-time name is `agent-durbar` on purpose (D2).
 - Not covered, still `[KNOWN GAP]`: a person's own Mac or PC (Gatekeeper and SmartScreen on a downloaded, unsigned build: the runner's copy is not quarantined), and code signing (spec 014, needs a purchase).
+
+### 2026-10-21: packaged display names on Windows, Linux and macOS (#384)
+
+*Status:* decided by the coordinator under Ruben's delegation (D1-D3 below); Linux checked on a real local build, Windows by reading electron-builder 26.15.3 / Electron 44.8.0 and a `--win --dir` cross-build, macOS by reading and CI run 39498528735. Built: see T039.
+
+*Found* (follow-up of #353 point 3, left open by #377). The run-time identity is still `agent-durbar` on every OS, on purpose (D2 of #353): `app.getName()`, the Keychain item, libsecret and WM_CLASS. The packed `app.asar/package.json` has `name: agent-durbar` and `desktopName: agent-durbar.desktop` but no `productName`, so Electron's `init.ts` sets `app.name` from `name`. `real:` on the packed Linux app, `app.getName()` returned `agent-durbar`. This closes the #353 `[KNOWN GAP]` "a packaged build reads `name` from `app.asar/package.json` the same way" for Linux. The display names come from `build.productName` = `Agent Durbar` (`package.json:154`):
+
+- **Linux** (`real:` `npm run dist:linux` on 911118d, then the AppImage extracted with `--appimage-extract`, plus the packed app started under `xvfb-run -a` with the simulator, a temp HOME and `DURBAR_USER_DATA`):
+  - the file is `Agent-Durbar-0.1.0-alpha.9-x86_64.AppImage`;
+  - the embedded `agent-durbar.desktop` has `Name=Agent Durbar`, `Exec=AppRun --no-sandbox %U`, `Icon=agent-durbar` and `StartupWMClass=agent-durbar`;
+  - the main window's WM_CLASS is `("agent-durbar", "agent-durbar")` and `CHROME_DESKTOP` is `agent-durbar.desktop`.
+
+  `syncDesktopName: true` only renames the desktop *file* to `desktopName` (default would be the executable name, also `agent-durbar`). `StartupWMClass` comes from `desktopName` whether `syncDesktopName` is on or off, and `Name=` always comes from `productName`. (read: `app-builder-lib/out/targets/LinuxTargetHelper.js:203-219,250-275`; `AppImageTarget.js:23-31,59`; Electron `lib/browser/init.ts` ~127-136 `app.setDesktopName(packageJson.desktopName ...)`; `shell/browser/native_window_views.cc` ~291-304 `wm_class_name = ToLower(GetXdgAppId() or name)`; `shell/common/platform_util_linux.cc` ~518-529.)
+- **Windows** (read: `app-builder-lib/out/targets/nsis/NsisTarget.js:160-166,461,473`, `out/options/CommonWindowsInstallerConfiguration.js:28`, `templates/nsis/common.nsh:14-17,93,104-106`, `templates/nsis/include/installer.nsh:106,119,133,197-200,217-240`, `out/winPackager.js:139-148,235`):
+  - the Start menu and desktop shortcuts are `Agent Durbar.lnk`. `shortcutName` defaults to the sanitized `productName`, there is no menu folder, and the desktop shortcut is made on a fresh install. The Start menu entry is `real:` in run 39498528735.
+  - The Add/Remove Programs DisplayName is `Agent Durbar 0.1.0-alpha.9` (`uninstallDisplayName` defaults to `${productName} ${version}`), and the Publisher is `Three Feathers`. The key is `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\1a945027-3b42-502e-829b-879c9ab6622e`, which is UUID v5 of `appId`.
+  - The installer is titled `Agent Durbar` (NSIS `Name`). The uninstaller is `Uninstall Agent Durbar.exe`.
+  - The exe is `Agent Durbar.exe`. `real:` on a `--win --dir` cross-build on Linux, read with `resedit`: `ProductName`, `FileDescription` and `InternalName` are `Agent Durbar`, and `CompanyName` is `Three Feathers`.
+  - The shortcuts get AppUserModelId `io.github.three-feathers.agentdurbar` (`WinShell::SetLnkAUMI ... ${APP_ID}`). The uninstaller removes that AUMID (`uninstaller.nsh:191`).
+  - The portable exe is `Agent-Durbar-0.1.0-alpha.9-portable.exe`. It makes no shortcut and sets no AUMID: it unpacks to `%TEMP%\<random>` and runs `Agent Durbar.exe` (`templates/nsis/portable.nsi:33-39,86`).
+- **Windows AUMID at run time.** `src/` never calls `app.setAppUserModelId` (grep). Electron sets no AUMID at start. The first call that needs one sets the explicit AUMID `electron.app.agent-durbar` for the process (read: `shell/common/application_info_win.cc` ~24 `kAppUserModelIDFormat = L"electron.app.$1"`, ~53-68 `GetRawAppUserModelID` with the app name). One such call is the first toast (`shell/browser/notifications/win/windows_toast_notification.cc` ~215); others are a jump list and a recent document. Durbar does show OS notifications: `new Notification(...)` at `src/renderer/app.js:1522` (spec 052 "Needs you"). So on an installed build:
+  - the toast goes out under an AUMID that no Start menu shortcut has. Windows may drop it or show it without the app's name and icon.
+  - From that moment the taskbar button may stop grouping with the pinned `Agent Durbar.lnk` (AUMID `io.github...`).
+  - `[KNOWN GAP]` not seen on a real PC (#9).
+- **macOS** (read: `app-builder-lib/out/macPackager.js:359,366-367`; `real:` run 39498528735):
+  - `CFBundleName` and `CFBundleDisplayName` are both `Agent Durbar`, `CFBundleExecutable` is `Agent Durbar`, and `CFBundleIdentifier` is `io.github.three-feathers.agentdurbar`.
+  - The menu-bar title is still open. Durbar's app menu is `{ role: 'appMenu' }` with no label (`src/main/appmenu.ts:26`). Electron fills it with `app.name` = `agent-durbar`. Paco's dev run showed `agent-durbar` there (#377). Whether macOS shows the bundle name or that label in a packaged build was not seen by eye.
+
+*Requirements:*
+
+- **FR-040 Linux display name** `[IMPLEMENTED]` `real:` (above). Fields of the AppImage's desktop entry:
+  - `Name=` = `build.productName`;
+  - `StartupWMClass=` and the desktop file name = `desktopName` without `.desktop` (`agent-durbar`);
+  - `Icon=agent-durbar`.
+
+  The window's WM_CLASS stays `agent-durbar`. The AppImage file name is `Agent-Durbar-<version>-x86_64.AppImage`. The launcher name comes from `Name=` when the AppImage is integrated (AppImageLauncher, Gear Lever, appimaged). `[KNOWN GAP]` The dock or launcher label on a real Linux desktop (GNOME, KDE) was not seen, because this server has no desktop.
+- **FR-041 No forced `--no-sandbox` in the desktop entry** (D2). The AppImage desktop entry has `Exec=AppRun %U`, not `Exec=AppRun --no-sandbox %U`. Set `build.appImage.executableArgs: []`; electron-builder only adds `--no-sandbox` when that option is unset (`AppImageTarget.js:26-27`). `AppRun` still adds `--no-sandbox` by itself when `unshare -Ur true` fails (`AppRun` lines 38-58 in the built image). So a launcher that copies `Exec` would no longer turn off Chromium's sandbox on systems where it works. Constitution III: sandbox on. README *Install from releases* (`README.md:148`) then says that AppRun adds the switch by itself when needed.
+- **FR-042 Windows display names** `read:` + `real:` (above). The names are:
+  - Start menu and desktop shortcuts: `Agent Durbar.lnk`;
+  - Add/Remove Programs DisplayName: `Agent Durbar <version>`, Publisher `Three Feathers`;
+  - installed exe: `Agent Durbar.exe`, with `ProductName` and `FileDescription` = `Agent Durbar`;
+  - shortcut AUMID: `build.appId`.
+
+  The installed-app check asserts the Start menu name, the DisplayName and the shortcut AUMID (FR-045). `[KNOWN GAP]` The taskbar label, the jump list, and the name in Settings > Apps on a person's own PC were not seen (#9).
+- **FR-043 Windows AppUserModelId at run time** (D1). On `win32`, `main.ts` calls `app.setAppUserModelId('io.github.three-feathers.agentdurbar')` at top level, before `app.whenReady` and before any window. The value equals `build.appId` (a unit test reads `package.json`). This applies to the packaged build, NSIS and portable alike. Then toasts and the taskbar button use the same AUMID as the Start menu shortcut. Dev runs (`!app.isPackaged`) do not call it, (D1), so a dev run never groups with or posts toasts as the installed app (same reason as FR-034). The portable build has no shortcut, so its toasts may still not show. `[KNOWN GAP]` until a real PC shows toast and taskbar behaviour for NSIS, portable and dev (#9).
+- **FR-044 macOS bundle and menu title** `real:` (bundle keys, run 39498528735) + D3. The app menu gets an explicit `label: MENU_APP_NAME` next to `role: 'appMenu'`, so the first menu's title says `Agent Durbar` whatever macOS takes. This is display only; `app.setName` is still never called. `scripts/test-macos.ts` checks the label. `[KNOWN GAP]` The packaged menu-bar title must be seen by eye on a real Mac (Paco).
+- **FR-045 Names checked on every package build.** `scripts/check-names.js` runs after `check-fuses.js` in `pack:dir` and every `dist:*` script (`package.json:48-55`), with no workflow change. CI's *Package smoke* (Linux) runs it on every code PR, and *Packaged check* runs it on macOS, Windows and Linux on `main`. It takes the expected values from `package.json` (`build.productName`, `build.appId`, `name`, `desktopName`) and fails on any difference:
+  - all OSes: the packed `app.asar/package.json` has `name` = `agent-durbar` and no `productName`. A top-level `productName` would move the profile folder and the Keychain name (#353 *Measured*). It is read with `@electron/asar`, a dependency of electron-builder (as with `@electron/fuses` in FR-039).
+  - Linux: `release/linux-unpacked/<name>` exists. When `release/*.AppImage` exists (`dist:linux`), it extracts `*.desktop` into a temp folder (`--appimage-extract`, fixed arguments, no shell) and checks the FR-040 fieldsplus FR-041.
+  - Windows: `release/win-unpacked/<productName>.exe` exists, and its version resource has `ProductName` and `FileDescription` = `productName`. It is read with `resedit`, a dependency of electron-builder.
+  - macOS: for every `release/mac*/<productName>.app/Contents/Info.plist`, `CFBundleName` and `CFBundleDisplayName` = `productName`, `CFBundleExecutable` = `productName`, and `CFBundleIdentifier` = `appId`. It is read with `plist`, a dependency of electron-builder.
+  - The pure comparison functions get a self-test in `npm test`. Changing `productName`, adding a top-level `productName` or changing `desktopName` in the test's copy of the config must fail.
+
+  The NSIS names are not in the `--dir` output, so `scripts/installed-app-ci.js` asserts what it records today on Windows and adds the rest:
+  - `Agent Durbar.lnk` in the Start menu and on the desktop;
+  - the uninstall key's `DisplayName` (`reg query`, fixed arguments);
+  - the shortcut's `System.AppUserModel.ID` = `appId` (PowerShell with a fixed script, no user text);
+  - on macOS and Linux, the `CFBundle*` and `.desktop` fields.
+
+  A PR that changes `scripts/installed-app-*.js` already triggers `installed-app.yml` on all three OSes, with no workflow edit.
+
+*Decisions* (coordinator, under Ruben's delegation, 2026-10-21):
+- **D1** AUMID in dev: (a) no call in dev runs, so a dev run never groups with or posts toasts as the installed app (same reason as FR-034); dev toasts may not show on Windows, accepted.
+- **D2** FR-041 is done in this change: one config line, a safer default (Chromium's sandbox stays on where it works; AppRun still adds `--no-sandbox` itself when `unshare -Ur true` fails), and the team rule asks small solvable findings to be fixed in the same PR.
+- **D3** FR-044 label added now: display only, it cannot make the title worse; the packaged title by eye stays a `[KNOWN GAP]` for Paco's Mac.
+
+*Not covered:* a person's own Windows PC (taskbar grouping, toasts, Settings > Apps, SmartScreen; #9); a Linux desktop launcher or dock; the Mac menu-bar title by eye; signed builds (spec 014).
