@@ -108,39 +108,73 @@ const INLINE: { re: RegExp; flag: RegExp }[] = [
   { re: /^(python|pypy)[0-9.]*$/, flag: /^-[A-Za-z]*c$/ },
   { re: /^(perl|ruby)$/, flag: /^-[A-Za-z]*[eE]$/ },
   { re: /^php$/, flag: /^-r$/ },
+  { re: /^npx$/, flag: /^(-c|--call)(=|$)/ },
   { re: /^(lua|luajit|osascript|rscript)$/, flag: /^-e$/ },
 ];
-const progName = (c: string): string => (c.split(/[\\/]/).pop() ?? '').toLowerCase().replace(/\.(exe|cmd|bat|com|ps1)$/, '');
-/**
- * Re-review #424: the program an MCP server starts runs code it is handed (a shell, or an interpreter with inline code), so an env value
- * the window does not show can be that code (`sh -c 'eval "$PAYLOAD"'`). `env [VAR=x] prog` is looked through. Returns the program's name.
- */
-export function runsGivenCode(command: string, args: readonly string[]): string | undefined {
-  let words = [command, ...args];
-  if (progName(words[0]) === 'env') {
-    const i = words.findIndex((w, n) => n > 0 && !w.startsWith('-') && !w.includes('='));
-    if (i < 0) return undefined;
-    words = words.slice(i);
-  }
+const progName = (c: string): string => (c.replace(/^["']+|["']+$/g, '').split(/[\\/]/).pop() ?? '').toLowerCase().replace(/\.(exe|cmd|bat|com|ps1)$/, '');
+/** Re-review #424 (7537f86): programs that start another program given in their arguments (looked through by `runsGivenCode`). */
+const WRAPPERS = new Set(['env', 'timeout', 'nice', 'nohup', 'sudo', 'doas', 'stdbuf', 'xargs', 'setsid', 'ionice', 'chrt', 'taskset', 'time', 'command', 'exec', 'start', 'runas']);
+/** Is `words[0]` a program that runs code it is given? A shell, or an interpreter with its inline-code flag later on. */
+function givenCodeAt(words: readonly string[]): string | undefined {
   const prog = progName(words[0]);
   if (SHELLS.has(prog)) return prog;
   const it = INLINE.find((x) => x.re.test(prog));
   return it && words.slice(1).some((w) => it.flag.test(w)) ? prog : undefined;
 }
+/**
+ * Re-review #424: the program an MCP server starts runs code it is handed (a shell, or an interpreter with inline code), so an env value
+ * can be that code (`sh -c 'eval "$PAYLOAD"'`). Re-review at 7537f86: a wrapper (`env -S "sh -c …"`, `timeout 60 sh -c …`, `nice`,
+ * `sudo`, `xargs`, …) is looked through: its arguments are split on whitespace (as `env -S` does) and ANY later word that is a shell,
+ * or an inline-code interpreter with its flag, counts; parsing each wrapper's options would miss one. Returns the program's name.
+ */
+export function runsGivenCode(command: string, args: readonly string[]): string | undefined {
+  const words = [command, ...args];
+  const first = progName(words[0]);
+  if (!WRAPPERS.has(first)) return givenCodeAt(words);
+  const rest = words.slice(1).flatMap((w) => w.split(/\s+/)).filter(Boolean);
+  if ((first === 'sudo' || first === 'doas') && rest.some((w) => /^(-[A-Za-z]*[si][A-Za-z]*|--shell|--login)$/.test(w))) return first;
+  for (let i = 0; i < rest.length; i++) { const p = givenCodeAt(rest.slice(i)); if (p) return p; }
+  return undefined;
+}
+
+/**
+ * Re-review #424 (7537f86): env variables that make a program load or run code from their value, whatever the command (`NODE_OPTIONS=
+ * --import=data:…`, `BASH_ENV`, `LD_PRELOAD`, …). A server whose env sets one is marked with the reason and starts unticked.
+ */
+const CODE_LOADING_ENV = /^(NODE_OPTIONS|NODE_PATH|NODE_REPL_EXTERNAL_MODULE|ELECTRON_RUN_AS_NODE|BASH_ENV|ENV|ZDOTDIR|PROMPT_COMMAND|SHELLOPTS|BASHOPTS|PS4|IFS|SHELL|LD_PRELOAD|LD_LIBRARY_PATH|LD_AUDIT|DYLD_\w+|PERL5OPT|PERL5LIB|PERLLIB|PERL5DB|RUBYOPT|RUBYLIB|PYTHONSTARTUP|PYTHONPATH|PYTHONHOME|PYTHONINSPECT|PYTHONUSERBASE|JAVA_TOOL_OPTIONS|_JAVA_OPTIONS|JDK_JAVA_OPTIONS|CLASSPATH|PATH|PATHEXT|COMSPEC|PSMODULEPATH|GIT_\w+|NPM_CONFIG_\w+|YARN_\w+|BUN_\w+|DENO_\w+|UV_\w+|PIP_\w+|GEM_PATH|GEM_HOME|BUNDLE_GEMFILE|LUA_INIT\w*|LUA_PATH\w*|LUA_CPATH\w*|PHPRC|PHP_INI_SCAN_DIR|TCLLIBPATH|EDITOR|VISUAL|PAGER|BROWSER)$/i;
+export function codeLoadingEnv(names: readonly string[]): string[] {
+  return names.filter((n) => CODE_LOADING_ENV.test(n));
+}
+
+/** Re-review #424 nit: one word as a POSIX shell would read it, so an argument with spaces or shell characters is not mistaken for several. */
+export function shownWord(w: string): string {
+  return /^[A-Za-z0-9_@%+=:,./~^-]+$/.test(w) ? w : `'${w.replace(/'/g, `'\\''`)}'`;
+}
 
 function mcpItem(app: FolderSetupApp, file: string, name: string, spec: McpServerSpec, note?: string): { item: FolderSetupItem; raw: RawItem } {
-  const envNames = Object.keys(spec.env ?? {});
-  const secretNames = [...envNames, ...Object.keys(spec.headers ?? {})].slice(0, 30);
-  // FR-014 (re-review #424): the same token-shape masking as hooks and rules; anything hidden is marked (and starts unticked)
-  const parts = (spec.type === 'stdio' ? [spec.command ?? '', ...(spec.args ?? [])] : [spec.url ?? '']).map(shownCommand);
+  const env = spec.type === 'stdio' ? Object.entries(spec.env ?? {}) : [];
+  const envNames = env.map(([k]) => k);
+  const headerNames = Object.keys(spec.headers ?? {}).slice(0, 30);
+  // FR-014 (re-review #424): the same token-shape masking as hooks and rules; anything hidden is marked (and starts unticked).
+  // Re-review at 7537f86: env values are shown too (`NAME=value` before the command), and every word is quoted where needed.
+  const envParts = env.map(([k, v]) => shownCommand(`${k}=${shownWord(v)}`));
+  const parts = [...envParts, ...(spec.type === 'stdio' ? [spec.command ?? '', ...(spec.args ?? [])].map((w) => shownCommand(shownWord(w))) : [shownCommand(spec.url ?? '')])];
   const detail = parts.map((p) => p.text).join(' ');
+  const tokenHidden = parts.some((p) => p.hidden);
   const shell = spec.type === 'stdio' && envNames.length ? runsGivenCode(spec.command ?? '', spec.args ?? []) : undefined;
-  const hiddenWhy = shell ? `It starts ${shell}, which can run what it is given, and hands it env values that are not shown here (${envNames.slice(0, 5).join(', ')}): they can be commands. Ticking it runs them too.` : undefined;
-  const hidden = parts.some((p) => p.hidden) || !!shell;
-  // S3 (review #424): the digest holds env and header NAMES only (FR-010), never their values (a weak secret could be brute-forced)
-  const id = digest(['mcp', name, { ...spec, ...(spec.env ? { env: Object.keys(spec.env).sort() } : {}), ...(spec.headers ? { headers: Object.keys(spec.headers).sort() } : {}) }]);
+  const loaders = codeLoadingEnv(envNames);
+  const why = [
+    ...(shell ? [`It starts ${shell}, which can run what it is given, and hands it env values (${envNames.slice(0, 5).join(', ')}): they can be commands, so read them above. Ticking it runs them too.`] : []),
+    ...(loaders.length ? [`Its env sets ${loaders.slice(0, 5).join(', ')}, which can make the program load and run code from that value. Read it above before ticking it.`] : []),
+  ];
+  if (why.length && tokenHidden) why.push('Part of it is hidden because it looks like a secret key.');
+  const hiddenWhy = why.length ? why.join(' ') : undefined;
+  const hidden = tokenHidden || !!hiddenWhy;
+  // S3 (review #424): no secret in the digest. Amended at 7537f86: env values are shown now, so the SHOWN values (token shapes masked)
+  // are part of the digest and a changed value asks again; header values stay out (names only).
+  const id = digest(['mcp', name, { ...spec, ...(spec.env ? { env: envParts.map((p) => p.text).sort() } : {}), ...(spec.headers ? { headers: Object.keys(spec.headers).sort() } : {}) }]);
   return {
-    item: { id, app, kind: 'mcp', file, label: `MCP server ${name}`, detail, ...(hidden ? { hidden: true } : {}), ...(hiddenWhy ? { hiddenWhy } : {}), ...(secretNames.length ? { secretNames } : {}), supported: true, ...(note ? { unsupportedWhy: note } : {}) },
+    item: { id, app, kind: 'mcp', file, label: `MCP server ${name}`, detail, ...(hidden ? { hidden: true } : {}), ...(hiddenWhy ? { hiddenWhy } : {}), ...(headerNames.length ? { secretNames: headerNames } : {}), supported: true, ...(note ? { unsupportedWhy: note } : {}) },
     raw: { kind: 'mcp', name, spec },
   };
 }

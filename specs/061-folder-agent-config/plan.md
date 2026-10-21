@@ -5,10 +5,10 @@
 3. **Shared types** `src/shared/foldersetup.ts`: the item model (app, kind hook/rule/mcp, label, masked detail, event, matcher, rule kind, broad, supported, digest, file) and the per-folder decision record.
 4. **Scanner** `src/main/foldersetup.ts` (pure apart from reading, size caps 256 KiB per file):
    - Claude: `.claude/settings.json` and `.claude/settings.local.json` (`hooks`, `permissions.allow/deny/ask`), `.mcp.json`;
-   - Codex: `.codex/config.toml` (`[mcp_servers.<name>]`: command, args, url, env names), `.codex/hooks.json` (listed, marked unsupported);
+   - Codex: `.codex/config.toml` (`[mcp_servers.<name>]`: command, args, url, env), `.codex/hooks.json` (listed, marked unsupported);
    - Copilot: `.github/hooks/*.json` and `hooks` in `.github/copilot/settings.json`; `.mcp.json` is shared.
 
-   One digest per item: sha256 of app, kind and its canonical content. Every shown string goes through `shownCommand` (real token shapes only; review #424); env and header values are never shown or kept (names only), and an MCP server that hands them to a shell or an inline-code interpreter starts unticked.
+   One digest per item: sha256 of app, kind and its canonical content. Every shown string goes through `shownCommand` (real token shapes only; review #424); env values are shown through it too and header values never (names only); an MCP server that hands env values to a shell or an inline-code interpreter (wrappers looked through), or whose env sets a code-loading variable, starts unticked with its reason (re-review #424 at 7537f86).
 5. **Decisions store** `src/main/foldersetupstore.ts` (`folder-setup.json` in userData): per folder key, accepted and declined digests. Paths and digests only, no file content (constitution III).
 6. **Apply** (main builds `StartOptions.folderSetup` for the adapter's app; adapters map it):
    - `hooks: {event, matcher?, command}[]` and `rules: {allow, deny, ask}` (Claude) become Claude's composed `--settings`;

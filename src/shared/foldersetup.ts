@@ -27,9 +27,9 @@ export interface FolderSetupItem {
   broad?: boolean;
   /** FR-014 (review #424): part of the text was replaced because it has a token's shape; shown as such, and left unticked. */
   hidden?: boolean;
-  /** Re-review #424: why the item is marked `hidden` when it is not a token shape (an MCP server that hands env values to a shell). */
+  /** Re-review #424: why the item is marked `hidden` beyond a token shape (env values handed to a shell, a code-loading env variable). */
   hiddenWhy?: string;
-  /** Names of env variables or headers (values never shown). */
+  /** Names of an HTTP server's headers (values never shown: a header never runs here). Env values are shown in `detail`. */
   secretNames?: string[];
   /** False when the agent app cannot apply this item from Durbar (FR-006), with the reason. */
   supported: boolean;

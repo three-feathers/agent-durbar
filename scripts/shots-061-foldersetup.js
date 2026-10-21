@@ -74,7 +74,8 @@ module.exports = async (ctx) => {
       const t=r.querySelector('.fs-hidden'),T=t.getBoundingClientRect(),C=r.querySelector('.fs-cmd').getBoundingClientRect(),D=document.querySelector('#scrDlg .dlg.fs').getBoundingClientRect();
       return {text:t.textContent,checked:r.querySelector('[data-fs]').checked,clear:T.top>=C.bottom-0.5,inside:T.right<=D.right&&T.left>=D.left,size:parseFloat(getComputedStyle(t).fontSize),
         count:document.querySelectorAll('#scrDlg .fs-hidden').length}})()`);
-    assert.ok(/^It starts sh, which can run what it is given, and hands it env values that are not shown here \(NOTES_FLAGS\)/.test(hd.text) && /Ticking it runs them too\.$/.test(hd.text), `${w}: the reason is shown: ${hd.text}`);
+    assert.ok(/^It starts sh, which can run what it is given, and hands it env values \(NOTES_FLAGS\): they can be commands, so read them above/.test(hd.text) && /Ticking it runs them too\.$/.test(hd.text), `${w}: the reason is shown: ${hd.text}`);
+    assert.ok(await js(`document.querySelector('#scrDlg [data-fs="${'1'.repeat(32)}"]').closest('li').textContent.includes("NOTES_FLAGS=--quiet sh -c 'node")`), `${w}: the env value is shown before the command, args quoted`);
     assert.ok(!hd.checked && hd.clear && hd.inside && hd.size >= 10.5 && hd.count === 1, `${w}: hidden server unticked, reason under its box: ${JSON.stringify(hd)}`);
     await shot('hidden', w, h);
     // FR-011: Use these without the confirmation: hooks stay off, rules and servers are used
