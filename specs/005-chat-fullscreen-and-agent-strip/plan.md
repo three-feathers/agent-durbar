@@ -82,3 +82,23 @@ specs/005-chat-fullscreen-and-agent-strip/
 - Cost in main: `outward` now masks every tool output. Measured 2026-10-21 (4-core Linux, `node`, `redact.ts` from `main`): `redact()` 5-7 ms per MB; `maskSecretUrl` 640 ms per MB of `?a=&` (390 ms on Vikram's machine), 46 ms on 50,000 characters, 11 ms on 20,000; 73 ms per MB and 3.6 ms per 50,000 on ordinary JSON. Hence the 50,000 cut (Q5 (b)). T039 times 50,000 worst-case characters through the whole `maskMcpText`; if streaming `update` events lag, cut `update` outputs at 20,000 first, then consider Q5 (d). `secretValuesFor` reads the MCP store per call; call it only for events with text to mask, and cache per session (with its `secretForms`) if T039's timing asks for it.
 - Not in this delta (`read:` only, unverified): the tool's arguments, which the chip shows as a command (`toolFull`, `src/renderer/app.js:2527`), are not changed by FR-030; whether they are masked elsewhere was not checked.
 - A runtime update can change Copilot's wording: the detection then simply stops (no line shown), it never misreports.
+
+## Delta 2026-10-21: settings under the message box, one Send / Stop button (FR-037..FR-043)
+
+**Shape.** Renderer only (`src/renderer/app.js`, `src/renderer/styles.css`): `openPanel` renders the existing chips into a new `.ctoolbar` under `.inbox` instead of `.ph-meta`; `#stopBtn` moves from the header actions into `.inbox` beside `#sendBtn`; `#mcpBtn` moves from More into the toolbar. No IPC, main, adapter or shared change.
+
+| Piece | Where | Notes |
+| --- | --- | --- |
+| Toolbar markup | `openPanel` | Same `agentChipHTML`, `modeChipHTML`, `modelChipHTML`, `ctxChipHTML` (now without Compact), `#mcpBtn`, `#attFile`, `#attImg`; each wrapped item has `data-ct` (its overflow rank). |
+| Send / Stop | `setSend` → also `syncRunState()`, called from `updatePanelHeader` (every render) | Shows `#stopBtn`/`#runSpin` while `running(a)` (live `busyNow`, demo chat busy); `#sendBtn` hidden while running unless live and text typed. Toggles attributes only when they change. |
+| Model window | `modelChipHTML` | Window: `STATS.agent(id).ctx.limit` if reported, else `DM.windowOf(model, tier)`; `DM.fmtTokens`. |
+| Context menu | new `openCtxMenu` beside `openModeMenu` | Same `.mode-menu` element, keyboard and close rules; Compact item calls `compactDialog`. |
+| MCP count | `refreshMcpCount(a)` | `bridge.agentMcp(id)` (cheap: reads stores, no spawn); on open, on `mcp` event, after the dialog. |
+| Menus above | `placeMenu(m,x,y,anchor)` used by the mode, model, profile and context menus | Inside `.ctoolbar`/overflow: placed above the anchor. |
+| Overflow | `fitToolbar()`; `ResizeObserver` on the toolbar, `MutationObserver` (records taken while fitting) | Moves `data-ct` items into `#ctMorePop` by rank until the row fits; back when it fits again. |
+| Styles | `styles.css` | Tokens only; 28px controls; spinner `@keyframes` (the global reduced-motion rule stops it; a static dot instead). |
+| Drivers | new `scripts/check-composer-toolbar.js` (in `ui-suite`), `check-office-overlap.js` chat check, `shots-017`, `shots-018`, `shots-model`, `shots-052-ux` | |
+
+**Constitution check.** I: no adapter types in the renderer (capabilities through `feat`). II/III: no new permission path; the mode is never hidden in the overflow; Allow all stays red. IV: simulator only. V: 10.5px floor, 28px controls, no overlap at both sizes; the office is untouched. VI: CSS and DOM only. VIII: decisions and gaps written in the spec.
+
+**Risks.** PR #479 (Ruben, `check:ui-text`) changes `styles.css` and dialogs: rebase and run its check once it is on `main`. PR #463 touches `app.js` chat code (different functions). Issue #452 (dockable panel) will reuse FR-040.

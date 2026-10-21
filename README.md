@@ -52,7 +52,8 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - Attach files and images by picking, dropping or pasting.
 - Questions an agent asks you appear as a card with its choices, an "Other" answer and Skip. The whole question, every choice and its description are shown in full; Enter in the "Other" box sends your answer (Shift+Enter adds a line). While a question waits and its card is scrolled out of view, the bar above the message box shows it; a short one can be answered right there (its choices, an "Other" box and Skip), a longer one has **Show question**. Several context compactions in a row are one line that counts them ("Context compacted 4 times · last 10:21").
 - **Needs you:** one inbox of every agent waiting for you, oldest first with how long each has waited. While Durbar is in the background the window title ("(3) Agent Durbar"), the app icon and one notification tell you (Settings > Notifications turns it off; it shows only the agent's name and a short summary). In a waiting chat, **Alt+A** allows once, **Alt+S** allows for the session, **Alt+D** denies and **Alt+N** goes to the next agent; **?** lists every shortcut.
-- **Stop** a turn or **End** a session from the chat header or from the agent's card menu ([screenshot](docs/screenshots/005-card-menu-stop-end-1440x900.png)).
+- **Under the message box**, as in VS Code, one row sets how the next message runs: the profile, the mode (*Read-only*, *Ask first*, *Allow all* in red), the model with its context window (`Sim Fast · 128k`), how full the context is (its menu has **Compact**), **MCP** with how many servers are on (it opens the server list), and attach file or image. In a narrow window what does not fit goes under **⋯**; the mode always stays in view. Simple shows the mode, memory and attachments ([screenshot](docs/screenshots/005-composer-expert-light-1440x900.png)).
+- **Send / Stop:** one button inside the message box. It is **Send** while the agent is idle and **Stop** (with a spinner beside it) while a reply runs; type during a reply and Send shows beside Stop. **End** a session from More, or Stop and End from the agent's card menu ([screenshot](docs/screenshots/005-card-menu-stop-end-1440x900.png)).
 
 **Sessions and folders**
 - One session per folder or `.code-workspace` file, or several per folder (**+ New** in a chat's header, or **+ New session** under More).
@@ -80,7 +81,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 
 **Models, context and tools**
 - Pick the model and reasoning effort per session, and switch them in a running session: Claude Code and Codex from the next message, the conversation kept (checked on real accounts 2026-10-20); Copilot too, but not yet seen on a paid plan.
-- A context chip shows how full the window is, with **Compact**.
+- A context chip under the message box shows how full the window is; its menu has **Compact**. The model chip shows the window size.
 - **MCP servers:**
   - your Copilot CLI list (`~/.copilot/mcp-config.json`) is used first;
   - each folder can add extras (with a trust prompt), import them from `.vscode/mcp.json`, and switch a server on or off per session.
@@ -178,7 +179,7 @@ Agents run **locally, on your machine, as you**, in the folders you add. Every a
 - **Ask first**: writes, shell commands, URLs and tools wait for *Allow once*, *Allow “…” for this session* or *Deny* (the same words in Simple and Expert).
 - **Allow all**: no prompts. Use it only in folders you trust; it asks once to confirm.
 
-Change the mode any time from the chat header chip or the agent's card menu.
+Change the mode any time from the mode chip under the message box or the agent's card menu.
 
 **Coming back to a session.** Each session keeps the mode you last chose for it. After a restart, and when you resume it from *Previous sessions*, it comes back in that mode, also when it was Allow all and the session you opened the list from is in Read-only. Its chat then says which mode it is in and why ("Permissions: Allow all, the mode you last chose for this session"), and an Allow all that came back shows *restored* on the mode chip. A session Durbar has no mode for (one from before this change, or started outside Durbar) gets the folder's mode after a restart, or the mode of the session you resumed it from; the chat says that too. A resumed session that comes back in another mode than the session you opened it from is also written to the activity log. Grants from *Allow for this session* are never kept.
 
@@ -252,6 +253,7 @@ npm run check:office      # layout check at 1440x900 and 1280x800 (Electron; xvf
 npm run check:question-options  # question card text, options and descriptions in full; Enter sends a custom answer (simulator, xvfb on Linux)
 npm run check:question-visible  # a waiting question stays visible in the answer bar; compactions in a row fold into one line (simulator, xvfb on Linux)
 npm run check:activity-table    # Tools > Activity shows the activity log table with the simulator's rows (simulator, xvfb on Linux)
+npm run check:composer-toolbar  # chat settings under the message box, Send / Stop with a spinner, narrow panel overflow (simulator, xvfb on Linux)
 npm run check:sched-sendto      # Schedules dialog: Send to / Limit labels on one line, every option fits, session name on a hint line (simulator, xvfb on Linux)
 npm run check:geometry    # every theme lays out exactly like Clean Office (about a minute)
 npm run check:theme-art   # a picked theme's people, gadgets and place icons on desks, walkers, the lobby and the chat strip (sample pack Pink Studio; simulator, xvfb on Linux)
