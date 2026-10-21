@@ -9,6 +9,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as ts from 'typescript';
 
 const ROOT = path.join(__dirname, '..', '..');
 const walk = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.ts') ? [path.join(dir, e.name)] : []));
@@ -59,14 +60,33 @@ for (const f of ipcFiles) {
 assert.ok(/\bregisterMcpIpc\(/.test(mainSrc), 'main.ts calls registerMcpIpc');
 for (const [c, list] of regs) for (const r of list) assert.ok(r.file.startsWith('src/main/ipc/') || r.file === 'src/main/mcpipc.ts', `"${c}" is registered in ${r.file}, outside src/main/ipc and mcpipc.ts`);
 
-// the guard itself comes from ipcguard.ts: a module with its own always-true fromApp or no-op ipcHandle would pass every check below
+// the guard itself comes from ipcguard.ts: a module with its own always-true fromApp or no-op ipcHandle would pass every check below.
+// An AST walk, not a regex: the only binding of these names in a module (any kind: variable incl. destructuring and extra declarators,
+// function, class, parameter incl. defaults, import alias, catch clause) must be the named import from '../ipcguard'.
+const GUARD = new Set(['fromApp', 'fromAppFrame', 'ipcHandle', 'ipcOn']);
 for (const f of ipcFiles) {
   const src = read(f);
-  const rel = path.relative(ROOT, f);
+  const rel = path.relative(ROOT, f).replace(/\\/g, '/');
   const imp = /import \{([^}]*)\} from '\.\.\/ipcguard';/.exec(src)?.[1] ?? '';
   if (/\bfromApp\(/.test(src)) assert.ok(/\bfromAppFrame as fromApp\b/.test(imp), `${rel}: fromApp comes from ipcguard.ts (fromAppFrame as fromApp)`);
   for (const n of ['ipcHandle', 'ipcOn']) if (new RegExp(`\\b${n}\\(`).test(src)) assert.ok(new RegExp(`(^|[\\s,])${n}([\\s,]|$)`).test(imp), `${rel}: ${n} comes from ipcguard.ts`);
-  assert.ok(!/\b(?:const|let|var|function)\s+(?:fromApp|fromAppFrame|ipcHandle|ipcOn)\b/.test(src), `${rel}: declares its own fromApp / ipcHandle / ipcOn`);
+  const sf = ts.createSourceFile(f, fs.readFileSync(f, 'utf8'), ts.ScriptTarget.Latest, true);
+  const names = (n: ts.BindingName): ts.Identifier[] => (ts.isIdentifier(n) ? [n] : n.elements.flatMap((el) => (ts.isOmittedExpression(el) ? [] : names(el.name))));
+  const visit = (n: ts.Node): void => {
+    let bound: ts.Identifier[] = [];
+    if (ts.isVariableDeclaration(n) || ts.isParameter(n) || ts.isBindingElement(n)) bound = names(n.name);
+    else if ((ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) || ts.isClassDeclaration(n) || ts.isClassExpression(n) || ts.isEnumDeclaration(n) || ts.isModuleDeclaration(n)) && n.name && ts.isIdentifier(n.name)) bound = [n.name];
+    else if (ts.isImportClause(n) && n.name) bound = [n.name];
+    else if (ts.isNamespaceImport(n) || ts.isImportEqualsDeclaration(n)) bound = [n.name];
+    else if (ts.isImportSpecifier(n)) {
+      const from = (n.parent.parent.parent.moduleSpecifier as ts.StringLiteral).text;
+      const orig = (n.propertyName ?? n.name).text;
+      if (GUARD.has(n.name.text)) assert.ok(from === '../ipcguard' && orig === (n.name.text === 'fromApp' ? 'fromAppFrame' : n.name.text), `${rel}: ${n.name.text} must be ipcguard.ts's own (imported as ${orig} from '${from}')`);
+    }
+    for (const id of bound) assert.ok(!GUARD.has(id.text), `${rel}:${sf.getLineAndCharacterOfPosition(id.getStart()).line + 1}: binds its own ${id.text} (the guard must be ipcguard.ts's)`);
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
 }
 
 // 3. the owner-only checks. Taken from main.ts before the move (spec 066 FR-007 resolvePlan and plan-first send, 045 FR-005 of 065, FR-004b of 051, FR-011 of 054, 052 FR-071 and FR-089, 063).
