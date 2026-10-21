@@ -141,8 +141,10 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
   - `<home>` is `os.homedir()` (`%USERPROFILE%` on Windows). Paths are joined with `path`, never with `/` literals.
 - **FR-002** `[IMPLEMENTED]` **Read** (pure parsers, `src/main/mcpglobal.ts`): each file gives a list of `{name, transport, command?, args?, url?,
   envKeys, headerKeys, envRefs, managed?}`; secret values are read only when a write needs them (harmonize copies) and stay in main.
-  JSON: strict JSON (Copilot, Claude); Codex: the line-based reader of spec 061 (`readCodexMcpToml`), extended to `env_vars`,
-  `bearer_token_env_var`, `http_headers` and `env_http_headers` key names.
+  JSON: strict JSON (Copilot, Claude); Codex: a line-based reader of its own (strict: it refuses a file it cannot read exactly, where
+  spec 061's `readCodexMcpToml` skips what it does not understand) that reads `env_vars`, `bearer_token_env_var`, `http_headers` and
+  `env_http_headers` key names too. Both Codex readers share the string, string-array and comment helpers (`src/main/codextoml.ts`,
+  change 2026-10-22).
 - **FR-003** `[IMPLEMENTED]` **Write** (pure editors that return the new text or a refusal):
   - JSON: parse, set or delete `mcpServers[name]`, write back with 2-space indentation; every other key is kept (key order of the
     rest kept by `JSON.parse`/`stringify`). A file that is not an object, has `mcpServers` that is not an object, or fails to parse is
@@ -179,7 +181,8 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
   sessions (spec 019 FR-007) stays on Copilot rows. The section says which files were read and their errors. Re-read on every open.
 - **FR-009** `[IMPLEMENTED]` **Claude Code's user list in Durbar's Claude sessions** (Q1 A): main reads `mcpServers` of the Claude file (values in main
   only) and adds the switched-on entries to the `mcpServers` of a Claude agent's start options (only for agents whose adapter is
-  `claude`); a name that is also a folder extra keeps the folder extra. Settings has a switch per Claude entry for new Durbar sessions,
+  `claude`); a name that is also a folder extra keeps the folder extra (compared without case). The values also mask that session's
+  MCP errors (`secretValuesFor`). Settings has a switch per Claude entry for new Durbar sessions,
   kept with the Copilot switches (`disabledAmbient`). `${NAME}` references are passed as written (Claude Code expands them, `read:` docs).
 - **FR-010** `[IMPLEMENTED]` **Trust**: the per-file confirmation (exact file, exact entry, the command or URL in full) is the trust step for a global
   server; Durbar adds no second trust prompt. Folder extras keep spec 020's trust per folder.
@@ -229,7 +232,8 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
 - **FR-041** (part 1 `[IMPLEMENTED]`, `scripts/test-mcp-global.ts`, mutation-checked on the hash check and the marker removal) Unit tests (0 credits): parsers and editors per format with fixtures (comments, unknown keys, CRLF, Windows paths in args,
   a Codex file with other tables before and after, inline-table refusal, parse-fail refusal), backup made and pruned to 3, atomic
   write, changed-since refusal, token expiry, masking of the preview, no secret value in any IPC reply or log line (planted-value scan),
-  Claude list merged only into Claude agents' options.
+  Claude list merged only into Claude agents' options, minus the Settings off-list, a folder extra winning, its values in the masking
+  list (through `registerMcpIpc`, change 2026-10-22), symlinked files, TOML escapes.
 - **FR-042** (part 1 `[IMPLEMENTED]`: `docs/screenshots/069-mcp-global-{settings,add,review}-<w>x<h>.png`) Screenshots at 1440x900 and 1280x800: the add form with the global choice, the per-file confirmation, the Settings list with
   source chips (part 1); harmonize (part 2); the expanded tools list (part 3).
 
@@ -288,10 +292,25 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
   Lines longer than 16 KiB stay unread, as before. `real:` the five refused and five accepted fixtures of `test:mcpglobal` give the same
   verdict in codex-cli 0.163.0. (FR-003, T061)
 
+- **2026-10-22 (review on #489):** four findings fixed.
+  1. **Symlinked files** (FR-006): a `~/.claude.json` or `~/.codex/config.toml` that is a symbolic link (dotfile managers) was replaced by
+     a plain file by the rename, and the link target never changed. The write now follows the link (also a chain, or a link to a file
+     not created yet): backup, temporary file and rename happen next to the real file, and the link stays. A link that cannot be
+     followed (a loop) is refused, nothing written.
+  2. **TOML escapes** (FR-002): basic strings were unescaped by sequential replaces, so `"C:\\notes\\tmp"` read as `C:`, a newline,
+     `otes`, a tab, `mp`. Strings are now decoded in one pass (`\uXXXX`, `\UXXXXXXXX`, `\"`, `\\`, `\b`, `\f`, `\n`, `\r`, `\t`, and TOML 1.1's
+     `\e`, `\xHH`); an undefined escape is kept as written; literal strings are taken as written; quoted table keys use the same decoder.
+  3. **One helper, not two**: the string, array and comment helpers are shared by spec 061's folder reader and this spec's reader
+     (`src/main/codextoml.ts`), so 061 gets the same fix; the Copilot folder comes from `mcpfiles.copilotDir`. FR-002 and the 061 line
+     below no longer claim that 069 reuses `readCodexMcpToml` itself (the two loops want different things: 061 lenient, 069 strict).
+  4. **FR-009 tested** (FR-041): the merge is one function (`mergeSessionServers`, `sessionGlobalFor`) and `test:mcpglobal` runs
+     `registerMcpIpc`: Claude agents only, the Settings off-list honoured, a folder extra wins, the user list's values masked. (T062)
+
 ## Relationship to other specs
 
 - **019 / 020**: the Copilot CLI list stays the source of Copilot's servers; Durbar now also *writes* it (only after confirmation), which
   replaces 019/020's "never written". Folder extras unchanged. Dated note under 019's and 020's `## Changes`.
 - **058**: Restart, Restart session and Sign in are 058's; this spec only places them on every row and adds Start/Stop and Remove.
-- **061**: reuses `readCodexMcpToml` and the JSON readers; folder-level files are not written by this feature.
+- **061**: shares the TOML string and comment helpers with `readCodexMcpToml` (`codextoml.ts`; the two line loops differ: 061 is
+  lenient, 069 strict) and reuses `copilotDir`; folder-level files are not written by this feature.
 - **012** Q8: Claude sessions stay `--strict-mcp-config`; FR-009 passes the user list explicitly.

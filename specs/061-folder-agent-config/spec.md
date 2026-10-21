@@ -275,3 +275,7 @@ The user's own global settings (`~/.claude/settings.json`, `~/.codex/config.toml
 
 - Since #460, every IPC handler lives in `src/main/ipc/<area>.ts` and `main.ts` registers none (`test:ipcchannels`). The folder-setup calls move unchanged from `src/main/foldersetupipc.ts` to `src/main/ipc/foldersetupipc.ts`; `registerFolderSetupIpc` is that module's `register`, imported by `main.ts` as `register as registerFolderSetupIpc` and called once next to the other `register*Ipc` calls, with the same deps. The three channels stay window-only through `ipcHandle` from `../ipcguard`; none is added to the `fromApp(e)` list. `[IMPLEMENTED]`
 - The FR-013 pin follows the move: the owner file is `src/main/ipc/foldersetupipc.ts`, and `main.ts`'s two allowed static imports are `./ipc/foldersetupipc` and `./foldersetupstore` (the old `./foldersetupipc` path from `main.ts` is now refused like any other). `test:` `test:foldersetup` and `test:ipcchannels`.
+
+### 2026-10-22: Codex TOML strings decoded in one pass (spec 069 review on #489)
+
+- `readCodexMcpToml` now uses the TOML helpers it shares with spec 069 (`src/main/codextoml.ts`): basic strings decode every TOML escape in one pass (`\n`, `\t`, `\uXXXX`, `\UXXXXXXXX`, ...; before, only `\"` and `\\`), literal strings are taken as written. A folder `config.toml` with `"C:\\tools\\node.exe"` reads as `C:\tools\node.exe`. `test:` `test:mcpglobal` (both readers on the same fixture), `test:foldersetup`.

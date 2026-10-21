@@ -13,7 +13,9 @@ import { createHash } from 'crypto';
 import * as path from 'path';
 import { NAME_RE } from '../shared/mcp';
 import { maskSecretArgs, maskSecretCommand, maskSecretUrl } from '../shared/redact';
-import type { McpServerInput } from '../shared/mcp';
+import { copilotDir } from './mcpfiles';
+import { stripTomlComment as stripComment, tomlStringArray, tomlUnquote as unq } from './codextoml';
+import type { McpServerInput, McpServerSpec } from '../shared/mcp';
 import type { GlobalApp, GlobalEntryView, GlobalSecretMode, McpSourceTag } from '../shared/api';
 
 export const GLOBAL_APPS: readonly GlobalApp[] = ['copilot', 'claude', 'codex'];
@@ -38,7 +40,7 @@ const tilde = (file: string, home: string): string => {
  * `DURBAR_COPILOT_DIR`, `DURBAR_CLAUDE_CONFIG_DIR`, `DURBAR_CODEX_HOME` (tests and screenshots; empty in a packaged build).
  */
 export function globalFiles(env: Readonly<Record<string, string | undefined>>, home: string): Record<GlobalApp, GlobalFile> {
-  const copilot = path.join(env.DURBAR_COPILOT_DIR || path.join(home, '.copilot'), 'mcp-config.json');
+  const copilot = path.join(copilotDir(env, home), 'mcp-config.json');
   const claudeDir = env.DURBAR_CLAUDE_CONFIG_DIR || env.CLAUDE_CONFIG_DIR;
   const claude = claudeDir ? path.join(claudeDir, '.claude.json') : path.join(home, '.claude.json');
   const codex = path.join(env.DURBAR_CODEX_HOME || env.CODEX_HOME || path.join(home, '.codex'), 'config.toml');
@@ -123,20 +125,6 @@ export function readGlobal(app: GlobalApp, text: string | undefined): ReadResult
 
 const MAX_TOML_LINE = 16 * 1024;
 
-/** Cut a `#` comment that is outside quotes. */
-function stripComment(line: string): string {
-  let q = '';
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (q) {
-      if (c === '\\' && q === '"') i++;
-      else if (c === q) q = '';
-    } else if (c === '"' || c === "'") q = c;
-    else if (c === '#') return line.slice(0, i);
-  }
-  return line;
-}
-
 interface TomlLine {
   raw: string;
   /** Table header path (`[a.b]` or `[[a.b]]`), or undefined for a key or blank line. */
@@ -155,14 +143,10 @@ function splitPath(p: string): string[] | undefined {
     if (s[i] === '"' || s[i] === "'") {
       const q = s[i];
       let j = i + 1;
-      let v = '';
-      for (; j < s.length && s[j] !== q; j++) {
-        if (q === '"' && s[j] === '\\') {
-          v += s[j + 1] ?? '';
-          j++;
-        } else v += s[j];
-      }
+      for (; j < s.length && s[j] !== q; j++) if (q === '"' && s[j] === '\\') j++;
       if (j >= s.length) return undefined;
+      const v = unq(s.slice(i, j + 1));
+      if (v === undefined) return undefined;
       out.push(v);
       i = j + 1;
     } else {
@@ -201,16 +185,7 @@ function tomlLines(text: string): TomlLine[] {
   return out;
 }
 
-const unq = (v: string): string | undefined => {
-  const m = /^"((?:[^"\\]|\\.)*)"$|^'([^']*)'$/.exec(v.trim());
-  if (!m) return undefined;
-  if (m[2] !== undefined) return m[2];
-  return m[1].replace(/\\u([0-9A-Fa-f]{4})/g, (_x, h: string) => String.fromCharCode(parseInt(h, 16))).replace(/\\(["\\])/g, '$1').replace(/\\n/g, '\n').replace(/\\t/g, '\t');
-};
-const tomlArray = (v: string): string[] => {
-  const m = /^\[(.*)\]$/.exec(v.trim());
-  return m ? (m[1].match(/"(?:[^"\\]|\\.)*"|'[^']*'/g) ?? []).map((x) => unq(x) ?? '').slice(0, 64) : [];
-};
+const tomlArray = (v: string): string[] => tomlStringArray(v) ?? [];
 /** An inline table of string values, `{ "K" = "v", L = 'w' }` (other value kinds are left out). */
 const tomlInline2 = (v: string): Record<string, string> => {
   const m = /^\{(.*)\}$/.exec(v.trim());
@@ -639,4 +614,16 @@ export function differences(a: GlobalInput, b: GlobalInput): string[] {
   if (keys(a.headers) !== keys(b.headers)) out.push('headers');
   if (keys(a.env) === keys(b.env) && keys(a.headers) === keys(b.headers) && (vals(a.env) !== vals(b.env) || vals(a.headers) !== vals(b.headers))) out.push('values');
   return out;
+}
+
+/**
+ * FR-009: the MCP servers one session gets: the agent app's user list that Durbar passes itself (`glob`, Claude Code only), minus the
+ * names this agent switched off, then the folder's extras. A folder extra wins over a user-list server of the same name (compared
+ * without case, as the agent's MCP dialog lists them).
+ */
+export function mergeSessionServers(glob: Readonly<Record<string, McpServerSpec>>, folder: Readonly<Record<string, McpServerSpec>>, off: ReadonlySet<string> = new Set()): Record<string, McpServerSpec> {
+  const taken = new Set(Object.keys(folder).map((n) => n.toLowerCase()));
+  const out: Record<string, McpServerSpec> = {};
+  for (const [n, s] of Object.entries(glob)) if (!off.has(n) && !taken.has(n.toLowerCase())) out[n] = s;
+  return { ...out, ...folder };
 }
