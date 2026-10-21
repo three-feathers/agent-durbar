@@ -253,3 +253,12 @@ was opened.** Sources (program files and public docs only):
 5. Owner answers (2026-10-20): Copilot sessions set `mcpOAuthTokenStorage: 'persistent'` (Q12 B); two-step open (Q13); Sign in in the
    dialog row, the card opens the dialog there (Q14); Claude not launched: "Send a message first" + steps (Q15); https only (Q16);
    switch-off offered, never automatic (Q17); Codex "applies with your next message" (Q18); no "another account" (Q19).
+
+### 7.7 Real check on CI runners (T116, 2026-10-21)
+
+Workflow *MCP OAuth real check* (`.github/workflows/mcp-oauth-real.yml`, manual), demo server `scripts/demo-oauth-mcp.ts`, check
+`scripts/mcp-oauth-real.ts`. 0 prompts. Results (filled in from the runs):
+
+| Runner | Runtime | A: first state | A: `oauth.login` | A: after the browser step | A2 (same runtime) | B (new runtime) | Keychain / files | Run |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+

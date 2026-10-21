@@ -583,3 +583,29 @@ sign-in part lands.
 **Done**: FR-070 `[IMPLEMENTED]`; FR-076 trust sentence `[IMPLEMENTED]`; README *MCP servers*, *Keychain prompts on a Mac* and a
 *Known limits* line (Copilot CLI sharing unverified, FR-068/FR-074, T105); CHANGELOG. Not run on a real account.
 
+### 2026-10-21: real check of FR-070 on CI runners (Windows first; T116)
+
+**Why**: the owner (Vikram, team chat 2026-10-21 20:46 UTC) asked to test the kept MCP sign-in (FR-070, #471) on Windows with a demo
+MCP server that needs a real OAuth sign-in. Nobody on the team has a Windows machine, so the check runs on GitHub's `windows-latest`
+(and `ubuntu-latest` to compare), started by hand (`workflow_dispatch` only, never on a pull request).
+
+**What** (task T116; it covers the "later session" part of T105 and does not replace T105 on the owner's machine):
+- `scripts/demo-oauth-mcp.ts`: a dependency-free demo remote MCP server on loopback that **requires** OAuth (MCP authorization
+  2025-06-18): 401 with `WWW-Authenticate: Bearer resource_metadata=...`, protected-resource and authorization-server metadata, dynamic
+  client registration, S256 PKCE only, one-use codes, registered redirect URIs only, refresh-token rotation. It auto-approves (no
+  consent page) and counts registrations, sign-ins (`/authorize`), grants and requests, never tokens. Its MCP part is Durbar's own
+  `McpSession` (spec 041). `scripts/test-demo-oauth-mcp.ts` (in `npm test`) proves the flow is enforced.
+- `scripts/mcp-oauth-real.ts`: through Durbar's Copilot adapter and its session config (`persistent`), session A shows the server's
+  state, calls `session.rpc.mcp.oauth.login` with only `serverName`, `clientName`, `callbackSuccessMessage` (the call T098 will make;
+  until T098 lands the script reaches the live session object, test code only), completes the authorization URL with a plain HTTP
+  client (the demo's 302 goes to the runtime's own loopback callback), and waits for `connected`. Session A2 (same runtime) and session
+  B (a new adapter, so a new runtime process) must connect with **no new `/authorize`**. Also, names only: Windows Credential Manager
+  targets (`cmdkey /list`) and new file names under `~/.copilot`, before and after. **0 prompts**: no message is sent.
+- `.github/workflows/mcp-oauth-real.yml`: `workflow_dispatch` only, `contents: read`, the CI Copilot token in the one step's env,
+  artifact = the sanitized step log and verdict (no token, no authorization URL beyond host and path, no credential values).
+
+**Limits**: a loopback `http` demo server, not a third-party https one; the browser step is an HTTP client, not a browser; the
+Copilot CLI's `/mcp auth` sharing (rest of T105) and the Durbar UI flow (T098-T102) are not part of this check.
+
+Results: see research.md section 7.7.
+
