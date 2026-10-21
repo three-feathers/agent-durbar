@@ -58,6 +58,8 @@ for (const p of ['win32', 'linux'] as NodeJS.Platform[]) assert.strictEqual(appM
 const mac = appMenuTemplate('darwin', actions) as MenuItemConstructorOptions[];
 assert.ok(Array.isArray(mac));
 assert.deepStrictEqual(mac.map((m) => m.role ?? m.label), ['appMenu', 'editMenu', 'View', 'windowMenu', 'help']);
+assert.strictEqual(mac[0].role, 'appMenu');
+assert.strictEqual(mac[0].label, MENU_APP_NAME, 'the app menu title is explicit (spec 008 FR-044)');
 const flat = (items: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] => items.flatMap((m) => [m, ...(Array.isArray(m.submenu) ? flat(m.submenu) : [])]);
 const all = flat(mac);
 const roles = all.map((m) => m.role).filter(Boolean) as string[];

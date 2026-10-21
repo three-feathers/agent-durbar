@@ -119,6 +119,10 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
 
 Codex also ships its own `bwrap` inside its npm package (`…/@openai/codex-linux-x64/vendor/…/codex-resources/bwrap`). Add a second profile with that path if `codex` still reports a sandbox error.
 
+**Codex's sandbox on macOS and Windows.** Read-only and Ask first always need Codex's own sandbox. If it cannot start, the session does not start and nothing runs. Durbar says why, and the message has a **Change mode…** button that opens the usual mode menu (it never picks a mode for you):
+- **Windows:** Codex's *elevated sandbox* must be set up once, and the native `codex.exe` used, not a `.cmd` shim.
+- **macOS:** on GitHub's macOS runners, macOS refused Codex's `sandbox-exec` (2026-10-20). Whether an ordinary Mac ever does this is not known yet. Durbar shows a plain message instead of the raw error.
+
 ## Install
 
 **Requirements**
@@ -145,7 +149,7 @@ Codex also ships its own `bwrap` inside its npm package (`…/@openai/codex-linu
   - Check the file in PowerShell: `Get-FileHash .\Agent-Durbar-Setup-<version>.exe -Algorithm SHA256` and compare the hash with the line for that file in `SHA256SUMS.txt`.
   - On "Windows protected your PC", click **More info**, then **Run anyway**.
   - The Copilot CLI needs PowerShell 6 or later (GitHub's docs, not checked by us); Windows only ships 5.1. If the Copilot card says so, install it with `winget install --id Microsoft.PowerShell -e`.
-- **Linux:** run `chmod +x Agent-Durbar-*.AppImage && ./Agent-Durbar-*.AppImage`. Add `--no-sandbox` on systems without unprivileged user namespaces.
+- **Linux:** run `chmod +x Agent-Durbar-*.AppImage && ./Agent-Durbar-*.AppImage`. The AppImage's launcher entry no longer forces `--no-sandbox`; its `AppRun` adds the switch by itself only on systems without unprivileged user namespaces (you can also add it by hand).
   - An AppImage needs FUSE 2. Ubuntu 22.04 and later do not install it: if the app does not start ("libfuse.so.2" / "dlopen()"), run `sudo apt install libfuse2t64` (Ubuntu 24.04 and later) or `sudo apt install libfuse2` (22.04), or start it without FUSE: `./Agent-Durbar-*.AppImage --appimage-extract-and-run`.
   - Saved MCP secrets need a desktop keyring (GNOME Keyring or KWallet). Without one, Durbar refuses to store them rather than keep them with a fixed key (spec 019): add a keyring, or pass secrets through the server's own environment.
 
@@ -234,11 +238,11 @@ npm run check:sched-sendto      # Schedules dialog: Send to / Limit labels on on
 npm run check:geometry    # every theme lays out exactly like Clean Office (about a minute)
 npm run check:ui          # every simulator driver that asserts, one after another, on any OS (UI_SUITE_XVFB=1 keeps windows off a Linux desktop)
 npm run check:themes      # on demand: the full layout check in every theme, a few at a time, low priority, memory limits
-npm run pack:dir          # unpacked app for this OS in release/ (also dist, dist:mac:arm64, dist:mac:x64, dist:win, dist:linux; unsigned); then checks the Electron fuses
+npm run pack:dir          # unpacked app for this OS in release/ (also dist, dist:mac:arm64, dist:mac:x64, dist:win, dist:linux; unsigned); then checks the Electron fuses and the display names
 npm run check:fuses-launch  # on demand, after pack:dir: the packed Linux app opens its window and offers no debugger (xvfb on Linux)
 ```
 
-`npm run smoke` and `npm run verify:cap` use a real Copilot login and may spend credits: run them only on purpose. GitHub Actions also runs the UI checks (geometry, office layout, the Mac title bar, `check:ui`) on macOS, Windows and Linux runners and keeps the screenshots of each run (workflow *UI on three OSes*; simulator only). Releases are built by GitHub Actions from `v*` tags into a draft release that the maintainer publishes by hand.
+`npm run smoke` and `npm run verify:cap` use a real Copilot login and may spend credits: run them only on purpose. The **E2E real accounts** workflow (spec 062) installs the three agent apps on Linux, macOS and Windows, signs in with the CI account's secrets and runs one tiny turn each; it runs by hand, weekly and on `main`, never on pull requests. The supported CI platforms are listed once, in `.github/platforms.json`. GitHub Actions also runs the UI checks (geometry, office layout, the Mac title bar, `check:ui`) on macOS, Windows and Linux runners and keeps the screenshots of each run (workflow *UI on three OSes*; simulator only). Releases are built by GitHub Actions from `v*` tags into a draft release that the maintainer publishes by hand.
 
 **Layout of the repository:**
 - `src/main` (Electron main), `src/preload`, `src/renderer` (plain HTML/CSS/JS, the simulator);
@@ -250,6 +254,7 @@ npm run check:fuses-launch  # on demand, after pack:dir: the packed Linux app op
 - **Windows has not been used by hand.** Linux is used every day and macOS on real Macs (from source and the simulator). A packaged-app check runs on all three in CI, and real-account end-to-end runs on all three are in review (#402), but nobody has used the Windows build on a real PC, or the packaged macOS `.dmg` day to day.
 - **Where your data lives:** the installed app keeps its settings, folders and saved MCP servers in `agent-durbar` under the OS app-data folder (`%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `~/.config` on Linux). `npm start` and the simulator use their own `agent-durbar-dev` folder next to it, so developing never touches the installed app's data. To keep data from an older dev run, start once with `DURBAR_USER_DATA=<old folder>` or copy the folder by hand.
 - **Unsigned builds:** expect the OS warnings above.
+- **Names in packaged builds:** the display name is `Agent Durbar` (Start menu and desktop shortcuts, Add/Remove Programs, `.app`, AppImage `Name=`), while the run-time identity stays `agent-durbar` on every OS (profile folder, Keychain, WM_CLASS). `scripts/check-names.js` compares the packed app with `package.json` on every package build. On Windows a packaged build sets the AppUserModelId `io.github.three-feathers.agentdurbar` so toasts and the taskbar match the Start menu shortcut. Checked on a real Linux build (AppImage `.desktop`, packed app started on the simulator); the Windows names and AUMID and the macOS bundle names are asserted only by the *Installed app* workflow in CI, and the taskbar, toasts, Mac menu-bar title and a Linux launcher or dock were not seen on a real desktop ([#9](https://github.com/three-feathers/agent-durbar/issues/9)).
 - **No debugger in packaged builds:** release builds ignore `--inspect`, `NODE_OPTIONS` and `ELECTRON_RUN_AS_NODE` (Electron fuses; `scripts/check-fuses.js` reads them from the packed binary on every package build on Linux, macOS and Windows: `pack:dir`, the `dist*` scripts, and so the packaged-check workflow and the release build) and always drop `remote-debugging-port` and `remote-debugging-pipe`, whatever the spelling. Run from source (`npm start`) to debug. Checked on the packed Linux build, including `-remote-debugging-port` with one dash (`npm run check:fuses-launch`); the fuse check itself has been run locally on Linux only, and macOS and Windows have not been tried by hand (on Windows Chromium also accepts `/` and any case, which the guard covers by removing the switches by name). The ASAR integrity fuse has no effect on Linux.
 - **VS Code's own chats are read-only.** VS Code keeps them in an undocumented store that cannot be continued from outside; Durbar shows a copy. Copilot CLI/SDK sessions *can* be resumed.
 - **Caps are soft:** one model response can overshoot them, and the figures are what each harness reports. Copilot's runtime does not stop at its limit at all, so Durbar does: a turn is stopped after the call that crosses it (real check, 2026-10-20).

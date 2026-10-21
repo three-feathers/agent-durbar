@@ -24,6 +24,7 @@ export function appMenuTemplate(platform: NodeJS.Platform, actions: MenuActions)
   return [
     {
       role: 'appMenu',
+      label: MENU_APP_NAME, // spec 008 FR-044: harmless hint; Electron documents that macOS shows the bundle name here whatever the label (the packaged CFBundleName is checked by check-names.js)
       submenu: [
         { role: 'about', label: `About ${MENU_APP_NAME}` },
         { type: 'separator' },
