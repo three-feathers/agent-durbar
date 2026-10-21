@@ -129,6 +129,19 @@ async function newSession(label: string, ad: AgentAdapter, events: AgentEvent[],
   return sid;
 }
 
+/** A package's version from its package.json. The SDK's `exports` map does not list `./package.json`, so it is read from the folder
+ *  next to the SDK's resolved entry (node_modules/@github/<name>), never through `require.resolve('<name>/package.json')`. */
+function versionOf(name: string): string {
+  try {
+    let d = path.dirname(require.resolve('@github/copilot-sdk'));
+    while (path.basename(path.dirname(d)) !== '@github' && path.dirname(d) !== d) d = path.dirname(d);
+    const pj = path.join(path.dirname(d), name.replace(/^@github\//, ''), 'package.json');
+    return (JSON.parse(fs.readFileSync(pj, 'utf8')) as { version?: string }).version ?? '?';
+  } catch {
+    return '?';
+  }
+}
+
 interface Result {
   os: string; arch: string; node: string; runtime: string; sdk: string; prompts: 0;
   a?: { first: string; login?: string; browser?: string; after?: string; tools?: string; demo?: string };
@@ -143,8 +156,7 @@ interface Result {
 async function main(): Promise<void> {
   const out = process.argv[2];
   if (!out) throw new Error('usage: mcp-oauth-real.js <out.json>');
-  const sdkPkg = JSON.parse(fs.readFileSync(require.resolve('@github/copilot-sdk/package.json'), 'utf8')) as { version: string; copilotRuntime?: { version?: string } };
-  const res: Result = { os: `${process.platform} ${os.release()}`, arch: process.arch, node: process.version, runtime: sdkPkg.copilotRuntime?.version ?? '?', sdk: sdkPkg.version, prompts: 0, verdict: 'not run', lines };
+  const res: Result = { os: `${process.platform} ${os.release()}`, arch: process.arch, node: process.version, runtime: versionOf(`@github/copilot-sdk-${process.platform}-${process.arch}`), sdk: versionOf('@github/copilot-sdk'), prompts: 0, verdict: 'not run', lines };
   const demo = await startDemoOAuthMcp();
   log(`demo OAuth MCP server on ${demo.base} (loopback, auto-approve)`);
   const start = snap(demo.stats);
