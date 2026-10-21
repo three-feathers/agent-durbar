@@ -73,6 +73,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - **Open in VS Code** opens the folder (VS Code, then Insiders, then VSCodium).
 - **Folder status:** in a chat, the folder chip also shows the git branch and how many files have uncommitted changes (`~/work/api · main · 3 changed`); click it for the list of changed files with their +/− lines and **Open in VS Code**. Read-only (Durbar never runs a git command that writes); nothing extra for a folder that is not a git repository ([screenshot](docs/screenshots/063-folder-changes-1440x900.png)).
 - **Send to several sessions…** (top bar ⋯ or Ctrl+K): one message to the running sessions you tick, each with its own agent app, mode and spending limit. Busy sessions, and sessions waiting for you, can't be ticked; the button says how many get it ([screenshot](docs/screenshots/064-send-several-1440x900.png)).
+- **Plan first** (chat mode menu → *Plan first (next message)*): the agent proposes a plan in its app's own plan mode and changes nothing until you press *Approve*; *Revise…* sends your changes, *Reject* ends it. The approved plan still runs in the folder's permission mode, so in Read-only changes stay refused. Checked on real Copilot, Claude Code and Codex sessions (2026-10-21).
 
 **Models, context and tools**
 - Pick the model and reasoning effort per session, and switch them in a running session: Claude Code and Codex from the next message, the conversation kept (checked on real accounts 2026-10-20); Copilot too, but not yet seen on a paid plan.

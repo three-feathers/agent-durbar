@@ -505,16 +505,19 @@ ipcHandle('agents:stageAttachment', (_e, name: unknown, mime: unknown, data: unk
   }
 });
 
-ipcHandle('agents:send', async (_e, id: string, text: string, attachments: PickedFile[]) => {
+ipcHandle('agents:send', async (e, id: string, text: string, attachments: PickedFile[], opts?: unknown) => {
   const ad = agents.has(id) ? router.forAgent(id) : undefined;
   if (!ad) return { ok: false, error: 'unknown agent' };
+  // spec 066 FR-001/FR-007: plan first only from Durbar's own window and only for an agent app that has a plan mode
+  const plan = !!opts && typeof opts === 'object' && (opts as { plan?: unknown }).plan === true;
+  if (plan && (!fromApp(e) || !ad.capabilities.planMode)) return { ok: false, error: 'This agent app cannot plan first.' };
   agentState.ensure(id, agents.get(id)?.lazy);
   agentState.noteSend(id); // the window shows Thinking from the moment the user sends (app.js sendLive)
-  const r = await sendOp(id, text, attachments, ad);
+  const r = await sendOp(id, text, attachments, ad, plan);
   if (!r.ok) agentState.noteSendFailed(id); // and Error when the send fails (app.js sendLive)
   return r;
 });
-async function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter): Promise<{ ok: boolean; error?: string }> {
+async function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter, plan = false): Promise<{ ok: boolean; error?: string }> {
   const safe = (Array.isArray(attachments) ? attachments : []).filter((a) => pickedFiles.has(a.path));
   // Caps are enforced here too, not only in the UI.
   if (safe.length > MAX_ATTACH_FILES) return { ok: false, error: `Up to ${MAX_ATTACH_FILES} attachments per message (got ${safe.length}).` };
@@ -528,6 +531,7 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
     await ad.send(id, {
       text: String(text),
       attachments: safe.map((a) => ({ path: a.path, kind: kindOfFile(a.path) })), // FR-009: checked again here, the renderer's kind is not trusted
+      ...(plan ? { plan: true } : {}),
     });
     for (const a of safe) pickedFiles.delete(a.path); // spec 004 FR-015: a sent file must be picked again to be sent again
     noteLastSession(agents.get(id));
@@ -928,6 +932,23 @@ ipcHandle('agents:selectProfile', async (_e, id: unknown, profileId: unknown, co
   }
 });
 
+// spec 066 FR-007: a proposed plan is answered only from Durbar's own window (never MCP, remote control or schedules)
+ipcHandle('agents:resolvePlan', async (e, id: unknown, requestId: unknown, answer: unknown) => {
+  if (!fromApp(e)) return { ok: false, error: 'invalid request' };
+  const a = typeof id === 'string' ? agents.get(id) : undefined;
+  const ad = a ? router.forAgent(a.id) : undefined;
+  if (!a || !ad || !ad.resolvePlan || typeof requestId !== 'string' || !requestId || requestId.length > 200) return { ok: false, error: 'unknown plan' };
+  const x = (answer && typeof answer === 'object' ? answer : {}) as { kind?: unknown; feedback?: unknown };
+  const fb = typeof x.feedback === 'string' ? x.feedback.replace(/\u0000/g, '').trim().slice(0, 4000) : '';
+  const parsed = x.kind === 'approve' ? { kind: 'approve' as const } : x.kind === 'reject' ? { kind: 'reject' as const } : x.kind === 'revise' && fb ? { kind: 'revise' as const, feedback: fb } : undefined;
+  if (!parsed) return { ok: false, error: 'Invalid answer.' };
+  try {
+    await ad.resolvePlan(a.id, requestId, parsed);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: errText(err) };
+  }
+});
 ipcHandle('agents:resolveLimit', async (_e, id: unknown, requestId: unknown, choice: unknown) => {
   const a = typeof id === 'string' ? agents.get(id) : undefined;
   const ad = a ? router.forAgent(a.id) : undefined;

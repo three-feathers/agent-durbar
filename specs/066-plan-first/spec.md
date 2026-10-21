@@ -1,8 +1,8 @@
 # Feature Specification: Plan first (the agent proposes, you approve)
 
-**Feature Branch**: `065-plan-mode`
+**Feature Branch**: `066-plan-mode`
 **Created**: 2026-10-21
-**Status**: Built (adapters, UI, simulator, tests); real checks recorded under `## Changes`.
+**Status**: Built, and checked on real Copilot, Claude Code and Codex sessions (2026-10-21, `## Changes`).
 **Input**: Issue #429 (overnight research, 2026-10-21); owner: "go ahead with those features" (Vikram, terminal, 2026-10-21).
 
 ## Summary
@@ -55,3 +55,24 @@ In a chat, the user opens the mode menu and picks **Plan first (next message)**;
 - I/II: the capability sits behind `AgentAdapter`. No vendor types in the renderer.
 
 ## Changes
+
+### 2026-10-21: built and checked on real accounts
+
+- `test:` `scripts/test-plan-mode.ts`:
+  - the helpers and the event guard;
+  - **Copilot** on the fake SDK: `mode.set plan` before the message; approve → `{approved: true, selectedAction: 'interactive'}` (never `autopilot`, even when the runtime recommends it); revise → feedback; reject → `{approved: false}` and back to `interactive`; Stop rejects an open plan;
+  - **Codex** on the fake app-server: `collaborationMode {mode: 'plan', settings: {model, developer_instructions: null}}`; the `plan` item becomes the proposal; approve sends "Go ahead with the plan above." in `default` mode; a later normal turn sends no collaboration mode;
+  - a source pin: the answer IPC is window-only, and plan first needs `planMode`.
+- `sim:` `scripts/check-plan-mode.js`, 1440x900 and 1280x800: the menu item (a checkbox, at least 10.5px), the one-shot chip, the card with Approve / Revise… / Reject and focus on Approve, Revise → a new plan, Approve → settled. Screenshots `docs/screenshots/066-plan-*`.
+- `real:` 2026-10-21, one tiny request per app in an empty read-only folder ("create hello.txt"), then **Reject**; `hello.txt` was never created:
+  - **Copilot** `gpt-6-luna`: a plan in 12 s, 0.25 AIU. With **Approve** instead, the agent tried to create the file and **Read-only refused it** (one permission event; no file), 0.24 AIU.
+  - **Claude Code 2.1.305 (haiku):** a plan in 6 s, $0.049. Two findings fixed on the way:
+    1. `ExitPlanMode` is a deferred tool loaded through `ToolSearch`, which Read-only's hook denied. During a plan-first turn only `ExitPlanMode` and `ToolSearch` (which loads definitions only) pass.
+    2. `ExitPlanMode`'s input is **empty**: the plan lives in Claude's plan file, which Read-only rightly cannot write. The plan is then the text Claude wrote in the turn, and the plan-first message adds one sentence: "write the full plan in your reply, not in a file, then call ExitPlanMode".
+
+    The two failed tries cost $0.14 and $0.058.
+  - **Codex 0.163:** a plan in 7 s, about 16k input tokens on a ChatGPT plan.
+- `[KNOWN GAP]`:
+  - Claude's plan text depends on Claude following that sentence; if it writes nothing, the card says the plan is empty, and Reject or Revise still work;
+  - Copilot `planContent` versus `summary` was seen only with `gpt-6-luna`;
+  - macOS and Windows by hand.

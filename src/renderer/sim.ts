@@ -79,6 +79,8 @@ interface SimAgent {
   /** Dollar estimate used (kinds with `capUnit: 'usd'`). */
   usd?: number;
   limitReq?: string;
+  /** Spec 066: an open plan (request id and the message it plans). */
+  planReq?: { id: string; text: string };
   /** Model and context handling (spec 030). */
   tier?: ContextTier;
   /** A switch asked for during a turn: applies when the turn ends and is dropped by Stop (both seen on a real runtime, spec 030 T042). */
@@ -122,7 +124,8 @@ const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
 /* Spec 012 T018 (FR-065, FR-066): the simulated kinds of `simkinds=mixed`. They are a simulation, not a statement about the real CLIs.
    Index in the 15-agent roster -> kind; every other agent is Copilot. Mcp-swiss holds two kinds (Ada, Mira); the basic agent is Priya (idle, never the first). */
 const SIM_KIND_BY_AGENT: Record<number, string> = { 0: 'claude', 3: 'claude', 4: 'codex', 5: 'claude', 6: 'basic', 7: 'codex', 8: 'claude', 9: 'codex', 11: 'claude' };
-const SIM_COPILOT_CAPS = { remoteService: { name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }, interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, remote: true, oneShot: true, deleteSession: true } as AdapterInfo['capabilities'];
+ const SIM_PLAN_CAPS = { planMode: true }; // spec 066: every simulated kind can plan first
+const SIM_COPILOT_CAPS = { ...SIM_PLAN_CAPS, remoteService: { name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }, interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, remote: true, oneShot: true, deleteSession: true } as AdapterInfo['capabilities'];
 const SIM_MIXED_KINDS: AdapterInfo[] = [
   { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, remote: true, remoteService: { name: 'Claude', host: 'claude.ai', mobile: 'the Claude app' }, mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true, deleteSession: false } }, // spec 006 FR-028: Claude Code has no per-session delete
   { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: false, remote: false } },
@@ -675,6 +678,20 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
 
     // Replies to chat messages the user types in sim mode.
     const wait = (ms: number): Promise<void> => new Promise((r) => window.setTimeout(r, ms));
+    /** Spec 066 FR-008: a simulated plan-first turn: the agent reads, then proposes a plan and waits. */
+    function simPlan(s: SimAgent, text: string, feedback?: string): void {
+      const id = s.info.id;
+      const requestId = `sim-plan-${id}-${Date.now()}`;
+      emit({ type: 'status', sessionId: id, timestamp: now(), status: 'working', intent: 'Planning' });
+      window.setTimeout(() => {
+        s.planReq = { id: requestId, text };
+        const goal = String(text).replace(/\s+/g, ' ').trim().slice(0, 80) || 'the task';
+        const plan = `**Plan for:** ${goal}\n\n1. Read \`src/auth/login.ts\` and its tests to see how sessions are created.\n2. Move token checks into a new \`src/auth/tokens.ts\` and keep the old exports.\n3. Update the three callers and run \`npm test\`.${feedback ? `\n4. As you asked: ${String(feedback).slice(0, 200)}` : ''}\n\nNothing is changed until you approve.`;
+        emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Plan ready' });
+        emit({ type: 'plan', sessionId: id, timestamp: now(), phase: 'proposed', requestId, text: plan });
+      }, 700);
+    }
+
     async function reply(s: SimAgent, text: string): Promise<void> {
       closeOpen(s);
       emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: 'Answering: ' + text.slice(0, 60) });
@@ -1058,6 +1075,17 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       setSchedulesPaused: async (on) => { simSched.pausedAll = on === true; simSched.changed(); return { ok: true, pausedAll: simSched.pausedAll }; },
       onSchedules: (cb) => { simSched.subs.push(cb); return () => undefined; },
       onScheduleRan: (cb) => { simSched.ran.push(cb); return () => undefined; },
+      resolvePlan: async (id: string, requestId: string, answer: { kind: string; feedback?: string }) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s || !s.planReq || s.planReq.id !== requestId) return { ok: false, error: 'unknown plan' };
+        const asked = s.planReq.text;
+        s.planReq = undefined;
+        emit({ type: 'plan', sessionId: id, timestamp: now(), phase: 'resolved', requestId, action: answer.kind as 'approve' | 'reject' | 'revise' });
+        if (answer.kind === 'approve') window.setTimeout(() => void reply(s, asked), 300);
+        else if (answer.kind === 'revise') simPlan(s, asked, answer.feedback);
+        else emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Plan rejected' });
+        return { ok: true };
+      },
       resolveLimit: async (id, requestId, choice) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || s.limitReq !== requestId) return { ok: false, error: 'That request is no longer open.' };
@@ -1443,9 +1471,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const clean = String(name).split(/[\\/]/).pop() || 'attachment';
         return { ok: true, file: { path: '/tmp/agent-durbar-att-sim/' + clean, name: clean, kind: /^image\//.test(mime) ? 'image' : 'file', size: data.byteLength } };
       },
-      send: async (id, text) => {
+      send: async (id, text, _atts?: unknown, opts?: { plan?: boolean }) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
+        if (opts?.plan) {
+          // spec 066 FR-008: a short plan after a moment; nothing runs until it is answered
+          simPlan(s, text);
+          return { ok: true };
+        }
         if (s.perm) return { ok: false, error: 'Waiting for your permission decision first.' };
         if (s.limitReq) return { ok: false, error: 'The spending limit was reached. Choose Raise limit, Remove limit or Stop here first.' };
         const kind = s.info.adapterId ?? 'copilot';
@@ -1469,6 +1502,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (s.limitReq) {
           emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'resolved', requestId: s.limitReq, action: 'cancel' });
           s.limitReq = undefined;
+        }
+        if (s.planReq) {
+          emit({ type: 'plan', sessionId: id, timestamp: now(), phase: 'resolved', requestId: s.planReq.id, action: 'reject' }); // spec 066: Stop rejects an open plan
+          s.planReq = undefined;
         }
         if (s.perm) {
           const { cont: _c, file: _f, ...p } = s.perm;

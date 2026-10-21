@@ -30,7 +30,8 @@ import type { ModelOption, RawModelInfo, RawSwitchResult } from './copilotmodel'
 import { PermissionBroker, isInsideRoots, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
-import type { AgentProfile } from './types';
+import type { AgentProfile, PlanAnswer } from './types';
+import { cleanPlanText } from './plan';
 import { cleanSessionTitle, eventsToHistory, previousSessionsFor } from './history';
 import type { HistoryResult, PreviousSession } from './history';
 import { unpackedRuntimePath } from './runtime';
@@ -66,6 +67,8 @@ interface Live {
   askedTitle?: boolean;
   /** `ask_user` questions waiting for the user (spec 002 FR-058): request id -> waiter. */
   questions?: Map<string, { choices: string[]; resolve: (answer: string | null) => void }>;
+  /** Spec 066: plans waiting for the user (request id -> answer). */
+  plans?: Map<string, (answer: PlanAnswer) => void>;
   /** MCP elicitations waiting for the user (spec 012 FR-151): request id -> waiter. */
   elicitations?: Map<string, ElicitWaiter>;
   /** The session's folders (spec 043: a profile file inside one is the repository's). */
@@ -145,6 +148,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggle: true,
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
   modelSwitch: Object.freeze({ verified: true, contextTier: true }), // spec 030 Phase 3 (real 2026-10-20, Copilot Pro): switch, effort, long tier, confirmation and compact-and-switch (T041, T044, T045)
+  planMode: true, // spec 066 FR-003: mode.set plan + onExitPlanModeRequest (@experimental)
   remote: true, // spec 054 FR-002: rpc.remote.enable/disable (@experimental; real 2026-10-20: `started: false` outside a GitHub repository, never seen started)
   remoteService: Object.freeze({ name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }), // spec 054 FR-060
   deleteSession: true, // spec 006 FR-028: CopilotClient.deleteSession (read: SDK 1.0.22 client.d.ts; never run on a real session)
@@ -443,6 +447,25 @@ export class CopilotAdapter implements AgentAdapter {
     const onPermissionRequest = async (req: PermissionRequest): Promise<PermissionRequestResult> =>
       broker.request(req as unknown as PermissionLike);
 
+    // spec 066 FR-003: the runtime's plan (plan mode) waits for the user's answer; approve continues interactively (never autopilot)
+    const onExitPlanModeRequest = async (req: { summary?: unknown; planContent?: unknown }): Promise<{ approved: boolean; selectedAction?: string; feedback?: string }> => {
+      const live = this.sessions.get(sid);
+      if (!live) return { approved: false };
+      const text = cleanPlanText(typeof req.planContent === 'string' && req.planContent.trim() ? req.planContent : req.summary);
+      const requestId = `copilot-plan-${randomUUID()}`;
+      live.plans ??= new Map();
+      const answer = await new Promise<PlanAnswer>((resolve) => {
+        live.plans!.set(requestId, resolve);
+        this.emit(sid, { type: 'plan', phase: 'proposed', requestId, text });
+      });
+      live.plans.delete(requestId);
+      this.emit(sid, { type: 'plan', phase: 'resolved', requestId, action: answer.kind });
+      if (answer.kind === 'approve') return { approved: true, selectedAction: 'interactive' };
+      if (answer.kind === 'revise') return { approved: false, feedback: answer.feedback };
+      void live.session.rpc.mode.set({ mode: 'interactive' }).catch(() => undefined); // rejected: leave plan mode, nothing runs
+      return { approved: false };
+    };
+
     // spec 002 FR-058: Copilot's `ask_user` (legacy form) as a question card; allowed in every mode (a question is not an action)
     const onUserInputRequest = async (req: { question?: unknown; choices?: unknown; allowFreeform?: unknown }): Promise<{ answer: string; wasFreeform: boolean }> => {
       const live = this.sessions.get(sid);
@@ -487,6 +510,7 @@ export class CopilotAdapter implements AgentAdapter {
       ...(options.maxAiCredits && options.maxAiCredits > 0 && Number.isFinite(options.maxAiCredits) ? { sessionLimits: { maxAiCredits: options.maxAiCredits } } : {}),
       onPermissionRequest,
       onUserInputRequest,
+      onExitPlanModeRequest,
       onElicitationRequest,
       // spec 043 FR-002: custom agents from explicit folders only (no config discovery, so no repository skills)
       agentDirectories: agentDirsFor([cwd, ...folders]),
@@ -551,6 +575,8 @@ export class CopilotAdapter implements AgentAdapter {
       return;
     }
     live.turnOpen = true;
+    // spec 066 FR-003: plan first: the runtime's own plan mode (it reads and proposes; nothing changes until the user approves)
+    if (message.plan) await live.session.rpc.mode.set({ mode: 'plan' });
     // Files the user attached are theirs to share: the runtime may read them even outside the folders (spec 003 FR-023).
     if (message.attachments?.length) live.broker.allowReadPaths(message.attachments.map((a) => a.path));
     this.emit(sessionId, { type: 'status', status: 'working', intent: 'Thinking' });
@@ -589,8 +615,15 @@ export class CopilotAdapter implements AgentAdapter {
     answerElicitation(this.sessions.get(sessionId)?.elicitations, requestId, answer);
   }
 
+  /** Spec 066 FR-002: the user's answer to a proposed plan. */
+  async resolvePlan(sessionId: string, requestId: string, answer: PlanAnswer): Promise<void> {
+    const w = this.sessions.get(sessionId)?.plans?.get(requestId);
+    if (w) w(answer);
+  }
+
   private cancelQuestions(live: Live): void {
     for (const q of [...(live.questions?.values() ?? [])]) q.resolve(null);
+    for (const p of [...(live.plans?.values() ?? [])]) p({ kind: 'reject' }); // spec 066: Stop / End reject an open plan
     cancelElicitations(live.elicitations);
   }
 

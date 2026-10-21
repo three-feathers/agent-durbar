@@ -69,6 +69,8 @@ export interface Attachment {
 export interface AgentMessage {
   text: string;
   attachments?: Attachment[];
+  /** Spec 066 FR-001: plan first: the agent proposes a plan in its app's own plan mode and waits for `resolvePlan`. Needs `capabilities.planMode`. */
+  plan?: boolean;
 }
 
 interface BaseEvent {
@@ -382,7 +384,22 @@ export interface RemoteEvent extends BaseEvent {
   url?: string;
 }
 
+/** Spec 066 FR-002: a plan the agent proposes (plan first), and its end. */
+export interface PlanEvent extends BaseEvent {
+  type: 'plan';
+  phase: 'proposed' | 'resolved';
+  requestId: string;
+  /** The plan as the agent wrote it (Markdown); `proposed` only. */
+  text?: string;
+  /** `resolved` only. */
+  action?: 'approve' | 'reject' | 'revise';
+}
+
+/** Spec 066 FR-002: the user's answer to a proposed plan. */
+export type PlanAnswer = { kind: 'approve' } | { kind: 'reject' } | { kind: 'revise'; feedback: string };
+
 export type AgentEvent =
+  | PlanEvent
   | RemoteEvent
   | AgentScheduleEvent
   | UserEvent
@@ -438,6 +455,8 @@ export interface AgentAdapter {
   setCap?(sessionId: string, credits: number | null): Promise<void>;
   /** Answer a "limit reached" request: add credits, set a new cap, remove the cap or cancel the blocked request. Optional. */
   resolveLimit?(sessionId: string, requestId: string, action: LimitAction): Promise<void>;
+  /** Spec 066 FR-002: answer a proposed plan (approve, reject, or revise with feedback). Optional (`capabilities.planMode`). */
+  resolvePlan?(sessionId: string, requestId: string, answer: PlanAnswer): Promise<void>;
   /** Answer a `question` event (spec 012 FR-128); `null` = the user skipped it. Unknown ids are ignored. */
   answerQuestion?(sessionId: string, requestId: string, answers: Record<string, string> | null): void;
   /** Answer an elicitation `question` event (spec 012 FR-151); main has checked it against the fields. Unknown ids are ignored. */

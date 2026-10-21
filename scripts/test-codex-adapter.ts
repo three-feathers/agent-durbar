@@ -93,7 +93,7 @@ async function main(): Promise<void> {
   // ---- FR-089: capabilities and optional members
   {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(CODEX_CAPABILITIES)), {
-      interrupt: true, resume: true, images: true, models: true, effort: true, modelSwitch: { verified: true, contextTier: false },
+      interrupt: true, resume: true, images: true, models: true, planMode: true, effort: true, modelSwitch: { verified: true, contextTier: false },
       permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'next-message',
       usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, oneShot: true, deleteSession: true,
     });

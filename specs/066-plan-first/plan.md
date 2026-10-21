@@ -1,4 +1,4 @@
-# Plan 065
+# Plan 066
 
 1. Types (`types.ts`, `capabilities.ts`): `AgentMessage.plan`, `PlanEvent`, `PlanAnswer`, `resolvePlan`, `planMode`; `eventguard` accepts `plan`.
 2. Adapters: Copilot (`mode.set` + `onExitPlanModeRequest`), Claude (`set_permission_mode` + `ExitPlanMode` in `can_use_tool` and the hook), Codex (`collaborationMode` + the `plan` item).
