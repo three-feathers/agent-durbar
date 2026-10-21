@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.10 tag)
 
+- **UI checks on macOS, Windows and Linux in CI** (spec 008 FR-090..FR-092). A new workflow runs theme geometry, the 15-agent office layout, the Mac title bar and every asserting simulator driver (`npm run check:ui`, new) on all three runners and keeps their screenshots; before, these ran on Linux only. A failing driver now exits 1.
 ## v0.1.0-alpha.10 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.10), 2026-10-21)
 
 - Agent apps installed with nvm, fnm, Volta, asdf, mise or Linuxbrew are now found, also when Durbar is opened from Finder or a desktop menu (the login shell's `PATH` is read once); Settings > Agent apps says where each was found (spec 060 FR-003).

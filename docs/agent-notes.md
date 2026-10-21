@@ -29,6 +29,9 @@ Each entry has the date it was learned, what happened, and how to apply it, with
 - **Previous sessions sit behind "Previous (N)"** in the chat header since spec 052 round 10; `#prev` stays hidden until opened. A driver that checks the history reads `#prevBtn`'s title or clicks it first.
 - **Top bar ids since round 11** (spec 052 FR-105): the defaults selects (`#kindSel`, `#permMode`, `#modelSel`, ...) are inside the `#defaultsPop` popover, opened by `#defaultsBtn`; *Add folder* and *Add VS Code workspace* are in the `+ New` menu (`#newMenu`, ids `#addFolder`, `#addWs` kept). Open the popover or menu before checking visibility.
 
+- **A failing driver now exits 1** (2026-10-20, spec 008 FR-090). Before that, Electron printed "DRIVER FAILED" and exited 0, so only a log grep caught a failure. `scripts/ui-suite.js` (`npm run check:ui`) runs every asserting driver with the settings it needs (`shots-033` needs floors, `shots-001-welcome` runs without the simulator, `shots-model` per size); add a new asserting driver to its list. On Linux with a desktop, set `UI_SUITE_XVFB=1` or the windows open on your screen.
+- **Check the PR's bot comments on the head commit, not only the merge-ref alerts** (2026-10-20, PR #388). An alert list of 0 can hide a fresh CodeQL line comment. The other way round, GitHub carries a line comment forward to a newer commit while its line still exists, even after the alert is fixed: then read the alert's instances (`code-scanning/alerts/<n>/instances`) and check its state on `refs/pull/<N>/head`.
+
 ## Electron and platform behaviour
 
 - **`safeStorage` is keyed by the app name** (2026-10-20, `real:` Linux gnome-libsecret; `read:` Electron source for macOS Keychain). Calling `app.setName()` **before** `ready` makes a new key, so secrets saved under the old name no longer decrypt; calling it inside `whenReady` kept the old key in the test. Durbar does not call `setName` at all (PR #377): the identity stays `agent-durbar` and only the menu labels say "Agent Durbar". Do not add a `setName` call; `test-profiledir` fails if you do.
@@ -60,3 +63,5 @@ Each entry has the date it was learned, what happened, and how to apply it, with
   - Merging a lower PR retargets and rebases the ones above it. Merging the top PR merges the whole stack from the bottom. Every layer runs `main`'s CI.
   - Merge bottom-up. Same repository only.
   - Examples: stacks #436 (#392 → #393 → #402) and #437 (#389 → #401).
+
+- **Simulator drivers on macOS** (2026-10-20, `real:` GitHub `macos-latest`, spec 008). (1) `sendInputEvent` with Shift+`/` arrives as key `/` on macOS, not `?`. Dispatch the `?` keydown in the page there. (2) Shortcuts use Cmd (`meta`), not Ctrl. (3) Windows are clamped to the runner's small screen unless `enableLargerThanScreen` is set. (4) The macOS runner is slow, so fixed `sleep`s before a click flake. Wait for the element (`ctx.waitFor`), and take layout snapshots only after two identical measurements in a row.

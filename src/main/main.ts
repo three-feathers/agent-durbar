@@ -1347,6 +1347,8 @@ function createWindow(): void {
     title: 'Agent Durbar',
     backgroundColor: '#f6f1e7',
     ...windowChrome(process.platform), // spec 052 FR-085: macOS hides the title bar; the top bar is the drag area (styles.css)
+    // spec 008 FR-093: test runs ask for exact sizes (1440x900, 1280x800); macOS otherwise clamps a window to its screen (CI: 677 px tall)
+    ...(dev.DURBAR_DRIVER || dev.DURBAR_SHOT ? { enableLargerThanScreen: true } : {}),
     // spec 008 FR-025: Windows and macOS take the icon from the .exe/.icns; Linux needs it on the window
     ...(process.platform === 'linux' ? { icon: path.join(__dirname, '..', 'icon.png') } : {}),
     webPreferences: {
@@ -1502,7 +1504,9 @@ app.whenReady().then(() => {
     };
     win?.webContents.once('did-finish-load', () => {
       const driver = require(dev.DURBAR_DRIVER as string) as (c: typeof ctx) => Promise<void>;
-      void driver(ctx).catch((err) => console.error('DRIVER FAILED', err)).finally(() => void router.disposeAll().finally(() => app.exit(0)));
+      // spec 008 FR-090: a failing driver exits 1, so CI on every OS sees it without reading the log
+      let failed = false;
+      void driver(ctx).catch((err) => { failed = true; console.error('DRIVER FAILED', err); }).finally(() => void router.disposeAll().finally(() => app.exit(failed ? 1 : 0)));
     });
   }
   // macOS: a click on the Dock icon brings back the hidden window (FR-085), or opens a new one
