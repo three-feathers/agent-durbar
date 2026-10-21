@@ -76,7 +76,23 @@ interface Live {
   /** Changes made while the session ran, put back after a reconnect (FR-158): the credit cap, and MCP servers switched on or off. */
   cap?: number | null;
   mcpToggles?: Map<string, boolean>;
+  /**
+   * Spec 011 FR-070..FR-073: the runtime does not stop a session at its cap (real 2026-10-20), so Durbar does. The cap in force
+   * (credits; null = none), the used nano-AIU (the runtime's last `usage_checkpoint` total plus the calls reported since), whether a
+   * turn runs, and a Durbar-raised limit waiting for the user with the message it held back.
+   */
+  capNow?: number | null;
+  usedCheckpointNano?: number;
+  usedSinceNano?: number;
+  turnOpen?: boolean;
+  localLimit?: { requestId: string; held?: AgentMessage };
 }
+
+/** FR-070: credits a live session has used, as far as the runtime reported them. */
+const usedCredits = (live: Live): number => ((live.usedCheckpointNano ?? 0) + (live.usedSinceNano ?? 0)) / 1e9;
+/** FR-071: a cap is set and what was used reached it. */
+const overCap = (live: Live): boolean => typeof live.capNow === 'number' && live.capNow > 0 && usedCredits(live) >= live.capNow;
+const nanoOf = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined);
 
 /** spec 043 FR-002: the folders Copilot reads agent files from: each session folder's `.github/agents` and the user's `~/.copilot/agents`. */
 export function agentDirsFor(folders: readonly string[], home = os.homedir()): string[] {
@@ -128,14 +144,20 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpStatus: true,
   mcpToggle: true,
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
-  modelSwitch: Object.freeze({ verified: false, contextTier: true }), // spec 030 Phase 3: switch, tier and compaction never run on a paid account (T041, T044, T045)
+  modelSwitch: Object.freeze({ verified: true, contextTier: true }), // spec 030 Phase 3 (real 2026-10-20, Copilot Pro): switch, effort, long tier, confirmation and compact-and-switch (T041, T044, T045)
   remote: true, // spec 054 FR-002: rpc.remote.enable/disable (@experimental; real 2026-10-20: `started: false` outside a GitHub repository, never seen started)
+  remoteService: Object.freeze({ name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }), // spec 054 FR-060
   deleteSession: true, // spec 006 FR-028: CopilotClient.deleteSession (read: SDK 1.0.22 client.d.ts; never run on a real session)
   oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (real 2026-10-20: no tool ran, nothing left on disk)
 });
 
-/** Spec 054 T020: what the user sees when the runtime answers `started: false` (seen in folders that are not a GitHub repository). */
-export const REMOTE_NOT_STARTED = 'Copilot did not start remote control for this session and gave no reason. It may need a folder that is a GitHub repository.';
+/** Spec 054 FR-063 (real, 2026-10-20): not started in a plain folder, a `git init` folder and a private GitHub repository alike, on Copilot Free. */
+/** Spec 012 FR-156 delta: the GitHub account is signed in but has no Copilot access (Copilot not enabled for it). */
+export const NO_COPILOT_ACCESS = /not authorized to use this Copilot feature/i;
+export const NO_COPILOT_ACCESS_DETAIL = 'Signed in to GitHub, but this account has no Copilot access yet: turn on Copilot for it (Copilot Free is enough) at github.com/settings/copilot, then choose Check again.';
+const errorText = (e: unknown): string => (e instanceof Error ? e.message : String(e ?? ''));
+
+export const REMOTE_NOT_STARTED = 'Copilot did not start remote control and gave no reason. It needs a paid Copilot plan: on Copilot Free it never started in our checks, on Copilot Pro it did.';
 
 /** Spec 040 FR-015: how long one `generateText` may take before it is aborted (the same 3 minutes as Claude and Codex). */
 export const ONE_SHOT_TIMEOUT_MS = 180_000;
@@ -185,6 +207,8 @@ export class CopilotAdapter implements AgentAdapter {
   /** Spec 012 FR-158: a running `refreshAuth` (calls that use a session wait for it). */
   private refreshing: Promise<void> | undefined;
   private sessions = new Map<string, Live>();
+  /** Spec 011 FR-071: ids of Durbar-raised limit requests. */
+  private capSeq = 0;
   /** Optional debug sink (DURBAR_LOG): what was actually handed to the SDK. */
   debug?: (message: string) => void;
   /** Spec 040 FR-015: the `generateText` time limit; protected so a test can shorten it. */
@@ -319,11 +343,20 @@ export class CopilotAdapter implements AgentAdapter {
     if (typeof rpc?.account?.getQuota === 'function') calls.push(() => rpc.account!.getQuota!({}));
     if (typeof rpc?.models?.list === 'function') calls.push(() => rpc.models!.list!({}));
     else calls.push(() => client.listModels());
+    // spec 012 FR-156 delta (real, CI account 2026-10-20): a GitHub sign-in without Copilot enabled passes the quota call, but
+    // every model call answers 403 "not authorized to use this Copilot feature"; the model list (free) tells the two apart
+    const listing = (): Promise<unknown> => (typeof rpc?.models?.list === 'function' ? rpc.models.list({}) : client.listModels());
     for (const call of calls) {
       try {
         await call();
+        try {
+          if (calls.length > 1) await listing();
+        } catch (e) {
+          if (NO_COPILOT_ACCESS.test(errorText(e))) return { status: 'unknown', detail: NO_COPILOT_ACCESS_DETAIL };
+        }
         return { status: 'signed-in', detail: 'Signed in (checked with GitHub).' };
       } catch (e) {
+        if (NO_COPILOT_ACCESS.test(errorText(e))) return { status: 'unknown', detail: NO_COPILOT_ACCESS_DETAIL };
         if (isAuthError(e)) return { status: 'signed-out', detail: 'GitHub did not accept the Copilot sign-in.' };
         // any other error (the runtime lacks the call, a network problem): try the next call, then say unknown
       }
@@ -485,12 +518,14 @@ export class CopilotAdapter implements AgentAdapter {
       else if (live && ev.type === 'session_limits_exhausted.completed' && live.limitRequestId === ev.data.requestId) live.limitRequestId = undefined;
       if (live && ev.type === 'session.title_changed' && !ev.agentId) live.titled = true;
       this.map(sid, ev);
+      if (live) this.trackCap(sid, live, ev);
       if (live && ev.type === 'session.idle') this.askTitle(sid);
     };
     const unsubscribe = session.on(onSessionEvent);
     // FR-158: a reconnect resumes with the same handlers but no model fields, so the session keeps the model the runtime stored
     // (it may have been switched since this start).
-    this.sessions.set(sid, { session, unsubscribe, cwd, folders: [cwd, ...folders], broker, resumeConfig: () => ({ ...config }), onSessionEvent });
+    const startCap = options.maxAiCredits && options.maxAiCredits > 0 && Number.isFinite(options.maxAiCredits) ? options.maxAiCredits : null;
+    this.sessions.set(sid, { session, unsubscribe, cwd, folders: [cwd, ...folders], broker, resumeConfig: () => ({ ...config }), onSessionEvent, capNow: startCap });
     // spec 043 FR-002: a resumed session keeps its selected agent (stored by the runtime): show it
     if (resumedExisting)
       void Promise.resolve()
@@ -510,6 +545,12 @@ export class CopilotAdapter implements AgentAdapter {
   async send(sessionId: string, message: AgentMessage): Promise<void> {
     await this.refreshing?.catch(() => undefined); // FR-158: send on the reconnected session
     const live = this.mustGet(sessionId);
+    // spec 011 FR-071: at or over the cap the message is held and the user is asked (the runtime would send it anyway)
+    if (overCap(live)) {
+      this.raiseLocalLimit(sessionId, live, message);
+      return;
+    }
+    live.turnOpen = true;
     // Files the user attached are theirs to share: the runtime may read them even outside the folders (spec 003 FR-023).
     if (message.attachments?.length) live.broker.allowReadPaths(message.attachments.map((a) => a.path));
     this.emit(sessionId, { type: 'status', status: 'working', intent: 'Thinking' });
@@ -832,11 +873,73 @@ export class CopilotAdapter implements AgentAdapter {
     if (credits !== null && !(credits > 0 && Number.isFinite(credits))) throw new Error('Invalid credit cap.');
     await live.session.rpc.options.update({ sessionLimits: credits === null ? null : { maxAiCredits: credits } });
     live.cap = credits;
+    live.capNow = credits;
   }
 
-  /** Answer the runtime's "limit reached" question (add / set / unset / cancel). */
+  /** FR-070: keep the used credits and the cap in force up to date from the session's own events; FR-072: stop a turn that crosses the cap. */
+  private trackCap(sid: string, live: Live, ev: SessionEvent): void {
+    const d = (ev as { data?: Record<string, unknown> }).data ?? {};
+    if (ev.type === 'session.usage_checkpoint') {
+      const n = nanoOf(d.totalNanoAiu);
+      if (n !== undefined) { live.usedCheckpointNano = n; live.usedSinceNano = 0; }
+    } else if (ev.type === 'assistant.usage') {
+      const n = nanoOf((d.copilotUsage as { totalNanoAiu?: unknown } | undefined)?.totalNanoAiu);
+      if (n !== undefined) live.usedSinceNano = (live.usedSinceNano ?? 0) + n;
+    } else if (ev.type === 'session.session_limits_changed') {
+      const cap = nanoOf((d.sessionLimits as { maxAiCredits?: unknown } | undefined)?.maxAiCredits);
+      live.capNow = cap && cap > 0 ? cap : null;
+    } else if (ev.type === 'session.idle') live.turnOpen = false;
+    // after a call's report or the runtime's own total (on a resumed session the first checkpoint brings what was spent before)
+    if ((ev.type === 'assistant.usage' || ev.type === 'session.usage_checkpoint') && live.turnOpen && !live.localLimit && overCap(live)) void this.stopAtCap(sid, live);
+  }
+
+  /** FR-071/FR-072: ask the user through the usual limit event; `held` is the message that was not sent. */
+  private raiseLocalLimit(sid: string, live: Live, held?: AgentMessage): void {
+    const requestId = `durbar-cap-${++this.capSeq}`;
+    live.localLimit = { requestId, ...(held ? { held } : {}) };
+    this.emit(sid, { type: 'limit', phase: 'exhausted', requestId, maxAiCredits: live.capNow ?? null, usedAiCredits: Math.round(usedCredits(live) * 100) / 100 });
+  }
+
+  /**
+   * FR-072: a turn crossed the cap. Stop it first and let its "Aborted" idle reach the window (which settles any open limit as
+   * cancelled), then ask. The call already in flight has spent what it spent: the cap is soft by one call.
+   */
+  private async stopAtCap(sid: string, live: Live): Promise<void> {
+    live.localLimit = { requestId: 'durbar-cap-stopping' };
+    try {
+      await live.session.abort();
+    } catch {
+      /* already ended */
+    }
+    for (let i = 0; i < 50 && live.turnOpen && this.sessions.get(sid) === live; i++) await new Promise((r) => setTimeout(r, 100));
+    live.turnOpen = false;
+    // the session ended, or Stop answered meanwhile (it clears the placeholder): nothing to ask
+    if (this.sessions.get(sid) !== live || live.localLimit?.requestId !== 'durbar-cap-stopping') return;
+    this.raiseLocalLimit(sid, live);
+  }
+
+  /** Answer a limit: Durbar's own (FR-071/FR-072) here, the runtime's (`add` / `set` / `unset` / `cancel`) through the SDK. */
   async resolveLimit(sessionId: string, requestId: string, action: LimitAction): Promise<void> {
     const live = this.mustGet(sessionId);
+    if (live.localLimit && live.localLimit.requestId === requestId) {
+      const { held } = live.localLimit;
+      live.localLimit = undefined;
+      if (action.kind === 'cancel') {
+        this.emit(sessionId, { type: 'limit', phase: 'resolved', requestId, action: 'cancel' });
+        this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Stopped at the spending limit' });
+        return;
+      }
+      const cap = action.kind === 'add' ? (live.capNow ?? 0) + action.credits : action.kind === 'set' ? action.credits : null;
+      await this.setCap(sessionId, cap);
+      this.emit(sessionId, { type: 'limit', phase: 'resolved', requestId, action: action.kind });
+      if (overCap(live)) {
+        this.raiseLocalLimit(sessionId, live, held);
+        return;
+      }
+      if (held) await this.send(sessionId, held);
+      else this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Ready' });
+      return;
+    }
     const response =
       action.kind === 'add' ? { action: 'add' as const, additionalAiCredits: action.credits }
       : action.kind === 'set' ? { action: 'set' as const, maxAiCredits: action.credits }
@@ -846,6 +949,7 @@ export class CopilotAdapter implements AgentAdapter {
   }
 
   private async cancelLimit(live: Live): Promise<void> {
+    live.localLimit = undefined; // FR-073: a held message is dropped
     const id = live.limitRequestId;
     if (!id) return;
     live.limitRequestId = undefined;

@@ -1,3 +1,4 @@
+import { parseEffort } from '../shared/effort';
 import { app, BrowserWindow, dialog, Menu, screen, shell } from 'electron';
 import { ipcHandle, ipcOn } from './ipcguard';
 import { randomUUID } from 'crypto';
@@ -7,7 +8,10 @@ import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
 import { offeredDescriptors } from '../adapters/experimental';
 import { createRegistry, detectAll } from '../adapters/registry';
-import { detectorFor, nodeDetectEnv } from '../adapters/detect';
+import { folderGitStatus } from './gitstatus';
+import type { GitStatus } from './gitstatus';
+import { detectorFor, nodeDetectEnv, setLoginPath } from '../adapters/detect';
+import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { execFile, spawn } from 'child_process';
 import { adapterForAdd, createRouter, historyOf, modelOptionsOf, previousSessionsOf } from '../adapters/router';
 import { errText, restorable, setCapOp, setModeOp, stopTurnOp, validMode } from './agentops';
@@ -64,6 +68,11 @@ import { REPO_URL, aboutPanelOptions, aboutView } from '../shared/about';
 import { modelControlFor, parseFocus, parseSwitchRequest } from '../shared/modelswitch';
 import type { ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import { createDebugSink } from '../shared/redact';
+import { profileDir } from './profiledir';
+import { debugSwitchesToRemove } from './debugguard';
+
+// Spec 008 FR-038: no DevTools endpoint in a packaged build. No fuse covers these switches; removing them before ready is shown to work on the packed Linux app (npm run check:fuses-launch).
+for (const sw of debugSwitchesToRemove(app.isPackaged)) app.commandLine.removeSwitch(sw);
 
 // Developer/test hooks (spec 010): ignored in packaged builds unless DURBAR_DEV=1. Read hooks only from `dev`.
 const dev = devEnv(process.env, app.isPackaged);
@@ -71,12 +80,12 @@ const devNote = devWarning(process.env, app.isPackaged);
 if (devNote) console.error(devNote);
 
 // Cheapest routing on the logged-in account's only model ("auto"); see docs/milestone-1.md.
-// Dev/test: DURBAR_USER_DATA=/tmp/x keeps the saved folder list (and Electron's other state) out of the real profile.
-if (dev.DURBAR_USER_DATA) app.setPath('userData', dev.DURBAR_USER_DATA);
+// Profile folder chosen in code (spec 008 FR-034): packaged `<appData>/agent-durbar`, dev `<appData>/agent-durbar-dev`.
+// Dev/test: DURBAR_USER_DATA=/tmp/x wins and keeps the saved folder list (and Electron's other state) out of the real profile.
+// Must stay before anything reads the userData folder and before `whenReady`.
+app.setPath('userData', profileDir({ packaged: app.isPackaged, platform: process.platform, appData: app.getPath('appData'), env: process.env }));
 const DEFAULT_MODEL = 'auto';
-const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
-type Effort = (typeof EFFORTS)[number];
-const asEffort = (v: unknown): Effort | undefined => (EFFORTS as readonly string[]).includes(v as string) ? (v as Effort) : undefined;
+const asEffort = parseEffort; // spec 007 FR-008: the models' own effort names, `none` included
 let folderStore: FolderStore | undefined;
 /** Global settings (default credit cap, spec 011), created when the app is ready. */
 let settingsStore: SettingsStore | undefined;
@@ -1030,6 +1039,17 @@ const remoteOps = createRemoteOps({
 router.onEvent((e) => {
   if (e.type === 'status' && e.status === 'stopped' && !e.agentId) remoteOps.forget(e.sessionId);
 });
+// spec 054 FR-062: the adapter says remote control ended on its own (for example a relaunch could not turn it back on)
+router.onEvent((e) => {
+  if (e.type !== 'remote' || e.agentId) return;
+  if (e.on) {
+    const url = remoteOps.updateUrl(e.sessionId, e.url);
+    if (url) toRenderer('agents:remoteUrl', { id: e.sessionId, url });
+    return;
+  }
+  remoteOps.forget(e.sessionId);
+  toRenderer('agents:remoteOff', { id: e.sessionId, ...(e.reason ? { reason: e.reason } : {}) });
+});
 ipcHandle('agents:setRemote', (e, id: unknown, on: unknown) => (fromApp(e) ? remoteOps.setRemote(id, on) : { ok: false, error: 'invalid request' }));
 ipcHandle('agents:openRemote', (e, id: unknown) => (fromApp(e) ? remoteOps.openRemote(id) : { ok: false }));
 
@@ -1073,9 +1093,19 @@ const signInCheck = (id: string): (() => Promise<SignInAnswer>) | undefined => {
     return undefined;
   }
 };
+/* spec 060 FR-003: the login shell's PATH, read once (at most 3 s) before the first detection; not under the simulator */
+let loginPathRead: Promise<void> | undefined;
+const loginPathReady = (): Promise<void> => {
+  if (!loginPathRead) loginPathRead = dev.DURBAR_SIM ? Promise.resolve() : readLoginShellPath(nodeLoginPathDeps()).then((dirs) => {
+    setLoginPath(dirs);
+    // what is found must also run: agent apps, their probes and MCP servers start with this PATH (an nvm `claude` needs its `node`)
+    if (dirs.length) process.env.PATH = mergeLoginPath(process.env.PATH, dirs);
+  }, () => undefined);
+  return loginPathRead;
+};
 const adaptersList = (refresh: boolean): Promise<AdapterInfo[]> => {
   // spec 012 FR-156: after the probes, each agent app that can tell is asked whether its sign-in works; cached until Check again
-  if (!adaptersInfo || refresh) adaptersInfo = detectAll(registry, (d) => detectorFor(d.id)?.(d) ?? Promise.resolve({ state: 'unknown' as const })).then((infos) => withSignIn(infos, signInCheck));
+  if (!adaptersInfo || refresh) adaptersInfo = loginPathReady().then(() => detectAll(registry, (d) => detectorFor(d.id)?.(d) ?? Promise.resolve({ state: 'unknown' as const }))).then((infos) => withSignIn(infos, signInCheck));
   return adaptersInfo;
 };
 /** Spec 012 FR-157: a session refused because of the sign-in marks its agent app `not-signed-in` in the cached list and tells the window. */
@@ -1260,6 +1290,11 @@ ipcHandle('agents:revokeGrant', (_e, id: string, key: string) => {
   if (agents.has(id)) router.forAgent(id)?.revokeGrant?.(id, String(key));
 });
 
+// spec 063: the git branch and changed files of an agent's own folder (read-only; the window never passes a path)
+ipcHandle('agents:gitStatus', async (e, id: unknown): Promise<GitStatus> => {
+  const a = fromApp(e) && typeof id === 'string' ? agents.get(id) : undefined;
+  return a && a.cwd ? folderGitStatus(a.cwd) : { repo: false };
+});
 ipcHandle('agents:openInVSCode', (_e, id: string) => {
   const a = agents.get(id);
   // Only paths of agents we started: the workspace file if there is one, else the folder.
@@ -1317,6 +1352,8 @@ function createWindow(): void {
     title: 'Agent Durbar',
     backgroundColor: '#f6f1e7',
     ...windowChrome(process.platform), // spec 052 FR-085: macOS hides the title bar; the top bar is the drag area (styles.css)
+    // spec 008 FR-093: test runs ask for exact sizes (1440x900, 1280x800); macOS otherwise clamps a window to its screen (CI: 677 px tall)
+    ...(dev.DURBAR_DRIVER || dev.DURBAR_SHOT ? { enableLargerThanScreen: true } : {}),
     // spec 008 FR-025: Windows and macOS take the icon from the .exe/.icns; Linux needs it on the window
     ...(process.platform === 'linux' ? { icon: path.join(__dirname, '..', 'icon.png') } : {}),
     webPreferences: {
@@ -1465,14 +1502,16 @@ app.whenReady().then(() => {
         const end = Date.now() + ms;
         while (Date.now() < end) {
           if (await (win as BrowserWindow).webContents.executeJavaScript(`!!(${expr})`)) return true;
-          await new Promise((r) => setTimeout(r, 300));
+          await new Promise((r) => setTimeout(r, 50)); // spec 008 FR-096: a wait ends as soon as the page is ready
         }
         return false;
       },
     };
     win?.webContents.once('did-finish-load', () => {
       const driver = require(dev.DURBAR_DRIVER as string) as (c: typeof ctx) => Promise<void>;
-      void driver(ctx).catch((err) => console.error('DRIVER FAILED', err)).finally(() => void router.disposeAll().finally(() => app.exit(0)));
+      // spec 008 FR-090: a failing driver exits 1, so CI on every OS sees it without reading the log
+      let failed = false;
+      void driver(ctx).catch((err) => { failed = true; console.error('DRIVER FAILED', err); }).finally(() => void router.disposeAll().finally(() => app.exit(failed ? 1 : 0)));
     });
   }
   // macOS: a click on the Dock icon brings back the hidden window (FR-085), or opens a new one

@@ -35,6 +35,7 @@ import { redact } from '../shared/redact';
 import { sessionIdOk } from '../shared/sessionid';
 import { HANDOFF_PROMPT, cleanSummary } from './handoff';
 import type { HandoffResult } from './handoff';
+import { isObj } from '../shared/guards';
 
 const CODEX_ID = 'codex';
 const CODEX_NAME = 'OpenAI Codex';
@@ -189,7 +190,6 @@ export function codexModelFlag(model: string | undefined): boolean {
 }
 
 const isShim = (file: string): boolean => /\.(cmd|bat)$/i.test(file);
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 /** A short, single-line reason: control characters stripped, 300 characters at most (server text is never trusted to be small or clean). */
 const reasonOf = (e: unknown): string => (e instanceof Error ? e.message : String(e)).replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').slice(0, 300);
 

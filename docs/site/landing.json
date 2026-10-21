@@ -5,9 +5,10 @@
     "tagline": "A free desktop app that puts your GitHub Copilot, Claude Code and Codex sessions in one office, with an inbox for every agent waiting on your OK.",
     "image": "052-office-1440x900.png",
     "alt": "Agent Durbar with simulated data: folders as rooms, agents at desks, a 'Needs you 5' button and one agent waiting for permission to rename a tool",
-    "caption": "Simulator demo data: names, costs and tasks are invented."
+    "caption": "Simulator demo data: names, costs and tasks are invented.",
+    "nameNote": "Why “Durbar”? A durbar is a royal court where everyone gets a hearing. Here your agents are the court, and you decide who gets your attention."
   },
-  "status": "Alpha · unsigned · run by hand on Linux only; the macOS and Windows builds are made in CI but not tried by hand yet.",
+  "status": "Alpha · unsigned · used by hand on Linux and on real Macs; Windows only in CI so far (builds start on all three, and real-account end-to-end runs pass on all three, 9 of 9, in review).",
   "cards": [
     {
       "title": "Never miss a waiting agent",
@@ -39,7 +40,14 @@
       "title": "Install and connect",
       "text": "Connect the AI account you already have. Settings > Agent apps can install the agent app and sign you in with the vendor's own page.",
       "screenshot": "051-harnesses-1440x900.png",
-      "alt": "Settings > Agent apps with Copilot, Claude Code and Codex and one next step each"
+      "alt": "Settings > Agent apps with Copilot, Claude Code and Codex and one next step each",
+      "crop": [
+        300,
+        0,
+        820,
+        245
+      ],
+      "caption": "Settings > Agent apps: each app with its state and one next step."
     },
     {
       "title": "Add a folder",
@@ -91,23 +99,23 @@
     {
       "name": "GitHub Copilot",
       "verified": "Checked on a real account since the first milestone, with the Copilot runtime from the official SDK and your own login.",
-      "notYet": "Not seen yet: switching between two real models, the long-context tier and a real credit cap being reached."
+      "notYet": "On Copilot Pro (2026-10-20, in review): switching between two real models, the long-context tier and compact-and-switch work. Copilot's own runtime does not stop at a spending limit, so Durbar is getting its own stop (in review)."
     },
     {
       "name": "Claude Code",
       "verified": "Checked on a real account: every mode, stop, resume, models, questions, MCP, sub-agents, the cost limit and summaries.",
-      "notYet": "Not verified yet on real macOS or Windows machines."
+      "notYet": "Installed, signed in and answering on Linux, macOS and Windows CI machines (end-to-end run, in review); not yet used by hand on a Windows PC."
     },
     {
       "name": "OpenAI Codex",
-      "verified": "Checked on a real account on Linux: every mode, resume, models, history, questions, MCP tools, sub-agents and summaries.",
-      "notYet": "Not verified yet on macOS or Windows; on Ubuntu 24.04+ Read-only and Ask first need an AppArmor profile."
+      "verified": "Checked on a real account: every mode, resume, models, history, questions, MCP tools, sub-agents and summaries; signed in with an API key and answering on Linux, macOS and Windows CI machines (in review).",
+      "notYet": "Read-only and Ask first need Codex's own sandbox: on Ubuntu 24.04+ that takes an AppArmor profile, and on Windows Codex's elevated sandbox. Not yet used by hand on a Windows PC."
     }
   ],
   "safety": [
     {
       "title": "Read-only by default",
-      "text": "A new agent reads inside its folders only. Ask first makes it wait for your OK; Allow all asks once to confirm."
+      "text": "A new agent starts Read-only: edits, commands and other changes are denied. Ask first makes it wait for your OK; Allow all asks once to confirm. Durbar asks agents to stay in their folders; only Codex is held there by its own sandbox."
     },
     {
       "title": "No tokens stored, no telemetry",
@@ -115,7 +123,7 @@
     },
     {
       "title": "You set the spending limit",
-      "text": "Give a session a spending limit in credits or dollars. When it is reached, the chat asks you what to do."
+      "text": "Give a session a spending limit in credits or dollars. Limits are checked between replies, so the reply in progress can go a little over; then the chat asks you what to do."
     }
   ],
   "featuresExclude": [
@@ -126,5 +134,42 @@
     "045",
     "050"
   ],
-  "proof": "Built in the open and spec-driven: every feature has a public spec that says what was checked and what is a known gap."
+  "proof": "Built in the open and spec-driven: every feature has a public spec that says what was checked and what is a known gap.",
+  "faq": [
+    {
+      "q": "What is an AI agent here?",
+      "a": "An assistant that works on its own in a folder: it reads files, runs commands and makes changes, and stops to ask when it needs you. GitHub Copilot, Claude Code and OpenAI Codex are such agents; Durbar lets you watch and answer several at once.",
+      "readmeAnchor": "what-you-can-do"
+    },
+    {
+      "q": "Do I need all three agent apps?",
+      "a": "No. One is enough: GitHub Copilot (a free plan works), Claude Code or OpenAI Codex. Durbar shows the ones you have and can install the others for you.",
+      "readmeAnchor": "install"
+    },
+    {
+      "q": "Which accounts or keys do I need?",
+      "a": "The ones those apps already use: your GitHub account for Copilot, a Claude plan or an Anthropic API key for Claude Code, a ChatGPT plan or an OpenAI API key for Codex. Each app keeps its own sign-in; Durbar never sees your tokens.",
+      "readmeAnchor": "harnesses"
+    },
+    {
+      "q": "Does my code go anywhere new?",
+      "a": "No. Durbar runs on your computer and has no servers, accounts or telemetry of its own. The agent apps talk to their own vendors exactly as they do without Durbar.",
+      "readmeAnchor": "safety-model"
+    },
+    {
+      "q": "Can my team use it?",
+      "a": "Each person installs it on their own computer and uses their own plans. There is no shared server and nothing to administer.",
+      "readmeAnchor": "what-you-can-do"
+    },
+    {
+      "q": "What does it cost?",
+      "a": "Durbar is free and open source (MIT). The agents bill your own plans; Durbar shows estimates and lets you set spending limits.",
+      "readmeAnchor": "costs-and-caps"
+    },
+    {
+      "q": "Is it only for code?",
+      "a": "No. A room is any folder an agent works in: code, documents, research or notes.",
+      "readmeAnchor": "what-you-can-do"
+    }
+  ]
 }

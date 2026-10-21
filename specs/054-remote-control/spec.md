@@ -2,7 +2,7 @@
 
 **Feature Branch**: `054-remote-control`
 **Created**: 2026-10-20
-**Status**: Phase 1 built (Copilot remote steering per session: simulator and unit tests; **not run on a real account**, `[KNOWN GAP]`). Phase 2 (Claude channels wizard) and Phase 3 (Codex mobile) are **planned**: requirements and research questions only, no code.
+**Status**: Phase 1 built (Copilot remote steering per session: simulator and unit tests; real checks 2026-10-20: never started on Copilot Free, started in any folder on Copilot Pro). **Phase 2 built** (FR-060..FR-064, Claude Code Remote Control per session: unit tests and simulator driver; the `remote_control` request was checked on a real account over `claude -p`; through Durbar's window `[KNOWN GAP]`). Codex: explain only (FR-064). Claude channels wizard: planned.
 **Input**: Issue #298. Owner (Telegram, 2026-10-19; Ruben raised it the day before): "support remote controls and channels". The issue's first open question ("which first: the Copilot `--remote` link or the Claude channels wizard?") is answered by doing the Copilot link first: it is generally available, needs no plugin or extra runtime, and the SDK Durbar already uses exposes it per session.
 
 ## Summary
@@ -136,3 +136,26 @@ Phase 1 adds one item to a live Copilot chat's **More** menu and to the command 
 - **Q2** (partly): a plain folder and a local-only git folder are not enough; Copilot gives no reason, it just answers `started: false`. A folder whose remote is a GitHub repository was not tried: that needs a throw-away GitHub repository, which is the owner's call.
 - Q3 (`url` vs `shareUrl`), Q4 (plan), FR-003 (does the GitHub task outlive the session) and steering from github.com stay open.
 - **FR-002 delta** `[IMPLEMENTED]` Before this, the adapter mapped that answer to `{ ok: true, on: true, steerable: false }`, so Durbar would show remote control as on with no link. Now `started: false` turns remote control off again (`disable()`, best effort) and returns `ok: false` with "Copilot did not start remote control for this session and gave no reason. It may need a folder that is a GitHub repository." (`REMOTE_NOT_STARTED`). `test:` `test:remote` (`started: false` is not on, `disable` is called, no visibility read; `started: true` is on).
+
+### 2026-10-20: Phase 2: Claude Code Remote Control (owner, #298 Q2) and the Copilot finding (Q1)
+
+Owner answers on #298: Q1 test Copilot remote in a private repository; **Q2 "this idea is not about Telegram, it is Claude Remote Control"** (code.claude.com/docs/en/remote-control); Q3 Codex: explain only.
+
+- `real:` 2026-10-20, Copilot runtime 1.0.98, Copilot **Free**, a private GitHub repository clone (`vikramgorla/durbar-remote-test`, to be deleted by the owner), 1 prompt, 0.16 AI credits: `remote.enable` answered `{started: false, remoteSteerable: false}`, the same as in a plain folder and a `git init` folder. So it is **not tied to the repository**; most likely remote needs a paid plan (unverified). Durbar's message blamed the folder: corrected in FR-063.
+- `real:` 2026-10-20, Claude Code 2.1.304 over `stream-json` (Durbar's transport): the control request `{subtype: "remote_control", enabled: true}` answered `{session_url: "https://claude.ai/code/session_…", connect_url, bridge_session_id, environment_id}` and a `system/bridge_state` event followed; `enabled: false` answered success. The docs list only interactive, server, Desktop and VS Code modes, but the stream protocol supports it. Remote Control needs a claude.ai sign-in on Pro, Max, Team or Enterprise (API keys are not supported, per the docs).
+
+- **FR-060** `AdapterCapabilities.remoteService?: { name, host, mobile }` names the service a session is controlled from: Copilot `{GitHub, github.com, GitHub Mobile}`, Claude `{Claude, claude.ai, the Claude app}`. `allowedRemoteUrl(url, host)` accepts only https links on that service's host (no user, password or port); main checks the adapter's host, and the window's texts use the name (no agent-app name in the renderer, constitution II).
+- **FR-061** `ClaudeAdapter.setRemote(id, on)` sends `remote_control` over the running CLI (`capabilities.remote: true`); the answer's `session_url` is the link when it is on claude.ai. Off sends `enabled: false`. The existing rules hold: only while the session runs, never in Allow all, and only after main's own confirmation (FR-011).
+- **FR-062** A Claude relaunch (a new mode, model or MCP set, which restarts the CLI process) turns Remote Control **back on** right after the new process starts, so a switch does not silently drop it. If that fails, the adapter emits the new normalized event `{type: "remote", on: false, reason}`; main forgets the state and tells the window, and the window shows the reason as a note (the same path as spec 012 FR-158).
+- **FR-063** Copilot's "not started" message no longer blames the folder: "Copilot did not start remote control and gave no reason. On a Copilot Free account it never started in our checks, in any folder; it may need a paid plan."
+- **FR-064** Codex (Q3): the README says Codex's own mobile access works through ChatGPT and cannot attach to a session Durbar runs, so Durbar offers none.
+
+
+### 2026-10-20: Copilot remote control on Copilot Pro
+
+- `real:` 2026-10-20, Copilot **Pro**, `scripts/remote-copilot-real.ts`, 2 tiny `auto` prompts, **0.13 AIU**. Remote control **started** both in a plain folder and in a `git init` folder with no remote:
+  - `remote.enable` answered `started: true`, `remoteSteerable: true`, with a github.com link;
+  - `setRemote(true)` gave `{ ok, on, steerable, url, visibility: 'unshared' }`, with one `session.remote_steerable_changed` event;
+  - `setRemote(false)` turned it off.
+
+  Together with the Copilot Free runs (never started, also in a private GitHub repository), this settles it: Copilot remote control **needs a paid plan**. FR-063's message now says so. What GitHub's web page and GitHub Mobile show for such a session was not opened (`[KNOWN GAP]`).

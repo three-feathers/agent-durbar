@@ -52,6 +52,35 @@
 - **Q5** Real install checks: on GitHub runners (clean macOS, Windows and Linux; no account needed for install and detection) in a manual workflow? *Recommended:* yes; sign-in stays on real machines.
 - **Q6** Order of work. *Recommended:* FR-002 (simulator truth) and FR-006 (libfuse2 docs) first (small); then FR-001 and FR-003 (the real gap); then FR-004, FR-007 and FR-008.
 
+## Changes
+
+### 2026-10-20: T030 built (FR-003, owner Q2: yes)
+
+- **FR-003** `[IMPLEMENTED]`:
+  - **Search order** in `candidates()` (`src/adapters/detect.ts`):
+    1. the configured path;
+    2. `PATH`;
+    3. the **login shell's `PATH`** (macOS and Linux);
+    4. the fixed folders as before;
+    5. then the version managers: nvm (`$NVM_DIR` or `~/.nvm/versions/node/*/bin`, newest version first), fnm (`$FNM_DIR`, `~/.fnm`, `~/.local/share/fnm` and, on macOS, `~/Library/Application Support/fnm`; the `aliases/default` link first, then `node-versions/*/installation/bin`), Volta, asdf and mise shims, and Linuxbrew on Linux. On Windows: `%LOCALAPPDATA%\Volta\bin`, `NVM_SYMLINK`, and nvm-windows' version folders (`NVM_HOME` or `%APPDATA%\nvm`).
+
+    Entries are deduplicated (case-insensitively on Windows). Version folders are read through `DetectEnv.listDir` (folder names only, at most 200 read and 20 used).
+  - **Login shell** (`src/main/loginpath.ts`), read once per app run before the first detection, never under the simulator:
+    - the shell is `$SHELL` only when it is an absolute, existing bash, zsh, fish, sh, dash or ksh, otherwise `/bin/sh`;
+    - the command is a constant `printf` between markers;
+    - argv only, stdin closed, its own process group, killed after 3 s;
+    - at most 64 KB read, 8 KB of `PATH`, 64 absolute folders;
+    - any failure gives an empty list.
+
+    Main hands the list to detection with `setLoginPath`; adapters never spawn a shell.
+    Main also adds those folders after its own `PATH` (`mergeLoginPath`, no duplicates), so what detection finds also runs. An npm-installed agent app in an nvm or fnm folder is a `#!/usr/bin/env node` script; its `--version` probe, its sessions and MCP servers such as `npx` need that folder's `node` on PATH (review finding on #398).
+  - **Where it was found:** `DetectResult.where` / `AdapterInfo.where` is the `displayPath` of the found binary: `~/…` under the home folder, otherwise only the file name, never the user name. The Agent apps card shows "Found at …" for an installed app (`shots-051-setup` asserts it; screenshots `051-harnesses-*`).
+- `test:` `scripts/test-detect.ts`: the folders per OS, newest-first order, dedupe, an unreadable folder, relative entries, the shell choice and fallbacks, the parser (markers, junk, caps) and the runner with a fake spawn (output, timeout, error, nothing on Windows).
+- `[KNOWN GAP]`:
+  - not run on a real macOS GUI launch (Finder or Dock), where the login-shell `PATH` matters most;
+  - the Windows nvm-windows and Volta folders are unit-tested only;
+  - a login profile that waits for input simply times out after 3 s, and detection then uses the fixed folders.
+
 ## Clarifications (owner, 2026-10-20)
 
 - **Q1 → least privilege first.** "Go with the least admin rights path first and then higher towards needing admin rights, as not everyone has admin rights on their machine." So FR-001's order per OS is:
@@ -125,3 +154,26 @@ Rerun after those fixes (run 39485719890, `d600c68`): `real:` **Codex official o
 - **Codex** `install.ps1`: access denied on the admin's `AppData\Local` (CI only: the test user inherited `LOCALAPPDATA`). `install-check.ts` now sets the user's own `APPDATA` and `LOCALAPPDATA`.
 
 `real:` 2026-10-20, spec 062's first e2e run (Windows runner): after OpenAI's official `install.ps1` succeeded, **detection said Codex was not installed**. The script installs to `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe`, but detection looked in `%LOCALAPPDATA%\Programs\codex`. Detection now also looks in OpenAI's folder (unit test).
+
+### 2026-10-21: review fixes (Paco's agent on #393)
+
+- **Downloaded body check** `[IMPLEMENTED]` (`looksLikeScript`):
+  - `text/html` is refused; a `.sh` must start with `#!`; a `.ps1` must not start with `<` (after a BOM);
+  - anything else stops before running, with "it looks like a web page; nothing was run".
+  - `test:` fake responses for a challenge page, HTML content type, and a BOM.
+- **Total download time limit** `[IMPLEMENTED]`:
+  - `makeGet` adds an overall timer to the idle one, so a dripping server cannot keep it open;
+  - `test:` the real stream code against a local HTTP server: a normal body with its content type, a reported (not followed) redirect, the streaming size cap and the total limit;
+  - the local server found that a fully received oversized body could still resolve after `destroy()`. The promise now fails first.
+- **Update uses the owning route** `[IMPLEMENTED]`:
+  - `routeOwning(realPath)` (npm, Homebrew, winget, official) puts that route first for Update, so no second copy is left in `~/.local/bin`;
+  - install keeps least privilege first.
+  - `test:` the classifier, and a Homebrew-installed `claude` (`update` → brew first, `install` → official first).
+- **Small fixes** `[IMPLEMENTED]`:
+  - a start refused as busy deletes its downloaded folder (two runs prepared before either started);
+  - the spawn-failure cleanup is guarded;
+  - the confirmation says the vendor's script may add its folder to the shell's PATH;
+  - the window's "no route" text names the vendor installer.
+- **Install check wording.** The "Install check" workflow is a **report, not a gate**: every step is `continue-on-error`. Its *Found at* column is what detection finds after that route ran, which can be an earlier route's copy; *Result* uses the route's own exit code.
+- Codex official on Windows was fixed by `setupEnv` (Git's GNU tar ahead of `System32`; real rerun passed), not by a BOM.
+- `[KNOWN GAP]`: the vendor's script itself is not pinned (trust on first use over HTTPS, from the vendor's hosts only); the scripts verify the binaries they download.

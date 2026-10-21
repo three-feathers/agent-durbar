@@ -21,30 +21,57 @@ export function allowedScriptUrl(script: OfficialScript, url: string): boolean {
   return script.hosts.some((h) => u.hostname === h.host && (!h.pathPrefix || u.pathname.startsWith(h.pathPrefix)));
 }
 
-export interface HttpResponse { status: number; location?: string; body: Buffer }
+export interface HttpResponse { status: number; location?: string; contentType?: string; body: Buffer }
 /** One GET without following redirects (tests hand in a fake). */
 export type HttpGet = (url: string, opts: { timeoutMs: number; maxBytes: number }) => Promise<HttpResponse>;
 
-/** Node's https, no redirects followed, a size cap while reading, a time limit for the whole request. */
-export const httpsGet: HttpGet = (url, { timeoutMs, maxBytes }) =>
-  new Promise((resolve, reject) => {
-    const req = https.get(url, { headers: { 'User-Agent': 'AgentDurbar', Accept: '*/*' } }, (res) => {
-      const status = res.statusCode ?? 0;
-      const location = typeof res.headers.location === 'string' ? res.headers.location : undefined;
-      if (status >= 300 && status < 400) { res.resume(); resolve({ status, location, body: Buffer.alloc(0) }); return; }
-      const parts: Buffer[] = [];
-      let n = 0;
-      res.on('data', (c: Buffer) => {
-        n += c.length;
-        if (n > maxBytes) { req.destroy(new Error('The installer is larger than expected; not downloaded.')); return; }
-        parts.push(c);
+/**
+ * One GET with no redirects followed, a size cap while reading, and two time limits: an idle one (nothing arrives) and a TOTAL
+ * one, so a server that drips bytes cannot keep the download open (review on #393). `get` is `https.get`; a test hands in
+ * `http.get` with a local server, so the real stream code is what is tested.
+ */
+export function makeGet(get: typeof https.get): HttpGet {
+  return (url, { timeoutMs, maxBytes }) =>
+    new Promise((resolve, reject) => {
+      let settled = false;
+      const fail = (e: Error): void => { if (!settled) { settled = true; clearTimeout(total); reject(e); } };
+      const ok = (r: HttpResponse): void => { if (!settled) { settled = true; clearTimeout(total); resolve(r); } };
+      const req = get(url, { headers: { 'User-Agent': 'AgentDurbar', Accept: '*/*' } }, (res) => {
+        const status = res.statusCode ?? 0;
+        const location = typeof res.headers.location === 'string' ? res.headers.location : undefined;
+        const contentType = typeof res.headers['content-type'] === 'string' ? res.headers['content-type'] : undefined;
+        if (status >= 300 && status < 400) { res.resume(); ok({ status, location, contentType, body: Buffer.alloc(0) }); return; }
+        const parts: Buffer[] = [];
+        let n = 0;
+        res.on('data', (c: Buffer) => {
+          n += c.length;
+          // settle first: a fully received response can still emit 'end' after destroy() (found by the local-server test)
+          if (n > maxBytes) { fail(new Error('The installer is larger than expected; not downloaded.')); req.destroy(); return; }
+          parts.push(c);
+        });
+        res.on('end', () => ok({ status, contentType, body: Buffer.concat(parts) }));
+        res.on('error', fail);
       });
-      res.on('end', () => resolve({ status, body: Buffer.concat(parts) }));
-      res.on('error', reject);
+      const tooLong = (): void => { fail(new Error('The download took too long.')); req.destroy(); };
+      const total = setTimeout(tooLong, timeoutMs);
+      req.setTimeout(timeoutMs, tooLong);
+      req.on('error', fail);
     });
-    req.setTimeout(timeoutMs, () => req.destroy(new Error('The download took too long.')));
-    req.on('error', reject);
-  });
+}
+export const httpsGet: HttpGet = makeGet(https.get);
+
+/**
+ * Review on #393: what came back must look like the script, not a web page. A 200 HTML page (a CDN challenge, a login wall)
+ * would otherwise go to bash, where lines such as `word > name` create or truncate files. `.sh` must start with `#!`;
+ * `.ps1` must not start with `<` (after a UTF-8 BOM and whitespace); `text/html` is refused either way.
+ */
+export function looksLikeScript(body: Buffer, ext: '.sh' | '.ps1', contentType?: string): boolean {
+  if (contentType && /^\s*text\/html\b/i.test(contentType)) return false;
+  const head = body.subarray(0, 512).toString('utf8').replace(/^\uFEFF/, '');
+  if (ext === '.sh') return head.startsWith('#!');
+  const first = head.trimStart();
+  return first.length > 0 && !first.startsWith('<');
+}
 
 /** Downloads the script into a new private folder; returns its path and the folder to delete afterwards. */
 export async function downloadScript(script: OfficialScript, ext: '.sh' | '.ps1', deps: { get?: HttpGet; tmpdir?: string } = {}): Promise<{ file: string; dir: string }> {
@@ -65,6 +92,7 @@ export async function downloadScript(script: OfficialScript, ext: '.sh' | '.ps1'
   }
   if (!res || res.status !== 200) throw new Error(`The installer could not be downloaded (HTTP ${res?.status ?? '?'}).`);
   if (res.body.length === 0 || res.body.length > MAX_SCRIPT_BYTES) throw new Error('The installer file was empty or too large.');
+  if (!looksLikeScript(res.body, ext, res.contentType)) throw new Error("What came back is not the vendor's install script (it looks like a web page); nothing was run. Try again later, or use the vendor's page.");
   const dir = fs.mkdtempSync(path.join(deps.tmpdir ?? os.tmpdir(), 'durbar-install-'));
   fs.chmodSync(dir, 0o700);
   const file = path.join(dir, 'install' + ext);

@@ -69,6 +69,7 @@ const api: DurbarApi = {
   onHarnessProgress: (cb) => sub('harness:progress', cb),
   onHarnessDone: (cb) => sub('harness:done', cb),
   onRemoteOff: (cb) => sub('agents:remoteOff', cb),
+  onRemoteUrl: (cb) => sub('agents:remoteUrl', cb),
   exportTheme: (id) => ipcRenderer.invoke('theme:export', id),
   setCap: (id, credits) => ipcRenderer.invoke('agents:setCap', id, credits),
   setPaused: (id, paused) => ipcRenderer.send('agents:setPaused', id, paused),
@@ -121,6 +122,7 @@ const api: DurbarApi = {
   listVsChats: (id) => ipcRenderer.invoke('vschat:list', id),
   readVsChat: (id, key) => ipcRenderer.invoke('vschat:read', id, key),
   openInVSCode: (id) => ipcRenderer.invoke('agents:openInVSCode', id),
+  gitStatus: (id) => ipcRenderer.invoke('agents:gitStatus', id),
   onEvent: (cb) => sub('agent:event', cb),
   onAgentAdded: (cb) => sub('agent:added', cb),
   // spec 052 FR-083, FR-085: the Mac app menu's Settings… item, full screen (the top bar's traffic-light room) and the platform

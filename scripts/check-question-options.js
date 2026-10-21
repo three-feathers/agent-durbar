@@ -10,27 +10,30 @@
  * DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
 const path = require('path');
+const { waits } = require('./driver-helpers');
 const assert = require('assert');
 const OUT = process.env.OUT || require('os').tmpdir();
 const INDEX = path.join(process.cwd(), 'dist', 'renderer', 'index.html');
 module.exports = async (ctx) => {
+  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
   const js = async (c) => { try { return await ctx.js(c); } catch (e) { console.log('JS ERR for', c.slice(0, 90)); throw e; } };
-  const shot = async (name) => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(400); await ctx.shot(path.join(OUT, name)); console.log('[question-options] saved', name); };
+  const shot = async (name) => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(150); await ctx.shot(path.join(OUT, name)); console.log('[question-options] saved', name); };
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     for (const level of ['expert', 'simple']) {
       ctx.win.setContentSize(w, h);
       await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simquestion: 'long' } });
       await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-      await ctx.sleep(2500);
+      await settle();
       await js(`localStorage.setItem('durbar.detail',${JSON.stringify(level)})`); // the level is remembered: reload so the office is drawn in it
       await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simquestion: 'long' } });
       await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-      await ctx.sleep(2500);
+      await settle();
       assert.ok(await js(`document.body.classList.contains('simple')===${level === 'simple'}`), `${w} ${level}: the detail level is on`);
-      const id = await js(`(()=>{for(const d of document.querySelectorAll('#stage .desk[data-id]')){d.click();const c=document.querySelector('#chat .note.question');if(c)return d.dataset.id;const b=document.getElementById('backBtn');if(b)b.click();}return ''})()`);
+      let id = null;
+      for (const end = Date.now() + 8000; !id && Date.now() < end;) { id = await js(`(()=>{for(const d of document.querySelectorAll('#stage .desk[data-id]')){d.click();const c=document.querySelector('#chat .note.question');if(c)return d.dataset.id;const b=document.getElementById('backBtn');if(b)b.click();}return ''})()`); if (!id) await ctx.sleep(100); }
       assert.ok(id, `${w} ${level}: an agent has the question in its chat`);
-      await ctx.sleep(600);
-      await js(`document.querySelector('#chat .note.question').scrollIntoView({block:'center'})`); await ctx.sleep(300);
+      await until(`!!document.querySelector('#chat .note.question .q-opt')`); await settle();
+      await js(`document.querySelector('#chat .note.question').scrollIntoView({block:'center'})`); await settle();
       const r = await js(`(()=>{const card=document.querySelector('#chat .note.question'),cr=card.getBoundingClientRect();
         const opts=[...card.querySelectorAll('.q-opt')].map(b=>{const br=b.getBoundingClientRect();return {label:b.textContent.replace(/^\\u2713\\s*/,''),title:b.title,clipped:b.scrollWidth>b.clientWidth+1||b.scrollHeight>b.clientHeight+1,ellipsis:getComputedStyle(b).textOverflow==='ellipsis',nowrap:getComputedStyle(b).whiteSpace==='nowrap',inside:br.left>=cr.left-0.5&&br.right<=cr.right+0.5,h:br.height}});
         const qs=[...card.querySelectorAll('.q-text')].map(p=>({text:p.textContent,clipped:p.scrollWidth>p.clientWidth+1||p.scrollHeight>p.clientHeight+1,h:p.getBoundingClientRect().height,lh:parseFloat(getComputedStyle(p).lineHeight)}));
@@ -52,12 +55,12 @@ module.exports = async (ctx) => {
       // the inbox row: the question text in full, nothing clipped
       await js(`document.activeElement&&document.activeElement.blur()`);
       ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'I' }); ctx.win.webContents.sendInputEvent({ type: 'char', keyCode: 'I' }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'I' });
-      await ctx.sleep(900);
+      await until(`[...document.querySelectorAll('#inboxDlg .inbox-row .ib-t')].some(p=>/Before I change/.test(p.textContent))`); await settle();
       const ib = await js(`(()=>{const d=document.getElementById('inboxDlg');if(!d)return null;const t=[...d.querySelectorAll('.inbox-row .ib-t')].find(p=>/Before I change/.test(p.textContent));if(!t)return {found:false};
         const br=t.getBoundingClientRect(),rr=t.closest('.inbox-row').getBoundingClientRect();return {found:true,text:t.textContent,clipped:t.scrollWidth>t.clientWidth+1||t.scrollHeight>t.clientHeight+1,inside:br.right<=rr.right+0.5}})()`);
       assert.ok(ib && ib.found, `${w} ${level}: the inbox row shows the question: ${JSON.stringify(ib)}`);
       assert.ok(!ib.clipped && ib.inside && ib.text.includes('migration of the saved preferences'), `${w} ${level}: the inbox question is in full: ${JSON.stringify(ib)}`);
-      await js(`[...document.querySelectorAll('#inboxDlg .inbox-row .ib-t')].find(p=>/Before I change/.test(p.textContent)).scrollIntoView({block:'center'})`); await ctx.sleep(300);
+      await js(`[...document.querySelectorAll('#inboxDlg .inbox-row .ib-t')].find(p=>/Before I change/.test(p.textContent)).scrollIntoView({block:'center'})`); await settle();
       if (level === 'expert') await shot(`052-question-options-inbox-${w}x${h}.png`);
       console.log('[question-options]', w, level, 'ok');
     }

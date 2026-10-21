@@ -8,11 +8,11 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { offeredDescriptors } from '../src/adapters/experimental';
 import { CODEX_CAPABILITIES, CODEX_DESCRIPTOR, CodexAdapter, codexChildEnv, linuxSandboxHint, macSandboxHint } from '../src/adapters/codex';
 import { CodexMapper } from '../src/adapters/codexMap';
 import { CODEX_INITIALIZE_CAPABILITIES, codexProfileArgs, codexWorkspaceRoots } from '../src/adapters/codexModes';
 import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
-import { CODEX_EXPERIMENTAL_DESCRIPTORS } from '../src/adapters/experimentalCodex';
 import type { AgentEvent, PermissionMode } from '../src/adapters/types';
 import { eventProblems } from '../src/adapters/eventguard';
 import { FakeCodexServer } from './fakes/codex-app-server';
@@ -107,7 +107,7 @@ async function main(): Promise<void> {
     assert.strictEqual(CODEX_DESCRIPTOR.capabilities, CODEX_CAPABILITIES);
     assert.ok(CODEX_DESCRIPTOR.create() instanceof CodexAdapter);
     assert.ok(!PRODUCTION_DESCRIPTORS.some((d) => d.id === 'codex'), 'codex is not a production descriptor');
-    assert.deepStrictEqual(CODEX_EXPERIMENTAL_DESCRIPTORS.map((d) => d.id), ['codex']);
+    assert.ok(offeredDescriptors({}).includes(CODEX_DESCRIPTOR), 'codex is offered next to Copilot (FR-135/FR-145)');
   }
 
   // ---- FR-090 / criterion 2: argv, no shell, handshake order

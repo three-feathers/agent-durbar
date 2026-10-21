@@ -138,3 +138,7 @@ The owner set these rules in the team chat on 2026-10-20 and asked for them, and
 - **FR-034** `docs/agent-notes.md` holds what agents learned (dated, with evidence, no secrets or personal data); agents read it before starting and add to it in the PR where they learn something. `CLAUDE.md`, the Copilot pointer, the PR template and `docs/collaboration.md` say the same.
 - Also written down: check spec numbers against remote branches and open PRs, and delete the branch and worktree after a merge (both agreed on 2026-10-18/19, kept only in one agent's memory until now).
 
+### 2026-10-20: read every review and comment before a merge (owner)
+
+- **FR-035** Before any merge, the merging agent reads every review, review thread, line comment and PR comment; a required change in a plain comment counts as *request changes*; nothing is merged while a request, an unresolved thread or an unanswered comment from someone else is open. `scripts/pr-gate.sh <N>` (bash and `gh`, verdict only, never merges) checks it together with the checks, CodeQL and the open alerts on the merge and head refs. `real:` it held #369 on an unanswered comment and passed #390 (2026-10-20). Mirrors: PR template checkbox, `docs/collaboration.md` step 9, `docs/agent-notes.md`.
+

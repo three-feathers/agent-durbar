@@ -147,7 +147,3 @@ export function trustHash(d: { transport: string; command?: string; args?: strin
     .digest('hex');
 }
 
-/** One line for logs and toasts: never contains values of env/headers. */
-export function describeServer(d: McpTrustInfo): string {
-  return d.transport === 'stdio' ? [d.command, ...(d.args ?? [])].join(' ') : `${d.transport} ${d.url ?? ''}`;
-}
