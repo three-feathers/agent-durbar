@@ -239,19 +239,19 @@ async function main(): Promise<void> {
     // main-process files that other features run through: the MCP server and tools, remote control and channels, schedules, the shared ops
     const guarded = [...walk('src/main/mcp'), 'src/main/mcpipc.ts', 'src/main/mcpstore.ts', 'src/main/mcpfiles.ts', 'src/main/remoteops.ts', 'src/main/schedules.ts', 'src/main/agentops.ts', 'src/main/daily.ts', ...walk('src/shared').filter((f) => !/shared[\\/]api\.ts$/.test(f))]; // api.ts only types the bridge
     for (const f of guarded) assert.ok(!DELETE_WORDS.test(read(f)), `${f} has no path to delete a session`);
-    // in src/main only main.ts (the window's IPC) and prevsessions.ts name it
-    for (const f of walk('src/main')) if (!/src\/main\/(main|prevsessions)\.ts$/.test(f.replace(/\\/g, '/'))) assert.ok(!DELETE_WORDS.test(read(f)), `${f} does not reach the delete`);
+    // in src/main only src/main/ipc/previous.ts (the window's IPC, spec 045 FR-060) and prevsessions.ts name it; main.ts only passes the dependencies to it
+    for (const f of walk('src/main')) if (!/src\/main\/(ipc\/previous|prevsessions)\.ts$/.test(f.replace(/\\/g, '/'))) assert.ok(!DELETE_WORDS.test(read(f)), `${f} does not reach the delete`);
     // adapters: only the delete members themselves and the router helper
     for (const f of walk('src/adapters')) if (!/\/(copilot|codex|fake|router|types|capabilities)\.ts$/.test(f.replace(/\\/g, '/'))) assert.ok(!/\bdeleteSession\b/.test(read(f)), `${f} does not delete sessions`);
-    const main = read('src/main/main.ts');
+    const main = read('src/main/ipc/previous.ts');
     assert.strictEqual((main.match(/'sessions:delete'/g) ?? []).length, 1, 'one registration');
     assert.ok(/ipcHandle\('sessions:delete'/.test(main), 'registered through ipcHandle (the sender check)');
     assert.strictEqual((main.match(/prevSessions\.delete\(/g) ?? []).length, 1, 'called from that one handler only');
     assert.ok(!/ipcMain\.(handle|on)\('sessions:/.test(main));
-    // nothing else in main.ts names the delete: every line that does is the single registration (`ipcHandle('sessions:delete', ... prevSessions.delete(`)
+    // nothing else in ipc/previous.ts names the delete: every line that does is the single registration (`ipcHandle('sessions:delete', ... prevSessions.delete(`)
     const namers = main.split(/\r?\n/).filter((l) => /deleteSessionOf|\.deleteSession\(|'sessions:delete'|prevSessions\.delete\(/.test(l.replace(/^\s*\/\/.*$/, '')));
-    assert.strictEqual(namers.length, 1, `one line in main.ts reaches the delete: ${namers.join(' | ')}`);
-    assert.ok(/^ipcHandle\('sessions:delete', \(_e, id: unknown, sessionId: unknown\) => prevSessions\.delete\(id, sessionId\)\);$/.test(namers[0]));
+    assert.strictEqual(namers.length, 1, `one line in ipc/previous.ts reaches the delete: ${namers.join(' | ')}`);
+    assert.ok(/^\s*ipcHandle\('sessions:delete', \(_e, id: unknown, sessionId: unknown\) => prevSessions\.delete\(id, sessionId\)\);$/.test(namers[0]));
     // Known limit (spec 006 R2): this reads source text, so an obfuscated call (a computed property name, a string built at run time) would not be seen.
     // Clarifications Q1: Delete… is offered only on a row of Previous sessions, never on an office card, List-view row, card menu or chat header
     const app = read('src/renderer/app.js');

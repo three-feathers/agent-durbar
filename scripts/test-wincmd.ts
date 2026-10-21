@@ -62,18 +62,22 @@ assert.ok(permissionAllowed('clipboard-sanitized-write'));
 assert.ok(permissionAllowed('notifications'), 'spec 052 FR-059: "needs you" notifications (agent name and a short summary only)');
 for (const p of ['media', 'geolocation', 'clipboard-read', 'openExternal', 'fullscreen', 'midi', 'hid', 'serial', 'usb', 'display-capture', 'pointerLock', 'unknown']) assert.ok(!permissionAllowed(p), `${p} refused`);
 
-// issue #332: every IPC handler goes through ipcHandle / ipcOn (the sender check in src/main/ipcguard.ts); none registers on ipcMain directly
+// issue #332: every IPC handler goes through ipcHandle / ipcOn (the sender check in src/main/ipcguard.ts); none registers on ipcMain directly.
+// Spec 045 FR-060: the handlers live in src/main/ipc/, so that folder is checked too (and so is any folder below src/main).
 {
   const root = path.join(__dirname, '..', '..');
   const mainDir = path.join(root, 'src', 'main');
+  const walk = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.ts') ? [path.join(dir, e.name)] : []));
   const direct: string[] = [];
-  for (const f of fs.readdirSync(mainDir)) {
-    if (!f.endsWith('.ts') || f === 'ipcguard.ts') continue;
-    const src = fs.readFileSync(path.join(mainDir, f), 'utf8');
-    if (/\bipcMain\.(handle|handleOnce|on|once)\(/.test(src)) direct.push(f);
+  for (const f of walk(mainDir)) {
+    if (path.basename(f) === 'ipcguard.ts' && path.dirname(f) === mainDir) continue;
+    const src = fs.readFileSync(f, 'utf8');
+    if (/\bipcMain\.(handle|handleOnce|on|once)\(/.test(src)) direct.push(path.relative(root, f));
   }
   assert.deepStrictEqual(direct, [], 'IPC registered on ipcMain directly, without the sender check: ' + direct.join(', '));
-  assert.ok(/ipcHandle\(/.test(fs.readFileSync(path.join(mainDir, 'main.ts'), 'utf8')), 'main.ts uses ipcHandle');
+  const ipcDir = path.join(mainDir, 'ipc');
+  assert.ok(walk(ipcDir).some((f) => /ipcHandle\(/.test(fs.readFileSync(f, 'utf8'))), 'src/main/ipc uses ipcHandle');
+  assert.ok(walk(ipcDir).length >= 10, 'the handlers are in src/main/ipc');
 }
 
 // tech-debt pass 2026-10-21: one CMD_UNSAFE for detection, harness setup and VS Code (was two copies): every unsafe character refused
