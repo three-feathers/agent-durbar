@@ -76,7 +76,7 @@ function helpers(ctx) {
   /** The data-id of the desk whose name starts with `name` (null when none). */
   const idOf = (name) => js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.querySelector('.name,.nm,h3,b')&&x.innerText.trim().startsWith(${jsLiteral(name)}));return d?d.dataset.id:null})()`);
   /**
-   * A key press. Return also sends the char event that activates a button; `char: 'always'` sends it for every key, `char: 'never'` for none (a shortcut such as Ctrl+K).
+   * A key press. Return and Enter also send the char event that activates a button; `char: 'always'` sends it for every key, `char: 'never'` for none (a shortcut such as Ctrl+K).
    * `pause` lets the key's own handler run; what it changes is waited for by the caller.
    */
   const key = async (keyCode, modifiers, o = {}) => {
@@ -84,7 +84,7 @@ function helpers(ctx) {
     wc().sendInputEvent({ type: 'keyDown', keyCode, modifiers: mods });
     if (o.char === 'never') { /* a shortcut: key down and up only */ }
     else if (o.char === 'always') wc().sendInputEvent({ type: 'char', keyCode, modifiers: mods });
-    else if (keyCode === 'Return') wc().sendInputEvent({ type: 'char', keyCode: '\r', modifiers: mods });
+    else if (keyCode === 'Return' || keyCode === 'Enter') wc().sendInputEvent({ type: 'char', keyCode: '\r', modifiers: mods });
     wc().sendInputEvent({ type: 'keyUp', keyCode, modifiers: mods });
     await ctx.sleep(o.pause === undefined ? 50 : o.pause);
   };

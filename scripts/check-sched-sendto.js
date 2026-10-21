@@ -17,6 +17,7 @@ const LONG = 'Rename public tool find_company and update every call site and the
 module.exports = async (ctx) => {
   const H = helpers(ctx); // spec 008 FR-096/097: shared plumbing, waits for the page instead of a fixed time
   const { until, settle } = H;
+  // stays local, not the shared js: it wraps the page code in try/catch and reports the page's own stack
   const js = async (c) => {
     const r = await ctx.js(`(()=>{try{return {v:(${c})}}catch(e){return {err:String(e&&e.stack||e).slice(0,300)}}})()`);
     if (r.err) throw new Error('renderer: ' + r.err + ' in ' + String(c).slice(0, 80));

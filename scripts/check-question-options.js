@@ -71,7 +71,7 @@ module.exports = async (ctx) => {
       // FR-161: the custom answer box. Close the inbox, then Enter / Shift+Enter / typing / Enter
       await js(`(()=>{const d=document.getElementById('inboxDlg');if(d)d.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));})()`);
       await until(`!document.getElementById('inboxDlg')`); await settle();
-      const key = async (keyCode, modifiers = []) => { const wc = ctx.win.webContents; wc.sendInputEvent({ type: 'keyDown', keyCode, modifiers }); if (keyCode === 'Enter') wc.sendInputEvent({ type: 'char', keyCode: '\r', modifiers }); wc.sendInputEvent({ type: 'keyUp', keyCode, modifiers }); await ctx.sleep(120); };
+      const key = (k, m = []) => H.key(k, m, { pause: 120 });
       const box = (i) => `document.querySelectorAll('#chat .note.question:not(.settled) .q-other')[${i}]`;
       await js(`${box(0)}.scrollIntoView({block:'center'});${box(0)}.focus()`); await settle();
       const a11y = await js(`({tag:${box(0)}.tagName,label:${box(0)}.getAttribute('aria-label'),hint:(document.getElementById(${box(0)}.getAttribute('aria-describedby')||'x')||{}).textContent,keys:${box(0)}.getAttribute('aria-keyshortcuts')})`);

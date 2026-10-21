@@ -105,15 +105,11 @@ module.exports = async (ctx) => {
     /* Ctrl+O in the page (Windows and Linux; on a Mac the File menu owns ⌘O) */
     if (process.platform !== 'darwin') {
       ctx.win.webContents.focus();
-      ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'O', modifiers: ['control'] });
-      ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'O', modifiers: ['control'] });
-      await ctx.sleep(600);
+      await H.key('O', ['control'], { char: 'never', pause: 600 });
       total++;
       const r2 = await rooms();
       if (r2 !== r1 + 1) fail(`Ctrl+O did not add a room (${r1} -> ${r2})`);
-      ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'O', modifiers: ['control', 'shift'] });
-      ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'O', modifiers: ['control', 'shift'] });
-      await ctx.sleep(400);
+      await H.key('O', ['control', 'shift'], { char: 'never', pause: 400 });
       total++;
       if ((await ctx.js('window.__wsClicks')) !== 2) fail('Ctrl+Shift+O did not press + Workspace');
     }

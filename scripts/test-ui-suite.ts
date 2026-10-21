@@ -43,6 +43,7 @@ const dh = require(path.join(ROOT, 'scripts', 'driver-helpers.js'));
   assert.ok(waited[0].includes('>=15'), 'default ready: 15 desks'); assert.ok(events.includes('focus'));
   await H.load({ query: { simfreeze: undefined, sim: '12' }, ready: 'fit', settle: false });
   assert.deepStrictEqual(loads[1][1].query, { sim: '12' }); assert.ok(waited[1].includes('dataset.fit')); assert.strictEqual(sizes.length, 1, 'no size given: the window keeps its size');
+  events.length = 0; await H.key('Enter'); assert.deepStrictEqual(events.map((e) => e.type), ['keyDown', 'char', 'keyUp'], 'Enter: down, char, up'); events.length = 0;
   // load settles by default (the page stopped changing: two equal readings 200 ms apart) and not when asked not to
   codes.length = 0; sleeps.length = 0; await H.load({ w: 800, h: 600 });
   assert.ok(codes.some((c) => c.includes("querySelectorAll('*').length")), 'load waits for the page to settle'); assert.ok(sleeps.includes(200), 'the settling wait sleeps between readings');
@@ -98,10 +99,10 @@ const drivers = fs.readdirSync(path.join(ROOT, 'scripts')).filter((x) => /^(shot
 assert.ok(drivers.length >= 45, `${drivers.length} page drivers are checked`);
 export function checkDriverSource(f: string, t: string): string[] {
   const bad: string[] = [];
-  if (/\.loadFile\(/.test(t)) bad.push(`${f}: loads the page through helpers(ctx).load, not its own loadFile`);
-  if (/#toasts[^'"`\n]*\{display:none/.test(t)) bad.push(`${f}: hides the toasts through helpers(ctx).calm`);
+  if (/\.load(File|URL)\(/.test(t)) bad.push(`${f}: loads the page through helpers(ctx).load, not its own loadFile/loadURL`);
+  if (/#toasts[^'"`\n]*\{\s*display\s*:\s*none/.test(t)) bad.push(`${f}: hides the toasts through helpers(ctx).calm`);
   if (/(function\s+jsLiteral\s*\(|(const|let|var)\s+jsLiteral\s*=)/.test(t)) bad.push(`${f}: jsLiteral comes from driver-helpers`);
-  if (/\{[^}]*\bjsLiteral\b[^}]*\}\s*=\s*require\('\.\/check-office-overlap\.js'\)/.test(t)) bad.push(`${f}: takes jsLiteral from driver-helpers`);
+  if (/\{[^}]*\bjsLiteral\b[^}]*\}\s*=\s*require\(\s*['"`]\.\/check-office-overlap(\.js)?['"`]\s*\)/.test(t)) bad.push(`${f}: takes jsLiteral from driver-helpers`);
   t.split('\n').forEach((line, n) => {
     for (const t of templates(line)) {
       if (!PAGE.test(t.text + t.exprs.join(' '))) continue; // a message, a path, a name: not page code
@@ -117,6 +118,10 @@ const clean = "const { helpers, jsLiteral } = require('./driver-helpers');\nmodu
 assert.deepStrictEqual(checkDriverSource('x.js', clean), []);
 for (const [what, add] of [
   ['a local loadFile', "await ctx.win.loadFile(INDEX, {});"],
+  ['a loadURL', "await ctx.win.loadURL('file://x');"],
+  ['a toast-hiding style with spaces', "s.textContent='#toasts { display : none !important }';"],
+  ['a double-quoted jsLiteral import from the overlap check', "const { jsLiteral } = require(\"./check-office-overlap.js\");"],
+  ['a jsLiteral import from the overlap check without .js', "const { jsLiteral } = require('./check-office-overlap');"],
   ['a toast-hiding style', "s.textContent='#toasts{display:none!important}';"],
   ['a local jsLiteral', "const jsLiteral = (v) => JSON.stringify(v);"],
   ['a function jsLiteral', "function jsLiteral(v) { return v; }"],
