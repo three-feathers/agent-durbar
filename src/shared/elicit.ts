@@ -80,8 +80,8 @@ export function isSecretField(name: string, title?: string, description?: string
 function fieldOf(name: string, p: unknown, required: boolean): ElicitField | undefined {
   if (!NAME_RE.test(name) || !isObj(p)) return undefined;
   const type = own(p, 'type');
-  const title = elicitText(own(p, 'title'), 120) ?? name;
-  const description = elicitText(own(p, 'description'), 300);
+  const title = elicitText(own(p, 'title'), 300) ?? name;
+  const description = elicitText(own(p, 'description'), 1000);
   const base = { name, title, ...(description ? { description } : {}), ...(required ? { required: true } : {}) };
   if (type === 'boolean') {
     const d = own(p, 'default');
@@ -165,7 +165,7 @@ export function elicitHttpsUrl(u: unknown): { url: string; host: string } | unde
 
 /** A vendor's request (message, schema or URL) to what the card shows, or why it must be declined. */
 export function parseElicitRequest(input: { message?: unknown; schema?: unknown; mode?: unknown; url?: unknown; source?: unknown }): { ok: true; request: ElicitRequest; dropped: string[] } | { ok: false; reason: string } {
-  const message = elicitText(input.message, 500) ?? 'An MCP server asks for input.';
+  const message = elicitText(input.message, 2000) ?? 'An MCP server asks for input.'; // spec 052 FR-160: the card shows it all
   const source = elicitText(input.source, 80);
   const base = { message, ...(source ? { source } : {}) };
   if (input.mode === 'url' || (input.url !== undefined && input.schema === undefined)) {

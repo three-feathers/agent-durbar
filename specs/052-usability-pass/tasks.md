@@ -195,3 +195,20 @@
 - [x] T125 Mutation: remove the `.dlg-ov` no-drag rule and see the check fail; screenshots in the scratchpad [FR-138]
 - [x] T126 Docs: CHANGELOG, README "On a Mac" limits, `specs/README.md` row, spec status tags; CI step proposed as a follow-up [FR-138]
 - [x] T129 Grant chips grouped into "Allowed (N)" with a popover, shorter labels, header chips flow; `simgrants=many`; `test-grant-label`; `scripts/check-grant-chips.js` (`npm run check:grant-chips`); mutation run; screenshots [FR-141, issue #367]
+- [x] T130 Raise the question and elicitation text bounds (adapters, shared, renderer); test in `test-claude-adapter` [FR-160]
+- [x] T131 Option descriptions visible in the button; custom answer box grows with its text; answer bar tooltip for a long request [FR-160]
+- [x] T132 Enter in the custom box sends the card (Answer's handler), Shift+Enter a line, empty Enter sends nothing; typing chooses the box; screen reader hint [FR-161]
+- [x] T133 `check-question-options.js` + `simquestion=long`: long texts in full, Enter / empty Enter; run at 1440x900 and 1280x800; screenshots; CHANGELOG, `specs/README.md` [FR-160, FR-161]
+
+## Question in sight, compactions folded (2026-10-21, owner report)
+- [x] T134 Spec delta FR-162/FR-163, plan note [FR-162, FR-163]
+- [x] T135 Answer bar: short question answered in the bar (options, Other box, Skip press the card's controls), Show question, no rebuild while unchanged, zero-height card counts as out of view, recheck on resize [FR-162]
+- [x] T136 `onCompaction`: one line per run of compactions (`compactionFoldText` in `modelswitch.js`, test in `test-modelswitch`), no `isConnected` leftover; `addInfoNote` folds an identical repeat with "(×N)" [FR-163]
+- [x] T137 `simquestion=compact` + `scripts/check-question-visible.js` (`npm run check:question-visible`) at 1440x900 and 1280x800; mutation runs; screenshots; README, CHANGELOG, `specs/README.md` [FR-162, FR-163]
+
+## FR-164: + Folder and + Workspace at the left, and a File menu (2026-10-21, owner request)
+- [x] T138 Spec delta FR-164 (amends FR-105 and FR-083) [FR-164]
+- [x] T139 Top bar: + Folder and + Workspace first after the brand (ids kept, + New menu removed), fit rules, `fitTopbar`, the defaults chip in two spans; Ctrl+O / Ctrl+Shift+O in the page on Windows and Linux; shortcut sheet and palette keys; empty-office and welcome texts [FR-164]
+- [x] T140 macOS File menu (Add Folder… ⌘O, Add VS Code Workspace… ⇧⌘O, Close Window) through `menu:add` → `onMenuAdd` → the same buttons; `test-macos` [FR-164]
+- [x] T141 `scripts/shots-052-addleft.js` in `check:ui`; `check-mac-titlebar.js` without the + New state; `check:office`, `check:geometry`, `check:mac-titlebar`; screenshots at 1440x900 and 1280x800 [FR-164]
+- [x] T142 Docs: README, CHANGELOG, `specs/README.md` row [FR-164]

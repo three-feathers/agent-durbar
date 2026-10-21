@@ -33,8 +33,10 @@ const DRIVERS = [
   { name: 'shots-044-templates' },
   { name: 'shots-051-setup', env: { DURBAR_SIM_MANAGERS: 'winget,brew,npm' } }, // spec 060 FR-002: the per-OS assertion needs a known manager set
   { name: 'shots-052-ux', env: { DURBAR_SIM_KINDS: 'mixed' } },
+  { name: 'shots-052-addleft' }, // FR-164: + Folder / + Workspace leftmost, one row in every theme, the File menu and Ctrl+O
   { name: 'shots-054-remote' },
   { name: 'shots-006-prevmarks' },
+  { name: 'shots-003-mode-back' },
   { name: 'shots-012-signin-chat' },
   { name: 'shots-model', label: 'shots-model 1440', env: { MODEL_W: '1440', MODEL_H: '900' } },
   { name: 'shots-model', label: 'shots-model 1280', env: { MODEL_W: '1280', MODEL_H: '800' } },
@@ -42,6 +44,7 @@ const DRIVERS = [
   { name: 'check-grant-chips' },
   { name: 'check-sched-sendto' },
   { name: 'check-question-options' },
+  { name: 'check-question-visible' },
 ];
 
 /** The screenshot variables the drivers read; all point at one folder. */

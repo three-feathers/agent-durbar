@@ -6,14 +6,16 @@ import type { AdapterRouter } from '../adapters/router';
 import { interruptOf, refusesLive, setCapOf, setMcpEnabledOf, setPermModeOf } from '../adapters/router';
 import { parseCapIn } from '../shared/credits';
 import type { AgentInfo, PermMode } from '../shared/api';
-import { adapterOf } from './folders';
+import { adapterOf, modeForSession } from './folders';
 import type { FolderStore, SavedFolder } from './folders';
 
 export interface OpsDeps {
   agents: Map<string, AgentInfo>;
   router: Pick<AdapterRouter, 'forAgent'>;
-  store?: Pick<FolderStore, 'setPermMode' | 'setMaxAiCredits'>;
+  store?: Pick<FolderStore, 'setPermMode' | 'setMaxAiCredits' | 'setSessionMode'>;
   wsKey(a: AgentInfo): string;
+  /** The id the session is resumed under (Codex: its thread id); its mode is remembered under it (spec 003, 2026-10-21). Default: the agent id. */
+  sessionKey?(a: AgentInfo): string;
   /** Local activity log (spec 052 FR-071): one row per applied mode or limit change. Recorded here, in main, never by the window. */
   log?(a: AgentInfo, decision: 'mode-change' | 'limit-change', action: string): void;
 }
@@ -40,10 +42,27 @@ export function setModeOp(d: OpsDeps, id: unknown, mode: unknown, opts: unknown)
   const was = a.permMode;
   a.permMode = m;
   a.permRestored = undefined; // a fresh choice, no longer "restored"
-  d.store?.setPermMode(d.wsKey(a), m);
+  a.permFrom = undefined;
+  d.store?.setPermMode(d.wsKey(a), m); // the folder's mode: new sessions and sessions with nothing remembered
+  d.store?.setSessionMode(d.wsKey(a), d.sessionKey?.(a) ?? a.id, m); // this session's own mode (spec 003, 2026-10-21)
   const extra = [o.clearGrants === true ? 'session permissions cleared' : '', o.approvePending === true && m === 'allow' ? 'waiting requests approved' : ''].filter(Boolean).join(', ');
   d.log?.(a, 'mode-change', `${MODE_WORDS[validMode(was)]} to ${MODE_WORDS[m]}${extra ? ` (${extra})` : ''}`);
   return { ok: true, mode: m, pending: r.pending };
+}
+
+/**
+ * Spec 003 (2026-10-21): the mode a session resumed from Previous sessions starts in. Its own remembered mode wins over the mode of
+ * the session the list was opened from; the chat and the activity log say so when the two differ (a mode never changes unseen).
+ */
+export function resumeModeOp(saved: Pick<SavedFolder, 'sessionModes'> | undefined, sessionId: string, opener: PermMode): { mode: PermMode; permFrom: 'session' | 'opener'; permRestored?: true; modeWas?: PermMode; logLine?: string } {
+  const sm = modeForSession(saved, [sessionId], opener);
+  const modeWas = sm.mode !== opener ? opener : undefined;
+  return {
+    mode: sm.mode,
+    permFrom: sm.fromSession ? 'session' : 'opener',
+    ...(sm.fromSession && sm.mode === 'allow' ? { permRestored: true as const } : {}),
+    ...(modeWas ? { modeWas, logLine: `Resumed in ${MODE_WORDS[sm.mode]}, the mode last chosen for this session (opened from a session in ${MODE_WORDS[modeWas]})` } : {}),
+  };
 }
 
 /** `agents:setCap`. */
