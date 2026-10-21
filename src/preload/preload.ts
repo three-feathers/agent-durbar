@@ -53,6 +53,7 @@ const api: DurbarApi = {
   removePlace: (id) => ipcRenderer.invoke('settings:removePlace', id),
   setSeriousMode: (on) => ipcRenderer.invoke('settings:setSeriousMode', on),
   setNotifyNeedsMe: (on) => ipcRenderer.invoke('settings:setNotifyNeedsMe', on),
+  setBreakResume: (v) => ipcRenderer.invoke('settings:setBreakResume', v),
   setBadge: (count) => ipcRenderer.invoke('app:setBadge', count),
   focusWindow: () => ipcRenderer.invoke('app:focusWindow'),
   setTheme: (id) => ipcRenderer.invoke('settings:setTheme', id),

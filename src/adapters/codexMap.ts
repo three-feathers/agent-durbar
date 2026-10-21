@@ -12,6 +12,7 @@
  * child-thread events on the parent's connection is unverified, so the adapter keeps `helpers: false` until it is recorded.
  */
 import type { EventBody } from './map';
+import { resetMs } from './usagelimit';
 import { isObj, nonEmptyStr as str } from '../shared/guards';
 
 /** The shape of a JSON-RPC notification as read off the wire (`id` absent). Names mirror the protocol; not a vendor type. */
@@ -49,7 +50,29 @@ function errorKind(info: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * Spec 068: from `account/rateLimits/updated` (`{ rateLimits: { primary, secondary } }`, each `{ usedPercent, windowDurationMins, resetsAt }`,
+ * `read:` the app-server docs, spec 012 research): the window at 100 % that resets last (both full: wait for both), with a fixed label.
+ * Nothing at 100 % -> undefined. `resetsAt` seconds or ms -> ms (resetMs).
+ */
+export function codexRateLimit(params: unknown, now = Date.now()): { resetsAt?: number; label: string } | undefined {
+  const rl = own(params, 'rateLimits');
+  let best: { resetsAt?: number; label: string } | undefined;
+  for (const k of ['primary', 'secondary']) {
+    const w = own(rl, k);
+    const used = num(own(w, 'usedPercent'));
+    if (used === undefined || used < 100) continue;
+    const mins = num(own(w, 'windowDurationMins'));
+    const label = mins === 300 ? '5-hour window' : mins === 10080 ? 'weekly limit' : 'usage limit';
+    const resetsAt = resetMs(own(w, 'resetsAt'), now);
+    if (!best || (resetsAt ?? 0) > (best.resetsAt ?? 0)) best = { ...(resetsAt ? { resetsAt } : {}), label };
+  }
+  return best;
+}
+
 export class CodexMapper {
+  /** Spec 068: the latest used-up window seen in `account/rateLimits/updated`. */
+  private rateLimit: { resetsAt?: number; label: string } | undefined;
   /** Thread id of the main agent (from `thread/started`); events without a `threadId` belong to it too. */
   private main: string | undefined;
   /** Child thread id -> id of the sub-agent item that named it. */
@@ -116,6 +139,11 @@ export class CodexMapper {
     const method = ownStr(n, 'method');
     const params = own(n, 'params');
     if (method === undefined || !isObj(params)) return;
+
+    if (method === 'account/rateLimits/updated') {
+      this.rateLimit = codexRateLimit(params); // spec 068: the window that is used up and when it resets, for a later UsageLimitExceeded
+      return;
+    }
 
     if (method === 'thread/started') {
       const thread = own(params, 'thread');
@@ -193,6 +221,12 @@ export class CodexMapper {
       const err = own(turn, 'error');
       const kind = errorKind(own(err, 'codexErrorInfo'));
       const message = ownStr(err, 'message');
+      if (kind === 'UsageLimitExceeded' && !agentId) {
+        // spec 068 FR-002: the plan's usage window is used up: a coffee break (with the reset time from the last rate-limit update), not an error
+        const rl = this.rateLimit;
+        this.emit({ type: 'usageLimit', scope: 'plan', ...(rl?.resetsAt ? { resetsAt: rl.resetsAt } : {}), source: `Codex ${rl?.label ?? 'usage limit'}` });
+        return this.emit({ type: 'status', status: 'idle', intent: 'Usage limit reached' });
+      }
       const text = kind === 'UsageLimitExceeded' ? 'Codex usage limit reached' : kind && message ? `${kind}: ${message}` : (kind ?? message ?? 'Turn failed');
       return this.emit({ type: 'status', status: 'error', intent: capIntent(text), agentId });
     }

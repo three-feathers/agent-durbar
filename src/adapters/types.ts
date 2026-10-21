@@ -296,6 +296,22 @@ export interface LimitEvent extends BaseEvent {
 }
 
 /**
+ * Spec 068 FR-001: a usage limit of the agent app stopped or blocked the turn (a plan window, a quota or a rate limit), so the
+ * agent goes on a coffee break. Never a vendor field: `source` is a short fixed label chosen by the adapter ("5-hour window"),
+ * never the provider's message, account or plan name. `resetsAt` (epoch ms) only when the agent app said when it resets;
+ * `estimated` when it said the time is a guess; `paid` when going on after the reset may lead to paid usage (the default asks first).
+ * Durbar's own spending limit is the `limit` event, not this one.
+ */
+export interface UsageLimitEvent extends BaseEvent {
+  type: 'usageLimit';
+  scope: 'plan' | 'quota' | 'rate';
+  resetsAt?: number;
+  estimated?: boolean;
+  paid?: boolean;
+  source: string;
+}
+
+/**
  * The session's display title from the runtime (spec 002 delta 2026-10-18, issue #126): a title made from the first prompt,
  * an auto summary or a name given elsewhere. Top-level agent only, already cleaned (one line, ≤ 80 characters). User text:
  * shown, never put in tool-usage labels or usage totals.
@@ -422,6 +438,7 @@ export type AgentEvent =
   | CompactionEvent
   | McpStatusEvent
   | LimitEvent
+  | UsageLimitEvent
   | TitleEvent;
 
 /** Spec 012 FR-156: the answer of `verifySignIn`. */

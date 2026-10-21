@@ -2,7 +2,7 @@
 
 **Feature Branch**: `068-coffee-break` (amends 011/012 limit display, 024 places, 034 agent health, 052 wording and notifications)
 **Created**: 2026-10-21
-**Status**: Clarified 2026-10-21 (the owner accepted Q1-Q4 with the recommended defaults); plan and tasks written; being built on this branch.
+**Status**: **Built** 2026-10-21 (unit tests, simulator driver and screenshots at 1440x900 and 1280x800, `check:office`); not run against a real usage limit (see *Implementation status*). Clarified the same day (the owner accepted Q1-Q4 with the recommended defaults).
 **Input**: Owner (Vikram, Telegram 2026-10-21): "Let's add a capability for coffee break when tokens are exhausted".
 
 ## Clarifications
@@ -110,7 +110,7 @@ As the user who set a spending limit, I see the agent on a coffee break "until y
   - Durbar's own cap: the existing `limit exhausted` event; no new event (FR-010).
   - Not a break: `billing_not_configured`, authentication, policy, context-window limits, and any limit the agent app recovered from on its own.
 - **FR-003** **Coffee corner.** A built-in place `coffee` in the lobby (spec 024), with its own icon (a cup) and the scene word `place-coffee` (default "Coffee corner"), **always shown** while the lobby is shown (Q3); it is not a mapping choice in Settings > Places. An agent on a break stands there; its desk shows the empty chair and a cup. The visit lasts for the whole break (not the 600 ms / 2 s tool rules); a tool walk never moves an agent that is on a break.
-- **FR-004** **State and words.** A break is shown as its own attention state, **Coffee break**, listed with *Waiting* (it is something the user may act on), never as *Error*. Card and List sub-label: "Coffee break — resumes at HH:MM" / "— resumes Fri 09:00" / "— resumes 1 Nov" / "— the limit resets later" / "— until you raise the limit". The tooltip names the source ("Claude Code: 5-hour window") and whether the time is an estimate.
+- **FR-004** **State and words.** A break is shown as its own attention state, **Coffee break**, listed with *Waiting* (it is something the user may act on), never as *Error*. Card and List sub-label: "Coffee break — resumes at HH:MM" / "— resumes Fri 9:00" / "— resumes 1 Nov" / "— the limit resets later" / "— until you raise the limit". The tooltip names the source ("Claude Code: 5-hour window") and whether the time is an estimate.
 - **FR-005** **Figure and room tone.** On a break the figure has a calm look (holding a cup, eyes open); no faint, ambulance, dizzy or impatient trouble while on a break; the room tone stays `calm` for that agent (amends spec 034 `troubleOf` and `roomAlertOf`). Durbar's own spending limit also shows as a coffee break (Q2), so the faint look is no longer used.
 - **FR-006** **When a break ends** (Settings > Usage, per user, stored in `durbar-settings.json` and validated in main): **Resume by itself when it costs nothing extra** (default) or **Always ask me**. With the default, plan and rate windows resume by themselves and a quota that may lead to paid usage (`paid` in FR-001) asks (Q1). Stored in `durbar-settings.json` only when it is *Always ask me* (`breakResume: 'ask'`).
 - **FR-007** **Resume rules** (safety, constitution III and IV):
@@ -121,7 +121,7 @@ As the user who set a spending limit, I see the agent on a coffee break "until y
   - At most one automatic resume per break; a new limit within 2 minutes of a resume ends automatic resumes for that agent until the user acts.
   - Agents of the same agent app resume one at a time, 20 s apart, in desk order; when one hits the limit again, the others' automatic resume is cancelled and they show **Resume?**.
   - The timer is a pure state machine with an injected clock (`src/renderer/coffeebreak.js`, tested in Node like `mood.js`), driven by the window's existing timers; it is kept in memory only: no break or resume is written to disk. A reset that passed more than 5 minutes before the timer saw it (the computer slept) asks instead of resuming.
-- **FR-008** **Scheduled prompts during a break.** A schedule due while its agent is on a break is skipped and recorded as "skipped: on a coffee break" (spec 044 busy rule); it is not queued.
+- **FR-008** **Scheduled prompts during a break.** A schedule due while its agent is on a break is skipped by the spec 044 busy rule and recorded as "skipped: the agent was busy" (no new outcome word); it is not queued.
 - **FR-009** **Actions on a break**: **Try now** (sends the resume message now), **Stay on break** (cancels the automatic resume), and, for Durbar's limit, today's raise/set/remove/cancel. The chat composer stays usable; sending a message ends the break.
 - **FR-010** **Durbar's own cap** keeps the spec 011 flow and events unchanged; only its presentation changes (coffee corner, words in FR-004) once Q2 is answered. It never resumes by itself.
 - **FR-011** **Notifications.** Going on a break adds one Needs you item and one OS notification when the window is in the background (spec 052), worded "<Name> is on a coffee break until 14:30". An automatic resume adds a quiet chat note and no notification; **Ask me** adds an inbox item and one notification at the reset time.
@@ -161,6 +161,27 @@ As the user who set a spending limit, I see the agent on a coffee break "until y
 - Copilot's `auto_mode_switch.requested` (offer to switch to auto on a rate limit) is not handled by Durbar today; handling it is out of scope here (spec 030 owns model switches), so such an offer is not answered and the runtime's own default applies.
 - Out of scope: an office-wide or daily budget across sessions; predicting a limit before it is hit (from `utilization`); sounds; helpers walking.
 
+## Implementation status (2026-10-21)
+
+- FR-001 `[IMPLEMENTED]` (test: coffeebreak) `UsageLimitEvent` in `src/adapters/types.ts`, checked by `eventguard.ts`.
+- FR-002 `[IMPLEMENTED]` (test: coffeebreak, fixtures) `claudeUsageLimit` (`claudeMap.ts`), `codexRateLimit` + `UsageLimitExceeded` (`codexMap.ts`), `copilotUsageLimit` (`map.ts`) and `copilotQuotaReset` with one `account.getQuota` read per quota break (`copilot.ts`, `usagelimit.ts`). Each turn that hit the limit ends as idle "Usage limit reached", not as an error. `[KNOWN GAP]` `read:` only: the field names and their place come from SDK typings and docs (spec 012 research); no real session was driven into a limit (it spends a whole window or quota). The getQuota read is not covered by a test with the real SDK.
+- FR-003 `[IMPLEMENTED]` (test: places; sim: `scripts/shots-068-coffee.js`; check:office) The coffee corner is a pinned visit (`createVisits().pin/unpin`) and the last lobby tile, never a mapping choice ("Coffee corner" is a reserved custom-place name). To keep the other places at two slots or more, it is a narrow tile with two slots of its own: icon and name where the lobby is at least 1300 px wide, icon only below (the name stays in its tooltip and label). At 1280x800 the other tiles go from three slots to two (`+N` beyond). The desk keeps an empty chair and draws a cup; the figure in the corner holds a cup.
+- FR-004 `[IMPLEMENTED]` (sim:) State *Waiting*, label *Coffee break* (theme word), text "Coffee break — resumes at 4:24 PM" / "— the limit resets at …" / "— the limit resets later" / "— until you raise the limit" / "— the limit has reset. Resume?". Times use the system locale (`Intl.DateTimeFormat`, numeric hour).
+- FR-005 `[IMPLEMENTED]` (test: mood) No trouble drawing on a break; the room stays calm. The faint look is no longer shown (Durbar's cap is a break too).
+- FR-006 `[IMPLEMENTED]` (test: coffeebreak; sim:) Settings > *Coffee break*: "Resume by itself when the limit resets" (on by default; off = always ask). Stored only when off (`breakResume: 'ask'`). The setting applies to breaks that start after it is changed.
+- FR-007 `[IMPLEMENTED]` (test: coffeebreak, fake clock; sim:) `src/renderer/coffeebreak.js`: reset + 60 s, one at a time per agent app 20 s apart, re-hit within 2 min stops automatic resumes for the app, late by more than 5 min asks, a reminder after 1 h without a reset time, never for Durbar's cap. A resume sends the fixed sentence once through the normal send path (the session's mode and caps).
+- FR-008 `[IMPLEMENTED]` (test: coffeebreak) Main's schedule busy check also asks `AgentStateTracker.onBreak`; the simulator's busy rule too.
+- FR-009 `[IMPLEMENTED]` (sim:) Try now, Stay on break; Resume, Not now once it asks; a message, Stop or the end of the session end the break.
+- FR-010 `[IMPLEMENTED]` (sim: Omar) The spec 011 flow is unchanged; the card and figure show a coffee break.
+- FR-011 `[IMPLEMENTED]` (sim: inbox) The chat card is a Needs you item, so the inbox row ("is on a coffee break") and the OS notification come from spec 052. A new card (ask at the reset, the 1-hour reminder) is a new item. `[KNOWN GAP]` the notification's title stays "<Name> needs you" (its body is the coffee sentence), and OS notifications were not seen on any OS (as in spec 052).
+- FR-012 `[IMPLEMENTED]` (sim:) Scene words `place-coffee` and `coffee-break` in `CLEAN_WORDS`, every built-in theme (Break room, Snack bar / Snack break, Chai stall / Chai break, The Tea Room / Tea break, Chashitsu / Tea break) and `GEN_WORDS`. Simple mode leaves out the limit's name on the card.
+- FR-013 `[IMPLEMENTED]` (check:office; sim: 15 and sparse rosters at 1440x900 and 1280x800) No overlap or office scroll; tile text 12.5 px.
+- FR-014 `[IMPLEMENTED]` (sim:) The corner's label: "Coffee corner: Tomas (until 4:24 PM), Omar (until you raise the limit), Rosa (until the limit resets)".
+- FR-015 `[IMPLEMENTED]` (read:) Epoch ms and `Intl`; no OS scheduler or shell. Not run on Windows or macOS.
+- FR-016 `[IMPLEMENTED]` (test: coffeebreak) `source` is a fixed label per adapter; unknown window names never reach the UI.
+- FR-017 `[IMPLEMENTED]` (sim:) `simbreak=N`: Tomas a 5-hour window resetting in N s, Rosa a premium quota with no reset time (paid), Omar his 30 AIU cap; a send before the reset hits the limit again; the window's waits shrink (2 s margin) while `simbreak` is in the URL.
+- FR-018 `[IMPLEMENTED]` `scripts/test-coffeebreak.ts` (`npm run test:coffeebreak`), `test-places`, `test-mood`, `test-mcp-agentstate`, `scripts/shots-068-coffee.js`, `check:office`.
+
 ## Changes
 
-(none yet)
+- **2026-10-21, built** (this branch). Decisions taken while building, within the clarified answers: the coffee corner tile is narrow (FR-003, above); a scheduled run on a break is recorded as busy (FR-008); the MCP read state (spec 041) shows *Waiting, Coffee break* for both kinds of limit.

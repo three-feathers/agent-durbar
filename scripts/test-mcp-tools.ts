@@ -371,7 +371,7 @@ async function main(): Promise<void> {
       tracker.noteSend('ag-1');
       tracker.setPaused('ag-0', true);
       const a = (await call('durbar_list_agents')).data.agents;
-      assert.deepStrictEqual([a[2].state, a[2].subLabel], ['Waiting', 'Limit reached']);
+      assert.deepStrictEqual([a[2].state, a[2].subLabel], ['Waiting', 'Coffee break']);
       assert.deepStrictEqual([a[1].state, a[1].subLabel], ['Thinking', null]);
       assert.deepStrictEqual([a[0].state, a[0].subLabel], ['Paused', null]);
     }

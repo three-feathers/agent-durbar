@@ -12,7 +12,8 @@
  *   idle (Aborted)  app.js:1656-1661   Idle; worked flag cleared
  *   idle            app.js:1662-1663   Done when the turn did work, else Idle
  *   error / stopped app.js:1667, 1673   Error / Idle, Ended
- *   limit           app.js:1679 (exhausted: Waiting, Limit reached), 1550-1551 (resolved: cancel = Idle; else Working)
+ *   limit           app.js:1679 (exhausted: Waiting, Coffee break, spec 068), 1550-1551 (resolved: cancel = Idle; else Working)
+ *   usageLimit      spec 068 startCoffee: Waiting, Coffee break; the turn's closing idle/error keeps it; working, thinking, stopped, Aborted or a send end it
  *   question        app.js:1683 (asked: Waiting), 1542 (answered or cancelled: Working, only if waiting)
  *   thinking        app.js:1688  Thinking
  *   output          app.js:1689  Working
@@ -39,7 +40,7 @@ export interface AgentStateView {
   paused: boolean;
 }
 
-interface Entry { state: OfficeState; label: string | null; paused: boolean; worked: boolean; limit: boolean; limitId?: string; question: boolean; questionId?: string }
+interface Entry { state: OfficeState; label: string | null; paused: boolean; worked: boolean; limit: boolean; limitId?: string; question: boolean; questionId?: string; /** spec 068: on a coffee break (a usage limit of the agent app) */ coffee?: boolean }
 
 export class AgentStateTracker {
   private readonly agents = new Map<string, Entry>();
@@ -75,6 +76,7 @@ export class AgentStateTracker {
     const a = this.agents.get(id);
     if (!a) return;
     a.worked = true;
+    a.coffee = false; // spec 068: a message ends the coffee break
     a.state = 'thinking';
     a.label = null;
   }
@@ -85,6 +87,12 @@ export class AgentStateTracker {
     if (!a) return;
     a.state = 'error';
     a.label = null;
+  }
+
+  /** Spec 068 FR-008: on a coffee break (a usage limit of the agent app, or Durbar's own cap): a scheduled run is skipped, never sent. */
+  onBreak(id: string): boolean {
+    const a = this.agents.get(id);
+    return !!a && (!!a.coffee || a.limit);
   }
 
   get(id: string): AgentStateView | undefined {
@@ -103,6 +111,9 @@ export class AgentStateTracker {
     const set = (state: OfficeState, label: string | null): void => { a.state = state; a.label = label; };
     switch (e.type) {
       case 'status':
+        // spec 068 (app.js onLiveEvent): the turn that hit a usage limit ends quietly; the coffee break stays until the agent works again
+        if (a.coffee && ((e.status === 'idle' && e.intent !== 'Aborted') || e.status === 'error')) { a.worked = false; return; }
+        if (e.status === 'working' || e.status === 'stopped' || e.status === 'idle') a.coffee = false;
         if (e.status === 'working') {
           a.worked = true;
           if (a.state !== 'working' && a.state !== 'thinking') set('working', null);
@@ -133,12 +144,18 @@ export class AgentStateTracker {
           if (a.limit && a.limitId === e.requestId) return; // ids compared as the renderer does: undefined equals undefined
           a.limit = true;
           a.limitId = e.requestId;
-          set('waiting', 'Limit reached');
+          set('waiting', 'Coffee break'); // spec 068 Q2: Durbar's own spending limit is a coffee break too
         } else if (e.phase === 'resolved' && a.limit && a.limitId === e.requestId) {
           a.limit = false;
           a.limitId = undefined;
           if ((e.action || 'add') === 'cancel') { a.worked = false; set('idle', null); } else set('working', null);
         }
+        return;
+      case 'usageLimit':
+        // spec 068 FR-004: a usage limit of the agent app: Waiting, Coffee break (app.js startCoffee)
+        a.coffee = true;
+        a.worked = false;
+        set('waiting', 'Coffee break');
         return;
       case 'question':
         if (e.phase === 'asked') {
@@ -153,13 +170,16 @@ export class AgentStateTracker {
         }
         return;
       case 'thinking':
+        a.coffee = false;
         set('thinking', null);
         return;
       case 'output':
+        if (a.coffee || a.limit) return; // spec 068: text after a usage limit (or at Durbar's cap) does not end the coffee break
         set('working', null);
         return;
       case 'toolCall':
         // app.js:1693: the sub-agent task tools are the sub-agent card's business ('task' and 'agent', app.js:1375)
+        if (a.coffee || a.limit) return; // spec 068: the coffee break keeps its word
         if (e.phase === 'start' && e.tool !== 'task' && e.tool !== 'agent') set(a.state === 'thinking' ? 'working' : a.state, null);
         return;
       default:

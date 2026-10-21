@@ -45,6 +45,7 @@ const DRIVERS = [
   { name: 'check-sched-sendto' },
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
+  { name: 'shots-068-coffee' }, // spec 068: coffee break (simbreak=8 in its own query)
 ];
 
 /** The screenshot variables the drivers read; all point at one folder. */

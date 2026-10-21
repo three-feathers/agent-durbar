@@ -99,8 +99,12 @@
        extras, every server seen in tool events this run and any already mapped. */
     /* Agent mood (spec 034 FR-004): Serious mode turns the monster, ambulance and the other drawings off */
     const moodSec=X.bridge.setSeriousMode&&X.isSerious?`<section class="scr-sec" aria-labelledby="moodH"><h3 id="moodH">Agent mood</h3>
-        <p class="scr-note">Agent figures get heavier from 70% of their context window and turn into a grumpy monster above 90% (a hint to start a fresh session). Trouble gets a drawing too: an ambulance when a session errors (one at a time), a faint at the spending limit, an agent tapping the desk after 60 s waiting for you, and dizzy stars after 3 failed tool calls in a row. The text and percentages never change. Serious mode turns every drawing off.</p>
+        <p class="scr-note">Agent figures get heavier from 70% of their context window and turn into a grumpy monster above 90% (a hint to start a fresh session). Trouble gets a drawing too: an ambulance when a session errors (one at a time), a coffee break when a usage or spending limit is used up, an agent tapping the desk after 60 s waiting for you, and dizzy stars after 3 failed tool calls in a row. The text and percentages never change. Serious mode turns every drawing off.</p>
         <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Serious mode</b> <small>(no mood drawings)</small>${sw(!!X.isSerious(),'Serious mode: no mood drawings on the agent figures','id="seriousSw"')}</span><span class="scr-note small" id="seriousMsg" role="status"></span></div></section>`:'';
+    /* spec 068 FR-006: what happens when a coffee break ends (a usage limit of the agent app has reset) */
+    const breakSec=X.bridge.setBreakResume&&X.breakResume?`<section class="scr-sec" aria-labelledby="brkH"><h3 id="brkH">Coffee break</h3>
+        <p class="scr-note">When an agent's usage limit is used up, it waits in the coffee corner instead of showing an error. When the agent app says when the limit resets, the agent comes back then and sends one message to continue where it stopped, but only when that costs nothing extra (a plan or rate window). It never goes past the spending limit you set, never resumes after a restart, and never checks on its own whether a limit has reset. A limit that may lead to paid usage always asks first.</p>
+        <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Resume by itself when the limit resets</b> <small>(off: always ask me)</small>${sw(X.breakResume()==='auto','Resume by itself when the limit resets (off: always ask me)','id="breakSw"')}</span><span class="scr-note small" id="breakMsg" role="status"></span></div></section>`:'';
     /* spec 052 FR-059: an OS notification when an agent needs you while Durbar is in the background (on for real sessions, off in the demo) */
     const notifySec=X.bridge.setNotifyNeedsMe&&X.isNotify?`<section class="scr-sec" aria-labelledby="ntfH"><h3 id="ntfH">Notifications</h3>
         <p class="scr-note">While Agent Durbar is in the background, one notification tells you when an agent asks for permission, asks a question, reaches its spending limit or hits an error. It shows only the agent's name and a short summary of the request, never file contents. The window title and the app icon show how many need you.</p>
@@ -171,7 +175,7 @@
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${detailSec}${notSec}${themeSec}${capSec}${moodSec}${notifySec}${schedSec}${floorsSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${detailSec}${notSec}${themeSec}${capSec}${moodSec}${breakSec}${notifySec}${schedSec}${floorsSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         <p class="scr-note">Every agent gets the servers of your <b>Copilot CLI list</b>, the one global list.</p>
@@ -439,6 +443,13 @@
       const on=ss.getAttribute('aria-checked')!=='true';
       let res=null; try{res=await X.bridge.setSeriousMode(on);}catch(err){res=null;}
       if(res&&res.ok){X.setSerious(!!res.seriousMode);ss.classList.toggle('on',!!res.seriousMode);ss.setAttribute('aria-checked',res.seriousMode?'true':'false');const m=$('seriousMsg');if(m)m.textContent=res.seriousMode?'Serious mode is on: no mood drawings.':'Serious mode is off.';}
+      return;
+    }
+    const bs=e.target.closest('#breakSw');
+    if(bs&&X.bridge.setBreakResume){
+      const want=bs.getAttribute('aria-checked')==='true'?'ask':'auto';
+      let res=null; try{res=await X.bridge.setBreakResume(want);}catch(err){res=null;}
+      if(res&&res.ok){const v=res.breakResume==='ask'?'ask':'auto';if(X.setBreakResume)X.setBreakResume(v);bs.classList.toggle('on',v==='auto');bs.setAttribute('aria-checked',v==='auto'?'true':'false');const m=$('breakMsg');if(m)m.textContent=v==='auto'?'Agents come back by themselves when it costs nothing extra.':'Agents ask you before going on after a coffee break.';}
       return;
     }
     const ns=e.target.closest('#notifySw');

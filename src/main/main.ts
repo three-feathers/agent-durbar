@@ -596,9 +596,11 @@ const scheduleAgent = (s: { folder: string; target?: { session: string } }): Age
   return a && wsKey(a) === s.folder ? a : undefined;
 };
 const busyStatus = (id: string): boolean => ['working', 'needs-permission'].includes(lastStatus.get(id) ?? '');
+/** Spec 068 FR-008: a schedule skips an agent on a coffee break as busy (never queued). */
+const busyOrBreak = (id: string): boolean => busyStatus(id) || agentState.onBreak(id);
 const scheduleDeps = (file: string): SchedulerDeps => ({
   now: () => Date.now(),
-  isBusy: (folder, session) => (session ? busyStatus(session) : [...agents.values()].some((x) => wsKey(x) === folder && busyStatus(x.id))),
+  isBusy: (folder, session) => (session ? busyOrBreak(session) : [...agents.values()].some((x) => wsKey(x) === folder && busyOrBreak(x.id))),
   hasSession: (session) => agents.has(session),
   capUnitOf: (s) => {
     const a = scheduleAgent(s);
@@ -682,10 +684,12 @@ ipcHandle('usage:reset', () => {
   usageStore?.reset();
   return { ok: true, doc: usageStore?.view() };
 });
-ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits, placeMap: settingsStore?.placeMap ?? {}, customPlaces: settingsStore?.customPlaces ?? [], seriousMode: settingsStore?.seriousMode ?? false, notifyNeedsMe: settingsStore?.notifyNeedsMe ?? true, theme: runTheme ?? settingsStore?.theme ?? 'clean-office', about: aboutView(app.getVersion()) }));
+ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore?.defaultMaxAiCredits, placeMap: settingsStore?.placeMap ?? {}, customPlaces: settingsStore?.customPlaces ?? [], seriousMode: settingsStore?.seriousMode ?? false, notifyNeedsMe: settingsStore?.notifyNeedsMe ?? true, breakResume: settingsStore?.breakResume ?? 'auto', theme: runTheme ?? settingsStore?.theme ?? 'clean-office', about: aboutView(app.getVersion()) }));
 ipcHandle('settings:setSeriousMode', (_e, on: unknown) => ({ ok: true, seriousMode: settingsStore?.setSeriousMode(on) ?? false }));
 /* spec 052 FR-059: OS notifications when an agent needs you and the window is in the background (on unless turned off) */
 ipcHandle('settings:setNotifyNeedsMe', (_e, on: unknown) => ({ ok: true, notifyNeedsMe: settingsStore?.setNotifyNeedsMe(on) ?? true }));
+/* spec 068 FR-006: what happens when a coffee break ends ('auto' or 'ask'; anything else keeps the setting) */
+ipcHandle('settings:setBreakResume', (_e, v: unknown) => ({ ok: true, breakResume: settingsStore?.setBreakResume(v) ?? 'auto' }));
 /* spec 052 FR-059: the "needs you" count on the app icon (macOS, Linux where the desktop supports it), a taskbar flash on Windows */
 let badgeCount = 0;
 ipcHandle('app:setBadge', (_e, count: unknown) => {
