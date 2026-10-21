@@ -51,3 +51,26 @@ specs/010-simulator/
 | Permission/attachment/resume flows on the simulator | README + screenshots | `sim:` recorded, not re-run |
 | Driver phases `real`, `ask`, `ro`, `att` | README (credits) | `real:` recorded, not re-run |
 | macOS/Windows | none | untested |
+
+## 2026-10-22 delta: the simulator never reaches a real agent app (FR-022..FR-027)
+
+**Where the check lives.** Two places, both in main, both default-deny:
+
+```text
+src/main/simguard.ts   pure: simulatorOn(dev) | SIM_OPEN_CHANNELS {channel: reason} | SIM_REFUSAL(channel)
+                       simGuardDescriptors(descs, on) -> create() returns blockedAdapter(d) (no real create call)
+src/main/ipcguard.ts   const SIM = simulatorOn(devEnv(process.env, app.isPackaged))   (module load: before any handler runs)
+                       ipcHandle: sender check -> if SIM && !simChannelOpen(channel) throw SIM_REFUSAL -> handler
+                       ipcOn:     sender check -> if SIM && !open: drop (one console.warn per channel)
+src/main/main.ts       createRegistry(simGuardDescriptors([...PRODUCTION, ...offered], simulatorOn(dev)))
+                       whenReady: scheduler.start() and DURBAR_OPEN only when !simulatorOn(dev)
+                       driver ctx: createdAdapters() = router.created().map({id, simBlocked})
+```
+
+**Why default deny, not a list of spending channels.** Handlers reach agent apps through helpers (`stopTurnOp`, `prevSessions.delete`, `explain`, `remoteOps`), so a text scan for "spending" handlers misses some (a first scan found 40 of the about 45). The simulator's window never calls main except `harness:plans` (`sim.ts`), so denying everything else costs nothing and covers channels added later, such as PR #505's `profiles:generate`.
+
+**Why also the registry.** IPC is not the only way in: restored folders, the scheduler, `DURBAR_OPEN` and a driver's `addMany` call adapters directly. The stand-in adapter makes any such path fail loudly with the same message instead of starting a CLI. The stand-in is a `Proxy` over `{ id, displayName, capabilities, isLive, onEvent, dispose }`; any other member is a function that throws, `then` is undefined (it is not a thenable), and `debug` / `writeGuard` can be set (the router sets them).
+
+**Tests.** `test:simguard` runs the real `ipcguard.js` under a stand-in `electron` module (`Module._load` hook), so the decision that ships is the one tested; `check:sim-guard` proves the wiring through the real preload and contextBridge in Electron.
+
+**Constitution.** IV (no credits in tests): enforced by main instead of trusted to the renderer. III (safe by default): a packaged build never has `DURBAR_SIM` (FR-018), so users are unaffected. VI (parity): no platform code; the driver runs on all three OSes in `ui-platforms.yml`.
