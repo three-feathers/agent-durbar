@@ -48,7 +48,7 @@ import { navigationAllowed, permissionAllowed } from './hardening';
 import type { ChatFileRef } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
 import { AgentStateTracker } from './mcp/agentstate';
-import { maskMcpEvent } from './mcpmask';
+import { maskMcpEvent, maskMcpHistory } from './mcpmask';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { UsageStore } from './usagestore';
 import { AgentTrustStore } from './agenttrust';
@@ -139,8 +139,9 @@ const toRenderer = (channel: string, payload: unknown): void => {
 
 /** An MCP status event carries server error text: masked here, once, before the window sees it (spec 019 FR-021). */
 /** Spec 019 FR-022: the masked copy of an `mcp` event, built once per event; every path out of main (window, debug sink) uses it. */
-const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' ? mcp.secretValuesFor(e.sessionId) : []);
+const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' || (e.type === 'toolCall' && e.phase !== 'start' && e.mcpServer) ? mcp.secretValuesFor(e.sessionId) : []);
 router.onEvent((e) => toRenderer('agent:event', outward(e)));
+const maskHistory = <H extends { items: { type: string; failed?: boolean; output?: string }[] }>(id: string, h: H): H => maskMcpHistory(h, mcp.secretValuesFor(id)); // FR-067: resume replies skip outward()
 /** Open MCP elicitations (spec 012 FR-151): main checks each answer against the fields it was asked with. */
 const elicitTracker = createElicitTracker();
 router.onEvent((e) => elicitTracker.onEvent(e));
@@ -581,9 +582,9 @@ const renameSessionOpFor = (openIds: () => ReadonlySet<string>) => renameOp({
 // Stores created in whenReady, and state that changes, are passed as getters so a handler reads them when it runs.
 const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity });
 registerAppIpc({ getSinceAway: () => sinceAway, clearSinceAway: () => { sinceAway = null; }, getWin: () => win });
-registerAgentsIpc({ agents, router, agentState, opsDeps, remoteOps, mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession });
+registerAgentsIpc({ agents, router, agentState, opsDeps, remoteOps, mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory });
 registerAttachmentsIpc({ dev, pickedFiles, getStageDir, sizeOf });
-registerPreviousIpc({ renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs });
+registerPreviousIpc({ renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });
 registerSchedulesIpc({ getScheduler: () => scheduler, getFolderStore: () => folderStore });
 registerUsageIpc({ agents, getUsageStore: () => usageStore, getUsageTotalsStore: () => usageTotalsStore, usageLabel });
