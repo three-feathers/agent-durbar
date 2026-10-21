@@ -21,6 +21,18 @@ assert.ok(/dev\.DURBAR_DRIVER \|\| dev\.DURBAR_SHOT \? \{ enableLargerThanScreen
 const wf = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ui-platforms.yml'), 'utf8');
 for (const os of ['ubuntu-latest', 'macos-latest', 'windows-latest']) assert.ok(wf.includes(os), `the workflow runs on ${os}`);
 for (const step of ['check-theme-geometry.js', 'check-office-overlap.js', 'check-mac-titlebar.js', 'ui-suite.js']) assert.ok(wf.includes(step), `the workflow runs ${step}`);
+// spec 008 FR-100: three parts per OS cover the whole office layout (2 halves) and every driver; the only part left out is Linux's
+// second half on pull requests and pushes, where ci.yml's office shards run the same check in the same event
+assert.ok(/part: \[layout-1, layout-2, drivers\]/.test(wf), 'three parts per OS');
+assert.ok(/OFFICE_SHARDS: '2'/.test(wf) && /OFFICE_SHARD: \$\{\{ matrix\.part == 'layout-2' && '1' \|\| '0' \}\}/.test(wf), 'the two layout parts are the two office halves');
+const excl = (/exclude: (.*)/.exec(wf) || [])[1] || '';
+assert.ok(excl.includes(`github.event_name == 'pull_request' || github.event_name == 'push'`) && excl.includes('"os":"ubuntu-latest","part":"layout-2"') && (excl.match(/"os"/g) || []).length === 1, 'only Linux layout 2/2, only on PR and push, is left out');
+const ci = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
+const shardJobs = (ci.match(/- \{ shard: \d+, index: \d+ \}/g) || []).length;
+assert.ok(shardJobs >= 2 && new RegExp(`OFFICE_SHARDS: ${shardJobs}\\n`).test(ci) && ci.includes(`shard }}/${shardJobs}`), 'ci.yml: one office shard job per shard (FR-099)');
+assert.ok(wf.includes("OFFICE_HERE: ${{ (matrix.os != 'ubuntu-latest' || (github.event_name != 'pull_request' && github.event_name != 'push'))") && ci.includes('needs.changes.outputs.code') && /^ {2}push:\n {4}branches: \[main\]/m.test(ci), 'Linux skips the office layout here only for the events where ci.yml runs it');
+// FR-098: every workflow with a required check also runs on merge queue entries
+for (const f of ['ci.yml', 'spec-kit.yml']) assert.ok(/^ {2}merge_group:/m.test(fs.readFileSync(path.join(ROOT, '.github', 'workflows', f), 'utf8')), `${f} runs on merge_group`);
 // ---- scripts/driver-helpers.js (spec 008 FR-097): the shared plumbing behaves as the drivers' own copies did ----
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const dh = require(path.join(ROOT, 'scripts', 'driver-helpers.js'));

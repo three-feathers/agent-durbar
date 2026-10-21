@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.10 tag)
 
+- CI only: the required checks also run on merge queue entries (ready for a merge queue on `main`, an owner setting), the office layout runs in 6 shards instead of 4, and the UI checks on each OS run as three parallel jobs (the macOS one took 15 min alone); every check still runs (spec 008 FR-098..FR-102, T095).
 - **macOS and Windows hand-checks recorded** (spec 001 T024, spec 012 T070; issues #10, #72): the owner uses Durbar daily on macOS and looked at it on a real Windows PC with a colleague on 2026-10-21 (findings #467). Not a scripted check; Codex's sandbox on Windows and macOS stays a known gap. `real:` owner report.
 - **Remote control** (spec 054, issue #298): the owner drove a real Copilot remote session on 2026-10-21 (Copilot Pro). The Claude Code channels (Telegram) wizard is out of scope for now and kept as idea #485. `real:` owner report.
 - **A folder's own agent setup is shown and used** (spec 061). Hooks, permission rules and MCP servers from a folder's Claude Code, Codex, Copilot and `.mcp.json` files are listed in full when the folder is added, with secrets hidden and broad rules marked. They apply only after you accept them; hooks and broad allow rules (every `Bash` rule included) need an explicit tick, and *Explain with AI* describes each hook. The mode chip shows *+ folder rules*, and a changed file asks again.

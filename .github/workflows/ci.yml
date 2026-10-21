@@ -4,6 +4,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  # spec 008 FR-098: the merge queue runs the required checks on each queue entry (treated like a push to main: everything runs)
+  merge_group:
   # spec 008 FR-031: the full layout matrix in every theme runs only on demand:
   #   gh workflow run ci.yml --ref <branch> -f full_themes=true
   workflow_dispatch:
@@ -23,7 +25,7 @@ concurrency:
 
 jobs:
   # Spec 008 delta 2026-10-19 (faster CI): a pull request that only touches docs, specs or Markdown skips the build, test and
-  # office jobs (a skipped required job counts as passed). Pushes to main always run everything.
+  # office jobs (a skipped required job counts as passed). Pushes to main and merge queue entries (FR-098) always run everything.
   changes:
     name: What changed
     runs-on: ubuntu-latest
@@ -81,7 +83,7 @@ jobs:
       - run: npm run pack:dir
 
   office-shard:
-    name: Office layout shard ${{ matrix.shard }}/4
+    name: Office layout shard ${{ matrix.shard }}/6
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -94,6 +96,8 @@ jobs:
           - { shard: 2, index: 1 }
           - { shard: 3, index: 2 }
           - { shard: 4, index: 3 }
+          - { shard: 5, index: 4 }
+          - { shard: 6, index: 5 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -101,11 +105,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Simulator only (no Copilot login, no AI credits). Runs Electron under xvfb; each shard takes every 4th unit of the check.
+      # Simulator only (no Copilot login, no AI credits). Runs Electron under xvfb; each shard takes every 6th unit of the check
+      # (spec 008 FR-099: 6 shards, was 4; measured 2.3-3.3 min per shard at 4).
       - run: sudo apt-get update && sudo apt-get install -y xvfb
       - run: npm run check:office
         env:
-          OFFICE_SHARDS: 4
+          OFFICE_SHARDS: 6
           OFFICE_SHARD: ${{ matrix.index }}
 
   # Spec 008 FR-031: a theme may not change sizes, so the full layout check above runs in Clean Office only, and this job proves
