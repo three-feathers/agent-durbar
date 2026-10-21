@@ -122,7 +122,7 @@ module.exports = async (ctx) => {
       await openMore('prev-1'); await js(`document.querySelector('#modeMenu [data-pact="delete"]').click()`); await ctx.sleep(300);
       await js(`[...document.querySelectorAll('#modeDlg .dbtn .btn')].find(x=>x.textContent==='Delete').click()`); await ctx.sleep(900);
       const d = await js(`({t:(document.getElementById('mdT')||{}).textContent,b:(document.getElementById('mdB')||{}).textContent,l:[...document.querySelectorAll('#mdL li')].map(x=>x.textContent),btn:[...document.querySelectorAll('#modeDlg .dbtn .btn')].map(x=>x.textContent)})`);
-      assert.deepStrictEqual(d, { t: 'This session is still in the office', b: 'This session is still in the office. End it and remove it from the office first.', l: lines, btn: expectBtns }, `refusal dialog (${variant})`);
+      assert.deepStrictEqual(d, { t: 'This session is still in the office', b: 'End it and remove it from the office first, then delete it here.', l: lines, btn: expectBtns }, `refusal dialog (${variant})`);
       assert.ok((await rows()).some((x) => x.k === 'prev-1'), 'the row stays');
       await shot(variant === 'inoffice' ? 'refused' : 'refused-only', w, h);
       await js(`document.querySelector('#modeDlg [data-cancel]').click()`); await ctx.sleep(200);
