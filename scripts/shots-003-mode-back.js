@@ -15,21 +15,14 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { waits } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 
 module.exports = async (ctx) => {
-  const { settle } = waits(ctx);
-  const js = (c) => ctx.js(c);
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { settle, js } = H;
   const log = (...a) => console.log('[003-back]', ...a);
-  const hideToasts = () => js(`(()=>{if(!document.getElementById('shotsNoToast')){const s=document.createElement('style');s.id='shotsNoToast';s.textContent='#toasts{display:none!important}';document.head.appendChild(s);}})()`);
-  const load = async (w, h, query) => {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', ...query } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
-    await settle();
-  };
+  const load = (w, h, query) => H.load({ w, h, query });
   const openAda = async () => {
     await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>/Ada/.test(x.innerText));d.click();})()`);
     await ctx.waitFor(`!!document.getElementById('prevBtn')&&!document.getElementById('prevBtn').hidden`, 8000);
@@ -40,7 +33,7 @@ module.exports = async (ctx) => {
   const lastNote = () => js(`(()=>{const n=[...document.querySelectorAll('#chat .note.modeback')].pop();return n?n.innerText.replace(/\\s+/g,' '):''})()`);
   const resume = async (key) => {
     const before = await js(`document.querySelectorAll('#stage .desk[data-id]').length`);
-    await js(`document.querySelector('#prevLists .prev-row[data-pk="${key}"] [data-pv="resume"]').click()`);
+    await js(`document.querySelector(${jsLiteral(`#prevLists .prev-row[data-pk="${key}"] [data-pv="resume"]`)}).click()`);
     await ctx.waitFor(`!!document.querySelector('#chat .note.modeback')&&document.querySelectorAll('#stage .desk[data-id]').length>=${before}`, 8000);
     await settle();
   };
@@ -57,7 +50,7 @@ module.exports = async (ctx) => {
     assert.ok(c && /Allow all/.test(c.text) && /restored/.test(c.text), `the resumed session is in Allow all, marked restored (${c && c.text})`);
     assert.ok(/the mode you last chose for this session/.test(c.title), 'the chip tooltip says where it came from');
     assert.ok(/Permissions: Allow all, the mode you last chose for this session\. The session you opened it from is in Read-only\./.test(note), `the chat note says it (${note})`);
-    await hideToasts();
+    await H.calm();
     await ctx.sleep(200);
     await ctx.shot(path.join(OUT, `003-mode-back-${w}x${h}.png`));
     if (w === 1440) {

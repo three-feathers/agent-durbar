@@ -15,15 +15,14 @@
  */
 const assert = require('assert');
 const path = require('path');
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
+const { helpers, jsLiteral, INDEX } = require('./driver-helpers');
 const SECONDS = Number(process.env.PERF_SECONDS || 20);
 const SPEED = String(process.env.PERF_SPEED || 10);
 
 module.exports = async (ctx) => {
-  const js = (c) => ctx.js(c);
-  ctx.win.setContentSize(1440, 900);
-  await ctx.win.loadFile(INDEX, { query: { sim: '15', simspeed: SPEED } });
-  await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { js } = H;
+  await H.load({ w: 1440, h: 900, query: { simspeed: SPEED, simfreeze: undefined }, settle: false }); // not frozen: the page never stops changing, so no settling wait
   await ctx.sleep(1500);
 
   // instruments: counters around the renderer's own global functions, a frame loop, long tasks and the office's mutations
@@ -37,7 +36,7 @@ module.exports = async (ctx) => {
   })()`);
   await ctx.sleep(SECONDS * 1000);
   const office = await js(`(()=>{const P=window.__perf;P.stop=true;const f=P.frames.slice(5).sort((a,b)=>a-b),q=p=>f.length?Math.round(f[Math.min(f.length-1,Math.floor(p*f.length))]*10)/10:0;
-    return {seconds:${SECONDS},speed:${SPEED},frameP50:q(.5),frameP95:q(.95),frameMax:q(1),longTasks:P.long.length,longMs:Math.round(P.long.reduce((s,x)=>s+x,0)),
+    return {seconds:${SECONDS},speed:${jsLiteral(Number(SPEED))},frameP50:q(.5),frameP95:q(.95),frameMax:q(1),longTasks:P.long.length,longMs:Math.round(P.long.reduce((s,x)=>s+x,0)),
       getComputedStylePerSec:Math.round(P.gcs/${SECONDS}),elementsAddedPerSec:Math.round(P.added/${SECONDS}),elementsRemovedPerSec:Math.round(P.removed/${SECONDS}),
       svgSubtreesAddedPerSec:Math.round(P.avatarsAdded/${SECONDS}*10)/10,domGrowth:document.getElementsByTagName('*').length-P.nodes0}})()`);
 

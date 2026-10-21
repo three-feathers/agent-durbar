@@ -11,19 +11,15 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { waits } = require('./driver-helpers');
+const { helpers } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 
 module.exports = async (ctx) => {
-  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
-  const js = (c) => ctx.js(c);
+  const H = helpers(ctx); // spec 008 FR-096/097: shared plumbing, waits for the page instead of a fixed time
+  const { until, settle, js } = H;
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1' } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
-    await settle();
-    await js(`(()=>{const s=document.createElement('style');s.textContent='#toasts{display:none!important}';document.head.appendChild(s);return true})()`);
+    await H.load({ w, h });
+    await H.calm();
     await js(`document.getElementById('foldersBtn').click()`); await until(`!!document.querySelector('[data-fp="sched"]')`);
     await js(`document.querySelector('[data-fp="sched"]').click()`); await until(`!!document.getElementById('scTpl')`);
     assert.ok(await js(`!!document.getElementById('scTpl')`), 'the template picker is there');

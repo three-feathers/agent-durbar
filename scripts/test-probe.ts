@@ -1,7 +1,7 @@
 /**
- * The office layout search's trial helpers (spec 001 FR-028): `svgHollow` keeps every outer <svg> tag and drops what is inside,
+ * The office layout search's trial helpers (spec 001 FR-033): `svgHollow` keeps every outer <svg> tag and drops what is inside,
  * `styleSplit` separates style attributes, and the app and styles keep the conditions the in-place update relies on.
- * `npm run test:probe`. No credits spent. The layouts themselves are compared in the browser (spec 001 FR-028 verification).
+ * `npm run test:probe`. No credits spent. The layouts themselves are compared in the browser (spec 001 FR-033 verification).
  */
 import assert from 'assert';
 import fs from 'fs';

@@ -1,4 +1,4 @@
-/* The office layout search (spec 001 FR-028) measures trial layouts in the hidden #probe. Two pure helpers make a trial cheaper
+/* The office layout search (spec 001 FR-033) measures trial layouts in the hidden #probe. Two pure helpers make a trial cheaper
    without changing any box it measures. No DOM. In the page: window.DurbarProbe; in Node (tests): module.exports.
    - svgHollow(html): keeps every outer <svg ...> tag with its attributes and drops what is inside it (nested <svg> included).
      An <svg>'s box comes from its own attributes and CSS, never from its children, so every measured box stays the same, and

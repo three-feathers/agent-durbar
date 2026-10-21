@@ -25,22 +25,17 @@
  * Crops of single desks (device pixels) go to 034-crop-<state>.png for a close look at the drawings.
  */
 const fs = require('fs');
-const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
 const path = require('path');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const assert = require('assert');
 const OUT = process.env.SHOTS_034 || '/tmp';
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 const SIZES = [[1440, 900], [1280, 800]];
 
 module.exports = async (ctx) => {
-  const js = (code) => ctx.js(code);
-  const shot = async (name, w, h) => { await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`); await ctx.sleep(300); /* the simulator's start-up toast would cover the office */ await ctx.shot(path.join(OUT, `034-${name}-${w}x${h}.png`)); console.log('[034] saved', name, w, h); };
-  const load = async (w, h, extra) => {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', ...(extra || {}) } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
-    await ctx.sleep(1500);
-  };
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { js } = H;
+  const shot = (name, w, h) => H.shot(path.join(OUT, `034-${name}-${w}x${h}.png`), { prep: 'toasts', delay: 300, tag: '034', what: `${name} ${w} ${h}` }); /* the simulator's start-up toast would cover the office */
+  const load = (w, h, extra) => H.load({ w, h, query: extra }); // was a fixed 1500 ms; now waits for the page to stop changing (FR-096)
   /* every main desk: name, away, mood (from data-sig), labels, visible text, scene box size */
   const desks = () => js(`[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>{const sv=d.querySelector('svg.scene'),sig=(sv&&sv.dataset.sig)||'',m=/\\|(normal|heavy|monster)(\\w*)$/.exec(sig),b=sv?sv.getBoundingClientRect():{width:0,height:0};
     return {id:d.dataset.id,name:d.querySelector('.name').textContent.trim(),room:((d.closest('.room')||document).querySelector('.room-name')||{textContent:''}).textContent.trim(),away:d.classList.contains('is-away'),st:(/is-(\\w+)/.exec(d.className)||[])[1],
