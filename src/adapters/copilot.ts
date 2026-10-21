@@ -597,6 +597,11 @@ export class CopilotAdapter implements AgentAdapter {
       // `.github/copilot/settings.json`) unasked, even in Read-only. Accepted ones come through `hookDirectories` instead.
       enableFileHooks: false,
       ...(hookDir ? { hookDirectories: [hookDir] } : {}),
+      // spec 058 FR-070 (owner Q12 B): the runtime keeps an MCP server's OAuth sign-in in the OS keychain (types.d.ts: "shared
+      // across sessions"); the SDK default "in-memory" drops it when the session ends. The runtime's own store: Durbar never
+      // reads, lists or clears it. On create AND resume (the same config), so the FR-158 reconnect re-resume keeps it; not in
+      // `oneShotConfig` or `renameResumeConfig` (no MCP there).
+      mcpOAuthTokenStorage: 'persistent' as const,
     };
     this.debug?.(`mcp: servers=[${Object.keys(options.mcpServers ?? {}).join(',')}] disabled=[${(options.disabledMcpServers ?? []).join(',')}]`);
     let session: CopilotSession;
