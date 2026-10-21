@@ -6,9 +6,9 @@ import { cut, maskSecretUrl, redact, secretFlag } from '../shared/redact';
 export const MCP_ERROR_MAX_CHARS = 300;
 
 /** The secret values a session was given (env and header values of its extra servers), longest first; under 4 characters are skipped since they would mangle every string. */
-export function mcpSecretValues(servers: Record<string, McpServerSpec> | undefined): string[] {
+export function mcpSecretValues(...lists: (Record<string, McpServerSpec> | undefined)[]): string[] {
   const out = new Set<string>();
-  for (const s of Object.values(servers ?? {})) for (const v of [...Object.values(s.env ?? {}), ...Object.values(s.headers ?? {})]) if (typeof v === 'string' && v.length >= 4) out.add(v);
+  for (const s of lists.flatMap((l) => Object.values(l ?? {}))) for (const v of [...Object.values(s.env ?? {}), ...Object.values(s.headers ?? {})]) if (typeof v === 'string' && v.length >= 4) out.add(v);
   return [...out].sort((a, b) => b.length - a.length);
 }
 
