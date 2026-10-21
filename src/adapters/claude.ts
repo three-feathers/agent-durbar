@@ -11,6 +11,7 @@
  * - Settings files are never loaded (`--setting-sources ""`, Q8); the folder's `CLAUDE.md` (with `@` imports inside the
  *   folder) goes in as an appended system prompt instead (owner decision, review of #160).
  */
+import { claudeSettingsJson } from '../shared/foldersetup';
 import { isAuthError, markAuthError } from './autherrors';
 import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
@@ -177,6 +178,10 @@ export interface ClaudeLaunch {
   addDirs?: string[];
   /** FR-150: what is left of the session's dollar cap (`--max-budget-usd`). */
   maxBudgetUsd?: number;
+  /** Spec 061 FR-004 (research R1): the folder's accepted hooks and rules as one composed `--settings` JSON; never logged. */
+  settingsJson?: string;
+  /** Spec 061 (Q3): the accepted folder allow rules, which pass Durbar's Read-only for the calls they cover. */
+  folderAllow?: string[];
   /** Spec 059 FR-007: the user's name for the session; the CLI stores it as the session title (`--name`, also with `--resume`). */
   name?: string;
 }
@@ -221,7 +226,7 @@ export function claudeNameOk(name: unknown): boolean {
 
 /** The CLI argv (FR-111). Mode flags come from `claudeOptionsFor`, so an unknown mode gets Read-only. */
 export function claudeArgs(i: ClaudeLaunch): string[] {
-  const o = claudeOptionsFor(i.mode);
+  const o = claudeOptionsFor(i.mode, i.folderAllow);
   const a = ['-p', '--output-format', 'stream-json', '--verbose', '--input-format', 'stream-json', '--permission-prompt-tool', 'stdio', '--include-partial-messages'];
   a.push('--permission-mode', o.permissionMode);
   if (o.allowDangerouslySkipPermissions) a.push('--allow-dangerously-skip-permissions');
@@ -230,6 +235,7 @@ export function claudeArgs(i: ClaudeLaunch): string[] {
   a.push('--setting-sources', o.settingSources.join(','));
   if (o.strictMcpConfig) a.push('--strict-mcp-config');
   if (i.mcpConfig) a.push('--mcp-config', i.mcpConfig);
+  if (i.settingsJson) a.push('--settings', i.settingsJson);
   if (claudeModelFlag(i.model)) a.push('--model', i.model as string);
   if (i.effort && CLAUDE_EFFORTS.has(i.effort)) a.push('--effort', i.effort);
   if (i.appendSystemPrompt) a.push('--append-system-prompt', i.appendSystemPrompt);
@@ -818,6 +824,8 @@ export class ClaudeAdapter implements AgentAdapter {
       effort: o.reasoningEffort,
       ...(s.agent ? { agent: { name: s.agent.profile.id, json: agentsArg(s.agent) } } : {}),
       mcpConfig: mcpConfigOf(o.mcpServers, o.disabledMcpServers),
+      settingsJson: claudeSettingsJson(o.folderSetup),
+      ...(o.folderSetup?.rules?.allow.length ? { folderAllow: o.folderSetup.rules.allow } : {}),
       appendSystemPrompt: (this.deps.claudeMd ?? claudeMdPrompt)(s.cwd),
       ...(s.roots.length > 1 ? { addDirs: s.roots.filter((r) => r !== s.cwd) } : {}),
       ...(s.capUsd !== undefined ? { maxBudgetUsd: s.capUsd - s.spentUsd } : {}),
@@ -1092,7 +1100,7 @@ export class ClaudeAdapter implements AgentAdapter {
     const current = s.broker.getMode();
     const launched = s.launchedMode ?? current;
     if (current === 'read-only' || launched === 'read-only') {
-      const deny = preToolUseDecision('read-only', tool, toolInput, s.roots);
+      const deny = preToolUseDecision('read-only', tool, toolInput, s.roots, undefined, s.options.folderSetup?.rules?.allow);
       if (!deny) return {};
       if (current !== 'read-only') deny.hookSpecificOutput.permissionDecisionReason += ' The new permission mode applies from your next message.';
       return { ...deny };

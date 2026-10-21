@@ -98,7 +98,7 @@ cancelMcpSignIn?(sessionId: string, name: string): Promise<void>; // optional; C
 
 | Event | Field | Notes |
 | --- | --- | --- |
-| `toolCall` (`phase: 'failed'`, `mcpServer` set) | `mcpAuth?: true` | FR-063; set by the adapter from `isMcpAuthChallenge`; the event guard drops it elsewhere |
+| `toolCall` (`phase: 'failed'`, `mcpServer` set) | `mcpAuth?: true` | FR-063; set by the adapter from `isMcpAuthChallenge`; the event guard reports it as a problem anywhere else (T093) |
 | `mcp` | server `status: 'needs-auth'`, `errorClass: 'auth'` | FR-060; `errorClass` is the T010 field |
 
 ### IPC shapes (`src/shared/api.ts`)
