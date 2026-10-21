@@ -83,3 +83,16 @@ sessions:delete(agentId, sessionId)  -> { ok } | { ok:false, error, code?: 'in-o
 **Constitution check.** I (adapters as plug-ins): delete behind `AgentAdapter`, renderer sees a boolean. III (safe, no secrets): ids only in the store; Durbar deletes no files; confirmation with Cancel focused; refusal for open sessions; IPC takes ids, re-checked against the folder's list; the window reads the flag from the capabilities it already gets (`capsFor`, `app.js:2947`). IV (no credits): fake adapter, simulator; no real delete in tests. V (calm UI): one ⋯ per row, fits 1280x800. VI (parity): no paths, no shell. VIII (honest limits): real deletes, concurrent use by another process and macOS/Windows are `[KNOWN GAP]` until run.
 
 **Verification plan.** `npm run typecheck && npm run build && npm test` (`test:folders`, `test:sessionsearch`, `test:prevsessions`, `test:activity`, adapter contract, Copilot/Codex adapter unit tests on fakes); `npm run check:office`; `scripts/shots-006-prevmarks.js` at 1440x900 and 1280x800.
+
+## Changes 2026-10-21: Previous sessions as a collapsible section (owner request, FR-033..FR-037)
+
+**Renderer only** (`src/renderer/app.js`, `styles.css`). No IPC, store, adapter or simulator data change.
+
+- Markup: `#prevBtn` leaves `.ph .actions`. `#prev` (region "Previous sessions") becomes `.prev-bar` (one `<button id="prevBtn" class="prev-toggle" data-pv="toggle" aria-expanded aria-controls="prevPanel">` with `ICON('chev')`, `.prev-l` label, `.prev-c` count pill, `.prev-sub` breakdown) plus `#prevPanel.prev-body` (search and lists, rendered only when open, as today).
+- `prevButton(a)` fills the row instead of the header button; `renderPrev` keeps `#prev` visible when FR-034 says so and toggles only the body. `prevVisible(st)` decides FR-034.
+- Preference: `prevPref()` / `setPrevPref(open)` on `localStorage['durbar.prevOpen']` in try/catch, like `durbar.detail`. `initPrev` applies a saved choice (and marks the state touched so FR-002's auto-open does not override it); the toggle saves it.
+- Shortcut: in the global keydown handler, `KEYS.modDown(e,IS_MAC)&&e.shiftKey&&e.code==='KeyH'` → `togglePrevByKey()`; a palette item and a keyboard sheet row. Focus as FR-036.
+- CSS: `.prev` loses its top padding and shadow when collapsed; `.prev-bar` is a full-width row aligned to the header's 1240px column; the chevron rotates on `[aria-expanded="true"]` like `.think-toggle`. Tokens only.
+- Drivers: keep `#prevBtn` so click paths still work; assertions on the text "Previous (N)" move to the count pill; `shots-052-ux` no longer needs to exclude `#prevBtn` from the header actions.
+
+**Constitution.** I: no adapter specifics. III: the preference holds no session data. V: one slim row (32px), T4/T5 text, no overlap at 1280x800/1440x900 (`check:office`, driver fit checks). VI: no platform code; ⇧⌘H through `DurbarKeys`. VIII: macOS, Windows and screen readers not checked (spec `[KNOWN GAP]`).
