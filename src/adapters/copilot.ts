@@ -153,9 +153,9 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   history: true,
   mcpStatus: true,
   mcpToggle: true,
-  mcpStart: 'session', // spec 058 FR-010
+  mcpStart: 'next-message', // spec 058 FR-010 (real 2026-10-21, runtime 1.0.22: the servers start with the first message, not at create or resume)
   mcpToggleApplies: 'live', // spec 019 (real: mcp.enable/disable)
-  mcpRestart: true, // spec 058 FR-012: rpc.mcp.restartServer (@experimental), else disable then enable (read: SDK 1.0.22; not checked on a real account)
+  mcpRestart: true, // spec 058 FR-012: rpc.mcp.restartServer (@experimental; real 2026-10-21, runtime 1.0.22), else disable then enable (fallback read: only)
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
   modelSwitch: Object.freeze({ verified: true, contextTier: true }), // spec 030 Phase 3 (real 2026-10-20, Copilot Pro): switch, effort, long tier, confirmation and compact-and-switch (T041, T044, T045)
   planMode: true, // spec 066 FR-003: mode.set plan + onExitPlanModeRequest (@experimental)
@@ -1179,7 +1179,8 @@ export class CopilotAdapter implements AgentAdapter {
       } catch (err) {
         // SDK 1.0.22 always has the generated method (`dist/generated/rpc.js`): an older runtime answers that it does not know it
         // (JSON-RPC -32601, as the SDK's own `connect` check reads it). Only then fall back; any other error is the restart's own.
-        if (!isMethodNotFound(err)) throw err;
+        // real 2026-10-21: a failed restart reads "Request session.mcp.restartServer failed with message: <the server's reason>"
+        if (!isMethodNotFound(err)) throw new Error(sdkErrorText(err));
       }
     }
     await mcp.disable({ serverName: name });
@@ -1240,6 +1241,12 @@ export const COPILOT_DESCRIPTOR: AdapterDescriptor = {
   capabilities: COPILOT_CAPABILITIES,
   create: () => new CopilotAdapter(),
 };
+
+/** Spec 058 FR-012: an SDK request error without its "Request <method> failed with message: " prefix (the runtime's own reason). */
+export function sdkErrorText(err: unknown): string {
+  const m = err instanceof Error ? err.message : String(err);
+  return m.replace(/^Request \S+ failed with message: /, '') || m;
+}
 
 /** Spec 058 FR-012: the runtime does not know an RPC method (JSON-RPC MethodNotFound, -32601, or its "Unhandled method" text). */
 export function isMethodNotFound(err: unknown): boolean {

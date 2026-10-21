@@ -172,8 +172,8 @@ and nothing is opened; simulator shows the button and a toast.
   followed by the escaped token. A switch the adapter applies with the next message shows "Off from your next message" / "On from your
   next message" until the runtime reports the new state.
 - **FR-002** Under the list, **one line says how servers start for this agent app**, chosen from the adapter's normalized start mode
-  (FR-010): *with the session* ("Copilot starts these servers when the session starts: when the folder is added, when you open a
-  restored chat, or with the first message"), *with the next message* ("Claude Code starts these servers with your next message"), and
+  (FR-010): *with the session* ("Codex starts these servers when the session starts"), *with the next message* ("Copilot / Claude Code
+  starts these servers with your next message"; Copilot real 2026-10-21, *Changes*), and
   the switch timing (*at once* or *from your next message*). The current claim "a switch applies right away" is shown only when the
   adapter applies it live.
 - **FR-003** The dialog explains the two scopes in one sentence each: **This session** (the switch and Restart; kept until the app is
@@ -197,7 +197,8 @@ and nothing is opened; simulator shows the button and a toast.
 ### Adapter surface (adapter-neutral, constitution II)
 
 - **FR-010** `AdapterCapabilities` gains optional, plain fields (missing = today's behaviour):
-  - `mcpStart?: 'session' | 'next-message'`: when servers start (Copilot and Codex `session`, Claude `next-message`);
+  - `mcpStart?: 'session' | 'next-message'`: when servers start (Codex `session`; Copilot and Claude `next-message`: real 2026-10-21,
+    the Copilot runtime starts them with the first message, *Changes*);
   - `mcpToggleApplies?: 'live' | 'next-message'`: when the switch takes effect (Copilot and Claude `live`, Codex `next-message`);
   - `mcpRestart?: boolean`: `restartMcpServer()` exists (Copilot and Claude true, Codex false);
   - `mcpLogs?: 'session' | 'per-server'`: `mcpLogFolder()` exists (Copilot `session`, Claude `per-server`, Codex `session`;
@@ -304,6 +305,8 @@ and nothing is opened; simulator shows the button and a toast.
   at that time, Q9), Copilot `restartServer`, Claude `mcp_reconnect`, the log folders,
   `errorClassification` values and resume with a changed server set are `read:` only; the README and the dialog's *More* text say
   "not checked on a real account yet" for Restart and the log folder.
+  Copilot part done 2026-10-21 (T060, real, Linux; *Changes*): `restartServer`, one `errorClassification` value (`os_not_found`),
+  resume with a changed server set, `~/.copilot/logs` exists. Claude `mcp_reconnect`, Codex, macOS and Windows stay `read:`.
 - **FR-051** `[KNOWN GAP]` Whether a server's stderr reaches any of the three log folders is not documented; the dialog says "the
   agent app's log folder" and never promises server output.
 - **FR-052** `[KNOWN GAP]` MCP sign-in (OAuth) stays out of scope (spec 019): "Needs sign-in" explains it and points to the agent app's
@@ -602,3 +605,35 @@ Five small fixes found in review of the #349 slice, made in the same PR. No new 
   `endSessionOp` in `src/main/agentops.ts`, shared by `agents:end`, `agents:remove` and Restart session, with an order test.
 - Tests: the "one restart at a time" checks for both Restart and Restart session now fail when the lock is removed (checked by removing
   each lock), and `test-mcp-session` fails when it exits before its last check.
+
+### 2026-10-21: real Copilot check of Restart and Restart session (T060)
+
+Owner's go-ahead on 2026-10-21 (Telegram, "yes, both", about 1-2 prompts). One real Copilot session through Durbar's own
+`CopilotAdapter` (SDK and bundled runtime 1.0.22, Linux), Ask first, a throw-away folder under the OS temp folder, two throw-away local
+stdio servers given as the session's servers (`demo`: a 20-line echo server; `broken`: a command that does not exist). No secrets; only
+event types, field names, states and the throw-away servers' own text were recorded. Two prompts: one that calls `demo`'s `echo` tool
+(proves the server works and gives the session a turn) and one "reply ok" after Restart session.
+
+- real: **the Copilot runtime starts the session's MCP servers with the first message, not at session create**: no
+  `session.mcp_server_status_changed` and no server process for 30 s after `createSession`; `pending` then `connected` / `failed` within
+  about 60 ms of the first `send`. The same after a resume: no server event for 20 s, the servers started with the next message.
+  **Fix (FR-010)**: Copilot's `mcpStart` is now `'next-message'` (was `'session'`), so the dialog and the Restart session toast say the
+  servers start with the next message. FR-002's Copilot line reads "Copilot starts these servers with your next message".
+- real (FR-012): the runtime has `session.rpc.mcp.restartServer`; Restart used it (no fallback). The server's own events were
+  `session.mcp_server_removed`, then `status_changed` `not_configured` -> `pending` -> `connected`, in about 75 ms, with a new server
+  process. The dialog's row shows "Not set up for this session" for that moment (FR-001's word for `not_configured`).
+- real (FR-011, input for T022): a server whose command does not exist is `failed` with `error` "failed to spawn MCP server process: No
+  such file or directory (os error 2): …" and `errorClassification: "os_not_found"` (data keys `configSource, error,
+  errorClassification, serverName, status`). `session.mcp_servers_loaded` lists it with `error, name, status`. Mapping it to
+  `errorClass: 'not-found'` stays T022.
+- real (FR-012): Restart of that failed server: `restartServer` rejects with JSON-RPC -32603 and the text "Request
+  session.mcp.restartServer failed with message: failed to spawn MCP server process: …"; no fallback (correct: not MethodNotFound).
+  **Fix**: the adapter drops the SDK's "Request <method> failed with message: " prefix, so the dialog shows the server's own reason.
+- real (FR-022): Restart session (`stop`, then `start` with `sessionId` = the same id, as `ensureLive` does) kept the id and the
+  conversation (`history` 66 items: the first turn's messages and tool calls), and the next message started the **new** server set
+  (`demo` and a new `demo2` connected; `broken`, no longer given, absent). A `resumeSessionId` of a session that never had a message
+  fails ("Session not found"): `ensureLive` uses `sessionId` (resume when it exists, else create with this id) unless the session is
+  in the folder's previous sessions, so Restart session is not affected.
+- real (FR-024): `~/.copilot/logs` exists on this machine (checked for existence only; nothing opened).
+- Not checked: T061 (Claude Code `mcp_reconnect`) and T062 (Codex) on a real session; macOS and Windows; the off-then-on fallback on an
+  older runtime (this runtime has `restartServer`).

@@ -20,7 +20,7 @@ import type { AgentInfo } from '../src/shared/api';
 import { endSessionOp } from '../src/main/agentops';
 import { agentMcpReply, mcpRestartOp, mcpRestartSessionOp, validServerName } from '../src/main/mcpsession';
 import type { McpReplyInput, RestartDeps, RestartSessionDeps } from '../src/main/mcpsession';
-import { isMethodNotFound } from '../src/adapters/copilot';
+import { isMethodNotFound, sdkErrorText } from '../src/adapters/copilot';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
 
 const info = (id: string): AgentInfo => ({ id, name: 'Ana', cwd: '/w', permMode: 'ask', model: 'auto' }) as AgentInfo;
@@ -250,7 +250,8 @@ async function main(): Promise<void> {
     {
       const client = new FakeClient();
       const ad = new FakeCopilot(client);
-      assert.deepStrictEqual([ad.capabilities.mcpRestart, ad.capabilities.mcpStart, ad.capabilities.mcpToggleApplies], [true, 'session', 'live']);
+      // real 2026-10-21 (T060): the Copilot runtime starts the session's servers with the first message, not at create or resume
+      assert.deepStrictEqual([ad.capabilities.mcpRestart, ad.capabilities.mcpStart, ad.capabilities.mcpToggleApplies], [true, 'next-message', 'live']);
       const sid = await ad.start({ workspace: ws, quiet: true });
       const s = client.last;
       const mcpCalls = () => s.calls.filter((c) => c.name.startsWith('mcp.')).map((c) => [c.name, ...c.args]);
@@ -274,6 +275,12 @@ async function main(): Promise<void> {
       s.calls.length = 0;
       await assert.rejects(ad.restartMcpServer(sid, 'notes'), /spawn ENOENT/);
       assert.deepStrictEqual(mcpCalls().map((c) => c[0]), ['mcp.restartServer'], 'another error: no fallback');
+      // real 2026-10-21 (T060, runtime 1.0.22): the SDK's own prefix is dropped, the runtime's reason is kept (and not a fallback)
+      rejectWith(Object.assign(new Error('Request session.mcp.restartServer failed with message: failed to spawn MCP server process: No such file or directory (os error 2)'), { code: -32603 }));
+      s.calls.length = 0;
+      await assert.rejects(ad.restartMcpServer(sid, 'notes'), (e: Error) => e.message === 'failed to spawn MCP server process: No such file or directory (os error 2)');
+      assert.deepStrictEqual(mcpCalls().map((c) => c[0]), ['mcp.restartServer'], 'a -32603 spawn failure: no fallback');
+      assert.strictEqual(sdkErrorText(new Error('plain reason')), 'plain reason');
       assert.ok(!isMethodNotFound(new Error('timeout')) && !isMethodNotFound(undefined) && isMethodNotFound({ code: -32601 }));
       // a runtime object without the method at all (an SDK older than 1.0.22's generated client)
       delete mcpRpc.restartServer;

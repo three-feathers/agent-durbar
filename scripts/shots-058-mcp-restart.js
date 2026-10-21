@@ -53,6 +53,8 @@ module.exports = async (ctx) => {
     assert.ok(/^Restart my-notes for .+/.test(notes.restart || ''), 'the failed server has Restart with an accessible name: ' + JSON.stringify(notes));
     assert.ok(r.filter((x) => x.restart).length >= 2, 'every running server that is on has Restart');
     assert.ok(await js(`!!document.getElementById('mcpRestartSess')`), 'Restart session with these servers is offered');
+    // real 2026-10-21 (T060): Copilot starts the session's servers with the first message, so Restart session says so too
+    assert.ok(/The servers start with your next message\./.test(await js(`document.querySelector('.mcp-rsess').textContent`)), 'Copilot: the servers start with the next message');
     assert.ok(await fits(), `${w}: the dialog fits the window`);
     const mf = await minFont();
     assert.ok(mf.min >= 10.5, `${w}: dialog text >= 10.5px (${JSON.stringify(mf)})`);
@@ -114,6 +116,7 @@ module.exports = async (ctx) => {
     r = await rows();
     assert.ok(r.every((x) => !x.restart), 'Codex has no per-server Restart: ' + JSON.stringify(r));
     assert.ok(/cannot restart one server; use this instead/.test(await js(`document.querySelector('.mcp-rsess').textContent`)), 'the line says to use Restart session');
+    assert.ok(!/next message/.test(await js(`document.querySelector('.mcp-rsess').textContent`)), 'Codex starts its servers with the session');
     await shot(`058-mcp-restart-codex-${w}x${h}.png`);
     await closeDlg();
     await openMcp('sim-6');

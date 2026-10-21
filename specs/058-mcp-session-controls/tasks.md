@@ -120,10 +120,15 @@ and one failed server (sim-6 `my-notes`); the hint waits for T113. How it was bu
 Each: a throw-away folder, a throw-away local stdio echo server as a folder extra, Ask first mode, **no prompt sent**. Record results in
 research.md and change `read:` to `real:` where confirmed. Do not open or paste log files.
 
-- [ ] T060 [needs-owner-approval] Copilot: session starts with the server Running; *Restart* (does `restartServer` exist on the pinned
+- [x] T060 [needs-owner-approval] Copilot: session starts with the server Running; *Restart* (does `restartServer` exist on the pinned
   runtime, does the row go Starting -> Running); a server with a wrong command shows Failed with its text and `errorClassification`
   value; *Restart session* keeps the id and history; does `~/.copilot/logs` exist [FR-050]
-- [ ] T061 [needs-owner-approval] Claude Code: the CLI is launched only with a message, so: start, then Restart session (expect "Not
+  (done 2026-10-21, real, SDK/runtime 1.0.22, Linux, owner's go-ahead, 2 prompts; spec *Changes* "real Copilot check": servers start
+  with the first message, not at create, so Copilot's `mcpStart` is now `next-message`; `restartServer` exists and was used, no
+  fallback, `not_configured` -> `pending` -> `connected`; wrong command `failed`, `errorClassification: "os_not_found"`; its restart
+  error now without the SDK's prefix; Restart session kept the id and history and the next message started the new server set;
+  `~/.copilot/logs` exists)
+- [ ] T061 [needs-owner-approval] (not run 2026-10-21: the Copilot check T060 was done first) Claude Code: the CLI is launched only with a message, so: start, then Restart session (expect "Not
   started yet" until the next message, Q11); with an already launched CLI from an earlier spec 012 check, `mcp_reconnect` on a failed
   server; does `mcp-logs-<server>` exist [FR-050]
 - [ ] T062 [needs-owner-approval] Codex: list states and `failureReason` for a wrong command; *Restart session* keeps the thread; does
