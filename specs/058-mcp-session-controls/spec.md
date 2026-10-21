@@ -207,8 +207,10 @@ and nothing is opened; simulator shows the button and a toast.
   `auth`, Codex `authStatus: notLoggedIn` -> `auth`) and `needsRestart?: boolean` (Copilot `session.mcp_server_needs_reconnect`).
   Claude's `init.mcp_server_errors` become `failed` rows with their text. No vendor type leaves the adapter.
 - **FR-012** `[IMPLEMENTED]` (`test:` fake SDK and fake CLI; not on a real account, FR-050) `AgentAdapter.restartMcpServer?(sessionId, name): Promise<void>`, present exactly when `mcpRestart` is true (contract C2):
-  - Copilot: `session.rpc.mcp.restartServer({ serverName })` when the method exists; when it does not (an older runtime), off then on
-    for that server only (`disable` then `enable`) (Q3); never `stopServer` (Q2); never `reload()` (all servers);
+  - Copilot: `session.rpc.mcp.restartServer({ serverName })`; when the runtime does not know that method (an older runtime: it answers
+    JSON-RPC MethodNotFound, -32601, or "Unhandled method", as the SDK's own `connect` check reads it) or the SDK object has no such
+    method, off then on for that server only (`disable` then `enable`) (Q3); any other error is reported, with no fallback; never
+    `stopServer` (Q2); never `reload()` (all servers);
   - Claude: control request `mcp_reconnect { serverName }`, then `mcp_status` for the new list (as FR-133 does after a toggle). A server
     that was off at launch is not in the running CLI: "Switch it on first; it starts with your next message";
   - Codex: not present.
@@ -584,3 +586,19 @@ sign-in part lands.
 **Done**: FR-070 `[IMPLEMENTED]`; FR-076 trust sentence `[IMPLEMENTED]`; README *MCP servers*, *Keychain prompts on a Mac* and a
 *Known limits* line (Copilot CLI sharing unverified, FR-068/FR-074, T105); CHANGELOG. Not run on a real account.
 
+### 2026-10-21: review of PR #473 (Restart and Restart session; Paco's agent)
+
+Five small fixes found in review of the #349 slice, made in the same PR. No new FR; these lines record what changed.
+
+- **FR-030**: *Restart session with these servers* sits under the server list, not in the dialog's footer button row, so the dialog
+  stays open and refreshes after it (already noted in tasks.md, 2026-10-21; agreed with Paco's side on #473). The footer keeps
+  *Settings*, *Folder extras…* and *Done* (and *Open log folder* once T052 is built).
+- **FR-012**: SDK 1.0.22 always has the generated `rpc.mcp.restartServer` (`read:` `dist/generated/rpc.js:2830`), so "when the method
+  exists" never chose the fallback. The fallback now runs when the runtime rejects the call as unknown (MethodNotFound, -32601, or
+  "Unhandled method"); any other failure is reported (`test:` test-mcp-session).
+- **FR-022**: after a confirmed Restart session on a busy agent, the card is Ready, not "Done" with the old output: the window's
+  `stopped` handling clears the running turn, so the resume's `idle` is not read as a finished turn (`sim:` shots-058-mcp-restart).
+- **FR-022 / FR-023** ("Remote control turns off"): End session's order (remote control off, then the session stops) is a pure helper
+  `endSessionOp` in `src/main/agentops.ts`, shared by `agents:end`, `agents:remove` and Restart session, with an order test.
+- Tests: the "one restart at a time" checks for both Restart and Restart session now fail when the lock is removed (checked by removing
+  each lock), and `test-mcp-session` fails when it exits before its last check.

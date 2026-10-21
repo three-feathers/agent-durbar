@@ -6,7 +6,9 @@
  *  - `mcpRestartOp` (FR-021): validation, one restart per server at a time, masked error, activity row;
  *  - `mcpRestartSessionOp` (FR-022, FR-027): end then resume the same id, no prompt; refused while busy without confirmation;
  *    a failed resume leaves the agent ended; a sign-in failure says `errorKind: 'auth'`;
- *  - the Copilot adapter (FR-012, SC-003): `rpc.mcp.restartServer` for that name only, else off then on; never stopServer or reload.
+ *  - `endSessionOp` (FR-022, FR-023): remote control off first, then the session stops;
+ *  - the Copilot adapter (FR-012, SC-003): `rpc.mcp.restartServer` for that name only; off then on only when the runtime does not know
+ *    the method (MethodNotFound) or the SDK lacks it; never stopServer or reload.
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -15,12 +17,23 @@ import * as path from 'path';
 import { FakeAdapter } from '../src/adapters/fake';
 import type { AgentAdapter, McpServerStatus } from '../src/adapters/types';
 import type { AgentInfo } from '../src/shared/api';
+import { endSessionOp } from '../src/main/agentops';
 import { agentMcpReply, mcpRestartOp, mcpRestartSessionOp, validServerName } from '../src/main/mcpsession';
 import type { McpReplyInput, RestartDeps, RestartSessionDeps } from '../src/main/mcpsession';
+import { isMethodNotFound } from '../src/adapters/copilot';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
 
 const info = (id: string): AgentInfo => ({ id, name: 'Ana', cwd: '/w', permMode: 'ask', model: 'auto' }) as AgentInfo;
 const routerOf = (ad: AgentAdapter | undefined) => ({ forAgent: () => ad });
+
+// A promise that never settles lets Node exit with code 0 before the end: fail instead (review on #473).
+let done = false;
+process.on('exit', (code) => {
+  if (code === 0 && !done) {
+    console.error('[058] mcp session: FAIL (exited before the last check; a pending promise never settled)');
+    process.exitCode = 1;
+  }
+});
 
 async function main(): Promise<void> {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-mcp-session-'));
@@ -101,12 +114,18 @@ async function main(): Promise<void> {
       const sid3 = await slow.start({ workspace: ws, quiet: true });
       slow.restartMcpServer = async (s, n) => { slow.restartCalls.push({ sessionId: s, name: n }); await gate; };
       const d3: RestartDeps = { ...d, agents: new Map([[sid3, info(sid3)]]), router: routerOf(slow) };
+      // the second call is not awaited before release(): without the lock it would wait on the gate too, so it must not hang the test
       const first = mcpRestartOp(d3, running, sid3, 'notes');
-      assert.match((await mcpRestartOp(d3, running, sid3, 'notes')).error!, /already restarting/, 'a second restart of the same server is refused');
+      const second = mcpRestartOp(d3, running, sid3, 'notes');
+      assert.strictEqual(slow.restartCalls.length, 1, 'the second press never reached the adapter while the first runs');
       release();
-      assert.deepStrictEqual(await first, { ok: true });
-      assert.strictEqual(slow.restartCalls.length, 1);
+      const [r1, r2] = await Promise.all([first, second]);
+      assert.deepStrictEqual(r1, { ok: true });
+      assert.strictEqual(r2.ok, false, 'a second restart of the same server is refused');
+      assert.match(r2.error!, /already restarting/);
+      assert.strictEqual(slow.restartCalls.length, 1, 'exactly one restart ran');
       assert.strictEqual(running.size, 0, 'the lock is released');
+      assert.deepStrictEqual(await mcpRestartOp(d3, running, sid3, 'notes'), { ok: true }, 'after it, the server can be restarted again');
 
       // the adapter's error is masked and short
       const rows = logged.length;
@@ -195,12 +214,36 @@ async function main(): Promise<void> {
       await ad.start({ workspace: ws, sessionId: sid, quiet: true });
       let release!: () => void;
       const gate = new Promise<void>((r) => (release = r));
-      const slow: RestartSessionDeps = { ...d, endSession: async () => { await gate; } };
+      let ends = 0;
+      const slow: RestartSessionDeps = { ...d, endSession: async (id) => { ends++; await gate; await ad.stop(id); } };
+      calls.length = 0;
+      // not awaited before release(): without the lock the second call would end the session again and wait on the gate
       const first = mcpRestartSessionOp(slow, running, sid, false);
-      assert.match((await mcpRestartSessionOp(slow, running, sid, false)).error!, /already restarting/);
+      const second = mcpRestartSessionOp(slow, running, sid, false);
+      assert.strictEqual(ends, 1, 'the second press never started a second End session');
       release();
-      await first;
-      assert.strictEqual(running.size, 0);
+      const [s1, s2] = await Promise.all([first, second]);
+      assert.deepStrictEqual(s1, { ok: true });
+      assert.strictEqual(s2.ok, false, 'a second Restart session while one runs is refused');
+      assert.match(s2.error!, /already restarting/);
+      assert.strictEqual(ends, 1, 'exactly one End session ran');
+      assert.deepStrictEqual(calls, [`resume ${sid}`], 'and exactly one resume');
+      assert.strictEqual(running.size, 0, 'the lock is released');
+    }
+
+    // ---- endSessionOp: End session and Restart session's first step (FR-022, FR-023 "Remote control turns off") ----
+    {
+      const ad = new FakeAdapter();
+      const sid = await ad.start({ workspace: ws, quiet: true });
+      const order: string[] = [];
+      const realStop = ad.stop.bind(ad);
+      ad.stop = async (id) => { order.push(`stop ${id}`); return realStop(id); };
+      await endSessionOp({ release: async (id) => { order.push(`release ${id}`); }, router: routerOf(ad) }, sid);
+      assert.deepStrictEqual(order, [`release ${sid}`, `stop ${sid}`], 'remote control off first, then the session ends');
+      assert.ok(!ad.isLive(sid), 'the session ended');
+      order.length = 0;
+      await endSessionOp({ release: async () => { order.push('release'); }, router: routerOf(undefined) }, 'gone');
+      assert.deepStrictEqual(order, ['release'], 'no adapter: remote control still released, nothing else');
     }
 
     // ---- Copilot adapter on the fake SDK (FR-012, SC-003) ----
@@ -213,16 +256,37 @@ async function main(): Promise<void> {
       const mcpCalls = () => s.calls.filter((c) => c.name.startsWith('mcp.')).map((c) => [c.name, ...c.args]);
       await ad.restartMcpServer(sid, 'notes');
       assert.deepStrictEqual(mcpCalls(), [['mcp.restartServer', { serverName: 'notes' }]], 'one restartServer for that name only, no config (it keeps its own)');
-      // an older runtime without restartServer: that one server off, then on (Q3)
-      delete (s.rpc.mcp as Record<string, unknown>).restartServer;
+      // an older runtime: SDK 1.0.22 always has the generated method, the runtime answers JSON-RPC MethodNotFound; then that one
+      // server off, then on (Q3)
+      const mcpRpc = s.rpc.mcp as Record<string, unknown>;
+      const realRestart = mcpRpc.restartServer;
+      const rejectWith = (e: Error) => { mcpRpc.restartServer = async (x: unknown) => { s.calls.push({ name: 'mcp.restartServer', args: [x] }); throw e; }; };
+      rejectWith(Object.assign(new Error('Unhandled method session.mcp.restartServer'), { code: -32601 }));
       s.calls.length = 0;
       await ad.restartMcpServer(sid, 'notes');
-      assert.deepStrictEqual(mcpCalls(), [['mcp.disable', { serverName: 'notes' }], ['mcp.enable', { serverName: 'notes' }]], 'fallback: disable then enable, that server only');
+      assert.deepStrictEqual(mcpCalls(), [['mcp.restartServer', { serverName: 'notes' }], ['mcp.disable', { serverName: 'notes' }], ['mcp.enable', { serverName: 'notes' }]], 'MethodNotFound: disable then enable, that server only');
+      rejectWith(new Error('Unhandled method session.mcp.restartServer')); // the text alone, as the SDK's own connect check reads it
+      s.calls.length = 0;
+      await ad.restartMcpServer(sid, 'notes');
+      assert.deepStrictEqual(mcpCalls().map((c) => c[0]), ['mcp.restartServer', 'mcp.disable', 'mcp.enable'], '"Unhandled method" text: fallback');
+      // any other failure is the restart's own: it is reported, the server is not switched off and on behind the user's back
+      rejectWith(new Error('MCP server notes failed to start: spawn ENOENT'));
+      s.calls.length = 0;
+      await assert.rejects(ad.restartMcpServer(sid, 'notes'), /spawn ENOENT/);
+      assert.deepStrictEqual(mcpCalls().map((c) => c[0]), ['mcp.restartServer'], 'another error: no fallback');
+      assert.ok(!isMethodNotFound(new Error('timeout')) && !isMethodNotFound(undefined) && isMethodNotFound({ code: -32601 }));
+      // a runtime object without the method at all (an SDK older than 1.0.22's generated client)
+      delete mcpRpc.restartServer;
+      s.calls.length = 0;
+      await ad.restartMcpServer(sid, 'notes');
+      assert.deepStrictEqual(mcpCalls(), [['mcp.disable', { serverName: 'notes' }], ['mcp.enable', { serverName: 'notes' }]], 'no method: disable then enable, that server only');
+      mcpRpc.restartServer = realRestart;
       assert.ok(!s.calls.some((c) => c.name === 'mcp.stopServer' || c.name === 'mcp.reload'), 'never stopServer (Q2) or reload (all servers)');
       await assert.rejects(ad.restartMcpServer('no-such-session', 'notes'), /not running/, 'not live: rejects, nothing started');
       assert.strictEqual(client.created.length, 1, 'no session was started by a restart');
       await ad.stop(sid);
     }
+    done = true;
     console.log('[058] mcp session: PASS');
   } finally {
     fs.rmSync(ws, { recursive: true, force: true });

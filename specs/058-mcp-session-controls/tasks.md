@@ -44,7 +44,7 @@ small PR-sized step with its own test. No task spends AI credits except Phase 6,
 - [ ] T026 [US1] Dialog rows: word + icon, hint, *Details* with *Copy*, start line and toggle timing, the two scopes sentence; the
   "applies right away" text only for `live`; `index.html` loads `mcpwords.js` [FR-001, FR-002, FR-003, FR-007, FR-030, FR-033]
 - [ ] T027 [US1] Live refresh: when an `mcp` event for the open agent arrives (`app.js`, where `a.mcp` is set), re-render the list and
-  keep focus by server name [FR-004]
+  keep focus by server name; replaces `repaint`'s 1.5 s re-read after a Restart (`screens.js`, #473) [FR-004]
 - [ ] T028 [US1] Simulator: real capability values per kind (Claude and Codex `mcpToggle: true`), servers in every state, a failed one
   with a canned error and hint [FR-040]
 - [ ] T029 [US1] Screenshot driver `scripts/shots-058-mcp.js` (Copilot, Claude, Codex dialogs; prints `[058] PASS`); run at 1440x900
@@ -68,7 +68,8 @@ small PR-sized step with its own test. No task spends AI credits except Phase 6,
 ## Phase 4: User Story 4, Restart session with these servers (P2)
 
 - [x] T040 [US4] Extract `endSession(a)` in main (remote off, `adapter.stop`) and use it in `agents:end`; no behaviour change; existing
-  tests pass [FR-022]
+  tests pass [FR-022]. Review on #473: the pure `endSessionOp` in `agentops.ts` (also used by `agents:remove`) with an order test in
+  `test-mcp-session`
 - [x] T041 [US4] `agents:mcpRestartSession(id, confirmed)`: validation, `resume` capability, busy check from main's `agentState`
   (`needsConfirm`), `endSession` then `ensureLive` with the same id and current options, no prompt; preload and `DurbarApi`;
   `canRestartSession`; test with a fake adapter: order, same id, new `mcpServers`/`disabledMcpServers`, refusal while busy, failed resume
@@ -158,10 +159,11 @@ references: `src/main/main.ts:123` is now `main.ts:142` (`outward`); `src/adapte
   for `failed` and `needs-auth` (the sign-in hint names the agent app, FR-052/FR-069); `scripts/test-mcpwords.ts` (`test:mcpwords` in
   `test:serial`). Start line and toggle timing wait for T010's capability fields (#349) [FR-001, FR-006, FR-052]
 - [ ] T114 Subset of T020: `agents:mcp` adds per agent the agent app's display name (`app`) and per server `errorClass`; `AgentMcpEntry`
-  in `src/shared/api.ts`; test in new `scripts/test-mcp-session.ts` (`test:mcpsession`), including that no session secret reaches the
-  reply (T021's missing test) [FR-020, FR-005]
+  in `src/shared/api.ts`. Extend `agentMcpReply` (`src/main/mcpsession.ts`, built by #473) and its existing test in
+  `scripts/test-mcp-session.ts` (`test:mcpsession`; T021's reply test, masking included, is already there) [FR-020, FR-005]
 - [ ] T115 Subset of T026, plus T027 whole: rows show word + icon (T113) and the hint, *Details* with *Copy* for the masked error;
-  `index.html` loads `mcpwords.js`; live refresh of the open dialog on an `mcp` event for that agent, focus kept by server name (T027);
+  `index.html` loads `mcpwords.js`; live refresh of the open dialog on an `mcp` event for that agent, focus kept by server name (T027;
+  it replaces `repaint`'s 1.5 s re-read after a Restart in `screens.js`, #473, and reuses `repaint` for the focus);
   simulator: the existing needs-auth and failed rows (`src/renderer/sim.ts:514`) get a canned error; screenshots at 1440x900 and
   1280x800. Start line, toggle timing and the two scopes sentence stay in T026 (#349) [FR-001, FR-002, FR-004, FR-030]
 

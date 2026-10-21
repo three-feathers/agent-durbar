@@ -1133,8 +1133,14 @@ export class CopilotAdapter implements AgentAdapter {
     if (!live) throw new Error('This session is not running. Send a message to start it.');
     const mcp = live.session.rpc.mcp as unknown as { restartServer?: (p: { serverName: string }) => Promise<void>; enable(p: { serverName: string }): Promise<void>; disable(p: { serverName: string }): Promise<void> };
     if (typeof mcp.restartServer === 'function') {
-      await mcp.restartServer({ serverName: name });
-      return;
+      try {
+        await mcp.restartServer({ serverName: name });
+        return;
+      } catch (err) {
+        // SDK 1.0.22 always has the generated method (`dist/generated/rpc.js`): an older runtime answers that it does not know it
+        // (JSON-RPC -32601, as the SDK's own `connect` check reads it). Only then fall back; any other error is the restart's own.
+        if (!isMethodNotFound(err)) throw err;
+      }
     }
     await mcp.disable({ serverName: name });
     await mcp.enable({ serverName: name });
@@ -1194,3 +1200,11 @@ export const COPILOT_DESCRIPTOR: AdapterDescriptor = {
   capabilities: COPILOT_CAPABILITIES,
   create: () => new CopilotAdapter(),
 };
+
+/** Spec 058 FR-012: the runtime does not know an RPC method (JSON-RPC MethodNotFound, -32601, or its "Unhandled method" text). */
+export function isMethodNotFound(err: unknown): boolean {
+  const e = err as { code?: unknown; message?: unknown } | null;
+  if (e && e.code === -32601) return true;
+  const m = e && typeof e.message === 'string' ? e.message : '';
+  return /^Unhandled method\b|\bmethod not found\b/i.test(m);
+}

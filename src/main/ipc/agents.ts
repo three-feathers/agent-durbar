@@ -5,7 +5,7 @@ import type { AdapterRouter } from '../../adapters/router';
 import { historyOf } from '../../adapters/router';
 import type { AddResult, AgentInfo, PickedFile, ResumeResult, SessionOptions } from '../../shared/api';
 import { parseAmount, parseCapIn } from '../../shared/credits';
-import { errText, setCapOp, setModeOp, stopTurnOp, validMode } from '../agentops';
+import { endSessionOp, errText, setCapOp, setModeOp, stopTurnOp, validMode } from '../agentops';
 import type { OpsDeps } from '../agentops';
 import { folderGitStatus } from '../gitstatus';
 import type { GitStatus } from '../gitstatus';
@@ -87,10 +87,7 @@ export function register(deps: AgentsIpcDeps): void {
   ipcHandle('agents:stop', (_e, id: string) => stopTurnOp(opsDeps, id));
 
   /** End session (spec 005): remote control off first (spec 054 FR-011: off on GitHub too), then the adapter frees the session. Also Restart session's first step (spec 058 FR-022). */
-  const endSession = async (id: string): Promise<void> => {
-    await remoteOps.release(id);
-    await router.forAgent(id)?.stop(id);
-  };
+  const endSession = (id: string): Promise<void> => endSessionOp({ release: (k) => remoteOps.release(k), router }, id);
   ipcHandle('agents:end', async (_e, id: string) => {
     if (!agents.has(id)) return;
     await endSession(id);
@@ -161,8 +158,7 @@ export function register(deps: AgentsIpcDeps): void {
     if ([...agents.values()].filter((x) => wsKey(x) === key).length < 2) return { ok: false, error: 'This is the only session in the folder. Remove the folder from Folders instead.' };
     forgetOpenSession(key, a.id); // FR-020 and spec 052 FR-088: a removed session does not come back after a restart
     try {
-      await remoteOps.release(a.id); // spec 054 FR-011
-      await router.forAgent(a.id)?.stop(a.id); // the history stays on disk and is listed under Previous sessions
+      await endSession(a.id); // spec 054 FR-011: remote control off first; the history stays on disk and is listed under Previous sessions
     } catch {
       /* already gone */
     }

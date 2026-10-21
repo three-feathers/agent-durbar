@@ -103,6 +103,9 @@ module.exports = async (ctx) => {
     await js(`[...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent==='Restart session').click()`);
     assert.ok(await until(`/session restarted with the current MCP servers/.test([...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' '))`, 8000), 'the page reached the expected state (wait 11)');
     assert.match(await toasts(), /session restarted with the current MCP servers/, 'confirmed: Restart session says it worked');
+    // the stopped turn is not a finished one: the card does not say "Done" with the old output (review on #473)
+    const after = await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(busyId)});return a?{state:a.state,worked:!!a.worked}:null;})()`);
+    assert.ok(after && after.state !== 'done', 'after a confirmed Restart session the busy agent is not "Done": ' + JSON.stringify(after));
     await closeDlg();
 
     // ---- Codex: no per-server Restart; Claude: servers start with the next message ----
