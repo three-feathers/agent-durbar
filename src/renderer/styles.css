@@ -1121,6 +1121,10 @@ body.simple #remoteChip:not([hidden]){display:inline-flex!important}
 .answer-bar .ab-act{display:flex;gap:6px;flex-wrap:wrap}
 .answer-bar .btn{height:var(--h-ctl)} /* spec 052 FR-076 */
 .answer-bar .btn.ghost{background:transparent;border-color:transparent;text-decoration:underline;color:var(--ink-2)}
+/* spec 052 FR-162: a short question is answered from the bar: its options, an "Other answer" box and Skip */
+.answer-bar .ab-q .tag{font-size:11px;margin-right:2px}
+.answer-bar .btn.ab-opt{background:var(--surface);font-weight:600;max-width:100%;white-space:normal;height:auto;min-height:var(--h-ctl);overflow-wrap:anywhere}
+.answer-bar .ab-other{box-sizing:border-box;height:var(--h-ctl);width:170px;min-width:120px;flex:1 1 150px;border:1px solid var(--line-ctl);border-radius:9px;padding:0 9px;font:inherit;font-size:12px;background:var(--surface);color:var(--ink)}
 
 /* spec 052 FR-015: a notice strip under the top bar (it takes its own room; the office lays out below it) */
 .notice-strip{flex:none;display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;padding:1px 20px;background:var(--warn-bg);border-bottom:1px solid #e5be78;color:var(--ink);font-size:12px;line-height:1.35}

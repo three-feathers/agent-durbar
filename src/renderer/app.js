@@ -1190,32 +1190,58 @@ function wireAnswerBar(a){
   if(answerObs){answerObs.m.disconnect();answerObs.i.disconnect();answerObs=null;}
   const bar=$('answerBar'), chat=$('chat'); if(!bar||!chat)return;
   let card=null, cardVisible=true;
-  /* in view = at least 60% of the card inside the chat's box; recomputed on scroll and on every change (plain geometry, no observer timing) */
-  const inView=()=>{if(!card||!card.isConnected)return true;const c=chat.getBoundingClientRect(),r=card.getBoundingClientRect();if(!r.height)return true;const vis=Math.min(r.bottom,c.bottom)-Math.max(r.top,c.top);return vis>=0.6*Math.min(r.height,c.height);};
+  /* in view = at least 60% of the card inside the chat's box; recomputed on scroll and on every change (plain geometry, no observer timing).
+     spec 052 FR-162: a card with no height (inside something folded or hidden) is not in view, so the bar shows it. */
+  const inView=()=>{if(!card||!card.isConnected)return true;const c=chat.getBoundingClientRect();if(!c.height)return true;const r=card.getBoundingClientRect();if(!r.height)return false;const vis=Math.min(r.bottom,c.bottom)-Math.max(r.top,c.top);return vis>=0.6*Math.min(r.height,c.height);};
   let raf=0;const recheck=()=>{if(raf)return;raf=requestAnimationFrame(()=>{raf=0;const v=inView();if(v!==cardVisible){cardVisible=v;paint();}});};
-  chat.addEventListener('scroll',recheck,{passive:true});
-  const io={observe(){},unobserve(){},disconnect(){chat.removeEventListener('scroll',recheck);}};
+  chat.addEventListener('scroll',recheck,{passive:true});window.addEventListener('resize',recheck);
+  const io={observe(){},unobserve(){},disconnect(){chat.removeEventListener('scroll',recheck);window.removeEventListener('resize',recheck);}};
   /* FR-016: the oldest waiting request first, and how many there are */
   const waiting=()=>[...chat.querySelectorAll('.note.perm:not(.settled)')].filter(n=>n.querySelector(':scope > .note-actions button'));
   const pending=()=>waiting()[0]||null;
   const textOf=requestText;
   /* FR-016: to the request itself, not to its Approve button (an Enter right after must not approve) */
   const show=()=>{if(!card)return;card.scrollIntoView({block:'center'});const f=card.classList.contains('question')?card.querySelector('.q-opt,.q-other,.q-form input,.q-form select,.q-open'):null;if(f){f.focus();return;}if(!card.hasAttribute('tabindex'))card.setAttribute('tabindex','-1');card.focus();};
+  /* spec 052 FR-162: a short question with one choice and a few short options is answered from the bar itself: its option buttons, its
+     own "Other answer" box and Skip press the card's own controls (one code path: the card's Answer handler sends and settles). */
+  const qFits=c=>{if(!c.classList.contains('question')||c.classList.contains('elicit'))return null;const it=c.querySelectorAll('.q-item');if(it.length!==1)return null;
+    const opts=[...it[0].querySelectorAll('.q-opt')],other=it[0].querySelector('.q-other'),ok=c.querySelector(':scope > .note-actions .btn.primary'),skip=c.querySelector(':scope > .note-actions .btn.danger');
+    if(it[0].querySelector('.q-opts[role="group"]')||opts.length>4||!other||!ok||opts.some(o=>(o.querySelector('.q-lbl')||o).textContent.length>40))return null;
+    const qt=it[0].querySelector('.q-text').cloneNode(true),tag=qt.querySelector('.tag');if(tag)tag.remove();
+    return {opts,other,ok,skip,tag:tag?tag.textContent:'',q:qt.textContent.replace(/\s+/g,' ').trim()};};
+  let painted='';
   function paint(){
-    if(!card||cardVisible){bar.hidden=true;bar.innerHTML='';return;}
-    const q=card.classList.contains('question');
+    if(!card||cardVisible){if(painted||!bar.hidden){bar.hidden=true;bar.innerHTML='';painted='';}return;}
+    const n=waiting().length, text=textOf(card);
+    /* the same request, count and words: keep the bar as it is (a repaint would drop what you type in its box and its focus) */
+    const key=n+'\u0001'+text;if(painted&&bar._card===card&&painted===key&&!bar.hidden)return;
+    const hadFocus=bar.contains(document.activeElement);
+    painted=key;bar._card=card;
+    const q=card.classList.contains('question'), long=text.length>480, fit=q&&!long?qFits(card):null;
     bar.innerHTML='<span class="ab-q"><b></b> <span></span></span><span class="ab-act"></span>';
-    const n=waiting().length, text=textOf(card), long=text.length>480;
     bar.querySelector('b').textContent=(n>1?'1 of '+n+' · ':'')+a.name+(q?' asks:':card.classList.contains('limit')?' stopped:':' needs your OK:');
-    bar.querySelector('.ab-q span').textContent=long?'a long request; read it in the chat before you answer.':text;if(long)bar.querySelector('.ab-q span').title=text; /* spec 052 FR-160: the full text stays reachable */
+    const qs=bar.querySelector('.ab-q span');
+    if(fit){if(fit.tag){const tg=document.createElement('span');tg.className='tag';tg.textContent=fit.tag;qs.appendChild(tg);qs.appendChild(document.createTextNode(' '));}qs.appendChild(document.createTextNode(fit.q));}
+    else{qs.textContent=long?'a long request; read it in the chat before you answer.':text;if(long)qs.title=text;} /* spec 052 FR-160: the full text stays reachable */
     const act=bar.querySelector('.ab-act');
-    const add=(label,cls,fn,title,keys)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;if(keys)b.setAttribute('aria-keyshortcuts',keys);b.onclick=fn;act.appendChild(b);};
-    if(q)add('Answer in chat','primary',show);
+    const add=(label,cls,fn,title,keys)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;if(keys)b.setAttribute('aria-keyshortcuts',keys);b.onclick=fn;act.appendChild(b);return b;};
+    if(fit){
+      const said=w=>{announce('Answered: '+w);const m=$('msgInput');if(m)m.focus();};
+      for(const o of fit.opts){const lb=(o.querySelector('.q-lbl')||o).textContent;add(lb,'ab-opt',()=>{o.click();fit.ok.click();said(lb);},o.title);}
+      const box=document.createElement('input');box.type='text';box.className='ab-other';box.maxLength=500;box.placeholder='Other answer';box.setAttribute('aria-label','Other answer: '+fit.q);box.setAttribute('aria-keyshortcuts','Enter');box.title='Type your own answer; Enter sends it';
+      box.addEventListener('keydown',ev=>{if(ev.key!=='Enter'||ev.shiftKey||ev.isComposing||ev.altKey||ev.ctrlKey||ev.metaKey)return;ev.preventDefault();
+        const v=box.value.replace(/\s+/g,' ').trim();if(!v){announce('Type an answer first, or choose an option.');return;}
+        fit.other.value=v;fit.other.dispatchEvent(new Event('input',{bubbles:true}));fit.ok.click();said(v);});
+      act.appendChild(box);
+      if(fit.skip)add(fit.skip.textContent,'danger',()=>{fit.skip.click();announce('Skipped');const m=$('msgInput');if(m)m.focus();},fit.skip.title);
+    }
+    else if(q)add('Answer in chat','primary',show);
     /* FR-016: a long request is answered in the chat only; the wide grant (any arguments) stays in the card */
     /* FR-060: Alt+A / Alt+S / Alt+D (⌥⌘A/S/D on a Mac, FR-084) press the same buttons (permission requests only) */
     else if(!long)for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad){const k=card.classList.contains('limit')?'':answerKeyOf(src);add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,text),k?(src.title?src.title+' ':'')+'('+chatKeyText(k)+')':src.title,k?chatKeyAria(k):'');}
-    add('Show in chat','ghost',show,'Scroll to the request in the chat');
+    add(q?'Show question':'Show in chat','ghost',show,q?'Scroll to the question in the chat':'Scroll to the request in the chat');
     bar.hidden=false;
+    if(hadFocus){const f=act.querySelector('button,input');if(f)f.focus();}
   }
   const check=()=>{const p=pending();if(p!==card){card=p;cardVisible=inView();}else cardVisible=inView();paint();};
   const mo=new MutationObserver(()=>check());mo.observe(chat,{childList:true,subtree:true});
@@ -1894,7 +1920,7 @@ window.addEventListener('resize',relayout);
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
@@ -3299,7 +3325,11 @@ function toastAction(html,label,onClick,ms){
   b.onclick=()=>{kill();onClick();};t.appendChild(b);$('toasts').appendChild(t);holdTimer(t,ms===0?0:(ms||8000),kill);
   return t;
 }
-function addInfoNote(chat,text,cls){const n=document.createElement('div');n.className='note info'+(cls?' '+cls:'');n.textContent=text;chat.el.appendChild(n);stickyScroll(chat);return n;}
+/* spec 052 FR-163: the same status line twice in a row is one line with a count ("… (×3)"), so repeated notes never push a request out of view */
+function addInfoNote(chat,text,cls){
+  const last=chat.el.lastElementChild;
+  if(last&&last.dataset.fold===text&&last.dataset.foldKind===(cls||'')){const k=(+last.dataset.foldN||1)+1;last.dataset.foldN=String(k);last.textContent=text+' (×'+k+')';stickyScroll(chat);return last;}
+  const n=document.createElement('div');n.className='note info'+(cls?' '+cls:'');n.textContent=text;n.dataset.fold=text;n.dataset.foldKind=cls||'';chat.el.appendChild(n);stickyScroll(chat);return n;}
 
 function modelChipHTML(a){
   const m=modelLabel(a.info),pend=a.pendingModel;
@@ -3491,14 +3521,25 @@ function onModelEvent(a,e){
   updateModelChip(a);updateCtxChip(a);scheduleRender();
 }
 function onCompaction(a,e){
-  const chat=liveChat(a),t=DM.compactionText(e);
-  if(e.phase==='start'){
-    if(a.compNote&&a.compNote.isConnected)a.compNote.remove();
-    a.compNote=addInfoNote(chat,t,'cline');a.compNote.setAttribute('role','status');a.compacting=true;
-  }else{
-    if(a.compNote&&a.compNote.isConnected){a.compNote.textContent=t;stickyScroll(chat);}else addInfoNote(chat,t,'cline');
-    if(e.phase==='failed'&&a.compNote)a.compNote.classList.add('failed');
-    a.compNote=null;a.compacting=false;
+  const chat=liveChat(a), at=()=>new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  /* spec 052 FR-163 (owner, 2026-10-21): compactions in a row (nothing else added to the chat in between) are one line that updates in
+     place: "Context compacted 4 times · last 10:21: …". Its tooltip lists each one. The line is found by its place in the chat, not by
+     isConnected: a chat that is not open is not in the page, and that check left a "Compacting the context…" line behind every time. */
+  let R=a.compRun;
+  if(!R||R.chat!==chat||!R.el||R.el.parentNode!==chat.el||(chat.el.lastElementChild!==R.el&&!(R.pending&&e.phase!=='start')))R=null; /* a started one ends on its own line */
+  const line=t=>{const el=document.createElement('div');el.className='note info cline';el.setAttribute('role','status');el.textContent=t;chat.el.appendChild(el);return el;};
+  if(!R)R=a.compRun={chat,n:0,at:'',el:null,log:[]};
+  const t=DM.compactionFoldText(e,R.n+(e.phase==='complete'?1:0),e.phase==='complete'?at():R.at);
+  if(R.el)R.el.textContent=t;else R.el=line(t);
+  R.el.classList.toggle('failed',e.phase==='failed');
+  stickyScroll(chat);
+  R.pending=e.phase==='start';
+  if(e.phase==='start'){a.compacting=true;}
+  else{
+    if(e.phase==='complete'){R.n++;R.at=at();}
+    R.log.push(at()+'  '+DM.compactionText(e));if(R.log.length>40)R.log.shift();
+    if(R.log.length>1)R.el.title=R.log.join('\n');
+    a.compacting=false;
     if(e.phase==='complete'){
       a.compactions=(a.compactions||0)+1;a.compactFailed=false;
       const old=STATS.agent(a.id).ctx;
