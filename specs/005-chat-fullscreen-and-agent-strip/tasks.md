@@ -32,4 +32,5 @@
 - [x] T033 Chat edit row, inline diff with Show all, Simple toggle, frame-throttled repaint, waiting line names the action [FR-020..FR-023]
 - [x] T034 Simulator edit calls with streamed arguments [FR-026]
 - [x] T035 Driver `check:edits` and screenshots at 1440x900 and 1280x800, Expert and Simple; README, CHANGELOG, specs index [FR-020..FR-026]
-- [ ] T036 Real check of the three argument streams (Claude Code `input_json_delta`, Copilot `assistant.tool_call_delta`, Codex `item/fileChange/patchUpdated`) on one small edit each, within the owner's budget (about 3 prompts) [FR-019, `[KNOWN GAP]`]
+- [x] T036 Real check of the three argument streams (Claude Code `input_json_delta`, Copilot `assistant.tool_call_delta`, Codex `item/fileChange/patchUpdated`) on one small edit each, within the owner's budget (about 3 prompts) [FR-019] (2026-10-21, `scripts/edit-stream-real.ts`: Claude Code and Copilot stream and pass; Codex 0.163.0 sends the patch at once with `item/started` and passes on the no-stream path, `[KNOWN GAP]` its `patchUpdated` branch; 6 prompts in all, results in spec.md)
+- [x] T037 A partial edit whose new text has not started shows the file only, no diff or counts (seen in T036); `test:edits` [FR-027]

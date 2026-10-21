@@ -218,4 +218,30 @@ const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
   assert.strictEqual(tc[0].tool, 'Write');
 }
 
+// 9. FR-027 (real Claude Code stream, T036): a partial edit whose new text has not started shows the file only
+{
+  const only = (e: ReturnType<typeof editOf>): void => {
+    assert.ok(e && e.partial);
+    assert.deepStrictEqual(e!.files, [{ path: '/tmp/d/notes.txt', kind: 'edit' }]);
+  };
+  only(editOf('Edit', { file_path: '/tmp/d/notes.txt', old_string: 'h' }, true));
+  only(editOf('Edit', { file_path: '/tmp/d/notes.txt', old_string: 'hello', new_string: null }, true));
+  only(editOf('edit', { path: '/tmp/d/notes.txt', old_str: 'hel' }, true));
+  only(editOf('str_replace_editor', { command: 'str_replace', path: '/tmp/d/notes.txt', old_str: 'hel' }, true));
+  only(editOf('MultiEdit', { file_path: '/tmp/d/notes.txt', edits: [{ old_string: 'hel' }] }, true));
+  // an empty new text that has started is a real removal
+  const del = editOf('Edit', { file_path: '/tmp/d/notes.txt', old_string: 'done', new_string: '' }, true)!;
+  assert.deepStrictEqual([del.files[0].added, del.files[0].removed], [0, 1]);
+  // the whole arguments (not partial) keep today's diff, even without new text
+  assert.strictEqual(editOf('Edit', { file_path: '/tmp/d/notes.txt', old_string: 'x' })!.files[0].removed, 1);
+  // replay of the real fragment sizes (16, 11, 14, 1, 12, ... characters) through EditStreams
+  const args = JSON.stringify({ file_path: '/tmp/d/notes.txt', old_string: 'hello', new_string: 'hello world', replace_all: false });
+  const st = new EditStreams();
+  st.begin('c1', 'Edit');
+  const steps: ReturnType<EditStreams['delta']> = [];
+  for (let i = 0, k = 0, sizes = [16, 11, 14, 1, 12, 1, 19, 4, 19, 10]; i < args.length; i += sizes[k++ % sizes.length]) steps.push(...st.delta('c1', args.slice(i, i + sizes[k % sizes.length])));
+  assert.strictEqual(steps.filter((x) => x.phase === 'start').length, 1);
+  for (const u of steps) if (u.phase === 'update') assert.ok(!u.edit.files[0].diff || /\+hello world/.test(u.edit.files[0].diff), 'no diff before the new text');
+}
+
 console.log('edits: ok');

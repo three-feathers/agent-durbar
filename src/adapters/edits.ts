@@ -35,8 +35,11 @@ export function editPath(tool: string, args: unknown): string | undefined {
   return s(args.file_path) ?? s(args.path) ?? s(args.notebook_path) ?? undefined;
 }
 
-/** The files a call changes, raw (not yet masked or cut). */
-function filesOf(tool: string, args: unknown): EditFile[] {
+/**
+ * The files a call changes, raw (not yet masked or cut). `partial`: the arguments are still being written, so an edit whose new
+ * text has not started yet shows the file only (FR-027: the old text alone is not a removal; real Claude Code stream, T036).
+ */
+function filesOf(tool: string, args: unknown, partial?: boolean): EditFile[] {
   const t = tool.toLowerCase();
   const p = patchText(args);
   if (t === 'apply_patch' || (p !== undefined && /^\*\*\* Begin Patch/m.test(p))) return p !== undefined ? patchFiles(p) : [];
@@ -45,7 +48,7 @@ function filesOf(tool: string, args: unknown): EditFile[] {
   if (!path) return [];
   switch (t) {
     case 'multiedit': {
-      const edits = Array.isArray(args.edits) ? args.edits.filter(isObj) : [];
+      const edits = (Array.isArray(args.edits) ? args.edits.filter(isObj) : []).filter((e) => !partial || s(e.new_string) !== undefined);
       const parts = edits.map((e) => editFile(path, 'edit', s(e.old_string) ?? '', s(e.new_string) ?? '')).filter((f) => f.diff);
       if (!parts.length) return [{ path, kind: 'edit' }];
       return [{ path, kind: 'edit', diff: parts.map((f) => f.diff).join('\n'), added: parts.reduce((n, f) => n + (f.added ?? 0), 0), removed: parts.reduce((n, f) => n + (f.removed ?? 0), 0) }];
@@ -65,13 +68,14 @@ function filesOf(tool: string, args: unknown): EditFile[] {
       if (cmd === 'view' || cmd === 'undo_edit') return [];
       if (cmd === 'create') return [editFile(path, 'create', undefined, s(args.file_text))];
       if (cmd === 'insert') return [editFile(path, 'edit', undefined, s(args.new_str))];
+      if (partial && s(args.new_str) === undefined) return [{ path, kind: 'edit' }];
       return [editFile(path, 'edit', s(args.old_str) ?? '', s(args.new_str) ?? '')];
     }
     default: {
       // Claude `Edit`, Copilot `edit`
       const oldText = s(args.old_string) ?? s(args.old_str);
       const newText = s(args.new_string) ?? s(args.new_str);
-      if (oldText === undefined && newText === undefined) return [{ path, kind: 'edit' }];
+      if ((oldText === undefined && newText === undefined) || (partial && newText === undefined)) return [{ path, kind: 'edit' }];
       return [editFile(path, 'edit', oldText ?? '', newText ?? '')];
     }
   }
@@ -81,7 +85,7 @@ function filesOf(tool: string, args: unknown): EditFile[] {
 export function editOf(tool: string, args: unknown, partial?: boolean): EditInfo | undefined {
   if (!isEditTool(tool)) return undefined;
   try {
-    return finishEdit(filesOf(tool, args), partial);
+    return finishEdit(filesOf(tool, args, partial), partial);
   } catch {
     return undefined;
   }
