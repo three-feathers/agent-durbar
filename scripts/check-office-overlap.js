@@ -124,6 +124,27 @@ function pageCheck(expanded, expectPlaces) {
     n.parentNode.appendChild(probe); const need = probe.getBoundingClientRect().width; probe.remove();
     if (n.clientWidth + 0.5 < need) problems.push(`desk name "${full}" shows fewer than three characters (${n.clientWidth}px, needs ${need.toFixed(0)}px)`);
   });
+  /* spec 052 (2026-10-21; real 15-session office at 1280x800): inside a desk card no icon (svg, status dot, warning) and no cost text
+     leaves the card or is cut by a clipping ancestor; a cut cost or icon once went unnoticed by every other rule here */
+  stage.querySelectorAll('.desk.card').forEach((d) => {
+    const D = R(d), who = (d.querySelector('.name') || {}).textContent || d.dataset.id || '?';
+    d.querySelectorAll('svg, .pill i, .warn, [class*="warn"], .use .aiu, .modeic').forEach((e) => {
+      if (!e.getClientRects().length || getComputedStyle(e).visibility === 'hidden') return;
+      const r = R(e); if (r.w < 1 || r.h < 1) return;
+      if (r.x < D.x - 0.5 || r.r > D.r + 0.5) { problems.push(`desk ${who}: ${name(e)} leaves its card`); return; }
+      for (let a = e.parentElement; a && a !== d.parentElement; a = a.parentElement) {
+        if (!/hidden|clip|auto|scroll/.test(getComputedStyle(a).overflowX)) continue;
+        const A = R(a);
+        if (r.r > A.r + 0.5 || r.x < A.x - 0.5) { problems.push(`desk ${who}: ${name(e)} is cut by ${name(a)}`); return; }
+      }
+    });
+  });
+  /* spec 052 (2026-10-21): a room's name is never cut while its path still takes room (the path, also in the tooltip, goes first) */
+  stage.querySelectorAll('.room-head').forEach((hd) => {
+    const n = hd.querySelector('.room-name'), p = hd.querySelector('.room-path');
+    if (!n || !p || !n.getClientRects().length || !p.getClientRects().length) return;
+    if (n.scrollWidth > n.clientWidth + 0.5 && p.getBoundingClientRect().width > 12) problems.push(`room "${n.textContent.trim()}": the name is cut while the path still shows (${Math.round(p.getBoundingClientRect().width)}px)`);
+  });
   /* spec 001 FR-023 (T030): a room header's parts (door, name, path, dots, +, MCP, AIU, plant, floor tag) never overlap or leave the header */
   stage.querySelectorAll('.room-head').forEach((hd) => {
     const H = R(hd), key = (hd.closest('.room') || {}).dataset?.key || '?';
@@ -427,13 +448,22 @@ async function driver(ctx) {
     if (!mine()) continue;
     const tag = `kinds ${w}x${h} mixed kinds`;
     await run(tag, 'sim=15&simfreeze=1&simkinds=mixed', w, h, shotsDir ? `kinds-${w}x${h}-mixed` : '');
+    /* spec 052 (2026-10-21): the card and full densities with dollar estimates (where a cut cost was found at 1280x800) */
+    /* forced densities do not fit 15 agents (the app picks the density itself), so only the card-contents rule applies here */
+    for (const dens of ['card', 'full']) {
+      await load(`sim=15&simfreeze=1&simkinds=mixed&density=${dens}`, w, h);
+      const r = await ctx.js(`(${pageCheck.toString()})(false, ${expectPlaces})`);
+      const own = r.problems.filter((p) => p.startsWith('desk ') && !p.includes('shows fewer than three characters'));
+      total++;
+      if (own.length) { failed++; console.log(`FAIL ${tag} density=${dens}: ${own.slice(0, 6).join('; ')}`); }
+    }
     const row = await ctx.js(`(()=>{const t=[...document.querySelectorAll('#liveBar > button, #liveBar > select')].filter(e=>e.getClientRects().length).map(e=>Math.round(e.getBoundingClientRect().top));return {min:Math.min(...t),max:Math.max(...t),n:t.length}})()`);
     total++;
     if (row.max - row.min > 3) { failed++; console.log(`FAIL ${tag}: the toolbar wraps ${JSON.stringify(row)}`); }
     /* spec 052 FR-105: the whole top bar is one row (about 48px) with the agent app named in the Defaults chip */
     const tb = await ctx.js(`({h:document.querySelector('.topbar').getBoundingClientRect().height,chip:document.getElementById('defaultsBtn').textContent})`);
     total++;
-    if (tb.h > 52.5 || !/^Copilot · /.test(tb.chip)) { failed++; console.log(`FAIL ${tag}: the top bar is not one row with the Defaults chip ${JSON.stringify(tb)}`); }
+    if (tb.h > 52.5 || !/^(Read-only|Ask first|Allow all) · Copilot( · |$)/.test(tb.chip)) { failed++; console.log(`FAIL ${tag}: the top bar is not one row with the Defaults chip ${JSON.stringify(tb)}`); }
     /* spec 012 FR-120: Claude chosen in the toolbar, its first model has efforts; the whole top bar stays inside the window */
     await ctx.js(`(async()=>{const s=document.getElementById('kindSel');s.value='claude';s.dispatchEvent(new Event('change'));await new Promise(r=>setTimeout(r,400));return true})()`);
     const fit = await ctx.js(`(()=>{const els=[...document.querySelectorAll('header button, header select, header .tgl, header .seg')].filter(e=>e.getClientRects().length);const r=els.map(e=>e.getBoundingClientRect());return {right:Math.max(...r.map(x=>x.right)),win:innerWidth,models:!document.getElementById('modelSel').hidden}})()`);

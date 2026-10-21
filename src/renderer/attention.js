@@ -23,7 +23,7 @@
   function waitLabel(ms){
     const v=Number(ms); if(!Number.isFinite(v)||v<0)return '';
     const m=Math.floor(v/60000);
-    if(m<1)return 'waiting under 1 min';
+    if(m<1)return 'waiting less than a minute';
     if(m<60)return 'waiting '+m+' min';
     const h=Math.floor(m/60), r=m%60;
     return 'waiting '+h+' h'+(r?' '+r+' min':'');
