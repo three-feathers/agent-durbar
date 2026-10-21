@@ -179,7 +179,7 @@ async function main(): Promise<void> {
   const rows: Row[] = [];
   for (const app of APPS) if (!only || only.has(app.kind)) { const r = await check(app); rows.push(r); console.log(clean(`${r.ok ? 'ok  ' : 'FAIL'} ${r.app} ${r.failedAt ? 'at ' + r.failedAt + ': ' + r.detail : ''}`)); }
   fs.writeFileSync(outFile, JSON.stringify(rows, null, 2));
-  const esc = (v: unknown) => clean(v).replace(/\|/g, '\\|');
+  const esc = (v: unknown) => clean(v).replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
   console.log(`\n### E2E with real accounts on ${process.platform}\n\n| App | Result | Install route | Version | Sign-in | Models | Read-only turn | Answer | Usage | Time | Detail |\n|---|---|---|---|---|---|---|---|---|---|---|`);
   for (const r of rows) console.log(`| ${r.app} | ${r.ok ? 'ok' : 'FAIL at ' + r.failedAt} | ${esc(r.route)} | ${esc(r.version)} | ${esc(r.signIn)} | ${r.models ?? ''} ${r.sampleModels ? '(' + esc(r.sampleModels) + ')' : ''} | ${esc(r.readOnly)} | ${esc(r.answer)} | ${esc(r.usage)} | ${r.secs} s | ${esc(r.detail)} |`);
   if (rows.some((r) => !r.ok)) process.exitCode = 1;
