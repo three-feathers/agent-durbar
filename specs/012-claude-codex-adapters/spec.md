@@ -935,11 +935,11 @@ The owner asked that sessions be shared between Durbar and the Claude Code CLI. 
 - **FR-045** superseded by FR-092 and spec 006 FR-020.
 - The Claude `context` event gap (2026-10-19 entry) is closed in code: `claudeMap.ts` emits `context` with the window (`read:`).
 - Still open, made precise:
-  - T070 (Windows sandbox);
+  - T070 (Windows sandbox; T070 itself closed by the owner's hand-check 2026-10-21, the sandbox stays a `[KNOWN GAP]`);
   - elicitation against a real MCP server;
   - Codex `request_user_input` (off upstream);
   - `CLAUDE_CODE_ENTRYPOINT` (undocumented upstream);
-  - the packaged app used by a person on macOS and Windows (#9, #10);
+  - the packaged app used by a person on macOS and Windows (#9; #10 closed by the owner's hand-check 2026-10-21);
   - a Copilot runtime restart after a new login, with several sessions open.
 
   Claude Code has no free sign-in check by design: with an API key the card says "confirmed at the first message", and the e2e turn proved it on three OSes.
@@ -959,3 +959,10 @@ The owner asked that sessions be shared between Durbar and the Claude Code CLI. 
   - when a send fails with such a refusal ("Read-only and Ask first need…", or "…limit reads to the session's folders"), the error note gets a **Change mode…** button. It opens the usual mode menu (Read-only, Ask first, Allow all, with each mode's help), so the choice stays the user's and the widest mode is never the only button;
   - `test:` `scripts/test-codex-adapter.ts` (no Allow all in any hint) and `scripts/test-codex-modes.ts` (refusals unchanged); `sim:` `scripts/check-mode-refusal.js` (`simsendfail=sandbox`, 1440x900 and 1280x800: the button is inside the note, at least 10.5px, and opens a menu with all three modes); screenshots `docs/screenshots/012-mode-refusal-*`.
 - **2026-10-21, FR-053 test note (test only, no behaviour change):** the `fake-bare` setup's `ALL_OPTIONAL` list in `scripts/test-adapter-contract.ts` had drifted (it missed `handoffSummary`, `generateText`, `renameSession` and `deleteSession`, so "bare" still had them). It is now a `Record<OptionalMember, true>` (the scripts build in `npm test` fails on a missing name), and the suite parses `interface AgentAdapter` in `src/adapters/types.ts` with the TypeScript parser and fails unless `ALL_OPTIONAL` plus an explicit `NOT_IN_FAKE` list is exactly its optional members, `fake-bare` has none of them and the full fake has every listed one. `scripts/test-agentops.ts` imports the same list. `test:` mutation checks (an unlisted new optional member, a dropped entry) fail.
+
+### 2026-10-21: owner hand-check on macOS and Windows (T070, issue #72)
+
+- `real:` 2026-10-21, owner (Vikram) hand-check, closed by the owner's decision: macOS in daily use; Windows looked at with a colleague on 2026-10-21. Findings filed from that Windows session: #467 (Settings > Agent apps offered no install option; Copilot was not detected or installable without Node.js; PowerShell/winget commands in PR #469) and the MCP sign-in sharing (#471, merged; real check in PR #478).
+- Owner decision (Vikram, team chat 2026-10-21): "I am using it daily on macOS and I looked at everything today with my colleague on Windows and you already have feedback. Issue #72 can be closed as well."
+- What the report adds for T070: `detect()` on a real Windows PC did not find or offer Copilot without Node.js (#467, fix in review in PR #469). Earlier real evidence stays: the spec 062 e2e run 39496442403 (detection, spawn and one turn of each adapter on macOS and Windows runners) and T044 (packaged build in CI on three OSes).
+- `[KNOWN GAP]` kept, not reported by the owner: the Codex sandbox on Windows (the `elevatedSandbox` setup step; Read-only and Ask first stay refused there, fail closed) and on an ordinary Mac (refused on GitHub's macOS runner); npm `.cmd` shims for Codex (D4); which build (packaged or source) and which adapters were used on the Windows PC was not recorded.

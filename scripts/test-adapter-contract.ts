@@ -60,7 +60,7 @@ async function until<T>(what: string, f: () => T | undefined, ms = 1000): Promis
   const end = Date.now() + ms;
   for (;;) {
     const v = f();
-    if (v !== undefined) return v;
+    if (v !== undefined && (v as unknown) !== false) return v; // `false` means "not yet", like undefined (as in test-codex-adapter)
     if (Date.now() > end) throw new assert.AssertionError({ message: `timed out waiting for ${what}` });
     await new Promise((r) => setTimeout(r, 2));
   }
