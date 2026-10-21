@@ -62,9 +62,9 @@ module.exports = async (ctx) => {
       let r = await rows();
       assert.deepStrictEqual(r.map((x) => x.k), ['prev-1', 'prev-2', 'prev-3', 'prev-4', 'h1/c1', 'h1/c2'], 'both groups, newest first');
       await assertFit(L + ' initial');
-      // the menu: Pin, Hide, Delete… on an agent session; no Delete… on a VS Code chat
+      // the menu: Pin, Rename… (059 FR-006), Hide, Delete… on an agent session; no Delete… on a VS Code chat
       await openMore('prev-3');
-      assert.deepStrictEqual(await menuItems(), ['Pin to top', 'Hide', 'Delete…'], 'agent session menu');
+      assert.deepStrictEqual(await menuItems(), ['Pin to top', 'Rename…', 'Hide', 'Delete…'], 'agent session menu (059 FR-006: Rename… between Pin and Hide)');
       assert.ok(await js(`document.activeElement.closest('#modeMenu')!==null`), 'focus is in the menu');
       assert.ok(await js(`document.querySelector('#modeMenu').getAttribute('role')==='menu'&&document.querySelector('#prevLists .prev-row[data-pk="prev-3"] .prev-more').getAttribute('aria-label')==='Actions for Add a retry with backoff to the registry client'`), 'roles and labels');
       await shot('menu', w, h, level);
@@ -76,7 +76,7 @@ module.exports = async (ctx) => {
       await escKey(); await until(`!document.getElementById('modeMenu')`);
       // right-click opens the same menu
       await js(`document.querySelector('#prevLists .prev-row[data-pk="prev-2"]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:300,clientY:300}))`); await until(`!!document.querySelector('#modeMenu [data-pact]')`);
-      assert.deepStrictEqual(await menuItems(), ['Pin to top', 'Hide', 'Delete…'], 'right-click opens the row menu');
+      assert.deepStrictEqual(await menuItems(), ['Pin to top', 'Rename…', 'Hide', 'Delete…'], 'right-click opens the row menu');
       await escKey(); await until(`!document.getElementById('modeMenu')`);
       // Pin the third and the VS Code chat: pinned rows come first in their group
       await openMore('prev-3'); await pact('pin');
@@ -101,7 +101,7 @@ module.exports = async (ctx) => {
       assert.ok(r.find((x) => x.k === 'prev-4').hid, 'Show hidden brings it back, tagged');
       assert.ok(await js(`!!document.querySelector('#prevLists .prev-row[data-pk="prev-4"] .prev-hidtag')`), 'Hidden tag');
       await openMore('prev-4');
-      assert.deepStrictEqual(await menuItems(), ['Unhide', 'Delete…'], 'a hidden row offers Unhide (no Pin)');
+      assert.deepStrictEqual(await menuItems(), ['Rename…', 'Unhide', 'Delete…'], 'a hidden row offers Unhide (no Pin)');
       await shot('hidden', w, h, level);
       await escKey(); await until(`!document.getElementById('modeMenu')`);
       await assertFit(L + ' hidden shown');

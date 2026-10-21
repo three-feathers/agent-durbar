@@ -160,6 +160,8 @@ FR-023) use the new name; Resume opens an agent with that name.
   3. the **Previous sessions** row menu (spec 006 FR-027, issue #368) for agent-session rows, between Pin/Unpin and Hide.
   The item is **Rename…** (it asks for input), tooltip "Give this session a short name". All three open the same dialog; focus returns
   to the menu button that opened it. Keyboard: the menus' existing arrows, Enter, Escape, Shift+F10.
+  A **hidden** row in Previous sessions also offers Rename… (first, since no Pin is shown: `Rename…, Unhide, Delete…`), so a hidden
+  session can be renamed without unhiding it. The ⋯ tooltip on agent-session rows reads "Pin, rename, hide or delete".
 - **FR-007** `[IMPLEMENTED]` **The app-side rename** (Q1 A, Q2 B, Q8 A, Q10; changed 2026-10-20). `AdapterCapabilities` gets
   `renameSession?: 'any' | 'next-turn'` (missing = none); `AgentAdapter` gets `renameSession?(sessionId: string, name: string): Promise<void>`,
   present exactly when the flag is set (spec 012 FR-027, contract check C2). `'any'`: the call renames the session now, open or stored.
