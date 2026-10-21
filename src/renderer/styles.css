@@ -1469,3 +1469,16 @@ h2,h3,h4{text-wrap:balance}
 .note.plan-card .plan-body{max-height:min(42vh,360px);overflow:auto;margin:6px 0 4px;padding:6px 10px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
 .note.plan-card .plan-why{margin:4px 0 0;color:var(--ink-2);font-size:var(--t4-size)}
 .att.plan-chip{border-color:var(--accent,#2a6f5a);color:var(--accent-ink,var(--ink))}
+
+/* spec 001 FR-028..FR-030: live activity on the desks. The side panel has a fixed size and is reserved next to every main desk while the
+   layout uses it (an empty one is invisible), so the office never moves when an agent starts or stops; text changes only. No animation. */
+.liveside{flex:none;width:196px;height:148px;margin:10px 0 0 8px;padding:9px 11px;border-radius:var(--radius);border:1px solid var(--line-hair);background:color-mix(in srgb,var(--card) 82%,transparent);display:flex;flex-direction:column;gap:5px;position:relative;overflow:hidden;box-sizing:border-box}
+.liveside::before{content:"";position:absolute;left:-1px;top:26px;width:3px;height:22px;border-radius:0 2px 2px 0;background:var(--c-working)}
+.liveside[data-lk="think"]::before{background:var(--c-thinking)}
+.liveside.is-empty{visibility:hidden}
+.liveside .ls-k{font-size:11px;line-height:14px;font-weight:600;color:var(--muted);letter-spacing:.01em}
+/* the newest words stay in view: text that does not fit sits at the bottom of its box and older lines leave at the top, fading (.over is set by measuring) */
+.liveside .ls-t{flex:1 1 0;min-height:0;font-size:12px;line-height:17px;color:var(--ink-2);display:flex;flex-direction:column;justify-content:flex-start;overflow:hidden;overflow-wrap:anywhere}
+.liveside .ls-t.over{justify-content:flex-end;-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 20px);mask-image:linear-gradient(to bottom,transparent 0,#000 20px)}
+.liveside[data-lk="think"] .ls-t,:is(.task,.intent)[data-lk="think"]{font-style:italic}
+.stage[data-d="full"] .liveside+.helpers{margin-left:0} /* the helper column's -2px tuck is for its desk's connector, not the panel */

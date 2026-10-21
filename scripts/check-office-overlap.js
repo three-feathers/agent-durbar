@@ -56,7 +56,7 @@ function pageCheck(expanded, expectPlaces) {
     return (e.className && typeof e.className === 'string' ? e.className.split(' ').slice(0, 2).join('.') : e.tagName) + (id ? '[' + id + ']' : pid ? '{' + pid + '}' : '');
   };
   const problems = [];
-  const items = [...stage.querySelectorAll('.desk, .helper, .more, .helpers, .plate, .place, .place-add')].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
+  const items = [...stage.querySelectorAll('.desk, .helper, .more, .helpers, .liveside, .plate, .place, .place-add')].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
   for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
     const a = items[i], b = items[j];
     if (a.contains(b) || b.contains(a)) continue; /* a strip contains its tiles */
@@ -75,10 +75,10 @@ function pageCheck(expanded, expectPlaces) {
   };
   stage.querySelectorAll('.room').forEach((room) => {
     inside(room, { x: fx0, y: -1e9, r: fx1, b: expanded ? 1e9 : fy1 }, 'the floor');
-    room.querySelectorAll('.desk, .helper, .more, .helpers').forEach((e) => inside(e, R(room), 'its room ' + room.dataset.key));
+    room.querySelectorAll('.desk, .helper, .more, .helpers, .liveside').forEach((e) => inside(e, R(room), 'its room ' + room.dataset.key));
   });
   stage.querySelectorAll('.doors').forEach((d) => { inside(d, { x: fx0, y: -1e9, r: fx1, b: expanded ? 1e9 : fy1 }, 'the floor'); d.querySelectorAll('.plate').forEach((e) => inside(e, R(d), 'the door row')); });
-  stage.querySelectorAll('.unit').forEach((u) => u.querySelectorAll('.desk, .helper, .more, .helpers').forEach((e) => inside(e, R(u), 'its unit ' + u.dataset.key)));
+  stage.querySelectorAll('.unit').forEach((u) => u.querySelectorAll('.desk, .helper, .more, .helpers, .liveside').forEach((e) => inside(e, R(u), 'its unit ' + u.dataset.key)));
   /* lobby (spec 024 FR-004, FR-009) */
   const lobby = stage.querySelector('.lobby');
   if (!lobby) problems.push('no lobby in the office');
