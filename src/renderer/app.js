@@ -3073,7 +3073,7 @@ function renderStrip(){
 function modeChipHTML(a){const m=a.info.permMode, rs=m==='allow'&&a.info.permRestored;
   /* spec 061 FR-012: Read-only still means something: when the folder's own hooks or allow rules apply, the chip says so */
   const fr=a.info.folderRules?' + folder rules':'', frT=a.info.folderRules?' This folder\u2019s own hooks or allow rules also apply (you accepted them): open the mode menu, then This folder\u2019s setup.':'';
-  if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts.${esc(frT)}">${esc(MODE_NAME[m]+fr)}</span>`; /* spec 052 FR-065 */
+  if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts${frT?'.'+esc(frT):''}">${esc(MODE_NAME[m]+fr)}</span>`; /* spec 052 FR-065 */
   return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}. ${esc(MODE_HELP[m])}${rs?(a.info.permFrom==='session'?' Restored: the mode you last chose for this session.':' Restored from your last run.'):''} Click to change; it applies from the next request.${esc(frT)}"><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m]+fr)}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>`;}
 function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');}}
 function openModeMenu(a0,x,y,anchor){
