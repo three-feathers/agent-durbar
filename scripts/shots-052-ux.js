@@ -12,27 +12,23 @@
  * Prints "[052] PASS".
  */
 const assert = require('assert');
-const { waits } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const path = require('path');
-const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(process.cwd(), 'dist', 'renderer', 'index.html');
 
 /* spec 052 FR-084: the palette and inbox shortcuts are Cmd on a Mac, Ctrl elsewhere (Ctrl+` stays Control everywhere, FR-091) */
 const MOD = process.platform === 'darwin' ? 'meta' : 'control';
 
 module.exports = async (ctx) => {
-  const { until, settle, office, chatOf } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
-  const js = (c) => ctx.js(c);
-  const key = (k) => { ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: k }); ctx.win.webContents.sendInputEvent({ type: 'char', keyCode: k }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: k }); };
-  const shot = async (name) => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(150); await ctx.shot(path.join(OUT, name)); console.log('[052] saved', name); };
+  const H = helpers(ctx); // spec 008 FR-096/097: shared plumbing, waits for the page instead of a fixed time
+  const { until, settle, office, chatOf, js } = H;
+  const key = (k) => H.key(k, [], { char: 'always' }); // not awaited: the events are sent at once
+  const shot = (name) => H.shot(path.join(OUT, name), { prep: 'mouse', tag: '052' });
   const load = async (w, h) => {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simkinds: 'mixed' } });
-    await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
+    await H.load({ w, h, query: { simkinds: 'mixed' }, ready: 'fit', settle: false });
     await office(15); await until(`!!document.getElementById('restoreStrip')&&!document.getElementById('restoreStrip').hidden`);
   };
-  const deskId = (name) => js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith(${jsLiteral(name)}));return d?d.dataset.id:null})()`);
+  const deskId = H.idOf;
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await load(w, h);
@@ -97,13 +93,13 @@ module.exports = async (ctx) => {
     assert.ok(await js(`!document.getElementById('inboxDlg')`), 'Esc closes the inbox');
     // FR-035: Ctrl+Shift+A opens the inbox even from a text field
     await js(`(()=>{const i=document.createElement('input');i.id='tmpIn';document.body.appendChild(i);i.focus();})()`);
-    const mod = MOD; ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'A', modifiers: [mod, 'shift'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'A', modifiers: [mod, 'shift'] }); await until(`!!document.getElementById('inboxDlg')`);
+    const mod = MOD; H.key('A', [mod, 'shift'], { char: 'never', pause: 0 }); await until(`!!document.getElementById('inboxDlg')`);
     assert.ok(await js(`!!document.getElementById('inboxDlg')`), 'Ctrl+Shift+A opens the inbox from a text field');
     key('Escape'); await until(`!document.getElementById('inboxDlg')`); await js(`document.getElementById('tmpIn').remove()`);
 
     // waiting agent's chat
     const jonas = await deskId('Jonas');
-    await js(`document.querySelector('#stage [data-id="${jonas}"]').click()`); await chatOf('Jonas');
+    await js(`document.querySelector(${jsLiteral(`#stage [data-id="${jonas}"]`)}).click()`); await chatOf('Jonas');
     // round 10 (FR-095): "Previous (N)" is a toggle for a panel, not an action, so it is not counted
     const hdr = await js(`[...document.querySelectorAll('#panelHead .actions > button:not(#prevBtn):not(#newSessHdrBtn)')].filter(b=>b.getClientRects().length).map(b=>b.id)`);
     assert.ok(hdr.length <= 3, 'at most 3 header actions besides Previous and + New (FR-139): ' + hdr.join(','));
@@ -187,7 +183,7 @@ module.exports = async (ctx) => {
     // a fresh office in Simple (the level is remembered): Jonas's request is drawn in Simple from the start (round 7 FR-080)
     ctx.win.webContents.reload(); await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000); await office(15);
     assert.ok(await js(`document.body.classList.contains('simple')`), 'Simple is remembered after a reload');
-    const jonasS = await deskId('Jonas'); await js(`document.querySelector('#stage [data-id="${jonasS}"]').click()`); await chatOf('Jonas');
+    const jonasS = await deskId('Jonas'); await js(`document.querySelector(${jsLiteral(`#stage [data-id="${jonasS}"]`)}).click()`); await chatOf('Jonas');
     const simpleChat = await js(`({hidden:['modelChip','vscodeBtn','copyResBtn','mcpBtn','toolsHdrBtn'].every(i=>{const e=document.getElementById(i);return !e||!e.getClientRects().length}),answer:!!document.querySelector('#chat .note.perm .note-actions button, #chat .note.perm.settled'),mode:!!document.getElementById('modeChip')&&document.getElementById('modeChip').getClientRects().length>0})`);
     assert.ok(simpleChat.hidden && simpleChat.answer && simpleChat.mode, 'Simple chat: developer chips gone, mode and answering kept: ' + JSON.stringify(simpleChat));
     // round 7 FR-081: the memory chip stays in Simple, in plain words
@@ -207,7 +203,7 @@ module.exports = async (ctx) => {
     const kenjiS = await deskId('Kenji');
     if (kenjiS) {
       await js(`document.getElementById('backBtn').click()`); await office(15);
-      await js(`document.querySelector('#stage [data-id="${kenjiS}"]').click()`); await chatOf('Kenji');
+      await js(`document.querySelector(${jsLiteral(`#stage [data-id="${kenjiS}"]`)}).click()`); await chatOf('Kenji');
       const k = await js(`(()=>{const c=document.querySelector('#chat .note.perm:not(.settled)');if(!c)return null;const d=c.querySelector('details.pcmd');return {sum:c.querySelector('.psum').textContent,open:d?d.open:null,cmd:d?d.querySelector('pre').textContent:'',vis:!!d&&d.getClientRects().length>0}})()`);
       if (k) assert.ok(k.sum === 'Kenji wants to run a command' && k.vis && k.open === false && /baseline\.py/.test(k.cmd), 'Simple shell request: the command under a collapsed "Show the command": ' + JSON.stringify(k));
     }
@@ -218,7 +214,7 @@ module.exports = async (ctx) => {
     assert.ok(await js(`!document.body.classList.contains('simple')`), 'back to Expert');
     // FR-042 (#316): Ctrl+K opens the palette; typing filters it; Enter opens the agent's chat
     await js(`document.activeElement&&document.activeElement.blur()`);
-    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'K', modifiers: [MOD] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'K', modifiers: [MOD] }); await until(`!!document.getElementById('palDlg')&&document.activeElement&&document.activeElement.id==='palIn'`);
+    H.key('K', [MOD], { char: 'never', pause: 0 }); await until(`!!document.getElementById('palDlg')&&document.activeElement&&document.activeElement.id==='palIn'`);
     assert.ok(await js(`!!document.getElementById('palDlg')&&document.activeElement&&document.activeElement.id==='palIn'`), 'Ctrl+K opens the palette with focus in its input');
     await js(`(()=>{const i=document.getElementById('palIn');i.value=${jsLiteral('lena')};i.dispatchEvent(new Event('input',{bubbles:true}));})()`); await until(`(document.querySelector('#palList [role="option"] .pal-l')||{}).textContent==='Lena'`);
     const pal = await js(`({opts:[...document.querySelectorAll('#palList [role="option"]')].map(o=>o.querySelector('.pal-l').textContent),active:document.getElementById('palIn').getAttribute('aria-activedescendant'),said:document.getElementById('srAnnounce').textContent})`);
@@ -231,12 +227,12 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`(document.getElementById('panelTitle')||{}).textContent||''`), 'Lena', 'Enter opens Lena\'s chat');
     await js(`document.getElementById('backBtn').click()`); await office(15);
     // FR-091 (round 8): with an empty search the palette starts with Recent (Lena, just opened); Ctrl+` goes back to her chat
-    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'K', modifiers: [MOD] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'K', modifiers: [MOD] }); await until(`!!document.querySelector('#palList [role="option"]')`);
+    H.key('K', [MOD], { char: 'never', pause: 0 }); await until(`!!document.querySelector('#palList [role="option"]')`);
     const rec = await js(`({g:(document.querySelector('#palList .pal-g')||{}).textContent,first:(document.querySelector('#palList [role="option"] .pal-l')||{}).textContent,end:[...document.querySelectorAll('#palList .pal-l')].some(x=>x.textContent==='End all sessions')})`);
     assert.ok(rec.g === 'Recent' && rec.first === 'Lena', 'the palette lists recent chats first: ' + JSON.stringify(rec));
     key('Escape'); await until(`!document.getElementById('palDlg')`);
     await js(`document.activeElement&&document.activeElement.blur()`);
-    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: '`', modifiers: ['control'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: '`', modifiers: ['control'] }); await chatOf('Lena');
+    H.key('`', ['control'], { char: 'never', pause: 0 }); await chatOf('Lena');
     assert.strictEqual(await js(`(document.getElementById('panelTitle')||{}).textContent||''`), 'Lena', 'Ctrl+` opens the previous chat');
     await js(`document.getElementById('backBtn').click()`); await office(15);
     // FR-043: ? opens the shortcut sheet; Esc closes it

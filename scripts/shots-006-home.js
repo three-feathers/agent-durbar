@@ -2,12 +2,12 @@
      DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 SHOTS_SIZE=1440x900 DURBAR_DRIVER=$PWD/scripts/shots-006-home.js xvfb-run -a npx electron . --no-sandbox
    Saves docs/screenshots/006-home-warning-<size>.png; fails when the warning does not appear. */
 const path = require('path');
+const { helpers } = require('./driver-helpers');
 
 module.exports = async (ctx) => {
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const size = /^(\d+)x(\d+)$/.exec(process.env.SHOTS_SIZE || '') || [null, '1440', '900'];
-  ctx.win.setContentSize(Number(size[1]), Number(size[2]));
-  await ctx.win.loadFile(path.join(__dirname, '..', 'dist', 'renderer', 'index.html'), { query: { sim: '15', simfreeze: '1', simaddhome: '1' } });
-  await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
+  await H.load({ w: Number(size[1]), h: Number(size[2]), query: { simaddhome: '1' }, ready: 'fit', settle: false });
   /* the simulator's "restored" toast arrives a few seconds after start: let it come, then clear it */
   await ctx.waitFor(`[...document.querySelectorAll('#toasts .toast')].some((t)=>/restored/.test(t.textContent))`, 10000).catch(() => undefined);
   await ctx.js(`(()=>{document.querySelectorAll('#toasts > *').forEach((t)=>t.remove());document.getElementById('addFolder').click();return true})()`);

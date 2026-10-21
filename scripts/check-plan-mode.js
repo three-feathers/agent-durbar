@@ -9,21 +9,19 @@
  */
 const assert = require('assert');
 const path = require('path');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 
 module.exports = async (ctx) => {
-  const js = async (c) => { try { return await ctx.js(c); } catch (e) { throw new Error('page code failed: ' + c.slice(0, 160)); } };
-  const shot = async (name) => { await ctx.sleep(150); await ctx.shot(path.join(OUT, name)); };
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { js } = H;
+  const shot = (name) => H.shot(path.join(OUT, name));
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1' } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
-    await ctx.sleep(800);
+    await H.load({ w, h });
     // an idle agent (a busy one cannot send)
     const id = 'sim-1'; // the agent the other chat drivers send to (sim-1 accepts sends in the simulator)
 
-    await js(`document.querySelector('#stage .desk[data-id="${id}"]').click()`);
+    await js(`document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)}).click()`);
     await ctx.waitFor(`!!document.getElementById('modeChip')&&!!document.getElementById('msgInput')`, 8000);
     // the menu offers Plan first; it sets a one-shot chip
     await js(`document.getElementById('modeChip').click()`);
@@ -45,7 +43,7 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(card.btns, ['Approve', 'Revise…', 'Reject']);
     assert.strictEqual(card.focus, 'Approve', `${w}: focus on Approve`);
     assert.match(card.why, /^Nothing has changed yet\./);
-    const desk = await js(`document.querySelector('#stage .desk[data-id="${id}"]')?document.querySelector('#stage .desk[data-id="${id}"]').innerText:''`);
+    const desk = await js(`document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)})?document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)}).innerText:''`);
     await shot(`066-plan-card-${w}x${h}.png`);
     // Revise: a dialog for the changes, then a new plan
     await js(`[...document.querySelectorAll('.note.plan-card .note-actions .btn')].find(b=>b.textContent==='Revise…').click()`);

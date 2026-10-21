@@ -8,16 +8,15 @@
  */
 const assert = require('assert');
 const path = require('path');
+const { helpers } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 
 module.exports = async (ctx) => {
-  const js = (c) => ctx.js(c);
-  const shot = async (name) => { await ctx.sleep(150); await ctx.shot(path.join(OUT, name)); };
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { js } = H;
+  const shot = (name) => H.shot(path.join(OUT, name));
   const open = async (w, h, mode) => {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simcheckpoint: mode } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
+    await H.load({ w, h, query: { simcheckpoint: mode } });
     await js(`document.querySelector('#stage .desk[data-id="sim-1"]').click()`);
     await ctx.waitFor(`!!document.querySelector('.ckpt-note [data-act="ckptUndo"]')`, 8000);
     await js(`document.querySelector('.ckpt-note').scrollIntoView({block:'center'})`);

@@ -13,17 +13,14 @@
 const assert = require('assert');
 const path = require('path');
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
+const { helpers } = require('./driver-helpers');
 
 module.exports = async (ctx) => {
-  const js = (c) => ctx.js(c);
-  const hideToasts = () => js(`(()=>{const s=document.createElement('style');s.textContent='#toasts{display:none!important}';document.head.appendChild(s);})()`);
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { js } = H;
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1' } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
-    await ctx.sleep(600);
-    await hideToasts();
+    await H.load({ w, h });
+    await H.calm();
     await js(`document.querySelector('#stage .desk[data-id="sim-2"]').click()`); await ctx.sleep(600);
     await js(`document.getElementById('newSessBtn').click()`); await ctx.sleep(400);
     assert.ok(await js(`!!document.getElementById('sdSum')&&!document.getElementById('sdSum').checked`), 'the checkbox is there, off by default');
@@ -56,9 +53,7 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('hoCancel').click()`); await ctx.sleep(400);
     assert.strictEqual(await js(`document.querySelectorAll('#stage .desk[data-id]').length`), n, 'Cancel starts nothing');
     // a kind without the capability: no checkbox
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simkinds: 'mixed' } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
-    await ctx.sleep(500);
+    await H.load({ query: { simkinds: 'mixed' } });
     await js(`document.querySelector('#stage .desk[data-id="sim-7"]').click()`); await ctx.sleep(500);
     const kind = 'basic';
     if (await js(`!!document.getElementById('newSessBtn')`)) {

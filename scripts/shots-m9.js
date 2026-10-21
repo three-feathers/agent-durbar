@@ -9,16 +9,16 @@
  * lets him continue, the cap chip shows used / cap, and the card shows used/cap AIU. Exits non-zero (driver failure) on a miss.
  */
 const path = require('path');
-const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
+const { helpers, jsLiteral } = require('./driver-helpers'); /* jsLiteral: CodeQL js/bad-code-sanitization, values spliced into page code */
 const assert = require('assert');
 const OUT = process.env.M9_OUT || '/tmp';
 const SIZES = [[1440, 900], [1280, 800]];
 
 module.exports = async (ctx) => {
-  const click = (sel) => ctx.js(`(()=>{const e=document.querySelector(${jsLiteral(sel)});if(!e)return false;e.click();return true})()`);
-  const text = (sel) => ctx.js(`(document.querySelector(${jsLiteral(sel)})||{}).textContent||''`);
-  const calm = () => ctx.js(`(()=>{if(!document.getElementById('shotCalm')){const s=document.createElement('style');s.id='shotCalm';s.textContent='#toasts{display:none!important}';document.head.appendChild(s);}})()`); // the startup toast would sit over the pictures
-  const shot = async (name, w, h) => { await ctx.sleep(450); await calm(); await ctx.sleep(150); await ctx.shot(path.join(OUT, `m9-${name}-${w}x${h}.png`)); console.log('[m9] saved', name, w, h); };
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { click } = H;
+  const text = (sel) => H.text(sel, 'textContent');
+  const shot = (name, w, h) => H.shot(path.join(OUT, `m9-${name}-${w}x${h}.png`), { prep: 'calm', settle: true, delay: 250, tag: 'm9', what: `${name} ${w} ${h}` });
   for (const [w, h] of SIZES) {
     ctx.win.setContentSize(w, h);
     await ctx.sleep(2500);

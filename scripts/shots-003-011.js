@@ -11,18 +11,14 @@
  * (same names as the first set). It asserts what each picture is meant to show and fails (driver error) on a miss.
  */
 const path = require('path');
-const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
+const { helpers, jsLiteral } = require('./driver-helpers'); /* jsLiteral: CodeQL js/bad-code-sanitization, values spliced into page code */
 const assert = require('assert');
 const OUT = process.env.SHOTS_OUT || require('os').tmpdir();
 
 module.exports = async (ctx) => {
-  const click = (sel) => ctx.js(`(()=>{const e=document.querySelector(${jsLiteral(sel)});if(!e)return false;e.click();return true})()`);
-  const text = (sel) => ctx.js(`(document.querySelector(${jsLiteral(sel)})||{}).innerText||''`);
-  // calm picture: no startup toast, no focus ring (same as shots-hero.js)
-  const calm = () => ctx.js(`(()=>{if(!document.getElementById('shotCalm')){const s=document.createElement('style');s.id='shotCalm';s.textContent='#toasts{display:none!important}';document.head.appendChild(s);}
-    if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();})()`);
-  const shot = async (file) => { await ctx.sleep(450); await calm(); await ctx.sleep(100); await ctx.shot(path.join(OUT, file)); console.log('[003-011] saved', file); };
-  const idOf = (name) => ctx.js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith(${jsLiteral(name)}));return d?d.dataset.id:null})()`);
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { click, text, idOf } = H;
+  const shot = (file) => H.shot(path.join(OUT, file), { prep: 'calm', blur: true, settle: true, delay: 250, tag: '003-011' });
 
   // 011: the office with the office total chip and each room's total
   for (const [w, h] of [[1440, 900], [1280, 800]]) {

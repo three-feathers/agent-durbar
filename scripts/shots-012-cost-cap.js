@@ -12,15 +12,13 @@
 const assert = require('assert');
 const path = require('path');
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
+const { helpers } = require('./driver-helpers');
 
 module.exports = async (ctx) => {
-  const js = (c) => ctx.js(c);
-  const hideToasts = () => js(`(()=>{const s=document.createElement('style');s.textContent='#toasts{display:none!important}';document.head.appendChild(s);})()`);
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { js } = H;
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simkinds: 'mixed' } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
+    await H.load({ w, h, query: { simkinds: 'mixed', simfreeze: undefined }, settle: false });
     await ctx.sleep(500);
     await js(`document.querySelector('#stage .desk[data-id="sim-1"]').click()`); await ctx.sleep(700);
     await ctx.waitFor(`!!document.getElementById('capChip')`, 5000);
@@ -36,8 +34,7 @@ module.exports = async (ctx) => {
     assert.match(note, /Spending limit reached/);
     assert.match(note, /Raise limit/);
     assert.ok(!/AIU/.test(note), 'no AIU on a dollar cap');
-    await hideToasts(); await ctx.sleep(200);
-    await ctx.shot(path.join(OUT, `cost-cap-${w}x${h}.png`));
+    await H.shot(path.join(OUT, `cost-cap-${w}x${h}.png`), { prep: 'calm', delay: 200 });
     // the cap dialog asks for dollars
     await js(`document.getElementById('capChip').click()`); await ctx.sleep(400);
     assert.match(await js(`document.getElementById('cdT').textContent`), /^Spending limit for/);

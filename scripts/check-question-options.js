@@ -14,24 +14,18 @@
  * DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
 const path = require('path');
-const { waits } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const assert = require('assert');
 const OUT = process.env.OUT || require('os').tmpdir();
-const INDEX = path.join(process.cwd(), 'dist', 'renderer', 'index.html');
 module.exports = async (ctx) => {
-  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
-  const js = async (c) => { try { return await ctx.js(c); } catch (e) { console.log('JS ERR for', c.slice(0, 90)); throw e; } };
-  const shot = async (name) => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(150); await ctx.shot(path.join(OUT, name)); console.log('[question-options] saved', name); };
+  const H = helpers(ctx); // spec 008 FR-096/097: shared plumbing, waits for the page instead of a fixed time
+  const { until, settle, js } = H;
+  const shot = (name) => H.shot(path.join(OUT, name), { prep: 'mouse', tag: 'question-options' });
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     for (const level of ['expert', 'simple']) {
-      ctx.win.setContentSize(w, h);
-      await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simquestion: 'long' } });
-      await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-      await settle();
-      await js(`localStorage.setItem('durbar.detail',${JSON.stringify(level)})`); // the level is remembered: reload so the office is drawn in it
-      await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simquestion: 'long' } });
-      await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-      await settle();
+      await H.load({ w, h, query: { simquestion: 'long' }, ready: 'fit' });
+      await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)})`); // the level is remembered: reload so the office is drawn in it
+      await H.load({ query: { simquestion: 'long' }, ready: 'fit' });
       assert.ok(await js(`document.body.classList.contains('simple')===${level === 'simple'}`), `${w} ${level}: the detail level is on`);
       let id = null;
       for (const end = Date.now() + 8000; !id && Date.now() < end;) { id = await js(`(()=>{for(const d of document.querySelectorAll('#stage .desk[data-id]')){d.click();const c=document.querySelector('#chat .note.question');if(c)return d.dataset.id;const b=document.getElementById('backBtn');if(b)b.click();}return ''})()`); if (!id) await ctx.sleep(100); }
@@ -66,7 +60,7 @@ module.exports = async (ctx) => {
       if (level === 'expert') await shot(`052-question-options-${w}x${h}.png`);
       // the inbox row: the question text in full, nothing clipped
       await js(`document.activeElement&&document.activeElement.blur()`);
-      ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'I' }); ctx.win.webContents.sendInputEvent({ type: 'char', keyCode: 'I' }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'I' });
+      H.key('I', [], { char: 'always', pause: 0 });
       await until(`[...document.querySelectorAll('#inboxDlg .inbox-row .ib-t')].some(p=>/Before I change/.test(p.textContent))`); await settle();
       const ib = await js(`(()=>{const d=document.getElementById('inboxDlg');if(!d)return null;const t=[...d.querySelectorAll('.inbox-row .ib-t')].find(p=>/Before I change/.test(p.textContent));if(!t)return {found:false};
         const br=t.getBoundingClientRect(),rr=t.closest('.inbox-row').getBoundingClientRect();return {found:true,text:t.textContent,clipped:t.scrollWidth>t.clientWidth+1||t.scrollHeight>t.clientHeight+1,inside:br.right<=rr.right+0.5}})()`);
@@ -77,7 +71,7 @@ module.exports = async (ctx) => {
       // FR-161: the custom answer box. Close the inbox, then Enter / Shift+Enter / typing / Enter
       await js(`(()=>{const d=document.getElementById('inboxDlg');if(d)d.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));})()`);
       await until(`!document.getElementById('inboxDlg')`); await settle();
-      const key = async (keyCode, modifiers = []) => { const wc = ctx.win.webContents; wc.sendInputEvent({ type: 'keyDown', keyCode, modifiers }); if (keyCode === 'Enter') wc.sendInputEvent({ type: 'char', keyCode: '\r', modifiers }); wc.sendInputEvent({ type: 'keyUp', keyCode, modifiers }); await ctx.sleep(120); };
+      const key = (k, m = []) => H.key(k, m, { pause: 120 });
       const box = (i) => `document.querySelectorAll('#chat .note.question:not(.settled) .q-other')[${i}]`;
       await js(`${box(0)}.scrollIntoView({block:'center'});${box(0)}.focus()`); await settle();
       const a11y = await js(`({tag:${box(0)}.tagName,label:${box(0)}.getAttribute('aria-label'),hint:(document.getElementById(${box(0)}.getAttribute('aria-describedby')||'x')||{}).textContent,keys:${box(0)}.getAttribute('aria-keyshortcuts')})`);

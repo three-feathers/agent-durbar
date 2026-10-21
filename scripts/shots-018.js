@@ -21,13 +21,11 @@
  * Shots: 012-mixed-<w>x<h>.png.
  */
 const os = require('os');
-const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
 const fs = require('fs');
 const path = require('path');
-const { waits } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const assert = require('assert');
 const OUT = process.env.SHOTS_012 || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-012-'));
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 const SIZES = [[1440, 900], [1280, 800]];
 /* the fixed roster of simkinds=mixed: agent id -> kind (sim.ts SIM_KIND_BY_AGENT; every other agent is Copilot) */
 const CLAUDE = ['sim-1', 'sim-4', 'sim-6', 'sim-9', 'sim-12'];
@@ -35,32 +33,24 @@ const CODEX = ['sim-5', 'sim-8', 'sim-10'];
 const BASIC = ['sim-7'];
 
 module.exports = async (ctx) => {
-  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
-  const js = (code) => ctx.js(code);
-  const wc = () => ctx.win.webContents;
-  const shot = async (name, w, h) => { await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`); await ctx.sleep(150); await ctx.shot(path.join(OUT, `${name}-${w}x${h}.png`)); console.log('[018] saved', name, w, h); };
-  const load = async (w, h, extra) => {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simkinds: 'mixed', ...(extra || {}) } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
-    await settle();
-    wc().focus();
-  };
+  const H = helpers(ctx); // spec 008 FR-096/097: shared plumbing, waits for the page instead of a fixed time
+  const { until, settle, js, exists } = H;
+  const shot = (name, w, h) => H.shot(path.join(OUT, `${name}-${w}x${h}.png`), { prep: 'toasts', tag: '018', what: `${name} ${w} ${h}` });
+  const load = (w, h, extra) => H.load({ w, h, query: { simkinds: 'mixed', ...extra }, focus: true });
   const closePanel = async () => { await js(`(()=>{const b=document.getElementById('backBtn');if(b)b.click()})()`); await until(`!document.body.classList.contains('panel-open')`); };
   const openPanel = async (id) => {
     await closePanel();
-    await js(`document.querySelector('#stage .desk[data-id="${id}"]').click()`);
+    await js(`document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)}).click()`);
     assert.ok(await ctx.waitFor(`(()=>{const h=document.getElementById('panelTitle');return !!h&&!!document.getElementById('vscodeBtn')})()`, 4000), `${id}: the panel opens`);
     await settle();
   };
   const toasts = () => js(`[...document.querySelectorAll('#toasts .toast')].map(x=>x.textContent).join(' | ')`);
-  const minFont = (root) => js(`(()=>{let min=99,who='';document.querySelectorAll('${root}, ${root} *').forEach(e=>{if(!e.getClientRects().length)return;const own=[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim());if(!own&&!/^(INPUT|SELECT|BUTTON)$/.test(e.tagName))return;const f=parseFloat(getComputedStyle(e).fontSize);if(f<min){min=f;who=e.tagName+'#'+e.id+'.'+e.className}});return {min,who}})()`);
-  const exists = (sel) => js(`!!document.querySelector(${jsLiteral(sel)})`);
-  const optionsOf = (id) => js(`[...document.getElementById('${id}').options].map(o=>o.value)`);
-  const setSel = (id, v) => js(`(()=>{const s=document.getElementById('${id}');s.value=${jsLiteral(v)};s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+  const minFont = (root) => js(`(()=>{let min=99,who='';document.querySelectorAll(${jsLiteral(`${root}, ${root} *`)}).forEach(e=>{if(!e.getClientRects().length)return;const own=[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim());if(!own&&!/^(INPUT|SELECT|BUTTON)$/.test(e.tagName))return;const f=parseFloat(getComputedStyle(e).fontSize);if(f<min){min=f;who=e.tagName+'#'+e.id+'.'+e.className}});return {min,who}})()`);
+  const optionsOf = (id) => js(`[...document.getElementById(${jsLiteral(`${id}`)}).options].map(o=>o.value)`);
+  const setSel = (id, v) => js(`(()=>{const s=document.getElementById(${jsLiteral(id)});s.value=${jsLiteral(v)};s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
   /* buttons with a handler: an onclick property, a data-* action, or the ones the page wires through a delegated listener on the document */
   const DELEGATED = ['agentChip', 'modeChip', 'modelChip', 'compactBtn', 'ctxChip', 'capChip']; // document-level click handlers in app.js
-  const deadButtons = (root) => js(`(()=>{const D=${jsLiteral(DELEGATED)};return [...document.querySelectorAll('${root} button')].filter(b=>!b.disabled&&!b.hidden&&b.getClientRects().length)
+  const deadButtons = (root) => js(`(()=>{const D=${jsLiteral(DELEGATED)};return [...document.querySelectorAll(${jsLiteral(`${root} button`)})].filter(b=>!b.disabled&&!b.hidden&&b.getClientRects().length)
     .filter(b=>typeof b.onclick!=='function'&&!Object.keys(b.dataset).length&&!D.includes(b.id)).map(b=>(b.id||b.className||b.textContent).toString().slice(0,40))})()`);
 
   for (const [w, h] of SIZES) {

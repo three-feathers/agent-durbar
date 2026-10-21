@@ -17,16 +17,17 @@
  */
 const os = require('os');
 const path = require('path');
-const { jsLiteral } = require('./check-office-overlap.js');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const assert = require('assert');
 const OUT = process.env.SHOTS_024 || os.tmpdir();
 const SIZES = [[1440, 900], [1280, 800]];
 const LONG = ['Customer support desk 01', 'Customer support desk 02', 'Customer support desk 03'];
 
 module.exports = async (ctx) => {
-  const js = (code) => ctx.js(code);
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { js } = H;
   const q = jsLiteral; /* CodeQL js/bad-code-sanitization: values spliced into page code go through jsLiteral */
-  const shot = async (name, w, h) => { await ctx.sleep(300); await ctx.shot(path.join(OUT, `024-custom-${name}-${w}x${h}.png`)); console.log('[024c] saved', `024-custom-${name}-${w}x${h}.png`); };
+  const shot = (name, w, h) => H.shot(path.join(OUT, `024-custom-${name}-${w}x${h}.png`), { delay: 300, tag: '024c', what: `024-custom-${name}-${w}x${h}.png` });
   /* ctx.waitFor returns false on a timeout: a miss must fail the driver */
   const W = async (expr, ms, what) => { assert.ok(await ctx.waitFor(expr, ms), 'timed out waiting for ' + (what || expr)); };
   const settle = async () => { await W(`!document.querySelector('.walker.walking')`, 6000, 'the walks to end'); await ctx.sleep(250); };
@@ -48,7 +49,8 @@ module.exports = async (ctx) => {
   const clickBtn = (scope, text) => js(`(()=>{const b=[...document.querySelectorAll(${q(scope)})].find(b=>b.textContent.trim()===${q(text)});if(!b)return false;b.click();return true})()`);
   /* fill the Add / Edit dialog (name, icon id) and press Save; returns the error text next to the field ('' when it closed) */
   const fillSave = async (name, icon) => {
-    await js(`(()=>{const i=document.getElementById('plName');i.value=${q(name)};i.dispatchEvent(new Event('input',{bubbles:true}));${icon ? `document.querySelector('input[name="plIcon"][value=${q(icon)}]').click();` : ''}})()`);
+    const iconClick = icon ? `document.querySelector(${q(`input[name="plIcon"][value="${icon}"]`)}).click();` : '';
+    await js(`(()=>{const i=document.getElementById('plName');i.value=${q(name)};i.dispatchEvent(new Event('input',{bubbles:true}));${iconClick}})()`);
     await clickBtn('#scrDlg .dbtn button', 'Save'); await ctx.sleep(500);
     return js(`(()=>{const e=document.getElementById('plNameErr');return document.getElementById('scrDlg')&&e&&!e.hidden?e.textContent:''})()`);
   };

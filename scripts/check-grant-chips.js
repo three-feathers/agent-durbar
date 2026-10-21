@@ -13,14 +13,13 @@
  */
 const path = require('path');
 const assert = require('assert');
-const { waits } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || require('os').tmpdir();
-const INDEX = path.join(process.cwd(), 'dist', 'renderer', 'index.html');
-const Q = { sim: '15', simfreeze: '1', simgrants: 'many' };
+const Q = { simgrants: 'many' };
 module.exports = async (ctx) => {
-  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
-  const js = async (c) => { try { return await ctx.js(c); } catch (e) { console.log('JS ERR for', c.slice(0, 90)); throw e; } };
-  const shot = async (name) => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(150); await ctx.shot(path.join(OUT, name)); console.log('[grant-chips] saved', name); };
+  const H = helpers(ctx); // spec 008 FR-096/097: shared plumbing, waits for the page instead of a fixed time
+  const { until, settle, js } = H;
+  const shot = (name) => H.shot(path.join(OUT, name), { prep: 'mouse', tag: 'grant-chips' });
   const measure = () => js(`(()=>{
     const R=e=>e.getBoundingClientRect(), ph=document.getElementById('panelHead'), meta=ph.querySelector('.ph-meta'), g=document.getElementById('grants');
     const kids=[...meta.children].filter(c=>R(c).height>0&&getComputedStyle(c).visibility!=='hidden');
@@ -35,13 +34,9 @@ module.exports = async (ctx) => {
   let first = true;
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     for (const level of ['expert', 'simple']) {
-      ctx.win.setContentSize(w, h);
-      await ctx.win.loadFile(INDEX, { query: Q });
-      await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-      await js(`localStorage.setItem('durbar.detail',${JSON.stringify(level)})`); // remembered: reload so the office is drawn in it
-      await ctx.win.loadFile(INDEX, { query: Q });
-      await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-      await settle();
+      await H.load({ w, h, query: Q, ready: 'fit', settle: false });
+      await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)})`); // remembered: reload so the office is drawn in it
+      await H.load({ query: Q, ready: 'fit' });
       const tag = `${w} ${level}`;
       assert.ok(await js(`document.body.classList.contains('simple')===${level === 'simple'}`), `${tag}: the detail level is on`);
       let id = null;
@@ -133,11 +128,7 @@ module.exports = async (ctx) => {
   }
   // A Revoke all that fails (the revokes never remove anything) leaves the grants and the page working; after switching to an agent
   // without grants the focus is not taken and nothing is announced.
-  ctx.win.setContentSize(1440, 900);
-  const QS = { sim: '15', simfreeze: '1', simgrants: 'stuck' };
-  await ctx.win.loadFile(INDEX, { query: QS });
-  await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-  await settle();
+  await H.load({ w: 1440, h: 900, query: { simgrants: 'stuck' }, ready: 'fit' });
   let ids = null;
   for (const end = Date.now() + 8000; !(ids && ids[0]) && Date.now() < end;) { ids = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')];let a='';for(const x of d){x.click();const g=document.getElementById('grants');if(g&&!g.hidden){a=x.dataset.id;break;}const b=document.getElementById('backBtn');if(b)b.click();}return [a,d.map(x=>x.dataset.id).find(i=>i!==a)]})()`); if (!(ids && ids[0])) await ctx.sleep(100); }
   await until(`!!document.getElementById('grantsBtn')`); await settle();
@@ -145,8 +136,8 @@ module.exports = async (ctx) => {
   await js(`document.getElementById('grantsAll').click()`); await until(`[...document.querySelectorAll('.dlg-ov button')].some(x=>x.textContent.trim()==='Revoke all')`);
   await js(`[...document.querySelectorAll('.dlg-ov button')].find(x=>x.textContent.trim()==='Revoke all').click()`); await ctx.sleep(100); // quick: inside the 1s the flag may live
   assert.strictEqual(await js(`document.querySelectorAll('#grantsPop .gp-row').length`), 8, 'stuck: a revoke that fails leaves the grants');
-  await js(`document.getElementById('backBtn').click()`); await until(`!document.body.classList.contains('panel-open')&&!!document.querySelector('#stage .desk[data-id="${ids[1]}"]')`);
-  await js(`document.querySelector('#stage .desk[data-id="${ids[1]}"]').click()`); await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('grants')`);
+  await js(`document.getElementById('backBtn').click()`); await until(`!document.body.classList.contains('panel-open')&&!!document.querySelector(${jsLiteral(`#stage .desk[data-id="${ids[1]}"]`)})`);
+  await js(`document.querySelector(${jsLiteral(`#stage .desk[data-id="${ids[1]}"]`)}).click()`); await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('grants')`);
   await ctx.sleep(150); // the checks below are that nothing happens (no announcement, no focus move): give a late handler its chance
   assert.ok(await js(`document.getElementById('grants').hidden`), 'stuck: the other agent has no grants');
   assert.notStrictEqual(await js(`document.getElementById('srAnnounce').textContent`), 'All permissions revoked.', 'stuck: a failed Revoke all on one agent does not announce for another');
