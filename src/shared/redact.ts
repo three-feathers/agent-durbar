@@ -454,7 +454,7 @@ function decodeCmd(s: string, i: number): Decoded {
 /** The masked payload written back in the quoting it came in (display only; `$` and `` ` `` stay as they are in sh). */
 function encodePayload(kind: ShellKind, v: string, d: Decoded, raw: string): string {
   if (kind === 'sh') {
-    if (d.quote === "'") return "'" + v.replace(/'/g, "'\\''") + "'";
+    if (d.quote === "'") return shQuote(v, true);
     if (d.quote === '"') return '"' + v.replace(/[\\"]/g, '\\$&') + '"'; // every backslash and quote escaped: each reads back as one char
     return v.replace(/[\s"'\\;&|<>()]/g, '\\$&');
   }
@@ -603,6 +603,15 @@ function maskHeaderValue(v: string, env: Env | undefined, d: number): string {
   const kv = KV.exec(v);
   if (kv && !v.includes('://')) return `${kv[1]}${kv[2]}=${MASK}`; // `Name=value` form
   return redact(maskText(v, d, env), env);
+}
+
+/**
+ * One word as a POSIX shell reads it, for display only (spec 041 T067, spec 061 T057: the one display-quoting helper). A word of only
+ * safe characters is shown bare unless `always`; anything else (whitespace, shell characters, empty) goes in single quotes, a `'` inside
+ * written `'\''`. Used by the folder setup list (`foldersetup.ts`) and by the shell-wrapper payload written back here.
+ */
+export function shQuote(w: string, always = false): string {
+  return !always && /^[A-Za-z0-9_@%+=:,./~^-]+$/.test(w) ? w : `'${w.replace(/'/g, `'\\''`)}'`;
 }
 
 /** R2: an arg that starts and ends with the same quote: its inside and the quote. */

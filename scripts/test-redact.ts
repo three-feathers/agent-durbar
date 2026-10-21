@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, shQuote, splitCommand } from '../src/shared/redact';
 
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const env = {
@@ -739,6 +739,15 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // [KNOWN GAP] (spec 041 T064 follow-ups): a bare `token` word is not a flag, so the value after it is NOT masked. This row pins the gap;
   // when it is closed, flip it on purpose (and update the spec).
   assert.deepStrictEqual(maskSecretArgs(['token', SEC]), ['token', SEC], '14c [KNOWN GAP]: a bare `token` before a secret shows the secret');
+}
+
+// 14c2. spec 061 T057: `shQuote` is the one display-quoting helper (folder setup list and the sh payload written back by T067).
+{
+  assert.deepStrictEqual(['-y', 'a b', '', "it's", '$(id)', 'x;y', '@scope/pkg@1.2', '--port=9', 'C:/x'].map((w) => shQuote(w)), ['-y', "'a b'", "''", `'it'\\''s'`, "'$(id)'", "'x;y'", '@scope/pkg@1.2', '--port=9', 'C:/x']);
+  assert.strictEqual(shQuote('x', true), "'x'", 'T057: always quotes a safe word');
+  assert.strictEqual(shQuote("a'b", true), `'a'\\''b'`, 'T057: a quote inside');
+  // the single-quoted sh payload is written back through shQuote: the `'\''` survives and the secret is masked
+  assert.strictEqual(maskSecretCommand("sh -c 'echo it'\\''s; srv --api-key SEC'"), "sh -c 'echo it'\\''s; srv --api-key [redacted]'");
 }
 
 // 14d. T067 (#447): secrets inside escaped quotes. The payload of `sh|bash -c`, `cmd /c` and `powershell|pwsh -Command` is unescaped one
