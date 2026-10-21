@@ -11,7 +11,7 @@ import type { DevEnv } from './devhooks';
 import { BUILTIN_SERVERS, cliServers, copilotDir } from './mcpfiles';
 import { applyFolderImport, MAX_IMPORT_FOLDERS, previewFolderImport } from './mcpimport';
 import { maskMcpError, mcpSecretValues } from './mcpmask';
-import { claudeOffKey, sourcesFor } from './mcpglobal';
+import { claudeOffKey, mergeSessionServers, sourcesFor } from './mcpglobal';
 import { McpStore } from './mcpstore';
 import type { SecretCodec } from './mcpstore';
 
@@ -69,7 +69,8 @@ export function registerMcpIpc(deps: {
     const a = agents.get(agentId);
     if (!a) return [];
     try {
-      return mcpSecretValues({ ...(deps.globalFor?.(agentId) ?? {}), ...store().forSession(keyOf(a), off.get(agentId) ?? [], cliNames()).mcpServers });
+      // Spec 069 FR-009: the user list's values too (all of them, also one a folder extra shadows: masking more is safe).
+      return mcpSecretValues(deps.globalFor?.(agentId), store().forSession(keyOf(a), off.get(agentId) ?? [], cliNames()).mcpServers);
     } catch {
       return []; // store not ready or unreadable: the shape-based masking still runs, and the event is not lost
     }
@@ -190,9 +191,7 @@ export function registerMcpIpc(deps: {
       // Only this agent's own folder's extras are passed (spec 020 FR-012).
       const r = store().forSession(keyOf(a), off.get(agentId) ?? [], cliNames());
       // Spec 069 FR-009: the agent app's own user list that Durbar passes itself (Claude Code); a folder extra of the same name wins.
-      const mine = off.get(agentId) ?? new Set<string>();
-      const glob = Object.fromEntries(Object.entries(deps.globalFor?.(agentId) ?? {}).filter(([n]) => !mine.has(n)));
-      return { mcpServers: { ...glob, ...r.mcpServers }, disabledMcpServers: r.disabledMcpServers };
+      return { mcpServers: mergeSessionServers(deps.globalFor?.(agentId) ?? {}, r.mcpServers, off.get(agentId)), disabledMcpServers: r.disabledMcpServers };
     },
   };
 }
