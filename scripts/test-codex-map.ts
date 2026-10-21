@@ -23,7 +23,7 @@ const run = (notes: unknown[]): any[] => {
 
 // 1. Every fixture gives its expected event list, and says it is synthetic.
 const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
-assert.deepStrictEqual(files, ['command.json', 'deltas.json', 'failure.json', 'file-change.json', 'mcp-tool.json', 'subagent.json', 'thread-turn.json', 'unknown.json', 'usage.json']);
+assert.deepStrictEqual(files, ['command.json', 'deltas.json', 'failure.json', 'file-change-stream.json', 'file-change.json', 'mcp-tool.json', 'subagent.json', 'thread-turn.json', 'unknown.json', 'usage.json']);
 for (const f of files) {
   const j = fx(f);
   assert.strictEqual(j.provenance, 'synthetic', `${f} is marked synthetic`);

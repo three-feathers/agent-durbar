@@ -11,6 +11,8 @@ import type { AdapterCapabilities, PermissionMode } from './capabilities';
 import type { HandoffResult } from './handoff';
 import type { HistoryResult, PreviousSession } from './history';
 import type { RemoteState } from '../shared/remote';
+import type { EditInfo } from '../shared/edits';
+export type { EditInfo };
 export type { ElicitAction, ElicitAnswer, ElicitRequest, McpServerSpec, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult, AdapterCapabilities, PermissionMode };
 
 export type AgentStatus = 'idle' | 'working' | 'needs-permission' | 'error' | 'stopped';
@@ -173,6 +175,11 @@ export interface ToolCallEvent extends BaseEvent {
   /** Set when the tool belongs to an MCP server: the server's configured name and the tool's own name there. */
   mcpServer?: string;
   mcpTool?: string;
+  /**
+   * Spec 005 FR-018: set on calls of file-changing tools (edit, create, write, patch): the files, their kind and a masked, cut
+   * unified diff with line counts. `partial` while the model is still writing the arguments (FR-019). Display only.
+   */
+  edit?: EditInfo;
 }
 
 export interface SubagentEvent extends BaseEvent {

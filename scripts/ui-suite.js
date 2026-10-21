@@ -45,6 +45,7 @@ const DRIVERS = [
   { name: 'check-sched-sendto' },
   { name: 'check-question-options' },
   { name: 'check-question-visible' },
+  { name: 'check-edits' }, // spec 005 FR-020..FR-026: file edits in the chat
 ];
 
 /** The screenshot variables the drivers read; all point at one folder. */
