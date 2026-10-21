@@ -41,13 +41,13 @@ One PR per line where possible; each with `npm run typecheck && npm run build &&
 
 IDs start after the readable-JSON delta's T048.
 
-- [ ] T049 Toolbar under the message box: move the profile, mode, model, context chips, MCP (from More) and the attach buttons from the header / box into `.ctoolbar`; header keeps identity, limit, remote, folder and its actions [FR-037, FR-039]
-- [ ] T050 Model chip shows the context window size; context chip opens a context menu with Compact (`#compactBtn`) and Models and context of all agents [FR-037]
-- [ ] T051 MCP chip with an MCP icon and the count of servers switched on; opens the existing MCP dialog [FR-037]
-- [ ] T052 One Send / Stop slot inside the box's right edge, spinner left of Stop, Send beside Stop when a live agent has text, reduced-motion static dot [FR-038]
-- [ ] T053 Menus open above a toolbar control; overflow "⋯" with the collapse order; mode never collapses [FR-037, FR-040]
-- [ ] T054 Simple shows mode, memory (from 70%), attachments and Send/Stop [FR-041]
-- [ ] T055 Driver `scripts/check-composer-toolbar.js` in `ui-suite` (positions, order, Send↔Stop with spinner in a simulated turn, window size, MCP count and dialog, context menu, overflow at a 480px panel, no overlap, 10.5px) and the toolbar in `check-office-overlap.js`'s chat check [FR-043]
-- [ ] T056 Update drivers that looked for these controls in the header (`shots-017`, `shots-018`, `shots-model`, `shots-052-ux`, `check-grant-chips`) [FR-043]
-- [ ] T057 Screenshots Expert and Simple, light and dark, 1440x900 and 1280x800 (`docs/screenshots/005-composer-*.png`); README chat screenshots and text, CHANGELOG, `specs/README.md` row [FR-043]
-- [ ] T058 Coordination: comment on #453 (composer placeholder) for Ruben; reviewers rubenlupi and fjcabello [FR-043]
+- [x] T049 Toolbar under the message box: move the profile, mode, model, context chips, MCP (from More) and the attach buttons from the header / box into `.ctoolbar`; header keeps identity, limit, remote, folder and its actions [FR-037, FR-039]
+- [x] T050 Model chip shows the context window size; context chip opens a context menu with Compact (`#compactBtn`) and Models and context of all agents [FR-037]
+- [x] T051 MCP chip with an MCP icon and the count of servers switched on; opens the existing MCP dialog [FR-037]
+- [x] T052 One Send / Stop slot inside the box's right edge, spinner left of Stop, Send beside Stop when a live agent has text, reduced-motion static dot [FR-038]
+- [x] T053 Menus open above a toolbar control; overflow "⋯" with the collapse order; mode never collapses [FR-037, FR-040]
+- [x] T054 Simple shows mode, memory (from 70%), attachments and Send/Stop [FR-041]
+- [x] T055 Driver `scripts/check-composer-toolbar.js` in `ui-suite` (positions, order, Send↔Stop with spinner in a simulated turn, window size, MCP count and dialog, context menu, overflow at a 480px panel, no overlap, 10.5px) and the toolbar in `check-office-overlap.js`'s chat check [FR-043]
+- [x] T056 Update drivers that looked for these controls in the header (`shots-017`, `shots-018`, `shots-model`, `shots-052-ux`, `check-grant-chips`) [FR-043]
+- [x] T057 Screenshots Expert and Simple, light and dark, 1440x900 and 1280x800 (`docs/screenshots/005-composer-*.png`); README chat screenshots and text, CHANGELOG, `specs/README.md` row [FR-043]
+- [x] T058 Coordination: comment on #453 (composer placeholder) for Ruben; reviewers rubenlupi and fjcabello [FR-043]
