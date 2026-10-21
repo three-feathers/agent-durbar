@@ -1,3 +1,8 @@
+import { FolderSetupStore } from './foldersetupstore';
+import { acceptedFor, hasFolderRules, scanFolderSetupCached } from './foldersetup';
+import type { FolderSetupStart } from '../shared/foldersetup';
+import type { McpServerSpec } from '../shared/mcp';
+import { cliServers, copilotDir } from './mcpfiles'; // spec 061 FR-015: the explainer switches Copilot's own servers off
 import { parseEffort } from '../shared/effort';
 import { app, BrowserWindow, dialog, Menu, screen, shell } from 'electron';
 import { register as registerActivityIpc } from './ipc/activity';
@@ -8,6 +13,7 @@ import { register as registerAttachmentsIpc } from './ipc/attachments';
 import { register as registerCheckpointsIpc } from './ipc/checkpoints';
 import { register as registerFloorsIpc } from './ipc/floors';
 import { register as registerFoldersIpc } from './ipc/folders';
+import { register as registerFolderSetupIpc } from './ipc/foldersetupipc';
 import { register as registerHarnessIpc } from './ipc/harness';
 import { register as registerModelIpc } from './ipc/model';
 import { register as registerPreviousIpc } from './ipc/previous';
@@ -93,6 +99,7 @@ if (devNote) console.error(devNote);
 app.setPath('userData', profileDir({ packaged: app.isPackaged, platform: process.platform, appData: app.getPath('appData'), env: process.env }));
 const DEFAULT_MODEL = 'auto';
 const asEffort = parseEffort; // spec 007 FR-008: the models' own effort names, `none` included
+let folderSetupStore: FolderSetupStore | undefined; // spec 061
 let folderStore: FolderStore | undefined;
 /** Global settings (default credit cap, spec 011), created when the app is ready. */
 let settingsStore: SettingsStore | undefined;
@@ -242,15 +249,31 @@ const infoFor = (workspace: string, permMode: PermMode, id: string, model: strin
     modelControl: modelControlFor(ad, { unverified: !ad.capabilities.modelSwitch?.verified, contextTier: ad.capabilities.modelSwitch?.contextTier }),
     profiles: typeof ad.listAgentProfiles === 'function' && typeof ad.selectAgentProfile === 'function' ? true : undefined, // spec 043
     adapterId: ad.id,
+    // spec 061 FR-012: the mode chip says "+ folder rules" when this folder's accepted hooks or allow rules apply to this app
+    ...(folderSetupStart(ws.workspaceFile ?? ws.cwd, ws.folders, ad.id).rules ? { folderRules: true } : {}),
     ...(ad.capabilities?.renameSession ? { renameCap: ad.capabilities.renameSession } : {}), // spec 059: what a rename does in the agent app
     ...extra,
   };
 };
 
-const startOptionsFor = (a: AgentInfo) => ({
-  ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort)),
-  ...mcp.optionsFor(a.id),
-});
+/**
+ * Spec 061 FR-004: what this folder's ACCEPTED setup gives a session of app `appId` (pending and declined items never apply).
+ * `rules` is set only when hooks or allow/ask rules apply (it also drives the "+ folder rules" chip, FR-012).
+ */
+function folderSetupStart(key: string, dirs: readonly string[], appId: string, taken: ReadonlySet<string> = new Set()): { folderSetup?: FolderSetupStart; mcpServers: Record<string, McpServerSpec>; rules?: true } {
+  if (!folderSetupStore || (appId !== 'claude' && appId !== 'codex' && appId !== 'copilot')) return { mcpServers: {} };
+  const accepted = new Set(folderSetupStore.get(key).accepted);
+  if (!accepted.size) return { mcpServers: {} };
+  const ap = acceptedFor(scanFolderSetupCached(dirs.length ? dirs : [key]), accepted, appId, taken); // review nit #424: no rescan per call
+  const any = ap.hooks.length || ap.rules.allow.length || ap.rules.deny.length || ap.rules.ask.length;
+  return { mcpServers: ap.mcpServers, ...(any ? { folderSetup: { hooks: ap.hooks, rules: ap.rules } } : {}), ...(hasFolderRules(ap) ? { rules: true as const } : {}) };
+}
+
+const startOptionsFor = (a: AgentInfo) => {
+  const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort)), ...mcp.optionsFor(a.id) };
+  const fs61 = folderSetupStart(wsKey(a), a.folders ?? [a.cwd], router.adapterIdOf(a.id) ?? a.adapterId ?? registry.defaultId, new Set(Object.keys(base.mcpServers)));
+  return { ...base, mcpServers: { ...base.mcpServers, ...fs61.mcpServers }, ...(fs61.folderSetup ? { folderSetup: fs61.folderSetup } : {}) };
+};
 
 async function addWorkspace(
   workspace: string,
@@ -460,6 +483,7 @@ const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, 
 /* DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it and is saved as usual. */
 let runTheme: string | undefined;
 
+
 /** Which adapters exist and whether each can run (spec 012 FR-033, FR-034). Cached; `refresh` probes again. Runs no session and spends no credits. */
 let adaptersInfo: Promise<AdapterInfo[]> | undefined;
 /** The adapter's own sign-in question, when it has one (spec 012 FR-156): `verifySignIn` (a free server call where the app has one), else `authStatus`. */
@@ -598,6 +622,35 @@ registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, 
 registerAdaptersIpc({ adaptersList });
 registerFoldersIpc({ agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey });
 registerFloorsIpc({ agents, getFolderStore: () => folderStore, wsKey });
+/* Spec 061: a folder's own agent setup (scan, decide, explain), window-only (FR-013); the pure handler bodies are unit-tested. */
+registerFolderSetupIpc({
+  store: () => folderSetupStore,
+  dirsOf: (key) => {
+    const a = [...agents.values()].find((x) => wsKey(x) === key);
+    return a ? (a.folders?.length ? a.folders : [a.cwd]) : undefined;
+  },
+  explainer: () => {
+    // FR-015: the first installed app that answers one prompt with no tools; Copilot first (its `auto` is the cheapest)
+    for (const id of ['copilot', 'claude', 'codex']) {
+      if (!registry.has(id)) continue;
+      const ad = router.instance(id);
+      if (typeof ad.generateText !== 'function') continue;
+      const opts = id === 'copilot' ? { disabledMcpServers: cliServers(copilotDir(dev), new Set()).servers.map((x) => x.name) } : {};
+      return { name: registry.get(id)?.displayName ?? id, generate: (prompt: string) => ad.generateText!(prompt, opts) };
+    }
+    return undefined;
+  },
+  afterDecide: (key) => {
+    const out: Record<string, boolean> = {};
+    for (const a of agents.values()) {
+      if (wsKey(a) !== key) continue;
+      const on = !!folderSetupStart(key, a.folders ?? [a.cwd], router.adapterIdOf(a.id) ?? a.adapterId ?? registry.defaultId).rules;
+      a.folderRules = on || undefined;
+      out[a.id] = on;
+    }
+    return out;
+  },
+});
 
 /** Spec 052 FR-087: where the window opens: the saved place and size on a display it still fits, else 1440x900. Dev screenshot runs keep the default. */
 function initialPlacement(): ReturnType<typeof placeWindow> {
@@ -765,6 +818,7 @@ app.whenReady().then(() => {
   /* Dev/test theme seed (spec 036 FR-005): DURBAR_THEME=<id> makes the office open on that theme for the per-theme checks; invalid ids fall back in the renderer. */
   if (dev.DURBAR_THEME) runTheme = parseThemeId(dev.DURBAR_THEME);
   mcpStore = new McpStore(path.join(app.getPath('userData'), 'durbar-mcp.json'), safeStorageCodec);
+  folderSetupStore = new FolderSetupStore(path.join(app.getPath('userData'), 'folder-setup.json')); // spec 061: digests and paths only
   mcpStore.load();
   usageStore = new UsageStore(path.join(app.getPath('userData'), 'durbar-tool-usage.json'));
   usageStore.load();

@@ -39,6 +39,10 @@ export interface AdapterCapabilities {
   readonly mcpToggleApplies?: 'live' | 'next-message';
   /** Spec 058 FR-012: `restartMcpServer()` exists: one server of a running session can be restarted on its own; missing = false. */
   readonly mcpRestart?: boolean;
+  /** Spec 058 FR-064: `startMcpSignIn()` (and `cancelMcpSignIn()`) exist: the agent app's own sign-in for an MCP server can be started; missing = false. */
+  readonly mcpSignIn?: boolean;
+  /** Spec 058 FR-068: plain text for signing in from a terminal when the in-app sign-in cannot run; `{name}` stands for the server name. Missing = a generic line. */
+  readonly mcpSignInSteps?: string;
   /** `handoffSummary()` exists (spec 030 FR-034); missing = false. */
   readonly handoff?: boolean;
   /** `generateText()` exists: one prompt, no tools, no session kept (spec 040 FR-015); missing = false. */

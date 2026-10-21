@@ -69,7 +69,7 @@ class InputQueue implements AsyncIterable<unknown> {
 
 /** `query()` options for a launch (same rules as the CLI flags: Q8, explicit mode, the user's `claude`). */
 export function sdkOptionsOf(o: TransportInput, canUseTool: unknown, hook: unknown): Record<string, unknown> {
-  const m = claudeOptionsFor(o.launch.mode);
+  const m = claudeOptionsFor(o.launch.mode, o.launch.folderAllow);
   const opts: Record<string, unknown> = {
     cwd: o.cwd,
     env: o.env,
@@ -85,6 +85,8 @@ export function sdkOptionsOf(o: TransportInput, canUseTool: unknown, hook: unkno
   if (m.allowedTools?.length) opts.allowedTools = m.allowedTools;
   if (m.disallowedTools?.length) opts.disallowedTools = m.disallowedTools;
   if (o.launch.mcpConfig) opts.mcpServers = (JSON.parse(o.launch.mcpConfig) as { mcpServers: unknown }).mcpServers;
+  // spec 061 FR-004: the composed folder settings as the CLI flag (the SDK passes extraArgs through; not checked on a real SDK, KNOWN GAP)
+  if (o.launch.settingsJson) opts.extraArgs = { ...(opts.extraArgs as Record<string, string | null> | undefined), settings: o.launch.settingsJson };
   if (claudeModelFlag(o.launch.model)) opts.model = o.launch.model;
   if (o.launch.effort && CLAUDE_EFFORTS.has(o.launch.effort)) opts.effort = o.launch.effort;
   if (o.launch.appendSystemPrompt) opts.systemPrompt = { type: 'preset', preset: 'claude_code', append: o.launch.appendSystemPrompt };

@@ -10,12 +10,13 @@ import type { HandoffResult } from './handoff';
 import type { EventBody } from './map';
 import { PermissionBroker, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
-import type { AgentAdapter, AgentEvent, AgentMessage, CompactResult, LimitAction, ModelOption, ModelSwitchRequest, ModelSwitchResult, PermissionMode, StartOptions, UsageEvent } from './types';
+import type { AgentAdapter, AgentEvent, AgentMessage, CompactResult, LimitAction, McpSignInResult, ModelOption, ModelSwitchRequest, ModelSwitchResult, PermissionMode, StartOptions, UsageEvent } from './types';
 import type { HistoryResult, PreviousSession } from './history';
 
 export type OptionalMember =
   | 'interrupt' | 'resolvePermission' | 'revokeGrant' | 'setCap' | 'resolveLimit' | 'setMcpEnabled' | 'setModel'
-  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText' | 'renameSession' | 'deleteSession' | 'restartMcpServer';
+  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText' | 'renameSession' | 'deleteSession' | 'restartMcpServer'
+  | 'startMcpSignIn' | 'cancelMcpSignIn';
 
 export type Step =
   | { output: string }
@@ -91,6 +92,12 @@ export class FakeAdapter implements AgentAdapter {
   declare handoffSummary?: (sessionId: string) => Promise<HandoffResult>;
   declare generateText?: (prompt: string) => Promise<{ text: string; costUsd?: number }>;
   declare renameSession?: (sessionId: string, name: string) => Promise<void>;
+  declare startMcpSignIn?: (sessionId: string, name: string) => Promise<McpSignInResult>;
+  declare cancelMcpSignIn?: (sessionId: string, name: string) => Promise<void>;
+  /** Spec 058: every `startMcpSignIn` / `cancelMcpSignIn` call, in order (test log; no browser is opened). */
+  readonly signInCalls: Array<{ sessionId: string; name: string; cancel?: true }> = [];
+  /** Spec 058: what the next `startMcpSignIn` resolves with. */
+  signInResult: McpSignInResult = { kind: 'browser', url: 'https://auth.example.test/authorize' };
   declare deleteSession?: (sessionId: string) => Promise<void>;
   /** Every id `deleteSession` was called with (test log; nothing real is deleted). */
   readonly deleteCalls: string[] = [];
@@ -126,9 +133,12 @@ export class FakeAdapter implements AgentAdapter {
       mcpRestart: !!c.mcpRestart && !omit.has('restartMcpServer'),
       handoff: !!c.handoff && !omit.has('handoffSummary'),
       oneShot: !!c.oneShot && !omit.has('generateText'),
+      mcpSignIn: !!c.mcpSignIn && !omit.has('startMcpSignIn'),
       deleteSession: !!c.deleteSession && !omit.has('deleteSession'),
       permModeSwitch: omit.has('setPermMode') ? ('none' as const) : c.permModeSwitch,
     };
+    if (!caps.mcpSignIn) delete (caps as { mcpSignIn?: unknown }).mcpSignIn;
+    if (c.mcpSignInSteps === undefined) delete (caps as { mcpSignInSteps?: unknown }).mcpSignInSteps;
     if (!c.renameSession || omit.has('renameSession')) delete (caps as { renameSession?: unknown }).renameSession;
     this.capabilities = caps;
     const has = (m: OptionalMember): boolean => !omit.has(m);
@@ -154,6 +164,21 @@ export class FakeAdapter implements AgentAdapter {
         if (this.failRestart !== undefined) throw new Error(this.failRestart);
         this.emit(sid, { type: 'mcp', servers: [{ name, status: 'connected' }] });
       };
+    }
+    if (caps.mcpSignIn) {
+      if (has('startMcpSignIn')) {
+        this.startMcpSignIn = async (sid, name) => {
+          this.mustGet(sid);
+          this.signInCalls.push({ sessionId: sid, name });
+          return this.signInResult;
+        };
+      }
+      if (has('cancelMcpSignIn')) {
+        this.cancelMcpSignIn = async (sid, name) => {
+          this.mustGet(sid);
+          this.signInCalls.push({ sessionId: sid, name, cancel: true });
+        };
+      }
     }
     if (caps.oneShot) this.generateText = async () => ({ text: '{"name":"Fake","tokens":{"--bg":"#ffffff","--surface":"#ffffff","--ink":"#111111","--muted":"#555555"}}' });
     if (caps.renameSession) {
