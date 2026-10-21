@@ -876,8 +876,15 @@ function fitUsage(root){
     const fits=()=>{if(!cost||!cost.getClientRects().length)return u.scrollWidth<=u.clientWidth+0.5;const c=cost.getBoundingClientRect(),b=u.getBoundingClientRect();return u.scrollWidth<=u.clientWidth+0.5&&c.right<=b.right+0.5&&c.left>=b.left-0.5;};
     for(const st of USE_STEPS){if(fits())break;u.classList.add(st);}
   }
+  /* the same for room headers: a name cut (even by a pixel, which shows an ellipsis) while its path still shows hides the path (also in the tooltip) */
+  for(const hd of root.querySelectorAll('.room-head')){
+    hd.classList.remove('no-path');
+    const n=hd.querySelector('.room-name'),p=hd.querySelector('.room-path');
+    if(n&&p&&p.getClientRects().length&&n.scrollWidth>n.clientWidth+0.5)hd.classList.add('no-path');
+  }
 }
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{const s=document.getElementById('stage');if(s)fitUsage(s);}).catch(()=>{});
+window.DurbarFit=()=>{const s=document.getElementById('stage');if(s)fitUsage(s);}; /* the layout checks refit after forcing a font */
 /* ---------------- list view ---------------- */
 /* spec 052 FR-064: sortable columns (click a header: ascending, then descending; in memory only), 34px rows. Unsorted it keeps the
    office order with waiting and errors first. A helper stays under its main agent; main agents sort by the column. */

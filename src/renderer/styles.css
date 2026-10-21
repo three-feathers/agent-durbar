@@ -577,6 +577,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .use.no-unit .est{display:none}
 .use.short .full{display:none}.use.short .short{display:inline}
 .use.no-cost .aiu{display:none}
+.stage .room-head.no-path .room-path{display:none}
 
 .stage[data-d="mini"] .desk.card{padding:4px 8px 4px 4px;column-gap:7px}
 .stage[data-d="mini"] .l1 .role,.stage[data-d="micro"] .l1 .role{display:none}
