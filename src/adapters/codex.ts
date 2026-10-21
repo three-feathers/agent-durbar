@@ -227,6 +227,10 @@ interface Live {
   relaunch?: boolean;
   /** The MCP list was read for this child (FR-147). */
   mcpRead?: boolean;
+  /** FR-060: a list re-read is in flight (one at a time). */
+  mcpRefreshing?: boolean;
+  /** FR-060: servers whose tool call met an OAuth challenge; kept as needs-auth until the runtime's next status for them. */
+  mcpAuthSeen?: Set<string>;
   /** FR-146: questions waiting for the user, by request id. */
   questions: Map<string, (answers: Record<string, string> | null) => void>;
   /** FR-151: MCP elicitations (forms, URL flows) waiting for the user, by request id. */
@@ -932,7 +936,17 @@ export class CodexAdapter implements AgentAdapter {
       return;
     }
     this.emit(live.sid, body);
-    if (body.type === 'toolCall' && body.mcpAuth) void this.refreshMcp(live); // FR-060: a sign-in challenge; the server's own state, from the runtime
+    if (body.type === 'toolCall' && body.mcpAuth && body.mcpServer) {
+      // FR-060: a sign-in challenge marks the server now (even when the list says connected), then one re-read at a time
+      const prev = live.mcp.get(body.mcpServer);
+      live.mcp.set(body.mcpServer, { ...(prev ?? { name: body.mcpServer }), status: 'needs-auth', errorClass: 'auth' });
+      (live.mcpAuthSeen ??= new Set()).add(body.mcpServer);
+      this.emitMcp(live);
+      if (!live.mcpRefreshing) {
+        live.mcpRefreshing = true;
+        void this.refreshMcp(live).finally(() => { live.mcpRefreshing = false; });
+      }
+    }
   }
 
   private onNotification(live: Live, method: string, params: unknown): void {
@@ -959,6 +973,7 @@ export class CodexAdapter implements AgentAdapter {
       const auth = !disabled && state === 'needs-auth';
       const prev = live.mcp.get(name);
       const { errorClass: _drop, ...rest } = prev ?? { name };
+      live.mcpAuthSeen?.delete(name); // the runtime's own status replaces a challenge mark
       live.mcp.set(name, { ...rest, name, status: disabled ? 'disabled' : state, ...(auth ? { errorClass: 'auth' as const } : {}), ...err });
       if (this.sessions.get(live.sid) === live) this.emitMcp(live);
       return;
@@ -1096,6 +1111,10 @@ export class CodexAdapter implements AgentAdapter {
       const res = await live.rpc.request('mcpServerStatus/list', { threadId: live.threadId, detail: 'toolsAndAuthOnly', limit: 100 });
       if (this.sessions.get(live.sid) !== live) return;
       live.mcp = new Map(codexMcpServers(isObj(res) ? res.data : undefined, live.options.disabledMcpServers ?? []).map((s) => [s.name, s]));
+      for (const n of live.mcpAuthSeen ?? []) { // a re-read that still says connected does not clear a challenge seen in this session
+        const s = live.mcp.get(n);
+        if (s?.status === 'connected') live.mcp.set(n, { ...s, status: 'needs-auth', errorClass: 'auth' });
+      }
       this.emitMcp(live);
     } catch {
       /* an older Codex without the method: no list */
@@ -1114,6 +1133,7 @@ export class CodexAdapter implements AgentAdapter {
     else off.add(name);
     live.options = { ...live.options, disabledMcpServers: [...off] };
     live.relaunch = true;
+    live.mcpAuthSeen?.delete(name);
     const cur = live.mcp.get(name) ?? { name, status: 'pending' };
     live.mcp.set(name, { ...cur, status: enabled ? 'pending' : 'disabled' });
     this.emitMcp(live);

@@ -302,7 +302,11 @@ export class FakeCodexServer {
         return;
       }
       case 'mcpServerStatus/list':
-        return this.reply(child, id, { data: this.mcpList ?? [{ name: 'echo', authStatus: 'unsupported', runtimeStatus: 'connected', tools: {}, resources: [], resourceTemplates: [] }], nextCursor: null });
+      {
+        const answer = (): void => this.reply(child, id, { data: this.mcpList ?? [{ name: 'echo', authStatus: 'unsupported', runtimeStatus: 'connected', tools: {}, resources: [], resourceTemplates: [] }], nextCursor: null });
+        if (this.holdMcpList) return void this.heldMcpList.push(answer);
+        return answer();
+      }
       case 'model/list':
         return this.reply(child, id, { data: [
           { id: 'gpt-6-luna', model: 'gpt-6-luna', displayName: 'GPT-6-Luna', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }], defaultReasoningEffort: 'medium', isDefault: false, hidden: false },
@@ -421,10 +425,17 @@ export class FakeCodexServer {
     });
   }
 
-  /** A notification to every live child (tests: MCP startup states, spec 012 FR-147). */
   /** What `mcpServerStatus/list` answers (default: one connected `echo`). */
   mcpList: unknown[] | undefined;
+  /** Tests: hold the `mcpServerStatus/list` replies until `releaseMcpList()`. */
+  holdMcpList = false;
+  private heldMcpList: Array<() => void> = [];
+  releaseMcpList(): void {
+    this.holdMcpList = false;
+    for (const f of this.heldMcpList.splice(0)) f();
+  }
 
+  /** A notification to every live child (tests: MCP startup states, spec 012 FR-147). */
   notifyAll(method: string, params: unknown): void {
     for (const c of this.children.filter((x) => !x.exited)) this.enqueue(c, { jsonrpc: '2.0', method, params });
   }

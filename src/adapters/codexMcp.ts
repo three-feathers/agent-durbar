@@ -38,13 +38,13 @@ export function codexMcpState(v: unknown): string {
   return typeof v === 'string' && RUNTIME[v] ? RUNTIME[v] : 'pending';
 }
 
-/** `mcpServerStatus/list` `data` to Durbar's list; names Durbar switched off read as disabled. */
+/** `mcpServerStatus/list` `data` to Durbar's list (its items have `runtimeStatus`, `authStatus`, `toolsError`; no `failureReason`, that is only on the startup notification); names Durbar switched off read as disabled. */
 export function codexMcpServers(data: unknown, disabled: readonly string[] = []): McpServerStatus[] {
   const out: McpServerStatus[] = [];
   for (const s of Array.isArray(data) ? data.slice(0, 100) : []) {
     if (!isObj(s) || typeof s.name !== 'string' || !s.name) continue;
     const name = s.name.slice(0, 64);
-    const auth = s.authStatus === 'notLoggedIn' || s.failureReason === 'reauthenticationRequired' || s.runtimeStatus === 'authenticationRequired';
+    const auth = s.authStatus === 'notLoggedIn' || s.runtimeStatus === 'authenticationRequired';
     const status = disabled.includes(name) ? 'disabled' : auth ? 'needs-auth' : codexMcpState(s.runtimeStatus ?? 'notStarted');
     const err = typeof s.toolsError === 'string' && s.toolsError ? { error: s.toolsError.slice(0, 300) } : {};
     out.push({ name, status, ...(status === 'needs-auth' ? { errorClass: 'auth' as const } : {}), ...(s.pluginId ? { source: 'plugin' } : {}), ...(s.httpOrigin ? { transport: 'http' } : {}), ...err });

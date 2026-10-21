@@ -637,8 +637,8 @@ async function main(): Promise<void> {
       const lastMcp = (): Srv[] => (events.filter((e) => e.type === 'mcp').pop() as { servers: Srv[] }).servers;
       server.mcpList = [
         { name: 'a', authStatus: 'notLoggedIn', runtimeStatus: 'connected' },
-        { name: 'b', authStatus: 'oAuth', runtimeStatus: 'failed', failureReason: 'reauthenticationRequired' },
-        { name: 'c', authStatus: 'oAuth', runtimeStatus: 'failed', failureReason: 'startupFailed' },
+        { name: 'b', authStatus: 'oAuth', runtimeStatus: 'authenticationRequired' },
+        { name: 'c', authStatus: 'oAuth', runtimeStatus: 'failed' },
         { name: 'd', authStatus: 'oAuth', runtimeStatus: 'connected' },
       ];
       const sid = await ad.start({ workspace: ws, permissionMode: 'read-only' });
@@ -675,6 +675,35 @@ async function main(): Promise<void> {
       await until('m5', () => (events.some((e) => e.type === 'toolCall' && e.callId === 'm5')) || undefined);
       for (const id of ['m2', 'm3', 'm4', 'm5']) assert.strictEqual((events.find((e) => e.type === 'toolCall' && e.callId === id) as { mcpAuth?: boolean } | undefined)?.mcpAuth, undefined, `${id}: no mcpAuth`);
       assert.strictEqual(reads(), after, 'no list refresh for them');
+      // the challenge marks the server needs-auth although the runtime list still says connected, and the mark survives the re-read
+      const n0 = reads();
+      server.holdMcpList = true; // the re-read is pending, so only the adapter's own mark can show
+      server.notifyAll('item/completed', { threadId: sid, item: item('m6', { server: 'd', error: { message: 'MCP OAuth challenge required (HTTP 401)' } }) });
+      await until('d marked', () => (lastMcp().some((s) => s.name === 'd' && s.status === 'needs-auth')) || undefined);
+      assert.strictEqual(lastMcp().find((s) => s.name === 'd')?.errorClass, 'auth');
+      await until('re-read', () => (reads() > n0) || undefined);
+      server.releaseMcpList();
+      await new Promise((r) => setTimeout(r, 50));
+      assert.strictEqual(lastMcp().find((s) => s.name === 'd')?.status, 'needs-auth', 'a list that still says connected does not clear it');
+      // the runtime's next status for the server replaces the mark
+      server.notifyAll('mcpServer/startupStatus/updated', { name: 'd', status: 'ready', threadId: sid });
+      await until('d connected again', () => (lastMcp().some((s) => s.name === 'd' && s.status === 'connected')) || undefined);
+      const n2 = reads();
+      server.notifyAll('item/completed', { threadId: sid, item: item('m6b', { server: 'c', error: { message: 'MCP OAuth challenge required (HTTP 401)' } }) });
+      await until('re-read for c', () => (reads() > n2) || undefined);
+      await new Promise((r) => setTimeout(r, 50));
+      assert.strictEqual(lastMcp().find((s) => s.name === 'd')?.status, 'connected', 'a re-read does not bring back a mark the runtime replaced');
+      // a burst of challenges while one re-read is pending sends one request
+      server.holdMcpList = true;
+      const n1 = reads();
+      for (const id of ['m7', 'm8', 'm9']) server.notifyAll('item/completed', { threadId: sid, item: item(id, { server: 'd', error: { message: 'MCP OAuth challenge required (HTTP 401)' } }) });
+      await until('m9', () => (events.some((e) => e.type === 'toolCall' && e.callId === 'm9')) || undefined);
+      await new Promise((r) => setTimeout(r, 50));
+      assert.strictEqual(reads() - n1, 1, 'three challenges, one list request while it is pending');
+      server.releaseMcpList();
+      await new Promise((r) => setTimeout(r, 50));
+      server.notifyAll('item/completed', { threadId: sid, item: item('m10', { server: 'd', error: { message: 'MCP OAuth challenge required (HTTP 401)' } }) });
+      await until('read again after it settled', () => (reads() - n1 >= 2) || undefined);
       await ad.dispose();
     }
     // FR-146: Codex's request_user_input goes to the question card; the answer goes back by question id; secret questions never shown
