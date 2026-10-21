@@ -19,7 +19,7 @@ const parsed = parseSavedFolders(
       { workspace: 5 },
       null,
       'x',
-      { workspace: abs('b'), permMode: 'root', effort: 'turbo', model: 7 },
+      { workspace: abs('b'), permMode: 'root', effort: 'TURBO!', model: 7 },
     ],
   }),
 );
@@ -136,8 +136,10 @@ assert.deepStrictEqual(restoreMode('read-only'), { mode: 'read-only', restored: 
     assert.deepStrictEqual([back.model, back.effort, back.contextTier], ['sim-fast', 'high', undefined], 'effort kept when not given, tier back to the default');
     assert.ok(st.setModelChoice(abs('p1'), { model: 'sim-deep', effort: null }));
     assert.strictEqual(new FolderStore(f5).load()[0].effort, undefined, 'null clears the effort');
-    assert.ok(st.setModelChoice(abs('p1'), { model: 'sim-deep', effort: 'turbo' }));
-    assert.strictEqual(new FolderStore(f5).load()[0].effort, undefined, 'an unknown effort is not saved');
+    assert.ok(st.setModelChoice(abs('p1'), { model: 'sim-deep', effort: 'none' }));
+    assert.strictEqual(new FolderStore(f5).load()[0].effort, 'none', 'spec 007 FR-008: a model\'s own effort name (none) is saved');
+    assert.ok(st.setModelChoice(abs('p1'), { model: 'sim-deep', effort: 'TURBO!' }));
+    assert.strictEqual(new FolderStore(f5).load()[0].effort, 'none', 'a malformed effort is not saved (the last one stays)');
     assert.ok(!st.setModelChoice(abs('nope'), { model: 'x' }));
     assert.ok(!st.setModelChoice(abs('p1'), { model: '' }));
     assert.ok(!st.setModelChoice(abs('p1'), { model: 'x'.repeat(101) }));

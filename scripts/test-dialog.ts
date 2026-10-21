@@ -175,5 +175,49 @@ const setup = () => {
     t.key('Enter');
     assert.deepStrictEqual(await u, { value: 'ok', checked: false, text: '' });
   }
+  // spec 064 FR-002: a multiline input, a pick list with disabled lines, and `need` (primary disabled until a text and N picks)
+  {
+    const t = setup();
+    const p = t.ask({
+      title: 'Send to several sessions', body: 'Choose', returnFocus: t.chip,
+      input: { label: 'Message', multiline: true, max: 4000, focus: true },
+      picks: [{ label: 'Ada · api', value: 'a1' }, { label: 'Kenji · web', note: 'busy', value: 'a2', disabled: true }, { label: 'Lena · <b>x</b>', value: 'a3' }],
+      need: { text: true, picks: 1, label: (n: number) => (n ? `Send to ${n} session${n === 1 ? '' : 's'}` : 'Send') },
+      buttons: [{ label: 'Cancel', value: null }, { label: 'Send', value: 'send', cls: 'primary' }],
+    });
+    const ta = t.doc.getElementById('mdIn') as HTMLTextAreaElement;
+    assert.strictEqual(ta.tagName, 'TEXTAREA', 'multiline input is a textarea');
+    assert.strictEqual(t.doc.activeElement, ta, 'focus starts in the message');
+    const cbs = Array.from(t.doc.querySelectorAll('#mdP input')) as HTMLInputElement[];
+    assert.strictEqual(cbs.length, 3);
+    assert.ok(cbs[1].disabled && !cbs[1].checked, 'a busy session cannot be picked');
+    assert.strictEqual(t.doc.querySelectorAll('#mdP b').length, 0, 'labels are text, not HTML');
+    const primary = t.doc.querySelector('#modeDlg .btn.primary') as HTMLButtonElement;
+    assert.ok(primary.disabled && primary.textContent === 'Send', 'disabled with no text and no pick');
+    ta.value = 'pull main and run the tests'; ta.dispatchEvent(new t.window.Event('input', { bubbles: true }));
+    assert.ok(primary.disabled, 'still disabled with no pick');
+    cbs[0].checked = true; cbs[0].dispatchEvent(new t.window.Event('change', { bubbles: true }));
+    cbs[2].checked = true; cbs[2].dispatchEvent(new t.window.Event('change', { bubbles: true }));
+    assert.ok(!primary.disabled && String(primary.textContent as string) === 'Send to 2 sessions', 'enabled, and it names the count');
+    ta.value = '   '; ta.dispatchEvent(new t.window.Event('input', { bubbles: true }));
+    assert.ok(primary.disabled, 'blank text disables it again');
+    primary.click();
+    assert.ok(t.dlg(), 'a disabled primary button does nothing');
+    ta.value = 'go'; ta.dispatchEvent(new t.window.Event('input', { bubbles: true }));
+    primary.click();
+    assert.deepStrictEqual(await p, { value: 'send', checked: false, text: 'go', picked: ['a1', 'a3'] });
+    // Enter in a multiline textarea never submits (it is a new line)
+    const q = t.ask({ title: 'T', body: 'b', returnFocus: t.chip, input: { label: 'Message', multiline: true, focus: true, submitOnEnter: true }, buttons: [{ label: 'Cancel', value: null }, { label: 'Send', value: 'send', cls: 'primary' }] });
+    (t.doc.getElementById('mdIn') as HTMLTextAreaElement).value = 'hello';
+    t.key('Enter');
+    assert.ok(t.dlg(), 'Enter in a textarea does not submit');
+    t.key('Escape'); assert.strictEqual(await q, null);
+    // submitOnEnter with an unmet `need` does not confirm
+    const r = t.ask({ title: 'T', body: 'b', returnFocus: t.chip, input: { label: 'Name', focus: true, submitOnEnter: true }, picks: [{ label: 'Ada', value: 'a1' }], need: { text: true, picks: 1 }, buttons: [{ label: 'Cancel', value: null }, { label: 'Send', value: 'send', cls: 'primary' }] });
+    (t.doc.getElementById('mdIn') as HTMLInputElement).value = 'text';
+    t.key('Enter');
+    assert.ok(t.dlg(), 'Enter does not press a primary button that `need` keeps disabled');
+    t.key('Escape'); assert.strictEqual(await r, null);
+  }
   console.log('dialog tests passed');
 })().catch((e) => { console.error(e); process.exit(1); });

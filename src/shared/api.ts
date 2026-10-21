@@ -568,6 +568,8 @@ export interface DurbarApi {
   /** Forget one "Approve for this session" grant (key from the `grants` event). */
   revokeGrant(id: string, key: string): Promise<void>;
   openInVSCode(id: string): Promise<{ ok: boolean; error?: string; edition?: string }>;
+  /** Spec 063: the git branch and uncommitted changes of the agent's folder (read-only). Optional: older bridges lack it. */
+  gitStatus?(id: string): Promise<FolderGitStatus>;
   /** Earlier Copilot CLI/SDK sessions in this agent's folder (newest first). Optional: not in the simulator. */
   listPrevious?(id: string): Promise<{ ok: boolean; error?: string; sessions: PreviousSession[]; pinned?: string[]; hidden?: string[]; names?: Record<string, string> }>;
   /** Pin, unpin, hide or unhide one row (spec 006 FR-026). `src` is the agent's adapter id or `vscode`; ids only, never a path. */
@@ -592,3 +594,8 @@ export interface DurbarApi {
   /** The OS the app runs on ('darwin', 'win32', 'linux'), spec 052 FR-085: the Mac title bar styles. */
   platform?: string;
 }
+
+/** Spec 063: what `gitStatus` answers (mirrors `GitStatus` in src/main/gitstatus.ts; the window gets plain data only). */
+export type FolderGitStatus =
+  | { repo: false }
+  | { repo: true; branch: string; detached?: boolean; ahead?: number; behind?: number; files: Array<{ path: string; state: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflict'; added?: number; removed?: number; binary?: boolean }>; more: number };

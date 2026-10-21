@@ -3,6 +3,7 @@
  * hidden flag), kept as one small JSON file in the app's userData folder. No tokens, no chat content, no paths
  * other than the folders the user added. Tolerant: a missing or corrupt file means an empty list.
  */
+import { parseEffort } from '../shared/effort';
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseCap } from '../shared/credits';
@@ -176,7 +177,6 @@ export function parsePrevMarks(v: unknown): PrevMark[] | undefined {
   return kept.length ? kept : undefined;
 }
 
-const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const MAX_FOLDERS = 200;
 
 /** Parse the file text; unknown shapes and bad entries are dropped, duplicates collapsed. */
@@ -201,7 +201,7 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       hidden: o.hidden === true,
       closed: o.closed === true ? true : undefined,
       model: typeof o.model === 'string' && o.model.length <= 100 ? o.model : undefined,
-      effort: typeof o.effort === 'string' && EFFORTS.has(o.effort) ? o.effort : undefined,
+      effort: parseEffort(o.effort),
       contextTier: parseTier(o.contextTier),
       maxAiCredits: parseCap(o.maxAiCredits),
       floor: typeof o.floor === 'string' && o.floor !== floorOps.GROUND && o.floor.length <= 20 ? o.floor : undefined,
@@ -348,7 +348,7 @@ export class FolderStore {
     if (!cur || !choice.model || choice.model.length > 100) return false;
     cur.model = choice.model;
     if (choice.effort === null) cur.effort = undefined;
-    else if (choice.effort !== undefined) cur.effort = EFFORTS.has(choice.effort) ? choice.effort : cur.effort;
+    else if (choice.effort !== undefined) cur.effort = parseEffort(choice.effort) ?? cur.effort;
     const t = parseTier(choice.contextTier);
     cur.contextTier = t === 'long' ? 'long' : undefined;
     this.save();

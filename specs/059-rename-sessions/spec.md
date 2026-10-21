@@ -175,6 +175,7 @@ FR-023) use the new name; Resume opens an agent with that name.
     `session.title_changed` with any other title (Copilot's auto title, also after a compaction; not cleared on idle) is not passed on, and the same title is a confirmation.
     Only that one event is skipped: usage, cap and idle events always go on. `[KNOWN GAP]` until T050: a rename made elsewhere (the CLI) while the session is open in Durbar is not seen until the
     session is reconnected, because the runtime does not mark an explicit rename apart from an auto title.
+    T050a (`real:` 2026-10-21) showed that Copilot keeps the `name.set` name across a resume (`rpc.name.get`), so after a reconnect or a restart the first `session.title_changed` is expected to equal the user's name and confirm it (FR-011).
   - Codex: `'any'`; `thread/name/set { threadId, name }` on the session's own app-server when live, else on a short-lived one
     (`probe`, `src/adapters/codex.ts:312`), as `listPreviousSessions` does. An archived thread is refused by Codex (FR-010).
   - Claude Code: `'next-turn'`. The adapter keeps `{ sessionId -> name }` and adds `--name <name>` to the next CLI start of that session

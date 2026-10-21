@@ -173,7 +173,7 @@ export interface ClaudeLaunch {
   name?: string;
 }
 
-const CLAUDE_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
+export const CLAUDE_EFFORTS: ReadonlySet<string> = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 /** FR-119: Claude ids, aliases and `[1m]` suffixes get `--model`; `auto` and `default` mean Claude's default (no flag). */
 export function claudeModelFlag(model: string | undefined): boolean {
   if (!model || model === 'auto' || model === 'default') return false;
