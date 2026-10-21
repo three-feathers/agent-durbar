@@ -54,7 +54,7 @@
   function itemHTML(it,v){
     const esc=X.esc, isNew=v.pending.includes(it.id), wasSeen=(v.accepted.length+v.declined.length)>0;
     const on=defaultOn(it,v);
-    const tags=[it.ruleKind?`<span class="mtag fs-${it.ruleKind}">${it.ruleKind}</span>`:'',it.broad?'<span class="mtag warn" title="Covers the whole tool, not one pattern">broad</span>':'',isNew&&wasSeen?'<span class="mtag new">new or changed</span>':'',it.event?`<span class="mtag">${esc(it.event)}${it.matcher?' · '+esc(it.matcher):''}</span>`:''].join('');
+    const tags=[it.ruleKind?`<span class="mtag fs-${it.ruleKind}">${it.ruleKind}</span>`:'',it.broad?'<span class="mtag warn" title="Needs the confirmation tick: it covers a whole tool, or runs shell commands">broad</span>':'',isNew&&wasSeen?'<span class="mtag new">new or changed</span>':'',it.event?`<span class="mtag">${esc(it.event)}${it.matcher?' · '+esc(it.matcher):''}</span>`:''].join('');
     const secrets=it.secretNames&&it.secretNames.length?`<span class="fs-sec">Values of ${it.secretNames.map(esc).join(', ')} are hidden.</span>`:'';
     const hidden=it.hidden?`<span class="fs-hidden">${it.hiddenWhy?esc(it.hiddenWhy):`Part of this ${it.kind==='rule'?'rule':'command'} is hidden because it looks like a secret key. Ticking it uses the hidden part too.`}</span>`:'';
     const why=!it.supported?`<span class="imp-block">${esc(it.unsupportedWhy||'Not supported.')}</span>`:'';

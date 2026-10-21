@@ -39,7 +39,8 @@ const items = scan.items;
 const by = (pred: (i: (typeof items)[number]) => boolean | undefined) => items.filter((i) => !!pred(i));
 assert.strictEqual(by((i) => i.app === 'claude' && i.kind === 'hook').length, 3, 'Claude hooks from settings and settings.local');
 assert.strictEqual(by((i) => i.kind === 'rule').length, 5, 'allow, deny and ask rules');
-assert.deepStrictEqual(by((i) => i.broad).map((i) => i.detail).sort(), ['Bash', 'Read(*)'], 'broad rules are marked; a pattern is not broad');
+assert.deepStrictEqual(by((i) => i.broad).map((i) => i.detail).sort(), ['Bash', 'Bash(npm test:*)', 'Read(*)'], 'broad allow rules are marked; S1 (owner 2026-10-21): every Bash rule is broad');
+assert.ok(!by((i) => i.ruleKind === 'ask').some((i) => i.broad), 'an ask rule grants nothing, so it is never flagged broad');
 assert.ok(!by((i) => i.ruleKind === 'deny').some((i) => i.broad), 'a deny rule is never flagged broad');
 assert.deepStrictEqual(by((i) => i.kind === 'mcp').map((i) => `${i.app}:${i.label}`).sort(), ['any:MCP server github', 'any:MCP server remote', 'codex:MCP server docs'], 'servers from .mcp.json and .codex/config.toml; a bad name is skipped');
 const codexHook = by((i) => i.app === 'codex' && i.kind === 'hook')[0];
@@ -59,10 +60,25 @@ fs.writeFileSync(path.join(dir, '.github', 'hooks', 'huge.json'), 'x'.repeat(MAX
 assert.deepStrictEqual(scanFolderSetup([dir]).problems.map((p) => p.file).sort(), ['.github/hooks/broken.json', '.github/hooks/huge.json']);
 fs.rmSync(path.join(dir, '.github', 'hooks', 'broken.json'));
 fs.rmSync(path.join(dir, '.github', 'hooks', 'huge.json'));
-assert.ok(isBroadRule('Bash(*)') && isBroadRule('mcp__github') && !isBroadRule('Bash(npm test:*)'));
+assert.ok(isBroadRule('Bash(*)') && isBroadRule('mcp__github') && isBroadRule('Bash(npm test:*)') && !isBroadRule('Read(./src/**)'));
 // S1 owner decision: broad = whole tool, wildcard-only, file tools on root/home/drive with **, Bash prefix with no command
 for (const r of ['Bash', 'Read', 'Bash(*:*)', 'Read(/**)', 'Read(~/**)', 'Edit(/**)', 'Write(C:/**)', 'Read(**)', 'Bash( :*)']) assert.ok(isBroadRule(r), `${r} is broad`);
-for (const r of ['Read(./src/**)', 'Edit(src/app.ts)', 'Bash(npm test:*)', 'Bash(git status)', 'Read(docs/*.md)']) assert.ok(!isBroadRule(r), `${r} is narrow`);
+for (const r of ['Read(./src/**)', 'Edit(src/app.ts)', 'Read(docs/*.md)', 'WebFetch(domain:example.com)']) assert.ok(!isBroadRule(r), `${r} is narrow`);
+// S1, owner decision (Vikram, Telegram 2026-10-21: "For bash - we go with paco's suggestion"): EVERY shell rule needs the tick, any
+// form and any argument (Paco's examples on #424), also Claude Code's PowerShell tool and Copilot's `shell(...)` form
+for (const r of ['Bash(sh:*)', 'Bash(bash -c:*)', 'Bash(eval:*)', 'Bash(python:*)', 'Bash(node:*)', 'Bash(npm run:*)', 'Bash(git:*)', 'Bash(cat:*)', 'Bash', 'Bash(npm test:*)', 'Bash(git status)', 'Bash(touch allowed-file)', 'Bash(git status\nid)', 'PowerShell(Get-ChildItem:*)', 'shell(git:*)', 'bash(ls)'])
+  assert.ok(isBroadRule(r) && needsConfirm({ kind: 'rule', ruleKind: 'allow', broad: isBroadRule(r) }), `${JSON.stringify(r)} needs the explicit tick`);
+{
+  // through the scanner too: each example allow rule is marked broad (starts unticked, needs the tick); a narrow non-Bash rule is not
+  const d5 = path.join(tmp, 's1-bash');
+  fs.mkdirSync(path.join(d5, '.claude'), { recursive: true });
+  const ex = ['Bash(sh:*)', 'Bash(bash -c:*)', 'Bash(eval:*)', 'Bash(python:*)', 'Bash(node:*)', 'Bash(npm run:*)', 'Bash(git:*)', 'Bash(cat:*)', 'Bash'];
+  fs.writeFileSync(path.join(d5, '.claude', 'settings.json'), JSON.stringify({ permissions: { allow: [...ex, 'Read(./src/**)'] } }));
+  const rs = scanFolderSetup([d5]).items.filter((i) => i.kind === 'rule');
+  for (const r of ex) assert.ok(needsConfirm(rs.find((i) => i.detail === r)!), `${r}: needs the explicit tick`);
+  const narrow = rs.find((i) => i.detail === 'Read(./src/**)')!;
+  assert.ok(narrow && !narrow.broad && !needsConfirm(narrow), 'a narrow non-Bash allow rule needs no tick');
+}
 assert.deepStrictEqual(readCodexMcpToml('[mcp_servers.a]\nurl = "https://x/mcp"\n[other]\ncommand = "no"\n'), [{ name: 'a', spec: { type: 'http', url: 'https://x/mcp' } }]);
 
 // ---- FR-003 / FR-010 / FR-011: decisions; hooks need the explicit confirmation; a change asks again
@@ -297,6 +313,9 @@ assert.deepStrictEqual(rootLabels(['/x/app', '/y/x/app']), ['x/app (1)', 'x/app 
   assert.strictEqual(defaultOn({ ...it, supported: false }, first), false, 'unsupported is never on');
   assert.strictEqual(defaultOn({ id: 'x', kind: 'rule', ruleKind: 'allow', broad: true, supported: true }, first), false, 'S1: broad allow starts unticked');
   assert.strictEqual(defaultOn({ id: 'x', kind: 'rule', ruleKind: 'deny', broad: true, supported: true }, first), true, 'a broad deny rule is on');
+  // S1 (owner 2026-10-21): a Bash allow rule as the scanner marks it starts unticked; a narrow non-Bash allow rule stays pre-ticked
+  assert.strictEqual(defaultOn({ id: 'x', kind: 'rule', ruleKind: 'allow', broad: isBroadRule('Bash(git:*)'), supported: true }, first), false, 'S1: Bash(git:*) starts unticked');
+  assert.strictEqual(defaultOn({ id: 'x', kind: 'rule', ruleKind: 'allow', broad: isBroadRule('Read(./src/**)'), supported: true }, first), true, 'a narrow non-Bash allow rule is pre-ticked');
 }
 
 // ---- FR-013: only Durbar's own window can accept: one registration, through ipcHandle, and nothing else calls decide.

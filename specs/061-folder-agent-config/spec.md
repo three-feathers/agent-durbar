@@ -1,6 +1,6 @@
 # Spec 061: A folder's own agent setup is used, and shown
 
-**Status:** built (2026-10-21; see `## Changes`), review on #424 fixed (2026-10-21, second entry). Owner decisions recorded (issue #289, 2026-10-20). Constitution **Amendment 1** (principle III, v1.1.0) is in force (#395). Review requirements FR-010..FR-014 (Paco, Ruben, #394). Checked on real Claude Code and Copilot sessions. Open: the `[KNOWN GAP]` list at the end. S1 decided by the owner on 2026-10-21.
+**Status:** built (2026-10-21; see `## Changes`), review on #424 fixed (2026-10-21, second entry). Owner decisions recorded (issue #289, 2026-10-20). Constitution **Amendment 1** (principle III, v1.1.0) is in force (#395). Review requirements FR-010..FR-014 (Paco, Ruben, #394). Checked on real Claude Code and Copilot sessions. Open: the `[KNOWN GAP]` list at the end. S1 decided by the owner (Vikram, Telegram, 2026-10-21: every `Bash(...)` allow rule needs the explicit tick; see the third `## Changes` entry).
 **Issue:** #289 (was spec 012 T083, `[KNOWN GAP]`). **Builds on:** 012 (Claude and Codex adapters), 019 (MCP), 043 (custom agents), 041/019 (secret masking), 003 (permission modes).
 
 ## Owner decisions (issue #289, 2026-10-20)
@@ -63,7 +63,7 @@ Added as requirements before anything is built (review findings are fixed in the
   A unit test pins this the way `test-prevsessions` pins `sessions:delete` (#379): one registration, through `ipcHandle`, and no other caller.
 - **FR-014 Show what each item does, secrets masked** (Ruben, Paco 5). The dialog lists each item in full, never only a count:
   - **hooks:** the event (`PreToolUse`, `SessionStart`…), the matcher, and the exact command;
-  - **allow, deny and ask rules:** the tool and pattern as written (`Bash(npm test:*)` is not `Bash(*)`). A wildcard rule such as `Bash(*)` or a bare tool name is marked *broad*;
+  - **allow, deny and ask rules:** the tool and pattern as written (`Bash(npm test:*)` is not `Bash(*)`). A wildcard rule such as `Bash(*)` or a bare tool name is marked *broad*, and so is **every rule of a shell tool**, in any form and with any argument (`Bash`, `Bash(git:*)`, `Bash(npm test:*)`, `Bash(git status)`; also Claude Code's `PowerShell` and Copilot's `shell(...)` form). A broad allow rule starts unticked and is used only with the explicit tick, like hooks (FR-011). *(Amended 2026-10-21, owner decision on S1, #424.)*;
   - **MCP servers:** command and args, or URL, and the names of env and header keys.
 
   Hook commands, rules, MCP commands, arguments and URLs hide only real token shapes (`shownCommand`, review #424); env and header values are never shown, only their names. An item with anything hidden, or an MCP server that hands env values to a shell or an inline-code interpreter, is marked and starts unticked. Never show a secret value, and never store one. A unit test feeds a hook command, a rule and an `.mcp.json` with tokens and checks that none reach the window. *(Amended 2026-10-21, re-review on #424: the flag-based `maskSecretCommand`/`maskSecretArgs`/`maskSecretUrl` let a repository choose what is hidden.)*
@@ -208,7 +208,7 @@ The user's own global settings (`~/.claude/settings.json`, `~/.codex/config.toml
   - **FR-016 cost** `[IMPLEMENTED]`: the reported cost of the explanation is shown with it (`≈ $…` or `… AIU`, `costText`).
   - **FR-001 agents and skills names** `[KNOWN GAP]`: not listed in this dialog. Custom agents keep spec 043's own per-file confirmation, and skills are not loaded from a folder by Durbar.
 - **Required 6:** Windows CI rerun to green (the failure was the flaky Electron download in `test:checkfuses`).
-- **S1, Read-only still means something.** **Decided by the owner** (Vikram, terminal, 2026-10-21): "broad allow rules need explicit tick like hooks".
+- **S1, Read-only still means something** (Paco's point 3 on #394, raised again by his agent on #424). Broad allow rules need the explicit tick like hooks; which rules count as broad was then still open (decided below, third entry).
   - **Broad allow rules are off until the person ticks them**, with the same explicit confirmation as hooks. Broad means: a bare tool name, a pattern of only wildcards (`*`, `:*`, `**`, `*:*`), `Read`/`Edit`/`Write` without a narrow path (from the root, the home folder or a drive with `**`), and a `Bash` prefix without a specific command (`isBroadRule`, `needsConfirm`). Narrow rules follow the normal accept.
   - **Defence in depth**, kept for ticked rules too. A folder allow rule covers the tool, never files outside the session's folders: `Read(*)`, `Read`, `Edit` and `Write` from the folder still get Durbar's path check in Read-only (`writeIsInsideRoots`).
   - A `Bash(prefix:*)` rule needs a word boundary. A command with shell syntax (`;`, `&`, `|`, backticks, `$(`, `${`, `<`, `>`, a newline) never matches a prefix or exact rule in Durbar's hook.
@@ -238,5 +238,15 @@ The user's own global settings (`~/.claude/settings.json`, `~/.codex/config.toml
   - A command box whose text does not fit gets "Long: scroll inside the box to read all of it" (`markLong`, measured after the dialog opens; `sim:` `shots-061-foldersetup`).
   - Copilot's private hook folder is removed in a `finally` when `disconnect()` throws while a session ends. `test:` a fake session whose `disconnect` rejects.
   - The FR-013 pin also catches any quoted path to `foldersetupipc`/`foldersetupstore` other than `main.ts`'s two static imports (`require(...)`, `import(...)`), in every file including `main.ts`, and a quoted `'decide'` (bracket access such as `_fs['decide']`). `test:` both bypasses.
-- **On hold:** S1, which allow rules count as *broad* (for example `Bash(sh:*)`, `Bash(git:*)`, `Bash(npm run:*)`), waits for the owner's answer on #424; wording and logic unchanged.
+- **S1, which allow rules count as *broad*:** was on hold here; decided in the next entry.
 - `test:` `scripts/test-foldersetup.ts` pins every item above.
+
+### 2026-10-21: S1 decided: every shell allow rule needs the tick (T052)
+
+- **Decision** (owner, Vikram, Telegram, 2026-10-21 13:55 UTC): "For bash - we go with paco's suggestion". The suggestion is Paco's point 3 on #394 ("Read-only still means something"), made concrete by his agent's re-review on #424: every `Bash(...)` allow rule needs the tick. This replaces the earlier wording here, which attributed S1 to the owner in a terminal; it was raised by Paco.
+- **Why:** rules such as `Bash(sh:*)`, `Bash(bash -c:*)`, `Bash(eval:*)`, `Bash(python:*)`, `Bash(node:*)`, `Bash(npm run:*)`, `Bash(git:*)` and `Bash(cat:*)` were not *broad*, so they were on by default. In Read-only they let through `git -c alias.x='!curl …' x`, `git -c core.pager=id log`, `cat ~/.ssh/id_rsa` (a shell command gets no path check) and `npm run lint` (the repository's own script).
+- **FR-014 amended** `[IMPLEMENTED]`: every rule of a shell tool is *broad*, any form and any argument, the bare tool too: Claude Code's `Bash` and `PowerShell`, and Copilot's `shell(...)` form. The existing classifier does it (`isBroadRule`, `SHELL_RULE_TOOLS` in `src/shared/foldersetup.ts`), so `needsConfirm`, the store's refusal without the tick, the renderer's `defaultOn` and the tick's text all follow without a second check. Only allow rules are marked (an ask or deny rule grants nothing).
+- **Other apps:** Durbar reads folder allow rules from Claude Code only. Codex's `.codex/config.toml` is read for MCP servers only, and Copilot's `.github/copilot/settings.json` for hooks only, so neither has shell allow rules in this path; a `shell(...)` rule is classed broad already should one be read later.
+- **Dialog:** the *broad* tag's tooltip now reads "Needs the confirmation tick: it covers a whole tool, or runs shell commands".
+- `test:` `test:foldersetup`: each of the examples above (and `Bash`, `Bash(git status)`, a newline in the pattern, `PowerShell(...)`, `shell(...)`) needs the tick, through the classifier and through the scanner; `Read(./src/**)` is not broad and starts ticked (`defaultOn`).
+- `sim:` the simulator's sample `Bash(npm test:*)` is now marked broad and starts unticked; `shots-061-foldersetup` asserts 5 of 9 items ticked (was 6) at 1440x900 and 1280x800.

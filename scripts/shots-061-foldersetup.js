@@ -6,7 +6,7 @@
  *   OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
  *     DURBAR_DRIVER=$PWD/scripts/shots-061-foldersetup.js xvfb-run -a npx electron . --no-sandbox
  *
- * Checks: the dialog opens by itself for that folder, lists every item in full, marks the broad rule and the unsupported Codex hook,
+ * Checks: the dialog opens by itself for that folder, lists every item in full, marks the broad rules (both Bash allow rules, S1) and the unsupported Codex hook,
  * explains a hook on demand (advisory, with its source), says
  * "scroll inside the box" on the long hook only, says why the hidden MCP server is hidden (unticked), keeps hooks off without the confirmation, applies with it, shows
  * "+ folder rules" on the mode chip, and reopens from the mode menu. Text is at least 10.5px and fits the dialog.
@@ -33,7 +33,8 @@ module.exports = async (ctx) => {
     assert.strictEqual(v.title, 'This folder brings its own agent setup');
     assert.strictEqual(v.rows, 9, `${w}: every item listed`);
     assert.strictEqual(v.disabled, 1, 'the Codex hook is shown as not supported');
-    assert.strictEqual(v.checked, 6, 'Q1: on by default, except the unsupported one, the hidden MCP server and the broad allow rule (S1: needs the explicit tick)');
+    assert.strictEqual(v.checked, 5, 'Q1: on by default, except the unsupported one, the hidden MCP server and the two Bash allow rules (S1, owner 2026-10-21: every Bash rule needs the explicit tick)');
+    assert.ok(await js(`!document.querySelector('#scrDlg [data-fs="${'c'.repeat(32)}"]').checked`), 'S1: Bash(npm test:*) starts unticked too');
     assert.ok(await js(`!document.querySelector('#scrDlg [data-fs="${'d'.repeat(32)}"]').checked`), 'S1: the broad allow rule (Bash) starts unticked');
     assert.ok(await js(`/hooks and broad allow rules/.test(document.querySelector('#scrDlg .fs-confirm').textContent)`), 'the tick names the broad allow rules too');
     assert.ok(v.broad.includes('broad'), 'the broad rule is marked');
@@ -83,8 +84,8 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#stage .desk[data-id="sim-1"]').click()`);
     await ctx.waitFor(`!!document.getElementById('modeChip')`, 5000);
     const chip1 = await js(`document.getElementById('modeChip').textContent`);
-    assert.ok(/\+ folder rules/.test(chip1), 'FR-012: allow rules on: the chip says so: ' + chip1);
-    await shot('chip', w, h);
+    // S1 (owner 2026-10-21): both sample allow rules are Bash rules, so without the tick no allow rule is used and the chip stays plain
+    assert.ok(!/\+ folder rules/.test(chip1), 'S1: no tick, no folder allow rule, the chip says plain Read-only: ' + chip1);
     await js(`document.getElementById('modeChip').click()`);
     await ctx.waitFor(`!!document.querySelector('#modeMenu [data-act="foldersetup"]')`, 3000);
     await shot('menu', w, h);
@@ -96,6 +97,10 @@ module.exports = async (ctx) => {
     await js(`document.querySelectorAll('#scrDlg [data-fs]:not(:disabled)').forEach(c=>{c.checked=true;});document.getElementById('fsHooksOk').click()`);
     await js(`[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(b=>b.textContent==='Use these').click()`);
     await ctx.waitFor(`!document.querySelector('#scrDlg')`, 5000);
+    await ctx.sleep(200);
+    const chipOn = await js(`document.getElementById('modeChip').textContent`);
+    assert.ok(/\+ folder rules/.test(chipOn), 'FR-012: hooks and allow rules on with the tick: the chip says so: ' + chipOn);
+    await shot('chip', w, h);
     await js(`document.getElementById('modeChip').click()`);
     await ctx.waitFor(`!!document.querySelector('#modeMenu [data-act="foldersetup"]')`, 3000);
     await js(`document.querySelector('#modeMenu [data-act="foldersetup"]').click()`);

@@ -184,8 +184,8 @@ Rules that always apply:
 - **A profile (custom agent) from a folder's repository** asks once before it is used and never changes your mode.
 - **A folder's own agent setup** (spec 061). The folder's hooks, permission rules and MCP servers (`.claude/settings*.json`, `.mcp.json`, `.codex/config.toml`, `.github/hooks/`, `.github/copilot/settings.json`) are listed in full the first time the folder is added, and again when a file changes, before anything of it runs:
   - each item shows its exact command or rule; only text shaped like a token (GitHub, OpenAI/Anthropic, bearer, JWT, AWS keys) is hidden, and env and header values show by name only. An item with something hidden, or an MCP server that hands env values to a shell or an inline-code interpreter, starts unticked and says why;
-  - a broad rule (a whole tool) is marked;
-  - everything is on unless you untick it, but hooks need your tick on *I have read these hooks and I know what they run*;
+  - a broad allow rule is marked: a whole tool, a wildcard-only pattern, a file tool on the root, home or a drive, and **every shell rule** (`Bash`, `Bash(git:*)`, `Bash(npm test:*)`, any argument);
+  - everything is on unless you untick it, but hooks and broad allow rules start off and need your tick on *I have read these hooks (and broad allow rules)…*;
   - *Explain with AI* asks an installed agent app what a hook does and how risky it looks. It is advisory and can be wrong: the command shown is what runs.
 
   Accepted hooks and allow rules act without asking, even in Read-only, and the mode chip then reads *Read-only + folder rules*. Codex cannot run a folder's hooks from Durbar, and the dialog says so. Reopen the list from the mode menu: *This folder's setup…*. Without your answer, nothing of it applies. Copilot's runtime would otherwise run a repository's hooks by itself (checked 2026-10-20), so Durbar switches that off.

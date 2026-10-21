@@ -55,7 +55,8 @@ export interface FolderSetupDecision {
   declined: string[];
   /**
    * FR-011: hooks are accepted only with this explicit confirmation ("I have read these hooks and I know what they run"). The same tick
-   * covers broad allow rules (S1, review #424: `Bash`, `Read(*)`, a bare tool name), which act without asking for a whole tool.
+   * covers broad allow rules (S1, review #424 and owner 2026-10-21: every shell rule such as `Bash(git:*)`, `Read(*)`, a bare tool
+   * name), which act without asking.
    */
   hooksConfirmed: boolean;
 }
@@ -78,18 +79,27 @@ export function needsConfirm(i: Pick<FolderSetupItem, 'kind' | 'ruleKind' | 'bro
 }
 
 /**
- * FR-014 + S1 (owner, 2026-10-21: "broad allow rules need explicit tick like hooks"): a rule is broad when it covers a whole tool or
- * more than one narrow place: a bare tool name; a pattern of only wildcards and separators (`*`, `:*`, `**`, `*:*`, `/**`); a file tool
- * (`Read`, `Edit`, `Write`, `MultiEdit`, `NotebookEdit`) on a path from the root, the home folder or a drive with `**`; a `Bash`
- * prefix that names no command (`Bash( :*)`).
+ * S1 (owner decision, Vikram, Telegram, 2026-10-21; raised as Paco's point 3 on #394 and by his agent on #424): the tools that run any
+ * shell command they are given. A rule for one of them runs repository-chosen commands (`Bash(git:*)` lets `git -c core.pager=id log`
+ * through, `Bash(cat:*)` reads `~/.ssh/id_rsa`), so EVERY rule for them counts as broad, whatever its argument: Claude Code's `Bash`
+ * and `PowerShell`, and the `shell(...)` form of Copilot's tool permissions. Codex has no folder allow rules Durbar reads (its
+ * `config.toml` is read for MCP servers only), so it has nothing in this path.
+ */
+const SHELL_RULE_TOOLS = /^(bash|powershell|shell)$/i;
+
+/**
+ * FR-014 + S1 (owner, 2026-10-21): a rule is broad, and as an allow rule needs the explicit tick like hooks, when it covers a whole tool,
+ * more than one narrow place, or a shell: a bare tool name; a pattern of only wildcards and separators (`*`, `:*`, `**`, `*:*`, `/**`);
+ * a file tool (`Read`, `Edit`, `Write`, `MultiEdit`, `NotebookEdit`) on a path from the root, the home folder or a drive with `**`;
+ * every rule of a shell tool (`SHELL_RULE_TOOLS`: `Bash(npm test:*)`, `Bash(git status)`, bare `Bash`, `PowerShell(...)`, `shell(...)`).
  */
 export function isBroadRule(rule: string): boolean {
-  const m = /^([A-Za-z_][A-Za-z0-9_:.-]*)(?:\((.*)\))?$/.exec(rule.trim());
-  if (!m) return false;
+  const m = /^([A-Za-z_][A-Za-z0-9_:.-]*)(?:\((.*)\))?$/s.exec(rule.trim());
+  if (!m) return /^\s*(bash|powershell|shell)\b/i.test(rule);
   const [, tool, pat] = m;
   if (pat === undefined || /^[\s*:/.\\]*$/.test(pat)) return true;
+  if (SHELL_RULE_TOOLS.test(tool)) return true;
   if (/^(Read|Edit|Write|MultiEdit|NotebookEdit)$/.test(tool) && /^\s*(~|\/|[A-Za-z]:)/.test(pat) && /\*\*/.test(pat)) return true;
-  if (tool === 'Bash' && /^\s*:\*\s*$/.test(pat)) return true;
   return false;
 }
 

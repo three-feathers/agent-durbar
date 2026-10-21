@@ -323,7 +323,7 @@ export function scanFolderSetup(dirs: readonly string[]): ScanResult {
           if (!s) continue;
           const shown = shownCommand(s);
           add(
-            { id: digest(['rule', ruleKind, s]), app: 'claude', kind: 'rule', file: rel(f), label: `${word} rule`, detail: shown.text, ...(shown.hidden ? { hidden: true } : {}), ruleKind, ...(ruleKind !== 'deny' && isBroadRule(s) ? { broad: true } : {}), supported: true },
+            { id: digest(['rule', ruleKind, s]), app: 'claude', kind: 'rule', file: rel(f), label: `${word} rule`, detail: shown.text, ...(shown.hidden ? { hidden: true } : {}), ruleKind, ...(ruleKind === 'allow' && isBroadRule(s) ? { broad: true } : {}), supported: true },
             { kind: 'rule', ruleKind, rule: s },
           );
         }
