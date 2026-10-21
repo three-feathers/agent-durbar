@@ -38,10 +38,12 @@ export interface AgentsIpcDeps {
   ensureLive: EnsureLive;
   readyAdapterIds(): Promise<ReadonlySet<string>>;
   forgetOpenSession(key: string, id: string): void;
+  /** Spec 058 FR-067: replayed history with failed tool output masked (session secret values from main). */
+  maskHistory<H extends { items: { type: string; failed?: boolean; output?: string }[] }>(id: string, h: H): H;
 }
 
 export function register(deps: AgentsIpcDeps): void {
-  const { agents, router, agentState, opsDeps, remoteOps, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, vsChatRefs, continued } = deps;
+  const { agents, router, agentState, opsDeps, remoteOps, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, vsChatRefs, continued, maskHistory } = deps;
   const scheduler = deps.getScheduler;
   const checkpointStore = deps.getCheckpointStore;
   ipcHandle('agents:list', () => [...agents.values()]);
@@ -167,7 +169,7 @@ export function register(deps: AgentsIpcDeps): void {
     if (!c.resumed) return { ok: true, resumed: false };
     let history: NonNullable<ResumeResult['history']>;
     try {
-      history = await historyOf(ad, a.id);
+      history = maskHistory(a.id, await historyOf(ad, a.id));
     } catch {
       history = { items: [], total: 0, truncated: false };
     }

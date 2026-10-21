@@ -20,9 +20,10 @@ small PR-sized step with its own test. No task spends AI credits except Phase 6,
 - [ ] T011 [P] `src/renderer/mcpwords.js` (UMD): state words and icons, start line, toggle timing, hints; `scripts/test-mcpwords.ts`
   (`test:mcpwords` in `test:serial`) covering every state, unknown tokens and every hint rule, including the sign-in hint that names
   the agent app's own sign-in without running it [FR-001, FR-002, FR-006, FR-052]
-- [ ] T012 [P] `maskMcpError(text, secretValues)` in `src/shared/redact.ts` (redact with the given values and the env, then URL
+- [x] T012 [P] `maskMcpError(text, secretValues)` in `src/shared/redact.ts` (redact with the given values and the env, then URL
   credentials, cut to 300); cases in the redact tests: an extra's header value, an env value, `ghp_` token, `https://user:pass@host`
-  [FR-005]
+  [FR-005] (note 2026-10-21: built under spec 019 T013, #360/#362, as `maskMcpError` in `src/main/mcpmask.ts:23` with the cases in
+  `scripts/test-mcp-errormask.ts`, not in `redact.ts`)
 
 ## Phase 2: User Story 1 + 2, words and errors (P1, MVP)
 
@@ -34,7 +35,7 @@ small PR-sized step with its own test. No task spends AI credits except Phase 6,
 - [ ] T022 [P] [US2] Copilot mapper: `errorClassification` (known values only) -> `errorClass`, `session.mcp_server_needs_reconnect` ->
   `needsRestart`; mapper test [FR-011]
 - [ ] T023 [P] [US2] Codex: `failureReason: reauthenticationRequired` and `authStatus: notLoggedIn` -> `errorClass: 'auth'`; test in
-  `test-codex-adapter` [FR-011]
+  `test-codex-adapter` [FR-011] (note 2026-10-21: done as part of T095 for #364; tick both there)
 - [ ] T024 [P] [US2] Claude mapper: `init.mcp_server_errors` -> `failed` rows with their text; mapper test [FR-011]
 - [ ] T025 [P] [US1] Capability values in the three adapters: Copilot `session`/`live`, Claude `next-message`/`live`, Codex
   `session`/`next-message` (restart and logs stay false here); contract test [FR-010]
@@ -118,29 +119,75 @@ research.md and change `read:` to `real:` where confirmed. Do not open or paste 
 Spec *Changes* > 2026-10-20 (FR-060..FR-074). Phase 8a needs no owner answer; Phase 8b needed T090 (done 2026-10-20); Phase 8c needs the owner's go-ahead
 at the time of the run. Builds on T010 (`errorClass`), T011 (words), T020 (`agents:mcp` fields) and T026 (dialog rows).
 
+**Note 2026-10-21 (analysis for #364 on `main` 6f918af; tasks only, no FR changed).** None of T010, T011, T020, T026 or T027 is built:
+`McpServerStatus` has no `errorClass` (`src/adapters/types.ts:255`), there is no `src/renderer/mcpwords.js`, `AgentMcpEntry` is
+`{name, origin, status?, error?, defaultOn, off}` (`src/shared/api.ts:390`), and the dialog prints the raw status token with no hint,
+*Details* or live refresh (`src/renderer/screens.js:645-667`). Built elsewhere: T012's masking is `maskMcpError` in
+`src/main/mcpmask.ts:23` (spec 019 T013, #360/#362; not in `redact.ts`), and `agents:mcp` already masks `error` with the session's values
+(`src/main/mcpipc.ts:152`, T021's code; its reply test is still missing). So #364 does not wait for all of #349: it needs only T112-T115
+below, split out of T010/T011/T020/T026 (+ T027 whole). The rest of those tasks stays with #349 and builds on these. Stale line
+references: `src/main/main.ts:123` is now `main.ts:142` (`outward`); `src/adapters/codex.ts:829-835` (spec, research) is now
+`codex.ts:953-959`.
+
+#### Prerequisites for #364 (subset of Phases 1-2; the remainder of T010, T011, T020, T026 follows in #349)
+
+- [ ] T112 [P] Subset of T010: only `McpServerStatus.errorClass?` (FR-011's values); no `needsRestart`, no new capability fields, no
+  `restartMcpServer` / `mcpLogFolder`. Same PR as T093 (types and contract C2 together) [FR-011, FR-060]
+- [ ] T113 [P] Subset of T011: `src/renderer/mcpwords.js` (UMD) with the word and icon for every state and unknown tokens, and the hints
+  for `failed` and `needs-auth` (the sign-in hint names the agent app, FR-052/FR-069); `scripts/test-mcpwords.ts` (`test:mcpwords` in
+  `test:serial`). Start line and toggle timing wait for T010's capability fields (#349) [FR-001, FR-006, FR-052]
+- [ ] T114 Subset of T020: `agents:mcp` adds per agent the agent app's display name (`app`) and per server `errorClass`; `AgentMcpEntry`
+  in `src/shared/api.ts`; test in new `scripts/test-mcp-session.ts` (`test:mcpsession`), including that no session secret reaches the
+  reply (T021's missing test) [FR-020, FR-005]
+- [ ] T115 Subset of T026, plus T027 whole: rows show word + icon (T113) and the hint, *Details* with *Copy* for the masked error;
+  `index.html` loads `mcpwords.js`; live refresh of the open dialog on an `mcp` event for that agent, focus kept by server name (T027);
+  simulator: the existing needs-auth and failed rows (`src/renderer/sim.ts:514`) get a canned error; screenshots at 1440x900 and
+  1280x800. Start line, toggle timing and the two scopes sentence stay in T026 (#349) [FR-001, FR-002, FR-004, FR-030]
+
+#### PR sequence for #364 (each PR ticks its tasks and updates docs; `npm run typecheck && npm run build && npm test`)
+
+1. T091 + T092 + T097: no prerequisite, no UI. Stops the false app sign-in card for the issue's text and masks failed MCP tool cards.
+2. T112 + T093: types, contract C2, fake.
+3. T094, T095 (folds T023 in), T096: one PR per adapter (owner, 2026-10-21).
+4. T113 + T114 + T115: the dialog shows "Needs sign-in" with its hint and *Details*; simulator screenshots. After PRs 1-4 a 401 / OAuth
+   challenge reads as needs-auth in the MCP dialog.
+5. T098 + T099 + T100: the adapters' `startMcpSignIn` and Copilot `persistent` storage, on the fakes; one PR per adapter (owner, 2026-10-21).
+6. T101: main store, IPC, preload, `DurbarApi`.
+7. T102 + T110 + T104 (dialog part): Sign in, two-step open, origin tag, terminal steps, Switch off; screenshots.
+8. T103 + T111 + T104 (card part) + T108: tool card line, keychain sentence, README, CHANGELOG, specs index.
+9. T105-T107 (8c) run on the owner's Mac with a remote OAuth MCP server he chooses, one adapter at a time, after PRs 5-8 merge (owner,
+   2026-10-21; still needs his go-ahead at the time); then T109.
+
+**Owner's answers, 2026-10-21 ("Ok todo").** (1) Until T040-T042 (Restart session, #349) exist, the manual steps (T102, T110 texts, FR-068)
+say "End this session (More > End session), then send a message to resume it"; they switch to the Restart button once T040-T042 are built.
+(2) One PR per adapter for steps 3 and 5. (3) Phase 8c as in step 9. (4) T112-T115 are tracked under #364, with a comment on #349.
+
 ### Phase 8a: clarify, signals, classifier, masking (only T090 needs the owner; T091-T097 do not wait for it)
 
 - [x] T090 Owner answers Q12-Q19 (spec *Changes*, open questions); record them under spec.md `## Clarifications` and adjust T098-T104
   (2026-10-20: Q12 B, Q13-Q19 A)
-- [ ] T091 [P] `src/adapters/mcpauth.ts` `isMcpAuthChallenge(text)`; `scripts/test-mcpauth.ts` (`test:mcpauth` in `test:serial`): the
+- [x] T091 [P] `src/adapters/mcpauth.ts` `isMcpAuthChallenge(text)`; `scripts/test-mcpauth.ts` (`test:mcpauth` in `test:serial`): the
   issue's exact text, the runtime phrases of research 7.2, negatives (model text, a usage limit, the app's own 401) [FR-061]
-- [ ] T092 [P] `isAuthError` returns false when `isMcpAuthChallenge` matches; cases in `scripts/test-autherrors.ts` (the issue's text as
+- [x] T092 [P] `isAuthError` returns false when `isMcpAuthChallenge` matches; cases in `scripts/test-autherrors.ts` (the issue's text as
   an `error` status gets no `errorKind: 'auth'`) [FR-062, SC-010]
 - [ ] T093 [P] Types: `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `cancelMcpSignIn?`, `ToolCallEvent.mcpAuth`; event guard (only
   on a failed `toolCall` with `mcpServer`); contract C2 lines; `fake.ts` members behind the flags [FR-063, FR-064, FR-068]
 - [ ] T094 [P] Copilot mapper: a failed MCP tool with challenge text -> `mcpAuth: true` and that server `needs-auth` + `errorClass:
   'auth'` (emit `mcp`); the next status replaces it; `remediation` ignored; mapper test with the issue's text [FR-060, FR-063, SC-010]
-- [ ] T095 [P] Codex: `failureReason: reauthenticationRequired` -> `needs-auth` + `errorClass: 'auth'` (extends T023); a failed MCP tool
-  with challenge text -> `mcpAuth` and a list refresh; `test-codex-adapter` [FR-060]
+- [ ] T095 [P] Codex: `failureReason: reauthenticationRequired` -> `needs-auth` + `errorClass: 'auth'` (extends T023, which this
+  task now includes: also `authStatus: notLoggedIn` -> `errorClass: 'auth'`; the notification is read at `src/adapters/codex.ts:953-959`); a
+  failed MCP tool with challenge text -> `mcpAuth` and a list refresh; `test-codex-adapter` [FR-011, FR-060]
 - [ ] T096 [P] Claude: a failed `mcp__<server>__<tool>` result with challenge text -> `mcpAuth` and one `mcp_status`; mapper and fake
   CLI tests [FR-060]
-- [ ] T097 Main masks failed MCP tool cards (`maskMcpText`, the session's secret values, no 300 cut) in the renderer hook
-  (`src/main/main.ts:123`); test in `scripts/test-mcp-errormask.ts` (a header value, a `ghp_` token, a URL with a key) [FR-067, SC-011]
+- [x] T097 Main masks failed MCP tool cards (`maskMcpText`, the session's secret values, no 300 cut) in the renderer hook
+  (`outward`, `src/main/main.ts:142`, next to `maskMcpEvent` in `src/main/mcpmask.ts:36`); extend the existing spec 019 test
+  `scripts/test-mcp-errormask.ts` (a header value, a `ghp_` token, a URL with a key, and the wiring check for `toolCall`) [FR-067, SC-011]
 
 ### Phase 8b: Sign in, steps and shortcut (after T090)
 
 - [ ] T098 [P] Copilot `startMcpSignIn`: `rpc.mcp.oauth.login({serverName, clientName, callbackSuccessMessage})` when it is a function,
-  else manual; no URL -> connected; `mcpOAuthTokenStorage: 'persistent'` on create and resume (Q12 B); fake SDK: recorder, no-method mode, no-URL mode, asserts no
+  else manual; no URL -> connected; `mcpOAuthTokenStorage: 'persistent'` on create and resume (Q12 B: in the shared `config` of `src/adapters/copilot.ts:576-577`, so
+  the FR-158 reconnect at `copilot.ts:337` keeps it; not in `oneShotConfig` or `renameResumeConfig`); fake SDK: recorder, no-method mode, no-URL mode, asserts no
   `handlePendingRequest` and no `onMcpAuthRequest` [FR-064, FR-070, SC-012]
 - [ ] T099 [P] Claude `startMcpSignIn`: `mcp_authenticate {serverName}` without `redirectUri`; `requiresUserAction: false` -> connected;
   "not supported in this context" -> manual; `mcp_status` every 3 s while open; not launched -> "Send a message first" (Q15); fake CLI
@@ -150,21 +197,21 @@ at the time of the run. Builds on T010 (`errorClass`), T011 (words), T020 (`agen
   [FR-064, SC-012]
 - [ ] T101 Main: `src/main/mcpsignin.ts` (pure store, injected clock and opener) and `agents:mcpSignIn` / `agents:mcpOpenSignIn` /
   `agents:mcpCancelSignIn`; `elicitHttpsUrl` check (Q16); host-only replies; drops on connected, Cancel, 10 minutes, End, Restart
-  session; `canSignIn`, `signIn`, `signInSteps` in `agents:mcp`; preload and `DurbarApi`; tests: host only, `http:` and user:password
+  session (the Restart session hook waits for T040/T041, #349, not built on 2026-10-21); `canSignIn`, `signIn`, `signInSteps` in `agents:mcp`; preload and `DurbarApi`; tests: host only, `http:` and user:password
   refused, expiry, Cancel, End, no address in the `DURBAR_LOG` sink or activity log [FR-065, SC-011]
-- [ ] T102 Dialog: needs-auth row (hint, Sign in, Switch off for this session, terminal steps with Copy), two-step open (Q13), waiting and
+- [ ] T102 Dialog: needs-auth row (hint, Sign in, Switch off for this session, terminal steps with Copy; the steps end with "End this session (More > End session), then send a message to resume it" until T040-T042 exist, then the Restart button), two-step open (Q13), waiting and
   time-limit states, toasts, live region; Switch off calls the existing `setMcp` [FR-066, FR-068, FR-069]
 - [ ] T103 Tool card line for `mcpAuth`: "<server> needs you to sign in", **Sign in…** opens the dialog at that row (Q14), **Switch off
   for this session** [FR-063, FR-066]
 - [ ] T104 Simulator `simmcpauth=1` / `simmcpauth=manual`; screenshots at 1440x900 and 1280x800 (`docs/screenshots/058-mcp-signin-*.png`)
   [FR-071, FR-073]
 
-- [ ] T110 Two-step confirm shows the server's origin tag next to the host, and the "different site" line when the registrable
+- [ ] T110 (its manual-steps wording follows T102's: End session, then a message, until T040-T042) Two-step confirm shows the server's origin tag next to the host, and the "different site" line when the registrable
   domains differ (pure helper `signInSiteNote(serverUrl, pageHost)` with unit tests: same domain, other domain, `co.uk`, stdio) [FR-075]
 - [ ] T111 Trust confirmation of per-folder extras and the Copilot waiting text say a sign-in may be kept in the system keychain
   after the session [FR-076]
 
-### Phase 8c: real checks (needs-owner-approval; 0 AI credits, no prompt; a remote MCP server with OAuth; a browser sign-in on the owner's machine)
+### Phase 8c: real checks (on the owner's Mac, one adapter at a time, after PRs 5-8; needs-owner-approval; 0 AI credits, no prompt; a remote MCP server with OAuth; a browser sign-in on the owner's machine)
 
 Record results in research.md section 7 and change `read:` to `real:`. Do not open, copy or paste any token, keychain entry or log file.
 
@@ -197,7 +244,8 @@ Record results in research.md section 7 and change `read:` to `real:`. Do not op
 
 - T001 (done) before everything. Phase 1 before Phases 2-5. T020 before T021, T026, T032, T041, T052. T040 before T041 before T044. T054 before T052.
 - Phases 3, 4 and 5 are independent of each other after Phase 2. Phase 6 after the phase it checks. Phase 7 last.
-- Phase 8: T091 and T092 depend on nothing. T010 before T093-T096; T091 before T092, T094-T096; T093 before T094-T101; T020 before
-  T101; T011 and T026 before T102; T090 before T098-T104; T101 before T102-T103; Phase 8c after the task it checks; T108-T109 last.
-  T095 extends T023 (same file; do them in order).
+- Phase 8: T091, T097, T112 and T113 depend on nothing. T091 before T092 and T094-T096; T112 before T093-T096 and T114; T093 before
+  T094-T101; T113 and T114 before T115; T114 before T101; T115 before T102; T090 (done) before T098-T104; T101 before T102-T103; Phase 8c
+  after the task it checks; T108-T109 last. T095 includes T023 (same file). Note 2026-10-21: T112-T115 replace the earlier "T010, T011,
+  T020, T026 before" for #364; the rest of those tasks builds on T112-T115 in #349.
 - MVP = Phases 1-2 (words, masked errors, live refresh): it answers the owner's "not clear how to start them" on its own.
