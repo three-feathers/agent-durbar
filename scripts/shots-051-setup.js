@@ -27,6 +27,10 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(cards.map((c) => c.kind), ['copilot', 'claude', 'codex'], 'one card per harness: ' + JSON.stringify(cards));
     assert.deepStrictEqual(cards.map((c) => c.st), ['Ready', 'Not installed', 'Update needed']);
     assert.ok(cards[1].act.includes('Install…') && cards[2].act.includes('Update…'), 'one next step each');
+    // spec 060 FR-003: where an installed app was found (home shortened to ~); nothing for an app that is not installed
+    const where = await js(`[...document.querySelectorAll('.hs-card')].map(c=>(c.querySelector('.hs-where')||{}).textContent||'')`);
+    assert.deepStrictEqual(where, ['', '', 'Found at ~/.nvm/versions/node/v22.3.0/bin/codex'], 'Found at: ' + JSON.stringify(where));
+    assert.ok(await js(`(()=>{const c=document.querySelector('.hs-card[data-kind="codex"]'),w=c.querySelector('.hs-where');return w.getBoundingClientRect().right<=c.getBoundingClientRect().right+0.5&&parseFloat(getComputedStyle(w.querySelector('code')).fontSize)>=10.5})()`), 'the path stays inside its card, at least 10.5px');
     assert.strictEqual(await js(`document.getElementById('hsH').textContent`), 'Agent apps', 'the section is called Agent apps (spec 052 FR-051)');
     await js(`document.getElementById('hsH').scrollIntoView()`); await ctx.sleep(300);
     await shot(`051-harnesses-${w}x${h}.png`);
