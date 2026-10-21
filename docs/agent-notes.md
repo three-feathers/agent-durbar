@@ -57,3 +57,8 @@ Each entry has the date it was learned, what happened, and how to apply it, with
   - An invalid `compactionDecision` is ignored silently, so the runtime does not reveal the allowed values.
 - **Codex `CODEX_HOME`**: an empty or missing folder reads as "not signed in". When a sign-in check says "could not confirm", first check that the folder you pointed at exists.
 - **A conflicting PR runs only CodeQL** (2026-10-21). When a PR cannot merge, GitHub skips its `pull_request` workflows, so the build and tests are absent rather than red, and a gate that only looks for failed checks says "ready". `scripts/pr-gate.sh` now also requires `mergeable=MERGEABLE` and, for `src/` changes, the Spec Kit gate and the Linux build-and-test check present and green. A PR stacked on another branch also gets no CodeQL until it is retargeted to `main`.
+- **Stacked PRs: use GitHub's native stacks** (2026-10-21, [docs](https://docs.github.com/en/pull-requests/get-started/about-stacked-prs)).
+  - When one PR depends on another, link them as a stack instead of retargeting by hand: `gh extension install github/gh-stack`, then `gh stack link <bottom> <next> <top>` for PRs that already exist, or `gh stack init` / `add` / `submit` for new ones.
+  - Merging a lower PR retargets and rebases the ones above it. Merging the top PR merges the whole stack from the bottom. Every layer runs `main`'s CI.
+  - Merge bottom-up. Same repository only.
+  - Examples: stacks #436 (#392 → #393 → #402) and #437 (#389 → #401).
