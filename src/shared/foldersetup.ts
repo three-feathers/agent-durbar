@@ -29,7 +29,7 @@ export interface FolderSetupItem {
   hidden?: boolean;
   /** Re-review #424: why the item is marked `hidden` beyond a token shape (env values handed to a shell, a code-loading env variable). */
   hiddenWhy?: string;
-  /** Names of an HTTP server's headers (values never shown: a header never runs here). Env values are shown in `detail`. */
+  /** Names whose values are not shown: an HTTP server's headers (a header never runs here) and env variables with a secret-looking name. Other env values are in `detail`. */
   secretNames?: string[];
   /** False when the agent app cannot apply this item from Durbar (FR-006), with the reason. */
   supported: boolean;

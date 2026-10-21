@@ -134,7 +134,7 @@ const SIM_FOLDER_SETUP: FolderSetupItem[] = [
   { id: 'c'.repeat(32), app: 'claude', kind: 'rule', file: '.claude/settings.json', label: 'Allow rule', detail: 'Bash(npm test:*)', ruleKind: 'allow', broad: true, supported: true },
   { id: 'd'.repeat(32), app: 'claude', kind: 'rule', file: '.claude/settings.json', label: 'Allow rule', detail: 'Bash', ruleKind: 'allow', broad: true, supported: true },
   { id: 'e'.repeat(32), app: 'claude', kind: 'rule', file: '.claude/settings.json', label: 'Deny rule', detail: 'Read(./.env)', ruleKind: 'deny', supported: true },
-  { id: 'f'.repeat(32), app: 'any', kind: 'mcp', file: '.mcp.json', label: 'MCP server github', detail: "GITHUB_TOKEN='${GITHUB_TOKEN}' npx -y @modelcontextprotocol/server-github", supported: true },
+  { id: 'f'.repeat(32), app: 'any', kind: 'mcp', file: '.mcp.json', label: 'MCP server github', detail: 'GITHUB_TOKEN=[hidden] LOG_LEVEL=info npx -y @modelcontextprotocol/server-github', secretNames: ['GITHUB_TOKEN'], supported: true },
   { id: '1'.repeat(32), app: 'any', kind: 'mcp', file: '.mcp.json', label: 'MCP server notes', detail: "NOTES_FLAGS=--quiet sh -c 'node ./tools/example-notes-server.js $NOTES_FLAGS'", hidden: true, hiddenWhy: 'It starts sh, which can run what it is given, and hands it env values (NOTES_FLAGS): they can be commands, so read them above. Ticking it runs them too.', supported: true },
   { id: '0'.repeat(32), app: 'codex', kind: 'hook', file: '.codex/hooks.json', label: 'SessionStart hook', detail: 'echo ready', event: 'SessionStart', supported: false, unsupportedWhy: 'Codex does not run a folder\u2019s hooks from Agent Durbar (they need its own review in a terminal).' },
 ];

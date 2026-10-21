@@ -11,6 +11,7 @@ import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { NAME_RE } from '../shared/mcp';
+import { secretFlag } from '../shared/redact';
 import type { McpServerSpec } from '../shared/mcp';
 import { isBroadRule } from '../shared/foldersetup';
 import type { FolderSetupApp, FolderSetupItem, RuleKind } from '../shared/foldersetup';
@@ -146,6 +147,15 @@ export function codeLoadingEnv(names: readonly string[]): string[] {
   return names.filter((n) => CODE_LOADING_ENV.test(n));
 }
 
+/**
+ * Constitution III (safe by default): an env value whose NAME looks secret is not shown (`DB_PASSWORD`, `PGPASSWORD`, `API_KEY`,
+ * `GITHUB_TOKEN`, ...). Reuses spec 041's `secretFlag` (token, secret, passw, key, pwd, auth, credential, cookie, session, ...) plus
+ * `private` and `cert`. Hiding by name does not by itself untick the item: a code-loading name is flagged by `codeLoadingEnv` anyway.
+ */
+export function secretEnvName(name: string): boolean {
+  return secretFlag(name) || /private|cert/i.test(name);
+}
+
 /** Re-review #424 nit: one word as a POSIX shell would read it, so an argument with spaces or shell characters is not mistaken for several. */
 export function shownWord(w: string): string {
   return /^[A-Za-z0-9_@%+=:,./~^-]+$/.test(w) ? w : `'${w.replace(/'/g, `'\\''`)}'`;
@@ -155,9 +165,11 @@ function mcpItem(app: FolderSetupApp, file: string, name: string, spec: McpServe
   const env = spec.type === 'stdio' ? Object.entries(spec.env ?? {}) : [];
   const envNames = env.map(([k]) => k);
   const headerNames = Object.keys(spec.headers ?? {}).slice(0, 30);
+  const secretEnv = envNames.filter(secretEnvName);
   // FR-014 (re-review #424): the same token-shape masking as hooks and rules; anything hidden is marked (and starts unticked).
   // Re-review at 7537f86: env values are shown too (`NAME=value` before the command), and every word is quoted where needed.
-  const envParts = env.map(([k, v]) => shownCommand(`${k}=${shownWord(v)}`));
+  // a secret-looking NAME shows `NAME=[hidden]` (never the value, never in the digest) and is listed as "value hidden"
+  const envParts = env.map(([k, v]) => (secretEnvName(k) ? { text: `${k}=[hidden]`, hidden: false } : shownCommand(`${k}=${shownWord(v)}`)));
   const parts = [...envParts, ...(spec.type === 'stdio' ? [spec.command ?? '', ...(spec.args ?? [])].map((w) => shownCommand(shownWord(w))) : [shownCommand(spec.url ?? '')])];
   const detail = parts.map((p) => p.text).join(' ');
   const tokenHidden = parts.some((p) => p.hidden);
@@ -174,7 +186,7 @@ function mcpItem(app: FolderSetupApp, file: string, name: string, spec: McpServe
   // are part of the digest and a changed value asks again; header values stay out (names only).
   const id = digest(['mcp', name, { ...spec, ...(spec.env ? { env: envParts.map((p) => p.text).sort() } : {}), ...(spec.headers ? { headers: Object.keys(spec.headers).sort() } : {}) }]);
   return {
-    item: { id, app, kind: 'mcp', file, label: `MCP server ${name}`, detail, ...(hidden ? { hidden: true } : {}), ...(hiddenWhy ? { hiddenWhy } : {}), ...(headerNames.length ? { secretNames: headerNames } : {}), supported: true, ...(note ? { unsupportedWhy: note } : {}) },
+    item: { id, app, kind: 'mcp', file, label: `MCP server ${name}`, detail, ...(hidden ? { hidden: true } : {}), ...(hiddenWhy ? { hiddenWhy } : {}), ...(secretEnv.length + headerNames.length ? { secretNames: [...secretEnv, ...headerNames].slice(0, 30) } : {}), supported: true, ...(note ? { unsupportedWhy: note } : {}) },
     raw: { kind: 'mcp', name, spec },
   };
 }

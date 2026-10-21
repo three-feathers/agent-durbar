@@ -76,6 +76,7 @@ module.exports = async (ctx) => {
     assert.ok(/^It starts sh, which can run what it is given, and hands it env values \(NOTES_FLAGS\): they can be commands, so read them above/.test(hd.text) && /Ticking it runs them too\.$/.test(hd.text), `${w}: the reason is shown: ${hd.text}`);
     assert.ok(await js(`document.querySelector(${jsLiteral(`#scrDlg [data-fs="${'1'.repeat(32)}"]`)}).closest('li').textContent.includes("NOTES_FLAGS=--quiet sh -c 'node")`), `${w}: the env value is shown before the command, args quoted`);
     assert.ok(!hd.checked && hd.clear && hd.inside && hd.size >= 10.5 && hd.count === 1, `${w}: hidden server unticked, reason under its box: ${JSON.stringify(hd)}`);
+    assert.ok(await js(`(()=>{const li=document.querySelector(${jsLiteral(`#scrDlg [data-fs="${'f'.repeat(32)}"]`)}).closest('li');return li.textContent.includes('GITHUB_TOKEN=[hidden] LOG_LEVEL=info npx')&&li.textContent.includes('Value hidden (the name looks secret): GITHUB_TOKEN.')})()`), `${w}: a secret-named env value is hidden and says so; a plain one is shown`);
     await shot('hidden', w, h);
     // FR-011: Use these without the confirmation: hooks stay off, rules and servers are used
     await js(`[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(b=>b.textContent==='Use these').click()`);
