@@ -59,6 +59,12 @@ module.exports = async (ctx) => {
   };
 
   /* ---- FR-033..FR-037: the section, before the row checks below (each load starts from no saved choice unless said) ---- */
+  /* the shortcut as the app shows it on this platform (FR-036, spec 052 FR-084): ⌘ on a Mac, Ctrl elsewhere; macOS drivers press meta */
+  const MAC = process.platform === 'darwin';
+  const MODS = MAC ? ['meta', 'shift'] : ['control', 'shift'];
+  const ARIA = MAC ? 'Meta+Shift+H' : 'Control+Shift+H', KEYTXT = MAC ? '⇧⌘H' : 'Ctrl+Shift+H';
+  /* a capture can fail once right after a page load on the Windows runner (UnknownVizError): settle and try once more */
+  const shotSafe = async (file) => { try { await H.shot(file, { prep: 'calm' }); } catch (e) { console.log('[006-prev] capture retry:', String(e && e.message || e)); await settle(); await ctx.sleep(500); await H.shot(file, { prep: 'calm' }); } };
   const forget = () => js(`(()=>{try{localStorage.removeItem('durbar.prevOpen');localStorage.removeItem('durbar.detail');}catch(e){}})()`);
   const openAgent = async (name) => { await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.includes(${jsLiteral(name)}));d.click();})()`); await ctx.waitFor(`!!document.getElementById('panelHead')`, 8000); await settle(); };
   const sect = () => js(`(()=>{const p=document.getElementById('prev'),b=document.getElementById('prevBtn'),pp=document.getElementById('prevPanel');if(!p||!b)return null;const r=p.getBoundingClientRect(),br=b.getBoundingClientRect();
@@ -71,31 +77,31 @@ module.exports = async (ctx) => {
     for (const theme of ['light', 'dark']) {
       const q = theme === 'dark' ? { theme: 'audit-dark', usertheme: DARK } : {};
       const T = `${w}x${h} ${theme}`;
-      const sshot = (name) => H.shot(path.join(OUT, `006-sessions-${name}-${w}x${h}${theme === 'dark' ? '-dark' : ''}.png`), { prep: 'calm' });
-      await H.load({ w, h, query: q }); await forget(); await H.load({ w, h, query: q });
+      const sshot = (name) => shotSafe(path.join(OUT, `006-sessions-${name}-${w}x${h}${theme === 'dark' ? '-dark' : ''}.png`));
+      await H.load({ w, h, query: q }); await forget(); await H.load({ w, h, query: q }); await settle();
       await openAgent('Ada'); await ctx.waitFor(`!document.getElementById('prev').hidden`, 8000); await settle();
       let S = await sect();
       // FR-033: collapsed by default for a chat with a conversation; one slim row; not in the header any more
       assert.strictEqual(S.inHeader, false, T + ': no Previous (N) in the chat header');
       assert.ok(S.shown && S.exp === 'false' && !S.panel, T + ': collapsed ' + JSON.stringify(S));
-      assert.strictEqual(S.ctl, 'prevPanel'); assert.strictEqual(S.keys, 'Control+Shift+H');
+      assert.strictEqual(S.ctl, 'prevPanel'); assert.strictEqual(S.keys, ARIA);
       assert.strictEqual(S.label, 'Previous sessions'); assert.strictEqual(S.region, 'Previous sessions');
       assert.strictEqual(S.count, '6'); assert.strictEqual(S.sub, '4 Copilot · 2 VS Code chats');
-      assert.ok(/Show \(Ctrl\+Shift\+H\)$/.test(S.title), T + ': tooltip names the key ' + S.title);
+      assert.ok(S.title.endsWith('Show (' + KEYTXT + ')'), T + ': tooltip names the key ' + S.title);
       assert.ok(S.h <= 32 && S.bh === 28, T + ': one slim row (28px toggle, 32px section) ' + S.h + '/' + S.bh);
       assert.ok(!S.sideways && S.minFont >= 10.5, T + ': fits, text ≥10.5px');
       assert.ok(await js(`(()=>{const bs=[...document.querySelectorAll('#panelHead .actions > button')].filter(b=>b.getClientRects().length);return bs.length>=3&&bs.every(b=>Math.abs(b.getBoundingClientRect().top-bs[0].getBoundingClientRect().top)<1)})()`), T + ': header actions on one row');
       await sshot('collapsed');
       // FR-036: Ctrl+Shift+H from the message box opens it and focuses the search; again closes and focuses the toggle
       await js(`document.getElementById('msgInput').focus()`);
-      await H.key('H', ['control', 'shift'], { char: 'never' }); assert.ok(await until(`document.getElementById('prevBtn').getAttribute('aria-expanded')==='true'&&!!document.getElementById('prevQ')`), T + ': Ctrl+Shift+H opens');
+      await H.key('H', MODS, { char: 'never' }); assert.ok(await until(`document.getElementById('prevBtn').getAttribute('aria-expanded')==='true'&&!!document.getElementById('prevQ')`), T + ': Ctrl+Shift+H opens');
       S = await sect();
       assert.ok(S.panel && S.pref === 'open' && S.chev !== 'none', T + ': open by the key, saved, chevron turned ' + JSON.stringify(S));
       assert.ok(await js(`document.activeElement===document.getElementById('prevQ')`), T + ': focus on the search');
       assert.ok(await js(`document.querySelectorAll('#prevLists .prev-row').length===6`), T + ': the same lists');
       await js(`document.activeElement.blur()`); await sshot('expanded');
       await js(`document.getElementById('prevQ').focus()`);
-      await H.key('H', ['control', 'shift'], { char: 'never' }); assert.ok(await until(`document.getElementById('prevBtn').getAttribute('aria-expanded')==='false'`), T + ': Ctrl+Shift+H closes');
+      await H.key('H', MODS, { char: 'never' }); assert.ok(await until(`document.getElementById('prevBtn').getAttribute('aria-expanded')==='false'`), T + ': Ctrl+Shift+H closes');
       S = await sect();
       assert.ok(!S.panel && S.pref === 'closed', T + ': closed by the key, saved');
       assert.ok(await js(`document.activeElement===document.getElementById('prevBtn')`), T + ': focus back on the toggle');
@@ -108,17 +114,17 @@ module.exports = async (ctx) => {
         await js(`document.getElementById('backBtn').click()`); await settle();
         await openAgent('Kenji'); await settle();
         assert.ok(await js(`document.getElementById('prev').hidden`), T + ': no section for a folder without previous sessions');
-        await H.key('H', ['control', 'shift'], { char: 'never' }); assert.ok(await until(`[...document.querySelectorAll('#toasts .toast')].some(t=>/No previous sessions in this folder/.test(t.textContent))`), T + ': the key says there are none');
+        await H.key('H', MODS, { char: 'never' }); assert.ok(await until(`[...document.querySelectorAll('#toasts .toast')].some(t=>/No previous sessions in this folder/.test(t.textContent))`), T + ': the key says there are none');
         // the palette and the keyboard sheet name it
         await js(`document.getElementById('backBtn').click()`); await settle(); await openAgent('Ada');
-        await H.key('K', ['control'], { char: 'never' }); assert.ok(await until(`!!document.getElementById('palIn')`), T + ': palette opens');
+        await H.key('K', [MAC ? 'meta' : 'control'], { char: 'never' }); assert.ok(await until(`!!document.getElementById('palIn')`), T + ': palette opens');
         await js(`(()=>{const i=document.getElementById('palIn');i.value='previous sessions';i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
         assert.ok(await until(`[...document.querySelectorAll('.pal-o .pal-l')].some(x=>x.textContent==='Show or hide previous sessions')`), T + ': palette item');
         await H.key('Escape', [], { char: 'never' }); await settle();
         // Simple wording (FR-033)
         await js(`localStorage.setItem('durbar.detail','simple')`); await H.load({ w, h, query: q }); await openAgent('Ada'); await ctx.waitFor(`!document.getElementById('prev').hidden`, 8000); await settle();
         S = await sect(); assert.strictEqual(S.label, 'Earlier chats'); assert.strictEqual(S.region, 'Earlier chats');
-        await H.shot(path.join(OUT, `006-sessions-simple-${w}x${h}.png`), { prep: 'calm' });
+        await shotSafe(path.join(OUT, `006-sessions-simple-${w}x${h}.png`));
       }
       await forget();
     }
