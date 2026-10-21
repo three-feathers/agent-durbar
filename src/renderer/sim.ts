@@ -35,6 +35,8 @@ interface SimOptions {
   floors?: boolean;
   /** Issue #126: some main agents receive a session title, as the runtime sends after the first prompt (page address `simtitles=1`). */
   titles?: boolean;
+  /** Spec 059 FR-016: every main agent carries a 60-character user name (page address `simnames=long`), to check that the office still fits. */
+  names?: 'long';
   /** Spec 012 FR-130: the first Claude agent (or the first agent) asks a question (page address `simquestion=1`). */
   /** Spec 052 FR-141 (issue #367): the first agent has eight session grants with long names (page address `simgrants=many`). */
   grants?: 'many' | 'stuck'; /* 'stuck': revokes are accepted but never remove anything (a failed revoke) */
@@ -120,6 +122,18 @@ const SIM_MODEL_BY_AGENT: Record<number, string> = { 3: 'sim-fast', 4: 'sim-fast
 /** Simulated caps (AI credits, min 30 like the runtime) by agent name; Omar's calls are expensive (11 AIU each), so he reaches 30 in his first turn (spec 011 FR-016). */
 const SIM_CAPS: Record<string, number> = { Ada: 50, Mira: 30, Omar: 30 };
 /** spec 012 FR-150: dollar caps for kinds that cap their dollar estimate (simulated Claude Code). */
+/* spec 059 FR-002 (the same messages as src/shared/names.ts; the simulator keeps its own copy, it never imports main code) */
+function simNameError(v: unknown): string {
+  if (typeof v !== 'string') return 'Use 1 to 60 characters.';
+  if (/[\u00ad\u034f\u115f\u180e\u200b\u2028\u2029\u202a-\u202e\u2060-\u2064\u2066-\u2069\u3164\ufeff\ufff9-\ufffb]/.test(v)) return 'Remove control or hidden characters.';
+  const n = v.replace(/\s+/g, ' ').trim();
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(n)) return 'Remove control or hidden characters.';
+  if ([...n].length > 60) return 'Use 1 to 60 characters.';
+  if (/gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}/.test(n)) return 'That looks like a secret. Use another name.';
+  return '';
+}
+const SIM_LONG_NAMES = ['Billing refactor: split invoice and credit-note flows', 'Canton lookup duplicates: reproduce and fix the join', 'Release notes for the next minor version and changelog', 'Tidy the registry modules and update every import path'];
 const SIM_USD_CAPS: Record<string, number> = { Ada: 0.01 };
 const SIM_EXPENSIVE: Record<string, number> = { Omar: 11 };
 /* Spec 012 T018 (FR-065, FR-066): the simulated kinds of `simkinds=mixed`. They are a simulation, not a statement about the real CLIs.
@@ -140,9 +154,9 @@ const SIM_FOLDER_SETUP: FolderSetupItem[] = [
 ];
 const simSetupDecisions = new Map<string, { accepted: string[]; declined: string[] }>();
  const SIM_PLAN_CAPS = { planMode: true }; // spec 066: every simulated kind can plan first
-const SIM_COPILOT_CAPS = { ...SIM_PLAN_CAPS, remoteService: { name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }, interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, remote: true, oneShot: true, deleteSession: true } as AdapterInfo['capabilities'];
+const SIM_COPILOT_CAPS = { ...SIM_PLAN_CAPS, remoteService: { name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }, interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, handoff: true, remote: true, oneShot: true, deleteSession: true, renameSession: 'any' } as AdapterInfo['capabilities'];
 const SIM_MIXED_KINDS: AdapterInfo[] = [
-  { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, remote: true, remoteService: { name: 'Claude', host: 'claude.ai', mobile: 'the Claude app' }, mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true, deleteSession: false } }, // spec 006 FR-028: Claude Code has no per-session delete
+  { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, remote: true, remoteService: { name: 'Claude', host: 'claude.ai', mobile: 'the Claude app' }, mcpToggle: false, permModeSwitch: 'live', helpers: true, history: true, deleteSession: false, renameSession: 'next-turn' } }, // spec 006 FR-028: Claude Code has no per-session delete
   { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: false, remote: false } },
   { id: 'basic', displayName: 'Basic agent (simulated)', state: 'ready', version: 'sim', capabilities: { interrupt: false, resume: false, images: false, models: false, effort: false, permissionModes: ['read-only'], permModeSwitch: 'none', usage: { tokens: true, costUsd: false, nanoAiu: false }, context: false, caps: false, helpers: false, history: false, mcpStatus: false, mcpToggle: false } as AdapterInfo['capabilities'] },
 ];
@@ -241,6 +255,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const rnd = mulberry32(opts.seed ?? 7);
     const listeners = new Set<(e: AgentEvent) => void>();
     const addedListeners = new Set<(a: AgentInfo) => void>();
+    const renamedListeners = new Set<(e: { id: string; alias?: string }) => void>();
+    const simPrevNames = new Map<string, string>(); // spec 059: names of the simulated Previous sessions rows
     const n = Math.max(1, opts.n);
     // Fewer than 12: drop the quieter agents first so the status mix stays varied.
     let rows = ROSTER.slice(0, Math.min(n, ROSTER.length));
@@ -270,6 +286,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (i === 6) info.modelControl = { switch: 'none', effort: false, contextTier: false, compact: false, windowKnown: true };
       (info as AgentInfo & { roomName?: string; role?: string }).roomName = roomName;
       (info as AgentInfo & { roomName?: string; role?: string }).role = role;
+      info.renameCap = caps(info.adapterId ?? 'copilot').renameSession; // spec 059: what a rename does in the agent app
+      if (opts.names === 'long') info.alias = (SIM_LONG_NAMES[i % SIM_LONG_NAMES.length] + ' ' + (i + 1)).padEnd(60, '.').slice(0, 60);
       return {
         info, room, state, intent, helpers, files,
         prompt: i === 0
@@ -1485,6 +1503,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (o && o.floor !== undefined) lastFloor = floor;
         folderFloor.set(cwd, floor);
         const info = { id: 'sim-x' + extra, name: home ? 'home' : 'new-folder-' + extra, cwd, folders: [cwd], permMode: 'read-only', floor, adapterId: mixed && o && o.adapterId ? o.adapterId : 'copilot' } as AgentInfo;
+        info.renameCap = caps(info.adapterId ?? 'copilot').renameSession;
         sims.push({ info, room: info.name, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: [], grants: new Map() });
         addedListeners.forEach((l) => l(info));
         return { ok: true, agents: [], ...(home ? { warnings: [{ name: 'home', kind: 'home' as const }] } : {}) };
@@ -1610,7 +1629,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const bad = o.adapterId !== undefined ? notReady(o.adapterId) : undefined;
         if (bad) return { ok: false, error: bad };
         extra++;
-        const info = { ...src.info, adapterId: o.adapterId ?? src.info.adapterId, id: 'sim-n' + extra, permMode: o.permMode ?? src.info.permMode, model: o.model ?? 'auto', tier: undefined, effort: o.effort, maxAiCredits: o.maxAiCredits === null ? undefined : o.maxAiCredits ?? defaultCap } as AgentInfo;
+        const info = { ...src.info, alias: undefined, adapterId: o.adapterId ?? src.info.adapterId, id: 'sim-n' + extra, permMode: o.permMode ?? src.info.permMode, model: o.model ?? 'auto', tier: undefined, effort: o.effort, maxAiCredits: o.maxAiCredits === null ? undefined : o.maxAiCredits ?? defaultCap } as AgentInfo;
         if (mixed) { // the new session follows its kind's capabilities like the roster does
           const k = caps(info.adapterId ?? 'copilot');
           if (!k.caps || (k.capUnit === 'usd' && o.maxAiCredits === undefined)) info.maxAiCredits = undefined; // the AIU default is not a dollar cap
@@ -1667,6 +1686,29 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         for (const x of sims) if (x.info.cwd === src.info.cwd) x.info.defaultAgent = profileId ?? undefined;
         return { ok: true, defaultAgent: profileId ?? undefined };
       },
+      renameSession: async (id, sessionId, name) => { // spec 059 FR-013, FR-015: in memory; the same rule and answers as main; __simRenameFail makes the next app-side rename fail
+        const src = sims.find((x) => x.info.id === id);
+        if (!src) return { ok: false, error: 'Unknown session.' };
+        const bad = simNameError(name);
+        if (bad) return { ok: false, error: bad };
+        const clean = String(name).replace(/\s+/g, ' ').trim();
+        if (sessionId !== null && !/^prev-[1-4]$/.test(sessionId)) return { ok: false, error: 'That session is no longer available for this folder.' };
+        if (!clean) {
+          if (sessionId === null) { src.info.alias = undefined; renamedListeners.forEach((l) => l({ id, alias: undefined })); } else simPrevNames.delete(sessionId);
+          return { ok: true, inApp: false };
+        }
+        const cap = src.info.renameCap;
+        const fail = (window as unknown as { __simRenameFail?: string }).__simRenameFail;
+        let note: string | undefined;
+        let inApp = false, pending = false;
+        if (cap && !(sessionId === null && src.info.lazy && !src.info.resumeLast)) {
+          if (fail) { note = `Renamed in Agent Durbar only. ${SIM_APP[src.info.adapterId ?? 'copilot'] ?? 'The agent app'} did not accept the name: ${fail.slice(0, 120)}.`; (window as unknown as { __simRenameFail?: string }).__simRenameFail = undefined; }
+          else { inApp = cap === 'any'; pending = cap === 'next-turn'; }
+        }
+        if (sessionId === null) { src.info.alias = clean; renamedListeners.forEach((l) => l({ id, alias: clean })); } else simPrevNames.set(sessionId, clean);
+        return { ok: true, name: clean, inApp, ...(pending ? { pending } : {}), ...(note ? { note } : {}) };
+      },
+      onAgentRenamed: (cb) => { renamedListeners.add(cb); return () => renamedListeners.delete(cb); },
       listPrevious: async (id) => {
         const src = sims.find((x) => x.info.id === id);
         if (!src || !hasPrev(src)) return { ok: true, sessions: [], pinned: [], hidden: [] };
@@ -1677,7 +1719,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           { id: 'prev-3', title: 'Add a retry with backoff to the registry client', startTime: t - 50 * 3600e3, modifiedTime: t - 49 * 3600e3, branch: 'feature/retry' },
           { id: 'prev-4', title: 'Explain why the release workflow failed on the Windows runner and how to fix the path handling', startTime: t - 80 * 3600e3, modifiedTime: t - 79 * 3600e3, branch: 'fix/windows-paths' },
         ].filter((x) => !prevDeleted.has(x.id));
-        return { ok: true, sessions: all, ...prevMarksOf(src.info.adapterId ?? 'copilot', all.map((x) => x.id)) };
+        return { ok: true, sessions: all, names: Object.fromEntries(simPrevNames), ...prevMarksOf(src.info.adapterId ?? 'copilot', all.map((x) => x.id)) };
       },
       // Spec 006 FR-026: pins and hides kept in memory for this run (the real ones are ids in durbar-folders.json), same exclusive rule and id shape as main.
       markPrevious: async (id, src, sessionId, mark) => {
@@ -1713,7 +1755,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         // spec 003 (2026-10-21): like main, the session comes back in the mode last chosen for it (prev-1 was last in Allow all), else the opener's
         const own = simSessionModes.get(sessionId);
         const mode = own ?? src.info.permMode;
-        const info = { ...src.info, id: 'sim-n' + extra, permMode: mode, permFrom: own ? 'session' : 'opener', permRestored: own === 'allow' ? true : undefined } as AgentInfo;
+        const info = { ...src.info, id: 'sim-n' + extra, alias: simPrevNames.get(sessionId), permMode: mode, permFrom: own ? 'session' : 'opener', permRestored: own === 'allow' ? true : undefined } as AgentInfo;
         const modeWas = mode !== src.info.permMode ? src.info.permMode : undefined;
         sims.push({ info, room: src.room, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: src.files, grants: new Map() });
         const t = Date.now() - 2 * 3600e3;

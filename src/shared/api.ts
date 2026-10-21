@@ -20,6 +20,9 @@ export type { HistoryItem, PreviousSession, VsChatSummary, VsChatTranscript };
 /** Permission policy chosen when adding a folder. */
 export type PermMode = 'read-only' | 'ask' | 'allow';
 
+/** The answer of `renameSession` (spec 059 FR-013). `inApp`: the agent app took the name; `pending`: it will at the session's next launch; `note`: why only Durbar has it. */
+export type RenameResult = { ok: true; name?: string; inApp: boolean; pending?: boolean; note?: string } | { ok: false; error: string };
+
 export interface AgentInfo {
   /** Session id. */
   id: string;
@@ -27,6 +30,10 @@ export interface AgentInfo {
   name: string;
   /** The runtime's display title for this session (spec 002/001 deltas 2026-10-18, issue #126); display only. */
   title?: string;
+  /** The user's own name for this session (spec 059); display only, kept in Durbar's folder file. Wins over `title` (FR-001, FR-011). */
+  alias?: string;
+  /** What a rename of this session does in the agent app (spec 059 FR-007): now, at its next launch, or never (Durbar only). */
+  renameCap?: 'any' | 'next-turn';
   cwd: string;
   /** Set when the agent was added from a .code-workspace file. */
   workspaceFile?: string;
@@ -585,11 +592,15 @@ export interface DurbarApi {
   /** Spec 063: the git branch and uncommitted changes of the agent's folder (read-only). Optional: older bridges lack it. */
   gitStatus?(id: string): Promise<FolderGitStatus>;
   /** Earlier Copilot CLI/SDK sessions in this agent's folder (newest first). Optional: not in the simulator. */
-  listPrevious?(id: string): Promise<{ ok: boolean; error?: string; sessions: PreviousSession[]; pinned?: string[]; hidden?: string[] }>;
+  listPrevious?(id: string): Promise<{ ok: boolean; error?: string; sessions: PreviousSession[]; pinned?: string[]; hidden?: string[]; names?: Record<string, string> }>;
   /** Pin, unpin, hide or unhide one row (spec 006 FR-026). `src` is the agent's adapter id or `vscode`; ids only, never a path. */
   markPrevious?(id: string, src: string, sessionId: string, mark: 'pin' | 'unpin' | 'hide' | 'unhide'): Promise<{ ok: boolean; error?: string }>;
   /** Delete one earlier session through the agent app's own API (spec 006 FR-029). `code: 'in-office'` = it still has a card. */
   deletePrevious?(id: string, sessionId: string): Promise<{ ok: boolean; error?: string; code?: 'in-office'; agentId?: string }>;
+  /** Spec 059 FR-013: give a session the user's name. `sessionId` null = this agent's own session; an id = another open or previous session of the same folder. An empty name resets. */
+  renameSession?(id: string, sessionId: string | null, name: string): Promise<RenameResult>;
+  /** Spec 059 FR-013: a session's user name changed (here or in another window); `alias` undefined = reset. */
+  onAgentRenamed?(cb: (e: { id: string; alias?: string }) => void): () => void;
   /** Resume one of them as a new agent in the same folder; `replace` retires this agent if it was never used. */
   resumeSession?(id: string, sessionId: string, replace: boolean): Promise<ResumeResult>;
   /** Read-only VS Code Copilot Chat history for this agent's folder. */
