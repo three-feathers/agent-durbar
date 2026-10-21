@@ -70,3 +70,10 @@ Each entry has the date it was learned, what happened, and how to apply it, with
 - **Testing as a standard user in CI** (2026-10-20, spec 060). On Windows, `Start-Process -Credential` keeps the admin's `TEMP`, `USERPROFILE`, `APPDATA` and `LOCALAPPDATA`; set them from `os.userInfo().homedir`. On macOS and Linux, Homebrew belongs to the admin account and fails for anyone else (exit 1), and npm with a system Node.js fails with exit 243. Vendor installers that write to `~/.local/bin` work without admin rights on all three OSes.
 
 - **Simulator drivers on macOS** (2026-10-20, `real:` GitHub `macos-latest`, spec 008). (1) `sendInputEvent` with Shift+`/` arrives as key `/` on macOS, not `?`. Dispatch the `?` keydown in the page there. (2) Shortcuts use Cmd (`meta`), not Ctrl. (3) Windows are clamped to the runner's small screen unless `enableLargerThanScreen` is set. (4) The macOS runner is slow, so fixed `sleep`s before a click flake. Use `scripts/driver-helpers.js` (`until`, `settle`, `office`, `chatOf`; spec 008 FR-096) in new drivers, never a bare `ctx.sleep` before a click or an assertion, and take layout snapshots only after two identical measurements in a row.
+
+- **Real-account CI** (2026-10-20, spec 062):
+  - Secrets: `COPILOT_CODEX_GITHUB_FINE_GRAINED_TOKEN` (given to Copilot as `COPILOT_GITHUB_TOKEN`), `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (to Codex through `codex login --with-api-key` on stdin).
+  - Only `e2e-real.yml` uses them: never on `pull_request`, `main` only, in one step.
+  - To try the workflow before it is on `main`, add a temporary `push` branch trigger and remove it before the PR (`test:platforms` checks that the trigger is `main` only).
+  - Never print a CLI's own sign-in line: Codex's shows a masked key tail.
+  - Copilot Free lists no models but runs `auto`.

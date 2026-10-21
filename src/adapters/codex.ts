@@ -10,7 +10,7 @@ import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, SignInCheck, StartOptions, Unsubscribe } from './types';
+import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
 import type { AdapterDescriptor } from './capabilities';
 import type { EventBody } from './map';
 import { CodexMapper } from './codexMap';
@@ -166,10 +166,21 @@ export function codexElicitationHasFields(params: unknown): boolean {
 /**
  * FR-140 (real, Ubuntu 24.04+): Codex's Linux sandbox (bubblewrap) cannot start where unprivileged user namespaces are blocked
  * (`kernel.apparmor_restrict_unprivileged_userns=1`). Read-only and Ask first then fail at start (closed, as they must); say why.
+ * FR-087 (owner 2026-10-20, option c): the text never suggests Allow all; the window adds a "Change mode…" button instead.
  */
 export function linuxSandboxHint(reason: string): string {
   return /bwrap|bubblewrap|user namespace|RTM_NEWADDR/i.test(reason)
-    ? ' Codex could not start its Linux sandbox: this system blocks unprivileged user namespaces (Ubuntu AppArmor). Read-only and Ask first need that sandbox; allow it for bubblewrap (see the README, Codex) or use Allow all in a folder you trust.'
+    ? ' Codex could not start its Linux sandbox: this system blocks unprivileged user namespaces (Ubuntu AppArmor). Read-only and Ask first need that sandbox, so nothing ran. To allow it for bubblewrap, see the README (Codex).'
+    : '';
+}
+
+/**
+ * FR-140 delta (real, GitHub's macOS runners 2026-10-20): Codex's macOS sandbox (`sandbox-exec`) was refused, so Read-only and Ask
+ * first fail at start (closed, as they must). The cause on an ordinary Mac is not known yet; say what happened and what to do.
+ */
+export function macSandboxHint(reason: string): string {
+  return /sandbox-exec/i.test(reason)
+    ? ' Codex could not start its macOS sandbox (macOS refused sandbox-exec). Read-only and Ask first need that sandbox, so nothing ran. This can happen when Agent Durbar itself runs restricted (a managed Mac or a CI machine); start Durbar normally and try again.'
     : '';
 }
 
@@ -240,6 +251,8 @@ export class CodexAdapter implements AgentAdapter {
   readonly capabilities: AdapterCapabilities = CODEX_CAPABILITIES;
   /** Optional debug sink (DURBAR_LOG). Receives short lines: rpc diagnostics, and on an unexpected exit the last stderr lines after `redact()` (FR-097). Never env values or prompts. */
   debug?: (message: string) => void;
+  /** Spec 065 FR-001: assigned by the main process (router.setWriteGuard). */
+  writeGuard?: WriteGuard;
   private listeners = new Set<(event: AgentEvent) => void>();
   private sessions = new Map<string, Live>();
   /** Ids this run has used, live or not: a stopped one cannot be silently restarted as a new thread (resume is T043b). */
@@ -392,7 +405,13 @@ export class CodexAdapter implements AgentAdapter {
           await rpc.request('account/rateLimits/read', {});
           return { status: 'signed-in', detail: 'Signed in (checked with OpenAI).' } as SignInCheck;
         } catch (e) {
-          if (isAuthError(e)) return { status: 'signed-out', detail: 'OpenAI did not accept the Codex sign-in.' } as SignInCheck;
+          if (isAuthError(e)) {
+            // spec 012 FR-156 delta (real e2e 2026-10-20): rate limits belong to a ChatGPT sign-in, so an API-key sign-in is
+            // refused here although it works (`codex login status`: "Logged in using an API key", model/list and turns work)
+            const a = await rpc.request('getAuthStatus', { includeToken: false, refreshToken: false }).catch(() => undefined);
+            if (isObj(a) && a.authMethod === 'apikey') return { status: 'signed-in', detail: 'Signed in with an OpenAI API key.' } as SignInCheck;
+            return { status: 'signed-out', detail: 'OpenAI did not accept the Codex sign-in.' } as SignInCheck;
+          }
           if (!(e instanceof CodexRpcError && e.kind === 'rpc' && (e.code === -32601 || /method not found|unknown variant|unknown method/i.test(e.message)))) return { status: 'unknown' } as SignInCheck;
         }
         const r = await rpc.request('getAuthStatus', { includeToken: false, refreshToken: false });
@@ -591,7 +610,7 @@ export class CodexAdapter implements AgentAdapter {
           : await child.rpc.request('thread/start', threadParams);
       } catch (e) {
         // Never retried with a weaker setting (FR-087).
-        throw new Error(`Codex refused the session settings: ${reasonOf(e)}${linuxSandboxHint(reasonOf(e))}`);
+        throw new Error(`Codex refused the session settings: ${reasonOf(e)}${linuxSandboxHint(reasonOf(e))}${macSandboxHint(reasonOf(e))}`);
       }
       if (resumeId !== undefined) codexResumeCheck(started, { cwd: (limited ? realCwd : cwd) as string, limited, realpath: this.realpath });
       const thread = isObj(started) && isObj(started.thread) ? started.thread : undefined;
@@ -892,6 +911,7 @@ export class CodexAdapter implements AgentAdapter {
     return new PermissionBroker({
       roots: live.roots,
       mode: live.mode,
+      beforeWrite: (paths) => this.writeGuard?.(live.sid, paths) ?? Promise.resolve(), // spec 065 FR-001
       emit: (e: BrokerEvent) => {
         const sid = live.sid;
         switch (e.type) {
@@ -936,6 +956,7 @@ export class CodexAdapter implements AgentAdapter {
       toolCallId,
       fullCommandText: perm.fullCommandText,
       fileName: perm.fileName,
+      ...(perm.paths ? { paths: perm.paths } : {}),
       url: perm.url,
       toolName: perm.toolName,
       serverName: perm.serverName,

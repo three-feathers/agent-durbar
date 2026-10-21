@@ -1455,6 +1455,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!s) return { ok: false, error: 'unknown agent' };
         if (s.perm) return { ok: false, error: 'Waiting for your permission decision first.' };
         if (s.limitReq) return { ok: false, error: 'The spending limit was reached. Choose Raise limit, Remove limit or Stop here first.' };
+        // spec 012 FR-087: `simsendfail=sandbox` fakes Codex refusing Read-only / Ask first (the real Linux message), for the driver
+        if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsendfail') === 'sandbox' && s.info.permMode !== 'allow')
+          return { ok: false, error: "Codex refused the session settings: fs sandbox helper failed: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted Codex could not start its Linux sandbox: this system blocks unprivileged user namespaces (Ubuntu AppArmor). Read-only and Ask first need that sandbox, so nothing ran. To allow it for bubblewrap, see the README (Codex)." };
         const kind = s.info.adapterId ?? 'copilot';
         if (simExpired.has(kind) || simSignedOut.has(kind)) {
           // FR-157: the app refuses the turn because of the sign-in, as Claude Code did on a real account
@@ -1663,6 +1666,32 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { repo: true as const, branch: n % 3 === 1 ? 'feature/login' : 'main', ...(n % 4 === 1 ? { ahead: 2 } : {}), files: pool.slice(0, n % 5), more: 0 };
       },
       onEvent: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },
+      // spec 065 FR-007: `simcheckpoint=1` gives Ada (sim-1) a turn that changed three files; `=conflict` makes one of them changed since
+      onCheckpoint: (cb) => {
+        const mode = simQuery.get('simcheckpoint');
+        if (mode) setTimeout(() => cb({ id: 'sim-1', turn: 1, kind: 'turn', files: [{ path: 'src/tools/registry.ts', change: 'changed' }, { path: 'src/tools/companies.ts', change: 'created' }, { path: 'src/tools/old-lookup.ts', change: 'deleted' }], notCovered: [{ path: 'dist/bundle.js', why: 'too large to undo' }] }), 900);
+        return () => undefined;
+      },
+      checkpointPreview: async (id, turn) => {
+        if (id !== 'sim-1' || (turn !== 1 && turn !== 2)) return { ok: false as const, error: 'These changes can no longer be undone (only the last turns are kept, while Agent Durbar runs).' };
+        const conflict = simQuery.get('simcheckpoint') === 'conflict';
+        const files = turn === 1
+          ? [
+              { path: 'src/tools/registry.ts', action: 'restore' as const, diff: '--- a/src/tools/registry.ts\n+++ b/src/tools/registry.ts\n@@\n-export const tools = [companies];\n+export const tools = [lookup];\n+// legacy\n' },
+              { path: 'src/tools/companies.ts', action: 'remove' as const },
+              { path: 'src/tools/old-lookup.ts', action: 'create' as const },
+            ]
+          : [{ path: 'src/tools/registry.ts', action: 'restore' as const, diff: '-a\n+b\n' }, { path: 'src/tools/companies.ts', action: 'create' as const }, { path: 'src/tools/old-lookup.ts', action: 'remove' as const }];
+        return { ok: true as const, turn, files, conflicts: conflict && turn === 1 ? ['src/tools/registry.ts'] : [], notCovered: turn === 1 ? [{ path: 'dist/bundle.js', why: 'too large to undo' }] : [] };
+      },
+      checkpointUndo: async (id, turn) => {
+        if (id !== 'sim-1' || (turn !== 1 && turn !== 2)) return { ok: false as const, error: 'invalid request' };
+        if (simQuery.get('simcheckpoint') === 'conflict' && turn === 1) return { ok: false as const, error: 'Some of these files changed after that turn, so nothing was restored.', conflicts: ['src/tools/registry.ts'] };
+        const files = turn === 1
+          ? [{ path: 'src/tools/registry.ts', change: 'changed' as const }, { path: 'src/tools/companies.ts', change: 'deleted' as const }, { path: 'src/tools/old-lookup.ts', change: 'created' as const }]
+          : [{ path: 'src/tools/registry.ts', change: 'changed' as const }, { path: 'src/tools/companies.ts', change: 'created' as const }, { path: 'src/tools/old-lookup.ts', change: 'deleted' as const }];
+        return { ok: true as const, restored: 1, removed: 1, created: 1, undo: { turn: turn + 1, kind: 'undo' as const, files, notCovered: [] } };
+      },
       onAgentAdded: (cb) => { addedListeners.add(cb); return () => addedListeners.delete(cb); },
       onMenuSettings: () => () => undefined, /* spec 052 FR-083: no app menu in the simulator */
       onFullScreen: () => () => undefined,
