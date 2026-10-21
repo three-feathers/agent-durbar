@@ -82,7 +82,7 @@ if (process.platform === 'win32') {
 fs.writeFileSync(outFile, JSON.stringify(facts, null, 2));
 const r = facts.result || {};
 console.log(`\n### Installed app on ${process.platform}\n\n| Fact | Value |\n|---|---|`);
-for (const [k, v] of Object.entries({ ...facts, result: undefined, ...Object.fromEntries(Object.entries(r).map(([k2, v2]) => ['app.' + k2, v2])) })) if (v !== undefined) console.log(`| ${k} | ${String(Array.isArray(v) ? v.join(', ') : v).replace(/\|/g, '\\|')} |`);
+for (const [k, v] of Object.entries({ ...facts, result: undefined, ...Object.fromEntries(Object.entries(r).map(([k2, v2]) => ['app.' + k2, v2])) })) if (v !== undefined) console.log(`| ${k} | ${String(Array.isArray(v) ? v.join(', ') : v).replace(/\\/g, '\\\\').replace(/\|/g, '\\|')} |`);
 assert.strictEqual(r.packaged, true, 'the installed app runs packaged');
 assert.strictEqual(r.office, true, 'the office rendered');
 assert.ok(r.desks >= 15, 'all 15 simulated agents are on screen');
