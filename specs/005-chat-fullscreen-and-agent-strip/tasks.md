@@ -21,7 +21,7 @@
 - [x] T025 Automated overflow test for the chat view (same harness as feature 001 T020). [SC-001] (2026-10-19: the chat checks in `check:office`, #221)
 - [x] T026 Card menu Stop and End session for live main agents (interrupt / end, confirm End when busy, disabled Stop when the kind cannot interrupt), simulator and `check:office` at both sizes, docs (issue #251) [FR-017]
 
-## 2026-10-21 delta: file edits stream into the chat (FR-018..FR-026)
+## 2026-10-21 delta: file edits stream into the chat (FR-018..FR-027)
 
 - [x] T027 Shared edit helpers `src/shared/edits.ts` (types, `editFile`, `patchFiles`, `finishEdit` with redact and caps, `partialJson`) and adapter normalizer `src/adapters/edits.ts` (`editOf`, `ArgStream`); unit tests `test:edits` [FR-018, FR-024]
 - [x] T028 Claude Code mapper: `content_block_start`/`input_json_delta` for file-changing tools, early start, partial updates, complete block as update; fixture tests [FR-019]
@@ -34,6 +34,7 @@
 - [x] T035 Driver `check:edits` and screenshots at 1440x900 and 1280x800, Expert and Simple; README, CHANGELOG, specs index [FR-020..FR-026]
 - [x] T036 Real check of the three argument streams (Claude Code `input_json_delta`, Copilot `assistant.tool_call_delta`, Codex `item/fileChange/patchUpdated`) on one small edit each, within the owner's budget (about 3 prompts) [FR-019] (2026-10-21, `scripts/edit-stream-real.ts`: Claude Code and Copilot stream and pass; Codex 0.163.0 sends the patch at once with `item/started` and passes on the no-stream path, `[KNOWN GAP]` its `patchUpdated` branch; 6 prompts in all, results in spec.md)
 - [x] T037 A partial edit whose new text has not started shows the file only, no diff or counts (seen in T036); `test:edits` [FR-027]
+- [x] T049 Review on PR #463 (numbered after #465's T038..T048): linear `partialJson`/`patchFiles`/`bodyOf`/`cut()` with timing cases (old code fails each); failed or refused edit worded as not done, in `test:editview`, the simulator and `check:edits`; `edit` masked in main's `outward` with the session values (`maskEditInfo`); event guard negative cases; early `start` path through `cleanPath`; waiting line names the tool still running and says "Waiting for your OK" while a permission card waits (`check:edits`); UUID check in `scripts/edit-stream-real.ts`; spec text [FR-018, FR-020, FR-022, FR-024, FR-026]
 
 ## Delta 2026-10-21: readable JSON tool results and saved outputs (issue #361)
 
