@@ -11,9 +11,9 @@
 
 ## Open
 
-- [ ] T020 Verify on an account with several models: list, multipliers, an effort-capable model, one tiny prompt (feature 013). [FR-006]
-- [ ] T021 Take the effort list from the SDK model info instead of hard-coding it (or validate leniently). [FR-008]
-- [ ] T022 Allow changing model/effort for an existing agent (spec delta; likely "new session with same history"). [FR-007]
+- [x] T020 Verify on an account with several models: list, multipliers, an effort-capable model, one tiny prompt (feature 013). [FR-006] Done by spec 030 T041/T044 on Copilot Pro (#399).
+- [x] T021 Take the effort list from the SDK model info instead of hard-coding it (or validate leniently). [FR-008] Done 2026-10-21: `src/shared/effort.ts`.
+- [x] T022 Allow changing model/effort for an existing agent (spec delta; likely "new session with same history"). [FR-007] Done by spec 030 (switch model of a live session).
 - [ ] T023 Expose the `auto` tier choice; clarify default. [FR-009]
-- [ ] T024 Explain the multiplier next to the picker; connect to credits (feature 011). [FR-010]
+- [x] T024 Explain the multiplier next to the picker; connect to credits (feature 011). [FR-010] Done by spec 030 FR-011/FR-012 (prices per million, compared).
 - [x] T025 Credit-free unit test of the option mapping with a fake `ModelInfo[]`. [FR-011] (done by spec 030: `modelOptionFrom` in `scripts/test-copilot-model.ts`)

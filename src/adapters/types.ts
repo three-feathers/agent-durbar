@@ -43,7 +43,8 @@ export interface StartOptions {
   /** Use this id: resume it when it exists on disk, otherwise create a new session with exactly this id. */
   sessionId?: string;
   /** Reasoning effort for models that support it (see listModels). */
-  reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  /** The model's own effort name (spec 007 FR-008: `none` too; `src/shared/effort.ts`). */
+  reasoningEffort?: string;
   /** Context-window tier of the saved choice (spec 030); omitted = the model's default tier. Passed on create and on resume. */
   contextTier?: ContextTier;
   /**

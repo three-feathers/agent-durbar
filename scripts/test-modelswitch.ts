@@ -2,6 +2,7 @@
 import * as assert from 'assert';
 import * as path from 'path';
 import { modelControlFor, parseFocus, parseSwitchRequest, parseTier, MAX_FOCUS, NO_MODEL_CONTROL } from '../src/shared/modelswitch';
+import { parseEffort } from '../src/shared/effort';
 
 type M = { id: string; name?: string; multiplier?: number; contextWindow?: number; longWindow?: number; contextTiers?: string[]; priceClass?: string; efforts?: string[]; pricing?: { inputPerMTok?: number; outputPerMTok?: number; cachedPerMTok?: number; unverified?: boolean; long?: { inputPerMTok?: number; outputPerMTok?: number } } };
 type Conf = { needed: boolean; direction: string; reasons: { code: string; text: string }[]; estimate?: number; headroom?: number; compaction: boolean; overCap: boolean };
@@ -321,3 +322,16 @@ console.log('modelswitch tests passed');
   assert.ok(D.provenanceLine('x'.repeat(200), 'y\n'.repeat(80)).length < 200, 'bounded, one line');
   assert.ok(!/\n/.test(D.provenanceLine('A\nB', 'C\nD')), 'one line');
 }
+
+// spec 007 FR-008 (real 2026-10-20: gpt-6-luna and Codex models list `none`): the models' own effort names, not a fixed list
+assert.strictEqual(parseEffort('none'), 'none');
+assert.strictEqual(parseEffort('xhigh'), 'xhigh');
+for (const bad of ['', 'NONE', 'x'.repeat(21), 'low;rm', 7, null, undefined]) assert.strictEqual(parseEffort(bad), undefined, String(bad));
+{
+  const models = [{ id: 'gpt-6-luna', efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] }, { id: 'haiku', efforts: ['low', 'high'] }];
+  const ok = parseSwitchRequest({ model: 'gpt-6-luna', effort: 'none' }, models as never);
+  assert.ok(ok.ok && ok.request.effort === 'none', 'none is accepted when the model lists it');
+  const no = parseSwitchRequest({ model: 'haiku', effort: 'none' }, models as never);
+  assert.ok(!no.ok && /does not offer/.test(no.error), 'and refused when it does not');
+}
+console.log('effort: the models\' own names (none included) OK');
