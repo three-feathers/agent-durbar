@@ -9,20 +9,16 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { waits } = require('./driver-helpers');
-const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
+const { helpers, jsLiteral } = require('./driver-helpers'); /* spec 008 FR-097; jsLiteral: CodeQL js/bad-code-sanitization */
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 
 module.exports = async (ctx) => {
-  const js = (c) => ctx.js(c);
-  const { until } = waits(ctx);
+  const H = helpers(ctx);
+  const { js, until } = H;
   const deskOf = (name) => `[...document.querySelectorAll('#stage .desk[data-id]')].find(d=>d.innerText.split('\\n').some(l=>l.trim()===${jsLiteral(name)}))`;
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     for (const n of ['15', '6']) {
-      ctx.win.setContentSize(w, h);
-      await ctx.win.loadFile(INDEX, { query: { sim: n, simbreak: '8', simfreeze: '1' } });
-      await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=${n}`, 15000);
+      await H.load({ w, h, query: { sim: n, simbreak: '8' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=${n}`, settle: false });
       const who = n === '15' ? ['Tomas', 'Omar', 'Rosa'] : ['Tomas'];
       for (const nm of who) assert.ok(await until(`(${deskOf(nm)})?.dataset.place==='coffee'`, 8000), `${w} ${n}: ${nm} went to the coffee corner`);
       await ctx.sleep(1300); // the walk (about 1 s)
