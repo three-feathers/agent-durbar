@@ -11,7 +11,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 **Website:** <https://three-feathers.github.io/agent-durbar/>
 
 > **Status: alpha.**
-> - The newest pre-release is [`v0.1.0-alpha.9`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.9). It is unsigned and not notarized.
+> - The newest pre-release is [`v0.1.0-alpha.10`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.10). It is unsigned and not notarized.
 > - What changed in each release is in the [CHANGELOG](CHANGELOG.md).
 > - **Where it has been run:** Linux by hand every day. macOS by hand on the owner's and a teammate's Macs (macOS 26, Apple Silicon), from source and the simulator, including real Copilot sessions; fixes from those runs are merged. Windows has not been run by hand on a real PC yet.
 > - **What CI checks on Linux, macOS and Windows:** every change builds and starts the packaged app (spec 012 T044). In review: the UI checks on all three ([#389](https://github.com/three-feathers/agent-durbar/pull/389)), real installs of each agent app as a standard and an admin user ([#393](https://github.com/three-feathers/agent-durbar/pull/393)), and real-account end-to-end runs, where Copilot, Claude Code and Codex each install, sign in and answer on all three OSes: 9 of 9 on 2026-10-20 ([#402](https://github.com/three-feathers/agent-durbar/pull/402)).
