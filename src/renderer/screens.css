@@ -236,6 +236,8 @@ body.has-bridge #topBtns{display:flex}
 .hs-man{position:relative;margin:6px 0;padding:6px 64px 6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
 .hs-man-l{display:block;font-size:11px;font-weight:600;color:var(--ink-2)}.hs-man-l small{font-weight:400;color:var(--muted);font-size:11px}
 .hs-man code{display:block;font-size:11px;overflow-wrap:anywhere;user-select:all}.hs-man .cp-btn{top:50%;transform:translateY(-50%)}
+/* spec 060 FR-012: Run (Durbar runs that route) sits left of Copy (room for its wider "Copied ✓") when the route is found here */
+.hs-man.has-run{padding-right:136px}.hs-man .hs-man-run{position:absolute;top:50%;right:80px;transform:translateY(-50%);height:24px;min-height:0;padding:0 10px;font-size:11px}
 #hsPaste{flex:1 1 240px;height:32px;border:1px solid var(--line-ctl);border-radius:8px;padding:0 10px;font:inherit}
 /* Tools > Cost (spec 052 FR-044): one row per folder, a total row; folders with no usage in grey */
 .scr-body .ttab.cost{table-layout:auto}
@@ -288,3 +290,5 @@ body.has-bridge #topBtns{display:flex}
 .dlg.fs .fs-confirm{align-items:flex-start;margin:14px 0 2px;font-weight:600}
 .dlg.fs .fs-confirm input{flex:none;width:16px;height:16px;margin:2px 0 0}
 .dlg.fs .fs-confirm>span{flex:1;min-width:0}
+/* spec 060 FR-012: a tall setup dialog (three routes and the vendor's commands) scrolls inside its body, so the rows never slide under Cancel/Install */
+#hsDlg .dlg .dbody{overflow:auto;padding-right:2px}

@@ -8,7 +8,7 @@ import type { AdapterRegistry } from '../../adapters/registry';
 import type { AdapterRouter } from '../../adapters/router';
 import { nodeDetectEnv } from '../../adapters/detect';
 import type { AdapterInfo } from '../../shared/adapters';
-import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind, simManagers } from '../../shared/harnesssetup';
+import { OFFICIAL_PAGES, allowedSignInUrl, isSetupKind, simManagers, validPlanIndex } from '../../shared/harnesssetup';
 import type { DevEnv } from '../devhooks';
 import { HarnessSetup, confirmText, posixTrusted } from '../harnesssetup';
 import type { createRemoteOps } from '../remoteops';
@@ -64,7 +64,10 @@ export function register(deps: HarnessIpcDeps): void {
   ipcHandle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? (dev.DURBAR_SIM ? harnessSetup.plans(kind, op, simManagers(simOs(), dev.DURBAR_SIM_MANAGERS), simOs()) : harnessSetup.plans(kind, op)) : { plans: [], page: '', name: '', manual: [] }));
   ipcHandle('harness:run', async (e, kind: unknown, op: unknown, planIndex: unknown) => {
     if (!fromApp(e) || !isSetupKind(kind) || (op !== 'install' && op !== 'update' && op !== 'signin')) return { ok: false, error: 'invalid request' };
-    const p = harnessSetup.prepare(kind, op, typeof planIndex === 'number' && Number.isInteger(planIndex) && planIndex >= 0 && planIndex < 8 ? planIndex : 0);
+    // spec 060 FR-012: the window sends only an index into main's fixed table; anything else is refused, never read as "the first"
+    const idx = op === 'signin' ? 0 : validPlanIndex(planIndex);
+    if (idx === undefined) return { ok: false, error: 'invalid request' };
+    const p = harnessSetup.prepare(kind, op, idx);
     if (!p.ok) return p;
     // FR-004b: an install or update changes the computer, so the main process asks itself, in a native dialog the page cannot
     // answer, showing the real path and arguments. Sign-in runs the harness's own fixed login and changes nothing else.

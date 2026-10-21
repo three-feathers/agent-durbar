@@ -75,7 +75,8 @@ const ROUTES: Record<SetupKind, Partial<Record<'win32' | 'darwin' | 'linux', Rou
   copilot: {
     win32: [
       npm('@github/copilot', 'Needs Node.js 22 or later. Installs into your user folder; no administrator rights needed.'),
-      { manager: 'winget', install: ['install', '--id', 'GitHub.Copilot', '-e', ...WINGET_AGREE], update: ['upgrade', '--id', 'GitHub.Copilot', '-e', ...WINGET_AGREE], note: MAY_ADMIN },
+      // spec 060 FR-012: the route for a PC without Node.js (owner's report 2026-10-21), and the dialog says so
+      { manager: 'winget', install: ['install', '--id', 'GitHub.Copilot', '-e', ...WINGET_AGREE], update: ['upgrade', '--id', 'GitHub.Copilot', '-e', ...WINGET_AGREE], note: 'No Node.js needed. ' + MAY_ADMIN },
     ],
     darwin: [official(SCRIPTS.copilotSh, false), npm('@github/copilot', 'Needs Node.js 22 or later.'), { manager: 'brew', install: ['install', '--cask', 'copilot-cli'], update: ['upgrade', '--cask', 'copilot-cli'], note: MAY_ADMIN }],
     linux: [official(SCRIPTS.copilotSh, false), npm('@github/copilot', 'Needs Node.js 22 or later.'), { manager: 'brew', install: ['install', '--cask', 'copilot-cli'], update: ['upgrade', '--cask', 'copilot-cli'], note: MAY_ADMIN }],
@@ -108,10 +109,18 @@ export interface ManualCommand {
   label: string;
   command: string;
   note?: string;
+  /**
+   * Spec 060 FR-012: the install route that does the same thing, so the dialog can offer **Run** for it when that route is found.
+   * Run never runs `command`: it starts that route from main's fixed table (for `official`, the same vendor script, downloaded
+   * from its fixed hosts and run as a file: `powershell -File` / `bash`, never `irm … | iex` or `curl … | sh`).
+   */
+  route: RouteManager;
 }
 const NPM_CMD: Record<SetupKind, string> = { claude: 'npm install -g @anthropic-ai/claude-code', copilot: 'npm install -g @github/copilot', codex: 'npm install -g @openai/codex' };
 const NODE22 = 'Needs Node.js 22 or later.';
-const MANUAL: Record<SetupKind, Record<'win32' | 'darwin' | 'linux', ManualCommand[]>> = {
+/** Spec 060 FR-012: which route each manual command's label stands for (one table, so a new row cannot miss its route). */
+const LABEL_ROUTE: Readonly<Record<string, RouteManager>> = Object.freeze({ PowerShell: 'official', Terminal: 'official', 'PowerShell (winget)': 'winget', Homebrew: 'brew', npm: 'npm' });
+const MANUAL: Record<SetupKind, Record<'win32' | 'darwin' | 'linux', Omit<ManualCommand, 'route'>[]>> = {
   claude: {
     win32: [
       { label: 'PowerShell', command: 'irm https://claude.ai/install.ps1 | iex', note: "Anthropic's recommended installer; no administrator rights." },
@@ -138,7 +147,7 @@ const MANUAL: Record<SetupKind, Record<'win32' | 'darwin' | 'linux', ManualComma
 /** Spec 060 FR-009: the commands to run yourself on this OS, in the vendor's order (copies, so a caller cannot change the table). */
 export const manualCommands = (kind: SetupKind, platform: string): ManualCommand[] => {
   const os = osOf(platform);
-  return os ? (MANUAL[kind]?.[os] ?? []).map((c) => ({ ...c })) : [];
+  return os ? (MANUAL[kind]?.[os] ?? []).map((c) => ({ ...c, route: LABEL_ROUTE[c.label] })) : [];
 };
 
 function plansFor(kind: SetupKind, platform: string, found: ReadonlySet<PackageManager>, op: 'install' | 'update'): SetupPlan[] {
@@ -246,6 +255,12 @@ export function validPaste(s: unknown): string | undefined {
 export function lastLines(raw: string, n = 6): string[] {
   return stripAnsi(raw).split('\n').map((l) => l.trimEnd()).filter((l) => l.trim()).slice(-n).map((l) => (l.length > 200 ? l.slice(0, 199) + '…' : l));
 }
+
+/**
+ * Spec 060 FR-012: the plan index the window may send to `harness:run`: an integer 0-7, else undefined (refused; it used to fall
+ * back to the first plan). The index only picks a row of main's fixed table; main still checks that the row exists.
+ */
+export const validPlanIndex = (v: unknown): number | undefined => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < 8 ? v : undefined);
 
 export const isSetupKind = (k: unknown): k is SetupKind => k === 'claude' || k === 'codex' || k === 'copilot';
 

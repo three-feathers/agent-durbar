@@ -23,6 +23,8 @@
   const ACCOUNT = { codex: 'your ChatGPT account', claude: 'your Claude account', copilot: 'your GitHub account' };
   /* FR-045: a plain label for each package manager in the install dialog; the command stays visible below it */
   const MANAGER = { official: 'Official installer', brew: 'Homebrew', npm: 'npm', winget: 'winget (Windows Package Manager)' }; /* spec 060 FR-001 */
+  /* spec 060 FR-012: on Windows the official installer is the vendor's PowerShell script, so its label says so */
+  const mgr = (pl) => (pl.manager === 'official' && pl.bin === 'powershell' ? 'Official installer (PowerShell)' : MANAGER[pl.manager] || pl.manager);
   /* spec 052 FR-073: two plain hints for Copilot (the second only on Windows when PowerShell 7 is missing; text only, nothing is installed) */
   const COPILOT_VSCODE_NOTE = 'Signed in to Copilot in VS Code? That sign-in is separate: this signs in the Copilot CLI once, with the same GitHub account.';
   const PWSH_HINT = 'Copilot runs shell commands with PowerShell 7. Install it with winget: winget install --id Microsoft.PowerShell -e';
@@ -108,12 +110,23 @@
   }
 
   /* spec 060 FR-009: the vendor's own commands for this OS, each with a Copy button (the shared .cp-btn handler in app.js copies the
-     <code> next to it). Durbar never runs these lines; the user pastes them into a terminal (PowerShell on Windows). */
+     <code> next to it). Durbar never runs these lines as written. spec 060 FR-012: a row whose route Durbar can run here also gets
+     Run, which sends only that route's plan index; main runs its own fixed command for it (the vendor script downloaded and run
+     as a file, winget, npm) after its native confirmation. */
+  const runIndex = (p, c) => (p && Array.isArray(p.plans) && c.route ? p.plans.findIndex((pl) => pl.manager === c.route) : -1);
   function manualHTML(p, open) {
     const list = (p && Array.isArray(p.manual) ? p.manual : []).filter((c) => c && c.command);
     if (!list.length) return '';
-    const rows = list.map((c) => `<div class="hs-man"><span class="hs-man-l">${esc(c.label)}${c.note ? ` <small>${esc(c.note)}</small>` : ''}</span><code>${esc(c.command)}</code><button type="button" class="cp-btn cp-code" aria-label="Copy the ${esc(c.label)} command" title="Copy the ${esc(c.label)} command">Copy</button></div>`).join('');
-    return `<details class="hs-cmds hs-manual"${open ? ' open' : ''}><summary>Run it yourself</summary><p class="scr-note small">Copy one command into a terminal${list.some((c) => /^PowerShell/.test(c.label)) ? ' (PowerShell on Windows)' : ''}, run it, then choose <b>Check again</b>.</p>${rows}</details>`;
+    const ps = list.some((c) => /^PowerShell/.test(c.label));
+    const rows = list.map((c) => {
+      const i = runIndex(p, c);
+      const run = i >= 0 ? `<button type="button" class="btn sm primary hs-man-run" data-plan="${i}" aria-label="Run the ${esc(c.label)} install in Durbar" title="Durbar runs it for you and shows the exact command first">Run</button>` : '';
+      return `<div class="hs-man${run ? ' has-run' : ''}"><span class="hs-man-l">${esc(c.label)}${c.note ? ` <small>${esc(c.note)}</small>` : ''}</span><code>${esc(c.command)}</code>${run}<button type="button" class="cp-btn cp-code" aria-label="Copy the ${esc(c.label)} command" title="Copy the ${esc(c.label)} command">Copy</button></div>`;
+    }).join('');
+    const anyRun = list.some((c) => runIndex(p, c) >= 0);
+    const how = `Copy one command into a terminal${ps ? ' (PowerShell on Windows)' : ''}, run it, then choose <b>Check again</b>.`;
+    const runNote = anyRun ? ` Or choose <b>Run</b>: Durbar runs that install for you and shows the exact command first${ps ? ' (for a PowerShell installer, it downloads the same script from the vendor and runs it with Windows PowerShell)' : ''}.` : '';
+    return `<details class="hs-cmds hs-manual"${open ? ' open' : ''}><summary>${anyRun ? "The vendor's commands" : 'Run it yourself'}</summary><p class="scr-note small">${how}${runNote}</p>${rows}</details>`;
   }
 
   async function install(kind, op, name) {
@@ -126,16 +139,17 @@
     /* spec 052 FR-056: one plain sentence per way; the exact commands sit in a <details>, closed in Simple and open in Expert.
        Main still shows the exact command in its native confirmation before anything runs (spec 051 FR-004b). */
     const simple = document.body.classList.contains('simple');
-    const mgr = (pl) => MANAGER[pl.manager] || pl.manager;
     /* spec 052 FR-077: each option leads with what differs (the manager); the shared words are in the lead sentence */
     const many = p.plans.length > 1;
     const tag = (pl, i) => (many && i === 0 ? ' (recommended)' : many && i === p.plans.length - 1 && pl.manager === 'npm' ? ' (last resort)' : '');
     const opts = p.plans.map((pl, i) => `<label class="hs-plan"><input type="radio" name="hsPlan" value="${i}"${i === 0 ? ' checked' : ''}> <span><b>${esc(mgr(pl))}${tag(pl, i)}</b>${pl.note ? `<small>${esc(pl.note)}</small>` : ''}</span></label>`).join('');
     const cmds = `<details class="hs-cmds"${simple ? '' : ' open'}><summary>Show the exact command</summary>${p.plans.map((pl) => `<p class="scr-note small">${esc(mgr(pl))}: <code>${esc(pl.display)}</code></p>`).join('')}</details>`;
     const choice = await new Promise((res) => {
-      modal((op === 'update' ? 'Update ' : 'Install ') + p.name, `<p class="scr-note">Durbar ${op === 'update' ? 'updates' : 'installs'} ${esc(p.name)} for you. Choose how:</p>${opts}${cmds}<p class="scr-note small">It runs on your computer, as you, and asks once more before it starts. Prefer to do it yourself? <button type="button" class="linkbtn" id="hsPage">Open the official page</button></p>${op === 'install' ? manualHTML(p, false) : ''}`,
+      const md = modal((op === 'update' ? 'Update ' : 'Install ') + p.name, `<p class="scr-note">Durbar ${op === 'update' ? 'updates' : 'installs'} ${esc(p.name)} for you. Choose how:</p>${opts}${cmds}<p class="scr-note small">It runs on your computer, as you, and asks once more before it starts. Prefer to do it yourself? <button type="button" class="linkbtn" id="hsPage">Open the official page</button></p>${op === 'install' ? manualHTML(p, false) : ''}`,
         [{ label: 'Cancel', cancel: true, onClick: (c) => { c(); res(null); } }, { label: op === 'update' ? 'Update' : 'Install', cls: 'primary', onClick: (c) => { const v = document.querySelector('#hsDlg input[name="hsPlan"]:checked'); const i = v ? Number(v.value) : 0; c(); res(i); } }]);
       const a = document.getElementById('hsPage'); if (a) a.onclick = (e) => { e.preventDefault(); B.harnessOpenPage(kind); };
+      /* spec 060 FR-012: Run beside a command starts that route, like choosing it above and Install */
+      document.querySelectorAll('#hsDlg .hs-man-run').forEach((b) => { b.onclick = () => { const i = Number(b.dataset.plan); md.close(); res(i); }; });
     });
     if (choice === null) return;
     const done = await runDialog(kind, op, p.name, choice);
