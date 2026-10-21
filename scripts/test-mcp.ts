@@ -236,7 +236,7 @@ const codec = (available = true): SecretCodec => ({
   assert.deepStrictEqual(s2.list(K2).map((x) => x.name), ['only-b']);
   assert.strictEqual(s2.forSession(K1, [], []).mcpServers['only-a'].env?.TOKEN, SECRET);
   assert.ok(!fs.readFileSync(f, 'utf8').includes(SECRET));
-  assert.strictEqual(JSON.parse(fs.readFileSync(f, 'utf8')).version, 2);
+  assert.strictEqual(JSON.parse(fs.readFileSync(f, 'utf8')).version, 3, "v3: one vault for all secret values (FR-023)");
 }
 
 // 8. Migration of the milestone-8 global list: kept as legacy, never applied, movable into a folder (FR-015)
@@ -526,5 +526,122 @@ const codec = (available = true): SecretCodec => ({
   assert.deepStrictEqual(capped, [...capped].sort(), 'sorted');
   assert.strictEqual(capped[0], 'srv000');
   assert.strictEqual(capped[499], 'srv499', 'the first 500 by name');
+}
+// 11. Keychain at most once (FR-023, owner report 2026-10-21 "a ton of Keychain prompts on Mac"): on macOS every codec call can
+// read the Keychain. A counting fake proves: loading N servers with secrets decrypts nothing, a session decrypts at most once,
+// secrets of servers that do not start are never decrypted, and toggles and edits that keep a value do not decrypt.
+{
+  const counting = () => {
+    const c = { available: 0, decrypt: 0, encrypt: 0 };
+    const base = codec();
+    const fake: SecretCodec = {
+      available: () => (c.available++, true),
+      encrypt: (x) => (c.encrypt++, base.encrypt(x)),
+      decrypt: (x) => (c.decrypt++, base.decrypt(x)),
+    };
+    return { c, fake };
+  };
+  const stdio = (name: string, n: number) => ({ name, transport: 'stdio', command: 'node', args: [name + '.js'], env: Array.from({ length: n }, (_, i) => ({ key: 'K' + i, value: `${SECRET}-${name}-${i}` })) });
+  const f = tmp();
+  {
+    const w = new McpStore(f, codec());
+    w.load();
+    for (let i = 0; i < 6; i++) assert.ok(w.upsert(K1, stdio('on' + i, 3)).ok && w.setEnabled(K1, 'on' + i, true, true).ok);
+    for (let i = 0; i < 4; i++) assert.ok(w.upsert(K2, stdio('off' + i, 2)).ok); // folder B: off, never started
+    assert.ok(w.upsert(K1, stdio('k1off', 2)).ok); // folder A: off
+  }
+  const disk = fs.readFileSync(f, 'utf8');
+  assert.ok(!disk.includes(SECRET), 'no plain value on disk');
+  assert.strictEqual((disk.match(/ENC1:/g) ?? []).length, 1, 'one encrypted blob for all 28 values');
+  // launch: load, list every folder, Settings flag, names: no decrypt
+  const { c, fake } = counting();
+  const s = new McpStore(f, fake);
+  s.load();
+  assert.strictEqual(c.decrypt, 0, 'load decrypts nothing');
+  assert.ok(s.list(K1).every((v) => v.env.every((e) => e.set) && !v.needsSecrets), 'stored values show as set without decrypting');
+  assert.ok(s.list(K2).every((v) => !v.needsSecrets));
+  void s.secretsPersist, s.extraNames(), s.legacyList();
+  assert.strictEqual(c.decrypt, 0, 'views, names and the Settings flag decrypt nothing');
+  assert.ok(c.available <= 1, 'the store asks the codec at most once whether it can store secrets');
+  // a session in folder B (all off) or with every server switched off for the agent: nothing to start, no decrypt
+  assert.deepStrictEqual(s.forSession(K2).mcpServers, {});
+  assert.deepStrictEqual(s.forSession(K1, ['on0', 'on1', 'on2', 'on3', 'on4', 'on5']).mcpServers, {});
+  assert.strictEqual(c.decrypt, 0, 'secrets of servers that do not start are never decrypted');
+  // toggles and an edit that keeps the value write the same vault: no decrypt, no encrypt
+  assert.ok(s.setEnabled(K2, 'off0', true, true).ok && s.setEnabled(K2, 'off0', false).ok);
+  assert.ok(s.upsert(K1, { ...stdio('k1off', 0), env: [{ key: 'K0' }, { key: 'K1' }] }, 'k1off').ok);
+  s.setAmbientDisabled('github-mcp-server', true);
+  assert.deepStrictEqual([c.decrypt, c.encrypt], [0, 0], 'toggles and kept values neither decrypt nor encrypt');
+  // the first session with servers to start: ONE decrypt for six servers (18 values); more sessions: none
+  const sess = s.forSession(K1);
+  assert.deepStrictEqual(Object.keys(sess.mcpServers).sort(), ['on0', 'on1', 'on2', 'on3', 'on4', 'on5']);
+  assert.strictEqual(sess.mcpServers.on3.env?.K2, `${SECRET}-on3-2`);
+  assert.strictEqual(c.decrypt, 1, 'one decrypt for every server');
+  s.forSession(K1);
+  s.forSession(K2);
+  assert.strictEqual(c.decrypt, 1, 'never twice in one run');
+  // after a reload the kept value of k1off and the toggles survived
+  const r = new McpStore(f, codec());
+  r.load();
+  assert.ok(r.setEnabled(K1, 'k1off', true, true).ok);
+  assert.strictEqual(r.forSession(K1).mcpServers.k1off.env?.K1, `${SECRET}-k1off-1`, 'a kept value survives edits made while locked');
+  // a new value: one decrypt (to keep the others) and one encrypt; a removed server's values leave the vault
+  const { c: c2, fake: fake2 } = counting();
+  const e = new McpStore(f, fake2);
+  e.load();
+  assert.ok(e.upsert(K2, stdio('off1', 1), 'off1').ok);
+  assert.deepStrictEqual([c2.decrypt, c2.encrypt], [1, 1], 'a changed value: one decrypt, one encrypt');
+  assert.ok(e.remove(K2, 'off2'));
+  assert.strictEqual(c2.decrypt, 1, 'still one decrypt per run');
+  const blob = JSON.parse(fs.readFileSync(f, 'utf8')).vault as string;
+  const vault = codec().decrypt(blob);
+  assert.ok(vault.includes(`${SECRET}-off1-0`) && !vault.includes(`${SECRET}-off1-1`), 'the new value replaced the old ones');
+  assert.ok(!vault.includes(`${SECRET}-off2-`), 'a removed server leaves nothing in the vault');
+  assert.ok(vault.includes(`${SECRET}-off3-1`) && vault.includes(`${SECRET}-on5-2`), 'the other values are kept');
+  // a renamed key drops its old value from the vault
+  const n = new McpStore(f, codec());
+  n.load();
+  assert.ok(n.upsert(K2, { ...stdio('off3', 0), env: [{ key: 'RENAMED' }, { key: 'K1' }] }, 'off3').ok);
+  const v2 = codec().decrypt(JSON.parse(fs.readFileSync(f, 'utf8')).vault);
+  assert.ok(!v2.includes(`${SECRET}-off3-0`) && v2.includes(`${SECRET}-off3-1`), 'a dropped key leaves the vault');
+  assert.strictEqual(n.list(K2).find((x) => x.name === 'off3')?.needsSecrets, true, 'the renamed key has no value');
+  // a vault that cannot be decrypted (Keychain refused): values show as missing, servers are skipped, nothing throws
+  const bad = new McpStore(f, { available: () => true, encrypt: () => { throw new Error('denied'); }, decrypt: () => { throw new Error('denied'); } });
+  bad.load();
+  const bs = bad.forSession(K1);
+  assert.deepStrictEqual(bs.mcpServers, {});
+  assert.ok(bs.skipped.every((x) => /secret values/.test(x.reason)) && bs.skipped.length === 7, "six on-servers and k1off");
+  assert.strictEqual(bad.list(K1)[0].needsSecrets, true);
+  assert.ok(bad.setEnabled(K1, 'on0', false).ok, 'a toggle still saves');
+  assert.ok(JSON.parse(fs.readFileSync(f, 'utf8')).vault, 'a toggle after a failed unlock keeps the vault on disk');
+}
+
+// 12. A file of the older format (one `enc` blob per value) is read without decrypting and moved into one vault on the first unlock
+{
+  const f = tmp();
+  const enc = codec().encrypt;
+  const doc = { version: 2, folders: { [K1]: [
+    { name: 'a', transport: 'stdio', command: 'node', args: ['a.js'], enabled: true, trust: trustHash({ transport: 'stdio', command: 'node', args: ['a.js'] }), env: [{ key: 'X', enc: enc('va') }, { key: 'Y', enc: enc('vb') }] },
+    { name: 'b', transport: 'stdio', command: 'node', args: ['b.js'], enabled: false, env: [{ key: 'Z', enc: enc('vc') }] },
+  ] }, legacy: [] };
+  fs.writeFileSync(f, JSON.stringify(doc));
+  let dec = 0;
+  const fake: SecretCodec = { available: () => true, encrypt: codec().encrypt, decrypt: (x) => (dec++, codec().decrypt(x)) };
+  const s = new McpStore(f, fake);
+  s.load();
+  assert.strictEqual(dec, 0, 'an old file is not decrypted on load');
+  assert.ok(s.list(K1).every((v) => !v.needsSecrets));
+  assert.ok(s.setEnabled(K1, 'b', false).ok);
+  assert.strictEqual(dec, 0, 'a toggle keeps the old blobs as they are');
+  assert.strictEqual(JSON.parse(fs.readFileSync(f, 'utf8')).folders[K1][0].env[0].enc, doc.folders[K1][0].env[0].enc);
+  assert.deepStrictEqual(s.forSession(K1).mcpServers.a.env, { X: 'va', Y: 'vb' });
+  const after = JSON.parse(fs.readFileSync(f, 'utf8'));
+  assert.ok(after.vault && !JSON.stringify(after.folders).includes('"enc"'), 'migrated: one vault, no per-value blob');
+  const r = new McpStore(f, fake);
+  r.load();
+  dec = 0;
+  assert.ok(r.setEnabled(K1, 'b', true, true).ok);
+  assert.deepStrictEqual(r.forSession(K1).mcpServers.b.env, { Z: 'vc' }, 'the off server\'s value was migrated too');
+  assert.strictEqual(dec, 1, 'after the migration a session decrypts once');
 }
 console.log('mcp tests passed');
