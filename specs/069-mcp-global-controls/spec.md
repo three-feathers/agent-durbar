@@ -196,7 +196,8 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
 ### Harmonize (part 2)
 
 - **FR-020** `[IMPLEMENTED]` `mcp:globalDiff()` returns per name: in which apps it is, and, where present in two or more, the differences (transport,
-  command, arguments, URL, env and header *names*); values are compared in main only and reported as "values differ" without them.
+  command, arguments, URL, env and header *names*, tool list, hidden tools, on/off); values are compared in main only and reported as
+  "values differ" without them.
 - **FR-021** `[IMPLEMENTED]` Settings shows **Harmonize (N)** when N > 0 and more than one app has a readable file. Each row: *Copy to <missing apps>*
   ticks; a different definition offers *Use the <app> version in <other apps>* (Q5: never ticked by default). Applying uses FR-005's
   preview and confirmation; the copied entry keeps the source's references or values as they are (no value reaches the window).
@@ -204,7 +205,11 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
 - **FR-023** `[IMPLEMENTED]` (found while building) A copy converts between formats and keeps references: JSON `${X}` <-> Codex
   `env_vars` (same name only; another name is refused for Codex) and `env_http_headers`; JSON `Authorization: Bearer ${X}` <-> Codex
   `bearer_token_env_var`. A value with `${...}` inside other text is refused for Codex (it does not expand it). A server with a working
-  directory, or of a kind Durbar does not write (WebSocket, plugin), is listed but not copyable. A missing file counts as an empty list.
+  directory (Codex `cwd` or JSON `cwd`), or of a kind Durbar does not write (WebSocket, plugin), is listed but not copyable. A missing file
+  counts as an empty list. A copy never widens what the server may do (change 2026-10-22): switched off (Codex `enabled = false`, JSON
+  `disabled: true`), hidden tools (Codex `disabled_tools`, written as a list) and a tool allow list (Codex `enabled_tools`, Copilot
+  `tools`) travel with it where the target list has the same field (Codex all three; Copilot the allow list); a target without it
+  refuses that file with a note naming the field.
 
 ### Session controls and tools (part 3; depends on spec 058 #473)
 
@@ -305,6 +310,17 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
      below no longer claim that 069 reuses `readCodexMcpToml` itself (the two loops want different things: 061 lenient, 069 strict).
   4. **FR-009 tested** (FR-041): the merge is one function (`mergeSessionServers`, `sessionGlobalFor`) and `test:mcpglobal` runs
      `registerMcpIpc`: Claude agents only, the Settings off-list honoured, a folder extra wins, the user list's values masked. (T062)
+
+- **2026-10-22 (review on #492):** two findings fixed.
+  1. **Secret in the copy review** (FR-012, SC-002): the review of a copy masked env and header values only; a token in the source
+     entry's command, arguments or URL reached the window. The review (`previewText`, also the add review) now masks command,
+     arguments and URL with the shared rules (`maskSecretCommand`, `maskSecretArgs`, `maskSecretUrl`); the file still gets the real
+     values. `test:` planted values in a Codex entry's command, `--api-key` argument and `?api_key=` URL never appear in `copyPreview`.
+  2. **A copy lost meaning** (FR-020, FR-023): Codex `enabled = false` and `disabled_tools` were not read (a switched-off server was
+     copied as on, and Claude sessions would then start it through FR-009); a Copilot `tools` allow list was dropped for Claude Code;
+     a JSON `cwd` was dropped while a Codex `cwd` was refused; the diff ignored tools and on/off. Now they are read, kept where the
+     target has the field, and otherwise the copy to that file is refused naming the field; the diff names `tools`, `hidden tools`
+     and `on/off`. The add form is unchanged. (T063)
 
 ## Relationship to other specs
 

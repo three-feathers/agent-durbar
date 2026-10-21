@@ -299,7 +299,8 @@ function readCodex(text: string | undefined): ReadResult {
     else if (sub === 'env_http_headers') ((cur.env_http_headers ??= {}) as Record<string, unknown>)[k] = unq(v) ?? '';
     else if (sub) continue;
     else if (k === 'command' || k === 'url' || k === 'bearer_token_env_var' || k === 'cwd') cur[k] = unq(v);
-    else if (k === 'args' || k === 'env_vars' || k === 'enabled_tools') cur[k] = tomlArray(v);
+    else if (k === 'args' || k === 'env_vars' || k === 'enabled_tools' || k === 'disabled_tools') cur[k] = tomlArray(v);
+    else if (k === 'enabled') cur[k] = v.trim() === 'false' ? false : v.trim() === 'true' ? true : v.trim();
     else if (k === 'env' || k === 'http_headers' || k === 'env_http_headers') cur[k] = tomlInline2(v);
   }
   for (const [name, r] of recs) {
@@ -330,7 +331,16 @@ export interface GlobalItem {
   value?: string;
   ref?: string;
 }
-export type GlobalInput = Omit<McpServerInput, 'env' | 'headers'> & { env?: GlobalItem[]; headers?: GlobalItem[] };
+export type GlobalInput = Omit<McpServerInput, 'env' | 'headers'> & {
+  env?: GlobalItem[];
+  headers?: GlobalItem[];
+  /** Harmonize (change 2026-10-22): the server is switched off in its list (Codex `enabled = false`, JSON `disabled: true`). */
+  off?: boolean;
+  /** Harmonize: tools the source list hides (Codex `disabled_tools`). */
+  disabledTools?: string[];
+  /** Harmonize: the app the entry was copied from (an add from the form has none). */
+  origin?: GlobalApp;
+};
 
 const VAR = '[A-Za-z_][A-Za-z0-9_]*';
 const REF_ONLY = new RegExp(`^\\$\\{(${VAR})\\}$`);
@@ -359,6 +369,13 @@ export function checkFor(app: GlobalApp, input: GlobalInput): EntryCheck {
   if (input.workingDirectory) return { ok: false, error: 'A working directory belongs to one folder: add this server to the folder instead.' };
   if (app === 'codex' && !/^[A-Za-z0-9_-]{1,48}$/.test(input.name)) return { ok: false, error: 'Codex needs a name of letters, digits, "_" or "-" (no dots).' };
   if (app === 'codex' && input.transport === 'sse') return { ok: false, error: 'Codex takes http servers only, not sse.' };
+  // Change 2026-10-22 (review on #492): a copy never changes what the server may do. A field the target list cannot hold refuses the copy.
+  if (input.off && app !== 'codex')
+    return { ok: false, error: `It is switched off in its list (enabled = false); ${APP_LABEL[app]}'s list has no such switch, so a copy would turn it on. Nothing was written.` };
+  if (input.disabledTools?.length && app !== 'codex')
+    return { ok: false, error: `It hides some tools (disabled_tools); ${APP_LABEL[app]}'s list cannot hide tools, so a copy would offer them. Nothing was written.` };
+  if (input.origin && app === 'claude' && (input.tools ?? []).some((t) => t !== '*'))
+    return { ok: false, error: "It allows only some tools (tools / enabled_tools); Claude Code's list has no tool list, so a copy would allow every tool. Nothing was written." };
   if (app === 'codex') {
     const odd = (input.env ?? []).find((e) => e.ref !== undefined && e.ref !== e.key);
     if (odd) return { ok: false, error: `Codex passes a variable only under its own name (${odd.key} would read ${odd.ref}).` };
@@ -418,6 +435,8 @@ export function codexBlock(input: GlobalInput, mode: GlobalSecretMode, masked = 
   }
   const tools = (input.tools ?? []).filter((t) => t !== '*');
   if (tools.length) out.push(`enabled_tools = ${tomlArr(tools)}`);
+  if (input.disabledTools?.length) out.push(`disabled_tools = ${tomlArr(input.disabledTools)}`);
+  if (input.off) out.push('enabled = false');
   if (input.transport === 'stdio' && envPlain.length) {
     out.push('', `[mcp_servers.${tomlKey(input.name)}.env]`);
     for (const e of envPlain) out.push(`${tomlKey(e.key)} = ${tomlStr(val(e.value))}`);
@@ -427,8 +446,16 @@ export function codexBlock(input: GlobalInput, mode: GlobalSecretMode, masked = 
 
 /** The entry as the confirmation shows it (values masked). */
 export function previewText(app: GlobalApp, input: GlobalInput, mode: GlobalSecretMode): string {
-  if (app === 'codex') return codexBlock(input, mode, true).join('\n');
-  return jsonBlock(input.name, jsonEntry(app, input, mode, true));
+  // FR-012 / SC-002 (change 2026-10-22, review on #492): a copy's command, arguments and URL come from another app's file and may hold
+  // a token: they are masked with the shared rules, like every other view of the files.
+  const x: GlobalInput = {
+    ...input,
+    ...(input.command !== undefined ? { command: maskSecretCommand(input.command) } : {}),
+    ...(input.args ? { args: maskSecretArgs(input.args) } : {}),
+    ...(input.url !== undefined ? { url: maskSecretUrl(input.url) } : {}),
+  };
+  if (app === 'codex') return codexBlock(x, mode, true).join('\n');
+  return jsonBlock(x.name, jsonEntry(app, x, mode, true));
 }
 
 /** `"name": { ... }` with one line per field and each value on one line, as the review shows it. */
@@ -578,7 +605,18 @@ const toItems = (m: Record<string, string>): GlobalItem[] =>
 export function neutralFrom(app: GlobalApp, name: string, raw: Record<string, unknown>): { ok: true; input: GlobalInput } | { ok: false; error: string } {
   const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
   const tools = strs(app === 'codex' ? raw.enabled_tools : raw.tools);
-  const base = { name, ...(tools && tools.length && !(tools.length === 1 && tools[0] === '*') ? { tools } : {}) };
+  const hidden = app === 'codex' ? strs(raw.disabled_tools) : undefined;
+  // Change 2026-10-22 (review on #492): switched off and tool lists travel with the copy (checkFor refuses a target that cannot hold them).
+  const off = app === 'codex' ? raw.enabled === false : raw.disabled === true || raw.enabled === false;
+  if (app === 'codex' && raw.enabled !== undefined && typeof raw.enabled !== 'boolean') return { ok: false, error: 'Its "enabled" is not true or false.' };
+  const base = {
+    name,
+    origin: app,
+    ...(tools && tools.length && !(tools.length === 1 && tools[0] === '*') ? { tools } : {}),
+    ...(hidden?.length ? { disabledTools: hidden } : {}),
+    ...(off ? { off: true } : {}),
+  };
+  if (app !== 'codex' && typeof raw.cwd === 'string') return { ok: false, error: 'It has a working directory, which belongs to one folder.' };
   if (app === 'codex') {
     if (str(raw.cwd)) return { ok: false, error: 'It has a working directory, which belongs to one folder.' };
     if (str(raw.command)) {
@@ -613,6 +651,10 @@ export function differences(a: GlobalInput, b: GlobalInput): string[] {
   if (keys(a.env) !== keys(b.env)) out.push('environment variables');
   if (keys(a.headers) !== keys(b.headers)) out.push('headers');
   if (keys(a.env) === keys(b.env) && keys(a.headers) === keys(b.headers) && (vals(a.env) !== vals(b.env) || vals(a.headers) !== vals(b.headers))) out.push('values');
+  const list = (l?: string[]): string => [...new Set((l ?? []).filter((t) => t !== '*'))].sort().join('\n');
+  if (list(a.tools) !== list(b.tools)) out.push('tools');
+  if (list(a.disabledTools) !== list(b.disabledTools)) out.push('hidden tools');
+  if (!!a.off !== !!b.off) out.push('on/off');
   return out;
 }
 

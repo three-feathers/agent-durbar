@@ -613,4 +613,97 @@ ok('FR-009 wiring: Claude agents only, Settings off-list, folder extra wins, val
   }
 });
 
+// ---------------------------------------------------------------- review on #492 (spec 069 change 2026-10-22)
+ok('copy preview masks a secret in the source command, arguments and URL (FR-012, SC-002)', () => {
+  const home = tmp();
+  fs.mkdirSync(path.join(home, '.codex'));
+  const ARG = 'ghp_plantedARGsecret0123456789abcdefABCD';
+  const URLK = 'planted-url-key-SECRET-778899';
+  const CMDK = 'planted-cmd-SECRET-445566';
+  fs.writeFileSync(
+    path.join(home, '.codex', 'config.toml'),
+    `[mcp_servers.leaky]\ncommand = "env API_TOKEN=${CMDK} leaky-mcp"\nargs = ["--api-key", "${ARG}", "--token=${ARG}"]\n\n[mcp_servers.leakyhttp]\nurl = "https://mcp.example.com/mcp?api_key=${URLK}"\n`,
+  );
+  const lists = new GlobalLists(() => globalFiles({}, home));
+  for (const name of ['leaky', 'leakyhttp']) {
+    const pv = lists.copyPreview(name, 'codex', ['copilot', 'claude']);
+    assert.ok(pv.ok && pv.items.length === 2, JSON.stringify(pv));
+    const out = JSON.stringify(pv);
+    for (const x of [ARG, URLK, CMDK]) assert.ok(!out.includes(x), `${name}: the copy preview holds a planted value`);
+    const res = lists.apply(pv.token);
+    assert.ok(res.ok, 'the real values are still written');
+  }
+  const cl = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
+  assert.deepStrictEqual(cl.mcpServers.leaky.args, ['--api-key', ARG, `--token=${ARG}`], 'the file gets the value, the window does not');
+  assert.ok(cl.mcpServers.leakyhttp.url.includes(URLK));
+  assert.ok(!previewText('codex', { name: 'a', transport: 'http', url: `https://x/mcp?token=${URLK}` }, 'ref').includes(URLK), 'the add review masks too');
+});
+
+ok('copy keeps switched off, hidden tools and tool lists, or refuses the file that cannot hold them', () => {
+  const toml = [
+    '[mcp_servers.offsrv]',
+    'command = "off-mcp"',
+    'enabled = false',
+    '',
+    '[mcp_servers.hide]',
+    'command = "hide-mcp"',
+    'disabled_tools = ["delete_repo", "push"]',
+    '',
+    '[mcp_servers.only]',
+    'url = "https://only.example.com/mcp"',
+    'enabled_tools = ["search"]',
+    '',
+  ].join('\n');
+  const g = readGlobal('codex', toml);
+  assert.ok(g.ok);
+  const off = neutralFrom('codex', 'offsrv', g.values.get('offsrv') ?? {});
+  assert.ok(off.ok && off.input.off === true, 'enabled = false is read');
+  for (const app of ['copilot', 'claude'] as const) {
+    const r = addToText(app, undefined, off.input, 'plain');
+    assert.ok(!r.ok && /enabled = false/.test(r.error), `${app}: a switched-off server is not copied as on`);
+  }
+  const back = addToText('codex', undefined, { ...off.input, name: 'offsrv2' }, 'plain');
+  assert.ok(back.ok && back.text.includes('enabled = false'), 'Codex keeps it off');
+  const hide = neutralFrom('codex', 'hide', g.values.get('hide') ?? {});
+  assert.ok(hide.ok && JSON.stringify(hide.input.disabledTools) === '["delete_repo","push"]');
+  for (const app of ['copilot', 'claude'] as const) {
+    const r = addToText(app, undefined, hide.input, 'plain');
+    assert.ok(!r.ok && /disabled_tools/.test(r.error), `${app}: hidden tools are not dropped silently`);
+  }
+  const hb = addToText('codex', undefined, { ...hide.input, name: 'hide2' }, 'plain');
+  assert.ok(hb.ok && hb.text.includes('disabled_tools = ["delete_repo", "push"]'), 'Codex takes the list (a list, not a string)');
+  const re = readGlobal('codex', hb.ok ? hb.text : '');
+  assert.ok(re.ok && JSON.stringify(re.values.get('hide2')?.disabled_tools) === '["delete_repo","push"]', 'and reads it back');
+  const only = neutralFrom('codex', 'only', g.values.get('only') ?? {});
+  assert.ok(only.ok);
+  const cop = addToText('copilot', undefined, only.input, 'plain');
+  assert.ok(cop.ok && JSON.parse(cop.text).mcpServers.only.tools[0] === 'search', 'Copilot keeps the tool list');
+  const cla = addToText('claude', undefined, only.input, 'plain');
+  assert.ok(!cla.ok && /tools/.test(cla.error), 'Claude Code cannot hold a tool list: refused');
+  const copTools = neutralFrom('copilot', 't', { type: 'local', command: 'x', tools: ['a', 'b'] });
+  assert.ok(copTools.ok && !addToText('claude', undefined, copTools.input, 'plain').ok, 'a Copilot tools list is not dropped for Claude');
+  const star = neutralFrom('copilot', 't', { type: 'local', command: 'x', tools: ['*'] });
+  assert.ok(star.ok && addToText('claude', undefined, star.input, 'plain').ok, 'tools ["*"] is no restriction');
+  assert.ok(addToText('claude', undefined, { name: 'f', transport: 'stdio', command: 'x', tools: ['a'] }, 'plain').ok, 'the add form keeps its old behaviour');
+  const cwd = neutralFrom('claude', 'w', { type: 'stdio', command: 'x', cwd: '/proj' });
+  assert.ok(!cwd.ok && /working directory/.test(cwd.error), 'a JSON cwd is refused like a Codex cwd');
+  const offJson = neutralFrom('copilot', 'd', { type: 'local', command: 'x', disabled: true });
+  assert.ok(offJson.ok && offJson.input.off, 'JSON disabled: true is read as off');
+  assert.ok(!neutralFrom('codex', 'e', { command: 'x', enabled: 'no' }).ok, 'an enabled that is not a boolean is not guessed');
+});
+
+ok('differences name tools, hidden tools and on/off; the diff lists them', () => {
+  const a = { name: 'n', transport: 'stdio' as const, command: 'c' };
+  assert.deepStrictEqual(differences(a, { ...a, tools: ['*'] }), [], '"*" is the same as no list');
+  assert.deepStrictEqual(differences(a, { ...a, tools: ['x'] }), ['tools']);
+  assert.deepStrictEqual(differences(a, { ...a, disabledTools: ['x'] }), ['hidden tools']);
+  assert.deepStrictEqual(differences(a, { ...a, off: true }), ['on/off']);
+  const home = tmp();
+  fs.mkdirSync(path.join(home, '.codex'));
+  fs.writeFileSync(path.join(home, '.codex', 'config.toml'), '[mcp_servers.s]\ncommand = "s"\nenabled = false\n');
+  fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ mcpServers: { s: { type: 'stdio', command: 's', args: [] } } }));
+  const lists = new GlobalLists(() => globalFiles({}, home));
+  assert.deepStrictEqual(lists.diff().items.find((i) => i.name === 's')?.differs, ['on/off']);
+});
+
 console.log(`test-mcp-global: ${n} checks passed`);
