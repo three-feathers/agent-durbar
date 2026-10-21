@@ -208,7 +208,9 @@ module.exports = async (ctx) => {
   // one label path: every place name drawn (tile text, tooltip, label, Settings options and list) must come from placeLabel -> DurbarPlaces.placeName
   const MARK = ' [L]';
   const redraw = async () => { await js(`document.querySelector('.stat[data-k="waiting"]').click();document.querySelector('.stat[data-k="waiting"]').click()`); await ctx.sleep(600); };
-  await js(`(()=>{const P=window.DurbarPlaces;P.__orig=P.placeName;P.placeName=(id,c)=>P.__orig(id,c)+${q(MARK)};return 0})()`); await redraw();
+  // placeLabel takes a built-in place's name from the theme's words (spec 036: themes rename places) and a custom place's from
+  // DurbarPlaces.placeName, so both sources are marked; anything drawn without placeLabel stays unmarked and fails below
+  await js(`(()=>{const P=window.DurbarPlaces,T=window.THEME;P.__orig=P.placeName;P.placeName=(id,c)=>P.__orig(id,c)+${q(MARK)};T.__origWord=T.word;T.word=(k)=>{const w=T.__origWord(k);return /^place-/.test(k)?w+${q(MARK)}:w};return 0})()`); await redraw();
   const marked = await js(`[...document.querySelectorAll('#stage .place')].map(p=>({pn:p.querySelector('.pn').textContent,title:p.title,label:p.getAttribute('aria-label')}))`);
   assert.strictEqual(marked.length, 8);
   marked.forEach((m) => { assert.ok(m.pn.endsWith(MARK) && m.title.includes(MARK) && m.label.includes(MARK), 'the tile bypasses placeLabel: ' + JSON.stringify(m)); });
@@ -217,7 +219,7 @@ module.exports = async (ctx) => {
   assert.ok(markedS.opts.slice(1, 9).every((t) => t.endsWith(MARK)), 'Settings options bypass placeLabel: ' + JSON.stringify(markedS.opts));
   assert.ok(/^Default \(.*\[L\]\)$/.test(markedS.opts[0]), 'the Default (...) option bypasses placeLabel: ' + markedS.opts[0]);
   assert.ok(markedS.list.every((t) => t.endsWith(MARK)), 'Your places list bypasses placeLabel');
-  await js(`window.DurbarPlaces.placeName=window.DurbarPlaces.__orig;0`); await closeSettings(); await redraw();
+  await js(`window.DurbarPlaces.placeName=window.DurbarPlaces.__orig;window.THEME.word=window.THEME.__origWord;0`); await closeSettings(); await redraw();
   // (the refusal of a fourth add by the IPC, `limit`, is covered by test-credits and test-places: the page keeps its bridge private)
   await openSettings();
   assert.strictEqual(await js(`document.getElementById('plCapNote').textContent`), 'Up to 3 places of your own.');
