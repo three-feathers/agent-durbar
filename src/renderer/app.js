@@ -615,11 +615,30 @@ function plateHTML({r}){
   return `<button class="plate tone-${sm.tone}" type="button" data-door="${esc(r.id)}" data-key="door:${esc(r.id)}" data-tint="${r.tint}" aria-expanded="false" aria-label="${esc(wordOf('door-open'))} ${esc(r.name)}. ${esc(sm.text)}. ${sm.n} agent${sm.n===1?'':'s'}.${u?' Usage: '+esc(u.long)+'.':''}${al.siren?' '+ALERT_WORDS+'.':''}" title="${esc(r.path)}">${doorSvg(false)}<span class="plate-tx"><b>${esc(r.name)}</b>${al.siren?SIREN():''}${floorTag(r)}<span class="plate-sum">${esc(sm.text)}</span></span>${u?`<span class="plate-aiu" title="${esc(u.tip)}">${esc(u.short)}</span>`:''}<span class="plate-n">${sm.n}</span></button>`;
 }
 const doorsHTML=list=>list.length?`<div class="doors" data-key="doors">${list.map(plateHTML).join('')}</div>`:'';
-function stageHTML(sizing,d,aw,cap){
+function stageHTML(sizing,d,aw,cap){return stageParts(sizing,d,aw,cap).join('');}
+/* the stage in parts (each open room, the lobby, the door plates), so a render can patch only the parts that changed */
+function stageParts(sizing,d,aw,cap){
   const open=sizing.filter(m=>!m.r.closed).map(m=>roomHTML(m,d,aw,cap)), doors=doorsHTML(sizing.filter(m=>m.r.closed)), lob=lobbyHTML(aw);
-  if(!lob)return open.join('')+doors;
-  const mid=open.length<2?open.length:Math.ceil(open.length/2); /* one room: below it; none: above the door plates */
-  return open.slice(0,mid).join('')+lob+open.slice(mid).join('')+doors;
+  const mid=!lob?open.length:open.length<2?open.length:Math.ceil(open.length/2); /* one room: below it; none: above the door plates */
+  return [...open.slice(0,mid),lob,...open.slice(mid),doors].filter(Boolean);
+}
+/* spec 052 (2026-10-21, measured): a render used to rebuild, parse and diff the whole stage although a tick usually changes one
+   desk. Each part's HTML is remembered; only a part whose HTML changed is parsed and morphed. Anything unexpected (parts added,
+   removed or reordered, a part with more than one root) falls back to the full morph, so the result is the same DOM. */
+let stagePrev=null;
+function morphParts(stage,parts){
+  const prev=stagePrev;
+  if(!prev||prev.length!==parts.length)return false;
+  const kids=[...stage.children].filter(k=>!k.classList.contains('scene-out'));
+  if(kids.length!==parts.length)return false;
+  for(let i=0;i<parts.length;i++){
+    if(parts[i]===prev[i])continue;
+    const t=document.createElement('template');t.innerHTML=parts[i];
+    const n=t.content.firstElementChild;
+    if(!n||t.content.childElementCount!==1||keyOf(n)==null||keyOf(n)!==keyOf(kids[i]))return false;
+    morphNode(kids[i],n);
+  }
+  return true;
 }
 function setRoomClosed(r,closed,quiet){
   if(!!r.closed===!!closed)return;
@@ -818,6 +837,7 @@ function renderOffice(){
   const model=officeModel();
   if(!model.length){
     stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey='';
+    stagePrev=null;
     if(!agents.length&&!demoOn){if(!stage.querySelector('.welcome'))ringFolder();stage.innerHTML=welcomeHTML();floor.classList.remove('scrolls');return;} /* spec 001 FR-026: first run */
     stage.innerHTML='<div class="empty">'+EMPTY_DESK+(!agents.length&&!demoOn?'No agents yet. Use "+ New" above to add a folder (or a VS Code .code-workspace file).':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open Manage folders (next to the folder filter) to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?(FLOORS.floors.length>1?'All floors are off. Open "Floors" above or Settings > Floors to switch one on.':'Your only floor is off. Switch it on in Settings > Floors.'):agents.length&&ROOMS.every(r=>!roomShown(r))?('Nothing to show: every folder is hidden or on a floor that is off. Open '+(floorsLive()&&FLOORS.floors.length>1?(SIMPLE?'"Floors" above, or ':'"Floors" or "Folders" above, or '):(SIMPLE?'':'"Folders" above, or '))+'Settings > Floors.'):'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
@@ -827,10 +847,11 @@ function renderOffice(){
   const key=JSON.stringify([aw,ah,FORCE_DENSITY,lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]])])]);
   if(key!==layoutKey||!layout){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
   HCAP=layout.hcap; HBOOST=new Map(layout.boost);
-  const html=stageHTML(model,layout.d,aw,layout.cap);
+  const parts=stageParts(model,layout.d,aw,layout.cap);
   const fresh=stage.dataset.d!==layout.d||!!stage.querySelector('.empty');
   stage.style.width=aw+'px'; stage.style.height='auto'; stage.dataset.d=layout.d;
-  if(fresh)stage.innerHTML=html; else morphHTML(stage,html);
+  if(fresh)stage.innerHTML=parts.join(''); else if(!morphParts(stage,parts))morphHTML(stage,parts.join(''));
+  stagePrev=parts;
   stage.dataset.fit=layout.fit?'ok':'scroll'; stage.dataset.h=String(layout.hcap);
   floor.classList.toggle('scrolls',!layout.fit);
   if(doorAnim){const el=stage.querySelector(`[data-door="${CSS.escape(doorAnim)}"]`),box=el&&(el.closest('.room')||el);if(box&&!REDUCED){box.classList.add('enter');setTimeout(()=>box.classList.remove('enter'),420);}doorAnim=null;}
@@ -903,10 +924,10 @@ const toolKind=n=>{n=String(n||'').toLowerCase();
 /* ---------------- panel + chat ---------------- */
 const chats={};
 const sleep=ms=>new Promise(r=>setTimeout(r,REDUCED?0:ms));
-function scrollChat(chat){const c=$('chat'); if(c&&chat.el.parentNode===c&&c.dataset.pin!=='0'){c.scrollTop=c.scrollHeight;}}
+
 async function typeInto(el,text,speed,chat){
   if(REDUCED){el.textContent=text;return;}
-  for(let i=0;i<text.length;){i+=2+Math.floor(Math.random()*3);el.textContent=text.slice(0,i);scrollChat(chat);await sleep(speed);}
+  for(let i=0;i<text.length;){i+=2+Math.floor(Math.random()*3);el.textContent=text.slice(0,i);stickyScroll(chat);await sleep(speed);}
   el.textContent=text;
 }
 /* Tool chip: one compact line that truncates; click expands it to show the full command and output. */
@@ -949,7 +970,7 @@ function newAgentMsg(chat,a){
   const tb=m.querySelector('.think-toggle'),body=m.querySelector('.think-body');
   tb.addEventListener('click',()=>{const o=tb.getAttribute('aria-expanded')==='true';tb.setAttribute('aria-expanded',String(!o));body.hidden=o;m.querySelector('.think').dataset.touched='1';});
   m.querySelector('.think').dataset.t0=String(Date.now());
-  chat.el.appendChild(m);scrollChat(chat);return m;
+  chat.el.appendChild(m);stickyScroll(chat);return m;
 }
 /* "Thinking · 4s" while a turn waits for the model; reasoning summaries only arrive when the model finishes thinking */
 setInterval(()=>{
@@ -968,7 +989,7 @@ async function playTurn(chat,a,turn,opts){
   const m=newAgentMsg(chat,a), body=m.querySelector('.think-body'), chips=m.querySelector('.chips'), think=m.querySelector('.think');
   await typeInto(body,turn.think,16,chat);
   think.classList.remove('streaming');
-  for(const t of turn.tools){await sleep(380);const [k,l,res,rs]=t;addChip(chips,makeChip({kind:k,tool:k,label:l,res,state:rs}));scrollChat(chat);}
+  for(const t of turn.tools){await sleep(380);const [k,l,res,rs]=t;addChip(chips,makeChip({kind:k,tool:k,label:l,res,state:rs}));stickyScroll(chat);}
   if(turn.reply){
     await sleep(350);
     const b=document.createElement('div');b.className='bubble caret';m.appendChild(b);
@@ -979,7 +1000,7 @@ async function playTurn(chat,a,turn,opts){
   } else if(opts.inProgress){
     const t=document.createElement('div');t.className='typing';t.setAttribute('aria-label',a.name+' is working');t.innerHTML='<i></i><i></i><i></i>';m.appendChild(t);
   }
-  scrollChat(chat);
+  stickyScroll(chat);
 }
 function addUserMsg(chat,text,atts,ts){
   const m=document.createElement('div');m.className='msg user';
@@ -990,7 +1011,7 @@ function addUserMsg(chat,text,atts,ts){
   (atts||[]).forEach(x=>{const c=document.createElement('div');c.className='chip att-chip'+(x.img?' img':'');c.title=x.path||x.name;
     c.innerHTML=(x.img?ICON('img'):ICON('file'))+'<span>'+esc(x.name)+'</span>';box.appendChild(c);});
   if(!(atts||[]).length)box.remove();
-  chat.el.appendChild(m);scrollChat(chat);
+  chat.el.appendChild(m);stickyScroll(chat);
 }
 function getChat(a){
   if(a.live)return liveChat(a);
@@ -1174,6 +1195,37 @@ function wireAnswerBar(a){
   };
   answerObs={m:mo,i:io,answerKey};check();
 }
+/* ---------------- spec 063: the folder chip says the git branch and how many files changed; a click lists them ---------------- */
+const FSTAT=new Map(); /* main agent id -> {at, busy, st} */
+const GS=window.DurbarGitStatus;
+/* the folder's own name (the last part of its path) */
+const folderNameOf=a=>{const r=roomOf(a);const p=r&&r.path?String(r.path).replace(/[\\/]+$/,''):'';return p.split(/[\\/]/).pop()||'';};
+function refreshFolderStatus(a0){
+  const a=a0&&liveRoot(a0); if(!a||!a.live||!bridge.gitStatus||!GS)return;
+  const c=FSTAT.get(a.id)||{at:0};FSTAT.set(a.id,c);
+  if(c.busy||Date.now()-c.at<5000){paintFolderStatus(a);return;} /* FR-005: once per 5 s, one request at a time */
+  c.busy=true;c.at=Date.now();
+  bridge.gitStatus(a.id).then(st=>{c.st=st;},()=>{c.st={repo:false};}).finally(()=>{c.busy=false;paintFolderStatus(a);});
+}
+function paintFolderStatus(a){
+  const sel=ui.selected&&byId(ui.selected);if(!sel||liveRoot(sel)!==a)return;
+  const chip=document.querySelector('#panelHead .folder');if(!chip)return;
+  const st=(FSTAT.get(a.id)||{}).st;
+  let t=chip.querySelector('.fst');
+  const text=GS.chipText(st);
+  if(!text){if(t)t.remove();chip.removeAttribute('role');chip.removeAttribute('tabindex');chip.onclick=chip.onkeydown=null;return;}
+  if(!t){t=document.createElement('span');t.className='fst';chip.appendChild(t);}
+  t.textContent=text;
+  /* FR-003: a button only when there is something to show */
+  if(GS.count(st)){chip.setAttribute('role','button');chip.tabIndex=0;chip.setAttribute('aria-label',GS.chipLabel(st));
+    chip.onclick=()=>showFolderStatus(a,chip);chip.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();showFolderStatus(a,chip);}};}
+  else{chip.removeAttribute('role');chip.removeAttribute('tabindex');chip.setAttribute('aria-label',GS.chipLabel(st));chip.onclick=chip.onkeydown=null;}
+}
+async function showFolderStatus(a,chip){
+  const st=(FSTAT.get(a.id)||{}).st;if(!st||!st.repo)return;
+  const r=await askDialog({title:'Changes in '+(folderNameOf(a)||'this folder'),body:GS.body(st),lines:GS.lines(st),buttons:[{label:'Open in VS Code',value:'vscode'},{label:'Done',value:null,cls:'primary'}],returnFocus:chip});
+  if(r&&r.value==='vscode'&&bridge.openInVSCode)openLive(a,chip);
+}
 function openPanel(id,focus){
   const a=byId(id); if(!a)return; ui.selected=id; attached=[];
   noteRecentChat(a); rememberUi();
@@ -1207,6 +1259,7 @@ function openPanel(id,focus){
   chatEl.onscroll=()=>{chatEl.dataset.pin=(chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight<80)?'1':'0';};
   $('panel').querySelector('.panel-in').classList.toggle('ro',!!(a.live&&a.parent));
   $('backBtn').onclick=closePanel;
+  refreshFolderStatus(a); /* spec 063: branch and changed files on the folder chip */
   $('vscodeBtn').onclick=e=>a.live?openLive(a,e.currentTarget):toast('Would run <code>code '+esc(room.path)+'</code>',3800);
   if(a.live)$('pauseBtn').hidden=true;
   if($('newSessBtn'))$('newSessBtn').onclick=()=>newSession(a);
@@ -1573,6 +1626,7 @@ function palActions(){
     {label:'Expand all folders',kw:'doors open expand rooms',run:palClick('openAll'),ok:()=>palUsable('openAll')},
     {label:'Back to the previous chat',kw:'previous last recent chat toggle switch',keys:['Ctrl','`'],run:openPreviousChat,ok:()=>!!previousChat()},
     {label:'Keyboard shortcuts',kw:'keys shortcuts help hotkeys',keys:['?'],run:openKbdHelp},
+    {label:'Send to several sessions…',hint:'One message to the running sessions you pick',kw:'send several many all broadcast message group sessions',run:()=>sendToSeveral(),ok:()=>!!bridge&&!!bridge.send&&sendTargets().filter(x=>!x.why).length>=2}, /* spec 064 FR-001 */
     {label:'End all sessions',hint:'Ends every running session; the chats stay',kw:'end stop all sessions quit day close',run:()=>endAllSessions(),ok:()=>!!bridge&&!!bridge.end&&endAllTargets().length>0},
     ...remotePalItems(),
     ...handoverPalItems(),
@@ -1727,6 +1781,31 @@ function openPreviousChat(){
 }
 /* FR-090: End all sessions: every main session that is running (the card menu's own rule: started, not ended), through the same end path */
 const endAllTargets=()=>agents.filter(a=>!a.parent&&a.live&&DMK().cardMenuActions(a,capsFor(a)).end);
+/* ---------------- spec 064: one message to several running sessions ---------------- */
+const SEND_BUSY={working:'busy',thinking:'busy',waiting:'waits for you'};
+function sendTargets(){
+  return agents.filter(a=>!a.parent&&a.live&&a.info).map(a=>{
+    const why=a.limit?'at its spending limit':SIGNIN&&SIGNIN.needsSignIn(KINDS,kindOf(a))?'needs a sign-in':SEND_BUSY[a.state]||'';
+    return {a,why};
+  });
+}
+async function sendToSeveral(anchor){
+  const list=sendTargets();
+  if(list.filter(x=>!x.why).length<1){toast('No running session is free to take a message right now.',3200);return;}
+  const r=await askDialog({title:'Send to several sessions',
+    body:'Each session you tick gets this message as if you typed it in its chat, with its own agent app, mode and spending limit.',
+    input:{label:'Message',multiline:true,max:4000,focus:true,placeholder:'For example: pull the latest main and run the tests again'},
+    picks:list.map(({a,why})=>({label:a.name+' \u00b7 '+(folderOfAgentName(a)||'')+' \u00b7 '+kindWord(kindOf(a))+' \u00b7 '+(MODE_NAME[a.info.permMode]||'Read-only'),note:why,value:a.id,disabled:!!why})),
+    need:{text:true,picks:1,label:n=>n?'Send to '+n+' session'+(n===1?'':'s'):'Send'},
+    buttons:[{label:'Cancel',value:null},{label:'Send',value:'send',cls:'primary'}],returnFocus:anchor});
+  if(!r||r.value!=='send')return;
+  const text=String(r.text||'').trim().slice(0,4000);if(!text||!r.picked||!r.picked.length)return;
+  const bad=[];let n=0;
+  for(const id of r.picked){const a=byId(id);if(!a||!a.live){bad.push(a?a.name:id);continue;}
+    try{await sendLive(text,id,{fromComposer:false});n++;}catch(err){bad.push(a.name);}}
+  toast(bad.length?'Sent to '+n+'; could not send to '+esc(bad.join(', '))+'.':'Sent to '+n+' session'+(n===1?'':'s')+'.',3600).classList.add(bad.length?'err':'ok');
+}
+const folderOfAgentName=a=>{const r=roomOf(a);const p=r&&r.path?String(r.path).replace(/[\\/]+$/,''):'';return p.split(/[\\/]/).pop()||'';};
 async function endAllSessions(anchor){
   const list=endAllTargets();
   if(!list.length){toast('No session is running.',2600);return;}
@@ -1762,6 +1841,7 @@ async function renderAwayStrip(){
   scheduleRender();
 }
 $('endAllBtn').onclick=()=>endAllSessions($('topMoreBtn'));
+if($('sendSeveralBtn'))$('sendSeveralBtn').onclick=()=>sendToSeveral($('topMoreBtn'));
 const DESK_NAV='#stage .desk, #stage .helper, #stage .plate';
 $('wsFilter').addEventListener('change',e=>{ui.ws=e.target.value;renderAll();});
 function setView(v){ui.view=v;document.body.classList.toggle('list-mode',v==='list');
@@ -1810,7 +1890,7 @@ function liveChat(a){
   if(a.sub)buildSubTranscript(a,chat);
   return chat;
 }
-function addNote(chat,html,err){const n=document.createElement('div');n.className='note'+(err?' err':'');n.innerHTML=html;chat.el.appendChild(n);scrollChat(chat);return n;}
+function addNote(chat,html,err){const n=document.createElement('div');n.className='note'+(err?' err':'');n.innerHTML=html;chat.el.appendChild(n);stickyScroll(chat);return n;}
 const MODE_NAME={'read-only':'Read-only','ask':'Ask first','allow':'Allow all'};
 const MODE_TEXT={'read-only':'read-only','allow':'no prompts','ask':'asks first'};
 /* spec 052 FR-077: one short line per mode in the menu; the full explanation stays in its title */
@@ -2020,7 +2100,14 @@ function mdSet(el,raw,now){
   if(el._mdq)return; el._mdq=true; MDQ.add(el);
   if(!mdRaf)mdRaf=requestAnimationFrame(()=>{mdRaf=0;mdFlush();});
 }
-function stickyScroll(chat){const c=$('chat'); if(c&&chat.el.parentNode===c&&c.dataset.pin!=='0')c.scrollTop=c.scrollHeight;}
+/* spec 052 (2026-10-21, measured): following the chat to the bottom read scrollHeight (a full layout of the chat) on every event,
+   so a long conversation got slower with each message (27 ms per message at 1000). Now one read and one write per frame. */
+let stickyRaf=0; const stickyChats=new Set();
+function stickyScroll(chat){stickyChats.add(chat);if(!stickyRaf)stickyRaf=requestAnimationFrame(stickyFlush);}
+function stickyFlush(){stickyRaf=0;const c=$('chat');const l=[...stickyChats];stickyChats.clear();
+  if(c&&c.dataset.pin!=='0'&&l.some(chat=>chat.el.parentNode===c))c.scrollTop=c.scrollHeight;
+  const bodies=[...thinkScroll];thinkScroll.clear();bodies.forEach(b=>{if(b.isConnected&&b.scrollHeight>b.clientHeight)b.scrollTop=b.scrollHeight;});}
+const thinkScroll=new Set(); /* the open thinking box follows its own text, in the same frame */
 
 function makeT(tl,chat){return {tl,chat,think:null,thinkN:0,bubble:null,chipsEl:null,chipEls:{},intent:'',typing:null};}
 function tScroll(T){if(T.chat)stickyScroll(T.chat);}
@@ -2044,7 +2131,7 @@ function tThink(T,id,delta){
   let b=T.think;
   if(!b||b.id!==id){if(b)tThinkEnd(b);b=T.think=newThink(T,id);T.thinkN++;}
   b.raw+=delta;mdSet(b.body,b.raw);
-  if(!REDUCED&&b.body.scrollHeight>b.body.clientHeight)b.body.scrollTop=b.body.scrollHeight;
+  if(!REDUCED){thinkScroll.add(b.body);if(!stickyRaf)stickyRaf=requestAnimationFrame(stickyFlush);}
   tScroll(T);
 }
 function plainFirst(raw){return String(raw).replace(/[*_`#>\[\]]/g,'').replace(/\s+/g,' ').trim().slice(0,90);}
@@ -2337,7 +2424,7 @@ function showLimit(a,e){
   mk('Stop here','danger','Cancel the blocked request. The agent is ready for your next message (the limit stays).',()=>answer({kind:'cancel'}));
   n.appendChild(row);
   a.limit={requestId:e.requestId,n,row,st:n.querySelector('.pstate')};
-  tChips(t.T).appendChild(n);scrollChat(liveChat(a));
+  tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
 }
 /* ---------- questions from the agent (spec 012 FR-130): options as buttons, "Other" text, Answer / Skip; text only, never HTML ---------- */
 function showQuestion(a,e){
@@ -2374,7 +2461,7 @@ function showQuestion(a,e){
   const skip=document.createElement('button');skip.type='button';skip.className='btn danger';skip.textContent='Skip';skip.title='Do not answer; the agent decides itself';skip.onclick=()=>send(null);
   row.appendChild(ok);row.appendChild(skip);n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st};
-  tChips(t.T).appendChild(n);scrollChat(liveChat(a));
+  tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   announce(a.name+' asks: '+((qs[0]&&qs[0].question)||'a question'));renderInboxBtn();
 }
 /* ---------- MCP elicitation (spec 012 FR-151): a form in the question card, or an https page opened only after a click.
@@ -2478,7 +2565,7 @@ function showElicitation(a,e){
   row.appendChild(btn('Cancel','ghost','Dismiss it without answering',()=>send('cancel')));
   n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st,elicit:isUrl?'url':'form'};
-  tChips(t.T).appendChild(n);scrollChat(liveChat(a));
+  tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   announce(a.name+': '+(R.source?R.source+' ':'an MCP server ')+(isUrl?'asks you to open a page on '+(R.host||'the web'):'asks for input')+'. '+SHORT(R.message||'',160));renderInboxBtn();
 }
 function settleQuestion(a,answers,action){
@@ -2486,11 +2573,11 @@ function settleQuestion(a,answers,action){
   if(Q.row)Q.row.remove();Q.n.querySelectorAll('.q-opts,.q-form,.q-urlbox').forEach(x=>x.remove());
   /* spec 012 FR-151: an elicitation says what the user did, never the values (they can be secrets) */
   if(Q.elicit){const acc=action==='accept';Q.st.textContent=' → '+(acc?(Q.elicit==='url'?'done':'submitted'):action==='decline'?'declined':'cancelled');Q.n.classList.add('settled',acc?'approved':'denied');
-    if(a.state==='waiting')setState(a,'working',null,acc?'Answered':action==='decline'?'Declined':'Cancelled');updatePanelHeader();scrollChat(liveChat(a));return;}
+    if(a.state==='waiting')setState(a,'working',null,acc?'Answered':action==='decline'?'Declined':'Cancelled');updatePanelHeader();stickyScroll(liveChat(a));return;}
   Q.st.textContent=answers?' → answered: '+Object.values(answers).join('; '):' → skipped';
   Q.n.classList.add('settled',answers?'approved':'denied');
   if(a.state==='waiting')setState(a,'working',null,answers?'Answered':'Question skipped'); /* a Stop already set it idle */
-  updatePanelHeader();scrollChat(liveChat(a));
+  updatePanelHeader();stickyScroll(liveChat(a));
 }
 function settleLimit(a,action){
   const L=a.limit;if(!L)return;a.limit=null;
@@ -2500,7 +2587,7 @@ function settleLimit(a,action){
   const what='the spending limit';
   if(action==='cancel'){closeTurn(a);a.worked=false;setState(a,'idle',null,'Stopped at '+what+'. Ready for your next message.');}
   else setState(a,'working',null,'Continuing after '+what);
-  updateCapChip(a);scrollChat(liveChat(a));
+  updateCapChip(a);stickyScroll(liveChat(a));
 }
 /* spec 052 FR-057: in Simple, a folder grant says what it lets the agent do: "Let Ada change files in “tools” until the session ends".
    Only for a "write in <folder>/" scope (the last path segment); any other scope keeps its label. The inbox and the answer bar copy the card's button. */
@@ -2547,7 +2634,7 @@ function showPerm(a,p){
     n.appendChild(row);
     a.pend.set(p.requestId,{n,row,st});
   }
-  tChips(t.T).appendChild(n);scrollChat(liveChat(a));
+  tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   if(p.state==='pending')announce(SIMPLE&&pl?plain:a.name+' needs your OK: '+p.summary);
   renderInboxBtn();
 }
@@ -2577,7 +2664,7 @@ function settlePerm(a,p){
   e.st.textContent=' → '+(word==='approved'?'allowed':'denied')+why;
   e.n.classList.add('settled',word);
   if(word==='denied'&&!p.via)roAskHint(a,e.n); /* denied by the mode (no one answered it): Read-only */
-  scrollChat(liveChat(a));
+  stickyScroll(liveChat(a));
 }
 function setGrants(a,list){a.grants=list;if(ui.selected&&liveRoot(byId(ui.selected)||a)===a)renderGrants();}
 /* spec 052 FR-141: 1-2 grants are single chips; 3 or more are one "Allowed (N)" chip that opens a list (a row per grant, Revoke all).
@@ -2651,7 +2738,11 @@ function ctxChipBtn(a,c){
   return `<button class="ctxchip ${c.cls}${c.cls==='unk'||!(c.pct>=70)?' mem-low':''}" id="ctxChip" type="button" title="${esc(title)}"><span class="bar" aria-hidden="true"><i style="width:${c.pct}%"></i></span><span>${esc(text)}</span></button>`;}
 function updateCtxChip(a){
   const el=$('ctxGrp');if(!el||!ui.selected)return;const cur=byId(ui.selected);if(!cur||liveRoot(cur)!==a)return;
-  const g=$('ctxGrp');if(g)g.outerHTML=ctxChipHTML(a);
+  /* spec 052 (2026-10-21): only when it changed: replacing it on every state change cost time and dropped keyboard focus */
+  const g=$('ctxGrp');if(!g)return;const html=ctxChipHTML(a);if(g._html===html)return;
+  const had=g.contains(document.activeElement)&&document.activeElement.id;
+  const t=document.createElement('template');t.innerHTML=html;const n=t.content.firstElementChild;if(!n){g.outerHTML=html;return;}
+  g.replaceWith(n);n._html=html;if(had){const f=document.getElementById(had);if(f)f.focus({preventScroll:true});}
 }
 /* A main agent's session title from the runtime (issue #126): shown instead of the folder name everywhere a.name is shown;
    the folder stays in the room header and in the tooltip. Sub-agents keep their own names. */
@@ -2685,6 +2776,7 @@ function onLiveEvent(e){
   case 'user':{addUserMsg(chat,e.text,(e.attachments||[]).map(x=>({name:String(x.path).split(/[\\/]/).pop(),img:x.kind==='image',path:x.path})));return;}
   case 'status':
     if(!main)return;
+    if(e.status==='idle')refreshFolderStatus(a); /* spec 063 FR-005: a finished turn may have changed files */
     if(e.status==='working'){a.worked=true; const tt=ensureTurn(a); if(e.intent){a.intent=e.intent;if(!/^(Thinking|Approved|Allowed|Denied|Waiting for permission)/.test(e.intent))tIntent(tt.T,e.intent);}
       if(a.state!=='working'&&a.state!=='thinking')setState(a,'working',null,e.intent||a.task); else if(e.intent)setState(a,a.state,undefined,e.intent);}
     else if(e.status==='needs-permission'){
@@ -2735,23 +2827,26 @@ function onLiveEvent(e){
     if(isTaskTool(e.tool)||(t.T.chipEls[e.callId]===undefined&&a.subs&&a.subs.has(e.callId)))onTaskTool(a,e);
     else tTool(t.T,e);
     if(e.phase==='start'&&!isTaskTool(e.tool)){const label=toolLabel(e.args);setState(a,a.state==='thinking'?'working':a.state,null,a.intent||(e.tool+(label?' '+SHORT(label,90):'')));}
-    scrollChat(chat);return;}
+    stickyScroll(chat);return;}
   case 'usage':{const u=a.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;u.usd=(u.usd||0)+(e.costUsd>0?e.costUsd:0);
     a.usageText=usageLong(a);recordUsage(a,e);scheduleRender();
     if(ui.selected===a.id||(byId(ui.selected)||{}).parent===a.id)updatePanelHeader();return;}
   }
 }
-async function sendLive(text,forId){
+async function sendLive(text,forId,opts){
   const a0=byId(forId||ui.selected); if(!a0)return; const a=liveRoot(a0);
-  text=(text||'').trim(); if(!text&&!attached.length)return;
+  /* spec 064 FR-003: a message sent from elsewhere (Send to several) leaves the open chat's composer and attachments alone */
+  const fromComposer=!(opts&&opts.fromComposer===false);
+  const atts=fromComposer?attached.slice():[];
+  text=(text||'').trim(); if(!text&&!atts.length)return;
   /* spec 012 FR-157: an app that is known to be signed out gets the sign-in card first; the typed text stays in the box */
-  if(SIGNIN&&SIGNIN.needsSignIn(KINDS,kindOf(a))){PROMPTS.set(a.id,text,attached.slice());showSignInCard(a,{before:true});return;}
-  if(PROMPTS)PROMPTS.set(a.id,text,attached.slice()); /* memory only, for Send again after a sign-in (never stored) */
+  if(SIGNIN&&SIGNIN.needsSignIn(KINDS,kindOf(a))){PROMPTS.set(a.id,text,atts);showSignInCard(a,{before:true});return;}
+  if(PROMPTS)PROMPTS.set(a.id,text,atts); /* memory only, for Send again after a sign-in (never stored) */
   a.sent=true;
-  const chat=liveChat(a), atts=attached.slice();
+  const chat=liveChat(a);
   addUserMsg(chat,text||'(attachment)',atts);
-  attached=[];renderAttached();attNotice([]);
-  const input=$('msgInput');if(input){input.value='';autoGrow();}
+  if(fromComposer){attached=[];renderAttached();attNotice([]);
+    const input=$('msgInput');if(input){input.value='';autoGrow();}}
   a.worked=true; a.intent=''; closeTurn(a); ensureTurn(a); setState(a,'thinking',null,'Thinking');
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})));
   if(!r.ok){closeTurn(a);addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);setState(a,'error',null,'Send failed: '+SHORT(r.error,100));}
@@ -2798,7 +2893,7 @@ function showSignInCard(a0,o){
     phase='sent';n.querySelector('.note-actions').textContent='';n.querySelector('.psum').textContent=opts.before?' Sent.':' Restarted the session and sent your last message again.';n.classList.add('settled');
     attached=p.atts.slice();sendLive(p.text,a.id);
   };
-  paint();chat.el.appendChild(n);scrollChat(chat);a.signCard=n;
+  paint();chat.el.appendChild(n);stickyScroll(chat);a.signCard=n;
   if(opts.before)setState(a,a.state==='error'?'error':a.state,null,name+' needs you to sign in first.');
   return n;
 }
@@ -3108,7 +3203,7 @@ function toastAction(html,label,onClick,ms){
   b.onclick=()=>{kill();onClick();};t.appendChild(b);$('toasts').appendChild(t);holdTimer(t,ms===0?0:(ms||8000),kill);
   return t;
 }
-function addInfoNote(chat,text,cls){const n=document.createElement('div');n.className='note info'+(cls?' '+cls:'');n.textContent=text;chat.el.appendChild(n);scrollChat(chat);return n;}
+function addInfoNote(chat,text,cls){const n=document.createElement('div');n.className='note info'+(cls?' '+cls:'');n.textContent=text;chat.el.appendChild(n);stickyScroll(chat);return n;}
 
 function modelChipHTML(a){
   const m=modelLabel(a.info),pend=a.pendingModel;
@@ -3304,7 +3399,7 @@ function onCompaction(a,e){
     if(a.compNote&&a.compNote.isConnected)a.compNote.remove();
     a.compNote=addInfoNote(chat,t,'cline');a.compNote.setAttribute('role','status');a.compacting=true;
   }else{
-    if(a.compNote&&a.compNote.isConnected){a.compNote.textContent=t;scrollChat(chat);}else addInfoNote(chat,t,'cline');
+    if(a.compNote&&a.compNote.isConnected){a.compNote.textContent=t;stickyScroll(chat);}else addInfoNote(chat,t,'cline');
     if(e.phase==='failed'&&a.compNote)a.compNote.classList.add('failed');
     a.compNote=null;a.compacting=false;
     if(e.phase==='complete'){
@@ -3351,7 +3446,7 @@ function maybeSuggestFresh(a){
   n.querySelector('[data-fresh="new"]').onclick=()=>newSession(a);
   const sb=n.querySelector('[data-fresh="sum"]');if(sb)sb.onclick=()=>newSession(a,{summary:true});
   n.querySelector('[data-fresh="x"]').onclick=()=>{a.freshDismissed=true;n.remove();a.freshNote=null;const i=$('msgInput');if(i)i.focus();};
-  chat.el.appendChild(n);a.freshNote=n;scrollChat(chat);
+  chat.el.appendChild(n);a.freshNote=n;stickyScroll(chat);
 }
 
 /* ---------------- new session (another agent in a folder) ---------------- */
@@ -4094,6 +4189,7 @@ if(bridge){
   wireMenu('newBtn','newMenu'); /* spec 052 FR-105: + New holds Add folder and Add VS Code workspace */
   wireDefaults();
   $('endAllBtn').hidden=$('endAllSep').hidden=!bridge.end; /* spec 052 FR-090 */
+  if($('sendSeveralBtn'))$('sendSeveralBtn').hidden=!bridge.send; /* spec 064 FR-001 */
   $('inboxBtn').onclick=openInbox;
   $('addFolder').onclick=()=>addVia(bridge.addFolder);
   $('addWs').onclick=()=>addVia(bridge.addWorkspaceFile);
