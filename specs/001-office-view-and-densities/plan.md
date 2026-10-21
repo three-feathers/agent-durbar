@@ -73,3 +73,4 @@ specs/001-office-view-and-densities/
 | Chat open densities (README: `card` at 1440x900, `mini` at 1280x800) | README only | not re-run |
 | Keyed updates keep animations | README measurement | not re-run |
 | macOS and Windows rendering | none | untested |
+| Layout search speed and same layout (FR-028, SC-004) | instrumented simulator build, alternating with `main`; 54-case layout and box comparison | pass, 2026-10-21: floor switch 438-526 ms -> 134-146 ms, `chooseLayout` 388-480 -> 97-105 ms (Linux, 4 cores, Xvfb); macOS and Windows not timed |

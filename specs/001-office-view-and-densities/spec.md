@@ -127,6 +127,7 @@ Animations are subtle, CSS-only in compact densities and stop under reduced-moti
 - **SC-001**: 15 simulated agents fit on 1440x900 and 1280x800 with no page/floor scroll and no text under 10.5px (re-verified 2026-10-16).
 - **SC-002**: Waiting and error agents are first in every room and in the strip.
 - **SC-003**: A tick that changes one agent replaces at most that agent's scene (README measurement, `sim:`).
+- **SC-004** (2026-10-21, FR-028): With 15 simulated agents on three floors, at 1440x900 and 1280x800, a full layout search (`chooseLayout`) takes at most 150 ms (median) and a floor switch (User Timing `durbar:floor-switch`, spec 033 SC-003) at most 200 ms on the reference machine (4-core Linux, Xvfb), and the search picks exactly the layout it picked before.
 
 ## Assumptions
 
@@ -206,3 +207,16 @@ Spec [024](../024-office-places/spec.md) adds a one-row **lobby** band between t
 - **FR-018** closed. `real:` 2026-10-21, Linux, the built app with an isolated profile: **15 real Copilot sessions** (`auto`, Read-only, 15 throw-away folders) in the office at once. Each answered a one-line prompt, and all 15 cards ended *Done*. Then the simulator office check's own page rules (`pageCheck`: overlap, clipping, text at least 10.5px) ran on the real page: **no problems at 1440x900 or 1280x800** (smallest text 11px, density `roomy`). Durbar showed about $0.01 in total.
 - `[KNOWN GAP]`: on that real page at 1280x800, the bottom row's wider cards cut a small icon at the card's right edge, which `pageCheck` does not flag. Handed to the usability pass.
 - **FR-017** still open, unchanged (the `micro` density is used only with many agents in a narrow window).
+
+### 2026-10-21: a faster layout search (finding in PR #457, owner: "snappy and flicker-free")
+
+*Finding.* PR #457 timed a floor switch (spec 033 SC-003) at about 220-310 ms of the app's own work on a 4-core Linux box, most of it in the layout search (`chooseLayout`), against 55-84 ms recorded in spec 033 on 2026-10-17. Ruben's agent measured 534 ms on a busy server, already without the CPU wait (#454), so the app's own work is near the 500 ms budget on slower machines.
+
+*Cause (measured, `sim:`, same machine, an instrumented build).* Not one regression. The search renders every candidate (about 16 trials at 1440x900, 19 at 1280x800) into the hidden `#probe` and measures it, and each trial parsed, styled and laid out the whole stage again, desk drawings included. Its cost grew with the app: at the spec 033 merge (`a48c05a`) a search already took 289-396 ms here (median of 9), at 841 style rules and 1301 stage elements; on `main` (`2e80f94`) 450-530 ms, at 1597 style rules and 1366-1531 elements (largest step: the usability pass, `de14af9` to `3018627`, +35%). The 55-84 ms of 2026-10-17 cannot be reproduced on this machine with that commit, so it was measured another way or on a faster machine (`read:` its Verification line does not say). Per trial on `main`: style recalculation about 7 ms, layout about 1.5 ms, parsing 5 ms, the HTML 1 ms; two thirds of the elements are the SVG drawings inside the desks. A status change does not run the search (its result is kept until the office's shape changes); such a render takes 2-4 ms.
+
+- **FR-028** `[IMPLEMENTED]` The layout search measures the same boxes with less work, and picks exactly the layout it picked before:
+  - a trial keeps every `<svg>` tag with its attributes and leaves out what is inside it (`src/renderer/probe.js`, `svgHollow`); an `<svg>`'s box comes from its attributes and CSS, never from its children;
+  - a trial that differs from the one before only in style attributes (the compact search changes only each room's `--w`, `--min` and `--cols` from one column count to the next) sets those values in place instead of parsing the stage again (`styleSplit`, `probeSet` in `app.js`); anything else replaces the probe's content as before;
+  - `--w`, `--min` and `--cols` are registered as not inherited (`@property ... inherits:false`); only the element that carries them reads them, so a new value restyles the rooms, not every desk inside them. `test:probe` fails if another rule or file starts reading them.
+- `sim:` before and after on the same machine, run alternately (8 switches each way per size, an instrumented copy of the build): floor switch (`durbar:floor-switch`, median) **438-445 ms -> 139-146 ms** at 1440x900 and **520-526 ms -> 134-142 ms** at 1280x800; `chooseLayout` **388-401 -> 97-105 ms** and **474-480 -> 97-102 ms**. Same layout: 54 cases (6 window sizes x all floors, one off, Show only on two floors, 2 and 5 rooms closed, reopened, a status filter, an expanded `+N more`), 22 different layouts among them (every density, boosts, one that does not fit), gave the same chosen layout and the same box (to 0.5 px) for every room, plate, desk, helper and `+N more` before and after. `check:office` and `check:geometry` pass.
+
