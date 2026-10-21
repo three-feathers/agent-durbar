@@ -98,6 +98,48 @@ export const SETUP_NAMES: Record<SetupKind, string> = { claude: 'Claude Code', c
 
 const osOf = (platform: string): 'win32' | 'darwin' | 'linux' | undefined => (platform === 'win32' || platform === 'darwin' || platform === 'linux' ? platform : undefined);
 
+/**
+ * Spec 060 FR-009: the vendors' own install commands, to copy and run yourself in a terminal. Durbar never runs these lines: some
+ * pipe a download into a shell, which spec 051 D1 forbids Durbar to do. Word for word from each vendor's install page (read
+ * 2026-10-21, spec 060 research.md). Windows labels name the terminal: "PowerShell" or "PowerShell (winget)".
+ */
+export interface ManualCommand {
+  label: string;
+  command: string;
+  note?: string;
+}
+const NPM_CMD: Record<SetupKind, string> = { claude: 'npm install -g @anthropic-ai/claude-code', copilot: 'npm install -g @github/copilot', codex: 'npm install -g @openai/codex' };
+const NODE22 = 'Needs Node.js 22 or later.';
+const MANUAL: Record<SetupKind, Record<'win32' | 'darwin' | 'linux', ManualCommand[]>> = {
+  claude: {
+    win32: [
+      { label: 'PowerShell', command: 'irm https://claude.ai/install.ps1 | iex', note: "Anthropic's recommended installer; no administrator rights." },
+      { label: 'PowerShell (winget)', command: 'winget install Anthropic.ClaudeCode' },
+      { label: 'npm', command: NPM_CMD.claude, note: NODE22 },
+    ],
+    darwin: [{ label: 'Terminal', command: 'curl -fsSL https://claude.ai/install.sh | bash' }, { label: 'Homebrew', command: 'brew install --cask claude-code' }, { label: 'npm', command: NPM_CMD.claude, note: NODE22 }],
+    linux: [{ label: 'Terminal', command: 'curl -fsSL https://claude.ai/install.sh | bash' }, { label: 'Homebrew', command: 'brew install --cask claude-code' }, { label: 'npm', command: NPM_CMD.claude, note: NODE22 }],
+  },
+  copilot: {
+    win32: [{ label: 'PowerShell (winget)', command: 'winget install GitHub.Copilot' }, { label: 'npm', command: NPM_CMD.copilot, note: NODE22 }],
+    darwin: [{ label: 'Terminal', command: 'curl -fsSL https://gh.io/copilot-install | bash' }, { label: 'Homebrew', command: 'brew install --cask copilot-cli' }, { label: 'npm', command: NPM_CMD.copilot, note: NODE22 }],
+    linux: [{ label: 'Terminal', command: 'curl -fsSL https://gh.io/copilot-install | bash' }, { label: 'Homebrew', command: 'brew install --cask copilot-cli' }, { label: 'npm', command: NPM_CMD.copilot, note: NODE22 }],
+  },
+  codex: {
+    win32: [
+      { label: 'PowerShell', command: 'powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"', note: "OpenAI's installer for Windows." },
+      { label: 'npm', command: NPM_CMD.codex },
+    ],
+    darwin: [{ label: 'Terminal', command: 'curl -fsSL https://chatgpt.com/codex/install.sh | sh' }, { label: 'Homebrew', command: 'brew install --cask codex' }, { label: 'npm', command: NPM_CMD.codex }],
+    linux: [{ label: 'Terminal', command: 'curl -fsSL https://chatgpt.com/codex/install.sh | sh' }, { label: 'npm', command: NPM_CMD.codex }],
+  },
+};
+/** Spec 060 FR-009: the commands to run yourself on this OS, in the vendor's order (copies, so a caller cannot change the table). */
+export const manualCommands = (kind: SetupKind, platform: string): ManualCommand[] => {
+  const os = osOf(platform);
+  return os ? (MANUAL[kind]?.[os] ?? []).map((c) => ({ ...c })) : [];
+};
+
 function plansFor(kind: SetupKind, platform: string, found: ReadonlySet<PackageManager>, op: 'install' | 'update'): SetupPlan[] {
   const os = osOf(platform);
   const routes = (os && ROUTES[kind]?.[os]) || [];

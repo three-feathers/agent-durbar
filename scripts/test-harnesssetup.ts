@@ -1,6 +1,6 @@
 /** Harness setup inside the app (spec 051): plans per OS, sign-in output parsing, link allowlist, paste rules. `npm run test:harnesssetup`. No process runs, nothing is installed. */
 import * as assert from 'assert';
-import { OFFICIAL_PAGES, SIGN_IN, allowedSignInUrl, installPlans, lastLines, managersFor, parseSignIn, simFoundFor, simManagers, stripAnsi, updatePlans, validPaste } from '../src/shared/harnesssetup';
+import { OFFICIAL_PAGES, SIGN_IN, allowedSignInUrl, installPlans, lastLines, managersFor, manualCommands, parseSignIn, simFoundFor, simManagers, stripAnsi, updatePlans, validPaste } from '../src/shared/harnesssetup';
 import type { PackageManager } from '../src/shared/harnesssetup';
 import { EventEmitter } from 'events';
 import { HarnessSetup, confirmText, maskOAuth, posixTrusted } from '../src/main/harnesssetup';
@@ -346,6 +346,53 @@ void (async () => {
     assert.deepStrictEqual(hs.plans('copilot', 'install', []).plans, [], 'nothing assumed: no route');
     assert.deepStrictEqual(looked, [], 'an assumed set does not look at this machine');
     assert.deepStrictEqual(hs.plans('copilot', 'install').plans.map((p) => p.manager), ['official', 'npm', 'brew'], 'without it, what is found here is used (least privilege first)');
+  }
+  // spec 060 FR-009: the vendors' commands to run yourself, per OS, word for word from their install pages (read 2026-10-21)
+  {
+    const cmds = (k: 'claude' | 'copilot' | 'codex', os: string) => manualCommands(k, os).map((c) => `${c.label}: ${c.command}`);
+    assert.deepStrictEqual(cmds('copilot', 'win32'), ['PowerShell (winget): winget install GitHub.Copilot', 'npm: npm install -g @github/copilot']);
+    assert.deepStrictEqual(cmds('claude', 'win32'), ['PowerShell: irm https://claude.ai/install.ps1 | iex', 'PowerShell (winget): winget install Anthropic.ClaudeCode', 'npm: npm install -g @anthropic-ai/claude-code']);
+    assert.deepStrictEqual(cmds('codex', 'win32'), ['PowerShell: powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"', 'npm: npm install -g @openai/codex']);
+    assert.ok(!cmds('codex', 'win32').some((c) => /winget/.test(c)), 'OpenAI documents no winget package: none is offered');
+    assert.deepStrictEqual(cmds('copilot', 'darwin'), ['Terminal: curl -fsSL https://gh.io/copilot-install | bash', 'Homebrew: brew install --cask copilot-cli', 'npm: npm install -g @github/copilot']);
+    assert.deepStrictEqual(cmds('codex', 'linux'), ['Terminal: curl -fsSL https://chatgpt.com/codex/install.sh | sh', 'npm: npm install -g @openai/codex']);
+    for (const k of ['claude', 'copilot', 'codex'] as const) {
+      assert.ok(manualCommands(k, 'win32').every((c) => c.label === 'npm' || /^PowerShell( \(winget\))?$/.test(c.label)), `Windows labels name PowerShell (${k})`);
+      for (const os of ['darwin', 'linux']) assert.ok(!manualCommands(k, os).some((c) => /winget|PowerShell|irm /.test(c.label + c.command)), `no Windows command on ${os} (${k})`);
+      assert.ok(!manualCommands(k, 'win32').some((c) => /curl |brew /.test(c.command)), `no macOS/Linux command on Windows (${k})`);
+    }
+    assert.deepStrictEqual(manualCommands('claude', 'freebsd'), [], 'unknown OS: none');
+    const a = manualCommands('copilot', 'win32'); a[0].command = 'x';
+    assert.strictEqual(manualCommands('copilot', 'win32')[0].command, 'winget install GitHub.Copilot', 'callers get copies');
+    // HarnessSetup.plans carries them, for the simulated OS too (FR-011)
+    const hs = new HarnessSetup({ detectEnv: { platform: 'linux', env: { PATH: '/usr/bin' }, homedir: '/home/u', isFile: () => false }, spawn: () => { throw new Error('no'); }, killTree: () => undefined, send: () => undefined, redetect: async () => undefined } as never);
+    assert.deepStrictEqual(hs.plans('copilot', 'install').manual.map((c) => c.label), ['Terminal', 'Homebrew', 'npm']);
+    const w = hs.plans('copilot', 'install', simFoundFor('win32'), 'win32');
+    assert.deepStrictEqual([w.plans.map((p) => p.manager), w.manual.map((c) => c.label)], [['winget'], ['PowerShell (winget)', 'npm']], 'simulated Windows: winget route and PowerShell commands');
+    assert.deepStrictEqual(hs.plans('copilot', 'install', undefined, 'win32').manual.map((c) => c.label), ['Terminal', 'Homebrew', 'npm'], 'simPlatform only with an assumed set');
+  }
+  // spec 060 FR-010: winget.exe is an App Execution Alias in %LOCALAPPDATA%\Microsoft\WindowsApps: found there, and run by that path
+  {
+    const alias = 'C:\\Users\\u\\AppData\\Local\\Microsoft\\WindowsApps\\winget.exe';
+    const calls: string[] = [];
+    let resolved = 0;
+    const hs = new HarnessSetup({
+      detectEnv: { platform: 'win32', env: { Path: 'C:\\Windows\\System32', SystemRoot: 'C:\\Windows', LOCALAPPDATA: 'C:\\Users\\u\\AppData\\Local' }, homedir: 'C:\\Users\\u', isFile: (f: string) => f === alias },
+      spawn: (file: string) => { calls.push(file); const e = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(), stdin: null }); return e as never; },
+      killTree: () => undefined, send: () => undefined, redetect: async () => undefined,
+      realpath: (p: string) => { resolved++; throw new Error('EACCES ' + p); },
+    } as never);
+    assert.strictEqual(hs.find('winget'), alias, 'found in WindowsApps although PATH lacks the folder');
+    const plans = hs.plans('copilot', 'install').plans;
+    assert.deepStrictEqual(plans.map((p) => p.manager), ['winget'], 'Copilot on a Windows PC without Node.js: the winget route');
+    const p = hs.prepare('copilot', 'install', 0);
+    assert.ok(p.ok, 'prepared: ' + JSON.stringify(p));
+    if (p.ok) {
+      assert.strictEqual(p.job.spawnFile, alias, 'the alias itself runs (never resolved into WindowsApps\' package folder)');
+      assert.deepStrictEqual(p.job.spawnArgs, ['install', '--id', 'GitHub.Copilot', '-e', '--source', 'winget', '--accept-source-agreements', '--accept-package-agreements'], 'fixed argv, no shell');
+      assert.strictEqual(p.job.verbatim, false);
+    }
+    assert.strictEqual(resolved, 0, 'realpath is not asked for an alias');
   }
   console.log('harnesssetup: all checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -59,7 +59,9 @@ export function register(deps: HarnessIpcDeps): void {
   } as ConstructorParameters<typeof HarnessSetup>[0]);
   /** FR-004b: harness setup answers only the app's own page in the main frame. */
   // spec 060 FR-002: under the simulator the routes are the real ones for this OS, with a typical new machine's package managers
-  ipcHandle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? harnessSetup.plans(kind, op, dev.DURBAR_SIM ? simManagers(process.platform, dev.DURBAR_SIM_MANAGERS) : undefined) : { plans: [], page: '', name: '' }));
+  // spec 060 FR-011: DURBAR_SIM_PLATFORM=win32|darwin|linux shows another OS's routes and commands in the simulator (screenshots)
+  const simOs = (): NodeJS.Platform => (['win32', 'darwin', 'linux'].includes(dev.DURBAR_SIM_PLATFORM ?? '') ? dev.DURBAR_SIM_PLATFORM as NodeJS.Platform : process.platform);
+  ipcHandle('harness:plans', (e, kind: unknown, op: unknown) => (fromApp(e) && isSetupKind(kind) && (op === 'install' || op === 'update') ? (dev.DURBAR_SIM ? harnessSetup.plans(kind, op, simManagers(simOs(), dev.DURBAR_SIM_MANAGERS), simOs()) : harnessSetup.plans(kind, op)) : { plans: [], page: '', name: '', manual: [] }));
   ipcHandle('harness:run', async (e, kind: unknown, op: unknown, planIndex: unknown) => {
     if (!fromApp(e) || !isSetupKind(kind) || (op !== 'install' && op !== 'update' && op !== 'signin')) return { ok: false, error: 'invalid request' };
     const p = harnessSetup.prepare(kind, op, typeof planIndex === 'number' && Number.isInteger(planIndex) && planIndex >= 0 && planIndex < 8 ? planIndex : 0);

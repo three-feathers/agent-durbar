@@ -107,10 +107,19 @@
     });
   }
 
+  /* spec 060 FR-009: the vendor's own commands for this OS, each with a Copy button (the shared .cp-btn handler in app.js copies the
+     <code> next to it). Durbar never runs these lines; the user pastes them into a terminal (PowerShell on Windows). */
+  function manualHTML(p, open) {
+    const list = (p && Array.isArray(p.manual) ? p.manual : []).filter((c) => c && c.command);
+    if (!list.length) return '';
+    const rows = list.map((c) => `<div class="hs-man"><span class="hs-man-l">${esc(c.label)}${c.note ? ` <small>${esc(c.note)}</small>` : ''}</span><code>${esc(c.command)}</code><button type="button" class="cp-btn cp-code" aria-label="Copy the ${esc(c.label)} command" title="Copy the ${esc(c.label)} command">Copy</button></div>`).join('');
+    return `<details class="hs-cmds hs-manual"${open ? ' open' : ''}><summary>Run it yourself</summary><p class="scr-note small">Copy one command into a terminal${list.some((c) => /^PowerShell/.test(c.label)) ? ' (PowerShell on Windows)' : ''}, run it, then choose <b>Check again</b>.</p>${rows}</details>`;
+  }
+
   async function install(kind, op, name) {
     const p = await B.harnessPlans(kind, op);
     if (!p || !p.plans || !p.plans.length) {
-      modal((op === 'update' ? 'Update ' : 'Install ') + (p && p.name || name), `<p class="scr-note">No install route that Durbar can use was found on this computer (the vendor's installer needs bash or Windows PowerShell; otherwise winget, Homebrew or npm). Install ${esc(p && p.name || name)} from its official page, then come back and choose <b>Check again</b>.</p>`,
+      modal((op === 'update' ? 'Update ' : 'Install ') + (p && p.name || name), `<p class="scr-note">No install route that Durbar can run was found on this computer (the vendor's installer needs bash or Windows PowerShell; otherwise winget, Homebrew or npm). Install ${esc(p && p.name || name)} yourself with one of these commands, or from its official page, then come back and choose <b>Check again</b>.</p>${op === 'install' ? manualHTML(p, true) : ''}`,
         [{ label: 'Close', cancel: true, onClick: (c) => c() }, { label: 'Open the official page', cls: 'primary', onClick: (c) => { B.harnessOpenPage(kind); c(); } }]);
       return;
     }
@@ -124,7 +133,7 @@
     const opts = p.plans.map((pl, i) => `<label class="hs-plan"><input type="radio" name="hsPlan" value="${i}"${i === 0 ? ' checked' : ''}> <span><b>${esc(mgr(pl))}${tag(pl, i)}</b>${pl.note ? `<small>${esc(pl.note)}</small>` : ''}</span></label>`).join('');
     const cmds = `<details class="hs-cmds"${simple ? '' : ' open'}><summary>Show the exact command</summary>${p.plans.map((pl) => `<p class="scr-note small">${esc(mgr(pl))}: <code>${esc(pl.display)}</code></p>`).join('')}</details>`;
     const choice = await new Promise((res) => {
-      modal((op === 'update' ? 'Update ' : 'Install ') + p.name, `<p class="scr-note">Durbar ${op === 'update' ? 'updates' : 'installs'} ${esc(p.name)} for you. Choose how:</p>${opts}${cmds}<p class="scr-note small">It runs on your computer, as you, and asks once more before it starts. Prefer to do it yourself? <button type="button" class="linkbtn" id="hsPage">Open the official page</button></p>`,
+      modal((op === 'update' ? 'Update ' : 'Install ') + p.name, `<p class="scr-note">Durbar ${op === 'update' ? 'updates' : 'installs'} ${esc(p.name)} for you. Choose how:</p>${opts}${cmds}<p class="scr-note small">It runs on your computer, as you, and asks once more before it starts. Prefer to do it yourself? <button type="button" class="linkbtn" id="hsPage">Open the official page</button></p>${op === 'install' ? manualHTML(p, false) : ''}`,
         [{ label: 'Cancel', cancel: true, onClick: (c) => { c(); res(null); } }, { label: op === 'update' ? 'Update' : 'Install', cls: 'primary', onClick: (c) => { const v = document.querySelector('#hsDlg input[name="hsPlan"]:checked'); const i = v ? Number(v.value) : 0; c(); res(i); } }]);
       const a = document.getElementById('hsPage'); if (a) a.onclick = (e) => { e.preventDefault(); B.harnessOpenPage(kind); };
     });

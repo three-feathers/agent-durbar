@@ -3,6 +3,7 @@
  * real sign-in runs (the simulator plays canned output).
  *
  *   npm run build
+ *   (add DURBAR_SIM_PLATFORM=win32 for Windows' routes and commands on any OS, spec 060 FR-011)
  *   OUT=docs/screenshots DURBAR_SIM_MANAGERS=winget,brew,npm DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
  *     DURBAR_DRIVER=$PWD/scripts/shots-051-setup.js xvfb-run -a npx electron . --no-sandbox
  *
@@ -13,6 +14,9 @@ const assert = require('assert');
 const path = require('path');
 const { helpers } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
+// spec 060 FR-011: DURBAR_SIM_PLATFORM=win32 shows Windows' routes and commands on any OS (screenshots get a -win32 suffix)
+const OS = ['win32', 'darwin', 'linux'].includes(process.env.DURBAR_SIM_PLATFORM) ? process.env.DURBAR_SIM_PLATFORM : process.platform;
+const SFX = OS !== process.platform ? '-' + OS : '';
 
 module.exports = async (ctx) => {
   const H = helpers(ctx); // spec 008 FR-096/097: shared plumbing, waits for the page instead of a fixed time
@@ -33,13 +37,26 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('hsH').scrollIntoView()`); await settle();
     await shot(`051-harnesses-${w}x${h}.png`);
     // Install: the exact commands first
-    await js(`document.querySelector('.hs-card[data-kind="claude"] [data-hs="install"]').click()`); await until(`document.querySelectorAll('#hsDlg .hs-cmds code').length>0`);
-    const plans = await js(`[...document.querySelectorAll('#hsDlg .hs-cmds code')].map(c=>c.textContent)`);
+    await js(`document.querySelector('.hs-card[data-kind="claude"] [data-hs="install"]').click()`); await until(`document.querySelectorAll('#hsDlg .hs-cmds:not(.hs-manual) code').length>0`);
+    const plans = await js(`[...document.querySelectorAll('#hsDlg .hs-cmds:not(.hs-manual) code')].map(c=>c.textContent)`);
     // spec 060 FR-002: the routes are the real ones for this OS (the suite runs this driver with DURBAR_SIM_MANAGERS=winget,brew,npm)
-    const first = process.platform === 'win32' ? /^winget install --id Anthropic\.ClaudeCode/ : /^brew install --cask claude-code/;
+    const first = OS === 'win32' ? /^winget install --id Anthropic\.ClaudeCode/ : /^brew install --cask claude-code/;
     assert.ok(plans.length === 2 && first.test(plans[0]) && /^npm install -g @anthropic-ai\/claude-code/.test(plans[1]), 'the commands are shown before they run: ' + plans.join(' | '));
-    assert.ok(process.platform === 'win32' ? !plans.some((p) => /^brew /.test(p)) : !plans.some((p) => /^winget /.test(p)), 'no other OS\'s package manager is offered');
-    await shot(`051-install-plan-${w}x${h}.png`);
+    assert.ok(OS === 'win32' ? !plans.some((p) => /^brew /.test(p)) : !plans.some((p) => /^winget /.test(p)), 'no other OS\'s package manager is offered');
+    await shot(`051-install-plan${SFX}-${w}x${h}.png`);
+    // spec 060 FR-009: the vendor's own commands, to copy and run yourself, labelled for this OS, each with a Copy button
+    await js(`document.querySelector('#hsDlg .hs-manual').open=true`); await settle();
+    const man = await js(`[...document.querySelectorAll('#hsDlg .hs-man')].map(r=>({l:r.querySelector('.hs-man-l').firstChild.textContent.trim(),c:r.querySelector('code').textContent,b:!!r.querySelector('button.cp-btn.cp-code')}))`);
+    const want = OS === 'win32' ? ['PowerShell', 'PowerShell (winget)', 'npm'] : ['Terminal', 'Homebrew', 'npm'];
+    assert.deepStrictEqual(man.map((m) => m.l), want, 'manual commands for ' + OS + ': ' + JSON.stringify(man));
+    assert.ok(man.every((m) => m.b), 'each has a Copy button');
+    if (OS === 'win32') assert.deepStrictEqual(man.map((m) => m.c), ['irm https://claude.ai/install.ps1 | iex', 'winget install Anthropic.ClaudeCode', 'npm install -g @anthropic-ai/claude-code']);
+    assert.ok(await js(`[...document.querySelectorAll('#hsDlg .hs-man')].every(r=>{const b=r.querySelector('.cp-btn').getBoundingClientRect(),c=r.querySelector('code').getBoundingClientRect(),o=r.getBoundingClientRect();return b.right<=o.right+0.5&&c.right<=b.left+0.5&&parseFloat(getComputedStyle(r.querySelector('code')).fontSize)>=10.5})`), 'Copy sits beside the command, inside its row, text at least 10.5px');
+    // the shared Copy handler (app.js .cp-btn) copies the row's command; it says "Copied ✓" (or shows an error toast if the clipboard refuses)
+    await js(`document.querySelector('#hsDlg .hs-man .cp-btn').click()`); await until(`document.querySelector('#hsDlg .hs-man .cp-btn').textContent==='Copied ✓'||!!document.querySelector('.toast.err')`);
+    assert.strictEqual(await js(`document.querySelector('#hsDlg .hs-man .cp-btn').textContent`), 'Copied ✓', 'Copy copies the command');
+    await js(`document.querySelector('#hsDlg .hs-dlg-scroll, #hsDlg .dbody').scrollTop=1e6`); await settle();
+    await shot(`051-install-manual${SFX}-${w}x${h}.png`);
     await js(`[...document.querySelectorAll('#hsDlg .btn')].find(b=>b.textContent==='Install').click()`); await until(`!!document.getElementById('hsLog')`);
     assert.ok(await js(`!!document.getElementById('hsLog')`), 'the progress dialog shows the output');
     await until(`!document.getElementById('hsDlg')`, 15000);
