@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.10 tag)
 
+- Test tooling only: every simulator driver now takes its helpers (`js`, click, key, page load, screenshot, escaping of values put into page code) from `scripts/driver-helpers.js` instead of its own copy; no check was changed (spec 008 FR-097, T094, #414).
 - One shared `PATH` reader (`src/shared/pathdirs.ts`) for agent detection and "Open in VS Code": the VS Code launcher now finds a quoted Windows `PATH` entry, and repeated `PATH` folders are tried once (spec 060 FR-094, #412).
 - **Packaged display names (spec 008 FR-040..FR-045, T039, issue #384).** A packaged Windows build sets its AppUserModelId (`build.appId`), so toasts and the taskbar match the Start menu shortcut; the Mac app menu item carries an `Agent Durbar` label (macOS takes the menu-bar title from the bundle name, `CFBundleName` = `Agent Durbar`, now checked on every Mac build); the Linux AppImage launcher entry no longer forces `--no-sandbox` (`AppRun` still adds it when needed). `scripts/check-names.js` runs after the fuse check on every package build, and the installed-app CI asserts the names a user sees. Checked on Linux (unit tests, `dist:linux`, the installed AppImage on the simulator); Windows and macOS names are asserted in CI (Installed app run 39561893292, all three OSes), not seen on a real PC or Mac.
 

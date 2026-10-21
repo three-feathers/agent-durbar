@@ -10,11 +10,12 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { waits } = require('./driver-helpers');
+const { helpers } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
 
 module.exports = async (ctx) => {
-  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
+  const H = helpers(ctx); // spec 008 FR-096/097: shared plumbing, waits for the page instead of a fixed time
+  const { until, settle } = H;
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     ctx.win.setContentSize(w, h);
     await until(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000); await settle();
@@ -28,9 +29,7 @@ module.exports = async (ctx) => {
       assert.ok(m.label.includes(m.words), 'the words are in the accessible label');
       assert.ok(m.h <= 35, 'the row keeps its height (34px since spec 052 FR-064)');
     }
-    await ctx.js(`(()=>{const s=document.createElement('style');s.textContent='#toasts{display:none!important}';document.head.appendChild(s);if(document.activeElement)document.activeElement.blur();})()`);
-    await settle();
-    await ctx.shot(path.join(OUT, `mood-list-${w}x${h}.png`));
+    await H.shot(path.join(OUT, `mood-list-${w}x${h}.png`), { prep: 'calm', blur: true, settle: true, delay: 0 });
     await ctx.js(`document.getElementById('vOffice').click()`); await until(`document.querySelectorAll('#stage .desk[data-id]').length>=15&&!document.querySelector('#list button.lrow')`); await settle();
     // FR-015: a figure away at a place keeps its mood (in the simulator Sven is dizzy and away)
     const wk = await ctx.js(`[...document.querySelectorAll('#walkers .walker')].map(x=>({body:x.dataset.body,trouble:x.dataset.trouble,dot:getComputedStyle(x,'::after').content!=='none'}))`);

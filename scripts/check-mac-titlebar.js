@@ -22,7 +22,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { jsLiteral } = require('./check-office-overlap.js'); /* every value put into page code goes through it */
+const { helpers, jsLiteral } = require('./driver-helpers');
 
 const ROOT = path.join(__dirname, '..');
 const INDEX = path.join(ROOT, 'dist', 'renderer', 'index.html');
@@ -109,10 +109,10 @@ function measure(TLX, TLY) {
 async function run(ctx) {
   const SHOTS = process.env.MAC_TITLEBAR_SHOTS;
   if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
-  const js = (c) => ctx.js(c);
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { js, click } = H;
   const results = [];
-  const key = (k, mods) => { const w = ctx.win.webContents; for (const type of ['keyDown', 'char', 'keyUp']) w.sendInputEvent({ type, keyCode: k, modifiers: mods || [] }); };
-  const click = (sel) => js(`(()=>{const e=document.querySelector(${jsLiteral(sel)});if(e){e.click();return true}return false})()`);
+  const key = (k, mods) => H.key(k, mods, { char: 'always', pause: 0 }); // not awaited: the events are sent at once
   const must = async (sel) => { if (!(await click(sel))) throw new Error(`missing control ${sel}`); await ctx.sleep(150); };
   const reset = async () => {
     await js(`(()=>{document.querySelectorAll('.dlg-ov').forEach(d=>d.remove());try{window.DurbarScreens.isOpen()&&window.DurbarScreens.close()}catch(e){};if(document.body.classList.contains('panel-open')){const b=document.getElementById('backBtn');if(b)b.click()};const m=document.getElementById('topMoreMenu');if(m)m.hidden=true;['foldersPop','floorsPop','defaultsPop','newMenu'].forEach(i=>{const e=document.getElementById(i);if(e)e.hidden=true});delete document.documentElement.dataset.fullscreen;const vo=document.getElementById('vOffice');if(vo&&document.body.classList.contains('list-mode'))vo.click();['restoreStrip','awayStrip'].forEach(i=>{const s=document.getElementById(i);if(s)s.hidden=true})})()`);
@@ -145,10 +145,7 @@ async function run(ctx) {
 
   for (const [w, h] of SIZES) {
     const size = `${w}x${h}`;
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1' } });
-    await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-    await ctx.sleep(1500);
+    await H.load({ w, h, ready: 'fit' }); // was a fixed 1500 ms; now waits for the page to stop changing (FR-096)
     await js(`document.documentElement.dataset.platform='darwin'`);
     await ctx.sleep(400);
     await js(`['restoreStrip','awayStrip'].forEach(i=>{document.getElementById(i).hidden=true})`);

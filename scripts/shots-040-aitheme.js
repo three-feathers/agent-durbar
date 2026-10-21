@@ -11,17 +11,15 @@
  */
 const assert = require('assert');
 const path = require('path');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 
 module.exports = async (ctx) => {
-  const js = (c) => ctx.js(c);
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { js } = H;
   const lastToast = () => js(`(()=>{const t=[...document.querySelectorAll('#toasts .toast')].pop();return t?t.innerText:''})()`);
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simkinds: 'mixed' } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
-    await ctx.sleep(500);
+    await H.load({ w, h, query: { simkinds: 'mixed' } });
     await js(`document.getElementById('settingsBtn').click()`);
     await ctx.waitFor(`!!document.getElementById('thAi')`, 6000);
     // export on a built-in theme explains instead of doing nothing
@@ -65,8 +63,8 @@ module.exports = async (ctx) => {
     await js(`[...document.querySelectorAll('#scrDlg .dbtn button')].find(b=>b.textContent==='Save as my theme').click()`); await ctx.sleep(1200);
     const id = await js(`window.THEME.current().id`);
     assert.match(id, /^ai-night-shift-newsroom/);
-    await ctx.waitFor(`!!document.querySelector('#thList [data-theme="${id}"]')`, 5000);
-    assert.ok(await js(`/yours/.test(document.querySelector('#thList [data-theme="${id}"]').innerText)`), 'listed as yours');
+    await ctx.waitFor(`!!document.querySelector(${jsLiteral(`#thList [data-theme="${id}"]`)})`, 5000);
+    assert.ok(await js(`/yours/.test(document.querySelector(${jsLiteral(`#thList [data-theme="${id}"]`)}).innerText)`), 'listed as yours');
     // export now works for the active (own) theme
     await js(`document.getElementById('thExport').click()`); await ctx.sleep(400);
     assert.match(await lastToast(), /Theme copied to/);

@@ -21,36 +21,23 @@
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
-const { waits } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const assert = require('assert');
 const OUT = process.env.SHOTS_012 || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-012-'));
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 const SIZES = [[1440, 900], [1280, 800]];
 
 module.exports = async (ctx) => {
-  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
-  const js = (code) => ctx.js(code);
-  const wc = () => ctx.win.webContents;
-  const key = async (keyCode, modifiers) => {
-    wc().sendInputEvent({ type: 'keyDown', keyCode, modifiers });
-    if (keyCode === 'Return') wc().sendInputEvent({ type: 'char', keyCode: '\r', modifiers }); // Enter activates a button on the char event
-    wc().sendInputEvent({ type: 'keyUp', keyCode, modifiers });
-    await ctx.sleep(120);
-  };
-  const shot = async (name, w, h) => { await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`); await ctx.sleep(150); await ctx.shot(path.join(OUT, `${name}-${w}x${h}.png`)); console.log('[017] saved', name, w, h); };
-  const load = async (w, h, extra) => {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', ...(extra || {}) } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
-    await settle();
-    wc().focus();
-  };
-  const vis = (id) => `(()=>{const e=document.getElementById('${id}');return !!e&&!e.hidden&&e.getClientRects().length>0})()`;
+  const H = helpers(ctx); // spec 008 FR-096/097: shared plumbing, waits for the page instead of a fixed time
+  const { until, js } = H;
+  const key = (keyCode, modifiers) => H.key(keyCode, modifiers, { pause: 120 });
+  const shot = (name, w, h) => H.shot(path.join(OUT, `${name}-${w}x${h}.png`), { prep: 'toasts', tag: '017', what: `${name} ${w} ${h}` });
+  const load = (w, h, extra) => H.load({ w, h, query: extra, focus: true });
+  const vis = (id) => `(()=>{const e=document.getElementById(${jsLiteral(`${id}`)});return !!e&&!e.hidden&&e.getClientRects().length>0})()`;
   /* spec 052 FR-105 (round 11): the defaults selects (ids kept) live in the popover of the top bar's Defaults chip; open it first */
   const openDefaults = async () => { await js(`(()=>{const p=document.getElementById('defaultsPop');if(p.hidden)document.getElementById('defaultsBtn').click();return !p.hidden})()`); await until(`!document.getElementById('defaultsPop').hidden`); };
   const headerH = () => js(`Math.round(document.querySelector('.controls').getBoundingClientRect().height)`);
   /* the smallest computed font size among visible elements with their own text, inside `root` */
-  const minFont = (root) => js(`(()=>{let min=99,who='';document.querySelectorAll('${root}, ${root} *').forEach(e=>{if(!e.getClientRects().length)return;const own=[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim());if(!own&&!/^(INPUT|SELECT|BUTTON)$/.test(e.tagName))return;const f=parseFloat(getComputedStyle(e).fontSize);if(f<min){min=f;who=e.tagName+'#'+e.id+'.'+e.className}});return {min,who}})()`);
+  const minFont = (root) => js(`(()=>{let min=99,who='';document.querySelectorAll(${jsLiteral(`${root}, ${root} *`)}).forEach(e=>{if(!e.getClientRects().length)return;const own=[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim());if(!own&&!/^(INPUT|SELECT|BUTTON)$/.test(e.tagName))return;const f=parseFloat(getComputedStyle(e).fontSize);if(f<min){min=f;who=e.tagName+'#'+e.id+'.'+e.className}});return {min,who}})()`);
   const inDialog = () => js(`(()=>{const d=document.getElementById('modeDlg');return !!d&&d.contains(document.activeElement)})()`);
 
   const heights = {};

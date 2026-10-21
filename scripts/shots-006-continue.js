@@ -12,18 +12,16 @@
 const assert = require('assert');
 const path = require('path');
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
+const { helpers, jsLiteral } = require('./driver-helpers');
 
 module.exports = async (ctx) => {
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simresume: '1' } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
-    await ctx.sleep(1200);
+    await H.load({ w, h, query: { simresume: '1' } });
     const card = await ctx.js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>/Priya/.test(x.innerText));return d?{id:d.dataset.id,text:d.innerText.replace(/\\s+/g,' ')}:null})()`);
     console.log('[006-cont]', w, JSON.stringify(card));
     assert.ok(card && /last session/i.test(card.text), 'the card says it continues the last session');
-    await ctx.js(`document.querySelector('#stage .desk[data-id="${card.id}"]').click()`);
+    await ctx.js(`document.querySelector(${jsLiteral(`#stage .desk[data-id="${card.id}"]`)}).click()`);
     await ctx.waitFor(`/Continued after restart/.test(document.getElementById('chat').innerText)`, 5000);
     const chat = await ctx.js(`document.getElementById('chat').innerText.replace(/\\s+/g,' ')`);
     assert.ok(/clause_type column/.test(chat), 'the earlier prompt is shown');
@@ -31,7 +29,7 @@ module.exports = async (ctx) => {
     assert.ok(/Continued after restart: Add the clause-type column migration\. New messages continue this session\./.test(chat), 'the note names the session');
     const status = await ctx.js(`document.querySelector('#panelHead [data-f="status"]').innerText`);
     assert.ok(/Idle/.test(status), `the agent is idle (${status})`);
-    await ctx.js(`(()=>{const s=document.createElement('style');s.textContent='#toasts{display:none!important}';document.head.appendChild(s);})()`);
+    await H.calm();
     await ctx.sleep(300);
     await ctx.shot(path.join(OUT, `continue-last-${w}x${h}.png`));
   }

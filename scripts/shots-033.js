@@ -18,16 +18,15 @@
  * Screenshots: 033-floors-on, 033-floors-panel, 033-floor-off, 033-floor-off-panel, 033-settings-floors at both sizes.
  */
 const path = require('path');
-const { waits } = require('./driver-helpers');
-const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
+const { helpers, jsLiteral } = require('./driver-helpers');
 const assert = require('assert');
 const OUT = process.env.SHOTS_033 || '/tmp';
 const SIZES = [[1440, 900], [1280, 800]];
 
 module.exports = async (ctx) => {
-  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
-  const js = (code) => ctx.js(code);
-  const shot = async (name, w, h) => { await ctx.sleep(150); await ctx.shot(path.join(OUT, `033-${name}-${w}x${h}.png`)); console.log('[033] saved', name, w, h); };
+  const H = helpers(ctx); // spec 008 FR-096/097: shared plumbing, waits for the page instead of a fixed time
+  const { until, settle, js } = H;
+  const shot = (name, w, h) => H.shot(path.join(OUT, `033-${name}-${w}x${h}.png`), { tag: '033', what: `${name} ${w} ${h}` });
   const panel = async (open) => { await js(`(()=>{const p=document.getElementById('floorsPop');if(p.hidden===${open})document.getElementById('floorsBtn').click();})()`); await until(`document.getElementById('floorsPop').hidden===${!open}`); };
   const click = async (sel) => { await panel(true); await js(`document.querySelector(${jsLiteral(sel)}).click()`); };
   const state = () => js(`(()=>{
@@ -57,8 +56,8 @@ module.exports = async (ctx) => {
     // start from all floors on (the previous size may have left them off)
     await panel(true);
     for (const id of ['ground', 'f-clienta0', 'f-personal']) {
-      const on = await js(`document.querySelector('[data-fl="on"][data-floor="${id}"]').getAttribute('aria-pressed')`);
-      if (on !== 'true') { await click(`[data-fl="on"][data-floor="${id}"]`); await until(`document.querySelector('[data-fl="on"][data-floor="${id}"]').getAttribute('aria-pressed')==='true'`); }
+      const on = await js(`document.querySelector(${jsLiteral(`[data-fl="on"][data-floor="${id}"]`)}).getAttribute('aria-pressed')`);
+      if (on !== 'true') { await click(`[data-fl="on"][data-floor="${id}"]`); await until(`document.querySelector(${jsLiteral(`[data-fl="on"][data-floor="${id}"]`)}).getAttribute('aria-pressed')==='true'`); }
     }
     await panel(false);
     await calm();
