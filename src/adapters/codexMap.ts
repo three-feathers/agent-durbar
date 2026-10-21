@@ -13,6 +13,7 @@
  */
 import type { EventBody } from './map';
 import { isObj, nonEmptyStr as str } from '../shared/guards';
+import { isMcpAuthChallenge } from './mcpauth';
 
 /** The shape of a JSON-RPC notification as read off the wire (`id` absent). Names mirror the protocol; not a vendor type. */
 export interface CodexNotification {
@@ -218,10 +219,10 @@ export class CodexMapper {
     const status = ownStr(item, 'status');
     const exit = own(item, 'exitCode');
     const failed = status === 'failed' || status === 'declined' || (type === 'commandExecution' && done && typeof exit === 'number' && exit !== 0);
-    const call = (meta: { tool: string; mcpServer?: string; mcpTool?: string }, args?: unknown, output?: string): void => {
+    const call = (meta: { tool: string; mcpServer?: string; mcpTool?: string }, args?: unknown, output?: string, mcpAuth?: true): void => {
       if (!done) this.tools.set(id, meta);
       else this.tools.delete(id);
-      this.emit({ type: 'toolCall', callId: id, ...meta, phase: done ? (failed ? 'failed' : 'complete') : 'start', ...(done ? {} : { args }), ...(done && output ? { output: cap(output) } : {}), agentId });
+      this.emit({ type: 'toolCall', callId: id, ...meta, phase: done ? (failed ? 'failed' : 'complete') : 'start', ...(done ? {} : { args }), ...(done && output ? { output: cap(output) } : {}), ...(done && failed && mcpAuth && meta.mcpServer ? { mcpAuth } : {}), agentId });
     };
 
     switch (type) {
@@ -257,7 +258,9 @@ export class CodexMapper {
         const result = own(item, 'result');
         const content = own(result, 'content');
         const text = Array.isArray(content) ? content.map((c) => ownStr(c, 'text')).filter(Boolean).join('\n') : undefined;
-        return call(meta, own(item, 'arguments'), failed ? (ownStr(own(item, 'error'), 'message') ?? 'failed') : text);
+        const output = failed ? (ownStr(own(item, 'error'), 'message') ?? 'failed') : text;
+        // Spec 058 FR-060: a failed MCP call whose error is the server's OAuth challenge says "sign in" (the adapter refreshes the list)
+        return call(meta, own(item, 'arguments'), output, failed && isMcpAuthChallenge(output) ? true : undefined);
       }
       case 'dynamicToolCall':
         return call({ tool: ownStr(item, 'tool') ?? type }, own(item, 'arguments'));
