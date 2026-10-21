@@ -95,9 +95,11 @@ for (const r of ROWS) {
   assert.strictEqual(t.setPaused(ID, true), true);
   t.onEvent(think);
   assert.deepStrictEqual(t.get(ID), { word: 'Paused', subLabel: null, state: 'idle', paused: true });
+  assert.strictEqual(t.isBusy(ID), true, 'spec 058 FR-022: a paused agent that is thinking is still busy (Restart session asks first)');
   t.setPaused(ID, false);
   assert.deepStrictEqual(t.get(ID), { word: 'Thinking', subLabel: null, state: 'thinking', paused: false });
   assert.strictEqual(t.setPaused('nope', true), false, 'unknown agent');
+  assert.strictEqual(t.isBusy('nope'), false, 'unknown agent: not busy');
 }
 // clearPaused: a fresh window starts with nobody paused.
 {
