@@ -327,7 +327,7 @@ function maskShellString(v0: string, depth: number, env?: Env, plain = false): s
  * `powershell -Command "srv `"x`""` used to be cut at the escaped quote and the secret showed. The payload after `sh|bash|... -c`,
  * `cmd /c` (or `/k`) and `powershell|pwsh -Command` is unescaped one level with that shell's own rules, masked by the usual rules and,
  * when anything changed, written back with the same quoting. At most `WRAP_MAX` decodes nest; a payload past that, or one whose quotes
- * do not close, is masked to its end (fail closed). Every pass is a single scan, so the cost stays linear.
+ * do not close, is masked to its end (fail closed). Every pass is a single scan (a backslash run is matched whole), so the cost stays linear.
  */
 type ShellKind = 'sh' | 'cmd' | 'ps';
 /** Text that may hold an escape of one of the three shells (`''` is PowerShell's quote inside `'...'`); without one the plain rules already see every quote (R1). */
@@ -351,7 +351,7 @@ function isCommandFlag(kind: ShellKind, w: string): boolean {
 }
 /** Flags of each shell that take the next word as their value (`sh -o pipefail -c`, `powershell -ExecutionPolicy Bypass -Command`). */
 const VALUE_FLAG: Record<ShellKind, RegExp> = {
-  sh: /^(?:[-+]o|--rcfile|--init-file)$/,
+  sh: /^(?:[-+][oO]|--rcfile|--init-file)$/, // `-o pipefail`, `-O extglob` (bash shopt)
   cmd: /^$/,
   ps: /^-(?:executionpolicy|ep|ex|windowstyle|w|workingdirectory|wd|configurationname|settingsfile|inputformat|if|outputformat|of|version|v)$/i,
 };
@@ -368,7 +368,11 @@ function findWrappers(s: string): Array<{ kind: ShellKind; start: number }> {
     if (!kind) continue;
     for (let j = i + 1; j < words.length && j <= i + 9; j++) {
       const w = words[j];
-      if (isCommandFlag(kind, w)) { if (j + 1 < words.length) found.push({ kind, start: pos[j + 1] }); break; }
+      if (isCommandFlag(kind, w)) {
+        const k = kind === 'sh' && words[j + 1] === '--' ? j + 2 : j + 1; // `bash -c -- "..."`: `--` ends the options, the script follows
+        if (k < words.length) found.push({ kind, start: pos[k] });
+        break;
+      }
       if (!/^[-+/]/.test(w)) break;
       if (VALUE_FLAG[kind].test(w)) j++;
     }
@@ -448,7 +452,8 @@ function decodeCmd(s: string, i: number): Decoded {
   const quoted = rest.length >= 2 && rest[0] === '"' && rest[rest.length - 1] === '"';
   const inner = quoted ? rest.slice(1, -1) : rest;
   // `^x` is cmd's escape; a run of backslashes before `"` is halved (the program's command line: 2n+1 backslashes and `"` are n and a quote)
-  const value = inner.replace(/\^([\s\S])|(\\+)"/g, (_m, x?: string, b?: string) => x ?? '\\'.repeat((b ?? '').length >> 1) + '"');
+  // a whole backslash run is matched at once (with or without its `"`), so a long run without a quote is not retried from each position
+  const value = inner.replace(/\^([\s\S])|(\\+)("?)/g, (_m, x?: string, b?: string, q?: string) => x ?? (q ? '\\'.repeat((b ?? '').length >> 1) + '"' : (b ?? '')));
   return { value, end: s.length, quote: quoted ? '"' : '' };
 }
 /** The masked payload written back in the quoting it came in (display only; `$` and `` ` `` stay as they are in sh). */
@@ -463,7 +468,8 @@ function encodePayload(kind: ShellKind, v: string, d: Decoded, raw: string): str
     return d.quote + v.replace(/[`"]|\\$/g, '`$&') + d.quote; // a last backslash too, or with the closing quote it reads as `\"`
   }
   // the program's command line: the backslashes right before a `"` are doubled, then the quote is escaped (decodeCmd halves them back)
-  const body = raw.includes('\\"') ? v.replace(/(\\*)"/g, (_m, b: string) => b + b + '\\"') : v.replace(/"/g, '^"');
+  // whole backslash runs again (linear): a run before a `"` is doubled, a run without one is kept, a bare `"` becomes `\"`
+  const body = raw.includes('\\"') ? v.replace(/(\\+)("?)|"/g, (_m, b?: string, q?: string) => (b === undefined ? '\\"' : q ? b + b + '\\"' : b)) : v.replace(/"/g, '^"');
   return d.quote ? `"${body}"` : body;
 }
 const HAS_ESC: Record<ShellKind, RegExp> = { sh: /\\/, cmd: /\^|\\"/, ps: /`|""|\\"|''/ };
@@ -491,9 +497,17 @@ function maskScriptText(s0: string, d: number, env: Env | undefined, plain: (x: 
   if (!ws.length) return undefined;
   // only when some payload may hold an escape: a cmd or PowerShell payload runs to the end of the text, so the first one decides; a sh
   // payload is one word (each scanned once, words do not overlap)
+  // A cmd or PowerShell payload runs to the end, so a later one of the same kind is inside it: each kind is tested once, at its first
+  // payload (at most two scans); a nested wrapper of the other kind (`cmd /c powershell -Command "..."`) is still looked at.
   let esc = false;
+  const tested = new Set<ShellKind>();
   for (const w of ws) {
-    if (w.kind !== 'sh') { esc = HAS_ESC[w.kind].test(s.slice(w.start)); break; }
+    if (w.kind !== 'sh') {
+      if (tested.has(w.kind)) continue;
+      tested.add(w.kind);
+      if (HAS_ESC[w.kind].test(s.slice(w.start))) { esc = true; break; }
+      continue;
+    }
     const dec = decodeSh(s, w.start);
     if (!dec || HAS_ESC.sh.test(s.slice(w.start, dec.end))) { esc = true; break; }
   }
@@ -654,12 +668,13 @@ function maskArgs(args: readonly string[], env: Env, d: number, top = false): st
       let a0 = typeof raw === 'string' ? raw : String(raw ?? '');
       const sk = scriptKind;
       scriptKind = undefined;
+      if (sk === 'sh' && a0 === '--') { scriptKind = 'sh'; out.push(a0); continue; } // `bash -c -- <script>`
       if (wrapKind) {
         if (wrapValue) { wrapValue = false; }
         else if (isCommandFlag(wrapKind, a0)) { if (wrapKind === 'sh') scriptKind = 'sh'; else joinKind = wrapKind; wrapKind = undefined; }
         else if (/^[-+/]/.test(a0) && ++wrapSeen <= 9) { wrapValue = VALUE_FLAG[wrapKind].test(a0); }
         else wrapKind = undefined;
-      } else if (!joinKind && (wrapKind = shellKind(a0))) { wrapSeen = 0; wrapValue = false; }
+      } else if ((wrapKind = shellKind(a0))) { wrapSeen = 0; wrapValue = false; } // also inside a cmd script (`cmd /c powershell -Command ...`)
       if (sk && !pending && SCRIPT_ESC.sh.test(a0)) { out.push(rd(maskShellScript('sh', a0, d, env))); continue; }
       if (joinKind && (joinKind === 'ps' ? /`|''|""/ : SCRIPT_ESC.cmd).test(a0)) {
         const pd = joinKind === 'ps' ? decodePs(a0, 0) : undefined; // PowerShell: a quoted word (`'a ''b'''`) or the arg with `` `x `` removed

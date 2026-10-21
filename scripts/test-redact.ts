@@ -770,6 +770,23 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   cmd(`powershell -Command "srv --env=${BT}"API_TOKEN=${T}${BT}""`, `powershell -Command "srv --env=${BT}"API_TOKEN=${R}${BT}""`, 'issue row 8: PowerShell --env');
   cmd(`sh -c "srv --opt=\\"token=${T}\\""`, `sh -c "srv --opt=\\"token=${R}\\""`, 'issue row 9: sh -c, --opt=\\"token=x\\"');
   cmd(`powershell -Command "srv --opt=${BT}"token=${T}${BT}""`, `powershell -Command "srv --opt=${BT}"token=${R}${BT}""`, 'issue row 10: PowerShell --opt');
+  // (a2) review of #455 (Paco's agent, d40f1ab): cmd wrapping PowerShell, `bash -c --`, `bash -O`, PowerShell's short -Command forms
+  const leakFree = (c: string, what: string): void => { const got = maskSecretCommand(c); noT(got, what); assert.ok(got.includes(R), `${what}: masked in ${got}`); };
+  leakFree(`cmd /c powershell -Command "srv -H ${BT}"X-Api-Key: ${T}${BT}""`, 'cmd /c powershell -Command, header');
+  leakFree(`cmd /c powershell -Command "srv --env=${BT}"API_TOKEN=${T}${BT}""`, 'cmd /c powershell -Command, --env=');
+  leakFree(`cmd /c powershell -Command "srv --opt=${BT}"token=${T}${BT}""`, 'cmd /c powershell -Command, --opt=');
+  leakFree(`cmd /c powershell -Command "srv --header=${BT}"X-Api-Key: ${T}${BT}""`, 'cmd /c powershell -Command, --header=');
+  leakFree(`cmd /c powershell -Command "srv --config '{${BT}"name${BT}":${BT}"api_key${BT}",${BT}"value${BT}":${BT}"${T}${BT}"}'"`, 'cmd /c powershell -Command, R7 name/value');
+  leakFree(`cmd /c powershell -Command "echo '{${BT}"api_key${BT}":${BT}"${T}${BT}"}' | srv"`, 'cmd /c powershell -Command, JSON pair in echo');
+  masked(['cmd', '/c', 'powershell', '-Command', `srv -H ${BT}"X-Api-Key: ${T}${BT}"`], ['cmd', '/c', 'powershell', '-Command', `srv -H "X-Api-Key: ${R}"`], 'args: cmd /c powershell -Command, one script arg');
+  masked(['cmd', '/c', 'powershell', '-Command', 'srv', `--env=${BT}"API_TOKEN=${T}${BT}"`], ['cmd', '/c', 'powershell', '-Command', 'srv', `--env="API_TOKEN=${R}"`], 'args: cmd /c powershell -Command, --env= arg');
+  cmd(`bash -c -- "srv -H \\"X-Api-Key: ${T}\\""`, `bash -c -- "srv -H \\"X-Api-Key: ${R}\\""`, 'bash -c -- "..."');
+  cmd(`bash -O extglob -c "srv -H \\"X-Api-Key: ${T}\\""`, `bash -O extglob -c "srv -H \\"X-Api-Key: ${R}\\""`, 'bash -O extglob -c "..."');
+  masked(['bash', '-c', '--', `srv --opt=\\"token=${T}\\"`], ['bash', '-c', '--', `srv --opt=\\"token=${R}\\"`], 'args: bash -c -- <script>');
+  cmd(`pwsh -c "srv -H ${BT}"X-Api-Key: ${T}${BT}""`, `pwsh -c "srv -H ${BT}"X-Api-Key: ${R}${BT}""`, 'pwsh -c');
+  cmd(`powershell -NoP -Comm "srv -H ${BT}"X-Api-Key: ${T}${BT}""`, `powershell -NoP -Comm "srv -H ${BT}"X-Api-Key: ${R}${BT}""`, 'powershell -NoP -Comm (a prefix of -Command)');
+  // cmd: a backslash run without a quote reads back unchanged through encode + decode (whole runs, review item 1)
+  for (const v of ['a\\\\\\b', 'a\\\\\\"b', 'x"y\\\\', '\\\\\\\\']) assert.strictEqual(_uncappedForTest.payloadRoundTrip('cmd', '"', v, '\\"'), v, 'cmd round trip ' + JSON.stringify(v));
   // (b) the issue's controls (no escapes) stay masked as before
   cmd(`sh -c 'srv -H "X-Api-Key: ${T}"'`, `sh -c 'srv -H "X-Api-Key: ${R}"'`, 'control: single-quoted payload');
   cmd(`sh -c 'srv --env="API_TOKEN=${T}"'`, `sh -c 'srv --env="API_TOKEN=${R}"'`, 'control: --env in single quotes');
@@ -845,6 +862,16 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     const ratio = tBig / Math.max(tSmall, 20);
     console.log(`redact: 14d linearity ${JSON.stringify(unit)} 50k=${Math.round(tSmall)} ms 400k=${Math.round(tBig)} ms ratio ${ratio.toFixed(1)}`);
     assert.ok(tBig < 8000 && ratio < 24, `14d: ${JSON.stringify(unit)} grew too fast: ${tSmall} -> ${tBig} ms (ratio ${ratio.toFixed(1)})`);
+  }
+  // review of #455 item 1: one long backslash run after a cmd wrapper (no quote after it) is not retried from each position
+  for (const head of ['cmd /c ^x ', 'cmd /c \\"x ']) {
+    const time = (n: number): number => { const x = head + '\\'.repeat(n); const t = process.hrtime.bigint(); _uncappedForTest.maskSecretCommand(x); return Number(process.hrtime.bigint() - t) / 1e6; };
+    let tSmall = Infinity;
+    let tBig = Infinity;
+    for (let i = 0; i < 3; i++) { tSmall = Math.min(tSmall, time(50_000)); tBig = Math.min(tBig, time(400_000)); }
+    const ratio = tBig / Math.max(tSmall, 20);
+    console.log(`redact: 14d linearity ${JSON.stringify(head)} + run 50k=${Math.round(tSmall)} ms 400k=${Math.round(tBig)} ms ratio ${ratio.toFixed(1)}`);
+    assert.ok(tBig < 8000 && ratio < 24, `14d: ${JSON.stringify(head)} + backslash run grew too fast: ${tSmall} -> ${tBig} ms (ratio ${ratio.toFixed(1)})`);
   }
   // the public helpers still hide a string over MASK_INPUT_MAX whole, before the wrapper decode
   assert.strictEqual(maskSecretCommand('sh -c "' + 'a \\"'.repeat(MASK_INPUT_MAX) + '"'), R, '14d: over MASK_INPUT_MAX, hidden whole');
