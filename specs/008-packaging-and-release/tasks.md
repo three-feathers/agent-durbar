@@ -43,6 +43,14 @@
 
   Built 2026-10-21 on Linux (`test:checknames`, `test:macos`, `pack:dir`, `dist:linux` with `Exec=AppRun %U`, `installed-app-ci.js` on the packed AppImage with the simulator). Criterion 5 done: `real:` CI *Installed app* run 39561893292 (Windows: Start menu and desktop `.lnk`, DisplayName, shortcut AUMID; macOS: `CFBundle*`; Linux: `.desktop`; check-names on the Windows exe and the macOS `Info.plist`). Still open: criterion 6 (*Packaged check* on `main`, run id to note after the merge).
 - [x] T038 (2026-10-20, #355) Electron fuses and no remote debugging in packaged builds (FR-037..FR-039). Files: `package.json` (`build.electronFuses`, `pack:dir` runs `scripts/check-fuses.js`, new `check:fuses-launch`), `scripts/check-fuses.js`, `scripts/check-fuses-launch.js`, `src/main/main.ts` (the FR-038 guard, packaged only), a unit test for the guard's decision function, README *Install from releases* / known limits, CHANGELOG. Rows: (a) the fuse wire of the Linux unpacked build matches FR-037; (b) changing one value in the config makes `check-fuses.js` fail; (c) launch probe on the packed Linux app: `--inspect=0` opens no inspector, `--remote-debugging-port` gives no `/json/version`, `ELECTRON_RUN_AS_NODE=1` starts the app (not Node), and the window opens; (d) the guard does nothing in dev runs (unit test, and `npm run check:office` still passes); (e) `npm run typecheck && npm run build && npm test` pass.
+
+## 2026-10-20: UI checks on three OSes in Actions
+
+- [x] T090 A failing driver exits 1 (dev hooks only) [FR-090]
+- [x] T091 `scripts/ui-suite.js`: cross-platform driver runner (no shell, xvfb only on Linux without a display), list of drivers with their settings, `--only`, `--list`; `npm run check:ui` [FR-091]
+- [x] T092 `.github/workflows/ui-platforms.yml` on ubuntu, macOS and Windows: geometry, office, Mac title bar, ui-suite, screenshots as artifacts [FR-092]
+- [ ] T093 (first run: Windows and Linux all green; macOS: window clamped to the screen, FR-093, and the driver pressed Ctrl not Cmd; both fixed) First runs on all three OSes; every failure fixed at the cause or recorded; docs (README Development, CONTRIBUTING, CHANGELOG, agent notes) [FR-090..FR-092]
+
 - [x] T039 (2026-10-21, #384) Packaged display names on Windows, Linux and macOS [FR-040..FR-045]. Files:
   - `src/main/main.ts` (FR-043, packaged win32 only);
   - `src/main/appmenu.ts` (FR-044 label);

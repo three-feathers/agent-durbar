@@ -17,6 +17,9 @@ const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-cod
 const OUT = process.env.OUT || '/tmp';
 const INDEX = path.join(process.cwd(), 'dist', 'renderer', 'index.html');
 
+/* spec 052 FR-084: the palette and inbox shortcuts are Cmd on a Mac, Ctrl elsewhere (Ctrl+` stays Control everywhere, FR-091) */
+const MOD = process.platform === 'darwin' ? 'meta' : 'control';
+
 module.exports = async (ctx) => {
   const js = (c) => ctx.js(c);
   const key = (k) => { ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: k }); ctx.win.webContents.sendInputEvent({ type: 'char', keyCode: k }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: k }); };
@@ -92,7 +95,7 @@ module.exports = async (ctx) => {
     assert.ok(await js(`!document.getElementById('inboxDlg')`), 'Esc closes the inbox');
     // FR-035: Ctrl+Shift+A opens the inbox even from a text field
     await js(`(()=>{const i=document.createElement('input');i.id='tmpIn';document.body.appendChild(i);i.focus();})()`);
-    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'A', modifiers: ['control', 'shift'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'A', modifiers: ['control', 'shift'] }); await ctx.sleep(700);
+    const mod = MOD; ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'A', modifiers: [mod, 'shift'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'A', modifiers: [mod, 'shift'] }); await ctx.sleep(700);
     assert.ok(await js(`!!document.getElementById('inboxDlg')`), 'Ctrl+Shift+A opens the inbox from a text field');
     key('Escape'); await ctx.sleep(300); await js(`document.getElementById('tmpIn').remove()`);
 
@@ -213,7 +216,7 @@ module.exports = async (ctx) => {
     assert.ok(await js(`!document.body.classList.contains('simple')`), 'back to Expert');
     // FR-042 (#316): Ctrl+K opens the palette; typing filters it; Enter opens the agent's chat
     await js(`document.activeElement&&document.activeElement.blur()`);
-    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'K', modifiers: ['control'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'K', modifiers: ['control'] }); await ctx.sleep(500);
+    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'K', modifiers: [MOD] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'K', modifiers: [MOD] }); await ctx.sleep(500);
     assert.ok(await js(`!!document.getElementById('palDlg')&&document.activeElement&&document.activeElement.id==='palIn'`), 'Ctrl+K opens the palette with focus in its input');
     await js(`(()=>{const i=document.getElementById('palIn');i.value=${jsLiteral('lena')};i.dispatchEvent(new Event('input',{bubbles:true}));})()`); await ctx.sleep(400);
     const pal = await js(`({opts:[...document.querySelectorAll('#palList [role="option"]')].map(o=>o.querySelector('.pal-l').textContent),active:document.getElementById('palIn').getAttribute('aria-activedescendant'),said:document.getElementById('srAnnounce').textContent})`);
@@ -226,7 +229,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`(document.getElementById('panelTitle')||{}).textContent||''`), 'Lena', 'Enter opens Lena\'s chat');
     await js(`document.getElementById('backBtn').click()`); await ctx.sleep(600);
     // FR-091 (round 8): with an empty search the palette starts with Recent (Lena, just opened); Ctrl+` goes back to her chat
-    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'K', modifiers: ['control'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'K', modifiers: ['control'] }); await ctx.sleep(500);
+    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'K', modifiers: [MOD] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'K', modifiers: [MOD] }); await ctx.sleep(500);
     const rec = await js(`({g:(document.querySelector('#palList .pal-g')||{}).textContent,first:(document.querySelector('#palList [role="option"] .pal-l')||{}).textContent,end:[...document.querySelectorAll('#palList .pal-l')].some(x=>x.textContent==='End all sessions')})`);
     assert.ok(rec.g === 'Recent' && rec.first === 'Lena', 'the palette lists recent chats first: ' + JSON.stringify(rec));
     key('Escape'); await ctx.sleep(300);
@@ -236,8 +239,16 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('backBtn').click()`); await ctx.sleep(600);
     // FR-043: ? opens the shortcut sheet; Esc closes it
     await js(`document.activeElement&&document.activeElement.blur()`);
-    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: '/', modifiers: ['shift'] }); ctx.win.webContents.sendInputEvent({ type: 'char', keyCode: '?', modifiers: ['shift'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: '/', modifiers: ['shift'] }); await ctx.sleep(500);
-    assert.ok(await js(`!!document.getElementById('kbdDlg')&&/Ctrl.*K/.test(document.getElementById('kbdDlg').innerText)`), '? opens the shortcut sheet');
+    // a synthetic Shift+/ keyDown arrives as key '/' on macOS (a real keyboard gives '?'), so there the page gets the '?' keydown itself
+    if (process.platform === 'darwin') await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'?',shiftKey:true,bubbles:true,cancelable:true}))`);
+    else { ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: '/', modifiers: ['shift'] }); ctx.win.webContents.sendInputEvent({ type: 'char', keyCode: '?', modifiers: ['shift'] }); ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: '/', modifiers: ['shift'] }); }
+    await ctx.waitFor(`!!document.getElementById('kbdDlg')`, 5000).catch(() => undefined);
+    if (!(await js(`!!document.getElementById('kbdDlg')`))) {
+      // macOS CI failed here twice in a row (not a timing flake): say what blocks the '?' shortcut
+      const why = await js(`({active:(document.activeElement&&(document.activeElement.id||document.activeElement.tagName))||'none',dialogs:[...document.querySelectorAll('[role="dialog"]')].map(d=>(d.id||d.className)+(d.getAttribute('aria-modal')==='true'?' (modal)':'')),menus:[...document.querySelectorAll('[role="menu"]')].map(m=>m.id||m.className)})`);
+      assert.fail('? opens the shortcut sheet; blocked by: ' + JSON.stringify(why));
+    }
+    assert.ok(await js(`/Ctrl.*K|⌘.*K|Cmd.*K/.test(document.getElementById('kbdDlg').innerText)`), 'the shortcut sheet lists the palette shortcut');
     await shot(`052-shortcuts-${w}x${h}.png`);
     key('Escape'); await ctx.sleep(300);
     assert.ok(await js(`!document.getElementById('kbdDlg')`), 'Esc closes the shortcut sheet');
