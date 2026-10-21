@@ -162,6 +162,28 @@ export interface AppSettingsView {
   breakResume?: 'auto' | 'ask';
 }
 
+/** A profile file (spec 043 FR-010); `path` is for display only, the window sends `id` back. */
+export interface ProfileFileInfo {
+  id: string;
+  app: 'copilot' | 'claude';
+  scope: 'folder' | 'user';
+  folder?: string;
+  fileName: string;
+  path: string;
+  name: string;
+  description?: string;
+  size: number;
+  writable: boolean;
+  note?: string;
+  tooBig?: boolean;
+}
+
+/** An office folder a new profile can go into (spec 043 FR-013); the window sends `id` back, never the path. */
+export interface ProfileFolderInfo {
+  id: string;
+  path: string;
+}
+
 /** A custom agent profile as the renderer sees it (spec 043; same shape as the adapter's `AgentProfile`). */
 export interface ProfileInfo {
   id: string;
@@ -574,6 +596,15 @@ export interface DurbarApi {
   listProfiles?(id: string): Promise<{ ok: boolean; error?: string; profiles: (ProfileInfo & { trusted: boolean })[] }>;
   /** Select a custom agent (null = default). A repository agent not yet confirmed answers `needsConfirm`; call again with `confirm` after the user agreed. */
   selectProfile?(id: string, profileId: string | null, confirm?: boolean): Promise<{ ok: boolean; error?: string; needsConfirm?: boolean; profile?: ProfileInfo | null }>;
+  /** Spec 043 FR-010: the profile files of the office's folders and the user (main lists them; `folders` = the places a new file can go, by index). */
+  listProfileFiles?(): Promise<{ ok: boolean; error?: string; folders: ProfileFolderInfo[]; files: ProfileFileInfo[] }>;
+  /** Spec 043 FR-011/FR-012: read by id only (never a path); text with LF line endings, `sha256` of the bytes on disk. */
+  readProfileFile?(fileId: string): Promise<{ ok: true; info: ProfileFileInfo; text: string; sha256: string; eol: 'lf' | 'crlf' } | { ok: false; error: string }>;
+  /** Writes atomically; `conflict` when the file changed since `baseSha` (unless `overwrite`). */
+  saveProfileFile?(fileId: string, text: string, baseSha: string, overwrite?: boolean): Promise<{ ok: true; sha256: string; info: ProfileFileInfo } | { ok: false; error: string; conflict?: boolean }>;
+  /** Spec 043 FR-013/FR-018: `place` = the `id` of one of `listProfileFiles().folders`, or 'user'; `template` defaults to the Agent Success Profile. */
+  createProfileFile?(app: 'copilot' | 'claude', place: string, name: string, template?: 'success' | 'standard'): Promise<{ ok: true; id: string; info: ProfileFileInfo } | { ok: false; error: string }>;
+  openProfileInVSCode?(fileId: string): Promise<{ ok: boolean; error?: string }>;
 
   /** Tool usage over all runs (spec 020). */
   usageAllTime?(): Promise<UsageView>;

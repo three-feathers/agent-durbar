@@ -61,6 +61,35 @@
   }
   const sw=(on,label,attrs)=>`<button class="swt${on?' on':''}" type="button" role="switch" aria-checked="${on?'true':'false'}" aria-label="${esc(label)}" ${attrs||''}><i></i></button>`;
 
+  /* ---------------- Settings: Profiles (custom agents), spec 043 FR-010/FR-014 ---------------- */
+  const PE=()=>window.DurbarProfileEditor;
+  const profilesOn=()=>!!(PE()&&X.bridge.listProfileFiles&&X.bridge.readProfileFile);
+  const PF_APPS=[['copilot','GitHub Copilot'],['claude','Claude Code']];
+  async function profilesInner(){
+    let l=null;try{l=await X.bridge.listProfileFiles();}catch(e){l=null;}
+    const files=(l&&l.files)||[];
+    const row=f=>`<li class="pf-row" data-pf="${esc(f.id)}"><div class="pf-main"><div class="pf-top"><b>${esc(f.name)}</b><span class="mtag">${esc(PE().placeText(f))}</span>${f.writable?'':`<span class="mtag warn" title="${esc(f.note||'')}">read-only</span>`}</div>${f.description?`<small>${esc(f.description)}</small>`:''}<small><code title="${esc(f.path)}">${esc(f.fileName)}</code></small></div>${f.tooBig?`<span class="scr-note small">${esc(f.note||'Too large to open here.')}</span>`:`<button class="btn sm" type="button" data-pf-open="${esc(f.id)}" aria-label="${esc('Open '+f.name)}">Open</button>`}</li>`;
+    const groups=PF_APPS.map(([app,label])=>{const fs=files.filter(f=>f.app===app);return `<h4 class="scr-sub">${esc(label)} <small>${fs.length}</small></h4>${fs.length?`<ul class="pf-list">${fs.map(row).join('')}</ul>`:`<p class="scr-note small">None yet. ${app==='copilot'?'Copilot loads <code>.github/agents/*.agent.md</code> in a folder and <code>~/.copilot/agents</code>.':'Claude Code profiles are <code>.claude/agents/*.md</code> in a folder and <code>~/.claude/agents</code>.'}</p>`}`;}).join('');
+    return `<h3 id="pfH">Agent Success Profiles (custom agents)</h3>
+      <p class="scr-note">Markdown files that give an agent its role, instructions, tools and model. Open one to read it, change it and save it; changes apply to sessions started after saving. Codex has no profiles in Durbar yet.</p>
+      ${l&&l.ok?groups:'<p class="scr-note">Could not list the profile files.</p>'}
+      ${X.bridge.createProfileFile?'<div class="scr-tools"><button class="btn" type="button" id="pfNew">New Agent Success Profile…</button></div>':''}`;
+  }
+  function wireProfiles(){
+    const sec=$('pfSec');if(!sec||sec.dataset.wired)return;sec.dataset.wired='1';
+    sec.addEventListener('click',e=>{
+      const o=e.target.closest('[data-pf-open]');if(o){PE().open(o.dataset.pfOpen,{returnFocus:o});return;}
+      if(e.target.closest('#pfNew'))PE().newProfile({returnFocus:$('pfNew')});
+    });
+  }
+  /* after a save or a new file: the list shows the new name and description (FR-016), keeping the scroll position */
+  async function repaintProfiles(){
+    const sec=$('pfSec');if(!sec||!cur||cur.kind!=='settings')return;
+    const html=await profilesInner();
+    const s2=$('pfSec');if(s2)s2.innerHTML=html;
+  }
+  if(window.DurbarProfileEditor)window.DurbarProfileEditor.onChange(()=>{repaintProfiles();});
+
   /* ---------------- Settings: MCP servers ---------------- */
   let mcp=null; /* last McpState */
   let advOpen=false; /* Settings > Advanced (MCP) open; kept across repaints, reset when Settings opens (FR-030) */
@@ -164,6 +193,8 @@
       if(X.bridge.copilotAuth&&kinds.some(k=>k.id==='copilot'&&k.state==='ready')){try{cp=await X.bridge.copilotAuth();}catch(e){cp=null;}}
       hsSec=window.DurbarHarnesses.sectionHTML(kinds,cp);
     }
+    /* spec 043 FR-010, FR-019: Settings > Agent Success Profiles (custom agents): the profile files of the office's folders and yours */
+    const pfSec=profilesOn()?`<section class="scr-sec" id="pfSec" aria-labelledby="pfH">${await profilesInner()}</section>`:'';
     /* spec 052 FR-031 (#306): Simple or Expert */
     const dl=X.detail?X.detail.get():'expert';
     const detailSec=X.detail?`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Detail level</h3>
@@ -176,7 +207,7 @@
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${detailSec}${notSec}${themeSec}${capSec}${moodSec}${breakSec}${notifySec}${schedSec}${floorsSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${notSec}${themeSec}${capSec}${moodSec}${breakSec}${notifySec}${schedSec}${floorsSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         <p class="scr-note">Every agent gets the servers of your <b>Copilot CLI list</b>, the one global list.</p>
@@ -195,6 +226,7 @@
     /* spec 051 FR-008: entry points open Settings at Agent apps */
     if(cur.section==='harnesses'){cur.section=null;const h=$('hsH');if(h){scrollInBody(h);h.focus({preventScroll:true});}}
     if($('advMcp')){$('advMcp').ontoggle=()=>{advOpen=$('advMcp').open;};if(cur.section==='mcp'){cur.section=null;const h=$('mcpH');if(h){scrollInBody(h);h.focus({preventScroll:true});}}}
+    if($('pfSec'))wireProfiles();
     if(X.floors&&$('floorsSet'))X.floors.render();
     if(X.sched&&$('schedSet'))X.sched.render();
     if($('capSave'))$('capSave').onclick=async()=>{

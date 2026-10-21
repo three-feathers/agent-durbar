@@ -1,11 +1,13 @@
 /** IPC for the custom agent of a session: list, select; a repository agent needs a confirmation for its exact file (spec 043 FR-003; moved out of main.ts as it was, spec 045 FR-060). */
-import { ipcHandle } from '../ipcguard';
+import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
 import type { AdapterRouter } from '../../adapters/router';
 import type { AgentInfo } from '../../shared/api';
 import { errText } from '../agentops';
 import type { AgentTrustStore } from '../agenttrust';
 import { hashAgentFile } from '../agenttrust';
 import { PROFILE_ID } from '../folders';
+import { createProfileFile, listProfileFiles, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile } from '../profilefiles';
+import { openInVSCode } from '../vscode';
 import type { EnsureLive } from './types';
 
 export interface ProfilesIpcDeps {
@@ -57,5 +59,27 @@ export function register(deps: ProfilesIpcDeps): void {
     } catch (err) {
       return { ok: false, error: errText(err) };
     }
+  });
+
+  // ---- profile files (spec 043 FR-010..FR-013): main owns every path; the window sends ids from the list (or app + place + name) ----
+  /** The office's folders; the New profile form gets each as an id (a hash of its path) and main accepts only an id of a folder still here. */
+  const officeFolders = (): string[] => [...new Set([...agents.values()].flatMap((a) => (a.folders && a.folders.length ? a.folders : [a.cwd])).filter((f): f is string => typeof f === 'string' && !!f))];
+  const dirs = () => profileDirs(officeFolders());
+  ipcHandle('profiles:listFiles', () => {
+    const d = dirs();
+    return { ok: true, folders: profileFolders(d), files: listProfileFiles(d) };
+  });
+  ipcHandle('profiles:read', (_e, id: unknown) => readProfileFile(dirs(), id));
+  ipcHandle('profiles:save', (e, id: unknown, text: unknown, baseSha: unknown, overwrite: unknown) => {
+    if (!fromApp(e)) return { ok: false, error: 'invalid request' };
+    return saveProfileFile(dirs(), id, text, baseSha, overwrite === true);
+  });
+  ipcHandle('profiles:create', (e, app: unknown, place: unknown, name: unknown, template: unknown) => {
+    if (!fromApp(e)) return { ok: false, error: 'invalid request' };
+    return createProfileFile(dirs(), app, place, name, template === undefined ? 'success' : template);
+  });
+  ipcHandle('profiles:openInVSCode', (_e, id: unknown) => {
+    const file = pathOfProfile(dirs(), id);
+    return file ? openInVSCode(file) : { ok: false, error: 'That profile file is not in the list any more.' };
   });
 }

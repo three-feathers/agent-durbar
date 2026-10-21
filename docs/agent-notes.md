@@ -53,6 +53,8 @@ Each entry has the date it was learned, what happened, and how to apply it, with
 
 - **`data-lbl-simple` / `data-lbl-expert` only on leaf elements** (2026-10-21, spec 005). `relabelScopes()` in `app.js` sets `textContent` of every element that has them when the detail level switches, so on a container (a `<details>`) it wipes the children. Put them on the `<summary>` or the button itself.
 - **`.place.busy` no longer means a tool walk happened** (2026-10-21, spec 068, `real:` macOS CI theme geometry). The coffee corner is busy at once when an agent goes on a break (Omar hits his cap at load), so a check that waits for "some place is busy" may measure before the 600 ms tool walks. Wait for `.place.busy:not([data-place="coffee"])` (as `check-theme-geometry`, `check-office-overlap`, `shots-themes` and `shots-024` now do).
+- **A dark-theme screenshot needs a user manifest** (2026-10-21, `sim:` spec 043 T012d). No built-in theme has a dark surface (Retro Pixel only has a dark floor), so a "light and dark" check passes a spec 040 manifest to `window.THEME.setTheme({id, extends:'clean-office', tokens:{...}})` in the page (`shots-043-editor.js` has one). The chat's `.md` code and table colours are light-only hex values; scope a token override to your own container instead of changing `.md` for every chat.
+- **jsdom has no `localStorage` on a `file:` URL** (2026-10-21, `test:` spec 043). A renderer script that reads `window.localStorage` throws there; give the JSDOM an `http://localhost/` URL in unit tests.
 
 ## Electron and platform behaviour
 
