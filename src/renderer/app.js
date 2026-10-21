@@ -2805,7 +2805,7 @@ function coffeeTick(){
   for(const x of BREAKS.tick()){
     const a=byId(x.id); if(!a||!a.live){BREAKS.end(x.id);continue;}
     if(x.type==='resume'&&!a.paused)resumeCoffee(a,'auto');
-    else if(x.type==='ask'||x.type==='resume') /* a paused agent asks instead of resuming by itself */{if(VISITS.unpin(a.id))scheduleRender();showCoffee(a,true);setState(a,'waiting',coffeeWord(),coffeeTask(a));}
+    else if(x.type==='ask'||x.type==='resume') /* a paused agent asks instead of resuming by itself */{const bb=BREAKS.get(a.id);if(bb)bb.phase='back';if(VISITS.unpin(a.id))scheduleRender();showCoffee(a,true);setState(a,'waiting',coffeeWord(),coffeeTask(a));}
     else if(x.type==='remind')showCoffee(a,false); /* a new card: one reminder in the inbox and as a notification (Q4) */
   }
 }
