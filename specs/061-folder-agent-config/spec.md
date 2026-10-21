@@ -17,7 +17,6 @@ Durbar starts every agent app so that a folder's own agent configuration does no
 - **Claude Code:** `--setting-sources ""`, `--strict-mcp-config` with Durbar's `--mcp-config`. Checked on a real session on 2026-10-20 (#352): the folder's hooks did not run and its `.mcp.json` server did not start.
 - **Copilot** (`real:` 2026-10-20, research R3, 0.15 AIU): **the runtime ran the folder's own hooks unasked**, from `.github/hooks/*.json` and `.github/copilot/settings.json`, at session start and on the prompt, in a Read-only session; the folder's `.mcp.json` was not loaded. Durbar now switches repository hooks off (`enableFileHooks: false`, FR-017) until this spec's dialog lets the person accept them.
 - **Codex:** see research R2 under `## Changes`.
-- **Codex** and **Copilot** (older text, superseded above): not checked for each file. Durbar passes its own MCP servers and permission mode; whether each runtime reads the folder's own files under Durbar is part of this spec's research (R1-R3).
 
 What Durbar already uses from a folder: `CLAUDE.md` and `AGENTS.md` (instructions), and `.claude/agents/*.md` in the agent picker after a per-file confirmation (spec 043).
 
@@ -108,5 +107,5 @@ The user's own global settings (`~/.claude/settings.json`, `~/.codex/config.toml
 ### 2026-10-21: Copilot ran a folder's hooks unasked: off until accepted (FR-017)
 
 - `real:` 2026-10-20 (R3, Copilot Pro, the real `CopilotAdapter`, one `auto` prompt, 0.15 AIU): a scratch folder with `.github/hooks/r3.json` (`sessionStart`, `userPromptSubmitted`) and `.github/copilot/settings.json` (`hooks.sessionStart`), each touching a marker file. **All three hooks ran**: the SDK's `enableFileHooks` defaults to on, and Durbar did not set it. This went against constitution III / Amendment 1 (a folder's setup applies only after the user has seen it).
-- **FR-017** `[IMPLEMENTED]`: every Copilot session is created and resumed with `enableFileHooks: false`. When this spec's dialog is built, accepted hooks are passed through the SDK's explicit `hookDirectories` instead, and nothing else is turned on. `test:` `scripts/test-copilot-model.ts` (create and resume config). `real:` the same check after the fix: **no hook ran** (0.07 AIU).
+- **FR-017** `[IMPLEMENTED]`: every Copilot session is created and resumed with `enableFileHooks: false`. When this spec's dialog is built, accepted hooks are passed through the SDK's explicit `hookDirectories` instead, and nothing else is turned on. `test:` `scripts/test-copilot-model.ts` (create and resume config), `scripts/test-authcheck.ts` (the FR-158 `refreshAuth` re-resume config). `real:` the same check after the fix: **no hook ran** (0.07 AIU).
 - The folder's `.mcp.json` was not loaded by Copilot (only the built-in GitHub MCP server connected), so nothing changes there.
