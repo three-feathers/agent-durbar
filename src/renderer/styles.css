@@ -557,7 +557,6 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .sc>svg{width:100%;height:auto;display:block;overflow:visible}
 .is-idle .sc>svg{opacity:.68}
 .ci{min-width:0;display:flex;flex-direction:column;gap:2px;container-type:inline-size}
-@container (max-width:150px){.use .aiu{display:none}}
 .l1{display:flex;align-items:baseline;gap:6px;min-width:0}
 .l1 .name{font-size:13.5px;line-height:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0}
 .l1 .role{font-size:11px;line-height:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 0;min-width:0}
@@ -572,9 +571,13 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .use{display:inline-flex;justify-content:flex-end}
 .use .tok{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .use .aiu{flex:none}
-@container (max-width:240px){.use .est{display:none}}
 .use .short{display:none}
-@container (max-width:170px){.use .full{display:none}.use .short{display:inline}}
+/* the steps fitUsage() adds (app.js) */
+.use.no-tok .tok,.use.no-tok .aiu>.sep{display:none}
+.use.no-unit .est{display:none}
+.use.short .full{display:none}.use.short .short{display:inline}
+.use.no-cost .aiu{display:none}
+
 .stage[data-d="mini"] .desk.card{padding:4px 8px 4px 4px;column-gap:7px}
 .stage[data-d="mini"] .l1 .role,.stage[data-d="micro"] .l1 .role{display:none}
 .stage[data-d="mini"] .l1{align-items:center}
