@@ -471,6 +471,22 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(cleanAnswers(qs, { 'Which colour?': '  Blue ', unknown: 'x', Q2: 5 }), { 'Which colour?': 'Blue' });
     assert.strictEqual(cleanAnswers(qs, { 'Which colour?': '   ' }), undefined);
     assert.deepStrictEqual(parseQuestions(null), []);
+    // spec 052 FR-160: long agent text reaches the card whole (bounded far above what agents send)
+    {
+      const longQ = 'Why '.repeat(275).trim(), longL = 'L'.repeat(280), longD = 'd '.repeat(300).trim();
+      const [q] = parseQuestions({ questions: [{ question: longQ, options: [{ label: longL, description: longD }] }] });
+      assert.strictEqual(q.question, longQ, 'a 1,100-character question is not cut');
+      assert.strictEqual(q.options[0].label, longL, 'a 280-character label is not cut');
+      assert.strictEqual(q.options[0].description, longD, 'a 600-character description is not cut');
+      const [huge] = parseQuestions({ questions: [{ question: 'x'.repeat(5000), options: [{ label: 'y'.repeat(900), description: 'z'.repeat(3000) }] }] });
+      assert.strictEqual(huge.question.length, 2000, 'still bounded');
+      assert.strictEqual(huge.options[0].label.length, 300);
+      assert.strictEqual(huge.options[0].description?.length, 1000);
+      const { parseElicitRequest } = await import('../src/shared/elicit');
+      const el = parseElicitRequest({ message: 'm '.repeat(700).trim(), schema: { type: 'object', properties: { a: { type: 'string', title: 'T'.repeat(250), description: 'h'.repeat(900) } } } });
+      assert.ok(el.ok && el.request.message.length === 1399 && !el.request.message.endsWith('…'), 'a 1,399-character elicitation message is not cut');
+      assert.ok(el.ok && el.request.fields?.[0].title.length === 250 && el.request.fields[0].description?.length === 900, 'field title and help are not cut');
+    }
 
     const answers: Record<string, Record<string, unknown>> = {};
     let cur: FakeClaudeChild | undefined;

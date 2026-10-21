@@ -66,3 +66,10 @@ The renderer only: `src/renderer/app.js`, `screens.js`, `index.html`, `styles.cs
 - Header chips: the cause is measured first (probe in the simulator at narrow widths); see the evidence in the spec. Renderer CSS only, no change to the darwin rules or the + New button.
 - Testing: `scripts/check-grant-chips.js` is an Electron driver (simulator `simgrants=many`), run under `xvfb-run` like `check:question-options`.
 
+## FR-160, FR-161 (2026-10-21): question card in full, Enter sends a custom answer
+
+- Existing capability reused: `showQuestion()` / `settleQuestion()` in `app.js` and the `.note.question` CSS; no new component. The Enter behaviour calls the Answer button's own handler, so validation and the multi-question toast stay in one place.
+- Bounds raised where the text is cut today: `src/adapters/questions.ts` (question 2000, label 300, description 1000) and `src/shared/elicit.ts` (message 2000, title 300, help 1000); the renderer's own `SHORT(R.message,500)` follows (2000).
+- Option button: a label span and a description span (`.q-desc`, 11px, muted). The custom box becomes a `<textarea rows=1>` that grows with its content (`scrollHeight`), full row width.
+- Testing: extend `scripts/check-question-options.js` and the `simquestion=long` fixture in `sim.ts`; adapter bounds in `scripts/test-claude-adapter.ts`.
+

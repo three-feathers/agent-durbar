@@ -195,3 +195,8 @@
 - [x] T125 Mutation: remove the `.dlg-ov` no-drag rule and see the check fail; screenshots in the scratchpad [FR-138]
 - [x] T126 Docs: CHANGELOG, README "On a Mac" limits, `specs/README.md` row, spec status tags; CI step proposed as a follow-up [FR-138]
 - [x] T129 Grant chips grouped into "Allowed (N)" with a popover, shorter labels, header chips flow; `simgrants=many`; `test-grant-label`; `scripts/check-grant-chips.js` (`npm run check:grant-chips`); mutation run; screenshots [FR-141, issue #367]
+- [x] T130 Raise the question and elicitation text bounds (adapters, shared, renderer); test in `test-claude-adapter` [FR-160]
+- [x] T131 Option descriptions visible in the button; custom answer box grows with its text; answer bar tooltip for a long request [FR-160]
+- [x] T132 Enter in the custom box sends the card (Answer's handler), Shift+Enter a line, empty Enter sends nothing; typing chooses the box; screen reader hint [FR-161]
+- [x] T133 `check-question-options.js` + `simquestion=long`: long texts in full, Enter / empty Enter; run at 1440x900 and 1280x800; screenshots; CHANGELOG, `specs/README.md` [FR-160, FR-161]
+
