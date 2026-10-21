@@ -36,7 +36,6 @@ const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-pack-ud-'));
 const env = {
   ...process.env,
   DURBAR_DEV: '1',
-  DURBAR_CLAUDE: '1',
   DURBAR_CLAUDE_TRANSPORT: 'sdk',
   DURBAR_DRIVER: path.join(__dirname, 'pack-esm-check.js'),
   DURBAR_USER_DATA: userData,

@@ -1,9 +1,9 @@
+import { isObj } from '../shared/guards';
 /**
  * A runtime check of normalized events (spec 010 FR-010, T023): what every producer (the real adapters, the simulator) must send
  * so the renderer can rely on it. Pure; returns the problems found (none = valid). Shared by the simulator contract test and the
  * adapter tests, so the simulator cannot drift from the event shapes without a failing test.
  */
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const str = (v: unknown): boolean => typeof v === 'string';
 const optStr = (v: unknown): boolean => v === undefined || typeof v === 'string';
 const optNum = (v: unknown): boolean => v === undefined || (typeof v === 'number' && Number.isFinite(v) && v >= 0);

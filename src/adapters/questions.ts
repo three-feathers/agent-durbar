@@ -4,12 +4,12 @@
  */
 import { cleanSessionTitle } from './history';
 import type { AskedQuestion } from './types';
+import { isObj } from '../shared/guards';
 
 export const MAX_QUESTIONS = 4;
 export const MAX_OPTIONS = 6;
 export const MAX_ANSWER = 500;
 
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const line = (v: unknown, max: number): string | undefined => cleanSessionTitle(v, max);
 
 /** `AskUserQuestion`'s input (`questions[]` with `question`, `header`, `options[]`, `multiSelect`) to the normalized list; [] when unusable. */

@@ -118,15 +118,18 @@ module.exports = async (ctx) => {
   await shot('settings-places', w, h);
   await js(`document.getElementById('scrClose').click()`); await ctx.sleep(400);
   await call(2, 'start');
-  await ctx.waitFor(`!!document.querySelector('#stage [data-id=${jsLiteral(who)}].is-away')`, 3000);
-  assert.strictEqual(await placeOf(who), expect.terminal, 'the mapping decides the place of the next call');
+  // the desk turns away first and gets its place a moment later: wait for the place itself, not only for is-away
+  // Settings sent github to the Terminal place: the next github call goes there (`expect` is keyed by server, so `expect.terminal`
+  // was undefined and this check could never pass; the place id is 'terminal', the same as bash's)
+  await ctx.waitFor(`(document.querySelector('#stage [data-id=${jsLiteral(who)}].is-away')||{dataset:{}}).dataset.place==='terminal'`, 3000).catch(() => undefined);
+  assert.strictEqual(await placeOf(who), expect.bash, 'the mapping decides the place of the next call');
   await call(2, 'complete');
   await ctx.waitFor(`!document.querySelector('#stage [data-id=${jsLiteral(who)}].is-away')`, 6000);
 
   // FR-014: the place set on the github row also applies to a call that comes in as github-mcp-server
   await js(`window.__durbarSimEmit({type:'toolCall',sessionId:${jsLiteral(who)},timestamp:Date.now(),callId:'shots-024-3',tool:'github-mcp-server-search_issues',phase:'start',mcpServer:'github-mcp-server',mcpTool:'search_issues'})`);
-  await ctx.waitFor(`!!document.querySelector('#stage [data-id=${jsLiteral(who)}].is-away')`, 3000);
-  assert.strictEqual(await placeOf(who), 'Terminal', 'a place set on the github row applies to a github-mcp-server call');
+  await ctx.waitFor(`(document.querySelector('#stage [data-id=${jsLiteral(who)}].is-away')||{dataset:{}}).dataset.place==='terminal'`, 3000).catch(() => undefined);
+  assert.strictEqual(await placeOf(who), 'terminal', 'a place set on the github row applies to a github-mcp-server call'); // the place id (spec 036 FR-004), not the rendered word
   await js(`window.__durbarSimEmit({type:'toolCall',sessionId:${jsLiteral(who)},timestamp:Date.now(),callId:'shots-024-3',tool:'github-mcp-server-search_issues',phase:'complete',mcpServer:'github-mcp-server',mcpTool:'search_issues'})`);
 
   // Demo mode hides the lobby and every figure
