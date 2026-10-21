@@ -130,7 +130,7 @@ const fc = codexPermission('item/fileChange/requestApproval', { changes: [{ path
 assert.deepStrictEqual([fc.kind, fc.fileName], ['write', '/a/b.ts'], 'file change is write, first path');
 assert.ok(fc.summary.includes('+1 more'), 'summary counts the rest');
 assert.strictEqual(codexPermission('item/fileChange/requestApproval', { grantRoot: '/r' }).fileName, '/r', 'grantRoot fallback');
-// spec 052 FR-165: the real request names only itemId; the files, kind and diff come from the fileChange item (generated types, 0.163.0)
+// spec 052 FR-172: the real request names only itemId; the files, kind and diff come from the fileChange item (generated types, 0.163.0)
 {
   const ch = codexFileChanges([
     { path: '/w/src/a.ts', kind: { type: 'update', move_path: null }, diff: '@@ -1,2 +1,2 @@\n x\n-old\n+new\n' },

@@ -200,7 +200,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     Lena: { kind: 'write', summary: 'Edit src/styles/focus.css (focus ring colour)', target: 'src/styles/focus.css' },
   };
   /**
-   * Spec 052 FR-165: `simcodexfile=1` makes a waiting Codex agent's write request look like the Codex adapter's card (the files,
+   * Spec 052 FR-172: `simcodexfile=1` makes a waiting Codex agent's write request look like the Codex adapter's card (the files,
    * kind and diff from the `fileChange` item); `simcodexfile=none` like one for which Codex named no file. Only with `simkinds=mixed`.
    */
   const codexFileReq = (s: { info: { adapterId?: string }; files: string[] }): (typeof WAIT_REQ)[string] | undefined => {

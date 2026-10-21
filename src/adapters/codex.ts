@@ -247,7 +247,7 @@ interface Live {
   /** The next mapper `Aborted` is the one `interrupt` already reported itself. */
   expectAborted: boolean;
   anon: number;
-  /** Spec 052 FR-165: the changes of `fileChange` items not yet completed, by item id (bounded): an approval names only the id. */
+  /** Spec 052 FR-172: the changes of `fileChange` items not yet completed, by item id (bounded): an approval names only the id. */
   fileChanges?: Map<string, CodexFileChange[]>;
 }
 
@@ -989,7 +989,7 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   /**
-   * Spec 052 FR-165: keep the changes of each `fileChange` item while it runs (`item/started`, `item/fileChange/patchUpdated`), so an
+   * Spec 052 FR-172: keep the changes of each `fileChange` item while it runs (`item/started`, `item/fileChange/patchUpdated`), so an
    * approval that names only the item id can show the files and the diff; forget them on `item/completed`. At most 32 items.
    */
   private noteFileChange(live: Live, method: string, params: unknown): void {
@@ -1071,7 +1071,7 @@ export class CodexAdapter implements AgentAdapter {
       url: perm.url,
       toolName: perm.toolName,
       serverName: perm.serverName,
-      // FR-165: the file change's diff with secrets masked (env values and key shapes), and its own card line
+      // FR-172: the file change's diff with secrets masked (env values and key shapes), and its own card line
       ...(perm.kind === 'write' ? { cardSummary: perm.summary } : {}),
       ...(perm.diff ? { diff: redact(perm.diff, { ...process.env, ...this.env }) } : {}),
     });

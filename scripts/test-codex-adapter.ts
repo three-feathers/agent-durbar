@@ -597,7 +597,7 @@ async function main(): Promise<void> {
       assert.ok(!decisions(server).includes('acceptForSession'));
       await ad.dispose();
     }
-    // spec 052 FR-165: the real approval names only itemId; the card gets the files, kind and diff from the fileChange item, secrets masked
+    // spec 052 FR-172: the real approval names only itemId; the card gets the files, kind and diff from the fileChange item, secrets masked
     {
       const SECRET = 'planted-openai-key-value-0123456789';
       const { server, ad, events } = make({ env: { OPENAI_API_KEY: SECRET } });

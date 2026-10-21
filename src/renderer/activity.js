@@ -46,7 +46,7 @@
     const all=String(diff==null?'':diff).replace(/\r\n?/g,'\n').replace(/\n$/,'').split('\n'), max=maxLines>0?maxLines:400;
     if(all.length===1&&all[0]==='')return {lines:[],more:0};
     /* "--- a/x" and "+++ b/x" are file headers outside a hunk; inside one they are a removed or added line. A hunk ends when the line
-       counts of its "@@ -a,b +c,d @@" header are used up, so the next file's header in a multi-file diff (spec 052 FR-165, Codex; Claude
+       counts of its "@@ -a,b +c,d @@" header are used up, so the next file's header in a multi-file diff (spec 052 FR-172, Codex; Claude
        MultiEdit) is a header again. A header without counts keeps the hunk open to the end, as before. */
     let hunk=false, oldN=0, newN=0, counted=false;
     const lines=all.slice(0,max).map(s=>{

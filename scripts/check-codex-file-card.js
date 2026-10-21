@@ -1,5 +1,5 @@
 /*
- * Check for spec 052 FR-165: a Codex write request's permission card names the files and shows the change. Simulator only (no AI credits).
+ * Check for spec 052 FR-172: a Codex write request's permission card names the files and shows the change. Simulator only (no AI credits).
  *
  *   npm run check:codex-file-card
  *   OUT=docs/screenshots  (optional) also saves the screenshots

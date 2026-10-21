@@ -56,7 +56,7 @@ assert.deepStrictEqual(A.diffLines(null), { lines: [], more: 0 });
 assert.strictEqual(A.diffLines('-- not a header\n--- a/f').lines[0].t, 'del', 'a removed line that starts with "--" stays a removed line');
 assert.deepStrictEqual(A.diffLines('--- a/f\n+++ b/f\n@@ -1 +1 @@\n--- SQL comment\n+++ x').lines.map((l) => l.t), ['file', 'file', 'hunk', 'del', 'add'], 'inside a hunk "---" is a removed line');
 
-// spec 052 FR-165: a multi-file diff (Codex file changes, Claude MultiEdit): a hunk ends when its line counts are used up, so the next
+// spec 052 FR-172: a multi-file diff (Codex file changes, Claude MultiEdit): a hunk ends when its line counts are used up, so the next
 // file's "---"/"+++" are headers again and the card's counts are right
 const two = A.diffLines('--- a/x\n+++ b/x\n@@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n--- a/y\n+++ b/y\n@@ -0,0 +1,2 @@\n+1\n+2\n--- a/z\n+++ /dev/null\n@@ -1 +0,0 @@\n-gone');
 assert.deepStrictEqual(two.lines.map((l) => l.t), ['file', 'file', 'hunk', 'ctx', 'del', 'add', 'ctx', 'file', 'file', 'hunk', 'add', 'add', 'file', 'file', 'hunk', 'del']);

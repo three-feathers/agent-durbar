@@ -27,7 +27,7 @@ export interface PermissionLike {
   /** Spec 065: every file a write changes (Codex file changes name several); `fileName`/`path` otherwise. */
   paths?: string[];
   /**
-   * Spec 052 FR-165: the adapter's own card line, used instead of the one built here (Codex: the change's kind, "+N more", or
+   * Spec 052 FR-172: the adapter's own card line, used instead of the one built here (Codex: the change's kind, "+N more", or
    * "Codex did not say which file"). Only the card text: the grant scope is still built from the fields above.
    */
   cardSummary?: string;

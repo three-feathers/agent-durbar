@@ -79,7 +79,7 @@ The renderer only: `src/renderer/app.js`, `screens.js`, `index.html`, `styles.cs
 - `onCompaction()` keeps a run per agent (`a.compRun`: the line, the count, the last time, a log for the tooltip) and reuses the line while it is the chat's last element (or ends a started one on its line). The words come from `compactionFoldText()` in `modelswitch.js` (pure, unit-tested). `addInfoNote()` folds an identical repeat.
 - Testing: `simquestion=compact` in `sim.ts` (one short question, then six compaction start/complete pairs); `scripts/check-question-visible.js`, an Electron driver like `check:question-options`.
 
-## FR-165 (2026-10-21): a Codex write request names the file and shows the change
+## FR-172 (2026-10-21): a Codex write request names the file and shows the change
 
 - Adapter only, no new IPC, no renderer component: `codexFileChanges()` and `codexChangeDiff()` in `src/adapters/codexModes.ts` (pure); `codexPermission()` takes the known changes of the request's item; `CodexAdapter.noteFileChange()` keeps them per live session (`Live.fileChanges`, bounded). The diff goes through `redact()` before `PermissionBroker.request()`.
 - `PermissionLike.cardSummary` (new, optional): the adapter's own card line; the broker's `summarize()` uses it, and the grant scope is still built from `fileName`. Only the Codex adapter sets it, for writes.

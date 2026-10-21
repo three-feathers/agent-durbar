@@ -209,14 +209,14 @@ export interface CodexPermission {
   url?: string;
   toolName?: string;
   serverName?: string;
-  /** Spec 052 FR-165: what a file change would do (unified diff text), from the change's own `fileChange` item. */
+  /** Spec 052 FR-172: what a file change would do (unified diff text), from the change's own `fileChange` item. */
   diff?: string;
   /** One line for the needs-permission card. */
   summary: string;
 }
 
 /**
- * Spec 052 FR-165: one change of a Codex `fileChange` item. Generated type `FileUpdateChange` (`codex app-server generate-ts`,
+ * Spec 052 FR-172: one change of a Codex `fileChange` item. Generated type `FileUpdateChange` (`codex app-server generate-ts`,
  * 0.163.0): `{ path, kind: { type: 'add' } | { type: 'delete' } | { type: 'update', move_path }, diff }`.
  */
 export interface CodexFileChange {
@@ -231,7 +231,7 @@ const MAX_CHANGES = 100;
 const MAX_CHANGE_TEXT = 100_000;
 const oneLine = (s: string): string => s.replace(/[\r\n]+/g, ' ').slice(0, 1024);
 
-/** FR-165: the changes of a `fileChange` item (`item.changes`), checked field by field; anything malformed is left out. */
+/** FR-172: the changes of a `fileChange` item (`item.changes`), checked field by field; anything malformed is left out. */
 export function codexFileChanges(changes: unknown): CodexFileChange[] {
   if (!Array.isArray(changes)) return [];
   const out: CodexFileChange[] = [];
@@ -249,7 +249,7 @@ export function codexFileChanges(changes: unknown): CodexFileChange[] {
 }
 
 /**
- * FR-165: one unified diff for the permission card. `read:` Codex's `diff` is the new file's text for an add, the old text for a
+ * FR-172: one unified diff for the permission card. `read:` Codex's `diff` is the new file's text for an add, the old text for a
  * delete, and a hunk (`@@ … @@`, no `---`/`+++` header) for an update; a header is added where missing. Cut at `DIFF_MAX`.
  * Display text only: never applied.
  */
@@ -265,7 +265,7 @@ export function codexChangeDiff(changes: readonly CodexFileChange[]): string {
   return text ? clipDiff(text) : '';
 }
 
-/** FR-165: the card line's note for the first change: a new file, a deletion or a move (an edit in place needs none). */
+/** FR-172: the card line's note for the first change: a new file, a deletion or a move (an edit in place needs none). */
 function kindNote(c: CodexFileChange | undefined): string {
   if (!c) return '';
   if (c.kind === 'add') return ' (new file)';
@@ -273,7 +273,7 @@ function kindNote(c: CodexFileChange | undefined): string {
   return c.movePath && c.movePath !== c.path ? ` (move to ${c.movePath})` : '';
 }
 
-/** FR-165: what the card says when Codex named no file in the request and no `fileChange` item is known for it. */
+/** FR-172: what the card says when Codex named no file in the request and no `fileChange` item is known for it. */
 export const CODEX_NO_FILE = 'Codex did not say which file';
 
 /** Own string property only: inherited or prototype keys never count. */
@@ -302,7 +302,7 @@ export function codexPermission(method: string, params: unknown, known?: readonl
       return { kind: 'shell', fullCommandText: command, url: netHost, summary: `run ${command ?? ''}${netHost ? ` (network: ${netHost})` : ''}`.trim() };
     }
     case 'item/fileChange/requestApproval': {
-      // FR-165 (real, Codex 0.163): the request names only `itemId` (generated type `FileChangeRequestApprovalParams`); the files
+      // FR-172 (real, Codex 0.163): the request names only `itemId` (generated type `FileChangeRequestApprovalParams`); the files
       // and the diff are on the `fileChange` item sent before it (`known`). `changes` in the request itself is still read.
       const changes = known?.length ? [...known] : codexFileChanges(own(params, 'changes'));
       const paths = changes.map((c) => c.path);
