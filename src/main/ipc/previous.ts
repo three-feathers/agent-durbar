@@ -20,6 +20,8 @@ import type { ActivityDecision } from '../../shared/activity';
 import type { AddWorkspace } from './types';
 
 export interface PreviousIpcDeps {
+  /** Spec 059: the rename operation, built in main.ts; it is given the ids open in the office. */
+  renameSessionOpFor(openIds: () => ReadonlySet<string>): (id: unknown, sessionId: unknown, name: unknown) => unknown;
   dev: DevEnv;
   agents: Map<string, AgentInfo>;
   router: AdapterRouter;
@@ -38,7 +40,7 @@ export interface PreviousIpcDeps {
 }
 
 export function register(deps: PreviousIpcDeps): void {
-  const { dev, agents, router, registry, agentState, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs } = deps;
+  const { renameSessionOpFor, dev, agents, router, registry, agentState, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs } = deps;
   const folderStore = deps.getFolderStore;
   const scheduler = deps.getScheduler;
   // ---- Previous sessions of a folder (Copilot CLI/SDK store, resumable) and VS Code chat history (read-only) ----
@@ -51,6 +53,8 @@ export function register(deps: PreviousIpcDeps): void {
   const prevDeps: PrevDeps = { agents, router, get store() { return folderStore(); }, wsKey, resumeIdFor: (id) => resumeIdFor(id), appName: (a) => registry.get(a.adapterId)?.displayName ?? a.adapterId, log: (a, decision, action) => logActivity(a, decision, action) };
   const prevSessions = new PrevSessions(prevDeps);
   ipcHandle('sessions:listPrevious', (_e, id: unknown) => listPreviousOp(prevDeps, id));
+  const renameSessionOp = renameSessionOpFor(() => openIdsOf(prevDeps));
+  ipcHandle('sessions:rename', (_e, id: unknown, sessionId: unknown, name: unknown) => renameSessionOp(id, sessionId, name));
   ipcHandle('sessions:mark', (_e, id: unknown, src: unknown, sessionId: unknown, mark: unknown) => markOp(prevDeps, id, src, sessionId, mark));
   ipcHandle('sessions:delete', (_e, id: unknown, sessionId: unknown) => prevSessions.delete(id, sessionId));
 

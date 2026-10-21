@@ -27,6 +27,7 @@ import { offeredDescriptors } from '../adapters/experimental';
 import { createRegistry, detectAll } from '../adapters/registry';
 import { detectorFor, setLoginPath } from '../adapters/detect';
 import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
+import { renameOp, titleSyncOf } from './sessionnames';
 import { adapterForAdd, createRouter, previousSessionsOf } from '../adapters/router';
 import { restorable, validMode } from './agentops';
 import type { OpsDeps } from './agentops';
@@ -166,7 +167,9 @@ const usageLabel = (a: AgentInfo): string => agentLabel(a.name, a.workspaceFile 
 router.onEvent((e) => {
   if (e.type !== 'title') return;
   const a = agents.get(e.sessionId);
-  if (a) a.title = e.title;
+  if (!a) return;
+  a.title = e.title;
+  syncSessionName(a, e.title); // spec 059 FR-011
 });
 router.onEvent((e) => {
   if (e.type !== 'toolCall') return;
@@ -182,7 +185,7 @@ router.onEvent((e) => {
 });
 /** One activity row for agent `a` (spec 052 FR-071): names, the folder's base name, the adapter's display name and a short summary. */
 const logActivity = (a: AgentInfo, decision: ActivityDecision, action: string, mode: string = a.permMode): void => {
-  activityStore?.record({ agent: a.label || a.name, folder: folderNameOf(a), app: registry.get(a.adapterId)?.displayName ?? a.adapterId, mode, action, decision });
+  activityStore?.record({ agent: a.alias || a.label || a.name, folder: folderNameOf(a), app: registry.get(a.adapterId)?.displayName ?? a.adapterId, mode, action, decision });
 };
 // The answer to a permission request, or an automatic approval (Allow all, a session permission), arrives as a `permission` event;
 // it is logged here, in main, so the window cannot add or change rows. Pending requests, plain reads and stopped sessions are not logged.
@@ -238,6 +241,7 @@ const infoFor = (workspace: string, permMode: PermMode, id: string, model: strin
     modelControl: modelControlFor(ad, { unverified: !ad.capabilities.modelSwitch?.verified, contextTier: ad.capabilities.modelSwitch?.contextTier }),
     profiles: typeof ad.listAgentProfiles === 'function' && typeof ad.selectAgentProfile === 'function' ? true : undefined, // spec 043
     adapterId: ad.id,
+    ...(ad.capabilities?.renameSession ? { renameCap: ad.capabilities.renameSession } : {}), // spec 059: what a rename does in the agent app
     ...extra,
   };
 };
@@ -268,6 +272,7 @@ async function addWorkspace(
   const saved = folderStore?.get(wsKey(draft));
   const info: AgentInfo = { ...draft, id, hidden: saved?.hidden, closed: saved?.closed, label: saved?.label, defaultAgent: saved?.defaultAgent };
   agents.set(id, info);
+  applyStoredAlias(info); // spec 059 FR-014
   if (opts.persist) folderStore?.upsert({ workspace: wsKey(info), permMode, model, effort, maxAiCredits: usdCap ? saved?.maxAiCredits : info.maxAiCredits, floor: opts.floor, adapterId });
   // An existing folder keeps its floor; a new one gets the chosen floor (spec 033 FR-006).
   info.floor = folderStore?.floorOfFolder(wsKey(info)) ?? GROUND;
@@ -352,6 +357,7 @@ function restoreFolders(): void {
         if (f.defaultAgent) info.defaultAgent = f.defaultAgent;
         router.bind(info.id, kind);
         agents.set(info.id, info);
+        applyStoredAlias(info); // spec 059 FR-014
       }
     } catch {
       /* folder gone or not a folder any more */
@@ -515,13 +521,68 @@ function forgetOpenSession(key: string, id: string): void {
   if (rid !== id) folderStore?.removeOpenSession(key, rid);
 }
 
+// ---- Spec 059: the user's names for sessions ----
+/** The adapter id a session name is kept under (`copilot` when none). */
+const srcOf = (a: AgentInfo): string => a.adapterId ?? DEFAULT_ADAPTER;
+const sameSession = (x: AgentInfo, a: AgentInfo, rid: string): boolean => wsKey(x) === wsKey(a) && srcOf(x) === srcOf(a) && resumeIdFor(x.id) === rid;
+function setAlias(a: AgentInfo, rid: string, alias: string | undefined): void {
+  for (const x of agents.values()) {
+    if (!sameSession(x, a, rid)) continue;
+    x.alias = alias;
+    toRenderer('agents:renamed', { id: x.id, alias });
+  }
+}
+/** FR-014: an agent that comes back (restart, resume) gets its saved name; a name still waiting for the agent app's next launch is handed to the adapter again. */
+function applyStoredAlias(a: AgentInfo): void {
+  const rid = resumeIdFor(a.id);
+  const e = folderStore?.sessionNameOf(wsKey(a), srcOf(a), rid);
+  if (!e) return;
+  a.alias = e.name;
+  if (e.pending) void router.forAgent(a.id)?.renameSession?.(rid, e.name).catch(() => undefined);
+}
+/** FR-011: a runtime title arrived; a Durbar-only name stays, a name the agent app now has differently is dropped, a waiting one is confirmed. */
+function syncSessionName(a: AgentInfo, title: string): void {
+  if (!folderStore) return;
+  const src = srcOf(a);
+  const rid = resumeIdFor(a.id);
+  const entry = folderStore.sessionNameOf(wsKey(a), src, rid);
+  const r = titleSyncOf(entry, title);
+  if (r.action === 'drop') {
+    folderStore.setSessionName(wsKey(a), src, rid, undefined);
+    setAlias(a, rid, undefined);
+  } else if (r.action === 'update') folderStore.setSessionName(wsKey(a), src, rid, r.entry.name, { inApp: r.entry.inApp === true, pending: r.entry.pending === true });
+}
+/** Built by ipc/previous.ts, which passes the ids open in the office (it owns the previous-sessions deps). */
+const renameSessionOpFor = (openIds: () => ReadonlySet<string>) => renameOp({
+  agent: (id) => agents.get(id),
+  adapter: (id) => router.forAgent(id),
+  resumeIdFor,
+  otherOpenIds: (id) => {
+    const a = agents.get(id);
+    return a ? [...agents.values()].filter((x) => x.id !== id && wsKey(x) === wsKey(a) && srcOf(x) === srcOf(a)).map((x) => resumeIdFor(x.id)) : [];
+  },
+  previousIds: async (id) => {
+    const a = agents.get(id);
+    const ad = a ? router.forAgent(id) : undefined;
+    return a && ad ? (await previousSessionsOf(ad, a.cwd, openIds())).map((s) => s.id) : [];
+  },
+  save: (id, src, rid, name, flags) => {
+    const a = agents.get(id);
+    return !!a && !!folderStore && folderStore.setSessionName(wsKey(a), src, rid, name, flags);
+  },
+  applyAlias: (id, rid, alias) => {
+    const a = agents.get(id);
+    if (a) setAlias(a, rid, alias);
+  },
+});
+
 // ---- IPC (spec 045 FR-060): every handler lives in src/main/ipc/<area>.ts, registered here through ipcHandle / ipcOn (ipcguard.ts). ----
 // Stores created in whenReady, and state that changes, are passed as getters so a handler reads them when it runs.
 const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity });
 registerAppIpc({ getSinceAway: () => sinceAway, clearSinceAway: () => { sinceAway = null; }, getWin: () => win });
 registerAgentsIpc({ agents, router, agentState, opsDeps, remoteOps, getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession });
 registerAttachmentsIpc({ dev, pickedFiles, getStageDir, sizeOf });
-registerPreviousIpc({ dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs });
+registerPreviousIpc({ renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs });
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });
 registerSchedulesIpc({ getScheduler: () => scheduler, getFolderStore: () => folderStore });
 registerUsageIpc({ agents, getUsageStore: () => usageStore, getUsageTotalsStore: () => usageTotalsStore, usageLabel });

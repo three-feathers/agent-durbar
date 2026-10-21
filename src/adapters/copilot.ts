@@ -65,6 +65,8 @@ interface Live {
   limitRequestId?: string;
   /** A title reached the app (event or name.get), or name.get was already asked once (issue #126). */
   titled?: boolean;
+  /** Spec 059 FR-011: the name Durbar stored with `name.set`. While it is set, a `session.title_changed` with any other title (an auto title, also after a compaction) is not passed on; the same title is a confirmation. Not cleared on idle. */
+  userTitle?: string;
   askedTitle?: boolean;
   /** `ask_user` questions waiting for the user (spec 002 FR-058): request id -> waiter. */
   questions?: Map<string, { choices: string[]; resolve: (answer: string | null) => void }>;
@@ -152,10 +154,44 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   modelSwitch: Object.freeze({ verified: true, contextTier: true }), // spec 030 Phase 3 (real 2026-10-20, Copilot Pro): switch, effort, long tier, confirmation and compact-and-switch (T041, T044, T045)
   planMode: true, // spec 066 FR-003: mode.set plan + onExitPlanModeRequest (@experimental)
   remote: true, // spec 054 FR-002: rpc.remote.enable/disable (@experimental; real 2026-10-20: `started: false` outside a GitHub repository, never seen started)
+  renameSession: 'any', // spec 059 FR-007: rpc.name.set (@experimental; real 2026-10-20 on a live session, 0 credits); a stored session through a prompt-free resume: real 2026-10-21 (T050a, 0 credits)
   remoteService: Object.freeze({ name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }), // spec 054 FR-060
   deleteSession: true, // spec 006 FR-028: CopilotClient.deleteSession (read: SDK 1.0.22 client.d.ts; never run on a real session)
   oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (real 2026-10-20: no tool ran, nothing left on disk)
 });
+
+/** Spec 059 FR-007: Copilot's own name rule is stricter than Durbar's: no double quotes, at most 100 UTF-16 units, no control characters (SDK `types.d.ts`, `SessionConfig.name`). */
+export function copilotNameError(name: string): string | undefined {
+  if (!name || name !== name.trim()) return 'Copilot needs a name without leading or trailing spaces.';
+  if (name.length > 100) return 'Copilot names are at most 100 characters.';
+  if (name.includes('"')) return 'Copilot does not accept double quotes in a name.';
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(name)) return 'Copilot does not accept control characters in a name.';
+  return undefined;
+}
+
+/**
+ * Spec 059 FR-007: the config of the prompt-free resume that renames a stored session: every permission request is denied (none can
+ * arrive, nothing is sent), no MCP server, skill, hook or git operation is started, remote control stays off, no tool is offered.
+ */
+export function renameResumeConfig(workingDirectory: string): Record<string, unknown> {
+  return {
+    // the session's own folder (from its stored metadata), so it is not resumed in the runtime's default folder; nothing else about the session changes
+    workingDirectory,
+    suppressResumeEvent: true, // no `session.resume` event is written
+    allowTranscriptRecovery: false, // a damaged transcript is refused, never repaired by a rename
+    streaming: false,
+    availableTools: [],
+    mcpServers: {},
+    enableConfigDiscovery: false,
+    enableSkills: false,
+    skipCustomInstructions: true,
+    enableFileHooks: false,
+    enableHostGitOperations: false,
+    remoteSession: 'off',
+    onPermissionRequest: async (): Promise<PermissionRequestResult> => ({ kind: 'reject', feedback: 'Agent Durbar allows no tools here.' }) as PermissionRequestResult,
+  };
+}
 
 /** Spec 054 FR-063 (real, 2026-10-20): not started in a plain folder, a `git init` folder and a private GitHub repository alike, on Copilot Free. */
 /** Spec 012 FR-156 delta: the GitHub account is signed in but has no Copilot access (Copilot not enabled for it). */
@@ -420,6 +456,11 @@ export class CopilotAdapter implements AgentAdapter {
   }
 
   async start(options: StartOptions): Promise<string> {
+    const id = options.resumeSessionId ?? options.sessionId;
+    return id ? this.withSessionLock(id, () => this.startLocked(options)) : this.startLocked(options);
+  }
+
+  private async startLocked(options: StartOptions): Promise<string> {
     const { cwd, folders } = resolveWorkspaceCwd(options.workspace);
     const client = await this.getClient();
     let sid = options.resumeSessionId ?? options.sessionId ?? '';
@@ -553,10 +594,16 @@ export class CopilotAdapter implements AgentAdapter {
       const live = this.sessions.get(sid);
       if (live && ev.type === 'session_limits_exhausted.requested') live.limitRequestId = ev.data.requestId;
       else if (live && ev.type === 'session_limits_exhausted.completed' && live.limitRequestId === ev.data.requestId) live.limitRequestId = undefined;
-      if (live && ev.type === 'session.title_changed' && !ev.agentId) live.titled = true;
+      if (live && ev.type === 'session.title_changed' && !ev.agentId) {
+        // spec 059 FR-011: only this event is skipped; every other event (usage, cap, idle) goes on below
+        if (live.userTitle !== undefined && (ev.data as { title?: unknown } | undefined)?.title !== live.userTitle) return;
+        live.titled = true;
+      }
       this.map(sid, ev);
       if (live) this.trackCap(sid, live, ev);
-      if (live && ev.type === 'session.idle') this.askTitle(sid);
+      if (live && ev.type === 'session.idle') {
+        this.askTitle(sid);
+      }
     };
     const unsubscribe = session.on(onSessionEvent);
     // FR-158: a reconnect resumes with the same handlers but no model fields, so the session keeps the model the runtime stored
@@ -869,6 +916,52 @@ export class CopilotAdapter implements AgentAdapter {
       }
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  }
+
+  /**
+   * Spec 059 FR-007 (Q2 B): store the user's name in Copilot (`rpc.name.set`, @experimental), the field the CLI's `/rename` writes. A live
+   * session is renamed directly. A session that is not live is resumed WITHOUT a prompt (`resumeSession` only, no `send`: no model
+   * call, 0 credits expected), renamed, and released again (`disconnect`, in a `finally`); it stays on disk. Any error is thrown so
+   * the caller keeps a Durbar-only name. The name is never logged.
+   */
+  async renameSession(sessionId: string, name: string): Promise<void> {
+    if (!sessionIdOk(this.id, sessionId)) throw new Error('That is not a session id.');
+    const bad = copilotNameError(name);
+    if (bad) throw new Error(bad);
+    await this.refreshing?.catch(() => undefined);
+    // one lock per session id: a start or resume of the same session waits for a rename in flight, and the other way round
+    return this.withSessionLock(sessionId, async () => {
+      const live = this.sessions.get(sessionId);
+      if (live) {
+        await live.session.rpc.name.set({ name });
+        live.titled = true; // the name is the user's: a later auto title must not replace it on screen
+        live.userTitle = name; // and no other title reaches Durbar's sync rule while this session is open (spec 059 FR-011)
+        return;
+      }
+      const client = await this.getClient();
+      const meta = await client.getSessionMetadata(sessionId).catch(() => undefined);
+      const dir = meta?.context?.workingDirectory;
+      if (!dir) throw new Error('Copilot has no folder stored for that session.');
+      const session = await client.resumeSession(sessionId, renameResumeConfig(dir) as unknown as ResumeSessionConfig);
+      try {
+        await session.rpc.name.set({ name });
+      } finally {
+        await session.disconnect().catch(() => undefined);
+      }
+    });
+  }
+
+  /** Spec 059: runs `fn` after any earlier call for the same session id has finished (rename-resume and start/resume never overlap). */
+  private sessionLocks = new Map<string, Promise<unknown>>();
+  private withSessionLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.sessionLocks.get(id) ?? Promise.resolve();
+    const run = prev.catch(() => undefined).then(fn);
+    const tail = run.catch(() => undefined);
+    this.sessionLocks.set(id, tail);
+    void tail.then(() => {
+      if (this.sessionLocks.get(id) === tail) this.sessionLocks.delete(id);
+    });
+    return run;
   }
 
   /**

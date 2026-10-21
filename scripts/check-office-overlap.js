@@ -384,6 +384,16 @@ async function driver(ctx) {
       }
     }
   }
+  /* spec 059 FR-016 (SC-005): every main agent carries a 60-character user name, both sizes; the run fails when no card shows one */
+  for (const [w, h] of SIZES) {
+    for (const sim of [12, 15]) {
+      if (!mine()) continue;
+      await run(`long names sim${sim}-${w}x${h}`, `sim=${sim}&simfreeze=1&simnames=long`, w, h, sim === 15 ? `names-sim15-${w}x${h}` : '');
+      const shown = await ctx.js(`[...document.querySelectorAll('#stage .desk .name')].some((n)=>n.textContent.length>=50)`);
+      total++;
+      if (!shown) { failed++; console.log(`FAIL long names sim${sim}-${w}x${h}: no long name on any card`); }
+    }
+  }
   /* spec 001/002 deltas 2026-10-18 (issue #126): main agents with session titles (one long enough to be ellipsized), both sizes;
      the run fails when no title reached a card, so it cannot pass on a page without titles */
   for (const [w, h] of SIZES) {

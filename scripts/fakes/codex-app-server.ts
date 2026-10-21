@@ -38,6 +38,8 @@ export interface FakeCodexOptions {
   rateLimits?: 'ok' | 'unauthorized' | 'network' | 'missing';
   /** What `getAuthStatus` reports as `authMethod` (default `chatgpt`; null = not signed in). */
   authMethod?: string | null;
+  /** spec 059: answer `thread/name/set` with this error message. */
+  refuseRename?: string;
   /** Exit (no answer) when a request with this method arrives. */
   exitOn?: { method: string; code?: number | null; signal?: NodeJS.Signals | null };
 }
@@ -140,6 +142,8 @@ export class FakeCodexServer {
   replies: ServerReply[] = [];
   /** Threads this server knows: id to cwd. Shared by all children, like Codex's own thread store. */
   threads = new Map<string, string>();
+  /** spec 059: thread names set with `thread/name/set`, shared by all children. */
+  names = new Map<string, string>();
   private nextThread = 1;
   /** Spec 030 FR-034: forked threads; a turn on one answers with one agent message (the hand-off summary). */
   private forks = new Set<string>();
@@ -274,6 +278,19 @@ export class FakeCodexServer {
       case 'thread/list': {
         const data = [...this.threads.entries()].map(([tid, cwd], i) => ({ id: tid, cwd, preview: `Prompt ${i + 1}`, createdAt: 1792403000 + i, updatedAt: 1792403100 + i, ephemeral: false, parentThreadId: null, gitInfo: null }));
         return this.reply(child, id, { data, nextCursor: null });
+      }
+      case 'thread/name/set': {
+        // spec 059: like Codex, an empty name and an unknown thread are refused; the stored name is shared by all children
+        const tid = isObj(params) && typeof params.threadId === 'string' ? params.threadId : '';
+        const name = isObj(params) && typeof params.name === 'string' ? params.name.trim() : '';
+        if (this.opts.refuseRename) return this.fail(child, id, -32600, this.opts.refuseRename);
+        if (!name) return this.fail(child, id, -32600, 'thread name must not be empty');
+        if (!this.threads.has(tid)) return this.fail(child, id, -32600, 'no rollout found for thread');
+        this.names.set(tid, name);
+        this.reply(child, id, {});
+        const owner = this.threadChild.get(tid);
+        if (owner && !owner.exited) this.enqueue(owner, { method: 'thread/name/updated', params: { threadId: tid, threadName: name } });
+        return;
       }
       case 'thread/delete': {
         const tid = isObj(params) && typeof params.threadId === 'string' ? params.threadId : '';

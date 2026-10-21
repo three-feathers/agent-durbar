@@ -6,7 +6,8 @@ read or edited (no `~/.copilot`, `~/.claude`, `~/.codex`). Sources: the installe
 
 ## R1. GitHub Copilot (SDK `@github/copilot-sdk` 1.0.22, runtime `@github/copilot-sdk-linux-x64` 1.0.22)
 
-**Decision:** rename a session that is live in Durbar with `session.rpc.name.set({ name })`; capability `'live'`.
+**Decision (changed 2026-10-20, Q2 B):** rename a live session with `session.rpc.name.set({ name })`; a session that is not live through a
+prompt-free `resumeSession` + `name.set` + `disconnect()` (R1b); capability `'any'`.
 
 Evidence (`read:` only):
 
@@ -40,6 +41,25 @@ Evidence (`read:` only):
 Alternatives rejected: sending `/rename <name>` as a prompt (it is a slash command of the CLI's interactive UI, not an SDK call; a
 missing argument spends credits); editing session files (constitution III).
 
+### R1b. Copilot: a session that is not live (added 2026-10-20)
+
+Vikram's agent asked for it on #372; the owner changed Q2. `read:` only, nothing was run.
+
+- `node_modules/@github/copilot-sdk/dist/client.d.ts:249`: `resumeSession(sessionId, config): Promise<CopilotSession>` opens a stored session
+  and sends **no prompt**: a prompt is a separate `session.send`. `ResumeSessionConfig` needs `onPermissionRequest`; the rename path denies
+  every request (nothing runs, so none arrives). `session.d.ts:288`: `disconnect()` releases the session and keeps it on disk.
+- Durbar already resumes this way when it opens a Previous session (`src/adapters/copilot.ts:455-464`) and disconnects (`:595`).
+- So the call is: `resumeSession(id, { onPermissionRequest: deny })` -> `session.rpc.name.set({ name })` -> `disconnect()`. Cost: 0 credits
+  expected (no model call). Side effects to say in the README: the session's last-used time and "last client" may change.
+- `real:` 2026-10-21 (T050a, Vikram's agent, the real `CopilotAdapter` at PR head 1633d4e, SDK 1.0.22 / runtime 1.0.98): a stored session resumes in its
+  stored folder with no model call (0 prompts, 0 credits, no `session.resume` event: `suppressResumeEvent` works), `name.set` is accepted, the name is kept
+  across a later resume (`rpc.name.get`), and `listSessions()` (`summary`) and `copilot --resume` (CLI 1.0.100) both show it; `SessionMetadata` has no
+  `name` field, the name comes back as `summary`. `[KNOWN GAP]` until T050: that a session
+  open in another Copilot client (the CLI, VS Code) is not disturbed. Any error falls back to a Durbar name with the note (FR-010).
+
+**`real:` (Vikram's agent, 2026-10-20, CLI 1.0.98):** `rpc.name.set` works on a live session and after a prompt-free `resumeSession(id)`; `copilot --resume`
+lists "the name"; 0 AI credits. The `[KNOWN GAP]` list in R1b narrows to: another client holding the session open, and VS Code.
+
 ## R2. OpenAI Codex (app-server, minimum 0.163.0)
 
 **Decision:** `thread/name/set { threadId, name }`; capability `'any'` (open or stored threads).
@@ -61,30 +81,36 @@ Evidence (`read:` upstream source, `openai/codex` on GitHub, `main` on 2026-10-2
 - Durbar's short-lived app-server helper `probe` (`src/adapters/codex.ts:312`) is how `thread/list` runs today (`codex.ts:355`); the
   same helper fits a rename of a thread that is not open.
 
-**Shows in the CLI:** yes by construction (`read:`). **Shows in VS Code (Codex extension):** **unverified**. Codex is not installed on
+**`real:` (Vikram's agent, Codex 0.163.0):** `thread/name/set` works before or after a turn; `codex resume` lists the name, only for a thread that has had a turn.
+**Shows in the CLI:** yes (`real:`, with that limit). **Shows in VS Code (Codex extension):** **unverified**. Codex is not installed on
 this machine, so nothing was run (`[KNOWN GAP]` until Q9).
 
 ## R3. Claude Code (CLI 2.1.304, stream-json transport)
 
-**Decision:** no app-side rename; Durbar-only name.
+**Decision (changed 2026-10-20, Q10):** `--name <name>` on the session's next CLI start; capability `'next-turn'`. Durbar never writes the
+session file.
 
 Evidence:
 
-- `claude --help` (local, read only): `-n, --name <name>  Set a display name for this session (shown in the prompt box, /resume picker,
-  and terminal title)`. It names the session being started. The Agent SDK reference says of its `title` option: "When resuming via
-  `resume` or `continue`, the resumed session's persisted title takes precedence; use `renameSession()` to retitle an existing session"
-  (https://code.claude.com/docs/en/agent-sdk/typescript). So passing `--name` with `--resume` (Durbar's launch, `src/adapters/claude.ts:210`)
-  is not documented to rename an existing session (**unverified**, and not to be tried on a real session without the owner).
-- Agent SDK `renameSession(sessionId, title, options?)`: "Renames a session by appending a custom-title entry" (same page). The SDK is
-  **not** a dependency of Durbar (spec 012, owner decision Q3; `src/adapters/claudeSdk.ts:1-7` loads it only when present). Rejected.
-- Docs, *Manage sessions* (https://code.claude.com/docs/en/sessions): names are set with `claude -n`, `/rename`, the picker's Ctrl+R,
-  claude.ai Remote Control or the desktop app. "Claude Code leaves sessions created with `claude -p` or the Agent SDK out of the session
-  picker"; Durbar's sessions are all `-p` (`claudeArgs`, `claude.ts:194-212`), so they are not in the CLI's picker anyway. "The desktop
-  app, claude.ai/code, and the VS Code extension each keep their own session list."
-- Durbar reads `custom-title` lines (`/rename`) in its own listing (`src/adapters/claudeHistory.ts:67`), so a name set in the CLI does
-  show in Previous sessions; the Claude adapter sends no live `title` event today.
-- Writing a `custom-title` line into the `.jsonl` ourselves is what `renameSession()` does, but Durbar never edits another tool's files
-  (constitution III). Rejected.
+- `real:` Vikram's agent, Vikram's account, 2026-10-20, Claude Code 2.1.304, haiku, 2 tiny prompts (USD 0.0037), issue #372:
+  `claude -p … --name 'A'` writes `{"type":"custom-title","customTitle":"A","sessionId":<same id>}` into the session file;
+  `claude -p … --resume <id> --name 'B'` **keeps the same session id** and appends a `custom-title` "B" (the last one wins). The earlier
+  reading of the Agent SDK docs ("the resumed session's persisted title takes precedence", for the SDK's own `title` option) does not hold
+  for the CLI flag.
+- `claude --help` (local, read only): `-n, --name <name>  Set a display name for this session (shown in the prompt box, /resume picker, and
+  terminal title)`. The CLI binary has a `saveCustomTitle` that appends a `custom-title` line and a reader that takes the **last** such
+  line (`strings`, read only), consistent with the real result.
+- Durbar's launch (`claudeArgs`, `src/adapters/claude.ts:194`) is `-p … --resume <id>` (or `--session-id <id>` for a new session); the
+  running CLI is relaunched before the next message when `needsRelaunch` is set (`claude.ts:567`), without an extra prompt. So the name is
+  applied at the next message, and a plain `--name` argument (no shell) is all that changes.
+- Durbar reads `custom-title` lines in its own listing (`src/adapters/claudeHistory.ts:67`), so the stored name shows in Previous sessions.
+- Docs, *Manage sessions* (https://code.claude.com/docs/en/sessions): sessions created with `claude -p` are left out of the CLI's picker, and
+  "the desktop app, claude.ai/code, and the VS Code extension each keep their own session list". So where the title shows is
+  `[KNOWN GAP]`: the `/resume` picker for `-p` sessions and the VS Code Claude extension's list (check on the owner's Mac, T050).
+- Rejected: the Agent SDK's `renameSession()` (not a dependency, spec 012 Q3) and writing the `.jsonl` ourselves (constitution III).
+- `real:` (Vikram's agent, 4 prompts, USD 0.007, `CLAUDE*` unset): `claude --resume <id>` shows the latest name in the prompt box; the `/resume` picker lists no `-p` session (named or not): "No conversations found in this project". `[KNOWN GAP]` then; **update 2026-10-20 (Vikram's agent, about $0.03):** with spec 012 FR-159 (PR #386) the picker lists Durbar's Claude sessions by their `--name` (the CLI marks sessions from `sdk-cli` as SDK runs and hides them; `CLAUDE_CODE_ENTRYPOINT=agent-durbar` avoids that; undocumented by Anthropic, recheck after updates). The picker's Ctrl+R rename changes the runtime title: spec 059 FR-011 drops a Durbar-written name then. `real:` (Paco's Mac, 2026-10-20, USD 0.137): a `claude -p --name` session has the `custom-title` in its jsonl (entrypoint `sdk-cli`) but the VS Code Claude Code extension's list does not show the session at all. `[KNOWN GAP]`: untested with #386's entrypoint, and whether the extension reads `custom-title`.
+- Not known without a run: whether the title is written at launch or only with the first turn. The adapter treats the name as applied after
+  the first turn that follows the launch (`result` message) and says so in the dialog ("at your next message").
 
 ## R4. Durbar today (where the name is shown and kept)
 
@@ -109,4 +135,6 @@ Evidence:
 1. Copilot: `session.name.set` on a real session; whether it emits `session.title_changed`; whether it works for a session id that is
    not loaded; whether VS Code shows the name.
 2. Codex: `thread/name/set` on a real app-server (Codex not installed here); whether the Codex VS Code extension shows the name.
-3. Claude: whether `--name` together with `--resume` would retitle (not used).
+3. Claude: whether the VS Code Claude extension and the `/resume` picker list a `-p` session's `--name` title; whether the title is written
+   before the first turn.
+4. Copilot: prompt-free `resumeSession` of a stored session, then `name.set` (R1b).

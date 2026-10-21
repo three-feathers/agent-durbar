@@ -17,7 +17,7 @@ import type { FolderStore, PrevMarkOp } from './folders';
 export interface PrevDeps {
   agents: Map<string, AgentInfo>;
   router: Pick<AdapterRouter, 'forAgent' | 'adapterIdOf'>;
-  store?: Pick<FolderStore, 'get' | 'markPrevious' | 'dropPrevious' | 'removeOpenSession'>;
+  store?: Pick<FolderStore, 'get' | 'markPrevious' | 'dropPrevious' | 'removeOpenSession' | 'sessionNames' | 'dropSessionName'>;
   wsKey(a: AgentInfo): string;
   /** The id a session is resumed under (Codex: its thread id). */
   resumeIdFor(id: string): string;
@@ -61,13 +61,18 @@ export function marksFor(d: Pick<PrevDeps, 'store' | 'wsKey'>, a: AgentInfo, src
 }
 
 /** `sessions:listPrevious`: open sessions are left out by Durbar id and by resume id (FR-032). */
-export async function listPreviousOp(d: PrevDeps, id: unknown): Promise<{ ok: boolean; error?: string; sessions: PreviousSession[]; pinned: string[]; hidden: string[] }> {
+export async function listPreviousOp(d: PrevDeps, id: unknown): Promise<{ ok: boolean; error?: string; sessions: PreviousSession[]; pinned: string[]; hidden: string[]; names?: Record<string, string> }> {
   const a = typeof id === 'string' ? d.agents.get(id) : undefined;
   const ad = a ? d.router.forAgent(a.id) : undefined;
   if (!a || !ad) return { ok: false, error: 'unknown agent', sessions: [], pinned: [], hidden: [] };
   try {
     const sessions = await previousSessionsOf(ad, a.cwd, openIdsOf(d));
-    return { ok: true, sessions, ...marksFor(d, a, d.router.adapterIdOf(a.id) ?? '', sessions.map((s) => s.id)) };
+    const src = d.router.adapterIdOf(a.id) ?? '';
+    // spec 059 FR-009: the user's names for the sessions in this list (ids that are present only)
+    const present = new Set(sessions.map((s) => s.id));
+    const names: Record<string, string> = {};
+    for (const e of d.store?.sessionNames(d.wsKey(a)) ?? []) if (e.src === src && present.has(e.id)) names[e.id] = e.name;
+    return { ok: true, sessions, names, ...marksFor(d, a, src, present) };
   } catch (err) {
     return { ok: false, error: errText(err), sessions: [], pinned: [], hidden: [] };
   }
@@ -148,6 +153,7 @@ export class PrevSessions {
       // 7. forget its marks (and any saved last/open session), log once, no title
       const key = d.wsKey(a);
       d.store?.dropPrevious(key, adapterId, sessionId);
+      d.store?.dropSessionName(key, adapterId, sessionId); // spec 059 FR-005: its name goes with it
       d.store?.removeOpenSession(key, sessionId);
       d.log?.(a, 'session-deleted', `Session deleted · ${d.appName(a)} · ${sessionId.slice(0, 8)} · last used ${isoDay(prev.modifiedTime)}`);
       return { ok: true };
