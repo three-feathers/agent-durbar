@@ -735,8 +735,12 @@ export class CopilotAdapter implements AgentAdapter {
       /* nothing running */
     }
     live.unsubscribe();
-    await live.session.disconnect();
-    if (live.hookDir) fs.rmSync(live.hookDir, { recursive: true, force: true }); // spec 061: the accepted folder hooks' private copy
+    try {
+      await live.session.disconnect();
+    } finally {
+      // spec 061: the accepted folder hooks' private copy, removed even when disconnect() throws (re-review #424)
+      if (live.hookDir) fs.rmSync(live.hookDir, { recursive: true, force: true });
+    }
     this.sessions.delete(sessionId);
     this.mappers.delete(sessionId);
     this.emit(sessionId, { type: 'status', status: 'stopped' });

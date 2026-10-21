@@ -12,7 +12,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { NAME_RE } from '../shared/mcp';
 import type { McpServerSpec } from '../shared/mcp';
-import { maskSecretArgs, maskSecretCommand, maskSecretUrl } from '../shared/redact';
 import { isBroadRule } from '../shared/foldersetup';
 import type { FolderSetupApp, FolderSetupItem, RuleKind } from '../shared/foldersetup';
 
@@ -101,14 +100,47 @@ function inside(root: string, file: string): boolean {
   }
 }
 
+/** Shells, and interpreters with the flag that takes inline code (the flag `null` = the program always runs code it is given). */
+const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'mksh', 'ash', 'fish', 'csh', 'tcsh', 'busybox', 'cmd', 'powershell', 'pwsh', 'nu', 'xonsh']);
+const INLINE: { re: RegExp; flag: RegExp }[] = [
+  { re: /^(node|nodejs|bun)$/, flag: /^(-e|-p|--eval|--print|-pe)$|^--(eval|print)=/ },
+  { re: /^deno$/, flag: /^eval$/ },
+  { re: /^(python|pypy)[0-9.]*$/, flag: /^-[A-Za-z]*c$/ },
+  { re: /^(perl|ruby)$/, flag: /^-[A-Za-z]*[eE]$/ },
+  { re: /^php$/, flag: /^-r$/ },
+  { re: /^(lua|luajit|osascript|rscript)$/, flag: /^-e$/ },
+];
+const progName = (c: string): string => (c.split(/[\\/]/).pop() ?? '').toLowerCase().replace(/\.(exe|cmd|bat|com|ps1)$/, '');
+/**
+ * Re-review #424: the program an MCP server starts runs code it is handed (a shell, or an interpreter with inline code), so an env value
+ * the window does not show can be that code (`sh -c 'eval "$PAYLOAD"'`). `env [VAR=x] prog` is looked through. Returns the program's name.
+ */
+export function runsGivenCode(command: string, args: readonly string[]): string | undefined {
+  let words = [command, ...args];
+  if (progName(words[0]) === 'env') {
+    const i = words.findIndex((w, n) => n > 0 && !w.startsWith('-') && !w.includes('='));
+    if (i < 0) return undefined;
+    words = words.slice(i);
+  }
+  const prog = progName(words[0]);
+  if (SHELLS.has(prog)) return prog;
+  const it = INLINE.find((x) => x.re.test(prog));
+  return it && words.slice(1).some((w) => it.flag.test(w)) ? prog : undefined;
+}
+
 function mcpItem(app: FolderSetupApp, file: string, name: string, spec: McpServerSpec, note?: string): { item: FolderSetupItem; raw: RawItem } {
-  const secretNames = [...Object.keys(spec.env ?? {}), ...Object.keys(spec.headers ?? {})].slice(0, 30);
-  const env = spec.env ?? {};
-  const detail = spec.type === 'stdio' ? [maskSecretCommand(spec.command ?? '', env), ...maskSecretArgs(spec.args ?? [], env)].join(' ') : maskSecretUrl(spec.url ?? '', env);
+  const envNames = Object.keys(spec.env ?? {});
+  const secretNames = [...envNames, ...Object.keys(spec.headers ?? {})].slice(0, 30);
+  // FR-014 (re-review #424): the same token-shape masking as hooks and rules; anything hidden is marked (and starts unticked)
+  const parts = (spec.type === 'stdio' ? [spec.command ?? '', ...(spec.args ?? [])] : [spec.url ?? '']).map(shownCommand);
+  const detail = parts.map((p) => p.text).join(' ');
+  const shell = spec.type === 'stdio' && envNames.length ? runsGivenCode(spec.command ?? '', spec.args ?? []) : undefined;
+  const hiddenWhy = shell ? `It starts ${shell}, which can run what it is given, and hands it env values that are not shown here (${envNames.slice(0, 5).join(', ')}): they can be commands. Ticking it runs them too.` : undefined;
+  const hidden = parts.some((p) => p.hidden) || !!shell;
   // S3 (review #424): the digest holds env and header NAMES only (FR-010), never their values (a weak secret could be brute-forced)
   const id = digest(['mcp', name, { ...spec, ...(spec.env ? { env: Object.keys(spec.env).sort() } : {}), ...(spec.headers ? { headers: Object.keys(spec.headers).sort() } : {}) }]);
   return {
-    item: { id, app, kind: 'mcp', file, label: `MCP server ${name}`, detail, ...(secretNames.length ? { secretNames } : {}), supported: true, ...(note ? { unsupportedWhy: note } : {}) },
+    item: { id, app, kind: 'mcp', file, label: `MCP server ${name}`, detail, ...(hidden ? { hidden: true } : {}), ...(hiddenWhy ? { hiddenWhy } : {}), ...(secretNames.length ? { secretNames } : {}), supported: true, ...(note ? { unsupportedWhy: note } : {}) },
     raw: { kind: 'mcp', name, spec },
   };
 }
@@ -284,9 +316,11 @@ export function scanFolderSetup(dirs: readonly string[]): ScanResult {
       for (const ruleKind of ['allow', 'deny', 'ask'] as const) {
         const list = Array.isArray(perms[ruleKind]) ? (perms[ruleKind] as unknown[]) : [];
         for (const rule of list.slice(0, 100)) {
+          const word = ruleKind === 'allow' ? 'Allow' : ruleKind === 'deny' ? 'Deny' : 'Ask';
+          // re-review #424: a rule too long to show is a problem, never dropped silently (and never used)
+          if (typeof rule === 'string' && rule.length > 500) { problems.push({ file: rel(f), message: `${word.toLowerCase()} rule longer than 500 characters: not shown, never used` }); continue; }
           const s = str(rule, 500);
           if (!s) continue;
-          const word = ruleKind === 'allow' ? 'Allow' : ruleKind === 'deny' ? 'Deny' : 'Ask';
           const shown = shownCommand(s);
           add(
             { id: digest(['rule', ruleKind, s]), app: 'claude', kind: 'rule', file: rel(f), label: `${word} rule`, detail: shown.text, ...(shown.hidden ? { hidden: true } : {}), ruleKind, ...(ruleKind !== 'deny' && isBroadRule(s) ? { broad: true } : {}), supported: true },

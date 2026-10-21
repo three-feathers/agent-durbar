@@ -183,7 +183,7 @@ Rules that always apply:
 - **Answering a question** an agent asks is allowed in every mode; it is not an action.
 - **A profile (custom agent) from a folder's repository** asks once before it is used and never changes your mode.
 - **A folder's own agent setup** (spec 061). The folder's hooks, permission rules and MCP servers (`.claude/settings*.json`, `.mcp.json`, `.codex/config.toml`, `.github/hooks/`, `.github/copilot/settings.json`) are listed in full the first time the folder is added, and again when a file changes, before anything of it runs:
-  - each item shows its exact command or rule, with secrets hidden;
+  - each item shows its exact command or rule; only text shaped like a token (GitHub, OpenAI/Anthropic, bearer, JWT, AWS keys) is hidden, and env and header values show by name only. An item with something hidden, or an MCP server that hands env values to a shell or an inline-code interpreter, starts unticked and says why;
   - a broad rule (a whole tool) is marked;
   - everything is on unless you untick it, but hooks need your tick on *I have read these hooks and I know what they run*;
   - *Explain with AI* asks an installed agent app what a hook does and how risky it looks. It is advisory and can be wrong: the command shown is what runs.

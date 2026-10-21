@@ -47,6 +47,12 @@ module.exports = async (ctx) => {
     assert.ok(/^Risky/.test(ai) && /it can be wrong/.test(ai) && /The command above is what runs/.test(ai), 'advisory explanation: ' + ai);
     await js(`document.querySelector('#scrDlg .fs-ai.v-risky').scrollIntoView({block:'center'})`);
     await shot('explained', w, h);
+    // re-review #424: a command too long for its box says "scroll to read all"; a short one does not
+    const more = await js(`(()=>{const d=document.querySelector('#scrDlg .dlg.fs');const c=d.querySelector('.fs-cmd');const t=c.textContent;
+      const before=d.querySelectorAll('.fs-more').length;c.textContent=t+'\\n'.repeat(40)+'tail';window.DurbarFolderSetup.markLong(d);const long=d.querySelectorAll('.fs-more').length;
+      const hint=(c.nextElementSibling||{}).textContent||'';c.textContent=t;window.DurbarFolderSetup.markLong(d);return {before,long,hint,after:d.querySelectorAll('.fs-more').length}})()`);
+    assert.deepStrictEqual([more.before, more.long, more.after], [0, 1, 0], `${w}: the scroll hint only on a long command: ${JSON.stringify(more)}`);
+    assert.ok(/scroll inside the box to read all/.test(more.hint));
     // FR-011: Use these without the confirmation: hooks stay off, rules and servers are used
     await js(`[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(b=>b.textContent==='Use these').click()`);
     await ctx.waitFor(`!document.querySelector('#scrDlg')`, 5000);

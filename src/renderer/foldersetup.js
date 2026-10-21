@@ -33,15 +33,30 @@
     return queue;
   }
 
-  function itemHTML(it,v,first){
+  /* Q1: on by default; a declined item stays off. Review #424: off until ticked again when new or changed after an answer (FR-010),
+     when part of it is hidden (FR-014), and for broad allow rules (S1, they also need the confirmation below).
+     Pure, so test:foldersetup pins every case (re-review #424). */
+  function defaultOn(it,v){
+    const isNew=v.pending.includes(it.id), wasSeen=(v.accepted.length+v.declined.length)>0;
+    const broadAllow=it.kind==='rule'&&it.ruleKind==='allow'&&!!it.broad;
+    return !!it.supported&&!v.declined.includes(it.id)&&!(isNew&&wasSeen)&&!it.hidden&&!broadAllow;
+  }
+
+  /* re-review #424: a command box whose text does not fit says so (measured: depends on the window and the font) */
+  function markLong(root){
+    root.querySelectorAll('.fs-cmd').forEach(c=>{
+      const next=c.nextElementSibling, has=next&&next.classList.contains('fs-more');
+      if(c.scrollHeight>c.clientHeight+2){if(!has)c.insertAdjacentHTML('afterend','<span class="fs-more">Long: scroll inside the box to read all of it.</span>');}
+      else if(has)next.remove();
+    });
+  }
+
+  function itemHTML(it,v){
     const esc=X.esc, isNew=v.pending.includes(it.id), wasSeen=(v.accepted.length+v.declined.length)>0;
-    /* Q1: on by default; a declined item stays off. Review #424: off until ticked again when new or changed after an answer (FR-010),
-       when part of it is hidden (FR-014), and for broad allow rules (S1, they also need the confirmation below) */
-    const broadAllow=it.kind==='rule'&&it.ruleKind==='allow'&&it.broad;
-    const on=it.supported&&!v.declined.includes(it.id)&&!(isNew&&wasSeen)&&!it.hidden&&!broadAllow;
+    const on=defaultOn(it,v);
     const tags=[it.ruleKind?`<span class="mtag fs-${it.ruleKind}">${it.ruleKind}</span>`:'',it.broad?'<span class="mtag warn" title="Covers the whole tool, not one pattern">broad</span>':'',isNew&&wasSeen?'<span class="mtag new">new or changed</span>':'',it.event?`<span class="mtag">${esc(it.event)}${it.matcher?' · '+esc(it.matcher):''}</span>`:''].join('');
     const secrets=it.secretNames&&it.secretNames.length?`<span class="fs-sec">Values of ${it.secretNames.map(esc).join(', ')} are hidden.</span>`:'';
-    const hidden=it.hidden?`<span class="fs-hidden">Part of this ${it.kind==='rule'?'rule':'command'} is hidden because it looks like a secret key. Ticking it uses the hidden part too.</span>`:'';
+    const hidden=it.hidden?`<span class="fs-hidden">${it.hiddenWhy?esc(it.hiddenWhy):`Part of this ${it.kind==='rule'?'rule':'command'} is hidden because it looks like a secret key. Ticking it uses the hidden part too.`}</span>`:'';
     const why=!it.supported?`<span class="imp-block">${esc(it.unsupportedWhy||'Not supported.')}</span>`:'';
     const ai=it.kind==='hook'&&it.supported&&X.bridge.folderSetupExplain?`<button class="btn sm" type="button" data-explain="${esc(it.id)}">Explain with AI</button><div class="fs-ai" data-ai="${esc(it.id)}" aria-live="polite"></div>`:'';
     return `<li class="imp-row fs-row${it.supported?'':' dis'}"><label><input type="checkbox" data-fs="${esc(it.id)}" data-kind="${it.kind}"${on?' checked':''}${it.supported?'':' disabled'} aria-label="Use ${esc(it.label)}">
@@ -78,6 +93,7 @@
       buttons:[{label:'Turn all off',value:'off'},{label:'Use these',value:'use',cls:'primary'}],
       validate:d=>{picked={accepted:[...d.querySelectorAll('[data-fs]')].filter(c=>c.checked&&!c.disabled).map(c=>c.dataset.fs),hooksConfirmed:!!(d.querySelector('#fsHooksOk')||{}).checked};return '';},
       onOpen:d=>{
+        requestAnimationFrame(()=>markLong(d));
         d.addEventListener('click',async e=>{
           const b=e.target.closest('[data-explain]');if(!b)return;
           const box=d.querySelector(`[data-ai="${b.dataset.explain}"]`);b.disabled=true;box.textContent='Asking an agent app…';
@@ -101,5 +117,5 @@
       if(X.toast)X.toast(off?'The folder’s own setup is off.':hooksDropped?'Used, except the hooks and broad allow rules (not confirmed).':'The folder’s setup will be used from the next start.',3600);
     }
   }
-  window.DurbarFolderSetup={init,check,openFor:(info)=>check(info,{force:true})};
+  window.DurbarFolderSetup={init,check,openFor:(info)=>check(info,{force:true}),defaultOn,markLong};
 })();
