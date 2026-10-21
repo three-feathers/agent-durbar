@@ -7,15 +7,14 @@
  */
 const assert = require('assert');
 const path = require('path');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 
 module.exports = async (ctx) => {
-  const js = (c) => ctx.js(c);
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { js } = H;
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1' } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
+    await H.load({ w, h });
     // a draft in the open chat must survive a group send
     await js(`document.querySelector('#stage .desk[data-id="sim-1"]').click()`);
     await ctx.waitFor(`!!document.getElementById('msgInput')`, 8000);
@@ -53,7 +52,7 @@ module.exports = async (ctx) => {
     const names = picked;
     for (const nm of names) {
       await js(`document.getElementById('backBtn')&&document.getElementById('backBtn').click()`); await ctx.sleep(300);
-      await js(`[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.split('\\n').some(l=>l.trim()===${JSON.stringify(nm)}))?.click()`);
+      await js(`[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.split('\\n').some(l=>l.trim()===${jsLiteral(nm)}))?.click()`);
       await ctx.waitFor(`!!document.getElementById('chat')`, 5000); await ctx.sleep(400);
       const has = await js(`[...document.querySelectorAll('#chat .msg, #chat .user, #chat [data-role="user"]')].some(m=>/Pull the latest main and run the tests again/.test(m.textContent))||/Pull the latest main and run the tests again/.test(document.getElementById('chat')?document.getElementById('chat').textContent:'')`);
       assert.ok(has, `${w}: ${nm} got the message`);

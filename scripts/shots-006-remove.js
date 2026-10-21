@@ -12,20 +12,17 @@
 const assert = require('assert');
 const path = require('path');
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
+const { helpers, jsLiteral } = require('./driver-helpers');
 
 module.exports = async (ctx) => {
-  const js = (c) => ctx.js(c);
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { js } = H;
   const rooms = () => js(`[...document.querySelectorAll('#stage .room [data-door]')].map(d=>d.dataset.door)`);
-  const hideToasts = () => js(`(()=>{const s=document.createElement('style');s.textContent='#toasts{display:none!important}';document.head.appendChild(s);})()`);
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1' } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
-    await ctx.sleep(800);
+    await H.load({ w, h });
     const before = await rooms();
     const target = before[before.length - 1];
-    const openMenu = `(()=>{const h=document.querySelector('#stage .room [data-door="${target}"]').closest('.room-head');const b=h.getBoundingClientRect();h.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:b.left+40,clientY:b.top+10}));return true})()`;
+    const openMenu = `(()=>{const h=document.querySelector(${jsLiteral(`#stage .room [data-door="${target}"]`)}).closest('.room-head');const b=h.getBoundingClientRect();h.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:b.left+40,clientY:b.top+10}));return true})()`;
     await js(openMenu); await ctx.sleep(300);
     const items = await js(`[...document.querySelectorAll('#modeMenu [data-fact] b')].map(b=>b.textContent)`);
     console.log('[006-rm]', w, 'menu', JSON.stringify(items));
@@ -33,10 +30,9 @@ module.exports = async (ctx) => {
     assert.ok(await js(`document.activeElement&&document.activeElement.closest('#modeMenu')!==null`), 'focus is in the menu');
     // the visible ⋯ button opens the same menu
     await js(`(document.getElementById('modeMenu')&&document.getElementById('modeMenu').remove(),true)`);
-    await js(`document.querySelector('#stage [data-foldermenu="${target}"]').click()`); await ctx.sleep(300);
+    await js(`document.querySelector(${jsLiteral(`#stage [data-foldermenu="${target}"]`)}).click()`); await ctx.sleep(300);
     assert.deepStrictEqual(await js(`[...document.querySelectorAll('#modeMenu [data-fact] b')].map(b=>b.textContent)`), items, 'the ⋯ button opens the folder menu');
-    await hideToasts(); await ctx.sleep(200);
-    await ctx.shot(path.join(OUT, `remove-folder-menu-${w}x${h}.png`));
+    await H.shot(path.join(OUT, `remove-folder-menu-${w}x${h}.png`), { prep: 'calm', delay: 200 });
     // Cancel keeps the room
     await js(`(window.confirm=()=>false,true)`);
     await js(`document.querySelector('#modeMenu [data-fact="rm"]').click()`); await ctx.sleep(500);
@@ -48,14 +44,11 @@ module.exports = async (ctx) => {
     const after = await rooms();
     assert.ok(!after.includes(target) && after.length === before.length - 1, `the folder is removed (${before.length} -> ${after.length})`);
     // one agent per folder: Remove folder in the chat header
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simrooms: 'solo' } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=10`, 15000);
-    await ctx.sleep(800);
+    await H.load({ query: { simrooms: 'solo' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=10` });
     const solo = await rooms();
     await js(`document.querySelector('#stage .desk[data-id]').click()`); await ctx.sleep(700);
     assert.ok(await js(`!!document.getElementById('rmFolderBtn')&&!document.getElementById('rmSessBtn')`), 'a single-session folder shows Remove folder, not Remove from office');
-    await hideToasts(); await ctx.sleep(200);
-    await ctx.shot(path.join(OUT, `remove-folder-chat-${w}x${h}.png`));
+    await H.shot(path.join(OUT, `remove-folder-chat-${w}x${h}.png`), { prep: 'calm', delay: 200 });
     await js(`(window.confirm=()=>true,true)`);
     await js(`document.getElementById('rmFolderBtn').click()`); await ctx.sleep(900);
     const solo2 = await rooms();

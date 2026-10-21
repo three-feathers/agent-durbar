@@ -163,7 +163,7 @@
     const dl=X.detail?X.detail.get():'expert';
     const detailSec=X.detail?`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Detail level</h3>
         <p class="scr-note">Expert adds tokens, models, context and paths. Permissions work the same in both.</p>
-        <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div>${X.density?densityRow():''}</section>`:'';
+        <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div>${X.density?densityRow():''}${X.liveAct&&X.liveAct.usable()?liveActRow():''}</section>`:'';
     /* spec 052 FR-066, FR-093: what Durbar does not do, in calm plain words (checked against the README's Safety model and Costs and caps) */
     const notSec=`<section class="scr-sec" aria-labelledby="notH"><h3 id="notH">What Durbar does not do</h3><ul class="scr-not">
         <li>Durbar asks Claude Code and Copilot to stay in their folders but cannot force them; only Codex is held there by the system (in Read-only and Ask first).</li>
@@ -357,6 +357,11 @@
     const d=X.density.get();
     return `<div class="scr-row"><span class="scr-row-l" id="denL">Spacing</span><div class="seg" role="group" aria-labelledby="denL"><button type="button" data-density="comfortable" aria-pressed="${d!=='compact'}">Comfortable</button><button type="button" data-density="compact" aria-pressed="${d==='compact'}" title="Tighter chat, screens, dialogs and inbox. The office and the top bar keep their sizes.">Compact</button></div></div>`;
   }
+  /* spec 001 FR-032: the live readout on the desks (thinking, tool, reply), on by default; kept per computer like Spacing */
+  function liveActRow(){
+    const on=!!X.liveAct.get();
+    return `<div class="scr-row"><span class="scr-row-l" id="laL">Live activity on desks</span>${sw(on,'Live activity on desks: what each working agent is thinking or doing, on its desk','id="liveActSw" aria-describedby="laN"')}<span class="scr-note small" id="laN">What each working agent is thinking or doing, on its desk. Secrets are masked.</span></div>`;
+  }
   function head(title){
     const tabs=cur&&cur.kind==='tools'?'':'';
     return `<div class="scr-head"><h2>${esc(title)}</h2>${tabs}<span class="grow"></span><button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>`;
@@ -441,6 +446,8 @@
       if(res&&res.ok){X.setSerious(!!res.seriousMode);ss.classList.toggle('on',!!res.seriousMode);ss.setAttribute('aria-checked',res.seriousMode?'true':'false');const m=$('seriousMsg');if(m)m.textContent=res.seriousMode?'Serious mode is on: no mood drawings.':'Serious mode is off.';}
       return;
     }
+    const la=e.target.closest('#liveActSw');
+    if(la&&X.liveAct){const on=!X.liveAct.get();X.liveAct.set(on);la.classList.toggle('on',on);la.setAttribute('aria-checked',on?'true':'false');return;}
     const ns=e.target.closest('#notifySw');
     if(ns&&X.bridge.setNotifyNeedsMe){
       const on=ns.getAttribute('aria-checked')!=='true';

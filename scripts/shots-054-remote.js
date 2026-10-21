@@ -12,21 +12,15 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { waits } = require('./driver-helpers');
-const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
+const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(process.cwd(), 'dist', 'renderer', 'index.html');
 
 module.exports = async (ctx) => {
-  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
-  const js = (c) => ctx.js(c);
-  const shot = async (name) => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(150); await ctx.shot(path.join(OUT, name)); console.log('[054] saved', name); };
-  const clickText = (sel, text) => js(`(()=>{const b=[...document.querySelectorAll(${jsLiteral(sel)})].find(x=>x.textContent.trim()===${jsLiteral(text)});if(!b)return false;b.click();return true;})()`);
+  const H = helpers(ctx); // spec 008 FR-096/097: shared plumbing, waits for the page instead of a fixed time
+  const { until, settle, js, clickText } = H;
+  const shot = (name) => H.shot(path.join(OUT, name), { prep: 'mouse', tag: '054' });
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1' } });
-    await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-    await settle();
+    await H.load({ w, h, ready: 'fit' });
     // open the first main agent's chat (every agent is Copilot without simkinds)
     const id = await js(`(document.querySelector('.desk[data-id]')||{dataset:{}}).dataset.id||''`);
     assert.ok(id, 'a desk card to open');
@@ -70,10 +64,7 @@ module.exports = async (ctx) => {
   }
   // spec 054 FR-060/FR-061: a Claude agent (simkinds=mixed: Ada, sim-1) is controlled from Claude, with a claude.ai link
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simkinds: 'mixed' } });
-    await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-    await ctx.sleep(1200);
+    await H.load({ w, h, query: { simkinds: 'mixed' }, ready: 'fit' }); // was a fixed 1200 ms; now waits for the page to stop changing (FR-096)
     await js(`document.querySelector('.desk[data-id="sim-1"]').click()`); await ctx.waitFor(`!!document.getElementById('moreBtn')`, 5000); await ctx.sleep(400);
     await js(`document.getElementById('moreBtn').click()`); await ctx.sleep(400);
     const item = await js(`(document.getElementById('remoteBtn')||{}).textContent||''`);

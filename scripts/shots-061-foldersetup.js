@@ -13,16 +13,15 @@
  */
 const assert = require('assert');
 const path = require('path');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 
 module.exports = async (ctx) => {
   const js = (c) => ctx.js(c);
+  const HP = helpers(ctx); // spec 008 FR-097: shared plumbing
   const shot = async (name, w, h) => { await ctx.sleep(200); await ctx.shot(path.join(OUT, `061-${name}-${w}x${h}.png`)); };
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simfoldersetup: '1' } });
-    await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
+    await HP.load({ w, h, query: { simfoldersetup: '1' }, settle: false });
     // FR-001: it opens by itself for the folder with pending items
     await ctx.waitFor(`!!document.querySelector('#scrDlg .dlg.fs')`, 8000);
     const v = await js(`(()=>{const d=document.querySelector('#scrDlg .dlg.fs');const R=d.getBoundingClientRect();
@@ -34,8 +33,8 @@ module.exports = async (ctx) => {
     assert.strictEqual(v.rows, 9, `${w}: every item listed`);
     assert.strictEqual(v.disabled, 1, 'the Codex hook is shown as not supported');
     assert.strictEqual(v.checked, 5, 'Q1: on by default, except the unsupported one, the hidden MCP server and the two Bash allow rules (S1, owner 2026-10-21: every Bash rule needs the explicit tick)');
-    assert.ok(await js(`!document.querySelector('#scrDlg [data-fs="${'c'.repeat(32)}"]').checked`), 'S1: Bash(npm test:*) starts unticked too');
-    assert.ok(await js(`!document.querySelector('#scrDlg [data-fs="${'d'.repeat(32)}"]').checked`), 'S1: the broad allow rule (Bash) starts unticked');
+    assert.ok(await js(`!document.querySelector(${jsLiteral(`#scrDlg [data-fs="${'c'.repeat(32)}"]`)}).checked`), 'S1: Bash(npm test:*) starts unticked too');
+    assert.ok(await js(`!document.querySelector(${jsLiteral(`#scrDlg [data-fs="${'d'.repeat(32)}"]`)}).checked`), 'S1: the broad allow rule (Bash) starts unticked');
     assert.ok(await js(`/hooks and broad allow rules/.test(document.querySelector('#scrDlg .fs-confirm').textContent)`), 'the tick names the broad allow rules too');
     assert.ok(v.broad.includes('broad'), 'the broad rule is marked');
     assert.ok(v.curl && v.note && v.confirm, 'the exact command, the plain warning, the hooks confirmation');
@@ -75,7 +74,7 @@ module.exports = async (ctx) => {
       return {text:t.textContent,checked:r.querySelector('[data-fs]').checked,clear:T.top>=C.bottom-0.5,inside:T.right<=D.right&&T.left>=D.left,size:parseFloat(getComputedStyle(t).fontSize),
         count:document.querySelectorAll('#scrDlg .fs-hidden').length}})()`);
     assert.ok(/^It starts sh, which can run what it is given, and hands it env values \(NOTES_FLAGS\): they can be commands, so read them above/.test(hd.text) && /Ticking it runs them too\.$/.test(hd.text), `${w}: the reason is shown: ${hd.text}`);
-    assert.ok(await js(`document.querySelector('#scrDlg [data-fs="${'1'.repeat(32)}"]').closest('li').textContent.includes("NOTES_FLAGS=--quiet sh -c 'node")`), `${w}: the env value is shown before the command, args quoted`);
+    assert.ok(await js(`document.querySelector(${jsLiteral(`#scrDlg [data-fs="${'1'.repeat(32)}"]`)}).closest('li').textContent.includes("NOTES_FLAGS=--quiet sh -c 'node")`), `${w}: the env value is shown before the command, args quoted`);
     assert.ok(!hd.checked && hd.clear && hd.inside && hd.size >= 10.5 && hd.count === 1, `${w}: hidden server unticked, reason under its box: ${JSON.stringify(hd)}`);
     await shot('hidden', w, h);
     // FR-011: Use these without the confirmation: hooks stay off, rules and servers are used
