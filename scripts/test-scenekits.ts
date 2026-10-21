@@ -50,4 +50,23 @@ for (const [id, kit] of [['clean-office', 'office'], ['corporate', 'corporate'],
   assert.strictEqual(THEME.sceneKit(), kit, id + ' draws with the ' + kit + ' kit');
 }
 assert.strictEqual(THEME._validateManifest({ id: 'k', scene: 'x"/>' }).scene, 'office', 'unknown scene = office');
+// spec 040 FR-023: a theme's character, desk and monitor art is drawn over every kit (scene and walking figure), the headwear over
+// the hair, and the theme key is part of the signature (a theme switch redraws the desk instead of keeping the old SVG)
+{
+  const art = { body: '<g class="art-slot" data-slot="char-robe"><rect/></g>', head: '<g class="art-slot" data-slot="char-headwear"><rect/></g>', desk: '<g class="art-slot" data-slot="desk-art"><rect/></g>', monitor: '<g class="art-slot" data-slot="monitor-art"><rect/></g>' };
+  for (const kit of K.KITS.slice(1)) {
+    const base = { st: 'working', mood: { body: 'normal' }, k: { shirt: '#336699', skin: '#e0b090', hair: '#222222', style: 'short' }, mini: false, c: false, T, shade, reduced: true };
+    const plainSvg: string = K.draw(kit, { id: 'p' }, base);
+    assert.ok(!plainSvg.includes('art-slot'), kit + ': no art without a theme that has some');
+    const svg: string = K.draw(kit, { id: 'p' }, { ...base, art, themeKey: 'ai-pink.3' });
+    for (const s of ['char-robe', 'char-headwear', 'desk-art', 'monitor-art']) assert.ok(svg.includes(`data-slot="${s}"`), kit + ': draws ' + s);
+    assert.ok(svg.indexOf('char-headwear') > svg.indexOf('class="head"'), kit + ': the headwear is inside the head, over the hair');
+    assert.ok(svg.indexOf('monitor-art') > svg.indexOf('x="116" y="36"'), kit + ': the monitor art is over the screen');
+    assert.strictEqual(parser.parseFromString(svg, 'image/svg+xml').getElementsByTagName('parsererror').length, 0, kit + ': valid SVG with art');
+    assert.ok(/data-sig="[^"]*\|ai-pink\.3\|/.test(svg), kit + ': the theme key is in the signature');
+    const av: string = K.avatar(kit, { id: 'w' }, { k: base.k, T, shade, art });
+    assert.ok(av.includes('char-robe') && av.includes('char-headwear'), kit + ': the walking figure wears the art too');
+    assert.ok(av.indexOf('char-headwear') > av.indexOf('char-robe'), kit + ': headwear after the body');
+  }
+}
 console.log('scene kit tests passed (' + n + ' scenes)');
