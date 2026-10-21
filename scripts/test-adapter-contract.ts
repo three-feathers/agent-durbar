@@ -139,6 +139,10 @@ export async function runContract(name: string, make: () => ContractTarget, hook
     assert.strictEqual(has('setRemote'), !!cap.remote, M('C2', 'setRemote() <=> capabilities.remote (spec 054 FR-001)'));
     assert.strictEqual(has('renameSession'), !!cap.renameSession, M('C2', 'renameSession() <=> capabilities.renameSession (spec 059 FR-007)'));
     assert.strictEqual(has('deleteSession'), !!cap.deleteSession, M('C2', 'deleteSession() <=> capabilities.deleteSession (spec 006 FR-028)'));
+    assert.strictEqual(has('startMcpSignIn'), !!cap.mcpSignIn, M('C2', 'startMcpSignIn() <=> capabilities.mcpSignIn (spec 058 FR-064)'));
+    if (has('cancelMcpSignIn')) assert.ok(cap.mcpSignIn, M('C2', 'cancelMcpSignIn() only with capabilities.mcpSignIn'));
+    assert.ok(cap.mcpSignInSteps === undefined || (typeof cap.mcpSignInSteps === 'string' && cap.mcpSignInSteps.length > 0), M('C2', 'mcpSignInSteps is a non-empty string or missing'));
+    assert.strictEqual(typeof cap.mcpSignIn, cap.mcpSignIn === undefined ? 'undefined' : 'boolean', M('C2', 'mcpSignIn is a boolean or missing'));
     assert.strictEqual(has('setPermMode'), cap.permModeSwitch !== 'none', M('C2', "setPermMode() <=> permModeSwitch !== 'none'"));
     ran('C2');
   }
@@ -337,7 +341,7 @@ export async function runContract(name: string, make: () => ContractTarget, hook
 
 const ALL_OPTIONAL: OptionalMember[] = [
   'interrupt', 'resolvePermission', 'revokeGrant', 'setCap', 'resolveLimit', 'setMcpEnabled', 'setModel', 'cancelQueuedModel', 'compact',
-  'listModelOptions', 'listPreviousSessions', 'history', 'setPermMode',
+  'listModelOptions', 'listPreviousSessions', 'history', 'setPermMode', 'startMcpSignIn', 'cancelMcpSignIn',
 ];
 const SCRIPT = [
   { thinking: 'Considering' },
@@ -352,10 +356,39 @@ const HOOKS: ContractHooks = {
 const WS = path.join(os.tmpdir(), 'durbar-contract-ws');
 
 async function main(): Promise<void> {
+  // Spec 058 FR-063: `mcpAuth` only on a failed toolCall that has an MCP server; FR-064: sign-in members behind the flag.
+  {
+    const base = { type: 'toolCall', sessionId: 's', timestamp: 1, callId: 'c', tool: 'mcp__notes__read' };
+    assert.deepStrictEqual(eventProblems({ ...base, phase: 'failed', mcpServer: 'notes', mcpTool: 'read', mcpAuth: true }), [], 'mcpAuth on a failed MCP call passes');
+    assert.deepStrictEqual(eventProblems({ ...base, phase: 'failed', mcpServer: 'notes' }), [], 'no mcpAuth passes');
+    assert.ok(eventProblems({ ...base, phase: 'complete', mcpServer: 'notes', mcpAuth: true }).length > 0, 'mcpAuth on a completed call is refused');
+    assert.ok(eventProblems({ ...base, phase: 'start', mcpServer: 'notes', mcpAuth: true }).length > 0, 'mcpAuth on a started call is refused');
+    assert.ok(eventProblems({ ...base, phase: 'failed', mcpAuth: true }).length > 0, 'mcpAuth without mcpServer is refused');
+    assert.ok(eventProblems({ ...base, phase: 'failed', mcpServer: '', mcpAuth: true }).length > 0, 'mcpAuth with an empty mcpServer is refused');
+    assert.ok(eventProblems({ ...base, phase: 'failed', mcpServer: 'notes', mcpAuth: false }).length > 0, 'mcpAuth false is refused');
+    assert.ok(eventProblems({ ...base, phase: 'failed', mcpServer: 'notes', mcpAuth: 'yes' }).length > 0, 'mcpAuth of another type is refused');
+    const si = new FakeAdapter({ script: [], capabilities: { mcpSignIn: true } });
+    assert.strictEqual(si.capabilities.mcpSignIn, true);
+    assert.ok(si.startMcpSignIn && si.cancelMcpSignIn, 'sign-in members exist with the flag');
+    const noCancel = new FakeAdapter({ script: [], capabilities: { mcpSignIn: true }, omit: ['cancelMcpSignIn'] });
+    assert.ok(noCancel.startMcpSignIn && !noCancel.cancelMcpSignIn, 'cancel is optional');
+    const off = new FakeAdapter({ script: [] });
+    assert.ok(!off.startMcpSignIn && !off.cancelMcpSignIn && !('mcpSignIn' in off.capabilities) && !('mcpSignInSteps' in off.capabilities), 'no members and no fields without the flag');
+    const omitted = new FakeAdapter({ script: [], capabilities: { mcpSignIn: true }, omit: ['startMcpSignIn'] });
+    assert.ok(!omitted.startMcpSignIn && !omitted.capabilities.mcpSignIn, 'omitting startMcpSignIn forces the flag off');
+    const sid = await si.start({ workspace: WS, permissionMode: 'read-only', quiet: true });
+    assert.deepStrictEqual(await si.startMcpSignIn!(sid, 'notes'), { kind: 'browser', url: 'https://auth.example.test/authorize' });
+    await si.cancelMcpSignIn!(sid, 'notes');
+    assert.deepStrictEqual(si.signInCalls, [{ sessionId: sid, name: 'notes' }, { sessionId: sid, name: 'notes', cancel: true }]);
+    await assert.rejects(() => si.startMcpSignIn!('nope', 'notes'), 'an unknown session is refused');
+    await si.stop(sid);
+  }
+
   const setups: Array<[string, () => FakeAdapter]> = [
     ['fake-full', () => new FakeAdapter({ script: SCRIPT })],
     ['fake-rename-any', () => new FakeAdapter({ script: SCRIPT, capabilities: { renameSession: 'any' } })],
     ['fake-rename-next', () => new FakeAdapter({ script: SCRIPT, capabilities: { renameSession: 'next-turn' } })],
+    ['fake-signin', () => new FakeAdapter({ script: SCRIPT, capabilities: { mcpSignIn: true, mcpSignInSteps: 'In a terminal, run `fake login {name}`.' } })],
     ['fake-bare', () => new FakeAdapter({ script: SCRIPT, omit: ALL_OPTIONAL })],
     ['fake-readonly', () => new FakeAdapter({ script: SCRIPT, capabilities: { permissionModes: ['read-only'] } })],
   ];
