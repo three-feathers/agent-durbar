@@ -44,7 +44,7 @@
     lines.push('This cannot be undone. To only take it out of this list, use Hide.');
     return {title:'Delete this session?',body:'\u201c'+title+'\u201d will be deleted from '+app+' on this computer.',lines};
   }
-  const IN_OFFICE_TITLE='This session is still in the office', IN_OFFICE_BODY='This session is still in the office. End it and remove it from the office first.', ONLY_SESSION='It is the only session in this folder: start a new session there first.';
+  const IN_OFFICE_TITLE='This session is still in the office', IN_OFFICE_BODY='End it and remove it from the office first, then delete it here.', ONLY_SESSION='It is the only session in this folder: start a new session there first.';
   /* The refusal dialog (FR-030): Remove from office is left out for a folder's only main session, and the extra line says what to do instead. */
   const refusalDialogText=canRemove=>({title:IN_OFFICE_TITLE,body:IN_OFFICE_BODY,lines:canRemove?[]:[ONLY_SESSION]});
   const noDeleteReason=app=>String(app||'This agent app')+' cannot delete one session. Hide it instead.';

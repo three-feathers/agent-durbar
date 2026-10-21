@@ -37,7 +37,7 @@ assert.strictEqual(long.length, 80); assert.ok(long.endsWith('…'));
 assert.strictEqual(A.clip(null), '');
 
 // wait labels: minutes only
-assert.strictEqual(A.waitLabel(5000), 'waiting under 1 min');
+assert.strictEqual(A.waitLabel(5000), 'waiting less than a minute');
 assert.strictEqual(A.waitLabel(4 * 60000 + 30000), 'waiting 4 min');
 assert.strictEqual(A.waitLabel(60 * 60000), 'waiting 1 h');
 assert.strictEqual(A.waitLabel(75 * 60000), 'waiting 1 h 15 min');

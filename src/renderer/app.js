@@ -333,7 +333,7 @@ function plainChip(k,tool,label,running){
   if(k==='read')return (running?'Reading ':'Read ')+file;
   if(k==='edit')return (running?'Changing ':'Changed ')+file;
   if(k==='run')return running?'Running a command':'Ran a command';
-  if(k==='search')return running?'Searching files':'Searched files';
+  if(k==='search')return /grep|glob|find|rg\b|file/.test(t)?(running?'Searching files':'Searched files'):(running?'Searching':'Ran a search'); /* round 4: an issue or notes search is not a file search */
   return running?'Using a tool':'Used a tool';
 }
 /* spec 052 FR-057: in Simple, the stop at the spending limit and a rate-limit error read in plain words; Expert keeps the exact text */
@@ -346,7 +346,14 @@ const taskText=a=>{const t=a.task==null?'':String(a.task);if(!SIMPLE)return t;
   if(a.state==='error'&&/\b429\b|rate[ -]?limit/i.test(t))return 'The AI service is busy. Try again in a minute.';
   return t;};
 const fmtUsd=v=>approx(v)+' est.';
+/* spec 052 (2026-10-21, round 7): the home folder shows as ~ (Windows C:\\Users\\name, macOS /Users/name, Linux /home/name), so the part after it, where the folder is, survives an ellipsis; tooltips keep the full path */
+const showPath=p=>String(p||'').replace(/^(?:\/home\/[^/]+|\/Users\/[^/]+|[A-Za-z]:\\Users\\[^\\]+)(?=[\\/]|$)/,'~');
 const USD_TIP='The agent\'s own estimate of the API price for these tokens, not a bill and not AIU.';
+/* spec 052 (2026-10-21, office fit): the cost part of a card's usage line; " est." in its own span so a narrow card can drop it (the tooltip explains it) */
+const useCost=c=>{const t=String(c||'');if(t.endsWith(' est.'))return esc(t.slice(0,-5))+'<span class="est"> est.</span>';
+  if(t.endsWith(' AIU')){const v=t.slice(0,-4),m=/^(\d+)\.\d+\/(\d+(?:\.\d+)?)$/.exec(v); /* a capped "33.00/30": a very narrow card shows "33/30" (exact value in the tooltip) */
+    return (m?'<span class="full">'+esc(v)+'</span><span class="short">'+esc(m[1]+'/'+m[2])+'</span>':esc(v))+'<span class="est"> AIU</span>';}
+  return esc(t);};
 function usageShort(a){const u=a.usage; if(!u||!u.calls)return ''; const k=usageCaps(a), c=capOf(a);
   if(SIMPLE){const m=k.nanoAiu?u.nano/1e9*AIU_USD:(k.costUsd?(u.usd||0):null);return m==null?'':approx(m);}
   if(!k.nanoAiu)return c&&k.costUsd&&isUsdCap(a)?fmtTok(u.inT+u.outT)+' · $'+(u.usd||0).toFixed(2)+'/$'+c.toFixed(2)+' est.':fmtTok(u.inT+u.outT)+' tok'+(k.costUsd?' · '+fmtUsd(u.usd||0):'');
@@ -545,7 +552,7 @@ function cardHTML(a,d,nSubs){
   return `<button class="desk card is-${st}${isFailing(a)?' is-failing':''}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${esc((a.profile?a.profile.name+' · '+a.role:a.role)+kindTag(a)+remoteTag(a))} · ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${sceneC(a)}</span>
     <span class="ci"><span class="l1"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span><span class="stl st-${pillSt(a)}">${esc(stWord(a,true))}</span></span>    <span class="intent" title="${esc(taskOf(a))}">${esc(taskOf(a))}</span>
-    <span class="l3"><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a,true))}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${esc(use.split(' · ')[1])}</span>`:`${esc(use.split(' · ')[0]||'')}<span class="aiu">${use.includes(' · ')?' · '+esc(use.split(' · ')[1]):''}</span>`}</span></span></span></button>`;
+    <span class="l3"><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a,true))}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${useCost(use.split(' · ')[1])}</span>`:`<span class="tok">${esc(use.split(' · ')[0]||'')}</span>${use.includes(' · ')?`<span class="aiu"><span class="sep">&nbsp;· </span>${useCost(use.split(' · ')[1])}</span>`:''}`}</span></span></span></button>`;
 }
 function linksSVG(d,rows,extraMore){
   const D=DENS[d]; const n=rows+(extraMore?1:0);
@@ -615,11 +622,30 @@ function plateHTML({r}){
   return `<button class="plate tone-${sm.tone}" type="button" data-door="${esc(r.id)}" data-key="door:${esc(r.id)}" data-tint="${r.tint}" aria-expanded="false" aria-label="${esc(wordOf('door-open'))} ${esc(r.name)}. ${esc(sm.text)}. ${sm.n} agent${sm.n===1?'':'s'}.${u?' Usage: '+esc(u.long)+'.':''}${al.siren?' '+ALERT_WORDS+'.':''}" title="${esc(r.path)}">${doorSvg(false)}<span class="plate-tx"><b>${esc(r.name)}</b>${al.siren?SIREN():''}${floorTag(r)}<span class="plate-sum">${esc(sm.text)}</span></span>${u?`<span class="plate-aiu" title="${esc(u.tip)}">${esc(u.short)}</span>`:''}<span class="plate-n">${sm.n}</span></button>`;
 }
 const doorsHTML=list=>list.length?`<div class="doors" data-key="doors">${list.map(plateHTML).join('')}</div>`:'';
-function stageHTML(sizing,d,aw,cap){
+function stageHTML(sizing,d,aw,cap){return stageParts(sizing,d,aw,cap).join('');}
+/* the stage in parts (each open room, the lobby, the door plates), so a render can patch only the parts that changed */
+function stageParts(sizing,d,aw,cap){
   const open=sizing.filter(m=>!m.r.closed).map(m=>roomHTML(m,d,aw,cap)), doors=doorsHTML(sizing.filter(m=>m.r.closed)), lob=lobbyHTML(aw);
-  if(!lob)return open.join('')+doors;
-  const mid=open.length<2?open.length:Math.ceil(open.length/2); /* one room: below it; none: above the door plates */
-  return open.slice(0,mid).join('')+lob+open.slice(mid).join('')+doors;
+  const mid=!lob?open.length:open.length<2?open.length:Math.ceil(open.length/2); /* one room: below it; none: above the door plates */
+  return [...open.slice(0,mid),lob,...open.slice(mid),doors].filter(Boolean);
+}
+/* spec 052 (2026-10-21, measured): a render used to rebuild, parse and diff the whole stage although a tick usually changes one
+   desk. Each part's HTML is remembered; only a part whose HTML changed is parsed and morphed. Anything unexpected (parts added,
+   removed or reordered, a part with more than one root) falls back to the full morph, so the result is the same DOM. */
+let stagePrev=null;
+function morphParts(stage,parts){
+  const prev=stagePrev;
+  if(!prev||prev.length!==parts.length)return false;
+  const kids=[...stage.children].filter(k=>!k.classList.contains('scene-out'));
+  if(kids.length!==parts.length)return false;
+  for(let i=0;i<parts.length;i++){
+    if(parts[i]===prev[i])continue;
+    const t=document.createElement('template');t.innerHTML=parts[i];
+    const n=t.content.firstElementChild;
+    if(!n||t.content.childElementCount!==1||keyOf(n)==null||keyOf(n)!==keyOf(kids[i]))return false;
+    morphNode(kids[i],n);
+  }
+  return true;
 }
 function setRoomClosed(r,closed,quiet){
   if(!!r.closed===!!closed)return;
@@ -659,7 +685,7 @@ function roomHTML({r,mains,all},d,aw,cap){
   const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':(k==='done'||k==='idle')?' calm':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}</span>`:''}).join('');
   /* spec 052 FR-006: the counts in words too (screen readers, and a tooltip for colour-blind users) */
   const dotsLabel=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?n+' '+LABELS[k].toLowerCase():'';}).filter(Boolean).join(', ');
-  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="${esc(wordOf('door-close'))} ${esc(r.name)}" title="${esc(wordOf('door-title-prefix'))}: ${esc(r.name)} ${esc(wordOf('door-plate-suffix'))}">${doorSvg(true)}</button><span class="room-name" title="${esc(r.name)}${(()=>{const u=roomAiu(r);return u?' · '+esc(u.long):'';})()}">${esc(r.name)}</span>${al.siren?SIREN():''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(r.path)}</span>${(()=>{const u=roomAiu(r);return u?`<button class="room-aiu" type="button" data-costview="${esc(r.id)}" title="${esc(u.tip+'\nClick for the cost by folder.')}">${esc(u.long)}</button>`:'';})()}${dotsLabel?`<span class="room-dots" role="img" aria-label="${esc(dotsLabel)}" title="${esc(dotsLabel)}">${dots}</span>`:`<span class="room-dots" aria-hidden="true">${dots}</span>`}${bridge&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.removeFolder&&!demoOn?`<button class="room-new room-more" type="button" data-foldermenu="${esc(r.id)}" title="Folder actions: new session, schedules, rename, hide, remove" aria-label="Folder actions for ${esc(r.name)}" aria-haspopup="menu">⋯</button>`:''}${roomSchedChip(r)}${bridge&&bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT()}</div>`;
+  const head=`<div class="room-head"><button class="door" type="button" data-door="${esc(r.id)}" aria-expanded="true" aria-label="${esc(wordOf('door-close'))} ${esc(r.name)}" title="${esc(wordOf('door-title-prefix'))}: ${esc(r.name)} ${esc(wordOf('door-plate-suffix'))}">${doorSvg(true)}</button><span class="room-name" title="${esc(r.name)}${(()=>{const u=roomAiu(r);return u?' · '+esc(u.long):'';})()}">${esc(r.name)}</span>${al.siren?SIREN():''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(showPath(r.path))}</span>${(()=>{const u=roomAiu(r);return u?`<button class="room-aiu" type="button" data-costview="${esc(r.id)}" title="${esc(u.tip+'\nClick for the cost by folder.')}">${esc(u.long)}</button>`:'';})()}${dotsLabel?`<span class="room-dots" role="img" aria-label="${esc(dotsLabel)}" title="${esc(dotsLabel)}">${dots}</span>`:`<span class="room-dots" aria-hidden="true">${dots}</span>`}${bridge&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.removeFolder&&!demoOn?`<button class="room-new room-more" type="button" data-foldermenu="${esc(r.id)}" title="Folder actions: new session, schedules, rename, hide, remove" aria-label="Folder actions for ${esc(r.name)}" aria-haspopup="menu">⋯</button>`:''}${roomSchedChip(r)}${bridge&&bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT()}</div>`;
   if(d==='full'){
     const gap=6, pad=12;
     const widths=mains.map(a=>unitWidth(a,d));
@@ -818,6 +844,7 @@ function renderOffice(){
   const model=officeModel();
   if(!model.length){
     stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey='';
+    stagePrev=null;
     if(!agents.length&&!demoOn){if(!stage.querySelector('.welcome'))ringFolder();stage.innerHTML=welcomeHTML();floor.classList.remove('scrolls');return;} /* spec 001 FR-026: first run */
     stage.innerHTML='<div class="empty">'+EMPTY_DESK+(!agents.length&&!demoOn?'No agents yet. Use "+ New" above to add a folder (or a VS Code .code-workspace file).':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open Manage folders (next to the folder filter) to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?(FLOORS.floors.length>1?'All floors are off. Open "Floors" above or Settings > Floors to switch one on.':'Your only floor is off. Switch it on in Settings > Floors.'):agents.length&&ROOMS.every(r=>!roomShown(r))?('Nothing to show: every folder is hidden or on a floor that is off. Open '+(floorsLive()&&FLOORS.floors.length>1?(SIMPLE?'"Floors" above, or ':'"Floors" or "Folders" above, or '):(SIMPLE?'':'"Folders" above, or '))+'Settings > Floors.'):'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
@@ -827,19 +854,41 @@ function renderOffice(){
   const key=JSON.stringify([aw,ah,FORCE_DENSITY,lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]])])]);
   if(key!==layoutKey||!layout){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
   HCAP=layout.hcap; HBOOST=new Map(layout.boost);
-  const html=stageHTML(model,layout.d,aw,layout.cap);
+  const parts=stageParts(model,layout.d,aw,layout.cap);
   const fresh=stage.dataset.d!==layout.d||!!stage.querySelector('.empty');
   stage.style.width=aw+'px'; stage.style.height='auto'; stage.dataset.d=layout.d;
-  if(fresh)stage.innerHTML=html; else morphHTML(stage,html);
+  if(fresh)stage.innerHTML=parts.join(''); else if(!morphParts(stage,parts))morphHTML(stage,parts.join(''));
+  stagePrev=parts;
   stage.dataset.fit=layout.fit?'ok':'scroll'; stage.dataset.h=String(layout.hcap);
+  fitUsage(stage);
   floor.classList.toggle('scrolls',!layout.fit);
   if(doorAnim){const el=stage.querySelector(`[data-door="${CSS.escape(doorAnim)}"]`),box=el&&(el.closest('.room')||el);if(box&&!REDUCED){box.classList.add('enter');setTimeout(()=>box.classList.remove('enter'),420);}doorAnim=null;}
 }
 
+/* spec 052 (2026-10-21; real 15-session office, and CI's fonts): a card's usage line is fitted by measuring, not by a width
+   threshold, so it holds with any font. Step by step until the cost fits: drop the token count, then " est." / " AIU", then the
+   short form of a capped figure ("33/30"), then the cost itself (its tooltip and the status pill still say it). */
+const USE_STEPS=['no-tok','no-unit','short','no-cost'];
+function fitUsage(root){
+  for(const u of root.querySelectorAll('.desk .use')){
+    u.classList.remove(...USE_STEPS);
+    const cost=u.querySelector('.aiu');
+    const fits=()=>{if(!cost||!cost.getClientRects().length)return u.scrollWidth<=u.clientWidth+0.5;const c=cost.getBoundingClientRect(),b=u.getBoundingClientRect();return u.scrollWidth<=u.clientWidth+0.5&&c.right<=b.right+0.5&&c.left>=b.left-0.5;};
+    for(const st of USE_STEPS){if(fits())break;u.classList.add(st);}
+  }
+  /* the same for room headers: a name cut (even by a pixel, which shows an ellipsis) while its path still shows hides the path (also in the tooltip) */
+  for(const hd of root.querySelectorAll('.room-head')){
+    hd.classList.remove('no-path');
+    const n=hd.querySelector('.room-name'),p=hd.querySelector('.room-path');
+    if(n&&p&&p.getClientRects().length&&n.scrollWidth>n.clientWidth+0.5)hd.classList.add('no-path');
+  }
+}
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{const s=document.getElementById('stage');if(s)fitUsage(s);}).catch(()=>{});
+window.DurbarFit=()=>{const s=document.getElementById('stage');if(s)fitUsage(s);}; /* the layout checks refit after forcing a font */
 /* ---------------- list view ---------------- */
 /* spec 052 FR-064: sortable columns (click a header: ascending, then descending; in memory only), 34px rows. Unsorted it keeps the
    office order with waiting and errors first. A helper stays under its main agent; main agents sort by the column. */
-const LCOLS=[['name','Agent'],['app','Agent app'],['role','Role'],['folder','Folder'],['task','Current task'],['ago','Active'],['cost','Cost'],['status','Status']];
+const LCOLS=[['name','Agent'],['app','Agent app'],['role','Role'],['folder','Folder'],['task','Current task'],['ago','Active'],['cost','Usage'],['status','Status']];
 const ST_ORDER={waiting:0,error:1,failing:2,working:3,thinking:4,idle:5,done:6};
 let LSORT=null;
 const appOf=a=>{const r=a&&a.parent?byId(a.parent):a;return r&&r.live&&r.info?kindWord(r.info.adapterId):'';};
@@ -903,10 +952,10 @@ const toolKind=n=>{n=String(n||'').toLowerCase();
 /* ---------------- panel + chat ---------------- */
 const chats={};
 const sleep=ms=>new Promise(r=>setTimeout(r,REDUCED?0:ms));
-function scrollChat(chat){const c=$('chat'); if(c&&chat.el.parentNode===c&&c.dataset.pin!=='0'){c.scrollTop=c.scrollHeight;}}
+
 async function typeInto(el,text,speed,chat){
   if(REDUCED){el.textContent=text;return;}
-  for(let i=0;i<text.length;){i+=2+Math.floor(Math.random()*3);el.textContent=text.slice(0,i);scrollChat(chat);await sleep(speed);}
+  for(let i=0;i<text.length;){i+=2+Math.floor(Math.random()*3);el.textContent=text.slice(0,i);stickyScroll(chat);await sleep(speed);}
   el.textContent=text;
 }
 /* Tool chip: one compact line that truncates; click expands it to show the full command and output. */
@@ -949,7 +998,7 @@ function newAgentMsg(chat,a){
   const tb=m.querySelector('.think-toggle'),body=m.querySelector('.think-body');
   tb.addEventListener('click',()=>{const o=tb.getAttribute('aria-expanded')==='true';tb.setAttribute('aria-expanded',String(!o));body.hidden=o;m.querySelector('.think').dataset.touched='1';});
   m.querySelector('.think').dataset.t0=String(Date.now());
-  chat.el.appendChild(m);scrollChat(chat);return m;
+  chat.el.appendChild(m);stickyScroll(chat);return m;
 }
 /* "Thinking · 4s" while a turn waits for the model; reasoning summaries only arrive when the model finishes thinking */
 setInterval(()=>{
@@ -968,7 +1017,7 @@ async function playTurn(chat,a,turn,opts){
   const m=newAgentMsg(chat,a), body=m.querySelector('.think-body'), chips=m.querySelector('.chips'), think=m.querySelector('.think');
   await typeInto(body,turn.think,16,chat);
   think.classList.remove('streaming');
-  for(const t of turn.tools){await sleep(380);const [k,l,res,rs]=t;addChip(chips,makeChip({kind:k,tool:k,label:l,res,state:rs}));scrollChat(chat);}
+  for(const t of turn.tools){await sleep(380);const [k,l,res,rs]=t;addChip(chips,makeChip({kind:k,tool:k,label:l,res,state:rs}));stickyScroll(chat);}
   if(turn.reply){
     await sleep(350);
     const b=document.createElement('div');b.className='bubble caret';m.appendChild(b);
@@ -979,7 +1028,7 @@ async function playTurn(chat,a,turn,opts){
   } else if(opts.inProgress){
     const t=document.createElement('div');t.className='typing';t.setAttribute('aria-label',a.name+' is working');t.innerHTML='<i></i><i></i><i></i>';m.appendChild(t);
   }
-  scrollChat(chat);
+  stickyScroll(chat);
 }
 function addUserMsg(chat,text,atts,ts){
   const m=document.createElement('div');m.className='msg user';
@@ -990,7 +1039,7 @@ function addUserMsg(chat,text,atts,ts){
   (atts||[]).forEach(x=>{const c=document.createElement('div');c.className='chip att-chip'+(x.img?' img':'');c.title=x.path||x.name;
     c.innerHTML=(x.img?ICON('img'):ICON('file'))+'<span>'+esc(x.name)+'</span>';box.appendChild(c);});
   if(!(atts||[]).length)box.remove();
-  chat.el.appendChild(m);scrollChat(chat);
+  chat.el.appendChild(m);stickyScroll(chat);
 }
 function getChat(a){
   if(a.live)return liveChat(a);
@@ -1174,6 +1223,37 @@ function wireAnswerBar(a){
   };
   answerObs={m:mo,i:io,answerKey};check();
 }
+/* ---------------- spec 063: the folder chip says the git branch and how many files changed; a click lists them ---------------- */
+const FSTAT=new Map(); /* main agent id -> {at, busy, st} */
+const GS=window.DurbarGitStatus;
+/* the folder's own name (the last part of its path) */
+const folderNameOf=a=>{const r=roomOf(a);const p=r&&r.path?String(r.path).replace(/[\\/]+$/,''):'';return p.split(/[\\/]/).pop()||'';};
+function refreshFolderStatus(a0){
+  const a=a0&&liveRoot(a0); if(!a||!a.live||!bridge.gitStatus||!GS)return;
+  const c=FSTAT.get(a.id)||{at:0};FSTAT.set(a.id,c);
+  if(c.busy||Date.now()-c.at<5000){paintFolderStatus(a);return;} /* FR-005: once per 5 s, one request at a time */
+  c.busy=true;c.at=Date.now();
+  bridge.gitStatus(a.id).then(st=>{c.st=st;},()=>{c.st={repo:false};}).finally(()=>{c.busy=false;paintFolderStatus(a);});
+}
+function paintFolderStatus(a){
+  const sel=ui.selected&&byId(ui.selected);if(!sel||liveRoot(sel)!==a)return;
+  const chip=document.querySelector('#panelHead .folder');if(!chip)return;
+  const st=(FSTAT.get(a.id)||{}).st;
+  let t=chip.querySelector('.fst');
+  const text=GS.chipText(st);
+  if(!text){if(t)t.remove();chip.removeAttribute('role');chip.removeAttribute('tabindex');chip.onclick=chip.onkeydown=null;return;}
+  if(!t){t=document.createElement('span');t.className='fst';chip.appendChild(t);}
+  t.textContent=text;
+  /* FR-003: a button only when there is something to show */
+  if(GS.count(st)){chip.setAttribute('role','button');chip.tabIndex=0;chip.setAttribute('aria-label',GS.chipLabel(st));
+    chip.onclick=()=>showFolderStatus(a,chip);chip.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();showFolderStatus(a,chip);}};}
+  else{chip.removeAttribute('role');chip.removeAttribute('tabindex');chip.setAttribute('aria-label',GS.chipLabel(st));chip.onclick=chip.onkeydown=null;}
+}
+async function showFolderStatus(a,chip){
+  const st=(FSTAT.get(a.id)||{}).st;if(!st||!st.repo)return;
+  const r=await askDialog({title:'Changes in '+(folderNameOf(a)||'this folder'),body:GS.body(st),lines:GS.lines(st),buttons:[{label:'Open in VS Code',value:'vscode'},{label:'Done',value:null,cls:'primary'}],returnFocus:chip});
+  if(r&&r.value==='vscode'&&bridge.openInVSCode)openLive(a,chip);
+}
 function openPanel(id,focus){
   const a=byId(id); if(!a)return; ui.selected=id; attached=[];
   noteRecentChat(a); rememberUi();
@@ -1185,10 +1265,10 @@ function openPanel(id,focus){
   p.innerHTML=`<div class="panel-in">
    <div class="strip" role="navigation" aria-label="Agents"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><div class="strip-list" id="stripList"></div></div>
    <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</h2><div class="sub">${esc(a.role)}${parent?' · helper of '+esc(parent.name):''}</div></div>
-      <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?(a.live&&a.info&&!a.parent&&bridge.setModel&&feat(a,'models')?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">Model: ${esc(mdlName.text)}</span>`):''}${a.live&&a.info&&!a.parent&&a.info.profiles&&bridge.listProfiles?agentChipHTML(a):''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(room.path)}</span></span></div>      <div class="actions"><!-- spec 052 FR-003: two actions in view (FR-139: a third, + New, by owner decision), the rest under More (ids kept; End and Remove last); FR-095: Previous (N) replaces the Previous sessions bar -->${a.live&&!a.parent?'<button class="btn sm prev-toggle" id="prevBtn" type="button" data-pv="toggle" aria-expanded="false" aria-controls="prev" title="Previous sessions in this folder" hidden>Previous</button>':''}${a.live&&!a.parent&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="btn sm" id="newSessHdrBtn" type="button" title="New session in ${esc(room.name)}" aria-label="New session in ${esc(room.name)}">+ New</button>`:''}<button class="btn sm primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
+      <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?(a.live&&a.info&&!a.parent&&bridge.setModel&&feat(a,'models')?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">Model: ${esc(mdlName.text)}</span>`):''}${a.live&&a.info&&!a.parent&&a.info.profiles&&bridge.listProfiles?agentChipHTML(a):''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(showPath(room.path))}</span></span></div>      <div class="actions"><!-- spec 052 FR-003: two actions in view (FR-139: a third, + New, by owner decision), the rest under More (ids kept; End and Remove last); FR-095: Previous (N) replaces the Previous sessions bar -->${a.live&&!a.parent?'<button class="btn sm prev-toggle" id="prevBtn" type="button" data-pv="toggle" aria-expanded="false" aria-controls="prev" title="Previous sessions in this folder" hidden>Previous</button>':''}${a.live&&!a.parent&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="btn sm" id="newSessHdrBtn" type="button" title="New session in ${esc(room.name)}" aria-label="New session in ${esc(room.name)}">+ New</button>`:''}<button class="btn sm primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
         <button class="btn sm" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
         ${a.live&&!feat(liveRoot(a),'stop')?'':`<button class="btn sm danger" id="stopBtn" type="button" title="${a.live?'Stop: interrupts this reply. The chat stays open and ready; nothing is removed.':'Stop'}"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>Stop</button>`}
-        <button class="btn sm" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools and usage</button>`:''}${a.live&&!a.parent&&bridge.agentMcp&&feat(liveRoot(a),'mcp')?`<button class="more-it" role="menuitem" tabindex="-1" id="mcpBtn" type="button" title="MCP servers for this agent (set globally in Settings)">MCP servers</button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}</button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>`:''}${canRemote(a)?`<button class="more-it${a.remote?' on':''}" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it danger" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>Send a message to pick up where you left off</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The other sessions in ${esc(room.name)} stay."><span class="mt">Remove from office<small>Ends the session; its history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Take ${esc(room.name)} out of Agent Durbar: its session ends and the folder is no longer remembered. Nothing on disk is deleted."><span class="mt">Remove folder<small>Forgets the folder; nothing on disk is deleted</small></span></button>`:'')}</div></div></div>
+        <button class="btn sm" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools and usage</button>`:''}${a.live&&!a.parent&&bridge.agentMcp&&feat(liveRoot(a),'mcp')?`<button class="more-it" role="menuitem" tabindex="-1" id="mcpBtn" type="button" title="MCP servers for this agent (set globally in Settings)">MCP servers</button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}</button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>${canHandover(a)?'<button class="more-it" role="menuitem" tabindex="-1" id="handoverBtn" type="button" title="Start a session in another agent app from a summary of this conversation (you review it first); this one keeps its history">Continue in another app…</button>':''}`:''}${canRemote(a)?`<button class="more-it${a.remote?' on':''}" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it danger" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>Send a message to pick up where you left off</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The other sessions in ${esc(room.name)} stay."><span class="mt">Remove from office<small>Ends the session; its history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Take ${esc(room.name)} out of Agent Durbar: its session ends and the folder is no longer remembered. Nothing on disk is deleted."><span class="mt">Remove folder<small>Forgets the folder; nothing on disk is deleted</small></span></button>`:'')}</div></div></div>
     <div class="ph-line"><p class="ptask" data-f="task"></p><p class="pusage" data-f="usage"></p></div>
     <div class="grants" id="grants" aria-label="Permissions allowed for this session" hidden></div></div>
    <div class="prev" id="prev" role="region" aria-label="Previous sessions" hidden></div>
@@ -1207,10 +1287,12 @@ function openPanel(id,focus){
   chatEl.onscroll=()=>{chatEl.dataset.pin=(chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight<80)?'1':'0';};
   $('panel').querySelector('.panel-in').classList.toggle('ro',!!(a.live&&a.parent));
   $('backBtn').onclick=closePanel;
+  refreshFolderStatus(a); /* spec 063: branch and changed files on the folder chip */
   $('vscodeBtn').onclick=e=>a.live?openLive(a,e.currentTarget):toast('Would run <code>code '+esc(room.path)+'</code>',3800);
   if(a.live)$('pauseBtn').hidden=true;
   if($('newSessBtn'))$('newSessBtn').onclick=()=>newSession(a);
   if($('newSessHdrBtn'))$('newSessHdrBtn').onclick=()=>newSession(a);
+  if($('handoverBtn'))$('handoverBtn').onclick=()=>newSession(a,{summary:true,handover:true}); /* spec 030 FR-042 (#409) */
   if($('schedHdrBtn'))$('schedHdrBtn').onclick=()=>openSchedules(room,a);
   if($('toolsHdrBtn'))$('toolsHdrBtn').onclick=()=>window.DurbarScreens.openTools(liveRoot(a).id);
   if($('mcpBtn'))$('mcpBtn').onclick=()=>window.DurbarScreens.agentMcp(liveRoot(a),{toggle:feat(liveRoot(a),'mcpToggle')});
@@ -1412,7 +1494,7 @@ function attentionItems(list,withText){
     const kind=card?(card.classList.contains('question')?'q':card.classList.contains('limit')?'l':'p'):(vis(a)==='error'?'e':a.limit?'l':'w');
     /* the OS notification never carries the request itself (a command can hold a token, and it would sit on the lock screen and in the
        notification history): only what kind of answer is needed (security review, 2026-10-20) */
-    const text=!withText?'':kind==='q'?'Has a question for you.':kind==='p'?'Asks for your OK.':kind==='e'?'Hit an error and needs a look.':kind==='l'?'Reached its spending limit.':'Waiting for you.';
+    const text=!withText?'':kind==='q'?'Has a question for you.':kind==='p'?'Asks for your OK.':kind==='e'?'Has an error. Please check it.':kind==='l'?'Reached its spending limit.':'Waiting for you.';
     return {key:a.id+'|'+kind+'|'+(card?cardKey.get(card):''),id:a.id,name:a.name,text};
   });
 }
@@ -1511,7 +1593,7 @@ function paintInbox(focusIndex){
   body.innerHTML=list.length?'':'<p class="inbox-empty" tabindex="-1"><span class="ib-ok" aria-hidden="true"></span><span><b>All clear. Nobody needs you right now.</b><small>Agents that ask for permission, ask a question, reach their limit or hit an error appear here.</small></span></p>'; /* spec 052 FR-048 */
   list.forEach((a,i)=>{
     const card=pendingCardOf(a), row=document.createElement('section');row.className='inbox-row';
-    const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?'stopped':'needs your OK'):(st==='error'?'hit an error':a.limit?'reached its limit':LABELS[st]||st);
+    const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?'stopped':'needs your OK'):(st==='error'?'has an error':a.limit?'reached its limit':LABELS[st]||st);
     row.setAttribute('aria-labelledby','ibh'+i);row.dataset.id=a.id;
     row.innerHTML='<div class="ib-av" aria-hidden="true">'+avatar(a)+'</div><div class="ib-main"><div class="ib-top"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b></b> <span class="ib-w"></span> <span class="ib-f"></span> <span class="ib-wait"></span></h4></div><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
     row.querySelector('.ib-h b').textContent=a.name;row.querySelector('.ib-w').textContent=what;row.querySelector('.ib-f').textContent='· '+roomOf(a).name;
@@ -1572,8 +1654,10 @@ function palActions(){
     {label:'Expand all folders',kw:'doors open expand rooms',run:palClick('openAll'),ok:()=>palUsable('openAll')},
     {label:'Back to the previous chat',kw:'previous last recent chat toggle switch',keys:['Ctrl','`'],run:openPreviousChat,ok:()=>!!previousChat()},
     {label:'Keyboard shortcuts',kw:'keys shortcuts help hotkeys',keys:['?'],run:openKbdHelp},
+    {label:'Send to several sessions…',hint:'One message to the running sessions you pick',kw:'send several many all broadcast message group sessions',run:()=>sendToSeveral(),ok:()=>!!bridge&&!!bridge.send&&sendTargets().filter(x=>!x.why).length>=2}, /* spec 064 FR-001 */
     {label:'End all sessions',hint:'Ends every running session; the chats stay',kw:'end stop all sessions quit day close',run:()=>endAllSessions(),ok:()=>!!bridge&&!!bridge.end&&endAllTargets().length>0},
     ...remotePalItems(),
+    ...handoverPalItems(),
   ].filter(x=>!x.ok||x.ok()).map(x=>({...x,group:'Actions'}));
 }
 function palAll(withRecent){
@@ -1673,12 +1757,13 @@ function openKbdHelp(back){
   const inList=[[['J'],['K'],'Next or previous row (also ↓ ↑)'],[['Enter'],'Open chat']];
   const row=(keys,what,alt)=>'<tr><td class="kb-k">'+kbdHTML(keys)+(alt?' <span class="kb-or">or</span> '+kbdHTML(alt):'')+'</td><td>'+esc(what)+'</td></tr>';
   const d=document.createElement('div');d.id='kbdDlg';d.className='dlg-ov';
-  d.innerHTML='<div class="dlg kbd-dlg" role="dialog" aria-modal="true" aria-labelledby="kbdT"><h3 id="kbdT">Keyboard shortcuts</h3><table class="kb-t"><tbody>'+rows.map(r=>row(r[0],r[1],r[2])).join('')+'</tbody></table><h4 class="kb-h">In the Needs you inbox</h4><table class="kb-t"><tbody>'+inbox.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In a chat that waits for you</h4><table class="kb-t"><tbody>'+inChat.map(r=>row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In the list view</h4><table class="kb-t"><tbody>'+inList.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><div class="dbtn"><button class="btn" type="button" id="kbdClose">Close</button></div></div>';
+  d.innerHTML='<div class="dlg kbd-dlg" role="dialog" aria-modal="true" aria-labelledby="kbdT"><h3 id="kbdT">Keyboard shortcuts</h3><div class="kb-cols"><div class="kb-col"><table class="kb-t"><tbody>'+rows.map(r=>row(r[0],r[1],r[2])).join('')+'</tbody></table><h4 class="kb-h">In the list view</h4><table class="kb-t"><tbody>'+inList.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table></div><div class="kb-col"><h4 class="kb-h">In the Needs you inbox</h4><table class="kb-t"><tbody>'+inbox.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In a chat that waits for you</h4><table class="kb-t"><tbody>'+inChat.map(r=>row(r[0],r[1])).join('')+'</tbody></table></div></div><div class="dbtn"><button class="btn" type="button" id="kbdClose">Close</button></div></div>';
   document.body.appendChild(d);
   d.addEventListener('click',e=>{if(e.target===d)closeKbdHelp();});
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeKbdHelp();}else if(e.key==='Tab'){e.preventDefault();$('kbdClose').focus();}});
   $('kbdClose').onclick=closeKbdHelp;
-  $('kbdClose').focus();
+  /* spec 052 (2026-10-21, round 1): focusing Close must not scroll the sheet to its end (the title and Ctrl K were hidden at 1280x800) */
+  $('kbdClose').focus({preventScroll:true});d.querySelector('.kbd-dlg').scrollTop=0;
 }
 $('kbdHelpBtn').onclick=()=>openKbdHelp($('topMoreBtn'));
 /* ---- end spec 052 FR-042 / FR-043 ---- */
@@ -1725,6 +1810,31 @@ function openPreviousChat(){
 }
 /* FR-090: End all sessions: every main session that is running (the card menu's own rule: started, not ended), through the same end path */
 const endAllTargets=()=>agents.filter(a=>!a.parent&&a.live&&DMK().cardMenuActions(a,capsFor(a)).end);
+/* ---------------- spec 064: one message to several running sessions ---------------- */
+const SEND_BUSY={working:'busy',thinking:'busy',waiting:'waits for you'};
+function sendTargets(){
+  return agents.filter(a=>!a.parent&&a.live&&a.info).map(a=>{
+    const why=a.limit?'at its spending limit':SIGNIN&&SIGNIN.needsSignIn(KINDS,kindOf(a))?'needs a sign-in':SEND_BUSY[a.state]||'';
+    return {a,why};
+  });
+}
+async function sendToSeveral(anchor){
+  const list=sendTargets();
+  if(list.filter(x=>!x.why).length<1){toast('No running session is free to take a message right now.',3200);return;}
+  const r=await askDialog({title:'Send to several sessions',
+    body:'Each session you tick gets this message as if you typed it in its chat, with its own agent app, mode and spending limit.',
+    input:{label:'Message',multiline:true,max:4000,focus:true,placeholder:'For example: pull the latest main and run the tests again'},
+    picks:list.map(({a,why})=>({label:a.name+' \u00b7 '+(folderOfAgentName(a)||'')+' \u00b7 '+kindWord(kindOf(a))+' \u00b7 '+(MODE_NAME[a.info.permMode]||'Read-only'),note:why,value:a.id,disabled:!!why})),
+    need:{text:true,picks:1,label:n=>n?'Send to '+n+' session'+(n===1?'':'s'):'Send'},
+    buttons:[{label:'Cancel',value:null},{label:'Send',value:'send',cls:'primary'}],returnFocus:anchor});
+  if(!r||r.value!=='send')return;
+  const text=String(r.text||'').trim().slice(0,4000);if(!text||!r.picked||!r.picked.length)return;
+  const bad=[];let n=0;
+  for(const id of r.picked){const a=byId(id);if(!a||!a.live){bad.push(a?a.name:id);continue;}
+    try{await sendLive(text,id,{fromComposer:false});n++;}catch(err){bad.push(a.name);}}
+  toast(bad.length?'Sent to '+n+'; could not send to '+esc(bad.join(', '))+'.':'Sent to '+n+' session'+(n===1?'':'s')+'.',3600).classList.add(bad.length?'err':'ok');
+}
+const folderOfAgentName=a=>{const r=roomOf(a);const p=r&&r.path?String(r.path).replace(/[\\/]+$/,''):'';return p.split(/[\\/]/).pop()||'';};
 async function endAllSessions(anchor){
   const list=endAllTargets();
   if(!list.length){toast('No session is running.',2600);return;}
@@ -1760,6 +1870,7 @@ async function renderAwayStrip(){
   scheduleRender();
 }
 $('endAllBtn').onclick=()=>endAllSessions($('topMoreBtn'));
+if($('sendSeveralBtn'))$('sendSeveralBtn').onclick=()=>sendToSeveral($('topMoreBtn'));
 const DESK_NAV='#stage .desk, #stage .helper, #stage .plate';
 $('wsFilter').addEventListener('change',e=>{ui.ws=e.target.value;renderAll();});
 function setView(v){ui.view=v;document.body.classList.toggle('list-mode',v==='list');
@@ -1808,11 +1919,11 @@ function liveChat(a){
   if(a.sub)buildSubTranscript(a,chat);
   return chat;
 }
-function addNote(chat,html,err){const n=document.createElement('div');n.className='note'+(err?' err':'');n.innerHTML=html;chat.el.appendChild(n);scrollChat(chat);return n;}
+function addNote(chat,html,err){const n=document.createElement('div');n.className='note'+(err?' err':'');n.innerHTML=html;chat.el.appendChild(n);stickyScroll(chat);return n;}
 const MODE_NAME={'read-only':'Read-only','ask':'Ask first','allow':'Allow all'};
 const MODE_TEXT={'read-only':'read-only','allow':'no prompts','ask':'asks first'};
 /* spec 052 FR-077: one short line per mode in the menu; the full explanation stays in its title */
-const MODE_SHORT={'read-only':"Can't change files; read-only tools still run",'ask':'Asks before each change or command','allow':'Never asks: edits, commands, web'}; /* spec 052 FR-093: one line each, but accurate (full help in the title) */
+const MODE_SHORT={'read-only':"Reads only: can't change files or run commands",'ask':'Asks before each change or command','allow':'Never asks: edits, commands, web'}; /* spec 052 FR-093: one line each, but accurate (full help in the title) */
 const MODE_HELP={'read-only':'Reads only. Edits, commands and other changes are denied. An MCP tool runs only if its server marks it read-only.','ask':'Asks before every edit or command. You can approve for the rest of the session.','allow':'Everything runs without asking: edits, shell commands, web requests and tools.'};
 /* spec 012 FR-123: the agent kind's own name in agent-facing text; Copilot's wording is unchanged */
 const KIND_WORD={copilot:'Copilot',claude:'Claude Code',codex:'Codex'};
@@ -1909,7 +2020,7 @@ function floorsBodyHTML(px){
       return `<div class="fl-floor${f.on?'':' off'}"><div class="fl-row">
         <button class="fl-sw" type="button" data-fl="on" data-floor="${esc(f.id)}" aria-pressed="${f.on}" aria-label="${esc(f.name)}: ${f.on?'on':'off'}. Switch ${f.on?'off':'on'}.">${f.on?'On':'Off'}</button>
         <div class="fl-t"><b title="${esc(f.name)}">${esc(f.name)}</b><small>${rooms.length} folder${rooms.length===1?'':'s'}</small><small class="fl-att" data-att="${esc(f.id)}"${offFloorAttention(f.id)?'':' hidden'}>${esc(offFloorAttention(f.id))}</small></div>
-        <button class="btn" type="button" data-fl="only" data-floor="${esc(f.id)}" title="Switch ${esc(f.name)} on and every other floor off" aria-label="Only ${esc(f.name)}">Only</button>
+        <button class="btn" type="button" data-fl="only" data-floor="${esc(f.id)}" title="Switch ${esc(f.name)} on and every other floor off" aria-label="Show only ${esc(f.name)}">Show only</button>
         <button class="btn" type="button" data-fl="rename" data-floor="${esc(f.id)}" aria-label="Rename ${esc(f.name)}">Rename…</button>
         <button class="btn" type="button" data-fl="up" data-floor="${esc(f.id)}" aria-label="Move ${esc(f.name)} up"${i===0?' disabled':''}>Up</button>
         <button class="btn" type="button" data-fl="down" data-floor="${esc(f.id)}" aria-label="Move ${esc(f.name)} down"${i===last?' disabled':''}>Down</button>
@@ -2017,7 +2128,14 @@ function mdSet(el,raw,now){
   if(el._mdq)return; el._mdq=true; MDQ.add(el);
   if(!mdRaf)mdRaf=requestAnimationFrame(()=>{mdRaf=0;mdFlush();});
 }
-function stickyScroll(chat){const c=$('chat'); if(c&&chat.el.parentNode===c&&c.dataset.pin!=='0')c.scrollTop=c.scrollHeight;}
+/* spec 052 (2026-10-21, measured): following the chat to the bottom read scrollHeight (a full layout of the chat) on every event,
+   so a long conversation got slower with each message (27 ms per message at 1000). Now one read and one write per frame. */
+let stickyRaf=0; const stickyChats=new Set();
+function stickyScroll(chat){stickyChats.add(chat);if(!stickyRaf)stickyRaf=requestAnimationFrame(stickyFlush);}
+function stickyFlush(){stickyRaf=0;const c=$('chat');const l=[...stickyChats];stickyChats.clear();
+  if(c&&c.dataset.pin!=='0'&&l.some(chat=>chat.el.parentNode===c))c.scrollTop=c.scrollHeight;
+  const bodies=[...thinkScroll];thinkScroll.clear();bodies.forEach(b=>{if(b.isConnected&&b.scrollHeight>b.clientHeight)b.scrollTop=b.scrollHeight;});}
+const thinkScroll=new Set(); /* the open thinking box follows its own text, in the same frame */
 
 function makeT(tl,chat){return {tl,chat,think:null,thinkN:0,bubble:null,chipsEl:null,chipEls:{},intent:'',typing:null};}
 function tScroll(T){if(T.chat)stickyScroll(T.chat);}
@@ -2041,7 +2159,7 @@ function tThink(T,id,delta){
   let b=T.think;
   if(!b||b.id!==id){if(b)tThinkEnd(b);b=T.think=newThink(T,id);T.thinkN++;}
   b.raw+=delta;mdSet(b.body,b.raw);
-  if(!REDUCED&&b.body.scrollHeight>b.body.clientHeight)b.body.scrollTop=b.body.scrollHeight;
+  if(!REDUCED){thinkScroll.add(b.body);if(!stickyRaf)stickyRaf=requestAnimationFrame(stickyFlush);}
   tScroll(T);
 }
 function plainFirst(raw){return String(raw).replace(/[*_`#>\[\]]/g,'').replace(/\s+/g,' ').trim().slice(0,90);}
@@ -2296,7 +2414,7 @@ function openCapDialog(a){
    ${usd?`<p class="dsub">The most this session may cost, in dollars of Claude's own estimate (not a bill; with a Claude subscription nothing is billed per token). When it is reached the agent stops and asks you. It is a <b>soft</b> limit: one turn can go a little past it. It counts what the session used while Agent Durbar ran it, and it is not saved with the folder. The minimum is $${MIN_USD_CAP}.</p>`
    :`<p class="dsub">The most AI credits this session may use (1 credit = USD 0.01; shown as AIU, the unit the Copilot runtime reports). When it is reached the agent stops and asks you. It is a <b>soft</b> limit: it is checked after each model response, so one response can go past it. The minimum is ${MIN_CAP}.</p>`}
    <label>${usd?'Limit ($, estimate)':'Limit (AI credits)'}<input id="cdVal" type="number" min="${min}" step="${usd?'0.01':'1'}" placeholder="No limit" value="${cur||''}"></label>
-   <p class="dsub small cd-plan">${esc(window.DurbarCost.PLAN_NOTE)}</p><!-- spec 052 FR-058 -->${(a.info&&a.info.adapterId||'copilot')==='copilot'?`<p class="dsub small cd-plan cd-copilot">${esc(window.DurbarCost.COPILOT_PLAN_NOTE)}</p>`:''}<!-- spec 052 FR-075 -->
+   <p class="dsub small cd-plan">${esc(window.DurbarCost.PLAN_NOTE)}</p><!-- spec 052 FR-058 --><!-- spec 052 (2026-10-21): the Copilot plan note said the same as the line above; it stays in Tools > Cost --><!-- spec 052 FR-075 -->
    <p class="derr" id="cdErr" role="alert" hidden></p>
    <div class="dbtn"><button class="btn" id="cdCancel" type="button">Cancel</button><button class="btn" id="cdNone" type="button">Remove limit</button><button class="btn primary" id="cdSave" type="button">Save</button></div></div>`;
   document.body.appendChild(d);
@@ -2334,7 +2452,7 @@ function showLimit(a,e){
   mk('Stop here','danger','Cancel the blocked request. The agent is ready for your next message (the limit stays).',()=>answer({kind:'cancel'}));
   n.appendChild(row);
   a.limit={requestId:e.requestId,n,row,st:n.querySelector('.pstate')};
-  tChips(t.T).appendChild(n);scrollChat(liveChat(a));
+  tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
 }
 /* ---------- questions from the agent (spec 012 FR-130): options as buttons, "Other" text, Answer / Skip; text only, never HTML ---------- */
 function showQuestion(a,e){
@@ -2371,7 +2489,7 @@ function showQuestion(a,e){
   const skip=document.createElement('button');skip.type='button';skip.className='btn danger';skip.textContent='Skip';skip.title='Do not answer; the agent decides itself';skip.onclick=()=>send(null);
   row.appendChild(ok);row.appendChild(skip);n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st};
-  tChips(t.T).appendChild(n);scrollChat(liveChat(a));
+  tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   announce(a.name+' asks: '+((qs[0]&&qs[0].question)||'a question'));renderInboxBtn();
 }
 /* ---------- MCP elicitation (spec 012 FR-151): a form in the question card, or an https page opened only after a click.
@@ -2475,7 +2593,7 @@ function showElicitation(a,e){
   row.appendChild(btn('Cancel','ghost','Dismiss it without answering',()=>send('cancel')));
   n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st,elicit:isUrl?'url':'form'};
-  tChips(t.T).appendChild(n);scrollChat(liveChat(a));
+  tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   announce(a.name+': '+(R.source?R.source+' ':'an MCP server ')+(isUrl?'asks you to open a page on '+(R.host||'the web'):'asks for input')+'. '+SHORT(R.message||'',160));renderInboxBtn();
 }
 function settleQuestion(a,answers,action){
@@ -2483,11 +2601,11 @@ function settleQuestion(a,answers,action){
   if(Q.row)Q.row.remove();Q.n.querySelectorAll('.q-opts,.q-form,.q-urlbox').forEach(x=>x.remove());
   /* spec 012 FR-151: an elicitation says what the user did, never the values (they can be secrets) */
   if(Q.elicit){const acc=action==='accept';Q.st.textContent=' → '+(acc?(Q.elicit==='url'?'done':'submitted'):action==='decline'?'declined':'cancelled');Q.n.classList.add('settled',acc?'approved':'denied');
-    if(a.state==='waiting')setState(a,'working',null,acc?'Answered':action==='decline'?'Declined':'Cancelled');updatePanelHeader();scrollChat(liveChat(a));return;}
+    if(a.state==='waiting')setState(a,'working',null,acc?'Answered':action==='decline'?'Declined':'Cancelled');updatePanelHeader();stickyScroll(liveChat(a));return;}
   Q.st.textContent=answers?' → answered: '+Object.values(answers).join('; '):' → skipped';
   Q.n.classList.add('settled',answers?'approved':'denied');
   if(a.state==='waiting')setState(a,'working',null,answers?'Answered':'Question skipped'); /* a Stop already set it idle */
-  updatePanelHeader();scrollChat(liveChat(a));
+  updatePanelHeader();stickyScroll(liveChat(a));
 }
 function settleLimit(a,action){
   const L=a.limit;if(!L)return;a.limit=null;
@@ -2497,7 +2615,7 @@ function settleLimit(a,action){
   const what='the spending limit';
   if(action==='cancel'){closeTurn(a);a.worked=false;setState(a,'idle',null,'Stopped at '+what+'. Ready for your next message.');}
   else setState(a,'working',null,'Continuing after '+what);
-  updateCapChip(a);scrollChat(liveChat(a));
+  updateCapChip(a);stickyScroll(liveChat(a));
 }
 /* spec 052 FR-057: in Simple, a folder grant says what it lets the agent do: "Let Ada change files in “tools” until the session ends".
    Only for a "write in <folder>/" scope (the last path segment); any other scope keeps its label. The inbox and the answer bar copy the card's button. */
@@ -2544,7 +2662,7 @@ function showPerm(a,p){
     n.appendChild(row);
     a.pend.set(p.requestId,{n,row,st});
   }
-  tChips(t.T).appendChild(n);scrollChat(liveChat(a));
+  tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   if(p.state==='pending')announce(SIMPLE&&pl?plain:a.name+' needs your OK: '+p.summary);
   renderInboxBtn();
 }
@@ -2574,7 +2692,7 @@ function settlePerm(a,p){
   e.st.textContent=' → '+(word==='approved'?'allowed':'denied')+why;
   e.n.classList.add('settled',word);
   if(word==='denied'&&!p.via)roAskHint(a,e.n); /* denied by the mode (no one answered it): Read-only */
-  scrollChat(liveChat(a));
+  stickyScroll(liveChat(a));
 }
 function setGrants(a,list){a.grants=list;if(ui.selected&&liveRoot(byId(ui.selected)||a)===a)renderGrants();}
 /* spec 052 FR-141: 1-2 grants are single chips; 3 or more are one "Allowed (N)" chip that opens a list (a row per grant, Revoke all).
@@ -2648,7 +2766,11 @@ function ctxChipBtn(a,c){
   return `<button class="ctxchip ${c.cls}${c.cls==='unk'||!(c.pct>=70)?' mem-low':''}" id="ctxChip" type="button" title="${esc(title)}"><span class="bar" aria-hidden="true"><i style="width:${c.pct}%"></i></span><span>${esc(text)}</span></button>`;}
 function updateCtxChip(a){
   const el=$('ctxGrp');if(!el||!ui.selected)return;const cur=byId(ui.selected);if(!cur||liveRoot(cur)!==a)return;
-  const g=$('ctxGrp');if(g)g.outerHTML=ctxChipHTML(a);
+  /* spec 052 (2026-10-21): only when it changed: replacing it on every state change cost time and dropped keyboard focus */
+  const g=$('ctxGrp');if(!g)return;const html=ctxChipHTML(a);if(g._html===html)return;
+  const had=g.contains(document.activeElement)&&document.activeElement.id;
+  const t=document.createElement('template');t.innerHTML=html;const n=t.content.firstElementChild;if(!n){g.outerHTML=html;return;}
+  g.replaceWith(n);n._html=html;if(had){const f=document.getElementById(had);if(f)f.focus({preventScroll:true});}
 }
 /* A main agent's session title from the runtime (issue #126): shown instead of the folder name everywhere a.name is shown;
    the folder stays in the room header and in the tooltip. Sub-agents keep their own names. */
@@ -2682,6 +2804,7 @@ function onLiveEvent(e){
   case 'user':{addUserMsg(chat,e.text,(e.attachments||[]).map(x=>({name:String(x.path).split(/[\\/]/).pop(),img:x.kind==='image',path:x.path})));return;}
   case 'status':
     if(!main)return;
+    if(e.status==='idle')refreshFolderStatus(a); /* spec 063 FR-005: a finished turn may have changed files */
     if(e.status==='working'){a.worked=true; const tt=ensureTurn(a); if(e.intent){a.intent=e.intent;if(!/^(Thinking|Approved|Allowed|Denied|Waiting for permission)/.test(e.intent))tIntent(tt.T,e.intent);}
       if(a.state!=='working'&&a.state!=='thinking')setState(a,'working',null,e.intent||a.task); else if(e.intent)setState(a,a.state,undefined,e.intent);}
     else if(e.status==='needs-permission'){
@@ -2732,23 +2855,26 @@ function onLiveEvent(e){
     if(isTaskTool(e.tool)||(t.T.chipEls[e.callId]===undefined&&a.subs&&a.subs.has(e.callId)))onTaskTool(a,e);
     else tTool(t.T,e);
     if(e.phase==='start'&&!isTaskTool(e.tool)){const label=toolLabel(e.args);setState(a,a.state==='thinking'?'working':a.state,null,a.intent||(e.tool+(label?' '+SHORT(label,90):'')));}
-    scrollChat(chat);return;}
+    stickyScroll(chat);return;}
   case 'usage':{const u=a.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;u.usd=(u.usd||0)+(e.costUsd>0?e.costUsd:0);
     a.usageText=usageLong(a);recordUsage(a,e);scheduleRender();
     if(ui.selected===a.id||(byId(ui.selected)||{}).parent===a.id)updatePanelHeader();return;}
   }
 }
-async function sendLive(text,forId){
+async function sendLive(text,forId,opts){
   const a0=byId(forId||ui.selected); if(!a0)return; const a=liveRoot(a0);
-  text=(text||'').trim(); if(!text&&!attached.length)return;
+  /* spec 064 FR-003: a message sent from elsewhere (Send to several) leaves the open chat's composer and attachments alone */
+  const fromComposer=!(opts&&opts.fromComposer===false);
+  const atts=fromComposer?attached.slice():[];
+  text=(text||'').trim(); if(!text&&!atts.length)return;
   /* spec 012 FR-157: an app that is known to be signed out gets the sign-in card first; the typed text stays in the box */
-  if(SIGNIN&&SIGNIN.needsSignIn(KINDS,kindOf(a))){PROMPTS.set(a.id,text,attached.slice());showSignInCard(a,{before:true});return;}
-  if(PROMPTS)PROMPTS.set(a.id,text,attached.slice()); /* memory only, for Send again after a sign-in (never stored) */
+  if(SIGNIN&&SIGNIN.needsSignIn(KINDS,kindOf(a))){PROMPTS.set(a.id,text,atts);showSignInCard(a,{before:true});return;}
+  if(PROMPTS)PROMPTS.set(a.id,text,atts); /* memory only, for Send again after a sign-in (never stored) */
   a.sent=true;
-  const chat=liveChat(a), atts=attached.slice();
+  const chat=liveChat(a);
   addUserMsg(chat,text||'(attachment)',atts);
-  attached=[];renderAttached();attNotice([]);
-  const input=$('msgInput');if(input){input.value='';autoGrow();}
+  if(fromComposer){attached=[];renderAttached();attNotice([]);
+    const input=$('msgInput');if(input){input.value='';autoGrow();}}
   a.worked=true; a.intent=''; closeTurn(a); ensureTurn(a); setState(a,'thinking',null,'Thinking');
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})));
   if(!r.ok){closeTurn(a);addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);setState(a,'error',null,'Send failed: '+SHORT(r.error,100));}
@@ -2795,7 +2921,7 @@ function showSignInCard(a0,o){
     phase='sent';n.querySelector('.note-actions').textContent='';n.querySelector('.psum').textContent=opts.before?' Sent.':' Restarted the session and sent your last message again.';n.classList.add('settled');
     attached=p.atts.slice();sendLive(p.text,a.id);
   };
-  paint();chat.el.appendChild(n);scrollChat(chat);a.signCard=n;
+  paint();chat.el.appendChild(n);stickyScroll(chat);a.signCard=n;
   if(opts.before)setState(a,a.state==='error'?'error':a.state,null,name+' needs you to sign in first.');
   return n;
 }
@@ -2986,7 +3112,7 @@ async function loadModels(){
   if(!r||!r.ok||!r.models.length)return;
   MODELS=r.models;
   const ms=$('modelSel');
-  fillModelSelect(ms,'auto','','Model: ');ms.dataset.kind='';
+  fillModelSelect(ms,'auto','');ms.dataset.kind='';
   ms.title='Model for new sessions. This is what your Copilot account offers; × is the cost multiplier the API reports.';
   syncKindModel();
 }
@@ -3000,7 +3126,7 @@ const kindCaps=id=>DMK().capsOf({adapterId:id},KINDS);
 const defaultKind=()=>KINDS&&KINDS[0]?KINDS[0].id:'';
 const anyKindReady=()=>!KINDS||DMK().kindChoices(KINDS).some(k=>!k.disabled); /* the room "+" and "+ New session" need a kind that can start */
 /* spec 052 FR-005: the top bar's mode is the default for NEW sessions, not every agent's mode: it says so (and is narrower than before) */
-const PERM_LABEL={'read-only':'New: Read-only',ask:'New: Ask first',allow:'New: Allow all'};
+const PERM_LABEL={'read-only':'Read-only',ask:'Ask first',allow:'Allow all'}; /* spec 052 FR (2026-10-21): the popover labels the select; no "New: " prefix */
 /* Permissions select of a kind: only the modes it can enforce; a value it cannot hold falls back to read-only, never to a wider mode (spec 012 FR-067) */
 function fillPermSelect(sel,caps){
   const modes=DMK().modesFor(caps),cur=sel.value;
@@ -3017,7 +3143,7 @@ function syncKindModel(){
   const c=KINDS?kindCaps(id):null, can=!c||DMK().shows(c,'models');
   if(other&&can&&!MODELS_BY[id]){ensureModels(id).then(()=>{if(MODELS_BY[id]&&MODELS_BY[id].length)syncKindModel();});}
   const k=other?id:'', ok=can&&(!other||modelsFor(id).length>0);
-  if(ok&&(ms.dataset.kind||'')!==k){fillModelSelect(ms,undefined,k,'Model: ');ms.dataset.kind=k;ms.title=other?'Model for new sessions of this agent app, as its CLI lists them.':'Model for new sessions. This is what your Copilot account offers; × is the cost multiplier the API reports.';}
+  if(ok&&(ms.dataset.kind||'')!==k){fillModelSelect(ms,undefined,k);ms.dataset.kind=k;ms.title=other?'Model for new sessions of this agent app, as its CLI lists them.':'Model for new sessions. This is what your Copilot account offers; × is the cost multiplier the API reports.';}
   ms.hidden=!ok;
   fillEffortSelect(ef,ms.value,undefined,!ok||(c&&!DMK().shows(c,'effort')),k);
   fillPermSelect($('permMode'),kindCaps(id));
@@ -3028,8 +3154,10 @@ function syncKindModel(){
 const optWord=s=>s&&!s.hidden&&s.selectedOptions&&s.selectedOptions[0]?s.selectedOptions[0].textContent.replace(/^(New|Model):\s*/,'').trim():'';
 function renderDefaultsChip(){
   const b=$('defaultsBtn'); if(!b)return;
-  const parts=[optWord($('kindSel')),optWord($('permMode')),SIMPLE?'':optWord($('modelSel'))].filter(Boolean);
+  /* spec 052 (2026-10-21, round 1): the permission mode first, so a narrow chip cuts the model, never the mode */
+  const parts=[optWord($('permMode')),optWord($('kindSel')),SIMPLE?'':optWord($('modelSel'))].filter(Boolean);
   b.querySelector('.dv').textContent=parts.length?parts.join(' · '):'Defaults';
+  b.classList.toggle('is-allow',!!$('permMode')&&$('permMode').value==='allow'); /* round 5: a default of Allow all is visible at a glance */
   b.setAttribute('aria-label','Defaults for new sessions: '+(parts.join(' · ')||'none'));
   b.title='Defaults for new sessions: '+(parts.join(', ')||'none')+'. Each agent shows its own values in its chat.';
 }
@@ -3103,7 +3231,7 @@ function toastAction(html,label,onClick,ms){
   b.onclick=()=>{kill();onClick();};t.appendChild(b);$('toasts').appendChild(t);holdTimer(t,ms===0?0:(ms||8000),kill);
   return t;
 }
-function addInfoNote(chat,text,cls){const n=document.createElement('div');n.className='note info'+(cls?' '+cls:'');n.textContent=text;chat.el.appendChild(n);scrollChat(chat);return n;}
+function addInfoNote(chat,text,cls){const n=document.createElement('div');n.className='note info'+(cls?' '+cls:'');n.textContent=text;chat.el.appendChild(n);stickyScroll(chat);return n;}
 
 function modelChipHTML(a){
   const m=modelLabel(a.info),pend=a.pendingModel;
@@ -3247,7 +3375,8 @@ async function sendModelChange(a,req,ctx){
   if(!res||!res.ok){toast('Could not change the model: '+esc((res&&res.error)||'unknown error'),6000);return;}
   const r=res.result||{},nm=ctx.tgt.name+(req.contextTier==='long'?' (long context)':'');
   if(r.status==='applied'){
-    if(!ctx.undo)toastAction(esc(a.name)+': <b>'+esc(nm)+'</b> from the next message.','Undo',()=>undoModel(a,ctx.prev,ctx.anchor),8000);
+    /* spec 052 (2026-10-21): one Undo toast per agent; a newer switch replaces the older toast (only the last switch can be undone) */
+    if(!ctx.undo){document.querySelectorAll('#toasts .toast[data-undo-model="'+CSS.escape(a.id)+'"]').forEach(t=>t.remove());const t=toastAction(esc(a.name)+': <b>'+esc(nm)+'</b> from the next message.','Undo',()=>undoModel(a,ctx.prev,ctx.anchor),8000);if(t&&t.dataset)t.dataset.undoModel=a.id;}
     else toast(esc(a.name)+': back to <b>'+esc(nm)+'</b>.',3800);
   }else if(r.status==='queued'){
     a.pendingModel={queueId:r.queueId,name:ctx.tgt.name,tier:req.contextTier,prev:ctx.prev};updateModelChip(a);
@@ -3299,7 +3428,7 @@ function onCompaction(a,e){
     if(a.compNote&&a.compNote.isConnected)a.compNote.remove();
     a.compNote=addInfoNote(chat,t,'cline');a.compNote.setAttribute('role','status');a.compacting=true;
   }else{
-    if(a.compNote&&a.compNote.isConnected){a.compNote.textContent=t;scrollChat(chat);}else addInfoNote(chat,t,'cline');
+    if(a.compNote&&a.compNote.isConnected){a.compNote.textContent=t;stickyScroll(chat);}else addInfoNote(chat,t,'cline');
     if(e.phase==='failed'&&a.compNote)a.compNote.classList.add('failed');
     a.compNote=null;a.compacting=false;
     if(e.phase==='complete'){
@@ -3346,7 +3475,7 @@ function maybeSuggestFresh(a){
   n.querySelector('[data-fresh="new"]').onclick=()=>newSession(a);
   const sb=n.querySelector('[data-fresh="sum"]');if(sb)sb.onclick=()=>newSession(a,{summary:true});
   n.querySelector('[data-fresh="x"]').onclick=()=>{a.freshDismissed=true;n.remove();a.freshNote=null;const i=$('msgInput');if(i)i.focus();};
-  chat.el.appendChild(n);a.freshNote=n;scrollChat(chat);
+  chat.el.appendChild(n);a.freshNote=n;stickyScroll(chat);
 }
 
 /* ---------------- new session (another agent in a folder) ---------------- */
@@ -3415,12 +3544,20 @@ async function remoteLinkDialog(a){
   else if(r.value==='open'&&bridge.openRemote){const o=await bridge.openRemote(a.id).catch(()=>({ok:false}));if(!o||!o.ok)toast('Could not open the link.').classList.add('err');}
 }
 const canHandoff=a=>!!(bridge.handoff&&a&&a.live&&!a.parent&&feat(a,'handoff'));
+/* spec 030 FR-042 (#409): continue this conversation in another agent app; only when one is ready (otherwise hidden, no clutter) */
+const handoverTargets=a=>DMK().handoverTargets(KINDS,(liveRoot(a).info||{}).adapterId);
+const canHandover=a=>!!(canHandoff(a)&&bridge.newSession&&handoverTargets(a).length);
+function handoverPalItems(){
+  const a=ui.selected?byId(ui.selected):null; if(!a||!canHandover(a))return [];
+  return [{label:'Continue in another app…',hint:a.name,kw:'handover hand off continue other agent app claude codex copilot summary move',run:()=>newSession(a,{summary:true,handover:true})}];
+}
 function newSession(a0,o){
   const a=liveRoot(a0); if(!bridge.newSession)return; o=o||{};
   closeSessDlg();
   const d=document.createElement('div');d.id='sessDlg';d.className='dlg-ov';
-  d.innerHTML=`<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="sdT"><h3 id="sdT">New session in ${esc(roomOf(a).name)}</h3>
-   <p class="dsub">Another agent with its own chat in <code>${esc(roomOf(a).path)}</code>.</p>
+  const ho=!!o.handover&&canHandover(a); /* spec 030 FR-042: the "Continue in another app" preset of this dialog */
+  d.innerHTML=`<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="sdT"><h3 id="sdT">${ho?'Continue in another agent app':'New session in '+esc(roomOf(a).name)}</h3>
+   <p class="dsub">${ho?'A new session in <code>'+esc(roomOf(a).path)+'</code>, in the agent app you pick, starting from a summary of this conversation (you review it first). '+esc(a.name)+' keeps its history.':'Another agent with its own chat in <code>'+esc(roomOf(a).path)+'</code>.'}</p>
    ${DMK().showsKindPicker(KINDS)?`<label>Agent app<select id="sdKind">${kindOptions()}</select></label>`:''}
    <label>Permissions<select id="sdPerm"><option value="read-only">Read-only</option><option value="ask">Ask first</option><option value="allow">Allow all (no prompts)</option></select></label>
    <label id="sdModelL">Model<select id="sdModel"></select></label>
@@ -3450,7 +3587,7 @@ function newSession(a0,o){
     }
     if(c)fillPermSelect($('sdPerm'),c);
   };
-  if($('sdKind'))$('sdKind').value=pickKind(a.info.adapterId||defaultKind());
+  if($('sdKind'))$('sdKind').value=pickKind(ho?handoverTargets(a)[0].id:(a.info.adapterId||defaultKind()));
   eff(); $('sdModel').onchange=eff; if($('sdKind'))$('sdKind').onchange=()=>{eff();agentRow();};
   /* spec 043 T010: the new session can start with a custom agent of this folder (the same list as the Agent chip; same kind only) */
   const agentRow=()=>{const l=$('sdAgentL');if(!l)return;l.hidden=!(l.dataset.ready==='1'&&(kindNow()||a.info.adapterId||'')===(a.info.adapterId||kindNow()||''));};
@@ -3491,7 +3628,10 @@ function newSession(a0,o){
         const go=await askDialog({title:'No summary',body:why,lines:['You can still start a new session without it.'],buttons:[{label:'Cancel',value:null},{label:'Start without a summary',value:'ok',cls:'primary'}]});
         if(!go)return;
       }else{
-        first=await reviewHandoff(a,text,h.costUsd);
+        /* spec 030 FR-043: a summary that moves to another app says where it came from (editable, like the rest) */
+        const src=a.info.adapterId||'copilot', to=kind||src;
+        const body=to!==src?DMK().provenanceLine(kindWord(src),a.name)+'\n\n'+text:text;
+        first=await reviewHandoff(a,body,h.costUsd,to!==src?kindWord(to):'');
         if(first===null)return;
       }
     }
@@ -3507,14 +3647,14 @@ function newSession(a0,o){
 }
 
 /* spec 030 FR-036: the hand-off summary in an editable box; resolves to the edited text, or null (Cancel). User text: never logged. */
-function reviewHandoff(a,text,costUsd){
+function reviewHandoff(a,text,costUsd,toApp){
   return new Promise(resolve=>{
     const d=document.createElement('div');d.id='hoDlg';d.className='dlg-ov';
     const cost=costUsd>0?' (about $'+(costUsd<0.01?costUsd.toFixed(4):costUsd.toFixed(2))+', Claude\'s estimate)':'';
     d.innerHTML=`<div class="dlg ho-dlg" role="dialog" aria-modal="true" aria-labelledby="hoT"><h3 id="hoT">Summary for the new session</h3>
-     <p class="dsub">This becomes the first message of the new session in ${esc(roomOf(a).name)}. Edit it as you like; nothing is sent until you press Start. Making it used the model of ${esc(a.name)}${esc(cost)}; this session keeps its history.</p>
+     <p class="dsub">This becomes the first message of the new session in ${esc(roomOf(a).name)}${toApp?' ('+esc(toApp)+')':''}. Edit it as you like; nothing is sent until you press Start. Making it used the model of ${esc(a.name)}${esc(cost)}; this session keeps its history.</p>
      <textarea id="hoText" rows="14" aria-label="Summary for the new session"></textarea>
-     <div class="dbtn"><button class="btn" id="hoCancel" type="button">Cancel</button><button class="btn primary" id="hoGo" type="button">Start new session</button></div></div>`;
+     <div class="dbtn"><button class="btn" id="hoCancel" type="button">Cancel</button><button class="btn primary" id="hoGo" type="button">${toApp?'Start in '+esc(toApp):'Start new session'}</button></div></div>`;
     document.body.appendChild(d);
     const ta=$('hoText');ta.value=text;
     const done=v=>{d.remove();resolve(v);};
@@ -3818,7 +3958,7 @@ function prevListsHtml(a){
   if(v&&(v.unreadable||v.tooLarge))h+=`<p class="prev-fine">${v.unreadable?v.unreadable+' chat file(s) could not be read. ':''}${v.tooLarge?v.tooLarge+' file(s) skipped for size.':''}</p>`;
   if(v&&v.formatNote)h+=`<p class="prev-fine">${esc(v.formatNote)}</p>`;
   const nh=ac.hiddenCount+av.hiddenCount;
-  if(nh>0)h+=`<div class="prev-showhid"><button class="btn sm" type="button" data-pv="showhidden" aria-pressed="${sh}">${sh?'Hide hidden again':'Show hidden ('+nh+')'}</button></div>`;
+  if(nh>0)h+=`<div class="prev-showhid"><button class="btn sm" type="button" data-pv="showhidden" aria-pressed="${sh}">${sh?'Hide the hidden ones':'Show hidden ('+nh+')'}</button></div>`;
   return h;
 }
 /* the header's Previous (N) button: visible rows only, "K hidden" in its tooltip (spec 006 FR-025) */
@@ -3847,7 +3987,10 @@ function renderPrev(a){
     h+='</div>';
   }
   box.hidden=!st.open; box.innerHTML=h;
-  const nb=box.querySelector('.prev-body'); if(nb)nb.scrollTop=keepScroll;
+  const nb=box.querySelector('.prev-body'); if(nb){nb.scrollTop=keepScroll;
+    /* spec 052 (2026-10-21, round 1): a cut last row read like text over the chat; fade it while more rows are below */
+    const more=()=>nb.classList.toggle('more-below',nb.scrollTop+nb.clientHeight<nb.scrollHeight-2);
+    more();nb.addEventListener('scroll',more,{passive:true});}
 }
 /* spec 006 FR-021: a folder restored after a restart continues its last session when its chat is first opened (no prompt is sent) */
 async function wakeLast(a){
@@ -4078,6 +4221,7 @@ if(bridge){
   wireMenu('newBtn','newMenu'); /* spec 052 FR-105: + New holds Add folder and Add VS Code workspace */
   wireDefaults();
   $('endAllBtn').hidden=$('endAllSep').hidden=!bridge.end; /* spec 052 FR-090 */
+  if($('sendSeveralBtn'))$('sendSeveralBtn').hidden=!bridge.send; /* spec 064 FR-001 */
   $('inboxBtn').onclick=openInbox;
   $('addFolder').onclick=()=>addVia(bridge.addFolder);
   $('addWs').onclick=()=>addVia(bridge.addWorkspaceFile);

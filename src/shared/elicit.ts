@@ -1,3 +1,4 @@
+import { isObj } from './guards';
 /**
  * MCP elicitation (spec 012 FR-151, closes the FR-147/FR-148 known gap): an MCP server asks the user to fill a small form, or to
  * finish a step on a web page (URL mode). Adapter-neutral and pure: no Electron, no vendor types. Used by the adapters (schema
@@ -58,7 +59,6 @@ const NAME_RE = /^[A-Za-z0-9_.-]{1,64}$/;
 const DROP_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f​⁠﻿‪-‮⁦-⁩]/g;
 const SECRET_RE = /pass(word|phrase|wd|code)?|token|secret|api[\s_.-]?key|private[\s_.-]?key|credential|\bpin\b|otp/i;
 
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const own = (o: Record<string, unknown>, k: string): unknown => (Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined);
 const fin = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 const len = (v: unknown): number | undefined => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? Math.min(v, MAX_ELICIT_TEXT) : undefined);

@@ -1,7 +1,7 @@
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { windowsCmd } from '../shared/wincmd';
+import { CMD_UNSAFE, windowsCmd } from '../shared/wincmd';
 
 export interface LaunchPlan {
   command: string;
@@ -34,7 +34,6 @@ const defaultEnv = (): LaunchEnv => ({
 });
 
 /** Characters that cmd.exe would interpret, or that could break out of a quoted argument. */
-const CMD_UNSAFE = /[\r\n\0"&|<>^%!`(),;=]/;
 
 /** Packaged apps started from Finder / Start menu do not inherit the shell PATH, so PATH alone is not enough. */
 function pathCandidates(e: LaunchEnv, names: string[]): string[] {

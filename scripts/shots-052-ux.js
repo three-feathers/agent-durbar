@@ -138,7 +138,7 @@ module.exports = async (ctx) => {
     // FR-064 (round 6): 34px rows, the new columns, sorting by a header (aria-sort), J/K between rows
     const lv = await js(`(()=>{const rows=[...document.querySelectorAll('#list button.lrow')];return {n:rows.length,h:Math.max(...rows.map(r=>r.getBoundingClientRect().height)),cols:[...document.querySelectorAll('.lrow.lhead .lsort')].map(b=>b.firstChild.textContent),cells:rows.length?rows[0].children.length:0,pageW:document.documentElement.scrollWidth<=innerWidth+1}})()`);
     assert.ok(lv.n >= 15 && lv.h <= 35, 'list rows are 34px: ' + JSON.stringify(lv));
-    assert.deepStrictEqual(lv.cols, ['Agent', 'Agent app', 'Role', 'Folder', 'Current task', 'Active', 'Cost', 'Status']);
+    assert.deepStrictEqual(lv.cols, ['Agent', 'Agent app', 'Role', 'Folder', 'Current task', 'Active', 'Usage', 'Status']);
     assert.strictEqual(lv.cells, 8, 'one cell per column'); assert.ok(lv.pageW, 'the list does not widen the page');
     // FR-101, FR-104 (round 10): a status that needs nothing is a dot and a word (no fill), Waiting/Error/Failing keep the fill; numbers right-aligned
     const pf = await js(`(()=>{const ps=[...document.querySelectorAll('#list button.lrow .pill')].map(p=>({c:(p.className.match(/st-(\\w+)/)||[])[1],bg:getComputedStyle(p).backgroundColor,h:p.getBoundingClientRect().height}));const num=document.querySelector('#list button.lrow .lcell.num');return {ps,align:num?getComputedStyle(num).textAlign:''}})()`);
