@@ -1508,7 +1508,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   app.setAboutPanelOptions(aboutPanelOptions(app.getVersion())); // owner and contributors: src/shared/about.ts (spec 008 FR-018)
-  // spec 052 FR-083: a Mac menu from roles (Settings… ⌘,); no menu on Windows and Linux (no Reload or DevTools for users)
+  // spec 052 FR-083, FR-164: a Mac menu from roles (Settings… ⌘,; File > Add Folder… ⌘O); no menu on Windows and Linux (no Reload or DevTools for users)
   const menu = appMenuTemplate(process.platform, {
     openSettings: () => {
       const w = win && !win.isDestroyed() ? win : undefined;
@@ -1517,6 +1517,13 @@ app.whenReady().then(() => {
       toRenderer('menu:settings', null);
     },
     openRepo: () => void shell.openExternal(REPO_URL),
+    // spec 052 FR-164: File > Add Folder… / Add VS Code Workspace… press the page's own buttons (one code path, agents:addFolder / addWorkspaceFile)
+    add: (kind) => {
+      const w = win && !win.isDestroyed() ? win : undefined;
+      if (!w) return;
+      w.show();
+      toRenderer('menu:add', kind);
+    },
   });
   Menu.setApplicationMenu(menu ? Menu.buildFromTemplate(menu) : null);
   folderStore = new FolderStore(path.join(app.getPath('userData'), 'durbar-folders.json'));

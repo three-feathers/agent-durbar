@@ -131,6 +131,8 @@ const api: DurbarApi = {
   onAgentAdded: (cb) => sub('agent:added', cb),
   // spec 052 FR-083, FR-085: the Mac app menu's Settings… item, full screen (the top bar's traffic-light room) and the platform
   onMenuSettings: (cb) => sub<null>('menu:settings', () => cb()),
+  // spec 052 FR-164: File > Add Folder… / Add VS Code Workspace…; only the two known words pass
+  onMenuAdd: (cb) => sub<unknown>('menu:add', (k) => { if (k === 'folder' || k === 'workspace') cb(k); }),
   onFullScreen: (cb) => sub<boolean>('window:fullScreen', (on) => cb(on === true)),
   platform: process.platform,
 };
