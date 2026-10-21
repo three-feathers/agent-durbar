@@ -15,20 +15,16 @@
  *     chip and the folder totals to zero (they come back only with new usage).
  */
 const path = require('path');
+const { helpers } = require('./driver-helpers');
 const assert = require('assert');
 const OUT = process.env.SHOTS_021 || '/tmp';
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 const SIZES = [[1440, 900], [1280, 800]];
 
 module.exports = async (ctx) => {
-  const js = (code) => ctx.js(code);
-  const shot = async (name, w, h) => { await ctx.sleep(300); await ctx.shot(path.join(OUT, `021-${name}-${w}x${h}.png`)); console.log('[021] saved', name, w, h); };
-  const load = async (w, h) => {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simtotals: '1', simunreported: 'infra-notes' } });
-    await ctx.waitFor(`!!document.querySelector('.stat-aiu')&&/Saved since/.test(document.querySelector('.stat-aiu').title)`, 15000);
-    await ctx.sleep(1200);
-  };
+  const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  const { js } = H;
+  const shot = (name, w, h) => H.shot(path.join(OUT, `021-${name}-${w}x${h}.png`), { delay: 300, tag: '021', what: `${name} ${w} ${h}` });
+  const load = (w, h) => H.load({ w, h, query: { simtotals: '1', simunreported: 'infra-notes' }, ready: `!!document.querySelector('.stat-aiu')&&/Saved since/.test(document.querySelector('.stat-aiu').title)` }); // was a fixed 1200 ms; now waits for the page to stop changing (FR-096)
   const read = () => js(`(()=>{const c=document.querySelector('.stat-aiu');const rooms={};document.querySelectorAll('.room').forEach(r=>{rooms[r.querySelector('.room-name').textContent.trim()]=((r.querySelector('.room-aiu')||{}).textContent||'').trim();});return {chip:c?c.innerText.replace(/\\s+/g,' ').trim():'',tip:c?c.title:'',rooms}})()`);
   const aiu = (t) => { const m = /([\d.]+) AIU/.exec(t || ''); return m ? parseFloat(m[1]) : NaN; };
   /* spec 052 FR-028 (#307): the chip and the rooms show money (Copilot credits at USD 0.01); the chip's tooltip keeps the exact AIU */

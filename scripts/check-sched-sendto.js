@@ -11,13 +11,13 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { waits } = require('./driver-helpers');
-const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
-const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const LONG = 'Rename public tool find_company and update every call site and the docs index'; // simtitles=1 gives one main agent this title
 
 module.exports = async (ctx) => {
-  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
+  const H = helpers(ctx); // spec 008 FR-096/097: shared plumbing, waits for the page instead of a fixed time
+  const { until, settle } = H;
+  // stays local, not the shared js: it wraps the page code in try/catch and reports the page's own stack
   const js = async (c) => {
     const r = await ctx.js(`(()=>{try{return {v:(${c})}}catch(e){return {err:String(e&&e.stack||e).slice(0,300)}}})()`);
     if (r.err) throw new Error('renderer: ' + r.err + ' in ' + String(c).slice(0, 80));
@@ -27,12 +27,11 @@ module.exports = async (ctx) => {
     ctx.win.setContentSize(w, h);
     for (const level of ['simple', 'expert']) {
       // the detail level is a stored display preference (localStorage), read at load
-      await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simtitles: '1' } });
+      await H.load({ query: { simtitles: '1' }, settle: false });
       await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)})`);
-      await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simtitles: '1' } });
-      await ctx.waitFor(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
+      await H.load({ query: { simtitles: '1' }, settle: false });
       await until(`[...document.querySelectorAll('#stage .desk[data-id]')].some(x=>x.textContent.includes('Rename public tool'))`); await settle();
-      await js(`(()=>{const s=document.createElement('style');s.textContent='#toasts{display:none!important}';document.head.appendChild(s);return true})()`);
+      await H.calm();
       assert.strictEqual(await js(`document.body.classList.contains('simple')`), level === 'simple', 'detail level ' + level);
       for (const width of [0, 340]) {
         const id = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.textContent.includes('Rename public tool'));if(!d)throw new Error('no desk with the long title');d.click();return d.dataset.id})()`);

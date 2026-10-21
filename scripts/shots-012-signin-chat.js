@@ -16,15 +16,13 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { waits } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
-const { jsLiteral } = require('./check-office-overlap.js');
-const INDEX = path.join(process.cwd(), 'dist', 'renderer', 'index.html');
 
 module.exports = async (ctx) => {
-  const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
-  const js = (c) => ctx.js(c);
-  const shot = async (name) => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(150); await ctx.shot(path.join(OUT, name)); console.log('[012-signin] saved', name); };
+  const H = helpers(ctx); // spec 008 FR-096/097: shared plumbing, waits for the page instead of a fixed time
+  const { until, settle, js } = H;
+  const shot = (name) => H.shot(path.join(OUT, name), { prep: 'mouse', tag: '012-signin' });
   const card = () => js(`(()=>{const c=[...document.querySelectorAll('#chat .note.signin')].pop();if(!c)return null;const d=c.querySelector('details');return {title:(c.querySelector('.signin-title')||{}).textContent,text:c.textContent,btns:[...c.querySelectorAll('button')].map(b=>b.textContent.trim()),details:d?{open:d.open,text:d.textContent}:null};})()`);
   const waitCard = async (want) => { for (let i = 0; i < 40; i++) { const c = await card(); if (c && (!want || want(c))) return c; await ctx.sleep(200); } return card(); };
   const clickCard = (label) => js(`(()=>{const c=[...document.querySelectorAll('#chat .note.signin')].pop();const b=c&&[...c.querySelectorAll('button')].find(x=>x.textContent.trim()===${jsLiteral(label)});if(b)b.click();return !!b;})()`);
@@ -43,10 +41,7 @@ module.exports = async (ctx) => {
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     // ---- an expired sign-in: the message fails, the card offers Sign in, then Send again
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simauth: 'expired' } });
-    await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-    await settle();
+    await H.load({ w, h, query: { simauth: 'expired' }, ready: 'fit' });
     assert.ok(await openIdleAgent(), 'an agent chat opens');
     await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`); await settle();
     await type('hello after expiry');
@@ -71,9 +66,7 @@ module.exports = async (ctx) => {
     assert.ok(/sent your last message again/.test(c.text), 'the card says so: ' + c.text);
 
     // ---- not signed in from the start: the card comes before anything is sent; the text stays in the box
-    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simauth: 'out' } });
-    await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
-    await settle();
+    await H.load({ query: { simauth: 'out' }, ready: 'fit' });
     assert.ok(await openIdleAgent());
     await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`); await settle();
     const before = (await userMsgs()).length;

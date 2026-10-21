@@ -634,7 +634,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: p1, tool: 'apply_patch', phase: 'start', args: { path: patch.files[0].path }, edit: patch });
       emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: p1, tool: 'apply_patch', phase: 'complete', output: 'Applied the patch to 2 files', edit: patch });
       const p2 = sid(s) + '-write';
-      const env = simEdit(base + '/config/.env.example', 'create', [], ['PORT=3000', 'API_TOKEN=[redacted]', 'LOG_LEVEL=info']);
+      const env = simEdit(base + '/config/.env.example', 'create', [], ['PORT=3000', 'API_TOKEN=ghp_simulatedTokenValue0123456789abcdef', 'LOG_LEVEL=info']);
       emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: p2, tool: 'Write', phase: 'start', args: { path: env.files[0].path }, edit: env });
       emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: p2, tool: 'Write', phase: 'complete', output: 'File created successfully', edit: env });
       // the streamed Edit: start as soon as the path is known, then partial diffs; it stays open (the model is still writing)

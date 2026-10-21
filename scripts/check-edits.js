@@ -4,23 +4,21 @@
  *   npm run check:edits
  *   OUT=docs/screenshots  (optional) also saves the screenshots 005-edit-{expert,simple}-{1440x900,1280x800}.png
  *
- * The first agent (sim-1) applies a two-file patch, creates a file whose token arrives masked (as the adapters send it), then starts an Edit whose
+ * The first agent (sim-1) applies a two-file patch, creates a file that holds a token-shaped value (the page must mask it), then starts an Edit whose
  * arguments stream in and stay open. At 1440x900 and 1280x800, in Expert and in Simple: the streamed edit has its row while it
  * runs (not only at completion), with the file name, its folder relative to the agent's folder and "+N −M"; its diff shows 12 lines
- * and "Show all"; the waiting line names the action; the patch row lists both files; the masked token stays masked; Simple uses plain words and keeps the diff closed; nothing overflows and text is >= 10.5px.
+ * and "Show all"; the waiting line names the action; the patch row lists both files; the token is masked by the page; Simple uses plain words and keeps the diff closed; nothing overflows and text is >= 10.5px.
  * A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
 const path = require('path');
 const assert = require('assert');
-const { waits } = require('./driver-helpers');
-const { jsLiteral } = require('./check-office-overlap.js'); /* CodeQL js/bad-code-sanitization: values spliced into page code */
+const { helpers, jsLiteral } = require('./driver-helpers'); /* jsLiteral: CodeQL js/bad-code-sanitization, values spliced into page code */
 const OUT = process.env.OUT || require('os').tmpdir();
-const INDEX = path.join(process.cwd(), 'dist', 'renderer', 'index.html');
-const Q = { sim: '15', simfreeze: '1', simedits: '1' };
+const Q = { simedits: '1' };
 module.exports = async (ctx) => {
-  const { until, settle } = waits(ctx);
-  const js = async (c) => { try { return await ctx.js(c); } catch (e) { console.log('[edits] JS ERR for', c.slice(0, 120)); throw e; } };
-  const shot = async (name) => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(150); await ctx.shot(path.join(OUT, name)); console.log('[edits] saved', name); };
+  const H = helpers(ctx); // spec 008 FR-096/097: shared plumbing
+  const { until, settle, js } = H;
+  const shot = (name) => H.shot(path.join(OUT, name), { prep: 'mouse', tag: 'edits' });
   const rows = async () => { const v = await rows0(); if (typeof v === 'string') throw new Error(v); return v; };
   const rows0 = () => js(`(()=>{try{return [...document.querySelectorAll('#chat .chip.editchip')].map(c=>{const d=c._ed&&c._ed.diffEl;return {
       verb:(c.querySelector('.ed-verb')||{}).textContent||'',name:(c.querySelector('.ed-name')||{}).textContent||'',dir:(c.querySelector('.ed-dir')||{}).textContent||'',
@@ -37,9 +35,7 @@ module.exports = async (ctx) => {
       [...document.querySelectorAll('#chat .chip.editchip')].forEach(c=>{if(c.hidden)return;const r=c.getBoundingClientRect(),h=c.querySelector('.ed-head').getBoundingClientRect();if(h.right>r.right+0.5)bad.push('row text leaves its row');});
       return bad;})()`);
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    ctx.win.setContentSize(w, h);
-    await ctx.win.loadFile(INDEX, { query: Q });
-    await until(`document.querySelectorAll('#stage .desk[data-id]').length>=15`, 15000);
+    await H.load({ w, h, query: Q, settle: false });
     await level('expert');
     await js(`document.querySelector('#stage .desk[data-id="sim-1"]').click()`);
     await until(`document.querySelectorAll('#chat .chip.editchip').length>=3&&[...document.querySelectorAll('#chat .chip.editchip .ed-name')].some(n=>n.textContent==='app.js')`, 10000);
@@ -61,7 +57,7 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(patch.diff.files.map((t) => t.replace(/\s+\+\d+−\d+$/, '')), ['src/routes/users.ts', 'src/routes/index.ts'], `${w}: each file listed`);
     const env = r.find((x) => x.name === '.env.example');
     assert.ok(env && env.verb === 'Created' && env.dir === 'config', `${w}: the new file ${JSON.stringify(env)}`);
-    assert.ok(!/ghp_/.test(env.diff.text) && /\[redacted\]/.test(env.diff.text), `${w}: the token stays masked (FR-024)`);
+    assert.ok(!/ghp_/.test(env.diff.text) && /\[redacted\]/.test(env.diff.text), `${w}: the token is masked in the page (FR-024)`);
     assert.deepStrictEqual(await layout(), [], `${w}: layout`);
     // scroll the streamed row into view for the picture
     await js(`(()=>{const c=[...document.querySelectorAll('#chat .chip.editchip')].find(c=>c.querySelector('.ed-name').textContent==='app.js');c.scrollIntoView({block:'start'});document.getElementById('chat').scrollTop-=60})()`);
