@@ -49,7 +49,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - Click an agent to open a full-screen chat. All the other agents stay in a slim strip.
 - You see its thinking, tool calls and replies as they stream in, with Markdown and copy buttons. An open tool call shows the whole command (with Copy), how long it took and its output; a Claude Code edit request has a **Show the change** diff.
 - Attach files and images by picking, dropping or pasting.
-- Questions an agent asks you appear as a card with its choices, an "Other" answer and Skip.
+- Questions an agent asks you appear as a card with its choices, an "Other" answer and Skip. The whole question, every choice and its description are shown in full; Enter in the "Other" box sends your answer (Shift+Enter adds a line).
 - **Needs you:** one inbox of every agent waiting for you, oldest first with how long each has waited. While Durbar is in the background the window title ("(3) Agent Durbar"), the app icon and one notification tell you (Settings > Notifications turns it off; it shows only the agent's name and a short summary). In a waiting chat, **Alt+A** allows once, **Alt+S** allows for the session, **Alt+D** denies and **Alt+N** goes to the next agent; **?** lists every shortcut.
 - **Stop** a turn or **End** a session from the chat header or from the agent's card menu ([screenshot](docs/screenshots/005-card-menu-stop-end-1440x900.png)).
 
@@ -72,6 +72,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - **Custom agents** per session: `.github/agents` or `~/.copilot/agents` for Copilot, `.claude/agents` for Claude.
 - **Open in VS Code** opens the folder (VS Code, then Insiders, then VSCodium).
 - **Folder status:** in a chat, the folder chip also shows the git branch and how many files have uncommitted changes (`~/work/api · main · 3 changed`); click it for the list of changed files with their +/− lines and **Open in VS Code**. Read-only (Durbar never runs a git command that writes); nothing extra for a folder that is not a git repository ([screenshot](docs/screenshots/063-folder-changes-1440x900.png)).
+- **Undo an agent's file changes:** after a turn in which the agent edited files, the chat shows what changed with **Undo these changes…**. A dialog lists each file (restore, remove the file it created, create back the file it deleted) and nothing is written until you confirm; the current files are kept, so you can undo the undo. It refuses when a file changed after that turn. Only edits made with the agent apps' file-edit tools are covered (not shell commands, MCP tools, or Codex in Allow all), inside the session's folders, while Durbar runs ([spec 065](specs/065-checkpoints/spec.md)).
 - **Send to several sessions…** (top bar ⋯ or Ctrl+K): one message to the running sessions you tick, each with its own agent app, mode and spending limit. Busy sessions, and sessions waiting for you, can't be ticked; the button says how many get it ([screenshot](docs/screenshots/064-send-several-1440x900.png)).
 
 **Models, context and tools**
@@ -118,6 +119,10 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
 ```
 
 Codex also ships its own `bwrap` inside its npm package (`…/@openai/codex-linux-x64/vendor/…/codex-resources/bwrap`). Add a second profile with that path if `codex` still reports a sandbox error.
+
+**Codex's sandbox on macOS and Windows.** Read-only and Ask first always need Codex's own sandbox. If it cannot start, the session does not start and nothing runs. Durbar says why, and the message has a **Change mode…** button that opens the usual mode menu (it never picks a mode for you):
+- **Windows:** Codex's *elevated sandbox* must be set up once, and the native `codex.exe` used, not a `.cmd` shim.
+- **macOS:** on GitHub's macOS runners, macOS refused Codex's `sandbox-exec` (2026-10-20). Whether an ordinary Mac ever does this is not known yet. Durbar shows a plain message instead of the raw error.
 
 ## Install
 
@@ -229,7 +234,7 @@ npm run typecheck && npm run build && npm test   # unit suites in parallel (~20 
 npm start                 # the app, with the harnesses you have installed and signed in
 DURBAR_SIM=15 npm start   # 15 simulated agents: no sessions, no AI credits
 npm run check:office      # layout check at 1440x900 and 1280x800 (Electron; xvfb on Linux), simulator only
-npm run check:question-options  # question card options wrap and are never cut off (simulator, xvfb on Linux)
+npm run check:question-options  # question card text, options and descriptions in full; Enter sends a custom answer (simulator, xvfb on Linux)
 npm run check:sched-sendto      # Schedules dialog: Send to / Limit labels on one line, every option fits, session name on a hint line (simulator, xvfb on Linux)
 npm run check:geometry    # every theme lays out exactly like Clean Office (about a minute)
 npm run check:ui          # every simulator driver that asserts, one after another, on any OS (UI_SUITE_XVFB=1 keeps windows off a Linux desktop)
@@ -238,7 +243,7 @@ npm run pack:dir          # unpacked app for this OS in release/ (also dist, dis
 npm run check:fuses-launch  # on demand, after pack:dir: the packed Linux app opens its window and offers no debugger (xvfb on Linux)
 ```
 
-`npm run smoke` and `npm run verify:cap` use a real Copilot login and may spend credits: run them only on purpose. GitHub Actions also runs the UI checks (geometry, office layout, the Mac title bar, `check:ui`) on macOS, Windows and Linux runners and keeps the screenshots of each run (workflow *UI on three OSes*; simulator only). Releases are built by GitHub Actions from `v*` tags into a draft release that the maintainer publishes by hand.
+`npm run smoke` and `npm run verify:cap` use a real Copilot login and may spend credits: run them only on purpose. The **E2E real accounts** workflow (spec 062) installs the three agent apps on Linux, macOS and Windows, signs in with the CI account's secrets and runs one tiny turn each; it runs by hand, weekly and on `main`, never on pull requests. The supported CI platforms are listed once, in `.github/platforms.json`. GitHub Actions also runs the UI checks (geometry, office layout, the Mac title bar, `check:ui`) on macOS, Windows and Linux runners and keeps the screenshots of each run (workflow *UI on three OSes*; simulator only). Releases are built by GitHub Actions from `v*` tags into a draft release that the maintainer publishes by hand.
 
 **Layout of the repository:**
 - `src/main` (Electron main), `src/preload`, `src/renderer` (plain HTML/CSS/JS, the simulator);

@@ -33,7 +33,7 @@ const DRIVERS = [
   { name: 'shots-044-templates' },
   { name: 'shots-051-setup', env: { DURBAR_SIM_MANAGERS: 'winget,brew,npm' } }, // spec 060 FR-002: the per-OS assertion needs a known manager set
   { name: 'shots-052-ux', env: { DURBAR_SIM_KINDS: 'mixed' } },
-  { name: 'shots-052-addleft' }, // FR-160: + Folder / + Workspace leftmost, one row in every theme, the File menu and Ctrl+O
+  { name: 'shots-052-addleft' }, // FR-162: + Folder / + Workspace leftmost, one row in every theme, the File menu and Ctrl+O
   { name: 'shots-054-remote' },
   { name: 'shots-006-prevmarks' },
   { name: 'shots-012-signin-chat' },

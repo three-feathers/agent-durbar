@@ -12,7 +12,7 @@ const KEYS=window.DurbarKeys;
 const IS_MAC=KEYS.isMac(navigator.platform);
 const keyText=parts=>KEYS.keyText(parts,IS_MAC), keyLabels=parts=>KEYS.keyLabels(parts,IS_MAC), ariaKeys=parts=>KEYS.ariaKeys(parts,IS_MAC);
 const INBOX_KEY=keyText(['mod','shift','A']), NEXT_KEY=keyText(['mod','shift','N']), PAL_KEY=keyText(['mod','K']);
-const ADD_KEY=keyText(['mod','O']), ADDWS_KEY=keyText(['mod','shift','O']); /* spec 052 FR-160: + Folder, + Workspace (the Mac File menu has the same keys) */
+const ADD_KEY=keyText(['mod','O']), ADDWS_KEY=keyText(['mod','shift','O']); /* spec 052 FR-162: + Folder, + Workspace (the Mac File menu has the same keys) */
 /* spec 052 FR-085: the window's platform from the preload (the Mac title bar styles are gated on html[data-platform="darwin"]) */
 if(window.agentDurbar&&window.agentDurbar.platform==='darwin')document.documentElement.dataset.platform='darwin';
 /* the keys written in index.html are the Windows/Linux ones: rewrite them for a Mac */
@@ -838,7 +838,7 @@ const EMPTY_DESK='<svg class="empty-desk" viewBox="0 0 120 72" aria-hidden="true
   +'<rect x="24" y="22" width="30" height="30" rx="9" fill="currentColor" stroke="none" opacity=".14"/>'
   +'<rect x="70" y="14" width="38" height="27" rx="3.5"/><rect x="74" y="18" width="30" height="19" rx="2" fill="currentColor" stroke="none" opacity=".1"/>'
   +'<path d="M89 41v7M81 49h16"/><path d="M8 52h104" stroke-width="3.5"/><rect x="13" y="54" width="94" height="14" rx="3" fill="currentColor" stroke="none" opacity=".1"/></svg>';
-/* spec 052 FR-070: when the first-run card shows, "+ Folder" (FR-160) in the top bar rings once (CSS pseudo-element, opacity and scale).
+/* spec 052 FR-070: when the first-run card shows, "+ Folder" (FR-162) in the top bar rings once (CSS pseudo-element, opacity and scale).
    It waits 600ms and checks the card is still there, so a start that loads agents a moment later does not ring. */
 function ringFolder(){if(reducedMotion())return;setTimeout(()=>{const b=$('addFolder'),st=$('stage');if(!b||!st||!st.querySelector('.welcome')||!b.getClientRects().length)return;
   b.classList.remove('ring-once');void b.offsetWidth;b.classList.add('ring-once');setTimeout(()=>b.classList.remove('ring-once'),1600);},600);}
@@ -891,7 +891,7 @@ function fitUsage(root){
   }
 }
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{const s=document.getElementById('stage');if(s)fitUsage(s);}).catch(()=>{});
-/* spec 052 FR-160: the top bar is one row. When its parts do not fit (a narrow window, a wide theme or system font, the Mac traffic
+/* spec 052 FR-162: the top bar is one row. When its parts do not fit (a narrow window, a wide theme or system font, the Mac traffic
    lights), the brand name moves to screen readers only (the mark and the Live/Demo pill stay; the name is also the window's and the Mac
    menu bar's). Measured, not guessed by width: the class is removed, the row measured, and set again only if the parts still wrap. */
 function fitTopbar(){
@@ -1222,7 +1222,7 @@ function wireAnswerBar(a){
     bar.innerHTML='<span class="ab-q"><b></b> <span></span></span><span class="ab-act"></span>';
     const n=waiting().length, text=textOf(card), long=text.length>480;
     bar.querySelector('b').textContent=(n>1?'1 of '+n+' · ':'')+a.name+(q?' asks:':card.classList.contains('limit')?' stopped:':' needs your OK:');
-    bar.querySelector('.ab-q span').textContent=long?'a long request; read it in the chat before you answer.':text;
+    bar.querySelector('.ab-q span').textContent=long?'a long request; read it in the chat before you answer.':text;if(long)bar.querySelector('.ab-q span').title=text; /* spec 052 FR-160: the full text stays reachable */
     const act=bar.querySelector('.ab-act');
     const add=(label,cls,fn,title,keys)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;if(keys)b.setAttribute('aria-keyshortcuts',keys);b.onclick=fn;act.appendChild(b);};
     if(q)add('Answer in chat','primary',show);
@@ -1415,7 +1415,7 @@ document.addEventListener('keydown',e=>{
   /* spec 052 FR-042: Ctrl+K (⌘K on a Mac, FR-084) opens the command palette from anywhere, also from text fields */
   const mod=KEYS.modDown(e,IS_MAC);
   if(mod&&!e.shiftKey&&!e.altKey&&(e.key==='k'||e.key==='K'||e.code==='KeyK')){e.preventDefault();closeKbdHelp();openPalette();return;}
-  /* spec 052 FR-160: Ctrl+O adds a folder, Ctrl+Shift+O a VS Code workspace (the same buttons, so the same code path). On a Mac the
+  /* spec 052 FR-162: Ctrl+O adds a folder, Ctrl+Shift+O a VS Code workspace (the same buttons, so the same code path). On a Mac the
      File menu owns ⌘O / ⇧⌘O, so this handler stays out of the way there. Not under a dialog, and only with the app's bridge (the
      page without it has no add buttons). Like the Mac menu it also works from an open chat and in Simple. */
   if(!IS_MAC&&mod&&!e.altKey&&(e.key==='o'||e.key==='O'||e.code==='KeyO')&&document.body.classList.contains('has-bridge')&&!document.querySelector('[role="dialog"][aria-modal="true"]')){const b=$(e.shiftKey?'addWs':'addFolder');if(b&&!b.disabled){e.preventDefault();b.click();}return;}
@@ -1766,7 +1766,7 @@ function openKbdHelp(back){
   palBack=back instanceof Element?back:(document.activeElement&&document.activeElement!==document.body?document.activeElement:null);
   const rows=[
     [keyLabels(['mod','K']),'Command palette: agents, folders and actions'],
-    [keyLabels(['mod','O']),'Add a folder'], /* spec 052 FR-160 */
+    [keyLabels(['mod','O']),'Add a folder'], /* spec 052 FR-162 */
     ...(SIMPLE?[]:[[keyLabels(['mod','shift','O']),'Add a VS Code workspace']]),
     [['I'],'Needs you inbox',keyLabels(['mod','shift','A'])],
     [['N'],'Next agent that needs you',keyLabels(['mod','shift','N'])],
@@ -2497,13 +2497,21 @@ function showQuestion(a,e){
     qt.appendChild(document.createTextNode(q.question));box.appendChild(qt);
     const opts=document.createElement('div');opts.className='q-opts';opts.setAttribute('role',q.multiSelect?'group':'radiogroup');opts.setAttribute('aria-label',q.question);
     (q.options||[]).forEach(o=>{const b=document.createElement('button');b.type='button';b.className='btn q-opt';b.setAttribute(q.multiSelect?'aria-pressed':'aria-checked','false');if(!q.multiSelect)b.setAttribute('role','radio');
-      b.textContent=o.label;b.title=o.description?o.label+' — '+o.description:o.label; /* FR-140: the title always has the label */
+      const lb=document.createElement('span');lb.className='q-lbl';lb.textContent=o.label;b.appendChild(lb);b.title=o.description?o.label+' — '+o.description:o.label; /* FR-140: the title always has the label */
+      if(o.description){const d=document.createElement('span');d.className='q-desc';d.textContent=o.description;b.appendChild(d);} /* spec 052 FR-160: the description is on screen, not only in the tooltip */
       b.onclick=()=>{const s=picks[i];if(q.multiSelect){s.has(o.label)?s.delete(o.label):s.add(o.label);b.setAttribute('aria-pressed',String(s.has(o.label)));b.classList.toggle('primary',s.has(o.label));}
-        else{s.clear();s.add(o.label);opts.querySelectorAll('.q-opt').forEach(x=>{x.setAttribute('aria-checked',String(x===b));x.classList.toggle('primary',x===b);});others[i].value='';}};
+        else{s.clear();s.add(o.label);opts.querySelectorAll('.q-opt').forEach(x=>{x.setAttribute('aria-checked',String(x===b));x.classList.toggle('primary',x===b);});others[i].value='';others[i].classList.remove('chosen');others[i].style.height='';}};
       opts.appendChild(b);});
-    const other=document.createElement('input');other.type='text';other.maxLength=500;other.className='q-other';other.placeholder='Other answer';other.setAttribute('aria-label','Other answer: '+q.question);
-    other.oninput=()=>{if(other.value.trim()&&!q.multiSelect){picks[i].clear();opts.querySelectorAll('.q-opt').forEach(x=>{x.setAttribute('aria-checked','false');x.classList.remove('primary');});}};
-    others.push(other);opts.appendChild(other);box.appendChild(opts);n.appendChild(box);
+    /* spec 052 FR-160/FR-161: a box that grows with its text; typing chooses it; Enter sends the card (Answer's own handler), Shift+Enter adds a line */
+    const other=document.createElement('textarea');other.rows=1;other.maxLength=500;other.className='q-other';other.placeholder='Other answer (Enter to send)';other.setAttribute('aria-label','Other answer: '+q.question);
+    const hint=document.createElement('span');hint.className='sr-only';hint.id='qh'+(++qFormSeq);hint.textContent='Enter sends this answer. Shift+Enter adds a line.';
+    other.setAttribute('aria-describedby',hint.id);other.setAttribute('aria-keyshortcuts','Enter');
+    const grow=()=>{other.style.height='auto';other.style.height=other.scrollHeight+2+'px';};
+    other.oninput=()=>{const has=!!other.value.trim();other.classList.toggle('chosen',has);
+      if(has&&!q.multiSelect){picks[i].clear();opts.querySelectorAll('.q-opt').forEach(x=>{x.setAttribute('aria-checked','false');x.classList.remove('primary');});}grow();};
+    other.addEventListener('keydown',ev=>{if(ev.key!=='Enter'||ev.shiftKey||ev.isComposing||ev.altKey||ev.ctrlKey||ev.metaKey)return;ev.preventDefault();
+      if(!other.value.trim()){announce('Type an answer first, or choose an option and press Answer.');return;}ok.click();});
+    others.push(other);opts.appendChild(other);opts.appendChild(hint);box.appendChild(opts);n.appendChild(box);
   });
   const row=document.createElement('div');row.className='note-actions';
   const send=async answers=>{
@@ -2551,7 +2559,7 @@ function showElicitation(a,e){
   const st=document.createElement('span');st.className='pstate';n.appendChild(st);
   const qt=document.createElement('p');qt.className='q-text';qt.id=uid+'-msg';
   if(R.source){const h=document.createElement('span');h.className='tag';h.textContent=SHORT(R.source,40);qt.appendChild(h);qt.appendChild(document.createTextNode(' '));}
-  qt.appendChild(document.createTextNode(SHORT(R.message||'',500)));n.appendChild(qt);n.setAttribute('aria-describedby',qt.id);
+  qt.appendChild(document.createTextNode(SHORT(R.message||'',2000)));n.appendChild(qt);n.setAttribute('aria-describedby',qt.id);
   const row=document.createElement('div');row.className='note-actions';
   const btn=(label,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;b.onclick=fn;return b;};
   const inputs=[];
@@ -2905,7 +2913,17 @@ async function sendLive(text,forId,opts){
     const input=$('msgInput');if(input){input.value='';autoGrow();}}
   a.worked=true; a.intent=''; closeTurn(a); ensureTurn(a); setState(a,'thinking',null,'Thinking');
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})));
-  if(!r.ok){closeTurn(a);addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);setState(a,'error',null,'Send failed: '+SHORT(r.error,100));}
+  if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc(r.error||'unknown error'),true);modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+SHORT(r.error,100));}
+}
+/* spec 012 FR-087 (owner 2026-10-20, option c): a refusal of Read-only / Ask first (Codex's sandbox could not start, or Codex cannot
+   limit reads) never suggests a mode in its text; a "Change mode…" button opens the usual mode menu, with every mode and its help */
+const MODE_REFUSAL=/Read-only and Ask first need|limit reads to the session's folders/;
+function modeRefusalAction(a,note,error){
+  if(!note||!MODE_REFUSAL.test(String(error||''))||!bridge.setPermMode||!feat(a,'modes'))return;
+  const row=document.createElement('div');row.className='note-actions';
+  const b=document.createElement('button');b.type='button';b.className='btn';b.textContent='Change mode…';b.dataset.act='modeRefusal';
+  b.onclick=()=>{const r=b.getBoundingClientRect();openModeMenu(a,r.left,r.bottom+4,b);};
+  row.appendChild(b);note.appendChild(row);
 }
 /* ---------------- sign in again from the chat (spec 012 FR-157) ---------------- */
 const SIGNIN=window.DurbarSignIn||null;
@@ -3184,7 +3202,7 @@ function renderDefaultsChip(){
   const b=$('defaultsBtn'); if(!b)return;
   /* spec 052 (2026-10-21, round 1): the permission mode first, so a narrow chip cuts the model, never the mode */
   const parts=[optWord($('permMode')),optWord($('kindSel')),SIMPLE?'':optWord($('modelSel'))].filter(Boolean);
-  /* spec 052 FR-160: the mode and the rest in two spans (same text), so a narrow top bar shows the whole mode word, not "Read-on…" */
+  /* spec 052 FR-162: the mode and the rest in two spans (same text), so a narrow top bar shows the whole mode word, not "Read-on…" */
   const dv=b.querySelector('.dv'),m=document.createElement('span'),r=document.createElement('span');
   m.className='dv-m';r.className='dv-r';m.textContent=parts.length?parts[0]:'Defaults';r.textContent=parts.length>1?' · '+parts.slice(1).join(' · '):'';
   dv.replaceChildren(m,r);
@@ -3863,6 +3881,39 @@ document.addEventListener('click',async e=>{
 document.addEventListener('change',async e=>{if(e.target&&e.target.id==='schedPauseAllSet'){const r=await bridge.setSchedulesPaused(e.target.checked);SCHED.pausedAll=r.pausedAll;schedChanged();}});
 /* spec 012 FR-158: a new sign-in reconnected the agent app, so remote control ended for this session */
 if(bridge&&bridge.onRemoteUrl)bridge.onRemoteUrl(p=>{const a=p&&liveById(p.id);if(a&&a.remote&&typeof p.url==='string')a.remote.url=p.url;});
+/* spec 065: after a turn that changed files, one muted line with "Undo these changes…"; the dialog previews, then restores */
+const CKPT=window.DurbarCheckpoints||null;
+function checkpointNote(a,n){
+  if(!CKPT||!a)return;
+  const text=CKPT.noteText(n);if(!text)return;
+  const chat=liveChat(a);
+  const note=addNote(chat,esc(text));note.classList.add('ckpt-note');note.dataset.turn=String(n.turn);
+  if(!(n.files||[]).length||!bridge.checkpointPreview)return;
+  const row=document.createElement('div');row.className='note-actions';
+  const b=document.createElement('button');b.type='button';b.className='btn';b.textContent=CKPT.button(n);b.dataset.act='ckptUndo';
+  b.onclick=()=>undoCheckpoint(a,n.turn,b);
+  row.appendChild(b);note.appendChild(row);
+}
+async function undoCheckpoint(a,turn,btn){
+  const p=await bridge.checkpointPreview(a.id,turn).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  if(!p||!p.ok){toast(esc((p&&p.error)||'Could not read these changes.')).classList.add('err');return;}
+  if(p.conflicts.length){
+    await askDialog({title:'These changes cannot be undone now',body:'These files changed after that turn, so nothing will be restored (your newer changes are kept):',lines:p.conflicts,buttons:[{label:'OK',value:null,cls:'primary'}],returnFocus:()=>btn});
+    return;
+  }
+  const r=await askDialog({title:'Undo these changes?',body:'These files will be put back as they were before the turn. A copy of them as they are now is kept, so you can undo this again.',lines:CKPT.previewLines(p),
+    buttons:[{label:'Cancel',value:null},{label:CKPT.confirmLabel(p),value:'undo',cls:'primary warn'}],returnFocus:()=>btn});
+  if(!r||r.value!=='undo')return;
+  const u=await bridge.checkpointUndo(a.id,turn).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  if(!u||!u.ok){
+    if(u&&u.conflicts&&u.conflicts.length)await askDialog({title:'Nothing was restored',body:(u.error||'')+' Changed files:',lines:u.conflicts,buttons:[{label:'OK',value:null,cls:'primary'}],returnFocus:()=>btn});
+    else toast(esc((u&&u.error)||'Could not restore the files.')).classList.add('err');
+    return;
+  }
+  btn.disabled=true;btn.textContent='Undone';
+  checkpointNote(a,Object.assign({id:a.id},u.undo));
+}
+if(bridge&&bridge.onCheckpoint)bridge.onCheckpoint(n=>{const a=n&&liveById(n.id);if(a)checkpointNote(a,n);});
 if(bridge&&bridge.onRemoteOff){bridge.onRemoteOff(p=>{const id=typeof p==='string'?p:p&&p.id;const a=liveById(id);if(!a||!a.remote)return;a.remote=null;updateRemoteUi(a);
   /* spec 054 FR-062: the adapter's own reason when it has one; otherwise the sign-in reconnect (spec 012 FR-158) */
   const why=p&&typeof p==='object'&&typeof p.reason==='string'&&p.reason?esc(p.reason.slice(0,300)):esc(a.name)+' reconnected after the new sign-in';
@@ -4275,7 +4326,7 @@ if(bridge){
   $('settingsBtn').onclick=()=>window.DurbarScreens.openSettings();
   /* spec 052 FR-083: Settings… (⌘,) in the macOS app menu. The real window's preload carries it, also under the simulator. */
   {const real=window.agentDurbar;if(real&&real.onMenuSettings)real.onMenuSettings(()=>window.DurbarScreens.openSettings());
-    /* spec 052 FR-160: File > Add Folder… / Add VS Code Workspace… press the same top-bar buttons (one code path) */
+    /* spec 052 FR-162: File > Add Folder… / Add VS Code Workspace… press the same top-bar buttons (one code path) */
     if(real&&real.onMenuAdd)real.onMenuAdd(k=>{const b=$(k==='workspace'?'addWs':'addFolder');if(b&&!b.disabled)b.click();});
    /* FR-085: in full screen the top bar no longer keeps room for the traffic lights */
    if(real&&real.onFullScreen)real.onFullScreen(on=>{if(on)document.documentElement.dataset.fullscreen='';else delete document.documentElement.dataset.fullscreen;});}

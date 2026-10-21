@@ -29,6 +29,7 @@ import { openInVSCode } from './vscode';
 import { isHttpUrl } from '../shared/url';
 import { checkElicitAnswer, createElicitTracker, elicitHttpsUrl } from '../shared/elicit';
 import { createRemoteOps } from './remoteops';
+import { CheckpointStore } from './checkpoints';
 import { DEFAULT_ADAPTER, FolderStore, PROFILE_ID, restoreMode, sessionsToRestore } from './folders';
 import { AppStateStore, buildSinceAway, placeWindow, quitMessage } from './daily';
 import type { SinceAway } from './daily';
@@ -522,6 +523,32 @@ ipcHandle('agents:send', async (_e, id: string, text: string, attachments: Picke
   if (!r.ok) agentState.noteSendFailed(id); // and Error when the send fails (app.js sendLive)
   return r;
 });
+// ---- spec 065: undo an agent's file changes per turn (copies kept just before each file-edit write, while the app runs) ----
+let checkpointStore: CheckpointStore | undefined;
+const checkpoints = (): CheckpointStore => (checkpointStore ??= new CheckpointStore(path.join(app.getPath('userData'), 'checkpoints')));
+const rootsOf = (a: AgentInfo): string[] => (a.folders?.length ? a.folders : [a.cwd]);
+router.setWriteGuard(async (sid, paths) => {
+  const a = agents.get(sid);
+  if (!a) return;
+  for (const p of paths) checkpoints().capture(sid, rootsOf(a), p);
+});
+router.onEvent((e) => {
+  if (e.type !== 'status' || e.agentId || (e.status !== 'idle' && e.status !== 'stopped' && e.status !== 'error')) return;
+  const s = checkpointStore?.endTurn(e.sessionId);
+  if (s) toRenderer('agents:checkpoint', { id: e.sessionId, ...s });
+});
+const checkpointArgs = (id: unknown, turn: unknown): string | undefined => (typeof id === 'string' && agents.has(id) && Number.isInteger(turn) && (turn as number) > 0 ? id : undefined);
+ipcHandle('agents:checkpointPreview', (e, id: unknown, turn: unknown) => {
+  const a = fromApp(e) ? checkpointArgs(id, turn) : undefined; // FR-005: Durbar's own window only, never MCP, remote control or schedules
+  return a && checkpointStore ? checkpointStore.preview(a, turn) : { ok: false, error: 'invalid request' };
+});
+ipcHandle('agents:checkpointUndo', (e, id: unknown, turn: unknown) => {
+  const a = fromApp(e) ? checkpointArgs(id, turn) : undefined;
+  if (!a || !checkpointStore) return { ok: false, error: 'invalid request' };
+  if (busyStatus(a)) return { ok: false, error: 'The agent is working. Stop it or wait for the turn to end, then undo.' };
+  return checkpointStore.undo(a, turn);
+});
+
 async function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter): Promise<{ ok: boolean; error?: string }> {
   const safe = (Array.isArray(attachments) ? attachments : []).filter((a) => pickedFiles.has(a.path));
   // Caps are enforced here too, not only in the UI.
@@ -533,6 +560,7 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
   }
   try {
     await ensureLive(agents.get(id) as AgentInfo); // an ended or not-yet-started agent starts (resumes) its session here
+    checkpoints().beginTurn(id, rootsOf(agents.get(id) as AgentInfo)); // spec 065 FR-002: a send starts a turn (scheduled prompts too)
     await ad.send(id, {
       text: String(text),
       attachments: safe.map((a) => ({ path: a.path, kind: kindOfFile(a.path) })), // FR-009: checked again here, the renderer's kind is not trusted
@@ -1223,6 +1251,7 @@ ipcHandle('agents:remove', async (_e, id: unknown) => {
     /* already gone */
   }
   router.unbind(a.id);
+  checkpointStore?.forget(a.id); // spec 065 FR-006
   agents.delete(a.id);
   agentState.remove(a.id);
   vsChatRefs.delete(a.id);
@@ -1448,7 +1477,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   app.setAboutPanelOptions(aboutPanelOptions(app.getVersion())); // owner and contributors: src/shared/about.ts (spec 008 FR-018)
-  // spec 052 FR-083, FR-160: a Mac menu from roles (Settings… ⌘,; File > Add Folder… ⌘O); no menu on Windows and Linux (no Reload or DevTools for users)
+  // spec 052 FR-083, FR-162: a Mac menu from roles (Settings… ⌘,; File > Add Folder… ⌘O); no menu on Windows and Linux (no Reload or DevTools for users)
   const menu = appMenuTemplate(process.platform, {
     openSettings: () => {
       const w = win && !win.isDestroyed() ? win : undefined;
@@ -1457,7 +1486,7 @@ app.whenReady().then(() => {
       toRenderer('menu:settings', null);
     },
     openRepo: () => void shell.openExternal(REPO_URL),
-    // spec 052 FR-160: File > Add Folder… / Add VS Code Workspace… press the page's own buttons (one code path, agents:addFolder / addWorkspaceFile)
+    // spec 052 FR-162: File > Add Folder… / Add VS Code Workspace… press the page's own buttons (one code path, agents:addFolder / addWorkspaceFile)
     add: (kind) => {
       const w = win && !win.isDestroyed() ? win : undefined;
       if (!w) return;

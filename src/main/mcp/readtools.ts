@@ -12,7 +12,7 @@ import type { AppSettings } from '../../shared/credits';
 import { GROUND } from '../../shared/floors';
 import type { FloorsDoc } from '../../shared/floors';
 import type { McpServerView } from '../../shared/mcp';
-import { cut, maskSecretArgs, maskSecretUrl, parseFlag, redact, splitCommand } from '../../shared/redact';
+import { MASK_INPUT_MAX, cut, maskSchemeSecrets, maskSecretArgs, maskSecretUrl, parseFlag, redact, shellWords, splitCommand } from '../../shared/redact';
 import { officeTotals } from '../../shared/usagedoc';
 import type { UsageNumbers, UsageTotalsDoc } from '../../shared/usagedoc';
 import type { SavedFolder } from '../folders';
@@ -72,7 +72,11 @@ const numbers = (n: UsageNumbers) => ({ calls: n.calls, inTokens: n.inTokens, ou
 const folderKeyOf = (a: AgentInfo): string => a.workspaceFile ?? a.cwd;
 
 /** Key names only, never values: the one place an env or header entry is turned into output. */
-const keyNames = (l: readonly { key: string; set: boolean }[] | undefined): { key: string; set: boolean }[] => (l ?? []).map((e) => ({ key: redact(e.key), set: e.set === true }));
+const keyNames = (l: readonly { key: string; set: boolean }[] | undefined, take: (len: number) => boolean): { key: string; set: boolean }[] => {
+  const out: { key: string; set: boolean }[] = [];
+  for (const e of l ?? []) { if (!take(String(e.key).length)) break; out.push({ key: redact(e.key), set: e.set === true }); } // T065: each key name is charged; the rest is left out (no partial key names)
+  return out;
+};
 
 const OUTSIDE = '\u2026/';
 const ABS_POSIX = /^\/+[^/\\]+[/\\]+[^/\\]/; // two segments or more: a one-segment `/name` is a Windows-style flag
@@ -84,7 +88,8 @@ const ABS_HOME = /^~[^/\\]*[/\\]/; // `~/x` and `~other/x`
  * (POSIX with two segments or more, drive, UNC, `~/`) that is not the saved folder itself or below it becomes `…/<base name>`, also
  * as a flag value (`--config=/x/y`, `--config /x/y`) or a `NAME=value` value. "Inside" uses `path.win32` or `path.posix` by `platform`,
  * case-insensitive on Windows and macOS, exact on Linux; a `.code-workspace` counts as its directory. Paths inside a longer arg
- * (`type=bind,src=/x/y`), `$HOME` and `%USERPROFILE%` forms and relative paths are not reduced (`[KNOWN GAP]`).
+ * (`type=bind,src=/x/y`), `$HOME` and `%USERPROFILE%` forms and relative paths are not reduced (`[KNOWN GAP]`). A whole-quoted arg or flag value is reduced on
+ * its inside (R9). An arg with whitespace that does not start with a path is reduced word by word (R10); one that starts with a path keeps the whole-arg rule.
  */
 export function makePathReducer(savedFolders: readonly string[], platform: NodeJS.Platform): (arg: string) => string {
   const mod = platform === 'win32' ? path.win32 : path.posix;
@@ -119,10 +124,21 @@ export function makePathReducer(savedFolders: readonly string[], platform: NodeJ
     const kv = /^([A-Za-z_][A-Za-z0-9_.-]{0,127})=([\s\S]*)$/.exec(v);
     return kv && isAbs(kv[2]) ? `${kv[1]}=${reduceAbs(kv[2])}` : v;
   };
-  return (arg) => {
+  // R9: a whole-quoted value is reduced on its inside and the quotes are put back.
+  const quoted = (a: string, fn: (x: string) => string): string => { const q = a[0]; return a.length >= 2 && (q === '"' || q === "'") && a[a.length - 1] === q ? q + fn(a.slice(1, -1)) + q : fn(a); };
+  const one = (arg: string): string => {
     const f = arg.startsWith('-') || arg.startsWith('/') ? parseFlag(arg) : undefined;
-    return f && f.rest !== undefined ? `${f.name}${f.sep}${reduceValue(f.rest)}` : f ? arg : reduceValue(arg);
+    return f && f.rest !== undefined ? `${f.name}${f.sep}${quoted(f.rest, reduceValue)}` : f ? arg : reduceValue(arg);
   };
+  // R10: an arg with whitespace that does not start with an absolute path is reduced word by word (separators kept).
+  const words = (arg: string): string => {
+    if (!/\s/.test(arg.trim()) || isAbs(arg)) return one(arg);
+    const { words: w, seps } = shellWords(arg);
+    let out = seps[0];
+    for (let i = 0; i < w.length; i++) out += quoted(w[i], one) + seps[i + 1];
+    return out;
+  };
+  return (arg) => quoted(arg, words);
 }
 
 /** Replace a folder's stored secret values (longest first); values under 4 characters are skipped, since they would mangle every string. */
@@ -132,14 +148,59 @@ function replaceValues(text: string, values: readonly string[]): string {
   return t;
 }
 
-/** The masking of `command`, `args` and `url` for one folder's server (T053): stored secret values, secret shapes, then outside paths. */
-function maskers(deps: ReadToolsDeps, folderKey?: string) {
+/** T065: two budgets per tool call, because two costs differ. Fixed units: a string costs MASK_PER_ARG, a key name MASK_PER_KEY (about a microsecond each); characters: the length of every string that goes through the rules (about 2 microseconds each on hostile text). Past either, later values are hidden whole. */
+export const MASK_BUDGET = 90000;
+export const MASK_CHARS = 48000;
+/** T065: fixed cost of one arg, command or url (an arg is masked inside one list call, about 10 microseconds each; a command or url is one more string). The number of entries, and so of commands, is capped by MASK_MAX_ENTRIES. */
+export const MASK_PER_ARG = 10;
+/** T065: fixed cost of one env or header key name (a `redact()` call each, measured below). */
+export const MASK_PER_KEY = 100;
+/** T065: most server entries one call lists (CLI plus every folder's extras), so a reply of bare entries stays under about 256 kB; 200 typical servers fit. */
+export const MASK_MAX_ENTRIES = 250;
+export const MASK_BUDGET_NOTE = 'budget reached: later values and servers are hidden';
+
+/** The masking budget of ONE tool call: every `maskers()` of that call shares it. */
+export interface MaskBudget { used: number; chars: number; entries: number; hit: boolean }
+export const newMaskBudget = (): MaskBudget => ({ used: 0, chars: 0, entries: 0, hit: false });
+const spent = (b: MaskBudget): boolean => b.used >= MASK_BUDGET || b.chars >= MASK_CHARS;
+const full = (b: MaskBudget): boolean => spent(b) || b.entries >= MASK_MAX_ENTRIES; // for entries only: values of an admitted entry are masked even when it is the last one allowed
+/** A server entry counts toward MASK_MAX_ENTRIES. Once the budget is spent the entry is left out of the result, so the size of the result (and its cost) stays bounded by the budget, not by the input. */
+const takeEntry = (b: MaskBudget): boolean => { if (full(b)) { b.hit = true; return false; } b.entries++; return true; };
+
+/** The masking of `command`, `args` and `url` for one folder's server (T053): stored secret values, secret shapes, then outside paths. T065: a string over MASK_INPUT_MAX, or any string after the call's budget is spent, becomes `[redacted]` whole without going through any rule (never cut before masking). */
+function maskers(deps: ReadToolsDeps, budget: MaskBudget, folderKey?: string) {
   const values = folderKey === undefined ? [] : deps.extraSecretValues(folderKey);
   const reduce = makePathReducer(deps.folders().map((f) => f.workspace), deps.platform);
+  /** true when the string may go through the rules; charges the budget. A string over the limit is hidden and costs only the fixed part. */
+  const admit = (len: number, fixed: number): boolean => {
+    if (spent(budget)) { budget.hit = true; return false; }
+    budget.used += fixed;
+    if (len > MASK_INPUT_MAX) return false;
+    budget.chars += len;
+    return true;
+  };
+  const R = '[redacted]';
   return {
-    command: (c: string | undefined): string | undefined => (c === undefined ? undefined : maskSecretArgs(splitCommand(replaceValues(c, values))).map(reduce).join(' ')),
-    args: (a: readonly string[] | undefined): string[] | undefined => (a === undefined ? undefined : maskSecretArgs(a.map((x) => replaceValues(String(x ?? ''), values))).map(reduce)),
-    url: (u: string | undefined): string | undefined => (u === undefined ? undefined : reduce(maskSecretUrl(replaceValues(u, values)))),
+    /** true when one more env or header key name may be shown; charges the budget. */
+    key: (len: number): boolean => {
+      if (spent(budget)) { budget.hit = true; return false; }
+      budget.used += MASK_PER_KEY;
+      budget.chars += len;
+      return true;
+    },
+    command: (c: string | undefined): string | undefined => (c === undefined ? undefined : !admit(c.length, MASK_PER_ARG) ? R : maskSecretArgs(splitCommand(redact(maskSchemeSecrets(replaceValues(c, values))))).map(reduce).join(' ')),
+    args: (a: readonly string[] | undefined): string[] | undefined => {
+      if (a === undefined) return undefined;
+      // the budget admits a prefix; it is masked as ONE list (so a flag still masks its next arg), the rest is ONE [redacted] element (not one per arg, so the result stays small)
+      const ok: boolean[] = [];
+      const kept: string[] = [];
+      let i = 0;
+      for (; i < a.length && !spent(budget); i++) { const s = String(a[i] ?? ''); const k = admit(s.length, MASK_PER_ARG); ok.push(k); kept.push(k ? replaceValues(s, values) : R); }
+      const out = maskSecretArgs(kept).map((x, j) => (ok[j] ? reduce(x) : R));
+      if (i < a.length) { budget.hit = true; out.push(R); }
+      return out;
+    },
+    url: (u: string | undefined): string | undefined => (u === undefined ? undefined : !admit(u.length, MASK_PER_ARG) ? R : reduce(maskSecretUrl(replaceValues(u, values)))),
   };
 }
 
@@ -151,7 +212,7 @@ function extraView(s: McpServerView, m: ReturnType<typeof maskers>) {
   return {
     name: s.name, transport: s.transport, enabled: s.enabled, trusted: s.trusted, needsSecrets: s.needsSecrets,
     command: m.command(s.command), args: m.args(s.args), url: m.url(s.url),
-    envKeys: keyNames(s.env), headerKeys: keyNames(s.headers),
+    envKeys: keyNames(s.env, m.key), headerKeys: keyNames(s.headers, m.key),
   };
 }
 
@@ -232,9 +293,18 @@ export function createReadToolHandlers(deps: ReadToolsDeps): ToolHandlers {
 
     durbar_mcp_state: () => {
       const c = deps.mcpCli();
-      const extras = deps.folders().map((f) => { const m = maskers(deps, f.workspace); return { folder: f.workspace, servers: deps.mcpExtras(f.workspace).map((x) => extraView(x, m)) }; }).filter((e) => e.servers.length > 0);
-      const cliMask = maskers(deps);
-      return json({ copilotCli: { servers: c.cli.map((x) => cliView(x, cliMask)), file: { label: c.file.label, found: c.file.found, skipped: c.file.skipped }, secretsPersist: c.secretsPersist }, extras });
+      const budget = newMaskBudget(); // one budget for the whole call (T065)
+      const cliMask = maskers(deps, budget);
+      const cliServers: Array<ReturnType<typeof cliView>> = [];
+      for (const x of c.cli) { if (!takeEntry(budget)) break; cliServers.push(cliView(x, cliMask)); }
+      const extras = deps.folders().map((f) => {
+        if (full(budget)) { if (deps.mcpExtras(f.workspace).length > 0) budget.hit = true; return { folder: f.workspace, servers: [] as Array<ReturnType<typeof extraView>> }; } // nothing left to spend: no work per folder; the note only when this folder had something
+        const m = maskers(deps, budget, f.workspace);
+        const servers: Array<ReturnType<typeof extraView>> = [];
+        for (const x of deps.mcpExtras(f.workspace)) { if (!takeEntry(budget)) break; servers.push(extraView(x, m)); }
+        return { folder: f.workspace, servers };
+      }).filter((e) => e.servers.length > 0);
+      return json({ copilotCli: { servers: cliServers, file: { label: c.file.label, found: c.file.found, skipped: c.file.skipped }, secretsPersist: c.secretsPersist }, extras, ...(budget.hit ? { masking: MASK_BUDGET_NOTE } : {}) });
     },
 
     // Stub until T031 (the change queue): nothing can have been requested yet, so there is no status to give.

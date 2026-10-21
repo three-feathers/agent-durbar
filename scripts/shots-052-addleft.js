@@ -1,4 +1,4 @@
-/* spec 052 FR-160 (owner, 2026-10-21): + Folder and + Workspace sit at the left end of the top bar, first in tab order, and the Mac
+/* spec 052 FR-162 (owner, 2026-10-21): + Folder and + Workspace sit at the left end of the top bar, first in tab order, and the Mac
    File menu has Add Folder… (⌘O) and Add VS Code Workspace… (⇧⌘O) that press the same buttons. Simulator only, no credits.
      npm run build && DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=$PWD/scripts/shots-052-addleft.js xvfb-run -a npx electron . --no-sandbox
    Per size (1440x900, 1280x800), level (Expert, Simple) and built-in theme, with floors and several agent apps (the widest bar):

@@ -27,6 +27,9 @@ const api: DurbarApi = {
   handoff: (id) => ipcRenderer.invoke('agents:handoff', id),
   setRemote: (id, on) => ipcRenderer.invoke('agents:setRemote', id, on),
   openRemote: (id) => ipcRenderer.invoke('agents:openRemote', id),
+  checkpointPreview: (id, turn) => ipcRenderer.invoke('agents:checkpointPreview', id, turn),
+  checkpointUndo: (id, turn) => ipcRenderer.invoke('agents:checkpointUndo', id, turn),
+  onCheckpoint: (cb) => sub('agents:checkpoint', cb),
   setRoomClosed: (id, closed) => ipcRenderer.invoke('folders:setClosed', id, closed),
   setFolderHidden: (id, hidden) => ipcRenderer.invoke('folders:setHidden', id, hidden),
   removeFolder: (id) => ipcRenderer.invoke('folders:remove', id),
@@ -127,7 +130,7 @@ const api: DurbarApi = {
   onAgentAdded: (cb) => sub('agent:added', cb),
   // spec 052 FR-083, FR-085: the Mac app menu's Settings… item, full screen (the top bar's traffic-light room) and the platform
   onMenuSettings: (cb) => sub<null>('menu:settings', () => cb()),
-  // spec 052 FR-160: File > Add Folder… / Add VS Code Workspace…; only the two known words pass
+  // spec 052 FR-162: File > Add Folder… / Add VS Code Workspace…; only the two known words pass
   onMenuAdd: (cb) => sub<unknown>('menu:add', (k) => { if (k === 'folder' || k === 'workspace') cb(k); }),
   onFullScreen: (cb) => sub<boolean>('window:fullScreen', (on) => cb(on === true)),
   platform: process.platform,

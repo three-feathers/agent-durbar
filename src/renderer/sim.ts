@@ -37,7 +37,7 @@ interface SimOptions {
   /** Spec 012 FR-130: the first Claude agent (or the first agent) asks a question (page address `simquestion=1`). */
   /** Spec 052 FR-141 (issue #367): the first agent has eight session grants with long names (page address `simgrants=many`). */
   grants?: 'many' | 'stuck'; /* 'stuck': revokes are accepted but never remove anything (a failed revoke) */
-  question?: boolean | 'long'; /* 'long' (spec 052 FR-140): a long question text and long option labels */
+  question?: boolean | 'long'; /* 'long' (spec 052 FR-140): a long question text and long option labels and descriptions (FR-160) */
   /** Spec 012 FR-151: an MCP server asks one agent for input: a small form (`simelicit=1`) or an https page to open (`simelicit=url`). */
   elicit?: string;
   /** Spec 033: names of floors that start switched off. */
@@ -343,9 +343,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         simQ = { s, requestId: 'q-' + s.info.id };
         s.state = 'waiting';
         emit({ type: 'question', sessionId: s.info.id, timestamp: now(), phase: 'asked', requestId: simQ.requestId, questions: opts.question === 'long' ? [
-          { question: 'Before I change the settings screen and the office view together, which of these long-running approaches should I take for the whole refactor, knowing that the second one touches every theme and the third one needs a migration of the saved preferences on every machine?', header: 'Refactor plan', multiSelect: false, options: [
-            { label: 'Change the settings screen first, keep the old office layout until every theme has been checked on all three platforms, then do the chat, then the inbox, then the activity log, and only after that the screens that nobody opens', description: 'Safest, slowest' },
-            { label: 'Change everything at once, including the saved preferences and the themes, and fix what breaks afterwards' },
+          { question: 'Before I change the settings screen and the office view together, which of these long-running approaches should I take for the whole refactor, knowing that the second one touches every theme and the third one needs a migration of the saved preferences on every machine? Some context first, so you can choose well: the settings screen has grown over eleven rounds of reviews and now mixes the defaults for new sessions, the agent apps, the themes, the places in the office and the spending limits on one long page; the office view draws fifteen desks at two window sizes and every theme lays them out the same way, so a change there is checked once but shows everywhere; the saved preferences are read at start-up on Windows, macOS and Linux, and an old file must still open after the change, or people lose their places and limits; the chat, the inbox and the activity log read the same settings, so they move with whatever we pick; and the screens that nobody opens still need their words checked, because a newcomer finds them through the command palette. Tell me which way you prefer, or write your own plan below.', header: 'Refactor plan', multiSelect: false, options: [
+            { label: 'Change the settings screen first, keep the old office layout until every theme has been checked on all three platforms, then do the chat, then the inbox, then the activity log, and only after that the screens that nobody opens', description: 'Safest, slowest. Each step is small enough to review in one sitting and to undo on its own if a theme breaks; the office keeps its old layout until the very end, so people who only watch their agents see no change for a while. It takes about five pull requests instead of one, and the saved preferences are migrated last, after every screen that reads them has been moved, with a backup of the old file kept next to the new one for one release in case anything goes wrong on a machine we did not test.' },
+            { label: 'Change everything at once, including the saved preferences and the themes, and fix what breaks afterwards; this is the fastest way to a consistent screen, but every theme, every window size and every platform has to be checked again in the same pull request before anyone can merge it' },
             { label: 'Short' } ] },
           { question: 'Which of the supercalifragilisticexpialidocious_configuration_option_names_that_are_unbroken_strings should stay?', header: 'Options', multiSelect: true, options: [{ label: 'an_option_label_without_any_space_that_is_much_longer_than_the_card_is_wide_in_any_window_size_and_keeps_going_with_more_words_joined_by_underscores_so_it_cannot_break_at_a_space_at_all' }, { label: 'Keep all of them' }] },
         ] : [
@@ -1455,6 +1455,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!s) return { ok: false, error: 'unknown agent' };
         if (s.perm) return { ok: false, error: 'Waiting for your permission decision first.' };
         if (s.limitReq) return { ok: false, error: 'The spending limit was reached. Choose Raise limit, Remove limit or Stop here first.' };
+        // spec 012 FR-087: `simsendfail=sandbox` fakes Codex refusing Read-only / Ask first (the real Linux message), for the driver
+        if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsendfail') === 'sandbox' && s.info.permMode !== 'allow')
+          return { ok: false, error: "Codex refused the session settings: fs sandbox helper failed: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted Codex could not start its Linux sandbox: this system blocks unprivileged user namespaces (Ubuntu AppArmor). Read-only and Ask first need that sandbox, so nothing ran. To allow it for bubblewrap, see the README (Codex)." };
         const kind = s.info.adapterId ?? 'copilot';
         if (simExpired.has(kind) || simSignedOut.has(kind)) {
           // FR-157: the app refuses the turn because of the sign-in, as Claude Code did on a real account
@@ -1663,9 +1666,35 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         return { repo: true as const, branch: n % 3 === 1 ? 'feature/login' : 'main', ...(n % 4 === 1 ? { ahead: 2 } : {}), files: pool.slice(0, n % 5), more: 0 };
       },
       onEvent: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },
+      // spec 065 FR-007: `simcheckpoint=1` gives Ada (sim-1) a turn that changed three files; `=conflict` makes one of them changed since
+      onCheckpoint: (cb) => {
+        const mode = simQuery.get('simcheckpoint');
+        if (mode) setTimeout(() => cb({ id: 'sim-1', turn: 1, kind: 'turn', files: [{ path: 'src/tools/registry.ts', change: 'changed' }, { path: 'src/tools/companies.ts', change: 'created' }, { path: 'src/tools/old-lookup.ts', change: 'deleted' }], notCovered: [{ path: 'dist/bundle.js', why: 'too large to undo' }] }), 900);
+        return () => undefined;
+      },
+      checkpointPreview: async (id, turn) => {
+        if (id !== 'sim-1' || (turn !== 1 && turn !== 2)) return { ok: false as const, error: 'These changes can no longer be undone (only the last turns are kept, while Agent Durbar runs).' };
+        const conflict = simQuery.get('simcheckpoint') === 'conflict';
+        const files = turn === 1
+          ? [
+              { path: 'src/tools/registry.ts', action: 'restore' as const, diff: '--- a/src/tools/registry.ts\n+++ b/src/tools/registry.ts\n@@\n-export const tools = [companies];\n+export const tools = [lookup];\n+// legacy\n' },
+              { path: 'src/tools/companies.ts', action: 'remove' as const },
+              { path: 'src/tools/old-lookup.ts', action: 'create' as const },
+            ]
+          : [{ path: 'src/tools/registry.ts', action: 'restore' as const, diff: '-a\n+b\n' }, { path: 'src/tools/companies.ts', action: 'create' as const }, { path: 'src/tools/old-lookup.ts', action: 'remove' as const }];
+        return { ok: true as const, turn, files, conflicts: conflict && turn === 1 ? ['src/tools/registry.ts'] : [], notCovered: turn === 1 ? [{ path: 'dist/bundle.js', why: 'too large to undo' }] : [] };
+      },
+      checkpointUndo: async (id, turn) => {
+        if (id !== 'sim-1' || (turn !== 1 && turn !== 2)) return { ok: false as const, error: 'invalid request' };
+        if (simQuery.get('simcheckpoint') === 'conflict' && turn === 1) return { ok: false as const, error: 'Some of these files changed after that turn, so nothing was restored.', conflicts: ['src/tools/registry.ts'] };
+        const files = turn === 1
+          ? [{ path: 'src/tools/registry.ts', change: 'changed' as const }, { path: 'src/tools/companies.ts', change: 'deleted' as const }, { path: 'src/tools/old-lookup.ts', change: 'created' as const }]
+          : [{ path: 'src/tools/registry.ts', change: 'changed' as const }, { path: 'src/tools/companies.ts', change: 'created' as const }, { path: 'src/tools/old-lookup.ts', change: 'deleted' as const }];
+        return { ok: true as const, restored: 1, removed: 1, created: 1, undo: { turn: turn + 1, kind: 'undo' as const, files, notCovered: [] } };
+      },
       onAgentAdded: (cb) => { addedListeners.add(cb); return () => addedListeners.delete(cb); },
       onMenuSettings: () => () => undefined, /* spec 052 FR-083: no app menu in the simulator */
-      onMenuAdd: () => () => undefined, /* spec 052 FR-160 */
+      onMenuAdd: () => () => undefined, /* spec 052 FR-162 */
       onFullScreen: () => () => undefined,
     };
     void timer;
