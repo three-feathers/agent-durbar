@@ -126,8 +126,10 @@ export function validateGeneratedProfile(reply: string, input: GenInput, parse: 
   if (fence) t = fence[1].trim();
   const warnings: string[] = [];
   const before = t;
-  t = t.replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, '').replace(/<\/?[A-Za-z!][^>]*>/g, '');
-  if (t !== before) warnings.push('HTML was removed from the reply');
+  // HTML is neutralised, not stripped: every "<" that could open a tag (or a comment, doctype or processing instruction) becomes
+  // "&lt;" in one pass, so no tag can survive or be re-formed (`<scr<script>ipt>` included); the preview shows it as text (FR-021)
+  t = t.replace(/<(?=[A-Za-z!/?])/g, '&lt;');
+  if (t !== before) warnings.push('HTML in the reply is kept as plain text');
   const fm = parse(t);
   if (!fm.has || !fm.closed) return { ok: false, error: 'The reply has no front matter (--- lines).' };
   if (fm.errors.length) return { ok: false, error: 'The front matter does not parse: ' + fm.errors[0].msg };
@@ -140,7 +142,9 @@ export function validateGeneratedProfile(reply: string, input: GenInput, parse: 
   const tools = String(v.tools).split(',').map((x) => x.trim()).filter(Boolean);
   const said = userTextOf(input).toLowerCase();
   const allowed = new Set(DEFAULT_READ_TOOLS[input.app].map((x) => x.toLowerCase()));
-  const named = (tool: string): boolean => /^[A-Za-z][\w.:-]{0,60}$/.test(tool) && new RegExp(`(^|[^\\w])${tool.toLowerCase().replace(/[.:-]/g, '\\$&')}([^\\w]|$)`).test(said);
+  // the words the user typed (no regular expression built from text): a tool counts as named when it is one of them
+  const words = new Set(said.split(/[^\w.:-]+/).map((w) => w.replace(/[.:-]+$/, '')).filter(Boolean));
+  const named = (tool: string): boolean => /^[A-Za-z][\w.:-]{0,60}$/.test(tool) && words.has(tool.toLowerCase());
   const broader = tools.filter((x) => !allowed.has(x.toLowerCase()) && !named(x));
   if (tools.includes('*') || broader.length) return { ok: false, error: `The reply gives tools you did not list: ${(tools.includes('*') ? ['*', ...broader] : broader).join(', ')}. Durbar never adds tools; name them in your answers if the agent needs them.` };
   if (input.app === 'claude' && v.model && !/^(inherit|haiku|sonnet|opus|[A-Za-z0-9._-]{1,60})$/.test(v.model)) return { ok: false, error: 'The model line is not a model name.' };

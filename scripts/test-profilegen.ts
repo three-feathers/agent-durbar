@@ -54,7 +54,13 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
   assert.ok(!validateGeneratedProfile('# no front matter', Q, parse).ok);
   assert.ok(!validateGeneratedProfile(filled('claude', 'pay-reviewer').replace(/^description: .*\n/m, ''), Q, parse).ok, 'no description refused');
   const html = validateGeneratedProfile('```markdown\n' + filled('claude', 'pay-reviewer').replace('## Skills\n', '## Skills\n<script>alert(1)</script><img src=x onerror=alert(1)>\n') + '\n```', Q, parse);
-  assert.ok(html.ok && !/<script|<img|onerror/.test(html.text) && html.warnings.length === 1, 'fence and HTML removed, with a note');
+  assert.ok(html.ok && !/<[A-Za-z!/?]/.test(html.text) && html.text.includes('&lt;script>') && html.warnings.length === 1, 'fence removed, HTML kept only as text, with a note');
+  // nested and overlapping tags, comments, closing tags: no "<" that opens a tag survives (one pass, nothing re-forms)
+  for (const evil of ['<scr<script>ipt>alert(1)</scr</script>ipt>', '<<script>script>x', '<!--<script>-->', '</style><svg/onload=x>', '<<img src=x onerror=y>>', '<?xml x?>', '<ScRiPt>a</sCrIpT>']) {
+    const r = validateGeneratedProfile(filled('claude', 'pay-reviewer').replace('## Skills\n', '## Skills\n' + evil + '\n'), Q, parse);
+    assert.ok(r.ok && !/<[A-Za-z!/?]/.test(r.text), `neutralised: ${evil}`);
+  }
+  assert.ok(validateGeneratedProfile(filled('claude', 'pay-reviewer').replace('## Skills\n', '## Skills\nUse a < b and 3<4 as text\n'), Q, parse).ok, 'a plain "<" stays');
   const renamed = validateGeneratedProfile(filled('claude', 'other-name'), Q, parse);
   assert.ok(renamed.ok && /^---\nname: pay-reviewer\n/.test(renamed.text), 'the chosen name wins');
   const cop = validateGeneratedProfile(filled('copilot', 'pay-reviewer'), { app: 'copilot', name: 'pay-reviewer', mode: 'describe', description: 'reviews code' }, parse);
@@ -65,5 +71,12 @@ const filled = (app: 'claude' | 'copilot', name: string, tools?: string, extra =
   // a tool named only as part of a word is not "named"
   const sub = validateGeneratedProfile(filled('claude', 'p', 'tools: Read, Edit'), { app: 'claude', name: 'p', mode: 'describe', description: 'an editor of docs, never edits' }, parse);
   assert.ok(!sub.ok, '"Edit" inside "edits"/"editor" does not count as naming the tool');
+  // backslashes and regex characters in the user's text or the tool name are plain text (no pattern is built from them)
+  const bs = validateGeneratedProfile(filled('claude', 'p', 'tools: Read, mcp.srv:do-x'), { app: 'claude', name: 'p', mode: 'describe', description: 'uses mcp.srv:do-x and C:\\tmp\\a.b (.*) [x]' }, parse);
+  assert.ok(bs.ok, 'a tool with dots, colons and dashes named verbatim');
+  const bs2 = validateGeneratedProfile(filled('claude', 'p', 'tools: Read, mcpXsrv'), { app: 'claude', name: 'p', mode: 'describe', description: 'uses mcp.srv and \\w+ and .*' }, parse);
+  assert.ok(!bs2.ok, '"." in the text is not a wildcard');
+  const bs3 = validateGeneratedProfile(filled('claude', 'p', 'tools: Read, Edit'), { app: 'claude', name: 'p', mode: 'describe', description: 'may use Edit.' }, parse);
+  assert.ok(bs3.ok, 'a trailing full stop is not part of the word');
 }
 console.log('profile generation tests passed');
