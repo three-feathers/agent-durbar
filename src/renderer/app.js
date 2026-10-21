@@ -3,6 +3,7 @@
 (function(){
 'use strict';
 const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FLOOR_MARK='durbar:floor-switch'; let floorSwitchTimed=false; /* spec 033 SC-003: see startFloorSwitchTiming */
 const THEME=window.THEME; /* theme packs (specs 035-040): tokens, words, motion; every scene colour reads a semantic token */
 const T_=n=>THEME.token(n);
 const wordOf=k=>THEME.word(k);
@@ -949,6 +950,7 @@ function renderAll(){
   if(id&&!inPanel){const n=document.querySelector(`[${key}="${CSS.escape(id)}"]`); if(n&&ae!==n)n.focus({preventScroll:true});}
   if(ui.selected){updatePanelHeader();renderStrip();}
   rememberUi();
+  if(floorSwitchTimed)endFloorSwitchTiming();
 }
 
 
@@ -2010,6 +2012,11 @@ const modeWords=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?', '+MODE_NAME[
 /* spec 052 FR-065: the list row says "Allow all" in a red badge (text=true); a desk card keeps the red icon, because a text badge
    there hides the agent's name at 1280x800 (office check) */
 const modeIcon=(a,text)=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?(a.info.permMode==='allow'&&text?`<span class="modebadge" title="${esc(MODE_NAME.allow)}${a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_HELP.allow)} (right-click for options)" aria-hidden="true">Allow all</span>`:`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}${a.info.permMode==='allow'&&a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_HELP[a.info.permMode])} (right-click for options)" aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`):'';
+/* spec 033 SC-003 (2026-10-21, issue #454): a floor switch is timed inside the app, from the click to the end of the office render
+   that shows it (that render measures the stage, so its layout is done). One User Timing entry, replaced on each switch; the
+   simulator check reads it. Nothing else uses it. */
+function startFloorSwitchTiming(){performance.clearMarks(FLOOR_MARK);performance.mark(FLOOR_MARK);}
+function endFloorSwitchTiming(){floorSwitchTimed=false;performance.clearMeasures(FLOOR_MARK);performance.measure(FLOOR_MARK,FLOOR_MARK);performance.clearMarks(FLOOR_MARK);}
 /* Floors state from the bridge (spec 033): rooms take their floor from it, then everything that depends on visibility re-renders. */
 function applyFloors(state){
   if(!state||!Array.isArray(state.floors)||!state.floors.length)return;
@@ -2022,7 +2029,8 @@ function afterFloorsChange(){
   if(demoOn)return;
   /* the open agent is now on a floor that is off: back to the office (its pending requests stay pending, FR-010) */
   if(ui.selected){const a=byId(ui.selected);if(a&&!roomShown(roomOf(a)))closePanel();}
-  renderFilter(); renderFloorsPanel(); renderFloorsSettings(); scheduleRender();
+  renderFilter(); renderFloorsPanel(); renderFloorsSettings();
+  floorSwitchTimed=performance.getEntriesByName(FLOOR_MARK,'mark').length>0; scheduleRender();
 }
 /* ---------------- floors: top-bar button, "into" select, panel (spec 033) ---------------- */
 /* FR-007 (PR #124 review): only with two or more floors, and compact (icon + "2/3"), so the top bar fits at 1280x800 with
@@ -2118,6 +2126,7 @@ async function floorCall(p){
 }
 async function floorAction(el){
   const fl=el.dataset.fl,id=el.dataset.floor,f=floorById(id);
+  if((fl==='on'||fl==='only')&&f)startFloorSwitchTiming();
   if(fl==='on'&&f)return floorCall(bridge.setFloorOn(id,!f.on));
   if(fl==='only'&&f)return floorCall(bridge.onlyFloor(id));
   if((fl==='up'||fl==='down')&&f){
