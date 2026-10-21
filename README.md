@@ -175,6 +175,8 @@ Agents run **locally, on your machine, as you**, in the folders you add. Every a
 
 Change the mode any time from the chat header chip or the agent's card menu.
 
+**Coming back to a session.** Each session keeps the mode you last chose for it. After a restart, and when you resume it from *Previous sessions*, it comes back in that mode, also when it was Allow all and the session you opened the list from is in Read-only. Its chat then says which mode it is in and why ("Permissions: Allow all, the mode you last chose for this session"), and an Allow all that came back shows *restored* on the mode chip. A session Durbar has no mode for (one from before this change, or started outside Durbar) gets the folder's mode after a restart, or the mode of the session you resumed it from; the chat says that too. A resumed session that comes back in another mode than the session you opened it from is also written to the activity log. Grants from *Allow for this session* are never kept.
+
 Rules that always apply:
 - **Durbar never deletes files itself.** *Delete…* in Previous sessions goes only through the agent app's own API (Copilot `deleteSession`, Codex `thread/delete`), only from Durbar's own window (not from MCP tools, remote control or schedules), never for a session still in the office, never for VS Code chats, and not for Claude Code. Not yet run against a real session.
 - **Add project folders, not your home folder or a drive root.** Everything under an added folder counts as the agent's own; Durbar warns calmly when you add one of those.

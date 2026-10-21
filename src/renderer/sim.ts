@@ -1348,6 +1348,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const simPrev = simQuery.get('simprev') ?? '';
     const prevMarks = new Map<string, { pinned: string[]; hidden: string[] }>(); // key = 'vscode' or the agent app's id; ids only
     const prevDeleted = new Set<string>();
+    const simSessionModes = new Map<string, AgentInfo['permMode']>([['prev-1', 'allow']]); // spec 003 (2026-10-21): the mode last chosen per earlier session
     const hasPrev = (x: SimAgent): boolean => x.info.cwd === '~/work/mcp-swiss' || (!!opts.solo && x.info.name === 'Ada'); // earlier sessions live in mcp-swiss (or in Ada's own folder with `simrooms=solo`)
     const prevMarksOf = (src: string, present: string[]): { pinned: string[]; hidden: string[] } => {
       const m = prevMarks.get(src);
@@ -1452,7 +1453,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         /* simresume=1 (spec 006 FR-021): Priya's folder came back after a restart as its last session, not started yet */
         if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simresume') === '1') {
           const r = sims.find((x) => x.info.name === 'Priya');
-          if (r && r.info.resumeLast === undefined) { r.info.lazy = true; r.info.resumeLast = true; }
+          if (r && r.info.resumeLast === undefined) { r.info.lazy = true; r.info.resumeLast = true; r.info.permFrom = 'session'; }
         }
         return sims.map((s) => s.info);
       },
@@ -1582,6 +1583,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         simLog(s, 'mode-change', `${MW[s.info.permMode] ?? s.info.permMode} to ${MW[mode] ?? mode}`, mode);
         s.info.permMode = mode;
         s.info.permRestored = undefined;
+        s.info.permFrom = undefined;
         if (o?.clearGrants && s.grants.size) { s.grants.clear(); grantsEvent(s); }
         let pending = s.perm ? 1 : 0;
         if (s.perm && ((mode === 'allow' && o?.approvePending) || mode === 'read-only')) {
@@ -1657,10 +1659,15 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const src = sims.find((x) => x.info.id === id);
         if (!src) return { ok: false, error: 'unknown agent' };
         extra++;
-        const info = { ...src.info, id: 'sim-n' + extra } as AgentInfo;
+        // spec 003 (2026-10-21): like main, the session comes back in the mode last chosen for it (prev-1 was last in Allow all), else the opener's
+        const own = simSessionModes.get(sessionId);
+        const mode = own ?? src.info.permMode;
+        const info = { ...src.info, id: 'sim-n' + extra, permMode: mode, permFrom: own ? 'session' : 'opener', permRestored: own === 'allow' ? true : undefined } as AgentInfo;
+        const modeWas = mode !== src.info.permMode ? src.info.permMode : undefined;
         sims.push({ info, room: src.room, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: src.files, grants: new Map() });
         const t = Date.now() - 2 * 3600e3;
-        return { ok: true, agent: info, title: sessionId === 'prev-1' ? 'Rename the filings handler and update its tests' : 'Why does the canton lookup return duplicates?',
+        if (modeWas) { const MW: Record<string, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' }; simLog(sims[sims.length - 1], 'mode-change', `Resumed in ${MW[mode]}, the mode last chosen for this session (opened from a session in ${MW[modeWas]})`, mode); }
+        return { ok: true, ...(modeWas ? { modeWas } : {}), agent: info, title: sessionId === 'prev-1' ? 'Rename the filings handler and update its tests' : 'Why does the canton lookup return duplicates?',
           history: { total: 4, truncated: false, items: [
             { type: 'user', text: 'Rename the filings handler to filingsSearch and update its tests.', ts: t },
             { type: 'tool', callId: 'c1', tool: 'grep', label: 'grep filingsHandler', output: '6 matches in 3 files' },
