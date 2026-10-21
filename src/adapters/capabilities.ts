@@ -41,6 +41,8 @@ export interface AdapterCapabilities {
   readonly remote?: boolean;
   /** `deleteSession()` exists: one earlier session can be removed through the vendor's own API, never by deleting files (spec 006 FR-028); missing = false. */
   readonly deleteSession?: boolean;
+  /** Spec 054 FR-060: the service a session is controlled from when `remote` is on: its name, the only host its links may use, and its phone app. */
+  readonly remoteService?: Readonly<{ name: string; host: string; mobile: string }>;
   /** Spec 030 FR-040: how `setModel` behaves: `verified` = checked on a real account (else the UI says it is not), `contextTier` = a long-context tier can be chosen. Missing = not verified, tier offered (the Copilot default before this field). */
   readonly modelSwitch?: Readonly<{ verified: boolean; contextTier: boolean }>;
 }

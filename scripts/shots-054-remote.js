@@ -66,5 +66,29 @@ module.exports = async (ctx) => {
     assert.ok(off.chip && /^Control from GitHub/.test(off.item), 'Stop remote control turns it off: ' + JSON.stringify(off));
     console.log('[054]', w, 'ok');
   }
+  // spec 054 FR-060/FR-061: a Claude agent (simkinds=mixed: Ada, sim-1) is controlled from Claude, with a claude.ai link
+  for (const [w, h] of [[1440, 900], [1280, 800]]) {
+    ctx.win.setContentSize(w, h);
+    await ctx.win.loadFile(INDEX, { query: { sim: '15', simfreeze: '1', simkinds: 'mixed' } });
+    await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000);
+    await ctx.sleep(1200);
+    await js(`document.querySelector('.desk[data-id="sim-1"]').click()`); await ctx.waitFor(`!!document.getElementById('moreBtn')`, 5000); await ctx.sleep(400);
+    await js(`document.getElementById('moreBtn').click()`); await ctx.sleep(400);
+    const item = await js(`(document.getElementById('remoteBtn')||{}).textContent||''`);
+    assert.ok(/^Control from Claude \(web and mobile\)/.test(item), 'Claude: the More menu offers remote control from Claude: ' + item);
+    await js(`document.getElementById('remoteBtn').click()`); await ctx.sleep(500);
+    const ask = await js(`({t:(document.getElementById('mdT')||{}).textContent,b:(document.getElementById('mdB')||{}).textContent})`);
+    assert.strictEqual(ask.t, 'Control this session from Claude?');
+    assert.ok(/sent to Claude, so you can follow and steer it from claude\.ai and the Claude app/.test(ask.b), 'Claude dialog: ' + ask.b);
+    assert.ok(!/GitHub/.test(ask.b), 'no GitHub wording for Claude');
+    assert.ok(await clickText('#modeDlg .dbtn .btn', 'Turn on'));
+    await ctx.waitFor(`document.getElementById('mdT')&&document.getElementById('mdT').textContent==='Remote control is on'`, 5000);
+    const link = await js(`({lines:[...document.querySelectorAll('#mdL li')].map(x=>x.textContent),btns:[...document.querySelectorAll('#modeDlg .dbtn .btn')].map(x=>x.textContent)})`);
+    assert.ok(link.lines.some((l) => /^https:\/\/claude\.ai\/code\/session_sim\d+$/.test(l)), 'Claude link: ' + JSON.stringify(link.lines));
+    assert.deepStrictEqual(link.btns, ['Copy link', 'Open on Claude', 'Done']);
+    await shot(`054-remote-claude-link-${w}x${h}.png`);
+    assert.ok(await clickText('#modeDlg .dbtn .btn', 'Done'));
+    await ctx.sleep(300);
+  }
   console.log('[054] PASS');
 };

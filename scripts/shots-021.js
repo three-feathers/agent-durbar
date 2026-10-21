@@ -31,24 +31,30 @@ module.exports = async (ctx) => {
   };
   const read = () => js(`(()=>{const c=document.querySelector('.stat-aiu');const rooms={};document.querySelectorAll('.room').forEach(r=>{rooms[r.querySelector('.room-name').textContent.trim()]=((r.querySelector('.room-aiu')||{}).textContent||'').trim();});return {chip:c?c.innerText.replace(/\\s+/g,' ').trim():'',tip:c?c.title:'',rooms}})()`);
   const aiu = (t) => { const m = /([\d.]+) AIU/.exec(t || ''); return m ? parseFloat(m[1]) : NaN; };
+  /* spec 052 FR-028 (#307): the chip and the rooms show money (Copilot credits at USD 0.01); the chip's tooltip keeps the exact AIU */
+  const officeAiu = (r) => { const m = /= ([\d.]+) AIU/.exec(r.tip || ''); return m ? parseFloat(m[1]) : NaN; };
+  const usd = (t) => { if (/^<\$0\.01$/.test(t || '')) return 0; const m = /\$([\d.]+)/.exec(t || ''); return m ? parseFloat(m[1]) : NaN; };
+  /* a room shows at least its saved total, in money rounded to the cent */
+  const atLeast = (shown, savedAiu) => usd(shown) >= savedAiu * 0.01 - 0.005;
 
   for (const [w, h] of SIZES) {
     await load(w, h);
     const r = await read();
     console.log('[021]', w, JSON.stringify({ chip: r.chip, rooms: r.rooms }));
-    assert.ok(aiu(r.chip) >= 41.7, 'the chip includes what the previous run saved: ' + r.chip);
+    assert.ok(/^≈ \$[\d.]+$/.test(r.chip), 'the chip shows money (spec 052 FR-028): ' + r.chip);
+    assert.ok(officeAiu(r) >= 41.7, 'the chip includes what the previous run saved: ' + r.chip + ' / ' + officeAiu(r) + ' AIU');
     assert.ok(/Saved since 2026-10-01 \(reset in Settings\)/.test(r.tip), 'the tooltip says since when');
     assert.ok(/Since the app opened \(or the last reset\): [\d.]+ AIU in \d+ calls?\./.test(r.tip), 'the tooltip gives this run alone');
     assert.ok(/Includes folders no longer shown\./.test(r.tip), 'a saved folder that is not listed is announced');
-    assert.ok(aiu(r.rooms['mcp-swiss']) >= 12.4, 'mcp-swiss shows at least its saved total: ' + r.rooms['mcp-swiss']);
-    assert.ok(aiu(r.rooms.blog) >= 8.1, 'blog shows at least its saved total: ' + r.rooms.blog);
-    assert.strictEqual(r.rooms['infra-notes'], 'credits not reported', 'a room whose calls carry no credits says so, never 0.00');
+    assert.ok(atLeast(r.rooms['mcp-swiss'], 12.4), 'mcp-swiss shows at least its saved total: ' + r.rooms['mcp-swiss']);
+    assert.ok(atLeast(r.rooms.blog, 8.1), 'blog shows at least its saved total: ' + r.rooms.blog);
+    assert.strictEqual(r.rooms['infra-notes'], 'cost not reported', 'a room whose calls carry no credits says so, never $0.00 (spec 052 FR-051: "cost")');
     await shot('office', w, h);
 
     // the closed door plate uses the short form
     await js(`(()=>{const d=[...document.querySelectorAll('.room-head .door')].find(b=>/infra-notes/.test(b.getAttribute('aria-label')));d.click();})()`); await ctx.sleep(900);
     const plate = await js(`(()=>{const p=[...document.querySelectorAll('.plate')].find(p=>/infra-notes/.test(p.getAttribute('aria-label')));return p?{t:(p.querySelector('.plate-aiu')||{}).textContent,l:p.getAttribute('aria-label')}:null})()`);
-    assert.ok(plate && plate.t === 'n/r' && /Usage: credits not reported\./.test(plate.l), 'closed plate: n/r and a spoken label: ' + JSON.stringify(plate));
+    assert.ok(plate && plate.t === 'n/r' && /Usage: cost not reported\./.test(plate.l), 'closed plate: n/r and a spoken label: ' + JSON.stringify(plate));
     if (w === 1280) await shot('unreported-plate', w, h);
     await js(`(()=>{const p=[...document.querySelectorAll('.plate')].find(p=>/infra-notes/.test(p.getAttribute('aria-label')));p.click();})()`); await ctx.sleep(700);
   }
@@ -56,7 +62,7 @@ module.exports = async (ctx) => {
   // Settings: the figure, since when, and the reset (Cancel first, then Reset)
   const [w, h] = SIZES[1];
   await load(w, h);
-  const before = aiu((await read()).chip);
+  const before = officeAiu(await read());
   await js(`document.getElementById('settingsBtn').click()`); await ctx.sleep(900);
   const now = await js(`(document.getElementById('usageNow')||{}).textContent||''`);
   assert.ok(/^[\d.]+ AIU in \d+ calls, counting since 2026-10-01\.$/.test(now), 'Settings shows the figure and since when: ' + now);
@@ -68,7 +74,7 @@ module.exports = async (ctx) => {
   await shot('reset-confirm', w, h);
   await js(`[...document.querySelectorAll('#scrDlg button')].find(b=>b.textContent.trim()==='Cancel').click()`); await ctx.sleep(500);
   await js(`document.getElementById('scrClose').click()`); await ctx.sleep(500);
-  assert.strictEqual(aiu((await read()).chip), before, 'Cancel changes nothing');
+  assert.strictEqual(officeAiu(await read()), before, 'Cancel changes nothing');
   await js(`document.getElementById('settingsBtn').click()`); await ctx.sleep(900);
   await js(`document.getElementById('usageTotalsReset').click()`); await ctx.sleep(500);
   await js(`[...document.querySelectorAll('#scrDlg button')].find(b=>b.textContent.trim()==='Reset').click()`); await ctx.sleep(900);

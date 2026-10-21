@@ -32,3 +32,11 @@
 - [ ] T040 Check whether Codex in the ChatGPT mobile app sees a session run by `codex app-server`, and whether the app-server has a method or flag for it (costs about 1 prompt) [FR-030]
 - [ ] T041 If yes: plan Codex `setRemote` on the same capability (FR-031)
 - [x] T011 FR-011 security review: native consent in main, refused in Allow all (and Allow all refused while on), off on GitHub before End/Remove/quit, activity log rows, fromApp on remote/mode/schedule handlers; notification body without the command
+
+## Phase 2: Claude Remote Control (2026-10-20)
+
+- [x] T050 `remoteService` capability, `allowedRemoteUrl(url, host)`, main checks the adapter's host, texts use the service's name [FR-060]
+- [x] T051 `ClaudeAdapter.setRemote` over `remote_control`; relaunch turns it back on; `remote` event when that fails [FR-061, FR-062]
+- [x] T052 Copilot "not started" message [FR-063]; README Codex line [FR-064]
+- [x] T053 Unit tests (fake CLI and remote ops), simulator Claude kind with remote, driver and screenshots (`054-remote-claude-link-*`); real: `remote_control` over `claude -p` stream-json returned a claude.ai `session_url` (2026-10-20); through Durbar's window: sim only [FR-060..FR-064]
+

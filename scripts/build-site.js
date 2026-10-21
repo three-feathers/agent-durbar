@@ -195,7 +195,13 @@ function shortChanges(changes, max = 5) {
   }
   // the release's own summary paragraph (the text before the first bullet), when it has one: it reads better than internal bullet leads
   const intro = changes.body.split(/\n\s*\n/).map((x) => x.trim()).find((x) => x && !x.startsWith('- ') && !x.startsWith('#'));
-  return { head: changes.head, bullets, intro: intro ? stripRefs(intro.replace(/\s*\n\s*/g, ' ')) : '' };
+  // the landing shows a short intro (visitor rounds 2026-10-20: a long release paragraph read as jargon); the full text is one link away
+  let text = intro ? stripRefs(intro.replace(/\s*\n\s*/g, ' ')) : '';
+  if (text.length > 360) {
+    const cut = text.slice(0, 360).search(/[.!?](?=\s)[^.!?]*$/);
+    text = cut > 80 ? text.slice(0, cut + 1) + ' …' : text.slice(0, 357) + '…';
+  }
+  return { head: changes.head, bullets, intro: text };
 }
 
 /* landing.json must stay in step with the README and the screenshots. Returns a list of problems (empty: fine). */
@@ -228,6 +234,10 @@ function validateLanding(landing, { readme, shotExists = (f) => fs.existsSync(pa
   });
   if (!Array.isArray(landing.howItWorks) || landing.howItWorks.length !== 3) errs.push('howItWorks needs 3 steps');
   (landing.howItWorks || []).forEach((s, i) => shot(s.screenshot, `howItWorks[${i}]`));
+  (landing.faq || []).forEach((f, i) => {
+    if (!f || !f.q || !f.a) errs.push(`faq[${i}] needs q and a`);
+    else if (f.readmeAnchor && !anchors.has(f.readmeAnchor)) errs.push(`faq[${i}].readmeAnchor "${f.readmeAnchor}" is not a README heading`);
+  });
   (landing.themes || []).forEach((t, i) => {
     need(t.name, `themes[${i}].name`);
     if (!t.screenshot) errs.push(`themes[${i}].screenshot is missing`);
@@ -317,7 +327,14 @@ section.sec{margin:var(--s7) auto 0}.sec.flush{margin-top:0}section.sec>.head{ma
 .steps{list-style:none;margin:0;padding:0;counter-reset:s}.steps li{counter-increment:s;position:relative;padding:0 0 var(--s4) 52px}
 .steps li::before{content:counter(s);position:absolute;left:0;top:0;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-weight:700;background:var(--ink);color:var(--bg)}
 .steps h3{margin:4px 0 var(--s1);font-size:18px}.steps p{margin:0;color:var(--ink-2)}
-.shot{border-radius:12px;border:1px solid var(--line);box-shadow:0 18px 40px -20px #2b1d0f40;display:block}
+.shot{margin:0;border-radius:12px;border:1px solid var(--line);box-shadow:0 18px 40px -20px #2b1d0f40;overflow:hidden;background:var(--surface)}
+.shot .crop{display:block;overflow:hidden}.shot .crop img{display:block;max-width:none;height:auto;border:0;border-radius:0}
+.shot figcaption{font-size:13.5px;color:var(--muted);padding:8px 12px;border-top:1px solid var(--line)}
+a.zoom{display:block;cursor:zoom-in;color:inherit}a.zoom:focus-visible{outline:3px solid var(--accent);outline-offset:3px;border-radius:10px}
+.faq{max-width:var(--prose);display:grid;gap:var(--s2)}.faq details{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:var(--s2) var(--s3)}.faq summary{font-weight:600;cursor:pointer;padding:6px 0}.faq p{margin:var(--s2) 0 6px;color:var(--ink-2)}
+.phone-only{display:none}@media (max-width:640px){.phone-only{display:inline}}
+.name-note{margin:var(--s3) auto 0;max-width:620px;font-size:14px;color:var(--muted)}
+.os-col details{margin-top:var(--s2)}.os-col details summary{font-size:14px;font-weight:600;color:var(--ink-2);cursor:pointer}.os-col details p{margin-top:var(--s2)}
 h1,h2,h3{text-wrap:balance}
 .hero .caption{margin:var(--s2) 0 0;font-size:13px;color:var(--muted);text-align:center}
 .proof{margin-top:var(--s3);color:var(--ink-2);max-width:68ch}
@@ -327,7 +344,7 @@ h1,h2,h3{text-wrap:balance}
 .themes figure{margin:0}.themes .tz{aspect-ratio:16/10;overflow:hidden;border-radius:12px;border:1px solid var(--line);background:var(--surface)}.themes .tz img{display:block;width:230%;max-width:none;height:auto;border:0;border-radius:0}
 .themes figcaption{display:flex;align-items:center;gap:8px;margin-top:var(--s2);font-size:13.5px;color:var(--ink-2);line-height:1.3}
 .sw{flex:none;width:12px;height:12px;border-radius:50%;box-shadow:0 0 0 2px var(--surface),0 0 0 3px var(--line)}
-.ai{display:flex;align-items:center;gap:var(--s3);margin-top:var(--s4);color:var(--ink-2)}.ai img{width:120px;aspect-ratio:16/10;object-fit:cover;object-position:left top;border-radius:8px;border:1px solid var(--line)}
+.ai{display:flex;align-items:center;gap:var(--s3);margin-top:var(--s4);color:var(--ink-2)}.ai img{width:180px;aspect-ratio:16/10;object-fit:cover;object-position:left top;border-radius:8px;border:1px solid var(--line)}
 .apps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s3)}
 .app{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:var(--s4)}.app h3{font-size:18px;margin-bottom:var(--s2)}
 .app p{margin:0 0 var(--s2);font-size:15px}.app .ok{color:var(--ink-2)}.app .ok::before{content:"✓ ";color:var(--accent);font-weight:700}
@@ -358,7 +375,8 @@ blockquote{margin:0 0 var(--s3);padding:var(--s2) var(--s3);border-left:4px soli
 .grid li a{display:block;height:100%;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);text-decoration:none;color:var(--ink)}
 .grid li small{display:block;color:var(--muted);font-size:12.5px}
 .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:var(--s3)}.gallery figure{margin:0}.gallery figcaption{font-size:13.5px;color:var(--muted);margin-top:6px}
-@media (max-width:860px){.docs{grid-template-columns:1fr;gap:var(--s3);padding-top:var(--s4)}.toc{position:static;max-height:none;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:var(--s3)}}
+.doc code{overflow-wrap:anywhere}.doc pre{overflow-x:auto;max-width:100%}.doc pre code{overflow-wrap:normal}.doc table{display:block;max-width:100%;overflow-x:auto}
+@media (max-width:860px){.docs{grid-template-columns:minmax(0,1fr);gap:var(--s3);padding-top:var(--s4)}.toc{position:static;max-height:none;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:var(--s3)}}
 `;
 
 function page({ title, description, css, nav, body, og }) {
@@ -393,19 +411,37 @@ const img = (file, alt, { lazy = true, cls = '' } = {}) => {
   return `<img${cls ? ` class="${cls}"` : ''} src="screenshots/${esc(file)}" alt="${esc(alt)}"${dims(`${SHOTS}/${file}`)}${lazy ? ' loading="lazy"' : ''} decoding="async">`;
 };
 
+/* Site delta 2026-10-20 (visitor rounds): every screenshot opens at full size in the same tab (no script); `crop` is a box in the
+   source image's pixels [x, y, w, h], shown with plain CSS so a small figure shows the part that matters. */
+const zoom = (file, inner, label) => `<a class="zoom" href="screenshots/${esc(file)}" aria-label="${esc(label)} (open full size)">${inner}</a>`;
+const cropped = (file, alt, box) => {
+  const m = /(\d+)x(\d+)\.png$/.exec(file);
+  if (!box || !m) return img(file, alt);
+  const W = Number(m[1]), [x, y, w, h] = box;
+  return `<span class="crop" style="aspect-ratio:${w}/${h}">${img(file, alt).replace('<img ', `<img style="width:${(W / w * 100).toFixed(2)}%;margin-left:-${(x / w * 100).toFixed(2)}%;margin-top:-${(y / w * 100).toFixed(2)}%" `)}</span>`;
+};
+
 function landingHtml({ landing, readme, rel, changes }) {
   const a = assetsOf(rel);
   const relUrl = rel ? rel.url : `${GH}/releases`;
   const link = (asset, label) => `<a href="${esc(asset ? asset.url : relUrl)}">${esc(label)}</a>`;
   const steps = installSteps(readme);
-  const step = (os) => (steps[os] ? mdRoot.parseInline(steps[os]) : 'See the install notes in the docs.');
+  const step = (os) => {
+    if (!steps[os]) return '<p>See the install notes in the docs.</p>';
+    const t = steps[os];
+    // a long note (Windows: SmartScreen, the hash check, PowerShell) shows its first sentence; the rest is one click away
+    const cut = t.length > 260 ? t.slice(120).search(/\.\s/) : -1;
+    if (cut < 0) return `<p>${mdRoot.parseInline(t)}</p>`;
+    const at = 120 + cut + 1;
+    return `<p>${mdRoot.parseInline(t.slice(0, at))}</p><details><summary>More for ${esc(os)}</summary><p>${mdRoot.parseInline(t.slice(at).trim())}</p></details>`;
+  };
   const h = landing.hero;
   const osLinks = rel
     ? [[a.macArm, 'macOS Apple Silicon'], [a.macIntel, 'macOS Intel'], [a.win, 'Windows'], [a.linux, 'Linux']].filter(([x]) => x).map(([x, l]) => `<span>${link(x, l)}</span>`).join('')
     : `<span><a href="${GH}/releases">macOS, Windows and Linux builds on the Releases page</a></span>`;
   const news = shortChanges(changes);
 
-  const nav = `<a href="#features">Features</a><a href="#themes">Themes</a><a href="#apps">Agent apps</a><a href="#download">Download</a><a class="keep" href="docs.html">Docs</a><a class="keep gh" href="${GH}">GitHub</a>`;
+  const nav = `<a href="#features">Features</a><a href="#themes">Themes</a><a href="#apps">Agent apps</a><a class="keep" href="#download">Download</a><a class="keep" href="docs.html">Docs</a><a class="keep gh" href="${GH}">GitHub</a>`;
   const body = `<main>
 <div class="hero"><div class="wrap">
 <p class="eyebrow">${esc(h.eyebrow || '')}</p>
@@ -414,7 +450,7 @@ function landingHtml({ landing, readme, rel, changes }) {
 <div class="cta"><a class="btn primary" href="${esc(relUrl)}">Download alpha</a><a class="btn secondary" href="${GH}">View on GitHub</a></div>
 <p class="os">${osLinks}</p>
 <p class="status" id="status">${esc(landing.status)}</p>
-<div class="frame"><div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>${img(h.image, h.alt || h.title, { lazy: false })}</div>${h.caption ? `<p class="caption">${esc(h.caption)}</p>` : ''}
+<div class="frame"><div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>${zoom(h.image, img(h.image, h.alt || h.title, { lazy: false }), 'The office screenshot')}</div>${h.caption ? `<p class="caption">${esc(h.caption)}<span class="phone-only"> Tap the picture to see it full size.</span></p>` : ''}${h.nameNote ? `<p class="name-note">${esc(h.nameNote)}</p>` : ''}
 </div></div>
 
 <div class="wrap">
@@ -425,14 +461,14 @@ function landingHtml({ landing, readme, rel, changes }) {
 
 <section class="sec" id="how"><div class="head"><p class="eyebrow">How it works</p><h2>Three steps to a working office</h2></div>
 <div class="how"><ol class="steps">${landing.howItWorks.map((s) => `<li><h3>${esc(s.title)}</h3><p>${esc(s.text)}</p></li>`).join('')}</ol>
-<div>${(() => { const s = landing.howItWorks.find((x) => x.screenshot); return s ? img(s.screenshot, s.alt || s.title, { cls: 'shot' }) : ''; })()}</div></div>
+<div>${(() => { const s = landing.howItWorks.find((x) => x.screenshot); return s ? `<figure class="shot">${zoom(s.screenshot, cropped(s.screenshot, s.alt || s.title, s.crop), s.alt || s.title)}${s.caption ? `<figcaption>${esc(s.caption)}</figcaption>` : ''}</figure>` : ''; })()}</div></div>
 </section>
 
 <div class="durbar" role="presentation"></div>
 
 <section class="sec flush" id="themes"><div class="head"><p class="eyebrow">Themes</p><h2>Make the office yours</h2><p class="lead">Six built-in looks change the whole app live: colours, frames, people and furniture. Status and permission words stay the same in every one.</p></div>
-<ul class="themes">${landing.themes.map((t) => `<li><figure><div class="tz">${img(t.screenshot, `The office in the ${t.name} theme`)}</div><figcaption><span class="sw" style="background:${esc(t.swatch)}"></span>${esc(t.name)}</figcaption></figure></li>`).join('')}</ul>
-${landing.aiTheme ? `<p class="ai">${img(landing.aiTheme.screenshot, landing.aiTheme.alt || '')}<span>${esc(landing.aiTheme.text)}</span></p>` : ''}
+<ul class="themes">${landing.themes.map((t) => `<li><figure><div class="tz">${zoom(t.screenshot, img(t.screenshot, `The office in the ${t.name} theme`), `The ${t.name} theme`)}</div><figcaption><span class="sw" style="background:${esc(t.swatch)}"></span>${esc(t.name)}</figcaption></figure></li>`).join('')}</ul>
+${landing.aiTheme ? `<p class="ai">${zoom(landing.aiTheme.screenshot, img(landing.aiTheme.screenshot, landing.aiTheme.alt || ''), 'A theme made with AI')}<span>${esc(landing.aiTheme.text)}</span></p>` : ''}
 </section>
 
 <section class="sec" id="apps"><div class="head"><p class="eyebrow">Agent apps</p><h2>Works with the agents you already use</h2><p>Durbar drives the agent apps you installed and signed in to yourself. What we checked, and what we have not yet:</p></div>
@@ -441,18 +477,22 @@ ${landing.aiTheme ? `<p class="ai">${img(landing.aiTheme.screenshot, landing.aiT
 ${landing.proof ? `<p class="proof">${esc(landing.proof)} <a href="${GH}/blob/main/specs/README.md">The specs</a> · <a href="https://github.com/orgs/three-feathers/projects/1">The board</a></p>` : ''}
 </section>
 
-<section class="sec" id="safety"><div class="head"><p class="eyebrow">Safety and cost</p><h2>Agents ask before they act</h2></div>
+<section class="sec" id="safety"><div class="head"><p class="eyebrow">Safety and cost</p><h2>Agents act only as far as you allow</h2></div>
 <div class="points">${landing.safety.map((s, i) => `<div><div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[['eye', 'lock', 'gauge'][i % 3]]}</svg></div><h3>${esc(s.title)}</h3><p>${esc(s.text)}</p></div>`).join('')}</div>
-<p class="small"><a href="docs.html#safety-model">The full safety model</a> · <a href="docs.html#costs-and-caps">Costs and spending limits</a></p>
+<p class="small"><a href="docs.html#safety-model">The full safety model</a> · <a href="docs.html#costs-and-caps">Costs and spending limits</a> · <a href="${GH}/blob/main/SECURITY.md">Report a security problem</a></p>
 </section>
+
+${Array.isArray(landing.faq) && landing.faq.length ? `<section class="sec" id="faq"><div class="head"><p class="eyebrow">Questions</p><h2>Before you try it</h2></div>
+<div class="faq">${landing.faq.map((f) => `<details><summary>${esc(f.q)}</summary><p>${esc(f.a)}${f.readmeAnchor ? ` <a href="docs.html#${esc(f.readmeAnchor)}">More</a>` : ''}</p></details>`).join('')}</div>
+</section>` : ''}
 
 <div class="durbar" role="presentation"></div>
 
 <section class="sec flush" id="download"><div class="head"><p class="eyebrow">Download</p><h2>Install the alpha</h2><p>${rel ? `Latest: <a href="${esc(rel.url)}"><b>${esc(rel.tag)}</b></a>${rel.pre ? ' (pre-release)' : ''}${rel.date ? ', ' + esc(rel.date) : ''}. ` : ''}The builds are not code-signed yet, so your system warns you the first time. Only open files from the Releases page.</p></div>
 <div class="dl">
-<div class="os-col"><h3>macOS</h3><div class="links">${link(a.macArm, 'Apple Silicon (.dmg)')}${link(a.macIntel, 'Intel (.dmg)')}</div><p>${step('macOS')}</p></div>
-<div class="os-col"><h3>Windows 10/11</h3><div class="links">${link(a.win, 'Installer (.exe)')}</div><p>${step('Windows')}</p></div>
-<div class="os-col"><h3>Linux</h3><div class="links">${link(a.linux, 'AppImage (x64)')}</div><p>${step('Linux')}</p></div>
+<div class="os-col"><h3>macOS</h3><div class="links">${link(a.macArm, 'Apple Silicon (.dmg)')}${link(a.macIntel, 'Intel (.dmg)')}</div>${step('macOS')}</div>
+<div class="os-col"><h3>Windows 10/11</h3><div class="links">${link(a.win, 'Installer (.exe)')}</div>${step('Windows')}</div>
+<div class="os-col"><h3>Linux</h3><div class="links">${link(a.linux, 'AppImage (x64)')}</div>${step('Linux')}</div>
 </div>
 <details><summary>Check the download (SHA-256)</summary>
 <p class="small">Compare your file with ${a.sums ? `<a href="${esc(a.sums.url)}">SHA256SUMS.txt</a>` : `<code>SHA256SUMS.txt</code> on the <a href="${esc(relUrl)}">release page</a>`}:</p>
@@ -488,7 +528,7 @@ function docsHtml({ readme, intro, feats, gallery, changes }) {
     { id: 'whats-new', title: "What's new", html: changes ? `<h3>${esc(changes.head)}</h3>${mdRoot.parse(changes.body)}<p><a href="${GH}/blob/main/CHANGELOG.md">Full changelog</a></p>` : '' },
   ];
   const all = [...secs, ...extra];
-  const nav = `<a href="index.html#features">Features</a><a href="index.html#download">Download</a><a class="keep" href="docs.html">Docs</a><a class="keep gh" href="${GH}">GitHub</a>`;
+  const nav = `<a href="index.html#features">Features</a><a class="keep" href="index.html#download">Download</a><a class="keep" href="docs.html">Docs</a><a class="keep gh" href="${GH}">GitHub</a>`;
   const body = `<main class="wrap docs">
 <nav class="toc" aria-label="Contents"><details open><summary>Contents</summary><ol>${all.map((s) => `<li><a href="#${esc(s.id)}">${esc(s.title)}</a></li>`).join('')}</ol></details></nav>
 <div class="doc">
