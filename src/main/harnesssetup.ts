@@ -5,9 +5,9 @@
  */
 import * as path from 'path';
 import { StringDecoder } from 'string_decoder';
-import { CMD_UNSAFE, candidates } from '../adapters/detect';
+import { candidates } from '../adapters/detect';
 import type { DetectEnv } from '../adapters/detect';
-import { windowsCmd } from '../shared/wincmd';
+import { CMD_UNSAFE, windowsCmd } from '../shared/wincmd';
 import { redact } from '../shared/redact';
 import { SIGN_IN, installPlans, lastLines, managersFor, parseSignIn, routeOwning, updatePlans, validPaste, OFFICIAL_PAGES, SETUP_NAMES } from '../shared/harnesssetup';
 import type { OfficialScript, PackageManager, SetupKind, SetupPlan, SignInView } from '../shared/harnesssetup';

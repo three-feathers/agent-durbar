@@ -6,9 +6,8 @@
 import type { HistoryItem, HistoryResult, PreviousSession } from './history';
 import { cleanSessionTitle, cleanTitle, sameDir } from './history';
 import type { ModelOption } from '../shared/modelswitch';
+import { isObj, nonEmptyStr as str } from '../shared/guards';
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 /** Codex sends seconds since the epoch; Durbar uses milliseconds. */
 const ms = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? (v < 1e12 ? Math.round(v * 1000) : Math.round(v)) : 0);
 

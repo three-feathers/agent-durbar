@@ -3,6 +3,7 @@
  * validation of what the renderer sends. No SDK types, no I/O. The UI decision logic (price comparison, estimates,
  * "start fresh" hint) is the plain script `src/renderer/modelswitch.js`, because the renderer cannot import modules.
  */
+import { parseEffort } from './effort';
 
 /** `long` is the long-context tier of a model that has one (the Copilot SDK calls it `long_context`). */
 export type ContextTier = 'default' | 'long';
@@ -99,7 +100,6 @@ export function modelControlFor(adapter: { setModel?: unknown; compact?: unknown
   };
 }
 
-const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 export const MAX_FOCUS = 500;
 
 export const parseTier = (v: unknown): ContextTier | undefined => (v === 'default' || v === 'long' ? v : undefined);
@@ -132,9 +132,10 @@ export function parseSwitchRequest(raw: unknown, models: readonly KnownModel[]):
   const request: ModelSwitchRequest = { model: m.id };
   if (o.effort === null) request.effort = null;
   else if (o.effort !== undefined) {
-    if (typeof o.effort !== 'string' || !EFFORTS.has(o.effort)) return { ok: false, error: 'Invalid reasoning effort.' };
-    if (!(m.efforts ?? []).includes(o.effort)) return { ok: false, error: 'That model does not offer this reasoning effort.' };
-    request.effort = o.effort;
+    const effort = parseEffort(o.effort);
+    if (effort === undefined) return { ok: false, error: 'Invalid reasoning effort.' };
+    if (!(m.efforts ?? []).includes(effort)) return { ok: false, error: 'That model does not offer this reasoning effort.' };
+    request.effort = effort;
   }
   if (o.contextTier !== undefined) {
     const t = parseTier(o.contextTier);
