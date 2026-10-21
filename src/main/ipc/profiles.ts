@@ -6,8 +6,11 @@ import { errText } from '../agentops';
 import type { AgentTrustStore } from '../agenttrust';
 import { hashAgentFile } from '../agenttrust';
 import { PROFILE_ID } from '../folders';
-import { createProfileFile, listProfileFiles, pathOfProfile, profileDirs, readProfileFile, saveProfileFile } from '../profilefiles';
+import { PROFILE_NAME, createProfileFile, listProfileFiles, pathOfProfile, profileDirs, readProfileFile, saveProfileFile } from '../profilefiles';
 import { openInVSCode } from '../vscode';
+import * as path from 'path';
+import { buildProfilePrompt, MAX_GEN_ANSWER, MAX_GEN_DESCRIPTION, PROFILE_QUESTIONS, validateGeneratedProfile } from '../../shared/profiletemplates';
+import type { FrontmatterParse, GenInput } from '../../shared/profiletemplates';
 import type { EnsureLive } from './types';
 
 export interface ProfilesIpcDeps {
@@ -17,6 +20,8 @@ export interface ProfilesIpcDeps {
   getAgentTrust(): AgentTrustStore | undefined;
   wsKey(a: AgentInfo): string;
   ensureLive: EnsureLive;
+  /** Spec 043 FR-022: an app's one-shot text call (the theme maker's path: no tools, no session), or undefined. */
+  oneShot(id: string): { name: string; generate(prompt: string): Promise<{ text: string; costUsd?: number; nanoAiu?: number }> } | undefined;
 }
 
 export function register(deps: ProfilesIpcDeps): void {
@@ -71,9 +76,36 @@ export function register(deps: ProfilesIpcDeps): void {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' };
     return saveProfileFile(dirs(), id, text, baseSha, overwrite === true);
   });
-  ipcHandle('profiles:create', (e, app: unknown, place: unknown, name: unknown, template: unknown) => {
+  ipcHandle('profiles:create', (e, app: unknown, place: unknown, name: unknown, template: unknown, text: unknown) => {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' };
-    return createProfileFile(dirs(), app, place, name, template === undefined ? 'success' : template);
+    return createProfileFile(dirs(), app, place, name, template === undefined ? 'success' : template, text); // text: a reviewed AI draft (FR-023)
+  });
+  /* spec 043 FR-020..FR-022: one prompt to an agent app's one-shot path; the reply is checked and handed back as a draft (nothing written) */
+  ipcHandle('profiles:generate', async (e, req: unknown) => {
+    if (!fromApp(e)) return { ok: false, error: 'invalid request' };
+    const r = (req && typeof req === 'object' ? req : {}) as Record<string, unknown>;
+    const app = r.app === 'claude' || r.app === 'copilot' ? r.app : undefined;
+    if (!app) return { ok: false, error: 'Choose an agent app.' };
+    if (typeof r.name !== 'string' || !PROFILE_NAME.test(r.name)) return { ok: false, error: 'Choose a valid name first.' };
+    const mode = r.mode === 'questions' ? 'questions' : 'describe';
+    const answers: Record<string, string> = {};
+    const a = (r.answers && typeof r.answers === 'object' ? r.answers : {}) as Record<string, unknown>;
+    for (const q of PROFILE_QUESTIONS) if (typeof a[q.id] === 'string') answers[q.id] = (a[q.id] as string).slice(0, MAX_GEN_ANSWER);
+    const input: GenInput = { app, name: r.name, mode, description: typeof r.description === 'string' ? r.description.slice(0, MAX_GEN_DESCRIPTION) : '', answers };
+    if (mode === 'describe' && (input.description ?? '').trim().length < 10) return { ok: false, error: 'Describe what the agent does in a sentence or two.' };
+    if (mode === 'questions' && !Object.values(answers).some((x) => x.trim())) return { ok: false, error: 'Answer at least one question.' };
+    const by = typeof r.by === 'string' ? deps.oneShot(r.by.slice(0, 40)) : undefined;
+    if (!by) return { ok: false, error: 'That agent app cannot write a profile here. Pick an installed, signed-in one.' };
+    // the editor's own front matter check (FR-015): one parser for the editor and this check
+    const PE = require(path.join(__dirname, '..', '..', 'renderer', 'profileeditor.js')) as { parseFrontmatter(t: string): FrontmatterParse };
+    try {
+      const g = await by.generate(buildProfilePrompt(input));
+      const cost = { ...(g.costUsd ? { costUsd: g.costUsd } : {}), ...(g.nanoAiu ? { nanoAiu: g.nanoAiu } : {}) };
+      const v = validateGeneratedProfile(g.text, input, (t) => PE.parseFrontmatter(t));
+      return v.ok ? { ok: true, text: v.text, warnings: v.warnings, by: by.name, ...cost } : { ok: false, error: v.error, ...cost };
+    } catch (err) {
+      return { ok: false, error: errText(err) };
+    }
   });
   ipcHandle('profiles:openInVSCode', (_e, id: unknown) => {
     const file = pathOfProfile(dirs(), id);

@@ -560,8 +560,10 @@ export interface DurbarApi {
   /** Writes atomically; `conflict` when the file changed since `baseSha` (unless `overwrite`). */
   saveProfileFile?(fileId: string, text: string, baseSha: string, overwrite?: boolean): Promise<{ ok: true; sha256: string; info: ProfileFileInfo } | { ok: false; error: string; conflict?: boolean }>;
   /** Spec 043 FR-013/FR-018: `place` = an index into `listProfileFiles().folders`, or 'user'; `template` defaults to the Agent Success Profile. */
-  createProfileFile?(app: 'copilot' | 'claude', place: number | 'user', name: string, template?: 'success' | 'standard'): Promise<{ ok: true; id: string; info: ProfileFileInfo } | { ok: false; error: string }>;
+  createProfileFile?(app: 'copilot' | 'claude', place: number | 'user', name: string, template?: 'success' | 'standard', text?: string): Promise<{ ok: true; id: string; info: ProfileFileInfo } | { ok: false; error: string }>;
   openProfileInVSCode?(fileId: string): Promise<{ ok: boolean; error?: string }>;
+  /** Spec 043 FR-020..FR-022: one prompt to an agent app's one-shot path (`by`); a checked draft, nothing written. */
+  generateProfile?(req: { app: 'copilot' | 'claude'; name: string; by: string; mode: 'describe' | 'questions'; description?: string; answers?: Record<string, string> }): Promise<{ ok: true; text: string; warnings: string[]; by: string; costUsd?: number; nanoAiu?: number } | { ok: false; error: string; costUsd?: number; nanoAiu?: number }>;
 
   /** Tool usage over all runs (spec 020). */
   usageAllTime?(): Promise<UsageView>;
