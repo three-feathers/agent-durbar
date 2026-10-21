@@ -2,18 +2,30 @@
  * Harness setup inside the app (spec 051): what Durbar may run to install, update or sign in to a harness, and how it reads the
  * vendor's sign-in output. Pure data and functions, no I/O: `src/main/harnesssetup.ts` runs the plans.
  *
- * Every command here is fixed (argv, no shell). Durbar never pipes a downloaded script into a shell (D1): without a package
- * manager it opens the vendor's page instead. Routes come from the vendors' docs (2026-10-19); see the spec for which were tried.
+ * Every command here is fixed (argv, no shell). Durbar never pipes a downloaded script into a shell (D1). Since spec 060 FR-001 it
+ * may run a vendor's official installer: main downloads it from that vendor's fixed hosts to a private file, the user confirms, and
+ * it runs as `bash <file>` / `powershell -File <file>`. Routes are ordered least privilege first (owner, 2026-10-20).
  */
 
 export type SetupKind = 'claude' | 'codex' | 'copilot';
-export type PackageManager = 'winget' | 'brew' | 'npm';
+/** What can be found on this computer: package managers and the interpreters that run an official installer. */
+export type PackageManager = 'winget' | 'brew' | 'npm' | 'bash' | 'powershell';
+/** A route's kind: a package manager, or the vendor's official installer (spec 060 FR-001). */
+export type RouteManager = 'winget' | 'brew' | 'npm' | 'official';
+
+/** Spec 060 FR-001: a vendor's official install script and the only hosts (and, for a shared host, path prefix) it may come from. */
+export interface OfficialScript {
+  url: string;
+  hosts: readonly { host: string; pathPrefix?: string }[];
+}
 
 /** One way to install or update: the package manager's binary name and its fixed arguments. */
 export interface SetupPlan {
-  manager: PackageManager;
-  /** Binary name looked up on PATH (`winget`, `brew`, `npm`). */
+  manager: RouteManager;
+  /** Binary name looked up on PATH (`winget`, `brew`, `npm`; `bash`/`powershell` for an official installer). */
   bin: PackageManager;
+  /** The official installer this plan downloads and runs (spec 060 FR-001); `args` then end with the downloaded file. */
+  script?: OfficialScript;
   args: string[];
   /** Shown before it runs (FR-004): exactly what will run. */
   display: string;
@@ -22,44 +34,55 @@ export interface SetupPlan {
 }
 
 interface Route {
-  manager: PackageManager;
+  manager: RouteManager;
   install: string[];
   update: string[];
   note?: string;
+  script?: OfficialScript;
 }
 
 // spec 051 FR-004b: from the winget community source only, never another configured source that might carry the same id
 const WINGET_AGREE = ['--source', 'winget', '--accept-source-agreements', '--accept-package-agreements'];
-const npm = (pkg: string): Pick<Route, 'manager' | 'install' | 'update'> => ({ manager: 'npm', install: ['install', '-g', pkg], update: ['install', '-g', `${pkg}@latest`] });
+const npm = (pkg: string, note?: string): Route => ({ manager: 'npm', install: ['install', '-g', pkg], update: ['install', '-g', `${pkg}@latest`], ...(note ? { note } : {}) });
+const MAY_ADMIN = 'May ask for administrator rights.';
+const NO_ADMIN = 'Installs into your home folder; no administrator rights needed.';
 
-/** FR-002: routes per harness and OS, in the order they are offered. */
+/** Spec 060 FR-001: the vendors' official scripts and the hosts they redirect to (checked 2026-10-20, research.md). */
+const SCRIPTS = {
+  claudeSh: { url: 'https://claude.ai/install.sh', hosts: [{ host: 'claude.ai' }, { host: 'downloads.claude.ai' }] },
+  claudePs1: { url: 'https://claude.ai/install.ps1', hosts: [{ host: 'claude.ai' }, { host: 'downloads.claude.ai' }] },
+  copilotSh: { url: 'https://gh.io/copilot-install', hosts: [{ host: 'gh.io' }, { host: 'raw.githubusercontent.com', pathPrefix: '/github/copilot-cli/' }] },
+  codexSh: { url: 'https://chatgpt.com/codex/install.sh', hosts: [{ host: 'chatgpt.com' }, { host: 'releases.openai.com' }] },
+  codexPs1: { url: 'https://chatgpt.com/codex/install.ps1', hosts: [{ host: 'chatgpt.com' }, { host: 'releases.openai.com' }] },
+} satisfies Record<string, OfficialScript>;
+/** The interpreter arguments before the downloaded file (the file is appended by main once it exists). */
+const PS_ARGS = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File'];
+const official = (script: OfficialScript, ps: boolean): Route => ({ manager: 'official', script, install: ps ? [...PS_ARGS] : [], update: ps ? [...PS_ARGS] : [], note: NO_ADMIN });
+const DEPRECATED = 'Deprecated by Anthropic: use it only if nothing else works.';
+
+/** FR-002 and spec 060 FR-001: routes per harness and OS, least privilege first (owner 2026-10-20); a deprecated route is last. */
 const ROUTES: Record<SetupKind, Partial<Record<'win32' | 'darwin' | 'linux', Route[]>>> = {
   claude: {
     win32: [
-      { manager: 'winget', install: ['install', '--id', 'Anthropic.ClaudeCode', '-e', ...WINGET_AGREE], update: ['upgrade', '--id', 'Anthropic.ClaudeCode', '-e', ...WINGET_AGREE], note: 'Windows may ask for permission to install.' },
-      { ...npm('@anthropic-ai/claude-code'), note: 'Deprecated by Anthropic: use it only if nothing else works.' },
+      official(SCRIPTS.claudePs1, true),
+      { manager: 'winget', install: ['install', '--id', 'Anthropic.ClaudeCode', '-e', ...WINGET_AGREE], update: ['upgrade', '--id', 'Anthropic.ClaudeCode', '-e', ...WINGET_AGREE], note: MAY_ADMIN },
+      npm('@anthropic-ai/claude-code', DEPRECATED),
     ],
-    darwin: [
-      { manager: 'brew', install: ['install', '--cask', 'claude-code'], update: ['upgrade', '--cask', 'claude-code'] },
-      { ...npm('@anthropic-ai/claude-code'), note: 'Deprecated by Anthropic: use it only if nothing else works.' },
-    ],
-    linux: [
-      { manager: 'brew', install: ['install', '--cask', 'claude-code'], update: ['upgrade', '--cask', 'claude-code'] },
-      { ...npm('@anthropic-ai/claude-code'), note: 'Deprecated by Anthropic: use it only if nothing else works.' },
-    ],
+    darwin: [official(SCRIPTS.claudeSh, false), { manager: 'brew', install: ['install', '--cask', 'claude-code'], update: ['upgrade', '--cask', 'claude-code'], note: MAY_ADMIN }, npm('@anthropic-ai/claude-code', DEPRECATED)],
+    linux: [official(SCRIPTS.claudeSh, false), { manager: 'brew', install: ['install', '--cask', 'claude-code'], update: ['upgrade', '--cask', 'claude-code'], note: MAY_ADMIN }, npm('@anthropic-ai/claude-code', DEPRECATED)],
   },
   copilot: {
     win32: [
-      { manager: 'winget', install: ['install', '--id', 'GitHub.Copilot', '-e', ...WINGET_AGREE], update: ['upgrade', '--id', 'GitHub.Copilot', '-e', ...WINGET_AGREE], note: 'Windows may ask for permission to install.' },
-      { ...npm('@github/copilot'), note: 'Needs Node.js 22 or later.' },
+      npm('@github/copilot', 'Needs Node.js 22 or later. Installs into your user folder; no administrator rights needed.'),
+      { manager: 'winget', install: ['install', '--id', 'GitHub.Copilot', '-e', ...WINGET_AGREE], update: ['upgrade', '--id', 'GitHub.Copilot', '-e', ...WINGET_AGREE], note: MAY_ADMIN },
     ],
-    darwin: [{ manager: 'brew', install: ['install', '--cask', 'copilot-cli'], update: ['upgrade', '--cask', 'copilot-cli'] }, { ...npm('@github/copilot'), note: 'Needs Node.js 22 or later.' }],
-    linux: [{ manager: 'brew', install: ['install', '--cask', 'copilot-cli'], update: ['upgrade', '--cask', 'copilot-cli'] }, { ...npm('@github/copilot'), note: 'Needs Node.js 22 or later.' }],
+    darwin: [official(SCRIPTS.copilotSh, false), npm('@github/copilot', 'Needs Node.js 22 or later.'), { manager: 'brew', install: ['install', '--cask', 'copilot-cli'], update: ['upgrade', '--cask', 'copilot-cli'], note: MAY_ADMIN }],
+    linux: [official(SCRIPTS.copilotSh, false), npm('@github/copilot', 'Needs Node.js 22 or later.'), { manager: 'brew', install: ['install', '--cask', 'copilot-cli'], update: ['upgrade', '--cask', 'copilot-cli'], note: MAY_ADMIN }],
   },
   codex: {
-    win32: [{ ...npm('@openai/codex'), note: 'Codex on Windows is experimental (OpenAI suggests WSL).' }],
-    darwin: [{ manager: 'brew', install: ['install', '--cask', 'codex'], update: ['upgrade', '--cask', 'codex'] }, npm('@openai/codex')],
-    linux: [npm('@openai/codex')],
+    win32: [official(SCRIPTS.codexPs1, true), npm('@openai/codex', 'Codex on Windows is experimental (OpenAI suggests WSL). Installs into your user folder.')],
+    darwin: [official(SCRIPTS.codexSh, false), npm('@openai/codex'), { manager: 'brew', install: ['install', '--cask', 'codex'], update: ['upgrade', '--cask', 'codex'], note: MAY_ADMIN }],
+    linux: [official(SCRIPTS.codexSh, false), npm('@openai/codex')],
   },
 };
 
@@ -78,11 +101,18 @@ const osOf = (platform: string): 'win32' | 'darwin' | 'linux' | undefined => (pl
 function plansFor(kind: SetupKind, platform: string, found: ReadonlySet<PackageManager>, op: 'install' | 'update'): SetupPlan[] {
   const os = osOf(platform);
   const routes = (os && ROUTES[kind]?.[os]) || [];
+  const interp: PackageManager = os === 'win32' ? 'powershell' : 'bash';
   return routes
-    .filter((r) => found.has(r.manager))
+    .filter((r) => (r.manager === 'official' ? found.has(interp) : found.has(r.manager)))
     .map((r) => {
       const args = op === 'install' ? r.install : r.update;
-      return { manager: r.manager, bin: r.manager, args: [...args], display: [r.manager, ...args].join(' '), ...(r.note ? { note: r.note } : {}) };
+      if (r.manager === 'official' && r.script) {
+        // the same script installs and updates; what runs is the interpreter with the downloaded file (appended by main)
+        const display = `${r.script.url} (downloaded, then run with ${interp === 'powershell' ? 'Windows PowerShell' : 'bash'})`;
+        return { manager: r.manager, bin: interp, script: r.script, args: [...args], display, ...(r.note ? { note: r.note } : {}) };
+      }
+      const bin = r.manager as PackageManager;
+      return { manager: r.manager, bin, args: [...args], display: [bin, ...args].join(' '), ...(r.note ? { note: r.note } : {}) };
     });
 }
 
@@ -93,19 +123,19 @@ export const updatePlans = (kind: SetupKind, platform: string, found: ReadonlySe
 
 /**
  * Spec 060 FR-002: what the simulator assumes is installed, per OS, so its setup screen shows the real routes for a typical new
- * machine: Windows 10/11 ship winget; a new Mac has no Homebrew and no Node; a Linux desktop usually has neither.
+ * machine: Windows 10/11 ship PowerShell 5.1 and winget; a new Mac has bash but no Homebrew and no Node; a Linux desktop has bash.
  */
-export const SIM_FOUND: Readonly<Record<'win32' | 'darwin' | 'linux', readonly PackageManager[]>> = Object.freeze({ win32: ['winget'], darwin: [], linux: [] });
+export const SIM_FOUND: Readonly<Record<'win32' | 'darwin' | 'linux', readonly PackageManager[]>> = Object.freeze({ win32: ['powershell', 'winget'], darwin: ['bash'], linux: ['bash'] });
 export const simFoundFor = (platform: string): PackageManager[] => [...(SIM_FOUND[osOf(platform) ?? 'linux'] ?? [])];
 /** The simulator's managers: `DURBAR_SIM_MANAGERS=winget,brew,npm` (a driver that needs the command dialog), else `SIM_FOUND`; unknown names dropped. */
 export function simManagers(platform: string, override?: string): PackageManager[] {
   if (override === undefined) return simFoundFor(platform);
-  const ok = new Set<PackageManager>(['winget', 'brew', 'npm']);
+  const ok = new Set<PackageManager>(['winget', 'brew', 'npm', 'bash', 'powershell']);
   return [...new Set(override.split(',').map((x) => x.trim()).filter((x): x is PackageManager => ok.has(x as PackageManager)))];
 }
 
 /** Package managers worth looking for on this OS. */
-export const managersFor = (platform: string): PackageManager[] => (platform === 'win32' ? ['winget', 'npm'] : ['brew', 'npm']);
+export const managersFor = (platform: string): PackageManager[] => (platform === 'win32' ? ['powershell', 'winget', 'npm'] : ['bash', 'brew', 'npm']);
 
 /** FR-005: the harness's own sign-in command (run with the found binary) and how the user finishes it. */
 export interface SignInPlan {
@@ -175,3 +205,17 @@ export function lastLines(raw: string, n = 6): string[] {
 }
 
 export const isSetupKind = (k: unknown): k is SetupKind => k === 'claude' || k === 'codex' || k === 'copilot';
+
+/**
+ * Spec 060 FR-001 (review on #393): which install route owns an installed binary, from its real path, so Update uses that route
+ * and never leaves a second copy (the official script would install into ~/.local/bin while detection still finds the old one).
+ * Pure; `undefined` when the path says nothing (then the usual order applies).
+ */
+export function routeOwning(realPath: string): RouteManager | undefined {
+  const p = realPath.replace(/\\/g, '/');
+  if (/\/node_modules\//i.test(p) || /\/npm\/[^/]+\.cmd$/i.test(p)) return 'npm';
+  if (/\/(Cellar|Caskroom)\//.test(p) || p.startsWith('/opt/homebrew/') || /\/\.?linuxbrew\//.test(p)) return 'brew';
+  if (/\/WinGet\/(Packages|Links)\//i.test(p)) return 'winget';
+  if (/\/\.local\/(bin|share)\//.test(p) || /\/\.claude\/local\//.test(p) || /\/Programs\/OpenAI\/Codex\//i.test(p)) return 'official';
+  return undefined;
+}

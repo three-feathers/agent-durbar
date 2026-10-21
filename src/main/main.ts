@@ -762,6 +762,7 @@ const harnessSetup = new HarnessSetup({
   },
   realpath: (p: string) => fs.realpathSync(p),
   trustedPath: (p: string) => process.platform === 'win32' || posixTrusted(p, (q) => fs.statSync(q).mode),
+  isRoot: () => typeof process.getuid === 'function' && process.getuid() === 0, // spec 060 FR-001
 } as ConstructorParameters<typeof HarnessSetup>[0]);
 /** FR-004b: harness setup answers only the app's own page in the main frame. */
 const fromApp = (e: Electron.IpcMainInvokeEvent): boolean => senderAllowed(e.senderFrame ? { url: e.senderFrame.url, isMain: e.senderFrame === e.sender.mainFrame } : null, path.join(__dirname, '..', 'renderer', 'index.html'));
@@ -779,7 +780,10 @@ ipcHandle('harness:run', async (e, kind: unknown, op: unknown, planIndex: unknow
     const r = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
     if (r.response !== 1) return { ok: false, cancelled: true, error: 'Cancelled.' };
   }
-  return harnessSetup.start(p.job);
+  // spec 060 FR-001: an official installer is downloaded only now, after the user confirmed, from the vendor's fixed hosts
+  const ready = await harnessSetup.withScript(p.job);
+  if (!ready.ok) return ready;
+  return harnessSetup.start(ready.job);
 });
 ipcHandle('harness:paste', (e, text: unknown) => (fromApp(e) ? harnessSetup.paste(text) : { ok: false, error: 'invalid request' }));
 ipcHandle('harness:cancel', (e) => fromApp(e) && harnessSetup.cancel());

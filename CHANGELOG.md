@@ -4,6 +4,7 @@ Agent Durbar is an alpha. Builds are unsigned and have only been run by hand on 
 
 ## Unreleased (on `main`, after the alpha.10 tag)
 
+- **Install agent apps without Homebrew or Node** (spec 060 FR-001). Settings > Agent apps now offers each vendor's official installer first (Claude Code, Copilot CLI on macOS/Linux, Codex): downloaded only from the vendor's own hosts after you confirm, run as you, into your home folder, no administrator rights. Routes are ordered least privilege first; winget and Homebrew say they may ask for admin.
 - The simulator's Agent apps screen now shows the real install options of each OS (winget on Windows; a new Mac or Linux desktop without Homebrew or Node gets the vendor page), instead of Homebrew everywhere. README: the Linux AppImage needs FUSE 2 on Ubuntu 22.04+, MCP secrets need a desktop keyring, and the Copilot CLI needs PowerShell 6+ (spec 060).
 - **UI checks on macOS, Windows and Linux in CI** (spec 008 FR-090..FR-092). A new workflow runs theme geometry, the 15-agent office layout, the Mac title bar and every asserting simulator driver (`npm run check:ui`, new) on all three runners and keeps their screenshots; before, these ran on Linux only. A failing driver now exits 1.
 ## v0.1.0-alpha.10 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.10), 2026-10-21)
