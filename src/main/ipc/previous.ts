@@ -37,10 +37,12 @@ export interface PreviousIpcDeps {
   addWorkspace: AddWorkspace;
   /** Per agent: the VS Code chat files last listed (shared with the handlers that remove an agent). */
   vsChatRefs: Map<string, Map<string, ChatFileRef>>;
+  /** Spec 058 FR-067: replayed history with failed tool output masked (session secret values from main). */
+  maskHistory<H extends { items: { type: string; failed?: boolean; output?: string }[] }>(id: string, h: H): H;
 }
 
 export function register(deps: PreviousIpcDeps): void {
-  const { renameSessionOpFor, dev, agents, router, registry, agentState, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs } = deps;
+  const { renameSessionOpFor, dev, agents, router, registry, agentState, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory } = deps;
   const folderStore = deps.getFolderStore;
   const scheduler = deps.getScheduler;
   // ---- Previous sessions of a folder (Copilot CLI/SDK store, resumable) and VS Code chat history (read-only) ----
@@ -78,7 +80,7 @@ export function register(deps: PreviousIpcDeps): void {
     if (rm.logLine) logActivity(info, 'mode-change', rm.logLine);
       let history: ResumeResult['history'];
       try {
-        history = await historyOf(router.forAgent(info.id) ?? ad, info.id);
+        history = maskHistory(info.id, await historyOf(router.forAgent(info.id) ?? ad, info.id));
       } catch {
         history = { items: [], total: 0, truncated: false };
       }
