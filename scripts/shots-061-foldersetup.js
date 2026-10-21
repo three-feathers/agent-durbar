@@ -1,13 +1,14 @@
 /*
- * Spec 061: the folder-setup dialog in the simulator (`simfoldersetup=1`: the first agent's folder brings two hooks, three rules, an MCP
- * server and an unsupported Codex hook). No real agent app, no credits. Linux with xvfb-run:
+ * Spec 061: the folder-setup dialog in the simulator (`simfoldersetup=1`: the first agent's folder brings three hooks (one too long for
+ * its box), three rules, two MCP servers (one hidden with a reason) and an unsupported Codex hook). No real agent app, no credits. Linux with xvfb-run:
  *
  *   npm run build
  *   OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
  *     DURBAR_DRIVER=$PWD/scripts/shots-061-foldersetup.js xvfb-run -a npx electron . --no-sandbox
  *
  * Checks: the dialog opens by itself for that folder, lists every item in full, marks the broad rule and the unsupported Codex hook,
- * explains a hook on demand (advisory, with its source), keeps hooks off without the confirmation, applies with it, shows
+ * explains a hook on demand (advisory, with its source), says
+ * "scroll inside the box" on the long hook only, says why the hidden MCP server is hidden (unticked), keeps hooks off without the confirmation, applies with it, shows
  * "+ folder rules" on the mode chip, and reopens from the mode menu. Text is at least 10.5px and fits the dialog.
  */
 const assert = require('assert');
@@ -30,9 +31,9 @@ module.exports = async (ctx) => {
         broad:[...d.querySelectorAll('.mtag.warn')].map(x=>x.textContent),curl:d.textContent.includes('curl -s https://example.com/setup.sh | sh'),
         note:/without asking you, even in Read-only/.test(d.textContent),confirm:!!d.querySelector('#fsHooksOk'),inside:R.right<=innerWidth&&R.bottom<=innerHeight+1,small}})()`);
     assert.strictEqual(v.title, 'This folder brings its own agent setup');
-    assert.strictEqual(v.rows, 7, `${w}: every item listed`);
+    assert.strictEqual(v.rows, 9, `${w}: every item listed`);
     assert.strictEqual(v.disabled, 1, 'the Codex hook is shown as not supported');
-    assert.strictEqual(v.checked, 5, 'Q1: on by default, except the unsupported one and the broad allow rule (S1: needs the explicit tick)');
+    assert.strictEqual(v.checked, 6, 'Q1: on by default, except the unsupported one, the hidden MCP server and the broad allow rule (S1: needs the explicit tick)');
     assert.ok(await js(`!document.querySelector('#scrDlg [data-fs="${'d'.repeat(32)}"]').checked`), 'S1: the broad allow rule (Bash) starts unticked');
     assert.ok(await js(`/hooks and broad allow rules/.test(document.querySelector('#scrDlg .fs-confirm').textContent)`), 'the tick names the broad allow rules too');
     assert.ok(v.broad.includes('broad'), 'the broad rule is marked');
@@ -51,8 +52,25 @@ module.exports = async (ctx) => {
     const more = await js(`(()=>{const d=document.querySelector('#scrDlg .dlg.fs');const c=d.querySelector('.fs-cmd');const t=c.textContent;
       const before=d.querySelectorAll('.fs-more').length;c.textContent=t+'\\n'.repeat(40)+'tail';window.DurbarFolderSetup.markLong(d);const long=d.querySelectorAll('.fs-more').length;
       const hint=(c.nextElementSibling||{}).textContent||'';c.textContent=t;window.DurbarFolderSetup.markLong(d);return {before,long,hint,after:d.querySelectorAll('.fs-more').length}})()`);
-    assert.deepStrictEqual([more.before, more.long, more.after], [0, 1, 0], `${w}: the scroll hint only on a long command: ${JSON.stringify(more)}`);
+    assert.deepStrictEqual([more.before, more.long, more.after], [1, 2, 1], `${w}: the scroll hint only on a long command: ${JSON.stringify(more)}`);
     assert.ok(/scroll inside the box to read all/.test(more.hint));
+    // T053: the sample's long Stop hook carries the hint (and only it); the box and the hint do not overlap
+    const lg = await js(`(()=>{const r=[...document.querySelectorAll('#scrDlg .fs-row')].find(x=>x.textContent.includes('Stop hook'));r.scrollIntoView({block:'center'});
+      const c=r.querySelector('.fs-cmd'),m=r.querySelector('.fs-more');const D=document.querySelector('#scrDlg .dlg.fs').getBoundingClientRect();
+      const C=c.getBoundingClientRect(),M=m&&m.getBoundingClientRect();
+      return {hint:m&&m.textContent,next:c.nextElementSibling===m,clear:!!M&&M.top>=C.bottom-0.5,inside:!!M&&M.right<=D.right&&M.left>=D.left,scrolls:c.scrollHeight>c.clientHeight,
+        others:[...document.querySelectorAll('#scrDlg .fs-more')].filter(x=>!r.contains(x)).length,size:m&&parseFloat(getComputedStyle(m).fontSize)}})()`);
+    assert.ok(lg.next && lg.scrolls && /^Long: scroll inside the box to read all of it\.$/.test(lg.hint), `${w}: the long hook says scroll: ${JSON.stringify(lg)}`);
+    assert.ok(lg.clear && lg.inside && lg.size >= 10.5 && lg.others === 0, `${w}: hint placed under its box, readable, only once: ${JSON.stringify(lg)}`);
+    await shot('long', w, h);
+    // T053: the MCP server that starts a shell with env values says why it is hidden and starts unticked
+    const hd = await js(`(()=>{const r=[...document.querySelectorAll('#scrDlg .fs-row')].find(x=>x.textContent.includes('MCP server notes'));r.scrollIntoView({block:'center'});
+      const t=r.querySelector('.fs-hidden'),T=t.getBoundingClientRect(),C=r.querySelector('.fs-cmd').getBoundingClientRect(),D=document.querySelector('#scrDlg .dlg.fs').getBoundingClientRect();
+      return {text:t.textContent,checked:r.querySelector('[data-fs]').checked,clear:T.top>=C.bottom-0.5,inside:T.right<=D.right&&T.left>=D.left,size:parseFloat(getComputedStyle(t).fontSize),
+        count:document.querySelectorAll('#scrDlg .fs-hidden').length}})()`);
+    assert.ok(/^It starts sh, which can run what it is given, and hands it env values that are not shown here \(NOTES_FLAGS\)/.test(hd.text) && /Ticking it runs them too\.$/.test(hd.text), `${w}: the reason is shown: ${hd.text}`);
+    assert.ok(!hd.checked && hd.clear && hd.inside && hd.size >= 10.5 && hd.count === 1, `${w}: hidden server unticked, reason under its box: ${JSON.stringify(hd)}`);
+    await shot('hidden', w, h);
     // FR-011: Use these without the confirmation: hooks stay off, rules and servers are used
     await js(`[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(b=>b.textContent==='Use these').click()`);
     await ctx.waitFor(`!document.querySelector('#scrDlg')`, 5000);
@@ -78,7 +96,7 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#modeMenu [data-act="foldersetup"]').click()`);
     await ctx.waitFor(`!!document.querySelector('#scrDlg .dlg.fs')`, 5000);
     const after = await js(`[...document.querySelectorAll('#scrDlg [data-kind="hook"]')].filter(c=>c.checked&&!c.disabled).length`);
-    assert.strictEqual(after, 2, 'with the confirmation both hooks are on');
+    assert.strictEqual(after, 3, 'with the confirmation all three hooks are on');
     // Turn all off
     await js(`[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(b=>b.textContent==='Turn all off').click()`);
     await ctx.waitFor(`!document.querySelector('#scrDlg')`, 5000);
