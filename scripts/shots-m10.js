@@ -76,6 +76,7 @@ module.exports = async (ctx) => {
     await shot('folder-extras', w, h);
     await click('li.srv[data-name="docs-search"] [data-act="toggle"]'); await ctx.sleep(400);
     assert.match(await text('#scrDlg'), /Trust "docs-search" in mcp-swiss/);
+    assert.match(await text('#scrDlg'), /may keep that sign-in in your system keychain/, 'spec 058 FR-076: a remote extra says a sign-in may outlive the session');
     await shot('folder-trust', w, h);
     await closeDlg(); await ctx.sleep(200);
     await closeScreen(); await ctx.sleep(300);

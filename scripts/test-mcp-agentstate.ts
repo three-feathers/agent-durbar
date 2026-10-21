@@ -142,11 +142,14 @@ for (const r of ROWS) {
 
 // Wiring guard: main.ts must feed the tracker (a pure unit cannot see these calls).
 {
-  const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
+  const mainOnly = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
+  // spec 045 FR-060: the IPC handlers live in src/main/ipc/*.ts; the wiring checks read main.ts and those modules together
+  const ipcDir = path.join(__dirname, '..', '..', 'src', 'main', 'ipc');
+  const main = [mainOnly, ...fs.readdirSync(ipcDir).filter((f) => f.endsWith('.ts')).map((f) => fs.readFileSync(path.join(ipcDir, f), 'utf8'))].join('\n');
   for (const f of ['agentState.noteSend(id)', 'agentState.noteSendFailed(id)', "'did-finish-load', () => agentState.clearPaused()", "ipcOn('agents:setPaused'", 'agentState.onEvent(e)']) assert.ok(main.includes(f), `main.ts no longer has: ${f}`);
   // The scheduled send (spec 044) must note the send and its failure like the interactive one.
-  const i = main.indexOf('send: async (folder, prompt, s)');
-  const sched = main.slice(i, main.indexOf('setTimer:', i));
+  const i = mainOnly.indexOf('send: async (folder, prompt, s)');
+  const sched = mainOnly.slice(i, mainOnly.indexOf('setTimer:', i));
   assert.ok(i > 0 && sched.includes('agentState.noteSend(a.id)') && sched.includes('agentState.noteSendFailed(a.id)'), 'the scheduled send path notes the send and its failure');
   assert.ok(main.includes('applySetPaused(agentState'), 'agents:setPaused goes through applySetPaused');
   const count = (s: string, f: string): number => s.split(f).length - 1;

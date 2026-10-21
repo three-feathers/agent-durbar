@@ -11,6 +11,7 @@
  * - Settings files are never loaded (`--setting-sources ""`, Q8); the folder's `CLAUDE.md` (with `@` imports inside the
  *   folder) goes in as an appended system prompt instead (owner decision, review of #160).
  */
+import { claudeSettingsJson } from '../shared/foldersetup';
 import { isAuthError, markAuthError } from './autherrors';
 import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
@@ -69,11 +70,18 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggle: true, // FR-133: mcp_toggle + mcp_status
   handoff: true, // spec 030 FR-034: a forked one-shot, the session is not changed
   oneShot: true, // spec 040 FR-015: no tools, no MCP, no settings, not saved
+  renameSession: 'next-turn', // spec 059 FR-007: `--name` on the session's next CLI start (real: Vikram's agent, 2026-10-20, CLI 2.1.304)
   planMode: true, // spec 066 FR-004: set_permission_mode plan + ExitPlanMode through can_use_tool
   remote: true, // spec 054 FR-061 (real 2026-10-20): `remote_control` over stream-json; claude.ai sign-in on Pro/Max/Team/Enterprise
   remoteService: Object.freeze({ name: 'Claude', host: 'claude.ai', mobile: 'the Claude app' }),
 }) as AdapterCapabilities;
 
+/** Spec 059 FR-007: the SDK transport (dev opt-in, `DURBAR_CLAUDE_TRANSPORT=sdk`) does not apply `--name`, so it does not offer a rename. */
+export const CLAUDE_SDK_CAPABILITIES: AdapterCapabilities = Object.freeze((() => {
+  const { renameSession: _r, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown };
+  void _r;
+  return rest;
+})()) as AdapterCapabilities;
 /** Spec 066: one sentence added to a plan-first message, so the plan reaches the card (Claude's plan file cannot be written in Read-only). */
 export const CLAUDE_PLAN_NOTE = '(Plan first: write the full plan in your reply, not in a file, then call ExitPlanMode. Do not change anything yet.)';
 /** The text blocks of one assistant message (top level). */
@@ -174,6 +182,12 @@ export interface ClaudeLaunch {
   addDirs?: string[];
   /** FR-150: what is left of the session's dollar cap (`--max-budget-usd`). */
   maxBudgetUsd?: number;
+  /** Spec 061 FR-004 (research R1): the folder's accepted hooks and rules as one composed `--settings` JSON; never logged. */
+  settingsJson?: string;
+  /** Spec 061 (Q3): the accepted folder allow rules, which pass Durbar's Read-only for the calls they cover. */
+  folderAllow?: string[];
+  /** Spec 059 FR-007: the user's name for the session; the CLI stores it as the session title (`--name`, also with `--resume`). */
+  name?: string;
 }
 
 export const CLAUDE_EFFORTS: ReadonlySet<string> = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
@@ -208,9 +222,15 @@ export function budgetText(usd: number): string {
 /** FR-150: a usable dollar cap or undefined (no cap). */
 const usdCap = (v: unknown): number | undefined => parseUsdCap(v);
 
+/** Spec 059 FR-007: a name that may go to `--name`: 1..200 characters, no control characters, not starting with `-` (it is one argv item, never a shell string). */
+export function claudeNameOk(name: unknown): boolean {
+  // eslint-disable-next-line no-control-regex
+  return typeof name === 'string' && name.length >= 1 && name.length <= 200 && !/[\u0000-\u001f\u007f-\u009f]/.test(name) && name === name.trim() && !name.startsWith('-');
+}
+
 /** The CLI argv (FR-111). Mode flags come from `claudeOptionsFor`, so an unknown mode gets Read-only. */
 export function claudeArgs(i: ClaudeLaunch): string[] {
-  const o = claudeOptionsFor(i.mode);
+  const o = claudeOptionsFor(i.mode, i.folderAllow);
   const a = ['-p', '--output-format', 'stream-json', '--verbose', '--input-format', 'stream-json', '--permission-prompt-tool', 'stdio', '--include-partial-messages'];
   a.push('--permission-mode', o.permissionMode);
   if (o.allowDangerouslySkipPermissions) a.push('--allow-dangerously-skip-permissions');
@@ -219,12 +239,14 @@ export function claudeArgs(i: ClaudeLaunch): string[] {
   a.push('--setting-sources', o.settingSources.join(','));
   if (o.strictMcpConfig) a.push('--strict-mcp-config');
   if (i.mcpConfig) a.push('--mcp-config', i.mcpConfig);
+  if (i.settingsJson) a.push('--settings', i.settingsJson);
   if (claudeModelFlag(i.model)) a.push('--model', i.model as string);
   if (i.effort && CLAUDE_EFFORTS.has(i.effort)) a.push('--effort', i.effort);
   if (i.appendSystemPrompt) a.push('--append-system-prompt', i.appendSystemPrompt);
   if (i.agent && /^[A-Za-z0-9._-]{1,64}$/.test(i.agent.name)) a.push('--agents', i.agent.json, '--agent', i.agent.name);
   for (const d of i.addDirs ?? []) a.push('--add-dir', d);
   if (i.maxBudgetUsd !== undefined && Number.isFinite(i.maxBudgetUsd)) a.push('--max-budget-usd', budgetText(i.maxBudgetUsd));
+  if (claudeNameOk(i.name)) a.push('--name', i.name as string);
   a.push(i.resume ? '--resume' : '--session-id', i.sessionId);
   return a;
 }
@@ -355,6 +377,8 @@ export interface ClaudeAdapterDeps {
   claudePath: () => Promise<string | undefined>;
   /** Makes a transport (tests inject a fake; default: the CLI transport; the SDK transport when chosen, FR-113). */
   makeTransport?: TransportFactory;
+  /** The SDK transport is in use (dev opt-in): it does not apply `--name`, so the adapter offers no rename (spec 059). */
+  sdkTransport?: boolean;
   sessionExists?: (id: string) => boolean;
   claudeMd?: (folder: string) => string | undefined;
   readImage?: (p: string) => Buffer | undefined;
@@ -448,6 +472,9 @@ interface Session {
   /** MCP servers left out of the running CLI's config at launch (FR-133): turning one on needs a relaunch. */
   launchedOff?: Set<string>;
   needsRelaunch?: boolean;
+  /** Spec 059 FR-007: the user's name waiting for the next CLI start, and the one the running CLI was started with (reported as the title after its first turn). */
+  pendingName?: string;
+  launchedName?: string;
   /** spec 043 FR-008: the selected custom agent (passed on every launch). */
   agent?: ClaudeAgentDef;
   /** FR-150: the dollar cap (Claude's estimate) and what the session spent while Durbar ran it. */
@@ -464,14 +491,20 @@ interface Session {
 export class ClaudeAdapter implements AgentAdapter {
   readonly id = CLAUDE_ID;
   readonly displayName = CLAUDE_NAME;
-  readonly capabilities = CLAUDE_CAPABILITIES;
+  readonly capabilities: AdapterCapabilities;
   debug?: (message: string) => void;
   /** Spec 065 FR-001: assigned by the main process (router.setWriteGuard). */
   writeGuard?: WriteGuard;
   private sessions = new Map<string, Session>();
+  /** Spec 059 FR-007: names for sessions that are not open yet (by Claude session id); applied at their first start. */
+  private pendingNames = new Map<string, string>();
   private listeners = new Set<(event: AgentEvent) => void>();
 
-  constructor(private readonly deps: ClaudeAdapterDeps) {}
+  constructor(private readonly deps: ClaudeAdapterDeps) {
+    // spec 059 FR-007: on the SDK transport `--name` is not applied, so no rename is offered (capability and member agree, contract C2)
+    this.capabilities = deps.sdkTransport ? CLAUDE_SDK_CAPABILITIES : CLAUDE_CAPABILITIES;
+    if (deps.sdkTransport) (this as { renameSession?: unknown }).renameSession = undefined;
+  }
 
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe {
     this.listeners.add(listener);
@@ -564,6 +597,26 @@ export class ClaudeAdapter implements AgentAdapter {
     return readClaudeHistory(sessionId, this.sessions.get(sessionId)?.cwd, this.deps.configDir);
   }
 
+  /**
+   * Spec 059 FR-007 (Q10): the user's name for a session. Claude has no call for it on the CLI transport, but `--name` together with
+   * `--resume <id>` keeps the session id and appends a title that Claude itself writes (real, Vikram's agent, 2026-10-20). So the name
+   * is only remembered here and goes with the session's next CLI start: an open session is relaunched before its next message (as
+   * for a mode change, a resume, no extra prompt); one that is not open gets it at its first start. After the first turn that follows,
+   * the adapter reports the name as the session's `title`. Durbar never writes the session file.
+   */
+  async renameSession(sessionId: string, name: string): Promise<void> {
+    if (!claudeNameOk(name)) throw new Error('Claude Code cannot use that name.');
+    const s = this.sessions.get(sessionId);
+    if (s) {
+      s.pendingName = name;
+      s.needsRelaunch = true;
+      return;
+    }
+    if (!/^[A-Za-z0-9-]{8,80}$/.test(sessionId)) throw new Error('Unknown Claude session.');
+    if (!this.pendingNames.has(sessionId) && this.pendingNames.size >= 50) this.pendingNames.delete(this.pendingNames.keys().next().value as string);
+    this.pendingNames.set(sessionId, name);
+  }
+
   isLive(sessionId: string): boolean {
     return this.sessions.has(sessionId);
   }
@@ -579,7 +632,8 @@ export class ClaudeAdapter implements AgentAdapter {
     const roots = [...new Set([ws.cwd, ...ws.folders])];
     const broker = new PermissionBroker({ roots, mode, emit: (e) => this.onBroker(id, e), beforeWrite: (paths) => this.writeGuard?.(id, paths) ?? Promise.resolve() }); // spec 065 FR-001
     const mapper = new ClaudeMapper((b) => this.onMapped(id, b), { quiet: true, onDropped: (why) => this.debug?.(`claude: dropped ${why}`) });
-    this.sessions.set(id, { id, cwd: ws.cwd, roots, options: { ...options, permissionMode: mode }, broker, mapper, resumable, capUsd: usdCap(options.maxAiCredits), spentUsd: 0 });
+    this.sessions.set(id, { id, cwd: ws.cwd, roots, options: { ...options, permissionMode: mode }, broker, mapper, resumable, capUsd: usdCap(options.maxAiCredits), spentUsd: 0, ...(this.pendingNames.has(id) ? { pendingName: this.pendingNames.get(id), needsRelaunch: false } : {}) });
+    this.pendingNames.delete(id);
     if (!options.quiet) this.emit(id, { type: 'status', status: 'idle', intent: `Ready in ${ws.cwd}` });
     return id;
   }
@@ -774,9 +828,12 @@ export class ClaudeAdapter implements AgentAdapter {
       effort: o.reasoningEffort,
       ...(s.agent ? { agent: { name: s.agent.profile.id, json: agentsArg(s.agent) } } : {}),
       mcpConfig: mcpConfigOf(o.mcpServers, o.disabledMcpServers),
+      settingsJson: claudeSettingsJson(o.folderSetup),
+      ...(o.folderSetup?.rules?.allow.length ? { folderAllow: o.folderSetup.rules.allow } : {}),
       appendSystemPrompt: (this.deps.claudeMd ?? claudeMdPrompt)(s.cwd),
       ...(s.roots.length > 1 ? { addDirs: s.roots.filter((r) => r !== s.cwd) } : {}),
       ...(s.capUsd !== undefined ? { maxBudgetUsd: s.capUsd - s.spentUsd } : {}),
+      ...(claudeNameOk(s.pendingName) ? { name: s.pendingName } : {}),
     };
     const handlers: TransportHandlers = {
       message: (m) => this.onMessage(s, m),
@@ -792,6 +849,7 @@ export class ClaudeAdapter implements AgentAdapter {
     const t = await make({ file, launch, cwd: s.cwd, env, handlers });
     s.transport = t;
     s.launchedMode = launch.mode;
+    s.launchedName = t.kind === 'cli' ? launch.name : undefined; // the SDK transport ignores `name`: it stays pending
     s.launchedOff = new Set(o.disabledMcpServers ?? []);
     s.needsRelaunch = false;
     // Register the PreToolUse hook (Read-only roots check) before the first prompt.
@@ -816,7 +874,16 @@ export class ClaudeAdapter implements AgentAdapter {
 
   private onMessage(s: Session, m: ClaudeMessage): void {
     if (m.type === 'system' && m.subtype === 'init') s.initSeen = true;
-    if (m.type === 'result') s.turnOpen = false;
+    if (m.type === 'result') {
+      s.turnOpen = false;
+      // Spec 059 FR-007: the first turn after a launch with `--name` finished: the CLI stored the title, so report it
+      if (s.launchedName) {
+        const applied = s.launchedName;
+        s.launchedName = undefined;
+        if (s.pendingName === applied) s.pendingName = undefined;
+        this.emit(s.id, { type: 'title', title: applied });
+      }
+    }
     if (s.planTurn && m.type === 'assistant') s.planDraft = ((s.planDraft ?? '') + assistantText(m)).slice(-40_000); // spec 066: bounded (the card shows 20k)
     if (m.type === 'result' && s.planTurn && !s.plans?.size) void this.leavePlanMode(s); // spec 066: a plan turn that ended without ExitPlanMode
     s.mapper.map(m);
@@ -1037,7 +1104,7 @@ export class ClaudeAdapter implements AgentAdapter {
     const current = s.broker.getMode();
     const launched = s.launchedMode ?? current;
     if (current === 'read-only' || launched === 'read-only') {
-      const deny = preToolUseDecision('read-only', tool, toolInput, s.roots);
+      const deny = preToolUseDecision('read-only', tool, toolInput, s.roots, undefined, s.options.folderSetup?.rules?.allow);
       if (!deny) return {};
       if (current !== 'read-only') deny.hookSpecificOutput.permissionDecisionReason += ' The new permission mode applies from your next message.';
       return { ...deny };
@@ -1133,13 +1200,13 @@ export class ClaudeAdapter implements AgentAdapter {
 }
 
 /** The descriptor; `makeTransport` chooses the transport (main passes the SDK one when it is chosen and available, FR-113/FR-114). */
-export function claudeDescriptor(makeTransport: TransportFactory = cliTransportFactory): AdapterDescriptor {
+export function claudeDescriptor(makeTransport: TransportFactory = cliTransportFactory, sdkTransport = false): AdapterDescriptor {
   return {
     id: CLAUDE_ID,
     displayName: CLAUDE_NAME,
     installHint: 'Open Settings > Agent apps and choose Install…, then Sign in… (or run `npm install -g @anthropic-ai/claude-code`, then `claude auth login`).',
-    capabilities: CLAUDE_CAPABILITIES,
-    create: () => new ClaudeAdapter({ claudePath: claudeBinaryPath, makeTransport }),
+    capabilities: sdkTransport ? CLAUDE_SDK_CAPABILITIES : CLAUDE_CAPABILITIES,
+    create: () => new ClaudeAdapter({ claudePath: claudeBinaryPath, makeTransport, sdkTransport }),
   };
 }
 export const CLAUDE_DESCRIPTOR: AdapterDescriptor = claudeDescriptor();

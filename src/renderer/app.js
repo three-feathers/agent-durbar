@@ -496,6 +496,8 @@ function busy(btn,label){
   return ()=>{clearTimeout(t);if(btn.getAttribute('aria-busy')!=='true')return;btn.innerHTML=html;btn.style.minWidth=mw;btn.disabled=was;btn.removeAttribute('aria-busy');};
 }
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const SN=()=>window.DurbarSessionName;
+const nameTipAttr=a=>{const t=SN().nameTip(a.alias,a.title,a.folderLabel||a.baseName||'');return t?` title="${esc(t)}"`:'';};
 /* the inverse of esc, in one pass (spec 045 FR-002: chained replacements turned "&amp;lt;" into "<") */
 const unesc=s=>String(s).replace(/&(amp|lt|gt|quot);/g,(m,k)=>({amp:'&',lt:'<',gt:'>',quot:'"'}[k]));
 
@@ -602,7 +604,7 @@ function cardHTML(a,d,nSubs){
   const st=vis(a), use=usageShort(a);
   return `<button class="desk card is-${st}${isFailing(a)?' is-failing':''}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(a.name)} · ${esc((a.profile?a.profile.name+' · '+a.role:a.role)+kindTag(a)+remoteTag(a))} · ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${sceneC(a)}</span>
-    <span class="ci"><span class="l1"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span><span class="stl st-${pillSt(a)}">${esc(stWord(a,true))}</span></span>    <span class="intent"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</span>
+    <span class="ci"><span class="l1"><span class="name"${nameTipAttr(a)}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span><span class="stl st-${pillSt(a)}">${esc(stWord(a,true))}</span></span>    <span class="intent"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</span>
     <span class="l3"><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a,true))}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${useCost(use.split(' · ')[1])}</span>`:`<span class="tok">${esc(use.split(' · ')[0]||'')}</span>${use.includes(' · ')?`<span class="aiu"><span class="sep">&nbsp;· </span>${useCost(use.split(' · ')[1])}</span>`:''}`}</span></span></span></button>`;
 }
 function linksSVG(d,rows,extraMore){
@@ -629,7 +631,7 @@ function unitHTML(a,d){
   if(d==='full'){
     desk=`<button class="desk is-${st}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}"${lastTip(a)?` title="${esc(lastTip(a).slice(3))}"`:''} aria-label="${esc(a.name)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(taskOf(a))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
       ${scene(a,false)}<span class="badge ${st}">${badgeSVG(st)}</span>
-      <div class="info"><div class="who"><span class="name"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span></div>
+      <div class="info"><div class="who"><span class="name"${nameTipAttr(a)}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span></div>
       <p class="task"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</p><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}${pillWarn(a)}</span></div></button>`;    if(LIVE_SIDE)desk+=sideHTML(a);
   } else desk=cardHTML(a,d,nSubs);
   return `<div class="unit${nSubs?' has-h':''}" data-key="unit:${esc(a.id)}">${desk}${helpers}</div>`;
@@ -1379,11 +1381,11 @@ function openPanel(id,focus){
   const mdlName=a.live&&a.info?modelLabel(a.info):'';
   p.innerHTML=`<div class="panel-in">
    <div class="strip" role="navigation" aria-label="Agents"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><div class="strip-list" id="stripList"></div></div>
-   <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1"${a.title?` title="${esc(a.title)} · ${esc(a.folderLabel||'')}"`:''}>${esc(a.name)}</h2><div class="sub">${esc(a.role)}${parent?' · helper of '+esc(parent.name):''}</div></div>
+   <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1"${nameTipAttr(a)}>${esc(a.name)}</h2><div class="sub">${esc(a.role)}${parent?' · helper of '+esc(parent.name):''}</div></div>
       <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span>${a.live&&a.info&&!a.parent&&bridge.setPermMode?modeChipHTML(a):''}${mdlName?(a.live&&a.info&&!a.parent&&bridge.setModel&&feat(a,'models')?modelChipHTML(a):`<span class="mchip" title="${esc(mdlName.title)}">Model: ${esc(mdlName.text)}</span>`):''}${a.live&&a.info&&!a.parent&&a.info.profiles&&bridge.listProfiles?agentChipHTML(a):''}${a.live&&!a.parent&&window.DurbarStats?ctxChipHTML(liveRoot(a)):''}${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(showPath(room.path))}</span></span></div>      <div class="actions"><!-- spec 052 FR-003: two actions in view (FR-139: a third, + New, by owner decision), the rest under More (ids kept; End and Remove last); FR-095: Previous (N) replaces the Previous sessions bar -->${a.live&&!a.parent?'<button class="btn sm prev-toggle" id="prevBtn" type="button" data-pv="toggle" aria-expanded="false" aria-controls="prev" title="Previous sessions in this folder" hidden>Previous</button>':''}${a.live&&!a.parent&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="btn sm" id="newSessHdrBtn" type="button" title="New session in ${esc(room.name)}" aria-label="New session in ${esc(room.name)}">+ New</button>`:''}<button class="btn sm primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
         <button class="btn sm" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
         ${a.live&&!feat(liveRoot(a),'stop')?'':`<button class="btn sm danger" id="stopBtn" type="button" title="${a.live?'Stop: interrupts this reply. The chat stays open and ready; nothing is removed.':'Stop'}"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>Stop</button>`}
-        <button class="btn sm" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools and usage</button>`:''}${a.live&&!a.parent&&bridge.agentMcp&&feat(liveRoot(a),'mcp')?`<button class="more-it" role="menuitem" tabindex="-1" id="mcpBtn" type="button" title="MCP servers for this agent (set globally in Settings)">MCP servers</button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}</button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>${canHandover(a)?'<button class="more-it" role="menuitem" tabindex="-1" id="handoverBtn" type="button" title="Start a session in another agent app from a summary of this conversation (you review it first); this one keeps its history">Continue in another app…</button>':''}`:''}${canRemote(a)?`<button class="more-it${a.remote?' on':''}" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it danger" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>Send a message to pick up where you left off</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The other sessions in ${esc(room.name)} stay."><span class="mt">Remove from office<small>Ends the session; its history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Take ${esc(room.name)} out of Agent Durbar: its session ends and the folder is no longer remembered. Nothing on disk is deleted."><span class="mt">Remove folder<small>Forgets the folder; nothing on disk is deleted</small></span></button>`:'')}</div></div></div>
+        <button class="btn sm" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window">Tools and usage</button>`:''}${a.live&&!a.parent&&bridge.agentMcp&&feat(liveRoot(a),'mcp')?`<button class="more-it" role="menuitem" tabindex="-1" id="mcpBtn" type="button" title="MCP servers for this agent (set globally in Settings)">MCP servers</button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}</button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder">+ New session</button>${canHandover(a)?'<button class="more-it" role="menuitem" tabindex="-1" id="handoverBtn" type="button" title="Start a session in another agent app from a summary of this conversation (you review it first); this one keeps its history">Continue in another app…</button>':''}`:''}${canRemote(a)?`<button class="more-it${a.remote?' on':''}" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}${canRenameSession(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="renameSessBtn" type="button" title="Give this session a short name"><span class="mt">Rename…<small>A short name for this session</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it danger" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>Send a message to pick up where you left off</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The other sessions in ${esc(room.name)} stay."><span class="mt">Remove from office<small>Ends the session; its history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Take ${esc(room.name)} out of Agent Durbar: its session ends and the folder is no longer remembered. Nothing on disk is deleted."><span class="mt">Remove folder<small>Forgets the folder; nothing on disk is deleted</small></span></button>`:'')}</div></div></div>
     <div class="ph-line"><p class="ptask" data-f="task"></p><p class="pusage" data-f="usage"></p></div>
     <div class="grants" id="grants" aria-label="Permissions allowed for this session" hidden></div></div>
    <div class="prev" id="prev" role="region" aria-label="Previous sessions" hidden></div>
@@ -1411,6 +1413,7 @@ function openPanel(id,focus){
   if($('schedHdrBtn'))$('schedHdrBtn').onclick=()=>openSchedules(room,a);
   if($('toolsHdrBtn'))$('toolsHdrBtn').onclick=()=>window.DurbarScreens.openTools(liveRoot(a).id);
   if($('mcpBtn'))$('mcpBtn').onclick=()=>window.DurbarScreens.agentMcp(liveRoot(a),{toggle:feat(liveRoot(a),'mcpToggle')});
+  if($('renameSessBtn'))$('renameSessBtn').onclick=e=>renameSessionUi(a,null,{opener:()=>$('moreBtn')||e.currentTarget});
   if($('endBtn'))$('endBtn').onclick=e=>endLive(a,e.currentTarget).catch(failToast('end'));
   if($('rmSessBtn'))$('rmSessBtn').onclick=()=>removeSessionUi(a);
   if($('rmFolderBtn'))$('rmFolderBtn').onclick=()=>removeFolder(room); /* spec 006 FR-022: the only session of the folder */
@@ -2008,7 +2011,7 @@ window.addEventListener('resize',relayout);
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), floors:qs.get('simfloors')==='1', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 const DEMO={agents:agents,rooms:ROOMS}, LIVE={agents:[],rooms:[]};
 let demoOn=!bridge;
@@ -2225,10 +2228,11 @@ function moveRoomToFloor(roomId,floorId){
 }
 function addLiveAgent(info){
   if(liveById(info.id))return;
+  if(window.DurbarFolderSetup&&!info.parent)setTimeout(()=>window.DurbarFolderSetup.check(info),0); /* spec 061 FR-001: new and saved folders, once each per run */
   let room=LIVE.rooms.find(r=>r.path===info.cwd);
   if(!room){room={id:'r'+LIVE.rooms.length+':'+info.cwd,name:(info.label||info.roomName||info.name),folderName:(info.roomName||info.name),path:info.cwd,tint:TINTS[LIVE.rooms.length%4],floor:info.floor||'ground',hidden:!!info.hidden,closed:!!info.closed||CLOSED_Q.includes(info.roomName||info.name)};LIVE.rooms.push(room);}
   let name=info.name; const dup=LIVE.agents.filter(x=>!x.parent&&x.room===room.id&&x.baseName===info.name).length; if(dup)name=info.name+' #'+(dup+1);
-  LIVE.agents.push({id:info.id,name:info.title||name,folderLabel:name,title:info.title,baseName:info.name,role:info.role||roleFor(info),room:room.id,state:'idle',label:info.lazy?'Not started':null,task:info.lazy?(info.resumeLast?'Your last session here. It continues when you open it.':'Saved folder. A session starts with your first message.'):'Ready. Send a message to start.',
+  LIVE.agents.push({id:info.id,name:SN().displayName(info.alias,info.title,name),alias:info.alias,folderLabel:name,title:info.title,baseName:info.name,role:info.role||roleFor(info),room:room.id,state:'idle',label:info.lazy?'Not started':null,task:info.lazy?(info.resumeLast?'Your last session here. It continues when you open it.':'Saved folder. A session starts with your first message.'):'Ready. Send a message to start.',
     look:lookFor(info.id),files:[],paused:false,live:true,info,usage:{calls:0,inT:0,outT:0,nano:0},usageText:'',turn:null,worked:false,pend:new Map(),settled:new Set(),grants:[]});
   if(!demoOn){if(!ui.expanded)ui.expanded={};renderFilter();scheduleRender();loadUsageBaseline();}
   if(pendingOpen===info.id){pendingOpen=null;if(!demoOn)openPanel(info.id,false);}
@@ -2948,9 +2952,21 @@ function updateCtxChip(a){
    the folder stays in the room header and in the tooltip. Sub-agents keep their own names. */
 function applyTitle(a,title){
   if(typeof title!=='string'||!title||a.title===title)return;
-  a.title=title; a.name=title;
-  if(ui.selected===a.id){const h=document.getElementById('panelTitle');if(h){h.textContent=title;h.title=title+' · '+(a.folderLabel||a.baseName||'');}}
+  a.title=title; repaintName(a);
+}
+/* spec 059: the display name is the user's name, else the runtime's title, else the folder label (FR-001); the tooltip never shows the runtime title once the user named the session (FR-003) */
+function repaintName(a){
+  a.name=SN().displayName(a.alias,a.title,a.folderLabel);
+  if(a.info)a.info.alias=a.alias;
+  if(ui.selected===a.id){const h=document.getElementById('panelTitle');if(h){h.textContent=a.name;const t=SN().nameTip(a.alias,a.title,a.folderLabel||a.baseName||'');if(t)h.title=t;else h.removeAttribute('title');}const c=document.getElementById('chat');if(c)c.setAttribute('aria-label','Chat with '+a.name);}
   scheduleRender();
+  if(document.getElementById('schedDlg'))try{renderSchedDlg();}catch(e){}
+}
+/* main tells every window that a session got (or lost) the user's name */
+function onAgentRenamed(e){
+  const a=liveById(e&&e.id); if(!a)return;
+  a.alias=typeof e.alias==='string'&&e.alias?e.alias:undefined;
+  repaintName(a);
 }
 function onLiveEvent(e){
   const a=liveById(e.sessionId); if(!a)return;
@@ -3145,22 +3161,25 @@ function renderStrip(){
 
 /* ---------------- permission mode: change it at any time (spec 018) ---------------- */
 function modeChipHTML(a){const m=a.info.permMode, rs=m==='allow'&&a.info.permRestored;
-  if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts">${esc(MODE_NAME[m])}</span>`; /* spec 052 FR-065 */
-  return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}. ${esc(MODE_HELP[m])}${rs?(a.info.permFrom==='session'?' Restored: the mode you last chose for this session.':' Restored from your last run.'):''} Click to change; it applies from the next request."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m])}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>`;}
+  /* spec 061 FR-012: Read-only still means something: when the folder's own hooks or allow rules apply, the chip says so */
+  const fr=a.info.folderRules?' + folder rules':'', frT=a.info.folderRules?' This folder\u2019s own hooks or allow rules also apply (you accepted them): open the mode menu, then This folder\u2019s setup.':'';
+  if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts${frT?'.'+esc(frT):''}">${esc(MODE_NAME[m]+fr)}</span>`; /* spec 052 FR-065 */
+  return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}. ${esc(MODE_HELP[m])}${rs?(a.info.permFrom==='session'?' Restored: the mode you last chose for this session.':' Restored from your last run.'):''} Click to change; it applies from the next request.${esc(frT)}"><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m]+fr)}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>`;}
 function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');}}
 function openModeMenu(a0,x,y,anchor){
   const a=liveRoot(a0); if(!a||!a.live)return false;
   /* spec 005 FR-017: Stop and End session for a main agent opened from its card (not from the chat header chip) */
   const ops=anchor&&anchor.dataset&&anchor.dataset.id&&!a0.parent&&bridge.stop?DMK().cardMenuActions(a,capsFor(a)):{stop:null,end:null};
-  const hasMode=!!bridge.setPermMode&&feat(a,'modes'), hasOps=!!(ops.stop||(ops.end&&bridge.end));
+  const canRen=!!(anchor&&anchor.dataset&&anchor.dataset.id&&!a0.parent&&canRenameSession(a)); /* spec 059 FR-006: Rename… in the card menu */
+  const hasMode=!!bridge.setPermMode&&feat(a,'modes'), hasOps=!!(ops.stop||(ops.end&&bridge.end)||canRen);
   if(!hasMode&&!hasOps)return false;
   closeModeMenu();
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',(hasOps?'Actions for ':'Permission mode for ')+a.name);
-  m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>`<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}" title="${esc(MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(MODE_SHORT[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`).join('')+(bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>The agent proposes a plan; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`:'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
+  m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>`<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}" title="${esc(MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(MODE_SHORT[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`).join('')+(bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>The agent proposes a plan; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`:'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
   document.body.appendChild(m);
   const r=m.getBoundingClientRect(); const px=Math.max(8,Math.min(x,innerWidth-r.width-8)), py=Math.max(8,Math.min(y,innerHeight-r.height-8));
   m.style.left=px+'px';m.style.top=py+'px';
-  m.addEventListener('click',e=>{const pn=e.target.closest('[data-act="planNext"]');if(pn){a.planNext=!a.planNext;closeModeMenu();renderAttached();announce(a.planNext?'The next message asks for a plan first.':'Plan first is off.');const mi=$('msgInput');if(mi)mi.focus();return;}const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,anchor);return;}const b=e.target.closest('[data-mode]');if(!b)return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
+  m.addEventListener('click',e=>{const pn=e.target.closest('[data-act="planNext"]');if(pn){a.planNext=!a.planNext;closeModeMenu();renderAttached();announce(a.planNext?'The next message asks for a plan first.':'Plan first is off.');const mi=$('msgInput');if(mi)mi.focus();return;}const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}if(e.target.closest('[data-act="foldersetup"]')){closeModeMenu();window.DurbarFolderSetup.openFor(a.info);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,anchor);return;}const b=e.target.closest('[data-mode]');if(!b)return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
   m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('[data-mode],[data-act],[data-op]')],i=it.indexOf(document.activeElement);
     if(e.key==='ArrowDown'){e.preventDefault();it[(i+1)%it.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();it[(i+it.length-1)%it.length].focus();}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&anchor.focus&&document.contains(anchor))anchor.focus();}});
@@ -3171,6 +3190,7 @@ function openModeMenu(a0,x,y,anchor){
 /* spec 005 FR-017: Stop / End session from the card menu; the same calls and toasts as the chat header */
 async function cardOp(a,op,anchor){
   try{
+    if(op==='rename')return await renameSessionUi(a,null,{opener:anchor});
     if(op==='stop')return await stopLive(a);
     /* decided at click time: the agent may have become busy (or ended) while the menu was open */
     const en=DMK().cardMenuActions(a,capsFor(a)).end;
@@ -3186,6 +3206,35 @@ async function cardOp(a,op,anchor){
 }
 /* small modal: returns {value, checked} or null when dismissed. Focus trap, Escape and focus return live in dialog.js (spec 003 FR-033). */
 const askDialog=DurbarDialog(document);
+/* ---------------- spec 059: rename a session ---------------- */
+/* Main sessions only (never helpers); a started or not started, live or ended card. */
+const canRenameSession=a=>!!(a&&a.live&&!a.parent&&a.info&&bridge.renameSession);
+/* One dialog for the More menu, the card menu and the Previous sessions row menu. `prev`: null for the agent's own session, else {id,title,runtime} of a Previous sessions row. */
+async function renameSessionUi(a0,prev,o){
+  const a=liveRoot(a0); if(!a||!a.live||!bridge.renameSession)return;
+  const info=a.info||{}, app=kindWord(info.adapterId), cap=info.renameCap;
+  const own=!prev, cur=own?a.name:(prev.name||prev.title||''), runtime=own?(a.title||''):(prev.runtime||'');
+  const inApp=!(own&&info.lazy&&!info.resumeLast); /* a card that never started has no session in the agent app yet */
+  const lines=[SN().whereLine(cap,app,inApp)];
+  if(runtime&&runtime!==cur)lines.push('Name in '+app+': '+SN().shortName(runtime,80));
+  let text=SN().shortName(cur,SN().MAX), reason='', out;
+  for(;;){
+    const res=await askDialog({title:'Rename session',body:'A short name for this session in Agent Durbar, 1 to '+SN().MAX+' characters. Leave it empty to use '+app+"'s title again.",lines,
+      input:{label:'Name',value:text,max:SN().MAX,focus:true,select:true,error:reason,submitOnEnter:true,check:SN().nameError},
+      returnFocus:o&&o.opener,buttons:[{label:'Cancel',value:null},{label:'Rename',value:'ok',cls:'primary'}]});
+    if(!res)return;
+    text=res.text||'';
+    try{out=await bridge.renameSession(a.id,own?null:prev.id,text);}catch(err){out={ok:false,error:String(err&&err.message||err)};}
+    /* main checks the name again with the shared rule (it also refuses a text that looks like a secret): that reason goes back under the field */
+    if(out&&!out.ok&&/^(Use 1 to|Remove control|That looks like a secret)/.test(out.error||'')){reason=out.error;continue;}
+    break;
+  }
+  if(!out||!out.ok){toast(esc((out&&out.error)||'Could not rename the session.'),5000).classList.add('err');return;}
+  if(own){a.alias=out.name||undefined;repaintName(a);}
+  else if(o&&o.onDone)o.onDone(out);
+  announce(out.name?'Renamed.':'Name reset.');
+  if(out.note)toast(esc(out.note),6000);
+}
 /* after a mode change the chip is re-rendered; put focus back on it (or the card it was opened from) unless the user moved it on */
 function refocusAnchor(anchor){
   const ae=document.activeElement;if(ae&&ae!==document.body&&document.contains(ae))return;
@@ -3904,7 +3953,7 @@ const capAmt=(n,u)=>u==='usd'?'$'+(Number(n)||0).toFixed(2):(Math.round((Number(
 /* one schedule's line under its prompt: when, target, state, spend, next and last run (escaped by the caller) */
 function schedLine(s){
   const st=s.done?' · done':s.paused?(s.pausedReason==='session-ended'?' · Paused: the session has ended':s.pausedReason==='cap'?' · Paused: reached its limit':' · paused'):(recurringS(s)&&s.next&&!SCHED.pausedAll?' · next '+clock(s.next):'');
-  return whenOf(s)+(s.target?' · → '+(s.target.name||'one session'):'')+st
+  return whenOf(s)+(s.target?' · → '+((t=>t?SN().shortName(t.name,40):null)(agents.find(x=>x.id===s.target.session&&x.live))||s.target.name||'one session'):'')+st
     +(s.cap?' · spent '+capAmt(s.spent||0,s.cap.unit)+' of '+capAmt(s.cap.amount,s.cap.unit)+(s.spentUnknown?' (the spend was not fully reported)':''):'')
     +(s.last?' · last '+clock(s.last.at)+': '+(OUTCOME_WORD[s.last.outcome]||s.last.outcome):'');
 }
@@ -3939,7 +3988,7 @@ function renderSchedDlg(){
   /* FR-016: the agent app's own schedules of this folder's live sessions, read-only */
   const own=agents.filter(x=>x.live&&!x.parent&&x.room===r.id&&x.agentScheds&&x.agentScheds.size).flatMap(x=>[...x.agentScheds.values()].map(v=>({x,v})));
   const ow=$('sdOwn');if(ow){ow.hidden=!own.length;ow.innerHTML=own.length?'<h4>Scheduled in the agent app (read-only)</h4><p class="sc-tpl-note">Made with the app\'s own commands or by the agent. Agent Durbar shows them but cannot change them; ask the agent, or use the app\'s own schedule manager.</p>'
-    +own.map(({x,v})=>`<div class="sc-row off"><div class="sc-t"><b title="${esc(v.prompt)}">${esc(v.prompt||'(no prompt text)')}</b><small>${esc(ownWhen(v)+' · '+(x.title||x.name)+(v.origin==='model'?' · made by the agent':v.origin==='user'?' · made by you':''))}</small></div></div>`).join(''):'';}
+    +own.map(({x,v})=>`<div class="sc-row off"><div class="sc-t"><b title="${esc(v.prompt)}">${esc(v.prompt||'(no prompt text)')}</b><small>${esc(ownWhen(v)+' · '+(x.name)+(v.origin==='model'?' · made by the agent':v.origin==='user'?' · made by you':''))}</small></div></div>`).join(''):'';}
 }
 function closeSchedDlg(){const d=$('schedDlg');if(d)d.remove();}
 /* `from`: the chat it was opened from (FR-014: then it can send to that session instead of the folder's agent) */
@@ -3963,7 +4012,7 @@ function openSchedules(r,from){
     <label class="chk"><input type="radio" name="scKind" value="once"> Once at <input type="datetime-local" id="scAt" value="${local}" aria-label="Date and time"></label></div>
     <div class="sc-days" id="scDays" role="group" aria-label="Days of the week" hidden>${[1,2,3,4,5,6,0].map(n=>`<label class="chk"><input type="checkbox" value="${n}"${n===today?' checked':''}> ${DAY3[n]}</label>`).join('')}</div>
     <div class="sc-opts">${ag?`<label class="sc-to"><span class="sc-lbl">Send to</span> <select id="scTarget" aria-describedby="scToHint"><option value="">This folder's agent</option><option value="${esc(ag.id)}">This session</option></select></label>`:''}
-     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}><span class="sc-lbl">Limit</span> <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div>${ag?`<p class="sc-hint" id="scToHint" title="${esc(ag.title||ag.name)}" hidden>${esc(ag.title||ag.name)}</p>`:''}</div>
+     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}><span class="sc-lbl">Limit</span> <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div>${ag?`<p class="sc-hint" id="scToHint" title="${esc(ag.name)}" hidden>${esc(ag.name)}</p>`:''}</div>
    <div class="dbtn"><button class="btn" id="scClose" type="button">Close</button><button class="btn primary" id="scAdd" type="button">Add schedule</button></div></div>`;
   document.body.appendChild(d);
   renderSchedDlg();
@@ -3984,7 +4033,7 @@ function openSchedules(r,from){
       else if(once){const t=new Date($('scAt').value).getTime();if(!(t>Date.now())){toast('Choose a time in the future.',3500);return;}input.at=t;}
       else{const m=Math.round(Number($('scEvery').value));if(!(m>=5&&m<=1440)){toast('Choose 5 to 1440 minutes.',3500);return;}input.every=m;}
       const tsel=$('scTarget'),tag=tsel&&tsel.value?ag:null; /* FR-014 */
-      if(tag&&tag.info)input.target={session:tag.id,agent:tag.info.adapterId||'copilot',name:String(tag.title||tag.name||'').slice(0,80)};
+      if(tag&&tag.info)input.target={session:tag.id,agent:tag.info.adapterId||'copilot',name:SN().shortName(tag.name||'',40)};
       const capV=$('scCap')&&!$('scCapL').hidden?String($('scCap').value).trim():''; /* FR-015 */
       if(capV){const n=Number(capV),u=schedCapUnit(tag||folderAg);if(!(n>0)||!u){toast('A limit must be a positive amount.',3500);return;}input.cap={amount:n,unit:u};}
       const res=await bridge.saveSchedule(input);
@@ -4160,11 +4209,26 @@ async function loadPrev(a){
   const st=prevOf(a);
   const safe=(f,empty)=>f?f(a.id).catch(e=>Object.assign({ok:false,error:String(e&&e.message||e)},empty)):null;
   const [c,v]=await Promise.all([safe(feat(a,'history')?bridge.listPrevious:null,{sessions:[]}),safe(bridge.listVsChats,{sessions:[],storesFound:0,unreadable:0,tooLarge:0,formatNote:''})]);
-  st.cli=c; st.vs=v;
+  st.cli=namePrev(c); st.vs=v;
   const vis=prevCounts(st);
   if(!st.touched&&pristine(a)&&(vis.nc||vis.nv))st.open=true; /* spec 006 FR-025: hidden rows do not open the panel by themselves */
   if(ui.selected===a.id)renderPrev(a);
   return st;
+}
+/* spec 059 FR-009: a row with the user's name shows it as its title (its tooltip and the search too); the runtime title is kept apart and not searched */
+function namePrev(c){
+  if(!c||!c.ok||!c.names||!Array.isArray(c.sessions))return c;
+  c.sessions=c.sessions.map(x=>c.names[x.id]?Object.assign({},x,{runtime:x.runtime!==undefined?x.runtime:x.title,title:c.names[x.id],named:true}):x);
+  return c;
+}
+/* Rename… for a Previous sessions row (FR-006): the row's ⋯ menu (spec 006 FR-027) calls this with the row's id. */
+async function renamePrevRow(a0,id,opener){
+  const a=liveRoot(a0), st=prevOf(a), row=st.cli&&st.cli.sessions&&st.cli.sessions.find(x=>x.id===id); if(!row)return;
+  await renameSessionUi(a,{id,title:row.title,name:row.named?row.title:'',runtime:row.runtime!==undefined?row.runtime:row.title},{opener,onDone:out=>{
+    if(out.name){row.runtime=row.runtime!==undefined?row.runtime:row.title;row.title=out.name;row.named=true;}
+    else{row.title=row.runtime!==undefined?row.runtime:row.title;row.named=false;}
+    if(ui.selected===a.id){renderPrev(a);const r=[...document.querySelectorAll('.prev-row')].find(x=>x.dataset.pk===id),f=r&&r.querySelector('.prev-more');if(f)f.focus();}
+  }});
 }
 function initPrev(a){
   const box=$('prev'); if(!box)return;
@@ -4175,7 +4239,7 @@ function initPrev(a){
 const PIN_SVG='<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" focusable="false"><path d="M9.5 1.5l5 5-2 .5-2.5 2.5.5 3.5-1 1L6.5 10 3 13.5l-.5-.5L6 9.5 2.5 6l1-1 3.5.5L9.5 3z" fill="currentColor"/></svg>';
 function prevRow(x,g,k,title,sub,main,info,a){
   const hid=info.hidden, mark=(info.pinned?`<span class="prev-pin" title="Pinned">${PIN_SVG}<span class="sr-only">Pinned</span></span>`:'')+(hid?'<span class="tag prev-hidtag">Hidden</span>':'');
-  return `<div class="prev-row${hid?' is-hidden':''}" data-pg="${g}" data-pk="${esc(k)}"><div class="prev-tx"><b title="${esc(title)}">${mark}<span class="prev-t">${esc(title)}</span></b><small>${sub}</small></div>${main}<button class="btn sm prev-more" type="button" data-pv="more" aria-haspopup="menu" aria-label="Actions for ${esc(title)}" title="Pin, hide or delete">⋯</button></div>`;
+  return `<div class="prev-row${hid?' is-hidden':''}" data-pg="${g}" data-pk="${esc(k)}"><div class="prev-tx"><b title="${esc(title)}">${mark}<span class="prev-t">${esc(title)}</span></b><small>${sub}</small></div>${main}<button class="btn sm prev-more" type="button" data-pv="more" aria-haspopup="menu" aria-label="Actions for ${esc(title)}" title="${g==='cli'?'Pin, rename, hide or delete':'Pin, hide or delete'}">⋯</button></div>`;
 }
 function prevListsHtml(a){
   const st=prevOf(a), c=st.cli, v=st.vs, kw=kindWord(a.info&&a.info.adapterId), hasHist=!!c, q=(st.q||'').trim();
@@ -4336,6 +4400,7 @@ function openPrevMenu(a,g,k,anchor,x,y){
   const it=(act,label,sub,cls,dis)=>`<button type="button" role="menuitem" data-pact="${act}"${cls?` class="${cls}"`:''}${dis?` aria-disabled="true" title="${esc(dis)}"`:` title="${esc(sub)}"`}><span class="mt"><b>${esc(label)}</b><small>${esc(dis||sub)}</small></span></button>`;
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Actions for '+title);
   m.innerHTML=(hid?'':pinned?it('unpin','Unpin','Back to its place by date'):it('pin','Pin to top','Keep it first in this list'))
+    +(g!=='vs'&&bridge.renameSession?it('rename','Rename…','Give this session a short name'):'')
     +(hid?it('unhide','Unhide','Show it in the list again'):it('hide','Hide','Only in Durbar; it stays in VS Code and the CLI'))
     +(canDel?(feat(a,'deleteSession')?it('delete','Delete…','Removes it from the agent app, VS Code and the CLI','mm-danger'):it('delete','Delete…','','mm-danger',window.DurbarSessionSearch.noDeleteReason(kindWord(a.info&&a.info.adapterId)))):'');
   document.body.appendChild(m);
@@ -4345,7 +4410,7 @@ function openPrevMenu(a,g,k,anchor,x,y){
     if(t.getAttribute('aria-disabled')==='true'){e.preventDefault();return;}
     closeModeMenu();
     const act=t.dataset.pact;
-    if(act==='delete')deletePrev(a,g,k,item);else markPrev(a,g,k,act);});
+    if(act==='delete')deletePrev(a,g,k,item);else if(act==='rename')renamePrevRow(a,k,()=>{const e=prevRowEl(g,k);return (e&&e.querySelector('.prev-more'))||anchor;});else markPrev(a,g,k,act);});
   m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-pact]')],i=its.indexOf(document.activeElement);
     if(e.key==='ArrowDown'){e.preventDefault();its[(i+1)%its.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();its[(i+its.length-1)%its.length].focus();}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();back();}});
@@ -4498,6 +4563,9 @@ if(bridge){
   $('kindHelp').onclick=()=>aboutKinds();
   bridge.onEvent(onLiveEvent);
   bridge.onAgentAdded(addLiveAgent);
+  if(bridge.onAgentRenamed)bridge.onAgentRenamed(onAgentRenamed);
+  /* spec 061: a folder's own agent setup is shown when its agent joins the office (once per folder in this run) */
+  if(window.DurbarFolderSetup){window.DurbarFolderSetup.init({bridge,esc,toast:(t,ms)=>toast(esc(t),ms),onRules:map=>{for(const id of Object.keys(map)){const a=liveById(id);if(!a||!a.info)continue;a.info.folderRules=map[id]||undefined;const c=$('modeChip'),sel=ui.selected&&liveRoot(byId(ui.selected)||a);if(c&&sel&&sel.id===a.id)c.outerHTML=modeChipHTML(a);}}});}
   bridge.listAgents().then(l=>{l.forEach(addLiveAgent);renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});renderRestoreStrip();
     restoreUi();renderAwayStrip(); /* spec 052 FR-087 / FR-089 */
     /* spec 052 FR-059: what already needs you a few seconds after start is remembered, not notified */
@@ -4525,4 +4593,6 @@ if(bridge){
 renderFilter(); renderAll();
 if(qs.get('view')==='list')setView('list');
 if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
+/* spec 059 test hook, simulator only: a driver reads agents and calls what the Previous sessions row menu will call */
+if(SIM)window.__durbarSimUi={agents:()=>agents,renamePrevRow};
 })();

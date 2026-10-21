@@ -10,12 +10,12 @@ import type { HandoffResult } from './handoff';
 import type { EventBody } from './map';
 import { PermissionBroker, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
-import type { AgentAdapter, AgentEvent, AgentMessage, CompactResult, LimitAction, ModelOption, ModelSwitchRequest, ModelSwitchResult, PermissionMode, StartOptions, UsageEvent } from './types';
+import type { AgentAdapter, AgentEvent, AgentMessage, CompactResult, LimitAction, McpSignInResult, ModelOption, ModelSwitchRequest, ModelSwitchResult, PermissionMode, StartOptions, UsageEvent } from './types';
 import type { HistoryResult, PreviousSession } from './history';
 
 export type OptionalMember =
   | 'interrupt' | 'resolvePermission' | 'revokeGrant' | 'setCap' | 'resolveLimit' | 'setMcpEnabled' | 'setModel'
-  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText' | 'deleteSession';
+  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText' | 'renameSession' | 'deleteSession' | 'startMcpSignIn' | 'cancelMcpSignIn';
 
 export type Step =
   | { output: string }
@@ -84,10 +84,22 @@ export class FakeAdapter implements AgentAdapter {
   declare history?: (sessionId: string) => Promise<HistoryResult>;
   declare handoffSummary?: (sessionId: string) => Promise<HandoffResult>;
   declare generateText?: (prompt: string) => Promise<{ text: string; costUsd?: number }>;
+  declare renameSession?: (sessionId: string, name: string) => Promise<void>;
+  declare startMcpSignIn?: (sessionId: string, name: string) => Promise<McpSignInResult>;
+  declare cancelMcpSignIn?: (sessionId: string, name: string) => Promise<void>;
+  /** Spec 058: every `startMcpSignIn` / `cancelMcpSignIn` call, in order (test log; no browser is opened). */
+  readonly signInCalls: Array<{ sessionId: string; name: string; cancel?: true }> = [];
+  /** Spec 058: what the next `startMcpSignIn` resolves with. */
+  signInResult: McpSignInResult = { kind: 'browser', url: 'https://auth.example.test/authorize' };
   declare deleteSession?: (sessionId: string) => Promise<void>;
   /** Every id `deleteSession` was called with (test log; nothing real is deleted). */
   readonly deleteCalls: string[] = [];
   declare setPermMode?: (sessionId: string, mode: PermissionMode, opts?: { clearGrants?: boolean; approvePending?: boolean }) => { pending: number };
+
+  /** Spec 059: every `renameSession` call, in order. */
+  readonly renameCalls: Array<{ sessionId: string; name: string }> = [];
+  /** Spec 059: when set, the next `renameSession` calls throw this message (cleared by setting it to undefined). */
+  failRename?: string;
 
   private listeners = new Set<(event: AgentEvent) => void>();
   private sessions = new Map<string, FakeSession>();
@@ -113,9 +125,13 @@ export class FakeAdapter implements AgentAdapter {
       mcpToggle: c.mcpToggle && !omit.has('setMcpEnabled'),
       handoff: !!c.handoff && !omit.has('handoffSummary'),
       oneShot: !!c.oneShot && !omit.has('generateText'),
+      mcpSignIn: !!c.mcpSignIn && !omit.has('startMcpSignIn'),
       deleteSession: !!c.deleteSession && !omit.has('deleteSession'),
       permModeSwitch: omit.has('setPermMode') ? ('none' as const) : c.permModeSwitch,
     };
+    if (!caps.mcpSignIn) delete (caps as { mcpSignIn?: unknown }).mcpSignIn;
+    if (c.mcpSignInSteps === undefined) delete (caps as { mcpSignInSteps?: unknown }).mcpSignInSteps;
+    if (!c.renameSession || omit.has('renameSession')) delete (caps as { renameSession?: unknown }).renameSession;
     this.capabilities = caps;
     const has = (m: OptionalMember): boolean => !omit.has(m);
     if (caps.interrupt && has('interrupt')) this.interrupt = (sid) => this.doInterrupt(sid);
@@ -133,7 +149,28 @@ export class FakeAdapter implements AgentAdapter {
       };
     }
     if (caps.mcpToggle) this.setMcpEnabled = async (sid) => void this.mustGet(sid);
+    if (caps.mcpSignIn) {
+      if (has('startMcpSignIn')) {
+        this.startMcpSignIn = async (sid, name) => {
+          this.mustGet(sid);
+          this.signInCalls.push({ sessionId: sid, name });
+          return this.signInResult;
+        };
+      }
+      if (has('cancelMcpSignIn')) {
+        this.cancelMcpSignIn = async (sid, name) => {
+          this.mustGet(sid);
+          this.signInCalls.push({ sessionId: sid, name, cancel: true });
+        };
+      }
+    }
     if (caps.oneShot) this.generateText = async () => ({ text: '{"name":"Fake","tokens":{"--bg":"#ffffff","--surface":"#ffffff","--ink":"#111111","--muted":"#555555"}}' });
+    if (caps.renameSession) {
+      this.renameSession = async (sid, name) => {
+        this.renameCalls.push({ sessionId: sid, name });
+        if (this.failRename !== undefined) throw new Error(this.failRename);
+      };
+    }
     if (caps.handoff) this.handoffSummary = async (sid) => (this.mustGet(sid), { summary: '## Goal\nFake hand-off summary.' });
     if (has('setModel')) this.setModel = async (sid, request) => (this.mustGet(sid), { status: 'applied', model: request.model });
     if (has('cancelQueuedModel')) this.cancelQueuedModel = async (sid) => void this.mustGet(sid);

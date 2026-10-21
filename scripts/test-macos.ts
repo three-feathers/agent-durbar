@@ -111,7 +111,9 @@ assert.ok(!shouldFlash(0, 1, false, 'darwin'), 'no taskbar flash on a Mac (flash
 
 // ---- wiring (static) ----
 const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8');
-for (const f of ['Menu.setApplicationMenu(menu ? Menu.buildFromTemplate(menu) : null)', "toRenderer('menu:settings', null)", 'hideOnClose(process.platform, quitting)', 'quitting = true;', "app.dock?.bounce('informational')", '...windowChrome(process.platform)', "toRenderer('window:fullScreen', true)", 'remoteReleased = true;'])
+const appIpc = fs.readFileSync(path.join(ROOT, 'src', 'main', 'ipc', 'app.ts'), 'utf8'); // spec 045 FR-060: the badge handler moved out of main.ts
+assert.ok(appIpc.includes("app.dock?.bounce('informational')"), 'ipc/app.ts wires: app.dock?.bounce');
+for (const f of ['Menu.setApplicationMenu(menu ? Menu.buildFromTemplate(menu) : null)', "toRenderer('menu:settings', null)", 'hideOnClose(process.platform, quitting)', 'quitting = true;', '...windowChrome(process.platform)', "toRenderer('window:fullScreen', true)", 'remoteReleased = true;'])
   assert.ok(main.includes(f), `main.ts wires: ${f}`);
 assert.ok(/window-all-closed[\s\S]*process\.platform !== 'darwin'\) app\.quit\(\)/.test(main), 'Windows/Linux still quit when the window closes');
 const preload = fs.readFileSync(path.join(ROOT, 'src', 'preload', 'preload.ts'), 'utf8');
