@@ -625,10 +625,19 @@ async function main(): Promise<void> {
     const last = [...ev].reverse().find((e) => e.type === 'mcp') as { servers: { name: string; status: string }[] };
     assert.strictEqual(last.servers.find((x) => x.name === 'notes')?.status, 'connected', 'the new state from mcp_status');
     await assert.rejects(ad.restartMcpServer('no-such', 'notes'), /not running/);
+    // spec 069 FR-031: a server's tools come from the same mcp_status reply (documented McpServerStatus.tools)
+    servers = servers.map((x) => (x.name === 'web' ? { ...x, tools: [{ name: 'fetch', description: 'Fetch a URL' }, { name: 'search' }] } : x)) as typeof servers;
+    reqs.length = 0;
+    assert.strictEqual(ad.capabilities.mcpTools, true);
+    assert.deepStrictEqual(await ad.listMcpTools(sid, 'web'), [{ name: 'fetch', description: 'Fetch a URL' }, { name: 'search' }]);
+    assert.deepStrictEqual(reqs, [{ subtype: 'mcp_status' }], 'only mcp_status is asked');
+    assert.deepStrictEqual(await ad.listMcpTools(sid, 'notes'), [], 'a server without tools in the reply: none');
+    await assert.rejects(ad.listMcpTools(sid, 'gone'), /not running in this session/);
     await ad.stop(sid);
     // the SDK transport (dev opt-in) sends no mcp_reconnect: no Restart there (C2)
     const sdk = new ClaudeAdapter({ sdkTransport: true, claudePath: async () => '/usr/bin/claude', sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) } as never);
     assert.deepStrictEqual([sdk.capabilities.mcpRestart, typeof sdk.restartMcpServer], [undefined, 'undefined'], 'SDK transport: no restartMcpServer');
+    assert.deepStrictEqual([sdk.capabilities.mcpTools, typeof sdk.listMcpTools], [undefined, 'undefined'], 'SDK transport: no listMcpTools (spec 069)');
   }
 
   // ---- custom agents (spec 043 FR-008): chosen before the first message, passed on the first launch; a started session refuses ----

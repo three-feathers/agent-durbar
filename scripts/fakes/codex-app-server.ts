@@ -301,8 +301,15 @@ export class FakeCodexServer {
         this.enqueue(child, { method: 'thread/deleted', params: { threadId: tid } });
         return;
       }
-      case 'mcpServerStatus/list':
-        return this.reply(child, id, { data: [{ name: 'echo', authStatus: 'unsupported', runtimeStatus: 'connected', tools: {}, resources: [], resourceTemplates: [] }], nextCursor: null });
+      case 'mcpServerStatus/list': {
+        // spec 069 FR-031: one server's tools when `serverName` is given (a map by tool name, as the generated schema says)
+        const all = [
+          { name: 'echo', authStatus: 'unsupported', runtimeStatus: 'connected', tools: { echo: { name: 'echo', description: 'Echo the text back\nSecond line', inputSchema: {} }, ping: { name: 'ping', inputSchema: {} } }, resources: [], resourceTemplates: [] },
+          { name: 'broken', authStatus: 'unsupported', runtimeStatus: 'failed', tools: {}, toolsError: 'tools/list failed: spawn broken-mcp ENOENT', resources: [], resourceTemplates: [] },
+        ];
+        const want = isObj(params) && typeof params.serverName === 'string' ? params.serverName : undefined;
+        return this.reply(child, id, { data: want ? all.filter((x) => x.name === want) : all.slice(0, 1), nextCursor: null });
+      }
       case 'model/list':
         return this.reply(child, id, { data: [
           { id: 'gpt-6-luna', model: 'gpt-6-luna', displayName: 'GPT-6-Luna', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }], defaultReasoningEffort: 'medium', isDefault: false, hidden: false },

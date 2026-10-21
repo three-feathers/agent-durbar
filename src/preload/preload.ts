@@ -123,6 +123,7 @@ const api: DurbarApi = {
   agentMcp: (id) => ipcRenderer.invoke('agents:mcp', id),
   setAgentMcp: (id, name, enabled) => ipcRenderer.invoke('agents:setMcp', id, name, enabled),
   agentMcpRestart: (id, name) => ipcRenderer.invoke('agents:mcpRestart', id, name),
+  agentMcpTools: (id, name) => ipcRenderer.invoke('agents:mcpTools', id, name),
   agentMcpRestartSession: (id, confirmed) => ipcRenderer.invoke('agents:mcpRestartSession', id, confirmed),
   listAgents: () => ipcRenderer.invoke('agents:list'),
   pickAttachments: (want) => ipcRenderer.invoke('agents:pickAttachments', want),

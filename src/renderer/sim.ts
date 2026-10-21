@@ -1051,9 +1051,25 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           ...fakeCli.map((a) => ({ name: a.name, origin: 'cli' as const, status: stat(a.name), error: failed(a.name) ? 'spawn notes-mcp ENOENT' : undefined, defaultOn: a.enabled, off: !!s.mcpOff?.has(a.name), ...(restartable(a.name, a.enabled) ? { canRestart: true } : {}), sources: gSources(a.name, false) })),
           ...extrasOf(s.info.cwd).map((v) => ({ name: v.name, origin: 'folder' as const, status: stat(v.name), defaultOn: v.enabled && v.trusted, off: !!s.mcpOff?.has(v.name), ...(restartable(v.name, v.enabled && v.trusted) ? { canRestart: true } : {}), sources: gSources(v.name, true) })),
         ];
-        return { ok: true, servers, live, ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume };
+        return { ok: true, servers, live, ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume, canListTools: true };
       },
       /* spec 058 FR-040: a canned Restart: Starting for a moment, then Running */
+      /* spec 069 FR-031/FR-032: canned tools per server; a session that is not running, a failed server and an empty one show their states */
+      agentMcpTools: async (id, name) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'Unknown agent or server.' };
+        if (s.state === 'idle' && !s.ctx) return { ok: false, notRunning: true, error: 'Start the session to see its tools.' };
+        await new Promise((r) => setTimeout(r, 250));
+        const canned: Record<string, [string, string?][]> = {
+          github: [['search_issues', 'Search issues and pull requests in a repository'], ['get_pull_request', 'Get one pull request with its files and checks'], ['create_issue', 'Open a new issue'], ['list_commits', 'List the commits of a branch'], ['get_file_contents', 'Read a file at a ref']],
+          'github-mcp-server': [['get_me', 'Your GitHub account'], ['search_code', 'Search code on GitHub']],
+          playwright: [['browser_navigate', 'Open a URL in the browser'], ['browser_click', 'Click an element'], ['browser_snapshot', 'Accessibility snapshot of the page'], ['browser_take_screenshot']],
+          'docs-search': [],
+        };
+        if (name === 'my-notes' && s.info.id === 'sim-6') return { ok: false, error: 'my-notes is not connected: spawn notes-mcp ENOENT' };
+        const list = canned[name] ?? [['search', 'Search the notes'], ['read_note', 'Read one note by its title']];
+        return { ok: true, total: list.length, tools: list.map(([n, d]) => ({ name: n, ...(d ? { description: d } : {}) })) };
+      },
       agentMcpRestart: async (id, name) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || !caps(s.info.adapterId ?? 'copilot').mcpRestart) return { ok: false, error: 'This agent app cannot restart one MCP server. Use Restart session with these servers.' };

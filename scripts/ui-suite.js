@@ -48,6 +48,7 @@ const DRIVERS = [
   { name: 'check-question-visible' },
   { name: 'shots-069-mcp-global' }, // spec 069: add to the agent apps' own lists, review, remove, source chips
   { name: 'shots-069-harmonize' }, // spec 069 part 2: copy servers between the agent apps' lists
+  { name: 'shots-069-mcp-tools' }, // spec 069 part 3: tools on expand, Start/Stop names, Remove in the agent dialog
 ];
 
 /** The screenshot variables the drivers read; all point at one folder. */

@@ -800,17 +800,56 @@
         const eff=x.defaultOn&&!x.off;
         const stat=x.status?`<span class="mst ${esc(x.status)}"><i></i>${esc(x.status)}</span>`:'<span class="mst none">not started</span>';
         const rs=x.canRestart&&X.bridge.agentMcpRestart?(restarting.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Restarting '+x.name+' for '+a.name)}">Restarting…</button>`:`<button class="btn sm" type="button" data-restart="${esc(x.name)}" aria-label="${esc('Restart '+x.name+' for '+a.name)}" title="Restart only this server in this session">Restart</button>`):'';
-        return `<li class="srv sm" data-n="${esc(x.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(x.name)}</b>${srcChips(x)}${stat}${!x.defaultOn?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${x.error?`<span class="imp-note">${esc(cap(x.error,160))}</span>`:''}</div>
-          <div class="srv-act">${rs}${sw(eff,(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name,'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed?' disabled':''))}</div></li>`;}).join('');
+        /* spec 069 FR-030/FR-033: the name opens the tools list; Remove for entries of an agent app's list or this folder */
+        const open=expanded.has(x.name), canTools=!!(s.canListTools&&X.bridge.agentMcpTools);
+        const nameEl=canTools?`<button class="mcp-tg" type="button" data-tools="${esc(x.name)}" aria-expanded="${open}" aria-controls="mt-${esc(x.name)}" aria-label="${esc((open?'Hide':'Show')+' the tools of '+x.name)}"><span class="mcp-car" aria-hidden="true">${open?'▾':'▸'}</span><b class="srv-name">${esc(x.name)}</b></button>`:`<b class="srv-name">${esc(x.name)}</b>`;
+        const srcs=Array.isArray(x.sources)?x.sources:[];
+        const removable=srcs.some(t=>t==='copilot'||t==='claude'||t==='codex'||t==='folder');
+        const rmb=removable&&(X.bridge.mcpGlobalRemovePreview||X.bridge.mcpRemove)?`<button class="btn sm" type="button" data-mrm="${esc(x.name)}" aria-label="${esc('Remove '+x.name+'…')}" title="Remove it from the list it comes from (you review the change first)">Remove…</button>`:'';
+        const why=removable?'':srcs.includes('builtin')?'Built into the agent app':'Reported by the running session; managed by the agent app';
+        return `<li class="srv sm${open?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${!x.defaultOn?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${x.error?`<span class="imp-note">${esc(cap(x.error,160))}</span>`:''}</div>
+          <div class="srv-act">${rs}${rmb}${sw(eff,(eff?'Stop ':'Start ')+x.name+' for '+a.name+' in this session','data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed?' disabled':''))}</div>${open?toolsHTML(x.name):''}</li>`;}).join('');
       /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
       const rsess=s.canRestartSession&&X.bridge.agentMcpRestartSession?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpRestartSess"${sessBusy?' disabled':''}>${sessBusy?'Restarting session…':'Restart session with these servers'}</button><span class="dsub small">${noServerRestart?esc(o.appName||'This agent app')+' cannot restart one server; use this instead. ':''}Ends this session and resumes it with the servers in Settings and the folder's extras. The conversation is kept.${s.start==='next-message'?' The servers start with your next message.':''}</span></div>`:'';
       return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}<p class="dsub small">Applies to this agent until the app is closed.</p>`;
     };
     let dlg=null;
+    /* spec 069 FR-032/FR-033: expanded rows and their tools, loaded once per open dialog (again after a Restart) */
+    const expanded=new Set(), toolsOf=new Map();
+    function toolsHTML(n){
+      const r=toolsOf.get(n), id='mt-'+esc(n);
+      if(!r)return `<div class="mcp-tools" id="${id}" role="status">Loading tools…</div>`;
+      if(!r.ok)return `<div class="mcp-tools" id="${id}" role="status">${esc(r.notRunning?'Start the session to see its tools.':'Could not list the tools: '+(r.error||'unknown error'))}</div>`;
+      if(!r.tools.length)return `<div class="mcp-tools" id="${id}" role="status">This server lists no tools.</div>`;
+      const more=r.total>r.tools.length?` (first ${r.tools.length} shown)`:'';
+      return `<div class="mcp-tools" id="${id}"><p class="mcp-tcount">${r.total} tool${r.total===1?'':'s'}${more}</p><ul class="mcp-tlist">${r.tools.map(t=>`<li><code>${esc(t.name)}</code>${t.description?`<span>${esc(t.description)}</span>`:''}</li>`).join('')}</ul></div>`;
+    }
+    const toggleTools=async n=>{
+      if(expanded.has(n)){expanded.delete(n);await repaint();return;}
+      expanded.add(n);await repaint();
+      if(toolsOf.has(n))return;
+      let r;try{r=await X.bridge.agentMcpTools(a.id,n);}catch(e){r={ok:false,error:String(e&&e.message||e)};}
+      toolsOf.set(n,r||{ok:false,error:'no answer'});
+      if(expanded.has(n))await repaint();
+    };
+    const removeOne=async n=>{
+      const x=(st.servers||[]).find(y=>y.name===n);if(!x)return;
+      const srcs=x.sources||[];
+      if(srcs.some(t=>t==='copilot'||t==='claude'||t==='codex')&&X.bridge.mcpGlobalState){
+        try{glob=await X.bridge.mcpGlobalState();}catch(e){glob=null;}
+        await removeGlobal(n);
+      }else if(srcs.includes('folder')&&X.folderOf&&X.bridge.mcpRemove){
+        const f=X.folderOf(a);if(!f)return;
+        const r=await dialog({title:'Remove "'+n+'"?',html:'<p class="dsub">The server and its stored secret values are deleted from this folder in Agent Durbar. Running sessions keep it until they end.</p>',buttons:[{label:'Cancel',value:null},{label:'Remove',value:'ok',cls:'primary danger'}]});
+        if(r){await X.bridge.mcpRemove(f.key,n);X.toast('Removed '+esc(n)+'.',2600);}
+      }
+      /* the review replaced this dialog: open it again with the new lists */
+      if(!dlg||!dlg.isConnected)void agentMcp(a,o);else await repaint();
+    };
     /* FR-004 / FR-033: repaint in place and keep the focus on the same control (by server name), so a keyboard user is not thrown out */
     const repaint=async()=>{st=await load();if(!dlg||!dlg.isConnected)return;
       const f=document.activeElement,inside=f&&dlg.contains(f);
-      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
+      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.tools!==undefined?['tools',f.dataset.tools]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
       dlg.querySelector('.dbody').innerHTML=body(st);
       if(!key)return;
       const btns=[...dlg.querySelectorAll('.dbody button:not([disabled])')];
@@ -824,6 +863,8 @@
       await repaint(); /* after the call went out: the row can already show the runtime's "pending" */
       const r=await call;
       restarting.delete(name);
+      toolsOf.delete(name); /* a restarted server may list other tools */
+      if(r&&r.ok&&expanded.has(name))void (async()=>{let t;try{t=await X.bridge.agentMcpTools(a.id,name);}catch(e){t={ok:false,error:String(e&&e.message||e)};}toolsOf.set(name,t);if(dlg&&dlg.isConnected)void repaint();})();
       X.toast(r&&r.ok?'Restarted '+esc(name)+'.':'Could not restart '+esc(name)+': '+esc((r&&r.error)||'unknown error'),r&&r.ok?3200:6000);
       await repaint();
       if(r&&r.ok)setTimeout(()=>{if(dlg&&dlg.isConnected)void repaint();},1500); /* the runtime reports the new state shortly after */
@@ -847,6 +888,8 @@
     };
     const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
       onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;d.addEventListener('click',async e=>{
+        const tg=e.target.closest('button[data-tools]');if(tg){void toggleTools(tg.dataset.tools);return;}
+        const mr=e.target.closest('button[data-mrm]');if(mr){const n=mr.dataset.mrm;d._close();void removeOne(n);return;}
         const rb=e.target.closest('button[data-restart]');if(rb&&!rb.disabled){void restartOne(rb.dataset.restart);return;}
         if(e.target.closest('#mcpRestartSess')){void restartSession();return;}
         const b=e.target.closest('button.swt');if(!b||b.disabled)return;const on=b.getAttribute('aria-checked')!=='true';

@@ -515,6 +515,19 @@ export interface AgentMcpReply {
   toggleApplies?: 'live' | 'next-message';
   /** Spec 058 FR-022: *Restart session with these servers* is offered (the app can resume and the session runs). */
   canRestartSession?: boolean;
+  /** Spec 069 FR-031: this agent app can list a server's tools (`agents:mcpTools`). */
+  canListTools?: boolean;
+}
+
+/** `agents:mcpTools` (spec 069 FR-032): one server's tools, masked and cut in main. */
+export interface McpToolsResult {
+  ok: boolean;
+  tools?: { name: string; description?: string }[];
+  /** How many the server listed (more than `tools` when it listed over 500). */
+  total?: number;
+  /** The session is not running: nothing was asked. */
+  notRunning?: boolean;
+  error?: string;
 }
 
 /** `agents:mcpRestart` (spec 058 FR-021): the error is short and masked. */
@@ -718,6 +731,8 @@ export interface DurbarApi {
   agentMcp?(id: string): Promise<AgentMcpReply>;
   /** Spec 058 FR-021: restart one MCP server of this agent's running session. */
   agentMcpRestart?(id: string, name: string): Promise<McpRestartResult>;
+  /** Spec 069 FR-032: the tools of one MCP server of this agent's running session. */
+  agentMcpTools?(id: string, name: string): Promise<McpToolsResult>;
   /** Spec 058 FR-022: end and resume this agent's session with the current MCP servers; `confirmed` after the window asked. */
   agentMcpRestartSession?(id: string, confirmed: boolean): Promise<McpRestartSessionResult>;
   /** Per-agent override: `enabled=false` turns the server off for this agent (now when the session runs, else at its next start). */

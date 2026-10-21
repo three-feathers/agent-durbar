@@ -136,6 +136,7 @@ export async function runContract(name: string, make: () => ContractTarget, hook
     assert.strictEqual(has('setMcpEnabled'), cap.mcpToggle, M('C2', 'setMcpEnabled() <=> capabilities.mcpToggle'));
     assert.strictEqual(has('restartMcpServer'), !!cap.mcpRestart, M('C2', 'restartMcpServer() <=> capabilities.mcpRestart (spec 058 FR-012)'));
     if (cap.mcpRestart) assert.ok(cap.mcpToggle, M('C2', 'a per-server restart only exists where servers can be switched (spec 058 FR-012)'));
+    assert.strictEqual(has('listMcpTools'), !!cap.mcpTools, M('C2', 'listMcpTools() <=> capabilities.mcpTools (spec 069 FR-031)'));
     assert.strictEqual(has('handoffSummary'), !!cap.handoff, M('C2', 'handoffSummary() <=> capabilities.handoff'));
     assert.strictEqual(has('generateText'), !!cap.oneShot, M('C2', 'generateText() <=> capabilities.oneShot'));
     assert.strictEqual(has('setRemote'), !!cap.remote, M('C2', 'setRemote() <=> capabilities.remote (spec 054 FR-001)'));
@@ -343,7 +344,7 @@ export async function runContract(name: string, make: () => ContractTarget, hook
 
 const ALL_OPTIONAL: OptionalMember[] = [
   'interrupt', 'resolvePermission', 'revokeGrant', 'setCap', 'resolveLimit', 'setMcpEnabled', 'setModel', 'cancelQueuedModel', 'compact',
-  'listModelOptions', 'listPreviousSessions', 'history', 'setPermMode', 'startMcpSignIn', 'cancelMcpSignIn', 'restartMcpServer',
+  'listModelOptions', 'listPreviousSessions', 'history', 'setPermMode', 'startMcpSignIn', 'cancelMcpSignIn', 'restartMcpServer', 'listMcpTools',
 ];
 const SCRIPT = [
   { thinking: 'Considering' },

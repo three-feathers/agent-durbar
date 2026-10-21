@@ -21,10 +21,10 @@
 
 ## Part 3: controls and tools (PR 3, after #473)
 
-- [ ] T030 `listMcpTools` + `mcpTools` capability: Copilot `rpc.mcp.listTools`, Claude `mcp_status` tools, Codex `mcpServerStatus/list` tools; fake adapter; contract lines [FR-031]
-- [ ] T031 `agents:mcpTools` with limits, timeout and masking [FR-032]
-- [ ] T032 Agent dialog: expand row with tools; Start/Stop, Remove, *managed by* words; Sign in placeholder wired to spec 058 when `canSignIn` exists [FR-030, FR-033]
-- [ ] T033 Tests (fake SDK, fake CLI, fake app-server), simulator tools, screenshots, docs
+- [x] T030 `listMcpTools` + `mcpTools` capability: Copilot `rpc.mcp.listTools`, Claude `mcp_status` tools, Codex `mcpServerStatus/list` tools; fake adapter; contract lines [FR-031]
+- [x] T031 `agents:mcpTools` with limits, timeout and masking [FR-032]
+- [x] T032 Agent dialog: expand row with tools; Start/Stop, Remove, *managed by* words; Sign in placeholder wired to spec 058 when `canSignIn` exists [FR-030, FR-033]
+- [x] T033 Tests (fake SDK, fake CLI, fake app-server), simulator tools, screenshots, docs
 
 ## Real check (needs the owner's go-ahead)
 

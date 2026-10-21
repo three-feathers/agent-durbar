@@ -5,7 +5,9 @@
 **Status**: Part 1 **built** 2026-10-21 (add to and remove from the agent apps' own lists with a per-file review and backups, source
 chips, Claude Code's user list in Durbar's Claude sessions): unit tests (`test:mcpglobal`) and a simulator driver (`shots-069-mcp-global`),
 no real agent app has read a written file yet (T060). Part 2 (harmonize) **built** 2026-10-21 the same way (`test:mcpglobal`,
-`shots-069-harmonize`). Part 3 (tools list and per-row controls) is specified, not built (see *Delivery*). Owner questions Q1-Q6 open; their defaults are what is built.
+`shots-069-harmonize`). Part 3 (tools list and per-row controls) **built** 2026-10-21 on top of
+spec 058's Restart (#473): unit tests on the fake SDK, fake CLI and fake app-server (`test:mcpservertools`, `test-claude-adapter`,
+`test-codex-adapter`) and `shots-069-mcp-tools`; not run on a real account. Sign in stays with spec 058 (#364). Owner questions Q1-Q6 open; their defaults are what is built.
 **Input**: Owner (Vikram, Telegram 2026-10-21 21:03 UTC): "For the MCP server addition UI, give an option to also add to the list of
 global MCP servers, and those controls to start/stop/restart/auth... we should have those options for all servers. Also show the list of
 tools per MCP server when you expand it." Owner decision (Vikram, Telegram 2026-10-21 21:06 UTC): "global" is written to the agent apps'
@@ -192,20 +194,21 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
 
 ### Session controls and tools (part 3; depends on spec 058 #473)
 
-- **FR-030** Agent dialog rows (spec 058 FR-030 layout, coordinated with its owner): **Stop** / **Start** buttons for this session using
-  `agents:setMcp` (same rules: a folder extra that is off in the folder cannot be started here and says why); **Restart** as spec 058
-  FR-031; **Sign in** only when spec 058 FR-064 reports `canSignIn` (not built here); **Remove…** for entries from a global file or a
+- **FR-030** `[IMPLEMENTED]` Agent dialog rows (spec 058 FR-030 layout, coordinated with its owner): **Stop** / **Start** for this session using
+  `agents:setMcp` (built as the row's existing switch, now named "Stop/Start <server> for <agent> in this session", so 058's layout and
+  the drivers that use the switch stay; buttons in its place if the owner of 058's layout prefers, question on #349) (same rules: a folder extra that is off in the folder cannot be started here and says why); **Restart** as spec 058
+  FR-031; **Sign in** only when spec 058 FR-064 reports `canSignIn` (not built here; nothing is shown until then); **Remove…** for entries from a global file or a
   folder extra; other rows say *managed by <app>* or *built-in*.
-- **FR-031** `AgentAdapter.listMcpTools?(sessionId, server): Promise<{name: string; description?: string}[]>`, capability
+- **FR-031** `[IMPLEMENTED]` `AgentAdapter.listMcpTools?(sessionId, server): Promise<{name: string; description?: string}[]>`, capability
   `mcpTools?: boolean`:
   - Copilot: `session.rpc.mcp.listTools({serverName})` (`read:` SDK `rpc.d.ts`, experimental; throws when not connected).
   - Claude Code: the `tools` of that server in the `mcp_status` reply (`read:` docs `McpServerStatus.tools`).
   - Codex: `mcpServerStatus/list {threadId, serverName, detail: "toolsAndAuthOnly"}`, the `tools` map (`read:` generated app-server schema
     `ListMcpServerStatusResponse`, codex-cli 0.163.0).
-- **FR-032** `agents:mcpTools(id, name)`: known agent, valid name, running session; at most 500 tools, names cut at 128 characters,
+- **FR-032** `[IMPLEMENTED]` `agents:mcpTools(id, name)`: known agent, valid name, running session; at most 500 tools, names cut at 128 characters,
   descriptions reduced to their first line, cut at 200 characters and masked (`maskMcpError` with the session's secret values); 10 s
   timeout; errors masked. Loaded only when a row is expanded, cached in the window until the dialog closes or the server restarts.
-- **FR-033** The expanded row lists the tools (text at least 10.5px, scrolls inside the dialog at 1280x800), "N tools", and the empty,
+- **FR-033** `[IMPLEMENTED]` The expanded row lists the tools (text at least 10.5px, scrolls inside the dialog at 1280x800), "N tools", and the empty,
   not-running and failed states (Story 5).
 
 ### Simulator and tests (constitution IV)

@@ -13,6 +13,7 @@ import { applyFolderImport, MAX_IMPORT_FOLDERS, previewFolderImport } from './mc
 import { mcpSecretValues } from './mcpmask';
 import { claudeOffKey, offOf } from './mcpglobal';
 import { agentMcpReply, mcpRestartOp } from './mcpsession';
+import { mcpToolsOp } from './mcptoolsop';
 import { McpStore } from './mcpstore';
 import type { SecretCodec } from './mcpstore';
 
@@ -179,6 +180,8 @@ export function registerMcpIpc(deps: {
   const restarting = new Set<string>();
   ipcHandle('agents:mcpRestart', (_e, id: unknown, name: unknown) =>
     mcpRestartOp({ agents, router, live: (k) => live.get(k) ?? [], off: (k) => new Set([...(off.get(k) ?? []), ...store().ambientDisabled(), ...offOf('claude', store().ambientDisabled())]), secrets: secretValuesFor, log: deps.log }, restarting, id, name));
+  /** Spec 069 FR-032: the tools of one server of this agent's running session, masked and cut. */
+  ipcHandle('agents:mcpTools', (_e, id: unknown, name: unknown) => mcpToolsOp({ agents, router, secrets: secretValuesFor }, id, name));
   ipcHandle('agents:setMcp', (_e, id: unknown, name: unknown, enabled: unknown) => setMcpOp({ agents, router, wsKey: keyOf }, off, id, name, enabled));
 
   return {

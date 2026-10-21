@@ -28,6 +28,8 @@ import type { EventBody } from './map';
 import { PermissionBroker, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec, PlanAnswer, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
+import type { McpToolInfo } from './types';
+import { normMcpTools } from './mcptools';
 import { PLAN_REJECTED, cleanPlanText, reviseText } from './plan';
 
 /** FR-156: what Settings says of a Claude Code that `auth status` calls signed in: only the first message can confirm it. */
@@ -70,6 +72,7 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggle: true, // FR-133: mcp_toggle + mcp_status
   mcpStart: 'next-message', // spec 058 FR-010: the CLI (and its servers) is launched with the next message
   mcpToggleApplies: 'live', // FR-133 (a server that was off at launch: next message)
+  mcpTools: true, // spec 069 FR-031: the tools of a server in the mcp_status reply (read: docs McpServerStatus.tools; not run on a real account)
   mcpRestart: true, // spec 058 FR-012: control request mcp_reconnect (read: CLI 2.1.304 strings; not checked on a real account)
   handoff: true, // spec 030 FR-034: a forked one-shot, the session is not changed
   oneShot: true, // spec 040 FR-015: no tools, no MCP, no settings, not saved
@@ -82,9 +85,10 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
 /** Spec 059 FR-007: the SDK transport (dev opt-in, `DURBAR_CLAUDE_TRANSPORT=sdk`) does not apply `--name`, so it does not offer a rename. */
 export const CLAUDE_SDK_CAPABILITIES: AdapterCapabilities = Object.freeze((() => {
   // the SDK transport sends only a few control requests (claudeSdk.ts): no rename, no mcp_reconnect
-  const { renameSession: _r, mcpRestart: _m, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown; mcpRestart?: unknown };
+  const { renameSession: _r, mcpRestart: _m, mcpTools: _t, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown; mcpRestart?: unknown; mcpTools?: unknown };
   void _r;
   void _m;
+  void _t;
   return rest;
 })()) as AdapterCapabilities;
 /** Spec 066: one sentence added to a plan-first message, so the plan reaches the card (Claude's plan file cannot be written in Read-only). */
@@ -510,6 +514,7 @@ export class ClaudeAdapter implements AgentAdapter {
     this.capabilities = deps.sdkTransport ? CLAUDE_SDK_CAPABILITIES : CLAUDE_CAPABILITIES;
     if (deps.sdkTransport) (this as { renameSession?: unknown }).renameSession = undefined;
     if (deps.sdkTransport) (this as { restartMcpServer?: unknown }).restartMcpServer = undefined;
+    if (deps.sdkTransport) (this as { listMcpTools?: unknown }).listMcpTools = undefined;
   }
 
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe {
@@ -782,6 +787,18 @@ export class ClaudeAdapter implements AgentAdapter {
     } catch {
       /* the reconnect worked; the list comes with the next init */
     }
+  }
+
+  /** Spec 069 FR-031: the tools of one server, from the CLI's `mcp_status` reply (no extra start: only a running CLI is asked). */
+  async listMcpTools(sessionId: string, name: string): Promise<McpToolInfo[]> {
+    const s = this.sessions.get(sessionId);
+    if (!s) throw new Error('This session is not running. Send a message to start it.');
+    if (!s.transport?.alive) throw new Error('Claude Code starts its MCP servers with your next message; send one to see the tools.');
+    const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
+    const list: unknown[] = Array.isArray(r?.mcpServers) ? r.mcpServers : [];
+    const srv = list.find((x) => !!x && typeof x === 'object' && (x as { name?: unknown }).name === name) as { tools?: unknown; status?: unknown } | undefined;
+    if (!srv) throw new Error(`${name} is not running in this session.`);
+    return normMcpTools(srv.tools);
   }
 
   /** FR-128: the user's answers (question text -> label(s)), or null when they skipped. */

@@ -95,7 +95,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(CODEX_CAPABILITIES)), {
       interrupt: true, resume: true, images: true, models: true, planMode: true, effort: true, modelSwitch: { verified: true, contextTier: false },
       permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'next-message',
-      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpRestart: false, handoff: true, oneShot: true, deleteSession: true, renameSession: 'any',
+      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpTools: true, mcpRestart: false, handoff: true, oneShot: true, deleteSession: true, renameSession: 'any',
     });
     assert.ok(Object.isFrozen(CODEX_CAPABILITIES) && Object.isFrozen(CODEX_CAPABILITIES.permissionModes) && Object.isFrozen(CODEX_CAPABILITIES.usage), 'capabilities are deeply frozen');
     const { ad } = make();
@@ -619,6 +619,13 @@ async function main(): Promise<void> {
       assert.deepStrictEqual((events.filter((e) => e.type === 'mcp').pop() as { servers: unknown[] }).servers, [{ name: 'echo', status: 'connected' }]);
       server.notifyAll('mcpServer/startupStatus/updated', { name: 'web', status: 'failed', error: 'refused', threadId: sid });
       await until('web failed', () => events.some((e) => e.type === 'mcp' && (e as { servers: Array<{ name: string; status: string }> }).servers.some((s) => s.name === 'web' && s.status === 'failed')));
+      // spec 069 FR-031: one server's tools from mcpServerStatus/list on the thread's connection (the tools map of the generated schema)
+      assert.deepStrictEqual(await ad.listMcpTools!(sid, 'echo'), [{ name: 'echo', description: 'Echo the text back\nSecond line' }, { name: 'ping' }]);
+      const lr = server.requests('mcpServerStatus/list').pop()!.params as Record<string, unknown>;
+      assert.deepStrictEqual([lr.threadId, lr.serverName, lr.detail], [sid, 'echo', 'toolsAndAuthOnly'], 'asked for that server on this thread');
+      await assert.rejects(ad.listMcpTools!(sid, 'broken'), /spawn broken-mcp ENOENT/, 'toolsError is the failure');
+      await assert.rejects(ad.listMcpTools!(sid, 'nope'), /not running in this session/);
+      await assert.rejects(ad.listMcpTools!('no-such', 'echo'), /not running/);
       await ad.setMcpEnabled!(sid, 'echo', false);
       const last = events.filter((e) => e.type === 'mcp').pop() as { servers: Array<{ name: string; status: string }> };
       assert.strictEqual(last.servers.find((s) => s.name === 'echo')?.status, 'disabled', 'shown as off at once');
