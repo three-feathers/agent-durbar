@@ -54,6 +54,7 @@ export function eventProblems(e: unknown): string[] {
       if (!str(e.tool)) out.push('toolCall.tool missing');
       if (!oneOf(e.phase, ['start', 'update', 'complete', 'failed'])) out.push(`toolCall.phase ${String(e.phase)}`);
       if (!optStr(e.output)) out.push('toolCall.output is not a string');
+      if (e.mcpAuth !== undefined && (e.mcpAuth !== true || e.phase !== 'failed' || !str(e.mcpServer) || !e.mcpServer)) out.push(`toolCall.mcpAuth on phase ${String(e.phase)} without a failed MCP call`);
       break;
     case 'subagent':
       if (!str(e.subagentId) || !e.subagentId) out.push('subagent.subagentId missing');
