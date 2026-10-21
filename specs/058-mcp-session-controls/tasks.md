@@ -252,6 +252,13 @@ Record results in research.md section 7 and change `read:` to `real:`. Do not op
 - [ ] T105 [needs-owner-approval] Copilot: a server shows needs-auth (or the issue's tool error with a cached catalog); Sign in returns an
   `authorizationUrl` on the pinned runtime; after the browser step the row goes Running; with `persistent` storage (Q12 B), a later session and the CLI's
   `/mcp auth` share the sign-in [FR-074]
+- [x] T116 Real check on CI runners (owner request 2026-10-21, `workflow_dispatch` only, 0 prompts): `scripts/demo-oauth-mcp.ts` (a demo
+  MCP server that requires OAuth; unit test `scripts/test-demo-oauth-mcp.ts` in `npm test`), `scripts/mcp-oauth-real.ts` (session A
+  signs in through `oauth.login` and a headless browser step; A2 in the same runtime and B in a new runtime connect with no new
+  `/authorize`), workflow `.github/workflows/mcp-oauth-real.yml` on `windows-latest` and `ubuntu-latest`; results as `real:` lines in
+  research.md 7.7 [FR-070, FR-074]. Done 2026-10-21: run 39680461023, PASS on `windows-latest` and `ubuntu-latest`. Review on #478
+  fixed 2026-10-22 (status sequence per session, one line per file with mode bits, resource-bound demo tokens, two more tests); the
+  new logging runs on the next dispatch
 - [ ] T106 [needs-owner-approval] Claude Code: does the stream-json CLI answer `mcp_authenticate` (docs say no, strings say yes); the row
   goes Running after the browser step; does `claude mcp login <name>` help Durbar's `--mcp-config` copy [FR-074]
 - [ ] T107 [needs-owner-approval] Codex: does the installed Codex have `mcpServer/oauth/login`; does it accept Durbar's thread override
