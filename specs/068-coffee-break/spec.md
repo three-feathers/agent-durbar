@@ -2,8 +2,18 @@
 
 **Feature Branch**: `068-coffee-break` (amends 011/012 limit display, 024 places, 034 agent health, 052 wording and notifications)
 **Created**: 2026-10-21
-**Status**: Draft for the owner's review (spec only; no plan, tasks or code). Four open questions, each with a recommended default.
+**Status**: Clarified 2026-10-21 (the owner accepted Q1-Q4 with the recommended defaults); plan and tasks written; being built on this branch.
 **Input**: Owner (Vikram, Telegram 2026-10-21): "Let's add a capability for coffee break when tokens are exhausted".
+
+## Clarifications
+
+### Session 2026-10-21 (Vikram, Telegram, 14:05 UTC: "Ok" to all four recommended defaults; the other defaults stand)
+
+- Q1: When a break ends → **Resume by itself** for plan and rate windows (no extra money); **Ask me** for a quota whose end may lead to paid usage (Copilot monthly premium requests, Claude `credits_required`). The setting can turn every break to **Ask me**. (FR-006, FR-007)
+- Q2: Durbar's own spending limit → **also a coffee break** "until you raise the limit", replacing the faint figure and the siren; it stays in Needs you and never resumes by itself. (FR-005, FR-010)
+- Q3: Coffee corner → **a sixth lobby tile, always shown** while the lobby is shown, if `check:office` still fits 15 agents at 1280x800; otherwise the figure stays at its desk with a cup. (FR-003, FR-013)
+- Q4: No reset time → **coffee break with Try now**, no automatic resume, **one reminder** notification after 1 hour; no automatic retry. (FR-007, FR-011)
+- Plan decisions (2026-10-21, recorded here because they change the draft's wording): the break timer runs in the window (renderer), not in the main process, because the sends, the simulator and the chat all live there; it is memory only either way, so a restart forgets every break and nothing is sent after it. The folder override of the setting is left out (one setting per user; a later spec can add it).
 
 ## Summary
 
@@ -92,25 +102,25 @@ As the user who set a spending limit, I see the agent on a coffee break "until y
 
 ### Functional Requirements
 
-- **FR-001** **One normalized event for provider limits.** Adapters emit a new normalized event (name decided in the plan, for example `usageLimit`) when the agent app reports that a usage limit stopped or blocked the turn: `{ scope: 'plan' | 'quota' | 'rate', resetsAt?: number (epoch ms), estimated?: boolean, source: string }`, where `source` is a short, safe label (for example "5-hour window", "weekly limit", "monthly premium requests"), never a raw provider message, account name or id. Agent specifics stay in the adapters (constitution II); the renderer and `src/shared` see only this event.
+- **FR-001** **One normalized event for provider limits.** Adapters emit a new normalized event (name decided in the plan, for example `usageLimit`) when the agent app reports that a usage limit stopped or blocked the turn: `{ scope: 'plan' | 'quota' | 'rate', resetsAt?: number (epoch ms), estimated?: boolean, paid?: boolean, source: string }` (`paid`: going on after the reset may lead to paid usage, so the default asks first), where `source` is a short, safe label (for example "5-hour window", "weekly limit", "monthly premium requests"), never a raw provider message, account name or id. Agent specifics stay in the adapters (constitution II); the renderer and `src/shared` see only this event.
 - **FR-002** **Which limits count** (mapping per adapter, unit-tested on fixtures):
   - Claude Code: a `rate_limit_event` whose status says the limit is reached (including `credits_required`), with `resetsAt`.
   - Codex: a failed turn with `UsageLimitExceeded`; `resetsAt` from the latest `account/rateLimits/updated` bucket that is at 100%, else none.
   - Copilot: `session.error` with `errorType: 'rate_limit'` (all `RateLimitErrorCode`s) when the runtime does not switch models by itself, and `errorType: 'quota'` with `quota_exceeded` or `session_quota_exceeded`; reset from `retryAfterSeconds`, else from `account.getQuota` (`resetDateEpochMs`, `resetDateEstimated`), asked at most once per break and only when free (it is a read call that spends nothing, spec 012 FR-156).
   - Durbar's own cap: the existing `limit exhausted` event; no new event (FR-010).
   - Not a break: `billing_not_configured`, authentication, policy, context-window limits, and any limit the agent app recovered from on its own.
-- **FR-003** **Coffee corner.** A built-in place `coffee` in the lobby (spec 024), with its own icon (a cup) and the scene word `place-coffee` (default "Coffee corner"; [NEEDS CLARIFICATION: Q3] whether it is always shown). An agent on a break stands there; its desk shows the empty chair and a cup. The visit lasts for the whole break (not the 600 ms / 2 s tool rules); a tool walk never moves an agent that is on a break.
+- **FR-003** **Coffee corner.** A built-in place `coffee` in the lobby (spec 024), with its own icon (a cup) and the scene word `place-coffee` (default "Coffee corner"), **always shown** while the lobby is shown (Q3); it is not a mapping choice in Settings > Places. An agent on a break stands there; its desk shows the empty chair and a cup. The visit lasts for the whole break (not the 600 ms / 2 s tool rules); a tool walk never moves an agent that is on a break.
 - **FR-004** **State and words.** A break is shown as its own attention state, **Coffee break**, listed with *Waiting* (it is something the user may act on), never as *Error*. Card and List sub-label: "Coffee break — resumes at HH:MM" / "— resumes Fri 09:00" / "— resumes 1 Nov" / "— the limit resets later" / "— until you raise the limit". The tooltip names the source ("Claude Code: 5-hour window") and whether the time is an estimate.
-- **FR-005** **Figure and room tone.** On a break the figure has a calm look (holding a cup, eyes open); no faint, ambulance, dizzy or impatient trouble while on a break; the room tone stays `calm` for that agent (amends spec 034 `troubleOf` and `roomAlertOf`). [NEEDS CLARIFICATION: Q2] whether Durbar's own spending limit also switches from the faint look to the coffee break.
-- **FR-006** **When a break ends** (Settings > Usage, per user, stored in `durbar-settings.json` and validated in main): **Resume by itself** or **Ask me**. [NEEDS CLARIFICATION: Q1] which is the default and whether it differs by kind of limit. The folder can override it like its cap (spec 011 FR-012).
+- **FR-005** **Figure and room tone.** On a break the figure has a calm look (holding a cup, eyes open); no faint, ambulance, dizzy or impatient trouble while on a break; the room tone stays `calm` for that agent (amends spec 034 `troubleOf` and `roomAlertOf`). Durbar's own spending limit also shows as a coffee break (Q2), so the faint look is no longer used.
+- **FR-006** **When a break ends** (Settings > Usage, per user, stored in `durbar-settings.json` and validated in main): **Resume by itself when it costs nothing extra** (default) or **Always ask me**. With the default, plan and rate windows resume by themselves and a quota that may lead to paid usage (`paid` in FR-001) asks (Q1). Stored in `durbar-settings.json` only when it is *Always ask me* (`breakResume: 'ask'`).
 - **FR-007** **Resume rules** (safety, constitution III and IV):
   - Only a break with a known reset time can resume by itself, at `resetsAt` plus 60 s; never before.
-  - Durbar never probes: no message, no retry and no model call is sent to find out whether a limit reset. **Try now** is a user action. [NEEDS CLARIFICATION: Q4] what an unknown reset time does.
+  - Durbar never probes: no message, no retry and no model call is sent to find out whether a limit reset. **Try now** is a user action. A break with no reset time never resumes by itself; it gets one reminder notification after 1 hour (Q4).
   - A resume sends exactly one message, the fixed sentence in User Story 2, to the same session, with the session's own permission mode and caps. It does not re-send the user's last prompt (that would repeat work) and never starts a new session.
   - Never after a Durbar spending limit, a per-schedule cap (spec 044 Phase 2), a stop, an end, a user message, or an app restart.
   - At most one automatic resume per break; a new limit within 2 minutes of a resume ends automatic resumes for that agent until the user acts.
   - Agents of the same agent app resume one at a time, 20 s apart, in desk order; when one hits the limit again, the others' automatic resume is cancelled and they show **Resume?**.
-  - The timer lives in the main process, reuses the spec 044 scheduler core (injected clock, one timer, missed-run rules), and is kept in memory only: no break or resume is written to disk.
+  - The timer is a pure state machine with an injected clock (`src/renderer/coffeebreak.js`, tested in Node like `mood.js`), driven by the window's existing timers; it is kept in memory only: no break or resume is written to disk. A reset that passed more than 5 minutes before the timer saw it (the computer slept) asks instead of resuming.
 - **FR-008** **Scheduled prompts during a break.** A schedule due while its agent is on a break is skipped and recorded as "skipped: on a coffee break" (spec 044 busy rule); it is not queued.
 - **FR-009** **Actions on a break**: **Try now** (sends the resume message now), **Stay on break** (cancels the automatic resume), and, for Durbar's limit, today's raise/set/remove/cancel. The chat composer stays usable; sending a message ends the break.
 - **FR-010** **Durbar's own cap** keeps the spec 011 flow and events unchanged; only its presentation changes (coffee corner, words in FR-004) once Q2 is answered. It never resumes by itself.
@@ -127,7 +137,7 @@ As the user who set a spending limit, I see the agent on a coffee break "until y
 
 - **UsageLimit** (normalized event): scope, resetsAt?, estimated?, source.
 - **Break** (per main agent, memory only): kind (`provider` | `durbar-cap`), since, resetsAt?, estimated, resumePolicy (`auto` | `ask`), autoResumeUsed, state (`on-break` | `back-ask` | `resuming` | `ended`).
-- **Setting**: `breakResume: 'auto' | 'ask'` per user, optional per folder.
+- **Setting**: `breakResume: 'auto' | 'ask'` per user (default `auto` = resume by itself when it costs nothing extra).
 
 ## Success Criteria *(mandatory)*
 
@@ -137,12 +147,12 @@ As the user who set a spending limit, I see the agent on a coffee break "until y
 - **SC-004** A Durbar spending limit never resumes on its own (unit test and simulator driver).
 - **SC-005** `npm run check:office` passes with 15 agents, five of them on a break, at 1440x900 and 1280x800.
 
-## Open questions (max 4, each with a recommended default)
+## Open questions (answered 2026-10-21, see *Clarifications*)
 
-- **Q1 [NEEDS CLARIFICATION] Default for "When a break ends".** Options: (A) **Resume by itself** for plan and rate windows (no extra money: a subscription window just reopens), **Ask me** for quotas that may lead to paid usage (Copilot monthly premium requests); (B) Resume by itself for all; (C) Ask me for all. **Recommended: A.**
-- **Q2 [NEEDS CLARIFICATION] Durbar's own spending limit.** Options: (A) also a coffee break ("until you raise the limit"), replacing today's faint figure and siren, still in Needs you; (B) keep the faint figure for Durbar's limit and use the coffee break only for provider limits. **Recommended: A** (one calm picture for "out of budget"; the inbox still asks).
-- **Q3 [NEEDS CLARIFICATION] Coffee corner in the lobby.** Options: (A) a sixth place tile, always shown (the tiles do not shift when the first agent goes on a break); (B) shown only while someone is on a break; (C) no lobby tile: the figure stays at its desk with a cup. **Recommended: A**, if `check:office` still fits 15 agents at 1280x800; else C.
-- **Q4 [NEEDS CLARIFICATION] A limit with no reset time** (some Copilot errors, a Claude event without `resetsAt`). Options: (A) coffee break with **Try now** only, no automatic resume, one reminder notification after 1 hour; (B) treat it as an error as today; (C) try again by itself every 30 minutes (spends credits). **Recommended: A** (C breaks "no surprise spending").
+- **Q1 (answered: A) Default for "When a break ends".** Options: (A) **Resume by itself** for plan and rate windows (no extra money: a subscription window just reopens), **Ask me** for quotas that may lead to paid usage (Copilot monthly premium requests); (B) Resume by itself for all; (C) Ask me for all. **Recommended: A.**
+- **Q2 (answered: A) Durbar's own spending limit.** Options: (A) also a coffee break ("until you raise the limit"), replacing today's faint figure and siren, still in Needs you; (B) keep the faint figure for Durbar's limit and use the coffee break only for provider limits. **Recommended: A** (one calm picture for "out of budget"; the inbox still asks).
+- **Q3 (answered: A) Coffee corner in the lobby.** Options: (A) a sixth place tile, always shown (the tiles do not shift when the first agent goes on a break); (B) shown only while someone is on a break; (C) no lobby tile: the figure stays at its desk with a cup. **Recommended: A**, if `check:office` still fits 15 agents at 1280x800; else C.
+- **Q4 (answered: A) A limit with no reset time** (some Copilot errors, a Claude event without `resetsAt`). Options: (A) coffee break with **Try now** only, no automatic resume, one reminder notification after 1 hour; (B) treat it as an error as today; (C) try again by itself every 30 minutes (spends credits). **Recommended: A** (C breaks "no surprise spending").
 
 ## Assumptions
 
