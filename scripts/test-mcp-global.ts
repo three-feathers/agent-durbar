@@ -188,6 +188,27 @@ ok('Codex: CRLF file, new file, refusals for inline tables and dotted keys', () 
   const quoted = '[mcp_servers."x y"]\ncommand = "q"\n';
   assert.deepStrictEqual((readGlobal('codex', quoted) as { servers: { name: string }[] }).servers.map((s) => s.name), ['x y']);
 });
+ok('Codex: a file that does not parse is refused, valid shapes still read (change 2026-10-22, T060)', () => {
+  // the T060 case: an unclosed table header, which `codex mcp list` refuses to load ("unclosed table, expected `]`")
+  for (const bad of ['[mcp_servers.x\ncommand = "a"\n', 'model = "o3"\njust words\n', '[tui]\n= 1\n', '[mcp_servers.a] command = "x"\n', '[a."b]\n']) {
+    const r = readGlobal('codex', bad);
+    assert.ok(!r.ok && /does not parse \(line \d+\)/.test(r.error), bad);
+    assert.ok(!addToText('codex', bad, stdio, 'ref').ok, bad);
+    assert.ok(!removeFromText('codex', bad, 'x').ok, bad);
+  }
+  assert.ok(/line 2/.test((readGlobal('codex', 'model = "o3"\njust words\n') as { error: string }).error));
+  const valid = [
+    '# c\nmodel = "o3" # x\n\n[profiles.dev]\napproval_policy = "never"\n',
+    'notify = [\n  "a", # one\n  "b]",\n]\n[x]\ny = 1\n',
+    'a.b = { c = [1, 2], d = "}" }\n[[t]]\nk = 2\n',
+    'instructions = """\nfree text [not a table\n"""\n[mcp_servers.a]\ncommand = "x"\n',
+    "lit = '''\n= odd\n'''\n\"quoted key\" = 1\n'single' = 2\n",
+  ];
+  for (const v of valid) {
+    assert.ok(readGlobal('codex', v).ok, v);
+    assert.ok(addToText('codex', v, stdio, 'ref').ok, v);
+  }
+});
 ok('Codex: a hostile long line is linear', () => {
   const big = '[mcp_servers.a]\nargs = [' + '"x",'.repeat(60000) + ']\n' + ';'.repeat(200000) + ' x y\n';
   const t = Date.now();

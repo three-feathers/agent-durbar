@@ -238,11 +238,62 @@ function codexOddShape(lines: TomlLine[]): boolean {
   return false;
 }
 
+/** `[`/`{` minus `]`/`}` outside quotes and comments: an array or inline table that goes on to the next lines. */
+function openBrackets(line: string): number {
+  let q = '';
+  let n = 0;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (q) {
+      if (c === '\\' && q === '"') i++;
+      else if (c === q) q = '';
+    } else if (c === '"' || c === "'") q = c;
+    else if (c === '#') break;
+    else if (c === '[' || c === '{') n++;
+    else if (c === ']' || c === '}') n--;
+  }
+  return n;
+}
+
+const TOML_KEY = String.raw`(?:[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|'[^']*')`;
+const TOML_KV = new RegExp(`^${TOML_KEY}(?:\\s*\\.\\s*${TOML_KEY})*\\s*=\\s*\\S`);
+
+/**
+ * Spec 069 change 2026-10-22 (found by T060): the 1-based number of the first line that is not a table header, a `key = value`, the
+ * rest of a multi-line array, inline table or string, a comment or a blank line; undefined when every line has one of those shapes. Not
+ * a full TOML parser: it catches a broken header or a stray line, which Codex itself refuses to load, so Durbar does not edit such a file.
+ */
+function codexBadLine(lines: TomlLine[]): number | undefined {
+  let depth = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (l.inString) continue;
+    if (l.raw.length > MAX_TOML_LINE) continue; // not read (as before), not judged
+    const line = stripComment(l.raw).trim();
+    if (depth > 0) {
+      depth = Math.max(0, depth + openBrackets(line));
+      continue;
+    }
+    if (!line) continue;
+    if (l.header) {
+      if (l.header[0] === '\0bad') return i + 1;
+      continue;
+    }
+    if (!TOML_KV.test(line)) return i + 1;
+    depth = Math.max(0, openBrackets(line.slice(line.indexOf('=') + 1)));
+  }
+  return undefined;
+}
+
+const codexParseError = (n: number): { ok: false; error: string } => ({ ok: false, error: `This config.toml does not parse (line ${n}). Fix it first; nothing was written.` });
+
 function readCodex(text: string | undefined): ReadResult {
   const servers: GlobalEntryView[] = [];
   const values = new Map<string, Record<string, unknown>>();
   if (text === undefined) return { ok: true, servers, values };
   const lines = tomlLines(text.replace(/^\uFEFF/, ''));
+  const bad = codexBadLine(lines);
+  if (bad !== undefined) return codexParseError(bad);
   if (codexOddShape(lines)) return { ok: false, error: 'This config.toml defines mcp_servers in a way Agent Durbar does not edit (an inline table or dotted keys). Nothing was written.' };
   const recs = new Map<string, Record<string, unknown>>();
   let cur: Record<string, unknown> | undefined;
@@ -453,6 +504,8 @@ function codexAdd(text: string | undefined, input: McpServerInput, mode: GlobalS
 
 function codexRemove(text: string, name: string): EditResult {
   const lines = tomlLines(text);
+  const bad = codexBadLine(lines);
+  if (bad !== undefined) return codexParseError(bad);
   if (codexOddShape(lines)) return { ok: false, error: 'This config.toml defines mcp_servers in a way Agent Durbar does not edit (an inline table or dotted keys). Nothing was written.' };
   const ranges = codexRanges(lines, name);
   if (!ranges.length) return { ok: false, error: `"${name}" is not in this file.` };
