@@ -206,3 +206,9 @@
 - [x] T136 `onCompaction`: one line per run of compactions (`compactionFoldText` in `modelswitch.js`, test in `test-modelswitch`), no `isConnected` leftover; `addInfoNote` folds an identical repeat with "(×N)" [FR-163]
 - [x] T137 `simquestion=compact` + `scripts/check-question-visible.js` (`npm run check:question-visible`) at 1440x900 and 1280x800; mutation runs; screenshots; README, CHANGELOG, `specs/README.md` [FR-162, FR-163]
 
+## FR-164: + Folder and + Workspace at the left, and a File menu (2026-10-21, owner request)
+- [x] T138 Spec delta FR-164 (amends FR-105 and FR-083) [FR-164]
+- [x] T139 Top bar: + Folder and + Workspace first after the brand (ids kept, + New menu removed), fit rules, `fitTopbar`, the defaults chip in two spans; Ctrl+O / Ctrl+Shift+O in the page on Windows and Linux; shortcut sheet and palette keys; empty-office and welcome texts [FR-164]
+- [x] T140 macOS File menu (Add Folder… ⌘O, Add VS Code Workspace… ⇧⌘O, Close Window) through `menu:add` → `onMenuAdd` → the same buttons; `test-macos` [FR-164]
+- [x] T141 `scripts/shots-052-addleft.js` in `check:ui`; `check-mac-titlebar.js` without the + New state; `check:office`, `check:geometry`, `check:mac-titlebar`; screenshots at 1440x900 and 1280x800 [FR-164]
+- [x] T142 Docs: README, CHANGELOG, `specs/README.md` row [FR-164]

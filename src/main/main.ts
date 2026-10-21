@@ -14,7 +14,7 @@ import { detectorFor, nodeDetectEnv, setLoginPath } from '../adapters/detect';
 import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { execFile, spawn } from 'child_process';
 import { adapterForAdd, createRouter, historyOf, modelOptionsOf, previousSessionsOf } from '../adapters/router';
-import { errText, restorable, setCapOp, setModeOp, stopTurnOp, validMode } from './agentops';
+import { errText, resumeModeOp, restorable, setCapOp, setModeOp, stopTurnOp, validMode } from './agentops';
 import type { OpsDeps } from './agentops';
 import { adapterOf } from './folders';
 import type { AgentAdapter, AgentEvent } from '../adapters/types';
@@ -30,7 +30,7 @@ import { isHttpUrl } from '../shared/url';
 import { checkElicitAnswer, createElicitTracker, elicitHttpsUrl } from '../shared/elicit';
 import { createRemoteOps } from './remoteops';
 import { CheckpointStore } from './checkpoints';
-import { DEFAULT_ADAPTER, FolderStore, PROFILE_ID, restoreMode, sessionsToRestore } from './folders';
+import { DEFAULT_ADAPTER, FolderStore, PROFILE_ID, modeForSession, restoreMode, sessionsToRestore } from './folders';
 import { AppStateStore, buildSinceAway, placeWindow, quitMessage } from './daily';
 import type { SinceAway } from './daily';
 import { navigationAllowed, permissionAllowed, senderAllowed } from './hardening';
@@ -359,13 +359,16 @@ function restoreFolders(): void {
   for (const { folder: f, adapterId } of restorable(folderStore.load(), (i) => registry.has(i), console.warn)) {
     try {
       if (!fs.existsSync(f.workspace)) continue; // e.g. an unplugged drive: stays saved, just not shown
-      const rm = restoreMode(f.permMode); // exactly as saved, Allow all included, flagged so the UI shows "restored" (spec 003 FR-025/026)
       // FR-021: the folder's last session comes back under its own id (resumed when first needed); a harness this build lacks starts fresh.
       // Spec 052 FR-088: so does every other session that was open in the folder (at most 6), each resumed lazily the same way.
       const sessions = sessionsToRestore(f).filter((s) => registry.has(s.adapterId ?? DEFAULT_ADAPTER) && !agents.has(s.id));
       for (const ls of sessions.length ? sessions : [undefined]) {
         const kind = ls ? (ls.adapterId ?? DEFAULT_ADAPTER) : adapterId;
-        const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, maxAiCredits: router.instance(kind).capabilities?.capUnit === 'usd' ? undefined : f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
+        // Spec 003: exactly as saved, Allow all included, flagged so the UI shows "restored" (FR-025/026). 2026-10-21: a session's own
+        // last mode wins over the folder's (several sessions of one folder may be in different modes), and the chat says which it was.
+        const sm = modeForSession(f, [ls?.id], f.permMode);
+        const rm = restoreMode(sm.mode);
+        const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, permFrom: ls ? (sm.fromSession ? 'session' : 'folder') : undefined, maxAiCredits: router.instance(kind).capabilities?.capUnit === 'usd' ? undefined : f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
         if (ls) info.resumeLast = true;
         if (f.label) info.label = f.label;
         if (f.defaultAgent) info.defaultAgent = f.defaultAgent;
@@ -431,7 +434,13 @@ ipcHandle('sessions:resume', async (_e, id: unknown, sessionId: unknown, replace
     const prev = (await previousSessionsOf(ad, a.cwd, openIdsOf(prevDeps))).find((s) => s.id === sessionId);
     if (!prev) return { ok: false, error: 'That session is no longer available for this folder.' };
     // Resume first; only then retire the untouched agent, so a failed resume leaves everything as it was.
-    const info = await addWorkspace(a.workspaceFile ?? a.cwd, a.permMode, { resumeSessionId: sessionId, silent: true, adapterId: router.adapterIdOf(a.id) });
+    // Spec 003 (2026-10-21): the session comes back in the mode last chosen for it, not in the mode of the session the list was opened from.
+    const rm = resumeModeOp(folderStore?.get(wsKey(a)), sessionId, a.permMode);
+    const info = await addWorkspace(a.workspaceFile ?? a.cwd, rm.mode, { resumeSessionId: sessionId, silent: true, adapterId: router.adapterIdOf(a.id) });
+    info.permFrom = rm.permFrom;
+    info.permRestored = rm.permRestored;
+    const modeWas = rm.modeWas;
+    if (rm.logLine) logActivity(info, 'mode-change', rm.logLine);
     let history: ResumeResult['history'];
     try {
       history = await historyOf(router.forAgent(info.id) ?? ad, info.id);
@@ -450,7 +459,7 @@ ipcHandle('sessions:resume', async (_e, id: unknown, sessionId: unknown, replace
       scheduler?.sessionsChanged(); // spec 044 FR-014: a schedule for the replaced session pauses
     }
     if (prev.title && prev.title !== 'Untitled session') info.title = prev.title; // the list's title (name, else summary) until the runtime sends its own
-    return { ok: true, agent: info, removedId, title: prev.title, history };
+    return { ok: true, agent: info, removedId, title: prev.title, history, ...(modeWas ? { modeWas } : {}) };
   } catch (err) {
     return { ok: false, error: errText(err) };
   } finally {
@@ -632,7 +641,7 @@ ipcHandle('schedules:setPausedAll', (_e, on: unknown) => {
 });
 
 // The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
-const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, log: (a, decision, action) => logActivity(a, decision, action) };
+const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, sessionKey: (a) => resumeIdFor(a.id), log: (a, decision, action) => logActivity(a, decision, action) };
 // Stop only interrupts the running turn (the agent returns to Ready); End session frees the runtime session.
 ipcHandle('agents:stop', (_e, id: string) => stopTurnOp(opsDeps, id));
 
@@ -1304,6 +1313,7 @@ function noteLastSession(a: AgentInfo | undefined): void {
   const rid = resumeIdFor(a.id); // Codex: its thread id
   folderStore?.setLastSession(wsKey(a), rid, router.adapterIdOf(a.id));
   folderStore?.addOpenSession(wsKey(a), rid, router.adapterIdOf(a.id)); // spec 052 FR-088: every open session comes back, not only the last
+  folderStore?.setSessionMode(wsKey(a), rid, a.permMode); // spec 003 (2026-10-21): it comes back in its own mode
 }
 /** The id a session is resumed under after a restart (Codex: its thread id; others: the agent id). */
 const resumeIdFor = (id: string): string => router.forAgent(id)?.resumeIdOf?.(id) ?? id;
@@ -1498,7 +1508,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   app.setAboutPanelOptions(aboutPanelOptions(app.getVersion())); // owner and contributors: src/shared/about.ts (spec 008 FR-018)
-  // spec 052 FR-083: a Mac menu from roles (Settings… ⌘,); no menu on Windows and Linux (no Reload or DevTools for users)
+  // spec 052 FR-083, FR-164: a Mac menu from roles (Settings… ⌘,; File > Add Folder… ⌘O); no menu on Windows and Linux (no Reload or DevTools for users)
   const menu = appMenuTemplate(process.platform, {
     openSettings: () => {
       const w = win && !win.isDestroyed() ? win : undefined;
@@ -1507,6 +1517,13 @@ app.whenReady().then(() => {
       toRenderer('menu:settings', null);
     },
     openRepo: () => void shell.openExternal(REPO_URL),
+    // spec 052 FR-164: File > Add Folder… / Add VS Code Workspace… press the page's own buttons (one code path, agents:addFolder / addWorkspaceFile)
+    add: (kind) => {
+      const w = win && !win.isDestroyed() ? win : undefined;
+      if (!w) return;
+      w.show();
+      toRenderer('menu:add', kind);
+    },
   });
   Menu.setApplicationMenu(menu ? Menu.buildFromTemplate(menu) : null);
   folderStore = new FolderStore(path.join(app.getPath('userData'), 'durbar-folders.json'));

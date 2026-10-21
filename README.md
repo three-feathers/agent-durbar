@@ -55,7 +55,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 
 **Sessions and folders**
 - One session per folder or `.code-workspace` file, or several per folder (**+ New** in a chat's header, or **+ New session** under More).
-- The top bar is one row: **+ New** adds a folder or a VS Code workspace, the **Defaults** chip (for example "Copilot · Read-only · Auto") sets the agent app, permission mode and model for new sessions, and **Manage folders** sits next to the folder filter. On narrower screens the status counters show a dot and a number (the words are in their tooltips).
+- The top bar is one row: **+ Folder** and **+ Workspace** come first, right after the app name (Ctrl+O and Ctrl+Shift+O; on a Mac also **File > Add Folder…** ⌘O and **Add VS Code Workspace…** ⇧⌘O), the **Defaults** chip (for example "Copilot · Read-only · Auto") sets the agent app, permission mode and model for new sessions, and **Manage folders** sits next to the folder filter. On narrower screens the status counters show a dot and a number (the words are in their tooltips).
 - After a restart, each folder **continues its open sessions** (up to 6 per folder, each resumed when you open its chat or send it a message), and Durbar **remembers where you were**: the window's place and size (back on a screen it fits, else 1440x900), Office or List, the folder filter and the open chat.
 - After more than 30 minutes closed, a **Since you were away** strip says how long it was and which scheduled prompts did not run, with **Run missed now** for each.
 - **End of day:** quitting while agents are still working asks first ("2 agents are still working. Quit anyway?", Cancel is the default). **End all sessions** (top bar **⋯** and Ctrl+K) ends every running session after a confirmation; the chats stay.
@@ -174,6 +174,8 @@ Agents run **locally, on your machine, as you**, in the folders you add. Every a
 - **Allow all**: no prompts. Use it only in folders you trust; it asks once to confirm.
 
 Change the mode any time from the chat header chip or the agent's card menu.
+
+**Coming back to a session.** Each session keeps the mode you last chose for it. After a restart, and when you resume it from *Previous sessions*, it comes back in that mode, also when it was Allow all and the session you opened the list from is in Read-only. Its chat then says which mode it is in and why ("Permissions: Allow all, the mode you last chose for this session"), and an Allow all that came back shows *restored* on the mode chip. A session Durbar has no mode for (one from before this change, or started outside Durbar) gets the folder's mode after a restart, or the mode of the session you resumed it from; the chat says that too. A resumed session that comes back in another mode than the session you opened it from is also written to the activity log. Grants from *Allow for this session* are never kept.
 
 Rules that always apply:
 - **Durbar never deletes files itself.** *Delete…* in Previous sessions goes only through the agent app's own API (Copilot `deleteSession`, Codex `thread/delete`), only from Durbar's own window (not from MCP tools, remote control or schedules), never for a session still in the office, never for VS Code chats, and not for Claude Code. Not yet run against a real session.

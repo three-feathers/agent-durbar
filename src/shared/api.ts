@@ -46,6 +46,12 @@ export interface AgentInfo {
   maxAiCredits?: number;
   /** Restored from a saved Allow all after a restart (spec 003 FR-026): shown as a small "restored" note until the mode is switched. */
   permRestored?: boolean;
+  /**
+   * Spec 003 (2026-10-21): where the mode of a session that came back (restart or Previous sessions) was taken from, so the chat
+   * can say it: `session` = the mode last chosen for this very session; `folder` = the folder's saved mode (nothing remembered for
+   * the session); `opener` = the mode of the session Previous sessions was opened from. Cleared by a mode switch; never saved.
+   */
+  permFrom?: 'session' | 'folder' | 'opener';
   /** The folder is hidden from the office (it keeps its saved sessions). */
   hidden?: boolean;
   /** The room's door is closed (compact door plate in the office). */
@@ -233,6 +239,8 @@ export interface ResumeResult {
   removedId?: string;
   title?: string;
   history?: { items: HistoryItem[]; total: number; truncated: boolean };
+  /** Spec 003 (2026-10-21): the mode of the session it was opened from, when the resumed session came back in a different one. */
+  modeWas?: PermMode;
 }
 
 export interface VsChatListResult {
@@ -584,6 +592,8 @@ export interface DurbarApi {
   onAgentAdded(cb: (a: AgentInfo) => void): () => void;
   /** The Settings… item of the macOS app menu (⌘,), spec 052 FR-083. */
   onMenuSettings?(cb: () => void): () => void;
+  /** File > Add Folder… / Add VS Code Workspace… of the macOS menu (⌘O, ⇧⌘O), spec 052 FR-164. */
+  onMenuAdd?(cb: (kind: 'folder' | 'workspace') => void): () => void;
   /** The window entered (true) or left (false) full screen, spec 052 FR-085. */
   onFullScreen?(cb: (on: boolean) => void): () => void;
   /** The OS the app runs on ('darwin', 'win32', 'linux'), spec 052 FR-085: the Mac title bar styles. */
