@@ -95,7 +95,7 @@
   /* ---------- the composer: one order for every kit ---------- */
   /* shade() in app.js takes #rrggbb only; a user theme may give any token grammar colour, which is then used as is */
   /* the overlays app.js hands over (already sanitized theme art); a caller without them draws none */
-  const artOf = (o) => { const a = o.art || {}; const s = (v) => (typeof v === 'string' ? v : ''); return { body: s(a.body), head: s(a.head), desk: s(a.desk), monitor: s(a.monitor) }; };
+  const artOf = (o) => { const a = o.art || {}; const s = (v) => (typeof v === 'string' ? v : ''); return { body: s(a.body), head: s(a.head), desk: s(a.desk), monitor: s(a.monitor), cup: s(a.cup), laptop: s(a.laptop) }; };
   const safeShade = (base) => (c, p) => (/^#[0-9a-f]{6}$/i.test(c) ? base.shade(c, p) : c);
   function draw(kitId, a, base) {
     const K = KIT[kitId];
@@ -124,8 +124,8 @@
     s += `<rect x="116" y="36" width="56" height="37"${K.crisp ? '' : ' rx="3"'} fill="${T(screenBg(o))}"/>` + art.monitor;
     s += screenContent(o);
     s += K.screenOver ? K.screenOver(o) : '';
-    s += K.keyboard(o);
-    if (st === 'idle') s += K.cup(o);
+    s += art.laptop || K.keyboard(o); /* spec 070 FR-011: a pack's own laptop and cup replace the kit's (the steam stays: it is a status cue) */
+    if (st === 'idle') s += art.cup ? art.cup + steam(o) : K.cup(o);
     s += K.props ? K.props(o) : '';
     s += arms(o, K);
     s += afterPerson(o);

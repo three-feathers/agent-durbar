@@ -261,12 +261,78 @@
   const TOKEN_VALUE_RE=/^(#[0-9a-f]{3,8}|(rgb|rgba|hsl|hsla)\([0-9a-z., %\/+-]*\)|-?[0-9]*\.?[0-9]+(px|em|rem|%|s|ms|deg)?|[a-z][a-z-]*)$/i;
   const isTokenValue=v=>typeof v==='string' && v.trim().length<=64 && TOKEN_VALUE_RE.test(v.trim());
 
+  /* ---------- spec 070: typed tokens besides the colours ----------
+     Fonts (system fonts from an allow-list only: no URL, no font file), the title weight, radii and shadows. They are set on <html>
+     only when a pack gives them, so the CSS defaults (styles.css :root) and a UI style's display font (themes.css) apply otherwise.
+     Sizes, spacing and borders are not themeable (spec 070 D2). Same lists and grammar as src/shared/themetokens.ts (test:theme-tokens). */
+  const FONT_GENERIC=['system-ui','sans-serif','serif','monospace','ui-monospace','ui-serif','ui-sans-serif','ui-rounded'];
+  const FONT_ALLOW=FONT_GENERIC.concat(['-apple-system','BlinkMacSystemFont','Segoe UI','Helvetica Neue','Helvetica','Arial','Verdana','Tahoma',
+    'Trebuchet MS','Georgia','Palatino Linotype','Palatino','Book Antiqua','URW Palladio L','P052','Times New Roman','Garamond','EB Garamond',
+    'Baskerville','Baskerville Old Face','Libre Baskerville','Cambria','Calibri','Candara','Corbel','Gill Sans','Optima','Futura','Avenir',
+    'Avenir Next','Didot','American Typewriter','Courier New','Consolas','Menlo','Monaco','SF Mono','SFMono-Regular','Cascadia Mono',
+    'Cascadia Code','Roboto','Noto Sans','Noto Serif','DejaVu Sans','DejaVu Serif','DejaVu Sans Mono','Liberation Sans','Liberation Serif',
+    'Liberation Mono','Ubuntu','Ubuntu Mono','Cantarell','Comic Neue','Hiragino Mincho ProN','Yu Mincho','YuMincho','Noto Serif CJK JP',
+    'Noto Serif JP','Source Han Serif']);
+  const FONT_INDEX={};FONT_ALLOW.forEach(f=>{FONT_INDEX[f.toLowerCase()]=f;});
+  const TYPED_TOKENS={
+    '--font':{type:'font',def:'system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif',generic:'sans-serif'},
+    '--ui-display':{type:'font',def:'system-ui',generic:'system-ui'},
+    '--font-mono':{type:'font',def:'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace',generic:'monospace'},
+    '--t1-weight':{type:'weight',def:'650'},
+    '--r-sm':{type:'radius',def:'6px'},'--r-md':{type:'radius',def:'10px'},'--r-lg':{type:'radius',def:'14px'},'--r-xl':{type:'radius',def:'18px'},
+    '--radius':{type:'radius',def:'16px'},
+    '--shadow-card':{type:'shadow',def:'none'},'--shadow-pop':{type:'shadow',def:'0 14px 40px rgba(40,35,25,.22)'},
+  };
+  const TCOLOR_RE=/^(#[0-9a-f]{3}|#[0-9a-f]{4}|#[0-9a-f]{6}|#[0-9a-f]{8}|(?:rgb|rgba|hsl|hsla)\((?:[0-9.%\s,\/+-]|deg)+\)|transparent)$/i;
+  const LEN_RE=/^(-?\d{1,2}(?:\.\d{1,2})?px|0)$/;
+  const lenPx=v=>v==='0'?0:parseFloat(v);
+  function fontStack(v,generic){
+    const names=String(v).split(',').map(x=>x.trim()).filter(Boolean);
+    if(!names.length||names.length>8)return null;
+    const out=[];
+    for(let n of names){
+      const q=/^(["'])(.*)\1$/.exec(n); if(q)n=q[2].trim();
+      if(!/^[A-Za-z0-9 -]{1,40}$/.test(n))return null;
+      const canon=FONT_INDEX[n.toLowerCase()]; if(!canon)return null;
+      out.push(/\s/.test(canon)?'"'+canon+'"':canon);
+    }
+    if(!out.some(n=>FONT_GENERIC.includes(n)))out.push(generic);
+    return out.join(',');
+  }
+  function shadowValue(v){
+    if(v==='none')return v;
+    const layers=v.split(/,(?![^(]*\))/).map(x=>x.trim());
+    if(!layers.length||layers.length>2)return null;
+    for(const l of layers){
+      const parts=l.split(/\s+(?![^(]*\))/);
+      if(parts[0]==='inset')parts.shift();
+      const color=parts.pop(), lens=parts;
+      if(!color||!TCOLOR_RE.test(color)||(lens.length!==3&&lens.length!==4)||!lens.every(x=>LEN_RE.test(x)))return null;
+      const [x,y,b,sp]=lens.map(lenPx);
+      if(Math.abs(x)>40||Math.abs(y)>40||b<0||b>64||(sp!==undefined&&Math.abs(sp)>24))return null;
+    }
+    return layers.join(',');
+  }
+  /* a typed token's value as it is applied, or null (wrong type, out of range, a font not on the list) */
+  function typedValue(key,v){
+    const spec=TYPED_TOKENS[key];
+    if(!spec||typeof v!=='string')return null;
+    const t=v.trim();
+    if(!t||t.length>160||/[<>{};\\@]|url\s*\(|expression\s*\(|var\s*\(/i.test(t))return null;
+    if(spec.type==='font')return fontStack(t,spec.generic);
+    if(spec.type==='weight')return /^(500|550|600|650|700|750|800)$/.test(t)?t:null;
+    if(spec.type==='radius')return LEN_RE.test(t)&&lenPx(t)>=0&&lenPx(t)<=24?t:null;
+    if(spec.type==='shadow')return shadowValue(t);
+    return null;
+  }
+
   /* UI styles (spec 035 FR-009): the app owns their CSS (themes.css); a manifest only names one. */
   /* Art slots the renderer draws (spec 040 FR-010); any other key is dropped. char-*, desk-*, monitor-art and hair-acc
      are overlays of the office kit only (spec 035 FR-013). */
   const ART_SLOTS=['plant','room-back-wall','room-back-window','room-floor','lobby-art','door-art',
     'place-library','place-software','place-terminal','place-web','place-other',
-    'char-body','char-robe','char-headwear','char-collar','desk-back','desk-art','monitor-art','hair-acc'];
+    'char-body','char-robe','char-headwear','char-collar','desk-back','desk-art','monitor-art','hair-acc',
+    'gadget-cup','gadget-laptop']; /* spec 070 FR-011: replace the idle cup and the laptop */
   const UI_STYLES=['clean','corporate','retro','court-indian','court-european','court-japanese'];
   /* Scene kits (spec 035 FR-013): how people and desks are drawn; the drawing code is the app's (scenekits.js). */
   const SCENE_KITS=['office','corporate','pixel','court-indian','court-european','court-japanese'];
@@ -282,17 +348,33 @@
     out.extends=String(m.extends||CLEAN_ID);
     if(!['clean-office'].includes(out.extends)) out.extends=CLEAN_ID;
     out.tokens={}; /* only Clean Office keys, only token-grammar values (spec 040 FR-006): never raw CSS on <html> or in SVG attributes */
+    /* spec 070 FR-020: what was dropped, for the note on the theme's card (kept across a second validation of a validated pack) */
+    const dropped=Array.isArray(m.dropped)?m.dropped.filter(x=>typeof x==='string'&&x.length<=64).slice(0,200):[];
+    const drop=k=>{if(dropped.length<200&&!dropped.includes(k))dropped.push(String(k).slice(0,64));};
     if(m.tokens && typeof m.tokens==='object'){
       for(const [k,v] of Object.entries(m.tokens)){
-        if(Object.prototype.hasOwnProperty.call(CLEAN_TOKENS,k) && isTokenValue(v)) out.tokens[k]=v.trim();
+        if(Object.prototype.hasOwnProperty.call(CLEAN_TOKENS,k)){ if(isTokenValue(v)) out.tokens[k]=v.trim(); else drop(k); }
+        else if(Object.prototype.hasOwnProperty.call(TYPED_TOKENS,k)){ const t=typedValue(k,v); if(t!==null) out.tokens[k]=t; else drop(k); } /* spec 070 FR-002 */
+        else drop(k);
+      }
+    }
+    /* spec 070 FR-010: the people's clothes and hair; skins stay the app's (D3). #rgb or #rrggbb, kept as #rrggbb (shading needs it) */
+    out.figures={};
+    if(m.figures&&typeof m.figures==='object'){
+      for(const part of ['shirts','hairs']){
+        const list=Array.isArray(m.figures[part])?m.figures[part]:[];
+        const ok=[];
+        list.slice(0,8).forEach((c,i)=>{const h=/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(typeof c==='string'?c.trim():'');if(h)ok.push('#'+(h[1].length===3?h[1].split('').map(x=>x+x).join(''):h[1]).toLowerCase());else drop('figures.'+part+'.'+i);});
+        if(list.length>8)drop('figures.'+part+'.8+');
+        if(ok.length)out.figures[part]=ok;
       }
     }
     out.art={};
     if(m.art && typeof m.art==='object'){
       for(const [k,v] of Object.entries(m.art)){
-        if(!ART_SLOTS.includes(k)) continue;
+        if(!ART_SLOTS.includes(k)) { drop('art.'+k); continue; }
         const clean=sanitizeArtValue(v);
-        if(clean!==null) out.art[k]=clean;
+        if(clean!==null) out.art[k]=clean; else drop('art.'+k);
       }
     }
     out.motion=Object.assign({}, m.motion && typeof m.motion==='object'?m.motion:{});
@@ -305,6 +387,7 @@
         if(Object.prototype.hasOwnProperty.call(CLEAN_WORDS,k) && typeof v==='string' && v.trim() && v.length<=60 && !/[\u0000-\u001f\u007f-\u009f]/.test(v)) out.words[k]=v;
       }
     }
+    out.dropped=dropped;
     return out;
   }
 
@@ -339,15 +422,46 @@
     return out||null;
   }
 
+  const MAX_SLOT_CHARS=24000; /* spec 070 FR-011: one slot's fragment (a compiled pixel map of a built-in reaches about 17,000) */
   function sanitizeArtValue(v){
-    if(typeof v==='string')return sanitizeSlot(v);
+    if(typeof v==='string')return v.length<=MAX_SLOT_CHARS?sanitizeSlot(v):null;
     const pix=compilePixelMap(v);
     return pix?sanitizeSlot(pix):null;
+  }
+
+  /* spec 070 FR-021: the text pairs of the AI maker's checks (themegen.ts CONTRAST_PAIRS; test:theme-tokens keeps them equal) */
+  const CONTRAST_PAIRS=[['--ink','--bg',4.5],['--ink','--surface',4.5],['--ink','--raised',4.5],['--ink','--card',4.5],['--ink','--card-waiting',4.5],['--ink','--card-error',4.5],['--ink-2','--soft',4.5],['--ink-2','--note',4.5],['--ink-2','--surface',4.5],['--muted','--surface',4.5],['--room-path','--bg',3]]
+    .concat(['working','thinking','waiting','idle','error','done'].map(s=>['--pc-'+s,'--pb-'+s,4.5]))
+    .concat([['--drop-ink','--drop-bg',4.5],['--brand-mark','--brand-bg',3],['--idle-stub-ink','--idle-stub',3]]);
+  const HEX_ANY=/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+  function lum(hex){
+    let h=HEX_ANY.exec(hex)[1]; if(h.length===3)h=h.split('').map(c=>c+c).join(''); h=h.slice(0,6);
+    const ch=[0,2,4].map(i=>parseInt(h.slice(i,i+2),16)/255).map(c=>c<=0.03928?c/12.92:Math.pow((c+0.055)/1.055,2.4));
+    return 0.2126*ch[0]+0.7152*ch[1]+0.0722*ch[2];
+  }
+  function ratio(a,b){const [x,y]=[lum(a),lum(b)].sort((p,q)=>q-p);return (x+0.05)/(y+0.05);}
+  /* sets failing pairs back to Clean Office in place; returns the keys it set back */
+  function contrastFix(t){
+    const back=[];
+    for(let pass=0;pass<4;pass++){
+      let changed=false;
+      for(const [fg,bg,min] of CONTRAST_PAIRS){
+        const a=t[fg],b=t[bg];
+        if(!HEX_ANY.test(String(a||''))||!HEX_ANY.test(String(b||'')))continue;
+        if(ratio(a,b)>=min)continue;
+        if(t[fg]===CLEAN_TOKENS[fg]&&t[bg]===CLEAN_TOKENS[bg])continue;
+        t[fg]=CLEAN_TOKENS[fg];t[bg]=CLEAN_TOKENS[bg];changed=true;
+        for(const k of [fg,bg])if(!back.includes(k))back.push(k);
+      }
+      if(!changed)break;
+    }
+    return back;
   }
 
   /* ---------- Theme store ---------- */
   let currentId=CLEAN_ID;
   let currentManifest=null;
+  let currentResolved=null; /* the applied token map (spec 070 FR-021) */
   let themeRev=0; /* +1 on every applied theme: drawings made with another theme's tokens and art are stale (spec 040 FR-023) */
   let listeners=[];
 
@@ -462,7 +576,16 @@
     currentId=id;
     currentManifest=manifest;
     themeRev++;
-    applyTokens(resolveTokens(manifest));
+    /* spec 070 FR-021: a text pair that is hard to read falls back as a pair to Clean Office's two values */
+    const resolved=resolveTokens(manifest);
+    if(!BUILT_IN[id])contrastFix(resolved); /* built-in packs are designed and tested by hand (test:theme); retro's ink is a fill, not text on --bg */
+    currentResolved=resolved;
+    applyTokens(resolved);
+    /* spec 070 FR-001: a typed token the pack does not give is removed, so the CSS default (and the UI style's display font) applies */
+    if(typeof document!=='undefined'&&document.documentElement){
+      for(const k of Object.keys(TYPED_TOKENS))if(!Object.prototype.hasOwnProperty.call(manifest.tokens||{},k))document.documentElement.style.removeProperty(k);
+      if(Object.prototype.hasOwnProperty.call(manifest.tokens||{},'--ui-display'))document.documentElement.dataset.display='';else delete document.documentElement.dataset.display;
+    }
     /* Clean Office itself has no data-ui (as at startup), so its `html:not([data-ui])` polish in styles.css also returns
        after switching back from another theme (spec 052 FR-053); other themes, generated ones too, name their style */
     if(typeof document!=='undefined'&&document.documentElement){
@@ -471,7 +594,7 @@
     }
     /* spec 052 FR-052: mark a dark surface, so rules meant for light themes (prefers-contrast:more) skip it */
     if(typeof document!=='undefined'&&document.documentElement){
-      const dark=isDarkColor(resolveTokens(manifest)['--surface']);
+      const dark=isDarkColor(resolved['--surface']);
       if(dark)document.documentElement.dataset.dark='';else delete document.documentElement.dataset.dark;
     }
     /* motion presets (036 FR-006): re-applied on every switch, reduced motion wins */
@@ -485,9 +608,17 @@
   function current(){return {id:currentId, manifest:currentManifest};}
   function token(name){
     const key=name.startsWith('--')?name:'--'+name;
-    const tokens=currentManifest&&currentManifest.tokens;
-    if(tokens&&Object.prototype.hasOwnProperty.call(tokens,key))return tokens[key];
-    return CLEAN_TOKENS[key]||null;
+    /* the resolved map: the pack's values after the contrast fallback (spec 070 FR-021), so the scenes draw what the CSS shows */
+    if(currentResolved&&Object.prototype.hasOwnProperty.call(currentResolved,key))return currentResolved[key];
+    return CLEAN_TOKENS[key]||(TYPED_TOKENS[key]?TYPED_TOKENS[key].def:null);
+  }
+  /* spec 070 FR-010: the pack's shirt and hair palettes, or null */
+  function figures(){const f=currentManifest&&currentManifest.figures;return f&&(f.shirts||f.hairs)?f:null;}
+  /* spec 070 FR-022: what a theme could not use: dropped values and text pairs set back to Clean Office */
+  function fallbacks(id){
+    const m=loadManifest(id);
+    if(!m)return {dropped:[],contrast:[]};
+    return {dropped:(m.dropped||[]).slice(),contrast:BUILT_IN[m.id]?[]:contrastFix(resolveTokens(m))};
   }
   function slot(name){
     const art=currentManifest&&currentManifest.art;
@@ -839,6 +970,12 @@
     previewRoom,
     onChange,
     themeIdForCache,
+    figures,
+    fallbacks,
+    TYPED_TOKENS:JSON.parse(JSON.stringify(TYPED_TOKENS)),
+    FONT_ALLOW:FONT_ALLOW.slice(),
+    CONTRAST_PAIRS:CONTRAST_PAIRS.map(p=>p.slice()),
+    _typedValue:typedValue,
     registerBuiltIn,
     registerUserThemes,
     MOTION_PRESETS,
