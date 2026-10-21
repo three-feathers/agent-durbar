@@ -524,6 +524,20 @@ async function driver(ctx) {
     }
     const strip = document.getElementById('stripList');
     if (strip && R(strip).right > innerWidth + 1) P.push('the agent strip leaves the window');
+    /* spec 005 FR-037..FR-040: the chat settings are one row under the message box, inside the window, nothing overlapping; the
+       Send / Stop slot sits inside the box */
+    const bar = document.getElementById('cToolbar'), row = document.getElementById('ctItems'), box = document.querySelector('#panel .inbox');
+    if (bar && row && box && bar.getClientRects().length) {
+      if (R(bar).top < R(box).bottom - 0.5) P.push('the chat settings are not under the message box');
+      if (row.scrollWidth > row.clientWidth + 1) P.push('the chat settings row overflows');
+      const ks = [...bar.querySelectorAll('#ctItems > .ct > *, #ctMoreBtn')].filter((c) => c.getClientRects().length && R(c).width > 0);
+      for (const c of ks) { const r = R(c); if (r.left < -1 || r.right > innerWidth + 1) P.push(`${c.id || c.className} leaves the window`); }
+      for (let i = 0; i < ks.length; i++) for (let j = i + 1; j < ks.length; j++) {
+        const a = R(ks[i]), b = R(ks[j]); if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > T && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > T) P.push(`${ks[i].id} overlaps ${ks[j].id}`);
+      }
+      const slot = document.getElementById('runSlot');
+      if (!slot || !box.contains(slot)) P.push('the Send / Stop slot is not in the message box');
+    }
     /* spec 052 FR-139: a main agent's header has + New next to Previous, named "New session in <folder>", on the same row as
        the other actions and as the chips (the header does not wrap) */
     const nb = document.getElementById('newSessHdrBtn');
