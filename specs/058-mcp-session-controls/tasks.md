@@ -131,8 +131,9 @@ references: `src/main/main.ts:123` is now `main.ts:142` (`outward`); `src/adapte
 
 #### Prerequisites for #364 (subset of Phases 1-2; the remainder of T010, T011, T020, T026 follows in #349)
 
-- [ ] T112 [P] Subset of T010: only `McpServerStatus.errorClass?` (FR-011's values); no `needsRestart`, no new capability fields, no
+- [x] T112 [P] Subset of T010: only `McpServerStatus.errorClass?` (FR-011's values); no `needsRestart`, no new capability fields, no
   `restartMcpServer` / `mcpLogFolder`. Same PR as T093 (types and contract C2 together) [FR-011, FR-060]
+  [IMPLEMENTED] `McpServerStatus.errorClass?` in `src/adapters/types.ts` (PR #473 does not define it). test: `scripts/test-adapter-contract.ts` (type-checked; no adapter sets it yet, mappers are T094-T096)
 - [ ] T113 [P] Subset of T011: `src/renderer/mcpwords.js` (UMD) with the word and icon for every state and unknown tokens, and the hints
   for `failed` and `needs-auth` (the sign-in hint names the agent app, FR-052/FR-069); `scripts/test-mcpwords.ts` (`test:mcpwords` in
   `test:serial`). Start line and toggle timing wait for T010's capability fields (#349) [FR-001, FR-006, FR-052]
@@ -170,8 +171,9 @@ say "End this session (More > End session), then send a message to resume it"; t
   issue's exact text, the runtime phrases of research 7.2, negatives (model text, a usage limit, the app's own 401) [FR-061]
 - [x] T092 [P] `isAuthError` returns false when `isMcpAuthChallenge` matches; cases in `scripts/test-autherrors.ts` (the issue's text as
   an `error` status gets no `errorKind: 'auth'`) [FR-062, SC-010]
-- [ ] T093 [P] Types: `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `cancelMcpSignIn?`, `ToolCallEvent.mcpAuth`; event guard (only
+- [x] T093 [P] Types: `mcpSignIn`, `mcpSignInSteps`, `startMcpSignIn?`, `cancelMcpSignIn?`, `ToolCallEvent.mcpAuth`; event guard (only
   on a failed `toolCall` with `mcpServer`); contract C2 lines; `fake.ts` members behind the flags [FR-063, FR-064, FR-068]
+  [IMPLEMENTED] types, guard (refuses `mcpAuth` unless `true` on a failed `toolCall` with a non-empty `mcpServer`), C2 lines (`startMcpSignIn` <=> `mcpSignIn`; `cancelMcpSignIn` only with it), fake (`signInCalls`, `signInResult`, omit `startMcpSignIn` / `cancelMcpSignIn`). test: `scripts/test-adapter-contract.ts` (guard cases, mutation-checked; fake-signin setup). No adapter sets the flags yet
 - [ ] T094 [P] Copilot mapper: a failed MCP tool with challenge text -> `mcpAuth: true` and that server `needs-auth` + `errorClass:
   'auth'` (emit `mcp`); the next status replaces it; `remediation` ignored; mapper test with the issue's text [FR-060, FR-063, SC-010]
 - [ ] T095 [P] Codex: `failureReason: reauthenticationRequired` -> `needs-auth` + `errorClass: 'auth'` (extends T023, which this

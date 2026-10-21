@@ -867,6 +867,7 @@
     openTools:(scope,tab)=>{if(tab==='agents')period='session';open('tools',{scope:scope||null,tab:tab||'tools'});},
     agentMcp,
     placeDialog,
+    dialog, /* spec 061: the folder-setup list uses the same modal */
     close,isOpen,
     /* live refresh while the Tools view is open (called when events arrive) */
     refresh:()=>{if(cur&&cur.kind==='tools'&&!document.getElementById('scrDlg'))paintTools();},
