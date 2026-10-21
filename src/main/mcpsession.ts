@@ -71,6 +71,7 @@ export interface RestartDeps {
   router: Pick<AdapterRouter, 'forAgent'>;
   /** The runtime's latest list for a session. */
   live(agentId: string): readonly McpServerStatus[];
+  /** Names that are off for this agent: switched off here or in Settings. */
   off(agentId: string): ReadonlySet<string>;
   secrets(agentId: string): readonly string[];
   /** Spec 052 activity log: one row per restart, no error text. */
@@ -85,8 +86,10 @@ export async function mcpRestartOp(d: RestartDeps, running: Set<string>, id: unk
   if (!ad) return { ok: false, error: 'Unknown agent or server.' };
   if (typeof ad.restartMcpServer !== 'function') return { ok: false, error: `${ad.displayName} cannot restart one MCP server. Use Restart session with these servers.` };
   if (!ad.isLive(a.id)) return { ok: false, error: NOT_RUNNING };
-  if (!d.live(a.id).some((x) => x.name === name)) return { ok: false, error: `${name} is not running in this session.` };
-  if (d.off(a.id).has(name)) return { ok: false, error: 'Switch it on first.' };
+  const st = d.live(a.id).find((x) => x.name === name);
+  if (!st) return { ok: false, error: `${name} is not running in this session.` };
+  // a server that is off (for this agent, in Settings, or as the runtime reports it) is never started by a Restart
+  if (d.off(a.id).has(name) || st.status === 'disabled') return { ok: false, error: 'Switch it on first.' };
   const key = `${a.id}\0${name}`;
   if (running.has(key)) return { ok: false, error: `${name} is already restarting.` };
   running.add(key);

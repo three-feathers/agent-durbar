@@ -155,7 +155,7 @@ export function registerMcpIpc(deps: { store: () => McpStore; agents: Map<string
   /** Spec 058 FR-021: restart one server of this agent's running session; one at a time per server. */
   const restarting = new Set<string>();
   ipcHandle('agents:mcpRestart', (_e, id: unknown, name: unknown) =>
-    mcpRestartOp({ agents, router, live: (k) => live.get(k) ?? [], off: (k) => off.get(k) ?? new Set<string>(), secrets: secretValuesFor, log: deps.log }, restarting, id, name));
+    mcpRestartOp({ agents, router, live: (k) => live.get(k) ?? [], off: (k) => new Set([...(off.get(k) ?? []), ...store().ambientDisabled()]), secrets: secretValuesFor, log: deps.log }, restarting, id, name));
   ipcHandle('agents:setMcp', (_e, id: unknown, name: unknown, enabled: unknown) => setMcpOp({ agents, router, wsKey: keyOf }, off, id, name, enabled));
 
   return {

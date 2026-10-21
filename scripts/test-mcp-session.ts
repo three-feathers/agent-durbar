@@ -78,7 +78,7 @@ async function main(): Promise<void> {
       const agents = new Map([[sid, info(sid)]]);
       const logged: string[] = [];
       const off = new Set<string>(['quiet']);
-      const live: McpServerStatus[] = [{ name: 'notes', status: 'failed' }, { name: 'quiet', status: 'disabled' }];
+      const live: McpServerStatus[] = [{ name: 'notes', status: 'failed' }, { name: 'quiet', status: 'disabled' }, { name: 'rt-off', status: 'disabled' }];
       const d: RestartDeps = { agents, router: routerOf(ad), live: () => live, off: () => off, secrets: () => ['sekret-value-42'], log: (_a, t) => logged.push(t) };
       const running = new Set<string>();
 
@@ -87,6 +87,7 @@ async function main(): Promise<void> {
       assert.strictEqual((await mcpRestartOp(d, running, sid, { toString: () => 'notes' })).ok, false, 'a non-string name is refused');
       assert.match((await mcpRestartOp(d, running, sid, 'other')).error!, /not running in this session/, 'a name the session does not know is refused');
       assert.match((await mcpRestartOp(d, running, sid, 'quiet')).error!, /Switch it on first/);
+      assert.match((await mcpRestartOp(d, running, sid, 'rt-off')).error!, /Switch it on first/, 'a server the runtime reports disabled is not started by a Restart');
       assert.strictEqual(ad.restartCalls.length, 0, 'nothing reached the adapter so far');
 
       assert.deepStrictEqual(await mcpRestartOp(d, running, sid, 'notes'), { ok: true });
